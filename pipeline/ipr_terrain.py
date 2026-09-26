@@ -107,11 +107,12 @@ def main(area: str = "centrum") -> None:
     corners = [sheet(*to_krovak.transform(lon, lat)) for lon in (w, e) for lat in (s, n)]
     items = catalogue()
 
-    # One height grid over the whole area in local metres, filled sheet by sheet.
-    W, H = index["size"]
-    nx, ny = int(W // STEP) + 2, int(H // STEP) + 2
-    grid = np.full((ny, nx), np.nan)
+    # Heights on one 4 m lattice over the area (x = -ox + i * STEP), kept per tile and
+    # filled sheet by sheet, so memory follows the tiles that exist, not the bbox.
+    N = int(T // STEP)
     gx0, gy0 = -ox, -oy
+    tiles = {(i, j): np.full((N + 1, N + 1), np.nan, dtype=np.float32) for i, j, _ in index["tiles"]}
+    lo, hi = math.inf, -math.inf
     for X in range(min(c[0] for c in corners), max(c[0] for c in corners) + 1):
         for Y in range(min(c[1] for c in corners), max(c[1] for c in corners) + 1):
             path = download(f"TER_Prah_{X}-{Y}", items)
@@ -122,26 +123,35 @@ def main(area: str = "centrum") -> None:
             flat = tris.reshape(-1, 3)
             lx, ly = to_local.transform(flat[:, 0], flat[:, 1])
             tris = np.column_stack([lx, ly, flat[:, 2]]).reshape(-1, 3, 3)
-            rasterise(tris, gx0, gy0, nx, ny, STEP, grid)
+            gi0, gi1 = math.floor((lx.min() - gx0) / STEP), math.ceil((lx.max() - gx0) / STEP)
+            gj0, gj1 = math.floor((ly.min() - gy0) / STEP), math.ceil((ly.max() - gy0) / STEP)
+            sub = np.full((gj1 - gj0 + 1, gi1 - gi0 + 1), np.nan)
+            rasterise(tris, gx0 + gi0 * STEP, gy0 + gj0 * STEP, sub.shape[1], sub.shape[0], STEP, sub)
+            lo, hi = min(lo, np.nanmin(sub)), max(hi, np.nanmax(sub))
+            for (i, j), arr in tiles.items():
+                ci, cj = int(round(i * T / STEP)), int(round(j * T / STEP))
+                a0, a1 = max(ci, gi0), min(ci + N, gi1)
+                b0, b1 = max(cj, gj0), min(cj + N, gj1)
+                if a0 > a1 or b0 > b1:
+                    continue
+                part = sub[b0 - gj0:b1 - gj0 + 1, a0 - gi0:a1 - gi0 + 1]
+                view = arr[b0 - cj:b1 - cj + 1, a0 - ci:a1 - ci + 1]
+                ok = ~np.isnan(part)
+                view[ok] = part[ok]
             print(f"  TER_Prah_{X}-{Y}: {len(tris)} triangles")
-    if np.isnan(grid).all():
+    if lo == math.inf:
         print("no terrain")
         return
-    # Fill any holes (outside the sheets) with the nearest known height along rows.
-    mean = np.nanmean(grid)
-    grid = np.where(np.isnan(grid), mean, grid)
-
-    N = int(T // STEP)
-    for i, j, _ in index["tiles"]:
-        ci, cj = int(round(i * T / STEP)), int(round(j * T / STEP))
-        tile = grid[cj:cj + N + 1, ci:ci + N + 1]
-        if tile.shape != (N + 1, N + 1):
-            tile = np.pad(tile, ((0, N + 1 - tile.shape[0]), (0, N + 1 - tile.shape[1])), mode="edge")
-        dm = np.clip(np.round((tile - 100) * 10), 0, 65535).astype("<u2")
+    # Anything no sheet covers gets the area's mean height: flat, so unshaded.
+    known = np.concatenate([a[~np.isnan(a)] for a in tiles.values()])
+    mean = float(known.mean()) if known.size else lo
+    for (i, j), arr in tiles.items():
+        arr[np.isnan(arr)] = mean
+        dm = np.clip(np.round((arr - 100) * 10), 0, 65535).astype("<u2")
         (out_dir / "tiles" / f"{i}_{j}.height.bin").write_bytes(dm.tobytes())
-    index["terrain"] = {"step": STEP, "n": N + 1, "min": float(np.min(grid)), "max": float(np.max(grid))}
+    index["terrain"] = {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi)}
     (out_dir / "index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")))
-    print(f"terrain {np.min(grid):.0f}–{np.max(grid):.0f} m for {len(index['tiles'])} tiles")
+    print(f"terrain {lo:.0f}–{hi:.0f} m for {len(index['tiles'])} tiles")
 
 
 if __name__ == "__main__":

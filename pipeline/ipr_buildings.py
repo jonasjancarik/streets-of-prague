@@ -203,7 +203,7 @@ def main(area: str = "centrum") -> None:
                 return b
         return None
 
-    per_tile = {}  # (i, j) → list of (triangles, colour) ; colour per triangle
+    per_tile = {}  # (i, j) → list of (int16 positions, uint8 colours), one pair per building
     for X in range(X0, X1 + 1):
         for Y in range(Y0, Y1 + 1):
             name = f"BD3_Prah_{X}-{Y}"
@@ -233,24 +233,23 @@ def main(area: str = "centrum") -> None:
                         tris.append(t)
                         flat = kind == 1 and nrm[2] > 0.97 * (np.linalg.norm(nrm) or 1)
                         cols.append(flat_roof(roof) if flat else roof if kind == 1 else wall)
-                per_tile.setdefault((i, j), []).append((tris, cols))
+                if tris:
+                    # Pack right away: centimetres from the tile corner, (x, height, y).
+                    x0, y0 = i * T - ox, j * T - oy
+                    v = np.array(tris, dtype=np.float64).reshape(-1, 3)
+                    pos = np.column_stack([(v[:, 0] - x0) * 100, v[:, 2] * 100, (v[:, 1] - y0) * 100])
+                    pos = np.clip(np.round(pos), -32768, 32767).astype("<i2").ravel()
+                    per_tile.setdefault((i, j), []).append((pos, np.array(cols, dtype=np.uint8).ravel()))
                 count += 1
             print(f"  {name}: {count} buildings in the area")
 
     total = 0
     for (i, j), blist in per_tile.items():
-        x0 = i * T - ox
-        y0 = j * T - oy
-        pos, col = [], []
-        for tris, cols in blist:
-            for t, c in zip(tris, cols):
-                for v in t:
-                    pos += [round((v[0] - x0) * 100), round(v[2] * 100), round((v[1] - y0) * 100)]
-                col += list(c)
+        pos_arr = np.concatenate([p for p, _ in blist])
+        col = np.concatenate([c for _, c in blist])
         n_tris = len(col) // 3
-        pos_arr = np.clip(np.array(pos, dtype=np.int32), -32768, 32767).astype("<i2")
         pad = (4 - (8 + pos_arr.nbytes) % 4) % 4
-        blob = struct.pack("<II", n_tris, len(blist)) + pos_arr.tobytes() + b"\0" * pad + bytes(col)
+        blob = struct.pack("<II", n_tris, len(blist)) + pos_arr.tobytes() + b"\0" * pad + col.tobytes()
         (out_dir / "tiles" / f"{i}_{j}.ipr.bin").write_bytes(blob)
         tj = out_dir / "tiles" / f"{i}_{j}.json"
         t = json.loads(tj.read_text())
