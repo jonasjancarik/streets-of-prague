@@ -175,11 +175,16 @@ eight about 6.5 min.
   timer, telephone reports that arrive late or are wrong, and columns sharing
   what they have seen over the radio.
 - Split the ground into tiles for larger areas and sharper close-ups.
+- Driving: about 550 of the cars TSK's data puts on Újezd by day have nowhere to
+  go, mostly in narrow two-way Malá Strana streets with no mapped parking lane.
+  Try tighter kerb spacing, half-on-the-pavement parking where the street is too
+  narrow, and parking on one side of two-way streets.
 
 ## Credits
 
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
 - Aerial photos 1938, 1945 and 2012: datový podklad ©
   [IPR Praha](https://geoportalpraha.cz/en/data-and-services/open-data), CC BY.
+- Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - The layer 5 tile was painted with AI image generation (Codex).
