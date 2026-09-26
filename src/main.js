@@ -15,7 +15,7 @@ const $ = (id) => document.getElementById(id);
 const status = (t) => { $('loading-text').textContent = t; };
 
 const TRAFFIC = 40;
-const PEOPLE = 160;
+const PEOPLE = 240;
 const LIFE_RADIUS = 330; // traffic and people are kept within this distance of the player
 
 async function main() {
@@ -110,8 +110,9 @@ async function main() {
     return d > rMin && d < LIFE_RADIUS && world.grid.at(sx, sy) !== 255;
   };
   for (let i = 0; i < TRAFFIC; i++) traffic.spawn(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS));
+  // People who wander too far are moved to just outside the view, so they walk into it.
   const scatterPeople = (onlyFar) => {
-    const edges = walkNear(px(), py(), LIFE_RADIUS * 0.8);
+    const edges = walkNear(px(), py(), onlyFar ? Math.min(LIFE_RADIUS, viewRadius() + 90) : LIFE_RADIUS * 0.6);
     if (!edges.length) return;
     for (const p of crowd.people) {
       if (onlyFar && Math.hypot(p.x - px(), p.y - py()) < LIFE_RADIUS) continue;

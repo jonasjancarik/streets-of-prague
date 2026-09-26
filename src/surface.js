@@ -72,7 +72,7 @@ function strips(lines, w, dash = null) {
 }
 
 // A soft band just outside each ring, fading from `alpha` at the ring to 0.
-function skirts(ringsList, width, outside) {
+function skirts(ringsList, width, outside, skip = () => false) {
   const pos = [], alpha = [], idx = [];
   for (const rings of ringsList) {
     rings.forEach((ring, k) => {
@@ -89,6 +89,7 @@ function skirts(ringsList, width, outside) {
         alpha.push(1, 0);
       }
       for (let i = 0; i < n; i++) {
+        if (skip(inner[i], inner[(i + 1) % n])) continue;
         const a = base + i * 2, b = base + ((i + 1) % n) * 2;
         idx.push(a, a + 1, b + 1, a, b + 1, b);
       }
@@ -151,16 +152,35 @@ export class Surfaces {
 
     // Base: everything unmapped between streets and houses is paved.
     const [x0, y0, x1, y1] = [geo.minX, geo.minY, geo.maxX, geo.maxY];
+    // Polygons are clipped to the tile: their edges along the tile border aren't real
+    // shores or kerbs, so outlines and shading skip them.
+    const cut = (a, b) => [[0, x0], [0, x1], [1, y0], [1, y1]].some(([k, v]) => Math.abs(a[k] - v) < 0.05 && Math.abs(b[k] - v) < 0.05);
+    const outlines = (polys) => {
+      const out = [];
+      for (const rings of polys) {
+        for (const ring of rings) {
+          let cur = [];
+          for (let i = 0; i < ring.length; i++) {
+            const a = ring[i], b = ring[(i + 1) % ring.length];
+            if (cut(a, b)) { if (cur.length > 1) out.push(cur); cur = []; continue; }
+            if (!cur.length) cur.push(a);
+            cur.push(b);
+          }
+          if (cur.length > 1) out.push(cur);
+        }
+      }
+      return out;
+    };
     add(polygons([[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]]), COLORS.pavement, 'mosaic');
     add(polygons(A.park || []), COLORS.park, 'grass');
     add(polygons(A.orchard || []), COLORS.orchard, 'grass');
     add(polygons(A.wood || []), COLORS.wood, 'wood');
     add(polygons(A.pitch || []), COLORS.pitch, 'pitch');
-    add(strips((A.pitch || []).map((r) => [...r[0], r[0][0]]), 0.12), COLORS.paint);
+    add(strips(outlines((A.pitch || []).map((r) => [r[0]])), 0.12), COLORS.paint);
     add(polygons(A.square || []), COLORS.square, 'slabs');
     add(polygons(A.water || []), COLORS.water, 'water');
-    shade(skirts(A.water || [], 6, false), 0.35);
-    add(strips((A.water || []).flatMap((r) => r.map((ring) => [...ring, ring[0]])), 0.9), COLORS.quay, 'slabs');
+    shade(skirts(A.water || [], 6, false, cut), 0.35);
+    add(strips(outlines(A.water || []), 0.9), COLORS.quay, 'slabs');
     add(strips(d.weirs || [], 2.4), '#9a978d', 'concrete');
     add(strips((d.weirs || []).map((w) => offsetLine(w, -1.6)), 2.2), '#dfe6e2');
 
@@ -175,7 +195,7 @@ export class Surfaces {
         const r = rs[0], cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;
         return (zones?.at(cx, cy)?.category || null) === cat;
       });
-      add(strips(rings.map((rs) => [...rs[0], rs[0][0]]), 0.15), color);
+      add(strips(outlines(rings.map((rs) => [rs[0]])), 0.15), color);
     }
 
     // Bridges: a soft shadow on the water, then the deck.
