@@ -1,0 +1,195 @@
+// Street graphs from pipeline/build_streets.py: a directed car network with lanes
+// offset to the right, and an undirected pedestrian network.
+
+export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+export class Polyline {
+  constructor(pts) {
+    this.pts = pts;
+    this.cum = [0];
+    for (let i = 1; i < pts.length; i++) {
+      this.cum.push(this.cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    }
+    this.length = this.cum[this.cum.length - 1];
+  }
+
+  at(s) {
+    s = clamp(s, 0, this.length);
+    let lo = 1, hi = this.cum.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.cum[mid] < s) lo = mid + 1;
+      else hi = mid;
+    }
+    const a = this.pts[lo - 1], b = this.pts[lo];
+    const t = (s - this.cum[lo - 1]) / (this.cum[lo] - this.cum[lo - 1] || 1);
+    return { x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t, ang: Math.atan2(b[1] - a[1], b[0] - a[0]) };
+  }
+}
+
+// Shift a polyline sideways; positive d = to the right of the direction of travel.
+export function offsetLine(pts, d) {
+  if (!d) return pts;
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    return [p[0] + ((b[1] - a[1]) / len) * d, p[1] - ((b[0] - a[0]) / len) * d];
+  });
+}
+
+function bezier(a, c, b, n = 8) {
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = 1 - t;
+    out.push([u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]);
+  }
+  return out;
+}
+
+const CLASS_SPEED = { primary: 14, secondary: 13, tertiary: 12, tertiary_link: 9, residential: 9, unclassified: 9, living_street: 5, service: 5 };
+
+export function buildDriveGraph(streets) {
+  const { nodes, edges } = streets.drive;
+  const out = nodes.map(() => []);
+  edges.forEach((e, i) => {
+    e.i = i;
+    e.laneOffset = e.oneway ? 0 : clamp(e.width / 4, 1.6, 3);
+    e.path = new Polyline(offsetLine(e.pts, e.laneOffset));
+    e.speed = e.maxspeed ? Math.min(e.maxspeed / 3.6, CLASS_SPEED[e.hw] || 9) : CLASS_SPEED[e.hw] || 9;
+    out[e.u].push(e);
+  });
+  for (const e of edges) e.twin = out[e.v].find((f) => f.v === e.u) || null;
+  return { nodes, edges, out };
+}
+
+// Next edge after `e`: anything but a U-turn, unless the street is a dead end.
+export function nextEdge(g, e, r) {
+  const opts = g.out[e.v].filter((f) => f !== e.twin);
+  const list = opts.length ? opts : g.out[e.v];
+  return list[Math.floor(r() * list.length)];
+}
+
+// A route is a chain of legs: the lane of each edge, trimmed at both ends, and a
+// short curve through each junction so turns are smooth.
+export class Route {
+  constructor(g, edge, s, r) {
+    this.g = g;
+    this.r = r;
+    this.legs = [{ path: edge.path, s0: 0, s1: edge.path.length, edge }];
+    this.s = s;
+    this.extend();
+  }
+
+  get leg() { return this.legs[0]; }
+
+  extend() {
+    while (this.legs.filter((l) => l.edge).length < 4) {
+      const last = this.legs[this.legs.length - 1];
+      const e = last.edge, f = nextEdge(this.g, e, this.r);
+      const trim = Math.min(7, e.path.length / 3, f.path.length / 3);
+      last.s1 = Math.max(last.s0, e.path.length - trim);
+      const a = e.path.at(last.s1), b = f.path.at(trim);
+      const turn = Math.abs(Math.atan2(Math.sin(b.ang - a.ang), Math.cos(b.ang - a.ang)));
+      const conn = new Polyline(bezier([a.x, a.y], corner(a, b), [b.x, b.y]));
+      this.legs.push({ path: conn, s0: 0, s1: conn.length, edge: null, turn, speed: Math.min(e.speed, f.speed) });
+      this.legs.push({ path: f.path, s0: trim, s1: f.path.length, edge: f });
+    }
+  }
+
+  // Advance by ds metres; returns the current point.
+  advance(ds) {
+    this.s += ds;
+    while (this.s > this.leg.s1) {
+      const over = this.s - this.leg.s1;
+      this.legs.shift();
+      this.s = this.leg.s0 + over;
+      this.extend();
+    }
+    return this.leg.path.at(this.s);
+  }
+
+  // Point `d` metres ahead along the route, and the lowest speed limit on the way there.
+  lookahead(d) {
+    let s = this.s, limit = Infinity;
+    for (const leg of this.legs) {
+      limit = Math.min(limit, leg.edge ? leg.edge.speed : leg.speed, !leg.edge && leg.turn > 1.1 ? 4.5 : !leg.edge && leg.turn > 0.5 ? 7 : Infinity);
+      if (s + d <= leg.s1) return { p: leg.path.at(s + d), limit };
+      d -= leg.s1 - s;
+      s = leg === this.legs[this.legs.length - 1] ? leg.s1 : this.legs[this.legs.indexOf(leg) + 1].s0;
+    }
+    const last = this.legs[this.legs.length - 1];
+    return { p: last.path.at(last.s1), limit };
+  }
+}
+
+// Where the incoming and outgoing lanes would cross; the midpoint when they're parallel.
+function corner(a, b) {
+  const dax = Math.cos(a.ang), day = Math.sin(a.ang), dbx = Math.cos(b.ang), dby = Math.sin(b.ang);
+  const den = dax * dby - day * dbx;
+  const mid = [(a.x + b.x) / 2, (a.y + b.y) / 2];
+  if (Math.abs(den) < 0.2) return mid;
+  const t = ((b.x - a.x) * dby - (b.y - a.y) * dbx) / den;
+  const gap = Math.hypot(b.x - a.x, b.y - a.y);
+  if (t < 0 || t > gap * 1.5) return mid;
+  return [a.x + dax * t, a.y + day * t];
+}
+
+export function buildWalkGraph(streets) {
+  const { nodes, edges } = streets.walk;
+  const adj = nodes.map(() => []);
+  const ROADLIKE = new Set(['residential', 'tertiary', 'secondary', 'primary', 'service', 'unclassified', 'living_street', 'busway']);
+  edges.forEach((e) => {
+    e.path = new Polyline(e.pts);
+    // Streets without a separately mapped pavement: people keep to the edge.
+    e.side = ROADLIKE.has(e.hw) ? Math.max(0, e.width / 2 - 0.9) : 0;
+    adj[e.u].push({ e, fwd: true });
+    adj[e.v].push({ e, fwd: false });
+  });
+  return { nodes, edges, adj };
+}
+
+// Spatial hash of named street segments, for the "you are on …" label.
+export class StreetNames {
+  constructor(...edgeLists) {
+    this.cell = 20;
+    this.map = new Map();
+    for (const list of edgeLists) {
+      for (const e of list) {
+        if (!e.name) continue;
+        for (let i = 0; i < e.pts.length - 1; i++) {
+          const a = e.pts[i], b = e.pts[i + 1];
+          const seg = { a, b, name: e.name, rank: e.hw === 'footway' || e.hw === 'steps' ? 1 : 0 };
+          const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / this.cell) + 1;
+          const keys = new Set();
+          for (let k = 0; k <= n; k++) keys.add(this.key(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n));
+          for (const key of keys) {
+            if (!this.map.has(key)) this.map.set(key, []);
+            this.map.get(key).push(seg);
+          }
+        }
+      }
+    }
+  }
+
+  key(x, y) { return `${Math.floor(x / this.cell)},${Math.floor(y / this.cell)}`; }
+
+  at(x, y, maxD = 14) {
+    let best = null, bestD = maxD;
+    const cx = Math.floor(x / this.cell), cy = Math.floor(y / this.cell);
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        for (const s of this.map.get(`${cx + i},${cy + j}`) || []) {
+          const d = segDist(x, y, s.a, s.b) + s.rank * 4;
+          if (d < bestD) { bestD = d; best = s.name; }
+        }
+      }
+    }
+    return best;
+  }
+}
+
+export function segDist(x, y, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const t = clamp(((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+  return Math.hypot(x - a[0] - dx * t, y - a[1] - dy * t);
+}

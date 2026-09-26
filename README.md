@@ -14,6 +14,24 @@ between the painted map and the 1945, 1938 and 2012 aerial photos; 5 shows the
 AI-painted test tile. B hides
 buildings, F gives an old-film look, R restarts.
 
+## Driving prototype (`drive.html`)
+
+A separate, present-day experiment on the same map: a GTA 2-style top-down
+sandbox. Open `http://localhost:5190/drive.html`.
+
+- Tank controls on foot and in the car: W/S forwards and back, A/D turn, Shift
+  runs, Space is the handbrake. E gets into the nearest car, including one driving
+  past (its driver runs off). R puts the car back on the road.
+- `pipeline/build_streets.py` exports OSM's car network (directed, one-way streets
+  respected, tunnels removed, largest strongly connected part) and the pedestrian
+  network into `public/data/<area>_streets.json`.
+- `src/drive/`: arcade car physics against the same 0.5 m collision grid as the
+  courier, with tree trunks added (`car.js`); AI traffic that keeps to the right
+  lane, brakes for anything ahead and gives way to the right (`traffic.js`);
+  pedestrians on the footpath network who dodge fast cars and get knocked over
+  (`people.js`). Parked cars line the kerbs where they leave the lane free.
+- The camera pulls up with speed. The buildings the 1945 map drops are put back.
+
 ## How it is built
 
 `pipeline/build_area.py` (uv) does the data work for one bbox:

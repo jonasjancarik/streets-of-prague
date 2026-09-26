@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Praha Drive</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      :root { --ink: #f5efe2; --paper: rgba(20, 18, 16, 0.72); --accent: #ffd23f; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #2a2622; color: var(--ink); font: 13px/1.4 Inter, system-ui, sans-serif; }
+      #app canvas { display: block; }
+      .panel { position: fixed; background: var(--paper); backdrop-filter: blur(6px); border-radius: 10px; padding: 10px 14px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); }
+      #hud { top: 16px; left: 16px; min-width: 190px; }
+      #street { font: 22px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
+      #speedo { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
+      #speed { font: 44px/1 'Bebas Neue', sans-serif; color: var(--accent); min-width: 2.2ch; }
+      #speedo small { opacity: 0.7; }
+      #hint { margin-top: 4px; min-height: 18px; }
+      #hint b { display: inline-block; background: var(--ink); color: #221f1b; border-radius: 4px; padding: 0 6px; margin-right: 4px; }
+      #tally { opacity: 0.6; font-size: 12px; margin-top: 4px; }
+      #banner { position: fixed; top: 14%; left: 0; right: 0; text-align: center; pointer-events: none; font: 64px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0 3px 0 #000, 0 0 24px rgba(0, 0, 0, 0.6); opacity: 0; }
+      #help { bottom: 16px; right: 16px; opacity: 0.85; font-size: 12px; max-width: 320px; }
+      #loading { position: fixed; inset: 0; display: grid; place-items: center; background: #2a2622; transition: opacity 0.6s; font: 28px 'Bebas Neue', sans-serif; letter-spacing: 0.05em; }
+      #loading.done { opacity: 0; pointer-events: none; }
+      @media (max-width: 640px) { #help { display: none; } #banner { font-size: 40px; } }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud" class="panel">
+      <div id="street">Praha</div>
+      <div id="speedo"><span id="speed">–</span><small>km/h</small></div>
+      <div id="hint"></div>
+      <div id="tally"></div>
+    </div>
+    <div id="banner"></div>
+    <div id="help" class="panel">
+      <b>On foot:</b> W and S walk forwards and back, A and D turn, Shift to run. <b>E</b> gets you into the nearest car, even one that's driving past.<br />
+      <b>Driving:</b> W and S for gas and brake (hold S to reverse), A and D to steer, Space for the handbrake. <b>R</b> puts the car back on the road.<br />
+      Scroll to zoom.
+    </div>
+    <div id="loading"><span id="loading-text">Loading…</span></div>
+    <script type="module" src="/src/drive/main.js"></script>
+  </body>
+</html>
