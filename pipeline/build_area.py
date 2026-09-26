@@ -29,6 +29,9 @@ from shapely.ops import transform, unary_union
 AREAS = {
     # west, south, east, north (WGS84)
     "ujezd": (14.3985, 50.0765, 14.4155, 50.0865),
+    # Historic centre for the driving game: Hradčany and Malá Strana to Vinohrady,
+    # Smíchov and Vyšehrad's edge to Letná's slope. About 4.3 x 3 km.
+    "centrum": (14.390, 50.068, 14.450, 50.095),
 }
 
 WMS = "https://gs-pub.praha.eu/arcgis/services/ort/ortofotomapa_archiv/MapServer/WmsServer"
@@ -64,7 +67,8 @@ ROAD_WIDTH = {
 }
 
 
-def main(area: str = "ujezd", era: str = "1945") -> None:
+def extract(area: str = "ujezd", era: str = "1945") -> dict:
+    """Fetch and classify everything in the area; geometry stays as shapely objects."""
     now = era == "now"
     w, s, e, n = AREAS[area]
     lon0, lat0 = (w + e) / 2, (s + n) / 2
@@ -213,6 +217,22 @@ def main(area: str = "ujezd", era: str = "1945") -> None:
     # Rivers mapped as lines only get buffered; the Vltava is an area in OSM already.
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
+    return {
+        "area": area, "era": era, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
+        "buildings": buildings, "areas": area_polys, "roads": road_polys, "rails": rails,
+        "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings,
+        "removed": removed, "candidates": candidates,
+    }
+
+
+def main(area: str = "ujezd", era: str = "1945") -> None:
+    now = era == "now"
+    x = extract(area, era)
+    w, s, e, n = x["bbox"]
+    x0, y0, x1, y1 = x["box"]
+    buildings, removed, candidates = x["buildings"], x["removed"], x["candidates"]
+    area_polys, road_polys = x["areas"], x["roads"]
+    rails, walls, trees, weirs, crossings = x["rails"], x["walls"], x["trees"], x["weirs"], x["crossings"]
 
     out = {
         "area": area,

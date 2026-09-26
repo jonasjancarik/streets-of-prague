@@ -115,23 +115,27 @@ function finish(pos, idx) {
   return g;
 }
 
+// One set of ground meshes for an area or a tile. `edges`: car network edges for the
+// centre lines (already clipped to the area); `buildings`: the ones to shade round.
 export class Surfaces {
-  constructor(geo, traffic, zones) {
+  constructor(geo, { edges = [], buildings = geo.data.buildings, zones = null, time = { value: 0 } } = {}) {
     this.group = new THREE.Group();
-    this.time = { value: 0 };
+    this.time = time;
     const d = geo.data, A = d.areas, R = d.roads;
+    // Fixed order per layer (whether or not it has anything), so tiles layer consistently.
     let order = -1000;
     const add = (geometry, color, pattern = 'flat') => {
+      const o = order++;
       if (!geometry.index?.count) return null;
       const mat = patterned(new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[pattern], this.time);
       const m = new THREE.Mesh(geometry, mat);
-      m.renderOrder = order++;
+      m.renderOrder = o;
       m.receiveShadow = true;
-      m.frustumCulled = false;
       this.group.add(m);
       return m;
     };
-    const shade = (geometry, opacity, width) => {
+    const shade = (geometry, opacity) => {
+      const o = order++;
       if (!geometry.index?.count) return;
       // Custom blending keeps it in the ordered ground pass, under buildings and cars.
       const mat = new THREE.ShaderMaterial({
@@ -141,8 +145,7 @@ export class Surfaces {
         fragmentShader: 'uniform float opacity; varying float vA; void main() { gl_FragColor = vec4(0.08, 0.07, 0.06, vA * vA * opacity); }',
       });
       const m = new THREE.Mesh(geometry, mat);
-      m.renderOrder = order++;
-      m.frustumCulled = false;
+      m.renderOrder = o;
       this.group.add(m);
     };
 
@@ -192,7 +195,7 @@ export class Surfaces {
     // Road paint: dashed centre lines on two-way asphalt streets without trams, zebras.
     const cobbled = new Set(['sett', 'cobblestone', 'unhewn_cobblestone', 'paving_stones']);
     const near = (p) => trams.some((pts) => pts.some((q, i) => i && segDistPts(p, pts[i - 1], q) < 3));
-    const centre = traffic.drive.edges.filter((e) => !e.oneway && e.u < e.v && !cobbled.has(e.surface)
+    const centre = edges.filter((e) => !e.oneway && e.u < e.v && !cobbled.has(e.surface)
       && ['primary', 'secondary', 'tertiary', 'tertiary_link'].includes(e.hw)
       && ![e.pts[0], e.pts[Math.floor(e.pts.length / 2)], e.pts[e.pts.length - 1]].some(near)).map((e) => e.pts);
     add(strips(centre, 0.13, [3, 6]), COLORS.paint);
@@ -208,10 +211,12 @@ export class Surfaces {
     add(strips(bars, 0.5), COLORS.paint);
 
     // Soft contact shadow round every building.
-    shade(skirts(d.buildings.map((b) => b.rings), 1.8, true), 0.5);
+    shade(skirts(buildings.map((b) => b.rings), 1.8, true), 0.5);
   }
 
-  update(dt) { this.time.value += dt; }
+  dispose() {
+    this.group.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+  }
 }
 
 function segDistPts(p, a, b) {

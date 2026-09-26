@@ -14,12 +14,14 @@ export class Traffic {
     this.agents = [];
   }
 
-  spawn(avoid) {
+  // A new car on a random street among `edges` (default: anywhere), where `avoid` allows.
+  spawn(avoid, edges = this.g.edges) {
     const r = this.r;
-    const total = this.g.edges.reduce((a, e) => a + e.path.length, 0);
+    if (!edges.length) return null;
+    const total = edges.reduce((a, e) => a + e.path.length, 0);
     for (let tries = 0; tries < 40; tries++) {
-      let x = r() * total, edge = this.g.edges[0];
-      for (const e of this.g.edges) if ((x -= e.path.length) < 0) { edge = e; break; }
+      let x = r() * total, edge = edges[0];
+      for (const e of edges) if ((x -= e.path.length) < 0) { edge = e; break; }
       if (edge.path.length < 12) continue;
       const s = 4 + r() * (edge.path.length - 8);
       const p = edge.path.at(s);
@@ -38,8 +40,8 @@ export class Traffic {
     this.agents.splice(this.agents.indexOf(agent), 1);
   }
 
-  // obstacles: [{ x, y, r, vx, vy, kind }]
-  update(dt, obstacles) {
+  // near(x, y, r): the obstacles ({ x, y, r, vx, vy, kind }) around a point.
+  update(dt, near) {
     for (const a of this.agents) {
       const c = a.car, L = c.spec.L, W = c.spec.W;
       const look = a.route.lookahead(6 + a.speed * 1.2);
@@ -48,7 +50,7 @@ export class Traffic {
       const fx = Math.cos(c.h), fy = Math.sin(c.h);
       const reach = L / 2 + 5 + a.speed * 1.6;
       let gap = Infinity, blocker = null;
-      for (const o of obstacles) {
+      for (const o of near(c.x, c.y, reach + 8)) {
         if (o.car === c) continue;
         const dx = o.x - c.x, dy = o.y - c.y;
         if (Math.abs(dx) > reach + 8 || Math.abs(dy) > reach + 8) continue;

@@ -193,3 +193,22 @@ export function segDist(x, y, a, b) {
   const t = clamp(((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1), 0, 1);
   return Math.hypot(x - a[0] - dx * t, y - a[1] - dy * t);
 }
+
+// Rebuilt every frame: everything that moves or blocks, bucketed in 10 m cells.
+export class SpatialHash {
+  constructor(cell = 10) { this.cell = cell; this.map = new Map(); }
+  clear() { this.map.clear(); }
+  add(o) {
+    const k = `${Math.floor(o.x / this.cell)},${Math.floor(o.y / this.cell)}`;
+    let b = this.map.get(k);
+    if (!b) this.map.set(k, (b = []));
+    b.push(o);
+  }
+  *near(x, y, r) {
+    const c = this.cell, i0 = Math.floor((x - r) / c), i1 = Math.floor((x + r) / c), j0 = Math.floor((y - r) / c), j1 = Math.floor((y + r) / c);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const b = this.map.get(`${i},${j}`);
+      if (b) yield* b;
+    }
+  }
+}

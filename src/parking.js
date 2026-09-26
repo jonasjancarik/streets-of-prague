@@ -39,7 +39,7 @@ export class Zones {
 }
 
 // Every possible parking spot: bays in OSM lots and lanes, then kerbside spots.
-function slots(data, drive) {
+function slots(data, edges) {
   const out = [];
   for (const rings of data.areas.parking || []) {
     const ring = rings[0];
@@ -67,7 +67,7 @@ function slots(data, drive) {
     }
   }
   const lots = out.length;
-  for (const e of drive.edges) {
+  for (const e of edges) {
     if (e.bridge || e.path.length < 30) continue;
     const kerb = e.width / 2 - 1.05;
     for (const side of e.oneway ? [1, -1] : [1]) {
@@ -86,7 +86,9 @@ function slots(data, drive) {
   return out;
 }
 
-export function parkCars({ data, drive, zones, grid, r, night = false }) {
+// `shares`: code → share of each paid-parking section inside this piece of map (a
+// tile); without it the whole section counts. `inside(x, y)` limits spots to the tile.
+export function parkCars({ data, edges, zones, solid, r, night = false, shares = null, inside = () => true }) {
   const railSegs = [];
   for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
   const nearRail = (x, y) => railSegs.some(([a, b]) => segDist(x, y, a, b) < 3.2);
@@ -104,7 +106,7 @@ export function parkCars({ data, drive, zones, grid, r, night = false }) {
     if (!s.lot && nearRail(s.x, s.y)) return false;
     const car = new Car(randomType(r), r, s.x, s.y, s.h + (r() > 0.5 ? Math.PI : 0));
     if (s.bay && car.type === 'van') return false;
-    if (!car.worldSamples().every(([x, y]) => grid.at(x, y) === 0) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8)) return false;
+    if (car.worldSamples().some(([x, y]) => solid(x, y)) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8)) return false;
     car.mode = 'loose';
     cars.push(car);
     const k = key(s.x, s.y);
@@ -115,7 +117,8 @@ export function parkCars({ data, drive, zones, grid, r, night = false }) {
   const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
   const bySection = new Map(), free = [];
-  for (const s of slots(data, drive)) {
+  for (const s of slots(data, edges)) {
+    if (!inside(s.x, s.y)) continue;
     const z = zones.at(s.x, s.y);
     if (!z) { free.push(s); continue; }
     if (!bySection.has(z)) bySection.set(z, []);
@@ -124,7 +127,8 @@ export function parkCars({ data, drive, zones, grid, r, night = false }) {
   let wanted = 0;
   for (const [z, list] of bySection) {
     const occ = Math.min(130, (night ? z.occNight : z.occDay) ?? 80);
-    let want = Math.round((z.spaces * z.inside * occ) / 100);
+    const share = shares ? shares.get(z.code) || 0 : z.inside;
+    let want = Math.round((z.spaces * share * occ) / 100);
     wanted += want;
     const ordered = [...shuffle(list.filter((s) => s.lot)), ...shuffle(list.filter((s) => !s.lot))];
     for (const s of ordered) if (want > 0 && place(s)) want--;
