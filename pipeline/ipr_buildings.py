@@ -221,7 +221,7 @@ def main(area: str = "centrum") -> None:
                 if (i, j) not in tiles_on_disk:
                     continue
                 osm = osm_at(i, j, Point(cx, cy))
-                roof, wall = colours(bid, osm)
+                roof, wall = colours(bid or f"{name}/{count}", osm)
                 tris, cols = [], []
                 for kind, ring in surfaces:
                     rx, ry = to_local.transform(ring[:, 0], ring[:, 1])

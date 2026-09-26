@@ -20,6 +20,9 @@ them up across tiles); and the share of each paid-parking section inside it, if
 
 import json
 import math
+import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +34,35 @@ from shapely.geometry import LineString, Point, Polygon, box
 from build_area import AREAS, OUT, ROAD_WIDTH, _coords, _float, _lines, _polys, _rings, extract, use_overpass_mirror
 
 MARGIN = 150.0
+# A local OpenStreetMap extract, if there is one, is much faster and kinder than
+# Overpass for big areas: https://download.geofabrik.de/europe/czech-republic.html
+PBF = Path(os.environ.get("OSM_PBF", Path(__file__).parent / ".cache" / "osm" / "czech-republic-latest.osm.pbf"))
+
+
+def cut(bbox, out, source=PBF):
+    """The OSM data of a box (.osm XML or .pbf by name), cut from a local extract with osmium."""
+    if not out.exists():
+        w, s, e, n = bbox
+        subprocess.run(["osmium", "extract", "-b", f"{w},{s},{e},{n}", "--strategy", "complete_ways",
+                        "--overwrite", "-o", str(out), str(source)], check=True)
+    return out
+
+
+def network_filter(network):
+    """osmnx's Overpass filter for a network type, as a test on a way's tags."""
+    parts = re.findall(r'\["([^"]+)"(?:(!?~)"([^"]*)")?\]', ox._overpass._get_network_filter(network))
+
+    def ok(tags):
+        for key, op, rx in parts:
+            v = tags.get(key)
+            if not op and v is None:
+                return False
+            if op == "~" and (v is None or not re.search(rx, v)):
+                return False
+            if op == "!~" and v is not None and re.search(rx, v):
+                return False
+        return True
+    return ok
 
 
 def first(v):
@@ -45,9 +77,17 @@ def truthy(v):
     return first(v) not in (None, False, "no", "False")
 
 
-def graph_edges(bbox, tf, network, directed):
+def graph_edges(bbox, tf, network, directed, source=None):
     """Edges of an osmnx network as dicts with OSM node ids and local-metre polylines."""
-    G = ox.graph_from_bbox(bbox, network_type=network, simplify=True, retain_all=True)
+    if source:
+        # The same network osmnx would ask Overpass for, built from the local cut.
+        data = ox._osm_xml._overpass_json_from_xml(Path(source), "utf-8")
+        ok = network_filter(network)
+        data["elements"] = [el for el in data["elements"] if el["type"] != "way" or ok(el.get("tags", {}))]
+        G = ox.graph._create_graph([data], network in ox.settings.bidirectional_network_types)
+        G = ox.simplify_graph(G)
+    else:
+        G = ox.graph_from_bbox(bbox, network_type=network, simplify=True, retain_all=True)
     G.remove_edges_from([(u, v, k) for u, v, k, d in G.edges(keys=True, data=True) if truthy(d.get("tunnel"))])
     if directed:
         # Strongly connected, so a car can always leave any street it turns into.
@@ -93,6 +133,8 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
     ox.settings.use_cache = True
     ox.settings.cache_folder = str(Path(__file__).parent / ".cache")
     use_overpass_mirror()
+    if "surface" not in ox.settings.useful_tags_way:
+        ox.settings.useful_tags_way = [*ox.settings.useful_tags_way, "surface"]  # asphalt vs setts
 
     sections = []
     parking = OUT / f"{area}_parking.json"
@@ -103,6 +145,12 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
             meta = {k: sec.get(k) for k in ("code", "category", "spaces", "occDay", "occNight")}
             sections.append((meta, polys, full))
 
+    # Cut the area out of the country extract once; chunks are cut from that.
+    area_pbf = None
+    if PBF.exists():
+        pad = 0.01
+        area_pbf = cut((w - pad, s - pad, e + pad, n + pad), PBF.parent / f"{area}.osm.pbf")
+
     tiles, rails, n_buildings = [], [], 0
     chunks = [(ci, cj) for ci in range(math.ceil(cols / C)) for cj in range(math.ceil(rows / C))]
     for number, (ci, cj) in enumerate(chunks, 1):
@@ -111,9 +159,10 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
         corners = [inv.transform(px, py) for px in (mx0, mx1) for py in (my0, my1)]
         bbox = (min(c[0] for c in corners), min(c[1] for c in corners), max(c[0] for c in corners), max(c[1] for c in corners))
         print(f"chunk {number}/{len(chunks)} ({ci},{cj})")
-        x = extract(area, "now", bbox=bbox, centre=centre)
-        drive = graph_edges(bbox, tf, "drive", True)
-        walk = graph_edges(bbox, tf, "walk", False)
+        source = cut(bbox, PBF.parent / f"{area}_{ci}_{cj}.osm", area_pbf) if area_pbf else None
+        x = extract(area, "now", bbox=bbox, centre=centre, source=source)
+        drive = graph_edges(bbox, tf, "drive", True, source)
+        walk = graph_edges(bbox, tf, "walk", False, source)
 
         shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in x["buildings"]]
         centres = [p.representative_point() for p in shapes]

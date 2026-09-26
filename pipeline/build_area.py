@@ -67,11 +67,12 @@ ROAD_WIDTH = {
 }
 
 
-def extract(area: str = "ujezd", era: str = "1945", bbox=None, centre=None) -> dict:
+def extract(area: str = "ujezd", era: str = "1945", bbox=None, centre=None, source=None) -> dict:
     """Fetch and classify everything in the area; geometry stays as shapely objects.
 
     `bbox` (WGS84) overrides the area's box, e.g. for one chunk of a large area, and
     `centre` (lon, lat) keeps the local metres of the whole area, so chunks line up.
+    `source`: an .osm XML file already cut to the box, instead of asking Overpass.
     """
     now = era == "now"
     w, s, e, n = bbox or AREAS[area]
@@ -98,7 +99,7 @@ def extract(area: str = "ujezd", era: str = "1945", bbox=None, centre=None) -> d
         "place": ["islet", "island"], "historic": ["city_gate", "castle_wall"],
         "bridge": True, "area:highway": True,
     }
-    gdf = ox.features_from_bbox((w, s, e, n), tags)
+    gdf = ox.features_from_xml(source, tags=tags) if source else ox.features_from_bbox((w, s, e, n), tags)
     gdf = gdf.reset_index()
     print(f"{len(gdf)} OSM features")
 
