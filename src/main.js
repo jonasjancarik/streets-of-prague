@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Geo, rng } from '../geo.js';
 import { Surfaces } from './surface.js';
+import { shadeBuildings } from './shading.js';
 import { initRoofs, buildBuildings, buildWalls } from '../buildings.js';
 import { buildTrees } from '../vegetation.js';
 import { buildTransit } from '../transit.js';
@@ -61,7 +62,9 @@ async function main() {
   status('Raising roofs…');
   await frame();
   await initRoofs();
-  scene.add(buildBuildings(data).mesh, buildWalls(data));
+  const buildings = buildBuildings(data).mesh;
+  shadeBuildings(buildings.material);
+  scene.add(buildings, buildWalls(data));
   status('Planting trees…');
   await frame();
   const trees = buildTrees(geo).mesh;

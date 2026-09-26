@@ -95,6 +95,64 @@ vec3 pattern(int id, vec3 c, vec2 p) {
 
 export const PATTERN = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10 };
 
+// Buildings: tiles laid in rows down the slope of every roof face (the slope comes
+// from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
+// windows on the walls, one row per 3.4 m storey with shopfronts at street level.
+const BUILDING_GLSL = /* glsl */ `
+vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
+  vec2 down = normalize(vec2(n.x, -n.z));
+  vec2 across = vec2(-down.y, down.x);
+  float slate = step(max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)), .08);   // grey roofs
+  vec2 size = mix(vec2(.26, .32), vec2(.3, .22), slate);
+  vec2 q = vec2(dot(wp, across), dot(wp, down) / max(n.y, .3));
+  vec2 b = blocks(q, size);
+  float row = fract(q.y / size.y);
+  float d = detail(wp, size.y);
+  vec3 t = c * (.9 + .2 * b.y);
+  t *= .8 + .25 * smoothstep(0., .4, row);                                     // overlap shadow
+  t = mix(t * .72, t, smoothstep(0., .012, b.x));
+  c = mix(c * .95, t, d);
+  c *= .88 + .24 * fbm(wp * .22);                                              // weathering
+  return mix(c, c * vec3(.86, .9, .8), smoothstep(.62, .75, fbm(wp * .09 + 4.)) * .7);
+}
+vec3 flatRoof(vec3 c, vec2 wp) {
+  c *= .86 + .22 * fbm(wp * .5);
+  return c + (vnoise(wp * 18.) - .5) * .08 * detail(wp, .05);
+}
+vec3 facade(vec3 c, vec3 w, vec3 n) {
+  vec2 t = normalize(vec2(-n.z, n.x));
+  float along = dot(w.xz, t), h = w.y;
+  float bay = fract(along / 1.9), storey = fract((h - .6) / 3.4);
+  float upper = step(4., h);
+  float win = step(.3, bay) * step(bay, .7) * step(.3, storey) * step(storey, .78) * upper;
+  float shop = step(.12, bay) * step(bay, .88) * step(.6, h) * step(h, 3.3) * (1. - upper);
+  vec3 glass = vec3(.16, .19, .23) + .06 * vnoise(vec2(along, h) * .7);
+  float m = max(win, shop * .85);
+  float d = detail(w.xz + vec2(h), .9);
+  c = mix(c, glass, m * d);
+  return mix(c, c * 1.08, (1. - m) * step(.92, storey) * upper * d);           // cornice line
+}
+`;
+
+export function shadeBuildings(material) {
+  material.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\n${NOISE_GLSL}\n${BUILDING_GLSL}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+  vec3 bn = normalize(vWN);
+  vec2 bwp = vec2(vWorld.x, -vWorld.z);
+  if (bn.y > .97) diffuseColor.rgb = flatRoof(diffuseColor.rgb, bwp);
+  else if (bn.y > .15) diffuseColor.rgb = roofTiles(diffuseColor.rgb, bwp, bn);
+  else diffuseColor.rgb = facade(diffuseColor.rgb, vWorld, bn);`);
+  };
+  material.customProgramCacheKey = () => 'buildings-procedural';
+  material.needsUpdate = true;
+  return material;
+}
+
 // Add a world-position varying to a Lambert/Standard shader and colour it by pattern.
 export function patterned(material, id, time) {
   material.onBeforeCompile = (sh) => {
