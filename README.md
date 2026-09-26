@@ -22,34 +22,47 @@ an old-film look, O switches to a flat (orthographic) map view.
 
 ## Driving prototype (`drive.html`)
 
-A separate, present-day experiment on the same map: a GTA 2-style top-down
-sandbox. Open `http://localhost:5190/drive.html`.
+A separate, present-day experiment: a GTA 2-style top-down sandbox covering
+Prague's historic centre (Hradčany and Malá Strana to Vinohrady, about 4.3 × 3 km).
+Open `http://localhost:5190/drive.html` (`?area=<name>` for another tiled area,
+`?night` for night-time parking).
 
 - Tank controls on foot and in the car: W/S forwards and back, A/D turn, Shift
   runs, Space is the handbrake. E gets into the nearest car, including one driving
   past (its driver runs off). R puts the car back on the road.
-- It uses today's map, not 1945: `uv run build_area.py ujezd now` writes
-  `public/data/<area>_now.json` with no 1945 filter, car parks kept as car parks,
-  streets split into asphalt and granite setts by OSM `surface`, and zebra
-  crossings. `src/drive/ground.js` paints it with asphalt, mosaic pavements, lane
-  markings and tram tracks in concrete, and the trams are three-section modern cars
-  (`trams.js`).
-- `pipeline/build_traffic.py` exports OSM's car network (directed, one-way streets
-  respected, tunnels removed, largest strongly connected part) and the pedestrian
-  network into `public/data/<area>_traffic.json`.
-- `src/drive/`: arcade car physics against the same 0.5 m collision grid as the
-  courier, with tree trunks added (`car.js`); AI traffic that keeps to the right
-  lane, brakes for anything ahead and gives way to the right (`traffic.js`);
-  pedestrians on the footpath network who dodge fast cars and get knocked over
-  (`people.js`).
-- Parked cars follow TSK Praha's paid-parking data (`pipeline/build_parking.py`
-  reads the monthly occupancy GeoJSON from `~/projects/parkovani-praha`, or
-  `PARKING_DATA`, into `public/data/<area>_parking.json`). Each street section gets
-  spaces × measured occupancy cars, by day or with `?night`, placed in OSM's mapped
-  parking lanes and lots first and then along the kerb (`parking.js`). Bay lines are
-  painted in the zone colour: blue resident, violet mixed, orange visitor. On Újezd
-  that is about 1,300 of the 1,850 cars the data asks for by day; the rest have no
-  free kerb to go to. Cars are drawn as instances.
+- **Everything is procedural, no textures or AI imagery.** The ground is real
+  geometry, one mesh per surface kind triangulated from OSM, coloured by world-space
+  GLSL patterns (`shading.js`, `surface.js`): asphalt, granite setts, Prague mosaic
+  pavement, slabs, grass, water. Rails, zebras, centre lines and bay outlines are
+  thin strips on top. Buildings get roof tiles laid down each face's slope, slate,
+  gravel on flat roofs and windows by storey. All of it stays sharp at any zoom.
+- **The map streams in 250 m tiles** (`tiles.js`), loaded around the camera and
+  dropped behind it. Each tile has its own ground, buildings, trees, collision grid
+  and parked cars; straight-skeleton roofs are built in web workers
+  (`roofWorker.js`). Traffic and pedestrians live within about 330 m of the player.
+- Data, per area (`centrum` and `ujezd` are defined in `build_area.py`):
+
+  ```bash
+  cd pipeline
+  uv run build_traffic.py centrum   # car + pedestrian networks → centrum_traffic.json
+  uv run build_parking.py centrum   # TSK paid-parking sections → centrum_parking.json
+  uv run build_tiles.py centrum     # today's map in tiles → centrum_now/
+  ```
+
+  `build_tiles.py` uses `build_area.py`'s present-day mode (no 1945 filter, car
+  parks kept, asphalt vs setts from OSM `surface`, zebra crossings); `uv run
+  build_area.py <area> now` writes the same data as one file.
+- `src/drive/`: arcade car physics against the 0.5 m collision grid, tree trunks
+  included (`car.js`); AI traffic that keeps to the right lane, brakes for anything
+  ahead and gives way to the right (`traffic.js`); pedestrians on the footpath
+  network who dodge fast cars and get knocked over (`people.js`); three-section
+  modern trams (`trams.js`).
+- Parked cars follow TSK Praha's paid-parking data (`build_parking.py` reads the
+  monthly occupancy GeoJSON from `~/projects/parkovani-praha`, or `PARKING_DATA`).
+  Each street section gets spaces × measured occupancy cars, by day or with `?night`,
+  placed in OSM's mapped parking lanes and lots first and then along the kerb
+  (`parking.js`); bay lines are painted in the zone colour (blue resident, violet
+  mixed, orange visitor). Cars are drawn as instances.
 - The camera pulls up with speed.
 
 ## How it is built
