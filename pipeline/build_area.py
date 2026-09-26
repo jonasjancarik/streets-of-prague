@@ -1,7 +1,8 @@
 """Fetch OSM + historical orthophotos for one area of Prague and bake them into
 game-ready JSON (local metres, origin at bbox centre, +x east, +y north).
 
-    uv run build_area.py            # default: Újezd
+    uv run build_area.py            # default: Újezd, as in May 1945
+    uv run build_area.py ujezd now  # present day, for the driving game → ujezd_now.json
 """
 
 import json
@@ -63,7 +64,8 @@ ROAD_WIDTH = {
 }
 
 
-def main(area: str = "ujezd") -> None:
+def main(area: str = "ujezd", era: str = "1945") -> None:
+    now = era == "now"
     w, s, e, n = AREAS[area]
     lon0, lat0 = (w + e) / 2, (s + n) / 2
     # Local transverse mercator centred on the area → metres with negligible distortion.
@@ -100,7 +102,7 @@ def main(area: str = "ujezd") -> None:
     buildings, removed, candidates = [], [], []
     areas: dict[str, list] = {}
     road_lines: dict[str, list] = {}
-    rails, walls, trees, weirs = [], [], [], []
+    rails, walls, trees, weirs, crossings = [], [], [], [], []
 
     for _, row in gdf.iterrows():
         g = row.geometry
@@ -117,13 +119,15 @@ def main(area: str = "ujezd") -> None:
             name = col(row, "name")
             year = _year(start)
             why = None
-            if osm_id in EXISTED_IN_1945_OSM_IDS:
+            if now:
+                why = "under construction" if b == "construction" else None
+            elif osm_id in EXISTED_IN_1945_OSM_IDS:
                 pass
             elif year and year > 1945 and len(str(start)) == 4:
                 why = f"start_date={start}"
             elif b in ("construction",) or name in NOT_IN_1945_NAMES or osm_id in NOT_IN_1945_OSM_IDS:
                 why = "listed as post-1945"
-            if why or (year and year > 1945):
+            if not now and (why or (year and year > 1945)):
                 # Everything with a post-1945 date or on a list is a review candidate,
                 # kept or dropped, so review_1945.py can show it against the 1945 photo.
                 candidates.append({"id": osm_id, "name": name, "start_date": start, "dropped": bool(why),
@@ -165,6 +169,11 @@ def main(area: str = "ujezd") -> None:
                 continue
             if hw in ("path", "track", "bridleway") and col(row, "surface") not in ("paving_stones", "sett", "asphalt", "cobblestone"):
                 cls = "dirt"
+            if now and cls == "road" and col(row, "surface") in ("sett", "cobblestone", "unhewn_cobblestone", "paving_stones"):
+                cls = "sett"  # today most streets are asphalt; the rest keep their cobbles
+            if now and hw == "footway" and col(row, "footway") == "crossing":
+                crossings.extend(_coords(ls) for ls in _lines(g.intersection(clip)))
+                continue
             road_lines.setdefault(cls, []).append(g.buffer(width / 2, cap_style="round", join_style="round"))
             continue
         if hw == "pedestrian" and isinstance(g, (Polygon, MultiPolygon)):
@@ -195,7 +204,7 @@ def main(area: str = "ujezd") -> None:
             continue
 
         if isinstance(g, (Polygon, MultiPolygon)):
-            kind = _area_kind(row, col)
+            kind = _area_kind(row, col, now)
             if kind:
                 areas.setdefault(kind, []).append(g.buffer(0))
             elif (col(row, "man_made") == "bridge" or col(row, "bridge")) and not b:
@@ -217,12 +226,19 @@ def main(area: str = "ujezd") -> None:
         "walls": walls,
         "trees": trees,
         "weirs": weirs,
-        "removed_for_1945": removed,
     }
+    if now:
+        out["crossings"] = crossings
+    else:
+        out["removed_for_1945"] = removed
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / f"{area}.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
+    name = f"{area}_now.json" if now else f"{area}.json"
+    (OUT / name).write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
     print(f"{len(buildings)} building polys, {len(trees)} trees, {len(rails)} rail lines, {len(weirs)} weirs, "
           f"areas={ {k: len(_polys(v)) for k, v in area_polys.items()} }")
+    if now:
+        print(f"present day → {name}, {len(crossings)} pedestrian crossings")
+        return
     print("removed for 1945:", [(r["id"], r["name"], r["why"]) for r in removed])
     REVIEW.mkdir(exist_ok=True)
     (REVIEW / f"{area}_1945_candidates.json").write_text(json.dumps(candidates, ensure_ascii=False, indent=1))
@@ -244,7 +260,7 @@ def main(area: str = "ujezd") -> None:
         print(f"ortho {label}: {path.name} {px_w}x{px_h}")
 
 
-def _area_kind(row, col):
+def _area_kind(row, col, now=False):
     lu, le, na, am = col(row, "landuse"), col(row, "leisure"), col(row, "natural"), col(row, "amenity")
     if na == "water" or lu in ("basin", "reservoir") or col(row, "waterway") == "riverbank":
         return "water"
@@ -257,7 +273,7 @@ def _area_kind(row, col):
     if le in ("pitch", "playground", "sports_centre", "track"):
         return "pitch"
     if am == "parking":
-        return "square"  # 1945: no car parks – render as cobbled yard
+        return "parking" if now else "square"  # 1945: no car parks – render as cobbled yard
     if col(row, "area:highway") or col(row, "highway") == "pedestrian" or col(row, "place") == "square":
         return "square"
     if lu in ("cemetery",) or am == "grave_yard":
