@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { buildTransit } from '../transit.js';
 import { nearestWalkable } from '../player.js';
-import { buildDriveGraph, buildWalkGraph, StreetNames, SpatialHash, clamp } from './network.js';
+import { DriveGraph, WalkGraph, buildDriveGraph, buildWalkGraph, StreetNames, SpatialHash, clamp } from './network.js';
 import { Car, CarPool, collideBodies } from './car.js';
 import { Traffic } from './traffic.js';
 import { Crowd, Walker } from './people.js';
@@ -20,11 +20,12 @@ const LIFE_RADIUS = 330; // traffic and people are kept within this distance of 
 
 async function main() {
   status('Loading the map…');
-  const [index, streets, parking] = await Promise.all([
+  const [index, parking] = await Promise.all([
     fetch(`data/${AREA}_now/index.json`).then((r) => r.json()),
-    fetch(`data/${AREA}_traffic.json`).then((r) => r.json()),
     fetch(`data/${AREA}_parking.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ]);
+  // Newer tiles carry their own street graphs; older areas have one file for the lot.
+  const streets = index.graphs ? null : await fetch(`data/${AREA}_traffic.json`).then((r) => r.json());
   const zones = new Zones(parking);
   const seeded = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 
@@ -50,12 +51,14 @@ async function main() {
   scene.add(sun, sun.target);
   const SUN_OFFSET = new THREE.Vector3(-110, 190, -80);
 
-  const drive = buildDriveGraph(streets);
-  const walk = buildWalkGraph(streets);
+  const drive = streets ? buildDriveGraph(streets) : new DriveGraph();
+  const walk = streets ? buildWalkGraph(streets) : new WalkGraph();
   const names = new StreetNames(drive.edges, walk.edges);
   const time = { value: 0 };
-  const world = new TileWorld({ area: AREA, index, scene, drive, walk, zones, time, night: params.has('night') });
+  const world = new TileWorld({ area: AREA, index, scene, drive, walk, zones, time, night: params.has('night'), osmBuildings: params.has('osm') });
   const grid = world.grid;
+  let crowd = null;
+  world.onEdges = (d, w) => { names.add(d); names.add(w); crowd?.index(w); };
 
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose = [];
@@ -66,16 +69,23 @@ async function main() {
     for (let i = loose.length - 1; i >= 0; i--) if (gone.has(loose[i])) { tileCars.delete(loose[i]); loose.splice(i, 1); }
   };
 
-  // Start on Újezd if the area has it, otherwise in the middle.
-  const startEdge = drive.edges.filter((e) => e.name === 'Újezd').sort((a, b) => b.path.length - a.path.length)[0]
-    || drive.edges.reduce((best, e) => (Math.hypot(...e.pts[0]) < Math.hypot(...best.pts[0]) ? e : best), drive.edges[0]);
-  const q = startEdge.path.at(startEdge.path.length / 2);
+  // Start on Újezd (or ?start=lon,lat) if it's in the area, otherwise in the middle.
+  const [w0, s0, e0, n0] = index.bbox_wgs84, lon0 = (w0 + e0) / 2, lat0 = (s0 + n0) / 2;
+  const [slon, slat] = (params.get('start') || '14.4052,50.0808').split(',').map(Number);
+  const inArea = slon > w0 && slon < e0 && slat > s0 && slat < n0;
+  const sx = inArea ? (slon - lon0) * 111320 * Math.cos((lat0 * Math.PI) / 180) : 0;
+  const sy = inArea ? (slat - lat0) * 110574 : 0;
   status('Building the streets…');
-  await world.loadNow(q.x, q.y, 380);
+  await world.loadNow(sx, sy, 380);
+  const startEdge = drive.edges.reduce((best, e) => {
+    const d = (f) => Math.hypot(f.pts[0][0] - sx, f.pts[0][1] - sy) + (f.name ? 0 : 60);
+    return d(e) < d(best) ? e : best;
+  }, drive.edges[0]);
+  const q = startEdge.path.at(startEdge.path.length / 2);
 
   const transit = buildTransit({ rails: index.rails }, scene);
   const trams = new Trams(transit, scene);
-  const crowd = new Crowd(walk, grid, scene, seeded, PEOPLE);
+  crowd = new Crowd(walk, grid, scene, seeded, PEOPLE);
   const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
   const carPool = new CarPool(scene);
 
@@ -96,7 +106,7 @@ async function main() {
     }
   }
   let inCar = null;
-  let height = 75;
+  let height = 100;
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
 
   const viewRadius = () => height * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
@@ -343,7 +353,7 @@ async function main() {
 
     // ---- Camera ----------------------------------------------------------
     const sp = inCar ? inCar.speed : 0;
-    const want = (inCar ? 95 + sp * 3.2 : 75) * zoom;
+    const want = (inCar ? 120 + sp * 3.4 : 100) * zoom;
     height += (want - height) * Math.min(1, dt * (want > height ? 1.6 : 0.9));
     const lead = inCar ? 0.7 : 0.3;
     look.set(px() + (inCar ? inCar.vx : walker.vx) * lead, 0, -(py() + (inCar ? inCar.vy : walker.vy) * lead));
@@ -389,6 +399,7 @@ async function main() {
     get car() { return inCar; },
     teleport: (x, y) => { (inCar || walker).x = x; (inCar || walker).y = y; camPos.set(x, 0, -y); },
     enterOrExit,
+    view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
   };
 }
 

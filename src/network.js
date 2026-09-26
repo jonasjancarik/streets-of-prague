@@ -48,25 +48,49 @@ function bezier(a, c, b, n = 8) {
 
 const CLASS_SPEED = { primary: 14, secondary: 13, tertiary: 12, tertiary_link: 9, residential: 9, unclassified: 9, living_street: 5, service: 5 };
 
+// The car network, filled in as tiles arrive. Edges are keyed by id and joined at
+// shared (OSM) node ids; `out` lists the edges leaving each node.
+export class DriveGraph {
+  constructor() {
+    this.byId = new Map();
+    this.out = new Map();
+    this.edges = [];
+  }
+
+  // Adds raw edges; returns the graph's own edge objects (new or already known).
+  add(list) {
+    return list.map((raw) => {
+      const known = this.byId.get(raw.id);
+      if (known) return known;
+      const e = { ...raw };
+      e.laneOffset = e.oneway ? 0 : clamp(e.width / 4, 1.6, 3);
+      e.path = new Polyline(offsetLine(e.pts, e.laneOffset));
+      e.speed = e.maxspeed ? Math.min(e.maxspeed / 3.6, CLASS_SPEED[e.hw] || 9) : CLASS_SPEED[e.hw] || 9;
+      this.byId.set(e.id, e);
+      this.edges.push(e);
+      if (!this.out.has(e.u)) this.out.set(e.u, []);
+      this.out.get(e.u).push(e);
+      e.twin = (this.out.get(e.v) || []).find((f) => f.v === e.u) || null;
+      if (e.twin && !e.twin.twin) e.twin.twin = e;
+      return e;
+    });
+  }
+}
+
+// Older single-file areas (<area>_traffic.json) number their nodes instead.
 export function buildDriveGraph(streets) {
-  const { nodes, edges } = streets.drive;
-  const out = nodes.map(() => []);
-  edges.forEach((e, i) => {
-    e.i = i;
-    e.laneOffset = e.oneway ? 0 : clamp(e.width / 4, 1.6, 3);
-    e.path = new Polyline(offsetLine(e.pts, e.laneOffset));
-    e.speed = e.maxspeed ? Math.min(e.maxspeed / 3.6, CLASS_SPEED[e.hw] || 9) : CLASS_SPEED[e.hw] || 9;
-    out[e.u].push(e);
-  });
-  for (const e of edges) e.twin = out[e.v].find((f) => f.v === e.u) || null;
-  return { nodes, edges, out };
+  const g = new DriveGraph();
+  g.add(streets.drive.edges.map((e, i) => ({ ...e, id: `${i}`, u: `${e.u}`, v: `${e.v}` })));
+  return g;
 }
 
 // Next edge after `e`: anything but a U-turn, unless the street is a dead end.
+// Null where the network isn't loaded (the far side of the map).
 export function nextEdge(g, e, r) {
-  const opts = g.out[e.v].filter((f) => f !== e.twin);
-  const list = opts.length ? opts : g.out[e.v];
-  return list[Math.floor(r() * list.length)];
+  const all = g.out.get(e.v) || [];
+  const opts = all.filter((f) => f !== e.twin);
+  const list = opts.length ? opts : all;
+  return list.length ? list[Math.floor(r() * list.length)] : null;
 }
 
 // A route is a chain of legs: the lane of each edge, trimmed at both ends, and a
@@ -83,9 +107,10 @@ export class Route {
   get leg() { return this.legs[0]; }
 
   extend() {
-    while (this.legs.filter((l) => l.edge).length < 4) {
+    while (!this.dead && this.legs.filter((l) => l.edge).length < 4) {
       const last = this.legs[this.legs.length - 1];
       const e = last.edge, f = nextEdge(this.g, e, this.r);
+      if (!f) { this.dead = true; return; }
       const trim = Math.min(7, e.path.length / 3, f.path.length / 3);
       last.s1 = Math.max(last.s0, e.path.length - trim);
       const a = e.path.at(last.s1), b = f.path.at(trim);
@@ -100,6 +125,7 @@ export class Route {
   advance(ds) {
     this.s += ds;
     while (this.s > this.leg.s1) {
+      if (this.legs.length === 1) { this.s = this.leg.s1; this.ended = true; break; }
       const over = this.s - this.leg.s1;
       this.legs.shift();
       this.s = this.leg.s0 + over;
@@ -134,18 +160,41 @@ function corner(a, b) {
   return [a.x + dax * t, a.y + day * t];
 }
 
+// The footpath network, filled in as tiles arrive (edges are undirected).
+const ROADLIKE = new Set(['residential', 'tertiary', 'secondary', 'primary', 'service', 'unclassified', 'living_street', 'busway']);
+export class WalkGraph {
+  constructor() {
+    this.byId = new Map();
+    this.adj = new Map();
+    this.edges = [];
+  }
+
+  add(list) {
+    const fresh = [];
+    const res = list.map((raw) => {
+      const known = this.byId.get(raw.id);
+      if (known) return known;
+      const e = { ...raw, path: new Polyline(raw.pts) };
+      // Streets without a separately mapped pavement: people keep to the edge.
+      e.side = ROADLIKE.has(e.hw) ? Math.max(0, e.width / 2 - 0.9) : 0;
+      this.byId.set(e.id, e);
+      this.edges.push(e);
+      for (const [n, fwd] of [[e.u, true], [e.v, false]]) {
+        if (!this.adj.has(n)) this.adj.set(n, []);
+        this.adj.get(n).push({ e, fwd });
+      }
+      fresh.push(e);
+      return e;
+    });
+    this.fresh = fresh;
+    return res;
+  }
+}
+
 export function buildWalkGraph(streets) {
-  const { nodes, edges } = streets.walk;
-  const adj = nodes.map(() => []);
-  const ROADLIKE = new Set(['residential', 'tertiary', 'secondary', 'primary', 'service', 'unclassified', 'living_street', 'busway']);
-  edges.forEach((e) => {
-    e.path = new Polyline(e.pts);
-    // Streets without a separately mapped pavement: people keep to the edge.
-    e.side = ROADLIKE.has(e.hw) ? Math.max(0, e.width / 2 - 0.9) : 0;
-    adj[e.u].push({ e, fwd: true });
-    adj[e.v].push({ e, fwd: false });
-  });
-  return { nodes, edges, adj };
+  const g = new WalkGraph();
+  g.add(streets.walk.edges.map((e, i) => ({ ...e, id: `${i}`, u: `${e.u}`, v: `${e.v}` })));
+  return g;
 }
 
 // Spatial hash of named street segments, for the "you are on …" label.
@@ -153,19 +202,24 @@ export class StreetNames {
   constructor(...edgeLists) {
     this.cell = 20;
     this.map = new Map();
-    for (const list of edgeLists) {
-      for (const e of list) {
-        if (!e.name) continue;
-        for (let i = 0; i < e.pts.length - 1; i++) {
-          const a = e.pts[i], b = e.pts[i + 1];
-          const seg = { a, b, name: e.name, rank: e.hw === 'footway' || e.hw === 'steps' ? 1 : 0 };
-          const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / this.cell) + 1;
-          const keys = new Set();
-          for (let k = 0; k <= n; k++) keys.add(this.key(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n));
-          for (const key of keys) {
-            if (!this.map.has(key)) this.map.set(key, []);
-            this.map.get(key).push(seg);
-          }
+    this.seen = new Set();
+    for (const list of edgeLists) this.add(list);
+  }
+
+  add(list) {
+    for (const e of list) {
+      if (this.seen.has(e)) continue;
+      this.seen.add(e);
+      if (!e.name) continue;
+      for (let i = 0; i < e.pts.length - 1; i++) {
+        const a = e.pts[i], b = e.pts[i + 1];
+        const seg = { a, b, name: e.name, rank: e.hw === 'footway' || e.hw === 'steps' ? 1 : 0 };
+        const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / this.cell) + 1;
+        const keys = new Set();
+        for (let k = 0; k <= n; k++) keys.add(this.key(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n));
+        for (const key of keys) {
+          if (!this.map.has(key)) this.map.set(key, []);
+          this.map.get(key).push(seg);
         }
       }
     }

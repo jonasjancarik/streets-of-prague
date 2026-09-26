@@ -67,11 +67,15 @@ ROAD_WIDTH = {
 }
 
 
-def extract(area: str = "ujezd", era: str = "1945") -> dict:
-    """Fetch and classify everything in the area; geometry stays as shapely objects."""
+def extract(area: str = "ujezd", era: str = "1945", bbox=None, centre=None) -> dict:
+    """Fetch and classify everything in the area; geometry stays as shapely objects.
+
+    `bbox` (WGS84) overrides the area's box, e.g. for one chunk of a large area, and
+    `centre` (lon, lat) keeps the local metres of the whole area, so chunks line up.
+    """
     now = era == "now"
-    w, s, e, n = AREAS[area]
-    lon0, lat0 = (w + e) / 2, (s + n) / 2
+    w, s, e, n = bbox or AREAS[area]
+    lon0, lat0 = centre or ((w + e) / 2, (s + n) / 2)
     # Local transverse mercator centred on the area → metres with negligible distortion.
     tf = Transformer.from_crs(
         "EPSG:4326",
@@ -86,6 +90,7 @@ def extract(area: str = "ujezd", era: str = "1945") -> dict:
 
     ox.settings.use_cache = True
     ox.settings.cache_folder = str(Path(__file__).parent / ".cache")
+    use_overpass_mirror()
     tags = {
         "building": True, "highway": True, "landuse": True, "leisure": True,
         "natural": True, "waterway": True, "railway": True, "amenity": True,
@@ -278,6 +283,14 @@ def main(area: str = "ujezd", era: str = "1945") -> None:
         r.raise_for_status()
         path.write_bytes(r.content)
         print(f"ortho {label}: {path.name} {px_w}x{px_h}")
+
+
+def use_overpass_mirror():
+    """OVERPASS_URL=https://overpass.kumi.systems/api when overpass-api.de refuses us."""
+    import os
+    if os.environ.get("OVERPASS_URL"):
+        ox.settings.overpass_url = os.environ["OVERPASS_URL"]
+        ox.settings.overpass_rate_limit = False
 
 
 def _area_kind(row, col, now=False):

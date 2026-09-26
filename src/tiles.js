@@ -40,6 +40,38 @@ class RoofBuilders {
   }
 }
 
+// IPR Praha's 3D buildings for a tile (pipeline/ipr_buildings.py): triangles with
+// positions in centimetres from the tile corner and a colour per triangle.
+async function iprMesh(url, [x0, y0]) {
+  const buf = await (await fetch(url)).arrayBuffer();
+  const n = new DataView(buf).getUint32(0, true);
+  const p16 = new Int16Array(buf, 8, n * 9);
+  const colAt = 8 + n * 18 + ((4 - ((8 + n * 18) % 4)) % 4);
+  const c8 = new Uint8Array(buf, colAt, n * 3);
+  const pos = new Float32Array(n * 9), col = new Float32Array(n * 9);
+  const c = new THREE.Color();
+  for (let t = 0; t < n; t++) {
+    c.setRGB(c8[t * 3] / 255, c8[t * 3 + 1] / 255, c8[t * 3 + 2] / 255, THREE.SRGBColorSpace);
+    for (let v = 0; v < 3; v++) {
+      const i = t * 9 + v * 3;
+      const h = p16[i + 1] / 100;
+      pos[i] = x0 + p16[i] / 100;
+      pos[i + 1] = h;
+      pos[i + 2] = -(y0 + p16[i + 2] / 100);
+      const k = 0.62 + 0.38 * Math.min(1, h / 6); // darker towards the street
+      col[i] = c.r * k; col[i + 1] = c.g * k; col[i + 2] = c.b * k;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  const mesh = new THREE.Mesh(g, buildingMaterial());
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
 const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ vertexColors: true }));
 
 function buildingMesh(arrays) {
@@ -151,7 +183,8 @@ function stampTrunks(grid, geo, trees) {
 }
 
 export class TileWorld {
-  constructor({ area, index, scene, drive, walk, zones, time, night }) {
+  constructor({ area, index, scene, drive, walk, zones, time, night, osmBuildings = false }) {
+    this.osmBuildings = osmBuildings;
     this.area = area;
     this.index = index;
     this.scene = scene;
@@ -163,8 +196,13 @@ export class TileWorld {
     this.available = new Set(index.tiles.map(([i, j]) => `${i}_${j}`));
     this.loaded = new Map(); // key → tile
     this.pending = new Map(); // key → Promise of tile JSON
-    this.driveBy = bucket(drive.edges, index);
-    this.walkBy = bucket(walk.edges, index);
+    this.drive = drive;
+    this.walk = walk;
+    // Tiles built with their own street graphs join them up as they load; older
+    // areas come with one graph for the whole area.
+    this.driveBy = index.graphs ? new Map() : bucket(drive.edges, index);
+    this.walkBy = index.graphs ? new Map() : bucket(walk.edges, index);
+    this.onEdges = () => {};
     this.onCars = () => {};
     this.onDrop = () => {};
     this.building = 0;
@@ -238,12 +276,21 @@ export class TileWorld {
     const data = { ...t, size: [x1 - x0, y1 - y0], origin: [-x0, -y0] };
     const geo = new Geo(data);
     const own = t.buildings.filter((b) => b.own);
+    if (t.drive && !this.driveBy.has(k)) {
+      this.driveBy.set(k, this.drive.add(t.drive));
+      this.walkBy.set(k, this.walk.add(t.walk));
+      this.onEdges(this.driveBy.get(k), this.walk.fresh);
+    }
     const ms = {};
     let t0 = performance.now();
     const lap = (name) => { const t1 = performance.now(); ms[name] = Math.round(t1 - t0); t0 = t1; };
-    const arrays = await this.roofs.build({ buildings: own, size: data.size, origin: data.origin });
+    // Real 3D buildings from IPR where the area has them (unless ?osm), else OSM
+    // footprints extruded with straight-skeleton roofs in a worker.
+    const buildings = t.ipr && !this.osmBuildings
+      ? await iprMesh(`data/${this.area}_now/tiles/${k}.ipr.bin`, t.box)
+      : buildingMesh(await this.roofs.build({ buildings: own, size: data.size, origin: data.origin }));
     if (this.loaded.has(k)) return this.loaded.get(k);
-    lap('roofs (worker)');
+    lap('buildings');
     // Spread the main-thread work over several frames.
     const breathe = () => new Promise((r) => setTimeout(r, 0));
     const group = new THREE.Group();
@@ -255,9 +302,8 @@ export class TileWorld {
     lap('ground');
     await breathe();
 
-    const buildings = buildingMesh(arrays);
     const walls = buildWalls(data);
-    lap('buildings');
+    lap('walls');
     const trees = buildTrees(geo).mesh;
     group.add(buildings, walls, trees);
     lap('trees');

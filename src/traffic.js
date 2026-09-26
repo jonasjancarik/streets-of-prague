@@ -83,6 +83,7 @@ export class Traffic {
       const acc = target > a.speed ? 3 : 9;
       a.speed += clamp(target - a.speed, -acc * dt, acc * dt);
       const p = a.route.advance(a.speed * dt);
+      if (a.route.ended) { a.gone = true; continue; }
       const prevX = c.x, prevY = c.y;
       c.x = p.x;
       c.y = p.y;
@@ -93,5 +94,7 @@ export class Traffic {
       c.w = 0;
       c.sync();
     }
+    // Cars whose street runs off the loaded map just disappear.
+    this.agents = this.agents.filter((a) => !a.gone);
   }
 }

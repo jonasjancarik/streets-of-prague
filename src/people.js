@@ -55,14 +55,15 @@ export class Crowd {
     this.dummy = new THREE.Object3D();
     this.dummy.rotation.order = 'YXZ';
     this.totalLen = walk.edges.reduce((a, e) => a + e.path.length, 0);
-    for (let i = 0; i < count; i++) this.add();
-    this.segIndex();
-  }
-
-  segIndex() {
     this.cell = 16;
     this.segs = new Map();
-    for (const e of this.walk.edges) {
+    this.index(walk.edges);
+    for (let i = 0; i < count; i++) this.add();
+  }
+
+  // Footpath segments bucketed for nearest(); called again as more of the map loads.
+  index(edges) {
+    for (const e of edges) {
       let acc = 0;
       for (let i = 0; i < e.pts.length - 1; i++) {
         const a = e.pts[i], b = e.pts[i + 1];
@@ -225,7 +226,7 @@ export class Crowd {
 
   turn(p) {
     const node = p.s > p.e.path.length / 2 ? p.e.v : p.e.u;
-    const opts = this.walk.adj[node].filter((o) => o.e !== p.e);
+    const opts = (this.walk.adj.get(node) || []).filter((o) => o.e !== p.e);
     const pick = opts.length ? opts[Math.floor(this.r() * opts.length)] : { e: p.e, fwd: !p.fwd };
     p.e = pick.e;
     p.fwd = pick.fwd;
