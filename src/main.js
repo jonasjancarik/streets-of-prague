@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Geo, rng } from '../geo.js';
-import { paintGroundNow } from './ground.js';
+import { Surfaces } from './surface.js';
 import { initRoofs, buildBuildings, buildWalls } from '../buildings.js';
 import { buildTrees } from '../vegetation.js';
 import { buildTransit } from '../transit.js';
@@ -55,14 +55,8 @@ async function main() {
 
   status('Painting the streets…');
   await frame();
-  const groundTex = new THREE.CanvasTexture(paintGroundNow(geo, streets, zones));
-  groundTex.colorSpace = THREE.SRGBColorSpace;
-  groundTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(geo.W, geo.H), new THREE.MeshLambertMaterial({ map: groundTex }));
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(geo.cx, 0, -geo.cy);
-  ground.receiveShadow = true;
-  scene.add(ground);
+  const surfaces = new Surfaces(geo, streets, zones);
+  scene.add(surfaces.group);
 
   status('Raising roofs…');
   await frame();
@@ -227,6 +221,7 @@ async function main() {
   renderer.setAnimationLoop((now) => {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    surfaces.update(dt);
 
     // Player
     if (inCar) {
