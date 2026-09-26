@@ -22,6 +22,9 @@ an old-film look, O switches to a flat (orthographic) map view.
 
 ## How it is built
 
+The full step-by-step record of how the Újezd level was made, and how to build
+another area, is in [docs/level-creation.md](docs/level-creation.md).
+
 `pipeline/build_area.py` (uv) does the data work for one bbox:
 
 1. **OSM via osmnx** → buildings, land use, water, roads (buffered to real widths),
@@ -31,6 +34,11 @@ an old-film look, O switches to a flat (orthographic) map view.
 3. **Historical orthophotos** from IPR Praha's archive WMS
    (`gs-pub.praha.eu/.../ortofotomapa_archiv`: layer 205 = 1945, 209 = 1938,
    117 = 2012 TrueOrto), saved at ~0.3 m/px for the same bbox.
+
+`pipeline/review_1945.py` makes a contact sheet of flagged buildings on the 1945
+and 2012 photos, for deciding what goes on the post-1945 list.
+`pipeline/ai_tile.py` prepares the inputs for an AI-painted tile, checks the
+result against the OSM footprints, and installs it as layer 5.
 
 `pipeline/build_streets.py` exports the drivable street graph for the same bbox
 (`public/data/<area>_streets.json`): junctions as nodes, streets as edges with their
@@ -135,3 +143,11 @@ eight about 6.5 min.
   timer, telephone reports that arrive late or are wrong, and columns sharing
   what they have seen over the radio.
 - Split the ground into tiles for larger areas and sharper close-ups.
+
+## Credits
+
+- Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
+- Aerial photos 1938, 1945 and 2012: datový podklad ©
+  [IPR Praha](https://geoportalpraha.cz/en/data-and-services/open-data), CC BY.
+- Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
+- The layer 5 tile was painted with AI image generation (Codex).
