@@ -22,9 +22,9 @@ sandbox. Open `http://localhost:5190/drive.html`.
 - Tank controls on foot and in the car: W/S forwards and back, A/D turn, Shift
   runs, Space is the handbrake. E gets into the nearest car, including one driving
   past (its driver runs off). R puts the car back on the road.
-- `pipeline/build_streets.py` exports OSM's car network (directed, one-way streets
+- `pipeline/build_traffic.py` exports OSM's car network (directed, one-way streets
   respected, tunnels removed, largest strongly connected part) and the pedestrian
-  network into `public/data/<area>_streets.json`.
+  network into `public/data/<area>_traffic.json`.
 - `src/drive/`: arcade car physics against the same 0.5 m collision grid as the
   courier, with tree trunks added (`car.js`); AI traffic that keeps to the right
   lane, brakes for anything ahead and gives way to the right (`traffic.js`);

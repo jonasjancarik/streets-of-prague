@@ -22,7 +22,7 @@ async function main() {
   status('Loading the map…');
   const [data, streets] = await Promise.all([
     fetch(`data/${AREA}.json`).then((r) => r.json()),
-    fetch(`data/${AREA}_streets.json`).then((r) => r.json()),
+    fetch(`data/${AREA}_traffic.json`).then((r) => r.json()),
   ]);
   // Present-day city: put back the buildings the 1945 map leaves out.
   for (const b of data.removed_for_1945 || []) {
