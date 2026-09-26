@@ -58,8 +58,13 @@ export class Trams {
   }
 
   // Place the outer sections along the track behind and ahead of the middle one.
-  sync() {
+  // Trams far from (x, y) keep running but aren't drawn.
+  sync(x = 0, y = 0, r = Infinity) {
     for (const v of this.list) {
+      const mid = v.path.at(v.s);
+      const show = Math.hypot(mid.x - x, mid.y - y) < r;
+      for (const m of v.sections) m.visible = show;
+      if (!show) continue;
       [-STEP, 0, STEP].forEach((o, i) => {
         const p = v.path.at(v.s + o);
         const m = v.sections[i];

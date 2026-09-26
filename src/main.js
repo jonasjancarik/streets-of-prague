@@ -20,10 +20,10 @@ const LIFE_RADIUS = 330; // traffic and people are kept within this distance of 
 
 async function main() {
   status('Loading the map…');
-  const [index, parking] = await Promise.all([
-    fetch(`data/${AREA}_now/index.json`).then((r) => r.json()),
-    fetch(`data/${AREA}_parking.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-  ]);
+  const index = await fetch(`data/${AREA}_now/index.json`).then((r) => r.json());
+  // Newer tiles carry their own paid-parking sections; older areas have one file.
+  const parking = index.parkingInTiles ? null
+    : await fetch(`data/${AREA}_parking.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   // Newer tiles carry their own street graphs; older areas have one file for the lot.
   const streets = index.graphs ? null : await fetch(`data/${AREA}_traffic.json`).then((r) => r.json());
   const zones = new Zones(parking);
@@ -261,7 +261,7 @@ async function main() {
       }
     }
     transit.update(dt);
-    trams.sync();
+    trams.sync(camPos.x, -camPos.z, viewRadius() + 150);
 
     const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5)];
     crowd.update(dt, threats);

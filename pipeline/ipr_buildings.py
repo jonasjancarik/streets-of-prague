@@ -156,6 +156,11 @@ def hexrgb(h):
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
+def flat_roof(c):
+    # Flat roofs are tar, gravel or sheet metal: mostly grey whatever the tiles would be.
+    return tuple(round(v * 0.35 + 138 * 0.65) for v in c)
+
+
 def colours(bid, osm):
     """Roof and wall colour for a building, from the OSM building it sits on if any."""
     hv = (zlib.crc32(bid.encode()) & 0xFFFFFF) / 0xFFFFFF
@@ -222,10 +227,12 @@ def main(area: str = "centrum") -> None:
                     rx, ry = to_local.transform(ring[:, 0], ring[:, 1])
                     loc = np.column_stack([rx, ry, ring[:, 2] - base])
                     for t in triangulate(loc):
-                        if kind == 1 and np.cross(t[1] - t[0], t[2] - t[0])[2] < 0:
-                            t = [t[0], t[2], t[1]]  # roofs always face up
+                        nrm = np.cross(t[1] - t[0], t[2] - t[0])
+                        if kind == 1 and nrm[2] < 0:
+                            t, nrm = [t[0], t[2], t[1]], -nrm  # roofs always face up
                         tris.append(t)
-                        cols.append(roof if kind == 1 else wall)
+                        flat = kind == 1 and nrm[2] > 0.97 * (np.linalg.norm(nrm) or 1)
+                        cols.append(flat_roof(roof) if flat else roof if kind == 1 else wall)
                 per_tile.setdefault((i, j), []).append((tris, cols))
                 count += 1
             print(f"  {name}: {count} buildings in the area")

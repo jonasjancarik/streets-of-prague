@@ -44,14 +44,27 @@ Open `http://localhost:5190/drive.html` (`?area=<name>` for another tiled area,
 
   ```bash
   cd pipeline
-  uv run build_traffic.py centrum   # car + pedestrian networks → centrum_traffic.json
-  uv run build_parking.py centrum   # TSK paid-parking sections → centrum_parking.json
-  uv run build_tiles.py centrum     # today's map in tiles → centrum_now/
+  uv run build_parking.py centrum    # TSK paid-parking sections (read by build_tiles)
+  uv run build_tiles.py centrum      # today's map + street graphs in tiles → centrum_now/
+  uv run ipr_buildings.py centrum    # IPR's real 3D buildings into the tiles
+  uv run ipr_terrain.py centrum      # IPR's terrain → hill shading per tile
   ```
 
-  `build_tiles.py` uses `build_area.py`'s present-day mode (no 1945 filter, car
-  parks kept, asphalt vs setts from OSM `surface`, zebra crossings); `uv run
-  build_area.py <area> now` writes the same data as one file.
+  `build_tiles.py` works in 2 km chunks (with a 150 m overlap so buildings and
+  streets on a chunk border come out whole), using `build_area.py`'s present-day
+  mode (no 1945 filter, car parks kept, asphalt vs setts from OSM `surface`, zebra
+  crossings). Each tile also carries its car and pedestrian network edges, keyed by
+  OSM node ids, and its paid-parking sections, so the game only ever loads what is
+  around the player; nothing about the area is loaded up front apart from the
+  tram rails. If overpass-api.de refuses the requests, set
+  `OVERPASS_URL=https://maps.mail.ru/osm/tools/overpass/api`.
+- **Buildings come from IPR Praha's open 3D model** (CityGML LOD3, real roofs,
+  towers and domes) where the area has it (`ipr_buildings.py`; `?osm` in the URL
+  shows the OSM footprints extruded instead). Sheets are downloaded once into
+  `pipeline/.cache/ipr/` (about 150 MB each). Coordinates go S-JTSK → WGS84 with the
+  Czech datum shift → local metres; IPR wall bases then sit a median 0.55 m from OSM
+  building edges. `ipr_terrain.py` turns IPR's terrain into per-tile hill shading;
+  the ground itself stays flat.
 - `src/drive/`: arcade car physics against the 0.5 m collision grid, tree trunks
   included (`car.js`); AI traffic that keeps to the right lane, brakes for anything
   ahead and gives way to the right (`traffic.js`); pedestrians on the footpath
@@ -199,5 +212,6 @@ eight about 6.5 min.
 - Aerial photos 1938, 1945 and 2012: datový podklad ©
   [IPR Praha](https://geoportalpraha.cz/en/data-and-services/open-data), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
+- 3D buildings and terrain (driving game): datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - The layer 5 tile was painted with AI image generation (Codex).

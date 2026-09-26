@@ -4,7 +4,7 @@ import { buildWalls } from '../buildings.js';
 import { buildTrees } from '../vegetation.js';
 import { Surfaces } from './surface.js';
 import { shadeBuildings } from './shading.js';
-import { parkCars } from './parking.js';
+import { Zones, parkCars } from './parking.js';
 
 // Streams the map in square tiles (pipeline/build_tiles.py) around the camera. Each
 // loaded tile has its own ground, buildings, trees, collision grid and parked cars;
@@ -301,6 +301,8 @@ export class TileWorld {
     const data = { ...t, size: [x1 - x0, y1 - y0], origin: [-x0, -y0] };
     const geo = new Geo(data);
     const own = t.buildings.filter((b) => b.own);
+    // Newer tiles carry their own paid-parking sections; older ones use the area's.
+    const zones = t.sections?.[0]?.polys ? new Zones({ sections: t.sections.map((z) => ({ ...z, inside: z.share })) }) : this.zones;
     if (t.drive && !this.driveBy.has(k)) {
       this.driveBy.set(k, this.drive.add(t.drive));
       this.walkBy.set(k, this.walk.add(t.walk));
@@ -326,7 +328,7 @@ export class TileWorld {
       ? await relief(`data/${this.area}_now/tiles/${k}.height.bin`, t.box, this.index.terrain.n, this.index.terrain.step)
       : null;
     if (this.loaded.has(k)) return this.loaded.get(k);
-    const surfaces = new Surfaces(geo, { edges: clipped, buildings: own, zones: this.zones, time: this.time, relief: shade });
+    const surfaces = new Surfaces(geo, { edges: clipped, buildings: own, zones, time: this.time, relief: shade });
     group.add(surfaces.group);
     lap('ground');
     await breathe();
@@ -355,7 +357,7 @@ export class TileWorld {
 
     const inside = (x, y) => x >= x0 && x < x1 && y >= y0 && y < y1;
     const { cars } = parkCars({
-      data, edges, zones: this.zones, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
+      data, edges, zones, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
       shares: new Map(t.sections.map((s) => [s.code, s.share])), inside,
       solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 : false),
     });

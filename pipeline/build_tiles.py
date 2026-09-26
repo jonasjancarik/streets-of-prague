@@ -100,7 +100,8 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
         for sec in json.loads(parking.read_text())["sections"]:
             polys = [Polygon(r[0], r[1:]) for r in sec["polys"]]
             full = sum(p.area for p in polys) / max(sec["inside"], 1e-6)
-            sections.append((sec["code"], polys, full))
+            meta = {k: sec.get(k) for k in ("code", "category", "spaces", "occDay", "occNight")}
+            sections.append((meta, polys, full))
 
     tiles, rails, n_buildings = [], [], 0
     chunks = [(ci, cj) for ci in range(math.ceil(cols / C)) for cj in range(math.ceil(rows / C))]
@@ -146,11 +147,14 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
                 t["trees"] = [p for p in x["trees"] if bx.contains(Point(p))]
                 t["drive"] = [drive[k] for k in sorted(dtree.query(bx, predicate="intersects"))]
                 t["walk"] = [walk[k] for k in sorted(wtree.query(bx, predicate="intersects"))]
+                # Paid-parking sections clipped to the tile, with the share of each
+                # section's spaces that falls inside it.
                 t["sections"] = []
-                for code, polys, full in sections:
-                    a = sum(p.intersection(bx).area for p in polys)
+                for meta, polys, full in sections:
+                    parts = [q for p in polys for q in _polys(p.intersection(bx))]
+                    a = sum(q.area for q in parts)
                     if a > 1:
-                        t["sections"].append({"code": code, "share": round(a / full, 4)})
+                        t["sections"].append({**meta, "share": round(a / full, 4), "polys": [_rings(q) for q in parts]})
                 if not (t["buildings"] or t["areas"] or t["roads"] or t["walk"]):
                     continue
                 (out_dir / "tiles" / f"{i}_{j}.json").write_text(json.dumps(t, ensure_ascii=False, separators=(",", ":")))
@@ -161,7 +165,7 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
     index = {
         "area": area, "bbox_wgs84": [w, s, e, n],
         "size": [round(x1 - x0, 2), round(y1 - y0, 2)], "origin": [round(-x0, 2), round(-y0, 2)],
-        "tile": T, "cols": cols, "rows": rows, "tiles": tiles, "rails": rails, "graphs": True,
+        "tile": T, "cols": cols, "rows": rows, "tiles": tiles, "rails": rails, "graphs": True, "parkingInTiles": bool(sections),
     }
     (out_dir / "index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")))
     total = sum(p.stat().st_size for p in (out_dir / "tiles").glob("*.json"))
