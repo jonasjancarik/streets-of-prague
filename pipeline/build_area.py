@@ -32,6 +32,9 @@ AREAS = {
     # Historic centre for the driving game: Hradčany and Malá Strana to Vinohrady,
     # Smíchov and Vyšehrad's edge to Letná's slope. About 4.3 x 3 km.
     "centrum": (14.390, 50.068, 14.450, 50.095),
+    # The whole city (its administrative bounding box). Too big to commit: the
+    # generated praha_* files are ignored by git; build them with the pipeline.
+    "praha": (14.2244, 49.9419, 14.7068, 50.1774),
 }
 
 WMS = "https://gs-pub.praha.eu/arcgis/services/ort/ortofotomapa_archiv/MapServer/WmsServer"

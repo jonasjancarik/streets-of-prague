@@ -56,8 +56,16 @@ Open `http://localhost:5190/drive.html` (`?area=<name>` for another tiled area,
   crossings). Each tile also carries its car and pedestrian network edges, keyed by
   OSM node ids, and its paid-parking sections, so the game only ever loads what is
   around the player; nothing about the area is loaded up front apart from the
-  tram rails. If overpass-api.de refuses the requests, set
-  `OVERPASS_URL=https://maps.mail.ru/osm/tools/overpass/api`.
+  tram rails. With a local OSM extract (`pipeline/.cache/osm/czech-republic-latest.osm.pbf`
+  from [Geofabrik](https://download.geofabrik.de/europe/czech-republic.html), about
+  950 MB, plus `brew install osmium-tool`) the chunks are cut locally and the centre
+  builds in under a minute; without it the pipeline asks Overpass (set
+  `OVERPASS_URL=https://maps.mail.ru/osm/tools/overpass/api` if overpass-api.de
+  refuses).
+- **The whole city** is the area `praha` (its bounding box, 34 × 26 km). Its data is
+  too big for git and is ignored; build it with the same four commands and open
+  `drive.html?area=praha`. The IPR step downloads every sheet it needs (about 150 MB
+  each) on the first run.
 - **Buildings come from IPR Praha's open 3D model** (CityGML LOD3, real roofs,
   towers and domes) where the area has it (`ipr_buildings.py`; `?osm` in the URL
   shows the OSM footprints extruded instead). Sheets are downloaded once into

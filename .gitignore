@@ -6,3 +6,5 @@ pipeline/.venv
 __pycache__
 pipeline/review/
 pipeline/ai_tiles/
+public/data/praha_now/
+public/data/praha_*.json
