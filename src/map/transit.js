@@ -65,7 +65,7 @@ class Path {
   }
 }
 
-function tramMesh() {
+export function tramMesh() {
   // 1940s Prague tram: red body, cream band, grey roof with a trolley pole.
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(12.5, 2.6, 2.4), new THREE.MeshLambertMaterial({ color: '#a9322a' }));

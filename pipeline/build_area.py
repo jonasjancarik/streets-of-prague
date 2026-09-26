@@ -34,6 +34,7 @@ WMS = "https://gs-pub.praha.eu/arcgis/services/ort/ortofotomapa_archiv/MapServer
 ORTHO_LAYERS = {"1945": 205, "1938": 209, "2012": 117}  # 2012 = TrueOrto city centre
 
 OUT = Path(__file__).resolve().parent.parent / "public" / "data"
+REVIEW = Path(__file__).resolve().parent / "review"  # 1945 review candidates, not served to the game
 
 # Things that were not there in 1945. OSM start_date catches some; the rest are
 # checked by eye against the 1945 orthophoto (toggle "1945 photo" in the game).
@@ -96,7 +97,7 @@ def main(area: str = "ujezd") -> None:
             return None
         return v
 
-    buildings, removed = [], []
+    buildings, removed, candidates = [], [], []
     areas: dict[str, list] = {}
     road_lines: dict[str, list] = {}
     rails, walls, trees, weirs = [], [], [], []
@@ -122,6 +123,13 @@ def main(area: str = "ujezd") -> None:
                 why = f"start_date={start}"
             elif b in ("construction",) or name in NOT_IN_1945_NAMES or osm_id in NOT_IN_1945_OSM_IDS:
                 why = "listed as post-1945"
+            if why or (year and year > 1945):
+                # Everything with a post-1945 date or on a list is a review candidate,
+                # kept or dropped, so review_1945.py can show it against the 1945 photo.
+                candidates.append({"id": osm_id, "name": name, "start_date": start, "dropped": bool(why),
+                                   "why": why or ("kept (verified: stood in 1945)" if osm_id in EXISTED_IN_1945_OSM_IDS
+                                                  else "kept (full-date start_date is a cadastre record date)"),
+                                   "rings": [_rings(p) for p in _polys(g.buffer(0).intersection(clip))]})
             if why:
                 g2 = g.buffer(0).intersection(clip)
                 removed.append({"id": osm_id, "name": name, "why": why,
@@ -216,6 +224,9 @@ def main(area: str = "ujezd") -> None:
     print(f"{len(buildings)} building polys, {len(trees)} trees, {len(rails)} rail lines, {len(weirs)} weirs, "
           f"areas={ {k: len(_polys(v)) for k, v in area_polys.items()} }")
     print("removed for 1945:", [(r["id"], r["name"], r["why"]) for r in removed])
+    REVIEW.mkdir(exist_ok=True)
+    (REVIEW / f"{area}_1945_candidates.json").write_text(json.dumps(candidates, ensure_ascii=False, indent=1))
+    print(f"{len(candidates)} review candidates → review/{area}_1945_candidates.json")
 
     for label, layer in ORTHO_LAYERS.items():
         path = OUT / f"{area}_ortho_{label}.jpg"
