@@ -2,17 +2,23 @@
 
 An experiment: a stylised, strictly top-down 3D view of Prague in May 1945, built
 in three.js from OpenStreetMap and checked against the 1945 Allied aerial survey.
-You play a courier crossing Most Legií during the first day of the uprising.
+It has two modes on the same map:
+
+- **Courier** (`/`): walk a message across Most Legií on the first day of the uprising.
+- **Barricades** (`/?mode=barricades`): German columns try to get through to
+  Smíchov; you barricade streets and they re-route around what they can see.
 
 ```bash
 npm install
 npm run dev          # http://localhost:5190
 ```
 
-Controls: WASD/arrows walk, Shift runs, scroll zooms. Keys 1–4 swap the ground
-between the painted map and the 1945, 1938 and 2012 aerial photos; 5 shows the
-AI-painted test tile. B hides
-buildings, F gives an old-film look, R restarts.
+Courier controls: WASD/arrows walk, Shift runs, scroll zooms, R restarts.
+Barricade controls: click a street to build (15 s), right-click to take it down,
+drag or WASD to pan, scroll to zoom, Space pauses, G hides the drivable streets.
+In both: keys 1–4 swap the ground between the painted map and the 1945, 1938 and
+2012 aerial photos, 5 shows the AI-painted test tile, B hides buildings, F gives
+an old-film look, O switches to a flat (orthographic) map view.
 
 ## How it is built
 
@@ -26,7 +32,14 @@ buildings, F gives an old-film look, R restarts.
    (`gs-pub.praha.eu/.../ortofotomapa_archiv`: layer 205 = 1945, 209 = 1938,
    117 = 2012 TrueOrto), saved at ~0.3 m/px for the same bbox.
 
-In the browser (`src/`):
+`pipeline/build_streets.py` exports the drivable street graph for the same bbox
+(`public/data/<area>_streets.json`): junctions as nodes, streets as edges with their
+polylines, cut at the bbox edge into `border` nodes where columns enter and leave.
+Footways, paths, steps and service alleys are left out; pedestrian zones and living
+streets stay in, since they were ordinary streets in 1945.
+
+In the browser (`src/`), `world.js` builds the shared city and `courier.js` and
+`barricades/` are the two modes:
 
 - `ground.js` paints the whole area onto one 4096 px canvas: speckled grass,
   cobbles, water with current bands, weir foam, tram rails and blurred contact
@@ -43,7 +56,31 @@ In the browser (`src/`):
   connected region counts as walkable, so closed courtyards never trap a spawn point.
 
 The camera is a perspective camera pointing straight down with north up, so
-building walls lean outwards at the screen edges (GTA 2 style).
+building walls lean outwards at the screen edges (GTA 2 style). O swaps in an
+orthographic camera with the same framing.
+
+### Barricade mode (`src/barricades/`)
+
+- `graph.js`: the street graph, Dijkstra towards a set of exit nodes, and snapping
+  a click to the nearest street. Most Legií is the only bridge inside the map, so
+  Jiráskův and Mánesův most are added as **off-map links** between border nodes.
+  Without them a single barricade on the bridge would decide the game.
+- `column.js`: a German column is a lead vehicle plus followers that drive along the
+  leader's trail, keeping to the right. The leader plans on **what the column knows**:
+  it learns about a finished barricade when it has line of sight to it (110 m,
+  raycast against building footprints) or runs into it. It then re-plans. That can
+  mean a U-turn, a different street, or forcing its way through: a Hetzer clears a
+  barricade in 40 s, infantry from trucks in 110 s, and a tipped-over tram takes 1.6×
+  as long. Half-built barricades are scattered by passing columns.
+- `mode.js`: three reported columns (from Národní, Myslíkova and Anenská), 8
+  barricades, the side panel, the report log and the score. The score is each
+  column's delay compared with its route through an empty city. On a street drawn as
+  two parallel carriageways in OSM, one barricade cuts both.
+- `models.js`: Hetzer (built in Prague by ČKD/BMM), Sd.Kfz. 251, Opel Blitz, a
+  paving-stone barricade and a tram on its side.
+
+`window.__game.advance(seconds)` fast-forwards the simulation, which is handy for
+checking a barricade layout without waiting.
 
 ## Findings
 
@@ -78,9 +115,23 @@ generate each one with the same brief, then blend the overlaps. Style drift
 between tiles and the per-tile generation time are the costs to watch.
 Geometry, collision and semantics should stay procedural from OSM either way.
 
+**Barricades as edges in the street graph work as a mechanic.** Columns visibly
+change their plans ("spotted the barricade on Janáčkovo nábřeží and is going
+another way, via Vítězná"). The city grid has so much redundancy, though, that a
+single barricade in the middle of a block costs a column only 20–40 s. What
+matters are the chokepoints (the bridge, the embankments) and barricades placed
+round a corner, where a column only sees them once it has committed to the street.
+Because a broken barricade stays open for everyone behind, the interesting decision
+is when and where to rebuild while the columns are on the move. Simulated layouts:
+no barricades 0 s, one on the bridge 1 min, bridge + embankment about 5 min, all
+eight about 6.5 min.
+
 ## Possible next steps
 
 - Petřín terrain from a DEM (it's a ~130 m hill; currently flat, with no hillshade).
 - Trace demolished 1945 buildings from the photo into a small GeoJSON overlay.
-- Barricades, period vehicles and NPCs from the Prague uprising.
+- Barricade mode: defenders and anti-tank weapons at barricades (so holding one
+  costs the Germans more than time), limited builders instead of a global build
+  timer, telephone reports that arrive late or are wrong, and columns sharing
+  what they have seen over the radio.
 - Split the ground into tiles for larger areas and sharper close-ups.
