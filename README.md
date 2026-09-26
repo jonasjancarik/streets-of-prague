@@ -41,8 +41,15 @@ sandbox. Open `http://localhost:5190/drive.html`.
   courier, with tree trunks added (`car.js`); AI traffic that keeps to the right
   lane, brakes for anything ahead and gives way to the right (`traffic.js`);
   pedestrians on the footpath network who dodge fast cars and get knocked over
-  (`people.js`). Parked cars fill OSM's mapped car parks and parking lanes (around
-  900 on Újezd, drawn as instances), then the kerbs where they leave the lane free.
+  (`people.js`).
+- Parked cars follow TSK Praha's paid-parking data (`pipeline/build_parking.py`
+  reads the monthly occupancy GeoJSON from `~/projects/parkovani-praha`, or
+  `PARKING_DATA`, into `public/data/<area>_parking.json`). Each street section gets
+  spaces × measured occupancy cars, by day or with `?night`, placed in OSM's mapped
+  parking lanes and lots first and then along the kerb (`parking.js`). Bay lines are
+  painted in the zone colour: blue resident, violet mixed, orange visitor. On Újezd
+  that is about 1,300 of the 1,850 cars the data asks for by day; the rest have no
+  free kerb to go to. Cars are drawn as instances.
 - The camera pulls up with speed.
 
 ## How it is built

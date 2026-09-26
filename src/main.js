@@ -5,11 +5,12 @@ import { initRoofs, buildBuildings, buildWalls } from '../buildings.js';
 import { buildTrees } from '../vegetation.js';
 import { buildTransit } from '../transit.js';
 import { buildWalkGrid, nearestWalkable } from '../player.js';
-import { buildDriveGraph, buildWalkGraph, StreetNames, Polyline, segDist, clamp } from './network.js';
-import { Car, CarPool, collideBodies, randomType } from './car.js';
+import { buildDriveGraph, buildWalkGraph, StreetNames, clamp } from './network.js';
+import { Car, CarPool, collideBodies } from './car.js';
 import { Traffic } from './traffic.js';
 import { Crowd, Walker } from './people.js';
 import { Trams } from './trams.js';
+import { Zones, parkCars } from './parking.js';
 
 const AREA = new URLSearchParams(location.search).get('area') || 'ujezd';
 const $ = (id) => document.getElementById(id);
@@ -21,10 +22,12 @@ const PEOPLE = 140;
 
 async function main() {
   status('Loading the map…');
-  const [data, streets] = await Promise.all([
+  const [data, streets, parking] = await Promise.all([
     fetch(`data/${AREA}_now.json`).then((r) => r.json()),
     fetch(`data/${AREA}_traffic.json`).then((r) => r.json()),
+    fetch(`data/${AREA}_parking.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ]);
+  const zones = new Zones(parking);
   const geo = new Geo(data);
   const r = rng(11);
 
@@ -52,7 +55,7 @@ async function main() {
 
   status('Painting the streets…');
   await frame();
-  const groundTex = new THREE.CanvasTexture(paintGroundNow(geo, streets));
+  const groundTex = new THREE.CanvasTexture(paintGroundNow(geo, streets, zones));
   groundTex.colorSpace = THREE.SRGBColorSpace;
   groundTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(geo.W, geo.H), new THREE.MeshLambertMaterial({ map: groundTex }));
@@ -100,71 +103,14 @@ async function main() {
   const traffic = new Traffic(drive, scene, r, TRAFFIC);
   const carPool = new CarPool(scene);
 
-  // Parked cars: in mapped car parks first, then along the kerb where they leave the lane free.
-  const railSegs = [];
-  for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
-  const nearRail = (x, y) => railSegs.some(([a, b]) => segDist(x, y, a, b) < 3.2);
+  // Parked cars, as many per street section as TSK counts (day, or ?night).
+  const night = new URLSearchParams(location.search).has('night');
   const loose = [];
   const addLoose = (car) => { car.mode = 'loose'; loose.push(car); return car; };
   const clearAt = (car) => car.worldSamples().every(([x, y]) => grid.at(x, y) === 0);
-  // Car parks: rows of bays lined up with the longest side of each lot.
-  const inRing = (x, y, ring) => {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const [xi, yi] = ring[i], [xj, yj] = ring[j];
-      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-    }
-    return inside;
-  };
-  for (const rings of data.areas.parking || []) {
-    const ring = rings[0];
-    let a = 0, best = 0;
-    for (let i = 0; i < ring.length; i++) {
-      const p = ring[i], q = ring[(i + 1) % ring.length], len = Math.hypot(q[0] - p[0], q[1] - p[1]);
-      if (len > best) { best = len; a = Math.atan2(q[1] - p[1], q[0] - p[0]); }
-    }
-    const ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
-    const [ox, oy] = ring[0];
-    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-    for (const [x, y] of ring) {
-      const u = (x - ox) * ux + (y - oy) * uy, v = (x - ox) * vx + (y - oy) * vy;
-      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
-    }
-    // Narrow strips beside the street are parallel parking; wider lots get rows of bays.
-    const strip = v1 - v0 < 4.5;
-    const rows = strip ? [(v0 + v1) / 2] : [];
-    for (let v = v0 + 3; !strip && v < v1 - 2.5; v += 5.6) rows.push(v);
-    for (const v of rows) {
-      for (let u = u0 + (strip ? 3 : 1.4); u < u1 - (strip ? 2.5 : 1.2); u += strip ? 6 : 2.6) {
-        if (r() > 0.45) continue;
-        const x = ox + ux * u + vx * v, y = oy + uy * u + vy * v;
-        if (!inRing(x, y, ring) || rings.slice(1).some((h) => inRing(x, y, h))) continue;
-        const car = new Car(randomType(r), r, x, y, a + (strip ? 0 : Math.PI / 2) + (r() > 0.5 ? Math.PI : 0));
-        if (car.type === 'van' || !clearAt(car) || loose.some((c) => Math.hypot(c.x - x, c.y - y) < 2.4)) continue;
-        addLoose(car);
-      }
-    }
-  }
-
-  // Then kerbside parking on streets without a mapped parking lane.
-  for (const e of drive.edges) {
-    if (e.bridge || e.path.length < 30) continue;
-    const kerb = e.width / 2 - 1.05;
-    const sides = e.oneway ? [1, -1] : [1];
-    for (const side of sides) {
-      if (Math.abs(side * kerb - e.laneOffset) < 2.3) continue;
-      const line = new Polyline(e.pts);
-      for (let s = 10; s < line.length - 10; s += 5.6 + r() * 4) {
-        if (r() > 0.45) continue;
-        const q = line.at(s);
-        const x = q.x + Math.sin(q.ang) * kerb * side, y = q.y - Math.cos(q.ang) * kerb * side;
-        if (nearRail(x, y)) continue;
-        const car = new Car(randomType(r), r, x, y, q.ang + (side < 0 && r() > 0.5 ? Math.PI : 0));
-        if (!clearAt(car) || loose.some((c) => Math.hypot(c.x - x, c.y - y) < 5)) continue;
-        addLoose(car);
-      }
-    }
-  }
+  const parkedCars = parkCars({ data, drive, zones, grid, r, night });
+  loose.push(...parkedCars.cars);
+  console.info(`${parkedCars.cars.length} parked cars (${parkedCars.wanted} wanted in ${parkedCars.zoned} paid-parking sections)`);
 
   // ---- Player ------------------------------------------------------------
   const walker = new Walker(grid);

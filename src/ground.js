@@ -23,6 +23,8 @@ const C = {
   paint: 'rgba(240,238,228,0.9)',
 };
 
+const ZONE = { RES: '#3d7be0', MIX: '#9b59d0', VIS: '#e8962c' };
+
 function noise(base, spread, n, size = 128, seed = 7, blob = 1.4) {
   const c = document.createElement('canvas');
   c.width = c.height = size;
@@ -55,7 +57,7 @@ function blocks(base, cell, spread, seed, size = 96) {
   return c;
 }
 
-export function paintGroundNow(geo, traffic, pxW = 4096) {
+export function paintGroundNow(geo, traffic, zones = null, pxW = 4096) {
   const d = geo.data;
   const s = pxW / geo.W;
   const c = document.createElement('canvas');
@@ -84,7 +86,22 @@ export function paintGroundNow(geo, traffic, pxW = 4096) {
   layer(A.wood, pat(noise(C.wood, 0.45, 7000, 256, 5, 2.8)), 'rgba(35,50,25,0.4)');
   layer(A.pitch, pat(noise(C.pitch, 0.18, 2000, 256, 4)), 'rgba(250,250,245,0.8)', 3);
   layer(A.square, pat(blocks(C.square, 6, 0.1, 6, 96)), 'rgba(90,85,75,0.35)', 1.5);
-  layer(A.parking, pat(noise(C.parking, 0.22, 2500, 128, 7, 1)), 'rgba(235,235,225,0.7)', 1.6);
+  // Car parks and parking lanes. Inside Prague's paid zones the bay lines are painted
+  // in the zone's colour: blue for residents, violet for mixed, orange for visitors.
+  if (A.parking) {
+    ctx.fillStyle = pat(noise(C.parking, 0.22, 2500, 128, 7, 1));
+    fillPolys(ctx, geo, A.parking, s);
+    ctx.lineWidth = Math.max(1.6, 0.15 * s);
+    for (const rings of A.parking) {
+      const ring = rings[0];
+      const cx = ring.reduce((a, p) => a + p[0], 0) / ring.length, cy = ring.reduce((a, p) => a + p[1], 0) / ring.length;
+      ctx.strokeStyle = ZONE[zones?.at(cx, cy)?.category] || 'rgba(235,235,225,0.7)';
+      ctx.beginPath();
+      ring.forEach(([x, y], i) => { const [u, v] = geo.px(x, y, s); i ? ctx.lineTo(u, v) : ctx.moveTo(u, v); });
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
 
   if (A.water) {
     ctx.save();
