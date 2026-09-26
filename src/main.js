@@ -1,14 +1,15 @@
 import * as THREE from 'three';
-import { Geo, rng, signedArea } from '../geo.js';
-import { paintGround } from '../ground.js';
+import { Geo, rng } from '../geo.js';
+import { paintGroundNow } from './ground.js';
 import { initRoofs, buildBuildings, buildWalls } from '../buildings.js';
 import { buildTrees } from '../vegetation.js';
 import { buildTransit } from '../transit.js';
 import { buildWalkGrid, nearestWalkable } from '../player.js';
 import { buildDriveGraph, buildWalkGraph, StreetNames, Polyline, segDist, clamp } from './network.js';
-import { Car, collideBodies, randomType } from './car.js';
+import { Car, CarPool, collideBodies, randomType } from './car.js';
 import { Traffic } from './traffic.js';
 import { Crowd, Walker } from './people.js';
+import { Trams } from './trams.js';
 
 const AREA = new URLSearchParams(location.search).get('area') || 'ujezd';
 const $ = (id) => document.getElementById(id);
@@ -21,16 +22,9 @@ const PEOPLE = 140;
 async function main() {
   status('Loading the map…');
   const [data, streets] = await Promise.all([
-    fetch(`data/${AREA}.json`).then((r) => r.json()),
+    fetch(`data/${AREA}_now.json`).then((r) => r.json()),
     fetch(`data/${AREA}_traffic.json`).then((r) => r.json()),
   ]);
-  // Present-day city: put back the buildings the 1945 map leaves out.
-  for (const b of data.removed_for_1945 || []) {
-    for (const rings of b.rings) {
-      if (Math.abs(signedArea(rings[0])) < 30) continue;
-      data.buildings.push({ id: b.id, kind: 'yes', name: b.name, h: 11, minh: 0, roof: null, church: false, part: false, rings });
-    }
-  }
   const geo = new Geo(data);
   const r = rng(11);
 
@@ -58,7 +52,7 @@ async function main() {
 
   status('Painting the streets…');
   await frame();
-  const groundTex = new THREE.CanvasTexture(paintGround(geo));
+  const groundTex = new THREE.CanvasTexture(paintGroundNow(geo, streets));
   groundTex.colorSpace = THREE.SRGBColorSpace;
   groundTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(geo.W, geo.H), new THREE.MeshLambertMaterial({ map: groundTex }));
@@ -76,6 +70,7 @@ async function main() {
   const trees = buildTrees(geo).mesh;
   scene.add(trees);
   const transit = buildTransit(data, scene);
+  const trams = new Trams(transit, scene);
 
   status('Filling the streets…');
   await frame();
@@ -103,14 +98,55 @@ async function main() {
   const names = new StreetNames(drive.edges, walk.edges);
   const crowd = new Crowd(walk, grid, scene, r, PEOPLE);
   const traffic = new Traffic(drive, scene, r, TRAFFIC);
+  const carPool = new CarPool(scene);
 
-  // Parked cars along the kerb, wherever they leave the driving lane free.
+  // Parked cars: in mapped car parks first, then along the kerb where they leave the lane free.
   const railSegs = [];
   for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
   const nearRail = (x, y) => railSegs.some(([a, b]) => segDist(x, y, a, b) < 3.2);
   const loose = [];
-  const addLoose = (car) => { car.mode = 'loose'; loose.push(car); scene.add(car.mesh); return car; };
+  const addLoose = (car) => { car.mode = 'loose'; loose.push(car); return car; };
   const clearAt = (car) => car.worldSamples().every(([x, y]) => grid.at(x, y) === 0);
+  // Car parks: rows of bays lined up with the longest side of each lot.
+  const inRing = (x, y, ring) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  for (const rings of data.areas.parking || []) {
+    const ring = rings[0];
+    let a = 0, best = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i], q = ring[(i + 1) % ring.length], len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (len > best) { best = len; a = Math.atan2(q[1] - p[1], q[0] - p[0]); }
+    }
+    const ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
+    const [ox, oy] = ring[0];
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const [x, y] of ring) {
+      const u = (x - ox) * ux + (y - oy) * uy, v = (x - ox) * vx + (y - oy) * vy;
+      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+    }
+    // Narrow strips beside the street are parallel parking; wider lots get rows of bays.
+    const strip = v1 - v0 < 4.5;
+    const rows = strip ? [(v0 + v1) / 2] : [];
+    for (let v = v0 + 3; !strip && v < v1 - 2.5; v += 5.6) rows.push(v);
+    for (const v of rows) {
+      for (let u = u0 + (strip ? 3 : 1.4); u < u1 - (strip ? 2.5 : 1.2); u += strip ? 6 : 2.6) {
+        if (r() > 0.45) continue;
+        const x = ox + ux * u + vx * v, y = oy + uy * u + vy * v;
+        if (!inRing(x, y, ring) || rings.slice(1).some((h) => inRing(x, y, h))) continue;
+        const car = new Car(randomType(r), r, x, y, a + (strip ? 0 : Math.PI / 2) + (r() > 0.5 ? Math.PI : 0));
+        if (car.type === 'van' || !clearAt(car) || loose.some((c) => Math.hypot(c.x - x, c.y - y) < 2.4)) continue;
+        addLoose(car);
+      }
+    }
+  }
+
+  // Then kerbside parking on streets without a mapped parking lane.
   for (const e of drive.edges) {
     if (e.bridge || e.path.length < 30) continue;
     const kerb = e.width / 2 - 1.05;
@@ -145,7 +181,7 @@ async function main() {
     // A car waiting at the kerb right next to the start.
     const car = new Car('hatch', r, q.x + Math.sin(q.ang) * (side - 2.3), q.y - Math.cos(q.ang) * (side - 2.3), q.ang);
     if (clearAt(car)) {
-      for (let i = loose.length - 1; i >= 0; i--) if (Math.hypot(loose[i].x - car.x, loose[i].y - car.y) < 6) { scene.remove(loose[i].mesh); loose.splice(i, 1); }
+      for (let i = loose.length - 1; i >= 0; i--) if (Math.hypot(loose[i].x - car.x, loose[i].y - car.y) < 6) loose.splice(i, 1);
       addLoose(car);
     }
   }
@@ -239,13 +275,6 @@ async function main() {
   let street = null, bannerT = 0;
   const stats = { knocked: 0, wrecked: 0 };
 
-  const trams = transit.vehicles.filter((v) => v.mesh.children.length > 3);
-  const tramBody = (v) => {
-    const a = v.mesh.rotation.y, c = Math.cos(a), s = Math.sin(a);
-    const x = v.mesh.position.x, y = -v.mesh.position.z;
-    const moving = v.wait > 0 ? 0 : v.dir * v.speed;
-    return { x, y, vx: c * moving, vy: s * moving, h: a, dirX: c * v.dir, dirY: s * v.dir, circles: [-5, -2.5, 0, 2.5, 5].map((o) => [x + c * o, y + s * o]) };
-  };
 
   $('loading').classList.add('done');
 
@@ -270,22 +299,22 @@ async function main() {
     if (inCar) pushCar(inCar);
     else obstacles.push({ x: walker.x, y: walker.y, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0) obstacles.push({ x: p.x, y: p.y, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
-    const tramBodies = trams.map(tramBody);
+    const tramBodies = trams.bodies();
     for (const t of tramBodies) for (const [x, y] of t.circles) obstacles.push({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
 
     traffic.update(dt, obstacles);
 
     // Trams stop for whatever is on the track in front of them.
-    trams.forEach((v, i) => {
-      const t = tramBodies[i];
+    for (const { v, head: t } of tramBodies) {
       for (const o of obstacles) {
         if (o.kind === 'tram') continue;
         const dx = o.x - t.x, dy = o.y - t.y;
         const ahead = dx * t.dirX + dy * t.dirY, side = Math.abs(dx * t.dirY - dy * t.dirX);
-        if (ahead > 5 && ahead < 16 && side < 1.3 + o.r) { v.wait = Math.max(v.wait, 0.3); break; }
+        if (ahead > 0 && ahead < 11 && side < 1.3 + o.r) { v.wait = Math.max(v.wait, 0.3); break; }
       }
-    });
+    }
     transit.update(dt);
+    trams.sync();
 
     const threats = [...(inCar ? [inCar] : []), ...loose.filter((c) => c.speed > 5)];
     crowd.update(dt, threats);
@@ -293,7 +322,10 @@ async function main() {
     // ---- Collisions ------------------------------------------------------
     const dynamic = inCar ? [inCar, ...loose] : loose;
     const near = (a, b, d) => Math.abs(a.x - b.x) < d && Math.abs(a.y - b.y) < d;
-    for (const a of dynamic) {
+    // Only bodies that are moving; resting parked cars can't hit anything.
+    const moving = (c) => c.mode === 'player' || c.speed > 0.05 || Math.abs(c.w) > 0.01;
+    const movers = dynamic.filter(moving);
+    for (const a of movers) {
       const ca = a.circles();
       for (const ag of [...traffic.agents]) {
         const b = ag.car;
@@ -311,16 +343,16 @@ async function main() {
         } else collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 0);
       }
     }
-    for (let i = 0; i < dynamic.length; i++) {
-      const a = dynamic[i];
-      for (let j = i + 1; j < dynamic.length; j++) {
-        const b = dynamic[j];
-        if (!near(a, b, 7)) continue;
+    const done = new Set();
+    for (const a of movers) {
+      done.add(a);
+      for (const b of dynamic) {
+        if (done.has(b) || !near(a, b, 7)) continue;
         const hit = collideBodies(a, a.circles(), a.r, 1 / a.mass, b, b.circles(), b.r, 1 / b.mass);
         if (hit > 6 && (a === inCar || b === inCar)) shake = Math.min(1.2, shake + hit * 0.04);
       }
       for (const t of tramBodies) {
-        if (!near(a, t, 10)) continue;
+        if (!near(a, t, 22)) continue;
         const hit = collideBodies(t, t.circles, 1.25, 0, a, a.circles(), a.r, 1 / a.mass);
         if (hit > 6 && a === inCar) shake = Math.min(1.2, shake + hit * 0.04);
       }
@@ -368,9 +400,10 @@ async function main() {
     if (traffic.agents.length < TRAFFIC) traffic.spawn((x, y) => offscreen(x, y));
     if (loose.length > parked + 30) {
       const far = loose.filter((c) => offscreen(c.x, c.y)).sort((a, b) => Math.hypot(b.x - px(), b.y - py()) - Math.hypot(a.x - px(), a.y - py()))[0];
-      if (far) { scene.remove(far.mesh); loose.splice(loose.indexOf(far), 1); }
+      if (far) loose.splice(loose.indexOf(far), 1);
     }
     crowd.render();
+    carPool.render(inCar ? [inCar, ...loose, ...traffic.agents.map((a) => a.car)] : [...loose, ...traffic.agents.map((a) => a.car)]);
 
     // ---- Camera ----------------------------------------------------------
     const sp = inCar ? inCar.speed : 0;

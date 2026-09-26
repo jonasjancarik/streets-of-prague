@@ -28,6 +28,12 @@ sandbox. Open `http://localhost:5190/drive.html`.
 - Tank controls on foot and in the car: W/S forwards and back, A/D turn, Shift
   runs, Space is the handbrake. E gets into the nearest car, including one driving
   past (its driver runs off). R puts the car back on the road.
+- It uses today's map, not 1945: `uv run build_area.py ujezd now` writes
+  `public/data/<area>_now.json` with no 1945 filter, car parks kept as car parks,
+  streets split into asphalt and granite setts by OSM `surface`, and zebra
+  crossings. `src/drive/ground.js` paints it with asphalt, mosaic pavements, lane
+  markings and tram tracks in concrete, and the trams are three-section modern cars
+  (`trams.js`).
 - `pipeline/build_traffic.py` exports OSM's car network (directed, one-way streets
   respected, tunnels removed, largest strongly connected part) and the pedestrian
   network into `public/data/<area>_traffic.json`.
@@ -35,8 +41,9 @@ sandbox. Open `http://localhost:5190/drive.html`.
   courier, with tree trunks added (`car.js`); AI traffic that keeps to the right
   lane, brakes for anything ahead and gives way to the right (`traffic.js`);
   pedestrians on the footpath network who dodge fast cars and get knocked over
-  (`people.js`). Parked cars line the kerbs where they leave the lane free.
-- The camera pulls up with speed. The buildings the 1945 map drops are put back.
+  (`people.js`). Parked cars fill OSM's mapped car parks and parking lanes (around
+  900 on Újezd, drawn as instances), then the kerbs where they leave the lane free.
+- The camera pulls up with speed.
 
 ## How it is built
 

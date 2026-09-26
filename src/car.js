@@ -64,8 +64,8 @@ export class Car {
     this.type = type;
     this.spec = TYPES[type];
     this.mass = this.spec.mass;
-    this.mesh = new THREE.Mesh(carGeometry(type, PAINT[Math.floor(r() * PAINT.length)]), material);
-    this.mesh.castShadow = true;
+    this.key = `${type}|${PAINT[Math.floor(r() * PAINT.length)]}`;
+    carGeometry(...this.key.split('|'));
     this.x = x;
     this.y = y;
     this.h = h;
@@ -176,9 +176,44 @@ export class Car {
     return -vn;
   }
 
-  sync() {
-    this.mesh.position.set(this.x, 0, -this.y);
-    this.mesh.rotation.y = this.h;
+  sync() {} // drawn by CarPool each frame
+}
+
+// Every car is an instance: one draw call per type and colour, however many are parked.
+export class CarPool {
+  constructor(scene) {
+    this.scene = scene;
+    this.meshes = new Map();
+    this.groups = new Map();
+    this.dummy = new THREE.Object3D();
+  }
+
+  render(cars) {
+    for (const list of this.groups.values()) list.length = 0;
+    for (const c of cars) {
+      if (!this.groups.has(c.key)) this.groups.set(c.key, []);
+      this.groups.get(c.key).push(c);
+    }
+    const d = this.dummy;
+    for (const [k, list] of this.groups) {
+      let m = this.meshes.get(k);
+      if (!m || m.instanceMatrix.count < list.length) {
+        if (m) { this.scene.remove(m); m.dispose(); }
+        m = new THREE.InstancedMesh(cache.get(k), material, Math.max(8, Math.ceil(list.length * 1.5)));
+        m.castShadow = true;
+        m.frustumCulled = false;
+        this.scene.add(m);
+        this.meshes.set(k, m);
+      }
+      list.forEach((c, i) => {
+        d.position.set(c.x, 0, -c.y);
+        d.rotation.set(0, c.h, 0);
+        d.updateMatrix();
+        m.setMatrixAt(i, d.matrix);
+      });
+      m.count = list.length;
+      m.instanceMatrix.needsUpdate = true;
+    }
   }
 }
 
