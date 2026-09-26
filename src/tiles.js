@@ -72,6 +72,31 @@ async function iprMesh(url, [x0, y0]) {
   return mesh;
 }
 
+// Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
+// the same north-west as the sun: 128 = unchanged, darker on slopes facing away.
+async function relief(url, box, n, step) {
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const h = new Uint16Array(await res.arrayBuffer());
+  const L = [-110, 80, 190], ll = Math.hypot(...L);
+  const lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
+  const px = new Uint8Array(n * n);
+  const at = (i, j) => h[Math.min(n - 1, Math.max(0, j)) * n + Math.min(n - 1, Math.max(0, i))] / 10;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const dx = (at(i + 1, j) - at(i - 1, j)) / (2 * step), dy = (at(i, j + 1) - at(i, j - 1)) / (2 * step);
+      const nl = Math.hypot(dx, dy, 1);
+      const lit = (-dx * lx - dy * ly + lz) / nl / lz; // 1 on flat ground
+      px[j * n + i] = Math.max(0, Math.min(255, Math.round(128 * Math.max(0.55, Math.min(1.35, 1 + 1.1 * (lit - 1))))));
+    }
+  }
+  const tex = new THREE.DataTexture(px, n, n, THREE.RedFormat, THREE.UnsignedByteType);
+  tex.magFilter = tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  const [x0, y0] = box;
+  return { texture: tex, box: [x0, y0, x0 + (n - 1) * step, y0 + (n - 1) * step] };
+}
+
 const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ vertexColors: true }));
 
 function buildingMesh(arrays) {
@@ -297,7 +322,11 @@ export class TileWorld {
 
     const edges = this.driveBy.get(k) || [];
     const clipped = edges.flatMap((e) => clipLine(e.pts, t.box).map((pts) => ({ ...e, pts })));
-    const surfaces = new Surfaces(geo, { edges: clipped, buildings: own, zones: this.zones, time: this.time });
+    const shade = this.index.terrain
+      ? await relief(`data/${this.area}_now/tiles/${k}.height.bin`, t.box, this.index.terrain.n, this.index.terrain.step)
+      : null;
+    if (this.loaded.has(k)) return this.loaded.get(k);
+    const surfaces = new Surfaces(geo, { edges: clipped, buildings: own, zones: this.zones, time: this.time, relief: shade });
     group.add(surfaces.group);
     lap('ground');
     await breathe();
@@ -334,7 +363,7 @@ export class TileWorld {
     lap('parking');
     if (this.loaded.has(k)) { surfaces.dispose(); return this.loaded.get(k); }
     this.scene.add(group);
-    const tile = { k, box: t.box, group, surfaces, grid, cars, ms, disposables: [buildings, walls, trees] };
+    const tile = { k, box: t.box, group, surfaces, grid, cars, ms, disposables: [buildings, walls, trees], relief: shade };
     this.loaded.set(k, tile);
     this.onCars(cars, tile);
     return tile;
@@ -345,6 +374,7 @@ export class TileWorld {
     if (!t) return;
     this.scene.remove(t.group);
     t.surfaces.dispose();
+    t.relief?.texture.dispose();
     for (const m of t.disposables) { m.geometry.dispose(); m.material.dispose?.(); }
     this.loaded.delete(k);
     this.pending.delete(k);

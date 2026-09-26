@@ -119,7 +119,7 @@ function finish(pos, idx) {
 // One set of ground meshes for an area or a tile. `edges`: car network edges for the
 // centre lines (already clipped to the area); `buildings`: the ones to shade round.
 export class Surfaces {
-  constructor(geo, { edges = [], buildings = geo.data.buildings, zones = null, time = { value: 0 } } = {}) {
+  constructor(geo, { edges = [], buildings = geo.data.buildings, zones = null, time = { value: 0 }, relief = null } = {}) {
     this.group = new THREE.Group();
     this.time = time;
     const d = geo.data, A = d.areas, R = d.roads;
@@ -128,7 +128,7 @@ export class Surfaces {
     const add = (geometry, color, pattern = 'flat') => {
       const o = order++;
       if (!geometry.index?.count) return null;
-      const mat = patterned(new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[pattern], this.time);
+      const mat = patterned(new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[pattern], this.time, relief);
       const m = new THREE.Mesh(geometry, mat);
       m.renderOrder = o;
       m.receiveShadow = true;
