@@ -67,6 +67,31 @@ developer panel, `?start=lon,lat` starts somewhere else.
 `src/map/` holds the map-building modules shared with the 1945 project it came
 from (geometry helpers, straight-skeleton buildings, trees, tram routes).
 
+## Known issues
+
+- **Bridges and tunnels.** The height map holds one height per point, so a car driving
+  under a flyover jumps up onto it. There are no tunnels at all (Blanka, Strahov).
+- **Buildings at the edges.** IPR's 3D model covers only inner Prague; further out the
+  buildings come from OSM, and where OSM has no height they are 13 m tall.
+- **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
+  narrow streets and are left out.
+- **No angled parking.** A mapped parking area narrower than 4.5 m gets parallel
+  parking and a wider one rows of perpendicular bays; nothing is parked at an angle,
+  and OSM's `parking:*:orientation` tags aren't read. Areas 4.5–5.5 m wide, typical
+  for angled parking, get no bays at all, so the kerbside fallback fills them with
+  parallel cars. Streets without a mapped parking area are always parallel.
+- **Trams** shuttle back and forth on stretches of track instead of running real
+  lines, and at the end of a stretch their sections bunch up into each other.
+- **Traffic** has no traffic lights; at junctions it only gives way to the right and
+  steers around others. The lane assist sometimes clips a corner.
+
+## Not yet in the game
+
+- Something to do: missions (deliveries, taxi, courier), police and a wanted level.
+- Visible damage on cars.
+- Sound.
+- Day and night (night-time parking data is already there, see `?night`).
+
 ## Building the map
 
 Requirements: [uv](https://docs.astral.sh/uv/), Node.js, and for a local OSM extract
