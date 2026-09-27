@@ -7,6 +7,8 @@ are defined here in AREAS.
 
 import math
 import os
+import random
+import zlib
 from pathlib import Path
 
 import osmnx as ox
@@ -117,7 +119,7 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
                     "id": osm_id,
                     "kind": b,
                     "name": col(row, "name"),
-                    "h": _height(row, col),
+                    "h": _height(row, col, osm_id, poly.area),
                     "minh": _float(col(row, "min_height")) or 0,
                     "roof": col(row, "roof:shape"),
                     "church": b in ("church", "cathedral", "chapel") or col(row, "amenity") == "place_of_worship",
@@ -283,15 +285,59 @@ def _gardens(homes, buildings, streets, clip):
     return unary_union(out) if out else Polygon()
 
 
-def _height(row, col):
+def _height(row, col, osm_id, area):
     h = _float(col(row, "height"))
     if h:
         return h
     lv = _float(col(row, "building:levels"))
     if lv:
         return lv * 3.4 + 1.0
-    b = col(row, "building")
-    return {"church": 18, "garage": 3, "shed": 3, "roof": 4, "kiosk": 3}.get(b, 13)
+    return _guess_height(col(row, "building"), area, random.Random(zlib.crc32(osm_id.encode())))
+
+
+# Where OSM gives neither a height nor a number of storeys (much of it past the city
+# limits, where IPR's model stops), guess from the kind of building and its footprint:
+# most of these are sheds, garden cottages and family houses. The guess is seeded by
+# the OSM id, so a building comes out the same in every build and every chunk.
+SMALL = {"garage", "garages", "shed", "carport", "hut", "cabin", "kiosk", "service", "static_caravan",
+         "transformer_tower", "houseboat", "toilets", "container", "allotment_house", "greenhouse"}
+HALLS = {"industrial", "warehouse", "barn", "farm_auxiliary", "transportation", "hangar", "manufacture",
+         "retail", "supermarket", "storage_tank", "sports_hall", "cowshed", "stable", "parking"}
+HOUSES = {"house", "detached", "semidetached_house", "terrace", "bungalow", "farm"}
+
+
+def _guess_height(kind, area, rnd):
+    storeys = lambda n: n * 3.4 + 1.0 + rnd.uniform(-0.4, 0.4)  # noqa: E731
+    if kind in ("church", "cathedral"):
+        return 18 if area > 150 else 8 + rnd.uniform(0, 3)
+    if kind == "chapel":
+        return 4.5 + rnd.uniform(0, 1.5) if area < 40 else 9 + rnd.uniform(0, 3)
+    if kind == "roof":  # a canopy: over a petrol station, a platform
+        return 4 + rnd.uniform(0, 1)
+    if kind == "ruins":
+        return rnd.uniform(3, 6)
+    if kind in SMALL or area < 25:
+        return (2.5 if area < 40 else 3.2) + rnd.uniform(0, 0.8)
+    if kind in HALLS:
+        if area < 80:
+            return 3.5 + rnd.uniform(0, 1)
+        return min(14, 5 + math.sqrt(area) / 12 + rnd.uniform(0, 2))
+    if kind == "bungalow":
+        return storeys(1)
+    if kind in HOUSES:
+        return storeys(rnd.choice((1, 2, 2)) if area < 250 else rnd.choice((2, 3)))
+    if kind == "apartments":
+        return storeys(rnd.randint(3, 5) if area < 500 else rnd.randint(4, 10))
+    # building=yes, residential, civic, commercial, school, ...: by the footprint alone.
+    if area < 60:
+        return storeys(1) - 0.8
+    if area < 250:
+        return storeys(rnd.choice((1, 2, 2)))
+    if area < 600:
+        return storeys(rnd.randint(2, 3))
+    if area < 1500:
+        return storeys(rnd.randint(2, 4))
+    return min(14, 6 + math.sqrt(area) / 15 + rnd.uniform(0, 2))
 
 
 def _float(v):

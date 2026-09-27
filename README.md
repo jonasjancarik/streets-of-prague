@@ -125,9 +125,10 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
 - **Bridges and tunnels.** The height map holds one height per point, so a car driving
   under a flyover jumps up onto it. There are no tunnels at all (Blanka, Strahov); only
   passages through buildings at street level can be driven and walked through.
-- **Past the city limits** the buildings come from OSM, and where OSM has no height
-  they are 13 m tall. The terrain there carries on flat at the height of the nearest
-  ground IPR has.
+- **Past the city limits** the buildings come from OSM, and where OSM gives neither a
+  height nor a number of storeys, the height is a guess from the kind of building and
+  the size of its footprint (sheds, cottages, one- or two-storey houses, halls). The
+  terrain there carries on flat at the height of the nearest ground IPR has.
 - **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
   narrow streets and are left out.
 - **Angled and perpendicular parking along the kerb** stands just outside the
