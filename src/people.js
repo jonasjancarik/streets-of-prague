@@ -241,11 +241,11 @@ export class Crowd {
     p.h = Math.atan2(vy, vx) + Math.PI;
   }
 
-  render() {
+  render(height = () => 0) {
     const d = this.dummy;
     for (const p of this.people) {
       const down = p.state === 'down';
-      d.position.set(p.x, down ? 0.25 : Math.abs(Math.sin(p.phase)) * 0.05, -p.y);
+      d.position.set(p.x, height(p.x, p.y) + (down ? 0.25 : Math.abs(Math.sin(p.phase)) * 0.05), -p.y);
       d.rotation.set(0, p.h, down ? Math.PI / 2 : Math.sin(p.phase) * 0.06);
       d.scale.setScalar(SCALE);
       d.updateMatrix();
@@ -315,7 +315,8 @@ export class Walker {
 
   sync() {
     const down = this.down > 0;
-    this.mesh.position.set(this.x, down ? 0.25 : Math.abs(Math.sin(this.phase)) * 0.06, -this.y);
+    const ground = this.grid.height ? this.grid.height(this.x, this.y) : 0;
+    this.mesh.position.set(this.x, ground + (down ? 0.25 : Math.abs(Math.sin(this.phase)) * 0.06), -this.y);
     this.mesh.rotation.set(0, this.h, down ? Math.PI / 2 : Math.sin(this.phase) * 0.07);
   }
 }

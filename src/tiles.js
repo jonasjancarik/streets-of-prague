@@ -42,7 +42,7 @@ class RoofBuilders {
 
 // IPR Praha's 3D buildings for a tile (pipeline/ipr_buildings.py): triangles with
 // positions in centimetres from the tile corner and a colour per triangle.
-async function iprMesh(url, [x0, y0]) {
+async function iprMesh(url, [x0, y0], absolute) {
   const buf = await (await fetch(url)).arrayBuffer();
   const n = new DataView(buf).getUint32(0, true);
   const p16 = new Int16Array(buf, 8, n * 9);
@@ -58,7 +58,7 @@ async function iprMesh(url, [x0, y0]) {
       pos[i] = x0 + p16[i] / 100;
       pos[i + 1] = h;
       pos[i + 2] = -(y0 + p16[i + 2] / 100);
-      const k = 0.62 + 0.38 * Math.min(1, h / 6); // darker towards the street
+      const k = absolute ? 1 : 0.62 + 0.38 * Math.min(1, h / 6); // older data: darker towards the street
       col[i] = c.r * k; col[i + 1] = c.g * k; col[i + 2] = c.b * k;
     }
   }
@@ -74,14 +74,27 @@ async function iprMesh(url, [x0, y0]) {
 
 // Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
 // the same north-west as the sun: 128 = unchanged, darker on slopes facing away.
-async function relief(url, box, n, step) {
+async function relief(url, box, n, step, ref, bareUrl = null) {
   const res = await fetch(url);
   if (!res.ok) return null;
   const h = new Uint16Array(await res.arrayBuffer());
+  // Hill shading uses the bare ground where bridges were raised (see ipr_terrain.py).
+  const bareRes = bareUrl ? await fetch(bareUrl) : null;
+  const hs = bareRes?.ok ? new Uint16Array(await bareRes.arrayBuffer()) : h;
+  // Heights in metres above `ref` (the game's y = 0), bilinear and clamped to the tile.
+  const hm = new Float32Array(n * n);
+  for (let i = 0; i < hm.length; i++) hm[i] = h[i] / 10 + 100 - ref;
+  const [bx, by] = box;
+  const sample = (x, y) => {
+    const u = Math.min(n - 1.001, Math.max(0, (x - bx) / step)), v = Math.min(n - 1.001, Math.max(0, (y - by) / step));
+    const i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j;
+    const a = hm[j * n + i], b = hm[j * n + i + 1], c = hm[(j + 1) * n + i], d = hm[(j + 1) * n + i + 1];
+    return (a * (1 - fu) + b * fu) * (1 - fv) + (c * (1 - fu) + d * fu) * fv;
+  };
   const L = [-110, 80, 190], ll = Math.hypot(...L);
   const lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
   const px = new Uint8Array(n * n);
-  const at = (i, j) => h[Math.min(n - 1, Math.max(0, j)) * n + Math.min(n - 1, Math.max(0, i))] / 10;
+  const at = (i, j) => hs[Math.min(n - 1, Math.max(0, j)) * n + Math.min(n - 1, Math.max(0, i))] / 10;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const dx = (at(i + 1, j) - at(i - 1, j)) / (2 * step), dy = (at(i, j + 1) - at(i, j - 1)) / (2 * step);
@@ -94,7 +107,7 @@ async function relief(url, box, n, step) {
   tex.magFilter = tex.minFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
   const [x0, y0] = box;
-  return { texture: tex, box: [x0, y0, x0 + (n - 1) * step, y0 + (n - 1) * step] };
+  return { texture: tex, box: [x0, y0, x0 + (n - 1) * step, y0 + (n - 1) * step], sample };
 }
 
 const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ vertexColors: true }));
@@ -233,13 +246,22 @@ export class TileWorld {
     this.building = 0;
     this.roofs = new RoofBuilders();
     // Collision lookups across tiles; anywhere not loaded counts as solid.
+    // Game y = 0 is this height above sea level (IPR buildings are stored against it).
+    this.ref = index.iprRef ?? 180;
     this.grid = {
       res: RES,
+      height: (x, y) => this.heightAt(x, y),
       at: (x, y) => {
         const t = this.loaded.get(this.keyAt(x, y));
         return t ? t.grid.at(x, y) : 255;
       },
     };
+  }
+
+  // Terrain height (m above this.ref) at a point, 0 where nothing is loaded.
+  heightAt(x, y) {
+    const t = this.loaded.get(this.keyAt(x, y));
+    return t?.sample ? t.sample(x, y) : 0;
   }
 
   keyAt(x, y) { return `${Math.floor((x + this.ox) / this.T)}_${Math.floor((y + this.oy) / this.T)}`; }
@@ -311,11 +333,19 @@ export class TileWorld {
     const ms = {};
     let t0 = performance.now();
     const lap = (name) => { const t1 = performance.now(); ms[name] = Math.round(t1 - t0); t0 = t1; };
+    // Terrain first: everything in the tile stands on it.
+    const shade = this.index.terrain
+      ? await relief(`data/${this.area}_now/tiles/${k}.height.bin`, t.box, this.index.terrain.n, this.index.terrain.step, this.ref,
+        this.index.terrain.bare?.includes(k) ? `data/${this.area}_now/tiles/${k}.bare.bin` : null)
+      : null;
+    const hAt = shade ? shade.sample : () => 0;
     // Real 3D buildings from IPR where the area has them (unless ?osm), else OSM
-    // footprints extruded with straight-skeleton roofs in a worker.
+    // footprints extruded with straight-skeleton roofs in a worker, each set on the
+    // lowest ground under its footprint.
+    const onGround = own.map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))) }));
     const buildings = t.ipr && !this.osmBuildings
-      ? await iprMesh(`data/${this.area}_now/tiles/${k}.ipr.bin`, t.box)
-      : buildingMesh(await this.roofs.build({ buildings: own, size: data.size, origin: data.origin }));
+      ? await iprMesh(`data/${this.area}_now/tiles/${k}.ipr.bin`, t.box, this.index.iprRef != null)
+      : buildingMesh(await this.roofs.build({ buildings: onGround, size: data.size, origin: data.origin }));
     if (this.loaded.has(k)) return this.loaded.get(k);
     lap('buildings');
     // Spread the main-thread work over several frames.
@@ -324,18 +354,25 @@ export class TileWorld {
 
     const edges = this.driveBy.get(k) || [];
     const clipped = edges.flatMap((e) => clipLine(e.pts, t.box).map((pts) => ({ ...e, pts })));
-    const shade = this.index.terrain
-      ? await relief(`data/${this.area}_now/tiles/${k}.height.bin`, t.box, this.index.terrain.n, this.index.terrain.step)
-      : null;
-    if (this.loaded.has(k)) return this.loaded.get(k);
-    const surfaces = new Surfaces(geo, { edges: clipped, buildings: own, zones, time: this.time, relief: shade });
+    const surfaces = new Surfaces(geo, { edges: clipped, buildings: own, zones, time: this.time, relief: shade, height: shade ? hAt : null });
     group.add(surfaces.group);
     lap('ground');
     await breathe();
 
     const walls = buildWalls(data);
+    const wp = walls.geometry.attributes.position;
+    for (let i = 0; i < wp.count; i++) wp.setY(i, wp.getY(i) + hAt(wp.getX(i), -wp.getZ(i)));
     lap('walls');
     const trees = buildTrees(geo).mesh;
+    {
+      const m = new THREE.Matrix4();
+      for (let i = 0; i < trees.count; i++) {
+        trees.getMatrixAt(i, m);
+        m.elements[13] += hAt(m.elements[12], -m.elements[14]);
+        trees.setMatrixAt(i, m);
+      }
+      trees.instanceMatrix.needsUpdate = true;
+    }
     group.add(buildings, walls, trees);
     lap('trees');
     await breathe();
@@ -365,7 +402,7 @@ export class TileWorld {
     lap('parking');
     if (this.loaded.has(k)) { surfaces.dispose(); return this.loaded.get(k); }
     this.scene.add(group);
-    const tile = { k, box: t.box, group, surfaces, grid, cars, ms, disposables: [buildings, walls, trees], relief: shade };
+    const tile = { k, box: t.box, group, surfaces, grid, cars, ms, disposables: [buildings, walls, trees], relief: shade, sample: shade?.sample };
     this.loaded.set(k, tile);
     this.onCars(cars, tile);
     return tile;

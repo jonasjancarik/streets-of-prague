@@ -59,7 +59,7 @@ export class Trams {
 
   // Place the outer sections along the track behind and ahead of the middle one.
   // Trams far from (x, y) keep running but aren't drawn.
-  sync(x = 0, y = 0, r = Infinity) {
+  sync(x = 0, y = 0, r = Infinity, height = () => 0) {
     for (const v of this.list) {
       const mid = v.path.at(v.s);
       const show = Math.hypot(mid.x - x, mid.y - y) < r;
@@ -68,8 +68,10 @@ export class Trams {
       [-STEP, 0, STEP].forEach((o, i) => {
         const p = v.path.at(v.s + o);
         const m = v.sections[i];
-        m.position.set(p.x, 0, -p.y);
-        m.rotation.y = p.ang;
+        const fx = Math.cos(p.ang) * SECTION / 2, fy = Math.sin(p.ang) * SECTION / 2;
+        const hf = height(p.x + fx, p.y + fy), hb = height(p.x - fx, p.y - fy);
+        m.position.set(p.x, (hf + hb) / 2, -p.y);
+        m.rotation.set(0, p.ang, Math.atan2(hf - hb, SECTION), 'YZX');
       });
     }
   }

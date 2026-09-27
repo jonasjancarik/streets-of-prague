@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import proj4 from 'proj4';
 import { buildTransit } from '../transit.js';
 import { nearestWalkable } from '../player.js';
 import { DriveGraph, WalkGraph, buildDriveGraph, buildWalkGraph, StreetNames, SpatialHash, clamp } from './network.js';
@@ -8,6 +9,7 @@ import { Crowd, Walker } from './people.js';
 import { Trams } from './trams.js';
 import { Zones } from './parking.js';
 import { TileWorld } from './tiles.js';
+import { setupDev } from './dev.js';
 
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'centrum';
@@ -57,6 +59,7 @@ async function main() {
   const time = { value: 0 };
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, zones, time, night: params.has('night'), osmBuildings: params.has('osm') });
   const grid = world.grid;
+  const ground = (x, y) => world.heightAt(x, y);
   let crowd = null;
   world.onEdges = (d, w) => { names.add(d); names.add(w); crowd?.index(w); };
 
@@ -73,8 +76,10 @@ async function main() {
   const [w0, s0, e0, n0] = index.bbox_wgs84, lon0 = (w0 + e0) / 2, lat0 = (s0 + n0) / 2;
   const [slon, slat] = (params.get('start') || '14.4052,50.0808').split(',').map(Number);
   const inArea = slon > w0 && slon < e0 && slat > s0 && slat < n0;
-  const sx = inArea ? (slon - lon0) * 111320 * Math.cos((lat0 * Math.PI) / 180) : 0;
-  const sy = inArea ? (slat - lat0) * 110574 : 0;
+  // The pipeline's local metres: a transverse Mercator centred on the area.
+  const [sx, sy] = inArea
+    ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [slon, slat])
+    : [0, 0];
   status('Building the streets…');
   await world.loadNow(sx, sy, 380);
   const startEdge = drive.edges.reduce((best, e) => {
@@ -108,6 +113,7 @@ async function main() {
   let inCar = null;
   let height = 100;
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
+  let camGround = ground(walker.x, walker.y);
 
   const viewRadius = () => height * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
   const px = () => (inCar ? inCar.x : walker.x), py = () => (inCar ? inCar.y : walker.y);
@@ -190,6 +196,25 @@ async function main() {
     Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0 });
   };
 
+  // Jump anywhere in the area: load the tiles there first, then land on a pavement
+  // (or on the road, if you're driving) and bring the traffic and people along.
+  const teleportTo = async (x, y) => {
+    const who = inCar || walker;
+    Object.assign(who, { x, y, vx: 0, vy: 0 });
+    if (inCar) inCar.w = 0;
+    camPos.set(x, 0, -y);
+    await world.loadNow(x, y, 300);
+    if (inCar) backOnRoad();
+    else { [walker.x, walker.y] = nearestWalkable(grid, x, y, 150); walker.sync(); }
+    for (const a of [...traffic.agents]) traffic.release(a);
+    scatterPeople(false);
+    camPos.set(px(), 0, -py());
+    camGround = ground(px(), py());
+    street = null; // show the new street's name, not the old one
+    $('street').textContent = '';
+  };
+  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()] });
+
   // ---- Input -------------------------------------------------------------
   const input = { up: false, down: false, left: false, right: false, run: false, brake: false };
   const keymap = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'brake' };
@@ -261,7 +286,7 @@ async function main() {
       }
     }
     transit.update(dt);
-    trams.sync(camPos.x, -camPos.z, viewRadius() + 150);
+    trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground);
 
     const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5)];
     crowd.update(dt, threats);
@@ -348,8 +373,8 @@ async function main() {
       scatterPeople(true);
     }
     if (traffic.agents.length < TRAFFIC) traffic.spawn((x, y) => offscreen(x, y) && lifeSpots(px(), py(), 40)(x, y), edgesNear(px(), py(), LIFE_RADIUS));
-    crowd.render();
-    carPool.render(inCar ? [inCar, ...allCars()] : allCars());
+    crowd.render(ground);
+    carPool.render(inCar ? [inCar, ...allCars()] : allCars(), ground);
 
     // ---- Camera ----------------------------------------------------------
     const sp = inCar ? inCar.speed : 0;
@@ -360,8 +385,10 @@ async function main() {
     camPos.lerp(look, Math.min(1, dt * 4));
     shake *= Math.exp(-6 * dt);
     const jx = (Math.random() - 0.5) * shake * 2, jz = (Math.random() - 0.5) * shake * 2;
-    camera.position.set(camPos.x + jx, height, camPos.z + jz);
-    camera.lookAt(camPos.x + jx, 0, camPos.z + jz);
+    // Follow the ground under the view, smoothed so the camera doesn't bob over kerbs.
+    camGround += (ground(camPos.x, -camPos.z) - camGround) * Math.min(1, dt * 3);
+    camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
+    camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
 
     const ext = Math.max(90, height * 0.5);
     const sc = sun.shadow.camera;
@@ -371,7 +398,7 @@ async function main() {
       sc.far = 1400;
       sc.updateProjectionMatrix();
     }
-    sun.target.position.set(camPos.x, 0, camPos.z);
+    sun.target.position.set(camPos.x, camGround, camPos.z);
     sun.position.copy(sun.target.position).add(SUN_OFFSET);
 
     // ---- HUD -------------------------------------------------------------
@@ -391,6 +418,7 @@ async function main() {
     $('hint').innerHTML = hint;
     $('tally').textContent = `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over`;
 
+    dev.update();
     renderer.render(scene, camera);
   });
 
@@ -398,7 +426,7 @@ async function main() {
     scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer,
     get car() { return inCar; },
     teleport: (x, y) => { (inCar || walker).x = x; (inCar || walker).y = y; camPos.set(x, 0, -y); },
-    enterOrExit,
+    enterOrExit, teleportTo, dev,
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
   };
 }

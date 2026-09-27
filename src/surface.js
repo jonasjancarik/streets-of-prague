@@ -95,20 +95,70 @@ function skirts(ringsList, width, outside, skip = () => false) {
       }
     });
   }
-  const g = finish(pos, idx);
-  g.setAttribute('alpha', new THREE.Float32BufferAttribute(alpha, 1));
-  return g;
+  return finish(pos, idx, alpha);
 }
 
-function finish(pos, idx) {
+// Split every edge longer than `max` metres (in halves, repeatedly) so a flat mesh can
+// follow the terrain. The decision is per edge, so neighbours split the same edges and
+// no cracks open between them. `extra`: an optional per-vertex value to interpolate.
+function subdivide(pos, idx, extra, max) {
+  const max2 = max * max;
+  for (let pass = 0; pass < 12; pass++) {
+    const mids = new Map();
+    const long = (i, j) => {
+      const dx = pos[i * 3] - pos[j * 3], dz = pos[i * 3 + 2] - pos[j * 3 + 2];
+      return dx * dx + dz * dz > max2;
+    };
+    const mid = (i, j) => {
+      const k = i < j ? `${i},${j}` : `${j},${i}`;
+      let m = mids.get(k);
+      if (m === undefined) {
+        m = pos.length / 3;
+        pos.push((pos[i * 3] + pos[j * 3]) / 2, 0, (pos[i * 3 + 2] + pos[j * 3 + 2]) / 2);
+        if (extra) extra.push((extra[i] + extra[j]) / 2);
+        mids.set(k, m);
+      }
+      return m;
+    };
+    const out = [];
+    let split = false;
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = idx[t], b = idx[t + 1], c = idx[t + 2];
+      const s0 = long(a, b), s1 = long(b, c), s2 = long(c, a);
+      if (!s0 && !s1 && !s2) { out.push(a, b, c); continue; }
+      split = true;
+      const m0 = s0 ? mid(a, b) : -1, m1 = s1 ? mid(b, c) : -1, m2 = s2 ? mid(c, a) : -1;
+      if (s0 && s1 && s2) out.push(a, m0, m2, m0, b, m1, m2, m1, c, m0, m1, m2);
+      else if (s0 && s1) out.push(m0, b, m1, a, m0, m1, a, m1, c);
+      else if (s1 && s2) out.push(m1, c, m2, a, b, m1, a, m1, m2);
+      else if (s0 && s2) out.push(a, m0, m2, m0, b, c, m0, c, m2);
+      else if (s0) out.push(a, m0, c, m0, b, c);
+      else if (s1) out.push(a, b, m1, a, m1, c);
+      else out.push(a, b, m2, m2, b, c);
+    }
+    idx = out;
+    if (!split) break;
+  }
+  return idx;
+}
+
+// Set while a Surfaces is being built: terrain height (m) at a point, or null for flat.
+let groundHeight = null;
+
+function finish(pos, idx, extra = null) {
   // Wind every triangle to face up, so lighting never sees a back face.
   for (let t = 0; t < idx.length; t += 3) {
     const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
     const up = (pos[b + 2] - pos[a + 2]) * (pos[c] - pos[a]) - (pos[b] - pos[a]) * (pos[c + 2] - pos[a + 2]);
     if (up < 0) [idx[t + 1], idx[t + 2]] = [idx[t + 2], idx[t + 1]];
   }
+  if (groundHeight) {
+    idx = subdivide(pos, idx, extra, 8);
+    for (let i = 0; i < pos.length; i += 3) pos[i + 1] = groundHeight(pos[i], -pos[i + 2]);
+  }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  if (extra) g.setAttribute('alpha', new THREE.Float32BufferAttribute(extra, 1));
   const nor = new Float32Array(pos.length);
   for (let i = 1; i < nor.length; i += 3) nor[i] = 1;
   g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
@@ -119,7 +169,12 @@ function finish(pos, idx) {
 // One set of ground meshes for an area or a tile. `edges`: car network edges for the
 // centre lines (already clipped to the area); `buildings`: the ones to shade round.
 export class Surfaces {
-  constructor(geo, { edges = [], buildings = geo.data.buildings, zones = null, time = { value: 0 }, relief = null } = {}) {
+  constructor(geo, { edges = [], buildings = geo.data.buildings, zones = null, time = { value: 0 }, relief = null, height = null } = {}) {
+    groundHeight = height;
+    try { this.build(geo, { edges, buildings, zones, time, relief }); } finally { groundHeight = null; }
+  }
+
+  build(geo, { edges, buildings, zones, time, relief }) {
     this.group = new THREE.Group();
     this.time = time;
     const d = geo.data, A = d.areas, R = d.roads;
@@ -212,20 +267,46 @@ export class Surfaces {
     add(strips(trams.flatMap((pts) => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.1), COLORS.steel);
     add(strips(d.rails.filter((r) => r.kind === 'funicular').map((r) => r.pts), 3), COLORS.funicular, 'concrete');
 
-    // Road paint: dashed centre lines on two-way asphalt streets without trams, zebras.
+    // Road paint from OSM lanes: dashed lane dividers, a centre line (double solid on
+    // roads of four lanes or more) and edge lines on the main roads. Cobbled streets
+    // and the middle of tram streets stay unpainted.
     const cobbled = new Set(['sett', 'cobblestone', 'unhewn_cobblestone', 'paving_stones']);
+    const MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
+    const EDGE_LINES = new Set(['motorway', 'trunk', 'primary', 'motorway_link', 'trunk_link']);
     const near = (p) => trams.some((pts) => pts.some((q, i) => i && segDistPts(p, pts[i - 1], q) < 3));
-    const centre = edges.filter((e) => !e.oneway && e.u < e.v && !cobbled.has(e.surface)
-      && ['primary', 'secondary', 'tertiary', 'tertiary_link'].includes(e.hw)
-      && ![e.pts[0], e.pts[Math.floor(e.pts.length / 2)], e.pts[e.pts.length - 1]].some(near)).map((e) => e.pts);
-    add(strips(centre, 0.13, [3, 6]), COLORS.paint);
+    const dashed = [], solid = [];
+    for (const e of edges) {
+      const n = e.lanes || 0;
+      if (cobbled.has(e.surface) || (!MAJOR.has(e.hw) && n < 2)) continue;
+      if (!e.oneway && e.u > e.v) continue; // a two-way street has an edge each way: paint it once
+      const W = e.width, pts = e.pts;
+      if (e.oneway) {
+        const lanes = Math.max(1, n || 1), lw = W / lanes;
+        for (let k = 1; k < lanes; k++) dashed.push(offsetLine(pts, -W / 2 + k * lw));
+        if (EDGE_LINES.has(e.hw) || lanes > 1) solid.push(offsetLine(pts, W / 2 - 0.4), offsetLine(pts, -W / 2 + 0.4));
+        continue;
+      }
+      const per = Math.max(1, Math.floor(Math.max(2, n || 2) / 2)), lw = W / (2 * per);
+      if (![pts[0], pts[Math.floor(pts.length / 2)], pts[pts.length - 1]].some(near)) {
+        if (per >= 2) solid.push(offsetLine(pts, 0.15), offsetLine(pts, -0.15));
+        else dashed.push(pts);
+      }
+      for (let k = 1; k < per; k++) dashed.push(offsetLine(pts, k * lw), offsetLine(pts, -k * lw));
+      if (EDGE_LINES.has(e.hw)) solid.push(offsetLine(pts, W / 2 - 0.4), offsetLine(pts, -W / 2 + 0.4));
+    }
+    add(strips(dashed, 0.13, [3, 6]), COLORS.paint);
+    add(strips(solid, 0.13), COLORS.paint);
+    // Zebra crossings: bars along the road, one every metre across it.
     const bars = [];
     for (const pts of d.crossings || []) {
       for (let i = 0; i < pts.length - 1; i++) {
         const [ax, ay] = pts[i], [bx, by] = pts[i + 1], len = Math.hypot(bx - ax, by - ay);
         if (len < 1) continue;
-        const vx = -(by - ay) / len, vy = (bx - ax) / len;
-        for (let o = -1.5; o <= 1.51; o += 1) bars.push([[ax + vx * o, ay + vy * o], [bx + vx * o, by + vy * o]]);
+        const ux = (bx - ax) / len, uy = (by - ay) / len, vx = -uy, vy = ux;
+        for (let t = 0.5; t < len - 0.25; t += 1) {
+          const px = ax + ux * t, py = ay + uy * t;
+          bars.push([[px - vx * 1.5, py - vy * 1.5], [px + vx * 1.5, py + vy * 1.5]]);
+        }
       }
     }
     add(strips(bars, 0.5), COLORS.paint);

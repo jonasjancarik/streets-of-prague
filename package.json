@@ -8,6 +8,8 @@
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
+    "leaflet": "^1.9.4",
+    "proj4": "^2.22.0",
     "straight-skeleton": "^3.0.0",
     "three": "^0.186.1"
   },

@@ -48,6 +48,18 @@ function bezier(a, c, b, n = 8) {
 
 const CLASS_SPEED = { primary: 14, secondary: 13, tertiary: 12, tertiary_link: 9, residential: 9, unclassified: 9, living_street: 5, service: 5 };
 
+// Where traffic drives, right of the street's centre line: the outer lane on two-way
+// streets, the middle (or right of middle) lane on one-way ones.
+function laneOffset(e) {
+  const n = e.lanes || 0;
+  if (e.oneway) {
+    const lanes = Math.max(1, n || 1), lw = e.width / lanes;
+    return e.width / 2 - lw * (Math.floor((lanes - 1) / 2) + 0.5);
+  }
+  const per = Math.max(1, Math.floor(Math.max(2, n || 2) / 2)), lw = e.width / (2 * per);
+  return clamp(lw * (per - 0.5), 1.6, e.width / 2 - 1);
+}
+
 // The car network, filled in as tiles arrive. Edges are keyed by id and joined at
 // shared (OSM) node ids; `out` lists the edges leaving each node.
 export class DriveGraph {
@@ -63,7 +75,7 @@ export class DriveGraph {
       const known = this.byId.get(raw.id);
       if (known) return known;
       const e = { ...raw };
-      e.laneOffset = e.oneway ? 0 : clamp(e.width / 4, 1.6, 3);
+      e.laneOffset = laneOffset(e);
       e.path = new Polyline(offsetLine(e.pts, e.laneOffset));
       e.speed = e.maxspeed ? Math.min(e.maxspeed / 3.6, CLASS_SPEED[e.hw] || 9) : CLASS_SPEED[e.hw] || 9;
       this.byId.set(e.id, e);

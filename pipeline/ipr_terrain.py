@@ -233,15 +233,23 @@ def main(area: str = "centrum") -> None:
     if lo == math.inf:
         print("no terrain")
         return
-    lift_bridges(out_dir, index, tiles, N, T, gx0, gy0)
     # Anything no sheet covers gets the area's mean height: flat, so unshaded.
     known = np.concatenate([a[~np.isnan(a)] for a in tiles.values()])
     mean = float(known.mean()) if known.size else lo
-    for (i, j), arr in tiles.items():
+    for arr in tiles.values():
         arr[np.isnan(arr)] = mean
-        dm = np.clip(np.round((arr - 100) * 10), 0, 65535).astype("<u2")
-        (out_dir / "tiles" / f"{i}_{j}.height.bin").write_bytes(dm.tobytes())
-    index["terrain"] = {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi)}
+    bare = {k: a.copy() for k, a in tiles.items()}
+    lift_bridges(out_dir, index, tiles, N, T, gx0, gy0)
+    encode = lambda a: np.clip(np.round((a - 100) * 10), 0, 65535).astype("<u2").tobytes()  # noqa: E731
+    with_bridges = []
+    for (i, j), arr in tiles.items():
+        (out_dir / "tiles" / f"{i}_{j}.height.bin").write_bytes(encode(arr))
+        # Where a bridge was raised, keep the bare ground too: hill shading comes from
+        # that, so a raised deck doesn't cast a fake slope onto the river.
+        if not np.array_equal(arr, bare[(i, j)]):
+            (out_dir / "tiles" / f"{i}_{j}.bare.bin").write_bytes(encode(bare[(i, j)]))
+            with_bridges.append(f"{i}_{j}")
+    index["terrain"] = {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi), "bare": with_bridges}
     (out_dir / "index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")))
     print(f"terrain {lo:.0f}–{hi:.0f} m for {len(index['tiles'])} tiles")
 

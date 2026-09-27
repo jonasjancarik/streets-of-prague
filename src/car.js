@@ -106,9 +106,15 @@ export class Car {
       if (vf > 0.3) vf = Math.max(0, vf - 16 * dt);
       else vf = Math.max(-S.vmax * 0.3, vf - S.accel * 0.6 * dt);
     } else {
-      vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.mode === 'player' ? 1.8 : 5) * dt);
+      vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.mode === 'player' ? 0.6 : 5) * dt);
     }
     if (ctl.handbrake) vf -= Math.sign(vf) * Math.min(Math.abs(vf), 5 * dt);
+    // Hills: gravity along the car's heading (rolls back down, slower uphill).
+    if (grid.height) {
+      const half = S.L / 2;
+      const slope = (grid.height(this.x + fx * half, this.y + fy * half) - grid.height(this.x - fx * half, this.y - fy * half)) / S.L;
+      vf -= 9.81 * slope * dt;
+    }
 
     const grip = ctl.handbrake ? 1.1 : S.grip * (1 - 0.45 * fast);
     vl *= Math.exp(-grip * dt);
@@ -188,7 +194,8 @@ export class CarPool {
     this.dummy = new THREE.Object3D();
   }
 
-  render(cars) {
+  // `height(x, y)`: terrain height; cars sit on it, pitched and rolled to the slope.
+  render(cars, height = null) {
     for (const list of this.groups.values()) list.length = 0;
     for (const c of cars) {
       if (!this.groups.has(c.key)) this.groups.set(c.key, []);
@@ -206,8 +213,16 @@ export class CarPool {
         this.meshes.set(k, m);
       }
       list.forEach((c, i) => {
-        d.position.set(c.x, 0, -c.y);
-        d.rotation.set(0, c.h, 0);
+        if (height) {
+          const fx = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
+          const hf = height(c.x + fx * L, c.y + fy * L), hb = height(c.x - fx * L, c.y - fy * L);
+          const hl = height(c.x - fy * W, c.y + fx * W), hr = height(c.x + fy * W, c.y - fx * W);
+          d.position.set(c.x, (hf + hb + hl + hr) / 4, -c.y);
+          d.rotation.set(Math.atan2(hl - hr, 2 * W), c.h, Math.atan2(hf - hb, 2 * L), 'YZX');
+        } else {
+          d.position.set(c.x, 0, -c.y);
+          d.rotation.set(0, c.h, 0);
+        }
         d.updateMatrix();
         m.setMatrixAt(i, d.matrix);
       });
