@@ -121,16 +121,15 @@ vec3 flatRoof(vec3 c, vec2 wp) {
   c *= .86 + .22 * fbm(wp * .5);
   return c + (vnoise(wp * 18.) - .5) * .08 * detail(wp, .05);
 }
-vec3 facade(vec3 c, vec3 w, vec3 n) {
-  vec2 t = normalize(vec2(-n.z, n.x));
-  float along = dot(w.xz, t), h = w.y;
+vec3 facade(vec3 c, vec2 f) {
+  float along = f.x, h = f.y;
   float bay = fract(along / 1.9), storey = fract((h - .6) / 3.4);
   float upper = step(4., h);
   float win = step(.3, bay) * step(bay, .7) * step(.3, storey) * step(storey, .78) * upper;
   float shop = step(.12, bay) * step(bay, .88) * step(.6, h) * step(h, 3.3) * (1. - upper);
   vec3 glass = vec3(.16, .19, .23) + .06 * vnoise(vec2(along, h) * .7);
   float m = max(win, shop * .85);
-  float d = detail(w.xz + vec2(h), .9);
+  float d = detail(f, .9);
   c = mix(c, glass, m * d);
   return mix(c, c * 1.08, (1. - m) * step(.92, storey) * upper * d);           // cornice line
 }
@@ -145,17 +144,17 @@ export function shadeBuildings(material) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uCut = CUTAWAY;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);');
+      .replace('#include <common>', '#include <common>\nattribute vec2 facade;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec2 vFacade;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nuniform vec4 uCut;\n${NOISE_GLSL}\n${BUILDING_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec2 vFacade;\nuniform vec4 uCut;\n${NOISE_GLSL}\n${BUILDING_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
   if (bn.y > .97) diffuseColor.rgb = flatRoof(diffuseColor.rgb, bwp);
   else if (bn.y > .15) diffuseColor.rgb = roofTiles(diffuseColor.rgb, bwp, bn);
-  else diffuseColor.rgb = facade(diffuseColor.rgb, vWorld, bn);`);
+  else diffuseColor.rgb = facade(diffuseColor.rgb, vFacade);`);
   };
   material.customProgramCacheKey = () => 'buildings-procedural';
   material.needsUpdate = true;
