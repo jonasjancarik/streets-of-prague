@@ -131,14 +131,18 @@ function slots(data, edges) {
   for (const e of edges) {
     if (e.bridge || e.path.length < 30) continue;
     // Each side as OSM tags it (`park`: [right, left] of this edge); parallel if it
-    // doesn't say. Parallel cars stand in the carriageway along its edge. Angled and
-    // perpendicular ones stand just outside it, their front (or back) at its edge: OSM
-    // street widths usually leave such parking out, so inside it they'd block the
-    // lane. Where a building is in the way there, they don't fit (see place()).
+    // doesn't say. Cars stand along the kerb (`kerb`: its distance from the centre on
+    // the right and left, from the pipeline's kerbs.py), angled and perpendicular ones
+    // never inside the driving width, where they'd block the lane. Tiles built before
+    // the kerbs only have that width: parallel cars stand inside its edge, the others
+    // just outside it. Where a building is in the way, they don't fit (see place()).
     for (const side of e.oneway ? [1, -1] : [1]) {
       const o = e.park?.[side > 0 ? 0 : 1] || 'parallel';
       if (o === 'no') continue;
-      const kerb = e.width / 2 + { parallel: -1.05, diagonal: 2.55, perpendicular: 2.5 }[o];
+      const edge = e.kerb?.[side > 0 ? 0 : 1];
+      const kerb = edge == null
+        ? e.width / 2 + { parallel: -1.05, diagonal: 2.55, perpendicular: 2.5 }[o]
+        : o === 'parallel' ? edge - 1.05 : Math.max(edge - 2.45, e.width / 2 + 2.55);
       if (o === 'parallel' && Math.abs(side * kerb - e.laneOffset) < 2.3) continue;
       const step = { parallel: 6, diagonal: ANGLED_STEP, perpendicular: 2.6 }[o];
       // Angled cars nose in: turned right on the right-hand side, left on the left.
@@ -162,7 +166,8 @@ function slots(data, edges) {
 export function parkCars({ data, edges, zones, solid, r, night = false, shares = null, inside = () => true }) {
   const railSegs = [];
   for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
-  const nearRail = (x, y) => railSegs.some(([a, b]) => segDist(x, y, a, b) < 3.2);
+  // Half a tram and half a car apart, and a little room between them.
+  const nearRail = (x, y) => railSegs.some(([a, b]) => segDist(x, y, a, b) < 2.6);
   const cars = [];
   const cell = new Map();
   const key = (x, y) => `${Math.floor(x / 5)},${Math.floor(y / 5)}`;

@@ -17,6 +17,8 @@ from shapely import STRtree
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import transform, unary_union
 
+from kerbs import Kerbs, estimate
+
 AREAS = {
     # west, south, east, north (WGS84)
     "ujezd": (14.3985, 50.0765, 14.4155, 50.0865),
@@ -97,6 +99,8 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
     lots = []  # each parking area on its own, with how the cars stand in it
     homes = []  # landuse=residential, where gardens may be (see _gardens)
     streets = []  # car roads other than service roads, which cut residential areas into blocks
+    car_ways = []  # (line, what its tags say, class, a street?), sized after the loop
+    sidewalks = []  # footways and paths with their half widths, which may run along a street
 
     for _, row in gdf.iterrows():
         g = row.geometry
@@ -151,9 +155,14 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
             if hw == "footway" and col(row, "footway") == "crossing":
                 crossings.extend(_coords(ls) for ls in _lines(g.intersection(clip)))
                 continue
+            if hw in ("footway", "path") and col(row, "footway") not in ("traffic_island", "link"):
+                sidewalks.extend((ls, width / 2, col(row, "footway") == "sidewalk") for ls in _lines(g))
+            if hw in CAR_ROADS:
+                # Sized kerb to kerb once the pavements and tracks are all in (kerbs.py).
+                est = estimate(width, lambda k: col(row, k), not col(row, "width") and not col(row, "lanes"))
+                car_ways.extend((ls, est, cls, hw != "service") for ls in _lines(g))
+                continue
             road_lines.setdefault(cls, []).append(g.buffer(width / 2, cap_style="round", join_style="round"))
-            if hw in CAR_ROADS and hw != "service":
-                streets.append(road_lines[cls][-1])
             continue
         if hw == "pedestrian" and isinstance(g, (Polygon, MultiPolygon)):
             areas.setdefault("square", []).append(g)
@@ -195,6 +204,14 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
             elif (col(row, "man_made") == "bridge" or col(row, "bridge")) and not b:
                 areas.setdefault("bridge", []).append(g.buffer(0))
 
+    kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways])
+    for (ls, _, cls, street), (left, right) in zip(car_ways, kerbs([w[0] for w in car_ways], [w[1] for w in car_ways])):
+        # Each side out to its kerb, and round ends so streets join up at crossroads.
+        poly = unary_union([ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),
+                            ls.buffer(min(left, right), cap_style="round", join_style="round")])
+        road_lines.setdefault(cls, []).append(poly)
+        if street:
+            streets.append(poly)
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
     gardens = _gardens(homes, buildings, streets, clip)
@@ -204,7 +221,7 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "areas": area_polys, "roads": road_polys, "rails": rails,
         "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
-        "lots": lots,
+        "lots": lots, "kerbs": kerbs,
     }
 
 

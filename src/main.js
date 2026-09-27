@@ -128,7 +128,7 @@ async function main() {
   const walker = new Walker(grid, kit);
   scene.add(walker.mesh);
   {
-    const side = startEdge.width / 2 + 1.2;
+    const side = (startEdge.kerb?.[0] ?? startEdge.width / 2) + 1.2;
     const [x, y] = nearestWalkable(grid, q.x + Math.sin(q.ang) * side, q.y - Math.cos(q.ang) * side);
     Object.assign(walker, { x, y, h: q.ang });
     walker.sync();

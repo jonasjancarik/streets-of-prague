@@ -155,7 +155,11 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   in. Sides tagged as having no parking (or parking mapped separately) get
   no kerbside cars. Underground, multi-storey and rooftop car parks stay empty.
 - **Roads** are sized and marked from OSM `lanes`: dashed dividers, double centre
-  lines on four lanes or more, edge lines on the main roads.
+  lines on four lanes or more, edge lines on the main roads. The asphalt reaches out
+  to each kerb on its own (`pipeline/kerbs.py`): past the lanes to take in a tram
+  track running in the street and a tagged parking lane, and where the pavement is
+  mapped as its own way beside the street, up to that pavement's inner edge. Parked
+  cars stand along that kerb.
 - **Passages through buildings** (OSM `tunnel=building_passage`: gateways, arcades,
   Prague's pasáže) are cut out of the buildings' collision footprint and stay in the
   street graphs, so cars, traffic and people go through. While you're in one, a round

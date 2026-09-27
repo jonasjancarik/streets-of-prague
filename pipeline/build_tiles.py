@@ -31,7 +31,8 @@ from pyproj import Transformer
 from shapely import STRtree
 from shapely.geometry import LineString, Point, Polygon, box
 
-from osm_area import AREAS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, extract, road_width, use_overpass_mirror
+from kerbs import NO_PARKING, estimate
+from osm_area import AREAS, CAR_ROADS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, extract, road_width, use_overpass_mirror
 
 MARGIN = 150.0
 # A local OpenStreetMap extract, if there is one, is much faster and kinder than
@@ -87,8 +88,7 @@ def values(v):
 
 # Street-side parking tags: the current scheme, then the older parking:lane:* one.
 PARKING_TAGS = [f"parking:{s}{k}" for s in ("both", "left", "right") for k in (":orientation", "")] + \
-    [f"parking:lane:{s}" for s in ("both", "left", "right")]
-NO_PARKING = {"no", "separate", "no_parking", "no_stopping", "fire_lane"}
+    [f"parking:lane:{s}{k}" for s in ("both", "left", "right") for k in ("", *(f":{o}" for o in ORIENTATIONS))]
 
 
 def kerb_parking(d, side):
@@ -107,8 +107,9 @@ def kerb_parking(d, side):
     return None
 
 
-def graph_edges(bbox, tf, network, directed, source=None):
-    """Edges of an osmnx network as dicts with OSM node ids and local-metre polylines."""
+def graph_edges(bbox, tf, network, directed, source=None, kerbs=None):
+    """Edges of an osmnx network as dicts with OSM node ids and local-metre polylines;
+    with `kerbs` (kerbs.Kerbs), car roads get their kerbs as `kerb`: [right, left]."""
     if source:
         # The same network osmnx would ask Overpass for, built from the local cut.
         data = ox._osm_xml._overpass_json_from_xml(Path(source), "utf-8")
@@ -124,7 +125,7 @@ def graph_edges(bbox, tf, network, directed, source=None):
     if directed:
         # Strongly connected, so a car can always leave any street it turns into.
         G = ox.truncate.largest_component(G, strongly=True)
-    out, seen = [], set()
+    out, seen, sized = [], set(), []
     for u, v, k, d in G.edges(keys=True, data=True):
         if not directed:
             key = (min(u, v), max(u, v), k)
@@ -140,16 +141,26 @@ def graph_edges(bbox, tf, network, directed, source=None):
         # Kerbside parking on the edge's right and left; an edge that runs against its
         # way (the far lane of a two-way street) has the way's sides swapped.
         right, left = kerb_parking(d, "right"), kerb_parking(d, "left")
-        if truthy(d.get("reversed")):
+        rev = truthy(d.get("reversed"))
+        if rev:
             right, left = left, right
+        width = road_width(hw, _float(first(d.get("width"))), _float(first(d.get("lanes"))))
+        if kerbs and hw in CAR_ROADS:
+            est = estimate(width, lambda key: first(d.get(key)), first(d.get("width")) is None and first(d.get("lanes")) is None)
+            if rev:
+                est["left"], est["right"] = est["right"], est["left"]
+            sized.append((len(out), LineString(pts), est))
         out.append({
             "id": f"{u}>{v}>{k}", "u": str(u), "v": str(v), "hw": hw, "name": first(d.get("name")),
             "oneway": truthy(d.get("oneway")), "lanes": _float(first(d.get("lanes"))),
-            "maxspeed": _float(first(d.get("maxspeed"))), "width": road_width(hw, _float(first(d.get("width"))), _float(first(d.get("lanes")))),
+            "maxspeed": _float(first(d.get("maxspeed"))), "width": width,
             "bridge": truthy(d.get("bridge")), "surface": first(d.get("surface")), "pts": pts,
             **({"passage": True} if "building_passage" in values(d.get("tunnel")) else {}),
             **({"park": [right, left]} if directed and (right or left) else {}),
         })
+    if sized:
+        for (i, _, _), (left, right) in zip(sized, kerbs([s[1] for s in sized], [s[2] for s in sized])):
+            out[i]["kerb"] = [right, left]
     return out
 
 
@@ -174,7 +185,7 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
     use_overpass_mirror()
     if "surface" not in ox.settings.useful_tags_way:
         ox.settings.useful_tags_way = [*ox.settings.useful_tags_way, "surface"]  # asphalt vs setts
-    ox.settings.useful_tags_way = [*dict.fromkeys([*ox.settings.useful_tags_way, *PARKING_TAGS])]
+    ox.settings.useful_tags_way = [*dict.fromkeys([*ox.settings.useful_tags_way, *PARKING_TAGS, "embedded_rails"])]
 
     sections = []
     parking = OUT / f"{area}_parking.json"
@@ -202,7 +213,7 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
         print(f"chunk {number}/{len(chunks)} ({ci},{cj})")
         source = cut(bbox, PBF.parent / f"{area}_{ci}_{cj}.osm", area_pbf) if area_pbf else None
         x = extract(area, bbox=bbox, centre=centre, source=source)
-        drive = graph_edges(bbox, tf, "drive", True, source)
+        drive = graph_edges(bbox, tf, "drive", True, source, x["kerbs"])
         walk = graph_edges(bbox, tf, "walk", False, source)
 
         shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in x["buildings"]]
