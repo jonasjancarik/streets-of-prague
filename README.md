@@ -20,6 +20,8 @@ the historic centre and `?area=ujezd` a small test area. The game's clock starts
 now; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
 (with night-time parking). `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
+The game draws at the screen's pixel ratio (up to 2) and steps it down while frames take
+too long; `?dpr=1` fixes it.
 
 ## Playing
 
@@ -275,9 +277,11 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 - **Parking.** `build_parking.py` reads the monthly TSK occupancy GeoJSON collected by
   `~/projects/parkovani-praha` (set `PARKING_DATA` to point elsewhere).
 
-Sizes: centrum is 234 tiles and about 36 MB; the whole city 13,609 tiles, 247k OSM
-buildings and IPR buildings in 4,326 tiles, about 580 MB. The caches (OSM extract and
-IPR sheets) are about 7.5 GB.
+Sizes: centrum is 234 tiles and about 22 MB; the whole city 13,609 tiles, 247k OSM
+buildings and IPR buildings in 4,326 tiles, about 580 MB. The tiles' binary files
+(IPR's buildings, the terrain) are gzipped (`.bin.gz`) and unpacked by the game. The
+caches (OSM extract and IPR sheets) are about 7.5 GB, and what the pipeline keeps of
+them once read about 2 GB more.
 
 ## Deploying
 

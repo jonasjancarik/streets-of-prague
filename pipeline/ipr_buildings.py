@@ -4,7 +4,7 @@ shapes, towers, domes and dormers) for the tiles made by build_tiles.py.
     uv run ipr_buildings.py centrum            # after build_tiles.py centrum
     uv run ipr_buildings.py praha --jobs 4     # sheets read side by side (default: cores - 2)
 
-For every tile it writes tiles/<i>_<j>.ipr.bin next to the tile JSON: the triangles of
+For every tile it writes tiles/<i>_<j>.ipr.bin.gz next to the tile JSON: the triangles of
 every building whose footprint centre is in the tile, with roof or wall colours; the
 tile JSON gets "ipr" so the game draws these instead of extruding OSM footprints. OSM
 buildings that no IPR building stands on (newer ones, sheds, anything past the edge of
@@ -346,7 +346,7 @@ def main() -> None:
         n_tris = len(col) // 3
         pad = (4 - (8 + pos_arr.nbytes) % 4) % 4
         blob = struct.pack("<II", n_tris, len(blist)) + pos_arr.tobytes() + b"\0" * pad + col.tobytes()
-        layers.write(out_dir / "tiles" / f"{i}_{j}.ipr.bin", blob)
+        layers.write_bin(out_dir / "tiles", f"{i}_{j}.ipr.bin", blob)
         missing = [layers.building_key(b) for b in osm_by_tile[(i, j)][0] if b["own"] and not covered(b)]
         extra += len(missing)
         tiles[f"{i}_{j}"] = {"buildings": len(blist), "triangles": n_tris, "noIpr": missing}
@@ -354,10 +354,10 @@ def main() -> None:
     # Tiles that no longer get IPR buildings go back to OSM ones.
     for i, j in osm_by_tile:
         if (i, j) not in per_tile:
-            (out_dir / "tiles" / f"{i}_{j}.ipr.bin").unlink(missing_ok=True)
+            layers.remove_bin(out_dir / "tiles", f"{i}_{j}.ipr.bin")
     # Heights in the .ipr.bin are above iprRef, in metres a.s.l.
-    layers.write_layer(area, "ipr", {"iprRef": REF_HEIGHT, "tiles": tiles})
-    print(f"{len(per_tile)} tiles with IPR buildings, {total / 1e6:.1f} MB; {extra} OSM buildings IPR doesn't have")
+    layers.write_layer(area, "ipr", {"iprRef": REF_HEIGHT, "gzip": True, "tiles": tiles})
+    print(f"{len(per_tile)} tiles with IPR buildings, {total / 1e6:.1f} MB before gzip; {extra} OSM buildings IPR doesn't have")
     layers.assemble(area)
 
 

@@ -24,6 +24,7 @@ IPR doesn't have); terrain raises bridges from the ground layer. build_tiles.py 
 which of the two to run again.
 """
 
+import gzip
 import json
 from pathlib import Path
 
@@ -39,6 +40,23 @@ EMPTY = {
     "parking": {"sections": []},
 }
 ORDER = ["areas", "lots", "roads", "buildings", "walls", "rails", "passages", "weirs", "crossings", "trees", "drive", "walk", "sections"]
+
+
+def gzip_bytes(raw: bytes) -> bytes:
+    """Gzipped the same way every time (no timestamp), so unchanged files stay unchanged."""
+    return gzip.compress(raw, compresslevel=9, mtime=0)
+
+
+def write_bin(tiles_dir: Path, name: str, raw: bytes) -> bool:
+    """A tile's binary file, gzipped (<name>.gz; the game unpacks it), in place of an
+    uncompressed one from before."""
+    (tiles_dir / name).unlink(missing_ok=True)
+    return write(tiles_dir / f"{name}.gz", gzip_bytes(raw))
+
+
+def remove_bin(tiles_dir: Path, name: str):
+    for p in (tiles_dir / name, tiles_dir / f"{name}.gz"):
+        p.unlink(missing_ok=True)
 
 
 def dumps(obj):
@@ -157,7 +175,8 @@ def assemble(area: str) -> dict:
                     b["noIpr"] = True
             t["ipr"] = {"buildings": got["buildings"], "triangles": got["triangles"]}
         written += write(out_dir / "tiles" / f"{k}.json", dumps(t))
-        listed.append([i, j, sum(b["own"] for b in t["buildings"])])
+        # Whether it has IPR's buildings, so the game can fetch them with the rest.
+        listed.append([i, j, sum(b["own"] for b in t["buildings"]), *([int(bool(got))] if ipr else [])])
     index = {
         "area": area, "bbox_wgs84": meta["bbox_wgs84"],
         "size": meta["size"], "origin": meta["origin"],
@@ -169,6 +188,12 @@ def assemble(area: str) -> dict:
         index["iprRef"] = ipr["iprRef"]
     if terrain:
         index["terrain"] = terrain["index"]
+    # The tiles' .bin files are gzipped (.bin.gz) since both IPR steps do it.
+    gz = [bool(layer.get("gzip")) for layer in (ipr, terrain) if layer]
+    if gz and all(gz):
+        index["gzip"] = True
+    elif any(gz):
+        print("the IPR buildings and the terrain were built by different versions: run both again")
     write(out_dir / "index.json", dumps(index))
     write(out_dir / "names.json", dumps({k: v[1:] for k, v in sorted(names.items())}))
     print(f"{area}: {len(listed)} tiles, {written} changed → {out_dir.name}/")

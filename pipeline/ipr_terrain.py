@@ -4,9 +4,9 @@ terrain model (a TIN with ~10 m spacing, CityGML), for hill shading in the game.
     uv run ipr_terrain.py centrum            # after build_tiles.py centrum
     uv run ipr_terrain.py praha --jobs 4     # sheets read side by side (default: cores - 2)
 
-Writes tiles/<i>_<j>.height.bin: a (N+1) x (N+1) grid of heights every 4 m across
+Writes tiles/<i>_<j>.height.bin.gz: a (N+1) x (N+1) grid of heights every 4 m across
 the tile (N = tile / 4), as little-endian uint16 decimetres above 100 m a.s.l.,
-rows from the tile's south edge; and "terrain" in index.json with the grid step (kept
+rows from the tile's south edge, gzipped; and "terrain" in index.json with the grid step (kept
 as the terrain layer, see layers.py). Bridge decks are raised from the streets and
 bridges of the ground layer. Each sheet's heights on the area's grid are kept in
 pipeline/.cache/ipr/parsed/, so running this again after the ground changed takes
@@ -335,15 +335,15 @@ def main() -> None:
     encode = lambda a: np.clip(np.round((a - 100) * 10), 0, 65535).astype("<u2").tobytes()  # noqa: E731
     with_bridges = []
     for (i, j), arr in tiles.items():
-        layers.write(out_dir / "tiles" / f"{i}_{j}.height.bin", encode(arr))
+        layers.write_bin(out_dir / "tiles", f"{i}_{j}.height.bin", encode(arr))
         # Where a bridge was raised, keep the bare ground too: hill shading comes from
         # that, so a raised deck doesn't cast a fake slope onto the river.
         if not np.array_equal(arr, bare[(i, j)]):
-            layers.write(out_dir / "tiles" / f"{i}_{j}.bare.bin", encode(bare[(i, j)]))
+            layers.write_bin(out_dir / "tiles", f"{i}_{j}.bare.bin", encode(bare[(i, j)]))
             with_bridges.append(f"{i}_{j}")
         else:
-            (out_dir / "tiles" / f"{i}_{j}.bare.bin").unlink(missing_ok=True)
-    layers.write_layer(area, "terrain", {"index": {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi), "bare": with_bridges}})
+            layers.remove_bin(out_dir / "tiles", f"{i}_{j}.bare.bin")
+    layers.write_layer(area, "terrain", {"gzip": True, "index": {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi), "bare": with_bridges}})
     print(f"terrain {lo:.0f}–{hi:.0f} m for {len(tiles)} tiles")
     layers.assemble(area)
 
