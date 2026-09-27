@@ -11,6 +11,7 @@ import { Trams } from './trams.js';
 import { TramRide, FAST } from './ride.js';
 import { Clock } from './clock.js';
 import { StopBoard } from './board.js';
+import { Metro } from './metro.js';
 import { TileWorld } from './tiles.js';
 import { CUTAWAY } from './shading.js';
 import { setupDev } from './dev.js';
@@ -37,6 +38,8 @@ async function main() {
   const index = await fetch(`data/${AREA}_now/index.json`).then((r) => r.json());
   // Tram lines (pipeline/build_lines.py); without them there are no trams.
   const lines = fetch(`data/${AREA}_now/lines.json`).then((r) => (r.ok ? r.json() : { lines: [] })).catch(() => ({ lines: [] }));
+  // The metro (pipeline/build_metro.py); without it there are no entrances.
+  const metroData = fetch(`data/${AREA}_now/metro.json`).then((r) => (r.ok ? r.json() : { lines: [] })).catch(() => ({ lines: [] }));
   const seeded = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -105,6 +108,16 @@ async function main() {
   const trams = new Trams((await lines).lines, scene, { clock, rng: seeded });
   const ride = new TramRide(trams, world, $('ride'));
   const board = new StopBoard(trams, $('board'));
+  // Down into the metro and up again at the station you picked (the police lose you).
+  const metro = new Metro(await metroData, scene, $('metro'), {
+    clock,
+    inMap: (x, y) => world.available.has(world.keyAt(x, y)),
+    onArrive: async (x, y, name) => {
+      await teleportTo(x, y);
+      walker.mesh.visible = true;
+      showBanner(name);
+    },
+  });
   const footfall = await footfallLoad;
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
@@ -287,6 +300,11 @@ async function main() {
       walker.mesh.visible = false;
       return;
     }
+    const station = metro.near(walker.x, walker.y);
+    if (station) {
+      metro.open(station);
+      return;
+    }
     let best = null, bestD = Infinity;
     for (const c of allCars()) {
       const d = Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2;
@@ -380,6 +398,12 @@ async function main() {
   const input = { up: false, down: false, left: false, right: false, run: false, brake: false };
   const keymap = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'brake' };
   addEventListener('keydown', (e) => {
+    // The metro screen takes the keys while it's up.
+    if (metro.active) {
+      metro.key(e.code);
+      e.preventDefault();
+      return;
+    }
     if (keymap[e.code]) { input[keymap[e.code]] = true; e.preventDefault(); }
     if (e.shiftKey) input.run = true;
     if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) enterOrExit();
@@ -606,11 +630,13 @@ async function main() {
     waitScale += ((waiting ? FAST : 1) - waitScale) * Math.min(1, dt * (waiting ? 1.5 : 4));
     if (Math.abs(waitScale - (waiting ? FAST : 1)) < 0.02) waitScale = waiting ? FAST : 1;
     const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : waitScale;
-    const steps = Math.ceil(scale - 1e-6);
+    const steps = metro.active ? 0 : Math.ceil(scale - 1e-6); // underground, the street waits
     for (let i = 0; i < steps; i++) simulate((dt * scale) / steps, ctl);
     input.jump = false;
     if (ride.on && ride.arrived()) getOff();
     trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground);
+    metro.update(dt);
+    metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     crowd.render(ground);
     police.render(ground, time.value);
     carPool.render(inCar ? [inCar, ...allCars()] : allCars(), ground, dt);
@@ -662,6 +688,7 @@ async function main() {
     if (clock.label() !== clockShown) $('clock').textContent = clockShown = clock.label();
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
     const canBoard = !inCar && !inHeli && !ride.on && ride.boardable(walker.x, walker.y);
+    const station = !inCar && !inHeli && !ride.on && !metro.active ? metro.near(walker.x, walker.y) : null;
     const gap = (c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2;
     const enterable = !inCar && !inHeli && !ride.on && [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8).sort((a, b) => gap(a) - gap(b))[0];
     const canEnter = !inCar && !inHeli && !ride.on && (!!enterable || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
@@ -691,6 +718,7 @@ async function main() {
       }
       hint = parts.join(' · ');
     } else if (canBoard && !touch.active) hint = `<b>E</b> get on the ${canBoard.line.ref} to ${ride.headsign(canBoard)}`;
+    else if (station && !touch.active) hint = `<b>E</b> take the metro from ${station.name}`;
     else if (board.shown) {
       const wait = waitScale > 1.5 ? `Waiting for a tram · ${Math.round(waitScale)}× speed` : touch.active ? '' : 'Hold <b>Space</b> to wait for a tram';
       hint = [canEnter && !touch.active ? getIn : '', wait].filter(Boolean).join(' · ');
@@ -698,7 +726,7 @@ async function main() {
     $('hint').innerHTML = hint;
     ride.render();
     const label = ride.on ? (ride.atStop() ? 'Get off' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : canBoard || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
-    touch.update({ car: inCar || inHeli, tram: ride.on, wait: !!board.shown, label, canEnter: canEnter || !!canBoard, tripped: ctl.run && assist.tripped });
+    touch.update({ car: inCar || inHeli, tram: ride.on, wait: !!board.shown, label: label || (station ? 'Metro' : null), canEnter: canEnter || !!canBoard || !!station, tripped: ctl.run && assist.tripped });
     $('tally').textContent = `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`;
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
@@ -716,7 +744,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

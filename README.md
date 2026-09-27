@@ -31,6 +31,12 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   lane, and A/D then pick the turn at the next junction instead of steering. It only
   works within the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
   trunk roads, 80 on motorways): speed and it lets go; 5 km/h under the limit it's back.
+- **Metro**: the M signs are the real entrances. Press E at one to go down, pick a
+  station on any line (W/S, A/D for the line, E to go, or tap), and the ride plays out
+  on the line's map: the wait for a train, the stations going by, a change of line
+  where you need one, with the clock moving on by the real times (`src/metro.js`).
+  You come up at an entrance of that station, and the police have lost you. After
+  midnight the metro is shut until about five.
 - **Tram stops**: stand at one and the HUD lists the next trams due, counting down
   (`src/board.js`). Hold Space (on touch, "Hold to wait") to fast-forward until one is
   about to arrive.
@@ -205,6 +211,7 @@ uv run build_tiles.py centrum      # today's map + street graphs in tiles → pu
 uv run ipr_buildings.py centrum    # IPR's 3D buildings into the tiles
 uv run ipr_terrain.py centrum      # IPR's terrain: heights, bridges, hill shading
 uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
+uv run build_metro.py centrum      # the metro from PID's timetables → metro.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 ```
 
@@ -232,6 +239,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `pid_timetable.py` downloads the GTFS feed (about 50 MB, again when it's a week old)
   into `pipeline/.cache/pid/` and reduces it to a summary of every tram and metro trip.
   Without it, every line runs every 8 minutes.
+- **Metro.** `build_metro.py` takes the metro from the same timetables: each line's
+  stations in order with the typical minutes between them, how often it runs, and
+  every station's entrances (PID's feed has them all, 331). It follows the current
+  timetable, so a station closed for works (Flora, as of autumn 2026) isn't there.
 - **Footfall.** `build_footfall.py` needs the local OSM extract and uses PID's
   timetables when it can get them (see Tram lines); it counts the departures at every
   stop once and keeps them in `pipeline/.cache/pid/departures.json`. The whole city

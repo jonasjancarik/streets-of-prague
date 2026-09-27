@@ -39,6 +39,33 @@
       .board-to { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .board-eta { font-variant-numeric: tabular-nums; color: var(--accent); }
       .board-none { margin-top: 4px; opacity: 0.75; }
+      /* The metro: picking a station, then the ride on the line's map. */
+      #metro { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; z-index: 6; background: rgba(20, 18, 16, 0.92); }
+      #metro[hidden] { display: none; }
+      .metro-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+      .metro-title { display: flex; align-items: center; gap: 8px; font: 24px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
+      .metro-close { font: 24px/1 Inter, system-ui, sans-serif; color: var(--ink); background: none; border: 0; cursor: pointer; padding: 0 4px; }
+      .metro-tabs { display: flex; gap: 6px; }
+      .metro-tab { font: 20px/1 'Bebas Neue', sans-serif; color: #fff; background: var(--line); opacity: 0.45; border: 0; border-radius: 6px; padding: 5px 14px 3px; cursor: pointer; }
+      .metro-tab.on { opacity: 1; box-shadow: 0 0 0 2px var(--ink); }
+      .metro-note { opacity: 0.8; font-size: 12px; }
+      .metro-stations, .metro-ride { list-style: none; margin: 0; padding: 0 0 0 9px; border-left: 4px solid var(--line); overflow: auto; min-height: 0; }
+      .metro-stations button { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; width: 100%; font: inherit; color: var(--ink); background: none; border: 0; border-radius: 5px; padding: 4px 6px; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      .metro-stations button:hover:not(:disabled), .metro-stations button.sel { background: rgba(255, 255, 255, 0.12); }
+      .metro-stations button.sel { box-shadow: inset 0 0 0 1px var(--accent); }
+      .metro-stations button:disabled { opacity: 0.45; cursor: default; }
+      .metro-stations small { opacity: 0.7; white-space: nowrap; }
+      .metro-keys { opacity: 0.65; font-size: 12px; }
+      .metro-keys b { display: inline-block; background: var(--ink); color: #221f1b; border-radius: 4px; padding: 0 5px; }
+      body.touch .metro-keys { display: none; }
+      .metro-bar { height: 4px; background: rgba(255, 255, 255, 0.15); border-radius: 2px; overflow: hidden; }
+      .metro-bar div { height: 100%; }
+      .metro-status { font-weight: 600; }
+      .metro-ride li { padding: 3px 6px; }
+      .metro-ride li.past { opacity: 0.4; }
+      .metro-ride li.now { font-weight: 600; }
+      .metro-ride li.now::before { content: '● '; color: var(--line); }
+      .metro-ride li.end { color: var(--accent); }
       .hud-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
       #clock { font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; opacity: 0.8; white-space: nowrap; }
       #wanted { font-size: 20px; line-height: 1; letter-spacing: 0.08em; margin-top: 6px; color: rgba(245, 239, 226, 0.22); }
@@ -133,6 +160,7 @@
         <div id="t-pedals" class="car-only"><div id="t-brake" class="t-pedal">Brake</div><div id="t-gas" class="t-pedal">Gas</div></div>
       </div>
     </div>
+    <div id="metro" class="panel" hidden></div>
     <div id="loading"><span id="loading-text">Loading…</span></div>
     <script type="module" src="/src/main.js"></script>
   </body>
