@@ -26,6 +26,8 @@ const LIFE_RADIUS = 330; // traffic and people are kept within this distance of 
 async function main() {
   status('Loading the map…');
   const index = await fetch(`data/${AREA}_now/index.json`).then((r) => r.json());
+  // Tram lines (pipeline/build_lines.py); without them there are no trams.
+  const lines = fetch(`data/${AREA}_now/lines.json`).then((r) => (r.ok ? r.json() : { lines: [] })).catch(() => ({ lines: [] }));
   const seeded = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -87,7 +89,7 @@ async function main() {
   const q = startEdge.path.at(startEdge.path.length / 2);
 
   const transit = buildTransit({ rails: index.rails }, scene);
-  const trams = new Trams(transit, scene);
+  const trams = new Trams((await lines).lines, scene, { night: params.has('night'), rng: seeded });
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE);
   const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
   const carPool = new CarPool(scene);
@@ -360,20 +362,14 @@ async function main() {
     else if (!inHeli) hash.add({ x: walker.x, y: walker.y, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0) hash.add({ x: p.x, y: p.y, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
-    const tramBodies = trams.bodies();
+    const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const t of tramBodies) for (const [x, y] of t.circles) hash.add({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
 
     traffic.update(dt, (x, y, rr) => hash.near(x, y, rr));
 
-    // Trams stop for whatever is on the track in front of them.
-    for (const { v, head: t } of tramBodies) {
-      for (const o of hash.near(t.x + t.dirX * 5, t.y + t.dirY * 5, 8)) {
-        if (o.kind === 'tram') continue;
-        const dx = o.x - t.x, dy = o.y - t.y;
-        const ahead = dx * t.dirX + dy * t.dirY, side = Math.abs(dx * t.dirY - dy * t.dirX);
-        if (ahead > 0 && ahead < 11 && side < 1.3 + o.r) { v.wait = Math.max(v.wait, 0.3); break; }
-      }
-    }
+    // Trams stop for whatever is on the track in front of them; one waiting to move
+    // across to the other track at a terminus with no loop does it out of sight.
+    trams.update(dt, { near: (x, y, rr) => hash.near(x, y, rr), x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
     transit.update(dt);
     trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground);
 
@@ -561,7 +557,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 import { rng } from './geo.js';
 
-// OSM splits tram tracks into many short ways. Stitch them back into long,
-// smooth chains so a tram can run along them.
+// The Petřín funicular's cars, shuttling up and down its track. (Trams run their
+// real lines: ../trams.js.)
+
+// OSM splits tracks into many short ways. Stitch them back into long, smooth chains
+// so a car can run along them.
 function chainLines(lines, maxTurnDeg = 40) {
   const key = ([x, y]) => `${Math.round(x)},${Math.round(y)}`;
   const byEnd = new Map();
@@ -65,25 +68,6 @@ class Path {
   }
 }
 
-export function tramMesh() {
-  // 1940s Prague tram: red body, cream band, grey roof with a trolley pole.
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(12.5, 2.6, 2.4), new THREE.MeshLambertMaterial({ color: '#a9322a' }));
-  body.position.y = 1.9;
-  const band = new THREE.Mesh(new THREE.BoxGeometry(12.6, 0.5, 2.45), new THREE.MeshLambertMaterial({ color: '#e8dcc0' }));
-  band.position.y = 2.6;
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(11.8, 0.35, 2.1), new THREE.MeshLambertMaterial({ color: '#8b8a86' }));
-  roof.position.y = 3.35;
-  const lantern = new THREE.Mesh(new THREE.BoxGeometry(7, 0.25, 1.1), new THREE.MeshLambertMaterial({ color: '#a9a69f' }));
-  lantern.position.y = 3.6;
-  const pole = new THREE.Mesh(new THREE.BoxGeometry(5, 0.12, 0.12), new THREE.MeshLambertMaterial({ color: '#2d2a26' }));
-  pole.position.set(-1.5, 4.1, 0);
-  pole.rotation.z = 0.25;
-  g.add(body, band, roof, lantern, pole);
-  g.traverse((o) => { o.castShadow = true; });
-  return g;
-}
-
 function funicularMesh() {
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(9, 2.6, 2.6), new THREE.MeshLambertMaterial({ color: '#7b2e27' }));
@@ -110,7 +94,6 @@ export function buildTransit(data, scene) {
       }
     }
   };
-  add(data.rails.filter((x) => x.kind === 'tram').map((x) => x.pts), tramMesh, 7, 120);
   add(data.rails.filter((x) => x.kind === 'funicular').map((x) => x.pts), funicularMesh, 3, 40);
 
   return {

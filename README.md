@@ -15,7 +15,7 @@ npm run dev          # http://localhost:5191
 The map data is built locally (see [Building the map](#building-the-map)); nothing
 generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
 the historic centre and `?area=ujezd` a small test area. `?night` fills the streets with night-time
-parking, `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
+parking and runs the night trams, `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
 
 ## Playing
@@ -74,8 +74,15 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
 - **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.js`); AI
   traffic that keeps to its lane, brakes for anything ahead and gives way to the right
   (`src/traffic.js`); pedestrians on the footpath network who dodge fast cars and get
-  knocked over (`src/people.js`); three-section modern trams (`src/trams.js`). Traffic
-  and people live within about 330 m of the player.
+  knocked over (`src/people.js`). Traffic and people live within about 330 m of the
+  player.
+- **Trams** run Prague's real lines (`src/trams.js`), taken from OSM's route
+  relations: each line goes round its whole route there and back, with a tram every
+  8 minutes (every 20 at night, when only the night lines 91–99 run). They stop at
+  every stop, keep to the track's speed limit, slow down for curves and brake for the
+  tram in front and for anything on the track. Three-section 15T-like cars with the
+  line number on the roof in the line's colour. They run all over the city at once, so
+  they come into view on their own timetable; only the ones near the camera are drawn.
 - **Police** patrol with the traffic. Chasing cars find their way with an A* search over
   the street graph (both ways along every street) and drive it with the same physics as
   your car; within 40 m and in sight they head straight for you. What the police see
@@ -98,7 +105,7 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   `src/shading.js`).
 
 `src/map/` holds the map-building modules shared with the 1945 project it came
-from (geometry helpers, straight-skeleton buildings, trees, tram routes).
+from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicular).
 
 ## Known issues
 
@@ -115,8 +122,11 @@ from (geometry helpers, straight-skeleton buildings, trees, tram routes).
   parking out) they would reach into the traffic lane. Separately mapped angled
   parking areas are fine; inside car parks, away from any street, their slant is
   arbitrary.
-- **Trams** shuttle back and forth on stretches of track instead of running real
-  lines, and at the end of a stretch their sections bunch up into each other.
+- **Tram termini without a loop.** Where the map has no way to turn round at the
+  end of a line (5 and 6 at Nádraží Holešovice, 13 at Zvonařka, 17 at Libuš, 19 at
+  Pankrác), the tram reverses where the track allows it, or waits until it's off
+  screen and reappears on the other track. There are no timetables: every line runs
+  every 8 minutes, and the historic lines 41 and 42 are left out.
 - **Traffic** has no traffic lights; at junctions it only gives way to the right and
   steers around others. The lane assist sometimes clips a corner.
 
@@ -138,6 +148,7 @@ uv run build_parking.py centrum    # TSK paid-parking sections (read by build_ti
 uv run build_tiles.py centrum      # today's map + street graphs in tiles → public/data/centrum_now/
 uv run ipr_buildings.py centrum    # IPR's 3D buildings into the tiles
 uv run ipr_terrain.py centrum      # IPR's terrain: heights, bridges, hill shading
+uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
 ```
 
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
@@ -156,6 +167,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (`Krav`) and Český Brod (`Cbro`); the pipeline reads all five. Coordinates go S-JTSK → WGS84 with the Czech datum shift →
   local metres (going straight to the datum-less local projection puts everything
   ~25 m off); IPR wall bases then sit a median 0.55 m from OSM building edges.
+- **Tram lines.** `build_lines.py` takes every tram line's two route relations (one
+  per direction) and joins them into a loop along the track network, stops and speed
+  limits included; it prints any line or direction it can't follow. Lines stay whole
+  where they leave the area. With the local extract it takes about 10 seconds.
 - **Parking.** `build_parking.py` reads the monthly TSK occupancy GeoJSON collected by
   `~/projects/parkovani-praha` (set `PARKING_DATA` to point elsewhere).
 
