@@ -16,8 +16,9 @@ npm run dev          # http://localhost:5191
 
 The map data is built locally (see [Building the map](#building-the-map)); nothing
 generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
-the historic centre and `?area=ujezd` a small test area. `?night` fills the streets with night-time
-parking and runs the night trams, `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
+the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague
+now; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
+(with night-time parking). `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
 
 ## Playing
@@ -30,6 +31,9 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   lane, and A/D then pick the turn at the next junction instead of steering. It only
   works within the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
   trunk roads, 80 on motorways): speed and it lets go; 5 km/h under the limit it's back.
+- **Tram stops**: stand at one and the HUD lists the next trams due, counting down
+  (`src/board.js`). Hold Space (on touch, "Hold to wait") to fast-forward until one is
+  about to arrive.
 - **Trams**: press E next to a tram waiting at a stop to get on (`src/ride.js`). The
   panel lists the stops ahead. Pick one with W/S (or tap it) and the ride runs at 6×,
   stops on the way included, until about 250 m before your stop; then you watch the
@@ -98,8 +102,13 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   knocked over (`src/people.js`). Traffic and people live within about 330 m of the
   player.
 - **Trams** run Prague's real lines (`src/trams.js`), taken from OSM's route
-  relations: each line goes round its whole route there and back, with a tram every
-  8 minutes (every 20 at night, when only the night lines 91–99 run). They stop at
+  relations: each line goes round its whole route there and back. How many trams a line
+  has out follows PID's timetable for the game clock's day and hour (`src/clock.js`):
+  a tram every few minutes on a weekday afternoon, fewer at weekends and in the
+  evening, and only the night lines 91–99 after midnight. Trams join a line where the
+  gap is widest and leave service out of sight; the dev panel moves the clock an hour
+  either way. The departure boards count down from where the trams really are, so a
+  tram held up in traffic shows up late there too. They stop at
   every stop, keep to the track's speed limit, slow down for curves and brake for the
   tram in front and for anything on the track. Three-section 15T-like cars with the
   line number on the roof in the line's colour. They run all over the city at once, so
@@ -147,8 +156,10 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
 - **Tram termini without a loop.** Where the map has no way to turn round at the
   end of a line (5 and 6 at Nádraží Holešovice, 13 at Zvonařka, 17 at Libuš, 19 at
   Pankrác), the tram reverses where the track allows it, or waits until it's off
-  screen and reappears on the other track. There are no timetables: every line runs
-  every 8 minutes, and the historic lines 41 and 42 are left out. In the smaller areas
+  screen and reappears on the other track. The timetables set how often each line runs,
+  not the departures themselves, and they come from one typical weekday, Saturday and
+  Sunday (public holidays run as normal days). Lines 32 and 40 have no track on the
+  map, and the historic lines 41 and 42 are left out. In the smaller areas
   (`centrum`, `ujezd`) the lines carry on past the edge of the map, and so does a tram
   you're riding.
 - **Traffic** has no traffic lights; at junctions it only gives way to the right and
@@ -194,7 +205,11 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 - **Tram lines.** `build_lines.py` takes every tram line's two route relations (one
   per direction) and joins them into a loop along the track network, stops and speed
   limits included; it prints any line or direction it can't follow. Lines stay whole
-  where they leave the area. With the local extract it takes about 10 seconds.
+  where they leave the area. With the local extract it takes about 10 seconds. It also
+  adds how often each line runs, hour by hour, from PID's timetables:
+  `pid_timetable.py` downloads the GTFS feed (about 50 MB, again when it's a week old)
+  into `pipeline/.cache/pid/` and reduces it to a summary of every tram and metro trip.
+  Without it, every line runs every 8 minutes.
 - **Parking.** `build_parking.py` reads the monthly TSK occupancy GeoJSON collected by
   `~/projects/parkovani-praha` (set `PARKING_DATA` to point elsewhere).
 
@@ -214,6 +229,7 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 ## Credits
 
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
+- Tram and metro timetables: [PID / ROPID](https://pid.cz/o-systemu/opendata/), CC BY 4.0, reduced to trips per hour.
 - 3D buildings and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).

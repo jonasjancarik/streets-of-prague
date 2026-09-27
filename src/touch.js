@@ -111,7 +111,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
   hand.addEventListener('pointerup', handUp);
   hand.addEventListener('pointercancel', handUp);
 
-  // On a tram: hold to speed the ride up.
+  // On a tram, or at a stop waiting for one: hold to speed things up.
   const fast = $('t-fast');
   const fastUp = () => { state.fast = false; fast.classList.remove('down'); };
   fast.addEventListener('pointerdown', (e) => {
@@ -152,9 +152,9 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
   // ---- Per frame -----------------------------------------------------------
   const shown = {};
   const set = (key, value, apply) => { if (shown[key] !== value) { shown[key] = value; apply(value); } };
-  // `tram`: riding one; `label`: what the main button does, when it isn't getting in
-  // or out of a car.
-  state.update = ({ car, tram = false, label = null, canEnter, tripped }) => {
+  // `tram`: riding one; `wait`: at a stop; `label`: what the main button does, when it
+  // isn't getting in or out of a car.
+  state.update = ({ car, tram = false, wait = false, label = null, canEnter, tripped }) => {
     if (!state.active) return;
     if (car !== inCar) {
       // Lane assist starts off in every car you take.
@@ -167,10 +167,11 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
     state.turn = inCar ? -dead(push.x) : 0;
     state.aim = !inCar && mag > DEAD ? { h: Math.atan2(push.y, push.x), mag: dead(mag) } : null;
     state.run = !!inCar && assistOn;
-    const mode = inCar ? 'car' : tram ? 'tram' : 'foot';
+    const mode = inCar ? 'car' : tram ? 'tram' : wait ? 'stop' : 'foot';
     set('mode', mode, (m) => {
       $('touch').dataset.mode = m;
-      if (m !== 'tram') fastUp();
+      fastUp();
+      fast.textContent = m === 'stop' ? 'Hold to wait' : 'Hold to speed up';
     });
     set('label', label || (mode === 'car' ? 'Get out' : 'Get in'), (text) => { $('t-action').textContent = text; });
     set('toggle', state.run, (on) => toggle.classList.toggle('on', on));

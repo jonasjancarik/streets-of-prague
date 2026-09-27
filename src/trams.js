@@ -5,19 +5,22 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 // pipeline/build_lines.py). Each line is one closed loop, there and back, and its
 // trams run round it: they stop at every stop, keep to the track's speed limit, slow
 // for curves, and brake for the tram in front and for anything on the track.
-// They're three-section articulated cars in red and white (15T-like), with the line
-// number on the roof; every section follows the track on its own, so a tram bends
-// round corners.
+// How many trams a line has out follows its timetable for the game clock's day and
+// hour (`perHour` in lines.json): trams join where the gaps are widest and leave
+// service out of sight. They're three-section articulated cars in red and white
+// (15T-like), with the line number on the roof; every section follows the track on its
+// own, so a tram bends round corners.
 
 const SECTION = 10.2, GAP = 0.25, W = 2.5, H = 3.4;
 const STEP = SECTION + GAP;
 const HALF = STEP + SECTION / 2; // from the middle of a tram to its front
 const ACCEL = 1.1, BRAKE = 1.2, HARD = 4.5; // m/s²: pulling away, braking, emergency braking
 const DWELL = 18, TURN = 40; // seconds at a stop, and at a terminus where the tram reverses
-// Minutes between the trams of a line (split between its variants); the mean speed
-// with stops spaces them out.
-const HEADWAY = { day: 8 * 60, night: 20 * 60 };
-const MEAN_SPEED = 5.5;
+// Without timetables: trips per hour, day lines from 5 in the morning to midnight,
+// night lines (91-99) through the night.
+const FALLBACK = { day: 7.5, night: 3 };
+export const MEAN_SPEED = 5.5; // m/s along a line, stops included: spaces the trams out
+const MANAGE = 2; // seconds between checks of how many trams each line should have out
 const CELL = 20;
 const FAR = 800, FAR_STEP = 0.25; // trams further than this from the player move in steps of this many seconds
 
@@ -119,6 +122,11 @@ function before(arr, s) {
   return lo;
 }
 
+// Where a line's trams are heading at a point along its loop: its far terminus on the
+// way there, its first one on the way back.
+export const headsignAt = (line, s) => (s < line.ends[0] || s >= line.ends[1] ? line.to : line.from);
+export const frontOf = (v) => v.line.path.wrap(v.s + HALF);
+
 function prepare(line) {
   const path = new Loop(line.pts);
   // Where a tram halts: the stops, and termini with no loop on the map, where it
@@ -140,32 +148,81 @@ function prepare(line) {
 }
 
 export class Trams {
-  constructor(lines, scene, { night = false, rng = Math.random } = {}) {
+  constructor(lines, scene, { clock, rng = Math.random } = {}) {
     this.scene = scene;
     this.rng = rng;
+    this.clock = clock;
     this.pool = [];
     this.grid = new Map();
     this.list = [];
-    const running = lines.filter((l) => l.night === night).map(prepare);
-    const variants = {};
-    for (const l of running) variants[l.ref] = (variants[l.ref] || 0) + 1;
-    let id = 0;
-    for (const line of running) {
-      const L = line.path.length;
-      const n = Math.max(1, Math.round(L / (MEAN_SPEED * HEADWAY[night ? 'night' : 'day'] * variants[line.ref])));
-      const offset = rng() * (L / n);
-      for (let k = 0; k < n; k++) {
-        const v = { id: id++, line, s: offset + (k * L) / n, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, look: null, pending: rng() * FAR_STEP };
-        // Not on the short cut across a terminus with no loop.
-        for (const h of line.halts) {
-          if (h.to !== undefined && h.to !== h.s && line.path.ahead(h.s - HALF, v.s) < line.path.ahead(h.s, h.to) + 2 * HALF) v.s = h.to + HALF;
+    this.id = 0;
+    this.manageT = 0;
+    this.lines = lines.map(prepare);
+    for (const line of this.lines) {
+      line.trams = [];
+      const L = line.path.length, n = this.target(line), offset = rng() * (L / Math.max(1, n));
+      for (let k = 0; k < n; k++) this.add(line, offset + (k * L) / n);
+    }
+  }
+
+  // Trips per hour in each direction for a line now, and so how many trams it needs out.
+  perHour(line) {
+    const { clock } = this;
+    if (line.perHour) return line.perHour[clock.kind][clock.hour];
+    const h = clock.hour, night = h < 5;
+    return line.night === night ? FALLBACK[night ? 'night' : 'day'] : 0;
+  }
+  target(line) {
+    const n = this.perHour(line);
+    return n > 0 ? Math.max(1, Math.round((line.path.length * n) / (MEAN_SPEED * 3600))) : 0;
+  }
+
+  add(line, s) {
+    const v = { id: this.id++, line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, look: null, pending: this.rng() * FAR_STEP };
+    // Not on the short cut across a terminus with no loop.
+    for (const h of line.halts) {
+      if (h.to !== undefined && h.to !== h.s && line.path.ahead(h.s - HALF, v.s) < line.path.ahead(h.s, h.to) + 2 * HALF) v.s = h.to + HALF;
+    }
+    v.s = line.path.wrap(v.s);
+    this.nextHalt(v);
+    this.place(v);
+    this.list.push(v);
+    line.trams.push(v);
+    return v;
+  }
+
+  remove(v) {
+    if (v.look) { this.give(v.look); v.look = null; }
+    this.list.splice(this.list.indexOf(v), 1);
+    v.line.trams.splice(v.line.trams.indexOf(v), 1);
+  }
+
+  // Bring each line's number of trams towards its timetable, one tram per line at a
+  // time: a new one in the middle of the widest gap, and the one whose leaving opens
+  // the smallest gap taken out, both only where nobody's looking.
+  manage(seen) {
+    for (const line of this.lines) {
+      const want = this.target(line), have = line.trams.length, L = line.path.length;
+      if (want === have) continue;
+      const order = [...line.trams].sort((a, b) => a.s - b.s);
+      const gaps = order.map((v, i) => line.path.ahead(v.s, order[(i + 1) % order.length].s) || L);
+      if (want > have) {
+        let s = this.rng() * L;
+        if (order.length) {
+          const i = gaps.indexOf(Math.max(...gaps));
+          s = order[i].s + gaps[i] / 2;
         }
-        v.s = line.path.wrap(v.s);
-        this.nextHalt(v);
-        this.list.push(v);
+        const p = line.path.at(s);
+        if (!seen(p.x, p.y)) this.add(line, s);
+      } else {
+        let best = null, bestGap = Infinity;
+        order.forEach((v, i) => {
+          const p = v.parts[1], g = gaps[i] + gaps[(i - 1 + order.length) % order.length];
+          if (!v.rider && !v.look && !seen(p.x, p.y) && g < bestGap) { best = v; bestGap = g; }
+        });
+        if (best) this.remove(best);
       }
     }
-    for (const v of this.list) this.place(v);
   }
 
   nextHalt(v) {
@@ -182,6 +239,11 @@ export class Trams {
   // player) within `r` of (x, y) of the player, and `seen(x, y)` whether a spot is
   // on screen.
   update(dt, { near = null, x = 0, y = 0, r = 0, seen = () => false } = {}) {
+    this.manageT -= dt;
+    if (this.manageT < 0) {
+      this.manageT = MANAGE;
+      this.manage(seen);
+    }
     // Where every tram's sections are, so the trams behind can see them.
     this.grid.clear();
     for (const v of this.list) {

@@ -6,10 +6,11 @@
 // Speeding up runs the whole world faster (see simulate() in main.js), so the city
 // keeps moving around you; it holds back while the streets ahead are still loading.
 
-const FAST = 6; // how much faster the world runs
+import { headsignAt, frontOf } from './trams.js';
+
+export const FAST = 6; // how much faster the world runs
 const SHOWN = 6; // stops listed ahead
 const SLOW_BEFORE = 250; // m before your stop where the ride goes back to normal speed
-const HALF = 15.55; // from the middle of a tram to its front (trams.js)
 
 export class TramRide {
   constructor(trams, world, el) {
@@ -85,14 +86,11 @@ export class TramRide {
   }
 
   // Where a tram (yours by default) is heading: the terminus of the way it's going.
-  headsign(v = this.v) {
-    const { line, s } = v, f = line.path.wrap(s + HALF);
-    return f < line.ends[0] || f >= line.ends[1] ? line.to : line.from;
-  }
+  headsign(v = this.v) { return headsignAt(v.line, frontOf(v)); }
 
   toDest() {
     const { v } = this;
-    return v.line.path.ahead(v.line.path.wrap(v.s + HALF), v.line.halts[this.dest].s);
+    return v.line.path.ahead(frontOf(v), v.line.halts[this.dest].s);
   }
 
   // How much faster the world should run this frame: with Shift held, or on the way to

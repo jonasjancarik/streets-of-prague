@@ -6,7 +6,9 @@ import { Car, CarPool, collideBodies } from './car.js';
 import { Traffic } from './traffic.js';
 import { Crowd, Walker, nearestWalkable } from './people.js';
 import { Trams } from './trams.js';
-import { TramRide } from './ride.js';
+import { TramRide, FAST } from './ride.js';
+import { Clock } from './clock.js';
+import { StopBoard } from './board.js';
 import { TileWorld } from './tiles.js';
 import { CUTAWAY } from './shading.js';
 import { setupDev } from './dev.js';
@@ -58,7 +60,8 @@ async function main() {
   const walk = new WalkGraph();
   const names = new StreetNames(drive.edges, walk.edges);
   const time = { value: 0 };
-  const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night'), osmBuildings: params.has('osm') });
+  const clock = new Clock(params);
+  const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm') });
   const grid = world.grid;
   const ground = (x, y) => world.heightAt(x, y);
   let crowd = null;
@@ -90,8 +93,9 @@ async function main() {
   const q = startEdge.path.at(startEdge.path.length / 2);
 
   const transit = buildTransit({ rails: index.rails }, scene);
-  const trams = new Trams((await lines).lines, scene, { night: params.has('night'), rng: seeded });
+  const trams = new Trams((await lines).lines, scene, { clock, rng: seeded });
   const ride = new TramRide(trams, world, $('ride'));
+  const board = new StopBoard(trams, $('board'));
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE);
   const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
   const carPool = new CarPool(scene);
@@ -297,7 +301,7 @@ async function main() {
     }
     return false;
   };
-  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper });
+  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, shiftTime: (h) => clock.advance(h * 3600) });
 
   // ---- Input -------------------------------------------------------------
   const input = { up: false, down: false, left: false, right: false, run: false, brake: false };
@@ -328,6 +332,7 @@ async function main() {
   // ---- Loop --------------------------------------------------------------
   const look = new THREE.Vector3();
   let last = performance.now(), shake = 0;
+  let waitScale = 1, clockShown = '';
   let street = null, bannerT = 0, lifeT = 0;
   const showBanner = (text, alert = false) => {
     $('banner').textContent = text;
@@ -344,6 +349,7 @@ async function main() {
 
   // One step of everything that moves (several per frame while a tram ride is sped up).
   const simulate = (dt, ctl) => {
+    clock.advance(dt);
     if (frozen > 0) {
       frozen -= dt;
       Object.assign(ctl, { move: 0, turn: 0, run: false, brake: true });
@@ -509,7 +515,12 @@ async function main() {
     };
     // On a tram, Shift speeds up the ride: the whole world runs faster, in steps short
     // enough for the physics.
-    const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : 1;
+    // At a tram stop, hold Space to wait: the same speed-up, until a tram is close.
+    board.update(dt, walker.x, walker.y, !ride.on && !inCar && !inHeli);
+    const waiting = !!board.shown && (input.brake || touch.fast) && board.next > 40;
+    waitScale += ((waiting ? FAST : 1) - waitScale) * Math.min(1, dt * (waiting ? 1.5 : 4));
+    if (Math.abs(waitScale - (waiting ? FAST : 1)) < 0.02) waitScale = waiting ? FAST : 1;
+    const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : waitScale;
     const steps = Math.ceil(scale - 1e-6);
     for (let i = 0; i < steps; i++) simulate((dt * scale) / steps, ctl);
     if (ride.on && ride.arrived()) getOff();
@@ -562,6 +573,7 @@ async function main() {
     $('banner').style.opacity = clamp(bannerT, 0, 1);
     $('speed').textContent = inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : inHeli ? Math.round(inHeli.speed * 3.6)
       : ride.on ? Math.round(ride.v.speed * 3.6) : '–';
+    if (clock.label() !== clockShown) $('clock').textContent = clockShown = clock.label();
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
     const canBoard = !inCar && !inHeli && !ride.on && ride.boardable(walker.x, walker.y);
     const canEnter = !inCar && !inHeli && !ride.on && ([...carsNear(walker.x, walker.y, 5)].some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2 < 1.8)
@@ -591,11 +603,14 @@ async function main() {
       }
       hint = parts.join(' · ');
     } else if (canBoard && !touch.active) hint = `<b>E</b> get on the ${canBoard.line.ref} to ${ride.headsign(canBoard)}`;
-    else if (canEnter && !touch.active) hint = '<b>E</b> get in';
+    else if (board.shown) {
+      const wait = waitScale > 1.5 ? `Waiting for a tram · ${Math.round(waitScale)}× speed` : touch.active ? '' : 'Hold <b>Space</b> to wait for a tram';
+      hint = [canEnter && !touch.active ? '<b>E</b> get in' : '', wait].filter(Boolean).join(' · ');
+    } else if (canEnter && !touch.active) hint = '<b>E</b> get in';
     $('hint').innerHTML = hint;
     ride.render();
     const label = ride.on ? (ride.atStop() ? 'Get off' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : canBoard ? 'Get on' : null;
-    touch.update({ car: inCar || inHeli, tram: ride.on, label, canEnter: canEnter || !!canBoard, tripped: ctl.run && assist.tripped });
+    touch.update({ car: inCar || inHeli, tram: ride.on, wait: !!board.shown, label, canEnter: canEnter || !!canBoard, tripped: ctl.run && assist.tripped });
     $('tally').textContent = `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`;
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
@@ -613,7 +628,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

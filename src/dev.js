@@ -1,12 +1,12 @@
 import proj4 from 'proj4';
 
 // Developer panel (` key or ?dev): jump to a street or an address, or pick a spot on
-// a map. Street names come from the area's own index (offline); addresses are looked
+// a map; move the clock an hour either way. Street names come from the area's own index (offline); addresses are looked
 // up on OpenStreetMap's Nominatim only when you ask for it.
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-export function setupDev({ area, index, teleport, position, helicopter }) {
+export function setupDev({ area, index, teleport, position, helicopter, shiftTime }) {
   const [w, s, e, n] = index.bbox_wgs84;
   const local = `+proj=tmerc +lat_0=${(s + n) / 2} +lon_0=${(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
   const toLocal = (lon, lat) => proj4('EPSG:4326', local, [lon, lat]);
@@ -34,6 +34,10 @@ export function setupDev({ area, index, teleport, position, helicopter }) {
     </div>
     <div class="dev-row">
       <button id="dev-heli" title="Walk up to it and press E to fly it">Helicopter next to me</button>
+    </div>
+    <div class="dev-row">
+      <button id="dev-earlier" title="The trams follow the timetable for the new time">An hour earlier</button>
+      <button id="dev-later" title="The trams follow the timetable for the new time">An hour later</button>
     </div>
     <div id="dev-pos"></div>`;
   panel.hidden = true;
@@ -96,6 +100,8 @@ export function setupDev({ area, index, teleport, position, helicopter }) {
     setTimeout(() => { $('dev-link').textContent = 'Copy link to this spot'; }, 1500);
   };
 
+  $('dev-earlier').onclick = () => shiftTime(-1);
+  $('dev-later').onclick = () => shiftTime(1);
   $('dev-heli').onclick = () => {
     const ok = helicopter();
     $('dev-heli').textContent = ok ? 'Helicopter parked nearby' : 'No open space for it here';

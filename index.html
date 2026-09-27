@@ -30,6 +30,17 @@
       .ride-stops button:hover { background: rgba(255, 255, 255, 0.1); }
       .ride-stops button.next { font-weight: 600; }
       .ride-stops button.dest { background: var(--accent); color: #221f1b; }
+      /* At a tram stop: the next trams due, counting down. */
+      #board { margin-top: 8px; max-width: 260px; }
+      #board[hidden] { display: none; }
+      .board-title { font-weight: 600; }
+      .board-rows { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+      .board-rows li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+      .board-to { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .board-eta { font-variant-numeric: tabular-nums; color: var(--accent); }
+      .board-none { margin-top: 4px; opacity: 0.75; }
+      .hud-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+      #clock { font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; opacity: 0.8; white-space: nowrap; }
       #wanted { font-size: 20px; line-height: 1; letter-spacing: 0.08em; margin-top: 6px; color: rgba(245, 239, 226, 0.22); }
       #wanted.hidden { display: none; }
       #wanted .on { color: var(--accent); text-shadow: 0 0 8px rgba(255, 210, 63, 0.5); }
@@ -80,7 +91,7 @@
       #t-brake { width: 84px; height: 84px; }
       #t-gas { width: 96px; height: 128px; border-color: var(--accent); }
       #t-gas.down { background: var(--accent); color: #221f1b; }
-      #touch:not([data-mode='car']) .car-only, #touch:not([data-mode='tram']) .tram-only { display: none; }
+      #touch:not([data-mode='car']) .car-only, #touch:not([data-mode='tram']):not([data-mode='stop']) .tram-only { display: none; }
       #touch[data-mode='tram'] #t-steer { display: none; }
       #t-road { position: fixed; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); height: 40px; padding: 0 14px; }
       @media (max-height: 460px) { #t-gas { height: 104px; } #t-brake { height: 72px; } #t-action { height: 44px; } }
@@ -96,12 +107,13 @@
   <body>
     <div id="app"></div>
     <div id="hud" class="panel">
-      <div id="street">Praha</div>
+      <div class="hud-top"><div id="street">Praha</div><div id="clock"></div></div>
       <div id="speedo"><span id="speed">–</span><small>km/h</small></div>
       <div id="wanted" class="hidden" role="status" aria-label="Not wanted"></div>
       <div id="hint"></div>
       <div id="tally"></div>
       <div id="ride" hidden></div>
+      <div id="board" hidden></div>
     </div>
     <div id="banner"></div>
     <div id="help" class="panel">
