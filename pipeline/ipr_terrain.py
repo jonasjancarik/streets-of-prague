@@ -8,7 +8,8 @@ the tile (N = tile / 4), as little-endian uint16 decimetres above 100 m a.s.l.,
 rows from the tile's south edge; and "terrain" in index.json with the grid step.
 
 Source: IPR Praha, 3D model terénu (datový podklad © IPR Praha, CC BY), SMO-5
-sheets TER_Prah_<X>-<Y>, downloaded once into pipeline/.cache/ipr/.
+sheets TER_<block>_<X>-<Y>, downloaded once into pipeline/.cache/ipr/. Past the edge
+of the model (outside the city) the ground carries on at the nearest known height.
 """
 
 import io
@@ -24,26 +25,17 @@ from lxml import etree
 from pyproj import Transformer
 
 from osm_area import AREAS, OUT
-from ipr_buildings import CACHE, ORG, krovak_to_local, sheet
+from ipr_buildings import CACHE, krovak_to_local, search, sheet, sheet_name
 
 STEP = 4.0
 GML = "http://www.opengis.net/gml"
 
 
 def catalogue():
-    path = CACHE / "terrain_catalogue.json"
+    path = CACHE / "catalogue_ter.json"
     if path.exists():
         return json.loads(path.read_text())
-    items = {}
-    for start in range(1, 1000, 100):
-        url = (f"https://www.arcgis.com/sharing/rest/search?q=title%3A%22TER_Prah%22%20AND%20orgid%3A{ORG}"
-               f"&num=100&start={start}&f=json")
-        d = json.load(urllib.request.urlopen(url))
-        for r in d.get("results", []):
-            if r["title"].endswith("_gml"):
-                items[r["title"][: -len("_gml")]] = r["id"]
-        if d.get("nextStart", -1) == -1:
-            break
+    items = {t[: -len("_gml")]: i for t, (i, _) in search("TER_").items() if t.endswith("_gml")}
     CACHE.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(items, indent=1))
     return items
@@ -93,6 +85,54 @@ def rasterise(tris, x0, y0, nx, ny, step, grid):
         z = l1 * a[2] + l2 * b[2] + l3 * c[2]
         sub = grid[j0:j1 + 1, i0:i1 + 1]
         sub[inside] = z[inside]
+
+
+def fill_gaps(tiles, N, T, coarse=8):
+    """Give grid points no sheet covers the height of the nearest ground that has one,
+    so the terrain runs on flat past the edge of the model instead of dropping to a
+    fixed height in a cliff. Works on a coarse grid (coarse x STEP metres) spreading
+    known heights outwards ring by ring, then samples it bilinearly."""
+    corner = {k: (int(round(k[0] * T / STEP)), int(round(k[1] * T / STEP))) for k in tiles}
+    ci0, cj0 = min(c[0] for c in corner.values()), min(c[1] for c in corner.values())
+    w = (max(c[0] for c in corner.values()) - ci0 + N) // coarse + 2
+    h = (max(c[1] for c in corner.values()) - cj0 + N) // coarse + 2
+    total, count = np.zeros((h, w)), np.zeros((h, w))
+    rows, cols = np.mgrid[0:N + 1, 0:N + 1]
+    gaps = False
+    for k, arr in tiles.items():
+        ok = ~np.isnan(arr)
+        gaps |= not ok.all()
+        gi, gj = (corner[k][0] - ci0 + cols[ok]) // coarse, (corner[k][1] - cj0 + rows[ok]) // coarse
+        np.add.at(total, (gj, gi), arr[ok])
+        np.add.at(count, (gj, gi), 1)
+    if not gaps or not count.any():
+        return
+    known = count > 0
+    grid = np.where(known, total / np.maximum(count, 1), 0.0)
+    while not known.all():
+        s, c = np.zeros_like(grid), np.zeros_like(grid)
+        for dj, di in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            src = np.roll(np.where(known, grid, 0.0), (dj, di), axis=(0, 1))
+            n = np.roll(known, (dj, di), axis=(0, 1))
+            # np.roll wraps round; drop what came across the far edge.
+            if dj: n[0 if dj > 0 else -1, :] = False
+            if di: n[:, 0 if di > 0 else -1] = False
+            s += np.where(n, src, 0.0)
+            c += n
+        new = ~known & (c > 0)
+        grid[new] = s[new] / c[new]
+        known |= new
+    for k, arr in tiles.items():
+        miss = np.isnan(arr)
+        if not miss.any():
+            continue
+        # Coarse cell centres sit at (index + 0.5) * coarse.
+        u = np.clip((corner[k][0] - ci0 + cols[miss]) / coarse - 0.5, 0, w - 1.001)
+        v = np.clip((corner[k][1] - cj0 + rows[miss]) / coarse - 0.5, 0, h - 1.001)
+        i, j = u.astype(int), v.astype(int)
+        fu, fv = u - i, v - j
+        arr[miss] = ((grid[j, i] * (1 - fu) + grid[j, i + 1] * fu) * (1 - fv)
+                     + (grid[j + 1, i] * (1 - fu) + grid[j + 1, i + 1] * fu) * fv)
 
 
 def lift_bridges(out_dir, index, tiles, N, T, gx0, gy0):
@@ -206,9 +246,11 @@ def main(area: str = "centrum") -> None:
     lo, hi = math.inf, -math.inf
     for X in range(min(c[0] for c in corners), max(c[0] for c in corners) + 1):
         for Y in range(min(c[1] for c in corners), max(c[1] for c in corners) + 1):
-            path = download(f"TER_Prah_{X}-{Y}", items)
+            name = sheet_name(X, Y) and f"TER_{sheet_name(X, Y)}"
+            path = name and download(name, items)
             if not path:
-                print(f"  TER_Prah_{X}-{Y}: not in the catalogue")
+                if name:
+                    print(f"  {name}: not in the catalogue")
                 continue
             tris = triangles(path)
             flat = tris.reshape(-1, 3)
@@ -229,15 +271,11 @@ def main(area: str = "centrum") -> None:
                 view = arr[b0 - cj:b1 - cj + 1, a0 - ci:a1 - ci + 1]
                 ok = ~np.isnan(part)
                 view[ok] = part[ok]
-            print(f"  TER_Prah_{X}-{Y}: {len(tris)} triangles")
+            print(f"  {name}: {len(tris)} triangles")
     if lo == math.inf:
         print("no terrain")
         return
-    # Anything no sheet covers gets the area's mean height: flat, so unshaded.
-    known = np.concatenate([a[~np.isnan(a)] for a in tiles.values()])
-    mean = float(known.mean()) if known.size else lo
-    for arr in tiles.values():
-        arr[np.isnan(arr)] = mean
+    fill_gaps(tiles, N, T)
     bare = {k: a.copy() for k, a in tiles.items()}
     lift_bridges(out_dir, index, tiles, N, T, gx0, gy0)
     encode = lambda a: np.clip(np.round((a - 100) * 10), 0, 65535).astype("<u2").tobytes()  # noqa: E731

@@ -321,11 +321,15 @@ export class TileWorld {
     const hAt = shade ? shade.sample : () => 0;
     // Real 3D buildings from IPR where the area has them (unless ?osm), else OSM
     // footprints extruded with straight-skeleton roofs in a worker, each set on the
-    // lowest ground under its footprint.
-    const onGround = own.map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))) }));
-    const buildings = t.ipr && !this.osmBuildings
-      ? await iprMesh(`data/${this.area}_now/tiles/${k}.ipr.bin`, t.box, this.index.iprRef != null)
-      : buildingMesh(await this.roofs.build({ buildings: onGround, size: data.size, origin: data.origin }));
+    // lowest ground under its footprint. In a tile with IPR buildings, the OSM ones IPR
+    // doesn't have (noIpr, see ipr_buildings.py) are still extruded.
+    const ipr = t.ipr && !this.osmBuildings;
+    const extrude = own.filter((b) => !ipr || b.noIpr)
+      .map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))) }));
+    const buildings = [
+      ...(ipr ? [await iprMesh(`data/${this.area}_now/tiles/${k}.ipr.bin`, t.box, this.index.iprRef != null)] : []),
+      ...(!ipr || extrude.length ? [buildingMesh(await this.roofs.build({ buildings: extrude, size: data.size, origin: data.origin }))] : []),
+    ];
     if (this.loaded.has(k)) return this.loaded.get(k);
     lap('buildings');
     // Spread the main-thread work over several frames.
@@ -353,7 +357,7 @@ export class TileWorld {
       }
       trees.instanceMatrix.needsUpdate = true;
     }
-    group.add(buildings, walls, trees);
+    group.add(...buildings, walls, trees);
     lap('trees');
     await breathe();
 
@@ -382,7 +386,7 @@ export class TileWorld {
     lap('parking');
     if (this.loaded.has(k)) { surfaces.dispose(); return this.loaded.get(k); }
     this.scene.add(group);
-    const tile = { k, box: t.box, group, surfaces, grid, cars, ms, disposables: [buildings, walls, trees], relief: shade, sample: shade?.sample };
+    const tile = { k, box: t.box, group, surfaces, grid, cars, ms, disposables: [...buildings, walls, trees], relief: shade, sample: shade?.sample };
     this.loaded.set(k, tile);
     this.onCars(cars, tile);
     return tile;

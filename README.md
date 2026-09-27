@@ -65,7 +65,8 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   on the area's size. Straight-skeleton roofs for OSM buildings are built in web
   workers (`src/roofWorker.js`).
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
-  and domes) wherever it covers the city, else from OSM footprints.
+  and domes), which covers the whole city. OSM buildings that the model doesn't have
+  (newer ones, sheds, anything past the city limits) are extruded from their footprints.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,
   walls, trees, cars, people, trams and the camera sit at their real height, cars
   pitch, roll and roll downhill, and the ground is hill-shaded. The terrain model has
@@ -93,8 +94,9 @@ from (geometry helpers, straight-skeleton buildings, trees, tram routes).
 
 - **Bridges and tunnels.** The height map holds one height per point, so a car driving
   under a flyover jumps up onto it. There are no tunnels at all (Blanka, Strahov).
-- **Buildings at the edges.** IPR's 3D model covers only inner Prague; further out the
-  buildings come from OSM, and where OSM has no height they are 13 m tall.
+- **Past the city limits** the buildings come from OSM, and where OSM has no height
+  they are 13 m tall. The terrain there carries on flat at the height of the nearest
+  ground IPR has.
 - **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
   narrow streets and are left out.
 - **No angled parking.** A mapped parking area narrower than 4.5 m gets parallel
@@ -138,7 +140,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   and streets on a chunk border come out whole.
 - **IPR.** `ipr_buildings.py` and `ipr_terrain.py` download the SMO-5 sheets they need
   (2.5 × 2 km, about 150 MB each for buildings) into `pipeline/.cache/ipr/` from IPR's
-  ArcGIS Online catalogue. Coordinates go S-JTSK → WGS84 with the Czech datum shift →
+  ArcGIS Online catalogue. Sheets come in blocks of 10 × 10 named after a town, and the
+  city spills over from Praha (`Prah`) into Beroun (`Bero`), Kladno (`Klad`), Kralupy
+  (`Krav`) and Český Brod (`Cbro`); the pipeline reads all five. Coordinates go S-JTSK → WGS84 with the Czech datum shift →
   local metres (going straight to the datum-less local projection puts everything
   ~25 m off); IPR wall bases then sit a median 0.55 m from OSM building edges.
 - **Parking.** `build_parking.py` reads the monthly TSK occupancy GeoJSON collected by

@@ -6,10 +6,12 @@ shapes, towers, domes and dormers) for the tiles made by build_tiles.py.
 For every tile it writes tiles/<i>_<j>.ipr.bin next to the tile JSON: the triangles of
 every building whose footprint centre is in the tile, with roof or wall colours, and
 marks the tile JSON with "ipr" so the game draws these instead of extruding OSM
-footprints. OSM footprints still drive collisions and contact shadows.
+footprints. OSM buildings that no IPR building stands on (newer ones, sheds, anything
+past the edge of the model) get "noIpr" and are still extruded. OSM footprints still
+drive collisions and contact shadows.
 
 Source: IPR Praha, 3D model budov (datový podklad © IPR Praha, CC BY). Sheets are
-SMO-5 map sheets of 2.5 x 2 km, BD3_Prah_<X>-<Y>, downloaded once into
+SMO-5 map sheets of 2.5 x 2 km, BD3_<block>_<X>-<Y>, downloaded once into
 pipeline/.cache/ipr/ from IPR's ArcGIS Online catalogue (each is ~150-250 MB).
 """
 
@@ -24,8 +26,8 @@ from pathlib import Path
 import numpy as np
 from lxml import etree
 from pyproj import Transformer
-from shapely import constrained_delaunay_triangles
-from shapely.geometry import Point, Polygon
+from shapely import STRtree, constrained_delaunay_triangles
+from shapely.geometry import MultiPoint, Point, Polygon
 
 from osm_area import AREAS, OUT
 
@@ -60,24 +62,41 @@ class krovak_to_local:
 
 
 def sheet(x, y):
-    """SMO-5 sheet (X, Y) holding a point in S-JTSK (EPSG:5514) metres."""
+    """SMO-5 sheet (X, Y) holding a point in S-JTSK (EPSG:5514) metres, counted from the
+    Praha block's north-east corner (X grows west, Y south)."""
     return math.floor((-725000 - x) / 2500), math.floor((-1040000 - y) / 2000)
 
 
-def catalogue():
-    path = CACHE / "catalogue.json"
-    if path.exists():
-        return json.loads(path.read_text())
-    items = {}
-    for start in range(1, 1000, 100):
-        url = (f"https://www.arcgis.com/sharing/rest/search?q=title%3A%22BD3_Prah%22%20AND%20orgid%3A{ORG}"
+# SMO-5 sheets come in blocks of 10 x 10 named after a town; the city spills over from
+# the Praha block into these neighbours, keyed by (X // 10, Y // 10).
+BLOCKS = {(0, 0): "Prah", (1, 0): "Bero", (1, -1): "Klad", (0, -1): "Krav", (-1, 0): "Cbro"}
+
+
+def sheet_name(X, Y):
+    """The block and number of sheet (X, Y), e.g. (10, 1) → "Bero_0-1"; None outside the blocks IPR covers."""
+    block = BLOCKS.get((X // 10, Y // 10))
+    return block and f"{block}_{X % 10}-{Y % 10}"
+
+
+def search(prefix):
+    """{title: item id} of every IPR catalogue item whose title starts with prefix."""
+    found, start = {}, 1
+    while start != -1:
+        url = (f"https://www.arcgis.com/sharing/rest/search?q=title%3A{prefix}%20AND%20orgid%3A{ORG}"
                f"&num=100&start={start}&f=json")
         d = json.load(urllib.request.urlopen(url))
         for r in d.get("results", []):
-            if r["type"] == "GML":
-                items[r["title"]] = r["id"]
-        if d.get("nextStart", -1) == -1:
-            break
+            if r["title"].startswith(prefix):
+                found[r["title"]] = (r["id"], r["type"])
+        start = d.get("nextStart", -1)
+    return found
+
+
+def catalogue():
+    path = CACHE / "catalogue_bd3.json"
+    if path.exists():
+        return json.loads(path.read_text())
+    items = {t: i for t, (i, kind) in search("BD3_").items() if kind == "GML"}
     CACHE.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(items, indent=1))
     return items
@@ -207,9 +226,12 @@ def main(area: str = "centrum") -> None:
         return None
 
     per_tile = {}  # (i, j) → list of (int16 positions, uint8 colours), one pair per building
+    footprints = []  # ground outlines of every IPR building, to find OSM ones it doesn't cover
     for X in range(X0, X1 + 1):
         for Y in range(Y0, Y1 + 1):
-            name = f"BD3_Prah_{X}-{Y}"
+            if not sheet_name(X, Y):
+                continue
+            name = f"BD3_{sheet_name(X, Y)}"
             path = download(name, items)
             if not path:
                 print(f"  {name}: not in the catalogue")
@@ -225,9 +247,11 @@ def main(area: str = "centrum") -> None:
                     continue
                 osm = osm_at(i, j, Point(cx, cy))
                 roof, wall = colours(bid or f"{name}/{count}", osm)
-                tris, cols = [], []
+                tris, cols, ground = [], [], []
                 for kind, ring in surfaces:
                     rx, ry = to_local.transform(ring[:, 0], ring[:, 1])
+                    if kind == 2 and len(ring) >= 3:
+                        ground.append(Polygon(np.column_stack([rx, ry])).buffer(0))
                     loc = np.column_stack([rx, ry, ring[:, 2] - REF_HEIGHT])
                     for t in triangulate(loc):
                         nrm = np.cross(t[1] - t[0], t[2] - t[0])
@@ -237,6 +261,7 @@ def main(area: str = "centrum") -> None:
                         flat = kind == 1 and nrm[2] > 0.97 * (np.linalg.norm(nrm) or 1)
                         cols.append(flat_roof(roof) if flat else roof if kind == 1 else wall)
                 if tris:
+                    footprints += [g for g in ground if g.area > 0.5] or [MultiPoint(np.column_stack([lx, ly])).convex_hull]
                     # Pack right away: centimetres from the tile corner, (x, height, y).
                     x0, y0 = i * T - ox, j * T - oy
                     v = np.array(tris, dtype=np.float64).reshape(-1, 3)
@@ -246,7 +271,17 @@ def main(area: str = "centrum") -> None:
                 count += 1
             print(f"  {name}: {count} buildings in the area")
 
-    total = 0
+    # An OSM building counts as IPR's if IPR buildings stand on at least 40 % of it.
+    tree = STRtree(footprints)
+
+    def covered(b):
+        poly = Polygon(b["rings"][0]).buffer(0)
+        if poly.area < 1:
+            return True
+        hit = sum(poly.intersection(footprints[k]).area for k in tree.query(poly, predicate="intersects"))
+        return hit >= 0.4 * poly.area
+
+    total = extra = 0
     for (i, j), blist in per_tile.items():
         pos_arr = np.concatenate([p for p, _ in blist])
         col = np.concatenate([c for _, c in blist])
@@ -257,6 +292,11 @@ def main(area: str = "centrum") -> None:
         tj = out_dir / "tiles" / f"{i}_{j}.json"
         t = json.loads(tj.read_text())
         t["ipr"] = {"buildings": len(blist), "triangles": n_tris}
+        for b in t["buildings"]:
+            b.pop("noIpr", None)
+            if b.get("own") and len(b["rings"][0]) >= 3 and not covered(b):
+                b["noIpr"] = True
+                extra += 1
         tj.write_text(json.dumps(t, ensure_ascii=False, separators=(",", ":")))
         total += len(blob)
     # Tiles that no longer get IPR buildings go back to OSM ones.
@@ -266,12 +306,14 @@ def main(area: str = "centrum") -> None:
         tj = out_dir / "tiles" / f"{i}_{j}.json"
         t = json.loads(tj.read_text())
         if t.pop("ipr", None):
+            for b in t["buildings"]:
+                b.pop("noIpr", None)
             tj.write_text(json.dumps(t, ensure_ascii=False, separators=(",", ":")))
             (out_dir / "tiles" / f"{i}_{j}.ipr.bin").unlink(missing_ok=True)
     index["ipr"] = True
     index["iprRef"] = REF_HEIGHT  # heights in the .ipr.bin are above this, in metres a.s.l.
     (out_dir / "index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")))
-    print(f"{len(per_tile)} tiles with IPR buildings, {total / 1e6:.1f} MB")
+    print(f"{len(per_tile)} tiles with IPR buildings, {total / 1e6:.1f} MB; {extra} OSM buildings IPR doesn't have")
 
 
 if __name__ == "__main__":
