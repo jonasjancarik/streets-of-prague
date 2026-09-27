@@ -1,4 +1,4 @@
-// Street graphs from pipeline/build_streets.py: a directed car network with lanes
+// Street graphs from pipeline/build_tiles.py: a directed car network with lanes
 // offset to the right, and an undirected pedestrian network.
 
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -87,13 +87,6 @@ export class DriveGraph {
       return e;
     });
   }
-}
-
-// Older single-file areas (<area>_traffic.json) number their nodes instead.
-export function buildDriveGraph(streets) {
-  const g = new DriveGraph();
-  g.add(streets.drive.edges.map((e, i) => ({ ...e, id: `${i}`, u: `${e.u}`, v: `${e.v}` })));
-  return g;
 }
 
 // Next edge after `e`: anything but a U-turn, unless the street is a dead end.
@@ -201,12 +194,6 @@ export class WalkGraph {
     this.fresh = fresh;
     return res;
   }
-}
-
-export function buildWalkGraph(streets) {
-  const g = new WalkGraph();
-  g.add(streets.walk.edges.map((e, i) => ({ ...e, id: `${i}`, u: `${e.u}`, v: `${e.v}` })));
-  return g;
 }
 
 // Spatial hash of named street segments, for the "you are on …" label.

@@ -18,7 +18,7 @@ from pyproj import Transformer
 from shapely.geometry import box, shape
 from shapely.ops import transform
 
-from build_area import AREAS, OUT, _polys, _rings
+from osm_area import AREAS, OUT, _polys, _rings
 
 SRC = Path(os.environ.get("PARKING_DATA", Path.home() / "projects/parkovani-praha/data/downloaded/parked_cars"))
 NAME = re.compile(r"^(P\d+)-OB_(\d{6})([DN])_NA\.json$")

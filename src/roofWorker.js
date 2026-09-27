@@ -1,6 +1,6 @@
 // Builds a tile's buildings (walls and straight-skeleton roofs) off the main thread.
 // Straight skeletons are by far the slowest part of a tile, up to a second or so.
-import { initRoofs, buildBuildings } from '../buildings.js';
+import { initRoofs, buildBuildings } from './map/buildings.js';
 
 const ready = initRoofs();
 

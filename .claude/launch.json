@@ -2,21 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "prague-1945",
+      "name": "streets-of-prague",
       "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "dev"
-      ],
-      "port": 5190,
-      "autoPort": true
-    },
-    {
-      "name": "praha-drive",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "--host", "0.0.0.0", "--port", "5191"],
+      "runtimeArgs": ["run", "dev"],
       "port": 5191,
-      "url": "http://localhost:5191"
+      "autoPort": true
     }
   ]
 }

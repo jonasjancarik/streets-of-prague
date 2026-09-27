@@ -23,7 +23,7 @@ import numpy as np
 from lxml import etree
 from pyproj import Transformer
 
-from build_area import AREAS, OUT
+from osm_area import AREAS, OUT
 from ipr_buildings import CACHE, ORG, krovak_to_local, sheet
 
 STEP = 4.0

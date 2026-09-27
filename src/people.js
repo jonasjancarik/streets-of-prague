@@ -255,6 +255,20 @@ export class Crowd {
   }
 }
 
+// Nearest spot where a person fits (a free cell with free cells on all four sides),
+// searching outward in rings up to maxR metres.
+export function nearestWalkable(grid, x, y, maxR = 60) {
+  for (let r = 0; r <= maxR; r += 1) {
+    const n = Math.max(8, Math.round(r * 6));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+      if (grid.at(px, py) === 0 && grid.at(px + 1, py) === 0 && grid.at(px - 1, py) === 0 && grid.at(px, py + 1) === 0 && grid.at(px, py - 1) === 0) return [px, py];
+    }
+  }
+  return [x, y];
+}
+
 // The player on foot: tank controls relative to where they face, Shift to run.
 export class Walker {
   constructor(grid) {

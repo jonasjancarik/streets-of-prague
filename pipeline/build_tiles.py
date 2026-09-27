@@ -6,7 +6,7 @@ around the camera, so an area can be as large as the city.
 
 Large areas are processed in chunks (default 2 km square, with a 150 m margin so
 buildings and streets across a chunk border come out whole and the same on both
-sides); every chunk is fetched from OSM, classified by build_area.extract() in the
+sides); every chunk is fetched from OSM, classified by osm_area.extract() in the
 area's own local metres, and cut into tiles.
 
 Writes index.json (area size, origin, tile grid, all tram and funicular rails, since
@@ -31,7 +31,7 @@ from pyproj import Transformer
 from shapely import STRtree
 from shapely.geometry import LineString, Point, Polygon, box
 
-from build_area import AREAS, OUT, _coords, _float, _lines, _polys, _rings, extract, road_width, use_overpass_mirror
+from osm_area import AREAS, OUT, _coords, _float, _lines, _polys, _rings, extract, road_width, use_overpass_mirror
 
 MARGIN = 150.0
 # A local OpenStreetMap extract, if there is one, is much faster and kinder than
@@ -66,8 +66,10 @@ def network_filter(network):
 
 
 def first(v):
+    # osmnx merges the tags of joined ways into lists in no fixed order; sort them so
+    # every build gives the same answer.
     if isinstance(v, list):
-        return v[0] if v else None
+        return sorted(v, key=str)[0] if v else None
     if v is None or (isinstance(v, float) and math.isnan(v)):
         return None
     return v
@@ -161,7 +163,7 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
         bbox = (min(c[0] for c in corners), min(c[1] for c in corners), max(c[0] for c in corners), max(c[1] for c in corners))
         print(f"chunk {number}/{len(chunks)} ({ci},{cj})")
         source = cut(bbox, PBF.parent / f"{area}_{ci}_{cj}.osm", area_pbf) if area_pbf else None
-        x = extract(area, "now", bbox=bbox, centre=centre, source=source)
+        x = extract(area, bbox=bbox, centre=centre, source=source)
         drive = graph_edges(bbox, tf, "drive", True, source)
         walk = graph_edges(bbox, tf, "walk", False, source)
 

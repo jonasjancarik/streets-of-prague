@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { signedArea } from '../geo.js';
+import { signedArea } from './map/geo.js';
 import { offsetLine } from './network.js';
 import { PATTERN, patterned } from './shading.js';
 

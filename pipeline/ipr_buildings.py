@@ -27,7 +27,7 @@ from pyproj import Transformer
 from shapely import constrained_delaunay_triangles
 from shapely.geometry import Point, Polygon
 
-from build_area import AREAS, OUT
+from osm_area import AREAS, OUT
 
 CACHE = Path(__file__).parent / ".cache" / "ipr"
 ORG = "SBTXIEUGWbqzUecw"

@@ -1,10 +1,8 @@
 node_modules
 dist
-pipeline/.cache
-pipeline/.venv
 .DS_Store
 __pycache__
-pipeline/review/
-pipeline/ai_tiles/
-public/data/praha_now/
-public/data/praha_*.json
+pipeline/.cache
+pipeline/.venv
+# Map data is built locally by the pipeline (see README), never committed.
+public/data/

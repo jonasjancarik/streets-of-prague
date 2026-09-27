@@ -1,13 +1,11 @@
 import * as THREE from 'three';
 import proj4 from 'proj4';
-import { buildTransit } from '../transit.js';
-import { nearestWalkable } from '../player.js';
-import { DriveGraph, WalkGraph, buildDriveGraph, buildWalkGraph, StreetNames, SpatialHash, clamp } from './network.js';
+import { buildTransit } from './map/transit.js';
+import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.js';
 import { Car, CarPool, collideBodies } from './car.js';
 import { Traffic } from './traffic.js';
-import { Crowd, Walker } from './people.js';
+import { Crowd, Walker, nearestWalkable } from './people.js';
 import { Trams } from './trams.js';
-import { Zones } from './parking.js';
 import { TileWorld } from './tiles.js';
 import { setupDev } from './dev.js';
 import { LaneAssist } from './assist.js';
@@ -24,12 +22,6 @@ const LIFE_RADIUS = 330; // traffic and people are kept within this distance of 
 async function main() {
   status('Loading the map…');
   const index = await fetch(`data/${AREA}_now/index.json`).then((r) => r.json());
-  // Newer tiles carry their own paid-parking sections; older areas have one file.
-  const parking = index.parkingInTiles ? null
-    : await fetch(`data/${AREA}_parking.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  // Newer tiles carry their own street graphs; older areas have one file for the lot.
-  const streets = index.graphs ? null : await fetch(`data/${AREA}_traffic.json`).then((r) => r.json());
-  const zones = new Zones(parking);
   const seeded = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -54,11 +46,12 @@ async function main() {
   scene.add(sun, sun.target);
   const SUN_OFFSET = new THREE.Vector3(-110, 190, -80);
 
-  const drive = streets ? buildDriveGraph(streets) : new DriveGraph();
-  const walk = streets ? buildWalkGraph(streets) : new WalkGraph();
+  // The street graphs grow as tiles load (each tile carries the edges that touch it).
+  const drive = new DriveGraph();
+  const walk = new WalkGraph();
   const names = new StreetNames(drive.edges, walk.edges);
   const time = { value: 0 };
-  const world = new TileWorld({ area: AREA, index, scene, drive, walk, zones, time, night: params.has('night'), osmBuildings: params.has('osm') });
+  const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night'), osmBuildings: params.has('osm') });
   const grid = world.grid;
   const ground = (x, y) => world.heightAt(x, y);
   let crowd = null;

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { Geo, Grid, fillPolys, strokeLines, rng, hash } from '../geo.js';
-import { buildWalls } from '../buildings.js';
-import { buildTrees } from '../vegetation.js';
+import { Geo, Grid, fillPolys, strokeLines, rng, hash } from './map/geo.js';
+import { buildWalls } from './map/buildings.js';
+import { buildTrees } from './map/vegetation.js';
 import { Surfaces } from './surface.js';
 import { shadeBuildings } from './shading.js';
 import { Zones, parkCars } from './parking.js';
@@ -148,24 +148,6 @@ export function clipLine(pts, [x0, y0, x1, y1]) {
   return out.filter((l) => l.length > 1);
 }
 
-// Edges of a graph bucketed by the tiles their bounding boxes touch.
-function bucket(edges, index) {
-  const map = new Map();
-  const { tile: T } = index, [ox, oy] = index.origin;
-  for (const e of edges) {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const [x, y] of e.pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-    for (let i = Math.floor((x0 + ox) / T); i <= Math.floor((x1 + ox) / T); i++) {
-      for (let j = Math.floor((y0 + oy) / T); j <= Math.floor((y1 + oy) / T); j++) {
-        const k = `${i}_${j}`;
-        if (!map.has(k)) map.set(k, []);
-        map.get(k).push(e);
-      }
-    }
-  }
-  return map;
-}
-
 // Walkable/drivable cells: 0 free, 255 solid, 254 free but walled in (a closed
 // courtyard). Only cells reachable from the street network count as free.
 function tileGrid(geo, t, seeds) {
@@ -221,12 +203,11 @@ function stampTrunks(grid, geo, trees) {
 }
 
 export class TileWorld {
-  constructor({ area, index, scene, drive, walk, zones, time, night, osmBuildings = false }) {
+  constructor({ area, index, scene, drive, walk, time, night, osmBuildings = false }) {
     this.osmBuildings = osmBuildings;
     this.area = area;
     this.index = index;
     this.scene = scene;
-    this.zones = zones;
     this.time = time;
     this.night = night;
     this.T = index.tile;
@@ -236,10 +217,9 @@ export class TileWorld {
     this.pending = new Map(); // key → Promise of tile JSON
     this.drive = drive;
     this.walk = walk;
-    // Tiles built with their own street graphs join them up as they load; older
-    // areas come with one graph for the whole area.
-    this.driveBy = index.graphs ? new Map() : bucket(drive.edges, index);
-    this.walkBy = index.graphs ? new Map() : bucket(walk.edges, index);
+    // Each tile's street graph edges, joined into drive/walk as tiles load.
+    this.driveBy = new Map();
+    this.walkBy = new Map();
     this.onEdges = () => {};
     this.onCars = () => {};
     this.onDrop = () => {};
@@ -323,8 +303,8 @@ export class TileWorld {
     const data = { ...t, size: [x1 - x0, y1 - y0], origin: [-x0, -y0] };
     const geo = new Geo(data);
     const own = t.buildings.filter((b) => b.own);
-    // Newer tiles carry their own paid-parking sections; older ones use the area's.
-    const zones = t.sections?.[0]?.polys ? new Zones({ sections: t.sections.map((z) => ({ ...z, inside: z.share })) }) : this.zones;
+    // The tile's paid-parking sections (clipped to it, with their share of spaces).
+    const zones = new Zones({ sections: (t.sections || []).map((z) => ({ ...z, inside: z.share })) });
     if (t.drive && !this.driveBy.has(k)) {
       this.driveBy.set(k, this.drive.add(t.drive));
       this.walkBy.set(k, this.walk.add(t.walk));
