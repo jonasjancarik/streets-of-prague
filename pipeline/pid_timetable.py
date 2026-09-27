@@ -5,9 +5,10 @@
 Downloads https://data.pid.cz/PID_GTFS.zip into .cache/pid/ (about 50 MB; again
 when it's a week old) and reduces it to what the game needs, cached next to it as
 summary.json: for every tram and metro trip on a typical weekday, Saturday and
-Sunday, the line, where it starts and ends, when it leaves and how long it takes.
-build_lines.py turns that into trips per hour for each line, and the metro's
-station-to-station times.
+Sunday, the line, where it starts and ends, when it leaves and how long it takes
+(for the metro, to each station); and the metro's stations with their entrances.
+build_lines.py turns that into trips per hour for each tram line, build_metro.py
+into the metro's lines.
 """
 
 import csv
@@ -26,6 +27,7 @@ URL = "https://data.pid.cz/PID_GTFS.zip"
 CACHE = Path(__file__).parent / ".cache" / "pid"
 FEED = CACHE / "PID_GTFS.zip"
 SUMMARY = CACHE / "summary.json"
+VERSION = 2  # of the summary's contents: rebuilt when this changes
 DAYS = ("weekday", "saturday", "sunday")
 KINDS = {"0": "tram", "1": "metro"}
 
@@ -83,7 +85,9 @@ def summary():
     """The cached summary, rebuilt when the feed is newer."""
     path = feed()
     if SUMMARY.exists() and SUMMARY.stat().st_mtime > path.stat().st_mtime:
-        return json.loads(SUMMARY.read_text())
+        data = json.loads(SUMMARY.read_text())
+        if data.get("version") == VERSION:
+            return data
     with zipfile.ZipFile(path) as z:
         dates = typical_dates(z)
         on = services_on(z, dates)
@@ -93,7 +97,8 @@ def summary():
         for r in rows(z, "trips.txt"):
             if r["route_id"] in routes and on.get(r["service_id"]):
                 trips[r["trip_id"]] = (r["route_id"], sorted(on[r["service_id"]]), r["direction_id"])
-        names = {r["stop_id"]: r["stop_name"] for r in rows(z, "stops.txt")}
+        stops = {r["stop_id"]: r for r in rows(z, "stops.txt")}
+        names = {k: r["stop_name"] for k, r in stops.items()}
         # Each trip's stops in order, with times.
         calls = defaultdict(list)
         for r in rows(z, "stop_times.txt"):
@@ -108,10 +113,17 @@ def summary():
         trip = {"kind": kind, "ref": ref, "colour": colour, "night": night, "days": days, "dir": direction,
                 "from": names[c[0][1]], "to": names[c[-1][1]], "dep": c[0][3], "dur": c[-1][2] - c[0][3]}
         if kind == "metro":
-            # Station by station, for the metro's travel times.
-            trip["stops"] = [[names[s], a - c[0][3]] for _, s, a, _ in c]
+            # Station by station (the station's id), for the metro's travel times.
+            trip["stops"] = [[stops[s]["parent_station"] or s, a - c[0][3]] for _, s, a, _ in c]
         out.append(trip)
-    data = {"dates": {k: str(v) for k, v in dates.items()}, "trips": out}
+    # The metro's stations: name, where, and their entrances.
+    used = {s for t in out if t["kind"] == "metro" for s, _ in t["stops"]}
+    stations = {k: {"name": stops[k]["stop_name"], "lat": float(stops[k]["stop_lat"]), "lon": float(stops[k]["stop_lon"]), "entrances": []}
+                for k in used}
+    for r in stops.values():
+        if r["location_type"] == "2" and r["parent_station"] in stations:
+            stations[r["parent_station"]]["entrances"].append({"name": r["stop_name"], "lat": float(r["stop_lat"]), "lon": float(r["stop_lon"])})
+    data = {"version": VERSION, "dates": {k: str(v) for k, v in dates.items()}, "trips": out, "stations": stations}
     SUMMARY.write_text(json.dumps(data, ensure_ascii=False))
     return data
 
