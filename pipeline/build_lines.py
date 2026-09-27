@@ -16,10 +16,13 @@ Each line in lines.json: `ref`, `colour`, `night` (the 9x night lines), `from` a
 `speed` ([distance, km/h] wherever the limit changes: the track's maxspeed, and
 less round tight curves) and `turns`, termini with no loop on the map: at `at` the
 tram stops, and it sets off again from `to` (where the track doubles back on itself,
-`to` = `at`: the tram reverses; otherwise it moves across to the other track).
+`to` = `at`: the tram reverses; otherwise it moves across to the other track), and
+`perHour`, trips per hour in each direction by hour of the day on a weekday, Saturday
+and Sunday, from PID's timetables (pid_timetable.py).
 """
 
 import heapq
+from collections import Counter
 import json
 import math
 import os
@@ -266,9 +269,39 @@ def main(area: str = "centrum") -> None:
             if c[0] not in used:
                 print(f"line {ref}: {c[1].get('from')} → {c[1].get('to')} (r{c[0]}) has no way back; left out")
 
+    frequencies(lines)
     out = OUT / f"{area}_now" / "lines.json"
     out.write_text(json.dumps({"lines": lines}, ensure_ascii=False, separators=(",", ":")))
     print(f"{len(lines)} lines, {out.stat().st_size / 1e6:.2f} MB → {out.relative_to(OUT.parent)}")
+
+
+def frequencies(lines):
+    """Each line variant's trips per hour in one direction, for a weekday, a Saturday
+    and a Sunday, from PID's timetables (pid_timetable.py). A trip counts for the
+    variant with the same two termini; a short working or a run from the depot, for
+    the variant it shares a terminus with. Without the timetables the game runs every
+    line every 8 minutes."""
+    try:
+        from pid_timetable import DAYS, summary
+        trips = [t for t in summary()["trips"] if t["kind"] == "tram"]
+    except Exception as e:  # noqa: BLE001 - offline: fine without
+        print(f"no timetables ({e}); trams will run every 8 minutes")
+        return
+    for line in lines:
+        line["perHour"] = {day: [0.0] * 24 for day in DAYS}
+    unmatched = Counter()
+    for t in trips:
+        cands = [ln for ln in lines if ln["ref"] == t["ref"]]
+        if not cands:
+            unmatched[t["ref"]] += 1
+            continue
+        best = max(cands, key=lambda ln: ((t["from"] in (ln["from"], ln["to"])) + (t["to"] in (ln["from"], ln["to"])), ln["length"]))
+        for day in t["days"]:
+            best["perHour"][day][(t["dep"] // 3600) % 24] += 0.5  # both directions count
+    for line in lines:
+        line["perHour"] = {day: [round(x, 1) for x in v] for day, v in line["perHour"].items()}
+    if unmatched:
+        print("timetabled lines not on the map:", ", ".join(sorted(unmatched, key=lambda r: int(re.sub(r"\D", "", r) or 0))))
 
 
 def join(tracks, a, b):
