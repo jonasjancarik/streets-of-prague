@@ -101,6 +101,14 @@ Sizes: centrum is 234 tiles and about 36 MB; the whole city 13,609 tiles, 247k O
 buildings and IPR buildings in 4,326 tiles, about 580 MB. The caches (OSM extract and
 IPR sheets) are about 7.5 GB.
 
+## Deploying
+
+It runs at <https://streets.jonasjancarik.cz> from mbxp. `scripts/deploy-mbxp.sh`
+builds the committed code, uploads it as a new release and syncs your local
+`public/data/` to the server (only changed files go over), then restarts the
+`streets-of-prague` container on `127.0.0.1:3017`. The Cloudflare tunnel
+`urad-ai-poc` routes the hostname there.
+
 ## Credits
 
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
