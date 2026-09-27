@@ -221,10 +221,24 @@ uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 
+- **Layers.** The map is built in layers, and each step rebuilds only its own
+  (`pipeline/layers.py`): `build_tiles.py` makes the OSM buildings, the ground (land
+  use, streets and pavements, parking areas, walls, rails, crossings, trees), the
+  street networks and the paid parking; `ipr_buildings.py` and `ipr_terrain.py` add
+  IPR's buildings and terrain. Every step ends by putting the tiles together from all
+  the layers, rewriting only the files that changed. So after changing how pavements
+  are drawn, `uv run build_tiles.py centrum --layers ground` rebuilds just the ground
+  (it then says to run `ipr_terrain.py`, which raises the bridges from it); after
+  changing the street networks, `--layers streets`. The layers are kept in
+  `pipeline/.cache/layers/`.
+- **Caches.** Every OSM chunk and every IPR sheet is read only once. What comes out
+  is kept (`pipeline/.cache/osm/*.parsed.pkl`, `pipeline/.cache/ipr/parsed/`) and read
+  again only when the source changes. Chunks and sheets are worked on side by side
+  (`--jobs`, by default two fewer than the machine has cores).
 - **OSM.** With `pipeline/.cache/osm/czech-republic-latest.osm.pbf` from
   [Geofabrik](https://download.geofabrik.de/europe/czech-republic.html) (about 950 MB)
-  the chunks are cut locally with osmium; the centre builds in under a minute, the
-  whole city in about 20 minutes. Without it the pipeline asks Overpass (set
+  the chunks are cut locally with osmium; the centre builds in under half a minute
+  the first time and in about 15 seconds after that. Without it the pipeline asks Overpass (set
   `OVERPASS_URL=https://maps.mail.ru/osm/tools/overpass/api` if overpass-api.de
   refuses). `build_tiles.py` works in 2 km chunks with a 150 m overlap, so buildings
   and streets on a chunk border come out whole.

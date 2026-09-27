@@ -2,28 +2,39 @@
 terrain model (a TIN with ~10 m spacing, CityGML), for hill shading in the game.
 
     uv run ipr_terrain.py centrum            # after build_tiles.py centrum
+    uv run ipr_terrain.py praha --jobs 4     # sheets read side by side (default: cores - 2)
 
 Writes tiles/<i>_<j>.height.bin: a (N+1) x (N+1) grid of heights every 4 m across
 the tile (N = tile / 4), as little-endian uint16 decimetres above 100 m a.s.l.,
-rows from the tile's south edge; and "terrain" in index.json with the grid step.
+rows from the tile's south edge; and "terrain" in index.json with the grid step (kept
+as the terrain layer, see layers.py). Bridge decks are raised from the streets and
+bridges of the ground layer. Each sheet's heights on the area's grid are kept in
+pipeline/.cache/ipr/parsed/, so running this again after the ground changed takes
+seconds.
 
 Source: IPR Praha, 3D model terénu (datový podklad © IPR Praha, CC BY), SMO-5
 sheets TER_<block>_<X>-<Y>, downloaded once into pipeline/.cache/ipr/. Past the edge
 of the model (outside the city) the ground carries on at the nearest known height.
 """
 
+import argparse
 import io
 import json
 import math
-import sys
+import os
+import pickle
+import time
 import urllib.request
 import zipfile
+import zlib
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
 from lxml import etree
 from pyproj import Transformer
 
+import layers
 from osm_area import AREAS, OUT
 from ipr_buildings import CACHE, krovak_to_local, search, sheet, sheet_name
 
@@ -135,18 +146,18 @@ def fill_gaps(tiles, N, T, coarse=8):
                      + (grid[j + 1, i] * (1 - fu) + grid[j + 1, i + 1] * fu) * fv)
 
 
-def lift_bridges(out_dir, index, tiles, N, T, gx0, gy0):
+def lift_bridges(ground, tiles, N, T, gx0, gy0):
     """The terrain model is bare earth, so under a bridge it drops to the river or the
     road below. Raise every bridge deck to the height of its ends: where the bridge
-    meets ordinary roads and paths, sloping linearly from one end to the other."""
+    meets ordinary roads and paths, sloping linearly from one end to the other.
+    `ground`: the tiles' ground (areas and roads), in the order of index.json."""
     import shapely
     from shapely import STRtree
     from shapely.geometry import Polygon
     from shapely.ops import unary_union
 
     pieces, roads = [], []
-    for i, j, _ in index["tiles"]:
-        t = json.loads((out_dir / "tiles" / f"{i}_{j}.json").read_text())
+    for t in ground:
         here = t["areas"].get("bridge", []) + t["roads"].get("bridge", [])
         pieces += [Polygon(r[0], r[1:]).buffer(0.05) for r in here]
         if here:
@@ -226,14 +237,54 @@ def lift_bridges(out_dir, index, tiles, N, T, gx0, gy0):
     print(f"  {lifted} bridges lifted to their deck height")
 
 
-def main(area: str = "centrum") -> None:
-    out_dir = OUT / f"{area}_now"
-    index = json.loads((out_dir / "index.json").read_text())
-    w, s, e, n = AREAS[area]
-    T = index["tile"]
-    ox, oy = index["origin"]
-    local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
+PARSED_VERSION = 1  # bump when read_sheet's output changes
+
+
+def read_sheet(job):
+    """One sheet's heights on the area's 4 m lattice: (grid column and row of its first
+    cell, the heights as float32 with NaN where the sheet has none, lowest, highest).
+    Kept per area and sheet."""
+    name, path, local, gx0, gy0 = job
+    cache = CACHE / "parsed" / f"{name}_{zlib.crc32(local.encode()):08x}.pkl"
+    st = Path(path).stat()
+    key = [PARSED_VERSION, st.st_mtime_ns, st.st_size, local, gx0, gy0, STEP]
+    if cache.exists():
+        with open(cache, "rb") as f:
+            got = pickle.load(f)
+        if got["key"] == key:
+            return name, got["grid"]
     to_local = krovak_to_local(local)
+    tris = triangles(path)
+    flat = tris.reshape(-1, 3)
+    lx, ly = to_local.transform(flat[:, 0], flat[:, 1])
+    tris = np.column_stack([lx, ly, flat[:, 2]]).reshape(-1, 3, 3)
+    gi0, gi1 = math.floor((lx.min() - gx0) / STEP), math.ceil((lx.max() - gx0) / STEP)
+    gj0, gj1 = math.floor((ly.min() - gy0) / STEP), math.ceil((ly.max() - gy0) / STEP)
+    sub = np.full((gj1 - gj0 + 1, gi1 - gi0 + 1), np.nan)
+    rasterise(tris, gx0 + gi0 * STEP, gy0 + gj0 * STEP, sub.shape[1], sub.shape[0], STEP, sub)
+    grid = (gi0, gj0, sub.astype(np.float32), float(np.nanmin(sub)), float(np.nanmax(sub)), len(tris))
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cache.with_suffix(".tmp")
+    with open(tmp, "wb") as f:
+        pickle.dump({"key": key, "grid": grid}, f, protocol=5)
+    tmp.replace(cache)
+    return name, grid
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="IPR Praha's terrain for an area's tiles")
+    ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
+    ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
+    args = ap.parse_args()
+    area = args.area
+    out_dir = OUT / f"{area}_now"
+    meta = layers.read_meta(area)
+    if not meta:
+        raise SystemExit(f"{area}: run build_tiles.py {area} first")
+    w, s, e, n = AREAS[area]
+    T = meta["tile"]
+    ox, oy = meta["origin"]
+    local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
     to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
     corners = [sheet(*to_krovak.transform(lon, lat)) for lon in (w, e) for lat in (s, n)]
     items = catalogue()
@@ -242,8 +293,12 @@ def main(area: str = "centrum") -> None:
     # filled sheet by sheet, so memory follows the tiles that exist, not the bbox.
     N = int(T // STEP)
     gx0, gy0 = -ox, -oy
-    tiles = {(i, j): np.full((N + 1, N + 1), np.nan, dtype=np.float32) for i, j, _ in index["tiles"]}
-    lo, hi = math.inf, -math.inf
+    ground = []
+    tiles = {}
+    for i, j, t in layers.tiles(area, meta):
+        tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
+        ground.append({"areas": t["areas"], "roads": t["roads"]})
+    sheets = []
     for X in range(min(c[0] for c in corners), max(c[0] for c in corners) + 1):
         for Y in range(min(c[1] for c in corners), max(c[1] for c in corners) + 1):
             name = sheet_name(X, Y) and f"TER_{sheet_name(X, Y)}"
@@ -252,45 +307,46 @@ def main(area: str = "centrum") -> None:
                 if name:
                     print(f"  {name}: not in the catalogue")
                 continue
-            tris = triangles(path)
-            flat = tris.reshape(-1, 3)
-            lx, ly = to_local.transform(flat[:, 0], flat[:, 1])
-            tris = np.column_stack([lx, ly, flat[:, 2]]).reshape(-1, 3, 3)
-            gi0, gi1 = math.floor((lx.min() - gx0) / STEP), math.ceil((lx.max() - gx0) / STEP)
-            gj0, gj1 = math.floor((ly.min() - gy0) / STEP), math.ceil((ly.max() - gy0) / STEP)
-            sub = np.full((gj1 - gj0 + 1, gi1 - gi0 + 1), np.nan)
-            rasterise(tris, gx0 + gi0 * STEP, gy0 + gj0 * STEP, sub.shape[1], sub.shape[0], STEP, sub)
-            lo, hi = min(lo, np.nanmin(sub)), max(hi, np.nanmax(sub))
-            for (i, j), arr in tiles.items():
-                ci, cj = int(round(i * T / STEP)), int(round(j * T / STEP))
-                a0, a1 = max(ci, gi0), min(ci + N, gi1)
-                b0, b1 = max(cj, gj0), min(cj + N, gj1)
-                if a0 > a1 or b0 > b1:
-                    continue
-                part = sub[b0 - gj0:b1 - gj0 + 1, a0 - gi0:a1 - gi0 + 1]
-                view = arr[b0 - cj:b1 - cj + 1, a0 - ci:a1 - ci + 1]
-                ok = ~np.isnan(part)
-                view[ok] = part[ok]
-            print(f"  {name}: {len(tris)} triangles")
+            sheets.append((name, str(path), local, gx0, gy0))
+    started = time.perf_counter()
+    lo, hi = math.inf, -math.inf
+    run = map if args.jobs == 1 or len(sheets) == 1 else ProcessPoolExecutor(args.jobs).map
+    for name, (gi0, gj0, sub, slo, shi, count) in run(read_sheet, sheets):
+        gi1, gj1 = gi0 + sub.shape[1] - 1, gj0 + sub.shape[0] - 1
+        lo, hi = min(lo, slo), max(hi, shi)
+        for (i, j), arr in tiles.items():
+            ci, cj = int(round(i * T / STEP)), int(round(j * T / STEP))
+            a0, a1 = max(ci, gi0), min(ci + N, gi1)
+            b0, b1 = max(cj, gj0), min(cj + N, gj1)
+            if a0 > a1 or b0 > b1:
+                continue
+            part = sub[b0 - gj0:b1 - gj0 + 1, a0 - gi0:a1 - gi0 + 1]
+            view = arr[b0 - cj:b1 - cj + 1, a0 - ci:a1 - ci + 1]
+            ok = ~np.isnan(part)
+            view[ok] = part[ok]
+        print(f"  {name}: {count} triangles", flush=True)
+    print(f"  sheets read in {time.perf_counter() - started:.0f} s")
     if lo == math.inf:
         print("no terrain")
         return
     fill_gaps(tiles, N, T)
     bare = {k: a.copy() for k, a in tiles.items()}
-    lift_bridges(out_dir, index, tiles, N, T, gx0, gy0)
+    lift_bridges(ground, tiles, N, T, gx0, gy0)
     encode = lambda a: np.clip(np.round((a - 100) * 10), 0, 65535).astype("<u2").tobytes()  # noqa: E731
     with_bridges = []
     for (i, j), arr in tiles.items():
-        (out_dir / "tiles" / f"{i}_{j}.height.bin").write_bytes(encode(arr))
+        layers.write(out_dir / "tiles" / f"{i}_{j}.height.bin", encode(arr))
         # Where a bridge was raised, keep the bare ground too: hill shading comes from
         # that, so a raised deck doesn't cast a fake slope onto the river.
         if not np.array_equal(arr, bare[(i, j)]):
-            (out_dir / "tiles" / f"{i}_{j}.bare.bin").write_bytes(encode(bare[(i, j)]))
+            layers.write(out_dir / "tiles" / f"{i}_{j}.bare.bin", encode(bare[(i, j)]))
             with_bridges.append(f"{i}_{j}")
-    index["terrain"] = {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi), "bare": with_bridges}
-    (out_dir / "index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")))
-    print(f"terrain {lo:.0f}–{hi:.0f} m for {len(index['tiles'])} tiles")
+        else:
+            (out_dir / "tiles" / f"{i}_{j}.bare.bin").unlink(missing_ok=True)
+    layers.write_layer(area, "terrain", {"index": {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi), "bare": with_bridges}})
+    print(f"terrain {lo:.0f}–{hi:.0f} m for {len(tiles)} tiles")
+    layers.assemble(area)
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:])
+    main()

@@ -1,38 +1,52 @@
 """Cut the present-day map of an area into square tiles the driving game streams in
 around the camera, so an area can be as large as the city.
 
-    uv run build_tiles.py centrum          # 250 m tiles → public/data/centrum_now/
-    uv run build_tiles.py praha 250 2000   # tile size, chunk size (m) for big areas
+    uv run build_tiles.py centrum                     # 250 m tiles → public/data/centrum_now/
+    uv run build_tiles.py praha 250 2000              # tile size, chunk size (m) for big areas
+    uv run build_tiles.py centrum --layers ground     # only the land use, streets and pavements
+    uv run build_tiles.py praha --jobs 4              # chunks built side by side (default: cores - 2)
 
 Large areas are processed in chunks (default 2 km square, with a 150 m margin so
 buildings and streets across a chunk border come out whole and the same on both
 sides); every chunk is fetched from OSM, classified by osm_area.extract() in the
-area's own local metres, and cut into tiles.
+area's own local metres, and cut into tiles. With the local OSM extract, each
+chunk's OSM data is read once and kept next to its cut (<area>_<ci>_<cj>.parsed.pkl),
+so building again, or another layer, starts straight from it.
 
-Writes index.json (area size, origin, tile grid, all tram and funicular rails, since
-trams run across tiles) and tiles/<i>_<j>.json. Each tile has its own clipped land
-use, roads, rails, walls, weirs, crossings and trees; buildings that touch it, with
-`own` set on the tile holding the building's centre (the one that draws it); the car
-and pedestrian network edges that touch it (with OSM node ids, so the game can join
-them up across tiles); and the share of each paid-parking section inside it, if
-<area>_parking.json exists (run build_parking.py first).
+What a tile has comes in layers (see layers.py), and --layers rebuilds only some:
+buildings (OSM buildings that touch the tile, with `own` set on the tile holding the
+building's centre, the one that draws it); ground (clipped land use, streets and
+pavements, parking areas, walls, rails, weirs, crossings and trees); streets (the car
+and pedestrian network edges that touch it, with OSM node ids, so the game can join
+them up across tiles); parking (the share of each paid-parking section inside it, if
+<area>_parking.json exists; run build_parking.py first). Changing the size of the
+tiles or chunks needs all four.
+
+Then it writes index.json (area size, origin, tile grid, all tram and funicular rails,
+since trams run across tiles), tiles/<i>_<j>.json and names.json (layers.assemble).
 """
 
+import argparse
 import json
 import math
 import os
+import pickle
 import re
 import subprocess
-import sys
+import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import osmnx as ox
 from pyproj import Transformer
+import shapely
 from shapely import STRtree
-from shapely.geometry import LineString, Point, Polygon, box
+from shapely.geometry import LineString, Polygon, box
 
 from kerbs import NO_PARKING, estimate
-from osm_area import AREAS, CAR_ROADS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, extract, road_width, use_overpass_mirror
+import layers
+from osm_area import (AREAS, CAR_ROADS, FEATURE_TAGS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, extract,
+                      features_from_json, road_width, use_overpass_mirror)
 
 MARGIN = 150.0
 # A local OpenStreetMap extract, if there is one, is much faster and kinder than
@@ -109,10 +123,11 @@ def kerb_parking(d, side):
 
 def graph_edges(bbox, tf, network, directed, source=None, kerbs=None):
     """Edges of an osmnx network as dicts with OSM node ids and local-metre polylines;
-    with `kerbs` (kerbs.Kerbs), car roads get their kerbs as `kerb`: [right, left]."""
+    with `kerbs` (kerbs.Kerbs), car roads get their kerbs as `kerb`: [right, left].
+    `source`: the local cut's OSM data as read by read_osm (pickled osmnx JSON)."""
     if source:
         # The same network osmnx would ask Overpass for, built from the local cut.
-        data = ox._osm_xml._overpass_json_from_xml(Path(source), "utf-8")
+        data = pickle.loads(source)
         ok = network_filter(network)
         data["elements"] = [el for el in data["elements"] if el["type"] != "way" or ok(el.get("tags", {}))]
         G = ox.graph._create_graph([data], network in ox.settings.bidirectional_network_types)
@@ -164,22 +179,33 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None):
     return out
 
 
-def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
-    T = float(tile)
-    C = max(1, round(float(chunk) / T))  # tiles per chunk side
-    w, s, e, n = AREAS[area]
-    centre = ((w + e) / 2, (s + n) / 2)
-    tf = Transformer.from_crs(
-        "EPSG:4326",
-        f"+proj=tmerc +lat_0={centre[1]} +lon_0={centre[0]} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m",
-        always_xy=True,
-    )
-    inv = Transformer.from_crs(tf.target_crs, "EPSG:4326", always_xy=True)
-    x0, y0 = tf.transform(w, s)
-    x1, y1 = tf.transform(e, n)
-    cols, rows = math.ceil((x1 - x0) / T), math.ceil((y1 - y0) / T)
-    out_dir = OUT / f"{area}_now"
-    (out_dir / "tiles").mkdir(parents=True, exist_ok=True)
+PARSED_VERSION = 2  # bump when what read_osm keeps changes
+
+
+def read_osm(source: Path):
+    """A chunk's OSM data read from its .osm cut once: (osmnx's JSON of it, pickled, for
+    the street graphs; the features for osm_area.extract). Kept next to the cut and
+    read again only when the cut or the tags asked for change."""
+    cache = source.with_suffix(".parsed.pkl")
+    st = source.stat()
+    key = [PARSED_VERSION, st.st_mtime_ns, st.st_size, ox.__version__, repr(FEATURE_TAGS)]
+    if cache.exists():
+        with open(cache, "rb") as f:
+            got = pickle.load(f)
+        if got["key"] == key:
+            return got["elements"], got["features"]
+    elements = pickle.dumps(ox._osm_xml._overpass_json_from_xml(source, "utf-8"), protocol=5)
+    # osmnx may change the data it's handed, so the features get a copy of their own.
+    features = features_from_json(pickle.loads(elements))
+    tmp = cache.with_suffix(".tmp")
+    with open(tmp, "wb") as f:
+        pickle.dump({"key": key, "elements": elements, "features": features}, f, protocol=5)
+    tmp.replace(cache)
+    return elements, features
+
+
+def setup():
+    """osmnx settings for the street graphs and features, in every worker."""
     ox.settings.use_cache = True
     ox.settings.cache_folder = str(Path(__file__).parent / ".cache")
     use_overpass_mirror()
@@ -187,6 +213,9 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
         ox.settings.useful_tags_way = [*ox.settings.useful_tags_way, "surface"]  # asphalt vs setts
     ox.settings.useful_tags_way = [*dict.fromkeys([*ox.settings.useful_tags_way, *PARKING_TAGS, "embedded_rails"])]
 
+
+def load_sections(area):
+    """Paid-parking sections (meta, polygons, the section's whole area), if built."""
     sections = []
     parking = OUT / f"{area}_parking.json"
     if parking.exists():
@@ -195,95 +224,197 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
             full = sum(p.area for p in polys) / max(sec["inside"], 1e-6)
             meta = {k: sec.get(k) for k in ("code", "category", "spaces", "occDay", "occNight")}
             sections.append((meta, polys, full))
+    return sections
 
-    # Cut the area out of the country extract once; chunks are cut from that.
-    area_pbf = None
-    if PBF.exists():
-        pad = 0.01
-        area_pbf = cut((w - pad, s - pad, e + pad, n + pad), PBF.parent / f"{area}.osm.pbf")
 
-    tiles, rails, n_buildings = [], [], 0
-    names = {}  # street name → (length of its longest edge, midpoint), for the dev search
-    chunks = [(ci, cj) for ci in range(math.ceil(cols / C)) for cj in range(math.ceil(rows / C))]
-    for number, (ci, cj) in enumerate(chunks, 1):
-        core = (x0 + ci * C * T, y0 + cj * C * T, min(x1, x0 + (ci + 1) * C * T), min(y1, y0 + (cj + 1) * C * T))
-        mx0, my0, mx1, my1 = core[0] - MARGIN, core[1] - MARGIN, core[2] + MARGIN, core[3] + MARGIN
-        corners = [inv.transform(px, py) for px in (mx0, mx1) for py in (my0, my1)]
-        bbox = (min(c[0] for c in corners), min(c[1] for c in corners), max(c[0] for c in corners), max(c[1] for c in corners))
-        print(f"chunk {number}/{len(chunks)} ({ci},{cj})")
-        source = cut(bbox, PBF.parent / f"{area}_{ci}_{cj}.osm", area_pbf) if area_pbf else None
-        x = extract(area, bbox=bbox, centre=centre, source=source)
-        drive = graph_edges(bbox, tf, "drive", True, source, x["kerbs"])
-        walk = graph_edges(bbox, tf, "walk", False, source)
+_sections = None  # per worker: (sections, STRtree over all their polygons, polygon → section)
 
+
+def build_chunk(job):
+    """Build the asked-for layers of one chunk; writes them and returns what took how long."""
+    global _sections
+    area, meta, ci, cj, wanted, area_pbf = job
+    started = time.perf_counter()
+    T, centre = meta["tile"], meta["centre"]
+    x0, y0, x1, y1 = meta["box"]
+    C = meta["chunk_tiles"]
+    tf = Transformer.from_crs("EPSG:4326", meta["crs"], always_xy=True)
+    inv = Transformer.from_crs(tf.target_crs, "EPSG:4326", always_xy=True)
+    core = (x0 + ci * C * T, y0 + cj * C * T, min(x1, x0 + (ci + 1) * C * T), min(y1, y0 + (cj + 1) * C * T))
+    mx0, my0, mx1, my1 = core[0] - MARGIN, core[1] - MARGIN, core[2] + MARGIN, core[3] + MARGIN
+    corners = [inv.transform(px, py) for px in (mx0, mx1) for py in (my0, my1)]
+    bbox = (min(c[0] for c in corners), min(c[1] for c in corners), max(c[0] for c in corners), max(c[1] for c in corners))
+    tiles = layers.chunk_tiles(meta, ci, cj)
+    boxes = {(i, j): box(*layers.tile_box(meta, i, j)) for i, j in tiles}
+    out = {}
+    lap = {}
+
+    if wanted & {"buildings", "ground", "streets"}:
+        t0 = time.perf_counter()
+        source = features = None
+        if area_pbf:
+            osm = cut(bbox, PBF.parent / f"{area}_{ci}_{cj}.osm", Path(area_pbf))
+            source, features = read_osm(osm)
+        lap["read"] = time.perf_counter() - t0
+        t0 = time.perf_counter()
+        x = extract(area, bbox=bbox, centre=centre, source=osm if area_pbf else None, features=features, ground="ground" in wanted)
+        lap["classify"] = time.perf_counter() - t0
+
+    if "buildings" in wanted:
         shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in x["buildings"]]
         centres = [p.representative_point() for p in shapes]
         btree = STRtree(shapes)
+        layer = {}
+        for (i, j), bx in boxes.items():
+            bx0, by0, bx1, by1 = bx.bounds
+            last_i, last_j = i == meta["cols"] - 1, j == meta["rows"] - 1
+
+            def own(c):  # half-open, so every centre belongs to exactly one tile
+                return (bx0 <= c.x < bx1 or (last_i and c.x == bx1)) and (by0 <= c.y < by1 or (last_j and c.y == by1))
+
+            hits = btree.query(bx, predicate="intersects")
+            if len(hits):
+                layer[f"{i}_{j}"] = {"buildings": [{**x["buildings"][k], "own": own(centres[k])} for k in sorted(hits)]}
+        out["buildings"] = {"tiles": layer}
+
+    if "ground" in wanted:
+        t0 = time.perf_counter()
+        core_box = box(*core)
+        rails = [{**r, "pts": _coords(ls)} for r in x["rails"] for ls in _lines(LineString(r["pts"]).intersection(core_box))]
+        ltree = STRtree([lot["poly"] for lot in x["lots"]])
+        # Lines looked up by tile through a tree; sorted hits keep the order they came in.
+        lines = {key: [LineString(item["pts"]) for item in x[key]] for key in ("walls", "rails", "passages")}
+        lines["weirs"] = [LineString(wr) for wr in x["weirs"]]
+        crossings = [c for c in x["crossings"] if len(c) > 1]
+        lines["crossings"] = [LineString(c) for c in crossings]
+        trees = {key: STRtree(v) for key, v in lines.items()}
+        tree_xy = shapely.points(x["trees"]) if x["trees"] else None
+        layer = {}
+        for (i, j), bx in boxes.items():
+            t = {}
+            t["areas"] = {k: v for k, g in x["areas"].items() if (v := [_rings(p) for p in _polys(g.intersection(bx))])}
+            # Parking areas one by one, with their orientation (the game lays out bays).
+            t["lots"] = [{"o": x["lots"][k]["o"], "rings": _rings(p)} for k in sorted(ltree.query(bx, predicate="intersects"))
+                         for p in _polys(x["lots"][k]["poly"].intersection(bx)) if p.area > 4]
+            t["roads"] = {k: v for k, g in x["roads"].items() if (v := [_rings(p) for p in _polys(g.intersection(bx))])}
+            for key in ("walls", "rails", "passages"):
+                t[key] = [{**x[key][k], "pts": _coords(ls)} for k in sorted(trees[key].query(bx))
+                          for ls in _lines(lines[key][k].intersection(bx))]
+            t["weirs"] = [_coords(ls) for k in sorted(trees["weirs"].query(bx)) for ls in _lines(lines["weirs"][k].intersection(bx))]
+            t["crossings"] = [_coords(ls) for k in sorted(trees["crossings"].query(bx)) for ls in _lines(lines["crossings"][k].intersection(bx))]
+            t["trees"] = [x["trees"][k] for k in shapely.contains(bx, tree_xy).nonzero()[0]] if tree_xy is not None else []
+            if any(t.values()):
+                layer[f"{i}_{j}"] = t
+        out["ground"] = {"tiles": layer, "rails": rails}
+        lap["ground"] = time.perf_counter() - t0
+
+    if "streets" in wanted:
+        t0 = time.perf_counter()
+        drive = graph_edges(bbox, tf, "drive", True, source, x["kerbs"])
+        walk = graph_edges(bbox, tf, "walk", False, source)
+        names = {}  # street name → (length of its longest edge, midpoint), for the dev search
         for ed in drive + walk:
             if ed["name"]:
                 ls = LineString(ed["pts"])
                 mid = ls.interpolate(0.5, normalized=True)
                 if x0 <= mid.x <= x1 and y0 <= mid.y <= y1 and ls.length > names.get(ed["name"], (0,))[0]:
                     names[ed["name"]] = (ls.length, round(mid.x, 1), round(mid.y, 1))
-        dlines = [LineString(ed["pts"]) for ed in drive]
-        wlines = [LineString(ed["pts"]) for ed in walk]
-        dtree, wtree = STRtree(dlines), STRtree(wlines)
-        ltree = STRtree([lot["poly"] for lot in x["lots"]])
-        core_box = box(*core)
-        for r in x["rails"]:
-            for ls in _lines(LineString(r["pts"]).intersection(core_box)):
-                rails.append({**r, "pts": _coords(ls)})
+        dtree, wtree = STRtree([LineString(ed["pts"]) for ed in drive]), STRtree([LineString(ed["pts"]) for ed in walk])
+        layer = {}
+        for (i, j), bx in boxes.items():
+            t = {"drive": [drive[k] for k in sorted(dtree.query(bx, predicate="intersects"))],
+                 "walk": [walk[k] for k in sorted(wtree.query(bx, predicate="intersects"))]}
+            if t["drive"] or t["walk"]:
+                layer[f"{i}_{j}"] = t
+        out["streets"] = {"tiles": layer, "names": names}
+        lap["streets"] = time.perf_counter() - t0
 
-        for i in range(ci * C, min(cols, (ci + 1) * C)):
-            for j in range(cj * C, min(rows, (cj + 1) * C)):
-                bx = box(x0 + i * T, y0 + j * T, min(x1, x0 + (i + 1) * T), min(y1, y0 + (j + 1) * T))
-                bx0, by0, bx1, by1 = bx.bounds
-                last_i, last_j = i == cols - 1, j == rows - 1
+    if "parking" in wanted:
+        # Paid-parking sections clipped to the tile, with the share of each section's
+        # spaces that falls inside it.
+        if _sections is None:
+            secs = load_sections(area)
+            polys = [p for _, ps, _ in secs for p in ps]
+            owner = [n for n, (_, ps, _) in enumerate(secs) for _ in ps]
+            _sections = (secs, STRtree(polys), owner)
+        secs, stree, owner = _sections
+        layer = {}
+        for (i, j), bx in boxes.items():
+            found = []
+            for n in sorted({owner[k] for k in stree.query(bx)}):
+                sec_meta, polys, full = secs[n]
+                parts = [q for p in polys for q in _polys(p.intersection(bx))]
+                a = sum(q.area for q in parts)
+                if a > 1:
+                    found.append({**sec_meta, "share": round(a / full, 4), "polys": [_rings(q) for q in parts]})
+            if found:
+                layer[f"{i}_{j}"] = {"sections": found}
+        out["parking"] = {"tiles": layer}
 
-                def own(c):  # half-open, so every centre belongs to exactly one tile
-                    return (bx0 <= c.x < bx1 or (last_i and c.x == bx1)) and (by0 <= c.y < by1 or (last_j and c.y == by1))
+    for name, data in out.items():
+        layers.write(layers.chunk_path(area, name, ci, cj), layers.dumps(data))
+    lap["total"] = time.perf_counter() - started
+    return ci, cj, lap
 
-                t = {"i": i, "j": j, "box": [round(v, 2) for v in bx.bounds]}
-                t["areas"] = {k: v for k, g in x["areas"].items() if (v := [_rings(p) for p in _polys(g.intersection(bx))])}
-                # Parking areas one by one, with their orientation (the game lays out bays).
-                t["lots"] = [{"o": x["lots"][k]["o"], "rings": _rings(p)} for k in sorted(ltree.query(bx, predicate="intersects"))
-                             for p in _polys(x["lots"][k]["poly"].intersection(bx)) if p.area > 4]
-                t["roads"] = {k: v for k, g in x["roads"].items() if (v := [_rings(p) for p in _polys(g.intersection(bx))])}
-                hits = btree.query(bx, predicate="intersects")
-                t["buildings"] = [{**x["buildings"][k], "own": own(centres[k])} for k in sorted(hits)]
-                for key in ("walls", "rails", "passages"):
-                    t[key] = [{**item, "pts": _coords(ls)} for item in x[key] for ls in _lines(LineString(item["pts"]).intersection(bx))]
-                t["weirs"] = [_coords(ls) for wr in x["weirs"] for ls in _lines(LineString(wr).intersection(bx))]
-                t["crossings"] = [_coords(ls) for c in x["crossings"] if len(c) > 1 for ls in _lines(LineString(c).intersection(bx))]
-                t["trees"] = [p for p in x["trees"] if bx.contains(Point(p))]
-                t["drive"] = [drive[k] for k in sorted(dtree.query(bx, predicate="intersects"))]
-                t["walk"] = [walk[k] for k in sorted(wtree.query(bx, predicate="intersects"))]
-                # Paid-parking sections clipped to the tile, with the share of each
-                # section's spaces that falls inside it.
-                t["sections"] = []
-                for meta, polys, full in sections:
-                    parts = [q for p in polys for q in _polys(p.intersection(bx))]
-                    a = sum(q.area for q in parts)
-                    if a > 1:
-                        t["sections"].append({**meta, "share": round(a / full, 4), "polys": [_rings(q) for q in parts]})
-                if not (t["buildings"] or t["areas"] or t["roads"] or t["walk"]):
-                    continue
-                (out_dir / "tiles" / f"{i}_{j}.json").write_text(json.dumps(t, ensure_ascii=False, separators=(",", ":")))
-                owned = sum(b["own"] for b in t["buildings"])
-                n_buildings += owned
-                tiles.append([i, j, owned])
 
-    index = {
-        "area": area, "bbox_wgs84": [w, s, e, n],
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
+    ap.add_argument("tile", nargs="?", type=float, default=250.0, help="tile size in metres")
+    ap.add_argument("chunk", nargs="?", type=float, default=2000.0, help="chunk size in metres")
+    ap.add_argument("--layers", default=",".join(layers.CHUNKED),
+                    help=f"which layers to build, comma-separated (default all: {','.join(layers.CHUNKED)})")
+    ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="chunks built side by side")
+    args = ap.parse_args()
+    area, T = args.area, args.tile
+    wanted = set(args.layers.split(","))
+    if wanted - set(layers.CHUNKED):
+        ap.error(f"unknown layers: {', '.join(sorted(wanted - set(layers.CHUNKED)))}")
+    C = max(1, round(args.chunk / T))  # tiles per chunk side
+    w, s, e, n = AREAS[area]
+    centre = ((w + e) / 2, (s + n) / 2)
+    crs = f"+proj=tmerc +lat_0={centre[1]} +lon_0={centre[0]} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
+    tf = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+    x0, y0 = tf.transform(w, s)
+    x1, y1 = tf.transform(e, n)
+    cols, rows = math.ceil((x1 - x0) / T), math.ceil((y1 - y0) / T)
+    meta = {
+        "area": area, "bbox_wgs84": [w, s, e, n], "centre": centre, "crs": crs, "box": [x0, y0, x1, y1],
         "size": [round(x1 - x0, 2), round(y1 - y0, 2)], "origin": [round(-x0, 2), round(-y0, 2)],
-        "tile": T, "cols": cols, "rows": rows, "tiles": tiles, "rails": rails, "graphs": True, "parkingInTiles": bool(sections),
+        "tile": T, "chunk_tiles": C, "cols": cols, "rows": rows,
     }
-    (out_dir / "index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")))
-    (out_dir / "names.json").write_text(json.dumps({k: v[1:] for k, v in sorted(names.items())}, ensure_ascii=False, separators=(",", ":")))
-    total = sum(p.stat().st_size for p in (out_dir / "tiles").glob("*.json"))
-    print(f"{area}: {x1 - x0:.0f} x {y1 - y0:.0f} m, {len(tiles)} tiles of {T:.0f} m in {len(chunks)} chunks, "
-          f"{n_buildings} buildings, {total / 1e6:.1f} MB → {out_dir.name}/")
+    old = layers.read_meta(area)
+    grid = ("tile", "chunk_tiles", "cols", "rows", "box")
+    if wanted != set(layers.CHUNKED) and (not old or any(old[k] != meta[k] for k in grid)):
+        ap.error("the tiles or chunks aren't the ones the other layers were built with: build all layers")
+    meta["parking"] = bool(load_sections(area)) if "parking" in wanted else old["parking"]
+
+    setup()
+    # Cut the area out of the country extract once; chunks are cut from that.
+    area_pbf = None
+    if PBF.exists():
+        pad = 0.01
+        area_pbf = str(cut((w - pad, s - pad, e + pad, n + pad), PBF.parent / f"{area}.osm.pbf"))
+
+    todo = layers.chunks(meta)
+    jobs = [(area, meta, ci, cj, wanted, area_pbf) for ci, cj in todo]
+    started = time.perf_counter()
+    print(f"{area}: {x1 - x0:.0f} x {y1 - y0:.0f} m, {len(todo)} chunks, layers {', '.join(sorted(wanted))}, {args.jobs} at a time")
+    run = map if args.jobs == 1 or len(jobs) == 1 else ProcessPoolExecutor(args.jobs, initializer=setup).map
+    for number, (ci, cj, lap) in enumerate(run(build_chunk, jobs), 1):
+        steps = ", ".join(f"{k} {v:.1f}" for k, v in lap.items() if k != "total")
+        print(f"chunk {number}/{len(jobs)} ({ci},{cj}) {lap['total']:.1f} s ({steps})", flush=True)
+    layers.write_meta(area, meta)
+    print(f"built in {time.perf_counter() - started:.0f} s")
+    layers.assemble(area)
+    later = []
+    if "buildings" in wanted and layers.read_layer(area, "ipr"):
+        later.append(f"ipr_buildings.py {area} (it matches IPR's buildings against OSM's)")
+    if "ground" in wanted and layers.read_layer(area, "terrain"):
+        later.append(f"ipr_terrain.py {area} (it raises the bridges)")
+    for step in later:
+        print(f"now run {step}")
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:])
+    main()

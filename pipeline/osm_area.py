@@ -11,11 +11,14 @@ import random
 import zlib
 from pathlib import Path
 
+import numpy as np
 import osmnx as ox
+import pandas as pd
+import shapely
 from pyproj import Transformer
 from shapely import STRtree
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon, box
-from shapely.ops import transform, unary_union
+from shapely.ops import unary_union
 
 from kerbs import Kerbs, estimate
 
@@ -52,12 +55,46 @@ def road_width(hw, width=None, lanes=None):
     return ROAD_WIDTH.get(hw, 6)
 
 
-def extract(area: str, bbox=None, centre=None, source=None) -> dict:
+# What extract() asks OSM for.
+FEATURE_TAGS = {
+    "building": True, "highway": True, "landuse": True, "leisure": True,
+    "natural": True, "waterway": True, "railway": True, "amenity": True,
+    "barrier": ["wall", "city_wall"], "man_made": ["bridge", "pier"],
+    "place": ["islet", "island"], "historic": ["city_gate", "castle_wall"],
+    "bridge": True, "area:highway": True,
+}
+
+
+def features_from_json(data):
+    """The features extract() works on, from OSM data already read into osmnx's JSON
+    (as ox.features_from_xml would make them, without reading the file again)."""
+    gdf = ox.features._create_gdf([data], Polygon(), FEATURE_TAGS)
+    return feature_rows(gdf.drop(columns=list(set(gdf.columns) & {"changeset", "timestamp", "uid", "user", "version"})))
+
+
+def feature_rows(gdf):
+    """(geometries, each feature's tags) of an osmnx features table. The table has a
+    column for every tag any feature has (a thousand in the centre), so each feature
+    keeps only its own: much smaller to keep and quicker to go through."""
+    fr = gdf.reset_index()
+    rows = [{} for _ in range(len(fr))]
+    for c in fr.columns:
+        if c != "geometry":
+            v = fr[c].values
+            for k in pd.notna(v).nonzero()[0]:
+                rows[k][c] = v[k]
+    return fr.geometry.values, rows
+
+
+def extract(area: str, bbox=None, centre=None, source=None, features=None, ground=True) -> dict:
     """Fetch and classify everything in the area; geometry stays as shapely objects.
 
     `bbox` (WGS84) overrides the area's box, e.g. for one chunk of a large area, and
     `centre` (lon, lat) keeps the local metres of the whole area, so chunks line up.
-    `source`: an .osm XML file already cut to the box, instead of asking Overpass.
+    `source`: an .osm XML file already cut to the box, instead of asking Overpass;
+    `features`: the features already read (features_from_json).
+    `ground`: False leaves out the land use and the streets' surfaces ("areas" and
+    "roads" come back empty), which take most of the time here.
     """
     w, s, e, n = bbox or AREAS[area]
     lon0, lat0 = centre or ((w + e) / 2, (s + n) / 2)
@@ -66,25 +103,16 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
         f"+proj=tmerc +lat_0={lat0} +lon_0={lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m",
         always_xy=True,
     )
-    proj = lambda g: transform(tf.transform, g)  # noqa: E731
     x0, y0 = tf.transform(w, s)
     x1, y1 = tf.transform(e, n)
     clip = box(x0, y0, x1, y1)
-    print(f"area {area}: {x1 - x0:.0f} x {y1 - y0:.0f} m")
 
-    ox.settings.use_cache = True
-    ox.settings.cache_folder = str(Path(__file__).parent / ".cache")
-    use_overpass_mirror()
-    tags = {
-        "building": True, "highway": True, "landuse": True, "leisure": True,
-        "natural": True, "waterway": True, "railway": True, "amenity": True,
-        "barrier": ["wall", "city_wall"], "man_made": ["bridge", "pier"],
-        "place": ["islet", "island"], "historic": ["city_gate", "castle_wall"],
-        "bridge": True, "area:highway": True,
-    }
-    gdf = ox.features_from_xml(source, tags=tags) if source else ox.features_from_bbox((w, s, e, n), tags)
-    gdf = gdf.reset_index()
-    print(f"{len(gdf)} OSM features")
+    if features is None:
+        ox.settings.use_cache = True
+        ox.settings.cache_folder = str(Path(__file__).parent / ".cache")
+        use_overpass_mirror()
+        features = feature_rows(ox.features_from_xml(source, tags=FEATURE_TAGS) if source else ox.features_from_bbox((w, s, e, n), FEATURE_TAGS))
+    geoms, rows = features
 
     def col(row, k):
         v = row.get(k)
@@ -102,12 +130,12 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
     car_ways = []  # (line, what its tags say, class, a street?), sized after the loop
     sidewalks = []  # footways and paths with their half widths, which may run along a street
 
-    for _, row in gdf.iterrows():
-        g = row.geometry
+    # Every geometry into local metres in one go.
+    geoms = shapely.transform(geoms, lambda c: np.column_stack(tf.transform(c[:, 0], c[:, 1])))
+    for g, row in zip(geoms, rows):
         if g is None or g.is_empty:
             continue
         osm_id = f"{row['element']}/{row['id']}"
-        g = proj(g)
         if not g.intersects(clip):
             continue
 
@@ -205,6 +233,13 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
                 areas.setdefault("bridge", []).append(g.buffer(0))
 
     kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways])
+    if not ground:
+        return {
+            "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
+            "buildings": buildings, "areas": {}, "roads": {}, "rails": rails,
+            "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
+            "lots": lots, "kerbs": kerbs,
+        }
     for (ls, _, cls, street), (left, right) in zip(car_ways, kerbs([w[0] for w in car_ways], [w[1] for w in car_ways])):
         # Each side out to its kerb, and round ends so streets join up at crossroads.
         poly = unary_union([ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),

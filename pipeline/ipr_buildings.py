@@ -2,25 +2,34 @@
 shapes, towers, domes and dormers) for the tiles made by build_tiles.py.
 
     uv run ipr_buildings.py centrum            # after build_tiles.py centrum
+    uv run ipr_buildings.py praha --jobs 4     # sheets read side by side (default: cores - 2)
 
 For every tile it writes tiles/<i>_<j>.ipr.bin next to the tile JSON: the triangles of
-every building whose footprint centre is in the tile, with roof or wall colours, and
-marks the tile JSON with "ipr" so the game draws these instead of extruding OSM
-footprints. OSM buildings that no IPR building stands on (newer ones, sheds, anything
-past the edge of the model) get "noIpr" and are still extruded. OSM footprints still
-drive collisions and contact shadows.
+every building whose footprint centre is in the tile, with roof or wall colours; the
+tile JSON gets "ipr" so the game draws these instead of extruding OSM footprints. OSM
+buildings that no IPR building stands on (newer ones, sheds, anything past the edge of
+the model) get "noIpr" and are still extruded. OSM footprints still drive collisions
+and contact shadows. What the tiles get is kept as the ipr layer (see layers.py).
+
+Each sheet is read once: its buildings, triangulated in the area's local metres, are
+kept in pipeline/.cache/ipr/parsed/<area>/, so running this again (after the OSM
+buildings changed, say) only matches them up and colours them.
 
 Source: IPR Praha, 3D model budov (datový podklad © IPR Praha, CC BY). Sheets are
 SMO-5 map sheets of 2.5 x 2 km, BD3_<block>_<X>-<Y>, downloaded once into
 pipeline/.cache/ipr/ from IPR's ArcGIS Online catalogue (each is ~150-250 MB).
 """
 
+import argparse
 import json
 import math
+import os
+import pickle
 import struct
-import sys
+import time
 import urllib.request
 import zlib
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +38,7 @@ from pyproj import Transformer
 from shapely import STRtree, constrained_delaunay_triangles
 from shapely.geometry import MultiPoint, Point, Polygon
 
+import layers
 from osm_area import AREAS, OUT
 
 CACHE = Path(__file__).parent / ".cache" / "ipr"
@@ -196,37 +206,98 @@ def colours(bid, osm):
     return roof, wall
 
 
-def main(area: str = "centrum") -> None:
-    out_dir = OUT / f"{area}_now"
-    index = json.loads((out_dir / "index.json").read_text())
-    w, s, e, n = AREAS[area]
-    T = index["tile"]
-    ox, oy = index["origin"]
-    local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
+PARSED_VERSION = 1  # bump when read_sheet's output changes
+
+
+def read_sheet(job):
+    """Every building of one sheet: (gml id, tile (i, j), int16 positions packed for the
+    tile, a code per triangle (0 wall, 1 roof, 2 flat roof), ground outlines); None
+    for the positions where a building has no triangles. Kept per area and sheet."""
+    name, path, local, T, origin = job
+    cache = CACHE / "parsed" / f"{name}_{zlib.crc32(local.encode()):08x}.pkl"
+    st = Path(path).stat()
+    key = [PARSED_VERSION, st.st_mtime_ns, st.st_size, local, T, origin, REF_HEIGHT]
+    if cache.exists():
+        with open(cache, "rb") as f:
+            got = pickle.load(f)
+        if got["key"] == key:
+            return name, got["buildings"]
     to_local = krovak_to_local(local)
+    ox, oy = origin
+    out = []
+    for bid, surfaces in buildings(path):
+        pts = np.vstack([v for _, v in surfaces])
+        lx, ly = to_local.transform(pts[:, 0], pts[:, 1])
+        cx, cy = float(np.mean(lx)), float(np.mean(ly))
+        i, j = math.floor((cx + ox) / T), math.floor((cy + oy) / T)
+        tris, codes, ground = [], [], []
+        for kind, ring in surfaces:
+            rx, ry = to_local.transform(ring[:, 0], ring[:, 1])
+            if kind == 2 and len(ring) >= 3:
+                ground.append(Polygon(np.column_stack([rx, ry])).buffer(0))
+            loc = np.column_stack([rx, ry, ring[:, 2] - REF_HEIGHT])
+            for t in triangulate(loc):
+                nrm = np.cross(t[1] - t[0], t[2] - t[0])
+                if kind == 1 and nrm[2] < 0:
+                    t, nrm = [t[0], t[2], t[1]], -nrm  # roofs always face up
+                tris.append(t)
+                flat = kind == 1 and nrm[2] > 0.97 * (np.linalg.norm(nrm) or 1)
+                codes.append(2 if flat else 1 if kind == 1 else 0)
+        pos = footprints = None
+        if tris:
+            footprints = [g for g in ground if g.area > 0.5] or [MultiPoint(np.column_stack([lx, ly])).convex_hull]
+            # Pack right away: centimetres from the tile corner, (x, height, y).
+            x0, y0 = i * T - ox, j * T - oy
+            v = np.array(tris, dtype=np.float64).reshape(-1, 3)
+            p = np.column_stack([(v[:, 0] - x0) * 100, v[:, 2] * 100, (v[:, 1] - y0) * 100])
+            pos = np.clip(np.round(p), -32768, 32767).astype("<i2").ravel()
+        out.append((bid, cx, cy, (i, j), pos, np.array(codes, dtype=np.uint8), footprints))
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cache.with_suffix(".tmp")
+    with open(tmp, "wb") as f:
+        pickle.dump({"key": key, "buildings": out}, f, protocol=5)
+    tmp.replace(cache)
+    return name, out
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="IPR Praha's 3D buildings for an area's tiles")
+    ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
+    ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
+    args = ap.parse_args()
+    area = args.area
+    out_dir = OUT / f"{area}_now"
+    meta = layers.read_meta(area)
+    if not meta:
+        raise SystemExit(f"{area}: run build_tiles.py {area} first")
+    w, s, e, n = AREAS[area]
+    T = meta["tile"]
+    origin = meta["origin"]
+    local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
     to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
     corners = [to_krovak.transform(lon, lat) for lon in (w, e) for lat in (s, n)]
     xs = [sheet(x, y) for x, y in corners]
     X0, X1 = min(c[0] for c in xs), max(c[0] for c in xs)
     Y0, Y1 = min(c[1] for c in xs), max(c[1] for c in xs)
     items = catalogue()
-    tiles_on_disk = {(i, j) for i, j, _ in index["tiles"]}
 
     # OSM buildings per tile, to borrow tags (church, roof shape, kind) for colours.
     osm_by_tile = {}
+    for i, j, t in layers.tiles(area, meta):
+        bs = [b for b in t["buildings"] if len(b["rings"][0]) >= 3]
+        osm_by_tile[(i, j)] = (bs, [Polygon(b["rings"][0]) for b in bs], None)
 
     def osm_at(i, j, pt):
-        if (i, j) not in osm_by_tile:
-            p = out_dir / "tiles" / f"{i}_{j}.json"
-            bs = json.loads(p.read_text())["buildings"] if p.exists() else []
-            osm_by_tile[(i, j)] = [(Polygon(b["rings"][0]), b) for b in bs if len(b["rings"][0]) >= 3]
-        for poly, b in osm_by_tile[(i, j)]:
-            if poly.contains(pt):
-                return b
+        bs, polys, tree = osm_by_tile[(i, j)]
+        if tree is None:
+            tree = STRtree(polys)
+            osm_by_tile[(i, j)] = (bs, polys, tree)
+        for k in sorted(tree.query(pt)):
+            if polys[k].contains(pt):
+                return bs[k]
         return None
 
-    per_tile = {}  # (i, j) → list of (int16 positions, uint8 colours), one pair per building
-    footprints = []  # ground outlines of every IPR building, to find OSM ones it doesn't cover
+    sheets = []
     for X in range(X0, X1 + 1):
         for Y in range(Y0, Y1 + 1):
             if not sheet_name(X, Y):
@@ -236,40 +307,26 @@ def main(area: str = "centrum") -> None:
             if not path:
                 print(f"  {name}: not in the catalogue")
                 continue
-            count = 0
-            for bid, surfaces in buildings(path):
-                pts = np.vstack([v for _, v in surfaces])
-                base = pts[:, 2].min()
-                lx, ly = to_local.transform(pts[:, 0], pts[:, 1])
-                cx, cy = float(np.mean(lx)), float(np.mean(ly))
-                i, j = math.floor((cx + ox) / T), math.floor((cy + oy) / T)
-                if (i, j) not in tiles_on_disk:
-                    continue
-                osm = osm_at(i, j, Point(cx, cy))
-                roof, wall = colours(bid or f"{name}/{count}", osm)
-                tris, cols, ground = [], [], []
-                for kind, ring in surfaces:
-                    rx, ry = to_local.transform(ring[:, 0], ring[:, 1])
-                    if kind == 2 and len(ring) >= 3:
-                        ground.append(Polygon(np.column_stack([rx, ry])).buffer(0))
-                    loc = np.column_stack([rx, ry, ring[:, 2] - REF_HEIGHT])
-                    for t in triangulate(loc):
-                        nrm = np.cross(t[1] - t[0], t[2] - t[0])
-                        if kind == 1 and nrm[2] < 0:
-                            t, nrm = [t[0], t[2], t[1]], -nrm  # roofs always face up
-                        tris.append(t)
-                        flat = kind == 1 and nrm[2] > 0.97 * (np.linalg.norm(nrm) or 1)
-                        cols.append(flat_roof(roof) if flat else roof if kind == 1 else wall)
-                if tris:
-                    footprints += [g for g in ground if g.area > 0.5] or [MultiPoint(np.column_stack([lx, ly])).convex_hull]
-                    # Pack right away: centimetres from the tile corner, (x, height, y).
-                    x0, y0 = i * T - ox, j * T - oy
-                    v = np.array(tris, dtype=np.float64).reshape(-1, 3)
-                    pos = np.column_stack([(v[:, 0] - x0) * 100, v[:, 2] * 100, (v[:, 1] - y0) * 100])
-                    pos = np.clip(np.round(pos), -32768, 32767).astype("<i2").ravel()
-                    per_tile.setdefault((i, j), []).append((pos, np.array(cols, dtype=np.uint8).ravel()))
-                count += 1
-            print(f"  {name}: {count} buildings in the area")
+            sheets.append((name, str(path), local, T, origin))
+
+    started = time.perf_counter()
+    per_tile = {}  # (i, j) → list of (int16 positions, uint8 colours), one pair per building
+    footprints = []  # ground outlines of every IPR building, to find OSM ones it doesn't cover
+    run = map if args.jobs == 1 or len(sheets) == 1 else ProcessPoolExecutor(args.jobs).map
+    for name, found in run(read_sheet, sheets):
+        count = 0
+        for bid, cx, cy, (i, j), pos, codes, fp in found:
+            if (i, j) not in osm_by_tile:
+                continue
+            osm = osm_at(i, j, Point(cx, cy))
+            roof, wall = colours(bid or f"{name}/{count}", osm)
+            if pos is not None:
+                footprints += fp
+                palette = np.array([wall, roof, flat_roof(roof)], dtype=np.uint8)
+                per_tile.setdefault((i, j), []).append((pos, palette[codes].ravel()))
+            count += 1
+        print(f"  {name}: {count} buildings in the area", flush=True)
+    print(f"  sheets read in {time.perf_counter() - started:.0f} s")
 
     # An OSM building counts as IPR's if IPR buildings stand on at least 40 % of it.
     tree = STRtree(footprints)
@@ -282,39 +339,27 @@ def main(area: str = "centrum") -> None:
         return hit >= 0.4 * poly.area
 
     total = extra = 0
+    tiles = {}
     for (i, j), blist in per_tile.items():
         pos_arr = np.concatenate([p for p, _ in blist])
         col = np.concatenate([c for _, c in blist])
         n_tris = len(col) // 3
         pad = (4 - (8 + pos_arr.nbytes) % 4) % 4
         blob = struct.pack("<II", n_tris, len(blist)) + pos_arr.tobytes() + b"\0" * pad + col.tobytes()
-        (out_dir / "tiles" / f"{i}_{j}.ipr.bin").write_bytes(blob)
-        tj = out_dir / "tiles" / f"{i}_{j}.json"
-        t = json.loads(tj.read_text())
-        t["ipr"] = {"buildings": len(blist), "triangles": n_tris}
-        for b in t["buildings"]:
-            b.pop("noIpr", None)
-            if b.get("own") and len(b["rings"][0]) >= 3 and not covered(b):
-                b["noIpr"] = True
-                extra += 1
-        tj.write_text(json.dumps(t, ensure_ascii=False, separators=(",", ":")))
+        layers.write(out_dir / "tiles" / f"{i}_{j}.ipr.bin", blob)
+        missing = [layers.building_key(b) for b in osm_by_tile[(i, j)][0] if b["own"] and not covered(b)]
+        extra += len(missing)
+        tiles[f"{i}_{j}"] = {"buildings": len(blist), "triangles": n_tris, "noIpr": missing}
         total += len(blob)
     # Tiles that no longer get IPR buildings go back to OSM ones.
-    for i, j, _ in index["tiles"]:
-        if (i, j) in per_tile:
-            continue
-        tj = out_dir / "tiles" / f"{i}_{j}.json"
-        t = json.loads(tj.read_text())
-        if t.pop("ipr", None):
-            for b in t["buildings"]:
-                b.pop("noIpr", None)
-            tj.write_text(json.dumps(t, ensure_ascii=False, separators=(",", ":")))
+    for i, j in osm_by_tile:
+        if (i, j) not in per_tile:
             (out_dir / "tiles" / f"{i}_{j}.ipr.bin").unlink(missing_ok=True)
-    index["ipr"] = True
-    index["iprRef"] = REF_HEIGHT  # heights in the .ipr.bin are above this, in metres a.s.l.
-    (out_dir / "index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")))
+    # Heights in the .ipr.bin are above iprRef, in metres a.s.l.
+    layers.write_layer(area, "ipr", {"iprRef": REF_HEIGHT, "tiles": tiles})
     print(f"{len(per_tile)} tiles with IPR buildings, {total / 1e6:.1f} MB; {extra} OSM buildings IPR doesn't have")
+    layers.assemble(area)
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:])
+    main()
