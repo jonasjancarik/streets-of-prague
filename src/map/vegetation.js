@@ -4,7 +4,10 @@ import { Grid, fillPolys, strokeLines, rng } from './geo.js';
 // Land-use classes rasterised at 1 px/m, used to scatter trees.
 const WOOD = 200, PARK = 120, ORCHARD = 60;
 
-export function buildTrees(geo) {
+// Where a tile's trees stand, and how big and what colour they are: their instance
+// matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Runs
+// in the tile workers.
+export function treeInstances(geo, height = () => 0) {
   const d = geo.data;
   const grid = new Grid(geo, 1, (ctx, s) => {
     ctx.fillStyle = '#000';
@@ -51,10 +54,7 @@ export function buildTrees(geo) {
     }
   }
 
-  const geom = new THREE.IcosahedronGeometry(1, 1);
-  geom.scale(1, 0.75, 1);
-  const mat = new THREE.MeshLambertMaterial({ flatShading: true });
-  const mesh = new THREE.InstancedMesh(geom, mat, trees.length);
+  const matrices = new Float32Array(trees.length * 16), colours = new Float32Array(trees.length * 3);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
   const colors = [
     [new THREE.Color('#4d6b35'), new THREE.Color('#3f5a2c'), new THREE.Color('#5a7a3c')],
@@ -68,12 +68,23 @@ export function buildTrees(geo) {
     q.setFromEuler(new THREE.Euler(0, r() * Math.PI, 0));
     sc.set(rad, rad, rad);
     m.compose(p, q, sc);
-    mesh.setMatrixAt(i, m);
+    m.elements[13] += height(x, y);
+    m.toArray(matrices, i * 16);
     const pal = colors[kind];
     c.copy(pal[Math.floor(r() * pal.length)]).offsetHSL(0, 0, (r() - 0.5) * 0.05);
-    mesh.setColorAt(i, c);
+    c.toArray(colours, i * 3);
   });
+  return { matrices, colours, count: trees.length };
+}
+
+export function treeMesh({ matrices, colours, count }) {
+  const geom = new THREE.IcosahedronGeometry(1, 1);
+  geom.scale(1, 0.75, 1);
+  const mat = new THREE.MeshLambertMaterial({ flatShading: true });
+  const mesh = new THREE.InstancedMesh(geom, mat, count);
+  mesh.instanceMatrix.array.set(matrices);
+  if (count) mesh.instanceColor = new THREE.InstancedBufferAttribute(colours, 3);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  return { mesh, count: trees.length };
+  return mesh;
 }

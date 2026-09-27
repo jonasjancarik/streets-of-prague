@@ -170,8 +170,9 @@ export function buildBuildings(data) {
   return { mesh, stats };
 }
 
-// Garden walls, city walls, the Hunger Wall: thin extruded strips.
-export function buildWalls(data) {
+// Garden walls, city walls, the Hunger Wall: thin extruded strips, standing on the
+// terrain (`height(x, y)`). The arrays for wallMesh; runs in the tile workers.
+export function wallArrays(data, height = () => 0) {
   const pos = [], nor = [];
   const quad = (a, b, c, d, n) => {
     for (const p of [a, b, c, a, c, d]) {
@@ -193,9 +194,15 @@ export function buildWalls(data) {
       quad([...R1, h], [...R2, h], [...L2, h], [...L1, h], [0, 0, 1]);
     }
   }
+  const position = new Float32Array(pos);
+  for (let i = 0; i < position.length; i += 3) position[i + 1] += height(position[i], -position[i + 2]);
+  return { position, normal: new Float32Array(nor) };
+}
+
+export function wallMesh({ position, normal }) {
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
   const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: '#cbbd9f', side: THREE.DoubleSide }));
   mesh.castShadow = true;
   mesh.receiveShadow = true;

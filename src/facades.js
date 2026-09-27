@@ -82,6 +82,68 @@ export function cellHash(i, j) {
   return s - Math.floor(s);
 }
 
+// Where each wall pixel sits on its facade, for the windows (see shading.js and
+// facades.js): metres along the wall, metres above the ground at its foot, the wall's
+// length, and its style plus a random fraction. Triangles that share an edge and lie in
+// one plane make one wall, measured from its own end in the direction between its two
+// ends, so the windows run on across the triangles. `p`: the triangles' positions
+// (three.js world); returns 4 floats a vertex. (Measured from the world's origin
+// with each triangle's own normal, they jumped by metres at every seam.)
+export function facadeCoords(p, groundAt, styleAt) {
+  const n = p.length / 9, out = new Float32Array(n * 12);
+  const nrm = new Float32Array(n * 2), wall = new Int32Array(n).fill(-1);
+  const up = (i) => (wall[i] === i ? i : (wall[i] = up(wall[i])));
+  const key = (v) => `${Math.round(p[v] * 1000)},${Math.round(p[v + 1] * 1000)},${Math.round(p[v + 2] * 1000)}`;
+  const edges = new Map();
+  for (let t = 0; t < n; t++) {
+    const i = t * 9;
+    const ax = p[i + 3] - p[i], ay = p[i + 4] - p[i + 1], az = p[i + 5] - p[i + 2];
+    const bx = p[i + 6] - p[i], by = p[i + 7] - p[i + 1], bz = p[i + 8] - p[i + 2];
+    const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx, h = Math.hypot(nx, nz);
+    if (!(h > 0) || Math.abs(ny) > 0.15 * Math.hypot(nx, ny, nz)) continue; // a roof, or a sliver
+    nrm[t * 2] = nx / h; nrm[t * 2 + 1] = nz / h; wall[t] = t;
+    const k = [key(i), key(i + 3), key(i + 6)];
+    for (const [u, v] of [[0, 1], [1, 2], [2, 0]]) {
+      const e = k[u] < k[v] ? k[u] + k[v] : k[v] + k[u], o = edges.get(e);
+      if (o === undefined) { edges.set(e, t); continue; }
+      const dot = nrm[t * 2] * nrm[o * 2] + nrm[t * 2 + 1] * nrm[o * 2 + 1];
+      if (Math.abs(dot) > 0.999) wall[up(t)] = up(o);
+    }
+  }
+  const walls = new Map();
+  for (let t = 0; t < n; t++) if (wall[t] >= 0) { const w = up(t); walls.has(w) ? walls.get(w).push(t) : walls.set(w, [t]); }
+  for (const [w, tris] of walls) {
+    // The wall's two ends: the farthest apart along its rough direction.
+    const rx = -nrm[w * 2 + 1], rz = nrm[w * 2];
+    let lo = Infinity, hi = -Infinity, a = 0, b = 0;
+    for (const t of tris) for (let v = t * 9; v < t * 9 + 9; v += 3) {
+      const s = p[v] * rx + p[v + 2] * rz;
+      if (s < lo) { lo = s; a = v; }
+      if (s > hi) { hi = s; b = v; }
+    }
+    const len = Math.hypot(p[b] - p[a], p[b + 2] - p[a + 2]) || 1;
+    const tx = (p[b] - p[a]) / len, tz = (p[b + 2] - p[a + 2]) / len;
+    let from = Infinity, to = -Infinity, top = 0;
+    for (const t of tris) {
+      let ground = Infinity;
+      for (let v = t * 9; v < t * 9 + 9; v += 3) ground = Math.min(ground, groundAt(p[v], -p[v + 2]));
+      for (let v = t * 9; v < t * 9 + 9; v += 3) {
+        const o = (v / 3) * 4, s = (p[v] - p[a]) * tx + (p[v + 2] - p[a + 2]) * tz;
+        out[o] = s;
+        out[o + 1] = p[v + 1] - ground;
+        from = Math.min(from, s); to = Math.max(to, s); top = Math.max(top, out[o + 1]);
+      }
+    }
+    const style = styleAt((p[a] + p[b]) / 2, -(p[a + 2] + p[b + 2]) / 2, top) + 0.999 * cellHash(p[a], p[a + 2]);
+    for (const t of tris) for (let o = t * 12; o < t * 12 + 12; o += 4) {
+      out[o] -= from;
+      out[o + 2] = Math.max(to - from, 0.5);
+      out[o + 3] = style;
+    }
+  }
+  return out;
+}
+
 // For every bay and storey, which module of the wall's style: upper floors, then the
 // ground floor's doors and the rest of the ground floor, as layers of the atlas
 // (sheet × 12 + row × 6 + column). A few bays of each ground floor get a door.

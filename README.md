@@ -93,8 +93,12 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.js`) around the camera. Each
   tile has its own ground, buildings, trees, collision grid, parked cars and piece of
   the street graphs (joined across tiles by OSM node ids), so start-up doesn't depend
-  on the area's size. Straight-skeleton roofs for OSM buildings are built in web
-  workers (`src/roofWorker.js`).
+  on the area's size. A tile's files are fetched all at once, and the heavy part of
+  building it runs in web workers (`src/tileWorker.js`): the ground's geometry
+  (`src/ground.js`), IPR's buildings, straight-skeleton roofs for OSM buildings, the
+  windows' positions on every wall, trees, walls and the collision grid. The main
+  thread only joins up the street graphs, makes the meshes and parks the cars, so
+  driving into new streets doesn't stutter.
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.

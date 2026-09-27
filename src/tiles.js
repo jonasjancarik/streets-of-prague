@@ -1,97 +1,56 @@
 import * as THREE from 'three';
-import { Geo, Grid, fillPolys, strokeLines, rng, hash } from './map/geo.js';
-import { buildWalls } from './map/buildings.js';
-import { buildTrees } from './map/vegetation.js';
+import { Geo, Grid, rng, hash } from './map/geo.js';
+import { wallMesh } from './map/buildings.js';
+import { treeMesh } from './map/vegetation.js';
 import { Surfaces } from './surface.js';
 import { shadeBuildings } from './shading.js';
-import { styleFor, cellHash, loadFacadeAtlas } from './facades.js';
+import { loadFacadeAtlas } from './facades.js';
 import { Zones, parkCars } from './parking.js';
+import { decodeHeights, heightSampler, fetchBinary } from './terrain.js';
 
 // Streams the map in square tiles (pipeline/build_tiles.py) around the camera. Each
 // loaded tile has its own ground, buildings, trees, collision grid and parked cars;
-// tiles far behind are dropped again. The street graphs stay global.
+// tiles far behind are dropped again. The street graphs stay global. The heavy part
+// of building a tile runs in workers (tileWorker.js); the main thread fetches the
+// tile's files, joins up the street graphs and makes the meshes and parked cars.
 
 const RES = 2; // collision grid cells per metre
 
-// A small pool of workers that build building meshes (see roofWorker.js).
-class RoofBuilders {
+// A small pool of workers that build tiles (see tileWorker.js).
+class TileWorkers {
   constructor(n = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 2))) {
     this.workers = [];
     this.jobs = new Map();
     this.next = 0;
     for (let i = 0; i < n; i++) {
-      const w = new Worker(new URL('./roofWorker.js', import.meta.url), { type: 'module' });
+      const w = new Worker(new URL('./tileWorker.js', import.meta.url), { type: 'module' });
       w.onmessage = (e) => {
         const job = this.jobs.get(e.data.id);
         this.jobs.delete(e.data.id);
         if (e.data.error) job.reject(new Error(e.data.error));
-        else job.resolve(e.data.arrays);
+        else job.resolve(e.data.result);
       };
       this.workers.push(w);
     }
     this.size = n;
   }
 
-  build(data) {
+  run(type, data, transfer = []) {
     const id = this.next++;
     return new Promise((resolve, reject) => {
       this.jobs.set(id, { resolve, reject });
-      this.workers[id % this.workers.length].postMessage({ id, data });
+      this.workers[id % this.workers.length].postMessage({ id, type, data }, transfer);
     });
   }
 }
 
-// IPR Praha's 3D buildings for a tile (pipeline/ipr_buildings.py): triangles with
-// positions in centimetres from the tile corner and a colour per triangle.
-async function iprMesh(url, [x0, y0], absolute) {
-  const buf = await (await fetch(url)).arrayBuffer();
-  const n = new DataView(buf).getUint32(0, true);
-  const p16 = new Int16Array(buf, 8, n * 9);
-  const colAt = 8 + n * 18 + ((4 - ((8 + n * 18) % 4)) % 4);
-  const c8 = new Uint8Array(buf, colAt, n * 3);
-  const pos = new Float32Array(n * 9), col = new Float32Array(n * 9);
-  const c = new THREE.Color();
-  for (let t = 0; t < n; t++) {
-    c.setRGB(c8[t * 3] / 255, c8[t * 3 + 1] / 255, c8[t * 3 + 2] / 255, THREE.SRGBColorSpace);
-    for (let v = 0; v < 3; v++) {
-      const i = t * 9 + v * 3;
-      const h = p16[i + 1] / 100;
-      pos[i] = x0 + p16[i] / 100;
-      pos[i + 1] = h;
-      pos[i + 2] = -(y0 + p16[i + 2] / 100);
-      const k = absolute ? 1 : 0.62 + 0.38 * Math.min(1, h / 6); // older data: darker towards the street
-      col[i] = c.r * k; col[i + 1] = c.g * k; col[i + 2] = c.b * k;
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  g.computeVertexNormals();
-  const mesh = new THREE.Mesh(g, buildingMaterial());
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
 // Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
 // the same north-west as the sun: 128 = unchanged, darker on slopes facing away.
-async function relief(url, box, n, step, ref, bareUrl = null) {
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  const h = new Uint16Array(await res.arrayBuffer());
-  // Hill shading uses the bare ground where bridges were raised (see ipr_terrain.py).
-  const bareRes = bareUrl ? await fetch(bareUrl) : null;
-  const hs = bareRes?.ok ? new Uint16Array(await bareRes.arrayBuffer()) : h;
+function relief(buffer, bareBuffer, box, n, step, ref) {
   // Heights in metres above `ref` (the game's y = 0), bilinear and clamped to the tile.
-  const hm = new Float32Array(n * n);
-  for (let i = 0; i < hm.length; i++) hm[i] = h[i] / 10 + 100 - ref;
-  const [bx, by] = box;
-  const sample = (x, y) => {
-    const u = Math.min(n - 1.001, Math.max(0, (x - bx) / step)), v = Math.min(n - 1.001, Math.max(0, (y - by) / step));
-    const i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j;
-    const a = hm[j * n + i], b = hm[j * n + i + 1], c = hm[(j + 1) * n + i], d = hm[(j + 1) * n + i + 1];
-    return (a * (1 - fu) + b * fu) * (1 - fv) + (c * (1 - fu) + d * fu) * fv;
-  };
+  const hm = decodeHeights(buffer, n, ref);
+  // Hill shading uses the bare ground where bridges were raised (see ipr_terrain.py).
+  const hs = new Uint16Array(bareBuffer || buffer);
   const L = [-110, 80, 190], ll = Math.hypot(...L);
   const lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
   const px = new Uint8Array(n * n);
@@ -108,78 +67,20 @@ async function relief(url, box, n, step, ref, bareUrl = null) {
   tex.magFilter = tex.minFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
   const [x0, y0] = box;
-  return { texture: tex, box: [x0, y0, x0 + (n - 1) * step, y0 + (n - 1) * step], sample };
+  return { texture: tex, box: [x0, y0, x0 + (n - 1) * step, y0 + (n - 1) * step], sample: heightSampler(hm, box, n, step), hm };
 }
 
 const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ vertexColors: true }));
 
-// Where each wall pixel sits on its facade, for the windows (see shading.js and
-// facades.js): metres along the wall, metres above the ground at its foot, the wall's
-// length, and its style plus a random fraction. Triangles that share an edge and lie in
-// one plane make one wall, measured from its own end in the direction between its two
-// ends, so the windows run on across the triangles. (Measured from the world's origin
-// with each triangle's own normal, they jumped by metres at every seam.)
-function facadeCoords(g, groundAt, styleAt) {
-  const p = g.attributes.position.array, n = p.length / 9, out = new Float32Array(n * 12);
-  const nrm = new Float32Array(n * 2), wall = new Int32Array(n).fill(-1);
-  const up = (i) => (wall[i] === i ? i : (wall[i] = up(wall[i])));
-  const key = (v) => `${Math.round(p[v] * 1000)},${Math.round(p[v + 1] * 1000)},${Math.round(p[v + 2] * 1000)}`;
-  const edges = new Map();
-  for (let t = 0; t < n; t++) {
-    const i = t * 9;
-    const ax = p[i + 3] - p[i], ay = p[i + 4] - p[i + 1], az = p[i + 5] - p[i + 2];
-    const bx = p[i + 6] - p[i], by = p[i + 7] - p[i + 1], bz = p[i + 8] - p[i + 2];
-    const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx, h = Math.hypot(nx, nz);
-    if (!(h > 0) || Math.abs(ny) > 0.15 * Math.hypot(nx, ny, nz)) continue; // a roof, or a sliver
-    nrm[t * 2] = nx / h; nrm[t * 2 + 1] = nz / h; wall[t] = t;
-    const k = [key(i), key(i + 3), key(i + 6)];
-    for (const [u, v] of [[0, 1], [1, 2], [2, 0]]) {
-      const e = k[u] < k[v] ? k[u] + k[v] : k[v] + k[u], o = edges.get(e);
-      if (o === undefined) { edges.set(e, t); continue; }
-      const dot = nrm[t * 2] * nrm[o * 2] + nrm[t * 2 + 1] * nrm[o * 2 + 1];
-      if (Math.abs(dot) > 0.999) wall[up(t)] = up(o);
-    }
-  }
-  const walls = new Map();
-  for (let t = 0; t < n; t++) if (wall[t] >= 0) { const w = up(t); walls.has(w) ? walls.get(w).push(t) : walls.set(w, [t]); }
-  for (const [w, tris] of walls) {
-    // The wall's two ends: the farthest apart along its rough direction.
-    const rx = -nrm[w * 2 + 1], rz = nrm[w * 2];
-    let lo = Infinity, hi = -Infinity, a = 0, b = 0;
-    for (const t of tris) for (let v = t * 9; v < t * 9 + 9; v += 3) {
-      const s = p[v] * rx + p[v + 2] * rz;
-      if (s < lo) { lo = s; a = v; }
-      if (s > hi) { hi = s; b = v; }
-    }
-    const len = Math.hypot(p[b] - p[a], p[b + 2] - p[a + 2]) || 1;
-    const tx = (p[b] - p[a]) / len, tz = (p[b + 2] - p[a + 2]) / len;
-    let from = Infinity, to = -Infinity, top = 0;
-    for (const t of tris) {
-      let ground = Infinity;
-      for (let v = t * 9; v < t * 9 + 9; v += 3) ground = Math.min(ground, groundAt(p[v], -p[v + 2]));
-      for (let v = t * 9; v < t * 9 + 9; v += 3) {
-        const o = (v / 3) * 4, s = (p[v] - p[a]) * tx + (p[v + 2] - p[a + 2]) * tz;
-        out[o] = s;
-        out[o + 1] = p[v + 1] - ground;
-        from = Math.min(from, s); to = Math.max(to, s); top = Math.max(top, out[o + 1]);
-      }
-    }
-    const style = styleAt((p[a] + p[b]) / 2, -(p[a + 2] + p[b + 2]) / 2, top) + 0.999 * cellHash(p[a], p[a + 2]);
-    for (const t of tris) for (let o = t * 12; o < t * 12 + 12; o += 4) {
-      out[o] -= from;
-      out[o + 2] = Math.max(to - from, 0.5);
-      out[o + 3] = style;
-    }
-  }
-  g.setAttribute('facade', new THREE.BufferAttribute(out, 4));
-}
-
+// Buildings from a worker's arrays: IPR's or extruded from OSM footprints, with their
+// facade coordinates (facades.js).
 function buildingMesh(arrays) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(arrays.position, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(arrays.normal, 3));
   g.setAttribute('color', new THREE.BufferAttribute(arrays.color, 3));
-  g.setAttribute('drapeUv', new THREE.BufferAttribute(arrays.drapeUv, 2));
+  if (arrays.drapeUv) g.setAttribute('drapeUv', new THREE.BufferAttribute(arrays.drapeUv, 2));
+  g.setAttribute('facade', new THREE.BufferAttribute(arrays.facade, 4));
   const mesh = new THREE.Mesh(g, buildingMaterial());
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -224,74 +125,11 @@ function inPassage(passages, x, y, pad = 0) {
   return false;
 }
 
-// Walkable/drivable cells: 0 free, 255 solid, 254 free but walled in (a closed
-// courtyard). Only cells reachable from the street network count as free.
-function tileGrid(geo, t, seeds) {
-  const grid = new Grid(geo, RES, (ctx, s) => {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    ctx.fillStyle = '#fff';
-    if (t.areas.water) fillPolys(ctx, geo, t.areas.water, s);
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 0.9 * s;
-    strokeLines(ctx, geo, t.walls.map((w) => w.pts), s);
-    ctx.fillStyle = '#000';
-    fillPolys(ctx, geo, [...(t.areas.bridge || []), ...(t.roads.bridge || [])], s);
-    ctx.fillStyle = '#fff';
-    fillPolys(ctx, geo, t.buildings.map((b) => b.rings), s);
-    // Gateways and passages through buildings stay open, a little past both ends
-    // (mapped passages often stop just short of the building's edge).
-    ctx.strokeStyle = '#000';
-    ctx.lineCap = 'square';
-    for (const p of t.passages || []) {
-      ctx.lineWidth = p.w * s;
-      strokeLines(ctx, geo, [p.pts], s);
-    }
-  });
-  const { w, h, cells } = grid;
-  for (let i = 0; i < cells.length; i++) cells[i] = cells[i] > 100 ? 255 : 0;
-  const seen = new Uint8Array(cells.length), stack = [];
-  for (const [x, y] of seeds) {
-    const [u, v] = geo.px(x, y, RES);
-    const i = Math.floor(u), j = Math.floor(v);
-    if (i < 0 || j < 0 || i >= w || j >= h) continue;
-    const k = j * w + i;
-    if (!cells[k] && !seen[k]) { seen[k] = 1; stack.push(k); }
-  }
-  while (stack.length) {
-    const k = stack.pop(), x = k % w;
-    for (const n of [x > 0 ? k - 1 : -1, x < w - 1 ? k + 1 : -1, k - w, k + w]) {
-      if (n >= 0 && n < cells.length && !cells[n] && !seen[n]) { seen[n] = 1; stack.push(n); }
-    }
-  }
-  for (let i = 0; i < cells.length; i++) if (!cells[i] && !seen[i]) cells[i] = 254;
-  return grid;
-}
-
-function stampTrunks(grid, geo, trees) {
-  const m = new THREE.Matrix4();
-  for (let i = 0; i < trees.count; i++) {
-    trees.getMatrixAt(i, m);
-    const x = m.elements[12], y = -m.elements[14];
-    const rad = 0.35 + Math.hypot(m.elements[0], m.elements[1], m.elements[2]) * 0.06;
-    const [u, v] = geo.px(x, y, RES);
-    const R = Math.ceil(rad * RES);
-    for (let j = -R; j <= R; j++) {
-      for (let k = -R; k <= R; k++) {
-        if (Math.hypot(j, k) > rad * RES) continue;
-        const cu = Math.floor(u) + k, cv = Math.floor(v) + j;
-        if (cu >= 0 && cv >= 0 && cu < grid.w && cv < grid.h) grid.cells[cv * grid.w + cu] = 255;
-      }
-    }
-  }
-}
-
 export class TileWorld {
   constructor({ area, index, scene, drive, walk, time, night, osmBuildings = false }) {
     this.osmBuildings = osmBuildings;
     this.area = area;
     this.index = index;
-    this.styleAt = styleFor(index);
     loadFacadeAtlas();
     this.scene = scene;
     this.time = time;
@@ -299,8 +137,13 @@ export class TileWorld {
     this.T = index.tile;
     [this.ox, this.oy] = index.origin;
     this.available = new Set(index.tiles.map(([i, j]) => `${i}_${j}`));
+    // Which tiles have IPR buildings, where index.json says (else the tile JSON does).
+    this.iprTiles = new Map(index.tiles.filter((t) => t.length > 3).map(([i, j, , ipr]) => [`${i}_${j}`, !!ipr]));
+    this.bare = new Set(index.terrain?.bare || []);
     this.loaded = new Map(); // key → tile
-    this.pending = new Map(); // key → Promise of tile JSON
+    this.byIndex = new Map(); // i * 65536 + j → tile, for lookups by position
+    this.last = { i: NaN, j: NaN, tile: undefined };
+    this.pending = new Map(); // key → Promise of the tile's files
     this.drive = drive;
     this.walk = walk;
     // Each tile's street graph edges, joined into drive/walk as tiles load.
@@ -310,7 +153,8 @@ export class TileWorld {
     this.onCars = () => {};
     this.onDrop = () => {};
     this.building = 0;
-    this.roofs = new RoofBuilders();
+    this.inFlight = new Set();
+    this.workers = new TileWorkers();
     // Collision lookups across tiles; anywhere not loaded counts as solid.
     // Game y = 0 is this height above sea level (IPR buildings are stored against it).
     this.ref = index.iprRef ?? 180;
@@ -318,21 +162,33 @@ export class TileWorld {
       res: RES,
       height: (x, y) => this.heightAt(x, y),
       at: (x, y) => {
-        const t = this.loaded.get(this.keyAt(x, y));
+        const t = this.tileAt(x, y);
         return t ? t.grid.at(x, y) : 255;
       },
     };
   }
 
+  // The loaded tile at a point. Lookups come by the thousand every frame and mostly
+  // in the tile of the one before, so that one is kept at hand.
+  tileAt(x, y) {
+    const i = Math.floor((x + this.ox) / this.T), j = Math.floor((y + this.oy) / this.T), last = this.last;
+    if (i !== last.i || j !== last.j) {
+      last.i = i;
+      last.j = j;
+      last.tile = this.byIndex.get(i * 65536 + j);
+    }
+    return last.tile;
+  }
+
   // Terrain height (m above this.ref) at a point, 0 where nothing is loaded.
   heightAt(x, y) {
-    const t = this.loaded.get(this.keyAt(x, y));
+    const t = this.tileAt(x, y);
     return t?.sample ? t.sample(x, y) : 0;
   }
 
   // Whether (x, y) is in a passage through a building (under its upper floors).
   passageAt(x, y) {
-    const t = this.loaded.get(this.keyAt(x, y));
+    const t = this.tileAt(x, y);
     return !!t && inPassage(t.passages, x, y, 0.5);
   }
 
@@ -355,9 +211,18 @@ export class TileWorld {
     return out.sort((a, b) => a[0] - b[0]).map((p) => p[1]);
   }
 
+  // All of a tile's files at once: its JSON, terrain heights (and the bare ground
+  // where bridges were raised) and IPR's buildings.
   fetchTile(k) {
     if (!this.pending.has(k)) {
-      this.pending.set(k, fetch(`data/${this.area}_now/tiles/${k}.json`).then((r) => r.json()));
+      const base = `data/${this.area}_now/tiles/${k}`, gz = !!this.index.gzip;
+      const bin = (name) => fetchBinary(`${base}.${name}.bin${gz ? '.gz' : ''}`, gz);
+      const json = fetch(`${base}.json`).then((r) => r.json());
+      const height = this.index.terrain ? bin('height') : null;
+      const bare = this.index.terrain && this.bare.has(k) ? bin('bare') : null;
+      const known = this.iprTiles.get(k);
+      const ipr = this.osmBuildings || known === false ? null : known ? bin('ipr') : json.then((t) => (t.ipr ? bin('ipr') : null));
+      this.pending.set(k, Promise.all([json, height, bare, ipr]).then(([t, height, bare, ipr]) => ({ t, height, bare, ipr })));
     }
     return this.pending.get(k);
   }
@@ -369,27 +234,28 @@ export class TileWorld {
     }));
   }
 
-  // Called every frame: builds at most one tile, drops far ones.
+  // Called every frame: starts building the nearest missing tiles, drops far ones.
   update(x, y, r) {
     const want = this.around(x, y, r);
     for (const k of want.slice(0, 12)) this.fetchTile(k);
-    // One build per worker at a time; the main thread only assembles the result.
-    this.inFlight ||= new Set();
-    while (this.building < this.roofs.size) {
+    // One build per worker at a time.
+    while (this.building < this.workers.size) {
       const next = want.find((k) => !this.loaded.has(k) && !this.inFlight.has(k));
       if (!next) break;
       this.building++;
       this.inFlight.add(next);
-      this.fetchTile(next).then((t) => this.build(next, t)).catch((e) => console.error(e)).finally(() => {
+      this.fetchTile(next).then((files) => this.build(next, files)).catch((e) => console.error(e)).finally(() => {
         this.building--;
         this.inFlight.delete(next);
       });
     }
-    const keep = new Set(this.around(x, y, r + this.T * 1.5));
+    const keep = new Set(this.around(x, y, r + this.T * 0.5));
     for (const k of [...this.loaded.keys()]) if (!keep.has(k)) this.drop(k);
+    // Files fetched ahead for tiles that are now far behind aren't needed any more.
+    for (const k of [...this.pending.keys()]) if (!keep.has(k) && !this.loaded.has(k) && !this.inFlight.has(k)) this.pending.delete(k);
   }
 
-  async build(k, t) {
+  async build(k, { t, height, bare, ipr }) {
     if (this.loaded.has(k)) return this.loaded.get(k);
     const [x0, y0, x1, y1] = t.box;
     const data = { ...t, size: [x1 - x0, y1 - y0], origin: [-x0, -y0] };
@@ -406,68 +272,66 @@ export class TileWorld {
     let t0 = performance.now();
     const lap = (name) => { const t1 = performance.now(); ms[name] = Math.round(t1 - t0); t0 = t1; };
     // Terrain first: everything in the tile stands on it.
-    const shade = this.index.terrain
-      ? await relief(`data/${this.area}_now/tiles/${k}.height.bin`, t.box, this.index.terrain.n, this.index.terrain.step, this.ref,
-        this.index.terrain.bare?.includes(k) ? `data/${this.area}_now/tiles/${k}.bare.bin` : null)
-      : null;
+    const terrain = this.index.terrain;
+    const shade = height ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref) : null;
     const hAt = shade ? shade.sample : () => 0;
+    const ground = shade ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step } : null;
+    lap('terrain');
+
     // Real 3D buildings from IPR where the area has them (unless ?osm), else OSM
-    // footprints extruded with straight-skeleton roofs in a worker, each set on the
-    // lowest ground under its footprint. In a tile with IPR buildings, the OSM ones IPR
-    // doesn't have (noIpr, see ipr_buildings.py) are still extruded.
-    const ipr = t.ipr && !this.osmBuildings;
-    const extrude = own.filter((b) => !ipr || b.noIpr)
+    // footprints extruded with straight-skeleton roofs, each set on the lowest ground
+    // under its footprint. In a tile with IPR buildings, the OSM ones IPR doesn't have
+    // (noIpr, see ipr_buildings.py) are still extruded.
+    const withIpr = !!(t.ipr && !this.osmBuildings && ipr);
+    const extrude = own.filter((b) => !withIpr || b.noIpr)
       .map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))) }));
-    const buildings = [
-      ...(ipr ? [await iprMesh(`data/${this.area}_now/tiles/${k}.ipr.bin`, t.box, this.index.iprRef != null)] : []),
-      ...(!ipr || extrude.length ? [buildingMesh(await this.roofs.build({ buildings: extrude, size: data.size, origin: data.origin }))] : []),
-    ];
-    for (const m of buildings) facadeCoords(m.geometry, hAt, this.styleAt);
-    if (this.loaded.has(k)) return this.loaded.get(k);
-    lap('buildings');
-    // Spread the main-thread work over several frames.
-    const breathe = () => new Promise((r) => setTimeout(r, 0));
-    const group = new THREE.Group();
-
+    const bbox = this.index.bbox_wgs84;
     const edges = this.driveBy.get(k) || [];
-    const clipped = edges.flatMap((e) => clipLine(e.pts, t.box).map((pts) => ({ ...e, pts })));
-    const surfaces = new Surfaces(geo, { edges: clipped, buildings: own, zones, time: this.time, relief: shade, height: shade ? hAt : null });
-    group.add(surfaces.group);
-    lap('ground');
-    await breathe();
-
-    const walls = buildWalls(data);
-    const wp = walls.geometry.attributes.position;
-    for (let i = 0; i < wp.count; i++) wp.setY(i, wp.getY(i) + hAt(wp.getX(i), -wp.getZ(i)));
-    lap('walls');
-    const trees = buildTrees(geo).mesh;
-    {
-      const m = new THREE.Matrix4();
-      for (let i = 0; i < trees.count; i++) {
-        trees.getMatrixAt(i, m);
-        m.elements[13] += hAt(m.elements[12], -m.elements[14]);
-        trees.setMatrixAt(i, m);
-      }
-      trees.instanceMatrix.needsUpdate = true;
-    }
-    group.add(...buildings, walls, trees);
-    lap('trees');
-    await breathe();
-
+    const clipped = edges.flatMap((e) => clipLine(e.pts, t.box).map((pts) => (
+      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface })));
+    // Paid-parking colour of each parking area's bay lines.
+    const parkingZones = (t.areas.parking || []).map((rs) => {
+      const r = rs[0], cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;
+      return zones.at(cx, cy)?.category || null;
+    });
     // Seeds for the collision grid: points along every street and path in the tile.
     const seeds = [];
     for (const e of [...edges, ...(this.walkBy.get(k) || [])]) {
       for (const pts of clipLine(e.pts, t.box)) {
         for (let i = 0; i < pts.length - 1; i++) {
           const [ax, ay] = pts[i], [bx, by] = pts[i + 1], n = Math.ceil(Math.hypot(bx - ax, by - ay) / 3);
-          for (let s = 0; s <= n; s++) seeds.push([ax + ((bx - ax) * s) / n, ay + ((by - ay) * s) / n]);
+          for (let s = 0; s <= n; s++) seeds.push(ax + ((bx - ax) * s) / n, ay + ((by - ay) * s) / n);
         }
       }
     }
-    const grid = tileGrid(geo, data, seeds);
-    stampTrunks(grid, geo, trees);
-    lap('grid');
-    await breathe();
+    const seedArray = new Float64Array(seeds);
+    const outlines = t.buildings.map((b) => ({ rings: b.rings }));
+    const w = this.workers;
+    const jobs = Promise.all([
+      w.run('ground', {
+        d: { areas: t.areas, roads: t.roads, rails: t.rails, weirs: t.weirs, crossings: t.crossings },
+        box: [geo.minX, geo.minY, geo.maxX, geo.maxY], edges: clipped, buildings: own.map((b) => ({ rings: b.rings })), parkingZones, ground,
+      }),
+      w.run('land', {
+        data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, trees: t.trees, passages: t.passages || [] },
+        seeds: seedArray, ground,
+      }, [seedArray.buffer]),
+      withIpr ? w.run('ipr', { buffer: ipr, box: t.box, absolute: this.index.iprRef != null, ground, bbox }, [ipr]) : null,
+      !withIpr || extrude.length ? w.run('roofs', { buildings: extrude, size: data.size, origin: data.origin, ground, bbox }) : null,
+    ]);
+    lap('send');
+    const [layers, land, iprArrays, roofArrays] = await jobs;
+    if (this.loaded.has(k)) return this.loaded.get(k);
+    t0 = performance.now();
+
+    const group = new THREE.Group();
+    const surfaces = new Surfaces(layers, { time: this.time, relief: shade });
+    const buildings = [iprArrays, roofArrays].filter(Boolean).map(buildingMesh);
+    const walls = wallMesh(land.walls);
+    const trees = treeMesh(land.trees);
+    group.add(surfaces.group, ...buildings, walls, trees);
+    const grid = new Grid(geo, RES, null, land.cells);
+    lap('meshes');
 
     const inside = (x, y) => x >= x0 && x < x1 && y >= y0 && y < y1;
     const { cars } = parkCars({
@@ -476,12 +340,12 @@ export class TileWorld {
       // No parking inside passages.
       solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) : false),
     });
-
     lap('parking');
-    if (this.loaded.has(k)) { surfaces.dispose(); return this.loaded.get(k); }
     this.scene.add(group);
-    const tile = { k, box: t.box, passages: t.passages || [], group, surfaces, grid, cars, ms, disposables: [...buildings, walls, trees], relief: shade, sample: shade?.sample };
+    const tile = { k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], group, surfaces, grid, cars, ms, disposables: [...buildings, walls, trees], relief: shade, sample: shade?.sample };
     this.loaded.set(k, tile);
+    this.byIndex.set(t.i * 65536 + t.j, tile);
+    this.last.i = NaN;
     this.onCars(cars, tile);
     return tile;
   }
@@ -492,8 +356,10 @@ export class TileWorld {
     this.scene.remove(t.group);
     t.surfaces.dispose();
     t.relief?.texture.dispose();
-    for (const m of t.disposables) { m.geometry.dispose(); m.material.dispose?.(); }
+    for (const m of t.disposables) { m.geometry.dispose(); m.material.dispose?.(); m.dispose?.(); }
     this.loaded.delete(k);
+    this.byIndex.delete(t.i * 65536 + t.j);
+    this.last.i = NaN;
     this.pending.delete(k);
     this.onDrop(t);
   }

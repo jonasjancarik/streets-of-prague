@@ -98,14 +98,24 @@ export function rng(seed = 1) {
   };
 }
 
-// Rasterised lookup grid (walkability, land-use) at `res` cells per metre.
+// Rasterised lookup grid (walkability, land-use) at `res` cells per metre. Painted
+// on an OffscreenCanvas where there is one, so it can be made in a worker; with
+// `paint` null, `cells` are ones already made.
 export class Grid {
-  constructor(geo, res, paint) {
+  constructor(geo, res, paint, cells = null) {
     this.geo = geo;
     this.res = res;
     this.w = Math.ceil(geo.W * res);
     this.h = Math.ceil(geo.H * res);
-    const c = document.createElement('canvas');
+    // For at(): the same sums as geo.px, without an array for every lookup.
+    this.ox = geo.ox;
+    this.oy = geo.oy;
+    this.H = geo.H;
+    if (!paint) {
+      this.cells = cells;
+      return;
+    }
+    const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(this.w, this.h) : document.createElement('canvas');
     c.width = this.w;
     c.height = this.h;
     const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -114,12 +124,11 @@ export class Grid {
     const img = ctx.getImageData(0, 0, this.w, this.h).data;
     this.cells = new Uint8Array(this.w * this.h);
     for (let i = 0; i < this.cells.length; i++) this.cells[i] = img[i * 4];
-    this.canvas = c;
+    c.width = c.height = 0; // let the canvas go now
   }
 
   at(x, y) {
-    const [u, v] = this.geo.px(x, y, this.res);
-    const i = Math.floor(u), j = Math.floor(v);
+    const i = Math.floor((x + this.ox) * this.res), j = Math.floor((this.H - (y + this.oy)) * this.res);
     if (i < 0 || j < 0 || i >= this.w || j >= this.h) return 255;
     return this.cells[j * this.w + i];
   }
