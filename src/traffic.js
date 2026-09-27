@@ -1,4 +1,5 @@
 import { Car, randomType } from './car.js';
+import { randomLook } from './figures.js';
 import { Route, clamp } from './network.js';
 
 // AI traffic: cars glued to their lane along a Route. They brake for anything in
@@ -27,8 +28,9 @@ export class Traffic {
       const p = edge.path.at(s);
       if (avoid && !avoid(p.x, p.y)) continue;
       if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < 12)) continue;
-      const car = new Car(type || randomType(r), r, p.x, p.y, p.ang);
+      const car = new Car(type || randomType(r, 'traffic'), r, p.x, p.y, p.ang);
       car.mode = 'traffic';
+      if (car.two) car.rider = randomLook(r);
       const agent = { car, route: new Route(this.g, edge, s, r), speed: edge.speed * 0.6, stuck: 0, ignore: 0, cruise: 0.8 + r() * 0.3 };
       this.agents.push(agent);
       return agent;
@@ -45,7 +47,8 @@ export class Traffic {
     for (const a of this.agents) {
       const c = a.car, L = c.spec.L, W = c.spec.W;
       const look = a.route.lookahead(6 + a.speed * 1.2);
-      let target = look.limit * a.cruise;
+      // Cyclists keep to their own pace, whatever the limit.
+      let target = Math.min(look.limit * a.cruise, c.spec.vmax * 0.75);
 
       const fx = Math.cos(c.h), fy = Math.sin(c.h);
       const reach = L / 2 + 5 + a.speed * 1.6;

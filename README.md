@@ -98,9 +98,20 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   no bridges, so each deck is raised to run between the heights of its two ends.
 - **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.js`); AI
   traffic that keeps to its lane, brakes for anything ahead and gives way to the right
-  (`src/traffic.js`); pedestrians on the footpath network who dodge fast cars and get
-  knocked over (`src/people.js`). Traffic and people live within about 330 m of the
-  player.
+  (`src/traffic.js`); pedestrians on the footpath network who leap out of the way of
+  fast cars and get knocked over, then get up again (`src/people.js`). Traffic and
+  people live within about 330 m of the player.
+- **Bikes and motorbikes.** Cyclists and motorcyclists ride with the traffic, and bikes
+  and motorbikes stand on the pavements around you: E gets you on one, and it leans
+  into the turns. Hit something hard and you're thrown off. On foot, Space jumps (not
+  at a tram stop, where it waits for a tram); in the air, a car can't knock you over.
+- **People and two-wheelers** are a small kit built in Blender from code
+  (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
+  and clips for standing, walking, running, jumping, falling, getting up and riding,
+  plus a bike and a motorbike. At load, `src/figures.js` plays every clip through and
+  bakes the posed vertices into textures, so the whole crowd is one instanced draw
+  call. Rebuild with `blender -b --factory-startup -P assets/figures/build.py`; add
+  `-- --preview DIR` to render a few frames of every clip.
 - **Trams** run Prague's real lines (`src/trams.js`), taken from OSM's route
   relations: each line goes round its whole route there and back. How many trams a line
   has out follows PID's timetable for the game clock's day and hour (`src/clock.js`):

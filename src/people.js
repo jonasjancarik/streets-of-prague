@@ -1,59 +1,41 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp, segDist } from './network.js';
+import { Figures, Anim, SCALE, randomLook, jumpHeight } from './figures.js';
 
 // Pedestrians wander the footpath network, jump out of the way of fast cars,
 // and get knocked over (then get up again) when they don't make it.
 
-const SCALE = 1.35;
-const CLOTHES = ['#3b4a63', '#5c3a3a', '#2f2f33', '#6a6f5a', '#8a6d4e', '#a8a39a', '#264653', '#7b4b6a', '#c26a3d', '#4f6d7a', '#1f2a36', '#9c3b30'];
-const SKIN = ['#e3b99a', '#d4a383', '#b9825f', '#8d5a3e', '#f0cdb3'];
-const HAIR = ['#2a1d15', '#4a3222', '#8a6a44', '#1a1a1a', '#b9b1a6', '#6e4a2c'];
+// Metres covered by one cycle of the walk and run clips, so feet keep pace with the ground.
+const WALK_STRIDE = 1.6;
+const RUN_STRIDE = 4;
+const GETUP = 1.25; // seconds of getting up at the end of lying on the ground
 
-function personGeometry() {
-  const torso = new THREE.CylinderGeometry(0.26, 0.2, 1.15, 10);
-  torso.scale(0.75, 1, 1);
-  torso.translate(0, 0.95, 0);
-  const shoulders = new THREE.BoxGeometry(0.3, 0.2, 0.58);
-  shoulders.translate(0, 1.45, 0);
-  const body = mergeGeometries([torso, shoulders]);
-  const head = new THREE.SphereGeometry(0.16, 12, 8);
-  head.translate(0.02, 1.72, 0);
-  const hair = new THREE.SphereGeometry(0.165, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
-  hair.translate(-0.01, 1.75, 0);
-  return { body, head, hair };
+const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(SCALE, SCALE, SCALE);
+const UP = new THREE.Vector3(0, 1, 0);
+
+// Pick the clip for someone on their feet going at `speed` (negative: backwards).
+export function locomote(a, dt, speed) {
+  const sp = Math.abs(speed);
+  if (sp < 0.2) { a.play('idle', false, 0.3); a.step(dt); }
+  else if (sp > 4.5) { a.play('run', false, 0.2); a.step(dt, (speed / RUN_STRIDE) * a.duration); }
+  else { a.play('walk', false, 0.2); a.step(dt, (speed / WALK_STRIDE) * a.duration); }
 }
 
-export function personMesh(clothes, skin = SKIN[0], hair = HAIR[0]) {
-  const g = personGeometry();
-  const group = new THREE.Group();
-  for (const [geo, color] of [[g.body, clothes], [g.head, skin], [g.hair, hair]]) {
-    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color }));
-    m.castShadow = true;
-    group.add(m);
-  }
-  group.scale.setScalar(SCALE);
-  return group;
+// Lying down after being knocked over, getting up for the last GETUP seconds.
+export function knocked(a, dt, left) {
+  if (left < GETUP) a.play('getup', false, 0.1);
+  a.step(dt);
 }
 
 export class Crowd {
-  constructor(walk, grid, scene, rng, count) {
+  constructor(walk, grid, scene, rng, count, kit) {
     this.walk = walk;
     this.grid = grid;
     this.r = rng;
+    this.kit = kit;
     this.people = [];
-    const g = personGeometry();
-    const mk = (geo) => {
-      const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial(), count + 16);
-      m.castShadow = true;
-      m.count = 0;
-      m.frustumCulled = false;
-      scene.add(m);
-      return m;
-    };
-    this.meshes = [mk(g.body), mk(g.head), mk(g.hair)];
-    this.dummy = new THREE.Object3D();
-    this.dummy.rotation.order = 'YXZ';
+    this.fig = new Figures(kit, count + 16);
+    scene.add(this.fig.mesh);
     this.totalLen = walk.edges.reduce((a, e) => a + e.path.length, 0);
     this.cell = 16;
     this.segs = new Map();
@@ -100,7 +82,7 @@ export class Crowd {
 
   add(at) {
     const r = this.r;
-    if (this.people.length >= this.meshes[0].instanceMatrix.count) {
+    if (this.people.length >= this.fig.capacity) {
       // Full: move someone who is out of the way instead.
       const p = this.people[Math.floor(r() * this.people.length)];
       Object.assign(p, { e: at?.e || p.e, s: at?.s ?? p.s, state: 'walk', vx: 0, vy: 0 });
@@ -118,13 +100,10 @@ export class Crowd {
     const p = {
       i, e, s, fwd: r() > 0.5, side: r() > 0.5 ? 1 : -1,
       speed: 1.1 + r() * 0.6, x: 0, y: 0, h: 0, vx: 0, vy: 0,
-      state: 'walk', t: 0, pause: 0, phase: r() * 10,
+      state: 'walk', t: 0, pause: 0, z: 0, anim: new Anim(this.kit, 'walk', r() * 2),
     };
-    const col = new THREE.Color();
-    this.meshes[0].setColorAt(i, col.set(CLOTHES[Math.floor(r() * CLOTHES.length)]));
-    this.meshes[1].setColorAt(i, col.set(SKIN[Math.floor(r() * SKIN.length)]));
-    this.meshes[2].setColorAt(i, col.set(HAIR[Math.floor(r() * HAIR.length)]));
-    for (const m of this.meshes) { m.count = this.people.length + 1; m.instanceColor.needsUpdate = true; }
+    this.fig.look(i, randomLook(r));
+    this.fig.mesh.count = this.people.length + 1;
     this.people.push(p);
     this.place(p);
     return p;
@@ -176,6 +155,8 @@ export class Crowd {
             p.t = 1 + r() * 0.8;
             p.vx = uy * s * 5.5;
             p.vy = -ux * s * 5.5;
+            // Too close to just run: they leap out of the way.
+            if (dist < 3 + sp * 0.35) p.anim.play('jump', true, 0.08);
             break;
           }
         }
@@ -188,7 +169,6 @@ export class Crowd {
           if (r() < dt * 0.02) p.pause = 1 + r() * 4;
         }
         this.place(p);
-        p.phase += p.speed * dt * 5;
       } else if (p.state === 'flee' || p.state === 'down' || p.state === 'rejoin') {
         if (p.state === 'down') {
           const k = Math.exp(-4 * dt);
@@ -210,7 +190,6 @@ export class Crowd {
         if (!this.blocked(nx, p.y)) p.x = nx; else p.vx *= -0.3;
         if (!this.blocked(p.x, ny)) p.y = ny; else p.vy *= -0.3;
         if (p.state !== 'down' && Math.hypot(p.vx, p.vy) > 0.3) p.h = Math.atan2(p.vy, p.vx);
-        p.phase += Math.hypot(p.vx, p.vy) * dt * 5;
         if (p.t < 0 && (p.state === 'flee' || p.state === 'down')) {
           const n = this.nearest(p.x, p.y);
           if (n) {
@@ -221,7 +200,16 @@ export class Crowd {
           } else p.state = 'walk';
         }
       }
+      this.animate(p, dt);
     }
+  }
+
+  animate(p, dt) {
+    const a = p.anim;
+    if (p.state === 'down') knocked(a, dt, p.t);
+    else if (a.name === 'jump' && !a.done) a.step(dt);
+    else locomote(a, dt, p.state === 'walk' ? (p.pause > 0 ? 0 : p.speed) : Math.hypot(p.vx, p.vy));
+    p.z = a.name === 'jump' ? jumpHeight(a.t, 0.7) : 0;
   }
 
   turn(p) {
@@ -239,19 +227,16 @@ export class Crowd {
     p.vx = vx;
     p.vy = vy;
     p.h = Math.atan2(vy, vx) + Math.PI;
+    p.anim.play('fall', true, 0.08);
   }
 
   render(height = () => 0) {
-    const d = this.dummy;
+    const m = new THREE.Matrix4();
     for (const p of this.people) {
-      const down = p.state === 'down';
-      d.position.set(p.x, height(p.x, p.y) + (down ? 0.25 : Math.abs(Math.sin(p.phase)) * 0.05), -p.y);
-      d.rotation.set(0, p.h, down ? Math.PI / 2 : Math.sin(p.phase) * 0.06);
-      d.scale.setScalar(SCALE);
-      d.updateMatrix();
-      for (const m of this.meshes) m.setMatrixAt(p.i, d.matrix);
+      m.compose(_p.set(p.x, height(p.x, p.y) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
+      this.fig.set(p.i, m, p.anim);
     }
-    for (const m of this.meshes) m.instanceMatrix.needsUpdate = true;
+    this.fig.commit(this.people.length);
   }
 }
 
@@ -269,28 +254,37 @@ export function nearestWalkable(grid, x, y, maxR = 60) {
   return [x, y];
 }
 
-// The player on foot: tank controls relative to where they face, Shift to run.
-// `ctl` = { move -1..1, turn -1..1 (left +), run, aim }. With `aim` = { h, mag } (the
-// touch stick) you turn to face h and walk that way instead; a full push runs.
+// The player on foot: tank controls relative to where they face, Shift to run, Space
+// to jump. `ctl` = { move -1..1, turn -1..1 (left +), run, jump, aim }. With `aim` =
+// { h, mag } (the touch stick) you turn to face h and walk that way instead; a full
+// push runs.
 export class Walker {
-  constructor(grid) {
+  constructor(grid, kit) {
     this.grid = grid;
     this.x = this.y = 0;
     this.h = 0;
+    this.z = 0;
     this.speed = 0;
-    this.phase = 0;
     this.down = 0;
     this.vx = this.vy = 0;
-    this.mesh = personMesh('#d9612c', SKIN[0], '#3a2618');
-    const ring = new THREE.Mesh(
+    this.anim = new Anim(kit, 'idle');
+    this.look = { shirt: '#d9612c', trousers: '#2f3a4f', skin: '#e3b99a', hair: '#3a2618', sleeves: false };
+    this.fig = new Figures(kit, 1);
+    this.fig.look(0, this.look);
+    this.fig.mesh.count = 1;
+    this.base = new THREE.Matrix4().makeScale(SCALE, SCALE, SCALE);
+    this.mesh = new THREE.Group();
+    this.mesh.add(this.fig.mesh);
+    this.ring = new THREE.Mesh(
       new THREE.RingGeometry(0.7, 0.95, 32),
       new THREE.MeshBasicMaterial({ color: '#ffe08a', transparent: true, opacity: 0.95, depthWrite: false }),
     );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.05;
-    this.mesh.add(ring);
-    this.mesh.rotation.order = 'YXZ';
+    this.ring.rotation.x = -Math.PI / 2;
+    this.mesh.add(this.ring);
   }
+
+  // In the air, high enough for a car to pass under your feet.
+  get airborne() { return this.z > 0.5; }
 
   blocked(x, y) {
     const g = this.grid, r = 0.3;
@@ -298,6 +292,7 @@ export class Walker {
   }
 
   update(dt, ctl) {
+    const a = this.anim;
     if (this.down > 0) {
       this.down -= dt;
       const k = Math.exp(-4 * dt);
@@ -305,6 +300,10 @@ export class Walker {
       this.vy *= k;
       if (!this.blocked(this.x + this.vx * dt, this.y)) this.x += this.vx * dt;
       if (!this.blocked(this.x, this.y + this.vy * dt)) this.y += this.vy * dt;
+      // A quicker get-up than the crowd's: you want to get going again.
+      if (this.down < GETUP / 1.5) a.play('getup', false, 0.1);
+      a.step(dt, a.name === 'getup' ? 1.5 : 1);
+      this.z = 0;
       this.sync();
       return;
     }
@@ -321,26 +320,34 @@ export class Walker {
       this.h += turn * (ctl.run ? 3.6 : 4.2) * dt;
       target = move > 0 ? move * (ctl.run ? 7.5 : 3.6) : move * 2;
     }
+    const jumping = a.name === 'jump' && !a.done;
+    if (ctl.jump && !jumping) a.play('jump', true, 0.06);
     this.speed += (target - this.speed) * Math.min(1, dt * 10);
     this.vx = Math.cos(this.h) * this.speed;
     this.vy = Math.sin(this.h) * this.speed;
     if (!this.blocked(this.x + this.vx * dt, this.y)) this.x += this.vx * dt;
     if (!this.blocked(this.x, this.y + this.vy * dt)) this.y += this.vy * dt;
-    this.phase += Math.max(Math.abs(this.speed), Math.abs(turn) * 1.2) * dt * 2.2;
+    if (a.name === 'jump' && !a.done) a.step(dt);
+    // Turning on the spot shuffles the feet.
+    else locomote(a, dt, Math.abs(this.speed) > 0.2 ? this.speed : Math.abs(turn) * 0.9);
+    this.z = a.name === 'jump' ? jumpHeight(a.t, 1.1) : 0;
     this.sync();
   }
 
   knock(vx, vy) {
-    this.down = 1.6;
+    this.down = 2.2;
     this.vx = vx;
     this.vy = vy;
     this.h = Math.atan2(vy, vx) + Math.PI;
+    this.anim.play('fall', true, 0.08);
   }
 
   sync() {
-    const down = this.down > 0;
     const ground = this.grid.height ? this.grid.height(this.x, this.y) : 0;
-    this.mesh.position.set(this.x, ground + (down ? 0.25 : Math.abs(Math.sin(this.phase)) * 0.06), -this.y);
-    this.mesh.rotation.set(0, this.h, down ? Math.PI / 2 : Math.sin(this.phase) * 0.07);
+    this.mesh.position.set(this.x, ground + this.z, -this.y);
+    this.mesh.rotation.set(0, this.h, 0);
+    this.ring.position.y = 0.05 - this.z;
+    this.fig.set(0, this.base, this.anim);
+    this.fig.commit(1);
   }
 }

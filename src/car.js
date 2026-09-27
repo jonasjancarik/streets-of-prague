@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp } from './network.js';
+import { Figures, Anim, SCALE } from './figures.js';
 
 // Arcade top-down car handling: grip on the long axis, lateral slip that decays
 // (much slower with the handbrake), bounces off walls against the collision grid.
@@ -13,14 +14,30 @@ export const TYPES = {
   taxi: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 1, color: '#e9c62f' },
   // Never parked or in ordinary traffic: src/police.js puts these on the streets.
   police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#eef1f4' },
+  // Two-wheelers (drawn from the figures kit, as big as the people riding them). A bike
+  // is never parked in a car bay; `traffic` is how often each type turns up on the road.
+  bike: { L: 2.3, W: 0.8, H: 1.5, mass: 90, accel: 3.2, vmax: 9, grip: 12, turn: 3.4, weight: 0, traffic: 0.5, two: 'bike' },
+  moto: { L: 2.8, W: 1.0, H: 1.6, mass: 260, accel: 12, vmax: 48, grip: 9.5, turn: 2.8, weight: 0.3, traffic: 1.2, two: 'moto' },
 };
 const PAINT = ['#e8e6e1', '#bfc3c7', '#8d9398', '#2c2f33', '#1d2a44', '#7a1f1f', '#b33a2c', '#2f5140', '#5b6d7c', '#d9d2c0', '#3f4a5a', '#9a7b4f'];
+const TWO_PAINT = {
+  bike: ['#1d2a44', '#b33a2c', '#2f5140', '#e8e6e1', '#2c2f33', '#d94f8c', '#e0b32a', '#5b6d7c', '#8fb3c9'],
+  moto: ['#b3161b', '#1d2a44', '#2c2f33', '#e8e6e1', '#d9d2c0', '#2f5140', '#e07b1f'],
+};
+
+let kit = null;
+// Two-wheelers come from the figures kit, which has to be loaded before the first one.
+export function useKit(k) { kit = k; }
 
 const cache = new Map();
 function carGeometry(type, paint) {
   const k = `${type}|${paint}`;
   if (cache.has(k)) return cache.get(k);
   const S = TYPES[type];
+  if (S.two) {
+    cache.set(k, kit.vehicles[S.two](paint));
+    return cache.get(k);
+  }
   const parts = [];
   const box = (sx, sy, sz, x, y, z, color) => {
     const g = new THREE.BoxGeometry(sx, sy, sz);
@@ -61,10 +78,12 @@ function carGeometry(type, paint) {
 
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 
-export function randomType(r) {
-  const total = Object.values(TYPES).reduce((a, t) => a + t.weight, 0);
+// A random type, by `weight` for parking and by `traffic` (where it's set) on the road.
+export function randomType(r, use = 'weight') {
+  const w = (t) => t[use] ?? t.weight;
+  const total = Object.values(TYPES).reduce((a, t) => a + w(t), 0);
   let x = r() * total;
-  for (const [k, t] of Object.entries(TYPES)) if ((x -= t.weight) < 0) return k;
+  for (const [k, t] of Object.entries(TYPES)) if ((x -= w(t)) < 0) return k;
   return 'sedan';
 }
 
@@ -73,7 +92,8 @@ export class Car {
     this.type = type;
     this.spec = TYPES[type];
     this.mass = this.spec.mass;
-    this.key = `${type}|${PAINT[Math.floor(r() * PAINT.length)]}`;
+    const paints = TWO_PAINT[type] || PAINT;
+    this.key = `${type}|${paints[Math.floor(r() * paints.length)]}`;
     carGeometry(...this.key.split('|'));
     this.x = x;
     this.y = y;
@@ -81,6 +101,8 @@ export class Car {
     this.vx = this.vy = this.w = 0;
     this.mode = 'loose'; // 'traffic' (driven by AI), 'loose' (free body), 'player', 'police' (chasing you)
     this.damage = 0;
+    this.rider = null; // on a two-wheeler: the look of whoever is riding it
+    this.lean = 0;
     const { L, W } = this.spec;
     this.r = W / 2 + 0.02;
     this.offsets = [-(L / 2 - this.r), 0, L / 2 - this.r];
@@ -92,6 +114,7 @@ export class Car {
   }
 
   get speed() { return Math.hypot(this.vx, this.vy); }
+  get two() { return this.spec.two; }
   // Someone at the wheel: the player, or the police chasing them.
   get driven() { return this.mode === 'player' || this.mode === 'police'; }
   get forwardSpeed() { return this.vx * Math.cos(this.h) + this.vy * Math.sin(this.h); }
@@ -197,22 +220,29 @@ export class Car {
 }
 
 // Every car is an instance: one draw call per type and colour, however many are parked.
+// Riders are drawn here too, sitting on their bikes.
 export class CarPool {
   constructor(scene) {
     this.scene = scene;
     this.meshes = new Map();
     this.groups = new Map();
     this.dummy = new THREE.Object3D();
+    this.riders = new Figures(kit, 64);
+    scene.add(this.riders.mesh);
+    this.scale = new THREE.Matrix4().makeScale(SCALE, SCALE, SCALE);
+    this.m = new THREE.Matrix4();
   }
 
   // `height(x, y)`: terrain height; cars sit on it, pitched and rolled to the slope.
-  render(cars, height = null) {
+  render(cars, height = null, dt = 0) {
+    for (const c of cars) if (c.two) this.lean(c, dt);
     for (const list of this.groups.values()) list.length = 0;
     for (const c of cars) {
       if (!this.groups.has(c.key)) this.groups.set(c.key, []);
       this.groups.get(c.key).push(c);
     }
     const d = this.dummy;
+    let riders = 0;
     for (const [k, list] of this.groups) {
       let m = this.meshes.get(k);
       if (!m || m.instanceMatrix.count < list.length) {
@@ -229,17 +259,36 @@ export class CarPool {
           const hf = height(c.x + fx * L, c.y + fy * L), hb = height(c.x - fx * L, c.y - fy * L);
           const hl = height(c.x - fy * W, c.y + fx * W), hr = height(c.x + fy * W, c.y - fx * W);
           d.position.set(c.x, (hf + hb + hl + hr) / 4, -c.y);
-          d.rotation.set(Math.atan2(hl - hr, 2 * W), c.h, Math.atan2(hf - hb, 2 * L), 'YZX');
+          d.rotation.set(Math.atan2(hl - hr, 2 * W) - c.lean, c.h, Math.atan2(hf - hb, 2 * L), 'YZX');
         } else {
           d.position.set(c.x, 0, -c.y);
-          d.rotation.set(0, c.h, 0);
+          d.rotation.set(-c.lean, c.h, 0, 'YZX');
         }
         d.updateMatrix();
         m.setMatrixAt(i, d.matrix);
+        if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
       });
       m.count = list.length;
       m.instanceMatrix.needsUpdate = true;
     }
+    this.riders.commit(riders);
+  }
+
+  // Lean into the turns (worked out from how fast the heading changes, so it works
+  // for traffic too); a parked bike leans on its stand.
+  lean(c, dt) {
+    const yaw = dt > 0 && c.lastH !== undefined ? Math.atan2(Math.sin(c.h - c.lastH), Math.cos(c.h - c.lastH)) / dt : 0;
+    c.lastH = c.h;
+    const want = !c.rider && c.speed < 0.3 ? 0.2 : clamp(Math.atan((c.forwardSpeed * yaw) / 9.81), -0.7, 0.7);
+    c.lean += (want - c.lean) * Math.min(1, dt * 6);
+  }
+
+  ride(c, i, matrix, dt) {
+    c.anim = c.anim || new Anim(kit, c.two, Math.random());
+    // Pedal as fast as the bike goes: about 6 m a turn of the cranks.
+    c.anim.step(dt, c.two === 'bike' ? Math.max(0, c.forwardSpeed) / 6 : 1);
+    this.riders.look(i, c.rider);
+    this.riders.set(i, this.m.copy(matrix).multiply(this.scale), c.anim);
   }
 }
 

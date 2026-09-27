@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { Car } from './car.js';
 import { Polyline, clamp } from './network.js';
 import { project, speedLimit, turnOf } from './assist.js';
-import { personMesh } from './people.js';
+import { Figures, Anim, SCALE } from './figures.js';
+import { locomote, knocked } from './people.js';
 import { Helicopters, HELI_SIGHT } from './helicopter.js';
 
 // The police and your wanted level, GTA 2 style.
@@ -70,8 +71,9 @@ class Heap {
 }
 
 export class Police {
-  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted }) {
-    Object.assign(this, { scene, drive, traffic, grid, r: rng, edgesNear, offscreen, onBusted });
+  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit }) {
+    Object.assign(this, { scene, drive, traffic, grid, r: rng, edgesNear, offscreen, onBusted, kit });
+    this.spare = []; // figures of officers who've gone, to reuse
     this.helis = new Helicopters(scene, height);
     this.heat = 0;
     this.cars = []; // chasing: { car, path, s, replan, stuck, reverse, calm, wrecked }
@@ -147,11 +149,17 @@ export class Police {
 
   knock(o, vx, vy) {
     Object.assign(o, { down: 3, vx, vy, h: Math.atan2(vy, vx) + Math.PI });
+    o.anim.play('fall', true, 0.08);
+  }
+
+  dismiss(o) {
+    this.scene.remove(o.fig.mesh);
+    this.spare.push(o.fig);
   }
 
   // Dev teleport: the chase doesn't follow you across town.
   reset() {
-    for (const o of this.officers) this.scene.remove(o.mesh);
+    for (const o of this.officers) this.dismiss(o);
     this.officers = [];
     this.cars = [];
     this.helis.reset();
@@ -308,10 +316,13 @@ export class Police {
     const lx = -Math.sin(car.h), ly = Math.cos(car.h);
     let x = car.x + lx * (car.spec.W / 2 + 0.7), y = car.y + ly * (car.spec.W / 2 + 0.7);
     if (this.grid.at(x, y)) { x = car.x - lx * (car.spec.W / 2 + 0.7); y = car.y - ly * (car.spec.W / 2 + 0.7); }
-    const mesh = personMesh('#1f3a68', '#e3b99a', '#15233f');
-    mesh.rotation.order = 'YXZ';
-    this.scene.add(mesh);
-    this.officers.push({ x, y, h: car.h, vx: 0, vy: 0, car, mesh, down: 0, phase: 0, back: false });
+    let fig = this.spare.pop();
+    if (!fig) {
+      fig = new Figures(this.kit, 1);
+      fig.look(0, { shirt: '#1f3a68', trousers: '#1a2438', skin: '#e3b99a', hair: '#15233f', sleeves: true });
+    }
+    this.scene.add(fig.mesh);
+    this.officers.push({ x, y, h: car.h, vx: 0, vy: 0, car, fig, anim: new Anim(this.kit, 'idle'), down: 0, back: false });
   }
 
   blocked(x, y) {
@@ -346,7 +357,8 @@ export class Police {
     const nx = o.x + o.vx * dt, ny = o.y + o.vy * dt;
     if (!this.blocked(nx, o.y)) o.x = nx;
     if (!this.blocked(o.x, ny)) o.y = ny;
-    o.phase += Math.hypot(o.vx, o.vy) * dt * 2.2;
+    if (o.down > 0) knocked(o.anim, dt, o.down);
+    else locomote(o.anim, dt, Math.hypot(o.vx, o.vy));
     if (o.back && !this.cars.some((p) => p.car === o.car) && this.offscreen(o.x, o.y)) o.gone = true;
   }
 
@@ -421,7 +433,7 @@ export class Police {
 
     this.helis.update(dt, me, HELIS[this.stars]);
     for (const o of this.officers) this.walk(o, dt, me);
-    for (const o of this.officers) if (o.gone) this.scene.remove(o.mesh);
+    for (const o of this.officers) if (o.gone) this.dismiss(o);
     this.officers = this.officers.filter((o) => !o.gone);
   }
 
@@ -468,10 +480,11 @@ export class Police {
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
     for (const o of this.officers) {
-      const down = o.down > 0;
-      o.mesh.position.set(o.x, height(o.x, o.y) + (down ? 0.25 : Math.abs(Math.sin(o.phase)) * 0.06), -o.y);
-      o.mesh.rotation.set(0, o.h, down ? Math.PI / 2 : Math.sin(o.phase) * 0.07);
+      m.compose(p.set(o.x, height(o.x, o.y), -o.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, o.h), sc);
+      o.fig.set(0, m, o.anim);
+      o.fig.commit(1);
     }
   }
 }
