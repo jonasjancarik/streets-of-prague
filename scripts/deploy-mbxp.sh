@@ -22,6 +22,9 @@ node --input-type=module -e "import { build } from 'vite'; await build({ publicD
 # site/data is the mountpoint for shared/data (it can't be created inside a read-only mount).
 ssh "$HOST" mkdir -p "$DIR/releases/$SHA/site/data" "$DIR/shared/data"
 rsync -a dist/ "$HOST:$DIR/releases/$SHA/site/"
+# The build leaves public/ out (publicDir: false, for the sake of public/data), so the
+# committed files in it (figures.glb, facades.webp) go over on their own.
+(cd public && git ls-files) | rsync -a --files-from=- public/ "$HOST:$DIR/releases/$SHA/site/"
 rsync -a scripts/httpd.conf "$HOST:$DIR/releases/$SHA/httpd.conf"
 rsync -a public/data/ "$HOST:$DIR/shared/data/"
 
