@@ -13,8 +13,8 @@ npm run dev          # http://localhost:5191
 ```
 
 The map data is built locally (see [Building the map](#building-the-map)); nothing
-generated is committed. `?area=centrum` is the default, `?area=praha` the whole
-city, `?area=ujezd` a small test area. `?night` fills the streets with night-time
+generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
+the historic centre and `?area=ujezd` a small test area. `?night` fills the streets with night-time
 parking, `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
 
@@ -138,7 +138,8 @@ IPR sheets) are about 7.5 GB.
 It runs at <https://streets.jonasjancarik.cz> from mbxp. `scripts/deploy-mbxp.sh`
 builds the committed code, uploads it as a new release and syncs your local
 `public/data/` to the server (only changed files go over), then restarts the
-`streets-of-prague` container on `127.0.0.1:3017`. The Cloudflare tunnel
+`streets-of-prague` container (busybox httpd) on `127.0.0.1:3017`. `scripts/httpd.conf`
+gives JSON a Content-Type, which Cloudflare needs before it compresses a response. The Cloudflare tunnel
 `urad-ai-poc` routes the hostname there.
 
 ## Credits

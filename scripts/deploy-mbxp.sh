@@ -22,6 +22,7 @@ node --input-type=module -e "import { build } from 'vite'; await build({ publicD
 # site/data is the mountpoint for shared/data (it can't be created inside a read-only mount).
 ssh "$HOST" mkdir -p "$DIR/releases/$SHA/site/data" "$DIR/shared/data"
 rsync -a dist/ "$HOST:$DIR/releases/$SHA/site/"
+rsync -a scripts/httpd.conf "$HOST:$DIR/releases/$SHA/httpd.conf"
 rsync -a public/data/ "$HOST:$DIR/shared/data/"
 
 ssh "$HOST" bash -s -- "$DIR" "$SHA" "$PORT" <<'EOF'
@@ -32,9 +33,10 @@ docker run -d --name streets-of-prague --restart unless-stopped \
   -p 127.0.0.1:$PORT:80 \
   -v "$DIR/releases/$SHA/site:/www:ro" \
   -v "$DIR/shared/data:/www/data:ro" \
-  busybox:latest httpd -f -p 80 -h /www >/dev/null
+  -v "$DIR/releases/$SHA/httpd.conf:/etc/httpd.conf:ro" \
+  busybox:latest httpd -f -p 80 -h /www -c /etc/httpd.conf >/dev/null
 sleep 1
 curl -fsS -o /dev/null -w "index.html: HTTP %{http_code}\n" http://127.0.0.1:$PORT/
-curl -fsS -o /dev/null -w "centrum index: HTTP %{http_code}\n" http://127.0.0.1:$PORT/data/centrum_now/index.json
+curl -fsS -o /dev/null -w "praha index: HTTP %{http_code} %{content_type}\n" http://127.0.0.1:$PORT/data/praha_now/index.json
 echo "$SHA" > "$DIR/current"
 EOF

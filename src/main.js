@@ -13,7 +13,7 @@ import { setupTouch } from './touch.js';
 import { Police } from './police.js';
 
 const params = new URLSearchParams(location.search);
-const AREA = params.get('area') || 'centrum';
+const AREA = params.get('area') || 'praha';
 const $ = (id) => document.getElementById(id);
 const status = (t) => { $('loading-text').textContent = t; };
 
