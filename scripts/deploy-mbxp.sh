@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Deploy to mbxp as https://streets.jonasjancarik.cz (Cloudflare tunnel urad-ai-poc → 127.0.0.1:3017).
+# The built site goes to releases/<commit>/site; the locally built map data (public/data)
+# is synced to shared/data and mounted over /www/data, so a code release doesn't copy it.
+set -euo pipefail
+
+HOST=${DEPLOY_HOST:-mbxp}
+DIR=/home/jonas/deployments/streets-of-prague
+PORT=3017
+
+cd "$(dirname "$0")/.."
+git diff --quiet HEAD || { echo "Commit your changes first." >&2; exit 1; }
+SHA=$(git rev-parse HEAD)
+
+node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
+
+ssh "$HOST" mkdir -p "$DIR/releases/$SHA/site" "$DIR/shared/data"
+rsync -a dist/ "$HOST:$DIR/releases/$SHA/site/"
+rsync -a public/data/ "$HOST:$DIR/shared/data/"
+
+ssh "$HOST" bash -s -- "$DIR" "$SHA" "$PORT" <<'EOF'
+set -euo pipefail
+DIR=$1 SHA=$2 PORT=$3
+docker rm -f streets-of-prague >/dev/null 2>&1 || true
+docker run -d --name streets-of-prague --restart unless-stopped \
+  -p 127.0.0.1:$PORT:80 \
+  -v "$DIR/releases/$SHA/site:/www:ro" \
+  -v "$DIR/shared/data:/www/data:ro" \
+  busybox:latest httpd -f -p 80 -h /www >/dev/null
+sleep 1
+curl -fsS -o /dev/null -w "index.html: HTTP %{http_code}\n" http://127.0.0.1:$PORT/
+curl -fsS -o /dev/null -w "centrum index: HTTP %{http_code}\n" http://127.0.0.1:$PORT/data/centrum_now/index.json
+echo "$SHA" > "$DIR/current"
+EOF
