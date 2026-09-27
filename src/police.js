@@ -272,7 +272,10 @@ export class Police {
       want = me.car ? Math.max(12, me.speed + 6) : dist < 12 ? 0 : clamp((dist - 10) * 0.8, 3, 12);
     } else {
       p.replan -= dt;
-      if (!p.path || p.replan < 0 || p.s > p.path.length - 6) {
+      // Where there's no way through (you're somewhere the street graph doesn't reach,
+      // or it isn't loaded yet) it heads straight for you and tries again on the timer,
+      // not every frame: a search that fails has looked at thousands of streets.
+      if (p.replan < 0 || (p.path && p.s > p.path.length - 6)) {
         p.path = this.route(c.x, c.y, me.x, me.y);
         p.s = 0;
         p.replan = 1.2 + this.r() * 0.8;
@@ -281,7 +284,8 @@ export class Police {
       else {
         const q = project(p.path, c.x, c.y, p.s - 10, p.s + 40);
         p.s = q.s;
-        if (q.d > 12) p.replan = 0;
+        // Off the route: a new one soon (still no more than a few times a second).
+        if (q.d > 12) p.replan = Math.min(p.replan, 0.3);
         const L = 6 + Math.abs(vf) * 0.6, t = p.path.at(p.s + L);
         tx = t.x;
         ty = t.y;

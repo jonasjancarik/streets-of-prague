@@ -22,6 +22,7 @@ const FALLBACK = { day: 7.5, night: 3 };
 export const MEAN_SPEED = 5.5; // m/s along a line, stops included: spaces the trams out
 const MANAGE = 2; // seconds between checks of how many trams each line should have out
 const CELL = 20;
+const NONE = [];
 const FAR = 800, FAR_STEP = 0.25; // trams further than this from the player move in steps of this many seconds
 
 function sectionGeometry(kind) {
@@ -154,6 +155,7 @@ export class Trams {
     this.clock = clock;
     this.pool = [];
     this.grid = new Map();
+    this.gridSweep = 0;
     this.list = [];
     this.id = 0;
     this.manageT = 0;
@@ -244,15 +246,24 @@ export class Trams {
       this.manageT = MANAGE;
       this.manage(seen);
     }
-    // Where every tram's sections are, so the trams behind can see them.
-    this.grid.clear();
+    // Where every tram's sections are, so the trams behind can see them (the buckets
+    // and entries are kept from step to step, keyed by number as in SpatialHash).
+    for (const b of this.grid.values()) b.length = 0;
     for (const v of this.list) {
-      for (const p of v.parts) {
-        const k = `${Math.floor(p.x / CELL)},${Math.floor(p.y / CELL)}`;
+      v.cells ||= [{ v }, { v }, { v }];
+      v.parts.forEach((p, n) => {
+        const k = Math.floor(p.x / CELL) * 131072 + Math.floor(p.y / CELL);
         let b = this.grid.get(k);
         if (!b) this.grid.set(k, (b = []));
-        b.push({ v, x: p.x, y: p.y, c: Math.cos(p.ang), s: Math.sin(p.ang) });
-      }
+        const o = v.cells[n];
+        o.x = p.x; o.y = p.y; o.c = Math.cos(p.ang); o.s = Math.sin(p.ang);
+        b.push(o);
+      });
+    }
+    // Buckets left empty for a while go, so the map doesn't grow with the city.
+    if (++this.gridSweep > 600) {
+      this.gridSweep = 0;
+      for (const [k, b] of this.grid) if (!b.length) this.grid.delete(k);
     }
     for (const v of this.list) {
       const mid = v.parts[1], d = Math.hypot(mid.x - x, mid.y - y);
@@ -333,7 +344,7 @@ export class Trams {
       if (v.ghost <= 0) {
         for (let i = Math.floor((p.x - 8) / CELL); i <= Math.floor((p.x + 8) / CELL); i++) {
           for (let j = Math.floor((p.y - 8) / CELL); j <= Math.floor((p.y + 8) / CELL); j++) {
-            for (const o of this.grid.get(`${i},${j}`) || []) {
+            for (const o of this.grid.get(i * 131072 + j) || NONE) {
               if (o.v === v) continue;
               const dx = p.x - o.x, dy = p.y - o.y;
               const along = dx * o.c + dy * o.s, clamped = Math.max(-SECTION / 2, Math.min(SECTION / 2, along));

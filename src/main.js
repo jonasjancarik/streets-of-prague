@@ -13,6 +13,7 @@ import { Clock } from './clock.js';
 import { StopBoard } from './board.js';
 import { Metro } from './metro.js';
 import { TileWorld } from './tiles.js';
+import { groundSamples } from './surface.js';
 import { CUTAWAY } from './shading.js';
 import { setupDev } from './dev.js';
 import { LaneAssist } from './assist.js';
@@ -43,11 +44,17 @@ async function main() {
   const seeded = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  // ?dpr=1 draws at that pixel ratio; otherwise it starts at the screen's (up to 2)
+  // and comes down while frames take too long (see `resolution` below).
+  const maxRatio = Math.min(Number(params.get('dpr')) || devicePixelRatio, 2);
+  renderer.setPixelRatio(maxRatio);
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // Asking the driver whether each shader compiled stalls the frame it's first used in;
+  // only the developer panel's ?dev needs the errors.
+  renderer.debug.checkShaderErrors = params.has('dev');
   $('app').appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -58,7 +65,7 @@ async function main() {
   scene.add(new THREE.HemisphereLight('#e4ecf2', '#8a7a5e', 1.5));
   const sun = new THREE.DirectionalLight('#fff0d4', 2.4);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.mapSize.set(2048, 2048); // about 9 cm a texel across the ±90 m it covers on foot
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.4;
   scene.add(sun, sun.target);
@@ -82,10 +89,12 @@ async function main() {
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose = [];
   const tileCars = new Set();
-  world.onCars = (cars) => { for (const c of cars) { loose.push(c); tileCars.add(c); } };
+  let restingStale = true; // see syncResting
+  world.onCars = (cars) => { for (const c of cars) { loose.push(c); tileCars.add(c); } restingStale = true; };
   world.onDrop = (tile) => {
     const gone = new Set(tile.cars.filter((c) => c.mode === 'loose'));
     for (let i = loose.length - 1; i >= 0; i--) if (gone.has(loose[i])) { tileCars.delete(loose[i]); loose.splice(i, 1); }
+    restingStale = true;
   };
 
   // Start on Újezd (or ?start=lon,lat) if it's in the area, otherwise in the middle.
@@ -244,6 +253,7 @@ async function main() {
   const police = new Police({ scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, offscreen, onBusted: busted, kit });
 
   const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car)];
+  const drawn = []; // the cars drawn this frame
   // Off the tram onto the pavement beside it.
   const getOff = () => {
     const [x, y, h] = ride.leave();
@@ -433,18 +443,63 @@ async function main() {
   let last = performance.now(), shake = 0;
   let waitScale = 1, clockShown = '';
   let street = null, bannerT = 0, lifeT = 0;
+  // The HUD is only written when what it says changes: every write makes the browser
+  // lay the page out again.
+  const shown = {};
+  const show = (id, value, how = 'text') => {
+    const key = `${id}/${how}`;
+    if (shown[key] === value) return;
+    shown[key] = value;
+    const el = $(id);
+    if (how === 'html') el.innerHTML = value;
+    else if (how === 'opacity') el.style.opacity = value;
+    else el.textContent = value;
+  };
   const showBanner = (text, alert = false) => {
     $('banner').textContent = text;
     $('banner').classList.toggle('alert', alert);
     bannerT = alert ? 3.5 : 2.6;
   };
-  const hash = new SpatialHash(10);
+  // Everything that moves or blocks, made again every step; parked and abandoned cars
+  // that stand still (thousands of them across the loaded tiles) have a hash of their
+  // own, made again only when one of them moves, comes or goes.
+  const hash = new SpatialHash(10), resting = new SpatialHash(10);
+  function* obstacles(x, y, rr) {
+    yield* hash.near(x, y, rr);
+    yield* resting.near(x, y, rr);
+  }
   const near = (a, b, d) => Math.abs(a.x - b.x) < d && Math.abs(a.y - b.y) < d;
-  const carsNear = (x, y, rr) => {
-    const out = new Set();
-    for (const o of hash.near(x, y, rr)) if (o.car) out.add(o.car);
+  // The cars within rr of (x, y), each once, into `out` (reused, to spare the garbage).
+  let stamp = 0;
+  const carsNear = (x, y, rr, out = []) => {
+    stamp++;
+    out.length = 0;
+    for (const o of obstacles(x, y, rr)) if (o.car && o.car.stamp !== stamp) { o.car.stamp = stamp; out.push(o.car); }
     return out;
   };
+  const nearA = [], nearB = [];
+  const pushCar = (h, c) => { for (const [x, y] of c.circles()) h.add({ x, y, r: c.r, vx: c.vx, vy: c.vy, kind: c.mode === 'player' ? 'player' : 'car', car: c }); };
+  const moving = (c) => c.mode === 'player' || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s
+  let restingCount = -1;
+  const syncResting = () => {
+    let n = 0, stale = restingStale;
+    for (const c of loose) {
+      if (moving(c)) { stale ||= c.resting; continue; }
+      n++;
+      stale ||= !c.resting || c.restAt[0] !== c.x || c.restAt[1] !== c.y || c.restAt[2] !== c.h;
+    }
+    if (!stale && n === restingCount) return;
+    resting.clear();
+    for (const c of loose) {
+      c.resting = !moving(c);
+      if (!c.resting) continue;
+      pushCar(resting, c);
+      c.restAt = [c.x, c.y, c.h];
+    }
+    restingCount = n;
+    restingStale = false;
+  };
+  let spawnT = 0;
 
   // One step of everything that moves (several per frame while a tram ride is sped up).
   let jolt = 0; // the hardest hit your own vehicle took this step
@@ -469,7 +524,6 @@ async function main() {
     // In the helicopter Space climbs and Shift comes down.
     for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: ctl.turn, up: ctl.brake, down: ctl.run } : null);
 
-    const moving = (c) => c.mode === 'player' || c.speed > 0.05 || Math.abs(c.w) > 0.01;
     const movers = loose.filter(moving);
     for (const c of movers) c.update(dt, null, grid);
     const me = inCar || inHeli || walker;
@@ -478,22 +532,22 @@ async function main() {
 
     // Everything the traffic, trams and people need to look out for.
     hash.clear();
-    const pushCar = (c) => { for (const [x, y] of c.circles()) hash.add({ x, y, r: c.r, vx: c.vx, vy: c.vy, kind: c.mode === 'player' ? 'player' : 'car', car: c }); };
-    for (const a of traffic.agents) pushCar(a.car);
-    for (const c of loose) pushCar(c);
-    for (const c of cops) pushCar(c);
-    if (inCar) pushCar(inCar);
+    for (const a of traffic.agents) pushCar(hash, a.car);
+    for (const c of movers) pushCar(hash, c);
+    syncResting();
+    for (const c of cops) pushCar(hash, c);
+    if (inCar) pushCar(hash, inCar);
     else if (!inHeli && !ride.on) hash.add({ x: walker.x, y: walker.y, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0) hash.add({ x: p.x, y: p.y, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const t of tramBodies) for (const [x, y] of t.circles) hash.add({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
 
-    traffic.update(dt, (x, y, rr) => hash.near(x, y, rr));
+    traffic.update(dt, obstacles);
 
     // Trams stop for whatever is on the track in front of them; one waiting to move
     // across to the other track at a terminus with no loop does it out of sight.
-    trams.update(dt, { near: (x, y, rr) => hash.near(x, y, rr), x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
+    trams.update(dt, { near: obstacles, x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
     if (ride.on) ride.seat(walker);
     transit.update(dt);
 
@@ -506,7 +560,7 @@ async function main() {
     for (const a of active) {
       done.add(a);
       const ca = a.circles();
-      for (const b of carsNear(a.x, a.y, 8)) {
+      for (const b of carsNear(a.x, a.y, 8, nearA)) {
         if (b === a || done.has(b) || !near(a, b, 7)) continue;
         const cb = b.circles();
         if (b.mode === 'traffic') {
@@ -550,7 +604,7 @@ async function main() {
 
     // People and cars
     const bump = (who, rad, onHit) => {
-      for (const c of carsNear(who.x, who.y, 5)) {
+      for (const c of carsNear(who.x, who.y, 5, nearB)) {
         if (!near(who, c, 4)) continue;
         for (const [cx, cy] of c.circles()) {
           const dx = who.x - cx, dy = who.y - cy, d = Math.hypot(dx, dy), min = c.r + rad;
@@ -601,13 +655,54 @@ async function main() {
       scatterPeople(true);
       parkTwoWheelers(true);
     }
-    if (traffic.agents.length < TRAFFIC) traffic.spawn((x, y) => offscreen(x, y) && lifeSpots(px(), py(), 40)(x, y), edgesNear(px(), py(), LIFE_RADIUS));
+    // New traffic out of sight, a few times a second rather than every step (finding
+    // the streets around you and a spot on them takes a while).
+    spawnT -= dt;
+    if (spawnT < 0 && traffic.agents.length < TRAFFIC) {
+      spawnT = 0.25;
+      const edges = edgesNear(px(), py(), LIFE_RADIUS), ok = lifeSpots(px(), py(), 40);
+      for (let n = 0; n < 10 && traffic.agents.length < TRAFFIC; n++) if (!traffic.spawn((x, y) => offscreen(x, y) && ok(x, y), edges)) break;
+    }
   };
 
+  // Every kind of ground's shader, compiled before the game starts.
+  {
+    const samples = groundSamples(time);
+    scene.add(samples.group);
+    await renderer.compileAsync(scene, camera).catch((e) => console.warn(e));
+    scene.remove(samples.group);
+    samples.dispose();
+  }
   $('loading').classList.add('done');
+
+  // Resolution: the screen's pixel ratio (up to 2) while frames keep up. Where they
+  // take too long, mostly the ground's patterns on a big high-density screen, it comes
+  // down a step at a time, and back up once there's time to spare, but not to a step
+  // it had to leave again soon after.
+  const resolution = { ratio: maxRatio, ceiling: maxRatio, frame: 16.7, slow: 0, quick: 0, raised: -Infinity };
+  const adapt = (ms, now) => {
+    if (params.get('dpr') || document.hidden) return;
+    const r = resolution;
+    r.frame += (Math.min(ms, 100) - r.frame) * 0.05;
+    r.slow = r.frame > 25 ? r.slow + ms : 0;
+    r.quick = r.frame < 18 ? r.quick + ms : 0;
+    let next = r.ratio;
+    if (r.slow > 2000 && r.ratio > 1) {
+      if (now - r.raised < 10000) r.ceiling = r.ratio - 0.25;
+      next = Math.max(1, r.ratio - 0.25);
+    } else if (r.quick > 8000 && r.ratio < r.ceiling) {
+      next = Math.min(r.ceiling, r.ratio + 0.25);
+      r.raised = now;
+    }
+    if (next === r.ratio) return;
+    r.ratio = next;
+    r.slow = r.quick = 0;
+    renderer.setPixelRatio(next);
+  };
 
   renderer.setAnimationLoop((now) => {
     const dt = Math.min(0.05, (now - last) / 1000);
+    adapt(now - last, now);
     last = now;
     time.value += dt;
     world.update(camPos.x, -camPos.z, viewRadius() + 220);
@@ -639,7 +734,17 @@ async function main() {
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     crowd.render(ground);
     police.render(ground, time.value);
-    carPool.render(inCar ? [inCar, ...allCars()] : allCars(), ground, dt);
+    // Only the cars in view (and a little round it, for their shadows) are drawn.
+    drawn.length = 0;
+    {
+      const cx = camPos.x, cy = -camPos.z, r = viewRadius() + 12;
+      const see = (c) => { if (Math.abs(c.x - cx) < r && Math.abs(c.y - cy) < r) drawn.push(c); };
+      if (inCar) drawn.push(inCar);
+      loose.forEach(see);
+      for (const a of traffic.agents) see(a.car);
+      for (const p of police.cars) see(p.car);
+    }
+    carPool.render(drawn, ground, dt);
     for (const c of choppers) c.render(dt);
 
     // ---- Camera ----------------------------------------------------------
@@ -682,9 +787,9 @@ async function main() {
       if ((!$('banner').classList.contains('alert') || bannerT < 0) && scale < 1.5) showBanner(name);
     }
     bannerT -= dt;
-    $('banner').style.opacity = clamp(bannerT, 0, 1);
-    $('speed').textContent = inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : inHeli ? Math.round(inHeli.speed * 3.6)
-      : ride.on ? Math.round(ride.v.speed * 3.6) : '–';
+    show('banner', clamp(bannerT, 0, 1), 'opacity');
+    show('speed', String(inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : inHeli ? Math.round(inHeli.speed * 3.6)
+      : ride.on ? Math.round(ride.v.speed * 3.6) : '–'));
     if (clock.label() !== clockShown) $('clock').textContent = clockShown = clock.label();
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
     const canBoard = !inCar && !inHeli && !ride.on && ride.boardable(walker.x, walker.y);
@@ -723,11 +828,11 @@ async function main() {
       const wait = waitScale > 1.5 ? `Waiting for a tram · ${Math.round(waitScale)}× speed` : touch.active ? '' : 'Hold <b>Space</b> to wait for a tram';
       hint = [canEnter && !touch.active ? getIn : '', wait].filter(Boolean).join(' · ');
     } else if (canEnter && !touch.active) hint = getIn;
-    $('hint').innerHTML = hint;
+    show('hint', hint, 'html');
     ride.render();
     const label = ride.on ? (ride.atStop() ? 'Get off' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : canBoard || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     touch.update({ car: inCar || inHeli, tram: ride.on, wait: !!board.shown, label: label || (station ? 'Metro' : null), canEnter: canEnter || !!canBoard || !!station, tripped: ctl.run && assist.tripped });
-    $('tally').textContent = `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`;
+    show('tally', `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
     const face = `${stars}|${stars && !police.seen}`;
@@ -744,7 +849,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, resolution,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

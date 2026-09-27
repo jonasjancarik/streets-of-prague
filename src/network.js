@@ -247,12 +247,13 @@ export function segDist(x, y, a, b) {
   return Math.hypot(x - a[0] - dx * t, y - a[1] - dy * t);
 }
 
-// Rebuilt every frame: everything that moves or blocks, bucketed in 10 m cells.
+// Everything that moves or blocks, bucketed in 10 m cells (keyed by number: cell
+// i * 2^17 + j, unique while |j| < 2^16 cells, far beyond any area).
 export class SpatialHash {
   constructor(cell = 10) { this.cell = cell; this.map = new Map(); }
   clear() { this.map.clear(); }
   add(o) {
-    const k = `${Math.floor(o.x / this.cell)},${Math.floor(o.y / this.cell)}`;
+    const k = Math.floor(o.x / this.cell) * 131072 + Math.floor(o.y / this.cell);
     let b = this.map.get(k);
     if (!b) this.map.set(k, (b = []));
     b.push(o);
@@ -260,7 +261,7 @@ export class SpatialHash {
   *near(x, y, r) {
     const c = this.cell, i0 = Math.floor((x - r) / c), i1 = Math.floor((x + r) / c), j0 = Math.floor((y - r) / c), j1 = Math.floor((y + r) / c);
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
-      const b = this.map.get(`${i},${j}`);
+      const b = this.map.get(i * 131072 + j);
       if (b) yield* b;
     }
   }
