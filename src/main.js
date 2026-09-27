@@ -424,8 +424,9 @@ async function main() {
     $('speed').textContent = inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : '–';
     let hint = '';
     if (inCar) {
-      hint = !assisted ? '<b>E</b> get out · <b>Shift</b> lane assist'
-        : `<b>Shift</b> lane assist · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : 'straight on (A/D to turn)'}`;
+      if (input.run && assist.tripped) hint = `<b>Shift</b> lane assist is off above ${assist.limit} km/h: slow down to get it back`;
+      else if (!assisted) hint = '<b>E</b> get out · <b>Shift</b> lane assist';
+      else hint = `<b>Shift</b> lane assist, up to ${assist.limit} km/h · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : 'straight on (A/D to turn)'}`;
     }
     else if ([...carsNear(walker.x, walker.y, 5)].some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2 < 1.8)) hint = '<b>E</b> get in';
     $('hint').innerHTML = hint;

@@ -31,7 +31,9 @@ Open `http://localhost:5190/drive.html` (`?area=<name>` for another tiled area,
   runs, Space is the handbrake. E gets into the nearest car, including one driving
   past (its driver runs off). R puts the car back on the road.
 - In the car, holding Shift is lane assist (`assist.js`): it steers along your lane,
-  and A/D then pick the turn at the next junction instead of steering.
+  and A/D then pick the turn at the next junction instead of steering. It only works
+  within the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on trunk
+  roads, 80 on motorways): speed and it lets go; 5 km/h under the limit it's back.
 - **Everything is procedural, no textures or AI imagery.** The ground is real
   geometry, one mesh per surface kind triangulated from OSM, coloured by world-space
   GLSL patterns (`shading.js`, `surface.js`): asphalt, granite setts, Prague mosaic
