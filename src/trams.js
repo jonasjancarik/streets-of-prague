@@ -19,6 +19,7 @@ const DWELL = 18, TURN = 40; // seconds at a stop, and at a terminus where the t
 const HEADWAY = { day: 8 * 60, night: 20 * 60 };
 const MEAN_SPEED = 5.5;
 const CELL = 20;
+const FAR = 800, FAR_STEP = 0.25; // trams further than this from the player move in steps of this many seconds
 
 function sectionGeometry(kind) {
   const parts = [];
@@ -123,12 +124,12 @@ function prepare(line) {
   // Where a tram halts: the stops, and termini with no loop on the map, where it
   // reverses or moves across to the other track (`to`). A stop just before such a
   // terminus is the terminus itself.
-  const turns = line.turns.map((t) => ({ s: t.at, dwell: TURN, to: t.to }));
+  const turns = line.turns.map((t) => ({ s: t.at, dwell: TURN, to: t.to, name: t.where }));
   const halts = [];
-  for (const s of line.stops) {
+  for (const [s, name] of line.stops) {
     if (turns.some((t) => path.ahead(s, t.s) < 40)) continue;
     if (halts.length && s - halts[halts.length - 1].s < 20) continue;
-    halts.push({ s, dwell: DWELL });
+    halts.push({ s, dwell: DWELL, name });
   }
   halts.push(...turns);
   halts.sort((a, b) => a.s - b.s);
@@ -154,7 +155,7 @@ export class Trams {
       const n = Math.max(1, Math.round(L / (MEAN_SPEED * HEADWAY[night ? 'night' : 'day'] * variants[line.ref])));
       const offset = rng() * (L / n);
       for (let k = 0; k < n; k++) {
-        const v = { id: id++, line, s: offset + (k * L) / n, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, look: null };
+        const v = { id: id++, line, s: offset + (k * L) / n, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, look: null, pending: rng() * FAR_STEP };
         // Not on the short cut across a terminus with no loop.
         for (const h of line.halts) {
           if (h.to !== undefined && h.to !== h.s && line.path.ahead(h.s - HALF, v.s) < line.path.ahead(h.s, h.to) + 2 * HALF) v.s = h.to + HALF;
@@ -191,12 +192,18 @@ export class Trams {
         b.push({ v, x: p.x, y: p.y, c: Math.cos(p.ang), s: Math.sin(p.ang) });
       }
     }
-    this.frame = (this.frame || 0) + 1;
     for (const v of this.list) {
       const mid = v.parts[1], d = Math.hypot(mid.x - x, mid.y - y);
-      // Far from the player a tram looks down the track every fourth frame.
-      v.far = d > 800;
-      this.step(v, dt, near && d < r ? near : null, seen);
+      // Far from the player a tram moves in bigger steps: nobody sees it, and it keeps
+      // fast-forwarding cheap.
+      let step = dt;
+      if (d > FAR) {
+        v.pending += dt;
+        if (v.pending < FAR_STEP) continue;
+        step = v.pending;
+      }
+      v.pending = 0;
+      this.step(v, step, near && d < r ? near : null, seen);
       this.place(v);
     }
   }
@@ -207,8 +214,9 @@ export class Trams {
     if (v.dwell > 0) {
       v.speed = 0;
       v.dwell -= dt;
-      // Moving across to the other track: only where nobody's looking, or after a while.
-      if (v.dwell <= 0 && h.to !== undefined && h.to !== h.s && v.dwell > -60) {
+      // Moving across to the other track: only where nobody's looking, or after a
+      // while (or at once with the player on board: you don't see it from inside).
+      if (v.dwell <= 0 && h.to !== undefined && h.to !== h.s && v.dwell > -60 && !v.rider) {
         const a = v.parts[1], b = path.at(h.to);
         if (seen(a.x, a.y) || seen(b.x, b.y)) return;
       }
@@ -246,17 +254,11 @@ export class Trams {
     target = Math.min(target, toHalt < 0.6 ? 0 : Math.max(0.8, Math.sqrt(2 * BRAKE * (toHalt - 0.5))));
 
     // Anything on the track ahead: another tram, a car, a person.
-    let gap;
-    if (v.far && (this.frame + v.id) % 4 && v.gapAt !== undefined) gap = v.gap - path.ahead(v.gapAt, front);
-    else {
-      gap = this.clearAhead(v, dt * (v.far ? 4 : 1), front, look, near);
-      v.gap = gap;
-      v.gapAt = front;
-    }
+    const gap = this.clearAhead(v, dt, front, look, near);
     if (gap < Infinity) target = Math.min(target, Math.sqrt(2 * BRAKE * Math.max(0, gap - 4)));
 
     v.speed = v.speed < target ? Math.min(target, v.speed + ACCEL * dt) : Math.max(target, v.speed - HARD * dt);
-    v.s = path.wrap(v.s + v.speed * dt);
+    v.s = path.wrap(v.s + Math.min(v.speed * dt, toHalt)); // never past the stop
   }
 
   // How far along the track ahead the way is clear (Infinity if it is, as far as `look`).

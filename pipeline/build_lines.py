@@ -11,7 +11,8 @@ times.
 
 Each line in lines.json: `ref`, `colour`, `night` (the 9x night lines), `from` and
 `to`, `pts` (the loop in the area's local metres, first point repeated at the end),
-`length`, `stops` (the distance along the loop of each stop position),
+`length`, `stops` ([distance along the loop, name] of each stop position), `ends`
+(where the tram gets to `to` and back to `from`),
 `speed` ([distance, km/h] wherever the limit changes: the track's maxspeed, and
 less round tight curves) and `turns`, termini with no loop on the map: at `at` the
 tram stops, and it sets off again from `to` (where the track doubles back on itself,
@@ -56,7 +57,7 @@ def load_pbf(bbox):
         tags = dict(unesc(kv).split("=", 1) for kv in f.get("T", "").split(",") if kv) if f.get("T") else {}
         oid = int(head[1:])
         if head[0] == "n":
-            nodes[oid] = (float(f["x"]), float(f["y"]))
+            nodes[oid] = (float(f["x"]), float(f["y"]), tags.get("name"))
         elif head[0] == "w":
             ways[oid] = (tags, [int(n[1:]) for n in f.get("N", "").split(",") if n])
         elif head[0] == "r":
@@ -78,7 +79,7 @@ def load_overpass(bbox):
     nodes, ways, rels = {}, {}, {}
     for el in data["elements"]:
         if el["type"] == "node":
-            nodes[el["id"]] = (el["lon"], el["lat"])
+            nodes[el["id"]] = (el["lon"], el["lat"], el.get("tags", {}).get("name"))
         elif el["type"] == "way":
             ways[el["id"]] = (el.get("tags", {}), el["nodes"])
         else:
@@ -215,7 +216,7 @@ def main(area: str = "centrum") -> None:
     nodes, ways, rels = load_pbf(wide) if PBF.exists() else load_overpass(wide)
     # Whole lines: every tram track in Prague's box, not only the area's.
     pw, ps, pe, pn = AREAS["praha"]
-    xy = {k: tf.transform(lon, lat) for k, (lon, lat) in nodes.items() if pw - MARGIN < lon < pe + MARGIN and ps - MARGIN < lat < pn + MARGIN}
+    xy = {k: tf.transform(lon, lat) for k, (lon, lat, _) in nodes.items() if pw - MARGIN < lon < pe + MARGIN and ps - MARGIN < lat < pn + MARGIN}
     tracks = Tracks(ways, xy)
     x0, y0 = tf.transform(w, s)
     x1, y1 = tf.transform(e, n)
@@ -232,7 +233,7 @@ def main(area: str = "centrum") -> None:
         if not seq:
             broken.append(f"{ref} (r{rid})")
             continue
-        stops = [xy[i] for t, i, role in members if t == "n" and role.startswith("stop") and i in xy]
+        stops = [(xy[i], stop_name(i, members, nodes, ways, xy)) for t, i, role in members if t == "n" and role.startswith("stop") and i in xy]
         legs.setdefault(ref, []).append((rid, tags, seq, stops))
     if broken:
         print("couldn't follow:", ", ".join(broken))
@@ -283,6 +284,27 @@ def join(tracks, a, b):
     return None
 
 
+def stop_name(i, members, nodes, ways, xy):
+    """A stop position's name, else the name of the nearest platform of the route
+    (within 60 m), else None."""
+    if nodes[i][2]:
+        return nodes[i][2]
+    best, near = None, 60.0
+    for t, j, role in members:
+        if not role.startswith("platform"):
+            continue
+        if t == "n" and j in xy and nodes[j][2]:
+            name, p = nodes[j][2], xy[j]
+        elif t == "w" and j in ways and ways[j][0].get("name") and all(n in xy for n in ways[j][1]):
+            pts = [xy[n] for n in ways[j][1]]
+            name, p = ways[j][0]["name"], (sum(x for x, _ in pts) / len(pts), sum(y for _, y in pts) / len(pts))
+        else:
+            continue
+        if math.dist(p, xy[i]) < near:
+            best, near = name, math.dist(p, xy[i])
+    return best
+
+
 def loop(ref, A, B, ab, ba, xy, ways):
     """One line variant as a closed loop: there, round the terminus, back and round."""
     (_, ta, a, sa), (_, tb, b, sb) = A, B
@@ -297,8 +319,8 @@ def loop(ref, A, B, ab, ba, xy, ways):
     at = lambda i: round(cum[i] * scale, 1)  # noqa: E731
     # Stops: each direction's stop positions measured along that direction only, so a
     # stop isn't put on the opposite track a few metres away.
-    stops = {cum[starts[0]] + LineString([xy[k] for k in a]).project(Point(p)) for p in sa}
-    stops |= {cum[starts[2]] + LineString([xy[k] for k in b]).project(Point(p)) for p in sb}
+    stops = {cum[starts[0]] + LineString([xy[k] for k in a]).project(Point(p)): name for p, name in sa}
+    stops |= {cum[starts[2]] + LineString([xy[k] for k in b]).project(Point(p)): name for p, name in sb}
     turns = []
     for j, (nodes, turn), where in ((1, ab, ta.get("to")), (3, ba, ta.get("from"))):
         if turn:
@@ -310,7 +332,8 @@ def loop(ref, A, B, ab, ba, xy, ways):
         "from": ta.get("from"), "to": ta.get("to"),
         "pts": [[round(x, 2), round(y, 2)] for x, y in ls.coords],
         "length": round(ls.length, 1),
-        "stops": sorted(round(v * scale, 1) for v in stops),
+        "stops": [[round(v * scale, 1), name] for v, name in sorted(stops.items())],
+        "ends": [at(starts[1]), at(starts[3])],
         "turns": turns,
         "speed": speed_profile(ls, seq, ways, xy, scale),
     }
