@@ -31,7 +31,7 @@ from pyproj import Transformer
 from shapely import STRtree
 from shapely.geometry import LineString, Point, Polygon, box
 
-from build_area import AREAS, OUT, ROAD_WIDTH, _coords, _float, _lines, _polys, _rings, extract, use_overpass_mirror
+from build_area import AREAS, OUT, _coords, _float, _lines, _polys, _rings, extract, road_width, use_overpass_mirror
 
 MARGIN = 150.0
 # A local OpenStreetMap extract, if there is one, is much faster and kinder than
@@ -43,7 +43,7 @@ def cut(bbox, out, source=PBF):
     """The OSM data of a box (.osm XML or .pbf by name), cut from a local extract with osmium."""
     if not out.exists():
         w, s, e, n = bbox
-        subprocess.run(["osmium", "extract", "-b", f"{w},{s},{e},{n}", "--strategy", "complete_ways",
+        subprocess.run(["osmium", "extract", "-b", f"{w},{s},{e},{n}", "--strategy", "smart",
                         "--overwrite", "-o", str(out), str(source)], check=True)
     return out
 
@@ -108,7 +108,7 @@ def graph_edges(bbox, tf, network, directed, source=None):
         out.append({
             "id": f"{u}>{v}>{k}", "u": str(u), "v": str(v), "hw": hw, "name": first(d.get("name")),
             "oneway": truthy(d.get("oneway")), "lanes": _float(first(d.get("lanes"))),
-            "maxspeed": _float(first(d.get("maxspeed"))), "width": _float(first(d.get("width"))) or ROAD_WIDTH.get(hw, 6),
+            "maxspeed": _float(first(d.get("maxspeed"))), "width": road_width(hw, _float(first(d.get("width"))), _float(first(d.get("lanes")))),
             "bridge": truthy(d.get("bridge")), "surface": first(d.get("surface")), "pts": pts,
         })
     return out
@@ -152,6 +152,7 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
         area_pbf = cut((w - pad, s - pad, e + pad, n + pad), PBF.parent / f"{area}.osm.pbf")
 
     tiles, rails, n_buildings = [], [], 0
+    names = {}  # street name → (length of its longest edge, midpoint), for the dev search
     chunks = [(ci, cj) for ci in range(math.ceil(cols / C)) for cj in range(math.ceil(rows / C))]
     for number, (ci, cj) in enumerate(chunks, 1):
         core = (x0 + ci * C * T, y0 + cj * C * T, min(x1, x0 + (ci + 1) * C * T), min(y1, y0 + (cj + 1) * C * T))
@@ -167,6 +168,12 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
         shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in x["buildings"]]
         centres = [p.representative_point() for p in shapes]
         btree = STRtree(shapes)
+        for ed in drive + walk:
+            if ed["name"]:
+                ls = LineString(ed["pts"])
+                mid = ls.interpolate(0.5, normalized=True)
+                if x0 <= mid.x <= x1 and y0 <= mid.y <= y1 and ls.length > names.get(ed["name"], (0,))[0]:
+                    names[ed["name"]] = (ls.length, round(mid.x, 1), round(mid.y, 1))
         dlines = [LineString(ed["pts"]) for ed in drive]
         wlines = [LineString(ed["pts"]) for ed in walk]
         dtree, wtree = STRtree(dlines), STRtree(wlines)
@@ -217,6 +224,7 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
         "tile": T, "cols": cols, "rows": rows, "tiles": tiles, "rails": rails, "graphs": True, "parkingInTiles": bool(sections),
     }
     (out_dir / "index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")))
+    (out_dir / "names.json").write_text(json.dumps({k: v[1:] for k, v in sorted(names.items())}, ensure_ascii=False, separators=(",", ":")))
     total = sum(p.stat().st_size for p in (out_dir / "tiles").glob("*.json"))
     print(f"{area}: {x1 - x0:.0f} x {y1 - y0:.0f} m, {len(tiles)} tiles of {T:.0f} m in {len(chunks)} chunks, "
           f"{n_buildings} buildings, {total / 1e6:.1f} MB → {out_dir.name}/")

@@ -95,6 +95,97 @@ def rasterise(tris, x0, y0, nx, ny, step, grid):
         sub[inside] = z[inside]
 
 
+def lift_bridges(out_dir, index, tiles, N, T, gx0, gy0):
+    """The terrain model is bare earth, so under a bridge it drops to the river or the
+    road below. Raise every bridge deck to the height of its ends: where the bridge
+    meets ordinary roads and paths, sloping linearly from one end to the other."""
+    import shapely
+    from shapely import STRtree
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    pieces, roads = [], []
+    for i, j, _ in index["tiles"]:
+        t = json.loads((out_dir / "tiles" / f"{i}_{j}.json").read_text())
+        here = t["areas"].get("bridge", []) + t["roads"].get("bridge", [])
+        pieces += [Polygon(r[0], r[1:]).buffer(0.05) for r in here]
+        if here:
+            for kind in ("road", "sett", "path", "dirt"):
+                roads += [Polygon(r[0], r[1:]) for r in t["roads"].get(kind, [])]
+    if not pieces:
+        return
+    merged = unary_union(pieces)
+    polys = list(getattr(merged, "geoms", [merged]))
+    road_tree = STRtree(roads) if roads else None
+
+    def height_at(x, y):
+        i, j = math.floor((x - gx0) / T), math.floor((y - gy0) / T)
+        arr = tiles.get((i, j))
+        if arr is None:
+            return np.nan
+        ci, cj = int(round((x - gx0 - i * T) / STEP)), int(round((y - gy0 - j * T) / STEP))
+        return arr[min(N, max(0, cj)), min(N, max(0, ci))]
+
+    lifted = 0
+    for poly in polys:
+        if poly.area < 30:
+            continue
+        # The bridge's long axis, from its minimum rotated rectangle.
+        rect = list(poly.minimum_rotated_rectangle.exterior.coords)
+        e1, e2 = np.subtract(rect[1], rect[0]), np.subtract(rect[2], rect[1])
+        axis = e1 if np.hypot(*e1) >= np.hypot(*e2) else e2
+        axis = axis / (np.hypot(*axis) or 1)
+        c = np.array(poly.centroid.coords[0])
+        ring = poly.exterior.buffer(3).exterior
+        pts = np.array([ring.interpolate(d).coords[0] for d in np.arange(0, ring.length, 2.0)])
+        hs = np.array([height_at(x, y) for x, y in pts])
+        # Ends: ring points on (or right next to) an ordinary road or path.
+        on_road = np.zeros(len(pts), bool)
+        if road_tree is not None:
+            for k, (x, y) in enumerate(pts):
+                on_road[k] = len(road_tree.query(shapely.points(x, y).buffer(2), predicate="intersects")) > 0
+        # Only the outer fifths of the bridge's length count, so a road passing under the
+        # middle of a flyover isn't mistaken for one of its ends.
+        along = (pts - c) @ axis
+        span = along.max() - along.min()
+        outer = (along < along.min() + 0.2 * span) | (along > along.max() - 0.2 * span)
+        ok = on_road & outer & ~np.isnan(hs)
+        if ok.sum() < 2:
+            ok = ~np.isnan(hs)
+            if not ok.any():
+                continue
+            ends_t, ends_h = np.array([0.0]), np.array([np.percentile(hs[ok], 90)])
+        else:
+            t = (pts[ok] - c) @ axis
+            h = hs[ok]
+            lo, hi = t < np.median(t), t >= np.median(t)
+            if lo.any() and hi.any() and t[hi].mean() - t[lo].mean() > 5:
+                ends_t = np.array([np.median(t[lo]), np.median(t[hi])])
+                ends_h = np.array([np.median(h[lo]), np.median(h[hi])])
+            else:
+                ends_t, ends_h = np.array([0.0]), np.array([np.median(h)])
+        minx, miny, maxx, maxy = poly.bounds
+        grown = poly.buffer(2)
+        for i in range(math.floor((minx - 2 - gx0) / T), math.floor((maxx + 2 - gx0) / T) + 1):
+            for j in range(math.floor((miny - 2 - gy0) / T), math.floor((maxy + 2 - gy0) / T) + 1):
+                arr = tiles.get((i, j))
+                if arr is None:
+                    continue
+                tx0, ty0 = gx0 + i * T, gy0 + j * T
+                xs, ys = np.meshgrid(tx0 + np.arange(N + 1) * STEP, ty0 + np.arange(N + 1) * STEP)
+                inside = shapely.contains_xy(grown, xs, ys)
+                if not inside.any():
+                    continue
+                if len(ends_t) == 1:
+                    arr[inside] = ends_h[0]
+                else:
+                    tt = (xs[inside] - c[0]) * axis[0] + (ys[inside] - c[1]) * axis[1]
+                    f = np.clip((tt - ends_t[0]) / (ends_t[1] - ends_t[0]), 0, 1)
+                    arr[inside] = ends_h[0] + (ends_h[1] - ends_h[0]) * f
+        lifted += 1
+    print(f"  {lifted} bridges lifted to their deck height")
+
+
 def main(area: str = "centrum") -> None:
     out_dir = OUT / f"{area}_now"
     index = json.loads((out_dir / "index.json").read_text())
@@ -142,6 +233,7 @@ def main(area: str = "centrum") -> None:
     if lo == math.inf:
         print("no terrain")
         return
+    lift_bridges(out_dir, index, tiles, N, T, gx0, gy0)
     # Anything no sheet covers gets the area's mean height: flat, so unshaded.
     known = np.concatenate([a[~np.isnan(a)] for a in tiles.values()])
     mean = float(known.mean()) if known.size else lo

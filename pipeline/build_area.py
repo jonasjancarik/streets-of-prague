@@ -68,6 +68,23 @@ ROAD_WIDTH = {
     "footway": 3, "path": 2, "steps": 3, "cycleway": 2.5, "track": 3,
     "bridleway": 2,
 }
+# Today's map also has the big roads (the 1945 map keeps its original classes and widths).
+CAR_ROADS = {"motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary",
+             "secondary_link", "tertiary", "tertiary_link", "residential", "unclassified", "living_street", "service"}
+ROAD_WIDTH_NOW = {**ROAD_WIDTH, "motorway": 22, "trunk": 16, "motorway_link": 7, "trunk_link": 7,
+                  "primary_link": 7, "secondary_link": 7, "tertiary_link": 6.5}
+LANE_WIDTH = 3.25
+
+
+def road_width(hw, width=None, lanes=None, now=True):
+    """Carriageway width: the width tag, else lanes x 3.25 m on today's map, else by class."""
+    if width:
+        return width
+    if not now:
+        return ROAD_WIDTH.get(hw, 6)
+    if lanes and hw in CAR_ROADS and hw not in ("service", "living_street"):
+        return lanes * LANE_WIDTH + (1.0 if hw.startswith(("motorway", "trunk", "primary")) else 0.5)
+    return ROAD_WIDTH_NOW.get(hw, 6)
 
 
 def extract(area: str = "ujezd", era: str = "1945", bbox=None, centre=None, source=None) -> dict:
@@ -173,9 +190,11 @@ def extract(area: str = "ujezd", era: str = "1945", bbox=None, centre=None, sour
         if hw and isinstance(g, (LineString, MultiLineString)):
             if hw in ("proposed", "construction", "elevator", "platform", "bus_stop"):
                 continue
-            width = _float(col(row, "width")) or ROAD_WIDTH.get(hw, 6)
+            width = road_width(hw, _float(col(row, "width")), _float(col(row, "lanes")), now)
             cls = "road" if hw in ("primary", "secondary", "tertiary", "residential",
                                    "unclassified", "living_street", "service") else "path"
+            if now and hw in CAR_ROADS:
+                cls = "road"  # trunks, motorways and slip roads too, not just the 1945 classes
             if col(row, "bridge") == "yes":
                 cls = "bridge"
             if col(row, "tunnel") in ("yes", "building_passage"):

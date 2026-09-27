@@ -35,6 +35,9 @@ NS = {"gml": "http://www.opengis.net/gml", "bldg": "http://www.opengis.net/cityg
 BUILDING = f"{{{NS['bldg']}}}Building"
 SURFACES = {"RoofSurface": 1, "WallSurface": 0, "GroundSurface": 2, "ClosureSurface": 0, "OuterFloorSurface": 1, "OuterCeilingSurface": 0}
 
+# Heights are stored in cm above this, so buildings stand on the terrain (ipr_terrain.py).
+REF_HEIGHT = 180.0
+
 ROOF_TILES = ["#b4543a", "#a64a31", "#bf6440", "#9a4835", "#b9694a", "#8e3f2f", "#c47250", "#a85a3f"]
 ROOF_SLATE = ["#6c6d70", "#5e6064", "#77746f"]
 COPPER = "#6f9483"
@@ -225,7 +228,7 @@ def main(area: str = "centrum") -> None:
                 tris, cols = [], []
                 for kind, ring in surfaces:
                     rx, ry = to_local.transform(ring[:, 0], ring[:, 1])
-                    loc = np.column_stack([rx, ry, ring[:, 2] - base])
+                    loc = np.column_stack([rx, ry, ring[:, 2] - REF_HEIGHT])
                     for t in triangulate(loc):
                         nrm = np.cross(t[1] - t[0], t[2] - t[0])
                         if kind == 1 and nrm[2] < 0:
@@ -266,6 +269,7 @@ def main(area: str = "centrum") -> None:
             tj.write_text(json.dumps(t, ensure_ascii=False, separators=(",", ":")))
             (out_dir / "tiles" / f"{i}_{j}.ipr.bin").unlink(missing_ok=True)
     index["ipr"] = True
+    index["iprRef"] = REF_HEIGHT  # heights in the .ipr.bin are above this, in metres a.s.l.
     (out_dir / "index.json").write_text(json.dumps(index, ensure_ascii=False, separators=(",", ":")))
     print(f"{len(per_tile)} tiles with IPR buildings, {total / 1e6:.1f} MB")
 
