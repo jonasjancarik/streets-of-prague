@@ -30,6 +30,8 @@ Open `http://localhost:5190/drive.html` (`?area=<name>` for another tiled area,
 - Tank controls on foot and in the car: W/S forwards and back, A/D turn, Shift
   runs, Space is the handbrake. E gets into the nearest car, including one driving
   past (its driver runs off). R puts the car back on the road.
+- In the car, holding Shift is lane assist (`assist.js`): it steers along your lane,
+  and A/D then pick the turn at the next junction instead of steering.
 - **Everything is procedural, no textures or AI imagery.** The ground is real
   geometry, one mesh per surface kind triangulated from OSM, coloured by world-space
   GLSL patterns (`shading.js`, `surface.js`): asphalt, granite setts, Prague mosaic
