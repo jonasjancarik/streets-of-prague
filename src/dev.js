@@ -6,7 +6,7 @@ import proj4 from 'proj4';
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-export function setupDev({ area, index, teleport, position }) {
+export function setupDev({ area, index, teleport, position, helicopter }) {
   const [w, s, e, n] = index.bbox_wgs84;
   const local = `+proj=tmerc +lat_0=${(s + n) / 2} +lon_0=${(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
   const toLocal = (lon, lat) => proj4('EPSG:4326', local, [lon, lat]);
@@ -31,6 +31,9 @@ export function setupDev({ area, index, teleport, position }) {
     <div class="dev-row">
       <button id="dev-map">Pick a spot on the map</button>
       <button id="dev-link" title="Copies a link that starts the game here">Copy link to this spot</button>
+    </div>
+    <div class="dev-row">
+      <button id="dev-heli" title="Walk up to it and press E to fly it">Helicopter next to me</button>
     </div>
     <div id="dev-pos"></div>`;
   panel.hidden = true;
@@ -91,6 +94,12 @@ export function setupDev({ area, index, teleport, position }) {
     await navigator.clipboard?.writeText(u.toString()).catch(() => {});
     $('dev-link').textContent = 'Link copied';
     setTimeout(() => { $('dev-link').textContent = 'Copy link to this spot'; }, 1500);
+  };
+
+  $('dev-heli').onclick = () => {
+    const ok = helicopter();
+    $('dev-heli').textContent = ok ? 'Helicopter parked nearby' : 'No open space for it here';
+    setTimeout(() => { $('dev-heli').textContent = 'Helicopter next to me'; }, 1800);
   };
 
   // The map: OpenStreetMap tiles, your position, click anywhere to go there.

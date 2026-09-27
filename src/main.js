@@ -11,6 +11,7 @@ import { setupDev } from './dev.js';
 import { LaneAssist } from './assist.js';
 import { setupTouch } from './touch.js';
 import { Police } from './police.js';
+import { Chopper } from './helicopter.js';
 
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'praha';
@@ -106,13 +107,14 @@ async function main() {
       loose.push(car);
     }
   }
-  let inCar = null;
+  let inCar = null, inHeli = null;
+  const choppers = []; // helicopters you can fly (from the developer tools)
   let height = 100;
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
   let camGround = ground(walker.x, walker.y);
 
   const viewRadius = () => height * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
-  const px = () => (inCar ? inCar.x : walker.x), py = () => (inCar ? inCar.y : walker.y);
+  const px = () => (inCar || inHeli || walker).x, py = () => (inCar || inHeli || walker).y;
   const offscreen = (x, y) => Math.hypot(x - camPos.x, y + camPos.z) > viewRadius();
   const edgesNear = (x, y, rMax) => world.around(x, y, rMax).flatMap((k) => world.driveBy.get(k) || []);
   const walkNear = (x, y, rMax) => world.around(x, y, rMax).flatMap((k) => world.walkBy.get(k) || []);
@@ -144,6 +146,7 @@ async function main() {
   let frozen = 0;
   const busted = () => {
     if (frozen > 0) return;
+    if (inHeli) enterOrExit();
     if (inCar) {
       const c = inCar;
       enterOrExit();
@@ -154,10 +157,28 @@ async function main() {
     frozen = 2.5;
     showBanner('Busted', true);
   };
-  const police = new Police({ scene, drive, traffic, grid, rng: seeded, edgesNear, offscreen, onBusted: busted });
+  const police = new Police({ scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, offscreen, onBusted: busted });
 
   const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car)];
   const enterOrExit = () => {
+    if (inHeli) {
+      if (!inHeli.landed) return;
+      const c = inHeli;
+      [walker.x, walker.y] = nearestWalkable(grid, c.x - Math.sin(c.h) * 3, c.y + Math.cos(c.h) * 3);
+      walker.h = c.h;
+      inHeli = null;
+      walker.mesh.visible = true;
+      walker.sync();
+      return;
+    }
+    if (!inCar) {
+      const heli = choppers.find((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4);
+      if (heli) {
+        inHeli = heli;
+        walker.mesh.visible = false;
+        return;
+      }
+    }
     if (inCar) {
       const c = inCar, lx = -Math.sin(c.h), ly = Math.cos(c.h);
       let spot = null;
@@ -218,13 +239,14 @@ async function main() {
   // Jump anywhere in the area: load the tiles there first, then land on a pavement
   // (or on the road, if you're driving) and bring the traffic and people along.
   const teleportTo = async (x, y) => {
-    const who = inCar || walker;
+    const who = inCar || inHeli || walker;
     Object.assign(who, { x, y, vx: 0, vy: 0 });
+    if (inHeli) inHeli.z = Math.max(inHeli.z, ground(x, y) + 60);
     if (inCar) inCar.w = 0;
     camPos.set(x, 0, -y);
     await world.loadNow(x, y, 300);
     if (inCar) backOnRoad();
-    else { [walker.x, walker.y] = nearestWalkable(grid, x, y, 150); walker.sync(); }
+    else if (!inHeli) { [walker.x, walker.y] = nearestWalkable(grid, x, y, 150); walker.sync(); }
     for (const a of [...traffic.agents]) traffic.release(a);
     police.reset();
     scatterPeople(false);
@@ -235,7 +257,20 @@ async function main() {
   };
   const assist = new LaneAssist(drive, (x, y, r) => edgesNear(x, y, r));
   let assisted = false;
-  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()] });
+  // Developer tools: a helicopter on the nearest open ground, facing the way you do.
+  const addChopper = () => {
+    const who = inCar || inHeli || walker;
+    for (let r = 8; r < 80; r += 2) for (let a = 0; a < 12; a++) {
+      const x = who.x + Math.cos(who.h + (a * Math.PI) / 6) * r, y = who.y + Math.sin(who.h + (a * Math.PI) / 6) * r;
+      let open = true;
+      for (let dx = -5; dx <= 5 && open; dx += 1) for (let dy = -5; dy <= 5 && open; dy += 1) open = grid.at(x + dx, y + dy) === 0;
+      if (!open) continue;
+      choppers.push(new Chopper(scene, grid, ground, x, y, who.h));
+      return true;
+    }
+    return false;
+  };
+  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper });
 
   // ---- Input -------------------------------------------------------------
   const input = { up: false, down: false, left: false, right: false, run: false, brake: false };
@@ -302,13 +337,15 @@ async function main() {
       } else assist.reset();
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake }, grid);
       if (hit > 6) shake = Math.min(1.2, shake + hit * 0.04);
-    } else walker.update(dt, ctl);
+    } else if (!inHeli) walker.update(dt, ctl);
+    // In the helicopter Space climbs and Shift comes down.
+    for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: ctl.turn, up: ctl.brake, down: ctl.run } : null);
 
     const moving = (c) => c.mode === 'player' || c.speed > 0.05 || Math.abs(c.w) > 0.01;
     const movers = loose.filter(moving);
     for (const c of movers) c.update(dt, null, grid);
-    const me = inCar || walker;
-    police.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar });
+    const me = inCar || inHeli || walker;
+    police.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: !!inHeli && !inHeli.landed });
     const cops = police.cars.map((p) => p.car);
 
     // Everything the traffic, trams and people need to look out for.
@@ -318,7 +355,7 @@ async function main() {
     for (const c of loose) pushCar(c);
     for (const c of cops) pushCar(c);
     if (inCar) pushCar(inCar);
-    else hash.add({ x: walker.x, y: walker.y, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
+    else if (!inHeli) hash.add({ x: walker.x, y: walker.y, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0) hash.add({ x: p.x, y: p.y, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     const tramBodies = trams.bodies();
@@ -369,12 +406,12 @@ async function main() {
             collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
           } else {
             collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 0);
-            if (a === inCar && b.type === 'police' && closing > 2) police.crime('hitCop', b.x, b.y);
+            if (a === inCar && b.type === 'police' && (a.vx * (b.x - a.x) + a.vy * (b.y - a.y)) / d > 3) police.crime('hitCop', b.x, b.y);
           }
           continue;
         }
         const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
-        if (hit > 5) { a.damage += hit - 5; b.damage += hit - 5; }
+        if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
         if (hit > 6 && (a === inCar || b === inCar)) shake = Math.min(1.2, shake + hit * 0.04);
         // Driving into a police car (not them into you).
         if (a === inCar && b.mode === 'police' && hit > 2) {
@@ -423,7 +460,7 @@ async function main() {
         }
       });
     }
-    if (!inCar) {
+    if (!inCar && !inHeli) {
       bump(walker, 0.35, (c, nx, ny) => {
         if (c.speed > 4 && walker.down <= 0) { walker.knock(c.vx + nx * 2, c.vy + ny * 2); shake = 0.6; }
       });
@@ -445,13 +482,15 @@ async function main() {
     crowd.render(ground);
     police.render(ground, time.value);
     carPool.render(inCar ? [inCar, ...allCars()] : allCars(), ground);
+    for (const c of choppers) c.render(dt);
 
     // ---- Camera ----------------------------------------------------------
-    const sp = inCar ? inCar.speed : 0;
-    const want = (inCar ? 120 + sp * 3.4 : 100) * zoom;
+    const ride = inCar || inHeli, sp = ride ? ride.speed : 0;
+    // In the air the camera rises with the helicopter, so it stays well above it.
+    const want = (inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : 100) * zoom + (inHeli ? inHeli.air : 0);
     height += (want - height) * Math.min(1, dt * (want > height ? 1.6 : 0.9));
-    const lead = inCar ? 0.7 : 0.3;
-    look.set(px() + (inCar ? inCar.vx : walker.vx) * lead, 0, -(py() + (inCar ? inCar.vy : walker.vy) * lead));
+    const lead = ride ? 0.7 : 0.3;
+    look.set(px() + (ride || walker).vx * lead, 0, -(py() + (ride || walker).vy * lead));
     camPos.lerp(look, Math.min(1, dt * 4));
     shake *= Math.exp(-6 * dt);
     const jx = (Math.random() - 0.5) * shake * 2, jz = (Math.random() - 0.5) * shake * 2;
@@ -480,19 +519,24 @@ async function main() {
     }
     bannerT -= dt;
     $('banner').style.opacity = clamp(bannerT, 0, 1);
-    $('speed').textContent = inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : '–';
+    $('speed').textContent = inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : inHeli ? Math.round(inHeli.speed * 3.6) : '–';
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
-    const canEnter = !inCar && [...carsNear(walker.x, walker.y, 5)].some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2 < 1.8);
+    const canEnter = !inCar && !inHeli && ([...carsNear(walker.x, walker.y, 5)].some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2 < 1.8)
+      || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
     const key = (k) => (touch.active ? '' : `<b>${k}</b> `);
     let hint = '';
-    if (inCar) {
+    if (inHeli) {
+      const up = `${Math.round(inHeli.air)} m up`;
+      if (touch.active) hint = inHeli.landed ? '' : up;
+      else hint = inHeli.landed ? '<b>Space</b> take off · <b>E</b> get out' : `${up} · <b>Space</b> climb · <b>Shift</b> down · land to get out`;
+    } else if (inCar) {
       if (ctl.run && assist.tripped) hint = `${key('Shift')}Lane assist is off above ${assist.limit} km/h: slow down to get it back`;
       else if (!assisted) hint = touch.active ? '' : '<b>E</b> get out · <b>Shift</b> lane assist';
       else hint = `${key('Shift')}Lane assist, up to ${assist.limit} km/h · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : `straight on (${touch.active ? 'steer' : 'A/D'} to turn)`}`;
     }
     else if (canEnter && !touch.active) hint = '<b>E</b> get in';
     $('hint').innerHTML = hint;
-    touch.update({ car: inCar, canEnter, tripped: ctl.run && assist.tripped });
+    touch.update({ car: inCar || inHeli, canEnter, tripped: ctl.run && assist.tripped });
     $('tally').textContent = `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`;
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
@@ -512,7 +556,9 @@ async function main() {
   window.__drive = {
     scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police,
     get car() { return inCar; },
-    teleport: (x, y) => { (inCar || walker).x = x; (inCar || walker).y = y; camPos.set(x, 0, -y); },
+    get heli() { return inHeli; },
+    choppers, addChopper,
+    teleport: (x, y) => { (inCar || inHeli || walker).x = x; (inCar || inHeli || walker).y = y; camPos.set(x, 0, -y); },
     enterOrExit, teleportTo, dev, touch,
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
   };

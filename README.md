@@ -35,10 +35,21 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   right thumb has the gas and brake (roll from one to the other without lifting), the
   handbrake, lane assist (a toggle here) and "Get out"; "Back on road" is top right.
   Pinch the map to zoom (`src/touch.js`).
+- **Police.** Knocking people over, pulling drivers out of their cars, wrecking
+  traffic, ramming or stealing a police car and speeding past the police (20 km/h over
+  the limit) earn stars, up to five; crimes the police see count three times as much.
+  Police cars chase you along the streets and ram you; when you're on foot or stopped,
+  an officer gets out and runs after you, and if they reach you, you're busted (the
+  police keep the car). You can outrun them on foot. From three stars a helicopter
+  joins in and sees you over the rooftops. Stay out of sight and the stars go one at a
+  time; they blink while nobody can see you (`src/police.js`, `src/helicopter.js`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads
   the tiles there and drops you on the pavement. "Copy link" gives a `?start=` link.
+  "Helicopter next to me" parks one on the nearest open ground: E gets in, W/S fly,
+  A/D turn, Space climbs, Shift comes down. Below 30 m the buildings are in the way;
+  land on open ground to get out.
 
 ## How it works
 
@@ -64,6 +75,10 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   (`src/traffic.js`); pedestrians on the footpath network who dodge fast cars and get
   knocked over (`src/people.js`); three-section modern trams (`src/trams.js`). Traffic
   and people live within about 330 m of the player.
+- **Police** patrol with the traffic. Chasing cars find their way with an A* search over
+  the street graph (both ways along every street) and drive it with the same physics as
+  your car; within 40 m and in sight they head straight for you. What the police see
+  is checked with rays over the collision grid; the helicopter needs no line of sight.
 - **Parking** follows TSK Praha's paid-parking data: each street section gets spaces ×
   measured occupancy cars (day or night), placed in OSM's parking lanes and lots and
   then along the kerb (`src/parking.js`); bay lines are painted in the zone colour
@@ -94,7 +109,7 @@ from (geometry helpers, straight-skeleton buildings, trees, tram routes).
 
 ## Not yet in the game
 
-- Something to do: missions (deliveries, taxi, courier), police and a wanted level.
+- Something to do: missions (deliveries, taxi, courier).
 - Visible damage on cars.
 - Sound.
 - Day and night (night-time parking data is already there, see `?night`).

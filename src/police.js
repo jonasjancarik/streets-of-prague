@@ -3,6 +3,7 @@ import { Car } from './car.js';
 import { Polyline, clamp } from './network.js';
 import { project, speedLimit, turnOf } from './assist.js';
 import { personMesh } from './people.js';
+import { Helicopters, HELI_SIGHT } from './helicopter.js';
 
 // The police and your wanted level, GTA 2 style.
 //
@@ -15,14 +16,16 @@ import { personMesh } from './people.js';
 // the street network, more of them the more stars you have, and ram you. When you're
 // on foot or stopped, an officer gets out and runs after you: if they reach you,
 // you're busted. Stay out of their sight for a while and you lose a star at a time.
+// From three stars a helicopter joins in (src/helicopter.js).
 
 const STARS = [1, 4, 9, 16, 25]; // heat for each star
 const CHASERS = [0, 1, 2, 3, 4, 6]; // police cars after you, by stars
+const HELIS = [0, 0, 0, 1, 1, 2];
 const PATROLS = 3;
 const POINTS = { knock: 1, carjack: 1, wreck: 0.6, hitCop: 2, stealCop: 3 };
 const COOLDOWN = { hitCop: 1 }; // one scrape shouldn't count ten times
 const RUN = 6.4; // officers on foot, m/s: you can outrun them, but not walking
-const WRECKED = 45; // damage that puts a police car out of the chase
+const WRECKED = 90; // damage that puts a police car out of the chase
 
 // Points of `poly` from s0 to s1 (backwards if s1 < s0), as [x, y].
 function slice(poly, s0, s1) {
@@ -67,8 +70,9 @@ class Heap {
 }
 
 export class Police {
-  constructor({ scene, drive, traffic, grid, rng, edgesNear, offscreen, onBusted }) {
+  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted }) {
     Object.assign(this, { scene, drive, traffic, grid, r: rng, edgesNear, offscreen, onBusted });
+    this.helis = new Helicopters(scene, height);
     this.heat = 0;
     this.cars = []; // chasing: { car, path, s, replan, stuck, reverse, calm, wrecked }
     this.officers = [];
@@ -107,6 +111,7 @@ export class Police {
     for (const a of this.traffic.agents) if (a.car.type === 'police') yield a.car;
     for (const p of this.cars) if (!p.wrecked) yield p.car;
     for (const o of this.officers) if (o.down <= 0) yield o;
+    yield* this.helis.watching;
   }
 
   clear(ax, ay, bx, by) {
@@ -118,6 +123,7 @@ export class Police {
   sees(x, y, far = 110) {
     for (const e of this.eyes()) {
       const d = Math.hypot(e.x - x, e.y - y);
+      if (e.air) { if (d < HELI_SIGHT) return true; continue; }
       if (d < 40 || (d < far && this.clear(e.x, e.y, x, y))) return true;
     }
     return false;
@@ -148,6 +154,7 @@ export class Police {
     for (const o of this.officers) this.scene.remove(o.mesh);
     this.officers = [];
     this.cars = [];
+    this.helis.reset();
   }
 
   // ---- Street network ----------------------------------------------------
@@ -290,7 +297,7 @@ export class Police {
       steer = -steer;
     }
     // Close enough and you're not going anywhere: an officer gets out.
-    if (c.crew && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18)) this.getOut(c);
+    if (c.crew && !me.air && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18)) this.getOut(c);
     return { throttle, steer, handbrake: want === 0 && Math.abs(vf) < 3 };
   }
 
@@ -331,7 +338,7 @@ export class Police {
       o.vy = (dy / d) * sp;
       o.h = Math.atan2(dy, dx);
       if (o.back && ride && d < 2.6) { o.gone = true; o.car.crew = true; return; }
-      if (!o.back && this.heat > 0) {
+      if (!o.back && this.heat > 0 && !me.air) {
         const reach = me.car ? me.car.spec.L / 2 + 1 : 1.1;
         if (toMe < reach && (!me.car || me.speed < 2)) this.onBusted();
       }
@@ -345,7 +352,8 @@ export class Police {
 
   // ---- Every frame -------------------------------------------------------
 
-  // `me`: { x, y, vx, vy, speed, car } for the player (car is null on foot).
+  // `me`: { x, y, vx, vy, speed, car, air } for the player (car is null on foot; air
+  // while flying a helicopter).
   update(dt, me) {
     for (const k in this.cool) this.cool[k] -= dt;
     const stars = this.stars;
@@ -411,6 +419,7 @@ export class Police {
     }
     this.cars = this.cars.filter((p) => !p.gone);
 
+    this.helis.update(dt, me, HELIS[this.stars]);
     for (const o of this.officers) this.walk(o, dt, me);
     for (const o of this.officers) if (o.gone) this.scene.remove(o.mesh);
     this.officers = this.officers.filter((o) => !o.gone);
@@ -424,6 +433,8 @@ export class Police {
   }
 
   render(height, time) {
+    this.helis.render(time, time - (this.lastT ?? time));
+    this.lastT = time;
     const d = this.dummy, col = new THREE.Color(), blue = new THREE.Color('#3d7bff'), dim = new THREE.Color('#0d1a3a');
     const flip = Math.floor(time * 5) % 2;
     let n = 0, g = 0;
