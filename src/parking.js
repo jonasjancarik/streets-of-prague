@@ -53,6 +53,44 @@ function rows(v0, v1, depth, gap) {
   return out.length ? out : [(v0 + v1) / 2];
 }
 
+// The ring in coordinates along `a` (u) and across it (v), from its first corner.
+function frame(ring, a) {
+  const ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
+  const [ox, oy] = ring[0];
+  let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+  for (const [x, y] of ring) {
+    const u = (x - ox) * ux + (y - oy) * uy, v = (x - ox) * vx + (y - oy) * vy;
+    u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+  }
+  return { ux, uy, vx, vy, ox, oy, u0, u1, v0, v1 };
+}
+
+// The traffic lane an angled parking area is beside: within 15 m, running along the
+// area (axis `a`), and on a two-way street the lane that has the area on its right.
+// Returns the lane's direction there and whether the area is on its right.
+function laneBeside(ring, a, edges) {
+  let cx = 0, cy = 0;
+  for (const [x, y] of ring) { cx += x; cy += y; }
+  cx /= ring.length;
+  cy /= ring.length;
+  let best = null;
+  for (const e of edges) {
+    const { pts } = e.path;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[i + 1], dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cy - ay) * dy) / len2));
+      const d = Math.hypot(cx - ax - dx * t, cy - ay - dy * t);
+      if (d > 15) continue;
+      const ang = Math.atan2(dy, dx);
+      if (Math.abs(Math.sin(ang - a)) > 0.5) continue;
+      const right = (cx - ax) * dy - (cy - ay) * dx > 0;
+      const score = d + (right || e.oneway ? 0 : 100);
+      if (!best || score < best.score) best = { score, ang, right };
+    }
+  }
+  return best;
+}
+
 // Every possible parking spot: bays in OSM lots and lanes, then kerbside spots.
 function slots(data, edges) {
   const out = [];
@@ -65,23 +103,27 @@ function slots(data, edges) {
       const p = ring[i], q = ring[(i + 1) % ring.length], len = Math.hypot(q[0] - p[0], q[1] - p[1]);
       if (len > best) { best = len; a = Math.atan2(q[1] - p[1], q[0] - p[0]); }
     }
-    const ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
-    const [ox, oy] = ring[0];
-    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-    for (const [x, y] of ring) {
-      const u = (x - ox) * ux + (y - oy) * uy, v = (x - ox) * vx + (y - oy) * vy;
-      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+    let f = frame(ring, a);
+    const kind = o || guess(f.v1 - f.v0);
+    // Angled bays slant forwards along the traffic beside them, so drivers pull in nose
+    // first: turned right off a lane that has the area on its right, left otherwise.
+    // Away from any street (inside a car park) the slant is arbitrary.
+    let slant = ANGLE;
+    const lane = kind === 'diagonal' ? laneBeside(ring, a, edges) : null;
+    if (lane) {
+      if (Math.cos(lane.ang - a) < 0) f = frame(ring, (a += Math.PI));
+      slant = lane.right ? -ANGLE : ANGLE;
     }
-    const kind = o || guess(v1 - v0);
+    const { ux, uy, vx, vy, ox, oy, u0, u1, v0, v1 } = f;
     const lay = {
       parallel: { rows: rows(v0, v1, 2, 0.6), step: 6, end: 2.8, turn: 0 },
-      diagonal: { rows: rows(v0, v1, 4.8, 0.7), step: ANGLED_STEP, end: 1.8, turn: ANGLE },
+      diagonal: { rows: rows(v0, v1, 4.8, 0.7), step: ANGLED_STEP, end: 1.8, turn: slant },
       perpendicular: { rows: rows(v0, v1, 5, 0.6), step: 2.6, end: 1.3, turn: Math.PI / 2 },
     }[kind];
     for (const v of lay.rows) {
       for (let u = u0 + lay.end; u < u1 - lay.end + 0.5; u += lay.step) {
         const x = ox + ux * u + vx * v, y = oy + uy * u + vy * v;
-        if (inPoly(x, y, rings)) out.push({ x, y, h: a + lay.turn, lot: true, bay: kind !== 'parallel' });
+        if (inPoly(x, y, rings)) out.push({ x, y, h: a + lay.turn, lot: true, bay: kind !== 'parallel', angled: kind === 'diagonal' });
       }
     }
   }
@@ -99,7 +141,8 @@ function slots(data, edges) {
       const kerb = e.width / 2 - inset[o];
       if (Math.abs(side * kerb - e.laneOffset) < 2.3) continue;
       const step = { parallel: 6, diagonal: ANGLED_STEP, perpendicular: 2.6 }[o];
-      const turn = { parallel: 0, diagonal: ANGLE * side, perpendicular: Math.PI / 2 }[o];
+      // Angled cars nose in: turned right on the right-hand side, left on the left.
+      const turn = { parallel: 0, diagonal: -ANGLE * side, perpendicular: Math.PI / 2 }[o];
       const line = new Polyline(e.pts);
       for (let s = 10; s < line.length - 10; s += step) {
         const q = line.at(s);
@@ -107,7 +150,7 @@ function slots(data, edges) {
         // A mapped parking lane already covers this stretch.
         let dup = false;
         for (let i = 0; i < lots && !dup; i++) dup = Math.abs(out[i].x - x) < 4.5 && Math.abs(out[i].y - y) < 4.5;
-        if (!dup) out.push({ x, y, h: q.ang + turn, lot: false, bay: o !== 'parallel' });
+        if (!dup) out.push({ x, y, h: q.ang + turn, lot: false, bay: o !== 'parallel', angled: o === 'diagonal' });
       }
     }
   }
@@ -132,7 +175,8 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
   };
   const place = (s) => {
     if (!s.lot && nearRail(s.x, s.y)) return false;
-    const car = new Car(randomType(r), r, s.x, s.y, s.h + (r() > 0.5 ? Math.PI : 0));
+    // Most people drive into angled bays forwards; elsewhere it's either way round.
+    const car = new Car(randomType(r), r, s.x, s.y, s.h + (r() < (s.angled ? 0.08 : 0.5) ? Math.PI : 0));
     if (s.bay && car.type === 'van') return false;
     if (car.worldSamples().some(([x, y]) => solid(x, y)) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8)) return false;
     car.mode = 'loose';

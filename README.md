@@ -110,7 +110,11 @@ from (geometry helpers, straight-skeleton buildings, trees, tram routes).
   ground IPR has.
 - **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
   narrow streets and are left out.
-- **Angled parking** always slants the same way, whichever way the traffic runs.
+- **Angled parking along the kerb** mostly comes out parallel: angled cars stand
+  further out from the kerb, and with street widths from OSM (which usually leave the
+  parking out) they would reach into the traffic lane. Separately mapped angled
+  parking areas are fine; inside car parks, away from any street, their slant is
+  arbitrary.
 - **Trams** shuttle back and forth on stretches of track instead of running real
   lines, and at the end of a stretch their sections bunch up into each other.
 - **Traffic** has no traffic lights; at junctions it only gives way to the right and
