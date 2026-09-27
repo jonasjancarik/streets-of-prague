@@ -44,7 +44,7 @@ export class Metro {
   // `inMap(x, y)`: whether a spot is on the map (you can only come up there);
   // `onArrive(x, y, name)`: take the player there.
   constructor(data, scene, el, { clock, inMap, onArrive }) {
-    Object.assign(this, { el, clock, inMap, onArrive });
+    Object.assign(this, { el, scene, clock, inMap, onArrive });
     this.lines = data.lines;
     this.stations = new Map(); // name → { name, entrances, lines: [{ line, i }] }
     this.entrances = [];
@@ -63,9 +63,7 @@ export class Metro {
         const sign = new THREE.Mesh(signGeometry, signMaterial(st.lines[0].line.colour));
         sign.position.y = 2.85;
         mesh.add(post, sign);
-        mesh.visible = false;
-        scene.add(mesh);
-        this.entrances.push({ x, y, station: st, mesh });
+        this.entrances.push({ x, y, station: st, mesh, shown: false });
       }
     }
     this.active = false; // the metro screen is up
@@ -92,11 +90,16 @@ export class Metro {
     return best;
   }
 
-  // Signs near the view, on the ground.
+  // Signs near the view, on the ground. Only those are in the scene: hidden ones
+  // would still be gone through every frame, all 331 of them.
   sync(x, y, r, height) {
     for (const en of this.entrances) {
       const show = Math.abs(en.x - x) < r && Math.abs(en.y - y) < r;
-      en.mesh.visible = show;
+      if (show !== en.shown) {
+        en.shown = show;
+        if (show) this.scene.add(en.mesh);
+        else this.scene.remove(en.mesh);
+      }
       if (show) en.mesh.position.set(en.x, height(en.x, en.y), -en.y);
     }
   }
