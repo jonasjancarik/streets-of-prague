@@ -10,7 +10,7 @@ import { PATTERN, patterned } from './shading.js';
 
 const COLORS = {
   pavement: '#c6c0b4', square: '#cbc4b6', path: '#d0cabe', dirt: '#bfa87e',
-  park: '#86a85a', wood: '#587a40', orchard: '#95ad64', pitch: '#6c9c55',
+  park: '#86a85a', garden: '#8dab5e', wood: '#587a40', orchard: '#95ad64', pitch: '#6c9c55',
   water: '#4d7680', asphalt: '#5c5f63', sett: '#8a847a', parking: '#666a6e',
   bridge: '#62656a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
   quay: '#7c776c', funicular: '#6e6a62',
@@ -205,7 +205,8 @@ export class Surfaces {
       this.group.add(m);
     };
 
-    // Base: everything unmapped between streets and houses is paved.
+    // Base: everything unmapped between streets and houses is paved; gardens round
+    // family houses come from the pipeline (osm_area.py, _gardens).
     const [x0, y0, x1, y1] = [geo.minX, geo.minY, geo.maxX, geo.maxY];
     // Polygons are clipped to the tile: their edges along the tile border aren't real
     // shores or kerbs, so outlines and shading skip them.
@@ -227,6 +228,7 @@ export class Surfaces {
       return out;
     };
     add(polygons([[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]]), COLORS.pavement, 'mosaic');
+    add(polygons(A.garden || []), COLORS.garden, 'grass');
     add(polygons(A.park || []), COLORS.park, 'grass');
     add(polygons(A.orchard || []), COLORS.orchard, 'grass');
     add(polygons(A.wood || []), COLORS.wood, 'wood');

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import osmnx as ox
 from pyproj import Transformer
+from shapely import STRtree
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import transform, unary_union
 
@@ -92,6 +93,7 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
     road_lines: dict[str, list] = {}
     rails, walls, trees, weirs, crossings, passages = [], [], [], [], [], []
     lots = []  # each parking area on its own, with how the cars stand in it
+    homes = []  # landuse=residential, where gardens may be (see _gardens)
 
     for _, row in gdf.iterrows():
         g = row.geometry
@@ -176,6 +178,8 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
             continue
 
         if isinstance(g, (Polygon, MultiPolygon)):
+            if col(row, "landuse") == "residential":
+                homes.append(g.buffer(0))
             kind = _area_kind(row, col)
             if kind:
                 areas.setdefault(kind, []).append(g.buffer(0))
@@ -188,6 +192,9 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
 
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
+    gardens = _gardens(homes, buildings, road_polys, clip)
+    if not gardens.is_empty:
+        area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "areas": area_polys, "roads": road_polys, "rails": rails,
@@ -216,6 +223,8 @@ def _area_kind(row, col):
         return "water"
     if lu == "orchard" or lu == "vineyard":
         return "orchard"
+    if lu == "allotments":
+        return "garden"
     if na == "wood" or lu == "forest":
         return "wood"
     if le in ("park", "garden") or lu in ("grass", "meadow", "village_green", "recreation_ground") or na in ("scrub", "grassland"):
@@ -229,6 +238,40 @@ def _area_kind(row, col):
     if lu in ("cemetery",) or am == "grave_yard":
         return "park"
     return None
+
+
+# Buildings that don't decide what a block is: sheds and garages stand in gardens too.
+OUTBUILDINGS = {"garage", "garages", "shed", "carport", "roof", "hut", "cabin", "greenhouse", "kiosk", "service"}
+# Buildings that aren't family houses, whatever their size.
+NOT_HOUSES = {"apartments", "commercial", "retail", "office", "industrial", "warehouse", "school", "university",
+              "hospital", "public", "civic", "government", "church", "hotel", "dormitory", "kindergarten"}
+
+
+def _gardens(homes, buildings, roads, clip):
+    """OSM maps a suburb as one residential area and rarely maps the gardens in it, so
+    the ground between houses would all be paved. Cut the residential areas along the
+    streets into blocks; where a block's buildings are mostly family houses and cover
+    less than half of it, everything but a strip round each building is garden."""
+    region = unary_union(homes).intersection(clip) if homes else Polygon()
+    if region.is_empty:
+        return Polygon()
+    streets = [roads[k] for k in ("road", "sett", "bridge") if k in roads]
+    blocks = _polys(region.difference(unary_union(streets)) if streets else region)
+    shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
+    tree = STRtree(shapes)
+    out = []
+    for block in blocks:
+        if block.area < 100:
+            continue
+        near = tree.query(block, predicate="intersects")
+        main = [k for k in near if buildings[k]["kind"] not in OUTBUILDINGS and not buildings[k]["part"]
+                and block.contains(shapes[k].representative_point())]
+        covered = sum(shapes[k].area for k in main)
+        houses = sum(shapes[k].area for k in main if shapes[k].area <= 350 and buildings[k]["kind"] not in NOT_HOUSES)
+        if not main or houses < 0.7 * covered or covered > 0.45 * block.area:
+            continue
+        out.append(block.difference(unary_union([shapes[k].buffer(0.8) for k in near])))
+    return unary_union(out) if out else Polygon()
 
 
 def _height(row, col):

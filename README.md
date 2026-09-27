@@ -57,7 +57,9 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   triangulated from OSM and coloured by world-space GLSL patterns (`src/shading.js`,
   `src/surface.js`): asphalt, granite setts, Prague mosaic pavement, slabs, grass,
   water. Rails, zebras, lane markings and parking-bay outlines are thin strips on top.
-  Buildings get roof tiles laid down each face's slope, slate, gravel on flat roofs
+  OSM rarely maps the gardens in a suburb, so a street block of family houses gets a
+  garden between them (`_gardens` in `pipeline/osm_area.py`); blocks of flats, shops
+  and offices stay paved. Buildings get roof tiles laid down each face's slope, slate, gravel on flat roofs
   and windows by storey. It all stays sharp at any zoom.
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.js`) around the camera. Each
   tile has its own ground, buildings, trees, collision grid, parked cars and piece of
