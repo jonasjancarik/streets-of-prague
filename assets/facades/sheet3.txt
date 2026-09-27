@@ -1,0 +1,8 @@
+$imagegen
+Asset: game texture sheet, landscape 3:2, one image
+Image 1: style and layout reference only (earlier sheet of the same set); do not copy its modules.
+Request: the next sheet in the set: facade modules from Prague's 1920s–30s functionalist blocks and from 1970s–80s prefab panel housing (paneláky).
+Top row, upper-floor modules, one per cell: functionalist wide window with thin steel frame; functionalist horizontal ribbon window; functionalist wall with a round porthole window; panel-house window in a concrete panel with visible panel joints; panel-house loggia with a corrugated parapet; panel-house staircase strip of glass blocks.
+Bottom row, ground-floor modules: functionalist shop front with large glass; functionalist entrance with a flat canopy; panel-house entrance with aluminium double door; panel-house ground-floor wall with small cellar windows; garage door with horizontal ribs; plain concrete panel wall.
+Look: exactly the same drawing style, scale, lighting, plaster grey and window colours as Image 1, and the same sheet layout: an exact grid of 6 columns × 2 rows of equal tall cells (one window bay by one storey), solid pure magenta (#FF00FF) gutters about 8 px wide and a magenta border. Straight-on orthographic elevation, no perspective, flat even front lighting, no cast shadows. Plaster and stone in neutral light grey with no colour cast; plaster runs to the cell edges so cells tile side by side and on top of each other.
+Constraints: no text, labels, sky, ground, people, or plants.

@@ -2,7 +2,9 @@
 
 A GTA 2-style top-down sandbox on the real, present-day Prague: every street,
 building, tram line, parked car and hill comes from open data and is drawn
-procedurally in three.js. No hand modelling, no textures, no AI imagery.
+procedurally in three.js. No hand modelling; the only images are one small set of
+facade parts (windows, doors, shopfronts) that every wall in the city is put together
+from.
 
 It started as the driving prototype inside `prague-game` (a Prague 1945 experiment)
 and was split out with its history at `prague-game@c271397`.
@@ -69,8 +71,15 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   block of family houses, or of flats with plenty of room round them, gets grass
   between the buildings (`_gardens` in `pipeline/osm_area.py`); denser inner-city
   blocks, shops, offices and schools stay paved. Buildings get roof tiles laid down
-  each face's slope, slate, gravel on flat roofs and windows by storey. It all stays
-  sharp at any zoom.
+  each face's slope, slate and gravel on flat roofs. It all stays sharp at any zoom.
+- **Facades** are put together bay by bay and storey by storey from 48 parts: windows,
+  doors, gateways and shopfronts of tenements, baroque houses, functionalist blocks,
+  panel housing and family houses (`src/facades.js`). A wall's style comes from where
+  it stands and how tall it is: baroque in Old Town, Malá Strana and Hradčany, panel
+  housing for tall blocks far out, family houses under about 8 m, tenements with some
+  functionalism elsewhere. The plaster takes the building's own colour. The parts were
+  drawn by an image model as four sheets, each asked for with the first sheet as a
+  style reference, and are cut and packed by `assets/facades/build_atlas.py`.
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.js`) around the camera. Each
   tile has its own ground, buildings, trees, collision grid, parked cars and piece of
   the street graphs (joined across tiles by OSM node ids), so start-up doesn't depend

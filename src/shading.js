@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FACADE_ATLAS, FACADE_ON, FACADE_GLSL } from './facades.js';
 
 // Procedural surface patterns in world space, shared by the ground and the buildings.
 // Everything is computed per pixel from the position in metres, so it stays sharp at
@@ -143,18 +144,22 @@ export const CUTAWAY = { value: new THREE.Vector4(0, 0, 0, 0) };
 export function shadeBuildings(material) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uCut = CUTAWAY;
+    sh.uniforms.uFacades = FACADE_ATLAS;
+    sh.uniforms.uFacadeOn = FACADE_ON;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 facade;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec2 vFacade;')
+      .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec2 vFacade;\nuniform vec4 uCut;\n${NOISE_GLSL}\n${BUILDING_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);
+  vec4 fdx = dFdx(vFacade), fdy = dFdy(vFacade);
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
   if (bn.y > .97) diffuseColor.rgb = flatRoof(diffuseColor.rgb, bwp);
   else if (bn.y > .15) diffuseColor.rgb = roofTiles(diffuseColor.rgb, bwp, bn);
-  else diffuseColor.rgb = facade(diffuseColor.rgb, vFacade);`);
+  else if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
+  else diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy);`);
   };
   material.customProgramCacheKey = () => 'buildings-procedural';
   material.needsUpdate = true;

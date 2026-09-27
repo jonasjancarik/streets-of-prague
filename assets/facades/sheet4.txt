@@ -1,0 +1,8 @@
+$imagegen
+Asset: game texture sheet, landscape 3:2, one image
+Image 1: style and layout reference only (earlier sheet of the same set). Match its drawing style, scale, lighting, plaster grey, window colours and grid, but NOT its ornament: this sheet is for plain suburban houses, with no stucco pediments, brackets, pilasters, keystones or rustication anywhere.
+Request: facade modules of 20th-century family houses and small outbuildings on the edge of Prague: smooth rendered walls, simple window openings.
+Top row, upper-floor modules, one per cell: small plain window with a thin sill; plain window with folding wooden shutters; small square bathroom window; wide three-pane window; plain balcony door with a simple steel rail; bare smooth wall.
+Bottom row, ground-floor modules: simple wooden front door with a small flat canopy; plain ground-floor window with a thin sill; up-and-over garage door; garage door of vertical wooden boards; low bare brick plinth with a small cellar window; bare smooth wall with a plain plinth.
+Layout: an exact grid of 6 columns × 2 rows of equal tall cells, solid pure magenta (#FF00FF) gutters about 8 px wide and a magenta border. Straight-on orthographic elevation, no perspective, flat even front lighting, no cast shadows; wall plaster runs to the cell edges so cells tile side by side and on top of each other. Nothing may reach above the top edge of a cell.
+Constraints: no text, labels, sky, ground, people, or plants.

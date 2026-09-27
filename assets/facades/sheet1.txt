@@ -1,0 +1,7 @@
+$imagegen
+Asset: game texture sheet, landscape 3:2, one image
+Request: a sprite sheet of facade modules from Prague's late-19th-century tenement houses (činžovní domy, Vinohrady/Žižkov style), laid out as an exact grid of 6 columns × 2 rows of equal tall cells (each cell about 1:1.8, one window bay by one storey), separated by solid pure magenta (#FF00FF) gutters about 8 px wide, magenta border around the whole sheet.
+Top row, upper-floor window modules, one per cell: plain double casement window with sill; window with triangular stucco pediment; window with segmental arched pediment; window with stucco garlands under the sill; tall French window with a small wrought-iron balcony rail; bare wall with a blind niche.
+Bottom row, ground-floor modules: shop window with wooden frame; shop entrance door with transom; wooden double entrance door with stone portal; arched gateway with wooden gates; rusticated wall with small barred window; plain rusticated wall.
+Look: straight-on orthographic elevation, no perspective, flat even front lighting, no cast shadows, only soft occlusion in recesses. Plaster, stucco and stone in neutral light grey with no colour cast (tinted later in the game); window frames white, glass dark blue-grey, doors dark brown wood. Plaster runs to the cell edges so each cell tiles side by side and on top of each other.
+Constraints: no text, labels, sky, ground, people, or plants.

@@ -4,6 +4,7 @@ import { buildWalls } from './map/buildings.js';
 import { buildTrees } from './map/vegetation.js';
 import { Surfaces } from './surface.js';
 import { shadeBuildings } from './shading.js';
+import { styleFor, cellHash, loadFacadeAtlas } from './facades.js';
 import { Zones, parkCars } from './parking.js';
 
 // Streams the map in square tiles (pipeline/build_tiles.py) around the camera. Each
@@ -112,13 +113,14 @@ async function relief(url, box, n, step, ref, bareUrl = null) {
 
 const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ vertexColors: true }));
 
-// Where each wall pixel sits on its facade, for the windows (see shading.js): metres
-// along the wall and metres above the ground at its foot. Triangles that share an edge
-// and lie in one plane make one wall, measured from its own end in the direction
-// between its two ends, so the windows run on across the triangles. (Measured from the
-// world's origin with each triangle's own normal, they jumped by metres at every seam.)
-function facadeCoords(g, groundAt) {
-  const p = g.attributes.position.array, n = p.length / 9, out = new Float32Array(n * 6);
+// Where each wall pixel sits on its facade, for the windows (see shading.js and
+// facades.js): metres along the wall, metres above the ground at its foot, the wall's
+// length, and its style plus a random fraction. Triangles that share an edge and lie in
+// one plane make one wall, measured from its own end in the direction between its two
+// ends, so the windows run on across the triangles. (Measured from the world's origin
+// with each triangle's own normal, they jumped by metres at every seam.)
+function facadeCoords(g, groundAt, styleAt) {
+  const p = g.attributes.position.array, n = p.length / 9, out = new Float32Array(n * 12);
   const nrm = new Float32Array(n * 2), wall = new Int32Array(n).fill(-1);
   const up = (i) => (wall[i] === i ? i : (wall[i] = up(wall[i])));
   const key = (v) => `${Math.round(p[v] * 1000)},${Math.round(p[v + 1] * 1000)},${Math.round(p[v + 2] * 1000)}`;
@@ -151,17 +153,25 @@ function facadeCoords(g, groundAt) {
     }
     const len = Math.hypot(p[b] - p[a], p[b + 2] - p[a + 2]) || 1;
     const tx = (p[b] - p[a]) / len, tz = (p[b + 2] - p[a + 2]) / len;
+    let from = Infinity, to = -Infinity, top = 0;
     for (const t of tris) {
       let ground = Infinity;
       for (let v = t * 9; v < t * 9 + 9; v += 3) ground = Math.min(ground, groundAt(p[v], -p[v + 2]));
       for (let v = t * 9; v < t * 9 + 9; v += 3) {
-        const o = (v / 3) * 2;
-        out[o] = (p[v] - p[a]) * tx + (p[v + 2] - p[a + 2]) * tz;
+        const o = (v / 3) * 4, s = (p[v] - p[a]) * tx + (p[v + 2] - p[a + 2]) * tz;
+        out[o] = s;
         out[o + 1] = p[v + 1] - ground;
+        from = Math.min(from, s); to = Math.max(to, s); top = Math.max(top, out[o + 1]);
       }
     }
+    const style = styleAt((p[a] + p[b]) / 2, -(p[a + 2] + p[b + 2]) / 2, top) + 0.999 * cellHash(p[a], p[a + 2]);
+    for (const t of tris) for (let o = t * 12; o < t * 12 + 12; o += 4) {
+      out[o] -= from;
+      out[o + 2] = Math.max(to - from, 0.5);
+      out[o + 3] = style;
+    }
   }
-  g.setAttribute('facade', new THREE.BufferAttribute(out, 2));
+  g.setAttribute('facade', new THREE.BufferAttribute(out, 4));
 }
 
 function buildingMesh(arrays) {
@@ -281,6 +291,8 @@ export class TileWorld {
     this.osmBuildings = osmBuildings;
     this.area = area;
     this.index = index;
+    this.styleAt = styleFor(index);
+    loadFacadeAtlas();
     this.scene = scene;
     this.time = time;
     this.night = night;
@@ -410,7 +422,7 @@ export class TileWorld {
       ...(ipr ? [await iprMesh(`data/${this.area}_now/tiles/${k}.ipr.bin`, t.box, this.index.iprRef != null)] : []),
       ...(!ipr || extrude.length ? [buildingMesh(await this.roofs.build({ buildings: extrude, size: data.size, origin: data.origin }))] : []),
     ];
-    for (const m of buildings) facadeCoords(m.geometry, hAt);
+    for (const m of buildings) facadeCoords(m.geometry, hAt, this.styleAt);
     if (this.loaded.has(k)) return this.loaded.get(k);
     lap('buildings');
     // Spread the main-thread work over several frames.

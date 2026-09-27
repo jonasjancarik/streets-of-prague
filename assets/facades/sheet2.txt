@@ -1,0 +1,8 @@
+$imagegen
+Asset: game texture sheet, landscape 3:2, one image
+Image 1: style and layout reference only (earlier sheet of the same set); do not copy its modules.
+Request: the next sheet in the set: facade modules from baroque and older houses in Prague's Malá Strana and Old Town.
+Top row, upper-floor window modules, one per cell: small window with a plain stucco frame with "ears"; window with a baroque scrolled pediment; window with wooden shutters opened; window with painted false-stone frame; small attic window; bare wall with a plain recessed panel.
+Bottom row, ground-floor modules: heavy wooden door in a stone portal with keystone; round-arched vaulted passage opening; shop window in a deep arched recess; small window with iron grille in a thick wall; stone plinth wall with a cellar window; plain thick plastered wall with stone corner blocks.
+Look: exactly the same drawing style, scale, lighting, plaster grey and window colours as Image 1, and the same sheet layout: an exact grid of 6 columns × 2 rows of equal tall cells (one window bay by one storey), solid pure magenta (#FF00FF) gutters about 8 px wide and a magenta border. Straight-on orthographic elevation, no perspective, flat even front lighting, no cast shadows. Plaster and stone in neutral light grey with no colour cast; plaster runs to the cell edges so cells tile side by side and on top of each other.
+Constraints: no text, labels, sky, ground, people, or plants.
