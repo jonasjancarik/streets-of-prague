@@ -102,11 +102,23 @@ export class Crowd {
       speed: 1.1 + r() * 0.6, x: 0, y: 0, h: 0, vx: 0, vy: 0,
       state: 'walk', t: 0, pause: 0, z: 0, anim: new Anim(this.kit, 'walk', r() * 2),
     };
-    this.fig.look(i, randomLook(r));
+    p.look = randomLook(r);
+    this.fig.look(i, p.look);
     this.fig.mesh.count = this.people.length + 1;
     this.people.push(p);
     this.place(p);
     return p;
+  }
+
+  // Someone goes home: the last in the list takes their slot.
+  retire(p) {
+    const last = this.people.pop();
+    if (last !== p) {
+      last.i = p.i;
+      this.people[p.i] = last;
+      this.fig.look(last.i, last.look);
+    }
+    this.fig.mesh.count = this.people.length;
   }
 
   // Put a person on their edge, on their side of the street, clear of buildings.
@@ -215,7 +227,12 @@ export class Crowd {
   turn(p) {
     const node = p.s > p.e.path.length / 2 ? p.e.v : p.e.u;
     const opts = (this.walk.adj.get(node) || []).filter((o) => o.e !== p.e);
-    const pick = opts.length ? opts[Math.floor(this.r() * opts.length)] : { e: p.e, fwd: !p.fwd };
+    // Busier streets are likelier, by the square root of how busy they are: in the
+    // long run that keeps as many people on a street as its footfall says.
+    const w = opts.map((o) => (this.footfall ? Math.sqrt(0.02 + this.footfall.edge(o.e)) : 1));
+    let x = this.r() * w.reduce((a, b) => a + b, 0), k = 0;
+    while (k < opts.length - 1 && (x -= w[k]) > 0) k++;
+    const pick = opts.length ? opts[k] : { e: p.e, fwd: !p.fwd };
     p.e = pick.e;
     p.fwd = pick.fwd;
     p.s = p.fwd ? 0 : p.e.path.length;

@@ -6,6 +6,7 @@ import { Car, CarPool, collideBodies, useKit } from './car.js';
 import { loadKit } from './figures.js';
 import { Traffic } from './traffic.js';
 import { Crowd, Walker, nearestWalkable } from './people.js';
+import { loadFootfall } from './footfall.js';
 import { Trams } from './trams.js';
 import { TramRide, FAST } from './ride.js';
 import { Clock } from './clock.js';
@@ -24,13 +25,15 @@ const $ = (id) => document.getElementById(id);
 const status = (t) => { $('loading-text').textContent = t; };
 
 const TRAFFIC = 40;
-const PEOPLE = 240;
+const PEOPLE = 600; // round the Old Town Square; fewer where it's quieter (src/footfall.js)
+const FEW_PEOPLE = 40; // on the quietest edge of town
 const PARKED_TWO = 10; // bikes and motorbikes parked around you
 const LIFE_RADIUS = 330; // traffic and people are kept within this distance of the player
 
 async function main() {
   status('Loading the map…');
   const kitLoad = loadKit();
+  const footfallLoad = loadFootfall(AREA);
   const index = await fetch(`data/${AREA}_now/index.json`).then((r) => r.json());
   // Tram lines (pipeline/build_lines.py); without them there are no trams.
   const lines = fetch(`data/${AREA}_now/lines.json`).then((r) => (r.ok ? r.json() : { lines: [] })).catch(() => ({ lines: [] }));
@@ -102,7 +105,9 @@ async function main() {
   const trams = new Trams((await lines).lines, scene, { clock, rng: seeded });
   const ride = new TramRide(trams, world, $('ride'));
   const board = new StopBoard(trams, $('board'));
+  const footfall = await footfallLoad;
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
+  crowd.footfall = footfall;
   const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
   const carPool = new CarPool(scene);
 
@@ -143,19 +148,47 @@ async function main() {
     return d > rMin && d < LIFE_RADIUS && world.grid.at(sx, sy) !== 255;
   };
   for (let i = 0; i < TRAFFIC; i++) traffic.spawn(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS));
+  // How many people are about: from FEW_PEOPLE on the edge of town to PEOPLE round
+  // the Old Town Square, by how busy the streets around you are.
+  const peopleWanted = () => {
+    const busy = Math.min(1, footfall.around(px(), py(), LIFE_RADIUS) / 0.2);
+    return Math.round(FEW_PEOPLE + (PEOPLE - FEW_PEOPLE) * busy ** 0.6);
+  };
+  // A spot on one of the footpaths, busier ones likelier; `ok` can turn spots down.
+  const pickSpot = (edges, ok) => {
+    let total = 0;
+    const upTo = edges.map((e) => (total += e.path.length * (0.02 + footfall.edge(e))));
+    for (let t = 0; t < 8; t++) {
+      const x = seeded() * total;
+      let lo = 0, hi = upTo.length - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (upTo[mid] < x) lo = mid + 1; else hi = mid; }
+      const e = edges[lo], s = seeded() * e.path.length, at = e.path.at(s);
+      if (!ok || ok(at.x, at.y)) return { e, s };
+    }
+    return null;
+  };
   // People who wander too far are moved to just outside the view, so they walk into it.
+  // Where it's getting quieter some go home, out of sight; where it's getting busier
+  // more turn up. `onlyFar` false: everyone at once, anywhere around you.
   const scatterPeople = (onlyFar) => {
     const edges = walkNear(px(), py(), onlyFar ? Math.min(LIFE_RADIUS, viewRadius() + 90) : LIFE_RADIUS * 0.6);
     if (!edges.length) return;
+    const ok = onlyFar ? offscreen : null, most = onlyFar ? 20 : Infinity, want = peopleWanted();
+    for (let k = crowd.people.length - 1, n = 0; k >= 0 && crowd.people.length > want && n < most; k--) {
+      const p = crowd.people[k];
+      if (p.state === 'walk' && (!onlyFar || offscreen(p.x, p.y))) { crowd.retire(p); n++; }
+    }
     for (const p of crowd.people) {
       if (onlyFar && Math.hypot(p.x - px(), p.y - py()) < LIFE_RADIUS) continue;
-      for (let t = 0; t < 8; t++) {
-        const e = edges[Math.floor(seeded() * edges.length)], s = seeded() * e.path.length, at = e.path.at(s);
-        if (onlyFar && !offscreen(at.x, at.y)) continue;
-        Object.assign(p, { e, s, state: 'walk', vx: 0, vy: 0 });
-        crowd.place(p);
-        break;
-      }
+      const at = pickSpot(edges, ok);
+      if (!at) continue;
+      Object.assign(p, { ...at, state: 'walk', vx: 0, vy: 0 });
+      crowd.place(p);
+    }
+    for (let n = 0; crowd.people.length < want && n < most; n++) {
+      const at = pickSpot(edges, ok);
+      if (!at) break;
+      crowd.add(at);
     }
   };
   scatterPeople(false);

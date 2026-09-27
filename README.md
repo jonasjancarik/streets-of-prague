@@ -101,6 +101,16 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   (`src/traffic.js`); pedestrians on the footpath network who leap out of the way of
   fast cars and get knocked over, then get up again (`src/people.js`). Traffic and
   people live within about 330 m of the player.
+- **Crowds.** The busier the streets around you, the more people: 500 to 600 round the
+  Old Town Square and on Charles Bridge, a couple of hundred in Vinohrady or on a
+  housing estate, a few dozen on the edge of town. They come and go out of sight as
+  you move, turn up more often on the busier streets and, at a junction, lean towards
+  the busier way. How busy a street is comes from a footfall map
+  (`pipeline/build_footfall.py`, `src/footfall.js`). There's no open data on where
+  people walk, so it's pieced together from what draws them: OSM's shops, cafés,
+  sights, schools and pedestrian streets, how many buses, trams, trains and metro
+  trains leave each stop on a weekday, and a short hand-made list of the places
+  tourists crowd.
 - **Bikes and motorbikes.** Cyclists and motorcyclists ride with the traffic, and bikes
   and motorbikes stand on the pavements around you: E gets you on one, and it leans
   into the turns. Hit something hard and you're thrown off. On foot, Space jumps (not
@@ -195,6 +205,7 @@ uv run build_tiles.py centrum      # today's map + street graphs in tiles → pu
 uv run ipr_buildings.py centrum    # IPR's 3D buildings into the tiles
 uv run ipr_terrain.py centrum      # IPR's terrain: heights, bridges, hill shading
 uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
+uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 ```
 
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
@@ -221,6 +232,13 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `pid_timetable.py` downloads the GTFS feed (about 50 MB, again when it's a week old)
   into `pipeline/.cache/pid/` and reduces it to a summary of every tram and metro trip.
   Without it, every line runs every 8 minutes.
+- **Footfall.** `build_footfall.py` needs the local OSM extract and uses PID's
+  timetables when it can get them (see Tram lines); it counts the departures at every
+  stop once and keeps them in `pipeline/.cache/pid/departures.json`. The whole city
+  takes about 15 seconds. 1 on the map is as busy as the Old Town Square, so `ujezd`,
+  which doesn't reach it, measures against the last `centrum` or `praha` built.
+  Without the map, every street counts as equally busy and about 240 people are about
+  everywhere.
 - **Parking.** `build_parking.py` reads the monthly TSK occupancy GeoJSON collected by
   `~/projects/parkovani-praha` (set `PARKING_DATA` to point elsewhere).
 
