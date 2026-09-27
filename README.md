@@ -16,7 +16,7 @@ The map data is built locally (see [Building the map](#building-the-map)); nothi
 generated is committed. `?area=centrum` is the default, `?area=praha` the whole
 city, `?area=ujezd` a small test area. `?night` fills the streets with night-time
 parking, `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
-developer panel, `?start=lon,lat` starts somewhere else.
+developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
 
 ## Playing
 
@@ -28,6 +28,12 @@ developer panel, `?start=lon,lat` starts somewhere else.
   lane, and A/D then pick the turn at the next junction instead of steering. It only
   works within the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
   trunk roads, 80 on motorways): speed and it lets go; 5 km/h under the limit it's back.
+- **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
+  desktop): put your left thumb down anywhere in the lower left and slide it sideways
+  to steer, harder the further you slide; the right thumb has the gas and brake (roll
+  from one to the other without lifting), the handbrake, get in/out and "Back on road".
+  Lane assist and running are toggles there, since both thumbs are busy. Pinch the map
+  to zoom (`src/touch.js`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads

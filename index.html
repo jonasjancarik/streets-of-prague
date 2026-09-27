@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Streets of Prague</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
@@ -36,6 +36,42 @@
       #loading { position: fixed; inset: 0; display: grid; place-items: center; background: #2a2622; transition: opacity 0.6s; font: 28px 'Bebas Neue', sans-serif; letter-spacing: 0.05em; }
       #loading.done { opacity: 0; pointer-events: none; }
       @media (max-width: 640px) { #help { display: none; } #banner { font-size: 40px; } }
+
+      /* Touch controls: left thumb steers, right thumb works the pedals and buttons. */
+      #touch { display: none; }
+      body.touch { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+      body.touch #touch { display: block; }
+      body.touch #help { display: none; }
+      body.touch #hud { top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); min-width: 0; padding: 8px 12px; }
+      body.touch #speed { font-size: 36px; }
+      #touch button, .t-pedal { font: 600 14px/1 Inter, system-ui, sans-serif; color: var(--ink); background: var(--paper); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 14px; backdrop-filter: blur(6px); -webkit-tap-highlight-color: transparent; touch-action: none; }
+      #t-steer { position: fixed; left: 0; bottom: 0; width: 50vw; height: 55vh; touch-action: none; }
+      #t-stick { position: absolute; left: calc(max(16px, env(safe-area-inset-left)) + 10px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 24px); width: 170px; height: 64px; border-radius: 32px; background: rgba(20, 18, 16, 0.45); border: 1px solid rgba(255, 255, 255, 0.14); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-sizing: border-box; color: rgba(245, 239, 226, 0.55); font-size: 18px; pointer-events: none; }
+      #t-stick.held { background: rgba(20, 18, 16, 0.6); }
+      #t-knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: var(--ink); opacity: 0.85; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35); }
+      #t-right { position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+      .t-row { display: flex; gap: 10px; }
+      #touch .t-row button { height: 44px; padding: 0 14px; }
+      #touch button.on { background: var(--accent); color: #221f1b; }
+      #touch button.tripped { background: rgba(255, 210, 63, 0.35); color: var(--ink); }
+      #touch button.down, .t-pedal.down { background: rgba(245, 239, 226, 0.3); }
+      #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
+      #t-action.off { visibility: hidden; }
+      #t-pedals { display: flex; align-items: flex-end; gap: 10px; touch-action: none; }
+      .t-pedal { display: grid; place-items: center; box-sizing: border-box; }
+      #t-brake { width: 84px; height: 84px; }
+      #t-gas { width: 96px; height: 128px; border-color: var(--accent); }
+      #t-gas.down { background: var(--accent); color: #221f1b; }
+      #touch[data-mode='foot'] .car-only { display: none; }
+      #t-road { position: fixed; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); height: 40px; padding: 0 14px; }
+      @media (max-height: 460px) { #t-gas { height: 104px; } #t-brake { height: 72px; } #t-action { height: 44px; } }
+      @media (max-width: 480px) {
+        body.touch #hud { max-width: calc(100vw - 180px); }
+        #t-stick { width: 136px; }
+        #t-brake { width: 72px; }
+        #t-gas { width: 84px; }
+        #touch .t-row button { padding: 0 11px; }
+      }
     </style>
   </head>
   <body>
@@ -51,6 +87,15 @@
       <b>On foot:</b> W and S walk forwards and back, A and D turn, Shift to run. <b>E</b> gets you into the nearest car, even one that's driving past.<br />
       <b>Driving:</b> W and S for gas and brake (hold S to reverse), A and D to steer, Space for the handbrake. Hold <b>Shift</b> and the car keeps to its lane, as long as you stay within the speed limit; while you hold it, A and D pick the turn at the next junction. <b>R</b> puts the car back on the road.<br />
       Scroll to zoom. <b>`</b> opens the developer tools: jump to a street, an address or a spot on the map.
+    </div>
+    <div id="touch" data-mode="foot">
+      <div id="t-steer"><div id="t-stick">◀<div id="t-knob"></div>▶</div></div>
+      <button id="t-road" class="car-only">Back on road</button>
+      <div id="t-right">
+        <button id="t-action" class="off">Get in</button>
+        <div class="t-row"><button id="t-hand" class="car-only">Handbrake</button><button id="t-toggle">Run</button></div>
+        <div id="t-pedals"><div id="t-brake" class="t-pedal">Back</div><div id="t-gas" class="t-pedal">Walk</div></div>
+      </div>
     </div>
     <div id="loading"><span id="loading-text">Loading…</span></div>
     <script type="module" src="/src/main.js"></script>

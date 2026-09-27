@@ -270,6 +270,7 @@ export function nearestWalkable(grid, x, y, maxR = 60) {
 }
 
 // The player on foot: tank controls relative to where they face, Shift to run.
+// `ctl` = { move -1..1, turn -1..1 (left +), run }.
 export class Walker {
   constructor(grid) {
     this.grid = grid;
@@ -295,7 +296,7 @@ export class Walker {
     return g.at(x, y) || g.at(x + r, y) || g.at(x - r, y) || g.at(x, y + r) || g.at(x, y - r);
   }
 
-  update(dt, input) {
+  update(dt, ctl) {
     if (this.down > 0) {
       this.down -= dt;
       const k = Math.exp(-4 * dt);
@@ -307,10 +308,9 @@ export class Walker {
       return;
     }
     // Tank controls, like GTA 2: up/down move along the way you face, left/right turn.
-    const turn = (input.left ? 1 : 0) - (input.right ? 1 : 0);
-    this.h += turn * (input.run ? 3.6 : 4.2) * dt;
-    const move = (input.up ? 1 : 0) - (input.down ? 1 : 0);
-    const target = move > 0 ? (input.run ? 7.5 : 3.6) : move < 0 ? -2 : 0;
+    const { turn, move } = ctl;
+    this.h += turn * (ctl.run ? 3.6 : 4.2) * dt;
+    const target = move > 0 ? move * (ctl.run ? 7.5 : 3.6) : move * 2;
     this.speed += (target - this.speed) * Math.min(1, dt * 10);
     this.vx = Math.cos(this.h) * this.speed;
     this.vy = Math.sin(this.h) * this.speed;

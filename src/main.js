@@ -9,6 +9,7 @@ import { Trams } from './trams.js';
 import { TileWorld } from './tiles.js';
 import { setupDev } from './dev.js';
 import { LaneAssist } from './assist.js';
+import { setupTouch } from './touch.js';
 
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'centrum';
@@ -225,7 +226,9 @@ async function main() {
     if (!e.shiftKey) input.run = false;
   });
   let zoom = 1;
-  addEventListener('wheel', (e) => { zoom = clamp(zoom * Math.exp(e.deltaY * 0.0012), 0.5, 4); }, { passive: true });
+  const zoomBy = (f) => { zoom = clamp(zoom * f, 0.5, 4); };
+  addEventListener('wheel', (e) => zoomBy(Math.exp(e.deltaY * 0.0012)), { passive: true });
+  const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, force: params.has('touch') });
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -248,19 +251,24 @@ async function main() {
     time.value += dt;
     world.update(camPos.x, -camPos.z, viewRadius() + 220);
 
-    // Player. In the car, Shift is lane assist: it steers along your lane, and A/D
-    // picks the turn at the next junction instead of steering.
+    // Player: keyboard and touch controls together. In the car, Shift is lane assist:
+    // it steers along your lane, and A/D picks the turn at the next junction instead.
+    const ctl = {
+      move: touch.move || (input.up ? 1 : 0) - (input.down ? 1 : 0),
+      turn: touch.turn || (input.left ? 1 : 0) - (input.right ? 1 : 0),
+      run: input.run || touch.run,
+      brake: input.brake || touch.brake,
+    };
     assisted = false;
     if (inCar) {
-      let steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
-      if (input.run) {
+      let steer = ctl.turn;
+      if (ctl.run) {
         const a = assist.steer(inCar, steer);
         if (a !== null) { steer = a; assisted = true; }
       } else assist.reset();
-      const ctl = { throttle: (input.up ? 1 : 0) - (input.down ? 1 : 0), steer, handbrake: input.brake };
-      const hit = inCar.update(dt, ctl, grid);
+      const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake }, grid);
       if (hit > 6) shake = Math.min(1.2, shake + hit * 0.04);
-    } else walker.update(dt, input);
+    } else walker.update(dt, ctl);
 
     const moving = (c) => c.mode === 'player' || c.speed > 0.05 || Math.abs(c.w) > 0.01;
     const movers = loose.filter(moving);
@@ -415,14 +423,18 @@ async function main() {
     bannerT -= dt;
     $('banner').style.opacity = clamp(bannerT, 0, 1);
     $('speed').textContent = inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : '–';
+    // On a touch screen the buttons say what they do, so the hint only reports lane assist.
+    const canEnter = !inCar && [...carsNear(walker.x, walker.y, 5)].some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2 < 1.8);
+    const key = (k) => (touch.active ? '' : `<b>${k}</b> `);
     let hint = '';
     if (inCar) {
-      if (input.run && assist.tripped) hint = `<b>Shift</b> lane assist is off above ${assist.limit} km/h: slow down to get it back`;
-      else if (!assisted) hint = '<b>E</b> get out · <b>Shift</b> lane assist';
-      else hint = `<b>Shift</b> lane assist, up to ${assist.limit} km/h · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : 'straight on (A/D to turn)'}`;
+      if (ctl.run && assist.tripped) hint = `${key('Shift')}Lane assist is off above ${assist.limit} km/h: slow down to get it back`;
+      else if (!assisted) hint = touch.active ? '' : '<b>E</b> get out · <b>Shift</b> lane assist';
+      else hint = `${key('Shift')}Lane assist, up to ${assist.limit} km/h · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : `straight on (${touch.active ? 'steer' : 'A/D'} to turn)`}`;
     }
-    else if ([...carsNear(walker.x, walker.y, 5)].some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2 < 1.8)) hint = '<b>E</b> get in';
+    else if (canEnter && !touch.active) hint = '<b>E</b> get in';
     $('hint').innerHTML = hint;
+    touch.update({ car: inCar, canEnter, tripped: ctl.run && assist.tripped });
     $('tally').textContent = `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over`;
 
     dev.update();
@@ -433,7 +445,7 @@ async function main() {
     scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer,
     get car() { return inCar; },
     teleport: (x, y) => { (inCar || walker).x = x; (inCar || walker).y = y; camPos.set(x, 0, -y); },
-    enterOrExit, teleportTo, dev,
+    enterOrExit, teleportTo, dev, touch,
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
   };
 }
