@@ -243,8 +243,11 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (`--jobs`, by default two fewer than the machine has cores).
 - **OSM.** With `pipeline/.cache/osm/czech-republic-latest.osm.pbf` from
   [Geofabrik](https://download.geofabrik.de/europe/czech-republic.html) (about 950 MB)
-  the chunks are cut locally with osmium; the centre builds in under half a minute
-  the first time and in about 15 seconds after that. Without it the pipeline asks Overpass (set
+  the chunks are cut locally with osmium. The centre builds in under half a minute
+  the first time and in about 15 seconds after that; the whole city, with IPR's
+  buildings and terrain, in about 11 minutes the first time (it was 42 before the
+  layers and caches), and its ground alone in about a minute and a half, plus 40
+  seconds for the terrain. Without it the pipeline asks Overpass (set
   `OVERPASS_URL=https://maps.mail.ru/osm/tools/overpass/api` if overpass-api.de
   refuses). `build_tiles.py` works in 2 km chunks with a 150 m overlap, so buildings
   and streets on a chunk border come out whole.
