@@ -10,6 +10,7 @@ import { Trams } from './trams.js';
 import { Zones } from './parking.js';
 import { TileWorld } from './tiles.js';
 import { setupDev } from './dev.js';
+import { LaneAssist } from './assist.js';
 
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'centrum';
@@ -213,6 +214,8 @@ async function main() {
     street = null; // show the new street's name, not the old one
     $('street').textContent = '';
   };
+  const assist = new LaneAssist(drive, (x, y, r) => edgesNear(x, y, r));
+  let assisted = false;
   const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()] });
 
   // ---- Input -------------------------------------------------------------
@@ -252,9 +255,16 @@ async function main() {
     time.value += dt;
     world.update(camPos.x, -camPos.z, viewRadius() + 220);
 
-    // Player
+    // Player. In the car, Shift is lane assist: it steers along your lane, and A/D
+    // picks the turn at the next junction instead of steering.
+    assisted = false;
     if (inCar) {
-      const ctl = { throttle: (input.up ? 1 : 0) - (input.down ? 1 : 0), steer: (input.left ? 1 : 0) - (input.right ? 1 : 0), handbrake: input.brake };
+      let steer = (input.left ? 1 : 0) - (input.right ? 1 : 0);
+      if (input.run) {
+        const a = assist.steer(inCar, steer);
+        if (a !== null) { steer = a; assisted = true; }
+      } else assist.reset();
+      const ctl = { throttle: (input.up ? 1 : 0) - (input.down ? 1 : 0), steer, handbrake: input.brake };
       const hit = inCar.update(dt, ctl, grid);
       if (hit > 6) shake = Math.min(1.2, shake + hit * 0.04);
     } else walker.update(dt, input);
@@ -413,7 +423,10 @@ async function main() {
     $('banner').style.opacity = clamp(bannerT, 0, 1);
     $('speed').textContent = inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : '–';
     let hint = '';
-    if (inCar) hint = '<b>E</b> get out';
+    if (inCar) {
+      hint = !assisted ? '<b>E</b> get out · <b>Shift</b> lane assist'
+        : `<b>Shift</b> lane assist · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : 'straight on (A/D to turn)'}`;
+    }
     else if ([...carsNear(walker.x, walker.y, 5)].some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2 < 1.8)) hint = '<b>E</b> get in';
     $('hint').innerHTML = hint;
     $('tally').textContent = `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over`;
