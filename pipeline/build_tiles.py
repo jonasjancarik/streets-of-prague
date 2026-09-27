@@ -253,7 +253,9 @@ def build_chunk(job):
         t0 = time.perf_counter()
         source = features = None
         if area_pbf:
-            osm = cut(bbox, PBF.parent / f"{area}_{ci}_{cj}.osm", Path(area_pbf))
+            # Chunks of the default size keep their old names; other sizes get their own.
+            grid = "" if (T, C) == (250.0, 8) else f"_{T:g}x{C}"
+            osm = cut(bbox, PBF.parent / f"{area}{grid}_{ci}_{cj}.osm", Path(area_pbf))
             source, features = read_osm(osm)
         lap["read"] = time.perf_counter() - t0
         t0 = time.perf_counter()

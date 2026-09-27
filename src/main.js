@@ -681,10 +681,11 @@ async function main() {
   // it had to leave again soon after.
   const resolution = { ratio: maxRatio, ceiling: maxRatio, frame: 16.7, slow: 0, quick: 0, raised: -Infinity };
   const adapt = (ms, now) => {
-    if (params.get('dpr') || document.hidden) return;
+    // (A frame over a quarter of a second is a pause, such as coming back to the tab.)
+    if (params.get('dpr') || ms > 250) return;
     const r = resolution;
     r.frame += (Math.min(ms, 100) - r.frame) * 0.05;
-    r.slow = r.frame > 25 ? r.slow + ms : 0;
+    r.slow = r.frame > 25 ? r.slow + Math.min(ms, 100) : 0;
     r.quick = r.frame < 18 ? r.quick + ms : 0;
     let next = r.ratio;
     if (r.slow > 2000 && r.ratio > 1) {
@@ -738,7 +739,10 @@ async function main() {
     drawn.length = 0;
     {
       const cx = camPos.x, cy = -camPos.z, r = viewRadius() + 12;
-      const see = (c) => { if (Math.abs(c.x - cx) < r && Math.abs(c.y - cy) < r) drawn.push(c); };
+      const see = (c) => {
+        if (Math.abs(c.x - cx) < r && Math.abs(c.y - cy) < r) drawn.push(c);
+        else c.lastH = undefined; // so a bike coming back into view doesn't lean at once
+      };
       if (inCar) drawn.push(inCar);
       loose.forEach(see);
       for (const a of traffic.agents) see(a.car);

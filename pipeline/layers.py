@@ -26,6 +26,7 @@ which of the two to run again.
 
 import gzip
 import json
+import os
 from pathlib import Path
 
 from osm_area import OUT
@@ -72,7 +73,7 @@ def write(path: Path, data) -> bool:
     except FileNotFoundError:
         pass
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     tmp.write_bytes(raw)
     tmp.replace(path)
     return True
@@ -159,6 +160,13 @@ def assemble(area: str) -> dict:
     out_dir = OUT / f"{area}_now"
     (out_dir / "tiles").mkdir(parents=True, exist_ok=True)
     ipr, terrain = read_layer(area, "ipr"), read_layer(area, "terrain")
+    # IPR's buildings and the terrain are made for a tile grid; after the tiles changed
+    # size they don't fit at all, and tiles that are new since they were made have none.
+    for name, layer in (("ipr_buildings", ipr), ("ipr_terrain", terrain)):
+        if layer and layer.get("tile") != meta["tile"]:
+            print(f"the tiles have changed size since {name}.py ran: run it again")
+    ipr = ipr if ipr and ipr.get("tile") == meta["tile"] else None
+    terrain = terrain if terrain and terrain.get("tile") == meta["tile"] else None
     listed, rails, names, written = [], [], {}, 0
     for ci, cj in chunks(meta):
         rails += read_chunk(area, "ground", ci, cj)["rails"]
@@ -188,6 +196,10 @@ def assemble(area: str) -> dict:
         index["iprRef"] = ipr["iprRef"]
     if terrain:
         index["terrain"] = terrain["index"]
+    keys = {f"{i}_{j}" for i, j, *_ in listed}
+    for name, layer in (("ipr_buildings", ipr), ("ipr_terrain", terrain)):
+        if layer and keys - set(layer["made_for"]):
+            print(f"{len(keys - set(layer['made_for']))} tiles are new since {name}.py ran: run it again")
     # The tiles' .bin files are gzipped (.bin.gz) since both IPR steps do it.
     gz = [bool(layer.get("gzip")) for layer in (ipr, terrain) if layer]
     if gz and all(gz):

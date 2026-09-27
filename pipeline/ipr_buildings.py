@@ -356,7 +356,7 @@ def main() -> None:
         if (i, j) not in per_tile:
             layers.remove_bin(out_dir / "tiles", f"{i}_{j}.ipr.bin")
     # Heights in the .ipr.bin are above iprRef, in metres a.s.l.
-    layers.write_layer(area, "ipr", {"iprRef": REF_HEIGHT, "gzip": True, "tiles": tiles})
+    layers.write_layer(area, "ipr", {"iprRef": REF_HEIGHT, "gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in osm_by_tile], "tiles": tiles})
     print(f"{len(per_tile)} tiles with IPR buildings, {total / 1e6:.1f} MB before gzip; {extra} OSM buildings IPR doesn't have")
     layers.assemble(area)
 

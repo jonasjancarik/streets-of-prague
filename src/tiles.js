@@ -155,6 +155,7 @@ export class TileWorld {
     this.building = 0;
     this.inFlight = new Set();
     this.builds = new Map(); // key → Promise of the tile, while it's being built
+    this.retry = new Map(); // key → when to try a tile that failed again
     this.workers = new TileWorkers();
     // Collision lookups across tiles; anywhere not loaded counts as solid.
     // Game y = 0 is this height above sea level (IPR buildings are stored against it).
@@ -223,9 +224,18 @@ export class TileWorld {
       const bare = this.index.terrain && this.bare.has(k) ? bin('bare') : null;
       const known = this.iprTiles.get(k);
       const ipr = this.osmBuildings || known === false ? null : known ? bin('ipr') : json.then((t) => (t.ipr ? bin('ipr') : null));
-      this.pending.set(k, Promise.all([json, height, bare, ipr]).then(([t, height, bare, ipr]) => ({ t, height, bare, ipr })));
+      const files = Promise.all([json, height, bare, ipr]).then(([t, height, bare, ipr]) => ({ t, height, bare, ipr }));
+      files.catch(() => { if (this.pending.get(k) === files) this.failed(k); });
+      this.pending.set(k, files);
     }
     return this.pending.get(k);
+  }
+
+  // A tile whose files or build failed is fetched afresh, after a pause (a file that
+  // keeps failing would otherwise be asked for every frame).
+  failed(k) {
+    this.pending.delete(k);
+    this.retry.set(k, performance.now() + 2000);
   }
 
   // Load everything within r now (used at start); returns when done.
@@ -237,7 +247,8 @@ export class TileWorld {
 
   // Called every frame: starts building the nearest missing tiles, drops far ones.
   update(x, y, r) {
-    const want = this.around(x, y, r);
+    const now = performance.now();
+    const want = this.around(x, y, r).filter((k) => !(this.retry.get(k) > now));
     for (const k of want.slice(0, 12)) this.fetchTile(k);
     // One build per worker at a time.
     while (this.building < this.workers.size) {
@@ -262,7 +273,7 @@ export class TileWorld {
     if (this.loaded.has(k)) return Promise.resolve(this.loaded.get(k));
     if (!this.builds.has(k)) {
       const made = this.make(k, files)
-        .catch((e) => { this.pending.delete(k); throw e; }) // fetched afresh next time
+        .catch((e) => { this.failed(k); throw e; })
         .finally(() => this.builds.delete(k));
       this.builds.set(k, made);
     }

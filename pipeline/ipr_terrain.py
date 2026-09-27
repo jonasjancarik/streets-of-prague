@@ -343,7 +343,7 @@ def main() -> None:
             with_bridges.append(f"{i}_{j}")
         else:
             layers.remove_bin(out_dir / "tiles", f"{i}_{j}.bare.bin")
-    layers.write_layer(area, "terrain", {"gzip": True, "index": {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi), "bare": with_bridges}})
+    layers.write_layer(area, "terrain", {"gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in tiles], "index": {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi), "bare": with_bridges}})
     print(f"terrain {lo:.0f}–{hi:.0f} m for {len(tiles)} tiles")
     layers.assemble(area)
 
