@@ -242,11 +242,12 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         }
     for (ls, _, cls, street), (left, right) in zip(car_ways, kerbs([w[0] for w in car_ways], [w[1] for w in car_ways])):
         # Each side out to its kerb, and round ends so streets join up at crossroads.
-        poly = unary_union([ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),
-                            ls.buffer(min(left, right), cap_style="round", join_style="round")])
-        road_lines.setdefault(cls, []).append(poly)
+        # (The pieces are merged with all the others below, so not one by one here.)
+        pieces = [ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),
+                  ls.buffer(min(left, right), cap_style="round", join_style="round")]
+        road_lines.setdefault(cls, []).extend(pieces)
         if street:
-            streets.append(poly)
+            streets.extend(pieces)
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
     gardens = _gardens(homes, buildings, streets, clip)
