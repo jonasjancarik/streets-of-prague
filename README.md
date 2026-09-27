@@ -28,6 +28,14 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   lane, and A/D then pick the turn at the next junction instead of steering. It only
   works within the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
   trunk roads, 80 on motorways): speed and it lets go; 5 km/h under the limit it's back.
+- **Trams**: press E next to a tram waiting at a stop to get on (`src/ride.js`). The
+  panel lists the stops ahead. Pick one with W/S (or tap it) and the ride runs at 6×,
+  stops on the way included, until about 250 m before your stop; then you watch the
+  tram pull in and you get off. Hold Shift (on touch, "Hold to speed up") to speed up
+  at any time. E while it's moving gets you off at the next stop. Sped up, the whole
+  world runs faster, in short steps so the physics holds; it slows down again while
+  the streets ahead are still loading. The police can't arrest you on a tram, and
+  your stars fade twice as fast.
 - **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
   desktop). The left thumb has a round stick: on foot, push it the way you want to go
   and you walk there (a full push runs); in the car, push it sideways to steer. Put
@@ -128,7 +136,9 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
   end of a line (5 and 6 at Nádraží Holešovice, 13 at Zvonařka, 17 at Libuš, 19 at
   Pankrác), the tram reverses where the track allows it, or waits until it's off
   screen and reappears on the other track. There are no timetables: every line runs
-  every 8 minutes, and the historic lines 41 and 42 are left out.
+  every 8 minutes, and the historic lines 41 and 42 are left out. In the smaller areas
+  (`centrum`, `ujezd`) the lines carry on past the edge of the map, and so does a tram
+  you're riding.
 - **Traffic** has no traffic lights; at junctions it only gives way to the right and
   steers around others. The lane assist sometimes clips a corner.
 

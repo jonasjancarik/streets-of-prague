@@ -19,7 +19,7 @@ const dead = (v) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD
 export function setupTouch({ action, backOnRoad, zoomBy, force }) {
   const $ = (id) => document.getElementById(id);
   // `aim` (on foot): { h, mag }, the way the stick points in world terms and how far.
-  const state = { active: false, move: 0, turn: 0, aim: null, brake: false, run: false };
+  const state = { active: false, move: 0, turn: 0, aim: null, brake: false, run: false, fast: false };
   let inCar = null, assistOn = false;
 
   const activate = () => {
@@ -111,6 +111,18 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
   hand.addEventListener('pointerup', handUp);
   hand.addEventListener('pointercancel', handUp);
 
+  // On a tram: hold to speed the ride up.
+  const fast = $('t-fast');
+  const fastUp = () => { state.fast = false; fast.classList.remove('down'); };
+  fast.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    capture(fast, e);
+    state.fast = true;
+    fast.classList.add('down');
+  });
+  fast.addEventListener('pointerup', fastUp);
+  fast.addEventListener('pointercancel', fastUp);
+
   const toggle = $('t-toggle');
   tap(toggle, () => { assistOn = !assistOn; });
   tap($('t-action'), action);
@@ -140,7 +152,9 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
   // ---- Per frame -----------------------------------------------------------
   const shown = {};
   const set = (key, value, apply) => { if (shown[key] !== value) { shown[key] = value; apply(value); } };
-  state.update = ({ car, canEnter, tripped }) => {
+  // `tram`: riding one; `label`: what the main button does, when it isn't getting in
+  // or out of a car.
+  state.update = ({ car, tram = false, label = null, canEnter, tripped }) => {
     if (!state.active) return;
     if (car !== inCar) {
       // Lane assist starts off in every car you take.
@@ -153,14 +167,15 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
     state.turn = inCar ? -dead(push.x) : 0;
     state.aim = !inCar && mag > DEAD ? { h: Math.atan2(push.y, push.x), mag: dead(mag) } : null;
     state.run = !!inCar && assistOn;
-    const mode = inCar ? 'car' : 'foot';
+    const mode = inCar ? 'car' : tram ? 'tram' : 'foot';
     set('mode', mode, (m) => {
       $('touch').dataset.mode = m;
-      $('t-action').textContent = m === 'car' ? 'Get out' : 'Get in';
+      if (m !== 'tram') fastUp();
     });
+    set('label', label || (mode === 'car' ? 'Get out' : 'Get in'), (text) => { $('t-action').textContent = text; });
     set('toggle', state.run, (on) => toggle.classList.toggle('on', on));
     set('tripped', !!(inCar && assistOn && tripped), (t) => toggle.classList.toggle('tripped', t));
-    set('action', !!(inCar || canEnter), (v) => $('t-action').classList.toggle('off', !v));
+    set('action', !!(inCar || tram || canEnter), (v) => $('t-action').classList.toggle('off', !v));
   };
   return state;
 }

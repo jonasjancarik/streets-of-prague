@@ -19,6 +19,17 @@
       #hint { margin-top: 4px; min-height: 18px; }
       #hint b { display: inline-block; background: var(--ink); color: #221f1b; border-radius: 4px; padding: 0 6px; margin-right: 4px; }
       #tally { opacity: 0.6; font-size: 12px; margin-top: 4px; }
+      /* Riding a tram: the line, where it's heading and the stops ahead. */
+      #ride { margin-top: 8px; max-width: 250px; }
+      #ride[hidden] { display: none; }
+      .ride-line { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+      .ride-ref { font: 20px/1 'Bebas Neue', sans-serif; color: #fff; padding: 3px 7px 1px; border-radius: 5px; min-width: 1.4em; text-align: center; }
+      .ride-here { margin-top: 4px; opacity: 0.75; font-size: 12px; }
+      .ride-stops { list-style: none; margin: 6px 0 0; padding: 0 0 0 9px; border-left: 3px solid rgba(245, 239, 226, 0.25); }
+      .ride-stops button { display: block; width: 100%; font: inherit; color: var(--ink); background: none; border: 0; border-radius: 5px; padding: 3px 6px; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      .ride-stops button:hover { background: rgba(255, 255, 255, 0.1); }
+      .ride-stops button.next { font-weight: 600; }
+      .ride-stops button.dest { background: var(--accent); color: #221f1b; }
       #wanted { font-size: 20px; line-height: 1; letter-spacing: 0.08em; margin-top: 6px; color: rgba(245, 239, 226, 0.22); }
       #wanted.hidden { display: none; }
       #wanted .on { color: var(--accent); text-shadow: 0 0 8px rgba(255, 210, 63, 0.5); }
@@ -62,13 +73,15 @@
       #touch button.tripped { background: rgba(255, 210, 63, 0.35); color: var(--ink); }
       #touch button.down, .t-pedal.down { background: rgba(245, 239, 226, 0.3); }
       #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
+      #t-fast { height: 52px; padding: 0 18px; }
       #t-action.off { visibility: hidden; }
       #t-pedals { display: flex; align-items: flex-end; gap: 10px; touch-action: none; }
       .t-pedal { display: grid; place-items: center; box-sizing: border-box; }
       #t-brake { width: 84px; height: 84px; }
       #t-gas { width: 96px; height: 128px; border-color: var(--accent); }
       #t-gas.down { background: var(--accent); color: #221f1b; }
-      #touch[data-mode='foot'] .car-only { display: none; }
+      #touch:not([data-mode='car']) .car-only, #touch:not([data-mode='tram']) .tram-only { display: none; }
+      #touch[data-mode='tram'] #t-steer { display: none; }
       #t-road { position: fixed; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); height: 40px; padding: 0 14px; }
       @media (max-height: 460px) { #t-gas { height: 104px; } #t-brake { height: 72px; } #t-action { height: 44px; } }
       @media (max-width: 480px) {
@@ -88,11 +101,13 @@
       <div id="wanted" class="hidden" role="status" aria-label="Not wanted"></div>
       <div id="hint"></div>
       <div id="tally"></div>
+      <div id="ride" hidden></div>
     </div>
     <div id="banner"></div>
     <div id="help" class="panel">
       <b>On foot:</b> W and S walk forwards and back, A and D turn, Shift to run. <b>E</b> gets you into the nearest car, even one that's driving past.<br />
       <b>Driving:</b> W and S for gas and brake (hold S to reverse), A and D to steer, Space for the handbrake. Hold <b>Shift</b> and the car keeps to its lane, as long as you stay within the speed limit; while you hold it, A and D pick the turn at the next junction. <b>R</b> puts the car back on the road.<br />
+      <b>Trams:</b> <b>E</b> gets you on a tram waiting at a stop. W and S pick a stop in the list and the ride speeds up until you're nearly there; hold <b>Shift</b> to speed up any time. <b>E</b> gets you off at the next stop.<br />
       <b>Police:</b> knock people over, steal cars or ram the police and you get stars. Police cars chase you and officers get out to arrest you; from three stars a helicopter watches you from above. Keep out of their sight and the stars go away one by one.<br />
       Scroll to zoom. <b>`</b> opens the developer tools: jump to a street, an address or a spot on the map, or park a helicopter next to you. In it, W and S fly, A and D turn, Space climbs and Shift comes down; land on open ground to get out.
     </div>
@@ -100,6 +115,7 @@
       <div id="t-steer"><div id="t-stick"><div id="t-knob"></div></div></div>
       <button id="t-road" class="car-only">Back on road</button>
       <div id="t-right">
+        <button id="t-fast" class="tram-only">Hold to speed up</button>
         <button id="t-action" class="off">Get in</button>
         <div class="t-row car-only"><button id="t-hand">Handbrake</button><button id="t-toggle">Lane assist</button></div>
         <div id="t-pedals" class="car-only"><div id="t-brake" class="t-pedal">Brake</div><div id="t-gas" class="t-pedal">Gas</div></div>

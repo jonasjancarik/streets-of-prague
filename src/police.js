@@ -352,8 +352,8 @@ export class Police {
 
   // ---- Every frame -------------------------------------------------------
 
-  // `me`: { x, y, vx, vy, speed, car, air } for the player (car is null on foot; air
-  // while flying a helicopter).
+  // `me`: { x, y, vx, vy, speed, car, air, riding } for the player (car is null on
+  // foot; air while flying a helicopter or riding a tram, out of the officers' reach).
   update(dt, me) {
     for (const k in this.cool) this.cool[k] -= dt;
     const stars = this.stars;
@@ -381,7 +381,7 @@ export class Police {
     // Out of sight long enough, you lose a star.
     this.seen = stars > 0 && this.sees(me.x, me.y);
     if (stars === 0 || this.seen) this.lose = 0;
-    else if ((this.lose += dt) > 8 + 3 * stars) {
+    else if ((this.lose += dt * (me.riding ? 2 : 1)) > 8 + 3 * stars) { // faster on a tram
       this.heat = stars >= 2 ? STARS[stars - 2] : 0;
       this.lose = 0;
     }

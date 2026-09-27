@@ -6,6 +6,7 @@ import { Car, CarPool, collideBodies } from './car.js';
 import { Traffic } from './traffic.js';
 import { Crowd, Walker, nearestWalkable } from './people.js';
 import { Trams } from './trams.js';
+import { TramRide } from './ride.js';
 import { TileWorld } from './tiles.js';
 import { CUTAWAY } from './shading.js';
 import { setupDev } from './dev.js';
@@ -90,6 +91,7 @@ async function main() {
 
   const transit = buildTransit({ rails: index.rails }, scene);
   const trams = new Trams((await lines).lines, scene, { night: params.has('night'), rng: seeded });
+  const ride = new TramRide(trams, world, $('ride'));
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE);
   const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
   const carPool = new CarPool(scene);
@@ -164,7 +166,21 @@ async function main() {
   const police = new Police({ scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, offscreen, onBusted: busted });
 
   const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car)];
+  // Off the tram onto the pavement beside it.
+  const getOff = () => {
+    const [x, y, h] = ride.leave();
+    [walker.x, walker.y] = nearestWalkable(grid, x, y);
+    Object.assign(walker, { h, vx: 0, vy: 0 });
+    walker.mesh.visible = true;
+    walker.sync();
+  };
   const enterOrExit = () => {
+    // On a tram: off at this stop, or at the next one.
+    if (ride.on) {
+      if (ride.atStop()) getOff();
+      else ride.requestStop();
+      return;
+    }
     if (inHeli) {
       if (!inHeli.landed) return;
       const c = inHeli;
@@ -197,6 +213,12 @@ async function main() {
       inCar = null;
       walker.mesh.visible = true;
       walker.sync();
+      return;
+    }
+    const tram = ride.boardable(walker.x, walker.y);
+    if (tram) {
+      ride.board(tram);
+      walker.mesh.visible = false;
       return;
     }
     let best = null, bestD = Infinity;
@@ -243,6 +265,7 @@ async function main() {
   // Jump anywhere in the area: load the tiles there first, then land on a pavement
   // (or on the road, if you're driving) and bring the traffic and people along.
   const teleportTo = async (x, y) => {
+    if (ride.on) getOff();
     const who = inCar || inHeli || walker;
     Object.assign(who, { x, y, vx: 0, vy: 0 });
     if (inHeli) inHeli.z = Math.max(inHeli.z, ground(x, y) + 60);
@@ -284,6 +307,9 @@ async function main() {
     if (e.shiftKey) input.run = true;
     if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) enterOrExit();
     if (e.code === 'KeyR') backOnRoad();
+    // On a tram, W and S move your pick along the stops ahead.
+    if (ride.on && ['KeyW', 'ArrowUp'].includes(e.code)) ride.pick(-1);
+    if (ride.on && ['KeyS', 'ArrowDown'].includes(e.code)) ride.pick(1);
   });
   addEventListener('keyup', (e) => {
     if (keymap[e.code]) input[keymap[e.code]] = false;
@@ -310,24 +336,14 @@ async function main() {
   };
   const hash = new SpatialHash(10);
   const near = (a, b, d) => Math.abs(a.x - b.x) < d && Math.abs(a.y - b.y) < d;
+  const carsNear = (x, y, rr) => {
+    const out = new Set();
+    for (const o of hash.near(x, y, rr)) if (o.car) out.add(o.car);
+    return out;
+  };
 
-  $('loading').classList.add('done');
-
-  renderer.setAnimationLoop((now) => {
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-    time.value += dt;
-    world.update(camPos.x, -camPos.z, viewRadius() + 220);
-
-    // Player: keyboard and touch controls together. In the car, Shift is lane assist:
-    // it steers along your lane, and A/D picks the turn at the next junction instead.
-    const ctl = {
-      move: touch.move || (input.up ? 1 : 0) - (input.down ? 1 : 0),
-      turn: touch.turn || (input.left ? 1 : 0) - (input.right ? 1 : 0),
-      run: input.run || touch.run,
-      brake: input.brake || touch.brake,
-      aim: touch.aim,
-    };
+  // One step of everything that moves (several per frame while a tram ride is sped up).
+  const simulate = (dt, ctl) => {
     if (frozen > 0) {
       frozen -= dt;
       Object.assign(ctl, { move: 0, turn: 0, run: false, brake: true });
@@ -341,7 +357,7 @@ async function main() {
       } else assist.reset();
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake }, grid);
       if (hit > 6) shake = Math.min(1.2, shake + hit * 0.04);
-    } else if (!inHeli) walker.update(dt, ctl);
+    } else if (!inHeli && !ride.on) walker.update(dt, ctl);
     // In the helicopter Space climbs and Shift comes down.
     for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: ctl.turn, up: ctl.brake, down: ctl.run } : null);
 
@@ -349,7 +365,7 @@ async function main() {
     const movers = loose.filter(moving);
     for (const c of movers) c.update(dt, null, grid);
     const me = inCar || inHeli || walker;
-    police.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: !!inHeli && !inHeli.landed });
+    police.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on, riding: ride.on });
     const cops = police.cars.map((p) => p.car);
 
     // Everything the traffic, trams and people need to look out for.
@@ -359,7 +375,7 @@ async function main() {
     for (const c of loose) pushCar(c);
     for (const c of cops) pushCar(c);
     if (inCar) pushCar(inCar);
-    else if (!inHeli) hash.add({ x: walker.x, y: walker.y, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
+    else if (!inHeli && !ride.on) hash.add({ x: walker.x, y: walker.y, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0) hash.add({ x: p.x, y: p.y, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100);
@@ -370,19 +386,14 @@ async function main() {
     // Trams stop for whatever is on the track in front of them; one waiting to move
     // across to the other track at a terminus with no loop does it out of sight.
     trams.update(dt, { near: (x, y, rr) => hash.near(x, y, rr), x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
+    if (ride.on) ride.seat(walker);
     transit.update(dt);
-    trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground);
 
     const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5), ...cops.filter((c) => c.speed > 5)];
     crowd.update(dt, threats);
 
     // ---- Collisions ------------------------------------------------------
     const active = [...(inCar ? [inCar] : []), ...movers, ...cops];
-    const carsNear = (x, y, rr) => {
-      const out = new Set();
-      for (const o of hash.near(x, y, rr)) if (o.car) out.add(o.car);
-      return out;
-    };
     const done = new Set();
     for (const a of active) {
       done.add(a);
@@ -458,7 +469,7 @@ async function main() {
         }
       });
     }
-    if (!inCar && !inHeli) {
+    if (!inCar && !inHeli && !ride.on) {
       bump(walker, 0.35, (c, nx, ny) => {
         if (c.speed > 4 && walker.down <= 0) { walker.knock(c.vx + nx * 2, c.vy + ny * 2); shake = 0.6; }
       });
@@ -477,18 +488,44 @@ async function main() {
       scatterPeople(true);
     }
     if (traffic.agents.length < TRAFFIC) traffic.spawn((x, y) => offscreen(x, y) && lifeSpots(px(), py(), 40)(x, y), edgesNear(px(), py(), LIFE_RADIUS));
+  };
+
+  $('loading').classList.add('done');
+
+  renderer.setAnimationLoop((now) => {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    time.value += dt;
+    world.update(camPos.x, -camPos.z, viewRadius() + 220);
+
+    // Player: keyboard and touch controls together. In the car, Shift is lane assist:
+    // it steers along your lane, and A/D picks the turn at the next junction instead.
+    const ctl = {
+      move: touch.move || (input.up ? 1 : 0) - (input.down ? 1 : 0),
+      turn: touch.turn || (input.left ? 1 : 0) - (input.right ? 1 : 0),
+      run: input.run || touch.run,
+      brake: input.brake || touch.brake,
+      aim: touch.aim,
+    };
+    // On a tram, Shift speeds up the ride: the whole world runs faster, in steps short
+    // enough for the physics.
+    const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : 1;
+    const steps = Math.ceil(scale - 1e-6);
+    for (let i = 0; i < steps; i++) simulate((dt * scale) / steps, ctl);
+    if (ride.on && ride.arrived()) getOff();
+    trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground);
     crowd.render(ground);
     police.render(ground, time.value);
     carPool.render(inCar ? [inCar, ...allCars()] : allCars(), ground);
     for (const c of choppers) c.render(dt);
 
     // ---- Camera ----------------------------------------------------------
-    const ride = inCar || inHeli, sp = ride ? ride.speed : 0;
+    const vehicle = inCar || inHeli, sp = vehicle ? vehicle.speed : 0;
     // In the air the camera rises with the helicopter, so it stays well above it.
-    const want = (inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : 100) * zoom + (inHeli ? inHeli.air : 0);
+    const want = (inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.air : 0);
     height += (want - height) * Math.min(1, dt * (want > height ? 1.6 : 0.9));
-    const lead = ride ? 0.7 : 0.3;
-    look.set(px() + (ride || walker).vx * lead, 0, -(py() + (ride || walker).vy * lead));
+    const lead = vehicle ? 0.7 : ride.on ? 0.5 : 0.3;
+    look.set(px() + (vehicle || walker).vx * lead, 0, -(py() + (vehicle || walker).vy * lead));
     camPos.lerp(look, Math.min(1, dt * 4));
     shake *= Math.exp(-6 * dt);
     const jx = (Math.random() - 0.5) * shake * 2, jz = (Math.random() - 0.5) * shake * 2;
@@ -518,13 +555,16 @@ async function main() {
     if (name && name !== street) {
       street = name;
       $('street').textContent = name;
-      if (!$('banner').classList.contains('alert') || bannerT < 0) showBanner(name);
+      // (Not while a sped-up ride flicks through the streets.)
+      if ((!$('banner').classList.contains('alert') || bannerT < 0) && scale < 1.5) showBanner(name);
     }
     bannerT -= dt;
     $('banner').style.opacity = clamp(bannerT, 0, 1);
-    $('speed').textContent = inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : inHeli ? Math.round(inHeli.speed * 3.6) : '–';
+    $('speed').textContent = inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : inHeli ? Math.round(inHeli.speed * 3.6)
+      : ride.on ? Math.round(ride.v.speed * 3.6) : '–';
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
-    const canEnter = !inCar && !inHeli && ([...carsNear(walker.x, walker.y, 5)].some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2 < 1.8)
+    const canBoard = !inCar && !inHeli && !ride.on && ride.boardable(walker.x, walker.y);
+    const canEnter = !inCar && !inHeli && !ride.on && ([...carsNear(walker.x, walker.y, 5)].some((c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2 < 1.8)
       || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
     const key = (k) => (touch.active ? '' : `<b>${k}</b> `);
     let hint = '';
@@ -537,9 +577,25 @@ async function main() {
       else if (!assisted) hint = touch.active ? '' : '<b>E</b> get out · <b>Shift</b> lane assist';
       else hint = `${key('Shift')}Lane assist, up to ${assist.limit} km/h · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : `straight on (${touch.active ? 'steer' : 'A/D'} to turn)`}`;
     }
+    else if (ride.on) {
+      const halts = ride.v.line.halts, dest = ride.dest !== null ? halts[ride.dest].name : null;
+      const next = ride.dest !== null && ride.dest === ride.upcoming()[0];
+      const parts = [];
+      if (ride.waiting) parts.push('The streets ahead are still loading');
+      else if (scale > 1.5) parts.push(`${Math.round(scale)}× speed`);
+      if (dest) parts.push(next ? `Getting off at ${dest}` : `Riding to ${dest}`);
+      if (!touch.active) {
+        if (ride.atStop()) parts.push('<b>E</b> get off');
+        else if (!next) parts.push('<b>E</b> get off at the next stop');
+        if (!dest) parts.push('<b>W</b>/<b>S</b> pick a stop', 'hold <b>Shift</b> to speed up');
+      }
+      hint = parts.join(' · ');
+    } else if (canBoard && !touch.active) hint = `<b>E</b> get on the ${canBoard.line.ref} to ${ride.headsign(canBoard)}`;
     else if (canEnter && !touch.active) hint = '<b>E</b> get in';
     $('hint').innerHTML = hint;
-    touch.update({ car: inCar || inHeli, canEnter, tripped: ctl.run && assist.tripped });
+    ride.render();
+    const label = ride.on ? (ride.atStop() ? 'Get off' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : canBoard ? 'Get on' : null;
+    touch.update({ car: inCar || inHeli, tram: ride.on, label, canEnter: canEnter || !!canBoard, tripped: ctl.run && assist.tripped });
     $('tally').textContent = `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`;
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
@@ -557,7 +613,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
