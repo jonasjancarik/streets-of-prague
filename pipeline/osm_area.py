@@ -90,7 +90,7 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
     buildings = []
     areas: dict[str, list] = {}
     road_lines: dict[str, list] = {}
-    rails, walls, trees, weirs, crossings = [], [], [], [], []
+    rails, walls, trees, weirs, crossings, passages = [], [], [], [], [], []
     lots = []  # each parking area on its own, with how the cars stand in it
 
     for _, row in gdf.iterrows():
@@ -131,7 +131,13 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
             cls = "road" if hw in CAR_ROADS else "path"
             if col(row, "bridge") == "yes":
                 cls = "bridge"
-            if col(row, "tunnel") in ("yes", "building_passage"):
+            tunnel = col(row, "tunnel")
+            if tunnel == "building_passage" and (_float(col(row, "layer")) or 0) >= -1:
+                # A way through a building at street level (a gateway, an arcade, a
+                # pasáž): drawn like any street, and cut through the building's footprint.
+                for ls in _lines(g.intersection(clip)):
+                    passages.append({"hw": hw, "w": round(width, 1), "pts": _coords(ls)})
+            elif tunnel:
                 continue
             if hw in ("path", "track", "bridleway") and col(row, "surface") not in ("paving_stones", "sett", "asphalt", "cobblestone"):
                 cls = "dirt"
@@ -185,7 +191,7 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "areas": area_polys, "roads": road_polys, "rails": rails,
-        "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings,
+        "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
         "lots": lots,
     }
 

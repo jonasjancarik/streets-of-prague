@@ -91,6 +91,11 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   no kerbside cars. Underground, multi-storey and rooftop car parks stay empty.
 - **Roads** are sized and marked from OSM `lanes`: dashed dividers, double centre
   lines on four lanes or more, edge lines on the main roads.
+- **Passages through buildings** (OSM `tunnel=building_passage`: gateways, arcades,
+  Prague's pasáže) are cut out of the buildings' collision footprint and stay in the
+  street graphs, so cars, traffic and people go through. While you're in one, a round
+  hole opens in the floors above you so you can still see yourself (`CUTAWAY` in
+  `src/shading.js`).
 
 `src/map/` holds the map-building modules shared with the 1945 project it came
 from (geometry helpers, straight-skeleton buildings, trees, tram routes).
@@ -98,7 +103,8 @@ from (geometry helpers, straight-skeleton buildings, trees, tram routes).
 ## Known issues
 
 - **Bridges and tunnels.** The height map holds one height per point, so a car driving
-  under a flyover jumps up onto it. There are no tunnels at all (Blanka, Strahov).
+  under a flyover jumps up onto it. There are no tunnels at all (Blanka, Strahov); only
+  passages through buildings at street level can be driven and walked through.
 - **Past the city limits** the buildings come from OSM, and where OSM has no height
   they are 13 m tall. The terrain there carries on flat at the height of the nearest
   ground IPR has.

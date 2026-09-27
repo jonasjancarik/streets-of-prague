@@ -79,6 +79,12 @@ def truthy(v):
     return first(v) not in (None, False, "no", "False")
 
 
+def values(v):
+    """Every value of a tag on an edge that osmnx may have joined from several ways."""
+    vs = v if isinstance(v, list) else [v]
+    return {x for x in vs if x is not None and not (isinstance(x, float) and math.isnan(x))}
+
+
 # Street-side parking tags: the current scheme, then the older parking:lane:* one.
 PARKING_TAGS = [f"parking:{s}{k}" for s in ("both", "left", "right") for k in (":orientation", "")] + \
     [f"parking:lane:{s}" for s in ("both", "left", "right")]
@@ -112,7 +118,9 @@ def graph_edges(bbox, tf, network, directed, source=None):
         G = ox.simplify_graph(G)
     else:
         G = ox.graph_from_bbox(bbox, network_type=network, simplify=True, retain_all=True)
-    G.remove_edges_from([(u, v, k) for u, v, k, d in G.edges(keys=True, data=True) if truthy(d.get("tunnel"))])
+    # Tunnels are left out; passages through a building at street level stay in.
+    G.remove_edges_from([(u, v, k) for u, v, k, d in G.edges(keys=True, data=True)
+                         if values(d.get("tunnel")) - {"no", "False", "building_passage"}])
     if directed:
         # Strongly connected, so a car can always leave any street it turns into.
         G = ox.truncate.largest_component(G, strongly=True)
@@ -139,6 +147,7 @@ def graph_edges(bbox, tf, network, directed, source=None):
             "oneway": truthy(d.get("oneway")), "lanes": _float(first(d.get("lanes"))),
             "maxspeed": _float(first(d.get("maxspeed"))), "width": road_width(hw, _float(first(d.get("width"))), _float(first(d.get("lanes")))),
             "bridge": truthy(d.get("bridge")), "surface": first(d.get("surface")), "pts": pts,
+            **({"passage": True} if "building_passage" in values(d.get("tunnel")) else {}),
             **({"park": [right, left]} if directed and (right or left) else {}),
         })
     return out
@@ -231,7 +240,7 @@ def main(area: str = "centrum", tile: str = "250", chunk: str = "2000") -> None:
                 t["roads"] = {k: v for k, g in x["roads"].items() if (v := [_rings(p) for p in _polys(g.intersection(bx))])}
                 hits = btree.query(bx, predicate="intersects")
                 t["buildings"] = [{**x["buildings"][k], "own": own(centres[k])} for k in sorted(hits)]
-                for key in ("walls", "rails"):
+                for key in ("walls", "rails", "passages"):
                     t[key] = [{**item, "pts": _coords(ls)} for item in x[key] for ls in _lines(LineString(item["pts"]).intersection(bx))]
                 t["weirs"] = [_coords(ls) for wr in x["weirs"] for ls in _lines(LineString(wr).intersection(bx))]
                 t["crossings"] = [_coords(ls) for c in x["crossings"] if len(c) > 1 for ls in _lines(LineString(c).intersection(bx))]

@@ -148,6 +148,20 @@ export function clipLine(pts, [x0, y0, x1, y1]) {
   return out.filter((l) => l.length > 1);
 }
 
+// Whether (x, y) is within `pad` metres of a passage through a building.
+function inPassage(passages, x, y, pad = 0) {
+  for (const p of passages) {
+    const r = p.w / 2 + pad;
+    for (let i = 0; i < p.pts.length - 1; i++) {
+      const [ax, ay] = p.pts[i], [bx, by] = p.pts[i + 1];
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+      const u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2));
+      if (Math.hypot(ax + dx * u - x, ay + dy * u - y) < r) return true;
+    }
+  }
+  return false;
+}
+
 // Walkable/drivable cells: 0 free, 255 solid, 254 free but walled in (a closed
 // courtyard). Only cells reachable from the street network count as free.
 function tileGrid(geo, t, seeds) {
@@ -163,6 +177,14 @@ function tileGrid(geo, t, seeds) {
     fillPolys(ctx, geo, [...(t.areas.bridge || []), ...(t.roads.bridge || [])], s);
     ctx.fillStyle = '#fff';
     fillPolys(ctx, geo, t.buildings.map((b) => b.rings), s);
+    // Gateways and passages through buildings stay open, a little past both ends
+    // (mapped passages often stop just short of the building's edge).
+    ctx.strokeStyle = '#000';
+    ctx.lineCap = 'square';
+    for (const p of t.passages || []) {
+      ctx.lineWidth = p.w * s;
+      strokeLines(ctx, geo, [p.pts], s);
+    }
   });
   const { w, h, cells } = grid;
   for (let i = 0; i < cells.length; i++) cells[i] = cells[i] > 100 ? 255 : 0;
@@ -242,6 +264,12 @@ export class TileWorld {
   heightAt(x, y) {
     const t = this.loaded.get(this.keyAt(x, y));
     return t?.sample ? t.sample(x, y) : 0;
+  }
+
+  // Whether (x, y) is in a passage through a building (under its upper floors).
+  passageAt(x, y) {
+    const t = this.loaded.get(this.keyAt(x, y));
+    return !!t && inPassage(t.passages, x, y, 0.5);
   }
 
   keyAt(x, y) { return `${Math.floor((x + this.ox) / this.T)}_${Math.floor((y + this.oy) / this.T)}`; }
@@ -380,13 +408,14 @@ export class TileWorld {
     const { cars } = parkCars({
       data, edges, zones, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
       shares: new Map(t.sections.map((s) => [s.code, s.share])), inside,
-      solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 : false),
+      // No parking inside passages.
+      solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) : false),
     });
 
     lap('parking');
     if (this.loaded.has(k)) { surfaces.dispose(); return this.loaded.get(k); }
     this.scene.add(group);
-    const tile = { k, box: t.box, group, surfaces, grid, cars, ms, disposables: [...buildings, walls, trees], relief: shade, sample: shade?.sample };
+    const tile = { k, box: t.box, passages: t.passages || [], group, surfaces, grid, cars, ms, disposables: [...buildings, walls, trees], relief: shade, sample: shade?.sample };
     this.loaded.set(k, tile);
     this.onCars(cars, tile);
     return tile;

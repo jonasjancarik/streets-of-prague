@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 // Procedural surface patterns in world space, shared by the ground and the buildings.
 // Everything is computed per pixel from the position in metres, so it stays sharp at
 // any zoom and needs no textures. Detail fades out once it gets smaller than a pixel.
@@ -134,14 +136,21 @@ vec3 facade(vec3 c, vec3 w, vec3 n) {
 }
 `;
 
+// A round hole through the buildings above the player while they're in a passage
+// under a building, so the car stays in view: (x, y above which to cut, z, radius).
+// Shadows are drawn without it, so the passage stays in the building's shade.
+export const CUTAWAY = { value: new THREE.Vector4(0, 0, 0, 0) };
+
 export function shadeBuildings(material) {
   material.onBeforeCompile = (sh) => {
+    sh.uniforms.uCut = CUTAWAY;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\n${NOISE_GLSL}\n${BUILDING_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nuniform vec4 uCut;\n${NOISE_GLSL}\n${BUILDING_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+  if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
   if (bn.y > .97) diffuseColor.rgb = flatRoof(diffuseColor.rgb, bwp);

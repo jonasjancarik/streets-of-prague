@@ -7,6 +7,7 @@ import { Traffic } from './traffic.js';
 import { Crowd, Walker, nearestWalkable } from './people.js';
 import { Trams } from './trams.js';
 import { TileWorld } from './tiles.js';
+import { CUTAWAY } from './shading.js';
 import { setupDev } from './dev.js';
 import { LaneAssist } from './assist.js';
 import { setupTouch } from './touch.js';
@@ -112,6 +113,7 @@ async function main() {
   let height = 100;
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
   let camGround = ground(walker.x, walker.y);
+  let cutR = 0; // radius of the hole in the buildings above a passage (see CUTAWAY)
 
   const viewRadius = () => height * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
   const px = () => (inCar || inHeli || walker).x, py = () => (inCar || inHeli || walker).y;
@@ -498,6 +500,11 @@ async function main() {
     camGround += (ground(camPos.x, -camPos.z) - camGround) * Math.min(1, dt * 3);
     camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
     camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
+
+    // In a passage under a building, open a hole in the floors above so you stay in view.
+    const under = !inHeli && world.passageAt(px(), py());
+    cutR += ((under ? 9 : 0) - cutR) * Math.min(1, dt * 6);
+    CUTAWAY.value.set(px(), ground(px(), py()) + 2.5, -py(), cutR > 0.3 ? cutR : 0);
 
     const ext = Math.max(90, height * 0.5);
     const sc = sun.shadow.camera;
