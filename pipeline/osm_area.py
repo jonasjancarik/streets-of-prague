@@ -94,6 +94,7 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
     rails, walls, trees, weirs, crossings, passages = [], [], [], [], [], []
     lots = []  # each parking area on its own, with how the cars stand in it
     homes = []  # landuse=residential, where gardens may be (see _gardens)
+    streets = []  # car roads other than service roads, which cut residential areas into blocks
 
     for _, row in gdf.iterrows():
         g = row.geometry
@@ -149,6 +150,8 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
                 crossings.extend(_coords(ls) for ls in _lines(g.intersection(clip)))
                 continue
             road_lines.setdefault(cls, []).append(g.buffer(width / 2, cap_style="round", join_style="round"))
+            if hw in CAR_ROADS and hw != "service":
+                streets.append(road_lines[cls][-1])
             continue
         if hw == "pedestrian" and isinstance(g, (Polygon, MultiPolygon)):
             areas.setdefault("square", []).append(g)
@@ -192,7 +195,7 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
 
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
-    gardens = _gardens(homes, buildings, road_polys, clip)
+    gardens = _gardens(homes, buildings, streets, clip)
     if not gardens.is_empty:
         area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])
     return {
@@ -242,20 +245,22 @@ def _area_kind(row, col):
 
 # Buildings that don't decide what a block is: sheds and garages stand in gardens too.
 OUTBUILDINGS = {"garage", "garages", "shed", "carport", "roof", "hut", "cabin", "greenhouse", "kiosk", "service"}
-# Buildings that aren't family houses, whatever their size.
-NOT_HOUSES = {"apartments", "commercial", "retail", "office", "industrial", "warehouse", "school", "university",
-              "hospital", "public", "civic", "government", "church", "hotel", "dormitory", "kindergarten"}
+# Buildings that aren't homes: a block with much of these stays paved.
+NOT_HOMES = {"commercial", "retail", "office", "industrial", "warehouse", "school", "university", "hospital",
+             "public", "civic", "government", "church", "hotel", "dormitory", "kindergarten"}
 
 
-def _gardens(homes, buildings, roads, clip):
-    """OSM maps a suburb as one residential area and rarely maps the gardens in it, so
-    the ground between houses would all be paved. Cut the residential areas along the
-    streets into blocks; where a block's buildings are mostly family houses and cover
-    less than half of it, everything but a strip round each building is garden."""
+def _gardens(homes, buildings, streets, clip):
+    """OSM maps a suburb or a housing estate as one residential area and rarely maps
+    the gardens and lawns in it, so the ground between the buildings would all be
+    paved. Cut the residential areas along the streets (not service roads) into blocks.
+    A block is green where it's mostly homes and either family houses covering less
+    than 45 % of it, or blocks of flats with lots of room round them (under 30 %, a
+    housing estate; inner-city blocks with paved courtyards are denser). All of it
+    but a strip round each building: 0.8 m round a house, 2 m round anything bigger."""
     region = unary_union(homes).intersection(clip) if homes else Polygon()
     if region.is_empty:
         return Polygon()
-    streets = [roads[k] for k in ("road", "sett", "bridge") if k in roads]
     blocks = _polys(region.difference(unary_union(streets)) if streets else region)
     shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
     tree = STRtree(shapes)
@@ -266,11 +271,15 @@ def _gardens(homes, buildings, roads, clip):
         near = tree.query(block, predicate="intersects")
         main = [k for k in near if buildings[k]["kind"] not in OUTBUILDINGS and not buildings[k]["part"]
                 and block.contains(shapes[k].representative_point())]
-        covered = sum(shapes[k].area for k in main)
-        houses = sum(shapes[k].area for k in main if shapes[k].area <= 350 and buildings[k]["kind"] not in NOT_HOUSES)
-        if not main or houses < 0.7 * covered or covered > 0.45 * block.area:
+        if not main:
             continue
-        out.append(block.difference(unary_union([shapes[k].buffer(0.8) for k in near])))
+        covered = sum(shapes[k].area for k in main)
+        other = sum(shapes[k].area for k in main if buildings[k]["kind"] in NOT_HOMES)
+        houses = sum(shapes[k].area for k in main if shapes[k].area <= 350 and buildings[k]["kind"] not in NOT_HOMES | {"apartments"})
+        share = covered / block.area
+        if other > 0.3 * covered or not (share < 0.3 or (houses >= 0.7 * covered and share < 0.45)):
+            continue
+        out.append(block.difference(unary_union([shapes[k].buffer(0.8 if shapes[k].area <= 350 else 2) for k in near])))
     return unary_union(out) if out else Polygon()
 
 
