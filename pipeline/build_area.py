@@ -192,7 +192,7 @@ def extract(area: str = "ujezd", era: str = "1945", bbox=None, centre=None, sour
                 continue
             width = road_width(hw, _float(col(row, "width")), _float(col(row, "lanes")), now)
             cls = "road" if hw in ("primary", "secondary", "tertiary", "residential",
-                                   "unclassified", "living_street", "service") else "path"
+                                   "unclassified", "living_street", "service") or hw.endswith("_link") else "path"
             if now and hw in CAR_ROADS:
                 cls = "road"  # trunks, motorways and slip roads too, not just the 1945 classes
             if col(row, "bridge") == "yes":
