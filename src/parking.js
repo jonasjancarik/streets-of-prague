@@ -38,10 +38,27 @@ export class Zones {
   }
 }
 
+// Angled bays: how far the cars turn from the kerb, and their spacing along it.
+const ANGLE = 0.9, ANGLED_STEP = 3.0;
+
+// How the cars stand in a parking area: OSM's `orientation` if it's tagged, else a
+// guess from its width. Under 4.5 m is a parallel lane, up to 5.6 m angled bays (the
+// usual depth of those), wider rows of perpendicular bays.
+const guess = (width) => (width < 4.5 ? 'parallel' : width < 5.6 ? 'diagonal' : 'perpendicular');
+
+// Rows across the area (offsets from its long side) for cars `depth` deep.
+function rows(v0, v1, depth, gap) {
+  const out = [];
+  for (let v = v0 + depth / 2; v <= v1 - depth / 2 + 1e-6; v += depth + gap) out.push(v);
+  return out.length ? out : [(v0 + v1) / 2];
+}
+
 // Every possible parking spot: bays in OSM lots and lanes, then kerbside spots.
 function slots(data, edges) {
   const out = [];
-  for (const rings of data.areas.parking || []) {
+  // Tiles built before the lots were kept separately only have the merged areas.
+  const areas = data.lots || (data.areas.parking || []).map((rings) => ({ o: null, rings }));
+  for (const { o, rings } of areas) {
     const ring = rings[0];
     let a = 0, best = 0;
     for (let i = 0; i < ring.length; i++) {
@@ -55,31 +72,42 @@ function slots(data, edges) {
       const u = (x - ox) * ux + (y - oy) * uy, v = (x - ox) * vx + (y - oy) * vy;
       u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
     }
-    // Narrow strips beside the street are parallel parking; wider lots get rows of bays.
-    const strip = v1 - v0 < 4.5;
-    const rows = strip ? [(v0 + v1) / 2] : [];
-    for (let v = v0 + 3; !strip && v < v1 - 2.5; v += 5.6) rows.push(v);
-    for (const v of rows) {
-      for (let u = u0 + (strip ? 3 : 1.4); u < u1 - (strip ? 2.5 : 1.2); u += strip ? 6 : 2.6) {
+    const kind = o || guess(v1 - v0);
+    const lay = {
+      parallel: { rows: rows(v0, v1, 2, 0.6), step: 6, end: 2.8, turn: 0 },
+      diagonal: { rows: rows(v0, v1, 4.8, 0.7), step: ANGLED_STEP, end: 1.8, turn: ANGLE },
+      perpendicular: { rows: rows(v0, v1, 5, 0.6), step: 2.6, end: 1.3, turn: Math.PI / 2 },
+    }[kind];
+    for (const v of lay.rows) {
+      for (let u = u0 + lay.end; u < u1 - lay.end + 0.5; u += lay.step) {
         const x = ox + ux * u + vx * v, y = oy + uy * u + vy * v;
-        if (inPoly(x, y, rings)) out.push({ x, y, h: a + (strip ? 0 : Math.PI / 2), lot: true, bay: !strip });
+        if (inPoly(x, y, rings)) out.push({ x, y, h: a + lay.turn, lot: true, bay: kind !== 'parallel' });
       }
     }
   }
   const lots = out.length;
   for (const e of edges) {
     if (e.bridge || e.path.length < 30) continue;
-    const kerb = e.width / 2 - 1.05;
+    // Each side as OSM tags it (`park`: [right, left] of this edge); parallel if it
+    // doesn't say. Angled or perpendicular cars stand further out from the kerb, so
+    // where that would reach into the traffic lane they park parallel instead.
     for (const side of e.oneway ? [1, -1] : [1]) {
+      let o = e.park?.[side > 0 ? 0 : 1] || 'parallel';
+      if (o === 'no') continue;
+      const inset = { parallel: 1.05, diagonal: 2.35, perpendicular: 2.5 };
+      if (o !== 'parallel' && Math.abs(side * (e.width / 2 - inset[o]) - e.laneOffset) < 2.3) o = 'parallel';
+      const kerb = e.width / 2 - inset[o];
       if (Math.abs(side * kerb - e.laneOffset) < 2.3) continue;
+      const step = { parallel: 6, diagonal: ANGLED_STEP, perpendicular: 2.6 }[o];
+      const turn = { parallel: 0, diagonal: ANGLE * side, perpendicular: Math.PI / 2 }[o];
       const line = new Polyline(e.pts);
-      for (let s = 10; s < line.length - 10; s += 6) {
+      for (let s = 10; s < line.length - 10; s += step) {
         const q = line.at(s);
         const x = q.x + Math.sin(q.ang) * kerb * side, y = q.y - Math.cos(q.ang) * kerb * side;
         // A mapped parking lane already covers this stretch.
         let dup = false;
         for (let i = 0; i < lots && !dup; i++) dup = Math.abs(out[i].x - x) < 4.5 && Math.abs(out[i].y - y) < 4.5;
-        if (!dup) out.push({ x, y, h: q.ang, lot: false });
+        if (!dup) out.push({ x, y, h: q.ang + turn, lot: false, bay: o !== 'parallel' });
       }
     }
   }

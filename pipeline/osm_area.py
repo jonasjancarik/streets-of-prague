@@ -91,6 +91,7 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
     areas: dict[str, list] = {}
     road_lines: dict[str, list] = {}
     rails, walls, trees, weirs, crossings = [], [], [], [], []
+    lots = []  # each parking area on its own, with how the cars stand in it
 
     for _, row in gdf.iterrows():
         g = row.geometry
@@ -172,6 +173,10 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
             kind = _area_kind(row, col)
             if kind:
                 areas.setdefault(kind, []).append(g.buffer(0))
+            if kind == "parking" and col(row, "parking") not in UNDER_COVER:
+                o = col(row, "orientation")
+                for poly in _polys(g.buffer(0).intersection(clip)):
+                    lots.append({"o": o if o in ORIENTATIONS else None, "poly": poly})
             elif (col(row, "man_made") == "bridge" or col(row, "bridge")) and not b:
                 areas.setdefault("bridge", []).append(g.buffer(0))
 
@@ -181,6 +186,7 @@ def extract(area: str, bbox=None, centre=None, source=None) -> dict:
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "areas": area_polys, "roads": road_polys, "rails": rails,
         "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings,
+        "lots": lots,
     }
 
 
@@ -189,6 +195,13 @@ def use_overpass_mirror():
     if os.environ.get("OVERPASS_URL"):
         ox.settings.overpass_url = os.environ["OVERPASS_URL"]
         ox.settings.overpass_rate_limit = False
+
+
+# How cars stand in a parking area or along a street (OSM `orientation` on parking
+# areas, `parking:<side>:orientation` on streets).
+ORIENTATIONS = ("parallel", "diagonal", "perpendicular")
+# Car parks with no cars to see from above.
+UNDER_COVER = ("underground", "multi-storey", "rooftop")
 
 
 def _area_kind(row, col):

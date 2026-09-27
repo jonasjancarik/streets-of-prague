@@ -83,7 +83,12 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
 - **Parking** follows TSK Praha's paid-parking data: each street section gets spaces ×
   measured occupancy cars (day or night), placed in OSM's parking lanes and lots and
   then along the kerb (`src/parking.js`); bay lines are painted in the zone colour
-  (blue resident, violet mixed, orange visitor).
+  (blue resident, violet mixed, orange visitor). Cars stand parallel, angled or
+  perpendicular as OSM tags each parking area (`orientation`) and each side of the
+  street (`parking:<side>:orientation`, or the older `parking:lane:<side>`); where it
+  doesn't say, an area under 4.5 m wide is parallel, up to 5.6 m angled and wider
+  perpendicular. Sides tagged as having no parking (or parking mapped separately) get
+  no kerbside cars. Underground, multi-storey and rooftop car parks stay empty.
 - **Roads** are sized and marked from OSM `lanes`: dashed dividers, double centre
   lines on four lanes or more, edge lines on the main roads.
 
@@ -99,11 +104,7 @@ from (geometry helpers, straight-skeleton buildings, trees, tram routes).
   ground IPR has.
 - **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
   narrow streets and are left out.
-- **No angled parking.** A mapped parking area narrower than 4.5 m gets parallel
-  parking and a wider one rows of perpendicular bays; nothing is parked at an angle,
-  and OSM's `parking:*:orientation` tags aren't read. Areas 4.5–5.5 m wide, typical
-  for angled parking, get no bays at all, so the kerbside fallback fills them with
-  parallel cars. Streets without a mapped parking area are always parallel.
+- **Angled parking** always slants the same way, whichever way the traffic runs.
 - **Trams** shuttle back and forth on stretches of track instead of running real
   lines, and at the end of a stretch their sections bunch up into each other.
 - **Traffic** has no traffic lights; at junctions it only gives way to the right and
