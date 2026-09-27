@@ -29,11 +29,12 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   works within the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
   trunk roads, 80 on motorways): speed and it lets go; 5 km/h under the limit it's back.
 - **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
-  desktop): put your left thumb down anywhere in the lower left and slide it sideways
-  to steer, harder the further you slide; the right thumb has the gas and brake (roll
-  from one to the other without lifting), the handbrake, get in/out and "Back on road".
-  Lane assist and running are toggles there, since both thumbs are busy. Pinch the map
-  to zoom (`src/touch.js`).
+  desktop). The left thumb has a round stick: on foot, push it the way you want to go
+  and you walk there (a full push runs); in the car, push it sideways to steer. Put
+  your thumb down away from the stick and the stick moves under it. In the car the
+  right thumb has the gas and brake (roll from one to the other without lifting), the
+  handbrake, lane assist (a toggle here) and "Get out"; "Back on road" is top right.
+  Pinch the map to zoom (`src/touch.js`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads

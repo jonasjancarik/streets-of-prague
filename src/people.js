@@ -270,7 +270,8 @@ export function nearestWalkable(grid, x, y, maxR = 60) {
 }
 
 // The player on foot: tank controls relative to where they face, Shift to run.
-// `ctl` = { move -1..1, turn -1..1 (left +), run }.
+// `ctl` = { move -1..1, turn -1..1 (left +), run, aim }. With `aim` = { h, mag } (the
+// touch stick) you turn to face h and walk that way instead; a full push runs.
 export class Walker {
   constructor(grid) {
     this.grid = grid;
@@ -308,9 +309,18 @@ export class Walker {
       return;
     }
     // Tank controls, like GTA 2: up/down move along the way you face, left/right turn.
-    const { turn, move } = ctl;
-    this.h += turn * (ctl.run ? 3.6 : 4.2) * dt;
-    const target = move > 0 ? move * (ctl.run ? 7.5 : 3.6) : move * 2;
+    let { turn, move } = ctl, target;
+    if (ctl.aim) {
+      const off = Math.atan2(Math.sin(ctl.aim.h - this.h), Math.cos(ctl.aim.h - this.h));
+      turn = Math.sign(off) * Math.min(1, Math.abs(off) * 3);
+      this.h += Math.sign(off) * Math.min(Math.abs(off), 12 * dt);
+      // Hardly move until you've turned round, so a sharp change doesn't drift sideways.
+      const facing = Math.max(0, Math.cos(off));
+      target = (ctl.aim.mag > 0.9 || ctl.run ? 7.5 : 3.6 * Math.min(1, ctl.aim.mag / 0.8)) * facing;
+    } else {
+      this.h += turn * (ctl.run ? 3.6 : 4.2) * dt;
+      target = move > 0 ? move * (ctl.run ? 7.5 : 3.6) : move * 2;
+    }
     this.speed += (target - this.speed) * Math.min(1, dt * 10);
     this.vx = Math.cos(this.h) * this.speed;
     this.vy = Math.sin(this.h) * this.speed;

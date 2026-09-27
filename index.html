@@ -19,7 +19,13 @@
       #hint { margin-top: 4px; min-height: 18px; }
       #hint b { display: inline-block; background: var(--ink); color: #221f1b; border-radius: 4px; padding: 0 6px; margin-right: 4px; }
       #tally { opacity: 0.6; font-size: 12px; margin-top: 4px; }
+      #wanted { font-size: 20px; line-height: 1; letter-spacing: 0.08em; margin-top: 6px; color: rgba(245, 239, 226, 0.22); }
+      #wanted.hidden { display: none; }
+      #wanted .on { color: var(--accent); text-shadow: 0 0 8px rgba(255, 210, 63, 0.5); }
+      #wanted.blink .on { animation: blink 0.8s steps(2, jump-none) infinite; }
+      @keyframes blink { 50% { opacity: 0.25; } }
       #banner { position: fixed; top: 14%; left: 0; right: 0; text-align: center; pointer-events: none; font: 64px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0 3px 0 #000, 0 0 24px rgba(0, 0, 0, 0.6); opacity: 0; }
+      #banner.alert { color: #ff5a4a; font-size: 88px; }
       #help { bottom: 16px; right: 16px; opacity: 0.85; font-size: 12px; max-width: 320px; }
       #dev { top: 16px; right: 16px; width: 340px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
       #dev[hidden], #dev-mapbox[hidden] { display: none; }
@@ -46,9 +52,9 @@
       body.touch #speed { font-size: 36px; }
       #touch button, .t-pedal { font: 600 14px/1 Inter, system-ui, sans-serif; color: var(--ink); background: var(--paper); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 14px; backdrop-filter: blur(6px); -webkit-tap-highlight-color: transparent; touch-action: none; }
       #t-steer { position: fixed; left: 0; bottom: 0; width: 50vw; height: 55vh; touch-action: none; }
-      #t-stick { position: absolute; left: calc(max(16px, env(safe-area-inset-left)) + 10px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 24px); width: 170px; height: 64px; border-radius: 32px; background: rgba(20, 18, 16, 0.45); border: 1px solid rgba(255, 255, 255, 0.14); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; box-sizing: border-box; color: rgba(245, 239, 226, 0.55); font-size: 18px; pointer-events: none; }
-      #t-stick.held { background: rgba(20, 18, 16, 0.6); }
-      #t-knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: var(--ink); opacity: 0.85; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35); }
+      #t-stick { position: absolute; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 12px); width: 136px; height: 136px; border-radius: 50%; background: radial-gradient(circle, rgba(20, 18, 16, 0.25) 0 38%, rgba(20, 18, 16, 0.5) 39%); border: 2px solid rgba(245, 239, 226, 0.3); box-sizing: border-box; pointer-events: none; }
+      #t-stick.held { border-color: rgba(245, 239, 226, 0.55); }
+      #t-knob { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fffaf0, #cfc6b4); opacity: 0.9; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4); }
       #t-right { position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
       .t-row { display: flex; gap: 10px; }
       #touch .t-row button { height: 44px; padding: 0 14px; }
@@ -67,7 +73,7 @@
       @media (max-height: 460px) { #t-gas { height: 104px; } #t-brake { height: 72px; } #t-action { height: 44px; } }
       @media (max-width: 480px) {
         body.touch #hud { max-width: calc(100vw - 180px); }
-        #t-stick { width: 136px; }
+        #t-stick { width: 124px; height: 124px; }
         #t-brake { width: 72px; }
         #t-gas { width: 84px; }
         #touch .t-row button { padding: 0 11px; }
@@ -79,6 +85,7 @@
     <div id="hud" class="panel">
       <div id="street">Praha</div>
       <div id="speedo"><span id="speed">–</span><small>km/h</small></div>
+      <div id="wanted" class="hidden" role="status" aria-label="Not wanted"></div>
       <div id="hint"></div>
       <div id="tally"></div>
     </div>
@@ -86,15 +93,16 @@
     <div id="help" class="panel">
       <b>On foot:</b> W and S walk forwards and back, A and D turn, Shift to run. <b>E</b> gets you into the nearest car, even one that's driving past.<br />
       <b>Driving:</b> W and S for gas and brake (hold S to reverse), A and D to steer, Space for the handbrake. Hold <b>Shift</b> and the car keeps to its lane, as long as you stay within the speed limit; while you hold it, A and D pick the turn at the next junction. <b>R</b> puts the car back on the road.<br />
+      <b>Police:</b> knock people over, steal cars or ram the police and you get stars. Police cars chase you and officers get out to arrest you. Keep out of their sight and the stars go away one by one.<br />
       Scroll to zoom. <b>`</b> opens the developer tools: jump to a street, an address or a spot on the map.
     </div>
     <div id="touch" data-mode="foot">
-      <div id="t-steer"><div id="t-stick">◀<div id="t-knob"></div>▶</div></div>
+      <div id="t-steer"><div id="t-stick"><div id="t-knob"></div></div></div>
       <button id="t-road" class="car-only">Back on road</button>
       <div id="t-right">
         <button id="t-action" class="off">Get in</button>
-        <div class="t-row"><button id="t-hand" class="car-only">Handbrake</button><button id="t-toggle">Run</button></div>
-        <div id="t-pedals"><div id="t-brake" class="t-pedal">Back</div><div id="t-gas" class="t-pedal">Walk</div></div>
+        <div class="t-row car-only"><button id="t-hand">Handbrake</button><button id="t-toggle">Lane assist</button></div>
+        <div id="t-pedals" class="car-only"><div id="t-brake" class="t-pedal">Brake</div><div id="t-gas" class="t-pedal">Gas</div></div>
       </div>
     </div>
     <div id="loading"><span id="loading-text">Loading…</span></div>

@@ -10,6 +10,7 @@ import { TileWorld } from './tiles.js';
 import { setupDev } from './dev.js';
 import { LaneAssist } from './assist.js';
 import { setupTouch } from './touch.js';
+import { Police } from './police.js';
 
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'centrum';
@@ -138,7 +139,24 @@ async function main() {
   };
   scatterPeople(false);
 
-  const allCars = () => [...loose, ...traffic.agents.map((a) => a.car)];
+  // Busted: out of the car (the police keep it), and a moment before you can move again.
+  const stats = { knocked: 0, wrecked: 0, busted: 0 };
+  let frozen = 0;
+  const busted = () => {
+    if (frozen > 0) return;
+    if (inCar) {
+      const c = inCar;
+      enterOrExit();
+      loose.splice(loose.indexOf(c), 1);
+    }
+    police.forgive();
+    stats.busted++;
+    frozen = 2.5;
+    showBanner('Busted', true);
+  };
+  const police = new Police({ scene, drive, traffic, grid, rng: seeded, edgesNear, offscreen, onBusted: busted });
+
+  const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car)];
   const enterOrExit = () => {
     if (inCar) {
       const c = inCar, lx = -Math.sin(c.h), ly = Math.cos(c.h);
@@ -163,13 +181,19 @@ async function main() {
     }
     if (!best || bestD > 1.8) return;
     const agent = traffic.agents.find((a) => a.car === best);
+    // A police car: the officer in it gets out and comes after you.
+    const cop = best.type === 'police';
+    if (cop) police.take(best);
     if (agent) {
       traffic.release(agent);
-      // The driver gets out and runs off.
-      const lx = -Math.sin(best.h), ly = Math.cos(best.h);
-      const p = crowd.spawnAt(best.x + lx * 1.6, best.y + ly * 1.6);
-      Object.assign(p, { state: 'flee', t: 2, vx: lx * 5, vy: ly * 5 });
-    } else {
+      if (!cop) {
+        // The driver gets out and runs off.
+        const lx = -Math.sin(best.h), ly = Math.cos(best.h);
+        const p = crowd.spawnAt(best.x + lx * 1.6, best.y + ly * 1.6);
+        Object.assign(p, { state: 'flee', t: 2, vx: lx * 5, vy: ly * 5 });
+        police.crime('carjack', best.x, best.y);
+      }
+    } else if (loose.includes(best)) {
       loose.splice(loose.indexOf(best), 1);
       tileCars.delete(best); // it's yours now: it stays when its tile unloads
     }
@@ -202,6 +226,7 @@ async function main() {
     if (inCar) backOnRoad();
     else { [walker.x, walker.y] = nearestWalkable(grid, x, y, 150); walker.sync(); }
     for (const a of [...traffic.agents]) traffic.release(a);
+    police.reset();
     scatterPeople(false);
     camPos.set(px(), 0, -py());
     camGround = ground(px(), py());
@@ -239,7 +264,11 @@ async function main() {
   const look = new THREE.Vector3();
   let last = performance.now(), shake = 0;
   let street = null, bannerT = 0, lifeT = 0;
-  const stats = { knocked: 0, wrecked: 0 };
+  const showBanner = (text, alert = false) => {
+    $('banner').textContent = text;
+    $('banner').classList.toggle('alert', alert);
+    bannerT = alert ? 3.5 : 2.6;
+  };
   const hash = new SpatialHash(10);
   const near = (a, b, d) => Math.abs(a.x - b.x) < d && Math.abs(a.y - b.y) < d;
 
@@ -258,7 +287,12 @@ async function main() {
       turn: touch.turn || (input.left ? 1 : 0) - (input.right ? 1 : 0),
       run: input.run || touch.run,
       brake: input.brake || touch.brake,
+      aim: touch.aim,
     };
+    if (frozen > 0) {
+      frozen -= dt;
+      Object.assign(ctl, { move: 0, turn: 0, run: false, brake: true });
+    }
     assisted = false;
     if (inCar) {
       let steer = ctl.turn;
@@ -273,15 +307,20 @@ async function main() {
     const moving = (c) => c.mode === 'player' || c.speed > 0.05 || Math.abs(c.w) > 0.01;
     const movers = loose.filter(moving);
     for (const c of movers) c.update(dt, null, grid);
+    const me = inCar || walker;
+    police.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar });
+    const cops = police.cars.map((p) => p.car);
 
     // Everything the traffic, trams and people need to look out for.
     hash.clear();
     const pushCar = (c) => { for (const [x, y] of c.circles()) hash.add({ x, y, r: c.r, vx: c.vx, vy: c.vy, kind: c.mode === 'player' ? 'player' : 'car', car: c }); };
     for (const a of traffic.agents) pushCar(a.car);
     for (const c of loose) pushCar(c);
+    for (const c of cops) pushCar(c);
     if (inCar) pushCar(inCar);
     else hash.add({ x: walker.x, y: walker.y, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0) hash.add({ x: p.x, y: p.y, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
+    for (const o of police.officers) hash.add({ x: o.x, y: o.y, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     const tramBodies = trams.bodies();
     for (const t of tramBodies) for (const [x, y] of t.circles) hash.add({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
 
@@ -299,11 +338,11 @@ async function main() {
     transit.update(dt);
     trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground);
 
-    const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5)];
+    const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5), ...cops.filter((c) => c.speed > 5)];
     crowd.update(dt, threats);
 
     // ---- Collisions ------------------------------------------------------
-    const active = inCar ? [inCar, ...movers] : movers;
+    const active = [...(inCar ? [inCar] : []), ...movers, ...cops];
     const carsNear = (x, y, rr) => {
       const out = new Set();
       for (const o of hash.near(x, y, rr)) if (o.car) out.add(o.car);
@@ -325,13 +364,23 @@ async function main() {
             traffic.release(ag);
             b.mode = 'loose';
             loose.push(b);
-            stats.wrecked++;
+            if (a.mode !== 'police') stats.wrecked++;
+            if (a === inCar) police.crime(b.type === 'police' ? 'hitCop' : 'wreck', b.x, b.y);
             collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
-          } else collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 0);
+          } else {
+            collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 0);
+            if (a === inCar && b.type === 'police' && closing > 2) police.crime('hitCop', b.x, b.y);
+          }
           continue;
         }
         const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
+        if (hit > 5) { a.damage += hit - 5; b.damage += hit - 5; }
         if (hit > 6 && (a === inCar || b === inCar)) shake = Math.min(1.2, shake + hit * 0.04);
+        // Driving into a police car (not them into you).
+        if (a === inCar && b.mode === 'police' && hit > 2) {
+          const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+          if ((a.vx * (b.x - a.x) + a.vy * (b.y - a.y)) / d > 3) police.crime('hitCop', b.x, b.y);
+        }
       }
       for (const t of tramBodies) {
         if (!near(a, t, 22)) continue;
@@ -362,6 +411,15 @@ async function main() {
           c.vx *= 0.93;
           c.vy *= 0.93;
           stats.knocked++;
+          if (c === inCar) police.crime('knock', p.x, p.y);
+        }
+      });
+    }
+    for (const o of police.officers) {
+      bump(o, 0.3, (c, nx, ny) => {
+        if (c.speed > 3 && o.down <= 0) {
+          police.knock(o, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
+          if (c === inCar) police.crime('hitCop', o.x, o.y);
         }
       });
     }
@@ -385,6 +443,7 @@ async function main() {
     }
     if (traffic.agents.length < TRAFFIC) traffic.spawn((x, y) => offscreen(x, y) && lifeSpots(px(), py(), 40)(x, y), edgesNear(px(), py(), LIFE_RADIUS));
     crowd.render(ground);
+    police.render(ground, time.value);
     carPool.render(inCar ? [inCar, ...allCars()] : allCars(), ground);
 
     // ---- Camera ----------------------------------------------------------
@@ -417,8 +476,7 @@ async function main() {
     if (name && name !== street) {
       street = name;
       $('street').textContent = name;
-      $('banner').textContent = name;
-      bannerT = 2.6;
+      if (!$('banner').classList.contains('alert') || bannerT < 0) showBanner(name);
     }
     bannerT -= dt;
     $('banner').style.opacity = clamp(bannerT, 0, 1);
@@ -435,14 +493,24 @@ async function main() {
     else if (canEnter && !touch.active) hint = '<b>E</b> get in';
     $('hint').innerHTML = hint;
     touch.update({ car: inCar, canEnter, tripped: ctl.run && assist.tripped });
-    $('tally').textContent = `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over`;
+    $('tally').textContent = `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`;
+    // Wanted stars: they blink while the police have lost sight of you.
+    const stars = police.stars, wanted = $('wanted');
+    const face = `${stars}|${stars && !police.seen}`;
+    if (wanted.dataset.face !== face) {
+      wanted.dataset.face = face;
+      wanted.innerHTML = [1, 2, 3, 4, 5].map((i) => `<span${i <= stars ? ' class="on"' : ''}>★</span>`).join('');
+      wanted.classList.toggle('hidden', stars === 0);
+      wanted.classList.toggle('blink', stars > 0 && !police.seen);
+      wanted.setAttribute('aria-label', stars ? `Wanted: ${stars} of 5 stars` : 'Not wanted');
+    }
 
     dev.update();
     renderer.render(scene, camera);
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police,
     get car() { return inCar; },
     teleport: (x, y) => { (inCar || walker).x = x; (inCar || walker).y = y; camPos.set(x, 0, -y); },
     enterOrExit, teleportTo, dev, touch,

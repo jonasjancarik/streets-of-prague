@@ -1,23 +1,26 @@
 import { clamp } from './network.js';
 
 // On-screen controls for phones and tablets. They appear on touch screens (or with
-// ?touch) and feed the same controls as the keyboard: the left thumb steers, the
-// right one works the pedals and the buttons. Two fingers on the map zoom.
+// ?touch) and feed the same controls as the keyboard: the left thumb has a round
+// stick, the right one the pedals and the buttons. Two fingers on the map zoom.
 //
-// Steering is a floating stick: put a thumb down anywhere in the lower left and slide
-// it sideways; how far you slide is how hard you steer. The pedals are one surface, so
-// a thumb can roll from gas to brake without lifting.
+// On foot the stick points where you want to go on screen: you turn and walk that
+// way, and a full push runs. In the car it steers: the further sideways, the harder.
+// Put a thumb down away from the stick and the stick moves under it. The pedals are
+// one surface, so a thumb can roll from gas to brake without lifting.
 
-const STEER_RANGE = 55; // px of thumb travel for full lock
-const DEAD = 0.1;
+const RANGE = 48; // px of thumb travel for a full push
+const DEAD = 0.12;
 
 // Keep getting a finger's moves after it slides off the control it started on.
 const capture = (el, e) => { try { el.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } };
+const dead = (v) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD));
 
 export function setupTouch({ action, backOnRoad, zoomBy, force }) {
   const $ = (id) => document.getElementById(id);
-  const state = { active: false, move: 0, turn: 0, brake: false, run: false };
-  let inCar = null, assistOn = false, runOn = false;
+  // `aim` (on foot): { h, mag }, the way the stick points in world terms and how far.
+  const state = { active: false, move: 0, turn: 0, aim: null, brake: false, run: false };
+  let inCar = null, assistOn = false;
 
   const activate = () => {
     if (state.active) return;
@@ -28,38 +31,46 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
   addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') activate(); }, { capture: true });
   addEventListener('contextmenu', (e) => { if (state.active) e.preventDefault(); });
 
-  // ---- Steering ----------------------------------------------------------
+  // ---- Stick -------------------------------------------------------------
   const pad = $('t-steer'), stick = $('t-stick'), knob = $('t-knob');
-  let steerId = null, x0 = 0;
-  const steerEnd = (e) => {
-    if (e.pointerId !== steerId) return;
-    steerId = null;
-    state.turn = 0;
+  let stickId = null, ox = 0, oy = 0;
+  const push = { x: 0, y: 0 }; // -1..1, y up
+  const stickEnd = (e) => {
+    if (e.pointerId !== stickId) return;
+    stickId = null;
+    push.x = push.y = 0;
     stick.classList.remove('held');
     stick.style.transform = knob.style.transform = '';
   };
+  const stickMove = (e) => {
+    let dx = e.clientX - ox, dy = e.clientY - oy;
+    const d = Math.hypot(dx, dy);
+    if (d > RANGE) { dx *= RANGE / d; dy *= RANGE / d; }
+    push.x = dx / RANGE;
+    push.y = -dy / RANGE;
+    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+  };
   pad.addEventListener('pointerdown', (e) => {
-    if (steerId !== null) return;
+    if (stickId !== null) return;
     e.preventDefault();
-    steerId = e.pointerId;
+    stickId = e.pointerId;
     capture(pad, e);
-    x0 = e.clientX;
     const r = stick.getBoundingClientRect();
-    const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-    stick.style.transform = `translate(${dx}px, ${dy}px)`;
+    ox = r.left + r.width / 2;
+    oy = r.top + r.height / 2;
+    if (Math.hypot(e.clientX - ox, e.clientY - oy) > r.width / 2) {
+      stick.style.transform = `translate(${e.clientX - ox}px, ${e.clientY - oy}px)`;
+      ox = e.clientX;
+      oy = e.clientY;
+    }
     stick.classList.add('held');
+    stickMove(e);
   });
-  pad.addEventListener('pointermove', (e) => {
-    if (e.pointerId !== steerId) return;
-    const d = clamp((e.clientX - x0) / STEER_RANGE, -1, 1);
-    // Left is positive, as with the A key.
-    state.turn = Math.abs(d) < DEAD ? 0 : -Math.sign(d) * (Math.abs(d) - DEAD) / (1 - DEAD);
-    knob.style.transform = `translateX(${d * STEER_RANGE}px)`;
-  });
-  pad.addEventListener('pointerup', steerEnd);
-  pad.addEventListener('pointercancel', steerEnd);
+  pad.addEventListener('pointermove', (e) => { if (e.pointerId === stickId) stickMove(e); });
+  pad.addEventListener('pointerup', stickEnd);
+  pad.addEventListener('pointercancel', stickEnd);
 
-  // ---- Pedals ------------------------------------------------------------
+// ---- Pedals ------------------------------------------------------------
   const pedals = $('t-pedals'), gas = $('t-gas'), brake = $('t-brake');
   const onPedal = new Map(); // pointerId → 1 (gas), -1 (brake) or 0
   const within = (el, e) => {
@@ -101,7 +112,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
   hand.addEventListener('pointercancel', handUp);
 
   const toggle = $('t-toggle');
-  tap(toggle, () => { if (inCar) assistOn = !assistOn; else runOn = !runOn; });
+  tap(toggle, () => { assistOn = !assistOn; });
   tap($('t-action'), action);
   tap($('t-road'), backOnRoad);
 
@@ -136,14 +147,16 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
       if (car) assistOn = false;
       inCar = car;
     }
-    state.run = inCar ? assistOn : runOn;
+    // In the car the stick steers (left is positive, as with the A key). On foot it
+    // points: screen up is north, the way the map is drawn.
+    const mag = Math.min(1, Math.hypot(push.x, push.y));
+    state.turn = inCar ? -dead(push.x) : 0;
+    state.aim = !inCar && mag > DEAD ? { h: Math.atan2(push.y, push.x), mag: dead(mag) } : null;
+    state.run = !!inCar && assistOn;
     const mode = inCar ? 'car' : 'foot';
     set('mode', mode, (m) => {
       $('touch').dataset.mode = m;
-      gas.textContent = m === 'car' ? 'Gas' : 'Walk';
-      brake.textContent = m === 'car' ? 'Brake' : 'Back';
       $('t-action').textContent = m === 'car' ? 'Get out' : 'Get in';
-      toggle.textContent = m === 'car' ? 'Lane assist' : 'Run';
     });
     set('toggle', state.run, (on) => toggle.classList.toggle('on', on));
     set('tripped', !!(inCar && assistOn && tripped), (t) => toggle.classList.toggle('tripped', t));
