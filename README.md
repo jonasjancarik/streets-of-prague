@@ -71,13 +71,18 @@ Open `http://localhost:5190/drive.html` (`?area=<name>` for another tiled area,
   shows the OSM footprints extruded instead). Sheets are downloaded once into
   `pipeline/.cache/ipr/` (about 150 MB each). Coordinates go S-JTSK → WGS84 with the
   Czech datum shift → local metres; IPR wall bases then sit a median 0.55 m from OSM
-  building edges. `ipr_terrain.py` turns IPR's terrain into per-tile hill shading;
-  the ground itself stays flat.
+  building edges.
+- **Terrain** (`ipr_terrain.py`, IPR's bare-earth model on a 4 m grid per tile): the
+  ground, buildings, walls, trees, cars, people, trams and the camera all sit at
+  their real height, cars pitch and roll with the slope and roll downhill, and the
+  ground is hill-shaded. The terrain model has no bridges, so each deck is raised to
+  run between the heights of its two ends.
 - `src/drive/`: arcade car physics against the 0.5 m collision grid, tree trunks
   included (`car.js`); AI traffic that keeps to the right lane, brakes for anything
   ahead and gives way to the right (`traffic.js`); pedestrians on the footpath
   network who dodge fast cars and get knocked over (`people.js`); three-section
-  modern trams (`trams.js`).
+  modern trams (`trams.js`). Roads are sized and marked from OSM `lanes`: lane
+  dividers, double centre lines on four lanes or more, edge lines on the main roads.
 - Parked cars follow TSK Praha's paid-parking data (`build_parking.py` reads the
   monthly occupancy GeoJSON from `~/projects/parkovani-praha`, or `PARKING_DATA`).
   Each street section gets spaces × measured occupancy cars, by day or with `?night`,
@@ -85,6 +90,11 @@ Open `http://localhost:5190/drive.html` (`?area=<name>` for another tiled area,
   (`parking.js`); bay lines are painted in the zone colour (blue resident, violet
   mixed, orange visitor). Cars are drawn as instances.
 - The camera pulls up with speed.
+- **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
+  matches from the area's `names.json`, press Enter to look up a full address on
+  OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads
+  the tiles there and drops you on the pavement. "Copy link" gives a `?start=lon,lat`
+  link to the spot.
 
 ## How it is built
 
