@@ -154,6 +154,7 @@ export class TileWorld {
     this.onDrop = () => {};
     this.building = 0;
     this.inFlight = new Set();
+    this.builds = new Map(); // key → Promise of the tile, while it's being built
     this.workers = new TileWorkers();
     // Collision lookups across tiles; anywhere not loaded counts as solid.
     // Game y = 0 is this height above sea level (IPR buildings are stored against it).
@@ -255,8 +256,20 @@ export class TileWorld {
     for (const k of [...this.pending.keys()]) if (!keep.has(k) && !this.loaded.has(k) && !this.inFlight.has(k)) this.pending.delete(k);
   }
 
-  async build(k, { t, height, bare, ipr }) {
-    if (this.loaded.has(k)) return this.loaded.get(k);
+  // Build a tile (once, however many ask: loadNow and update may both want it, and
+  // its IPR buildings are handed over to a worker, so they can't be used twice).
+  build(k, files) {
+    if (this.loaded.has(k)) return Promise.resolve(this.loaded.get(k));
+    if (!this.builds.has(k)) {
+      const made = this.make(k, files)
+        .catch((e) => { this.pending.delete(k); throw e; }) // fetched afresh next time
+        .finally(() => this.builds.delete(k));
+      this.builds.set(k, made);
+    }
+    return this.builds.get(k);
+  }
+
+  async make(k, { t, height, bare, ipr }) {
     const [x0, y0, x1, y1] = t.box;
     const data = { ...t, size: [x1 - x0, y1 - y0], origin: [-x0, -y0] };
     const geo = new Geo(data);
