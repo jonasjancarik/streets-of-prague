@@ -15,7 +15,7 @@ export class Traffic {
   }
 
   // A new car on a random street among `edges` (default: anywhere), where `avoid` allows.
-  spawn(avoid, edges = this.g.edges) {
+  spawn(avoid, edges = this.g.edges, type = null) {
     const r = this.r;
     if (!edges.length) return null;
     const total = edges.reduce((a, e) => a + e.path.length, 0);
@@ -27,7 +27,7 @@ export class Traffic {
       const p = edge.path.at(s);
       if (avoid && !avoid(p.x, p.y)) continue;
       if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < 12)) continue;
-      const car = new Car(randomType(r), r, p.x, p.y, p.ang);
+      const car = new Car(type || randomType(r), r, p.x, p.y, p.ang);
       car.mode = 'traffic';
       const agent = { car, route: new Route(this.g, edge, s, r), speed: edge.speed * 0.6, stuck: 0, ignore: 0, cruise: 0.8 + r() * 0.3 };
       this.agents.push(agent);

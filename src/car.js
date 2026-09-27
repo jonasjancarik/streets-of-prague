@@ -11,6 +11,8 @@ export const TYPES = {
   estate: { L: 4.7, W: 1.82, H: 1.5, mass: 1500, accel: 9, vmax: 40, grip: 8.5, turn: 2.3, cabin: [-1.95, 0.8], weight: 2 },
   van: { L: 5.2, W: 2.0, H: 2.3, mass: 2200, accel: 6.5, vmax: 31, grip: 8, turn: 1.9, cabin: [-2.5, 1.6], weight: 1 },
   taxi: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 1, color: '#e9c62f' },
+  // Never parked or in ordinary traffic: src/police.js puts these on the streets.
+  police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#eef1f4' },
 };
 const PAINT = ['#e8e6e1', '#bfc3c7', '#8d9398', '#2c2f33', '#1d2a44', '#7a1f1f', '#b33a2c', '#2f5140', '#5b6d7c', '#d9d2c0', '#3f4a5a', '#9a7b4f'];
 
@@ -45,6 +47,13 @@ function carGeometry(type, paint) {
   box(0.06, 0.16, 0.3, -L / 2 - 0.01, 0.66, -W * 0.35, '#b3161b');
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(0.66, 0.6, 0.24, sx * (L / 2 - 0.85), 0.3, sz * (W / 2 - 0.1), '#161616');
   if (type === 'taxi') box(0.28, 0.2, 0.7, (c0 + c1) / 2, H + 0.1, 0, '#fff4c2');
+  if (type === 'police') {
+    // Blue and yellow bands down the sides, a blue band across the bonnet, the light bar.
+    box(L * 0.96, 0.16, W + 0.02, 0, 0.25 + bodyH * 0.5, 0, '#1d4fa3');
+    box(L * 0.96, 0.07, W + 0.03, 0, 0.25 + bodyH * 0.5 + 0.115, 0, '#d4e02b');
+    box(0.5, 0.02, W * 0.92, (c1 + L / 2) / 2, 0.25 + bodyH + 0.01, 0, '#1d4fa3');
+    box(0.3, 0.12, W * 0.74, (c0 + c1) / 2, H + 0.06, 0, '#1b1f2a');
+  }
   const g = mergeGeometries(parts);
   cache.set(k, g);
   return g;
@@ -70,7 +79,7 @@ export class Car {
     this.y = y;
     this.h = h;
     this.vx = this.vy = this.w = 0;
-    this.mode = 'loose'; // 'traffic' (driven by AI), 'loose' (free body), 'player'
+    this.mode = 'loose'; // 'traffic' (driven by AI), 'loose' (free body), 'player', 'police' (chasing you)
     this.damage = 0;
     const { L, W } = this.spec;
     this.r = W / 2 + 0.02;
@@ -83,6 +92,8 @@ export class Car {
   }
 
   get speed() { return Math.hypot(this.vx, this.vy); }
+  // Someone at the wheel: the player, or the police chasing them.
+  get driven() { return this.mode === 'player' || this.mode === 'police'; }
   get forwardSpeed() { return this.vx * Math.cos(this.h) + this.vy * Math.sin(this.h); }
 
   circles() {
@@ -106,7 +117,7 @@ export class Car {
       if (vf > 0.3) vf = Math.max(0, vf - 16 * dt);
       else vf = Math.max(-S.vmax * 0.3, vf - S.accel * 0.6 * dt);
     } else {
-      vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.mode === 'player' ? 0.6 : 5) * dt);
+      vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.driven ? 0.6 : 5) * dt);
     }
     if (ctl.handbrake) vf -= Math.sign(vf) * Math.min(Math.abs(vf), 5 * dt);
     // Hills: gravity along the car's heading (rolls back down, slower uphill).
@@ -122,7 +133,7 @@ export class Car {
     const sgn = vf >= 0 ? 1 : -1;
     const maxW = S.turn * (1 - 0.35 * fast) * (ctl.handbrake ? 1.35 : 1);
     const wantW = ctl.steer * Math.min(Math.abs(vf) / 3.6, maxW) * sgn;
-    if (this.mode === 'player') this.w += (wantW - this.w) * Math.min(1, dt * 9);
+    if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * 9);
     else this.w *= Math.exp(-4 * dt);
     this.h += this.w * dt;
 

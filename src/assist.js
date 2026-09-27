@@ -10,7 +10,7 @@ import { clamp } from './network.js';
 // once you're 5 km/h under the limit.
 
 // Nearest point of a polyline to (x, y), searching [s0, s1]: { s, d, ang }.
-function project(path, x, y, s0 = 0, s1 = path.length) {
+export function project(path, x, y, s0 = 0, s1 = path.length) {
   const { pts, cum } = path;
   let best = { s: 0, d: Infinity, ang: 0 };
   for (let i = 0; i < pts.length - 1; i++) {
@@ -24,7 +24,7 @@ function project(path, x, y, s0 = 0, s1 = path.length) {
   return best;
 }
 
-const turnOf = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
+export const turnOf = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
 
 // km/h: the tagged limit, else 80 on motorways, 70 on trunk roads, 50 in town.
 export function speedLimit(e) {

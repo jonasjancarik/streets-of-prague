@@ -5,6 +5,11 @@
 set -euo pipefail
 
 HOST=${DEPLOY_HOST:-mbxp}
+# Off the home network, reach mbxp through Cloudflare Access instead.
+if [[ -z ${DEPLOY_HOST:-} ]] && ! ssh -o ConnectTimeout=5 -o BatchMode=yes mbxp true 2>/dev/null; then
+  HOST=mbxp-remote
+  echo "mbxp isn't reachable on the LAN, using mbxp-remote."
+fi
 DIR=/home/jonas/deployments/streets-of-prague
 PORT=3017
 
