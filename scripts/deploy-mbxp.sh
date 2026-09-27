@@ -14,7 +14,8 @@ SHA=$(git rev-parse HEAD)
 
 node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
 
-ssh "$HOST" mkdir -p "$DIR/releases/$SHA/site" "$DIR/shared/data"
+# site/data is the mountpoint for shared/data (it can't be created inside a read-only mount).
+ssh "$HOST" mkdir -p "$DIR/releases/$SHA/site/data" "$DIR/shared/data"
 rsync -a dist/ "$HOST:$DIR/releases/$SHA/site/"
 rsync -a public/data/ "$HOST:$DIR/shared/data/"
 
