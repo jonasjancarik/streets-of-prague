@@ -131,15 +131,15 @@ function slots(data, edges) {
   for (const e of edges) {
     if (e.bridge || e.path.length < 30) continue;
     // Each side as OSM tags it (`park`: [right, left] of this edge); parallel if it
-    // doesn't say. Angled or perpendicular cars stand further out from the kerb, so
-    // where that would reach into the traffic lane they park parallel instead.
+    // doesn't say. Parallel cars stand in the carriageway along its edge. Angled and
+    // perpendicular ones stand just outside it, their front (or back) at its edge: OSM
+    // street widths usually leave such parking out, so inside it they'd block the
+    // lane. Where a building is in the way there, they don't fit (see place()).
     for (const side of e.oneway ? [1, -1] : [1]) {
-      let o = e.park?.[side > 0 ? 0 : 1] || 'parallel';
+      const o = e.park?.[side > 0 ? 0 : 1] || 'parallel';
       if (o === 'no') continue;
-      const inset = { parallel: 1.05, diagonal: 2.35, perpendicular: 2.5 };
-      if (o !== 'parallel' && Math.abs(side * (e.width / 2 - inset[o]) - e.laneOffset) < 2.3) o = 'parallel';
-      const kerb = e.width / 2 - inset[o];
-      if (Math.abs(side * kerb - e.laneOffset) < 2.3) continue;
+      const kerb = e.width / 2 + { parallel: -1.05, diagonal: 2.55, perpendicular: 2.5 }[o];
+      if (o === 'parallel' && Math.abs(side * kerb - e.laneOffset) < 2.3) continue;
       const step = { parallel: 6, diagonal: ANGLED_STEP, perpendicular: 2.6 }[o];
       // Angled cars nose in: turned right on the right-hand side, left on the left.
       const turn = { parallel: 0, diagonal: -ANGLE * side, perpendicular: Math.PI / 2 }[o];

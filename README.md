@@ -96,7 +96,8 @@ developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat
   perpendicular as OSM tags each parking area (`orientation`) and each side of the
   street (`parking:<side>:orientation`, or the older `parking:lane:<side>`); where it
   doesn't say, an area under 4.5 m wide is parallel, up to 5.6 m angled and wider
-  perpendicular. Sides tagged as having no parking (or parking mapped separately) get
+  perpendicular. Angled bays slant forwards along the lane beside them, so cars nose
+  in. Sides tagged as having no parking (or parking mapped separately) get
   no kerbside cars. Underground, multi-storey and rooftop car parks stay empty.
 - **Roads** are sized and marked from OSM `lanes`: dashed dividers, double centre
   lines on four lanes or more, edge lines on the main roads.
@@ -119,11 +120,10 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
   ground IPR has.
 - **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
   narrow streets and are left out.
-- **Angled parking along the kerb** mostly comes out parallel: angled cars stand
-  further out from the kerb, and with street widths from OSM (which usually leave the
-  parking out) they would reach into the traffic lane. Separately mapped angled
-  parking areas are fine; inside car parks, away from any street, their slant is
-  arbitrary.
+- **Angled and perpendicular parking along the kerb** stands just outside the
+  carriageway, since OSM street widths usually leave it out. Where the pavement there
+  is narrow, the cars end up on it; where a building is in the way, they're left out.
+  Inside car parks, away from any street, angled bays slant an arbitrary way.
 - **Tram termini without a loop.** Where the map has no way to turn round at the
   end of a line (5 and 6 at Nádraží Holešovice, 13 at Zvonařka, 17 at Libuš, 19 at
   Pankrác), the tram reverses where the track allows it, or waits until it's off
