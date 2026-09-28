@@ -27,6 +27,10 @@ TRAM_LANE = 1.6  # half a lane, beside the track centre
 # tagged as a street's pavement (footway=sidewalk) than for any other path.
 MORE = {True: 8.0, False: 4.0}
 LESS = 1.0  # or this much short of it, where the width is only a guess by class
+# The surveyed surface may reach this much past the estimate (parking bays, turning
+# lanes); further, and it's a car park or a square beside the street, not its kerb.
+BEYOND = 8.0
+ON = 1.0  # a sample this close to the surveyed surface is on it
 
 
 def parking_depth(tag, side):
@@ -64,7 +68,16 @@ class Kerbs:
     tagged as a street's pavement), tram tracks and the car roads themselves to
     measure streets against."""
 
-    def __init__(self, sidewalks, trams, roads):
+    def __init__(self, sidewalks, trams, roads, surface=None):
+        # The street surfaces from the technical map (dtm.streets), one polygon each,
+        # and their edges (the kerbs) cut into segments, to find quickly.
+        self.surf = np.array([p for p in shapely.get_parts(surface) if p.geom_type == "Polygon"]
+                             if surface is not None and not surface.is_empty else [], dtype=object)
+        rings = shapely.get_rings(self.surf) if len(self.surf) else np.array([], dtype=object)
+        coords, ring = shapely.get_coordinates(rings, return_index=True)
+        same = ring[1:] == ring[:-1]
+        self.kerb_a, self.kerb_b = coords[:-1][same], coords[1:][same]
+        self.kerb_tree = STRtree(shapely.linestrings(np.stack([self.kerb_a, self.kerb_b], axis=1))) if same.any() else None
         self.sw = np.array([g for g, _, _ in sidewalks], dtype=object)
         self.sw_half = np.array([h for _, h, _ in sidewalks], dtype=float)
         self.sw_more = np.array([MORE[bool(tagged)] for _, _, tagged in sidewalks], dtype=float)
@@ -72,24 +85,21 @@ class Kerbs:
         self.roads = np.array(list(roads), dtype=object)
         self.sw_tree, self.tram_tree, self.road_tree = STRtree(self.sw), STRtree(self.trams), STRtree(self.roads)
 
+    def surveyed(self, lines):
+        """The share of each street's centre line that runs on the surveyed surface."""
+        if not lines:
+            return np.zeros(0)
+        idx, orig, _ = _samples(lines)
+        on, _ = self._on(orig)
+        return np.bincount(idx, weights=on, minlength=len(lines)) / np.maximum(np.bincount(idx, minlength=len(lines)), 1)
+
     def __call__(self, lines, ests):
         """(left, right) kerb offsets from the centre line of each street, as seen along it."""
-        idx, orig, tang = [], [], []
-        for k, line in enumerate(lines):
-            L = line.length
-            ds = np.array([L / 2]) if L < 2 * END + 1 else np.arange(END, L - END + 1e-6, STEP)
-            a = shapely.get_coordinates(shapely.line_interpolate_point(line, np.maximum(ds - 0.5, 0)))
-            b = shapely.get_coordinates(shapely.line_interpolate_point(line, np.minimum(ds + 0.5, L)))
-            t = b - a
-            n = np.linalg.norm(t, axis=1, keepdims=True)
-            t = np.divide(t, n, out=np.zeros_like(t), where=n > 0)
-            idx.append(np.full(len(ds), k))
-            orig.append((a + b) / 2)
-            tang.append(t)
         if not lines:
             return []
-        idx, orig, tang = np.concatenate(idx), np.concatenate(orig), np.concatenate(tang)
+        idx, orig, tang = _samples(lines)
         left = np.stack([-tang[:, 1], tang[:, 0]], axis=1)
+        on, inside = self._on(orig)
 
         halves = np.array([e["half"] for e in ests])
         out = [[None, None] for _ in lines]
@@ -108,14 +118,59 @@ class Kerbs:
             road = self._hits(orig, left * s, tang, est[idx] + max(MORE.values()), self.road_tree, self.roads, skip=0.5)
             sw = np.where(np.isnan(road) | (sw < road), sw, np.nan)
             measured = dict(_per_line(idx, sw, len(lines), 0.4))
+            surveyed = dict(_per_line(idx, self._across(orig, left * s, est[idx] + BEYOND, on, inside), len(lines), 0.4))
             for k, e in enumerate(ests):
                 kerb = est[k]
                 m = measured.get(k)
-                if m is not None:
+                if k in surveyed:
+                    kerb = max(surveyed[k], 1.5)
+                elif m is not None:
                     low = base[k] - LESS if e["guessed"] else base[k]
                     kerb = max(m, low, 1.5)
                 out[k][0 if s > 0 else 1] = round(float(kerb), 2)
         return [tuple(o) for o in out]
+
+    def _on(self, orig):
+        """For each sample: whether it's on the surveyed surface (or within ON of it),
+        and whether it's inside it."""
+        on, inside = np.zeros(len(orig), bool), np.zeros(len(orig), bool)
+        if len(self.surf):
+            tree = STRtree(shapely.points(orig))
+            on[tree.query(self.surf, predicate="dwithin", distance=ON)[1]] = True
+            inside[tree.query(self.surf, predicate="contains")[1]] = True
+        return on, inside
+
+    def _across(self, orig, normal, reach, on, inside):
+        """How far the surveyed surface reaches across the street from each sample (along
+        `normal`) before it ends at the kerb; NaN where the sample isn't on the surface
+        or the surface carries on past `reach`."""
+        best = np.full(len(orig), np.nan)
+        si = on.nonzero()[0]
+        if self.kerb_tree is None or not len(si):
+            return best
+        ends = orig[si] + normal[si] * reach[si][:, None]
+        ri, ki = self.kerb_tree.query(shapely.linestrings(np.stack([orig[si], ends], axis=1)))
+        # Where each ray (p + t d) crosses each kerb segment (a + u (b - a)) near it.
+        p, d = orig[si][ri], normal[si][ri]
+        a, e = self.kerb_a[ki], self.kerb_b[ki] - self.kerb_a[ki]
+        den = d[:, 0] * e[:, 1] - d[:, 1] * e[:, 0]
+        ok = np.abs(den) > 1e-9
+        den = np.where(ok, den, 1.0)
+        w = a - p
+        t = (w[:, 0] * e[:, 1] - w[:, 1] * e[:, 0]) / den
+        u = (w[:, 0] * d[:, 1] - w[:, 1] * d[:, 0]) / den
+        ok &= (u >= 0) & (u <= 1) & (t > 0) & (t <= reach[si][ri])
+        ri, t = ri[ok], t[ok]
+        # The first kerb out from a sample inside the surface; from one just outside it,
+        # the second (the first is where the ray comes onto the surface).
+        order = np.lexsort((t, ri))
+        ri, t = ri[order], t[order]
+        first = np.r_[True, ri[1:] != ri[:-1]]
+        rank = np.arange(len(ri)) - np.maximum.accumulate(np.where(first, np.arange(len(ri)), 0))
+        want = np.where(inside[si][ri], 0, 1)
+        hit = rank == want
+        best[si[ri[hit]]] = t[hit]
+        return best
 
     def _hits(self, orig, normal, tang, reach, tree, geoms, half=None, more=None, skip=0.0):
         """Distance from each sample to the nearest line parallel to the street across
@@ -145,6 +200,24 @@ class Kerbs:
         full = np.full(len(orig), np.inf)
         np.minimum.at(full, ri, dist)
         return np.where(np.isfinite(full), full, np.nan)
+
+
+def _samples(lines):
+    """Points every STEP metres along each line, away from its ends: (line of each,
+    the points, the unit direction of the line there)."""
+    idx, orig, tang = [], [], []
+    for k, line in enumerate(lines):
+        L = line.length
+        ds = np.array([L / 2]) if L < 2 * END + 1 else np.arange(END, L - END + 1e-6, STEP)
+        a = shapely.get_coordinates(shapely.line_interpolate_point(line, np.maximum(ds - 0.5, 0)))
+        b = shapely.get_coordinates(shapely.line_interpolate_point(line, np.minimum(ds + 0.5, L)))
+        t = b - a
+        n = np.linalg.norm(t, axis=1, keepdims=True)
+        t = np.divide(t, n, out=np.zeros_like(t), where=n > 0)
+        idx.append(np.full(len(ds), k))
+        orig.append((a + b) / 2)
+        tang.append(t)
+    return np.concatenate(idx), np.concatenate(orig), np.concatenate(tang)
 
 
 def _per_line(idx, values, n_lines, share):

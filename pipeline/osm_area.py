@@ -20,6 +20,7 @@ from shapely import STRtree
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 
+import dtm
 import roofs
 from kerbs import Kerbs, estimate
 
@@ -45,6 +46,12 @@ ROAD_WIDTH = {
 }
 LANE_WIDTH = 3.25
 COBBLES = ("sett", "cobblestone", "unhewn_cobblestone", "paving_stones")
+# A car road at least this much of whose centre line runs on the technical map's
+# surveyed surface is drawn from the survey (dtm.py); others, from OSM's tags.
+SURVEYED = 0.5
+# How far past its kerb a cobbled street's cobbles may reach (into its parking bays).
+SETT_REACH = 4.0
+GRID = 0.01  # metres, for overlaying the survey's surface
 
 
 def road_width(hw, width=None, lanes=None):
@@ -239,7 +246,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             elif (col(row, "man_made") == "bridge" or col(row, "bridge")) and not b:
                 areas.setdefault("bridge", []).append(g.buffer(0))
 
-    kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways])
+    # The streets as surveyed, where the technical map has them (within Prague).
+    surface = shapely.intersection(dtm.streets((w, s, e, n), tf.transform), clip, grid_size=GRID)
+    kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways], surface)
     if not ground:
         return {
             "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
@@ -247,14 +256,33 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "lots": lots, "kerbs": kerbs,
         }
-    for (ls, _, cls, street), (left, right) in zip(car_ways, kerbs([w[0] for w in car_ways], [w[1] for w in car_ways])):
+    lines = [w[0] for w in car_ways]
+    surveyed, sett_near = [], []  # (centre line, cobbled?) of streets drawn from the survey
+    for (ls, _, cls, street), (left, right), share in zip(car_ways, kerbs(lines, [w[1] for w in car_ways]), kerbs.surveyed(lines)):
         # Each side out to its kerb, and round ends so streets join up at crossroads.
         # (The pieces are merged with all the others below, so not one by one here.)
         pieces = [ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),
                   ls.buffer(min(left, right), cap_style="round", join_style="round")]
-        road_lines.setdefault(cls, []).extend(pieces)
         if street:
             streets.extend(pieces)
+        if cls != "bridge" and share >= SURVEYED:
+            # The survey has this street: it's drawn from there (below); what OSM
+            # says is only what it's paved with.
+            surveyed.append((ls, cls == "sett"))
+            if cls == "sett":
+                sett_near.append(ls.buffer(max(left, right) + SETT_REACH))
+            continue
+        road_lines.setdefault(cls, []).extend(pieces)
+    if not surface.is_empty:
+        # Cobbles where a cobbled street is the nearest and close by, asphalt elsewhere,
+        # including the surveyed car parks and lanes OSM doesn't have.
+        # (Snapped to a centimetre grid: the survey's surface and the Voronoi cells meet
+        # at countless near-coincident edges, which exact overlay trips over.)
+        setts = Polygon()
+        if sett_near:
+            setts = shapely.intersection(_nearest(surveyed, surface), unary_union(sett_near), grid_size=GRID)
+        road_lines.setdefault("sett", []).append(shapely.intersection(surface, setts, grid_size=GRID))
+        road_lines.setdefault("road", []).append(shapely.difference(surface, setts, grid_size=GRID))
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
     gardens = _gardens(homes, buildings, streets, clip)
@@ -343,6 +371,25 @@ def _gardens(homes, buildings, streets, clip):
             continue
         out.append(block.difference(unary_union([shapes[k].buffer(0.8 if shapes[k].area <= 350 else 2) for k in near])))
     return unary_union(out) if out else Polygon()
+
+
+def _nearest(lines, surface):
+    """The part of the surface nearer to a line marked True than to any marked False:
+    Voronoi cells round points every 2 m along the lines."""
+    pts, marks, seen = [], [], set()
+    for ls, mark in lines:
+        n = max(2, int(ls.length / 2) + 1)
+        for x, y in shapely.get_coordinates(shapely.line_interpolate_point(ls, np.linspace(0, 1, n), normalized=True)):
+            key = (round(x, 1), round(y, 1))
+            if key not in seen:
+                seen.add(key)
+                pts.append(key)
+                marks.append(mark)
+    marks = np.array(marks, dtype=bool)
+    if marks.all() or len(pts) < 3:
+        return surface if marks.all() else Polygon()
+    cells = shapely.get_parts(shapely.voronoi_polygons(shapely.multipoints(pts), extend_to=surface.envelope, ordered=True))
+    return shapely.make_valid(shapely.coverage_union_all(cells[marks]))
 
 
 def _height(row, col, osm_id, area):

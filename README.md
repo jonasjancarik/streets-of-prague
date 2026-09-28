@@ -198,12 +198,19 @@ too long; `?dpr=1` fixes it.
   perpendicular. Angled bays slant forwards along the lane beside them, so cars nose
   in. Sides tagged as having no parking (or parking mapped separately) get
   no kerbside cars. Underground, multi-storey and rooftop car parks stay empty.
-- **Roads** are sized and marked from OSM `lanes`: dashed dividers, double centre
-  lines on four lanes or more, edge lines on the main roads. The asphalt reaches out
-  to each kerb on its own (`pipeline/kerbs.py`): past the lanes to take in a tram
-  track running in the street and a tagged parking lane, and where the pavement is
-  mapped as its own way beside the street, up to that pavement's inner edge. Parked
-  cars stand along that kerb.
+- **Roads** are marked from OSM `lanes`: dashed dividers, double centre lines on four
+  lanes or more, edge lines on the main roads. In Prague their shape comes from the
+  city's digital technical map (`pipeline/dtm.py`), which has every carriageway,
+  lay-by and parking bay as surveyed, so the asphalt ends where the real kerb does,
+  rounded street corners and traffic islands included. OSM only says what a street is
+  paved with: each part of the surveyed surface takes the paving of the nearest street,
+  and cobbles reach at most 4 m past a cobbled street's kerb (a car park beside it is
+  asphalt). Each side's kerb, for the parked cars, is measured straight across from
+  the street's centre line to where the surveyed surface ends (`pipeline/kerbs.py`).
+  Past the city limits, and on the few streets the map doesn't have (about 2 %, mostly
+  new ones), the asphalt reaches out to each kerb as OSM suggests: past the lanes to
+  take in a tram track running in the street and a tagged parking lane, and where the
+  pavement is mapped as its own way beside the street, up to that pavement's inner edge.
 - **Passages through buildings** (OSM `tunnel=building_passage`: gateways, arcades,
   Prague's pasáže) are cut out of the buildings' collision footprint and stay in the
   street graphs, so cars, traffic and people go through. While you're in one, a round
@@ -224,9 +231,10 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
   terrain there carries on flat at the height of the nearest ground IPR has.
 - **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
   narrow streets and are left out.
-- **Angled and perpendicular parking along the kerb** stands just outside the
-  carriageway, since OSM street widths usually leave it out. Where the pavement there
-  is narrow, the cars end up on it; where a building is in the way, they're left out.
+- **Angled and perpendicular parking along the kerb** past the city limits stands just
+  outside the carriageway, since OSM street widths usually leave it out. Where the
+  pavement there is narrow, the cars end up on it; where a building is in the way,
+  they're left out. (In Prague the technical map's parking bays are part of the street.)
   Inside car parks, away from any street, angled bays slant an arbitrary way.
 - **Tram termini without a loop.** Where the map has no way to turn round at the
   end of a line (5 and 6 at Nádraží Holešovice, 13 at Zvonařka, 17 at Libuš, 19 at
@@ -289,6 +297,13 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `OVERPASS_URL=https://maps.mail.ru/osm/tools/overpass/api` if overpass-api.de
   refuses). `build_tiles.py` works in 2 km chunks with a 150 m overlap, so buildings
   and streets on a chunk border come out whole.
+- **Technical map.** `build_tiles.py` checks IPR's open data for this month's
+  digital technical map (DTM kraje, set 2: the surfaces as polygons) when it builds
+  the ground or the streets, and downloads any district that's new (57 GeoPackages,
+  about 130 MB) into `pipeline/.cache/dtm/ZPS_OPL/`. They're read once, in about 15
+  seconds, into `pipeline/.cache/dtm/surfaces.pkl`; `uv run dtm.py` does the same on
+  its own. Offline, it uses whatever it downloaded last; with nothing downloaded, every
+  street is sized from OSM.
 - **IPR.** `ipr_buildings.py` and `ipr_terrain.py` download the SMO-5 sheets they need
   (2.5 × 2 km, about 150 MB each for buildings) into `pipeline/.cache/ipr/` from IPR's
   ArcGIS Online catalogue. Sheets come in blocks of 10 × 10 named after a town, and the
@@ -341,6 +356,7 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
 - Tram and metro timetables: [PID / ROPID](https://pid.cz/o-systemu/opendata/), CC BY 4.0, reduced to trips per hour.
 - 3D buildings, bridges and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
+- Carriageways and parking bays: Digitální technická mapa kraje, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/28A24EB4-5EE8-436E-B0BB-357025258211), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - Maps in the developer panel: [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).
