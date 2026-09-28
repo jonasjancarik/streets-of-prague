@@ -99,6 +99,7 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Taxis.** Let the player hail a taxi in the street or order one through a
   ride-hailing app. The apps stand in for Uber and Bolt under made-up names, and
   their drivers are more reckless than regular street taxis.
+- **Buses.** Add city buses running their routes, painted in the new PID livery.
 - **Parking zone markings.** The blue line should run only along the street side of
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
