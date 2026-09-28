@@ -79,6 +79,6 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   run mostly perpendicular to it where the geometry allows, instead of stopping
   short or overshooting. The stripes also have uneven gaps now (one gap noticeably
   wider than the rest).
-- **Place names on screen.** Street names don't need to pop up in large letters;
-  keep the big title for entering a new neighbourhood or district, and show street
-  names more quietly.
+- **Place names on screen.** Drop the large pop-up for street names; the street is
+  already shown top left next to the speed, and that's enough. Keep the big title
+  for entering a new neighbourhood or district.
