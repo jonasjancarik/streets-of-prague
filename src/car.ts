@@ -6,7 +6,7 @@ import { Figures, Anim, SCALE } from './figures.ts';
 import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import { lampLit } from './lamps.ts';
-import { SNOW, WET } from './shading.ts';
+import { SNOW, STREET_SNOW, WET } from './shading.ts';
 
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
@@ -194,7 +194,7 @@ export class Car {
     const throttle = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - vf) / 2, 0, 1));
     // A wet road and snow take some of the tyres' grip: longer braking, wider slides
     // (for the cars someone is driving hard; the traffic keeps to its lanes as before).
-    const road = this.driven ? 1 - 0.25 * WET.value - 0.45 * SNOW.value : 1;
+    const road = this.driven ? 1 - Math.max(0.25 * WET.value, 0.45 * SNOW.value * STREET_SNOW.value, 0.25 * SNOW.value) : 1;
 
     if (throttle > 0) {
       if (vf < -0.3) vf = Math.min(0, vf + 16 * road * dt);

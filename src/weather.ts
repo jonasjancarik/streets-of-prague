@@ -1,13 +1,16 @@
 import * as THREE from 'three';
-import { WET, SNOW, RAIN, NOISE_GLSL } from './shading.ts';
+import { WET, SNOW, STREET_SNOW, RAIN, NOISE_GLSL } from './shading.ts';
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
 
 // The weather: clear, cloudy, rain, a thunderstorm, mist or snow. Each is a mix of
 // cloud, rain, storm, snow and mist (0–1), and the weather moves between them
 // gradually; in a storm lightning flashes now and then (thunder in audio.ts).
 // The ground gets wet in the rain and dries slowly after it; snow settles and melts
-// slower still. It changes by itself every half hour or so of the game's clock, more
-// often to rain in summer and to snow and mist in winter, unless it's been picked
+// slower still. On the streets and pavements it lies thick through the night, and
+// from the morning the traffic and the ploughs clear it, more with every busy hour
+// (by the game's clock); falling snow covers them again, fastest at night. The
+// weather changes by itself every half hour or so of the game's clock, more often to
+// rain in summer and to snow and mist in winter, unless it's been picked
 // (?weather=clear|cloudy|rain|storm|mist|snow, the P key or the developer panel).
 //
 // Sky (sky.ts) turns it into light and fog; WeatherFx draws the falling rain and snow
@@ -16,9 +19,10 @@ import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
 
 export type Kind = 'clear' | 'cloudy' | 'rain' | 'storm' | 'mist' | 'snow';
 export const KINDS: Kind[] = ['clear', 'cloudy', 'rain', 'storm', 'mist', 'snow'];
+// `cover`: the snow lying; `cleared`, how much of it is gone from the streets.
 // `flash`: lightning, 0–1 as it flickers; `strikes` counts them (for the thunder).
-export interface Conditions { cloud: number; rain: number; storm: number; snow: number; mist: number; wet: number; cover: number; flash: number; strikes: number }
-export const CLEAR: Conditions = { cloud: 0, rain: 0, storm: 0, snow: 0, mist: 0, wet: 0, cover: 0, flash: 0, strikes: 0 };
+export interface Conditions { cloud: number; rain: number; storm: number; snow: number; mist: number; wet: number; cover: number; cleared: number; flash: number; strikes: number }
+export const CLEAR: Conditions = { cloud: 0, rain: 0, storm: 0, snow: 0, mist: 0, wet: 0, cover: 0, cleared: 0, flash: 0, strikes: 0 };
 
 const LOOK: Record<Kind, { cloud: number; rain: number; storm: number; snow: number; mist: number }> = {
   clear: { cloud: 0, rain: 0, storm: 0, snow: 0, mist: 0 },
@@ -45,6 +49,15 @@ const season = (month: number) => month === 11 || month < 2 ? 'winter' : month <
 const CHANGE = 1 / 25;         // of the full change a second (clear to rain in 25 s)
 const WETTING = 1 / 40, DRYING = 1 / 480;
 const SETTLING = 1 / 90, MELTING = 1 / 900;
+// Snow cleared off the streets: by the traffic of the hour, up to MOST of it, with
+// CLEARING of what's left going an hour at full traffic; falling snow covers them
+// again with COVERING of the cleared part an hour, less in busy streets.
+const TRAFFIC = [0.05, 0.03, 0.02, 0.02, 0.05, 0.2, 0.5, 0.85, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0.9, 0.7, 0.5, 0.35, 0.2, 0.1];
+const MOST = 0.9, CLEARING = 1 / (3 * 3600), COVERING = 1 / (2 * 3600);
+const trafficAt = (clockT: number) => {
+  const h = (clockT % 86400) / 3600, i = Math.floor(h);
+  return TRAFFIC[i] + (TRAFFIC[(i + 1) % 24] - TRAFFIC[i]) * (h - i);
+};
 
 export class Weather {
   kind: Kind;
@@ -53,6 +66,7 @@ export class Weather {
   readonly now: Conditions = { ...CLEAR };
   private next = 0; // clock seconds of the week at the next change
   private flashT = Infinity; // s since the last lightning
+  private lastT: number; // the clock at the last update (to notice it being set)
   private rng: () => number;
 
   constructor(params: URLSearchParams, clockT: number) {
@@ -62,6 +76,7 @@ export class Weather {
     const asked = params.get('weather') as Kind | null;
     this.fixed = !!asked && KINDS.includes(asked);
     this.kind = this.fixed && asked ? asked : this.pick(clockT);
+    this.lastT = clockT;
     this.settle();
     this.next = clockT + this.span();
   }
@@ -82,12 +97,27 @@ export class Weather {
   private settle() {
     const look = LOOK[this.kind];
     Object.assign(this.now, look, { wet: look.rain > 0.5 ? 1 : 0, cover: look.snow > 0.5 ? 1 : 0 });
+    this.clearSince(this.lastT);
     this.share();
+  }
+
+  // The streets as they'd be at `clockT` after the snow lay whole at midnight.
+  private clearSince(clockT: number) {
+    const n = this.now, day = clockT - (clockT % 86400);
+    n.cleared = 0;
+    for (let t = day; t < clockT; t += 60) this.clear(60, t);
+  }
+
+  private clear(dt: number, clockT: number) {
+    const n = this.now, traffic = trafficAt(clockT);
+    n.cleared += (CLEARING * traffic * (MOST - n.cleared) - COVERING * n.snow * (1 - 0.85 * traffic) * n.cleared) * dt;
+    n.cleared = Math.min(MOST, Math.max(0, n.cleared));
   }
 
   private share() {
     WET.value = this.now.wet;
     SNOW.value = this.now.cover;
+    STREET_SNOW.value = 1 - this.now.cleared;
     RAIN.value = this.now.rain;
   }
 
@@ -109,6 +139,10 @@ export class Weather {
   // `dt`: game seconds (faster on a sped-up tram ride); `clockT` the game's clock;
   // `real` the real seconds since the last frame.
   update(dt: number, clockT: number, real = dt) {
+    // The clock set to another time (the developer panel): the streets as they'd be then.
+    const jumped = Math.abs(clockT - this.lastT - dt) > 120;
+    this.lastT = clockT;
+    if (jumped && this.now.cover > 0) this.clearSince(clockT);
     if (!this.fixed && (clockT >= this.next || clockT < this.next - 7200)) {
       this.kind = this.pick(clockT);
       this.next = clockT + this.span();
@@ -123,6 +157,8 @@ export class Weather {
     n.snow = toward(n.snow, n.cloud > 0.8 ? want.snow : 0, CHANGE);
     n.wet = n.rain > 0.3 ? toward(n.wet, 1, WETTING * n.rain) : toward(n.wet, 0, DRYING * (1 - n.cloud * 0.6));
     n.cover = n.snow > 0.3 ? toward(n.cover, 1, SETTLING * n.snow) : toward(n.cover, 0, MELTING);
+    if (n.cover > 0) this.clear(dt, clockT);
+    else n.cleared = 0;
     // Lightning (by real time: `real`, not sped up with the clock).
     this.flashT += real;
     if (n.storm > 0.3 && Math.random() < real * STRIKES * n.storm) { this.flashT = 0; n.strikes++; }

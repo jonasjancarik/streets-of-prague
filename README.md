@@ -129,8 +129,11 @@ the pixel ratio.
   of, with fog measured from the camera so the ground is hazier than the roofs. The
   ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,
   rings where the drops hit) and dries over several minutes; snow settles on the
-  ground (thinner and slushy on the roads), the roofs, the cars and the tree tops, and
-  melts slower still (`WEATHER_GLSL` in `src/shading.ts`). A wet road takes a quarter
+  ground, the roofs, the cars and the tree tops, and melts slower still. On the roads
+  and pavements it lies whole through the night; from about six in the morning the
+  traffic clears it, a little more with every busy hour (by the game's clock), to wet
+  slush with patches of snow by the afternoon, the roads before the pavements, while
+  snow still falling covers them again, fastest at night (`WEATHER_GLSL` in `src/shading.ts`). A wet road takes a quarter
   of the tyres' grip and snow nearly half, for the cars you and the police drive.
   Rain hisses and patters, the tyres hiss louder in the wet, and a wind blows while it
   snows, all made in Web Audio (`src/audio.ts`).

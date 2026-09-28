@@ -138,6 +138,7 @@ vec3 pattern(int id, vec3 c, vec2 p) {
 export const WEATHER_GLSL = /* glsl */ `
 uniform float uWet;
 uniform float uSnow;
+uniform float uStreetSnow;
 uniform float uRain;
 uniform vec3 uSkyRef;
 float ripples(vec2 p) {
@@ -149,22 +150,25 @@ float ripples(vec2 p) {
 }
 vec3 weathered(int id, vec3 c, vec2 p, inout float shine) {
   if (id == 10) { shine = .35; return c; }
-  bool paved = id <= 4 || id == 9;
-  if (uWet > .01) {
-    c *= mix(1., paved ? .6 : .78, uWet);
+  bool paved = id <= 4 || id == 9, road = id == 1 || id == 2;
+  // Streets cleared of snow are wet with the slush.
+  float wet = paved && uSnow > .01 ? max(uWet, uSnow * (1. - uStreetSnow) * .8) : uWet;
+  if (wet > .01) {
+    c *= mix(1., paved ? .6 : .78, wet);
     if (paved) {
-      float puddle = smoothstep(.66, .71, fbm2(p * .3 + 31.) * .75 + fbm2(p * .04 + 7.) * .35) * smoothstep(.35, .9, uWet);
-      shine = (.1 + .4 * puddle) * uWet;
+      float puddle = smoothstep(.66, .71, fbm2(p * .3 + 31.) * .75 + fbm2(p * .04 + 7.) * .35) * smoothstep(.35, .9, wet);
+      shine = (.1 + .4 * puddle) * wet;
       c *= 1. - .35 * puddle;
       if (uRain > .01) shine += ripples(p) * puddle * uRain * .8 * detail(p, .12);
     }
   }
   if (uSnow > .01) {
-    float lie = id == 1 || id == 2 ? .55 : paved ? .8 : 1.;
+    // The roads are cleared first; the pavements keep some along their edges.
+    float lie = road ? uStreetSnow : paved ? .15 + .85 * uStreetSnow : 1.;
     float n = fbm2(p * .3 + 9.);
     float cover = smoothstep(n * .6, n * .6 + .25, uSnow * lie * 1.15);
     vec3 snow = vec3(.78, .8, .84) * (.94 + .06 * vnoise(p * 4.));
-    if (id == 1 || id == 2) snow = mix(snow * vec3(.72, .7, .68), c, .35 * (1. - uSnow));   // slush
+    if (paved) snow = mix(snow * vec3(.72, .7, .68), snow, uStreetSnow * uStreetSnow);   // trodden and driven to slush
     c = mix(c, snow, cover);
     shine *= 1. - cover;
   }
@@ -233,6 +237,9 @@ export const LEAVES = { value: 1 };
 // raining (0–1 each), and the colour of the sky mirrored in the puddles.
 export const WET = { value: 0 };
 export const SNOW = { value: 0 };
+// How much of that snow is still on the streets and pavements (weather.ts: all of it
+// at night, less and less through the day).
+export const STREET_SNOW = { value: 1 };
 export const RAIN = { value: 0 };
 export const SKY_REF = { value: new THREE.Color(0, 0, 0) };
 // Lit windows at night: the share of them (0 by day).
@@ -335,6 +342,7 @@ export function patterned(
     sh.uniforms.uDirt = DIRT;
     sh.uniforms.uWet = WET;
     sh.uniforms.uSnow = SNOW;
+    sh.uniforms.uStreetSnow = STREET_SNOW;
     sh.uniforms.uRain = RAIN;
     sh.uniforms.uSkyRef = SKY_REF;
     if (photo) {
