@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { lampLit } from './lamps.ts';
 
 // People and two-wheelers from public/figures.glb (built in Blender by
 // assets/figures/build.py): a low-poly person with a skeleton and a few clips, a bike
@@ -177,6 +178,7 @@ vTint = aPart < 0.5 ? aSkin : aPart < 1.5 ? aShirt : aPart < 2.5 ? (aAnimB.w > 0
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vTint;')
         .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vTint;');
+      lampLit(sh);
     }
   };
   material.customProgramCacheKey = () => `figures-${colour}`;

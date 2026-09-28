@@ -11,6 +11,9 @@ import { Trams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
 import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
+import { Weather, WeatherFx, KINDS } from './weather.ts';
+import type { Kind } from './weather.ts';
+import { Lamps } from './lamps.ts';
 import { Graphics } from './graphics.ts';
 import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
@@ -111,13 +114,16 @@ async function main() {
   const kit = await kitLoad;
   useKit(kit);
   const clock = new Clock(params);
+  const weather = new Weather(params, clock.t);
+  const weatherFx = new WeatherFx(scene);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), cover: params.get('cover'), ortho: params.has('ortho') });
   const grid = world.grid;
   // Height of the ground at a point; with `who` (a car, a person), of whatever they're
   // on there: the ground, or a bridge deck (see TileWorld.track).
   const ground = (x: number, y: number, who?: Tracked | null) => (who ? world.groundFor(who, x, y) : world.heightAt(x, y));
   let crowd: Crowd | null = null;
-  world.onEdges = (d, w) => { names.add(d); names.add(w); crowd?.index(w); };
+  const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y));
+  world.onEdges = (d, w) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(d); };
 
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose: Car[] = [];
@@ -461,7 +467,8 @@ async function main() {
     return best && bestD < 1 ? surfaceOf(best.surface) : 'pavement';
   };
   const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, shiftTime: (h) => clock.advance(h * 3600),
-    timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics });
+    timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics,
+    weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); }, label: () => weather.name } });
 
   // ---- Input -------------------------------------------------------------
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
@@ -483,6 +490,7 @@ async function main() {
     if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on) input.jump = true;
     if (e.code === 'KeyM' && !e.repeat) sound.toggle();
     if (e.code === 'KeyG' && !e.repeat) { graphics.cycle(); showBanner(graphics.label()); }
+    if (e.code === 'KeyP' && !e.repeat) { weather.cycle(); showBanner(weather.label()); }
     if (e.code === 'KeyH' && !e.repeat) foldHelp(!$('help').classList.contains('folded'));
     // On a tram, W and S move your pick along the stops ahead.
     if (ride.on && ['KeyW', 'ArrowUp'].includes(e.code)) ride.pick(-1);
@@ -829,6 +837,7 @@ async function main() {
     const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : waitScale;
     const steps = metro.active ? 0 : Math.ceil(scale - 1e-6); // underground, the street waits
     for (let i = 0; i < steps; i++) simulate((dt * scale) / steps, ctl);
+    weather.update(dt * scale, clock.t);
     input.jump = false;
     if (ride.on) ride.watch(dt);
     if (ride.on && ride.arrived()) getOff();
@@ -894,8 +903,13 @@ async function main() {
       sc.updateProjectionMatrix();
     }
     sun.target.position.set(camPos.x, camGround, camPos.z);
-    sky.update(clock.t % 86400);
+    sky.update(clock.t % 86400, weather.now, height);
     sun.position.copy(sun.target.position).add(sky.offset);
+    // Street lamps and headlights, and the rain, snow and mist round the view.
+    lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now);
+    weatherFx.tint.value.copy(sky.tint);
+    weatherFx.fog.value.copy(sky.haze);
+    weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio());
 
     // ---- HUD -------------------------------------------------------------
     const name = names.at(px(), py());
@@ -971,7 +985,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, graphics, sound,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, graphics, sound, weather, lamps, sky,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

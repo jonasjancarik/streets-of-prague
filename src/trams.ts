@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Point2 } from './map/geo.ts';
 import type { Car } from './car.ts';
 import type { Clock } from './clock.ts';
+import { lampLit } from './lamps.ts';
 
 export interface RawTramLine {
   ref: string; colour: string | null; night: boolean; from: string; to: string;
@@ -93,6 +94,8 @@ function sectionGeometry(kind: string) {
 }
 
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+material.onBeforeCompile = (sh) => lampLit(sh);
+material.customProgramCacheKey = () => 'trams';
 const geoms: Record<string, THREE.BufferGeometry> = {};
 const sectionMesh = (kind: string) => {
   geoms[kind] ||= sectionGeometry(kind);

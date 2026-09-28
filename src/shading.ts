@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FACADE_ATLAS, FACADE_ON, FACADE_GLSL } from './facades.ts';
+import { lampLit } from './lamps.ts';
 
 // Procedural surface patterns in world space, shared by the ground and the buildings.
 // Everything is computed per pixel from the position in metres, so it stays sharp at
@@ -130,6 +131,47 @@ vec3 pattern(int id, vec3 c, vec2 p) {
 }
 `;
 
+// Weather on the ground (weather.ts sets the uniforms): wet paving darker, with
+// puddles that mirror the sky and the lamps and ripple while it rains; snow lying
+// thick on grass and earth, thinner and slushy on the roads and pavements. `shine`:
+// how much of a mirror the ground is there.
+export const WEATHER_GLSL = /* glsl */ `
+uniform float uWet;
+uniform float uSnow;
+uniform float uRain;
+uniform vec3 uSkyRef;
+float ripples(vec2 p) {
+  p *= 2.5;
+  vec2 i = floor(p), f = fract(p);
+  float t = fract(uTime * 1.1 + hash12(i));
+  vec2 c = vec2(hash12(i + 1.7), hash12(i + 4.3)) * .6 + .2;
+  return (1. - t) * smoothstep(.07, 0., abs(length(f - c) - t * .45));
+}
+vec3 weathered(int id, vec3 c, vec2 p, inout float shine) {
+  if (id == 10) { shine = .35; return c; }
+  bool paved = id <= 4 || id == 9;
+  if (uWet > .01) {
+    c *= mix(1., paved ? .6 : .78, uWet);
+    if (paved) {
+      float puddle = smoothstep(.6, .66, fbm2(p * .22 + 31.) * .8 + fbm2(p * .03 + 7.) * .3) * smoothstep(.35, .9, uWet);
+      shine = (.1 + .5 * puddle) * uWet;
+      c *= 1. - .35 * puddle;
+      if (uRain > .01) shine += ripples(p) * puddle * uRain * .8 * detail(p, .12);
+    }
+  }
+  if (uSnow > .01) {
+    float lie = id == 1 || id == 2 ? .55 : paved ? .8 : 1.;
+    float n = fbm2(p * .3 + 9.);
+    float cover = smoothstep(n * .6, n * .6 + .25, uSnow * lie * 1.15);
+    vec3 snow = vec3(.78, .8, .84) * (.94 + .06 * vnoise(p * 4.));
+    if (id == 1 || id == 2) snow = mix(snow * vec3(.72, .7, .68), c, .35 * (1. - uSnow));   // slush
+    c = mix(c, snow, cover);
+    shine *= 1. - cover;
+  }
+  return c;
+}
+`;
+
 export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
@@ -187,6 +229,15 @@ vec3 facade(vec3 c, vec2 f) {
 export const DIRT = { value: 1 };
 export const LEAVES = { value: 1 };
 
+// The weather (weather.ts): how wet the ground is, how much snow lies, how hard it's
+// raining (0–1 each), and the colour of the sky mirrored in the puddles.
+export const WET = { value: 0 };
+export const SNOW = { value: 0 };
+export const RAIN = { value: 0 };
+export const SKY_REF = { value: new THREE.Color(0, 0, 0) };
+// Lit windows at night: the share of them (0 by day).
+export const WINDOWS = { value: 0 };
+
 export const CUTAWAY = { value: new THREE.Vector4(0, 0, 0, 0) };
 
 // When you're in a tunnel, the ground round you is shown as bare earth, cut open
@@ -197,6 +248,7 @@ export const DIG = { value: new THREE.Vector4(0, 0, 0, 0) };
 export function cutAway<M extends THREE.Material>(material: M, key: string): M {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uCut = CUTAWAY;
+    lampLit(sh);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vCutWorld;')
       .replace('#include <project_vertex>', `#include <project_vertex>
@@ -220,11 +272,15 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uDirt = DIRT;
     sh.uniforms.uFacades = FACADE_ATLAS;
     sh.uniforms.uFacadeOn = FACADE_ON;
+    sh.uniforms.uWet = WET;
+    sh.uniforms.uSnow = SNOW;
+    sh.uniforms.uWindows = WINDOWS;
+    lampLit(sh, 'vWorld');
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);
@@ -236,7 +292,24 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
     else diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy);
     if (uDirt > .5) diffuseColor.rgb = grime(diffuseColor.rgb, vFacade);
-  }`);
+  }
+  // Lit windows at night: dark glass above the ground floor, in a share of the
+  // windows by the time; shop windows at street level the same.
+  vec3 windowGlow = vec3(0.);
+  if (uWindows > .005 && bn.y < .15 && vFacade.z > .1) {
+    float bays = max(1., floor(vFacade.z / 1.9 + .5));
+    vec2 cell = vec2(floor(vFacade.x / vFacade.z * bays), floor((vFacade.y - .6) / 3.4));
+    float lit = step(fHash(cell.x + fract(vFacade.w) * 97., cell.y), uWindows * (vFacade.y < 4. ? 1.6 : 1.));
+    float glass = 1. - smoothstep(.2, .35, luma(diffuseColor.rgb) / max(luma(vColor.rgb), .02));
+    windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(cell.y, cell.x)) * lit * glass * .55;
+  }
+  // Rain darkens the walls and the roofs; snow lies on the roofs, less on steep ones.
+  diffuseColor.rgb *= mix(1., bn.y > .15 ? .72 : .84, uWet);
+  if (uSnow > .01 && bn.y > .15) {
+    float cover = smoothstep(.0, .25, uSnow * smoothstep(.25, .7, bn.y) * 1.2 - .45 * fbm2(bwp * .4));
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.8, .82, .86) * (.93 + .07 * vnoise(bwp * 3.)), cover);
+  }`)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += windowGlow;');
   };
   material.customProgramCacheKey = () => 'buildings-procedural';
   material.needsUpdate = true;
@@ -255,10 +328,15 @@ export function patterned(
   deck: { mask: THREE.Texture | null; box?: number[] } | null = null,
   dig = false,
   photo: { texture: THREE.Texture; box: number[] } | null = null,
+  sheltered = false, // in a tunnel: no rain or snow
 ) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
     sh.uniforms.uDirt = DIRT;
+    sh.uniforms.uWet = WET;
+    sh.uniforms.uSnow = SNOW;
+    sh.uniforms.uRain = RAIN;
+    sh.uniforms.uSkyRef = SKY_REF;
     if (photo) {
       sh.uniforms.uPhoto = { value: photo.texture };
       sh.uniforms.uPhotoBox = { value: photo.box };
@@ -276,15 +354,19 @@ export function patterned(
       .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}\n${WEATHER_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   vec2 wp = vec2(vWorld.x, -vWorld.z);
 ${deck ? `  if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
 ${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = ${photo ? 'texture2D(uPhoto, (wp - uPhotoBox.xy) / (uPhotoBox.zw - uPhotoBox.xy)).rgb' : `pattern(${id}, diffuseColor.rgb, wp)`} * (.93 + .14 * fbm(wp * .004));
   if (uReliefOn > .5) diffuseColor.rgb *= texture2D(uRelief, (wp - uReliefBox.xy) / (uReliefBox.zw - uReliefBox.xy)).r * 2.;
-${dig ? `  if (distance(vWorld.xz, uDig.xy) < uDig.z) diffuseColor.rgb = vec3(.23, .19, .15) * (.8 + .4 * fbm(wp * .7));
+  float shine = 0.;
+${sheltered ? '' : `  diffuseColor.rgb = weathered(${id}, diffuseColor.rgb, wp, shine);\n`}${dig ? `  if (distance(vWorld.xz, uDig.xy) < uDig.z) diffuseColor.rgb = vec3(.23, .19, .15) * (.8 + .4 * fbm(wp * .7));
 ` : ''}`);
+    lampLit(sh, 'vWorld');
+    // Wet ground mirrors the sky and the lamps.
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += shine * (uSkyRef + lampLight(vWorld) * 1.1);');
   };
-  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}-${dig ? 'dig' : ''}${photo ? '-photo' : ''}`;
+  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}-${dig ? 'dig' : ''}${photo ? '-photo' : ''}${sheltered ? '-in' : ''}`;
   return material;
 }

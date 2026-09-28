@@ -1,8 +1,12 @@
 import * as THREE from 'three';
+import { SKY_REF, WINDOWS } from './shading.ts';
+import { CLEAR } from './weather.ts';
+import type { Conditions } from './weather.ts';
 
 // The light of the time of day: where the sun is over Prague, and the colour and
 // strength of the sunlight and of the sky's light, blended between a few moods by the
-// sun's height. Weather can later swap these moods for overcast or rainy ones.
+// sun's height, then dimmed and greyed by the clouds (weather.ts). Also the fog of
+// rain, snow and mist, when the street lamps come on, and how many windows are lit.
 
 const LAT = 50.08 * Math.PI / 180;
 
@@ -25,15 +29,24 @@ function sunAt(secOfDay: number, date: Date) {
 type Mood = { sun: string; sunI: number; sky: string; ground: string; skyI: number; exposure: number };
 // By the sun's height in degrees. Below the horizon the moon takes over (see update).
 const MOODS: [number, Mood][] = [
-  [-10, { sun: '#8fa6d8', sunI: 0.9, sky: '#2c3a5c', ground: '#16151c', skyI: 1.6, exposure: 2.03 }],
-  [-4, { sun: '#8fa6d8', sunI: 0.0, sky: '#4a4e72', ground: '#2a2230', skyI: 1.7, exposure: 1.96 }],
+  [-10, { sun: '#8fa6d8', sunI: 0.5, sky: '#2c3a5c', ground: '#16151c', skyI: 1.0, exposure: 2.03 }],
+  [-4, { sun: '#8fa6d8', sunI: 0.0, sky: '#4a4e72', ground: '#2a2230', skyI: 1.45, exposure: 1.96 }],
   [1, { sun: '#ffa060', sunI: 1.8, sky: '#948aa4', ground: '#4c3a34', skyI: 1.3, exposure: 1.82 }],
   [8, { sun: '#ffaa66', sunI: 3.0, sky: '#b4b2bd', ground: '#6a5444', skyI: 1.1, exposure: 1.69 }],
   [20, { sun: '#ffd1a0', sunI: 3.4, sky: '#bfc4cc', ground: '#7a6a52', skyI: 1.15, exposure: 1.62 }],
   [40, { sun: '#fff0dc', sunI: 3.6, sky: '#c9cfd6', ground: '#857a62', skyI: 1.2, exposure: 1.62 }],
 ];
 
-const ca = new THREE.Color(), cb = new THREE.Color();
+// Under clouds the sky's light is grey by day; at night the clouds glow orange with
+// the city's lights.
+const OVERCAST = new THREE.Color('#b3b8bf'), CITY_GLOW = new THREE.Color('#5a4d48');
+const SNOWY_GROUND = new THREE.Color('#b9bec6');
+// Fog and mist, as seen (display colours): by day, at night, at night under clouds.
+const FOG_DAY = new THREE.Color('#b4b9bf'), FOG_NIGHT = new THREE.Color('#1a1e25'), FOG_GLOW = new THREE.Color('#2c2a2b');
+// The share of lit windows through the day, by the hour.
+const LIT = [0.12, 0.08, 0.06, 0.05, 0.06, 0.12, 0.25, 0.3, 0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.15, 0.25, 0.4, 0.45, 0.45, 0.4, 0.3, 0.2];
+
+const ca = new THREE.Color(), cb = new THREE.Color(), cc = new THREE.Color();
 function mix(a: string, b: string, t: number, out: THREE.Color) {
   return out.copy(ca.set(a).convertSRGBToLinear()).lerp(cb.set(b).convertSRGBToLinear(), t).convertLinearToSRGB();
 }
@@ -73,15 +86,25 @@ export class Sky {
   // The tone curve (graphics.ts). Without it the light is only scaled so that mid-grey
   // comes out as bright as with it; highlights clip instead of rolling off.
   curve = true;
+  // How dark it is, for the street lamps: 0 by day, 1 at night.
+  dark = 0;
+  // Always there (switching it on and off would compile every shader again); it
+  // starts beyond the view when there's nothing to see.
+  readonly fog = new THREE.Fog(0xffffff, 1e5, 1e5 + 1);
+  // The colour of the fog and of the rain as seen, for WeatherFx.
+  readonly haze = new THREE.Color();
+  readonly tint = new THREE.Color();
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
     renderer.toneMapping = THREE.CustomToneMapping;
     scene.add(this.hemi, this.sun, this.sun.target);
+    scene.fog = this.fog;
   }
 
-  // `sec`: seconds since midnight on the game's clock.
-  update(sec: number) {
+  // `sec`: seconds since midnight on the game's clock; `w` the weather; `height` how
+  // high the camera is above the ground (the fog is measured from it).
+  update(sec: number, w: Conditions = CLEAR, height = 100) {
     const { el, az } = sunAt(sec, new Date());
     const deg = el * 180 / Math.PI;
     let i = 0;
@@ -93,7 +116,36 @@ export class Sky {
     mix(a.ground, b.ground, t, this.hemi.groundColor);
     this.sun.intensity = THREE.MathUtils.lerp(a.sunI, b.sunI, t);
     this.hemi.intensity = THREE.MathUtils.lerp(a.skyI, b.skyI, t);
-    const exposure = THREE.MathUtils.lerp(a.exposure, b.exposure, t);
+    let exposure = THREE.MathUtils.lerp(a.exposure, b.exposure, t);
+
+    // Clouds: the sun hidden (and its shadows faint), the sky's light grey and a
+    // little stronger, as the whole sky shines, or orange from the city at night.
+    const night = THREE.MathUtils.clamp((2 - deg) / 8, 0, 1);
+    this.sun.intensity *= 1 - 0.85 * w.cloud;
+    this.hemi.color.lerp(cc.copy(OVERCAST).lerp(CITY_GLOW, night), w.cloud * 0.75);
+    this.hemi.intensity *= 1 + 0.3 * w.cloud * (1 - night);
+    this.hemi.groundColor.lerp(SNOWY_GROUND, w.cover * 0.5 * (1 - night * 0.6));
+    exposure *= 1 + 0.12 * w.cloud;
+    // The lamps come on at dusk, earlier under heavy cloud.
+    this.dark = THREE.MathUtils.clamp((3 + 3 * w.cloud - deg) / 7, 0, 1);
+    const hour = Math.floor(sec / 3600) % 24;
+    WINDOWS.value = THREE.MathUtils.lerp(LIT[hour], LIT[(hour + 1) % 24], (sec % 3600) / 3600) * this.dark;
+    // Puddles mirror the sky above.
+    SKY_REF.value.copy(this.hemi.color).multiplyScalar(this.hemi.intensity * 0.06 * (1 - night * 0.8));
+
+    // Fog, measured from the camera: `amount` of it on the ground right below, more
+    // further off, less on the roofs.
+    const amount = Math.max(0.08 * w.cloud, 0.2 * w.rain, 0.3 * w.snow, 0.55 * w.mist);
+    const day = 1 - night;
+    this.haze.copy(FOG_NIGHT).lerp(FOG_GLOW, w.cloud).lerp(FOG_DAY, day).convertLinearToSRGB();
+    this.tint.copy(this.haze).multiplyScalar(0.8 + 0.3 * day);
+    if (amount < 0.01) this.fog.near = this.fog.far = 1e5;
+    else {
+      const x = 0.5 - Math.sin(Math.asin(1 - 2 * amount) / 3); // the inverse of smoothstep
+      this.fog.near = 0.5 * height;
+      this.fog.far = this.fog.near + (height - this.fog.near) / x;
+    }
+    this.fog.color.copy(this.haze);
     this.renderer.toneMappingExposure = this.curve ? exposure : -toneCurve(0.18 * exposure) / 0.18;
 
     // Kept a little above the horizon so shadows don't run off for hundreds of metres

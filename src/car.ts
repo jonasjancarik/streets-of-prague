@@ -4,6 +4,8 @@ import { clamp } from './network.ts';
 import { Figures, Anim, SCALE } from './figures.ts';
 import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
+import { lampLit } from './lamps.ts';
+import { SNOW } from './shading.ts';
 
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
@@ -95,6 +97,19 @@ function carGeometry(type: string, paint: string): THREE.BufferGeometry {
 }
 
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+// Snow settles on the roofs and bonnets (weather.ts).
+material.onBeforeCompile = (sh) => {
+  lampLit(sh);
+  sh.uniforms.uSnow = SNOW;
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform float uSnow;')
+    .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+  if (uSnow > .01) {
+    float up = dot(normal, (viewMatrix * vec4(0., 1., 0., 0.)).xyz);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.8, .82, .86), smoothstep(.75, .95, up) * smoothstep(.1, .6, uSnow) * .6);
+  }`);
+};
+material.customProgramCacheKey = () => 'cars';
 
 // A random type, by `weight` for parking and by `traffic` (where it's set) on the road.
 export function randomType(r: () => number, use: 'weight' | 'traffic' = 'weight') {

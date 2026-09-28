@@ -20,7 +20,8 @@ The map data is built locally (see [Building the map](#building-the-map)); nothi
 generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
 the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague
 now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
-(with night-time parking). `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
+(with night-time parking). The weather changes by itself every half hour or so of the game's clock;
+`?weather=clear|cloudy|rain|mist|snow` fixes it, and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser): High draws at the screen's
 pixel ratio up to 2, Medium up to 1.5, Low at 1, all with the tone curve, dirt and grime
@@ -113,6 +114,31 @@ the pixel ratio.
   loading screen puts three of them in front of a skyline of a real view, drawn from
   the 3D city by `pipeline/skyline.py`, with poster shapes over the panels' cut edges;
   a conversation shows the speaker rising out of a frame (`src/portraits.ts`).
+- **Weather** (`src/weather.ts`): clear, cloudy, rain, mist or snow, each a mix of
+  cloud, rain, snow and mist that the weather moves between over half a minute. It
+  picks the next one every 20 to 60 minutes of the game's clock, by season (rain in
+  summer, snow and mist in winter, mist mostly in the morning); a picked weather stays.
+  Clouds hide the sun and fade the shadows, and the sky's light turns grey by day and
+  orange from the city at night (`src/sky.ts`). Rain falls as streaks and snow as
+  flakes in a box round the view that stays put in the world, so you move through
+  them; mist is a drifting sheet a few metres up that the taller buildings stand out
+  of, with fog measured from the camera so the ground is hazier than the roofs. The
+  ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,
+  rings where the drops hit) and dries over several minutes; snow settles on the
+  ground (thinner and slushy on the roads), the roofs and the cars, and melts slower
+  still (`WEATHER_GLSL` in `src/shading.ts`).
+- **Night** (`src/lamps.ts`): the street lamps are IPR's, about 130,000 of them: on
+  poles, on walls, the Old Town's gas lamps, floodlit monuments, tunnels and
+  underpasses (`pipeline/build_lamps.py`). Side streets whose lamps hang on cables
+  between the houses aren't in that map, so a street with no lamp within 20 m gets
+  one hung over it every 30 m. Round the view the lamps get a pole and a glowing head,
+  and every lamp and every driving car's headlights and rear lights add a pool of
+  light to a light map: a texture over the view, drawn from above each frame. The
+  ground, walls, trees, cars and people read their light from it by position, so the
+  light costs one texture read a pixel however many lamps there are; its alpha keeps
+  the height of the ground under the lamps, so their light stays off the roofs. The
+  lamps come on at dusk (earlier under heavy cloud), and a share of the windows is lit
+  by the hour, most in the evening.
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.ts`) around the camera. Each
   tile has its own ground, buildings, trees, collision grid, parked cars and piece of
   the street graphs (joined across tiles by OSM node ids), so start-up doesn't depend
@@ -271,8 +297,9 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
 - Something to do: missions (deliveries, taxi, courier).
 - Visible damage on cars.
 - Sound for the traffic, crashes, people and the helicopter.
-- Night proper: street lights, headlights, lit windows (the light already follows the clock, see `?time`).
-- Weather: overcast and rain, as other sets of light in `src/sky.ts`.
+- Weather sounds (rain on the street, wind), thunderstorms, and tyres slipping on
+  snow and in the wet.
+- Snow on the trees, and bare trees in winter.
 
 ## Building the map
 
@@ -288,6 +315,7 @@ uv run ipr_terrain.py centrum      # IPR's terrain, bridges and tunnels, hill sh
 uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
 uv run build_metro.py centrum      # the metro from PID's timetables → metro.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
+uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
 ```
 
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
@@ -397,6 +425,7 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 - 3D buildings, bridges and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
 - Carriageways and parking bays: Digitální technická mapa kraje, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/28A24EB4-5EE8-436E-B0BB-357025258211), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
+- Street lamps: the surface marks of the archived utility map (DTMP_CUR_TMISZNAK_B), datový podklad © [IPR Praha](https://geoportalpraha.cz/), CC BY.
 - Unmapped-ground prototype (`?cover`, `?ortho`): orthophotos and the digital surface model © [IPR Praha](https://geoportalpraha.cz/), CC BY 4.0; older surface model DMP 1G © [ČÚZK](https://geoportal.cuzk.cz/), CC BY 4.0.
 - Tram sounds: [Freesound](https://freesound.org), nearly all CC0; the motor's whine is
   [tramvaj nova prujezd nabrezi MS](https://freesound.org/s/621068/) by ozvuk,
