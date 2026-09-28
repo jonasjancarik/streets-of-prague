@@ -86,6 +86,10 @@ too long; `?dpr=1` fixes it.
   triangulated from OSM and coloured by world-space GLSL patterns (`src/shading.ts`,
   `src/surface.ts`): asphalt, granite setts, Prague mosaic pavement, slabs, grass,
   water. Rails, zebras, lane markings and parking-bay outlines are thin strips on top.
+  Land that OSM gives a use but no surface still gets one: fields with crop rows
+  (farmland, nurseries), concrete work yards (industrial land, garages, farmyards),
+  gravel ballast on railway land, and bare earth on building sites, brownfields and
+  quarries (`_area_kind` in `pipeline/osm_area.py`).
   OSM rarely maps the gardens and lawns in a suburb or a housing estate, so a street
   block of family houses, or of flats with plenty of room round them, gets grass
   between the buildings (`_gardens` in `pipeline/osm_area.py`); denser inner-city
@@ -335,6 +339,17 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   everywhere.
 - **Parking.** `build_parking.py` reads the monthly TSK occupancy GeoJSON collected by
   `~/projects/parkovani-praha` (set `PARKING_DATA` to point elsewhere).
+- **Unmapped ground (prototype).** `ground_cover.py` tries two ways to fill the ground
+  nothing is mapped on, from IPR's aerial photographs, on a few tiles at a time; it
+  isn't part of the build, and its extra packages are in a group of their own
+  (`uv run --group cover ground_cover.py …`). `fetch` downloads the photos (colour and
+  infrared) for the tiles; `classify --method rules` sorts the unmapped ground into
+  grass, trees, dirt, gravel, asphalt and what isn't ground, and the game draws it with
+  `?cover=rules`; `ortho` paints the photo itself through a Kuwahara filter, shown with
+  `?ortho` (not convincing yet; stronger filters are still to try). Heights come from
+  IPR's 1 m surface model, unzipped into `pipeline/.cache/cover/dsm_ipr/` (1.5 GB to
+  download). The script's docstring has the rest, including hand-labelling and
+  scoring.
 
 Sizes: centrum is 234 tiles and about 22 MB; the whole city 13,609 tiles, 247k OSM
 buildings and IPR buildings in 4,326 tiles, about 580 MB. The tiles' binary files
@@ -358,6 +373,7 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 - 3D buildings, bridges and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
 - Carriageways and parking bays: Digitální technická mapa kraje, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/28A24EB4-5EE8-436E-B0BB-357025258211), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
+- Unmapped-ground prototype (`?cover`, `?ortho`): orthophotos and the digital surface model © [IPR Praha](https://geoportalpraha.cz/), CC BY 4.0; older surface model DMP 1G © [ČÚZK](https://geoportal.cuzk.cz/), CC BY 4.0.
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - Maps in the developer panel: [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).
 

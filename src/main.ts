@@ -109,7 +109,7 @@ async function main() {
   const kit = await kitLoad;
   useKit(kit);
   const clock = new Clock(params);
-  const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm') });
+  const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), cover: params.get('cover'), ortho: params.has('ortho') });
   const grid = world.grid;
   // Height of the ground at a point; with `who` (a car, a person), of whatever they're
   // on there: the ground, or a bridge deck (see TileWorld.track).
