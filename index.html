@@ -6,7 +6,7 @@
     <title>Streets of Prague</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
     <style>
       :root { --ink: #f5efe2; --paper: rgba(20, 18, 16, 0.72); --accent: #ffd23f; }
       html, body { margin: 0; height: 100%; overflow: hidden; background: #2a2622; color: var(--ink); font: 13px/1.4 Inter, system-ui, sans-serif; }
@@ -103,8 +103,58 @@
       #dev-mapbox { position: fixed; inset: 5%; z-index: 10; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
       #dev-leaflet { position: absolute; inset: 0; }
       .dev-maphint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1000; background: var(--paper); padding: 6px 12px; border-radius: 8px; pointer-events: none; }
-      #loading { position: fixed; inset: 0; display: grid; place-items: center; background: #2a2622; transition: opacity 0.6s; font: 28px 'Bebas Neue', sans-serif; letter-spacing: 0.05em; }
+      /* The illustrated layer (src/portraits.ts): black, signal red and paper, like a
+         constructivist poster. Portraits end in hard cut edges; something always covers them. */
+      :root { --poster-red: #c8241d; --poster-black: #140d0c; --poster-paper: #ece4d6; }
+      #loading { position: fixed; inset: 0; z-index: 20; overflow: hidden; background: var(--poster-black); transition: opacity 0.6s; font: 28px 'Bebas Neue', sans-serif; letter-spacing: 0.05em; }
       #loading.done { opacity: 0; pointer-events: none; }
+      .portrait { display: block; opacity: 0; transition: opacity 0.4s; }
+      .portrait.in { opacity: 1; }
+      .ls-sky { position: absolute; inset: 0; background: center 70% / cover no-repeat; }
+      .ls-wedge { position: absolute; inset: 0; background: var(--poster-black); clip-path: polygon(0 0, 34% 0, 18% 100%, 0 100%); opacity: 0.9; }
+      .ls-cast { position: absolute; z-index: 0; right: 3vw; bottom: 9vh; height: 74vh; display: flex; align-items: flex-end; }
+      /* Each figure is cut out with a paper edge, as if snipped from a print: the sides
+         slant in over the panel's cut edges, and the band below hides its foot. */
+      .ls-face { position: relative; height: 100%; margin-left: -4vh; display: flex; align-items: flex-end;
+        filter: drop-shadow(0.5vh 0 0 var(--poster-paper)) drop-shadow(-0.5vh 0 0 var(--poster-paper)) drop-shadow(0 -0.5vh 0 var(--poster-paper)) drop-shadow(1.2vh 1.2vh 0 rgba(20, 13, 12, 0.55)); }
+      .ls-face:nth-child(2) { height: 88%; z-index: 1; }
+      .ls-face:nth-child(3) { height: 80%; }
+      .ls-face img { height: 100%; width: auto; clip-path: polygon(0 -50%, 100% -50%, 100% 22%, 94% 100%, 6% 100%, 0 22%); }
+      .ls-stripe { position: absolute; left: 0; right: 0; bottom: 21vh; height: 1.4vh; background: var(--poster-paper); transform-origin: left; transform: rotate(-4deg) scaleX(1.2); }
+      .ls-band { position: absolute; left: -5%; right: -5%; bottom: -14vh; height: 36vh; background: var(--poster-red); transform: rotate(-4deg); box-shadow: 0 -2vh 0 var(--poster-black); }
+      .ls-title { position: absolute; left: 5vw; top: 8vh; display: flex; flex-direction: column; font: 17vh/0.82 'Bebas Neue', sans-serif; letter-spacing: 0.01em; color: var(--poster-paper); text-shadow: 0.6vh 0.6vh 0 var(--poster-red); }
+      .ls-title span + span { color: var(--poster-red); text-shadow: 0.6vh 0.6vh 0 var(--poster-black); }
+      #loading-text { position: absolute; left: 5vw; bottom: 5vh; font: 5vh/1 'Bebas Neue', sans-serif; color: var(--poster-black); transform: rotate(-4deg); transform-origin: left; }
+      @media (max-aspect-ratio: 1/1) {
+        .ls-title { font-size: 17vw; line-height: 0.9; }
+        .ls-cast { right: -6vw; height: 58vh; }
+        .ls-face:nth-child(3) { display: none; }
+      }
+
+      /* A conversation: the portrait rises out of its frame, the line beside it. */
+      .dlg { position: fixed; left: 50%; bottom: 24px; z-index: 12; transform: translateX(-50%); width: min(1040px, calc(100vw - 32px)); display: flex; align-items: flex-end; cursor: pointer; }
+      .dlg[hidden] { display: none; }
+      body.talking #help { display: none; }
+      .dlg-frame { position: relative; flex: 0 0 auto; width: 210px; height: 200px; margin-right: -14px; z-index: 1; border: 4px solid var(--poster-paper); background: var(--poster-black); box-shadow: 6px 6px 0 var(--poster-red); }
+      .dlg-sky { position: absolute; inset: 0; background: 30% 70% / auto 180% no-repeat; }
+      .dlg-frame .portrait { position: absolute; left: 0; bottom: 0; width: 100%; height: auto; }
+      .dlg-body { flex: 1; min-width: 0; background: rgba(20, 13, 12, 0.93); border-left: 6px solid var(--poster-red); padding: 16px 22px 14px 34px; margin-bottom: 0; }
+      .dlg-name { font: 40px/1 'Bebas Neue', sans-serif; letter-spacing: 0.03em; color: var(--poster-paper); }
+      .dlg-text { margin: 8px 0 12px; font: 18px/1.5 'IBM Plex Mono', ui-monospace, monospace; color: var(--poster-paper); }
+      .dlg-goal { border-top: 1px solid rgba(236, 228, 214, 0.3); padding-top: 10px; font: 16px/1.4 'IBM Plex Mono', ui-monospace, monospace; }
+      .dlg-goal b { font: 22px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; color: #e8403a; margin-right: 10px; }
+      .dlg-goal b::before { content: '◎ '; }
+      .dlg-next { text-align: right; margin-top: 8px; font: 14px/1 'IBM Plex Mono', ui-monospace, monospace; color: rgba(236, 228, 214, 0.8); }
+      .dlg-next kbd { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 3px 6px; margin-right: 6px; font: inherit; }
+      @media (max-width: 640px) {
+        .dlg { bottom: 12px; }
+        .dlg-frame { width: 110px; height: 110px; border-width: 3px; }
+        .dlg-body { padding: 10px 12px 10px 22px; }
+        .dlg-name { font-size: 28px; }
+        .dlg-text { font-size: 14px; }
+        .dlg-goal { font-size: 13px; }
+        .dlg-goal b { font-size: 18px; }
+      }
       @media (max-width: 640px) { #help { display: none; } #banner { font-size: 40px; } }
 
       /* Touch controls: left thumb steers, right thumb works the pedals and buttons. */
@@ -213,7 +263,7 @@
       </div>
     </div>
     <div id="metro" class="panel" hidden></div>
-    <div id="loading"><span id="loading-text">Loading…</span></div>
+    <div id="loading"><div id="loading-text">Loading…</div></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

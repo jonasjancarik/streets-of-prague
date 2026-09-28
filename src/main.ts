@@ -18,6 +18,7 @@ import { TileWorld } from './tiles.ts';
 import { groundSamples } from './surface.ts';
 import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
+import { dressLoading, Dialog } from './portraits.ts';
 import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import type { Surface } from './audio.ts';
@@ -55,6 +56,7 @@ const SHOVE = 1.2; // m/s a tram pushes a car aside, off its track
 const LIFE_RADIUS = 330; // traffic and people are kept within this distance of the player
 
 async function main() {
+  dressLoading($('loading'));
   status('Loading the map…');
   const kitLoad = loadKit();
   const footfallLoad = loadFootfall(AREA);
@@ -464,10 +466,12 @@ async function main() {
   // ---- Input -------------------------------------------------------------
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
   const keymap: Record<string, InputKey> = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'brake' };
+  const dialog = new Dialog();
   window.addEventListener('keydown', (e) => {
-    // The metro screen takes the keys while it's up.
-    if (metro.active) {
-      metro.key(e.code);
+    // The metro screen and a conversation take the keys while they're up.
+    if (metro.active || dialog.active) {
+      if (!dialog.active) metro.key(e.code);
+      else if (!e.repeat) dialog.key(e.code);
       e.preventDefault();
       return;
     }
@@ -790,6 +794,11 @@ async function main() {
     samples.dispose();
   }
   $('loading').classList.add('done');
+  // ?dialog plays a sample conversation, to see how one looks.
+  if (params.has('dialog')) void dialog.play([
+    { who: 'marek', name: 'Marek', text: 'Come around the back. Don’t use the main entrance. I’ll be waiting by the tram stop.', objective: 'Meet Marek behind the block' },
+    { who: 'policewoman', name: 'Officer Nováková', text: 'You there. Seen a man in a green jacket come this way?' },
+  ]);
 
   graphics.started(performance.now());
 
@@ -967,7 +976,7 @@ async function main() {
     get heli() { return inHeli; },
     choppers, addChopper,
     teleport: (x: number, y: number) => { (inCar || inHeli || walker).x = x; (inCar || inHeli || walker).y = y; camPos.set(x, 0, -y); },
-    enterOrExit, teleportTo, dev, touch,
+    enterOrExit, teleportTo, dev, touch, dialog,
     // One step of the world with these controls (for tests, and while the tab is hidden).
     simulate: (dt: number, ctl: Partial<Controls> = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z: number) => { zoom = z; height = (inCar ? 120 : 100) * z; },

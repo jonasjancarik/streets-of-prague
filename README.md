@@ -21,7 +21,7 @@ generated is committed. The whole city (`?area=praha`) is the default, `?area=ce
 the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague
 now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
 (with night-time parking). `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
-developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
+developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser): High draws at the screen's
 pixel ratio up to 2, Medium up to 1.5, Low at 1, all with the tone curve, dirt and grime
 and the trees' small leaves; Lowest at 1 without them. Auto, the default, moves between
@@ -107,6 +107,12 @@ the pixel ratio.
   functionalism elsewhere. The plaster takes the building's own colour. The parts were
   drawn by an image model as four sheets, each asked for with the first sheet as a
   style reference, and are cut and packed by `assets/facades/build_atlas.py`.
+- **Portraits and the loading screen.** Characters are half-length portraits drawn by
+  an image model, ten to a sheet, and cut apart by `assets/portraits/cut.py` into
+  `public/portraits/` (the sheets never line up, so the seams are found per row). The
+  loading screen puts three of them in front of a skyline of a real view, drawn from
+  the 3D city by `pipeline/skyline.py`, with poster shapes over the panels' cut edges;
+  a conversation shows the speaker rising out of a frame (`src/portraits.ts`).
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.ts`) around the camera. Each
   tile has its own ground, buildings, trees, collision grid, parked cars and piece of
   the street graphs (joined across tiles by OSM node ids), so start-up doesn't depend
@@ -287,7 +293,7 @@ uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 
 - **Skylines.** `uv run skyline.py hradcany` (or `--all`) draws a real Prague view as a
-  red screen-print silhouette into `assets/skylines/`, for loading screens and the
+  red screen-print silhouette into `public/skylines/`, for the loading screen and the
   backdrop behind character portraits. It reads the praha caches of `ipr_buildings.py`
   and `ipr_terrain.py`; the views (camera spot, direction, field of view) are listed
   in `VIEWS` at the top of `pipeline/skyline.py`.
