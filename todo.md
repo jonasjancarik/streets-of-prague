@@ -73,6 +73,9 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   moving cars and parked cars should all block the player and each other.
 - **Trams turn in sharp steps.** On curves they snap from one heading to the next
   in visible increments instead of turning smoothly along the track.
+- **Trams drive into each other.** When one tram gets stuck, the next one on the
+  same track sometimes doesn't stop behind it and ends up overlapping it (not
+  always). Trams should queue behind the tram ahead.
 - **Tram braking distance.** Trams should brake more realistically (long stopping
   distance), so a player who steps or drives in front of one too late actually gets
   hit more often. Accidents with NPCs should stay very rare.
