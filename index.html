@@ -96,6 +96,10 @@
       #dev-results { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
       .dev-row { display: flex; gap: 6px; flex-wrap: wrap; }
       .dev-note, #dev-pos { opacity: 0.7; font-size: 12px; }
+      .dev-time { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+      #dev .dev-time input { flex: 1 0 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: none; accent-color: #e8a15c; }
+      .dev-check { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; opacity: 0.85; }
+      #dev .dev-check input { margin: 2px 0 0; padding: 0; }
       #dev-mapbox { position: fixed; inset: 5%; z-index: 10; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
       #dev-leaflet { position: absolute; inset: 0; }
       .dev-maphint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1000; background: var(--paper); padding: 6px 12px; border-radius: 8px; pointer-events: none; }

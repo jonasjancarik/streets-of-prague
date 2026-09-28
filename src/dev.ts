@@ -7,14 +7,17 @@ interface DevHit { label: string; x: number; y: number }
 interface StreetName { name: string; key: string; x: number; y: number }
 
 // Developer panel (` key or ?dev): jump to a street or an address, or pick a spot on
-// a map; move the clock an hour either way. Street names come from the area's own index (offline); addresses are looked
+// a map; set the time of day, and which side the sun shines from. Street names come from the area's own index (offline); addresses are looked
 // up on OpenStreetMap's Nominatim only when you ask for it.
 
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-export function setupDev({ area, index, teleport, position, helicopter, shiftTime }: {
+export function setupDev({ area, index, teleport, position, helicopter, shiftTime, timeOfDay, setTimeOfDay, sunFromSouth }: {
   area: string; index: MapIndex; teleport: (x: number, y: number) => Promise<void>;
   position: () => Point2; helicopter: () => boolean; shiftTime: (hours: number) => void;
+  // Seconds since midnight on the game's clock.
+  timeOfDay: () => number; setTimeOfDay: (sec: number) => void;
+  sunFromSouth: (on?: boolean) => boolean;
 }) {
   const [w, s, e, n] = index.bbox_wgs84;
   const local = `+proj=tmerc +lat_0=${(s + n) / 2} +lon_0=${(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
@@ -51,6 +54,11 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
       <button id="dev-earlier" title="The trams follow the timetable for the new time">An hour earlier</button>
       <button id="dev-later" title="The trams follow the timetable for the new time">An hour later</button>
     </div>
+    <label class="dev-time">Time of day <span id="dev-time-label"></span>
+      <input id="dev-time" type="range" min="0" max="1439" step="5" title="The trams follow the timetable for the new time" />
+    </label>
+    <label class="dev-check"><input id="dev-south" type="checkbox" />
+      Sun in the south, as in reality (otherwise its path is flipped so the light always comes from the top of the screen)</label>
     <div id="dev-pos"></div>`;
   panel.hidden = true;
   document.body.appendChild(panel);
@@ -121,6 +129,18 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
     setTimeout(() => { $('dev-link').textContent = 'Copy link to this spot'; }, 1500);
   };
 
+  const time = $('dev-time') as HTMLInputElement;
+  let dragging = false;
+  time.oninput = () => { dragging = true; setTimeOfDay(+time.value * 60); };
+  time.onchange = () => { dragging = false; };
+  // Arrow keys move the slider, not the player.
+  for (const el of [time, $('dev-south')]) {
+    el.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+    el.addEventListener('keyup', (ev) => ev.stopPropagation());
+  }
+  const south = $('dev-south') as HTMLInputElement;
+  south.checked = sunFromSouth();
+  south.onchange = () => sunFromSouth(south.checked);
   $('dev-earlier').onclick = () => shiftTime(-1);
   $('dev-later').onclick = () => shiftTime(1);
   $('dev-heli').onclick = () => {
@@ -177,6 +197,9 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
       const [x, y] = position();
       const [lon, lat] = toLonLat(x, y);
       $('dev-pos').textContent = `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`;
+      const min = Math.floor(timeOfDay() / 60);
+      if (!dragging) time.value = String(min);
+      $('dev-time-label').textContent = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
     },
     toLocal,
   };
