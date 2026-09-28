@@ -106,6 +106,9 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Motorbike rider sunk into the ground.** Came across a motorbike with its rider
   stuck partly in the road surface, not moving. Probably a height that isn't
   following the terrain (unchecked); could be related to the elevation break above.
+- **Building bridge over Svornosti blocks the street.** A covered walkway joins
+  two buildings above the street, but it's solid down to the ground, so you can't
+  drive under it. Probably needs a targeted fix for this spot.
 - **Parking zone markings.** The blue line should run only along the street side of
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
