@@ -25,18 +25,32 @@ function sunAt(secOfDay: number, date: Date) {
 type Mood = { sun: string; sunI: number; sky: string; ground: string; skyI: number; exposure: number };
 // By the sun's height in degrees. Below the horizon the moon takes over (see update).
 const MOODS: [number, Mood][] = [
-  [-10, { sun: '#8fa6d8', sunI: 0.9, sky: '#2c3a5c', ground: '#16151c', skyI: 1.6, exposure: 1.5 }],
-  [-4, { sun: '#8fa6d8', sunI: 0.0, sky: '#4a4e72', ground: '#2a2230', skyI: 1.7, exposure: 1.45 }],
-  [1, { sun: '#ffa060', sunI: 1.8, sky: '#948aa4', ground: '#4c3a34', skyI: 1.3, exposure: 1.35 }],
-  [8, { sun: '#ffaa66', sunI: 3.0, sky: '#a8aec4', ground: '#6a5444', skyI: 0.95, exposure: 1.25 }],
-  [20, { sun: '#ffd1a0', sunI: 3.4, sky: '#b4c2d8', ground: '#7a6a52', skyI: 0.95, exposure: 1.2 }],
-  [40, { sun: '#fff0dc', sunI: 3.6, sky: '#c4d4e6', ground: '#857a62', skyI: 1.0, exposure: 1.2 }],
+  [-10, { sun: '#8fa6d8', sunI: 0.9, sky: '#2c3a5c', ground: '#16151c', skyI: 1.6, exposure: 2.03 }],
+  [-4, { sun: '#8fa6d8', sunI: 0.0, sky: '#4a4e72', ground: '#2a2230', skyI: 1.7, exposure: 1.96 }],
+  [1, { sun: '#ffa060', sunI: 1.8, sky: '#948aa4', ground: '#4c3a34', skyI: 1.3, exposure: 1.82 }],
+  [8, { sun: '#ffaa66', sunI: 3.0, sky: '#a8aec4', ground: '#6a5444', skyI: 0.95, exposure: 1.69 }],
+  [20, { sun: '#ffd1a0', sunI: 3.4, sky: '#b4c2d8', ground: '#7a6a52', skyI: 0.95, exposure: 1.62 }],
+  [40, { sun: '#fff0dc', sunI: 3.6, sky: '#c4d4e6', ground: '#857a62', skyI: 1.0, exposure: 1.62 }],
 ];
 
 const ca = new THREE.Color(), cb = new THREE.Color();
 function mix(a: string, b: string, t: number, out: THREE.Color) {
   return out.copy(ca.set(a).convertSRGBToLinear()).lerp(cb.set(b).convertSRGBToLinear(), t).convertLinearToSRGB();
 }
+
+// Tone mapping: an extended Reinhard per channel, so bright colours drift towards
+// white as on film, a little less saturation and a gentle S-curve. It runs in every
+// material, for every ground layer drawn over a pixel; AgX looked much the same and
+// cost about 12% of the frame on a big high-density screen, this about 7%.
+THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
+  'vec3 CustomToneMapping( vec3 color ) { return color; }',
+  `vec3 CustomToneMapping( vec3 color ) {
+  color *= toneMappingExposure;
+  vec3 c = color * ( 1. + color / 36. ) / ( 1. + color );
+  c = mix( c, vec3( dot( c, vec3( .2126, .7152, .0722 ) ) ), .2 );
+  return mix( c, c * c * ( 3. - 2. * c ), .35 );
+}`,
+);
 
 export class Sky {
   readonly hemi = new THREE.HemisphereLight();
@@ -47,7 +61,7 @@ export class Sky {
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
-    renderer.toneMapping = THREE.AgXToneMapping;
+    renderer.toneMapping = THREE.CustomToneMapping;
     scene.add(this.hemi, this.sun, this.sun.target);
   }
 
