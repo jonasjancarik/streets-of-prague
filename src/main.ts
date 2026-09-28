@@ -58,6 +58,7 @@ const FEW_PEOPLE = 40; // on the quietest edge of town
 const PARKED_TWO = 10; // bikes and motorbikes parked around you
 const SHOVE = 1.2; // m/s a tram pushes a car aside, off its track
 const LIFE_RADIUS = 330; // traffic and people are kept within this distance of the player
+const METRO_HEIGHT = 420; // m the view rises to over a metro ride
 
 async function main() {
   dressLoading($('loading'));
@@ -163,6 +164,7 @@ async function main() {
   const metro = new Metro(await metroData, scene, $('metro'), {
     clock,
     inMap: (x, y) => world.available.has(world.keyAt(x, y)),
+    ready: (x, y) => { const k = world.keyAt(x, y); return !world.available.has(k) || world.loaded.has(k); },
     onArrive: async (x, y, name) => {
       await teleportTo(x, y);
       walker.mesh.visible = true;
@@ -481,7 +483,7 @@ async function main() {
   window.addEventListener('keydown', (e) => {
     // The metro screen and a conversation take the keys while they're up.
     if (metro.active || dialog.active) {
-      if (!dialog.active) metro.key(e.code);
+      if (!dialog.active) metro.key(e.code, e.repeat);
       else if (!e.repeat) dialog.key(e.code);
       e.preventDefault();
       return;
@@ -873,22 +875,29 @@ async function main() {
 
     // ---- Camera ----------------------------------------------------------
     const vehicle = inCar || inHeli, sp = vehicle ? vehicle.speed : 0;
+    // On the metro, high over the train as it goes (see Metro.view).
+    const underway = metro.view();
     // In the air the camera rises with the helicopter, so it stays well above it.
-    const want = (inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.air : 0);
+    const want = (underway ? METRO_HEIGHT : inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.air : 0);
     height += (want - height) * Math.min(1, dt * (want > height ? 1.6 : 0.9));
-    const lead = vehicle ? 0.7 : ride.on ? 0.5 : 0.3;
-    look.set(px() + (vehicle || walker).vx * lead, 0, -(py() + (vehicle || walker).vy * lead));
+    const lead = underway ? 0.25 : vehicle ? 0.7 : ride.on ? 0.5 : 0.3;
+    if (underway) look.set(underway.x + underway.vx * lead, 0, -(underway.y + underway.vy * lead));
+    else look.set(px() + (vehicle || walker).vx * lead, 0, -(py() + (vehicle || walker).vy * lead));
     camPos.lerp(look, Math.min(1, dt * 4));
     shake *= Math.exp(-6 * dt);
     const jx = (Math.random() - 0.5) * shake * 2, jz = (Math.random() - 0.5) * shake * 2;
     // Follow the ground under the view, smoothed so the camera doesn't bob over kerbs.
     // In a tunnel, the ground above it: the view looks down into the tunnel through
     // the hole round you (below), deep as it may be.
-    const body = inHeli ? null : inCar || walker;
+    // (Over the metro, where the map hasn't loaded yet, the camera keeps its height.)
+    const body = inHeli || underway ? null : inCar || walker;
     const deep = !!body && world.track(body) < 0;
-    camGround += ((deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body)) - camGround) * Math.min(1, dt * 3);
+    const below = underway && !world.loaded.has(world.keyAt(camPos.x, -camPos.z)) ? camGround
+      : deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body);
+    camGround += (below - camGround) * Math.min(1, dt * 3);
     camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
     camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
+    metro.place(camPos.x, -camPos.z, camGround, viewRadius());
 
     // In a passage under a building, open a hole in the floors above so you stay in view.
     // The same under a bridge, and a wider one down into a tunnel.
@@ -918,12 +927,13 @@ async function main() {
     weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio());
 
     // ---- HUD -------------------------------------------------------------
-    const name = names.at(px(), py());
+    // (On the metro, the street the train is under.)
+    const name = underway ? names.at(underway.x, underway.y) : names.at(px(), py());
     if (name && name !== street) {
       street = name;
       $('street').textContent = name;
       // (Not while a sped-up ride flicks through the streets.)
-      if ((!$('banner').classList.contains('alert') || bannerT < 0) && scale < 1.5) showBanner(name);
+      if ((!$('banner').classList.contains('alert') || bannerT < 0) && scale < 1.5 && !underway) showBanner(name);
     }
     bannerT -= dt;
     show('banner', clamp(bannerT, 0, 1), 'opacity');
@@ -931,17 +941,18 @@ async function main() {
       : ride.on ? Math.round((ride.v?.speed ?? 0) * 3.6) : '–'));
     if (clock.label() !== clockShown) $('clock').textContent = clockShown = clock.label();
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
-    const canBoard = !inCar && !inHeli && !ride.on && ride.boardable(walker.x, walker.y);
+    const canBoard = !inCar && !inHeli && !ride.on && !metro.active && ride.boardable(walker.x, walker.y);
     const station = !inCar && !inHeli && !ride.on && !metro.active ? metro.near(walker.x, walker.y) : null;
     const gap = (c: Car) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2;
     const enterable = !inCar && !inHeli && !ride.on
       ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8).sort((a, b) => gap(a) - gap(b))[0]
       : undefined;
-    const canEnter = !inCar && !inHeli && !ride.on && (!!enterable || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
+    const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
     const getIn = enterable?.two ? '<b>E</b> get on' : '<b>E</b> get in';
     const key = (k: string) => (touch.active ? '' : `<b>${k}</b> `);
     let hint = '';
-    if (inHeli) {
+    if (metro.active) hint = '';
+    else if (inHeli) {
       const up = `${Math.round(inHeli.air)} m up`;
       if (touch.active) hint = inHeli.landed ? '' : up;
       else hint = inHeli.landed ? '<b>Space</b> take off · <b>E</b> get out' : `${up} · <b>Space</b> climb · <b>Shift</b> down · land to get out`;
@@ -1042,7 +1053,9 @@ function parseMetroLines(value: unknown): { lines: MetroLine[] } {
     && record(line.perHour) && Array.isArray(line.stations)
     && line.stations.every((station: unknown) => record(station)
       && typeof station.name === 'string' && typeof station.t === 'number'
-      && pair(station.at) && Array.isArray(station.entrances) && station.entrances.every(pair)))) {
+      && (station.d === undefined || typeof station.d === 'number')
+      && pair(station.at) && Array.isArray(station.entrances) && station.entrances.every(pair))
+    && (line.path === undefined || (Array.isArray(line.path) && line.path.every(pair))))) {
     throw new Error('The metro line data has invalid fields');
   }
   return value as unknown as { lines: MetroLine[] };

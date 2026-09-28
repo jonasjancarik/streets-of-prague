@@ -43,6 +43,10 @@
       /* The metro: picking a station, then the ride on the line's map. */
       #metro { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; z-index: 6; background: rgba(20, 18, 16, 0.92); }
       #metro[hidden] { display: none; }
+      /* During the ride it moves to the corner, out of the way of the view. */
+      #metro.riding { top: 16px; left: auto; right: 16px; transform: none; width: min(280px, calc(100vw - 32px)); max-height: min(60vh, calc(100vh - 32px)); }
+      .metro-skip { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.12); border: 0; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+      .metro-skip:hover { background: rgba(255, 255, 255, 0.2); }
       .metro-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
       .metro-title { display: flex; align-items: center; gap: 8px; font: 24px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
       .metro-close { font: 24px/1 Inter, system-ui, sans-serif; color: var(--ink); background: none; border: 0; cursor: pointer; padding: 0 4px; }

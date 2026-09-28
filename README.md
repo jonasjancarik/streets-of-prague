@@ -45,8 +45,10 @@ the pixel ratio.
   station on any line (W/S, A/D for the line, E to go, or tap), and the ride plays out
   on the line's map: the wait for a train, the stations going by, a change of line
   where you need one, with the clock moving on by the real times (`src/metro.ts`).
-  You come up at an entrance of that station, and the police have lost you. After
-  midnight the metro is shut until about five.
+  Meanwhile the view rises over the darkened city and follows your train along the
+  real track, stopping at each station, and slows down while the map ahead loads;
+  E skips to the end. You come up at an entrance of that station, and the police have
+  lost you. After midnight the metro is shut until about five.
 - **Tram stops**: stand at one and the HUD lists the next trams due, counting down
   (`src/board.ts`). Hold Space (on touch, "Hold to wait") to fast-forward until one is
   about to arrive.
