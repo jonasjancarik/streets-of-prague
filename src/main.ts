@@ -10,6 +10,7 @@ import { loadFootfall } from './footfall.ts';
 import { Trams } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
 import { Clock } from './clock.ts';
+import { Sky } from './sky.ts';
 import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
 import { TileWorld } from './tiles.ts';
@@ -89,14 +90,13 @@ async function main() {
   const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 1, 6000);
   camera.up.set(0, 0, -1);
 
-  scene.add(new THREE.HemisphereLight('#e4ecf2', '#8a7a5e', 1.5));
-  const sun = new THREE.DirectionalLight('#fff0d4', 2.4);
+  // The sun and the sky's light follow the clock (see Sky).
+  const sky = new Sky(scene, renderer);
+  const sun = sky.sun;
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); // about 9 cm a texel across the ±90 m it covers on foot
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.4;
-  scene.add(sun, sun.target);
-  const SUN_OFFSET = new THREE.Vector3(-110, 190, -80);
 
   // The street graphs grow as tiles load (each tile carries the edges that touch it).
   const drive = new DriveGraph();
@@ -838,7 +838,8 @@ async function main() {
       sc.updateProjectionMatrix();
     }
     sun.target.position.set(camPos.x, camGround, camPos.z);
-    sun.position.copy(sun.target.position).add(SUN_OFFSET);
+    sky.update(clock.t % 86400);
+    sun.position.copy(sun.target.position).add(sky.offset);
 
     // ---- HUD -------------------------------------------------------------
     const name = names.at(px(), py());
