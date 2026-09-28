@@ -5,6 +5,7 @@ import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './networ
 import { Car, CarPool, collideBodies, useKit } from './car.ts';
 import { loadKit } from './figures.ts';
 import { Traffic } from './traffic.ts';
+import { PavementDrivers } from './pavement.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
 import { loadFootfall } from './footfall.ts';
 import { Trams, pushOutOfTram } from './trams.ts';
@@ -170,6 +171,7 @@ async function main() {
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
   const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
+  const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
 
   // ---- Player ------------------------------------------------------------
@@ -621,7 +623,8 @@ async function main() {
     for (const c of cops) pushCar(hash, c);
     if (inCar) pushCar(hash, inCar);
     else if (!inHeli && !ride.on) hash.add({ x: walker.x, y: walker.y, z: walker.gz, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
-    for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0) hash.add({ x: p.x, y: p.y, z: p.gz, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
+    // (People walking along the pavement only where a car is driving along it too.)
+    for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0 || traffic.pavementNear(p.x, p.y, 12)) hash.add({ x: p.x, y: p.y, z: p.gz, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const t of tramBodies) for (const [x, y] of t.circles) hash.add({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
@@ -774,6 +777,7 @@ async function main() {
     lifeT -= dt;
     if (lifeT < 0) {
       lifeT = 0.5;
+      if (pavementDrivers.update(0.5, loose, px(), py(), (x, y) => !offscreen(x, y), (x, y) => grid.at(x, y) !== 0)) restingStale = true;
       // (And cars stuck in a queue that hasn't moved for a while, where nobody sees them go.)
       for (const a of [...traffic.agents]) if ((a.jam > 30 || Math.hypot(a.car.x - px(), a.car.y - py()) > LIFE_RADIUS * 1.3) && offscreen(a.car.x, a.car.y)) traffic.release(a);
       for (let i = loose.length - 1; i >= 0; i--) {

@@ -242,6 +242,10 @@ the pixel ratio.
   perpendicular. Angled bays slant forwards along the lane beside them, so cars nose
   in. Sides tagged as having no parking (or parking mapped separately) get
   no kerbside cars. Underground, multi-storey and rooftop car parks stay empty.
+  As in Prague, some cars stand half or fully on the pavement, often vans and often
+  at corners or where the kerb is otherwise empty. Every half minute or so, one in
+  view sets off along the pavement at walking pace before it bumps down into the
+  street (`src/pavement.ts`).
 - **Roads** are marked from OSM `lanes`: dashed dividers, double centre lines on four
   lanes or more, edge lines on the main roads. In Prague their shape comes from the
   city's digital technical map (`pipeline/dtm.py`), which has every carriageway,

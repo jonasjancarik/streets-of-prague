@@ -14,12 +14,18 @@ interface ParkingData {
   areas: { parking?: Polygons };
   rails: { pts: Point2[] }[];
 }
-interface ParkingSlot { x: number; y: number; h: number; lot: boolean; bay: boolean; angled: boolean }
+interface ParkingSlot { x: number; y: number; h: number; lot: boolean; bay: boolean; angled: boolean; fwd?: boolean }
+
+// Cars left up on the pavement, facing the way the traffic beside them goes: the
+// street, and how far along it (see PavementDrivers, which now and then has one of
+// them drive off along the pavement before it pulls into the street).
+export const onPavement = new WeakMap<Car, { edge: DriveEdge; s: number }>();
 
 // Parked cars. Where TSK's paid-parking sections cover the street, each section
 // gets as many cars as its spaces × measured occupancy (day or night). They go
 // into OSM's mapped parking lanes and lots first, then along the kerb. Outside
-// the zones, lots and kerbs are filled at random.
+// the zones, lots and kerbs are filled at random. And, this being Prague, a few more
+// stand up on the pavement: at corners, and where the kerb is otherwise empty.
 
 export function inRing(x: number, y: number, ring: Point2[]) {
   let inside = false;
@@ -223,6 +229,47 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
   return out;
 }
 
+// Streets where people put a car up on the pavement: not the big roads.
+const PAVED_OVER = new Set(['residential', 'unclassified', 'tertiary', 'secondary', 'service']);
+
+// Spots up on the pavement beside the kerb, on streets whose kerbs are known: a few
+// metres from the corners, and every 12 m along the way (taken only where nobody has
+// parked at the kerb, see parkCars). Half on (two wheels up) or right up on it.
+function pavementSlots(edges: DriveEdge[], r: () => number) {
+  const out: (ParkingSlot & { corner: boolean; edge: DriveEdge; s: number })[] = [];
+  for (const e of edges) {
+    if (e.bridge || e.tunnel || !PAVED_OVER.has(e.hw) || e.path.length < 16) continue;
+    for (const side of e.oneway ? [1, -1] : [1]) {
+      const edge = e.kerb?.[side > 0 ? 0 : 1];
+      if (edge == null) continue;
+      const line = new Polyline(e.pts);
+      const along = [4 + r() * 2, line.length - 6 - r() * 2];
+      for (let s = 16; s < line.length - 16; s += 12) along.push(s + (r() - 0.5) * 4);
+      along.forEach((s, i) => {
+        const q = line.at(s), kerb = edge + (r() < 0.5 ? 0.15 : 1.15);
+        const x = q.x + Math.sin(q.ang) * kerb * side, y = q.y - Math.cos(q.ang) * kerb * side;
+        // Left at a slant, the nose in towards the houses at a corner.
+        const skew = (i < 2 ? 0.05 + r() * 0.2 : (r() - 0.5) * 0.1) * side;
+        out.push({ x, y, h: q.ang - skew, lot: false, bay: false, angled: false, fwd: true, corner: i < 2, edge: e, s });
+      });
+    }
+  }
+  return out;
+}
+
+// Whether (x, y) is on the driving part of any street in `edges`.
+function onCarriageway(x: number, y: number, edges: DriveEdge[]) {
+  for (const e of edges) {
+    const hw = e.width / 2 + 0.4;
+    for (let i = 0; i < e.pts.length - 1; i++) {
+      const [ax, ay] = e.pts[i], [bx, by] = e.pts[i + 1];
+      if (x < Math.min(ax, bx) - hw || x > Math.max(ax, bx) + hw || y < Math.min(ay, by) - hw || y > Math.max(ay, by) + hw) continue;
+      if (segDist(x, y, e.pts[i], e.pts[i + 1]) < hw) return true;
+    }
+  }
+  return false;
+}
+
 // `shares`: code → share of each paid-parking section inside this piece of map (a
 // tile); without it the whole section counts. `inside(x, y)` limits spots to the tile.
 export function parkCars({ data, edges, zones, solid, r, night = false, shares = null, inside = () => true }: {
@@ -243,14 +290,15 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
     }
     return false;
   };
-  const place = (s: ParkingSlot) => {
+  const place = (s: ParkingSlot, type = randomType(r)) => {
     // Most people drive into angled bays forwards; elsewhere it's either way round.
-    const car = new Car(randomType(r), r, s.x, s.y, s.h + (r() < (s.angled ? 0.08 : 0.5) ? Math.PI : 0));
+    const car = new Car(type, r, s.x, s.y, s.h + (!s.fwd && r() < (s.angled ? 0.08 : 0.5) ? Math.PI : 0));
     if (s.bay && car.type === 'van') return false;
     // No part of the car where a passing tram would hit it: half a tram's width from
     // the track and a little room. Whatever the map says about parking there.
     if (nearRail(s.x, s.y, 4.5) && car.worldSamples().some(([x, y]) => nearRail(x, y, 1.65))) return false;
     if (car.worldSamples().some(([x, y]) => solid(x, y)) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8)) return false;
+    if (s.fwd && car.worldSamples().some(([x, y]) => onCarriageway(x, y, edges))) return false;
     car.mode = 'loose';
     cars.push(car);
     const k = key(s.x, s.y);
@@ -278,5 +326,12 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
     for (const s of ordered) if (want > 0 && place(s)) want--;
   }
   for (const s of shuffle(free)) if (r() < (s.lot ? 0.45 : 0.2)) place(s);
+  // Up on the pavement, where there's room beside it at the kerb: more often at a
+  // corner, and as often as not a delivery van.
+  for (const s of pavementSlots(edges, r)) {
+    if (!inside(s.x, s.y) || r() > (s.corner ? 0.2 : 0.07) || crowded(s.x, s.y, 5.5)) continue;
+    const n = cars.length;
+    if (place(s, r() < 0.45 ? 'van' : randomType(r))) onPavement.set(cars[n], { edge: s.edge, s: s.s });
+  }
   return { cars, wanted, zoned: bySection.size };
 }

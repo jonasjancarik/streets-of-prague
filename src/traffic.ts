@@ -13,7 +13,13 @@ interface TrafficAgent {
   ignore: number;
   cruise: number;
   gone?: boolean;
+  // Still up on the pavement (see adopt): this far right of the lane (m), with
+  // `left` metres to go before it's back in it, the last `merge` of them pulling in.
+  kerb?: { off: number; left: number; merge: number };
 }
+
+// The longest a car coming off the pavement takes to pull into its lane (m).
+export const MERGE = 20;
 
 interface Obstacle {
   x: number; y: number; z?: number; r: number; vx: number; vy: number;
@@ -64,6 +70,27 @@ export class Traffic {
     return null;
   }
 
+  // A parked car that joins the traffic from where it stands, `s` along `edge`: first
+  // `run` metres along the pavement at walking pace, then over the kerb into the lane.
+  adopt(car: Car, edge: DriveEdge, s: number, run: number) {
+    const p = edge.path.at(s);
+    const off = (car.x - p.x) * Math.sin(p.ang) - (car.y - p.y) * Math.cos(p.ang);
+    car.mode = 'traffic';
+    car.hint = 'ground';
+    const agent: TrafficAgent = {
+      car, route: new Route(this.g, edge, s, this.r), speed: 0, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + this.r() * 0.3,
+      // Pulling in over three times the distance it has to move across, so it doesn't swerve.
+      kerb: { off, left: run + clamp(Math.abs(off) * 3, 8, MERGE), merge: clamp(Math.abs(off) * 3, 8, MERGE) },
+    };
+    this.agents.push(agent);
+    return agent;
+  }
+
+  // Whether a car driving along the pavement is near (x, y).
+  pavementNear(x: number, y: number, d: number) {
+    return this.agents.some((a) => a.kerb && Math.abs(a.car.x - x) < d && Math.abs(a.car.y - y) < d);
+  }
+
   release(agent: TrafficAgent) {
     this.agents.splice(this.agents.indexOf(agent), 1);
   }
@@ -111,6 +138,8 @@ export class Traffic {
         if (d < gap) { gap = d; blocker = o; }
       }
       if (blocker) target = Math.min(target, Math.max(0, (gap - 1.5) * 0.9));
+      // On the pavement it creeps along, and a little faster pulling in.
+      if (a.kerb) target = Math.min(target, a.kerb.left > a.kerb.merge ? 2.2 : 4);
 
       if (target < 0.3 && blocker) a.stuck += dt;
       else a.stuck = Math.max(0, a.stuck - dt * 2);
@@ -126,7 +155,19 @@ export class Traffic {
       const prevX = c.x, prevY = c.y;
       c.x = p.x;
       c.y = p.y;
-      let dh = Math.atan2(Math.sin(p.ang - c.h), Math.cos(p.ang - c.h));
+      let ang = p.ang;
+      if (a.kerb) {
+        // Right of the lane by `off`, less and less over the last `merge` metres (a
+        // smoothstep), turned towards the lane as it goes.
+        const k = a.kerb;
+        k.left -= a.speed * dt;
+        const t = clamp(k.left / k.merge, 0, 1), f = t * t * (3 - 2 * t);
+        c.x += Math.sin(p.ang) * k.off * f;
+        c.y -= Math.cos(p.ang) * k.off * f;
+        ang += Math.atan((k.off * 6 * t * (1 - t)) / k.merge);
+        if (k.left <= 0) a.kerb = undefined;
+      }
+      let dh = Math.atan2(Math.sin(ang - c.h), Math.cos(ang - c.h));
       c.h += dh * Math.min(1, dt * 10);
       c.vx = (c.x - prevX) / Math.max(dt, 1e-4);
       c.vy = (c.y - prevY) / Math.max(dt, 1e-4);
