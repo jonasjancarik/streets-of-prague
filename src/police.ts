@@ -1,10 +1,26 @@
 import * as THREE from 'three';
-import { Car } from './car.js';
-import { Polyline, clamp } from './network.js';
-import { project, speedLimit, turnOf } from './assist.js';
-import { Figures, Anim, SCALE } from './figures.js';
-import { locomote, knocked } from './people.js';
-import { Helicopters, HELI_SIGHT } from './helicopter.js';
+import { Car } from './car.ts';
+import { Polyline, clamp } from './network.ts';
+import { project, speedLimit, turnOf } from './assist.ts';
+import { Figures, Anim, SCALE } from './figures.ts';
+import { locomote, knocked } from './people.ts';
+import { Helicopters, HELI_SIGHT } from './helicopter.ts';
+import type { CarGrid } from './car.ts';
+import type { DriveEdge, DriveGraph } from './network.ts';
+import type { Traffic } from './traffic.ts';
+import type { FigureKit } from './figures.ts';
+import type { Point2 } from './map/geo.ts';
+
+interface ChaseCar { car: Car; path: Polyline | null; s: number; replan: number; stuck: number; reverse: number; calm: boolean; wrecked: boolean; gone?: boolean }
+interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number }
+interface Link { to: string; e: DriveEdge; back: boolean }
+interface PlayerTarget { x: number; y: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean }
+interface PoliceOptions {
+  scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
+  height: (x: number, y: number, who?: Car | Officer) => number;
+  rng: () => number; edgesNear: (x: number, y: number, radius: number) => DriveEdge[];
+  offscreen: (x: number, y: number) => boolean; onBusted: () => void; kit: FigureKit;
+}
 
 // The police and your wanted level, GTA 2 style.
 //
@@ -17,20 +33,20 @@ import { Helicopters, HELI_SIGHT } from './helicopter.js';
 // the street network, more of them the more stars you have, and ram you. When you're
 // on foot or stopped, an officer gets out and runs after you: if they reach you,
 // you're busted. Stay out of their sight for a while and you lose a star at a time.
-// From three stars a helicopter joins in (src/helicopter.js).
+// From three stars a helicopter joins in (src/helicopter.ts).
 
 const STARS = [1, 4, 9, 16, 25]; // heat for each star
 const CHASERS = [0, 1, 2, 3, 4, 6]; // police cars after you, by stars
 const HELIS = [0, 0, 0, 1, 1, 2];
 const PATROLS = 3;
 const POINTS = { knock: 1, carjack: 1, wreck: 0.6, hitCop: 2, stealCop: 3 };
-const COOLDOWN = { hitCop: 1 }; // one scrape shouldn't count ten times
+const COOLDOWN: Partial<Record<keyof typeof POINTS, number>> = { hitCop: 1 }; // one scrape shouldn't count ten times
 const RUN = 6.4; // officers on foot, m/s: you can outrun them, but not walking
 const WRECKED = 90; // damage that puts a police car out of the chase
 
 // Points of `poly` from s0 to s1 (backwards if s1 < s0), as [x, y].
-function slice(poly, s0, s1) {
-  const a = poly.at(s0), b = poly.at(s1), out = [[a.x, a.y]];
+function slice(poly: Polyline, s0: number, s1: number): Point2[] {
+  const a = poly.at(s0), b = poly.at(s1), out: Point2[] = [[a.x, a.y]];
   const { pts, cum } = poly;
   if (s1 >= s0) { for (let i = 0; i < pts.length; i++) if (cum[i] > s0 && cum[i] < s1) out.push(pts[i]); }
   else for (let i = pts.length - 1; i >= 0; i--) if (cum[i] < s0 && cum[i] > s1) out.push(pts[i]);
@@ -40,9 +56,10 @@ function slice(poly, s0, s1) {
 
 // Smallest-first queue of [cost, value] for the route search.
 class Heap {
+  a: [number, string][];
   constructor() { this.a = []; }
   get size() { return this.a.length; }
-  push(item) {
+  push(item: [number, string]) {
     const a = this.a;
     a.push(item);
     for (let i = a.length - 1; i > 0;) {
@@ -54,7 +71,7 @@ class Heap {
   }
   pop() {
     const a = this.a, top = a[0], last = a.pop();
-    if (a.length) {
+    if (a.length && last) {
       a[0] = last;
       for (let i = 0; ;) {
         const l = 2 * i + 1, r = l + 1;
@@ -71,8 +88,20 @@ class Heap {
 }
 
 export class Police {
-  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit }) {
-    Object.assign(this, { scene, drive, traffic, grid, r: rng, edgesNear, offscreen, onBusted, kit });
+  scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
+  r: () => number; edgesNear: PoliceOptions['edgesNear']; offscreen: PoliceOptions['offscreen'];
+  onBusted: () => void; kit: FigureKit;
+  spare: Figures[]; helis: Helicopters; heat: number; cars: ChaseCar[]; officers: Officer[];
+  seen: boolean; lose: number; cool: Record<string, number>; spawnT: number; checkT: number; limit: number;
+  nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number;
+  lamps: THREE.InstancedMesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
+  glow: THREE.InstancedMesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
+  dummy: THREE.Object3D; lastT?: number;
+
+  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit }: PoliceOptions) {
+    this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
+    this.r = rng; this.edgesNear = edgesNear; this.offscreen = offscreen;
+    this.onBusted = onBusted; this.kit = kit;
     this.spare = []; // figures of officers who've gone, to reuse
     this.helis = new Helicopters(scene, height);
     this.heat = 0;
@@ -116,22 +145,22 @@ export class Police {
     yield* this.helis.watching;
   }
 
-  clear(ax, ay, bx, by) {
+  clear(ax: number, ay: number, bx: number, by: number) {
     const d = Math.hypot(bx - ax, by - ay), n = Math.ceil(d / 2);
     for (let i = 1; i < n; i++) if (this.grid.at(ax + ((bx - ax) * i) / n, ay + ((by - ay) * i) / n) === 255) return false;
     return true;
   }
 
-  sees(x, y, far = 110) {
+  sees(x: number, y: number, far = 110) {
     for (const e of this.eyes()) {
       const d = Math.hypot(e.x - x, e.y - y);
-      if (e.air) { if (d < HELI_SIGHT) return true; continue; }
+      if ('air' in e && e.air) { if (d < HELI_SIGHT) return true; continue; }
       if (d < 40 || (d < far && this.clear(e.x, e.y, x, y))) return true;
     }
     return false;
   }
 
-  crime(kind, x, y) {
+  crime(kind: keyof typeof POINTS, x: number, y: number) {
     if (this.cool[kind] > 0) return;
     this.cool[kind] = COOLDOWN[kind] || 0;
     const seen = this.sees(x, y);
@@ -140,19 +169,19 @@ export class Police {
   }
 
   // You got into a police car: whoever was in it gets out and comes after you.
-  take(car) {
+  take(car: Car) {
     const i = this.cars.findIndex((p) => p.car === car);
     if (i >= 0) this.cars.splice(i, 1);
     if (car.crew) this.getOut(car);
     this.crime('stealCop', car.x, car.y);
   }
 
-  knock(o, vx, vy) {
+  knock(o: Officer, vx: number, vy: number) {
     Object.assign(o, { down: 3, vx, vy, h: Math.atan2(vy, vx) + Math.PI });
     o.anim.play('fall', true, 0.08);
   }
 
-  dismiss(o) {
+  dismiss(o: Officer) {
     this.scene.remove(o.fig.mesh);
     this.spare.push(o.fig);
   }
@@ -174,59 +203,65 @@ export class Police {
       e.mid = e.mid || new Polyline(e.pts);
       this.nodes.set(e.u, e.pts[0]);
       this.nodes.set(e.v, e.pts[e.pts.length - 1]);
-      for (const [a, b, back] of [[e.u, e.v, false], [e.v, e.u, true]]) {
+      for (const [a, b, back] of [[e.u, e.v, false], [e.v, e.u, true]] as [string, string, boolean][]) {
         if (!this.links.has(a)) this.links.set(a, []);
-        this.links.get(a).push({ to: b, e, back });
+        this.links.get(a)!.push({ to: b, e, back });
       }
     }
   }
 
-  nearestStreet(x, y) {
-    let best = null;
+  nearestStreet(x: number, y: number) {
+    let best: { e: DriveEdge & { mid: Polyline }; s: number; d: number } | null = null;
     for (const e of this.edgesNear(x, y, 40)) {
       e.mid = e.mid || new Polyline(e.pts);
       const p = project(e.mid, x, y);
-      if (p.d < 40 && (!best || p.d < best.d)) best = { e, s: p.s, d: p.d };
+      if (p.d < 40 && (!best || p.d < best.d)) best = { e: e as DriveEdge & { mid: Polyline }, s: p.s, d: p.d };
     }
     return best;
   }
 
   // Shortest way by road from (ax, ay) to (bx, by), as a Polyline, or null.
-  route(ax, ay, bx, by) {
+  route(ax: number, ay: number, bx: number, by: number): Polyline | null {
     this.sync();
     const A = this.nearestStreet(ax, ay), B = this.nearestStreet(bx, by);
     if (!A || !B) return null;
     const lenA = A.e.mid.length, lenB = B.e.mid.length;
-    let pts;
+    let pts: Point2[];
     if (A.e === B.e || A.e.twin === B.e) {
       const sb = A.e === B.e ? B.s : lenA - B.s;
       pts = slice(A.e.mid, A.s, sb);
     } else {
-      const goal = new Map([[B.e.u, B.s], [B.e.v, lenB - B.s]]);
+      const goal = new Map<string, number>([[B.e.u, B.s], [B.e.v, lenB - B.s]]);
       const [gx, gy] = [bx, by];
-      const g = new Map(), from = new Map(), heap = new Heap();
-      for (const [n, cost] of [[A.e.u, A.s], [A.e.v, lenA - A.s]]) {
+      const g = new Map<string, number>(), from = new Map<string, Link>(), heap = new Heap();
+      for (const [n, cost] of [[A.e.u, A.s], [A.e.v, lenA - A.s]] as [string, number][]) {
         g.set(n, cost);
         heap.push([cost, n]);
       }
-      let end = null;
+      let end: string | null = null;
       for (let pops = 0; heap.size && pops < 6000; pops++) {
-        const [f, n] = heap.pop();
+        const item = heap.pop();
+        if (!item) break;
+        const [f, n] = item;
         const gn = g.get(n);
-        const [nx, ny] = this.nodes.get(n);
+        const node = this.nodes.get(n);
+        if (gn === undefined || !node) continue;
+        const [nx, ny] = node;
         if (f > gn + Math.hypot(gx - nx, gy - ny) + 1e-6) continue; // stale entry
         if (goal.has(n)) { end = n; break; }
         for (const l of this.links.get(n) || []) {
-          const c = gn + l.e.mid.length;
+          const c = gn + (l.e.mid?.length ?? 0);
           if (c >= (g.get(l.to) ?? Infinity)) continue;
           g.set(l.to, c);
           from.set(l.to, l);
-          const [tx, ty] = this.nodes.get(l.to);
+          const next = this.nodes.get(l.to);
+          if (!next) continue;
+          const [tx, ty] = next;
           heap.push([c + Math.hypot(gx - tx, gy - ty), l.to]);
         }
       }
       if (end === null) return null;
-      const chain = [];
+      const chain: Link[] = [];
       let first = end;
       for (let l = from.get(end); l; l = from.get(first)) { chain.unshift(l); first = l.back ? l.e.v : l.e.u; }
       pts = slice(A.e.mid, A.s, first === A.e.u ? 0 : lenA);
@@ -239,7 +274,7 @@ export class Police {
   // ---- Cars --------------------------------------------------------------
 
   // A new police car on a street out of view, 90–250 m from (x, y).
-  spawn(x, y) {
+  spawn(x: number, y: number) {
     const edges = this.edgesNear(x, y, 250);
     for (let t = 0; t < 30 && edges.length; t++) {
       const e = edges[Math.floor(this.r() * edges.length)];
@@ -254,14 +289,14 @@ export class Police {
     return false;
   }
 
-  enlist(car) {
+  enlist(car: Car) {
     car.mode = 'police';
     car.crew = true;
     this.cars.push({ car, path: null, s: 0, replan: 0, stuck: 0, reverse: 0, calm: false, wrecked: false });
   }
 
   // Steering and pedals for a car chasing the player.
-  chase(p, dt, me) {
+  chase(p: ChaseCar, dt: number, me: PlayerTarget) {
     const c = p.car, vf = c.forwardSpeed;
     const dx = me.x - c.x, dy = me.y - c.y, dist = Math.hypot(dx, dy);
     let tx, ty, want;
@@ -315,7 +350,7 @@ export class Police {
 
   // ---- Officers on foot --------------------------------------------------
 
-  getOut(car) {
+  getOut(car: Car) {
     car.crew = false;
     const lx = -Math.sin(car.h), ly = Math.cos(car.h);
     let x = car.x + lx * (car.spec.W / 2 + 0.7), y = car.y + ly * (car.spec.W / 2 + 0.7);
@@ -329,12 +364,12 @@ export class Police {
     this.officers.push({ x, y, h: car.h, vx: 0, vy: 0, car, fig, anim: new Anim(this.kit, 'idle'), down: 0, back: false });
   }
 
-  blocked(x, y) {
+  blocked(x: number, y: number) {
     const g = this.grid, r = 0.3;
     return g.at(x, y) || g.at(x + r, y) || g.at(x - r, y) || g.at(x, y + r) || g.at(x, y - r);
   }
 
-  walk(o, dt, me) {
+  walk(o: Officer, dt: number, me: PlayerTarget) {
     if (o.down > 0) {
       o.down -= dt;
       const k = Math.exp(-4 * dt);
@@ -344,7 +379,7 @@ export class Police {
       const ride = this.cars.find((p) => p.car === o.car && !p.wrecked);
       // Back to the car when you drive off (or the chase is over); after you otherwise.
       const toMe = Math.hypot(me.x - o.x, me.y - o.y);
-      o.back = this.heat <= 0 || (ride && me.car && me.speed > 6 && toMe > 12);
+      o.back = this.heat <= 0 || !!(ride && me.car && me.speed > 6 && toMe > 12);
       // No car to go back to: they walk off.
       const tx = !o.back ? me.x : ride ? o.car.x : 2 * o.x - me.x, ty = !o.back ? me.y : ride ? o.car.y : 2 * o.y - me.y;
       const dx = tx - o.x, dy = ty - o.y, d = Math.hypot(dx, dy) || 1;
@@ -370,7 +405,7 @@ export class Police {
 
   // `me`: { x, y, vx, vy, speed, car, air, riding } for the player (car is null on
   // foot; air while flying a helicopter or riding a tram, out of the officers' reach).
-  update(dt, me) {
+  update(dt: number, me: PlayerTarget) {
     for (const k in this.cool) this.cool[k] -= dt;
     const stars = this.stars;
 
@@ -448,7 +483,7 @@ export class Police {
     for (const p of this.cars) p.calm = true;
   }
 
-  render(height, time) {
+  render(height: (x: number, y: number, who: Car | Officer) => number, time: number) {
     this.helis.render(time, time - (this.lastT ?? time));
     this.lastT = time;
     const d = this.dummy, col = new THREE.Color(), blue = new THREE.Color('#3d7bff'), dim = new THREE.Color('#0d1a3a');
@@ -456,7 +491,7 @@ export class Police {
     let n = 0, g = 0;
     for (const p of this.cars) {
       if (p.calm || p.wrecked) continue;
-      const c = p.car, S = c.spec, mid = (S.cabin[0] + S.cabin[1]) / 2;
+      const c = p.car, S = c.spec, cabin = S.cabin ?? [0, 0], mid = (cabin[0] + cabin[1]) / 2;
       const fx = Math.cos(c.h), fy = Math.sin(c.h);
       const base = height(c.x, c.y, c);
       for (const side of [-1, 1]) {
@@ -479,7 +514,7 @@ export class Police {
         g++;
       }
     }
-    for (const [m, k] of [[this.lamps, n], [this.glow, g]]) {
+    for (const [m, k] of [[this.lamps, n], [this.glow, g]] as [THREE.InstancedMesh, number][]) {
       m.count = k;
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;

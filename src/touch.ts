@@ -1,4 +1,12 @@
-import { clamp } from './network.js';
+import { clamp } from './network.ts';
+import type { Car } from './car.ts';
+import type { Chopper } from './helicopter.ts';
+
+export interface TouchState {
+  active: boolean; move: number; turn: number; aim: { h: number; mag: number } | null;
+  brake: boolean; run: boolean; fast: boolean;
+  update(options: { car: Car | Chopper | null; tram?: boolean; wait?: boolean; label?: string | null; canEnter: boolean; limit?: number | null }): void;
+}
 
 // On-screen controls for phones and tablets. They appear on touch screens (or with
 // ?touch) and feed the same controls as the keyboard: the left thumb has a round
@@ -14,14 +22,20 @@ const RANGE = 48; // px of thumb travel for a full push
 const DEAD = 0.12;
 
 // Keep getting a finger's moves after it slides off the control it started on.
-const capture = (el, e) => { try { el.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } };
-const dead = (v) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD));
+const capture = (el: HTMLElement, e: PointerEvent) => { try { el.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } };
+const dead = (v: number) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD));
 
-export function setupTouch({ action, backOnRoad, zoomBy, force }) {
-  const $ = (id) => document.getElementById(id);
+export function setupTouch({ action, backOnRoad, zoomBy, force }: {
+  action: () => void; backOnRoad: () => void; zoomBy: (factor: number) => void; force: boolean;
+}): TouchState {
+  const $ = (id: string): HTMLElement => {
+    const el = document.getElementById(id);
+    if (!el) throw new Error(`Missing touch control: ${id}`);
+    return el;
+  };
   // `aim` (on foot): { h, mag }, the way the stick points in world terms and how far.
-  const state = { active: false, move: 0, turn: 0, aim: null, brake: false, run: false, fast: false };
-  let inCar = null, assistOn = false;
+  const state: TouchState = { active: false, move: 0, turn: 0, aim: null, brake: false, run: false, fast: false, update: () => {} };
+  let inCar: Car | Chopper | null = null, assistOn = false;
 
   const activate = () => {
     if (state.active) return;
@@ -29,21 +43,21 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
     document.body.classList.add('touch');
   };
   if (force || matchMedia('(pointer: coarse)').matches) activate();
-  addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') activate(); }, { capture: true });
-  addEventListener('contextmenu', (e) => { if (state.active) e.preventDefault(); });
+  window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') activate(); }, { capture: true });
+  window.addEventListener('contextmenu', (e) => { if (state.active) e.preventDefault(); });
 
   // ---- Stick -------------------------------------------------------------
   const pad = $('t-steer'), stick = $('t-stick'), knob = $('t-knob');
-  let stickId = null, ox = 0, oy = 0;
+  let stickId: number | null = null, ox = 0, oy = 0;
   const push = { x: 0, y: 0 }; // -1..1, y up
-  const stickEnd = (e) => {
+  const stickEnd = (e: PointerEvent) => {
     if (e.pointerId !== stickId) return;
     stickId = null;
     push.x = push.y = 0;
     stick.classList.remove('held');
     stick.style.transform = knob.style.transform = '';
   };
-  const stickMove = (e) => {
+  const stickMove = (e: PointerEvent) => {
     let dx = e.clientX - ox, dy = e.clientY - oy;
     const d = Math.hypot(dx, dy);
     if (d > RANGE) { dx *= RANGE / d; dy *= RANGE / d; }
@@ -73,8 +87,8 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
 
 // ---- Pedals ------------------------------------------------------------
   const pedals = $('t-pedals'), gas = $('t-gas'), brake = $('t-brake');
-  const onPedal = new Map(); // pointerId → 1 (gas), -1 (brake) or 0
-  const within = (el, e) => {
+  const onPedal = new Map<number, number>(); // pointerId → 1 (gas), -1 (brake) or 0
+  const within = (el: HTMLElement, e: PointerEvent) => {
     const r = el.getBoundingClientRect();
     return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   };
@@ -85,7 +99,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
     gas.classList.toggle('down', g);
     brake.classList.toggle('down', b);
   };
-  const pedalAt = (e) => {
+  const pedalAt = (e: PointerEvent) => {
     onPedal.set(e.pointerId, within(gas, e) ? 1 : within(brake, e) ? -1 : 0);
     pedalsChanged();
   };
@@ -95,12 +109,12 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
     pedalAt(e);
   });
   pedals.addEventListener('pointermove', (e) => { if (onPedal.has(e.pointerId)) pedalAt(e); });
-  const pedalUp = (e) => { onPedal.delete(e.pointerId); pedalsChanged(); };
+  const pedalUp = (e: PointerEvent) => { onPedal.delete(e.pointerId); pedalsChanged(); };
   pedals.addEventListener('pointerup', pedalUp);
   pedals.addEventListener('pointercancel', pedalUp);
 
   // ---- Buttons -----------------------------------------------------------
-  const tap = (el, fn) => el.addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); });
+  const tap = (el: HTMLElement, fn: () => void) => el.addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); });
   const hand = $('t-hand');
   const handUp = () => { state.brake = false; hand.classList.remove('down'); };
   hand.addEventListener('pointerdown', (e) => {
@@ -130,9 +144,9 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
   tap($('t-road'), backOnRoad);
 
   // ---- Pinch to zoom -----------------------------------------------------
-  const app = $('app'), fingers = new Map();
+  const app = $('app'), fingers = new Map<number, { x: number; y: number }>();
   let spread = 0;
-  const span = () => { const [a, b] = fingers.values(); return Math.hypot(a.x - b.x, a.y - b.y); };
+  const span = () => { const [a, b] = fingers.values(); return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0; };
   app.addEventListener('pointerdown', (e) => {
     if (e.pointerType !== 'touch') return;
     fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -146,13 +160,13 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
     if (spread > 0 && s > 0) zoomBy(spread / s);
     spread = s;
   });
-  const lift = (e) => { fingers.delete(e.pointerId); spread = fingers.size === 2 ? span() : 0; };
+  const lift = (e: PointerEvent) => { fingers.delete(e.pointerId); spread = fingers.size === 2 ? span() : 0; };
   app.addEventListener('pointerup', lift);
   app.addEventListener('pointercancel', lift);
 
   // ---- Per frame -----------------------------------------------------------
-  const shown = {};
-  const set = (key, value, apply) => { if (shown[key] !== value) { shown[key] = value; apply(value); } };
+  const shown: Record<string, string | boolean> = {};
+  const set = <T extends string | boolean>(key: string, value: T, apply: (value: T) => void) => { if (shown[key] !== value) { shown[key] = value; apply(value); } };
   // `tram`: riding one; `wait`: at a stop; `label`: what the main button does, when it
   // isn't getting in or out of a car; `limit`: the speed lane assist is keeping to.
   state.update = ({ car, tram = false, wait = false, label = null, canEnter, limit = null }) => {

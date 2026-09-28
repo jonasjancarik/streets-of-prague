@@ -3,7 +3,7 @@ import proj4 from 'proj4';
 
 // Facade modules: one window bay by one storey each, drawn as sheets of 6 × 2
 // (upper floors on top, ground floors below) and packed by assets/facades/build_atlas.py
-// into public/facades.webp, one sheet under another. The shader (shading.js) picks a
+// into public/facades.webp, one sheet under another. The shader (shading.ts) picks a
 // module for every bay and storey of a wall, by the wall's style.
 export const CELL = [256, 512];
 export const SHEETS = 4;
@@ -11,7 +11,7 @@ export const SHEETS = 4;
 // Styles: 0 tenement, 1 baroque, 2 functionalist, 3 panel housing, 4 family house.
 export const STYLE = { tenement: 0, baroque: 1, functionalist: 2, panel: 3, house: 4 };
 
-export const FACADE_ATLAS = { value: null };
+export const FACADE_ATLAS: { value: THREE.DataArrayTexture | null } = { value: null };
 export const FACADE_ON = { value: 0 };
 
 let loading = null;
@@ -25,6 +25,7 @@ export function loadFacadeAtlas() {
     canvas.width = img.width;
     canvas.height = img.height;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('Cannot create facade atlas canvas');
     ctx.drawImage(img, 0, 0);
     const px = ctx.getImageData(0, 0, img.width, img.height).data;
     // Cut the atlas into layers of a texture array, so modules never bleed into
@@ -56,17 +57,17 @@ export function loadFacadeAtlas() {
 // low buildings are family houses; the rest is mostly 19th-century tenements with some
 // 1920s–30s functionalism further out. Neighbouring walls share the random pick
 // (it goes by 60 m squares), so a block keeps to one style.
-export function styleFor(index) {
+export function styleFor(index: { bbox_wgs84: [number, number, number, number] }) {
   const [w, s, e, n] = index.bbox_wgs84;
   const local = `+proj=tmerc +lat_0=${(s + n) / 2} +lon_0=${(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
-  const at = (lon, lat) => proj4('EPSG:4326', local, [lon, lat]);
+  const at = (lon: number, lat: number) => proj4('EPSG:4326', local, [lon, lat]);
   const oldTown = at(14.4213, 50.0875);
   const core = [
     [...oldTown, 750], // Staré Město
     [...at(14.4034, 50.0880), 550], // Malá Strana
     [...at(14.3975, 50.0890), 450], // Hradčany
   ];
-  return (x, y, height) => {
+  return (x: number, y: number, height: number) => {
     if (height < 8.5) return STYLE.house;
     const pick = cellHash(Math.floor(x / 60), Math.floor(y / 60));
     if (core.some(([cx, cy, r]) => Math.hypot(x - cx, y - cy) < r)) return pick < 0.65 ? STYLE.baroque : STYLE.tenement;
@@ -77,24 +78,24 @@ export function styleFor(index) {
   };
 }
 
-export function cellHash(i, j) {
+export function cellHash(i: number, j: number) {
   const s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453;
   return s - Math.floor(s);
 }
 
-// Where each wall pixel sits on its facade, for the windows (see shading.js and
-// facades.js): metres along the wall, metres above the ground at its foot, the wall's
+// Where each wall pixel sits on its facade, for the windows (see shading.ts and
+// facades.ts): metres along the wall, metres above the ground at its foot, the wall's
 // length, and its style plus a random fraction. Triangles that share an edge and lie in
 // one plane make one wall, measured from its own end in the direction between its two
 // ends, so the windows run on across the triangles. `p`: the triangles' positions
 // (three.js world); returns 4 floats a vertex. (Measured from the world's origin
 // with each triangle's own normal, they jumped by metres at every seam.)
-export function facadeCoords(p, groundAt, styleAt) {
+export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) => number, styleAt: (x: number, y: number, height: number) => number) {
   const n = p.length / 9, out = new Float32Array(n * 12);
   const nrm = new Float32Array(n * 2), wall = new Int32Array(n).fill(-1);
-  const up = (i) => (wall[i] === i ? i : (wall[i] = up(wall[i])));
-  const key = (v) => `${Math.round(p[v] * 1000)},${Math.round(p[v + 1] * 1000)},${Math.round(p[v + 2] * 1000)}`;
-  const edges = new Map();
+  const up = (i: number): number => (wall[i] === i ? i : (wall[i] = up(wall[i])));
+  const key = (v: number) => `${Math.round(p[v] * 1000)},${Math.round(p[v + 1] * 1000)},${Math.round(p[v + 2] * 1000)}`;
+  const edges = new Map<string, number>();
   for (let t = 0; t < n; t++) {
     const i = t * 9;
     const ax = p[i + 3] - p[i], ay = p[i + 4] - p[i + 1], az = p[i + 5] - p[i + 2];
@@ -110,8 +111,8 @@ export function facadeCoords(p, groundAt, styleAt) {
       if (Math.abs(dot) > 0.999) wall[up(t)] = up(o);
     }
   }
-  const walls = new Map();
-  for (let t = 0; t < n; t++) if (wall[t] >= 0) { const w = up(t); walls.has(w) ? walls.get(w).push(t) : walls.set(w, [t]); }
+  const walls = new Map<number, number[]>();
+  for (let t = 0; t < n; t++) if (wall[t] >= 0) { const w = up(t); walls.has(w) ? walls.get(w)!.push(t) : walls.set(w, [t]); }
   for (const [w, tris] of walls) {
     // The wall's two ends: the farthest apart along its rough direction.
     const rx = -nrm[w * 2 + 1], rz = nrm[w * 2];

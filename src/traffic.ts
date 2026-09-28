@@ -1,13 +1,36 @@
-import { Car, randomType } from './car.js';
-import { randomLook } from './figures.js';
-import { Route, clamp } from './network.js';
+import { Car, randomType } from './car.ts';
+import { randomLook } from './figures.ts';
+import { Route, clamp } from './network.ts';
+import type { DriveEdge, DriveGraph } from './network.ts';
+import * as THREE from 'three';
+
+interface TrafficAgent {
+  car: Car & { level: number; gz?: number };
+  route: Route;
+  speed: number;
+  stuck: number;
+  ignore: number;
+  cruise: number;
+  gone?: boolean;
+}
+
+interface Obstacle {
+  x: number; y: number; z?: number; r: number; vx: number; vy: number;
+  kind: string; car?: Car;
+}
 
 // AI traffic: cars glued to their lane along a Route. They brake for anything in
 // front of them (cars, trams, people, the player) and give way to the right.
 // A car that is hit hard enough leaves traffic and becomes a free body.
 
 export class Traffic {
-  constructor(graph, scene, rng, count) {
+  g: DriveGraph;
+  scene: THREE.Scene;
+  r: () => number;
+  count: number;
+  agents: TrafficAgent[];
+
+  constructor(graph: DriveGraph, scene: THREE.Scene, rng: () => number, count: number) {
     this.g = graph;
     this.scene = scene;
     this.r = rng;
@@ -16,7 +39,7 @@ export class Traffic {
   }
 
   // A new car on a random street among `edges` (default: anywhere), where `avoid` allows.
-  spawn(avoid, edges = this.g.edges, type = null) {
+  spawn(avoid: ((x: number, y: number) => boolean) | null, edges: DriveEdge[] = this.g.edges, type: string | null = null): TrafficAgent | null {
     const r = this.r;
     if (!edges.length) return null;
     const total = edges.reduce((a, e) => a + e.path.length, 0);
@@ -28,7 +51,7 @@ export class Traffic {
       const p = edge.path.at(s);
       if (avoid && !avoid(p.x, p.y)) continue;
       if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < 12)) continue;
-      const car = new Car(type || randomType(r, 'traffic'), r, p.x, p.y, p.ang);
+      const car = new Car(type || randomType(r, 'traffic'), r, p.x, p.y, p.ang) as Car & { level: number; gz?: number };
       car.mode = 'traffic';
       car.level = edge.bridge ? 1 : 0; // on a bridge's deck, or under it (TileWorld.track)
       if (car.two) car.rider = randomLook(r);
@@ -39,12 +62,12 @@ export class Traffic {
     return null;
   }
 
-  release(agent) {
+  release(agent: TrafficAgent) {
     this.agents.splice(this.agents.indexOf(agent), 1);
   }
 
   // near(x, y, r): the obstacles ({ x, y, z, r, vx, vy, kind }) around a point.
-  update(dt, near) {
+  update(dt: number, near: (x: number, y: number, radius: number) => Iterable<Obstacle>) {
     for (const a of this.agents) {
       const c = a.car, L = c.spec.L, W = c.spec.W;
       const look = a.route.lookahead(6 + a.speed * 1.2);

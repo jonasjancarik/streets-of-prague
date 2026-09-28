@@ -1,8 +1,31 @@
 // Area data is in local metres: +x east, +y north, origin at the bbox centre.
 // three.js world: X = x, Y = up, Z = -y  (so north is "up" on screen).
 
-export class Geo {
-  constructor(data) {
+export type Point2 = [number, number];
+export type Bounds = [number, number, number, number];
+export type Rings = Point2[][];
+export type Polygons = Rings[];
+export type PaintContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+export interface GeoData {
+  size: Point2;
+  origin: Point2;
+}
+
+export class Geo<T extends GeoData = GeoData> {
+  data: T;
+  W: number;
+  H: number;
+  ox: number;
+  oy: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  cx: number;
+  cy: number;
+
+  constructor(data: T) {
     this.data = data;
     this.W = data.size[0];
     this.H = data.size[1];
@@ -17,16 +40,16 @@ export class Geo {
   }
 
   // Canvas pixel for local coords at `s` px per metre.
-  px(x, y, s) {
+  px(x: number, y: number, s: number): Point2 {
     return [(x + this.ox) * s, (this.H - (y + this.oy)) * s];
   }
 
-  inside(x, y, pad = 0) {
+  inside(x: number, y: number, pad = 0) {
     return x > this.minX + pad && x < this.maxX - pad && y > this.minY + pad && y < this.maxY - pad;
   }
 }
 
-export function ringPath(ctx, geo, rings, s) {
+export function ringPath(ctx: PaintContext, geo: Geo, rings: Rings, s: number) {
   for (const ring of rings) {
     ring.forEach(([x, y], i) => {
       const [u, v] = geo.px(x, y, s);
@@ -39,7 +62,7 @@ export function ringPath(ctx, geo, rings, s) {
 
 // Each polygon is filled on its own (even-odd only within its rings), so
 // overlapping polygons don't cancel out. Leaves all outlines as the current path.
-export function fillPolys(ctx, geo, polys, s) {
+export function fillPolys(ctx: PaintContext, geo: Geo, polys: Polygons, s: number) {
   for (const rings of polys) {
     ctx.beginPath();
     ringPath(ctx, geo, rings, s);
@@ -49,7 +72,7 @@ export function fillPolys(ctx, geo, polys, s) {
   for (const rings of polys) ringPath(ctx, geo, rings, s);
 }
 
-export function strokeLines(ctx, geo, lines, s) {
+export function strokeLines(ctx: PaintContext, geo: Geo, lines: Point2[][], s: number) {
   ctx.beginPath();
   for (const pts of lines) {
     pts.forEach(([x, y], i) => {
@@ -61,7 +84,7 @@ export function strokeLines(ctx, geo, lines, s) {
   ctx.stroke();
 }
 
-export function signedArea(ring) {
+export function signedArea(ring: Point2[]) {
   let a = 0;
   for (let i = 0; i < ring.length; i++) {
     const [x1, y1] = ring[i];
@@ -71,14 +94,14 @@ export function signedArea(ring) {
   return a / 2;
 }
 
-export function centroid(ring) {
+export function centroid(ring: Point2[]): Point2 {
   let x = 0, y = 0;
   for (const p of ring) { x += p[0]; y += p[1]; }
   return [x / ring.length, y / ring.length];
 }
 
 // Deterministic per-feature randomness.
-export function hash(str) {
+export function hash(str: string) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
@@ -102,7 +125,16 @@ export function rng(seed = 1) {
 // on an OffscreenCanvas where there is one, so it can be made in a worker; with
 // `paint` null, `cells` are ones already made.
 export class Grid {
-  constructor(geo, res, paint, cells = null) {
+  geo: Geo;
+  res: number;
+  w: number;
+  h: number;
+  ox: number;
+  oy: number;
+  H: number;
+  cells: Uint8Array;
+
+  constructor(geo: Geo, res: number, paint: ((ctx: PaintContext, res: number) => void) | null, cells: Uint8Array | null = null) {
     this.geo = geo;
     this.res = res;
     this.w = Math.ceil(geo.W * res);
@@ -112,6 +144,7 @@ export class Grid {
     this.oy = geo.oy;
     this.H = geo.H;
     if (!paint) {
+      if (!cells) throw new Error('Grid cells are required when there is no paint callback');
       this.cells = cells;
       return;
     }
@@ -119,6 +152,7 @@ export class Grid {
     c.width = this.w;
     c.height = this.h;
     const ctx = c.getContext('2d', { willReadFrequently: true });
+    if (!ctx || !('getImageData' in ctx)) throw new Error('Cannot create a 2D canvas context');
     ctx.imageSmoothingEnabled = false;
     paint(ctx, res);
     const img = ctx.getImageData(0, 0, this.w, this.h).data;
@@ -127,7 +161,7 @@ export class Grid {
     c.width = c.height = 0; // let the canvas go now
   }
 
-  at(x, y) {
+  at(x: number, y: number) {
     const i = Math.floor((x + this.ox) * this.res), j = Math.floor((this.H - (y + this.oy)) * this.res);
     if (i < 0 || j < 0 || i >= this.w || j >= this.h) return 255;
     return this.cells[j * this.w + i];

@@ -1,6 +1,25 @@
 import * as THREE from 'three';
-import { clamp, segDist } from './network.js';
-import { Figures, Anim, SCALE, randomLook, jumpHeight } from './figures.js';
+import { clamp, segDist } from './network.ts';
+import { Figures, Anim, SCALE, randomLook, jumpHeight } from './figures.ts';
+import type { FigureKit, Look } from './figures.ts';
+import type { WalkEdge, WalkGraph } from './network.ts';
+import type { Footfall } from './footfall.ts';
+import type { Point2 } from './map/geo.ts';
+
+interface WalkGrid {
+  at(x: number, y: number): number;
+  height?: (x: number, y: number) => number;
+  view?: (who: Walker) => WalkGrid;
+}
+interface WalkSpot { e: WalkEdge; s: number }
+export interface Pedestrian extends WalkSpot {
+  i: number; fwd: boolean; side: number; speed: number; x: number; y: number; h: number;
+  vx: number; vy: number; state: 'walk' | 'flee' | 'down' | 'rejoin';
+  t: number; pause: number; z: number; anim: Anim; look: Look;
+  target?: WalkSpot & { x: number; y: number };
+  gz?: number;
+}
+interface WalkSegment extends WalkSpot { a: Point2; b: Point2; s0: number; len: number }
 
 // Pedestrians wander the footpath network, jump out of the way of fast cars,
 // and get knocked over (then get up again) when they don't make it.
@@ -14,7 +33,7 @@ const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vect
 const UP = new THREE.Vector3(0, 1, 0);
 
 // Pick the clip for someone on their feet going at `speed` (negative: backwards).
-export function locomote(a, dt, speed) {
+export function locomote(a: Anim, dt: number, speed: number) {
   const sp = Math.abs(speed);
   if (sp < 0.2) { a.play('idle', false, 0.3); a.step(dt); }
   else if (sp > 4.5) { a.play('run', false, 0.2); a.step(dt, (speed / RUN_STRIDE) * a.duration); }
@@ -22,13 +41,24 @@ export function locomote(a, dt, speed) {
 }
 
 // Lying down after being knocked over, getting up for the last GETUP seconds.
-export function knocked(a, dt, left) {
+export function knocked(a: Anim, dt: number, left: number) {
   if (left < GETUP) a.play('getup', false, 0.1);
   a.step(dt);
 }
 
 export class Crowd {
-  constructor(walk, grid, scene, rng, count, kit) {
+  walk: WalkGraph;
+  grid: WalkGrid;
+  r: () => number;
+  kit: FigureKit;
+  people: Pedestrian[];
+  fig: Figures;
+  totalLen: number;
+  cell: number;
+  segs: Map<string, WalkSegment[]>;
+  footfall: Footfall | null = null;
+
+  constructor(walk: WalkGraph, grid: WalkGrid, scene: THREE.Scene, rng: () => number, count: number, kit: FigureKit) {
     this.walk = walk;
     this.grid = grid;
     this.r = rng;
@@ -44,7 +74,7 @@ export class Crowd {
   }
 
   // Footpath segments bucketed for nearest(); called again as more of the map loads.
-  index(edges) {
+  index(edges: WalkEdge[]) {
     for (const e of edges) {
       let acc = 0;
       for (let i = 0; i < e.pts.length - 1; i++) {
@@ -52,15 +82,15 @@ export class Crowd {
         const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
         const k = `${Math.floor((a[0] + b[0]) / 2 / this.cell)},${Math.floor((a[1] + b[1]) / 2 / this.cell)}`;
         if (!this.segs.has(k)) this.segs.set(k, []);
-        this.segs.get(k).push({ e, a, b, s0: acc, len });
+        this.segs.get(k)!.push({ e, a, b, s0: acc, len, s: acc });
         acc += len;
       }
     }
   }
 
   // Closest point on the footpath network (used to rejoin after running away).
-  nearest(x, y) {
-    let best = null, bestD = Infinity;
+  nearest(x: number, y: number): WalkSpot | null {
+    let best: WalkSpot | null = null, bestD = Infinity;
     const cx = Math.floor(x / this.cell), cy = Math.floor(y / this.cell);
     for (let R = 1; R <= 4 && !best; R++) {
       for (let i = -R; i <= R; i++) {
@@ -80,7 +110,7 @@ export class Crowd {
     return best;
   }
 
-  add(at) {
+  add(at?: WalkSpot): Pedestrian {
     const r = this.r;
     if (this.people.length >= this.fig.capacity) {
       // Full: move someone who is out of the way instead.
@@ -94,15 +124,15 @@ export class Crowd {
       let x = r() * this.totalLen;
       for (const f of this.walk.edges) if ((x -= f.path.length) < 0) { e = f; break; }
       e = e || this.walk.edges[0];
+      if (!e) throw new Error('No walkable edges are loaded');
       s = r() * e.path.length;
     }
     const i = this.people.length;
-    const p = {
-      i, e, s, fwd: r() > 0.5, side: r() > 0.5 ? 1 : -1,
+    const p: Pedestrian = {
+      i, e, s: s ?? 0, fwd: r() > 0.5, side: r() > 0.5 ? 1 : -1,
       speed: 1.1 + r() * 0.6, x: 0, y: 0, h: 0, vx: 0, vy: 0,
-      state: 'walk', t: 0, pause: 0, z: 0, anim: new Anim(this.kit, 'walk', r() * 2),
+      state: 'walk', t: 0, pause: 0, z: 0, anim: new Anim(this.kit, 'walk', r() * 2), look: randomLook(r),
     };
-    p.look = randomLook(r);
     this.fig.look(i, p.look);
     this.fig.mesh.count = this.people.length + 1;
     this.people.push(p);
@@ -111,8 +141,9 @@ export class Crowd {
   }
 
   // Someone goes home: the last in the list takes their slot.
-  retire(p) {
+  retire(p: Pedestrian) {
     const last = this.people.pop();
+    if (!last) return;
     if (last !== p) {
       last.i = p.i;
       this.people[p.i] = last;
@@ -122,7 +153,7 @@ export class Crowd {
   }
 
   // Put a person on their edge, on their side of the street, clear of buildings.
-  place(p) {
+  place(p: Pedestrian) {
     const q = p.e.path.at(p.s);
     let off = p.e.side * p.side;
     const nx = Math.sin(q.ang), ny = -Math.cos(q.ang);
@@ -137,17 +168,17 @@ export class Crowd {
     p.h = p.fwd ? q.ang : q.ang + Math.PI;
   }
 
-  blocked(x, y) { return this.grid.at(x, y) !== 0; }
+  blocked(x: number, y: number) { return this.grid.at(x, y) !== 0; }
 
   // Someone steps out of a car (a driver who's just been pulled out, say).
-  spawnAt(x, y) {
+  spawnAt(x: number, y: number) {
     const p = this.add(this.nearest(x, y) || undefined);
     p.x = x;
     p.y = y;
     return p;
   }
 
-  update(dt, threats) {
+  update(dt: number, threats: Iterable<{ x: number; y: number; vx: number; vy: number }>) {
     const r = this.r;
     for (const p of this.people) {
       p.t -= dt;
@@ -188,6 +219,7 @@ export class Crowd {
           p.vy *= k;
         }
         if (p.state === 'rejoin') {
+          if (!p.target) continue;
           const dx = p.target.x - p.x, dy = p.target.y - p.y, d = Math.hypot(dx, dy);
           if (d < 0.4 || p.t < -8) {
             p.state = 'walk';
@@ -216,7 +248,7 @@ export class Crowd {
     }
   }
 
-  animate(p, dt) {
+  animate(p: Pedestrian, dt: number) {
     const a = p.anim;
     if (p.state === 'down') knocked(a, dt, p.t);
     else if (a.name === 'jump' && !a.done) a.step(dt);
@@ -224,7 +256,7 @@ export class Crowd {
     p.z = a.name === 'jump' ? jumpHeight(a.t, 0.7) : 0;
   }
 
-  turn(p) {
+  turn(p: Pedestrian) {
     const node = p.s > p.e.path.length / 2 ? p.e.v : p.e.u;
     const opts = (this.walk.adj.get(node) || []).filter((o) => o.e !== p.e);
     // Busier streets are likelier, by the square root of how busy they are: in the
@@ -238,7 +270,7 @@ export class Crowd {
     p.s = p.fwd ? 0 : p.e.path.length;
   }
 
-  knock(p, vx, vy) {
+  knock(p: Pedestrian, vx: number, vy: number) {
     p.state = 'down';
     p.t = 3 + this.r() * 2;
     p.vx = vx;
@@ -247,7 +279,7 @@ export class Crowd {
     p.anim.play('fall', true, 0.08);
   }
 
-  render(height = () => 0) {
+  render(height: (x: number, y: number, p: Pedestrian) => number = () => 0) {
     const m = new THREE.Matrix4();
     for (const p of this.people) {
       m.compose(_p.set(p.x, height(p.x, p.y, p) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
@@ -259,7 +291,7 @@ export class Crowd {
 
 // Nearest spot where a person fits (a free cell with free cells on all four sides),
 // searching outward in rings up to maxR metres.
-export function nearestWalkable(grid, x, y, maxR = 60) {
+export function nearestWalkable(grid: WalkGrid, x: number, y: number, maxR = 60): Point2 {
   for (let r = 0; r <= maxR; r += 1) {
     const n = Math.max(8, Math.round(r * 6));
     for (let i = 0; i < n; i++) {
@@ -276,7 +308,19 @@ export function nearestWalkable(grid, x, y, maxR = 60) {
 // { h, mag } (the touch stick) you turn to face h and walk that way instead; a full
 // push runs.
 export class Walker {
-  constructor(grid, kit) {
+  grid: WalkGrid;
+  x: number; y: number; h: number; z: number; speed: number; down: number;
+  vx: number; vy: number;
+  anim: Anim;
+  look: Look;
+  fig: Figures;
+  base: THREE.Matrix4;
+  mesh: THREE.Group;
+  ring: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+  gz?: number;
+  level?: number;
+
+  constructor(grid: WalkGrid, kit: FigureKit) {
     this.grid = grid;
     this.x = this.y = 0;
     this.h = 0;
@@ -306,12 +350,12 @@ export class Walker {
   // The ground and walls as you meet them: on a bridge deck or under it.
   get ground() { return this.grid.view ? this.grid.view(this) : this.grid; }
 
-  blocked(x, y) {
+  blocked(x: number, y: number) {
     const g = this.ground, r = 0.3;
     return g.at(x, y) || g.at(x + r, y) || g.at(x - r, y) || g.at(x, y + r) || g.at(x, y - r);
   }
 
-  update(dt, ctl) {
+  update(dt: number, ctl: { turn: number; move: number; run: boolean; jump: boolean; aim?: { h: number; mag: number } | null }) {
     const a = this.anim;
     if (this.down > 0) {
       this.down -= dt;
@@ -354,7 +398,7 @@ export class Walker {
     this.sync();
   }
 
-  knock(vx, vy) {
+  knock(vx: number, vy: number) {
     this.down = 2.2;
     this.vx = vx;
     this.vy = vy;
