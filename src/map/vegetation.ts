@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
+import { NOISE_GLSL } from '../shading.ts';
 
 export interface TreeTileData extends GeoData {
   areas: Record<string, Polygons | undefined>;
@@ -172,9 +173,24 @@ const TUFT_GLSL = /* glsl */ `
 varying vec3 vTuft;
 float tuftAlpha() {
   float r = length(vTuft.xy), a = atan(vTuft.y, vTuft.x), s = vTuft.z * 6.2832;
-  float edge = .8 + .13 * cos(5. * (a + s)) + .05 * cos(11. * a + s * 3.);
+  float edge = .8 + .13 * cos(5. * (a + s)) + .05 * cos(11. * a + s * 3.) + .035 * cos(29. * a + s * 5.);
   float w = fwidth(r) * .7 + 1e-4;
   return 1. - smoothstep(edge - w, edge + w, r);
+}
+`;
+// Cells for the small leaves: x = gap to the next leaf, y = random, zw = from the
+// leaf's middle.
+const SMALL_LEAVES_GLSL = /* glsl */ `
+vec4 smallLeaves(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  float d1 = 8., d2 = 8., id = 0.;
+  vec2 o1 = vec2(0.);
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 g = vec2(x, y), r = g + vec2(hash12(i + g), hash12(i + g + 17.3)) * .8 + .1 - f;
+    float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; id = hash12(i + g + 5.1); o1 = r; } else if (d < d2) d2 = d;
+  }
+  return vec4(sqrt(d2) - sqrt(d1), id, -o1);
 }
 `;
 const TUFT_VERTEX = ['#include <common>', '#include <common>\nattribute vec3 tuft;\nvarying vec3 vTuft;'] as const;
@@ -194,7 +210,7 @@ function leafy(material: THREE.MeshLambertMaterial) {
   vAcross = normalMatrix * mat3(instanceMatrix) * across;
   vAlong = normalMatrix * mat3(instanceMatrix) * along;`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
+      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   float ta = tuftAlpha();
   if (ta < .02) discard;
@@ -215,11 +231,18 @@ function leafy(material: THREE.MeshLambertMaterial) {
     float rnd = fract(sin(leaf * 12.9 + s * 7.) * 43758.5);
     float tilt = mix(.95, .45, top) * (.6 + .8 * rnd) * smoothstep(.08, .22, r);
     vec3 ln = normalize(N + (T * cos(mid + rnd - .5) + B * sin(mid + rnd - .5)) * tilt);
-    normal = normalize(mix(normal, ln, .8));
+    normal = normalize(mix(normal, ln, .6));
     float gap = min(fract(f), 1. - fract(f)) * k * r;                // to the next leaf
     float w = fwidth(r) + .008;
-    leafCrease = mix(.72, 1., smoothstep(0., w * 1.5, gap) + (1. - smoothstep(.1, .2, r)))
-      * mix(.7, 1., smoothstep(0., w * 1.5, abs(r - topEdge)));
+    leafCrease = mix(.78, 1., smoothstep(0., w * 1.5, gap) + (1. - smoothstep(.1, .2, r)))
+      * mix(.75, 1., smoothstep(0., w * 1.5, abs(r - topEdge)));
+    // Small leaves all over: each a little dome of its own, turned and lit a little
+    // differently, which breaks the light up into a fine grain.
+    vec4 sl = smallLeaves(vTuft.xy * 8.);
+    float sd = detail(vTuft.xy * 8., 1.5);
+    vec2 jit = vec2(hash12(sl.yy * 91.), hash12(sl.yy * 37. + 3.)) - .5;
+    normal = normalize(normal + (T * (sl.z * 1.3 + jit.x * .7) + B * (sl.w * 1.3 + jit.y * .7)) * sd);
+    leafCrease *= mix(1., (.78 + .38 * sl.y) * mix(.7, 1., smoothstep(0., .12, sl.x)), sd);
   }`)
       .replace('#include <lights_lambert_fragment>', 'diffuseColor.rgb *= leafCrease;\n#include <lights_lambert_fragment>')
       .replace('#include <opaque_fragment>', `outgoingLight *= mix(vec3(.88, 1., 1.06), vec3(1.14, 1.06, .7), smoothstep(.04, .3, dot(outgoingLight, vec3(.3, .59, .11))));
