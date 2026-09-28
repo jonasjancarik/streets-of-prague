@@ -83,6 +83,8 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   over it (bonnet or roof) to the other side instead of being blocked.
 - **Steal an empty police car.** When the officers have left a police car, the
   player should be able to get in and drive it away.
+- **Skid marks.** Hard braking and sliding turns could leave tyre marks on the road
+  that fade out over time.
 - **Parking zone markings.** The blue line should run only along the street side of
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
