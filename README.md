@@ -184,14 +184,18 @@ the pixel ratio.
   tram up for a minute gets pushed aside, slowly. Three-section 15T-like cars with the
   line number on the roof in the line's colour. They run all over the city at once, so
   they come into view on their own timetable; only the ones near the camera are drawn.
-- **Sound** is made in code with the Web Audio API, no recordings (`src/audio.ts`).
-  The engine's note follows the revs up through the gears (lower for a van, higher for
-  a motorbike, none on a bike), and the tyres hiss on asphalt, rumble over setts at
-  the rate the wheels meet the stones (from the street's OSM `surface`), and squeal in
-  a slide. The four nearest trams rumble along, whine as they pull away and brake,
-  click over the rail joints bogie by bogie, squeal in tight curves, and ring the bell
-  at you or a car on the track ahead. It starts with the first key press or tap (the
-  browser's rule); M turns it off and on, and it goes quiet in the metro.
+- **Sound** (`src/audio.ts`, Web Audio API). Your engine and tyres are made in code:
+  the engine's note follows the revs up through the gears (lower for a van, higher for
+  a motorbike, none on a bike), and the tyres hiss on asphalt, rumble over setts at the
+  rate the wheels meet the stones (from the street's OSM `surface`), and squeal in a
+  slide. The four nearest trams are recordings of Prague trams from Freesound, cut
+  into clips by `pipeline/build_audio.py` (sources and licences in
+  `public/audio/SOURCES.md`): the rumble and the motors' whine as loops that follow
+  the tram's speed, the wheels' squeal in tight curves, pulling away from a stop and
+  pulling in as it happens, and the bell at you or a car on the track ahead. The
+  bogies' clicks over the rail joints are made in code. It starts with the first key
+  press or tap (the browser's rule); M turns it off and on, and it goes quiet in the
+  metro.
 - **Police** patrol with the traffic. Chasing cars find their way with an A* search over
   the street graph (both ways along every street) and drive it with the same physics as
   your car; within 40 m and in sight they head straight for you. What the police see
@@ -342,6 +346,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   which doesn't reach it, measures against the last `centrum` or `praha` built.
   Without the map, every street counts as equally busy and about 240 people are about
   everywhere.
+- **Tram sounds.** Unlike the map, the clips in `public/audio/` are committed; run
+  `uv run build_audio.py` (needs ffmpeg) only to change how they're cut. It downloads
+  the Freesound previews it needs into `pipeline/.cache/audio/freesound/` (no login
+  needed). Add a new recording's source and licence to `public/audio/SOURCES.md`.
 - **Parking.** `build_parking.py` reads the monthly TSK occupancy GeoJSON collected by
   `~/projects/parkovani-praha` (set `PARKING_DATA` to point elsewhere).
 - **Unmapped ground (prototype).** `ground_cover.py` tries two ways to fill the ground
@@ -379,6 +387,9 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 - Carriageways and parking bays: Digitální technická mapa kraje, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/28A24EB4-5EE8-436E-B0BB-357025258211), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Unmapped-ground prototype (`?cover`, `?ortho`): orthophotos and the digital surface model © [IPR Praha](https://geoportalpraha.cz/), CC BY 4.0; older surface model DMP 1G © [ČÚZK](https://geoportal.cuzk.cz/), CC BY 4.0.
+- Tram sounds: [Freesound](https://freesound.org), nearly all CC0; the motor's whine is
+  [tramvaj nova prujezd nabrezi MS](https://freesound.org/s/621068/) by ozvuk,
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (see `public/audio/SOURCES.md`).
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - Maps in the developer panel: [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).
 
