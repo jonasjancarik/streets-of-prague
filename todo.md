@@ -207,11 +207,11 @@ What's in since 29 September 2026: clear, cloudy, rain, mist and snow
   Open-Meteo is easy but free only for non-commercial use (the game may take
   donations); ČHMÚ's open data (CC BY) has the current observations from Prague's
   stations but needs a small proxy or a build step.
-- **Snow on the trees** and bare trees in winter; wet leaves darker in the rain.
+- **Bare trees in winter.** Snow already lies on the crowns' tops.
 - **Puddles where the water gathers.** They're placed by noise; the terrain's low
   points and the kerbs would be better.
-- **Tyres in the wet and on snow.** Less grip, longer braking, skids; spray behind
-  cars in the rain.
+- **Spray behind cars in the rain**, and tracks in fresh snow. (Grip already drops
+  in the wet and on snow, for the cars you and the police drive.)
 - **Thunderstorms:** lightning flashes and thunder.
 
 ## More map data

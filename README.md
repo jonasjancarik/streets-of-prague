@@ -125,8 +125,11 @@ the pixel ratio.
   of, with fog measured from the camera so the ground is hazier than the roofs. The
   ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,
   rings where the drops hit) and dries over several minutes; snow settles on the
-  ground (thinner and slushy on the roads), the roofs and the cars, and melts slower
-  still (`WEATHER_GLSL` in `src/shading.ts`).
+  ground (thinner and slushy on the roads), the roofs, the cars and the tree tops, and
+  melts slower still (`WEATHER_GLSL` in `src/shading.ts`). A wet road takes a quarter
+  of the tyres' grip and snow nearly half, for the cars you and the police drive.
+  Rain hisses and patters, the tyres hiss louder in the wet, and a wind blows while it
+  snows, all made in Web Audio (`src/audio.ts`).
 - **Night** (`src/lamps.ts`): the street lamps are IPR's, about 130,000 of them: on
   poles, on walls, the Old Town's gas lamps, floodlit monuments, tunnels and
   underpasses (`pipeline/build_lamps.py`). Side streets whose lamps hang on cables
@@ -301,9 +304,7 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
 - Something to do: missions (deliveries, taxi, courier).
 - Visible damage on cars.
 - Sound for the traffic, crashes, people and the helicopter.
-- Weather sounds (rain on the street, wind), thunderstorms, and tyres slipping on
-  snow and in the wet.
-- Snow on the trees, and bare trees in winter.
+- Thunderstorms, spray behind cars in the rain, and bare trees in winter.
 
 ## Building the map
 
