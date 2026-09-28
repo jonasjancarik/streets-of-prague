@@ -28,9 +28,9 @@ const MOODS: [number, Mood][] = [
   [-10, { sun: '#8fa6d8', sunI: 0.9, sky: '#2c3a5c', ground: '#16151c', skyI: 1.6, exposure: 2.03 }],
   [-4, { sun: '#8fa6d8', sunI: 0.0, sky: '#4a4e72', ground: '#2a2230', skyI: 1.7, exposure: 1.96 }],
   [1, { sun: '#ffa060', sunI: 1.8, sky: '#948aa4', ground: '#4c3a34', skyI: 1.3, exposure: 1.82 }],
-  [8, { sun: '#ffaa66', sunI: 3.0, sky: '#a8aec4', ground: '#6a5444', skyI: 0.95, exposure: 1.69 }],
-  [20, { sun: '#ffd1a0', sunI: 3.4, sky: '#b4c2d8', ground: '#7a6a52', skyI: 0.95, exposure: 1.62 }],
-  [40, { sun: '#fff0dc', sunI: 3.6, sky: '#c4d4e6', ground: '#857a62', skyI: 1.0, exposure: 1.62 }],
+  [8, { sun: '#ffaa66', sunI: 3.0, sky: '#b4b2bd', ground: '#6a5444', skyI: 1.1, exposure: 1.69 }],
+  [20, { sun: '#ffd1a0', sunI: 3.4, sky: '#bfc4cc', ground: '#7a6a52', skyI: 1.15, exposure: 1.62 }],
+  [40, { sun: '#fff0dc', sunI: 3.6, sky: '#c9cfd6', ground: '#857a62', skyI: 1.2, exposure: 1.62 }],
 ];
 
 const ca = new THREE.Color(), cb = new THREE.Color();
@@ -38,25 +38,30 @@ function mix(a: string, b: string, t: number, out: THREE.Color) {
   return out.copy(ca.set(a).convertSRGBToLinear()).lerp(cb.set(b).convertSRGBToLinear(), t).convertLinearToSRGB();
 }
 
-// Tone mapping: an extended Reinhard per channel, so bright colours drift towards
-// white as on film, a little less saturation and a gentle S-curve. It runs in every
-// material, for every ground layer drawn over a pixel; AgX looked much the same and
-// cost about 12% of the frame on a big high-density screen, this about 7%.
+// Tone mapping and grading: an extended Reinhard per channel, so bright colours drift
+// towards white as on film, a little less saturation, a gentle S-curve and the
+// shadows lifted a little towards warm. (A lookup table would allow any grade, but it
+// needs the scene drawn to a target first and graded in a pass of its own, which cost
+// as much as it saved at 2×.) It runs in every material, for every ground layer drawn
+// over a pixel; AgX looked much the same and cost about 12% of the frame on a big
+// high-density screen, this about 7%.
 THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
   'vec3 CustomToneMapping( vec3 color ) { return color; }',
   `vec3 CustomToneMapping( vec3 color ) {
   if ( toneMappingExposure < 0. ) return color * -toneMappingExposure;   // off (see Sky.curve)
   color *= toneMappingExposure;
   vec3 c = color * ( 1. + color / 36. ) / ( 1. + color );
-  c = mix( c, vec3( dot( c, vec3( .2126, .7152, .0722 ) ) ), .2 );
-  return mix( c, c * c * ( 3. - 2. * c ), .35 );
+  c = mix( c, vec3( dot( c, vec3( .2126, .7152, .0722 ) ) ), .12 );
+  c = mix( c, c * c * ( 3. - 2. * c ), .35 );
+  return c + vec3( .016, .012, .006 ) * ( 1. - c );   // the shadows lifted a little, warm
 }`,
 );
 
 // The same curve for one channel, to match its mid-tones when it's off.
 function toneCurve(x: number) {
   const c = (x * (1 + x / 36)) / (1 + x);
-  return c * 0.65 + c * c * (3 - 2 * c) * 0.35;
+  const d = c * 0.65 + c * c * (3 - 2 * c) * 0.35;
+  return d + 0.012 * (1 - d);
 }
 
 export class Sky {

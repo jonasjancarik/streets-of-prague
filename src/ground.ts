@@ -31,11 +31,11 @@ type GroundGeometry = GroundLayer['geometry'];
 // workers (tileWorker.ts); surface.ts makes the meshes.
 
 export const COLORS = {
-  pavement: '#c6c0b4', square: '#cbc4b6', path: '#d0cabe', dirt: '#bfa87e',
-  park: '#7d9a55', garden: '#83a058', wood: '#52703c', orchard: '#8aa25e', pitch: '#6c9c55',
+  pavement: '#cdbfa8', square: '#d0c3ab', path: '#d4c8b2', dirt: '#bfa87e',
+  park: '#79a24c', garden: '#80a552', wood: '#52703c', orchard: '#89a858', pitch: '#6c9c55',
   field: '#b9b27a', yard: '#a9a69e', ballast: '#99948a', bare: '#bba888',
-  water: '#4d7680', asphalt: '#5c5f63', sett: '#8a847a', parking: '#666a6e',
-  bridge: '#62656a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
+  water: '#4d7680', asphalt: '#6b6a68', sett: '#8a847a', parking: '#72706c',
+  bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', tunnel: '#46484c', tunnelWall: '#a59f93',
 };
 const ZONE = { RES: '#3d7be0', MIX: '#9b59d0', VIS: '#e8962c' };
