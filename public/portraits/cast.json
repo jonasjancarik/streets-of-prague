@@ -1,0 +1,182 @@
+[
+ {
+  "id": "marek",
+  "who": "man in an olive jacket",
+  "w": 271,
+  "h": 521
+ },
+ {
+  "id": "clerk",
+  "who": "woman with glasses and files",
+  "w": 264,
+  "h": 484
+ },
+ {
+  "id": "driver",
+  "who": "older man in a transport company vest",
+  "w": 265,
+  "h": 478
+ },
+ {
+  "id": "student",
+  "who": "curly-haired lad with headphones",
+  "w": 261,
+  "h": 504
+ },
+ {
+  "id": "butcher",
+  "who": "man in an apron, arms crossed",
+  "w": 271,
+  "h": 502
+ },
+ {
+  "id": "courier",
+  "who": "food courier in a cap",
+  "w": 271,
+  "h": 462
+ },
+ {
+  "id": "veteran",
+  "who": "old man in a sheepskin jacket",
+  "w": 265,
+  "h": 456
+ },
+ {
+  "id": "tattooed",
+  "who": "tattooed woman in a black top",
+  "w": 256,
+  "h": 474
+ },
+ {
+  "id": "neighbour",
+  "who": "woman in a green jacket",
+  "w": 271,
+  "h": 484
+ },
+ {
+  "id": "drifter",
+  "who": "man in a beanie with a cigarette",
+  "w": 262,
+  "h": 468
+ },
+ {
+  "id": "rocker",
+  "who": "woman in a leather jacket",
+  "w": 268,
+  "h": 525
+ },
+ {
+  "id": "conductor",
+  "who": "old tram conductor in uniform",
+  "w": 273,
+  "h": 488
+ },
+ {
+  "id": "foreman",
+  "who": "woman in a hi-vis jacket, smoking",
+  "w": 272,
+  "h": 494
+ },
+ {
+  "id": "bouncer",
+  "who": "bald man with tattoos",
+  "w": 281,
+  "h": 479
+ },
+ {
+  "id": "mechanic",
+  "who": "man in a cap and overalls",
+  "w": 264,
+  "h": 465
+ },
+ {
+  "id": "barmaid",
+  "who": "tattooed barmaid with a glass",
+  "w": 245,
+  "h": 488
+ },
+ {
+  "id": "grandma",
+  "who": "grandmother with newspapers",
+  "w": 277,
+  "h": 481
+ },
+ {
+  "id": "punk",
+  "who": "teenager in a hoodie with badges",
+  "w": 274,
+  "h": 482
+ },
+ {
+  "id": "inspector",
+  "who": "detective in a trench coat",
+  "w": 268,
+  "h": 500
+ },
+ {
+  "id": "hacker",
+  "who": "man with glasses and headphones",
+  "w": 267,
+  "h": 500
+ },
+ {
+  "id": "boss",
+  "who": "man in a pinstripe suit",
+  "w": 281,
+  "h": 469
+ },
+ {
+  "id": "lawyer",
+  "who": "woman in a suit with a tablet",
+  "w": 283,
+  "h": 485
+ },
+ {
+  "id": "journalist",
+  "who": "man with glasses in tweed",
+  "w": 258,
+  "h": 466
+ },
+ {
+  "id": "policeman",
+  "who": "police officer",
+  "w": 241,
+  "h": 463
+ },
+ {
+  "id": "policewoman",
+  "who": "police officer",
+  "w": 266,
+  "h": 457
+ },
+ {
+  "id": "detective",
+  "who": "grey-haired detective in a trench coat",
+  "w": 281,
+  "h": 503
+ },
+ {
+  "id": "paramedic-f",
+  "who": "paramedic",
+  "w": 262,
+  "h": 504
+ },
+ {
+  "id": "paramedic",
+  "who": "paramedic",
+  "w": 278,
+  "h": 504
+ },
+ {
+  "id": "guard",
+  "who": "security guard in sunglasses",
+  "w": 274,
+  "h": 494
+ },
+ {
+  "id": "official",
+  "who": "official with glasses and a lanyard",
+  "w": 277,
+  "h": 497
+ }
+]
