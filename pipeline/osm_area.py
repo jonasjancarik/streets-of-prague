@@ -277,12 +277,14 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         # Cobbles where a cobbled street is the nearest and close by, asphalt elsewhere,
         # including the surveyed car parks and lanes OSM doesn't have.
         # (Snapped to a centimetre grid: the survey's surface and the Voronoi cells meet
-        # at countless near-coincident edges, which exact overlay trips over.)
+        # at countless near-coincident edges, which exact overlay trips over. Snapping
+        # can also squash a sliver into a line, so only the areas are kept each time.)
+        surface = _areas(surface)
         setts = Polygon()
         if sett_near:
-            setts = shapely.intersection(_nearest(surveyed, surface), unary_union(sett_near), grid_size=GRID)
-        road_lines.setdefault("sett", []).append(shapely.intersection(surface, setts, grid_size=GRID))
-        road_lines.setdefault("road", []).append(shapely.difference(surface, setts, grid_size=GRID))
+            setts = _areas(shapely.intersection(_nearest(surveyed, surface), unary_union(sett_near), grid_size=GRID))
+        road_lines.setdefault("sett", []).append(_areas(shapely.intersection(surface, setts, grid_size=GRID)))
+        road_lines.setdefault("road", []).append(_areas(shapely.difference(surface, setts, grid_size=GRID)))
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
     gardens = _gardens(homes, buildings, streets, clip)
@@ -399,10 +401,23 @@ def _nearest(lines, surface):
     if marks.all() or len(pts) < 3:
         return surface if marks.all() else Polygon()
     cells = shapely.get_parts(shapely.voronoi_polygons(shapely.multipoints(pts), extend_to=surface.envelope, ordered=True))
-    # Only the areas: making the union valid can leave lines where cells met in a sliver,
-    # and an overlay of polygons with lines fails ("mixed-dimension").
-    parts = shapely.get_parts(shapely.make_valid(shapely.coverage_union_all(cells[marks])))
-    return shapely.union_all(parts[np.isin(shapely.get_type_id(parts), (3, 6))]) if len(parts) else Polygon()  # Polygon, MultiPolygon
+    try:
+        union = shapely.coverage_union_all(cells[marks])
+    except shapely.errors.GEOSException:
+        # The fast union assumes cells that meet exactly; now and then they don't, and
+        # a plain overlay trips over the same near-coincident edges. Grown by a
+        # centimetre, the cells overlap and join cleanly.
+        union = shapely.union_all(shapely.buffer(cells[marks], 0.01, join_style="mitre"))
+    return _areas(shapely.make_valid(union))
+
+
+def _areas(g):
+    """Only the polygons of a geometry. Making it valid or snapping it to a grid can
+    leave lines where a sliver collapsed, and an overlay of polygons with lines fails
+    ("mixed-dimension")."""
+    parts = shapely.get_parts(g)
+    keep = parts[np.isin(shapely.get_type_id(parts), (3, 6))]  # Polygon, MultiPolygon
+    return shapely.union_all(keep) if len(keep) else Polygon()
 
 
 def _height(row, col, osm_id, area):
