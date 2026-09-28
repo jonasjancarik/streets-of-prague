@@ -206,6 +206,13 @@ the pixel ratio.
   bakes the posed vertices into textures, so the whole crowd is one instanced draw
   call. Rebuild with `blender -b --factory-startup -P assets/figures/build.py`; add
   `-- --preview DIR` to render a few frames of every clip.
+- **Cars** are built the same way (`assets/cars/build.py` → `public/cars.glb`): one
+  low-poly body per type (hatchback, saloon, estate, van, taxi, police), shaped for
+  the view from above, where the bonnet, cabin, windows and roof show, with a little
+  of the sides, wheels and lights towards the edges of the screen. `src/car.ts` puts
+  each car's colour on the paint. Rebuild with
+  `blender -b --factory-startup -P assets/cars/build.py`; `-- --preview DIR` renders
+  them from above.
 - **Trams** run Prague's real lines (`src/trams.ts`), taken from OSM's route
   relations: each line goes round its whole route there and back. How many trams a line
   has out follows PID's timetable for the game clock's day and hour (`src/clock.ts`):

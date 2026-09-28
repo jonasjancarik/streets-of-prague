@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import proj4 from 'proj4';
 import { buildTransit } from './map/transit.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
-import { Car, CarPool, collideBodies, useKit } from './car.ts';
+import { Car, CarPool, collideBodies, loadCars, useKit } from './car.ts';
 import { loadKit } from './figures.ts';
 import { Traffic } from './traffic.ts';
 import { PavementDrivers } from './pavement.ts';
@@ -63,6 +63,7 @@ async function main() {
   dressLoading($('loading'));
   status('Loading the map…');
   const kitLoad = loadKit();
+  const carsLoad = loadCars();
   const footfallLoad = loadFootfall(AREA);
   const indexValue: unknown = await fetch(`data/${AREA}_now/index.json`).then((r) => {
     if (!r.ok) throw new Error(`Map index could not be loaded (${r.status})`);
@@ -114,6 +115,7 @@ async function main() {
   // People and two-wheelers (parked motorbikes come with the tiles, so load it first).
   const kit = await kitLoad;
   useKit(kit);
+  await carsLoad;
   const clock = new Clock(params);
   const weather = new Weather(params, clock.t);
   const weatherFx = new WeatherFx(scene);
