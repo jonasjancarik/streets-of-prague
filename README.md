@@ -148,7 +148,9 @@ too long; `?dpr=1` fixes it.
   either way. The departure boards count down from where the trams really are, so a
   tram held up in traffic shows up late there too. They stop at
   every stop, keep to the track's speed limit, slow down for curves and brake for the
-  tram in front and for anything on the track. Three-section 15T-like cars with the
+  tram in front and for anything on the track. A car left on the track that holds a
+  tram up is towed away after 3 minutes, out of sight (after 6, with a note, if you're
+  watching). Three-section 15T-like cars with the
   line number on the roof in the line's colour. They run all over the city at once, so
   they come into view on their own timetable; only the ones near the camera are drawn.
 - **Police** patrol with the traffic. Chasing cars find their way with an A* search over

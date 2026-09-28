@@ -180,7 +180,7 @@ export class Trams {
   }
 
   add(line, s) {
-    const v = { id: this.id++, line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, look: null, pending: this.rng() * FAR_STEP };
+    const v = { id: this.id++, line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, look: null, pending: this.rng() * FAR_STEP };
     // Not on the short cut across a terminus with no loop.
     for (const h of line.halts) {
       if (h.to !== undefined && h.to !== h.s && line.path.ahead(h.s - HALF, v.s) < line.path.ahead(h.s, h.to) + 2 * HALF) v.s = h.to + HALF;
@@ -338,6 +338,7 @@ export class Trams {
   clearAhead(v, dt, front, look, near) {
     const path = v.line.path;
     v.waitFor = null;
+    v.blocker = null;
     if (v.ghost > 0) v.ghost -= dt;
     for (let d = 1; d <= look; d += 3.5) {
       const p = path.at(front + d);
@@ -363,12 +364,18 @@ export class Trams {
       if (near) {
         for (const o of near(p.x, p.y, 3)) {
           if (o.kind === 'tram') continue;
-          if (Math.hypot(o.x - p.x, o.y - p.y) < 1.3 + o.r) return d;
+          if (Math.hypot(o.x - p.x, o.y - p.y) < 1.3 + o.r) { v.blocker = o.car || null; return d; }
         }
       }
     }
     v.stuck = 0;
     return Infinity;
+  }
+
+  // The cars holding a tram up: standing on the track in front of one that has stopped
+  // between stops.
+  *blockers() {
+    for (const v of this.list) if (v.blocker && v.dwell <= 0 && v.speed < 0.1) yield v.blocker;
   }
 
   // Draw the trams within r of (x, y); the others keep running undrawn.
