@@ -16,6 +16,7 @@ const STEP = SECTION + GAP;
 const HALF = STEP + SECTION / 2; // from the middle of a tram to its front
 const ACCEL = 1.1, BRAKE = 1.2, HARD = 4.5; // m/s²: pulling away, braking, emergency braking
 const DWELL = 18, TURN = 40; // seconds at a stop, and at a terminus where the tram reverses
+const PUSH = 60, CREEP = 1.5; // s a car can hold a tram up before the tram pushes it off the track, at this many m/s
 // Without timetables: trips per hour, day lines from 5 in the morning to midnight,
 // night lines (91-99) through the night.
 const FALLBACK = { day: 7.5, night: 3 };
@@ -180,7 +181,7 @@ export class Trams {
   }
 
   add(line, s) {
-    const v = { id: this.id++, line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, look: null, pending: this.rng() * FAR_STEP };
+    const v = { id: this.id++, line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, held: 0, shove: null, look: null, pending: this.rng() * FAR_STEP };
     // Not on the short cut across a terminus with no loop.
     for (const h of line.halts) {
       if (h.to !== undefined && h.to !== h.s && line.path.ahead(h.s - HALF, v.s) < line.path.ahead(h.s, h.to) + 2 * HALF) v.s = h.to + HALF;
@@ -326,9 +327,15 @@ export class Trams {
     }
     target = Math.min(target, toHalt < 0.6 ? 0 : Math.max(0.8, Math.sqrt(2 * BRAKE * (toHalt - 0.5))));
 
-    // Anything on the track ahead: another tram, a car, a person.
+    // Anything on the track ahead: another tram, a car, a person. A car left on the
+    // track that has held the tram up for a minute gets slowly pushed off it (not one
+    // waiting in traffic).
+    const was = v.blocker;
     const gap = this.clearAhead(v, dt, front, look, near);
     if (gap < Infinity) target = Math.min(target, Math.sqrt(2 * BRAKE * Math.max(0, gap - 4)));
+    v.held = v.blocker && v.blocker === was && v.speed < 0.1 ? v.held + dt : 0;
+    if (v.held > PUSH && v.blocker.mode !== 'traffic') { v.shove = v.blocker; v.held = 0; }
+    if (v.shove) target = Math.min(target, CREEP);
 
     v.speed = v.speed < target ? Math.min(target, v.speed + ACCEL * dt) : Math.max(target, v.speed - HARD * dt);
     v.s = path.wrap(v.s + Math.min(v.speed * dt, toHalt)); // never past the stop
@@ -339,6 +346,8 @@ export class Trams {
     const path = v.line.path;
     v.waitFor = null;
     v.blocker = null;
+    const shove = v.shove;
+    v.shove = null; // until it's on the track ahead again
     if (v.ghost > 0) v.ghost -= dt;
     for (let d = 1; d <= look; d += 3.5) {
       const p = path.at(front + d);
@@ -364,7 +373,10 @@ export class Trams {
       if (near) {
         for (const o of near(p.x, p.y, 3)) {
           if (o.kind === 'tram') continue;
-          if (Math.hypot(o.x - p.x, o.y - p.y) < 1.3 + o.r) { v.blocker = o.car || null; return d; }
+          if (Math.hypot(o.x - p.x, o.y - p.y) >= 1.3 + o.r) continue;
+          if (o.car && o.car === shove) { v.shove = shove; continue; } // being pushed aside
+          v.blocker = o.car || null;
+          return d;
         }
       }
     }
@@ -372,10 +384,9 @@ export class Trams {
     return Infinity;
   }
 
-  // The cars holding a tram up: standing on the track in front of one that has stopped
-  // between stops.
-  *blockers() {
-    for (const v of this.list) if (v.blocker && v.dwell <= 0 && v.speed < 0.1) yield v.blocker;
+  // The cars trams are pushing off the track.
+  *shoved() {
+    for (const v of this.list) if (v.shove) yield v.shove;
   }
 
   // Draw the trams within r of (x, y); the others keep running undrawn.

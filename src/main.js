@@ -30,7 +30,7 @@ const TRAFFIC = 40;
 const PEOPLE = 600; // round the Old Town Square; fewer where it's quieter (src/footfall.js)
 const FEW_PEOPLE = 40; // on the quietest edge of town
 const PARKED_TWO = 10; // bikes and motorbikes parked around you
-const TOW = 180, TOW_SEEN = 360; // s a car can hold a tram up before it's towed: out of sight, in view
+const SHOVE = 1.2; // m/s a tram pushes a car aside, off its track
 const LIFE_RADIUS = 330; // traffic and people are kept within this distance of the player
 
 async function main() {
@@ -509,26 +509,6 @@ async function main() {
   };
   let spawnT = 0;
 
-  // A car left on the tram track (parked, pushed or wrecked there) is towed away once
-  // it has held a tram up for a while: out of sight, or later with a word if you're
-  // watching. Moving cars, police cars and the one you're in aren't towed.
-  const holding = new Map(); // car → seconds it has held a tram up
-  const towAway = (dt) => {
-    const now = new Set(trams.blockers());
-    for (const c of holding.keys()) if (!now.has(c)) holding.delete(c);
-    for (const c of now) {
-      if (!loose.includes(c)) continue;
-      const t = (holding.get(c) || 0) + dt, seen = !offscreen(c.x, c.y);
-      holding.set(c, t);
-      if (t < (seen ? TOW_SEEN : TOW)) continue;
-      holding.delete(c);
-      loose.splice(loose.indexOf(c), 1);
-      tileCars.delete(c);
-      restingStale = true;
-      if (seen) showBanner('Towed: a car was blocking the tram');
-    }
-  };
-
   // One step of everything that moves (several per frame while a tram ride is sped up).
   let jolt = 0; // the hardest hit your own vehicle took this step
   const simulate = (dt, ctl) => {
@@ -579,7 +559,6 @@ async function main() {
     // Trams stop for whatever is on the track in front of them; one waiting to move
     // across to the other track at a terminus with no loop does it out of sight.
     trams.update(dt, { near: obstacles, x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
-    towAway(dt);
     if (ride.on) ride.seat(walker);
     transit.update(dt);
 
@@ -588,6 +567,8 @@ async function main() {
 
     // ---- Collisions ------------------------------------------------------
     const active = [...(inCar ? [inCar] : []), ...movers, ...cops];
+    // A car a tram is pushing off its track, even while it still stands.
+    for (const c of trams.shoved()) if (!active.includes(c)) active.push(c);
     const done = new Set();
     for (const a of active) {
       done.add(a);
@@ -628,6 +609,12 @@ async function main() {
       for (const t of tramBodies) {
         if (!near(a, t, 22)) continue;
         const hit = collideBodies(t, t.circles, 1.25, 0, a, a.circles(), a.r, 1 / a.mass);
+        // Pushing a car off the track: ahead, and to the right, away from the other track.
+        if (hit && t.v.shove === a) {
+          const ang = t.v.parts[2].ang, rx = Math.sin(ang), ry = -Math.cos(ang);
+          const lat = a.vx * rx + a.vy * ry;
+          if (lat < SHOVE) { a.vx += rx * (SHOVE - lat); a.vy += ry * (SHOVE - lat); }
+        }
         if (hit > 6 && a === inCar) shake = Math.min(1.2, shake + hit * 0.04);
         if (a === inCar) jolt = Math.max(jolt, hit);
       }
