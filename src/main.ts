@@ -435,7 +435,9 @@ async function main() {
     }
     return false;
   };
-  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, shiftTime: (h) => clock.advance(h * 3600) });
+  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, shiftTime: (h) => clock.advance(h * 3600),
+    timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400),
+    sunFromSouth: (on) => { if (on !== undefined) sky.flipped = !on; return !sky.flipped; } });
 
   // ---- Input -------------------------------------------------------------
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
@@ -829,7 +831,8 @@ async function main() {
     cutR += ((under ? 9 : 0) - cutR) * Math.min(1, dt * 6);
     CUTAWAY.value.set(px(), ground(px(), py(), body) + 2.5, -py(), cutR > 0.3 ? cutR : 0);
 
-    const ext = Math.max(90, height * 0.5);
+    // The shadows have to reach the corners of the screen, whichever way the sun shines.
+    const ext = Math.max(90, viewRadius());
     const sc = sun.shadow.camera;
     if (Math.abs(sc.right - ext) > 4) {
       sc.left = sc.bottom = -ext;
