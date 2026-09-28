@@ -44,6 +44,7 @@ from shapely import STRtree
 from shapely.geometry import LineString, Polygon, box
 
 from kerbs import NO_PARKING, estimate
+import dtm
 import layers
 import structures
 from osm_area import (AREAS, CAR_ROADS, FEATURE_TAGS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, extract,
@@ -424,6 +425,14 @@ def main() -> None:
     if PBF.exists():
         pad = 0.01
         area_pbf = str(cut((w - pad, s - pad, e + pad, n + pad), PBF.parent / f"{area}.osm.pbf"))
+
+    if wanted & {"ground", "streets"}:
+        # The technical map's streets (dtm.py), read here once rather than in every worker.
+        try:
+            dtm.download()
+        except OSError as e:
+            print(f"dtm: couldn't look for a newer map ({e}); using the one here")
+        dtm.surfaces()
 
     todo = layers.chunks(meta)
     jobs = [(area, meta, ci, cj, wanted, area_pbf) for ci, cj in todo]
