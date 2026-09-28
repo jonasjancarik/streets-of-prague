@@ -105,15 +105,16 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   two buildings above the street. NPC cars drive under it, but the player can't:
   the walkway seems to block the player as if it were a building on the ground.
   Probably needs a targeted fix for this spot.
-- **Fill the plain beige areas.** Large parts of the map (yards, industrial land,
-  unmapped open ground) still show the default beige. Ideas: bake the IPR
-  orthophoto into those areas through an anisotropic Kuwahara filter so it reads as
-  painted rather than photographic; or classify the orthophoto into surface types
-  (grass, paving, gravel, dirt, trees) and draw them with the existing procedural
-  materials, which also yields tree positions. Things to watch with raw imagery:
-  baked-in shadows at a different sun angle, parked cars and leaning roofs, seams
-  between photo tiles, the licence, and tile size. Only use it where no mapped
-  surface exists.
+- **Fill the plain beige areas.** Fields, work yards, railway land and building sites
+  now have surfaces of their own (from OSM land use). What's left is unmapped ground
+  in town: yards, verges, car parks on bare earth. The prototype
+  (`pipeline/ground_cover.py`, `?cover=rules` in the game, branch `beige-ground`)
+  classifies IPR's 2024 orthophoto and 2025 surface model into grass, trees, dirt,
+  gravel, asphalt and "not ground" on 49 tiles round Smíchov. Still to do: run it for
+  the whole city (a 16–65 GB photo download), and fold it into the build. The
+  painted-photo alternative (`?ortho`) looked like a blurry photograph, not the game.
+  About a third of the beige pieces in town are roofs or site clutter and some are
+  roadway the streets don't reach: gaps in the map data rather than missing ground.
 - **Parking zone markings.** The blue line should run only along the street side of
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
