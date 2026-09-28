@@ -9,8 +9,9 @@ import type { TramVehicle } from './trams.ts';
 // recordings of Prague trams (public/audio, cut by pipeline/build_audio.py): their
 // rumble, the motors' whine, the wheels squealing in tight curves, pulling away from a
 // stop and pulling in, and the bell when something's on the track; the bogies clicking
-// over rail joints are made here. Browsers only start sound after a key press or a
-// tap; M turns it off and on.
+// over rail joints are made here, and so is the weather: rain hissing and pattering,
+// the tyres louder in the wet, a wind while it snows. Browsers only start sound after
+// a key press or a tap; M turns it off and on.
 
 export type Surface = 'asphalt' | 'setts' | 'pavers' | 'pavement';
 
@@ -43,6 +44,7 @@ export interface SoundState {
   car: Car | null; throttle: number; surface: Surface;
   trams: TramVehicle[];
   quiet: boolean; // in the metro
+  rain?: number; wet?: number; snow?: number; // the weather, 0–1 each (weather.ts)
 }
 
 export class Sound {
@@ -54,6 +56,7 @@ export class Sound {
   clips: Record<string, AudioBuffer> = {};
   engine: Engine | null = null;
   tyres: Tyres | null = null;
+  weather: WeatherSound | null = null;
   voices: TramVoice[] = [];
 
   constructor() {
@@ -94,6 +97,7 @@ export class Sound {
     this.noise = noiseBuffer(ctx);
     this.clack = clackBuffer(ctx);
     this.tyres = new Tyres(ctx, this.noise, this.master);
+    this.weather = new WeatherSound(ctx, this.noise, this.master);
     // The trams are heard once their recordings are in.
     Promise.all([...LOOPS, ...ONCE].map(async (name) => {
       const r = await fetch(`audio/${name}.${LOOPS.includes(name) ? 'wav' : 'm4a'}`);
@@ -124,7 +128,8 @@ export class Sound {
       if (spec) this.engine = new Engine(ctx, this.noise, this.master, car, spec);
     }
     this.engine?.update(dt, s.throttle);
-    this.tyres!.update(car, s.surface);
+    this.tyres!.update(car, s.surface, s.wet ?? 0);
+    this.weather!.update(s.rain ?? 0, s.snow ?? 0);
 
     // The nearest trams, each keeping its voice while it's among them.
     const near: { v: TramVehicle; d: number; dx: number }[] = [];
@@ -276,14 +281,15 @@ class Tyres {
     for (const n of [a, b, c, this.bumps]) n.start(t);
   }
 
-  update(car: Car | null, surface: Surface) {
+  // `wet`: how wet the road is, which makes the hiss louder and brighter.
+  update(car: Car | null, surface: Surface, wet = 0) {
     const t = this.ctx.currentTime;
     const v = car ? car.speed : 0;
     const light = car?.two ? 0.35 : 1; // two narrow tyres
     const s = SURFACES[surface];
     const slip = car ? Math.abs(car.vx * Math.sin(car.h) - car.vy * Math.cos(car.h)) : 0;
-    this.hiss.frequency.setTargetAtTime(250 + v * 45, t, SMOOTH);
-    this.hissGain.gain.setTargetAtTime(light * clamp(v / 30, 0, 1) * 0.3 * (1 - 0.5 * s.rumble), t, SMOOTH);
+    this.hiss.frequency.setTargetAtTime((250 + v * 45) * (1 + wet * 2.5), t, SMOOTH);
+    this.hissGain.gain.setTargetAtTime(light * clamp(v / 30, 0, 1) * 0.3 * (1 - 0.5 * s.rumble) * (1 + wet * 1.2), t, SMOOTH);
     this.bumps.frequency.setTargetAtTime(clamp(v / s.spacing, 1, 400), t, SMOOTH);
     this.rumble.frequency.setTargetAtTime(140 + v * 12, t, SMOOTH);
     this.rumbleGain.gain.setTargetAtTime(light * s.rumble * clamp(v / 12, 0, 1) * 0.55, t, SMOOTH);
@@ -415,6 +421,38 @@ class TramVoice {
 
 // ---- Building blocks ---------------------------------------------------------
 
+// Rain: a steady hiss, and drops pattering on the street (a loop of short clicks at
+// random times); while it snows, a low wind that rises and falls.
+class WeatherSound {
+  ctx: AudioContext;
+  hissGain: GainNode; patterGain: GainNode;
+  wind: BiquadFilterNode; windGain: GainNode;
+
+  constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode) {
+    this.ctx = ctx;
+    this.hissGain = gain(ctx, 0);
+    const a = loop(ctx, noise, 0.9);
+    a.connect(filter(ctx, 'highpass', 500)).connect(filter(ctx, 'lowpass', 6000)).connect(this.hissGain).connect(dest);
+    this.patterGain = gain(ctx, 0);
+    const b = loop(ctx, patterBuffer(ctx));
+    b.connect(filter(ctx, 'bandpass', 2600, 0.5)).connect(this.patterGain).connect(dest);
+    this.wind = filter(ctx, 'lowpass', 380, 1.8);
+    this.windGain = gain(ctx, 0);
+    const c = loop(ctx, noise, 0.23);
+    c.connect(this.wind).connect(this.windGain).connect(dest);
+    for (const n of [a, b, c]) n.start(ctx.currentTime);
+  }
+
+  update(rain: number, snow: number) {
+    const t = this.ctx.currentTime;
+    this.hissGain.gain.setTargetAtTime(rain * 0.09, t, 0.5);
+    this.patterGain.gain.setTargetAtTime(rain * 0.5, t, 0.5);
+    const gust = 0.6 + 0.25 * Math.sin(t * 0.31) + 0.15 * Math.sin(t * 0.83 + 1);
+    this.windGain.gain.setTargetAtTime(snow * 0.22 * gust, t, 0.8);
+    this.wind.frequency.setTargetAtTime(260 + 240 * gust, t, 0.8);
+  }
+}
+
 const gain = (ctx: AudioContext, value: number) => {
   const g = ctx.createGain();
   g.gain.value = value;
@@ -443,6 +481,16 @@ function softClip(drive: number) {
 function noiseBuffer(ctx: AudioContext) {
   const b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = b.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return b;
+}
+// Rain drops: three seconds of short ticks, some near and loud, most faint.
+function patterBuffer(ctx: AudioContext) {
+  const sr = ctx.sampleRate, b = ctx.createBuffer(1, sr * 3, sr), d = b.getChannelData(0);
+  for (let n = 0; n < 1800; n++) {
+    const at = Math.floor(Math.random() * (d.length - sr * 0.01)), loud = Math.random() ** 3;
+    const decay = 900 + Math.random() * 2500;
+    for (let i = 0; i < sr * 0.01; i++) d[at + i] += (Math.random() * 2 - 1) * loud * Math.exp((-i / sr) * decay);
+  }
   return b;
 }
 // A wheel over a rail joint: a knock and a short metallic ring.

@@ -365,7 +365,7 @@ ${sheltered ? '' : `  diffuseColor.rgb = weathered(${id}, diffuseColor.rgb, wp, 
 ` : ''}`);
     lampLit(sh, 'vWorld');
     // Wet ground mirrors the sky and the lamps.
-    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += shine * (uSkyRef + lampLight(vWorld) * 1.1);');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += shine * (uSkyRef + lampLight(vWorld) * .85);');
   };
   material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}-${dig ? 'dig' : ''}${photo ? '-photo' : ''}${sheltered ? '-in' : ''}`;
   return material;

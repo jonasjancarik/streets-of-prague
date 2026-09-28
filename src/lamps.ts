@@ -72,7 +72,8 @@ const UNLIT = new Set(['motorway', 'motorway_link', 'track', 'service']);
 // Warm LED, old sodium, neutral LED; gas; floodlights.
 const WARM = new THREE.Color('#ffcf8f'), SODIUM = new THREE.Color('#ffa850'), NEUTRAL = new THREE.Color('#f1ece0');
 const GAS = new THREE.Color('#ffbb6e'), FLOOD = new THREE.Color('#ffe0b0');
-const HEAD = new THREE.Color('#fff4df'), TAIL = new THREE.Color('#ff2a1a');
+const HEAD = new THREE.Color('#fff4df'), TAIL = new THREE.Color('#ff2a1a'), CABIN = new THREE.Color('#fff0d8');
+const TRAM_SECTION = 10.2; // m (trams.ts)
 
 const hash = (i: number) => { const s = Math.sin(i * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
 function colourOf(kind: number, i: number) {
@@ -89,6 +90,7 @@ const MAX_LIGHTS = 6000;
 const MAX_POLES = 4000;
 
 interface Street { hw: string; pts: [number, number][]; tunnel?: boolean }
+interface LitTram { parts: { x: number; y: number; ang: number }[]; look: unknown; levels?: { gz?: number }[] }
 interface LitCar { x: number; y: number; h: number; spec: { L: number; W: number }; mode: string; two?: string; speed: number }
 
 export class Lamps {
@@ -292,8 +294,8 @@ export class Lamps {
 
   // Once a frame before the scene is drawn. `on`: how dark it is (Sky.dark); `cars`:
   // the cars in view, lit when they're driving; `carHeight(x, y, car)` the ground
-  // under them.
-  update<C extends LitCar>(x: number, y: number, r: number, on: number, cars: C[], carHeight: (x: number, y: number, car: C) => number, now: number) {
+  // under them; `trams`, the ones drawn (with a look) light the street round them.
+  update<C extends LitCar>(x: number, y: number, r: number, on: number, cars: C[], carHeight: (x: number, y: number, car: C) => number, now: number, trams: LitTram[] = []) {
     LAMP_ON.value = on;
     this.gather(x, y, r, now);
     // The cars' own lights glow too (after the lamps' heads in the same instances).
@@ -333,6 +335,26 @@ export class Lamps {
           this.glows.setMatrixAt(g, d.matrix);
           this.glows.setColorAt(g++, this.c.copy(colour).multiplyScalar(0.8));
         }
+      }
+    }
+    if (on > 0.005) for (const v of trams) {
+      if (!v.look || !v.parts.length) continue;
+      v.parts.forEach((p, i) => {
+        if (Math.abs(p.x - x) > r + 30 || Math.abs(p.y - y) > r + 30) return;
+        add(p.x, p.y, v.levels?.[i]?.gz ?? this.height(p.x, p.y), 0, 1, 0, 6, 6, CABIN, 0.3);
+      });
+      const f = v.parts[v.parts.length - 1], b = v.parts[0], half = TRAM_SECTION / 2;
+      const fx = Math.cos(f.ang), fy = Math.sin(f.ang), bx = Math.cos(b.ang), by = Math.sin(b.ang);
+      const z = v.levels?.[v.parts.length - 1]?.gz ?? this.height(f.x, f.y);
+      add(f.x + fx * half, f.y + fy * half, z, 1, fx, fy, 28, 5, HEAD, 1.8);
+      add(b.x - bx * half, b.y - by * half, v.levels?.[0]?.gz ?? this.height(b.x, b.y), 0, 1, 0, 2.6, 2.6, TAIL, 0.5);
+      for (const s of [-1, 1]) {
+        if (g >= this.glows.instanceMatrix.count) break;
+        d.position.set(f.x + fx * (half + 0.1) - fy * s * 0.9, z + 0.9, -(f.y + fy * (half + 0.1) + fx * s * 0.9));
+        d.scale.set(1, 1, 1);
+        d.updateMatrix();
+        this.glows.setMatrixAt(g, d.matrix);
+        this.glows.setColorAt(g++, this.c.copy(HEAD).multiplyScalar(0.8));
       }
     }
     this.glows.count = on > 0.005 ? g : 0;

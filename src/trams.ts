@@ -94,7 +94,12 @@ function sectionGeometry(kind: string) {
 }
 
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
-material.onBeforeCompile = (sh) => lampLit(sh);
+// At night the windows (the dark band) are lit from inside.
+material.onBeforeCompile = (sh) => {
+  lampLit(sh);
+  sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  if (uLampOn > .005 && dot(vColor.rgb, vec3(.3, .59, .11)) < .03 && vColor.b > vColor.r) totalEmissiveRadiance += vec3(1., .88, .7) * .5 * uLampOn;`);
+};
 material.customProgramCacheKey = () => 'trams';
 const geoms: Record<string, THREE.BufferGeometry> = {};
 const sectionMesh = (kind: string) => {
