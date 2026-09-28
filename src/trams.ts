@@ -24,11 +24,13 @@ interface TramCell { v: TramVehicle; x: number; y: number; c: number; s: number 
 export interface TramVehicle {
   id: number; line: TramLine; s: number; speed: number; dwell: number; halt: number;
   stuck: number; ghost: number; waitFor: TramVehicle | null; blocker: Car | null;
+  spotted: number; forPlayer: boolean;
   held: number; shove: Car | null; look: TramLook | null; pending: number;
-  parts: TramPoint[]; cells?: TramCell[]; levels?: { x: number; y: number }[];
+  parts: TramPoint[]; cells?: TramCell[]; levels?: { x: number; y: number; gz?: number }[];
   rider?: boolean;
 }
 interface TrackObstacle { kind: string; x: number; y: number; r: number; car?: Car }
+export interface TramBody { v: TramVehicle; x: number; y: number; vx: number; vy: number; circles: Point2[] }
 type Nearby = (x: number, y: number, radius: number) => Iterable<TrackObstacle>;
 
 // Prague's trams on their real lines (data/<area>_now/lines.json, from
@@ -44,7 +46,14 @@ type Nearby = (x: number, y: number, radius: number) => Iterable<TrackObstacle>;
 const SECTION = 10.2, GAP = 0.25, W = 2.5, H = 3.4;
 const STEP = SECTION + GAP;
 const HALF = STEP + SECTION / 2; // from the middle of a tram to its front
-const ACCEL = 1.1, BRAKE = 1.2, HARD = 4.5; // m/s²: pulling away, braking, emergency braking
+const BOGIE = SECTION / 2 - 1.6; // from the middle of a section to each of its bogies
+// How far behind a tram's front each of its bogies runs (they click over the rail joints).
+export const BOGIES = [STEP, 0, -STEP].flatMap((o) => [HALF - o - BOGIE, HALF - o + BOGIE]);
+const ACCEL = 1.1, BRAKE = 1.2, HARD = 4.5; // m/s²: pulling away, braking, stopping short
+// For the player the driver needs a moment to react, then brakes as hard as a real
+// tram can: 14 m/s (50 km/h) takes some 45 m to stop, so step out in front of one too
+// late and it hits you. Everyone else it sees coming, and stops for in time.
+const REACT = 0.8, EMERGENCY = 2.8; // s, m/s²
 const DWELL = 18, TURN = 40; // seconds at a stop, and at a terminus where the tram reverses
 const PUSH = 60, CREEP = 1.5; // s a car can hold a tram up before the tram pushes it off the track, at this many m/s
 // Without timetables: trips per hour, day lines from 5 in the morning to midnight,
@@ -227,7 +236,7 @@ export class Trams {
   }
 
   add(line: TramLine, s: number) {
-    const v: TramVehicle = { id: this.id++, line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, held: 0, shove: null, look: null, pending: this.rng() * FAR_STEP, parts: [] };
+    const v: TramVehicle = { id: this.id++, line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, spotted: 0, forPlayer: false, held: 0, shove: null, look: null, pending: this.rng() * FAR_STEP, parts: [] };
     // Not on the short cut across a terminus with no loop.
     for (const h of line.halts) {
       if (h.to !== undefined && h.to !== h.s && line.path.ahead(h.s - HALF, v.s) < line.path.ahead(h.s, h.to) + 2 * HALF) v.s = h.to + HALF;
@@ -279,9 +288,15 @@ export class Trams {
     v.halt = (before(line.haltS, line.path.wrap(v.s + HALF)) + 1) % line.halts.length;
   }
 
-  // The three sections' centres and headings along the track.
+  // The three sections' centres and headings along the track. Each section rides on two
+  // bogies and lies along the line between them, so it swings round a curve smoothly
+  // instead of snapping from one piece of the track to the next.
   place(v: TramVehicle) {
-    v.parts = [-STEP, 0, STEP].map((o) => v.line.path.at(v.s + o));
+    const path = v.line.path;
+    v.parts = [-STEP, 0, STEP].map((o) => {
+      const a = path.at(v.s + o - BOGIE), b = path.at(v.s + o + BOGIE);
+      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, ang: Math.atan2(b.y - a.y, b.x - a.x) };
+    });
   }
 
   // Move every tram on. `near(x, y, r)` finds what else is about (cars, people, the
@@ -380,21 +395,23 @@ export class Trams {
     // track that has held the tram up for a minute gets slowly pushed off it (not one
     // waiting in traffic).
     const was = v.blocker;
-    const gap = this.clearAhead(v, dt, front, look, near);
+    const gap = this.clearAhead(v, dt, front, look, near, seen);
     if (gap < Infinity) target = Math.min(target, Math.sqrt(2 * BRAKE * Math.max(0, gap - 4)));
     v.held = v.blocker && v.blocker === was && v.speed < 0.1 ? v.held + dt : 0;
     if (v.held > PUSH && v.blocker && v.blocker.mode !== 'traffic') { v.shove = v.blocker; v.held = 0; }
     if (v.shove) target = Math.min(target, CREEP);
 
-    v.speed = v.speed < target ? Math.min(target, v.speed + ACCEL * dt) : Math.max(target, v.speed - HARD * dt);
+    v.speed = v.speed < target ? Math.min(target, v.speed + ACCEL * dt) : Math.max(target, v.speed - (v.forPlayer ? EMERGENCY : HARD) * dt);
     v.s = path.wrap(v.s + Math.min(v.speed * dt, toHalt)); // never past the stop
   }
 
   // How far along the track ahead the way is clear (Infinity if it is, as far as `look`).
-  clearAhead(v: TramVehicle, dt: number, front: number, look: number, near: Nearby | null) {
+  clearAhead(v: TramVehicle, dt: number, front: number, look: number, near: Nearby | null, seen: (x: number, y: number) => boolean) {
     const path = v.line.path;
     v.waitFor = null;
     v.blocker = null;
+    v.forPlayer = false;
+    let sawPlayer = false;
     const shove = v.shove;
     v.shove = null; // until it's on the track ahead again
     if (v.ghost > 0) v.ghost -= dt;
@@ -411,9 +428,12 @@ export class Trams {
               // Two trams waiting for each other (at a junction): the older one goes.
               if (o.v.waitFor === v && v.id > o.v.id) continue;
               v.waitFor = o.v;
-              // Stuck behind a tram for long (a head-on meeting on a stub): drive through.
+              // Stuck behind a tram for long: drive through it only when the two meet
+              // head-on (on a stub with one track), or when nobody can see it happen.
+              // A tram queueing behind another waits its turn.
               v.stuck = v.speed < 0.1 ? v.stuck + dt : 0;
-              if (v.stuck > 25) { v.ghost = 6; v.stuck = 0; }
+              const headOn = o.c * Math.cos(p.ang) + o.s * Math.sin(p.ang) < -0.5;
+              if ((headOn && v.stuck > 25) || (v.stuck > 90 && !seen(p.x, p.y) && !seen(v.parts[1].x, v.parts[1].y))) { v.ghost = 6; v.stuck = 0; }
               return d;
             }
           }
@@ -424,11 +444,19 @@ export class Trams {
           if (o.kind === 'tram') continue;
           if (Math.hypot(o.x - p.x, o.y - p.y) >= 1.3 + o.r) continue;
           if (o.car && o.car === shove) { v.shove = shove; continue; } // being pushed aside
+          // The player: only once the driver has had a moment to react.
+          if (o.kind === 'player') {
+            sawPlayer = true;
+            if (v.spotted < REACT) continue;
+            v.forPlayer = true;
+          }
           v.blocker = o.car || null;
+          v.spotted = sawPlayer ? v.spotted + dt : 0;
           return d;
         }
       }
     }
+    v.spotted = sawPlayer ? v.spotted + dt : 0;
     v.stuck = 0;
     return Infinity;
   }
@@ -484,18 +512,41 @@ export class Trams {
   // Collision and look-ahead data for the trams within r of (x, y): for traffic, and
   // for crashes.
   bodies(x = 0, y = 0, r = Infinity) {
-    const out: { v: TramVehicle; x: number; y: number; vx: number; vy: number; circles: Point2[] }[] = [];
+    const out: TramBody[] = [];
     for (const v of this.list) {
       const mid = v.parts[1];
       if (Math.hypot(mid.x - x, mid.y - y) > r) continue;
       const circles: Point2[] = [];
       for (const p of v.parts) {
         const c = Math.cos(p.ang), s = Math.sin(p.ang);
-        for (const k of [-3.8, -1.3, 1.3, 3.8]) circles.push([p.x + c * k, p.y + s * k]);
+        for (const k of [-3.85, -2.57, -1.28, 0, 1.28, 2.57, 3.85]) circles.push([p.x + c * k, p.y + s * k]);
       }
       const c = Math.cos(mid.ang), s = Math.sin(mid.ang);
       out.push({ v, x: mid.x, y: mid.y, vx: c * v.speed, vy: s * v.speed, circles });
     }
     return out;
   }
+}
+
+// Someone on foot (radius `rad`) out of a tram's sections, to the nearest side as long
+// as `free` there; not a section on a bridge deck above them or below. Returns the way
+// they were pushed (away from the tram), or null if they weren't touching it.
+export function pushOutOfTram(t: TramBody, who: { x: number; y: number; gz?: number }, rad: number, free: (x: number, y: number) => boolean): Point2 | null {
+  const A = SECTION / 2 - W / 2, min = W / 2 + rad;
+  for (let i = 0; i < t.v.parts.length; i++) {
+    const p = t.v.parts[i], gz = t.v.levels?.[i]?.gz;
+    if (gz !== undefined && who.gz !== undefined && Math.abs(gz - who.gz) > 3) continue;
+    const c = Math.cos(p.ang), s = Math.sin(p.ang), dx = who.x - p.x, dy = who.y - p.y;
+    const along = Math.max(-A, Math.min(A, dx * c + dy * s));
+    const qx = p.x + c * along, qy = p.y + s * along;
+    let nx = who.x - qx, ny = who.y - qy;
+    const d = Math.hypot(nx, ny);
+    if (d >= min) continue;
+    if (d < 1e-6) { const side = -dx * s + dy * c < 0 ? -1 : 1; nx = -s * side; ny = c * side; }
+    else { nx /= d; ny /= d; }
+    const x = qx + nx * min, y = qy + ny * min;
+    if (free(x, y)) { who.x = x; who.y = y; }
+    return [nx, ny];
+  }
+  return null;
 }

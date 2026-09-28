@@ -20,6 +20,7 @@ from shapely import STRtree
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 
+import roofs
 from kerbs import Kerbs, estimate
 
 AREAS = {
@@ -57,7 +58,7 @@ def road_width(hw, width=None, lanes=None):
 
 # What extract() asks OSM for.
 FEATURE_TAGS = {
-    "building": True, "highway": True, "landuse": True, "leisure": True,
+    "building": True, "building:part": True, "highway": True, "landuse": True, "leisure": True,
     "natural": True, "waterway": True, "railway": True, "amenity": True,
     "barrier": ["wall", "city_wall"], "man_made": ["bridge", "pier"],
     "place": ["islet", "island"], "historic": ["city_gate", "castle_wall"],
@@ -121,6 +122,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         return v
 
     buildings = []
+    parts = []  # building parts whose roof OSM describes (roofs.py), to colour IPR's roofs by
     areas: dict[str, list] = {}
     road_lines: dict[str, list] = {}
     rails, walls, trees, weirs, crossings, passages = [], [], [], [], [], []
@@ -140,6 +142,10 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
 
         b = col(row, "building")
+        cover = roofs.OVERRIDES.get(osm_id) or roofs.cover(col(row, "roof:material"), col(row, "roof:colour"))
+        if not b and cover and col(row, "building:part") and isinstance(g, (Polygon, MultiPolygon)):
+            parts += [{"id": osm_id, "cover": cover, "rings": _rings(poly)}
+                      for poly in _polys(g.buffer(0).intersection(clip)) if poly.area >= 1]
         if b and isinstance(g, (Polygon, MultiPolygon)):
             if b == "construction":
                 continue
@@ -156,6 +162,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                     "roof": col(row, "roof:shape"),
                     "church": b in ("church", "cathedral", "chapel") or col(row, "amenity") == "place_of_worship",
                     "part": bool(col(row, "building:part")),
+                    **({"cover": cover} if cover else {}),
                     "rings": _rings(poly),
                 })
             continue
@@ -166,7 +173,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 continue
             width = road_width(hw, _float(col(row, "width")), _float(col(row, "lanes")))
             cls = "road" if hw in CAR_ROADS else "path"
-            if col(row, "bridge") == "yes":
+            if col(row, "bridge") not in (None, "no"):  # yes, viaduct, cantilever, …
                 cls = "bridge"
             tunnel = col(row, "tunnel")
             if tunnel == "building_passage" and (_float(col(row, "layer")) or 0) >= -1:
@@ -236,7 +243,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     if not ground:
         return {
             "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
-            "buildings": buildings, "areas": {}, "roads": {}, "rails": rails,
+            "buildings": buildings, "parts": parts, "areas": {}, "roads": {}, "rails": rails,
             "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "lots": lots, "kerbs": kerbs,
         }
@@ -255,7 +262,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
-        "buildings": buildings, "areas": area_polys, "roads": road_polys, "rails": rails,
+        "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
         "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
         "lots": lots, "kerbs": kerbs,
     }

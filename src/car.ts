@@ -121,6 +121,7 @@ export class Car {
   samples: Point2[];
   level?: number;
   gz?: number;
+  hint?: 'bridge' | 'tunnel' | 'ground';
   lastH?: number;
   anim?: Anim;
   crew?: boolean;

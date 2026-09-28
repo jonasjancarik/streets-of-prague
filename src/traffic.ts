@@ -5,10 +5,11 @@ import type { DriveEdge, DriveGraph } from './network.ts';
 import * as THREE from 'three';
 
 interface TrafficAgent {
-  car: Car & { level: number; gz?: number };
+  car: Car;
   route: Route;
   speed: number;
   stuck: number;
+  jam: number;
   ignore: number;
   cruise: number;
   gone?: boolean;
@@ -51,11 +52,12 @@ export class Traffic {
       const p = edge.path.at(s);
       if (avoid && !avoid(p.x, p.y)) continue;
       if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < 12)) continue;
-      const car = new Car(type || randomType(r, 'traffic'), r, p.x, p.y, p.ang) as Car & { level: number; gz?: number };
+      const car = new Car(type || randomType(r, 'traffic'), r, p.x, p.y, p.ang);
       car.mode = 'traffic';
-      car.level = edge.bridge ? 1 : 0; // on a bridge's deck, or under it (TileWorld.track)
+      // On a bridge, in a tunnel or on the ground under or over one (TileWorld.track).
+      car.hint = edge.bridge ? 'bridge' : edge.tunnel ? 'tunnel' : 'ground';
       if (car.two) car.rider = randomLook(r);
-      const agent = { car, route: new Route(this.g, edge, s, r), speed: edge.speed * 0.6, stuck: 0, ignore: 0, cruise: 0.8 + r() * 0.3 };
+      const agent = { car, route: new Route(this.g, edge, s, r), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + r() * 0.3 };
       this.agents.push(agent);
       return agent;
     }
@@ -86,8 +88,14 @@ export class Traffic {
         const ahead = dx * fx + dy * fy;
         const side = dx * fy - dy * fx; // + = to the right
         if (ahead < 0 || ahead > reach + o.r) continue;
-        if (a.ignore > 0 && o.kind !== 'person' && o.kind !== 'player') continue;
         const inPath = Math.abs(side) < W / 2 + o.r + 0.25;
+        // Stuck a while (cars waiting for each other at a junction, a parked car
+        // sticking out into the lane): go anyway, but never into the back of the car
+        // ahead in the same lane, or into a tram.
+        if (a.ignore > 0 && o.kind !== 'person' && o.kind !== 'player') {
+          const queue = o.kind === 'tram' || (o.car?.mode === 'traffic' && Math.cos(o.car.h - c.h) > 0.5);
+          if (!queue || !inPath || ahead - L / 2 - o.r > 2) continue;
+        }
         // Near the lookahead point too, so cars see what's round the corner.
         const lp = Math.hypot(o.x - look.p.x, o.y - look.p.y) < W / 2 + o.r + 0.4;
         if (!inPath && !lp) continue;
@@ -107,6 +115,8 @@ export class Traffic {
       if (target < 0.3 && blocker) a.stuck += dt;
       else a.stuck = Math.max(0, a.stuck - dt * 2);
       if (a.stuck > 3.5) { a.ignore = 1.5; a.stuck = 0; }
+      // How long it's been standing in a queue that doesn't move (see main.ts).
+      a.jam = target < 0.3 && blocker ? a.jam + dt : 0;
       a.ignore = Math.max(0, a.ignore - dt);
 
       const acc = target > a.speed ? 3 : 9;

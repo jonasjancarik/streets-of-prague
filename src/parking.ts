@@ -191,7 +191,7 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
   }
   const lots = out.length;
   for (const e of edges) {
-    if (e.bridge || e.path.length < 30) continue;
+    if (e.bridge || e.tunnel || e.path.length < 30) continue;
     // Each side as OSM tags it (`park`: [right, left] of this edge); parallel if it
     // doesn't say. Cars stand along the kerb (`kerb`: its distance from the centre on
     // the right and left, from the pipeline's kerbs.py), angled and perpendicular ones

@@ -18,7 +18,6 @@ tile files). Rough order: quick wins first.
   cover the JSON too. The catch is that tiles change on every deploy under the same
   names, so either purge the cache from `scripts/deploy-mbxp.sh` after the sync, or
   keep the edge TTL short.
-- **Favicon.** There is none, so every visit logs a 404 for `/favicon.ico`.
 - **Clean up stale tiles locally too.** Tiles that drop out of an area (none in the
   index any more) keep their old files in `public/data/<area>_now/tiles/`, and the
   deploy copies them over. `layers.assemble` could remove tile files that aren't
@@ -68,18 +67,13 @@ checking on a real phone before going further.
 
 Noted on 28 September 2026 while playing, during the TypeScript refactor.
 
-- **Vehicle collisions.** You can walk under a tram, trams drive over cars, and at
-  one point the player walked straight through the middle of a parked car. Trams,
-  moving cars and parked cars should all block the player and each other.
-- **Trams turn in sharp steps.** On curves they snap from one heading to the next
-  in visible increments instead of turning smoothly along the track.
-- **Trams and cars drive into each other.** When one tram gets stuck, the next one
-  on the same track sometimes doesn't stop behind it and ends up overlapping it
-  (not always). NPC cars stack up on top of each other the same way. Both should
-  queue behind the vehicle ahead.
-- **Tram braking distance.** Trams should brake more realistically (long stopping
-  distance), so a player who steps or drives in front of one too late actually gets
-  hit more often. Accidents with NPCs should stay very rare.
+- **Traffic squeezes through parked cars.** In narrow streets some parked cars stick
+  a metre or so into the traffic lane. A car stuck behind one for a few seconds
+  drives on through it (it no longer does that to the car ahead in its lane or to a
+  tram). It could steer round it instead, or parking could keep clear of the lanes.
+- **Police cars drive over the parking lane.** Chasing you on foot, a police car
+  heads straight for you, across parked cars. It could stop on the road and let
+  the officer run the rest of the way.
 - **Bike theft leaves no rider behind.** When you take a bike from someone riding
   it, the original rider doesn't appear running away (or at least isn't visible).
   They should be knocked off or step off and run away.
@@ -97,10 +91,6 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   offset on one side. Looks like a tile edge where the heights of neighbouring
   tiles don't match (unchecked). A similar faint east–west line shows up elsewhere
   across both beige ground and grass.
-- **Police cars get stuck.** A police car sometimes ends up wedged across the
-  parking lane, overlapping parked cars, and stays there. The officer who gets out
-  can end up standing inside the car. Police cars need to be able to reverse or
-  steer out of a jam (and not drive into parked cars in the first place).
 - **Taxis.** Let the player hail a taxi in the street or order one through a
   ride-hailing app. The apps stand in for Uber and Bolt under made-up names, and
   their drivers are more reckless than regular street taxis.
@@ -125,10 +115,6 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
   white dashed lines instead of blue (confusing, but that's how Prague does it).
-- **Zebra crossings.** They should start and end where they meet the pavement, and
-  run mostly perpendicular to it where the geometry allows, instead of stopping
-  short or overshooting. The stripes also have uneven gaps now (one gap noticeably
-  wider than the rest).
 - **Place names on screen.** Drop the large pop-up for street names; the street is
   already shown top left next to the speed, and that's enough. Keep the big title
   for entering a new neighbourhood or district.

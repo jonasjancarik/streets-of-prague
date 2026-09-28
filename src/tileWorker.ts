@@ -3,7 +3,7 @@
 //           part of a tile, up to a second or so), with their facade coordinates
 //   ipr     IPR's 3D buildings unpacked from the tile's .ipr.bin, with normals and
 //           facade coordinates
-//   ground  the ground's layers (ground.ts), and the bridge decks above it
+//   ground  the ground's layers (ground.ts), the bridges above it and the tunnels below
 //   land    trees, walls and the collision grid
 // Everything stands on the tile's terrain, sampled from the heights sent along.
 import * as THREE from 'three';
@@ -92,9 +92,9 @@ function tileGrid(geo: Geo<LandData>, t: LandData, seeds: Float64Array) {
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 0.9 * s;
     strokeLines(ctx, geo, t.walls.map((w) => w.pts), s);
-    // Bridges are open ground, unless they have decks of their own (see tiles.ts):
+    // Bridges are open ground, unless they have levels of their own (see tiles.ts):
     // then the ground under them stays as it is (a river, or a street under a flyover).
-    if (!t.decks) {
+    if (!t.levels) {
       ctx.fillStyle = '#000';
       fillPolys(ctx, geo, [...(t.areas.bridge || []), ...(t.roads.bridge || [])], s);
     }
@@ -149,9 +149,19 @@ function stampTrunks(grid: Grid, geo: Geo<LandData>, { matrices, count }: LandRe
   }
 }
 
-function land({ data, seeds, ground }: WorkerJobs['land']): LandResult {
+function land({ data, seeds, ground, bridges }: WorkerJobs['land']): LandResult {
   const geo = new Geo(data), hAt = groundAt(ground);
-  const trees = treeInstances(geo, hAt);
+  // How much room a tree has under the bridges (Infinity where there's none over it).
+  const decks = bridges.map((b) => groundAt(b));
+  const room = (x: number, y: number) => {
+    let r = Infinity;
+    for (const d of decks) {
+      const h = d(x, y) - hAt(x, y);
+      if (h > 0) r = Math.min(r, h);
+    }
+    return r;
+  };
+  const trees = treeInstances(geo, hAt, room);
   const walls = wallArrays(data, hAt);
   const grid = tileGrid(geo, data, seeds);
   stampTrunks(grid, geo, trees);
@@ -192,8 +202,11 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         break;
       }
       case 'ground': {
-        const { d, ground, deck, ...opts } = event.data.data;
-        const result = groundLayers(d, { ...opts, height: ground ? groundAt(ground) : null, deck: deck ? ('hm' in deck ? groundAt(deck as HeightGrid) : () => NaN) : null });
+        const { d, ground, levels, ...opts } = event.data.data;
+        const result = groundLayers(d, {
+          ...opts, height: ground ? groundAt(ground) : null,
+          levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,
+        });
         worker.postMessage({ id, result } satisfies WorkerResponse, layerBuffers(result));
         break;
       }

@@ -161,6 +161,31 @@ vec3 facade(vec3 c, vec2 f) {
 // Shadows are drawn without it, so the passage stays in the building's shade.
 export const CUTAWAY = { value: new THREE.Vector4(0, 0, 0, 0) };
 
+// When you're in a tunnel, the ground round you is shown as bare earth, cut open
+// down to the tunnel: (x, z, radius, 0).
+export const DIG = { value: new THREE.Vector4(0, 0, 0, 0) };
+
+// The same hole in any other material (trees, the ground's depth under a tunnel).
+export function cutAway<M extends THREE.Material>(material: M, key: string): M {
+  material.onBeforeCompile = (sh) => {
+    sh.uniforms.uCut = CUTAWAY;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCutWorld;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+  vec4 cutP = vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+  cutP = instanceMatrix * cutP;
+#endif
+  vCutWorld = (modelMatrix * cutP).xyz;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCutWorld;\nuniform vec4 uCut;')
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+  if (vCutWorld.y > uCut.y && distance(vCutWorld.xz, uCut.xz) < uCut.w) discard;`);
+  };
+  material.customProgramCacheKey = () => `cut-${key}`;
+  return material;
+}
+
 export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uCut = CUTAWAY;
@@ -199,12 +224,14 @@ export function patterned(
   time: { value: number },
   relief: { texture: THREE.Texture; box: number[] } | null = null,
   deck: { mask: THREE.Texture | null; box?: number[] } | null = null,
+  dig = false,
 ) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
     sh.uniforms.uRelief = { value: relief?.texture || null };
     sh.uniforms.uReliefBox = { value: relief?.box || [0, 0, 1, 1] };
     sh.uniforms.uReliefOn = { value: relief ? 1 : 0 };
+    if (dig) sh.uniforms.uDig = DIG;
     if (deck) {
       sh.uniforms.uCut = CUTAWAY;
       sh.uniforms.uDeck = { value: deck.mask };
@@ -214,13 +241,15 @@ export function patterned(
       .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\n${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\n${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   vec2 wp = vec2(vWorld.x, -vWorld.z);
 ${deck ? `  if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
 ${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = pattern(${id}, diffuseColor.rgb, wp) * (.93 + .14 * fbm(wp * .004));
-  if (uReliefOn > .5) diffuseColor.rgb *= texture2D(uRelief, (wp - uReliefBox.xy) / (uReliefBox.zw - uReliefBox.xy)).r * 2.;`);
+  if (uReliefOn > .5) diffuseColor.rgb *= texture2D(uRelief, (wp - uReliefBox.xy) / (uReliefBox.zw - uReliefBox.xy)).r * 2.;
+${dig ? `  if (distance(vWorld.xz, uDig.xy) < uDig.z) diffuseColor.rgb = vec3(.23, .19, .15) * (.8 + .4 * fbm(wp * .7));
+` : ''}`);
   };
-  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}`;
+  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}-${dig ? 'dig' : ''}`;
   return material;
 }

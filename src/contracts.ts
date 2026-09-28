@@ -8,7 +8,8 @@ export interface TerrainMetadata {
   n: number;
   step: number;
   bare?: string[];
-  decks?: string[];
+  // Tiles with bridges or tunnels of their own (pipeline/structures.py).
+  structures?: string[];
 }
 
 export type TileIndexEntry = [number, number, number] | [number, number, number, number];
@@ -47,6 +48,10 @@ export interface TileSection {
 
 export interface TilePassage { pts: Point2[]; w: number }
 
+// A level of bridges (1, 2, …) or tunnels (-1, -2, …) in a tile: its outline here;
+// its heights come in the tile's .levels.bin.
+export interface TileStructure { level: number; kind: 'bridge' | 'tunnel'; polys: Polygons }
+
 export interface TileJSON extends GroundTileData {
   i: number;
   j: number;
@@ -60,10 +65,12 @@ export interface TileJSON extends GroundTileData {
   drive?: RawStreetEdge[];
   walk?: RawStreetEdge[];
   ipr?: object;
-  decks?: object;
+  structures?: TileStructure[];
 }
 
 export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number }
+// A level with its heights, for the tile workers.
+export interface LevelInput extends TileStructure { heights: HeightGrid }
 
 export interface BuildingArrays {
   position: Float32Array;
@@ -85,11 +92,11 @@ export interface WorkerJobs {
   ground: {
     d: GroundTileData; box: Bounds; edges: GroundRoadEdge[];
     buildings: { rings: Point2[][] }[]; parkingZones: (string | null)[];
-    ground: HeightGrid | null; deck: HeightGrid | object | null;
+    ground: HeightGrid | null; levels: LevelInput[] | null;
   };
   land: {
-    data: TreeTileData & { passages: TilePassage[]; decks: boolean };
-    seeds: Float64Array; ground: HeightGrid | null;
+    data: TreeTileData & { passages: TilePassage[]; levels: boolean };
+    seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
   };
 }
 

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
+import { cutAway, NOISE_GLSL } from '../shading.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
-import { NOISE_GLSL } from '../shading.ts';
 
 export interface TreeTileData extends GeoData {
   areas: Record<string, Polygons | undefined>;
@@ -17,9 +17,11 @@ interface TreeInstances { matrices: Float32Array; colours: Float32Array; count: 
 const WOOD = 200, PARK = 120, ORCHARD = 60;
 
 // Where a tile's trees stand, and how big and what colour they are: their instance
-// matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Runs
-// in the tile workers.
-export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: number) => number = () => 0): TreeInstances {
+// matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Under
+// a bridge a tree grows no higher than `room(x, y)` metres leaves it, or not at all.
+// Runs in the tile workers.
+export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: number) => number = () => 0,
+  room: (x: number, y: number) => number = () => Infinity): TreeInstances {
   const d = geo.data;
   const grid = new Grid(geo, 1, (ctx, s) => {
     ctx.fillStyle = '#000';
@@ -75,7 +77,13 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   ];
   const c = new THREE.Color();
   trees.forEach(([x, y, rad, kind], i) => {
-    const h = rad * (1.6 + r() * 0.6);
+    let h = rad * (1.6 + r() * 0.6);
+    // The crown's top is 0.75 of its radius above its centre.
+    const top = h + rad * 0.75, fit = Math.min(1, (room(x, y) - 0.5) / top);
+    if (fit < 1) {
+      rad *= fit < 0.35 ? 0 : fit;
+      h *= fit < 0.35 ? 0 : fit;
+    }
     p.set(x, h, -y);
     q.setFromEuler(new THREE.Euler(0, r() * Math.PI, 0));
     const w = rad * (0.9 + r() * 0.2);
@@ -203,7 +211,9 @@ const TUFT_BEGIN = ['#include <begin_vertex>', '#include <begin_vertex>\n  vTuft
 // yellow, as sunlight through leaves does, and the shade a little blue-green.
 function leafy(material: THREE.MeshLambertMaterial) {
   material.alphaToCoverage = true;
-  material.onBeforeCompile = (sh) => {
+  const before = material.onBeforeCompile; // (the tunnel's hole, see treeMesh)
+  material.onBeforeCompile = (sh, renderer) => {
+    before.call(material, sh, renderer);
     sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN)
       .replace('#include <common>', '#include <common>\nattribute vec3 across;\nattribute vec3 along;\nvarying vec3 vAcross;\nvarying vec3 vAlong;')
       .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
@@ -248,7 +258,7 @@ function leafy(material: THREE.MeshLambertMaterial) {
       .replace('#include <opaque_fragment>', `outgoingLight *= mix(vec3(.88, 1., 1.06), vec3(1.14, 1.06, .7), smoothstep(.04, .3, dot(outgoingLight, vec3(.3, .59, .11))));
   #include <opaque_fragment>`);
   };
-  material.customProgramCacheKey = () => 'tufts';
+  material.customProgramCacheKey = () => 'tufts-cut';
   return material;
 }
 
@@ -267,7 +277,8 @@ function tuftDepth() {
 
 export function treeMesh({ matrices, colours, count }: TreeInstances) {
   crown ??= crownGeometry();
-  const mat = leafy(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+  // Opened round you, like the buildings, when you're in a tunnel under a park.
+  const mat = leafy(cutAway(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), 'trees'));
   const mesh = new THREE.InstancedMesh(crown, mat, count);
   mesh.customDepthMaterial = tuftDepth();
   (mesh.instanceMatrix.array as Float32Array).set(matrices);
