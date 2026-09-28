@@ -92,6 +92,10 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   cuts across roads, pavement and grass, with the ground slightly lighter and
   offset on one side. Looks like a tile edge where the heights of neighbouring
   tiles don't match (unchecked).
+- **Police cars get stuck.** A police car sometimes ends up wedged across the
+  parking lane, overlapping parked cars, and stays there. The officer who gets out
+  can end up standing inside the car. Police cars need to be able to reverse or
+  steer out of a jam (and not drive into parked cars in the first place).
 - **Parking zone markings.** The blue line should run only along the street side of
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
