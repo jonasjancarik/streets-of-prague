@@ -184,6 +184,36 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   already shown top left next to the speed, and that's enough. Keep the big title
   for entering a new neighbourhood or district.
 
+## Weather and night
+
+What's in since 29 September 2026: clear, cloudy, rain, mist and snow
+(`src/weather.ts`), IPR's street lamps with a light map over the view
+(`src/lamps.ts`), headlights, lit windows and trams, rain and wind sounds.
+
+- **Measure what it costs.** The headless benchmark was too noisy that night (the
+  machine was busy: ±3 fps round 15 fps at 2×) to tell the weathers apart. Worth
+  checking: the mist sheet (a noise per pixel over the whole view), the extra noise
+  for wet and snowy ground on every ground layer, and the light map's pass. If they
+  show, the mist and the ripples could go in the Lowest graphics tier.
+- **Hung lamps where there are none.** Streets with no IPR lamp within 20 m get one
+  over their middle every 30 m (their real lamps hang on cables or walls, which the
+  utility map mostly lacks). Motorways, service roads and tracks get none; footpaths
+  in parks are left dark unless IPR has lamps there. Could also look at OSM's
+  `highway=street_lamp` and `lit=yes` for streets that should be dark.
+- **Lamps light the roofs of low sheds.** The light map keeps the height of the ground
+  under the brightest lamp and fades the light 3–11 m above it, so a low roof next to a
+  lamp still gets some; walls next to floodlit monuments get light up to about 25 m.
+- **Live weather.** The clock starts at the time in Prague; the weather could too.
+  Open-Meteo is easy but free only for non-commercial use (the game may take
+  donations); ČHMÚ's open data (CC BY) has the current observations from Prague's
+  stations but needs a small proxy or a build step.
+- **Snow on the trees** and bare trees in winter; wet leaves darker in the rain.
+- **Puddles where the water gathers.** They're placed by noise; the terrain's low
+  points and the kerbs would be better.
+- **Tyres in the wet and on snow.** Less grip, longer braking, skids; spray behind
+  cars in the rain.
+- **Thunderstorms:** lightning flashes and thunder.
+
 ## More map data
 
 Open data found on 28 September 2026 and not used yet. All IPR Praha, CC BY; the
@@ -198,9 +228,9 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
 - **Lawns, shrubs, hedges and flower beds.** `OPK_CUR_OPK_SMZ_VP_P`, 127,000
   polygons, for the plain beige ground in parks, housing estates and along streets.
 - **Street furniture from the archived utility map.** `DTMP_CUR_TMISZNAK_B`, 1.39
-  million points by `ctmtp_popis`: street lamps (121,000; OSM has about 21,000),
-  manhole covers (174,000), storm drains (71,000), traffic lights (5,700),
-  hydrants, phone boxes, substations. The lamps would matter for night.
+  million points by `ctmtp_popis`: manhole covers (174,000), storm drains (71,000),
+  traffic lights (5,700), hydrants, phone boxes, substations. The street lamps from it
+  are in the game (`pipeline/build_lamps.py`).
 - **Walls, fences, railings and steps from the technical map.** Set 3 of the DTM
   (lines and points), already downloaded to `pipeline/.cache/dtm/ZPS_KR/` (same
   download list as `dtm.py`, `code=03`). Could add to or replace OSM's walls, and
