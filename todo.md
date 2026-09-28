@@ -100,6 +100,9 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   ride-hailing app. The apps stand in for Uber and Bolt under made-up names, and
   their drivers are more reckless than regular street taxis.
 - **Buses.** Add city buses running their routes, painted in the new PID livery.
+- **Motorbike rider sunk into the ground.** Came across a motorbike with its rider
+  stuck partly in the road surface, not moving. Probably a height that isn't
+  following the terrain (unchecked); could be related to the elevation break above.
 - **Parking zone markings.** The blue line should run only along the street side of
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
