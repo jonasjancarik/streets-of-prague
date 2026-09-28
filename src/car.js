@@ -124,7 +124,9 @@ export class Car {
     return this.offsets.map((o) => [this.x + c * o, this.y + s * o]);
   }
 
-  // Free-body physics. `ctl` = { throttle -1..1, steer -1..1 (left +), handbrake }.
+  // Free-body physics. `ctl` = { throttle -1..1, steer -1..1 (left +), handbrake, cap }.
+  // `cap` (m/s, optional) limits the speed: the gas fades as the car gets near it, and
+  // above it the car eases down, as if you'd lifted off and touched the brake.
   update(dt, ctl, grid) {
     const S = this.spec;
     ctl = ctl || { throttle: 0, steer: 0, handbrake: false };
@@ -132,11 +134,12 @@ export class Car {
     let vf = this.vx * fx + this.vy * fy;
     let vl = this.vx * fy - this.vy * fx;
     const fast = clamp(Math.abs(vf) / S.vmax, 0, 1);
+    const throttle = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - vf) / 2, 0, 1));
 
-    if (ctl.throttle > 0) {
+    if (throttle > 0) {
       if (vf < -0.3) vf = Math.min(0, vf + 16 * dt);
-      else vf += S.accel * ctl.throttle * (1 - fast * fast) * dt;
-    } else if (ctl.throttle < 0) {
+      else vf += S.accel * throttle * (1 - fast * fast) * dt;
+    } else if (throttle < 0) {
       if (vf > 0.3) vf = Math.max(0, vf - 16 * dt);
       else vf = Math.max(-S.vmax * 0.3, vf - S.accel * 0.6 * dt);
     } else {
@@ -149,6 +152,7 @@ export class Car {
       const slope = (grid.height(this.x + fx * half, this.y + fy * half) - grid.height(this.x - fx * half, this.y - fy * half)) / S.L;
       vf -= 9.81 * slope * dt;
     }
+    if (ctl.cap != null && vf > ctl.cap) vf = Math.max(ctl.cap, vf - 3 * dt);
 
     const grip = ctl.handbrake ? 1.1 : S.grip * (1 - 0.45 * fast);
     vl *= Math.exp(-grip * dt);

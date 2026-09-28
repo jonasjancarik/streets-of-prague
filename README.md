@@ -30,9 +30,10 @@ too long; `?dpr=1` fixes it.
   past (its driver runs off). R puts the car back on the road. Scroll zooms; the
   camera also pulls up with speed.
 - In the car, holding Shift is lane assist (`src/assist.js`): it steers along your
-  lane, and A/D then pick the turn at the next junction instead of steering. It only
-  works within the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
-  trunk roads, 80 on motorways): speed and it lets go; 5 km/h under the limit it's back.
+  lane, and A/D then pick the turn at the next junction instead of steering. It also
+  keeps you to the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
+  trunk roads, 80 on motorways): the gas fades out at the limit, and faster than that
+  the car eases down to it. To drive faster, let go of Shift.
 - **Metro**: the M signs are the real entrances. Press E at one to go down, pick a
   station on any line (W/S, A/D for the line, E to go, or tap), and the ride plays out
   on the line's map: the wait for a train, the stations going by, a change of line
@@ -56,9 +57,10 @@ too long; `?dpr=1` fixes it.
   desktop). The left thumb has a round stick: on foot, push it the way you want to go
   and you walk there (a full push runs); in the car, point it the way you want to
   drive on screen and the car steers round to it (reversing, the back follows it). Put
-  your thumb down away from the stick and the stick moves under it. In the car the
-  right thumb has the gas and brake (roll from one to the other without lifting), the
-  handbrake, lane assist (a toggle here) and "Get out"; "Back on road" is top right.
+  your thumb down away from the stick and the stick moves under it. In the car, lane
+  assist is a toggle above the stick, showing the speed limit it keeps to while it's
+  on; the right thumb has the gas and brake (roll from one to the other without
+  lifting), the handbrake and "Get out"; "Back on road" is top right.
   Pinch the map to zoom (`src/touch.js`).
 - **Police.** Knocking people over, pulling drivers out of their cars, wrecking
   traffic, ramming or stealing a police car and speeding past the police (20 km/h over

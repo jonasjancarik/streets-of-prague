@@ -6,8 +6,9 @@ import { clamp } from './network.js';
 //
 // The stick points where you want to go on screen: on foot you turn and walk that
 // way (a full push runs); in the car you steer that way while the pedals set the speed.
-// Put a thumb down away from the stick and the stick moves under it. The pedals are
-// one surface, so a thumb can roll from gas to brake without lifting.
+// Put a thumb down away from the stick and the stick moves under it. Lane assist
+// sits above the stick, since with it on the stick picks the next turn instead. The
+// pedals are one surface, so a thumb can roll from gas to brake without lifting.
 
 const RANGE = 48; // px of thumb travel for a full push
 const DEAD = 0.12;
@@ -153,8 +154,8 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
   const shown = {};
   const set = (key, value, apply) => { if (shown[key] !== value) { shown[key] = value; apply(value); } };
   // `tram`: riding one; `wait`: at a stop; `label`: what the main button does, when it
-  // isn't getting in or out of a car.
-  state.update = ({ car, tram = false, wait = false, label = null, canEnter, tripped }) => {
+  // isn't getting in or out of a car; `limit`: the speed lane assist is keeping to.
+  state.update = ({ car, tram = false, wait = false, label = null, canEnter, limit = null }) => {
     if (!state.active) return;
     if (car !== inCar) {
       // Lane assist starts off in every car you take.
@@ -173,7 +174,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
     });
     set('label', label || (mode === 'car' ? 'Get out' : 'Get in'), (text) => { $('t-action').textContent = text; });
     set('toggle', state.run, (on) => toggle.classList.toggle('on', on));
-    set('tripped', !!(inCar && assistOn && tripped), (t) => toggle.classList.toggle('tripped', t));
+    set('limit', state.run && limit ? `Lane assist · ${limit}` : 'Lane assist', (text) => { toggle.textContent = text; });
     set('action', !!(inCar || tram || canEnter), (v) => $('t-action').classList.toggle('off', !v));
   };
   return state;

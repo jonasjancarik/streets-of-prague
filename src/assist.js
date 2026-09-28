@@ -3,11 +3,9 @@ import { clamp } from './network.js';
 // Lane assist (hold Shift while driving): picks up the lane you're driving in and
 // steers along it, through bends and across junctions. A or D works like an indicator:
 // press it any time and the assist takes the next left or right turn; otherwise it goes
-// straight on. Gas and brakes stay yours.
-//
-// It only works within the speed limit of the street you're on (OSM maxspeed, else
-// the Czech defaults): go faster and it lets go of the wheel, and it takes over again
-// once you're 5 km/h under the limit.
+// straight on. The brakes stay yours, and the gas only up to the speed limit of the
+// street you're on (OSM maxspeed, else the Czech defaults; see `limit`): to go faster,
+// let go of the assist.
 
 // Nearest point of a polyline to (x, y), searching [s0, s1]: { s, d, ang }.
 export function project(path, x, y, s0 = 0, s1 = path.length) {
@@ -44,7 +42,7 @@ export class LaneAssist {
     this.intent = 0; // +1 left, -1 right at the next junction
   }
 
-  reset() { this.edge = this.next = null; this.intent = 0; this.tripped = false; }
+  reset() { this.edge = this.next = null; this.intent = 0; this.limit = null; }
 
   // A lane within 5 m running roughly the way the car points.
   acquire(car) {
@@ -87,11 +85,7 @@ export class LaneAssist {
     }
     this.s = p.s;
     const speed = Math.abs(car.forwardSpeed);
-    this.limit = speedLimit(this.edge);
-    const kmh = speed * 3.6;
-    if (this.tripped && kmh < this.limit - 5) this.tripped = false;
-    if (!this.tripped && kmh > this.limit) this.tripped = true;
-    if (this.tripped) return null;
+    this.limit = speedLimit(this.edge); // km/h
     const L = 6 + speed * 0.8;
     const left = this.edge.path.length - this.s;
     // A/D sets the turn for the next junction; the way on is picked as it comes up.

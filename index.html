@@ -119,7 +119,7 @@
       .t-row { display: flex; gap: 10px; }
       #touch .t-row button { height: 44px; padding: 0 14px; }
       #touch button.on { background: var(--accent); color: #221f1b; }
-      #touch button.tripped { background: rgba(255, 210, 63, 0.35); color: var(--ink); }
+      #t-toggle { position: fixed; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 160px); width: 136px; height: 44px; padding: 0 10px; white-space: nowrap; }
       #touch button.down, .t-pedal.down { background: rgba(245, 239, 226, 0.3); }
       #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
       #t-fast { height: 52px; padding: 0 18px; }
@@ -136,6 +136,7 @@
       @media (max-width: 480px) {
         body.touch #hud { max-width: calc(100vw - 180px); }
         #t-stick { width: 124px; height: 124px; }
+        #t-toggle { width: 124px; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 148px); }
         #t-brake { width: 72px; }
         #t-gas { width: 84px; }
         #touch .t-row button { padding: 0 11px; }
@@ -171,7 +172,7 @@
           <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd>Gas and brake, hold S to reverse</dd>
           <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd>Steer</dd>
           <dt><kbd>Space</kbd></dt><dd>Handbrake</dd>
-          <dt><kbd>Shift</kbd></dt><dd>Keep to the lane, while A and D pick the next turn</dd>
+          <dt><kbd>Shift</kbd></dt><dd>Hold to keep to the lane and the speed limit, while A and D pick the next turn</dd>
           <dt><kbd>R</kbd></dt><dd>Back on the road</dd>
           <dt><kbd>E</kbd></dt><dd>Get out, or off a bike</dd>
         </dl>
@@ -198,11 +199,12 @@
     </div>
     <div id="touch" data-mode="foot">
       <div id="t-steer"><div id="t-stick"><div id="t-knob"></div></div></div>
+      <button id="t-toggle" class="car-only">Lane assist</button>
       <button id="t-road" class="car-only">Back on road</button>
       <div id="t-right">
         <button id="t-fast" class="tram-only">Hold to speed up</button>
         <button id="t-action" class="off">Get in</button>
-        <div class="t-row car-only"><button id="t-hand">Handbrake</button><button id="t-toggle">Lane assist</button></div>
+        <div class="t-row car-only"><button id="t-hand">Handbrake</button></div>
         <div id="t-pedals" class="car-only"><div id="t-brake" class="t-pedal">Brake</div><div id="t-gas" class="t-pedal">Gas</div></div>
       </div>
     </div>

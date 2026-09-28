@@ -524,7 +524,9 @@ async function main() {
         const a = assist.steer(inCar, steer);
         if (a !== null) { steer = a; assisted = true; }
       } else assist.reset();
-      const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake }, grid);
+      // Keeping to the lane, you keep to the speed limit too.
+      const cap = assisted ? assist.limit / 3.6 : null;
+      const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
       if (hit > 6) shake = Math.min(1.2, shake + hit * 0.04);
       jolt = hit;
     } else if (!inHeli && !ride.on) walker.update(dt, ctl);
@@ -818,9 +820,8 @@ async function main() {
       if (touch.active) hint = inHeli.landed ? '' : up;
       else hint = inHeli.landed ? '<b>Space</b> take off · <b>E</b> get out' : `${up} · <b>Space</b> climb · <b>Shift</b> down · land to get out`;
     } else if (inCar) {
-      if (ctl.run && assist.tripped) hint = `${key('Shift')}Lane assist is off above ${assist.limit} km/h: slow down to get it back`;
-      else if (!assisted) hint = touch.active ? '' : `<b>E</b> get ${inCar.two ? 'off' : 'out'} · <b>Shift</b> lane assist`;
-      else hint = `${key('Shift')}Lane assist, up to ${assist.limit} km/h · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : `straight on (${touch.active ? 'steer' : 'A/D'} to turn)`}`;
+      if (!assisted) hint = touch.active ? '' : `<b>E</b> get ${inCar.two ? 'off' : 'out'} · <b>Shift</b> lane assist`;
+      else hint = `${key('Shift')}Lane assist, keeping to ${assist.limit} km/h${touch.active ? '' : ' (let go to drive faster)'} · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : `straight on (${touch.active ? 'point the stick' : 'A/D'} to turn)`}`;
     }
     else if (ride.on) {
       const halts = ride.v.line.halts, dest = ride.dest !== null ? halts[ride.dest].name : null;
@@ -846,7 +847,7 @@ async function main() {
     $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.on ? 'tram' : 'foot';
     ride.render();
     const label = ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : canBoard || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
-    touch.update({ car: inCar || inHeli, tram: ride.on, wait: !!board.shown, label: label || (station ? 'Metro' : null), canEnter: canEnter || !!canBoard || !!station, tripped: ctl.run && assist.tripped });
+    touch.update({ car: inCar || inHeli, tram: ride.on, wait: !!board.shown, label: label || (station ? 'Metro' : null), canEnter: canEnter || !!canBoard || !!station, limit: assisted ? assist.limit : null });
     show('tally', `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
