@@ -99,12 +99,16 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
 }
 
 // A crown: tufts of leaves in tiers, like shingles, round a dark core that fills the
-// gaps between them. Each tuft is a flat card (its ragged outline is cut out in the
-// shader, see TUFT_GLSL), tilted outwards the further down the crown it sits, with
-// normals that bulge like a dome so every tuft has its own lit edge and shaded
-// underside; the upper tufts shade the ones below. Lower tiers are darker (vertex
-// colours, multiplied by each tree's own colour). About 100 triangles, shared by every
-// tree of a tile. `tuft`: where on its card a corner is (-1…1) and the tuft's seed.
+// gaps between them. Each tuft is a low dome with a ragged outline of five lobes,
+// tilted outwards the further down the crown it sits, with normals that bulge so
+// every tuft has its own lit edge and shaded underside; the upper tufts shade the ones
+// below. Lower tiers are darker (vertex colours, multiplied by each tree's own
+// colour). The tufts are real geometry rather than shapes cut out of cards, so they're
+// opaque: what's hidden needn't be shaded, the edges are antialiased like any mesh's
+// and the shadows need no material of their own. Top tier first, so what it covers is
+// skipped. About 340 triangles, shared by every tree of a tile.
+// `tuft`: where on the tuft a vertex is (-1…1 across) and the tuft's seed.
+const RIM = 20;
 function crownGeometry() {
   const r = rng(7);
   const pos: number[] = [], nor: number[] = [], col: number[] = [], tuft: number[] = [], idx: number[] = [];
@@ -117,9 +121,16 @@ function crownGeometry() {
     b.crossVectors(normal, t);
     const spin = r() * Math.PI * 2, cs = Math.cos(spin), sn = Math.sin(spin);
     const tx = t.clone().multiplyScalar(cs).addScaledVector(b, sn), bx = b.clone().multiplyScalar(cs).addScaledVector(t, -sn);
-    const seed = r(), base = pos.length / 3;
-    // A low dome: the four corners and the middle raised a little.
-    for (const [u, v, h] of [[0, 0, 0.35], [-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]]) {
+    const seed = r(), base = pos.length / 3, sa = seed * Math.PI * 2;
+    // A low dome: the middle raised a little, and round it the outline, four points
+    // to a lobe (the leaf shader lays its leaves out by the same lobes).
+    const ring: [number, number, number][] = [[0, 0, 0.35]];
+    for (let j = 0; j < RIM; j++) {
+      const th = (j / RIM) * Math.PI * 2 - sa;
+      const e = 0.8 + 0.13 * Math.cos(5 * (th + sa)) + 0.05 * Math.cos(11 * th + sa * 3);
+      ring.push([Math.cos(th) * e, Math.sin(th) * e, 0]);
+    }
+    for (const [u, v, h] of ring) {
       p.copy(c).addScaledVector(tx, u * size).addScaledVector(bx, v * size).addScaledVector(normal, h * size);
       bulge.copy(normal).addScaledVector(tx, u).addScaledVector(bx, v).normalize();
       round.copy(p).normalize();
@@ -131,14 +142,14 @@ function crownGeometry() {
       across.push(tx.x, tx.y, tx.z);
       along.push(bx.x, bx.y, bx.z);
     }
-    idx.push(base, base + 1, base + 2, base, base + 2, base + 3, base, base + 3, base + 4, base, base + 4, base + 1);
+    for (let j = 0; j < RIM; j++) idx.push(base, base + 1 + j, base + 1 + ((j + 1) % RIM));
   };
   // [tufts, distance from the middle, height, tilt, half size]
   const tiers: [number, number, number, number, number][] = [
-    [9, 0.66, -0.08, 62, 0.42], [7, 0.44, 0.2, 40, 0.4], [4, 0.2, 0.4, 20, 0.36], [1, 0, 0.5, 0, 0.34],
+    [7, 0.64, -0.08, 62, 0.48], [5, 0.4, 0.2, 40, 0.46], [3, 0.18, 0.4, 20, 0.4], [1, 0, 0.5, 0, 0.36],
   ];
   const c = new THREE.Vector3(), normal = new THREE.Vector3();
-  tiers.forEach(([count, dist, y, tilt, size], tier) => {
+  tiers.map((t, tier) => [t, tier] as const).reverse().forEach(([[count, dist, y, tilt, size], tier]) => {
     const phase = r() * Math.PI * 2, lift = tier / (tiers.length - 1);
     for (let i = 0; i < count; i++) {
       const a = phase + (i / count) * Math.PI * 2 + (r() - 0.5) * 0.4;
@@ -149,15 +160,15 @@ function crownGeometry() {
     }
   });
   // The core, round and dark, behind the tufts.
-  const core = new THREE.IcosahedronGeometry(0.62, 0);
+  const core = new THREE.IcosahedronGeometry(0.56, 0);
   const cp = core.attributes.position.array;
   for (let i = 0; i < cp.length; i += 3) {
-    p.set(cp[i], cp[i + 1] * 0.8 + 0.05, cp[i + 2]);
+    p.set(cp[i], cp[i + 1] * 0.7, cp[i + 2]);
     n.set(cp[i], cp[i + 1], cp[i + 2]).normalize();
     idx.push(pos.length / 3);
     pos.push(p.x, p.y, p.z);
     nor.push(n.x, n.y, n.z);
-    col.push(0.25, 0.25, 0.25);
+    col.push(0.32, 0.32, 0.32);
     tuft.push(0, 0, -1); // (no leaves)
     across.push(1, 0, 0);
     along.push(0, 0, 1);
@@ -175,30 +186,21 @@ function crownGeometry() {
 }
 let crown: THREE.BufferGeometry | null = null;
 
-// A tuft's outline: a rosette of five leaves with smaller notches, turned differently
-// for every tuft. 1 inside, 0 outside, soft over a pixel (for alpha to coverage).
-const TUFT_GLSL = /* glsl */ `
-varying vec3 vTuft;
-float tuftAlpha() {
-  float r = length(vTuft.xy), a = atan(vTuft.y, vTuft.x), s = vTuft.z * 6.2832;
-  float edge = .8 + .13 * cos(5. * (a + s)) + .05 * cos(11. * a + s * 3.) + .035 * cos(29. * a + s * 5.);
-  float w = fwidth(r) * .7 + 1e-4;
-  return 1. - smoothstep(edge - w, edge + w, r);
-}
-`;
+const TUFT_GLSL = 'varying vec3 vTuft;';
 // Cells for the small leaves: x = gap to the next leaf, y = random, zw = from the
-// leaf's middle.
+// leaf's middle. Only the four nearest cells are searched (their points kept near the
+// middle of each cell so that's enough).
 const SMALL_LEAVES_GLSL = /* glsl */ `
 vec4 smallLeaves(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  float d1 = 8., d2 = 8., id = 0.;
-  vec2 o1 = vec2(0.);
-  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-    vec2 g = vec2(x, y), r = g + vec2(hash12(i + g), hash12(i + g + 17.3)) * .8 + .1 - f;
+  vec2 i = floor(p - .5), f = p - i;
+  float d1 = 8., d2 = 8.;
+  vec2 o1 = vec2(0.), c1 = vec2(0.);
+  for (int y = 0; y <= 1; y++) for (int x = 0; x <= 1; x++) {
+    vec2 g = vec2(x, y), r = g + vec2(hash12(i + g), hash12(i + g + 17.3)) * .75 + .125 - f;
     float d = dot(r, r);
-    if (d < d1) { d2 = d1; d1 = d; id = hash12(i + g + 5.1); o1 = r; } else if (d < d2) d2 = d;
+    if (d < d1) { d2 = d1; d1 = d; o1 = r; c1 = i + g; } else if (d < d2) d2 = d;
   }
-  return vec4(sqrt(d2) - sqrt(d1), id, -o1);
+  return vec4(sqrt(d2) - sqrt(d1), hash12(c1 + 5.1), -o1);
 }
 `;
 const TUFT_VERTEX = ['#include <common>', '#include <common>\nattribute vec3 tuft;\nvarying vec3 vTuft;'] as const;
@@ -210,7 +212,6 @@ const TUFT_BEGIN = ['#include <begin_vertex>', '#include <begin_vertex>\n  vTuft
 // meet, not in one smooth gradient over the tuft. Leaves in the light go a little
 // yellow, as sunlight through leaves does, and the shade a little blue-green.
 function leafy(material: THREE.MeshLambertMaterial) {
-  material.alphaToCoverage = true;
   const before = material.onBeforeCompile; // (the tunnel's hole, see treeMesh)
   material.onBeforeCompile = (sh, renderer) => {
     before.call(material, sh, renderer);
@@ -221,12 +222,12 @@ function leafy(material: THREE.MeshLambertMaterial) {
   vAlong = normalMatrix * mat3(instanceMatrix) * along;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
-      .replace('#include <color_fragment>', `#include <color_fragment>
-  float ta = tuftAlpha();
-  if (ta < .02) discard;
-  diffuseColor.a = ta;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-  if (vTuft.z >= 0.) {
+  // (Derivatives first, outside the branches. A tuft only a few pixels across gets
+  // no leaves at all.)
+  float tw = fwidth(length(vTuft.xy));
+  float sd = detail(vTuft.xy * 8., 1.5);
+  if (vTuft.z >= 0. && tw < .3) {
     float r = length(vTuft.xy), s = vTuft.z * 6.2832, k = 6.2832 / 5.;
     float a0 = atan(vTuft.y, vTuft.x);
     // The top leaves have lobed edges of their own; the edges between leaves curve a
@@ -243,16 +244,19 @@ function leafy(material: THREE.MeshLambertMaterial) {
     vec3 ln = normalize(N + (T * cos(mid + rnd - .5) + B * sin(mid + rnd - .5)) * tilt);
     normal = normalize(mix(normal, ln, .6));
     float gap = min(fract(f), 1. - fract(f)) * k * r;                // to the next leaf
-    float w = fwidth(r) + .008;
+    float w = tw + .008;
     leafCrease = mix(.78, 1., smoothstep(0., w * 1.5, gap) + (1. - smoothstep(.1, .2, r)))
       * mix(.75, 1., smoothstep(0., w * 1.5, abs(r - topEdge)));
     // Small leaves all over: each a little dome of its own, turned and lit a little
     // differently, which breaks the light up into a fine grain.
-    vec4 sl = smallLeaves(vTuft.xy * 8.);
-    float sd = detail(vTuft.xy * 8., 1.5);
-    vec2 jit = vec2(hash12(sl.yy * 91.), hash12(sl.yy * 37. + 3.)) - .5;
-    normal = normalize(normal + (T * (sl.z * 1.3 + jit.x * .7) + B * (sl.w * 1.3 + jit.y * .7)) * sd);
-    leafCrease *= mix(1., (.78 + .38 * sl.y) * mix(.7, 1., smoothstep(0., .12, sl.x)), sd);
+    // (Only where they're big enough to see: most of a wood seen from high up is
+    // too far for them, and they're the costliest part of a tree.)
+    if (sd > .01) {
+      vec4 sl = smallLeaves(vTuft.xy * 8.);
+      vec2 jit = vec2(hash12(sl.yy * 91.), hash12(sl.yy * 37. + 3.)) - .5;
+      normal = normalize(normal + (T * (sl.z * 1.3 + jit.x * .7) + B * (sl.w * 1.3 + jit.y * .7)) * sd);
+      leafCrease *= mix(1., (.78 + .38 * sl.y) * mix(.7, 1., smoothstep(0., .12, sl.x)), sd);
+    }
   }`)
       .replace('#include <lights_lambert_fragment>', 'diffuseColor.rgb *= leafCrease;\n#include <lights_lambert_fragment>')
       .replace('#include <opaque_fragment>', `outgoingLight *= mix(vec3(.88, 1., 1.06), vec3(1.14, 1.06, .7), smoothstep(.04, .3, dot(outgoingLight, vec3(.3, .59, .11))));
@@ -262,25 +266,11 @@ function leafy(material: THREE.MeshLambertMaterial) {
   return material;
 }
 
-// For the shadows: the tufts' outlines, cut sharp.
-function tuftDepth() {
-  const material = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
-  material.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN);
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}`)
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (tuftAlpha() < .5) discard;');
-  };
-  material.customProgramCacheKey = () => 'tufts-depth';
-  return material;
-}
-
 export function treeMesh({ matrices, colours, count }: TreeInstances) {
   crown ??= crownGeometry();
   // Opened round you, like the buildings, when you're in a tunnel under a park.
   const mat = leafy(cutAway(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), 'trees'));
   const mesh = new THREE.InstancedMesh(crown, mat, count);
-  mesh.customDepthMaterial = tuftDepth();
   (mesh.instanceMatrix.array as Float32Array).set(matrices);
   if (count) mesh.instanceColor = new THREE.InstancedBufferAttribute(colours, 3);
   mesh.castShadow = true;
