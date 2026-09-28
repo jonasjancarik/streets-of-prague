@@ -389,8 +389,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   into `pipeline/.cache/pid/` and reduces it to a summary of every tram and metro trip.
   Without it, every line runs every 8 minutes.
 - **Metro.** `build_metro.py` takes the metro from the same timetables: each line's
-  stations in order with the typical minutes between them, how often it runs, and
-  every station's entrances (PID's feed has them all, 331). It follows the current
+  stations in order with the typical minutes between them, how often it runs,
+  every station's entrances (PID's feed has them all, 331), and the track from the
+  feed's shapes, with how far along it each station is. It follows the current
   timetable, so a station closed for works (Flora, as of autumn 2026) isn't there.
 - **Footfall.** `build_footfall.py` needs the local OSM extract and uses PID's
   timetables when it can get them (see Tram lines); it counts the departures at every
