@@ -324,6 +324,17 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   everywhere.
 - **Parking.** `build_parking.py` reads the monthly TSK occupancy GeoJSON collected by
   `~/projects/parkovani-praha` (set `PARKING_DATA` to point elsewhere).
+- **Unmapped ground (prototype).** `ground_cover.py` tries two ways to fill the ground
+  nothing is mapped on, from IPR's aerial photographs, on a few tiles at a time; it
+  isn't part of the build, and its extra packages are in a group of their own
+  (`uv run --group cover ground_cover.py …`). `fetch` downloads the photos (colour and
+  infrared) for the tiles; `classify --method rules` sorts the unmapped ground into
+  grass, trees, dirt, gravel, asphalt and what isn't ground, and the game draws it with
+  `?cover=rules`; `ortho` paints the photo itself through a Kuwahara filter, shown with
+  `?ortho` (not convincing yet; stronger filters are still to try). Heights come from
+  IPR's 1 m surface model, unzipped into `pipeline/.cache/cover/dsm_ipr/` (1.5 GB to
+  download). The script's docstring has the rest, including hand-labelling and
+  scoring.
 
 Sizes: centrum is 234 tiles and about 22 MB; the whole city 13,609 tiles, 247k OSM
 buildings and IPR buildings in 4,326 tiles, about 580 MB. The tiles' binary files
@@ -346,6 +357,7 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 - Tram and metro timetables: [PID / ROPID](https://pid.cz/o-systemu/opendata/), CC BY 4.0, reduced to trips per hour.
 - 3D buildings, bridges and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
+- Unmapped-ground prototype (`?cover`, `?ortho`): orthophotos and the digital surface model © [IPR Praha](https://geoportalpraha.cz/), CC BY 4.0; older surface model DMP 1G © [ČÚZK](https://geoportal.cuzk.cz/), CC BY 4.0.
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - Maps in the developer panel: [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).
 
