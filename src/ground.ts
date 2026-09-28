@@ -33,11 +33,27 @@ type GroundGeometry = GroundLayer['geometry'];
 export const COLORS = {
   pavement: '#c6c0b4', square: '#cbc4b6', path: '#d0cabe', dirt: '#bfa87e',
   park: '#7d9a55', garden: '#83a058', wood: '#52703c', orchard: '#8aa25e', pitch: '#6c9c55',
+  field: '#b9b27a', yard: '#a9a69e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', asphalt: '#5c5f63', sett: '#8a847a', parking: '#666a6e',
   bridge: '#62656a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', tunnel: '#46484c', tunnelWall: '#a59f93',
 };
 const ZONE = { RES: '#3d7be0', MIX: '#9b59d0', VIS: '#e8962c' };
+
+// Land with a use but no mapped surface (osm_area.py): fields, work yards, railway
+// land, ground being dug up. Drawn just above the plain base, under everything else.
+const LAND_USE: [string, string][] = [
+  ['field', 'field'], ['yard', 'concrete'], ['ballast', 'gravel'], ['bare', 'dirt'],
+];
+// Prototype (?cover=<method>, ground_cover.py): what the aerial photographs say the
+// unmapped ground is made of, above those and under everything mapped (tree canopy
+// joins the wood, see tiles.ts).
+const COVER: [string, string, string][] = [
+  ['cover_grass', '#8fa860', 'grass'],
+  ['cover_dirt', '#b39d78', 'dirt'], ['cover_gravel', '#a39d92', 'gravel'],
+  ['cover_concrete', '#aeaaa0', 'concrete'], ['cover_paving', '#b7b0a3', 'slabs'],
+  ['cover_asphalt', '#6e7174', 'asphalt'],
+];
 
 function polygons(polys: Polygons): GroundGeometry {
   const pos: number[] = [], idx: number[] = [];
@@ -476,6 +492,9 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
       return out;
     };
     add(polygons([[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]]), COLORS.pavement, 'mosaic');
+    out[out.length - 1].base = true;
+    for (const [key, pattern] of LAND_USE) add(polygons(A[key] || []), COLORS[key as keyof typeof COLORS], pattern);
+    for (const [key, color, pattern] of COVER) add(polygons(A[key] || []), color, pattern);
     add(polygons(A.garden || []), COLORS.garden, 'grass');
     add(polygons(A.park || []), COLORS.park, 'grass');
     add(polygons(A.orchard || []), COLORS.orchard, 'grass');

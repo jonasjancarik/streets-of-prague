@@ -11,3 +11,10 @@ dependencies = [
     "requests>=2.34.2",
     "shapely>=2.1.2",
 ]
+
+[dependency-groups]
+cover = [
+    "scikit-image>=0.26.0",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.18.1",
+]

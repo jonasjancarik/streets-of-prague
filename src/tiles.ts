@@ -197,6 +197,10 @@ function inPassage(passages: TilePassage[], x: number, y: number, pad = 0) {
 
 export class TileWorld {
   osmBuildings: boolean;
+  // Prototype (ground_cover.py): `cover`, the unmapped ground classified from aerial
+  // photographs by that method (?cover=rules|model|jev); `ortho`, the painted
+  // photograph itself under everything mapped (?ortho).
+  cover: string | null; ortho: boolean; photos: Map<string, Promise<THREE.Texture | null>>;
   area: string;
   index: MapIndex;
   scene: THREE.Scene;
@@ -220,11 +224,14 @@ export class TileWorld {
     view: (who: Tracked) => { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
   };
 
-  constructor({ area, index, scene, drive, walk, time, night, osmBuildings = false }: {
+  constructor({ area, index, scene, drive, walk, time, night, osmBuildings = false, cover = null, ortho = false }: {
     area: string; index: MapIndex; scene: THREE.Scene; drive: DriveGraph; walk: WalkGraph;
-    time: { value: number }; night: boolean; osmBuildings?: boolean;
+    time: { value: number }; night: boolean; osmBuildings?: boolean; cover?: string | null; ortho?: boolean;
   }) {
     this.osmBuildings = osmBuildings;
+    this.cover = cover;
+    this.ortho = ortho;
+    this.photos = new Map();
     this.area = area;
     this.index = index;
     loadFacadeAtlas();
@@ -479,8 +486,26 @@ export class TileWorld {
         if (!r.ok) throw new Error(`Tile ${k} could not be loaded (${r.status})`);
         const value: unknown = await r.json();
         if (!isTileJSON(value)) throw new Error(`Tile ${k} has invalid map data`);
+        if (this.cover) {
+          const c = await fetch(`data/${this.area}_now/cover/${this.cover}/${k}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+          if (c) {
+            // Tree canopy becomes wood, which the game fills with trees of its own.
+            for (const [kind, polys] of Object.entries(c.areas || {})) {
+              const key = kind === 'trees' ? 'wood' : `cover_${kind}`;
+              value.areas[key] = [...(value.areas[key] || []), ...(polys as NonNullable<TileJSON['areas'][string]>)];
+            }
+            value.trees = [...value.trees, ...(c.trees || [])];
+          }
+        }
         return value;
       });
+      if (this.ortho && !this.photos.has(k)) {
+        this.photos.set(k, new THREE.TextureLoader().loadAsync(`data/${this.area}_now/cover/ortho/${k}.jpg`).then((tex) => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.anisotropy = 4;
+          return tex;
+        }).catch(() => null));
+      }
       const height = this.index.terrain ? bin('height') : null;
       const bare = this.index.terrain && this.bare.has(k) ? bin('bare') : null;
       const levels = this.structures.has(k) ? bin('levels') : null;
@@ -633,7 +658,8 @@ export class TileWorld {
         sample: input ? heightSampler(input.heights.hm, t.box, input.heights.n, input.heights.step) : () => NaN,
       });
     }
-    const surfaces = new Surfaces(layers, { time: this.time, relief: shade, masks: levelMasks });
+    const photo = this.ortho ? await this.photos.get(k) : null;
+    const surfaces = new Surfaces(layers, { time: this.time, relief: shade, masks: levelMasks, photo: photo ? { texture: photo, box: [x0, y0, x1, y1] } : null });
     // Under a tunnel, the ground hides what's below it (the tunnel, the cars in it)
     // except round you (CUTAWAY): the ground's own layers are drawn without depth.
     const hidden = shade && terrain && onLevels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step) : null;
@@ -675,6 +701,8 @@ export class TileWorld {
     this.scene.remove(t.group);
     t.surfaces.dispose();
     t.relief?.texture.dispose();
+    this.photos.get(k)?.then((tex) => tex?.dispose());
+    this.photos.delete(k);
     for (const m of t.disposables) {
       m.geometry.dispose();
       if (Array.isArray(m.material)) m.material.forEach((material) => material.dispose());

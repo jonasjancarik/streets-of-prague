@@ -16,16 +16,21 @@ export interface GroundLayer {
   deck?: boolean;
   tunnel?: boolean;
   level?: number;
+  base?: boolean; // the plain ground under everything (see `photo`)
 }
 
 interface SurfaceTexture { texture: THREE.DataTexture; box: number[] }
-interface SurfaceOptions { time?: { value: number }; relief?: SurfaceTexture | null; masks?: Map<number, SurfaceTexture> }
+// `photo`: prototype (?ortho): the tile's painted aerial photograph on the plain ground.
+interface SurfaceOptions {
+  time?: { value: number }; relief?: SurfaceTexture | null; masks?: Map<number, SurfaceTexture>;
+  photo?: { texture: THREE.Texture; box: number[] } | null;
+}
 
 export class Surfaces {
   group: THREE.Group;
   masks: THREE.DataTexture[];
 
-  constructor(layers: GroundLayer[], { time = { value: 0 }, relief = null, masks = new Map() }: SurfaceOptions = {}) {
+  constructor(layers: GroundLayer[], { time = { value: 0 }, relief = null, masks = new Map(), photo = null }: SurfaceOptions = {}) {
     this.group = new THREE.Group();
     this.masks = [...masks.values()].map((m) => m.texture);
     for (const l of layers) {
@@ -34,7 +39,7 @@ export class Surfaces {
       g.setAttribute('normal', new THREE.BufferAttribute(l.geometry.normal, 3));
       if (l.geometry.alpha) g.setAttribute('alpha', new THREE.BufferAttribute(l.geometry.alpha, 1));
       g.setIndex(new THREE.BufferAttribute(l.geometry.index, 1));
-      const mat = surfaceMaterial(l, time, relief, l.level === undefined ? null : masks.get(l.level) ?? null);
+      const mat = surfaceMaterial(l, time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, l.base ? photo : null);
       const m = new THREE.Mesh(g, mat);
       m.renderOrder = l.order;
       if (l.shade === undefined && !l.tunnel) m.receiveShadow = true;
@@ -49,7 +54,7 @@ export class Surfaces {
   }
 }
 
-function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: SurfaceTexture | null, mask: SurfaceTexture | null) {
+function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: SurfaceTexture | null, mask: SurfaceTexture | null, photo: { texture: THREE.Texture; box: number[] } | null = null) {
   // A bridge deck's slab is solid: drawn with depth, so what's under it is hidden
   // (except round the player, see CUTAWAY), and it casts a shadow.
   if (l.slab) return patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide }), PATTERN[l.pattern ?? 'flat'], time, null, { mask: null });
@@ -79,7 +84,7 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
       fragmentShader: 'uniform float opacity; uniform vec4 uDig; varying float vA; varying vec2 vXZ; void main() { if (distance(vXZ, uDig.xy) < uDig.z) discard; gl_FragColor = vec4(0.08, 0.07, 0.06, vA * vA * opacity); }',
     });
   }
-  const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[l.pattern ?? 'flat'], time, relief, null, true);
+  const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[l.pattern ?? 'flat'], time, relief, null, true, photo);
   if (l.blend !== null && l.blend !== undefined) { mat.blending = THREE.CustomBlending; mat.opacity = l.blend; }
   return mat;
 }
