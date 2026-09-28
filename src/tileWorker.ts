@@ -3,53 +3,59 @@
 //           part of a tile, up to a second or so), with their facade coordinates
 //   ipr     IPR's 3D buildings unpacked from the tile's .ipr.bin, with normals and
 //           facade coordinates
-//   ground  the ground's layers (ground.js), and the bridge decks above it
+//   ground  the ground's layers (ground.ts), and the bridge decks above it
 //   land    trees, walls and the collision grid
 // Everything stands on the tile's terrain, sampled from the heights sent along.
 import * as THREE from 'three';
-import { initRoofs, buildBuildings, wallArrays } from './map/buildings.js';
-import { treeInstances } from './map/vegetation.js';
-import { Geo, Grid, fillPolys, strokeLines } from './map/geo.js';
-import { styleFor, facadeCoords } from './facades.js';
-import { groundLayers, layerBuffers } from './ground.js';
-import { heightSampler } from './terrain.js';
+import { initRoofs, buildBuildings, wallArrays } from './map/buildings.ts';
+import { treeInstances } from './map/vegetation.ts';
+import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
+import { styleFor, facadeCoords } from './facades.ts';
+import { groundLayers, layerBuffers } from './ground.ts';
+import { heightSampler } from './terrain.ts';
+import type { Bounds } from './map/geo.ts';
+import type { HeightGrid, BuildingArrays, LandResult, WorkerJobs, WorkerRequest, WorkerResponse } from './contracts.ts';
+
+type LandData = WorkerJobs['land']['data'];
+type StyleAt = (x: number, y: number, height: number) => number;
 
 const RES = 2; // collision grid cells per metre
 
-let roofsReady = null;
-let styles = null, stylesOf = '';
-// A facade's style by where it is and how tall (facades.js), for this area.
-const styleAt = (bbox) => {
+let roofsReady: Promise<void> | null = null;
+let styles: StyleAt | null = null, stylesOf = '';
+// A facade's style by where it is and how tall (facades.ts), for this area.
+const styleAt = (bbox: Bounds): StyleAt => {
   if (stylesOf !== bbox.join()) { styles = styleFor({ bbox_wgs84: bbox }); stylesOf = bbox.join(); }
+  if (!styles) throw new Error('Facade styles are unavailable');
   return styles;
 };
-const groundAt = (g) => (g ? heightSampler(g.hm, g.box, g.n, g.step) : () => 0);
+const groundAt = (g: HeightGrid | null) => (g ? heightSampler(g.hm, g.box, g.n, g.step) : () => 0);
 
-async function roofs({ buildings, size, origin, ground, bbox }) {
+async function roofs({ buildings, size, origin, ground, bbox }: WorkerJobs['roofs']): Promise<BuildingArrays> {
   await (roofsReady ??= initRoofs());
   const hAt = groundAt(ground);
   // One building at a time, each lifted onto its own ground height (`base`).
-  const parts = { position: [], normal: [], color: [], drapeUv: [] };
+  const keys = ['position', 'normal', 'color', 'drapeUv'] as const;
+  const parts: Record<(typeof keys)[number], Float32Array[]> = { position: [], normal: [], color: [], drapeUv: [] };
   for (const b of buildings) {
     const g = buildBuildings({ size, origin, buildings: [b] }).mesh.geometry;
-    const pos = g.attributes.position.array;
+    const pos = g.attributes.position.array as Float32Array;
     for (let i = 1; i < pos.length; i += 3) pos[i] += b.base || 0;
-    for (const k in parts) parts[k].push(g.attributes[k].array);
+    for (const k of keys) parts[k].push(g.attributes[k].array as Float32Array);
   }
-  const arrays = {};
-  for (const k in parts) {
+  const arrays: Record<(typeof keys)[number], Float32Array> = { position: new Float32Array(0), normal: new Float32Array(0), color: new Float32Array(0), drapeUv: new Float32Array(0) };
+  for (const k of keys) {
     const n = parts[k].reduce((a, x) => a + x.length, 0);
     arrays[k] = new Float32Array(n);
     let o = 0;
     for (const x of parts[k]) { arrays[k].set(x, o); o += x.length; }
   }
-  arrays.facade = facadeCoords(arrays.position, hAt, styleAt(bbox));
-  return arrays;
+  return { ...arrays, facade: facadeCoords(arrays.position, hAt, styleAt(bbox)) };
 }
 
 // IPR Praha's 3D buildings for a tile (pipeline/ipr_buildings.py): triangles with
 // positions in centimetres from the tile corner and a colour per triangle.
-function ipr({ buffer, box: [x0, y0], absolute, ground, bbox }) {
+function ipr({ buffer, box: [x0, y0], absolute, ground, bbox }: WorkerJobs['ipr']): BuildingArrays {
   const n = new DataView(buffer).getUint32(0, true);
   const p16 = new Int16Array(buffer, 8, n * 9);
   const colAt = 8 + n * 18 + ((4 - ((8 + n * 18) % 4)) % 4);
@@ -71,13 +77,13 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox }) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.computeVertexNormals();
-  return { position: pos, color: col, normal: g.attributes.normal.array, facade: facadeCoords(pos, groundAt(ground), styleAt(bbox)) };
+  return { position: pos, color: col, normal: g.attributes.normal.array as Float32Array, facade: facadeCoords(pos, groundAt(ground), styleAt(bbox)) };
 }
 
 // Walkable/drivable cells: 0 free, 255 solid, 254 free but walled in (a closed
 // courtyard). Only cells reachable from the street network (`seeds`: x, y pairs
 // along every street and path in the tile) count as free.
-function tileGrid(geo, t, seeds) {
+function tileGrid(geo: Geo<LandData>, t: LandData, seeds: Float64Array) {
   const grid = new Grid(geo, RES, (ctx, s) => {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -86,7 +92,7 @@ function tileGrid(geo, t, seeds) {
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 0.9 * s;
     strokeLines(ctx, geo, t.walls.map((w) => w.pts), s);
-    // Bridges are open ground, unless they have decks of their own (see tiles.js):
+    // Bridges are open ground, unless they have decks of their own (see tiles.ts):
     // then the ground under them stays as it is (a river, or a street under a flyover).
     if (!t.decks) {
       ctx.fillStyle = '#000';
@@ -105,7 +111,7 @@ function tileGrid(geo, t, seeds) {
   });
   const { w, h, cells } = grid;
   for (let i = 0; i < cells.length; i++) cells[i] = cells[i] > 100 ? 255 : 0;
-  const seen = new Uint8Array(cells.length), stack = [];
+  const seen = new Uint8Array(cells.length), stack: number[] = [];
   for (let s = 0; s < seeds.length; s += 2) {
     const [u, v] = geo.px(seeds[s], seeds[s + 1], RES);
     const i = Math.floor(u), j = Math.floor(v);
@@ -113,9 +119,9 @@ function tileGrid(geo, t, seeds) {
     const k = j * w + i;
     if (!cells[k] && !seen[k]) { seen[k] = 1; stack.push(k); }
   }
-  const visit = (n) => { if (!cells[n] && !seen[n]) { seen[n] = 1; stack.push(n); } };
+  const visit = (n: number) => { if (!cells[n] && !seen[n]) { seen[n] = 1; stack.push(n); } };
   while (stack.length) {
-    const k = stack.pop(), x = k % w;
+    const k = stack.pop()!, x = k % w;
     if (x > 0) visit(k - 1);
     if (x < w - 1) visit(k + 1);
     if (k >= w) visit(k - w);
@@ -126,7 +132,7 @@ function tileGrid(geo, t, seeds) {
 }
 
 // Tree trunks are solid.
-function stampTrunks(grid, geo, { matrices, count }) {
+function stampTrunks(grid: Grid, geo: Geo<LandData>, { matrices, count }: LandResult['trees']) {
   for (let i = 0; i < count; i++) {
     const e = matrices.subarray(i * 16, i * 16 + 16);
     const x = e[12], y = -e[14];
@@ -143,7 +149,7 @@ function stampTrunks(grid, geo, { matrices, count }) {
   }
 }
 
-function land({ data, seeds, ground }) {
+function land({ data, seeds, ground }: WorkerJobs['land']): LandResult {
   const geo = new Geo(data), hAt = groundAt(ground);
   const trees = treeInstances(geo, hAt);
   const walls = wallArrays(data, hAt);
@@ -152,23 +158,54 @@ function land({ data, seeds, ground }) {
   return { trees, walls, cells: grid.cells };
 }
 
-const JOBS = {
-  roofs,
-  ipr,
-  ground: ({ d, ground, deck, ...opts }) => groundLayers(d, { ...opts, height: ground ? groundAt(ground) : null, deck: deck ? (deck.hm ? groundAt(deck) : () => NaN) : null }),
-  land,
-};
-// The typed arrays in a result, handed back without copying.
-const buffers = (type, r) => (type === 'ground' ? layerBuffers(r)
-  : type === 'land' ? [r.trees.matrices.buffer, r.trees.colours.buffer, r.walls.position.buffer, r.walls.normal.buffer, r.cells.buffer]
-    : Object.values(r).map((a) => a.buffer));
+function isRequest(value: unknown): value is WorkerRequest {
+  if (typeof value !== 'object' || value === null) return false;
+  const message = value as Record<string, unknown>;
+  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land'].includes(String(message.type))
+    && typeof message.data === 'object' && message.data !== null;
+}
 
-self.onmessage = async (e) => {
-  const { id, type, data } = e.data;
+function transferBuffers(arrays: BuildingArrays): ArrayBuffer[] {
+  const buffers = Object.values(arrays).map((array) => array.buffer);
+  if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Building transfer requires ArrayBuffer storage');
+  return buffers as ArrayBuffer[];
+}
+
+const worker = self as DedicatedWorkerGlobalScope;
+worker.onmessage = async (event: MessageEvent<unknown>) => {
+  if (!isRequest(event.data)) {
+    const id = typeof event.data === 'object' && event.data !== null && 'id' in event.data ? event.data.id : null;
+    if (typeof id === 'number') worker.postMessage({ id, error: 'Unknown tile job' } satisfies WorkerResponse);
+    return;
+  }
+  const { id } = event.data;
   try {
-    const result = await JOBS[type](data);
-    self.postMessage({ id, result }, buffers(type, result));
+    switch (event.data.type) {
+      case 'roofs': {
+        const result = await roofs(event.data.data);
+        worker.postMessage({ id, result } satisfies WorkerResponse, transferBuffers(result));
+        break;
+      }
+      case 'ipr': {
+        const result = ipr(event.data.data);
+        worker.postMessage({ id, result } satisfies WorkerResponse, transferBuffers(result));
+        break;
+      }
+      case 'ground': {
+        const { d, ground, deck, ...opts } = event.data.data;
+        const result = groundLayers(d, { ...opts, height: ground ? groundAt(ground) : null, deck: deck ? ('hm' in deck ? groundAt(deck as HeightGrid) : () => NaN) : null });
+        worker.postMessage({ id, result } satisfies WorkerResponse, layerBuffers(result));
+        break;
+      }
+      case 'land': {
+        const result = land(event.data.data);
+        const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.walls.position.buffer, result.walls.normal.buffer, result.cells.buffer];
+        if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Land transfer requires ArrayBuffer storage');
+        worker.postMessage({ id, result } satisfies WorkerResponse, buffers as ArrayBuffer[]);
+        break;
+      }
+    }
   } catch (err) {
-    self.postMessage({ id, error: String(err?.stack || err) });
+    worker.postMessage({ id, error: String(err instanceof Error ? err.stack || err.message : err) } satisfies WorkerResponse);
   }
 };

@@ -1,4 +1,10 @@
-import { clamp } from './network.js';
+import { clamp } from './network.ts';
+import type { DriveEdge, DriveGraph, Polyline, RawStreetEdge } from './network.ts';
+
+interface AssistedCar {
+  x: number; y: number; h: number; forwardSpeed: number;
+  spec: { vmax: number; turn: number };
+}
 
 // Lane assist (hold Shift while driving): picks up the lane you're driving in and
 // steers along it, through bends and across junctions. A or D works like an indicator:
@@ -8,7 +14,7 @@ import { clamp } from './network.js';
 // let go of the assist.
 
 // Nearest point of a polyline to (x, y), searching [s0, s1]: { s, d, ang }.
-export function project(path, x, y, s0 = 0, s1 = path.length) {
+export function project(path: Polyline, x: number, y: number, s0 = 0, s1 = path.length) {
   const { pts, cum } = path;
   let best = { s: 0, d: Infinity, ang: 0 };
   for (let i = 0; i < pts.length - 1; i++) {
@@ -22,10 +28,10 @@ export function project(path, x, y, s0 = 0, s1 = path.length) {
   return best;
 }
 
-export const turnOf = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
+export const turnOf = (a: number, b: number) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
 
 // km/h: the tagged limit, else 80 on motorways, 70 on trunk roads, 50 in town.
-export function speedLimit(e) {
+export function speedLimit(e: Pick<RawStreetEdge, 'maxspeed' | 'hw'> | null | undefined) {
   if (e?.maxspeed) return e.maxspeed;
   if (e?.hw?.startsWith('motorway')) return 80;
   if (e?.hw?.startsWith('trunk')) return 70;
@@ -33,7 +39,15 @@ export function speedLimit(e) {
 }
 
 export class LaneAssist {
-  constructor(drive, edgesNear) {
+  g: DriveGraph;
+  edgesNear: (x: number, y: number, radius: number) => DriveEdge[];
+  edge: DriveEdge | null;
+  next: DriveEdge | null;
+  s: number;
+  intent: number;
+  limit: number | null = null;
+
+  constructor(drive: DriveGraph, edgesNear: (x: number, y: number, radius: number) => DriveEdge[]) {
     this.g = drive;
     this.edgesNear = edgesNear;
     this.edge = null;
@@ -45,7 +59,7 @@ export class LaneAssist {
   reset() { this.edge = this.next = null; this.intent = 0; this.limit = null; }
 
   // A lane within 5 m running roughly the way the car points.
-  acquire(car) {
+  acquire(car: AssistedCar) {
     let best = null, score = Infinity;
     for (const e of this.edgesNear(car.x, car.y, 40)) {
       const p = project(e.path, car.x, car.y);
@@ -63,8 +77,9 @@ export class LaneAssist {
   }
 
   // Which way to leave the current street: straight on, or the turn you're asking for.
-  choose(steer) {
+  choose(steer: number) {
     const e = this.edge;
+    if (!e) return null;
     const opts = (this.g.out.get(e.v) || []).filter((f) => f !== e.twin);
     if (!opts.length) return null;
     const endAng = e.path.at(e.path.length).ang;
@@ -76,11 +91,13 @@ export class LaneAssist {
 
   // The steering (-1..1, left positive) that keeps the car in lane, or null if there's
   // no lane to follow here.
-  steer(car, playerSteer) {
+  steer(car: AssistedCar, playerSteer: number): number | null {
     if (!this.edge && !this.acquire(car)) return null;
+    if (!this.edge) return null;
     let p = project(this.edge.path, car.x, car.y, this.s - 15, this.s + 40);
     if (p.d > 7) {
       if (!this.acquire(car)) return null;
+      if (!this.edge) return null;
       p = project(this.edge.path, car.x, car.y);
     }
     this.s = p.s;

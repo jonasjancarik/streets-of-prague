@@ -1,6 +1,13 @@
 import * as THREE from 'three';
-import { clamp } from './network.js';
-import { turnOf } from './assist.js';
+import { clamp } from './network.ts';
+import { turnOf } from './assist.ts';
+
+interface Flyer { x: number; y: number; vx: number; vy: number }
+interface Helicopter {
+  x: number; y: number; z: number; vx: number; vy: number; h: number; w: number;
+  g: THREE.Group; rotor: THREE.Group; tail: THREE.Group;
+  leaving: boolean; orbit: number; air: boolean; gone?: boolean; pitch?: number; roll?: number;
+}
 
 // Police helicopters. From three stars up one joins the chase (two at five): it flies
 // straight over the rooftops, keeps a searchlight on you and sees you wherever you
@@ -17,16 +24,16 @@ const POLICE = { body: '#eef1f4', band: '#1d4fa3', stripe: '#d4e02b' };
 
 function model(paint = POLICE) {
   const g = new THREE.Group();
-  const mat = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
-  const add = (geo, color, [x, y, z], parent = g, extra) => {
+  const mat = (color: string, extra: THREE.MeshLambertMaterialParameters = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+  const add = (geo: THREE.BufferGeometry, color: string, [x, y, z]: [number, number, number], parent = g, extra?: THREE.MeshLambertMaterialParameters) => {
     const m = new THREE.Mesh(geo, mat(color, extra));
     m.position.set(x, y, z);
     m.castShadow = true;
     parent.add(m);
     return m;
   };
-  const ball = (sx, sy, sz) => new THREE.SphereGeometry(1, 18, 12).scale(sx, sy, sz);
-  const box = (x, y, z) => new THREE.BoxGeometry(x, y, z);
+  const ball = (sx: number, sy: number, sz: number) => new THREE.SphereGeometry(1, 18, 12).scale(sx, sy, sz);
+  const box = (x: number, y: number, z: number) => new THREE.BoxGeometry(x, y, z);
   // Local +x is the nose, +y up; the car models use the same axes.
   add(ball(2.4, 1.15, 1.1), paint.body, [0.3, 1.5, 0]);
   add(ball(1.3, 0.8, 0.95), '#1b232b', [1.45, 1.8, 0]);
@@ -58,7 +65,14 @@ function model(paint = POLICE) {
 }
 
 export class Helicopters {
-  constructor(scene, height) {
+  scene: THREE.Scene;
+  height: (x: number, y: number) => number;
+  list: Helicopter[];
+  spot: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
+  spots: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>[];
+  me: Flyer | null = null;
+
+  constructor(scene: THREE.Scene, height: (x: number, y: number) => number) {
     this.scene = scene;
     this.height = height;
     this.list = [];
@@ -70,12 +84,12 @@ export class Helicopters {
   }
 
   // A new helicopter `d` metres from (x, y), flying in.
-  spawn(x, y, d = 260) {
+  spawn(x: number, y: number, d = 260) {
     const a = Math.random() * Math.PI * 2;
     const hx = x + Math.cos(a) * d, hy = y + Math.sin(a) * d;
     const { g, rotor, tail } = model();
     this.scene.add(g);
-    const h = { x: hx, y: hy, z: this.height(hx, hy) + ALT, vx: 0, vy: 0, h: a + Math.PI, w: 0, g, rotor, tail, leaving: false, orbit: Math.random() * 6, air: true };
+    const h: Helicopter = { x: hx, y: hy, z: this.height(hx, hy) + ALT, vx: 0, vy: 0, h: a + Math.PI, w: 0, g, rotor, tail, leaving: false, orbit: Math.random() * 6, air: true };
     this.list.push(h);
     return h;
   }
@@ -89,7 +103,7 @@ export class Helicopters {
   }
 
   // `want`: how many should be over you; `me`: the player { x, y, vx, vy }.
-  update(dt, me, want) {
+  update(dt: number, me: Flyer, want: number) {
     let on = this.watching;
     if (on.length < want && !on.some((h) => Math.hypot(h.x - me.x, h.y - me.y) > 200)) this.spawn(me.x, me.y);
     on = this.watching;
@@ -130,7 +144,7 @@ export class Helicopters {
     this.me = me;
   }
 
-  render(time, dt = 1 / 60) {
+  render(time: number, dt = 1 / 60) {
     let n = 0;
     for (const h of this.list) {
       h.g.position.set(h.x, h.z, -h.y);
@@ -163,23 +177,31 @@ const ROOFS = 30; // m above the ground: higher than that, the buildings don't m
 const FLY = { top: 42, accel: 14, yaw: 1.7, climb: 9 };
 
 export class Chopper {
-  constructor(scene, grid, height, x, y, h) {
-    Object.assign(this, { grid, height, x, y, h, vx: 0, vy: 0, vz: 0, w: 0, spin: 0 });
+  grid: { at(x: number, y: number): number };
+  height: (x: number, y: number) => number;
+  x: number; y: number; h: number; z: number;
+  vx: number; vy: number; vz: number; w: number; spin: number;
+  g: THREE.Group; rotor: THREE.Group; tail: THREE.Group;
+  pitch?: number; roll?: number;
+
+  constructor(scene: THREE.Scene, grid: { at(x: number, y: number): number }, height: (x: number, y: number) => number, x: number, y: number, h: number) {
+    this.grid = grid; this.height = height; this.x = x; this.y = y; this.h = h;
+    this.vx = 0; this.vy = 0; this.vz = 0; this.w = 0; this.spin = 0;
     this.z = height(x, y);
     const m = model({ body: '#c8312b', band: '#f2efe8', stripe: '#2a2d31' });
-    Object.assign(this, m);
+    this.g = m.g; this.rotor = m.rotor; this.tail = m.tail;
     scene.add(m.g);
   }
 
   get speed() { return Math.hypot(this.vx, this.vy); }
   get air() { return this.z - this.height(this.x, this.y); }
   // Rooftop height counts as the floor over buildings.
-  solid(x, y) { return this.grid.at(x, y) === 255; }
-  floor(x, y) { return this.height(x, y) + (this.solid(x, y) ? ROOFS : 0); }
+  solid(x: number, y: number) { return this.grid.at(x, y) === 255; }
+  floor(x: number, y: number) { return this.height(x, y) + (this.solid(x, y) ? ROOFS : 0); }
   get landed() { return this.air < 0.6 && !this.solid(this.x, this.y); }
 
   // `ctl`: { move -1..1, turn -1..1 (left +), up, down } or null when nobody's flying it.
-  update(dt, ctl) {
+  update(dt: number, ctl: { move: number; turn: number; up: boolean; down: boolean } | null) {
     const flying = !!ctl;
     this.spin += ((flying ? 1 : 0) - this.spin) * Math.min(1, dt * (flying ? 0.8 : 0.4));
     const lift = this.spin > 0.85; // the rotor needs to be up to speed
@@ -205,7 +227,7 @@ export class Chopper {
     // Below the rooftops, buildings stop you like walls.
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
     const under = this.z - this.height(nx, ny) < ROOFS;
-    const hits = (x, y) => under && [[3, 0], [-3, 0], [0, 3], [0, -3], [0, 0]].some(([a, b]) => this.solid(x + a, y + b));
+    const hits = (x: number, y: number) => under && [[3, 0], [-3, 0], [0, 3], [0, -3], [0, 0]].some(([a, b]) => this.solid(x + a, y + b));
     if (!hits(nx, this.y)) this.x = nx; else this.vx *= -0.2;
     if (!hits(this.x, ny)) this.y = ny; else this.vy *= -0.2;
     this.z += this.vz * dt;
@@ -218,12 +240,12 @@ export class Chopper {
     this.roll = clamp(-this.w * this.speed * 0.02, -0.35, 0.35);
   }
 
-  render(dt) {
+  render(dt: number) {
     this.g.position.set(this.x, this.z, -this.y);
     this.g.rotation.set(this.roll || 0, this.h, this.pitch || 0, 'YZX');
     this.rotor.rotation.y += dt * 38 * this.spin;
     this.tail.rotation.z += dt * 60 * this.spin;
   }
 
-  remove(scene) { scene.remove(this.g); }
+  remove(scene: THREE.Scene) { scene.remove(this.g); }
 }

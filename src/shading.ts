@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FACADE_ATLAS, FACADE_ON, FACADE_GLSL } from './facades.js';
+import { FACADE_ATLAS, FACADE_ON, FACADE_GLSL } from './facades.ts';
 
 // Procedural surface patterns in world space, shared by the ground and the buildings.
 // Everything is computed per pixel from the position in metres, so it stays sharp at
@@ -96,7 +96,7 @@ vec3 pattern(int id, vec3 c, vec2 p) {
 }
 `;
 
-export const PATTERN = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
@@ -141,7 +141,7 @@ vec3 facade(vec3 c, vec2 f) {
 // Shadows are drawn without it, so the passage stays in the building's shade.
 export const CUTAWAY = { value: new THREE.Vector4(0, 0, 0, 0) };
 
-export function shadeBuildings(material) {
+export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uCut = CUTAWAY;
     sh.uniforms.uFacades = FACADE_ATLAS;
@@ -167,10 +167,16 @@ export function shadeBuildings(material) {
 }
 
 // Add a world-position varying to a Lambert/Standard shader and colour it by pattern.
-// `relief`: optional { texture, box } hill shading for a tile (see tiles.js).
+// `relief`: optional { texture, box } hill shading for a tile (see tiles.ts).
 // `deck`: for a bridge deck, { mask, box } to draw it only where the tile's decks are
 // (mask null: everywhere), and with a hole round the player under it (CUTAWAY).
-export function patterned(material, id, time, relief = null, deck = null) {
+export function patterned(
+  material: THREE.MeshLambertMaterial,
+  id: number,
+  time: { value: number },
+  relief: { texture: THREE.Texture; box: number[] } | null = null,
+  deck: { mask: THREE.Texture | null; box?: number[] } | null = null,
+) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
     sh.uniforms.uRelief = { value: relief?.texture || null };
