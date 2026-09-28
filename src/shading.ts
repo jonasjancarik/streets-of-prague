@@ -4,13 +4,35 @@ import { lampLit } from './lamps.ts';
 
 // Procedural surface patterns in world space, shared by the ground and the buildings.
 // Everything is computed per pixel from the position in metres, so it stays sharp at
-// any zoom and needs no textures. Detail fades out once it gets smaller than a pixel.
+// any zoom and needs no textures. Detail fades out once it gets smaller than a pixel
+// (and isn't worked out at all once it has).
 
+// The value noise's lattice: random values, wrapping round every NOISE_SIZE cells.
+const NOISE_SIZE = 256;
+export const NOISE = {
+  value: (() => {
+    const cells = new Uint8Array(NOISE_SIZE * NOISE_SIZE);
+    let s = 7;
+    for (let i = 0; i < cells.length; i++) cells[i] = ((s = (s * 16807) % 2147483647) >> 7) & 255;
+    const tex = new THREE.DataTexture(cells, NOISE_SIZE, NOISE_SIZE, THREE.RedFormat, THREE.UnsignedByteType);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.magFilter = tex.minFilter = THREE.LinearFilter;
+    tex.unpackAlignment = 1;
+    tex.needsUpdate = true;
+    return tex;
+  })(),
+};
+
+// Value noise reads its random lattice from a small texture (NOISE, below) instead of
+// hashing four corners per call: the smooth step between lattice points goes into
+// the coordinate, so one filtered read gives the same curve. It's the ground's main
+// cost: a pixel of paving takes a dozen of these or more.
 export const NOISE_GLSL = /* glsl */ `
+uniform sampler2D uNoise;
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float vnoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f);
-  return mix(mix(hash12(i), hash12(i + vec2(1, 0)), u.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), u.x), u.y);
+  vec2 i = floor(p), f = p - i;
+  return textureLod(uNoise, (mod(i, ${NOISE_SIZE}.) + f * f * (3. - 2. * f) + .5) * (1. / ${NOISE_SIZE}.), 0.).r;
 }
 // Two octaves: for broad dirt, where the finer ones would only cost time.
 float fbm2(vec2 p) { return (vnoise(p) * 2. + vnoise(p * 2.03 + 11.7)) / 3.; }
@@ -45,47 +67,72 @@ uniform float uDirt;
 vec3 pAsphalt(vec3 c, vec2 p) {
   c *= .9 + .18 * fbm(p * .3);
   c *= mix(1., .9, smoothstep(.62, .66, fbm(p * .07 + 3.)));          // repair patches
-  c += (vnoise(p * 16.) - .5) * .07 * detail(p, .06);                  // aggregate
+  float d = detail(p, .06), dc = detail(p, .15);
+  if (d > 0.) c += (vnoise(p * 16.) - .5) * .07 * d;                   // aggregate
   c *= 1. - .14 * smoothstep(.6, .85, vnoise(p * vec2(.9, .25) + 23.)); // oil and tyre marks
-  float crack = 1. - smoothstep(.0, .025, abs(vnoise(p * .7) - .5));
-  c *= 1. - .3 * crack * detail(p, .15) * smoothstep(.55, .7, vnoise(p * .06 + 2.));
+  if (dc > 0.) {
+    float crack = 1. - smoothstep(.0, .025, abs(vnoise(p * .7) - .5));
+    c *= 1. - .3 * crack * dc * smoothstep(.55, .7, vnoise(p * .06 + 2.));
+  }
   return c;
 }
 vec3 pSetts(vec3 c, vec2 p, vec2 size) {
-  vec2 b = blocks(p, size);
-  vec3 stone = c * (.8 + .4 * b.y) * (.92 + .16 * vnoise(p * 9.));
-  vec3 s = mix(c * .5, stone, smoothstep(.004, .02, b.x));
-  return mix(c * .85, s, detail(p, size.x)) * (.94 + .12 * fbm(p * .2));
+  float d = detail(p, size.x);
+  vec3 s = c * .85;
+  if (d > 0.) {
+    vec2 b = blocks(p, size);
+    vec3 stone = c * (.8 + .4 * b.y) * (.92 + .16 * vnoise(p * 9.));
+    s = mix(s, mix(c * .5, stone, smoothstep(.004, .02, b.x)), d);
+  }
+  return s * (.94 + .12 * fbm(p * .2));
 }
 vec3 pMosaic(vec3 c, vec2 p) {
-  vec2 s = stones(p * 11.);
-  float dark = step(.9, s.y);                                          // a few grey stones
-  vec3 stone = mix(c * (.9 + .18 * s.y), c * .62, dark);
-  vec3 m = mix(c * .6, stone, smoothstep(.03, .12, s.x));
-  return mix(c * .9, m, detail(p, .09)) * (.95 + .1 * fbm(p * .25));
+  float d = detail(p, .09);
+  vec3 m = c * .9;
+  if (d > 0.) {
+    vec2 s = stones(p * 11.);
+    float dark = step(.9, s.y);                                        // a few grey stones
+    vec3 stone = mix(c * (.9 + .18 * s.y), c * .62, dark);
+    m = mix(m, mix(c * .6, stone, smoothstep(.03, .12, s.x)), d);
+  }
+  return m * (.95 + .1 * fbm(p * .25));
 }
 vec3 pSlabs(vec3 c, vec2 p) {
-  vec2 b = blocks(p, vec2(.6, .4));
-  vec3 s = mix(c * .72, c * (.9 + .15 * b.y), smoothstep(.004, .015, b.x));
-  return mix(c * .95, s, detail(p, .4)) * (.93 + .14 * fbm(p * .15));
+  float d = detail(p, .4);
+  vec3 s = c * .95;
+  if (d > 0.) {
+    vec2 b = blocks(p, vec2(.6, .4));
+    s = mix(s, mix(c * .72, c * (.9 + .15 * b.y), smoothstep(.004, .015, b.x)), d);
+  }
+  return s * (.93 + .14 * fbm(p * .15));
 }
 vec3 pGrass(vec3 c, vec2 p) {
   c *= .82 + .32 * fbm(p * .18);
   c = mix(c, c * vec3(1.12, 1.05, .78), smoothstep(.55, .75, fbm(p * .04 + 7.)));  // dry patches
   c = mix(c, c * vec3(1.05, .9, .7), smoothstep(.6, .8, fbm2(p * .15 + 3.)) * .6);  // worn to earth
-  c += (vnoise(p * 5.) - .5) * .07 * detail(p, .2);
+  float d = detail(p, .2);
+  if (d > 0.) c += (vnoise(p * 5.) - .5) * .07 * d;
   return c;
 }
 vec3 pWood(vec3 c, vec2 p) { return c * (.75 + .45 * fbm(p * .12)) + (vnoise(p * 3.) - .5) * .05; }
 vec3 pPitch(vec3 c, vec2 p) { return pGrass(c, p) * (.94 + .1 * step(.5, fract(p.x / 6.))); }
-vec3 pDirt(vec3 c, vec2 p) { return c * (.85 + .25 * fbm(p * .5)) + (vnoise(p * 12.) - .5) * .08 * detail(p, .08); }
+vec3 pDirt(vec3 c, vec2 p) {
+  float d = detail(p, .08);
+  c *= .85 + .25 * fbm(p * .5);
+  if (d > 0.) c += (vnoise(p * 12.) - .5) * .08 * d;
+  return c;
+}
 // Gravel and railway ballast: packed small stones, a few bigger light and dark ones,
 // and faint wheel tracks worn into it.
 vec3 pGravel(vec3 c, vec2 p) {
-  vec2 s = stones(p * 22.);
-  vec3 g = c * (.84 + .3 * s.y) * mix(.7, 1., smoothstep(.02, .1, s.x));
-  g = mix(g, c * vec3(1.18, 1.16, 1.12), step(.94, hash12(floor(p * 7.))) * .5);
-  c = mix(c * (.93 + .1 * vnoise(p * 4.)), g, detail(p, .05));
+  float d = detail(p, .05);
+  vec3 g = c;
+  if (d > 0.) {
+    vec2 s = stones(p * 22.);
+    g = c * (.84 + .3 * s.y) * mix(.7, 1., smoothstep(.02, .1, s.x));
+    g = mix(g, c * vec3(1.18, 1.16, 1.12), step(.94, hash12(floor(p * 7.))) * .5);
+  }
+  c = mix(c * (.93 + .1 * vnoise(p * 4.)), g, d);
   return c * (.9 + .16 * fbm(p * .35)) * mix(1., .93, smoothstep(.6, .7, fbm(vec2(p.x * .05, p.y * .8) + 5.)));
 }
 // Fields: straight crop rows in strips that change direction and tone.
@@ -96,7 +143,10 @@ vec3 pField(vec3 c, vec2 p) {
   float row = fract(dot(p, d) / 1.6);
   c *= mix(vec3(.95, 1.02, .9), vec3(1.07, 1., .88), t);
   c *= 1. - .1 * smoothstep(.35, .5, abs(row - .5)) * detail(p, 1.2);
-  return c * (.9 + .2 * fbm(p * .03)) + (vnoise(p * 6.) - .5) * .04 * detail(p, .15);
+  float fine = detail(p, .15);
+  c *= .9 + .2 * fbm(p * .03);
+  if (fine > 0.) c += (vnoise(p * 6.) - .5) * .04 * fine;
+  return c;
 }
 vec3 pConcrete(vec3 c, vec2 p) {
   vec2 b = blocks(p, vec2(3., 2.4));
@@ -105,14 +155,17 @@ vec3 pConcrete(vec3 c, vec2 p) {
 vec3 pWater(vec3 c, vec2 p) {
   float n = fbm(p * vec2(.05, .012) + vec2(0., uTime * .03));
   c *= .88 + .2 * n;
-  float glint = smoothstep(.72, .8, fbm(p * vec2(.5, .09) + vec2(uTime * .02, uTime * .12)));
-  return c + glint * .1 * detail(p, .5);
+  float d = detail(p, .5);
+  if (d > 0.) c += smoothstep(.72, .8, fbm(p * vec2(.5, .09) + vec2(uTime * .02, uTime * .12))) * .1 * d; // glints
+  return c;
 }
 // Dirt on paved ground: broad grimy patches and smaller stains.
 vec3 grit(vec3 c, vec2 p) {
   if (uDirt < .5) return c;
   c *= 1. - .22 * smoothstep(.3, .85, fbm2(p * .13 + 5.));
-  return c * (1. - .12 * smoothstep(.55, .85, fbm2(p * .6 + 17.)) * detail(p, .6));
+  float d = detail(p, .6);
+  if (d > 0.) c *= 1. - .12 * smoothstep(.55, .85, fbm2(p * .6 + 17.)) * d;
+  return c;
 }
 vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 1) return grit(pAsphalt(c, p), p);
@@ -159,7 +212,8 @@ vec3 weathered(int id, vec3 c, vec2 p, inout float shine) {
       float puddle = smoothstep(.66, .71, fbm2(p * .3 + 31.) * .75 + fbm2(p * .04 + 7.) * .35) * smoothstep(.35, .9, wet);
       shine = (.1 + .4 * puddle) * wet;
       c *= 1. - .35 * puddle;
-      if (uRain > .01) shine += ripples(p) * puddle * uRain * .8 * detail(p, .12);
+      float d = uRain > .01 ? detail(p, .12) * puddle : 0.;
+      if (d > 0.) shine += ripples(p) * uRain * .8 * d;
     }
   }
   if (uSnow > .01) {
@@ -276,6 +330,7 @@ export function cutAway<M extends THREE.Material>(material: M, key: string): M {
 export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uCut = CUTAWAY;
+    sh.uniforms.uNoise = NOISE;
     sh.uniforms.uDirt = DIRT;
     sh.uniforms.uFacades = FACADE_ATLAS;
     sh.uniforms.uFacadeOn = FACADE_ON;
@@ -339,6 +394,7 @@ export function patterned(
 ) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
+    sh.uniforms.uNoise = NOISE;
     sh.uniforms.uDirt = DIRT;
     sh.uniforms.uWet = WET;
     sh.uniforms.uSnow = SNOW;

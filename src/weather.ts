@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WET, SNOW, STREET_SNOW, RAIN, NOISE_GLSL } from './shading.ts';
+import { WET, SNOW, STREET_SNOW, RAIN, NOISE, NOISE_GLSL } from './shading.ts';
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
 
 // The weather: clear, cloudy, rain, a thunderstorm, mist or snow. Each is a mix of
@@ -278,7 +278,7 @@ export class WeatherFx {
     // Mist: a drifting sheet a few metres above the ground, taller buildings standing
     // out of it, lit from below by the lamps.
     this.mist = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
-      uniforms: { ...this.shared, uOn: this.mistOn, uFog: this.fog },
+      uniforms: { ...this.shared, uOn: this.mistOn, uFog: this.fog, uNoise: NOISE },
       vertexShader: /* glsl */ `
         varying vec3 vW;
         void main() { vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
