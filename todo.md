@@ -95,7 +95,8 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Straight elevation break near Jeremenkova.** A dead-straight north–south line
   cuts across roads, pavement and grass, with the ground slightly lighter and
   offset on one side. Looks like a tile edge where the heights of neighbouring
-  tiles don't match (unchecked).
+  tiles don't match (unchecked). A similar faint east–west line shows up elsewhere
+  across both beige ground and grass.
 - **Police cars get stuck.** A police car sometimes ends up wedged across the
   parking lane, overlapping parked cars, and stays there. The officer who gets out
   can end up standing inside the car. Police cars need to be able to reverse or
@@ -111,6 +112,15 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   two buildings above the street. NPC cars drive under it, but the player can't:
   the walkway seems to block the player as if it were a building on the ground.
   Probably needs a targeted fix for this spot.
+- **Fill the plain beige areas.** Large parts of the map (yards, industrial land,
+  unmapped open ground) still show the default beige. Ideas: bake the IPR
+  orthophoto into those areas through an anisotropic Kuwahara filter so it reads as
+  painted rather than photographic; or classify the orthophoto into surface types
+  (grass, paving, gravel, dirt, trees) and draw them with the existing procedural
+  materials, which also yields tree positions. Things to watch with raw imagery:
+  baked-in shadows at a different sun angle, parked cars and leaning roofs, seams
+  between photo tiles, the licence, and tile size. Only use it where no mapped
+  surface exists.
 - **Parking zone markings.** The blue line should run only along the street side of
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
