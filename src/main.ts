@@ -16,7 +16,9 @@ import { TileWorld } from './tiles.ts';
 import { groundSamples } from './surface.ts';
 import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
-import { LaneAssist, turnOf } from './assist.ts';
+import { LaneAssist, turnOf, project } from './assist.ts';
+import { Sound, surfaceOf } from './audio.ts';
+import type { Surface } from './audio.ts';
 import { setupTouch } from './touch.ts';
 import { Police } from './police.ts';
 import { Chopper } from './helicopter.ts';
@@ -444,6 +446,18 @@ async function main() {
     }
     return false;
   };
+  const sound = new Sound();
+  // What the ground under a car is made of, for its tyres: the OSM surface of the street
+  // it's on, or the pavement off the streets.
+  let surface: Surface = 'asphalt', surfaceT = 0;
+  const surfaceUnder = (x: number, y: number): Surface => {
+    let best: DriveEdge | null = null, bestD = Infinity;
+    for (const e of edgesNear(x, y, 20)) {
+      const d = project(e.path, x, y).d - e.width / 2 - Math.abs(e.laneOffset);
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    return best && bestD < 1 ? surfaceOf(best.surface) : 'pavement';
+  };
   const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, shiftTime: (h) => clock.advance(h * 3600) });
 
   // ---- Input -------------------------------------------------------------
@@ -462,6 +476,7 @@ async function main() {
     if (e.code === 'KeyR') backOnRoad();
     // Space jumps, except at a tram stop, where holding it waits for a tram.
     if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on) input.jump = true;
+    if (e.code === 'KeyM' && !e.repeat) sound.toggle();
     if (e.code === 'KeyH' && !e.repeat) foldHelp(!$('help').classList.contains('folded'));
     // On a tram, W and S move your pick along the stops ahead.
     if (ride.on && ['KeyW', 'ArrowUp'].includes(e.code)) ride.pick(-1);
@@ -850,6 +865,9 @@ async function main() {
     }
     carPool.render(drawn, ground, dt);
     for (const c of choppers) c.render(dt);
+    surfaceT -= dt;
+    if (inCar && surfaceT < 0) { surfaceT = 0.2; surface = surfaceUnder(inCar.x, inCar.y); }
+    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active });
 
     // ---- Camera ----------------------------------------------------------
     const vehicle = inCar || inHeli, sp = vehicle ? vehicle.speed : 0;
@@ -964,7 +982,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, resolution,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, resolution, sound,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

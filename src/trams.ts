@@ -47,6 +47,8 @@ const SECTION = 10.2, GAP = 0.25, W = 2.5, H = 3.4;
 const STEP = SECTION + GAP;
 const HALF = STEP + SECTION / 2; // from the middle of a tram to its front
 const BOGIE = SECTION / 2 - 1.6; // from the middle of a section to each of its bogies
+// How far behind a tram's front each of its bogies runs (they click over the rail joints).
+export const BOGIES = [STEP, 0, -STEP].flatMap((o) => [HALF - o - BOGIE, HALF - o + BOGIE]);
 const ACCEL = 1.1, BRAKE = 1.2, HARD = 4.5; // m/s²: pulling away, braking, stopping short
 // For the player the driver needs a moment to react, then brakes as hard as a real
 // tram can: 14 m/s (50 km/h) takes some 45 m to stop, so step out in front of one too
