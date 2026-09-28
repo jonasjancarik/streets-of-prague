@@ -263,9 +263,9 @@ async function main() {
     walker.sync();
   };
   const enterOrExit = () => {
-    // On a tram: off at this stop, or at the next one.
+    // On a tram: off at this stop (or here, if it's stuck), or at the next one.
     if (ride.on) {
-      if (ride.atStop()) getOff();
+      if (ride.canLeave()) getOff();
       else ride.requestStop();
       return;
     }
@@ -737,6 +737,7 @@ async function main() {
     const steps = metro.active ? 0 : Math.ceil(scale - 1e-6); // underground, the street waits
     for (let i = 0; i < steps; i++) simulate((dt * scale) / steps, ctl);
     input.jump = false;
+    if (ride.on) ride.watch(dt);
     if (ride.on && ride.arrived()) getOff();
     trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground);
     metro.update(dt);
@@ -830,6 +831,7 @@ async function main() {
       if (dest) parts.push(next ? `Getting off at ${dest}` : `Riding to ${dest}`);
       if (!touch.active) {
         if (ride.atStop()) parts.push('<b>E</b> get off');
+        else if (ride.stuck) parts.push('<b>E</b> get off here');
         else if (!next) parts.push('<b>E</b> get off at the next stop');
         if (!dest) parts.push('<b>W</b>/<b>S</b> pick a stop', 'hold <b>Shift</b> to speed up');
       }
@@ -843,7 +845,7 @@ async function main() {
     show('hint', hint, 'html');
     $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.on ? 'tram' : 'foot';
     ride.render();
-    const label = ride.on ? (ride.atStop() ? 'Get off' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : canBoard || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
+    const label = ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : canBoard || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     touch.update({ car: inCar || inHeli, tram: ride.on, wait: !!board.shown, label: label || (station ? 'Metro' : null), canEnter: canEnter || !!canBoard || !!station, tripped: ctl.run && assist.tripped });
     show('tally', `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.

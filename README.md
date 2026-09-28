@@ -46,7 +46,9 @@ too long; `?dpr=1` fixes it.
   panel lists the stops ahead. Pick one with W/S (or tap it) and the ride runs at 6×,
   stops on the way included, until about 250 m before your stop; then you watch the
   tram pull in and you get off. Hold Shift (on touch, "Hold to speed up") to speed up
-  at any time. E while it's moving gets you off at the next stop. Sped up, the whole
+  at any time. E while it's moving gets you off at the next stop; if something on the
+  track holds the tram up between stops for 10 seconds, E gets you off where it
+  stands (on touch, "Get off here"). Sped up, the whole
   world runs faster, in short steps so the physics holds; it slows down again while
   the streets ahead are still loading. The police can't arrest you on a tram, and
   your stars fade twice as fast.

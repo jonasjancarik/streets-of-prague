@@ -1,7 +1,9 @@
 // Riding a tram. Get on while one waits at a stop (E) and it carries you along its
 // line. The strip in the HUD lists the stops ahead: pick one (W/S, or tap it) and the
 // ride speeds up until you're nearly there, then you watch the tram pull in and get
-// off. Hold Shift to speed up at any time, and E gets you off at the next stop.
+// off. Hold Shift to speed up at any time, and E gets you off at the next stop. A
+// tram held up between stops for a while (by something on the track) lets you off
+// where it stands.
 //
 // Speeding up runs the whole world faster (see simulate() in main.js), so the city
 // keeps moving around you; it holds back while the streets ahead are still loading.
@@ -11,6 +13,7 @@ import { headsignAt, frontOf } from './trams.js';
 export const FAST = 6; // how much faster the world runs
 const SHOWN = 6; // stops listed ahead
 const SLOW_BEFORE = 250; // m before your stop where the ride goes back to normal speed
+const STUCK = 10; // seconds standing between stops before you can get off there
 
 export class TramRide {
   constructor(trams, world, el) {
@@ -18,6 +21,7 @@ export class TramRide {
     this.v = null;
     this.dest = null; // index of the halt you're riding to
     this.scale = 1;
+    this.held = 0; // seconds your tram has stood still between stops
     this.waiting = false; // held back by streets still loading
     this.shown = '';
     el.addEventListener('pointerdown', (e) => {
@@ -49,6 +53,7 @@ export class TramRide {
     this.v = v;
     v.rider = true;
     this.dest = null;
+    this.held = 0;
     this.el.hidden = false;
   }
 
@@ -66,6 +71,10 @@ export class TramRide {
   }
 
   atStop() { return this.v.dwell > 0; }
+  // Held up between stops long enough that you may as well walk.
+  get stuck() { return this.held > STUCK; }
+  canLeave() { return this.atStop() || this.stuck; }
+  watch(dt) { this.held = this.v.speed < 0.2 && this.v.dwell <= 0 ? this.held + dt : 0; }
   arrived() { return this.v.dwell > 0 && this.v.halt === this.dest; }
   // Get off at the next stop.
   requestStop() { this.dest = this.upcoming()[0]; }
@@ -126,11 +135,12 @@ export class TramRide {
     const { v } = this;
     if (!v) return;
     const list = this.upcoming(), halts = v.line.halts;
-    const key = `${v.line.ref}|${this.headsign()}|${list.join(',')}|${this.dest}|${v.dwell > 0}`;
+    const key = `${v.line.ref}|${this.headsign()}|${list.join(',')}|${this.dest}|${v.dwell > 0}|${this.stuck}`;
     if (key === this.shown) return;
     this.shown = key;
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => `&${{ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' }[c]};`);
-    const here = v.dwell > 0 ? `<div class="ride-here">At ${esc(halts[v.halt].name)}</div>` : '';
+    const here = v.dwell > 0 ? `<div class="ride-here">At ${esc(halts[v.halt].name)}</div>`
+      : this.stuck ? '<div class="ride-here">Held up: something is blocking the track</div>' : '';
     this.el.innerHTML = `
       <div class="ride-line"><span class="ride-ref" style="background:${esc(v.line.colour || '#c4161c')}">${esc(v.line.ref)}</span>
       <span>to ${esc(this.headsign())}</span></div>${here}
