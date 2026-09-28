@@ -10,7 +10,7 @@ import type { TramVehicle } from './trams.ts';
 // rumble, the motors' whine, the wheels squealing in tight curves, pulling away from a
 // stop and pulling in, and the bell when something's on the track; the bogies clicking
 // over rail joints are made here, and so is the weather: rain hissing and pattering,
-// the tyres louder in the wet, a wind while it snows. Browsers only start sound after
+// the tyres louder in the wet, thunder after lightning, a wind while it snows. Browsers only start sound after
 // a key press or a tap; M turns it off and on.
 
 export type Surface = 'asphalt' | 'setts' | 'pavers' | 'pavement';
@@ -45,6 +45,7 @@ export interface SoundState {
   trams: TramVehicle[];
   quiet: boolean; // in the metro
   rain?: number; wet?: number; snow?: number; // the weather, 0–1 each (weather.ts)
+  strikes?: number; // lightning so far: each new one thunders a moment later
 }
 
 export class Sound {
@@ -57,6 +58,7 @@ export class Sound {
   engine: Engine | null = null;
   tyres: Tyres | null = null;
   weather: WeatherSound | null = null;
+  private strikes = -1;
   voices: TramVoice[] = [];
 
   constructor() {
@@ -130,6 +132,10 @@ export class Sound {
     this.engine?.update(dt, s.throttle);
     this.tyres!.update(car, s.surface, s.wet ?? 0);
     this.weather!.update(s.rain ?? 0, s.snow ?? 0);
+    if (s.strikes !== undefined) {
+      if (this.strikes >= 0 && s.strikes > this.strikes) this.weather!.thunder(t + 0.6 + Math.random() * 3.5);
+      this.strikes = s.strikes;
+    }
 
     // The nearest trams, each keeping its voice while it's among them.
     const near: { v: TramVehicle; d: number; dx: number }[] = [];
@@ -424,12 +430,14 @@ class TramVoice {
 // Rain: a steady hiss, and drops pattering on the street (a loop of short clicks at
 // random times); while it snows, a low wind that rises and falls.
 class WeatherSound {
-  ctx: AudioContext;
+  ctx: AudioContext; noise: AudioBuffer; dest: AudioNode;
   hissGain: GainNode; patterGain: GainNode;
   wind: BiquadFilterNode; windGain: GainNode;
 
   constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode) {
     this.ctx = ctx;
+    this.noise = noise;
+    this.dest = dest;
     this.hissGain = gain(ctx, 0);
     const a = loop(ctx, noise, 0.9);
     a.connect(filter(ctx, 'highpass', 500)).connect(filter(ctx, 'lowpass', 6000)).connect(this.hissGain).connect(dest);
@@ -441,6 +449,22 @@ class WeatherSound {
     const c = loop(ctx, noise, 0.23);
     c.connect(this.wind).connect(this.windGain).connect(dest);
     for (const n of [a, b, c]) n.start(ctx.currentTime);
+  }
+
+  // Thunder at `at`: a crack, then a low rumble rolling on for a few seconds.
+  thunder(at: number) {
+    const ctx = this.ctx, src = loop(ctx, this.noise, 0.5), lp = filter(ctx, 'lowpass', 600, 0.8), g = gain(ctx, 0);
+    src.connect(lp).connect(g).connect(this.dest);
+    const far = Math.random();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.9 - far * 0.4, at + 0.06 + far * 0.3);
+    g.gain.setTargetAtTime(0.45, at + 0.3, 0.4);
+    g.gain.setTargetAtTime(0.6, at + 1.2 + Math.random(), 0.3); // a second roll
+    g.gain.setTargetAtTime(0, at + 2.2, 1.1);
+    lp.frequency.setValueAtTime(900 - far * 600, at);
+    lp.frequency.setTargetAtTime(110, at + 0.05, 0.35);
+    src.start(at);
+    src.stop(at + 9);
   }
 
   update(rain: number, snow: number) {

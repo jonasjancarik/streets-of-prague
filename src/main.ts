@@ -843,7 +843,7 @@ async function main() {
     const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : waitScale;
     const steps = metro.active ? 0 : Math.ceil(scale - 1e-6); // underground, the street waits
     for (let i = 0; i < steps; i++) simulate((dt * scale) / steps, ctl);
-    weather.update(dt * scale, clock.t);
+    weather.update(dt * scale, clock.t, dt);
     input.jump = false;
     if (ride.on) ride.watch(dt);
     if (ride.on && ride.arrived()) getOff();
@@ -869,7 +869,7 @@ async function main() {
     for (const c of choppers) c.render(dt);
     surfaceT -= dt;
     if (inCar && surfaceT < 0) { surfaceT = 0.2; surface = surfaceUnder(inCar.x, inCar.y); }
-    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow });
+    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes });
 
     // ---- Camera ----------------------------------------------------------
     const vehicle = inCar || inHeli, sp = vehicle ? vehicle.speed : 0;

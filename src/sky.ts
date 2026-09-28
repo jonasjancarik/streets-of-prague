@@ -40,7 +40,7 @@ const MOODS: [number, Mood][] = [
 // Under clouds the sky's light is grey by day; at night the clouds glow orange with
 // the city's lights.
 const OVERCAST = new THREE.Color('#b3b8bf'), CITY_GLOW = new THREE.Color('#5a4d48');
-const SNOWY_GROUND = new THREE.Color('#b9bec6');
+const SNOWY_GROUND = new THREE.Color('#b9bec6'), LIGHTNING = new THREE.Color('#dfe6ff');
 // Fog and mist, as seen (display colours): by day, at night, at night under clouds.
 const FOG_DAY = new THREE.Color('#b4b9bf'), FOG_NIGHT = new THREE.Color('#1a1e25'), FOG_GLOW = new THREE.Color('#2c2a2b');
 // The share of lit windows through the day, by the hour.
@@ -126,6 +126,11 @@ export class Sky {
     this.hemi.intensity *= 1 + 0.3 * w.cloud * (1 - night);
     this.hemi.groundColor.lerp(SNOWY_GROUND, w.cover * 0.5 * (1 - night * 0.6));
     exposure *= 1 + 0.12 * w.cloud;
+    // Lightning lights up everything for a moment, blue-white.
+    if (w.flash > 0) {
+      this.hemi.color.lerp(LIGHTNING, Math.min(1, w.flash));
+      this.hemi.intensity += w.flash * 5;
+    }
     // The lamps come on at dusk, earlier under heavy cloud.
     this.dark = THREE.MathUtils.clamp((3 + 3 * w.cloud - deg) / 7, 0, 1);
     const hour = Math.floor(sec / 3600) % 24;

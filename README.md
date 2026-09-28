@@ -21,7 +21,7 @@ generated is committed. The whole city (`?area=praha`) is the default, `?area=ce
 the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague
 now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
 (with night-time parking). The weather changes by itself every half hour or so of the game's clock;
-`?weather=clear|cloudy|rain|mist|snow` fixes it, and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
+`?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser): High draws at the screen's
 pixel ratio up to 2, Medium up to 1.5, Low at 1, all with the tone curve, dirt and grime
@@ -114,8 +114,10 @@ the pixel ratio.
   loading screen puts three of them in front of a skyline of a real view, drawn from
   the 3D city by `pipeline/skyline.py`, with poster shapes over the panels' cut edges;
   a conversation shows the speaker rising out of a frame (`src/portraits.ts`).
-- **Weather** (`src/weather.ts`): clear, cloudy, rain, mist or snow, each a mix of
-  cloud, rain, snow and mist that the weather moves between over half a minute. It
+- **Weather** (`src/weather.ts`): clear, cloudy, rain, a thunderstorm, mist or snow,
+  each a mix of cloud, rain, storm, snow and mist that the weather moves between over
+  half a minute. In a storm the rain drives in on the wind, and lightning flickers
+  every few seconds and thunders a moment later. It
   picks the next one every 20 to 60 minutes of the game's clock, by season (rain in
   summer, snow and mist in winter, mist mostly in the morning); a picked weather stays.
   Clouds hide the sun and fade the shadows, and the sky's light turns grey by day and
@@ -311,7 +313,7 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
 - Something to do: missions (deliveries, taxi, courier).
 - Visible damage on cars.
 - Sound for the traffic, crashes, people and the helicopter.
-- Thunderstorms, spray behind cars in the rain, and bare trees in winter.
+- Spray behind cars in the rain, and bare trees in winter.
 
 ## Building the map
 

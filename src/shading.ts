@@ -153,8 +153,8 @@ vec3 weathered(int id, vec3 c, vec2 p, inout float shine) {
   if (uWet > .01) {
     c *= mix(1., paved ? .6 : .78, uWet);
     if (paved) {
-      float puddle = smoothstep(.6, .66, fbm2(p * .22 + 31.) * .8 + fbm2(p * .03 + 7.) * .3) * smoothstep(.35, .9, uWet);
-      shine = (.1 + .5 * puddle) * uWet;
+      float puddle = smoothstep(.66, .71, fbm2(p * .3 + 31.) * .75 + fbm2(p * .04 + 7.) * .35) * smoothstep(.35, .9, uWet);
+      shine = (.1 + .4 * puddle) * uWet;
       c *= 1. - .35 * puddle;
       if (uRain > .01) shine += ripples(p) * puddle * uRain * .8 * detail(p, .12);
     }

@@ -2,37 +2,43 @@ import * as THREE from 'three';
 import { WET, SNOW, RAIN, NOISE_GLSL } from './shading.ts';
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
 
-// The weather: clear, cloudy, rain, mist or snow. Each is a mix of four things,
-// cloud, rain, snow and mist (0–1), and the weather moves between them gradually.
+// The weather: clear, cloudy, rain, a thunderstorm, mist or snow. Each is a mix of
+// cloud, rain, storm, snow and mist (0–1), and the weather moves between them
+// gradually; in a storm lightning flashes now and then (thunder in audio.ts).
 // The ground gets wet in the rain and dries slowly after it; snow settles and melts
 // slower still. It changes by itself every half hour or so of the game's clock, more
 // often to rain in summer and to snow and mist in winter, unless it's been picked
-// (?weather=clear|cloudy|rain|mist|snow, the P key or the developer panel).
+// (?weather=clear|cloudy|rain|storm|mist|snow, the P key or the developer panel).
 //
 // Sky (sky.ts) turns it into light and fog; WeatherFx draws the falling rain and snow
 // and the drifting mist; the ground and the buildings get wet and snowy in their
 // shaders (shading.ts).
 
-export type Kind = 'clear' | 'cloudy' | 'rain' | 'mist' | 'snow';
-export const KINDS: Kind[] = ['clear', 'cloudy', 'rain', 'mist', 'snow'];
-export interface Conditions { cloud: number; rain: number; snow: number; mist: number; wet: number; cover: number }
-export const CLEAR: Conditions = { cloud: 0, rain: 0, snow: 0, mist: 0, wet: 0, cover: 0 };
+export type Kind = 'clear' | 'cloudy' | 'rain' | 'storm' | 'mist' | 'snow';
+export const KINDS: Kind[] = ['clear', 'cloudy', 'rain', 'storm', 'mist', 'snow'];
+// `flash`: lightning, 0–1 as it flickers; `strikes` counts them (for the thunder).
+export interface Conditions { cloud: number; rain: number; storm: number; snow: number; mist: number; wet: number; cover: number; flash: number; strikes: number }
+export const CLEAR: Conditions = { cloud: 0, rain: 0, storm: 0, snow: 0, mist: 0, wet: 0, cover: 0, flash: 0, strikes: 0 };
 
-const LOOK: Record<Kind, { cloud: number; rain: number; snow: number; mist: number }> = {
-  clear: { cloud: 0, rain: 0, snow: 0, mist: 0 },
-  cloudy: { cloud: 0.85, rain: 0, snow: 0, mist: 0 },
-  rain: { cloud: 1, rain: 1, snow: 0, mist: 0.12 },
-  mist: { cloud: 0.6, rain: 0, snow: 0, mist: 1 },
-  snow: { cloud: 0.95, rain: 0, snow: 1, mist: 0.15 },
+const LOOK: Record<Kind, { cloud: number; rain: number; storm: number; snow: number; mist: number }> = {
+  clear: { cloud: 0, rain: 0, storm: 0, snow: 0, mist: 0 },
+  cloudy: { cloud: 0.85, rain: 0, storm: 0, snow: 0, mist: 0 },
+  rain: { cloud: 1, rain: 1, storm: 0, snow: 0, mist: 0.12 },
+  storm: { cloud: 1, rain: 1, storm: 1, snow: 0, mist: 0.2 },
+  mist: { cloud: 0.6, rain: 0, storm: 0, snow: 0, mist: 1 },
+  snow: { cloud: 0.95, rain: 0, storm: 0, snow: 1, mist: 0.15 },
 };
-const NAMES: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', mist: 'Mist', snow: 'Snow' };
+const NAMES: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
+// Lightning: strikes a second at full storm, and how a flash flickers (s, brightness).
+const STRIKES = 1 / 9;
+const FLICKER: [number, number][] = [[0, 1], [0.07, 0.15], [0.14, 0.85], [0.22, 0.3], [0.3, 0.5], [0.7, 0]];
 
 // How likely each weather is to come next, by season.
 const CHANCES: Record<'winter' | 'spring' | 'summer' | 'autumn', Record<Kind, number>> = {
-  winter: { clear: 2, cloudy: 4, rain: 1, mist: 2, snow: 3 },
-  spring: { clear: 4, cloudy: 3, rain: 2, mist: 0.5, snow: 0.2 },
-  summer: { clear: 6, cloudy: 2, rain: 2, mist: 0.2, snow: 0 },
-  autumn: { clear: 3, cloudy: 4, rain: 2.5, mist: 2, snow: 0.2 },
+  winter: { clear: 2, cloudy: 4, rain: 1, storm: 0, mist: 2, snow: 3 },
+  spring: { clear: 4, cloudy: 3, rain: 2, storm: 0.3, mist: 0.5, snow: 0.2 },
+  summer: { clear: 6, cloudy: 2, rain: 1.5, storm: 0.7, mist: 0.2, snow: 0 },
+  autumn: { clear: 3, cloudy: 4, rain: 2.5, storm: 0.1, mist: 2, snow: 0.2 },
 };
 const season = (month: number) => month === 11 || month < 2 ? 'winter' : month < 5 ? 'spring' : month < 8 ? 'summer' : 'autumn';
 
@@ -46,6 +52,7 @@ export class Weather {
   fixed: boolean;
   readonly now: Conditions = { ...CLEAR };
   private next = 0; // clock seconds of the week at the next change
+  private flashT = Infinity; // s since the last lightning
   private rng: () => number;
 
   constructor(params: URLSearchParams, clockT: number) {
@@ -73,7 +80,8 @@ export class Weather {
 
   // At once, with the ground as it would be after a while of it.
   private settle() {
-    Object.assign(this.now, LOOK[this.kind], { wet: this.kind === 'rain' ? 1 : 0, cover: this.kind === 'snow' ? 1 : 0 });
+    const look = LOOK[this.kind];
+    Object.assign(this.now, look, { wet: look.rain > 0.5 ? 1 : 0, cover: look.snow > 0.5 ? 1 : 0 });
     this.share();
   }
 
@@ -98,8 +106,9 @@ export class Weather {
   label() { return `Weather: ${NAMES[this.kind]}`; }
   get name() { return NAMES[this.kind]; }
 
-  // `dt`: game seconds (faster on a sped-up tram ride); `clockT` the game's clock.
-  update(dt: number, clockT: number) {
+  // `dt`: game seconds (faster on a sped-up tram ride); `clockT` the game's clock;
+  // `real` the real seconds since the last frame.
+  update(dt: number, clockT: number, real = dt) {
     if (!this.fixed && (clockT >= this.next || clockT < this.next - 7200)) {
       this.kind = this.pick(clockT);
       this.next = clockT + this.span();
@@ -110,9 +119,19 @@ export class Weather {
     n.mist = toward(n.mist, want.mist, CHANGE * 0.6);
     // Clouds come before the rain and go after it.
     n.rain = toward(n.rain, n.cloud > 0.8 ? want.rain : 0, CHANGE);
+    n.storm = toward(n.storm, n.rain > 0.8 ? want.storm : 0, CHANGE);
     n.snow = toward(n.snow, n.cloud > 0.8 ? want.snow : 0, CHANGE);
     n.wet = n.rain > 0.3 ? toward(n.wet, 1, WETTING * n.rain) : toward(n.wet, 0, DRYING * (1 - n.cloud * 0.6));
     n.cover = n.snow > 0.3 ? toward(n.cover, 1, SETTLING * n.snow) : toward(n.cover, 0, MELTING);
+    // Lightning (by real time: `real`, not sped up with the clock).
+    this.flashT += real;
+    if (n.storm > 0.3 && Math.random() < real * STRIKES * n.storm) { this.flashT = 0; n.strikes++; }
+    let flash = 0;
+    for (let i = 1; i < FLICKER.length; i++) {
+      const [t0, a] = FLICKER[i - 1], [t1, b] = FLICKER[i];
+      if (this.flashT >= t0 && this.flashT < t1) flash = a + (b - a) * ((this.flashT - t0) / (t1 - t0));
+    }
+    n.flash = flash;
     this.share();
   }
 }
@@ -258,6 +277,7 @@ export class WeatherFx {
     // Up to 15 m under the camera; the box wide enough to fill the view at the top.
     s.uBox.value.set(2 * r + 20, Math.max(10, Math.min(45, height - 15)));
     this.rainOn.value = w.rain;
+    s.uWind.value.set(1.5 + 5 * w.storm, 0.6 + 2 * w.storm);
     this.snowOn.value = w.snow;
     this.mistOn.value = Math.min(1, w.mist) * 0.62;
     this.rain.visible = w.rain > 0.01;
