@@ -75,7 +75,18 @@
       @keyframes blink { 50% { opacity: 0.25; } }
       #banner { position: fixed; top: 14%; left: 0; right: 0; text-align: center; pointer-events: none; font: 64px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0 3px 0 #000, 0 0 24px rgba(0, 0, 0, 0.6); opacity: 0; }
       #banner.alert { color: #ff5a4a; font-size: 88px; }
-      #help { bottom: 16px; right: 16px; opacity: 0.85; font-size: 12px; max-width: 320px; }
+      /* Controls card: only the keys for what you're doing right now. */
+      #help { bottom: 16px; right: 16px; opacity: 0.85; font-size: 12px; width: 250px; }
+      #help h2 { margin: 0 0 6px; font: 17px/1 'Bebas Neue', sans-serif; letter-spacing: 0.05em; opacity: 0.8; }
+      #help dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; align-items: baseline; }
+      #help dt { justify-self: end; white-space: nowrap; }
+      #help dd { margin: 0; }
+      #help kbd { display: inline-block; font: 600 11px/1 Inter, system-ui, sans-serif; background: rgba(245, 239, 226, 0.14); border: 1px solid rgba(245, 239, 226, 0.22); border-radius: 4px; padding: 3px 5px 2px; min-width: 1em; text-align: center; }
+      #help .foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(245, 239, 226, 0.15); opacity: 0.7; }
+      #help section { display: none; }
+      #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='tram'] .tram-only, #help[data-mode='heli'] .heli-only { display: block; }
+      #help.folded { width: auto; padding: 6px 10px; }
+      #help.folded > :not(.unfold), #help:not(.folded) .unfold { display: none; }
       #dev { top: 16px; right: 16px; width: 340px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
       #dev[hidden], #dev-mapbox[hidden] { display: none; }
       .dev-title { font-weight: 600; }
@@ -143,12 +154,47 @@
       <div id="board" hidden></div>
     </div>
     <div id="banner"></div>
-    <div id="help" class="panel">
-      <b>On foot:</b> W and S walk forwards and back, A and D turn, Shift to run. <b>E</b> gets you into the nearest car, even one that's driving past.<br />
-      <b>Driving:</b> W and S for gas and brake (hold S to reverse), A and D to steer, Space for the handbrake. Hold <b>Shift</b> and the car keeps to its lane, as long as you stay within the speed limit; while you hold it, A and D pick the turn at the next junction. <b>R</b> puts the car back on the road.<br />
-      <b>Trams:</b> <b>E</b> gets you on a tram waiting at a stop. W and S pick a stop in the list and the ride speeds up until you're nearly there; hold <b>Shift</b> to speed up any time. <b>E</b> gets you off at the next stop.<br />
-      <b>Police:</b> knock people over, steal cars or ram the police and you get stars. Police cars chase you and officers get out to arrest you; from three stars a helicopter watches you from above. Keep out of their sight and the stars go away one by one.<br />
-      Scroll to zoom. <b>`</b> opens the developer tools: jump to a street, an address or a spot on the map, or park a helicopter next to you. In it, W and S fly, A and D turn, Space climbs and Shift comes down; land on open ground to get out.
+    <div id="help" class="panel" data-mode="foot">
+      <section class="foot-only">
+        <h2>On foot</h2>
+        <dl>
+          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd>Walk forwards and back</dd>
+          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd>Turn</dd>
+          <dt><kbd>Shift</kbd></dt><dd>Run</dd>
+          <dt><kbd>Space</kbd></dt><dd>Jump</dd>
+          <dt><kbd>E</kbd></dt><dd>Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop</dd>
+        </dl>
+      </section>
+      <section class="car-only">
+        <h2>Driving</h2>
+        <dl>
+          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd>Gas and brake, hold S to reverse</dd>
+          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd>Steer</dd>
+          <dt><kbd>Space</kbd></dt><dd>Handbrake</dd>
+          <dt><kbd>Shift</kbd></dt><dd>Keep to the lane, while A and D pick the next turn</dd>
+          <dt><kbd>R</kbd></dt><dd>Back on the road</dd>
+          <dt><kbd>E</kbd></dt><dd>Get out, or off a bike</dd>
+        </dl>
+      </section>
+      <section class="tram-only">
+        <h2>On the tram</h2>
+        <dl>
+          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd>Pick where to get off</dd>
+          <dt><kbd>Shift</kbd></dt><dd>Speed up the ride</dd>
+          <dt><kbd>E</kbd></dt><dd>Get off at the next stop</dd>
+        </dl>
+      </section>
+      <section class="heli-only">
+        <h2>Flying</h2>
+        <dl>
+          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd>Fly forwards and back</dd>
+          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd>Turn</dd>
+          <dt><kbd>Space</kbd> <kbd>Shift</kbd></dt><dd>Climb and come down</dd>
+          <dt><kbd>E</kbd></dt><dd>Get out, once landed on open ground</dd>
+        </dl>
+      </section>
+      <div class="foot">Cause trouble and the police come after you. Stay out of sight to lose them.<br />Scroll to zoom · <kbd>`</kbd> dev tools · <kbd>H</kbd> hide</div>
+      <div class="unfold"><kbd>H</kbd> controls</div>
     </div>
     <div id="touch" data-mode="foot">
       <div id="t-steer"><div id="t-stick"><div id="t-knob"></div></div></div>

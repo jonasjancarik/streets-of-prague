@@ -420,10 +420,17 @@ async function main() {
     if (e.code === 'KeyR') backOnRoad();
     // Space jumps, except at a tram stop, where holding it waits for a tram.
     if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on) input.jump = true;
+    if (e.code === 'KeyH' && !e.repeat) foldHelp(!$('help').classList.contains('folded'));
     // On a tram, W and S move your pick along the stops ahead.
     if (ride.on && ['KeyW', 'ArrowUp'].includes(e.code)) ride.pick(-1);
     if (ride.on && ['KeyS', 'ArrowDown'].includes(e.code)) ride.pick(1);
   });
+  // The controls card remembers whether you folded it away.
+  const foldHelp = (folded) => {
+    $('help').classList.toggle('folded', folded);
+    try { localStorage.setItem('help-folded', folded ? '1' : ''); } catch {}
+  };
+  try { foldHelp(localStorage.getItem('help-folded') === '1'); } catch {}
   addEventListener('keyup', (e) => {
     if (keymap[e.code]) input[keymap[e.code]] = false;
     if (!e.shiftKey) input.run = false;
@@ -833,6 +840,7 @@ async function main() {
       hint = [canEnter && !touch.active ? getIn : '', wait].filter(Boolean).join(' · ');
     } else if (canEnter && !touch.active) hint = getIn;
     show('hint', hint, 'html');
+    $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.on ? 'tram' : 'foot';
     ride.render();
     const label = ride.on ? (ride.atStop() ? 'Get off' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : canBoard || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     touch.update({ car: inCar || inHeli, tram: ride.on, wait: !!board.shown, label: label || (station ? 'Metro' : null), canEnter: canEnter || !!canBoard || !!station, tripped: ctl.run && assist.tripped });
