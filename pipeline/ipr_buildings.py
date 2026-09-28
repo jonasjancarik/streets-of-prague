@@ -33,12 +33,14 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
+import shapely
 from lxml import etree
 from pyproj import Transformer
 from shapely import STRtree, constrained_delaunay_triangles
 from shapely.geometry import MultiPoint, Point, Polygon
 
 import layers
+import roofs
 from osm_area import AREAS, OUT
 
 CACHE = Path(__file__).parent / ".cache" / "ipr"
@@ -193,17 +195,53 @@ def flat_roof(c):
     return tuple(round(v * 0.35 + 138 * 0.65) for v in c)
 
 
+COVERS = ("tiles", "slate", "copper")
+
+
 def colours(bid, osm):
-    """Roof and wall colour for a building, from the OSM building it sits on if any.
-    Pitched roofs in Prague are nearly all red tiles, offices and ministries included;
-    only churches get slate or copper. Flat roofs are greyed in flat_roof."""
+    """A building's wall colour, its roof colour for each cover (roofs.py), and the
+    cover its roofs get where OSM doesn't say: the OSM building it sits on if that
+    says, else slate or copper for churches and red tiles for everything else, which
+    is what nearly all pitched roofs in Prague are. Flat roofs are greyed in flat_roof."""
     hv = (zlib.crc32(bid.encode()) & 0xFFFFFF) / 0xFFFFFF
     wall = hexrgb(WALLS[int(hv * len(WALLS)) % len(WALLS)])
-    if osm and osm.get("church"):
-        roof = hexrgb(COPPER if osm.get("roof") in ("dome", "onion") else ROOF_SLATE[0])
+    roof = {
+        "tiles": hexrgb(ROOF_TILES[int(hv * 997) % len(ROOF_TILES)]),
+        "slate": hexrgb(ROOF_SLATE[int(hv * 10) % len(ROOF_SLATE)]),
+        "copper": hexrgb(COPPER),
+    }
+    if osm and osm.get("cover"):
+        default = osm["cover"]
+    elif osm and osm.get("church"):
+        default = "copper" if osm.get("roof") in ("dome", "onion") else "slate"
     else:
-        roof = hexrgb(ROOF_TILES[int(hv * 997) % len(ROOF_TILES)])
-    return roof, wall
+        default = "tiles"
+    return wall, roof, default
+
+
+class RoofRegions:
+    """The OSM buildings and building parts of a tile whose roof cover is known, and
+    the hand-drawn regions of roofs.py. A roof triangle takes the cover of a region
+    it lies in: a hand-drawn one first, else the smallest (a tower's part inside the
+    whole church, say)."""
+
+    def __init__(self, shapes):
+        self.covers = np.array([COVERS.index(c) for _, c, _ in shapes], dtype=np.int8)
+        self.rank = np.array([(0 if hand else 1e9) + g.area for g, _, hand in shapes])
+        self.tree = STRtree([g for g, _, _ in shapes]) if shapes else None
+
+    def __call__(self, xy):
+        """Cover index for each point, -1 where no region says."""
+        out = np.full(len(xy), -1, dtype=np.int8)
+        if self.tree is None or not len(xy):
+            return out
+        pt, reg = self.tree.query(shapely.points(xy), predicate="within")
+        if len(pt):
+            order = np.lexsort((self.rank[reg], pt))
+            pt, reg = pt[order], reg[order]
+            first = np.r_[True, pt[1:] != pt[:-1]]
+            out[pt[first]] = self.covers[reg[first]]
+        return out
 
 
 PARSED_VERSION = 1  # bump when read_sheet's output changes
@@ -281,7 +319,7 @@ def main() -> None:
     Y0, Y1 = min(c[1] for c in xs), max(c[1] for c in xs)
     items = catalogue()
 
-    # OSM buildings per tile, to borrow tags (church, roof shape, kind) for colours.
+    # OSM buildings per tile, to borrow tags (church, roof shape, roof cover) for colours.
     osm_by_tile = {}
     for i, j, t in layers.tiles(area, meta):
         bs = [b for b in t["buildings"] if len(b["rings"][0]) >= 3]
@@ -296,6 +334,33 @@ def main() -> None:
             if polys[k].contains(pt):
                 return bs[k]
         return None
+
+    # What says which roof is covered with what (roofs.py): OSM's building parts (kept
+    # in the buildings layer for this), its buildings, and the hand-drawn regions.
+    parts_by_tile = {}
+    for ci, cj in layers.chunks(meta):
+        for k, t in layers.read_chunk(area, "buildings", ci, cj)["tiles"].items():
+            if t.get("parts"):
+                parts_by_tile[tuple(map(int, k.split("_")))] = t["parts"]
+    to_local = Transformer.from_crs("EPSG:4326", local, always_xy=True)
+    hand = [(Polygon([to_local.transform(lon, lat) for lon, lat in ring]), cover) for cover, _, ring in roofs.REGIONS]
+    regions_by_tile = {}
+
+    def regions(i, j):
+        if (i, j) not in regions_by_tile:
+            shapes = [(g, c, True) for g, c in hand]
+            # The neighbouring tiles' too: a big IPR building reaches well past its own.
+            seen = set()
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    near = (i + di, j + dj)
+                    for b in (osm_by_tile[near][0] if near in osm_by_tile else []) + parts_by_tile.get(near, []):
+                        key = (b["id"], tuple(b["rings"][0][0]))
+                        if b.get("cover") and key not in seen:
+                            seen.add(key)
+                            shapes.append((Polygon(b["rings"][0], b["rings"][1:]), b["cover"], False))
+            regions_by_tile[(i, j)] = RoofRegions(shapes)
+        return regions_by_tile[(i, j)]
 
     sheets = []
     for X in range(X0, X1 + 1):
@@ -319,11 +384,20 @@ def main() -> None:
             if (i, j) not in osm_by_tile:
                 continue
             osm = osm_at(i, j, Point(cx, cy))
-            roof, wall = colours(bid or f"{name}/{count}", osm)
+            wall, roof, default = colours(bid or f"{name}/{count}", osm)
             if pos is not None:
                 footprints += fp
-                palette = np.array([wall, roof, flat_roof(roof)], dtype=np.uint8)
-                per_tile.setdefault((i, j), []).append((pos, palette[codes].ravel()))
+                # Colour 0 is the wall, 1-3 the pitched roofs and 4-6 the flat ones, by cover.
+                palette = np.array([wall] + [roof[c] for c in COVERS] + [flat_roof(roof[c]) for c in COVERS], dtype=np.uint8)
+                which = np.zeros(len(codes), dtype=np.int8)
+                top = codes != 0
+                if top.any():
+                    v = pos.reshape(-1, 3, 3)[top].astype(np.float64) / 100
+                    xy = np.column_stack([v[:, :, 0].mean(1) + i * T - origin[0], v[:, :, 2].mean(1) + j * T - origin[1]])
+                    cover = regions(i, j)(xy)
+                    cover[cover < 0] = COVERS.index(default)
+                    which[top] = 1 + cover + np.where(codes[top] == 2, 3, 0)
+                per_tile.setdefault((i, j), []).append((pos, palette[which].ravel()))
             count += 1
         print(f"  {name}: {count} buildings in the area", flush=True)
     print(f"  sheets read in {time.perf_counter() - started:.0f} s")

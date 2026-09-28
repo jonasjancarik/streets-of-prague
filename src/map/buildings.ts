@@ -8,7 +8,8 @@ const skeletonModule = SS as typeof SS & { default?: { SkeletonBuilder?: typeof 
 const SkeletonBuilder = skeletonModule.SkeletonBuilder ?? skeletonModule.default?.SkeletonBuilder;
 
 export interface BuildingTile extends GeoData {
-  buildings: { id: string; name?: string | null; kind: string; h: number; minh: number; church?: boolean; roof?: string | null; rings: Point2[][] }[];
+  // cover: what the roof is covered with, where OSM or pipeline/roofs.py says.
+  buildings: { id: string; name?: string | null; kind: string; h: number; minh: number; church?: boolean; roof?: string | null; cover?: 'tiles' | 'slate' | 'copper'; rings: Point2[][] }[];
 }
 interface WallTile { walls: { kind: string; pts: Point2[] }[] }
 interface WallBuffers { position: Float32Array; normal: Float32Array }
@@ -66,8 +67,11 @@ export function buildBuildings(data: BuildingTile) {
     const base = isWall ? 0 : b.minh;
 
     cWall.set(WALLS[Math.floor(hv * WALLS.length)]);
-    // Pitched roofs in Prague are nearly all red tiles; only churches get slate or copper.
-    if (b.church) cRoof.set(b.roof === 'onion' || b.roof === 'dome' ? ROOF_COPPER : ROOF_SLATE[0]);
+    // Pitched roofs in Prague are nearly all red tiles; unless OSM says otherwise, only
+    // churches get slate or copper.
+    const cover = b.cover ?? (b.church ? (b.roof === 'onion' || b.roof === 'dome' ? 'copper' : 'slate') : 'tiles');
+    if (cover === 'copper') cRoof.set(ROOF_COPPER);
+    else if (cover === 'slate') cRoof.set(ROOF_SLATE[Math.floor(hv * 10) % ROOF_SLATE.length]);
     else cRoof.set(ROOF_TILES[Math.floor(hv * 997) % ROOF_TILES.length]);
     tmp.copy(cRoof).offsetHSL(0, 0, (hash(b.id) - 0.5) * 0.06);
     cRoof.copy(tmp);

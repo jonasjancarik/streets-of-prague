@@ -111,6 +111,13 @@ too long; `?dpr=1` fixes it.
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.
+- **Roof colours.** Pitched roofs are red tiles, as nearly all of them are in Prague;
+  flat ones are grey. OSM's `roof:material` and `roof:colour` can make a roof grey slate
+  or green copper instead, down to single building parts (the cathedral's grey roofs
+  and copper domes), and `pipeline/roofs.py` corrects landmarks OSM gets wrong or leaves
+  out, including wings of the Castle that both OSM and IPR draw as one building.
+  Churches OSM says nothing about get slate. IPR's roofs take their colour triangle by
+  triangle, from the OSM building or part they lie in.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,
   walls, trees, cars, people, trams and the camera sit at their real height, cars
   pitch, roll and roll downhill, and the ground is hill-shaded.
@@ -281,6 +288,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (`Krav`) and Český Brod (`Cbro`); the pipeline reads all five. Coordinates go S-JTSK → WGS84 with the Czech datum shift →
   local metres (going straight to the datum-less local projection puts everything
   ~25 m off); IPR wall bases then sit a median 0.55 m from OSM building edges.
+- **Roof corrections.** `pipeline/roofs.py` lists landmarks by OSM id, and outlines
+  (in WGS84) for parts of buildings OSM draws as one. After changing it, run
+  `build_tiles.py <area> --layers buildings` and then `ipr_buildings.py <area>`.
 - **Tram lines.** `build_lines.py` takes every tram line's two route relations (one
   per direction) and joins them into a loop along the track network, stops and speed
   limits included; it prints any line or direction it can't follow. Lines stay whole

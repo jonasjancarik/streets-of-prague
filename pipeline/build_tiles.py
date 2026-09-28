@@ -285,6 +285,7 @@ def build_chunk(job):
         shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in x["buildings"]]
         centres = [p.representative_point() for p in shapes]
         btree = STRtree(shapes)
+        ptree = STRtree([Polygon(p["rings"][0], p["rings"][1:]) for p in x["parts"]])
         layer = {}
         for (i, j), bx in boxes.items():
             bx0, by0, bx1, by1 = bx.bounds
@@ -296,6 +297,10 @@ def build_chunk(job):
             hits = btree.query(bx, predicate="intersects")
             if len(hits):
                 layer[f"{i}_{j}"] = {"buildings": [{**x["buildings"][k], "own": own(centres[k])} for k in sorted(hits)]}
+            # Building parts are only for ipr_buildings.py (roof colours); tiles don't get them.
+            got = [x["parts"][k] for k in sorted(ptree.query(bx, predicate="intersects"))]
+            if got:
+                layer.setdefault(f"{i}_{j}", {"buildings": []})["parts"] = got
         out["buildings"] = {"tiles": layer}
 
     if "ground" in wanted:
