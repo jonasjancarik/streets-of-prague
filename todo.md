@@ -76,6 +76,9 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Tram braking distance.** Trams should brake more realistically (long stopping
   distance), so a player who steps or drives in front of one too late actually gets
   hit more often. Accidents with NPCs should stay very rare.
+- **Bike theft leaves no rider behind.** When you take a bike from someone riding
+  it, the original rider doesn't appear running away (or at least isn't visible).
+  They should be knocked off or step off and run away.
 - **Parking zone markings.** The blue line should run only along the street side of
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
