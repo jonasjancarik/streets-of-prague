@@ -281,6 +281,11 @@ uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 
+- **Skylines.** `uv run skyline.py hradcany` (or `--all`) draws a real Prague view as a
+  red screen-print silhouette into `assets/skylines/`, for loading screens and the
+  backdrop behind character portraits. It reads the praha caches of `ipr_buildings.py`
+  and `ipr_terrain.py`; the views (camera spot, direction, field of view) are listed
+  in `VIEWS` at the top of `pipeline/skyline.py`.
 - **Layers.** The map is built in layers, and each step rebuilds only its own
   (`pipeline/layers.py`): `build_tiles.py` makes the OSM buildings, the ground (land
   use, streets and pavements, parking areas, walls, rails, crossings, trees), the
