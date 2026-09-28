@@ -336,3 +336,15 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - Maps in the developer panel: [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).
+
+### Licences for added assets
+
+The game isn't commercial, but it may take donations (a "buy me a coffee" link), so
+treat every asset as if it were for commercial use:
+
+- Fine: CC0, CC BY (credit it here), our own recordings, and anything royalty-free
+  that allows commercial use (e.g. Sonniss GDC bundles, Pixabay).
+- Not fine: anything non-commercial (CC BY-NC, BBC Sound Effects, Meta AudioGen
+  output), and AI tools whose free tier bars commercial use.
+- Record each sound or texture that comes from outside, with where it came from, its
+  licence and its author, next to the files (e.g. `assets/audio/SOURCES.md`).
