@@ -26,7 +26,6 @@ OVERRIDES = {
     "relation/295830": "slate",     # Arcibiskupský palác
     "relation/15317893": "slate",   # Schwarzenberský palác
     "way/30123527": "copper",       # Rudolfinum (tagged gray)
-    "way/30825119": "copper",       # Uměleckoprůmyslové museum
     "relation/49848": "copper",     # Filozofická fakulta, nám. Jana Palacha
 }
 
