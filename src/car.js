@@ -128,6 +128,8 @@ export class Car {
   // `cap` (m/s, optional) limits the speed: the gas fades as the car gets near it, and
   // above it the car eases down, as if you'd lifted off and touched the brake.
   update(dt, ctl, grid) {
+    // The ground and walls as this car meets them: on a bridge deck or under it.
+    if (grid.view) grid = grid.view(this);
     const S = this.spec;
     ctl = ctl || { throttle: 0, steer: 0, handbrake: false };
     const fx = Math.cos(this.h), fy = Math.sin(this.h);
@@ -237,7 +239,8 @@ export class CarPool {
     this.m = new THREE.Matrix4();
   }
 
-  // `height(x, y)`: terrain height; cars sit on it, pitched and rolled to the slope.
+  // `height(x, y, car)`: the height of the ground (or the bridge deck) under a car's
+  // wheels; cars sit on it, pitched and rolled to the slope.
   render(cars, height = null, dt = 0) {
     for (const c of cars) if (c.two) this.lean(c, dt);
     for (const list of this.groups.values()) list.length = 0;
@@ -260,8 +263,8 @@ export class CarPool {
       list.forEach((c, i) => {
         if (height) {
           const fx = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
-          const hf = height(c.x + fx * L, c.y + fy * L), hb = height(c.x - fx * L, c.y - fy * L);
-          const hl = height(c.x - fy * W, c.y + fx * W), hr = height(c.x + fy * W, c.y - fx * W);
+          const hf = height(c.x + fx * L, c.y + fy * L, c), hb = height(c.x - fx * L, c.y - fy * L, c);
+          const hl = height(c.x - fy * W, c.y + fx * W, c), hr = height(c.x + fy * W, c.y - fx * W, c);
           d.position.set(c.x, (hf + hb + hl + hr) / 4, -c.y);
           d.rotation.set(Math.atan2(hl - hr, 2 * W) - c.lean, c.h, Math.atan2(hf - hb, 2 * L), 'YZX');
         } else {

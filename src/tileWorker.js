@@ -3,7 +3,7 @@
 //           part of a tile, up to a second or so), with their facade coordinates
 //   ipr     IPR's 3D buildings unpacked from the tile's .ipr.bin, with normals and
 //           facade coordinates
-//   ground  the ground's layers (ground.js)
+//   ground  the ground's layers (ground.js), and the bridge decks above it
 //   land    trees, walls and the collision grid
 // Everything stands on the tile's terrain, sampled from the heights sent along.
 import * as THREE from 'three';
@@ -86,8 +86,12 @@ function tileGrid(geo, t, seeds) {
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 0.9 * s;
     strokeLines(ctx, geo, t.walls.map((w) => w.pts), s);
-    ctx.fillStyle = '#000';
-    fillPolys(ctx, geo, [...(t.areas.bridge || []), ...(t.roads.bridge || [])], s);
+    // Bridges are open ground, unless they have decks of their own (see tiles.js):
+    // then the ground under them stays as it is (a river, or a street under a flyover).
+    if (!t.decks) {
+      ctx.fillStyle = '#000';
+      fillPolys(ctx, geo, [...(t.areas.bridge || []), ...(t.roads.bridge || [])], s);
+    }
     ctx.fillStyle = '#fff';
     fillPolys(ctx, geo, t.buildings.map((b) => b.rings), s);
     // Gateways and passages through buildings stay open, a little past both ends
@@ -151,7 +155,7 @@ function land({ data, seeds, ground }) {
 const JOBS = {
   roofs,
   ipr,
-  ground: ({ d, ground, ...opts }) => groundLayers(d, { ...opts, height: ground ? groundAt(ground) : null }),
+  ground: ({ d, ground, deck, ...opts }) => groundLayers(d, { ...opts, height: ground ? groundAt(ground) : null, deck: deck ? (deck.hm ? groundAt(deck) : () => NaN) : null }),
   land,
 };
 // The typed arrays in a result, handed back without copying.

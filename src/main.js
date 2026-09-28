@@ -83,7 +83,9 @@ async function main() {
   const clock = new Clock(params);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm') });
   const grid = world.grid;
-  const ground = (x, y) => world.heightAt(x, y);
+  // Height of the ground at a point; with `who` (a car, a person), of whatever they're
+  // on there: the ground, or a bridge deck (see TileWorld.track).
+  const ground = (x, y, who) => (who ? world.groundFor(who, x, y) : world.heightAt(x, y));
   let crowd = null;
   world.onEdges = (d, w) => { names.add(d); names.add(w); crowd?.index(w); };
 
@@ -157,8 +159,8 @@ async function main() {
   const choppers = []; // helicopters you can fly (from the developer tools)
   let height = 100;
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
-  let camGround = ground(walker.x, walker.y);
-  let cutR = 0; // radius of the hole in the buildings above a passage (see CUTAWAY)
+  let camGround = ground(walker.x, walker.y, walker);
+  let cutR = 0; // radius of the hole in the buildings above a passage or a bridge deck (see CUTAWAY)
 
   const viewRadius = () => height * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
   const px = () => (inCar || inHeli || walker).x, py = () => (inCar || inHeli || walker).y;
@@ -357,15 +359,18 @@ async function main() {
 
   const backOnRoad = () => {
     if (!inCar) return;
-    let best = null, bestD = Infinity;
+    let best = null, bestD = Infinity, onto = null;
     for (const e of edgesNear(inCar.x, inCar.y, 150)) {
       for (let s = 0; s < e.path.length; s += 3) {
         const p = e.path.at(s), d = Math.hypot(p.x - inCar.x, p.y - inCar.y);
-        if (d < bestD) { bestD = d; best = p; }
+        if (d < bestD) { bestD = d; best = p; onto = e; }
       }
     }
     if (!best) return;
-    Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0 });
+    // Onto a bridge's deck if that street is a bridge, else under it.
+    Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0, level: onto.bridge ? 1 : 0 });
+    inCar._tx = inCar.x;
+    inCar._ty = inCar.y;
   };
 
   // Jump anywhere in the area: load the tiles there first, then land on a pavement
@@ -384,7 +389,7 @@ async function main() {
     police.reset();
     scatterPeople(false);
     camPos.set(px(), 0, -py());
-    camGround = ground(px(), py());
+    camGround = ground(px(), py(), inHeli ? null : inCar || walker);
     street = null; // show the new street's name, not the old one
     $('street').textContent = '';
   };
@@ -486,7 +491,9 @@ async function main() {
     return out;
   };
   const nearA = [], nearB = [];
-  const pushCar = (h, c) => { for (const [x, y] of c.circles()) h.add({ x, y, r: c.r, vx: c.vx, vy: c.vy, kind: c.mode === 'player' ? 'player' : 'car', car: c }); };
+  const pushCar = (h, c) => { for (const [x, y] of c.circles()) h.add({ x, y, z: c.gz, r: c.r, vx: c.vx, vy: c.vy, kind: c.mode === 'player' ? 'player' : 'car', car: c }); };
+  // On a bridge and under it: two things that don't meet.
+  const apart = (a, b) => a.gz !== undefined && b.gz !== undefined && Math.abs(a.gz - b.gz) > 3;
   const moving = (c) => c.mode === 'player' || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s
   let restingCount = -1;
   const syncResting = () => {
@@ -548,13 +555,15 @@ async function main() {
     syncResting();
     for (const c of cops) pushCar(hash, c);
     if (inCar) pushCar(hash, inCar);
-    else if (!inHeli && !ride.on) hash.add({ x: walker.x, y: walker.y, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
-    for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0) hash.add({ x: p.x, y: p.y, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
-    for (const o of police.officers) hash.add({ x: o.x, y: o.y, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
+    else if (!inHeli && !ride.on) hash.add({ x: walker.x, y: walker.y, z: walker.gz, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
+    for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0) hash.add({ x: p.x, y: p.y, z: p.gz, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
+    for (const o of police.officers) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const t of tramBodies) for (const [x, y] of t.circles) hash.add({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
 
     traffic.update(dt, obstacles);
+    // In view or not, each car keeps track of whether it's on a bridge or under it.
+    for (const a of traffic.agents) world.track(a.car);
 
     // Trams stop for whatever is on the track in front of them; one waiting to move
     // across to the other track at a terminus with no loop does it out of sight.
@@ -574,7 +583,7 @@ async function main() {
       done.add(a);
       const ca = a.circles();
       for (const b of carsNear(a.x, a.y, 8, nearA)) {
-        if (b === a || done.has(b) || !near(a, b, 7)) continue;
+        if (b === a || done.has(b) || !near(a, b, 7) || apart(a, b)) continue;
         const cb = b.circles();
         if (b.mode === 'traffic') {
           if (!touching(ca, cb, a.r + b.r)) continue;
@@ -624,7 +633,7 @@ async function main() {
     // People and cars
     const bump = (who, rad, onHit) => {
       for (const c of carsNear(who.x, who.y, 5, nearB)) {
-        if (!near(who, c, 4)) continue;
+        if (!near(who, c, 4) || apart(who, c)) continue;
         for (const [cx, cy] of c.circles()) {
           const dx = who.x - cx, dy = who.y - cy, d = Math.hypot(dx, dy), min = c.r + rad;
           if (d >= min) continue;
@@ -782,14 +791,16 @@ async function main() {
     shake *= Math.exp(-6 * dt);
     const jx = (Math.random() - 0.5) * shake * 2, jz = (Math.random() - 0.5) * shake * 2;
     // Follow the ground under the view, smoothed so the camera doesn't bob over kerbs.
-    camGround += (ground(camPos.x, -camPos.z) - camGround) * Math.min(1, dt * 3);
+    const body = inHeli ? null : inCar || walker;
+    camGround += (ground(camPos.x, -camPos.z, body) - camGround) * Math.min(1, dt * 3);
     camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
     camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
 
     // In a passage under a building, open a hole in the floors above so you stay in view.
-    const under = !inHeli && world.passageAt(px(), py());
+    // The same under a bridge deck.
+    const under = !inHeli && (world.passageAt(px(), py()) || (world.track(body) === 0 && world.deckAbove(px(), py())));
     cutR += ((under ? 9 : 0) - cutR) * Math.min(1, dt * 6);
-    CUTAWAY.value.set(px(), ground(px(), py()) + 2.5, -py(), cutR > 0.3 ? cutR : 0);
+    CUTAWAY.value.set(px(), ground(px(), py(), body) + 2.5, -py(), cutR > 0.3 ? cutR : 0);
 
     const ext = Math.max(90, height * 0.5);
     const sc = sun.shadow.camera;

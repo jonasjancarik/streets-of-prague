@@ -30,6 +30,7 @@ export class Traffic {
       if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < 12)) continue;
       const car = new Car(type || randomType(r, 'traffic'), r, p.x, p.y, p.ang);
       car.mode = 'traffic';
+      car.level = edge.bridge ? 1 : 0; // on a bridge's deck, or under it (TileWorld.track)
       if (car.two) car.rider = randomLook(r);
       const agent = { car, route: new Route(this.g, edge, s, r), speed: edge.speed * 0.6, stuck: 0, ignore: 0, cruise: 0.8 + r() * 0.3 };
       this.agents.push(agent);
@@ -42,7 +43,7 @@ export class Traffic {
     this.agents.splice(this.agents.indexOf(agent), 1);
   }
 
-  // near(x, y, r): the obstacles ({ x, y, r, vx, vy, kind }) around a point.
+  // near(x, y, r): the obstacles ({ x, y, z, r, vx, vy, kind }) around a point.
   update(dt, near) {
     for (const a of this.agents) {
       const c = a.car, L = c.spec.L, W = c.spec.W;
@@ -55,6 +56,8 @@ export class Traffic {
       let gap = Infinity, blocker = null;
       for (const o of near(c.x, c.y, reach + 8)) {
         if (o.car === c) continue;
+        // On a bridge overhead, or under the one this car is on.
+        if (o.z !== undefined && c.gz !== undefined && Math.abs(o.z - c.gz) > 3) continue;
         const dx = o.x - c.x, dy = o.y - c.y;
         if (Math.abs(dx) > reach + 8 || Math.abs(dy) > reach + 8) continue;
         const ahead = dx * fx + dy * fy;

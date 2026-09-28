@@ -397,10 +397,12 @@ export class Trams {
       if (show && !v.look) v.look = this.take(v.line);
       if (!show && v.look) { this.give(v.look); v.look = null; }
       if (!show) continue;
+      // Each section keeps track of whether it's on a bridge deck or under one.
+      v.levels ||= v.parts.map(() => ({}));
       v.parts.forEach((p, i) => {
-        const m = v.look.sections[i];
+        const m = v.look.sections[i], at = Object.assign(v.levels[i], { x: p.x, y: p.y });
         const fx = Math.cos(p.ang) * SECTION / 2, fy = Math.sin(p.ang) * SECTION / 2;
-        const hf = height(p.x + fx, p.y + fy), hb = height(p.x - fx, p.y - fy);
+        const hf = height(p.x + fx, p.y + fy, at), hb = height(p.x - fx, p.y - fy, at);
         m.position.set(p.x, (hf + hb) / 2, -p.y);
         m.rotation.set(0, p.ang, Math.atan2(hf - hb, SECTION), 'YZX');
       });

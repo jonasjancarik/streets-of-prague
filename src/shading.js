@@ -168,22 +168,30 @@ export function shadeBuildings(material) {
 
 // Add a world-position varying to a Lambert/Standard shader and colour it by pattern.
 // `relief`: optional { texture, box } hill shading for a tile (see tiles.js).
-export function patterned(material, id, time, relief = null) {
+// `deck`: for a bridge deck, { mask, box } to draw it only where the tile's decks are
+// (mask null: everywhere), and with a hole round the player under it (CUTAWAY).
+export function patterned(material, id, time, relief = null, deck = null) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
     sh.uniforms.uRelief = { value: relief?.texture || null };
     sh.uniforms.uReliefBox = { value: relief?.box || [0, 0, 1, 1] };
     sh.uniforms.uReliefOn = { value: relief ? 1 : 0 };
+    if (deck) {
+      sh.uniforms.uCut = CUTAWAY;
+      sh.uniforms.uDeck = { value: deck.mask };
+      sh.uniforms.uDeckBox = { value: deck.box };
+    }
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\n${NOISE_GLSL}\n${PATTERNS_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\n${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   vec2 wp = vec2(vWorld.x, -vWorld.z);
-  diffuseColor.rgb = pattern(${id}, diffuseColor.rgb, wp) * (.93 + .14 * fbm(wp * .004));
+${deck ? `  if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
+${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = pattern(${id}, diffuseColor.rgb, wp) * (.93 + .14 * fbm(wp * .004));
   if (uReliefOn > .5) diffuseColor.rgb *= texture2D(uRelief, (wp - uReliefBox.xy) / (uReliefBox.zw - uReliefBox.xy)).r * 2.;`);
   };
-  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}`;
+  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}`;
   return material;
 }

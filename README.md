@@ -111,8 +111,14 @@ too long; `?dpr=1` fixes it.
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,
   walls, trees, cars, people, trams and the camera sit at their real height, cars
-  pitch, roll and roll downhill, and the ground is hill-shaded. The terrain model has
-  no bridges, so each deck is raised to run between the heights of its two ends.
+  pitch, roll and roll downhill, and the ground is hill-shaded.
+- **Bridges** stand above the ground. The terrain model has no bridges, so each deck
+  gets heights of its own, running between the heights of its two ends, and the
+  ground under it stays bare: a street, a park or a river. Cars, trams and people
+  drive or walk onto a deck where it meets the street and off it at the far end;
+  its parapets keep them on it, and whatever is on it and under it pass each other by.
+  Under a deck, a round hole opens in it above you, as in a passage (`track` and
+  `view` in `src/tiles.js`, the decks' meshes in `src/ground.js`).
 - **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.js`); AI
   traffic that keeps to its lane, brakes for anything ahead and gives way to the right
   (`src/traffic.js`); pedestrians on the footpath network who leap out of the way of
@@ -183,9 +189,11 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
 
 ## Known issues
 
-- **Bridges and tunnels.** The height map holds one height per point, so a car driving
-  under a flyover jumps up onto it. There are no tunnels at all (Blanka, Strahov); only
-  passages through buildings at street level can be driven and walked through.
+- **Tunnels.** There are none (Blanka, Strahov); only passages through buildings at
+  street level can be driven and walked through.
+- **Bridges** have one deck per point: where one bridge crosses over another, both
+  share a height. Each deck slopes evenly from one end to the other, however the
+  real one rises and falls. Trees mapped under a low deck can poke through it.
 - **Past the city limits** the buildings come from OSM, and where OSM gives neither a
   height nor a number of storeys, the height is a guess from the kind of building and
   the size of its footprint (sheds, cottages, one- or two-storey houses, halls). The
@@ -225,7 +233,7 @@ cd pipeline
 uv run build_parking.py centrum    # TSK paid-parking sections (read by build_tiles)
 uv run build_tiles.py centrum      # today's map + street graphs in tiles → public/data/centrum_now/
 uv run ipr_buildings.py centrum    # IPR's 3D buildings into the tiles
-uv run ipr_terrain.py centrum      # IPR's terrain: heights, bridges, hill shading
+uv run ipr_terrain.py centrum      # IPR's terrain: heights, bridge decks, hill shading
 uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
 uv run build_metro.py centrum      # the metro from PID's timetables → metro.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
@@ -240,7 +248,7 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   IPR's buildings and terrain. Every step ends by putting the tiles together from all
   the layers, rewriting only the files that changed. So after changing how pavements
   are drawn, `uv run build_tiles.py centrum --layers ground` rebuilds just the ground
-  (it then says to run `ipr_terrain.py`, which raises the bridges from it); after
+  (it then says to run `ipr_terrain.py`, which works out the bridge decks from it); after
   changing the street networks, `--layers streets`. The layers are kept in
   `pipeline/.cache/layers/`.
 - **Caches.** Every OSM chunk and every IPR sheet is read only once. What comes out

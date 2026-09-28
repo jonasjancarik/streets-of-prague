@@ -250,7 +250,7 @@ export class Crowd {
   render(height = () => 0) {
     const m = new THREE.Matrix4();
     for (const p of this.people) {
-      m.compose(_p.set(p.x, height(p.x, p.y) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
+      m.compose(_p.set(p.x, height(p.x, p.y, p) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
       this.fig.set(p.i, m, p.anim);
     }
     this.fig.commit(this.people.length);
@@ -303,8 +303,11 @@ export class Walker {
   // In the air, high enough for a car to pass under your feet.
   get airborne() { return this.z > 0.5; }
 
+  // The ground and walls as you meet them: on a bridge deck or under it.
+  get ground() { return this.grid.view ? this.grid.view(this) : this.grid; }
+
   blocked(x, y) {
-    const g = this.grid, r = 0.3;
+    const g = this.ground, r = 0.3;
     return g.at(x, y) || g.at(x + r, y) || g.at(x - r, y) || g.at(x, y + r) || g.at(x, y - r);
   }
 
@@ -360,7 +363,7 @@ export class Walker {
   }
 
   sync() {
-    const ground = this.grid.height ? this.grid.height(this.x, this.y) : 0;
+    const g = this.ground, ground = g.height ? g.height(this.x, this.y) : 0;
     this.mesh.position.set(this.x, ground + this.z, -this.y);
     this.mesh.rotation.set(0, this.h, 0);
     this.ring.position.y = 0.05 - this.z;

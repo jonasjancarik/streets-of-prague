@@ -15,6 +15,10 @@ import { decodeHeights, heightSampler, fetchBinary } from './terrain.js';
 // tile's files, joins up the street graphs and makes the meshes and parked cars.
 
 const RES = 2; // collision grid cells per metre
+// Metres a car or a walker can go up or down between the ground and a bridge deck:
+// where a deck is that close to the ground (at its ends), they drive onto it; further
+// apart, the deck is overhead, or the ground is below the parapet.
+const CLIMB = 1.5;
 
 // A small pool of workers that build tiles (see tileWorker.js).
 class TileWorkers {
@@ -140,6 +144,9 @@ export class TileWorld {
     // Which tiles have IPR buildings, where index.json says (else the tile JSON does).
     this.iprTiles = new Map(index.tiles.filter((t) => t.length > 3).map(([i, j, , ipr]) => [`${i}_${j}`, !!ipr]));
     this.bare = new Set(index.terrain?.bare || []);
+    // Bridge decks above the bare ground (ipr_terrain.py); older data raised them into it.
+    this.decked = !!index.terrain?.decks;
+    this.decks = new Set(index.terrain?.decks || []);
     this.loaded = new Map(); // key → tile
     this.byIndex = new Map(); // i * 65536 + j → tile, for lookups by position
     this.last = { i: NaN, j: NaN, tile: undefined };
@@ -160,12 +167,15 @@ export class TileWorld {
     // Collision lookups across tiles; anywhere not loaded counts as solid.
     // Game y = 0 is this height above sea level (IPR buildings are stored against it).
     this.ref = index.iprRef ?? 180;
+    // Anything on the ground or on a deck (for what doesn't keep track of which: see view).
     this.grid = {
       res: RES,
       height: (x, y) => this.heightAt(x, y),
       at: (x, y) => {
         const t = this.tileAt(x, y);
-        return t ? t.grid.at(x, y) : 255;
+        if (!t) return 255;
+        const g = t.grid.at(x, y);
+        return g && t.deck?.grid.at(x, y) ? 0 : g;
       },
     };
   }
@@ -182,10 +192,96 @@ export class TileWorld {
     return last.tile;
   }
 
-  // Terrain height (m above this.ref) at a point, 0 where nothing is loaded.
-  heightAt(x, y) {
+  // Ground height (m above this.ref) at a point, 0 where nothing is loaded.
+  terrainAt(x, y) {
     const t = this.tileAt(x, y);
     return t?.sample ? t.sample(x, y) : 0;
+  }
+
+  // Height of the bridge deck at a point, NaN off the decks.
+  deckAt(x, y) {
+    const t = this.tileAt(x, y);
+    if (!t?.deck?.grid.at(x, y)) return NaN;
+    const h = t.deck.sample(x, y);
+    return Number.isNaN(h) ? this.terrainAt(x, y) : h;
+  }
+
+  // Height of what's underfoot at a point: the ground (level 0) or a bridge deck
+  // (level 1). Without a level, a guess: the deck, unless it's high over open ground
+  // (a street under a flyover).
+  surfaceAt(x, y, level) {
+    const d = level === 0 ? NaN : this.deckAt(x, y);
+    if (Number.isNaN(d)) return this.terrainAt(x, y);
+    if (level === 1) return d;
+    const g = this.terrainAt(x, y);
+    return d - g < CLIMB || this.tileAt(x, y).grid.at(x, y) ? d : g;
+  }
+
+  heightAt(x, y) { return this.surfaceAt(x, y); }
+
+  // Keep track of whether someone or something (anything with x and y) is on the
+  // ground or on a bridge deck: onto a deck where it meets the ground, off it where it
+  // ends. Sets `level` and `gz` (the height underfoot) on it; returns the level.
+  track(who) {
+    if (who._tx === who.x && who._ty === who.y && who.level !== undefined) return who.level;
+    // Moved far since last time (put somewhere else): where it was says nothing.
+    if (Math.abs(who.x - who._tx) + Math.abs(who.y - who._ty) > 12) who.level = undefined;
+    who._tx = who.x;
+    who._ty = who.y;
+    const d = this.deckAt(who.x, who.y);
+    if (Number.isNaN(d)) who.level = 0;
+    else if (who.level === undefined) {
+      // Someone on a footpath knows whether it's a bridge; anyone else, a guess.
+      const g = this.terrainAt(who.x, who.y);
+      who.level = who.e?.bridge !== undefined ? +who.e.bridge
+        : d - g < CLIMB || this.tileAt(who.x, who.y).grid.at(who.x, who.y) ? 1 : 0;
+    } else if (who.level === 0) {
+      // Up onto the deck at its end (where the ground meets it, or where it was just
+      // before: the ground may drop away at once, at a quay wall); or, far out over a
+      // river, back onto it (a tram that came in from beyond the loaded tiles, say).
+      const g = this.terrainAt(who.x, who.y);
+      if (Math.abs(d - g) < CLIMB || Math.abs(d - who.gz) < CLIMB || this.tileAt(who.x, who.y).grid.at(who.x, who.y) === 255) who.level = 1;
+    }
+    who.gz = who.level ? d : this.terrainAt(who.x, who.y);
+    return who.level;
+  }
+
+  // Height at (x, y) for someone at `who` (as track): a car's wheels, a tram's bogies.
+  groundFor(who, x, y) {
+    return this.surfaceAt(x, y, this.track(who));
+  }
+
+  // Whether a bridge deck is overhead at a point, for someone on the ground there.
+  deckAbove(x, y) {
+    const d = this.deckAt(x, y);
+    return d - this.terrainAt(x, y) > CLIMB;
+  }
+
+  // Collision cell at (x, y) for someone at height z on `level`: on a deck, its
+  // parapets are solid wherever the ground beside is well below or above it; on the
+  // ground, a deck overhead is no wall, and one at its level is open.
+  cellAt(x, y, level, z) {
+    const t = this.tileAt(x, y);
+    if (!t) return 255;
+    const g = t.grid.at(x, y);
+    if (!t.deck) return level ? (g === 0 && Math.abs(this.terrainAt(x, y) - z) < CLIMB ? 0 : 255) : g;
+    const d = this.deckAt(x, y);
+    if (level) {
+      if (!Number.isNaN(d) && Math.abs(d - z) < CLIMB) return 0;
+      return g === 0 && Math.abs(this.terrainAt(x, y) - z) < CLIMB ? 0 : 255;
+    }
+    return g && !Number.isNaN(d) && Math.abs(d - z) < CLIMB ? 0 : g;
+  }
+
+  // The collision grid and ground as `who` meets them (a car, the walker): with the
+  // bridge decks it's on or under. Same shape as this.grid.
+  view(who) {
+    this.track(who);
+    return (who._view ||= {
+      res: RES,
+      height: (x, y) => this.surfaceAt(x, y, who.level),
+      at: (x, y) => this.cellAt(x, y, who.level, who.gz),
+    });
   }
 
   // Whether (x, y) is in a passage through a building (under its upper floors).
@@ -213,8 +309,9 @@ export class TileWorld {
     return out.sort((a, b) => a[0] - b[0]).map((p) => p[1]);
   }
 
-  // All of a tile's files at once: its JSON, terrain heights (and the bare ground
-  // where bridges were raised) and IPR's buildings.
+  // All of a tile's files at once: its JSON, terrain heights, its bridge decks' heights
+  // (or, from before decks, the bare ground where bridges were raised) and IPR's
+  // buildings.
   fetchTile(k) {
     if (!this.pending.has(k)) {
       const base = `data/${this.area}_now/tiles/${k}`, gz = !!this.index.gzip;
@@ -222,9 +319,10 @@ export class TileWorld {
       const json = fetch(`${base}.json`).then((r) => r.json());
       const height = this.index.terrain ? bin('height') : null;
       const bare = this.index.terrain && this.bare.has(k) ? bin('bare') : null;
+      const deck = this.decks.has(k) ? bin('deck') : null;
       const known = this.iprTiles.get(k);
       const ipr = this.osmBuildings || known === false ? null : known ? bin('ipr') : json.then((t) => (t.ipr ? bin('ipr') : null));
-      const files = Promise.all([json, height, bare, ipr]).then(([t, height, bare, ipr]) => ({ t, height, bare, ipr }));
+      const files = Promise.all([json, height, bare, ipr, deck]).then(([t, height, bare, ipr, deck]) => ({ t, height, bare, ipr, deck }));
       files.catch(() => { if (this.pending.get(k) === files) this.failed(k); });
       this.pending.set(k, files);
     }
@@ -280,7 +378,7 @@ export class TileWorld {
     return this.builds.get(k);
   }
 
-  async make(k, { t, height, bare, ipr }) {
+  async make(k, { t, height, bare, ipr, deck }) {
     const [x0, y0, x1, y1] = t.box;
     const data = { ...t, size: [x1 - x0, y1 - y0], origin: [-x0, -y0] };
     const geo = new Geo(data);
@@ -300,6 +398,10 @@ export class TileWorld {
     const shade = height ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref) : null;
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step } : null;
+    // Bridge decks, drawn above the ground; a tile's bridges without heights of their
+    // own (too small to have any) lie on the ground.
+    const deckHeights = deck ? { hm: decodeHeights(deck, terrain.n, this.ref), box: t.box, n: terrain.n, step: terrain.step } : null;
+    const decks = this.decked ? deckHeights || {} : null;
     lap('terrain');
 
     // Real 3D buildings from IPR where the area has them (unless ?osm), else OSM
@@ -312,7 +414,7 @@ export class TileWorld {
     const bbox = this.index.bbox_wgs84;
     const edges = this.driveBy.get(k) || [];
     const clipped = edges.flatMap((e) => clipLine(e.pts, t.box).map((pts) => (
-      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface })));
+      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge })));
     // Paid-parking colour of each parking area's bay lines.
     const parkingZones = (t.areas.parking || []).map((rs) => {
       const r = rs[0], cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;
@@ -334,22 +436,35 @@ export class TileWorld {
     const jobs = Promise.all([
       w.run('ground', {
         d: { areas: t.areas, roads: t.roads, rails: t.rails, weirs: t.weirs, crossings: t.crossings },
-        box: [geo.minX, geo.minY, geo.maxX, geo.maxY], edges: clipped, buildings: own.map((b) => ({ rings: b.rings })), parkingZones, ground,
+        box: [geo.minX, geo.minY, geo.maxX, geo.maxY], edges: clipped, buildings: own.map((b) => ({ rings: b.rings })), parkingZones, ground, deck: decks,
       }),
       w.run('land', {
-        data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, trees: t.trees, passages: t.passages || [] },
+        data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, trees: t.trees, passages: t.passages || [], decks: !!decks },
         seeds: seedArray, ground,
       }, [seedArray.buffer]),
       withIpr ? w.run('ipr', { buffer: ipr, box: t.box, absolute: this.index.iprRef != null, ground, bbox }, [ipr]) : null,
       !withIpr || extrude.length ? w.run('roofs', { buildings: extrude, size: data.size, origin: data.origin, ground, bbox }) : null,
     ]);
     lap('send');
-    const [layers, land, iprArrays, roofArrays] = await jobs;
+    const [{ layers, mask }, land, iprArrays, roofArrays] = await jobs;
     if (this.loaded.has(k)) return this.loaded.get(k);
     t0 = performance.now();
 
     const group = new THREE.Group();
-    const surfaces = new Surfaces(layers, { time: this.time, relief: shade });
+    // Where the decks are: for drawing what's on them, and for getting about on them.
+    let deckMask = null, tileDeck = null;
+    if (mask) {
+      const texture = new THREE.DataTexture(mask.cells, mask.w, mask.h, THREE.RedFormat, THREE.UnsignedByteType);
+      texture.unpackAlignment = 1;
+      texture.magFilter = texture.minFilter = THREE.LinearFilter;
+      texture.needsUpdate = true;
+      deckMask = { texture, box: [x0, y1, x0 + mask.w / RES, y1 - mask.h / RES] };
+      tileDeck = {
+        grid: new Grid(geo, RES, null, mask.cells),
+        sample: deckHeights ? heightSampler(deckHeights.hm, t.box, terrain.n, terrain.step) : () => NaN,
+      };
+    }
+    const surfaces = new Surfaces(layers, { time: this.time, relief: shade, mask: deckMask });
     const buildings = [iprArrays, roofArrays].filter(Boolean).map(buildingMesh);
     const walls = wallMesh(land.walls);
     const trees = treeMesh(land.trees);
@@ -369,7 +484,8 @@ export class TileWorld {
     });
     lap('parking');
     this.scene.add(group);
-    const tile = { k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], group, surfaces, grid, cars, ms, disposables: [...buildings, walls, trees], relief: shade, sample: shade?.sample };
+    for (const c of cars) c.level = 0; // (nobody parks on a bridge)
+    const tile = { k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], group, surfaces, grid, deck: tileDeck, cars, ms, disposables: [...buildings, walls, trees], relief: shade, sample: shade?.sample };
     this.loaded.set(k, tile);
     this.byIndex.set(t.i * 65536 + t.j, tile);
     this.last.i = NaN;

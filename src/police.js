@@ -458,7 +458,7 @@ export class Police {
       if (p.calm || p.wrecked) continue;
       const c = p.car, S = c.spec, mid = (S.cabin[0] + S.cabin[1]) / 2;
       const fx = Math.cos(c.h), fy = Math.sin(c.h);
-      const base = height(c.x, c.y);
+      const base = height(c.x, c.y, c);
       for (const side of [-1, 1]) {
         if (n >= this.lamps.instanceMatrix.count) break;
         const off = side * S.W * 0.24;
@@ -486,7 +486,7 @@ export class Police {
     }
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
     for (const o of this.officers) {
-      m.compose(p.set(o.x, height(o.x, o.y), -o.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, o.h), sc);
+      m.compose(p.set(o.x, height(o.x, o.y, o), -o.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, o.h), sc);
       o.fig.set(0, m, o.anim);
       o.fig.commit(1);
     }

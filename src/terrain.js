@@ -2,14 +2,15 @@
 // from the tile's south-west corner, as uint16 decimetres above 100 m a.s.l. Used on
 // the main thread and in the tile workers alike.
 
-// Heights in metres above `ref` (the game's y = 0).
+// Heights in metres above `ref` (the game's y = 0). A tile's bridge decks come on the
+// same lattice, with 0 where there is no deck: NaN here.
 export function decodeHeights(buffer, n, ref) {
   const h = new Uint16Array(buffer), hm = new Float32Array(n * n);
-  for (let i = 0; i < hm.length; i++) hm[i] = h[i] / 10 + 100 - ref;
+  for (let i = 0; i < hm.length; i++) hm[i] = h[i] ? h[i] / 10 + 100 - ref : NaN;
   return hm;
 }
 
-// Height at a point, bilinear and clamped to the tile.
+// Height at a point, bilinear and clamped to the tile (NaN next to a missing height).
 export function heightSampler(hm, [bx, by], n, step) {
   return (x, y) => {
     const u = Math.min(n - 1.001, Math.max(0, (x - bx) / step)), v = Math.min(n - 1.001, Math.max(0, (y - by) / step));
