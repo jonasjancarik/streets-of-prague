@@ -2,7 +2,7 @@
 backdrop behind character portraits), drawn from the same IPR 3D buildings and terrain
 the game uses, so every tower is where it really is.
 
-    uv run skyline.py hradcany                 # one view, into ../assets/skylines/
+    uv run skyline.py hradcany                 # one view, into ../public/skylines/
     uv run skyline.py --all --out /tmp/sky     # every view, elsewhere
 
 Buildings and terrain are projected through a pinhole camera and painted far to near.
@@ -25,7 +25,7 @@ import layers
 from osm_area import AREAS
 
 CACHE = Path(__file__).parent / ".cache" / "ipr" / "parsed"
-OUT = Path(__file__).resolve().parent.parent / "assets" / "skylines"
+OUT = Path(__file__).resolve().parent.parent / "public" / "skylines"
 AREA = "praha"
 REF_HEIGHT = 180.0
 STEP = 4.0
@@ -222,7 +222,7 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     for name in names:
         img = render(name, VIEWS[name], buildings, centres, grids, to_local, width, height, args.ss, args.reach)
-        img.save(args.out / f"{name}.png")
+        img.save(args.out / f"{name}.webp", quality=90, method=6)
 
 
 if __name__ == "__main__":
