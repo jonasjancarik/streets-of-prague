@@ -91,6 +91,22 @@ checking on a real phone before going further.
   puts a valley in shade. Hardly noticeable with the current midday sun; worth doing
   with a low evening sun.
 
+## Bridges and tunnels
+
+Left over from putting bridges and tunnels on levels of their own (28 September
+2026, `pipeline/structures.py`).
+
+- **Metro stations count as tunnels.** OSM tags the corridors and stairs of metro
+  stations `tunnel=yes`, so they became walkable tunnels too, several levels deep
+  under Můstek or Muzeum. They could be left out (by `indoor`, `level` or being
+  inside a station's area), or kept on purpose as a way down to the platforms.
+- **Paint and tram tracks where two bridges cross.** A street's road paint and each
+  stretch of tram track are drawn on the one level they mostly lie on
+  (`mostlyOn` and `splitByLevel` in `src/ground.ts`). Where a flyover crosses
+  another bridge they can end up on the wrong one, painted over the upper deck or
+  hidden under it. The pipeline knows which level each way is on and could hand that
+  to the game with the street edges, instead of the game guessing from the masks.
+
 ## Gameplay and look
 
 Noted on 28 September 2026 while playing, during the TypeScript refactor.
