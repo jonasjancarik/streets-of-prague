@@ -9,7 +9,7 @@ rebuilds that layer alone:
     streets    the car and footpath networks       build_tiles.py --layers streets
     parking    paid-parking sections               build_tiles.py --layers parking
     ipr        IPR's 3D buildings                  ipr_buildings.py
-    terrain    IPR's terrain, bridges raised       ipr_terrain.py
+    terrain    IPR's terrain, bridge decks         ipr_terrain.py
 
 The first four are kept per chunk in pipeline/.cache/layers/<area>/<layer>/<ci>_<cj>.json
 (tile key → what the layer has there, plus what the chunk adds to the whole area,
@@ -20,7 +20,7 @@ from the layers, and leaves files whose content hasn't changed alone (so a deplo
 sends what did).
 
 What depends on what: ipr uses the OSM buildings (colours, and which OSM buildings
-IPR doesn't have); terrain raises bridges from the ground layer. build_tiles.py says
+IPR doesn't have); terrain works out the bridge decks from the ground layer. build_tiles.py says
 which of the two to run again.
 """
 

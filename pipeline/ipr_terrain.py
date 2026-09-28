@@ -7,8 +7,10 @@ terrain model (a TIN with ~10 m spacing, CityGML), for hill shading in the game.
 Writes tiles/<i>_<j>.height.bin.gz: a (N+1) x (N+1) grid of heights every 4 m across
 the tile (N = tile / 4), as little-endian uint16 decimetres above 100 m a.s.l.,
 rows from the tile's south edge, gzipped; and "terrain" in index.json with the grid step (kept
-as the terrain layer, see layers.py). Bridge decks are raised from the streets and
-bridges of the ground layer. Each sheet's heights on the area's grid are kept in
+as the terrain layer, see layers.py). The ground stays bare under bridges: their decks
+have heights of their own, worked out from the streets and bridges of the ground layer,
+in tiles/<i>_<j>.deck.bin.gz on the same lattice (0 off the decks), for the tiles
+listed in "decks". Each sheet's heights on the area's grid are kept in
 pipeline/.cache/ipr/parsed/, so running this again after the ground changed takes
 seconds.
 
@@ -39,6 +41,7 @@ from osm_area import AREAS, OUT
 from ipr_buildings import CACHE, krovak_to_local, search, sheet, sheet_name
 
 STEP = 4.0
+DECK_PAD = 6.0  # m of deck heights past the edge of a bridge (more than a lattice diagonal)
 GML = "http://www.opengis.net/gml"
 
 
@@ -146,11 +149,14 @@ def fill_gaps(tiles, N, T, coarse=8):
                      + (grid[j + 1, i] * (1 - fu) + grid[j + 1, i + 1] * fu) * fv)
 
 
-def lift_bridges(ground, tiles, N, T, gx0, gy0):
+def bridge_decks(ground, tiles, N, T, gx0, gy0):
     """The terrain model is bare earth, so under a bridge it drops to the river or the
-    road below. Raise every bridge deck to the height of its ends: where the bridge
-    meets ordinary roads and paths, sloping linearly from one end to the other.
-    `ground`: the tiles' ground (areas and roads), in the order of index.json."""
+    road below. Work out every bridge deck's own height instead: that of its ends, where
+    the bridge meets ordinary roads and paths, sloping linearly from one end to the
+    other. Returns the decks' heights per tile on the terrain's lattice (NaN off the
+    decks), reaching DECK_PAD metres past each deck so the game can interpolate right
+    up to its edge. `ground`: the tiles' ground (areas and roads), in the order of
+    index.json; `tiles`: the bare terrain, which stays as it is."""
     import shapely
     from shapely import STRtree
     from shapely.geometry import Polygon
@@ -163,11 +169,13 @@ def lift_bridges(ground, tiles, N, T, gx0, gy0):
         if here:
             for kind in ("road", "sett", "path", "dirt"):
                 roads += [Polygon(r[0], r[1:]) for r in t["roads"].get(kind, [])]
+    decks = {}
     if not pieces:
-        return
+        return decks
     merged = unary_union(pieces)
     polys = list(getattr(merged, "geoms", [merged]))
     road_tree = STRtree(roads) if roads else None
+    near = {}  # tile → distance from each lattice point to the deck its height is from
 
     def height_at(x, y):
         i, j = math.floor((x - gx0) / T), math.floor((y - gy0) / T)
@@ -177,7 +185,7 @@ def lift_bridges(ground, tiles, N, T, gx0, gy0):
         ci, cj = int(round((x - gx0 - i * T) / STEP)), int(round((y - gy0 - j * T) / STEP))
         return arr[min(N, max(0, cj)), min(N, max(0, ci))]
 
-    lifted = 0
+    made = 0
     for poly in polys:
         if poly.area < 30:
             continue
@@ -216,25 +224,32 @@ def lift_bridges(ground, tiles, N, T, gx0, gy0):
             else:
                 ends_t, ends_h = np.array([0.0]), np.array([np.median(h)])
         minx, miny, maxx, maxy = poly.bounds
-        grown = poly.buffer(2)
-        for i in range(math.floor((minx - 2 - gx0) / T), math.floor((maxx + 2 - gx0) / T) + 1):
-            for j in range(math.floor((miny - 2 - gy0) / T), math.floor((maxy + 2 - gy0) / T) + 1):
-                arr = tiles.get((i, j))
-                if arr is None:
+        grown = poly.buffer(DECK_PAD)
+        for i in range(math.floor((minx - DECK_PAD - gx0) / T), math.floor((maxx + DECK_PAD - gx0) / T) + 1):
+            for j in range(math.floor((miny - DECK_PAD - gy0) / T), math.floor((maxy + DECK_PAD - gy0) / T) + 1):
+                if (i, j) not in tiles:
                     continue
                 tx0, ty0 = gx0 + i * T, gy0 + j * T
                 xs, ys = np.meshgrid(tx0 + np.arange(N + 1) * STEP, ty0 + np.arange(N + 1) * STEP)
                 inside = shapely.contains_xy(grown, xs, ys)
                 if not inside.any():
                     continue
+                arr = decks.setdefault((i, j), np.full((N + 1, N + 1), np.nan, dtype=np.float32))
+                dist = near.setdefault((i, j), np.full((N + 1, N + 1), np.inf, dtype=np.float32))
+                # Where two decks are close, each point takes the height of the nearer.
+                d = np.full(xs.shape, np.inf, dtype=np.float32)
+                d[inside] = shapely.distance(poly, shapely.points(xs[inside], ys[inside]))
+                mine = inside & (d < dist)
                 if len(ends_t) == 1:
-                    arr[inside] = ends_h[0]
+                    arr[mine] = ends_h[0]
                 else:
-                    tt = (xs[inside] - c[0]) * axis[0] + (ys[inside] - c[1]) * axis[1]
+                    tt = (xs[mine] - c[0]) * axis[0] + (ys[mine] - c[1]) * axis[1]
                     f = np.clip((tt - ends_t[0]) / (ends_t[1] - ends_t[0]), 0, 1)
-                    arr[inside] = ends_h[0] + (ends_h[1] - ends_h[0]) * f
-        lifted += 1
-    print(f"  {lifted} bridges lifted to their deck height")
+                    arr[mine] = ends_h[0] + (ends_h[1] - ends_h[0]) * f
+                dist[mine] = d[mine]
+        made += 1
+    print(f"  {made} bridge decks")
+    return decks
 
 
 PARSED_VERSION = 1  # bump when read_sheet's output changes
@@ -330,20 +345,19 @@ def main() -> None:
         print("no terrain")
         return
     fill_gaps(tiles, N, T)
-    bare = {k: a.copy() for k, a in tiles.items()}
-    lift_bridges(ground, tiles, N, T, gx0, gy0)
+    decks = bridge_decks(ground, tiles, N, T, gx0, gy0)
     encode = lambda a: np.clip(np.round((a - 100) * 10), 0, 65535).astype("<u2").tobytes()  # noqa: E731
-    with_bridges = []
     for (i, j), arr in tiles.items():
         layers.write_bin(out_dir / "tiles", f"{i}_{j}.height.bin", encode(arr))
-        # Where a bridge was raised, keep the bare ground too: hill shading comes from
-        # that, so a raised deck doesn't cast a fake slope onto the river.
-        if not np.array_equal(arr, bare[(i, j)]):
-            layers.write_bin(out_dir / "tiles", f"{i}_{j}.bare.bin", encode(bare[(i, j)]))
-            with_bridges.append(f"{i}_{j}")
+        # Bridge decks on their own, 0 off them: the ground stays bare under a bridge,
+        # so a road can pass under a flyover.
+        if (i, j) in decks:
+            layers.write_bin(out_dir / "tiles", f"{i}_{j}.deck.bin", encode(np.nan_to_num(decks[(i, j)], nan=100.0)))
         else:
-            layers.remove_bin(out_dir / "tiles", f"{i}_{j}.bare.bin")
-    layers.write_layer(area, "terrain", {"gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in tiles], "index": {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi), "bare": with_bridges}})
+            layers.remove_bin(out_dir / "tiles", f"{i}_{j}.deck.bin")
+        # From before decks: the bare ground kept where bridges were raised into it.
+        layers.remove_bin(out_dir / "tiles", f"{i}_{j}.bare.bin")
+    layers.write_layer(area, "terrain", {"gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in tiles], "index": {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi), "decks": sorted(f"{i}_{j}" for i, j in decks)}})
     print(f"terrain {lo:.0f}–{hi:.0f} m for {len(tiles)} tiles")
     layers.assemble(area)
 
