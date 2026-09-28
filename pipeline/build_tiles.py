@@ -45,6 +45,7 @@ from shapely.geometry import LineString, Polygon, box
 
 from kerbs import NO_PARKING, estimate
 import layers
+import structures
 from osm_area import (AREAS, CAR_ROADS, FEATURE_TAGS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, extract,
                       features_from_json, road_width, use_overpass_mirror)
 
@@ -121,10 +122,11 @@ def kerb_parking(d, side):
     return None
 
 
-def graph_edges(bbox, tf, network, directed, source=None, kerbs=None):
+def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None):
     """Edges of an osmnx network as dicts with OSM node ids and local-metre polylines;
     with `kerbs` (kerbs.Kerbs), car roads get their kerbs as `kerb`: [right, left].
-    `source`: the local cut's OSM data as read by read_osm (pickled osmnx JSON)."""
+    `source`: the local cut's OSM data as read by read_osm (pickled osmnx JSON);
+    `core`: the chunk's own box in local metres (without its margin)."""
     if source:
         # The same network osmnx would ask Overpass for, built from the local cut.
         data = pickle.loads(source)
@@ -134,12 +136,8 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None):
         G = ox.simplify_graph(G)
     else:
         G = ox.graph_from_bbox(bbox, network_type=network, simplify=True, retain_all=True)
-    # Tunnels are left out; passages through a building at street level stay in.
-    G.remove_edges_from([(u, v, k) for u, v, k, d in G.edges(keys=True, data=True)
-                         if values(d.get("tunnel")) - {"no", "False", "building_passage"}])
     if directed:
-        # Strongly connected, so a car can always leave any street it turns into.
-        G = ox.truncate.largest_component(G, strongly=True)
+        G = connected(G, tf, core)
     out, seen, sized = [], set(), []
     for u, v, k, d in G.edges(keys=True, data=True):
         if not directed:
@@ -171,12 +169,33 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None):
             "maxspeed": _float(first(d.get("maxspeed"))), "width": width,
             "bridge": truthy(d.get("bridge")), "surface": first(d.get("surface")), "pts": pts,
             **({"passage": True} if "building_passage" in values(d.get("tunnel")) else {}),
+            **({"tunnel": True} if values(d.get("tunnel")) - {"no", "False", "building_passage"} else {}),
             **({"park": [right, left]} if directed and (right or left) else {}),
         })
     if sized:
         for (i, _, _), (left, right) in zip(sized, kerbs([s[1] for s in sized], [s[2] for s in sized])):
             out[i]["kerb"] = [right, left]
     return out
+
+
+def connected(G, tf, core):
+    """The car network strongly connected, so a car can always leave any street it
+    turns into. The streets beyond the chunk's own box carry on in the next chunk, so
+    they count as connected through it: a one-way carriageway leaving the chunk (the
+    magistrála, say) stays in, where on its own it would be a dead end."""
+    import networkx as nx
+    out = "beyond"
+    if core is not None:
+        x0, y0, x1, y1 = core
+        for n, d in list(G.nodes(data=True)):
+            x, y = tf.transform(d["x"], d["y"])
+            if not (x0 <= x <= x1 and y0 <= y <= y1):
+                G.add_edge(n, out)
+                G.add_edge(out, n)
+    comps = list(nx.strongly_connected_components(G))
+    keep = next((c for c in comps if out in c), None) or max(comps, key=len)
+    G = G.subgraph(keep - {out}).copy()
+    return G
 
 
 PARSED_VERSION = 2  # bump when what read_osm keeps changes
@@ -266,6 +285,7 @@ def build_chunk(job):
         shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in x["buildings"]]
         centres = [p.representative_point() for p in shapes]
         btree = STRtree(shapes)
+        ptree = STRtree([Polygon(p["rings"][0], p["rings"][1:]) for p in x["parts"]])
         layer = {}
         for (i, j), bx in boxes.items():
             bx0, by0, bx1, by1 = bx.bounds
@@ -277,6 +297,10 @@ def build_chunk(job):
             hits = btree.query(bx, predicate="intersects")
             if len(hits):
                 layer[f"{i}_{j}"] = {"buildings": [{**x["buildings"][k], "own": own(centres[k])} for k in sorted(hits)]}
+            # Building parts are only for ipr_buildings.py (roof colours); tiles don't get them.
+            got = [x["parts"][k] for k in sorted(ptree.query(bx, predicate="intersects"))]
+            if got:
+                layer.setdefault(f"{i}_{j}", {"buildings": []})["parts"] = got
         out["buildings"] = {"tiles": layer}
 
     if "ground" in wanted:
@@ -312,7 +336,7 @@ def build_chunk(job):
 
     if "streets" in wanted:
         t0 = time.perf_counter()
-        drive = graph_edges(bbox, tf, "drive", True, source, x["kerbs"])
+        drive = graph_edges(bbox, tf, "drive", True, source, x["kerbs"], core)
         walk = graph_edges(bbox, tf, "walk", False, source)
         names = {}  # street name → (length of its longest edge, midpoint), for the dev search
         for ed in drive + walk:
@@ -328,7 +352,10 @@ def build_chunk(job):
                  "walk": [walk[k] for k in sorted(wtree.query(bx, predicate="intersects"))]}
             if t["drive"] or t["walk"]:
                 layer[f"{i}_{j}"] = t
-        out["streets"] = {"tiles": layer, "names": names}
+        # Bridges and tunnels, with where they meet the streets on the ground, for
+        # ipr_terrain.py to work out their heights (structures.py).
+        found = structures.structure_ways(pickle.loads(source), tf) if source else []
+        out["streets"] = {"tiles": layer, "names": names, "structures": found}
         lap["streets"] = time.perf_counter() - t0
 
     if "parking" in wanted:
@@ -412,8 +439,8 @@ def main() -> None:
     later = []
     if "buildings" in wanted and layers.read_layer(area, "ipr"):
         later.append(f"ipr_buildings.py {area} (it matches IPR's buildings against OSM's)")
-    if "ground" in wanted and layers.read_layer(area, "terrain"):
-        later.append(f"ipr_terrain.py {area} (it raises the bridges)")
+    if wanted & {"ground", "streets"} and layers.read_layer(area, "terrain"):
+        later.append(f"ipr_terrain.py {area} (it works out the bridges and tunnels)")
     for step in later:
         print(f"now run {step}")
 

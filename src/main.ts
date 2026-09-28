@@ -7,14 +7,14 @@ import { loadKit } from './figures.ts';
 import { Traffic } from './traffic.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
 import { loadFootfall } from './footfall.ts';
-import { Trams } from './trams.ts';
+import { Trams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
 import { Clock } from './clock.ts';
 import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
 import { TileWorld } from './tiles.ts';
 import { groundSamples } from './surface.ts';
-import { CUTAWAY } from './shading.ts';
+import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { LaneAssist, turnOf } from './assist.ts';
 import { setupTouch } from './touch.ts';
@@ -186,7 +186,7 @@ async function main() {
   let height = 100;
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
   let camGround = ground(walker.x, walker.y, walker);
-  let cutR = 0; // radius of the hole in the buildings above a passage or a bridge deck (see CUTAWAY)
+  let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
   const viewRadius = () => height * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
   const px = () => (inCar || inHeli || walker).x, py = () => (inCar || inHeli || walker).y;
@@ -279,7 +279,17 @@ async function main() {
     frozen = 2.5;
     showBanner('Busted', true);
   };
-  const police = new Police({ scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, offscreen, onBusted: busted, kit });
+  const police = new Police({
+    scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, offscreen, onBusted: busted, kit,
+    // Officers on foot go round cars and trams (see obstacles below).
+    bodyAt: (x, y, r, skip) => {
+      for (const o of obstacles(x, y, r + 3)) {
+        if (o.kind !== 'tram' && (!o.car || o.car === skip)) continue;
+        if (Math.hypot(o.x - x, o.y - y) < o.r + r) return true;
+      }
+      return false;
+    },
+  });
 
   const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car)];
   const drawn: Car[] = []; // the cars drawn this frame
@@ -394,10 +404,9 @@ async function main() {
       }
     }
     if (!best || !onto) return;
-    // Onto a bridge's deck if that street is a bridge, else under it.
-    Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0, level: onto.bridge ? 1 : 0 });
-    inCar._tx = inCar.x;
-    inCar._ty = inCar.y;
+    // Onto a bridge if that street is a bridge, into a tunnel if it's a tunnel, else
+    // onto the ground.
+    Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0, level: undefined, hint: onto.bridge ? 'bridge' : onto.tunnel ? 'tunnel' : 'ground' });
   };
 
   // Jump anywhere in the area: load the tiles there first, then land on a pavement
@@ -642,9 +651,25 @@ async function main() {
           if ((a.vx * (b.x - a.x) + a.vy * (b.y - a.y)) / d > 3) police.crime('hitCop', b.x, b.y);
         }
       }
-      for (const t of tramBodies) {
-        if (!near(a, t, 22)) continue;
-        const hit = collideBodies(t, t.circles, 1.25, 0, a, a.circles(), a.r, 1 / a.mass);
+    }
+    // Trams: nothing moves one, and it shoves aside any car in its way, parked or
+    // driving, instead of running over it. A car in traffic it hits leaves the traffic.
+    for (const t of tramBodies) {
+      const tz = { gz: t.v.levels?.[1]?.gz };
+      for (const a of carsNear(t.x, t.y, 20, nearA)) {
+        if (!near(a, t, 22) || apart(a, tz)) continue;
+        const ca = a.circles();
+        if (a.mode === 'traffic') {
+          if (!touching(t.circles, ca, 1.25 + a.r)) continue;
+          const d = Math.hypot(a.x - t.x, a.y - t.y) || 1;
+          const closing = ((t.vx - a.vx) * (a.x - t.x) + (t.vy - a.vy) * (a.y - t.y)) / d;
+          const ag = traffic.agents.find((x) => x.car === a);
+          if (closing < 1 || !ag) continue; // only just touching: the car is braking for the tram
+          traffic.release(ag);
+          a.mode = 'loose';
+          loose.push(a);
+        }
+        const hit = collideBodies(t, t.circles, 1.25, 0, a, ca, a.r, 1 / a.mass);
         // Pushing a car off the track: ahead, and to the right, away from the other track.
         if (hit && t.v.shove === a) {
           const ang = t.v.parts[2].ang, rx = Math.sin(ang), ry = -Math.cos(ang);
@@ -661,18 +686,32 @@ async function main() {
     const bump = (who: { x: number; y: number; gz?: number }, rad: number, onHit: (car: Car, nx: number, ny: number) => void) => {
       for (const c of carsNear(who.x, who.y, 5, nearB)) {
         if (!near(who, c, 4) || apart(who, c)) continue;
-        for (const [cx, cy] of c.circles()) {
-          const dx = who.x - cx, dy = who.y - cy, d = Math.hypot(dx, dy), min = c.r + rad;
-          if (d >= min) continue;
-          const nx = dx / (d || 1), ny = dy / (d || 1);
-          onHit(c, nx, ny);
-          if (!grid.at(cx + nx * min, cy + ny * min)) { who.x = cx + nx * min; who.y = cy + ny * min; }
-          break;
-        }
+        // The car as one rounded box (the line through its circles, as wide as they
+        // are), so there's no gap between the circles to slip into; out to the nearest
+        // point of its outline.
+        const fx = Math.cos(c.h), fy = Math.sin(c.h), end = c.spec.L / 2 - c.r, min = c.r + rad;
+        const along = clamp((who.x - c.x) * fx + (who.y - c.y) * fy, -end, end);
+        const cx = c.x + fx * along, cy = c.y + fy * along;
+        const d = Math.hypot(who.x - cx, who.y - cy);
+        if (d >= min) continue;
+        const nx = d > 1e-6 ? (who.x - cx) / d : -fy, ny = d > 1e-6 ? (who.y - cy) / d : fx;
+        onHit(c, nx, ny);
+        if (!grid.at(cx + nx * min, cy + ny * min)) { who.x = cx + nx * min; who.y = cy + ny * min; }
+      }
+    };
+    // Nobody walks through a tram: out to the nearer side (knocked over if it's moving).
+    const closeTrams = tramBodies.filter((t) => near(t, { x: px(), y: py() }, 150));
+    const open = (x: number, y: number) => !grid.at(x, y);
+    const offTrams = (who: { x: number; y: number; gz?: number }, rad: number, free: (x: number, y: number) => boolean, onHit?: (vx: number, vy: number) => void) => {
+      for (const t of closeTrams) {
+        if (!near(who, t, 18)) continue;
+        const n = pushOutOfTram(t, who, rad, free);
+        if (n && onHit && t.vx * n[0] + t.vy * n[1] > 2) onHit(t.vx + n[0] * 2, t.vy + n[1] * 2);
       }
     };
     for (const p of crowd.people) {
       if (!near(p, { x: px(), y: py() }, 120)) continue;
+      offTrams(p, 0.3, open);
       bump(p, 0.3, (c, nx, ny) => {
         if (c.speed > 3 && p.state !== 'down' && c.mode !== 'traffic') {
           crowd.knock(p, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
@@ -684,6 +723,7 @@ async function main() {
       });
     }
     for (const o of police.officers) {
+      offTrams(o, 0.3, open);
       bump(o, 0.3, (c, nx, ny) => {
         if (c.speed > 3 && o.down <= 0) {
           police.knock(o, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
@@ -692,6 +732,9 @@ async function main() {
       });
     }
     if (!inCar && !inHeli && !ride.on) {
+      offTrams(walker, 0.35, (x, y) => !walker.blocked(x, y), (vx, vy) => {
+        if (walker.down <= 0) { walker.knock(vx, vy); shake = 0.8; }
+      });
       bump(walker, 0.35, (c, nx, ny) => {
         if (c.speed > 4 && walker.down <= 0 && !walker.airborne) { walker.knock(c.vx + nx * 2, c.vy + ny * 2); shake = 0.6; }
       });
@@ -702,7 +745,8 @@ async function main() {
     lifeT -= dt;
     if (lifeT < 0) {
       lifeT = 0.5;
-      for (const a of [...traffic.agents]) if (Math.hypot(a.car.x - px(), a.car.y - py()) > LIFE_RADIUS * 1.3 && offscreen(a.car.x, a.car.y)) traffic.release(a);
+      // (And cars stuck in a queue that hasn't moved for a while, where nobody sees them go.)
+      for (const a of [...traffic.agents]) if ((a.jam > 30 || Math.hypot(a.car.x - px(), a.car.y - py()) > LIFE_RADIUS * 1.3) && offscreen(a.car.x, a.car.y)) traffic.release(a);
       for (let i = loose.length - 1; i >= 0; i--) {
         const c = loose[i];
         if (!tileCars.has(c) && Math.hypot(c.x - px(), c.y - py()) > 600) loose.splice(i, 1);
@@ -818,16 +862,22 @@ async function main() {
     shake *= Math.exp(-6 * dt);
     const jx = (Math.random() - 0.5) * shake * 2, jz = (Math.random() - 0.5) * shake * 2;
     // Follow the ground under the view, smoothed so the camera doesn't bob over kerbs.
+    // In a tunnel, the ground above it: the view looks down into the tunnel through
+    // the hole round you (below), deep as it may be.
     const body = inHeli ? null : inCar || walker;
-    camGround += (ground(camPos.x, -camPos.z, body) - camGround) * Math.min(1, dt * 3);
+    const deep = !!body && world.track(body) < 0;
+    camGround += ((deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body)) - camGround) * Math.min(1, dt * 3);
     camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
     camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
 
     // In a passage under a building, open a hole in the floors above so you stay in view.
-    // The same under a bridge deck.
-    const under = !inHeli && (world.passageAt(px(), py()) || (!!body && world.track(body) === 0 && world.deckAbove(px(), py())));
-    cutR += ((under ? 9 : 0) - cutR) * Math.min(1, dt * 6);
+    // The same under a bridge, and a wider one down into a tunnel.
+    const under = !inHeli && (world.passageAt(px(), py()) || (!!body && world.covered(body)));
+    // (The deeper the tunnel, the wider: the view is from above the ground.)
+    const hole = deep && body ? Math.min(45, 14 + 0.35 * Math.max(0, world.terrainAt(px(), py()) - (body.gz ?? 0))) : 9;
+    cutR += ((under ? hole : 0) - cutR) * Math.min(1, dt * 6);
     CUTAWAY.value.set(px(), ground(px(), py(), body) + 2.5, -py(), cutR > 0.3 ? cutR : 0);
+    DIG.value.set(px(), -py(), deep && cutR > 0.3 ? cutR : 0, 0);
 
     const ext = Math.max(90, height * 0.5);
     const sc = sun.shadow.camera;
@@ -920,6 +970,8 @@ async function main() {
     choppers, addChopper,
     teleport: (x: number, y: number) => { (inCar || inHeli || walker).x = x; (inCar || inHeli || walker).y = y; camPos.set(x, 0, -y); },
     enterOrExit, teleportTo, dev, touch,
+    // One step of the world with these controls (for tests, and while the tab is hidden).
+    simulate: (dt: number, ctl: Partial<Controls> = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z: number) => { zoom = z; height = (inCar ? 120 : 100) * z; },
   };
 }

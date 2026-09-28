@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
+import { cutAway } from '../shading.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
 export interface TreeTileData extends GeoData {
@@ -16,9 +17,11 @@ interface TreeInstances { matrices: Float32Array; colours: Float32Array; count: 
 const WOOD = 200, PARK = 120, ORCHARD = 60;
 
 // Where a tile's trees stand, and how big and what colour they are: their instance
-// matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Runs
-// in the tile workers.
-export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: number) => number = () => 0): TreeInstances {
+// matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Under
+// a bridge a tree grows no higher than `room(x, y)` metres leaves it, or not at all.
+// Runs in the tile workers.
+export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: number) => number = () => 0,
+  room: (x: number, y: number) => number = () => Infinity): TreeInstances {
   const d = geo.data;
   const grid = new Grid(geo, 1, (ctx, s) => {
     ctx.fillStyle = '#000';
@@ -74,7 +77,13 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   ];
   const c = new THREE.Color();
   trees.forEach(([x, y, rad, kind], i) => {
-    const h = rad * (1.6 + r() * 0.6);
+    let h = rad * (1.6 + r() * 0.6);
+    // The crown's top is 0.75 of its radius above its centre.
+    const top = h + rad * 0.75, fit = Math.min(1, (room(x, y) - 0.5) / top);
+    if (fit < 1) {
+      rad *= fit < 0.35 ? 0 : fit;
+      h *= fit < 0.35 ? 0 : fit;
+    }
     p.set(x, h, -y);
     q.setFromEuler(new THREE.Euler(0, r() * Math.PI, 0));
     sc.set(rad, rad, rad);
@@ -91,7 +100,8 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
 export function treeMesh({ matrices, colours, count }: TreeInstances) {
   const geom = new THREE.IcosahedronGeometry(1, 1);
   geom.scale(1, 0.75, 1);
-  const mat = new THREE.MeshLambertMaterial({ flatShading: true });
+  // Opened round you, like the buildings, when you're in a tunnel under a park.
+  const mat = cutAway(new THREE.MeshLambertMaterial({ flatShading: true }), 'trees');
   const mesh = new THREE.InstancedMesh(geom, mat, count);
   (mesh.instanceMatrix.array as Float32Array).set(matrices);
   if (count) mesh.instanceColor = new THREE.InstancedBufferAttribute(colours, 3);

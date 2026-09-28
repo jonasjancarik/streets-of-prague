@@ -111,16 +111,32 @@ too long; `?dpr=1` fixes it.
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.
+- **Roof colours.** Pitched roofs are red tiles, as nearly all of them are in Prague;
+  flat ones are grey. OSM's `roof:material` and `roof:colour` can make a roof grey slate
+  or green copper instead, down to single building parts (the cathedral's grey roofs
+  and copper domes), and `pipeline/roofs.py` corrects landmarks OSM gets wrong or leaves
+  out, including wings of the Castle that both OSM and IPR draw as one building.
+  Churches OSM says nothing about get slate. IPR's roofs take their colour triangle by
+  triangle, from the OSM building or part they lie in.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,
   walls, trees, cars, people, trams and the camera sit at their real height, cars
   pitch, roll and roll downhill, and the ground is hill-shaded.
-- **Bridges** stand above the ground. The terrain model has no bridges, so each deck
-  gets heights of its own, running between the heights of its two ends, and the
-  ground under it stays bare: a street, a park or a river. Cars, trams and people
-  drive or walk onto a deck where it meets the street and off it at the far end;
-  its parapets keep them on it, and whatever is on it and under it pass each other by.
-  Under a deck, a round hole opens in it above you, as in a passage (`track` and
-  `view` in `src/tiles.ts`, the decks' meshes in `src/ground.ts`).
+- **Bridges and tunnels** have heights of their own, above and below the bare ground
+  (`pipeline/structures.py`). Where one meets a street on the ground it's at the
+  ground's height, and in between its height runs evenly from end to end, along the
+  ways and through junctions (Blanka's underground ramps). Bridges follow IPR's 3D
+  model of Prague's bridges wherever it has them, so a deck rises and falls as the
+  real one does. Tunnels keep a few metres of ground over them, more away from their
+  portals, and wherever two cross on different OSM layers, the upper one clears the
+  lower. They're put on levels (bridges 1, 2, …, tunnels -1, -2, …) so that ones
+  crossing at different heights never share one.
+  Cars, trams and people drive or walk onto a bridge or into a tunnel where it meets
+  the street and off it at the far end; parapets and tunnel walls keep them in, and
+  whatever is on one level and another passes by. Under a bridge a round hole opens in
+  it above you, as in a passage; in a tunnel a wider one opens down to it, the ground
+  round you shown as bare earth. Everything else under the ground stays hidden
+  (`track` and `view` in `src/tiles.ts`, the meshes in `src/ground.ts`). The car
+  network keeps the tunnels and the magistrála, so traffic drives through them.
 - **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.ts`); AI
   traffic that keeps to its lane, brakes for anything ahead and gives way to the right
   (`src/traffic.ts`); pedestrians on the footpath network who leap out of the way of
@@ -191,11 +207,9 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
 
 ## Known issues
 
-- **Tunnels.** There are none (Blanka, Strahov); only passages through buildings at
-  street level can be driven and walked through.
-- **Bridges** have one deck per point: where one bridge crosses over another, both
-  share a height. Each deck slopes evenly from one end to the other, however the
-  real one rises and falls. Trees mapped under a low deck can poke through it.
+- **Bridges and tunnels.** A bridge IPR's model doesn't have (a newer one) slopes
+  evenly from one end to the other. Tunnels' depths are a guess (OSM has none), and
+  the metro stations' corridors and stairs are tunnels like any other.
 - **Past the city limits** the buildings come from OSM, and where OSM gives neither a
   height nor a number of storeys, the height is a guess from the kind of building and
   the size of its footprint (sheds, cottages, one- or two-storey houses, halls). The
@@ -235,7 +249,7 @@ cd pipeline
 uv run build_parking.py centrum    # TSK paid-parking sections (read by build_tiles)
 uv run build_tiles.py centrum      # today's map + street graphs in tiles → public/data/centrum_now/
 uv run ipr_buildings.py centrum    # IPR's 3D buildings into the tiles
-uv run ipr_terrain.py centrum      # IPR's terrain: heights, bridge decks, hill shading
+uv run ipr_terrain.py centrum      # IPR's terrain, bridges and tunnels, hill shading
 uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
 uv run build_metro.py centrum      # the metro from PID's timetables → metro.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
@@ -250,7 +264,7 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   IPR's buildings and terrain. Every step ends by putting the tiles together from all
   the layers, rewriting only the files that changed. So after changing how pavements
   are drawn, `uv run build_tiles.py centrum --layers ground` rebuilds just the ground
-  (it then says to run `ipr_terrain.py`, which works out the bridge decks from it); after
+  (it then says to run `ipr_terrain.py`, which works out the bridges and tunnels from it); after
   changing the street networks, `--layers streets`. The layers are kept in
   `pipeline/.cache/layers/`.
 - **Caches.** Every OSM chunk and every IPR sheet is read only once. What comes out
@@ -274,6 +288,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (`Krav`) and Český Brod (`Cbro`); the pipeline reads all five. Coordinates go S-JTSK → WGS84 with the Czech datum shift →
   local metres (going straight to the datum-less local projection puts everything
   ~25 m off); IPR wall bases then sit a median 0.55 m from OSM building edges.
+- **Roof corrections.** `pipeline/roofs.py` lists landmarks by OSM id, and outlines
+  (in WGS84) for parts of buildings OSM draws as one. After changing it, run
+  `build_tiles.py <area> --layers buildings` and then `ipr_buildings.py <area>`.
 - **Tram lines.** `build_lines.py` takes every tram line's two route relations (one
   per direction) and joins them into a loop along the track network, stops and speed
   limits included; it prints any line or direction it can't follow. Lines stay whole
@@ -315,7 +332,7 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
 - Tram and metro timetables: [PID / ROPID](https://pid.cz/o-systemu/opendata/), CC BY 4.0, reduced to trips per hour.
-- 3D buildings and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
+- 3D buildings, bridges and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - Maps in the developer panel: [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).

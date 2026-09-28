@@ -12,7 +12,7 @@ import type { FigureKit } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 
 interface ChaseCar { car: Car; path: Polyline | null; s: number; replan: number; stuck: number; reverse: number; calm: boolean; wrecked: boolean; gone?: boolean }
-interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number }
+interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number }
 interface Link { to: string; e: DriveEdge; back: boolean }
 interface PlayerTarget { x: number; y: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean }
 interface PoliceOptions {
@@ -20,6 +20,8 @@ interface PoliceOptions {
   height: (x: number, y: number, who?: Car | Officer) => number;
   rng: () => number; edgesNear: (x: number, y: number, radius: number) => DriveEdge[];
   offscreen: (x: number, y: number) => boolean; onBusted: () => void; kit: FigureKit;
+  // Whether a car or a tram (other than `skip`) takes up a circle of radius r at (x, y).
+  bodyAt?: (x: number, y: number, r: number, skip: Car | null) => boolean;
 }
 
 // The police and your wanted level, GTA 2 style.
@@ -90,7 +92,7 @@ class Heap {
 export class Police {
   scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
   r: () => number; edgesNear: PoliceOptions['edgesNear']; offscreen: PoliceOptions['offscreen'];
-  onBusted: () => void; kit: FigureKit;
+  onBusted: () => void; kit: FigureKit; bodyAt: NonNullable<PoliceOptions['bodyAt']>;
   spare: Figures[]; helis: Helicopters; heat: number; cars: ChaseCar[]; officers: Officer[];
   seen: boolean; lose: number; cool: Record<string, number>; spawnT: number; checkT: number; limit: number;
   nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number;
@@ -98,10 +100,10 @@ export class Police {
   glow: THREE.InstancedMesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
   dummy: THREE.Object3D; lastT?: number;
 
-  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit }: PoliceOptions) {
+  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit, bodyAt = () => false }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
     this.r = rng; this.edgesNear = edgesNear; this.offscreen = offscreen;
-    this.onBusted = onBusted; this.kit = kit;
+    this.onBusted = onBusted; this.kit = kit; this.bodyAt = bodyAt;
     this.spare = []; // figures of officers who've gone, to reuse
     this.helis = new Helicopters(scene, height);
     this.heat = 0;
@@ -278,7 +280,7 @@ export class Police {
     const edges = this.edgesNear(x, y, 250);
     for (let t = 0; t < 30 && edges.length; t++) {
       const e = edges[Math.floor(this.r() * edges.length)];
-      if (e.bridge || e.path.length < 12) continue;
+      if (e.bridge || e.tunnel || e.path.length < 12) continue;
       const q = e.path.at(this.r() * e.path.length), d = Math.hypot(q.x - x, q.y - y);
       if (d < 90 || d > 250 || !this.offscreen(q.x, q.y)) continue;
       const car = new Car('police', this.r, q.x, q.y, q.ang);
@@ -354,7 +356,8 @@ export class Police {
     car.crew = false;
     const lx = -Math.sin(car.h), ly = Math.cos(car.h);
     let x = car.x + lx * (car.spec.W / 2 + 0.7), y = car.y + ly * (car.spec.W / 2 + 0.7);
-    if (this.grid.at(x, y)) { x = car.x - lx * (car.spec.W / 2 + 0.7); y = car.y - ly * (car.spec.W / 2 + 0.7); }
+    // Out of the other door if a wall or another car is on this side.
+    if (this.grid.at(x, y) || this.bodyAt(x, y, 0.4, car)) { x = car.x - lx * (car.spec.W / 2 + 0.7); y = car.y - ly * (car.spec.W / 2 + 0.7); }
     let fig = this.spare.pop();
     if (!fig) {
       fig = new Figures(this.kit, 1);
@@ -384,9 +387,29 @@ export class Police {
       const tx = !o.back ? me.x : ride ? o.car.x : 2 * o.x - me.x, ty = !o.back ? me.y : ride ? o.car.y : 2 * o.y - me.y;
       const dx = tx - o.x, dy = ty - o.y, d = Math.hypot(dx, dy) || 1;
       const sp = o.back && !ride ? 1.4 : RUN;
-      o.vx = (dx / d) * sp;
-      o.vy = (dy / d) * sp;
-      o.h = Math.atan2(dy, dx);
+      // Round the cars and trams in the way, not into them: the first way clear a step
+      // ahead, turning further and further off the straight line, the same side as last
+      // time first (so they don't dither). Not their own car when going back to it.
+      let ang = Math.atan2(dy, dx);
+      const skip = o.back ? o.car : null, step = Math.min(d, 0.9);
+      const clear = (a: number) => !this.bodyAt(o.x + Math.cos(a) * step, o.y + Math.sin(a) * step, 0.4, skip);
+      if (!clear(ang)) {
+        const side = o.detour || (this.r() < 0.5 ? 1 : -1);
+        let found = false;
+        for (let k = 1; k <= 5 && !found; k++) {
+          for (const sgn of [side, -side]) {
+            if (!clear(ang + sgn * k * 0.5)) continue;
+            ang += sgn * k * 0.5;
+            o.detour = sgn;
+            found = true;
+            break;
+          }
+        }
+        // (Hemmed in all round: straight on, and the cars push them back out.)
+      } else o.detour = 0;
+      o.vx = Math.cos(ang) * sp;
+      o.vy = Math.sin(ang) * sp;
+      o.h = ang;
       if (o.back && ride && d < 2.6) { o.gone = true; o.car.crew = true; return; }
       if (!o.back && this.heat > 0 && !me.air) {
         const reach = me.car ? me.car.spec.L / 2 + 1 : 1.1;
