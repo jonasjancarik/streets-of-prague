@@ -300,8 +300,18 @@ def _area_kind(row, col):
         return "parking"
     if col(row, "area:highway") or col(row, "highway") == "pedestrian" or col(row, "place") == "square":
         return "square"
-    if lu in ("cemetery",) or am == "grave_yard":
+    if lu in ("cemetery",) or am == "grave_yard" or le == "golf_course" or na in ("wetland", "heath"):
         return "park"
+    # Land that has a use but no mapped surface, which would otherwise stay plain:
+    # fields round the city, work yards, railway land, and ground being dug up.
+    if lu in ("farmland", "plant_nursery", "greenhouse_horticulture"):
+        return "field"
+    if lu in ("industrial", "garages", "farmyard"):
+        return "yard"
+    if lu == "railway":
+        return "ballast"
+    if lu in ("construction", "brownfield", "landfill", "quarry") or na in ("bare_rock", "sand"):
+        return "bare"
     return None
 
 

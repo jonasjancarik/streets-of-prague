@@ -86,6 +86,10 @@ too long; `?dpr=1` fixes it.
   triangulated from OSM and coloured by world-space GLSL patterns (`src/shading.ts`,
   `src/surface.ts`): asphalt, granite setts, Prague mosaic pavement, slabs, grass,
   water. Rails, zebras, lane markings and parking-bay outlines are thin strips on top.
+  Land that OSM gives a use but no surface still gets one: fields with crop rows
+  (farmland, nurseries), concrete work yards (industrial land, garages, farmyards),
+  gravel ballast on railway land, and bare earth on building sites, brownfields and
+  quarries (`_area_kind` in `pipeline/osm_area.py`).
   OSM rarely maps the gardens and lawns in a suburb or a housing estate, so a street
   block of family houses, or of flats with plenty of room round them, gets grass
   between the buildings (`_gardens` in `pipeline/osm_area.py`); denser inner-city

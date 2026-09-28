@@ -71,6 +71,25 @@ vec3 pGrass(vec3 c, vec2 p) {
 vec3 pWood(vec3 c, vec2 p) { return c * (.75 + .45 * fbm(p * .12)) + (vnoise(p * 3.) - .5) * .05; }
 vec3 pPitch(vec3 c, vec2 p) { return pGrass(c, p) * (.94 + .1 * step(.5, fract(p.x / 6.))); }
 vec3 pDirt(vec3 c, vec2 p) { return c * (.85 + .25 * fbm(p * .5)) + (vnoise(p * 12.) - .5) * .08 * detail(p, .08); }
+// Gravel and railway ballast: packed small stones, a few bigger light and dark ones,
+// and faint wheel tracks worn into it.
+vec3 pGravel(vec3 c, vec2 p) {
+  vec2 s = stones(p * 22.);
+  vec3 g = c * (.84 + .3 * s.y) * mix(.7, 1., smoothstep(.02, .1, s.x));
+  g = mix(g, c * vec3(1.18, 1.16, 1.12), step(.94, hash12(floor(p * 7.))) * .5);
+  c = mix(c * (.93 + .1 * vnoise(p * 4.)), g, detail(p, .05));
+  return c * (.9 + .16 * fbm(p * .35)) * mix(1., .93, smoothstep(.6, .7, fbm(vec2(p.x * .05, p.y * .8) + 5.)));
+}
+// Fields: straight crop rows in strips that change direction and tone.
+vec3 pField(vec3 c, vec2 p) {
+  vec2 cell = floor(p / 90.);
+  float a = hash12(cell) * 3.1416, t = hash12(cell + 3.7);
+  vec2 d = vec2(cos(a), sin(a));
+  float row = fract(dot(p, d) / 1.6);
+  c *= mix(vec3(.95, 1.02, .9), vec3(1.07, 1., .88), t);
+  c *= 1. - .1 * smoothstep(.35, .5, abs(row - .5)) * detail(p, 1.2);
+  return c * (.9 + .2 * fbm(p * .03)) + (vnoise(p * 6.) - .5) * .04 * detail(p, .15);
+}
 vec3 pConcrete(vec3 c, vec2 p) {
   vec2 b = blocks(p, vec2(3., 2.4));
   return c * (.9 + .12 * fbm(p * .4)) * mix(.8, 1., smoothstep(.01, .04, b.x) * detail(p, 1.) + (1. - detail(p, 1.)));
@@ -92,11 +111,13 @@ vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 8) return pDirt(c, p);
   if (id == 9) return pConcrete(c, p);
   if (id == 10) return pWater(c, p);
+  if (id == 11) return pGravel(c, p);
+  if (id == 12) return pField(c, p);
   return c;
 }
 `;
 
-export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
