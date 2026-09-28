@@ -43,8 +43,6 @@ export class Sky {
   readonly sun = new THREE.DirectionalLight();
   // From the light towards the target, and how far back the light sits.
   readonly offset = new THREE.Vector3();
-  // The sun's path mirrored north to south (see update); ?sun=south for the real one.
-  flipped = !new URLSearchParams(location.search).has('sun', 'south');
   private renderer: THREE.WebGLRenderer;
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
@@ -68,14 +66,11 @@ export class Sky {
     this.hemi.intensity = THREE.MathUtils.lerp(a.skyI, b.skyI, t);
     this.renderer.toneMappingExposure = THREE.MathUtils.lerp(a.exposure, b.exposure, t);
 
-    // The view looks straight down with north at the top. Light from the south can
-    // make roofs read as hollows, so by default the sun's path is mirrored north to south: it
-    // rises in the east, stands at the top of the screen at noon and sets in the west,
-    // and shadows fall towards the bottom. Kept a little above the horizon so shadows
-    // don't run off for hundreds of metres; the moon stands high in the north-west.
+    // Kept a little above the horizon so shadows don't run off for hundreds of metres
+    // at sunset; at night the moon stands high in the south-west.
     let lightEl: number, lightAz: number;
-    if (deg > -4) { lightEl = Math.max(el, 15 * Math.PI / 180); lightAz = this.flipped ? Math.PI - az : az; }
-    else { lightEl = 50 * Math.PI / 180; lightAz = -0.7; }
+    if (deg > -4) { lightEl = Math.max(el, 15 * Math.PI / 180); lightAz = az; }
+    else { lightEl = 50 * Math.PI / 180; lightAz = Math.PI + 0.5; }
     const dist = 300;
     this.offset.set(
       Math.sin(lightAz) * Math.cos(lightEl) * dist,

@@ -19,7 +19,7 @@ npm run build        # typecheck, then make a production build
 The map data is built locally (see [Building the map](#building-the-map)); nothing
 generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
 the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague
-now, and the sun and the light follow it (its path flipped so the light comes from the top of the screen; `?sun=south` for the real one); `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
+now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
 (with night-time parking). `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
 The game draws at the screen's pixel ratio (up to 2) and steps it down while frames take
