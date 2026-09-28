@@ -182,3 +182,35 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Place names on screen.** Drop the large pop-up for street names; the street is
   already shown top left next to the speed, and that's enough. Keep the big title
   for entering a new neighbourhood or district.
+
+## More map data
+
+Open data found on 28 September 2026 and not used yet. All IPR Praha, CC BY; the
+feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<name>/FeatureServer/0`
+(paged queries, 2,000 features at a time).
+
+- **Trees from the city's greenery records.** `OPK_CUR_OPK_SMZ_VP_B` has 171,000
+  trees (`kod_vp` 71) and 30,000 shrubs (51), each marked conifer, broadleaf or
+  fruit tree (`kod_drevin`); OSM has about 20,000 trees in Prague. Only greenery the
+  city and its districts look after, so no private gardens: for those, IPR's 1 m
+  surface model minus the terrain gives the tree crowns' heights.
+- **Lawns, shrubs, hedges and flower beds.** `OPK_CUR_OPK_SMZ_VP_P`, 127,000
+  polygons, for the plain beige ground in parks, housing estates and along streets.
+- **Street furniture from the archived utility map.** `DTMP_CUR_TMISZNAK_B`, 1.39
+  million points by `ctmtp_popis`: street lamps (121,000; OSM has about 21,000),
+  manhole covers (174,000), storm drains (71,000), traffic lights (5,700),
+  hydrants, phone boxes, substations. The lamps would matter for night.
+- **Walls, fences, railings and steps from the technical map.** Set 3 of the DTM
+  (lines and points), already downloaded to `pipeline/.cache/dtm/ZPS_KR/` (same
+  download list as `dtm.py`, `code=03`). Could add to or replace OSM's walls, and
+  block the player.
+- **The rest of the technical map's surfaces.** Set 2 (what `dtm.py` reads) also
+  has pavements, traffic islands, separate tram tracks, yards and kept greenery;
+  its levels tell bridges and the metro apart.
+- **Building age** (catalogue: "Stáří zástavby") to pick facade styles, instead of
+  guessing from where a building stands and how tall it is.
+- **Noise maps** (day and night, road traffic on its own) for how loud the
+  background sound is in a street.
+- **Smaller things:** tree-lined avenues, memorial trees, retaining walls, noise
+  barriers, fountains, drinking fountains, public toilets, recycling bins, parking
+  meters, playgrounds. All in the catalogue at <https://opendata.geoportalpraha.cz/>.
