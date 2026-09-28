@@ -12,6 +12,8 @@ and was split out with its history at `prague-game@c271397`.
 ```bash
 npm install
 npm run dev          # http://localhost:5191
+npm run typecheck    # check the TypeScript browser code
+npm run build        # typecheck, then build the site
 ```
 
 The map data is built locally (see [Building the map](#building-the-map)); nothing
@@ -29,7 +31,7 @@ too long; `?dpr=1` fixes it.
   runs, Space is the handbrake. E gets into the nearest car, including one driving
   past (its driver runs off). R puts the car back on the road. Scroll zooms; the
   camera also pulls up with speed.
-- In the car, holding Shift is lane assist (`src/assist.js`): it steers along your
+- In the car, holding Shift is lane assist (`src/assist.ts`): it steers along your
   lane, and A/D then pick the turn at the next junction instead of steering. It also
   keeps you to the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
   trunk roads, 80 on motorways): the gas fades out at the limit, and faster than that
@@ -37,13 +39,13 @@ too long; `?dpr=1` fixes it.
 - **Metro**: the M signs are the real entrances. Press E at one to go down, pick a
   station on any line (W/S, A/D for the line, E to go, or tap), and the ride plays out
   on the line's map: the wait for a train, the stations going by, a change of line
-  where you need one, with the clock moving on by the real times (`src/metro.js`).
+  where you need one, with the clock moving on by the real times (`src/metro.ts`).
   You come up at an entrance of that station, and the police have lost you. After
   midnight the metro is shut until about five.
 - **Tram stops**: stand at one and the HUD lists the next trams due, counting down
-  (`src/board.js`). Hold Space (on touch, "Hold to wait") to fast-forward until one is
+  (`src/board.ts`). Hold Space (on touch, "Hold to wait") to fast-forward until one is
   about to arrive.
-- **Trams**: press E next to a tram waiting at a stop to get on (`src/ride.js`). The
+- **Trams**: press E next to a tram waiting at a stop to get on (`src/ride.ts`). The
   panel lists the stops ahead. Pick one with W/S (or tap it) and the ride runs at 6×,
   stops on the way included, until about 250 m before your stop; then you watch the
   tram pull in and you get off. Hold Shift (on touch, "Hold to speed up") to speed up
@@ -61,7 +63,7 @@ too long; `?dpr=1` fixes it.
   assist is a toggle above the stick, showing the speed limit it keeps to while it's
   on; the right thumb has the gas and brake (roll from one to the other without
   lifting), the handbrake and "Get out"; "Back on road" is top right.
-  Pinch the map to zoom (`src/touch.js`).
+  Pinch the map to zoom (`src/touch.ts`).
 - **Police.** Knocking people over, pulling drivers out of their cars, wrecking
   traffic, ramming or stealing a police car and speeding past the police (20 km/h over
   the limit) earn stars, up to five; crimes the police see count three times as much.
@@ -69,7 +71,7 @@ too long; `?dpr=1` fixes it.
   an officer gets out and runs after you, and if they reach you, you're busted (the
   police keep the car). You can outrun them on foot. From three stars a helicopter
   joins in and sees you over the rooftops. Stay out of sight and the stars go one at a
-  time; they blink while nobody can see you (`src/police.js`, `src/helicopter.js`).
+  time; they blink while nobody can see you (`src/police.ts`, `src/helicopter.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads
@@ -81,8 +83,8 @@ too long; `?dpr=1` fixes it.
 ## How it works
 
 - **Procedural look.** The ground is real geometry, one mesh per surface kind
-  triangulated from OSM and coloured by world-space GLSL patterns (`src/shading.js`,
-  `src/surface.js`): asphalt, granite setts, Prague mosaic pavement, slabs, grass,
+  triangulated from OSM and coloured by world-space GLSL patterns (`src/shading.ts`,
+  `src/surface.ts`): asphalt, granite setts, Prague mosaic pavement, slabs, grass,
   water. Rails, zebras, lane markings and parking-bay outlines are thin strips on top.
   OSM rarely maps the gardens and lawns in a suburb or a housing estate, so a street
   block of family houses, or of flats with plenty of room round them, gets grass
@@ -91,18 +93,18 @@ too long; `?dpr=1` fixes it.
   each face's slope, slate and gravel on flat roofs. It all stays sharp at any zoom.
 - **Facades** are put together bay by bay and storey by storey from 48 parts: windows,
   doors, gateways and shopfronts of tenements, baroque houses, functionalist blocks,
-  panel housing and family houses (`src/facades.js`). A wall's style comes from where
+  panel housing and family houses (`src/facades.ts`). A wall's style comes from where
   it stands and how tall it is: baroque in Old Town, Malá Strana and Hradčany, panel
   housing for tall blocks far out, family houses under about 8 m, tenements with some
   functionalism elsewhere. The plaster takes the building's own colour. The parts were
   drawn by an image model as four sheets, each asked for with the first sheet as a
   style reference, and are cut and packed by `assets/facades/build_atlas.py`.
-- **Tiles.** The map streams in 250 m tiles (`src/tiles.js`) around the camera. Each
+- **Tiles.** The map streams in 250 m tiles (`src/tiles.ts`) around the camera. Each
   tile has its own ground, buildings, trees, collision grid, parked cars and piece of
   the street graphs (joined across tiles by OSM node ids), so start-up doesn't depend
   on the area's size. A tile's files are fetched all at once, and the heavy part of
-  building it runs in web workers (`src/tileWorker.js`): the ground's geometry
-  (`src/ground.js`), IPR's buildings, straight-skeleton roofs for OSM buildings, the
+  building it runs in web workers (`src/tileWorker.ts`): the ground's geometry
+  (`src/ground.ts`), IPR's buildings, straight-skeleton roofs for OSM buildings, the
   windows' positions on every wall, trees, walls and the collision grid. The main
   thread only joins up the street graphs, makes the meshes and parks the cars, so
   driving into new streets doesn't stutter.
@@ -118,18 +120,18 @@ too long; `?dpr=1` fixes it.
   drive or walk onto a deck where it meets the street and off it at the far end;
   its parapets keep them on it, and whatever is on it and under it pass each other by.
   Under a deck, a round hole opens in it above you, as in a passage (`track` and
-  `view` in `src/tiles.js`, the decks' meshes in `src/ground.js`).
-- **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.js`); AI
+  `view` in `src/tiles.ts`, the decks' meshes in `src/ground.ts`).
+- **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.ts`); AI
   traffic that keeps to its lane, brakes for anything ahead and gives way to the right
-  (`src/traffic.js`); pedestrians on the footpath network who leap out of the way of
-  fast cars and get knocked over, then get up again (`src/people.js`). Traffic and
+  (`src/traffic.ts`); pedestrians on the footpath network who leap out of the way of
+  fast cars and get knocked over, then get up again (`src/people.ts`). Traffic and
   people live within about 330 m of the player.
 - **Crowds.** The busier the streets around you, the more people: 500 to 600 round the
   Old Town Square and on Charles Bridge, a couple of hundred in Vinohrady or on a
   housing estate, a few dozen on the edge of town. They come and go out of sight as
   you move, turn up more often on the busier streets and, at a junction, lean towards
   the busier way. How busy a street is comes from a footfall map
-  (`pipeline/build_footfall.py`, `src/footfall.js`). There's no open data on where
+  (`pipeline/build_footfall.py`, `src/footfall.ts`). There's no open data on where
   people walk, so it's pieced together from what draws them: OSM's shops, cafés,
   sights, schools and pedestrian streets, how many buses, trams, trains and metro
   trains leave each stop on a weekday, and a short hand-made list of the places
@@ -141,13 +143,13 @@ too long; `?dpr=1` fixes it.
 - **People and two-wheelers** are a small kit built in Blender from code
   (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
   and clips for standing, walking, running, jumping, falling, getting up and riding,
-  plus a bike and a motorbike. At load, `src/figures.js` plays every clip through and
+  plus a bike and a motorbike. At load, `src/figures.ts` plays every clip through and
   bakes the posed vertices into textures, so the whole crowd is one instanced draw
   call. Rebuild with `blender -b --factory-startup -P assets/figures/build.py`; add
   `-- --preview DIR` to render a few frames of every clip.
-- **Trams** run Prague's real lines (`src/trams.js`), taken from OSM's route
+- **Trams** run Prague's real lines (`src/trams.ts`), taken from OSM's route
   relations: each line goes round its whole route there and back. How many trams a line
-  has out follows PID's timetable for the game clock's day and hour (`src/clock.js`):
+  has out follows PID's timetable for the game clock's day and hour (`src/clock.ts`):
   a tram every few minutes on a weekday afternoon, fewer at weekends and in the
   evening, and only the night lines 91–99 after midnight. Trams join a line where the
   gap is widest and leave service out of sight; the dev panel moves the clock an hour
@@ -164,7 +166,7 @@ too long; `?dpr=1` fixes it.
   is checked with rays over the collision grid; the helicopter needs no line of sight.
 - **Parking** follows TSK Praha's paid-parking data: each street section gets spaces ×
   measured occupancy cars (day or night), placed in OSM's parking lanes and lots and
-  then along the kerb (`src/parking.js`); bay lines are painted in the zone colour
+  then along the kerb (`src/parking.ts`); bay lines are painted in the zone colour
   (blue resident, violet mixed, orange visitor). Cars stand parallel, angled or
   perpendicular as OSM tags each parking area (`orientation`) and each side of the
   street (`parking:<side>:orientation`, or the older `parking:lane:<side>`); where it
@@ -182,7 +184,7 @@ too long; `?dpr=1` fixes it.
   Prague's pasáže) are cut out of the buildings' collision footprint and stay in the
   street graphs, so cars, traffic and people go through. While you're in one, a round
   hole opens in the floors above you so you can still see yourself (`CUTAWAY` in
-  `src/shading.js`).
+  `src/shading.ts`).
 
 `src/map/` holds the map-building modules shared with the 1945 project it came
 from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicular).

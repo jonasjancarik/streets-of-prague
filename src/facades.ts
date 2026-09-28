@@ -1,0 +1,181 @@
+import * as THREE from 'three';
+import proj4 from 'proj4';
+import type { Box, HeightSampler } from './map/types.ts';
+
+// Facade modules: one window bay by one storey each, drawn as sheets of 6 × 2
+// (upper floors on top, ground floors below) and packed by assets/facades/build_atlas.py
+// into public/facades.webp, one sheet under another. The shader (shading.ts) picks a
+// module for every bay and storey of a wall, by the wall's style.
+export const CELL: [number, number] = [256, 512];
+export const SHEETS = 4;
+
+// Styles: 0 tenement, 1 baroque, 2 functionalist, 3 panel housing, 4 family house.
+export const STYLE = { tenement: 0, baroque: 1, functionalist: 2, panel: 3, house: 4 } as const;
+
+export const FACADE_ATLAS: { value: THREE.DataArrayTexture | null } = { value: null };
+export const FACADE_ON = { value: 0 };
+
+let loading: Promise<void> | null = null;
+export function loadFacadeAtlas(): Promise<void> {
+  loading ??= (async () => {
+    const img = new Image();
+    img.src = 'facades.webp';
+    await img.decode();
+    const [w, h] = CELL, cols = 6, rows = SHEETS * 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    ctx.drawImage(img, 0, 0);
+    const px = ctx.getImageData(0, 0, img.width, img.height).data;
+    // Cut the atlas into layers of a texture array, so modules never bleed into
+    // their neighbours in the mipmaps.
+    const data = new Uint8Array(w * h * 4 * cols * rows);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const layer = r * cols + c;
+      for (let y = 0; y < h; y++) {
+        const src = ((r * h + y) * img.width + c * w) * 4;
+        data.set(px.subarray(src, src + w * 4), (layer * h + y) * w * 4);
+      }
+    }
+    const tex = new THREE.DataArrayTexture(data, w, h, cols * rows);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = true;
+    tex.anisotropy = 8; // walls are seen almost edge-on from above
+    tex.needsUpdate = true;
+    FACADE_ATLAS.value = tex;
+    FACADE_ON.value = 1;
+  })().catch((err) => console.warn('Facade textures did not load, drawing plain windows', err));
+  return loading;
+}
+
+// A wall's style from where it stands and how tall it is. Old Town, Malá Strana and
+// Hradčany are mostly baroque and older; tall blocks far out are prefab panel housing;
+// low buildings are family houses; the rest is mostly 19th-century tenements with some
+// 1920s–30s functionalism further out. Neighbouring walls share the random pick
+// (it goes by 60 m squares), so a block keeps to one style.
+export function styleFor(index: { bbox_wgs84: Box }): (x: number, y: number, height: number) => number {
+  const [w, s, e, n] = index.bbox_wgs84;
+  const local = `+proj=tmerc +lat_0=${(s + n) / 2} +lon_0=${(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
+  const at = (lon: number, lat: number): [number, number] => proj4('EPSG:4326', local, [lon, lat]) as [number, number];
+  const oldTown = at(14.4213, 50.0875);
+  const core: [number, number, number][] = [
+    [...oldTown, 750], // Staré Město
+    [...at(14.4034, 50.0880), 550], // Malá Strana
+    [...at(14.3975, 50.0890), 450], // Hradčany
+  ];
+  return (x, y, height) => {
+    if (height < 8.5) return STYLE.house;
+    const pick = cellHash(Math.floor(x / 60), Math.floor(y / 60));
+    if (core.some(([cx, cy, r]) => Math.hypot(x - cx, y - cy) < r)) return pick < 0.65 ? STYLE.baroque : STYLE.tenement;
+    const d = Math.hypot(x - oldTown[0], y - oldTown[1]);
+    if (height > 20 && d > 3500) return STYLE.panel;
+    if (d > 1800 && pick < 0.25) return STYLE.functionalist;
+    return STYLE.tenement;
+  };
+}
+
+export function cellHash(i: number, j: number): number {
+  const s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+// Where each wall pixel sits on its facade, for the windows (see shading.ts and
+// facades.ts): metres along the wall, metres above the ground at its foot, the wall's
+// length, and its style plus a random fraction. Triangles that share an edge and lie in
+// one plane make one wall, measured from its own end in the direction between its two
+// ends, so the windows run on across the triangles. `p`: the triangles' positions
+// (three.js world); returns 4 floats a vertex. (Measured from the world's origin
+// with each triangle's own normal, they jumped by metres at every seam.)
+export function facadeCoords(p: Float32Array, groundAt: HeightSampler, styleAt: (x: number, y: number, height: number) => number): Float32Array {
+  const n = p.length / 9, out = new Float32Array(n * 12);
+  const nrm = new Float32Array(n * 2), wall = new Int32Array(n).fill(-1);
+  const up = (i: number): number => (wall[i] === i ? i : (wall[i] = up(wall[i])));
+  const key = (v: number): string => `${Math.round(p[v] * 1000)},${Math.round(p[v + 1] * 1000)},${Math.round(p[v + 2] * 1000)}`;
+  const edges = new Map<string, number>();
+  for (let t = 0; t < n; t++) {
+    const i = t * 9;
+    const ax = p[i + 3] - p[i], ay = p[i + 4] - p[i + 1], az = p[i + 5] - p[i + 2];
+    const bx = p[i + 6] - p[i], by = p[i + 7] - p[i + 1], bz = p[i + 8] - p[i + 2];
+    const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx, h = Math.hypot(nx, nz);
+    if (!(h > 0) || Math.abs(ny) > 0.15 * Math.hypot(nx, ny, nz)) continue; // a roof, or a sliver
+    nrm[t * 2] = nx / h; nrm[t * 2 + 1] = nz / h; wall[t] = t;
+    const k = [key(i), key(i + 3), key(i + 6)];
+    for (const [u, v] of [[0, 1], [1, 2], [2, 0]]) {
+      const e = k[u] < k[v] ? k[u] + k[v] : k[v] + k[u], o = edges.get(e);
+      if (o === undefined) { edges.set(e, t); continue; }
+      const dot = nrm[t * 2] * nrm[o * 2] + nrm[t * 2 + 1] * nrm[o * 2 + 1];
+      if (Math.abs(dot) > 0.999) wall[up(t)] = up(o);
+    }
+  }
+  const walls = new Map<number, number[]>();
+  for (let t = 0; t < n; t++) if (wall[t] >= 0) {
+    const w = up(t);
+    const group = walls.get(w);
+    if (group) group.push(t);
+    else walls.set(w, [t]);
+  }
+  for (const [w, tris] of walls) {
+    // The wall's two ends: the farthest apart along its rough direction.
+    const rx = -nrm[w * 2 + 1], rz = nrm[w * 2];
+    let lo = Infinity, hi = -Infinity, a = 0, b = 0;
+    for (const t of tris) for (let v = t * 9; v < t * 9 + 9; v += 3) {
+      const s = p[v] * rx + p[v + 2] * rz;
+      if (s < lo) { lo = s; a = v; }
+      if (s > hi) { hi = s; b = v; }
+    }
+    const len = Math.hypot(p[b] - p[a], p[b + 2] - p[a + 2]) || 1;
+    const tx = (p[b] - p[a]) / len, tz = (p[b + 2] - p[a + 2]) / len;
+    let from = Infinity, to = -Infinity, top = 0;
+    for (const t of tris) {
+      let ground = Infinity;
+      for (let v = t * 9; v < t * 9 + 9; v += 3) ground = Math.min(ground, groundAt(p[v], -p[v + 2]));
+      for (let v = t * 9; v < t * 9 + 9; v += 3) {
+        const o = (v / 3) * 4, s = (p[v] - p[a]) * tx + (p[v + 2] - p[a + 2]) * tz;
+        out[o] = s;
+        out[o + 1] = p[v + 1] - ground;
+        from = Math.min(from, s); to = Math.max(to, s); top = Math.max(top, out[o + 1]);
+      }
+    }
+    const style = styleAt((p[a] + p[b]) / 2, -(p[a + 2] + p[b + 2]) / 2, top) + 0.999 * cellHash(p[a], p[a + 2]);
+    for (const t of tris) for (let o = t * 12; o < t * 12 + 12; o += 4) {
+      out[o] -= from;
+      out[o + 2] = Math.max(to - from, 0.5);
+      out[o + 3] = style;
+    }
+  }
+  return out;
+}
+
+// For every bay and storey, which module of the wall's style: upper floors, then the
+// ground floor's doors and the rest of the ground floor, as layers of the atlas
+// (sheet × 12 + row × 6 + column). A few bays of each ground floor get a door.
+export const FACADE_GLSL = /* glsl */ `
+uniform mediump sampler2DArray uFacades;
+uniform float uFacadeOn;
+const int F_UP[30] = int[30](0, 1, 2, 3, 4, 0,   12, 13, 14, 15, 12, 14,   24, 25, 24, 25, 26, 24,   27, 28, 27, 27, 28, 27,   36, 37, 38, 39, 40, 36);
+const int F_DOOR[15] = int[15](7, 8, 9,   18, 19, 20,   31, 31, 34,   32, 32, 34,   42, 44, 45);
+const int F_WALL[20] = int[20](6, 6, 10, 11,   21, 22, 23, 20,   30, 30, 30, 35,   33, 35, 33, 35,   43, 46, 47, 43);
+float fHash(float a, float b) { return fract(sin(a * 127.1 + b * 311.7) * 43758.5453); }
+vec3 facadeModules(vec3 wall, vec4 f, vec4 fdx, vec4 fdy) {
+  int style = int(floor(f.w));
+  float seed = fract(f.w) * 97.;
+  float bays = max(1., floor(f.z / 1.9 + .5));
+  vec2 q = vec2(f.x / f.z * bays, f.y < 4. ? clamp(f.y / 4., 0., .999) : (f.y - 4.) / 3.4);
+  vec2 cell = floor(q), uv = fract(q);
+  int layer;
+  if (f.y < 4.) {
+    float r = fHash(seed, cell.x);
+    layer = r < .18 ? F_DOOR[style * 3 + int(r / .18 * 3.)] : F_WALL[style * 4 + int(fHash(cell.x, seed) * 4.)];
+  } else layer = F_UP[style * 6 + int(fHash(seed, cell.y + 7.) * 6.)];
+  vec2 k = vec2(bays / f.z, 1. / 3.6);
+  vec3 t = textureGrad(uFacades, vec3(uv.x, 1. - uv.y, float(layer)), fdx.xy * k, fdy.xy * k).rgb;
+  // Plaster is drawn neutral grey: give it the wall's colour. Frames, doors and
+  // metal keep their own.
+  float hi = max(t.r, max(t.g, t.b)), sat = (hi - min(t.r, min(t.g, t.b))) / max(hi, 1e-3);
+  return mix(t, t * wall / .55, 1. - smoothstep(.08, .2, sat));
+}
+`;

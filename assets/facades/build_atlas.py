@@ -4,7 +4,7 @@ Each sheet (sheetN.webp, generated from the brief in sheetN.txt with the first s
 a style reference) is a grid of 6 × 2 cells, upper floors on top and ground floors below,
 between pinkish-magenta gutters. The gutters are found from the colours, since the image
 model never puts them exactly where asked. Every cell is scaled to 256 × 512 and the
-sheets are stacked, one under another, in the order src/facades.js expects.
+sheets are stacked, one under another, in the order src/facades.ts expects.
 
 usage: python3 assets/facades/build_atlas.py   (needs Pillow and numpy)
 """

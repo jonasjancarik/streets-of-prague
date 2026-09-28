@@ -43,7 +43,7 @@ checking on a real phone before going further.
   including tiles that have been dropped, so shrinking it needs care.
 - **What's left on the main thread** (in order, standing on the Old Town Square):
   the collision hash's generators (`SpatialHash.near` and `obstacles` in
-  `src/main.js`), placing people (`Crowd.place` allocates a point per person per
+  `src/main.ts`), placing people (`Crowd.place` allocates a point per person per
   step), and the trams, all ~300 of them updated every step even far away (they
   already move in bigger steps when far).
 - **A benchmark in the repo.** The measurements were made with a throwaway

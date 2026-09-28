@@ -1,0 +1,428 @@
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { clamp, type Random } from './network.ts';
+import { Figures, Anim, SCALE, type FigureKit, type FigureVehicleName, type Look } from './figures.ts';
+
+// Arcade top-down car handling: grip on the long axis, lateral slip that decays
+// (much slower with the handbrake), bounces off walls against the collision grid.
+
+export type CarType = 'hatch' | 'sedan' | 'estate' | 'van' | 'taxi' | 'police' | FigureVehicleName;
+
+interface BaseCarSpec {
+  L: number;
+  W: number;
+  H: number;
+  mass: number;
+  accel: number;
+  vmax: number;
+  grip: number;
+  turn: number;
+  weight: number;
+  traffic?: number;
+}
+
+interface FourWheelCarSpec extends BaseCarSpec {
+  cabin: readonly [number, number];
+  color?: string;
+  two?: undefined;
+}
+
+interface TwoWheelerCarSpec extends BaseCarSpec {
+  cabin?: never;
+  color?: never;
+  two: FigureVehicleName;
+}
+
+export type CarSpec = FourWheelCarSpec | TwoWheelerCarSpec;
+
+export const TYPES = {
+  hatch: { L: 3.9, W: 1.75, H: 1.45, mass: 1100, accel: 9, vmax: 36, grip: 9, turn: 2.6, cabin: [-1.15, 0.85], weight: 4 },
+  sedan: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 4 },
+  estate: { L: 4.7, W: 1.82, H: 1.5, mass: 1500, accel: 9, vmax: 40, grip: 8.5, turn: 2.3, cabin: [-1.95, 0.8], weight: 2 },
+  van: { L: 5.2, W: 2.0, H: 2.3, mass: 2200, accel: 6.5, vmax: 31, grip: 8, turn: 1.9, cabin: [-2.5, 1.6], weight: 1 },
+  taxi: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 1, color: '#e9c62f' },
+  // Never parked or in ordinary traffic: src/police.ts puts these on the streets.
+  police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#eef1f4' },
+  // Two-wheelers (drawn from the figures kit, as big as the people riding them). A bike
+  // is never parked in a car bay; `traffic` is how often each type turns up on the road.
+  bike: { L: 2.3, W: 0.8, H: 1.5, mass: 90, accel: 3.2, vmax: 9, grip: 12, turn: 3.4, weight: 0, traffic: 0.5, two: 'bike' },
+  moto: { L: 2.8, W: 1.0, H: 1.6, mass: 260, accel: 12, vmax: 48, grip: 9.5, turn: 2.8, weight: 0.3, traffic: 1.2, two: 'moto' },
+} satisfies Record<CarType, CarSpec>;
+const PAINT = ['#e8e6e1', '#bfc3c7', '#8d9398', '#2c2f33', '#1d2a44', '#7a1f1f', '#b33a2c', '#2f5140', '#5b6d7c', '#d9d2c0', '#3f4a5a', '#9a7b4f'];
+const TWO_PAINT = {
+  bike: ['#1d2a44', '#b33a2c', '#2f5140', '#e8e6e1', '#2c2f33', '#d94f8c', '#e0b32a', '#5b6d7c', '#8fb3c9'],
+  moto: ['#b3161b', '#1d2a44', '#2c2f33', '#e8e6e1', '#d9d2c0', '#2f5140', '#e07b1f'],
+} satisfies Record<FigureVehicleName, string[]>;
+
+let kit: FigureKit | null = null;
+// Two-wheelers come from the figures kit, which has to be loaded before the first one.
+export function useKit(k: FigureKit): void { kit = k; }
+
+const cache = new Map<string, THREE.BufferGeometry>();
+function carGeometry(type: CarType, paint: string): THREE.BufferGeometry {
+  const k = `${type}|${paint}`;
+  if (cache.has(k)) return cache.get(k)!;
+  const S: CarSpec = TYPES[type];
+  if (S.two) {
+    cache.set(k, kit!.vehicles[S.two](paint));
+    return cache.get(k)!;
+  }
+  const parts: THREE.BufferGeometry[] = [];
+  const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string): void => {
+    const g = new THREE.BoxGeometry(sx, sy, sz);
+    g.translate(x, y, z);
+    const c = new THREE.Color(color);
+    const n = g.attributes.position.count;
+    const col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    parts.push(g);
+  };
+  const { L, W, H } = S;
+  const body = S.color || paint;
+  const glass = '#1b232b';
+  const [c0, c1] = S.cabin;
+  const bodyH = type === 'van' ? H * 0.55 : H * 0.5;
+  box(L, bodyH, W, 0, 0.25 + bodyH / 2, 0, body);
+  box(c1 - c0, H - bodyH - 0.3, W * 0.86, (c0 + c1) / 2, 0.25 + bodyH + (H - bodyH - 0.3) / 2, 0, glass);
+  // Roof panel: shorter than the cabin, so the windscreen and rear window show from above.
+  box(c1 - c0 - (type === 'van' ? 0.35 : 0.75), 0.08, W * 0.84, (c0 + c1) / 2 - (type === 'van' ? 0.15 : 0.1), H - 0.01, 0, body);
+  box(0.06, 0.18, 0.34, L / 2 + 0.01, 0.62, W * 0.33, '#fff6d8');
+  box(0.06, 0.18, 0.34, L / 2 + 0.01, 0.62, -W * 0.33, '#fff6d8');
+  box(0.06, 0.16, 0.3, -L / 2 - 0.01, 0.66, W * 0.35, '#b3161b');
+  box(0.06, 0.16, 0.3, -L / 2 - 0.01, 0.66, -W * 0.35, '#b3161b');
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(0.66, 0.6, 0.24, sx * (L / 2 - 0.85), 0.3, sz * (W / 2 - 0.1), '#161616');
+  if (type === 'taxi') box(0.28, 0.2, 0.7, (c0 + c1) / 2, H + 0.1, 0, '#fff4c2');
+  if (type === 'police') {
+    // Blue and yellow bands down the sides, a blue band across the bonnet, the light bar.
+    box(L * 0.96, 0.16, W + 0.02, 0, 0.25 + bodyH * 0.5, 0, '#1d4fa3');
+    box(L * 0.96, 0.07, W + 0.03, 0, 0.25 + bodyH * 0.5 + 0.115, 0, '#d4e02b');
+    box(0.5, 0.02, W * 0.92, (c1 + L / 2) / 2, 0.25 + bodyH + 0.01, 0, '#1d4fa3');
+    box(0.3, 0.12, W * 0.74, (c0 + c1) / 2, H + 0.06, 0, '#1b1f2a');
+  }
+  const g = mergeGeometries(parts);
+  cache.set(k, g);
+  return g;
+}
+
+const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+
+// A random type, by `weight` for parking and by `traffic` (where it's set) on the road.
+export function randomType(r: Random, use: 'weight' | 'traffic' = 'weight'): CarType {
+  const w = (t: CarSpec) => t[use] ?? t.weight;
+  const total = Object.values(TYPES).reduce((a, t) => a + w(t), 0);
+  let x = r() * total;
+  for (const [k, t] of Object.entries(TYPES)) if ((x -= w(t)) < 0) return k as CarType;
+  return 'sedan';
+}
+
+export interface CarControls {
+  throttle: number;
+  steer: number;
+  handbrake: boolean;
+  cap?: number;
+}
+
+export interface CarCollisionGrid {
+  at(x: number, y: number): number;
+  height?(x: number, y: number): number;
+}
+
+export interface CarGrid extends CarCollisionGrid {
+  view?(who: Car): CarCollisionGrid;
+}
+
+export type Coordinate = [number, number];
+
+interface CollisionBody {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  w?: number;
+}
+
+export class Car {
+  type: CarType;
+  spec: CarSpec;
+  mass: number;
+  key: string;
+  x: number;
+  y: number;
+  h: number;
+  vx: number;
+  vy: number;
+  w: number;
+  mode: 'loose' | 'traffic' | 'player' | 'police';
+  level?: number;
+  z?: number;
+  gz?: number;
+  _tx?: number;
+  _ty?: number;
+  stamp?: number;
+  resting?: boolean;
+  restAt?: [number, number, number];
+  damage: number;
+  rider: Look | null;
+  lean: number;
+  r: number;
+  offsets: number[];
+  samples: Coordinate[];
+  lastH?: number;
+  anim?: Anim;
+  crew?: boolean;
+  constructor(type: CarType, r: Random, x = 0, y = 0, h = 0) {
+    this.type = type;
+    this.spec = TYPES[type];
+    this.mass = this.spec.mass;
+    const paints = this.spec.two ? TWO_PAINT[this.spec.two] : PAINT;
+    const paint = paints[Math.floor(r() * paints.length)];
+    this.key = `${type}|${paint}`;
+    carGeometry(type, paint);
+    this.x = x;
+    this.y = y;
+    this.h = h;
+    this.vx = this.vy = this.w = 0;
+    this.mode = 'loose'; // 'traffic' (driven by AI), 'loose' (free body), 'player', 'police' (chasing you)
+    this.damage = 0;
+    this.rider = null; // on a two-wheeler: the look of whoever is riding it
+    this.lean = 0;
+    const { L, W } = this.spec;
+    this.r = W / 2 + 0.02;
+    this.offsets = [-(L / 2 - this.r), 0, L / 2 - this.r];
+    this.samples = [];
+    for (const [a, b] of [[1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1], [0.5, 1], [0.5, -1], [-0.5, 1], [-0.5, -1]]) {
+      this.samples.push([(a * L) / 2, (b * W) / 2]);
+    }
+    this.sync();
+  }
+
+  get speed() { return Math.hypot(this.vx, this.vy); }
+  get two(): FigureVehicleName | undefined { return this.spec.two; }
+  // Someone at the wheel: the player, or the police chasing them.
+  get driven() { return this.mode === 'player' || this.mode === 'police'; }
+  get forwardSpeed() { return this.vx * Math.cos(this.h) + this.vy * Math.sin(this.h); }
+
+  circles(): Coordinate[] {
+    const c = Math.cos(this.h), s = Math.sin(this.h);
+    return this.offsets.map((o) => [this.x + c * o, this.y + s * o]);
+  }
+
+  // Free-body physics. `ctl` = { throttle -1..1, steer -1..1 (left +), handbrake, cap }.
+  // `cap` (m/s, optional) limits the speed: the gas fades as the car gets near it, and
+  // above it the car eases down, as if you'd lifted off and touched the brake.
+  update(dt: number, ctl: CarControls | null, grid: CarGrid): number {
+    // The ground and walls as this car meets them: on a bridge deck or under it.
+    if (grid.view) grid = grid.view(this);
+    const S = this.spec;
+    ctl = ctl || { throttle: 0, steer: 0, handbrake: false };
+    const fx = Math.cos(this.h), fy = Math.sin(this.h);
+    let vf = this.vx * fx + this.vy * fy;
+    let vl = this.vx * fy - this.vy * fx;
+    const fast = clamp(Math.abs(vf) / S.vmax, 0, 1);
+    const throttle = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - vf) / 2, 0, 1));
+
+    if (throttle > 0) {
+      if (vf < -0.3) vf = Math.min(0, vf + 16 * dt);
+      else vf += S.accel * throttle * (1 - fast * fast) * dt;
+    } else if (throttle < 0) {
+      if (vf > 0.3) vf = Math.max(0, vf - 16 * dt);
+      else vf = Math.max(-S.vmax * 0.3, vf - S.accel * 0.6 * dt);
+    } else {
+      vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.driven ? 0.6 : 5) * dt);
+    }
+    if (ctl.handbrake) vf -= Math.sign(vf) * Math.min(Math.abs(vf), 5 * dt);
+    // Hills: gravity along the car's heading (rolls back down, slower uphill).
+    if (grid.height) {
+      const half = S.L / 2;
+      const slope = (grid.height(this.x + fx * half, this.y + fy * half) - grid.height(this.x - fx * half, this.y - fy * half)) / S.L;
+      vf -= 9.81 * slope * dt;
+    }
+    if (ctl.cap != null && vf > ctl.cap) vf = Math.max(ctl.cap, vf - 3 * dt);
+
+    const grip = ctl.handbrake ? 1.1 : S.grip * (1 - 0.45 * fast);
+    vl *= Math.exp(-grip * dt);
+
+    const sgn = vf >= 0 ? 1 : -1;
+    const maxW = S.turn * (1 - 0.35 * fast) * (ctl.handbrake ? 1.35 : 1);
+    const wantW = ctl.steer * Math.min(Math.abs(vf) / 3.6, maxW) * sgn;
+    if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * 9);
+    else this.w *= Math.exp(-4 * dt);
+    this.h += this.w * dt;
+
+    const nx = Math.cos(this.h), ny = Math.sin(this.h);
+    this.vx = nx * vf + ny * vl;
+    this.vy = ny * vf - nx * vl;
+
+    // Substeps so a fast car can't skip through a thin wall.
+    const steps = Math.max(1, Math.ceil((this.speed * dt) / 0.25));
+    let impact = 0;
+    for (let i = 0; i < steps; i++) {
+      this.x += (this.vx * dt) / steps;
+      this.y += (this.vy * dt) / steps;
+      impact = Math.max(impact, this.collideGrid(grid));
+    }
+    this.sync();
+    return impact;
+  }
+
+  worldSamples(): Coordinate[] {
+    const c = Math.cos(this.h), s = Math.sin(this.h);
+    return this.samples.map(([a, b]) => [this.x + c * a - s * b, this.y + s * a + c * b]);
+  }
+
+  collideGrid(grid: CarCollisionGrid): number {
+    const solid = (x: number, y: number): number => (grid.at(x, y) ? 1 : 0);
+    let nx = 0, ny = 0, hits = 0, cx = 0, cy = 0;
+    for (const [x, y] of this.worldSamples()) {
+      if (!solid(x, y)) continue;
+      const d = 0.7;
+      nx += solid(x - d, y) - solid(x + d, y);
+      ny += solid(x, y - d) - solid(x, y + d);
+      cx += x;
+      cy += y;
+      hits++;
+    }
+    if (!hits) return 0;
+    let len = Math.hypot(nx, ny);
+    if (len < 1e-6) { nx = -this.vx; ny = -this.vy; len = Math.hypot(nx, ny) || 1; }
+    nx /= len;
+    ny /= len;
+    for (let k = 0; k < 30; k++) {
+      this.x += nx * 0.06;
+      this.y += ny * 0.06;
+      if (!this.worldSamples().some(([x, y]) => solid(x, y))) break;
+    }
+    const vn = this.vx * nx + this.vy * ny;
+    if (vn >= 0) return 0;
+    this.vx -= 1.3 * vn * nx;
+    this.vy -= 1.3 * vn * ny;
+    this.vx *= 0.92;
+    this.vy *= 0.92;
+    // Off-centre hits make the car spin.
+    const rx = cx / hits - this.x, ry = cy / hits - this.y;
+    this.w += (rx * ny - ry * nx) * vn * 0.09;
+    this.damage += Math.max(0, -vn - 3);
+    return -vn;
+  }
+
+  sync(): void {} // drawn by CarPool each frame
+}
+
+// Every car is an instance: one draw call per type and colour, however many are parked.
+// Riders are drawn here too, sitting on their bikes.
+export class CarPool {
+  scene: THREE.Scene;
+  meshes: Map<string, THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>>;
+  groups: Map<string, Car[]>;
+  dummy: THREE.Object3D;
+  riders: Figures;
+  scale: THREE.Matrix4;
+  m: THREE.Matrix4;
+  constructor(scene: THREE.Scene) {
+    this.scene = scene;
+    this.meshes = new Map();
+    this.groups = new Map();
+    this.dummy = new THREE.Object3D();
+    this.riders = new Figures(kit!, 64);
+    scene.add(this.riders.mesh);
+    this.scale = new THREE.Matrix4().makeScale(SCALE, SCALE, SCALE);
+    this.m = new THREE.Matrix4();
+  }
+
+  // `height(x, y, car)`: the height of the ground (or the bridge deck) under a car's
+  // wheels; cars sit on it, pitched and rolled to the slope.
+  render(cars: Car[], height: ((x: number, y: number, car: Car) => number) | null = null, dt = 0): void {
+    for (const c of cars) if (c.two) this.lean(c, dt);
+    for (const list of this.groups.values()) list.length = 0;
+    for (const c of cars) {
+      let group = this.groups.get(c.key);
+      if (!group) {
+        group = [];
+        this.groups.set(c.key, group);
+      }
+      group.push(c);
+    }
+    const d = this.dummy;
+    let riders = 0;
+    for (const [k, list] of this.groups) {
+      let m = this.meshes.get(k);
+      if (!m || m.instanceMatrix.count < list.length) {
+        if (m) { this.scene.remove(m); m.dispose(); }
+        m = new THREE.InstancedMesh(cache.get(k)!, material, Math.max(8, Math.ceil(list.length * 1.5)));
+        m.castShadow = true;
+        m.frustumCulled = false;
+        this.scene.add(m);
+        this.meshes.set(k, m);
+      }
+      list.forEach((c, i) => {
+        if (height) {
+          const fx = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
+          const hf = height(c.x + fx * L, c.y + fy * L, c), hb = height(c.x - fx * L, c.y - fy * L, c);
+          const hl = height(c.x - fy * W, c.y + fx * W, c), hr = height(c.x + fy * W, c.y - fx * W, c);
+          d.position.set(c.x, (hf + hb + hl + hr) / 4, -c.y);
+          d.rotation.set(Math.atan2(hl - hr, 2 * W) - c.lean, c.h, Math.atan2(hf - hb, 2 * L), 'YZX');
+        } else {
+          d.position.set(c.x, 0, -c.y);
+          d.rotation.set(-c.lean, c.h, 0, 'YZX');
+        }
+        d.updateMatrix();
+        m.setMatrixAt(i, d.matrix);
+        if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
+      });
+      m.count = list.length;
+      m.instanceMatrix.needsUpdate = true;
+    }
+    this.riders.commit(riders);
+  }
+
+  // Lean into the turns (worked out from how fast the heading changes, so it works
+  // for traffic too); a parked bike leans on its stand.
+  lean(c: Car, dt: number): void {
+    const yaw = dt > 0 && c.lastH !== undefined ? Math.atan2(Math.sin(c.h - c.lastH), Math.cos(c.h - c.lastH)) / dt : 0;
+    c.lastH = c.h;
+    const want = !c.rider && c.speed < 0.3 ? 0.2 : clamp(Math.atan((c.forwardSpeed * yaw) / 9.81), -0.7, 0.7);
+    c.lean += (want - c.lean) * Math.min(1, dt * 6);
+  }
+
+  ride(c: Car, i: number, matrix: THREE.Matrix4, dt: number): void {
+    c.anim = c.anim || new Anim(kit!, c.two!, Math.random());
+    // Pedal as fast as the bike goes: about 6 m a turn of the cranks.
+    c.anim.step(dt, c.two === 'bike' ? Math.max(0, c.forwardSpeed) / 6 : 1);
+    this.riders.look(i, c.rider!);
+    this.riders.set(i, this.m.copy(matrix).multiply(this.scale), c.anim);
+  }
+}
+
+// Circle-based collision between two bodies. `ia`/`ib` are inverse masses (0 = immovable).
+// Returns the closing speed at contact, or 0 if they don't touch.
+export function collideBodies(a: CollisionBody, ca: readonly Coordinate[], ra: number, ia: number, b: CollisionBody, cb: readonly Coordinate[], rb: number, ib: number, restitution = 0.25): number {
+  let best: { pen: number; nx: number; ny: number; px: number; py: number } | null = null;
+  for (const p of ca) {
+    for (const q of cb) {
+      const dx = q[0] - p[0], dy = q[1] - p[1], d = Math.hypot(dx, dy);
+      const pen = ra + rb - d;
+      if (pen > 0 && (!best || pen > best.pen)) best = { pen, nx: dx / (d || 1), ny: dy / (d || 1), px: (p[0] + q[0]) / 2, py: (p[1] + q[1]) / 2 };
+    }
+  }
+  if (!best || ia + ib === 0) return best ? 0.001 : 0;
+  const { pen, nx, ny } = best;
+  const sa = ia / (ia + ib), sb = ib / (ia + ib);
+  a.x -= nx * pen * sa;
+  a.y -= ny * pen * sa;
+  b.x += nx * pen * sb;
+  b.y += ny * pen * sb;
+  const vrel = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+  if (vrel >= 0) return 0.001;
+  const j = (-(1 + restitution) * vrel) / (ia + ib);
+  a.vx -= j * ia * nx;
+  a.vy -= j * ia * ny;
+  b.vx += j * ib * nx;
+  b.vy += j * ib * ny;
+  for (const [body, inv, sign] of [[a, ia, -1], [b, ib, 1]] as const) {
+    if (!inv || body.w === undefined) continue;
+    const rx = best.px - body.x, ry = best.py - body.y;
+    body.w += (rx * ny - ry * nx) * sign * j * inv * 0.25;
+  }
+  return -vrel;
+}
