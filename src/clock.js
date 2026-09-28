@@ -15,9 +15,7 @@ function pragueNow() {
 }
 
 export class Clock {
-  t: number;
-
-  constructor(params: URLSearchParams) {
+  constructor(params) {
     let { day, sec } = pragueNow();
     if (params.has('night') && !params.has('time')) sec = 1.5 * 3600;
     const t = (params.get('time') || '').match(/^(\d{1,2})[:.](\d{2})$/);
@@ -27,7 +25,7 @@ export class Clock {
     this.t = day * 86400 + sec;
   }
 
-  advance(dt: number) { this.t = (((this.t + dt) % WEEK) + WEEK) % WEEK; }
+  advance(dt) { this.t = (((this.t + dt) % WEEK) + WEEK) % WEEK; }
   get day() { return Math.floor(this.t / 86400); }
   get hour() { return Math.floor((this.t % 86400) / 3600); }
   // Which timetable applies: weekday, saturday or sunday.

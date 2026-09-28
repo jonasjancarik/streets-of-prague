@@ -1,31 +1,27 @@
 import * as THREE from 'three';
-import { rng } from './geo.ts';
-import type { Point2 } from './geo.ts';
-
-interface TransitData { rails: { kind: string; pts: Point2[] }[] }
-interface Vehicle { path: Path; mesh: THREE.Group; s: number; dir: number; speed: number; wait: number }
+import { rng } from './geo.js';
 
 // The Petřín funicular's cars, shuttling up and down its track. (Trams run their
-// real lines: ../trams.ts.)
+// real lines: ../trams.js.)
 
 // OSM splits tracks into many short ways. Stitch them back into long, smooth chains
 // so a car can run along them.
-function chainLines(lines: Point2[][], maxTurnDeg = 40): Point2[][] {
-  const key = ([x, y]: Point2) => `${Math.round(x)},${Math.round(y)}`;
-  const byEnd = new Map<string, number[]>();
+function chainLines(lines, maxTurnDeg = 40) {
+  const key = ([x, y]) => `${Math.round(x)},${Math.round(y)}`;
+  const byEnd = new Map();
   lines.forEach((pts, i) => {
     for (const k of [key(pts[0]), key(pts[pts.length - 1])]) {
       if (!byEnd.has(k)) byEnd.set(k, []);
-      byEnd.get(k)!.push(i);
+      byEnd.get(k).push(i);
     }
   });
-  const used = new Set<number>();
-  const dir = (a: Point2, b: Point2) => Math.atan2(b[1] - a[1], b[0] - a[0]);
-  const extend = (chain: Point2[]) => {
+  const used = new Set();
+  const dir = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]);
+  const extend = (chain) => {
     for (;;) {
       const end = chain[chain.length - 1], prev = chain[chain.length - 2];
       const heading = dir(prev, end);
-      let best: [number, Point2[]] | null = null, bestTurn = (maxTurnDeg * Math.PI) / 180;
+      let best = null, bestTurn = (maxTurnDeg * Math.PI) / 180;
       for (const i of byEnd.get(key(end)) || []) {
         if (used.has(i)) continue;
         let pts = lines[i];
@@ -40,7 +36,7 @@ function chainLines(lines: Point2[][], maxTurnDeg = 40): Point2[][] {
       chain.push(...best[1].slice(1));
     }
   };
-  const chains: Point2[][] = [];
+  const chains = [];
   lines.forEach((pts, i) => {
     if (used.has(i) || pts.length < 2) return;
     used.add(i);
@@ -54,11 +50,7 @@ function chainLines(lines: Point2[][], maxTurnDeg = 40): Point2[][] {
 }
 
 class Path {
-  pts: Point2[];
-  cum: number[];
-  length: number;
-
-  constructor(pts: Point2[]) {
+  constructor(pts) {
     this.pts = pts;
     this.cum = [0];
     for (let i = 1; i < pts.length; i++) {
@@ -66,7 +58,7 @@ class Path {
     }
     this.length = this.cum[this.cum.length - 1];
   }
-  at(s: number) {
+  at(s) {
     s = Math.max(0, Math.min(this.length, s));
     let i = 1;
     while (i < this.cum.length - 1 && this.cum[i] < s) i++;
@@ -83,14 +75,14 @@ function funicularMesh() {
   const roof = new THREE.Mesh(new THREE.BoxGeometry(9.2, 0.3, 2.8), new THREE.MeshLambertMaterial({ color: '#d9cfb6' }));
   roof.position.y = 3.0;
   g.add(body, roof);
-  g.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = true; });
+  g.traverse((o) => { o.castShadow = true; });
   return g;
 }
 
-export function buildTransit(data: TransitData, scene: THREE.Scene) {
+export function buildTransit(data, scene) {
   const r = rng(5);
-  const vehicles: Vehicle[] = [];
-  const add = (lines: Point2[][], make: () => THREE.Group, speed: number, minLen: number) => {
+  const vehicles = [];
+  const add = (lines, make, speed, minLen) => {
     for (const pts of chainLines(lines)) {
       const path = new Path(pts);
       if (path.length < minLen) continue;
@@ -106,7 +98,7 @@ export function buildTransit(data: TransitData, scene: THREE.Scene) {
 
   return {
     vehicles,
-    update(dt: number) {
+    update(dt) {
       for (const v of vehicles) {
         if (v.wait > 0) { v.wait -= dt; continue; }
         v.s += v.dir * v.speed * dt;

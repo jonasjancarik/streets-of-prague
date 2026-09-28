@@ -5,14 +5,10 @@
 // tram held up between stops for a while (by something on the track) lets you off
 // where it stands.
 //
-// Speeding up runs the whole world faster (see simulate() in main.ts), so the city
+// Speeding up runs the whole world faster (see simulate() in main.js), so the city
 // keeps moving around you; it holds back while the streets ahead are still loading.
 
-import { headsignAt, frontOf } from './trams.ts';
-import type { Trams, TramVehicle } from './trams.ts';
-
-interface RideWorld { keyAt(x: number, y: number): string; available: { has(key: string): boolean }; loaded: { has(key: string): boolean } }
-interface RiderPosition { x: number; y: number; h: number; vx: number; vy: number }
+import { headsignAt, frontOf } from './trams.js';
 
 export const FAST = 6; // how much faster the world runs
 const SHOWN = 6; // stops listed ahead
@@ -20,20 +16,8 @@ const SLOW_BEFORE = 250; // m before your stop where the ride goes back to norma
 const STUCK = 10; // seconds standing between stops before you can get off there
 
 export class TramRide {
-  trams: Trams;
-  world: RideWorld;
-  el: HTMLElement;
-  v: TramVehicle | null;
-  dest: number | null;
-  scale: number;
-  held: number;
-  waiting: boolean;
-  shown: string;
-
-  constructor(trams: Trams, world: RideWorld, el: HTMLElement) {
-    this.trams = trams;
-    this.world = world;
-    this.el = el;
+  constructor(trams, world, el) {
+    Object.assign(this, { trams, world, el });
     this.v = null;
     this.dest = null; // index of the halt you're riding to
     this.scale = 1;
@@ -41,7 +25,7 @@ export class TramRide {
     this.waiting = false; // held back by streets still loading
     this.shown = '';
     el.addEventListener('pointerdown', (e) => {
-      const b = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-halt]') : null;
+      const b = e.target.closest('[data-halt]');
       if (!b || !this.v) return;
       e.preventDefault();
       e.stopPropagation();
@@ -51,13 +35,9 @@ export class TramRide {
   }
 
   get on() { return !!this.v; }
-  private get riding(): TramVehicle {
-    if (!this.v) throw new Error('No tram ride is active');
-    return this.v;
-  }
 
   // A tram waiting at a stop right next to (x, y), if there is one.
-  boardable(x: number, y: number) {
+  boardable(x, y) {
     for (const v of this.trams.list) {
       if (v.dwell <= 0 || !v.look) continue;
       for (const p of v.parts) {
@@ -69,7 +49,7 @@ export class TramRide {
     return null;
   }
 
-  board(v: TramVehicle) {
+  board(v) {
     this.v = v;
     v.rider = true;
     this.dest = null;
@@ -80,7 +60,7 @@ export class TramRide {
   // Off the tram: where to stand (beside its middle door, on the right, the side
   // Prague's platforms are on) and which way to face.
   leave() {
-    const v = this.riding, p = v.parts[1];
+    const v = this.v, p = v.parts[1];
     v.rider = false;
     this.v = null;
     this.dest = null;
@@ -90,24 +70,24 @@ export class TramRide {
     return [p.x + Math.sin(p.ang) * 3, p.y - Math.cos(p.ang) * 3, p.ang];
   }
 
-  atStop() { return this.riding.dwell > 0; }
+  atStop() { return this.v.dwell > 0; }
   // Held up between stops long enough that you may as well walk.
   get stuck() { return this.held > STUCK; }
   canLeave() { return this.atStop() || this.stuck; }
-  watch(dt: number) { this.held = this.riding.speed < 0.2 && this.riding.dwell <= 0 ? this.held + dt : 0; }
-  arrived() { return this.riding.dwell > 0 && this.riding.halt === this.dest; }
+  watch(dt) { this.held = this.v.speed < 0.2 && this.v.dwell <= 0 ? this.held + dt : 0; }
+  arrived() { return this.v.dwell > 0 && this.v.halt === this.dest; }
   // Get off at the next stop.
-  requestStop() { this.dest = this.upcoming()[0] ?? null; }
+  requestStop() { this.dest = this.upcoming()[0]; }
 
   // The halts ahead, as indices (the one you're standing at isn't one of them).
   upcoming(n = SHOWN) {
-    const v = this.riding, count = v.line.halts.length, out: number[] = [];
+    const { v } = this, count = v.line.halts.length, out = [];
     for (let k = v.dwell > 0 ? 1 : 0; out.length < Math.min(n, count - 1); k++) out.push((v.halt + k) % count);
     return out;
   }
 
   // Keyboard: move your pick along the stops ahead (from none to the furthest shown).
-  pick(step: number) {
+  pick(step) {
     const list = this.upcoming();
     const i = this.dest === null ? -1 : list.indexOf(this.dest);
     const j = Math.max(-1, Math.min(list.length - 1, i + step));
@@ -115,18 +95,17 @@ export class TramRide {
   }
 
   // Where a tram (yours by default) is heading: the terminus of the way it's going.
-  headsign(v = this.riding) { return headsignAt(v.line, frontOf(v)); }
+  headsign(v = this.v) { return headsignAt(v.line, frontOf(v)); }
 
   toDest() {
-    const v = this.riding;
-    if (this.dest === null) return Infinity;
+    const { v } = this;
     return v.line.path.ahead(frontOf(v), v.line.halts[this.dest].s);
   }
 
   // How much faster the world should run this frame: with Shift held, or on the way to
   // your stop (stops on the way included) until you're nearly there, as long as the
   // streets ahead have loaded.
-  speedUp(dt: number, hold: boolean) {
+  speedUp(dt, hold) {
     const want = hold || (this.dest !== null && !this.arrived() && this.toDest() > SLOW_BEFORE);
     this.waiting = want && !this.loadedAhead();
     const target = want && !this.waiting ? FAST : 1;
@@ -137,7 +116,7 @@ export class TramRide {
 
   // Whether the map is loaded along the track for the next few seconds of fast ride.
   loadedAhead() {
-    const v = this.riding, { world } = this, reach = Math.max(150, v.speed * FAST * 4);
+    const { v, world } = this, reach = Math.max(150, v.speed * FAST * 4);
     for (let d = 0; d <= reach; d += 60) {
       const p = v.line.path.at(v.s + d), k = world.keyAt(p.x, p.y);
       if (world.available.has(k) && !world.loaded.has(k)) return false;
@@ -146,8 +125,8 @@ export class TramRide {
   }
 
   // Keep the player (hidden) in the tram, for the camera, the police and the life around.
-  seat(walker: RiderPosition) {
-    const v = this.riding, p = v.parts[1], sp = v.speed * this.scale;
+  seat(walker) {
+    const p = this.v.parts[1], sp = this.v.speed * this.scale;
     Object.assign(walker, { x: p.x, y: p.y, h: p.ang, vx: Math.cos(p.ang) * sp, vy: Math.sin(p.ang) * sp });
   }
 
@@ -159,8 +138,7 @@ export class TramRide {
     const key = `${v.line.ref}|${this.headsign()}|${list.join(',')}|${this.dest}|${v.dwell > 0}|${this.stuck}`;
     if (key === this.shown) return;
     this.shown = key;
-    const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
-    const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => `&${{ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' }[c]};`);
     const here = v.dwell > 0 ? `<div class="ride-here">At ${esc(halts[v.halt].name)}</div>`
       : this.stuck ? '<div class="ride-here">Held up: something is blocking the track</div>' : '';
     this.el.innerHTML = `

@@ -1,32 +1,14 @@
 import * as THREE from 'three';
-import { signedArea } from './map/geo.ts';
-import { offsetLine } from './network.ts';
-import type { Point2, Bounds, Polygons } from './map/geo.ts';
-import type { GroundLayer } from './surface.ts';
-
-export interface GroundTileData {
-  areas: Record<string, Polygons | undefined>;
-  roads: Record<string, Polygons | undefined>;
-  rails: { kind: string; pts: Point2[] }[];
-  weirs?: Point2[][];
-  crossings?: Point2[][];
-}
-export interface DeckMask { w: number; h: number; cells: Uint8Array; box: Bounds }
-export interface GroundResult { layers: GroundLayer[]; mask: DeckMask | null }
-export interface GroundRoadEdge {
-  u: string; v: string; hw: string; pts: Point2[]; width: number;
-  lanes?: number | null; oneway?: boolean; bridge?: boolean; surface?: string;
-}
-type HeightAt = (x: number, y: number) => number;
-type GroundGeometry = GroundLayer['geometry'];
+import { signedArea } from './map/geo.js';
+import { offsetLine } from './network.js';
 
 // The present-day ground as real geometry: one mesh per surface kind, triangulated
-// from OSM polygons, coloured by procedural shaders (shading.ts). Paint, rails and
+// from OSM polygons, coloured by procedural shaders (shading.js). Paint, rails and
 // kerb lines are thin strips on top. Layers are drawn in a fixed order with no depth
 // writes, so they never z-fight however far the camera pulls back.
 //
 // This part only works out the geometry, as plain arrays, so it runs in the tile
-// workers (tileWorker.ts); surface.ts makes the meshes.
+// workers (tileWorker.js); surface.js makes the meshes.
 
 export const COLORS = {
   pavement: '#c6c0b4', square: '#cbc4b6', path: '#d0cabe', dirt: '#bfa87e',
@@ -37,8 +19,8 @@ export const COLORS = {
 };
 const ZONE = { RES: '#3d7be0', MIX: '#9b59d0', VIS: '#e8962c' };
 
-function polygons(polys: Polygons): GroundGeometry {
-  const pos: number[] = [], idx: number[] = [];
+function polygons(polys) {
+  const pos = [], idx = [];
   for (const rings of polys) {
     const contour = rings[0].map(([x, y]) => new THREE.Vector2(x, y));
     const holes = rings.slice(1).map((r) => r.map(([x, y]) => new THREE.Vector2(x, y)));
@@ -50,9 +32,9 @@ function polygons(polys: Polygons): GroundGeometry {
 }
 
 // Quads along polylines, `w` metres wide. `dash` = [on, off] in metres for dashed lines.
-function strips(lines: Point2[][], w: number, dash: Point2 | null = null): GroundGeometry {
-  const pos: number[] = [], idx: number[] = [];
-  const quad = (a: Point2, b: Point2) => {
+function strips(lines, w, dash = null) {
+  const pos = [], idx = [];
+  const quad = (a, b) => {
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
     const nx = ((b[1] - a[1]) / len) * w / 2, ny = (-(b[0] - a[0]) / len) * w / 2;
     const i = pos.length / 3;
@@ -78,7 +60,7 @@ function strips(lines: Point2[][], w: number, dash: Point2 | null = null): Groun
       while (seg > 1e-6) {
         const step = Math.min(seg, left);
         const t = step / seg;
-        const c: Point2 = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+        const c = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
         if (drawing) quad(a, c);
         a = c;
         seg -= step;
@@ -92,8 +74,8 @@ function strips(lines: Point2[][], w: number, dash: Point2 | null = null): Groun
 }
 
 // A soft band just outside each ring, fading from `alpha` at the ring to 0.
-function skirts(ringsList: Polygons, width: number, outside: boolean, skip: (a: Point2, b: Point2) => boolean = () => false): GroundGeometry {
-  const pos: number[] = [], alpha: number[] = [], idx: number[] = [];
+function skirts(ringsList, width, outside, skip = () => false) {
+  const pos = [], alpha = [], idx = [];
   for (const rings of ringsList) {
     rings.forEach((ring, k) => {
       const ccw = signedArea(ring) > 0;
@@ -121,15 +103,15 @@ function skirts(ringsList: Polygons, width: number, outside: boolean, skip: (a: 
 // Split every edge longer than `max` metres (in halves, repeatedly) so a flat mesh can
 // follow the terrain. The decision is per edge, so neighbours split the same edges and
 // no cracks open between them. `extra`: an optional per-vertex value to interpolate.
-function subdivide(pos: number[], idx: number[], extra: number[] | null, max: number) {
+function subdivide(pos, idx, extra, max) {
   const max2 = max * max;
   for (let pass = 0; pass < 12; pass++) {
-    const mids = new Map<number, number>();
-    const long = (i: number, j: number) => {
+    const mids = new Map();
+    const long = (i, j) => {
       const dx = pos[i * 3] - pos[j * 3], dz = pos[i * 3 + 2] - pos[j * 3 + 2];
       return dx * dx + dz * dz > max2;
     };
-    const mid = (i: number, j: number) => {
+    const mid = (i, j) => {
       const k = i < j ? i * 4194304 + j : j * 4194304 + i;
       let m = mids.get(k);
       if (m === undefined) {
@@ -140,7 +122,7 @@ function subdivide(pos: number[], idx: number[], extra: number[] | null, max: nu
       }
       return m;
     };
-    const out: number[] = [];
+    const out = [];
     let split = false;
     for (let t = 0; t < idx.length; t += 3) {
       const a = idx[t], b = idx[t + 1], c = idx[t + 2];
@@ -163,9 +145,9 @@ function subdivide(pos: number[], idx: number[], extra: number[] | null, max: nu
 }
 
 // Set while a Surfaces is being built: terrain height (m) at a point, or null for flat.
-let groundHeight: HeightAt | null = null;
+let groundHeight = null;
 
-function finish(pos: number[], idx: number[], extra: number[] | null = null): GroundGeometry {
+function finish(pos, idx, extra = null) {
   // Wind every triangle to face up, so lighting never sees a back face.
   for (let t = 0; t < idx.length; t += 3) {
     const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
@@ -195,17 +177,14 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
 // on top of it ({ ..., deck: true }: the deck's surface, tram tracks, paint), which
 // the game only draws where `mask` (the decks rasterised, `res` cells per metre,
 // rows from the north) says there is a deck.
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, deck = null }: {
-  box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
-  parkingZones?: (string | null)[]; height?: HeightAt | null; deck?: HeightAt | null;
-}): GroundResult {
+export function groundLayers(d, { box, edges = [], buildings = [], parkingZones = [], height = null, deck = null }) {
   const bridges = [...(d.areas.bridge || []), ...(d.roads.bridge || [])];
   if (!deck || !bridges.length) {
     groundHeight = height;
     try { return { layers: layers(d, { box, edges, buildings, parkingZones }), mask: null }; } finally { groundHeight = null; }
   }
   const T = height || (() => 0);
-  const D = (x: number, y: number) => { const h = deck(x, y); return Number.isNaN(h) ? T(x, y) : h; };
+  const D = (x, y) => { const h = deck(x, y); return Number.isNaN(h) ? T(x, y) : h; };
   const mask = deckMask(box, bridges);
   groundHeight = height;
   let lower;
@@ -215,26 +194,23 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   try { slab = deckSlab(bridges, box, mask, D, T); } finally { groundHeight = null; }
   // What's on the deck floats a hand's breadth above the slab: they're triangulated
   // differently, and the heights come in decimetres, so they'd cut into each other.
-  groundHeight = (x: number, y: number) => D(x, y) + 0.12;
+  groundHeight = (x, y) => D(x, y) + 0.12;
   try {
     return { layers: [...lower, ...slab, ...deckLayers(d, { box, edges: edges.filter((e) => e.bridge), bridges })], mask };
   } finally { groundHeight = null; }
 }
 
 // The typed arrays in a tile's ground, to hand them over from a worker without copying.
-export const layerBuffers = ({ layers, mask }: GroundResult): ArrayBuffer[] => {
-  const buffers = [...layers.flatMap((l) => Object.values(l.geometry).map((a) => a.buffer)), ...(mask ? [mask.cells.buffer] : [])];
-  if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Ground transfer requires ArrayBuffer storage');
-  return buffers as ArrayBuffer[];
-};
+export const layerBuffers = ({ layers, mask }) => [
+  ...layers.flatMap((l) => Object.values(l.geometry).map((a) => a.buffer)), ...(mask ? [mask.cells.buffer] : []),
+];
 
 export const DECK_RES = 2; // deck mask cells per metre
 
 // The decks rasterised: 255 on a deck, 0 off it, rows from the north.
-function deckMask([x0, y0, x1, y1]: Bounds, polys: Polygons): DeckMask {
+function deckMask([x0, y0, x1, y1], polys) {
   const w = Math.ceil((x1 - x0) * DECK_RES), h = Math.ceil((y1 - y0) * DECK_RES);
   const c = new OffscreenCanvas(w, h), ctx = c.getContext('2d', { willReadFrequently: true });
-  if (!ctx) throw new Error('Cannot create deck mask canvas');
   ctx.fillStyle = '#fff';
   for (const rings of polys) {
     ctx.beginPath();
@@ -249,7 +225,7 @@ function deckMask([x0, y0, x1, y1]: Bounds, polys: Polygons): DeckMask {
   return { w, h, cells, box: [x0, y0, x1, y1] };
 }
 
-const onDeck = (mask: DeckMask, x: number, y: number) => {
+const onDeck = (mask, x, y) => {
   const [x0, , , y1] = mask.box;
   const i = Math.floor((x - x0) * DECK_RES), j = Math.floor((y1 - y) * DECK_RES);
   return i >= 0 && j >= 0 && i < mask.w && j < mask.h && mask.cells[j * mask.w + i] > 0;
@@ -262,16 +238,16 @@ const PARAPET_W = 0.35;
 // The decks as a solid slab: their surface, the edge below it and a parapet along
 // every side that's open (not where a deck meets the ground or another deck, nor along
 // the tile's border, where the slab carries on in the next tile).
-function deckSlab(bridges: Polygons, [x0, y0, x1, y1]: Bounds, mask: DeckMask, D: HeightAt, T: HeightAt): GroundLayer[] {
+function deckSlab(bridges, [x0, y0, x1, y1], mask, D, T) {
   const top = polygons(bridges);
-  const pos: number[] = [], nor: number[] = [], idx: number[] = [];
-  const quad = (a: number[], b: number[], c: number[], d: number[], n: number[]) => {
+  const pos = [], nor = [], idx = [];
+  const quad = (a, b, c, d, n) => {
     const i = pos.length / 3;
     pos.push(...a, ...b, ...c, ...d);
     for (let k = 0; k < 4; k++) nor.push(...n);
     idx.push(i, i + 1, i + 2, i, i + 2, i + 3);
   };
-  const cut = (a: Point2, b: Point2) => ([[0, x0], [0, x1], [1, y0], [1, y1]] as [0 | 1, number][]).some(([k, v]) => Math.abs(a[k] - v) < 0.05 && Math.abs(b[k] - v) < 0.05);
+  const cut = (a, b) => [[0, x0], [0, x1], [1, y0], [1, y1]].some(([k, v]) => Math.abs(a[k] - v) < 0.05 && Math.abs(b[k] - v) < 0.05);
   for (const rings of bridges) {
     for (const ring of rings) {
       for (let r = 0; r < ring.length; r++) {
@@ -313,10 +289,10 @@ function deckSlab(bridges: Polygons, [x0, y0, x1, y1]: Bounds, mask: DeckMask, D
 // What's drawn on the decks, over the slab: their surface, tram tracks and the bridges'
 // road paint, clipped to the decks by the game (with `mask`). Zebra crossings stay on
 // the ground: they're far more often under a flyover than on a bridge.
-function deckLayers(d: GroundTileData, { box, edges, bridges }: { box: Bounds; edges: GroundRoadEdge[]; bridges: Polygons }): GroundLayer[] {
-  const out: GroundLayer[] = [];
+function deckLayers(d, { box, edges, bridges }) {
+  const out = [];
   let order = -599;
-  const add = (geometry: GroundGeometry, color: string, pattern = 'flat') => {
+  const add = (geometry, color, pattern = 'flat') => {
     const o = order++;
     if (geometry.index.length) out.push({ order: o, geometry, color, pattern, blend: null, deck: true });
   };
@@ -330,19 +306,16 @@ function deckLayers(d: GroundTileData, { box, edges, bridges }: { box: Bounds; e
   return out;
 }
 
-function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridges: withBridges = true }: {
-  box: Bounds; edges: GroundRoadEdge[]; buildings: { rings: Point2[][] }[];
-  parkingZones: (string | null)[]; bridges?: boolean;
-}): GroundLayer[] {
-  const out: GroundLayer[] = [];
+function layers(d, { box, edges, buildings, parkingZones, bridges: withBridges = true }) {
+  const out = [];
   const A = d.areas, R = d.roads;
   // Fixed order per layer (whether or not it has anything), so tiles layer consistently.
   let order = -1000;
-  const add = (geometry: GroundGeometry, color: string, pattern = 'flat', blend: number | null = null) => {
+  const add = (geometry, color, pattern = 'flat', blend = null) => {
     const o = order++;
     if (geometry.index.length) out.push({ order: o, geometry, color, pattern, blend });
   };
-  const shade = (geometry: GroundGeometry, opacity: number) => {
+  const shade = (geometry, opacity) => {
     const o = order++;
     if (geometry.index.length) out.push({ order: o, geometry, shade: opacity });
   };
@@ -352,12 +325,12 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
   const [x0, y0, x1, y1] = box;
   // Polygons are clipped to the tile: their edges along the tile border aren't real
   // shores or kerbs, so outlines and shading skip them.
-  const cut = (a: Point2, b: Point2) => ([[0, x0], [0, x1], [1, y0], [1, y1]] as [0 | 1, number][]).some(([k, v]) => Math.abs(a[k] - v) < 0.05 && Math.abs(b[k] - v) < 0.05);
-  const outlines = (polys: Polygons): Point2[][] => {
-    const out: Point2[][] = [];
+  const cut = (a, b) => [[0, x0], [0, x1], [1, y0], [1, y1]].some(([k, v]) => Math.abs(a[k] - v) < 0.05 && Math.abs(b[k] - v) < 0.05);
+  const outlines = (polys) => {
+    const out = [];
     for (const rings of polys) {
       for (const ring of rings) {
-        let cur: Point2[] = [];
+        let cur = [];
         for (let i = 0; i < ring.length; i++) {
           const a = ring[i], b = ring[(i + 1) % ring.length];
           if (cut(a, b)) { if (cur.length > 1) out.push(cur); cur = []; continue; }
@@ -389,7 +362,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(R.sett || []), COLORS.sett, 'setts');
     add(polygons(R.road || []), COLORS.asphalt, 'asphalt');
     // Bay outlines in the paid zone's colour: blue residents, violet mixed, orange visitors.
-    for (const [cat, color] of [...Object.entries(ZONE), [null, COLORS.paint] as [null, string]]) {
+    for (const [cat, color] of [...Object.entries(ZONE), [null, COLORS.paint]]) {
       const rings = (A.parking || []).filter((rs, k) => (parkingZones[k] || null) === cat);
       add(strips(outlines(rings.map((rs) => [rs[0]])), 0.15), color);
     }
@@ -424,12 +397,12 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
 const COBBLED = new Set(['sett', 'cobblestone', 'unhewn_cobblestone', 'paving_stones']);
 const MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
 const EDGE_LINES = new Set(['motorway', 'trunk', 'primary', 'motorway_link', 'trunk_link']);
-function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
-  const near = (p: Point2) => trams.some((pts) => pts.some((q, i) => i > 0 && segDistPts(p, pts[i - 1], q) < 3));
-  const dashed: Point2[][] = [], solid: Point2[][] = [];
+function roadPaint(edges, trams) {
+  const near = (p) => trams.some((pts) => pts.some((q, i) => i && segDistPts(p, pts[i - 1], q) < 3));
+  const dashed = [], solid = [];
   for (const e of edges) {
     const n = e.lanes || 0;
-    if (COBBLED.has(e.surface ?? '') || (!MAJOR.has(e.hw) && n < 2)) continue;
+    if (COBBLED.has(e.surface) || (!MAJOR.has(e.hw) && n < 2)) continue;
     if (!e.oneway && e.u > e.v) continue; // a two-way street has an edge each way: paint it once
     const W = e.width, pts = e.pts;
     if (e.oneway) {
@@ -450,8 +423,8 @@ function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
 }
 
 // Zebra crossings: bars along the road, one every metre across it.
-function zebras(crossings: Point2[][]): Point2[][] {
-  const bars: Point2[][] = [];
+function zebras(crossings) {
+  const bars = [];
   for (const pts of crossings) {
     for (let i = 0; i < pts.length - 1; i++) {
       const [ax, ay] = pts[i], [bx, by] = pts[i + 1], len = Math.hypot(bx - ax, by - ay);
@@ -466,7 +439,7 @@ function zebras(crossings: Point2[][]): Point2[][] {
   return bars;
 }
 
-function segDistPts(p: Point2, a: Point2, b: Point2) {
+function segDistPts(p, a, b) {
   const dx = b[0] - a[0], dy = b[1] - a[1];
   const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
   return Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t);

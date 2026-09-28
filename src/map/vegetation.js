@@ -1,16 +1,5 @@
 import * as THREE from 'three';
-import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
-import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
-
-export interface TreeTileData extends GeoData {
-  areas: Record<string, Polygons | undefined>;
-  roads: Record<string, Polygons | undefined>;
-  buildings: { rings: Point2[][] }[];
-  walls: { kind: string; pts: Point2[] }[];
-  trees: Point2[];
-}
-
-interface TreeInstances { matrices: Float32Array; colours: Float32Array; count: number }
+import { Grid, fillPolys, strokeLines, rng } from './geo.js';
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees.
 const WOOD = 200, PARK = 120, ORCHARD = 60;
@@ -18,12 +7,12 @@ const WOOD = 200, PARK = 120, ORCHARD = 60;
 // Where a tile's trees stand, and how big and what colour they are: their instance
 // matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Runs
 // in the tile workers.
-export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: number) => number = () => 0): TreeInstances {
+export function treeInstances(geo, height = () => 0) {
   const d = geo.data;
   const grid = new Grid(geo, 1, (ctx, s) => {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const fill = (polys: Polygons | undefined, v: number) => {
+    const fill = (polys, v) => {
       if (!polys) return;
       ctx.fillStyle = `rgb(${v},0,0)`;
       fillPolys(ctx, geo, polys, s);
@@ -88,12 +77,12 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   return { matrices, colours, count: trees.length };
 }
 
-export function treeMesh({ matrices, colours, count }: TreeInstances) {
+export function treeMesh({ matrices, colours, count }) {
   const geom = new THREE.IcosahedronGeometry(1, 1);
   geom.scale(1, 0.75, 1);
   const mat = new THREE.MeshLambertMaterial({ flatShading: true });
   const mesh = new THREE.InstancedMesh(geom, mat, count);
-  (mesh.instanceMatrix.array as Float32Array).set(matrices);
+  mesh.instanceMatrix.array.set(matrices);
   if (count) mesh.instanceColor = new THREE.InstancedBufferAttribute(colours, 3);
   mesh.castShadow = true;
   mesh.receiveShadow = true;

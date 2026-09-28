@@ -1,16 +1,4 @@
 import * as THREE from 'three';
-import type { Point2 } from './map/geo.ts';
-import type { Clock } from './clock.ts';
-
-export interface MetroLine {
-  ref: string; colour: string;
-  stations: { name: string; at: Point2; t: number; entrances: Point2[] }[];
-  perHour: Record<'weekday' | 'saturday' | 'sunday', number[]>;
-}
-interface Station { name: string; entrances: Point2[]; lines: { line: MetroLine; i: number }[]; onMap: boolean }
-interface Entrance { x: number; y: number; station: Station; mesh: THREE.Group; shown: boolean }
-interface MetroLeg { line: MetroLine; i: number; j: number }
-interface MetroStep { kind: 'change' | 'wait' | 'ride'; leg: MetroLeg; from: number; to: number }
 
 // The metro (data/<area>_now/metro.json, from pipeline/build_metro.py). It runs
 // underground, so here it's a way across town: walk up to an entrance (the M signs)
@@ -23,18 +11,16 @@ const TRANSFER = 180; // s to walk between lines at a change
 const SLOWEST = 60; // at least this many game seconds pass per real second of the ride…
 const LONGEST = 16; // …and a ride takes at most this many real seconds
 
-const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
-const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
-const mins = (s: number) => `${Math.max(1, Math.round(s / 60))} min`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => `&${{ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' }[c]};`);
+const mins = (s) => `${Math.max(1, Math.round(s / 60))} min`;
 
 // The sign over an entrance: a white M on the line's colour, seen from above.
-const signs = new Map<string, THREE.MeshBasicMaterial>();
-function signMaterial(colour: string) {
+const signs = new Map();
+function signMaterial(colour) {
   if (!signs.has(colour)) {
     const c = document.createElement('canvas');
     c.width = c.height = 64;
     const g = c.getContext('2d');
-    if (!g) throw new Error('Cannot create metro sign canvas');
     g.fillStyle = colour;
     g.beginPath();
     g.roundRect(2, 2, 60, 60, 12);
@@ -48,48 +34,24 @@ function signMaterial(colour: string) {
     tex.colorSpace = THREE.SRGBColorSpace;
     signs.set(colour, new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
   }
-  return signs.get(colour)!;
+  return signs.get(colour);
 }
 const signGeometry = new THREE.PlaneGeometry(2.2, 2.2).rotateX(-Math.PI / 2);
 const postGeometry = new THREE.BoxGeometry(0.16, 2.8, 0.16).translate(0, 1.4, 0);
 const postMaterial = new THREE.MeshLambertMaterial({ color: '#3a3d40' });
 
 export class Metro {
-  el: HTMLElement;
-  scene: THREE.Scene;
-  clock: Clock;
-  inMap: (x: number, y: number) => boolean;
-  onArrive: (x: number, y: number, name: string) => void | Promise<void>;
-  lines: MetroLine[];
-  stations: Map<string, Station>;
-  entrances: Entrance[];
-  active: boolean;
-  phase: 'pick' | 'ride' | 'arriving' | null;
-  tab = 0;
-  sel = 0;
-  from: Station | null = null;
-  dest: Station | null = null;
-  note = '';
-  steps: MetroStep[] = [];
-  total = 0;
-  rate = 0;
-  t = 0;
-  shown = '';
-
   // `inMap(x, y)`: whether a spot is on the map (you can only come up there);
   // `onArrive(x, y, name)`: take the player there.
-  constructor(data: { lines: MetroLine[] }, scene: THREE.Scene, el: HTMLElement, { clock, inMap, onArrive }: {
-    clock: Clock; inMap: (x: number, y: number) => boolean;
-    onArrive: (x: number, y: number, name: string) => void | Promise<void>;
-  }) {
-    this.el = el; this.scene = scene; this.clock = clock; this.inMap = inMap; this.onArrive = onArrive;
+  constructor(data, scene, el, { clock, inMap, onArrive }) {
+    Object.assign(this, { el, scene, clock, inMap, onArrive });
     this.lines = data.lines;
     this.stations = new Map(); // name → { name, entrances, lines: [{ line, i }] }
     this.entrances = [];
     for (const line of this.lines) {
       line.stations.forEach((s, i) => {
-        if (!this.stations.has(s.name)) this.stations.set(s.name, { name: s.name, entrances: s.entrances, lines: [], onMap: false });
-        this.stations.get(s.name)!.lines.push({ line, i });
+        if (!this.stations.has(s.name)) this.stations.set(s.name, { name: s.name, entrances: s.entrances, lines: [] });
+        this.stations.get(s.name).lines.push({ line, i });
       });
     }
     for (const st of this.stations.values()) {
@@ -107,11 +69,11 @@ export class Metro {
     this.active = false; // the metro screen is up
     this.phase = null; // 'pick' or 'ride'
     el.addEventListener('pointerdown', (e) => {
-      const b = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]') : null;
+      const b = e.target.closest('[data-act]');
       if (!b) return;
       e.preventDefault();
       e.stopPropagation();
-      const [act, arg] = (b.dataset.act ?? '').split(':');
+      const [act, arg] = b.dataset.act.split(':');
       if (act === 'close') this.close();
       if (act === 'tab') { this.tab = +arg; this.sel = 0; this.render(); }
       if (act === 'go') this.go(this.tabLine().stations[+arg].name);
@@ -119,8 +81,8 @@ export class Metro {
   }
 
   // The station whose entrance you're standing at, if any.
-  near(x: number, y: number) {
-    let best: Station | null = null, bestD = REACH;
+  near(x, y) {
+    let best = null, bestD = REACH;
     for (const en of this.entrances) {
       const d = Math.hypot(en.x - x, en.y - y);
       if (d < bestD) { best = en.station; bestD = d; }
@@ -130,7 +92,7 @@ export class Metro {
 
   // Signs near the view, on the ground. Only those are in the scene: hidden ones
   // would still be gone through every frame, all 331 of them.
-  sync(x: number, y: number, r: number, height: (x: number, y: number) => number) {
+  sync(x, y, r, height) {
     for (const en of this.entrances) {
       const show = Math.abs(en.x - x) < r && Math.abs(en.y - y) < r;
       if (show !== en.shown) {
@@ -143,15 +105,15 @@ export class Metro {
   }
 
   // Trips per hour on a line now, and the hour its trains start again when it's shut.
-  perHour(line: MetroLine, clock = this.clock) { return line.perHour[clock.kind][clock.hour]; }
-  opens(line: MetroLine) {
+  perHour(line, clock = this.clock) { return line.perHour[clock.kind][clock.hour]; }
+  opens(line) {
     for (let h = 1; h <= 24; h++) if (line.perHour[this.clock.kind][(this.clock.hour + h) % 24] > 0) return (this.clock.hour + h) % 24;
     return null;
   }
 
-  shutNote(line: MetroLine) { return `The metro isn't running now: the first trains leave after ${this.opens(line) ?? 4}:00`; }
+  shutNote(line) { return `The metro isn't running now: the first trains leave after ${this.opens(line) ?? 4}:00`; }
 
-  open(station: Station) {
+  open(station) {
     this.from = station;
     this.active = true;
     this.phase = 'pick';
@@ -172,7 +134,7 @@ export class Metro {
   tabLine() { return this.lines[this.tab]; }
 
   // Keyboard, while the metro screen is up.
-  key(code: string) {
+  key(code) {
     if (this.phase !== 'pick') return;
     const n = this.tabLine().stations.length;
     if (code === 'Escape' || code === 'Backspace') this.close();
@@ -185,9 +147,8 @@ export class Metro {
   }
 
   // The way from here to a station: one line, or two with a change where they meet.
-  plan(to: string): MetroLeg[] | null {
+  plan(to) {
     const from = this.from, dest = this.stations.get(to);
-    if (!from || !dest) return null;
     for (const a of from.lines) for (const b of dest.lines) if (a.line === b.line) return [{ line: a.line, i: a.i, j: b.i }];
     for (const a of from.lines) {
       for (const b of dest.lines) {
@@ -200,11 +161,10 @@ export class Metro {
     return null;
   }
 
-  go(to: string) {
+  go(to) {
     const dest = this.stations.get(to);
     if (!dest || dest === this.from || !dest.onMap) return;
     const legs = this.plan(to);
-    if (!legs) return;
     const shut = legs.find((l) => this.perHour(l.line) === 0);
     if (shut) {
       this.note = this.shutNote(shut.line);
@@ -231,42 +191,36 @@ export class Metro {
   }
 
   // Every frame: the ride moves on, and so does the clock.
-  update(dt: number) {
+  update(dt) {
     if (this.phase !== 'ride') return;
     const step = Math.min(dt * this.rate, this.total - this.t);
     this.t += step;
     this.clock.advance(step);
     if (this.t >= this.total) {
       this.phase = 'arriving';
-      const dest = this.dest;
-      if (!dest) return;
-      const [x, y] = dest.entrances.find(([ex, ey]) => this.inMap(ex, ey)) || dest.entrances[0];
+      const [x, y] = this.dest.entrances.find(([ex, ey]) => this.inMap(ex, ey)) || this.dest.entrances[0];
       this.render();
-      Promise.resolve(this.onArrive(x, y, dest.name)).finally(() => this.close());
+      Promise.resolve(this.onArrive(x, y, this.dest.name)).finally(() => this.close());
       return;
     }
     this.render();
   }
 
   render() {
-    if (!this.phase) return;
-    const pill = (line: MetroLine) => `<span class="ride-ref" style="background:${esc(line.colour)}">${esc(line.ref)}</span>`;
-    const from = this.from;
-    if (!from) return;
+    const pill = (line) => `<span class="ride-ref" style="background:${esc(line.colour)}">${esc(line.ref)}</span>`;
     let html;
     if (this.phase === 'pick') {
-      const line = this.tabLine(), here = line.stations.findIndex((s) => s.name === from.name);
+      const line = this.tabLine(), here = line.stations.findIndex((s) => s.name === this.from.name);
       // A line that doesn't stop here: where to change onto it.
-      const change = here < 0 ? line.stations.find((s) => from.lines.some((a) => a.line.stations.some((x) => x.name === s.name)))?.name : null;
+      const change = here < 0 ? line.stations.find((s) => this.from.lines.some((a) => a.line.stations.some((x) => x.name === s.name)))?.name : null;
       const tabs = this.lines.map((l, k) => `<button data-act="tab:${k}" class="metro-tab${k === this.tab ? ' on' : ''}" style="--line:${esc(l.colour)}">${esc(l.ref)}</button>`).join('');
       const rows = line.stations.map((s, k) => {
-        const st = this.stations.get(s.name), mine = s.name === from.name;
-        if (!st) return '';
+        const st = this.stations.get(s.name), mine = s.name === this.from.name;
         const note = mine ? 'You’re here' : !st.onMap ? 'Off the map' : st.lines.length > 1 ? `Change for ${st.lines.filter((x) => x.line !== line).map((x) => x.line.ref).join(', ')}` : '';
         return `<li><button data-act="go:${k}" class="${k === this.sel ? 'sel' : ''}"${mine || !st.onMap ? ' disabled' : ''}>`
           + `<span>${esc(s.name)}</span>${note ? `<small>${esc(note)}</small>` : ''}</button></li>`;
       }).join('');
-      html = `<div class="metro-head"><div class="metro-title">Metro · ${esc(from.name)}</div><button data-act="close" class="metro-close" aria-label="Back to the street">×</button></div>
+      html = `<div class="metro-head"><div class="metro-title">Metro · ${esc(this.from.name)}</div><button data-act="close" class="metro-close" aria-label="Back to the street">×</button></div>
         <div class="metro-tabs">${tabs}</div>
         ${change ? `<div class="metro-note">Change at ${esc(change)}</div>` : ''}
         ${this.note ? `<div class="metro-note">${esc(this.note)}</div>` : ''}
@@ -274,7 +228,6 @@ export class Metro {
         <div class="metro-keys"><b>W</b>/<b>S</b> choose · <b>A</b>/<b>D</b> line · <b>E</b> go · <b>Esc</b> back to the street</div>`;
     } else {
       const s = this.steps.find((x) => this.t < x.to) || this.steps[this.steps.length - 1];
-      if (!s || !this.dest) return;
       const { line, i, j } = s.leg, dir = j > i ? 1 : -1;
       const towards = line.stations[dir > 0 ? line.stations.length - 1 : 0].name;
       // How far along this leg the train is, in stations.

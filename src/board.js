@@ -1,8 +1,4 @@
-import { headsignAt, frontOf, MEAN_SPEED } from './trams.ts';
-import type { Trams, TramLine, TramVehicle } from './trams.ts';
-
-interface StopSpot { line: TramLine; i: number; x: number; y: number; name: string; headsign: string }
-interface DueTram { line: TramLine; headsign: string; eta: number; here: boolean; v: TramVehicle }
+import { headsignAt, frontOf, MEAN_SPEED } from './trams.js';
 
 // Departure boards. Standing at a tram stop, the HUD lists the next trams due there and
 // counts them down as they come. The times come from where the trams actually are
@@ -16,17 +12,8 @@ const HORIZON = 30 * 60; // s: trams further off than this aren't listed
 const CELL = 50;
 
 export class StopBoard {
-  trams: Trams;
-  el: HTMLElement;
-  grid: Map<string, StopSpot[]>;
-  shown: string | null;
-  next: number;
-  t: number;
-  key: string;
-
-  constructor(trams: Trams, el: HTMLElement) {
-    this.trams = trams;
-    this.el = el;
+  constructor(trams, el) {
+    Object.assign(this, { trams, el });
     this.grid = new Map();
     this.shown = null; // the stop's name while you're at one
     this.next = Infinity; // seconds until the first tram
@@ -39,13 +26,13 @@ export class StopBoard {
         const spot = { line, i, x: p.x, y: p.y, name: h.name, headsign: headsignAt(line, h.s) };
         const k = `${Math.floor(p.x / CELL)},${Math.floor(p.y / CELL)}`;
         if (!this.grid.has(k)) this.grid.set(k, []);
-        this.grid.get(k)!.push(spot);
+        this.grid.get(k).push(spot);
       });
     }
   }
 
-  near(x: number, y: number, r: number) {
-    const out: StopSpot[] = [];
+  near(x, y, r) {
+    const out = [];
     for (let i = Math.floor((x - r) / CELL); i <= Math.floor((x + r) / CELL); i++) {
       for (let j = Math.floor((y - r) / CELL); j <= Math.floor((y + r) / CELL); j++) {
         for (const s of this.grid.get(`${i},${j}`) || []) if (Math.hypot(s.x - x, s.y - y) < r) out.push(s);
@@ -55,7 +42,7 @@ export class StopBoard {
   }
 
   // Every frame: `here` is false when you can't use the board (in a car, on a tram).
-  update(dt: number, x: number, y: number, here: boolean) {
+  update(dt, x, y, here) {
     this.t -= dt;
     if (this.t > 0) return;
     this.t = 0.25;
@@ -68,7 +55,7 @@ export class StopBoard {
       return;
     }
     const spots = this.near(at.x, at.y, SAME).filter((s) => s.name === at.name);
-    const due: DueTram[] = [];
+    const due = [];
     for (const s of spots) {
       const { line } = s, h = line.halts[s.i];
       for (const v of line.trams) {
@@ -87,10 +74,9 @@ export class StopBoard {
     this.render(at.name, rows);
   }
 
-  render(name: string, rows: DueTram[]) {
-    const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
-    const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
-    const when = (r: DueTram) => (r.here ? 'now' : r.eta < 45 ? 'arriving' : `${Math.round(r.eta / 60)} min`);
+  render(name, rows) {
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => `&${{ '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' }[c]};`);
+    const when = (r) => (r.here ? 'now' : r.eta < 45 ? 'arriving' : `${Math.round(r.eta / 60)} min`);
     const list = rows.length
       ? `<ol class="board-rows">${rows.map((r) => `<li><span class="ride-ref" style="background:${esc(r.line.colour || '#c4161c')}">${esc(r.line.ref)}</span>`
         + `<span class="board-to">${esc(r.headsign)}</span><span class="board-eta">${when(r)}</span></li>`).join('')}</ol>`
