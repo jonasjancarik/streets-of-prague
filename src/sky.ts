@@ -121,7 +121,7 @@ export class Sky {
     // Clouds: the sun hidden (and its shadows faint), the sky's light grey and a
     // little stronger, as the whole sky shines, or orange from the city at night.
     const night = THREE.MathUtils.clamp((2 - deg) / 8, 0, 1);
-    this.sun.intensity *= 1 - 0.85 * w.cloud;
+    this.sun.intensity *= 1 - 0.92 * w.cloud;
     this.hemi.color.lerp(cc.copy(OVERCAST).lerp(CITY_GLOW, night), w.cloud * 0.75);
     this.hemi.intensity *= 1 + 0.3 * w.cloud * (1 - night);
     this.hemi.groundColor.lerp(SNOWY_GROUND, w.cover * 0.5 * (1 - night * 0.6));

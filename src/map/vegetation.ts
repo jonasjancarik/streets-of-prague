@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
-import { cutAway, NOISE_GLSL, LEAVES } from '../shading.ts';
+import { cutAway, NOISE_GLSL, LEAVES, SNOW, WET } from '../shading.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
 export interface TreeTileData extends GeoData {
@@ -216,13 +216,15 @@ function leafy(material: THREE.MeshLambertMaterial) {
   material.onBeforeCompile = (sh, renderer) => {
     before.call(material, sh, renderer);
     sh.uniforms.uLeaves = LEAVES;
+    sh.uniforms.uSnow = SNOW;
+    sh.uniforms.uWet = WET;
     sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN)
       .replace('#include <common>', '#include <common>\nattribute vec3 across;\nattribute vec3 along;\nvarying vec3 vAcross;\nvarying vec3 vAlong;')
       .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
   vAcross = normalMatrix * mat3(instanceMatrix) * across;
   vAlong = normalMatrix * mat3(instanceMatrix) * along;`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\nuniform float uLeaves;\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
+      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\nuniform float uLeaves;\nuniform float uSnow;\nuniform float uWet;\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   // (Derivatives first, outside the branches. A tuft only a few pixels across gets
   // no leaves at all.)
@@ -259,7 +261,13 @@ function leafy(material: THREE.MeshLambertMaterial) {
       leafCrease *= mix(1., (.78 + .38 * sl.y) * mix(.7, 1., smoothstep(0., .12, sl.x)), sd);
     }
   }`)
-      .replace('#include <lights_lambert_fragment>', 'diffuseColor.rgb *= leafCrease;\n#include <lights_lambert_fragment>')
+      .replace('#include <lights_lambert_fragment>', `diffuseColor.rgb *= leafCrease * (1. - .18 * uWet);
+  // Snow on the tops of the crowns (weather.ts); wet leaves a little darker.
+  if (uSnow > .01) {
+    float up = dot(normal, (viewMatrix * vec4(0., 1., 0., 0.)).xyz);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.78, .8, .84), smoothstep(.35, .8, up) * smoothstep(.2, .8, uSnow) * .75);
+  }
+#include <lights_lambert_fragment>`)
       .replace('#include <opaque_fragment>', `outgoingLight *= mix(vec3(.88, 1., 1.06), vec3(1.14, 1.06, .7), smoothstep(.04, .3, dot(outgoingLight, vec3(.3, .59, .11))));
   #include <opaque_fragment>`);
   };

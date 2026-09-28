@@ -1,11 +1,12 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp } from './network.ts';
 import { Figures, Anim, SCALE } from './figures.ts';
 import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import { lampLit } from './lamps.ts';
-import { SNOW } from './shading.ts';
+import { SNOW, WET } from './shading.ts';
 
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
@@ -58,42 +59,41 @@ function carGeometry(type: string, paint: string): THREE.BufferGeometry {
     cache.set(k, geometry);
     return geometry;
   }
+  if (!bodies) throw new Error('Car bodies are not loaded');
+  const node = bodies.getObjectByName(type);
+  if (!node) throw new Error(`Missing ${type} in cars.glb`);
+  const c = new THREE.Color();
   const parts: THREE.BufferGeometry[] = [];
-  const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string) => {
-    const g = new THREE.BoxGeometry(sx, sy, sz);
-    g.translate(x, y, z);
-    const c = new THREE.Color(color);
-    const n = g.attributes.position.count;
-    const col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
+  node.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const g = new THREE.BufferGeometry();
+    g.setIndex(o.geometry.index);
+    g.setAttribute('position', o.geometry.attributes.position.clone());
+    g.setAttribute('normal', o.geometry.attributes.normal.clone());
+    g.applyMatrix4(o.matrixWorld);
+    const name = (Array.isArray(o.material) ? o.material[0] : o.material).name;
+    c.set(name === 'Paint' ? S.color || paint : PART[name] || '#777777');
+    const col = new Float32Array(g.attributes.position.count * 3);
+    for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     parts.push(g);
-  };
-  const { L, W, H } = S;
-  const body = S.color || paint;
-  const glass = '#1b232b';
-  const [c0, c1] = S.cabin ?? [0, 0];
-  const bodyH = type === 'van' ? H * 0.55 : H * 0.5;
-  box(L, bodyH, W, 0, 0.25 + bodyH / 2, 0, body);
-  box(c1 - c0, H - bodyH - 0.3, W * 0.86, (c0 + c1) / 2, 0.25 + bodyH + (H - bodyH - 0.3) / 2, 0, glass);
-  // Roof panel: shorter than the cabin, so the windscreen and rear window show from above.
-  box(c1 - c0 - (type === 'van' ? 0.35 : 0.75), 0.08, W * 0.84, (c0 + c1) / 2 - (type === 'van' ? 0.15 : 0.1), H - 0.01, 0, body);
-  box(0.06, 0.18, 0.34, L / 2 + 0.01, 0.62, W * 0.33, '#fff6d8');
-  box(0.06, 0.18, 0.34, L / 2 + 0.01, 0.62, -W * 0.33, '#fff6d8');
-  box(0.06, 0.16, 0.3, -L / 2 - 0.01, 0.66, W * 0.35, '#b3161b');
-  box(0.06, 0.16, 0.3, -L / 2 - 0.01, 0.66, -W * 0.35, '#b3161b');
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(0.66, 0.6, 0.24, sx * (L / 2 - 0.85), 0.3, sz * (W / 2 - 0.1), '#161616');
-  if (type === 'taxi') box(0.28, 0.2, 0.7, (c0 + c1) / 2, H + 0.1, 0, '#fff4c2');
-  if (type === 'police') {
-    // Blue and yellow bands down the sides, a blue band across the bonnet, the light bar.
-    box(L * 0.96, 0.16, W + 0.02, 0, 0.25 + bodyH * 0.5, 0, '#1d4fa3');
-    box(L * 0.96, 0.07, W + 0.03, 0, 0.25 + bodyH * 0.5 + 0.115, 0, '#d4e02b');
-    box(0.5, 0.02, W * 0.92, (c1 + L / 2) / 2, 0.25 + bodyH + 0.01, 0, '#1d4fa3');
-    box(0.3, 0.12, W * 0.74, (c0 + c1) / 2, H + 0.06, 0, '#1b1f2a');
-  }
+  });
   const g = mergeGeometries(parts);
   cache.set(k, g);
   return g;
+}
+
+// Car bodies from public/cars.glb (built in Blender by assets/cars/build.py): one per
+// type, each part a material named after it. Paint takes the car's colour; the rest:
+const PART: Record<string, string> = {
+  Glass: '#1e2830', Trim: '#1f2022', Tyre: '#161616', Metal: '#70757b', Lamp: '#fff6d8', Tail: '#b3161b',
+  Plate: '#e3e5e0', Sign: '#fff4c2', Blue: '#1d4fa3', Yellow: '#d4e02b', Bar: '#1b1f2a',
+};
+let bodies: THREE.Object3D | null = null;
+export async function loadCars(url = 'cars.glb') {
+  const gltf = await new GLTFLoader().loadAsync(url);
+  gltf.scene.updateMatrixWorld(true);
+  bodies = gltf.scene;
 }
 
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -192,12 +192,15 @@ export class Car {
     let vl = this.vx * fy - this.vy * fx;
     const fast = clamp(Math.abs(vf) / S.vmax, 0, 1);
     const throttle = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - vf) / 2, 0, 1));
+    // A wet road and snow take some of the tyres' grip: longer braking, wider slides
+    // (for the cars someone is driving hard; the traffic keeps to its lanes as before).
+    const road = this.driven ? 1 - 0.25 * WET.value - 0.45 * SNOW.value : 1;
 
     if (throttle > 0) {
-      if (vf < -0.3) vf = Math.min(0, vf + 16 * dt);
-      else vf += S.accel * throttle * (1 - fast * fast) * dt;
+      if (vf < -0.3) vf = Math.min(0, vf + 16 * road * dt);
+      else vf += S.accel * throttle * (1 - fast * fast) * (0.6 + 0.4 * road) * dt;
     } else if (throttle < 0) {
-      if (vf > 0.3) vf = Math.max(0, vf - 16 * dt);
+      if (vf > 0.3) vf = Math.max(0, vf - 16 * road * dt);
       else vf = Math.max(-S.vmax * 0.3, vf - S.accel * 0.6 * dt);
     } else {
       vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.driven ? 0.6 : 5) * dt);
@@ -211,7 +214,7 @@ export class Car {
     }
     if (ctl.cap != null && vf > ctl.cap) vf = Math.max(ctl.cap, vf - 3 * dt);
 
-    const grip = ctl.handbrake ? 1.1 : S.grip * (1 - 0.45 * fast);
+    const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - 0.45 * fast)) * road;
     vl *= Math.exp(-grip * dt);
 
     const sgn = vf >= 0 ? 1 : -1;
