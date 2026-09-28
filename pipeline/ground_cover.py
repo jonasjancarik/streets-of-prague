@@ -27,9 +27,11 @@ Two ways, for comparing on a few tiles; the game shows them with ?cover=<method>
 
 Sources (all downloaded once into pipeline/.cache/cover/):
   IPR Praha orthophoto 2024, colour and colour-infrared, 10 cm/px, ImageServer at
-  gs-pub.praha.eu (CC BY 4.0, © IPR Praha); ČÚZK DMP 1G surface model, 2 m (CC BY 4.0,
-  © ČÚZK); IPR's technical land-use map (Mapa technického využití území, DTMP);
-  the tile's own terrain heights (ipr_terrain.py).
+  gs-pub.praha.eu (CC BY 4.0, © IPR Praha); IPR's 2025 digital surface model, 1 m
+  (AGO item "Digitální model povrchu - 1m", DSM_1m.zip, 1.5 GB, CC BY 4.0), unzipped
+  into .cache/cover/dsm_ipr/ (without it, or with COVER_DSM=cuzk, ČÚZK's DMP 1G from
+  2009-2013, 2 m, CC BY 4.0, © ČÚZK); IPR's technical land-use map (Mapa technického
+  využití území, DTMP); the tile's own terrain heights (ipr_terrain.py).
 """
 
 import argparse
@@ -150,6 +152,53 @@ def export(url, name, area, t, res, src_res, fmt="png", extra=None):
     return arr
 
 
+IPR_DSM = CACHE / "dsm_ipr" / "DSM_1m.tif"  # unpacked from IPR's DSM_1m.zip (see ipr_dsm)
+# Which height model the pieces' numbers come from: IPR's 2025 one once it's there.
+DSM_SOURCE = os.environ.get("COVER_DSM") or ("ipr" if IPR_DSM.exists() else "cuzk")
+_dsm = None
+
+
+def ipr_dsm(area, t, res):
+    """IPR Praha's digital surface model (2025, 1 m, CC BY 4.0) on the tile's grid.
+    One 35000 x 26000 float GeoTIFF for the whole city (AGO item "Digitální model
+    povrchu - 1m", DSM_1m.zip), stored uncompressed in 128 px blocks, so only the
+    blocks under the tile are read. Its world file puts the centre of the top-left
+    pixel at S-JTSK (-757499.5, -1034000.5)."""
+    global _dsm
+    out = CACHE / "img" / "dsm_ipr" / f"{t['i']}_{t['j']}.npy"
+    if out.exists():
+        return np.load(out)
+    import tifffile
+    if _dsm is None:
+        tf_ = tifffile.TiffFile(IPR_DSM)
+        page = tf_.pages[0]
+        _dsm = (open(IPR_DSM, "rb"), page.shape, page.tilelength, page.tilewidth, page.dataoffsets)
+    f, (H, W), th, tw, offsets = _dsm
+    X, Y = grid(t, res)
+    to_ll = Transformer.from_crs(local_proj(area), "EPSG:4326", always_xy=True)
+    to_sjtsk = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
+    E, N = to_sjtsk.transform(*to_ll.transform(X.ravel(), Y.ravel()))
+    cols, rows = E + 757499.5, -1034000.5 - N
+    c0, c1 = max(int(cols.min()) - 2, 0), min(int(cols.max()) + 3, W)
+    r0, r1 = max(int(rows.min()) - 2, 0), min(int(rows.max()) + 3, H)
+    win = np.full((r1 - r0, c1 - c0), np.nan, np.float32)
+    per_row = -(-W // tw)
+    for ty in range(r0 // th, (r1 - 1) // th + 1):
+        for tx in range(c0 // tw, (c1 - 1) // tw + 1):
+            f.seek(offsets[ty * per_row + tx])
+            block = np.frombuffer(f.read(th * tw * 4), "<f4").reshape(th, tw)
+            ys, xs = ty * th, tx * tw
+            a0, a1 = max(ys, r0), min(ys + th, r1)
+            b0, b1 = max(xs, c0), min(xs + tw, c1)
+            win[a0 - r0:a1 - r0, b0 - c0:b1 - c0] = block[a0 - ys:a1 - ys, b0 - xs:b1 - xs]
+    win[~(win > -1000)] = np.nan
+    fill = np.nanmedian(win) if np.isfinite(win).any() else 0
+    arr = ndimage.map_coordinates(np.nan_to_num(win, nan=fill), [rows - r0, cols - c0], order=1, mode="nearest").reshape(X.shape)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    np.save(out, arr.astype(np.float32))
+    return arr.astype(np.float32)
+
+
 def dtmp(area, t):
     """IPR's technical land-use polygons over the tile, in local metres: [(class, polygon)]."""
     out = CACHE / "dtmp" / f"{t['i']}_{t['j']}.pkl"
@@ -219,7 +268,10 @@ def features(area, meta, t):
     """Per-pixel measurements at RES: colour, infrared greenness, texture, height."""
     rgb = export(RGB, "rgb", area, t, RES, RES)
     cir = export(CIR, "cir", area, t, RES, RES)
-    dsm = export(DSM, "dsm", area, t, RES, 1.0, fmt="tiff", extra={"pixelType": "F32", "interpolation": "RSP_BilinearInterpolation"})[:, :, 0]
+    if DSM_SOURCE == "ipr":
+        dsm = ipr_dsm(area, t, RES)
+    else:
+        dsm = export(DSM, "dsm", area, t, RES, 1.0, fmt="tiff", extra={"pixelType": "F32", "interpolation": "RSP_BilinearInterpolation"})[:, :, 0]
     hm, step = terrain(area, meta, t)
     X, Y = grid(t, RES)
     x0, y0 = t["box"][0], t["box"][1]
@@ -233,15 +285,20 @@ def features(area, meta, t):
     k = int(1 / RES) + 1
     m1 = ndimage.uniform_filter(lum, k)
     tex = np.sqrt(np.maximum(ndimage.uniform_filter(lum * lum, k) - m1 * m1, 0))
-    # Height above the ground round about: the surface model minus its own lowest
-    # points within 16 m (a morphological opening), not minus the game's terrain. The
-    # ČÚZK model is from 2009-2013 and doesn't always meet IPR's terrain, and an
-    # opening is what's left to go on where there's no terrain at all.
     dsm = np.where(dsm > 0, dsm, dtm)
-    f4 = 4
-    low = ndimage.grey_opening(dsm[::f4, ::f4], size=int(16 / (RES * f4)))
-    low = ndimage.zoom(ndimage.uniform_filter(low, 3), (dsm.shape[0] / low.shape[0], dsm.shape[1] / low.shape[1]), order=1)
-    ndsm = dsm - low[: dsm.shape[0], : dsm.shape[1]]
+    if DSM_SOURCE == "ipr":
+        # IPR's surface model and its terrain (the game's heights) come from the same
+        # office and heights: the difference is how far things stand above the ground,
+        # also inside a wood, where there's no open ground near by to measure from.
+        ndsm = dsm - dtm
+    else:
+        # Height above the ground round about: the surface model minus its own lowest
+        # points within 16 m (a morphological opening). The ČÚZK model is from
+        # 2009-2013 and doesn't always meet IPR's terrain.
+        f4 = 4
+        low = ndimage.grey_opening(dsm[::f4, ::f4], size=int(16 / (RES * f4)))
+        low = ndimage.zoom(ndimage.uniform_filter(low, 3), (dsm.shape[0] / low.shape[0], dsm.shape[1] / low.shape[1]), order=1)
+        ndsm = dsm - low[: dsm.shape[0], : dsm.shape[1]]
     warm = rgb[:, :, 0] - rgb[:, :, 2]  # brown/ochre against grey
     return {"rgb": rgb, "ndvi": ndvi, "lum": lum, "sat": sat, "tex": tex, "ndsm": ndsm, "warm": warm}
 
@@ -303,10 +360,15 @@ def rules(p):
     """Fixed thresholds on a piece's summary."""
     # Tuned by eye on the hand-labelled Smíchov pieces (so optimistic there). The June
     # 2024 photo is bright and hazy: asphalt isn't dark in it, it's grey (not warm, not
-    # saturated). Tree canopy is darker than lawn. The height model is from 2009-2013,
-    # older than the building sites, so it only helps to tell trees from lawn.
+    # saturated). Tree canopy is darker than lawn. With IPR's 2025 surface model,
+    # height says what isn't ground: anything standing over 2.5 m that isn't green
+    # (sheds, site huts, containers, roofs missing from OSM), and building pits dug
+    # below the terrain the game knows. (The 2009-2013 ČÚZK model predates the
+    # building sites, so with it height only tells trees from lawn.)
     if p["green"] > 0.45 or p["ndvi"] > 0.2:
         return "trees" if p["tall"] > 0.4 or p["lum"] < 0.42 else "grass"
+    if DSM_SOURCE == "ipr" and (p["tall"] > 0.5 or p["ndsm"] < -1.2):
+        return "structure"
     if p["lum"] < 0.38 and p["warm"] < -0.03:
         return "structure"  # in a building's shadow, or a dark roof
     if p["tex"] > 0.075:
@@ -485,21 +547,25 @@ def jev(states):
 def analyse(area, meta, i, j):
     """Features, pieces and summaries of a tile's beige (cached)."""
     out = CACHE / "pieces" / f"{i}_{j}.pkl"
-    if out.exists():
-        return pickle.loads(out.read_bytes())
+    old = pickle.loads(out.read_bytes()) if out.exists() else None
+    if old and old.get("dsm", "cuzk") == DSM_SOURCE:
+        return old
     t = tile_json(area, i, j)
     F = features(area, meta, t)
     mask = beige_mask(t, RES)
-    labels, m = pieces(F, mask)
+    if old:  # the same pieces (and hand labels), measured again with this height model
+        labels, m, polys, ctx = old["labels"], old["mask"], old["polys"], old["ctx"]
+    else:
+        labels, m = pieces(F, mask)
+        polys = piece_polygons(labels, t)
+        ctx = contexts(t, dtmp(area, t), labels)
     summ = summarise(F, labels)
-    polys = piece_polygons(labels, t)
-    ctx = contexts(t, dtmp(area, t), labels)
     # Canopy tops in the beige: tall, green local maxima at least 4 m apart.
     canopy = (F["ndsm"] > 3) & (F["ndvi"] > 0.15) & mask
     peaks = peak_local_max(np.where(canopy, ndimage.gaussian_filter(F["ndsm"], 2), 0), min_distance=int(4 / RES), threshold_abs=3)
     x0, _, _, y1 = t["box"]
     trees = [[round(x0 + (c + 0.5) * RES, 1), round(y1 - (r + 0.5) * RES, 1)] for r, c in peaks]
-    res = {"t": {"i": i, "j": j, "box": t["box"]}, "labels": labels, "mask": m, "summ": summ, "polys": polys, "ctx": ctx, "trees": trees}
+    res = {"t": {"i": i, "j": j, "box": t["box"]}, "labels": labels, "mask": m, "summ": summ, "polys": polys, "ctx": ctx, "trees": trees, "dsm": DSM_SOURCE}
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(pickle.dumps(res))
     return res
@@ -810,7 +876,7 @@ def main():
     ap.add_argument("--method", default="rules", choices=["rules", "model", "jev"])
     ap.add_argument("--skip", nargs=4, type=int)
     args = ap.parse_args()
-    meta = layers.read_meta(args.area) or json.loads((OUT / f"{args.area}_now" / "index.json").read_text())
+    meta = json.loads((OUT / f"{args.area}_now" / "index.json").read_text())
     tiles = tiles_in(*args.tiles, skip=args.skip)
     t0 = time.time()
     if args.cmd == "fetch":
