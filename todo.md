@@ -74,9 +74,6 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Police cars drive over the parking lane.** Chasing you on foot, a police car
   heads straight for you, across parked cars. It could stop on the road and let
   the officer run the rest of the way.
-- **Tram braking distance.** Trams should brake more realistically (long stopping
-  distance), so a player who steps or drives in front of one too late actually gets
-  hit more often. Accidents with NPCs should stay very rare.
 - **Bike theft leaves no rider behind.** When you take a bike from someone riding
   it, the original rider doesn't appear running away (or at least isn't visible).
   They should be knocked off or step off and run away.
@@ -118,10 +115,6 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
   white dashed lines instead of blue (confusing, but that's how Prague does it).
-- **Zebra crossings.** They should start and end where they meet the pavement, and
-  run mostly perpendicular to it where the geometry allows, instead of stopping
-  short or overshooting. The stripes also have uneven gaps now (one gap noticeably
-  wider than the rest).
 - **Place names on screen.** Drop the large pop-up for street names; the street is
   already shown top left next to the speed, and that's enough. Keep the big title
   for entering a new neighbourhood or district.
