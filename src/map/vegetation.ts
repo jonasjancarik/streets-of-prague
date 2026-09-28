@@ -99,6 +99,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
 function crownGeometry() {
   const r = rng(7);
   const pos: number[] = [], nor: number[] = [], col: number[] = [], tuft: number[] = [], idx: number[] = [];
+  const across: number[] = [], along: number[] = []; // each tuft's card, for its leaves
   const up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3(1, 0, 0);
   const t = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3(), n = new THREE.Vector3();
   const bulge = new THREE.Vector3(), round = new THREE.Vector3();
@@ -118,6 +119,8 @@ function crownGeometry() {
       nor.push(n.x, n.y, n.z);
       col.push(shade, shade, shade);
       tuft.push(u, v, seed);
+      across.push(tx.x, tx.y, tx.z);
+      along.push(bx.x, bx.y, bx.z);
     }
     idx.push(base, base + 1, base + 2, base, base + 2, base + 3, base, base + 3, base + 4, base, base + 4, base + 1);
   };
@@ -146,7 +149,9 @@ function crownGeometry() {
     pos.push(p.x, p.y, p.z);
     nor.push(n.x, n.y, n.z);
     col.push(0.25, 0.25, 0.25);
-    tuft.push(0, 0, 0);
+    tuft.push(0, 0, -1); // (no leaves)
+    across.push(1, 0, 0);
+    along.push(0, 0, 1);
   }
   core.dispose();
   const geom = new THREE.BufferGeometry();
@@ -154,18 +159,20 @@ function crownGeometry() {
   geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   geom.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geom.setAttribute('tuft', new THREE.Float32BufferAttribute(tuft, 3));
+  geom.setAttribute('across', new THREE.Float32BufferAttribute(across, 3));
+  geom.setAttribute('along', new THREE.Float32BufferAttribute(along, 3));
   geom.setIndex(idx);
   return geom;
 }
 let crown: THREE.BufferGeometry | null = null;
 
-// A tuft's outline: a rosette of five lobes with smaller notches, different for every
-// tuft. 1 inside, 0 outside, soft over a pixel (for alpha to coverage).
+// A tuft's outline: a rosette of five leaves with smaller notches, turned differently
+// for every tuft. 1 inside, 0 outside, soft over a pixel (for alpha to coverage).
 const TUFT_GLSL = /* glsl */ `
 varying vec3 vTuft;
 float tuftAlpha() {
   float r = length(vTuft.xy), a = atan(vTuft.y, vTuft.x), s = vTuft.z * 6.2832;
-  float edge = .8 + .13 * cos(5. * a + s) + .05 * cos(11. * a + s * 3.);
+  float edge = .8 + .13 * cos(5. * (a + s)) + .05 * cos(11. * a + s * 3.);
   float w = fwidth(r) * .7 + 1e-4;
   return 1. - smoothstep(edge - w, edge + w, r);
 }
@@ -173,19 +180,48 @@ float tuftAlpha() {
 const TUFT_VERTEX = ['#include <common>', '#include <common>\nattribute vec3 tuft;\nvarying vec3 vTuft;'] as const;
 const TUFT_BEGIN = ['#include <begin_vertex>', '#include <begin_vertex>\n  vTuft = tuft;'] as const;
 
-// Leaves in the light go a little yellow, as sunlight through leaves does, and the
-// shade a little blue-green.
+// Leaves: every tuft is five big leaves with five smaller ones on top, set between
+// them. Each leaf is flat and tilted its own way, outwards (the top ones less), so
+// the light changes leaf by leaf, with hard edges and a thin dark crease where two
+// meet, not in one smooth gradient over the tuft. Leaves in the light go a little
+// yellow, as sunlight through leaves does, and the shade a little blue-green.
 function leafy(material: THREE.MeshLambertMaterial) {
   material.alphaToCoverage = true;
   material.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN);
+    sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN)
+      .replace('#include <common>', '#include <common>\nattribute vec3 across;\nattribute vec3 along;\nvarying vec3 vAcross;\nvarying vec3 vAlong;')
+      .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
+  vAcross = normalMatrix * mat3(instanceMatrix) * across;
+  vAlong = normalMatrix * mat3(instanceMatrix) * along;`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}`)
+      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   float ta = tuftAlpha();
   if (ta < .02) discard;
-  diffuseColor.a = ta;
-  diffuseColor.rgb *= mix(1.08, .56, smoothstep(.3, .85, length(vTuft.xy)));`)
+  diffuseColor.a = ta;`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  if (vTuft.z >= 0.) {
+    float r = length(vTuft.xy), s = vTuft.z * 6.2832, k = 6.2832 / 5.;
+    float a0 = atan(vTuft.y, vTuft.x);
+    // The top leaves have lobed edges of their own; the edges between leaves curve a
+    // little, as where leaves overlap.
+    float topEdge = .44 + .1 * cos(5. * (a0 + s) + 3.1416);
+    float top = step(r, topEdge);
+    float a = a0 + s + top * k * .5 + .7 * r;
+    float f = a / k + .5, leaf = floor(f);
+    float mid = leaf * k - s - top * k * .5;                        // the leaf's middle
+    vec3 T = normalize(vAcross), B = normalize(vAlong), N = normalize(cross(T, B));
+    if (dot(N, normal) < 0.) N = -N;
+    float rnd = fract(sin(leaf * 12.9 + s * 7.) * 43758.5);
+    float tilt = mix(.95, .45, top) * (.6 + .8 * rnd) * smoothstep(.08, .22, r);
+    vec3 ln = normalize(N + (T * cos(mid + rnd - .5) + B * sin(mid + rnd - .5)) * tilt);
+    normal = normalize(mix(normal, ln, .8));
+    float gap = min(fract(f), 1. - fract(f)) * k * r;                // to the next leaf
+    float w = fwidth(r) + .008;
+    leafCrease = mix(.72, 1., smoothstep(0., w * 1.5, gap) + (1. - smoothstep(.1, .2, r)))
+      * mix(.7, 1., smoothstep(0., w * 1.5, abs(r - topEdge)));
+  }`)
+      .replace('#include <lights_lambert_fragment>', 'diffuseColor.rgb *= leafCrease;\n#include <lights_lambert_fragment>')
       .replace('#include <opaque_fragment>', `outgoingLight *= mix(vec3(.88, 1., 1.06), vec3(1.14, 1.06, .7), smoothstep(.04, .3, dot(outgoingLight, vec3(.3, .59, .11))));
   #include <opaque_fragment>`);
   };
