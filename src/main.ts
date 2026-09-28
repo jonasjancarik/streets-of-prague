@@ -11,6 +11,7 @@ import { Trams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
 import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
+import { Graphics } from './graphics.ts';
 import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
 import { TileWorld } from './tiles.ts';
@@ -73,11 +74,8 @@ async function main() {
     .catch(() => ({ lines: [] }));
   const seeded = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 
+  // (Its pixel ratio comes from the graphics setting, see Graphics.)
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  // ?dpr=1 draws at that pixel ratio; otherwise it starts at the screen's (up to 2)
-  // and comes down while frames take too long (see `resolution` below).
-  const maxRatio = Math.min(Number(params.get('dpr')) || devicePixelRatio, 2);
-  renderer.setPixelRatio(maxRatio);
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -95,6 +93,8 @@ async function main() {
   // The sun and the sky's light follow the clock (see Sky).
   const sky = new Sky(scene, renderer);
   const sun = sky.sun;
+  // How sharp the picture is and whether the costlier looks are on; Auto adapts.
+  const graphics = new Graphics(renderer, sky, params);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); // about 9 cm a texel across the ±90 m it covers on foot
   sun.shadow.bias = -0.0004;
@@ -459,7 +459,7 @@ async function main() {
     return best && bestD < 1 ? surfaceOf(best.surface) : 'pavement';
   };
   const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, shiftTime: (h) => clock.advance(h * 3600),
-    timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400) });
+    timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics });
 
   // ---- Input -------------------------------------------------------------
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
@@ -478,6 +478,7 @@ async function main() {
     // Space jumps, except at a tram stop, where holding it waits for a tram.
     if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on) input.jump = true;
     if (e.code === 'KeyM' && !e.repeat) sound.toggle();
+    if (e.code === 'KeyG' && !e.repeat) { graphics.cycle(); showBanner(graphics.label()); }
     if (e.code === 'KeyH' && !e.repeat) foldHelp(!$('help').classList.contains('folded'));
     // On a tram, W and S move your pick along the stops ahead.
     if (ride.on && ['KeyW', 'ArrowUp'].includes(e.code)) ride.pick(-1);
@@ -790,35 +791,11 @@ async function main() {
   }
   $('loading').classList.add('done');
 
-  // Resolution: the screen's pixel ratio (up to 2) while frames keep up. Where they
-  // take too long, mostly the ground's patterns on a big high-density screen, it comes
-  // down a step at a time, and back up once there's time to spare, but not to a step
-  // it had to leave again soon after.
-  const resolution = { ratio: maxRatio, ceiling: maxRatio, frame: 16.7, slow: 0, quick: 0, raised: -Infinity };
-  const adapt = (ms: number, now: number) => {
-    // (A frame over a quarter of a second is a pause, such as coming back to the tab.)
-    if (params.get('dpr') || ms > 250) return;
-    const r = resolution;
-    r.frame += (Math.min(ms, 100) - r.frame) * 0.05;
-    r.slow = r.frame > 25 ? r.slow + Math.min(ms, 100) : 0;
-    r.quick = r.frame < 18 ? r.quick + ms : 0;
-    let next = r.ratio;
-    if (r.slow > 2000 && r.ratio > 1) {
-      if (now - r.raised < 10000) r.ceiling = r.ratio - 0.25;
-      next = Math.max(1, r.ratio - 0.25);
-    } else if (r.quick > 8000 && r.ratio < r.ceiling) {
-      next = Math.min(r.ceiling, r.ratio + 0.25);
-      r.raised = now;
-    }
-    if (next === r.ratio) return;
-    r.ratio = next;
-    r.slow = r.quick = 0;
-    renderer.setPixelRatio(next);
-  };
+  graphics.started(performance.now());
 
   renderer.setAnimationLoop((now) => {
     const dt = Math.min(0.05, (now - last) / 1000);
-    adapt(now - last, now);
+    graphics.frame(now - last, now, world.inFlight.size > 0);
     last = now;
     time.value += dt;
     world.update(camPos.x, -camPos.z, viewRadius() + 220);
@@ -985,7 +962,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, resolution, sound,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, graphics, sound,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

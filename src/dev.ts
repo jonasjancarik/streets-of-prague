@@ -2,21 +2,23 @@ import proj4 from 'proj4';
 import type * as Leaflet from 'leaflet';
 import type { MapIndex } from './contracts.ts';
 import type { Point2 } from './map/geo.ts';
+import type { Graphics, Choice } from './graphics.ts';
 
 interface DevHit { label: string; x: number; y: number }
 interface StreetName { name: string; key: string; x: number; y: number }
 
 // Developer panel (` key or ?dev): jump to a street or an address, or pick a spot on
-// a map; set the time of day. Street names come from the area's own index (offline); addresses are looked
+// a map; set the time of day and the graphics. Street names come from the area's own index (offline); addresses are looked
 // up on OpenStreetMap's Nominatim only when you ask for it.
 
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-export function setupDev({ area, index, teleport, position, helicopter, shiftTime, timeOfDay, setTimeOfDay }: {
+export function setupDev({ area, index, teleport, position, helicopter, shiftTime, timeOfDay, setTimeOfDay, graphics }: {
   area: string; index: MapIndex; teleport: (x: number, y: number) => Promise<void>;
   position: () => Point2; helicopter: () => boolean; shiftTime: (hours: number) => void;
   // Seconds since midnight on the game's clock.
   timeOfDay: () => number; setTimeOfDay: (sec: number) => void;
+  graphics: Graphics;
 }) {
   const [w, s, e, n] = index.bbox_wgs84;
   const local = `+proj=tmerc +lat_0=${(s + n) / 2} +lon_0=${(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
@@ -55,6 +57,11 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
     </div>
     <label class="dev-time">Time of day <span id="dev-time-label"></span>
       <input id="dev-time" type="range" min="0" max="1439" step="5" title="The trams follow the timetable for the new time" />
+    </label>
+    <label class="dev-time">Graphics <span id="dev-graphics-label"></span>
+      <select id="dev-graphics">
+        <option value="auto">Auto</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="lowest">Lowest</option>
+      </select>
     </label>
     <div id="dev-pos"></div>`;
   panel.hidden = true;
@@ -126,6 +133,10 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
     setTimeout(() => { $('dev-link').textContent = 'Copy link to this spot'; }, 1500);
   };
 
+  const pick = $('dev-graphics') as HTMLSelectElement;
+  pick.value = graphics.choice;
+  pick.onchange = () => graphics.set(pick.value as Choice);
+  pick.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   const time = $('dev-time') as HTMLInputElement;
   let dragging = false;
   time.oninput = () => { dragging = true; setTimeOfDay(+time.value * 60); };
@@ -189,6 +200,8 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
       const [x, y] = position();
       const [lon, lat] = toLonLat(x, y);
       $('dev-pos').textContent = `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`;
+      $('dev-graphics-label').textContent = graphics.choice === 'auto' ? `(${graphics.tier} now)` : '';
+      if (document.activeElement !== pick) pick.value = graphics.choice;
       const min = Math.floor(timeOfDay() / 60);
       if (!dragging) time.value = String(min);
       $('dev-time-label').textContent = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
