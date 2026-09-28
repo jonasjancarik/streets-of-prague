@@ -395,7 +395,7 @@ export class Trams {
     let look = this.pool.pop();
     if (!look) {
       look = { sections: [sectionMesh('back'), sectionMesh('mid'), sectionMesh('front')], sign: new THREE.Mesh(signGeometry) };
-      look.sign.position.y = 3.6;
+      look.sign.position.y = 3.75; // well clear of the roof box (top at 3.58), or the two flicker from high up
       look.sections[2].add(look.sign);
       for (const m of look.sections) this.scene.add(m);
     }
