@@ -194,13 +194,13 @@ def flat_roof(c):
 
 
 def colours(bid, osm):
-    """Roof and wall colour for a building, from the OSM building it sits on if any."""
+    """Roof and wall colour for a building, from the OSM building it sits on if any.
+    Pitched roofs in Prague are nearly all red tiles, offices and ministries included;
+    only churches get slate or copper. Flat roofs are greyed in flat_roof."""
     hv = (zlib.crc32(bid.encode()) & 0xFFFFFF) / 0xFFFFFF
     wall = hexrgb(WALLS[int(hv * len(WALLS)) % len(WALLS)])
     if osm and osm.get("church"):
         roof = hexrgb(COPPER if osm.get("roof") in ("dome", "onion") else ROOF_SLATE[0])
-    elif osm and osm.get("kind") in ("civic", "government", "school", "industrial", "commercial", "office", "retail") and hv > 0.5:
-        roof = hexrgb(ROOF_SLATE[int(hv * 10) % 3])
     else:
         roof = hexrgb(ROOF_TILES[int(hv * 997) % len(ROOF_TILES)])
     return roof, wall
