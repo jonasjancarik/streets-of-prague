@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
-import { cutAway, NOISE_GLSL } from '../shading.ts';
+import { cutAway, NOISE_GLSL, LEAVES } from '../shading.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
 export interface TreeTileData extends GeoData {
@@ -215,19 +215,20 @@ function leafy(material: THREE.MeshLambertMaterial) {
   const before = material.onBeforeCompile; // (the tunnel's hole, see treeMesh)
   material.onBeforeCompile = (sh, renderer) => {
     before.call(material, sh, renderer);
+    sh.uniforms.uLeaves = LEAVES;
     sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN)
       .replace('#include <common>', '#include <common>\nattribute vec3 across;\nattribute vec3 along;\nvarying vec3 vAcross;\nvarying vec3 vAlong;')
       .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
   vAcross = normalMatrix * mat3(instanceMatrix) * across;
   vAlong = normalMatrix * mat3(instanceMatrix) * along;`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
+      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\nuniform float uLeaves;\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   // (Derivatives first, outside the branches. A tuft only a few pixels across gets
   // no leaves at all.)
   float tw = fwidth(length(vTuft.xy));
   float sd = detail(vTuft.xy * 8., 1.5);
-  if (vTuft.z >= 0. && tw < .3) {
+  if (uLeaves > .5 && vTuft.z >= 0. && tw < .3) {
     float r = length(vTuft.xy), s = vTuft.z * 6.2832, k = 6.2832 / 5.;
     float a0 = atan(vTuft.y, vTuft.x);
     // The top leaves have lobed edges of their own; the edges between leaves curve a

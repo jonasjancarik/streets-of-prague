@@ -40,6 +40,7 @@ float luma(vec3 c) { return dot(c, vec3(.299, .587, .114)); }
 // Patterns by id. Each takes the base colour and the position in metres (x east, y north).
 export const PATTERNS_GLSL = /* glsl */ `
 uniform float uTime;
+uniform float uDirt;
 vec3 pAsphalt(vec3 c, vec2 p) {
   c *= .9 + .18 * fbm(p * .3);
   c *= mix(1., .9, smoothstep(.62, .66, fbm(p * .07 + 3.)));          // repair patches
@@ -108,6 +109,7 @@ vec3 pWater(vec3 c, vec2 p) {
 }
 // Dirt on paved ground: broad grimy patches and smaller stains.
 vec3 grit(vec3 c, vec2 p) {
+  if (uDirt < .5) return c;
   c *= 1. - .22 * smoothstep(.3, .85, fbm2(p * .13 + 5.));
   return c * (1. - .12 * smoothstep(.55, .85, fbm2(p * .6 + 17.)) * detail(p, .6));
 }
@@ -180,6 +182,11 @@ vec3 facade(vec3 c, vec2 f) {
 // A round hole through the buildings above the player while they're in a passage
 // under a building, so the car stays in view: (x, y above which to cut, z, radius).
 // Shadows are drawn without it, so the passage stays in the building's shade.
+// Graphics settings (graphics.ts): dirt on the paving and grime on the walls (1 on,
+// 0 off), and the small leaves on the trees (vegetation.ts).
+export const DIRT = { value: 1 };
+export const LEAVES = { value: 1 };
+
 export const CUTAWAY = { value: new THREE.Vector4(0, 0, 0, 0) };
 
 // When you're in a tunnel, the ground round you is shown as bare earth, cut open
@@ -210,13 +217,14 @@ export function cutAway<M extends THREE.Material>(material: M, key: string): M {
 export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uCut = CUTAWAY;
+    sh.uniforms.uDirt = DIRT;
     sh.uniforms.uFacades = FACADE_ATLAS;
     sh.uniforms.uFacadeOn = FACADE_ON;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);
@@ -227,7 +235,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   else {
     if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
     else diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy);
-    diffuseColor.rgb = grime(diffuseColor.rgb, vFacade);
+    if (uDirt > .5) diffuseColor.rgb = grime(diffuseColor.rgb, vFacade);
   }`);
   };
   material.customProgramCacheKey = () => 'buildings-procedural';
@@ -250,6 +258,7 @@ export function patterned(
 ) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
+    sh.uniforms.uDirt = DIRT;
     if (photo) {
       sh.uniforms.uPhoto = { value: photo.texture };
       sh.uniforms.uPhotoBox = { value: photo.box };

@@ -45,6 +45,7 @@ function mix(a: string, b: string, t: number, out: THREE.Color) {
 THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
   'vec3 CustomToneMapping( vec3 color ) { return color; }',
   `vec3 CustomToneMapping( vec3 color ) {
+  if ( toneMappingExposure < 0. ) return color * -toneMappingExposure;   // off (see Sky.curve)
   color *= toneMappingExposure;
   vec3 c = color * ( 1. + color / 36. ) / ( 1. + color );
   c = mix( c, vec3( dot( c, vec3( .2126, .7152, .0722 ) ) ), .2 );
@@ -52,12 +53,21 @@ THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars
 }`,
 );
 
+// The same curve for one channel, to match its mid-tones when it's off.
+function toneCurve(x: number) {
+  const c = (x * (1 + x / 36)) / (1 + x);
+  return c * 0.65 + c * c * (3 - 2 * c) * 0.35;
+}
+
 export class Sky {
   readonly hemi = new THREE.HemisphereLight();
   readonly sun = new THREE.DirectionalLight();
   // From the light towards the target, and how far back the light sits.
   readonly offset = new THREE.Vector3();
   private renderer: THREE.WebGLRenderer;
+  // The tone curve (graphics.ts). Without it the light is only scaled so that mid-grey
+  // comes out as bright as with it; highlights clip instead of rolling off.
+  curve = true;
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
@@ -78,7 +88,8 @@ export class Sky {
     mix(a.ground, b.ground, t, this.hemi.groundColor);
     this.sun.intensity = THREE.MathUtils.lerp(a.sunI, b.sunI, t);
     this.hemi.intensity = THREE.MathUtils.lerp(a.skyI, b.skyI, t);
-    this.renderer.toneMappingExposure = THREE.MathUtils.lerp(a.exposure, b.exposure, t);
+    const exposure = THREE.MathUtils.lerp(a.exposure, b.exposure, t);
+    this.renderer.toneMappingExposure = this.curve ? exposure : -toneCurve(0.18 * exposure) / 0.18;
 
     // Kept a little above the horizon so shadows don't run off for hundreds of metres
     // at sunset; at night the moon stands high in the south-west.
