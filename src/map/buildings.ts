@@ -66,8 +66,8 @@ export function buildBuildings(data: BuildingTile) {
     const base = isWall ? 0 : b.minh;
 
     cWall.set(WALLS[Math.floor(hv * WALLS.length)]);
+    // Pitched roofs in Prague are nearly all red tiles; only churches get slate or copper.
     if (b.church) cRoof.set(b.roof === 'onion' || b.roof === 'dome' ? ROOF_COPPER : ROOF_SLATE[0]);
-    else if (['civic', 'government', 'school', 'industrial'].includes(b.kind) && hv > 0.5) cRoof.set(ROOF_SLATE[Math.floor(hv * 10) % 3]);
     else cRoof.set(ROOF_TILES[Math.floor(hv * 997) % ROOF_TILES.length]);
     tmp.copy(cRoof).offsetHSL(0, 0, (hash(b.id) - 0.5) * 0.06);
     cRoof.copy(tmp);
