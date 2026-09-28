@@ -63,3 +63,22 @@ checking on a real phone before going further.
 - **The caches take about 2.5 GB** in `pipeline/.cache` (parsed OSM chunks, parsed
   IPR sheets, layers), on top of the OSM extract and the IPR sheets. Stale ones
   (after a new OSM extract, say) are replaced as they're rebuilt but never removed.
+
+## Gameplay and look
+
+Noted on 28 September 2026 while playing, during the TypeScript refactor.
+
+- **Vehicle collisions.** You can walk under a tram, trams drive over cars, and at
+  one point the player walked straight through the middle of a parked car. Trams,
+  moving cars and parked cars should all block the player and each other.
+- **Parking zone markings.** The blue line should run only along the street side of
+  a bay, plus short lines perpendicular to the pavement where the zone starts and
+  ends; there's no line along the pavement. Purple and orange zones are marked with
+  white dashed lines instead of blue (confusing, but that's how Prague does it).
+- **Zebra crossings.** They should start and end where they meet the pavement, and
+  run mostly perpendicular to it where the geometry allows, instead of stopping
+  short or overshooting. The stripes also have uneven gaps now (one gap noticeably
+  wider than the rest).
+- **Place names on screen.** Street names don't need to pop up in large letters;
+  keep the big title for entering a new neighbourhood or district, and show street
+  names more quietly.
