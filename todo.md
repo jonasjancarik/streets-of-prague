@@ -63,6 +63,34 @@ checking on a real phone before going further.
   IPR sheets, layers), on top of the OSM extract and the IPR sheets. Stale ones
   (after a new OSM extract, say) are replaced as they're rebuilt but never removed.
 
+## Terrain
+
+- **Straight elevation break at tile edges (likely cause found).** A dead-straight
+  north–south line near Jeremenkova cuts across roads, pavement and grass, with the
+  ground slightly lighter and offset on one side; a similar faint east–west line
+  shows up elsewhere. Probable cause, from the code (untested): a tile is 250 m but
+  its height grid covers only 248 m (62 steps of 4 m, `N = int(T // STEP)` in
+  `ipr_terrain.py`), and the game holds the last height for the final 2 m. On top of
+  that, a tile's first grid row is found with `round(i * 62.5)`, so every other tile's
+  heights sit up to 2 m off its real edge. On a 10 % slope that's a 20 cm step at the
+  seam. The hill shading (`relief()` in `src/tiles.ts`) also works out the slope at
+  the tile's edge from the tile's own clamped values, not the neighbour's, so it
+  flattens there. Fix in the pipeline: a height grid that lines up with the tile
+  edges (e.g. a step that divides 250 m, or one shared row between neighbours), and
+  shading that takes the edge slope from the neighbouring tile.
+- **Finer terrain.** IPR's terrain model has points about 10 m apart, so
+  embankments, retaining walls, cuttings and steps are smoothed away (most visible
+  along the river and railways). A finer bare-earth model would fix it; ČÚZK's
+  DMR 5G (2 m grid) may be open (unchecked). IPR's 1 m surface model won't do: it
+  includes buildings and trees.
+- **Hill shading for a moving sun.** The shading is baked per tile to the fixed
+  north-west sun (`relief()` in `src/tiles.ts`, `SUN_OFFSET` in `src/main.ts`). If
+  the sun ever moves with the clock, store the slope per tile instead and light it in
+  the ground shader.
+- **Hills casting shadows.** The terrain doesn't throw shadows, so a hill never
+  puts a valley in shade. Hardly noticeable with the current midday sun; worth doing
+  with a low evening sun.
+
 ## Gameplay and look
 
 Noted on 28 September 2026 while playing, during the TypeScript refactor.
@@ -86,18 +114,20 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Trees in residential areas.** The grass between houses has almost no trees,
   which looks bare. Gardens and courtyards could get some scattered trees and
   shrubs.
-- **Straight elevation break near Jeremenkova.** A dead-straight north–south line
-  cuts across roads, pavement and grass, with the ground slightly lighter and
-  offset on one side. Looks like a tile edge where the heights of neighbouring
-  tiles don't match (unchecked). A similar faint east–west line shows up elsewhere
-  across both beige ground and grass.
 - **Taxis.** Let the player hail a taxi in the street or order one through a
   ride-hailing app. The apps stand in for Uber and Bolt under made-up names, and
   their drivers are more reckless than regular street taxis.
 - **Buses.** Add city buses running their routes, painted in the new PID livery.
+- **Boats on the Vltava.** The river is empty. It could have pedal boats (rented at
+  Slovanský ostrov and round the islands, some shaped like swans or old cars),
+  tourist cruise boats moored along Náplavka and sailing up and down, and the PID
+  ferries crossing at their fixed points. The player could rent a pedal boat, or
+  jump onto a moored boat. The water is only a ground layer for now (`areas.water`
+  in the tiles), so the boats would need it as the area they can move in, and
+  bridges and weirs as things to stop at or pass under.
 - **Motorbike rider sunk into the ground.** Came across a motorbike with its rider
   stuck partly in the road surface, not moving. Probably a height that isn't
-  following the terrain (unchecked); could be related to the elevation break above.
+  following the terrain (unchecked); could be related to the terrain elevation issues.
 - **Building bridge over Svornosti blocks the player.** A covered walkway joins
   two buildings above the street. NPC cars drive under it, but the player can't:
   the walkway seems to block the player as if it were a building on the ground.
