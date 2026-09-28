@@ -11,6 +11,13 @@ tile files). Rough order: quick wins first.
   credit where people use the work, and the README isn't public. A small line or
   link (a corner of the screen, or a menu) naming OpenStreetMap, IPR Praha, PID and
   TSK Praha, with the licences from the README's Credits.
+- **Licence notices for the libraries.** The build ships three.js and proj4 (MIT)
+  and Leaflet (BSD-2), which want their licence text kept with every copy. In
+  today's `dist/`, only the tile worker keeps three.js's `@license` comment; the main
+  bundle and Leaflet's chunk have none. Either have the build keep the licence
+  comments or write them to a `licenses.txt` next to it (a Vite plugin such as
+  rollup-plugin-license can collect them), and add three.js and proj4 to the
+  README's Credits, which list only straight-skeleton and Leaflet.
 - **Delete the old uncompressed tile files on mbxp.** The game now fetches
   `<tile>.<kind>.bin.gz`. The deploy never deletes anything, so the old `.ipr.bin`,
   `.height.bin` and `.bare.bin` files from before are still in
