@@ -6,6 +6,11 @@ tile files). Rough order: quick wins first.
 
 ## Serving
 
+- **Credits in the game.** The public site says nowhere where the map comes from;
+  the only © OpenStreetMap is on the dev panel's Leaflet map. ODbL and CC BY want the
+  credit where people use the work, and the README isn't public. A small line or
+  link (a corner of the screen, or a menu) naming OpenStreetMap, IPR Praha, PID and
+  TSK Praha, with the licences from the README's Credits.
 - **Delete the old uncompressed tile files on mbxp.** The game now fetches
   `<tile>.<kind>.bin.gz`. The deploy never deletes anything, so the old `.ipr.bin`,
   `.height.bin` and `.bare.bin` files from before are still in
