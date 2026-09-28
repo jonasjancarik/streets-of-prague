@@ -52,7 +52,8 @@ too long; `?dpr=1` fixes it.
   your stars fade twice as fast.
 - **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
   desktop). The left thumb has a round stick: on foot, push it the way you want to go
-  and you walk there (a full push runs); in the car, push it sideways to steer. Put
+  and you walk there (a full push runs); in the car, point it the way you want to
+  drive on screen and the car steers round to it (reversing, the back follows it). Put
   your thumb down away from the stick and the stick moves under it. In the car the
   right thumb has the gas and brake (roll from one to the other without lifting), the
   handbrake, lane assist (a toggle here) and "Get out"; "Back on road" is top right.

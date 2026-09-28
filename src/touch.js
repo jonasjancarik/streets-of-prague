@@ -4,8 +4,8 @@ import { clamp } from './network.js';
 // ?touch) and feed the same controls as the keyboard: the left thumb has a round
 // stick, the right one the pedals and the buttons. Two fingers on the map zoom.
 //
-// On foot the stick points where you want to go on screen: you turn and walk that
-// way, and a full push runs. In the car it steers: the further sideways, the harder.
+// The stick points where you want to go on screen: on foot you turn and walk that
+// way (a full push runs); in the car you steer that way while the pedals set the speed.
 // Put a thumb down away from the stick and the stick moves under it. The pedals are
 // one surface, so a thumb can roll from gas to brake without lifting.
 
@@ -161,11 +161,9 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }) {
       if (car) assistOn = false;
       inCar = car;
     }
-    // In the car the stick steers (left is positive, as with the A key). On foot it
-    // points: screen up is north, the way the map is drawn.
+    // The stick points: screen up is north, the way the map is drawn.
     const mag = Math.min(1, Math.hypot(push.x, push.y));
-    state.turn = inCar ? -dead(push.x) : 0;
-    state.aim = !inCar && mag > DEAD ? { h: Math.atan2(push.y, push.x), mag: dead(mag) } : null;
+    state.aim = mag > DEAD ? { h: Math.atan2(push.y, push.x), mag: dead(mag) } : null;
     state.run = !!inCar && assistOn;
     const mode = inCar ? 'car' : tram ? 'tram' : wait ? 'stop' : 'foot';
     set('mode', mode, (m) => {

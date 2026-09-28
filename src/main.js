@@ -16,7 +16,7 @@ import { TileWorld } from './tiles.js';
 import { groundSamples } from './surface.js';
 import { CUTAWAY } from './shading.js';
 import { setupDev } from './dev.js';
-import { LaneAssist } from './assist.js';
+import { LaneAssist, turnOf } from './assist.js';
 import { setupTouch } from './touch.js';
 import { Police } from './police.js';
 import { Chopper } from './helicopter.js';
@@ -515,11 +515,11 @@ async function main() {
     clock.advance(dt);
     if (frozen > 0) {
       frozen -= dt;
-      Object.assign(ctl, { move: 0, turn: 0, run: false, brake: true });
+      Object.assign(ctl, { move: 0, turn: 0, aim: null, run: false, brake: true });
     }
     assisted = false;
     if (inCar) {
-      let steer = ctl.turn;
+      let steer = ctl.aim ? steerToward(inCar, ctl.aim.h, ctl.move) : ctl.turn;
       if (ctl.run) {
         const a = assist.steer(inCar, steer);
         if (a !== null) { steer = a; assisted = true; }
@@ -529,7 +529,8 @@ async function main() {
       jolt = hit;
     } else if (!inHeli && !ride.on) walker.update(dt, ctl);
     // In the helicopter Space climbs and Shift comes down.
-    for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: ctl.turn, up: ctl.brake, down: ctl.run } : null);
+    const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
+    for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null);
 
     const movers = loose.filter(moving);
     for (const c of movers) c.update(dt, null, grid);
@@ -869,6 +870,20 @@ async function main() {
     enterOrExit, teleportTo, dev, touch,
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
   };
+}
+
+// The touch stick in a car points where you want to go on screen, as it does on foot:
+// steer towards that heading, harder the further off it is. Reversing (or about to,
+// with the brake held at a standstill), the back of the car is what follows the stick.
+let lastOff = 0;
+function steerToward(car, h, throttle) {
+  const v = car.forwardSpeed;
+  const back = v < -0.3 || (throttle < 0 && v < 0.5);
+  let off = turnOf(car.h + (back ? Math.PI : 0), h);
+  // Pointing straight behind: keep turning the way you started, not flip-flop.
+  if (Math.abs(off) > 2.6 && lastOff && Math.sign(off) !== Math.sign(lastOff)) off = -off;
+  lastOff = off;
+  return clamp(off * 1.6, -1, 1) * (back ? -1 : 1);
 }
 
 function touching(ca, cb, rr) {
