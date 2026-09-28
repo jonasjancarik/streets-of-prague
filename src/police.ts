@@ -280,7 +280,7 @@ export class Police {
     const edges = this.edgesNear(x, y, 250);
     for (let t = 0; t < 30 && edges.length; t++) {
       const e = edges[Math.floor(this.r() * edges.length)];
-      if (e.bridge || e.path.length < 12) continue;
+      if (e.bridge || e.tunnel || e.path.length < 12) continue;
       const q = e.path.at(this.r() * e.path.length), d = Math.hypot(q.x - x, q.y - y);
       if (d < 90 || d > 250 || !this.offscreen(q.x, q.y)) continue;
       const car = new Car('police', this.r, q.x, q.y, q.ang);

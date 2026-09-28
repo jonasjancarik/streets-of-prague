@@ -5,7 +5,7 @@ import type { DriveEdge, DriveGraph } from './network.ts';
 import * as THREE from 'three';
 
 interface TrafficAgent {
-  car: Car & { level: number; gz?: number };
+  car: Car;
   route: Route;
   speed: number;
   stuck: number;
@@ -52,9 +52,10 @@ export class Traffic {
       const p = edge.path.at(s);
       if (avoid && !avoid(p.x, p.y)) continue;
       if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < 12)) continue;
-      const car = new Car(type || randomType(r, 'traffic'), r, p.x, p.y, p.ang) as Car & { level: number; gz?: number };
+      const car = new Car(type || randomType(r, 'traffic'), r, p.x, p.y, p.ang);
       car.mode = 'traffic';
-      car.level = edge.bridge ? 1 : 0; // on a bridge's deck, or under it (TileWorld.track)
+      // On a bridge, in a tunnel or on the ground under or over one (TileWorld.track).
+      car.hint = edge.bridge ? 'bridge' : edge.tunnel ? 'tunnel' : 'ground';
       if (car.two) car.rider = randomLook(r);
       const agent = { car, route: new Route(this.g, edge, s, r), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + r() * 0.3 };
       this.agents.push(agent);

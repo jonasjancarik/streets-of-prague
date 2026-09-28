@@ -15,6 +15,7 @@ export interface RawStreetEdge {
   oneway?: boolean;
   maxspeed?: number | null;
   bridge?: boolean;
+  tunnel?: boolean;
   surface?: string;
   park?: [ParkingOrientation | null, ParkingOrientation | null];
   kerb?: [number | null, number | null];
@@ -90,7 +91,11 @@ function bezier(a: Point2, c: Point2, b: Point2, n = 8): Point2[] {
   return out;
 }
 
-const CLASS_SPEED: Record<string, number> = { primary: 14, secondary: 13, tertiary: 12, tertiary_link: 9, residential: 9, unclassified: 9, living_street: 5, service: 5 };
+const CLASS_SPEED: Record<string, number> = {
+  motorway: 22, trunk: 17, primary: 14, secondary: 13, tertiary: 12,
+  motorway_link: 12, trunk_link: 11, primary_link: 10, secondary_link: 9, tertiary_link: 9,
+  residential: 9, unclassified: 9, living_street: 5, service: 5,
+};
 
 // Where traffic drives, right of the street's centre line: the outer lane on two-way
 // streets, the middle (or right of middle) lane on one-way ones.

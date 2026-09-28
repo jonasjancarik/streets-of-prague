@@ -14,7 +14,7 @@ import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
 import { TileWorld } from './tiles.ts';
 import { groundSamples } from './surface.ts';
-import { CUTAWAY } from './shading.ts';
+import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { LaneAssist, turnOf } from './assist.ts';
 import { setupTouch } from './touch.ts';
@@ -186,7 +186,7 @@ async function main() {
   let height = 100;
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
   let camGround = ground(walker.x, walker.y, walker);
-  let cutR = 0; // radius of the hole in the buildings above a passage or a bridge deck (see CUTAWAY)
+  let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
   const viewRadius = () => height * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
   const px = () => (inCar || inHeli || walker).x, py = () => (inCar || inHeli || walker).y;
@@ -404,10 +404,9 @@ async function main() {
       }
     }
     if (!best || !onto) return;
-    // Onto a bridge's deck if that street is a bridge, else under it.
-    Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0, level: onto.bridge ? 1 : 0 });
-    inCar._tx = inCar.x;
-    inCar._ty = inCar.y;
+    // Onto a bridge if that street is a bridge, into a tunnel if it's a tunnel, else
+    // onto the ground.
+    Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0, level: undefined, hint: onto.bridge ? 'bridge' : onto.tunnel ? 'tunnel' : 'ground' });
   };
 
   // Jump anywhere in the area: load the tiles there first, then land on a pavement
@@ -863,16 +862,22 @@ async function main() {
     shake *= Math.exp(-6 * dt);
     const jx = (Math.random() - 0.5) * shake * 2, jz = (Math.random() - 0.5) * shake * 2;
     // Follow the ground under the view, smoothed so the camera doesn't bob over kerbs.
+    // In a tunnel, the ground above it: the view looks down into the tunnel through
+    // the hole round you (below), deep as it may be.
     const body = inHeli ? null : inCar || walker;
-    camGround += (ground(camPos.x, -camPos.z, body) - camGround) * Math.min(1, dt * 3);
+    const deep = !!body && world.track(body) < 0;
+    camGround += ((deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body)) - camGround) * Math.min(1, dt * 3);
     camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
     camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
 
     // In a passage under a building, open a hole in the floors above so you stay in view.
-    // The same under a bridge deck.
-    const under = !inHeli && (world.passageAt(px(), py()) || (!!body && world.track(body) === 0 && world.deckAbove(px(), py())));
-    cutR += ((under ? 9 : 0) - cutR) * Math.min(1, dt * 6);
+    // The same under a bridge, and a wider one down into a tunnel.
+    const under = !inHeli && (world.passageAt(px(), py()) || (!!body && world.covered(body)));
+    // (The deeper the tunnel, the wider: the view is from above the ground.)
+    const hole = deep && body ? Math.min(45, 14 + 0.35 * Math.max(0, world.terrainAt(px(), py()) - (body.gz ?? 0))) : 9;
+    cutR += ((under ? hole : 0) - cutR) * Math.min(1, dt * 6);
     CUTAWAY.value.set(px(), ground(px(), py(), body) + 2.5, -py(), cutR > 0.3 ? cutR : 0);
+    DIG.value.set(px(), -py(), deep && cutR > 0.3 ? cutR : 0, 0);
 
     const ext = Math.max(90, height * 0.5);
     const sc = sun.shadow.camera;
