@@ -73,6 +73,9 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   moving cars and parked cars should all block the player and each other.
 - **Trams turn in sharp steps.** On curves they snap from one heading to the next
   in visible increments instead of turning smoothly along the track.
+- **Tram braking distance.** Trams should brake more realistically (long stopping
+  distance), so a player who steps or drives in front of one too late actually gets
+  hit more often. Accidents with NPCs should stay very rare.
 - **Parking zone markings.** The blue line should run only along the street side of
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
