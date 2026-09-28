@@ -1,73 +1,33 @@
 import * as THREE from 'three';
 import proj4 from 'proj4';
-import { buildTransit } from './map/transit.ts';
-import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
-import { Car, CarPool, collideBodies, useKit } from './car.ts';
-import { loadKit } from './figures.ts';
-import { Traffic } from './traffic.ts';
-import { Crowd, Walker, nearestWalkable } from './people.ts';
-import { loadFootfall } from './footfall.ts';
-import { Trams } from './trams.ts';
-import { TramRide, FAST } from './ride.ts';
-import { Clock } from './clock.ts';
-import { StopBoard } from './board.ts';
-import { Metro } from './metro.ts';
-import { TileWorld, type TrackedEntity } from './tiles.ts';
-import { groundSamples } from './surface.ts';
-import { CUTAWAY } from './shading.ts';
-import { setupDev } from './dev.ts';
-import { LaneAssist, turnOf } from './assist.ts';
-import { setupTouch } from './touch.ts';
-import { Police } from './police.ts';
-import { Chopper } from './helicopter.ts';
-import type { DriveEdge, WalkEdge, Point } from './network.ts';
-import type { TileIndex } from './tile-types.ts';
-
-type Position = { x: number; y: number };
-type Altitude = Position & { gz?: number };
-type Obstacle = Position & { z?: number; r: number; vx: number; vy: number; kind?: string; car?: Car };
-type Controls = { move: number; turn: number; run: boolean; brake: boolean; jump: boolean; aim: { h: number; mag: number } | null };
-
-function isTileIndex(value: unknown): value is TileIndex {
-  if (typeof value !== 'object' || value === null) return false;
-  const index = value as Record<string, unknown>;
-  const numbers = (v: unknown, length: number) => Array.isArray(v) && v.length === length && v.every((n) => typeof n === 'number' && Number.isFinite(n));
-  const tileEntry = (v: unknown) => Array.isArray(v) && (v.length === 3 || v.length === 4)
-    && v.slice(0, 3).every((n) => Number.isInteger(n)) && (v.length === 3 || v[3] === 0 || v[3] === 1);
-  const rail = (v: unknown) => typeof v === 'object' && v !== null && 'kind' in v && typeof v.kind === 'string'
-    && 'pts' in v && Array.isArray(v.pts) && v.pts.every((p: unknown) => numbers(p, 2));
-  const terrain = index.terrain;
-  const terrainValid = terrain === undefined || (typeof terrain === 'object' && terrain !== null
-    && 'n' in terrain && typeof terrain.n === 'number' && Number.isInteger(terrain.n) && terrain.n > 1
-    && 'step' in terrain && typeof terrain.step === 'number' && terrain.step > 0
-    && (!('bare' in terrain) || (Array.isArray(terrain.bare) && terrain.bare.every((s: unknown) => typeof s === 'string')))
-    && (!('decks' in terrain) || (Array.isArray(terrain.decks) && terrain.decks.every((s: unknown) => typeof s === 'string'))));
-  return typeof index.area === 'string' && numbers(index.size, 2) && numbers(index.origin, 2)
-    && numbers(index.bbox_wgs84, 4) && typeof index.tile === 'number' && index.tile > 0
-    && Number.isInteger(index.cols) && Number.isInteger(index.rows)
-    && Array.isArray(index.tiles) && index.tiles.every(tileEntry)
-    && Array.isArray(index.rails) && index.rails.every(rail) && terrainValid
-    && (index.iprRef === undefined || typeof index.iprRef === 'number')
-    && (index.gzip === undefined || typeof index.gzip === 'boolean');
-}
-
-function isTrackedEntity(value: unknown): value is TrackedEntity {
-  if (typeof value !== 'object' || value === null) return false;
-  const entity = value as { x?: unknown; y?: unknown };
-  return typeof entity.x === 'number' && typeof entity.y === 'number';
-}
+import { buildTransit } from './map/transit.js';
+import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.js';
+import { Car, CarPool, collideBodies, useKit } from './car.js';
+import { loadKit } from './figures.js';
+import { Traffic } from './traffic.js';
+import { Crowd, Walker, nearestWalkable } from './people.js';
+import { loadFootfall } from './footfall.js';
+import { Trams } from './trams.js';
+import { TramRide, FAST } from './ride.js';
+import { Clock } from './clock.js';
+import { StopBoard } from './board.js';
+import { Metro } from './metro.js';
+import { TileWorld } from './tiles.js';
+import { groundSamples } from './surface.js';
+import { CUTAWAY } from './shading.js';
+import { setupDev } from './dev.js';
+import { LaneAssist, turnOf } from './assist.js';
+import { setupTouch } from './touch.js';
+import { Police } from './police.js';
+import { Chopper } from './helicopter.js';
 
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'praha';
-const $ = (id: string): HTMLElement => {
-  const element = document.getElementById(id);
-  if (!element) throw new Error(`Missing game element: ${id}`);
-  return element;
-};
-const status = (t: string) => { $('loading-text').textContent = t; };
+const $ = (id) => document.getElementById(id);
+const status = (t) => { $('loading-text').textContent = t; };
 
 const TRAFFIC = 40;
-const PEOPLE = 600; // round the Old Town Square; fewer where it's quieter (src/footfall.ts)
+const PEOPLE = 600; // round the Old Town Square; fewer where it's quieter (src/footfall.js)
 const FEW_PEOPLE = 40; // on the quietest edge of town
 const PARKED_TWO = 10; // bikes and motorbikes parked around you
 const SHOVE = 1.2; // m/s a tram pushes a car aside, off its track
@@ -77,11 +37,7 @@ async function main() {
   status('Loading the map…');
   const kitLoad = loadKit();
   const footfallLoad = loadFootfall(AREA);
-  const indexResponse = await fetch(`data/${AREA}_now/index.json`);
-  if (!indexResponse.ok) throw new Error('The map is unavailable.');
-  const indexData: unknown = await indexResponse.json();
-  if (!isTileIndex(indexData)) throw new Error('The map data is incomplete.');
-  const index = indexData;
+  const index = await fetch(`data/${AREA}_now/index.json`).then((r) => r.json());
   // Tram lines (pipeline/build_lines.py); without them there are no trams.
   const lines = fetch(`data/${AREA}_now/lines.json`).then((r) => (r.ok ? r.json() : { lines: [] })).catch(() => ({ lines: [] }));
   // The metro (pipeline/build_metro.py); without it there are no entrances.
@@ -129,13 +85,13 @@ async function main() {
   const grid = world.grid;
   // Height of the ground at a point; with `who` (a car, a person), of whatever they're
   // on there: the ground, or a bridge deck (see TileWorld.track).
-  const ground = (x: number, y: number, who: unknown = null) => (isTrackedEntity(who) ? world.groundFor(who, x, y) : world.heightAt(x, y));
-  let crowd: Crowd | null = null;
+  const ground = (x, y, who) => (who ? world.groundFor(who, x, y) : world.heightAt(x, y));
+  let crowd = null;
   world.onEdges = (d, w) => { names.add(d); names.add(w); crowd?.index(w); };
 
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
-  const loose: Car[] = [];
-  const tileCars = new Set<Car>();
+  const loose = [];
+  const tileCars = new Set();
   let restingStale = true; // see syncResting
   world.onCars = (cars) => { for (const c of cars) { loose.push(c); tileCars.add(c); } restingStale = true; };
   world.onDrop = (tile) => {
@@ -155,7 +111,7 @@ async function main() {
   status('Building the streets…');
   await world.loadNow(sx, sy, 380);
   const startEdge = drive.edges.reduce((best, e) => {
-    const d = (f: DriveEdge) => Math.hypot(f.pts[0][0] - sx, f.pts[0][1] - sy) + (f.name ? 0 : 60);
+    const d = (f) => Math.hypot(f.pts[0][0] - sx, f.pts[0][1] - sy) + (f.name ? 0 : 60);
     return d(e) < d(best) ? e : best;
   }, drive.edges[0]);
   const q = startEdge.path.at(startEdge.path.length / 2);
@@ -167,8 +123,8 @@ async function main() {
   // Down into the metro and up again at the station you picked (the police lose you).
   const metro = new Metro(await metroData, scene, $('metro'), {
     clock,
-    inMap: (x: number, y: number) => world.available.has(world.keyAt(x, y)),
-    onArrive: async (x: number, y: number, name: string) => {
+    inMap: (x, y) => world.available.has(world.keyAt(x, y)),
+    onArrive: async (x, y, name) => {
       await teleportTo(x, y);
       walker.mesh.visible = true;
       showBanner(name);
@@ -199,8 +155,8 @@ async function main() {
     const bike = new Car('bike', seeded, x + Math.cos(q.ang) * 3, y + Math.sin(q.ang) * 3, q.ang);
     if (bike.worldSamples().every(([x, y]) => grid.at(x, y) === 0)) loose.push(bike);
   }
-  let inCar: Car | null = null, inHeli: Chopper | null = null;
-  const choppers: Chopper[] = []; // helicopters you can fly (from the developer tools)
+  let inCar = null, inHeli = null;
+  const choppers = []; // helicopters you can fly (from the developer tools)
   let height = 100;
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
   let camGround = ground(walker.x, walker.y, walker);
@@ -208,11 +164,11 @@ async function main() {
 
   const viewRadius = () => height * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
   const px = () => (inCar || inHeli || walker).x, py = () => (inCar || inHeli || walker).y;
-  const offscreen = (x: number, y: number) => Math.hypot(x - camPos.x, y + camPos.z) > viewRadius();
-  const edgesNear = (x: number, y: number, rMax: number) => world.around(x, y, rMax).flatMap((k) => world.driveBy.get(k) || []);
-  const walkNear = (x: number, y: number, rMax: number) => world.around(x, y, rMax).flatMap((k) => world.walkBy.get(k) || []);
+  const offscreen = (x, y) => Math.hypot(x - camPos.x, y + camPos.z) > viewRadius();
+  const edgesNear = (x, y, rMax) => world.around(x, y, rMax).flatMap((k) => world.driveBy.get(k) || []);
+  const walkNear = (x, y, rMax) => world.around(x, y, rMax).flatMap((k) => world.walkBy.get(k) || []);
 
-  const lifeSpots = (x: number, y: number, rMin: number) => (sx: number, sy: number) => {
+  const lifeSpots = (x, y, rMin) => (sx, sy) => {
     const d = Math.hypot(sx - x, sy - y);
     return d > rMin && d < LIFE_RADIUS && world.grid.at(sx, sy) !== 255;
   };
@@ -224,7 +180,7 @@ async function main() {
     return Math.round(FEW_PEOPLE + (PEOPLE - FEW_PEOPLE) * busy ** 0.6);
   };
   // A spot on one of the footpaths, busier ones likelier; `ok` can turn spots down.
-  const pickSpot = (edges: WalkEdge[], ok: ((x: number, y: number) => boolean) | null) => {
+  const pickSpot = (edges, ok) => {
     let total = 0;
     const upTo = edges.map((e) => (total += e.path.length * (0.02 + footfall.edge(e))));
     for (let t = 0; t < 8; t++) {
@@ -239,7 +195,7 @@ async function main() {
   // People who wander too far are moved to just outside the view, so they walk into it.
   // Where it's getting quieter some go home, out of sight; where it's getting busier
   // more turn up. `onlyFar` false: everyone at once, anywhere around you.
-  const scatterPeople = (onlyFar: boolean) => {
+  const scatterPeople = (onlyFar) => {
     const edges = walkNear(px(), py(), onlyFar ? Math.min(LIFE_RADIUS, viewRadius() + 90) : LIFE_RADIUS * 0.6);
     if (!edges.length) return;
     const ok = onlyFar ? offscreen : null, most = onlyFar ? 20 : Infinity, want = peopleWanted();
@@ -264,7 +220,7 @@ async function main() {
 
   // Bikes and motorbikes left on the pavements around you, topped up out of sight as you
   // move (far ones go with the rest of the loose cars).
-  const parkTwoWheelers = (onlyOffscreen: boolean) => {
+  const parkTwoWheelers = (onlyOffscreen) => {
     let n = loose.filter((c) => c.two && Math.hypot(c.x - px(), c.y - py()) < LIFE_RADIUS).length;
     const edges = n < PARKED_TWO ? walkNear(px(), py(), LIFE_RADIUS * 0.8) : [];
     for (let t = 0; t < 30 && n < PARKED_TWO && edges.length; t++) {
@@ -300,7 +256,7 @@ async function main() {
   const police = new Police({ scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, offscreen, onBusted: busted, kit });
 
   const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car)];
-  const drawn: Car[] = []; // the cars drawn this frame
+  const drawn = []; // the cars drawn this frame
   // Off the tram onto the pavement beside it.
   const getOff = () => {
     const [x, y, h] = ride.leave();
@@ -394,7 +350,6 @@ async function main() {
   // A hard knock on a bike or motorbike throws you off it.
   const throwOff = () => {
     const c = inCar;
-    if (!c) return;
     enterOrExit();
     walker.knock(c.vx * 0.6, c.vy * 0.6);
     c.vx *= 0.4;
@@ -411,7 +366,7 @@ async function main() {
         if (d < bestD) { bestD = d; best = p; onto = e; }
       }
     }
-    if (!best || !onto) return;
+    if (!best) return;
     // Onto a bridge's deck if that street is a bridge, else under it.
     Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0, level: onto.bridge ? 1 : 0 });
     inCar._tx = inCar.x;
@@ -420,7 +375,7 @@ async function main() {
 
   // Jump anywhere in the area: load the tiles there first, then land on a pavement
   // (or on the road, if you're driving) and bring the traffic and people along.
-  const teleportTo = async (x: number, y: number) => {
+  const teleportTo = async (x, y) => {
     if (ride.on) getOff();
     const who = inCar || inHeli || walker;
     Object.assign(who, { x, y, vx: 0, vy: 0 });
@@ -438,7 +393,7 @@ async function main() {
     street = null; // show the new street's name, not the old one
     $('street').textContent = '';
   };
-  const assist = new LaneAssist(drive, (x: number, y: number, r: number) => edgesNear(x, y, r));
+  const assist = new LaneAssist(drive, (x, y, r) => edgesNear(x, y, r));
   let assisted = false;
   // Developer tools: a helicopter on the nearest open ground, facing the way you do.
   const addChopper = () => {
@@ -456,9 +411,9 @@ async function main() {
   const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, shiftTime: (h) => clock.advance(h * 3600) });
 
   // ---- Input -------------------------------------------------------------
-  const input = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
-  const keymap: Record<string, 'up' | 'down' | 'left' | 'right' | 'brake'> = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'brake' };
-  window.addEventListener('keydown', (e) => {
+  const input = { up: false, down: false, left: false, right: false, run: false, brake: false };
+  const keymap = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'brake' };
+  addEventListener('keydown', (e) => {
     // The metro screen takes the keys while it's up.
     if (metro.active) {
       metro.key(e.code);
@@ -477,20 +432,20 @@ async function main() {
     if (ride.on && ['KeyS', 'ArrowDown'].includes(e.code)) ride.pick(1);
   });
   // The controls card remembers whether you folded it away.
-  const foldHelp = (folded: boolean) => {
+  const foldHelp = (folded) => {
     $('help').classList.toggle('folded', folded);
     try { localStorage.setItem('help-folded', folded ? '1' : ''); } catch {}
   };
   try { foldHelp(localStorage.getItem('help-folded') === '1'); } catch {}
-  window.addEventListener('keyup', (e) => {
+  addEventListener('keyup', (e) => {
     if (keymap[e.code]) input[keymap[e.code]] = false;
     if (!e.shiftKey) input.run = false;
   });
   let zoom = 1;
-  const zoomBy = (f: number) => { zoom = clamp(zoom * f, 0.5, 4); };
-  window.addEventListener('wheel', (e) => zoomBy(Math.exp(e.deltaY * 0.0012)), { passive: true });
+  const zoomBy = (f) => { zoom = clamp(zoom * f, 0.5, 4); };
+  addEventListener('wheel', (e) => zoomBy(Math.exp(e.deltaY * 0.0012)), { passive: true });
   const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, force: params.has('touch') });
-  window.addEventListener('resize', () => {
+  addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
@@ -500,20 +455,20 @@ async function main() {
   const look = new THREE.Vector3();
   let last = performance.now(), shake = 0;
   let waitScale = 1, clockShown = '';
-  let street: string | null = null, bannerT = 0, lifeT = 0;
+  let street = null, bannerT = 0, lifeT = 0;
   // The HUD is only written when what it says changes: every write makes the browser
   // lay the page out again.
-  const shown = new Map<string, string | number>();
-  const show = (id: string, value: string | number, how: 'text' | 'html' | 'opacity' = 'text') => {
+  const shown = {};
+  const show = (id, value, how = 'text') => {
     const key = `${id}/${how}`;
-    if (shown.get(key) === value) return;
-    shown.set(key, value);
+    if (shown[key] === value) return;
+    shown[key] = value;
     const el = $(id);
-    if (how === 'html') el.innerHTML = String(value);
-    else if (how === 'opacity') el.style.opacity = String(value);
-    else el.textContent = String(value);
+    if (how === 'html') el.innerHTML = value;
+    else if (how === 'opacity') el.style.opacity = value;
+    else el.textContent = value;
   };
-  const showBanner = (text: string, alert = false) => {
+  const showBanner = (text, alert = false) => {
     $('banner').textContent = text;
     $('banner').classList.toggle('alert', alert);
     bannerT = alert ? 3.5 : 2.6;
@@ -521,32 +476,32 @@ async function main() {
   // Everything that moves or blocks, made again every step; parked and abandoned cars
   // that stand still (thousands of them across the loaded tiles) have a hash of their
   // own, made again only when one of them moves, comes or goes.
-  const hash = new SpatialHash<Obstacle>(10), resting = new SpatialHash<Obstacle>(10);
-  function* obstacles(x: number, y: number, rr: number): Generator<Obstacle> {
+  const hash = new SpatialHash(10), resting = new SpatialHash(10);
+  function* obstacles(x, y, rr) {
     yield* hash.near(x, y, rr);
     yield* resting.near(x, y, rr);
   }
-  const near = (a: Position, b: Position, d: number) => Math.abs(a.x - b.x) < d && Math.abs(a.y - b.y) < d;
+  const near = (a, b, d) => Math.abs(a.x - b.x) < d && Math.abs(a.y - b.y) < d;
   // The cars within rr of (x, y), each once, into `out` (reused, to spare the garbage).
   let stamp = 0;
-  const carsNear = (x: number, y: number, rr: number, out: Car[] = []): Car[] => {
+  const carsNear = (x, y, rr, out = []) => {
     stamp++;
     out.length = 0;
     for (const o of obstacles(x, y, rr)) if (o.car && o.car.stamp !== stamp) { o.car.stamp = stamp; out.push(o.car); }
     return out;
   };
-  const nearA: Car[] = [], nearB: Car[] = [];
-  const pushCar = (h: SpatialHash<Obstacle>, c: Car) => { for (const [x, y] of c.circles()) h.add({ x, y, z: c.gz, r: c.r, vx: c.vx, vy: c.vy, kind: c.mode === 'player' ? 'player' : 'car', car: c }); };
+  const nearA = [], nearB = [];
+  const pushCar = (h, c) => { for (const [x, y] of c.circles()) h.add({ x, y, z: c.gz, r: c.r, vx: c.vx, vy: c.vy, kind: c.mode === 'player' ? 'player' : 'car', car: c }); };
   // On a bridge and under it: two things that don't meet.
-  const apart = (a: Altitude, b: Altitude) => a.gz !== undefined && b.gz !== undefined && Math.abs(a.gz - b.gz) > 3;
-  const moving = (c: Car) => c.mode === 'player' || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s
+  const apart = (a, b) => a.gz !== undefined && b.gz !== undefined && Math.abs(a.gz - b.gz) > 3;
+  const moving = (c) => c.mode === 'player' || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s
   let restingCount = -1;
   const syncResting = () => {
     let n = 0, stale = restingStale;
     for (const c of loose) {
-      if (moving(c)) { stale ||= !!c.resting; continue; }
+      if (moving(c)) { stale ||= c.resting; continue; }
       n++;
-      stale ||= !c.resting || !c.restAt || c.restAt[0] !== c.x || c.restAt[1] !== c.y || c.restAt[2] !== c.h;
+      stale ||= !c.resting || c.restAt[0] !== c.x || c.restAt[1] !== c.y || c.restAt[2] !== c.h;
     }
     if (!stale && n === restingCount) return;
     resting.clear();
@@ -563,7 +518,7 @@ async function main() {
 
   // One step of everything that moves (several per frame while a tram ride is sped up).
   let jolt = 0; // the hardest hit your own vehicle took this step
-  const simulate = (dt: number, ctl: Controls) => {
+  const simulate = (dt, ctl) => {
     jolt = 0;
     clock.advance(dt);
     if (frozen > 0) {
@@ -578,7 +533,7 @@ async function main() {
         if (a !== null) { steer = a; assisted = true; }
       } else assist.reset();
       // Keeping to the lane, you keep to the speed limit too.
-      const cap = assisted && assist.limit !== null ? assist.limit / 3.6 : undefined;
+      const cap = assisted ? assist.limit / 3.6 : null;
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
       if (hit > 6) shake = Math.min(1.2, shake + hit * 0.04);
       jolt = hit;
@@ -676,7 +631,7 @@ async function main() {
     if (inCar?.two && jolt > 7) throwOff();
 
     // People and cars
-    const bump = (who: Altitude, rad: number, onHit: (car: Car, nx: number, ny: number) => void) => {
+    const bump = (who, rad, onHit) => {
       for (const c of carsNear(who.x, who.y, 5, nearB)) {
         if (!near(who, c, 4) || apart(who, c)) continue;
         for (const [cx, cy] of c.circles()) {
@@ -753,7 +708,7 @@ async function main() {
   // down a step at a time, and back up once there's time to spare, but not to a step
   // it had to leave again soon after.
   const resolution = { ratio: maxRatio, ceiling: maxRatio, frame: 16.7, slow: 0, quick: 0, raised: -Infinity };
-  const adapt = (ms: number, now: number) => {
+  const adapt = (ms, now) => {
     // (A frame over a quarter of a second is a pause, such as coming back to the tab.)
     if (params.get('dpr') || ms > 250) return;
     const r = resolution;
@@ -813,7 +768,7 @@ async function main() {
     drawn.length = 0;
     {
       const cx = camPos.x, cy = -camPos.z, r = viewRadius() + 12;
-      const see = (c: Car) => {
+      const see = (c) => {
         if (Math.abs(c.x - cx) < r && Math.abs(c.y - cy) < r) drawn.push(c);
         else c.lastH = undefined; // so a bike coming back into view doesn't lean at once
       };
@@ -843,7 +798,7 @@ async function main() {
 
     // In a passage under a building, open a hole in the floors above so you stay in view.
     // The same under a bridge deck.
-    const under = !inHeli && body !== null && (world.passageAt(px(), py()) || (world.track(body) === 0 && world.deckAbove(px(), py())));
+    const under = !inHeli && (world.passageAt(px(), py()) || (world.track(body) === 0 && world.deckAbove(px(), py())));
     cutR += ((under ? 9 : 0) - cutR) * Math.min(1, dt * 6);
     CUTAWAY.value.set(px(), ground(px(), py(), body) + 2.5, -py(), cutR > 0.3 ? cutR : 0);
 
@@ -869,16 +824,16 @@ async function main() {
     bannerT -= dt;
     show('banner', clamp(bannerT, 0, 1), 'opacity');
     show('speed', String(inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : inHeli ? Math.round(inHeli.speed * 3.6)
-      : ride.on && ride.v ? Math.round(ride.v.speed * 3.6) : '–'));
+      : ride.on ? Math.round(ride.v.speed * 3.6) : '–'));
     if (clock.label() !== clockShown) $('clock').textContent = clockShown = clock.label();
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
     const canBoard = !inCar && !inHeli && !ride.on && ride.boardable(walker.x, walker.y);
     const station = !inCar && !inHeli && !ride.on && !metro.active ? metro.near(walker.x, walker.y) : null;
-    const gap = (c: Car) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2;
-    const enterable = !inCar && !inHeli && !ride.on ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8).sort((a, b) => gap(a) - gap(b))[0] : undefined;
+    const gap = (c) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2;
+    const enterable = !inCar && !inHeli && !ride.on && [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8).sort((a, b) => gap(a) - gap(b))[0];
     const canEnter = !inCar && !inHeli && !ride.on && (!!enterable || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
     const getIn = enterable?.two ? '<b>E</b> get on' : '<b>E</b> get in';
-    const key = (k: string) => (touch.active ? '' : `<b>${k}</b> `);
+    const key = (k) => (touch.active ? '' : `<b>${k}</b> `);
     let hint = '';
     if (inHeli) {
       const up = `${Math.round(inHeli.air)} m up`;
@@ -888,8 +843,8 @@ async function main() {
       if (!assisted) hint = touch.active ? '' : `<b>E</b> get ${inCar.two ? 'off' : 'out'} · <b>Shift</b> lane assist`;
       else hint = `${key('Shift')}Lane assist, keeping to ${assist.limit} km/h${touch.active ? '' : ' (let go to drive faster)'} · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : `straight on (${touch.active ? 'point the stick' : 'A/D'} to turn)`}`;
     }
-    else if (ride.on && ride.v) {
-      const halts = ride.v.line.halts, dest = ride.dest == null ? null : (halts[ride.dest]?.name ?? null);
+    else if (ride.on) {
+      const halts = ride.v.line.halts, dest = ride.dest !== null ? halts[ride.dest].name : null;
       const next = ride.dest !== null && ride.dest === ride.upcoming()[0];
       const parts = [];
       if (ride.waiting) parts.push('The streets ahead are still loading');
@@ -929,22 +884,22 @@ async function main() {
     renderer.render(scene, camera);
   });
 
-  Object.assign(window, { __drive: {
+  window.__drive = {
     scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, resolution,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
-    teleport: (x: number, y: number) => { (inCar || inHeli || walker).x = x; (inCar || inHeli || walker).y = y; camPos.set(x, 0, -y); },
+    teleport: (x, y) => { (inCar || inHeli || walker).x = x; (inCar || inHeli || walker).y = y; camPos.set(x, 0, -y); },
     enterOrExit, teleportTo, dev, touch,
-    view: (z: number) => { zoom = z; height = (inCar ? 120 : 100) * z; },
-  } });
+    view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
+  };
 }
 
 // The touch stick in a car points where you want to go on screen, as it does on foot:
 // steer towards that heading, harder the further off it is. Reversing (or about to,
 // with the brake held at a standstill), the back of the car is what follows the stick.
 let lastOff = 0;
-function steerToward(car: Car, h: number, throttle: number) {
+function steerToward(car, h, throttle) {
   const v = car.forwardSpeed;
   const back = v < -0.3 || (throttle < 0 && v < 0.5);
   let off = turnOf(car.h + (back ? Math.PI : 0), h);
@@ -954,7 +909,7 @@ function steerToward(car: Car, h: number, throttle: number) {
   return clamp(off * 1.6, -1, 1) * (back ? -1 : 1);
 }
 
-function touching(ca: ReadonlyArray<readonly number[]>, cb: ReadonlyArray<readonly number[]>, rr: number) {
+function touching(ca, cb, rr) {
   for (const p of ca) for (const q of cb) if (Math.hypot(p[0] - q[0], p[1] - q[1]) < rr) return true;
   return false;
 }

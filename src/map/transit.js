@@ -1,28 +1,27 @@
 import * as THREE from 'three';
-import { rng } from './geo.ts';
-import type { Lines, MapData, Point } from './types.ts';
+import { rng } from './geo.js';
 
 // The Petřín funicular's cars, shuttling up and down its track. (Trams run their
-// real lines: ../trams.ts.)
+// real lines: ../trams.js.)
 
 // OSM splits tracks into many short ways. Stitch them back into long, smooth chains
 // so a car can run along them.
-function chainLines(lines: Lines, maxTurnDeg = 40): Lines {
-  const key = ([x, y]: Point): string => `${Math.round(x)},${Math.round(y)}`;
-  const byEnd = new Map<string, number[]>();
+function chainLines(lines, maxTurnDeg = 40) {
+  const key = ([x, y]) => `${Math.round(x)},${Math.round(y)}`;
+  const byEnd = new Map();
   lines.forEach((pts, i) => {
     for (const k of [key(pts[0]), key(pts[pts.length - 1])]) {
       if (!byEnd.has(k)) byEnd.set(k, []);
-      byEnd.get(k)!.push(i);
+      byEnd.get(k).push(i);
     }
   });
-  const used = new Set<number>();
-  const dir = (a: Point, b: Point): number => Math.atan2(b[1] - a[1], b[0] - a[0]);
-  const extend = (chain: Point[]): void => {
+  const used = new Set();
+  const dir = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]);
+  const extend = (chain) => {
     for (;;) {
       const end = chain[chain.length - 1], prev = chain[chain.length - 2];
       const heading = dir(prev, end);
-      let best: [number, Point[]] | null = null, bestTurn = (maxTurnDeg * Math.PI) / 180;
+      let best = null, bestTurn = (maxTurnDeg * Math.PI) / 180;
       for (const i of byEnd.get(key(end)) || []) {
         if (used.has(i)) continue;
         let pts = lines[i];
@@ -37,7 +36,7 @@ function chainLines(lines: Lines, maxTurnDeg = 40): Lines {
       chain.push(...best[1].slice(1));
     }
   };
-  const chains: Lines = [];
+  const chains = [];
   lines.forEach((pts, i) => {
     if (used.has(i) || pts.length < 2) return;
     used.add(i);
@@ -51,11 +50,7 @@ function chainLines(lines: Lines, maxTurnDeg = 40): Lines {
 }
 
 class Path {
-  readonly pts: Point[];
-  readonly cum: number[];
-  readonly length: number;
-
-  constructor(pts: Point[]) {
+  constructor(pts) {
     this.pts = pts;
     this.cum = [0];
     for (let i = 1; i < pts.length; i++) {
@@ -63,7 +58,7 @@ class Path {
     }
     this.length = this.cum[this.cum.length - 1];
   }
-  at(s: number): { x: number; y: number; ang: number } {
+  at(s) {
     s = Math.max(0, Math.min(this.length, s));
     let i = 1;
     while (i < this.cum.length - 1 && this.cum[i] < s) i++;
@@ -73,7 +68,7 @@ class Path {
   }
 }
 
-function funicularMesh(): THREE.Group {
+function funicularMesh() {
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(9, 2.6, 2.6), new THREE.MeshLambertMaterial({ color: '#7b2e27' }));
   body.position.y = 1.6;
@@ -84,10 +79,10 @@ function funicularMesh(): THREE.Group {
   return g;
 }
 
-export function buildTransit(data: Pick<MapData, 'rails'>, scene: THREE.Scene): { vehicles: { path: Path; mesh: THREE.Group; s: number; dir: number; speed: number; wait: number }[]; update: (dt: number) => void } {
+export function buildTransit(data, scene) {
   const r = rng(5);
-  const vehicles: { path: Path; mesh: THREE.Group; s: number; dir: number; speed: number; wait: number }[] = [];
-  const add = (lines: Lines, make: () => THREE.Group, speed: number, minLen: number): void => {
+  const vehicles = [];
+  const add = (lines, make, speed, minLen) => {
     for (const pts of chainLines(lines)) {
       const path = new Path(pts);
       if (path.length < minLen) continue;

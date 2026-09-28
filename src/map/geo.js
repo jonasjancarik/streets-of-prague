@@ -1,22 +1,8 @@
-import type { Lines, MapData, Point, Polygon, Polygons, Ring } from './types.ts';
-
 // Area data is in local metres: +x east, +y north, origin at the bbox centre.
 // three.js world: X = x, Y = up, Z = -y  (so north is "up" on screen).
 
 export class Geo {
-  readonly data: MapData;
-  readonly W: number;
-  readonly H: number;
-  readonly ox: number;
-  readonly oy: number;
-  readonly minX: number;
-  readonly minY: number;
-  readonly maxX: number;
-  readonly maxY: number;
-  readonly cx: number;
-  readonly cy: number;
-
-  constructor(data: MapData) {
+  constructor(data) {
     this.data = data;
     this.W = data.size[0];
     this.H = data.size[1];
@@ -31,16 +17,16 @@ export class Geo {
   }
 
   // Canvas pixel for local coords at `s` px per metre.
-  px(x: number, y: number, s: number): Point {
+  px(x, y, s) {
     return [(x + this.ox) * s, (this.H - (y + this.oy)) * s];
   }
 
-  inside(x: number, y: number, pad = 0): boolean {
+  inside(x, y, pad = 0) {
     return x > this.minX + pad && x < this.maxX - pad && y > this.minY + pad && y < this.maxY - pad;
   }
 }
 
-export function ringPath(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, geo: Geo, rings: Polygon, s: number): void {
+export function ringPath(ctx, geo, rings, s) {
   for (const ring of rings) {
     ring.forEach(([x, y], i) => {
       const [u, v] = geo.px(x, y, s);
@@ -53,7 +39,7 @@ export function ringPath(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderin
 
 // Each polygon is filled on its own (even-odd only within its rings), so
 // overlapping polygons don't cancel out. Leaves all outlines as the current path.
-export function fillPolys(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, geo: Geo, polys: Polygons, s: number): void {
+export function fillPolys(ctx, geo, polys, s) {
   for (const rings of polys) {
     ctx.beginPath();
     ringPath(ctx, geo, rings, s);
@@ -63,7 +49,7 @@ export function fillPolys(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderi
   for (const rings of polys) ringPath(ctx, geo, rings, s);
 }
 
-export function strokeLines(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, geo: Geo, lines: Lines, s: number): void {
+export function strokeLines(ctx, geo, lines, s) {
   ctx.beginPath();
   for (const pts of lines) {
     pts.forEach(([x, y], i) => {
@@ -75,7 +61,7 @@ export function strokeLines(ctx: CanvasRenderingContext2D | OffscreenCanvasRende
   ctx.stroke();
 }
 
-export function signedArea(ring: Ring): number {
+export function signedArea(ring) {
   let a = 0;
   for (let i = 0; i < ring.length; i++) {
     const [x1, y1] = ring[i];
@@ -85,14 +71,14 @@ export function signedArea(ring: Ring): number {
   return a / 2;
 }
 
-export function centroid(ring: Ring): Point {
+export function centroid(ring) {
   let x = 0, y = 0;
   for (const p of ring) { x += p[0]; y += p[1]; }
   return [x / ring.length, y / ring.length];
 }
 
 // Deterministic per-feature randomness.
-export function hash(str: string): number {
+export function hash(str) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
@@ -101,7 +87,7 @@ export function hash(str: string): number {
   return ((h >>> 0) % 100000) / 100000;
 }
 
-export function rng(seed = 1): () => number {
+export function rng(seed = 1) {
   let s = seed >>> 0;
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -116,21 +102,7 @@ export function rng(seed = 1): () => number {
 // on an OffscreenCanvas where there is one, so it can be made in a worker; with
 // `paint` null, `cells` are ones already made.
 export class Grid {
-  readonly geo: Geo;
-  readonly res: number;
-  readonly w: number;
-  readonly h: number;
-  readonly ox: number;
-  readonly oy: number;
-  readonly H: number;
-  cells: Uint8Array | null;
-
-  constructor(
-    geo: Geo,
-    res: number,
-    paint: ((ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, scale: number) => void) | null,
-    cells: Uint8Array | null = null,
-  ) {
+  constructor(geo, res, paint, cells = null) {
     this.geo = geo;
     this.res = res;
     this.w = Math.ceil(geo.W * res);
@@ -146,7 +118,7 @@ export class Grid {
     const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(this.w, this.h) : document.createElement('canvas');
     c.width = this.w;
     c.height = this.h;
-    const ctx = c.getContext('2d', { willReadFrequently: true })!;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
     ctx.imageSmoothingEnabled = false;
     paint(ctx, res);
     const img = ctx.getImageData(0, 0, this.w, this.h).data;
@@ -155,9 +127,9 @@ export class Grid {
     c.width = c.height = 0; // let the canvas go now
   }
 
-  at(x: number, y: number): number {
+  at(x, y) {
     const i = Math.floor((x + this.ox) * this.res), j = Math.floor((this.H - (y + this.oy)) * this.res);
     if (i < 0 || j < 0 || i >= this.w || j >= this.h) return 255;
-    return this.cells![j * this.w + i];
+    return this.cells[j * this.w + i];
   }
 }

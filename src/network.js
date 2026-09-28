@@ -1,21 +1,10 @@
 // Street graphs from pipeline/build_tiles.py: a directed car network with lanes
 // offset to the right, and an undirected pedestrian network.
 
-export type Point = [number, number];
-export type Random = () => number;
-export interface PointAt { x: number; y: number; ang: number; }
-export interface RawEdge { id: string; u: string; v: string; pts: Point[]; width: number; hw: string; lanes?: number | null; oneway?: boolean; maxspeed?: number | null; name?: string | null; kerb?: [number, number]; bridge?: boolean; surface?: string | null; [key: string]: unknown; }
-export interface DriveEdge extends RawEdge { laneOffset: number; path: Polyline; speed: number; twin: DriveEdge | null; }
-export interface WalkEdge extends RawEdge { path: Polyline; side: number; busy?: number; }
-export interface RouteLeg { path: Polyline; s0: number; s1: number; edge: DriveEdge | null; turn?: number; speed?: number; }
-
-export const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
+export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 export class Polyline {
-  pts: Point[];
-  cum: number[];
-  length: number;
-  constructor(pts: Point[]) {
+  constructor(pts) {
     this.pts = pts;
     this.cum = [0];
     for (let i = 1; i < pts.length; i++) {
@@ -24,7 +13,7 @@ export class Polyline {
     this.length = this.cum[this.cum.length - 1];
   }
 
-  at(s: number): PointAt {
+  at(s) {
     s = clamp(s, 0, this.length);
     let lo = 1, hi = this.cum.length - 1;
     while (lo < hi) {
@@ -39,7 +28,7 @@ export class Polyline {
 }
 
 // Shift a polyline sideways; positive d = to the right of the direction of travel.
-export function offsetLine(pts: Point[], d: number): Point[] {
+export function offsetLine(pts, d) {
   if (!d) return pts;
   return pts.map((p, i) => {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
@@ -48,8 +37,8 @@ export function offsetLine(pts: Point[], d: number): Point[] {
   });
 }
 
-function bezier(a: Point, c: Point, b: Point, n = 8): Point[] {
-  const out: Point[] = [];
+function bezier(a, c, b, n = 8) {
+  const out = [];
   for (let i = 0; i <= n; i++) {
     const t = i / n, u = 1 - t;
     out.push([u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]);
@@ -57,11 +46,11 @@ function bezier(a: Point, c: Point, b: Point, n = 8): Point[] {
   return out;
 }
 
-const CLASS_SPEED: Record<string, number> = { primary: 14, secondary: 13, tertiary: 12, tertiary_link: 9, residential: 9, unclassified: 9, living_street: 5, service: 5 };
+const CLASS_SPEED = { primary: 14, secondary: 13, tertiary: 12, tertiary_link: 9, residential: 9, unclassified: 9, living_street: 5, service: 5 };
 
 // Where traffic drives, right of the street's centre line: the outer lane on two-way
 // streets, the middle (or right of middle) lane on one-way ones.
-function laneOffset(e: RawEdge): number {
+function laneOffset(e) {
   const n = e.lanes || 0;
   if (e.oneway) {
     const lanes = Math.max(1, n || 1), lw = e.width / lanes;
@@ -74,28 +63,25 @@ function laneOffset(e: RawEdge): number {
 // The car network, filled in as tiles arrive. Edges are keyed by id and joined at
 // shared (OSM) node ids; `out` lists the edges leaving each node.
 export class DriveGraph {
-  byId: Map<string, DriveEdge>;
-  out: Map<string, DriveEdge[]>;
-  edges: DriveEdge[];
   constructor() {
-    this.byId = new Map<string, DriveEdge>();
-    this.out = new Map<string, DriveEdge[]>();
+    this.byId = new Map();
+    this.out = new Map();
     this.edges = [];
   }
 
   // Adds raw edges; returns the graph's own edge objects (new or already known).
-  add(list: RawEdge[]): DriveEdge[] {
-    return list.map((raw): DriveEdge => {
+  add(list) {
+    return list.map((raw) => {
       const known = this.byId.get(raw.id);
       if (known) return known;
-      const e = { ...raw } as DriveEdge;
+      const e = { ...raw };
       e.laneOffset = laneOffset(e);
       e.path = new Polyline(offsetLine(e.pts, e.laneOffset));
       e.speed = e.maxspeed ? Math.min(e.maxspeed / 3.6, CLASS_SPEED[e.hw] || 9) : CLASS_SPEED[e.hw] || 9;
       this.byId.set(e.id, e);
       this.edges.push(e);
       if (!this.out.has(e.u)) this.out.set(e.u, []);
-      this.out.get(e.u)!.push(e);
+      this.out.get(e.u).push(e);
       e.twin = (this.out.get(e.v) || []).find((f) => f.v === e.u) || null;
       if (e.twin && !e.twin.twin) e.twin.twin = e;
       return e;
@@ -105,7 +91,7 @@ export class DriveGraph {
 
 // Next edge after `e`: anything but a U-turn, unless the street is a dead end.
 // Null where the network isn't loaded (the far side of the map).
-export function nextEdge(g: DriveGraph, e: DriveEdge, r: Random): DriveEdge | null {
+export function nextEdge(g, e, r) {
   const all = g.out.get(e.v) || [];
   const opts = all.filter((f) => f !== e.twin);
   const list = opts.length ? opts : all;
@@ -115,13 +101,7 @@ export function nextEdge(g: DriveGraph, e: DriveEdge, r: Random): DriveEdge | nu
 // A route is a chain of legs: the lane of each edge, trimmed at both ends, and a
 // short curve through each junction so turns are smooth.
 export class Route {
-  g: DriveGraph;
-  r: Random;
-  legs: RouteLeg[];
-  s: number;
-  dead?: boolean;
-  ended?: boolean;
-  constructor(g: DriveGraph, edge: DriveEdge, s: number, r: Random) {
+  constructor(g, edge, s, r) {
     this.g = g;
     this.r = r;
     this.legs = [{ path: edge.path, s0: 0, s1: edge.path.length, edge }];
@@ -129,14 +109,12 @@ export class Route {
     this.extend();
   }
 
-  get leg(): RouteLeg { return this.legs[0]; }
+  get leg() { return this.legs[0]; }
 
   extend() {
     while (!this.dead && this.legs.filter((l) => l.edge).length < 4) {
       const last = this.legs[this.legs.length - 1];
-      const e = last.edge;
-      if (!e) { this.dead = true; return; }
-      const f = nextEdge(this.g, e, this.r);
+      const e = last.edge, f = nextEdge(this.g, e, this.r);
       if (!f) { this.dead = true; return; }
       const trim = Math.min(7, e.path.length / 3, f.path.length / 3);
       last.s1 = Math.max(last.s0, e.path.length - trim);
@@ -149,7 +127,7 @@ export class Route {
   }
 
   // Advance by ds metres; returns the current point.
-  advance(ds: number): PointAt {
+  advance(ds) {
     this.s += ds;
     while (this.s > this.leg.s1) {
       if (this.legs.length === 1) { this.s = this.leg.s1; this.ended = true; break; }
@@ -162,10 +140,10 @@ export class Route {
   }
 
   // Point `d` metres ahead along the route, and the lowest speed limit on the way there.
-  lookahead(d: number): { p: PointAt; limit: number } {
+  lookahead(d) {
     let s = this.s, limit = Infinity;
     for (const leg of this.legs) {
-      limit = Math.min(limit, leg.edge ? leg.edge.speed : leg.speed ?? Infinity, !leg.edge && (leg.turn ?? 0) > 1.1 ? 4.5 : !leg.edge && (leg.turn ?? 0) > 0.5 ? 7 : Infinity);
+      limit = Math.min(limit, leg.edge ? leg.edge.speed : leg.speed, !leg.edge && leg.turn > 1.1 ? 4.5 : !leg.edge && leg.turn > 0.5 ? 7 : Infinity);
       if (s + d <= leg.s1) return { p: leg.path.at(s + d), limit };
       d -= leg.s1 - s;
       s = leg === this.legs[this.legs.length - 1] ? leg.s1 : this.legs[this.legs.indexOf(leg) + 1].s0;
@@ -176,10 +154,10 @@ export class Route {
 }
 
 // Where the incoming and outgoing lanes would cross; the midpoint when they're parallel.
-function corner(a: PointAt, b: PointAt): Point {
+function corner(a, b) {
   const dax = Math.cos(a.ang), day = Math.sin(a.ang), dbx = Math.cos(b.ang), dby = Math.sin(b.ang);
   const den = dax * dby - day * dbx;
-  const mid: Point = [(a.x + b.x) / 2, (a.y + b.y) / 2];
+  const mid = [(a.x + b.x) / 2, (a.y + b.y) / 2];
   if (Math.abs(den) < 0.2) return mid;
   const t = ((b.x - a.x) * dby - (b.y - a.y) * dbx) / den;
   const gap = Math.hypot(b.x - a.x, b.y - a.y);
@@ -190,29 +168,25 @@ function corner(a: PointAt, b: PointAt): Point {
 // The footpath network, filled in as tiles arrive (edges are undirected).
 const ROADLIKE = new Set(['residential', 'tertiary', 'secondary', 'primary', 'service', 'unclassified', 'living_street', 'busway']);
 export class WalkGraph {
-  byId: Map<string, WalkEdge>;
-  adj: Map<string, { e: WalkEdge; fwd: boolean }[]>;
-  edges: WalkEdge[];
-  fresh: WalkEdge[] = [];
   constructor() {
-    this.byId = new Map<string, WalkEdge>();
-    this.adj = new Map<string, { e: WalkEdge; fwd: boolean }[]>();
+    this.byId = new Map();
+    this.adj = new Map();
     this.edges = [];
   }
 
-  add(list: RawEdge[]): WalkEdge[] {
-    const fresh: WalkEdge[] = [];
-    const res = list.map((raw): WalkEdge => {
+  add(list) {
+    const fresh = [];
+    const res = list.map((raw) => {
       const known = this.byId.get(raw.id);
       if (known) return known;
-      const e = { ...raw, path: new Polyline(raw.pts) } as WalkEdge;
+      const e = { ...raw, path: new Polyline(raw.pts) };
       // Streets without a separately mapped pavement: people keep to the edge.
       e.side = ROADLIKE.has(e.hw) ? Math.max(0, e.width / 2 - 0.9) : 0;
       this.byId.set(e.id, e);
       this.edges.push(e);
-      for (const [n, fwd] of [[e.u, true], [e.v, false]] as [string, boolean][]) {
+      for (const [n, fwd] of [[e.u, true], [e.v, false]]) {
         if (!this.adj.has(n)) this.adj.set(n, []);
-        this.adj.get(n)!.push({ e, fwd });
+        this.adj.get(n).push({ e, fwd });
       }
       fresh.push(e);
       return e;
@@ -224,39 +198,36 @@ export class WalkGraph {
 
 // Spatial hash of named street segments, for the "you are on …" label.
 export class StreetNames {
-  cell: number;
-  map: Map<string, { a: Point; b: Point; name: string; rank: number }[]>;
-  seen: Set<RawEdge>;
-  constructor(...edgeLists: RawEdge[][]) {
+  constructor(...edgeLists) {
     this.cell = 20;
     this.map = new Map();
     this.seen = new Set();
     for (const list of edgeLists) this.add(list);
   }
 
-  add(list: RawEdge[]): void {
+  add(list) {
     for (const e of list) {
       if (this.seen.has(e)) continue;
       this.seen.add(e);
-      if (typeof e.name !== 'string') continue;
+      if (!e.name) continue;
       for (let i = 0; i < e.pts.length - 1; i++) {
         const a = e.pts[i], b = e.pts[i + 1];
         const seg = { a, b, name: e.name, rank: e.hw === 'footway' || e.hw === 'steps' ? 1 : 0 };
         const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / this.cell) + 1;
-        const keys = new Set<string>();
+        const keys = new Set();
         for (let k = 0; k <= n; k++) keys.add(this.key(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n));
         for (const key of keys) {
           if (!this.map.has(key)) this.map.set(key, []);
-          this.map.get(key)!.push(seg);
+          this.map.get(key).push(seg);
         }
       }
     }
   }
 
-  key(x: number, y: number): string { return `${Math.floor(x / this.cell)},${Math.floor(y / this.cell)}`; }
+  key(x, y) { return `${Math.floor(x / this.cell)},${Math.floor(y / this.cell)}`; }
 
-  at(x: number, y: number, maxD = 14): string | null {
-    let best: string | null = null, bestD = maxD;
+  at(x, y, maxD = 14) {
+    let best = null, bestD = maxD;
     const cx = Math.floor(x / this.cell), cy = Math.floor(y / this.cell);
     for (let i = -1; i <= 1; i++) {
       for (let j = -1; j <= 1; j++) {
@@ -270,7 +241,7 @@ export class StreetNames {
   }
 }
 
-export function segDist(x: number, y: number, a: Point, b: Point): number {
+export function segDist(x, y, a, b) {
   const dx = b[0] - a[0], dy = b[1] - a[1];
   const t = clamp(((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1), 0, 1);
   return Math.hypot(x - a[0] - dx * t, y - a[1] - dy * t);
@@ -278,18 +249,16 @@ export function segDist(x: number, y: number, a: Point, b: Point): number {
 
 // Everything that moves or blocks, bucketed in 10 m cells (keyed by number: cell
 // i * 2^17 + j, unique while |j| < 2^16 cells, far beyond any area).
-export class SpatialHash<T extends { x: number; y: number } = { x: number; y: number }> {
-  cell: number;
-  map: Map<number, T[]>;
-  constructor(cell = 10) { this.cell = cell; this.map = new Map<number, T[]>(); }
+export class SpatialHash {
+  constructor(cell = 10) { this.cell = cell; this.map = new Map(); }
   clear() { this.map.clear(); }
-  add(o: T): void {
+  add(o) {
     const k = Math.floor(o.x / this.cell) * 131072 + Math.floor(o.y / this.cell);
     let b = this.map.get(k);
     if (!b) this.map.set(k, (b = []));
     b.push(o);
   }
-  *near(x: number, y: number, r: number): Generator<T> {
+  *near(x, y, r) {
     const c = this.cell, i0 = Math.floor((x - r) / c), i1 = Math.floor((x + r) / c), j0 = Math.floor((y - r) / c), j1 = Math.floor((y + r) / c);
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
       const b = this.map.get(i * 131072 + j);

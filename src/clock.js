@@ -7,7 +7,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const WEEK = 7 * 86400;
 
 // The day (0 = Monday) and the seconds since midnight in Prague right now.
-function pragueNow(): { day: number; sec: number } {
+function pragueNow() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Europe/Prague', weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
   }).formatToParts(new Date()).map((p) => [p.type, p.value]));
@@ -15,8 +15,7 @@ function pragueNow(): { day: number; sec: number } {
 }
 
 export class Clock {
-  t: number;
-  constructor(params: URLSearchParams) {
+  constructor(params) {
     let { day, sec } = pragueNow();
     if (params.has('night') && !params.has('time')) sec = 1.5 * 3600;
     const t = (params.get('time') || '').match(/^(\d{1,2})[:.](\d{2})$/);
@@ -26,14 +25,14 @@ export class Clock {
     this.t = day * 86400 + sec;
   }
 
-  advance(dt: number): void { this.t = (((this.t + dt) % WEEK) + WEEK) % WEEK; }
+  advance(dt) { this.t = (((this.t + dt) % WEEK) + WEEK) % WEEK; }
   get day() { return Math.floor(this.t / 86400); }
   get hour() { return Math.floor((this.t % 86400) / 3600); }
   // Which timetable applies: weekday, saturday or sunday.
   get kind() { return this.day === 5 ? 'saturday' : this.day === 6 ? 'sunday' : 'weekday'; }
   // Night for the parked cars: from 10 in the evening to 6 in the morning.
   get night() { return this.hour >= 22 || this.hour < 6; }
-  label(): string {
+  label() {
     const m = Math.floor((this.t % 3600) / 60);
     return `${DAYS[this.day]} ${String(this.hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }

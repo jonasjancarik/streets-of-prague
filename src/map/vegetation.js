@@ -1,7 +1,5 @@
 import * as THREE from 'three';
-import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
-import type { HeightSampler, Polygons } from './types.ts';
-import type { Geo } from './geo.ts';
+import { Grid, fillPolys, strokeLines, rng } from './geo.js';
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees.
 const WOOD = 200, PARK = 120, ORCHARD = 60;
@@ -9,12 +7,12 @@ const WOOD = 200, PARK = 120, ORCHARD = 60;
 // Where a tile's trees stand, and how big and what colour they are: their instance
 // matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Runs
 // in the tile workers.
-export function treeInstances(geo: Geo, height: HeightSampler = () => 0): { matrices: Float32Array; colours: Float32Array; count: number } {
+export function treeInstances(geo, height = () => 0) {
   const d = geo.data;
   const grid = new Grid(geo, 1, (ctx, s) => {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const fill = (polys: Polygons | undefined, v: number) => {
+    const fill = (polys, v) => {
       if (!polys) return;
       ctx.fillStyle = `rgb(${v},0,0)`;
       fillPolys(ctx, geo, polys, s);
@@ -36,7 +34,7 @@ export function treeInstances(geo: Geo, height: HeightSampler = () => 0): { matr
     strokeLines(ctx, geo, d.walls.map((w) => w.pts), s);
   });
 
-  const trees: [number, number, number, number][] = []; // [x, y, radius, kind]
+  const trees = []; // [x, y, radius, kind]
   const r = rng(42);
   for (const [x, y] of d.trees) trees.push([x, y, 3 + r() * 2.5, 1]);
 
@@ -79,7 +77,7 @@ export function treeInstances(geo: Geo, height: HeightSampler = () => 0): { matr
   return { matrices, colours, count: trees.length };
 }
 
-export function treeMesh({ matrices, colours, count }: { matrices: Float32Array; colours: Float32Array; count: number }): THREE.InstancedMesh {
+export function treeMesh({ matrices, colours, count }) {
   const geom = new THREE.IcosahedronGeometry(1, 1);
   geom.scale(1, 0.75, 1);
   const mat = new THREE.MeshLambertMaterial({ flatShading: true });

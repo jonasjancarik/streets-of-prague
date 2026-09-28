@@ -1,9 +1,8 @@
 import * as THREE from 'three';
 import * as SS from 'straight-skeleton';
-import { signedArea, hash } from './geo.ts';
-import type { HeightSampler, MapData, Point3 } from './types.ts';
+import { signedArea, hash } from './geo.js';
 
-const SkeletonBuilder = SS.SkeletonBuilder ?? (SS as typeof SS & { default?: { SkeletonBuilder?: typeof SS.SkeletonBuilder } }).default?.SkeletonBuilder;
+const SkeletonBuilder = SS.SkeletonBuilder ?? SS.default?.SkeletonBuilder;
 
 const ROOF_TILES = ['#b4543a', '#a64a31', '#bf6440', '#9a4835', '#b9694a', '#8e3f2f', '#c47250', '#a85a3f'];
 const ROOF_SLATE = ['#6c6d70', '#5e6064', '#77746f'];
@@ -13,34 +12,34 @@ const WALLS = ['#e4d4b1', '#dac49b', '#efe3c6', '#cfb98f', '#e9d0a2', '#d8c7b0',
 const PITCH = 0.8; // rise per metre of inset (~39°)
 const MAX_ROOF = 7.5;
 
-export async function initRoofs(): Promise<void> {
+export async function initRoofs() {
   await SkeletonBuilder.init();
 }
 
 // Builds one merged mesh for all buildings: walls + straight-skeleton roofs.
-export function buildBuildings(data: Pick<MapData, 'size' | 'origin' | 'buildings'>): { mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>; stats: { skeleton: number; gabled: number; flat: number; failed: number } } {
-  const pos: number[] = [], nor: number[] = [], col: number[] = [], uv: number[] = [];
+export function buildBuildings(data) {
+  const pos = [], nor = [], col = [], uv = [];
   const [W, H] = data.size, [ox, oy] = data.origin;
   const stats = { skeleton: 0, gabled: 0, flat: 0, failed: 0 };
   const cWall = new THREE.Color(), cRoof = new THREE.Color(), tmp = new THREE.Color();
 
   // local (x, y, z-up) → three (X, Y-up, Z)
-  const push = (p: Point3, n: Point3, c: THREE.Color) => {
+  const push = (p, n, c) => {
     pos.push(p[0], p[2], -p[1]);
     nor.push(n[0], n[2], -n[1]);
     col.push(c.r, c.g, c.b);
     uv.push((p[0] + ox) / W, (p[1] + oy) / H); // top-down projection, same as the ground
   };
-  const tri = (a: Point3, b: Point3, c: Point3, color: THREE.Color | [THREE.Color, THREE.Color, THREE.Color], want: Point3) => {
+  const tri = (a, b, c, color, want) => {
     // Flat normal; flip winding if it disagrees with the expected direction.
     const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
     const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-    let n: Point3 = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+    let n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
     const len = Math.hypot(...n) || 1;
-    n = [n[0] / len, n[1] / len, n[2] / len];
+    n = n.map((v) => v / len);
     if (n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0) {
       [b, c] = [c, b];
-      n = [-n[0], -n[1], -n[2]];
+      n = n.map((v) => -v);
     }
     const cols = Array.isArray(color) ? color : [color, color, color];
     push(a, n, cols[0]);
@@ -51,13 +50,13 @@ export function buildBuildings(data: Pick<MapData, 'size' | 'origin' | 'building
   for (const b of data.buildings) {
     const hv = hash(b.id + b.rings[0].length);
     const isWall = /zeď/i.test(b.name || '');
-    const small = ['garage', 'shed', 'kiosk', 'roof', 'service'].includes(b.kind ?? '');
+    const small = ['garage', 'shed', 'kiosk', 'roof', 'service'].includes(b.kind);
     const eaves = isWall ? 5 : Math.max(b.h, b.minh + 3);
     const base = isWall ? 0 : b.minh;
 
     cWall.set(WALLS[Math.floor(hv * WALLS.length)]);
     if (b.church) cRoof.set(b.roof === 'onion' || b.roof === 'dome' ? ROOF_COPPER : ROOF_SLATE[0]);
-    else if (['civic', 'government', 'school', 'industrial'].includes(b.kind ?? '') && hv > 0.5) cRoof.set(ROOF_SLATE[Math.floor(hv * 10) % 3]);
+    else if (['civic', 'government', 'school', 'industrial'].includes(b.kind) && hv > 0.5) cRoof.set(ROOF_SLATE[Math.floor(hv * 10) % 3]);
     else cRoof.set(ROOF_TILES[Math.floor(hv * 997) % ROOF_TILES.length]);
     tmp.copy(cRoof).offsetHSL(0, 0, (hash(b.id) - 0.5) * 0.06);
     cRoof.copy(tmp);
@@ -75,8 +74,8 @@ export function buildBuildings(data: Pick<MapData, 'size' | 'origin' | 'building
       for (let i = 0; i < ring.length; i++) {
         const [x1, y1] = ring[i];
         const [x2, y2] = ring[(i + 1) % ring.length];
-        const out: Point3 = [y2 - y1, -(x2 - x1), 0];
-        const a0: Point3 = [x1, y1, base], b0: Point3 = [x2, y2, base], a1: Point3 = [x1, y1, eaves], b1: Point3 = [x2, y2, eaves];
+        const out = [y2 - y1, -(x2 - x1), 0];
+        const a0 = [x1, y1, base], b0 = [x2, y2, base], a1 = [x1, y1, eaves], b1 = [x2, y2, eaves];
         tri(a0, b0, b1, [dark, dark, cWall], out);
         tri(a0, b1, a1, [dark, cWall, cWall], out);
       }
@@ -95,7 +94,7 @@ export function buildBuildings(data: Pick<MapData, 'size' | 'origin' | 'building
       const all = [...rings[0], ...rings.slice(1).flat()];
       const flatCol = isWall ? cWall : cRoof.clone().lerp(new THREE.Color('#8a8580'), 0.6);
       for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(pts, holes)) {
-        tri([...all[i], eaves] as Point3, [...all[j], eaves] as Point3, [...all[k], eaves] as Point3, flatCol, [0, 0, 1]);
+        tri([...all[i], eaves], [...all[j], eaves], [...all[k], eaves], flatCol, [0, 0, 1]);
       }
       stats.flat++;
     };
@@ -119,8 +118,8 @@ export function buildBuildings(data: Pick<MapData, 'size' | 'origin' | 'building
 
     const maxT = Math.max(...sk.vertices.map((v) => v[2])) || 1;
     const k = Math.min(PITCH, MAX_ROOF / maxT);
-    const verts: Point3[] = sk.vertices.map((v) => [v[0], v[1], eaves + v[2] * k]);
-    const gableFaces = new Set<number>();
+    const verts = sk.vertices.map((v) => [v[0], v[1], eaves + v[2] * k]);
+    const gableFaces = new Set();
 
     if (roofShape === 'gabled' && rings.length === 1 && rings[0].length === 4) {
       // Turn the two hip triangles into vertical gable ends by sliding each ridge
@@ -145,9 +144,9 @@ export function buildBuildings(data: Pick<MapData, 'size' | 'origin' | 'building
         const [p, q] = face.filter((i) => sk.vertices[i][2] <= 1e-6).map((i) => verts[i]);
         const apex = pts.find((v) => v[2] > eaves + 1e-6);
         const cx = rings[0].reduce((s, v) => s + v[0], 0) / 4, cy = rings[0].reduce((s, v) => s + v[1], 0) / 4;
-        let out: Point3 = [q[1] - p[1], -(q[0] - p[0]), 0];
-        if (out[0] * ((p[0] + q[0]) / 2 - cx) + out[1] * ((p[1] + q[1]) / 2 - cy) < 0) out = [-out[0], -out[1], -out[2]];
-        tri(p, q, apex!, cWall, out);
+        let out = [q[1] - p[1], -(q[0] - p[0]), 0];
+        if (out[0] * ((p[0] + q[0]) / 2 - cx) + out[1] * ((p[1] + q[1]) / 2 - cy) < 0) out = out.map((v) => -v);
+        tri(p, q, apex, cWall, out);
         return;
       }
       const tris = THREE.ShapeUtils.triangulateShape(
@@ -173,9 +172,9 @@ export function buildBuildings(data: Pick<MapData, 'size' | 'origin' | 'building
 
 // Garden walls, city walls, the Hunger Wall: thin extruded strips, standing on the
 // terrain (`height(x, y)`). The arrays for wallMesh; runs in the tile workers.
-export function wallArrays(data: Pick<MapData, 'walls'>, height: HeightSampler = () => 0): { position: Float32Array; normal: Float32Array } {
-  const pos: number[] = [], nor: number[] = [];
-  const quad = (a: Point3, b: Point3, c: Point3, d: Point3, n: Point3) => {
+export function wallArrays(data, height = () => 0) {
+  const pos = [], nor = [];
+  const quad = (a, b, c, d, n) => {
     for (const p of [a, b, c, a, c, d]) {
       pos.push(p[0], p[2], -p[1]);
       nor.push(n[0], n[2], -n[1]);
@@ -188,11 +187,11 @@ export function wallArrays(data: Pick<MapData, 'walls'>, height: HeightSampler =
       const [x1, y1] = w.pts[i], [x2, y2] = w.pts[i + 1];
       const len = Math.hypot(x2 - x1, y2 - y1) || 1;
       const nx = (y2 - y1) / len * hw, ny = -(x2 - x1) / len * hw;
-      const L1: [number, number] = [x1 - nx, y1 - ny], L2: [number, number] = [x2 - nx, y2 - ny], R1: [number, number] = [x1 + nx, y1 + ny], R2: [number, number] = [x2 + nx, y2 + ny];
-      const N: Point3 = [nx / hw, ny / hw, 0];
-      quad([...R1, 0] as Point3, [...R2, 0] as Point3, [...R2, h] as Point3, [...R1, h] as Point3, N);
-      quad([...L2, 0] as Point3, [...L1, 0] as Point3, [...L1, h] as Point3, [...L2, h] as Point3, [-N[0], -N[1], -N[2]]);
-      quad([...R1, h] as Point3, [...R2, h] as Point3, [...L2, h] as Point3, [...L1, h] as Point3, [0, 0, 1]);
+      const L1 = [x1 - nx, y1 - ny], L2 = [x2 - nx, y2 - ny], R1 = [x1 + nx, y1 + ny], R2 = [x2 + nx, y2 + ny];
+      const N = [nx / hw, ny / hw, 0];
+      quad([...R1, 0], [...R2, 0], [...R2, h], [...R1, h], N);
+      quad([...L2, 0], [...L1, 0], [...L1, h], [...L2, h], N.map((v) => -v));
+      quad([...R1, h], [...R2, h], [...L2, h], [...L1, h], [0, 0, 1]);
     }
   }
   const position = new Float32Array(pos);
@@ -200,7 +199,7 @@ export function wallArrays(data: Pick<MapData, 'walls'>, height: HeightSampler =
   return { position, normal: new Float32Array(nor) };
 }
 
-export function wallMesh({ position, normal }: { position: Float32Array; normal: Float32Array }): THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial> {
+export function wallMesh({ position, normal }) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(position, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
@@ -212,7 +211,7 @@ export function wallMesh({ position, normal }: { position: Float32Array; normal:
 
 // Optional top-down texture draped over roofs (walls keep their colours).
 // Used for the AI-painted tile experiment.
-export function drapeRoofs(mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>, texture: THREE.Texture): { roofMap: { value: THREE.Texture }; roofMix: { value: number } } {
+export function drapeRoofs(mesh, texture) {
   const u = { roofMap: { value: texture }, roofMix: { value: 0 } };
   const m = mesh.material;
   m.onBeforeCompile = (sh) => {

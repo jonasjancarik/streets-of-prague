@@ -4,17 +4,13 @@
 
 const QUIET = 0.036; // about 240 people everywhere
 
-interface FootfallMeta { size: [number, number]; box: [number, number, number, number]; cell: number; }
-interface FootfallEdge { busy?: number; path: { length: number; at(s: number): { x: number; y: number } }; }
-
-export async function loadFootfall(area: string): Promise<Footfall> {
+export async function loadFootfall(area) {
   try {
-    const meta = await fetch(`data/${area}_now/footfall.json`).then((r): Promise<FootfallMeta> => r.json());
+    const meta = await fetch(`data/${area}_now/footfall.json`).then((r) => r.json());
     const blob = await fetch(`data/${area}_now/footfall.png`).then((r) => (r.ok ? r.blob() : Promise.reject()));
     const img = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
     const [w, h] = meta.size;
     const ctx = new OffscreenCanvas(w, h).getContext('2d', { willReadFrequently: true });
-    if (!ctx) throw new Error('Could not read footfall image');
     ctx.drawImage(img, 0, 0);
     const px = ctx.getImageData(0, 0, w, h).data;
     const share = new Float32Array(w * h);
@@ -26,28 +22,22 @@ export async function loadFootfall(area: string): Promise<Footfall> {
 }
 
 export class Footfall {
-  share!: Float32Array | null;
-  w!: number;
-  h!: number;
-  cell!: number;
-  x0 = 0;
-  y1 = 0;
-  constructor(share: Float32Array | null, w = 0, h = 0, box?: [number, number, number, number], cell = 1) {
+  constructor(share, w, h, box, cell) {
     Object.assign(this, { share, w, h, cell });
     if (box) [this.x0, , , this.y1] = box;
   }
 
   // Busyness at a point, between the cells' centres.
-  at(x: number, y: number): number {
+  at(x, y) {
     if (!this.share) return QUIET;
     const fx = (x - this.x0) / this.cell - 0.5, fy = (this.y1 - y) / this.cell - 0.5;
     const i = Math.floor(fx), j = Math.floor(fy), tx = fx - i, ty = fy - j;
-    const c = (a: number, b: number): number => this.share![Math.min(this.h - 1, Math.max(0, b)) * this.w + Math.min(this.w - 1, Math.max(0, a))];
+    const c = (a, b) => this.share[Math.min(this.h - 1, Math.max(0, b)) * this.w + Math.min(this.w - 1, Math.max(0, a))];
     return (c(i, j) * (1 - tx) + c(i + 1, j) * tx) * (1 - ty) + (c(i, j + 1) * (1 - tx) + c(i + 1, j + 1) * tx) * ty;
   }
 
   // Average busyness within r metres.
-  around(x: number, y: number, r: number): number {
+  around(x, y, r) {
     if (!this.share) return QUIET;
     let sum = 0, n = 0;
     const step = Math.max(this.cell, r / 12);
@@ -62,7 +52,7 @@ export class Footfall {
   }
 
   // An edge's busyness, taken once at its middle.
-  edge(e: FootfallEdge): number {
+  edge(e) {
     if (e.busy === undefined) {
       const q = e.path.at(e.path.length / 2);
       e.busy = this.at(q.x, q.y);

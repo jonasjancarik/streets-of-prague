@@ -16,56 +16,14 @@ export const SCALE = 1.35; // people (and what they ride) are drawn bigger than 
 const FPS = 24;
 const PARTS = ['Skin', 'Shirt', 'Sleeve', 'Trousers', 'Shoes', 'Hair'];
 
-export type FigureVehicleName = 'bike' | 'moto';
-
-interface Clip {
-  row: number;
-  frames: number;
-  duration: number;
-  loop: boolean;
-}
-
-export interface Look {
-  shirt: string;
-  trousers: string;
-  skin: string;
-  hair: string;
-  sleeves: boolean;
-}
-
-export interface FigureKit {
-  geometry: THREE.BufferGeometry;
-  clips: Record<string, Clip>;
-  N: number;
-  pos: THREE.DataTexture;
-  nrm: THREE.DataTexture;
-  material: THREE.MeshLambertMaterial;
-  depthMaterial: THREE.MeshDepthMaterial;
-  vehicles: Record<FigureVehicleName, (paint: string) => THREE.BufferGeometry>;
-}
-
-type FigureMesh = THREE.SkinnedMesh<THREE.BufferGeometry, THREE.Material>;
-type VehicleMesh = THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
-type FigureAttributeName = 'aAnimA' | 'aAnimB' | 'aShirt' | 'aTrousers' | 'aSkin' | 'aHair';
-type ColourAttributeName = 'aShirt' | 'aTrousers' | 'aSkin' | 'aHair';
-type FigureAttributes = Record<FigureAttributeName, THREE.InstancedBufferAttribute>;
-
-function isFigureMesh(object: THREE.Object3D): object is FigureMesh {
-  return 'isSkinnedMesh' in object && object.isSkinnedMesh === true;
-}
-
-function isVehicleMesh(object: THREE.Object3D): object is VehicleMesh {
-  return 'isMesh' in object && object.isMesh === true;
-}
-
 // Where the jump clip leaves the ground and lands again, in seconds.
 export const JUMP = { up: 7 / 24, down: 16 / 24 };
 
-export async function loadKit(url = 'figures.glb'): Promise<FigureKit> {
+export async function loadKit(url = 'figures.glb') {
   const gltf = await new GLTFLoader().loadAsync(url);
   const root = gltf.scene;
-  const parts: FigureMesh[] = [];
-  root.traverse((object) => { if (isFigureMesh(object)) parts.push(object); });
+  const parts = [];
+  root.traverse((o) => { if (o.isSkinnedMesh) parts.push(o); });
   root.updateMatrixWorld(true);
 
   // One geometry for the person, with each vertex's part (skin, shirt, …) as an attribute.
@@ -83,7 +41,7 @@ export async function loadKit(url = 'figures.glb'): Promise<FigureKit> {
 
   // Play every clip through and keep where each vertex ends up.
   const mixer = new THREE.AnimationMixer(root);
-  const clips: Record<string, Clip> = {};
+  const clips = {};
   let rows = 0;
   for (const clip of gltf.animations) {
     const frames = Math.round(clip.duration * FPS);
@@ -106,11 +64,9 @@ export async function loadKit(url = 'figures.glb'): Promise<FigureKit> {
       let base = 0;
       for (const mesh of parts) {
         const g = mesh.geometry, bones = mesh.skeleton.bones, inv = mesh.skeleton.boneInverses;
-        const position = g.attributes.position as THREE.BufferAttribute;
-        const normal = g.attributes.normal as THREE.BufferAttribute;
         for (let i = 0; i < g.attributes.position.count; i++) {
-          idx.fromBufferAttribute(g.attributes.skinIndex as THREE.BufferAttribute, i);
-          wt.fromBufferAttribute(g.attributes.skinWeight as THREE.BufferAttribute, i);
+          idx.fromBufferAttribute(g.attributes.skinIndex, i);
+          wt.fromBufferAttribute(g.attributes.skinWeight, i);
           acc.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
           for (let k = 0; k < 4; k++) {
             const w = wt.getComponent(k);
@@ -119,8 +75,8 @@ export async function loadKit(url = 'figures.glb'): Promise<FigureKit> {
             for (let e = 0; e < 16; e++) acc.elements[e] += m.elements[e] * w;
           }
           acc.premultiply(mesh.bindMatrixInverse).multiply(mesh.bindMatrix);
-          v.fromBufferAttribute(position, i).applyMatrix4(acc);
-          n.fromBufferAttribute(normal, i).applyMatrix3(nm.getNormalMatrix(acc)).normalize();
+          v.fromBufferAttribute(g.attributes.position, i).applyMatrix4(acc);
+          n.fromBufferAttribute(g.attributes.normal, i).applyMatrix3(nm.getNormalMatrix(acc)).normalize();
           const o = ((c.row + f) * N + base + i) * 4;
           pos.set([v.x, v.y, v.z, 1], o);
           nrm.set([n.x, n.y, n.z, 0], o);
@@ -130,37 +86,28 @@ export async function loadKit(url = 'figures.glb'): Promise<FigureKit> {
     }
   }
   mixer.stopAllAction();
-  const tex = (data: Float32Array): THREE.DataTexture => {
+  const tex = (data) => {
     const t = new THREE.DataTexture(data, N, rows, THREE.RGBAFormat, THREE.FloatType);
     t.needsUpdate = true;
     return t;
   };
-  const kitCore = {
-    geometry,
-    clips,
-    N,
-    pos: tex(pos),
-    nrm: tex(nrm),
-  };
-  const kit: FigureKit = {
-    ...kitCore,
-    material: vatMaterial(new THREE.MeshLambertMaterial(), kitCore, true),
-    depthMaterial: vatMaterial(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), kitCore, false),
-    vehicles: { bike: vehicle(root, 'Bike'), moto: vehicle(root, 'Moto') },
-  };
+  const kit = { geometry, clips, N, pos: tex(pos), nrm: tex(nrm) };
+  kit.material = vatMaterial(new THREE.MeshLambertMaterial(), kit, true);
+  kit.depthMaterial = vatMaterial(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), kit, false);
+  kit.vehicles = { bike: vehicle(root, 'Bike'), moto: vehicle(root, 'Moto') };
   return kit;
 }
 
 // A two-wheeler as one geometry with its colours per vertex; `paint(hex)` gives a
 // copy with the frame (the Paint parts) in that colour.
-function vehicle(root: THREE.Object3D, name: string): (paint: string) => THREE.BufferGeometry {
+function vehicle(root, name) {
   const node = root.getObjectByName(name);
-  const meshes: VehicleMesh[] = [];
-  node!.traverse((object) => { if (isVehicleMesh(object)) meshes.push(object); });
-  const COLOUR: Record<string, string> = { Tyre: '#141414', Metal: '#9aa0a6', Seat: '#1c1a19', Engine: '#43464b', Lamp: '#fff1c9' };
-  const cache = new Map<string, THREE.BufferGeometry>();
-  return (paint: string): THREE.BufferGeometry => {
-    if (cache.has(paint)) return cache.get(paint)!;
+  const meshes = [];
+  node.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  const COLOUR = { Tyre: '#141414', Metal: '#9aa0a6', Seat: '#1c1a19', Engine: '#43464b', Lamp: '#fff1c9' };
+  const cache = new Map();
+  return (paint) => {
+    if (cache.has(paint)) return cache.get(paint);
     const c = new THREE.Color(), red = new THREE.Color('#c0171d');
     const geos = meshes.map((m) => {
       const g = new THREE.BufferGeometry();
@@ -182,8 +129,8 @@ function vehicle(root: THREE.Object3D, name: string): (paint: string) => THREE.B
   };
 }
 
-function vatMaterial<T extends THREE.Material>(material: T, kit: Pick<FigureKit, 'pos' | 'nrm'>, colour: boolean): T {
-  material.onBeforeCompile = (sh: THREE.WebGLProgramParametersWithUniforms) => {
+function vatMaterial(material, kit, colour) {
+  material.onBeforeCompile = (sh) => {
     sh.uniforms.uPos = { value: kit.pos };
     sh.uniforms.uNrm = { value: kit.nrm };
     sh.vertexShader = sh.vertexShader
@@ -223,35 +170,25 @@ const SHIRTS = ['#3b4a63', '#5c3a3a', '#2f2f33', '#6a6f5a', '#8a6d4e', '#a8a39a'
 const TROUSERS = ['#23272e', '#2f3a4f', '#3e3a33', '#5a5347', '#1b1b1d', '#44506a', '#6b6255', '#2b3b36'];
 const SKIN = ['#e3b99a', '#d4a383', '#b9825f', '#8d5a3e', '#f0cdb3'];
 const HAIR = ['#2a1d15', '#4a3222', '#8a6a44', '#1a1a1a', '#b9b1a6', '#6e4a2c', '#c9a063'];
-export function randomLook(r: () => number): Look {
-  const pick = (a: readonly string[]): string => a[Math.floor(r() * a.length)];
+export function randomLook(r) {
+  const pick = (a) => a[Math.floor(r() * a.length)];
   return { shirt: pick(SHIRTS), trousers: pick(TROUSERS), skin: pick(SKIN), hair: pick(HAIR), sleeves: r() < 0.6 };
 }
 
 // A group of people drawn together. Each one is a slot: give it a look once, then a
 // matrix and an Anim every frame.
 export class Figures {
-  kit: FigureKit;
-  attr: FigureAttributes;
-  mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
-  capacity: number;
-  sleeves: Uint8Array;
-  constructor(kit: FigureKit, capacity: number) {
+  constructor(kit, capacity) {
     this.kit = kit;
     const base = kit.geometry, g = new THREE.BufferGeometry();
     g.setIndex(base.index);
     for (const k of ['position', 'normal', 'aPart']) g.setAttribute(k, base.attributes[k]);
-    const aAnimA = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
-    const aAnimB = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
-    const aShirt = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
-    const aTrousers = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
-    const aSkin = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
-    const aHair = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
-    aAnimA.setUsage(THREE.DynamicDrawUsage);
-    aAnimB.setUsage(THREE.DynamicDrawUsage);
-    this.attr = { aAnimA, aAnimB, aShirt, aTrousers, aSkin, aHair };
-    for (const [name, attribute] of Object.entries(this.attr) as [FigureAttributeName, THREE.InstancedBufferAttribute][]) {
-      g.setAttribute(name, attribute);
+    this.attr = {};
+    for (const [k, size] of [['aAnimA', 4], ['aAnimB', 4], ['aShirt', 3], ['aTrousers', 3], ['aSkin', 3], ['aHair', 3]]) {
+      const a = new THREE.InstancedBufferAttribute(new Float32Array(capacity * size), size);
+      if (k.startsWith('aAnim')) a.setUsage(THREE.DynamicDrawUsage);
+      g.setAttribute(k, a);
+      this.attr[k] = a;
     }
     this.mesh = new THREE.InstancedMesh(g, kit.material, capacity);
     this.mesh.customDepthMaterial = kit.depthMaterial;
@@ -262,10 +199,9 @@ export class Figures {
     this.sleeves = new Uint8Array(capacity);
   }
 
-  look(i: number, look: Look): void {
+  look(i, look) {
     const c = new THREE.Color();
-    const colours: [ColourAttributeName, string][] = [['aShirt', look.shirt], ['aTrousers', look.trousers], ['aSkin', look.skin], ['aHair', look.hair]];
-    for (const [k, v] of colours) {
+    for (const [k, v] of [['aShirt', look.shirt], ['aTrousers', look.trousers], ['aSkin', look.skin], ['aHair', look.hair]]) {
       c.set(v);
       this.attr[k].setXYZ(i, c.r, c.g, c.b);
       this.attr[k].needsUpdate = true;
@@ -273,12 +209,12 @@ export class Figures {
     this.sleeves[i] = look.sleeves ? 1 : 0;
   }
 
-  set(i: number, matrix: THREE.Matrix4, anim: Anim): void {
+  set(i, matrix, anim) {
     this.mesh.setMatrixAt(i, matrix);
     anim.write(this.attr.aAnimA, this.attr.aAnimB, i, this.sleeves[i]);
   }
 
-  commit(count = this.mesh.count): void {
+  commit(count = this.mesh.count) {
     this.mesh.count = count;
     this.mesh.instanceMatrix.needsUpdate = true;
     this.attr.aAnimA.needsUpdate = this.attr.aAnimB.needsUpdate = true;
@@ -288,14 +224,7 @@ export class Figures {
 // One person's animation: the clip playing and, for a moment after a change, the one
 // it's fading out of.
 export class Anim {
-  clips: Record<string, Clip>;
-  name: string;
-  t: number;
-  from: string | null;
-  ft: number;
-  w: number;
-  fade: number;
-  constructor(kit: FigureKit, clip = 'idle', t = 0) {
+  constructor(kit, clip = 'idle', t = 0) {
     this.clips = kit.clips;
     this.name = clip;
     this.t = t;
@@ -305,13 +234,13 @@ export class Anim {
     this.fade = 0.15;
   }
 
-  play(name: string, restart = false, fade = 0.15): void {
+  play(name, restart = false, fade = 0.15) {
     if (name === this.name && !restart) return;
     Object.assign(this, { from: this.name, ft: this.t, w: fade > 0 ? 1 : 0, fade, name, t: 0 });
   }
 
   // `rate` 1 is the clip's own speed; locomotion passes speed / stride so feet keep pace.
-  step(dt: number, rate = 1): void {
+  step(dt, rate = 1) {
     this.t += dt * rate;
     if (this.w > 0) {
       this.ft += dt * rate;
@@ -319,10 +248,10 @@ export class Anim {
     }
   }
 
-  get duration(): number { return this.clips[this.name].duration; }
-  get done(): boolean { return !this.clips[this.name].loop && this.t >= this.duration; }
+  get duration() { return this.clips[this.name].duration; }
+  get done() { return !this.clips[this.name].loop && this.t >= this.duration; }
 
-  rows(name: string, t: number): [number, number, number] {
+  rows(name, t) {
     const c = this.clips[name];
     let f = t * FPS;
     if (c.loop) f = ((f % c.frames) + c.frames) % c.frames;
@@ -331,16 +260,16 @@ export class Anim {
     return [c.row + i, c.row + Math.min(i + 1, c.frames), f - i];
   }
 
-  write(A: THREE.InstancedBufferAttribute, B: THREE.InstancedBufferAttribute, i: number, sleeves: number): void {
+  write(A, B, i, sleeves) {
     const [a0, a1, af] = this.rows(this.name, this.t);
-    const [b0, b1, bf] = this.w > 0 ? this.rows(this.from!, this.ft) : [a0, a1, af];
+    const [b0, b1, bf] = this.w > 0 ? this.rows(this.from, this.ft) : [a0, a1, af];
     A.setXYZW(i, a0, a1, af, this.w);
     B.setXYZW(i, b0, b1, bf, sleeves);
   }
 }
 
 // Height off the ground partway through the jump clip.
-export function jumpHeight(t: number, h = 1): number {
+export function jumpHeight(t, h = 1) {
   if (t <= JUMP.up || t >= JUMP.down) return 0;
   const u = (t - JUMP.up) / (JUMP.down - JUMP.up);
   return 4 * h * u * (1 - u);

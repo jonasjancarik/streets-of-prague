@@ -1,11 +1,11 @@
 # Plan 001: Migrate the browser application to TypeScript
 
 > This is an implementation plan, not a request to change the Python map pipeline.
-> Read the current working tree before starting. At planning time, the checkout had
-> uncommitted changes in `README.md`, several `src/*.js` files, and two pipeline
-> files. Preserve them. Do not switch branches or overwrite tracked files. The
-> plan was written against the *working tree* at commit `4658c59`; comparing only
-> `4658c59..HEAD` is insufficient because the working tree was already dirty.
+> The rerun baseline is commit `c6b5350` on `main` with a clean working tree.
+> Preserve that state and check for new edits before starting. This plan was first
+> written at `4658c59` while the intervening bridge changes were uncommitted;
+> those changes are now part of the rerun baseline. Do not switch branches or
+> overwrite unrelated tracked files.
 
 ## Status
 
@@ -15,6 +15,7 @@
 - Depends on: none
 - Category: migration
 - Planned at: `4658c59`, 2026-09-28
+- Rerun baseline: `c6b5350`, 2026-09-28
 
 ## Goal and scope
 

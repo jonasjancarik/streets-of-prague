@@ -3,12 +3,12 @@
 A small low-poly person with a skeleton and a handful of clips (standing, walking,
 running, jumping, being knocked over and getting up, riding a bike and a motorbike),
 plus a bike and a motorbike to ride. Everything is made from code here, so the kit
-can be tweaked and rebuilt; src/figures.ts bakes the clips into textures at load.
+can be tweaked and rebuilt; src/figures.js bakes the clips into textures at load.
 
 Conventions: metres, Z up, facing +X, left is +Y, feet on z = 0. The glTF exporter
 turns this into three.js's Y up, and the figure still faces +X there. Materials are
 named after the part they colour (Skin, Shirt, Sleeve, Trousers, Shoes, Hair, and
-Paint, Tyre, Metal, Seat, Lamp, Engine on the vehicles); src/figures.ts relies on the
+Paint, Tyre, Metal, Seat, Lamp, Engine on the vehicles); src/figures.js relies on the
 names.
 
 usage: blender -b --factory-startup -P assets/figures/build.py

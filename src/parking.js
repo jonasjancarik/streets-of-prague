@@ -1,35 +1,12 @@
-import { Car, randomType } from './car.ts';
-import { Polyline, segDist } from './network.ts';
-import type { DriveEdge, Point, Random } from './network.ts';
-import type { ParkingLot, ParkingOrientation, ParkingSection, TileData } from './tile-types.ts';
-
-type Ring = Point[];
-type Polygon = Ring[];
-type ParkingEdge = DriveEdge & {
-  park?: [ParkingOrientation | 'no' | null, ParkingOrientation | 'no' | null];
-  kerb?: [number, number];
-  bridge?: boolean;
-};
-type Spot = { x: number; y: number; h: number; lot: boolean; bay: boolean; angled: boolean };
-type Section = ParkingSection & { inside: number; box: [number, number, number, number] };
-type ParkingData = Pick<TileData, 'areas' | 'rails' | 'lots'>;
-interface ParkCarsOptions {
-  data: ParkingData;
-  edges: ParkingEdge[];
-  zones: Zones;
-  solid: (x: number, y: number) => boolean;
-  r: Random;
-  night?: boolean;
-  shares?: Map<string, number> | null;
-  inside?: (x: number, y: number) => boolean;
-}
+import { Car, randomType } from './car.js';
+import { Polyline, segDist } from './network.js';
 
 // Parked cars. Where TSK's paid-parking sections cover the street, each section
 // gets as many cars as its spaces × measured occupancy (day or night). They go
 // into OSM's mapped parking lanes and lots first, then along the kerb. Outside
 // the zones, lots and kerbs are filled at random.
 
-export function inRing(x: number, y: number, ring: Ring): boolean {
+export function inRing(x, y, ring) {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [xi, yi] = ring[i], [xj, yj] = ring[j];
@@ -38,21 +15,20 @@ export function inRing(x: number, y: number, ring: Ring): boolean {
   return inside;
 }
 
-const inPoly = (x: number, y: number, rings: Polygon): boolean => inRing(x, y, rings[0]) && !rings.slice(1).some((h) => inRing(x, y, h));
+const inPoly = (x, y, rings) => inRing(x, y, rings[0]) && !rings.slice(1).some((h) => inRing(x, y, h));
 
 export class Zones {
-  sections: Section[];
-  constructor(parking: { sections: Array<ParkingSection & { inside: number }> }) {
+  constructor(parking) {
     this.sections = (parking?.sections || []).map((s) => {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const rings of s.polys) for (const [x, y] of rings[0]) {
         x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
       }
-      return { ...s, box: [x0, y0, x1, y1] as [number, number, number, number] };
+      return { ...s, box: [x0, y0, x1, y1] };
     });
   }
 
-  at(x: number, y: number): Section | null {
+  at(x, y) {
     for (const s of this.sections) {
       const [x0, y0, x1, y1] = s.box;
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
@@ -68,12 +44,12 @@ const ANGLE = 0.9, ANGLED_STEP = 3.0;
 // How the cars stand in a parking area: OSM's `orientation` if it's tagged, else a
 // guess from its width. Under 4.5 m is a parallel lane, up to 5.6 m angled bays (the
 // usual depth of those), wider rows of perpendicular bays.
-const guess = (width: number): ParkingOrientation => (width < 4.5 ? 'parallel' : width < 5.6 ? 'diagonal' : 'perpendicular');
+const guess = (width) => (width < 4.5 ? 'parallel' : width < 5.6 ? 'diagonal' : 'perpendicular');
 
 // An area's width as a rectangle with the same area and perimeter would have it. A
 // strip along a street that bends is as narrow as it looks, where the box round it
 // isn't.
-function stripWidth(ring: Ring): number {
+function stripWidth(ring) {
   let area = 0, perim = 0;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     area += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
@@ -86,7 +62,7 @@ function stripWidth(ring: Ring): number {
 // Which way the kerb runs at (x, y): the nearest side of the area within 30° of its
 // axis `a`, turned to point the same way as `a`. Along a bending strip the cars follow
 // the bend.
-function kerbAt(ring: Ring, x: number, y: number, a: number): number {
+function kerbAt(ring, x, y, a) {
   let best = Infinity, h = a;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     const [ax, ay] = ring[j], [bx, by] = ring[i];
@@ -99,16 +75,16 @@ function kerbAt(ring: Ring, x: number, y: number, a: number): number {
 }
 
 // Rows across the area (offsets from its long side) for cars `depth` deep.
-function rows(v0: number, v1: number, depth: number, gap: number): number[] {
-  const out: number[] = [];
+function rows(v0, v1, depth, gap) {
+  const out = [];
   for (let v = v0 + depth / 2; v <= v1 - depth / 2 + 1e-6; v += depth + gap) out.push(v);
   return out.length ? out : [(v0 + v1) / 2];
 }
 
 // Where the line across the area at `u` goes in and out of it (`uv`: the ring in
 // frame coordinates), in order: pairs of v, one for each stretch inside.
-function crossings(uv: Ring, u: number): number[] {
-  const vs: number[] = [];
+function crossings(uv, u) {
+  const vs = [];
   for (let i = 0, j = uv.length - 1; i < uv.length; j = i++) {
     const [ua, va] = uv[j], [ub, vb] = uv[i];
     if (ua > u !== ub > u) vs.push(va + ((u - ua) * (vb - va)) / (ub - ua));
@@ -117,7 +93,7 @@ function crossings(uv: Ring, u: number): number[] {
 }
 
 // The ring in coordinates along `a` (u) and across it (v), from its first corner.
-function frame(ring: Ring, a: number) {
+function frame(ring, a) {
   const ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
   const [ox, oy] = ring[0];
   let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
@@ -131,12 +107,12 @@ function frame(ring: Ring, a: number) {
 // The traffic lane an angled parking area is beside: within 15 m, running along the
 // area (axis `a`), and on a two-way street the lane that has the area on its right.
 // Returns the lane's direction there and whether the area is on its right.
-function laneBeside(ring: Ring, a: number, edges: ParkingEdge[]) {
+function laneBeside(ring, a, edges) {
   let cx = 0, cy = 0;
   for (const [x, y] of ring) { cx += x; cy += y; }
   cx /= ring.length;
   cy /= ring.length;
-  let best: { score: number; ang: number; right: boolean } | null = null;
+  let best = null;
   for (const e of edges) {
     const { pts } = e.path;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -155,10 +131,10 @@ function laneBeside(ring: Ring, a: number, edges: ParkingEdge[]) {
 }
 
 // Every possible parking spot: bays in OSM lots and lanes, then kerbside spots.
-function slots(data: ParkingData, edges: ParkingEdge[]): Spot[] {
-  const out: Spot[] = [];
+function slots(data, edges) {
+  const out = [];
   // Tiles built before the lots were kept separately only have the merged areas.
-  const areas: ParkingLot[] = data.lots || (data.areas.parking || []).map((rings) => ({ o: null, rings }));
+  const areas = data.lots || (data.areas.parking || []).map((rings) => ({ o: null, rings }));
   for (const { o, rings } of areas) {
     const ring = rings[0];
     let a = 0, best = 0;
@@ -178,7 +154,7 @@ function slots(data: ParkingData, edges: ParkingEdge[]): Spot[] {
       slant = lane.right ? -ANGLE : ANGLE;
     }
     const { ux, uy, vx, vy, ox, oy, u0, u1 } = f;
-    const uv: Ring = ring.map(([x, y]) => [(x - ox) * ux + (y - oy) * uy, (x - ox) * vx + (y - oy) * vy]);
+    const uv = ring.map(([x, y]) => [(x - ox) * ux + (y - oy) * uy, (x - ox) * vx + (y - oy) * vy]);
     const lay = {
       parallel: { depth: 2, gap: 0.6, step: 6, end: 2.8, turn: 0 },
       diagonal: { depth: 4.8, gap: 0.7, step: ANGLED_STEP, end: 1.8, turn: slant },
@@ -232,21 +208,21 @@ function slots(data: ParkingData, edges: ParkingEdge[]): Spot[] {
 
 // `shares`: code → share of each paid-parking section inside this piece of map (a
 // tile); without it the whole section counts. `inside(x, y)` limits spots to the tile.
-export function parkCars({ data, edges, zones, solid, r, night = false, shares = null, inside = () => true }: ParkCarsOptions) {
-  const railSegs: [Point, Point][] = [];
+export function parkCars({ data, edges, zones, solid, r, night = false, shares = null, inside = () => true }) {
+  const railSegs = [];
   for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
-  const nearRail = (x: number, y: number, d: number) => railSegs.some(([a, b]) => segDist(x, y, a, b) < d);
-  const cars: Car[] = [];
-  const cell = new Map<string, Car[]>();
-  const key = (x: number, y: number) => `${Math.floor(x / 5)},${Math.floor(y / 5)}`;
-  const crowded = (x: number, y: number, d: number) => {
+  const nearRail = (x, y, d) => railSegs.some(([a, b]) => segDist(x, y, a, b) < d);
+  const cars = [];
+  const cell = new Map();
+  const key = (x, y) => `${Math.floor(x / 5)},${Math.floor(y / 5)}`;
+  const crowded = (x, y, d) => {
     const cx = Math.floor(x / 5), cy = Math.floor(y / 5);
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
       for (const c of cell.get(`${cx + i},${cy + j}`) || []) if (Math.hypot(c.x - x, c.y - y) < d) return true;
     }
     return false;
   };
-  const place = (s: Spot) => {
+  const place = (s) => {
     // Most people drive into angled bays forwards; elsewhere it's either way round.
     const car = new Car(randomType(r), r, s.x, s.y, s.h + (r() < (s.angled ? 0.08 : 0.5) ? Math.PI : 0));
     if (s.bay && car.type === 'van') return false;
@@ -257,21 +233,19 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
     car.mode = 'loose';
     cars.push(car);
     const k = key(s.x, s.y);
-    const bucket = cell.get(k) || [];
-    bucket.push(car);
-    cell.set(k, bucket);
+    if (!cell.has(k)) cell.set(k, []);
+    cell.get(k).push(car);
     return true;
   };
-  const shuffle = <T>(a: T[]): T[] => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
-  const bySection = new Map<Section, Spot[]>(), free: Spot[] = [];
+  const bySection = new Map(), free = [];
   for (const s of slots(data, edges)) {
     if (!inside(s.x, s.y)) continue;
     const z = zones.at(s.x, s.y);
     if (!z) { free.push(s); continue; }
-    const sectionSpots = bySection.get(z) || [];
-    sectionSpots.push(s);
-    bySection.set(z, sectionSpots);
+    if (!bySection.has(z)) bySection.set(z, []);
+    bySection.get(z).push(s);
   }
   let wanted = 0;
   for (const [z, list] of bySection) {

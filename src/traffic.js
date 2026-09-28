@@ -1,22 +1,13 @@
-import * as THREE from 'three';
-import { Car, randomType, TYPES } from './car.ts';
-import { randomLook } from './figures.ts';
-import { Route, clamp, type DriveEdge, type DriveGraph, type Random } from './network.ts';
-
-interface TrafficAgent { car: Car; route: Route; speed: number; stuck: number; ignore: number; cruise: number; gone?: boolean; }
-interface NearbyCar { x: number; y: number; z?: number; r: number; vx: number; vy: number; kind?: string; car?: Car; }
+import { Car, randomType } from './car.js';
+import { randomLook } from './figures.js';
+import { Route, clamp } from './network.js';
 
 // AI traffic: cars glued to their lane along a Route. They brake for anything in
 // front of them (cars, trams, people, the player) and give way to the right.
 // A car that is hit hard enough leaves traffic and becomes a free body.
 
 export class Traffic {
-  g: DriveGraph;
-  scene: THREE.Scene;
-  r: Random;
-  count: number;
-  agents: TrafficAgent[];
-  constructor(graph: DriveGraph, scene: THREE.Scene, rng: Random, count: number) {
+  constructor(graph, scene, rng, count) {
     this.g = graph;
     this.scene = scene;
     this.r = rng;
@@ -25,7 +16,7 @@ export class Traffic {
   }
 
   // A new car on a random street among `edges` (default: anywhere), where `avoid` allows.
-  spawn(avoid: (x: number, y: number) => boolean, edges: DriveEdge[] = this.g.edges, type: keyof typeof TYPES | null = null): TrafficAgent | null {
+  spawn(avoid, edges = this.g.edges, type = null) {
     const r = this.r;
     if (!edges.length) return null;
     const total = edges.reduce((a, e) => a + e.path.length, 0);
@@ -48,12 +39,12 @@ export class Traffic {
     return null;
   }
 
-  release(agent: TrafficAgent): void {
+  release(agent) {
     this.agents.splice(this.agents.indexOf(agent), 1);
   }
 
   // near(x, y, r): the obstacles ({ x, y, z, r, vx, vy, kind }) around a point.
-  update(dt: number, near: (x: number, y: number, r: number) => Iterable<NearbyCar>): void {
+  update(dt, near) {
     for (const a of this.agents) {
       const c = a.car, L = c.spec.L, W = c.spec.W;
       const look = a.route.lookahead(6 + a.speed * 1.2);

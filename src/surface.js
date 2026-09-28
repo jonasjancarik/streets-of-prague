@@ -1,15 +1,11 @@
 import * as THREE from 'three';
-import { PATTERN, patterned } from './shading.ts';
-import type { Relief, SurfaceLayer, TextureMask } from './map/types.ts';
+import { PATTERN, patterned } from './shading.js';
 
-// A tile's ground as meshes, from the layers ground.ts worked out (in a tile worker):
+// A tile's ground as meshes, from the layers ground.js worked out (in a tile worker):
 // procedural shaders for the surfaces, soft shading at shores and round buildings,
 // and the bridge decks above the ground (`mask`: { texture, box }, where they are).
 export class Surfaces {
-  readonly group: THREE.Group;
-  readonly mask: THREE.Texture | null;
-
-  constructor(layers: SurfaceLayer[], { time = { value: 0 }, relief = null, mask = null }: { time?: { value: number }; relief?: Relief | null; mask?: TextureMask | null } = {}) {
+  constructor(layers, { time = { value: 0 }, relief = null, mask = null } = {}) {
     this.group = new THREE.Group();
     this.mask = mask?.texture || null;
     for (const l of layers) {
@@ -27,27 +23,20 @@ export class Surfaces {
     }
   }
 
-  dispose(): void {
-    this.group.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) {
-        const mesh = o as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
-        mesh.geometry.dispose();
-        mesh.material.dispose();
-      }
-    });
+  dispose() {
+    this.group.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
     this.mask?.dispose();
   }
 }
 
-function surfaceMaterial(l: SurfaceLayer, time: { value: number }, relief: Relief | null, mask: TextureMask | null): THREE.Material {
+function surfaceMaterial(l, time, relief, mask) {
   // A bridge deck's slab is solid: drawn with depth, so what's under it is hidden
   // (except round the player, see CUTAWAY), and it casts a shadow.
-  const pattern = l.pattern ?? 'flat';
-  if (l.slab) return patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide }), PATTERN[pattern], time, null, { mask: null });
+  if (l.slab) return patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide }), PATTERN[l.pattern], time, null, { mask: null });
   // What's on a deck is drawn over its slab, only where there is a deck, and hidden
   // behind anything in front of it (a higher deck, a parapet).
   if (l.deck) {
-    const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false }), PATTERN[pattern], time, null, { mask: mask!.texture, box: mask!.box });
+    const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false }), PATTERN[l.pattern], time, null, { mask: mask.texture, box: mask.box });
     Object.assign(mat, { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
     return mat;
   }
@@ -60,29 +49,29 @@ function surfaceMaterial(l: SurfaceLayer, time: { value: number }, relief: Relie
       fragmentShader: 'uniform float opacity; varying float vA; void main() { gl_FragColor = vec4(0.08, 0.07, 0.06, vA * vA * opacity); }',
     });
   }
-  const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[pattern], time, relief);
-  if (l.blend !== null) { mat.blending = THREE.CustomBlending; mat.opacity = l.blend!; }
+  const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[l.pattern], time, relief);
+  if (l.blend !== null) { mat.blending = THREE.CustomBlending; mat.opacity = l.blend; }
   return mat;
 }
 
 // A mesh of every kind of ground, with and without hill shading: added to the scene
 // while the game loads, to have all their shaders compiled up front (compiling one the
 // first time a tile has, say, water would hold up that frame).
-export function groundSamples(time: { value: number }): { group: THREE.Group; dispose: () => void } {
+export function groundSamples(time) {
   const plane = () => {
     const position = new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, -1]);
     return { position, normal: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), alpha: new Float32Array(3), index: new Uint32Array([0, 1, 2]) };
   };
   const texture = new THREE.DataTexture(new Uint8Array([128]), 1, 1, THREE.RedFormat, THREE.UnsignedByteType);
-  const relief: Relief = { texture, box: [0, 0, 1, 1] };
-  const layers: SurfaceLayer[] = Object.keys(PATTERN).map((pattern, order) => ({ order, geometry: plane(), color: '#ffffff', pattern, blend: null }));
+  const relief = { texture, box: [0, 0, 1, 1] };
+  const layers = Object.keys(PATTERN).map((pattern, order) => ({ order, geometry: plane(), color: '#ffffff', pattern, blend: null }));
   layers.push({ order: layers.length, geometry: plane(), shade: 0.5 });
   // And the bridge decks' kinds.
-  const decks: SurfaceLayer[] = [
+  const decks = [
     ...Object.keys(PATTERN).map((pattern, order) => ({ order, geometry: plane(), color: '#ffffff', pattern, blend: null, deck: true })),
     { order: 0, geometry: plane(), color: '#ffffff', pattern: 'concrete', blend: null, slab: true },
   ];
-  const mask: TextureMask = { texture: new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat, THREE.UnsignedByteType), box: [0, 1, 1, 0] };
+  const mask = { texture: new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat, THREE.UnsignedByteType), box: [0, 1, 1, 0] };
   mask.texture.needsUpdate = true;
   const flat = new Surfaces(layers, {}), shaded = new Surfaces(layers.map((l) => ({ ...l, geometry: plane() })), { relief });
   const decked = new Surfaces(decks, { mask });

@@ -4,17 +4,15 @@
 
 // Heights in metres above `ref` (the game's y = 0). A tile's bridge decks come on the
 // same lattice, with 0 where there is no deck: NaN here.
-import type { HeightSampler, Point } from './map/types.ts';
-
-export function decodeHeights(buffer: ArrayBuffer, n: number, ref: number): Float32Array {
+export function decodeHeights(buffer, n, ref) {
   const h = new Uint16Array(buffer), hm = new Float32Array(n * n);
   for (let i = 0; i < hm.length; i++) hm[i] = h[i] ? h[i] / 10 + 100 - ref : NaN;
   return hm;
 }
 
 // Height at a point, bilinear and clamped to the tile (NaN next to a missing height).
-export function heightSampler(hm: Float32Array, [bx, by]: Point, n: number, step: number): HeightSampler {
-  return (x: number, y: number): number => {
+export function heightSampler(hm, [bx, by], n, step) {
+  return (x, y) => {
     const u = Math.min(n - 1.001, Math.max(0, (x - bx) / step)), v = Math.min(n - 1.001, Math.max(0, (y - by) / step));
     const i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j;
     const a = hm[j * n + i], b = hm[j * n + i + 1], c = hm[(j + 1) * n + i], d = hm[(j + 1) * n + i + 1];
@@ -25,7 +23,7 @@ export function heightSampler(hm: Float32Array, [bx, by]: Point, n: number, step
 // A tile's data file; `gz`: gzipped by the pipeline (index.json has "gzip"). A server
 // may already have undone the gzip on the way, so it's only unpacked if it still
 // starts with gzip's header (magic number, deflate).
-export async function fetchBinary(url: string, gz = false): Promise<ArrayBuffer | null> {
+export async function fetchBinary(url, gz = false) {
   const res = await fetch(url);
   if (!res.ok) return null;
   const buf = await res.arrayBuffer();

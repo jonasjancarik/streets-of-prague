@@ -1,42 +1,21 @@
 import proj4 from 'proj4';
-import type { Map as LeafletMap, CircleMarker } from 'leaflet';
 
 // Developer panel (` key or ?dev): jump to a street or an address, or pick a spot on
 // a map; move the clock an hour either way. Street names come from the area's own index (offline); addresses are looked
 // up on OpenStreetMap's Nominatim only when you ask for it.
 
-const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-type Point = [number, number];
-type SearchHit = { label: string; x: number; y: number };
-type NameHit = { name: string; key: string; x: number; y: number };
-type NominatimResult = { lon: string; lat: string; display_name: string };
-
-interface DevOptions {
-  area: string;
-  index: { bbox_wgs84: [number, number, number, number] };
-  teleport: (x: number, y: number) => Promise<unknown>;
-  position: () => Point;
-  helicopter: () => boolean;
-  shiftTime: (hours: number) => void;
-}
-
-function requiredElement<T extends HTMLElement = HTMLElement>(id: string): T {
-  const element = document.getElementById(id);
-  if (!element) throw new Error(`Missing developer control: ${id}`);
-  return element as T;
-}
-
-export function setupDev({ area, index, teleport, position, helicopter, shiftTime }: DevOptions) {
+export function setupDev({ area, index, teleport, position, helicopter, shiftTime }) {
   const [w, s, e, n] = index.bbox_wgs84;
   const local = `+proj=tmerc +lat_0=${(s + n) / 2} +lon_0=${(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
-  const toLocal = (lon: number, lat: number): Point => proj4('EPSG:4326', local, [lon, lat]) as Point;
-  const toLonLat = (x: number, y: number): Point => proj4(local, 'EPSG:4326', [x, y]) as Point;
-  let names: NameHit[] | null = null;
+  const toLocal = (lon, lat) => proj4('EPSG:4326', local, [lon, lat]);
+  const toLonLat = (x, y) => proj4(local, 'EPSG:4326', [x, y]);
+  let names = null;
   const loadNames = async () => {
     if (!names) {
       const r = await fetch(`data/${area}_now/names.json`);
-      const obj = (r.ok ? await r.json() : {}) as Record<string, Point>;
+      const obj = r.ok ? await r.json() : {};
       names = Object.entries(obj).map(([name, [x, y]]) => ({ name, key: fold(name), x, y }));
     }
     return names;
@@ -63,16 +42,15 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
     <div id="dev-pos"></div>`;
   panel.hidden = true;
   document.body.appendChild(panel);
-  const $ = requiredElement;
+  const $ = (id) => document.getElementById(id);
   const results = $('dev-results');
-  const query = $<HTMLInputElement>('dev-q');
 
-  const go = async (x: number, y: number, label: string) => {
+  const go = async (x, y, label) => {
     results.innerHTML = `<div class="dev-note">Going to ${label}…</div>`;
     await teleport(x, y);
     results.innerHTML = '';
   };
-  const show = (items: SearchHit[], note = '') => {
+  const show = (items, note = '') => {
     results.innerHTML = note ? `<div class="dev-note">${note}</div>` : '';
     for (const it of items) {
       const b = document.createElement('button');
@@ -84,23 +62,23 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
   };
 
   // Streets as you type; the whole address on Enter.
-  query.addEventListener('input', async () => {
-    const q = fold(query.value.trim());
+  $('dev-q').addEventListener('input', async (ev) => {
+    const q = fold(ev.target.value.trim());
     if (q.length < 2) { results.innerHTML = ''; return; }
     const list = await loadNames();
     const hits = list.filter((s) => s.key.includes(q)).sort((a, b) => (a.key.startsWith(q) ? 0 : 1) - (b.key.startsWith(q) ? 0 : 1) || a.name.length - b.name.length).slice(0, 8);
     show(hits.map((h) => ({ label: h.name, x: h.x, y: h.y })), hits.length ? '' : 'No street by that name here. Press Enter to look the address up online.');
   });
-  query.addEventListener('keydown', async (ev) => {
+  $('dev-q').addEventListener('keydown', async (ev) => {
     ev.stopPropagation(); // typing mustn't drive the car
     if (ev.code === 'Backquote') { ev.preventDefault(); toggle(false); return; }
     if (ev.key !== 'Enter') return;
-    const q = query.value.trim();
+    const q = ev.target.value.trim();
     if (!q) return;
     results.innerHTML = '<div class="dev-note">Looking the address up on OpenStreetMap…</div>';
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&bounded=1&viewbox=${w},${n},${e},${s}&q=${encodeURIComponent(q)}`;
-      const found = await (await fetch(url, { headers: { 'Accept-Language': 'cs' } })).json() as NominatimResult[];
+      const found = await (await fetch(url, { headers: { 'Accept-Language': 'cs' } })).json();
       const items = found.map((f) => {
         const [x, y] = toLocal(+f.lon, +f.lat);
         return { label: f.display_name.split(',').slice(0, 3).join(','), x, y };
@@ -131,7 +109,7 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
   };
 
   // The map: OpenStreetMap tiles, your position, click anywhere to go there.
-  let map: LeafletMap | null = null, marker: CircleMarker | null = null;
+  let map = null, marker = null;
   const overlay = document.createElement('div');
   overlay.id = 'dev-mapbox';
   overlay.hidden = true;
@@ -156,17 +134,17 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
       });
     } else {
       map.setView([lat, lon], map.getZoom());
-      marker?.setLatLng([lat, lon]);
+      marker.setLatLng([lat, lon]);
     }
-    setTimeout(() => map?.invalidateSize(), 0);
+    setTimeout(() => map.invalidateSize(), 0);
   };
 
   const toggle = (on = panel.hidden) => {
     panel.hidden = !on;
-    if (on) query.focus();
+    if (on) $('dev-q').focus();
     else overlay.hidden = true;
   };
-  window.addEventListener('keydown', (ev) => {
+  addEventListener('keydown', (ev) => {
     if (ev.code === 'Backquote') { toggle(); ev.preventDefault(); }
     if (ev.code === 'Escape' && !overlay.hidden) overlay.hidden = true;
   });
