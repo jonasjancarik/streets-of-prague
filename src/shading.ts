@@ -176,9 +176,14 @@ export function patterned(
   time: { value: number },
   relief: { texture: THREE.Texture; box: number[] } | null = null,
   deck: { mask: THREE.Texture | null; box?: number[] } | null = null,
+  photo: { texture: THREE.Texture; box: number[] } | null = null,
 ) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
+    if (photo) {
+      sh.uniforms.uPhoto = { value: photo.texture };
+      sh.uniforms.uPhotoBox = { value: photo.box };
+    }
     sh.uniforms.uRelief = { value: relief?.texture || null };
     sh.uniforms.uReliefBox = { value: relief?.box || [0, 0, 1, 1] };
     sh.uniforms.uReliefOn = { value: relief ? 1 : 0 };
@@ -191,13 +196,13 @@ export function patterned(
       .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\n${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   vec2 wp = vec2(vWorld.x, -vWorld.z);
 ${deck ? `  if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
-${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = pattern(${id}, diffuseColor.rgb, wp) * (.93 + .14 * fbm(wp * .004));
+${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = ${photo ? 'texture2D(uPhoto, (wp - uPhotoBox.xy) / (uPhotoBox.zw - uPhotoBox.xy)).rgb' : `pattern(${id}, diffuseColor.rgb, wp)`} * (.93 + .14 * fbm(wp * .004));
   if (uReliefOn > .5) diffuseColor.rgb *= texture2D(uRelief, (wp - uReliefBox.xy) / (uReliefBox.zw - uReliefBox.xy)).r * 2.;`);
   };
-  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}`;
+  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}${photo ? '-photo' : ''}`;
   return material;
 }

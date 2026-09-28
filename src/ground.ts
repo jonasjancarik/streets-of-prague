@@ -37,6 +37,17 @@ export const COLORS = {
 };
 const ZONE = { RES: '#3d7be0', MIX: '#9b59d0', VIS: '#e8962c' };
 
+// Prototype (?cover=<method>, ground_cover.py): what the aerial photographs say the
+// unmapped ground is made of, drawn just above the plain base and under everything
+// mapped (tree canopy joins the wood, see tiles.ts). Gravel borrows the dirt pattern
+// in grey until it has one of its own.
+const COVER: [string, string, string][] = [
+  ['cover_grass', '#8fa860', 'grass'],
+  ['cover_dirt', '#b39d78', 'dirt'], ['cover_gravel', '#a39d92', 'dirt'],
+  ['cover_concrete', '#aeaaa0', 'concrete'], ['cover_paving', '#b7b0a3', 'slabs'],
+  ['cover_asphalt', '#6e7174', 'asphalt'],
+];
+
 function polygons(polys: Polygons): GroundGeometry {
   const pos: number[] = [], idx: number[] = [];
   for (const rings of polys) {
@@ -370,6 +381,8 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
       return out;
     };
     add(polygons([[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]]), COLORS.pavement, 'mosaic');
+    out[out.length - 1].base = true;
+    for (const [key, color, pattern] of COVER) add(polygons(A[key] || []), color, pattern);
     add(polygons(A.garden || []), COLORS.garden, 'grass');
     add(polygons(A.park || []), COLORS.park, 'grass');
     add(polygons(A.orchard || []), COLORS.orchard, 'grass');
