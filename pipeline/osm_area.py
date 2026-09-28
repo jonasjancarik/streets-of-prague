@@ -399,7 +399,10 @@ def _nearest(lines, surface):
     if marks.all() or len(pts) < 3:
         return surface if marks.all() else Polygon()
     cells = shapely.get_parts(shapely.voronoi_polygons(shapely.multipoints(pts), extend_to=surface.envelope, ordered=True))
-    return shapely.make_valid(shapely.coverage_union_all(cells[marks]))
+    # Only the areas: making the union valid can leave lines where cells met in a sliver,
+    # and an overlay of polygons with lines fails ("mixed-dimension").
+    parts = shapely.get_parts(shapely.make_valid(shapely.coverage_union_all(cells[marks])))
+    return shapely.union_all(parts[np.isin(shapely.get_type_id(parts), (3, 6))]) if len(parts) else Polygon()  # Polygon, MultiPolygon
 
 
 def _height(row, col, osm_id, area):
