@@ -32,7 +32,7 @@ type GroundGeometry = GroundLayer['geometry'];
 
 export const COLORS = {
   pavement: '#c6c0b4', square: '#cbc4b6', path: '#d0cabe', dirt: '#bfa87e',
-  park: '#86a85a', garden: '#8dab5e', wood: '#587a40', orchard: '#95ad64', pitch: '#6c9c55',
+  park: '#7d9a55', garden: '#83a058', wood: '#52703c', orchard: '#8aa25e', pitch: '#6c9c55',
   field: '#b9b27a', yard: '#a9a69e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', asphalt: '#5c5f63', sett: '#8a847a', parking: '#666a6e',
   bridge: '#62656a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
@@ -538,8 +538,11 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(strips(solid, 0.13), COLORS.paint);
     add(strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5), COLORS.paint);
 
-    // Soft contact shadow round every building.
-    shade(skirts(buildings.map((b) => b.rings), 1.8, true), 0.5);
+    // Soft contact shadow round every building: a tight dark one where the wall meets
+    // the ground, and a wide faint one, which adds up in courtyards and narrow lanes.
+    const rings = buildings.map((b) => b.rings);
+    shade(skirts(rings, 7, true), 0.38);
+    shade(skirts(rings, 1.8, true), 0.5);
   return out;
 }
 

@@ -19,11 +19,15 @@ npm run build        # typecheck, then make a production build
 The map data is built locally (see [Building the map](#building-the-map)); nothing
 generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
 the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague
-now; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
+now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
 (with night-time parking). `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
-The game draws at the screen's pixel ratio (up to 2) and steps it down while frames take
-too long; `?dpr=1` fixes it.
+Graphics (<kbd>G</kbd> cycles it, remembered in the browser): High draws at the screen's
+pixel ratio up to 2, Medium up to 1.5, Low at 1, all with the tone curve, dirt and grime
+and the trees' small leaves; Lowest at 1 without them. Auto, the default, moves between
+them by how steady the frames are (`src/graphics.ts`).
+`?graphics=auto|high|medium|low|lowest` overrides it for one visit and `?dpr=1` fixes
+the pixel ratio.
 
 ## Playing
 
@@ -261,7 +265,8 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
 - Something to do: missions (deliveries, taxi, courier).
 - Visible damage on cars.
 - Sound for the traffic, crashes, people and the helicopter.
-- Day and night (night-time parking data is already there, see `?night`).
+- Night proper: street lights, headlights, lit windows (the light already follows the clock, see `?time`).
+- Weather: overcast and rain, as other sets of light in `src/sky.ts`.
 
 ## Building the map
 

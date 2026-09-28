@@ -46,8 +46,9 @@ checking on a real phone before going further.
   expensive patterns. Drawing the opaque layers top-down with a stencil would shade
   each pixel once, but the see-through layers (soft shading at shores and round
   buildings, bridge shadows) have to stay in order on top, which makes it fiddly.
-  Only worth it if a phone turns out to be held back by the GPU; the pixel ratio
-  already steps down when frames are slow (`?dpr=1` to compare).
+  Only worth it if a phone turns out to be held back by the GPU; the Auto
+  graphics setting already steps down when frames are slow (`?graphics=high&dpr=2`
+  to compare).
 - **The street graphs only grow.** The drive and walk graphs, street names and the
   crowd's index keep the edges of every tile ever loaded, so memory grows over a
   long session across the city. The police's route search runs over the graph,

@@ -11,6 +11,8 @@ float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f);
   return mix(mix(hash12(i), hash12(i + vec2(1, 0)), u.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), u.x), u.y);
 }
+// Two octaves: for broad dirt, where the finer ones would only cost time.
+float fbm2(vec2 p) { return (vnoise(p) * 2. + vnoise(p * 2.03 + 11.7)) / 3.; }
 float fbm(vec2 p) { float a = .5, s = 0.; for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 11.7; a *= .5; } return s; }
 // 1 while a pattern with cells of \`cell\` metres is well above pixel size, fading to 0.
 float detail(vec2 p, float cell) { float w = length(fwidth(p)); return 1. - smoothstep(cell * .2, cell * .7, w); }
@@ -38,10 +40,14 @@ float luma(vec3 c) { return dot(c, vec3(.299, .587, .114)); }
 // Patterns by id. Each takes the base colour and the position in metres (x east, y north).
 export const PATTERNS_GLSL = /* glsl */ `
 uniform float uTime;
+uniform float uDirt;
 vec3 pAsphalt(vec3 c, vec2 p) {
   c *= .9 + .18 * fbm(p * .3);
   c *= mix(1., .9, smoothstep(.62, .66, fbm(p * .07 + 3.)));          // repair patches
   c += (vnoise(p * 16.) - .5) * .07 * detail(p, .06);                  // aggregate
+  c *= 1. - .14 * smoothstep(.6, .85, vnoise(p * vec2(.9, .25) + 23.)); // oil and tyre marks
+  float crack = 1. - smoothstep(.0, .025, abs(vnoise(p * .7) - .5));
+  c *= 1. - .3 * crack * detail(p, .15) * smoothstep(.55, .7, vnoise(p * .06 + 2.));
   return c;
 }
 vec3 pSetts(vec3 c, vec2 p, vec2 size) {
@@ -65,6 +71,7 @@ vec3 pSlabs(vec3 c, vec2 p) {
 vec3 pGrass(vec3 c, vec2 p) {
   c *= .82 + .32 * fbm(p * .18);
   c = mix(c, c * vec3(1.12, 1.05, .78), smoothstep(.55, .75, fbm(p * .04 + 7.)));  // dry patches
+  c = mix(c, c * vec3(1.05, .9, .7), smoothstep(.6, .8, fbm2(p * .15 + 3.)) * .6);  // worn to earth
   c += (vnoise(p * 5.) - .5) * .07 * detail(p, .2);
   return c;
 }
@@ -100,16 +107,22 @@ vec3 pWater(vec3 c, vec2 p) {
   float glint = smoothstep(.72, .8, fbm(p * vec2(.5, .09) + vec2(uTime * .02, uTime * .12)));
   return c + glint * .1 * detail(p, .5);
 }
+// Dirt on paved ground: broad grimy patches and smaller stains.
+vec3 grit(vec3 c, vec2 p) {
+  if (uDirt < .5) return c;
+  c *= 1. - .22 * smoothstep(.3, .85, fbm2(p * .13 + 5.));
+  return c * (1. - .12 * smoothstep(.55, .85, fbm2(p * .6 + 17.)) * detail(p, .6));
+}
 vec3 pattern(int id, vec3 c, vec2 p) {
-  if (id == 1) return pAsphalt(c, p);
-  if (id == 2) return pSetts(c, p, vec2(.17, .14));
-  if (id == 3) return pMosaic(c, p);
-  if (id == 4) return pSlabs(c, p);
+  if (id == 1) return grit(pAsphalt(c, p), p);
+  if (id == 2) return grit(pSetts(c, p, vec2(.17, .14)), p);
+  if (id == 3) return grit(pMosaic(c, p), p);
+  if (id == 4) return grit(pSlabs(c, p), p);
   if (id == 5) return pGrass(c, p);
   if (id == 6) return pWood(c, p);
   if (id == 7) return pPitch(c, p);
   if (id == 8) return pDirt(c, p);
-  if (id == 9) return pConcrete(c, p);
+  if (id == 9) return grit(pConcrete(c, p), p);
   if (id == 10) return pWater(c, p);
   if (id == 11) return pGravel(c, p);
   if (id == 12) return pField(c, p);
@@ -143,6 +156,15 @@ vec3 flatRoof(vec3 c, vec2 wp) {
   c *= .86 + .22 * fbm(wp * .5);
   return c + (vnoise(wp * 18.) - .5) * .08 * detail(wp, .05);
 }
+// Weathering on every wall: soot in broad patches, rain streaks running down, and the
+// splashed dirt along the bottom. f: along the wall, height, length, style.seed.
+vec3 grime(vec3 c, vec4 f) {
+  float seed = fract(f.w) * 97.;
+  c *= .76 + .34 * fbm2(vec2(f.x * .1 + seed, f.y * .07));
+  float streak = fbm2(vec2(f.x * 1.8 + seed, f.y * .12));
+  c *= 1. - .28 * smoothstep(.5, .8, streak) * detail(f.xy, .4);
+  return c * mix(.66, 1., smoothstep(0., 1.4, f.y));
+}
 vec3 facade(vec3 c, vec2 f) {
   float along = f.x, h = f.y;
   float bay = fract(along / 1.9), storey = fract((h - .6) / 3.4);
@@ -160,6 +182,11 @@ vec3 facade(vec3 c, vec2 f) {
 // A round hole through the buildings above the player while they're in a passage
 // under a building, so the car stays in view: (x, y above which to cut, z, radius).
 // Shadows are drawn without it, so the passage stays in the building's shade.
+// Graphics settings (graphics.ts): dirt on the paving and grime on the walls (1 on,
+// 0 off), and the small leaves on the trees (vegetation.ts).
+export const DIRT = { value: 1 };
+export const LEAVES = { value: 1 };
+
 export const CUTAWAY = { value: new THREE.Vector4(0, 0, 0, 0) };
 
 // When you're in a tunnel, the ground round you is shown as bare earth, cut open
@@ -190,13 +217,14 @@ export function cutAway<M extends THREE.Material>(material: M, key: string): M {
 export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uCut = CUTAWAY;
+    sh.uniforms.uDirt = DIRT;
     sh.uniforms.uFacades = FACADE_ATLAS;
     sh.uniforms.uFacadeOn = FACADE_ON;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);
@@ -204,8 +232,11 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
   if (bn.y > .97) diffuseColor.rgb = flatRoof(diffuseColor.rgb, bwp);
   else if (bn.y > .15) diffuseColor.rgb = roofTiles(diffuseColor.rgb, bwp, bn);
-  else if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
-  else diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy);`);
+  else {
+    if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
+    else diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy);
+    if (uDirt > .5) diffuseColor.rgb = grime(diffuseColor.rgb, vFacade);
+  }`);
   };
   material.customProgramCacheKey = () => 'buildings-procedural';
   material.needsUpdate = true;
@@ -227,6 +258,7 @@ export function patterned(
 ) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
+    sh.uniforms.uDirt = DIRT;
     if (photo) {
       sh.uniforms.uPhoto = { value: photo.texture };
       sh.uniforms.uPhotoBox = { value: photo.box };
