@@ -79,6 +79,8 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Bike theft leaves no rider behind.** When you take a bike from someone riding
   it, the original rider doesn't appear running away (or at least isn't visible).
   They should be knocked off or step off and run away.
+- **Climb over cars by jumping.** Jumping into a car should let the player scramble
+  over it (bonnet or roof) to the other side instead of being blocked.
 - **Parking zone markings.** The blue line should run only along the street side of
   a bay, plus short lines perpendicular to the pavement where the zone starts and
   ends; there's no line along the pavement. Purple and orange zones are marked with
