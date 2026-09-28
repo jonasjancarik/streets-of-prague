@@ -46,11 +46,50 @@ const ANGLE = 0.9, ANGLED_STEP = 3.0;
 // usual depth of those), wider rows of perpendicular bays.
 const guess = (width) => (width < 4.5 ? 'parallel' : width < 5.6 ? 'diagonal' : 'perpendicular');
 
+// An area's width as a rectangle with the same area and perimeter would have it. A
+// strip along a street that bends is as narrow as it looks, where the box round it
+// isn't.
+function stripWidth(ring) {
+  let area = 0, perim = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    area += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    perim += Math.hypot(ring[i][0] - ring[j][0], ring[i][1] - ring[j][1]);
+  }
+  area = Math.abs(area) / 2;
+  return (perim - Math.sqrt(Math.max(0, perim * perim - 16 * area))) / 4;
+}
+
+// Which way the kerb runs at (x, y): the nearest side of the area within 30° of its
+// axis `a`, turned to point the same way as `a`. Along a bending strip the cars follow
+// the bend.
+function kerbAt(ring, x, y, a) {
+  let best = Infinity, h = a;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [ax, ay] = ring[j], [bx, by] = ring[i];
+    const ang = Math.atan2(by - ay, bx - ax);
+    if (Math.abs(Math.sin(ang - a)) > 0.5) continue;
+    const d = segDist(x, y, ring[j], ring[i]);
+    if (d < best) { best = d; h = Math.cos(ang - a) < 0 ? ang + Math.PI : ang; }
+  }
+  return h;
+}
+
 // Rows across the area (offsets from its long side) for cars `depth` deep.
 function rows(v0, v1, depth, gap) {
   const out = [];
   for (let v = v0 + depth / 2; v <= v1 - depth / 2 + 1e-6; v += depth + gap) out.push(v);
   return out.length ? out : [(v0 + v1) / 2];
+}
+
+// Where the line across the area at `u` goes in and out of it (`uv`: the ring in
+// frame coordinates), in order: pairs of v, one for each stretch inside.
+function crossings(uv, u) {
+  const vs = [];
+  for (let i = 0, j = uv.length - 1; i < uv.length; j = i++) {
+    const [ua, va] = uv[j], [ub, vb] = uv[i];
+    if (ua > u !== ub > u) vs.push(va + ((u - ua) * (vb - va)) / (ub - ua));
+  }
+  return vs.sort((p, q) => p - q);
 }
 
 // The ring in coordinates along `a` (u) and across it (v), from its first corner.
@@ -104,7 +143,7 @@ function slots(data, edges) {
       if (len > best) { best = len; a = Math.atan2(q[1] - p[1], q[0] - p[0]); }
     }
     let f = frame(ring, a);
-    const kind = o || guess(f.v1 - f.v0);
+    const kind = o || guess(Math.min(f.v1 - f.v0, stripWidth(ring)));
     // Angled bays slant forwards along the traffic beside them, so drivers pull in nose
     // first: turned right off a lane that has the area on its right, left otherwise.
     // Away from any street (inside a car park) the slant is arbitrary.
@@ -114,16 +153,22 @@ function slots(data, edges) {
       if (Math.cos(lane.ang - a) < 0) f = frame(ring, (a += Math.PI));
       slant = lane.right ? -ANGLE : ANGLE;
     }
-    const { ux, uy, vx, vy, ox, oy, u0, u1, v0, v1 } = f;
+    const { ux, uy, vx, vy, ox, oy, u0, u1 } = f;
+    const uv = ring.map(([x, y]) => [(x - ox) * ux + (y - oy) * uy, (x - ox) * vx + (y - oy) * vy]);
     const lay = {
-      parallel: { rows: rows(v0, v1, 2, 0.6), step: 6, end: 2.8, turn: 0 },
-      diagonal: { rows: rows(v0, v1, 4.8, 0.7), step: ANGLED_STEP, end: 1.8, turn: slant },
-      perpendicular: { rows: rows(v0, v1, 5, 0.6), step: 2.6, end: 1.3, turn: Math.PI / 2 },
+      parallel: { depth: 2, gap: 0.6, step: 6, end: 2.8, turn: 0 },
+      diagonal: { depth: 4.8, gap: 0.7, step: ANGLED_STEP, end: 1.8, turn: slant },
+      perpendicular: { depth: 5, gap: 0.6, step: 2.6, end: 1.3, turn: Math.PI / 2 },
     }[kind];
-    for (const v of lay.rows) {
-      for (let u = u0 + lay.end; u < u1 - lay.end + 0.5; u += lay.step) {
-        const x = ox + ux * u + vx * v, y = oy + uy * u + vy * v;
-        if (inPoly(x, y, rings)) out.push({ x, y, h: a + lay.turn, lot: true, bay: kind !== 'parallel', angled: kind === 'diagonal' });
+    for (let u = u0 + lay.end; u < u1 - lay.end + 0.5; u += lay.step) {
+      // The rows go across the area where it is at u, so they follow a strip that bends.
+      const vs = crossings(uv, u);
+      for (let i = 0; i + 1 < vs.length; i += 2) {
+        if (vs[i + 1] - vs[i] < 1.2) continue;
+        for (const v of rows(vs[i], vs[i + 1], lay.depth, lay.gap)) {
+          const x = ox + ux * u + vx * v, y = oy + uy * u + vy * v;
+          if (inPoly(x, y, rings)) out.push({ x, y, h: kerbAt(ring, x, y, a) + lay.turn, lot: true, bay: kind !== 'parallel', angled: kind === 'diagonal' });
+        }
       }
     }
   }
@@ -166,8 +211,7 @@ function slots(data, edges) {
 export function parkCars({ data, edges, zones, solid, r, night = false, shares = null, inside = () => true }) {
   const railSegs = [];
   for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
-  // Half a tram and half a car apart, and a little room between them.
-  const nearRail = (x, y) => railSegs.some(([a, b]) => segDist(x, y, a, b) < 2.6);
+  const nearRail = (x, y, d) => railSegs.some(([a, b]) => segDist(x, y, a, b) < d);
   const cars = [];
   const cell = new Map();
   const key = (x, y) => `${Math.floor(x / 5)},${Math.floor(y / 5)}`;
@@ -179,10 +223,12 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
     return false;
   };
   const place = (s) => {
-    if (!s.lot && nearRail(s.x, s.y)) return false;
     // Most people drive into angled bays forwards; elsewhere it's either way round.
     const car = new Car(randomType(r), r, s.x, s.y, s.h + (r() < (s.angled ? 0.08 : 0.5) ? Math.PI : 0));
     if (s.bay && car.type === 'van') return false;
+    // No part of the car where a passing tram would hit it: half a tram's width from
+    // the track and a little room. Whatever the map says about parking there.
+    if (nearRail(s.x, s.y, 4.5) && car.worldSamples().some(([x, y]) => nearRail(x, y, 1.65))) return false;
     if (car.worldSamples().some(([x, y]) => solid(x, y)) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8)) return false;
     car.mode = 'loose';
     cars.push(car);
