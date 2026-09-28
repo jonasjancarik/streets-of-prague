@@ -1,0 +1,426 @@
+import { clamp } from './network.ts';
+import { BOGIES, frontOf } from './trams.ts';
+import type { Car } from './car.ts';
+import type { TramVehicle } from './trams.ts';
+
+// Sound, all of it made here with the Web Audio API rather than played from recordings:
+// the engine of whatever you're driving (its note follows the revs through the gears),
+// its tyres (a hiss on asphalt, a rumble over setts, a squeal in a slide) and the trams
+// near you (the rumble, the motors' whine, the bogies clicking over rail joints, the
+// wheels squealing in tight curves and the bell when something's on the track).
+// Browsers only start sound after a key press or a tap; M turns it off and on.
+
+export type Surface = 'asphalt' | 'setts' | 'pavers' | 'pavement';
+
+interface EngineSpec { idle: number; redline: number; cylinders: number; gears: number[]; rough: number }
+const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.02 };
+const ENGINES: Record<string, EngineSpec | null> = {
+  van: { idle: 750, redline: 4200, cylinders: 4, gears: [0.2, 0.38, 0.58, 0.8, 1.02], rough: 0.05 },
+  moto: { idle: 1300, redline: 10500, cylinders: 2, gears: [0.14, 0.26, 0.4, 0.55, 0.75, 1.02], rough: 0.04 },
+  bike: null,
+};
+// How much each surface rumbles, and how far apart its bumps are (m).
+const SURFACES: Record<Surface, { rumble: number; spacing: number }> = {
+  asphalt: { rumble: 0, spacing: 1 },
+  setts: { rumble: 1, spacing: 0.14 },
+  pavers: { rumble: 0.45, spacing: 0.2 },
+  pavement: { rumble: 0.6, spacing: 0.5 },
+};
+const SETTS = new Set(['sett', 'cobblestone', 'unhewn_cobblestone']);
+export const surfaceOf = (tag: string | undefined | null): Surface => (SETTS.has(tag ?? '') ? 'setts' : tag === 'paving_stones' ? 'pavers' : 'asphalt');
+
+const TRAM_VOICES = 4, TRAM_RANGE = 170; // the nearest trams you can hear, as far as this (m)
+const JOINT = 24; // m between the rail joints
+const SMOOTH = 0.06; // s: how quickly a sound follows what it's following
+
+export interface SoundState {
+  x: number; y: number; // where you are
+  car: Car | null; throttle: number; surface: Surface;
+  trams: TramVehicle[];
+  quiet: boolean; // in the metro
+}
+
+export class Sound {
+  ctx: AudioContext | null = null;
+  on: boolean;
+  master!: GainNode;
+  noise!: AudioBuffer;
+  clack!: AudioBuffer;
+  bell!: AudioBuffer;
+  engine: Engine | null = null;
+  tyres: Tyres | null = null;
+  voices: TramVoice[] = [];
+
+  constructor() {
+    let saved = '';
+    try { saved = localStorage.getItem('sound') ?? ''; } catch {}
+    this.on = saved !== 'off';
+    const start = () => {
+      this.start();
+      if (this.ctx?.state === 'running') for (const k of ['keydown', 'pointerdown'] as const) removeEventListener(k, start);
+    };
+    for (const k of ['keydown', 'pointerdown'] as const) addEventListener(k, start);
+    // The game stops in a hidden tab, so the sound does too.
+    document.addEventListener('visibilitychange', () => {
+      if (!this.ctx) return;
+      if (document.hidden) this.ctx.suspend();
+      else if (this.on) this.ctx.resume();
+    });
+  }
+
+  toggle() {
+    this.on = !this.on;
+    try { localStorage.setItem('sound', this.on ? '' : 'off'); } catch {}
+    if (!this.ctx) return;
+    this.master.gain.setTargetAtTime(this.on ? 0.8 : 0, this.ctx.currentTime, 0.05);
+    if (this.on) this.ctx.resume();
+  }
+
+  // Only once the player has pressed something (the browser's rule).
+  private start() {
+    if (this.ctx) { if (this.on && this.ctx.state !== 'running') this.ctx.resume(); return; }
+    const ctx = (this.ctx = new AudioContext({ latencyHint: 'interactive' }));
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -14;
+    comp.ratio.value = 4;
+    this.master = ctx.createGain();
+    this.master.gain.value = this.on ? 0.8 : 0;
+    this.master.connect(comp).connect(ctx.destination);
+    this.noise = noiseBuffer(ctx);
+    this.clack = clackBuffer(ctx);
+    this.bell = bellBuffer(ctx);
+    this.tyres = new Tyres(ctx, this.noise, this.master);
+    for (let i = 0; i < TRAM_VOICES; i++) this.voices.push(new TramVoice(this, this.master));
+  }
+
+  update(dt: number, s: SoundState) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.on) return;
+    const t = ctx.currentTime;
+    this.master.gain.setTargetAtTime(s.quiet ? 0 : 0.8, t, 0.2);
+
+    // Your engine: a new one each time you get in, faded out when you get out.
+    const car = s.car;
+    if (this.engine && this.engine.car !== car) { this.engine.stop(); this.engine = null; }
+    if (car && !this.engine) {
+      const spec = car.type in ENGINES ? ENGINES[car.type] : PETROL;
+      if (spec) this.engine = new Engine(ctx, this.noise, this.master, car, spec);
+    }
+    this.engine?.update(dt, s.throttle);
+    this.tyres!.update(car, s.surface);
+
+    // The nearest trams, each keeping its voice while it's among them.
+    const near: { v: TramVehicle; d: number; dx: number }[] = [];
+    for (const v of s.trams) {
+      let d = Infinity, dx = 0;
+      for (const p of v.parts) {
+        const e = Math.hypot(p.x - s.x, p.y - s.y);
+        if (e < d) { d = e; dx = p.x - s.x; }
+      }
+      if (d < TRAM_RANGE) near.push({ v, d, dx });
+    }
+    near.sort((a, b) => a.d - b.d);
+    near.length = Math.min(near.length, TRAM_VOICES);
+    for (const voice of this.voices) if (voice.v && !near.some((n) => n.v === voice.v)) voice.release();
+    for (const n of near) {
+      const voice = this.voices.find((x) => x.v === n.v) ?? this.voices.find((x) => !x.v);
+      voice?.update(dt, n.v, n.d, n.dx);
+    }
+  }
+
+  play(buffer: AudioBuffer, at: number, gain: number, out: AudioNode, rate = 1) {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = rate;
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    src.connect(g).connect(out);
+    src.start(Math.max(at, ctx.currentTime));
+  }
+}
+
+// Near to far: loud to quiet, and to the side it's on (the view looks down on the map,
+// so east is to the right).
+function place(gain: GainNode, pan: StereoPannerNode, d: number, dx: number, t: number) {
+  const g = (15 / (15 + d)) * clamp(1 - d / TRAM_RANGE, 0, 1);
+  gain.gain.setTargetAtTime(g, t, 0.1);
+  pan.pan.setTargetAtTime(clamp(dx / 45, -0.85, 0.85), t, 0.1);
+}
+
+// An engine's note: harmonics of the cylinders' firing rate, roughened with a little
+// wobble, through a filter that opens up with the throttle; plus the intake's roar.
+class Engine {
+  ctx: AudioContext;
+  car: Car;
+  spec: EngineSpec;
+  out: GainNode;
+  osc: OscillatorNode; sub: OscillatorNode; wobble: AudioBufferSourceNode; intake: AudioBufferSourceNode;
+  depth: GainNode; tone: BiquadFilterNode; roar: BiquadFilterNode; roarGain: GainNode;
+  gear = 0; shift = 0;
+
+  constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode, car: Car, spec: EngineSpec) {
+    this.ctx = ctx;
+    this.car = car;
+    this.spec = spec;
+    const t = ctx.currentTime;
+    const harmonics = new Float32Array([0, 1, 0.75, 0.45, 0.55, 0.25, 0.3, 0.15, 0.18, 0.08, 0.1, 0.05, 0.06]);
+    this.osc = ctx.createOscillator();
+    this.osc.setPeriodicWave(ctx.createPeriodicWave(new Float32Array(harmonics.length), harmonics));
+    this.sub = ctx.createOscillator();
+    this.sub.type = 'triangle';
+    // Slow random wobble of the pitch: no engine fires perfectly evenly.
+    this.wobble = loop(ctx, noise);
+    const slow = filter(ctx, 'lowpass', 25);
+    this.depth = ctx.createGain();
+    this.wobble.connect(slow).connect(this.depth);
+    this.depth.connect(this.osc.frequency);
+    this.depth.connect(this.sub.frequency);
+    const subGain = gain(ctx, 0.6);
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = softClip(2.2);
+    this.tone = filter(ctx, 'lowpass', 400, 0.9);
+    this.out = gain(ctx, 0);
+    this.osc.connect(shaper);
+    this.sub.connect(subGain).connect(shaper);
+    shaper.connect(this.tone).connect(this.out).connect(dest);
+    this.intake = loop(ctx, noise);
+    this.roar = filter(ctx, 'bandpass', 300, 1.2);
+    this.roarGain = gain(ctx, 0);
+    this.intake.connect(this.roar).connect(this.roarGain).connect(this.tone);
+    this.osc.start(t);
+    this.sub.start(t);
+    this.wobble.start(t);
+    this.intake.start(t);
+    this.out.gain.setTargetAtTime(0.3, t, 0.15);
+    this.update(0, 0);
+  }
+
+  // `throttle`: -1..1 as driven, braking or reversing when it's below 0.
+  update(dt: number, throttle: number) {
+    const { car, spec } = this, t = this.ctx.currentTime;
+    const v = Math.abs(car.forwardSpeed), vmax = car.spec.vmax;
+    const load = car.forwardSpeed < 0.5 && throttle < 0 ? -throttle : clamp(throttle, 0, 1);
+    // Up a gear near the top of this one, down again well below it.
+    const top = (g: number) => spec.gears[g] * vmax;
+    if (this.gear < spec.gears.length - 1 && v > top(this.gear) * 0.92) { this.gear++; this.shift = 0.18; }
+    else if (this.gear > 0 && v < top(this.gear - 1) * 0.55) this.gear--;
+    this.shift = Math.max(0, this.shift - dt);
+    let rpm = spec.idle + (spec.redline - spec.idle) * clamp(v / top(this.gear), 0, 1);
+    // Pulling away, the clutch lets the revs rise ahead of the speed.
+    if (this.gear === 0) rpm = Math.max(rpm, spec.idle + load * 2200);
+    const pull = this.shift > 0 ? 0.1 : load;
+    const hz = ((rpm / 60) * spec.cylinders) / 2;
+    this.osc.frequency.setTargetAtTime(hz, t, SMOOTH);
+    this.sub.frequency.setTargetAtTime(hz / 2, t, SMOOTH);
+    this.depth.gain.setTargetAtTime(hz * spec.rough, t, 0.2);
+    this.tone.frequency.setTargetAtTime(250 + hz * 3 + pull * 2200, t, SMOOTH);
+    this.roar.frequency.setTargetAtTime(hz * 4, t, SMOOTH);
+    this.roarGain.gain.setTargetAtTime(0.05 + pull * 0.35, t, SMOOTH);
+    this.out.gain.setTargetAtTime(0.2 + pull * 0.14 + (rpm / spec.redline) * 0.06, t, 0.1);
+  }
+
+  stop() {
+    const t = this.ctx.currentTime;
+    this.out.gain.setTargetAtTime(0, t, 0.08);
+    for (const n of [this.osc, this.sub, this.wobble, this.intake]) n.stop(t + 0.6);
+  }
+}
+
+// Tyres on the road: a hiss on asphalt, a rumble at the rate the wheels hit the stones
+// on setts, and a squeal when the car slides sideways.
+class Tyres {
+  ctx: AudioContext;
+  hiss: BiquadFilterNode; hissGain: GainNode;
+  bumps: OscillatorNode; rumble: BiquadFilterNode; rumbleGain: GainNode;
+  squeal: BiquadFilterNode; squealGain: GainNode;
+
+  constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode) {
+    this.ctx = ctx;
+    const t = ctx.currentTime;
+    this.hiss = filter(ctx, 'lowpass', 300);
+    this.hissGain = gain(ctx, 0);
+    const a = loop(ctx, noise);
+    a.connect(filter(ctx, 'highpass', 60)).connect(this.hiss).connect(this.hissGain).connect(dest);
+    // The stones: noise switched on and off at the rate the wheels meet them.
+    this.rumble = filter(ctx, 'lowpass', 200, 0.7);
+    const chop = gain(ctx, 0.5);
+    this.bumps = ctx.createOscillator();
+    this.bumps.type = 'square';
+    this.bumps.connect(gain(ctx, 0.5)).connect(chop.gain);
+    this.rumbleGain = gain(ctx, 0);
+    const b = loop(ctx, noise, 0.7);
+    b.connect(this.rumble).connect(chop).connect(this.rumbleGain).connect(dest);
+    this.squeal = filter(ctx, 'bandpass', 1900, 12);
+    this.squealGain = gain(ctx, 0);
+    const c = loop(ctx, noise, 1.3);
+    c.connect(this.squeal).connect(filter(ctx, 'bandpass', 1900, 6)).connect(this.squealGain).connect(dest);
+    for (const n of [a, b, c, this.bumps]) n.start(t);
+  }
+
+  update(car: Car | null, surface: Surface) {
+    const t = this.ctx.currentTime;
+    const v = car ? car.speed : 0;
+    const light = car?.two ? 0.35 : 1; // two narrow tyres
+    const s = SURFACES[surface];
+    const slip = car ? Math.abs(car.vx * Math.sin(car.h) - car.vy * Math.cos(car.h)) : 0;
+    this.hiss.frequency.setTargetAtTime(250 + v * 45, t, SMOOTH);
+    this.hissGain.gain.setTargetAtTime(light * clamp(v / 30, 0, 1) * 0.3 * (1 - 0.5 * s.rumble), t, SMOOTH);
+    this.bumps.frequency.setTargetAtTime(clamp(v / s.spacing, 1, 400), t, SMOOTH);
+    this.rumble.frequency.setTargetAtTime(140 + v * 12, t, SMOOTH);
+    this.rumbleGain.gain.setTargetAtTime(light * s.rumble * clamp(v / 12, 0, 1) * 0.55, t, SMOOTH);
+    this.squealGain.gain.setTargetAtTime(light * clamp((slip - 2.5) / 5, 0, 1) * (1 - 0.6 * s.rumble) * 0.4, t, 0.04);
+  }
+}
+
+// One tram near you. Its motors whine as it pulls away and brakes (higher the faster
+// it goes), it rumbles along, its bogies click over the rail joints one after another,
+// the wheels squeal in tight curves, and the driver rings the bell at whatever's on
+// the track ahead.
+class TramVoice {
+  sound: Sound;
+  ctx: AudioContext;
+  v: TramVehicle | null = null;
+  out: GainNode; pan: StereoPannerNode;
+  motor: OscillatorNode; motorTone: BiquadFilterNode; motorGain: GainNode;
+  roll: BiquadFilterNode; rollGain: GainNode;
+  squeal: BiquadFilterNode; squealGain: GainNode;
+  hum: GainNode;
+  lastSpeed = 0; joint = 0; bellT = 0;
+
+  constructor(sound: Sound, dest: AudioNode) {
+    this.sound = sound;
+    const ctx = (this.ctx = sound.ctx!), t = ctx.currentTime;
+    this.pan = ctx.createStereoPanner();
+    this.out = gain(ctx, 0);
+    this.out.connect(this.pan).connect(dest);
+    this.motor = ctx.createOscillator();
+    this.motor.type = 'sawtooth';
+    this.motorTone = filter(ctx, 'lowpass', 1500, 2);
+    this.motorGain = gain(ctx, 0);
+    this.motor.connect(this.motorTone).connect(this.motorGain).connect(this.out);
+    this.roll = filter(ctx, 'lowpass', 200);
+    this.rollGain = gain(ctx, 0);
+    const a = loop(ctx, sound.noise, 0.9);
+    a.connect(this.roll).connect(this.rollGain).connect(this.out);
+    this.squeal = filter(ctx, 'bandpass', 3400, 25);
+    this.squealGain = gain(ctx, 0);
+    const b = loop(ctx, sound.noise, 1.1);
+    b.connect(this.squeal).connect(filter(ctx, 'bandpass', 3400, 15)).connect(this.squealGain).connect(this.out);
+    // Standing still, a tram still hums (its converters and fans).
+    const hum = ctx.createOscillator();
+    hum.frequency.value = 100;
+    this.hum = gain(ctx, 0);
+    hum.connect(this.hum).connect(this.out);
+    for (const n of [this.motor, a, b, hum]) n.start(t);
+  }
+
+  release() {
+    this.v = null;
+    this.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2);
+  }
+
+  update(dt: number, v: TramVehicle, d: number, dx: number) {
+    const t = this.ctx.currentTime;
+    if (this.v !== v) {
+      this.v = v;
+      this.lastSpeed = v.speed;
+      this.joint = Math.floor(frontOf(v) / JOINT);
+      this.bellT = 0;
+    }
+    place(this.out, this.pan, d, dx, t);
+    const speed = v.speed;
+    const accel = dt > 0 ? (speed - this.lastSpeed) / dt : 0;
+    this.lastSpeed = speed;
+    const moving = clamp(speed / 1.5, 0, 1);
+    this.motor.frequency.setTargetAtTime(80 + speed * 50, t, SMOOTH);
+    this.motorTone.frequency.setTargetAtTime(600 + speed * 120, t, SMOOTH);
+    this.motorGain.gain.setTargetAtTime(moving * (0.02 + clamp(Math.abs(accel), 0, 1.5) * 0.07), t, 0.15);
+    this.roll.frequency.setTargetAtTime(120 + speed * 25, t, SMOOTH);
+    this.rollGain.gain.setTargetAtTime(clamp(speed / 12, 0, 1) * 0.45, t, SMOOTH);
+    this.hum.gain.setTargetAtTime(0.025, t, 0.3);
+    // The curve: how far the first and last sections point apart.
+    const [a, , c] = v.parts;
+    const bend = Math.abs(Math.atan2(Math.sin(a.ang - c.ang), Math.cos(a.ang - c.ang)));
+    this.squeal.frequency.setTargetAtTime(3200 + Math.sin(t * 1.7) * 250 + Math.sin(t * 4.3) * 120, t, 0.1);
+    this.squealGain.gain.setTargetAtTime(clamp((bend - 0.35) * 2, 0, 1) * clamp((speed - 1.5) / 3, 0, 1) * 0.35, t, 0.2);
+
+    // A joint under the front: each bogie crosses it in turn.
+    const joint = Math.floor(frontOf(v) / JOINT);
+    if (joint !== this.joint) {
+      this.joint = joint;
+      if (speed > 1) {
+        const loud = clamp(speed / 10, 0.3, 1) * 0.5;
+        for (const back of BOGIES) if (back / speed < 5) this.sound.play(this.sound.clack, t + back / speed, loud, this.out, 0.9 + Math.random() * 0.2);
+      }
+    }
+
+    // The bell: at you or a car on the track ahead, again every few seconds while it's there.
+    this.bellT -= dt;
+    // (What the driver sees can come and go from one step to the next.)
+    if ((v.spotted > 0 || v.forPlayer || (!!v.blocker && speed < 1)) && this.bellT < 0) {
+      this.sound.play(this.sound.bell, t, 0.45, this.out);
+      this.sound.play(this.sound.bell, t + 0.17, 0.4, this.out);
+      this.bellT = v.forPlayer ? 1.5 : 4;
+    }
+  }
+}
+
+// ---- Building blocks ---------------------------------------------------------
+
+const gain = (ctx: AudioContext, value: number) => {
+  const g = ctx.createGain();
+  g.gain.value = value;
+  return g;
+};
+const filter = (ctx: AudioContext, type: BiquadFilterType, frequency: number, Q = 0.7) => {
+  const f = ctx.createBiquadFilter();
+  f.type = type;
+  f.frequency.value = frequency;
+  f.Q.value = Q;
+  return f;
+};
+// The noise looped (at a slightly different rate for each use, so they don't line up).
+const loop = (ctx: AudioContext, buffer: AudioBuffer, rate = 1) => {
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.loop = true;
+  src.playbackRate.value = rate;
+  return src;
+};
+function softClip(drive: number) {
+  const n = 1024, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) curve[i] = Math.tanh(((i / (n - 1)) * 2 - 1) * drive) / Math.tanh(drive);
+  return curve;
+}
+function noiseBuffer(ctx: AudioContext) {
+  const b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return b;
+}
+// A wheel over a rail joint: a knock and a short metallic ring.
+function clackBuffer(ctx: AudioContext) {
+  const sr = ctx.sampleRate, b = ctx.createBuffer(1, Math.floor(sr * 0.15), sr), d = b.getChannelData(0);
+  let lp = 0;
+  for (let i = 0; i < d.length; i++) {
+    const t = i / sr;
+    lp += (Math.random() * 2 - 1 - lp) * 0.3;
+    d[i] = lp * 0.9 * Math.exp(-t * 70) + Math.sin(2 * Math.PI * 85 * t) * Math.exp(-t * 30) * 0.8 + Math.sin(2 * Math.PI * 1370 * t) * Math.exp(-t * 45) * 0.12;
+  }
+  return b;
+}
+// The tram's bell: one strike, its overtones out of tune with each other as a bell's are.
+function bellBuffer(ctx: AudioContext) {
+  const sr = ctx.sampleRate, b = ctx.createBuffer(1, Math.floor(sr * 1.4), sr), d = b.getChannelData(0);
+  const f0 = 1180, partials = [[1, 1, 0.9], [2.0, 0.3, 0.6], [2.76, 0.5, 0.45], [3.95, 0.22, 0.3], [5.4, 0.15, 0.2]];
+  let peak = 0;
+  for (let i = 0; i < d.length; i++) {
+    const t = i / sr;
+    let s = 0;
+    for (const [r, a, decay] of partials) s += a * Math.sin(2 * Math.PI * f0 * r * t) * Math.exp(-t / decay);
+    d[i] = s * Math.min(1, t / 0.002);
+    peak = Math.max(peak, Math.abs(d[i]));
+  }
+  for (let i = 0; i < d.length; i++) d[i] *= 0.9 / peak;
+  return b;
+}

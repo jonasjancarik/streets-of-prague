@@ -180,6 +180,14 @@ too long; `?dpr=1` fixes it.
   tram up for a minute gets pushed aside, slowly. Three-section 15T-like cars with the
   line number on the roof in the line's colour. They run all over the city at once, so
   they come into view on their own timetable; only the ones near the camera are drawn.
+- **Sound** is made in code with the Web Audio API, no recordings (`src/audio.ts`).
+  The engine's note follows the revs up through the gears (lower for a van, higher for
+  a motorbike, none on a bike), and the tyres hiss on asphalt, rumble over setts at
+  the rate the wheels meet the stones (from the street's OSM `surface`), and squeal in
+  a slide. The four nearest trams rumble along, whine as they pull away and brake,
+  click over the rail joints bogie by bogie, squeal in tight curves, and ring the bell
+  at you or a car on the track ahead. It starts with the first key press or tap (the
+  browser's rule); M turns it off and on, and it goes quiet in the metro.
 - **Police** patrol with the traffic. Chasing cars find their way with an A* search over
   the street graph (both ways along every street) and drive it with the same physics as
   your car; within 40 m and in sight they head straight for you. What the police see
@@ -240,7 +248,7 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
 
 - Something to do: missions (deliveries, taxi, courier).
 - Visible damage on cars.
-- Sound.
+- Sound for the traffic, crashes, people and the helicopter.
 - Day and night (night-time parking data is already there, see `?night`).
 
 ## Building the map
@@ -340,3 +348,15 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - Maps in the developer panel: [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).
+
+### Licences for added assets
+
+The game isn't commercial, but it may take donations (a "buy me a coffee" link), so
+treat every asset as if it were for commercial use:
+
+- Fine: CC0, CC BY (credit it here), our own recordings, and anything royalty-free
+  that allows commercial use (e.g. Sonniss GDC bundles, Pixabay).
+- Not fine: anything non-commercial (CC BY-NC, BBC Sound Effects, Meta AudioGen
+  output), and AI tools whose free tier bars commercial use.
+- Record each sound or texture that comes from outside, with where it came from, its
+  licence and its author, next to the files (e.g. `assets/audio/SOURCES.md`).

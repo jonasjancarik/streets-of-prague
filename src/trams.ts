@@ -24,6 +24,7 @@ interface TramCell { v: TramVehicle; x: number; y: number; c: number; s: number 
 export interface TramVehicle {
   id: number; line: TramLine; s: number; speed: number; dwell: number; halt: number;
   stuck: number; ghost: number; waitFor: TramVehicle | null; blocker: Car | null;
+  spotted: number; forPlayer: boolean;
   held: number; shove: Car | null; look: TramLook | null; pending: number;
   parts: TramPoint[]; cells?: TramCell[]; levels?: { x: number; y: number; gz?: number }[];
   rider?: boolean;
@@ -46,7 +47,13 @@ const SECTION = 10.2, GAP = 0.25, W = 2.5, H = 3.4;
 const STEP = SECTION + GAP;
 const HALF = STEP + SECTION / 2; // from the middle of a tram to its front
 const BOGIE = SECTION / 2 - 1.6; // from the middle of a section to each of its bogies
-const ACCEL = 1.1, BRAKE = 1.2, HARD = 4.5; // m/s²: pulling away, braking, emergency braking
+// How far behind a tram's front each of its bogies runs (they click over the rail joints).
+export const BOGIES = [STEP, 0, -STEP].flatMap((o) => [HALF - o - BOGIE, HALF - o + BOGIE]);
+const ACCEL = 1.1, BRAKE = 1.2, HARD = 4.5; // m/s²: pulling away, braking, stopping short
+// For the player the driver needs a moment to react, then brakes as hard as a real
+// tram can: 14 m/s (50 km/h) takes some 45 m to stop, so step out in front of one too
+// late and it hits you. Everyone else it sees coming, and stops for in time.
+const REACT = 0.8, EMERGENCY = 2.8; // s, m/s²
 const DWELL = 18, TURN = 40; // seconds at a stop, and at a terminus where the tram reverses
 const PUSH = 60, CREEP = 1.5; // s a car can hold a tram up before the tram pushes it off the track, at this many m/s
 // Without timetables: trips per hour, day lines from 5 in the morning to midnight,
@@ -229,7 +236,7 @@ export class Trams {
   }
 
   add(line: TramLine, s: number) {
-    const v: TramVehicle = { id: this.id++, line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, held: 0, shove: null, look: null, pending: this.rng() * FAR_STEP, parts: [] };
+    const v: TramVehicle = { id: this.id++, line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, spotted: 0, forPlayer: false, held: 0, shove: null, look: null, pending: this.rng() * FAR_STEP, parts: [] };
     // Not on the short cut across a terminus with no loop.
     for (const h of line.halts) {
       if (h.to !== undefined && h.to !== h.s && line.path.ahead(h.s - HALF, v.s) < line.path.ahead(h.s, h.to) + 2 * HALF) v.s = h.to + HALF;
@@ -394,7 +401,7 @@ export class Trams {
     if (v.held > PUSH && v.blocker && v.blocker.mode !== 'traffic') { v.shove = v.blocker; v.held = 0; }
     if (v.shove) target = Math.min(target, CREEP);
 
-    v.speed = v.speed < target ? Math.min(target, v.speed + ACCEL * dt) : Math.max(target, v.speed - HARD * dt);
+    v.speed = v.speed < target ? Math.min(target, v.speed + ACCEL * dt) : Math.max(target, v.speed - (v.forPlayer ? EMERGENCY : HARD) * dt);
     v.s = path.wrap(v.s + Math.min(v.speed * dt, toHalt)); // never past the stop
   }
 
@@ -403,6 +410,8 @@ export class Trams {
     const path = v.line.path;
     v.waitFor = null;
     v.blocker = null;
+    v.forPlayer = false;
+    let sawPlayer = false;
     const shove = v.shove;
     v.shove = null; // until it's on the track ahead again
     if (v.ghost > 0) v.ghost -= dt;
@@ -435,11 +444,19 @@ export class Trams {
           if (o.kind === 'tram') continue;
           if (Math.hypot(o.x - p.x, o.y - p.y) >= 1.3 + o.r) continue;
           if (o.car && o.car === shove) { v.shove = shove; continue; } // being pushed aside
+          // The player: only once the driver has had a moment to react.
+          if (o.kind === 'player') {
+            sawPlayer = true;
+            if (v.spotted < REACT) continue;
+            v.forPlayer = true;
+          }
           v.blocker = o.car || null;
+          v.spotted = sawPlayer ? v.spotted + dt : 0;
           return d;
         }
       }
     }
+    v.spotted = sawPlayer ? v.spotted + dt : 0;
     v.stuck = 0;
     return Infinity;
   }

@@ -536,7 +536,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     const { dashed, solid } = roadPaint(edges, trams);
     add(strips(dashed, 0.13, [3, 6]), COLORS.paint);
     add(strips(solid, 0.13), COLORS.paint);
-    add(strips(zebras(d.crossings || []), 0.5), COLORS.paint);
+    add(strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5), COLORS.paint);
 
     // Soft contact shadow round every building.
     shade(skirts(buildings.map((b) => b.rings), 1.8, true), 0.5);
@@ -574,21 +574,116 @@ function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
   return { dashed, solid };
 }
 
-// Zebra crossings: bars along the road, one every metre across it.
-function zebras(crossings: Point2[][]): Point2[][] {
+// Zebra crossings: bars along the road, one every metre across it, from kerb to kerb.
+// OSM's crossing lines only say roughly where a crossing is: they often stop short of
+// the kerb or run on over the pavement, and bend. So each crossing is laid out afresh
+// where it meets a street's centre line: straight across the street (unless it's
+// mapped 30° to 60° off square, as some are: then along the way it's mapped), as
+// far as the road surface goes on each side, with the bars evened out between them.
+const BAR = 0.5, PITCH = 1, BAR_LEN = 3, KERB_GAP = 0.3, SQUARE = Math.cos(Math.PI / 6);
+function zebras(crossings: Point2[][], edges: GroundRoadEdge[], road: Polygons, box: Bounds): Point2[][] {
   const bars: Point2[][] = [];
+  const done: Point2[] = [];
   for (const pts of crossings) {
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [ax, ay] = pts[i], [bx, by] = pts[i + 1], len = Math.hypot(bx - ax, by - ay);
-      if (len < 1) continue;
-      const ux = (bx - ax) / len, uy = (by - ay) / len, vx = -uy, vy = ux;
-      for (let t = 0.5; t < len - 0.25; t += 1) {
-        const px = ax + ux * t, py = ay + uy * t;
-        bars.push([[px - vx * 1.5, py - vy * 1.5], [px + vx * 1.5, py + vy * 1.5]]);
+    for (const hit of crossingHits(pts, edges)) {
+      if (done.some((q) => Math.hypot(q[0] - hit.at[0], q[1] - hit.at[1]) < 2.5)) continue; // a two-way street's other edge
+      done.push(hit.at);
+      const [px, py] = hit.at, [rx, ry] = hit.road, nx = -ry, ny = rx;
+      // Across the street, or along the crossing where it's mapped well off square.
+      let [ax, ay] = hit.along;
+      if (ax * nx + ay * ny < 0) { ax = -ax; ay = -ay; }
+      const square = ax * nx + ay * ny;
+      if (square > SQUARE || square < 0.5) { ax = nx; ay = ny; } // (or so far off it's a mapping slip)
+      const k = ax * nx + ay * ny; // metres across the street per metre along the crossing
+      // As far as the road surface reaches each way; where it runs off the tile, or
+      // there's no mapped surface, half the street's width.
+      const half = hit.width / 2 / k;
+      const span = roadSpan(road, px, py, ax, ay) ?? [-half, half];
+      const [x0, y0, x1, y1] = box;
+      const offTile = (t: number) => { const x = px + ax * t, y = py + ay * t; return x < x0 + 0.5 || x > x1 - 0.5 || y < y0 + 0.5 || y > y1 - 0.5; };
+      const lo = offTile(span[0]) ? Math.min(span[0], -half) : span[0];
+      const hi = offTile(span[1]) ? Math.max(span[1], half) : span[1];
+      // Bars evened out between the kerbs, a little in from each.
+      const width = (hi - lo) * k - 2 * KERB_GAP;
+      if (width < BAR || width > 40) continue;
+      const n = Math.floor((width - BAR) / PITCH) + 1;
+      const first = lo * k + KERB_GAP + (width - (BAR + (n - 1) * PITCH)) / 2 + BAR / 2;
+      for (let i = 0; i < n; i++) {
+        const t = (first + i * PITCH) / k, cx = px + ax * t, cy = py + ay * t;
+        bars.push([[cx - rx * BAR_LEN / 2, cy - ry * BAR_LEN / 2], [cx + rx * BAR_LEN / 2, cy + ry * BAR_LEN / 2]]);
       }
     }
   }
   return bars;
+}
+
+// Where a crossing meets the centre lines of the streets (not bridges or tunnels):
+// the point, the street's heading there, the crossing's, and the street's width.
+// A crossing that stops short of the centre line meets the nearest street it reaches.
+function crossingHits(pts: Point2[], edges: GroundRoadEdge[]) {
+  const hits: { at: Point2; road: Point2; along: Point2; width: number }[] = [];
+  const unit = (a: Point2, b: Point2): Point2 => { const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
+  for (const e of edges) {
+    if (e.bridge || e.tunnel) continue;
+    for (let i = 1; i < pts.length; i++) {
+      for (let j = 1; j < e.pts.length; j++) {
+        const at = segCross(pts[i - 1], pts[i], e.pts[j - 1], e.pts[j]);
+        if (at) hits.push({ at, road: unit(e.pts[j - 1], e.pts[j]), along: unit(pts[i - 1], pts[i]), width: e.width });
+      }
+    }
+  }
+  if (hits.length || pts.length < 2) return hits;
+  const mid = pts[Math.floor((pts.length - 1) / 2)], next = pts[Math.floor((pts.length - 1) / 2) + 1];
+  let best: { at: Point2; road: Point2; along: Point2; width: number } | null = null, bestD = Infinity;
+  for (const e of edges) {
+    if (e.bridge || e.tunnel) continue;
+    for (let j = 1; j < e.pts.length; j++) {
+      const a = e.pts[j - 1], b = e.pts[j], d = segDistPts(mid, a, b);
+      if (d >= bestD || d > e.width / 2 + 3) continue;
+      const dx = b[0] - a[0], dy = b[1] - a[1], t = Math.max(0, Math.min(1, ((mid[0] - a[0]) * dx + (mid[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+      bestD = d;
+      best = { at: [a[0] + dx * t, a[1] + dy * t], road: unit(a, b), along: unit(mid, next), width: e.width };
+    }
+  }
+  return best ? [best] : [];
+}
+
+function segCross(a: Point2, b: Point2, c: Point2, d: Point2): Point2 | null {
+  const rx = b[0] - a[0], ry = b[1] - a[1], sx = d[0] - c[0], sy = d[1] - c[1];
+  const den = rx * sy - ry * sx;
+  if (Math.abs(den) < 1e-9) return null;
+  const t = ((c[0] - a[0]) * sy - (c[1] - a[1]) * sx) / den, u = ((c[0] - a[0]) * ry - (c[1] - a[1]) * rx) / den;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [a[0] + rx * t, a[1] + ry * t] : null;
+}
+
+// How far the road surface reaches from (px, py) along (ax, ay), both ways, as
+// [back, ahead] in metres (back negative); null if (px, py) isn't on it. Pieces of
+// surface that touch (separate polygons for each street, say) count as one.
+function roadSpan(road: Polygons, px: number, py: number, ax: number, ay: number): [number, number] | null {
+  const spans: [number, number][] = [];
+  for (const rings of road) {
+    const ts: number[] = [];
+    for (const ring of rings) {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        const ex = b[0] - a[0], ey = b[1] - a[1], den = ax * ey - ay * ex;
+        if (Math.abs(den) < 1e-9) continue;
+        const u = ((a[0] - px) * ay - (a[1] - py) * ax) / den; // along the ring's edge
+        if (u < 0 || u >= 1) continue;
+        ts.push(((a[0] - px) * ey - (a[1] - py) * ex) / den);
+      }
+    }
+    ts.sort((p, q) => p - q);
+    for (let i = 0; i + 1 < ts.length; i += 2) spans.push([ts[i], ts[i + 1]]);
+  }
+  spans.sort((p, q) => p[0] - q[0]);
+  const merged: [number, number][] = [];
+  for (const sp of spans) {
+    const last = merged[merged.length - 1];
+    if (last && sp[0] <= last[1] + 0.3) last[1] = Math.max(last[1], sp[1]);
+    else merged.push([...sp]);
+  }
+  return merged.find(([lo, hi]) => lo <= 0.3 && hi >= -0.3) ?? null;
 }
 
 function segDistPts(p: Point2, a: Point2, b: Point2) {
