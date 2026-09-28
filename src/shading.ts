@@ -89,8 +89,8 @@ vec3 pWater(vec3 c, vec2 p) {
 }
 // Dirt on paved ground: broad grimy patches and smaller stains.
 vec3 grit(vec3 c, vec2 p) {
-  c *= 1. - .28 * smoothstep(.42, .8, fbm2(p * .13 + 5.));
-  return c * (1. - .2 * smoothstep(.6, .9, vnoise(p * .8 + 17.)) * detail(p, .6));
+  c *= 1. - .22 * smoothstep(.3, .85, fbm2(p * .13 + 5.));
+  return c * (1. - .12 * smoothstep(.55, .85, fbm2(p * .6 + 17.)) * detail(p, .6));
 }
 vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 1) return grit(pAsphalt(c, p), p);
