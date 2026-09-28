@@ -11,6 +11,8 @@ float vnoise(vec2 p) {
   vec2 i = floor(p), f = fract(p), u = f * f * (3. - 2. * f);
   return mix(mix(hash12(i), hash12(i + vec2(1, 0)), u.x), mix(hash12(i + vec2(0, 1)), hash12(i + vec2(1, 1)), u.x), u.y);
 }
+// Two octaves: for broad dirt, where the finer ones would only cost time.
+float fbm2(vec2 p) { return (vnoise(p) * 2. + vnoise(p * 2.03 + 11.7)) / 3.; }
 float fbm(vec2 p) { float a = .5, s = 0.; for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 11.7; a *= .5; } return s; }
 // 1 while a pattern with cells of \`cell\` metres is well above pixel size, fading to 0.
 float detail(vec2 p, float cell) { float w = length(fwidth(p)); return 1. - smoothstep(cell * .2, cell * .7, w); }
@@ -42,6 +44,9 @@ vec3 pAsphalt(vec3 c, vec2 p) {
   c *= .9 + .18 * fbm(p * .3);
   c *= mix(1., .9, smoothstep(.62, .66, fbm(p * .07 + 3.)));          // repair patches
   c += (vnoise(p * 16.) - .5) * .07 * detail(p, .06);                  // aggregate
+  c *= 1. - .14 * smoothstep(.6, .85, vnoise(p * vec2(.9, .25) + 23.)); // oil and tyre marks
+  float crack = 1. - smoothstep(.0, .025, abs(vnoise(p * .7) - .5));
+  c *= 1. - .3 * crack * detail(p, .15) * smoothstep(.55, .7, vnoise(p * .06 + 2.));
   return c;
 }
 vec3 pSetts(vec3 c, vec2 p, vec2 size) {
@@ -65,6 +70,7 @@ vec3 pSlabs(vec3 c, vec2 p) {
 vec3 pGrass(vec3 c, vec2 p) {
   c *= .82 + .32 * fbm(p * .18);
   c = mix(c, c * vec3(1.12, 1.05, .78), smoothstep(.55, .75, fbm(p * .04 + 7.)));  // dry patches
+  c = mix(c, c * vec3(1.05, .9, .7), smoothstep(.6, .8, fbm2(p * .15 + 3.)) * .6);  // worn to earth
   c += (vnoise(p * 5.) - .5) * .07 * detail(p, .2);
   return c;
 }
@@ -81,16 +87,21 @@ vec3 pWater(vec3 c, vec2 p) {
   float glint = smoothstep(.72, .8, fbm(p * vec2(.5, .09) + vec2(uTime * .02, uTime * .12)));
   return c + glint * .1 * detail(p, .5);
 }
+// Dirt on paved ground: broad grimy patches and smaller stains.
+vec3 grit(vec3 c, vec2 p) {
+  c *= 1. - .28 * smoothstep(.42, .8, fbm2(p * .13 + 5.));
+  return c * (1. - .2 * smoothstep(.6, .9, vnoise(p * .8 + 17.)) * detail(p, .6));
+}
 vec3 pattern(int id, vec3 c, vec2 p) {
-  if (id == 1) return pAsphalt(c, p);
-  if (id == 2) return pSetts(c, p, vec2(.17, .14));
-  if (id == 3) return pMosaic(c, p);
-  if (id == 4) return pSlabs(c, p);
+  if (id == 1) return grit(pAsphalt(c, p), p);
+  if (id == 2) return grit(pSetts(c, p, vec2(.17, .14)), p);
+  if (id == 3) return grit(pMosaic(c, p), p);
+  if (id == 4) return grit(pSlabs(c, p), p);
   if (id == 5) return pGrass(c, p);
   if (id == 6) return pWood(c, p);
   if (id == 7) return pPitch(c, p);
   if (id == 8) return pDirt(c, p);
-  if (id == 9) return pConcrete(c, p);
+  if (id == 9) return grit(pConcrete(c, p), p);
   if (id == 10) return pWater(c, p);
   return c;
 }
@@ -121,6 +132,15 @@ vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
 vec3 flatRoof(vec3 c, vec2 wp) {
   c *= .86 + .22 * fbm(wp * .5);
   return c + (vnoise(wp * 18.) - .5) * .08 * detail(wp, .05);
+}
+// Weathering on every wall: soot in broad patches, rain streaks running down, and the
+// splashed dirt along the bottom. f: along the wall, height, length, style.seed.
+vec3 grime(vec3 c, vec4 f) {
+  float seed = fract(f.w) * 97.;
+  c *= .76 + .34 * fbm2(vec2(f.x * .1 + seed, f.y * .07));
+  float streak = fbm2(vec2(f.x * 1.8 + seed, f.y * .12));
+  c *= 1. - .28 * smoothstep(.5, .8, streak) * detail(f.xy, .4);
+  return c * mix(.66, 1., smoothstep(0., 1.4, f.y));
 }
 vec3 facade(vec3 c, vec2 f) {
   float along = f.x, h = f.y;
@@ -158,8 +178,11 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
   if (bn.y > .97) diffuseColor.rgb = flatRoof(diffuseColor.rgb, bwp);
   else if (bn.y > .15) diffuseColor.rgb = roofTiles(diffuseColor.rgb, bwp, bn);
-  else if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
-  else diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy);`);
+  else {
+    if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
+    else diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy);
+    diffuseColor.rgb = grime(diffuseColor.rgb, vFacade);
+  }`);
   };
   material.customProgramCacheKey = () => 'buildings-procedural';
   material.needsUpdate = true;
