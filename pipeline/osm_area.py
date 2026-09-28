@@ -166,7 +166,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 continue
             width = road_width(hw, _float(col(row, "width")), _float(col(row, "lanes")))
             cls = "road" if hw in CAR_ROADS else "path"
-            if col(row, "bridge") == "yes":
+            if col(row, "bridge") not in (None, "no"):  # yes, viaduct, cantilever, …
                 cls = "bridge"
             tunnel = col(row, "tunnel")
             if tunnel == "building_passage" and (_float(col(row, "layer")) or 0) >= -1:
