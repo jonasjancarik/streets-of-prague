@@ -1,3 +1,5 @@
+import { BusRun, busStart } from './buses.ts';
+import type { BusLine } from './buses.ts';
 import { Car, randomType } from './car.ts';
 import { randomLook } from './figures.ts';
 import { MAIN_ROADS, Route, clamp } from './network.ts';
@@ -13,6 +15,8 @@ interface TrafficAgent {
   ignore: number;
   cruise: number;
   gone?: boolean;
+  // A bus on its line (buses.json): where it is along it and the stops it has served.
+  bus?: BusRun;
   // Still up on the pavement (see adopt): this far right of the lane (m), with
   // `left` metres to go before it's back in it, the last `merge` of them pulling in.
   kerb?: { off: number; left: number; merge: number };
@@ -36,6 +40,8 @@ export class Traffic {
   r: () => number;
   count: number;
   agents: TrafficAgent[];
+  // The bus lines through the area (buses.json); without them buses wander the main roads.
+  busLines: BusLine[] = [];
 
   constructor(graph: DriveGraph, scene: THREE.Scene, rng: () => number, count: number) {
     this.g = graph;
@@ -71,11 +77,23 @@ export class Traffic {
     return null;
   }
 
-  // Keep `want` buses about, on the main roads among `edges`, where `avoid` allows.
+  // Keep `want` buses about, on their lines (or, without them, on the main roads)
+  // among `edges`, where `avoid` allows.
   buses(avoid: (x: number, y: number) => boolean, edges: DriveEdge[], want: number) {
     let n = 0;
     for (const a of this.agents) if (a.car.type === 'bus') n++;
     if (n >= want) return;
+    if (this.busLines.length) {
+      const start = busStart(this.busLines, edges, this.r, (x, y) => avoid(x, y) && !this.agents.some((a) => Math.hypot(a.car.x - x, a.car.y - y) < 20));
+      if (!start) return;
+      const { edge, s, run } = start;
+      const p = edge.path.at(s);
+      const car = new Car('bus', this.r, p.x, p.y, p.ang);
+      car.mode = 'traffic';
+      car.hint = 'ground';
+      this.agents.push({ car, route: new Route(this.g, edge, s, this.r, true, (e, opts) => run.pick(e, opts)), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.9, bus: run });
+      return;
+    }
     const main = edges.filter((e) => MAIN_ROADS.has(e.hw) && !e.bridge && !e.tunnel);
     if (main.length) this.spawn(avoid, main, 'bus');
   }
@@ -148,6 +166,23 @@ export class Traffic {
         if (d < gap) { gap = d; blocker = o; }
       }
       if (blocker) target = Math.min(target, Math.max(0, (gap - 1.5) * 0.9));
+      // A bus on its line brakes for its next stop, stands there a while, and goes on.
+      const run = a.bus;
+      if (run && !run.lost) {
+        run.track(c.x, c.y);
+        const stop = run.line.stops[run.stop];
+        if (run.dwell > 0) {
+          target = 0;
+          run.dwell -= dt;
+          if (run.dwell <= 0) run.stop++;
+        } else if (stop) {
+          // (The front of the bus pulls up by the stop's sign.)
+          const left = stop[0] - run.along - L / 2 + 1;
+          if (left < -4) run.stop++;
+          else if (left < 1 && a.speed < 0.6) run.dwell = 10 + this.r() * 5;
+          else target = Math.min(target, Math.sqrt(2 * 1.1 * Math.max(0, left)) + 0.3);
+        }
+      }
       // On the pavement it creeps along, and a little faster pulling in.
       if (a.kerb) target = Math.min(target, a.kerb.left > a.kerb.merge ? 2.2 : 4);
 
@@ -167,6 +202,14 @@ export class Traffic {
       c.x = p.x;
       c.y = p.y;
       let ang = p.ang;
+      if (c.spec.heavy) {
+        // A bus's back wheels follow the lane, and its front ones are 6 m further on:
+        // on a bend it lies across the inside of the curve rather than sticking out.
+        const f = a.route.lookahead(6).p;
+        if (Math.hypot(f.x - p.x, f.y - p.y) > 3) ang = Math.atan2(f.y - p.y, f.x - p.x);
+        c.x = p.x + Math.cos(ang) * 2.5;
+        c.y = p.y + Math.sin(ang) * 2.5;
+      }
       if (a.kerb) {
         // Right of the lane by `off`, less and less over the last `merge` metres (a
         // smoothstep), turned towards the lane as it goes.

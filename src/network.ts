@@ -169,11 +169,14 @@ export class Route {
   dead = false;
   ended = false;
   main: boolean;
+  // Which street to take after `e` (a bus on its line, see buses.ts); null: any.
+  pick?: (e: DriveEdge, opts: DriveEdge[]) => DriveEdge | null;
 
-  constructor(g: DriveGraph, edge: DriveEdge, s: number, r: Random, main = false) {
+  constructor(g: DriveGraph, edge: DriveEdge, s: number, r: Random, main = false, pick?: (e: DriveEdge, opts: DriveEdge[]) => DriveEdge | null) {
     this.g = g;
     this.r = r;
     this.main = main;
+    this.pick = pick;
     this.legs = [{ path: edge.path, s0: 0, s1: edge.path.length, edge }];
     this.s = s;
     this.extend();
@@ -186,9 +189,11 @@ export class Route {
       const last = this.legs[this.legs.length - 1];
       const e = last.edge;
       if (!e) return;
-      const f = nextEdge(this.g, e, this.r, this.main);
+      const f = this.pick?.(e, (this.g.out.get(e.v) || []).filter((o) => o !== e.twin)) || nextEdge(this.g, e, this.r, this.main);
       if (!f) { this.dead = true; return; }
-      const trim = Math.min(7, e.path.length / 3, f.path.length / 3);
+      // (A bus starts its turns further back, so they're wider and its back doesn't
+      // swing over the kerb.)
+      const trim = Math.min(this.main ? 11 : 7, e.path.length / 3, f.path.length / 3);
       last.s1 = Math.max(last.s0, e.path.length - trim);
       const a = e.path.at(last.s1), b = f.path.at(trim);
       const turn = Math.abs(Math.atan2(Math.sin(b.ang - a.ang), Math.cos(b.ang - a.ang)));

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import proj4 from 'proj4';
 import { buildTransit } from './map/transit.ts';
+import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
 import { Car, CarPool, collideBodies, loadCars, useKit } from './car.ts';
 import { loadKit } from './figures.ts';
@@ -77,6 +78,10 @@ async function main() {
   const lines: Promise<{ lines: RawTramLine[] }> = fetch(`data/${AREA}_now/lines.json`)
     .then(async (r) => r.ok ? parseTramLines(await r.json()) : { lines: [] })
     .catch(() => ({ lines: [] }));
+  // Bus lines (pipeline/build_buses.py); without them buses wander the main roads.
+  const busLines = fetch(`data/${AREA}_now/buses.json`)
+    .then(async (r) => r.ok ? parseBusLines(await r.json()) : [])
+    .catch(() => []);
   // The metro (pipeline/build_metro.py); without it there are no entrances.
   const metroData: Promise<{ lines: MetroLine[] }> = fetch(`data/${AREA}_now/metro.json`)
     .then(async (r) => r.ok ? parseMetroLines(await r.json()) : { lines: [] })
@@ -177,6 +182,7 @@ async function main() {
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
   const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
+  traffic.busLines = await busLines;
   const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
 
