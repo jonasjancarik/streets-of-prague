@@ -23,6 +23,9 @@
       /* Riding a tram: the line, where it's heading and the stops ahead. */
       #ride { margin-top: 8px; max-width: 250px; }
       #ride[hidden] { display: none; }
+      #taxi { margin-top: 8px; max-width: 280px; }
+      #taxi[hidden] { display: none; }
+      #taxi kbd { font: inherit; opacity: 0.6; }
       .ride-line { display: flex; align-items: center; gap: 8px; font-weight: 600; }
       .ride-ref { font: 20px/1 'Bebas Neue', sans-serif; color: #fff; padding: 3px 7px 1px; border-radius: 5px; min-width: 1.4em; text-align: center; }
       .ride-here { margin-top: 4px; opacity: 0.75; font-size: 12px; }
@@ -230,6 +233,7 @@
       <div id="hint"></div>
       <div id="tally"></div>
       <div id="ride" hidden></div>
+      <div id="taxi" hidden></div>
       <div id="board" hidden></div>
     </div>
     <div id="banner"></div>

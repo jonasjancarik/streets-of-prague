@@ -169,6 +169,9 @@ export class Route {
   dead = false;
   ended = false;
   main: boolean;
+  // The edges to take next, in order, instead of random turns (a taxi on a job). The
+  // route simply stops growing when they run out.
+  plan: DriveEdge[] | null = null;
 
   constructor(g: DriveGraph, edge: DriveEdge, s: number, r: Random, main = false) {
     this.g = g;
@@ -186,8 +189,8 @@ export class Route {
       const last = this.legs[this.legs.length - 1];
       const e = last.edge;
       if (!e) return;
-      const f = nextEdge(this.g, e, this.r, this.main);
-      if (!f) { this.dead = true; return; }
+      const f = this.plan ? this.plan.shift() ?? null : nextEdge(this.g, e, this.r, this.main);
+      if (!f) { if (!this.plan) this.dead = true; return; }
       const trim = Math.min(7, e.path.length / 3, f.path.length / 3);
       last.s1 = Math.max(last.s0, e.path.length - trim);
       const a = e.path.at(last.s1), b = f.path.at(trim);
@@ -196,6 +199,36 @@ export class Route {
       this.legs.push({ path: conn, s0: 0, s1: conn.length, edge: null, turn, speed: Math.min(e.speed, f.speed) });
       this.legs.push({ path: f.path, s0: trim, s1: f.path.length, edge: f });
     }
+  }
+
+  // The edge being driven along, or the next one while crossing a junction.
+  get head(): DriveEdge {
+    const leg = this.legs.find((l) => l.edge);
+    if (!leg?.edge) throw new Error('A route always has an edge ahead');
+    return leg.edge;
+  }
+
+  // Follow `plan` (edges leading on from `head`) from the end of the head edge, or
+  // random turns again with null.
+  follow(plan: DriveEdge[] | null) {
+    const i = this.legs.findIndex((l) => l.edge);
+    this.legs.length = i + 1;
+    this.legs[i].s1 = this.head.path.length;
+    this.plan = plan;
+    this.dead = false;
+    this.extend();
+  }
+
+  // Metres along the route to `s` on `edge`; Infinity if it isn't on the route yet.
+  to(edge: DriveEdge, s: number) {
+    let d = 0, from = this.s;
+    for (let i = 0; i < this.legs.length; i++) {
+      const leg = this.legs[i];
+      if (leg.edge === edge && s >= from - 0.5) return d + s - from;
+      d += leg.s1 - from;
+      from = this.legs[i + 1]?.s0 ?? 0;
+    }
+    return Infinity;
   }
 
   // Advance by ds metres; returns the current point.

@@ -4,7 +4,7 @@ import { MAIN_ROADS, Route, clamp } from './network.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 import * as THREE from 'three';
 
-interface TrafficAgent {
+export interface TrafficAgent {
   car: Car;
   route: Route;
   speed: number;
@@ -16,6 +16,11 @@ interface TrafficAgent {
   // Still up on the pavement (see adopt): this far right of the lane (m), with
   // `left` metres to go before it's back in it, the last `merge` of them pulling in.
   kerb?: { off: number; left: number; merge: number };
+  // A taxi on a job (see taxi.ts): it stops at `stop`, keeps out of the clean-up round
+  // the player, and with `reckless` drives like a ride-hailing driver late for the next fare.
+  stop?: { edge: DriveEdge; s: number };
+  hired?: boolean;
+  reckless?: boolean;
 }
 
 // The longest a car coming off the pavement takes to pull into its lane (m).
@@ -111,7 +116,7 @@ export class Traffic {
       const c = a.car, L = c.spec.L, W = c.spec.W;
       const look = a.route.lookahead(6 + a.speed * 1.2);
       // Cyclists keep to their own pace, whatever the limit.
-      let target = Math.min(look.limit * a.cruise, c.spec.vmax * 0.75);
+      let target = a.reckless ? Math.min(look.limit * 1.4, c.spec.vmax * 0.9) : Math.min(look.limit * a.cruise, c.spec.vmax * 0.75);
 
       const fx = Math.cos(c.h), fy = Math.sin(c.h);
       const reach = L / 2 + 5 + a.speed * 1.6;
@@ -147,13 +152,15 @@ export class Traffic {
         const d = ahead - L / 2 - o.r;
         if (d < gap) { gap = d; blocker = o; }
       }
-      if (blocker) target = Math.min(target, Math.max(0, (gap - 1.5) * 0.9));
+      if (blocker) target = Math.min(target, Math.max(0, a.reckless ? (gap - 0.8) * 1.3 : (gap - 1.5) * 0.9));
+      // Braking in time for where it has to stop.
+      if (a.stop) target = Math.min(target, Math.sqrt(2 * 3 * Math.max(0, a.route.to(a.stop.edge, a.stop.s) - 0.3)));
       // On the pavement it creeps along, and a little faster pulling in.
       if (a.kerb) target = Math.min(target, a.kerb.left > a.kerb.merge ? 2.2 : 4);
 
       if (target < 0.3 && blocker) a.stuck += dt;
       else a.stuck = Math.max(0, a.stuck - dt * 2);
-      if (a.stuck > 3.5) { a.ignore = 1.5; a.stuck = 0; }
+      if (a.stuck > (a.reckless ? 1.5 : 3.5)) { a.ignore = 1.5; a.stuck = 0; }
       // How long it's been standing in a queue that doesn't move (see main.ts).
       a.jam = target < 0.3 && blocker ? a.jam + dt : 0;
       a.ignore = Math.max(0, a.ignore - dt);

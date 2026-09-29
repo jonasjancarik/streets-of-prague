@@ -10,6 +10,7 @@ import { Crowd, Walker, nearestWalkable } from './people.ts';
 import { loadFootfall } from './footfall.ts';
 import { Trams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
+import { Taxis } from './taxi.ts';
 import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
 import { Weather, WeatherFx, KINDS } from './weather.ts';
@@ -326,6 +327,9 @@ async function main() {
     walker.sync();
   };
   const enterOrExit = () => {
+    // In a taxi: out here, and into the one waiting for you.
+    if (taxi.riding) { taxi.leave(); return; }
+    if (!inCar && !inHeli && !ride.on && taxi.enter()) return;
     // On a tram: off at this stop (or here, if it's stuck), or at the next one.
     if (ride.on) {
       if (ride.canLeave()) getOff();
@@ -464,6 +468,10 @@ async function main() {
     street = null; // show the new street's name, not the old one
     $('street').textContent = '';
   };
+  const taxi = new Taxis({
+    traffic, drive, world, el: $('taxi'), walker, edgesNear, offscreen, standAt: (x, y) => nearestWalkable(grid, x, y), banner: (t) => showBanner(t),
+    toLocal: (lon, lat) => (lon > w0 && lon < e0 && lat > s0 && lat < n0 ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [lon, lat]) as [number, number] : null),
+  });
   const assist = new LaneAssist(drive, (x, y, r) => edgesNear(x, y, r));
   let assisted = false;
   // Developer tools: a helicopter on the nearest open ground, facing the way you do.
@@ -507,6 +515,7 @@ async function main() {
       e.preventDefault();
       return;
     }
+    if (taxi.key(e.code, !inCar && !inHeli && !ride.on)) { e.preventDefault(); return; }
     if (keymap[e.code]) { input[keymap[e.code]] = true; e.preventDefault(); }
     if (e.shiftKey) input.run = true;
     if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) enterOrExit();
@@ -631,7 +640,7 @@ async function main() {
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
       if (hit > 6) shake = Math.min(1.2, shake + hit * 0.04);
       jolt = hit;
-    } else if (!inHeli && !ride.on) walker.update(dt, ctl);
+    } else if (!inHeli && !ride.on && !taxi.riding) walker.update(dt, ctl);
     // In the helicopter Space climbs and Shift comes down.
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
     for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null);
@@ -649,7 +658,7 @@ async function main() {
     syncResting();
     for (const c of cops) pushCar(hash, c);
     if (inCar) pushCar(hash, inCar);
-    else if (!inHeli && !ride.on) hash.add({ x: walker.x, y: walker.y, z: walker.gz, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
+    else if (!inHeli && !ride.on && !taxi.riding) hash.add({ x: walker.x, y: walker.y, z: walker.gz, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
     // (People walking along the pavement only where a car is driving along it too.)
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0 || traffic.pavementNear(p.x, p.y, 12)) hash.add({ x: p.x, y: p.y, z: p.gz, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
@@ -664,6 +673,7 @@ async function main() {
     // across to the other track at a terminus with no loop does it out of sight.
     trams.update(dt, { near: obstacles, x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
     if (ride.on) ride.seat(walker);
+    taxi.seat();
     transit.update(dt);
 
     const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5), ...cops.filter((c) => c.speed > 5)];
@@ -817,7 +827,7 @@ async function main() {
       lifeT = 0.5;
       if (pavementDrivers.update(0.5, loose, px(), py(), (x, y) => !offscreen(x, y), (x, y) => grid.at(x, y) !== 0)) restingStale = true;
       // (And cars stuck in a queue that hasn't moved for a while, where nobody sees them go.)
-      for (const a of [...traffic.agents]) if ((a.jam > 30 || Math.hypot(a.car.x - px(), a.car.y - py()) > LIFE_RADIUS * 1.3) && offscreen(a.car.x, a.car.y)) traffic.release(a);
+      for (const a of [...traffic.agents]) if (!a.hired && (a.jam > 30 || Math.hypot(a.car.x - px(), a.car.y - py()) > LIFE_RADIUS * 1.3) && offscreen(a.car.x, a.car.y)) traffic.release(a);
       for (let i = loose.length - 1; i >= 0; i--) {
         const c = loose[i];
         if (!tileCars.has(c) && Math.hypot(c.x - px(), c.y - py()) > 600) loose.splice(i, 1);
@@ -877,7 +887,8 @@ async function main() {
     const waiting = !!board.shown && (input.brake || touch.fast) && board.next > 40;
     waitScale += ((waiting ? FAST : 1) - waitScale) * Math.min(1, dt * (waiting ? 1.5 : 4));
     if (Math.abs(waitScale - (waiting ? FAST : 1)) < 0.02) waitScale = waiting ? FAST : 1;
-    const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : waitScale;
+    taxi.update(dt);
+    const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : taxi.riding ? taxi.speedUp(dt, ctl.run || touch.fast) : waitScale;
     const steps = metro.active ? 0 : Math.ceil(scale - 1e-6); // underground, the street waits
     for (let i = 0; i < steps; i++) simulate((dt * scale) / steps, ctl);
     weather.update(dt * scale, clock.t, dt);
@@ -1015,6 +1026,8 @@ async function main() {
       const wait = waitScale > 1.5 ? `Waiting for a tram · ${Math.round(waitScale)}× speed` : touch.active ? '' : 'Hold <b>Space</b> to wait for a tram';
       hint = [canEnter && !touch.active ? getIn : '', wait].filter(Boolean).join(' · ');
     } else if (canEnter && !touch.active) hint = getIn;
+    hint = (!inCar && !inHeli && !ride.on && taxi.hint(touch.active)) || hint;
+    taxi.render(touch.active);
     show('hint', hint, 'html');
     $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.on ? 'tram' : 'foot';
     ride.render();
@@ -1037,7 +1050,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, graphics, sound, weather, lamps, sky, skids,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, taxi, clock, board, metro, graphics, sound, weather, lamps, sky, skids,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
