@@ -70,7 +70,6 @@ const FEW_PEOPLE = 40; // on the quietest edge of town
 const PARKED_TWO = 10; // bikes and motorbikes parked around you
 const SHOVE = 1.2; // m/s a tram pushes a car aside, off its track
 const LIFE_RADIUS = 330; // traffic and people are kept within this distance of the player
-const METRO_HEIGHT = 420; // m the view rises to over a metro ride
 
 async function main() {
   dressLoading($('loading'));
@@ -192,11 +191,13 @@ async function main() {
     clock,
     inMap: (x, y) => world.available.has(world.keyAt(x, y)),
     ready: (x, y) => { const k = world.keyAt(x, y); return !world.available.has(k) || world.loaded.has(k); },
+    terrain: (x, y) => world.terrainAt(x, y),
     onArrive: async (x, y, name) => {
       await teleportTo(x, y);
       walker.mesh.visible = true;
       showBanner(name);
     },
+    onStation: (name) => showBanner(name),
   });
   const footfall = await footfallLoad;
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
@@ -917,9 +918,11 @@ async function main() {
   // Every kind of ground's shader, compiled before the game starts.
   {
     const samples = groundSamples(time);
-    scene.add(samples.group);
+    // (And the metro's tunnels and train, for the first ride.)
+    scene.add(samples.group, metro.under.group);
     await renderer.compileAsync(scene, camera).catch((e) => console.warn(e));
     scene.remove(samples.group);
+    metro.under.hide();
     samples.dispose();
   }
   if (start) {
@@ -1003,10 +1006,10 @@ async function main() {
 
     // ---- Camera ----------------------------------------------------------
     const vehicle = inCar || inHeli, sp = vehicle ? vehicle.speed : 0;
-    // On the metro, high over the train as it goes (see Metro.view).
+    // On the metro, over the train as it goes (see Metro.view).
     const underway = metro.view();
     // In the air the camera rises with the helicopter, so it stays well above it.
-    const want = (underway ? METRO_HEIGHT : inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.air : 0);
+    const want = (underway ? underway.height : inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.air : 0);
     height += (want - height) * Math.min(1, dt * (want > height ? 1.6 : 0.9));
     const lead = underway ? 0.25 : vehicle ? 0.7 : ride.on ? 0.5 : 0.3;
     if (underway) look.set(underway.x + underway.vx * lead, 0, -(underway.y + underway.vy * lead));
@@ -1017,24 +1020,25 @@ async function main() {
     // Follow the ground under the view, smoothed so the camera doesn't bob over kerbs.
     // In a tunnel, the ground above it: the view looks down into the tunnel through
     // the hole round you (below), deep as it may be.
-    // (Over the metro, where the map hasn't loaded yet, the camera keeps its height.)
+    // (On the metro, the ground above the train: see Metro.view.)
     const body = inHeli || underway ? null : inCar || walker;
     const deep = !!body && world.track(body) < 0;
-    const below = underway && !world.loaded.has(world.keyAt(camPos.x, -camPos.z)) ? camGround
+    const below = underway ? underway.ground
       : deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body);
     camGround += (below - camGround) * Math.min(1, dt * 3);
     camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
     camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
-    metro.place(camPos.x, -camPos.z, camGround, viewRadius());
 
     // In a passage under a building, open a hole in the floors above so you stay in view.
     // The same under a bridge, and a wider one down into a tunnel.
     const under = !inHeli && (world.passageAt(px(), py()) || (!!body && world.covered(body)));
     // (The deeper the tunnel, the wider: the view is from above the ground.)
-    const hole = deep && body ? Math.min(45, 14 + 0.35 * Math.max(0, world.terrainAt(px(), py()) - (body.gz ?? 0))) : 9;
-    cutR += ((under ? hole : 0) - cutR) * Math.min(1, dt * 6);
-    CUTAWAY.value.set(px(), ground(px(), py(), body) + 2.5, -py(), cutR > 0.3 ? cutR : 0);
-    DIG.value.set(px(), -py(), deep && cutR > 0.3 ? cutR : 0, 0);
+    // On the metro, the hole goes with the train, down to its tunnel.
+    const hole = underway ? underway.r : deep && body ? Math.min(45, 14 + 0.35 * Math.max(0, world.terrainAt(px(), py()) - (body.gz ?? 0))) : 9;
+    cutR += ((under || underway ? hole : 0) - cutR) * Math.min(1, dt * 6);
+    const [hx, hy] = underway ? [underway.x, underway.y] : [px(), py()];
+    CUTAWAY.value.set(hx, (underway ? underway.floor : ground(px(), py(), body)) + 2.5, -hy, cutR > 0.3 ? cutR : 0);
+    DIG.value.set(hx, -hy, (deep || underway) && cutR > 0.3 ? cutR : 0, 0);
 
     // The shadows have to reach the corners of the screen, whichever way the sun shines.
     const ext = Math.max(90, viewRadius());

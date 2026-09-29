@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Point2 } from './map/geo.ts';
 import type { Clock } from './clock.ts';
 import { t } from './i18n.ts';
+import { Track, Underground, DEPTH } from './underground.ts';
 
 export interface MetroLine {
   ref: string; colour: string;
@@ -18,13 +19,16 @@ interface MetroLeg { line: MetroLine; i: number; j: number }
 // station a to the next one, b. `from`/`to` in game seconds; `real`: how many seconds
 // it takes to watch.
 interface MetroStep { kind: 'change' | 'wait' | 'ride'; leg: MetroLeg; from: number; to: number; real: number; a: number; b: number }
-export interface MetroView { x: number; y: number; vx: number; vy: number }
+// The view during a ride: where to look (m), how fast that moves (m/s), the ground
+// above the train, the hole round it and how high to watch from.
+export interface MetroView { x: number; y: number; vx: number; vy: number; ground: number; floor: number; r: number; height: number }
 
 // The metro (data/<area>_now/metro.json, from pipeline/build_metro.py). It runs
 // underground, so here it's a way across town: walk up to an entrance (the M signs)
 // and press E, pick a station on any line, and watch the ride with time passing
-// quickly. The view rises and follows your train along the real track, seen through
-// the darkened city, stopping at every station on the way. The clock moves on by the
+// quickly. The view follows your train along the real track deep under the streets,
+// seen through a hole in the ground as in a road tunnel (underground.ts), stopping at
+// every station on the way. The clock moves on by the
 // real wait for a train, the travel time and any change of line, and you come up at
 // one of the station's entrances. E skips to the end of the ride.
 
@@ -32,11 +36,14 @@ const REACH = 5; // m from an entrance
 const TRANSFER = 180; // s to walk between lines at a change
 const SLOWEST = 60; // without a track: at least this many game seconds per real second…
 const LONGEST = 16; // …and a ride takes at most this many real seconds
-const SHOW_WAIT = 1.6; // real seconds to watch the wait for a train, or a change
-const LEG_SECONDS = 22; // a leg of the ride takes about this long to watch…
-const SLOW = 120, FAST = 400; // …at this many metres a second or more, and no faster
-const HOP = 1.4; // real seconds at least from one station to the next
-const TRAIN = 5, CAR = 19.3; // a train of five cars, each this long (m)
+const SHOW_WAIT = 3; // real seconds to watch the wait for a train (it pulls in at the end)…
+const SHOW_CHANGE = 1.6; // …or a change of line
+const APPROACH = 120; // m the train comes in from
+const LEG_SECONDS = 25; // a leg of the ride takes about this long to watch…
+const SLOW = 70, FAST = 140; // …at this many metres a second or more, and no faster
+const HOP = 3; // real seconds at least from one station to the next…
+const DWELL = 0.8; // …and standing at each
+const HOLE = 62; // m round the train, opened in the ground (the train is 97 m long)
 
 const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
 const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
@@ -65,66 +72,6 @@ function signMaterial(colour: string) {
   }
   return signs.get(colour)!;
 }
-// A line's track as a path: where along it (m) is where, and which way it runs.
-class Track {
-  pts: Point2[];
-  at: number[]; // distance to each point
-  length: number;
-  constructor(pts: Point2[]) {
-    this.pts = pts;
-    this.at = [0];
-    for (let i = 1; i < pts.length; i++) this.at.push(this.at[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-    this.length = this.at[this.at.length - 1];
-  }
-
-  // The point d metres along, carrying on straight past either end.
-  point(d: number) {
-    const { pts, at } = this;
-    let lo = 0, hi = pts.length - 2;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (at[mid] <= d) lo = mid; else hi = mid - 1;
-    }
-    const [x0, y0] = pts[lo], [x1, y1] = pts[lo + 1], len = at[lo + 1] - at[lo] || 1, f = (d - at[lo]) / len;
-    return { x: x0 + (x1 - x0) * f, y: y0 + (y1 - y0) * f, ang: Math.atan2(y1 - y0, x1 - x0) };
-  }
-
-  // A flat strip w metres wide along the track, for the overlay (x, z; y up).
-  strip(w: number) {
-    const { pts } = this, pos: number[] = [], index: number[] = [];
-    pts.forEach(([x, y], i) => {
-      const [ax, ay] = pts[Math.max(0, i - 1)], [bx, by] = pts[Math.min(pts.length - 1, i + 1)];
-      const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l, ny = (bx - ax) / l;
-      pos.push(x + nx * w / 2, 0, -(y + ny * w / 2), x - nx * w / 2, 0, -(y - ny * w / 2));
-      if (i) index.push(2 * i - 2, 2 * i - 1, 2 * i, 2 * i - 1, 2 * i + 1, 2 * i);
-    });
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    g.setIndex(index);
-    return g;
-  }
-}
-
-// The overlay drawn over everything during a ride: the city darkened, the line's
-// track and stations, and the train. Nothing of it is hidden by what's above.
-const overlay = (color: THREE.ColorRepresentation, opacity: number, order: number) => {
-  const m = new THREE.MeshBasicMaterial({ color, opacity, transparent: true, depthTest: false, depthWrite: false, fog: false });
-  m.toneMapped = false;
-  return { m, order };
-};
-const DIM = overlay('#07080c', 0.5, 20), STOP = overlay('#ffffff', 1, 23), EDGE = overlay('#16181c', 1, 24), CARS = overlay('#f2f0e8', 1, 25);
-const dimGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-const stopGeometry = new THREE.CircleGeometry(9, 24).rotateX(-Math.PI / 2);
-const ringGeometry = new THREE.CircleGeometry(15, 24).rotateX(-Math.PI / 2);
-const carGeometry = new THREE.PlaneGeometry(CAR - 2.4, 6).rotateX(-Math.PI / 2);
-const edgeGeometry = new THREE.PlaneGeometry(CAR - 0.8, 8.4).rotateX(-Math.PI / 2);
-const mesh = (g: THREE.BufferGeometry, { m, order }: { m: THREE.Material; order: number }) => {
-  const o = new THREE.Mesh(g, m);
-  o.renderOrder = order;
-  o.frustumCulled = false;
-  return o;
-};
-
 const signGeometry = new THREE.PlaneGeometry(2.2, 2.2).rotateX(-Math.PI / 2);
 const postGeometry = new THREE.BoxGeometry(0.16, 2.8, 0.16).translate(0, 1.4, 0);
 const postMaterial = new THREE.MeshLambertMaterial({ color: '#3a3d40' });
@@ -136,6 +83,7 @@ export class Metro {
   inMap: (x: number, y: number) => boolean;
   ready: (x: number, y: number) => boolean;
   onArrive: (x: number, y: number, name: string) => void | Promise<void>;
+  onStation: (name: string) => void;
   lines: MetroLine[];
   tracks = new Map<MetroLine, Track>();
   stations: Map<string, Station>;
@@ -154,22 +102,25 @@ export class Metro {
   r = 0; // …and real seconds into that
   pace = 1; // slower while the map ahead is still loading
   shown = '';
-  // The overlay during a ride (see overlay), and the line it shows.
-  tunnel = new THREE.Group();
-  tunnelLine: MetroLine | null = null;
-  strip: THREE.Mesh | null = null;
-  ring: THREE.Material | null = null;
-  dim = mesh(dimGeometry, DIM);
-  cars = Array.from({ length: TRAIN }, () => mesh(edgeGeometry, EDGE).add(mesh(carGeometry, CARS)));
+  // The tunnels and the train (see underground.ts), and the ground above them.
+  under: Underground;
+  ground = 0;
+  terrain: (x: number, y: number) => number;
+  announced = -1; // the step whose station has been announced
 
   // `inMap(x, y)`: whether a spot is on the map (you can only come up there);
   // `ready(x, y)`: whether the map there has loaded (or never will);
-  // `onArrive(x, y, name)`: take the player there.
-  constructor(data: { lines: MetroLine[] }, scene: THREE.Scene, el: HTMLElement, { clock, inMap, ready, onArrive }: {
+  // `terrain(x, y)`: the height of the ground there (once loaded);
+  // `onArrive(x, y, name)`: take the player there; `onStation(name)`: the train
+  // stops at a station on the way.
+  constructor(data: { lines: MetroLine[] }, scene: THREE.Scene, el: HTMLElement, { clock, inMap, ready, terrain, onArrive, onStation }: {
     clock: Clock; inMap: (x: number, y: number) => boolean; ready: (x: number, y: number) => boolean;
-    onArrive: (x: number, y: number, name: string) => void | Promise<void>;
+    terrain: (x: number, y: number) => number;
+    onArrive: (x: number, y: number, name: string) => void | Promise<void>; onStation: (name: string) => void;
   }) {
-    this.el = el; this.scene = scene; this.clock = clock; this.inMap = inMap; this.ready = ready; this.onArrive = onArrive;
+    this.el = el; this.scene = scene; this.clock = clock; this.inMap = inMap; this.ready = ready; this.terrain = terrain;
+    this.onArrive = onArrive; this.onStation = onStation;
+    this.under = new Underground(scene);
     this.lines = data.lines;
     for (const line of this.lines) {
       if (line.path && line.path.length > 1 && line.stations.every((s) => typeof s.d === 'number')) this.tracks.set(line, new Track(line.path));
@@ -259,7 +210,7 @@ export class Metro {
     this.phase = null;
     this.el.hidden = true;
     this.el.classList.remove('riding');
-    this.scene.remove(this.tunnel);
+    this.under.hide();
   }
 
   tabLine() { return this.lines[this.tab]; }
@@ -312,13 +263,13 @@ export class Metro {
     const steps: MetroStep[] = [];
     legs.forEach((leg, n) => {
       const { line, i, j } = leg, st = line.stations, dir = j > i ? 1 : -1, tracked = this.tracks.has(line);
-      if (n) steps.push({ kind: 'change', leg, from: t, to: (t += TRANSFER), real: SHOW_WAIT, a: i, b: i });
+      if (n) steps.push({ kind: 'change', leg, from: t, to: (t += TRANSFER), real: SHOW_CHANGE, a: i, b: i });
       const wait = Math.random() * (3600 / this.perHour(line));
       steps.push({ kind: 'wait', leg, from: t, to: (t += wait), real: SHOW_WAIT, a: i, b: i });
       const speed = Math.min(FAST, Math.max(SLOW, Math.abs((st[j].d ?? 0) - (st[i].d ?? 0)) / LEG_SECONDS));
       for (let a = i; a !== j; a += dir) {
         const b = a + dir, time = Math.abs(st[b].t - st[a].t);
-        steps.push({ kind: 'ride', leg, from: t, to: (t += time), real: tracked ? Math.max(HOP, Math.abs(st[b].d! - st[a].d!) / speed) : 0, a, b });
+        steps.push({ kind: 'ride', leg, from: t, to: (t += time), real: tracked ? Math.max(HOP, Math.abs(st[b].d! - st[a].d!) / speed) + DWELL : 0, a, b });
       }
     });
     // Without a track, the whole ride in at most LONGEST seconds, as before.
@@ -328,6 +279,9 @@ export class Metro {
     this.total = t;
     this.t = this.r = this.k = 0;
     this.pace = 1;
+    this.announced = -1;
+    const first = this.state();
+    if (first) this.ground = this.terrain(first.x, first.y);
     this.dest = dest;
     this.phase = 'ride';
     this.note = '';
@@ -345,6 +299,12 @@ export class Metro {
     while (this.k < this.steps.length && this.r >= this.steps[this.k].real) this.r -= this.steps[this.k++].real;
     const s = this.steps[this.k];
     this.moveTo(s ? s.from + (s.to - s.from) * (this.r / s.real) : this.total);
+    // The train stands at a station: say which.
+    if (s?.kind === 'ride' && this.tracks.has(s.leg.line) && this.r >= s.real - DWELL && this.announced !== this.k) {
+      this.announced = this.k;
+      this.onStation(s.leg.line.stations[s.b].name);
+    }
+    this.draw(dt);
     if (!s) this.arrive();
     else this.render();
   }
@@ -372,28 +332,40 @@ export class Metro {
     Promise.resolve(this.onArrive(x, y, dest.name)).finally(() => this.close());
   }
 
-  // Where the train is (its middle, m along the track) and how fast it's going there
-  // (m per real second, along the track's direction of numbering).
-  private train(): { step: MetroStep; track: Track; d: number; v: number } | null {
+  // Where the ride is: the station or the train to watch (m along the track, and x, y),
+  // how fast that moves (m per real second), where the train is (its middle, m along;
+  // null while it hasn't come in yet) and which way it goes along the track.
+  private state() {
     if (this.phase !== 'ride' && this.phase !== 'arriving') return null;
     const step = this.steps[Math.min(this.k, this.steps.length - 1)];
     const track = step && this.tracks.get(step.leg.line);
     if (!step || !track) return null;
-    const st = step.leg.line.stations, da = st[step.a].d!, db = st[step.b].d!;
-    if (step.kind !== 'ride' || this.phase === 'arriving') return { step, track, d: step.kind === 'ride' ? db : da, v: 0 };
-    // Pulling away from a station and slowing into the next.
-    const f = Math.min(1, this.r / step.real);
-    return { step, track, d: da + (db - da) * (1 - Math.cos(Math.PI * f)) / 2, v: ((db - da) * Math.PI / 2) * Math.sin(Math.PI * f) / step.real * this.pace };
+    const { line, i, j } = step.leg, st = line.stations, da = st[step.a].d!, db = st[step.b].d!;
+    const dir = Math.sign(st[j].d! - st[i].d!) || 1, f = Math.min(1, this.r / step.real);
+    let d = da, v = 0, train: number | null = da;
+    if (this.phase === 'arriving') d = train = step.kind === 'ride' ? db : da;
+    else if (step.kind === 'change') train = null;
+    else if (step.kind === 'wait') {
+      // The train comes in at the end of the wait, slowing to a stop.
+      const u = (f - 0.35) / 0.65;
+      train = u < 0 ? null : da - dir * APPROACH * (1 - u) ** 2;
+    } else {
+      // Pulling away from a station and slowing into the next, then standing there.
+      const g = Math.min(1, this.r / (step.real - DWELL));
+      d = train = da + (db - da) * (1 - Math.cos(Math.PI * g)) / 2;
+      v = g < 1 ? ((db - da) * Math.PI / 2) * Math.sin(Math.PI * g) / (step.real - DWELL) * this.pace : 0;
+    }
+    const cruise = step.kind === 'ride' ? Math.abs(db - da) / (step.real - DWELL) : SLOW;
+    const p = track.point(d);
+    return { step, track, line, d, v, train, dir, cruise, x: p.x, y: p.y, ang: p.ang };
   }
 
   // Whether the map along the track has loaded for the next couple of seconds' ride.
   loadedAhead() {
-    const tr = this.train();
-    if (!tr) return true;
-    const { step, track, d } = tr, st = step.leg.line.stations, dir = Math.sign(st[step.b].d! - st[step.a].d!) || 1;
-    const reach = Math.max(200, (Math.abs(st[step.b].d! - st[step.a].d!) / step.real) * 2.5);
-    for (let s = 0; s <= reach; s += 100) {
-      const p = track.point(d + dir * s);
+    const s = this.state();
+    if (!s) return true;
+    for (let k = 0; k <= Math.max(200, s.cruise * 2.5); k += 100) {
+      const p = s.track.point(s.d + s.dir * k);
       if (!this.ready(p.x, p.y)) return false;
     }
     return true;
@@ -402,51 +374,22 @@ export class Metro {
   // Where the view should be during the ride: over the train, going its way. Null
   // while choosing a station, or with no track to follow.
   view(): MetroView | null {
-    const tr = this.train();
-    if (!tr) return null;
-    const p = tr.track.point(tr.d);
-    return { x: p.x, y: p.y, vx: Math.cos(p.ang) * tr.v, vy: Math.sin(p.ang) * tr.v };
+    const s = this.state();
+    if (!s) return null;
+    return {
+      x: s.x, y: s.y, vx: Math.cos(s.ang) * s.v, vy: Math.sin(s.ang) * s.v,
+      ground: this.ground, floor: this.ground - DEPTH, r: HOLE, height: 130 + s.cruise * 0.6,
+    };
   }
 
-  // Every frame during a ride: the overlay over the view at (x, y), at height `y0`
-  // (the ground there), `r` across.
-  place(x: number, y: number, y0: number, r: number) {
-    const tr = this.train();
-    if (!tr) {
-      this.scene.remove(this.tunnel);
-      return;
-    }
-    const line = tr.step.leg.line;
-    if (this.tunnelLine !== line) this.build(line, tr.track);
-    if (!this.tunnel.parent) this.scene.add(this.tunnel);
-    this.tunnel.position.y = y0 + 1;
-    this.dim.position.set(x, 0, -y);
-    this.dim.scale.set(r * 2.5, 1, r * 2.5);
-    // The cars one behind the other, the first where the train is heading.
-    const st = line.stations, dir = Math.sign(st[tr.step.b].d! - st[tr.step.a].d!) || 1;
-    this.cars.forEach((c, i) => {
-      const p = tr.track.point(tr.d + dir * CAR * ((TRAIN - 1) / 2 - i));
-      c.position.set(p.x, 0, -p.y);
-      c.rotation.y = p.ang;
-    });
-  }
-
-  private build(line: MetroLine, track: Track) {
-    this.tunnel.clear();
-    this.strip?.geometry.dispose();
-    this.ring?.dispose();
-    this.tunnelLine = line;
-    const colour = overlay(line.colour, 1, 21);
-    this.ring = colour.m;
-    this.strip = mesh(track.strip(7), colour);
-    this.tunnel.add(this.dim, this.strip, ...this.cars);
-    for (const s of line.stations) {
-      const p = track.point(s.d!);
-      for (const o of [mesh(ringGeometry, { m: this.ring, order: 22 }), mesh(stopGeometry, STOP)]) {
-        o.position.set(p.x, 0, -p.y);
-        this.tunnel.add(o);
-      }
-    }
+  // The tunnels and the train where the ride is, under the ground (once it's loaded
+  // there: until then, as deep as before).
+  private draw(dt: number) {
+    const s = this.state();
+    if (!s) return this.under.hide();
+    if (this.ready(s.x, s.y)) this.ground += (this.terrain(s.x, s.y) - this.ground) * Math.min(1, dt * 3);
+    this.under.show(s.track, s.line.colour, s.line.stations.map((x) => x.d!));
+    this.under.place(this.ground, s.train, s.dir);
   }
 
   render() {

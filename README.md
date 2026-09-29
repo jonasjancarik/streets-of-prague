@@ -48,9 +48,11 @@ the pixel ratio.
   station on any line (W/S, A/D for the line, E to go, or tap), and the ride plays out
   on the line's map: the wait for a train, the stations going by, a change of line
   where you need one, with the clock moving on by the real times (`src/metro.ts`).
-  Meanwhile the view rises over the darkened city and follows your train along the
-  real track, stopping at each station, and slows down while the map ahead loads;
-  E skips to the end. You come up at an entrance of that station, and the police have
+  Meanwhile the view follows your train along the real track, deep under the streets
+  and seen through a hole in the ground as in a road tunnel (`src/underground.ts`):
+  the line's two tunnels, a platform at each station with the line's colour on its
+  walls, the train pulling in and stopping, the station's name as it stands there.
+  It slows down while the map ahead loads; E skips to the end. You come up at an entrance of that station, and the police have
   lost you. After midnight the metro is shut until about five.
 - **Parts of town**: the street you're in shows top left; come into another part of
   town (Smíchov, Malá Strana, Vinohrady…) and its name comes up as a large title for a
