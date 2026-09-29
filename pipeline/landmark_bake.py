@@ -6,10 +6,16 @@ model (LOD3), and writes that as a GLB.
 
 Both inputs are in the game's coordinates (y up), as is the result. The clean model is
 welded, its coplanar triangles merged into faces and its undersides dropped; it gets
-UVs and one texture of about `cm_per_px` (default 5) cm per pixel. Each texel's colour
-comes from a ray cast inwards from a little outside the clean surface; where the two
-models are further apart than that, from a second, longer ray, and anything still
-missing is filled in from around it.
+UVs and one texture of about `cm_per_px` (default 5) cm per pixel.
+
+A roof's colours come from straight above, as the game's camera sees it (the mesh
+comes from aerial photographs too): the first surface of the mesh a ray from high
+above meets, so a dome the clean model has simpler than it is still looks right. A
+wall's come from a ray cast inwards from a little outside it, or where the two models
+are further apart than that, from a second, longer ray. Where that ray meets the
+underside of something (an onion dome bulging out over the simpler drum the clean
+model has, whose shaded underside the camera never sees), the wall takes what's seen
+from above instead. Anything still missing is filled in from around it.
 """
 import math
 import os
@@ -18,6 +24,7 @@ import sys
 import bmesh
 import bpy
 import numpy as np
+from mathutils import Vector
 
 args = sys.argv[sys.argv.index("--") + 1:]
 low_path, high_path, out_path = map(os.path.abspath, args[:3])
@@ -42,6 +49,13 @@ select(*highs)
 if len(highs) > 1:
     bpy.ops.object.join()
 high = bpy.context.view_layer.objects.active
+# The importers turn y-up into Blender's z-up with the objects' rotation: put it into
+# the meshes, so z is up in them too (and the GLB comes out without a rotation).
+for o in (low, high):
+    select(o)
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+
+ROOF = 0.35  # a face whose normal points up at least this much is a roof
 
 me = low.data
 bm = bmesh.new()
@@ -51,6 +65,9 @@ bmesh.ops.dissolve_limit(bm, angle_limit=math.radians(1), verts=bm.verts, edges=
 bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
 # Undersides (floors over the ground or the water) are never seen from above.
 bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.normal.z < -0.7], context="FACES")
+# Roofs and walls baked in different ways, so they share no vertices.
+bmesh.ops.split_edges(bm, edges=[e for e in bm.edges if len(e.link_faces) == 2
+                                 and (e.link_faces[0].normal.z > ROOF) != (e.link_faces[1].normal.z > ROOF)])
 area = sum(f.calc_area() for f in bm.faces)
 bm.to_mesh(me)
 bm.free()
@@ -85,19 +102,78 @@ bake.use_pass_indirect = False
 bake.use_pass_color = True
 
 
-def bake_into(name, extrusion, reach):
-    """The mesh's base colour by rays from `extrusion` m outside the clean surface
-    inwards, at most `reach` m long; black where none found it."""
-    im = bpy.data.images.new(name, size, size)
+# For the bakes of which way the mesh faces where a ray met it: its normal's height,
+# from 0.1 (straight down) to 1 (straight up), so that black still means a miss.
+facing = bpy.data.materials.new("facing")
+facing.use_nodes = True
+fn = facing.node_tree
+for n in list(fn.nodes):
+    fn.nodes.remove(n)
+geo, sep = fn.nodes.new("ShaderNodeNewGeometry"), fn.nodes.new("ShaderNodeSeparateXYZ")
+mp, emit, out = fn.nodes.new("ShaderNodeMapRange"), fn.nodes.new("ShaderNodeEmission"), fn.nodes.new("ShaderNodeOutputMaterial")
+mp.inputs["From Min"].default_value, mp.inputs["To Min"].default_value = -1.0, 0.1
+fn.links.new(geo.outputs["True Normal"], sep.inputs[0])
+fn.links.new(sep.outputs["Z"], mp.inputs["Value"])
+fn.links.new(mp.outputs["Result"], emit.inputs["Color"])
+fn.links.new(emit.outputs["Emission"], out.inputs["Surface"])
+
+
+def bake_into(name, extrusion, reach, normals=False):
+    """The mesh's base colour (or with `normals`, which way it faces, see `facing`) by
+    rays from `extrusion` m outside the clean surface inwards, at most `reach` m long;
+    black where none found it."""
+    im = bpy.data.images.new(name, size, size, float_buffer=normals)
     tex.image = im
     bake.cage_extrusion = extrusion
     bake.max_ray_distance = reach
     select(high, low, active=low)
-    bpy.ops.object.bake(type="DIFFUSE")
+    own = [s.material for s in high.material_slots]
+    if normals:
+        for s in high.material_slots:
+            s.material = facing
+    bpy.ops.object.bake(type="EMIT" if normals else "DIFFUSE")
+    for s, m in zip(high.material_slots, own):
+        s.material = m
     px = np.empty(size * size * 4, np.float32)
     im.pixels.foreach_get(px)
     bpy.data.images.remove(im)
     return px.reshape(size, size, 4)
+
+
+def roof_mask():
+    """The texels of the roofs' UV islands."""
+    mask = np.zeros((size, size), bool)
+    uv = me.uv_layers.active.data
+    ys, xs = np.mgrid[0:size, 0:size]
+    for f in me.polygons:
+        if f.normal.z <= ROOF:
+            continue
+        pts = [np.array(uv[i].uv) * size for i in f.loop_indices]
+        for a, b, c in ((pts[0], pts[k], pts[k + 1]) for k in range(1, len(pts) - 1)):
+            x0, y0 = np.floor(np.minimum(np.minimum(a, b), c)).astype(int).clip(0, size - 1)
+            x1, y1 = np.ceil(np.maximum(np.maximum(a, b), c)).astype(int).clip(0, size - 1)
+            px_, py_ = xs[y0:y1 + 1, x0:x1 + 1] + 0.5, ys[y0:y1 + 1, x0:x1 + 1] + 0.5
+            e = [(q[0] - p[0]) * (py_ - p[1]) - (q[1] - p[1]) * (px_ - p[0]) for p, q in ((a, b), (b, c), (c, a))]
+            inside = ((e[0] >= 0) & (e[1] >= 0) & (e[2] >= 0)) | ((e[0] <= 0) & (e[1] <= 0) & (e[2] <= 0))
+            mask[y0:y1 + 1, x0:x1 + 1] |= inside
+    return mask
+
+
+def bake_from_above(name, rise=30.0):
+    """Colours by rays straight down from `rise` m above, through a cage: the clean
+    model lifted. On a wall, a ray runs down its face, meeting whatever is over it."""
+    cage = low.copy()
+    cage.data = low.data.copy()
+    bpy.context.collection.objects.link(cage)
+    for v in cage.data.vertices:
+        v.co.z += rise
+    bake.use_cage = True
+    bake.cage_object = cage
+    try:
+        return bake_into(name, 0.0, rise + 20.0)
+    finally:
+        bake.use_cage = False
+        bpy.data.objects.remove(cage)
 
 
 def missed(px):
@@ -107,8 +183,15 @@ def missed(px):
 
 
 near = bake_into("near", 0.8, 2.0)  # where the two models agree
-far = bake_into("far", 3.0, 8.0)    # parts the clean model has a little off
-px = np.where(missed(near)[..., None], far, near)
+far = bake_into("far", 3.0, 8.0)    # parts the clean model has further off
+use_far = missed(near)
+side = np.where(use_far[..., None], far, near)
+# Which way the mesh faces where those rays met it (see `facing`): below 0.4, its
+# normal points down at least a little.
+up = np.where(use_far, bake_into("far_n", 3.0, 8.0, True)[..., 0], bake_into("near_n", 0.8, 2.0, True)[..., 0])
+under = ~missed(side) & (up > 0.1) & (up < 0.4)
+above = bake_from_above("above")
+px = np.where(((roof_mask() | under) & ~missed(above))[..., None], above, side)
 hole = missed(px)
 
 # Fill the rest from around it (push-pull: average down, then back up), which also

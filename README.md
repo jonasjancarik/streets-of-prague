@@ -232,8 +232,11 @@ the pixel ratio.
   (a little wider) and keeps the triangles inside. Blender (`pipeline/landmark_bake.py`)
   then bakes their colours onto the landmark's clean model from IPR's city model
   (LOD3): straight walls and roof edges, without the mesh's trees and lumps, about 100
-  faces and one texture of about 5 cm per pixel (Mánes: 0.9 MB, against 2 MB and
-  18,000 triangles for the mesh's own). The game hides IPR's and OSM's buildings in that
+  faces and one texture of about 5 cm per pixel (Mánes: 1.2 MB, against 2 MB and
+  18,000 triangles for the mesh's own). Roofs take their colours from straight above,
+  as the camera sees them; walls from straight in front, except where that meets the
+  underside of something (an onion dome bulging over the simpler drum LOD3 has), which
+  the camera never sees, so they take what's above instead. The game hides IPR's and OSM's buildings in that
   footprint and draws the model there (`landmarkModel` in `src/tiles.ts`). The photographs have the day's light
   in them, so the model is lit evenly, as if every face looked up, and still darkens at
   night. The collision footprint stays OSM's.

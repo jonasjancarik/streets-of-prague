@@ -156,13 +156,16 @@ const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ ve
 async function landmarkModel(url: string) {
   const gltf = await new GLTFLoader().loadAsync(url);
   const model = gltf.scene;
+  model.updateMatrixWorld(true);
   model.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     const map = (o.material as THREE.MeshStandardMaterial).map;
     if (map) map.anisotropy = 4;
     o.material = cutAway(new THREE.MeshLambertMaterial({ map, side: THREE.DoubleSide }), 'landmark');
+    // Up in the world, in the mesh's own axes (in case the file turns it).
+    const up = new THREE.Vector3(0, 1, 0).applyMatrix3(new THREE.Matrix3().getNormalMatrix(o.matrixWorld).invert()).normalize();
     const n = o.geometry.attributes.position.count;
-    o.geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    o.geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3).map((_, i) => up.getComponent(i % 3)), 3));
     o.castShadow = true;
   });
   return model;
