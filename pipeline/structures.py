@@ -72,14 +72,15 @@ def is_subway_station(tags):
                                            or tags.get("public_transport") in ("station", "stop_position", "platform"))
 
 
-def station_ways(els, tf):
+def station_ways(els, tf, ground=frozenset()):
     """The ids of the ways that are a metro station's corridors and stairs: OSM tags them
     tunnel=yes, but they're the station inside, not tunnels to walk through. Footways
     and stairs in tunnels, taken together where they meet, are left out as a whole if
     any of them is indoors (indoor=*), reaches a metro entrance (railway=subway_entrance),
     comes within STATION metres of a metro station, platform or stop, or is inside a
     station's outline. Underpasses away from the metro (under the magistrála by Hlavní
-    nádraží, say) stay."""
+    nádraží, say) stay. `ground`: ways tagged as tunnels that are passages through
+    buildings at street level (osm_area.extract's ground_ways), neither."""
     where = {el["id"]: (el["lon"], el["lat"]) for el in els if el["type"] == "node"}
     entrances = {el["id"] for el in els if el["type"] == "node" and el.get("tags", {}).get("railway") == "subway_entrance"}
     near, outlines = [], []
@@ -93,7 +94,7 @@ def station_ways(els, tf):
             if len(pts) > 3 and el["nodes"][0] == el["nodes"][-1]:
                 outlines.append(Polygon(list(zip(*tf.transform(*zip(*pts))))).buffer(0))
     foot = {el["id"]: el for el in els if el["type"] == "way" and el.get("tags", {}).get("highway") in STATION_FOOT
-            and structure_kind(el["tags"]) == "tunnel"}
+            and structure_kind(el["tags"]) == "tunnel" and el["id"] not in ground}
     if not foot:
         return set()
     # Group the footways that meet (share a node) into one piece each.
@@ -125,28 +126,32 @@ def station_ways(els, tf):
     return out
 
 
-def structure_ways(data, tf):
+def structure_ways(data, tf, ground=frozenset()):
     """Every highway on a bridge or in a tunnel in a chunk's OSM data (osmnx's JSON of
     it): {id, kind, layer, hw, w, pts, nodes, grade}, `grade` saying for each node
     whether a way on the ground meets it there (or the way ends there, on its own).
-    A metro station's corridors and stairs aren't tunnels (station_ways)."""
+    A metro station's corridors and stairs aren't tunnels (station_ways), and nor are
+    the passages through buildings in `ground` (osm_area.extract's ground_ways)."""
     from osm_area import road_width, _float
 
     els = data["elements"]
     where = {el["id"]: (el["lon"], el["lat"]) for el in els if el["type"] == "node"}
-    inside = station_ways(els, tf)
+    inside = station_ways(els, tf, ground)
     ways = [el for el in els if el["type"] == "way" and el.get("tags", {}).get("highway") not in (None, *NO_HIGHWAY)
             and el["id"] not in inside]
+
+    def kind_of(el):
+        return None if el["id"] in ground else structure_kind(el["tags"])
     on_ground, uses = set(), defaultdict(int)
     for el in ways:
         for n in el["nodes"]:
             uses[n] += 1
-        if not structure_kind(el["tags"]):
+        if not kind_of(el):
             on_ground.update(el["nodes"])
     out = []
     for el in ways:
         tags = el["tags"]
-        kind = structure_kind(tags)
+        kind = kind_of(el)
         nodes = [n for n in el["nodes"] if n in where]
         if not kind or len(nodes) < 2:
             continue

@@ -45,6 +45,14 @@ ROAD_WIDTH = {
     "footway": 3, "path": 2, "steps": 3, "cycleway": 2.5, "track": 3, "bridleway": 2,
 }
 LANE_WIDTH = 3.25
+# Ways that may run through a building at street level: a pasáž, a gateway, an arcade.
+PASSAGE_WAYS = {"footway", "path", "pedestrian", "steps", "corridor", "cycleway", "living_street", "service"}
+# A way tagged tunnel=yes or covered (not tunnel=building_passage) is taken for a
+# passage through buildings when at least this much of it is inside them; an arcade
+# (covered=arcade), which runs along the street under the buildings' fronts, when
+# ARCADE metres of it are.
+INSIDE = 0.5
+ARCADE = 3.0
 COBBLES = ("sett", "cobblestone", "unhewn_cobblestone", "paving_stones")
 # A car road at least this much of whose centre line runs on the technical map's
 # surveyed surface is drawn from the survey (dtm.py); others, from OSM's tags.
@@ -128,6 +136,32 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             return None
         return v
 
+    def add_passage(g, hw, width):
+        # A way through a building at street level (a gateway, an arcade, a pasáž):
+        # drawn like any street, and cut through the building's footprint.
+        for ls in _lines(g.intersection(clip)):
+            passages.append({"hw": hw, "w": round(width, 1), "pts": _coords(ls)})
+
+    def add_way(row, g, hw, width):
+        cls = "road" if hw in CAR_ROADS else "path"
+        if col(row, "bridge") not in (None, "no"):  # yes, viaduct, cantilever, …
+            cls = "bridge"
+        if hw in ("path", "track", "bridleway") and col(row, "surface") not in ("paving_stones", "sett", "asphalt", "cobblestone"):
+            cls = "dirt"
+        if cls == "road" and col(row, "surface") in COBBLES:
+            cls = "sett"  # most streets are asphalt; the rest keep their cobbles
+        if hw == "footway" and col(row, "footway") == "crossing":
+            crossings.extend(_coords(ls) for ls in _lines(g.intersection(clip)))
+            return
+        if hw in ("footway", "path") and col(row, "footway") not in ("traffic_island", "link"):
+            sidewalks.extend((ls, width / 2, col(row, "footway") == "sidewalk") for ls in _lines(g))
+        if hw in CAR_ROADS:
+            # Sized kerb to kerb once the pavements and tracks are all in (kerbs.py).
+            est = estimate(width, lambda k: col(row, k), not col(row, "width") and not col(row, "lanes"))
+            car_ways.extend((ls, est, cls, hw != "service") for ls in _lines(g))
+            return
+        road_lines.setdefault(cls, []).append(g.buffer(width / 2, cap_style="round", join_style="round"))
+
     buildings = []
     parts = []  # building parts whose roof OSM describes (roofs.py), to colour IPR's roofs by
     areas: dict[str, list] = {}
@@ -138,6 +172,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     streets = []  # car roads other than service roads, which cut residential areas into blocks
     car_ways = []  # (line, what its tags say, class, a street?), sized after the loop
     sidewalks = []  # footways and paths with their half widths, which may run along a street
+    maybe = []  # ways that are passages if they run through buildings (passage_tags)
+    ground_ways = set()  # the OSM ids of the passages among the ways tagged as tunnels
 
     # Every geometry into local metres in one go.
     geoms = shapely.transform(geoms, lambda c: np.column_stack(tf.transform(c[:, 0], c[:, 1])))
@@ -179,32 +215,15 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             if hw in ("proposed", "construction", "elevator", "platform", "bus_stop"):
                 continue
             width = road_width(hw, _float(col(row, "width")), _float(col(row, "lanes")))
-            cls = "road" if hw in CAR_ROADS else "path"
-            if col(row, "bridge") not in (None, "no"):  # yes, viaduct, cantilever, …
-                cls = "bridge"
-            tunnel = col(row, "tunnel")
-            if tunnel == "building_passage" and (_float(col(row, "layer")) or 0) >= -1:
-                # A way through a building at street level (a gateway, an arcade, a
-                # pasáž): drawn like any street, and cut through the building's footprint.
-                for ls in _lines(g.intersection(clip)):
-                    passages.append({"hw": hw, "w": round(width, 1), "pts": _coords(ls)})
-            elif tunnel:
+            passage = passage_tags(hw, lambda k: col(row, k))
+            if passage == "maybe":
+                maybe.append((row, g, hw, width))  # decided once all the buildings are in
                 continue
-            if hw in ("path", "track", "bridleway") and col(row, "surface") not in ("paving_stones", "sett", "asphalt", "cobblestone"):
-                cls = "dirt"
-            if cls == "road" and col(row, "surface") in COBBLES:
-                cls = "sett"  # most streets are asphalt; the rest keep their cobbles
-            if hw == "footway" and col(row, "footway") == "crossing":
-                crossings.extend(_coords(ls) for ls in _lines(g.intersection(clip)))
+            if passage:
+                add_passage(g, hw, width)
+            elif col(row, "tunnel"):
                 continue
-            if hw in ("footway", "path") and col(row, "footway") not in ("traffic_island", "link"):
-                sidewalks.extend((ls, width / 2, col(row, "footway") == "sidewalk") for ls in _lines(g))
-            if hw in CAR_ROADS:
-                # Sized kerb to kerb once the pavements and tracks are all in (kerbs.py).
-                est = estimate(width, lambda k: col(row, k), not col(row, "width") and not col(row, "lanes"))
-                car_ways.extend((ls, est, cls, hw != "service") for ls in _lines(g))
-                continue
-            road_lines.setdefault(cls, []).append(g.buffer(width / 2, cap_style="round", join_style="round"))
+            add_way(row, g, hw, width)
             continue
         if hw == "pedestrian" and isinstance(g, (Polygon, MultiPolygon)):
             areas.setdefault("square", []).append(g)
@@ -246,6 +265,21 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             elif (col(row, "man_made") == "bridge" or col(row, "bridge")) and not b:
                 areas.setdefault("bridge", []).append(g.buffer(0))
 
+    # Passages tagged as tunnels or as covered ways: the ones that run through buildings.
+    if maybe:
+        shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
+        btree = STRtree(shapes)
+        for row, g, hw, width in maybe:
+            hits = btree.query(g, predicate="intersects")
+            inside = unary_union([shapes[k] for k in hits]).intersection(g).length if len(hits) else 0
+            if inside >= (min(ARCADE, INSIDE * g.length) if col(row, "covered") == "arcade" else INSIDE * g.length):
+                add_passage(g, hw, width)
+                if row["element"] == "way":
+                    ground_ways.add(int(row["id"]))
+            elif col(row, "tunnel"):
+                continue
+            add_way(row, g, hw, width)
+
     # The streets as surveyed, where the technical map has them (within Prague).
     surface = shapely.intersection(dtm.streets((w, s, e, n), tf.transform), clip, grid_size=GRID)
     kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways], surface)
@@ -254,6 +288,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
             "buildings": buildings, "parts": parts, "areas": {}, "roads": {}, "rails": rails,
             "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
+            "ground_ways": ground_ways,
             "lots": lots, "kerbs": kerbs,
         }
     lines = [w[0] for w in car_ways]
@@ -294,8 +329,27 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
         "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
+            "ground_ways": ground_ways,
         "lots": lots, "kerbs": kerbs,
     }
+
+
+def passage_tags(hw, get):
+    """Whether a way is a passage through a building at street level, by its tags
+    (`get`: a tag's value or None): True for tunnel=building_passage, "maybe" for a
+    way tagged as a tunnel or as covered that could be one (it is if it runs through
+    buildings, INSIDE), else False. Not below the street: a metro station's corridors,
+    an underpass."""
+    tunnel, covered = get("tunnel"), get("covered")
+    layer = _float(get("layer")) or 0
+    if tunnel == "building_passage":
+        return layer >= -1
+    if hw not in PASSAGE_WAYS or not (tunnel == "yes" or (not tunnel and covered in ("yes", "arcade"))):
+        return False
+    # Arcades are often put a layer down, under the building.
+    if layer not in (0, -1) or (layer == -1 and not covered) or str(get("level") or "0").strip() != "0":
+        return False
+    return "maybe"
 
 
 def use_overpass_mirror():

@@ -124,17 +124,18 @@ def kerb_parking(d, side):
     return None
 
 
-def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None):
+def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None, ground=frozenset()):
     """Edges of an osmnx network as dicts with OSM node ids and local-metre polylines;
     with `kerbs` (kerbs.Kerbs), car roads get their kerbs as `kerb`: [right, left].
     `source`: the local cut's OSM data as read by read_osm (pickled osmnx JSON);
-    `core`: the chunk's own box in local metres (without its margin)."""
+    `core`: the chunk's own box in local metres (without its margin);
+    `ground`: ways tagged as tunnels that are passages through buildings (osm_area)."""
     if source:
         # The same network osmnx would ask Overpass for, built from the local cut.
         data = pickle.loads(source)
         ok = network_filter(network)
         # Not a metro station's corridors and stairs: they're underground, off the map.
-        station = structures.station_ways(data["elements"], tf)
+        station = structures.station_ways(data["elements"], tf, ground)
         data["elements"] = [el for el in data["elements"] if el["type"] != "way" or (ok(el.get("tags", {})) and el["id"] not in station)]
         G = ox.graph._create_graph([data], network in ox.settings.bidirectional_network_types)
         G = ox.simplify_graph(G)
@@ -155,6 +156,7 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None)
         if math.dist(pts[0], (ux, uy)) > math.dist(pts[-1], (ux, uy)):
             pts.reverse()
         hw = first(d.get("highway")) or "unclassified"
+        passage = bool(values(d.get("osmid")) & ground)
         # Kerbside parking on the edge's right and left; an edge that runs against its
         # way (the far lane of a two-way street) has the way's sides swapped.
         right, left = kerb_parking(d, "right"), kerb_parking(d, "left")
@@ -172,8 +174,8 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None)
             "oneway": truthy(d.get("oneway")), "lanes": _float(first(d.get("lanes"))),
             "maxspeed": _float(first(d.get("maxspeed"))), "width": width,
             "bridge": truthy(d.get("bridge")), "surface": first(d.get("surface")), "pts": pts,
-            **({"passage": True} if "building_passage" in values(d.get("tunnel")) else {}),
-            **({"tunnel": True} if values(d.get("tunnel")) - {"no", "False", "building_passage"} else {}),
+            **({"passage": True} if "building_passage" in values(d.get("tunnel")) or passage else {}),
+            **({"tunnel": True} if not passage and values(d.get("tunnel")) - {"no", "False", "building_passage"} else {}),
             **({"park": [right, left]} if directed and (right or left) else {}),
         })
     if sized:
@@ -341,8 +343,8 @@ def build_chunk(job):
 
     if "streets" in wanted:
         t0 = time.perf_counter()
-        drive = graph_edges(bbox, tf, "drive", True, source, x["kerbs"], core)
-        walk = graph_edges(bbox, tf, "walk", False, source)
+        drive = graph_edges(bbox, tf, "drive", True, source, x["kerbs"], core, x["ground_ways"])
+        walk = graph_edges(bbox, tf, "walk", False, source, ground=x["ground_ways"])
         names = {}  # street name → (length of its longest edge, midpoint), for the dev search
         for ed in drive + walk:
             if ed["name"]:
@@ -359,7 +361,7 @@ def build_chunk(job):
                 layer[f"{i}_{j}"] = t
         # Bridges and tunnels, with where they meet the streets on the ground, for
         # ipr_terrain.py to work out their heights (structures.py).
-        found = structures.structure_ways(pickle.loads(source), tf) if source else []
+        found = structures.structure_ways(pickle.loads(source), tf, x["ground_ways"]) if source else []
         out["streets"] = {"tiles": layer, "names": names, "structures": found}
         lap["streets"] = time.perf_counter() - t0
 

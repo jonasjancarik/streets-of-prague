@@ -368,7 +368,12 @@ the pixel ratio.
   pavement is mapped as its own way beside the street, up to that pavement's inner edge.
 - **Passages through buildings** (OSM `tunnel=building_passage`: gateways, arcades,
   Prague's pasáže) are cut out of the buildings' collision footprint and stay in the
-  street graphs, so cars, traffic and people go through. While you're in one, a round
+  street graphs, so cars, traffic and people go through. Many pasáže are mapped as
+  `tunnel=yes` or `covered=yes|arcade` instead; such a way at street level (no lower
+  layer or level, bar an arcade one layer down) counts as a passage when at least
+  half of it runs inside buildings, or an arcade 3 m of it (`passage_tags` in
+  `pipeline/osm_area.py`), rather than as a tunnel under the ground or a metro
+  station's corridor. While you're in one, a round
   hole opens in the floors above you so you can still see yourself (`CUTAWAY` in
   `src/shading.ts`).
 
