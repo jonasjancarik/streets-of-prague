@@ -62,7 +62,10 @@ export function buildBuildings(data: BuildingTile) {
   for (const b of data.buildings) {
     const hv = hash(b.id + b.rings[0].length);
     const isWall = /zeď/i.test(b.name || '');
-    const small = ['garage', 'shed', 'kiosk', 'roof', 'service'].includes(b.kind);
+    // Kiosks and canopies are flat; garages, sheds and service buildings half and half,
+    // so a row of them isn't all flat.
+    const small = ['kiosk', 'roof'].includes(b.kind)
+      || (['garage', 'shed', 'service'].includes(b.kind) && hash(b.id + 'roof') < 0.5);
     const eaves = isWall ? 5 : Math.max(b.h, b.minh + 3);
     const base = isWall ? 0 : b.minh;
 
