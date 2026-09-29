@@ -58,12 +58,15 @@ grime on the walls 6%, the shadow map's own pass 7%.
   long session across the city. The police's route search runs over the graph,
   including tiles that have been dropped, so shrinking it needs care.
 - **three.js's WebGPU renderer** (trial: `?renderer=webgpu`, `src/webgpu.ts`, 29
-  September 2026). The ground, the tone curve and the buildings
-  are ported (to TSL); rain, snow, lamp light, skid marks and the ground's soft
-  shading aren't drawn, and trees, cars, people and trams are drawn plain; not
+  September 2026). The ground, the tone curve, the buildings
+  and the lamps' light (on the ground with the wet ground's mirror, the buildings,
+  landmarks and poles) are ported (to TSL); rain, snow, lamp glows, skid marks and the
+  ground's soft shading aren't drawn, and trees, cars, people and trams are drawn plain; not
   playable. Buildings cost 0.6–1.4 ms a frame on WebGPU against 0.7–1.3 ms on WebGL
   (`--ab`, 2×, Old Town Square, the drive from Újezd, Karlovo náměstí; the GPU was
-  17–20% busy before each run). Open: fog looks stronger on WebGPU in rain and snow
+  17–20% busy before each run). The lamps at night cost +0.7–0.8 ms a frame on WebGPU
+  against +0.2–0.5 ms on WebGL (Old Town Square, Karlovo náměstí, glows not included).
+  Open: fog looks stronger on WebGPU in rain and snow
   (it is probably mixed in before the tone curve, where the game means it after). The same ground patterns cost about half
   as much there: switched on and off with `--ab` at 2× on an M5, +1.2 ms a frame
   on WebGPU against +2.4–3.1 ms on WebGL (Old Town Square, Karlovo náměstí,

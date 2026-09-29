@@ -11,6 +11,7 @@ import {
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON } from '../facades.ts';
 import { WINDOWS } from '../shading.ts';
+import { lampLit } from './lamps.ts';
 import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks } from './common.ts';
 
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS);
@@ -139,10 +140,14 @@ addPort(/^buildings-procedural$/, (node) => {
   node.vertexColors = false; // the colour node multiplies the vertex colour in itself
   node.colorNode = buildingColor();
   node.emissiveNode = windowGlow();
+  lampLit(node);
 });
 
 // The same hole in the landmarks, trees and the ground's depth pass (cutAway in shading.ts).
 addPort(/^cut-/, (node) => {
   const w = positionWorld;
   node.maskNode = w.y.greaterThan(uCut.y).and(distance(w.xz, uCut.xz).lessThan(uCut.w)).not();
+  lampLit(node);
 });
+
+addPort(/^lamp-pole$/, (node) => { lampLit(node); });

@@ -21,7 +21,14 @@ registered with `renderer.library.addToneMapping`), and the buildings
 (`src/webgpu/buildings.ts`: roofs, windows, facade pictures, grime, lit windows, rain
 and snow, and the cutaway hole, also used by every `cutAway` material: landmarks, trees'
 `cut-*` key, the depth-only ground). Shared helpers and uniforms are in
-`src/webgpu/common.ts`. Buildings cost 0.6–1.4 ms a frame at 2× on WebGPU against
+`src/webgpu/common.ts`. The lamps' light is ported too (`src/webgpu/lamps.ts`): the pools
+drawn into the light map (`setPools`, a node material with the same custom blending),
+`lampLight(world, normal)`, and `lampLit(node)`, which adds the light to a port's
+`emissiveNode`. It is on the ground (with the wet ground's mirror, `shine`), the
+buildings, the landmarks and trees' `cut-*` materials, and the poles. At night (22:00, 2×)
+the whole lamp system costs +0.7 and +0.8 ms a frame on WebGPU against +0.2 and +0.5 ms
+on WebGL (Old Town Square, Karlovo náměstí; `--ab` swapping `lamps.update`'s `on` for
+0; the glows aren't drawn on WebGPU yet, so its number is a little low). Buildings cost 0.6–1.4 ms a frame at 2× on WebGPU against
 0.7–1.3 ms on WebGL (`--ab`, three scenes).
 
 Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
@@ -29,17 +36,16 @@ Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 | Where | What | Notes |
 |---|---|---|
 | `shading.ts` `cutAway` | the hole over the player, for trees | ported for the landmarks and the depth ground (a `maskNode` on every `cut-*` material); trees still need `leafy` |
-| `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | shared by the ground, buildings, cars, figures, trams, boats, signals; needed for night |
+| `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | ported for the ground, buildings, `cut-*` and poles (`lampLit(node)` in a port); cars, figures, trams, boats, funicular and signals still need it |
 | `map/vegetation.ts` `leafy`, `treeDepth` | leaves in tufts (vertex and fragment), bare twigs, their shadows | `treeDepth` is a `customDepthMaterial`, see below |
 | `figures.ts` `vatMaterial` | people animated from textures (`gl_VertexID`, `texelFetch`) | colour and depth versions |
-| `car.ts`, `trams.ts`, `boats.ts`, `funicular.ts` | snow on top, lamp light | module-level materials, see "Load order" |
+| `car.ts`, `trams.ts`, `boats.ts`, `funicular.ts` | snow on top, lamp light (`lampLit(node)`) | module-level materials, see "Load order" |
 | `underground.ts` | metro hole and earth | |
 | `map/buildings.ts` `drapeRoofs` | an experiment's roof texture | low priority |
 
 Not drawn at all (every `ShaderMaterial` is hidden by a `visible` accessor on
 `THREE.ShaderMaterial.prototype` in `createRenderer`): the ground's soft shading
-(`surface.ts`), rain, snow and mist (`weather.ts`), lamp light pools and glows
-(`lamps.ts`), signal glows (`signals.ts`), spray, fire, skid marks. A ported one has
+(`surface.ts`), rain, snow and mist (`weather.ts`), lamp glows (`lamps.ts`; the pools are ported), signal glows (`signals.ts`), spray, fire, skid marks. A ported one has
 to be built as a node material (not a `ShaderMaterial`) or it stays hidden.
 
 ## How a port is wired
@@ -108,8 +114,12 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
   `uniform(CUTAWAY.value)`.
 - Per-tile numbers (a texture's box) must be uniforms, not constants in the graph,
   or every tile compiles its own shader.
-- `WebGLRenderTarget` works as a render target; sampling a render target's
-  texture in TSL flips it for you. Check the lamps' light map lands where it should.
+- `WebGLRenderTarget` works as a render target, but its texture is upside down when
+  sampled in TSL (the lamps' light map needs `1 - v`, see `lampLight`). `attribute()`
+  reads an `InstancedBufferGeometry`'s instanced attributes (the pools' quads).
+  `NodeMaterial` with `vertexNode` (clip space) and `fragmentNode` takes custom
+  blending as on `ShaderMaterial`, max equation for alpha included. WGSL's
+  `smoothstep` wants edge0 < edge1: write `1 - smoothstep(lo, hi, x)`.
 
 ## Gotchas found so far
 
@@ -121,7 +131,7 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
   compare screenshots).
 - **Night on WebGPU crashed** with `camera.updateProjectionMatrix is not a function`: the
   lamps' light map is drawn with a bare `THREE.Camera`. `createRenderer` gives the base
-  class a no-op; the light map itself is empty until the lamps are ported.
+  class a no-op.
 - **Derivatives only outside branches.** WGSL rejects `fwidth`/`dFdx` (and
   `textureSample` without a level) in non-uniform control flow. Anything computed
   with them must be declared before an `If`: `.toVar()` puts it on the stack where

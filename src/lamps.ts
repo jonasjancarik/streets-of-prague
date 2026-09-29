@@ -42,6 +42,10 @@ vec3 lampLightOn(vec3 w, vec3 n) {
 
 type Shader = THREE.WebGLProgramParametersWithUniforms;
 
+// The WebGPU trial's own version of the pools (webgpu/lamps.ts), set before the lamps are made.
+let poolsBy: ((view: { value: THREE.Vector4 }) => THREE.Material) | null = null;
+export const setPools = (f: typeof poolsBy) => { poolsBy = f; };
+
 // Lamp light on a Lambert material, inside its onBeforeCompile (after the other
 // replacements). `world`: a varying with the world position the shader already has.
 export function lampLit(sh: Shader, world?: string) {
@@ -146,7 +150,7 @@ export class Lamps {
     quad.setAttribute('iColour', this.colour);
     quad.instanceCount = 0;
     this.lights = quad;
-    const pools = new THREE.Mesh(quad, new THREE.ShaderMaterial({
+    const pools = new THREE.Mesh(quad, poolsBy ? poolsBy(this.view) : new THREE.ShaderMaterial({
       uniforms: { uView: this.view },
       vertexShader: /* glsl */ `
         attribute vec4 iAt; attribute vec4 iShape; attribute vec3 iColour;

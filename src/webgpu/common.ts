@@ -14,7 +14,8 @@ export type N = any; // TSL nodes (their typings don't follow the chained arithm
 // (In renderGroup: an uniform in the default per-object group kept the value it had when first uploaded.)
 export const follow = (u: { value: number }) => uniform(u.value).setGroup(renderGroup).onRenderUpdate(() => u.value);
 export const uDirt = follow(DIRT), uWet = follow(WET), uSnow = follow(SNOW), uStreetSnow = follow(STREET_SNOW), uRain = follow(RAIN);
-const followVec = (v: { value: THREE.Vector4 }) => { const u = uniform(v.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(v.value); return u.value; }); return u; };
+export const followVec = (v: { value: THREE.Vector4 }) => { const u = uniform(v.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(v.value); return u.value; }); return u; };
+export const followColor = (v: { value: THREE.Color }) => { const u = uniform(v.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(v.value); return u.value; }); return u; };
 export const uCut = followVec(CUTAWAY), uDig = followVec(DIG);
 const times = new WeakMap<{ value: number }, N>();
 export const timeOf = (t: { value: number }) => { let u = times.get(t); if (!u) times.set(t, (u = follow(t))); return u; };

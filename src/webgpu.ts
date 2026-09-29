@@ -5,19 +5,19 @@
 // and what is written in GLSL outright (ShaderMaterial: rain, snow, the lamps' light,
 // skid marks, the ground's soft shading) isn't drawn at all. Not for playing: for
 // scripts/bench.mjs, e.g. --extra "&renderer=webgpu" with --ab (see ground's flatten).
-// Not ported yet: the lamps' light on the ground and the wet ground's mirror (shine).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
 import { WebGPURenderer, MeshLambertNodeMaterial } from 'three/webgpu';
 import {
-  Fn, If, Discard, float, vec2, vec3, vec4, uniform, texture, positionWorld, materialColor, fract, floor, mod, dot,
+  Fn, If, Discard, float, vec2, vec3, vec4, uniform, texture, positionWorld, normalView, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select,
 } from 'three/tsl';
-import { setPatterned } from './shading.ts';
+import { setPatterned, SKY_REF } from './shading.ts';
 import {
-  type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports,
+  type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports,
 } from './webgpu/common.ts';
+import { lampLight } from './webgpu/lamps.ts';
 import './webgpu/buildings.ts';
 
 // PATTERNS_GLSL.
@@ -133,17 +133,23 @@ function pattern(id: number, c: N, p: N, time: N): N {
   }
 }
 
-// WEATHER_GLSL, the colour only (not the shine).
-function weathered(id: number, c0: N, p: N) {
-  if (id === 10) return c0;
+// WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
+function weathered(id: number, c0: N, p: N, time: N) {
+  if (id === 10) return vec4(c0, 0.35);
   const paved = id <= 4 || id === 9, road = id === 1 || id === 2;
-  const c = vec3(c0).toVar();
+  const c = vec3(c0).toVar(), shine = float(0).toVar();
+  // (Derivatives outside the branches.)
+  const ripple = paved ? detail(p, 0.12) : float(0);
   const wet = (paved ? select(uSnow.greaterThan(0.01), max(uWet, uSnow.mul(uStreetSnow.oneMinus()).mul(0.8)), uWet) : uWet).toVar();
   If(wet.greaterThan(0.01), () => {
     c.mulAssign(mix(1, paved ? 0.6 : 0.78, wet));
     if (paved) {
-      const puddle = smoothstep(0.66, 0.71, fbm2(p.mul(0.3).add(31)).mul(0.75).add(fbm2(p.mul(0.04).add(7)).mul(0.35))).mul(smoothstep(0.35, 0.9, wet));
+      const puddle = smoothstep(0.66, 0.71, fbm2(p.mul(0.3).add(31)).mul(0.75).add(fbm2(p.mul(0.04).add(7)).mul(0.35))).mul(smoothstep(0.35, 0.9, wet)).toVar();
+      shine.assign(puddle.mul(0.4).add(0.1).mul(wet));
       c.mulAssign(float(1).sub(puddle.mul(0.35)));
+      If(uRain.greaterThan(0.01).and(ripple.mul(puddle).greaterThan(0)), () => {
+        shine.addAssign(ripples(p, time).mul(uRain).mul(0.8).mul(ripple).mul(puddle));
+      });
     }
   });
   If(uSnow.greaterThan(0.01), () => {
@@ -153,11 +159,19 @@ function weathered(id: number, c0: N, p: N) {
     let snow: N = vec3(0.78, 0.8, 0.84).mul(vnoise(p.mul(4)).mul(0.06).add(0.94));
     if (paved) snow = mix(snow.mul(vec3(0.72, 0.7, 0.68)), snow, uStreetSnow.mul(uStreetSnow));
     c.assign(mix(c, snow, cover));
+    shine.mulAssign(cover.oneMinus());
   });
-  void uRain; // (the rain only ripples the puddles' shine)
-  return c;
+  return vec4(c, shine);
+}
+// Rings spreading from a drop in each cell of the puddles.
+function ripples(p0: N, time: N) {
+  const p = p0.mul(2.5), i = floor(p), f = fract(p);
+  const t = fract(time.mul(1.1).add(hash12(i)));
+  const c = vec2(hash12(i.add(1.7)), hash12(i.add(4.3))).mul(0.6).add(0.2);
+  return t.oneMinus().mul(smoothstep(0, 0.07, abs(length(f.sub(c)).sub(t.mul(0.45)))).oneMinus());
 }
 
+const uSkyRef: N = followColor(SKY_REF);
 const inBox = (p: N, box: number[]) => {
   const b = uniform(new THREE.Vector4(box[0], box[1], box[2], box[3]));
   return p.sub(b.xy).div(b.zw.sub(b.xy));
@@ -172,10 +186,19 @@ function groundMaterial(
   const m = new MeshLambertNodeMaterial();
   m.color.copy(base.color);
   Object.assign(m, { side: base.side, depthWrite: base.depthWrite, depthTest: base.depthTest, transparent: base.transparent, opacity: base.opacity });
-  m.colorNode = groundColor(id, timeOf(time), relief, deck, dig, photo, sheltered);
+  const shade = (n: N, pattern: number) => {
+    const g = groundColor(pattern, timeOf(time), relief, deck, dig, photo, sheltered).toVar();
+    n.colorNode = vec4(g.rgb, 1);
+    // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
+    n.emissiveNode = Fn(() => {
+      const l = lampLight(positionWorld, normalView);
+      return g.rgb.mul(l).add(uSkyRef.add(l.mul(0.85)).mul(g.a));
+    })();
+  };
+  shade(m, id);
   m.userData.flatten = () => {
     const f = m.clone();
-    f.colorNode = groundColor(0, timeOf(time), relief, deck, dig, photo, sheltered);
+    shade(f, 0);
     return f;
   };
   return m as unknown as THREE.MeshLambertMaterial;
@@ -195,9 +218,10 @@ function groundColor(
     // Hill shading and the broad variation (broad), baked together for a tile.
     if (relief) c.mulAssign(texture(relief.texture, inBox(wp, relief.box)).r);
     else c.mulAssign(fbm(wp.mul(0.004)).mul(0.14).add(0.93));
-    if (!sheltered) c.assign(weathered(id, c, wp));
+    const shine = float(0).toVar();
+    if (!sheltered) { const wc = weathered(id, c, wp, time); c.assign(wc.rgb); shine.assign(wc.a); }
     if (dig) If(distance(w.xz, uDig.xy).lessThan(uDig.z), () => { c.assign(vec3(0.23, 0.19, 0.15).mul(fbm(wp.mul(0.7)).mul(0.4).add(0.8))); });
-    return vec4(c, 1);
+    return vec4(c, shine);
   })();
 }
 
