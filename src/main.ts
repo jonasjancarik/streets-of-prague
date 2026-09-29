@@ -47,6 +47,7 @@ import type { MapIndex } from './contracts.ts';
 import type { RawTramLine } from './trams.ts';
 import type { MetroLine } from './metro.ts';
 import { BikeShare } from './bikeshare.ts';
+import { Wallet, kc } from './money.ts';
 import type { DriveEdge, WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Tracked } from './tiles.ts';
@@ -60,6 +61,7 @@ declare global { interface Window { __drive?: unknown } }
 
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'praha';
+const wallet = new Wallet(params);
 const $ = (id: string): HTMLElement => {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing interface element: ${id}`);
@@ -1125,6 +1127,7 @@ async function main() {
     graphics.frame(now - last, now, world.inFlight.size > 0);
     last = now;
     time.value += dt;
+    wallet.update(dt);
     world.update(camPos.x, -camPos.z, viewRadius() + 220);
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
@@ -1317,6 +1320,9 @@ async function main() {
       wanted.classList.toggle('blink', stars > 0 && !police.seen);
       wanted.setAttribute('aria-label', stars ? t('Wanted: {stars} of 5 stars', { stars }) : t('Not wanted'));
     }
+    const money = kc(wallet.balance), paid = wallet.paidT > 0 ? wallet.paid : 0;
+    show('money', `${money}${paid ? ` <span class="paid">−${kc(paid)}</span>` : ''}`, 'html');
+    if (shown.moneyLabel !== money) { shown.moneyLabel = money; $('money').setAttribute('aria-label', t('Money: {money}', { money })); }
     // Health: a bar once you're hurt, and red at the edges of the screen as you're hit.
     const hp = Math.ceil(health.value);
     show('health', hp < MAX_HEALTH ? `<span role="img" aria-label="${t('Health: {n}%', { n: hp })}" style="width:${hp}%"${hp <= 30 ? ' class="low"' : ''}></span>` : '', 'html');

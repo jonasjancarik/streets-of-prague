@@ -2,6 +2,8 @@
 // here shows in English. Counts use 'one|few|many'. Names that are already Czech
 // (streets, stops, stations, districts) come from the map data and aren't listed.
 export const CS: Record<string, string> = {
+  // Money
+  'Money: {money}': 'Peníze: {money}',
   // Start screen and loading
   Language: 'Jazyk',
   Time: 'Čas',

@@ -82,6 +82,8 @@
       #wanted.hidden { display: none; }
       #wanted .on { color: var(--accent); text-shadow: 0 0 8px rgba(232, 64, 58, 0.55); }
       #wanted.blink .on { animation: blink 0.8s steps(2, jump-none) infinite; }
+      #money { margin-top: 6px; font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; opacity: 0.85; }
+      #money .paid { color: var(--accent); margin-left: 6px; }
       #health { height: 5px; margin-top: 8px; background: var(--key); border-radius: 3px; overflow: hidden; }
       #health:empty { display: none; }
       #health span { display: block; height: 100%; background: #7fc97a; transition: width 0.2s; }
@@ -332,6 +334,7 @@
       <div class="hud-top"><div id="street">Praha</div><div id="clock"></div></div>
       <div id="speedo"><span id="speed">–</span><small>km/h</small></div>
       <div id="wanted" class="hidden" role="status" aria-label="Not wanted"></div>
+      <div id="money" role="status"></div>
       <div id="health"></div>
       <div id="hint"></div>
       <div id="tally"></div>
