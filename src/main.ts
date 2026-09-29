@@ -795,8 +795,9 @@ async function main() {
     if (lifeT < 0) {
       lifeT = 0.5;
       if (pavementDrivers.update(0.5, loose, px(), py(), (x, y) => !offscreen(x, y), (x, y) => grid.at(x, y) !== 0)) restingStale = true;
-      // (And cars stuck in a queue that hasn't moved for a while, where nobody sees them go.)
-      for (const a of [...traffic.agents]) if ((a.jam > 30 || Math.hypot(a.car.x - px(), a.car.y - py()) > LIFE_RADIUS * 1.3) && offscreen(a.car.x, a.car.y)) traffic.release(a);
+      // (And cars stuck in a queue that hasn't moved for a while, and buses that have
+      // left their line, where nobody sees them go.)
+      for (const a of [...traffic.agents]) if ((a.jam > 30 || a.bus?.lost || Math.hypot(a.car.x - px(), a.car.y - py()) > LIFE_RADIUS * 1.3) && offscreen(a.car.x, a.car.y)) traffic.release(a);
       for (let i = loose.length - 1; i >= 0; i--) {
         const c = loose[i];
         if (!tileCars.has(c) && Math.hypot(c.x - px(), c.y - py()) > 600) loose.splice(i, 1);
