@@ -52,6 +52,11 @@ the pixel ratio.
   real track, stopping at each station, and slows down while the map ahead loads;
   E skips to the end. You come up at an entrance of that station, and the police have
   lost you. After midnight the metro is shut until about five.
+- **Parts of town**: the street you're in shows top left; come into another part of
+  town (Smíchov, Malá Strana, Vinohrady…) and its name comes up as a large title for a
+  few seconds, as does the one you start in (`src/districts.ts`). You have to be 30 m
+  into it, and a name doesn't come up again within a minute and a half, so a street
+  along the boundary doesn't keep showing titles.
 - **Tram stops**: stand at one and the HUD lists the next trams due, counting down
   (`src/board.ts`). Hold Space (on touch, "Hold to wait") to fast-forward until one is
   about to arrive.
@@ -346,6 +351,7 @@ uv run build_lines.py centrum      # tram lines from OSM's route relations → l
 uv run build_metro.py centrum      # the metro from PID's timetables → metro.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
+uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
 ```
 
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
@@ -409,6 +415,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   every station's entrances (PID's feed has them all, 331), and the track from the
   feed's shapes, with how far along it each station is. It follows the current
   timetable, so a station closed for works (Flora, as of autumn 2026) isn't there.
+- **Parts of town.** `build_districts.py` needs the local OSM extract: it takes the
+  cadastral areas (`boundary=cadastral`, the katastrální území, which is what people
+  call the parts of town) once into `pipeline/.cache/osm/cadastral.osm.pbf` and keeps
+  each one reaching into the area whole, simplified to 4 m. The whole city has 112 of
+  them and the `praha` box reaches into the villages round it (255, about 540 kB).
+  Without the file there are no titles.
 - **Footfall.** `build_footfall.py` needs the local OSM extract and uses PID's
   timetables when it can get them (see Tram lines); it counts the departures at every
   stop once and keeps them in `pipeline/.cache/pid/departures.json`. The whole city
