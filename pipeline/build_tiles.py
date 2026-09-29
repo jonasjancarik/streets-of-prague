@@ -132,7 +132,9 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None)
         # The same network osmnx would ask Overpass for, built from the local cut.
         data = pickle.loads(source)
         ok = network_filter(network)
-        data["elements"] = [el for el in data["elements"] if el["type"] != "way" or ok(el.get("tags", {}))]
+        # Not a metro station's corridors and stairs: they're underground, off the map.
+        station = structures.station_ways(data["elements"], tf)
+        data["elements"] = [el for el in data["elements"] if el["type"] != "way" or (ok(el.get("tags", {})) and el["id"] not in station)]
         G = ox.graph._create_graph([data], network in ox.settings.bidirectional_network_types)
         G = ox.simplify_graph(G)
     else:
