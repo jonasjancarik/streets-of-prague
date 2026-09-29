@@ -74,6 +74,10 @@ function onceAPixel(m: THREE.Mesh, l: GroundLayer) {
   });
 }
 
+// The WebGPU trial's own version of the soft shading's material (webgpu/soft.ts).
+let softShadeBy: ((opacity: number) => THREE.Material) | null = null;
+export const setSoftShade = (f: (opacity: number) => THREE.Material) => { softShadeBy = f; };
+
 function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: SurfaceTexture | null, mask: SurfaceTexture | null, photo: { texture: THREE.Texture; box: number[] } | null = null) {
   // A bridge deck's slab is solid: drawn with depth, so what's under it is hidden
   // (except round the player, see CUTAWAY), and it casts a shadow.
@@ -95,6 +99,7 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
     return mat;
   }
   if (l.shade !== undefined) {
+    if (softShadeBy) return softShadeBy(l.shade);
     // Custom blending keeps it in the ordered ground pass, under buildings and cars.
     return new THREE.ShaderMaterial({
       blending: THREE.CustomBlending, depthWrite: false, depthTest: false,

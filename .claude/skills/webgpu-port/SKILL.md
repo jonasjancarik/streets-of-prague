@@ -33,7 +33,13 @@ on WebGL (Old Town Square, Karlovo náměstí; `--ab` swapping `lamps.update`'s 
 0; the glows aren't drawn on WebGPU yet, so its number is a little low). Buildings cost 0.6–1.4 ms a frame at 2× on WebGPU against
 0.7–1.3 ms on WebGL (`--ab`, three scenes). Trees cost +0.5 ms a frame on WebGPU against
 +0.6 ms on WebGL (Petřín woods, 2×, clear noon, hiding every tree mesh; the GPU was 52% busy
-before the run and 80% after, another app's).
+before the run and 80% after, another app's). The ground's soft shading (`src/webgpu/soft.ts`,
+a node material with the same custom blending, dig discard and stencil settings, made through
+`setSoftShade` in `surface.ts`) costs +0.2 ms on WebGL and +0.7 ms on WebGPU (Old Town Square, 2×,
+clear noon, hiding the meshes with an `alpha` attribute; GPU 41% busy before, 75% after). WebGPU
+blends before the tone curve, so the colour is converted to linear and divided by the exposure:
+the shading comes out about 10% stronger than in WebGL (mean change of −11.9 against −10.8 in
+brightness); by night it looks the same.
 
 Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 
@@ -47,8 +53,7 @@ Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 | `map/buildings.ts` `drapeRoofs` | an experiment's roof texture | low priority |
 
 Not drawn at all (every `ShaderMaterial` is hidden by a `visible` accessor on
-`THREE.ShaderMaterial.prototype` in `createRenderer`): the ground's soft shading
-(`surface.ts`), rain, snow and mist (`weather.ts`), lamp glows (`lamps.ts`; the pools are ported), signal glows (`signals.ts`), spray, fire, skid marks. A ported one has
+`THREE.ShaderMaterial.prototype` in `createRenderer`): rain, snow and mist (`weather.ts`), lamp glows (`lamps.ts`; the pools are ported), signal glows (`signals.ts`), spray, fire, skid marks. A ported one has
 to be built as a node material (not a `ShaderMaterial`) or it stays hidden.
 
 ## How a port is wired

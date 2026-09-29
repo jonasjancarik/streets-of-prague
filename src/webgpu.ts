@@ -1,9 +1,9 @@
 // A trial of three.js's WebGPU renderer (?renderer=webgpu), to measure what the ground
-// costs there against WebGL. Only the ground is ported (to TSL, from PATTERNS_GLSL,
-// NOISE_GLSL and WEATHER_GLSL in shading.ts), and the tone curve (sky.ts). Everything
+// costs there against WebGL. The ground, buildings, trees, lamp light and the ground's soft
+// shading are ported (to TSL, in webgpu/), and the tone curve (sky.ts). Everything
 // else that changes three.js's GLSL (onBeforeCompile) is drawn with the plain material,
-// and what is written in GLSL outright (ShaderMaterial: rain, snow, the lamps' light,
-// skid marks, the ground's soft shading) isn't drawn at all. Not for playing: for
+// and what is written in GLSL outright (ShaderMaterial: rain, snow, lamp glows,
+// skid marks) isn't drawn at all. Not for playing: for
 // scripts/bench.mjs, e.g. --extra "&renderer=webgpu" with --ab (see ground's flatten).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -20,6 +20,7 @@ import {
 import { lampLight } from './webgpu/lamps.ts';
 import './webgpu/buildings.ts';
 import './webgpu/trees.ts';
+import './webgpu/soft.ts';
 
 // PATTERNS_GLSL.
 function pAsphalt(c0: N, p: N) {
