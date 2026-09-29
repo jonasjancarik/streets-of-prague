@@ -234,6 +234,8 @@ export class Car {
   lastH?: number;
   anim?: Anim;
   crew?: boolean;
+  // Blown up (src/fire.ts): a charred wreck nobody can drive.
+  burnt?: boolean;
   // A bus on a line: its number and where it's going, for the boards (Traffic.buses).
   line?: { ref: string; to: string };
   // A shared bike (src/bikeshare.ts): its system, and the station it stands at (null
@@ -404,6 +406,21 @@ export class Car {
     this.w += (rx * ny - ry * nx) * vn * 0.09;
     this.damage += Math.max(0, -vn - 3);
     return -vn;
+  }
+
+  // Charred: the same body, drawn nearly black (one wreck colour for each type).
+  burn() {
+    const k = `${this.type}|burnt`;
+    if (!cache.has(k)) {
+      const g = carGeometry(this.type, this.key.slice(this.type.length + 1)).clone(), col = g.getAttribute('color');
+      if (col) for (let i = 0; i < col.count; i++) {
+        const v = 0.02 + 0.05 * (col.getX(i) + col.getY(i) + col.getZ(i)) / 3;
+        col.setXYZ(i, v, v, v * 1.05);
+      }
+      cache.set(k, g);
+    }
+    this.key = k;
+    this.burnt = true;
   }
 
   sync() {} // drawn by CarPool each frame

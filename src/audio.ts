@@ -221,6 +221,32 @@ export class Sound {
     thump.stop(t + 0.16);
   }
 
+  // A car blowing up d m away, dx of it to the east: a deep bang, and a roar that
+  // rumbles on for a second or two.
+  boom(d: number, dx: number) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.on) return;
+    const t = ctx.currentTime, loud = 40 / (40 + d), pan = ctx.createStereoPanner();
+    pan.pan.value = clamp(dx / 45, -0.85, 0.85);
+    pan.connect(this.master);
+    const src = loop(ctx, this.noise, 0.6), lp = filter(ctx, 'lowpass', 2400 - Math.min(d, 300) * 6), g = gain(ctx, 0);
+    lp.frequency.setTargetAtTime(160, t + 0.05, 0.4);
+    g.gain.setValueAtTime(loud * 1.3, t);
+    g.gain.setTargetAtTime(loud * 0.5, t + 0.08, 0.15);
+    g.gain.setTargetAtTime(0, t + 0.5, 0.6);
+    src.connect(lp).connect(g).connect(pan);
+    src.start(t, Math.random() * 1.5);
+    src.stop(t + 4);
+    const thump = ctx.createOscillator(), tg = gain(ctx, 0);
+    thump.frequency.setValueAtTime(90, t);
+    thump.frequency.exponentialRampToValueAtTime(28, t + 0.5);
+    tg.gain.setValueAtTime(loud * 1.2, t);
+    tg.gain.exponentialRampToValueAtTime(0.0005, t + 0.6);
+    thump.connect(tg).connect(pan);
+    thump.start(t);
+    thump.stop(t + 0.65);
+  }
+
   play(buffer: AudioBuffer, at: number, gain: number, out: AudioNode, rate = 1) {
     const ctx = this.ctx!;
     if (!buffer) return;

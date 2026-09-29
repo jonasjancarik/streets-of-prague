@@ -69,6 +69,7 @@ export const CS: Record<string, string> = {
   'busted {n}×': 'chycen {n}×',
   'wasted {n}×': 'zabit {n}×',
   'Health: {n}%': 'Zdraví: {n} %',
+  'Your car is on fire!': 'Auto hoří!',
   'Wanted: {stars} of 5 stars': 'Hledaný: {stars} z 5 hvězd',
   'Not wanted': 'Nehledaný',
   '{n} m up': '{n} m nad zemí',

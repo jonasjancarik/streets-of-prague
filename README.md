@@ -128,6 +128,13 @@ the pixel ratio.
   stars shows how much you have left once you're hurt, and it comes back by itself
   after a few quiet seconds. When it runs out you're wasted: you fall where you are
   and come round outside the nearest hospital, no longer wanted (`src/guns.ts`).
+- **Burning cars.** A car that's taken enough knocks (crashes, police bullets, a blast
+  nearby) starts to smoke, then catches fire and a few seconds later blows up, leaving
+  a charred wreck that smoulders for a while and can't be driven. If your own car
+  catches fire, get out: still inside when it goes, you're wasted. The blast knocks
+  people over, hurts you if you're near, shoves the cars around and can set them going
+  too; blowing up a car you've crashed into is a crime, a police car more so
+  (`src/fire.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads

@@ -39,6 +39,7 @@ import { setupTouch } from './touch.ts';
 import './credits.ts';
 import { Police } from './police.ts';
 import { Tracers, Health, MAX_HEALTH } from './guns.ts';
+import { Fires } from './fire.ts';
 import { Chopper } from './helicopter.ts';
 import { Boats } from './boats.ts';
 import { isMapIndex } from './contracts.ts';
@@ -511,6 +512,7 @@ async function main() {
     }
     let best = null, bestD = Infinity;
     for (const c of allCars()) {
+      if (c.burnt) continue;
       const d = c.gap(walker.x, walker.y);
       if (d < bestD) { bestD = d; best = c; }
     }
@@ -591,6 +593,7 @@ async function main() {
     else if (!inHeli) { [walker.x, walker.y] = nearestWalkable(grid, x, y, 150); walker.sync(); }
     for (const a of [...traffic.agents]) traffic.release(a);
     police.reset();
+    fires.reset();
     scatterPeople(false);
     camPos.set(px(), 0, -py());
     camGround = ground(px(), py(), inHeli ? null : inCar || walker);
@@ -686,6 +689,48 @@ async function main() {
   let last = performance.now(), shake = 0;
   // The car you're standing on, and where it was last step (to carry you with it).
   let onCar: { c: Car; x: number; y: number; h: number } | null = null;
+  // A car blowing up knocks down and hurts whoever is near, shoves the cars round about
+  // and damages them (close by, enough to set them going too), and kills you if you're
+  // still inside. Setting it going yourself is a crime.
+  const BLAST = 9;
+  const fires = new Fires({
+    scene, height: ground, rng: seeded,
+    onIgnite: (c) => { if (c === inCar) showBanner(t('Your car is on fire!'), true); },
+    onBlast: (c, blamed) => {
+      const { x, y } = c, near = (p: { x: number; y: number }) => 1 - Math.hypot(p.x - x, p.y - y) / BLAST;
+      const away = (p: { x: number; y: number }, v: number) => {
+        const d = Math.hypot(p.x - x, p.y - y) || 1;
+        return [((p.x - x) / d) * v, ((p.y - y) / d) * v] as const;
+      };
+      const d = Math.hypot(x - px(), y - py());
+      sound.boom(d, x - px());
+      shake = Math.min(1.6, shake + (1.4 * 30) / (30 + d));
+      if (c === inCar) hurt(MAX_HEALTH);
+      else if (inCar) hurt(25 * Math.max(0, near(inCar)));
+      else if (!inHeli && !ride.on && !taxi.riding && !boats.me && !funicular.me && near(walker) > 0) {
+        const k = near(walker);
+        if (walker.down <= 0) walker.knock(...away(walker, 3 + 7 * k));
+        hurt(95 * k);
+      }
+      for (const p of crowd.people) if (near(p) > 0 && p.state !== 'down') crowd.knock(p, ...away(p, 3 + 7 * near(p)));
+      crowd.scare(x, y, 45);
+      for (const o of police.officers) if (near(o) > 0 && o.down <= 0) police.knock(o, ...away(o, 3 + 7 * near(o)));
+      for (const b of [...carsNear(x, y, BLAST)]) {
+        const k = near(b);
+        if (b === c || k <= 0) continue;
+        const ag = traffic.agents.find((a) => a.car === b);
+        if (ag) { traffic.release(ag); b.mode = 'loose'; loose.push(b); }
+        const [vx, vy] = away(b, (8 * k * 1500) / b.mass);
+        b.vx += vx;
+        b.vy += vy;
+        b.w += (seeded() - 0.5) * 3 * k;
+        b.damage += 120 * k;
+        if (blamed) fires.blame(b);
+        fires.check(b);
+      }
+      if (blamed) police.crime(c.type === 'police' ? 'blowUpCop' : 'blowUp', x, y);
+    },
+  });
   let waitScale = 1, clockShown = '';
   let street: string | null = null, bannerT = 0, lifeT = 0;
   // The HUD is only written when what it says changes: every write makes the browser
@@ -843,6 +888,8 @@ async function main() {
             if (a === inCar) police.crime(b.type === 'police' ? 'hitCop' : 'wreck', b.x, b.y);
             const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
             if (a === inCar) jolt = Math.max(jolt, hit);
+            if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
+            if (a === inCar) fires.blame(b);
           } else {
             const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 0);
             if (a === inCar) jolt = Math.max(jolt, hit);
@@ -853,6 +900,8 @@ async function main() {
         const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
         if (a === inCar || b === inCar) jolt = Math.max(jolt, hit);
         if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
+        if (hit > 8 && a === inCar) fires.blame(b);
+        else if (hit > 8 && b === inCar) fires.blame(a);
         if (hit > 6 && (a === inCar || b === inCar)) shake = Math.min(1.2, shake + hit * 0.04);
         // Driving into a police car (not them into you).
         if (a === inCar && b.mode === 'police' && hit > 2) {
@@ -992,6 +1041,9 @@ async function main() {
       onCar = u && walker.down <= 0 ? { c: u, x: u.x, y: u.y, h: u.h } : null;
       walker.sync();
     } else onCar = null;
+
+    // Cars smoking, burning and blowing up (the ones that could have been hurt this step).
+    fires.update(dt, active, { x: camPos.x, y: -camPos.z, r: viewRadius() + 40 });
 
     // Keep life around the player: traffic and people follow you, far ones are recycled.
     lifeT -= dt;
@@ -1186,7 +1238,7 @@ async function main() {
     const station = !inCar && !inHeli && !ride.on && !metro.active ? metro.near(walker.x, walker.y) : null;
     const gap = (c: Car) => c.gap(walker.x, walker.y);
     const enterable = !inCar && !inHeli && !ride.on
-      ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8).sort((a, b) => gap(a) - gap(b))[0]
+      ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8 && !c.burnt).sort((a, b) => gap(a) - gap(b))[0]
       : undefined;
     const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y) : null;
     const onFoot = !inCar && !inHeli && !ride.on && !metro.active && !boats.me && !taxi.riding;
@@ -1257,7 +1309,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, health, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare,
+    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
