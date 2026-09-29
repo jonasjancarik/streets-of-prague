@@ -69,9 +69,20 @@ Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 | `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | ported for the ground, buildings, `cut-*` and poles (`lampLit(node)` in a port); cars, trams, boats, funicular, figures and the signals' poles and heads have it too |
 | `map/buildings.ts` `drapeRoofs` | an experiment's roof texture | low priority |
 
-Not drawn at all (every `ShaderMaterial` is hidden by a `visible` accessor on
-`THREE.ShaderMaterial.prototype` in `createRenderer`): rain, snow and mist (`weather.ts`). A ported one has
-to be built as a node material (not a `ShaderMaterial`) or it stays hidden.
+Every `ShaderMaterial` is hidden by a `visible` accessor on `THREE.ShaderMaterial.prototype` in
+`createRenderer`, so a ported one has to be built as a node material (not a `ShaderMaterial`) or it stays hidden.
+All the effects are ported now; what's left of the plain-material list above is the roofs experiment.
+
+Whole frame, 2×, high, 12 s each, `bench.mjs --extra "&renderer=webgpu"` (run each scene in its own process: a second
+scene in one WebGPU run never finishes loading). Frames per second, WebGL then WebGPU; WebGPU ran with other apps
+keeping the GPU 78–91% busy, WebGL at 21% (clear) and 80% (rain), so the pairs are not fair:
+
+| Scene | Clear noon | Rain, 22:00 |
+|---|---|---|
+| Old Town Square, standing | 154 / 144 | 119 / 123 |
+| Old Town Square, walking | 145 / 137 | 129 / 139 |
+| Petřín woods | 160 / 167 | 154 / 153 |
+| Drive from Újezd | 115 / 131 | 120 / 136 |
 
 ## How a port is wired
 

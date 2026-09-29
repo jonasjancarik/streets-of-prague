@@ -62,8 +62,7 @@ grime on the walls 6%, the shadow map's own pass 7%.
   the trees and the lamps' light (on the ground with the wet ground's mirror, the buildings,
   landmarks, trees and poles) are ported (to TSL); the ground's soft shading is ported too (+0.7 ms on WebGPU
   against +0.2 ms on WebGL, Old Town Square, 2×; about 10% stronger on WebGPU because it blends
-  before the tone curve); the cars, trams, funicular and boats are ported (+0.0–0.4 ms on WebGL against +0.8–1.0 ms on WebGPU, Old Town Square and the drive, 2×, GPU about 80% busy); the people are ported too (+0.1–0.3 ms on WebGL against −0.1–+0.3 ms on WebGPU, same scenes); the lamp and signal glows, spray, fire and skid marks are ported too (colours matched by eye, see the skill file); rain, snow and mist are ported too (much fainter at night on WebGPU); not
-  playable. Trees cost +0.5 ms a frame on WebGPU against +0.6 ms on WebGL (Petřín woods, 2×;
+  before the tone curve); the cars, trams, funicular and boats are ported (+0.0–0.4 ms on WebGL against +0.8–1.0 ms on WebGPU, Old Town Square and the drive, 2×, GPU about 80% busy); the people are ported too (+0.1–0.3 ms on WebGL against −0.1–+0.3 ms on WebGPU, same scenes); the lamp and signal glows, spray, fire and skid marks are ported too (colours matched by eye, see the skill file); rain, snow and mist are ported too (much fainter at night on WebGPU); everything is ported now. Whole frame at 2×, WebGL against WebGPU, frames a second (Old Town Square standing and walking, Petřín woods, drive from Újezd): clear noon 154/144, 145/137, 160/167, 115/131; rain at 22:00 119/123, 129/139, 154/153, 120/136 (the GPU was 78–91% busy from other apps on WebGPU runs, 21–80% on WebGL, so not a fair race). Trees cost +0.5 ms a frame on WebGPU against +0.6 ms on WebGL (Petřín woods, 2×;
   the GPU was 52% busy before). Open: some low buildings show no windows by day on WebGPU
   where WebGL does (the tile north-east of the woods start). Buildings cost 0.6–1.4 ms a frame on WebGPU against 0.7–1.3 ms on WebGL
   (`--ab`, 2×, Old Town Square, the drive from Újezd, Karlovo náměstí; the GPU was
@@ -73,10 +72,7 @@ grime on the walls 6%, the shadow map's own pass 7%.
   (it is probably mixed in before the tone curve, where the game means it after). The same ground patterns cost about half
   as much there: switched on and off with `--ab` at 2× on an M5, +1.2 ms a frame
   on WebGPU against +2.4–3.1 ms on WebGL (Old Town Square, Karlovo náměstí,
-  Petřín), with another app keeping the GPU 70–80% busy. The whole frame can't be
-  compared until the rest is ported: every `onBeforeCompile` (about 20, the
-  buildings' and lamps' light among them) and every `ShaderMaterial` (about 10)
-  would have to become TSL. Headless Chrome with `--disable-frame-rate-limit` never
+  Petřín), with another app keeping the GPU 70–80% busy. Headless Chrome with `--disable-frame-rate-limit` never
   finishes `compileAsync` on WebGPU (webgpu.ts gives up after 10 s).
 - **What's left on the main thread** (in order, with the CPU slowed 4×): the trams'
   steps and look-ahead, traffic, placing people (`Crowd.place`) and following
