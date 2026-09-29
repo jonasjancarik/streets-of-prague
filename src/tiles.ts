@@ -24,6 +24,7 @@ interface Tile {
   sample?: (x: number, y: number) => number;
   // The tile's water (the river and ponds), each polygon with its bounding box.
   water: { rings: Point2[][]; box: Bounds }[];
+  weirs: Point2[][];
 }
 export interface Tracked {
   x: number; y: number; _tx?: number; _ty?: number; level?: number; gz?: number;
@@ -301,7 +302,7 @@ export class TileWorld {
     return last.tile;
   }
 
-  // Whether a point is on water: true or false, null where nothing is loaded.
+  // Whether a point is on open water: true or false, null where nothing is loaded.
   waterAt(x: number, y: number): boolean | null {
     const t = this.tileAt(x, y);
     if (!t) return null;
@@ -314,7 +315,16 @@ export class TileWorld {
           if ((ay > y) !== (by > y) && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
         }
       }
-      if (inside) return true;
+      if (!inside) continue;
+      // A weir across the river isn't open water either: boats stop short of it.
+      for (const w of t.weirs) {
+        for (let i = 0; i < w.length - 1; i++) {
+          const [ax, ay] = w[i], [bx, by] = w[i + 1], dx = bx - ax, dy = by - ay;
+          const k = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
+          if (Math.hypot(x - ax - dx * k, y - ay - dy * k) < 5) return false;
+        }
+      }
+      return true;
     }
     return false;
   }
@@ -716,6 +726,7 @@ export class TileWorld {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };
       }),
+      weirs: t.weirs || [],
     };
     this.loaded.set(k, tile);
     this.byIndex.set(t.i * 65536 + t.j, tile);

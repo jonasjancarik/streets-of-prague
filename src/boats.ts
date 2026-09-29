@@ -32,6 +32,7 @@ const PAINTS = ['#e8c534', '#d8402f', '#2f7fc4', '#3aa55a', '#f08a2c'];
 interface Boat {
   kind: Kind; s: Spec; mesh: THREE.Mesh; live: boolean;
   x: number; y: number; h: number; v: number; w: number; phase: number; wander: number; side: number;
+  next: number; turn: number; ahead: number; // when to look round again, and what it found
 }
 
 // Boxes and extrusions with a colour per vertex, merged into one body. Forward is +x,
@@ -68,9 +69,10 @@ function body(kind: Kind, paint: string) {
     const L = SPECS.cruise.len, B = SPECS.cruise.beam;
     hull(L, B, 7, -0.4, 0.5, '#1f3550');
     hull(L, B, 7, 0.5, 1.5, '#f2f1ec');
+    hull(L - 0.7, B - 0.7, 6.6, 1.5, 1.56, '#a9855a'); // wooden deck fore and aft
     box(L * 0.64, 2.3, B - 1, -2, 2.65, 0, '#f4f3ee'); // the cabin
     box(L * 0.62, 1.05, B - 0.94, -2, 2.75, 0, '#27343f'); // its windows all round
-    box(L * 0.68, 0.14, B - 0.6, -2, 3.85, 0, '#dcdad2'); // the roof deck
+    box(L * 0.68, 0.14, B - 0.6, -2, 3.85, 0, '#7f98a8'); // the roof deck
     box(L * 0.66, 0.5, 0.06, -2, 4.15, (B - 0.7) / 2, '#c9c7bf'); // railings along it
     box(L * 0.66, 0.5, 0.06, -2, 4.15, -(B - 0.7) / 2, '#c9c7bf');
     box(4.2, 1.7, 3.4, 9.6, 2.35, 0, '#f4f3ee'); // the wheelhouse forward
@@ -132,7 +134,7 @@ export class Boats {
       mesh.visible = false;
       mesh.matrixAutoUpdate = false;
       scene.add(mesh);
-      this.list.push({ kind, s: SPECS[kind], mesh, live: false, x: 0, y: 0, h: 0, v: 0, w: 0, phase: rng() * 10, wander: 0, side: 1 });
+      this.list.push({ kind, s: SPECS[kind], mesh, live: false, x: 0, y: 0, h: 0, v: 0, w: 0, phase: rng() * 10, wander: 0, side: 1, next: 0, turn: 0, ahead: 1 });
     };
     for (let i = 0; i < CRUISE; i++) add('cruise', '');
     if (islands) for (let i = 0; i < PEDALS; i++) i % 3 === 2 ? add('swan', '') : add('pedal', PAINTS[i % PAINTS.length]);
@@ -180,8 +182,10 @@ export class Boats {
         const a = (i / 12) * Math.PI * 2, r = this.run(b, x, y, a, b.s.look * 2) + this.run(b, x, y, a + Math.PI, b.s.look * 2) * 0.5;
         if (r > best) { best = r; h = a; }
       }
+      // Cruise boats keep to the main river, not the narrow arms round the islands.
+      if (b.kind === 'cruise' && this.run(b, x, y, h + Math.PI / 2, 60) + this.run(b, x, y, h - Math.PI / 2, 60) < 70) continue;
       if (!this.fits(b, x, y, h) || this.list.some((o) => o !== b && o.live && Math.hypot(o.x - x, o.y - y) < (o.s.len + b.s.len) / 2 + 8)) continue;
-      Object.assign(b, { x, y, h, v: 0, w: 0, live: true, wander: this.rng() * 2 - 1, side: this.rng() < 0.5 ? -1 : 1 });
+      Object.assign(b, { x, y, h, v: 0, w: 0, next: 0, live: true, wander: this.rng() * 2 - 1, side: this.rng() < 0.5 ? -1 : 1 });
       b.mesh.visible = true;
       return;
     }
@@ -221,16 +225,21 @@ export class Boats {
   // turn round where it closes in.
   steer(b: Boat, dt: number) {
     const S = b.s, look = S.look + S.len / 2;
-    const ahead = this.run(b, b.x, b.y, b.h, look);
-    const left = this.run(b, b.x, b.y, b.h + 0.45, look), right = this.run(b, b.x, b.y, b.h - 0.45, look);
-    b.wander = clamp(b.wander + (this.rng() - 0.5) * dt * 0.8, -1, 1);
-    let turn: number;
-    if (ahead >= look && left >= look * 0.8 && right >= look * 0.8) turn = b.wander * (b.kind === 'cruise' ? 0.1 : 0.6);
-    else if (Math.abs(left - right) > S.len * 0.05) turn = left > right ? 1 : -1;
-    else turn = b.side; // straight at the bank: keep turning one way until clear
-    if (ahead < look * 0.5) b.side = left >= right ? 1 : -1;
-    b.w += (turn * S.turn - b.w) * Math.min(1, dt * 1.5);
-    const want = S.speed * clamp(ahead / look, 0.15, 1);
+    // (A look round a few times a second is plenty at these speeds.)
+    b.next -= dt;
+    if (b.next <= 0) {
+      b.next = 0.3;
+      const ahead = this.run(b, b.x, b.y, b.h, look);
+      const left = this.run(b, b.x, b.y, b.h + 0.45, look), right = this.run(b, b.x, b.y, b.h - 0.45, look);
+      b.wander = clamp(b.wander + (this.rng() - 0.5) * 0.3, -1, 1);
+      if (ahead >= look && left >= look * 0.8 && right >= look * 0.8) b.turn = b.wander * (b.kind === 'cruise' ? 0.1 : 0.6);
+      else if (Math.abs(left - right) > S.len * 0.05) b.turn = left > right ? 1 : -1;
+      else b.turn = b.side; // straight at the bank: keep turning one way until clear
+      if (ahead < look * 0.5) b.side = left >= right ? 1 : -1;
+      b.ahead = ahead / look;
+    }
+    b.w += (b.turn * S.turn - b.w) * Math.min(1, dt * 1.5);
+    const want = S.speed * clamp(b.ahead, 0.15, 1);
     b.v += clamp(want - b.v, -0.5 * dt, 0.3 * dt);
     const h = b.h + b.w * dt;
     const x = b.x + Math.cos(h) * b.v * dt, y = b.y + Math.sin(h) * b.v * dt;
@@ -243,7 +252,10 @@ export class Boats {
     b.phase += dt;
     const t = b.phase, A = b.s.bob;
     const m = b.mesh;
-    m.position.set(b.x, this.water.terrainAt(b.x, b.y) + A * Math.sin(t * 1.4), -b.y);
+    // The lowest of bow, middle and stern: the ground by the banks can bulge up over the water.
+    const c = Math.cos(b.h) * b.s.len * 0.4, s = Math.sin(b.h) * b.s.len * 0.4, T = this.water;
+    const y = Math.min(T.terrainAt(b.x, b.y), T.terrainAt(b.x + c, b.y + s), T.terrainAt(b.x - c, b.y - s));
+    m.position.set(b.x, y + A * Math.sin(t * 1.4), -b.y);
     m.rotation.set(A * 0.6 * Math.sin(t * 1.1 + 1), b.h, A * 0.4 * Math.sin(t * 0.9 + 2), 'YXZ');
     m.updateMatrix();
   }
