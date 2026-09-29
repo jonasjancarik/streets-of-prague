@@ -277,6 +277,9 @@ function corner(a: PathPoint, b: PathPoint): Point2 {
 
 // The footpath network, filled in as tiles arrive (edges are undirected).
 const ROADLIKE = new Set(['residential', 'tertiary', 'secondary', 'primary', 'service', 'unclassified', 'living_street', 'busway']);
+// Main roads nobody strolls along (the Magistrála is only a `primary` road in the map,
+// with no ban on foot): people use the pavements and crossings mapped beside them.
+const NO_STROLLING = new Set(['trunk', 'trunk_link', 'primary', 'primary_link', 'motorway', 'motorway_link']);
 export class WalkGraph {
   byId: Map<string, WalkEdge>;
   adj: Map<string, { e: WalkEdge; fwd: boolean }[]>;
@@ -291,7 +294,7 @@ export class WalkGraph {
 
   add(list: RawStreetEdge[]): WalkEdge[] {
     const fresh: WalkEdge[] = [];
-    const res = list.map((raw) => {
+    const res = list.filter((raw) => !NO_STROLLING.has(raw.hw)).map((raw) => {
       const known = this.byId.get(raw.id);
       if (known) return known;
       const e: WalkEdge = { ...raw, path: new Polyline(raw.pts), side: 0 };

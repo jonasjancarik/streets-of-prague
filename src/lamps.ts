@@ -24,7 +24,19 @@ vec3 lampLight(vec3 w) {
   vec2 uv = (w.xz - uLampBox.xy) * uLampBox.z * .5 + .5;
   if (uv.x < 0. || uv.y < 0. || uv.x > 1. || uv.y > 1.) return vec3(0.);
   vec4 l = texture2D(uLampMap, uv);
-  return l.rgb * uLampOn * (1. - smoothstep(3., 11., w.y - (l.a - 500.)));
+  float dy = w.y - (l.a - 500.);
+  // Not far below the lamp either: the street under a bridge isn't lit from the deck.
+  return l.rgb * uLampOn * (1. - smoothstep(3., 11., dy)) * smoothstep(-5., -2.5, dy);
+}
+// The same for something with a surface: what faces up and is well above the lamp
+// (a bridge deck over the street, whose cars' lights would otherwise show through it)
+// gets none.
+vec3 lampLightOn(vec3 w, vec3 n) {
+  float up = smoothstep(.5, .8, dot(n, viewMatrix[1].xyz));
+  vec3 l = lampLight(w);
+  if (up < .01 || l.r + l.g + l.b <= 0.) return l;
+  vec4 m = texture2D(uLampMap, (w.xz - uLampBox.xy) * uLampBox.z * .5 + .5);
+  return l * (1. - up * smoothstep(3.5, 5.5, w.y - (m.a - 500.)));
 }
 `;
 
@@ -47,7 +59,7 @@ export function lampLit(sh: Shader, world?: string) {
   }
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', `#include <common>\n${LAMP_GLSL}`)
-    .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  reflectedLight.directDiffuse += diffuseColor.rgb * lampLight(${w});`);
+    .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  reflectedLight.directDiffuse += diffuseColor.rgb * lampLightOn(${w}, normal);`);
 }
 
 // Kinds of lamp (pipeline/build_lamps.py): the height of the head, the pole under it,
