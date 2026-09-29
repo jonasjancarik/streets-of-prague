@@ -15,7 +15,8 @@ OSM's buildings in the landmark's footprint and draws the model instead
 is how to do it and what goes wrong.
 
 Mánes with Šítkovská vodárenská věž was the first (29 September 2026). Everything
-below was learned on it.
+below was learned on it and on the Týn Church (one OSM way, `way/379512802`, and one
+IPR building, towers included; 334 faces, 1.2 MB).
 
 ## Adding one
 
@@ -117,6 +118,10 @@ the game to render (see the memory on benchmarking).
 - **A tree baked into a roof or wall.** The mesh has trees; one that reaches over the
   building is baked in (Mánes's north-east corner, see `todo.md`). Nothing handles it
   yet.
+- **White or blocky ground floor.** Where houses, arcades or crowds hide the lowest
+  metres of a wall from every photograph (the Týn Church's west and south fronts), the
+  rays find nothing and the texels are filled in from around them. Not fixed; see
+  `todo.md`, "Landmarks".
 - **Baked light.** Walls facing away from the sun at the time of the flight are
   darker, and stay so. It's the photograph; leave it.
 

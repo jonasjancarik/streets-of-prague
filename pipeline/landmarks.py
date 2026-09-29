@@ -51,6 +51,7 @@ KEEP = Path(__file__).parent / ".cache" / "landmarks"
 # (PAD) so the walls and the eaves stay whole.
 LANDMARKS = {
     "manes": ["way/7649964", "way/30169179"],  # Mánes and Šítkovská vodárenská věž
+    "tyn": ["way/379512802"],  # Kostel Matky Boží před Týnem (Týnský chrám), Staroměstské náměstí
 }
 PAD = 1.5
 BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or "/Applications/Blender.app/Contents/MacOS/Blender"

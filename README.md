@@ -243,7 +243,7 @@ the pixel ratio.
   winter), fruit trees are small. The woods, parks and gardens are filled up with made-up
   trees, 30% of them conifers in woods, but not next to a surveyed one. Rebuild them with
   `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
-- **Landmarks** (so far Mánes with Šítkovská vodárenská věž) are cut out of IPR's
+- **Landmarks** (so far Mánes with Šítkovská vodárenská věž, and the Týn Church) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
   `pipeline/landmarks.py` takes the mesh's pieces over the landmark's OSM footprints
