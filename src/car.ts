@@ -37,8 +37,12 @@ export const TYPES: Record<string, CarSpec> = {
   hatch: { L: 3.9, W: 1.75, H: 1.45, mass: 1100, accel: 9, vmax: 36, grip: 9, turn: 2.6, cabin: [-1.15, 0.85], weight: 4, radius: 3.2, response: 11, brake: 17 },
   sedan: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 4, radius: 3.8 },
   estate: { L: 4.7, W: 1.82, H: 1.5, mass: 1500, accel: 9, vmax: 40, grip: 8.5, turn: 2.3, cabin: [-1.95, 0.8], weight: 2, radius: 4, brake: 15 },
+  // A crossover such as a Kodiaq or Enyaq: taller and heavier than an estate.
+  suv: { L: 4.65, W: 1.88, H: 1.65, mass: 1900, accel: 8.5, vmax: 40, grip: 8.3, turn: 2.2, cabin: [-2, 0.85], weight: 3, radius: 4.4, response: 8.5, brake: 15 },
   van: { L: 5.2, W: 2.0, H: 2.3, mass: 2200, accel: 6.5, vmax: 31, grip: 8, turn: 1.9, cabin: [-2.5, 1.6], weight: 1, drive: 'rwd', radius: 6, response: 7, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
   taxi: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 1, color: '#e9c62f', radius: 3.8 },
+  // A full-size American pickup (an F-150): rare, long, heavy and rear-wheel drive.
+  pickup: { L: 5.9, W: 2.03, H: 1.95, mass: 2500, accel: 8, vmax: 38, grip: 7.6, turn: 1.9, cabin: [-1, 0.7], weight: 0.5, drive: 'rwd', radius: 5.8, response: 7.5, brake: 13, tough: 4.5, drag: 0.5, weather: 1.05 },
   // Never parked or in ordinary traffic: src/police.ts puts these on the streets.
   police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#eef1f4', drive: 'rwd', radius: 3.8, brake: 19, tough: 4 },
   // Two-wheelers (drawn from the figures kit, as big as the people riding them). A bike
@@ -63,8 +67,16 @@ export const VARIANTS: Record<string, Variant[]> = {
   sedan: [
     // The Octavia I 1.9 TDI: strong from low revs, a little short at the top.
     { id: 'octavia', name: 'Škoda Octavia 1.9 TDI', freq: 0.4, tune: { accel: 10.5, vmax: 39, tough: 4 } },
-    { id: 'sedan', freq: 0.6, tune: {} },
+    // An electric car: quick off the line, regenerative braking when you lift off, all-wheel drive.
+    { id: 'model3', name: 'Tesla Model 3', freq: 0.06, tune: { accel: 13, vmax: 45, drag: 1.2, mass: 1850, drive: 'awd' } },
+    { id: 'sedan', freq: 0.54, tune: {} },
   ],
+  suv: [
+    { id: 'enyaq', name: 'Škoda Enyaq iV 80', freq: 0.15, tune: { accel: 10.5, vmax: 40, drag: 1.1, mass: 2100, drive: 'rwd' } },
+    { id: 'modely', name: 'Tesla Model Y', freq: 0.08, tune: { accel: 12.5, vmax: 44, drag: 1.2, mass: 2000, drive: 'awd' } },
+    { id: 'suv', freq: 0.77, tune: {} },
+  ],
+  pickup: [{ id: 'f150', name: 'Ford F-150', freq: 1, tune: {} }],
   estate: [
     { id: 'octavia', name: 'Škoda Octavia 1.9 TDI', freq: 0.4, tune: { accel: 10, vmax: 38, tough: 4 } },
     { id: 'estate', freq: 0.6, tune: {} },

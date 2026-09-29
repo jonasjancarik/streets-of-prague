@@ -50,9 +50,25 @@ const DIESEL: EngineVoice = {
   harmonics: [0, 1, 0.55, 0.3, 0.12, 0.05], sub: 0, drive: 0.6, tone: [110, 1.4, 220],
   roar: [0.005, 0.02, 3], level: [0.035, 0.014, 0.01], shift: [0.2, 0.4], clutch: 800,
 };
+// An electric motor: a thin whine that rises with speed, silent when standing, a single
+// gear (so no shifts) and no clutch or irregular firing.
+const ELECTRIC_VOICE: EngineVoice = {
+  harmonics: [0, 1, 0, 0.25, 0, 0.08], sub: 0, drive: 0.2, tone: [300, 2, 500],
+  roar: [0, 0, 3], level: [0, 0.01, 0.022], shift: [1, 1], clutch: 0,
+};
+const ELECTRIC: EngineSpec = { idle: 600, redline: 9000, cylinders: 8, gears: [1.02], rough: 0, voice: ELECTRIC_VOICE };
+// A big V8 pickup: low and burbling, taken easy.
+const V8_VOICE: EngineVoice = {
+  harmonics: [0, 1, 0.6, 0.35, 0.15, 0.06], sub: 0.35, drive: 1, tone: [140, 1.6, 300],
+  roar: [0.01, 0.06, 3], level: [0.05, 0.03, 0.015], shift: [0.3, 0.55], clutch: 1200,
+};
 const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.006, voice: EVERYDAY };
 const ENGINES: Record<string, EngineSpec | null> = {
   // By variant (see VARIANTS in car.ts), before the type.
+  model3: ELECTRIC,
+  modely: ELECTRIC,
+  enyaq: ELECTRIC,
+  f150: { idle: 650, redline: 5500, cylinders: 8, gears: [0.16, 0.28, 0.42, 0.58, 0.78, 1.02], rough: 0.015, voice: V8_VOICE },
   fabia: { idle: 900, redline: 5500, cylinders: 3, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.02, voice: EVERYDAY },
   octavia: { idle: 800, redline: 4500, cylinders: 4, gears: [0.16, 0.3, 0.46, 0.68, 1.02], rough: 0.012, voice: DIESEL },
   van: { idle: 750, redline: 4200, cylinders: 4, gears: [0.2, 0.38, 0.58, 0.8, 1.02], rough: 0.02, voice: EVERYDAY },
