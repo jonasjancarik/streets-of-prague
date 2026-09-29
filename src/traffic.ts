@@ -92,6 +92,7 @@ export class Traffic {
   }
 
   release(agent: TrafficAgent) {
+    agent.car.grounded = undefined;
     this.agents.splice(this.agents.indexOf(agent), 1);
   }
 
@@ -172,6 +173,12 @@ export class Traffic {
       c.vx = (c.x - prevX) / Math.max(dt, 1e-4);
       c.vy = (c.y - prevY) / Math.max(dt, 1e-4);
       c.w = 0;
+      // On a street at ground level it is on the ground, whatever it passes over: a
+      // tunnel just under the surface near its portal would otherwise take it in, and
+      // it would sink into the road as the tunnel goes deeper (see TileWorld.track).
+      // (Between two streets, on the ground only if both are.)
+      const on = a.route.leg.edge, next = on ?? a.route.legs[1]?.edge;
+      c.grounded = !!next && !next.bridge && !next.tunnel && (!!on || !!c.grounded);
       c.sync();
     }
     // Cars whose street runs off the loaded map just disappear.

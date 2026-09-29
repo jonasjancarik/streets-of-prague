@@ -150,6 +150,7 @@ export class Car {
   level?: number;
   gz?: number;
   hint?: 'bridge' | 'tunnel' | 'ground';
+  grounded?: boolean;
   lastH?: number;
   anim?: Anim;
   crew?: boolean;

@@ -27,6 +27,9 @@ export interface Tracked {
   x: number; y: number; _tx?: number; _ty?: number; level?: number; gz?: number;
   // Where it's put on a street: on a bridge, in a tunnel or on the ground (see track).
   hint?: 'bridge' | 'tunnel' | 'ground';
+  // Kept on the ground, whatever is under it or over it (a car in traffic on a street
+  // at ground level, see Traffic.update).
+  grounded?: boolean;
   e?: { bridge?: boolean; tunnel?: boolean }; _view?: { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
 }
 
@@ -359,7 +362,7 @@ export class TileWorld {
     who._tx = who.x;
     who._ty = who.y;
     const { x, y } = who, t = this.tileAt(x, y);
-    if (!t?.levels.length) {
+    if (!t?.levels.length || who.grounded) {
       who.level = 0;
       who.gz = this.terrainAt(x, y);
       return 0;
