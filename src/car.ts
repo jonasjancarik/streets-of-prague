@@ -34,7 +34,7 @@ export const TYPES: Record<string, CarSpec> = {
   police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#eef1f4' },
   // Two-wheelers (drawn from the figures kit, as big as the people riding them). A bike
   // is never parked in a car bay; `traffic` is how often each type turns up on the road.
-  bike: { L: 2.3, W: 0.8, H: 1.5, mass: 90, accel: 3.2, vmax: 9, grip: 12, turn: 3.4, weight: 0, traffic: 0.5, two: 'bike' },
+  bike: { L: 2.3, W: 0.8, H: 1.5, mass: 90, accel: 3.2, vmax: 9, grip: 12, turn: 3.4, weight: 0, traffic: 1.6, two: 'bike' },
   moto: { L: 2.8, W: 1.0, H: 1.6, mass: 260, accel: 12, vmax: 48, grip: 9.5, turn: 2.8, weight: 0.3, traffic: 1.2, two: 'moto' },
   // A 12 m city bus in PID colours: slow to pick up speed, wide in the turns. Never
   // parked or in the ordinary mix: Traffic.buses keeps a few on their lines.
@@ -46,19 +46,47 @@ const TWO_PAINT: Record<string, string[]> = {
   moto: ['#b3161b', '#1d2a44', '#2c2f33', '#e8e6e1', '#d9d2c0', '#2f5140', '#e07b1f'],
 };
 
+// Delivery couriers' boxes: pink, green and blue, as on the streets.
+export const COURIER_BOXES = ['#d70f64', '#2fbf71', '#0a9fdc'];
+// Where the box sits on the rider's back, in the figures kit's units, and how far it
+// leans forward with them (radians).
+const BOX_AT: Record<string, { x: number; y: number; lean: number }> = {
+  bike: { x: -0.36, y: 1.38, lean: 0.52 },
+  moto: { x: -0.35, y: 1.3, lean: 0.42 },
+};
+function boxGeometry(kind: string, colour: string): THREE.BufferGeometry {
+  const at = BOX_AT[kind], c = new THREE.Color(colour);
+  const parts: THREE.BufferGeometry[] = [];
+  const add = (w: number, h: number, d: number, dy: number, shade: number) => {
+    const g = new THREE.BoxGeometry(w, h, d);
+    g.deleteAttribute('uv');
+    g.translate(0, dy, 0);
+    g.rotateZ(-at.lean);
+    g.translate(at.x, at.y, 0);
+    g.scale(SCALE, SCALE, SCALE);
+    const col = new Float32Array(g.attributes.position.count * 3);
+    for (let i = 0; i < col.length; i += 3) col.set([c.r * shade, c.g * shade, c.b * shade], i);
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    parts.push(g);
+  };
+  add(0.34, 0.36, 0.44, 0, 1);
+  add(0.36, 0.06, 0.46, 0.21, 0.8); // the lid
+  return mergeGeometries(parts);
+}
+
 let kit: FigureKit | null = null;
 // Two-wheelers come from the figures kit, which has to be loaded before the first one.
 export function useKit(k: FigureKit) { kit = k; }
 
 const cache = new Map<string, THREE.BufferGeometry>();
-function carGeometry(type: string, paint: string): THREE.BufferGeometry {
-  const k = `${type}|${paint}`;
+function carGeometry(type: string, paint: string, box?: string): THREE.BufferGeometry {
+  const k = box ? `${type}|${paint}|${box}` : `${type}|${paint}`;
   const known = cache.get(k);
   if (known) return known;
   const S = TYPES[type];
   if (S.two) {
     if (!kit) throw new Error('Figures kit is not loaded');
-    const geometry = kit.vehicles[S.two](paint);
+    const geometry = box ? mergeGeometries([kit.vehicles[S.two](paint), boxGeometry(S.two, box)]) : kit.vehicles[S.two](paint);
     cache.set(k, geometry);
     return geometry;
   }
@@ -234,6 +262,8 @@ export class Car {
   lastH?: number;
   anim?: Anim;
   crew?: boolean;
+  // A delivery courier's box colour (COURIER_BOXES), on a bike or moped.
+  courier?: string;
   // Blown up (src/fire.ts): a charred wreck nobody can drive.
   burnt?: boolean;
   // A bus on a line: its number and where it's going, for the boards (Traffic.buses).
@@ -245,15 +275,16 @@ export class Car {
   skidBack = 0; skidFront = 0;
   _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number]; stamp?: number;
 
-  constructor(type: string, r: () => number, x = 0, y = 0, h = 0, colour?: string) {
+  constructor(type: string, r: () => number, x = 0, y = 0, h = 0, colour?: string, box?: string) {
     this.type = type;
     this.spec = TYPES[type];
     this.mass = this.spec.mass;
     const paints = TWO_PAINT[type] || PAINT;
     // (One colour for the types painted alike, so they share a draw call.)
     const pick = paints[Math.floor(r() * paints.length)], paint = colour || this.spec.color || pick;
-    this.key = `${type}|${paint}`;
-    carGeometry(type, paint);
+    this.key = box ? `${type}|${paint}|${box}` : `${type}|${paint}`;
+    carGeometry(type, paint, box);
+    this.courier = box;
     this.x = x;
     this.y = y;
     this.h = h;
@@ -412,7 +443,8 @@ export class Car {
   burn() {
     const k = `${this.type}|burnt`;
     if (!cache.has(k)) {
-      const g = carGeometry(this.type, this.key.slice(this.type.length + 1)).clone(), col = g.getAttribute('color');
+      const [paint, box] = this.key.slice(this.type.length + 1).split('|');
+      const g = carGeometry(this.type, paint, box).clone(), col = g.getAttribute('color');
       if (col) for (let i = 0; i < col.count; i++) {
         const v = 0.02 + 0.05 * (col.getX(i) + col.getY(i) + col.getZ(i)) / 3;
         col.setXYZ(i, v, v, v * 1.05);

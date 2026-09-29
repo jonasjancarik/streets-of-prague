@@ -1,7 +1,7 @@
 import { BusRun, busStart } from './buses.ts';
 import type { BusLine } from './buses.ts';
-import { Car, randomType } from './car.ts';
-import { randomLook } from './figures.ts';
+import { COURIER_BOXES, Car, randomType } from './car.ts';
+import { courierLook, randomLook } from './figures.ts';
 import { MAIN_ROADS, Route, clamp, roadWeight } from './network.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 import type { Signals } from './signals.ts';
@@ -111,11 +111,14 @@ export class Traffic {
       const p = edge.path.at(s);
       if (avoid && !avoid(p.x, p.y)) continue;
       if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < (bus ? 20 : 12))) continue;
-      const car = new Car(type || randomType(r, 'traffic'), r, p.x, p.y, p.ang);
+      const kind = type || randomType(r, 'traffic');
+      // Some of the ordinary bikes and mopeds are delivery couriers, with a box on their back.
+      const box = ordinary && (kind === 'bike' ? r() < 0.5 : kind === 'moto' && r() < 0.35) ? COURIER_BOXES[Math.floor(r() * COURIER_BOXES.length)] : undefined;
+      const car = new Car(kind, r, p.x, p.y, p.ang, undefined, box);
       car.mode = 'traffic';
       // On a bridge, in a tunnel or on the ground under or over one (TileWorld.track).
       car.hint = edge.bridge ? 'bridge' : edge.tunnel ? 'tunnel' : 'ground';
-      if (car.two) car.rider = randomLook(r);
+      if (car.two) car.rider = box ? courierLook(r, box) : randomLook(r);
       const agent = { car, route: new Route(this.g, edge, s, r, bus, undefined, ordinary), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + r() * 0.3, off: 0 };
       this.agents.push(agent);
       return agent;

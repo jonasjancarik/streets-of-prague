@@ -196,6 +196,11 @@ export function randomLook(r: () => number): Look {
   return { shirt: pick(SHIRTS), trousers: pick(TROUSERS), skin: pick(SKIN), hair: pick(HAIR), sleeves: r() < 0.6 };
 }
 
+// A delivery courier: a jacket in the colour of their box.
+export function courierLook(r: () => number, colour: string): Look {
+  return { ...randomLook(r), shirt: colour, trousers: '#23272e', sleeves: true };
+}
+
 // A group of people drawn together. Each one is a slot: give it a look once, then a
 // matrix and an Anim every frame.
 export class Figures {

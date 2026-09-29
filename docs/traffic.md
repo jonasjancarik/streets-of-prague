@@ -25,6 +25,13 @@ secondary 2.5, tertiary 2, residential 1, living street and service 0.3). At a j
 more often but side streets stay reachable. Both apply only to ordinary cars (spawned
 without a type). Buses, taxis, police and pavement drivers are unchanged.
 
+**Couriers.** In `Traffic.spawn`, half of the ordinary bikes and a third of the mopeds are
+delivery couriers: a box on the rider's back in pink, green or blue (`COURIER_BOXES` in
+`src/car.ts`, baked into the two-wheeler's geometry, so one draw call per colour) and a
+jacket in the same colour (`courierLook`). Bikes are 1.6 of the traffic mix's weights, up
+from 0.5. `BOX_AT` in `src/car.ts` puts the box on the back; it was placed by eye from the
+riding pose in `assets/figures/build.py`, so change it if that pose changes.
+
 ## The data
 
 `TRAFFIC_LOAD` is made by `pipeline/build_traffic_profile.py`:
