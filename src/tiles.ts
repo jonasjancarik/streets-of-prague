@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Geo, Grid, rng, hash } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { treeMesh } from './map/vegetation.ts';
@@ -10,7 +11,7 @@ import { decodeHeights, decodeLevels, heightSampler, fetchBinary } from './terra
 import type { Point2, Bounds } from './map/geo.ts';
 import type { DriveEdge, DriveGraph, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
-import type { TileJSON, MapIndex, TilePassage, BuildingArrays, WorkerJobs, WorkerKind, WorkerResults, WorkerResponse, HeightGrid, LevelInput } from './contracts.ts';
+import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, WorkerJobs, WorkerKind, WorkerResults, WorkerResponse, HeightGrid, LevelInput } from './contracts.ts';
 import { isTileJSON } from './contracts.ts';
 
 interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer | null; ipr: ArrayBuffer | null; levels: ArrayBuffer | null }
@@ -149,6 +150,24 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
 
 const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ vertexColors: true }));
 
+// A landmark's model (pipeline/landmarks.py), already in the game's coordinates. Its
+// photographs have the day's light in them, so it's lit as if every face looked up:
+// evenly, dimming at night and taking the street lamps' light like the rest.
+async function landmarkModel(url: string) {
+  const gltf = await new GLTFLoader().loadAsync(url);
+  const model = gltf.scene;
+  model.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const map = (o.material as THREE.MeshStandardMaterial).map;
+    if (map) map.anisotropy = 4;
+    o.material = cutAway(new THREE.MeshLambertMaterial({ map, side: THREE.DoubleSide }), 'landmark');
+    const n = o.geometry.attributes.position.count;
+    o.geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+    o.castShadow = true;
+  });
+  return model;
+}
+
 // The ground of a tile as depth alone, a little below the ground itself: drawn after
 // the ground's layers (which have no depth) and before the tunnels, so what's under
 // the ground is hidden but for the hole round you.
@@ -249,6 +268,7 @@ export class TileWorld {
   onDrop: (tile: Tile) => void;
   building: number; inFlight: Set<string>; builds: Map<string, Promise<Tile>>;
   retry: Map<string, number>; workers: TileWorkers; ref: number;
+  landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
     view: (who: Tracked) => { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
@@ -295,6 +315,10 @@ export class TileWorld {
     this.builds = new Map(); // key → Promise of the tile, while it's being built
     this.retry = new Map(); // key → when to try a tile that failed again
     this.workers = new TileWorkers();
+    // Landmarks from IPR's photorealistic mesh, where the area has any (?osm: none).
+    this.landmarks = osmBuildings ? Promise.resolve([]) : fetch(`data/${area}_now/landmarks.json`)
+      .then((r) => (r.ok ? r.json() as Promise<Landmark[]> : [])).catch(() => []);
+    this.landmarkModels = new Map();
     // Collision lookups across tiles; anywhere not loaded counts as solid.
     // Game y = 0 is this height above sea level (IPR buildings are stored against it).
     this.ref = index.iprRef ?? 180;
@@ -645,6 +669,13 @@ export class TileWorld {
     const data = { ...t, size: [x1 - x0, y1 - y0] as Point2, origin: [-x0, -y0] as Point2 };
     const geo = new Geo(data);
     const own = t.buildings.filter((b) => b.own);
+    // Landmarks reaching into the tile: its buildings in their footprints give way.
+    const marks = (await this.landmarks).filter((l) => l.tiles.includes(k));
+    const hide = marks.flatMap((l) => l.polygons);
+    const givesWay = (rings: Point2[][]) => {
+      const cx = rings[0].reduce((a, p) => a + p[0], 0) / rings[0].length, cy = rings[0].reduce((a, p) => a + p[1], 0) / rings[0].length;
+      return hide.some((r) => inRing(cx, cy, r[0]) && !r.slice(1).some((h) => inRing(cx, cy, h)));
+    };
     // What stands on the ground: not the parts raised well above it (a covered bridge
     // between two buildings, an overhang on pillars), which you walk and drive under.
     const grounded = (b: { minh?: number }) => !((b.minh ?? 0) >= RAISED);
@@ -680,7 +711,7 @@ export class TileWorld {
     // under its footprint. In a tile with IPR buildings, the OSM ones IPR doesn't have
     // (noIpr, see ipr_buildings.py) are still extruded.
     const withIpr = !!(t.ipr && !this.osmBuildings && ipr);
-    const extrude = own.filter((b) => !withIpr || b.noIpr)
+    const extrude = own.filter((b) => (!withIpr || b.noIpr) && !givesWay(b.rings))
       .map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))) }));
     const bbox = this.index.bbox_wgs84;
     const edges = this.driveBy.get(k) || [];
@@ -713,11 +744,22 @@ export class TileWorld {
         data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, trees: t.trees, passages: t.passages || [], levels: !!tileLevels },
         seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       }, [seedArray.buffer]),
-      withIpr ? w.run('ipr', { buffer: ipr, box: t.box, absolute: this.index.iprRef != null, ground, bbox }, [ipr]) : null,
+      withIpr ? w.run('ipr', { buffer: ipr, box: t.box, absolute: this.index.iprRef != null, ground, bbox, hide }, [ipr]) : null,
       !withIpr || extrude.length ? w.run('roofs', { buildings: extrude, size: data.size, origin: data.origin, ground, bbox }) : null,
     ]);
     lap('send');
+    // The landmarks drawn with this tile (each with one tile only, where it mostly is).
+    const models = Promise.all(marks.filter((l) => l.home === k).map((l) => {
+      if (!this.landmarkModels.has(l.name)) {
+        this.landmarkModels.set(l.name, landmarkModel(`data/${this.area}_now/${l.file}`).catch((e) => {
+          console.warn(`Landmark ${l.name} could not be loaded`, e);
+          return null;
+        }));
+      }
+      return this.landmarkModels.get(l.name)!;
+    }));
     const [{ layers, masks }, land, iprArrays, roofArrays] = await jobs;
+    const landmarks = (await models).filter((m): m is THREE.Group => m !== null);
     if (this.loaded.has(k)) return this.loaded.get(k)!;
     t0 = performance.now();
 
@@ -746,7 +788,7 @@ export class TileWorld {
     const buildings = [iprArrays, roofArrays].filter((arrays): arrays is BuildingArrays => arrays !== null).map(buildingMesh);
     const walls = wallMesh(land.walls);
     const trees = treeMesh(land.trees);
-    group.add(surfaces.group, ...buildings, walls, trees);
+    group.add(surfaces.group, ...buildings, walls, trees, ...landmarks);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
     group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });

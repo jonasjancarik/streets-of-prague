@@ -13,7 +13,7 @@ import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords } from './facades.ts';
 import { groundLayers, layerBuffers } from './ground.ts';
 import { heightSampler } from './terrain.ts';
-import type { Bounds } from './map/geo.ts';
+import type { Bounds, Point2 } from './map/geo.ts';
 import type { HeightGrid, BuildingArrays, LandResult, WorkerJobs, WorkerRequest, WorkerResponse } from './contracts.ts';
 
 type LandData = WorkerJobs['land']['data'];
@@ -53,23 +53,43 @@ async function roofs({ buildings, size, origin, ground, bbox }: WorkerJobs['roof
   return { ...arrays, facade: facadeCoords(arrays.position, hAt, styleAt(bbox)) };
 }
 
+// Whether (x, y) is inside a polygon (outer ring, then holes).
+function inPolygon(x: number, y: number, rings: Point2[][]) {
+  let inside = false;
+  for (const r of rings) {
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [xi, yi] = r[i], [xj, yj] = r[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+  }
+  return inside;
+}
+
 // IPR Praha's 3D buildings for a tile (pipeline/ipr_buildings.py): triangles with
-// positions in centimetres from the tile corner and a colour per triangle.
-function ipr({ buffer, box: [x0, y0], absolute, ground, bbox }: WorkerJobs['ipr']): BuildingArrays {
-  const n = new DataView(buffer).getUint32(0, true);
-  const p16 = new Int16Array(buffer, 8, n * 9);
-  const colAt = 8 + n * 18 + ((4 - ((8 + n * 18) % 4)) % 4);
-  const c8 = new Uint8Array(buffer, colAt, n * 3);
+// positions in centimetres from the tile corner and a colour per triangle. Those in a
+// landmark's footprint (`hide`) are left out: the landmark stands there instead.
+function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs['ipr']): BuildingArrays {
+  const all = new DataView(buffer).getUint32(0, true);
+  const p16 = new Int16Array(buffer, 8, all * 9);
+  const colAt = 8 + all * 18 + ((4 - ((8 + all * 18) % 4)) % 4);
+  const c8 = new Uint8Array(buffer, colAt, all * 3);
+  const kept: number[] = [];
+  for (let t = 0; t < all; t++) {
+    const x = x0 + (p16[t * 9] + p16[t * 9 + 3] + p16[t * 9 + 6]) / 300, y = y0 + (p16[t * 9 + 2] + p16[t * 9 + 5] + p16[t * 9 + 8]) / 300;
+    if (!hide.some((rings) => inPolygon(x, y, rings))) kept.push(t);
+  }
+  const n = kept.length;
   const pos = new Float32Array(n * 9), col = new Float32Array(n * 9);
   const c = new THREE.Color();
-  for (let t = 0; t < n; t++) {
+  for (let o = 0; o < n; o++) {
+    const t = kept[o];
     c.setRGB(c8[t * 3] / 255, c8[t * 3 + 1] / 255, c8[t * 3 + 2] / 255, THREE.SRGBColorSpace);
     for (let v = 0; v < 3; v++) {
-      const i = t * 9 + v * 3;
-      const h = p16[i + 1] / 100;
-      pos[i] = x0 + p16[i] / 100;
+      const s = t * 9 + v * 3, i = o * 9 + v * 3;
+      const h = p16[s + 1] / 100;
+      pos[i] = x0 + p16[s] / 100;
       pos[i + 1] = h;
-      pos[i + 2] = -(y0 + p16[i + 2] / 100);
+      pos[i + 2] = -(y0 + p16[s + 2] / 100);
       const k = absolute ? 1 : 0.62 + 0.38 * Math.min(1, h / 6); // older data: darker towards the street
       col[i] = c.r * k; col[i + 1] = c.g * k; col[i + 2] = c.b * k;
     }

@@ -209,6 +209,15 @@ the pixel ratio.
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.
+- **Landmarks** (so far Mánes with Šítkovská vodárenská věž) are cut out of IPR's
+  photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
+  photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
+  `pipeline/landmarks.py` takes the mesh's pieces over the landmark's OSM footprints
+  (a little wider), keeps the triangles inside and writes a GLB in the game's
+  coordinates; the game hides IPR's and OSM's buildings in that footprint and draws the
+  model there (`landmarkModel` in `src/tiles.ts`). The photographs have the day's light
+  in them, so the model is lit evenly, as if every face looked up, and still darkens at
+  night. The collision footprint stays OSM's.
 - **Roof colours.** Pitched roofs are red tiles, as nearly all of them are in Prague;
   flat ones are grey. OSM's `roof:material` and `roof:colour` can make a roof grey slate
   or green copper instead, down to single building parts (the cathedral's grey roofs
@@ -431,6 +440,7 @@ uv run build_buses.py centrum      # bus lines and stops from PID's timetables �
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
 uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
+uv run landmarks.py centrum        # landmarks from IPR's photorealistic mesh → landmarks/
 ```
 
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
@@ -492,6 +502,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (`Krav`) and Český Brod (`Cbro`); the pipeline reads all five. Coordinates go S-JTSK → WGS84 with the Czech datum shift →
   local metres (going straight to the datum-less local projection puts everything
   ~25 m off); IPR wall bases then sit a median 0.55 m from OSM building edges.
+- **Landmarks.** `LANDMARKS` in `pipeline/landmarks.py` names each landmark and the OSM
+  buildings it replaces; `uv run landmarks.py <area> [name…] [--level N]` cuts them
+  (after `build_tiles.py`, which it takes the footprints from). The mesh's pieces are
+  kept in `pipeline/.cache/mesh/`; the finest level (16) is the default.
 - **Roof corrections.** `pipeline/roofs.py` lists landmarks by OSM id, and outlines
   (in WGS84) for parts of buildings OSM draws as one. After changing it, run
   `build_tiles.py <area> --layers buildings` and then `ipr_buildings.py <area>`.
@@ -563,6 +577,7 @@ libraries to `dist/licenses.txt` (a small plugin in `vite.config.js`).
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
 - Tram and metro timetables: [PID / ROPID](https://pid.cz/o-systemu/opendata/), CC BY 4.0, reduced to trips per hour.
 - 3D buildings, bridges and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
+- Landmarks: photorealistic 3D model of Prague, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh), CC BY.
 - Carriageways and parking bays: Digitální technická mapa kraje, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/28A24EB4-5EE8-436E-B0BB-357025258211), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Street lamps: the surface marks of the archived utility map (DTMP_CUR_TMISZNAK_B), datový podklad © [IPR Praha](https://geoportalpraha.cz/), CC BY.

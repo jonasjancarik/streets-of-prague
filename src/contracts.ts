@@ -12,6 +12,10 @@ export interface TerrainMetadata {
   structures?: string[];
 }
 
+// A landmark cut out of IPR's photorealistic mesh (pipeline/landmarks.py): its model,
+// the footprint it takes over, the tile it's drawn with and the tiles it reaches into.
+export interface Landmark { name: string; file: string; polygons: Point2[][][]; home: string; tiles: string[] }
+
 export type TileIndexEntry = [number, number, number] | [number, number, number, number];
 
 export interface MapIndex extends GeoData {
@@ -88,7 +92,8 @@ export interface LandResult {
 
 export interface WorkerJobs {
   roofs: { buildings: TileBuilding[]; size: Point2; origin: Point2; ground: HeightGrid | null; bbox: Bounds };
-  ipr: { buffer: ArrayBuffer; box: Bounds; absolute: boolean; ground: HeightGrid | null; bbox: Bounds };
+  // hide: landmarks' footprints (rings of each), where IPR's buildings give way to them.
+  ipr: { buffer: ArrayBuffer; box: Bounds; absolute: boolean; ground: HeightGrid | null; bbox: Bounds; hide: Point2[][][] };
   ground: {
     d: GroundTileData; box: Bounds; edges: GroundRoadEdge[];
     buildings: { rings: Point2[][] }[]; parkingZones: (string | null)[];
