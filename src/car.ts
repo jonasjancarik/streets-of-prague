@@ -11,7 +11,16 @@ import { SNOW, STREET_SNOW, WET } from './shading.ts';
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
   grip: number; turn: number; weight: number; cabin?: Point2; color?: string;
-  traffic?: number; two?: 'bike' | 'moto'; heavy?: boolean;
+  wheelbase?: number; traffic?: number; two?: 'bike' | 'moto'; heavy?: boolean;
+  // Handling when someone drives it (each defaults to the value in brackets): braking
+  // (m/s², 16), tightest turning circle (m, 3.6), how fast the steering answers (9),
+  // how much speed costs grip (0.45), coasting drag with a driver (m/s², 0.6), top
+  // reverse speed as a share of vmax (0.3), the impact speed (m/s) before damage
+  // starts (3) and how much rain and snow matter (1).
+  // Which wheels drive it (fwd): rwd slides out when you floor it in a bend, fwd runs
+  // wide (understeers), awd suffers less from rain and snow.
+  drive?: 'fwd' | 'rwd' | 'awd';
+  brake?: number; radius?: number; response?: number; fade?: number; drag?: number; reverse?: number; tough?: number; weather?: number;
 }
 export interface CarControl { throttle: number; steer: number; handbrake: boolean; cap?: number | null }
 export interface CarGrid {
@@ -25,24 +34,69 @@ export interface Body { x: number; y: number; vx: number; vy: number; w?: number
 // (much slower with the handbrake), bounces off walls against the collision grid.
 
 export const TYPES: Record<string, CarSpec> = {
-  hatch: { L: 3.9, W: 1.75, H: 1.45, mass: 1100, accel: 9, vmax: 36, grip: 9, turn: 2.6, cabin: [-1.15, 0.85], weight: 4 },
-  sedan: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 4 },
-  estate: { L: 4.7, W: 1.82, H: 1.5, mass: 1500, accel: 9, vmax: 40, grip: 8.5, turn: 2.3, cabin: [-1.95, 0.8], weight: 2 },
-  van: { L: 5.2, W: 2.0, H: 2.3, mass: 2200, accel: 6.5, vmax: 31, grip: 8, turn: 1.9, cabin: [-2.5, 1.6], weight: 1 },
-  taxi: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 1, color: '#e9c62f' },
+  hatch: { L: 3.9, W: 1.75, H: 1.45, mass: 1100, accel: 9, vmax: 36, grip: 9, turn: 2.6, cabin: [-1.15, 0.85], weight: 4, radius: 3.2, response: 11, brake: 17 },
+  sedan: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 4, radius: 3.8 },
+  estate: { L: 4.7, W: 1.82, H: 1.5, mass: 1500, accel: 9, vmax: 40, grip: 8.5, turn: 2.3, cabin: [-1.95, 0.8], weight: 2, radius: 4, brake: 15 },
+  // A crossover such as a Kodiaq or Enyaq: taller and heavier than an estate.
+  suv: { L: 4.65, W: 1.88, H: 1.65, mass: 1900, accel: 8.5, vmax: 40, grip: 8.3, turn: 2.2, cabin: [-2, 0.85], weight: 3, radius: 4.4, response: 8.5, brake: 15 },
+  van: { L: 5.2, W: 2.0, H: 2.3, mass: 2200, accel: 6.5, vmax: 31, grip: 8, turn: 1.9, cabin: [-2.5, 1.6], weight: 1, drive: 'rwd', radius: 6, response: 7, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
+  taxi: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 1, color: '#e9c62f', radius: 3.8 },
+  // A full-size American pickup (an F-150): rare, long, heavy and rear-wheel drive.
+  pickup: { L: 5.9, W: 2.03, H: 1.95, mass: 2500, accel: 8, vmax: 38, grip: 7.6, turn: 1.9, cabin: [-1, 0.7], weight: 0.5, drive: 'rwd', radius: 5.8, response: 7.5, brake: 13, tough: 4.5, drag: 0.5, weather: 1.05 },
   // Never parked or in ordinary traffic: src/police.ts puts these on the streets.
-  police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#eef1f4' },
+  police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#eef1f4', drive: 'rwd', radius: 3.8, brake: 19, tough: 4 },
   // Two-wheelers (drawn from the figures kit, as big as the people riding them). A bike
   // is never parked in a car bay; `traffic` is how often each type turns up on the road.
-  bike: { L: 2.3, W: 0.8, H: 1.5, mass: 90, accel: 3.2, vmax: 9, grip: 12, turn: 3.4, weight: 0, traffic: 1.6, two: 'bike' },
-  moto: { L: 2.8, W: 1.0, H: 1.6, mass: 260, accel: 12, vmax: 48, grip: 9.5, turn: 2.8, weight: 0.3, traffic: 1.2, two: 'moto' },
+  bike: { L: 2.3, W: 0.8, H: 1.5, mass: 90, accel: 3.2, vmax: 9, grip: 12, turn: 3.4, weight: 0, traffic: 1.6, two: 'bike', radius: 2, brake: 10, tough: 1.5, weather: 1.3 },
+  moto: { L: 2.8, W: 1.0, H: 1.6, mass: 260, accel: 12, vmax: 48, grip: 9.5, turn: 2.8, weight: 0.3, traffic: 1.2, two: 'moto', radius: 2.5, response: 12, brake: 22, fade: 0.35, tough: 1.5, weather: 1.5 },
   // A 12 m city bus in PID colours: slow to pick up speed, wide in the turns. Never
   // parked or in the ordinary mix: Traffic.buses keeps a few on their lines.
-  bus: { L: 12, W: 2.55, H: 3.1, mass: 12000, accel: 2.6, vmax: 24, grip: 7, turn: 1.25, weight: 0, color: '#c8102e', heavy: true },
+  // Lorries: only on the motorways and out in the suburbs (Traffic.spawn), never parked.
+  truck: { L: 8, W: 2.5, H: 3.6, mass: 7500, accel: 3.2, vmax: 25, grip: 7, turn: 1.4, weight: 0, traffic: 0, heavy: true, wheelbase: 4.6, drive: 'rwd', radius: 8, response: 5, brake: 9, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
+  artic: { L: 16.5, W: 2.55, H: 4, mass: 30000, accel: 2, vmax: 24, grip: 6.5, turn: 1.1, weight: 0, traffic: 0, heavy: true, wheelbase: 9, drive: 'rwd', radius: 12, response: 3.5, brake: 7, fade: 0.25, drag: 0.35, reverse: 0.15, tough: 6, weather: 1.2 },
+  bus: { L: 12, W: 2.55, H: 3.1, mass: 12000, accel: 2.6, vmax: 24, grip: 7, turn: 1.25, weight: 0, color: '#c8102e', heavy: true, drive: 'rwd', radius: 10, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
 };
+// A variant of a body type: the same geometry (so the same draw call) with its own
+// handling and engine. `id` picks the engine in audio.ts, `name` (a model's own name,
+// never translated) is shown when you get in, `freq` is how common it is among the
+// variants of its type. Types without an entry (taxi, police, two-wheelers, bus) have none.
+export interface Variant { id: string; name?: string; freq: number; tune: Partial<CarSpec> }
+export const VARIANTS: Record<string, Variant[]> = {
+  hatch: [
+    // The Fabia I 1.2 HTP: three light cylinders, slow but willing, soft brakes.
+    { id: 'fabia', name: 'Škoda Fabia 1.2', freq: 0.4, tune: { accel: 6, vmax: 33, brake: 14, weather: 1.2, mass: 1000 } },
+    { id: 'hatch', freq: 0.6, tune: {} },
+  ],
+  sedan: [
+    // The Octavia I 1.9 TDI: strong from low revs, a little short at the top.
+    { id: 'octavia', name: 'Škoda Octavia 1.9 TDI', freq: 0.4, tune: { accel: 10.5, vmax: 39, tough: 4 } },
+    // An electric car: quick off the line, regenerative braking when you lift off, all-wheel drive.
+    { id: 'model3', name: 'Tesla Model 3', freq: 0.06, tune: { accel: 13, vmax: 45, drag: 1.2, mass: 1850, drive: 'awd' } },
+    { id: 'sedan', freq: 0.54, tune: {} },
+  ],
+  suv: [
+    { id: 'enyaq', name: 'Škoda Enyaq iV 80', freq: 0.15, tune: { accel: 10.5, vmax: 40, drag: 1.1, mass: 2100, drive: 'rwd' } },
+    { id: 'modely', name: 'Tesla Model Y', freq: 0.08, tune: { accel: 12.5, vmax: 44, drag: 1.2, mass: 2000, drive: 'awd' } },
+    { id: 'suv', freq: 0.77, tune: {} },
+  ],
+  pickup: [{ id: 'f150', name: 'Ford F-150', freq: 1, tune: {} }],
+  estate: [
+    { id: 'octavia', name: 'Škoda Octavia 1.9 TDI', freq: 0.4, tune: { accel: 10, vmax: 38, tough: 4 } },
+    { id: 'estate', freq: 0.6, tune: {} },
+  ],
+};
+// The body's spec with a variant's changes, made once for each pair.
+const merged = new Map<Variant, CarSpec>();
+function tuned(type: string, v: Variant): CarSpec {
+  let m = merged.get(v);
+  if (!m) merged.set(v, (m = { ...TYPES[type], ...v.tune }));
+  return m;
+}
 const PAINT = ['#e8e6e1', '#bfc3c7', '#8d9398', '#2c2f33', '#1d2a44', '#7a1f1f', '#b33a2c', '#2f5140', '#5b6d7c', '#d9d2c0', '#3f4a5a', '#9a7b4f'];
 const TWO_PAINT: Record<string, string[]> = {
   bike: ['#1d2a44', '#b33a2c', '#2f5140', '#e8e6e1', '#2c2f33', '#d94f8c', '#e0b32a', '#5b6d7c', '#8fb3c9'],
+  truck: ['#1d4fa3', '#b33a2c', '#2f5140', '#e8e6e1', '#e0b32a', '#5b6d7c', '#2c2f33'],
+  artic: ['#1d4fa3', '#b33a2c', '#2f5140', '#e8e6e1', '#e0b32a', '#2c2f33', '#7a1f1f'],
   moto: ['#b3161b', '#1d2a44', '#2c2f33', '#e8e6e1', '#d9d2c0', '#2f5140', '#e07b1f'],
 };
 
@@ -90,6 +144,11 @@ function carGeometry(type: string, paint: string, box?: string): THREE.BufferGeo
     cache.set(k, geometry);
     return geometry;
   }
+  if (type === 'truck' || type === 'artic') {
+    const geometry = truckGeometry(type, S, paint);
+    cache.set(k, geometry);
+    return geometry;
+  }
   if (type === 'bus') {
     const geometry = busGeometry(S);
     cache.set(k, geometry);
@@ -123,7 +182,7 @@ function carGeometry(type: string, paint: string, box?: string): THREE.BufferGeo
 // white roof with the air conditioning on top, a dark band of glass all round with
 // white pillars, three doors on the right, and the line board over the windscreen.
 // (Forward is +x, right +z, the ground y = 0, as for the car bodies.)
-function busGeometry(S: CarSpec): THREE.BufferGeometry {
+function boxBuilder() {
   const parts: THREE.BufferGeometry[] = [];
   const c = new THREE.Color();
   const add = (g: THREE.BufferGeometry, colour: string, x: number, y: number, z: number) => {
@@ -137,6 +196,21 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
   };
   const box = (colour: string, x0: number, x1: number, y0: number, y1: number, w: number, z = 0) =>
     add(new THREE.BoxGeometry(x1 - x0, y1 - y0, w), colour, (x0 + x1) / 2, (y0 + y1) / 2, z);
+  const wheel = (x: number, W: number, twin = false) => {
+    for (const z of [-1, 1]) {
+      const w = new THREE.CylinderGeometry(0.5, 0.5, twin ? 0.6 : 0.34, 14);
+      w.rotateX(Math.PI / 2);
+      add(w, '#161616', x, 0.5, z * (W / 2 - 0.22));
+      const hub = new THREE.CylinderGeometry(0.24, 0.24, 0.02, 10);
+      hub.rotateX(Math.PI / 2);
+      add(hub, '#70757b', x, 0.5, z * (W / 2 - 0.04));
+    }
+  };
+  return { box, wheel, done: () => mergeGeometries(parts) };
+}
+
+function busGeometry(S: CarSpec): THREE.BufferGeometry {
+  const { box, wheel, done } = boxBuilder();
   const L = S.L / 2, W = S.W, red = S.color || '#c8102e', white = '#eeeeea', glass = '#1b242c', grey = '#8a8f94';
   const sill = 1.15, top = 2.55, roof = 2.95;
   box('#2a2c2f', -L + 0.05, L - 0.05, 0.28, 0.5, W - 0.02); // skirt and bumpers
@@ -176,17 +250,40 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
   box(glass, -L - 0.02, -L + 0.05, 1.4, top - 0.1, W - 0.5);
   box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
   // Wheels: two at the front, twin tyres at the back.
-  for (const x of [L - 2.7, -L + 3.3]) {
-    for (const z of [-1, 1]) {
-      const w = new THREE.CylinderGeometry(0.5, 0.5, 0.34, 14);
-      w.rotateX(Math.PI / 2);
-      add(w, '#161616', x, 0.5, z * (W / 2 - 0.22));
-      const hub = new THREE.CylinderGeometry(0.24, 0.24, 0.02, 10);
-      hub.rotateX(Math.PI / 2);
-      add(hub, '#70757b', x, 0.5, z * (W / 2 - 0.04));
-    }
+  wheel(L - 2.7, W);
+  wheel(-L + 3.3, W);
+  return done();
+}
+
+// Lorries are boxes too: a cab in the paint colour and a white box or trailer behind
+// it (with a stripe in the cab's colour), a dark chassis, tail lamps and a bar at the back.
+// The artic is a tractor with a trailer, the box truck one rigid body.
+function truckGeometry(type: string, S: CarSpec, paint: string): THREE.BufferGeometry {
+  const { box, wheel, done } = boxBuilder();
+  const L = S.L / 2, W = S.W, glass = '#1b242c', artic = type === 'artic';
+  const cab = artic ? 2.5 : 2.2, cabTop = artic ? 3.3 : 2.9, floor = artic ? 1.0 : 0.85, top = artic ? 4.0 : 3.6;
+  const cx = L - cab; // where the cab starts
+  box('#2a2c2f', -L, L, 0.35, floor, W - 0.5); // chassis
+  box(paint, cx, L, floor - 0.2, cabTop, W); // cab
+  box(glass, L - 0.05, L + 0.02, floor + 0.65, cabTop - 0.2, W - 0.25); // windscreen
+  box(glass, cx + 0.5, L - 0.4, floor + 0.7, cabTop - 0.25, W + 0.02); // side windows
+  box(paint, cx + 0.05, cx + 0.5, cabTop, cabTop + (artic ? 0.5 : 0.0), W - 0.3); // roof deflector
+  box('#2a2c2f', L - 0.1, L + 0.15, 0.35, 0.75, W - 0.1); // bumper
+  const bx = artic ? cx - 0.9 : cx - 0.1; // the box's front end
+  box('#e6e7e3', -L, bx, floor, top, W); // box or trailer
+  box(paint, -L, bx, floor + 0.7, floor + 1.05, W + 0.01); // stripe
+  box('#9a9fa3', -L, -L + 0.06, floor + 0.15, top - 0.15, W - 0.3); // rear doors
+  for (const z of [-1, 1]) {
+    box('#fff6d8', L - 0.05, L + 0.05, floor - 0.1, floor + 0.2, 0.4, z * (W / 2 - 0.3));
+    box('#b3161b', -L - 0.03, -L + 0.05, floor - 0.1, floor + 0.3, 0.25, z * (W / 2 - 0.2));
   }
-  return mergeGeometries(parts);
+  box('#3a3c3f', -L - 0.1, -L + 0.05, 0.55, 0.75, W - 0.2); // under-run bar
+  if (artic) box('#2a2c2f', bx, cx + 0.3, floor, floor + 0.3, W - 0.6); // the fifth wheel between them
+  box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
+  wheel(L - 1.1, W);
+  if (artic) { wheel(cx + 0.4, W, true); wheel(-L + 1.6, W, true); wheel(-L + 2.9, W, true); }
+  else { wheel(-L + 1.5, W, true); }
+  return done();
 }
 
 // Car bodies from public/cars.glb (built in Blender by assets/cars/build.py): one per
@@ -243,6 +340,7 @@ export function randomType(r: () => number, use: 'weight' | 'traffic' = 'weight'
 
 export class Car {
   type: string;
+  variant: Variant | null = null;
   spec: CarSpec;
   mass: number;
   key: string;
@@ -278,10 +376,16 @@ export class Car {
   constructor(type: string, r: () => number, x = 0, y = 0, h = 0, colour?: string, box?: string) {
     this.type = type;
     this.spec = TYPES[type];
-    this.mass = this.spec.mass;
     const paints = TWO_PAINT[type] || PAINT;
     // (One colour for the types painted alike, so they share a draw call.)
     const pick = paints[Math.floor(r() * paints.length)], paint = colour || this.spec.color || pick;
+    const options = VARIANTS[type];
+    if (options) {
+      let x = r() * options.reduce((a, v) => a + v.freq, 0);
+      this.variant = options.find((v) => (x -= v.freq) < 0) ?? options[options.length - 1];
+      this.spec = tuned(type, this.variant);
+    }
+    this.mass = this.spec.mass;
     this.key = box ? `${type}|${paint}|${box}` : `${type}|${paint}`;
     carGeometry(type, paint, box);
     this.courier = box;
@@ -347,16 +451,17 @@ export class Car {
     const throttle = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - vf) / 2, 0, 1));
     // A wet road and snow take some of the tyres' grip: longer braking, wider slides
     // (for the cars someone is driving hard; the traffic keeps to its lanes as before).
-    const road = this.driven ? 1 - Math.max(0.25 * WET.value, 0.45 * SNOW.value * STREET_SNOW.value, 0.25 * SNOW.value) : 1;
+    const road = this.driven ? 1 - (S.weather ?? 1) * (S.drive === 'awd' ? 0.6 : 1) * Math.max(0.25 * WET.value, 0.45 * SNOW.value * STREET_SNOW.value, 0.25 * SNOW.value) : 1;
+    const brake = S.brake ?? 16;
 
     if (throttle > 0) {
-      if (vf < -0.3) vf = Math.min(0, vf + 16 * road * dt);
+      if (vf < -0.3) vf = Math.min(0, vf + brake * road * dt);
       else vf += S.accel * throttle * (1 - fast * fast) * (0.6 + 0.4 * road) * dt;
     } else if (throttle < 0) {
-      if (vf > 0.3) vf = Math.max(0, vf - 16 * road * dt);
-      else vf = Math.max(-S.vmax * 0.3, vf - S.accel * 0.6 * dt);
+      if (vf > 0.3) vf = Math.max(0, vf - brake * road * dt);
+      else vf = Math.max(-S.vmax * (S.reverse ?? 0.3), vf - S.accel * 0.6 * dt);
     } else {
-      vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.driven ? 0.6 : 5) * dt);
+      vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.driven ? S.drag ?? 0.6 : 5) * dt);
     }
     if (ctl.handbrake) vf -= Math.sign(vf) * Math.min(Math.abs(vf), 5 * dt);
     // Hills: gravity along the car's heading (rolls back down, slower uphill).
@@ -367,7 +472,11 @@ export class Car {
     }
     if (ctl.cap != null && vf > ctl.cap) vf = Math.max(ctl.cap, vf - 3 * dt);
 
-    const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - 0.45 * fast)) * road;
+    // Full throttle in a bend: the driven wheels lose sideways grip (rear-wheel drive)
+    // or the car runs wide (front-wheel drive, below).
+    const power = this.driven && !S.two ? clamp(throttle, 0, 1) : 0;
+    const bend = power * Math.min(1, Math.abs(ctl.steer)) * clamp(Math.abs(vf) / 10, 0, 1);
+    const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - (S.fade ?? 0.45) * fast) * (S.drive === 'rwd' ? 1 - 0.3 * bend : 1)) * road;
     vl *= Math.exp(-grip * dt);
     // Tyre marks: sliding sideways, the back wheels locked by the handbrake, or all
     // four braking hard.
@@ -377,9 +486,9 @@ export class Car {
     this.skidFront = Math.max(slide * 0.7, braking);
 
     const sgn = vf >= 0 ? 1 : -1;
-    const maxW = S.turn * (1 - 0.35 * fast) * (ctl.handbrake ? 1.35 : 1);
-    const wantW = ctl.steer * Math.min(Math.abs(vf) / 3.6, maxW) * sgn;
-    if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * 9);
+    const maxW = S.turn * (1 - 0.35 * fast) * (ctl.handbrake ? 1.35 : 1) * (!S.drive || S.drive === 'fwd' ? 1 - 0.12 * bend : 1);
+    const wantW = ctl.steer * Math.min(Math.abs(vf) / (S.radius ?? 3.6), maxW) * sgn;
+    if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * (S.response ?? 9));
     else this.w *= Math.exp(-4 * dt);
     this.h += this.w * dt;
 
@@ -435,7 +544,7 @@ export class Car {
     // Off-centre hits make the car spin.
     const rx = cx / hits - this.x, ry = cy / hits - this.y;
     this.w += (rx * ny - ry * nx) * vn * 0.09;
-    this.damage += Math.max(0, -vn - 3);
+    this.damage += Math.max(0, -vn - (this.spec.tough ?? 3));
     return -vn;
   }
 

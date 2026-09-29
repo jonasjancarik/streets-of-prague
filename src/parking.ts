@@ -329,7 +329,7 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
   const place = (s: ParkingSlot, type = randomType(r)) => {
     // Most people drive into angled bays forwards; elsewhere it's either way round.
     const car = new Car(type, r, s.x, s.y, s.h + (!s.fwd && r() < (s.angled ? 0.08 : 0.5) ? Math.PI : 0));
-    if (s.bay && car.type === 'van') return false;
+    if (s.bay && (car.type === 'van' || car.type === 'pickup')) return false;
     // Nothing sticking out into a lane, where the traffic would have to squeeze past:
     // where the kerb or a mapped parking lane leaves no room, the street has none.
     if (car.circles().some(([x, y]) => !laneClear(x, y, car.r + LANE_CLEAR))) return false;

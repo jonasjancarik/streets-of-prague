@@ -331,6 +331,11 @@ the pixel ratio.
   the main roads and is replaced once out of sight; without `buses.json` all buses just
   drive the main roads. You can take one like any car, but it's slow to pick up speed,
   wide in the turns and shoves smaller cars aside.
+- **Lorries.** Box trucks and articulated lorries (built from boxes in `src/car.ts`, like the
+  bus) use only the motorways and, further than 6.5 km from the Old Town Square, the trunk and
+  primary roads (the suburbs with the depots and warehouses); they never appear in the
+  centre or in parking spaces, and one that turns onto another kind of street is removed.
+  They are slow to pick up speed and swing wide in the bends.
 - **People and two-wheelers** are a small kit built in Blender from code
   (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
   and clips for standing, walking, jogging, running, jumping, falling, getting up and
@@ -341,7 +346,7 @@ the pixel ratio.
   textures, so the whole crowd is one instanced draw call. Rebuild with `blender -b --factory-startup -P assets/figures/build.py`; add
   `-- --preview DIR` to render a few frames of every clip.
 - **Cars** are built the same way (`assets/cars/build.py` → `public/cars.glb`): one
-  low-poly body per type (hatchback, saloon, estate, van, taxi, police), shaped for
+  low-poly body per type (hatchback, saloon, estate, SUV, van, pickup, taxi, police), shaped for
   the view from above, where the bonnet, cabin, windows and roof show, with a little
   of the sides, wheels and lights towards the edges of the screen. `src/car.ts` puts
   each car's colour on the paint. The bus is built from boxes in `src/car.ts`. Rebuild with

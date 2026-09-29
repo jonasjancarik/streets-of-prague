@@ -63,6 +63,17 @@ export const MERGE = 20;
 // how much room it leaves beside that car.
 const SWERVE = 2.4, PASS = 0.35;
 
+// Lorries keep to the motorways and, out in the suburbs (the warehouses and depots),
+// the big roads. The centre of the map is the Old Town Square, in local metres.
+const CENTRE = [-3205, 3097], SUBURB = 6500;
+const BIG = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link']);
+export function lorryRoad(e: DriveEdge): boolean {
+  if (e.hw === 'motorway' || e.hw === 'motorway_link') return true;
+  if (!BIG.has(e.hw)) return false;
+  const p = e.path.at(e.path.length / 2);
+  return Math.hypot(p.x - CENTRE[0], p.y - CENTRE[1]) > SUBURB;
+}
+
 interface Obstacle {
   x: number; y: number; z?: number; r: number; vx: number; vy: number;
   kind: string; car?: Car;
@@ -107,19 +118,22 @@ export class Traffic {
       for (const e of edges) if ((x -= weight(e)) < 0) { edge = e; break; }
       if (edge.path.length < 12) continue;
       const bus = type === 'bus';
+      // Now and then a lorry, where lorries may go.
+      let kind = type || randomType(r, 'traffic');
+      if (ordinary && lorryRoad(edge) && r() < (edge.hw.startsWith('motorway') ? 0.15 : 0.05)) kind = r() < 0.6 ? 'artic' : 'truck';
+      const lorry = kind === 'truck' || kind === 'artic';
       const s = 4 + r() * (edge.path.length - 8);
       const p = edge.path.at(s);
       if (avoid && !avoid(p.x, p.y)) continue;
-      if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < (bus ? 20 : 12))) continue;
-      const kind = type || randomType(r, 'traffic');
+      if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < (bus ? 20 : lorry ? 24 : 12))) continue;
       // Some of the ordinary bikes and mopeds are delivery couriers, with a box on their back.
-      const box = ordinary && (kind === 'bike' ? r() < 0.5 : kind === 'moto' && r() < 0.35) ? COURIER_BOXES[Math.floor(r() * COURIER_BOXES.length)] : undefined;
+      const box = ordinary && !lorry && (kind === 'bike' ? r() < 0.5 : kind === 'moto' && r() < 0.35) ? COURIER_BOXES[Math.floor(r() * COURIER_BOXES.length)] : undefined;
       const car = new Car(kind, r, p.x, p.y, p.ang, undefined, box);
       car.mode = 'traffic';
       // On a bridge, in a tunnel or on the ground under or over one (TileWorld.track).
       car.hint = edge.bridge ? 'bridge' : edge.tunnel ? 'tunnel' : 'ground';
       if (car.two) car.rider = box ? courierLook(r, box) : randomLook(r);
-      const agent = { car, route: new Route(this.g, edge, s, r, bus, undefined, ordinary), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + r() * 0.3, off: 0 };
+      const agent = { car, route: new Route(this.g, edge, s, r, bus, lorry ? (_e, opts) => { const ok = opts.filter(lorryRoad); return ok.length ? ok[Math.floor(r() * ok.length)] : null; } : undefined, ordinary && !lorry), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + r() * 0.3, off: 0 };
       this.agents.push(agent);
       return agent;
     }
@@ -308,18 +322,19 @@ export class Traffic {
       const acc = target > a.speed ? (c.spec.heavy ? 1.2 : 3) : 9;
       a.speed += clamp(target - a.speed, -acc * dt, acc * dt);
       const p = a.route.advance(a.speed * dt);
-      if (a.route.ended) { a.gone = true; continue; }
+      if (a.route.ended || (c.spec.heavy && c.type !== 'bus' && !lorryRoad(a.route.head))) { a.gone = true; continue; }
       const prevX = c.x, prevY = c.y;
       c.x = p.x;
       c.y = p.y;
       let ang = p.ang;
       if (c.spec.heavy) {
-        // A bus's back wheels follow the lane, and its front ones are 6 m further on:
+        // A bus's or lorry's back wheels follow the lane, and its front ones are a wheelbase further on:
         // on a bend it lies across the inside of the curve rather than sticking out.
-        const f = a.route.lookahead(6).p;
-        if (Math.hypot(f.x - p.x, f.y - p.y) > 3) ang = Math.atan2(f.y - p.y, f.x - p.x);
-        c.x = p.x + Math.cos(ang) * 2.5;
-        c.y = p.y + Math.sin(ang) * 2.5;
+        const wb = c.spec.wheelbase ?? 6;
+        const f = a.route.lookahead(wb).p;
+        if (Math.hypot(f.x - p.x, f.y - p.y) > wb / 2) ang = Math.atan2(f.y - p.y, f.x - p.x);
+        c.x = p.x + Math.cos(ang) * wb * 0.42;
+        c.y = p.y + Math.sin(ang) * wb * 0.42;
       }
       if (a.kerb) {
         // Right of the lane by `off`, less and less over the last `merge` metres (a

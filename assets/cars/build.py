@@ -1,6 +1,6 @@
 """Build the car bodies into public/cars.glb.
 
-One low-poly mesh per car type (hatch, sedan, estate, van, taxi, police), made from
+One low-poly mesh per car type (hatch, sedan, estate, suv, van, pickup, taxi, police), made from
 code so they can be tweaked and rebuilt. The game looks down on them, so what counts is
 the shape from above and a little of the sides: a body rounded off at the corners in
 plan, the bonnet and boot, a cabin narrower than the body with the windscreen and rear
@@ -214,18 +214,20 @@ class Car:
 # Lengths, widths and heights as in src/car.ts TYPES.
 
 
-def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False):
+def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, r=0.31, lift=0.0):
     """A car: `rear` is 'hatch', 'sedan' or 'estate'; `bar` is where along the roof the
-    light bar goes (the middle of `cabin` in src/car.ts, where src/police.ts flashes it)."""
+    light bar goes (the middle of `cabin` in src/car.ts, where src/police.ts flashes it).
+    `r` is the wheel radius and `lift` how much higher the bonnet and sills sit (an SUV)."""
     c = Car()
     w, n = W / 2, L / 2
-    belt = 0.93 if H < 1.48 else 0.95
+    belt = 0.93 if H < 1.48 else 0.95 if H < 1.6 else 1.03
     boot = {"hatch": belt, "sedan": belt + 0.03, "estate": belt}[rear]
     stations = [
-        (n, w * 0.8, 0.7, 0.3), (n - 0.12, w * 0.93, 0.76, 0.26), (n - 0.35, w * 0.985, 0.8, 0.24),
-        (n - 0.8, w, 0.84, 0.22), (n - 1.25, w, belt - 0.01, 0.22), (n - 1.45, w, belt, 0.22),
-        (-n + 0.7, w, boot, 0.22), (-n + 0.3, w * 0.985, boot, 0.24), (-n + 0.1, w * 0.95, boot - 0.02, 0.27),
-        (-n, w * 0.86, boot - 0.06, 0.3),
+        (n, w * 0.8, 0.7 + lift, 0.3 + lift), (n - 0.12, w * 0.93, 0.76 + lift, 0.26 + lift),
+        (n - 0.35, w * 0.985, 0.8 + lift, 0.24 + lift), (n - 0.8, w, 0.84 + lift, 0.22 + lift),
+        (n - 1.25, w, belt - 0.01, 0.22 + lift), (n - 1.45, w, belt, 0.22 + lift),
+        (-n + 0.7, w, boot, 0.22 + lift), (-n + 0.3, w * 0.985, boot, 0.24 + lift),
+        (-n + 0.1, w * 0.95, boot - 0.02, 0.27 + lift), (-n, w * 0.86, boot - 0.06, 0.3 + lift),
     ]
     xa = n - 1.45
     if rear == "hatch":
@@ -236,11 +238,11 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False):
         xb, xc, xd = xa - 0.78, -n + 0.3, -n + 0.1
     xm = (xa + xd) / 2 + 0.1
     wheels = (n - 0.82, -n + 0.8)
-    c.body(stations, wheels, 0.31, stripe=stripe, bonnet_band=(n - 1.0, n - 0.55) if stripe else None)
+    c.body(stations, wheels, r, stripe=stripe, bonnet_band=(n - 1.0, n - 0.55) if stripe else None)
     c.cabin(belt, xa, xb, xm, xc, xd, w - 0.11, w * 0.74, H, xm_top=(xb + xc) / 2 + 0.05)
-    c.wheels(wheels, w, 0.31)
+    c.wheels(wheels, w, r)
     c.mirrors(xa - 0.08, w, belt + 0.07)
-    c.lamps(n - 0.06, -n + 0.04, w * 0.6, w * 0.68, 0.64, boot - 0.12)
+    c.lamps(n - 0.06, -n + 0.04, w * 0.6, w * 0.68, 0.64 + lift, boot - 0.12)
     mid = (xb + xc) / 2
     if sign:
         c.block((mid, 0, H + 0.1), (0.24, 0.62, 0.2), "Sign")
@@ -274,6 +276,33 @@ def van(name="van", L=5.2, W=2.0, H=2.3):
     return c.finish(name)
 
 
+def pickup(name="pickup", L=5.9, W=2.03, H=1.95):
+    """A full-size American pickup (an F-150): a long bonnet, a crew cab and an open bed."""
+    c = Car()
+    w, n = W / 2, L / 2
+    belt, rail, r = 1.24, 1.2, 0.4
+    stations = [
+        (n, w * 0.82, 1.02, 0.44), (n - 0.15, w * 0.94, 1.1, 0.42), (n - 0.5, w * 0.985, 1.17, 0.4),
+        (n - 1.0, w, rail, 0.38), (-n + 0.1, w, rail, 0.38), (-n, w * 0.97, rail - 0.05, 0.4),
+    ]
+    xa = n - 1.5
+    xd = xa - 2.4
+    wheels = (n - 1.05, -n + 1.05)
+    c.body(stations, wheels, r)
+    c.cabin(belt, xa, xa - 0.65, xa - 1.2, xd + 0.1, xd, w - 0.12, w * 0.8, H, xm_top=xa - 1.15)
+    c.wheels(wheels, w, r, 0.28)
+    c.mirrors(xa - 0.1, w + 0.02, belt + 0.1)
+    c.lamps(n - 0.06, -n + 0.04, w * 0.72, w * 0.8, 0.86, 0.98)
+    # The bed: a dark floor between paint rails, and the tailgate.
+    end = -n + 0.06
+    c.block(((xd + end) / 2 - 0.02, 0, rail + 0.012), (xd - end - 0.2, W - 0.3, 0.024), "Trim")
+    for s in (1, -1):
+        c.block(((xd + end) / 2, s * (w - 0.07), rail + 0.03), (xd - end, 0.14, 0.06), "Paint")
+    c.block((end + 0.04, 0, rail + 0.04), (0.08, W - 0.04, 0.08), "Paint")
+    c.block((xd - 0.06, 0, rail + 0.04), (0.1, W - 0.04, 0.08), "Paint")
+    return c.finish(name)
+
+
 POLICE_STRIPE = [(0.5, "Blue"), (0.66, "Yellow"), (0.73, "Paint")]
 
 
@@ -283,7 +312,9 @@ def build():
         saloon("hatch", 3.9, 1.75, 1.45, "hatch"),
         saloon("sedan", 4.6, 1.82, 1.45, "sedan"),
         saloon("estate", 4.7, 1.82, 1.5, "estate", rails=True),
+        saloon("suv", 4.65, 1.88, 1.65, "estate", rails=True, r=0.36, lift=0.07),
         van(),
+        pickup(),
         saloon("taxi", 4.6, 1.82, 1.45, "sedan", sign=True),
         saloon("police", 4.7, 1.84, 1.5, "estate", stripe=POLICE_STRIPE, bar=-0.25),
     ]
@@ -310,7 +341,7 @@ def preview(out_dir):
     cars = build()
     scene = bpy.context.scene
     for i, o in enumerate(cars):
-        o.location = (0, (i - 2.5) * 3.0, 0)
+        o.location = (0, (i - 3.5) * 3.2, 0)
     ground = bpy.data.meshes.new("ground")
     bm = bmesh.new()
     bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=30)
