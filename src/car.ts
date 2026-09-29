@@ -236,17 +236,20 @@ export class Car {
   crew?: boolean;
   // A bus on a line: its number and where it's going, for the boards (Traffic.buses).
   line?: { ref: string; to: string };
+  // A shared bike (src/bikeshare.ts): its system, and the station it stands at (null
+  // while rented).
+  share?: { system: number; station: string | null };
   // How hard the back and front tyres scrub the road (0–1), for their marks (skids.ts).
   skidBack = 0; skidFront = 0;
   _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number]; stamp?: number;
 
-  constructor(type: string, r: () => number, x = 0, y = 0, h = 0) {
+  constructor(type: string, r: () => number, x = 0, y = 0, h = 0, colour?: string) {
     this.type = type;
     this.spec = TYPES[type];
     this.mass = this.spec.mass;
     const paints = TWO_PAINT[type] || PAINT;
     // (One colour for the types painted alike, so they share a draw call.)
-    const pick = paints[Math.floor(r() * paints.length)], paint = this.spec.color || pick;
+    const pick = paints[Math.floor(r() * paints.length)], paint = colour || this.spec.color || pick;
     this.key = `${type}|${paint}`;
     carGeometry(type, paint);
     this.x = x;

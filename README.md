@@ -274,6 +274,13 @@ the pixel ratio.
   knock you over. Jump at a car that's standing still and you climb onto it and can
   walk over its bonnet, roof or boot and drop off the other side. If it drives off with
   you on top, you ride along until it goes faster than about 30 km/h and throws you off.
+- **Shared bikes.** At the real stations of nextbike (and of Rekola and the others,
+  when the data has them; see `build_bikes.py` below) stands a row of the system's
+  bikes, nextbike's blue, Rekola's pink (`src/bikeshare.ts`). Taking one starts a rental,
+  and leaving it within 25 m of a station of the same system returns it and ends the
+  rental; left anywhere else it's only parked and still yours. Rides are free for now:
+  every finished rental is kept with its length by the game's clock and the system's
+  GBFS pricing plans, ready for paying for it.
 - **Buses.** A few red and white city buses drive Prague's real bus lines around you
   (`src/buses.ts`, from PID's timetables): each follows its line from junction to
   junction, shows its number and where it's going on the boards at the front and by the
@@ -439,11 +446,19 @@ uv run build_metro.py centrum      # the metro from PID's timetables → metro.j
 uv run build_buses.py centrum      # bus lines and stops from PID's timetables → buses.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
+uv run build_bikes.py centrum      # shared bikes' stations from GBFS feeds → bikes.json
 uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
 uv run landmarks.py centrum        # landmarks from IPR's photorealistic mesh → landmarks/
 ```
 
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
+
+- **Shared bikes.** PID's own open data has no shared bikes: the stations the PID
+  Lítačka app shows come from the operators' GBFS feeds. `build_bikes.py` reads
+  nextbike Praha's public feed, and with `GOLEMIO_API_KEY` set (free, from
+  [api.golemio.cz/api-keys](https://api.golemio.cz/api-keys)) every system with stations
+  in Golemio's `/v2/vehiclesharing/gbfs`, which is where Rekola's are. Feeds are cached
+  in `.cache/bikes/` for a day.
 
 - **Skylines.** `uv run skyline.py hradcany` (or `--all`) draws a real Prague view as a
   red screen-print silhouette into `public/skylines/`, for the loading screen and the

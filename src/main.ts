@@ -43,6 +43,7 @@ import { isMapIndex } from './contracts.ts';
 import type { MapIndex } from './contracts.ts';
 import type { RawTramLine } from './trams.ts';
 import type { MetroLine } from './metro.ts';
+import { BikeShare } from './bikeshare.ts';
 import type { DriveEdge, WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Tracked } from './tiles.ts';
@@ -323,6 +324,12 @@ async function main() {
     }
   };
   parkTwoWheelers(false);
+  // Shared bikes at their stations (src/bikeshare.ts), stood there as you come near.
+  const bikeShare = new BikeShare(AREA);
+  const bikeWorld = {
+    loose, seeded, walkNear, free: (x: number, y: number) => grid.at(x, y) === 0, loaded: (x: number, y: number) => grid.at(x, y) !== 255,
+    standAt: (x: number, y: number) => nearestWalkable(grid, x, y, 20),
+  };
 
   // Busted: out of the car (the police keep it), and a moment before you can move again.
   const stats = { knocked: 0, wrecked: 0, busted: 0 };
@@ -427,6 +434,7 @@ async function main() {
       c.mode = 'loose';
       c.rider = null;
       loose.push(c);
+      if (c.share) bikeShare.leave(c, clock.t);
       inCar = null;
       walker.mesh.visible = true;
       walker.sync();
@@ -461,6 +469,7 @@ async function main() {
       if (d < bestD) { bestD = d; best = c; }
     }
     if (!best || bestD > 1.8) return;
+    if (best.share && !bikeShare.rent(best, clock.t)) return;
     const agent = traffic.agents.find((a) => a.car === best);
     // A police car: the officer in it gets out and comes after you.
     const cop = best.type === 'police';
@@ -949,6 +958,7 @@ async function main() {
       }
       scatterPeople(true);
       parkTwoWheelers(true);
+      bikeShare.update(px(), py(), clock.t, bikeWorld);
     }
     // New traffic out of sight, a few times a second rather than every step (finding
     // the streets around you and a spot on them takes a while).
@@ -1192,7 +1202,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids,
+    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
