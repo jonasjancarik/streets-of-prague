@@ -116,6 +116,7 @@ export class Boats {
   islands: Point2 | null;
   list: Boat[];
   rng: () => number;
+  me: Boat | null = null; // the pedal boat the player is in
 
   // `islands`: where Slovanský ostrov is in local metres (null if not in the area).
   constructor(scene: THREE.Scene, water: Waters, islands: Point2 | null, rng = seededRandom(7)) {
@@ -191,9 +192,25 @@ export class Boats {
     }
   }
 
-  update(dt: number, px: number, py: number) {
+  // A pedal boat close enough to step into from where you stand (by the bank).
+  near(x: number, y: number) {
+    let best: Boat | null = null, bestD = Infinity;
+    for (const b of this.list) {
+      if (!b.live || b.kind === 'cruise') continue;
+      const d = Math.hypot(b.x - x, b.y - y);
+      if (d < 4.5 && d < bestD) { best = b; bestD = d; }
+    }
+    return best;
+  }
+
+  // `ctl`: how the player pedals the boat they're in ({ move, turn }), if they are.
+  update(dt: number, px: number, py: number, ctl: { move: number; turn: number } | null = null) {
     let placed = false;
     for (const b of this.list) {
+      if (b === this.me) {
+        if (ctl) this.pedal(b, dt, ctl);
+        continue;
+      }
       if (b.live && Math.hypot(b.x - px, b.y - py) > FAR) { b.live = false; b.mesh.visible = false; }
       if (!b.live) {
         if (!placed) { this.place(b, px, py); placed = true; }
@@ -219,6 +236,19 @@ export class Boats {
       }
     }
     for (const b of this.list) if (b.live) this.pose(b, dt);
+  }
+
+  // The player's pedal boat: W/S pedal forward and back, A/D turn (a pedal boat turns
+  // on the spot). It stops dead against the bank.
+  pedal(b: Boat, dt: number, ctl: { move: number; turn: number }) {
+    const want = ctl.move * (ctl.move > 0 ? 1.8 : 0.9);
+    b.v += clamp(want - b.v, -1.2 * dt, 0.8 * dt);
+    b.w += (ctl.turn * 0.7 - b.w) * Math.min(1, dt * 3);
+    const h = b.h + b.w * dt;
+    const x = b.x + Math.cos(h) * b.v * dt, y = b.y + Math.sin(h) * b.v * dt;
+    if (this.fits(b, x, y, h)) { b.x = x; b.y = y; b.h = h; }
+    else if (this.fits(b, b.x, b.y, h)) { b.h = h; b.v = 0; }
+    else b.v = 0;
   }
 
   // Look ahead and to both sides; head for open water, slow down near the bank, and
