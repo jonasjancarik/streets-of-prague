@@ -97,6 +97,34 @@ export class Heap {
   }
 }
 
+// Walking towards (tx, ty) at `speed`: round the cars and trams in the way, not into
+// them: the first way clear a step ahead, turning further and further off the straight
+// line, the same side as last time first (so they don't dither). Not `skip`.
+export function steer(o: { x: number; y: number; vx: number; vy: number; h: number; detour?: number }, tx: number, ty: number, speed: number,
+  bodyAt: (x: number, y: number, r: number, skip: Car | null) => boolean, skip: Car | null, rng: () => number) {
+  const dx = tx - o.x, dy = ty - o.y, d = Math.hypot(dx, dy) || 1;
+  let ang = Math.atan2(dy, dx);
+  const step = Math.min(d, 0.9);
+  const clear = (a: number) => !bodyAt(o.x + Math.cos(a) * step, o.y + Math.sin(a) * step, 0.4, skip);
+  if (!clear(ang)) {
+    const side = o.detour || (rng() < 0.5 ? 1 : -1);
+    let found = false;
+    for (let k = 1; k <= 5 && !found; k++) {
+      for (const sgn of [side, -side]) {
+        if (!clear(ang + sgn * k * 0.5)) continue;
+        ang += sgn * k * 0.5;
+        o.detour = sgn;
+        found = true;
+        break;
+      }
+    }
+    // (Hemmed in all round: straight on, and the cars push them back out.)
+  } else o.detour = 0;
+  o.vx = Math.cos(ang) * speed;
+  o.vy = Math.sin(ang) * speed;
+  o.h = ang;
+}
+
 export class Police {
   scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
   r: () => number; edgesNear: PoliceOptions['edgesNear']; offscreen: PoliceOptions['offscreen'];
@@ -467,31 +495,8 @@ export class Police {
       } else {
         // No car to go back to: they walk off.
         const tx = !o.back ? me.x : ride ? o.car.x : 2 * o.x - me.x, ty = !o.back ? me.y : ride ? o.car.y : 2 * o.y - me.y;
-        const dx = tx - o.x, dy = ty - o.y, d = Math.hypot(dx, dy) || 1;
-        const sp = o.back && !ride ? 1.4 : RUN;
-        // Round the cars and trams in the way, not into them: the first way clear a step
-        // ahead, turning further and further off the straight line, the same side as last
-        // time first (so they don't dither). Not their own car when going back to it.
-        let ang = Math.atan2(dy, dx);
-        const skip = o.back ? o.car : null, step = Math.min(d, 0.9);
-        const clear = (a: number) => !this.bodyAt(o.x + Math.cos(a) * step, o.y + Math.sin(a) * step, 0.4, skip);
-        if (!clear(ang)) {
-          const side = o.detour || (this.r() < 0.5 ? 1 : -1);
-          let found = false;
-          for (let k = 1; k <= 5 && !found; k++) {
-            for (const sgn of [side, -side]) {
-              if (!clear(ang + sgn * k * 0.5)) continue;
-              ang += sgn * k * 0.5;
-              o.detour = sgn;
-              found = true;
-              break;
-            }
-          }
-          // (Hemmed in all round: straight on, and the cars push them back out.)
-        } else o.detour = 0;
-        o.vx = Math.cos(ang) * sp;
-        o.vy = Math.sin(ang) * sp;
-        o.h = ang;
+        const d = Math.hypot(tx - o.x, ty - o.y) || 1;
+        steer(o, tx, ty, o.back && !ride ? 1.4 : RUN, this.bodyAt, o.back ? o.car : null, this.r);
         if (o.back && ride && d < 2.6) { o.gone = true; o.car.crew = true; return; }
         if (!o.back && this.heat > 0 && !me.air) {
           const reach = me.car ? me.car.spec.L / 2 + 1 : 1.1;
