@@ -207,8 +207,9 @@ the pixel ratio.
 - **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.ts`), in
   which buildings raised 3 m or more off the ground (OSM `min_height`, like a covered
   bridge between two houses) leave the way under them open; AI
-  traffic that keeps to its lane, brakes for anything ahead and gives way to the right
-  (`src/traffic.ts`); pedestrians on the footpath network who leap out of the way of
+  traffic that keeps to its lane, brakes for anything ahead, pulls out round a car
+  standing in its way where the street has room (and waits behind it where it hasn't)
+  and gives way to the right (`src/traffic.ts`); pedestrians on the footpath network who leap out of the way of
   fast cars and get knocked over, then get up again (`src/people.ts`). Traffic and
   people live within about 330 m of the player.
 - **Crowds.** The busier the streets around you, the more people: 500 to 600 round the
@@ -292,7 +293,7 @@ the pixel ratio.
   doesn't say, an area under 4.5 m wide is parallel, up to 5.6 m angled and wider
   perpendicular. Angled bays slant forwards along the lane beside them, so cars nose
   in. Sides tagged as having no parking (or parking mapped separately) get
-  no kerbside cars. Underground, multi-storey and rooftop car parks stay empty.
+  no kerbside cars, and no car is left sticking out into a traffic lane. Underground, multi-storey and rooftop car parks stay empty.
   As in Prague, some cars stand half or fully on the pavement, often vans and often
   at corners or where the kerb is otherwise empty. Every half minute or so, one in
   view sets off along the pavement at walking pace before it bumps down into the
@@ -329,7 +330,7 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
   the size of its footprint (sheds, cottages, one- or two-storey houses, halls). The
   terrain there carries on flat at the height of the nearest ground IPR has.
 - **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
-  narrow streets and are left out.
+  narrow streets (without standing in the traffic lane) and are left out.
 - **Angled and perpendicular parking along the kerb** past the city limits stands just
   outside the carriageway, since OSM street widths usually leave it out. Where the
   pavement there is narrow, the cars end up on it; where a building is in the way,
