@@ -53,6 +53,16 @@ IPR building, towers included; 334 faces, 1.2 MB).
 4. **Check it** (next section), fix what's wrong, commit `LANDMARKS`. The GLBs are
    generated data and stay out of git.
 
+## Showing a change
+
+For anything visual, show before and after from the same camera, side by side, day
+(and night where it matters): teleport to the landmark with `window.__drive.teleport`,
+`window.__drive.view(1.4)`, press `H`, wait about 12 s for the tiles, then screenshot.
+Playwright with real Chrome (`channel: 'chrome'`, args `--use-angle=metal
+--enable-gpu --ignore-gpu-blocklist --enable-unsafe-webgpu`) is what works; see the
+memory on the headless bench. Other sessions load the machine, so a bench number taken
+while it is busy says little; check `uptime` before trusting one.
+
 ## Checking one
 
 **The sheet first.** One Blender command renders a 3 × 4 sheet: the mesh as cut, the
@@ -128,6 +138,22 @@ the game to render (see the memory on benchmarking).
   metres of a wall from every photograph (the Týn Church's west and south fronts), the
   rays find nothing and the texels are filled in from around them. Not fixed; see
   `todo.md`, "Landmarks".
+- **Landmark roofs look like another material.** The photographs' roofs are paler and
+  yellower than the city's tiled roofs. Two things in the game handle it, both after
+  the bake, so a landmark's GLB never needs remaking for colour: `warmUp` in
+  `src/tiles.ts` shifts warm colours of the texture redder when it loads (gently: too
+  much and the plaster goes orange too), and `shadeLandmark` (`src/shading.ts`, and its
+  TSL port in `src/webgpu/buildings.ts`, key `landmark-roof`) draws the city's tile
+  pattern wherever a texel is a red roof on an up-facing face, at the photograph's
+  brightness. The face's normal comes from derivatives, because the model's normals are
+  all "up" for the light. Mask by hue and saturation, and let dark texels through too
+  (roofs in shadow are low in saturation); a strict mask leaves speckles on shaded
+  slopes. Change both shader versions together, and check with `?renderer=webgl`.
+- **Roof colours to match.** The palette for the other roofs is in `src/map/buildings.ts`
+  and, separately, `pipeline/ipr_buildings.py` (IPR's buildings; run it again for `praha`
+  and `centrum` after a change). Judge colour against photographs of real roofs, as
+  measured pixels of the rendered result, not the palette's hex values: the render
+  shifts hue and brightness.
 - **Baked light.** Walls facing away from the sun at the time of the flight are
   darker, and stay so. It's the photograph; leave it.
 
