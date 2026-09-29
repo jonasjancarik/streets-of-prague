@@ -5,7 +5,7 @@ import { treeMesh } from './map/vegetation.ts';
 import { Surfaces } from './surface.ts';
 import { shadeBuildings, cutAway, broad } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
-import { Zones, parkCars } from './parking.ts';
+import { Zones, parkCars, inRing } from './parking.ts';
 import { decodeHeights, decodeLevels, heightSampler, fetchBinary } from './terrain.ts';
 import type { Point2, Bounds } from './map/geo.ts';
 import type { DriveEdge, DriveGraph, WalkEdge, WalkGraph } from './network.ts';
@@ -17,7 +17,7 @@ interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer
 // A bridge (1, 2, …) or tunnel (-1, -2, …) level in a tile: where it is and how high.
 interface TileLevel { level: number; grid: Grid; sample: (x: number, y: number) => number }
 interface Tile {
-  k: string; i: number; j: number; box: Bounds; passages: TilePassage[];
+  k: string; i: number; j: number; box: Bounds; passages: TilePassage[]; raised: Point2[][][];
   group: THREE.Group; surfaces: Surfaces; grid: Grid; levels: TileLevel[];
   cars: Car[]; ms: Record<string, number>; disposables: THREE.Mesh[];
   relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number) => number; hm: Float32Array; edges: () => void } | null;
@@ -474,10 +474,12 @@ export class TileWorld {
     });
   }
 
-  // Whether (x, y) is in a passage through a building (under its upper floors).
+  // Whether (x, y) is in a passage through a building (under its upper floors), or
+  // under a building raised off the ground (see RAISED).
   passageAt(x: number, y: number) {
     const t = this.tileAt(x, y);
-    return !!t && inPassage(t.passages, x, y, 0.5);
+    return !!t && (inPassage(t.passages, x, y, 0.5)
+      || t.raised.some((rings) => inRing(x, y, rings[0]) && !rings.slice(1).some((h) => inRing(x, y, h))));
   }
 
   keyAt(x: number, y: number) { return `${Math.floor((x + this.ox) / this.T)}_${Math.floor((y + this.oy) / this.T)}`; }
@@ -717,7 +719,7 @@ export class TileWorld {
     this.scene.add(group);
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
-      k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], group, surfaces, grid, levels: onLevels, cars, ms,
+      k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), group, surfaces, grid, levels: onLevels, cars, ms,
       disposables: [...buildings, walls, trees, ...(hidden ? [hidden] : [])], relief: shade, sample: shade?.sample,
     };
     this.loaded.set(k, tile);
