@@ -54,6 +54,11 @@ the pixel ratio.
   walls, the train pulling in and stopping, the station's name as it stands there.
   It slows down while the map ahead loads; E skips to the end. You come up at an entrance of that station, and the police have
   lost you. After midnight the metro is shut until about five.
+- **Petřín funicular**: its two cars run on one cable from Újezd up to Petřín, one
+  going up as the other comes down, and pass each other at Nebozízek, where both stop
+  (`src/funicular.ts`). From 9:00 to 23:30 a car leaves each end every four minutes or
+  so. Press E beside a car standing at a station to get in; hold Shift to speed the
+  ride up, and E gets you out at any station.
 - **Parts of town**: the street you're in shows top left; come into another part of
   town (Smíchov, Malá Strana, Vinohrady…) and its name comes up as a large title for a
   few seconds, as does the one you start in (`src/districts.ts`). You have to be 30 m
@@ -356,7 +361,7 @@ the pixel ratio.
   `src/shading.ts`).
 
 `src/map/` holds the map-building modules shared with the 1945 project it came
-from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicular).
+from (geometry helpers, straight-skeleton buildings, trees).
 
 ## Known issues
 
