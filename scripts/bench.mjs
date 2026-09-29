@@ -6,7 +6,8 @@
 //   node scripts/bench.mjs [--url http://localhost:5191/] [--scenes stand,drive,woods]
 //     [--seconds 10] [--dpr 2] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
 //     [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json]
-//     [--browser chrome|chromium]
+//     [--browser chrome|chromium] [--angle metal|swiftshader (software, drawing like
+//     a desktop GPU that shades every covered pixel: for overdraw)]
 //     [--vs http://localhost:5192/ (compare with another server, taking turns)]
 //     [--ab "window.__ab = (on) => { … }" [--window 2]] [--shot /tmp/look-%s.png [--zoom 0.5]]
 //
@@ -186,7 +187,7 @@ function topSelf(profile, n = 25) {
 // MSAA costs several times more than Chrome's on a Mac).
 const browser = await pw.chromium.launch({
   headless: true, channel: args.browser === 'chromium' ? undefined : 'chrome',
-  args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--enable-unsafe-webgpu'],
+  args: [`--use-angle=${args.angle || 'metal'}`, '--enable-gpu', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--enable-unsafe-webgpu'],
 });
 const all = [];
 try {
