@@ -21,6 +21,7 @@ import { lampLight } from './webgpu/lamps.ts';
 import './webgpu/buildings.ts';
 import './webgpu/trees.ts';
 import './webgpu/soft.ts';
+import './webgpu/vehicles.ts';
 
 // PATTERNS_GLSL.
 function pAsphalt(c0: N, p: N) {

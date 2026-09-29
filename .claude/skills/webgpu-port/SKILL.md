@@ -39,16 +39,19 @@ a node material with the same custom blending, dig discard and stencil settings,
 clear noon, hiding the meshes with an `alpha` attribute; GPU 41% busy before, 75% after). WebGPU
 blends before the tone curve, so the colour is converted to linear and divided by the exposure:
 the shading comes out about 10% stronger than in WebGL (mean change of −11.9 against −10.8 in
-brightness); by night it looks the same.
+brightness); by night it looks the same. The cars, trams, funicular and boats
+(`src/webgpu/vehicles.ts`: snow on the cars' tops, the tram, funicular and boat windows
+lit at night through `emissiveNode`, and `lampLit`) cost +0.0 and +0.4 ms a frame on WebGL
+against +0.8 and +1.0 ms on WebGPU (Old Town Square, the drive from Újezd; 2×, clear noon,
+`--ab` hiding those meshes; another app kept the GPU about 80% busy).
 
 Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 
 | Where | What | Notes |
 |---|---|---|
 | `shading.ts` `cutAway` | the hole over the player | ported for the landmarks, the depth ground and the trees (a `maskNode`) |
-| `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | ported for the ground, buildings, `cut-*` and poles (`lampLit(node)` in a port); cars, figures, trams, boats, funicular and signals still need it |
+| `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | ported for the ground, buildings, `cut-*` and poles (`lampLit(node)` in a port); cars, trams, boats and funicular have it too; figures and signals still need it |
 | `figures.ts` `vatMaterial` | people animated from textures (`gl_VertexID`, `texelFetch`) | colour and depth versions |
-| `car.ts`, `trams.ts`, `boats.ts`, `funicular.ts` | snow on top, lamp light (`lampLit(node)`) | module-level materials, see "Load order" |
 | `underground.ts` | metro hole and earth | |
 | `map/buildings.ts` `drapeRoofs` | an experiment's roof texture | low priority |
 
@@ -153,6 +156,10 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
 - **Hiding by material fails with shared shaders.** Hiding `ShaderMaterial`s when
   they were first compiled missed every later material with the same program (three
   caches the build): hide or replace at creation, not at compile.
+- **Geometries that share a buffer need it marked `shared`.** Disposing one geometry makes
+  three.js destroy the buffer for all, and an object that hasn't changed is never checked
+  again, so it draws without it (validation errors after 20–30 s of driving). Set
+  `attribute.shared = true` (the tree crown's do); `createRenderer` skips deleting those.
 - **Shadows use the object's own material.** WebGPU ignores `customDepthMaterial`
   (`treeDepth`, the cars' and figures' depth materials): the shadow pass takes the
   material's `positionNode` (or `castShadowPositionNode`) and `maskShadowNode`. It

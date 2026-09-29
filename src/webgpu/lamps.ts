@@ -44,7 +44,8 @@ function poolsMaterial(view: { value: THREE.Vector4 }) {
 }
 setPools(poolsMaterial);
 
-const uLampOn = follow(LAMP_ON), uLampBox = followVec(LAMP_BOX);
+export const uLampOn = follow(LAMP_ON);
+const uLampBox = followVec(LAMP_BOX);
 let map: N = null;
 
 // The lamps' light at a point in the world (0 by day and off the map); with a normal,

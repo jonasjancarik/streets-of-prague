@@ -62,7 +62,7 @@ grime on the walls 6%, the shadow map's own pass 7%.
   the trees and the lamps' light (on the ground with the wet ground's mirror, the buildings,
   landmarks, trees and poles) are ported (to TSL); the ground's soft shading is ported too (+0.7 ms on WebGPU
   against +0.2 ms on WebGL, Old Town Square, 2×; about 10% stronger on WebGPU because it blends
-  before the tone curve); rain, snow, lamp glows and skid marks aren't drawn, and cars, people and trams are drawn plain; not
+  before the tone curve); the cars, trams, funicular and boats are ported (+0.0–0.4 ms on WebGL against +0.8–1.0 ms on WebGPU, Old Town Square and the drive, 2×, GPU about 80% busy); rain, snow, lamp glows and skid marks aren't drawn, and people are drawn plain; not
   playable. Trees cost +0.5 ms a frame on WebGPU against +0.6 ms on WebGL (Petřín woods, 2×;
   the GPU was 52% busy before). Open: some low buildings show no windows by day on WebGPU
   where WebGL does (the tile north-east of the woods start). Buildings cost 0.6–1.4 ms a frame on WebGPU against 0.7–1.3 ms on WebGL
