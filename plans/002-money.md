@@ -27,16 +27,16 @@ spent, on three things:
    getting on; at the metro you choose on the way in. Ride without one and a ticket
    inspector may check you. You either pay the fine or run. The inspector, in plain
    clothes, runs after you, and if you aren't caught quickly they call the police.
-3. **Shared bikes (nextbike)**: the rental is charged when you return the bike, by the
-   operator's real pricing plan (GBFS, already in `bikes.json`).
+3. **Shared bikes (nextbike)**: the rental is paid as it goes, by the operator's real
+   pricing plan (GBFS, already in `bikes.json`). A bike left outside a station and
+   abandoned costs a fee, as with nextbike.
 
 The balance is always shown in the HUD. If you can't afford something, you can't
 start it, and a short message says why.
 
 Out of scope: earning money, saving the balance between games, police fines, parking,
-pedal boats, choosing between ticket types, buses (you can't ride them yet), and a
-fine for fare dodging when the police catch you afterwards (the ordinary "Busted"
-applies).
+pedal boats, choosing between ticket types, buses (you can't ride them yet), and
+police fines for anything other than fare dodging.
 
 ## Decisions made (don't change them without asking)
 
@@ -87,12 +87,44 @@ applies).
     inspector's position: **one star**. The same happens at
     once if you get into a vehicle (car, bike, tram, taxi) while they're chasing you.
     After the call they go on chasing you, up to 30 s from the start.
+  - **Caught by the police afterwards**: once the inspector has called the police,
+    you owe the fine at the higher rate, **1,500 Kč** (PID's fine paid within 15
+    days). If the police catch you ("Busted") while you still owe it, it's taken
+    (or what you have left), and the banner says so. You no longer owe it once
+    you lose the police (the stars go to 0), or when you're "Wasted".
   - **Giving up**: after 30 s, or when you're more than 60 m ahead, they give up,
     walk off and disappear once out of sight (as officers do, `offscreen`). If
     you've got into a vehicle, they give up at once after the call.
   - **Knocking them over**: you can knock them down like a person or an officer
     (a car, an explosion, a tram): they lie down for a while and it counts as the
     crime `knock`.
+
+- **Taxi**:
+  - You can't call one unless you can afford its starting fare (`firm.start`).
+  - During the ride the hint shows the meter.
+  - When the meter reaches your balance, the driver pulls over and lets you out:
+    *"Your money ran out, so the driver let you out"*.
+  - If the taxi **crashes**, the ride is free.
+- **Bikes**:
+  - Renting from a station needs at least the price of the first charge (39 Kč with
+    nextbike's standard plan).
+  - **Paid as it goes**: each begun interval is paid when it begins. That means
+    39 Kč when you take the bike, another 39 Kč when the 31st minute begins, and so
+    on, up to the plan's daily cap. So nothing goes unpaid when you don't return the
+    bike. When the money runs out, whatever is left is taken and the rental goes on
+    (no debt).
+  - The time is counted on the game clock, and a parked bike's rental keeps running,
+    as it does now.
+  - **Returning** to a station of its system ends the rental. It costs nothing more,
+    since the time has already been paid.
+  - **Abandoning**: a rented bike parked outside a station is abandoned when you're
+    more than **300 m** from it, or when it's gone (burnt out, or dropped with its
+    tile). The rental ends, and nextbike's fee for a bike not returned to a station
+    is taken: **500 Kč**, or **1,000 Kč** if it's more than 3 km from the nearest
+    station of its system (nextbike's price list, 2026). A banner says so. The bike
+    stays where it is as an ordinary shared bike, not yours any more.
+  - A teleport (developer panel), a metro ride or a taxi ride can take you more than
+    300 m away. That counts as abandoning too, which is fair: you left it there.
 
 ## Current state (what the plan relies on)
 
@@ -176,6 +208,7 @@ export class Wallet {
 
 export const GRACE = 10; // s (real) after getting on a tram or funicular to buy a ticket
 export const FINE = 1200; // Kč, PID's fine paid on the spot (2026)
+export const FINE_LATE = 1500; // Kč, and paid later (within 15 days): when the police catch you
 export const CHECK_STOP = 0.05; // chance of inspectors at each stop, riding without a ticket
 export const CHECK_METRO = 0.15; // and on a metro ride
 export const DECIDE = 5; // s to pay or run at an inspection
@@ -342,6 +375,7 @@ export class Inspector {
   where: 'tram' | 'funicular' | 'street' = 'street';
   left = 0; // s to decide
   called = false; // the police have been called
+  owed = 0; // Kč owed for running off, collected if the police catch you
   private t = 0; // s since you ran
   person: Chaser | null = null; // the figure on foot
   constructor(o: {
@@ -374,8 +408,8 @@ export class Inspector {
 - **Catching**: on foot and within 1.1 m (the same `reach` as officers), call
   `pay()`. You can't be caught in a vehicle.
 - **Timing**:
-  - 10 s after `run()` with no catch: `crime(x, y)` once (`called = true`), and
-    `showBanner(t('The inspector called the police'))`.
+  - 10 s after `run()` with no catch: `crime(x, y)` once (`called = true`,
+    `owed = FINE_LATE`), and `showBanner(t('The inspector called the police'))`.
   - At once, if `me.inVehicle`.
   - 30 s, or more than 60 m, or `called && me.inVehicle`: phase `'leaving'`; they
     walk off (1.4 m/s away from you, as officers without a car do) and go once
@@ -385,7 +419,15 @@ export class Inspector {
     the same places as `police.officers` (main ~lines 727, 854, 1007). Hitting them
     with your car counts as `police.crime('knock', …)`.
   - Add a way to knock them down (`knock(vx, vy)`, with `down` as officers have).
-  - On a teleport, being wasted or busted, call `inspector.reset()`.
+  - On a teleport, being wasted or busted, call `inspector.reset()`. `reset()`
+    doesn't clear `owed`, so that `busted()` can still collect it.
+  - In `busted()` (main ~line 344), before `police.forgive()`: if `inspector.owed`,
+    `const paid = wallet.take(inspector.owed)` and `inspector.owed = 0`. Then show
+    `t('Busted · fine for riding without a ticket: {fine}')` instead of plain
+    "Busted", with `paid` in place of `fine` when it was less. It stays an alert
+    banner.
+  - In `wasted()`, set `inspector.owed = 0`. In the frame, if
+    `police.stars === 0 && inspector.owed`, also set it to 0: you got away.
 - **The choice, in main**:
   - While `inspector.phase === 'decide'`, the hint shows
     `t('Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s')`.
@@ -412,22 +454,48 @@ export class Inspector {
 
 ### 5. Shared bikes (`src/bikeshare.ts` and main)
 
+- `Rental` gets `paid: number` (Kč paid so far).
+- `plan` means `system.plans[0]`; write a small `planOf(system)` helper for it.
 - `rent(c, now, afford: (kc: number) => boolean)`:
   - For a new rental (a bike taken from a station), if
     `!afford(rentalCost(plan, 0))`, return `false`.
   - A bike you parked yourself (with its rental still running) is let go as it is now.
-  - `plan` means `system.plans[0]`. Write a small `planOf(system)` helper for it.
 - In main: `if (best.share && !bikeShare.rent(best, clock.t, (n) => wallet.has(n))) { showBanner(t('Not enough money for a bike ({price})', …)); return; }`.
   Show the price of the first charge.
-- Returning (main ~line 494): `const r = bikeShare.leave(c, clock.t);`. If `r` is set:
-  - `const cost = rentalCost(planOf(r.system), r.seconds / 60)`.
-  - `wallet.take(cost)`.
-  - Show `showBanner(t('{name}: {minutes} min, {price}', …))` with the system's name.
+- **Paying as it goes**: add `charge(now, take: (kc: number) => number)` to
+  `BikeShare` and call it from main every frame (or once a second), next to
+  `bikeShare.update`. For each running rental, compute
+  `due = rentalCost(plan, minutes so far) - rental.paid`. If it's above 0, call
+  `take(due)` and add **`due`** to `paid`, not what was actually taken, so that
+  the balance running out doesn't make it charge again and again. Measure the
+  minutes as in `leave` (modulo a week). The first charge is taken right at
+  `rent`, through the same path.
+- **Returning** (main ~line 494): `bikeShare.leave(c, clock.t)` doesn't take any
+  more. If it returns a rental, show
+  `showBanner(t('{name}: returned after {minutes} min, {price} in all', …))`.
+- **Abandoning**: add `abandon(px, py, now): { rental: Rental; fee: number }[]` to
+  `BikeShare`, called from main next to `charge`.
+  - It ends every running rental whose bike, parked (not `c.mode === 'player'`), is
+    more than `ABANDON = 300` m from the player.
+  - It also ends rentals whose bike has left `loose` or is `burnt`. Check what
+    happens to such a car when its tile is unloaded: after a pick-up, main takes it
+    out of `tileCars` (it "stays when its tile unloads"), so it may never go.
+    Measure the distance by the position either way.
+  - `fee` is `FEE_OFF_STATION = 500`, or `FEE_FAR = 1000` when the nearest station
+    of its system is more than 3 km away (`near()` or a scan over `stations`).
+  - After abandoning, `c.share.station` stays `null` (a bike outside a station) and
+    the rental is put in `done`.
+  - Main takes the fee with `wallet.take(fee)` and shows
+    `t('You left the {name} bike outside a station: fee {price}')`.
 - While riding a shared bike, add the running price to the hint in the `inCar`
   branch: `t('{name} bike: {minutes} min, {price} so far')`. For that, add
-  `rental(c)` to `BikeShare`, returning the running rental (or `null`), with the time
-  so far measured as in `leave`.
-- Update the file's header comment: remove "Until then every ride is free".
+  `rental(c)` to `BikeShare`, returning the running rental (or `null`).
+- While walking away from a parked rented bike, add
+  `t('Your {name} bike is still rented: {minutes} min, {price} so far')` to the hint
+  on foot, when nothing more important is showing. Players should know the meter
+  is running.
+- Update the file's header comment: remove "Until then every ride is free" and
+  describe the paying.
 
 ### 6. Translations (`src/cs.ts`)
 
@@ -448,13 +516,16 @@ entries. Suggested translations:
 | `Ticket inspection! Fine for riding without a ticket: {fine}` | `Revize! Pokuta za jízdu bez jízdenky: {fine}` |
 | `Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s` | `Revize! <b>B</b> zaplatit pokutu ({fine}) · <b>E</b> vystoupit a utéct · {secs} s` |
 | `The inspector called the police` | `Revizor zavolal policii` |
+| `Busted · fine for riding without a ticket: {fine}` | `Chycen · pokuta za jízdu bez jízdenky: {fine}` |
 | `Pay the fine` | `Zaplatit pokutu` |
 | `Ticket inspection! You had no ticket, so they took all your money ({paid})` | `Revize bez jízdenky: revizor si vzal všechno, co ti zbylo ({paid})` |
 | `Going in without a ticket?` | `Jdeš dovnitř bez jízdenky?` |
 | `Buy a ticket for {minutes} minutes ({price})` | `Koupit jízdenku na {minutes} minut ({price})` |
 | `Go in without a ticket` | `Jít bez jízdenky` |
 | `Not enough money for a bike ({price})` | `Na kolo nemáš dost peněz ({price})` |
-| `{name}: {minutes} min, {price}` | `{name}: {minutes} min, {price}` |
+| `{name}: returned after {minutes} min, {price} in all` | `{name}: vráceno po {minutes} min, celkem {price}` |
+| `You left the {name} bike outside a station: fee {price}` | `Kolo {name} zůstalo mimo stanici: poplatek {price}` |
+| `Your {name} bike is still rented: {minutes} min, {price} so far` | `Kolo {name} máš pořád půjčené: {minutes} min, zatím {price}` |
 | `{name} bike: {minutes} min, {price} so far` | `Kolo {name}: {minutes} min, zatím {price}` |
 
 Check how the existing Czech lines address the player (the "ty" form, as in
@@ -470,12 +541,12 @@ Check how the existing Czech lines address the player (the "ty" form, as in
     crash means a free ride.
   - Trams, metro and funicular: the 90-minute ticket, 10 seconds to buy it after
     getting on (B), the choice on the way into the metro, the check, the 1,200 Kč
-    fine, and running from the inspector (who calls the police after 10 s). The NH
-    funicular is free.
-  - Shared bikes: the price follows nextbike's plan.
+    fine, and running from the inspector (who calls the police after 10 s; if the
+    police then catch you, they take 1,500 Kč). The NH funicular is free.
+  - Shared bikes: paid as you go by nextbike's plan. A bike left outside a station
+    and abandoned (more than 300 m away) costs a fee of 500 or 1,000 Kč.
 - The README's URL parameters paragraph: add `?money=N`.
 - "Not yet in the game": earning money.
-- "Known issues": a bike that's never returned is never charged.
 
 ## Verification
 
@@ -501,6 +572,9 @@ Check how the existing Czech lines address the player (the "ty" form, as in
        lights up and the police come. Once you're far enough away, the inspector
        gives up and disappears.
      - Getting into a car during the chase calls the police at once.
+     - If the police then catch you, "Busted" also takes 1,500 Kč. If you shake them
+       off (no stars) and they catch you later for something else, nothing is taken
+       for the ticket.
      - A car knocks the inspector over, and that's the crime `knock`.
      - A chase with the police on foot still works as before (the `steer`
        refactor).
@@ -514,9 +588,15 @@ Check how the existing Czech lines address the player (the "ty" form, as in
      at the way out with `CHECK_METRO` temporarily at 1: B pays, and walking away
      means running.
    - Petřín funicular: the 10-second countdown as on a tram; the NH funicular has none.
-   - Shared bike (nextbike station near Újezd, or anywhere in `praha`): taking it
-     needs 39 Kč. Returning it to a station takes the price. The hint shows the
-     running price.
+   - Shared bike (nextbike station near Újezd, or anywhere in `praha`):
+     - Taking it needs 39 Kč, and 39 Kč is taken right away.
+     - Once 30 game minutes have gone by (the developer panel can shift the time),
+       another 39 is taken.
+     - Returning it takes nothing more, and the banner shows the total.
+     - Park it away from a station and walk off 300 m: the fee of 500 Kč, and the
+       rental ends.
+     - With `money=60`, the money runs out and the rental goes on without the
+       balance going below 0.
 4. Look at the console: no errors.
 
 Leave out a full performance benchmark. The change adds no per-pixel work, only one
@@ -533,7 +613,7 @@ repository's style (`git log` subjects such as "Taxis: …", "Shared bikes: …"
 4. `Police: officers' steering round cars pulled out for others to use` (the refactor
    on its own, with no change in behaviour)
 5. `Ticket inspectors: pay the fine or run, and they call the police`
-6. `Shared bikes: rentals charged by nextbike's pricing plan`
+6. `Shared bikes: rentals paid as they go by nextbike's plan, a fee for abandoned ones`
 7. README (can be part of the commits above).
 
 Don't push unless the user asks.
