@@ -539,7 +539,7 @@ class TramVoice {
 // chorus early on), none of them in rain or snow. The levels change slowly, so walking
 // from a quiet street onto a square the crowd comes up over a few seconds.
 // (Two crowds of different lengths layered, so together they repeat only every few minutes.)
-const AMBIENCE: Record<string, number> = { crowd: 0.25, crowd2: 0.25, traffic: 0.3, night: 0.3, blackbird: 0.1, garden: 0.1, morning: 0.08 };
+const AMBIENCE: Record<string, number> = { crowd: 0.25, crowd2: 0.25, traffic: 0.3, night: 0.3, blackbird: 0.07, garden: 0.07, morning: 0.06 };
 
 // 0 outside [a, d], 1 within [b, c], smooth in between (hours, round midnight too).
 function span(h: number, a: number, b: number, c: number, d: number) {
@@ -567,7 +567,11 @@ class Ambience {
 
   // `busy` 0–1, `hour` 0–24, `wet` how hard it rains or snows 0–1.
   update(busy: number, hour: number, wet: number) {
-    const t = this.ctx.currentTime, quiet = (1 - busy) ** 1.5, dry = 1 - wet;
+    // Birds only well away from the centre: none from 0.1 up (the inner city, even
+    // Vinohrady's side streets), all of them below 0.006 (the suburbs), on a log scale
+    // (half the city is under 0.01). The parks in town, at 0.03–0.06, get a little.
+    const far = clamp((-1 - Math.log10(Math.max(busy, 1e-4))) / 1.2, 0, 1);
+    const t = this.ctx.currentTime, quiet = far * far * (3 - 2 * far), dry = 1 - wet;
     const awake = 0.15 + 0.85 * span(hour, 5.5, 8, 21, 24); // how many people are about
     const night = 1 - span(hour, 5, 6.5, 22, 23.5);
     const level: Record<string, number> = {
