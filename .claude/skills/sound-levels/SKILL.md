@@ -54,6 +54,16 @@ difference.
   Petřín 0.049, Letná park 0.031, Barrandov 0.007, Kunratice 0.004. Anything meant to
   fade with busyness wants a log scale (as the birds do: none from 0.1, all below
   0.006). The footfall map doesn't know parks, so city parks only get a little.
+- **Loud needs room (advice from a game audio designer).** Loudness is perceived
+  loudness, and the same mixing principles apply as in music mastering. A sound only
+  feels big if the others make space for it: to make one loud, duck the rest. Brains
+  prioritise impact sounds, so the first ~0.2 s of an impact (explosion, gunshot) is
+  what counts. Duck the ambience, engine and tyres briefly under it, then
+  release. Raising the impact's own gain instead makes the whole mix louder without
+  making it hit harder. For a new impact sound, add a short duck of the other buses
+  (a few dB, ~0.2 s attack, slower release) rather than only setting its level. Meant
+  for explosions, gunshots and the like; the game has none yet, and `audio.ts` has no
+  ducking today.
 - **Not covered offline:** the code-made sounds (engine, tyres, clicks, weather). To
   measure those, run `audio.ts` in Node with the `node-web-audio-api` package (a new
   dependency: check it first), or read the engine's output with an `AnalyserNode` in
