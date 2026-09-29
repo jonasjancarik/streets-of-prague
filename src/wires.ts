@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Point2 } from './map/geo.ts';
+import { fall, type Post } from './posts.ts';
 
 // The trams' overhead wires, built with each tile from its tram tracks and buildings.
 // A contact wire runs over every track at WIRE above the rails (where the trams'
@@ -8,7 +9,8 @@ import type { Point2 } from './map/geo.ts';
 // crosses the street over the tracks there.
 // Each end of it is held as in Prague: anchored to the front of a building when there
 // is one close enough (in the old town's narrow streets most are), otherwise on a
-// steel pole beside the outermost track.
+// steel pole beside the outermost track. A pole is one of the posts a car can knock
+// over (posts.ts): its span wire comes down with it.
 
 const WIRE = 5.6; // m above the rails
 const SPAN = 30; // m between supports along a track
@@ -20,6 +22,15 @@ const SAG = 0.35; // m the span wire sags in the middle
 // How wide a wire is drawn: a little wider than it is, or from up where the camera is it
 // would thin out to nothing between the pixels.
 const THICK = 0.06;
+const POLE_R = 0.18, TOUGH = 9, GIVE = 0.5; // a pole: its radius at the foot, how hard a hit knocks it over, how much it slows the car
+
+// A pole standing on its foot at the origin, for one that is falling.
+let fallen: THREE.BufferGeometry | null = null;
+const poleGeometry = () => fallen ||= mergeGeometries([
+  new THREE.CylinderGeometry(0.12, POLE_R, POLE_H, 8).translate(0, POLE_H / 2, 0).toNonIndexed(),
+  new THREE.SphereGeometry(0.18, 8, 4).translate(0, POLE_H, 0).toNonIndexed(),
+]);
+const axis = new THREE.Vector3();
 
 type HeightAt = (x: number, y: number) => number;
 interface Seg { ax: number; ay: number; bx: number; by: number }
@@ -51,6 +62,10 @@ export function overheadWires(rails: Point2[][], buildings: Point2[][], ground: 
   // Each wire a flat ribbon facing up, THICK wide.
   const lines: number[] = [];
   const poles: THREE.BufferGeometry[] = [];
+  let vertices = 0; // in `poles` so far
+  const add = (g: THREE.BufferGeometry) => { poles.push(g); vertices += g.attributes.position.count; };
+  // Each pole: where it is, its vertices in the poles' mesh, and its span wire's in the wires'.
+  const standing: { post: Post; x: number; y: number; z: number; from: number; to: number; span: [number, number] }[] = [];
   const line = (ax: number, ay: number, az: number, bx: number, by: number, bz: number) => {
     const l = Math.hypot(bx - ax, by - ay);
     if (l < 1e-3) return;
@@ -75,13 +90,13 @@ export function overheadWires(rails: Point2[][], buildings: Point2[][], ground: 
   const walls = segments(buildings);
   const placed: Point2[] = [];
   const pole = (x: number, y: number) => {
-    const z = terrain(x, y);
-    const g = new THREE.CylinderGeometry(0.12, 0.18, POLE_H, 8).translate(x, z + POLE_H / 2, -y);
-    const cap = new THREE.SphereGeometry(0.18, 8, 4).translate(x, z + POLE_H, -y);
-    poles.push(g.toNonIndexed(), cap.toNonIndexed());
+    const z = terrain(x, y), from = vertices;
+    add(poleGeometry().clone().translate(x, z, -y));
+    const post: Post = { x, y, z, r: POLE_R, tough: TOUGH, give: GIVE, down: null };
+    standing.push({ post, x, y, z, from, to: vertices, span: [0, 0] });
   };
   const rosette = (x: number, y: number, z: number) => {
-    poles.push(new THREE.BoxGeometry(0.3, 0.3, 0.3).translate(x, z, -y).toNonIndexed());
+    add(new THREE.BoxGeometry(0.3, 0.3, 0.3).translate(x, z, -y).toNonIndexed());
   };
 
   for (const pts of rails) {
@@ -110,6 +125,7 @@ export function overheadWires(rails: Point2[][], buildings: Point2[][], ground: 
         }
         const lo = Math.min(...at), hi = Math.max(...at), z = ground(px, py);
         // Each end: a building front within reach, or a pole.
+        const held = standing.length;
         const ends = [-1, 1].map((s) => {
           const edge = s > 0 ? hi : lo, ox = px + nx * edge, oy = py + ny * edge;
           const wall = cast(walls, ox, oy, nx * s, ny * s, REACH);
@@ -127,28 +143,61 @@ export function overheadWires(rails: Point2[][], buildings: Point2[][], ground: 
           const u = k / n;
           return [a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, a.z + (b.z - a.z) * u - SAG * 4 * u * (1 - u)];
         };
+        const first = lines.length;
         for (let k = 0; k < n; k++) {
           const [x0, y0, z0] = pt(k), [x1, y1, z1] = pt(k + 1);
           line(x0, y0, z0, x1, y1, z1);
         }
+        for (let k = held; k < standing.length; k++) standing[k].span = [first / 3, lines.length / 3];
       }
       along += len;
     }
   }
 
   const out: THREE.Mesh[] = [];
+  let wireMesh: THREE.Mesh | null = null, poleMesh: THREE.Mesh | null = null;
   if (lines.length) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
     g.computeVertexNormals();
-    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#202223', side: THREE.DoubleSide }));
-    mesh.castShadow = true;
-    out.push(mesh);
+    wireMesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#202223', side: THREE.DoubleSide }));
+    wireMesh.castShadow = true;
+    out.push(wireMesh);
   }
   if (poles.length) {
-    const mesh = new THREE.Mesh(mergeGeometries(poles), new THREE.MeshLambertMaterial({ color: '#4a524d' }));
-    mesh.castShadow = true;
-    out.push(mesh);
+    poleMesh = new THREE.Mesh(mergeGeometries(poles), new THREE.MeshLambertMaterial({ color: '#4a524d' }));
+    poleMesh.castShadow = true;
+    out.push(poleMesh);
   }
-  return out;
+  // Knocked over: the pole and its span wire gone from the tile's meshes, and in its
+  // place one that falls the way it was hit (drawn with the tile, so gone with it).
+  const collapse = (mesh: THREE.Mesh | null, from: number, to: number) => {
+    if (!mesh || to <= from) return;
+    const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
+    for (let v = from; v < to; v++) pos.setXYZ(v, pos.getX(from), pos.getY(from), pos.getZ(from));
+    pos.needsUpdate = true;
+  };
+  for (const s of standing) {
+    s.post.knocked = (p) => {
+      collapse(poleMesh, s.from, s.to);
+      collapse(wireMesh, s.span[0], s.span[1]);
+      const parent = poleMesh?.parent;
+      if (!poleMesh || !parent) return;
+      const m = new THREE.Mesh(poleGeometry(), poleMesh.material);
+      m.castShadow = true;
+      m.frustumCulled = false;
+      m.matrixAutoUpdate = false;
+      m.position.set(s.x, s.z, -s.y);
+      const ang = p.down?.ang ?? 0;
+      const place = () => {
+        m.quaternion.setFromAxisAngle(axis.set(-Math.sin(ang), 0, -Math.cos(ang)), fall(p, performance.now()));
+        m.updateMatrix();
+        m.matrixWorld.copy(m.matrix); // (the tile's group is where the world is, and never moves)
+      };
+      place();
+      m.onBeforeRender = place;
+      parent.add(m);
+    };
+  }
+  return { meshes: out, posts: standing.map((s) => s.post) };
 }

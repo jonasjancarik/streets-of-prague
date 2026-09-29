@@ -14,6 +14,7 @@ import type { Car } from './car.ts';
 import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, WorkerJobs, WorkerKind, WorkerResults, WorkerResponse, HeightGrid, LevelInput } from './contracts.ts';
 import { isTileJSON } from './contracts.ts';
 import { overheadWires } from './wires.ts';
+import { posts, type Post } from './posts.ts';
 
 interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer | null; ipr: ArrayBuffer | null; levels: ArrayBuffer | null }
 // A bridge (1, 2, …) or tunnel (-1, -2, …) level in a tile: where it is and how high.
@@ -22,6 +23,7 @@ interface Tile {
   k: string; i: number; j: number; box: Bounds; passages: TilePassage[]; raised: Point2[][][];
   group: THREE.Group; surfaces: Surfaces; grid: Grid; levels: TileLevel[];
   cars: Car[]; ms: Record<string, number>; disposables: THREE.Mesh[];
+  poles: Post[]; // the wires' poles, among the posts a car can hit
   relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number) => number; hm: Float32Array; edges: () => void } | null;
   sample?: (x: number, y: number) => number;
   // The tile's water (the river and ponds), each polygon with its bounding box.
@@ -835,7 +837,7 @@ export class TileWorld {
       }
       return hAt(x, y);
     };
-    const wires = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt);
+    const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt);
     group.add(surfaces.group, ...buildings, walls, ...trees, ...landmarks, ...wires);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
@@ -845,6 +847,8 @@ export class TileWorld {
     const grid = new Grid(geo, RES, null, land.cells);
     lap('meshes');
 
+    // The wires' poles stand among the lamp posts from now on: cars hit them, and park clear of them.
+    for (const p of poles) posts.add(p);
     const inside = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1;
     const { cars } = parkCars({
       data, edges, zones, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
@@ -857,7 +861,7 @@ export class TileWorld {
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), group, surfaces, grid, levels: onLevels, cars, ms,
-      disposables: [...buildings, walls, ...trees, ...wires, ...(hidden ? [hidden] : [])], relief: shade, sample: shade?.sample,
+      disposables: [...buildings, walls, ...trees, ...wires, ...(hidden ? [hidden] : [])], poles, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };
@@ -887,6 +891,7 @@ export class TileWorld {
       else m.material.dispose();
       if ('dispose' in m && typeof m.dispose === 'function') m.dispose();
     }
+    for (const p of t.poles) posts.remove(p);
     this.loaded.delete(k);
     this.byIndex.delete(t.i * 65536 + t.j);
     this.last.i = NaN;

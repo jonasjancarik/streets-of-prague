@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { fetchBinary } from './terrain.ts';
+import { posts, fall, type Post } from './posts.ts';
 import { armLamp, gasPair, gasSingle, wallLantern, globeLamp, hungLamp } from './lampmodels.ts';
 
 // Street lighting at night. The lamps come from IPR's utility map
@@ -191,6 +192,12 @@ export class Lamps {
   private nearAt = { x: Infinity, y: Infinity, r: 0, t: 0 };
   private dummy = new THREE.Object3D();
   private c = new THREE.Color();
+  // The lamps on poles are posts a car can knock over (posts.ts): each one's, and until
+  // when one is falling (performance.now), which has it drawn afresh every frame.
+  private posts: (Post | undefined)[] = [];
+  private falling = 0;
+  private tilt = new THREE.Quaternion();
+  private axis = new THREE.Vector3();
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer, area: string, height: (x: number, y: number) => number) {
     this.renderer = renderer;
@@ -336,6 +343,11 @@ export class Lamps {
     const k = this.key(x, y);
     let list = this.grid.get(k);
     if (!list) this.grid.set(k, list = []);
+    if (KINDS[kind].pole) {
+      const post: Post = { x, y, z: NaN, r: 0.15, tough: 5, give: 0.2, down: null, knocked: () => { this.falling = performance.now() + 1300; this.nearAt.x = Infinity; } };
+      this.posts[this.kind.length] = post;
+      posts.add(post);
+    }
     list.push(this.kind.length);
     this.xy.push(x, y);
     this.kind.push(kind);
@@ -438,7 +450,7 @@ export class Lamps {
   // seconds for the heights of tiles that have loaded since.
   private gather(x: number, y: number, r: number, now: number) {
     const a = this.nearAt;
-    if (Math.hypot(x - a.x, y - a.y) < 25 && r <= a.r && r > a.r * 0.6 && now - a.t < 3000) return;
+    if (Math.hypot(x - a.x, y - a.y) < 25 && r <= a.r && r > a.r * 0.6 && now - a.t < 3000 && performance.now() > this.falling) return;
     const R = r * 1.25 + 40;
     Object.assign(a, { x, y, r: R, t: now });
     this.near.length = 0;
@@ -478,9 +490,16 @@ export class Lamps {
         d.position.set(lx, z, -ly);
         d.rotation.set(0, ang, 0);
         d.scale.set(1, 1, 1);
+        // Knocked over: tipped the way it was hit, about its foot.
+        const post = this.posts[i], over = post ? fall(post, performance.now()) : 0;
+        if (post?.down) {
+          const fa = post.down.ang;
+          d.quaternion.premultiply(this.tilt.setFromAxisAngle(this.axis.set(-Math.sin(fa), 0, -Math.cos(fa)), over));
+        }
         d.updateMatrix();
         this.models[m].setMatrixAt(used[m]++, d.matrix);
         d.rotation.set(0, 0, 0);
+        if (post?.down) continue; // (and its light is out)
         for (const [gx, gy, gz] of MODELS[m].glows) {
           if (g >= this.glows.instanceMatrix.count) break;
           // (a local x along the arm is (cos, -sin) in world x, z; z across it, (sin, cos).)
@@ -584,7 +603,7 @@ export class Lamps {
     };
     for (const i of this.near) {
       const k = KINDS[this.kind[i]], lx = this.xy[i * 2], ly = this.xy[i * 2 + 1];
-      if (Math.abs(lx - x) > r + k.r || Math.abs(ly - y) > r + k.r) continue;
+      if (Math.abs(lx - x) > r + k.r || Math.abs(ly - y) > r + k.r || this.posts[i]?.down) continue;
       // (Only the lamps up on poles and walls: not the floodlights or those in tunnels.)
       add(lx, ly, this.height(lx, ly) + k.raise, 0, 1, 0, k.r, k.r, colourOf(this.kind[i], i), k.i, k.raise || k.head < 3 ? 0 : k.head);
     }

@@ -380,6 +380,11 @@ the pixel ratio.
   contact wire 5.6 m above every track, where the pantographs reach, and every 30 m or so
   a span wire across the tracks, anchored to a building front when one is within 11 m
   (as in the old town's narrow streets) or else hung from a pole beside the track.
+- **Posts** (`src/posts.ts`): the wires' poles and the lamp posts are solid, and nobody
+  parks round one. Drive into one slowly and you bounce off; hit a lamp post at more
+  than 18 km/h or a wire pole at more than 32 km/h and it goes over the way you were
+  going, and you carry on slowed. A fallen lamp goes dark, and a fallen wire pole
+  brings its span wire down with it.
 - **Boats** on the Vltava (`src/boats.ts`): a few white cruise boats go slowly up and
   down the river, and pedal boats, every third a swan, paddle about round the islands.
   The river is only a ground layer, so the water of the loaded tiles is where they can

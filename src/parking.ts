@@ -1,4 +1,5 @@
 import { Car, randomType } from './car.ts';
+import { posts } from './posts.ts';
 import { Polyline, segDist } from './network.ts';
 import type { DriveEdge, ParkingOrientation } from './network.ts';
 import type { Point2, Polygons, Bounds } from './map/geo.ts';
@@ -337,7 +338,7 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
     // No part of the car where a passing tram would hit it: half a tram's width from
     // the track and a little room. Whatever the map says about parking there.
     if (nearRail(s.x, s.y, 4.5) && outline.some(([x, y]) => nearRail(x, y, 1.65))) return false;
-    if (outline.some(([x, y]) => solid(x, y)) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8)) return false;
+    if (outline.some(([x, y]) => solid(x, y)) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8) || posts.touches(car)) return false;
     if (s.fwd && outline.some(([x, y]) => onCarriageway(x, y, edges))) return false;
     car.mode = 'loose';
     cars.push(car);

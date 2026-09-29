@@ -5,6 +5,7 @@ import { clamp } from './network.ts';
 import { Figures, Anim, SCALE } from './figures.ts';
 import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
+import { posts } from './posts.ts';
 import { lampLit } from './lamps.ts';
 import { SNOW, STREET_SNOW, WET } from './shading.ts';
 
@@ -502,7 +503,7 @@ export class Car {
     for (let i = 0; i < steps; i++) {
       this.x += (this.vx * dt) / steps;
       this.y += (this.vy * dt) / steps;
-      impact = Math.max(impact, this.collideGrid(grid));
+      impact = Math.max(impact, posts.collide(this), this.collideGrid(grid));
     }
     this.sync();
     return impact;
