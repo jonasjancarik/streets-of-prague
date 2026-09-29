@@ -55,7 +55,11 @@ busy; within the noise). The lamp glows, signal glows, spray, fire and skid mark
 small quads for each drop because WebGPU points are one pixel wide) are NodeMaterials that blend before
 the tone curve, so the glows' and flames' strength is scaled by eye (`GG` in `glows.ts`) and the smoke,
 spray and skid alpha is approximate. The lamp glows cost +0.2 ms on WebGL against +0.7 ms on WebGPU (Old Town Square,
-22:00, 2×; GPU about 80% busy). The others only show while they are used, and were not timed.
+22:00, 2×; GPU about 80% busy). The others only show while they are used, and were not timed. Rain, snow and mist
+(`src/webgpu/weather.ts`; `setFx` in `weather.ts`; the snow is an instanced quad for each flake) cost +0.0 ms on
+WebGL and +0.4 ms on WebGPU for rain and its mist, +0.0 and +0.1 ms for snow (Old Town Square, 2×, 14:00, hidden with
+`layers.mask`). At night they are much fainter on WebGPU than on WebGL, because the whole night frame is lighter there
+(fog before the tone curve).
 
 Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 

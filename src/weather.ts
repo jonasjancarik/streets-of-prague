@@ -207,10 +207,22 @@ vec3 dropAt(vec4 seed, float fall, float sway) {
 }
 `;
 
+// What the WebGPU trial's own version (webgpu/weather.ts) gets to build the three from: it
+// returns the objects to draw (its snow is a sprite for each flake: points there are 1 px).
+export interface FxParts {
+  shared: { uCentre: { value: THREE.Vector3 }; uBox: { value: THREE.Vector2 }; uTime: { value: number }; uWind: { value: THREE.Vector2 } };
+  rainOn: { value: number }; snowOn: { value: number }; mistOn: { value: number };
+  scale: { value: number }; // the snow's size in pixels at a distance of 1 m
+  tint: { value: THREE.Color }; fog: { value: THREE.Color };
+  rain: THREE.BufferGeometry; snowSeeds: Float32Array; mist: THREE.BufferGeometry;
+}
+let fxBy: ((parts: FxParts) => { rain: THREE.Object3D; snow: THREE.Object3D; mist: THREE.Object3D }) | null = null;
+export const setFx = (f: typeof fxBy) => { fxBy = f; };
+
 export class WeatherFx {
-  private rain: THREE.LineSegments;
-  private snow: THREE.Points;
-  private mist: THREE.Mesh;
+  private rain: THREE.Object3D;
+  private snow: THREE.Object3D;
+  private mist: THREE.Object3D;
   private shared = {
     uCentre: { value: new THREE.Vector3() }, uBox: { value: new THREE.Vector2(200, 40) },
     uTime: { value: 0 }, uWind: { value: new THREE.Vector2(1.5, 0.6) },
@@ -219,6 +231,7 @@ export class WeatherFx {
   private rainOn = { value: 0 };
   private snowOn = { value: 0 };
   private mistOn = { value: 0 };
+  private snowScale = { value: 800 };
   // The colours they take from the light (display colours, see Sky).
   readonly tint = { value: new THREE.Color('#9aa3ad') };
   readonly fog = { value: new THREE.Color('#b0b5bb') };
@@ -240,7 +253,17 @@ export class WeatherFx {
     rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(RAIN_DROPS * 6), 3));
     rg.setAttribute('seed', new THREE.BufferAttribute(rand(RAIN_DROPS, 2), 4));
     rg.setAttribute('tail', new THREE.BufferAttribute(tail, 1));
-    this.rain = new THREE.LineSegments(rg, new THREE.ShaderMaterial({
+    // Snow: soft flakes, swaying as they come down.
+    const sg = new THREE.BufferGeometry();
+    const flakes = rand(FLAKES, 1);
+    sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(FLAKES * 3), 3));
+    sg.setAttribute('seed', new THREE.BufferAttribute(flakes, 4));
+    const mistGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    const by = fxBy?.({
+      shared: this.shared, rainOn: this.rainOn, snowOn: this.snowOn, mistOn: this.mistOn, scale: this.snowScale,
+      tint: this.tint, fog: this.fog, rain: rg, snowSeeds: flakes, mist: mistGeometry,
+    });
+    this.rain = by ? by.rain : new THREE.LineSegments(rg, new THREE.ShaderMaterial({
       uniforms: { ...this.shared, uOn: this.rainOn, uTint: this.tint },
       vertexShader: /* glsl */ `
         attribute vec4 seed; attribute float tail;
@@ -262,12 +285,8 @@ export class WeatherFx {
         }`,
       transparent: true, depthWrite: false,
     }));
-    // Snow: soft flakes, swaying as they come down.
-    const sg = new THREE.BufferGeometry();
-    sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(FLAKES * 3), 3));
-    sg.setAttribute('seed', new THREE.BufferAttribute(rand(FLAKES, 1), 4));
-    this.snow = new THREE.Points(sg, new THREE.ShaderMaterial({
-      uniforms: { ...this.shared, uOn: this.snowOn, uTint: this.tint, uScale: { value: 800 } },
+    this.snow = by ? by.snow : new THREE.Points(sg, new THREE.ShaderMaterial({
+      uniforms: { ...this.shared, uOn: this.snowOn, uTint: this.tint, uScale: this.snowScale },
       vertexShader: /* glsl */ `
         attribute vec4 seed;
         ${WRAP_GLSL}
@@ -293,7 +312,7 @@ export class WeatherFx {
     }));
     // Mist: a drifting sheet a few metres above the ground, taller buildings standing
     // out of it, lit from below by the lamps.
-    this.mist = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+    this.mist = by ? by.mist : new THREE.Mesh(mistGeometry, new THREE.ShaderMaterial({
       uniforms: { ...this.shared, uOn: this.mistOn, uFog: this.fog, uNoise: NOISE },
       vertexShader: /* glsl */ `
         varying vec3 vW;
@@ -335,7 +354,7 @@ export class WeatherFx {
     this.rain.visible = w.rain > 0.01;
     this.snow.visible = w.snow > 0.01;
     this.mist.visible = w.mist > 0.01;
-    (this.snow.material as THREE.ShaderMaterial).uniforms.uScale.value = innerHeight * dpr * 1.4;
+    this.snowScale.value = innerHeight * dpr * 1.4;
     this.mist.position.set(x, ground + 3.5, -y);
     this.mist.scale.set(2.6 * r + 60, 1, 2.6 * r + 60);
   }
