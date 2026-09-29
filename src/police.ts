@@ -98,7 +98,7 @@ export class Police {
   nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number;
   lamps: THREE.InstancedMesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
   glow: THREE.InstancedMesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
-  dummy: THREE.Object3D; lastT?: number;
+  dummy: THREE.Object3D; lastT?: number; stolen: WeakSet<Car>;
 
   constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit, bodyAt = () => false }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
@@ -112,6 +112,7 @@ export class Police {
     this.seen = false; // the police can see you right now
     this.lose = 0; // seconds out of sight
     this.cool = {};
+    this.stolen = new WeakSet(); // police cars you've taken
     this.spawnT = 0;
     this.checkT = 0;
     this.limit = 50;
@@ -170,11 +171,15 @@ export class Police {
     if (seen) this.lose = 0;
   }
 
-  // You got into a police car: whoever was in it gets out and comes after you.
+  // You got into a police car, with its crew or one they've left to come after you on
+  // foot: whoever was in it gets out and comes after you, and the car is yours, out of
+  // the chase. Stealing it is a crime once; getting back into it later isn't another.
   take(car: Car) {
     const i = this.cars.findIndex((p) => p.car === car);
     if (i >= 0) this.cars.splice(i, 1);
     if (car.crew) this.getOut(car);
+    if (this.stolen.has(car)) return;
+    this.stolen.add(car);
     this.crime('stealCop', car.x, car.y);
   }
 
@@ -355,6 +360,11 @@ export class Police {
       // And stop short of you, should you be out in the road.
       if (!me.car) want = Math.min(want, dist < 12 ? 0 : clamp((dist - 10) * 0.8, 3, 24));
     }
+    // Another police car got there first and stands just ahead: stop behind it, not
+    // squeeze past it over the parked cars.
+    const behind = !me.car && dist < 60 && this.cars.some((q) => q !== p && q.car.speed < 2
+      && Math.hypot(q.car.x - c.x, q.car.y - c.y) < 9 && (q.car.x - c.x) * Math.cos(c.h) + (q.car.y - c.y) * Math.sin(c.h) > 0);
+    if (behind) want = 0;
     // An officer out on foot: the car waits.
     if (!c.crew) want = 0;
     const alpha = turnOf(c.h, Math.atan2(ty - c.y, tx - c.x));
@@ -371,7 +381,7 @@ export class Police {
     // Close enough and you're not going anywhere: an officer gets out.
     // On foot, also once the car has got as near as the road goes: the officer runs
     // the rest of the way.
-    const there = !me.car && dist < 60 && !!p.path && p.path.length - p.s < 8;
+    const there = behind || (!me.car && dist < 60 && !!p.path && p.path.length - p.s < 8);
     if (c.crew && !me.air && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18 || there)) this.getOut(c);
     return { throttle, steer, handbrake: want === 0 && Math.abs(vf) < 3 };
   }
