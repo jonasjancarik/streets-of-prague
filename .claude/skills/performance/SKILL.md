@@ -53,7 +53,7 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
 ## Where the time goes (2× on an M5, Chrome, by the Old Town Square)
 
 The GPU is the limit at 2×. Per frame, roughly:
-- **Ground patterns: ~29%.** The mosaic's stones 14%, dirt on the paving 12%.
+- **Ground patterns: ~29%.** The mosaic's stones 14%, dirt on the paving was 12% until it was baked into a texture (`GRIT` in `shading.ts`, one read: now under 1%).
 - **Shadows on the ground: 11%.**
 - **Roof tiles: 12%.**
 - **Facade pictures: 7%.**

@@ -30,8 +30,8 @@ less time a frame than before it, and 32–42% less with the CPU slowed 4× at 1
 Still worth checking on a real phone.
 
 What a frame costs now, at 2× standing by the Old Town Square (switched off one at a
-time with `--ab`): the ground's patterns about 29% (the mosaic's stones 14%, dirt on
-the paving 12%), shadows on the ground 11%, roof tiles 12%, the facade pictures 7%,
+time with `--ab`): the ground's patterns about 29% (the mosaic's stones 14%; the dirt on
+the paving was 12% until 30 September 2026, when it was baked into a texture: now under 1%), shadows on the ground 11%, roof tiles 12%, the facade pictures 7%,
 grime on the walls 6%, the shadow map's own pass 7%.
 
 - **MSAA costs about a fifth of a frame at 2×** (57 → 71 fps without it, Chrome on
