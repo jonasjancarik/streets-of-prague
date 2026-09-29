@@ -90,7 +90,7 @@ the pixel ratio.
   on the road and stop at the kerb nearest you; then (or when you stop the car) an
   officer gets out and runs after you, and if they reach you, you're busted (the
   police keep the car). You can outrun them on foot, or take the police car they've
-  left behind (E) and drive off in it. From three stars a helicopter
+  left behind (E) and drive off in it, its blue lights flashing as you go. From three stars a helicopter
   joins in and sees you over the rooftops. Stay out of sight and the stars go one at a
   time; they blink while nobody can see you (`src/police.ts`, `src/helicopter.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
@@ -236,10 +236,12 @@ the pixel ratio.
   down if it was going), then run. Hit something hard and you're thrown off. On foot,
   Space jumps (not at a tram stop, where it waits for a tram); in the air, a car can't
   knock you over. Jump at a car that's standing still and you climb onto it and can
-  walk over its bonnet, roof or boot and drop off the other side.
+  walk over its bonnet, roof or boot and drop off the other side. If it drives off with
+  you on top, you ride along until it goes faster than about 30 km/h and throws you off.
 - **Buses.** A few red and white city buses drive Prague's real bus lines around you
   (`src/buses.ts`, from PID's timetables): each follows its line from junction to
-  junction, pulls up at its stops for 10 to 15 seconds and goes on, holding up the
+  junction, shows its number and where it's going on the boards at the front and by the
+  front door, pulls up at its stops for 10 to 15 seconds and goes on, holding up the
   traffic behind it. Where a line leaves the streets on the map, the bus carries on along
   the main roads and is replaced once out of sight; without `buses.json` all buses just
   drive the main roads. You can take one like any car, but it's slow to pick up speed,

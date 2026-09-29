@@ -99,6 +99,7 @@ export class Traffic {
       const car = new Car('bus', this.r, p.x, p.y, p.ang);
       car.mode = 'traffic';
       car.hint = 'ground';
+      car.line = { ref: run.line.ref, to: run.line.to };
       this.agents.push({ car, route: new Route(this.g, edge, s, this.r, true, (e, opts) => run.pick(e, opts)), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.9, off: 0, bus: run });
       return;
     }

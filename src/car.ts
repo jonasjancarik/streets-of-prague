@@ -234,6 +234,8 @@ export class Car {
   lastH?: number;
   anim?: Anim;
   crew?: boolean;
+  // A bus on a line: its number and where it's going, for the boards (Traffic.buses).
+  line?: { ref: string; to: string };
   // How hard the back and front tyres scrub the road (0–1), for their marks (skids.ts).
   skidBack = 0; skidFront = 0;
   _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number]; stamp?: number;
@@ -404,6 +406,42 @@ export class Car {
   sync() {} // drawn by CarPool each frame
 }
 
+// A line board: the number big on the left and where the bus is going, in amber on
+// black, one small texture per line and direction (there are only ever a few buses).
+const boards = new Map<string, THREE.MeshBasicMaterial>();
+function boardMaterial(ref: string, to: string) {
+  const k = `${ref}|${to}`;
+  let m = boards.get(k);
+  if (m) return m;
+  const cv = document.createElement('canvas');
+  cv.width = 512;
+  cv.height = 64;
+  const g = cv.getContext('2d')!;
+  g.fillStyle = '#0c0c0c';
+  g.fillRect(0, 0, 512, 64);
+  g.fillStyle = '#ffb020';
+  g.textBaseline = 'middle';
+  g.font = 'bold 54px sans-serif';
+  g.fillText(ref, 10, 35, 130);
+  g.font = 'bold 40px sans-serif';
+  if (to) g.fillText(to, 150, 35, 352);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  m = new THREE.MeshBasicMaterial({ map: t });
+  boards.set(k, m);
+  return m;
+}
+const boardPlane = new THREE.PlaneGeometry(1, 1);
+// Where the boards sit on a bus (see busGeometry): over the windscreen, facing
+// forward, and on the right over the glass behind the front door.
+const BOARDS = (() => {
+  const L = TYPES.bus.L / 2, W = TYPES.bus.W, m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  const front = m.clone().compose(new THREE.Vector3(L + 0.04, 2.74, 0), q.clone().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), s.clone().set(W - 0.9, 0.2, 1));
+  const side = m.clone().compose(new THREE.Vector3(L - 3.4, 2.38, W / 2 + 0.012), q.clone(), s.clone().set(1.5, 0.19, 1));
+  return [front, side];
+})();
+
 // Every car is an instance: one draw call per type and colour, however many are parked.
 // Riders are drawn here too, sitting on their bikes.
 export class CarPool {
@@ -414,6 +452,7 @@ export class CarPool {
   riders: Figures;
   scale: THREE.Matrix4;
   m: THREE.Matrix4;
+  boards: THREE.Mesh[] = [];
 
   constructor(scene: THREE.Scene) {
     if (!kit) throw new Error('Figures kit is not loaded');
@@ -437,7 +476,7 @@ export class CarPool {
       this.groups.get(c.key)!.push(c);
     }
     const d = this.dummy;
-    let riders = 0;
+    let riders = 0, nb = 0;
     for (const [k, list] of this.groups) {
       let m = this.meshes.get(k);
       if (!m || m.instanceMatrix.count < list.length) {
@@ -465,11 +504,29 @@ export class CarPool {
         d.updateMatrix();
         m.setMatrixAt(i, d.matrix);
         if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
+        if (c.line) for (const at of BOARDS) this.board(nb++, c.line, d.matrix, at);
       });
       m.count = list.length;
       m.instanceMatrix.needsUpdate = true;
     }
     this.riders.commit(riders);
+    for (let i = 0; i < this.boards.length; i++) this.boards[i].visible = i < nb;
+  }
+
+  // A line board on a bus: a quad over the plain amber one, placed by hand each frame.
+  board(i: number, line: { ref: string; to: string }, matrix: THREE.Matrix4, at: THREE.Matrix4) {
+    let b = this.boards[i];
+    if (!b) {
+      b = new THREE.Mesh(boardPlane, boardMaterial(line.ref, line.to));
+      b.matrixAutoUpdate = false;
+      b.frustumCulled = false;
+      this.scene.add(b);
+      this.boards[i] = b;
+    }
+    b.material = boardMaterial(line.ref, line.to);
+    b.matrix.multiplyMatrices(matrix, at);
+    b.matrixWorldNeedsUpdate = true;
+    b.visible = true;
   }
 
   // Lean into the turns (worked out from how fast the heading changes, so it works

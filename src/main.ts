@@ -576,6 +576,8 @@ async function main() {
   // ---- Loop --------------------------------------------------------------
   const look = new THREE.Vector3();
   let last = performance.now(), shake = 0;
+  // The car you're standing on, and where it was last step (to carry you with it).
+  let onCar: { c: Car; x: number; y: number; h: number } | null = null;
   let waitScale = 1, clockShown = '';
   let street: string | null = null, bannerT = 0, lifeT = 0;
   // The HUD is only written when what it says changes: every write makes the browser
@@ -829,21 +831,40 @@ async function main() {
       offTrams(walker, 0.35, (x, y) => !walker.blocked(x, y), (vx, vy) => {
         if (walker.down <= 0) { walker.knock(vx, vy); shake = 0.8; }
       });
+      // Standing on a car that drives off: it carries you round with it, until it's
+      // going too fast to keep your feet and throws you off to the side.
+      if (onCar && walker.down <= 0 && walker.perch > 0.3) {
+        const { c } = onCar, dh = c.h - onCar.h, cs = Math.cos(dh), sn = Math.sin(dh);
+        const rx = walker.x - onCar.x, ry = walker.y - onCar.y;
+        const x = c.x + rx * cs - ry * sn, y = c.y + rx * sn + ry * cs;
+        if (!walker.blocked(x, y)) { walker.x = x; walker.y = y; }
+        walker.h += dh;
+        if (c.speed > 8) {
+          const lx = -Math.sin(c.h), ly = Math.cos(c.h), side = (walker.x - c.x) * lx + (walker.y - c.y) * ly >= 0 ? 1 : -1;
+          walker.knock(c.vx * 0.6 + side * lx * 3, c.vy * 0.6 + side * ly * 3);
+          shake = 0.6;
+        }
+      }
       // Jump at a car that's standing still (or step across from one you're already on)
       // and you scramble up onto it, over its bonnet, roof or boot, and drop off the far
-      // side. Not bikes and motorbikes, and not anything that's moving.
-      let top = 0;
+      // side. Not bikes and motorbikes, and you can't jump onto one that's moving.
+      let top = 0, under: Car | null = null;
       bump(walker, 0.35, (c, nx, ny, d) => {
-        if (!c.two && c.speed < 2 && walker.down <= 0 && (walker.jumping || walker.perch > 0.3)) {
-          if (d < c.r) top = Math.max(top, c.topAt(walker.x, walker.y));
+        if (!c.two && walker.down <= 0 && (c.speed < 2 ? walker.jumping || walker.perch > 0.3 : c === onCar?.c && walker.perch > 0.3)) {
+          if (d < c.r) {
+            const t = c.topAt(walker.x, walker.y);
+            if (t > top) { top = t; under = c; }
+          }
           return true;
         }
         if (c.speed > 4 && walker.down <= 0 && !walker.airborne) { walker.knock(c.vx + nx * 2, c.vy + ny * 2); shake = 0.6; }
       });
       // Up quickly, down as fast as you'd drop.
       walker.perch = top > walker.perch ? walker.perch + (top - walker.perch) * Math.min(1, dt * 14) : Math.max(top, walker.perch - dt * 5);
+      const u = under as Car | null;
+      onCar = u && walker.down <= 0 ? { c: u, x: u.x, y: u.y, h: u.h } : null;
       walker.sync();
-    }
+    } else onCar = null;
 
     // Keep life around the player: traffic and people follow you, far ones are recycled.
     lifeT -= dt;
@@ -923,7 +944,7 @@ async function main() {
     metro.update(dt);
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     crowd.render(ground);
-    police.render(ground, time.value);
+    police.render(ground, time.value, inCar);
     // Only the cars in view (and a little round it, for their shadows) are drawn.
     drawn.length = 0;
     {
