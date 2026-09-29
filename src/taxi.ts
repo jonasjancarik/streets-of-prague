@@ -17,7 +17,7 @@ import type { DriveEdge, DriveGraph } from './network.ts';
 // Well-known places to be driven to, as lon, lat (at a street where a taxi can stop).
 export const PLACES: [string, number, number][] = [
   ['Old Town Square', 14.4196, 50.0880],
-  ['Wenceslas Square', 14.4265, 50.0815],
+  ['Wenceslas Square', 14.4282, 50.0802],
   ['Main Station', 14.4350, 50.0835],
   ['Charles Square', 14.4185, 50.0760],
   ['Náměstí Míru', 14.4378, 50.0754],
@@ -35,6 +35,7 @@ const FIRMS: Firm[] = [
   { name: 'Hopla', app: true, start: 40, perKm: 26 },
 ];
 
+const MINOR = new Set(['service', 'living_street', 'pedestrian', 'track']);
 const REACH = 500; // m round you a free taxi is sent from
 const PATIENCE = 90; // s a taxi waits for you at the kerb
 const SLOW_BEFORE = 200; // m before the end of the ride where it goes back to normal speed
@@ -139,10 +140,11 @@ export class Taxis {
   }
 
   // The lane point nearest (x, y), within r metres, to stop at.
-  private stopNear(x: number, y: number, r: number) {
+  // (For a place to be driven to, on a proper street, not a service road off one.)
+  private stopNear(x: number, y: number, r: number, street = false) {
     let best: { edge: DriveEdge; s: number } | null = null, bestD = r;
     for (const e of this.o.edgesNear(x, y, r + 60)) {
-      if (e.path.length < 10 || e.tunnel || e.bridge) continue;
+      if (e.path.length < 10 || e.tunnel || e.bridge || (street && MINOR.has(e.hw))) continue;
       const p = project(e.path, x, y);
       if (p.d < bestD) { bestD = p.d; best = { edge: e, s: Math.min(Math.max(p.s, 4), e.path.length - 3) }; }
     }
@@ -239,7 +241,7 @@ export class Taxis {
     if (!a || !p) return;
     this.dest = i;
     a.stop = undefined;
-    this.head(this.stopNear(p.x, p.y, 80), true, p);
+    this.head(this.stopNear(p.x, p.y, 100, true), true, p);
   }
 
   // Once a frame, before the world steps.
