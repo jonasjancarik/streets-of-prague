@@ -111,7 +111,7 @@ async function runScene(browser, name, base = URL_BASE) {
 
   await page.evaluate(() => {
     const d = window.__drive, b = window.__bench, r = d.renderer, gl = r.getContext();
-    const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    const ext = gl.getExtension ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null; // (none on WebGPU)
     const pending = [];
     const render = r.render.bind(r);
     r.render = (s, c) => {

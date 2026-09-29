@@ -114,7 +114,10 @@ async function main() {
 
   // (Its pixel ratio comes from the graphics setting, see Graphics. The stencil is for
   // shading each pixel of the ground once, see surface.ts.)
-  const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
+  // (?renderer=webgpu: the trial of three.js's WebGPU renderer, see webgpu.ts.)
+  const renderer = params.get('renderer') === 'webgpu'
+    ? await (await import('./webgpu.ts')).createRenderer()
+    : new THREE.WebGLRenderer({ antialias: true, stencil: true });
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;

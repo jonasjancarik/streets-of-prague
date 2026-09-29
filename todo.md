@@ -57,6 +57,17 @@ grime on the walls 6%, the shadow map's own pass 7%.
   crowd's index keep the edges of every tile ever loaded, so memory grows over a
   long session across the city. The police's route search runs over the graph,
   including tiles that have been dropped, so shrinking it needs care.
+- **three.js's WebGPU renderer** (trial: `?renderer=webgpu`, `src/webgpu.ts`, 29
+  September 2026). Only the ground and the tone curve are ported (to TSL), so the
+  buildings are drawn plain and rain, snow, lamp light, skid marks and the ground's
+  soft shading aren't drawn; not playable. The same ground patterns cost about half
+  as much there: switched on and off with `--ab` at 2× on an M5, +1.2 ms a frame
+  on WebGPU against +2.4–3.1 ms on WebGL (Old Town Square, Karlovo náměstí,
+  Petřín), with another app keeping the GPU 70–80% busy. The whole frame can't be
+  compared until the rest is ported: every `onBeforeCompile` (about 20, the
+  buildings' and lamps' light among them) and every `ShaderMaterial` (about 10)
+  would have to become TSL. Headless Chrome with `--disable-frame-rate-limit` never
+  finishes `compileAsync` on WebGPU (webgpu.ts gives up after 10 s).
 - **What's left on the main thread** (in order, with the CPU slowed 4×): the trams'
   steps and look-ahead, traffic, placing people (`Crowd.place`) and following
   everyone's height (`TileWorld.track`, `surfaceAt`), then three.js's own work.

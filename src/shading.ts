@@ -410,11 +410,17 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   return material;
 }
 
+// The WebGPU trial's own version (webgpu.ts), set before any ground is made.
+let patternedBy: typeof patterned | null = null;
+export const setPatterned = (f: typeof patterned) => { patternedBy = f; };
+
 // Add a world-position varying to a Lambert/Standard shader and colour it by pattern.
 // `relief`: optional { texture, box } hill shading for a tile, times broad() (see
 // tiles.ts).
 // `deck`: for a bridge deck, { mask, box } to draw it only where the tile's decks are
 // (mask null: everywhere), and with a hole round the player under it (CUTAWAY).
+// userData.flatten() makes the same material without the pattern, for measuring what
+// the patterns cost (bench.mjs --ab).
 export function patterned(
   material: THREE.MeshLambertMaterial,
   id: number,
@@ -424,7 +430,9 @@ export function patterned(
   dig = false,
   photo: { texture: THREE.Texture; box: number[] } | null = null,
   sheltered = false, // in a tunnel: no rain or snow
-) {
+): THREE.MeshLambertMaterial {
+  if (patternedBy) return patternedBy(material, id, time, relief, deck, dig, photo, sheltered);
+  material.userData.flatten = () => patterned(material.clone(), 0, time, relief, deck, dig, photo, sheltered);
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
     sh.uniforms.uNoise = NOISE;

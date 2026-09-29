@@ -126,6 +126,20 @@ The ground is shaded on every pixel. Measure anything you add to `PATTERNS_GLSL`
 - Check behaviour after simulation changes: trams, traffic and people still move,
   some stop for obstacles, and the grids hold no stale entries.
 
+## WebGPU trial
+
+`?renderer=webgpu` (with `--extra "&renderer=webgpu"`) draws with three.js's
+WebGPU renderer, where only the ground is ported (see `src/webgpu.ts` and `todo.md`).
+Measure the ground's patterns in either renderer by swapping each ground material
+for its `userData.flatten()` (the same ground without the pattern):
+
+```
+--ab 'window.__ab = (on) => { window.__drive.scene.traverse((o) => { const m = o.material; if (!m || Array.isArray(m)) return; const u = o.userData; if (!u.patterned && m.userData && m.userData.flatten) { u.patterned = m; u.flat = m.userData.flatten(); } if (u.patterned) o.material = on ? u.patterned : u.flat; }); }; window.__ab(false); window.__ab(true);'
+```
+
+Only compare such differences between the renderers, not whole frames: on WebGPU
+everything written in GLSL is drawn plain or not at all. There's no GPU timer there.
+
 ## Before you commit
 
 Type check (`npm run typecheck`), check screenshots against the baseline, and put
