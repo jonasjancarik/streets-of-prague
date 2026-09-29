@@ -174,6 +174,13 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
 - **Night on WebGPU crashed** with `camera.updateProjectionMatrix is not a function`: the
   lamps' light map is drawn with a bare `THREE.Camera`. `createRenderer` gives the base
   class a no-op.
+- **A texture a port swaps later never reaches objects that don't move.** three.js checks
+  the *legacy* material for nodes, finds none, and gives an unchanged object only the shared
+  (render-group) refresh, so its texture bindings stay as they were at the first draw. The
+  facade atlas's stand-in (`atlas` in `webgpu/buildings.ts`) stayed black on every tile compiled
+  before `facades.webp` loaded (black walls with whole window cells lit at night, in the build
+  only, where loading is faster). `main.ts` awaits `loadFacadeAtlas()` before the first
+  `compileAsync`; load any such texture before the first draw, or don't swap it.
 - **Derivatives only outside branches.** WGSL rejects `fwidth`/`dFdx` (and
   `textureSample` without a level) in non-uniform control flow. Anything computed
   with them must be declared before an `If`: `.toVar()` puts it on the stack where

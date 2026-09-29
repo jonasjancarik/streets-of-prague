@@ -25,6 +25,7 @@ import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
 import { Districts } from './districts.ts';
 import { TileWorld } from './tiles.ts';
+import { loadFacadeAtlas } from './facades.ts';
 import { groundSamples } from './surface.ts';
 import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
@@ -1175,6 +1176,9 @@ async function main() {
     const samples = groundSamples(time);
     // (And the metro's tunnels and train, for the first ride.)
     scene.add(samples.group, metro.under.group);
+    // The facade pictures must be in first: on WebGPU a building that doesn't move binds
+    // its textures once, so tiles compiled here would keep the black stand-in.
+    await loadFacadeAtlas();
     await renderer.compileAsync(scene, camera).catch((e) => console.warn(e));
     scene.remove(samples.group);
     metro.under.hide();
