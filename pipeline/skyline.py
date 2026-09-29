@@ -28,7 +28,7 @@ CACHE = Path(__file__).parent / ".cache" / "ipr" / "parsed"
 OUT = Path(__file__).resolve().parent.parent / "public" / "skylines"
 AREA = "praha"
 REF_HEIGHT = 180.0
-STEP = 4.0
+STEP = 4.0  # until load_terrain reads the step the terrain was cached with
 
 # eye: (lon, lat); height: metres above the ground there, or a.s.l. when over 100
 # (for bridges above the river); at: (lon, lat) the camera faces; pitch: degrees up
@@ -87,11 +87,15 @@ def load_buildings(key):
 
 
 def load_terrain(key):
-    """[(first lattice column, first row, heights)] per sheet, on the 4 m lattice."""
+    """[(first lattice column, first row, heights)] per sheet, on ipr_terrain.py's
+    lattice (its step is the last item of each sheet's cache key)."""
+    global STEP
     grids = []
     for path in sorted(CACHE.glob(f"TER_*_{key}.pkl")):
         with open(path, "rb") as f:
-            gi0, gj0, sub, *_ = pickle.load(f)["grid"]
+            got = pickle.load(f)
+        gi0, gj0, sub, *_ = got["grid"]
+        STEP = got["key"][-1]
         grids.append((gi0, gj0, sub))
     return grids
 

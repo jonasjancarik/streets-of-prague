@@ -17,7 +17,7 @@ such as tram rails and street names); ipr and terrain write their .bin files str
 into the tiles and keep the rest in <layer>.json. Every step ends with assemble(),
 which writes tiles/<i>_<j>.json, index.json and names.json in public/data/<area>_now/
 from the layers, and leaves files whose content hasn't changed alone (so a deploy only
-sends what did).
+sends what did). Files of tiles no longer in the index are removed.
 
 What depends on what: ipr uses the OSM buildings (colours, and which OSM buildings
 IPR doesn't have); terrain works out the bridges and tunnels from the ground and
@@ -28,6 +28,7 @@ which of the two to run again.
 import gzip
 import json
 import os
+import re
 from pathlib import Path
 
 from osm_area import OUT
@@ -213,7 +214,23 @@ def assemble(area: str) -> dict:
     write(out_dir / "index.json", dumps(index))
     write(out_dir / "names.json", dumps({k: v[1:] for k, v in sorted(names.items())}))
     print(f"{area}: {len(listed)} tiles, {written} changed → {out_dir.name}/")
+    remove_stale(out_dir / "tiles", keys)
     return index
+
+
+TILE_FILE = re.compile(r"^(-?\d+_-?\d+)\.[a-z0-9.]+$")
+
+
+def remove_stale(tiles_dir: Path, keys: set):
+    """Remove the files of tiles no longer in the index (a tile drops out when the area
+    or its contents change, and its old files would stay behind and go out with a
+    deploy). Only files named after a tile, only in the tiles folder."""
+    stale = sorted(p for p in tiles_dir.iterdir() if p.is_file() and (m := TILE_FILE.match(p.name)) and m.group(1) not in keys)
+    for p in stale:
+        p.unlink()
+    if stale:
+        gone = sorted({TILE_FILE.match(p.name).group(1) for p in stale})
+        print(f"removed {len(stale)} files of {len(gone)} tiles no longer in the index: {', '.join(gone[:20])}{' …' if len(gone) > 20 else ''}")
 
 
 if __name__ == "__main__":
