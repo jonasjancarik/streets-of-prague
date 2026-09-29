@@ -584,10 +584,24 @@ export class TileWorld {
     this.retry.set(k, performance.now() + 2000);
   }
 
-  // Load everything within r now (used at start); returns when done.
+  // Load everything within r now (used at start); returns when done. A tile that fails
+  // (a dropped or cut-short download on a busy machine) is tried again a couple of
+  // times, then left for update() to load later, so one bad file never stops the start.
   async loadNow(x: number, y: number, r: number) {
     await Promise.all(this.around(x, y, r).map(async (k) => {
-      if (!this.loaded.has(k)) await this.build(k, await this.fetchTile(k));
+      for (let tries = 1; !this.loaded.has(k); tries++) {
+        try {
+          await this.build(k, await this.fetchTile(k));
+        } catch (e) {
+          // fetchTile and build have already called failed(k), so the next try fetches afresh.
+          if (tries >= 3) {
+            console.warn(`Tile ${k} failed to load at start; it will be tried again shortly`, e);
+            this.failed(k);
+            return;
+          }
+          await new Promise((done) => setTimeout(done, 300 * tries));
+        }
+      }
     }));
   }
 
