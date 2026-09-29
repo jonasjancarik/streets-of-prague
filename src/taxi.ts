@@ -16,6 +16,7 @@ import type { DriveEdge, DriveGraph } from './network.ts';
 import { getLang, t } from './i18n.ts';
 import { kc } from './money.ts';
 import type { Wallet } from './money.ts';
+import * as THREE from 'three';
 
 // Well-known places to be driven to, as lon, lat (at a street where a taxi can stop).
 export const PLACES: [string, number, number][] = [
@@ -43,7 +44,7 @@ const REACH = 500; // m round you a free taxi is sent from
 const PATIENCE = 90; // s a taxi waits for you at the kerb
 const SLOW_BEFORE = 200; // m before the end of the ride where it goes back to normal speed
 
-interface Walker { x: number; y: number; h: number; vx: number; vy: number; mesh: { visible: boolean }; sync(): void }
+interface Walker { gz?: number; x: number; y: number; h: number; vx: number; vy: number; mesh: { visible: boolean }; sync(): void }
 interface TaxiWorld { keyAt(x: number, y: number): string; available: { has(key: string): boolean }; loaded: { has(key: string): boolean } }
 
 export class Taxis {
@@ -61,9 +62,13 @@ export class Taxis {
   private wait = 0;
   private metres = 0;
   private shown = '';
+  private beacon = new THREE.Group();
+  private pillar: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  private arrow: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  private clock = 0;
 
   constructor(private o: {
-    traffic: Traffic; drive: DriveGraph; world: TaxiWorld; el: HTMLElement; walker: Walker;
+    scene: THREE.Scene; traffic: Traffic; drive: DriveGraph; world: TaxiWorld; el: HTMLElement; walker: Walker;
     edgesNear: (x: number, y: number, r: number) => DriveEdge[];
     offscreen: (x: number, y: number) => boolean;
     toLocal: (lon: number, lat: number) => [number, number] | null;
@@ -71,6 +76,15 @@ export class Taxis {
     banner: (text: string) => void;
     wallet: Wallet;
   }) {
+    const mat = () => new THREE.MeshBasicMaterial({ color: '#ffd23a', transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    this.pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 40, 16, 1, true), mat());
+    this.pillar.position.y = 22;
+    this.arrow = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.4, 4), mat());
+    this.arrow.rotation.x = Math.PI;
+    this.arrow.material.opacity = 0.95;
+    this.beacon.add(this.pillar, this.arrow);
+    this.beacon.visible = false;
+    o.scene.add(this.beacon);
     this.places = PLACES.flatMap(([name, lon, lat]) => {
       const p = o.toLocal(lon, lat);
       return p ? [{ name, x: p[0], y: p[1] }] : [];
@@ -135,6 +149,20 @@ export class Taxis {
     best.reckless = firm.app;
     this.state = 'coming';
     this.head(stop, true);
+  }
+
+  // A pillar of light and a bobbing arrow over the taxi that is yours.
+  mark(dt: number) {
+    const a = this.agent, on = !!a && (this.state === 'coming' || this.state === 'waiting');
+    this.beacon.visible = on;
+    if (!on) return;
+    this.clock += dt;
+    const c = a.car, ready = this.near();
+    this.beacon.position.set(c.x, c.gz ?? this.o.walker.gz ?? 0, -c.y);
+    this.arrow.position.y = 3.4 + Math.sin(this.clock * 3) * 0.3;
+    this.pillar.material.opacity = ready ? 0.45 : 0.22 + Math.sin(this.clock * 4) * 0.06;
+    this.pillar.material.color.set(ready ? '#7dff9a' : '#ffd23a');
+    this.arrow.material.color.set(ready ? '#7dff9a' : '#ffd23a');
   }
 
   cancel() {
@@ -255,6 +283,7 @@ export class Taxis {
   // Once a frame, before the world steps.
   update(dt: number) {
     this.noteT -= dt;
+    this.mark(dt);
     const a = this.agent;
     if (!a) return;
     // Hit hard enough to leave the traffic, or gone off the map.
@@ -332,7 +361,7 @@ export class Taxis {
       const secs = Math.max(10, Math.round(far / (this.firm.app ? 9 : 7) / 10) * 10);
       return `${t('{name} is on the way, about {secs} s', { name, secs })} · ${touch ? '' : `${t('hold <b>Space</b> to wait')} · `}${k('T')}${t('cancel')}`;
     }
-    if (this.state === 'waiting') return `${t('{name} is waiting at the kerb', { name })} · ${k('E')}${t('get in')} · ${k('T')}${t('cancel')}`;
+    if (this.state === 'waiting') return `${t('{name} is waiting at the kerb', { name })} · ${this.near() ? `${k('E')}${t('get in')}` : t('walk up to it (yellow marker)')} · ${k('T')}${t('cancel')}`;
     if (this.riding) {
       const parts = [];
       if (this.waiting) parts.push(t('The streets ahead are still loading'));

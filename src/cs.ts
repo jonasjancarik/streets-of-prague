@@ -205,6 +205,7 @@ export const CS: Record<string, string> = {
   '{name} is on the way, about {secs} s': '{name} je na cestě, asi {secs} s',
   'hold <b>Space</b> to wait': 'podržením <b>mezerníku</b> počkáš',
   cancel: 'zrušit',
+  'walk up to it (yellow marker)': 'dojděte k němu (žlutá značka)',
   '{name} is waiting at the kerb': '{name} čeká u krajnice',
   'get in': 'nastoupit',
   'Stuck in traffic': 'Uvízl v koloně',
