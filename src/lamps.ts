@@ -83,13 +83,16 @@ const KINDS = [
   { head: 1.0, pole: false, r: 9, i: 1.3, raise: 14, glow: 0 }, // floodlight on a monument
   { head: 0, pole: false, r: 7, i: 0.8, raise: 0, glow: 0 }, // in a tunnel or underpass
   { head: 0, pole: false, r: 3, i: 0.4, raise: 0, glow: 0 }, // set into the ground
-  { head: 6.5, pole: false, r: 14, i: 0.9, raise: 0, glow: 0.5 }, // added: hung over a street (see fill)
+  { head: 6.3, pole: false, r: 14, i: 0.9, raise: 0, glow: 0.5 }, // added: hung over a street on cables (see fill)
 ];
 const HUNG = 7;
 // Many side streets' lamps hang on cables between the houses or sit on their walls,
 // and the utility map has few of those: a street with no lamp within REACH gets one
-// hung over it every SPACING metres.
-const SPACING = 30, REACH = 20;
+// hung over it every SPACING metres, but only where a building stands on each side
+// within WALL of it to take the cables (elsewhere a lamp would hang from nothing).
+const SPACING = 30, REACH = 20, WALL = 18;
+const ANCHOR = 7.4, SLACK = 0.3; // m: where a cable meets a wall above the street, how much it sags
+const MAX_HUNG = 800, HALVES = 5; // (cable pieces from a wall to the lamp)
 const UNLIT = new Set(['motorway', 'motorway_link', 'track', 'service']);
 // Warm LED, old sodium, neutral LED; gas; floodlights.
 const WARM = new THREE.Color('#ffcf8f'), SODIUM = new THREE.Color('#ffa850'), NEUTRAL = new THREE.Color('#f1ece0');
@@ -111,6 +114,21 @@ const MAP_SIZE = 1024; // texels across the light map
 const MAX_LIGHTS = 6000;
 const MAX_POLES = 4000;
 
+interface Seg { ax: number; ay: number; bx: number; by: number }
+// Where the ray from (px, py) along (dx, dy) first crosses one of the segments, as the
+// distance along it (Infinity if none within max).
+function cast(segs: Seg[], px: number, py: number, dx: number, dy: number, max: number) {
+  let best = Infinity;
+  for (const s of segs) {
+    const ex = s.bx - s.ax, ey = s.by - s.ay, den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const qx = s.ax - px, qy = s.ay - py;
+    const t = (qx * ey - qy * ex) / den, u = (qx * dy - qy * dx) / den;
+    if (t > 0 && t < max && t < best && u >= 0 && u <= 1) best = t;
+  }
+  return best;
+}
+
 interface Street { hw: string; pts: [number, number][]; tunnel?: boolean }
 interface LitTram { parts: { x: number; y: number; ang: number }[]; look: unknown; levels?: { gz?: number }[] }
 interface LitCar { x: number; y: number; h: number; spec: { L: number; W: number; H: number }; mode: string; two?: string; speed: number }
@@ -126,7 +144,9 @@ export class Lamps {
   private xy: number[] = [];
   private kind: number[] = [];
   private loaded = false;
-  private waiting: Street[][] = [];
+  private waiting: [Street[], [number, number][][]][] = [];
+  private hung = new Map<number, number[]>(); // a hung lamp → the two wall points its cables run to (x, y, x, y)
+  private cables: THREE.LineSegments;
   private grid = new Map<number, number[]>();
   private renderer: THREE.WebGLRenderer;
   private height: (x: number, y: number) => number;
@@ -272,7 +292,13 @@ export class Lamps {
     this.glows.count = 0;
     this.glows.frustumCulled = false;
     this.glows.renderOrder = 5;
-    scene.add(this.poles, this.glows);
+    // The cables of the hung lamps near the camera: HALVES lines a side, two sides each.
+    const cableGeometry = new THREE.BufferGeometry();
+    cableGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_HUNG * 2 * HALVES * 2 * 3), 3));
+    cableGeometry.setDrawRange(0, 0);
+    this.cables = new THREE.LineSegments(cableGeometry, new THREE.LineBasicMaterial({ color: '#1d1f20', transparent: true, opacity: 0.85 }));
+    this.cables.frustumCulled = false;
+    scene.add(this.poles, this.glows, this.cables);
 
     void fetchBinary(`data/${area}_now/lamps.bin.gz`, true).then((buf) => {
       if (!buf) return;
@@ -281,7 +307,7 @@ export class Lamps {
       for (let i = 0; i < n; i++) this.add(xy[i * 2], xy[i * 2 + 1], kind[i]);
     }).catch(() => {}).finally(() => {
       this.loaded = true;
-      for (const edges of this.waiting) this.fill(edges);
+      for (const [edges, walls] of this.waiting) this.fill(edges, walls);
       this.waiting.length = 0;
       this.nearAt.x = Infinity;
     });
@@ -306,9 +332,33 @@ export class Lamps {
     return false;
   }
 
-  // Streets as their tiles load: lamps hung over the unlit stretches.
-  fill(edges: Street[]) {
-    if (!this.loaded) { this.waiting.push(edges); return; }
+  // Streets as their tiles load: lamps hung over the unlit stretches, on cables to the
+  // buildings either side (`buildings`: their outlines; a stretch with none is left dark).
+  fill(edges: Street[], buildings: [number, number][][]) {
+    if (!this.loaded) { this.waiting.push([edges, buildings]); return; }
+    const cells = new Map<number, Seg[]>();
+    for (const ring of buildings) {
+      for (let i = 0; i < ring.length; i++) {
+        const [ax, ay] = ring[i], [bx, by] = ring[(i + 1) % ring.length];
+        const s = { ax, ay, bx, by };
+        for (let cx = Math.floor(Math.min(ax, bx) / CELL); cx <= Math.floor(Math.max(ax, bx) / CELL); cx++) {
+          for (let cy = Math.floor(Math.min(ay, by) / CELL); cy <= Math.floor(Math.max(ay, by) / CELL); cy++) {
+            const k = this.key(cx * CELL, cy * CELL);
+            const list = cells.get(k);
+            if (list) list.push(s); else cells.set(k, [s]);
+          }
+        }
+      }
+    }
+    const near = (x: number, y: number) => {
+      const out = new Set<Seg>();
+      for (let cx = Math.floor((x - WALL) / CELL); cx <= Math.floor((x + WALL) / CELL); cx++) {
+        for (let cy = Math.floor((y - WALL) / CELL); cy <= Math.floor((y + WALL) / CELL); cy++) {
+          for (const s of cells.get(this.key(cx * CELL, cy * CELL)) ?? []) out.add(s);
+        }
+      }
+      return [...out];
+    };
     for (const e of edges) {
       if (e.tunnel || UNLIT.has(e.hw)) continue;
       let next = SPACING / 2;
@@ -316,7 +366,13 @@ export class Lamps {
         const [ax, ay] = e.pts[i - 1], [bx, by] = e.pts[i], len = Math.hypot(bx - ax, by - ay);
         for (; next <= s + len; next += SPACING) {
           const t = (next - s) / len, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
-          if (!this.lampWithin(x, y, REACH)) this.add(x, y, HUNG);
+          if (this.lampWithin(x, y, REACH)) continue;
+          // Across the street, to the first wall each way.
+          const nx = -(by - ay) / len, ny = (bx - ax) / len, walls = near(x, y);
+          const l = cast(walls, x, y, nx, ny, WALL), r = cast(walls, x, y, -nx, -ny, WALL);
+          if (!Number.isFinite(l) || !Number.isFinite(r)) continue;
+          this.hung.set(this.kind.length, [x + nx * l, y + ny * l, x - nx * r, y - ny * r]);
+          this.add(x, y, HUNG);
         }
         s += len;
       }
@@ -343,11 +399,26 @@ export class Lamps {
     if (this.near.length > MAX_LIGHTS - 400) this.near.length = MAX_LIGHTS - 400;
     // Poles and heads: they stay put until the next gathering.
     const d = this.dummy;
-    let p = 0, g = 0;
+    let p = 0, g = 0, c = 0;
+    const cable = this.cables.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (const i of this.near) {
       const k = KINDS[this.kind[i]], lx = this.xy[i * 2], ly = this.xy[i * 2 + 1];
       if (!k.head) continue;
       const z = this.height(lx, ly);
+      const walls = this.hung.get(i);
+      if (walls && c < MAX_HUNG * 2 * HALVES) {
+        // From each wall down to the lamp, sagging a little between.
+        for (let w = 0; w < 2; w++) {
+          const wx = walls[w * 2], wy = walls[w * 2 + 1];
+          const at = (u: number): [number, number, number] => [wx + (lx - wx) * u, z + ANCHOR + (k.head + 0.1 - ANCHOR) * u - SLACK * 4 * u * (1 - u), -(wy + (ly - wy) * u)];
+          for (let h = 0; h < HALVES; h++) {
+            const a = at(h / HALVES), b = at((h + 1) / HALVES);
+            cable.setXYZ(c * 2, a[0], a[1], a[2]);
+            cable.setXYZ(c * 2 + 1, b[0], b[1], b[2]);
+            c++;
+          }
+        }
+      }
       if (k.pole && p < MAX_POLES) {
         d.position.set(lx, z, -ly);
         d.scale.set(1, k.head, 1);
@@ -364,6 +435,8 @@ export class Lamps {
     }
     this.poles.count = p;
     this.poles.instanceMatrix.needsUpdate = true;
+    cable.needsUpdate = true;
+    this.cables.geometry.setDrawRange(0, c * 2);
     this.heads = g;
     this.glows.instanceMatrix.needsUpdate = true;
     if (this.glows.instanceColor) this.glows.instanceColor.needsUpdate = true;

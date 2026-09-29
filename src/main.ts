@@ -172,7 +172,7 @@ async function main() {
   let crowd: Crowd | null = null;
   const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y));
   const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)));
-  world.onEdges = (d, w) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(d); signals.add(d); };
+  world.onEdges = (d, w, b) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(d, b); signals.add(d); };
 
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose: Car[] = [];
