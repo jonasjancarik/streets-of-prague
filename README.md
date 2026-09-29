@@ -101,7 +101,10 @@ the pixel ratio.
   OSM rarely maps the gardens and lawns in a suburb or a housing estate, so a street
   block of family houses, or of flats with plenty of room round them, gets grass
   between the buildings (`_gardens` in `pipeline/osm_area.py`); denser inner-city
-  blocks, shops, offices and schools stay paved. Buildings get roof tiles laid down
+  blocks, shops, offices and schools stay paved. Gardens get a few trees and shrubs,
+  scattered by where they are so they're the same every visit, clear of the houses,
+  paths and the trees already there (`gardenTrees` in `src/map/vegetation.ts`).
+  Buildings get roof tiles laid down
   each face's slope, slate and gravel on flat roofs. It all stays sharp at any zoom.
 - **Facades** are put together bay by bay and storey by storey from 48 parts: windows,
   doors, gateways and shopfronts of tenements, baroque houses, functionalist blocks,
