@@ -1,6 +1,6 @@
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
-import { AMBIENCE, ambienceGains } from './soundmix.ts';
+import { AMBIENCE, ambienceGains, ambienceMuffle } from './soundmix.ts';
 import { Radio, radioOn, setRadioSaved } from './radio.ts';
 import type { Station } from './radio.ts';
 import type { Car } from './car.ts';
@@ -564,21 +564,24 @@ class TramVoice {
 class Ambience {
   ctx: AudioContext;
   gains: Record<string, GainNode> = {};
+  muffles: Record<string, BiquadFilterNode> = {};
 
   constructor(ctx: AudioContext, clips: Record<string, AudioBuffer>, dest: AudioNode) {
     this.ctx = ctx;
     for (const [name, buffer] of Object.entries(clips)) {
-      const src = loop(ctx, buffer), g = gain(ctx, 0);
-      src.connect(g).connect(dest);
+      const src = loop(ctx, buffer), g = gain(ctx, 0), lp = filter(ctx, 'lowpass', 20000);
+      src.connect(lp).connect(g).connect(dest);
       src.start(ctx.currentTime, Math.random() * buffer.duration);
       this.gains[name] = g;
+      this.muffles[name] = lp;
     }
   }
 
   // `busy` 0–1, `hour` 0–24, `wet` how hard it rains or snows 0–1.
   update(busy: number, hour: number, wet: number) {
-    const t = this.ctx.currentTime, gains = ambienceGains(busy, hour, wet);
+    const t = this.ctx.currentTime, gains = ambienceGains(busy, hour, wet), muffle = ambienceMuffle(busy);
     for (const [name, g] of Object.entries(this.gains)) g.gain.setTargetAtTime(gains[name] ?? 0, t, 2);
+    for (const [name, lp] of Object.entries(this.muffles)) lp.frequency.setTargetAtTime(muffle[name] ?? 20000, t, 2);
   }
 }
 

@@ -17,7 +17,9 @@ Report numbers (dB) to the user and let them judge by ear.
   for faster cars later, on no car yet), tyres by road surface, rail-joint clicks,
   weather. Recorded: the four nearest trams (`TramVoice`, distance falloff in
   `place()`: `15 / (15 + d)`) and the city ambience (`Ambience`).
-- `src/soundmix.ts`: the ambience gains (`AMBIENCE`, `ambienceGains(busy, hour, wet)`).
+- `src/soundmix.ts`: the ambience gains (`AMBIENCE`, `ambienceGains(busy, hour, wet)`)
+  and how muffled each loop is (`ambienceMuffle(busy)`, a lowpass: the crowd heard
+  from a side street; `levels.mjs` measures through the same filter).
   Pure, no imports, so Node can run it: the measuring script uses the same code as the
   game. Keep new level formulas there, not in `audio.ts`.
 - `public/audio/`: the clips, committed. Tram loops are WAV (gapless), one-offs and

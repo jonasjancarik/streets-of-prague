@@ -387,8 +387,9 @@ the pixel ratio.
   bogies' clicks over the rail joints are made in code. Under it all is the city's own
   sound, long stereo loops from the same script, each as loud as where you are and the
   time of day call for: two layered Old Town crowds (each six stretches of the
-  recordings at once, a murmur with no words to make out), as loud as the streets within
-  150 m are busy (the footfall map, 1 at the Old Town Square) and quiet at night;
+  recordings at once, a murmur with no words to make out), full on the busiest squares
+  and well down and muffled in side streets, by how busy the streets within 150 m are
+  (the footfall map, 1 at the Old Town Square), and quiet at night;
   distant traffic by day and a low hum by night; and birds where it's quiet (a
   blackbird at dawn and dusk, small garden birds by day, a morning chorus early on),
   none in rain or snow. It starts with the first key press or tap (the browser's rule);

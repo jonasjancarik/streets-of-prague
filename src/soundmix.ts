@@ -37,8 +37,11 @@ export function ambienceGains(busy: number, hour: number, wet: number): Record<s
   const awake = 0.15 + 0.85 * span(hour, 5.5, 8, 21, 24); // how many people are about
   const night = 1 - span(hour, 5, 6.5, 22, 23.5);
   const level: Record<string, number> = {
-    crowd: busy ** 0.7 * awake,
-    crowd2: busy ** 0.7 * awake,
+    // The crowd is the Old Town's: full only on the busiest squares, well down on a
+    // side street (0.36 about -12 dB, 0.09 about -27 dB), and muffled there too (see
+    // ambienceMuffle).
+    crowd: busy ** 1.3 * awake,
+    crowd2: busy ** 1.3 * awake,
     traffic: (0.35 + 0.65 * busy) * (1 - night),
     night: (0.5 + 0.5 * busy) * night,
     blackbird: quiet * dry * Math.max(span(hour, 3.5, 4.5, 7, 9), 0.8 * span(hour, 18, 19.5, 21, 22), 0.25 * span(hour, 9, 10, 17, 18)),
@@ -46,4 +49,13 @@ export function ambienceGains(busy: number, hour: number, wet: number): Record<s
     morning: quiet * dry * span(hour, 4, 5, 8, 10),
   };
   return Object.fromEntries(Object.entries(AMBIENCE).map(([name, full]) => [name, (level[name] ?? 0) * full]));
+}
+
+// How muffled each loop is (a lowpass, Hz; missing: not at all). The crowd, heard from
+// a side street, is round the corner: its highs go, on a log scale, from none at
+// busy 0.6 and up to about 1.4 kHz at 0.09 (Vinohrady's side streets) and 700 Hz
+// at 0.05 and below.
+export function ambienceMuffle(busy: number): Record<string, number> {
+  const hz = Math.min(20000, 700 * Math.max(1, busy / 0.05) ** 1.26);
+  return { crowd: hz, crowd2: hz };
 }
