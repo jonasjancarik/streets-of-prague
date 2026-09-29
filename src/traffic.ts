@@ -41,6 +41,21 @@ const TRAFFIC_LOAD: Record<string, number[]> = {
   sunday: [0.06, 0.04, 0.03, 0.02, 0.02, 0.02, 0.12, 0.14, 0.18, 0.24, 0.31, 0.36, 0.39, 0.39, 0.41, 0.43, 0.45, 0.45, 0.41, 0.34, 0.29, 0.24, 0.09, 0.06],
 };
 
+// The cars kept about on the emptiest and the busiest roads.
+const QUIET = 10, BUSY = 46;
+
+// How many cars to keep about at clock time `t` (seconds into the week; see Clock).
+// The hour's figure stands for the middle of the hour, with a straight line between.
+// The square root is because travel times climb much faster than the number of cars
+// once the roads are close to full.
+export function trafficWanted(t: number): number {
+  const day = Math.floor(t / 86400) % 7, h = ((t % 86400) / 3600 + 23.5) % 24;
+  const row = TRAFFIC_LOAD[day === 5 ? 'saturday' : day === 6 ? 'sunday' : 'weekday'];
+  const i = Math.floor(h), f = h - i;
+  const load = row[i] * (1 - f) + row[(i + 1) % 24] * f;
+  return Math.round(QUIET + (BUSY - QUIET) * Math.sqrt(load));
+}
+
 // The longest a car coming off the pavement takes to pull into its lane (m).
 export const MERGE = 20;
 

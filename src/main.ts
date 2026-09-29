@@ -5,7 +5,7 @@ import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
 import { Car, CarPool, collideBodies, loadCars, useKit } from './car.ts';
 import { loadKit } from './figures.ts';
-import { Traffic } from './traffic.ts';
+import { Traffic, trafficWanted } from './traffic.ts';
 import { PavementDrivers } from './pavement.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
 import { loadFootfall } from './footfall.ts';
@@ -68,7 +68,6 @@ const $ = (id: string): HTMLElement => {
 let statusText = '';
 const status = (text: string) => { statusText = text; $('loading-text').textContent = text ? t(text) : ''; };
 
-const TRAFFIC = 40;
 const BUSES = 3; // of the traffic, on the main roads
 const PEOPLE = 600; // round the Old Town Square; fewer where it's quieter (src/footfall.ts)
 const FEW_PEOPLE = 40; // on the quietest edge of town
@@ -217,7 +216,7 @@ async function main() {
   const footfall = await footfallLoad;
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
-  const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
+  const traffic = new Traffic(drive, scene, seeded, trafficWanted(clock.t));
   traffic.signals = signals;
   traffic.busLines = await busLines;
   const pavementDrivers = new PavementDrivers(traffic, seeded);
@@ -268,7 +267,7 @@ async function main() {
     return d > rMin && d < LIFE_RADIUS && world.grid.at(sx, sy) !== 255;
   };
   for (let i = 0; i < BUSES; i++) traffic.buses(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS), BUSES);
-  for (let i = 0; i < TRAFFIC; i++) traffic.spawn(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS));
+  for (let i = trafficWanted(clock.t); i > 0; i--) traffic.spawn(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS));
   // How many people are about: from FEW_PEOPLE on the edge of town to PEOPLE round
   // the Old Town Square, by how busy the streets around you are.
   const peopleWanted = () => {
@@ -1056,6 +1055,15 @@ async function main() {
       // (And cars stuck in a queue that hasn't moved for a while, and buses that have
       // left their line, where nobody sees them go.)
       for (const a of [...traffic.agents]) if (!a.hired && (a.jam > 30 || a.bus?.lost || Math.hypot(a.car.x - px(), a.car.y - py()) > LIFE_RADIUS * 1.3) && offscreen(a.car.x, a.car.y)) traffic.release(a);
+      // When the roads empty (evening, time moved on), a few of the surplus cars leave
+      // each round, out of sight, so the traffic thins out rather than vanishing.
+      let surplus = Math.min(3, traffic.agents.length - trafficWanted(clock.t));
+      for (const a of [...traffic.agents]) {
+        if (surplus <= 0) break;
+        if (a.hired || a.car.type === 'bus' || a.car.type === 'police' || !offscreen(a.car.x, a.car.y)) continue;
+        traffic.release(a);
+        surplus--;
+      }
       for (let i = loose.length - 1; i >= 0; i--) {
         const c = loose[i];
         if (!tileCars.has(c) && Math.hypot(c.x - px(), c.y - py()) > 600) loose.splice(i, 1);
@@ -1067,11 +1075,12 @@ async function main() {
     // New traffic out of sight, a few times a second rather than every step (finding
     // the streets around you and a spot on them takes a while).
     spawnT -= dt;
-    if (spawnT < 0 && traffic.agents.length < TRAFFIC) {
+    const wanted = trafficWanted(clock.t);
+    if (spawnT < 0 && traffic.agents.length < wanted) {
       spawnT = 0.25;
       const edges = edgesNear(px(), py(), LIFE_RADIUS), ok = lifeSpots(px(), py(), 40);
       traffic.buses((x, y) => offscreen(x, y) && ok(x, y), edges, BUSES);
-      for (let n = 0; n < 10 && traffic.agents.length < TRAFFIC; n++) if (!traffic.spawn((x, y) => offscreen(x, y) && ok(x, y), edges)) break;
+      for (let n = 0; n < 10 && traffic.agents.length < wanted; n++) if (!traffic.spawn((x, y) => offscreen(x, y) && ok(x, y), edges)) break;
     }
   };
 
