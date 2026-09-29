@@ -192,7 +192,9 @@ the pixel ratio.
   round you shown as bare earth. Everything else under the ground stays hidden
   (`track` and `view` in `src/tiles.ts`, the meshes in `src/ground.ts`). The car
   network keeps the tunnels and the magistrála, so traffic drives through them.
-- **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.ts`); AI
+- **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.ts`), in
+  which buildings raised 3 m or more off the ground (OSM `min_height`, like a covered
+  bridge between two houses) leave the way under them open; AI
   traffic that keeps to its lane, brakes for anything ahead and gives way to the right
   (`src/traffic.ts`); pedestrians on the footpath network who leap out of the way of
   fast cars and get knocked over, then get up again (`src/people.ts`). Traffic and
@@ -262,8 +264,10 @@ the pixel ratio.
   is checked with rays over the collision grid; the helicopter needs no line of sight.
 - **Parking** follows TSK Praha's paid-parking data: each street section gets spaces ×
   measured occupancy cars (day or night), placed in OSM's parking lanes and lots and
-  then along the kerb (`src/parking.ts`); bay lines are painted in the zone colour
-  (blue resident, violet mixed, orange visitor). Cars stand parallel, angled or
+  then along the kerb (`src/parking.ts`); bay lines are painted as Prague paints them,
+  along the street side of the bays with short lines across at each end and none along
+  the pavement: solid blue in residents' zones, white dashes in the mixed (violet) and
+  visitors' (orange) ones. Cars stand parallel, angled or
   perpendicular as OSM tags each parking area (`orientation`) and each side of the
   street (`parking:<side>:orientation`, or the older `parking:lane:<side>`); where it
   doesn't say, an area under 4.5 m wide is parallel, up to 5.6 m angled and wider

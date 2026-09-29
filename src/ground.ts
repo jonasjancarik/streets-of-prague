@@ -38,7 +38,10 @@ export const COLORS = {
   bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', tunnel: '#46484c', tunnelWall: '#a59f93',
 };
-const ZONE = { RES: '#3d7be0', MIX: '#9b59d0', VIS: '#e8962c' };
+// Paint of parking bays by paid-parking zone: [zone, colour, dashes].
+const BAY_PAINT: [string | null, string, Point2 | null][] = [
+  ['RES', '#3d7be0', null], ['MIX', COLORS.paint, [1, 1]], ['VIS', COLORS.paint, [1, 1]], [null, COLORS.paint, null],
+];
 
 // Land with a use but no mapped surface (osm_area.py): fields, work yards, railway
 // land, ground being dug up. Drawn just above the plain base, under everything else.
@@ -513,10 +516,11 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(R.path || []), COLORS.path, 'mosaic');
     add(polygons(R.sett || []), COLORS.sett, 'setts');
     add(polygons(R.road || []), COLORS.asphalt, 'asphalt');
-    // Bay outlines in the paid zone's colour: blue residents, violet mixed, orange visitors.
-    for (const [cat, color] of [...Object.entries(ZONE), [null, COLORS.paint] as [null, string]]) {
+    // Bay lines as Prague paints them: a solid blue line in residents' zones, white
+    // dashes in the mixed (violet) and visitors' (orange) ones, plain white elsewhere.
+    for (const [cat, color, dash] of BAY_PAINT) {
       const rings = (A.parking || []).filter((rs, k) => (parkingZones[k] || null) === cat);
-      add(strips(outlines(rings.map((rs) => [rs[0]])), 0.15), color);
+      add(strips(bayLines(rings.map((rs) => rs[0]), edges, cut), 0.15, dash), color);
     }
 
     // Bridges: a soft shadow on the water, then the deck (unless the decks are drawn
@@ -543,6 +547,58 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     const rings = buildings.map((b) => b.rings);
     shade(skirts(rings, 7, true), 0.38);
     shade(skirts(rings, 1.8, true), 0.5);
+  return out;
+}
+
+// The painted edges of parking areas. Along a street the line runs only on the
+// street side of the bays, with short ones across at each end, and none along the
+// pavement: a side that runs with the street and faces away from it is left bare.
+// Car parks away from the streets keep their whole outline. `cut` = along the tile's
+// border (not a real edge).
+const BAY_REACH = 8, ALONG = 0.85;
+function bayLines(rings: Point2[][], edges: GroundRoadEdge[], cut: (a: Point2, b: Point2) => boolean): Point2[][] {
+  const out: Point2[][] = [];
+  const inside = (x: number, y: number, ring: Point2[]) => {
+    let hit = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+    }
+    return hit;
+  };
+  const street = edges.filter((e) => !e.tunnel);
+  for (const ring of rings) {
+    const turn = signedArea(ring) > 0 ? 1 : -1; // outward normal of a→b is turn · (dy, −dx)
+    const painted = (a: Point2, b: Point2) => {
+      if (cut(a, b)) return false;
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+      if (len < 0.05) return false;
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      // The nearest street centre line.
+      let best = Infinity, px = 0, py = 0, rx = 0, ry = 0;
+      for (const e of street) {
+        for (let j = 1; j < e.pts.length; j++) {
+          const p = e.pts[j - 1], q = e.pts[j], ex = q[0] - p[0], ey = q[1] - p[1], l2 = ex * ex + ey * ey || 1;
+          const t = Math.max(0, Math.min(1, ((mx - p[0]) * ex + (my - p[1]) * ey) / l2));
+          const cx = p[0] + ex * t, cy = p[1] + ey * t, d = Math.hypot(mx - cx, my - cy);
+          if (d < best && d < e.width / 2 + BAY_REACH) { best = d; px = cx; py = cy; rx = ex; ry = ey; }
+        }
+      }
+      if (best === Infinity) return true; // a car park off the street
+      if (Math.abs(dx * rx + dy * ry) / (len * Math.hypot(rx, ry)) < ALONG) return true; // an end, across the street
+      // Along the street: painted on the side that faces it (or where the centre line
+      // runs through the bays, as down the middle of a wide street).
+      return turn * (dy * (px - mx) - dx * (py - my)) > 0 || inside(px, py, ring);
+    };
+    let cur: Point2[] = [];
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      if (!painted(a, b)) { if (cur.length > 1) out.push(cur); cur = []; continue; }
+      if (!cur.length) cur.push(a);
+      cur.push(b);
+    }
+    if (cur.length > 1) out.push(cur);
+  }
   return out;
 }
 
