@@ -90,8 +90,12 @@
       #health span.low { background: var(--accent); }
       #hurt { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 16, 0.55) 100%); }
       @keyframes blink { 50% { opacity: 0.25; } }
-      #banner { position: fixed; top: 14%; left: 0; right: 0; text-align: center; pointer-events: none; font: 64px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0.05em 0.05em 0 var(--edge), 0 0 24px rgba(0, 0, 0, 0.6); opacity: 0; }
-      #banner.alert { color: var(--accent); font-size: 88px; text-shadow: 0.05em 0.05em 0 #140d0c, 0 0 24px rgba(0, 0, 0, 0.6); }
+      #banner { position: fixed; top: 14%; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none; opacity: 0; }
+      #banner .big { text-align: center; font: 64px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0.05em 0.05em 0 var(--edge), 0 0 24px rgba(0, 0, 0, 0.6); }
+      #banner.alert .big { color: var(--accent); font-size: 88px; text-shadow: 0.05em 0.05em 0 #140d0c, 0 0 24px rgba(0, 0, 0, 0.6); }
+      /* A sentence: a card like the HUD's, red when it's bad news. */
+      #banner .note { max-width: min(520px, calc(100vw - 32px)); box-sizing: border-box; padding: 10px 16px 8px; font: 24px/1.15 'Bebas Neue', sans-serif; letter-spacing: 0.03em; text-align: center; color: var(--ink); background: var(--paper); border-left: 4px solid var(--edge); box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.3); }
+      #banner.alert .note { background: rgba(170, 26, 22, 0.94); border-left-color: #140d0c; }
       /* The part of town you've come into: fades in, stays a few seconds and fades out. */
       #district { position: fixed; top: 22%; left: 0; right: 0; width: fit-content; max-width: calc(100vw - 32px); margin: 0 auto; padding: 20px 100px 26px; box-sizing: border-box; text-align: center; pointer-events: none; font: 88px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; color: var(--ink); text-shadow: 0.05em 0.05em 0 var(--edge), 0 0 28px rgba(0, 0, 0, 0.55); background: radial-gradient(closest-side, rgba(20, 16, 12, 0.5), rgba(20, 16, 12, 0)); opacity: 0; }
       #district::after { content: ''; display: block; width: 120px; height: 5px; margin: 12px auto 0; background: var(--ink); box-shadow: 3px 3px 0 var(--edge); transform: rotate(-4deg); }
@@ -248,7 +252,7 @@
         .dlg-goal { font-size: 13px; }
         .dlg-goal b { font-size: 18px; }
       }
-      @media (max-width: 640px) { #help { display: none; } #banner { font-size: 40px; } #district { font-size: 52px; padding: 16px 40px 20px; } }
+      @media (max-width: 640px) { #help { display: none; } #banner { top: 30%; } #banner .big { font-size: 40px; } #banner.alert .big { font-size: 56px; } #banner .note { font-size: 20px; } #district { font-size: 52px; padding: 16px 40px 20px; } }
 
       /* Credits: a quiet line in the corner, and the full list when you open it. */
       #credits { position: fixed; left: 12px; bottom: 8px; z-index: 4; font: 11px/1.3 Inter, system-ui, sans-serif; color: var(--ink); opacity: 0.6; background: none; border: 0; padding: 2px 4px; text-align: left; cursor: pointer; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }

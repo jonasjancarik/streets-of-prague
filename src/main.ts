@@ -821,9 +821,18 @@ async function main() {
     else el.textContent = String(value);
   };
   sound.onRadioFail = (station) => showBanner(t('{name} isn’t playing right now').replace('{name}', station.name), true);
+  // A short word (Wasted, a station's name) goes up big; a sentence or a setting (a fee,
+  // a fare, "Weather: rain") goes in a card, so it doesn't stretch across the screen.
+  // "Busted · fine…" gives both: the word big and the rest in the card under it.
   const showBanner = (text: string, alert = false) => {
-    $('banner').textContent = text;
-    $('banner').classList.toggle('alert', alert);
+    const [head, ...rest] = text.split(' · ');
+    const big = head.length <= 22 && !head.includes(':') ? head : '';
+    const note = big ? rest.join(' · ') : text;
+    const el = $('banner');
+    el.replaceChildren();
+    if (big) el.appendChild(Object.assign(document.createElement('div'), { className: 'big', textContent: big }));
+    if (note) el.appendChild(Object.assign(document.createElement('div'), { className: 'note', textContent: note }));
+    el.classList.toggle('alert', alert);
     bannerT = alert ? 3.5 : 2.6;
   };
   // Everything that moves or blocks, made again every step; parked and abandoned cars
