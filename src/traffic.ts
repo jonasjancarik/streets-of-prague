@@ -4,6 +4,7 @@ import { Car, randomType } from './car.ts';
 import { randomLook } from './figures.ts';
 import { MAIN_ROADS, Route, clamp } from './network.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
+import type { Signals } from './signals.ts';
 import * as THREE from 'three';
 
 export interface TrafficAgent {
@@ -43,7 +44,8 @@ interface Obstacle {
 }
 
 // AI traffic: cars glued to their lane along a Route. They brake for anything in
-// front of them (cars, trams, people, the player) and give way to the right.
+// front of them (cars, trams, people, the player), stop at red lights and give way
+// to the right.
 // A car that is hit hard enough leaves traffic and becomes a free body.
 
 export class Traffic {
@@ -55,6 +57,8 @@ export class Traffic {
   // The bus lines through the area (buses.json); without them buses wander the main roads.
   busLines: BusLine[] = [];
   swerving = new Set<Car>();
+  // The traffic lights at junctions.
+  signals: Signals | null = null;
 
   constructor(graph: DriveGraph, scene: THREE.Scene, rng: () => number, count: number) {
     this.g = graph;
@@ -248,6 +252,13 @@ export class Traffic {
           else target = Math.min(target, Math.sqrt(2 * 1.1 * Math.max(0, left)) + 0.3);
         }
       }
+      // Stopping at a red light (and at amber, if it can do so easily).
+      let held = false;
+      if (this.signals) {
+        const light = this.signals.ahead(a.route, L / 2, a.speed, a.reckless);
+        held = this.signals.held;
+        if (light < Infinity) target = Math.min(target, Math.sqrt(2 * 3 * Math.max(0, light - 0.3)));
+      }
       // Braking in time for where it has to stop.
       if (a.stop) target = Math.min(target, Math.sqrt(2 * 3 * Math.max(0, a.route.to(a.stop.edge, a.stop.s) - 0.3)));
       // On the pavement it creeps along, and a little faster pulling in.
@@ -256,8 +267,9 @@ export class Traffic {
       if (target < 0.3 && blocker) a.stuck += dt;
       else a.stuck = Math.max(0, a.stuck - dt * 2);
       if (a.stuck > (a.reckless ? 1.5 : 3.5)) { a.ignore = 1.5; a.stuck = 0; }
-      // How long it's been standing in a queue that doesn't move (see main.ts).
-      a.jam = target < 0.3 && blocker ? a.jam + dt : 0;
+      // How long it's been standing in a queue that doesn't move (see main.ts); not
+      // one waiting for the lights to change.
+      a.jam = target < 0.3 && blocker && !held ? a.jam + dt : 0;
       a.ignore = Math.max(0, a.ignore - dt);
 
       // (A bus picks up speed slowly.)

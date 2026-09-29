@@ -17,6 +17,7 @@ import { Sky } from './sky.ts';
 import { Weather, WeatherFx, KINDS } from './weather.ts';
 import type { Kind } from './weather.ts';
 import { Lamps } from './lamps.ts';
+import { Signals } from './signals.ts';
 import { Skids } from './skids.ts';
 import { Spray } from './spray.ts';
 import { Graphics } from './graphics.ts';
@@ -156,7 +157,8 @@ async function main() {
   const ground = (x: number, y: number, who?: Tracked | null) => (who ? world.groundFor(who, x, y) : world.heightAt(x, y));
   let crowd: Crowd | null = null;
   const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y));
-  world.onEdges = (d, w) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(d); };
+  const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)));
+  world.onEdges = (d, w) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(d); signals.add(d); };
 
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose: Car[] = [];
@@ -212,6 +214,7 @@ async function main() {
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
   const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
+  traffic.signals = signals;
   traffic.busLines = await busLines;
   const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
@@ -1159,6 +1162,7 @@ async function main() {
     sun.position.copy(sun.target.position).add(sky.offset);
     // Street lamps and headlights, and the rain, snow and mist round the view.
     lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list);
+    signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
     weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio());

@@ -261,7 +261,7 @@ the pixel ratio.
   bridge between two houses) leave the way under them open; AI
   traffic that keeps to its lane, brakes for anything ahead, pulls out round a car
   standing in its way where the street has room (and waits behind it where it hasn't)
-  and gives way to the right (`src/traffic.ts`); pedestrians on the footpath network who leap out of the way of
+  and gives way to the right (`src/traffic.ts`), and stops at red lights; pedestrians on the footpath network who leap out of the way of
   fast cars and get knocked over, then get up again (`src/people.ts`). Traffic and
   people live within about 330 m of the player.
 - **Crowds.** The busier the streets around you, the more people: 500 to 600 round the
@@ -430,8 +430,13 @@ from (geometry helpers, straight-skeleton buildings, trees).
   map, and the historic lines 41 and 42 are left out. In the smaller areas
   (`centrum`, `ujezd`) the lines carry on past the edge of the map, and so does a tram
   you're riding.
-- **Traffic** has no traffic lights; at junctions it only gives way to the right and
-  steers around others. The lane assist sometimes clips a corner.
+- **Traffic lights** come from OSM, which has about 2,200 in Prague at some 620
+  junctions; junctions without them in OSM have none in the game. Each junction runs
+  two phases (along its main street and across it), so turning traffic gets no arrow
+  of its own, trams and pedestrians ignore the lights, and the lights never switch to
+  flashing amber at night.
+- **Traffic** without lights only gives way to the right and steers around others.
+  The lane assist sometimes clips a corner.
 
 ## Not yet in the game
 
@@ -456,6 +461,7 @@ uv run build_metro.py centrum      # the metro from PID's timetables → metro.j
 uv run build_buses.py centrum      # bus lines and stops from PID's timetables → buses.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
+uv run build_signals.py centrum    # traffic lights at junctions from OSM → signals.json
 uv run build_bikes.py centrum      # shared bikes' stations from GBFS feeds → bikes.json
 uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
 uv run landmarks.py centrum        # landmarks from IPR's photorealistic mesh → landmarks/
@@ -542,6 +548,14 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `pid_timetable.py` downloads the GTFS feed (about 50 MB, again when it's a week old)
   into `pipeline/.cache/pid/` and reduces it to a summary of every tram and metro trip.
   Without it, every line runs every 8 minutes.
+- **Traffic lights.** `build_signals.py` needs the streets layer and the local OSM
+  extract. It puts each `highway=traffic_signals` node on the car network's streets that
+  pass it and run the way it faces (`traffic_signals:direction`, else towards the nearer
+  end), when that end is a junction within 60 m; a light mapped on the junction itself
+  stops cars short of the streets crossing there. Junction nodes within 40 m of each
+  other share one cycle (a crossing of two dual carriageways is four nodes); the main
+  street gets the longer green. Lights for a pedestrian crossing alone are left out.
+  It takes a few seconds, even for the whole city.
 - **Metro.** `build_metro.py` takes the metro from the same timetables: each line's
   stations in order with the typical minutes between them, how often it runs,
   every station's entrances (PID's feed has them all, 331), and the track from the
