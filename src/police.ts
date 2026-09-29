@@ -542,15 +542,18 @@ export class Police {
     for (const p of this.cars) p.calm = true;
   }
 
-  render(height: (x: number, y: number, who: Car | Officer) => number, time: number) {
+  // `mine`: the car the player is driving; a stolen police car keeps its lights going
+  // while it moves.
+  render(height: (x: number, y: number, who: Car | Officer) => number, time: number, mine: Car | null = null) {
     this.helis.render(time, time - (this.lastT ?? time));
     this.lastT = time;
     const d = this.dummy, col = new THREE.Color(), blue = new THREE.Color('#3d7bff'), dim = new THREE.Color('#0d1a3a');
     const flip = Math.floor(time * 5) % 2;
     let n = 0, g = 0;
-    for (const p of this.cars) {
-      if (p.calm || p.wrecked) continue;
-      const c = p.car, S = c.spec, cabin = S.cabin ?? [0, 0], mid = (cabin[0] + cabin[1]) / 2;
+    const lit = this.cars.filter((p) => !p.calm && !p.wrecked).map((p) => p.car);
+    if (mine?.type === 'police' && mine.speed > 0.5) lit.push(mine);
+    for (const c of lit) {
+      const S = c.spec, cabin = S.cabin ?? [0, 0], mid = (cabin[0] + cabin[1]) / 2;
       const fx = Math.cos(c.h), fy = Math.sin(c.h);
       const base = height(c.x, c.y, c);
       for (const side of [-1, 1]) {

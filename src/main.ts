@@ -898,7 +898,7 @@ async function main() {
     metro.update(dt);
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     crowd.render(ground);
-    police.render(ground, time.value);
+    police.render(ground, time.value, inCar);
     // Only the cars in view (and a little round it, for their shadows) are drawn.
     drawn.length = 0;
     {
