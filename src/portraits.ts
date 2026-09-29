@@ -8,9 +8,12 @@ import { t } from './i18n.ts';
 // conversation a frame the head rises out of.
 
 export const SKYLINES = ['hradcany', 'stare-mesto', 'zizkov', 'jizni-mesto'];
-// Where each skyline's landmark stands in its picture (fractions of 1920 × 1080): the
-// cathedral, Týn, the television tower. Jižní Město has none to show off.
-const LANDMARK: Record<string, [number, number] | undefined> = { hradcany: [0.49, 0.45], 'stare-mesto': [0.54, 0.55], zizkov: [0.51, 0.4] };
+// Where each skyline's landmark stands in its picture, as fractions of it (the tip's x,
+// the tip, the foot, its left and right edge): written by pipeline/skyline.py. Jižní
+// Město has none to show off.
+interface Mark { x: number; top: number; base: number; left: number; right: number }
+const SKY_SIZE = [2560, 1440];
+const marks: Promise<Record<string, Mark>> = fetch('skylines/skylines.json').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
 // The dark wedge's right edge, as a share of the width, at the top and the bottom (index.html).
 const WEDGE = [0.46, 0.36];
 
@@ -59,26 +62,28 @@ export function dressLoading(root: HTMLElement) {
   sky.style.backgroundImage = `url(skylines/${skyline}.webp)`;
   el('div', 'ls-wedge', root);
   const cast = el('div', 'ls-cast', root);
-  const faces = pick(POSTER_CAST, 3).map((id) => portrait(id, el('div', 'ls-face', cast)));
-  // Slide the skyline so its landmark stands in the open between the dark wedge and
-  // the first figure, rather than behind them.
+  for (const id of pick(POSTER_CAST, 3)) portrait(id, el('div', 'ls-face', cast));
+  // Grow and slide the skyline so its landmark stands tall in the open, its tip near
+  // the top and its left side just clear of the dark wedge. The picture always covers
+  // the top and the sides; its foot may go under the red band.
+  let mark: Mark | undefined;
   const place = () => {
-    const at = LANDMARK[skyline];
-    if (!at) return;
+    if (!mark) return;
     const w = root.clientWidth, h = root.clientHeight, sw = sky.offsetWidth;
-    const cover = Math.max(sw / 1920, h / 1080);
-    const yAt = (scale: number) => (h - 1080 * scale) * 0.7 + at[1] * 1080 * scale; // background-position-y: 70%
-    const edge = w * (WEDGE[0] + (WEDGE[1] - WEDGE[0]) * Math.min(1, Math.max(0, yAt(cover) / h)));
-    const left = cast.getBoundingClientRect().left;
-    const x = Math.max(edge + w * 0.02, (edge + left) / 2) - sky.offsetLeft;
-    // Wider than covering when that's what it takes to bring the landmark there
-    // without uncovering an edge.
-    const iw = Math.max(1920 * cover, x / at[0], (sw - x) / (1 - at[0]));
-    sky.style.backgroundSize = `${iw}px auto`;
-    sky.style.backgroundPosition = `${x - at[0] * iw}px 70%`;
+    const [IW, IH] = SKY_SIZE;
+    const tipY = h * 0.1, footY = h * 0.82;
+    const edge = w * (WEDGE[0] + (WEDGE[1] - WEDGE[0]) * 0.1); // at the tip's height
+    const x = edge + w * 0.02 - sky.offsetLeft; // where its left side goes
+    const scale = Math.max(
+      sw / IW, h / IH, // cover
+      tipY / (mark.top * IH), // nothing uncovered above
+      (footY - tipY) / ((1 - mark.top) * IH), // nor below, down to the band
+      x / (mark.left * IW), (sw - x) / ((1 - mark.left) * IW), // nor at the sides
+    );
+    sky.style.backgroundSize = `${IW * scale}px ${IH * scale}px`;
+    sky.style.backgroundPosition = `${x - mark.left * IW * scale}px ${tipY - mark.top * IH * scale}px`;
   };
-  place();
-  for (const img of faces) img.addEventListener('load', place, { once: true });
+  void marks.then((all) => { mark = all[skyline]; place(); });
   addEventListener('resize', place);
   el('div', 'ls-stripe', root);
   el('div', 'ls-band', root);

@@ -1,5 +1,6 @@
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
+import { AMBIENCE, ambienceGains } from './soundmix.ts';
 import { Radio, radioOn, setRadioSaved } from './radio.ts';
 import type { Station } from './radio.ts';
 import type { Car } from './car.ts';
@@ -15,8 +16,8 @@ import type { TramVehicle } from './trams.ts';
 // the tyres louder in the wet, thunder after lightning, a wind while it snows. Under it
 // all, the city's own sound, from recordings too: crowds where the streets are busy,
 // traffic in the distance by day and a low hum by night, and birds where it's quiet
-// (see Ambience). Browsers only start sound after a key press or a tap; M turns it off
-// and on.
+// (see Ambience and src/soundmix.ts). Browsers only start sound after a key press or
+// a tap; M turns it off and on.
 
 export type Surface = 'asphalt' | 'setts' | 'pavers' | 'pavement';
 
@@ -557,25 +558,9 @@ class TramVoice {
   }
 }
 
-// The city's sound, as loops that play all the time, each as loud as where you are
-// and when calls for: people and their footsteps and voices on busy streets by day,
-// traffic in the distance by day and a quieter hum by night, and birds where it's
-// quiet (a blackbird at dawn and dusk, the small garden birds by day, a whole morning
-// chorus early on), none of them in rain or snow. The levels change slowly, so walking
-// from a quiet street onto a square the crowd comes up over a few seconds.
-// (Two crowds of different lengths layered, so together they repeat only every few minutes.)
-const AMBIENCE: Record<string, number> = { crowd: 0.25, crowd2: 0.25, traffic: 0.3, night: 0.3, blackbird: 0.07, garden: 0.07, morning: 0.06 };
-
-// 0 outside [a, d], 1 within [b, c], smooth in between (hours, round midnight too).
-function span(h: number, a: number, b: number, c: number, d: number) {
-  const x = (((h - a) % 24) + 24) % 24, len = (((d - a) % 24) + 24) % 24;
-  const b1 = (((b - a) % 24) + 24) % 24, c1 = (((c - a) % 24) + 24) % 24;
-  if (x > len) return 0;
-  const up = b1 > 0 ? clamp(x / b1, 0, 1) : 1, down = len > c1 ? clamp((len - x) / (len - c1), 0, 1) : 1;
-  const e = Math.min(up, down);
-  return e * e * (3 - 2 * e);
-}
-
+// The city's sound: loops that play all the time, as loud as src/soundmix.ts says for
+// where you are and when. The levels change slowly, so walking from a quiet street onto
+// a square the crowd comes up over a few seconds.
 class Ambience {
   ctx: AudioContext;
   gains: Record<string, GainNode> = {};
@@ -592,23 +577,8 @@ class Ambience {
 
   // `busy` 0–1, `hour` 0–24, `wet` how hard it rains or snows 0–1.
   update(busy: number, hour: number, wet: number) {
-    // Birds only well away from the centre: none from 0.1 up (the inner city, even
-    // Vinohrady's side streets), all of them below 0.006 (the suburbs), on a log scale
-    // (half the city is under 0.01). The parks in town, at 0.03–0.06, get a little.
-    const far = clamp((-1 - Math.log10(Math.max(busy, 1e-4))) / 1.2, 0, 1);
-    const t = this.ctx.currentTime, quiet = far * far * (3 - 2 * far), dry = 1 - wet;
-    const awake = 0.15 + 0.85 * span(hour, 5.5, 8, 21, 24); // how many people are about
-    const night = 1 - span(hour, 5, 6.5, 22, 23.5);
-    const level: Record<string, number> = {
-      crowd: busy ** 0.7 * awake,
-      crowd2: busy ** 0.7 * awake,
-      traffic: (0.35 + 0.65 * busy) * (1 - night),
-      night: (0.5 + 0.5 * busy) * night,
-      blackbird: quiet * dry * Math.max(span(hour, 3.5, 4.5, 7, 9), 0.8 * span(hour, 18, 19.5, 21, 22), 0.25 * span(hour, 9, 10, 17, 18)),
-      garden: quiet * dry * Math.max(span(hour, 6, 8, 17, 19.5), 0.5 * span(hour, 4.5, 5.5, 6, 8)),
-      morning: quiet * dry * span(hour, 4, 5, 8, 10),
-    };
-    for (const [name, g] of Object.entries(this.gains)) g.gain.setTargetAtTime((level[name] ?? 0) * AMBIENCE[name], t, 2);
+    const t = this.ctx.currentTime, gains = ambienceGains(busy, hour, wet);
+    for (const [name, g] of Object.entries(this.gains)) g.gain.setTargetAtTime(gains[name] ?? 0, t, 2);
   }
 }
 

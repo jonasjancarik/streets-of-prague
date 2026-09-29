@@ -12,6 +12,7 @@ caches from ipr_buildings.py and ipr_terrain.py (pipeline/.cache/ipr/parsed/).
 """
 
 import argparse
+import json
 import math
 import pickle
 import zlib
@@ -33,15 +34,16 @@ STEP = 4.0  # until load_terrain reads the step the terrain was cached with
 # eye: (lon, lat); height: metres above the ground there, or a.s.l. when over 100
 # (for bridges above the river); at: (lon, lat) the camera faces; pitch: degrees up
 # from level; fov: horizontal field of view in degrees (narrow flattens the city into
-# a skyline); clear: buildings nearer than this are left out, so the camera can stand
-# on a bridge or among trees.
+# a skyline and makes the landmark big); clear: buildings nearer than this are left
+# out, so the camera can stand on a bridge or among trees; mark: (lon, lat) of the
+# landmark, whose place in the picture goes to skylines.json for the loading screen.
 VIEWS = {
-    # From the middle of Charles Bridge to the castle.
-    "hradcany": dict(eye=(14.4092, 50.08645), height=199, at=(14.4005, 50.0907), pitch=9, fov=34, clear=150),
-    # From Letná's terrace over the river to the Old Town's towers.
-    "stare-mesto": dict(eye=(14.4205, 50.0957), height=3, at=(14.4227, 50.0876), pitch=2, fov=24, clear=60),
+    # From the middle of Charles Bridge to the castle and St Vitus.
+    "hradcany": dict(eye=(14.4092, 50.08645), height=199, at=(14.4005, 50.0907), pitch=6, fov=22, clear=150, mark=(14.4005, 50.0907)),
+    # From Letná's terrace over the river to Týn.
+    "stare-mesto": dict(eye=(14.4205, 50.0957), height=3, at=(14.4228, 50.0876), pitch=0, fov=11, clear=60, mark=(14.4228, 50.0876)),
     # From the top of Vítkov over Žižkov's roofs to the television tower.
-    "zizkov": dict(eye=(14.4488, 50.0878), height=3, at=(14.4512, 50.0809), pitch=10, fov=40, clear=90),
+    "zizkov": dict(eye=(14.4488, 50.0878), height=3, at=(14.4512, 50.0809), pitch=10, fov=30, clear=90, mark=(14.4512, 50.0809)),
     # Across the housing estate of Jižní Město from its central park.
     "jizni-mesto": dict(eye=(14.5205, 50.0265), height=3, at=(14.5330, 50.0300), pitch=6, fov=44, clear=60),
 }
@@ -184,10 +186,19 @@ def render(name, view, buildings, centres, grids, to_local, width, height, ss, r
     ex, ey = cam["eye"][:2]
     d = np.hypot(centres[:, 0] - ex, centres[:, 1] - ey)
     near = (d < reach) & (d > view["clear"])
+    landmark = np.zeros(len(buildings), bool)
+    if "mark" in view:
+        # The landmark: the building with the highest point within 45 m of the mark
+        # (its triangles share its centre). It's drawn black, whatever its distance.
+        mx, my = to_local.transform(*view["mark"])
+        around = np.hypot(centres[:, 0] - mx, centres[:, 1] - my) < 45
+        lk = np.flatnonzero(around)[np.argmax(buildings[around][:, :, 2].max(1))]
+        landmark = (centres[:, 0] == centres[lk, 0]) & (centres[:, 1] == centres[lk, 1])
+        d = np.where(landmark, 0.0, d)
     tris = np.concatenate([buildings[near], ground])
     # Buildings take their colour from their centre, so each one is a single flat shape;
     # the ground from each triangle's own distance.
-    dist = np.concatenate([np.hypot(centres[near, 0] - ex, centres[near, 1] - ey),
+    dist = np.concatenate([d[near],
                            np.hypot(ground[:, :, 0].mean(1) - ex, ground[:, :, 1].mean(1) - ey)])
     keep, sx, sy, z = project(cam, tris)
     order = np.argsort(-z.mean(1)[keep])
@@ -198,11 +209,25 @@ def render(name, view, buildings, centres, grids, to_local, width, height, ss, r
     img = halftone_sky(W, H, horizon, cell=7 * ss)
     draw = ImageDraw.Draw(img)
     # The ground right under the camera, which is too near to draw as triangles.
-    draw.rectangle([0, max(horizon, 0), W, H], fill=BANDS[0])
+    if horizon < H:
+        draw.rectangle([0, max(horizon, 0), W, H], fill=BANDS[0])
     colours = [BANDS[b] for b in band(dist)]
     for k in range(len(sx)):
         draw.polygon([(sx[k, 0], sy[k, 0]), (sx[k, 1], sy[k, 1]), (sx[k, 2], sy[k, 2])], fill=colours[k])
-    return img.resize((width, height), Image.LANCZOS)
+    mark = None
+    if "mark" in view:
+        # Its tip, the ground under it and its width, as fractions of the picture.
+        top = buildings[lk][np.argmax(buildings[lk][:, 2])]
+        here = landmark
+        pts = np.array([[[top[0], top[1], top[2]], [top[0], top[1], ground_at(grids, mx, my)], [mx, my, top[2]]]])
+        _, px, py, _ = project(cam, pts)
+        # Its width, above the level of its foot.
+        _, bx, by, _ = project(cam, buildings[here])
+        above = bx[by < py[0, 1]]
+        mark = {"x": round(float(px[0, 0]) / W, 4), "top": round(float(py[0, 0]) / H, 4), "base": round(float(py[0, 1]) / H, 4),
+                "left": round(float(above.min()) / W, 4), "right": round(float(above.max()) / W, 4)}
+        print(f"  landmark at {mark}")
+    return img.resize((width, height), Image.LANCZOS), mark
 
 
 def main() -> None:
@@ -210,7 +235,7 @@ def main() -> None:
     ap.add_argument("views", nargs="*", help=f"views to draw: {', '.join(VIEWS)}")
     ap.add_argument("--all", action="store_true", help="draw every view")
     ap.add_argument("--out", type=Path, default=OUT)
-    ap.add_argument("--size", default="1920x1080")
+    ap.add_argument("--size", default="2560x1440")
     ap.add_argument("--ss", type=int, default=2, help="supersampling")
     ap.add_argument("--reach", type=float, default=6000, help="metres drawn from the eye")
     args = ap.parse_args()
@@ -224,9 +249,16 @@ def main() -> None:
     grids = load_terrain(key)
     buildings, centres = load_buildings(key)
     args.out.mkdir(parents=True, exist_ok=True)
+    marks_path = args.out / "skylines.json"
+    marks = json.loads(marks_path.read_text()) if marks_path.exists() else {}
     for name in names:
-        img = render(name, VIEWS[name], buildings, centres, grids, to_local, width, height, args.ss, args.reach)
-        img.save(args.out / f"{name}.webp", quality=90, method=6)
+        img, mark = render(name, VIEWS[name], buildings, centres, grids, to_local, width, height, args.ss, args.reach)
+        img.save(args.out / f"{name}.webp", quality=86, method=6)
+        if mark:
+            marks[name] = mark
+        else:
+            marks.pop(name, None)
+    marks_path.write_text(json.dumps(marks, indent=1) + "\n")
 
 
 if __name__ == "__main__":

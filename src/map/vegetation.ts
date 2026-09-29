@@ -8,18 +8,24 @@ export interface TreeTileData extends GeoData {
   roads: Record<string, Polygons | undefined>;
   buildings: { rings: Point2[][] }[];
   walls: { kind: string; pts: Point2[] }[];
-  trees: Point2[];
+  trees: TreeSpot[];
 }
 
-interface TreeInstances { matrices: Float32Array; colours: Float32Array; evergreen: Float32Array; count: number }
+// A tree's place in metres, and what kind it is when the map knows: 1 a conifer, 2 a fruit tree.
+export type TreeSpot = [number, number, number?];
+
+// `conifers` of the last instances are conifers (their own mesh, see treeMeshes).
+interface TreeInstances { matrices: Float32Array; colours: Float32Array; evergreen: Float32Array; count: number; conifers: number }
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
 const WOOD = 200, PARK = 120, GARDEN = 90, ORCHARD = 60, FENCE = 1;
 // Of each kind of tree (below), how many are evergreen and keep their leaves in
-// winter: pines and spruces in the woods, a few in the streets and gardens, yews and
-// hedges among the shrubs.
-const EVERGREEN = [0.3, 0.08, 0, 0.4];
+// winter: yews and hedges among the shrubs. (Conifers have a shape of their own.)
+const EVERGREEN = [0, 0, 0, 0.4];
+// Of the trees we make up, how many are conifers: pines and spruces in the woods, a
+// few in the streets, parks and gardens. Chosen by where the tree stands.
+const CONIFERS = [0.3, 0.08];
 
 // Where a tile's trees stand, and how big and what colour they are: their instance
 // matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Under
@@ -59,15 +65,40 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
 
   const trees: [number, number, number, number][] = []; // [x, y, radius, kind]
   const r = rng(42);
-  for (const [x, y] of d.trees) trees.push([x, y, 3 + r() * 2.5, 1]);
+  // The surveyed trees (IPR's and OSM's), with which kind they are when it's known.
+  const real = new Map<number, number[]>();
+  for (const [x, y, k] of d.trees) {
+    if (k === 1) trees.push([x, y, 2.6 + r() * 1.8, CONIFER]);
+    else if (k === 2) trees.push([x, y, 1.7 + r() * 0.9, 2]);
+    else trees.push([x, y, 3 + r() * 2.5, 1]);
+    const cell = Math.floor(x / 4) * 65536 + Math.floor(y / 4);
+    const list = real.get(cell);
+    if (list) list.push(x, y); else real.set(cell, [x, y]);
+  }
+  // Whether a surveyed tree is within 3.5 m: the trees we make up leave room for them.
+  const surveyed = (x: number, y: number) => {
+    const i0 = Math.floor(x / 4), j0 = Math.floor(y / 4);
+    for (let i = i0 - 1; i <= i0 + 1; i++) {
+      for (let j = j0 - 1; j <= j0 + 1; j++) {
+        const list = real.get(i * 65536 + j);
+        if (list) for (let n = 0; n < list.length; n += 2) if (Math.hypot(list[n] - x, list[n + 1] - y) < 3.5) return true;
+      }
+    }
+    return false;
+  };
 
   const step = 4.5;
   for (let y = geo.minY; y < geo.maxY; y += step) {
     for (let x = geo.minX; x < geo.maxX; x += step) {
       const jx = x + (r() - 0.5) * step, jy = y + (r() - 0.5) * step;
       const v = grid.at(jx, jy);
-      if (v === WOOD && r() < 0.62) trees.push([jx, jy, 3 + r() * 3.2, 0]);
-      else if (v === PARK && r() < 0.09) trees.push([jx, jy, 2.8 + r() * 2.8, 1]);
+      if (v === WOOD && r() < 0.62) {
+        const rad = 3 + r() * 3.2;
+        if (!surveyed(jx, jy)) trees.push(conifer(jx, jy, CONIFERS[0]) ? [jx, jy, rad * 0.8, CONIFER] : [jx, jy, rad, 0]);
+      } else if (v === PARK && r() < 0.09) {
+        const rad = 2.8 + r() * 2.8;
+        if (!surveyed(jx, jy)) trees.push(conifer(jx, jy, CONIFERS[1]) ? [jx, jy, rad * 0.8, CONIFER] : [jx, jy, rad, 1]);
+      }
     }
   }
   // Orchards: loose rows, like the Petřín fruit gardens in the 1945 photo.
@@ -78,6 +109,10 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   }
   gardenTrees(geo, grid, trees);
 
+  // Conifers last, for their own mesh.
+  const pines = trees.filter((t) => t[3] === CONIFER);
+  trees.splice(0, trees.length, ...trees.filter((t) => t[3] !== CONIFER), ...pines);
+  const conifers = pines.length;
   const matrices = new Float32Array(trees.length * 16), colours = new Float32Array(trees.length * 3);
   const evergreen = new Float32Array(trees.length);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
@@ -86,13 +121,14 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     [new THREE.Color('#6f9440'), new THREE.Color('#7f9c45'), new THREE.Color('#5f8638')],
     [new THREE.Color('#7f9a52'), new THREE.Color('#8ea85c'), new THREE.Color('#c9c7a0')], // blossom in May
     [new THREE.Color('#5a7a38'), new THREE.Color('#68883e'), new THREE.Color('#779646'), new THREE.Color('#4e6c3a')], // shrubs, hedges, yews
+    [new THREE.Color('#3f5e3a'), new THREE.Color('#34523a'), new THREE.Color('#4a6842')], // conifers
   ];
   const c = new THREE.Color();
   trees.forEach(([x, y, rad, kind], i) => {
     // A shrub's crown sits on the ground, a little flattened.
     let h = kind === SHRUB ? rad * (0.42 + r() * 0.12) : rad * (1.6 + r() * 0.6);
-    // The crown's top is 0.75 of its radius above its centre.
-    const top = h + rad * 0.75, fit = Math.min(1, (room(x, y) - 0.5) / top);
+    // The crown's top is 0.75 of its radius above its centre (a conifer's, 1.4).
+    const top = h + rad * (kind === CONIFER ? 1.4 : 0.75), fit = Math.min(1, (room(x, y) - 0.5) / top);
     if (fit < 1) {
       rad *= fit < 0.35 ? 0 : fit;
       h *= fit < 0.35 ? 0 : fit;
@@ -108,12 +144,18 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     c.copy(pal[Math.floor(r() * pal.length)]).offsetHSL(0, 0, (r() - 0.5) * 0.05);
     c.toArray(colours, i * 3);
     // (By where it stands, so the other trees' looks don't change.)
-    evergreen[i] = rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663))() < EVERGREEN[kind] ? 1 : 0;
+    evergreen[i] = kind === CONIFER ? 1 : rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663))() < EVERGREEN[kind] ? 1 : 0;
   });
-  return { matrices, colours, evergreen, count: trees.length };
+  return { matrices, colours, evergreen, count: trees.length, conifers };
 }
 
-const SHRUB = 3;
+const SHRUB = 3, CONIFER = 4;
+
+// Whether the tree we make up at (x, y) is a conifer (`share` of them are), by where it
+// stands so the same place always has the same tree.
+function conifer(x: number, y: number, share: number) {
+  return rng(Math.imul(Math.floor(x * 8), 19349663) ^ Math.imul(Math.floor(y * 8), 83492791))() < share;
+}
 
 // Gardens round houses and in courtyards: a few trees and shrubs scattered over the
 // grass, clear of the houses, streets and paths (a crown may lean over a fence) and of
@@ -167,7 +209,7 @@ function gardenTrees(geo: Geo, grid: Grid, trees: [number, number, number, numbe
     if (g() > 0.3) return;
     const rad = g() < 0.12 ? 3.4 + g() * 1.6 : 1.8 + g() * 1.8;
     if (!clear(x, y, rad * 1.1) || crowded(x, y, rad, 0.85)) return;
-    trees.push([x, y, rad, g() < 0.15 ? 2 : 1]);
+    trees.push(conifer(x, y, CONIFERS[1]) ? [x, y, rad * 0.8, CONIFER] : [x, y, rad, g() < 0.15 ? 2 : 1]);
     index(trees.length - 1);
   });
   // Then shrubs, along the edges as much as in the open.
@@ -256,6 +298,12 @@ function crownGeometry() {
     along.push(0, 0, 1);
   }
   core.dispose();
+  return crownBuffers({ pos, nor, col, tuft, across, along, idx });
+}
+
+interface CrownArrays { pos: number[]; nor: number[]; col: number[]; tuft: number[]; across: number[]; along: number[]; idx: number[] }
+
+function crownBuffers({ pos, nor, col, tuft, across, along, idx }: CrownArrays) {
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
@@ -273,6 +321,60 @@ function crownGeometry() {
   return geom;
 }
 let crown: THREE.BufferGeometry | null = null;
+
+// A conifer: tiers of spiky skirts, one on top of the next and narrowing to a tip,
+// round a bare trunk. Its local frame is the broadleaf crown's (scaled the same way
+// by each tree's matrix), but it runs from -1.5 to 1.4, low enough to stand near the
+// ground. No tufts, so no leaves: the shader takes its `tuft.z < 0` for a plain
+// surface, and the tiers are shaded by their vertex colours, the underside darkest.
+function pineGeometry() {
+  const r = rng(11);
+  const pos: number[] = [], nor: number[] = [], col: number[] = [], idx: number[] = [];
+  const vertex = (x: number, y: number, z: number, nx: number, ny: number, nz: number, shade: number) => {
+    const l = Math.hypot(nx, ny, nz) || 1;
+    pos.push(x, y, z);
+    nor.push(nx / l, ny / l, nz / l);
+    col.push(shade, shade, shade);
+    return pos.length / 3 - 1;
+  };
+  const TIERS = 6, SIDES = 14;
+  for (let i = 0; i < TIERS; i++) {
+    const t = i / (TIERS - 1);
+    const yb = -1.5 + i * 0.42, ya = Math.min(1.4, yb + 1.0), rb = 0.8 * (1 - t * 0.78);
+    const shade = 0.6 + 0.3 * t;
+    const apex = vertex(0, ya, 0, 0, 1, 0, Math.min(1, shade + 0.15));
+    const under = vertex(0, yb + 0.16, 0, 0, -1, 0, 0.3);
+    const spin = r() * Math.PI * 2;
+    const rim: number[] = [], low: number[] = [];
+    for (let j = 0; j < SIDES; j++) {
+      const a = spin + (j / SIDES) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+      const spike = j % 2 ? 1 : 0.8 + r() * 0.1;
+      const rad = rb * spike, y = yb - (j % 2 ? 0.07 : 0);
+      rim.push(vertex(c * rad, y, sn * rad, c * 0.8, 0.55, sn * 0.8, shade * (0.85 + r() * 0.1)));
+      low.push(vertex(c * rad, y, sn * rad, 0, -1, 0, 0.32));
+    }
+    for (let j = 0; j < SIDES; j++) {
+      const k = (j + 1) % SIDES;
+      idx.push(apex, rim[k], rim[j], under, low[j], low[k]);
+    }
+  }
+  // The trunk, from below the ground to the lowest tier.
+  const base = pos.length / 3, N = 6;
+  for (let j = 0; j < N; j++) {
+    const a = (j / N) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+    vertex(c * 0.06, -2.7, sn * 0.06, c, 0, sn, 0.3);
+    vertex(c * 0.05, -0.9, sn * 0.05, c, 0, sn, 0.3);
+  }
+  for (let j = 0; j < N; j++) {
+    const a = base + j * 2, b = base + ((j + 1) % N) * 2;
+    idx.push(a, a + 1, b, a + 1, b + 1, b);
+  }
+  const n = pos.length / 3;
+  const tuft: number[] = [], across: number[] = [], along: number[] = [];
+  for (let i = 0; i < n; i++) { tuft.push(0, 0, -1); across.push(1, 0, 0); along.push(0, 0, 1); }
+  return crownBuffers({ pos, nor, col, tuft, across, along, idx });
+}
+let pine: THREE.BufferGeometry | null = null;
 
 const TUFT_GLSL = 'varying vec3 vTuft;';
 // Cells for the small leaves: x = gap to the next leaf, y = random, zw = from the
@@ -392,25 +494,31 @@ function leafy(material: THREE.MeshLambertMaterial) {
   return material;
 }
 
-export function treeMesh({ matrices, colours, evergreen, count }: TreeInstances) {
+// One mesh for the broadleaf trees and one for the conifers, sharing a material.
+export function treeMeshes({ matrices, colours, evergreen, count, conifers }: TreeInstances) {
   crown ??= crownGeometry();
+  pine ??= pineGeometry();
   // Opened round you, like the buildings, when you're in a tunnel under a park.
   const mat = leafy(cutAway(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), 'trees'));
-  // The shared crown, with the tile's own list of which trees are evergreen.
-  const geom = new THREE.BufferGeometry();
-  geom.setIndex(crown.index);
-  for (const [name, attr] of Object.entries(crown.attributes)) geom.setAttribute(name, attr);
-  geom.setAttribute('evergreen', new THREE.InstancedBufferAttribute(count ? evergreen : new Float32Array(1), 1));
-  const mesh = new THREE.InstancedMesh(geom, mat, count);
-  (mesh.instanceMatrix.array as Float32Array).set(matrices);
-  if (count) mesh.instanceColor = new THREE.InstancedBufferAttribute(colours, 3);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  // A depth material of their own for the shadows: three.js's shared one, switching
-  // between instanced and plain meshes (the buildings), works out its shader again at
-  // every switch.
-  mesh.customDepthMaterial = treeDepth;
-  return mesh;
+  const part = (shape: THREE.BufferGeometry, from: number, to: number) => {
+    const n = to - from;
+    // The shared shape, with the tile's own list of which trees are evergreen.
+    const geom = new THREE.BufferGeometry();
+    geom.setIndex(shape.index);
+    for (const [name, attr] of Object.entries(shape.attributes)) geom.setAttribute(name, attr);
+    geom.setAttribute('evergreen', new THREE.InstancedBufferAttribute(n ? evergreen.slice(from, to) : new Float32Array(1), 1));
+    const mesh = new THREE.InstancedMesh(geom, mat, n);
+    (mesh.instanceMatrix.array as Float32Array).set(matrices.subarray(from * 16, to * 16));
+    if (n) mesh.instanceColor = new THREE.InstancedBufferAttribute(colours.slice(from * 3, to * 3), 3);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    // A depth material of their own for the shadows: three.js's shared one, switching
+    // between instanced and plain meshes (the buildings), works out its shader again at
+    // every switch.
+    mesh.customDepthMaterial = treeDepth;
+    return mesh;
+  };
+  return [part(crown, 0, count - conifers), part(pine, count - conifers, count)];
 }
 // (Bare trees throw the shadows of their twigs.)
 const treeDepth = new THREE.MeshDepthMaterial();

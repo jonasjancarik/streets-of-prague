@@ -2,140 +2,140 @@
  {
   "id": "marek",
   "who": "man in an olive jacket",
-  "w": 271,
-  "h": 521
+  "w": 520,
+  "h": 904
  },
  {
   "id": "clerk",
   "who": "woman with glasses and files",
-  "w": 264,
-  "h": 484
+  "w": 545,
+  "h": 966
  },
  {
   "id": "driver",
   "who": "older man in a transport company vest",
-  "w": 265,
-  "h": 478
+  "w": 555,
+  "h": 959
  },
  {
   "id": "student",
   "who": "curly-haired lad with headphones",
-  "w": 261,
-  "h": 504
+  "w": 518,
+  "h": 891
  },
  {
   "id": "butcher",
   "who": "heavy, balding man in an apron, arms crossed",
-  "w": 540,
-  "h": 861
+  "w": 539,
+  "h": 876
  },
  {
   "id": "courier",
   "who": "young food courier in a cap, black bob",
   "w": 587,
-  "h": 983
+  "h": 978
  },
  {
   "id": "veteran",
   "who": "old man in a sheepskin jacket",
-  "w": 265,
-  "h": 456
+  "w": 581,
+  "h": 984
  },
  {
   "id": "tattooed",
   "who": "tattooed woman in a black top",
-  "w": 256,
-  "h": 474
+  "w": 540,
+  "h": 993
  },
  {
   "id": "neighbour",
   "who": "stocky woman with a curly perm, green jacket",
   "w": 560,
-  "h": 941
+  "h": 951
  },
  {
   "id": "drifter",
   "who": "old man with long grey hair, a beanie and a cigarette",
-  "w": 560,
-  "h": 985
+  "w": 559,
+  "h": 991
  },
  {
   "id": "rocker",
   "who": "woman with a bleached buzz cut, leather jacket",
   "w": 510,
-  "h": 870
+  "h": 899
  },
  {
   "id": "conductor",
   "who": "old tram conductor in uniform",
-  "w": 273,
-  "h": 488
+  "w": 559,
+  "h": 972
  },
  {
   "id": "foreman",
   "who": "woman in a hi-vis jacket, smoking",
-  "w": 272,
-  "h": 494
+  "w": 551,
+  "h": 961
  },
  {
   "id": "bouncer",
   "who": "big crew-cut man with a boxer's nose and tattoos",
   "w": 587,
-  "h": 989
+  "h": 992
  },
  {
   "id": "mechanic",
   "who": "lanky young man in a cap and overalls",
-  "w": 568,
+  "w": 567,
   "h": 986
  },
  {
   "id": "barmaid",
   "who": "copper-haired barmaid with tattoos and a glass",
   "w": 502,
-  "h": 1000
+  "h": 995
  },
  {
   "id": "grandma",
   "who": "grandmother with newspapers",
-  "w": 277,
-  "h": 481
+  "w": 576,
+  "h": 996
  },
  {
   "id": "punk",
   "who": "teenager with a green mohawk, hoodie and badges",
-  "w": 569,
-  "h": 999
+  "w": 568,
+  "h": 1000
  },
  {
   "id": "inspector",
   "who": "old detective in a trench coat",
-  "w": 536,
-  "h": 966
+  "w": 535,
+  "h": 972
  },
  {
   "id": "hacker",
   "who": "man with glasses and headphones",
-  "w": 534,
-  "h": 994
+  "w": 533,
+  "h": 999
  },
  {
   "id": "boss",
   "who": "man in a pinstripe suit",
-  "w": 281,
-  "h": 469
+  "w": 599,
+  "h": 986
  },
  {
   "id": "lawyer",
   "who": "silver-haired woman in a suit with a tablet",
-  "w": 583,
-  "h": 948
+  "w": 582,
+  "h": 946
  },
  {
   "id": "journalist",
   "who": "man with glasses in tweed",
   "w": 553,
-  "h": 966
+  "h": 963
  },
  {
   "id": "policeman",
@@ -146,7 +146,7 @@
  {
   "id": "policewoman",
   "who": "police officer",
-  "w": 582,
+  "w": 581,
   "h": 994
  },
  {
@@ -171,12 +171,12 @@
   "id": "guard",
   "who": "security guard with a ponytail and sunglasses",
   "w": 555,
-  "h": 996
+  "h": 997
  },
  {
   "id": "official",
   "who": "official with burgundy hair, glasses on a chain, lanyard",
   "w": 557,
-  "h": 992
+  "h": 994
  }
 ]

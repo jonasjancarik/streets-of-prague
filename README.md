@@ -236,7 +236,14 @@ the pixel ratio.
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.
-- **Landmarks** (so far Mánes with Šítkovská vodárenská věž) are cut out of IPR's
+- **Trees** are IPR's surveyed ones (about 171,000 on city land, `pipeline/ipr_trees.py`)
+  plus OSM's; where both have a tree within 2.5 m, IPR's stands. IPR says which are
+  conifers and which fruit trees, and so does OSM sometimes (`leaf_type`, `genus`).
+  Conifers are their own shape (`pineGeometry` in `src/map/vegetation.ts`, evergreen in
+  winter), fruit trees are small. The woods, parks and gardens are filled up with made-up
+  trees, 30% of them conifers in woods, but not next to a surveyed one. Rebuild them with
+  `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
+- **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the National Theatre, the Rudolfinum, and the Municipal House with the Powder Tower) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
   `pipeline/landmarks.py` takes the mesh's pieces over the landmark's OSM footprints
@@ -511,8 +518,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 - **Skylines.** `uv run skyline.py hradcany` (or `--all`) draws a real Prague view as a
   red screen-print silhouette into `public/skylines/`, for the loading screen and the
   backdrop behind character portraits. It reads the praha caches of `ipr_buildings.py`
-  and `ipr_terrain.py`; the views (camera spot, direction, field of view) are listed
-  in `VIEWS` at the top of `pipeline/skyline.py`.
+  and `ipr_terrain.py`; the views (camera spot, direction, field of view, landmark) are
+  listed in `VIEWS` at the top of `pipeline/skyline.py`. Each landmark is drawn black and
+  its place in the picture goes to `skylines.json`, which the loading screen uses to
+  stand it tall beside the menu.
 - **Layers.** The map is built in layers, and each step rebuilds only its own
   (`pipeline/layers.py`): `build_tiles.py` makes the OSM buildings, the ground (land
   use, streets and pavements, parking areas, walls, rails, crossings, trees), the

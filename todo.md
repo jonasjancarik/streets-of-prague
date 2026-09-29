@@ -181,6 +181,14 @@ What's in since 29 September 2026: clear, cloudy, rain, mist and snow
   (see "Trees from the city's greenery records" below); otherwise, paint the roof's
   colour over green texels near the roof's edges when baking.
 
+- **Týn Church: bare and blocky walls at street level.** The lowest 3–4 m of the
+  west and south walls have white patches and a few coarse blocks in the baked texture:
+  the photographs never see the ground floor there, because of the houses, the arcade in
+  front of the west front and the crowds on the square, so the bake fills the gaps from
+  around them. Only a player next to the wall sees it. Filling those texels from the
+  nearest sharp wall texture, or leaving the ground floor to the game's own facade
+  texture, would hide it.
+
 ## More map data
 
 Open data found on 28 September 2026 and not used yet. All IPR Praha, CC BY; the
