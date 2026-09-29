@@ -154,6 +154,35 @@ const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ ve
 // photographs have the day's light in them, so it's lit as if every face looked up:
 // evenly, dimming at night and taking the street lamps' light like the rest. Baked
 // models are one-sided; a raw piece of the mesh (--raw) says it's two-sided.
+// The photographs are paler and yellower than Prague's roofs are to the eye: warm
+// colours (roofs, plaster, brick) go a little redder and more saturated; greys and
+// blues stay as they are.
+function warmUp(map: THREE.Texture) {
+  const img = map.image as ImageBitmap;
+  const canvas = document.createElement('canvas');
+  canvas.width = img.width; canvas.height = img.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    let r = px[i] / 255, g = px[i + 1] / 255, b = px[i + 2] / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    if (d < 0.04 || mx !== r || g < b) continue;
+    let h = ((g - b) / d) / 6;
+    if (h > 0.17) continue;
+    const w = 1 - Math.max(0, h - 0.11) / 0.06;
+    h = Math.max(0, h - 0.028 * w);
+    const s = Math.min(1, (d / mx) * (1 + 0.28 * w));
+    const k = h * 6;
+    g = mx * (1 - s * (1 - k)); b = mx * (1 - s); r = mx;
+    px[i] = r * 255; px[i + 1] = g * 255; px[i + 2] = b * 255;
+  }
+  ctx.putImageData(data, 0, 0);
+  map.image = canvas;
+  map.needsUpdate = true;
+}
+
 async function landmarkModel(url: string) {
   const gltf = await new GLTFLoader().loadAsync(url);
   const model = gltf.scene;
@@ -161,7 +190,7 @@ async function landmarkModel(url: string) {
   model.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     const { map, side } = o.material as THREE.MeshStandardMaterial;
-    if (map) map.anisotropy = 4;
+    if (map) { map.anisotropy = 4; warmUp(map); }
     o.material = cutAway(new THREE.MeshLambertMaterial({ map, side }), 'landmark');
     // Up in the world, in the mesh's own axes (in case the file turns it).
     const up = new THREE.Vector3(0, 1, 0).applyMatrix3(new THREE.Matrix3().getNormalMatrix(o.matrixWorld).invert()).normalize();
