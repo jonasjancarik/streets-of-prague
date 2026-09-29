@@ -6,19 +6,21 @@
     <title>Streets of Prague</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Cormorant+Garamond:ital,wght@1,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
     <style>
-      :root { --ink: #f5efe2; --paper: rgba(20, 18, 16, 0.72); --accent: #ffd23f; }
+      /* In-game UI in the start screen's poster colours (see the illustrated layer below),
+         kept quiet: dark cards with a red edge, square corners, red only for what matters. */
+      :root { --ink: #ece4d6; --paper: rgba(20, 13, 12, 0.8); --accent: #e8403a; --edge: #c8241d; --key: rgba(236, 228, 214, 0.14); }
       html, body { margin: 0; height: 100%; overflow: hidden; background: #2a2622; color: var(--ink); font: 13px/1.4 Inter, system-ui, sans-serif; }
       #app canvas { display: block; }
-      .panel { position: fixed; background: var(--paper); backdrop-filter: blur(6px); border-radius: 10px; padding: 10px 14px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); }
+      .panel { position: fixed; background: var(--paper); backdrop-filter: blur(6px); border-left: 4px solid var(--edge); padding: 10px 14px; box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.3); }
       #hud { top: 16px; left: 16px; min-width: 190px; }
       #street { font: 22px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
       #speedo { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
-      #speed { font: 44px/1 'Bebas Neue', sans-serif; color: var(--accent); min-width: 2.2ch; }
+      #speed { font: 44px/1 'Bebas Neue', sans-serif; color: var(--ink); min-width: 2.2ch; }
       #speedo small { opacity: 0.7; }
       #hint { margin-top: 4px; min-height: 18px; }
-      #hint b { display: inline-block; background: var(--ink); color: #221f1b; border-radius: 4px; padding: 0 6px; margin-right: 4px; }
+      #hint b { display: inline-block; background: var(--ink); color: #140d0c; padding: 0 6px; margin-right: 4px; }
       #tally { opacity: 0.6; font-size: 12px; margin-top: 4px; }
       /* Riding a tram: the line, where it's heading and the stops ahead. */
       #ride { margin-top: 8px; max-width: 250px; }
@@ -27,13 +29,13 @@
       #taxi[hidden] { display: none; }
       #taxi kbd { font: inherit; opacity: 0.6; }
       .ride-line { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-      .ride-ref { font: 20px/1 'Bebas Neue', sans-serif; color: #fff; padding: 3px 7px 1px; border-radius: 5px; min-width: 1.4em; text-align: center; }
+      .ride-ref { font: 20px/1 'Bebas Neue', sans-serif; color: #fff; padding: 3px 7px 1px; min-width: 1.4em; text-align: center; }
       .ride-here { margin-top: 4px; opacity: 0.75; font-size: 12px; }
-      .ride-stops { list-style: none; margin: 6px 0 0; padding: 0 0 0 9px; border-left: 3px solid rgba(245, 239, 226, 0.25); }
-      .ride-stops button { display: block; width: 100%; font: inherit; color: var(--ink); background: none; border: 0; border-radius: 5px; padding: 3px 6px; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-      .ride-stops button:hover { background: rgba(255, 255, 255, 0.1); }
+      .ride-stops { list-style: none; margin: 6px 0 0; padding: 0 0 0 9px; border-left: 3px solid rgba(236, 228, 214, 0.25); }
+      .ride-stops button { display: block; width: 100%; font: inherit; color: var(--ink); background: none; border: 0; padding: 3px 6px; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      .ride-stops button:hover { background: var(--key); }
       .ride-stops button.next { font-weight: 600; }
-      .ride-stops button.dest { background: var(--accent); color: #221f1b; }
+      .ride-stops button.dest { background: var(--ink); color: #140d0c; }
       /* At a tram stop: the next trams due, counting down. */
       #board { margin-top: 8px; max-width: 260px; }
       #board[hidden] { display: none; }
@@ -44,29 +46,29 @@
       .board-eta { font-variant-numeric: tabular-nums; color: var(--accent); }
       .board-none { margin-top: 4px; opacity: 0.75; }
       /* The metro: picking a station, then the ride on the line's map. */
-      #metro { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; z-index: 6; background: rgba(20, 18, 16, 0.92); }
+      #metro { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; z-index: 6; background: rgba(20, 13, 12, 0.94); }
       #metro[hidden] { display: none; }
       /* During the ride it moves to the corner, out of the way of the view. */
       #metro.riding { top: 16px; left: auto; right: 16px; transform: none; width: min(280px, calc(100vw - 32px)); max-height: min(60vh, calc(100vh - 32px)); }
-      .metro-skip { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.12); border: 0; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
-      .metro-skip:hover { background: rgba(255, 255, 255, 0.2); }
+      .metro-skip { font: inherit; color: var(--ink); background: var(--key); border: 1px solid rgba(236, 228, 214, 0.4); padding: 7px 10px; cursor: pointer; }
+      .metro-skip:hover { background: rgba(236, 228, 214, 0.24); border-color: var(--ink); }
       .metro-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
       .metro-title { display: flex; align-items: center; gap: 8px; font: 24px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
       .metro-close { font: 24px/1 Inter, system-ui, sans-serif; color: var(--ink); background: none; border: 0; cursor: pointer; padding: 0 4px; }
       .metro-tabs { display: flex; gap: 6px; }
-      .metro-tab { font: 20px/1 'Bebas Neue', sans-serif; color: #fff; background: var(--line); opacity: 0.45; border: 0; border-radius: 6px; padding: 5px 14px 3px; cursor: pointer; }
+      .metro-tab { font: 20px/1 'Bebas Neue', sans-serif; color: #fff; background: var(--line); opacity: 0.45; border: 0; padding: 5px 14px 3px; cursor: pointer; }
       .metro-tab.on { opacity: 1; box-shadow: 0 0 0 2px var(--ink); }
       .metro-note { opacity: 0.8; font-size: 12px; }
       .metro-stations, .metro-ride { list-style: none; margin: 0; padding: 0 0 0 9px; border-left: 4px solid var(--line); overflow: auto; min-height: 0; }
-      .metro-stations button { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; width: 100%; font: inherit; color: var(--ink); background: none; border: 0; border-radius: 5px; padding: 4px 6px; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-      .metro-stations button:hover:not(:disabled), .metro-stations button.sel { background: rgba(255, 255, 255, 0.12); }
-      .metro-stations button.sel { box-shadow: inset 0 0 0 1px var(--accent); }
+      .metro-stations button { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; width: 100%; font: inherit; color: var(--ink); background: none; border: 0; padding: 4px 6px; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      .metro-stations button:hover:not(:disabled), .metro-stations button.sel { background: var(--key); }
+      .metro-stations button.sel { box-shadow: inset 3px 0 0 var(--accent); }
       .metro-stations button:disabled { opacity: 0.45; cursor: default; }
       .metro-stations small { opacity: 0.7; white-space: nowrap; }
       .metro-keys { opacity: 0.65; font-size: 12px; }
-      .metro-keys b { display: inline-block; background: var(--ink); color: #221f1b; border-radius: 4px; padding: 0 5px; }
+      .metro-keys b { display: inline-block; background: var(--ink); color: #140d0c; padding: 0 5px; }
       body.touch .metro-keys { display: none; }
-      .metro-bar { height: 4px; background: rgba(255, 255, 255, 0.15); border-radius: 2px; overflow: hidden; }
+      .metro-bar { height: 4px; background: rgba(236, 228, 214, 0.15); overflow: hidden; }
       .metro-bar div { height: 100%; }
       .metro-status { font-weight: 600; }
       .metro-ride li { padding: 3px 6px; }
@@ -76,26 +78,26 @@
       .metro-ride li.end { color: var(--accent); }
       .hud-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
       #clock { font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; opacity: 0.8; white-space: nowrap; }
-      #wanted { font-size: 20px; line-height: 1; letter-spacing: 0.08em; margin-top: 6px; color: rgba(245, 239, 226, 0.22); }
+      #wanted { font-size: 20px; line-height: 1; letter-spacing: 0.08em; margin-top: 6px; color: rgba(236, 228, 214, 0.22); }
       #wanted.hidden { display: none; }
-      #wanted .on { color: var(--accent); text-shadow: 0 0 8px rgba(255, 210, 63, 0.5); }
+      #wanted .on { color: var(--accent); text-shadow: 0 0 8px rgba(232, 64, 58, 0.55); }
       #wanted.blink .on { animation: blink 0.8s steps(2, jump-none) infinite; }
       @keyframes blink { 50% { opacity: 0.25; } }
-      #banner { position: fixed; top: 14%; left: 0; right: 0; text-align: center; pointer-events: none; font: 64px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0 3px 0 #000, 0 0 24px rgba(0, 0, 0, 0.6); opacity: 0; }
-      #banner.alert { color: #ff5a4a; font-size: 88px; }
+      #banner { position: fixed; top: 14%; left: 0; right: 0; text-align: center; pointer-events: none; font: 64px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0.05em 0.05em 0 var(--edge), 0 0 24px rgba(0, 0, 0, 0.6); opacity: 0; }
+      #banner.alert { color: var(--accent); font-size: 88px; text-shadow: 0.05em 0.05em 0 #140d0c, 0 0 24px rgba(0, 0, 0, 0.6); }
       /* The part of town you've come into: fades in, stays a few seconds and fades out. */
-      #district { position: fixed; top: 22%; left: 0; right: 0; width: fit-content; max-width: calc(100vw - 32px); margin: 0 auto; padding: 20px 100px 26px; box-sizing: border-box; text-align: center; pointer-events: none; font: italic 500 80px/1.1 'Cormorant Garamond', Georgia, serif; color: var(--ink); text-shadow: 0 0 2px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.6), 0 0 28px rgba(0, 0, 0, 0.5); background: radial-gradient(closest-side, rgba(20, 16, 12, 0.5), rgba(20, 16, 12, 0)); opacity: 0; }
-      #district::after { content: ''; display: block; width: 140px; height: 1px; margin: 14px auto 0; background: currentColor; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); opacity: 0.7; }
+      #district { position: fixed; top: 22%; left: 0; right: 0; width: fit-content; max-width: calc(100vw - 32px); margin: 0 auto; padding: 20px 100px 26px; box-sizing: border-box; text-align: center; pointer-events: none; font: 88px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; color: var(--ink); text-shadow: 0.05em 0.05em 0 var(--edge), 0 0 28px rgba(0, 0, 0, 0.55); background: radial-gradient(closest-side, rgba(20, 16, 12, 0.5), rgba(20, 16, 12, 0)); opacity: 0; }
+      #district::after { content: ''; display: block; width: 120px; height: 5px; margin: 12px auto 0; background: var(--ink); box-shadow: 3px 3px 0 var(--edge); transform: rotate(-4deg); }
       #district.on { animation: district 6s ease-in-out forwards; }
       @keyframes district { 0% { opacity: 0; transform: translateY(10px); } 18% { opacity: 1; transform: none; } 72% { opacity: 1; } 100% { opacity: 0; } }
       /* Controls card: only the keys for what you're doing right now. */
       #help { bottom: 16px; right: 16px; opacity: 0.85; font-size: 12px; width: 250px; }
-      #help h2 { margin: 0 0 6px; font: 17px/1 'Bebas Neue', sans-serif; letter-spacing: 0.05em; opacity: 0.8; }
+      #help h2 { margin: 0 0 6px; font: 17px/1 'Bebas Neue', sans-serif; letter-spacing: 0.05em; color: var(--accent); }
       #help dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; align-items: baseline; }
       #help dt { justify-self: end; white-space: nowrap; }
       #help dd { margin: 0; }
-      #help kbd { display: inline-block; font: 600 11px/1 Inter, system-ui, sans-serif; background: rgba(245, 239, 226, 0.14); border: 1px solid rgba(245, 239, 226, 0.22); border-radius: 4px; padding: 3px 5px 2px; min-width: 1em; text-align: center; }
-      #help .foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(245, 239, 226, 0.15); opacity: 0.7; }
+      #help kbd { display: inline-block; font: 600 11px/1 Inter, system-ui, sans-serif; background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 3px 5px 2px; min-width: 1em; text-align: center; }
+      #help .foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(236, 228, 214, 0.15); opacity: 0.7; }
       #help section { display: none; }
       #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='tram'] .tram-only, #help[data-mode='heli'] .heli-only { display: block; }
       #help.folded { width: auto; padding: 6px 10px; }
@@ -103,18 +105,18 @@
       #dev { top: 16px; right: 16px; width: 340px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
       #dev[hidden], #dev-mapbox[hidden] { display: none; }
       .dev-title { font-weight: 600; }
-      #dev input { font: inherit; padding: 7px 9px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.35); color: var(--ink); }
-      #dev button { font: inherit; padding: 6px 9px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.08); color: var(--ink); cursor: pointer; text-align: left; }
+      #dev input { font: inherit; padding: 7px 9px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.35); color: var(--ink); }
+      #dev button { font: inherit; padding: 6px 9px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.08); color: var(--ink); cursor: pointer; text-align: left; }
       #dev button:hover { background: rgba(255, 255, 255, 0.18); }
       #dev-results { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
       .dev-row { display: flex; gap: 6px; flex-wrap: wrap; }
       .dev-note, #dev-pos { opacity: 0.7; font-size: 12px; }
       .dev-time { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
-      #dev select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.35); color: var(--ink); }
+      #dev select { font: inherit; padding: 4px 6px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.35); color: var(--ink); }
       #dev .dev-time input { flex: 1 0 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: none; accent-color: #e8a15c; }
-      #dev-mapbox { position: fixed; inset: 5%; z-index: 10; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
+      #dev-mapbox { position: fixed; inset: 5%; z-index: 10; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
       #dev-leaflet { position: absolute; inset: 0; }
-      .dev-maphint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1000; background: var(--paper); padding: 6px 12px; border-radius: 8px; pointer-events: none; }
+      .dev-maphint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1000; background: var(--paper); padding: 6px 12px; pointer-events: none; }
       /* The illustrated layer (src/portraits.ts): black, signal red and paper, like a
          constructivist poster. Portraits end in hard cut edges; something always covers them. */
       :root { --poster-red: #c8241d; --poster-black: #140d0c; --poster-paper: #ece4d6; }
@@ -205,7 +207,7 @@
       .dlg-goal b { font: 22px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; color: #e8403a; margin-right: 10px; }
       .dlg-goal b::before { content: '◎ '; }
       .dlg-next { text-align: right; margin-top: 8px; font: 14px/1 'IBM Plex Mono', ui-monospace, monospace; color: rgba(236, 228, 214, 0.8); }
-      .dlg-next kbd { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 3px 6px; margin-right: 6px; font: inherit; }
+      .dlg-next kbd { display: inline-block; border: 1px solid currentColor; padding: 3px 6px; margin-right: 6px; font: inherit; }
       @media (max-width: 640px) {
         .dlg { bottom: 12px; }
         .dlg-frame { width: 110px; height: 110px; border-width: 3px; }
@@ -224,12 +226,12 @@
       @media (min-width: 641px) { body:not(.touch) #credits { max-width: calc(100vw - 330px); } }
       #credits u { text-underline-offset: 2px; }
       #credits .short { display: none; }
-      body.touch #credits { left: auto; bottom: auto; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); background: var(--paper); border-radius: 8px; padding: 7px 10px; font-size: 12px; opacity: 0.75; text-shadow: none; -webkit-tap-highlight-color: transparent; }
+      body.touch #credits { left: auto; bottom: auto; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); background: var(--paper); border-left: 3px solid var(--edge); padding: 7px 10px; font-size: 12px; opacity: 0.75; text-shadow: none; -webkit-tap-highlight-color: transparent; }
       /* In the car, "Back on road" has that corner, so the credits go under it. */
       body.touch:has(#touch[data-mode='car']) #credits { top: calc(max(12px, env(safe-area-inset-top)) + 48px); }
       body.touch #credits .long { display: none; }
       body.touch #credits .short { display: inline; }
-      #credits-box { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; overflow: auto; padding: 16px 20px; color: var(--ink); background: rgba(20, 18, 16, 0.94); border: 0; border-radius: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); font: 13px/1.45 Inter, system-ui, sans-serif; }
+      #credits-box { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; overflow: auto; padding: 16px 20px; color: var(--ink); background: rgba(20, 13, 12, 0.96); border: 0; border-left: 5px solid var(--edge); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4); font: 13px/1.45 Inter, system-ui, sans-serif; }
       #credits-box::backdrop { background: rgba(0, 0, 0, 0.35); }
       #credits-box h2 { margin: 0 0 8px; font: 26px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
       #credits-box ul { margin: 8px 0; padding-left: 18px; }
@@ -237,8 +239,8 @@
       #credits-box a { color: var(--accent); }
       #credits-box p { margin: 8px 0; }
       #credits-box form { text-align: right; margin: 12px 0 0; }
-      #credits-box form button { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.12); border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; }
-      #credits-box form button:hover { background: rgba(255, 255, 255, 0.2); }
+      #credits-box form button { font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); background: var(--edge); border: 0; padding: 8px 16px 6px; cursor: pointer; box-shadow: 3px 3px 0 #000; }
+      #credits-box form button:hover { background: var(--accent); }
       /* Touch controls: left thumb steers, right thumb works the pedals and buttons. */
       #touch { display: none; }
       body.touch { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -246,17 +248,17 @@
       body.touch #help { display: none; }
       body.touch #hud { top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); min-width: 0; padding: 8px 12px; }
       body.touch #speed { font-size: 36px; }
-      #touch button, .t-pedal { font: 600 14px/1 Inter, system-ui, sans-serif; color: var(--ink); background: var(--paper); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 14px; backdrop-filter: blur(6px); -webkit-tap-highlight-color: transparent; touch-action: none; }
+      #touch button, .t-pedal { font: 600 14px/1 Inter, system-ui, sans-serif; color: var(--ink); background: var(--paper); border: 1px solid rgba(236, 228, 214, 0.3); border-radius: 0; backdrop-filter: blur(6px); -webkit-tap-highlight-color: transparent; touch-action: none; }
       #t-steer { position: fixed; left: 0; bottom: 0; width: 50vw; height: 55vh; touch-action: none; }
-      #t-stick { position: absolute; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 12px); width: 136px; height: 136px; border-radius: 50%; background: radial-gradient(circle, rgba(20, 18, 16, 0.25) 0 38%, rgba(20, 18, 16, 0.5) 39%); border: 2px solid rgba(245, 239, 226, 0.3); box-sizing: border-box; pointer-events: none; }
-      #t-stick.held { border-color: rgba(245, 239, 226, 0.55); }
+      #t-stick { position: absolute; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 12px); width: 136px; height: 136px; border-radius: 50%; background: radial-gradient(circle, rgba(20, 13, 12, 0.25) 0 38%, rgba(20, 13, 12, 0.5) 39%); border: 2px solid rgba(236, 228, 214, 0.3); box-sizing: border-box; pointer-events: none; }
+      #t-stick.held { border-color: var(--edge); }
       #t-knob { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fffaf0, #cfc6b4); opacity: 0.9; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4); }
       #t-right { position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
       .t-row { display: flex; gap: 10px; }
       #touch .t-row button { height: 44px; padding: 0 14px; }
-      #touch button.on { background: var(--accent); color: #221f1b; }
+      #touch button.on { background: var(--ink); color: #140d0c; }
       #t-toggle { position: fixed; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 160px); width: 136px; height: 44px; padding: 0 10px; white-space: nowrap; }
-      #touch button.down, .t-pedal.down { background: rgba(245, 239, 226, 0.3); }
+      #touch button.down, .t-pedal.down { background: rgba(236, 228, 214, 0.3); }
       #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
       #t-fast, #t-taxi { height: 52px; padding: 0 18px; }
       #t-action.off { visibility: hidden; }
@@ -264,7 +266,7 @@
       .t-pedal { display: grid; place-items: center; box-sizing: border-box; }
       #t-brake { width: 84px; height: 84px; }
       #t-gas { width: 96px; height: 128px; border-color: var(--accent); }
-      #t-gas.down { background: var(--accent); color: #221f1b; }
+      #t-gas.down { background: var(--edge); color: var(--ink); }
       #touch:not([data-mode='foot']):not([data-mode='stop']) .foot-only,
       #touch:not([data-mode='car']) .car-only, #touch:not([data-mode='tram']):not([data-mode='stop']) .tram-only { display: none; }
       #touch[data-mode='tram'] #t-steer { display: none; }
