@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { fetchBinary } from './terrain.ts';
+import { armLamp, gasPair, gasSingle, wallLantern, globeLamp, hungLamp } from './lampmodels.ts';
 
 // Street lighting at night. The lamps come from IPR's utility map
 // (pipeline/build_lamps.py, data/<area>_now/lamps.bin.gz); round the camera they get
@@ -86,6 +87,20 @@ const KINDS = [
   { head: 6.3, pole: false, r: 14, i: 0.9, raise: 0, glow: 0.5 }, // added: hung over a street on cables (see fill)
 ];
 const HUNG = 7;
+// The models (lampmodels.ts) and where their lights are (x along the arm, y, z across it).
+// A kind's lamps take one by hash: the Old Town has big two-lantern gas posts and small
+// single lanterns both.
+const MODELS = [
+  { make: () => armLamp(7.5), glows: [[1.68, 7.62, 0]] },
+  { make: gasPair, glows: [[0, 3.7, 0.6], [0, 3.7, -0.6]] },
+  { make: gasSingle, glows: [[0, 3.5, 0]] },
+  { make: wallLantern, glows: [[0.55, 4.7, 0]] },
+  { make: () => globeLamp(5.5), glows: [[0, 5.5, 0]] },
+  { make: () => hungLamp(6.3), glows: [[0, 6.25, 0]] },
+];
+const modelOf = (kind: number, i: number) => kind === 0 ? 0 : kind === 2 ? (hash(i + 7) < 0.5 ? 1 : 2) : kind === 1 ? 3 : kind === 3 ? 4 : kind === HUNG ? 5 : -1;
+// Streets to turn lamps towards: their segments in a grid (x0, y0, x1, y1 each).
+const STREET_CELL = 50, REACH_ARM = 30;
 // Many side streets' lamps hang on cables between the houses or sit on their walls,
 // and the utility map has few of those: a street with no lamp within REACH gets one
 // hung over it every SPACING metres, but only where a building stands on each side
@@ -168,7 +183,9 @@ export class Lamps {
   private shape: THREE.InstancedBufferAttribute; // direction x, z, length (or radius), width
   private colour: THREE.InstancedBufferAttribute;
   private view = { value: new THREE.Vector4() };
-  private poles: THREE.InstancedMesh;
+  private models: THREE.InstancedMesh[] = [];
+  private streets = new Map<number, number[]>();
+  private facing = new Map<number, number>(); // a lamp → the way (radians) its arm points
   private glows: THREE.InstancedMesh;
   private near: number[] = []; // the lamps round the camera
   private nearAt = { x: Infinity, y: Infinity, r: 0, t: 0 };
@@ -266,13 +283,15 @@ export class Lamps {
     this.lightScene.add(pools);
 
     // Poles with a head, and the heads' glow at night.
-    const pole = new THREE.CylinderGeometry(0.07, 0.1, 1, 6).translate(0, 0.5, 0);
-    const poleMaterial = new THREE.MeshLambertMaterial({ color: '#3b3d3f' });
+    const poleMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
     poleMaterial.onBeforeCompile = (sh) => lampLit(sh);
     poleMaterial.customProgramCacheKey = () => 'lamp-pole';
-    this.poles = new THREE.InstancedMesh(pole, poleMaterial, MAX_POLES);
-    this.poles.count = 0;
-    this.poles.frustumCulled = false;
+    this.models = MODELS.map((m) => {
+      const mesh = new THREE.InstancedMesh(m.make(), poleMaterial, MAX_POLES);
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      return mesh;
+    });
     const glow = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     this.glows = new THREE.InstancedMesh(glow, glowsBy ? glowsBy() : new THREE.ShaderMaterial({
       uniforms: { uOn: LAMP_ON },
@@ -298,7 +317,7 @@ export class Lamps {
     cableGeometry.setDrawRange(0, 0);
     this.cables = new THREE.LineSegments(cableGeometry, new THREE.LineBasicMaterial({ color: '#1d1f20', transparent: true, opacity: 0.85 }));
     this.cables.frustumCulled = false;
-    scene.add(this.poles, this.glows, this.cables);
+    scene.add(...this.models, this.glows, this.cables);
 
     void fetchBinary(`data/${area}_now/lamps.bin.gz`, true).then((buf) => {
       if (!buf) return;
@@ -360,6 +379,19 @@ export class Lamps {
       return [...out];
     };
     for (const e of edges) {
+      if (e.tunnel) continue;
+      for (let i = 1; i < e.pts.length; i++) {
+        const [ax, ay] = e.pts[i - 1], [bx, by] = e.pts[i];
+        for (let cx = Math.floor((Math.min(ax, bx) - REACH_ARM) / STREET_CELL); cx <= Math.floor((Math.max(ax, bx) + REACH_ARM) / STREET_CELL); cx++) {
+          for (let cy = Math.floor((Math.min(ay, by) - REACH_ARM) / STREET_CELL); cy <= Math.floor((Math.max(ay, by) + REACH_ARM) / STREET_CELL); cy++) {
+            const k = (cx + 4096) * 8192 + cy + 4096;
+            const list = this.streets.get(k);
+            if (list) list.push(ax, ay, bx, by); else this.streets.set(k, [ax, ay, bx, by]);
+          }
+        }
+      }
+    }
+    for (const e of edges) {
       if (e.tunnel || UNLIT.has(e.hw)) continue;
       let next = SPACING / 2;
       for (let i = 1, s = 0; i < e.pts.length; i++) {
@@ -378,6 +410,26 @@ export class Lamps {
       }
     }
     this.nearAt.x = Infinity;
+  }
+
+  // The way from a lamp to the nearest street within reach (radians, the map's x and y),
+  // once a street is known; until then whichever way.
+  private face(i: number, x: number, y: number) {
+    const known = this.facing.get(i);
+    if (known !== undefined) return known;
+    const list = this.streets.get((Math.floor(x / STREET_CELL) + 4096) * 8192 + Math.floor(y / STREET_CELL) + 4096);
+    let best = REACH_ARM, ang: number | undefined;
+    if (list) {
+      for (let j = 0; j < list.length; j += 4) {
+        const ax = list[j], ay = list[j + 1], ex = list[j + 2] - ax, ey = list[j + 3] - ay;
+        const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey || 1)));
+        const dx = ax + ex * t - x, dy = ay + ey * t - y, d = Math.hypot(dx, dy);
+        if (d < best) { best = d; ang = Math.atan2(dy, dx); }
+      }
+    }
+    if (ang === undefined) return hash(i) * Math.PI * 2;
+    this.facing.set(i, ang);
+    return ang;
   }
 
   private key(x: number, y: number) { return (Math.floor(x / CELL) + 2048) * 4096 + Math.floor(y / CELL) + 2048; }
@@ -399,7 +451,8 @@ export class Lamps {
     if (this.near.length > MAX_LIGHTS - 400) this.near.length = MAX_LIGHTS - 400;
     // Poles and heads: they stay put until the next gathering.
     const d = this.dummy;
-    let p = 0, g = 0, c = 0;
+    const used = this.models.map(() => 0);
+    let g = 0, c = 0;
     const cable = this.cables.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (const i of this.near) {
       const k = KINDS[this.kind[i]], lx = this.xy[i * 2], ly = this.xy[i * 2 + 1];
@@ -419,13 +472,25 @@ export class Lamps {
           }
         }
       }
-      if (k.pole && p < MAX_POLES) {
+      const m = modelOf(this.kind[i], i);
+      if (m >= 0 && used[m] < MAX_POLES) {
+        const ang = this.face(i, lx, ly), co = Math.cos(ang), si = Math.sin(ang);
         d.position.set(lx, z, -ly);
-        d.scale.set(1, k.head, 1);
+        d.rotation.set(0, ang, 0);
+        d.scale.set(1, 1, 1);
         d.updateMatrix();
-        this.poles.setMatrixAt(p++, d.matrix);
-      }
-      if (k.glow && g < this.glows.instanceMatrix.count) {
+        this.models[m].setMatrixAt(used[m]++, d.matrix);
+        d.rotation.set(0, 0, 0);
+        for (const [gx, gy, gz] of MODELS[m].glows) {
+          if (g >= this.glows.instanceMatrix.count) break;
+          // (a local x along the arm is (cos, -sin) in world x, z; z across it, (sin, cos).)
+          d.position.set(lx + gx * co + gz * si, z + gy, -ly - gx * si + gz * co);
+          d.scale.set(1.6, 1, 1.6);
+          d.updateMatrix();
+          this.glows.setMatrixAt(g, d.matrix);
+          this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], i)).multiplyScalar(k.glow * 2));
+        }
+      } else if (k.glow && g < this.glows.instanceMatrix.count) {
         d.position.set(lx, z + k.head, -ly);
         d.scale.set(1.6, 1, 1.6);
         d.updateMatrix();
@@ -433,8 +498,7 @@ export class Lamps {
         this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], i)).multiplyScalar(k.glow * 2));
       }
     }
-    this.poles.count = p;
-    this.poles.instanceMatrix.needsUpdate = true;
+    this.models.forEach((mesh, m) => { mesh.count = used[m]; mesh.instanceMatrix.needsUpdate = true; });
     cable.needsUpdate = true;
     this.cables.geometry.setDrawRange(0, c * 2);
     this.heads = g;
