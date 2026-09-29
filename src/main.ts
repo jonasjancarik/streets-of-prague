@@ -364,6 +364,9 @@ async function main() {
       enterOrExit();
       loose.splice(loose.indexOf(c), 1);
     }
+    // Three stars or more: the prison in Pankrác (if the map reaches that far), else the station in Bartolomějská.
+    const inMap = (lon: number, lat: number) => lon > w0 && lon < e0 && lat > s0 && lat < n0;
+    const cell = police.stars >= 3 && inMap(14.43747, 50.05786) ? [14.43747, 50.05786] : [14.41636, 50.08256];
     inspector.reset();
     let text = t('Busted');
     if (inspector.owed) {
@@ -373,6 +376,10 @@ async function main() {
     police.forgive();
     stats.busted++;
     frozen = 2.5;
+    if (inMap(cell[0], cell[1])) {
+      const [cx, cy] = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, cell);
+      void teleportTo(cx, cy);
+    }
     showBanner(text, true);
   };
   // Wasted: you drop where you are, and a few seconds later you come round outside the
