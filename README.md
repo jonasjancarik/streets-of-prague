@@ -14,6 +14,7 @@ npm install
 npm run dev          # http://localhost:5191
 npm run typecheck    # check browser source with strict TypeScript
 npm run build        # typecheck, then make a production build
+node scripts/bench.mjs   # frame times in Chrome at a few places (options in the script)
 ```
 
 The map data is built locally (see [Building the map](#building-the-map)); nothing

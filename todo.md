@@ -1,8 +1,8 @@
 # To do
 
-Possible next steps after the performance work of 27–28 September 2026 (the layered
+Possible next steps after the performance work of 27–29 September 2026 (the layered
 pipeline, tiles built in workers, parked cars kept out of the per-frame work, gzipped
-tile files). Rough order: quick wins first.
+tile files, cheaper ground shading). Rough order: quick wins first.
 
 ## Serving
 
@@ -37,31 +37,46 @@ tile files). Rough order: quick wins first.
 
 ## Game performance
 
-Measured on an M5 MacBook Air in Chromium, plus Chrome's 4× CPU throttling to stand
-in for a phone (60 fps standing, 57 driving, where it was 48 and 46). Worth
-checking on a real phone before going further.
+`scripts/bench.mjs` measures frame times in Google Chrome (headless, on the GPU) at
+fixed places; `--vs` compares with another server taking turns, `--ab` switches a
+change on and off within one page (both hold up when the machine is busy), `--cpu 4`
+stands in for a phone's CPU. After the work of 29 September 2026 (noise from a
+texture, the ground's broad variation baked per tile, cheaper stones, the ground
+shaded once a pixel, less per-frame bookkeeping), at 2× on an M5 in Chrome: 32–41%
+less time a frame than before it, and 32–42% less with the CPU slowed 4× at 1×.
+Still worth checking on a real phone.
 
-- **Ground overdraw.** Every ground layer is drawn without a depth test, over a
-  full-tile mosaic base, so each pixel is shaded two or three times with the most
-  expensive patterns. Drawing the opaque layers top-down with a stencil would shade
-  each pixel once, but the see-through layers (soft shading at shores and round
-  buildings, bridge shadows) have to stay in order on top, which makes it fiddly.
-  Only worth it if a phone turns out to be held back by the GPU; the Auto
-  graphics setting already steps down when frames are slow (`?graphics=high&dpr=2`
-  to compare).
+What a frame costs now, at 2× standing by the Old Town Square (switched off one at a
+time with `--ab`): the ground's patterns about 29% (the mosaic's stones 14%, dirt on
+the paving 12%), shadows on the ground 11%, roof tiles 12%, the facade pictures 7%,
+grime on the walls 6%, the shadow map's own pass 7%.
+
+- **MSAA costs about a fifth of a frame at 2×** (57 → 71 fps without it, Chrome on
+  an M5). At a pixel ratio of 2 the jagged edges are small. The renderer picks
+  antialiasing once, when it's made, so leaving it out at 2× (or in some graphics
+  tiers) means either choosing at start or drawing into a multisampled render
+  target that Auto can switch, with a pass to the screen after. A decision on the
+  look first. (Playwright's own Chromium makes MSAA look far costlier, 4.5× a
+  fragment against Chrome's 1.5×: benchmark in Chrome.)
+- **The mosaic's stones at the usual height on foot** are drawn at about a tenth of
+  their contrast (they fade out as they get smaller than a pixel) yet cost 14% of the
+  frame. A tighter fade would save most of that, but it's a change to the look.
+- **Ground overdraw** is gone: the stencil lets only the top solid layer shade a pixel
+  (1.4–2.1 layers a pixel before). Apple's GPUs skipped covered pixels on their own,
+  so it measured the same on a Mac; the gain is for GPUs that don't, untested. The
+  ground under buildings is still shaded where a GPU doesn't skip it: drawing the
+  ground after the buildings would need the tunnels' contents to be drawn after it
+  too.
+- **Parking a tile's cars runs on the main thread**: 0–4 ms a tile once warmed up,
+  but up to 30 ms for the first tiles on an M5, several times that on a phone. The
+  spots could be worked out in the tile worker, with only the cars made here.
 - **The street graphs only grow.** The drive and walk graphs, street names and the
   crowd's index keep the edges of every tile ever loaded, so memory grows over a
   long session across the city. The police's route search runs over the graph,
   including tiles that have been dropped, so shrinking it needs care.
-- **What's left on the main thread** (in order, standing on the Old Town Square):
-  the collision hash's generators (`SpatialHash.near` and `obstacles` in
-  `src/main.ts`), placing people (`Crowd.place` allocates a point per person per
-  step), and the trams, all ~300 of them updated every step even far away (they
-  already move in bigger steps when far).
-- **A benchmark in the repo.** The measurements were made with a throwaway
-  Playwright script (load at the Old Town Square, stand, drive east; frame times,
-  long tasks, CPU profile, draw calls). Worth keeping as `scripts/bench.mjs` to
-  compare changes against.
+- **What's left on the main thread** (in order, with the CPU slowed 4×): the trams'
+  steps and look-ahead, traffic, placing people (`Crowd.place`) and following
+  everyone's height (`TileWorld.track`, `surfaceAt`), then three.js's own work.
 
 ## Pipeline
 
@@ -190,11 +205,10 @@ What's in since 29 September 2026: clear, cloudy, rain, mist and snow
 (`src/weather.ts`), IPR's street lamps with a light map over the view
 (`src/lamps.ts`), headlights, lit windows and trams, rain and wind sounds.
 
-- **Measure what it costs.** The headless benchmark was too noisy that night (the
-  machine was busy: ±3 fps round 15 fps at 2×) to tell the weathers apart. Worth
-  checking: the mist sheet (a noise per pixel over the whole view), the extra noise
-  for wet and snowy ground on every ground layer, and the light map's pass. If they
-  show, the mist and the ripples could go in the Lowest graphics tier.
+- **What it costs** (measured on 29 September 2026, 2× on an M5 in Chrome, standing
+  by the Old Town Square, rather noisy): rain, a storm and mist about 10–15% more a
+  frame than a clear day, snow about 20%; night about the same as day. If phones
+  struggle, the mist and the ripples could go in the Lowest graphics tier.
 - **Hung lamps where there are none.** Streets with no IPR lamp within 20 m get one
   over their middle every 30 m (their real lamps hang on cables or walls, which the
   utility map mostly lacks). Motorways, service roads and tracks get none; footpaths
