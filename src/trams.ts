@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Point2 } from './map/geo.ts';
 import type { Car } from './car.ts';
@@ -18,12 +19,13 @@ export interface TramLine extends RawTramLine {
   trams: TramVehicle[];
 }
 interface TramLook {
+  kind: string;
   sections: THREE.Mesh[];
   sign: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 }
 interface TramCell { v: TramVehicle; x: number; y: number; c: number; s: number }
 export interface TramVehicle {
-  id: number; line: TramLine; s: number; speed: number; dwell: number; halt: number;
+  id: number; kind: string; line: TramLine; s: number; speed: number; dwell: number; halt: number;
   stuck: number; ghost: number; waitFor: TramVehicle | null; blocker: Car | null;
   spotted: number; forPlayer: boolean;
   held: number; shove: Car | null; look: TramLook | null; pending: number;
@@ -43,11 +45,12 @@ type Nearby = (x: number, y: number, radius: number) => Iterable<TrackObstacle>;
 // for curves, and brake for the tram in front and for anything on the track.
 // How many trams a line has out follows its timetable for the game clock's day and
 // hour (`perHour` in lines.json): trams join where the gaps are widest and leave
-// service out of sight. They're three-section articulated cars in red and white
-// (15T-like), with the line number on the roof; every section follows the track on its
-// own, so a tram bends round corners.
+// service out of sight. Each is one of the types Prague runs (see KINDS), with the line
+// number on the roof. The simulation treats them all alike, as three 10 m sections; how
+// one looks is its own: every section of its body lies along the track between its own
+// two points on it, so a tram bends round corners where the real one does.
 
-const SECTION = 10.2, GAP = 0.25, W = 2.5, H = 3.4;
+const SECTION = 10.2, GAP = 0.25, W = 2.5;
 const STEP = SECTION + GAP;
 const HALF = STEP + SECTION / 2; // from the middle of a tram to its front
 const BOGIE = SECTION / 2 - 1.6; // from the middle of a section to each of its bogies
@@ -69,48 +72,71 @@ const CELL = 20;
 const NONE: TramCell[] = [];
 const FAR = 800, FAR_STEP = 0.25; // trams further than this from the player move in steps of this many seconds
 
-function sectionGeometry(kind: string) {
-  const parts: THREE.BufferGeometry[] = [];
-  const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string) => {
-    const g = new THREE.BoxGeometry(sx, sy, sz);
-    g.translate(x, y, z);
-    const c = new THREE.Color(color), n = g.attributes.position.count, col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    parts.push(g);
-  };
-  box(SECTION, 1.0, W, 0, 0.85, 0, '#c4161c');
-  box(SECTION, 1.2, W * 0.99, 0, 1.95, 0, '#262b30');
-  box(SECTION, 0.55, W, 0, 2.82, 0, '#ecebe6');
-  box(SECTION - 0.4, 0.16, W * 0.9, 0, 3.17, 0, '#d4d4cf');
-  box(SECTION * 0.45, 0.35, W * 0.55, 0, 3.4, 0, '#9fa2a3');
-  // Cab ends: red nose with a dark windscreen, at the outer end of the first and last section.
-  if (kind !== 'mid') {
-    const x = (SECTION / 2) * (kind === 'front' ? 1 : -1);
-    box(0.5, 1.6, W * 0.96, x * 0.96, 2.1, 0, '#1b1f23');
-    box(0.7, 0.5, W, x * 0.96, 2.95, 0, '#c4161c');
-  } else {
-    box(1.4, 0.9, 0.08, -1, 3.6, 0, '#2d2f31'); // pantograph
-    box(0.1, 0.1, 1.6, -1, 4.05, 0, '#2d2f31');
+// The types, by their share of Prague's fleet (2026): the Škoda 15T most of all, Tatra
+// T3R.P in coupled pairs, the Škoda 14T, the Tatra KT8D5R.N2P and the new Škoda 52T.
+// Their bodies come from public/trams.glb (built in Blender by assets/trams/build.py):
+// sections <kind>_<n> from the front, each with where it goes in its userData.
+const KINDS: Record<string, number> = { '15T': 45, T3: 25, '14T': 12, KT8: 10, '52T': 8 };
+interface SectionSpec { geometry: THREE.BufferGeometry; front: number; length: number; pivot: number }
+interface TramType { sections: SectionSpec[]; length: number; sign: [number, number] }
+const types = new Map<string, TramType>();
+// The colours the parts are named after (the same as HEX in the build script).
+const PART: Record<string, string> = {
+  Red: '#c8161d', Cream: '#efe5c8', White: '#eeefeb', Silver: '#b4b8bb', Light: '#dcdedc', Roof: '#8f9396',
+  Black: '#1d1c1b', Dark: '#3a3d40', Glass: '#1e2830', Skirt: '#2b2a29', Bellows: '#252423', Lamp: '#fff6d8',
+  Tail: '#b3161b', Metal: '#5d6064', Pan: '#d9a21b',
+};
+
+export async function loadTrams(url = 'trams.glb') {
+  const gltf = await new GLTFLoader().loadAsync(url);
+  gltf.scene.updateMatrixWorld(true);
+  const c = new THREE.Color(), inv = new THREE.Matrix4(), m = new THREE.Matrix4();
+  for (const kind of Object.keys(KINDS)) {
+    const sections: SectionSpec[] = [];
+    let sign: [number, number] = [0, 4];
+    for (let i = 0; ; i++) {
+      const node = gltf.scene.getObjectByName(`${kind}_${i}`);
+      if (!node) break;
+      inv.copy(node.matrixWorld).invert();
+      const parts: THREE.BufferGeometry[] = [];
+      node.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        const g = new THREE.BufferGeometry();
+        g.setIndex(o.geometry.index);
+        g.setAttribute('position', o.geometry.attributes.position.clone());
+        g.setAttribute('normal', o.geometry.attributes.normal.clone());
+        g.applyMatrix4(m.multiplyMatrices(inv, o.matrixWorld));
+        c.set(PART[(Array.isArray(o.material) ? o.material[0] : o.material).name] || '#777777');
+        const col = new Float32Array(g.attributes.position.count * 3);
+        for (let k = 0; k < col.length; k += 3) col.set([c.r, c.g, c.b], k);
+        g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        parts.push(g);
+      });
+      const u = node.userData as { front: number; length: number; pivot: number; sign?: [number, number] };
+      if (u.sign) sign = u.sign;
+      sections.push({ geometry: mergeGeometries(parts), front: u.front, length: u.length, pivot: u.pivot });
+    }
+    if (!sections.length) throw new Error(`Missing ${kind} in trams.glb`);
+    const last = sections[sections.length - 1];
+    types.set(kind, { sections, length: last.front + last.length, sign });
   }
-  return mergeGeometries(parts);
+}
+
+function randomKind(r: () => number) {
+  const total = Object.values(KINDS).reduce((a, w) => a + w, 0);
+  let x = r() * total;
+  for (const [k, w] of Object.entries(KINDS)) if ((x -= w) < 0) return k;
+  return '15T';
 }
 
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
-// At night the windows (the dark band) are lit from inside.
+// At night the windows (the dark blue-ish glass) are lit from inside.
 material.onBeforeCompile = (sh) => {
   lampLit(sh);
   sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
   if (uLampOn > .005 && dot(vColor.rgb, vec3(.3, .59, .11)) < .03 && vColor.b > vColor.r) totalEmissiveRadiance += vec3(1., .88, .7) * .5 * uLampOn;`);
 };
 material.customProgramCacheKey = () => 'trams';
-const geoms: Record<string, THREE.BufferGeometry> = {};
-const sectionMesh = (kind: string) => {
-  geoms[kind] ||= sectionGeometry(kind);
-  const m = new THREE.Mesh(geoms[kind], material);
-  m.castShadow = true;
-  return m;
-};
 
 // The line number on the roof, white on the line's colour.
 const signGeometry = new THREE.PlaneGeometry(3.2, 1.6).rotateX(-Math.PI / 2);
@@ -211,7 +237,7 @@ export class Trams {
   scene: THREE.Scene;
   rng: () => number;
   clock: Clock;
-  pool: TramLook[];
+  pool: Map<string, TramLook[]>;
   grid: Map<number, TramCell[]>;
   gridSweep: number;
   list: TramVehicle[];
@@ -223,7 +249,7 @@ export class Trams {
     this.scene = scene;
     this.rng = rng;
     this.clock = clock;
-    this.pool = [];
+    this.pool = new Map();
     this.grid = new Map();
     this.gridSweep = 0;
     this.list = [];
@@ -250,7 +276,7 @@ export class Trams {
   }
 
   add(line: TramLine, s: number) {
-    const v: TramVehicle = { id: this.id++, line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, spotted: 0, forPlayer: false, held: 0, shove: null, look: null, pending: this.rng() * FAR_STEP, parts: [] };
+    const v: TramVehicle = { id: this.id++, kind: randomKind(this.rng), line, s, speed: 0, dwell: 0, halt: 0, stuck: 0, ghost: 0, waitFor: null, blocker: null, spotted: 0, forPlayer: false, held: 0, shove: null, look: null, pending: this.rng() * FAR_STEP, parts: [] };
     // Not on the short cut across a terminus with no loop.
     for (const h of line.halts) {
       if (h.to !== undefined && h.to !== h.s && line.path.ahead(h.s - HALF, v.s) < line.path.ahead(h.s, h.to) + 2 * HALF) v.s = h.to + HALF;
@@ -504,42 +530,54 @@ export class Trams {
     for (const v of this.list) {
       const mid = v.parts[1];
       const show = Math.hypot(mid.x - x, mid.y - y) < r;
-      if (show && !v.look) v.look = this.take(v.line);
+      if (show && !v.look) v.look = this.take(v);
       if (!show && v.look) { this.give(v.look); v.look = null; }
       if (!show) continue;
       const look = v.look;
       if (!look) continue;
-      // Each section keeps track of whether it's on a bridge deck or under one.
+      // Each third of the tram keeps track of whether it's on a bridge deck or under one.
       v.levels ||= v.parts.map(() => ({ x: 0, y: 0 }));
-      const levels = v.levels;
-      v.parts.forEach((p, i) => {
-        const m = look.sections[i], at = Object.assign(levels[i], { x: p.x, y: p.y });
-        const fx = Math.cos(p.ang) * SECTION / 2, fy = Math.sin(p.ang) * SECTION / 2;
-        const hf = height(p.x + fx, p.y + fy, at), hb = height(p.x - fx, p.y - fy, at);
-        m.position.set(p.x, (hf + hb) / 2, -p.y);
-        m.rotation.set(0, p.ang, Math.atan2(hf - hb, SECTION), 'YZX');
+      const levels = v.levels, type = types.get(v.kind)!, path = v.line.path, front = v.s + type.length / 2;
+      type.sections.forEach((spec, i) => {
+        const m = look.sections[i], c = front - spec.front - spec.length / 2;
+        const a = path.at(c + spec.pivot), b = path.at(c - spec.pivot);
+        const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+        const k = Math.max(0, Math.min(2, Math.round((c - v.s) / STEP) + 1));
+        const at = Object.assign(levels[k], { x: cx, y: cy });
+        const hf = height(a.x, a.y, at), hb = height(b.x, b.y, at);
+        m.position.set(cx, (hf + hb) / 2, -cy);
+        m.rotation.set(0, Math.atan2(a.y - b.y, a.x - b.x), Math.atan2(hf - hb, 2 * spec.pivot), 'YZX');
       });
       // The number reads the right way up whichever way the tram is going.
-      look.sign.rotation.y = Math.cos(v.parts[2].ang) < 0 ? Math.PI : 0;
+      look.sign.rotation.y = Math.cos(look.sections[0].rotation.y) < 0 ? Math.PI : 0;
     }
   }
 
-  take(line: TramLine): TramLook {
-    let look = this.pool.pop();
+  take(v: TramVehicle): TramLook {
+    let look = this.pool.get(v.kind)?.pop();
     if (!look) {
-      look = { sections: [sectionMesh('back'), sectionMesh('mid'), sectionMesh('front')], sign: new THREE.Mesh(signGeometry) };
-      look.sign.position.y = 3.75; // well clear of the roof box (top at 3.58), or the two flicker from high up
-      look.sections[2].add(look.sign);
+      const type = types.get(v.kind);
+      if (!type) throw new Error('Trams are not loaded');
+      const sections = type.sections.map((spec) => {
+        const m = new THREE.Mesh(spec.geometry, material);
+        m.castShadow = true;
+        return m;
+      });
+      look = { kind: v.kind, sections, sign: new THREE.Mesh(signGeometry) };
+      look.sign.position.set(type.sign[0], type.sign[1], 0); // over the roof, clear of the pantograph
+      look.sections[0].add(look.sign);
       for (const m of look.sections) this.scene.add(m);
     }
-    look.sign.material = signMaterial(line.ref, line.colour);
+    look.sign.material = signMaterial(v.line.ref, v.line.colour);
     for (const m of look.sections) m.visible = true;
     return look;
   }
 
   give(look: TramLook) {
     for (const m of look.sections) m.visible = false;
-    this.pool.push(look);
+    let pool = this.pool.get(look.kind);
+    if (!pool) this.pool.set(look.kind, (pool = []));
+    pool.push(look);
   }
 
   // Collision and look-ahead data for the trams within r of (x, y): for traffic, and

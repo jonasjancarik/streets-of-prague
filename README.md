@@ -362,9 +362,14 @@ the pixel ratio.
   tram held up in traffic shows up late there too. They stop at
   every stop, keep to the track's speed limit, slow down for curves and brake for the
   tram in front and for anything on the track. A car left on the track that holds a
-  tram up for a minute gets pushed aside, slowly. Three-section 15T-like cars with the
-  line number on the roof in the line's colour. They run all over the city at once, so
-  they come into view on their own timetable; only the ones near the camera are drawn.
+  tram up for a minute gets pushed aside, slowly. They're the types Prague runs, about
+  as often as in its fleet: the Škoda 15T, Tatra T3R.P in coupled pairs, the Škoda 14T,
+  the Tatra KT8D5R.N2P and the new Škoda 52T, with the line number on the roof in the
+  line's colour. Each section of a tram lies along the track on its own, so it bends
+  round a corner as the real one does. The bodies are built like the cars
+  (`assets/trams/build.py` → `public/trams.glb`, `-- --preview DIR` renders them), from
+  the real lengths and liveries. They run all over the city at once, so they come into
+  view on their own timetable; only the ones near the camera are drawn.
 - **Boats** on the Vltava (`src/boats.ts`): a few white cruise boats go slowly up and
   down the river, and pedal boats, every third a swan, paddle about round the islands.
   The river is only a ground layer, so the water of the loaded tiles is where they can

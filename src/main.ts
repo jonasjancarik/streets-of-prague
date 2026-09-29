@@ -9,7 +9,7 @@ import { Traffic, trafficWanted } from './traffic.ts';
 import { PavementDrivers } from './pavement.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
 import { loadFootfall } from './footfall.ts';
-import { Trams, pushOutOfTram } from './trams.ts';
+import { Trams, loadTrams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
 import { Taxis } from './taxi.ts';
 import { Clock } from './clock.ts';
@@ -98,6 +98,7 @@ async function main() {
   status('Loading the map…');
   const kitLoad = loadKit();
   const carsLoad = loadCars();
+  const tramsLoad = loadTrams();
   const footfallLoad = loadFootfall(AREA);
   const indexValue: unknown = await fetch(`data/${AREA}_now/index.json`).then((r) => {
     if (!r.ok) throw new Error(`Map index could not be loaded (${r.status})`);
@@ -161,6 +162,7 @@ async function main() {
   const kit = await kitLoad;
   useKit(kit);
   await carsLoad;
+  await tramsLoad;
   const weatherFx = new WeatherFx(scene);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), cover: params.get('cover'), ortho: params.has('ortho') });
   const grid = world.grid;
