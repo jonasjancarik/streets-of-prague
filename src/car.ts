@@ -267,6 +267,16 @@ export class Car {
   get driven() { return this.mode === 'player' || this.mode === 'police'; }
   get forwardSpeed() { return this.vx * Math.cos(this.h) + this.vy * Math.sin(this.h); }
 
+  // How far (x, y) is from the car, for getting in: from its middle less half its
+  // length, as for any car, but for a bus from the nearest point along its middle, or
+  // you could get in from across the street.
+  gap(x: number, y: number) {
+    const c = Math.cos(this.h), s = Math.sin(this.h), dx = x - this.x, dy = y - this.y;
+    const half = Math.min(this.spec.L / 2, 2.3), run = this.spec.L / 2 - half;
+    const along = clamp(dx * c + dy * s, -run, run);
+    return Math.hypot(dx - c * along, dy - s * along) - half;
+  }
+
   circles(): Point2[] {
     const c = Math.cos(this.h), s = Math.sin(this.h);
     return this.offsets.map((o) => [this.x + c * o, this.y + s * o]);

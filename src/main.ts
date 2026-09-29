@@ -375,7 +375,7 @@ async function main() {
     }
     let best = null, bestD = Infinity;
     for (const c of allCars()) {
-      const d = Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2;
+      const d = c.gap(walker.x, walker.y);
       if (d < bestD) { bestD = d; best = c; }
     }
     if (!best || bestD > 1.8) return;
@@ -951,7 +951,7 @@ async function main() {
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
     const canBoard = !inCar && !inHeli && !ride.on && !metro.active && ride.boardable(walker.x, walker.y);
     const station = !inCar && !inHeli && !ride.on && !metro.active ? metro.near(walker.x, walker.y) : null;
-    const gap = (c: Car) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2;
+    const gap = (c: Car) => c.gap(walker.x, walker.y);
     const enterable = !inCar && !inHeli && !ride.on
       ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8).sort((a, b) => gap(a) - gap(b))[0]
       : undefined;
