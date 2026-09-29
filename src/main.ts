@@ -721,6 +721,10 @@ async function main() {
     // Space jumps, except at a tram stop, where holding it waits for a tram.
     if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on && taxi.state !== 'coming') input.jump = true;
     if (e.code === 'KeyM' && !e.repeat) sound.toggle();
+    if (e.code === 'KeyN' && !e.repeat && inCar && !inCar.two && sound.radio) {
+      const station = sound.radio.next();
+      showBanner(station ? station.name : t('Radio off'));
+    }
     if (e.code === 'KeyG' && !e.repeat) { graphics.cycle(); showBanner(graphics.label()); }
     if (e.code === 'KeyP' && !e.repeat) { weather.cycle(); showBanner(weather.label()); }
     if (e.code === 'KeyH' && !e.repeat) foldHelp(!$('help').classList.contains('folded'));
@@ -812,6 +816,7 @@ async function main() {
     else if (how === 'opacity') el.style.opacity = String(value);
     else el.textContent = String(value);
   };
+  sound.onRadioFail = (station) => showBanner(t('{name} isn’t playing right now').replace('{name}', station.name), true);
   const showBanner = (text: string, alert = false) => {
     $('banner').textContent = text;
     $('banner').classList.toggle('alert', alert);

@@ -1,5 +1,7 @@
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
+import { Radio } from './radio.ts';
+import type { Station } from './radio.ts';
 import type { Car } from './car.ts';
 import type { TramVehicle } from './trams.ts';
 
@@ -88,6 +90,8 @@ export class Sound {
   tyres: Tyres | null = null;
   weather: WeatherSound | null = null;
   ambience: Ambience | null = null;
+  radio: Radio | null = null;
+  onRadioFail: (station: Station) => void = () => {};
   private strikes = -1;
   voices: TramVoice[] = [];
 
@@ -130,6 +134,8 @@ export class Sound {
     this.clack = clackBuffer(ctx);
     this.tyres = new Tyres(ctx, this.noise, this.master);
     this.weather = new WeatherSound(ctx, this.noise, this.master);
+    this.radio = new Radio(ctx, this.noise, this.master);
+    this.radio.onFail = (station) => this.onRadioFail(station);
     // The trams are heard once their recordings are in.
     Promise.all([...LOOPS, ...ONCE].map(async (name) => {
       const r = await fetch(`audio/${name}.${LOOPS.includes(name) ? 'wav' : 'm4a'}`);
@@ -156,7 +162,7 @@ export class Sound {
 
   update(dt: number, s: SoundState) {
     const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running' || !this.on) return;
+    if (!ctx || ctx.state !== 'running' || !this.on) { this.radio?.update(false); return; }
     const t = ctx.currentTime;
     this.master.gain.setTargetAtTime(s.quiet ? 0 : 0.8, t, 0.2);
 
@@ -168,6 +174,7 @@ export class Sound {
       if (spec) this.engine = new Engine(ctx, this.noise, this.master, car, spec);
     }
     this.engine?.update(dt, s.throttle);
+    this.radio?.update(!!car && !car.two && !s.quiet);
     this.tyres!.update(car, s.surface, s.wet ?? 0);
     this.weather!.update(s.rain ?? 0, s.snow ?? 0);
     this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0));
