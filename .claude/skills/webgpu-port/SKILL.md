@@ -19,25 +19,28 @@ Ported: the ground's patterns, noise, dirt and weather colour (`patterned()` in
 `src/shading.ts`, through `setPatterned`; `src/webgpu.ts`), the tone curve (`sky.ts`,
 registered with `renderer.library.addToneMapping`), and the buildings
 (`src/webgpu/buildings.ts`: roofs, windows, facade pictures, grime, lit windows, rain
-and snow, and the cutaway hole, also used by every `cutAway` material: landmarks, trees'
-`cut-*` key, the depth-only ground). Shared helpers and uniforms are in
+and snow, and the cutaway hole, also used by every `cutAway` material: landmarks, the
+depth-only ground), and the trees (`src/webgpu/trees.ts`: facets, creases, small leaves,
+bare twigs in winter, bark, snow on the crowns, the tint of light through leaves, and the
+twigs' shadows). Shared helpers and uniforms are in
 `src/webgpu/common.ts`. The lamps' light is ported too (`src/webgpu/lamps.ts`): the pools
 drawn into the light map (`setPools`, a node material with the same custom blending),
 `lampLight(world, normal)`, and `lampLit(node)`, which adds the light to a port's
 `emissiveNode`. It is on the ground (with the wet ground's mirror, `shine`), the
-buildings, the landmarks and trees' `cut-*` materials, and the poles. At night (22:00, 2×)
+buildings, the landmarks, the trees and the poles. At night (22:00, 2×)
 the whole lamp system costs +0.7 and +0.8 ms a frame on WebGPU against +0.2 and +0.5 ms
 on WebGL (Old Town Square, Karlovo náměstí; `--ab` swapping `lamps.update`'s `on` for
 0; the glows aren't drawn on WebGPU yet, so its number is a little low). Buildings cost 0.6–1.4 ms a frame at 2× on WebGPU against
-0.7–1.3 ms on WebGL (`--ab`, three scenes).
+0.7–1.3 ms on WebGL (`--ab`, three scenes). Trees cost +0.5 ms a frame on WebGPU against
++0.6 ms on WebGL (Petřín woods, 2×, clear noon, hiding every tree mesh; the GPU was 52% busy
+before the run and 80% after, another app's).
 
 Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 
 | Where | What | Notes |
 |---|---|---|
-| `shading.ts` `cutAway` | the hole over the player, for trees | ported for the landmarks and the depth ground (a `maskNode` on every `cut-*` material); trees still need `leafy` |
+| `shading.ts` `cutAway` | the hole over the player | ported for the landmarks, the depth ground and the trees (a `maskNode`) |
 | `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | ported for the ground, buildings, `cut-*` and poles (`lampLit(node)` in a port); cars, figures, trams, boats, funicular and signals still need it |
-| `map/vegetation.ts` `leafy`, `treeDepth` | leaves in tufts (vertex and fragment), bare twigs, their shadows | `treeDepth` is a `customDepthMaterial`, see below |
 | `figures.ts` `vatMaterial` | people animated from textures (`gl_VertexID`, `texelFetch`) | colour and depth versions |
 | `car.ts`, `trams.ts`, `boats.ts`, `funicular.ts` | snow on top, lamp light (`lampLit(node)`) | module-level materials, see "Load order" |
 | `underground.ts` | metro hole and earth | |

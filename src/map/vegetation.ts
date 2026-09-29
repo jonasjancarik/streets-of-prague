@@ -260,9 +260,13 @@ function crownGeometry() {
   geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   geom.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  geom.setAttribute('tuft', new THREE.Float32BufferAttribute(tuft, 3));
-  geom.setAttribute('across', new THREE.Float32BufferAttribute(across, 3));
-  geom.setAttribute('along', new THREE.Float32BufferAttribute(along, 3));
+  // One vertex buffer for the three (WebGPU allows eight, and the instances need theirs).
+  const leaf = new Float32Array(tuft.length * 3);
+  for (let i = 0; i < tuft.length / 3; i++) { leaf.set(tuft.slice(i * 3, i * 3 + 3), i * 9); leaf.set(across.slice(i * 3, i * 3 + 3), i * 9 + 3); leaf.set(along.slice(i * 3, i * 3 + 3), i * 9 + 6); }
+  const leaves = new THREE.InterleavedBuffer(leaf, 9);
+  geom.setAttribute('tuft', new THREE.InterleavedBufferAttribute(leaves, 3, 0));
+  geom.setAttribute('across', new THREE.InterleavedBufferAttribute(leaves, 3, 3));
+  geom.setAttribute('along', new THREE.InterleavedBufferAttribute(leaves, 3, 6));
   geom.setIndex(idx);
   return geom;
 }
