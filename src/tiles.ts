@@ -43,6 +43,7 @@ function isWorkerResponse(value: unknown): value is WorkerResponse {
 // tile's files, joins up the street graphs and makes the meshes and parked cars.
 
 const RES = 2; // collision grid cells per metre
+const RAISED = 3; // a building whose underside is this high (m) or more doesn't block the way under it
 // Metres a car or a walker can go up or down between the ground and a bridge or a
 // tunnel, or between two levels: where a bridge is that close to the ground (at its
 // ends), they drive onto it; further apart, it's overhead, or the ground is below the
@@ -575,6 +576,9 @@ export class TileWorld {
     const data = { ...t, size: [x1 - x0, y1 - y0] as Point2, origin: [-x0, -y0] as Point2 };
     const geo = new Geo(data);
     const own = t.buildings.filter((b) => b.own);
+    // What stands on the ground: not the parts raised well above it (a covered bridge
+    // between two buildings, an overhang on pillars), which you walk and drive under.
+    const grounded = (b: { minh?: number }) => !((b.minh ?? 0) >= RAISED);
     // The tile's paid-parking sections (clipped to it, with their share of spaces).
     const zones = new Zones({ sections: (t.sections || []).map((z) => ({ ...z, inside: z.share })) });
     if (t.drive && !this.driveBy.has(k)) {
@@ -626,12 +630,12 @@ export class TileWorld {
       }
     }
     const seedArray = new Float64Array(seeds);
-    const outlines = t.buildings.map((b) => ({ rings: b.rings }));
+    const outlines = t.buildings.filter(grounded).map((b) => ({ rings: b.rings }));
     const w = this.workers;
     const jobs = Promise.all([
       w.run('ground', {
         d: { areas: t.areas, roads: t.roads, rails: t.rails, weirs: t.weirs, crossings: t.crossings },
-        box: [geo.minX, geo.minY, geo.maxX, geo.maxY] as Bounds, edges: clipped, buildings: own.map((b) => ({ rings: b.rings })), parkingZones, ground, levels: tileLevels,
+        box: [geo.minX, geo.minY, geo.maxX, geo.maxY] as Bounds, edges: clipped, buildings: own.filter(grounded).map((b) => ({ rings: b.rings })), parkingZones, ground, levels: tileLevels,
       }),
       w.run('land', {
         data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, trees: t.trees, passages: t.passages || [], levels: !!tileLevels },
