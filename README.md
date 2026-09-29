@@ -23,7 +23,7 @@ the historic centre and `?area=ujezd` a small test area. The game's clock starts
 now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
 (with night-time parking). The weather changes by itself every half hour or so of the game's clock;
 `?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen (the loading screen's language, time, weather and sound choices and its Start button; the weather is the real weather in Prague now, from Open-Meteo (`src/liveweather.ts`), or else rolled anew on each visit), and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
-developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else. The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. Elements in `index.html` marked `data-t` work the same way.
+developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. Elements in `index.html` marked `data-t` work the same way.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser): High draws at the screen's
 pixel ratio up to 2, Medium up to 1.5, Low at 1, all with the tone curve, dirt and grime
 and the trees' small leaves; Lowest at 1 without them. Auto, the default, moves between
@@ -85,6 +85,17 @@ the pixel ratio.
   stand next to one (or any passing pedal boat or swan) and press E to get in
   (`src/boats.ts`). W/S pedal, A/D turn;
   E gets you out again where the bank is close.
+- **Money** (`src/money.ts`): you start with 10,000 Kč, shown top right, and can only spend
+  it (not saved between visits, never below 0). **PID ticket**: 46 Kč for 90 game minutes on
+  trams, the metro and the Petřín funicular (the NH hotel's funicular is free). Nothing is
+  bought for you: on a tram or the funicular you have 10 seconds to buy one (B, or "Buy a
+  ticket" on touch) and then ride without; the metro asks "Going in without a ticket?" at the
+  entrance. Riding without one risks an inspection (5% at each tram or funicular stop, 15% per
+  metro ride): pay the 1,200 Kč fine (B) within 5 seconds or get off and run, and the inspector
+  chases you on foot (`src/inspector.ts`). After 10 seconds, or at once if you get into a
+  vehicle, they phone the police: one star, and if you're then arrested the fine is 1,500 Kč.
+  Taxis need money for the fare, and let you out when it reaches your balance. Shared bikes are
+  paid as you ride (below).
 - **Taxis**: on foot near a street, press T (on touch, "Taxi") and pick how to get one
   (`src/taxi.ts`): wave down a street taxi, or order one through Zipp or Hopla, two
   made-up ride-hailing apps that cost less and whose drivers speed, tailgate and push
@@ -94,7 +105,7 @@ the pixel ratio.
   number (or tap) to pick one of ten well-known places (Old Town Square, Wenceslas
   Square, Main Station, Anděl, Prague Castle, Vyšehrad…). It finds its own way there
   along the one-way streets, sped up like a tram ride until the last 200 m, and you
-  pay at the end (a street taxi 60 Kč plus 36 Kč a km, the apps less). E gets you out
+  pay at the end from your money (a street taxi 60 Kč plus 36 Kč a km, the apps less; the meter shows in the hint, and a crash means a free ride). E gets you out
   early, and T cancels a taxi on its way. As on a tram, the police can't arrest you
   in a taxi, and your stars fade twice as fast.
 - **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
@@ -300,9 +311,11 @@ the pixel ratio.
   when the data has them; see `build_bikes.py` below) stands a row of the system's
   bikes, nextbike's blue, Rekola's pink (`src/bikeshare.ts`). Taking one starts a rental,
   and leaving it within 25 m of a station of the same system returns it and ends the
-  rental; left anywhere else it's only parked and still yours. Rides are free for now:
-  every finished rental is kept with its length by the game's clock and the system's
-  GBFS pricing plans, ready for paying for it.
+  rental; left anywhere else it's only parked and still yours. You pay as you go by the
+  system's GBFS pricing plan (nextbike: 39 Kč per begun half hour, at most 500 Kč a day): each
+  interval is charged when it begins, and the hint shows the price so far. A rented bike left
+  more than 300 m from you, burnt out or gone costs a fee of 500 Kč (1,000 Kč when the nearest
+  station of its system is over 3 km away).
 - **Buses.** A few red and white city buses drive Prague's real bus lines around you
   (`src/buses.ts`, from PID's timetables): each follows its line from junction to
   junction, shows its number and where it's going on the boards at the front and by the
@@ -454,7 +467,7 @@ from (geometry helpers, straight-skeleton buildings, trees).
 
 ## Not yet in the game
 
-- Something to do: missions (deliveries, taxi, courier).
+- Something to do: missions (deliveries, taxi, courier), and earning money.
 - Visible damage on cars.
 - Sound for the traffic, crashes, people and the helicopter.
 - Spray behind cars in the rain, and bare trees in winter.
