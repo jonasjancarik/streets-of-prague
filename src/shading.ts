@@ -45,6 +45,59 @@ function fbm(x: number, y: number) {
 // (BROAD_GLSL is the same in the shader). Tiles bake it into their hill shading.
 export const broad = (x: number, y: number) => 0.93 + 0.14 * fbm(x * 0.004, y * 0.004);
 
+// Dirt on the paving (grit in PATTERNS_GLSL), baked once into a texture that repeats every
+// GRIT_M metres: red the broad grimy patches (about 8 m), green the smaller stains (about
+// 2 m), each how dark from 0 to 1. One read a pixel instead of four noise reads, which cost
+// about 12% of a frame at 2×. Its own noise, wrapping round the texture's width, so it
+// repeats without a seam.
+export const GRIT_M = 512;
+const GRIT_SIZE = 1024;
+export const GRIT = {
+  value: (() => {
+    const hash = (i: number, j: number, s: number) => {
+      let h = Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(s, 2147483647);
+      h = Math.imul(h ^ (h >>> 13), 1274126177);
+      return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+    };
+    // Value noise at x, y in cells, wrapping every `n` cells (its lattice worked out once).
+    const noise = (n: number, s: number) => {
+      const lattice = new Float32Array(n * n);
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) lattice[j * n + i] = hash(i, j, s);
+      return (x: number, y: number) => {
+        const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+        const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+        const i0 = i % n, i1 = (i0 + 1) % n, r0 = (j % n) * n, r1 = ((j + 1) % n) * n;
+        return (lattice[r0 + i0] * (1 - ux) + lattice[r0 + i1] * ux) * (1 - uy) + (lattice[r1 + i0] * (1 - ux) + lattice[r1 + i1] * ux) * uy;
+      };
+    };
+    const fbm2 = (n: number, s: number) => {
+      const a = noise(n, s), b = noise(n * 2, s + 1);
+      return (x: number, y: number) => (a(x, y) * 2 + b(x * 2, y * 2)) / 3;
+    };
+    const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    // Cells across the texture: as near as whole numbers allow to the 0.13 and 0.6 a
+    // metre the shader had before.
+    const nb = Math.round(0.13 * GRIT_M), ns = Math.round(0.6 * GRIT_M);
+    const patches = fbm2(nb, 1), stains = fbm2(ns, 3);
+    const px = new Uint8Array(GRIT_SIZE * GRIT_SIZE * 2);
+    for (let v = 0; v < GRIT_SIZE; v++) {
+      for (let u = 0; u < GRIT_SIZE; u++) {
+        const x = (u + 0.5) / GRIT_SIZE, y = (v + 0.5) / GRIT_SIZE, k = (v * GRIT_SIZE + u) * 2;
+        px[k] = Math.round(255 * smooth(0.3, 0.85, patches(x * nb, y * nb)));
+        px[k + 1] = Math.round(255 * smooth(0.55, 0.85, stains(x * ns, y * ns)));
+      }
+    }
+    const tex = new THREE.DataTexture(px, GRIT_SIZE, GRIT_SIZE, THREE.RGFormat, THREE.UnsignedByteType);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.generateMipmaps = true;
+    tex.unpackAlignment = 2;
+    tex.needsUpdate = true;
+    return tex;
+  })(),
+};
+
 // Value noise reads its random lattice from a small texture (NOISE, below) instead of
 // hashing four corners per call: the smooth step between lattice points goes into
 // the coordinate, so one filtered read gives the same curve. It's the ground's main
@@ -190,12 +243,12 @@ vec3 pWater(vec3 c, vec2 p) {
   return c;
 }
 // Dirt on paved ground: broad grimy patches and smaller stains.
+// (Baked into uGrit, see GRIT.)
+uniform sampler2D uGrit;
 vec3 grit(vec3 c, vec2 p) {
   if (uDirt < .5) return c;
-  c *= 1. - .22 * smoothstep(.3, .85, fbm2(p * .13 + 5.));
-  float d = detail(p, .6);
-  if (d > 0.) c *= 1. - .12 * smoothstep(.55, .85, fbm2(p * .6 + 17.)) * d;
-  return c;
+  vec2 g = texture(uGrit, p * ${1 / GRIT_M}).rg;
+  return c * (1. - .22 * g.r) * (1. - .12 * g.g * detail(p, .6));
 }
 vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 1) return grit(pAsphalt(c, p), p);
@@ -481,6 +534,7 @@ export function patterned(
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = time;
     sh.uniforms.uNoise = NOISE;
+    sh.uniforms.uGrit = GRIT;
     sh.uniforms.uDirt = DIRT;
     sh.uniforms.uWet = WET;
     sh.uniforms.uSnow = SNOW;

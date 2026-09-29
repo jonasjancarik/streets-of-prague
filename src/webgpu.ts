@@ -13,7 +13,7 @@ import {
   Fn, If, Discard, float, vec2, vec3, vec4, uniform, texture, positionWorld, normalView, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select,
 } from 'three/tsl';
-import { setPatterned, SKY_REF } from './shading.ts';
+import { setPatterned, SKY_REF, GRIT, GRIT_M } from './shading.ts';
 import {
   type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports,
 } from './webgpu/common.ts';
@@ -114,11 +114,11 @@ function pWater(c0: N, p: N, time: N) {
   });
   return c;
 }
+const gritMap = texture(GRIT.value);
 function grit(c0: N, p: N) {
-  const c = vec3(c0).toVar(), d = detail(p, 0.6);
+  const c = vec3(c0).toVar(), d = detail(p, 0.6), g = gritMap.sample(p.div(GRIT_M)).rg.toVar();
   If(uDirt.greaterThan(0.5), () => {
-    c.mulAssign(float(1).sub(smoothstep(0.3, 0.85, fbm2(p.mul(0.13).add(5))).mul(0.22)));
-    If(d.greaterThan(0), () => { c.mulAssign(float(1).sub(smoothstep(0.55, 0.85, fbm2(p.mul(0.6).add(17))).mul(0.12).mul(d))); });
+    c.mulAssign(float(1).sub(g.x.mul(0.22)).mul(float(1).sub(g.y.mul(0.12).mul(d))));
   });
   return c;
 }
