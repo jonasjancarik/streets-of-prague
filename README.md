@@ -200,7 +200,11 @@ the pixel ratio.
   real one does. Tunnels keep a few metres of ground over them, more away from their
   portals, and wherever two cross on different OSM layers, the upper one clears the
   lower. They're put on levels (bridges 1, 2, …, tunnels -1, -2, …) so that ones
-  crossing at different heights never share one.
+  crossing at different heights never share one. The metro stations' corridors and
+  stairs (OSM tags them as tunnels too) are left out, both as tunnels and from the
+  walking network: footways and stairs underground that are indoors, reach a metro
+  entrance or come within 30 m of a station or platform. Underpasses away from the
+  metro stay.
   Cars, trams and people drive or walk onto a bridge or into a tunnel where it meets
   the street and off it at the far end; parapets and tunnel walls keep them in, and
   whatever is on one level and another passes by. Under a bridge a round hole opens in
@@ -334,8 +338,7 @@ from (geometry helpers, straight-skeleton buildings, trees, the Petřín funicul
 ## Known issues
 
 - **Bridges and tunnels.** A bridge IPR's model doesn't have (a newer one) slopes
-  evenly from one end to the other. Tunnels' depths are a guess (OSM has none), and
-  the metro stations' corridors and stairs are tunnels like any other.
+  evenly from one end to the other, and tunnels' depths are a guess (OSM has none).
 - **Past the city limits** the buildings come from OSM, and where OSM gives neither a
   height nor a number of storeys, the height is a guess from the kind of building and
   the size of its footprint (sheds, cottages, one- or two-storey houses, halls). The

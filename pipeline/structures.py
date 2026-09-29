@@ -49,7 +49,9 @@ COVER_SLOPE = 0.25  # how quickly a tunnel goes under that cover from a portal
 CLEAR = 5.5  # m between a bridge or tunnel and one crossing it on another layer
 SAME = 3.0  # m: two structures further apart in height than this can't share a level
 NO_HIGHWAY = {"proposed", "construction", "elevator", "platform", "bus_stop", "abandoned", "razed", "planned"}
-MOSTY_ITEM = "622e66a29f3d459a8dbc57939954db8c"  # IPR's mosty_shp
+STATION_FOOT = {"footway", "steps", "corridor", "pedestrian", "path"}  # a station's ways inside
+STATION = 30.0  # m from a metro station, platform or stop: its corridors and stairs
+MOSTY_ITEM ="622e66a29f3d459a8dbc57939954db8c"  # IPR's mosty_shp
 
 
 def structure_kind(tags):
@@ -62,15 +64,79 @@ def structure_kind(tags):
     return None
 
 
+def is_subway_station(tags):
+    """A metro station, its platform or its stop in OSM (a node, or a way round it)."""
+    if tags.get("station") == "subway":
+        return True
+    return tags.get("subway") == "yes" and (tags.get("railway") in ("station", "stop", "platform")
+                                           or tags.get("public_transport") in ("station", "stop_position", "platform"))
+
+
+def station_ways(els, tf):
+    """The ids of the ways that are a metro station's corridors and stairs: OSM tags them
+    tunnel=yes, but they're the station inside, not tunnels to walk through. Footways
+    and stairs in tunnels, taken together where they meet, are left out as a whole if
+    any of them is indoors (indoor=*), reaches a metro entrance (railway=subway_entrance),
+    comes within STATION metres of a metro station, platform or stop, or is inside a
+    station's outline. Underpasses away from the metro (under the magistrála by Hlavní
+    nádraží, say) stay."""
+    where = {el["id"]: (el["lon"], el["lat"]) for el in els if el["type"] == "node"}
+    entrances = {el["id"] for el in els if el["type"] == "node" and el.get("tags", {}).get("railway") == "subway_entrance"}
+    near, outlines = [], []
+    for el in els:
+        tags = el.get("tags", {})
+        if el["type"] == "node" and is_subway_station(tags):
+            near.append(where[el["id"]])
+        elif el["type"] == "way" and is_subway_station(tags):
+            pts = [where[n] for n in el["nodes"] if n in where]
+            near += pts
+            if len(pts) > 3 and el["nodes"][0] == el["nodes"][-1]:
+                outlines.append(Polygon(list(zip(*tf.transform(*zip(*pts))))).buffer(0))
+    foot = {el["id"]: el for el in els if el["type"] == "way" and el.get("tags", {}).get("highway") in STATION_FOOT
+            and structure_kind(el["tags"]) == "tunnel"}
+    if not foot:
+        return set()
+    # Group the footways that meet (share a node) into one piece each.
+    parent = {i: i for i in foot}
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+    first = {}
+    for i, el in foot.items():
+        for n in el["nodes"]:
+            parent[find(i)] = find(first.setdefault(n, i))
+    pieces = defaultdict(list)
+    for i in foot:
+        pieces[find(i)].append(i)
+    stations = STRtree(shapely.points([tf.transform(*p) for p in near]) if near else [])
+    inside = STRtree(outlines)
+    out = set()
+    for ids in pieces.values():
+        nodes = {n for i in ids for n in foot[i]["nodes"]}
+        pts = [tf.transform(*where[n]) for n in nodes if n in where]
+        line = shapely.multipoints(pts) if pts else None
+        if (any("indoor" in foot[i]["tags"] for i in ids) or nodes & entrances
+                or (line is not None and (len(stations.query(line, predicate="dwithin", distance=STATION))
+                                          or len(inside.query(line, predicate="intersects"))))):
+            out.update(ids)
+    return out
+
+
 def structure_ways(data, tf):
     """Every highway on a bridge or in a tunnel in a chunk's OSM data (osmnx's JSON of
     it): {id, kind, layer, hw, w, pts, nodes, grade}, `grade` saying for each node
-    whether a way on the ground meets it there (or the way ends there, on its own)."""
+    whether a way on the ground meets it there (or the way ends there, on its own).
+    A metro station's corridors and stairs aren't tunnels (station_ways)."""
     from osm_area import road_width, _float
 
     els = data["elements"]
     where = {el["id"]: (el["lon"], el["lat"]) for el in els if el["type"] == "node"}
-    ways = [el for el in els if el["type"] == "way" and el.get("tags", {}).get("highway") not in (None, *NO_HIGHWAY)]
+    inside = station_ways(els, tf)
+    ways = [el for el in els if el["type"] == "way" and el.get("tags", {}).get("highway") not in (None, *NO_HIGHWAY)
+            and el["id"] not in inside]
     on_ground, uses = set(), defaultdict(int)
     for el in ways:
         for n in el["nodes"]:
