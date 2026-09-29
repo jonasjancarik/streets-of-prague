@@ -4,7 +4,7 @@ import { Geo, Grid, rng, hash } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { treeMeshes } from './map/vegetation.ts';
 import { Surfaces } from './surface.ts';
-import { shadeBuildings, cutAway, broad } from './shading.ts';
+import { shadeBuildings, shadeLandmark, cutAway, broad } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { Zones, parkCars, inRing } from './parking.ts';
 import { decodeHeights, decodeLevels, heightSampler, fetchBinary } from './terrain.ts';
@@ -155,7 +155,7 @@ const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ ve
 // evenly, dimming at night and taking the street lamps' light like the rest. Baked
 // models are one-sided; a raw piece of the mesh (--raw) says it's two-sided.
 // The photographs are paler and yellower than Prague's roofs are to the eye: warm
-// colours (roofs, plaster, brick) go a little redder and more saturated; greys and
+// colours (roofs, plaster, brick) go a touch redder and a little more saturated; greys and
 // blues stay as they are.
 function warmUp(map: THREE.Texture) {
   const img = map.image as ImageBitmap;
@@ -172,8 +172,8 @@ function warmUp(map: THREE.Texture) {
     let h = ((g - b) / d) / 6;
     if (h > 0.17) continue;
     const w = 1 - Math.max(0, h - 0.11) / 0.06;
-    h = Math.max(0, h - 0.028 * w);
-    const s = Math.min(1, (d / mx) * (1 + 0.28 * w));
+    h = Math.max(0, h - 0.018 * w);
+    const s = Math.min(1, (d / mx) * (1 + 0.08 * w));
     const k = h * 6;
     g = mx * (1 - s * (1 - k)); b = mx * (1 - s); r = mx;
     px[i] = r * 255; px[i + 1] = g * 255; px[i + 2] = b * 255;
@@ -191,7 +191,7 @@ async function landmarkModel(url: string) {
     if (!(o instanceof THREE.Mesh)) return;
     const { map, side } = o.material as THREE.MeshStandardMaterial;
     if (map) { map.anisotropy = 4; warmUp(map); }
-    o.material = cutAway(new THREE.MeshLambertMaterial({ map, side }), 'landmark');
+    o.material = shadeLandmark(new THREE.MeshLambertMaterial({ map, side }));
     // Up in the world, in the mesh's own axes (in case the file turns it).
     const up = new THREE.Vector3(0, 1, 0).applyMatrix3(new THREE.Matrix3().getNormalMatrix(o.matrixWorld).invert()).normalize();
     const n = o.geometry.attributes.position.count;

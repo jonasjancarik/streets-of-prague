@@ -14,7 +14,7 @@ export interface BuildingTile extends GeoData {
 interface WallTile { walls: { kind: string; pts: Point2[] }[] }
 interface WallBuffers { position: Float32Array; normal: Float32Array }
 
-const ROOF_TILES = ['#d16b4f', '#c25942', '#e07f5e', '#b85c49', '#cc6749', '#c76e58', '#db7a58', '#bd5942'];
+const ROOF_TILES = ['#b2644b', '#a6543f', '#bf7256', '#9e5442', '#ad5f45', '#a8634f', '#ba6e50', '#a15540'];
 const ROOF_SLATE = ['#6c6d70', '#5e6064', '#77746f'];
 const ROOF_COPPER = '#6f9483';
 const WALLS = ['#e4d4b1', '#dac49b', '#efe3c6', '#cfb98f', '#e9d0a2', '#d8c7b0', '#e6c9a8'];

@@ -52,7 +52,7 @@ SURFACES = {"RoofSurface": 1, "WallSurface": 0, "GroundSurface": 2, "ClosureSurf
 # Heights are stored in cm above this, so buildings stand on the terrain (ipr_terrain.py).
 REF_HEIGHT = 180.0
 
-ROOF_TILES = ["#d16b4f", "#c25942", "#e07f5e", "#b85c49", "#cc6749", "#c76e58", "#db7a58", "#bd5942"]
+ROOF_TILES = ["#b2644b", "#a6543f", "#bf7256", "#9e5442", "#ad5f45", "#a8634f", "#ba6e50", "#a15540"]
 ROOF_SLATE = ["#6c6d70", "#5e6064", "#77746f"]
 COPPER = "#6f9483"
 WALLS = ["#e4d4b1", "#dac49b", "#efe3c6", "#cfb98f", "#e9d0a2", "#d8c7b0", "#e6c9a8"]

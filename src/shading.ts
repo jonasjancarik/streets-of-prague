@@ -360,6 +360,36 @@ export function cutAway<M extends THREE.Material>(material: M, key: string): M {
   return material;
 }
 
+// The colour of the tiles on a landmark's roofs (linear), a middling one of ROOF_TILES.
+export const LANDMARK_TILE_RGB = (() => { const c = new THREE.Color('#ad5f45'); return [c.r, c.g, c.b]; })();
+
+// A landmark: the cutaway, and its roofs, where the photograph shows a red one, drawn with
+// the tile pattern of the other roofs at the photograph's brightness. The face's own
+// normal comes from derivatives: the model's normals are all "up" for the light.
+export function shadeLandmark(material: THREE.MeshLambertMaterial) {
+  cutAway(material, 'landmark-roof');
+  const cut = material.onBeforeCompile;
+  material.onBeforeCompile = (sh, r) => {
+    cut(sh, r);
+    sh.uniforms.uNoise = NOISE;
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\n${NOISE_GLSL}\n${BUILDING_GLSL}`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+  vec3 lmFn = cross(dFdx(vCutWorld), dFdy(vCutWorld));
+  vec3 lmUp = normalize(lmFn * (lmFn.y < 0. ? -1. : 1.));
+  vec3 lmC = diffuseColor.rgb;
+  float lmMax = max(lmC.r, max(lmC.g, lmC.b)), lmMin = min(lmC.r, min(lmC.g, lmC.b));
+  float lmHue = (lmC.g - lmC.b) / max(lmMax - lmMin, .001) / 6.;
+  float lmWarm = max(smoothstep(.18, .3, (lmMax - lmMin) / max(lmMax, .001)) * (1. - smoothstep(.11, .16, lmHue)),
+    1. - smoothstep(.02, .06, dot(lmC, vec3(.299, .587, .114))))
+    * step(max(lmC.g, lmC.b), lmC.r + .01) * smoothstep(.15, .3, lmUp.y);
+  vec3 lmTile = roofTiles(vec3(${LANDMARK_TILE_RGB.map((v) => v.toFixed(4)).join(',')}) * clamp(dot(lmC, vec3(.299, .587, .114)) / .15, .15, 1.7), vec2(vCutWorld.x, -vCutWorld.z), lmUp);
+  diffuseColor.rgb = mix(lmC, lmTile, lmWarm);`);
+  };
+  material.customProgramCacheKey = () => 'landmark-roof';
+  return material;
+}
+
 export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uCut = CUTAWAY;

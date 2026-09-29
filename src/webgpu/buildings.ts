@@ -7,10 +7,10 @@
 import * as THREE from 'three';
 import {
   Fn, If, Discard, float, int, vec2, vec3, vec4, array, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
-  materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select,
+  materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON } from '../facades.ts';
-import { WINDOWS } from '../shading.ts';
+import { WINDOWS, LANDMARK_TILE_RGB } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks } from './common.ts';
 
@@ -31,6 +31,7 @@ const F_DOOR = ints([7, 8, 9, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45]);
 const F_WALL = ints([6, 6, 10, 11, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43]);
 
 const fHash = (a: N, b: N) => fract(sin(a.mul(127.1).add(b.mul(311.7))).mul(43758.5453));
+const LANDMARK_TILE = vec3(...LANDMARK_TILE_RGB);
 const luma = (c: N) => dot(c, vec3(0.299, 0.587, 0.114));
 // detail() with the pixel's footprint worked out once, outside any branch (derivatives).
 const fade = (width: N, cell: number) => float(1).sub(smoothstep(cell * 0.2, cell * 0.7, width));
@@ -148,6 +149,32 @@ addPort(/^buildings-procedural$/, (node) => {
 addPort(/^cut-/, (node) => {
   const w = positionWorld;
   node.maskNode = w.y.greaterThan(uCut.y).and(distance(w.xz, uCut.xz).lessThan(uCut.w)).not();
+  lampLit(node);
+});
+
+// Landmarks' roofs: where the photograph shows a red roof, the tile pattern of the other
+// roofs, in their colour, at the brightness of the photograph (its shadows and dormers).
+// The face's own normal comes from derivatives: the model's normals are all "up" for the light.
+const landmarkColor = Fn(() => {
+  const w = positionWorld.toVar();
+  const c = vec3(materialColor).toVar();
+  const fn = cross(dFdx(w), dFdy(w)).toVar();
+  const up = normalize(fn.mul(select(fn.y.lessThan(0), -1, 1))).toVar();
+  const bwp = vec2(w.x, w.z.negate()).toVar();
+  const wpWidth = length(abs(dFdx(bwp)).add(abs(dFdy(bwp)))).toVar();
+  const mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
+  const sat = mx.sub(mn).div(max(mx, 0.001));
+  const hue = c.g.sub(c.b).div(max(mx.sub(mn), 0.001)).div(6);
+  const roofFace = smoothstep(0.15, 0.3, up.y);
+  const reddish = step(max(c.g, c.b), c.r.add(0.01));
+  const warm = max(smoothstep(0.18, 0.3, sat).mul(float(1).sub(smoothstep(0.11, 0.16, hue))), float(1).sub(smoothstep(0.02, 0.06, luma(c)))).mul(reddish).mul(roofFace);
+  const tile = roofTiles(LANDMARK_TILE.mul(clamp(luma(c).div(0.15), 0.15, 1.7)), bwp, up, wpWidth);
+  return mix(c, tile, warm);
+});
+addPort(/^landmark-roof$/, (node) => {
+  const w = positionWorld;
+  node.maskNode = w.y.greaterThan(uCut.y).and(distance(w.xz, uCut.xz).lessThan(uCut.w)).not();
+  node.colorNode = landmarkColor();
   lampLit(node);
 });
 
