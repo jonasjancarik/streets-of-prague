@@ -27,6 +27,14 @@ export const CS: Record<string, string> = {
   'Building the streets…': 'Stavba ulic…',
   Streets: 'Ulice',
   'of Prague': 'Prahy',
+  // Settings (the corner buttons)
+  Settings: 'Nastavení',
+  Graphics: 'Grafika',
+  Auto: 'Automaticky',
+  Changing: 'Proměnlivé',
+  'Sound on (M)': 'Zvuk zapnutý (M)',
+  'Sound off (M)': 'Zvuk vypnutý (M)',
+  'Credits and licences': 'Poděkování a licence',
 
   // Banners
   'Weather: {name}': 'Počasí: {name}',

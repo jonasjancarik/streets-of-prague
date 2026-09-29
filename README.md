@@ -95,8 +95,12 @@ the pixel ratio.
   your thumb down away from the stick and the stick moves under it. In the car, lane
   assist is a toggle above the stick, showing the speed limit it keeps to while it's
   on; the right thumb has the gas and brake (roll from one to the other without
-  lifting), the handbrake and "Get out"; "Back on road" is top right.
-  Pinch the map to zoom (`src/touch.ts`).
+  lifting), the handbrake and "Get out"; "Back on road" is top right, under the
+  sound and settings buttons. Pinch the map to zoom (`src/touch.ts`).
+- **Sound and settings.** Two buttons in the top right corner: sound on or off (also
+  M), and the settings, with the start screen's choices during play: language, sound,
+  graphics (also G) and weather (also P). On a phone the credits are in there too
+  (`src/settings.ts`).
 - **Police.** Knocking people over, pulling drivers out of their cars, wrecking
   traffic, ramming or stealing a police car and speeding past the police (20 km/h over
   the limit) earn stars, up to five; crimes the police see count three times as much.
