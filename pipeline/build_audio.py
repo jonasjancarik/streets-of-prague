@@ -1,12 +1,12 @@
-"""The trams' recorded sounds: cut from Freesound recordings of Prague trams into the
-short clips the game plays (src/audio.ts).
+"""The game's recorded sounds: the trams, and the city around you, cut from Freesound
+recordings (most of them made in Prague) into the clips the game plays (src/audio.ts).
 
     uv run build_audio.py        # → public/audio/*.wav, *.m4a (needs ffmpeg)
 
 The recordings are Freesound's public previews (192 kbps Ogg), downloaded once into
-.cache/audio/freesound/; nearly all are CC0 from two packs recorded by students of a
-Prague school, and one (the motor) is CC BY 4.0, credited in the README. Every clip's
-source is in public/audio/SOURCES.md.
+.cache/audio/freesound/. The trams' are nearly all CC0, from two packs recorded by
+students of a Prague school; the ones under CC BY are credited in the README. Every
+clip's source is in public/audio/SOURCES.md.
 
 Where each clip comes from was picked by measuring the recordings (loudness and the
 strongest tone over time), not by ear:
@@ -17,6 +17,13 @@ strongest tone over time), not by ear:
   the start of a file, which leaves a gap in a loop.
 - One-off sounds (the bell, pulling away, arriving at a stop) are AAC, faded in and
   out at the cuts.
+- The city's sound (amb-*: the crowd, traffic, the night, birds) is long stereo loops,
+  the steadiest stretch of each recording (no loud one-off sound, as even a level at
+  the end as at the start), crossfaded over two seconds and only slowly evened out,
+  so it keeps its own swell. Birdsong ("song") isn't evened out at all: it's phrases
+  with quiet between them, which evening out would fill with noise. AAC: at 45 s or
+  more a small gap at the seam wouldn't matter as much as the size, and browsers
+  decode it without one.
 """
 
 import subprocess
@@ -41,9 +48,16 @@ SOURCES = {
     497564: "497/497564_10809263-hq.ogg",  # 14 Tram leaving the station
     461311: "461/461311_9677231-hq.ogg",  # 09-1_departure-close
     461320: "461/461320_9677231-hq.ogg",  # 10_arrival
+    212034: "212/212034_3658882-hq.ogg",  # Prague, Staro Mesto, City Center part.2 (CC BY 3.0, vonfleisch)
+    212035: "212/212035_3658882-hq.ogg",  # Prague, Staro Mesto, City Center part.1 (CC BY 3.0, vonfleisch)
+    94309: "94/94309_542096-hq.ogg",  # Prague Atmo Traffic from 5th floor (CC BY 4.0, aUREa)
+    572530: "572/572530_97550-hq.ogg",  # Night city rumble quiet distant traffic (TRP)
+    116791: "116/116791_1088850-hq.ogg",  # Blackbird 252 (nigelcoop)
+    475836: "475/475836_3374104-hq.ogg",  # Birds in the garden 1 (rionka, Brno)
+    498378: "498/498378_10815958-hq.ogg",  # 01 - atmosphere, a garden in the morning (16FHermanovaB)
 }
 
-# name: (source, channel (None: both mixed), start s, end s, kind, rate, high-pass Hz)
+# name: (source, channel (None: both mixed, "stereo": both kept), start s, end s, kind, rate, high-pass Hz)
 # The bells are recorded with the two microphones out of phase, so mixing them
 # would cancel much of the ring: one channel. 621068 is mid-side: its left channel
 # is the mid, a plain mono recording.
@@ -57,6 +71,14 @@ CLIPS = {
     "depart-1": (497564, None, 2.2, 16.2, "once", SR, None),
     "depart-2": (461311, None, 3.4, 10.3, "once", SR, None),
     "arrive": (461320, None, 6.5, 15.0, "once", SR, None),
+    # The city (src/audio.ts, Ambience): the steadiest stretch of each, found by measuring.
+    "amb-crowd": (212034, "stereo", 119.0, 171.0, "amb", SR, None),  # the Old Town, fewest cars in it
+    "amb-crowd2": (212035, "stereo", 47.0, 89.0, "amb", SR, None),  # layered with it: repeats only every ~200 s
+    "amb-traffic": (94309, "stereo", 39.0, 86.0, "amb", SR, None),
+    "amb-night": (572530, "stereo", 71.0, 123.0, "amb", SR, None),
+    "amb-blackbird": (116791, "stereo", 30.0, 92.0, "song", SR, None),
+    "amb-garden": (475836, "stereo", 0.0, 27.5, "song", SR, None),
+    "amb-morning": (498378, "stereo", 20.0, 67.0, "amb", SR, None),
 }
 
 
@@ -100,6 +122,18 @@ def loop(x: np.ndarray) -> np.ndarray:
     return body / np.sqrt((body ** 2).mean()) * 0.1  # -20 dBFS
 
 
+def ambience(x: np.ndarray, even=True) -> np.ndarray:
+    # Stereo: even out only the slow drift (a 6 s window over both channels), then fold
+    # the last two seconds over the start.
+    if even:
+        x = x / envelope(x.mean(1), 6.0)[:, None]
+    fade = int(SR * 2)
+    body = x[:-fade].copy()
+    r = np.linspace(0, 1, fade)[:, None]
+    body[:fade] = x[-fade:] * np.sqrt(1 - r) + x[:fade] * np.sqrt(r)
+    return body / np.sqrt((body ** 2).mean()) * 0.1  # -20 dBFS
+
+
 def once(x: np.ndarray) -> np.ndarray:
     fade_in, fade_out = int(SR * 0.01), int(SR * 0.3)
     x = x.copy()
@@ -112,21 +146,22 @@ def write(name: str, x: np.ndarray, kind: str, rate: int):
     OUT.mkdir(parents=True, exist_ok=True)
     pcm = np.clip(x, -1, 1).astype(np.float32).tobytes()
     out = OUT / (f"{name}.wav" if kind == "loop" else f"{name}.m4a")
-    codec = ["-c:a", "pcm_s16le"] if kind == "loop" else ["-c:a", "aac", "-b:a", "96k"]
+    codec = {"loop": ["-c:a", "pcm_s16le"], "once": ["-c:a", "aac", "-b:a", "96k"], "amb": ["-c:a", "aac", "-b:a", "80k"], "song": ["-c:a", "aac", "-b:a", "80k"]}[kind]
+    channels = "2" if x.ndim == 2 else "1"
     # (Resampled before the crossfade point matters: the loop's length changes with
     # the rate, not its seam.)
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "1", "-i", "-",
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(SR), "-ac", channels, "-i", "-",
                     "-ar", str(rate), *codec, str(out)], input=pcm, check=True)
     return out
 
 
 def main():
     for name, (sid, channel, start, end, kind, rate, hp) in CLIPS.items():
-        s = load(sid)
-        x = (s[:, channel] if channel is not None else s.mean(1))[int(start * SR):int(end * SR)]
+        s = load(sid)[int(start * SR):int(end * SR)]
+        x = s if channel == "stereo" else s[:, channel] if channel is not None else s.mean(1)
         if hp:
             x = highpass(x, hp)
-        x = loop(x) if kind == "loop" else once(x)
+        x = {"loop": loop, "once": once, "amb": ambience, "song": lambda x: ambience(x, even=False)}[kind](x)
         out = write(name, x, kind, rate)
         print(f"{out.name:14} {len(x) / SR:5.2f} s  {out.stat().st_size / 1000:6.0f} kB  from {sid}")
 
