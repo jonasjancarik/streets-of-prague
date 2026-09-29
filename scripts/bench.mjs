@@ -6,6 +6,7 @@
 //   node scripts/bench.mjs [--url http://localhost:5191/] [--scenes stand,drive,woods]
 //     [--seconds 10] [--dpr 2] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
 //     [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json]
+//     [--browser chrome|chromium]
 //     [--vs http://localhost:5192/ (compare with another server, taking turns)]
 //     [--ab "window.__ab = (on) => { … }" [--window 2]] [--shot /tmp/look-%s.png [--zoom 0.5]]
 //
@@ -83,13 +84,13 @@ async function runScene(browser, name, base = URL_BASE) {
   // Settle: the streets round the view load, the shaders compile.
   await page.waitForTimeout(place.drive ? 3000 : 6000);
   await page.waitForFunction(() => window.__drive.world.inFlight.size === 0, null, { timeout: 60000, polling: 200 }).catch(() => {});
+  if (args.eval) { const out = await page.evaluate(args.eval); if (out !== undefined) console.log(typeof out === "string" ? out : JSON.stringify(out, null, 1)); await page.waitForTimeout(1000); }
   if (args.shot) {
     // A still for comparing looks: the clock and the crowd held, so two runs match.
     if (args.zoom) await page.evaluate((z) => window.__drive.view(z), Number(args.zoom));
     await page.waitForTimeout(1500);
     await page.screenshot({ path: String(args.shot).replace('%s', name) });
   }
-  if (args.eval) { const out = await page.evaluate(args.eval); if (out !== undefined) console.log(typeof out === "string" ? out : JSON.stringify(out, null, 1)); await page.waitForTimeout(1000); }
 
   const cdp = CPU > 1 || args.profile ? await ctx.newCDPSession(page) : null;
   if (CPU > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU });
@@ -179,8 +180,10 @@ function topSelf(profile, n = 25) {
   return [...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => `${(v / total * 100).toFixed(1).padStart(5)}%  ${k}`);
 }
 
+// Google Chrome itself by default (--browser chromium for Playwright's own build, whose
+// MSAA costs several times more than Chrome's on a Mac).
 const browser = await pw.chromium.launch({
-  headless: true,
+  headless: true, channel: args.browser === 'chromium' ? undefined : 'chrome',
   args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--enable-unsafe-webgpu'],
 });
 const all = [];
