@@ -451,6 +451,10 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 
 ## Credits
 
+The game credits the map's sources in the corner of the screen (**Credits** opens the
+list, with the licences), and the build writes the full licence texts of the bundled
+libraries to `dist/licenses.txt` (a small plugin in `vite.config.js`).
+
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
 - Tram and metro timetables: [PID / ROPID](https://pid.cz/o-systemu/opendata/), CC BY 4.0, reduced to trips per hour.
 - 3D buildings, bridges and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
@@ -461,8 +465,9 @@ gives JSON a Content-Type, which Cloudflare needs before it compresses a respons
 - Tram sounds: [Freesound](https://freesound.org), nearly all CC0; the motor's whine is
   [tramvaj nova prujezd nabrezi MS](https://freesound.org/s/621068/) by ozvuk,
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (see `public/audio/SOURCES.md`).
+- Drawing: [three.js](https://threejs.org/) (MIT); map projections: [proj4js](https://proj4js.github.io/proj4js/) (MIT).
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
-- Maps in the developer panel: [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).
+- Maps in the developer panel: [Leaflet](https://leafletjs.com/) (BSD-2-Clause) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).
 
 ### Licences for added assets
 
