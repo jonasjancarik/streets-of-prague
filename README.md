@@ -291,7 +291,10 @@ the pixel ratio.
   go: each boat looks ahead and to both sides and turns towards the more open water,
   and turns back short of a weir. They're put on the water near you and taken away
   when they fall far behind; they keep to the water's height, so they pass under the
-  bridges. Low-poly bodies built from boxes and extrusions, one mesh each.
+  bridges. Low-poly bodies built from boxes and extrusions, one mesh each. At night,
+  when the street lamps come on, the cruise boats' cabin windows light up and they
+  show their navigation lights (red to port, green to starboard, white on the mast
+  and at the stern).
 - **Sound** (`src/audio.ts`, Web Audio API). Your engine and tyres are made in code:
   the engine's note follows the revs up through the gears (lower for a van, higher for
   a motorbike, none on a bike), and the tyres hiss on asphalt, rumble over setts at the
