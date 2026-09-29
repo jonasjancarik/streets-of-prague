@@ -182,6 +182,7 @@ vTint = aPart < 0.5 ? aSkin : aPart < 1.5 ? aShirt : aPart < 2.5 ? (aAnimB.w > 0
     }
   };
   material.customProgramCacheKey = () => `figures-${colour}`;
+  material.userData.vat = kit;
   return material;
 }
 
@@ -200,6 +201,7 @@ export function randomLook(r: () => number): Look {
 export class Figures {
   kit: FigureKit;
   attr: Record<string, THREE.InstancedBufferAttribute>;
+  looks: Record<string, THREE.InterleavedBufferAttribute>;
   mesh: THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
   capacity: number;
   sleeves: Uint8Array;
@@ -210,12 +212,18 @@ export class Figures {
     g.setIndex(base.index);
     for (const k of ['position', 'normal', 'aPart']) g.setAttribute(k, base.attributes[k]);
     this.attr = {};
-    for (const [k, size] of ([['aAnimA', 4], ['aAnimB', 4], ['aShirt', 3], ['aTrousers', 3], ['aSkin', 3], ['aHair', 3]] as [string, number][])) {
-      const a = new THREE.InstancedBufferAttribute(new Float32Array(capacity * size), size);
-      if (k.startsWith('aAnim')) a.setUsage(THREE.DynamicDrawUsage);
+    for (const k of ['aAnimA', 'aAnimB']) {
+      const a = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
+      a.setUsage(THREE.DynamicDrawUsage);
       g.setAttribute(k, a);
       this.attr[k] = a;
     }
+    // The four colours share one vertex buffer (WebGPU allows eight).
+    const worn = new THREE.InstancedInterleavedBuffer(new Float32Array(capacity * 12), 12, 1);
+    this.looks = {};
+    ['aShirt', 'aTrousers', 'aSkin', 'aHair'].forEach((k, n) => {
+      g.setAttribute(k, (this.looks[k] = new THREE.InterleavedBufferAttribute(worn, 3, n * 3)));
+    });
     this.mesh = new THREE.InstancedMesh(g, kit.material, capacity);
     this.mesh.customDepthMaterial = kit.depthMaterial;
     this.mesh.castShadow = true;
@@ -229,8 +237,8 @@ export class Figures {
     const c = new THREE.Color();
     for (const [k, v] of ([['aShirt', look.shirt], ['aTrousers', look.trousers], ['aSkin', look.skin], ['aHair', look.hair]] as [string, string][])) {
       c.set(v);
-      this.attr[k].setXYZ(i, c.r, c.g, c.b);
-      this.attr[k].needsUpdate = true;
+      this.looks[k].setXYZ(i, c.r, c.g, c.b);
+      this.looks[k].data.needsUpdate = true;
     }
     this.sleeves[i] = look.sleeves ? 1 : 0;
   }

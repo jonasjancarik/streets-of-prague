@@ -55,7 +55,7 @@ const vBare = () => uBare.mul(float(1).sub(evergreen));
 // The tree's instance matrix, for the parts that need the plain crown (a tile's trees
 // are one InstancedMesh; three.js keeps its own copy of the node inside).
 const matrixBuffers = new WeakMap<THREE.InstancedBufferAttribute, THREE.InstancedInterleavedBuffer>();
-const instanceMatrix = Fn((builder: N) => {
+export const instanceMatrix = Fn((builder: N) => {
   const m = builder.object.instanceMatrix as THREE.InstancedBufferAttribute;
   let buffer = matrixBuffers.get(m);
   if (!buffer) matrixBuffers.set(m, (buffer = new THREE.InstancedInterleavedBuffer(m.array as Float32Array, 16, 1)));

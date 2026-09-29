@@ -22,6 +22,7 @@ import './webgpu/buildings.ts';
 import './webgpu/trees.ts';
 import './webgpu/soft.ts';
 import './webgpu/vehicles.ts';
+import './webgpu/figures.ts';
 
 // PATTERNS_GLSL.
 function pAsphalt(c0: N, p: N) {

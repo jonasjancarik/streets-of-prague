@@ -43,15 +43,18 @@ brightness); by night it looks the same. The cars, trams, funicular and boats
 (`src/webgpu/vehicles.ts`: snow on the cars' tops, the tram, funicular and boat windows
 lit at night through `emissiveNode`, and `lampLit`) cost +0.0 and +0.4 ms a frame on WebGL
 against +0.8 and +1.0 ms on WebGPU (Old Town Square, the drive from Újezd; 2×, clear noon,
-`--ab` hiding those meshes; another app kept the GPU about 80% busy).
+`--ab` hiding those meshes; another app kept the GPU about 80% busy). The people
+(`src/webgpu/figures.ts`: the animation textures read with `vertexIndex`, the colour per part, `lampLit`;
+their four colours share one interleaved buffer in `figures.ts` to stay within WebGPU's 8 vertex
+buffers) cost +0.3 and +0.1 ms on WebGL against −0.1 and +0.3 ms on WebGPU (Old Town Square, the drive;
+2×, clear noon; GPU 20% busy before and 76% after).
 
 Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 
 | Where | What | Notes |
 |---|---|---|
 | `shading.ts` `cutAway` | the hole over the player | ported for the landmarks, the depth ground and the trees (a `maskNode`) |
-| `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | ported for the ground, buildings, `cut-*` and poles (`lampLit(node)` in a port); cars, trams, boats and funicular have it too; figures and signals still need it |
-| `figures.ts` `vatMaterial` | people animated from textures (`gl_VertexID`, `texelFetch`) | colour and depth versions |
+| `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | ported for the ground, buildings, `cut-*` and poles (`lampLit(node)` in a port); cars, trams, boats, funicular and figures have it too; signals still need it |
 | `underground.ts` | metro hole and earth | |
 | `map/buildings.ts` `drapeRoofs` | an experiment's roof texture | low priority |
 
