@@ -1148,6 +1148,10 @@ async function main() {
       scatterPeople(true);
       parkTwoWheelers(true);
       bikeShare.update(px(), py(), clock.t, bikeWorld);
+      bikeShare.charge(clock.t, (n) => wallet.take(n));
+      for (const { rental, fee } of bikeShare.abandon(px(), py(), clock.t)) {
+        showBanner(t('You left the {name} bike outside a station: fee {price}', { name: rental.system.name, price: kc(wallet.take(fee)) }), true);
+      }
     }
     // New traffic out of sight, a few times a second rather than every step (finding
     // the streets around you and a spot on them takes a while).
@@ -1155,10 +1159,6 @@ async function main() {
     const wanted = trafficWanted(clock.t);
     if (spawnT < 0 && traffic.agents.length < wanted) {
       spawnT = 0.25;
-      bikeShare.charge(clock.t, (n) => wallet.take(n));
-      for (const { rental, fee } of bikeShare.abandon(px(), py(), clock.t)) {
-        showBanner(t('You left the {name} bike outside a station: fee {price}', { name: rental.system.name, price: kc(wallet.take(fee)) }), true);
-      }
       const edges = edgesNear(px(), py(), LIFE_RADIUS), ok = lifeSpots(px(), py(), 40);
       traffic.buses((x, y) => offscreen(x, y) && ok(x, y), edges, BUSES);
       for (let n = 0; n < 10 && traffic.agents.length < wanted; n++) if (!traffic.spawn((x, y) => offscreen(x, y) && ok(x, y), edges)) break;
@@ -1396,13 +1396,6 @@ async function main() {
       hint = [canEnter && !touch.active ? getIn : '', wait].filter(Boolean).join(' · ');
     } else if (canEnter && !touch.active) hint = getIn;
     hint = (!inCar && !inHeli && !ride.on && !funicular.me && taxi.hint(touch.active)) || hint;
-    if (inspector.phase === 'decide') hint = touch.active ? t('Ticket inspection! Pay the fine ({fine}) or get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) }) : t('Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) });
-    taxi.render(touch.active);
-    show('hint', hint, 'html');
-    $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.on ? 'tram' : funicular.me ? 'funicular' : 'foot';
-    ride.render();
-    const label = ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : canBoard || cabin || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
-    const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : null;
     const bikeRental = (c: Car) => {
       const rental = bikeShare.rental(c);
       return rental && { name: rental.system.name, minutes: String(Math.max(1, Math.round((((clock.t - rental.since) % 604800) + 604800) % 604800 / 60))), price: kc(rental.paid) };
@@ -1416,6 +1409,13 @@ async function main() {
         if (b) { hint = [t('Your {name} bike is still rented: {minutes} min, {price} so far', b), hint].filter(Boolean).join(' · '); break; }
       }
     }
+    if (inspector.phase === 'decide') hint = touch.active ? t('Ticket inspection! Pay the fine ({fine}) or get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) }) : t('Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) });
+    taxi.render(touch.active);
+    show('hint', hint, 'html');
+    $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.on ? 'tram' : funicular.me ? 'funicular' : 'foot';
+    ride.render();
+    const label = ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : canBoard || cabin || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
+    const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : null;
     const ticketBtn = inspector.phase === 'decide' ? 2 : pid.state === 'grace' ? 1 : 0;
     if (shown.ticketBtn !== ticketBtn) {
       shown.ticketBtn = ticketBtn;
