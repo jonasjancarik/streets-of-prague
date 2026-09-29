@@ -223,6 +223,3 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
 - **Licences to check.** The credits give IPR as CC BY 4.0 and state no licence for
   TSK Praha's data; `straight-skeleton` is MIT but wraps CGAL, whose straight-skeleton
   code may be GPL.
-- **The neighbourhood title over the HUD on a phone held sideways.** The lane assist
-  button fits (checked: 11 px clear of the tallest HUD card), but while a title shows,
-  a wide HUD card in a car runs under it briefly.

@@ -222,10 +222,11 @@
       #touch[data-mode='tram'] #t-steer { display: none; }
       #t-road { position: fixed; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); height: 40px; padding: 0 14px; }
       @media (max-height: 460px) { #t-gas { height: 104px; } #t-brake { height: 72px; } #t-action { height: 44px; } }
-      /* A phone on its side: the neighbourhood title stays clear of the HUD, and the
+      /* A phone on its side: the neighbourhood title sits below the middle, between the
+         thumbs, clear of the HUD card however tall it grows; the
          taxi choices use the width (one line each, no tally) so they end above the stick. */
       @media (max-height: 460px) {
-        #district { top: 16%; font-size: 52px; padding: 14px 40px 18px; }
+        #district { top: 56%; font-size: 52px; padding: 14px 40px 18px; }
         body.touch #taxi { max-width: 440px; }
         body.touch #hud:has(#taxi:not([hidden])) #tally { display: none; }
       }
