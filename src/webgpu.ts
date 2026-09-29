@@ -1,10 +1,10 @@
-// A trial of three.js's WebGPU renderer (?renderer=webgpu), to measure what the ground
+// The game's renderer, three.js's WebGPURenderer (it began as a trial, ?renderer=webgpu), to measure what the ground
 // costs there against WebGL. The ground, buildings, trees, lamp light and the ground's soft
 // shading are ported (to TSL, in webgpu/), and the tone curve (sky.ts). Everything
 // else that changes three.js's GLSL (onBeforeCompile) is drawn with the plain material,
 // and what is written in GLSL outright (ShaderMaterial: rain, snow, lamp glows,
 // skid marks) isn't drawn at all. Not for playing: for
-// scripts/bench.mjs, e.g. --extra "&renderer=webgpu" with --ab (see ground's flatten).
+// scripts/bench.mjs, e.g. --extra "&renderer=webgl" for the old renderer, with --ab (see ground's flatten).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';

@@ -15,6 +15,12 @@ skill for measuring.
 
 ## Where things stand
 
+WebGPU is the default renderer now (`main.ts`). The old `WebGLRenderer` and the GLSL are no longer kept up
+to date: they run with `?renderer=webgl`, and for a browser with no WebGPU adapter. A change to the look
+is made in TSL only. Delete the GLSL, its setter hooks and `?renderer=webgl` when nobody needs them. (three's own
+WebGL 2 backend under `WebGPURenderer` was tried on 29 September 2026: it drew the square correctly but at 21 fps with
+hitches of a second and a half, and the page then reset; it wasn't looked into.)
+
 Ported: the ground's patterns, noise, dirt and weather colour (`patterned()` in
 `src/shading.ts`, through `setPatterned`; `src/webgpu.ts`), the tone curve (`sky.ts`,
 registered with `renderer.library.addToneMapping`), and the buildings

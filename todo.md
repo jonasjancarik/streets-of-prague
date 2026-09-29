@@ -57,8 +57,8 @@ grime on the walls 6%, the shadow map's own pass 7%.
   crowd's index keep the edges of every tile ever loaded, so memory grows over a
   long session across the city. The police's route search runs over the graph,
   including tiles that have been dropped, so shrinking it needs care.
-- **three.js's WebGPU renderer** (trial: `?renderer=webgpu`, `src/webgpu.ts`, 29
-  September 2026). The ground, the tone curve, the buildings,
+- **three.js's WebGPU renderer** (the default since 29 September 2026, `src/webgpu.ts`; the old WebGL renderer
+  and the GLSL stay unmaintained at `?renderer=webgl` until they're deleted). The ground, the tone curve, the buildings,
   the trees and the lamps' light (on the ground with the wet ground's mirror, the buildings,
   landmarks, trees and poles) are ported (to TSL); the ground's soft shading is ported too (+0.7 ms on WebGPU
   against +0.2 ms on WebGL, Old Town Square, 2×; about 10% stronger on WebGPU because it blends
