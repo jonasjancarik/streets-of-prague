@@ -648,7 +648,7 @@ async function main() {
     const movers = loose.filter(moving);
     for (const c of movers) c.update(dt, null, grid);
     const me = inCar || inHeli || walker;
-    police.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on, riding: ride.on });
+    police.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || taxi.riding, riding: ride.on || taxi.riding });
     const cops = police.cars.map((p) => p.car);
 
     // Everything the traffic, trams and people need to look out for.
@@ -985,7 +985,7 @@ async function main() {
     bannerT -= dt;
     show('banner', clamp(bannerT, 0, 1), 'opacity');
     show('speed', String(inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : inHeli ? Math.round(inHeli.speed * 3.6)
-      : ride.on ? Math.round((ride.v?.speed ?? 0) * 3.6) : '–'));
+      : ride.on ? Math.round((ride.v?.speed ?? 0) * 3.6) : taxi.riding ? Math.round((taxi.agent?.speed ?? 0) * 3.6) : '–'));
     if (clock.label() !== clockShown) $('clock').textContent = clockShown = clock.label();
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
     const canBoard = !inCar && !inHeli && !ride.on && !metro.active && ride.boardable(walker.x, walker.y);

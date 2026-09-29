@@ -75,7 +75,8 @@ the pixel ratio.
   Square, Main Station, Anděl, Prague Castle, Vyšehrad…). It finds its own way there
   along the one-way streets, sped up like a tram ride until the last 200 m, and you
   pay at the end (a street taxi 60 Kč plus 36 Kč a km, the apps less). E gets you out
-  early, and T cancels a taxi on its way.
+  early, and T cancels a taxi on its way. As on a tram, the police can't arrest you
+  in a taxi, and your stars fade twice as fast.
 - **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
   desktop). The left thumb has a round stick: on foot, push it the way you want to go
   and you walk there (a full push runs); in the car, point it the way you want to
