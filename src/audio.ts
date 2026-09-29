@@ -15,11 +15,34 @@ import type { TramVehicle } from './trams.ts';
 
 export type Surface = 'asphalt' | 'setts' | 'pavers' | 'pavement';
 
-interface EngineSpec { idle: number; redline: number; cylinders: number; gears: number[]; rough: number }
-const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.02 };
+// How an engine sounds: the overtones of its note, the sub-octave under it, how hard
+// it's driven into distortion, the filter over it (`tone`: base + per Hz of the note +
+// with the pedal down), the intake's roar (base, pedal down, pitch in notes), how loud
+// (base, pedal down, share of the redline), where it shifts up (a share of the rev
+// range: easing along, pedal down) and how far the clutch lets the revs rise pulling
+// away.
+interface EngineVoice {
+  harmonics: number[]; sub: number; drive: number; tone: [number, number, number];
+  roar: [number, number, number]; level: [number, number, number]; shift: [number, number]; clutch: number;
+}
+interface EngineSpec { idle: number; redline: number; cylinders: number; gears: number[]; rough: number; voice: EngineVoice }
+// An everyday car heard from outside: a soft hum, muffled, a little fuller with the
+// pedal down, shifting up early as in town.
+const EVERYDAY: EngineVoice = {
+  harmonics: [0, 1, 0.35, 0.12, 0.08, 0.03], sub: 0.15, drive: 0.8, tone: [150, 1.5, 350],
+  roar: [0.01, 0.04, 3], level: [0.08, 0.04, 0.03], shift: [0.28, 0.5], clutch: 1100,
+};
+// A tuned sports car: a buzzing note over a deep sub-octave, uneven firing, the
+// intake roaring and every gear taken nearly to the redline. Not on any car yet;
+// meant for faster ones (use with `rough` about 0.02).
+export const SPORTY: EngineVoice = {
+  harmonics: [0, 1, 0.75, 0.45, 0.55, 0.25, 0.3, 0.15, 0.18, 0.08, 0.1, 0.05, 0.06], sub: 0.6, drive: 2.2,
+  tone: [250, 3, 2200], roar: [0.05, 0.35, 4], level: [0.2, 0.14, 0.06], shift: [0.92, 0.92], clutch: 2200,
+};
+const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.006, voice: EVERYDAY };
 const ENGINES: Record<string, EngineSpec | null> = {
-  van: { idle: 750, redline: 4200, cylinders: 4, gears: [0.2, 0.38, 0.58, 0.8, 1.02], rough: 0.05 },
-  moto: { idle: 1300, redline: 10500, cylinders: 2, gears: [0.14, 0.26, 0.4, 0.55, 0.75, 1.02], rough: 0.04 },
+  van: { idle: 750, redline: 4200, cylinders: 4, gears: [0.2, 0.38, 0.58, 0.8, 1.02], rough: 0.02, voice: EVERYDAY },
+  moto: { idle: 1300, redline: 10500, cylinders: 2, gears: [0.14, 0.26, 0.4, 0.55, 0.75, 1.02], rough: 0.025, voice: EVERYDAY },
   bike: null,
 };
 // How much each surface rumbles, and how far apart its bumps are (m).
@@ -193,7 +216,7 @@ class Engine {
     this.car = car;
     this.spec = spec;
     const t = ctx.currentTime;
-    const harmonics = new Float32Array([0, 1, 0.75, 0.45, 0.55, 0.25, 0.3, 0.15, 0.18, 0.08, 0.1, 0.05, 0.06]);
+    const voice = spec.voice, harmonics = new Float32Array(voice.harmonics);
     this.osc = ctx.createOscillator();
     this.osc.setPeriodicWave(ctx.createPeriodicWave(new Float32Array(harmonics.length), harmonics));
     this.sub = ctx.createOscillator();
@@ -205,9 +228,9 @@ class Engine {
     this.wobble.connect(slow).connect(this.depth);
     this.depth.connect(this.osc.frequency);
     this.depth.connect(this.sub.frequency);
-    const subGain = gain(ctx, 0.6);
+    const subGain = gain(ctx, voice.sub);
     const shaper = ctx.createWaveShaper();
-    shaper.curve = softClip(2.2);
+    shaper.curve = softClip(voice.drive);
     this.tone = filter(ctx, 'lowpass', 400, 0.9);
     this.out = gain(ctx, 0);
     this.osc.connect(shaper);
@@ -221,32 +244,34 @@ class Engine {
     this.sub.start(t);
     this.wobble.start(t);
     this.intake.start(t);
-    this.out.gain.setTargetAtTime(0.3, t, 0.15);
+    this.out.gain.setTargetAtTime(voice.level[0], t, 0.15);
     this.update(0, 0);
   }
 
   // `throttle`: -1..1 as driven, braking or reversing when it's below 0.
   update(dt: number, throttle: number) {
-    const { car, spec } = this, t = this.ctx.currentTime;
+    const { car, spec } = this, voice = spec.voice, t = this.ctx.currentTime;
     const v = Math.abs(car.forwardSpeed), vmax = car.spec.vmax;
     const load = car.forwardSpeed < 0.5 && throttle < 0 ? -throttle : clamp(throttle, 0, 1);
-    // Up a gear near the top of this one, down again well below it.
-    const top = (g: number) => spec.gears[g] * vmax;
-    if (this.gear < spec.gears.length - 1 && v > top(this.gear) * 0.92) { this.gear++; this.shift = 0.18; }
-    else if (this.gear > 0 && v < top(this.gear - 1) * 0.55) this.gear--;
+    // Revs in a gear: redline at the gear's top speed. Up a gear where the voice says
+    // (later with the pedal down), and down once the revs sag.
+    const revs = (g: number) => spec.idle + (spec.redline - spec.idle) * clamp(v / (spec.gears[g] * vmax), 0, 1);
+    const up = spec.idle + (spec.redline - spec.idle) * (voice.shift[0] + (voice.shift[1] - voice.shift[0]) * load);
+    if (this.gear < spec.gears.length - 1 && revs(this.gear) > up) { this.gear++; this.shift = 0.18; }
+    else if (this.gear > 0 && revs(this.gear) < spec.idle * 1.9 && revs(this.gear - 1) < up * 0.9) this.gear--;
     this.shift = Math.max(0, this.shift - dt);
-    let rpm = spec.idle + (spec.redline - spec.idle) * clamp(v / top(this.gear), 0, 1);
+    let rpm = revs(this.gear);
     // Pulling away, the clutch lets the revs rise ahead of the speed.
-    if (this.gear === 0) rpm = Math.max(rpm, spec.idle + load * 2200);
+    if (this.gear === 0) rpm = Math.max(rpm, spec.idle + load * voice.clutch);
     const pull = this.shift > 0 ? 0.1 : load;
     const hz = ((rpm / 60) * spec.cylinders) / 2;
     this.osc.frequency.setTargetAtTime(hz, t, SMOOTH);
     this.sub.frequency.setTargetAtTime(hz / 2, t, SMOOTH);
     this.depth.gain.setTargetAtTime(hz * spec.rough, t, 0.2);
-    this.tone.frequency.setTargetAtTime(250 + hz * 3 + pull * 2200, t, SMOOTH);
-    this.roar.frequency.setTargetAtTime(hz * 4, t, SMOOTH);
-    this.roarGain.gain.setTargetAtTime(0.05 + pull * 0.35, t, SMOOTH);
-    this.out.gain.setTargetAtTime(0.2 + pull * 0.14 + (rpm / spec.redline) * 0.06, t, 0.1);
+    this.tone.frequency.setTargetAtTime(voice.tone[0] + hz * voice.tone[1] + pull * voice.tone[2], t, SMOOTH);
+    this.roar.frequency.setTargetAtTime(hz * voice.roar[2], t, SMOOTH);
+    this.roarGain.gain.setTargetAtTime(voice.roar[0] + pull * voice.roar[1], t, SMOOTH);
+    this.out.gain.setTargetAtTime(voice.level[0] + pull * voice.level[1] + (rpm / spec.redline) * voice.level[2], t, 0.1);
   }
 
   stop() {
