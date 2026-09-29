@@ -298,6 +298,12 @@ export class Lamps {
   update<C extends LitCar>(x: number, y: number, r: number, on: number, cars: C[], carHeight: (x: number, y: number, car: C) => number, now: number, trams: LitTram[] = []) {
     LAMP_ON.value = on;
     this.gather(x, y, r, now);
+    // By day nothing glows or lights the street: only the poles (gathered above) show.
+    if (on <= 0.005) {
+      this.glows.count = 0;
+      this.lights.instanceCount = 0;
+      return;
+    }
     // The cars' own lights glow too (after the lamps' heads in the same instances).
     let g = this.heads, n = 0;
     const at = this.at.array as Float32Array, sh = this.shape.array as Float32Array, col = this.colour.array as Float32Array;
@@ -308,22 +314,18 @@ export class Lamps {
       col.set([c.r * i, c.g * i, c.b * i], n * 3);
       n++;
     };
-    if (on > 0.005) {
-      for (const i of this.near) {
-        const k = KINDS[this.kind[i]], lx = this.xy[i * 2], ly = this.xy[i * 2 + 1];
-        if (Math.abs(lx - x) > r + k.r || Math.abs(ly - y) > r + k.r) continue;
-        add(lx, ly, this.height(lx, ly) + k.raise, 0, 1, 0, k.r, k.r, colourOf(this.kind[i], i), k.i);
-      }
+    for (const i of this.near) {
+      const k = KINDS[this.kind[i]], lx = this.xy[i * 2], ly = this.xy[i * 2 + 1];
+      if (Math.abs(lx - x) > r + k.r || Math.abs(ly - y) > r + k.r) continue;
+      add(lx, ly, this.height(lx, ly) + k.raise, 0, 1, 0, k.r, k.r, colourOf(this.kind[i], i), k.i);
     }
     const d = this.dummy;
     for (const c of cars) {
       if (c.mode === 'loose' && c.speed < 0.5) continue; // parked: lights off
       const fx = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
       const z = carHeight(c.x, c.y, c);
-      if (on > 0.005) {
-        add(c.x + fx * L, c.y + fy * L, z, 1, fx, fy, c.two ? 16 : 24, c.two ? 3 : 5, HEAD, c.two ? 1.2 : 2.2);
-        add(c.x - fx * L, c.y - fy * L, z, 0, 1, 0, 2.4, 2.4, TAIL, 0.5);
-      }
+      add(c.x + fx * L, c.y + fy * L, z, 1, fx, fy, c.two ? 16 : 24, c.two ? 3 : 5, HEAD, c.two ? 1.2 : 2.2);
+      add(c.x - fx * L, c.y - fy * L, z, 0, 1, 0, 2.4, 2.4, TAIL, 0.5);
       // Two headlights and two rear lights (one each on a bike).
       for (const [along, colour, size] of [[L - 0.05, HEAD, 0.9], [-L + 0.05, TAIL, 0.6]] as [number, THREE.Color, number][]) {
         for (const s of c.two ? [0] : [-1, 1]) {
@@ -337,7 +339,7 @@ export class Lamps {
         }
       }
     }
-    if (on > 0.005) for (const v of trams) {
+    for (const v of trams) {
       if (!v.look || !v.parts.length) continue;
       v.parts.forEach((p, i) => {
         if (Math.abs(p.x - x) > r + 30 || Math.abs(p.y - y) > r + 30) return;
@@ -357,11 +359,11 @@ export class Lamps {
         this.glows.setColorAt(g++, this.c.copy(HEAD).multiplyScalar(0.8));
       }
     }
-    this.glows.count = on > 0.005 ? g : 0;
+    this.glows.count = g;
     this.glows.instanceMatrix.needsUpdate = true;
     if (this.glows.instanceColor) this.glows.instanceColor.needsUpdate = true;
     this.lights.instanceCount = n;
-    if (on <= 0.005 || !n) return;
+    if (!n) return;
     this.at.needsUpdate = this.shape.needsUpdate = this.colour.needsUpdate = true;
 
     // The light map: a square over the view, its centre on a texel so the pools don't shimmer.
