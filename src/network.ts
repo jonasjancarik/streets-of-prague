@@ -100,6 +100,16 @@ const CLASS_SPEED: Record<string, number> = {
   residential: 9, unclassified: 9, living_street: 5, service: 5,
 };
 
+// How much traffic a street of each class gets, against a residential street (1):
+// the main roads carry most of the cars in Prague, and living streets and service
+// roads hardly any. (Only ever a lean: cars still reach the small streets.)
+export const ROAD_WEIGHT: Record<string, number> = {
+  motorway: 3, trunk: 3, primary: 3, secondary: 2.5, tertiary: 2,
+  motorway_link: 2, trunk_link: 2, primary_link: 2, secondary_link: 2, tertiary_link: 1.5,
+  residential: 1, unclassified: 1, living_street: 0.3, service: 0.3,
+};
+export const roadWeight = (hw: string) => ROAD_WEIGHT[hw] ?? 1;
+
 // Where traffic drives, right of the street's centre line: the outer lane on two-way
 // streets, the middle (or right of middle) lane on one-way ones.
 function laneOffset(e: RawStreetEdge) {
@@ -148,12 +158,19 @@ export class DriveGraph {
 // Next edge after `e`: anything but a U-turn, unless the street is a dead end.
 // Null where the network isn't loaded (the far side of the map).
 // With `main`, it keeps to the main roads where it can (a bus).
-export function nextEdge(g: DriveGraph, e: DriveEdge, r: Random, main = false): DriveEdge | null {
+// With `lean`, it merely favours the bigger road (an ordinary car): the square root
+// of the road's weight, so a main road wins more often but every turn stays possible.
+export function nextEdge(g: DriveGraph, e: DriveEdge, r: Random, main = false, lean = false): DriveEdge | null {
   const all = g.out.get(e.v) || [];
   let opts = all.filter((f) => f !== e.twin);
   if (main && opts.some((f) => MAIN_ROADS.has(f.hw))) opts = opts.filter((f) => MAIN_ROADS.has(f.hw));
   const list = opts.length ? opts : all;
-  return list.length ? list[Math.floor(r() * list.length)] : null;
+  if (!list.length) return null;
+  if (!lean) return list[Math.floor(r() * list.length)];
+  const w = list.map((f) => Math.sqrt(roadWeight(f.hw)));
+  let x = r() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < list.length; i++) if ((x -= w[i]) < 0) return list[i];
+  return list[list.length - 1];
 }
 
 // The streets buses keep to.
@@ -169,16 +186,19 @@ export class Route {
   dead = false;
   ended = false;
   main: boolean;
+  // Leans towards the bigger road at junctions (see nextEdge).
+  lean: boolean;
   // Which street to take after `e` (a bus on its line, see buses.ts); null: any.
   pick?: (e: DriveEdge, opts: DriveEdge[]) => DriveEdge | null;
   // The edges to take next, in order, instead of random turns (a taxi on a job). The
   // route simply stops growing when they run out.
   plan: DriveEdge[] | null = null;
 
-  constructor(g: DriveGraph, edge: DriveEdge, s: number, r: Random, main = false, pick?: (e: DriveEdge, opts: DriveEdge[]) => DriveEdge | null) {
+  constructor(g: DriveGraph, edge: DriveEdge, s: number, r: Random, main = false, pick?: (e: DriveEdge, opts: DriveEdge[]) => DriveEdge | null, lean = false) {
     this.g = g;
     this.r = r;
     this.main = main;
+    this.lean = lean;
     this.pick = pick;
     this.legs = [{ path: edge.path, s0: 0, s1: edge.path.length, edge }];
     this.s = s;
@@ -192,7 +212,7 @@ export class Route {
       const last = this.legs[this.legs.length - 1];
       const e = last.edge;
       if (!e) return;
-      const f = this.plan ? this.plan.shift() ?? null : this.pick?.(e, (this.g.out.get(e.v) || []).filter((o) => o !== e.twin)) || nextEdge(this.g, e, this.r, this.main);
+      const f = this.plan ? this.plan.shift() ?? null : this.pick?.(e, (this.g.out.get(e.v) || []).filter((o) => o !== e.twin)) || nextEdge(this.g, e, this.r, this.main, this.lean);
       if (!f) { if (!this.plan) this.dead = true; return; }
       // (A bus starts its turns further back, so they're wider and its back doesn't
       // swing over the kerb.)

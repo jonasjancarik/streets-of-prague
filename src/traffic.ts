@@ -2,7 +2,7 @@ import { BusRun, busStart } from './buses.ts';
 import type { BusLine } from './buses.ts';
 import { Car, randomType } from './car.ts';
 import { randomLook } from './figures.ts';
-import { MAIN_ROADS, Route, clamp } from './network.ts';
+import { MAIN_ROADS, Route, clamp, roadWeight } from './network.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 import type { Signals } from './signals.ts';
 import * as THREE from 'three';
@@ -97,10 +97,14 @@ export class Traffic {
   spawn(avoid: ((x: number, y: number) => boolean) | null, edges: DriveEdge[] = this.g.edges, type: string | null = null): TrafficAgent | null {
     const r = this.r;
     if (!edges.length) return null;
-    const total = edges.reduce((a, e) => a + e.path.length, 0);
+    // Ordinary cars start more often on the bigger roads (and lean towards them at
+    // junctions); buses, taxis and police are placed as before.
+    const ordinary = type === null;
+    const weight = (e: DriveEdge) => e.path.length * (ordinary ? roadWeight(e.hw) : 1);
+    const total = edges.reduce((a, e) => a + weight(e), 0);
     for (let tries = 0; tries < 40; tries++) {
       let x = r() * total, edge = edges[0];
-      for (const e of edges) if ((x -= e.path.length) < 0) { edge = e; break; }
+      for (const e of edges) if ((x -= weight(e)) < 0) { edge = e; break; }
       if (edge.path.length < 12) continue;
       const bus = type === 'bus';
       const s = 4 + r() * (edge.path.length - 8);
@@ -112,7 +116,7 @@ export class Traffic {
       // On a bridge, in a tunnel or on the ground under or over one (TileWorld.track).
       car.hint = edge.bridge ? 'bridge' : edge.tunnel ? 'tunnel' : 'ground';
       if (car.two) car.rider = randomLook(r);
-      const agent = { car, route: new Route(this.g, edge, s, r, bus), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + r() * 0.3, off: 0 };
+      const agent = { car, route: new Route(this.g, edge, s, r, bus, undefined, ordinary), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + r() * 0.3, off: 0 };
       this.agents.push(agent);
       return agent;
     }
