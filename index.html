@@ -140,7 +140,7 @@
       /* The poster assembles itself once (shapes, title, then the cast rising behind the
          band), then only drifts: the skyline pans slowly and the figures breathe. Only
          transform, translate and opacity move, so it runs smoothly while the map loads. */
-      .ls-sky { inset: 0 -4%; animation: ls-pan 36s ease-in-out infinite alternate; }
+      .ls-sky { inset: 0 -4%; animation: ls-pan 36s ease-in-out infinite alternate; will-change: translate; }
       @keyframes ls-pan { from { translate: 2% 0; } to { translate: -2% 0; } }
       .ls-wedge { animation: ls-wedge-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
       @keyframes ls-wedge-in { from { transform: translateX(-40%); } }
@@ -151,7 +151,7 @@
       .ls-title span { animation: ls-title-in 0.6s 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
       .ls-title span + span { animation-delay: 0.27s; }
       @keyframes ls-title-in { from { transform: translateX(-10vw); opacity: 0; } }
-      .ls-face { animation: ls-rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both, ls-breathe 7s ease-in-out infinite alternate; }
+      .ls-face { will-change: transform, translate; animation: ls-rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both, ls-breathe 7s ease-in-out infinite alternate; }
       .ls-face:nth-child(1) { animation-delay: 0.3s, -2s; }
       .ls-face:nth-child(2) { animation-delay: 0.45s, -5s; animation-duration: 0.9s, 8.5s; }
       .ls-face:nth-child(3) { animation-delay: 0.6s, -1s; animation-duration: 0.9s, 6.2s; }
