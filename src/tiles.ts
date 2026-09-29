@@ -671,9 +671,11 @@ export class TileWorld {
     const walls = wallMesh(land.walls);
     const trees = treeMesh(land.trees);
     group.add(surfaces.group, ...buildings, walls, trees);
-    // Nothing in a tile ever moves: its matrices are worked out once, not every frame.
+    // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
+    // and the renderer's walk through the scene each frame skips the tile's objects.
     group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
     group.updateMatrixWorld(true);
+    group.updateMatrixWorld = () => {};
     const grid = new Grid(geo, RES, null, land.cells);
     lap('meshes');
 

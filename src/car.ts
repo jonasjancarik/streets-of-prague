@@ -110,6 +110,7 @@ material.onBeforeCompile = (sh) => {
   }`);
 };
 material.customProgramCacheKey = () => 'cars';
+const depthMaterial = new THREE.MeshDepthMaterial();
 
 // A random type, by `weight` for parking and by `traffic` (where it's set) on the road.
 export function randomType(r: () => number, use: 'weight' | 'traffic' = 'weight') {
@@ -325,6 +326,7 @@ export class CarPool {
         if (!geometry) throw new Error(`Missing car geometry: ${k}`);
         m = new THREE.InstancedMesh(geometry, material, Math.max(8, Math.ceil(list.length * 1.5)));
         m.castShadow = true;
+        m.customDepthMaterial = depthMaterial; // (see treeMesh)
         m.frustumCulled = false;
         this.scene.add(m);
         this.meshes.set(k, m);

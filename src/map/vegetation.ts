@@ -284,5 +284,10 @@ export function treeMesh({ matrices, colours, count }: TreeInstances) {
   if (count) mesh.instanceColor = new THREE.InstancedBufferAttribute(colours, 3);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+  // A depth material of their own for the shadows: three.js's shared one, switching
+  // between instanced and plain meshes (the buildings), works out its shader again at
+  // every switch.
+  mesh.customDepthMaterial = treeDepth;
   return mesh;
 }
+const treeDepth = new THREE.MeshDepthMaterial();
