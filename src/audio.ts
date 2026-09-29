@@ -473,7 +473,7 @@ class TramVoice {
 // chorus early on), none of them in rain or snow. The levels change slowly, so walking
 // from a quiet street onto a square the crowd comes up over a few seconds.
 // (Two crowds of different lengths layered, so together they repeat only every few minutes.)
-const AMBIENCE: Record<string, number> = { crowd: 0.25, crowd2: 0.25, traffic: 0.3, night: 0.3, blackbird: 0.3, garden: 0.3, morning: 0.25 };
+const AMBIENCE: Record<string, number> = { crowd: 0.25, crowd2: 0.25, traffic: 0.3, night: 0.3, blackbird: 0.1, garden: 0.1, morning: 0.08 };
 
 // 0 outside [a, d], 1 within [b, c], smooth in between (hours, round midnight too).
 function span(h: number, a: number, b: number, c: number, d: number) {
