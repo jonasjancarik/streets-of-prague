@@ -954,7 +954,7 @@ async function main() {
             b.mode = 'loose';
             loose.push(b);
             if (a.mode !== 'police') stats.wrecked++;
-            if (a === inCar) police.crime(b.type === 'police' ? 'hitCop' : 'wreck', b.x, b.y);
+            if (a === inCar) police.crime(b.type === 'police' ? 'hitCop' : 'wreck', b.x, b.y, b);
             const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
             if (a === inCar) jolt = Math.max(jolt, hit);
             if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
@@ -962,7 +962,7 @@ async function main() {
           } else {
             const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 0);
             if (a === inCar) jolt = Math.max(jolt, hit);
-            if (a === inCar && b.type === 'police' && (a.vx * (b.x - a.x) + a.vy * (b.y - a.y)) / d > 3) police.crime('hitCop', b.x, b.y);
+            if (a === inCar && b.type === 'police' && (a.vx * (b.x - a.x) + a.vy * (b.y - a.y)) / d > 3) police.crime('hitCop', b.x, b.y, b);
           }
           continue;
         }
@@ -975,7 +975,7 @@ async function main() {
         // Driving into a police car (not them into you).
         if (a === inCar && b.mode === 'police' && hit > 2) {
           const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-          if ((a.vx * (b.x - a.x) + a.vy * (b.y - a.y)) / d > 3) police.crime('hitCop', b.x, b.y);
+          if ((a.vx * (b.x - a.x) + a.vy * (b.y - a.y)) / d > 3) police.crime('hitCop', b.x, b.y, b);
         }
       }
     }

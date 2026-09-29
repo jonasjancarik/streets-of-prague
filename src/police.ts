@@ -201,7 +201,10 @@ export class Police {
     return false;
   }
 
-  crime(kind: keyof typeof POINTS, x: number, y: number) {
+  // `car`: the police car that was hit, if any; its crew gets out and comes after you,
+  // wrecked or not.
+  crime(kind: keyof typeof POINTS, x: number, y: number, car?: Car) {
+    if (kind === 'hitCop' && car?.crew) this.getOut(car);
     if (this.cool[kind] > 0) return;
     this.cool[kind] = COOLDOWN[kind] || 0;
     const seen = this.sees(x, y);
