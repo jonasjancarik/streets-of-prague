@@ -212,12 +212,28 @@ export class Police {
     }
   }
 
-  nearestStreet(x: number, y: number) {
+  nearestStreet(x: number, y: number, radius = 40) {
     let best: { e: DriveEdge & { mid: Polyline }; s: number; d: number } | null = null;
-    for (const e of this.edgesNear(x, y, 40)) {
+    for (const e of this.edgesNear(x, y, radius)) {
       e.mid = e.mid || new Polyline(e.pts);
       const p = project(e.mid, x, y);
-      if (p.d < 40 && (!best || p.d < best.d)) best = { e: e as DriveEdge & { mid: Polyline }, s: p.s, d: p.d };
+      if (p.d < radius && (!best || p.d < best.d)) best = { e: e as DriveEdge & { mid: Polyline }, s: p.s, d: p.d };
+    }
+    return best;
+  }
+
+  // Where a police car stops for you on foot: in the traffic lane nearest you, the
+  // side of the street you're on. The lanes keep clear of the parked cars, so the car
+  // doesn't drive over them (or up on the pavement) to get to you. A street on a
+  // bridge or in a tunnel counts only if nothing else is much nearer.
+  roadside(x: number, y: number) {
+    let best: { x: number; y: number } | null = null, bestD = 80;
+    for (const e of this.edgesNear(x, y, 80)) {
+      const q = project(e.path, x, y), d = q.d + (e.bridge || e.tunnel ? 15 : 0);
+      if (d >= bestD) continue;
+      const p = e.path.at(q.s);
+      best = { x: p.x, y: p.y };
+      bestD = d;
     }
     return best;
   }
@@ -302,18 +318,21 @@ export class Police {
     const c = p.car, vf = c.forwardSpeed;
     const dx = me.x - c.x, dy = me.y - c.y, dist = Math.hypot(dx, dy);
     let tx, ty, want;
-    if (dist < 40 && this.clear(c.x, c.y, me.x, me.y)) {
-      // In sight: straight at you. Drive into your car; stop short of you on foot.
+    if (me.car && dist < 40 && this.clear(c.x, c.y, me.x, me.y)) {
+      // In sight and you're driving: straight at you, to ram you.
       tx = me.x + me.vx * Math.min(0.8, dist / 25);
       ty = me.y + me.vy * Math.min(0.8, dist / 25);
-      want = me.car ? Math.max(12, me.speed + 6) : dist < 12 ? 0 : clamp((dist - 10) * 0.8, 3, 12);
+      want = Math.max(12, me.speed + 6);
     } else {
       p.replan -= dt;
       // Where there's no way through (you're somewhere the street graph doesn't reach,
       // or it isn't loaded yet) it heads straight for you and tries again on the timer,
-      // not every frame: a search that fails has looked at thousands of streets.
-      if (p.replan < 0 || (p.path && p.s > p.path.length - 6)) {
-        p.path = this.route(c.x, c.y, me.x, me.y);
+      // not every frame: a search that fails has looked at thousands of streets. On
+      // foot the way ends at the roadside nearest you, and the car doesn't look for a
+      // new one while its officer is out.
+      if (c.crew && (p.replan < 0 || (me.car && p.path && p.s > p.path.length - 6))) {
+        const to = me.car ? null : this.roadside(me.x, me.y);
+        p.path = this.route(c.x, c.y, to ? to.x : me.x, to ? to.y : me.y);
         p.s = 0;
         p.replan = 1.2 + this.r() * 0.8;
       }
@@ -330,7 +349,11 @@ export class Police {
         let bend = 0;
         for (const d of [8, 18, 30]) bend = Math.max(bend, Math.abs(turnOf(c.h, p.path.at(p.s + d).ang)));
         want = clamp(24 - bend * 14, 7, 24);
+        // On foot: slow down for the end of the way and stop there.
+        if (!me.car) want = Math.min(want, clamp((p.path.length - p.s - 4) * 0.9, 0, 24));
       }
+      // And stop short of you, should you be out in the road.
+      if (!me.car) want = Math.min(want, dist < 12 ? 0 : clamp((dist - 10) * 0.8, 3, 24));
     }
     // An officer out on foot: the car waits.
     if (!c.crew) want = 0;
@@ -346,7 +369,10 @@ export class Police {
       steer = -steer;
     }
     // Close enough and you're not going anywhere: an officer gets out.
-    if (c.crew && !me.air && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18)) this.getOut(c);
+    // On foot, also once the car has got as near as the road goes: the officer runs
+    // the rest of the way.
+    const there = !me.car && dist < 60 && !!p.path && p.path.length - p.s < 8;
+    if (c.crew && !me.air && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18 || there)) this.getOut(c);
     return { throttle, steer, handbrake: want === 0 && Math.abs(vf) < 3 };
   }
 
