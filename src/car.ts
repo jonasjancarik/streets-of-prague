@@ -46,6 +46,34 @@ export const TYPES: Record<string, CarSpec> = {
   // parked or in the ordinary mix: Traffic.buses keeps a few on their lines.
   bus: { L: 12, W: 2.55, H: 3.1, mass: 12000, accel: 2.6, vmax: 24, grip: 7, turn: 1.25, weight: 0, color: '#c8102e', heavy: true, radius: 10, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
 };
+// A variant of a body type: the same geometry (so the same draw call) with its own
+// handling and engine. `id` picks the engine in audio.ts, `name` (a model's own name,
+// never translated) is shown when you get in, `freq` is how common it is among the
+// variants of its type. Types without an entry (taxi, police, two-wheelers, bus) have none.
+export interface Variant { id: string; name?: string; freq: number; tune: Partial<CarSpec> }
+export const VARIANTS: Record<string, Variant[]> = {
+  hatch: [
+    // The Fabia I 1.2 HTP: three light cylinders, slow but willing, soft brakes.
+    { id: 'fabia', name: 'Škoda Fabia 1.2', freq: 0.4, tune: { accel: 6, vmax: 33, brake: 14, weather: 1.2, mass: 1000 } },
+    { id: 'hatch', freq: 0.6, tune: {} },
+  ],
+  sedan: [
+    // The Octavia I 1.9 TDI: strong from low revs, a little short at the top.
+    { id: 'octavia', name: 'Škoda Octavia 1.9 TDI', freq: 0.4, tune: { accel: 10.5, vmax: 39, tough: 4 } },
+    { id: 'sedan', freq: 0.6, tune: {} },
+  ],
+  estate: [
+    { id: 'octavia', name: 'Škoda Octavia 1.9 TDI', freq: 0.4, tune: { accel: 10, vmax: 38, tough: 4 } },
+    { id: 'estate', freq: 0.6, tune: {} },
+  ],
+};
+// The body's spec with a variant's changes, made once for each pair.
+const merged = new Map<Variant, CarSpec>();
+function tuned(type: string, v: Variant): CarSpec {
+  let m = merged.get(v);
+  if (!m) merged.set(v, (m = { ...TYPES[type], ...v.tune }));
+  return m;
+}
 const PAINT = ['#e8e6e1', '#bfc3c7', '#8d9398', '#2c2f33', '#1d2a44', '#7a1f1f', '#b33a2c', '#2f5140', '#5b6d7c', '#d9d2c0', '#3f4a5a', '#9a7b4f'];
 const TWO_PAINT: Record<string, string[]> = {
   bike: ['#1d2a44', '#b33a2c', '#2f5140', '#e8e6e1', '#2c2f33', '#d94f8c', '#e0b32a', '#5b6d7c', '#8fb3c9'],
@@ -221,6 +249,7 @@ export function randomType(r: () => number, use: 'weight' | 'traffic' = 'weight'
 
 export class Car {
   type: string;
+  variant: Variant | null = null;
   spec: CarSpec;
   mass: number;
   key: string;
@@ -254,10 +283,16 @@ export class Car {
   constructor(type: string, r: () => number, x = 0, y = 0, h = 0, colour?: string) {
     this.type = type;
     this.spec = TYPES[type];
-    this.mass = this.spec.mass;
     const paints = TWO_PAINT[type] || PAINT;
     // (One colour for the types painted alike, so they share a draw call.)
     const pick = paints[Math.floor(r() * paints.length)], paint = colour || this.spec.color || pick;
+    const options = VARIANTS[type];
+    if (options) {
+      let x = r() * options.reduce((a, v) => a + v.freq, 0);
+      this.variant = options.find((v) => (x -= v.freq) < 0) ?? options[options.length - 1];
+      this.spec = tuned(type, this.variant);
+    }
+    this.mass = this.spec.mass;
     this.key = `${type}|${paint}`;
     carGeometry(type, paint);
     this.x = x;

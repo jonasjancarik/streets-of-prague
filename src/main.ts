@@ -611,6 +611,7 @@ async function main() {
     best.mode = 'player';
     if (best.two) best.rider = walker.look;
     inCar = best;
+    if (best.variant?.name) showBanner(best.variant.name);
     walker.perch = 0;
     walker.mesh.visible = false;
   };

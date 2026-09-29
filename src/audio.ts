@@ -45,8 +45,16 @@ export const SPORTY: EngineVoice = {
   harmonics: [0, 1, 0.75, 0.45, 0.55, 0.25, 0.3, 0.15, 0.18, 0.08, 0.1, 0.05, 0.06], sub: 0.6, drive: 2.2,
   tone: [250, 3, 2200], roar: [0.05, 0.35, 4], level: [0.2, 0.14, 0.06], shift: [0.92, 0.92], clutch: 2200,
 };
+// A turbo diesel: a fuller, lower note with a bit of clatter, shifting up early.
+const DIESEL: EngineVoice = {
+  harmonics: [0, 1, 0.55, 0.3, 0.12, 0.05], sub: 0, drive: 0.6, tone: [110, 1.4, 220],
+  roar: [0.005, 0.02, 3], level: [0.035, 0.014, 0.01], shift: [0.2, 0.4], clutch: 800,
+};
 const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.006, voice: EVERYDAY };
 const ENGINES: Record<string, EngineSpec | null> = {
+  // By variant (see VARIANTS in car.ts), before the type.
+  fabia: { idle: 900, redline: 5500, cylinders: 3, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.02, voice: EVERYDAY },
+  octavia: { idle: 800, redline: 4500, cylinders: 4, gears: [0.16, 0.3, 0.46, 0.68, 1.02], rough: 0.012, voice: DIESEL },
   van: { idle: 750, redline: 4200, cylinders: 4, gears: [0.2, 0.38, 0.58, 0.8, 1.02], rough: 0.02, voice: EVERYDAY },
   moto: { idle: 1300, redline: 10500, cylinders: 2, gears: [0.14, 0.26, 0.4, 0.55, 0.75, 1.02], rough: 0.025, voice: EVERYDAY },
   bike: null,
@@ -177,7 +185,8 @@ export class Sound {
     const car = s.car;
     if (this.engine && this.engine.car !== car) { this.engine.stop(); this.engine = null; }
     if (car && !this.engine) {
-      const spec = car.type in ENGINES ? ENGINES[car.type] : PETROL;
+      const id = car.variant && car.variant.id in ENGINES ? car.variant.id : car.type;
+      const spec = id in ENGINES ? ENGINES[id] : PETROL;
       if (spec) this.engine = new Engine(ctx, this.noise, this.master, car, spec);
     }
     this.engine?.update(dt, s.throttle);
