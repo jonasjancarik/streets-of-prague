@@ -74,6 +74,18 @@ the pixel ratio.
   stand next to one (or any passing pedal boat or swan) and press E to get in
   (`src/boats.ts`). W/S pedal, A/D turn;
   E gets you out again where the bank is close.
+- **Taxis**: on foot near a street, press T (on touch, "Taxi") and pick how to get one
+  (`src/taxi.ts`): wave down a street taxi, or order one through Zipp or Hopla, two
+  made-up ride-hailing apps that cost less and whose drivers speed, tailgate and push
+  through gaps. The nearest free taxi in the traffic (or a new one out of sight) drives
+  to the lane next to you and waits 90 seconds; the hint says roughly how long it will
+  be, and holding Space fast-forwards the wait. Press E beside it to get in, then a
+  number (or tap) to pick one of ten well-known places (Old Town Square, Wenceslas
+  Square, Main Station, Anděl, Prague Castle, Vyšehrad…). It finds its own way there
+  along the one-way streets, sped up like a tram ride until the last 200 m, and you
+  pay at the end (a street taxi 60 Kč plus 36 Kč a km, the apps less). E gets you out
+  early, and T cancels a taxi on its way. As on a tram, the police can't arrest you
+  in a taxi, and your stars fade twice as fast.
 - **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
   desktop). The left thumb has a round stick: on foot, push it the way you want to go
   and you walk there (a full push runs); in the car, point it the way you want to
