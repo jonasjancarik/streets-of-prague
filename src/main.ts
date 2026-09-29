@@ -938,8 +938,6 @@ async function main() {
     if (name && name !== street) {
       street = name;
       $('street').textContent = name;
-      // (Not while a sped-up ride flicks through the streets.)
-      if ((!$('banner').classList.contains('alert') || bannerT < 0) && scale < 1.5 && !underway) showBanner(name);
     }
     bannerT -= dt;
     show('banner', clamp(bannerT, 0, 1), 'opacity');
