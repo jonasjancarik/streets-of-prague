@@ -31,6 +31,16 @@ export interface TrafficAgent {
   reckless?: boolean;
 }
 
+// How busy the main roads are at each hour (0 = free-flowing, 1 = the slowest hour of
+// the week), on weekdays, Saturdays and Sundays: how much slower TSK Praha's travel
+// times on 73 main-road routes were than free flow, averaged over 2025 (published by
+// Data Praha). Made by pipeline/build_traffic_profile.py.
+const TRAFFIC_LOAD: Record<string, number[]> = {
+  weekday: [0.04, 0.02, 0.02, 0.01, 0.02, 0.03, 0.21, 0.41, 0.60, 0.63, 0.64, 0.65, 0.65, 0.65, 0.73, 0.88, 1.00, 0.95, 0.72, 0.43, 0.30, 0.27, 0.11, 0.08],
+  saturday: [0.06, 0.04, 0.03, 0.02, 0.02, 0.02, 0.12, 0.17, 0.21, 0.28, 0.36, 0.42, 0.43, 0.44, 0.47, 0.48, 0.50, 0.51, 0.49, 0.40, 0.33, 0.29, 0.13, 0.10],
+  sunday: [0.06, 0.04, 0.03, 0.02, 0.02, 0.02, 0.12, 0.14, 0.18, 0.24, 0.31, 0.36, 0.39, 0.39, 0.41, 0.43, 0.45, 0.45, 0.41, 0.34, 0.29, 0.24, 0.09, 0.06],
+};
+
 // The longest a car coming off the pavement takes to pull into its lane (m).
 export const MERGE = 20;
 
