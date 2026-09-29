@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FACADE_ATLAS, FACADE_ON, FACADE_GLSL } from './facades.ts';
 import { lampLit } from './lamps.ts';
+import { ROOF_TILES } from './map/roofPalette.ts';
 
 // Procedural surface patterns in world space, shared by the ground and the buildings.
 // Everything is computed per pixel from the position in metres, so it stays sharp at
@@ -360,13 +361,26 @@ export function cutAway<M extends THREE.Material>(material: M, key: string): M {
   return material;
 }
 
-// The colour of the tiles on a landmark's roofs (linear), a middling one of ROOF_TILES.
-export const LANDMARK_TILE_RGB = (() => { const c = new THREE.Color('#ad5f45'); return [c.r, c.g, c.b]; })();
+// Landmark roofs: the colour of their tiles (linear) is the mean of the other roofs' palette;
+// a texel counts as a red roof by its saturation and hue (roofs in shadow are low in
+// saturation, so texels near black count too) on a face pointing up (the ranges are
+// smoothsteps); the tiles are drawn at the texel's brightness relative to `light`.
+export const LANDMARK_ROOF = {
+  rgb: (() => {
+    const mean = new THREE.Color(0, 0, 0);
+    for (const h of ROOF_TILES) mean.add(new THREE.Color(h));
+    mean.multiplyScalar(1 / ROOF_TILES.length);
+    return [mean.r, mean.g, mean.b];
+  })(),
+  light: 0.15, minLight: 0.15, maxLight: 1.7,
+  sat: [0.18, 0.3], hue: [0.11, 0.16], black: [0.02, 0.06], face: [0.15, 0.3],
+};
 
 // A landmark: the cutaway, and its roofs, where the photograph shows a red one, drawn with
 // the tile pattern of the other roofs at the photograph's brightness. The face's own
 // normal comes from derivatives: the model's normals are all "up" for the light.
 export function shadeLandmark(material: THREE.MeshLambertMaterial) {
+  const R = LANDMARK_ROOF;
   cutAway(material, 'landmark-roof');
   const cut = material.onBeforeCompile;
   material.onBeforeCompile = (sh, r) => {
@@ -380,10 +394,10 @@ export function shadeLandmark(material: THREE.MeshLambertMaterial) {
   vec3 lmC = diffuseColor.rgb;
   float lmMax = max(lmC.r, max(lmC.g, lmC.b)), lmMin = min(lmC.r, min(lmC.g, lmC.b));
   float lmHue = (lmC.g - lmC.b) / max(lmMax - lmMin, .001) / 6.;
-  float lmWarm = max(smoothstep(.18, .3, (lmMax - lmMin) / max(lmMax, .001)) * (1. - smoothstep(.11, .16, lmHue)),
-    1. - smoothstep(.02, .06, dot(lmC, vec3(.299, .587, .114))))
-    * step(max(lmC.g, lmC.b), lmC.r + .01) * smoothstep(.15, .3, lmUp.y);
-  vec3 lmTile = roofTiles(vec3(${LANDMARK_TILE_RGB.map((v) => v.toFixed(4)).join(',')}) * clamp(dot(lmC, vec3(.299, .587, .114)) / .15, .15, 1.7), vec2(vCutWorld.x, -vCutWorld.z), lmUp);
+  float lmWarm = max(smoothstep(${R.sat[0]}, ${R.sat[1]}, (lmMax - lmMin) / max(lmMax, .001)) * (1. - smoothstep(${R.hue[0]}, ${R.hue[1]}, lmHue)),
+    1. - smoothstep(${R.black[0]}, ${R.black[1]}, dot(lmC, vec3(.299, .587, .114))))
+    * step(max(lmC.g, lmC.b), lmC.r + .01) * smoothstep(${R.face[0]}, ${R.face[1]}, lmUp.y);
+  vec3 lmTile = roofTiles(vec3(${R.rgb.map((v) => v.toFixed(4)).join(',')}) * clamp(dot(lmC, vec3(.299, .587, .114)) / ${R.light}, ${R.minLight}, ${R.maxLight}), vec2(vCutWorld.x, -vCutWorld.z), lmUp);
   diffuseColor.rgb = mix(lmC, lmTile, lmWarm);`);
   };
   material.customProgramCacheKey = () => 'landmark-roof';

@@ -3,6 +3,7 @@ import * as SS from 'straight-skeleton';
 import { signedArea, hash } from './geo.ts';
 import type { GeoData, Point2 } from './geo.ts';
 import { TENEMENT_PLASTER } from '../facades.ts';
+import { ROOF_TILES } from './roofPalette.ts';
 
 // Some package builds expose the builder on a default export at runtime.
 const skeletonModule = SS as typeof SS & { default?: { SkeletonBuilder?: typeof SS.SkeletonBuilder } };
@@ -15,7 +16,6 @@ export interface BuildingTile extends GeoData {
 interface WallTile { walls: { kind: string; pts: Point2[] }[] }
 interface WallBuffers { position: Float32Array; normal: Float32Array }
 
-const ROOF_TILES = ['#b2644b', '#a6543f', '#bf7256', '#9e5442', '#ad5f45', '#a8634f', '#ba6e50', '#a15540'];
 const ROOF_SLATE = ['#6c6d70', '#5e6064', '#77746f'];
 const ROOF_COPPER = '#6f9483';
 const WALLS = TENEMENT_PLASTER;

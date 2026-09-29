@@ -10,7 +10,7 @@ import {
   materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON, BLANK } from '../facades.ts';
-import { WINDOWS, LANDMARK_TILE_RGB } from '../shading.ts';
+import { WINDOWS, LANDMARK_ROOF as R } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks } from './common.ts';
 
@@ -39,7 +39,7 @@ const fBays = (f: N) => {
 };
 
 const fHash = (a: N, b: N) => fract(sin(a.mul(127.1).add(b.mul(311.7))).mul(43758.5453));
-const LANDMARK_TILE = vec3(...LANDMARK_TILE_RGB);
+const LANDMARK_TILE = vec3(...R.rgb);
 const luma = (c: N) => dot(c, vec3(0.299, 0.587, 0.114));
 // detail() with the pixel's footprint worked out once, outside any branch (derivatives).
 const fade = (width: N, cell: number) => float(1).sub(smoothstep(cell * 0.2, cell * 0.7, width));
@@ -179,10 +179,10 @@ const landmarkColor = Fn(() => {
   const mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
   const sat = mx.sub(mn).div(max(mx, 0.001));
   const hue = c.g.sub(c.b).div(max(mx.sub(mn), 0.001)).div(6);
-  const roofFace = smoothstep(0.15, 0.3, up.y);
+  const roofFace = smoothstep(R.face[0], R.face[1], up.y);
   const reddish = step(max(c.g, c.b), c.r.add(0.01));
-  const warm = max(smoothstep(0.18, 0.3, sat).mul(float(1).sub(smoothstep(0.11, 0.16, hue))), float(1).sub(smoothstep(0.02, 0.06, luma(c)))).mul(reddish).mul(roofFace);
-  const tile = roofTiles(LANDMARK_TILE.mul(clamp(luma(c).div(0.15), 0.15, 1.7)), bwp, up, wpWidth);
+  const warm = max(smoothstep(R.sat[0], R.sat[1], sat).mul(float(1).sub(smoothstep(R.hue[0], R.hue[1], hue))), float(1).sub(smoothstep(R.black[0], R.black[1], luma(c)))).mul(reddish).mul(roofFace);
+  const tile = roofTiles(LANDMARK_TILE.mul(clamp(luma(c).div(R.light), R.minLight, R.maxLight)), bwp, up, wpWidth);
   return mix(c, tile, warm);
 });
 addPort(/^landmark-roof$/, (node) => {

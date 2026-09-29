@@ -149,8 +149,10 @@ the game to render (see the memory on benchmarking).
   all "up" for the light. Mask by hue and saturation, and let dark texels through too
   (roofs in shadow are low in saturation); a strict mask leaves speckles on shaded
   slopes. Change both shader versions together, and check with `?renderer=webgl`.
-- **Roof colours to match.** The palette for the other roofs is in `src/map/buildings.ts`
-  and, separately, `pipeline/ipr_buildings.py` (IPR's buildings, baked into their tile data).
+- **Roof colours to match.** The palette for the other roofs is `ROOF_TILES` in
+  `src/map/roofPalette.ts` (landmark roofs use its mean, and the mask and brightness
+  limits are `LANDMARK_ROOF` in `src/shading.ts`, used by both shaders) and, separately,
+  `pipeline/ipr_buildings.py` (IPR's buildings, baked into their tile data).
   Only a change to the palette itself needs `ipr_buildings.py` run again for `praha` and
   `centrum`; adding or editing a landmark never touches the city's roofs. Judge colour against photographs of real roofs, as
   measured pixels of the rendered result, not the palette's hex values: the render
