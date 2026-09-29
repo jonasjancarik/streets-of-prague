@@ -195,6 +195,32 @@ export class Sound {
     }
   }
 
+  // A gunshot d m away, dx of it to the east: a crack with a thump under it, and its
+  // echo off the houses a moment later.
+  shot(d: number, dx: number) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.on) return;
+    const t = ctx.currentTime, loud = 20 / (20 + d), pan = ctx.createStereoPanner();
+    pan.pan.value = clamp(dx / 45, -0.85, 0.85);
+    pan.connect(this.master);
+    for (const [at, level, top] of [[0, 1, 6000 - Math.min(d, 200) * 22], [0.07 + Math.random() * 0.1, 0.25, 1400]]) {
+      const src = loop(ctx, this.noise, 0.9 + Math.random() * 0.3), lp = filter(ctx, 'lowpass', top), g = gain(ctx, 0);
+      g.gain.setValueAtTime(loud * level, t + at);
+      g.gain.exponentialRampToValueAtTime(0.0005, t + at + 0.22);
+      src.connect(lp).connect(g).connect(pan);
+      src.start(t + at, Math.random() * 1.5);
+      src.stop(t + at + 0.25);
+    }
+    const thump = ctx.createOscillator(), g = gain(ctx, 0);
+    thump.frequency.setValueAtTime(140, t);
+    thump.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    g.gain.setValueAtTime(loud * 0.8, t);
+    g.gain.exponentialRampToValueAtTime(0.0005, t + 0.15);
+    thump.connect(g).connect(pan);
+    thump.start(t);
+    thump.stop(t + 0.16);
+  }
+
   play(buffer: AudioBuffer, at: number, gain: number, out: AudioNode, rate = 1) {
     const ctx = this.ctx!;
     if (!buffer) return;

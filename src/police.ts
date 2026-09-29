@@ -10,11 +10,12 @@ import type { DriveEdge, DriveGraph } from './network.ts';
 import type { Traffic } from './traffic.ts';
 import type { FigureKit } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
+import type { Point3 } from './guns.ts';
 
-interface ChaseCar { car: Car; path: Polyline | null; s: number; replan: number; stuck: number; reverse: number; calm: boolean; wrecked: boolean; gone?: boolean }
-interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number }
+interface ChaseCar { car: Car; path: Polyline | null; s: number; replan: number; stuck: number; reverse: number; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
+interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number; reload?: number }
 interface Link { to: string; e: DriveEdge; back: boolean }
-interface PlayerTarget { x: number; y: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean }
+interface PlayerTarget { x: number; y: number; z: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean }
 interface PoliceOptions {
   scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
   height: (x: number, y: number, who?: Car | Officer) => number;
@@ -22,6 +23,8 @@ interface PoliceOptions {
   offscreen: (x: number, y: number) => boolean; onBusted: () => void; kit: FigureKit;
   // Whether a car or a tram (other than `skip`) takes up a circle of radius r at (x, y).
   bodyAt?: (x: number, y: number, r: number, skip: Car | null) => boolean;
+  // A shot at the player, from the muzzle to where the bullet went, and whether it hit.
+  onShot?: (from: Point3, to: Point3, hit: boolean) => void;
 }
 
 // The police and your wanted level, GTA 2 style.
@@ -35,7 +38,9 @@ interface PoliceOptions {
 // the street network, more of them the more stars you have, and ram you. When you're
 // on foot or stopped, an officer gets out and runs after you: if they reach you,
 // you're busted. Stay out of their sight for a while and you lose a star at a time.
-// From three stars a helicopter joins in (src/helicopter.ts).
+// From three stars a helicopter joins in (src/helicopter.ts), and the officers draw
+// their pistols: they stop where they can see you and shoot rather than run you down.
+// From four stars they shoot from the cars as well.
 
 const STARS = [1, 4, 9, 16, 25]; // heat for each star
 const CHASERS = [0, 1, 2, 3, 4, 6]; // police cars after you, by stars
@@ -45,6 +50,9 @@ const POINTS = { knock: 1, carjack: 1, wreck: 0.6, hitCop: 2, stealCop: 3 };
 const COOLDOWN: Partial<Record<keyof typeof POINTS, number>> = { hitCop: 1 }; // one scrape shouldn't count ten times
 const RUN = 6.4; // officers on foot, m/s: you can outrun them, but not walking
 const WRECKED = 90; // damage that puts a police car out of the chase
+const ARMED = 3; // stars from which officers on foot shoot
+const FROM_CARS = 4; // and from which they shoot from the cars
+const RANGE = 24; // m; further off they come closer first
 
 // Points of `poly` from s0 to s1 (backwards if s1 < s0), as [x, y].
 function slice(poly: Polyline, s0: number, s1: number): Point2[] {
@@ -93,6 +101,7 @@ export class Police {
   scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
   r: () => number; edgesNear: PoliceOptions['edgesNear']; offscreen: PoliceOptions['offscreen'];
   onBusted: () => void; kit: FigureKit; bodyAt: NonNullable<PoliceOptions['bodyAt']>;
+  height: PoliceOptions['height']; onShot: NonNullable<PoliceOptions['onShot']>;
   spare: Figures[]; helis: Helicopters; heat: number; cars: ChaseCar[]; officers: Officer[];
   seen: boolean; lose: number; cool: Record<string, number>; spawnT: number; checkT: number; limit: number;
   nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number;
@@ -100,10 +109,11 @@ export class Police {
   glow: THREE.InstancedMesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
   dummy: THREE.Object3D; lastT?: number; stolen: WeakSet<Car>;
 
-  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit, bodyAt = () => false }: PoliceOptions) {
+  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {} }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
     this.r = rng; this.edgesNear = edgesNear; this.offscreen = offscreen;
     this.onBusted = onBusted; this.kit = kit; this.bodyAt = bodyAt;
+    this.height = height; this.onShot = onShot;
     this.spare = []; // figures of officers who've gone, to reuse
     this.helis = new Helicopters(scene, height);
     this.heat = 0;
@@ -383,7 +393,34 @@ export class Police {
     // the rest of the way.
     const there = behind || (!me.car && dist < 60 && !!p.path && p.path.length - p.s < 8);
     if (c.crew && !me.air && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18 || there)) this.getOut(c);
+    // Near you and in sight, from four stars: a shot out of the window now and then.
+    p.reload = (p.reload ?? 1) - dt;
+    if (c.crew && this.stars >= FROM_CARS && !me.air && dist < RANGE && p.reload <= 0 && this.clear(c.x, c.y, me.x, me.y)) {
+      p.reload = this.pace() + 1;
+      this.shoot(c.x, c.y, c, me);
+    }
     return { throttle, steer, handbrake: want === 0 && Math.abs(vf) < 3 };
+  }
+
+  // ---- Guns ----------------------------------------------------------------
+
+  // Seconds to the next shot: quicker with more stars.
+  pace() { return (this.stars >= 5 ? 0.5 : this.stars >= 4 ? 0.7 : 0.9) + this.r() * 0.5; }
+
+  // A shot at you from (x, y). It's likelier to hit close up, with more stars, and when
+  // you're standing still; a miss goes past you, a little to one side.
+  shoot(x: number, y: number, who: Car | Officer, me: PlayerTarget) {
+    const d = Math.hypot(me.x - x, me.y - y) || 1, ux = (me.x - x) / d, uy = (me.y - y) / d;
+    const odds = clamp(0.5 + 0.07 * (this.stars - ARMED) - d / 60 - me.speed * 0.03, 0.08, 0.8);
+    const hit = this.r() < odds;
+    const from: Point3 = [x + ux * 0.6, y + uy * 0.6, this.height(x, y, who) + (who instanceof Car ? who.spec.H + 0.1 : 1.3)];
+    const z = me.z + (me.car ? me.car.spec.H * 0.7 : 1.1);
+    let to: Point3 = [me.x, me.y, z];
+    if (!hit) {
+      const a = Math.atan2(uy, ux) + (this.r() - 0.5) * 0.3, far = d + 4 + this.r() * 8;
+      to = [x + Math.cos(a) * far, y + Math.sin(a) * far, z - this.r()];
+    }
+    this.onShot(from, to, hit);
   }
 
   // ---- Officers on foot --------------------------------------------------
@@ -419,37 +456,47 @@ export class Police {
       // Back to the car when you drive off (or the chase is over); after you otherwise.
       const toMe = Math.hypot(me.x - o.x, me.y - o.y);
       o.back = this.heat <= 0 || !!(ride && me.car && me.speed > 6 && toMe > 12);
-      // No car to go back to: they walk off.
-      const tx = !o.back ? me.x : ride ? o.car.x : 2 * o.x - me.x, ty = !o.back ? me.y : ride ? o.car.y : 2 * o.y - me.y;
-      const dx = tx - o.x, dy = ty - o.y, d = Math.hypot(dx, dy) || 1;
-      const sp = o.back && !ride ? 1.4 : RUN;
-      // Round the cars and trams in the way, not into them: the first way clear a step
-      // ahead, turning further and further off the straight line, the same side as last
-      // time first (so they don't dither). Not their own car when going back to it.
-      let ang = Math.atan2(dy, dx);
-      const skip = o.back ? o.car : null, step = Math.min(d, 0.9);
-      const clear = (a: number) => !this.bodyAt(o.x + Math.cos(a) * step, o.y + Math.sin(a) * step, 0.4, skip);
-      if (!clear(ang)) {
-        const side = o.detour || (this.r() < 0.5 ? 1 : -1);
-        let found = false;
-        for (let k = 1; k <= 5 && !found; k++) {
-          for (const sgn of [side, -side]) {
-            if (!clear(ang + sgn * k * 0.5)) continue;
-            ang += sgn * k * 0.5;
-            o.detour = sgn;
-            found = true;
-            break;
+      // Armed, in range and in sight: they stand and shoot. Closer in they still come to
+      // arrest you.
+      o.reload = (o.reload ?? 0.5 + this.r() * 0.6) - dt;
+      const aiming = !o.back && this.stars >= ARMED && !me.air && toMe > 5 && toMe < RANGE && this.clear(o.x, o.y, me.x, me.y);
+      if (aiming) {
+        o.vx = o.vy = 0;
+        o.h = Math.atan2(me.y - o.y, me.x - o.x);
+        if (o.reload <= 0) { o.reload = this.pace(); this.shoot(o.x, o.y, o, me); }
+      } else {
+        // No car to go back to: they walk off.
+        const tx = !o.back ? me.x : ride ? o.car.x : 2 * o.x - me.x, ty = !o.back ? me.y : ride ? o.car.y : 2 * o.y - me.y;
+        const dx = tx - o.x, dy = ty - o.y, d = Math.hypot(dx, dy) || 1;
+        const sp = o.back && !ride ? 1.4 : RUN;
+        // Round the cars and trams in the way, not into them: the first way clear a step
+        // ahead, turning further and further off the straight line, the same side as last
+        // time first (so they don't dither). Not their own car when going back to it.
+        let ang = Math.atan2(dy, dx);
+        const skip = o.back ? o.car : null, step = Math.min(d, 0.9);
+        const clear = (a: number) => !this.bodyAt(o.x + Math.cos(a) * step, o.y + Math.sin(a) * step, 0.4, skip);
+        if (!clear(ang)) {
+          const side = o.detour || (this.r() < 0.5 ? 1 : -1);
+          let found = false;
+          for (let k = 1; k <= 5 && !found; k++) {
+            for (const sgn of [side, -side]) {
+              if (!clear(ang + sgn * k * 0.5)) continue;
+              ang += sgn * k * 0.5;
+              o.detour = sgn;
+              found = true;
+              break;
+            }
           }
+          // (Hemmed in all round: straight on, and the cars push them back out.)
+        } else o.detour = 0;
+        o.vx = Math.cos(ang) * sp;
+        o.vy = Math.sin(ang) * sp;
+        o.h = ang;
+        if (o.back && ride && d < 2.6) { o.gone = true; o.car.crew = true; return; }
+        if (!o.back && this.heat > 0 && !me.air) {
+          const reach = me.car ? me.car.spec.L / 2 + 1 : 1.1;
+          if (toMe < reach && (!me.car || me.speed < 2)) this.onBusted();
         }
-        // (Hemmed in all round: straight on, and the cars push them back out.)
-      } else o.detour = 0;
-      o.vx = Math.cos(ang) * sp;
-      o.vy = Math.sin(ang) * sp;
-      o.h = ang;
-      if (o.back && ride && d < 2.6) { o.gone = true; o.car.crew = true; return; }
-      if (!o.back && this.heat > 0 && !me.air) {
-        const reach = me.car ? me.car.spec.L / 2 + 1 : 1.1;
-        if (toMe < reach && (!me.car || me.speed < 2)) this.onBusted();
       }
     }
     const nx = o.x + o.vx * dt, ny = o.y + o.vy * dt;

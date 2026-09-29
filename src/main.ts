@@ -37,6 +37,7 @@ import type { Surface } from './audio.ts';
 import { setupTouch } from './touch.ts';
 import './credits.ts';
 import { Police } from './police.ts';
+import { Tracers, Health, MAX_HEALTH } from './guns.ts';
 import { Chopper } from './helicopter.ts';
 import { Boats } from './boats.ts';
 import { isMapIndex } from './contracts.ts';
@@ -332,7 +333,7 @@ async function main() {
   };
 
   // Busted: out of the car (the police keep it), and a moment before you can move again.
-  const stats = { knocked: 0, wrecked: 0, busted: 0 };
+  const stats = { knocked: 0, wrecked: 0, busted: 0, wasted: 0 };
   let frozen = 0;
   const busted = () => {
     if (frozen > 0) return;
@@ -347,8 +348,50 @@ async function main() {
     frozen = 2.5;
     showBanner(t('Busted'), true);
   };
+  // Wasted: you drop where you are, and a few seconds later you come round outside the
+  // nearest hospital, patched up and no longer wanted.
+  const health = new Health(), tracers = new Tracers(scene);
+  const HOSPITALS = [
+    [14.42275, 50.07468], [14.4217, 50.09185], [14.3412, 50.0753], [14.4745, 50.0737], // VFN, Na Františku, Motol, Vinohrady
+    [14.463, 50.1163], [14.4604, 50.0306], [14.368, 50.072], [14.366, 50.093], // Bulovka, Thomayer, Homolka, ÚVN
+  ];
+  let wastedT = 0;
+  const wasted = () => {
+    if (funicular.me) funicular.leave();
+    boats.me = null;
+    if (inHeli) enterOrExit();
+    if (inCar) enterOrExit();
+    walker.mesh.visible = true;
+    walker.knock((seeded() - 0.5) * 2, (seeded() - 0.5) * 2);
+    walker.down = 99; // until you come round
+    police.forgive();
+    stats.wasted++;
+    frozen = 3.2;
+    wastedT = 3;
+    showBanner(t('Wasted'), true);
+  };
+  const comeRound = () => {
+    const tm = `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
+    const near = HOSPITALS.filter(([lon, lat]) => lon > w0 && lon < e0 && lat > s0 && lat < n0).map((ll) => proj4('EPSG:4326', tm, ll) as [number, number])
+      .sort((a, b) => Math.hypot(a[0] - px(), a[1] - py()) - Math.hypot(b[0] - px(), b[1] - py()))[0];
+    health.reset();
+    walker.down = 0;
+    walker.anim.play('idle', true);
+    if (near) void teleportTo(near[0], near[1]);
+  };
+  const hurt = (points: number) => { if (wastedT <= 0 && health.hurt(points)) wasted(); };
   const police = new Police({
     scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, offscreen, onBusted: busted, kit,
+    // A shot is heard, seen and sends people running; one that hits you in a car mostly
+    // hits the car.
+    onShot: (from, to, hit) => {
+      tracers.fire(from, to);
+      sound.shot(Math.hypot(from[0] - px(), from[1] - py()), from[0] - px());
+      crowd.scare(from[0], from[1], 35);
+      if (!hit) return;
+      if (inCar) { inCar.damage += 6; hurt(inCar.two ? 10 : 3); } else hurt(inHeli ? 3 : 10);
+      shake = Math.max(shake, 0.3);
+    },
     // Officers on foot go round cars and trams (see obstacles below).
     bodyAt: (x, y, r, skip) => {
       for (const o of obstacles(x, y, r + 3)) {
@@ -509,6 +552,7 @@ async function main() {
     const c = inCar;
     if (!c) return;
     enterOrExit();
+    hurt(Math.hypot(c.vx, c.vy) * 1.5);
     walker.knock(c.vx * 0.6, c.vy * 0.6);
     c.vx *= 0.4;
     c.vy *= 0.4;
@@ -714,6 +758,8 @@ async function main() {
       frozen -= dt;
       Object.assign(ctl, { move: 0, turn: 0, aim: null, run: false, brake: true });
     }
+    health.update(dt);
+    if (wastedT > 0 && (wastedT -= dt) <= 0) comeRound();
     assisted = false;
     if (inCar) {
       let steer = ctl.aim ? steerToward(inCar, ctl.aim.h, ctl.move) : ctl.turn;
@@ -734,7 +780,7 @@ async function main() {
     const movers = loose.filter(moving);
     for (const c of movers) c.update(dt, null, grid);
     const me = inCar || inHeli || walker;
-    police.update(dt, { x: me.x, y: me.y, vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || taxi.riding, riding: ride.on || taxi.riding });
+    police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || taxi.riding, riding: ride.on || taxi.riding });
     const cops = police.cars.map((p) => p.car);
 
     // Everything the traffic, trams and people need to look out for.
@@ -907,7 +953,7 @@ async function main() {
     }
     if (!inCar && !inHeli && !ride.on) {
       offTrams(walker, 0.35, (x, y) => !walker.blocked(x, y), (vx, vy) => {
-        if (walker.down <= 0) { walker.knock(vx, vy); shake = 0.8; }
+        if (walker.down <= 0) { walker.knock(vx, vy); hurt(Math.hypot(vx, vy) * 2.5); shake = 0.8; }
       });
       // Standing on a car that drives off: it carries you round with it, until it's
       // going too fast to keep your feet and throws you off to the side.
@@ -935,7 +981,7 @@ async function main() {
           }
           return true;
         }
-        if (c.speed > 4 && walker.down <= 0 && !walker.airborne) { walker.knock(c.vx + nx * 2, c.vy + ny * 2); shake = 0.6; }
+        if (c.speed > 4 && walker.down <= 0 && !walker.airborne) { walker.knock(c.vx + nx * 2, c.vy + ny * 2); hurt(c.speed * 2.5); shake = 0.6; }
       });
       // Up quickly, down as fast as you'd drop.
       walker.perch = top > walker.perch ? walker.perch + (top - walker.perch) * Math.min(1, dt * 14) : Math.max(top, walker.perch - dt * 5);
@@ -1039,6 +1085,7 @@ async function main() {
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     crowd.render(ground);
     police.render(ground, time.value, inCar);
+    tracers.update(dt);
     // Only the cars in view (and a little round it, for their shadows) are drawn.
     drawn.length = 0;
     {
@@ -1185,7 +1232,7 @@ async function main() {
     const label = ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : canBoard || cabin || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : null;
     touch.update({ car: inCar || inHeli, tram: ride.on || taxi.riding || !!funicular.me, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || funicular.me?.stop != null, limit: assisted ? assist.limit : null });
-    show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')} · ${tn(stats.knocked, '{n} person knocked over|{n} people knocked over')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}`);
+    show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')} · ${tn(stats.knocked, '{n} person knocked over|{n} people knocked over')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}${stats.wasted ? ` · ${t('wasted {n}×', { n: stats.wasted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
     const face = `${getLang()}|${stars}|${stars && !police.seen}`;
@@ -1196,13 +1243,17 @@ async function main() {
       wanted.classList.toggle('blink', stars > 0 && !police.seen);
       wanted.setAttribute('aria-label', stars ? t('Wanted: {stars} of 5 stars', { stars }) : t('Not wanted'));
     }
+    // Health: a bar once you're hurt, and red at the edges of the screen as you're hit.
+    const hp = Math.ceil(health.value);
+    show('health', hp < MAX_HEALTH ? `<span role="img" aria-label="${t('Health: {n}%', { n: hp })}" style="width:${hp}%"${hp <= 30 ? ' class="low"' : ''}></span>` : '', 'html');
+    show('hurt', Math.round(health.flash * 50) / 50, 'opacity');
 
     dev.update();
     renderer.render(scene, camera);
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare,
+    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, health, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

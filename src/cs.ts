@@ -45,6 +45,7 @@ export const CS: Record<string, string> = {
   Low: 'Nízká',
   Lowest: 'Nejnižší',
   Busted: 'Chycen',
+  Wasted: 'Zabit',
 
   // Dialogues
   'New objective': 'Nový úkol',
@@ -66,6 +67,8 @@ export const CS: Record<string, string> = {
   '{n} car wrecked|{n} cars wrecked': '{n} rozbité auto|{n} rozbitá auta|{n} rozbitých aut',
   '{n} person knocked over|{n} people knocked over': '{n} sražený člověk|{n} sražení lidé|{n} sražených lidí',
   'busted {n}×': 'chycen {n}×',
+  'wasted {n}×': 'zabit {n}×',
+  'Health: {n}%': 'Zdraví: {n} %',
   'Wanted: {stars} of 5 stars': 'Hledaný: {stars} z 5 hvězd',
   'Not wanted': 'Nehledaný',
   '{n} m up': '{n} m nad zemí',

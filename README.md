@@ -118,8 +118,16 @@ the pixel ratio.
   officer gets out and runs after you, and if they reach you, you're busted (the
   police keep the car). You can outrun them on foot, or take the police car they've
   left behind (E) and drive off in it, its blue lights flashing as you go. From three stars a helicopter
-  joins in and sees you over the rooftops. Stay out of sight and the stars go one at a
-  time; they blink while nobody can see you (`src/police.ts`, `src/helicopter.ts`).
+  joins in and sees you over the rooftops, and the officers carry pistols: once they can
+  see you from close enough they stop and shoot instead of running you down, and from
+  four stars they shoot out of the cars too. Gunshots send people running. Stay out of
+  sight and the stars go one at a time; they blink while nobody can see you
+  (`src/police.ts`, `src/helicopter.ts`).
+- **Health.** Shots hurt you, far less in a car (the car takes most of it), and so
+  does being run down, knocked over by a tram or thrown off a bike. A bar under the
+  stars shows how much you have left once you're hurt, and it comes back by itself
+  after a few quiet seconds. When it runs out you're wasted: you fall where you are
+  and come round outside the nearest hospital, no longer wanted (`src/guns.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads
@@ -350,6 +358,8 @@ the pixel ratio.
   and a car that finds another police car already stopped just ahead waits behind
   it. What the police see
   is checked with rays over the collision grid; the helicopter needs no line of sight.
+  Shots are decided when they're fired (likelier to hit close up, with more stars and
+  against someone standing still) and drawn as a streak flying to where the bullet went.
 - **Parking** follows TSK Praha's paid-parking data: each street section gets spaces ×
   measured occupancy cars (day or night), placed in OSM's parking lanes and lots and
   then along the kerb (`src/parking.ts`); bay lines are painted as Prague paints them,

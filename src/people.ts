@@ -281,6 +281,17 @@ export class Crowd {
     p.s = p.fwd ? 0 : p.e.path.length;
   }
 
+  // A gunshot at (x, y): everyone walking within r runs from it.
+  scare(x: number, y: number, r: number) {
+    for (const p of this.people) {
+      if (p.state !== 'walk' && p.state !== 'rejoin') continue;
+      const dx = p.x - x, dy = p.y - y, d = Math.hypot(dx, dy);
+      if (d > r) continue;
+      const a = Math.atan2(dy, dx) + (this.r() - 0.5) * 0.8, sp = 5 + this.r();
+      Object.assign(p, { state: 'flee', t: 2.5 + this.r() * 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp });
+    }
+  }
+
   knock(p: Pedestrian, vx: number, vy: number) {
     p.state = 'down';
     p.t = 3 + this.r() * 2;
