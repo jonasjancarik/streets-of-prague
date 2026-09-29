@@ -18,6 +18,8 @@ export interface Pedestrian extends WalkSpot {
   t: number; pause: number; z: number; anim: Anim; look: Look;
   target?: WalkSpot & { x: number; y: number };
   gz?: number;
+  // Knocked down by someone taking their bike: which way to run once they're up.
+  then?: Point2;
 }
 interface WalkSegment extends WalkSpot { a: Point2; b: Point2; s0: number; len: number }
 
@@ -170,11 +172,17 @@ export class Crowd {
 
   blocked(x: number, y: number) { return this.grid.at(x, y) !== 0; }
 
-  // Someone steps out of a car (a driver who's just been pulled out, say).
-  spawnAt(x: number, y: number) {
+  // Someone steps out of a car (a driver who's just been pulled out, say), looking
+  // like `look` if given (the rider of a bike you've taken).
+  spawnAt(x: number, y: number, look?: Look) {
     const p = this.add(this.nearest(x, y) || undefined);
     p.x = x;
     p.y = y;
+    p.then = undefined;
+    if (look) {
+      p.look = look;
+      this.fig.look(p.i, look);
+    }
     return p;
   }
 
@@ -234,7 +242,10 @@ export class Crowd {
         if (!this.blocked(nx, p.y)) p.x = nx; else p.vx *= -0.3;
         if (!this.blocked(p.x, ny)) p.y = ny; else p.vy *= -0.3;
         if (p.state !== 'down' && Math.hypot(p.vx, p.vy) > 0.3) p.h = Math.atan2(p.vy, p.vx);
-        if (p.t < 0 && (p.state === 'flee' || p.state === 'down')) {
+        if (p.t < 0 && p.state === 'down' && p.then) {
+          // Up again, and off at a run.
+          Object.assign(p, { state: 'flee', t: 2.5, vx: p.then[0], vy: p.then[1], then: undefined });
+        } else if (p.t < 0 && (p.state === 'flee' || p.state === 'down')) {
           const n = this.nearest(p.x, p.y);
           if (n) {
             const q = n.e.path.at(n.s);
@@ -311,6 +322,8 @@ export class Walker {
   grid: WalkGrid;
   x: number; y: number; h: number; z: number; speed: number; down: number;
   vx: number; vy: number;
+  // Standing on a car: how high its bonnet, roof or boot is under your feet.
+  perch: number;
   anim: Anim;
   look: Look;
   fig: Figures;
@@ -328,6 +341,7 @@ export class Walker {
     this.speed = 0;
     this.down = 0;
     this.vx = this.vy = 0;
+    this.perch = 0;
     this.anim = new Anim(kit, 'idle');
     this.look = { shirt: '#d9612c', trousers: '#2f3a4f', skin: '#e3b99a', hair: '#3a2618', sleeves: false };
     this.fig = new Figures(kit, 1);
@@ -345,7 +359,8 @@ export class Walker {
   }
 
   // In the air, high enough for a car to pass under your feet.
-  get airborne() { return this.z > 0.5; }
+  get airborne() { return this.z + this.perch > 0.5; }
+  get jumping() { return this.anim.name === 'jump' && !this.anim.done; }
 
   // The ground and walls as you meet them: on a bridge deck or under it.
   get ground() { return this.grid.view ? this.grid.view(this) : this.grid; }
@@ -408,7 +423,7 @@ export class Walker {
 
   sync() {
     const g = this.ground, ground = g.height ? g.height(this.x, this.y) : 0;
-    this.mesh.position.set(this.x, ground + this.z, -this.y);
+    this.mesh.position.set(this.x, ground + this.perch + this.z, -this.y);
     this.mesh.rotation.set(0, this.h, 0);
     this.ring.position.y = 0.05 - this.z;
     this.fig.set(0, this.base, this.anim);
