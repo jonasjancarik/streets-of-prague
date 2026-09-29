@@ -52,14 +52,16 @@ let map: N = null;
 export function lampLight(w: N, n?: N) {
   map ??= texture(LAMP_MAP.value ?? new THREE.Texture());
   const out = vec3(0).toVar();
+  // Worked out here, not first inside the branch below: the lighting after it needs the normal too.
+  const nv = n ? n.toVar() : null;
   const uv = w.xz.sub(uLampBox.xy).mul(uLampBox.z).mul(0.5).add(0.5).toVar();
   const inside = uv.x.greaterThanEqual(0).and(uv.y.greaterThanEqual(0)).and(uv.x.lessThanEqual(1)).and(uv.y.lessThanEqual(1));
   If(uLampOn.greaterThan(0.005).and(inside), () => {
     const l = map.sample(vec2(uv.x, uv.y.oneMinus())).level(float(0)).toVar();
     const dy = w.y.sub(l.a.sub(500));
     const k = smoothstep(3, 11, dy).oneMinus().mul(smoothstep(-5, -2.5, dy)).toVar();
-    if (n) {
-      const up = smoothstep(0.5, 0.8, dot(n, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz));
+    if (nv) {
+      const up = smoothstep(0.5, 0.8, dot(nv, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz));
       k.mulAssign(select(up.lessThan(0.01), float(1), up.mul(smoothstep(3.5, 5.5, dy)).oneMinus()));
     }
     out.assign(l.rgb.mul(uLampOn).mul(k));
