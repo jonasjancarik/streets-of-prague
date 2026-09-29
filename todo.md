@@ -214,9 +214,9 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   They can creep or stall behind parked cars in narrow Old Town streets, their routes
   are sometimes long, the apps have no phone screen of their own, and the touch
   button hasn't been looked at on a phone.
-- **A tile-load error at start, seen twice.** `TileWorld.loadNow` → `fetchTile` threw
-  once in the integration check and once in the final smoke test (default area, dev
-  server), and didn't come back on reruns. Startup has no retry there.
+- **A tile-load error at start, seen twice** (`TileWorld.loadNow` → `fetchTile`, under
+  heavy load, not reproduced). Startup now retries a failing tile and carries on
+  without it; the cause of the failed download itself wasn't found.
 - **Raised buildings from IPR.** Passages and walkways over a street are left out of
   the collision only when OSM has `min_height` (3 m or more); raised parts only in
   IPR's 3D buildings still block.
