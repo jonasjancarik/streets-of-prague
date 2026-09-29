@@ -83,6 +83,7 @@ export class TramRide {
   leave() {
     const v = this.riding, p = v.parts[1];
     v.rider = false;
+    v.hold = false;
     this.v = null;
     this.dest = null;
     this.scale = 1;
