@@ -10,8 +10,11 @@ import type { TramVehicle } from './trams.ts';
 // rumble, the motors' whine, the wheels squealing in tight curves, pulling away from a
 // stop and pulling in, and the bell when something's on the track; the bogies clicking
 // over rail joints are made here, and so is the weather: rain hissing and pattering,
-// the tyres louder in the wet, thunder after lightning, a wind while it snows. Browsers only start sound after
-// a key press or a tap; M turns it off and on.
+// the tyres louder in the wet, thunder after lightning, a wind while it snows. Under it
+// all, the city's own sound, from recordings too: crowds where the streets are busy,
+// traffic in the distance by day and a low hum by night, and birds where it's quiet
+// (see Ambience). Browsers only start sound after a key press or a tap; M turns it off
+// and on.
 
 export type Surface = 'asphalt' | 'setts' | 'pavers' | 'pavement';
 
@@ -70,6 +73,8 @@ export interface SoundState {
   quiet: boolean; // in the metro
   rain?: number; wet?: number; snow?: number; // the weather, 0–1 each (weather.ts)
   strikes?: number; // lightning so far: each new one thunders a moment later
+  busy?: number; // how busy the streets around you are, 0 (the edge of town) to 1 (the Old Town)
+  hour?: number; // the time of day, in hours (13.5 is half past one)
 }
 
 export class Sound {
@@ -82,6 +87,7 @@ export class Sound {
   engine: Engine | null = null;
   tyres: Tyres | null = null;
   weather: WeatherSound | null = null;
+  ambience: Ambience | null = null;
   private strikes = -1;
   voices: TramVoice[] = [];
 
@@ -132,6 +138,14 @@ export class Sound {
     })).then(() => {
       for (let i = 0; i < TRAM_VOICES; i++) this.voices.push(new TramVoice(this, this.master));
     }).catch((e) => console.warn('The tram sounds could not be loaded', e));
+    // And the city around you, once its recordings are in.
+    Promise.all(Object.keys(AMBIENCE).map(async (name) => {
+      const r = await fetch(`audio/amb-${name}.m4a`);
+      if (!r.ok) throw new Error(`${name}: ${r.status}`);
+      return [name, await ctx.decodeAudioData(await r.arrayBuffer())] as const;
+    })).then((clips) => {
+      this.ambience = new Ambience(ctx, Object.fromEntries(clips), this.master);
+    }).catch((e) => console.warn('The city sounds could not be loaded', e));
   }
 
   // One of the clips whose names start with `name`, at random.
@@ -156,6 +170,7 @@ export class Sound {
     this.engine?.update(dt, s.throttle);
     this.tyres!.update(car, s.surface, s.wet ?? 0);
     this.weather!.update(s.rain ?? 0, s.snow ?? 0);
+    this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0));
     if (s.strikes !== undefined) {
       if (this.strikes >= 0 && s.strikes > this.strikes) this.weather!.thunder(t + 0.6 + Math.random() * 3.5);
       this.strikes = s.strikes;
@@ -448,6 +463,57 @@ class TramVoice {
       sound.play(sound.pick('bell'), t, 0.7, this.out);
       this.bellT = v.forPlayer ? 2 : 4;
     }
+  }
+}
+
+// The city's sound, as loops that play all the time, each as loud as where you are
+// and when calls for: people and their footsteps and voices on busy streets by day,
+// traffic in the distance by day and a quieter hum by night, and birds where it's
+// quiet (a blackbird at dawn and dusk, the small garden birds by day, a whole morning
+// chorus early on), none of them in rain or snow. The levels change slowly, so walking
+// from a quiet street onto a square the crowd comes up over a few seconds.
+// (Two crowds of different lengths layered, so together they repeat only every few minutes.)
+const AMBIENCE: Record<string, number> = { crowd: 0.25, crowd2: 0.25, traffic: 0.3, night: 0.3, blackbird: 0.3, garden: 0.3, morning: 0.25 };
+
+// 0 outside [a, d], 1 within [b, c], smooth in between (hours, round midnight too).
+function span(h: number, a: number, b: number, c: number, d: number) {
+  const x = (((h - a) % 24) + 24) % 24, len = (((d - a) % 24) + 24) % 24;
+  const b1 = (((b - a) % 24) + 24) % 24, c1 = (((c - a) % 24) + 24) % 24;
+  if (x > len) return 0;
+  const up = b1 > 0 ? clamp(x / b1, 0, 1) : 1, down = len > c1 ? clamp((len - x) / (len - c1), 0, 1) : 1;
+  const e = Math.min(up, down);
+  return e * e * (3 - 2 * e);
+}
+
+class Ambience {
+  ctx: AudioContext;
+  gains: Record<string, GainNode> = {};
+
+  constructor(ctx: AudioContext, clips: Record<string, AudioBuffer>, dest: AudioNode) {
+    this.ctx = ctx;
+    for (const [name, buffer] of Object.entries(clips)) {
+      const src = loop(ctx, buffer), g = gain(ctx, 0);
+      src.connect(g).connect(dest);
+      src.start(ctx.currentTime, Math.random() * buffer.duration);
+      this.gains[name] = g;
+    }
+  }
+
+  // `busy` 0–1, `hour` 0–24, `wet` how hard it rains or snows 0–1.
+  update(busy: number, hour: number, wet: number) {
+    const t = this.ctx.currentTime, quiet = (1 - busy) ** 1.5, dry = 1 - wet;
+    const awake = 0.15 + 0.85 * span(hour, 5.5, 8, 21, 24); // how many people are about
+    const night = 1 - span(hour, 5, 6.5, 22, 23.5);
+    const level: Record<string, number> = {
+      crowd: busy ** 0.7 * awake,
+      crowd2: busy ** 0.7 * awake,
+      traffic: (0.35 + 0.65 * busy) * (1 - night),
+      night: (0.5 + 0.5 * busy) * night,
+      blackbird: quiet * dry * Math.max(span(hour, 3.5, 4.5, 7, 9), 0.8 * span(hour, 18, 19.5, 21, 22), 0.25 * span(hour, 9, 10, 17, 18)),
+      garden: quiet * dry * Math.max(span(hour, 6, 8, 17, 19.5), 0.5 * span(hour, 4.5, 5.5, 6, 8)),
+      morning: quiet * dry * span(hour, 4, 5, 8, 10),
+    };
+    for (const [name, g] of Object.entries(this.gains)) g.gain.setTargetAtTime((level[name] ?? 0) * AMBIENCE[name], t, 2);
   }
 }
 

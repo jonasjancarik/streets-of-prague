@@ -319,9 +319,14 @@ the pixel ratio.
   `public/audio/SOURCES.md`): the rumble and the motors' whine as loops that follow
   the tram's speed, the wheels' squeal in tight curves, pulling away from a stop and
   pulling in as it happens, and the bell at you or a car on the track ahead. The
-  bogies' clicks over the rail joints are made in code. It starts with the first key
-  press or tap (the browser's rule); M turns it off and on, and it goes quiet in the
-  metro.
+  bogies' clicks over the rail joints are made in code. Under it all is the city's own
+  sound, long stereo loops from the same script, each as loud as where you are and the
+  time of day call for: two layered Old Town crowds, as loud as the streets within
+  150 m are busy (the footfall map, 1 at the Old Town Square) and quiet at night;
+  distant traffic by day and a low hum by night; and birds where it's quiet (a
+  blackbird at dawn and dusk, small garden birds by day, a morning chorus early on),
+  none in rain or snow. It starts with the first key press or tap (the browser's rule);
+  M turns it off and on, and it goes quiet in the metro.
 - **Police** patrol with the traffic. Chasing cars find their way with an A* search over
   the street graph (both ways along every street) and drive it with the same physics as
   your car; within 40 m and in sight of your car they head straight for it. After you
@@ -508,7 +513,7 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   which doesn't reach it, measures against the last `centrum` or `praha` built.
   Without the map, every street counts as equally busy and about 240 people are about
   everywhere.
-- **Tram sounds.** Unlike the map, the clips in `public/audio/` are committed; run
+- **Sounds.** Unlike the map, the clips in `public/audio/` are committed; run
   `uv run build_audio.py` (needs ffmpeg) only to change how they're cut. It downloads
   the Freesound previews it needs into `pipeline/.cache/audio/freesound/` (no login
   needed). Add a new recording's source and licence to `public/audio/SOURCES.md`.
@@ -557,6 +562,11 @@ libraries to `dist/licenses.txt` (a small plugin in `vite.config.js`).
 - Tram sounds: [Freesound](https://freesound.org), nearly all CC0; the motor's whine is
   [tramvaj nova prujezd nabrezi MS](https://freesound.org/s/621068/) by ozvuk,
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (see `public/audio/SOURCES.md`).
+- City sounds: [Freesound](https://freesound.org); the Old Town crowds are
+  [Prague, Staro Mesto, City Center](https://freesound.org/s/212034/) (parts 1 and 2)
+  by vonfleisch, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), the traffic
+  [Prague Atmo Traffic from 5th floor](https://freesound.org/s/94309/) by aUREa,
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), the rest CC0.
 - Drawing: [three.js](https://threejs.org/) (MIT); map projections: [proj4js](https://proj4js.github.io/proj4js/) (MIT).
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - Maps in the developer panel: [Leaflet](https://leafletjs.com/) (BSD-2-Clause) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).
