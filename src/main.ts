@@ -82,8 +82,9 @@ async function main() {
     .catch(() => ({ lines: [] }));
   const seeded = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 
-  // (Its pixel ratio comes from the graphics setting, see Graphics.)
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  // (Its pixel ratio comes from the graphics setting, see Graphics. The stencil is for
+  // shading each pixel of the ground once, see surface.ts.)
+  const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;

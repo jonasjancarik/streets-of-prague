@@ -42,6 +42,7 @@ export class Surfaces {
       const mat = surfaceMaterial(l, time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, l.base ? photo : null);
       const m = new THREE.Mesh(g, mat);
       m.renderOrder = l.order;
+      if (!l.slab && !l.deck && !l.tunnel && l.order >= -1000 && l.order < -800) onceAPixel(m, l);
       if (l.shade === undefined && !l.tunnel) m.receiveShadow = true;
       if (l.slab) m.castShadow = true;
       this.group.add(m);
@@ -52,6 +53,25 @@ export class Surfaces {
     this.group.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); o.material.dispose(); } });
     for (const m of this.masks) m.dispose();
   }
+}
+
+// The ground's layers (numbered from -1000 up, see ground.ts) cover each other, and
+// their patterns are the costliest part of a frame, so each pixel is shaded once, by
+// the top layer there, on GPUs that would otherwise shade every layer drawn over it
+// (most outside Apple's, which skip what's drawn over on their own). The stencil keeps
+// the rank of the layer that drew a pixel: the solid layers are drawn from the top
+// down, each only where nothing above it has been (where its rank is greater than the
+// one there, which is 0 until one has). Then the see-through ones (soft shading, the
+// bridges' shadows) go over them from the bottom up, each only where the solid layer
+// underneath is lower than it. (Needs a renderer with a stencil buffer, see main.ts.)
+function onceAPixel(m: THREE.Mesh, l: GroundLayer) {
+  const rank = l.order + 1001;
+  const solid = l.shade === undefined && (l.blend === null || l.blend === undefined);
+  m.renderOrder = solid ? -1000 - rank : -900 + rank;
+  Object.assign(m.material as THREE.Material, {
+    stencilWrite: true, stencilRef: rank, stencilFunc: THREE.GreaterStencilFunc,
+    stencilZPass: solid ? THREE.ReplaceStencilOp : THREE.KeepStencilOp, stencilWriteMask: solid ? 0xff : 0,
+  });
 }
 
 function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: SurfaceTexture | null, mask: SurfaceTexture | null, photo: { texture: THREE.Texture; box: number[] } | null = null) {
