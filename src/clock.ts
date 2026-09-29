@@ -27,6 +27,15 @@ export class Clock {
     this.t = day * 86400 + sec;
   }
 
+  // Seconds into today in Prague, as it reads now.
+  static nowLabel() {
+    const s = pragueNow().sec;
+    return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}`;
+  }
+
+  // The time of day set (the start screen), on the same day.
+  setTime(sec: number) { this.t = this.day * 86400 + sec; }
+
   advance(dt: number) { this.t = (((this.t + dt) % WEEK) + WEEK) % WEEK; }
   get day() { return Math.floor(this.t / 86400); }
   get hour() { return Math.floor((this.t % 86400) / 3600); }

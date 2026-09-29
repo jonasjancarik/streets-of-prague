@@ -85,6 +85,16 @@ export class Weather {
     this.next = clockT + this.span();
   }
 
+  // The game begins (the start screen): this weather, at this time, changing by itself
+  // after a while unless it was asked for in the URL.
+  begin(kind: Kind, clockT: number) {
+    if (kind !== this.kind) this.fixed = false;
+    this.kind = kind;
+    this.lastT = clockT;
+    this.settle();
+    this.next = clockT + this.span();
+  }
+
   private span() { return (20 + this.rng() * 40) * 60; }
 
   // `opening`: the first weather of a visit is never mist, which looks broken to a newcomer.

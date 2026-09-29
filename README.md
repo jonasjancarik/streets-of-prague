@@ -22,7 +22,7 @@ generated is committed. The whole city (`?area=praha`) is the default, `?area=ce
 the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague
 now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
 (with night-time parking). The weather changes by itself every half hour or so of the game's clock;
-`?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
+`?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen (the loading screen's time, weather and sound choices and its Start button; the weather is rolled anew on each visit and never opens with mist), and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser): High draws at the screen's
 pixel ratio up to 2, Medium up to 1.5, Low at 1, all with the tone curve, dirt and grime

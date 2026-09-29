@@ -28,6 +28,7 @@ import { groundSamples } from './surface.ts';
 import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { dressLoading, Dialog } from './portraits.ts';
+import { startScreen } from './startscreen.ts';
 import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import type { Surface } from './audio.ts';
@@ -70,6 +71,12 @@ const METRO_HEIGHT = 420; // m the view rises to over a metro ride
 
 async function main() {
   dressLoading($('loading'));
+  // Rolled now, so the start screen can say what the game will begin with.
+  const clock = new Clock(params);
+  const weather = new Weather(params, clock.t);
+  let savedSound = '';
+  try { savedSound = localStorage.getItem('sound') ?? ''; } catch {}
+  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off' });
   status('Loading the map…');
   const kitLoad = loadKit();
   const carsLoad = loadCars();
@@ -132,8 +139,6 @@ async function main() {
   const kit = await kitLoad;
   useKit(kit);
   await carsLoad;
-  const clock = new Clock(params);
-  const weather = new Weather(params, clock.t);
   const weatherFx = new WeatherFx(scene);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), cover: params.get('cover'), ortho: params.has('ortho') });
   const grid = world.grid;
@@ -909,6 +914,17 @@ async function main() {
     await renderer.compileAsync(scene, camera).catch((e) => console.warn(e));
     scene.remove(samples.group);
     samples.dispose();
+  }
+  if (start) {
+    status('');
+    const choice = await start.ready();
+    // "Now" is the time now, not the time the page was opened at.
+    if (choice.time === null && !params.has('time') && !params.has('night')) clock.t = new Clock(params).t;
+    else if (choice.time !== null) clock.setTime(choice.time);
+    world.night = params.has('night') || clock.night;
+    weather.begin(choice.weather, clock.t);
+    if (sound.on !== choice.sound) sound.toggle();
+    last = performance.now();
   }
   $('loading').classList.add('done');
   // ?dialog plays a sample conversation, to see how one looks.
