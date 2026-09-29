@@ -20,7 +20,7 @@ interface Tile {
   k: string; i: number; j: number; box: Bounds; passages: TilePassage[];
   group: THREE.Group; surfaces: Surfaces; grid: Grid; levels: TileLevel[];
   cars: Car[]; ms: Record<string, number>; disposables: THREE.Mesh[];
-  relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number) => number; hm: Float32Array } | null;
+  relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number) => number; hm: Float32Array; edges: () => void } | null;
   sample?: (x: number, y: number) => number;
 }
 export interface Tracked {
@@ -94,7 +94,11 @@ class TileWorkers {
 // Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
 // the same north-west as the sun: 1 = unchanged, darker on slopes facing away. The
 // ground's broad variation (broad) is multiplied in, sparing the shader its noise.
-function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds, n: number, step: number, ref: number) {
+// `around(di, dj)`: the neighbouring tile's heights (hm) if it is loaded and shares this
+// tile's edge points, for the slope at the edge; `edges()` shades the edges again once
+// a neighbour has come.
+function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds, n: number, step: number, ref: number,
+  around: ((di: number, dj: number) => Float32Array | null) | null) {
   // Heights in metres above `ref` (the game's y = 0), bilinear and clamped to the tile.
   const hm = decodeHeights(buffer, n, ref);
   // Hill shading uses the bare ground where bridges were raised (see ipr_terrain.py).
@@ -102,28 +106,38 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
   const L = [-110, 80, 190], ll = Math.hypot(...L);
   const lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
   const px = new Uint16Array(n * n);
-  const at = (i: number, j: number) => hs[j * n + i] / 10;
+  // Height (m above 100 m a.s.l.) at a grid point; one past the edge, from the
+  // neighbour's second row (its first is this tile's edge); NaN where there's none.
+  const at = (i: number, j: number) => {
+    if (i >= 0 && i < n && j >= 0 && j < n) return hs[j * n + i] / 10;
+    const o = around?.(i < 0 ? -1 : i >= n ? 1 : 0, j < 0 ? -1 : j >= n ? 1 : 0);
+    return o ? o[(j < 0 ? n - 2 : j >= n ? 1 : j) * n + (i < 0 ? n - 2 : i >= n ? 1 : i)] + ref - 100 : NaN;
+  };
   // Each texel's middle sits on its grid point: the box reaches half a step past the
   // outer points. (Since 2026-09-29 the outer points lie on the tile's edges, shared
   // with the neighbours; older data stops a little short, see ipr_terrain.py.)
   const [x0, y0] = box, half = step / 2;
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      // The slope across the neighbouring points, or at the edge between this point and
-      // the next one in (halving it there by leaving out the missing side would light
-      // a line along every tile edge).
-      const i0 = Math.max(0, i - 1), i1 = Math.min(n - 1, i + 1), j0 = Math.max(0, j - 1), j1 = Math.min(n - 1, j + 1);
-      const dx = (at(i1, j) - at(i0, j)) / ((i1 - i0) * step), dy = (at(i, j1) - at(i, j0)) / ((j1 - j0) * step);
-      const nl = Math.hypot(dx, dy, 1);
-      const lit = (-dx * lx - dy * ly + lz) / nl / lz; // 1 on flat ground
-      const shade = Math.round(128 * Math.max(0.55, Math.min(1.35, 1 + 1.1 * (lit - 1)))) / 127.5;
-      px[j * n + i] = THREE.DataUtils.toHalfFloat(shade * broad(x0 + i * step, y0 + j * step));
-    }
-  }
+  // The slope across the neighbouring points, or at an edge with no neighbour between
+  // the edge point and the next one in (halving it there by leaving out the missing
+  // side would draw a line along the tile edge).
+  const slope = (a: number, c: number, b: number) =>
+    Number.isNaN(a) ? (Number.isNaN(b) ? 0 : (b - c) / step) : Number.isNaN(b) ? (c - a) / step : (b - a) / (2 * step);
+  const paint = (i: number, j: number) => {
+    const c = at(i, j), dx = slope(at(i - 1, j), c, at(i + 1, j)), dy = slope(at(i, j - 1), c, at(i, j + 1));
+    const nl = Math.hypot(dx, dy, 1);
+    const lit = (-dx * lx - dy * ly + lz) / nl / lz; // 1 on flat ground
+    const shade = Math.round(128 * Math.max(0.55, Math.min(1.35, 1 + 1.1 * (lit - 1)))) / 127.5;
+    px[j * n + i] = THREE.DataUtils.toHalfFloat(shade * broad(x0 + i * step, y0 + j * step));
+  };
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) paint(i, j);
   const tex = new THREE.DataTexture(px, n, n, THREE.RedFormat, THREE.HalfFloatType);
   tex.magFilter = tex.minFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
-  return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step), hm };
+  const edges = () => {
+    for (let k = 0; k < n; k++) { paint(k, 0); paint(k, n - 1); paint(0, k); paint(n - 1, k); }
+    tex.needsUpdate = true;
+  };
+  return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step), hm, edges };
 }
 
 const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ vertexColors: true }));
@@ -594,7 +608,10 @@ export class TileWorld {
     // Terrain first: everything in the tile stands on it.
     const terrain = this.index.terrain;
     if ((height || levels) && !terrain) throw new Error(`Terrain metadata missing for tile ${k}`);
-    const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref) : null;
+    // Data from 2026-09-29 on shares the grid points along tile edges with the neighbours.
+    const shared = !!terrain && Math.abs((terrain.n - 1) * terrain.step - (x1 - x0)) < 0.01;
+    const around = shared ? (di: number, dj: number) => this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.hm ?? null : null;
+    const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around) : null;
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
@@ -701,6 +718,8 @@ export class TileWorld {
     };
     this.loaded.set(k, tile);
     this.byIndex.set(t.i * 65536 + t.j, tile);
+    // The neighbours' hill shading along the shared edges, now that this side is known.
+    if (shared) for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.edges();
     this.last.i = NaN;
     this.onCars(cars, tile);
     return tile;
