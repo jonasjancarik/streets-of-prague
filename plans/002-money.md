@@ -22,8 +22,10 @@ The player has money: **10,000 Kč at the start of every game**. For now it's on
 spent, on three things:
 
 1. **Taxis**: the fare the meter already works out is taken from the balance.
-2. **Public transport (PID)**: trams, the metro and the Petřín funicular. A 90-minute
-   ticket is bought automatically when you get on and don't hold a valid one.
+2. **Public transport (PID)**: trams, the metro and the Petřín funicular. You buy a
+   90-minute ticket yourself. On a tram or the funicular you have 10 seconds after
+   getting on; at the metro you choose on the way in. Ride without one and ticket
+   inspectors may catch you and fine you.
 3. **Shared bikes (nextbike)**: the rental is charged when you return the bike, by the
    operator's real pricing plan (GBFS, already in `bikes.json`).
 
@@ -31,8 +33,8 @@ The balance is always shown in the HUD. If you can't afford something, you can't
 start it, and a short message says why.
 
 Out of scope: earning money, saving the balance between games, police fines, parking,
-pedal boats, ticket inspectors, choosing between ticket types, and buses (you can't
-ride them yet).
+pedal boats, inspectors you can see (they're only a message), choosing between
+ticket types, and buses (you can't ride them yet).
 
 ## Decisions made (don't change them without asking)
 
@@ -45,8 +47,23 @@ ride them yet).
 - **PID ticket**: one kind, the 90-minute transfer ticket at the PID Lítačka app
   price, **46 Kč** (fares from 1 January 2026; 30 minutes cost 36 Kč). It's valid for
   90 minutes of **game** time from purchase, on trams, the metro and the Petřín
-  funicular. You get on with a valid ticket for free; without one, 46 Kč is taken.
-  The NH hotel's funicular on Mrázovka stays free.
+  funicular. The NH hotel's funicular on Mrázovka stays free. Nothing is bought
+  automatically:
+  - **Tram and Petřín funicular**: getting on is always allowed. Without a valid
+    ticket you have **10 seconds** (real time, not sped up) to buy one: key **B**,
+    or a touch button. After that the chance is gone for this ride and you're riding
+    without a ticket.
+  - **Metro**: the choice comes **on the way in**, before the station list. Buy a
+    ticket (46 Kč), or go in without one. If you hold a valid ticket, the question
+    is skipped. If you can't afford one, only "without a ticket" is offered, with
+    the reason.
+  - **Inspectors**: riding without a ticket, at each tram or funicular stop the
+    vehicle arrives at there's a **5%** chance of a check. On the metro the chance is
+    **15%** a ride, checked on arrival. Keep these as named constants so they can be
+    tuned.
+  - **Fine**: **1,200 Kč**, PID's fine paid on the spot (2026). You pay what you
+    have, never going below 0. The message is red, like "Busted"
+    (`showBanner(…, true)`). Once fined, you aren't checked again on the same ride.
 - **Taxi**:
   - You can't call one unless you can afford its starting fare (`firm.start`).
   - During the ride the hint shows the meter.
@@ -137,10 +154,29 @@ export class Wallet {
   has(kc: number): boolean
   // Take up to `kc` (never below 0); returns what was taken.
   take(kc: number): number
-  // Whether you hold a PID ticket valid at `now`; if not, buy one when you can.
-  // 'valid' | 'bought' | 'short' (not enough money).
-  ticket(now: number): 'valid' | 'bought' | 'short'
+  hasTicket(now: number): boolean // a PID ticket still valid at `now`
+  buyTicket(now: number): boolean // false when you can't afford it
   update(dt: number): void // counts down paidT
+}
+
+export const GRACE = 10; // s (real) after getting on a tram or funicular to buy a ticket
+export const FINE = 1200; // Kč, PID's fine paid on the spot (2026)
+export const CHECK_STOP = 0.05; // chance of inspectors at each stop, riding without a ticket
+export const CHECK_METRO = 0.15; // and on a metro ride
+
+// One ride on a tram or the Petřín funicular: with a ticket, still time to buy one,
+// or riding without (and caught at most once).
+export class PidRide {
+  state: 'ticket' | 'grace' | 'dodging' | null = null;
+  left = 0; // seconds left to buy
+  constructor(private wallet: Wallet) {}
+  board(now: number): void // 'ticket' if one is valid, else 'grace' with left = GRACE
+  buy(now: number): boolean // only during 'grace'; then 'ticket'
+  update(realDt: number): void // 'grace' runs out into 'dodging'
+  // At a stop: inspectors, maybe. Returns the fine taken, or null.
+  // After a fine, state becomes 'ticket'.
+  check(chance: number, roll = Math.random()): number | null
+  leave(): void // state = null
 }
 
 // "10 000 Kč" / "10,000 Kč", by the game's language.
@@ -149,7 +185,7 @@ export function kc(n: number): string
 
 Requirements:
 
-- `ticket()` checks the age as `((now - ticketFrom) % WEEK + WEEK) % WEEK < TICKET.minutes * 60`.
+- `hasTicket()` checks the age as `((now - ticketFrom) % WEEK + WEEK) % WEEK < TICKET.minutes * 60`.
   Export `WEEK` from one place or copy the constant with a comment.
 - `kc()` uses `Intl.NumberFormat` with `cs-CZ` or `en-GB` depending on `getLang()`.
   The Czech locale puts a non-breaking space between thousands.
@@ -208,34 +244,77 @@ The first charge (the minimum needed to rent) is `rentalCost(plan, 0)`.
   parts.
 - The firm choice (`render`) may stay as it is.
 
-### 4. Public transport
+### 4. Public transport: tickets and inspectors
 
-Write one helper in `src/main.ts`, so the three places use the same messages:
+Create one `PidRide` in main (`const pid = new PidRide(wallet)`) and one helper that
+fines you, so the tram, funicular and metro all say the same thing:
 
 ```ts
-// On a tram, the metro or the Petřín funicular: a valid PID ticket, or buy one now.
-const ticket = () => {
-  const r = wallet.ticket(clock.t);
-  if (r === 'bought') showBanner(t('Ticket for {minutes} minutes: {price}', { minutes: TICKET.minutes, price: kc(TICKET.price) }));
-  if (r === 'short') showBanner(t('Not enough money for a ticket ({price})', { price: kc(TICKET.price) }));
-  return r !== 'short';
-};
+// Caught without a ticket: the fine, or all you have left.
+const fined = (paid: number) => showBanner(paid < FINE
+  ? t('Ticket inspection! You had no ticket, so they took all your money ({paid})', { paid: kc(paid) })
+  : t('Ticket inspection! Fine for riding without a ticket: {fine}', { fine: kc(FINE) }), true);
 ```
 
-- **Tram**: in `enterOrExit`, before `ride.board(tram)`, do
-  `if (!ticket()) return;`.
-- **Funicular**: add `ticket: boolean` to the line spec in `SPECS`. Set it to `true`
-  for Petřín and `false` for NH. In `enterOrExit`, before `funicular.board(cabin)`,
-  do `if (cabin.line.spec.ticket && !ticket()) return;`.
-- **Metro**: add an optional option `pay?: () => string | null` to the constructor.
-  It returns the refusal text, or `null` when the ticket is fine. In `go()`, after the
-  shut check and before building the steps, do
-  `const no = pay?.(); if (no) { this.note = no; this.render(); return; }`.
-  Main passes a version of the helper that returns the text: the banner for a
-  purchase, and the refusal text for `note`. The metro screen covers the HUD, so
-  check that the banner can be seen during the ride. If it can't, show the purchase
-  in `note` too.
-- The police's rules (no arrest on a tram) don't change.
+**Tram** (`enterOrExit` and the frame loop in `src/main.ts`):
+
+- After `ride.board(tram)`, call `pid.board(clock.t)`. In `getOff()`, call
+  `pid.leave()`.
+- In the frame, call `pid.update(dt)` with the **real** frame time, not the sped-up
+  one.
+- Key **B**, while `pid.state === 'grace'`: `pid.buy(clock.t)`. Then show a banner:
+  - bought: `t('Ticket for {minutes} minutes: {price}')`;
+  - not enough money: `t('Not enough money for a ticket ({price})')`.
+
+  Check that no other key handler already uses `KeyB`.
+- Touch: add a `#t-ticket` button, shown only during `grace`. Follow the example of
+  `#t-taxi` in `index.html` and `src/touch.ts`, and of its click listener in
+  `taxi.ts`.
+- Hint while riding, during `grace`: put first
+  `t('<b>B</b> buy a ticket ({price}) · {secs} s left')` (without `<b>B</b>` on
+  touch). While `dodging`, show a short `t('No ticket')` among the parts.
+- Inspection: when the tram **arrives** at a stop with you on it, call
+  `pid.check(CHECK_STOP)`; if it returns a number, call `fined(n)`. Arriving means
+  `ride.atStop()` turned from false to true; keep the previous value in main.
+  Check only while riding, not at the stop where you got on.
+
+**Petřín funicular**:
+
+- Add `ticket: boolean` to the line spec in `SPECS`: `true` for Petřín, `false` for
+  NH.
+- After `funicular.board(cabin)`, if `cabin.line.spec.ticket`, call
+  `pid.board(clock.t)`. In the funicular's branch of `enterOrExit`, call
+  `pid.leave()`.
+- Buying (B or touch) and the hint work the same as on a tram. Add the grace part
+  to `funicular.hint()`, or put it in front of it in main.
+- Inspection: when `funicular.me.stop` turns from `null` to a station, call
+  `pid.check(CHECK_STOP)`.
+
+**Metro** (`src/metro.ts`):
+
+- Add an option `fares?: { valid(): boolean; buy(): boolean; price: number }` to the
+  constructor. Main wires it to `wallet.hasTicket(clock.t)`,
+  `wallet.buyTicket(clock.t)` and `TICKET.price`.
+- `open(station)`: if `fares` exists and `!fares.valid()`, the first phase is a new
+  one, `'ticket'`; otherwise go straight to `'pick'`, as now. Add `'ticket'` to the
+  type of `phase`.
+- The `'ticket'` screen, in `render()` in the same style as `'pick'`:
+  - the question `t('Going in without a ticket?')`;
+  - two buttons:
+    - `data-act="buy"`: `t('Buy a ticket for {minutes} minutes ({price})')`. When
+      you can't afford it, it's disabled, with `t('Not enough money for a ticket
+      ({price})')`.
+    - `data-act="nobuy"`: `t('Go in without a ticket')`.
+  - keys: **1**/**2** (or W/S and E) choose, **Esc** goes back to the street.
+  - Both choices lead to `'pick'`. `nobuy` sets `this.dodging = true`, and `open()`
+    resets it to `false`.
+- Inspection is checked on arrival. In main's `onArrive`, if `metro.dodging`, roll
+  `Math.random() < CHECK_METRO`; if it hits, take `wallet.take(FINE)` and call
+  `fined(...)`. Then set `metro.dodging = false`.
+- A ticket bought on a tram also covers the metro, and the other way round, within
+  its 90 minutes.
+
+The police's rules (no arrest on a tram) don't change.
 
 ### 5. Shared bikes (`src/bikeshare.ts` and main)
 
@@ -270,6 +349,13 @@ entries. Suggested translations:
 | `Meter: {fare}` | `Taxametr: {fare}` |
 | `Ticket for {minutes} minutes: {price}` | `Jízdenka na {minutes} minut: {price}` |
 | `Not enough money for a ticket ({price})` | `Na jízdenku nemáš dost peněz ({price})` |
+| `<b>B</b> buy a ticket ({price}) · {secs} s left` | `<b>B</b> koupit jízdenku ({price}) · zbývá {secs} s` |
+| `No ticket` | `Bez jízdenky` |
+| `Ticket inspection! Fine for riding without a ticket: {fine}` | `Revize! Pokuta za jízdu bez jízdenky: {fine}` |
+| `Ticket inspection! You had no ticket, so they took all your money ({paid})` | `Revize bez jízdenky: revizor si vzal všechno, co ti zbylo ({paid})` |
+| `Going in without a ticket?` | `Jdeš dovnitř bez jízdenky?` |
+| `Buy a ticket for {minutes} minutes ({price})` | `Koupit jízdenku na {minutes} minut ({price})` |
+| `Go in without a ticket` | `Jít bez jízdenky` |
 | `Not enough money for a bike ({price})` | `Na kolo nemáš dost peněz ({price})` |
 | `{name}: {minutes} min, {price}` | `{name}: {minutes} min, {price}` |
 | `{name} bike: {minutes} min, {price} so far` | `Kolo {name}: {minutes} min, zatím {price}` |
@@ -285,7 +371,9 @@ Check how the existing Czech lines address the player (the "ty" form, as in
     shared bikes cost money; the balance isn't saved; you can't earn money yet.
   - Taxis: the fare is taken from your money; the ride stops when you run out; a
     crash means a free ride.
-  - Trams, metro and funicular: the 90-minute ticket, and NH is free.
+  - Trams, metro and funicular: the 90-minute ticket, 10 seconds to buy it after
+    getting on (B), the choice on the way into the metro, inspectors and the
+    1,200 Kč fine. The NH funicular is free.
   - Shared bikes: the price follows nextbike's plan.
 - The README's URL parameters paragraph: add `?money=N`.
 - "Not yet in the game": earning money.
@@ -303,16 +391,22 @@ Check how the existing Czech lines address the player (the "ty" form, as in
    `http://localhost:5191/?go&start=14.4052,50.0808` and then the same URL with
    `&money=60`:
    - The HUD shows 10,000 Kč (or 60 Kč), in both English and Czech (`?lang=cs`).
-   - Get on a tram at Újezd: 46 Kč is taken and the banner says so. Get off and get on
-     again: nothing is taken.
-   - With `money=60`, after one ticket, the next attempt (after 90 minutes of game
-     time, which you can wait out by fast-forwarding on the tram) is refused with a
-     message.
+   - Get on a tram at Újezd: the hint counts down 10 s with "B buy a ticket". B takes
+     46 Kč and the banner says so. Get off and on again: no countdown, since the
+     ticket is still valid.
+   - Without buying, after 10 s the hint shows "No ticket". For a quick check of the
+     fine, temporarily raise `CHECK_STOP` to 1 (don't commit that). At the next stop
+     1,200 Kč is taken, or everything with `money=60`, and you aren't checked again
+     on that ride.
+   - With `money=60`, after one ticket, buying another (after 90 minutes of game
+     time) is refused with a message.
    - Taxi (T): with 60 Kč the street taxi (60) can be called and the app ones too. The
      ride ends when the meter reaches the balance. With 30 Kč, no taxi can be called.
-   - Metro: choosing a station takes a ticket. When it's refused, the note on the
-     metro screen says why.
-   - Petřín funicular: needs a ticket; the NH funicular is free.
+   - Metro without a valid ticket: the question comes first. "Buy" takes 46 Kč and
+     "without" doesn't. With a valid ticket, the station list comes straight away.
+     With too little money, "Buy" is disabled with the reason. Check the fine on
+     arrival with `CHECK_METRO` temporarily at 1.
+   - Petřín funicular: the 10-second countdown as on a tram; the NH funicular has none.
    - Shared bike (nextbike station near Újezd, or anywhere in `praha`): taking it
      needs 39 Kč. Returning it to a station takes the price. The hint shows the
      running price.
@@ -328,7 +422,7 @@ repository's style (`git log` subjects such as "Taxis: …", "Shared bikes: …"
 
 1. `Money: a wallet with 10 000 Kč, shown in the HUD`
 2. `Taxis: the fare taken from your money, out when it runs out`
-3. `PID tickets: 90 minutes for trams, the metro and the Petřín funicular`
+3. `PID tickets: 90 minutes for trams, the metro and the Petřín funicular, and inspectors`
 4. `Shared bikes: rentals charged by nextbike's pricing plan`
 5. README (can be part of the commits above).
 
