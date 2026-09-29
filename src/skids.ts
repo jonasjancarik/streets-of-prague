@@ -94,7 +94,7 @@ export class Skids {
     for (const c of cars) {
       if (c.mode === 'traffic' || c.spec.two === 'bike') continue;
       const speed = c.speed;
-      const back = speed > 1 ? Math.max(c.skidBack, snow > 0.25 ? 0.3 * snow : 0) : 0;
+      const back = speed > 1 ? Math.max(c.skidBack, snow > 0.25 ? 0.45 * snow : 0) : 0;
       const front = speed > 1 ? c.skidFront : 0;
       let list = this.wheels.get(c);
       if (!list) {
