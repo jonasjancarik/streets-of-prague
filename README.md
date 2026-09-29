@@ -207,9 +207,13 @@ the pixel ratio.
   and motorbikes stand on the pavements around you: E gets you on one, and it leans
   into the turns. Hit something hard and you're thrown off. On foot, Space jumps (not
   at a tram stop, where it waits for a tram); in the air, a car can't knock you over.
-- **Buses.** A few red and white city buses drive the main roads around you. You can
-  take one like any car, but it's slow to pick up speed, wide in the turns and shoves
-  smaller cars aside. They don't follow real bus lines or stop at the stops yet.
+- **Buses.** A few red and white city buses drive Prague's real bus lines around you
+  (`src/buses.ts`, from PID's timetables): each follows its line from junction to
+  junction, pulls up at its stops for 10 to 15 seconds and goes on, holding up the
+  traffic behind it. Where a line leaves the streets on the map, the bus carries on along
+  the main roads and is replaced once out of sight; without `buses.json` all buses just
+  drive the main roads. You can take one like any car, but it's slow to pick up speed,
+  wide in the turns and shoves smaller cars aside.
 - **People and two-wheelers** are a small kit built in Blender from code
   (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
   and clips for standing, walking, running, jumping, falling, getting up and riding,
@@ -337,6 +341,7 @@ uv run ipr_buildings.py centrum    # IPR's 3D buildings into the tiles
 uv run ipr_terrain.py centrum      # IPR's terrain, bridges and tunnels, hill shading
 uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
 uv run build_metro.py centrum      # the metro from PID's timetables → metro.json
+uv run build_buses.py centrum      # bus lines and stops from PID's timetables → buses.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
 ```

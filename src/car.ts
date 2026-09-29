@@ -37,7 +37,7 @@ export const TYPES: Record<string, CarSpec> = {
   bike: { L: 2.3, W: 0.8, H: 1.5, mass: 90, accel: 3.2, vmax: 9, grip: 12, turn: 3.4, weight: 0, traffic: 0.5, two: 'bike' },
   moto: { L: 2.8, W: 1.0, H: 1.6, mass: 260, accel: 12, vmax: 48, grip: 9.5, turn: 2.8, weight: 0.3, traffic: 1.2, two: 'moto' },
   // A 12 m city bus in PID colours: slow to pick up speed, wide in the turns. Never
-  // parked or in the ordinary mix: Traffic.buses keeps a few on the main roads.
+  // parked or in the ordinary mix: Traffic.buses keeps a few on their lines.
   bus: { L: 12, W: 2.55, H: 3.1, mass: 12000, accel: 2.6, vmax: 24, grip: 7, turn: 1.25, weight: 0, color: '#c8102e', heavy: true },
 };
 const PAINT = ['#e8e6e1', '#bfc3c7', '#8d9398', '#2c2f33', '#1d2a44', '#7a1f1f', '#b33a2c', '#2f5140', '#5b6d7c', '#d9d2c0', '#3f4a5a', '#9a7b4f'];
