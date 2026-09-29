@@ -281,12 +281,15 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
   for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
   const nearRail = (x: number, y: number, d: number) => railSegs.some(([a, b]) => segDist(x, y, a, b) < d);
   const cars: Car[] = [];
-  const cell = new Map<string, Car[]>();
-  const key = (x: number, y: number) => `${Math.floor(x / 5)},${Math.floor(y / 5)}`;
+  // Parked cars by 5 m cell (keyed by number, as in SpatialHash: this is asked for
+  // every spot tried).
+  const cell = new Map<number, Car[]>();
+  const key = (x: number, y: number) => Math.floor(x / 5) * 131072 + Math.floor(y / 5);
   const crowded = (x: number, y: number, d: number) => {
     const cx = Math.floor(x / 5), cy = Math.floor(y / 5);
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
-      for (const c of cell.get(`${cx + i},${cy + j}`) || []) if (Math.hypot(c.x - x, c.y - y) < d) return true;
+      const list = cell.get((cx + i) * 131072 + cy + j);
+      if (list) for (const c of list) if (Math.hypot(c.x - x, c.y - y) < d) return true;
     }
     return false;
   };
@@ -294,11 +297,12 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
     // Most people drive into angled bays forwards; elsewhere it's either way round.
     const car = new Car(type, r, s.x, s.y, s.h + (!s.fwd && r() < (s.angled ? 0.08 : 0.5) ? Math.PI : 0));
     if (s.bay && car.type === 'van') return false;
+    const outline = car.worldSamples();
     // No part of the car where a passing tram would hit it: half a tram's width from
     // the track and a little room. Whatever the map says about parking there.
-    if (nearRail(s.x, s.y, 4.5) && car.worldSamples().some(([x, y]) => nearRail(x, y, 1.65))) return false;
-    if (car.worldSamples().some(([x, y]) => solid(x, y)) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8)) return false;
-    if (s.fwd && car.worldSamples().some(([x, y]) => onCarriageway(x, y, edges))) return false;
+    if (nearRail(s.x, s.y, 4.5) && outline.some(([x, y]) => nearRail(x, y, 1.65))) return false;
+    if (outline.some(([x, y]) => solid(x, y)) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8)) return false;
+    if (s.fwd && outline.some(([x, y]) => onCarriageway(x, y, edges))) return false;
     car.mode = 'loose';
     cars.push(car);
     const k = key(s.x, s.y);

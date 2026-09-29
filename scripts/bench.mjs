@@ -5,7 +5,7 @@
 //
 //   node scripts/bench.mjs [--url http://localhost:5191/] [--scenes stand,drive,woods]
 //     [--seconds 10] [--dpr 2] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
-//     [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json]
+//     [--profile-load] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json]
 //     [--browser chrome|chromium] [--angle metal|swiftshader (software, drawing like
 //     a desktop GPU that shades every covered pixel: for overdraw)]
 //     [--vs http://localhost:5192/ (compare with another server, taking turns)]
@@ -70,11 +70,19 @@ async function runScene(browser, name, base = URL_BASE) {
   page.on('pageerror', (e) => console.error(`[${name}] page error:`, e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.error(`[${name}] console:`, m.text().slice(0, 3000)); });
   const q = `?start=${place.start}&dpr=${DPR}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&day=wed&weather=${args.weather || 'clear'}${args.extra || ''}`;
+  // --profile-load: the CPU profile of loading, up to the game starting.
+  const loadCdp = args['profile-load'] ? await ctx.newCDPSession(page) : null;
+  if (loadCdp) { await loadCdp.send('Profiler.enable'); await loadCdp.send('Profiler.setSamplingInterval', { interval: 200 }); await loadCdp.send('Profiler.start'); }
   const loadStart = Date.now();
   await page.goto(base + q);
   // Loaded: the loading screen is gone and no tiles are being built.
   await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__drive, null, { timeout: 120000, polling: 100 });
   const loadTime = (Date.now() - loadStart) / 1000;
+  if (loadCdp) {
+    const { profile } = await loadCdp.send('Profiler.stop');
+    writeFileSync(`/tmp/bench-${name}-load.cpuprofile`, JSON.stringify(profile));
+    console.log(`${name}: loading\n${topSelf(profile).join('\n')}`);
+  }
   await page.keyboard.press('KeyH'); // fold the help card away
   if (place.drive) {
     await page.keyboard.press('KeyE');

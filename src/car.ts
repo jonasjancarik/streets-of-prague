@@ -112,6 +112,18 @@ material.onBeforeCompile = (sh) => {
 material.customProgramCacheKey = () => 'cars';
 const depthMaterial = new THREE.MeshDepthMaterial();
 
+// Points round a car's outline for its collisions, the same for every car of a type
+// (shared: parking tries thousands of cars when a tile loads).
+const outlines = new Map<string, Point2[]>();
+function samplesOf(type: string, L: number, W: number) {
+  let out = outlines.get(type);
+  if (!out) {
+    out = [[1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1], [0.5, 1], [0.5, -1], [-0.5, 1], [-0.5, -1]].map(([a, b]) => [(a * L) / 2, (b * W) / 2] as Point2);
+    outlines.set(type, out);
+  }
+  return out;
+}
+
 // A random type, by `weight` for parking and by `traffic` (where it's set) on the road.
 export function randomType(r: () => number, use: 'weight' | 'traffic' = 'weight') {
   const w = (t: CarSpec) => t[use] ?? t.weight;
@@ -162,10 +174,7 @@ export class Car {
     const { L, W } = this.spec;
     this.r = W / 2 + 0.02;
     this.offsets = [-(L / 2 - this.r), 0, L / 2 - this.r];
-    this.samples = [];
-    for (const [a, b] of [[1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1], [0.5, 1], [0.5, -1], [-0.5, 1], [-0.5, -1]]) {
-      this.samples.push([(a * L) / 2, (b * W) / 2]);
-    }
+    this.samples = samplesOf(type, L, W);
     this.sync();
   }
 
