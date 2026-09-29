@@ -432,6 +432,28 @@ function boardMaterial(ref: string, to: string) {
   boards.set(k, m);
   return m;
 }
+// The line number painted big on the roof, so it can be read from above: dark on the
+// white roof, the top of the digits towards the front.
+const roofs = new Map<string, THREE.MeshBasicMaterial>();
+function roofMaterial(ref: string) {
+  let m = roofs.get(ref);
+  if (m) return m;
+  const cv = document.createElement('canvas');
+  cv.width = 256;
+  cv.height = 128;
+  const g = cv.getContext('2d')!;
+  g.fillStyle = '#23272b';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = 'bold 112px sans-serif';
+  g.fillText(ref, 128, 68, 244);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  m = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false });
+  roofs.set(ref, m);
+  return m;
+}
 const boardPlane = new THREE.PlaneGeometry(1, 1);
 // Where the boards sit on a bus (see busGeometry): over the windscreen, facing
 // forward, and on the right over the glass behind the front door.
@@ -441,6 +463,9 @@ const BOARDS = (() => {
   const side = m.clone().compose(new THREE.Vector3(L - 3.4, 2.38, W / 2 + 0.012), q.clone(), s.clone().set(1.5, 0.19, 1));
   return [front, side];
 })();
+// On the roof between the hatch and the front, lying flat, reading from the front.
+const ROOF = new THREE.Matrix4().compose(new THREE.Vector3(TYPES.bus.L / 2 - 1.95, 2.955, 0),
+  new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, -Math.PI / 2, 0, 'YXZ')), new THREE.Vector3(2.2, 1.1, 1));
 
 // Every car is an instance: one draw call per type and colour, however many are parked.
 // Riders are drawn here too, sitting on their bikes.
@@ -504,7 +529,10 @@ export class CarPool {
         d.updateMatrix();
         m.setMatrixAt(i, d.matrix);
         if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
-        if (c.line) for (const at of BOARDS) this.board(nb++, c.line, d.matrix, at);
+        if (c.line) {
+          for (const at of BOARDS) this.board(nb++, boardMaterial(c.line.ref, c.line.to), d.matrix, at);
+          this.board(nb++, roofMaterial(c.line.ref), d.matrix, ROOF);
+        }
       });
       m.count = list.length;
       m.instanceMatrix.needsUpdate = true;
@@ -514,16 +542,16 @@ export class CarPool {
   }
 
   // A line board on a bus: a quad over the plain amber one, placed by hand each frame.
-  board(i: number, line: { ref: string; to: string }, matrix: THREE.Matrix4, at: THREE.Matrix4) {
+  board(i: number, material: THREE.MeshBasicMaterial, matrix: THREE.Matrix4, at: THREE.Matrix4) {
     let b = this.boards[i];
     if (!b) {
-      b = new THREE.Mesh(boardPlane, boardMaterial(line.ref, line.to));
+      b = new THREE.Mesh(boardPlane, material);
       b.matrixAutoUpdate = false;
       b.frustumCulled = false;
       this.scene.add(b);
       this.boards[i] = b;
     }
-    b.material = boardMaterial(line.ref, line.to);
+    b.material = material;
     b.matrix.multiplyMatrices(matrix, at);
     b.matrixWorldNeedsUpdate = true;
     b.visible = true;
