@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp } from './network.ts';
+import { lampLit } from './lamps.ts';
 import type { Point2 } from './map/geo.ts';
 
 // Boats on the Vltava: a few white tourist cruise boats going slowly up and down the
@@ -38,19 +39,21 @@ interface Boat {
 }
 
 // Boxes and extrusions with a colour per vertex, merged into one body. Forward is +x,
-// right +z, the waterline y = 0, as for the cars.
+// right +z, the waterline y = 0, as for the cars. `glow` marks what shines at night:
+// 1 the cabin windows (lit from inside), 2 the navigation lights (their own colour).
 function body(kind: Kind, paint: string) {
   const parts: THREE.BufferGeometry[] = [];
-  const colour = (g: THREE.BufferGeometry, color: string) => {
+  const colour = (g: THREE.BufferGeometry, color: string, glow = 0) => {
     const c = new THREE.Color(color), n = g.attributes.position.count, col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('glow', new THREE.BufferAttribute(new Float32Array(n).fill(glow), 1));
     g.deleteAttribute('uv');
     g.deleteAttribute('normal');
     parts.push(g.index ? g.toNonIndexed() : g);
   };
-  const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string) =>
-    colour(new THREE.BoxGeometry(sx, sy, sz).translate(x, y, z), color);
+  const box = (sx: number, sy: number, sz: number, x: number, y: number, z: number, color: string, glow = 0) =>
+    colour(new THREE.BoxGeometry(sx, sy, sz).translate(x, y, z), color, glow);
   // A hull seen from above: square stern, pointed bow, `len` by `beam`, from y0 to y1.
   const hull = (len: number, beam: number, bow: number, y0: number, y1: number, color: string, z = 0) => {
     const s = new THREE.Shape(), l = len / 2, b = beam / 2;
@@ -73,12 +76,18 @@ function body(kind: Kind, paint: string) {
     hull(L, B, 7, 0.5, 1.5, '#f2f1ec');
     hull(L - 0.7, B - 0.7, 6.6, 1.5, 1.56, '#a9855a'); // wooden deck fore and aft
     box(L * 0.64, 2.3, B - 1, -2, 2.65, 0, '#f4f3ee'); // the cabin
-    box(L * 0.62, 1.05, B - 0.94, -2, 2.75, 0, '#27343f'); // its windows all round
+    box(L * 0.62, 1.05, B - 0.3, -2, 2.75, 0, '#27343f', 1); // its windows all round (a little proud of the roof, so they show from above)
     box(L * 0.68, 0.14, B - 0.6, -2, 3.85, 0, '#7f98a8'); // the roof deck
     box(L * 0.66, 0.5, 0.06, -2, 4.15, (B - 0.7) / 2, '#c9c7bf'); // railings along it
     box(L * 0.66, 0.5, 0.06, -2, 4.15, -(B - 0.7) / 2, '#c9c7bf');
     box(4.2, 1.7, 3.4, 9.6, 2.35, 0, '#f4f3ee'); // the wheelhouse forward
     box(0.1, 0.8, 3.0, 11.7, 2.55, 0, '#27343f');
+    // Navigation lights: red to port (left), green to starboard, white on a short mast.
+    box(0.5, 0.35, 0.12, 9.9, 2.9, -1.76, '#ff1a10', 2);
+    box(0.5, 0.35, 0.12, 9.9, 2.9, 1.76, '#10ff40', 2);
+    box(0.08, 1.3, 0.08, 10.4, 3.85, 0, '#c9c7bf');
+    box(0.45, 0.35, 0.45, 10.4, 4.6, 0, '#ffffff', 2);
+    box(0.3, 0.3, 0.3, -2 - L * 0.32 + 0.3, 2.0, 0, '#ffffff', 2); // and one at the stern
     box(0.8, 0.2, 5.2, -2 - L * 0.32 + 0.5, 1.55, 0, '#8a2b2b'); // a red stripe at the stern
     for (let i = 0; i < 6; i++) box(1.2, 0.08, 0.5, -12 + i * 3.6, 4.0, 0, '#3d6f9a'); // benches up top
   } else {
@@ -128,6 +137,19 @@ export class Boats {
     this.rng = rng;
     this.list = [];
     const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // At night the cruise boats' cabin windows are lit and their navigation lights on,
+    // with the street lamps (the same switch); the lamps' light falls on the boats too.
+    material.onBeforeCompile = (sh) => {
+      lampLit(sh);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', 'attribute float glow;\nvarying float vGlow;\n#include <common>')
+        .replace('#include <color_vertex>', '#include <color_vertex>\nvGlow = glow;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', 'varying float vGlow;\n#include <common>')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  if (vGlow > .5 && uLampOn > .005) totalEmissiveRadiance += (vGlow > 1.5 ? vColor.rgb * 1.6 : vec3(1., .86, .62) * .6) * uLampOn;`);
+    };
+    material.customProgramCacheKey = () => 'boats';
     const geometries = new Map<string, THREE.BufferGeometry>();
     const add = (kind: Kind, paint: string) => {
       const k = `${kind}|${paint}`;
