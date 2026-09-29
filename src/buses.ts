@@ -91,8 +91,16 @@ export class BusRun {
 // Where on the street network a bus can join a line: a random spot of a line among
 // `edges` (the streets round the player), on a lane that runs the line's way.
 export function busStart(lines: BusLine[], edges: DriveEdge[], rand: () => number, ok: (x: number, y: number) => boolean) {
+  // The lanes a bus can start on, each with its box, and the box round them all.
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const e of edges) for (const q of e.pts) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); }
+  const lanes: [DriveEdge, number, number, number, number][] = [];
+  for (const e of edges) {
+    if (e.bridge || e.tunnel || e.path.length < 16) continue;
+    let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+    for (const q of e.path.pts) { a = Math.min(a, q[0]); b = Math.min(b, q[1]); c = Math.max(c, q[0]); d = Math.max(d, q[1]); }
+    lanes.push([e, a, b, c, d]);
+    x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d);
+  }
   // The stretches of line in that box.
   const spans: [BusLine, number, number][] = [];
   let total = 0;
@@ -110,14 +118,9 @@ export function busStart(lines: BusLine[], edges: DriveEdge[], rand: () => numbe
     const line = span[0], along = span[1] + rand() * (span[2] - span[1]);
     const p = line.path.at(along);
     if (!ok(p.x, p.y)) continue;
-    let best: { edge: DriveEdge; s: number } | null = null, bestD = 6;
-    for (const e of edges) {
-      if (e.bridge || e.tunnel || e.path.length < 16) continue;
-      const pts = e.path.pts;
-      // (A quick look at the edge's box first.)
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const q of pts) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); }
-      if (p.x < x0 - bestD || p.x > x1 + bestD || p.y < y0 - bestD || p.y > y1 + bestD) continue;
+    let best: { edge: DriveEdge; s: number } | null = null, bestD = 8;
+    for (const [e, ex0, ey0, ex1, ey1] of lanes) {
+      if (p.x < ex0 - bestD || p.x > ex1 + bestD || p.y < ey0 - bestD || p.y > ey1 + bestD) continue;
       const [s, d] = project(e.path, p.x, p.y);
       if (d >= bestD || s < 6 || s > e.path.length - 8) continue;
       const q = e.path.at(s);
