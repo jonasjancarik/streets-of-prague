@@ -79,8 +79,10 @@ grime on the walls 6%, the shadow map's own pass 7%.
 - **Rebuild the terrain for the city.** The seams at tile edges are fixed in the
   pipeline and the game (29 September 2026: the height grid now has rows on both tile
   edges, and the hill shading takes the edge slope from the neighbouring tile), but
-  the data has to be rebuilt to show it: `cd pipeline && uv run ipr_terrain.py praha`
-  (then `centrum`, `ujezd`). See "Terrain grid" in the README.
+  the data has to be rebuilt to show it. `centrum` was rebuilt on the night of 29
+  September; `praha` and `ujezd` still need it, together with the metro fix below:
+  `cd pipeline && uv run build_tiles.py praha --layers streets && uv run ipr_terrain.py praha`
+  (the same for `ujezd`; centrum took 43 s with warm caches). See "Terrain grid" in the README.
 - **Finer terrain.** IPR's terrain model has points about 10 m apart, so
   embankments, retaining walls, cuttings and steps are smoothed away (most visible
   along the river and railways). A finer bare-earth model would fix it; ČÚZK's
@@ -206,9 +208,15 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   tile, and at junctions a car standing on the corner is still driven through after a
   few seconds (parking isn't checked against the turning paths).
 - **Rebuild the streets layer for the metro fix.** Metro station corridors and stairs
-  are no longer tunnels (`station_ways` in `pipeline/structures.py`), once the streets
-  layer is rebuilt: `uv run build_tiles.py <area> --layers streets`, then
-  `uv run ipr_terrain.py <area>`.
+  are no longer tunnels (`station_ways` in `pipeline/structures.py`); rebuilt for
+  `centrum`, not yet for `praha` and `ujezd` (the command is under Terrain).
+- **Taxis.** Hail one with T or order one from the two made-up apps (`src/taxi.ts`).
+  They can creep or stall behind parked cars in narrow Old Town streets, their routes
+  are sometimes long, the apps have no phone screen of their own, and the touch
+  button hasn't been looked at on a phone.
+- **A tile-load error at start, seen twice.** `TileWorld.loadNow` → `fetchTile` threw
+  once in the integration check and once in the final smoke test (default area, dev
+  server), and didn't come back on reruns. Startup has no retry there.
 - **Raised buildings from IPR.** Passages and walkways over a street are left out of
   the collision only when OSM has `min_height` (3 m or more); raised parts only in
   IPR's 3D buildings still block.
