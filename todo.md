@@ -6,18 +6,6 @@ tile files, cheaper ground shading). Rough order: quick wins first.
 
 ## Serving
 
-- **Credits in the game.** The public site says nowhere where the map comes from;
-  the only © OpenStreetMap is on the dev panel's Leaflet map. ODbL and CC BY want the
-  credit where people use the work, and the README isn't public. A small line or
-  link (a corner of the screen, or a menu) naming OpenStreetMap, IPR Praha, PID and
-  TSK Praha, with the licences from the README's Credits.
-- **Licence notices for the libraries.** The build ships three.js and proj4 (MIT)
-  and Leaflet (BSD-2), which want their licence text kept with every copy. In
-  today's `dist/`, only the tile worker keeps three.js's `@license` comment; the main
-  bundle and Leaflet's chunk have none. Either have the build keep the licence
-  comments or write them to a `licenses.txt` next to it (a Vite plugin such as
-  rollup-plugin-license can collect them), and add three.js and proj4 to the
-  README's Credits, which list only straight-skeleton and Leaflet.
 - **Delete the old uncompressed tile files on mbxp.** The game now fetches
   `<tile>.<kind>.bin.gz`. The deploy never deletes anything, so the old `.ipr.bin`,
   `.height.bin` and `.bare.bin` files from before are still in
@@ -30,11 +18,6 @@ tile files, cheaper ground shading). Rough order: quick wins first.
   cover the JSON too. The catch is that tiles change on every deploy under the same
   names, so either purge the cache from `scripts/deploy-mbxp.sh` after the sync, or
   keep the edge TTL short.
-- **Clean up stale tiles locally too.** Tiles that drop out of an area (none in the
-  index any more) keep their old files in `public/data/<area>_now/tiles/`, and the
-  deploy copies them over. `layers.assemble` could remove tile files that aren't
-  listed; it doesn't, to stay on the safe side.
-
 ## Game performance
 
 `scripts/bench.mjs` measures frame times in Google Chrome (headless, on the GPU) at
@@ -93,19 +76,11 @@ grime on the walls 6%, the shadow map's own pass 7%.
 
 ## Terrain
 
-- **Straight elevation break at tile edges (likely cause found).** A dead-straight
-  north–south line near Jeremenkova cuts across roads, pavement and grass, with the
-  ground slightly lighter and offset on one side; a similar faint east–west line
-  shows up elsewhere. Probable cause, from the code (untested): a tile is 250 m but
-  its height grid covers only 248 m (62 steps of 4 m, `N = int(T // STEP)` in
-  `ipr_terrain.py`), and the game holds the last height for the final 2 m. On top of
-  that, a tile's first grid row is found with `round(i * 62.5)`, so every other tile's
-  heights sit up to 2 m off its real edge. On a 10 % slope that's a 20 cm step at the
-  seam. The hill shading (`relief()` in `src/tiles.ts`) also works out the slope at
-  the tile's edge from the tile's own clamped values, not the neighbour's, so it
-  flattens there. Fix in the pipeline: a height grid that lines up with the tile
-  edges (e.g. a step that divides 250 m, or one shared row between neighbours), and
-  shading that takes the edge slope from the neighbouring tile.
+- **Rebuild the terrain for the city.** The seams at tile edges are fixed in the
+  pipeline and the game (29 September 2026: the height grid now has rows on both tile
+  edges, and the hill shading takes the edge slope from the neighbouring tile), but
+  the data has to be rebuilt to show it: `cd pipeline && uv run ipr_terrain.py praha`
+  (then `centrum`, `ujezd`). See "Terrain grid" in the README.
 - **Finer terrain.** IPR's terrain model has points about 10 m apart, so
   embankments, retaining walls, cuttings and steps are smoothed away (most visible
   along the river and railways). A finer bare-earth model would fix it; ČÚZK's
@@ -143,25 +118,12 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   a metre or so into the traffic lane. A car stuck behind one for a few seconds
   drives on through it (it no longer does that to the car ahead in its lane or to a
   tram). It could steer round it instead, or parking could keep clear of the lanes.
-- **Police cars drive over the parking lane.** Chasing you on foot, a police car
-  heads straight for you, across parked cars. It could stop on the road and let
-  the officer run the rest of the way.
-- **Bike theft leaves no rider behind.** When you take a bike from someone riding
-  it, the original rider doesn't appear running away (or at least isn't visible).
-  They should be knocked off or step off and run away.
-- **Climb over cars by jumping.** Jumping into a car should let the player scramble
-  over it (bonnet or roof) to the other side instead of being blocked.
-- **Steal an empty police car.** When the officers have left a police car, the
-  player should be able to get in and drive it away.
-- **Skid marks.** Hard braking and sliding turns could leave tyre marks on the road
-  that fade out over time.
-- **Trees in residential areas.** The grass between houses has almost no trees,
-  which looks bare. Gardens and courtyards could get some scattered trees and
-  shrubs.
 - **Taxis.** Let the player hail a taxi in the street or order one through a
   ride-hailing app. The apps stand in for Uber and Bolt under made-up names, and
   their drivers are more reckless than regular street taxis.
-- **Buses.** Add city buses running their routes, painted in the new PID livery.
+- **Buses on their real routes.** Buses drive the main roads (29 September 2026) but
+  pick their turns at random and don't stop at stops. PID's GTFS in
+  `pipeline/.cache/pid/` already has the bus shapes and stops.
 - **Boats on the Vltava.** The river is empty. It could have pedal boats (rented at
   Slovanský ostrov and round the islands, some shaped like swans or old cars),
   tourist cruise boats moored along Náplavka and sailing up and down, and the PID
@@ -172,10 +134,6 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Motorbike rider sunk into the ground.** Came across a motorbike with its rider
   stuck partly in the road surface, not moving. Probably a height that isn't
   following the terrain (unchecked); could be related to the terrain elevation issues.
-- **Building bridge over Svornosti blocks the player.** A covered walkway joins
-  two buildings above the street. NPC cars drive under it, but the player can't:
-  the walkway seems to block the player as if it were a building on the ground.
-  Probably needs a targeted fix for this spot.
 - **Fill the plain beige areas.** Fields, work yards, railway land and building sites
   now have surfaces of their own (from OSM land use). What's left is unmapped ground
   in town: yards, verges, car parks on bare earth. The prototype
@@ -191,14 +149,6 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   fewer colours (the game's own ground palette); 1–2 m/px; evening out the photo's
   own shadows; darker edges; and painting each tile with a margin from its
   neighbours so the tiles don't show seams.
-- **Parking zone markings.** The blue line should run only along the street side of
-  a bay, plus short lines perpendicular to the pavement where the zone starts and
-  ends; there's no line along the pavement. Purple and orange zones are marked with
-  white dashed lines instead of blue (confusing, but that's how Prague does it).
-- **Place names on screen.** Drop the large pop-up for street names; the street is
-  already shown top left next to the speed, and that's enough. Keep the big title
-  for entering a new neighbourhood or district.
-
 ## Weather and night
 
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow
@@ -221,11 +171,8 @@ What's in since 29 September 2026: clear, cloudy, rain, mist and snow
   Open-Meteo is easy but free only for non-commercial use (the game may take
   donations); ČHMÚ's open data (CC BY) has the current observations from Prague's
   stations but needs a small proxy or a build step.
-- **Bare trees in winter.** Snow already lies on the crowns' tops.
 - **Puddles where the water gathers.** They're placed by noise; the terrain's low
   points and the kerbs would be better.
-- **Spray behind cars in the rain**, and tracks in fresh snow. (Grip already drops
-  in the wet and on snow, for the cars you and the police drive.)
 
 ## More map data
 
@@ -258,3 +205,20 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
 - **Smaller things:** tree-lined avenues, memorial trees, retaining walls, noise
   barriers, fountains, drinking fountains, public toilets, recycling bins, parking
   meters, playgrounds. All in the catalogue at <https://opendata.geoportalpraha.cz/>.
+
+## Left over from the night of 29 September 2026
+
+- **Garden trees cost triangles.** The scattered garden trees and shrubs roughly
+  doubled the triangles in view in a garden suburb (0.57 M → 1.19 M near Na
+  Slatinách). Measure in Chrome with `--vs`, and thin them or give far crowns fewer
+  triangles if it shows.
+- **Standing on a car that drives off.** You can climb onto a standing car, but if
+  it drives away it slides out from under you rather than carrying you.
+- **A stolen police car has no flashing lights**, and the back of a bus swings over
+  the kerb in tight turns.
+- **Raised buildings from IPR.** Passages and walkways over a street are left out of
+  the collision only when OSM has `min_height` (3 m or more); raised parts only in
+  IPR's 3D buildings still block.
+- **Licences to check.** The credits give IPR as CC BY 4.0 and state no licence for
+  TSK Praha's data; `straight-skeleton` is MIT but wraps CGAL, whose straight-skeleton
+  code may be GPL.
