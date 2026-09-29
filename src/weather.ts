@@ -74,12 +74,12 @@ export class Weather {
   private rng: () => number;
 
   constructor(params: URLSearchParams, clockT: number) {
-    // The same weather for the same day and hour.
-    let s = Math.floor(Date.now() / 3600000) % 2147483646 + 1;
+    // A new roll every time the game starts.
+    let s = Math.floor(Math.random() * 2147483646) + 1;
     this.rng = () => ((s = (s * 16807) % 2147483647) / 2147483647);
     const asked = params.get('weather') as Kind | null;
     this.fixed = !!asked && KINDS.includes(asked);
-    this.kind = this.fixed && asked ? asked : this.pick(clockT);
+    this.kind = this.fixed && asked ? asked : this.pick(clockT, true);
     this.lastT = clockT;
     this.settle();
     this.next = clockT + this.span();
@@ -87,10 +87,12 @@ export class Weather {
 
   private span() { return (20 + this.rng() * 40) * 60; }
 
-  private pick(clockT: number): Kind {
+  // `opening`: the first weather of a visit is never mist, which looks broken to a newcomer.
+  private pick(clockT: number, opening = false): Kind {
     const chances = { ...CHANCES[season(new Date().getMonth())] };
     const hour = (clockT % 86400) / 3600;
     if (hour > 4 && hour < 10) chances.mist *= 2.5; // mist mostly in the morning
+    if (opening) chances.mist = 0;
     const total = KINDS.reduce((a, k) => a + chances[k], 0);
     let x = this.rng() * total;
     for (const k of KINDS) if ((x -= chances[k]) < 0) return k;
