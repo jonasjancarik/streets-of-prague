@@ -102,22 +102,28 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
   const L = [-110, 80, 190], ll = Math.hypot(...L);
   const lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
   const px = new Uint16Array(n * n);
-  const at = (i: number, j: number) => hs[Math.min(n - 1, Math.max(0, j)) * n + Math.min(n - 1, Math.max(0, i))] / 10;
-  // (Where the shader reads each texel: its middle, over the box below.)
-  const [x0, y0] = box, span = (n - 1) * step;
+  const at = (i: number, j: number) => hs[j * n + i] / 10;
+  // Each texel's middle sits on its grid point: the box reaches half a step past the
+  // outer points. (Since 2026-09-29 the outer points lie on the tile's edges, shared
+  // with the neighbours; older data stops a little short, see ipr_terrain.py.)
+  const [x0, y0] = box, half = step / 2;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const dx = (at(i + 1, j) - at(i - 1, j)) / (2 * step), dy = (at(i, j + 1) - at(i, j - 1)) / (2 * step);
+      // The slope across the neighbouring points, or at the edge between this point and
+      // the next one in (halving it there by leaving out the missing side would light
+      // a line along every tile edge).
+      const i0 = Math.max(0, i - 1), i1 = Math.min(n - 1, i + 1), j0 = Math.max(0, j - 1), j1 = Math.min(n - 1, j + 1);
+      const dx = (at(i1, j) - at(i0, j)) / ((i1 - i0) * step), dy = (at(i, j1) - at(i, j0)) / ((j1 - j0) * step);
       const nl = Math.hypot(dx, dy, 1);
       const lit = (-dx * lx - dy * ly + lz) / nl / lz; // 1 on flat ground
       const shade = Math.round(128 * Math.max(0.55, Math.min(1.35, 1 + 1.1 * (lit - 1)))) / 127.5;
-      px[j * n + i] = THREE.DataUtils.toHalfFloat(shade * broad(x0 + ((i + 0.5) / n) * span, y0 + ((j + 0.5) / n) * span));
+      px[j * n + i] = THREE.DataUtils.toHalfFloat(shade * broad(x0 + i * step, y0 + j * step));
     }
   }
   const tex = new THREE.DataTexture(px, n, n, THREE.RedFormat, THREE.HalfFloatType);
   tex.magFilter = tex.minFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
-  return { texture: tex, box: [x0, y0, x0 + (n - 1) * step, y0 + (n - 1) * step], sample: heightSampler(hm, box, n, step), hm };
+  return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step), hm };
 }
 
 const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ vertexColors: true }));
