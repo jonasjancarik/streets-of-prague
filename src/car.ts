@@ -17,6 +17,9 @@ export interface CarSpec {
   // how much speed costs grip (0.45), coasting drag with a driver (m/s², 0.6), top
   // reverse speed as a share of vmax (0.3), the impact speed (m/s) before damage
   // starts (3) and how much rain and snow matter (1).
+  // Which wheels drive it (fwd): rwd slides out when you floor it in a bend, fwd runs
+  // wide (understeers), awd suffers less from rain and snow.
+  drive?: 'fwd' | 'rwd' | 'awd';
   brake?: number; radius?: number; response?: number; fade?: number; drag?: number; reverse?: number; tough?: number; weather?: number;
 }
 export interface CarControl { throttle: number; steer: number; handbrake: boolean; cap?: number | null }
@@ -34,17 +37,17 @@ export const TYPES: Record<string, CarSpec> = {
   hatch: { L: 3.9, W: 1.75, H: 1.45, mass: 1100, accel: 9, vmax: 36, grip: 9, turn: 2.6, cabin: [-1.15, 0.85], weight: 4, radius: 3.2, response: 11, brake: 17 },
   sedan: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 4, radius: 3.8 },
   estate: { L: 4.7, W: 1.82, H: 1.5, mass: 1500, accel: 9, vmax: 40, grip: 8.5, turn: 2.3, cabin: [-1.95, 0.8], weight: 2, radius: 4, brake: 15 },
-  van: { L: 5.2, W: 2.0, H: 2.3, mass: 2200, accel: 6.5, vmax: 31, grip: 8, turn: 1.9, cabin: [-2.5, 1.6], weight: 1, radius: 6, response: 7, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
+  van: { L: 5.2, W: 2.0, H: 2.3, mass: 2200, accel: 6.5, vmax: 31, grip: 8, turn: 1.9, cabin: [-2.5, 1.6], weight: 1, drive: 'rwd', radius: 6, response: 7, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
   taxi: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 1, color: '#e9c62f', radius: 3.8 },
   // Never parked or in ordinary traffic: src/police.ts puts these on the streets.
-  police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#eef1f4', radius: 3.8, brake: 19, tough: 4 },
+  police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#eef1f4', drive: 'rwd', radius: 3.8, brake: 19, tough: 4 },
   // Two-wheelers (drawn from the figures kit, as big as the people riding them). A bike
   // is never parked in a car bay; `traffic` is how often each type turns up on the road.
   bike: { L: 2.3, W: 0.8, H: 1.5, mass: 90, accel: 3.2, vmax: 9, grip: 12, turn: 3.4, weight: 0, traffic: 0.5, two: 'bike', radius: 2, brake: 10, tough: 1.5, weather: 1.3 },
   moto: { L: 2.8, W: 1.0, H: 1.6, mass: 260, accel: 12, vmax: 48, grip: 9.5, turn: 2.8, weight: 0.3, traffic: 1.2, two: 'moto', radius: 2.5, response: 12, brake: 22, fade: 0.35, tough: 1.5, weather: 1.5 },
   // A 12 m city bus in PID colours: slow to pick up speed, wide in the turns. Never
   // parked or in the ordinary mix: Traffic.buses keeps a few on their lines.
-  bus: { L: 12, W: 2.55, H: 3.1, mass: 12000, accel: 2.6, vmax: 24, grip: 7, turn: 1.25, weight: 0, color: '#c8102e', heavy: true, radius: 10, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
+  bus: { L: 12, W: 2.55, H: 3.1, mass: 12000, accel: 2.6, vmax: 24, grip: 7, turn: 1.25, weight: 0, color: '#c8102e', heavy: true, drive: 'rwd', radius: 10, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
 };
 // A variant of a body type: the same geometry (so the same draw call) with its own
 // handling and engine. `id` picks the engine in audio.ts, `name` (a model's own name,
@@ -357,7 +360,7 @@ export class Car {
     const throttle = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - vf) / 2, 0, 1));
     // A wet road and snow take some of the tyres' grip: longer braking, wider slides
     // (for the cars someone is driving hard; the traffic keeps to its lanes as before).
-    const road = this.driven ? 1 - (S.weather ?? 1) * Math.max(0.25 * WET.value, 0.45 * SNOW.value * STREET_SNOW.value, 0.25 * SNOW.value) : 1;
+    const road = this.driven ? 1 - (S.weather ?? 1) * (S.drive === 'awd' ? 0.6 : 1) * Math.max(0.25 * WET.value, 0.45 * SNOW.value * STREET_SNOW.value, 0.25 * SNOW.value) : 1;
     const brake = S.brake ?? 16;
 
     if (throttle > 0) {
@@ -378,7 +381,11 @@ export class Car {
     }
     if (ctl.cap != null && vf > ctl.cap) vf = Math.max(ctl.cap, vf - 3 * dt);
 
-    const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - (S.fade ?? 0.45) * fast)) * road;
+    // Full throttle in a bend: the driven wheels lose sideways grip (rear-wheel drive)
+    // or the car runs wide (front-wheel drive, below).
+    const power = this.driven && !S.two ? clamp(throttle, 0, 1) : 0;
+    const bend = power * Math.min(1, Math.abs(ctl.steer)) * clamp(Math.abs(vf) / 10, 0, 1);
+    const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - (S.fade ?? 0.45) * fast) * (S.drive === 'rwd' ? 1 - 0.3 * bend : 1)) * road;
     vl *= Math.exp(-grip * dt);
     // Tyre marks: sliding sideways, the back wheels locked by the handbrake, or all
     // four braking hard.
@@ -388,7 +395,7 @@ export class Car {
     this.skidFront = Math.max(slide * 0.7, braking);
 
     const sgn = vf >= 0 ? 1 : -1;
-    const maxW = S.turn * (1 - 0.35 * fast) * (ctl.handbrake ? 1.35 : 1);
+    const maxW = S.turn * (1 - 0.35 * fast) * (ctl.handbrake ? 1.35 : 1) * (!S.drive || S.drive === 'fwd' ? 1 - 0.12 * bend : 1);
     const wantW = ctl.steer * Math.min(Math.abs(vf) / (S.radius ?? 3.6), maxW) * sgn;
     if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * (S.response ?? 9));
     else this.w *= Math.exp(-4 * dt);
