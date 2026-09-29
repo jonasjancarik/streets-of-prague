@@ -47,6 +47,7 @@ import type { MapIndex } from './contracts.ts';
 import type { RawTramLine } from './trams.ts';
 import type { MetroLine } from './metro.ts';
 import { BikeShare } from './bikeshare.ts';
+import { rentalCost } from './pricing.ts';
 import { Wallet, PidRide, TICKET, FINE, CHECK_STOP, CHECK_METRO, kc } from './money.ts';
 import { Inspector } from './inspector.ts';
 import type { DriveEdge, WalkEdge } from './network.ts';
@@ -524,7 +525,11 @@ async function main() {
       c.mode = 'loose';
       c.rider = null;
       loose.push(c);
-      if (c.share) bikeShare.leave(c, clock.t);
+      if (c.share) {
+        bikeShare.charge(clock.t, (n) => wallet.take(n));
+        const done = bikeShare.leave(c, clock.t);
+        if (done) showBanner(t('{name}: returned after {minutes} min, {price} in all', { name: done.system.name, minutes: String(Math.max(1, Math.round(done.seconds / 60))), price: kc(done.paid) }));
+      }
       inCar = null;
       walker.mesh.visible = true;
       walker.sync();
@@ -562,7 +567,12 @@ async function main() {
       if (d < bestD) { bestD = d; best = c; }
     }
     if (!best || bestD > 1.8) return;
-    if (best.share && !bikeShare.rent(best, clock.t)) return;
+    if (best.share && !bikeShare.rent(best, clock.t, (n) => wallet.has(n))) {
+      const sys = bikeShare.systems[best.share.system];
+      showBanner(t('Not enough money for a bike ({price})', { price: kc(rentalCost(sys && bikeShare.planOf(sys), 0)) }));
+      return;
+    }
+    if (best.share) bikeShare.charge(clock.t, (n) => wallet.take(n));
     const agent = traffic.agents.find((a) => a.car === best);
     // A police car: the officer in it gets out and comes after you.
     const cop = best.type === 'police';
@@ -1138,6 +1148,10 @@ async function main() {
     const wanted = trafficWanted(clock.t);
     if (spawnT < 0 && traffic.agents.length < wanted) {
       spawnT = 0.25;
+      bikeShare.charge(clock.t, (n) => wallet.take(n));
+      for (const { rental, fee } of bikeShare.abandon(px(), py(), clock.t)) {
+        showBanner(t('You left the {name} bike outside a station: fee {price}', { name: rental.system.name, price: kc(wallet.take(fee)) }), true);
+      }
       const edges = edgesNear(px(), py(), LIFE_RADIUS), ok = lifeSpots(px(), py(), 40);
       traffic.buses((x, y) => offscreen(x, y) && ok(x, y), edges, BUSES);
       for (let n = 0; n < 10 && traffic.agents.length < wanted; n++) if (!traffic.spawn((x, y) => offscreen(x, y) && ok(x, y), edges)) break;
@@ -1382,6 +1396,19 @@ async function main() {
     ride.render();
     const label = ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : canBoard || cabin || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : null;
+    const bikeRental = (c: Car) => {
+      const rental = bikeShare.rental(c);
+      return rental && { name: rental.system.name, minutes: String(Math.max(1, Math.round((((clock.t - rental.since) % 604800) + 604800) % 604800 / 60))), price: kc(rental.paid) };
+    };
+    if (inCar && !inHeli) {
+      const b = bikeRental(inCar);
+      if (b && !assisted) hint = [t('{name} bike: {minutes} min, {price} so far', b), hint].filter(Boolean).join(' · ');
+    } else if (!inHeli && !ride.on && !funicular.me && !taxi.riding) {
+      for (const c of loose) {
+        const b = c.share && bikeRental(c);
+        if (b) { hint = [t('Your {name} bike is still rented: {minutes} min, {price} so far', b), hint].filter(Boolean).join(' · '); break; }
+      }
+    }
     const ticketBtn = inspector.phase === 'decide' ? 2 : pid.state === 'grace' ? 1 : 0;
     if (shown.ticketBtn !== ticketBtn) {
       shown.ticketBtn = ticketBtn;

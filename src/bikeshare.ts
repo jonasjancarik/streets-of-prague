@@ -1,6 +1,7 @@
 import { Car } from './car.ts';
 import type { WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
+import { rentalCost, type PricingPlan } from './pricing.ts';
 
 // Shared bikes (data/<area>_now/bikes.json, from pipeline/build_bikes.py): nextbike's
 // stations, and Rekola's and the others' where the data has them. Near you each
@@ -10,20 +11,16 @@ import type { Point2 } from './map/geo.ts';
 // Riding one is a rental: it starts when you get on a bike from a station and ends
 // when you get off it near a station of the same system; getting off anywhere else
 // only parks it, and the rental goes on. Every finished rental is kept (`done`), with
-// how long it took by the game's clock and the system's pricing plans (GBFS) in the
-// data: that is where paying for rides will go. Until then every ride is free.
+// how long it took by the game's clock and what it cost. The price follows the system's
+// pricing plan (GBFS): each interval is paid for as it begins, up to the plan's cap.
+// A rented bike left parked far from you, or burnt out, costs a fee on top.
 
 export interface BikeSystem {
   id: string; name: string; operator: string; url: string | null; colour: string;
   apps: unknown; plans: PricingPlan[];
 }
-// GBFS system_pricing_plans (v2.3), as the operator publishes them.
-export interface PricingPlan {
-  plan_id: string; name: string | { text: string; language: string }[]; currency: string; price: number;
-  per_min_pricing?: { start: number; interval: number; rate: number; end?: number }[];
-}
 interface Station { x: number; y: number; system: number; capacity: number; id: string; name: string; left: number; stocked: boolean }
-export interface Rental { system: BikeSystem; from: string; to: string | null; since: number; seconds: number }
+export interface Rental { system: BikeSystem; from: string; to: string | null; since: number; seconds: number; paid: number }
 interface Data { systems: BikeSystem[]; stations: [number, number, number, number, string, string][] }
 
 const CELL = 200; // m, the stations' grid
@@ -32,6 +29,9 @@ const RETURN_R = 25; // m from a station to leave a bike there
 const MOST = 8; // bikes at a station, at most (a big one keeps the rest out of sight)
 const GAP = 0.8; // m between bikes in a row
 const WEEK = 7 * 86400;
+const ABANDON = 300; // m from you: a rented bike parked farther is given up
+const FEE_OFF_STATION = 500; // Kč for a bike given up
+const FEE_FAR = 1000; // Kč when the nearest station of its system is over 3 km away
 
 export interface BikeWorld {
   loose: Car[];
@@ -49,6 +49,7 @@ export class BikeShare {
   private grid = new Map<string, Station[]>();
   private bikes = new Map<Station, Car[]>();
   private rentals = new Map<Car, Rental>();
+  private gone: { rental: Rental; fee: number }[] = [];
 
   constructor(area: string) {
     void fetch(`data/${area}_now/bikes.json`).then((r) => (r.ok ? r.json() as Promise<Data> : null)).then((d) => {
@@ -80,7 +81,7 @@ export class BikeShare {
     for (const [c, rental] of this.rentals) {
       if (c.mode === 'player' || w.loose.includes(c)) continue;
       this.rentals.delete(c);
-      this.done.push({ ...rental, seconds: (((now - rental.since) % WEEK) + WEEK) % WEEK });
+      this.end(rental, c, now, true);
     }
     for (const [st, cars] of this.bikes) {
       const still = cars.filter((c) => w.loose.includes(c) && c.share?.station === st.id);
@@ -115,14 +116,29 @@ export class BikeShare {
     if (cars.length) this.bikes.set(st, cars);
   }
 
+  private end(rental: Rental, c: Car, now: number, abandoned: boolean) {
+    rental.seconds = (((now - rental.since) % WEEK) + WEEK) % WEEK;
+    this.done.push(rental);
+    if (!abandoned) return;
+    const d = this.stations.reduce((m, s) => (s.system === c.share?.system ? Math.min(m, Math.hypot(s.x - c.x, s.y - c.y)) : m), Infinity);
+    this.gone.push({ rental, fee: d > 3000 ? FEE_FAR : FEE_OFF_STATION });
+  }
+
+  planOf(system: BikeSystem): PricingPlan | undefined {
+    return system.plans.find((p) => p.per_min_pricing?.length) || system.plans[0];
+  }
+
+  rental(c: Car) { return this.rentals.get(c); }
+
   // Getting on a shared bike (`now`: the game's clock). A bike from a station starts a
-  // rental; one you parked on the way is still yours. False would mean you can't take
-  // it (when rides cost money: you can't pay).
-  rent(c: Car, now: number) {
+  // rental, if you can afford its start (`afford`); one you parked on the way is still yours.
+  rent(c: Car, now: number, afford: (price: number) => boolean) {
     if (!c.share || this.rentals.has(c)) return true;
+    const sys = this.systems[c.share.system];
+    if (!afford(rentalCost(sys && this.planOf(sys), 0))) return false;
     const st = this.stations.find((s) => s.id === c.share!.station);
     if (st) st.left = Math.max(0, st.left - 1);
-    this.rentals.set(c, { system: this.systems[c.share.system], from: c.share.station ?? '', to: null, since: now, seconds: 0 });
+    this.rentals.set(c, { system: this.systems[c.share.system], from: c.share.station ?? '', to: null, since: now, seconds: 0, paid: 0 });
     c.share.station = null;
     return true;
   }
@@ -138,9 +154,30 @@ export class BikeShare {
     c.share.station = st.id;
     (this.bikes.get(st) || this.bikes.set(st, []).get(st)!).push(c);
     this.rentals.delete(c);
-    Object.assign(rental, { to: st.id, seconds: (((now - rental.since) % WEEK) + WEEK) % WEEK });
-    this.done.push(rental);
+    rental.to = st.id;
+    this.end(rental, c, now, false);
     return rental;
+  }
+
+  // What each rental owes by now, less what it has paid: `take` gets the amount and
+  // returns what it could take.
+  charge(now: number, take: (n: number) => number) {
+    for (const rental of this.rentals.values()) {
+      const minutes = (((now - rental.since) % WEEK) + WEEK) % WEEK / 60;
+      const due = rentalCost(this.planOf(rental.system), minutes) - rental.paid;
+      if (due > 0) rental.paid += take(due);
+    }
+  }
+
+  // Rented bikes given up: parked far from you, burnt out, or gone. Each ends its
+  // rental and owes a fee.
+  abandon(px: number, py: number, now: number) {
+    for (const [c, rental] of this.rentals) {
+      if (c.mode === 'player' || !(c.burnt || Math.hypot(c.x - px, c.y - py) > ABANDON)) continue;
+      this.rentals.delete(c);
+      this.end(rental, c, now, true);
+    }
+    return this.gone.splice(0);
   }
 }
 

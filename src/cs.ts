@@ -3,6 +3,11 @@
 // (streets, stops, stations, districts) come from the map data and aren't listed.
 export const CS: Record<string, string> = {
   // Money
+  'Not enough money for a bike ({price})': 'Nemáš dost peněz na kolo ({price})',
+  '{name}: returned after {minutes} min, {price} in all': '{name}: vráceno po {minutes} min, celkem {price}',
+  'You left the {name} bike outside a station: fee {price}': 'Kolo {name} zůstalo mimo stanici: poplatek {price}',
+  '{name} bike: {minutes} min, {price} so far': 'Kolo {name}: {minutes} min, zatím {price}',
+  'Your {name} bike is still rented: {minutes} min, {price} so far': 'Kolo {name} máš stále půjčené: {minutes} min, zatím {price}',
   'Money: {money}': 'Peníze: {money}',
   'Not enough money for a taxi (from {fare})': 'Nemáš dost peněz na taxi (od {fare})',
   'Your money ran out, so the driver let you out': 'Došly ti peníze, tak tě řidič vysadil',
