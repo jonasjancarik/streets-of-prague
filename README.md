@@ -54,11 +54,15 @@ the pixel ratio.
   walls, the train pulling in and stopping, the station's name as it stands there.
   It slows down while the map ahead loads; E skips to the end. You come up at an entrance of that station, and the police have
   lost you. After midnight the metro is shut until about five.
-- **Petřín funicular**: its two cars run on one cable from Újezd up to Petřín, one
-  going up as the other comes down, and pass each other at Nebozízek, where both stop
-  (`src/funicular.ts`). From 9:00 to 23:30 a car leaves each end every four minutes or
-  so. Press E beside a car standing at a station to get in; hold Shift to speed the
-  ride up, and E gets you out at any station.
+- **Funiculars**: the Petřín funicular's two cars run on one cable from Újezd up to
+  Petřín, one going up as the other comes down, and pass each other at Nebozízek,
+  where both stop; from 7:00 to 22:00 a car leaves each end every four minutes or so.
+  The NH hotel's little one on Mrázovka has a single cabin, free to ride in its opening
+  hours (10:30–11:30, 15:00–18:00, 22:00–24:00). Where the cars are follows from the
+  game's clock (`src/funicular.ts`). Press E beside a car standing at a station to get
+  in; hold Shift to speed the ride up, and E gets you out at any station. Nobody walks
+  or drives through a car: people are pushed aside (knocked over by one coming at
+  them), and cars bounce off.
 - **Parts of town**: the street you're in shows top left; come into another part of
   town (Smíchov, Malá Strana, Vinohrady…) and its name comes up as a large title for a
   few seconds, as does the one you start in (`src/districts.ts`). You have to be 30 m

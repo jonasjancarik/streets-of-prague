@@ -373,6 +373,8 @@ async function main() {
       const side = [1, -1].map((k) => [c.x + lx * k * 2.8, c.y + ly * k * 2.8] as [number, number]).find(([x, y]) => !walker.blocked(x, y));
       const [x, y] = side || nearestWalkable(grid, c.x, c.y);
       funicular.leave();
+      street = null; // the street here, not the line's name
+      $('street').textContent = '';
       Object.assign(walker, { x, y, h: c.h, vx: 0, vy: 0 });
       walker.mesh.visible = true;
       walker.sync();
@@ -737,6 +739,8 @@ async function main() {
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const t of tramBodies) for (const [x, y] of t.circles) hash.add({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
+    const funiBodies = funicular.bodies(px(), py(), LIFE_RADIUS + 100);
+    for (const f of funiBodies) for (const [x, y] of f.circles) hash.add({ x, y, z: f.gz, r: f.line.spec.w / 2, vx: f.vx, vy: f.vy, kind: 'tram' });
 
     traffic.update(dt, obstacles);
     // In view or not, each car keeps track of whether it's on a bridge or under it.
@@ -825,6 +829,16 @@ async function main() {
         if (a === inCar) jolt = Math.max(jolt, hit);
       }
     }
+    // Funicular cars: nothing moves one either.
+    for (const f of funiBodies) {
+      const r = f.line.spec.w / 2;
+      for (const a of carsNear(f.x, f.y, f.line.spec.len / 2 + 5, nearA)) {
+        if (apart(a, f)) continue;
+        const hit = collideBodies(f, f.circles, r, 0, a, a.circles(), a.r, 1 / a.mass);
+        if (hit > 6 && a === inCar) shake = Math.min(1.2, shake + hit * 0.04);
+        if (a === inCar) jolt = Math.max(jolt, hit);
+      }
+    }
     if (inCar?.two && jolt > 7) throwOff();
 
     // People and cars
@@ -845,7 +859,7 @@ async function main() {
         if (!grid.at(cx + nx * min, cy + ny * min)) { who.x = cx + nx * min; who.y = cy + ny * min; }
       }
     };
-    // Nobody walks through a tram: out to the nearer side (knocked over if it's moving).
+    // Nobody walks through a tram or a funicular car: out to the nearer side (knocked over if it's moving).
     const closeTrams = tramBodies.filter((t) => near(t, { x: px(), y: py() }, 150));
     const open = (x: number, y: number) => !grid.at(x, y);
     const offTrams = (who: { x: number; y: number; gz?: number }, rad: number, free: (x: number, y: number) => boolean, onHit?: (vx: number, vy: number) => void) => {
@@ -854,6 +868,9 @@ async function main() {
         const n = pushOutOfTram(t, who, rad, free);
         if (n && onHit && t.vx * n[0] + t.vy * n[1] > 2) onHit(t.vx + n[0] * 2, t.vy + n[1] * 2);
       }
+      // (And out of a funicular car; knocked over if it's coming at them.)
+      const f = funiBodies.length ? funicular.pushOut(who, rad, free) : null;
+      if (f && onHit && f.c.vx * f.nx + f.c.vy * f.ny > 1) onHit(f.c.vx + f.nx * 2, f.c.vy + f.ny * 2);
     };
     for (const p of crowd.people) {
       if (!near(p, { x: px(), y: py() }, 120)) continue;
@@ -1086,8 +1103,8 @@ async function main() {
     weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio());
 
     // ---- HUD -------------------------------------------------------------
-    // (On the metro, the street the train is under.)
-    const name = underway ? names.at(underway.x, underway.y) : names.at(px(), py());
+    // (On the metro, the street the train is under; on a funicular, its name.)
+    const name = underway ? names.at(underway.x, underway.y) : funicular.me ? funicular.me.line.spec.name : names.at(px(), py());
     if (name && name !== street) {
       street = name;
       $('street').textContent = name;
@@ -1109,7 +1126,7 @@ async function main() {
     const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y) : null;
     const onFoot = !inCar && !inHeli && !ride.on && !metro.active && !boats.me && !taxi.riding;
     const cabin = onFoot ? funicular.near(walker.x, walker.y) : null;
-    const shut = onFoot && !cabin && !!funicular.near(walker.x, walker.y, true);
+    const shut = onFoot && !cabin ? funicular.near(walker.x, walker.y, true) : null;
     const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
     const getIn = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
     const key = (k: string) => (touch.active ? '' : `<b>${k}</b> `);
@@ -1124,14 +1141,7 @@ async function main() {
       else hint = `${key('Shift')}${t('Lane assist, keeping to {limit} km/h', { limit: String(assist.limit) })}${touch.active ? '' : ` ${t('(let go to drive faster)')}`} · ${assist.intent > 0 ? t('turning left at the next junction') : assist.intent < 0 ? t('turning right at the next junction') : t(touch.active ? 'straight on (point the stick to turn)' : 'straight on (A/D to turn)')}`;
     }
     else if (boats.me) hint = touch.active ? '' : t('<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank');
-    else if (funicular.me) {
-      const c = funicular.me, parts = [];
-      if (scale > 1.5) parts.push(t('{n}× speed', { n: Math.round(scale) }));
-      if (c.stop !== null) parts.push(t('At {name}', { name: c.line.stops[c.stop].name }));
-      else parts.push(t('Funicular to {name}', { name: funicular.heading(c).next ?? '' }));
-      if (!touch.active) parts.push(t(c.stop !== null ? '<b>E</b> get off' : 'hold <b>Shift</b> to speed up'));
-      hint = parts.join(' · ');
-    }
+    else if (funicular.me) hint = funicular.hint(touch.active, scale);
     else if (ride.on) {
       const halts = ride.v!.line.halts, dest = ride.dest !== null ? halts[ride.dest].name : null;
       const next = ride.dest !== null && ride.dest === ride.upcoming()[0];
@@ -1148,10 +1158,7 @@ async function main() {
       hint = parts.join(' · ');
     } else if (canBoard && !touch.active) hint = t('<b>E</b> get on the {line} to {name}', { line: canBoard.line.ref, name: ride.headsign(canBoard) });
     else if (station && !touch.active) hint = t('<b>E</b> take the metro from {name}', { name: station.name });
-    else if (cabin && !touch.active) {
-      const { up, end } = funicular.heading(cabin);
-      hint = t(up ? '<b>E</b> ride the funicular up to {name}' : '<b>E</b> ride the funicular down to {name}', { name: end });
-    } else if (shut) hint = t('The funicular runs from 9:00 to 23:30');
+    else if ((cabin && !touch.active) || shut) hint = funicular.offer((cabin || shut)!);
     else if (board.shown) {
       const wait = waitScale > 1.5 ? t('Waiting for a tram · {n}× speed', { n: Math.round(waitScale) }) : touch.active ? '' : t('Hold <b>Space</b> to wait for a tram');
       hint = [canEnter && !touch.active ? getIn : '', wait].filter(Boolean).join(' · ');

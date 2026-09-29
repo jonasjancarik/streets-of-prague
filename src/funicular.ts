@@ -3,15 +3,15 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Point2 } from './map/geo.ts';
 import type { Clock } from './clock.ts';
 import { lampLit } from './lamps.ts';
+import { t } from './i18n.ts';
 
-// The Petřín funicular: two cars on one cable, one going up while the other comes
-// down, passing each other on the loop halfway, where both stop at Nebozízek. Where
-// they are follows from the game's clock (trips every few minutes from 9:00 to 23:30),
-// so they keep their places while the world runs faster. Press E beside a car waiting
-// at a station to ride it; E again at a station to get off.
-//
-// Any other funicular OSM has in the area (a short private one) runs the same way,
-// with one car and nobody riding it.
+// Prague's funiculars. On Petřín two cars share one cable, one going up while the
+// other comes down; they pass each other on the loop halfway, where both stop at
+// Nebozízek. The NH hotel's little one on Mrázovka has a single cabin, free for anyone
+// to ride in its opening hours. Where the cars are follows from the game's clock, so
+// they keep their places while the world runs faster. Press E beside a car waiting at
+// a station to ride it; E again at a station to get off. Nobody walks or drives
+// through one.
 
 interface Rail { kind: string; pts: Point2[] }
 interface Options {
@@ -23,15 +23,24 @@ interface Options {
 }
 interface RiderPosition { x: number; y: number; h: number; vx: number; vy: number }
 
-const V = 4, ACC = 0.5; // m/s at full speed, and m/s² starting and stopping
-const END_WAIT = 75, MID_WAIT = 20; // seconds at the ends, and at the halfway stop
-const OPEN = 9 * 3600, CLOSE = 23.5 * 3600;
-const LEN = 14, W = 2.5, BAYS = 4; // a car, in stepped compartments
+// Each line (from OSM: its name, stations, opening hours, and which end is the lower
+// one), with its cars and how they run.
+interface Spec {
+  name: string;
+  bottom: [number, number]; // lon, lat of the lower end
+  stops: string[]; // bottom to top ('' for stations without a name)
+  hours: [number, number][];
+  speed: number; acc: number; endWait: number; midWait: number;
+  len: number; w: number; bays: number;
+}
+const SPECS: Spec[] = [
+  { name: 'Lanová dráha na Petřín', bottom: [14.40354, 50.08265], stops: ['Újezd', 'Nebozízek', 'Petřín'], hours: [[7, 22]],
+    speed: 4, acc: 0.5, endWait: 75, midWait: 20, len: 14, w: 2.5, bays: 4 },
+  { name: 'Lanová dráha hotelu NH', bottom: [14.39685, 50.07107], stops: ['', ''], hours: [[10.5, 11.5], [15, 18], [22, 24]],
+    speed: 1.5, acc: 0.3, endWait: 30, midWait: 0, len: 3, w: 1.6, bays: 1 },
+];
+const BAY = 3.5, BAY_W = 2.5; // the size the compartment's geometry is made at
 const FAST = 6;
-
-// The Petřín line's stations: the ends by where they are (the lower one first),
-// Nebozízek by where the cars pass each other.
-const PETRIN = { bottom: { name: 'Újezd', lon: 14.40354, lat: 50.08265 }, mid: 'Nebozízek', top: 'Petřín' };
 
 class Path {
   pts: Point2[];
@@ -96,17 +105,20 @@ function routes(lines: Point2[][]): Point2[][][] {
   return out;
 }
 
+
 // Seconds to cover d metres from a standstill to a standstill, and how far along and
 // how fast at τ seconds in.
-function runTime(d: number) { return d > (V * V) / ACC ? d / V + V / ACC : 2 * Math.sqrt(d / ACC); }
-function runAt(tau: number, d: number): [number, number] {
-  const T = runTime(d), top = Math.min(V, (ACC * T) / 2), ta = top / ACC;
+function runTime(d: number, v: number, a: number) { return d > (v * v) / a ? d / v + v / a : 2 * Math.sqrt(d / a); }
+function runAt(tau: number, d: number, v: number, a: number): [number, number] {
+  const T = runTime(d, v, a), top = Math.min(v, (a * T) / 2), ta = top / a;
   if (tau <= 0) return [0, 0];
   if (tau >= T) return [d, 0];
-  if (tau < ta) return [0.5 * ACC * tau * tau, ACC * tau];
-  if (tau > T - ta) { const r = T - tau; return [d - 0.5 * ACC * r * r, ACC * r]; }
-  return [0.5 * ACC * ta * ta + top * (tau - ta), top];
+  if (tau < ta) return [0.5 * a * tau * tau, a * tau];
+  if (tau > T - ta) { const r = T - tau; return [d - 0.5 * a * r * r, a * r]; }
+  return [0.5 * a * ta * ta + top * (tau - ta), top];
 }
+
+const clockTime = (h: number) => `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
 
 function carGeometry() {
   const parts: THREE.BufferGeometry[] = [];
@@ -119,11 +131,10 @@ function carGeometry() {
     parts.push(g);
   };
   // One compartment: red below, a band of windows, a cream roof.
-  const bay = LEN / BAYS;
-  box(bay, 0.9, W, 0, 0.75, 0, '#9b2a22');
-  box(bay - 0.06, 1.1, W * 0.99, 0, 1.75, 0, '#23282c');
-  box(bay, 0.35, W, 0, 2.47, 0, '#9b2a22');
-  box(bay - 0.5, 0.14, W * 0.8, 0, 2.7, 0, '#d8d2c2');
+  box(BAY, 0.9, BAY_W, 0, 0.75, 0, '#9b2a22');
+  box(BAY - 0.06, 1.1, BAY_W * 0.99, 0, 1.75, 0, '#23282c');
+  box(BAY, 0.35, BAY_W, 0, 2.47, 0, '#9b2a22');
+  box(BAY - 0.5, 0.14, BAY_W * 0.8, 0, 2.7, 0, '#d8d2c2');
   return mergeGeometries(parts);
 }
 const bayGeometry = carGeometry();
@@ -145,11 +156,13 @@ export interface FunicularCar {
   bays: THREE.Mesh[];
   frame: THREE.Mesh;
   x: number; y: number; h: number; vx: number; vy: number;
+  gz: number; slope: number; // ground height under its middle, and the rise a metre along
   s: number; // along its own path, from the bottom
   up: boolean;
   stop: number | null; // the station it stands at (index into line.stops)
+  circles: Point2[]; // for knocking into cars
 }
-interface Line { length: number; mid: number | null; stops: { at: number; name: string }[]; cars: FunicularCar[] }
+interface Line { spec: Spec; length: number; mid: number | null; stops: { at: number; name: string }[]; cars: FunicularCar[]; open: boolean }
 
 export class Funicular {
   o: Options;
@@ -157,21 +170,23 @@ export class Funicular {
   cars: FunicularCar[] = [];
   me: FunicularCar | null = null;
   scale = 1;
-  open = false;
 
   constructor(rails: Rail[], scene: THREE.Scene, o: Options) {
     this.o = o;
-    const bottom = o.toLocal(PETRIN.bottom.lon, PETRIN.bottom.lat);
     for (let found of routes(rails.filter((r) => r.kind === 'funicular').map((r) => r.pts))) {
-      // Every route starts at the bottom end.
+      // Which line this is, by its lower end, and every route starting there.
       const [a, b] = [found[0][0], found[0][found[0].length - 1]];
-      const named = !!bottom && Math.min(Math.hypot(a[0] - bottom[0], a[1] - bottom[1]), Math.hypot(b[0] - bottom[0], b[1] - bottom[1])) < 60;
-      if (named && Math.hypot(b[0] - bottom![0], b[1] - bottom![1]) < Math.hypot(a[0] - bottom![0], a[1] - bottom![1])) {
-        found = found.map((p) => p.slice().reverse());
+      let spec: Spec | null = null, flip = false;
+      for (const s of SPECS) {
+        const p = o.toLocal(s.bottom[0], s.bottom[1]);
+        if (!p) continue;
+        const da = Math.hypot(a[0] - p[0], a[1] - p[1]), db = Math.hypot(b[0] - p[0], b[1] - p[1]);
+        if (Math.min(da, db) < 60) { spec = s; flip = db < da; break; }
       }
+      if (!spec) continue;
+      if (flip) found = found.map((p) => p.slice().reverse());
       const paths = found.map((p) => new Path(p));
       const length = paths.reduce((s, p) => s + p.length, 0) / paths.length;
-      if (length < 40) continue;
       // Halfway stop: the middle of the loop, where the two routes part and meet again.
       let mid: number | null = null;
       if (paths.length === 2) {
@@ -183,28 +198,28 @@ export class Funicular {
         const s0 = paths[0].cum[i], s1 = paths[0].cum[p.length - 1 - j];
         mid = ((s0 + s1) / 2 / paths[0].length) * length;
       }
-      const line: Line = { length, mid, stops: [], cars: [] };
-      if (named) {
-        line.stops.push({ at: 0, name: PETRIN.bottom.name });
-        if (mid !== null) line.stops.push({ at: mid, name: PETRIN.mid });
-        line.stops.push({ at: length, name: PETRIN.top });
-      }
+      const names = spec.stops;
+      const stops = [{ at: 0, name: names[0] }, ...(mid !== null && names.length > 2 ? [{ at: mid, name: names[1] }] : []), { at: length, name: names[names.length - 1] }];
+      const line: Line = { spec, length, mid: stops.length > 2 ? mid : null, stops, cars: [], open: false };
       paths.forEach((path, k) => {
-        const mesh = new THREE.Group(), bays: THREE.Mesh[] = [];
-        for (let i = 0; i < BAYS; i++) {
+        const mesh = new THREE.Group(), bays: THREE.Mesh[] = [], bay = spec.len / spec.bays;
+        for (let i = 0; i < spec.bays; i++) {
           const m = new THREE.Mesh(bayGeometry, material);
           m.castShadow = true;
-          m.position.x = (i + 0.5) * (LEN / BAYS) - LEN / 2;
+          m.scale.set(bay / BAY, 1, spec.w / BAY_W);
+          m.position.x = (i + 0.5) * bay - spec.len / 2;
           bays.push(m);
           mesh.add(m);
         }
         // The running gear under the steps, along the slope.
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(LEN - 0.4, 0.5, W * 0.7), frameMaterial);
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(spec.len - 0.4, 0.5, spec.w * 0.7), frameMaterial);
         frame.castShadow = true;
         mesh.add(frame);
         mesh.visible = false;
         scene.add(mesh);
-        const car: FunicularCar = { line, path, flip: k === 1, mesh, bays, frame, x: 0, y: 0, h: 0, vx: 0, vy: 0, s: 0, up: true, stop: null };
+        const car: FunicularCar = {
+          line, path, flip: k === 1, mesh, bays, frame, x: 0, y: 0, h: 0, vx: 0, vy: 0, gz: 0, slope: 0, s: 0, up: true, stop: null, circles: [],
+        };
         line.cars.push(car);
         this.cars.push(car);
       });
@@ -213,27 +228,32 @@ export class Funicular {
   }
 
   // Where the cable is: how far the first car is from the bottom, how fast it's going
-  // (up is positive), and whether the line is running.
+  // (up is positive), and whether the line is running. Trips go back and forth from
+  // each opening time, and the last one is back at the bottom by closing time.
   private cable(line: Line, sec: number) {
-    const L = line.length, m = line.mid;
-    const trip = m === null ? runTime(L) : runTime(m) + MID_WAIT + runTime(L - m);
-    const half = END_WAIT + trip, cycles = Math.floor((CLOSE - OPEN) / (2 * half));
-    if (sec < OPEN || sec >= OPEN + cycles * 2 * half) return { d: 0, v: 0, open: false };
-    const p = (sec - OPEN) % (2 * half), up = p < half, tau = (p % half) - END_WAIT;
-    let d: number, v: number;
-    if (m === null) [d, v] = runAt(tau, L);
-    else if (tau < runTime(m)) [d, v] = runAt(tau, m);
-    else if (tau < runTime(m) + MID_WAIT) [d, v] = [m, 0];
-    else { const [e, w] = runAt(tau - runTime(m) - MID_WAIT, L - m); [d, v] = [m + e, w]; }
-    return up ? { d, v, open: true } : { d: L - d, v: -v, open: true };
+    const { spec, length: L, mid: m } = line, v = spec.speed, a = spec.acc;
+    const first = m === null ? 0 : runTime(m, v, a);
+    const trip = m === null ? runTime(L, v, a) : first + spec.midWait + runTime(L - m, v, a);
+    const half = spec.endWait + trip;
+    for (const [from, to] of spec.hours) {
+      const p = sec - from * 3600;
+      if (p < 0 || p >= Math.floor(((to - from) * 3600) / (2 * half)) * 2 * half) continue;
+      const up = p % (2 * half) < half, tau = (p % half) - spec.endWait;
+      let d: number, s: number;
+      if (m === null) [d, s] = runAt(tau, L, v, a);
+      else if (tau < first) [d, s] = runAt(tau, m, v, a);
+      else if (tau < first + spec.midWait) [d, s] = [m, 0];
+      else { const [e, w] = runAt(tau - first - spec.midWait, L - m, v, a); [d, s] = [m + e, w]; }
+      return up ? { d, v: s, open: true } : { d: L - d, v: -s, open: true };
+    }
+    return { d: 0, v: 0, open: false };
   }
 
   update() {
     const sec = this.o.clock.t % 86400;
-    this.open = false;
     for (const line of this.lines) {
-      const { d, v, open } = this.cable(line, sec);
-      if (line.stops.length) this.open ||= open;
+      const { d, v, open } = this.cable(line, sec), { len, w } = line.spec;
+      line.open = open;
       for (const car of line.cars) {
         const along = car.flip ? line.length - d : d, speed = car.flip ? -v : v;
         car.s = (along / line.length) * car.path.length;
@@ -245,30 +265,61 @@ export class Funicular {
         car.stop = v === 0 && stop >= 0 ? stop : null;
         const p = car.path.at(car.s);
         car.x = p.x; car.y = p.y; car.h = p.ang;
-        car.vx = Math.cos(p.ang) * speed; car.vy = Math.sin(p.ang) * speed;
+        const c = Math.cos(p.ang), sn = Math.sin(p.ang);
+        car.vx = c * speed; car.vy = sn * speed;
+        car.circles.length = 0;
+        const end = len / 2 - w / 2, n = Math.max(1, Math.ceil((2 * end) / (w / 2)));
+        for (let i = 0; i <= n; i++) { const k = -end + (2 * end * i) / n; car.circles.push([p.x + c * k, p.y + sn * k]); }
         // Level compartments stepped up the slope, the ends' heights from the ground.
-        const back = car.path.at(car.s - LEN / 2), front = car.path.at(car.s + LEN / 2);
+        const back = car.path.at(car.s - len / 2), front = car.path.at(car.s + len / 2);
         const hb = this.o.terrain(back.x, back.y), hf = this.o.terrain(front.x, front.y);
         car.mesh.visible = hb !== null && hf !== null;
         if (hb === null || hf === null) continue;
-        const run = Math.hypot(front.x - back.x, front.y - back.y) || LEN, slope = (hf - hb) / run;
-        car.mesh.position.set(p.x, (hb + hf) / 2, -p.y);
+        car.slope = (hf - hb) / (Math.hypot(front.x - back.x, front.y - back.y) || len);
+        car.gz = (hb + hf) / 2;
+        car.mesh.position.set(p.x, car.gz, -p.y);
         car.mesh.rotation.y = p.ang;
-        for (const b of car.bays) b.position.y = slope * b.position.x;
+        for (const b of car.bays) b.position.y = car.slope * b.position.x;
         car.frame.position.y = 0.25;
-        car.frame.rotation.z = Math.atan(slope);
+        car.frame.rotation.z = Math.atan(car.slope);
       }
     }
   }
 
-  // A car waiting at a station right next to (x, y), if there is one to ride.
-  // (With any, also one standing there for the night.)
-  near(x: number, y: number, any = false) {
-    if (this.me || (!this.open && !any)) return null;
+  // The cars within r of (x, y) that can be bumped into.
+  bodies(x: number, y: number, r: number) {
+    return this.cars.filter((c) => c.mesh.visible && c !== this.me && Math.hypot(c.x - x, c.y - y) < r);
+  }
+
+  // Someone on foot (radius rad) out of a car to its nearer side, where free there.
+  // Returns the car they touched and the way they were pushed (away from it), else null.
+  pushOut(who: { x: number; y: number; gz?: number }, rad: number, free: (x: number, y: number) => boolean) {
     for (const c of this.cars) {
-      if (c.stop === null || !c.mesh.visible) continue;
-      const dx = x - c.x, dy = y - c.y, cs = Math.cos(c.h), sn = Math.sin(c.h);
-      if (Math.abs(dx * cs + dy * sn) < LEN / 2 + 1 && Math.abs(dx * sn - dy * cs) < W / 2 + 2.5) return c;
+      if (!c.mesh.visible || c === this.me) continue;
+      const { len, w } = c.line.spec, dx = who.x - c.x, dy = who.y - c.y;
+      if (Math.abs(dx) > len && Math.abs(dy) > len) continue;
+      const cs = Math.cos(c.h), sn = Math.sin(c.h), along = Math.max(-len / 2 + w / 2, Math.min(len / 2 - w / 2, dx * cs + dy * sn));
+      if (who.gz !== undefined && Math.abs(c.gz + c.slope * along - who.gz) > 3) continue;
+      const qx = c.x + cs * along, qy = c.y + sn * along, min = w / 2 + rad;
+      let nx = who.x - qx, ny = who.y - qy;
+      const d = Math.hypot(nx, ny);
+      if (d >= min) continue;
+      if (d < 1e-6) { const side = -dx * sn + dy * cs < 0 ? -1 : 1; nx = -sn * side; ny = cs * side; } else { nx /= d; ny /= d; }
+      const x = qx + nx * min, y = qy + ny * min;
+      if (free(x, y)) { who.x = x; who.y = y; }
+      return { c, nx, ny };
+    }
+    return null;
+  }
+
+  // A car waiting at a station right next to (x, y), if there is one to ride.
+  // (With any, also one standing there while the line is shut.)
+  near(x: number, y: number, any = false) {
+    if (this.me) return null;
+    for (const c of this.cars) {
+      if (c.stop === null || !c.mesh.visible || (!c.line.open && !any)) continue;
+      const { len, w } = c.line.spec, dx = x - c.x, dy = y - c.y, cs = Math.cos(c.h), sn = Math.sin(c.h);
+      if (Math.abs(dx * cs + dy * sn) < len / 2 + 1 && Math.abs(dx * sn - dy * cs) < w / 2 + 2.5) return c;
     }
     return null;
   }
@@ -277,7 +328,30 @@ export class Funicular {
   heading(c: FunicularCar) {
     const stops = c.line.stops, along = (c.s / c.path.length) * c.line.length;
     const ahead = stops.filter((st) => (c.up ? st.at > along + 0.5 : st.at < along - 0.5));
-    return { next: (c.up ? ahead[0] : ahead[ahead.length - 1])?.name ?? null, end: (c.up ? stops[stops.length - 1] : stops[0]).name, up: c.up };
+    return { next: (c.up ? ahead[0] : ahead[ahead.length - 1]) ?? null, end: c.up ? stops[stops.length - 1] : stops[0], up: c.up };
+  }
+
+  // What the hint says standing by a car at a station.
+  offer(c: FunicularCar) {
+    if (!c.line.open) return t('The funicular runs {hours}', { hours: c.line.spec.hours.map(([a, b]) => `${clockTime(a)}–${clockTime(b)}`).join(', ') });
+    const { up, end } = this.heading(c);
+    if (!end.name) return t(up ? '<b>E</b> ride the funicular up' : '<b>E</b> ride the funicular down');
+    return t(up ? '<b>E</b> ride the funicular up to {name}' : '<b>E</b> ride the funicular down to {name}', { name: end.name });
+  }
+
+  // And riding one (without the keys on a touch screen).
+  hint(touch: boolean, scale: number) {
+    const c = this.me!, parts = [];
+    if (scale > 1.5) parts.push(t('{n}× speed', { n: Math.round(scale) }));
+    if (c.stop !== null) {
+      const { name } = c.line.stops[c.stop];
+      parts.push(name ? t('At {name}', { name }) : t(c.stop === 0 ? 'At the bottom' : 'At the top'));
+    } else {
+      const { next, up } = this.heading(c);
+      parts.push(next?.name ? t('Funicular to {name}', { name: next.name }) : t(up ? 'Going up' : 'Going down'));
+    }
+    if (!touch) parts.push(t(c.stop !== null ? '<b>E</b> get off' : 'hold <b>Shift</b> to speed up'));
+    return parts.join(' · ');
   }
 
   board(c: FunicularCar) {
