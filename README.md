@@ -258,7 +258,7 @@ the pixel ratio.
   footprint and draws the model there (`landmarkModel` in `src/tiles.ts`). The photographs have the day's light
   in them, so the model is lit evenly, as if every face looked up, and still darkens at
   night. The collision footprint stays OSM's.
-- **Roof colours.** Pitched roofs are red tiles, as nearly all of them are in Prague;
+- **Roof colours.** Pitched roofs are terracotta tiles (a palette matched to the hue of the photographed landmark roofs, with each tile a little redder or duller than the next), as nearly all of them are in Prague;
   flat ones are grey. OSM's `roof:material` and `roof:colour` can make a roof grey slate
   or green copper instead, down to single building parts (the cathedral's grey roofs
   and copper domes), and `pipeline/roofs.py` corrects landmarks OSM gets wrong or leaves

@@ -275,6 +275,7 @@ vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
   float row = fract(q.y / size.y);
   float d = detail(wp, size.y);
   vec3 t = c * (.9 + .2 * b.y);
+  t *= mix(vec3(1.07, .95, .86), vec3(.95, 1., 1.05), fract(b.y * 7.3));           // fired-clay variation, tile by tile
   t *= .8 + .25 * smoothstep(0., .4, row);                                     // overlap shadow
   t = mix(t * .72, t, smoothstep(0., .012, b.x));
   c = mix(c * .95, t, d);

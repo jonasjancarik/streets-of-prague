@@ -44,6 +44,7 @@ function roofTiles(c0: N, wp: N, n: N, wpWidth: N) {
   const row = fract(q.y.div(size.y));
   const d = float(1).sub(smoothstep(size.y.mul(0.2), size.y.mul(0.7), wpWidth));
   const t = c0.mul(b.y.mul(0.2).add(0.9)).toVar();
+  t.mulAssign(mix(vec3(1.07, 0.95, 0.86), vec3(0.95, 1, 1.05), fract(b.y.mul(7.3))));
   t.mulAssign(smoothstep(0, 0.4, row).mul(0.25).add(0.8));
   t.assign(mix(t.mul(0.72), t, smoothstep(0, 0.012, b.x)));
   const c = mix(c0.mul(0.95), t, d).toVar();
