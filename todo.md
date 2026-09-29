@@ -148,10 +148,10 @@ What's in since 29 September 2026: clear, cloudy, rain, mist and snow
 - **Lamps light the roofs of low sheds.** The light map keeps the height of the ground
   under the brightest lamp and fades the light 3–11 m above it, so a low roof next to a
   lamp still gets some; walls next to floodlit monuments get light up to about 25 m.
-- **Live weather.** The clock starts at the time in Prague; the weather could too.
-  Open-Meteo is easy but free only for non-commercial use (the game may take
-  donations); ČHMÚ's open data (CC BY) has the current observations from Prague's
-  stations but needs a small proxy or a build step.
+- **Live weather beyond the start.** The start screen takes the real weather in
+  Prague from Open-Meteo (free only for non-commercial use; if the game takes more than
+  donations, switch to ČHMÚ's open data, CC BY, which needs a small proxy). It could
+  also follow the real weather as the game runs, not only at the start.
 - **Puddles where the water gathers.** They're placed by noise; the terrain's low
   points and the kerbs would be better.
 

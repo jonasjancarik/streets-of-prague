@@ -29,6 +29,7 @@ import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { dressLoading, Dialog } from './portraits.ts';
 import { startScreen } from './startscreen.ts';
+import { liveWeather } from './liveweather.ts';
 import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import type { Surface } from './audio.ts';
@@ -81,6 +82,8 @@ async function main() {
   let savedSound = '';
   try { savedSound = localStorage.getItem('sound') ?? ''; } catch {}
   const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off' });
+  // The weather in Prague now, for the start screen (the URL's ?weather wins).
+  if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
   status('Loading the map…');
   const kitLoad = loadKit();
   const carsLoad = loadCars();

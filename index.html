@@ -137,6 +137,30 @@
       .ls-title { position: absolute; left: 5vw; top: 8vh; display: flex; flex-direction: column; font: 17vh/0.82 'Bebas Neue', sans-serif; letter-spacing: 0.01em; color: var(--poster-paper); text-shadow: 0.6vh 0.6vh 0 var(--poster-red); }
       .ls-title span + span { color: var(--poster-red); text-shadow: 0.6vh 0.6vh 0 var(--poster-black); }
       #loading-text { position: absolute; left: 5vw; bottom: 5vh; font: 5vh/1 'Bebas Neue', sans-serif; color: var(--poster-black); transform: rotate(-4deg); transform-origin: left; }
+      /* The poster assembles itself once (shapes, title, then the cast rising behind the
+         band), then only drifts: the skyline pans slowly and the figures breathe. Only
+         transform, translate and opacity move, so it runs smoothly while the map loads. */
+      .ls-sky { inset: 0 -4%; animation: ls-pan 36s ease-in-out infinite alternate; }
+      @keyframes ls-pan { from { translate: 2% 0; } to { translate: -2% 0; } }
+      .ls-wedge { animation: ls-wedge-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      @keyframes ls-wedge-in { from { transform: translateX(-40%); } }
+      .ls-band { animation: ls-band-in 0.7s 0.1s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      @keyframes ls-band-in { from { transform: translateY(40vh) rotate(-4deg); } to { transform: rotate(-4deg); } }
+      .ls-stripe { animation: ls-stripe-in 0.8s 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      @keyframes ls-stripe-in { from { transform: rotate(-4deg) scaleX(0); } to { transform: rotate(-4deg) scaleX(1.2); } }
+      .ls-title span { animation: ls-title-in 0.6s 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      .ls-title span + span { animation-delay: 0.27s; }
+      @keyframes ls-title-in { from { transform: translateX(-10vw); opacity: 0; } }
+      .ls-face { animation: ls-rise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both, ls-breathe 7s ease-in-out infinite alternate; }
+      .ls-face:nth-child(1) { animation-delay: 0.3s, -2s; }
+      .ls-face:nth-child(2) { animation-delay: 0.45s, -5s; animation-duration: 0.9s, 8.5s; }
+      .ls-face:nth-child(3) { animation-delay: 0.6s, -1s; animation-duration: 0.9s, 6.2s; }
+      @keyframes ls-rise { from { transform: translateY(24vh); } }
+      @keyframes ls-breathe { from { translate: 0 0; } to { translate: 0 -1.2vh; } }
+      .ls-start { animation: ls-fade 0.5s 0.5s both; }
+      #loading-text { animation: ls-fade 0.5s 0.6s both; }
+      @keyframes ls-fade { from { opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) { #loading, #loading * { animation: none !important; } }
       /* The start screen's choices (src/startscreen.ts), over the wedge at the left. */
       .ls-start { position: absolute; z-index: 2; left: 5vw; top: 44vh; width: min(44vw, 560px); display: flex; flex-direction: column; gap: 1.4vh; font: 2.6vh/1.1 'Bebas Neue', sans-serif; color: var(--poster-paper); }
       .ls-row { display: flex; flex-direction: column; gap: 0.6vh; }

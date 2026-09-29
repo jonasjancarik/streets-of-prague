@@ -34,6 +34,7 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
 export function startScreen(root: HTMLElement, opts: { now: string; weather: Kind; sound: boolean }) {
   const panel = el('div', 'ls-start', root);
   let time: string = 'now', weather: Kind = opts.weather, sound = opts.sound;
+  let weatherPicked = false;
 
   // Text that follows the language: each is given again when it changes.
   const relabel: (() => void)[] = [];
@@ -56,12 +57,13 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
       });
       return b;
     });
+    return { chips, buttons, pick };
   }
 
   const fixed = (s: string) => () => s;
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang(), setLang);
   row('Time', [{ id: 'now', label: () => t('Now {time}', { time: opts.now }) }, ...TIMES.map((x) => ({ id: x.id, label: () => t(x.label) }))], 'now', (id) => { time = id; });
-  row('Weather', KINDS.map((k) => ({ id: k, label: () => t(WEATHER[k]) })), weather, (id) => { weather = id; });
+  const weatherRow = row('Weather', KINDS.map((k) => ({ id: k, label: () => t(WEATHER[k]) })), weather, (id) => { weather = id; weatherPicked = true; });
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], sound ? 'on' : 'off', (id) => { sound = id === 'on'; });
 
   const go = el('button', 'ls-go', panel) as HTMLButtonElement;
@@ -73,6 +75,22 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
 
   // Enables the button; resolves with the choice when it's pressed.
   return {
+    // The weather in Prague now has come in: a button for it, first, and picked unless
+    // the player has picked something already.
+    live(kind: Kind) {
+      const b = el('button', 'ls-chip', weatherRow.chips) as HTMLButtonElement;
+      weatherRow.chips.prepend(b);
+      relabel.push(() => { b.textContent = t('Now: {weather}', { weather: t(WEATHER[kind]) }); });
+      b.type = 'button';
+      const choose = () => {
+        weather = kind;
+        for (const o of weatherRow.buttons) o.setAttribute('aria-pressed', String(o === b));
+      };
+      weatherRow.buttons.push(b);
+      b.addEventListener('click', () => { choose(); weatherPicked = true; });
+      relabel[relabel.length - 1]();
+      if (!weatherPicked) choose();
+    },
     ready(): Promise<StartChoice> {
       go.disabled = false;
       ready = true;

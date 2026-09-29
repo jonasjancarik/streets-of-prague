@@ -8,6 +8,7 @@ export const CS: Record<string, string> = {
   Weather: 'Počasí',
   Sound: 'Zvuk',
   'Now {time}': 'Teď {time}',
+  'Now: {weather}': 'Teď: {weather}',
   Morning: 'Ráno',
   Midday: 'Poledne',
   Evening: 'Večer',
