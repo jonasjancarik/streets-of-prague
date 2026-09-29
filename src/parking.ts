@@ -270,6 +270,38 @@ function onCarriageway(x: number, y: number, edges: DriveEdge[]) {
   return false;
 }
 
+// How far a parked car's outline keeps from the middle of a traffic lane: half the
+// widest car in traffic (a van) and a little room, so the traffic passes it without
+// braking (see Traffic.update, which counts anything nearer as in its way).
+const LANE_CLEAR = 1.25;
+
+// The lanes the traffic drives along (not on bridges or in tunnels, where nobody
+// parks under or over them), by 10 m cell: `clear(x, y, d)` is whether (x, y) is
+// more than d from the middle of all of them.
+function laneCells(edges: DriveEdge[]) {
+  const cells = new Map<number, [Point2, Point2][]>(), pad = 4;
+  for (const e of edges) {
+    if (e.bridge || e.tunnel) continue;
+    const pts = e.path.pts;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const i0 = Math.floor((Math.min(a[0], b[0]) - pad) / 10), i1 = Math.floor((Math.max(a[0], b[0]) + pad) / 10);
+      const j0 = Math.floor((Math.min(a[1], b[1]) - pad) / 10), j1 = Math.floor((Math.max(a[1], b[1]) + pad) / 10);
+      for (let ci = i0; ci <= i1; ci++) for (let cj = j0; cj <= j1; cj++) {
+        const k = ci * 131072 + cj;
+        let list = cells.get(k);
+        if (!list) cells.set(k, (list = []));
+        list.push([a, b]);
+      }
+    }
+  }
+  return (x: number, y: number, d: number) => {
+    const list = cells.get(Math.floor(x / 10) * 131072 + Math.floor(y / 10));
+    if (list) for (const [a, b] of list) if (segDist(x, y, a, b) < d) return false;
+    return true;
+  };
+}
+
 // `shares`: code → share of each paid-parking section inside this piece of map (a
 // tile); without it the whole section counts. `inside(x, y)` limits spots to the tile.
 export function parkCars({ data, edges, zones, solid, r, night = false, shares = null, inside = () => true }: {
@@ -280,6 +312,7 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
   const railSegs: [Point2, Point2][] = [];
   for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
   const nearRail = (x: number, y: number, d: number) => railSegs.some(([a, b]) => segDist(x, y, a, b) < d);
+  const laneClear = laneCells(edges);
   const cars: Car[] = [];
   // Parked cars by 5 m cell (keyed by number, as in SpatialHash: this is asked for
   // every spot tried).
@@ -297,6 +330,9 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
     // Most people drive into angled bays forwards; elsewhere it's either way round.
     const car = new Car(type, r, s.x, s.y, s.h + (!s.fwd && r() < (s.angled ? 0.08 : 0.5) ? Math.PI : 0));
     if (s.bay && car.type === 'van') return false;
+    // Nothing sticking out into a lane, where the traffic would have to squeeze past:
+    // where the kerb or a mapped parking lane leaves no room, the street has none.
+    if (car.circles().some(([x, y]) => !laneClear(x, y, car.r + LANE_CLEAR))) return false;
     const outline = car.worldSamples();
     // No part of the car where a passing tram would hit it: half a tram's width from
     // the track and a little room. Whatever the map says about parking there.
