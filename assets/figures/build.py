@@ -44,6 +44,13 @@ ANKLE = Vector((0, 0.1, 0.1))
 TOE = Vector((0.17, 0.1, 0.03))
 
 
+THIGH = (KNEE - HIP).length
+SHIN = (ANKLE - KNEE).length
+# The sole's heel and ball, from the ankle: a foot rolls over one or the other.
+HEEL = Vector((-0.065, 0, -ANKLE.z))
+BALL = Vector((0.13, 0, -ANKLE.z))
+
+
 def mirror(v, side):
     return Vector((v.x, v.y * side, v.z))
 
@@ -457,17 +464,23 @@ def two_bone(root, target, a, b, pole):
     return root + (u * cos_a + n * math.sqrt(max(0, 1 - cos_a * cos_a))) * a
 
 
+def leg(D, t, side, ankle, knee_pole, foot_dir):
+    """The leg from the hip to an ankle position, the foot pointing along foot_dir."""
+    W = fk(D, t)
+    hip = W["hips"] @ BONES[f"thigh.{side}"][0]
+    knee = two_bone(hip, ankle, THIGH, SHIN, knee_pole)
+    aim(D, W, f"thigh.{side}", "hips", knee - hip)
+    W = fk(D, t)
+    aim(D, W, f"shin.{side}", f"thigh.{side}", ankle - knee)
+    W = fk(D, t)
+    aim(D, W, f"foot.{side}", f"shin.{side}", foot_dir)
+
+
 def reach(D, t, side, grip, foot_at, knee_pole, elbow_pole, foot_dir):
     """Arms to the grips and legs to the pedals/pegs, for the riding poses."""
     s = 1 if side == "L" else -1
+    leg(D, t, side, foot_at, knee_pole, foot_dir)
     W = fk(D, t)
-    hip = W["hips"] @ BONES[f"thigh.{side}"][0]
-    knee = two_bone(hip, foot_at, (KNEE - HIP).length, (ANKLE - KNEE).length, knee_pole)
-    aim(D, W, f"thigh.{side}", "hips", knee - hip)
-    W = fk(D, t)
-    aim(D, W, f"shin.{side}", f"thigh.{side}", foot_at - knee)
-    W = fk(D, t)
-    aim(D, W, f"foot.{side}", f"shin.{side}", foot_dir)
     shoulder = W["spine"] @ BONES[f"upper_arm.{side}"][0]
     g = grip * Vector((1, s, 1))
     elbow = two_bone(shoulder, g, (ELBOW - SHOULDER).length, (WRIST - ELBOW).length + 0.05, elbow_pole * Vector((1, s, 1)))
@@ -519,20 +532,150 @@ def idle(frames=72):
     return out
 
 
-def gait(frames, stride, knee_lift, arm, elbow, lean, bob, drop):
-    out = []
+# ---- Walking and running ----------------------------------------------------
+
+# Each gait is one cycle (two steps), left foot down at the start. The feet are placed
+# where a real walker's would be, and the legs reach them: a foot on the ground stays
+# put while the body passes over it, rolling from the heel onto the ball, and the hips
+# rise and fall to let the legs reach. `stride` is how far the body goes in a cycle, in
+# the figure's own metres; the game draws people 1.35 times bigger (SCALE in
+# src/figures.ts), so the strides in GAITS in src/people.ts are these times 1.35. Keep
+# the two in step, or feet slide.
+#
+# stance: the part of the cycle a foot is on the ground; reach: how far ahead of the
+# hips it lands, as a part of the distance it covers on the ground; width: feet apart
+# from the middle line. roll: (part of the stance, foot pitch) keys, positive toe up.
+# swing: (part of the swing, way from lift-off to landing, ankle height, foot pitch)
+# keys between lift-off and landing. The rest shapes the body: sink lowers the hips,
+# bob raises them mid-stance (negative: lowers, as a runner's knee gives), sway and roll
+# carry them over the foot on the ground, yaw turns them with the leg going forward,
+# counter turns the shoulders back the other way.
+SHOWN = 1.35
+GAITS = {
+    "walk": dict(
+        stride=1.6 / SHOWN, stance=0.62, reach=0.5, width=0.095,
+        roll=[(0, 0.32), (0.13, 0), (0.48, 0), (1, -0.7)],
+        swing=[(0.35, 0.3, 0.16, -0.1), (0.7, 0.85, 0.14, 0.18)],
+        sink=0.015, bob=0.018, sway=0.022, roll_hips=0.06, yaw=0.1, counter=0.9, pitch=0.02, spine=0.03,
+        arm=(0.4, 0.3), elbow=(0.18, 0.35), out=0.09, lag=0.03),
+    "jog": dict(
+        stride=2.6 / SHOWN, stance=0.42, reach=0.4, width=0.085,
+        roll=[(0, 0.12), (0.12, 0), (0.4, 0), (1, -0.8)],
+        swing=[(0.25, 0.0, 0.34, -0.75), (0.5, 0.45, 0.4, -0.25), (0.8, 1.02, 0.19, 0.12)],
+        sink=0.03, bob=-0.025, sway=0.012, roll_hips=0.05, yaw=0.12, counter=1.1, pitch=0.06, spine=0.06,
+        arm=(0.5, 0.45), elbow=(1.25, 0.2), out=0.12, lag=0.02),
+    "run": dict(
+        stride=3.8 / SHOWN, stance=0.3, reach=0.36, width=0.07,
+        roll=[(0, 0.06), (0.1, 0), (0.35, 0), (1, -0.9)],
+        swing=[(0.18, -0.05, 0.38, -0.9), (0.38, 0.2, 0.62, -0.6), (0.6, 0.7, 0.54, -0.15), (0.82, 1.06, 0.24, 0.08)],
+        sink=0.035, bob=-0.03, sway=0.01, roll_hips=0.05, yaw=0.14, counter=1.3, pitch=0.14, spine=0.12,
+        arm=(0.95, 0.75), elbow=(1.45, 0.15), out=0.14, lag=0.02),
+}
+FOOT = (TOE - ANKLE).normalized()
+
+
+def eased(keys, u):
+    """Value at u from (u, value) keys, eased between them."""
+    for (u0, v0), (u1, v1) in zip(keys, keys[1:]):
+        if u0 <= u <= u1:
+            k = (u - u0) / max(u1 - u0, 1e-9)
+            return v0 + (v1 - v0) * k * k * (3 - 2 * k)
+    return keys[-1][1] if u > keys[-1][0] else keys[0][1]
+
+
+def spline(keys, u, m0, m1):
+    """Smooth curve through (u, point) keys, leaving the first at velocity m0 and
+    arriving at the last at m1."""
+    us, ps = [k[0] for k in keys], [k[1] for k in keys]
+    ms = [m0] + [(ps[i + 1] - ps[i - 1]) / (us[i + 1] - us[i - 1]) for i in range(1, len(ps) - 1)] + [m1]
+    for i in range(len(ps) - 1):
+        if us[i] <= u <= us[i + 1]:
+            h = us[i + 1] - us[i]
+            k = (u - us[i]) / h
+            return (ps[i] * (2 * k ** 3 - 3 * k ** 2 + 1) + ms[i] * h * (k ** 3 - 2 * k ** 2 + k)
+                    + ps[i + 1] * (3 * k ** 2 - 2 * k ** 3) + ms[i + 1] * h * (k ** 3 - k ** 2))
+    return ps[-1]
+
+
+def feet(g):
+    """foot(phase) -> (ankle, pitch, on the ground) for one foot of gait g, in the frame
+    that moves with the hips, and the most the foot is off the ground at the ankle."""
+    beta, span = g["stance"], g["stance"] * g["stride"]
+    front = g["reach"] * span
+
+    def planted(u):
+        pitch = eased(g["roll"], u)
+        pivot = HEEL if pitch > 0 else BALL
+        flat = Vector((front - u * span, 0, ANKLE.z))
+        return flat + pivot - Ry(-pitch) @ pivot, pitch
+
+    lift, land = planted(1)[0], planted(0)[0]
+    e, k = 1e-4, (1 - beta) / beta
+    v0 = (lift - planted(1 - e)[0]) / e * k
+    v1 = (planted(e)[0] - land) / e * k
+    path = [(0, lift)] + [(u, Vector((lift.x + (land.x - lift.x) * x, 0, z))) for u, x, z, _ in g["swing"]] + [(1, land)]
+    pitches = [(0, g["roll"][-1][1])] + [(u, th) for u, _, _, th in g["swing"]] + [(1, g["roll"][0][1])]
+
+    def foot(ph):
+        ph %= 1
+        if ph < beta:
+            return (*planted(ph / beta), True)
+        u = (ph - beta) / (1 - beta)
+        return spline(path, u, v0, v1), eased(pitches, u), False
+
+    return foot
+
+
+def gait(g, frames=32):
+    foot = feet(g)
+    beta = g["stance"]
+    L = (THIGH + SHIN) * 0.995
+    body, legs, drops = [], [], []
     for f in range(frames):
-        a = 2 * math.pi * f / frames
-        P = {"spine": lean, "head": -lean * 0.7, "yaw": 0.1 * math.sin(a), "twist": -0.16 * math.sin(a),
-             "t": (0, 0, -drop + bob * math.cos(2 * a)), "out": 0.08}
+        ph = f / frames
+        a, mid = 2 * math.pi * ph, 2 * math.pi * (ph - beta / 2)
+        yaw = -g["yaw"] * math.cos(a)
+        roll = g["roll_hips"] * math.cos(mid)
+        twist = -yaw * (1 + g["counter"])
+        P = {"yaw": yaw, "roll": roll, "pitch": g["pitch"], "spine": g["spine"], "twist": twist, "bend": -roll * 0.8,
+             "look": -(yaw + twist), "head": -(g["pitch"] + g["spine"]) * 0.7 - 0.2 * g["bob"] * math.cos(2 * mid),
+             "t": (0, g["sway"] * math.cos(mid), -g["sink"] + g["bob"] * math.cos(2 * mid)), "out": g["out"]}
+        fwd, back = g["arm"]
+        base, bend = g["elbow"]
+        placed = {}
         for side, s in (("L", 1), ("R", -1)):
-            ph = a if s > 0 else a + math.pi
-            P[f"thigh{side}"] = stride * math.sin(ph)
-            P[f"knee{side}"] = 0.08 + knee_lift * max(0, math.cos(ph + 0.55)) ** 1.6 + 0.1 * max(0, -math.sin(ph)) * (knee_lift > 1)
-            P[f"toe{side}"] = -0.18 * max(0, math.sin(ph)) + 0.45 * max(0, -math.sin(ph + 0.35)) ** 2
-            P[f"arm{side}"] = -arm * math.sin(ph)
-            P[f"elbow{side}"] = elbow + 0.25 * max(0, -math.sin(ph))
-        out.append(P)
+            # An arm swings with the other side's leg: back as its own leg lands.
+            swing = -math.cos(a - 2 * math.pi * g["lag"] + (0 if s > 0 else math.pi))
+            P[f"arm{side}"] = (fwd - back) / 2 + (fwd + back) / 2 * swing
+            P[f"elbow{side}"] = base + bend * max(0.0, swing)
+            ankle, pitch, down = foot(ph if s > 0 else ph + 0.5)
+            ankle.y = g["width"] * s
+            placed[side] = (ankle, pitch)
+        D, t = pose(P)
+        W = fk(D, t)
+        # Lower the hips where a leg couldn't reach its foot.
+        drop = 0.0
+        for side, (ankle, _) in placed.items():
+            hip = W["hips"] @ BONES[f"thigh.{side}"][0]
+            d = Vector((ankle.x - hip.x, ankle.y - hip.y)).length
+            top = ankle.z + math.sqrt(max(0.0, L * L - d * d))
+            drop = max(drop, hip.z - top)
+        body.append(P)
+        legs.append(placed)
+        drops.append(drop)
+    # Spread each dip over its neighbours, so the hips ease down and up again.
+    n = len(drops)
+    wide = [max(drops[(i + k) % n] for k in range(-2, 3)) for i in range(n)]
+    drops = [sum(wide[(i + k) % n] for k in range(-2, 3)) / 5 for i in range(n)]
+    out = []
+    for P, placed, drop in zip(body, legs, drops):
+        x, y, z = P["t"]
+        P["t"] = (x, y, z - drop)
+        D, t = pose(P)
+        for side, (ankle, pitch) in placed.items():
+            s = 1 if side == "L" else -1
+            leg(D, t, side, ankle, Vector((1, 0.12 * s, 0)), Ry(-pitch) @ FOOT)
+        out.append((D, t))
     return out
 
 
@@ -608,8 +751,9 @@ def ride_moto(frames=48):
 
 CLIPS = {
     "idle": (idle(), True),
-    "walk": (gait(24, 0.42, 0.62, 0.36, 0.2, 0.05, 0.018, 0.012), True),
-    "run": (gait(16, 0.78, 1.45, 0.75, 1.25, 0.26, 0.03, 0.05), True),
+    "walk": (gait(GAITS["walk"]), True),
+    "jog": (gait(GAITS["jog"]), True),
+    "run": (gait(GAITS["run"]), True),
     "jump": (jump(), False),
     "fall": (fall(), False),
     "getup": (getup(), False),

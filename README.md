@@ -333,10 +333,12 @@ the pixel ratio.
   wide in the turns and shoves smaller cars aside.
 - **People and two-wheelers** are a small kit built in Blender from code
   (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
-  and clips for standing, walking, running, jumping, falling, getting up and riding,
-  plus a bike and a motorbike. At load, `src/figures.ts` plays every clip through and
-  bakes the posed vertices into textures, so the whole crowd is one instanced draw
-  call. Rebuild with `blender -b --factory-startup -P assets/figures/build.py`; add
+  and clips for standing, walking, jogging, running, jumping, falling, getting up and
+  riding, plus a bike and a motorbike. The walk, jog and run place the feet first (on
+  the ground they stay put, rolling from heel to ball) and reach them with the legs;
+  in the game the two gaits either side of someone's speed are blended, in step. At
+  load, `src/figures.ts` plays every clip through and bakes the posed vertices into
+  textures, so the whole crowd is one instanced draw call. Rebuild with `blender -b --factory-startup -P assets/figures/build.py`; add
   `-- --preview DIR` to render a few frames of every clip.
 - **Cars** are built the same way (`assets/cars/build.py` → `public/cars.glb`): one
   low-poly body per type (hatchback, saloon, estate, van, taxi, police), shaped for

@@ -28,20 +28,16 @@ interface WalkSegment extends WalkSpot { a: Point2; b: Point2; s0: number; len: 
 // Pedestrians wander the footpath network, jump out of the way of fast cars,
 // and get knocked over (then get up again) when they don't make it.
 
-// Metres covered by one cycle of the walk and run clips, so feet keep pace with the ground.
-const WALK_STRIDE = 1.6;
-const RUN_STRIDE = 4;
 const GETUP = 1.25; // seconds of getting up at the end of lying on the ground
 
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(SCALE, SCALE, SCALE);
 const UP = new THREE.Vector3(0, 1, 0);
 
-// Pick the clip for someone on their feet going at `speed` (negative: backwards).
+// Standing, or walking to running, for someone on their feet going at `speed`
+// (negative: backwards).
 export function locomote(a: Anim, dt: number, speed: number) {
-  const sp = Math.abs(speed);
-  if (sp < 0.2) { a.play('idle', false, 0.3); a.step(dt); }
-  else if (sp > 4.5) { a.play('run', false, 0.2); a.step(dt, (speed / RUN_STRIDE) * a.duration); }
-  else { a.play('walk', false, 0.2); a.step(dt, (speed / WALK_STRIDE) * a.duration); }
+  if (Math.abs(speed) < 0.2) { a.play('idle', false, 0.3); a.step(dt); }
+  else a.move(dt, speed);
 }
 
 // Lying down after being knocked over, getting up for the last GETUP seconds.

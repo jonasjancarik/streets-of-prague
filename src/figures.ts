@@ -59,7 +59,7 @@ export async function loadKit(url = 'figures.glb') {
   let rows = 0;
   for (const clip of gltf.animations) {
     const frames = Math.round(clip.duration * FPS);
-    clips[clip.name] = { row: rows, frames, duration: frames / FPS, loop: ['idle', 'walk', 'run', 'bike', 'moto'].includes(clip.name) };
+    clips[clip.name] = { row: rows, frames, duration: frames / FPS, loop: ['idle', 'walk', 'jog', 'run', 'bike', 'moto'].includes(clip.name) };
     rows += frames + 1;
   }
   const pos = new Float32Array(N * rows * 4), nrm = new Float32Array(N * rows * 4);
@@ -255,8 +255,28 @@ export class Figures {
   }
 }
 
+// Walking, jogging and running. `stride` is the metres one cycle (two steps) covers,
+// so feet keep pace with the ground: the clip's own stride (GAITS in
+// assets/figures/build.py) times SCALE. Each gait shows alone at speeds (m/s) from
+// `from` to `to`; between one's `to` and the next one's `from` the two are blended.
+const GAITS = [
+  { clip: 'walk', stride: 1.6, from: 0, to: 1.9 },
+  { clip: 'jog', stride: 2.6, from: 2.9, to: 4.4 },
+  { clip: 'run', stride: 3.8, from: 6.2, to: Infinity },
+];
+
+// Where `speed` falls between the gaits: 0 walking, 1 jogging, 2 running.
+function gaitAt(speed: number) {
+  for (let i = 0; i < GAITS.length; i++) {
+    const g = GAITS[i];
+    if (speed <= g.to) return speed >= g.from ? i : i - 1 + (speed - GAITS[i - 1].to) / (g.from - GAITS[i - 1].to);
+  }
+  return GAITS.length - 1;
+}
+
 // One person's animation: the clip playing and, for a moment after a change, the one
-// it's fading out of.
+// it's fading out of. On the move, the two are instead neighbouring gaits, mixed by
+// speed.
 export class Anim {
   clips: Record<string, ClipInfo>;
   name: string;
@@ -265,6 +285,11 @@ export class Anim {
   ft: number;
   w: number;
   fade: number;
+  // Mixing two gaits rather than fading: `w` is how much of `from` shows.
+  blend = false;
+  // How far through a cycle the feet are (0 to 1), and the gait shown (as from gaitAt).
+  phase = 0;
+  gait = 0;
 
   constructor(kit: FigureKit, clip = 'idle', t = 0) {
     this.clips = kit.clips;
@@ -274,14 +299,50 @@ export class Anim {
     this.ft = 0;
     this.w = 0;
     this.fade = 0.15;
+    // Starting mid-stride (a crowd, out of step).
+    const g = GAITS.findIndex((g) => g.clip === clip);
+    if (g >= 0) Object.assign(this, { gait: g, phase: (t / this.duration) % 1 });
   }
 
   play(name: string, restart = false, fade = 0.15) {
-    if (name === this.name && !restart) return;
+    if (name === this.name && !restart && !this.blend) return;
+    // Out of a mix of gaits: fade from whichever of the two shows more.
+    if (this.blend && this.w > 0.5 && this.from) Object.assign(this, { name: this.from, t: this.ft });
+    this.blend = false;
     Object.assign(this, { from: this.name, ft: this.t, w: fade > 0 ? 1 : 0, fade, name, t: 0 });
   }
 
-  // `rate` 1 is the clip's own speed; locomotion passes speed / stride so feet keep pace.
+  // On foot at `speed` (m/s, negative backwards).
+  move(dt: number, speed: number) {
+    const want = gaitAt(Math.abs(speed));
+    if (!GAITS.some((g) => g.clip === this.name)) {
+      // Setting off, or landing from a jump: fade into the nearest gait with a fresh step.
+      this.gait = Math.round(want);
+      this.phase = 0;
+      this.play(GAITS[this.gait].clip, false, 0.2);
+    }
+    // Only one gait at a time until the fade is over.
+    if (!this.blend && this.w > 0) this.gait = GAITS.findIndex((g) => g.clip === this.name);
+    else {
+      this.blend = true;
+      this.gait += (want - this.gait) * Math.min(1, dt * 6);
+    }
+    const lo = Math.min(Math.floor(this.gait), GAITS.length - 2), mix = this.gait - lo;
+    const stride = GAITS[lo].stride + (GAITS[lo + 1].stride - GAITS[lo].stride) * mix;
+    this.phase = (((this.phase + (dt * speed) / stride) % 1) + 1) % 1;
+    if (this.blend) {
+      this.name = GAITS[lo].clip;
+      this.from = GAITS[lo + 1].clip;
+      this.w = mix;
+      this.ft = this.phase * this.clips[this.from].duration;
+    } else {
+      this.ft += dt;
+      this.w = Math.max(0, this.w - dt / this.fade);
+    }
+    this.t = this.phase * this.duration;
+  }
+
+  // `rate` 1 is the clip's own speed.
   step(dt: number, rate = 1) {
     this.t += dt * rate;
     if (this.w > 0) {
