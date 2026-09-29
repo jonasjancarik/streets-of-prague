@@ -249,6 +249,12 @@ export async function createRenderer() {
     }
     return node;
   };
+  // Buffers that geometries share (the tree crown's, in every tile) are marked `shared`. Left to
+  // three.js, disposing one tile's geometry destroys the buffer for all of them, and objects that
+  // haven't changed are never checked again, so they would draw without it.
+  const attributes = (renderer as any)._geometries.attributes;
+  const deleteAttribute = attributes.delete.bind(attributes);
+  attributes.delete = (attribute: { shared?: boolean }) => (attribute.shared ? null : deleteAttribute(attribute));
   library.addToneMapping(toneCurve, THREE.CustomToneMapping);
   // GLSL materials can't be drawn: hide them all. (Material's constructor sets
   // visible through this setter too.)

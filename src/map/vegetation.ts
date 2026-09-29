@@ -268,6 +268,8 @@ function crownGeometry() {
   geom.setAttribute('across', new THREE.InterleavedBufferAttribute(leaves, 3, 3));
   geom.setAttribute('along', new THREE.InterleavedBufferAttribute(leaves, 3, 6));
   geom.setIndex(idx);
+  // Every tile's trees use these buffers: the WebGPU renderer must keep them when one tile goes.
+  for (const a of [idx, ...Object.values(geom.attributes)]) (a as { shared?: boolean }).shared = true;
   return geom;
 }
 let crown: THREE.BufferGeometry | null = null;
