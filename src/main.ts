@@ -521,7 +521,7 @@ async function main() {
     if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) enterOrExit();
     if (e.code === 'KeyR') backOnRoad();
     // Space jumps, except at a tram stop, where holding it waits for a tram.
-    if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on) input.jump = true;
+    if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on && taxi.state !== 'coming') input.jump = true;
     if (e.code === 'KeyM' && !e.repeat) sound.toggle();
     if (e.code === 'KeyG' && !e.repeat) { graphics.cycle(); showBanner(graphics.label()); }
     if (e.code === 'KeyP' && !e.repeat) { weather.cycle(); showBanner(weather.label()); }
@@ -884,7 +884,8 @@ async function main() {
     // enough for the physics.
     // At a tram stop, hold Space to wait: the same speed-up, until a tram is close.
     board.update(dt, walker.x, walker.y, !ride.on && !inCar && !inHeli);
-    const waiting = !!board.shown && (input.brake || touch.fast) && board.next > 40;
+    // (The same waiting for a taxi on its way.)
+    const waiting = (!!board.shown && board.next > 40 || taxi.state === 'coming') && (input.brake || touch.fast);
     waitScale += ((waiting ? FAST : 1) - waitScale) * Math.min(1, dt * (waiting ? 1.5 : 4));
     if (Math.abs(waitScale - (waiting ? FAST : 1)) < 0.02) waitScale = waiting ? FAST : 1;
     taxi.update(dt);
@@ -1032,7 +1033,8 @@ async function main() {
     $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.on ? 'tram' : 'foot';
     ride.render();
     const label = ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : canBoard || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
-    touch.update({ car: inCar || inHeli, tram: ride.on, wait: !!board.shown, label: label || (station ? 'Metro' : null), canEnter: canEnter || !!canBoard || !!station, limit: assisted ? assist.limit : null });
+    const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : null;
+    touch.update({ car: inCar || inHeli, tram: ride.on || taxi.riding, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station, limit: assisted ? assist.limit : null });
     show('tally', `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');

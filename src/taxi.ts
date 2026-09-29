@@ -10,6 +10,7 @@
 
 import { FAST } from './ride.ts';
 import { project } from './assist.ts';
+import { Heap } from './police.ts';
 import type { Traffic, TrafficAgent } from './traffic.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 
@@ -76,6 +77,7 @@ export class Taxis {
       e.stopPropagation();
       this.choose(Number(b.dataset.pick));
     });
+    document.getElementById('t-taxi')?.addEventListener('click', () => this.key('KeyT', true));
   }
 
   get riding() { return this.state === 'riding'; }
@@ -173,15 +175,12 @@ export class Taxis {
   // `target`; with no target or none in reach, to the street end nearest (gx, gy).
   private search(from: DriveEdge, target: DriveEdge | null, gx: number, gy: number) {
     const g = this.o.drive, cost = new Map<string, number>(), prev = new Map<string, DriveEdge>();
-    const open: [number, string][] = [[0, from.v]];
+    const open = new Heap();
+    open.push([0, from.v]);
     cost.set(from.v, 0);
     let bestNode = from.v, bestD = Infinity, reached = false, pops = 0;
-    while (open.length && pops++ < 40000) {
-      let k = 0;
-      for (let i = 1; i < open.length; i++) if (open[i][0] < open[k][0]) k = i;
-      const [c, n] = open[k];
-      open[k] = open[open.length - 1];
-      open.pop();
+    while (open.size && pops++ < 40000) {
+      const [c, n] = open.pop();
       if (c > (cost.get(n) ?? Infinity)) continue;
       if (target && n === target.u) { bestNode = n; reached = true; break; }
       const last = prev.get(n) ?? from, end = last.pts[last.pts.length - 1];
@@ -205,10 +204,15 @@ export class Taxis {
     return { edges, reached };
   }
 
-  // Get in: the taxi waiting for you is right there.
-  enter() {
+  // The taxi waiting for you is right there.
+  near() {
     const a = this.agent, w = this.o.walker;
-    if (this.state !== 'waiting' || !a || Math.hypot(a.car.x - w.x, a.car.y - w.y) > 7) return false;
+    return this.state === 'waiting' && !!a && Math.hypot(a.car.x - w.x, a.car.y - w.y) < 7;
+  }
+
+  enter() {
+    const w = this.o.walker;
+    if (!this.near()) return false;
     this.state = 'riding';
     this.dest = null;
     this.metres = 0;
@@ -311,7 +315,7 @@ export class Taxis {
       const a = this.agent!, left = a.stop ? a.route.to(a.stop.edge, a.stop.s) : Infinity;
       const far = Number.isFinite(left) && this.final ? left : Math.hypot(a.car.x - this.o.walker.x, a.car.y - this.o.walker.y) * 1.4;
       const secs = Math.max(10, Math.round(far / (this.firm.app ? 9 : 7) / 10) * 10);
-      return `${name} is on the way, about ${secs} s · ${k('T')}cancel`;
+      return `${name} is on the way, about ${secs} s · ${touch ? '' : 'hold <b>Space</b> to wait · '}${k('T')}cancel`;
     }
     if (this.state === 'waiting') return `${name} is waiting at the kerb · ${k('E')}get in · ${k('T')}cancel`;
     if (this.riding) {

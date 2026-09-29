@@ -56,8 +56,8 @@ function slice(poly: Polyline, s0: number, s1: number): Point2[] {
   return out;
 }
 
-// Smallest-first queue of [cost, value] for the route search.
-class Heap {
+// Smallest-first queue of [cost, value] for the route search (the taxis' too).
+export class Heap {
   a: [number, string][];
   constructor() { this.a = []; }
   get size() { return this.a.length; }
