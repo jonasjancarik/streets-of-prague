@@ -155,6 +155,15 @@ What's in since 29 September 2026: clear, cloudy, rain, mist and snow
 - **Puddles where the water gathers.** They're placed by noise; the terrain's low
   points and the kerbs would be better.
 
+## Landmarks
+
+- **A tree baked into Mánes's roof.** The tree at the building's north-east corner,
+  on the embankment, reaches over the roof in IPR's photorealistic mesh, so a dark
+  smudge of it is baked into the roof's texture (`pipeline/landmarks.py`). A tree of
+  the game's own there may hide it once trees come from the city's greenery records
+  (see "Trees from the city's greenery records" below); otherwise, paint the roof's
+  colour over green texels near the roof's edges when baking.
+
 ## More map data
 
 Open data found on 28 September 2026 and not used yet. All IPR Praha, CC BY; the
