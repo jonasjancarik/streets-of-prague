@@ -384,10 +384,20 @@ async function main() {
     if (agent) {
       traffic.release(agent);
       if (!cop) {
-        // The driver gets out and runs off.
-        const lx = -Math.sin(best.h), ly = Math.cos(best.h);
-        const p = crowd.spawnAt(best.x + lx * 1.6, best.y + ly * 1.6);
-        Object.assign(p, { state: 'flee', t: 2, vx: lx * 5, vy: ly * 5 });
+        // The driver gets out and runs off. A rider is pushed off on the side away
+        // from you (the other side if there's a wall there), knocked down if the bike
+        // was going, and runs off once up again.
+        let lx = -Math.sin(best.h), ly = Math.cos(best.h), off = 1.6;
+        if (best.two) {
+          off = best.spec.W / 2 + 0.5;
+          if ((walker.x - best.x) * lx + (walker.y - best.y) * ly > 0) { lx = -lx; ly = -ly; }
+          if (walker.blocked(best.x + lx * off, best.y + ly * off)) { lx = -lx; ly = -ly; }
+        }
+        const p = crowd.spawnAt(best.x + lx * off, best.y + ly * off, best.rider || undefined);
+        if (best.two && best.speed > 2) {
+          crowd.knock(p, best.vx * 0.7 + lx * 2, best.vy * 0.7 + ly * 2);
+          p.then = [lx * 5, ly * 5];
+        } else Object.assign(p, { state: 'flee', t: 2, vx: lx * 5, vy: ly * 5 });
         police.crime('carjack', best.x, best.y);
       }
     } else if (loose.includes(best)) {
