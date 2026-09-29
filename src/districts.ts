@@ -49,7 +49,10 @@ export class Districts {
   private shownAt = new Map<string, number>();
   private time = 0;
 
-  constructor(area: string, private el: HTMLElement) {
+  private el: HTMLElement;
+
+  constructor(area: string, el: HTMLElement) {
+    this.el = el;
     fetch(`data/${area}_now/districts.json`)
       .then(async (r) => { if (r.ok) this.list = ((await r.json()) as { districts: District[] }).districts ?? []; })
       .catch(() => {});
