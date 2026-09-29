@@ -223,3 +223,5 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
 - **Licences to check.** The credits give IPR as CC BY 4.0 and state no licence for
   TSK Praha's data; `straight-skeleton` is MIT but wraps CGAL, whose straight-skeleton
   code may be GPL.
+- **Lane assist button on a phone held sideways.** It sits 160 px above the bottom,
+  so in landscape it probably lands on the HUD card (unchecked; older than tonight).
