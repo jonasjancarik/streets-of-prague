@@ -144,7 +144,14 @@
       .ls-chips { display: flex; flex-wrap: wrap; gap: 0.6vh 0.8vh; }
       .ls-chip { font: inherit; letter-spacing: inherit; color: var(--poster-paper); background: rgba(20, 13, 12, 0.7); border: 0.25vh solid rgba(236, 228, 214, 0.5); padding: max(0.6vh, 6px) max(1.4vh, 10px); cursor: pointer; }
       .ls-chip[aria-pressed='true'] { background: var(--poster-paper); color: var(--poster-black); border-color: var(--poster-paper); }
+      .ls-chip { transition: background 0.12s, border-color 0.12s, transform 0.12s; }
+      .ls-chip:hover { background: rgba(236, 228, 214, 0.22); border-color: var(--poster-paper); }
+      .ls-chip[aria-pressed='true']:hover { background: var(--poster-paper); }
+      .ls-chip:active { transform: translateY(0.2vh); }
       .ls-go { margin-top: 1vh; align-self: flex-start; font: max(4vh, 20px)/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; padding: max(1.2vh, 8px) max(3vh, 18px); color: var(--poster-paper); background: var(--poster-red); border: 0; cursor: pointer; box-shadow: 0.6vh 0.6vh 0 var(--poster-black); }
+      .ls-go { transition: background 0.12s, transform 0.12s, box-shadow 0.12s; }
+      .ls-go:not(:disabled):hover { background: #e2342b; transform: translate(-0.2vh, -0.2vh); box-shadow: 0.8vh 0.8vh 0 var(--poster-black); }
+      .ls-go:not(:disabled):active { transform: translate(0.4vh, 0.4vh); box-shadow: 0.2vh 0.2vh 0 var(--poster-black); }
       .ls-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; }
       .ls-start button:focus-visible { outline: 0.4vh solid var(--poster-paper); outline-offset: 0.3vh; }
       @media (max-height: 500px) and (min-aspect-ratio: 1/1) {
@@ -262,7 +269,7 @@
     <div id="hud" class="panel">
       <div class="hud-top"><div id="street">Praha</div><div id="clock"></div></div>
       <div id="speedo"><span id="speed">–</span><small>km/h</small></div>
-      <div id="wanted" class="hidden" role="status" aria-label="Not wanted"></div>
+      <div id="wanted" class="hidden" role="status" aria-label="Not wanted" data-t-label></div>
       <div id="hint"></div>
       <div id="tally"></div>
       <div id="ride" hidden></div>
@@ -273,73 +280,74 @@
     <div id="district" aria-live="polite"></div>
     <div id="help" class="panel" data-mode="foot">
       <section class="foot-only">
-        <h2>On foot</h2>
+        <h2 data-t>On foot</h2>
         <dl>
-          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd>Walk forwards and back</dd>
-          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd>Turn</dd>
-          <dt><kbd>Shift</kbd></dt><dd>Run</dd>
-          <dt><kbd>Space</kbd></dt><dd>Jump</dd>
-          <dt><kbd>E</kbd></dt><dd>Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop</dd>
-          <dt><kbd>T</kbd></dt><dd>Get a taxi: wave one down or order one through an app</dd>
+          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Walk forwards and back</dd>
+          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Turn</dd>
+          <dt><kbd>Shift</kbd></dt><dd data-t>Run</dd>
+          <dt><kbd>Space</kbd></dt><dd data-t>Jump</dd>
+          <dt><kbd>E</kbd></dt><dd data-t>Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop</dd>
+          <dt><kbd>T</kbd></dt><dd data-t>Get a taxi: wave one down or order one through an app</dd>
         </dl>
       </section>
       <section class="car-only">
-        <h2>Driving</h2>
+        <h2 data-t>Driving</h2>
         <dl>
-          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd>Gas and brake, hold S to reverse</dd>
-          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd>Steer</dd>
-          <dt><kbd>Space</kbd></dt><dd>Handbrake</dd>
-          <dt><kbd>Shift</kbd></dt><dd>Hold to keep to the lane and the speed limit, while A and D pick the next turn</dd>
-          <dt><kbd>R</kbd></dt><dd>Back on the road</dd>
-          <dt><kbd>E</kbd></dt><dd>Get out, or off a bike</dd>
+          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Gas and brake, hold S to reverse</dd>
+          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Steer</dd>
+          <dt><kbd>Space</kbd></dt><dd data-t>Handbrake</dd>
+          <dt><kbd>Shift</kbd></dt><dd data-t>Hold to keep to the lane and the speed limit, while A and D pick the next turn</dd>
+          <dt><kbd>R</kbd></dt><dd data-t>Back on the road</dd>
+          <dt><kbd>E</kbd></dt><dd data-t>Get out, or off a bike</dd>
         </dl>
       </section>
       <section class="tram-only">
-        <h2>On the tram</h2>
+        <h2 data-t>On the tram</h2>
         <dl>
-          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd>Pick where to get off</dd>
-          <dt><kbd>Shift</kbd></dt><dd>Speed up the ride</dd>
-          <dt><kbd>E</kbd></dt><dd>Get off at the next stop</dd>
+          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Pick where to get off</dd>
+          <dt><kbd>Shift</kbd></dt><dd data-t>Speed up the ride</dd>
+          <dt><kbd>E</kbd></dt><dd data-t>Get off at the next stop</dd>
         </dl>
       </section>
       <section class="heli-only">
-        <h2>Flying</h2>
+        <h2 data-t>Flying</h2>
         <dl>
-          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd>Fly forwards and back</dd>
-          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd>Turn</dd>
-          <dt><kbd>Space</kbd> <kbd>Shift</kbd></dt><dd>Climb and come down</dd>
-          <dt><kbd>E</kbd></dt><dd>Get out, once landed on open ground</dd>
+          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Fly forwards and back</dd>
+          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Turn</dd>
+          <dt><kbd>Space</kbd> <kbd>Shift</kbd></dt><dd data-t>Climb and come down</dd>
+          <dt><kbd>E</kbd></dt><dd data-t>Get out, once landed on open ground</dd>
         </dl>
       </section>
-      <div class="foot">Cause trouble and the police come after you. Stay out of sight to lose them.<br />Scroll to zoom · <kbd>`</kbd> dev tools · <kbd>M</kbd> sound · <kbd>G</kbd> graphics · <kbd>P</kbd> weather · <kbd>H</kbd> hide</div>
-      <div class="unfold"><kbd>H</kbd> controls</div>
+      <div class="foot"><span data-t>Cause trouble and the police come after you. Stay out of sight to lose them.</span><br />
+        <span data-t>Scroll to zoom</span> · <kbd>`</kbd> <span data-t>dev tools</span> · <kbd>M</kbd> <span data-t>sound</span> · <kbd>G</kbd> <span data-t>graphics</span> · <kbd>P</kbd> <span data-t>weather</span> · <kbd>H</kbd> <span data-t>hide</span></div>
+      <div class="unfold"><kbd>H</kbd> <span data-t>controls</span></div>
     </div>
     <div id="touch" data-mode="foot">
       <div id="t-steer"><div id="t-stick"><div id="t-knob"></div></div></div>
       <button id="t-toggle" class="car-only">Lane assist</button>
-      <button id="t-road" class="car-only">Back on road</button>
+      <button id="t-road" class="car-only" data-t>Back on road</button>
       <div id="t-right">
         <button id="t-fast" class="tram-only">Hold to speed up</button>
-        <button id="t-taxi" class="foot-only">Taxi</button>
+        <button id="t-taxi" class="foot-only" data-t>Taxi</button>
         <button id="t-action" class="off">Get in</button>
-        <div class="t-row car-only"><button id="t-hand">Handbrake</button></div>
-        <div id="t-pedals" class="car-only"><div id="t-brake" class="t-pedal">Brake</div><div id="t-gas" class="t-pedal">Gas</div></div>
+        <div class="t-row car-only"><button id="t-hand" data-t>Handbrake</button></div>
+        <div id="t-pedals" class="car-only"><div id="t-brake" class="t-pedal" data-t>Brake</div><div id="t-gas" class="t-pedal" data-t>Gas</div></div>
       </div>
     </div>
     <div id="metro" class="panel" hidden></div>
-    <button id="credits" type="button"><span class="long">Map data © OpenStreetMap contributors, IPR Praha, PID and TSK Praha · <u>Credits</u></span><span class="short">© Credits</span></button>
+    <button id="credits" type="button"><span class="long" data-t="credits.line">Map data © OpenStreetMap contributors, IPR Praha, PID and TSK Praha · <u>Credits</u></span><span class="short" data-t>© Credits</span></button>
     <dialog id="credits-box" aria-labelledby="credits-title">
-      <h2 id="credits-title">Credits</h2>
-      <p>This Prague is built from open data. Thanks to:</p>
+      <h2 id="credits-title" data-t>Credits</h2>
+      <p data-t>This Prague is built from open data. Thanks to:</p>
       <ul>
-        <li>Streets, buildings, parks and places: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, under the Open Database Licence (ODbL).</li>
-        <li>Building shapes, bridges, hills and slopes, roadways, parking spaces and street lamps: © <a href="https://geoportalpraha.cz/" target="_blank" rel="noopener">IPR Praha</a> (Prague Institute of Planning and Development), CC BY 4.0.</li>
-        <li>Tram and metro timetables: <a href="https://pid.cz/o-systemu/opendata/" target="_blank" rel="noopener">PID / ROPID</a>, CC BY 4.0.</li>
-        <li>Paid parking zones and how full they get: <a href="https://zps.tsk-praha.cz/" target="_blank" rel="noopener">TSK Praha</a>.</li>
-        <li>Tram sounds: recordings from <a href="https://freesound.org" target="_blank" rel="noopener">Freesound</a>, nearly all CC0; the motor's whine is <a href="https://freesound.org/s/621068/" target="_blank" rel="noopener">tramvaj nova prujezd nabrezi MS</a> by ozvuk, CC BY 4.0.</li>
+        <li data-t="credits.osm">Streets, buildings, parks and places: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, under the Open Database Licence (ODbL).</li>
+        <li data-t="credits.ipr">Building shapes, bridges, hills and slopes, roadways, parking spaces and street lamps: © <a href="https://geoportalpraha.cz/" target="_blank" rel="noopener">IPR Praha</a> (Prague Institute of Planning and Development), CC BY 4.0.</li>
+        <li data-t="credits.pid">Tram and metro timetables: <a href="https://pid.cz/o-systemu/opendata/" target="_blank" rel="noopener">PID / ROPID</a>, CC BY 4.0.</li>
+        <li data-t="credits.tsk">Paid parking zones and how full they get: <a href="https://zps.tsk-praha.cz/" target="_blank" rel="noopener">TSK Praha</a>.</li>
+        <li data-t="credits.tram">Tram sounds: recordings from <a href="https://freesound.org" target="_blank" rel="noopener">Freesound</a>, nearly all CC0; the motor's whine is <a href="https://freesound.org/s/621068/" target="_blank" rel="noopener">tramvaj nova prujezd nabrezi MS</a> by ozvuk, CC BY 4.0.</li>
       </ul>
-      <p>Made with the open-source libraries three.js, proj4, Leaflet and straight-skeleton. <a href="licenses.txt" target="_blank" rel="noopener">Read their licences</a>.</p>
-      <form method="dialog"><button autofocus>Close</button></form>
+      <p data-t="credits.made">Made with the open-source libraries three.js, proj4, Leaflet and straight-skeleton. <a href="licenses.txt" target="_blank" rel="noopener">Read their licences</a>.</p>
+      <form method="dialog"><button autofocus data-t>Close</button></form>
     </dialog>
     <div id="loading"><div id="loading-text">Loading…</div></div>
     <script type="module" src="/src/main.ts"></script>
