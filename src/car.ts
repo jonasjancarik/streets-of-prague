@@ -12,6 +12,12 @@ export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
   grip: number; turn: number; weight: number; cabin?: Point2; color?: string;
   traffic?: number; two?: 'bike' | 'moto'; heavy?: boolean;
+  // Handling when someone drives it (each defaults to the value in brackets): braking
+  // (m/s², 16), tightest turning circle (m, 3.6), how fast the steering answers (9),
+  // how much speed costs grip (0.45), coasting drag with a driver (m/s², 0.6), top
+  // reverse speed as a share of vmax (0.3), the impact speed (m/s) before damage
+  // starts (3) and how much rain and snow matter (1).
+  brake?: number; radius?: number; response?: number; fade?: number; drag?: number; reverse?: number; tough?: number; weather?: number;
 }
 export interface CarControl { throttle: number; steer: number; handbrake: boolean; cap?: number | null }
 export interface CarGrid {
@@ -316,16 +322,17 @@ export class Car {
     const throttle = ctl.cap == null || ctl.throttle <= 0 ? ctl.throttle : Math.min(ctl.throttle, clamp((ctl.cap - vf) / 2, 0, 1));
     // A wet road and snow take some of the tyres' grip: longer braking, wider slides
     // (for the cars someone is driving hard; the traffic keeps to its lanes as before).
-    const road = this.driven ? 1 - Math.max(0.25 * WET.value, 0.45 * SNOW.value * STREET_SNOW.value, 0.25 * SNOW.value) : 1;
+    const road = this.driven ? 1 - (S.weather ?? 1) * Math.max(0.25 * WET.value, 0.45 * SNOW.value * STREET_SNOW.value, 0.25 * SNOW.value) : 1;
+    const brake = S.brake ?? 16;
 
     if (throttle > 0) {
-      if (vf < -0.3) vf = Math.min(0, vf + 16 * road * dt);
+      if (vf < -0.3) vf = Math.min(0, vf + brake * road * dt);
       else vf += S.accel * throttle * (1 - fast * fast) * (0.6 + 0.4 * road) * dt;
     } else if (throttle < 0) {
-      if (vf > 0.3) vf = Math.max(0, vf - 16 * road * dt);
-      else vf = Math.max(-S.vmax * 0.3, vf - S.accel * 0.6 * dt);
+      if (vf > 0.3) vf = Math.max(0, vf - brake * road * dt);
+      else vf = Math.max(-S.vmax * (S.reverse ?? 0.3), vf - S.accel * 0.6 * dt);
     } else {
-      vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.driven ? 0.6 : 5) * dt);
+      vf -= Math.sign(vf) * Math.min(Math.abs(vf), (this.driven ? S.drag ?? 0.6 : 5) * dt);
     }
     if (ctl.handbrake) vf -= Math.sign(vf) * Math.min(Math.abs(vf), 5 * dt);
     // Hills: gravity along the car's heading (rolls back down, slower uphill).
@@ -336,7 +343,7 @@ export class Car {
     }
     if (ctl.cap != null && vf > ctl.cap) vf = Math.max(ctl.cap, vf - 3 * dt);
 
-    const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - 0.45 * fast)) * road;
+    const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - (S.fade ?? 0.45) * fast)) * road;
     vl *= Math.exp(-grip * dt);
     // Tyre marks: sliding sideways, the back wheels locked by the handbrake, or all
     // four braking hard.
@@ -347,8 +354,8 @@ export class Car {
 
     const sgn = vf >= 0 ? 1 : -1;
     const maxW = S.turn * (1 - 0.35 * fast) * (ctl.handbrake ? 1.35 : 1);
-    const wantW = ctl.steer * Math.min(Math.abs(vf) / 3.6, maxW) * sgn;
-    if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * 9);
+    const wantW = ctl.steer * Math.min(Math.abs(vf) / (S.radius ?? 3.6), maxW) * sgn;
+    if (this.driven) this.w += (wantW - this.w) * Math.min(1, dt * (S.response ?? 9));
     else this.w *= Math.exp(-4 * dt);
     this.h += this.w * dt;
 
@@ -404,7 +411,7 @@ export class Car {
     // Off-centre hits make the car spin.
     const rx = cx / hits - this.x, ry = cy / hits - this.y;
     this.w += (rx * ny - ry * nx) * vn * 0.09;
-    this.damage += Math.max(0, -vn - 3);
+    this.damage += Math.max(0, -vn - (this.spec.tough ?? 3));
     return -vn;
   }
 
