@@ -177,7 +177,12 @@ the pixel ratio.
   panel housing and family houses (`src/facades.ts`). A wall's style comes from where
   it stands and how tall it is: baroque in Old Town, Malá Strana and Hradčany, panel
   housing for tall blocks far out, family houses under about 8 m, tenements with some
-  functionalism elsewhere. The plaster takes the building's own colour. The parts were
+  functionalism elsewhere. Window axes are about 3 m apart, as in a Prague tenement,
+  with plain plaster between the windows. Party walls (a building's side wall standing
+  back to back with its neighbour's, and showing where the neighbour is lower) are
+  plastered without windows. Each building gets its own plaster colour: mostly ochres,
+  yellows, creams and stone-like sands and greys, with a few pale greens, pinks and
+  blues, mixed differently for each style. The parts were
   drawn by an image model as four sheets, each asked for with the first sheet as a
   style reference, and are cut and packed by `assets/facades/build_atlas.py`.
 - **Portraits and the loading screen.** Characters are half-length portraits drawn by

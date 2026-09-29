@@ -9,7 +9,7 @@ import {
   Fn, If, Discard, float, int, vec2, vec3, vec4, array, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
   materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross,
 } from 'three/tsl';
-import { FACADE_ATLAS, FACADE_ON } from '../facades.ts';
+import { FACADE_ATLAS, FACADE_ON, BLANK } from '../facades.ts';
 import { WINDOWS, LANDMARK_TILE_RGB } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks } from './common.ts';
@@ -26,9 +26,17 @@ const atlas = texture(standIn).onRenderUpdate(() => { atlas.value = FACADE_ATLAS
 
 // The layer tables of FACADE_GLSL (const int arrays).
 const ints = (v: number[]): N => array(v.map((x) => int(x))).toVar();
-const F_UP = ints([0, 1, 2, 3, 4, 0, 12, 13, 14, 15, 12, 14, 24, 25, 24, 25, 26, 24, 27, 28, 27, 27, 28, 27, 36, 37, 38, 39, 40, 36]);
+const F_UP = ints([0, 1, 2, 3, 4, 0, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 27, 28, 27, 36, 37, 38, 39, 40, 36]);
 const F_DOOR = ints([7, 8, 9, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45]);
 const F_WALL = ints([6, 6, 10, 11, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43]);
+const floats = (v: number[]): N => array(v.map((x) => float(x))).toVar();
+const F_BAY = floats([2.9, 3.1, 2.6, 2.4, 2.8]);
+const F_MOD = floats([1.9, 1.9, 2, 2.4, 1.9]);
+// Window bays across a wall: none on a party wall or one too short for a window.
+const fBays = (f: N) => {
+  const style = floor(f.w);
+  return select(style.greaterThanEqual(BLANK), float(0), floor(f.z.div(F_BAY.element(min(style, 4).toInt())).add(0.5)));
+};
 
 const fHash = (a: N, b: N) => fract(sin(a.mul(127.1).add(b.mul(311.7))).mul(43758.5453));
 const LANDMARK_TILE = vec3(...LANDMARK_TILE_RGB);
@@ -56,9 +64,9 @@ function flatRoof(c: N, wp: N, wpWidth: N) {
   return c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).add(vnoise(wp.mul(18)).sub(0.5).mul(0.08).mul(fade(wpWidth, 0.05)));
 }
 
-function facadeWalls(c: N, f: N, fWidth: N) {
+function facadeWalls(c: N, f: N, bayWidth: N, fWidth: N) {
   const along = f.x, h = f.y;
-  const bay = fract(along.div(1.9)), storey = fract(h.sub(0.6).div(3.4));
+  const bay = fract(along.div(bayWidth)), storey = fract(h.sub(0.6).div(3.4));
   const upper = step(4, h);
   const win = step(0.3, bay).mul(step(bay, 0.7)).mul(step(0.3, storey)).mul(step(storey, 0.78)).mul(upper);
   const shop = step(0.12, bay).mul(step(bay, 0.88)).mul(step(0.6, h)).mul(step(h, 3.3)).mul(float(1).sub(upper));
@@ -76,20 +84,22 @@ function grime(c0: N, f: N, fWidth: N) {
   return c.mul(mix(0.66, 1, smoothstep(0, 1.4, f.y)));
 }
 
-// The picture for a bay and storey, from the atlas's layer, with the wall's plaster colour.
-function facadeModules(wall: N, f: N, fdx: N, fdy: N) {
+// The picture for a bay and storey, from the atlas's layer, with the wall's plaster
+// colour; the module in the middle of the bay, its plaster edge drawn on across the piers.
+function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N) {
   const style = floor(f.w).toInt(), seed = fract(f.w).mul(97);
-  const bays = max(1, floor(f.z.div(1.9).add(0.5)));
   const q = vec2(f.x.div(f.z).mul(bays), select(f.y.lessThan(4), clamp(f.y.div(4), 0, 0.999), f.y.sub(4).div(3.4)));
   const cell = floor(q), uv = fract(q);
+  const bay: N = f.z.div(bays), mw: N = min(F_MOD.element(style), bay);
+  const u: N = clamp(uv.x.sub(0.5).mul(bay).div(mw).add(0.5), 0.016, 0.984);
   const layer = int(0).toVar();
   If(f.y.lessThan(4), () => {
     const r = fHash(seed, cell.x);
     If(r.lessThan(0.18), () => { layer.assign(F_DOOR.element(style.mul(3).add(r.div(0.18).mul(3).toInt()))); })
       .Else(() => { layer.assign(F_WALL.element(style.mul(4).add(fHash(cell.x, seed).mul(4).toInt()))); });
   }).Else(() => { layer.assign(F_UP.element(style.mul(6).add(fHash(seed, cell.y.add(7)).mul(6).toInt()))); });
-  const k = vec2(bays.div(f.z), 1 / 3.6);
-  const t = atlas.sample(vec2(uv.x, float(1).sub(uv.y))).depth(layer).grad(fdx.xy.mul(k), fdy.xy.mul(k)).rgb;
+  const k = vec2(float(1).div(mw), 1 / 3.6);
+  const t = atlas.sample(vec2(u, float(1).sub(uv.y))).depth(layer).grad(fdx.xy.mul(k), fdy.xy.mul(k)).rgb;
   const hi = max(t.r, max(t.g, t.b)), sat = hi.sub(min(t.r, min(t.g, t.b))).div(max(hi, 1e-3));
   return mix(t, t.mul(wall).div(0.55), float(1).sub(smoothstep(0.08, 0.2, sat)));
 }
@@ -110,8 +120,12 @@ const buildingColor = Fn(() => {
   }).ElseIf(bn.y.greaterThan(0.15), () => {
     c.assign(roofTiles(c, bwp, bn, wpWidth));
   }).Else(() => {
-    If(uFacadeOn.greaterThan(0.5).and(f.z.greaterThan(0.1)), () => { c.assign(facadeModules(c, f, fdx, fdy)); })
-      .Else(() => { c.assign(facadeWalls(c, f.xy, fWidth)); });
+    const bays = fBays(f).toVar();
+    If(bays.lessThan(0.5), () => {
+      // A party wall: bare plaster, as bright as the modules' plaster (drawn about .45 grey).
+      c.mulAssign(vnoise(f.xy.mul(vec2(0.9, 0.6))).mul(0.06).add(0.77));
+    }).ElseIf(uFacadeOn.greaterThan(0.5).and(f.z.greaterThan(0.1)), () => { c.assign(facadeModules(c, f, bays, fdx, fdy)); })
+      .Else(() => { c.assign(facadeWalls(c, f.xy, f.z.div(bays), fWidth)); });
     If(uDirt.greaterThan(0.5), () => { c.assign(grime(c, f, fWidth)); });
   });
   // Rain darkens the walls and the roofs; snow lies on the roofs, less on steep ones.
@@ -128,8 +142,8 @@ const buildingColor = Fn(() => {
 const windowGlow = Fn(() => {
   const g = vec3(0).toVar();
   const bn = normalWorld.normalize(), f = attribute('facade', 'vec4');
-  If(uWindows.greaterThan(0.005).and(bn.y.lessThan(0.15)).and(f.z.greaterThan(0.1)), () => {
-    const bays = max(1, floor(f.z.div(1.9).add(0.5)));
+  const bays = fBays(f);
+  If(uWindows.greaterThan(0.005).and(bn.y.lessThan(0.15)).and(f.z.greaterThan(0.1)).and(bays.greaterThan(0.5)), () => {
     const cell = vec2(floor(f.x.div(f.z).mul(bays)), floor(f.y.sub(0.6).div(3.4)));
     const lit = step(fHash(cell.x.add(fract(f.w).mul(97)), cell.y), uWindows.mul(select(f.y.lessThan(4), 1.6, 1)));
     const glass = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));

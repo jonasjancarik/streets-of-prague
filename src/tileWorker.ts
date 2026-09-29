@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { initRoofs, buildBuildings, wallArrays } from './map/buildings.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
-import { styleFor, facadeCoords } from './facades.ts';
+import { styleFor, facadeCoords, paintWalls } from './facades.ts';
 import { groundLayers, layerBuffers } from './ground.ts';
 import { heightSampler } from './terrain.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
@@ -97,7 +97,9 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.computeVertexNormals();
-  return { position: pos, color: col, normal: g.attributes.normal.array as Float32Array, facade: facadeCoords(pos, groundAt(ground), styleAt(bbox)) };
+  const facade = facadeCoords(pos, groundAt(ground), styleAt(bbox));
+  paintWalls(pos, col, facade, (o) => { const t = kept[o] * 3; return [c8[t], c8[t + 1], c8[t + 2]]; });
+  return { position: pos, color: col, normal: g.attributes.normal.array as Float32Array, facade };
 }
 
 // Walkable/drivable cells: 0 free, 255 solid, 254 free but walled in (a closed

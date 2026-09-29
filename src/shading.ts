@@ -295,9 +295,9 @@ vec3 grime(vec3 c, vec4 f) {
   c *= 1. - .28 * smoothstep(.5, .8, streak) * detail(f.xy, .4);
   return c * mix(.66, 1., smoothstep(0., 1.4, f.y));
 }
-vec3 facade(vec3 c, vec2 f) {
+vec3 facade(vec3 c, vec2 f, float bayWidth) {
   float along = f.x, h = f.y;
-  float bay = fract(along / 1.9), storey = fract((h - .6) / 3.4);
+  float bay = fract(along / bayWidth), storey = fract((h - .6) / 3.4);
   float upper = step(4., h);
   float win = step(.3, bay) * step(bay, .7) * step(.3, storey) * step(storey, .78) * upper;
   float shop = step(.12, bay) * step(bay, .88) * step(.6, h) * step(h, 3.3) * (1. - upper);
@@ -415,14 +415,14 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   else if (bn.y > .15) diffuseColor.rgb = roofTiles(diffuseColor.rgb, bwp, bn);
   else {
     if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
-    else diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy);
+    else if (fBays(vFacade) > .5) diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy, vFacade.z / fBays(vFacade));
     if (uDirt > .5) diffuseColor.rgb = grime(diffuseColor.rgb, vFacade);
   }
   // Lit windows at night: dark glass above the ground floor, in a share of the
   // windows by the time; shop windows at street level the same.
   vec3 windowGlow = vec3(0.);
-  if (uWindows > .005 && bn.y < .15 && vFacade.z > .1) {
-    float bays = max(1., floor(vFacade.z / 1.9 + .5));
+  float bays = fBays(vFacade);
+  if (uWindows > .005 && bn.y < .15 && vFacade.z > .1 && bays > .5) {
     vec2 cell = vec2(floor(vFacade.x / vFacade.z * bays), floor((vFacade.y - .6) / 3.4));
     float lit = step(fHash(cell.x + fract(vFacade.w) * 97., cell.y), uWindows * (vFacade.y < 4. ? 1.6 : 1.));
     float glass = 1. - smoothstep(.13, .22, luma(diffuseColor.rgb) / max(luma(vColor.rgb), .02));
