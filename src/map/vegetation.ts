@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
-import { cutAway, NOISE_GLSL, LEAVES, SNOW, WET } from '../shading.ts';
+import { cutAway, NOISE, NOISE_GLSL, LEAVES, SNOW, WET, BARE } from '../shading.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
 export interface TreeTileData extends GeoData {
@@ -11,11 +11,15 @@ export interface TreeTileData extends GeoData {
   trees: Point2[];
 }
 
-interface TreeInstances { matrices: Float32Array; colours: Float32Array; count: number }
+interface TreeInstances { matrices: Float32Array; colours: Float32Array; evergreen: Float32Array; count: number }
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
 const WOOD = 200, PARK = 120, GARDEN = 90, ORCHARD = 60, FENCE = 1;
+// Of each kind of tree (below), how many are evergreen and keep their leaves in
+// winter: pines and spruces in the woods, a few in the streets and gardens, yews and
+// hedges among the shrubs.
+const EVERGREEN = [0.3, 0.08, 0, 0.4];
 
 // Where a tile's trees stand, and how big and what colour they are: their instance
 // matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Under
@@ -75,6 +79,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   gardenTrees(geo, grid, trees);
 
   const matrices = new Float32Array(trees.length * 16), colours = new Float32Array(trees.length * 3);
+  const evergreen = new Float32Array(trees.length);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
   const colors = [
     [new THREE.Color('#5a7c38'), new THREE.Color('#4a6a30'), new THREE.Color('#6a8c40')],
@@ -102,8 +107,10 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     const pal = colors[kind];
     c.copy(pal[Math.floor(r() * pal.length)]).offsetHSL(0, 0, (r() - 0.5) * 0.05);
     c.toArray(colours, i * 3);
+    // (By where it stands, so the other trees' looks don't change.)
+    evergreen[i] = rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663))() < EVERGREEN[kind] ? 1 : 0;
   });
-  return { matrices, colours, count: trees.length };
+  return { matrices, colours, evergreen, count: trees.length };
 }
 
 const SHRUB = 3;
@@ -278,8 +285,32 @@ vec4 smallLeaves(vec2 p) {
   return vec4(sqrt(d2) - sqrt(d1), hash12(c1 + 5.1), -o1);
 }
 `;
-const TUFT_VERTEX = ['#include <common>', '#include <common>\nattribute vec3 tuft;\nvarying vec3 vTuft;'] as const;
-const TUFT_BEGIN = ['#include <begin_vertex>', '#include <begin_vertex>\n  vTuft = tuft;'] as const;
+// Bare in winter (BARE), each tree but the evergreens: of every tuft only twigs are
+// left, where the small leaves' cells meet, and a few boughs out from its middle;
+// the rest falls cell by cell as it grows. The core shrinks to the thicker branches.
+// -1 where there's nothing, else how much of a twig it is.
+const BARE_GLSL = /* glsl */ `
+float bareTwig(vec3 t, float bare) {
+  if (bare <= 0.) return 0.;
+  if (t.z < 0.) return bare;
+  float r = length(t.xy), s = t.z * 6.2832;
+  // Boughs out from the middle, wavering, thinner outwards, forking halfway.
+  float a = atan(t.y, t.x) + .25 * sin(r * 9. + s);
+  float bough = abs(fract(a * 7. / 6.2832 + t.z * 3.) - .5) * r * 6.2832 / 7.;
+  float fork = abs(fract(a * 14. / 6.2832 + t.z * 5.) - .5) * r * 6.2832 / 14.;
+  float twig = max(step(bough, .045 - .025 * r), step(fork, .025 - .012 * r) * step(.45, r));
+  // Twigs at the ends: bits of the small leaves' cell edges, not all of them.
+  vec4 c = smallLeaves(t.xy * 5. + t.z * 31.);
+  twig = max(twig, step(c.x, .06) * step(.5, r) * step(.4, hash12(floor(t.xy * 9. + t.z * 17.))));
+  if (twig < .5 && c.y < bare) return -1.;
+  return twig * bare;
+}
+`;
+const TUFT_VERTEX = ['#include <common>', '#include <common>\nattribute vec3 tuft;\nattribute float evergreen;\nuniform float uBare;\nvarying vec3 vTuft;\nvarying float vBare;'] as const;
+const TUFT_BEGIN = ['#include <begin_vertex>', `#include <begin_vertex>
+  vTuft = tuft;
+  vBare = uBare * (1. - evergreen);
+  if (tuft.z < 0.) transformed *= 1. - .5 * vBare;`] as const;
 
 // Leaves: every tuft is five big leaves with five smaller ones on top, set between
 // them. Each leaf is flat and tilted its own way, outwards (the top ones less), so
@@ -293,18 +324,21 @@ function leafy(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uLeaves = LEAVES;
     sh.uniforms.uSnow = SNOW;
     sh.uniforms.uWet = WET;
+    sh.uniforms.uBare = BARE;
     sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN)
       .replace('#include <common>', '#include <common>\nattribute vec3 across;\nattribute vec3 along;\nvarying vec3 vAcross;\nvarying vec3 vAlong;')
       .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
   vAcross = normalMatrix * mat3(instanceMatrix) * across;
   vAlong = normalMatrix * mat3(instanceMatrix) * along;`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\nuniform float uLeaves;\nuniform float uSnow;\nuniform float uWet;\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
+      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\n${BARE_GLSL}\nvarying float vBare;\nfloat twigAmt = 0.;\nuniform float uLeaves;\nuniform float uSnow;\nuniform float uWet;\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   // (Derivatives first, outside the branches. A tuft only a few pixels across gets
   // no leaves at all.)
   float tw = fwidth(length(vTuft.xy));
   float sd = detail(vTuft.xy * 8., 1.5);
+  twigAmt = bareTwig(vTuft, vBare);
+  if (twigAmt < 0.) discard;
   if (uLeaves > .5 && vTuft.z >= 0. && tw < .3) {
     float r = length(vTuft.xy), s = vTuft.z * 6.2832, k = 6.2832 / 5.;
     float a0 = atan(vTuft.y, vTuft.x);
@@ -337,10 +371,12 @@ function leafy(material: THREE.MeshLambertMaterial) {
     }
   }`)
       .replace('#include <lights_lambert_fragment>', `diffuseColor.rgb *= leafCrease * (1. - .18 * uWet);
+  // Twigs and branches: grey-brown bark.
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.3, .27, .24), twigAmt);
   // Snow on the tops of the crowns (weather.ts); wet leaves a little darker.
   if (uSnow > .01) {
     float up = dot(normal, (viewMatrix * vec4(0., 1., 0., 0.)).xyz);
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.78, .8, .84), smoothstep(.35, .8, up) * smoothstep(.2, .8, uSnow) * .75);
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.78, .8, .84), smoothstep(.35, .8, up) * smoothstep(.2, .8, uSnow) * (.75 - .45 * twigAmt));
   }
 #include <lights_lambert_fragment>`)
       .replace('#include <opaque_fragment>', `outgoingLight *= mix(vec3(.88, 1., 1.06), vec3(1.14, 1.06, .7), smoothstep(.04, .3, dot(outgoingLight, vec3(.3, .59, .11))));
@@ -350,11 +386,16 @@ function leafy(material: THREE.MeshLambertMaterial) {
   return material;
 }
 
-export function treeMesh({ matrices, colours, count }: TreeInstances) {
+export function treeMesh({ matrices, colours, evergreen, count }: TreeInstances) {
   crown ??= crownGeometry();
   // Opened round you, like the buildings, when you're in a tunnel under a park.
   const mat = leafy(cutAway(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), 'trees'));
-  const mesh = new THREE.InstancedMesh(crown, mat, count);
+  // The shared crown, with the tile's own list of which trees are evergreen.
+  const geom = new THREE.BufferGeometry();
+  geom.setIndex(crown.index);
+  for (const [name, attr] of Object.entries(crown.attributes)) geom.setAttribute(name, attr);
+  geom.setAttribute('evergreen', new THREE.InstancedBufferAttribute(count ? evergreen : new Float32Array(1), 1));
+  const mesh = new THREE.InstancedMesh(geom, mat, count);
   (mesh.instanceMatrix.array as Float32Array).set(matrices);
   if (count) mesh.instanceColor = new THREE.InstancedBufferAttribute(colours, 3);
   mesh.castShadow = true;
@@ -365,4 +406,14 @@ export function treeMesh({ matrices, colours, count }: TreeInstances) {
   mesh.customDepthMaterial = treeDepth;
   return mesh;
 }
+// (Bare trees throw the shadows of their twigs.)
 const treeDepth = new THREE.MeshDepthMaterial();
+treeDepth.onBeforeCompile = (sh) => {
+  sh.uniforms.uBare = BARE;
+  sh.uniforms.uNoise = NOISE;
+  sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN);
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\nvarying float vBare;\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\n${BARE_GLSL}`)
+    .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (bareTwig(vTuft, vBare) < 0.) discard;');
+};
+treeDepth.customProgramCacheKey = () => 'tree-depth';

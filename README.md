@@ -133,7 +133,9 @@ the pixel ratio.
   of, with fog measured from the camera so the ground is hazier than the roofs. The
   ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,
   rings where the drops hit) and dries over several minutes; snow settles on the
-  ground, the roofs, the cars and the tree tops, and melts slower still. On the roads
+  ground, the roofs, the cars and the tree tops, and melts slower still. Under snow,
+  and from December to February, the broadleaf trees lose their leaves down to the
+  branches; pines, spruces and some of the hedges stay green. On the roads
   and pavements it lies whole through the night; from about six in the morning the
   traffic clears it, a little more with every busy hour (by the game's clock), to wet
   slush with patches of snow by the afternoon, the roads before the pavements, while

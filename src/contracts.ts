@@ -81,7 +81,7 @@ export interface BuildingArrays {
 }
 
 export interface LandResult {
-  trees: { matrices: Float32Array; colours: Float32Array; count: number };
+  trees: { matrices: Float32Array; colours: Float32Array; evergreen: Float32Array; count: number };
   walls: { position: Float32Array; normal: Float32Array };
   cells: Uint8Array;
 }
