@@ -23,6 +23,7 @@ import { Spray } from './spray.ts';
 import { Graphics } from './graphics.ts';
 import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
+import { TramStops } from './tramstops.ts';
 import { Districts } from './districts.ts';
 import { TileWorld } from './tiles.ts';
 import { loadFacadeAtlas } from './facades.ts';
@@ -207,6 +208,7 @@ async function main() {
   const trams = new Trams((await lines).lines, scene, { clock, rng: seeded });
   const ride = new TramRide(trams, world, $('ride'));
   const board = new StopBoard(trams, $('board'));
+  const tramStops = new TramStops(trams, scene);
   // Down into the metro and up again at the station you picked (the police lose you).
   const metro = new Metro(await metroData, scene, $('metro'), {
     clock,
@@ -1257,6 +1259,7 @@ async function main() {
     trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground);
     metro.update(dt);
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
+    tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     crowd.render(ground);
     police.render(ground, time.value, inCar);
     inspector.render(ground);
