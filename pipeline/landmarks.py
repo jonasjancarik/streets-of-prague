@@ -57,6 +57,7 @@ LANDMARKS = {
     "divadlo": ["way/7649971"],  # Národní divadlo
     "rudolfinum": ["way/30123527"],  # Rudolfinum
     "mikulas": ["way/27859115"],  # Kostel sv. Mikuláše, Staroměstské náměstí
+    "okamura": ["way/998156376"],  # Vila Tomia Okamury (House Okamura), Nad Tejnkou 9a, Břevnov; not in IPR's city model, so the mesh as it is
 }
 PAD = 1.5
 BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or "/Applications/Blender.app/Contents/MacOS/Blender"
@@ -156,6 +157,21 @@ def bake(area: str, name: str, parts, clean: np.ndarray, out: Path):
     print(f"{name}: " + "; ".join(said))
 
 
+def ground_off(parts, height: float = 1.0):
+    """Without a clean model the mesh's ground round the building's foot (flat triangles
+    within `height` of its lowest point) is dropped: it shows as dark spikes."""
+    zmin = min(p[:, 2].min() for p, _, _ in parts)
+    out = []
+    for pos, uv, tex in parts:
+        t = pos.reshape(-1, 3, 3)
+        n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+        n = n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
+        keep = ~((t[..., 2].max(1) < zmin + height) & (np.abs(n[:, 2]) > 0.7))
+        if keep.any():
+            out.append((t[keep].reshape(-1, 3), uv.reshape(-1, 3, 2)[keep].reshape(-1, 2), tex))
+    return out
+
+
 def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: float, tile: float, origin, raw: bool):
     osm = unary_union(footprints(area, ids))
     clean, outlines = (np.empty((0, 3, 3)), []) if raw else lod3(area, osm, tile, origin)
@@ -179,6 +195,8 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
             parts.append((p[keep].reshape(-1, 3), uv.reshape(-1, 3, 2)[keep].reshape(-1, 2), fetch(f"nodes/{n['id']}/textures/0")))
     if not parts:
         raise SystemExit(f"{name}: the mesh has nothing there")
+    if not len(clean):
+        parts = ground_off(parts)
     ox, oy = origin
     tiles = sorted({f"{i}_{j}" for i in range(int((x0 + ox) // tile), int((x1 + ox) // tile) + 1)
                     for j in range(int((y0 + oy) // tile), int((y1 + oy) // tile) + 1)})

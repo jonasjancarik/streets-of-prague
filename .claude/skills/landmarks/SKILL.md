@@ -134,6 +134,10 @@ the game to render (see the memory on benchmarking).
   it is a torn black shape. Don't ship that. IPR may carry the building as part of a
   neighbour (Obecní dům's model includes the Powder Tower): make the neighbour the
   landmark, and the widened footprint hides the OSM building too.
+  A raw mesh can still be good, though: House Okamura (Nad Tejnkou 9a, newer than IPR's
+  city model) has clean concrete cylinders in the mesh, so it ships as raw triangles.
+  `ground_off` in `landmarks.py` drops the flat triangles within 1 m of the lowest point,
+  which removes the ground spikes. Look at the sheet before deciding; don't assume.
 - **White or blocky ground floor.** Where houses, arcades or crowds hide the lowest
   metres of a wall from every photograph (the Týn Church's west and south fronts), the
   rays find nothing and the texels are filled in from around them. Not fixed; see
