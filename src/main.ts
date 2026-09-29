@@ -69,8 +69,9 @@ let statusText = '';
 const status = (text: string) => { statusText = text; $('loading-text').textContent = text ? t(text) : ''; };
 
 const BUSES = 3; // of the traffic, on the main roads
-const PEOPLE = 600; // round the Old Town Square; fewer where it's quieter (src/footfall.ts)
+const PEOPLE = 1200; // at most, round the Old Town Square; fewer where it's quieter (src/footfall.ts)
 const FEW_PEOPLE = 40; // on the quietest edge of town
+const CROWD = 1; // people a metre of footpath that draws people fully (Footfall.pull)
 const PARKED_TWO = 10; // bikes and motorbikes parked around you
 const SHOVE = 1.2; // m/s a tram pushes a car aside, off its track
 const LIFE_RADIUS = 330; // traffic and people are kept within this distance of the player
@@ -268,16 +269,21 @@ async function main() {
   };
   for (let i = 0; i < BUSES; i++) traffic.buses(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS), BUSES);
   for (let i = trafficWanted(clock.t); i > 0; i--) traffic.spawn(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS));
-  // How many people are about: from FEW_PEOPLE on the edge of town to PEOPLE round
-  // the Old Town Square, by how busy the streets around you are.
+  // How many people are about: CROWD a metre along each footpath around you, times
+  // how strongly it draws people, so a busy street adds its own crowd (Karlův most,
+  // Anděl) rather than sharing out a fixed number. At most PEOPLE.
   const peopleWanted = () => {
-    const busy = Math.min(1, footfall.around(px(), py(), LIFE_RADIUS) / 0.2);
-    return Math.round(FEW_PEOPLE + (PEOPLE - FEW_PEOPLE) * busy ** 0.6);
+    let draw = 0;
+    for (const e of walkNear(px(), py(), LIFE_RADIUS)) {
+      const [x, y] = e.pts[e.pts.length >> 1];
+      if (Math.hypot(x - px(), y - py()) < LIFE_RADIUS) draw += e.path.length * footfall.pull(e);
+    }
+    return Math.min(PEOPLE, Math.round(FEW_PEOPLE + CROWD * draw));
   };
   // A spot on one of the footpaths, busier ones likelier; `ok` can turn spots down.
   const pickSpot = (edges: WalkEdge[], ok: ((x: number, y: number) => boolean) | null) => {
     let total = 0;
-    const upTo = edges.map((e) => (total += e.path.length * (0.02 + footfall.edge(e))));
+    const upTo = edges.map((e) => (total += e.path.length * footfall.pull(e)));
     for (let t = 0; t < 8; t++) {
       const x = seeded() * total;
       let lo = 0, hi = upTo.length - 1;

@@ -14,6 +14,8 @@ interface WalkGrid {
 interface WalkSpot { e: WalkEdge; s: number }
 export interface Pedestrian extends WalkSpot {
   i: number; fwd: boolean; side: number; speed: number; x: number; y: number; h: number;
+  // How far across their half of the path they keep, 0 (the middle) to 1 (the edge).
+  lane: number;
   vx: number; vy: number; state: 'walk' | 'flee' | 'down' | 'rejoin';
   t: number; pause: number; z: number; anim: Anim; look: Look;
   target?: WalkSpot & { x: number; y: number };
@@ -131,7 +133,7 @@ export class Crowd {
     }
     const i = this.people.length;
     const p: Pedestrian = {
-      i, e, s: s ?? 0, fwd: r() > 0.5, side: r() > 0.5 ? 1 : -1,
+      i, e, s: s ?? 0, fwd: r() > 0.5, side: r() > 0.5 ? 1 : -1, lane: r(),
       speed: 1.1 + r() * 0.6, x: 0, y: 0, h: 0, vx: 0, vy: 0,
       state: 'walk', t: 0, pause: 0, z: 0, anim: new Anim(this.kit, 'walk', r() * 2), look: randomLook(r),
     };
@@ -154,10 +156,11 @@ export class Crowd {
     this.fig.mesh.count = this.people.length;
   }
 
-  // Put a person on their edge, on their side of the street, clear of buildings.
+  // Put a person on their edge, clear of buildings: near the edge of a street without
+  // a pavement of its own, anywhere across a footpath, a pedestrian street or a bridge.
   place(p: Pedestrian) {
     const q = p.e.path.at(p.s);
-    let off = p.e.side * p.side;
+    let off = p.side * (p.e.side ? Math.max(0, p.e.side - p.lane * 0.6) : p.lane * Math.max(0, p.e.width / 2 - 0.4));
     const nx = Math.sin(q.ang), ny = -Math.cos(q.ang);
     let x = q.x + nx * off, y = q.y + ny * off;
     for (let k = 0; k < 6 && this.grid.at(x, y); k++) {
@@ -270,9 +273,11 @@ export class Crowd {
   turn(p: Pedestrian) {
     const node = p.s > p.e.path.length / 2 ? p.e.v : p.e.u;
     const opts = (this.walk.adj.get(node) || []).filter((o) => o.e !== p.e);
-    // Busier streets are likelier, by the square root of how busy they are: in the
-    // long run that keeps as many people on a street as its footfall says.
-    const w = opts.map((o) => (this.footfall ? Math.sqrt(0.02 + this.footfall.edge(o.e)) : 1));
+    // Busier streets are likelier. A walk spreads people out more evenly than its
+    // turns lean (it has to pass the quiet streets round a busy one), so the turns lean
+    // harder, by pull^1.75: in a simulation that kept as many people a metre on each
+    // street, in the long run, as the crowd is first put out with (by pull).
+    const w = opts.map((o) => (this.footfall ? this.footfall.pull(o.e) ** 1.75 : 1));
     let x = this.r() * w.reduce((a, b) => a + b, 0), k = 0;
     while (k < opts.length - 1 && (x -= w[k]) > 0) k++;
     const pick = opts.length ? opts[k] : { e: p.e, fwd: !p.fwd };

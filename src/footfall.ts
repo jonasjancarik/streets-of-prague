@@ -3,6 +3,7 @@
 // Square. Without the map every street counts as equally busy, as before.
 
 const QUIET = 0.036; // about 240 people everywhere
+const CROWDING = 1.5; // see pull()
 
 interface FootfallMeta {
   size: [number, number];
@@ -91,5 +92,12 @@ export class Footfall {
       e.busy = this.at(q.x, q.y);
     }
     return e.busy;
+  }
+
+  // How strongly an edge draws people, for spreading a crowd out: more than in
+  // proportion to its busyness, so Karlův most packs while the lanes beside it
+  // stay quiet.
+  pull(e: FootfallEdge) {
+    return (0.02 + this.edge(e)) ** CROWDING;
   }
 }
