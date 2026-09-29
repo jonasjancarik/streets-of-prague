@@ -18,6 +18,18 @@ export const STATIONS: Station[] = [
   { id: 'paradise', name: 'Radio Paradise', url: 'https://stream.radioparadise.com/mp3-128' },
 ];
 
+// What's remembered: a station's id, or 'off'. Nothing yet means the first station.
+const KEY = 'radio';
+const readSaved = () => {
+  let saved: string | null = null;
+  try { saved = localStorage.getItem(KEY); } catch {}
+  return saved === null ? 0 : STATIONS.findIndex((s) => s.id === saved);
+};
+const save = (i: number) => { try { localStorage.setItem(KEY, STATIONS[i]?.id ?? 'off'); } catch {} };
+// Whether a station is set to play; known before the sound has started.
+export const radioOn = () => readSaved() >= 0;
+export const setRadioSaved = (on: boolean) => save(on ? 0 : -1);
+
 const LEVEL = 0.55; // how loud a station plays, before the master volume
 const FADE = 0.25; // s
 
@@ -43,17 +55,23 @@ export class Radio {
     this.out.gain.value = 0;
     hp.connect(body).connect(lp).connect(this.out).connect(dest);
     this.input = hp;
-    try {
-      const saved = localStorage.getItem('radio');
-      this.tuned = STATIONS.findIndex((s) => s.id === saved);
-    } catch {}
+    this.tuned = readSaved();
   }
   get station(): Station | null { return STATIONS[this.tuned] ?? null; }
 
   // The next station, and after the last one, off.
   next(): Station | null {
-    this.tuned = this.tuned + 1 >= STATIONS.length ? -1 : this.tuned + 1;
-    try { localStorage.setItem('radio', this.station?.id ?? ''); } catch {}
+    return this.tune(this.tuned + 1 >= STATIONS.length ? -1 : this.tuned + 1);
+  }
+
+  // The first station, or off.
+  set(on: boolean) {
+    if (on !== (this.tuned >= 0)) this.tune(on ? 0 : -1);
+  }
+
+  private tune(i: number) {
+    this.tuned = i;
+    save(i);
     this.close();
     if (this.station) { this.hiss(); if (this.want) this.open(); }
     return this.station;

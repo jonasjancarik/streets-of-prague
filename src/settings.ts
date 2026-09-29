@@ -29,7 +29,7 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
 };
 
 export function setupSettings({ sound, graphics, weather }: {
-  sound: { on: boolean; toggle: () => void };
+  sound: { on: boolean; toggle: () => void; radioOn: boolean; setRadio: (on: boolean) => void };
   graphics: Graphics;
   weather: { kinds: Kind[]; get: () => Kind | 'auto'; set: (k: Kind | 'auto') => void };
 }) {
@@ -69,6 +69,7 @@ export function setupSettings({ sound, graphics, weather }: {
   const fixed = (s: string) => () => s;
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang, setLang);
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.on ? 'on' : 'off'), (id) => { if ((id === 'on') !== sound.on) sound.toggle(); });
+  row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => t(g.label) })), () => graphics.choice, (id) => graphics.set(id));
   row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
 

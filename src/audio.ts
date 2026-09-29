@@ -1,6 +1,6 @@
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
-import { Radio } from './radio.ts';
+import { Radio, radioOn, setRadioSaved } from './radio.ts';
 import type { Station } from './radio.ts';
 import type { Car } from './car.ts';
 import type { TramVehicle } from './trams.ts';
@@ -110,6 +110,13 @@ export class Sound {
       if (document.hidden) this.ctx.suspend();
       else if (this.on) this.ctx.resume();
     });
+  }
+
+  // The car radio, on or off; works before the sound has started (a browser only allows it after a key press).
+  get radioOn() { return this.radio ? !!this.radio.station : radioOn(); }
+  setRadio(on: boolean) {
+    if (this.radio) this.radio.set(on);
+    else setRadioSaved(on);
   }
 
   toggle() {

@@ -37,6 +37,7 @@ export const CS: Record<string, string> = {
   Time: 'Čas',
   Weather: 'Počasí',
   Sound: 'Zvuk',
+  'Car radio': 'Rádio v autě',
   'Now {time}': 'Teď {time}',
   'Now: {weather}': 'Teď: {weather}',
   Morning: 'Ráno',

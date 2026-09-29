@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DIRT, LEAVES } from './shading.ts';
+import { LAMP_SHADOWS } from './lamps.ts';
 import type { Sky } from './sky.ts';
 import { t } from './i18n.ts';
 
@@ -27,11 +28,13 @@ export type Tier = 'lowest' | 'low' | 'medium' | 'high';
 export type Choice = Tier | 'auto';
 const ORDER: Tier[] = ['lowest', 'low', 'medium', 'high'];
 const CHOICES: Choice[] = ['auto', 'high', 'medium', 'low', 'lowest'];
-const TIERS: Record<Tier, { look: boolean; maxRatio: number }> = {
-  high: { look: true, maxRatio: 2 },
-  medium: { look: true, maxRatio: 1.5 },
-  low: { look: true, maxRatio: 1 },
-  lowest: { look: false, maxRatio: 1 },
+// `cars`: what cars do to the lamps' light at night: 2 shadows from every lamp and
+// headlight, 1 a soft darkening round each car, 0 nothing.
+const TIERS: Record<Tier, { look: boolean; maxRatio: number; cars: 0 | 1 | 2 }> = {
+  high: { look: true, maxRatio: 2, cars: 2 },
+  medium: { look: true, maxRatio: 1.5, cars: 1 },
+  low: { look: true, maxRatio: 1, cars: 1 },
+  lowest: { look: false, maxRatio: 1, cars: 0 },
 };
 
 const TARGET_MS = 1000 / 40;  // 40 frames a second
@@ -119,12 +122,13 @@ export class Graphics {
   started(now: number) { this.auto.hold(now, WARMUP); }
 
   private ratio(t: Tier) { return this.fixedRatio ?? Math.min(devicePixelRatio, TIERS[t].maxRatio); }
-  private same(a: Tier, b: Tier) { return TIERS[a].look === TIERS[b].look && this.ratio(a) === this.ratio(b); }
+  private same(a: Tier, b: Tier) { return TIERS[a].look === TIERS[b].look && TIERS[a].cars === TIERS[b].cars && this.ratio(a) === this.ratio(b); }
 
   private apply() {
     const { look } = TIERS[this.tier];
     DIRT.value = LEAVES.value = look ? 1 : 0;
     this.sky.curve = look;
+    LAMP_SHADOWS.value = TIERS[this.tier].cars;
     const r = this.ratio(this.tier);
     if (this.renderer.getPixelRatio() !== r) this.renderer.setPixelRatio(r);
   }

@@ -132,18 +132,20 @@
       .portrait { display: block; opacity: 0; transition: opacity 0.4s; }
       .portrait.in { opacity: 1; }
       .ls-sky { position: absolute; inset: 0; background: center 70% / cover no-repeat; }
-      .ls-wedge { position: absolute; inset: 0; background: var(--poster-black); clip-path: polygon(0 0, 34% 0, 18% 100%, 0 100%); opacity: 0.9; }
-      .ls-cast { position: absolute; z-index: 0; right: 3vw; bottom: 9vh; height: 74vh; display: flex; align-items: flex-end; }
+      /* The dark wedge carries the title and the menu; the skyline's landmark stands just right of it (portraits.ts). */
+      .ls-wedge { position: absolute; inset: 0; background: var(--poster-black); clip-path: polygon(0 0, 46% 0, 36% 100%, 0 100%); opacity: 0.93; }
+      .ls-cast { position: absolute; z-index: 0; right: 2vw; bottom: 9vh; height: 66vh; display: flex; align-items: flex-end; }
       /* Each figure is cut out with a paper edge, as if snipped from a print: the sides
          slant in over the panel's cut edges, and the band below hides its foot. */
       .ls-face { position: relative; height: 100%; margin-left: -4vh; display: flex; align-items: flex-end;
         filter: drop-shadow(0.5vh 0 0 var(--poster-paper)) drop-shadow(-0.5vh 0 0 var(--poster-paper)) drop-shadow(0 -0.5vh 0 var(--poster-paper)) drop-shadow(1.2vh 1.2vh 0 rgba(20, 13, 12, 0.55)); }
-      .ls-face:nth-child(2) { height: 88%; z-index: 1; }
-      .ls-face:nth-child(3) { height: 80%; }
+      .ls-face:nth-child(1) { height: 84%; }
+      .ls-face:nth-child(2) { height: 100%; z-index: 1; }
+      .ls-face:nth-child(3) { height: 90%; }
       .ls-face img { height: 100%; width: auto; clip-path: polygon(0 -50%, 100% -50%, 100% 22%, 94% 100%, 6% 100%, 0 22%); }
       .ls-stripe { position: absolute; left: 0; right: 0; bottom: 21vh; height: 1.4vh; background: var(--poster-paper); transform-origin: left; transform: rotate(-4deg) scaleX(1.2); }
       .ls-band { position: absolute; left: -5%; right: -5%; bottom: -14vh; height: 36vh; background: var(--poster-red); transform: rotate(-4deg); box-shadow: 0 -2vh 0 var(--poster-black); }
-      .ls-title { position: absolute; left: 5vw; top: 8vh; display: flex; flex-direction: column; font: 17vh/0.82 'Bebas Neue', sans-serif; letter-spacing: 0.01em; color: var(--poster-paper); text-shadow: 0.6vh 0.6vh 0 var(--poster-red); }
+      .ls-title { position: absolute; left: 5vw; top: 6vh; display: flex; flex-direction: column; font: 13vh/0.82 'Bebas Neue', sans-serif; letter-spacing: 0.01em; color: var(--poster-paper); text-shadow: 0.6vh 0.6vh 0 var(--poster-red); }
       .ls-title span + span { color: var(--poster-red); text-shadow: 0.6vh 0.6vh 0 var(--poster-black); }
       #loading-text { position: absolute; left: 5vw; bottom: 5vh; font: 5vh/1 'Bebas Neue', sans-serif; color: var(--poster-black); transform: rotate(-4deg); transform-origin: left; }
       /* The poster assembles itself once (shapes, title, then the cast rising behind the
@@ -171,8 +173,11 @@
       @keyframes ls-fade { from { opacity: 0; } }
       @media (prefers-reduced-motion: reduce) { #loading, #loading * { animation: none !important; } }
       /* The start screen's choices (src/startscreen.ts), over the wedge at the left. */
-      .ls-start { position: absolute; z-index: 2; left: 5vw; top: 44vh; width: min(44vw, 560px); display: flex; flex-direction: column; gap: 1.4vh; font: 2.6vh/1.1 'Bebas Neue', sans-serif; color: var(--poster-paper); }
-      .ls-row { display: flex; flex-direction: column; gap: 0.6vh; }
+      .ls-start { position: absolute; z-index: 2; left: 5vw; top: 31vh; width: min(32vw, 64vh); display: flex; flex-direction: column; gap: 1vh; font: 2.2vh/1.1 'Bebas Neue', sans-serif; color: var(--poster-paper); }
+      /* A label beside its choices, so the menu stays short and on the dark wedge. */
+      .ls-row { display: flex; align-items: flex-start; gap: 1vh; }
+      .ls-label { flex: 0 0 5.4em; padding-top: 0.55em; }
+      .ls-chips { flex: 1; min-width: 0; }
       .ls-label { opacity: 0.85; letter-spacing: 0.08em; text-shadow: 0 0 6px var(--poster-black), 0 0 3px var(--poster-black); }
       .ls-chips { display: flex; flex-wrap: wrap; gap: 0.6vh 0.8vh; }
       .ls-chip { font: inherit; letter-spacing: inherit; color: var(--poster-paper); background: rgba(20, 13, 12, 0.7); border: 0.25vh solid rgba(236, 228, 214, 0.5); padding: max(0.6vh, 6px) max(1.4vh, 10px); cursor: pointer; }
@@ -181,23 +186,31 @@
       .ls-chip:hover { background: rgba(236, 228, 214, 0.22); border-color: var(--poster-paper); }
       .ls-chip[aria-pressed='true']:hover { background: var(--poster-paper); }
       .ls-chip:active { transform: translateY(0.2vh); }
-      .ls-go { margin-top: 1vh; align-self: flex-start; font: max(4vh, 20px)/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; padding: max(1.2vh, 8px) max(3vh, 18px); color: var(--poster-paper); background: var(--poster-red); border: 0; cursor: pointer; box-shadow: 0.6vh 0.6vh 0 var(--poster-black); }
+      .ls-go { margin-top: 1vh; align-self: flex-start; font: max(3.4vh, 20px)/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; padding: max(1.2vh, 8px) max(3vh, 18px); color: var(--poster-paper); background: var(--poster-red); border: 0; cursor: pointer; box-shadow: 0.6vh 0.6vh 0 var(--poster-black); }
       .ls-go { transition: background 0.12s, transform 0.12s, box-shadow 0.12s; }
       .ls-go:not(:disabled):hover { background: #e2342b; transform: translate(-0.2vh, -0.2vh); box-shadow: 0.8vh 0.8vh 0 var(--poster-black); }
       .ls-go:not(:disabled):active { transform: translate(0.4vh, 0.4vh); box-shadow: 0.2vh 0.2vh 0 var(--poster-black); }
       .ls-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; }
       .ls-start button:focus-visible { outline: 0.4vh solid var(--poster-paper); outline-offset: 0.3vh; }
+      /* Squarer screens: two figures, so they stay clear of the menu. */
+      @media (min-aspect-ratio: 1/1) and (max-aspect-ratio: 3/2) {
+        .ls-cast { height: 60vh; }
+        .ls-face:nth-child(1) { display: none; }
+      }
       @media (max-height: 500px) and (min-aspect-ratio: 1/1) {
-        .ls-start { top: 33vh; width: 54vw; gap: 6px; }
+        .ls-start { top: 30vh; width: 42vw; gap: 4px; font-size: max(2.2vh, 10px); }
+        .ls-go { font-size: 16px; margin-top: 2px; }
         .ls-row { flex-direction: row; align-items: center; gap: 10px; }
         .ls-label { flex: 0 0 56px; }
         .ls-title { top: 5vh; }
       }
+      /* A phone upright: the dark ground behind all of the menu, one figure below it. */
       @media (max-aspect-ratio: 1/1) {
-        .ls-start { width: 90vw; }
+        .ls-start { width: 90vw; top: 24vh; }
         .ls-title { font-size: 17vw; line-height: 0.9; }
-        .ls-cast { right: -6vw; height: 58vh; }
-        .ls-face:nth-child(3) { display: none; }
+        .ls-wedge { clip-path: polygon(0 0, 100% 0, 100% 52%, 0 72%); }
+        .ls-cast { right: -8vw; height: 30vh; }
+        .ls-face:nth-child(1), .ls-face:nth-child(3) { display: none; }
       }
 
       /* Bebas has no descenders, so on a full line box its capitals sit high. Where the
