@@ -4,6 +4,10 @@
 export const CS: Record<string, string> = {
   // Money
   'Money: {money}': 'Peníze: {money}',
+  'Not enough money for a taxi (from {fare})': 'Nemáš dost peněz na taxi (od {fare})',
+  'Your money ran out, so the driver let you out': 'Došly ti peníze, tak tě řidič vysadil',
+  'The taxi crashed. You got out. The ride was free': 'Taxi havarovalo a musíš vystoupit. Jízda je zdarma',
+  'Meter: {fare}': 'Taxametr: {fare}',
   // Start screen and loading
   Language: 'Jazyk',
   Time: 'Čas',
@@ -168,8 +172,7 @@ export const CS: Record<string, string> = {
   'Taxi cancelled': 'Taxi zrušeno',
   'No street here for a taxi to stop in': 'Tady nemá taxi kde zastavit',
   'No taxi free nearby. Try again in a moment': 'Poblíž není žádné volné taxi. Zkus to za chvíli',
-  '{firm} fare: {fare} Kč': 'Jízdné {firm}: {fare} Kč',
-  'The taxi crashed. You got out': 'Taxi havarovalo. Vystoupil jsi',
+  '{firm} fare: {fare}': 'Jízdné {firm}: {fare}',
   'Your taxi had an accident on the way': 'Tvoje taxi cestou mělo nehodu',
   'The taxi gave up waiting and drove off': 'Taxi čekání vzdalo a odjelo',
   'You walked away from your taxi, so it left': 'Odešel jsi od taxi, tak odjelo',

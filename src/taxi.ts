@@ -14,6 +14,8 @@ import { Heap } from './police.ts';
 import type { Traffic, TrafficAgent } from './traffic.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 import { getLang, t } from './i18n.ts';
+import { kc } from './money.ts';
+import type { Wallet } from './money.ts';
 
 // Well-known places to be driven to, as lon, lat (at a street where a taxi can stop).
 export const PLACES: [string, number, number][] = [
@@ -67,6 +69,7 @@ export class Taxis {
     toLocal: (lon: number, lat: number) => [number, number] | null;
     standAt: (x: number, y: number) => [number, number];
     banner: (text: string) => void;
+    wallet: Wallet;
   }) {
     this.places = PLACES.flatMap(([name, lon, lat]) => {
       const p = o.toLocal(lon, lat);
@@ -109,9 +112,13 @@ export class Taxis {
     else if (this.riding && this.places[i]) this.goTo(i);
   }
 
+  // What the ride costs so far, to the nearest 5 Kč.
+  private fare() { return Math.round((this.firm.start + (this.metres / 1000) * this.firm.perKm) / 5) * 5; }
+
   // Send a taxi to the kerb nearest the player.
   call(firm: Firm) {
     const { walker: w, traffic } = this.o;
+    if (!this.o.wallet.has(firm.start)) { this.state = 'off'; this.say(t('Not enough money for a taxi (from {fare})', { fare: kc(firm.start) })); return; }
     const stop = this.stopNear(w.x, w.y, 30);
     if (!stop) { this.state = 'off'; this.say(t('No street here for a taxi to stop in')); return; }
     let best: TrafficAgent | null = null, bestD = REACH;
@@ -225,16 +232,15 @@ export class Taxis {
     return true;
   }
 
-  // Out of the taxi onto the pavement on its right, paying for the ride so far.
-  leave() {
+  // Out of the taxi onto the pavement on its right, paying for the ride so far (or not, after a crash).
+  leave(pay = true) {
     const a = this.agent, w = this.o.walker;
     if (!a) return;
     const c = a.car, [x, y] = this.o.standAt(c.x + Math.sin(c.h) * 2.2, c.y - Math.cos(c.h) * 2.2);
     Object.assign(w, { x, y, h: c.h, vx: 0, vy: 0 });
     w.mesh.visible = true;
     w.sync();
-    const fare = Math.round((this.firm.start + (this.metres / 1000) * this.firm.perKm) / 5) * 5;
-    this.o.banner(t('{firm} fare: {fare} Kč', { firm: this.firmName(), fare }));
+    if (pay) this.o.banner(t('{firm} fare: {fare}', { firm: this.firmName(), fare: kc(this.o.wallet.take(this.fare())) }));
     this.cancel();
   }
 
@@ -254,13 +260,18 @@ export class Taxis {
     // Hit hard enough to leave the traffic, or gone off the map.
     if (!this.o.traffic.agents.includes(a)) {
       const was = this.riding;
-      if (was) this.leave();
+      if (was) this.leave(false);
       else this.cancel();
-      this.say(t(was ? 'The taxi crashed. You got out' : 'Your taxi had an accident on the way'));
+      this.say(t(was ? 'The taxi crashed. You got out. The ride was free' : 'Your taxi had an accident on the way'));
       return;
     }
     const c = a.car, w = this.o.walker;
     if (this.riding) this.metres += Math.hypot(c.vx, c.vy) * dt * this.scale;
+    if (this.riding && this.fare() >= this.o.wallet.balance) {
+      this.leave();
+      this.say(t('Your money ran out, so the driver let you out'));
+      return;
+    }
     const left = a.stop ? a.route.to(a.stop.edge, a.stop.s) : Infinity;
     // Not there yet: plan on as more of the map loads.
     if (a.stop && !this.final && (this.state === 'coming' || this.dest !== null)) {
@@ -327,6 +338,7 @@ export class Taxis {
       if (this.waiting) parts.push(t('The streets ahead are still loading'));
       else if (this.agent && this.agent.jam > 15) parts.push(t('Stuck in traffic'));
       else if (this.scale > 1.5) parts.push(t('{n}× speed', { n: Math.round(this.scale) }));
+      parts.push(t('Meter: {fare}', { fare: kc(this.fare()) }));
       parts.push(this.dest === null ? `${t('Where to?')} ${t(touch ? 'Pick a place' : 'Press a number')}` : t('To {name}', { name: t(this.places[this.dest].name) }));
       if (!touch) parts.push(`<b>E</b> ${t('get out here')}`);
       return parts.join(' · ');

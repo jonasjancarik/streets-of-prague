@@ -611,7 +611,7 @@ async function main() {
     $('street').textContent = '';
   };
   const taxi = new Taxis({
-    traffic, drive, world, el: $('taxi'), walker, edgesNear, offscreen, standAt: (x, y) => nearestWalkable(grid, x, y), banner: (t) => showBanner(t),
+    traffic, drive, world, el: $('taxi'), walker, edgesNear, offscreen, standAt: (x, y) => nearestWalkable(grid, x, y), banner: (t) => showBanner(t), wallet,
     toLocal: (lon, lat) => (lon > w0 && lon < e0 && lat > s0 && lat < n0 ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [lon, lat]) as [number, number] : null),
   });
   const assist = new LaneAssist(drive, (x, y, r) => edgesNear(x, y, r));
