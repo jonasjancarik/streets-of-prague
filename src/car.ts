@@ -11,7 +11,7 @@ import { SNOW, STREET_SNOW, WET } from './shading.ts';
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
   grip: number; turn: number; weight: number; cabin?: Point2; color?: string;
-  traffic?: number; two?: 'bike' | 'moto';
+  traffic?: number; two?: 'bike' | 'moto'; heavy?: boolean;
 }
 export interface CarControl { throttle: number; steer: number; handbrake: boolean; cap?: number | null }
 export interface CarGrid {
@@ -36,6 +36,9 @@ export const TYPES: Record<string, CarSpec> = {
   // is never parked in a car bay; `traffic` is how often each type turns up on the road.
   bike: { L: 2.3, W: 0.8, H: 1.5, mass: 90, accel: 3.2, vmax: 9, grip: 12, turn: 3.4, weight: 0, traffic: 0.5, two: 'bike' },
   moto: { L: 2.8, W: 1.0, H: 1.6, mass: 260, accel: 12, vmax: 48, grip: 9.5, turn: 2.8, weight: 0.3, traffic: 1.2, two: 'moto' },
+  // A 12 m city bus in PID colours: slow to pick up speed, wide in the turns. Never
+  // parked or in the ordinary mix: Traffic.buses keeps a few on the main roads.
+  bus: { L: 12, W: 2.55, H: 3.1, mass: 12000, accel: 2.6, vmax: 24, grip: 7, turn: 1.25, weight: 0, color: '#c8102e', heavy: true },
 };
 const PAINT = ['#e8e6e1', '#bfc3c7', '#8d9398', '#2c2f33', '#1d2a44', '#7a1f1f', '#b33a2c', '#2f5140', '#5b6d7c', '#d9d2c0', '#3f4a5a', '#9a7b4f'];
 const TWO_PAINT: Record<string, string[]> = {
@@ -56,6 +59,11 @@ function carGeometry(type: string, paint: string): THREE.BufferGeometry {
   if (S.two) {
     if (!kit) throw new Error('Figures kit is not loaded');
     const geometry = kit.vehicles[S.two](paint);
+    cache.set(k, geometry);
+    return geometry;
+  }
+  if (type === 'bus') {
+    const geometry = busGeometry(S);
     cache.set(k, geometry);
     return geometry;
   }
@@ -81,6 +89,76 @@ function carGeometry(type: string, paint: string): THREE.BufferGeometry {
   const g = mergeGeometries(parts);
   cache.set(k, g);
   return g;
+}
+
+// The bus is built here from boxes rather than in Blender: red below the windows, a
+// white roof with the air conditioning on top, a dark band of glass all round with
+// white pillars, three doors on the right, and the line board over the windscreen.
+// (Forward is +x, right +z, the ground y = 0, as for the car bodies.)
+function busGeometry(S: CarSpec): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const c = new THREE.Color();
+  const add = (g: THREE.BufferGeometry, colour: string, x: number, y: number, z: number) => {
+    g.deleteAttribute('uv');
+    g.translate(x, y, z);
+    c.set(colour);
+    const col = new Float32Array(g.attributes.position.count * 3);
+    for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    parts.push(g.index ? g.toNonIndexed() : g);
+  };
+  const box = (colour: string, x0: number, x1: number, y0: number, y1: number, w: number, z = 0) =>
+    add(new THREE.BoxGeometry(x1 - x0, y1 - y0, w), colour, (x0 + x1) / 2, (y0 + y1) / 2, z);
+  const L = S.L / 2, W = S.W, red = S.color || '#c8102e', white = '#eeeeea', glass = '#1b242c', grey = '#8a8f94';
+  const sill = 1.15, top = 2.55, roof = 2.95;
+  box('#2a2c2f', -L + 0.05, L - 0.05, 0.28, 0.5, W - 0.02); // skirt and bumpers
+  box(red, -L, L, 0.5, sill, W);
+  box(glass, -L + 0.02, L - 0.02, sill, top, W - 0.06);
+  // The roof stops short of the front, so from above the dark windscreen and line
+  // board show which way the bus faces.
+  box(white, -L, L - 0.4, top, roof, W);
+  box('#141414', L - 0.4, L, top, roof - 0.08, W - 0.04);
+  box('#9a9fa3', -3.3, 0.9, roof, roof + 0.18, 1.8); // air conditioning
+  box('#e2e4e2', -3.2, 0.8, roof + 0.18, roof + 0.3, 1.7);
+  box('#9a9fa3', -L + 0.3, -L + 2.0, roof, roof + 0.25, 2.0); // engine vents
+  box('#b9bdbf', 1.9, 2.7, roof, roof + 0.06, 0.8); // roof hatches
+  box('#b9bdbf', -5.0, -4.2, roof, roof + 0.06, 0.8);
+  // Pillars between the side windows (none where the doors are).
+  const doors = [L - 1.35, 0.6, -3.8];
+  for (let x = -L + 0.9; x < L - 2.2; x += 1.45) {
+    if (doors.some((d) => Math.abs(x - d) < 0.9)) continue;
+    box(white, x - 0.07, x + 0.07, sill, top, W + 0.01);
+  }
+  box(white, L - 2.25, L - 2.1, sill, top, W + 0.01);
+  box(white, -L + 0.02, -L + 0.5, sill, top, W + 0.01); // the back corners
+  // Doors on the right (+z): glass nearly down to the kerb, a red frame round them.
+  for (const d of doors) {
+    box(red, d - 0.68, d + 0.68, 0.32, top, 0.04, W / 2);
+    box('#26313a', d - 0.6, d + 0.6, 0.38, top - 0.08, 0.06, W / 2 + 0.005);
+    box('#15191d', d - 0.02, d + 0.02, 0.38, top - 0.08, 0.08, W / 2 + 0.005);
+  }
+  // Front: a tall windscreen, the line board above it, headlamps; tail lamps at the back.
+  box(glass, L - 0.05, L + 0.02, 0.9, top, W - 0.2);
+  box('#141414', L - 0.04, L + 0.03, top + 0.04, roof - 0.06, W - 0.5);
+  box('#ffb020', L - 0.03, L + 0.035, top + 0.1, roof - 0.12, W - 0.9);
+  for (const z of [-1, 1]) {
+    box('#fff6d8', L - 0.05, L + 0.03, 0.55, 0.72, 0.4, z * (W / 2 - 0.3));
+    box('#b3161b', -L - 0.03, -L + 0.05, 0.6, 1.1, 0.22, z * (W / 2 - 0.2));
+  }
+  box(glass, -L - 0.02, -L + 0.05, 1.4, top - 0.1, W - 0.5);
+  box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
+  // Wheels: two at the front, twin tyres at the back.
+  for (const x of [L - 2.7, -L + 3.3]) {
+    for (const z of [-1, 1]) {
+      const w = new THREE.CylinderGeometry(0.5, 0.5, 0.34, 14);
+      w.rotateX(Math.PI / 2);
+      add(w, '#161616', x, 0.5, z * (W / 2 - 0.22));
+      const hub = new THREE.CylinderGeometry(0.24, 0.24, 0.02, 10);
+      hub.rotateX(Math.PI / 2);
+      add(hub, '#70757b', x, 0.5, z * (W / 2 - 0.04));
+    }
+  }
+  return mergeGeometries(parts);
 }
 
 // Car bodies from public/cars.glb (built in Blender by assets/cars/build.py): one per
@@ -119,6 +197,8 @@ function samplesOf(type: string, L: number, W: number) {
   let out = outlines.get(type);
   if (!out) {
     out = [[1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1], [0.5, 1], [0.5, -1], [-0.5, 1], [-0.5, -1]].map(([a, b]) => [(a * L) / 2, (b * W) / 2] as Point2);
+    // A bus: more along its sides, every metre and a half or so.
+    for (const a of [-0.75, -0.25, 0.25, 0.75]) if (L > 6) out.push([(a * L) / 2, W / 2], [(a * L) / 2, -W / 2]);
     outlines.set(type, out);
   }
   return out;
@@ -160,7 +240,8 @@ export class Car {
     this.spec = TYPES[type];
     this.mass = this.spec.mass;
     const paints = TWO_PAINT[type] || PAINT;
-    const paint = paints[Math.floor(r() * paints.length)];
+    // (One colour for the types painted alike, so they share a draw call.)
+    const pick = paints[Math.floor(r() * paints.length)], paint = this.spec.color || pick;
     this.key = `${type}|${paint}`;
     carGeometry(type, paint);
     this.x = x;
@@ -173,7 +254,9 @@ export class Car {
     this.lean = 0;
     const { L, W } = this.spec;
     this.r = W / 2 + 0.02;
-    this.offsets = [-(L / 2 - this.r), 0, L / 2 - this.r];
+    // Circles along the length, at least three, close enough to cover a bus's sides.
+    const n = Math.max(3, Math.ceil((L - 2 * this.r) / (2 * this.r)) + 1), end = L / 2 - this.r;
+    this.offsets = Array.from({ length: n }, (_, i) => -end + (2 * end * i) / (n - 1));
     this.samples = samplesOf(type, L, W);
     this.sync();
   }

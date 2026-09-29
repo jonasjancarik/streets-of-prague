@@ -1,6 +1,6 @@
 import { Car, randomType } from './car.ts';
 import { randomLook } from './figures.ts';
-import { Route, clamp } from './network.ts';
+import { MAIN_ROADS, Route, clamp } from './network.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 import * as THREE from 'three';
 
@@ -54,20 +54,30 @@ export class Traffic {
       let x = r() * total, edge = edges[0];
       for (const e of edges) if ((x -= e.path.length) < 0) { edge = e; break; }
       if (edge.path.length < 12) continue;
+      const bus = type === 'bus';
       const s = 4 + r() * (edge.path.length - 8);
       const p = edge.path.at(s);
       if (avoid && !avoid(p.x, p.y)) continue;
-      if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < 12)) continue;
+      if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < (bus ? 20 : 12))) continue;
       const car = new Car(type || randomType(r, 'traffic'), r, p.x, p.y, p.ang);
       car.mode = 'traffic';
       // On a bridge, in a tunnel or on the ground under or over one (TileWorld.track).
       car.hint = edge.bridge ? 'bridge' : edge.tunnel ? 'tunnel' : 'ground';
       if (car.two) car.rider = randomLook(r);
-      const agent = { car, route: new Route(this.g, edge, s, r), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + r() * 0.3 };
+      const agent = { car, route: new Route(this.g, edge, s, r, bus), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + r() * 0.3 };
       this.agents.push(agent);
       return agent;
     }
     return null;
+  }
+
+  // Keep `want` buses about, on the main roads among `edges`, where `avoid` allows.
+  buses(avoid: (x: number, y: number) => boolean, edges: DriveEdge[], want: number) {
+    let n = 0;
+    for (const a of this.agents) if (a.car.type === 'bus') n++;
+    if (n >= want) return;
+    const main = edges.filter((e) => MAIN_ROADS.has(e.hw) && !e.bridge && !e.tunnel);
+    if (main.length) this.spawn(avoid, main, 'bus');
   }
 
   // A parked car that joins the traffic from where it stands, `s` along `edge`: first
@@ -148,7 +158,8 @@ export class Traffic {
       a.jam = target < 0.3 && blocker ? a.jam + dt : 0;
       a.ignore = Math.max(0, a.ignore - dt);
 
-      const acc = target > a.speed ? 3 : 9;
+      // (A bus picks up speed slowly.)
+      const acc = target > a.speed ? (c.spec.heavy ? 1.2 : 3) : 9;
       a.speed += clamp(target - a.speed, -acc * dt, acc * dt);
       const p = a.route.advance(a.speed * dt);
       if (a.route.ended) { a.gone = true; continue; }
