@@ -25,15 +25,15 @@
  },
  {
   "id": "butcher",
-  "who": "man in an apron, arms crossed",
-  "w": 271,
-  "h": 502
+  "who": "heavy, balding man in an apron, arms crossed",
+  "w": 540,
+  "h": 861
  },
  {
   "id": "courier",
-  "who": "food courier in a cap",
-  "w": 271,
-  "h": 462
+  "who": "young food courier in a cap, black bob",
+  "w": 587,
+  "h": 983
  },
  {
   "id": "veteran",
@@ -49,9 +49,9 @@
  },
  {
   "id": "neighbour",
-  "who": "woman in a green jacket",
-  "w": 271,
-  "h": 484
+  "who": "stocky woman with a curly perm, green jacket",
+  "w": 560,
+  "h": 941
  },
  {
   "id": "drifter",
@@ -61,9 +61,9 @@
  },
  {
   "id": "rocker",
-  "who": "woman in a leather jacket",
-  "w": 268,
-  "h": 525
+  "who": "woman with a bleached buzz cut, leather jacket",
+  "w": 510,
+  "h": 870
  },
  {
   "id": "conductor",
@@ -85,15 +85,15 @@
  },
  {
   "id": "mechanic",
-  "who": "man in a cap and overalls",
-  "w": 264,
-  "h": 465
+  "who": "lanky young man in a cap and overalls",
+  "w": 568,
+  "h": 986
  },
  {
   "id": "barmaid",
-  "who": "tattooed barmaid with a glass",
-  "w": 245,
-  "h": 488
+  "who": "copper-haired barmaid with tattoos and a glass",
+  "w": 502,
+  "h": 1000
  },
  {
   "id": "grandma",
@@ -109,15 +109,15 @@
  },
  {
   "id": "inspector",
-  "who": "detective in a trench coat",
-  "w": 268,
-  "h": 500
+  "who": "old detective in a trench coat",
+  "w": 536,
+  "h": 966
  },
  {
   "id": "hacker",
   "who": "man with glasses and headphones",
   "w": 534,
-  "h": 1000
+  "h": 994
  },
  {
   "id": "boss",
@@ -127,27 +127,27 @@
  },
  {
   "id": "lawyer",
-  "who": "woman in a suit with a tablet",
-  "w": 283,
-  "h": 485
+  "who": "silver-haired woman in a suit with a tablet",
+  "w": 583,
+  "h": 948
  },
  {
   "id": "journalist",
   "who": "man with glasses in tweed",
   "w": 553,
-  "h": 1000
+  "h": 966
  },
  {
   "id": "policeman",
-  "who": "police officer",
-  "w": 241,
-  "h": 463
+  "who": "young police officer",
+  "w": 521,
+  "h": 999
  },
  {
   "id": "policewoman",
   "who": "police officer",
-  "w": 266,
-  "h": 457
+  "w": 582,
+  "h": 994
  },
  {
   "id": "detective",
@@ -157,21 +157,21 @@
  },
  {
   "id": "paramedic-f",
-  "who": "paramedic",
-  "w": 262,
-  "h": 504
+  "who": "grey-haired paramedic with glasses",
+  "w": 520,
+  "h": 998
  },
  {
   "id": "paramedic",
-  "who": "paramedic",
-  "w": 278,
-  "h": 504
+  "who": "paramedic with a walrus moustache",
+  "w": 552,
+  "h": 994
  },
  {
   "id": "guard",
-  "who": "security guard in sunglasses",
-  "w": 274,
-  "h": 494
+  "who": "security guard with a ponytail and sunglasses",
+  "w": 555,
+  "h": 996
  },
  {
   "id": "official",

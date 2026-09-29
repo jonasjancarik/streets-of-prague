@@ -171,7 +171,8 @@ the pixel ratio.
   style reference, and are cut and packed by `assets/facades/build_atlas.py`.
 - **Portraits and the loading screen.** Characters are half-length portraits drawn by
   an image model, ten to a sheet, and cut apart by `assets/portraits/cut.py` into
-  `public/portraits/` (the sheets never line up, so the seams are found per row). The
+  `public/portraits/` (the sheets never line up, so the seams are found per row); faces
+  that came out too alike were regenerated one at a time (`assets/portraits/faces/`). The
   loading screen puts three of them in front of a skyline of a real view, drawn from
   the 3D city by `pipeline/skyline.py`, with poster shapes over the panels' cut edges;
   a conversation shows the speaker rising out of a frame (`src/portraits.ts`).

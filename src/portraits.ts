@@ -16,9 +16,8 @@ const POSTER_CAST = [
   'policewoman', 'detective', 'paramedic', 'guard',
 ];
 
-// Portraits too alike to stand side by side: the same curly hair, glasses and stubble;
-// the same dark-haired or tattooed woman.
-const ALIKE = [['journalist', 'hacker'], ['tattooed', 'rocker', 'barmaid']];
+// Portraits too alike to stand side by side (the same curly hair, glasses and stubble).
+const ALIKE = [['journalist', 'hacker']];
 
 const pick = <T>(list: T[], n: number): T[] => {
   const pool = [...list];
