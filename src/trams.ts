@@ -29,6 +29,8 @@ export interface TramVehicle {
   held: number; shove: Car | null; look: TramLook | null; pending: number;
   parts: TramPoint[]; cells?: TramCell[]; levels?: { x: number; y: number; gz?: number }[];
   rider?: boolean;
+  // The grid buckets its sections are in, and whether it has moved since (see update).
+  keys?: number[]; moved?: boolean;
 }
 interface TrackObstacle { kind: string; x: number; y: number; r: number; car?: Car }
 export interface TramBody { v: TramVehicle; x: number; y: number; vx: number; vy: number; circles: Point2[] }
@@ -262,6 +264,7 @@ export class Trams {
 
   remove(v: TramVehicle) {
     if (v.look) { this.give(v.look); v.look = null; }
+    if (v.cells && v.keys) for (let n = 0; n < 3; n++) this.unfile(v.keys[n], v.cells[n]);
     this.list.splice(this.list.indexOf(v), 1);
     v.line.trams.splice(v.line.trams.indexOf(v), 1);
   }
@@ -311,6 +314,31 @@ export class Trams {
       q.y = (a.y + b.y) / 2;
       q.ang = Math.atan2(b.y - a.y, b.x - a.x);
     }
+    v.moved = true;
+  }
+
+  // Where a tram's sections are, for the trams behind (see update).
+  file(v: TramVehicle) {
+    const cells = (v.cells ||= [{ v, x: 0, y: 0, c: 0, s: 0 }, { v, x: 0, y: 0, c: 0, s: 0 }, { v, x: 0, y: 0, c: 0, s: 0 }]);
+    const keys = (v.keys ||= [NaN, NaN, NaN]);
+    for (let n = 0; n < 3; n++) {
+      const p = v.parts[n], o = cells[n], k = Math.floor(p.x / CELL) * 131072 + Math.floor(p.y / CELL);
+      o.x = p.x; o.y = p.y; o.c = Math.cos(p.ang); o.s = Math.sin(p.ang);
+      if (k === keys[n]) continue;
+      this.unfile(keys[n], o);
+      let b = this.grid.get(k);
+      if (!b) this.grid.set(k, (b = []));
+      b.push(o);
+      keys[n] = k;
+    }
+    v.moved = false;
+  }
+
+  unfile(k: number, o: TramCell) {
+    const b = this.grid.get(k), i = b ? b.indexOf(o) : -1;
+    if (!b || i < 0) return;
+    b[i] = b[b.length - 1];
+    b.pop();
   }
 
   // Move every tram on. `near(x, y, r)` finds what else is about (cars, people, the
@@ -324,21 +352,10 @@ export class Trams {
       this.manageT = MANAGE;
       this.manage(seen);
     }
-    // Where every tram's sections are, so the trams behind can see them (the buckets
-    // and entries are kept from step to step, keyed by number as in SpatialHash).
-    for (const b of this.grid.values()) b.length = 0;
-    for (const v of this.list) {
-      v.cells ||= [{ v, x: 0, y: 0, c: 0, s: 0 }, { v, x: 0, y: 0, c: 0, s: 0 }, { v, x: 0, y: 0, c: 0, s: 0 }];
-      const cells = v.cells;
-      for (let n = 0; n < v.parts.length; n++) {
-        const p = v.parts[n], k = Math.floor(p.x / CELL) * 131072 + Math.floor(p.y / CELL);
-        let b = this.grid.get(k);
-        if (!b) this.grid.set(k, (b = []));
-        const o = cells[n];
-        o.x = p.x; o.y = p.y; o.c = Math.cos(p.ang); o.s = Math.sin(p.ang);
-        b.push(o);
-      }
-    }
+    // Where every tram's sections are, so the trams behind can see them: where they
+    // were at the start of this step (keyed by number as in SpatialHash). Only the ones
+    // that moved are filed again: most trams are far off and move a few times a second.
+    for (const v of this.list) if (v.moved || !v.keys) this.file(v);
     // Buckets left empty for a while go, so the map doesn't grow with the city.
     if (++this.gridSweep > 600) {
       this.gridSweep = 0;
