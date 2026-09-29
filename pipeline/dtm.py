@@ -43,6 +43,14 @@ KINDS = {
     "010000001103": "parking",    # parkoviště, odstavná plocha: parking bays and car parks
 }
 VERSION = 2  # bump when what surfaces() keeps changes
+# The survey draws a street corner's curve as a few straight pieces, and where two
+# surfaces meet their edges often miss by a hand's width. Gaps and spikes narrower
+# than twice SLIVER go, then each corner is cut ROUNDS times, at most CUT metres
+# along each side and never more than a quarter of the shorter side: a corner between
+# long kerbs comes out round, while a parking bay's short sides stay nearly square.
+SLIVER = 0.3
+CUT, ROUNDS = 1.5, 3
+MARGIN = 0.0005  # degrees (~40 m) past the box, so neighbouring boxes round alike
 
 _index = None  # per process: (STRtree, polygons on the ground in WGS84)
 
@@ -116,11 +124,32 @@ def streets(bbox, transform):
         geoms = np.concatenate(geoms) if geoms else np.array([], dtype=object)
         _index = (STRtree(geoms), geoms)
     tree, geoms = _index
-    hits = geoms[tree.query(box(*bbox))]
+    w, s, e, n = bbox
+    hits = geoms[tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN))]
     if not len(hits):
         return Polygon()
     local = shapely.transform(hits, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
-    return shapely.union_all(shapely.make_valid(local), grid_size=0.01)
+    return _smooth(shapely.union_all(shapely.make_valid(local), grid_size=0.01))
+
+
+def _smooth(g):
+    """The surfaces with slivers closed, spikes gone and corners rounded (see CUT)."""
+    g = g.buffer(SLIVER, join_style="round").buffer(-2 * SLIVER, join_style="round").buffer(SLIVER, join_style="round")
+    polys = [Polygon(_round(p.exterior), [_round(r) for r in p.interiors])
+             for p in shapely.get_parts(g) if p.geom_type == "Polygon"]
+    return shapely.union_all(shapely.make_valid(np.array(polys, dtype=object)), grid_size=0.01) if polys else Polygon()
+
+
+def _round(ring):
+    """A ring with its corners cut, Chaikin's way but limited to CUT."""
+    p = shapely.get_coordinates(ring)[:-1]
+    for _ in range(ROUNDS):
+        d = np.roll(p, -1, axis=0) - p
+        length = np.linalg.norm(d, axis=1, keepdims=True)
+        u = d / np.maximum(length, 1e-9)
+        c = np.minimum(np.minimum(length, np.roll(length, 1, axis=0)) / 4, CUT)
+        p = np.stack([p - np.roll(u, 1, axis=0) * c, p + u * c], axis=1).reshape(-1, 2)
+    return p
 
 
 def _read(package):

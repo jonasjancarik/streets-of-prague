@@ -502,8 +502,8 @@ def _coords(ls):
     return [[round(x, 2), round(y, 2)] for x, y in ls.coords]
 
 
-def _rings(poly: Polygon):
-    poly = poly.simplify(0.15)
+def _rings(poly: Polygon, tolerance=0.15):
+    poly = poly.simplify(tolerance)
     outer = [[round(x, 2), round(y, 2)] for x, y in list(poly.exterior.coords)[:-1]]
     holes = [[[round(x, 2), round(y, 2)] for x, y in list(i.coords)[:-1]] for i in poly.interiors]
     return [outer, *holes]

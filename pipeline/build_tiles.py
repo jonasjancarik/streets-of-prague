@@ -51,6 +51,7 @@ from osm_area import (AREAS, CAR_ROADS, FEATURE_TAGS, ORIENTATIONS, OUT, _coords
                       features_from_json, road_width, use_overpass_mirror)
 
 MARGIN = 150.0
+ROAD_TOLERANCE = 0.03  # metres the streets' outlines may be simplified by
 # A local OpenStreetMap extract, if there is one, is much faster and kinder than
 # Overpass for big areas: https://download.geofabrik.de/europe/czech-republic.html
 PBF = Path(os.environ.get("OSM_PBF", Path(__file__).parent / ".cache" / "osm" / "czech-republic-latest.osm.pbf"))
@@ -325,7 +326,8 @@ def build_chunk(job):
             # Parking areas one by one, with their orientation (the game lays out bays).
             t["lots"] = [{"o": x["lots"][k]["o"], "rings": _rings(p)} for k in sorted(ltree.query(bx, predicate="intersects"))
                          for p in _polys(x["lots"][k]["poly"].intersection(bx)) if p.area > 4]
-            t["roads"] = {k: v for k, g in x["roads"].items() if (v := [_rings(p) for p in _polys(g.intersection(bx))])}
+            # Finer for the streets, whose rounded corners (dtm.py) the coarser tolerance undoes.
+            t["roads"] = {k: v for k, g in x["roads"].items() if (v := [_rings(p, ROAD_TOLERANCE) for p in _polys(g.intersection(bx))])}
             for key in ("walls", "rails", "passages"):
                 t[key] = [{**x[key][k], "pts": _coords(ls)} for k in sorted(trees[key].query(bx))
                           for ls in _lines(lines[key][k].intersection(bx))]

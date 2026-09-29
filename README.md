@@ -354,7 +354,10 @@ the pixel ratio.
   lanes or more, edge lines on the main roads. In Prague their shape comes from the
   city's digital technical map (`pipeline/dtm.py`), which has every carriageway,
   lay-by and parking bay as surveyed, so the asphalt ends where the real kerb does,
-  rounded street corners and traffic islands included. OSM only says what a street is
+  rounded street corners and traffic islands included. The survey draws a corner's
+  curve as a few straight pieces, so the corners are rounded off (up to 1.5 m along
+  each side) and hairline gaps between neighbouring surfaces closed; a parking bay's
+  short sides stay nearly square. OSM only says what a street is
   paved with: each part of the surveyed surface takes the paving of the nearest street,
   and cobbles reach at most 4 m past a cobbled street's kerb (a car park beside it is
   asphalt). Each side's kerb, for the parked cars, is measured straight across from
