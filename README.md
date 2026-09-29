@@ -63,8 +63,9 @@ the pixel ratio.
   world runs faster, in short steps so the physics holds; it slows down again while
   the streets ahead are still loading. The police can't arrest you on a tram, and
   your stars fade twice as fast.
-- **Pedal boats**: round Slovanský ostrov and the islands, stand on the bank next to a
-  pedal boat (or a swan) and press E to get in (`src/boats.ts`). W/S pedal, A/D turn;
+- **Pedal boats**: a few wait tied up at the bank round Slovanský ostrov and the islands;
+  stand next to one (or any passing pedal boat or swan) and press E to get in
+  (`src/boats.ts`). W/S pedal, A/D turn;
   E gets you out again where the bank is close.
 - **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
   desktop). The left thumb has a round stick: on foot, push it the way you want to go

@@ -26,6 +26,7 @@ const SPECS: Record<Kind, Spec> = {
 };
 const CRUISE = 4, PEDALS = 9;
 const NEAR = 60, SPAWN = 420, FAR = 700; // m from the player: where boats are put, and taken away
+const MOORED = 3; // pedal boats tied up at the bank
 const ISLANDS = 520; // pedal boats keep within this many metres of Slovanský ostrov
 const PAINTS = ['#e8c534', '#d8402f', '#2f7fc4', '#3aa55a', '#f08a2c'];
 
@@ -33,6 +34,7 @@ interface Boat {
   kind: Kind; s: Spec; mesh: THREE.Mesh; live: boolean;
   x: number; y: number; h: number; v: number; w: number; phase: number; wander: number; side: number;
   next: number; turn: number; ahead: number; // when to look round again, and what it found
+  moored: boolean; // tied up at the bank, waiting to be taken
 }
 
 // Boxes and extrusions with a colour per vertex, merged into one body. Forward is +x,
@@ -135,10 +137,12 @@ export class Boats {
       mesh.visible = false;
       mesh.matrixAutoUpdate = false;
       scene.add(mesh);
-      this.list.push({ kind, s: SPECS[kind], mesh, live: false, x: 0, y: 0, h: 0, v: 0, w: 0, phase: rng() * 10, wander: 0, side: 1, next: 0, turn: 0, ahead: 1 });
+      this.list.push({ kind, s: SPECS[kind], mesh, live: false, x: 0, y: 0, h: 0, v: 0, w: 0, phase: rng() * 10, wander: 0, side: 1, next: 0, turn: 0, ahead: 1, moored: false });
     };
     for (let i = 0; i < CRUISE; i++) add('cruise', '');
     if (islands) for (let i = 0; i < PEDALS; i++) i % 3 === 2 ? add('swan', '') : add('pedal', PAINTS[i % PAINTS.length]);
+    // The first few wait at the bank, for you to take one.
+    for (const b of this.list.filter((b) => b.kind !== 'cruise').slice(0, MOORED)) b.moored = true;
   }
 
   // Open water here, for this boat: loaded, on the river, and (for pedal boats) near
@@ -179,6 +183,22 @@ export class Boats {
       }
       if (!this.wet(b, x, y)) continue;
       let best = -1, h = 0;
+      if (b.moored) {
+        // Tied up: pulled in to the nearest bank, lying along it.
+        let bank = Infinity, a = 0;
+        for (let i = 0; i < 16; i++) {
+          const r = this.run(b, x, y, (i / 16) * Math.PI * 2, 12);
+          if (r < bank) { bank = r; a = (i / 16) * Math.PI * 2; }
+        }
+        if (bank >= 12) continue;
+        const pull = bank - (b.s.beam / 2 + 0.6);
+        x += Math.cos(a) * pull; y += Math.sin(a) * pull;
+        h = a + Math.PI / 2;
+        if (!this.fits(b, x, y, h) || this.list.some((o) => o !== b && o.live && Math.hypot(o.x - x, o.y - y) < 6)) continue;
+        Object.assign(b, { x, y, h, v: 0, w: 0, live: true });
+        b.mesh.visible = true;
+        return;
+      }
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * Math.PI * 2, r = this.run(b, x, y, a, b.s.look * 2) + this.run(b, x, y, a + Math.PI, b.s.look * 2) * 0.5;
         if (r > best) { best = r; h = a; }
@@ -241,6 +261,7 @@ export class Boats {
   // The player's pedal boat: W/S pedal forward and back, A/D turn (a pedal boat turns
   // on the spot). It stops dead against the bank.
   pedal(b: Boat, dt: number, ctl: { move: number; turn: number }) {
+    b.moored = false;
     const want = ctl.move * (ctl.move > 0 ? 1.8 : 0.9);
     b.v += clamp(want - b.v, -1.2 * dt, 0.8 * dt);
     b.w += (ctl.turn * 0.7 - b.w) * Math.min(1, dt * 3);
@@ -254,6 +275,7 @@ export class Boats {
   // Look ahead and to both sides; head for open water, slow down near the bank, and
   // turn round where it closes in.
   steer(b: Boat, dt: number) {
+    if (b.moored) return;
     const S = b.s, look = S.look + S.len / 2;
     // (A look round a few times a second is plenty at these speeds.)
     b.next -= dt;
