@@ -13,8 +13,9 @@ export interface TreeTileData extends GeoData {
 
 interface TreeInstances { matrices: Float32Array; colours: Float32Array; count: number }
 
-// Land-use classes rasterised at 1 px/m, used to scatter trees.
-const WOOD = 200, PARK = 120, ORCHARD = 60;
+// Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
+// apart from buildings and paving: a garden tree may lean over a fence, not a roof.
+const WOOD = 200, PARK = 120, GARDEN = 90, ORCHARD = 60, FENCE = 1;
 
 // Where a tile's trees stand, and how big and what colour they are: their instance
 // matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Under
@@ -31,12 +32,15 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
       ctx.fillStyle = `rgb(${v},0,0)`;
       fillPolys(ctx, geo, polys, s);
     };
+    fill(d.areas.cover_grass, GARDEN);
+    fill(d.areas.garden, GARDEN);
     fill(d.areas.park, PARK);
     fill(d.areas.orchard, ORCHARD);
     fill(d.areas.wood, WOOD);
     // Keep trees off everything built or paved.
     fill(d.areas.square, 0);
     fill(d.areas.pitch, 0);
+    fill(d.areas.parking, 0);
     fill(d.areas.water, 0);
     fill(d.areas.bridge, 0);
     for (const k of Object.keys(d.roads)) fill(d.roads[k], 0);
@@ -45,10 +49,11 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#000';
     ctx.stroke();
+    ctx.strokeStyle = `rgb(${FENCE},0,0)`;
     strokeLines(ctx, geo, d.walls.map((w) => w.pts), s);
   });
 
-  const trees = []; // [x, y, radius, kind]
+  const trees: [number, number, number, number][] = []; // [x, y, radius, kind]
   const r = rng(42);
   for (const [x, y] of d.trees) trees.push([x, y, 3 + r() * 2.5, 1]);
 
@@ -67,6 +72,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
       if (grid.at(x, y) === ORCHARD && r() < 0.85) trees.push([x + (r() - 0.5), y + (r() - 0.5), 1.7 + r() * 0.8, 2]);
     }
   }
+  gardenTrees(geo, grid, trees);
 
   const matrices = new Float32Array(trees.length * 16), colours = new Float32Array(trees.length * 3);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
@@ -74,10 +80,12 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     [new THREE.Color('#5a7c38'), new THREE.Color('#4a6a30'), new THREE.Color('#6a8c40')],
     [new THREE.Color('#6f9440'), new THREE.Color('#7f9c45'), new THREE.Color('#5f8638')],
     [new THREE.Color('#7f9a52'), new THREE.Color('#8ea85c'), new THREE.Color('#c9c7a0')], // blossom in May
+    [new THREE.Color('#5a7a38'), new THREE.Color('#68883e'), new THREE.Color('#779646'), new THREE.Color('#4e6c3a')], // shrubs, hedges, yews
   ];
   const c = new THREE.Color();
   trees.forEach(([x, y, rad, kind], i) => {
-    let h = rad * (1.6 + r() * 0.6);
+    // A shrub's crown sits on the ground, a little flattened.
+    let h = kind === SHRUB ? rad * (0.42 + r() * 0.12) : rad * (1.6 + r() * 0.6);
     // The crown's top is 0.75 of its radius above its centre.
     const top = h + rad * 0.75, fit = Math.min(1, (room(x, y) - 0.5) / top);
     if (fit < 1) {
@@ -87,7 +95,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     p.set(x, h, -y);
     q.setFromEuler(new THREE.Euler(0, r() * Math.PI, 0));
     const w = rad * (0.9 + r() * 0.2);
-    sc.set(w, rad * (0.85 + r() * 0.3), rad * (0.9 + r() * 0.2));
+    sc.set(w, rad * (kind === SHRUB ? 0.65 + r() * 0.2 : 0.85 + r() * 0.3), rad * (0.9 + r() * 0.2));
     m.compose(p, q, sc);
     m.elements[13] += height(x, y);
     m.toArray(matrices, i * 16);
@@ -96,6 +104,73 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     c.toArray(colours, i * 3);
   });
   return { matrices, colours, count: trees.length };
+}
+
+const SHRUB = 3;
+
+// Gardens round houses and in courtyards: a few trees and shrubs scattered over the
+// grass, clear of the houses, streets and paths (a crown may lean over a fence) and of
+// the trees already there, fewer than in a park. Each spot's own random numbers come
+// from where it is, so a garden looks the same every time it loads, whatever else
+// the tile has.
+function gardenTrees(geo: Geo, grid: Grid, trees: [number, number, number, number][]) {
+  // The trees already placed, in 8 m cells, to keep new ones apart from them.
+  const CELL = 8, near = new Map<number, number[]>();
+  const key = (i: number, j: number) => i * 65536 + j;
+  const index = (t: number) => {
+    const k = key(Math.floor(trees[t][0] / CELL), Math.floor(trees[t][1] / CELL));
+    const list = near.get(k);
+    if (list) list.push(t); else near.set(k, [t]);
+  };
+  for (let t = 0; t < trees.length; t++) index(t);
+  const crowded = (x: number, y: number, rad: number, apart: number) => {
+    const i0 = Math.floor(x / CELL), j0 = Math.floor(y / CELL);
+    for (let i = i0 - 1; i <= i0 + 1; i++) {
+      for (let j = j0 - 1; j <= j0 + 1; j++) {
+        for (const t of near.get(key(i, j)) || []) {
+          const [tx, ty, tr] = trees[t];
+          if (Math.hypot(tx - x, ty - y) < (tr + rad) * apart) return true;
+        }
+      }
+    }
+    return false;
+  };
+  // Grass under the middle, and nothing built or paved under the crown (two rings of
+  // eight points; a fence or the next tile is fine).
+  const clear = (x: number, y: number, rad: number) => {
+    if (grid.at(x, y) !== GARDEN) return false;
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+      if (grid.at(x + c * rad, y + s * rad) === 0 || grid.at(x + c * rad * 0.5, y + s * rad * 0.5) === 0) return false;
+    }
+    return true;
+  };
+  // Candidates on a lattice fixed to the map, not the tile, each with its own seed.
+  const scatter = (step: number, salt: number, place: (x: number, y: number, g: () => number) => void) => {
+    for (let j = Math.ceil(geo.minY / step); j * step < geo.maxY; j++) {
+      for (let i = Math.ceil(geo.minX / step); i * step < geo.maxX; i++) {
+        const g = rng(Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ salt);
+        place((i + 0.15 + g() * 0.7) * step, (j + 0.15 + g() * 0.7) * step, g);
+      }
+    }
+  };
+  // Trees first: mostly small (fruit trees, birches, a lilac grown tall), now and
+  // then a big old one.
+  scatter(8, 0x51f3, (x, y, g) => {
+    if (g() > 0.3) return;
+    const rad = g() < 0.12 ? 3.4 + g() * 1.6 : 1.8 + g() * 1.8;
+    if (!clear(x, y, rad * 1.1) || crowded(x, y, rad, 0.85)) return;
+    trees.push([x, y, rad, g() < 0.15 ? 2 : 1]);
+    index(trees.length - 1);
+  });
+  // Then shrubs, along the edges as much as in the open.
+  scatter(5.5, 0x2c9e, (x, y, g) => {
+    if (g() > 0.1) return;
+    const rad = 0.8 + g() * 0.9;
+    if (!clear(x, y, rad + 0.3) || crowded(x, y, rad, 0.7)) return;
+    trees.push([x, y, rad, SHRUB]);
+    index(trees.length - 1);
+  });
 }
 
 // A crown: tufts of leaves in tiers, like shingles, round a dark core that fills the
