@@ -10,7 +10,7 @@
 ## Status
 
 - Priority: P1
-- Effort: M (about a day)
+- Effort: M–L (about 1.5 days, with the inspector)
 - Risk: low to medium. Most of the work is small hooks in `src/main.ts` (about 1,400
   lines, shared with parallel work) and the GBFS price calculation for bikes.
 - Depends on: none
@@ -24,8 +24,9 @@ spent, on three things:
 1. **Taxis**: the fare the meter already works out is taken from the balance.
 2. **Public transport (PID)**: trams, the metro and the Petřín funicular. You buy a
    90-minute ticket yourself. On a tram or the funicular you have 10 seconds after
-   getting on; at the metro you choose on the way in. Ride without one and ticket
-   inspectors may catch you and fine you.
+   getting on; at the metro you choose on the way in. Ride without one and a ticket
+   inspector may check you. You either pay the fine or run. The inspector, in plain
+   clothes, runs after you, and if you aren't caught quickly they call the police.
 3. **Shared bikes (nextbike)**: the rental is charged when you return the bike, by the
    operator's real pricing plan (GBFS, already in `bikes.json`).
 
@@ -33,8 +34,9 @@ The balance is always shown in the HUD. If you can't afford something, you can't
 start it, and a short message says why.
 
 Out of scope: earning money, saving the balance between games, police fines, parking,
-pedal boats, inspectors you can see (they're only a message), choosing between
-ticket types, and buses (you can't ride them yet).
+pedal boats, choosing between ticket types, buses (you can't ride them yet), and a
+fine for fare dodging when the police catch you afterwards (the ordinary "Busted"
+applies).
 
 ## Decisions made (don't change them without asking)
 
@@ -57,27 +59,40 @@ ticket types, and buses (you can't ride them yet).
     ticket (46 Kč), or go in without one. If you hold a valid ticket, the question
     is skipped. If you can't afford one, only "without a ticket" is offered, with
     the reason.
-  - **Inspectors**: riding without a ticket, at each tram or funicular stop the
+  - **Inspection**: riding without a ticket, at each tram or funicular stop the
     vehicle arrives at there's a **5%** chance of a check. On the metro the chance is
-    **15%** a ride, checked on arrival. Keep these as named constants so they can be
-    tuned.
+    **15%** a ride, checked at the way out. Keep these as named constants so they can
+    be tuned. At most one check a ride.
   - **Fine**: **1,200 Kč**, PID's fine paid on the spot (2026). You pay what you
-    have, never going below 0. The message is red, like "Busted"
-    (`showBanner(…, true)`). Once fined, you aren't checked again on the same ride.
-- **Taxi**:
-  - You can't call one unless you can afford its starting fare (`firm.start`).
-  - During the ride the hint shows the meter.
-  - When the meter reaches your balance, the driver pulls over and lets you out:
-    *"Your money ran out, so the driver let you out"*.
-  - If the taxi **crashes**, the ride is free.
-- **Bikes**:
-  - Renting from a station needs at least the price of the first charge (39 Kč with
-    nextbike's standard plan).
-  - The whole rental is charged when the bike goes back to a station. If the cost is
-    more than you have, all you have left is taken (no debt).
-  - A bike parked away from a station keeps its rental running, as it does now.
-  - A bike that's never returned is never charged. That's a known gap; add it to
-    "Known issues" in the README.
+    have, never going below 0.
+  - **The choice at a check**: *"Ticket inspection!"* in the hint and a banner, with
+    **B** to pay the fine and **E** to get off and run. There are **5 seconds** to
+    decide.
+    - Tram or funicular: the vehicle waits at the stop while you decide. If you don't
+      decide, you pay.
+    - Metro: the check is at the way out, on the street. Running there just means
+      walking or running away (more than 3 m from the inspector); pressing nothing
+      for 5 s means paying.
+  - **The inspector**: when you run, a figure appears beside you:
+    - in plain clothes: any look from the crowd (`randomLook`), not a uniform;
+    - on a tram, beside the door you got off by, after about 0.5 s;
+    - they run after you on foot like a police officer on foot (the same way round
+      cars and trams), at about **6 m/s**, a little slower than the police (6.4). They
+      never shoot and never drive.
+  - **Caught**: when they reach you on foot, you pay the fine (or what you have
+    left), with a red banner, like "Busted" (`showBanner(…, true)`), and the chase is
+    over. If they haven't called the police yet, they don't.
+  - **The police**: if they haven't caught you **10 seconds** after you ran, they
+    call the police. That's a new crime, `fareDodge`, reported by phone at the
+    inspector's position: **one star**. The same happens at
+    once if you get into a vehicle (car, bike, tram, taxi) while they're chasing you.
+    After the call they go on chasing you, up to 30 s from the start.
+  - **Giving up**: after 30 s, or when you're more than 60 m ahead, they give up,
+    walk off and disappear once out of sight (as officers do, `offscreen`). If
+    you've got into a vehicle, they give up at once after the call.
+  - **Knocking them over**: you can knock them down like a person or an officer
+    (a car, an explosion, a tram): they lie down for a while and it counts as the
+    crime `knock`.
 
 ## Current state (what the plan relies on)
 
@@ -163,19 +178,20 @@ export const GRACE = 10; // s (real) after getting on a tram or funicular to buy
 export const FINE = 1200; // Kč, PID's fine paid on the spot (2026)
 export const CHECK_STOP = 0.05; // chance of inspectors at each stop, riding without a ticket
 export const CHECK_METRO = 0.15; // and on a metro ride
+export const DECIDE = 5; // s to pay or run at an inspection
 
 // One ride on a tram or the Petřín funicular: with a ticket, still time to buy one,
 // or riding without (and caught at most once).
 export class PidRide {
-  state: 'ticket' | 'grace' | 'dodging' | null = null;
+  state: 'ticket' | 'grace' | 'dodging' | 'checked' | null = null;
   left = 0; // seconds left to buy
   constructor(private wallet: Wallet) {}
   board(now: number): void // 'ticket' if one is valid, else 'grace' with left = GRACE
   buy(now: number): boolean // only during 'grace'; then 'ticket'
   update(realDt: number): void // 'grace' runs out into 'dodging'
-  // At a stop: inspectors, maybe. Returns the fine taken, or null.
-  // After a fine, state becomes 'ticket'.
-  check(chance: number, roll = Math.random()): number | null
+  // At a stop: an inspection, maybe (only while 'dodging', at most once a ride;
+  // after that, state becomes 'checked').
+  check(chance: number, roll = Math.random()): boolean
   leave(): void // state = null
 }
 
@@ -246,15 +262,9 @@ The first charge (the minimum needed to rent) is `rentalCost(plan, 0)`.
 
 ### 4. Public transport: tickets and inspectors
 
-Create one `PidRide` in main (`const pid = new PidRide(wallet)`) and one helper that
-fines you, so the tram, funicular and metro all say the same thing:
-
-```ts
-// Caught without a ticket: the fine, or all you have left.
-const fined = (paid: number) => showBanner(paid < FINE
-  ? t('Ticket inspection! You had no ticket, so they took all your money ({paid})', { paid: kc(paid) })
-  : t('Ticket inspection! Fine for riding without a ticket: {fine}', { fine: kc(FINE) }), true);
-```
+Create one `PidRide` in main (`const pid = new PidRide(wallet)`). The inspection
+itself (the choice and the chase) lives in the new module `src/inspector.ts`
+(section 4a).
 
 **Tram** (`enterOrExit` and the frame loop in `src/main.ts`):
 
@@ -273,10 +283,13 @@ const fined = (paid: number) => showBanner(paid < FINE
 - Hint while riding, during `grace`: put first
   `t('<b>B</b> buy a ticket ({price}) · {secs} s left')` (without `<b>B</b>` on
   touch). While `dodging`, show a short `t('No ticket')` among the parts.
-- Inspection: when the tram **arrives** at a stop with you on it, call
-  `pid.check(CHECK_STOP)`; if it returns a number, call `fined(n)`. Arriving means
-  `ride.atStop()` turned from false to true; keep the previous value in main.
-  Check only while riding, not at the stop where you got on.
+- Inspection: when the tram **arrives** at a stop with you on it and
+  `pid.check(CHECK_STOP)` returns true, start the inspection (`inspector.start('tram')`,
+  section 4a). Arriving means `ride.atStop()` turned from false to true; keep the
+  previous value in main. Check only while riding, not at the stop where you got on.
+  While you decide, the tram must not leave: add a way to hold its dwell to `ride.ts`
+  (`hold(seconds)`, or a `held` flag that `trams.ts` respects) and check it doesn't
+  hold up the other trams behind it for longer than necessary.
 
 **Petřín funicular**:
 
@@ -287,8 +300,10 @@ const fined = (paid: number) => showBanner(paid < FINE
   `pid.leave()`.
 - Buying (B or touch) and the hint work the same as on a tram. Add the grace part
   to `funicular.hint()`, or put it in front of it in main.
-- Inspection: when `funicular.me.stop` turns from `null` to a station, call
-  `pid.check(CHECK_STOP)`.
+- Inspection: when `funicular.me.stop` turns from `null` to a station and
+  `pid.check(CHECK_STOP)` is true, start `inspector.start('funicular')`. The
+  funicular runs by the clock, so it can't wait. If it leaves before you decide,
+  treat that as paying.
 
 **Metro** (`src/metro.ts`):
 
@@ -308,13 +323,92 @@ const fined = (paid: number) => showBanner(paid < FINE
   - keys: **1**/**2** (or W/S and E) choose, **Esc** goes back to the street.
   - Both choices lead to `'pick'`. `nobuy` sets `this.dodging = true`, and `open()`
     resets it to `false`.
-- Inspection is checked on arrival. In main's `onArrive`, if `metro.dodging`, roll
-  `Math.random() < CHECK_METRO`; if it hits, take `wallet.take(FINE)` and call
-  `fined(...)`. Then set `metro.dodging = false`.
+- Inspection happens at the way out. In main's `onArrive`, after the teleport, if
+  `metro.dodging && Math.random() < CHECK_METRO`, call `inspector.start('street')`.
+  Then set `metro.dodging = false`.
 - A ticket bought on a tram also covers the metro, and the other way round, within
   its 90 minutes.
 
 The police's rules (no arrest on a tram) don't change.
+
+### 4a. The inspector (`src/inspector.ts`)
+
+This is a new module, in the style of `police.ts`. Start with a header comment
+explaining the rules from "Decisions made". Its outline:
+
+```ts
+export class Inspector {
+  phase: 'off' | 'decide' | 'chase' | 'leaving' = 'off';
+  where: 'tram' | 'funicular' | 'street' = 'street';
+  left = 0; // s to decide
+  called = false; // the police have been called
+  private t = 0; // s since you ran
+  person: Chaser | null = null; // the figure on foot
+  constructor(o: {
+    scene; kit: FigureKit; grid; rng; wallet: Wallet;
+    bodyAt: (x, y, r, skip) => boolean; offscreen: (x, y) => boolean;
+    crime: (x: number, y: number) => void; // police.crime('fareDodge', x, y)
+    fined: (paid: number) => void; // the red banner
+  })
+  start(where): void // phase 'decide', left = DECIDE
+  pay(): void // B: wallet.take(FINE), fined(paid), phase 'off'
+  run(x, y, h): void // you've left: the figure beside (x, y), phase 'chase'
+  update(dt, me: { x, y, onFoot: boolean, inVehicle: boolean }): void
+  render(height): void
+  reset(): void // teleport, being wasted or busted: the figure goes
+}
+```
+
+- **Chasing on foot**: police officers already do it in `Police.walk()` in
+  `src/police.ts`: they head for you, go round cars and trams with `bodyAt` and the
+  `detour` side, move by the grid (`blocked`), and animate with `locomote`/`knocked`.
+  Don't copy that code. Pull the steering (the part from `let ang = Math.atan2(dy,
+  dx)` to setting `vx/vy/h`) out into an exported function, for example
+  `steer(o, tx, ty, speed, bodyAt, skip, rng)` in `police.ts`, and use it in both
+  places. Officers must behave exactly as before. Check a chase on foot with the
+  police after the refactor.
+- **The figure**: `new Figures(kit, 1)` with `fig.look(0, randomLook(rng))`, and an
+  `Anim(kit, 'idle')`. Render it as `Police.render` renders officers (`fig.set` with
+  a matrix and `SCALE`, then `commit`). There's never more than one inspector, and
+  the figure can be kept and reused.
+- **Catching**: on foot and within 1.1 m (the same `reach` as officers), call
+  `pay()`. You can't be caught in a vehicle.
+- **Timing**:
+  - 10 s after `run()` with no catch: `crime(x, y)` once (`called = true`), and
+    `showBanner(t('The inspector called the police'))`.
+  - At once, if `me.inVehicle`.
+  - 30 s, or more than 60 m, or `called && me.inVehicle`: phase `'leaving'`; they
+    walk off (1.4 m/s away from you, as officers without a car do) and go once
+    `offscreen`.
+- **In main**:
+  - Collisions: add the inspector to what cars, trams and explosions knock over, in
+    the same places as `police.officers` (main ~lines 727, 854, 1007). Hitting them
+    with your car counts as `police.crime('knock', …)`.
+  - Add a way to knock them down (`knock(vx, vy)`, with `down` as officers have).
+  - On a teleport, being wasted or busted, call `inspector.reset()`.
+- **The choice, in main**:
+  - While `inspector.phase === 'decide'`, the hint shows
+    `t('Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s')`.
+    On touch, the `#t-ticket` button becomes "Pay the fine", and running is the
+    usual get-off button.
+  - B calls `inspector.pay()`.
+  - On a tram, E (`getOff`) during `decide` calls `inspector.run(...)` at the
+    place where you got off. On the funicular, the same in its branch of
+    `enterOrExit`.
+  - On the street (metro), moving more than 3 m from where the check began counts
+    as `run`.
+  - If `left` runs out, call `pay()`.
+- **Police**: in `src/police.ts`, add `fareDodge: 2` to `POINTS`. `crime()` adds
+  `POINTS × 0.5` when phoned in and `× 1.5` when an officer sees it. With 2, a phoned-in
+  call gives heat 1, which is one star (`STARS = [1, 4, …]`). If a patrol sees it
+  (heat 3), it's still one star.
+- **The banner at a fine**, in main, passed as `fined`:
+
+  ```ts
+  const fined = (paid: number) => showBanner(paid < FINE
+    ? t('Ticket inspection! You had no ticket, so they took all your money ({paid})', { paid: kc(paid) })
+    : t('Ticket inspection! Fine for riding without a ticket: {fine}', { fine: kc(FINE) }), true);
+  ```
 
 ### 5. Shared bikes (`src/bikeshare.ts` and main)
 
@@ -352,6 +446,9 @@ entries. Suggested translations:
 | `<b>B</b> buy a ticket ({price}) · {secs} s left` | `<b>B</b> koupit jízdenku ({price}) · zbývá {secs} s` |
 | `No ticket` | `Bez jízdenky` |
 | `Ticket inspection! Fine for riding without a ticket: {fine}` | `Revize! Pokuta za jízdu bez jízdenky: {fine}` |
+| `Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s` | `Revize! <b>B</b> zaplatit pokutu ({fine}) · <b>E</b> vystoupit a utéct · {secs} s` |
+| `The inspector called the police` | `Revizor zavolal policii` |
+| `Pay the fine` | `Zaplatit pokutu` |
 | `Ticket inspection! You had no ticket, so they took all your money ({paid})` | `Revize bez jízdenky: revizor si vzal všechno, co ti zbylo ({paid})` |
 | `Going in without a ticket?` | `Jdeš dovnitř bez jízdenky?` |
 | `Buy a ticket for {minutes} minutes ({price})` | `Koupit jízdenku na {minutes} minut ({price})` |
@@ -372,8 +469,9 @@ Check how the existing Czech lines address the player (the "ty" form, as in
   - Taxis: the fare is taken from your money; the ride stops when you run out; a
     crash means a free ride.
   - Trams, metro and funicular: the 90-minute ticket, 10 seconds to buy it after
-    getting on (B), the choice on the way into the metro, inspectors and the
-    1,200 Kč fine. The NH funicular is free.
+    getting on (B), the choice on the way into the metro, the check, the 1,200 Kč
+    fine, and running from the inspector (who calls the police after 10 s). The NH
+    funicular is free.
   - Shared bikes: the price follows nextbike's plan.
 - The README's URL parameters paragraph: add `?money=N`.
 - "Not yet in the game": earning money.
@@ -394,18 +492,27 @@ Check how the existing Czech lines address the player (the "ty" form, as in
    - Get on a tram at Újezd: the hint counts down 10 s with "B buy a ticket". B takes
      46 Kč and the banner says so. Get off and on again: no countdown, since the
      ticket is still valid.
-   - Without buying, after 10 s the hint shows "No ticket". For a quick check of the
-     fine, temporarily raise `CHECK_STOP` to 1 (don't commit that). At the next stop
-     1,200 Kč is taken, or everything with `money=60`, and you aren't checked again
-     on that ride.
+   - Without buying, after 10 s the hint shows "No ticket". For a quick check,
+     temporarily raise `CHECK_STOP` to 1 (don't commit that). At the next stop comes
+     the inspection with its 5 s:
+     - B takes 1,200 Kč (everything with `money=60`), and the tram goes on.
+     - E gets you off. A person in ordinary clothes gets off after you and runs
+       after you. If they catch you, you pay. If you get away for 10 s, one star
+       lights up and the police come. Once you're far enough away, the inspector
+       gives up and disappears.
+     - Getting into a car during the chase calls the police at once.
+     - A car knocks the inspector over, and that's the crime `knock`.
+     - A chase with the police on foot still works as before (the `steer`
+       refactor).
    - With `money=60`, after one ticket, buying another (after 90 minutes of game
      time) is refused with a message.
    - Taxi (T): with 60 Kč the street taxi (60) can be called and the app ones too. The
      ride ends when the meter reaches the balance. With 30 Kč, no taxi can be called.
    - Metro without a valid ticket: the question comes first. "Buy" takes 46 Kč and
      "without" doesn't. With a valid ticket, the station list comes straight away.
-     With too little money, "Buy" is disabled with the reason. Check the fine on
-     arrival with `CHECK_METRO` temporarily at 1.
+     With too little money, "Buy" is disabled with the reason. Check the inspection
+     at the way out with `CHECK_METRO` temporarily at 1: B pays, and walking away
+     means running.
    - Petřín funicular: the 10-second countdown as on a tram; the NH funicular has none.
    - Shared bike (nextbike station near Újezd, or anywhere in `praha`): taking it
      needs 39 Kč. Returning it to a station takes the price. The hint shows the
@@ -422,8 +529,11 @@ repository's style (`git log` subjects such as "Taxis: …", "Shared bikes: …"
 
 1. `Money: a wallet with 10 000 Kč, shown in the HUD`
 2. `Taxis: the fare taken from your money, out when it runs out`
-3. `PID tickets: 90 minutes for trams, the metro and the Petřín funicular, and inspectors`
-4. `Shared bikes: rentals charged by nextbike's pricing plan`
-5. README (can be part of the commits above).
+3. `PID tickets: 90 minutes for trams, the metro and the Petřín funicular`
+4. `Police: officers' steering round cars pulled out for others to use` (the refactor
+   on its own, with no change in behaviour)
+5. `Ticket inspectors: pay the fine or run, and they call the police`
+6. `Shared bikes: rentals charged by nextbike's pricing plan`
+7. README (can be part of the commits above).
 
 Don't push unless the user asks.
