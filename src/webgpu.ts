@@ -14,56 +14,11 @@ import {
   Fn, If, Discard, float, vec2, vec3, vec4, uniform, texture, positionWorld, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select,
 } from 'three/tsl';
-import { NOISE, DIRT, WET, SNOW, STREET_SNOW, RAIN, CUTAWAY, DIG, setPatterned } from './shading.ts';
-
-type N = any; // TSL nodes (their typings don't follow the chained arithmetic well)
-
-// Uniforms that follow the shared { value } objects in shading.ts.
-const follow = (u: { value: number }) => uniform(u.value).onRenderUpdate(() => u.value);
-const uDirt = follow(DIRT), uWet = follow(WET), uSnow = follow(SNOW), uStreetSnow = follow(STREET_SNOW), uRain = follow(RAIN);
-const uCut = uniform(CUTAWAY.value), uDig = uniform(DIG.value);
-const times = new WeakMap<{ value: number }, N>();
-const timeOf = (t: { value: number }) => { let u = times.get(t); if (!u) times.set(t, (u = follow(t))); return u; };
-
-// NOISE_GLSL. (One texture node, sampled at each call, so it's one binding.)
-const noise = texture(NOISE.value);
-const hash12 = (p: N) => {
-  const p3 = fract(vec3(p.x, p.y, p.x).mul(0.1031)).toVar();
-  p3.addAssign(dot(p3, p3.yzx.add(33.33)));
-  return fract(p3.x.add(p3.y).mul(p3.z));
-};
-const vnoise = (p: N) => {
-  const i = floor(p), f = p.sub(i);
-  return noise.sample(i.mod(256).add(f.mul(f).mul(f.mul(-2).add(3))).add(0.5).div(256)).level(float(0)).r;
-};
-const fbm2 = (p: N) => vnoise(p).mul(2).add(vnoise(p.mul(2.03).add(11.7))).div(3);
-const fbm = (p: N) => {
-  let s: N = float(0), a = 0.5, q = p;
-  for (let k = 0; k < 4; k++) { s = s.add(vnoise(q).mul(a)); q = q.mul(2.03).add(11.7); a *= 0.5; }
-  return s;
-};
-// Declared where it's called (toVar), outside any branch: WGSL wants derivatives there.
-const detail = (p: N, cell: number) => float(1).sub(smoothstep(cell * 0.2, cell * 0.7, length(fwidth(p)))).toVar();
-const blocks = (p: N, sx: number, sy: number) => {
-  const qy = p.y.div(sy), qx = p.x.div(sx).add(step(1, mod(floor(qy), 2)).mul(0.5));
-  const q = vec2(qx, qy), f = fract(q), e = min(f, f.oneMinus()).mul(vec2(sx, sy));
-  return vec2(min(e.x, e.y), hash12(floor(q)));
-};
-const hash32 = (p: N) => {
-  const p3 = fract(vec3(p.x, p.y, p.x).mul(vec3(0.1031, 0.103, 0.0973))).toVar();
-  p3.addAssign(dot(p3, p3.yxz.add(33.33)));
-  return fract(p3.xxy.add(p3.yzz).mul(p3.zyx));
-};
-const stones = (p: N) => {
-  const i = floor(p).toVar(), f = fract(p).toVar();
-  const d1 = float(64).toVar(), d2 = float(64).toVar(), id = float(0).toVar();
-  for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) {
-    const g = vec2(x, y), h = hash32(i.add(g)).toVar();
-    const r = g.add(h.xy.mul(0.8)).add(0.1).sub(f), d = dot(r, r).toVar();
-    If(d.lessThan(d1), () => { d2.assign(d1); d1.assign(d); id.assign(h.z); }).ElseIf(d.lessThan(d2), () => { d2.assign(d); });
-  }
-  return vec2(sqrt(d2).sub(sqrt(d1)), id);
-};
+import { setPatterned } from './shading.ts';
+import {
+  type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports,
+} from './webgpu/common.ts';
+import './webgpu/buildings.ts';
 
 // PATTERNS_GLSL.
 function pAsphalt(c0: N, p: N) {
@@ -255,18 +210,6 @@ const toneCurve = Fn(([color, exposure]: N[]) => {
   return select(exposure.lessThan(0), color.mul(exposure.negate()), c.add(vec3(0.016, 0.012, 0.006).mul(c.oneMinus())));
 }).setLayout({ name: 'customToneMapping', type: 'vec3', inputs: [{ name: 'color', type: 'vec3' }, { name: 'exposure', type: 'float' }] });
 
-// Ports of the materials that change three.js's GLSL, chosen by the legacy material's
-// customProgramCacheKey (each of them sets one). When WebGPURenderer builds a shader for a
-// legacy material, it converts it through library.fromMaterial: `port` gets the node
-// material made from it, to set colorNode and the like. The mesh keeps its legacy
-// material, so the module-level ones (cars, trams, funicular, treeDepth) need no lazy
-// creation or boot module, and the shadow pass (which reads the mesh's own material's
-// nodes, not the converted one's) stays plain unless the port sets castShadow nodes on
-// the legacy material.
-type Port = (node: N, legacy: THREE.Material) => void;
-const ports: { match: RegExp; port: Port }[] = [];
-const addPort = (match: RegExp, port: Port) => { ports.push({ match, port }); };
-
 export async function createRenderer() {
   const renderer = new WebGPURenderer({ antialias: true, stencil: true });
   await renderer.init();
@@ -283,6 +226,8 @@ export async function createRenderer() {
   library.addToneMapping(toneCurve, THREE.CustomToneMapping);
   // GLSL materials can't be drawn: hide them all. (Material's constructor sets
   // visible through this setter too.)
+  // WebGPURenderer calls camera.updateProjectionMatrix(); the lamps' light map is drawn with a bare THREE.Camera, which has none.
+  (THREE.Camera.prototype as { updateProjectionMatrix?: () => void }).updateProjectionMatrix ??= () => {};
   Object.defineProperty(THREE.ShaderMaterial.prototype, 'visible', { get: () => false, set: () => {}, configurable: true });
   // Under Chrome's --disable-frame-rate-limit (bench.mjs) compiling ahead never
   // finishes; what isn't compiled by then is compiled when it's first drawn.

@@ -5,7 +5,7 @@
 //
 //   node scripts/bench.mjs [--url http://localhost:5191/] [--scenes stand,drive,woods]
 //     [--seconds 10] [--dpr 2] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
-//     [--profile-load] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json]
+//     [--profile-load] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json] [--stack (page errors with their stack)]
 //     [--browser chrome|chromium] [--angle metal|swiftshader (software, drawing like
 //     a desktop GPU that shades every covered pixel: for overdraw)]
 //     [--vs http://localhost:5192/ (compare with another server, taking turns)]
@@ -69,7 +69,7 @@ async function runScene(browser, name, base = URL_BASE) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
   await page.addInitScript(INIT);
-  page.on('pageerror', (e) => console.error(`[${name}] page error:`, e.message));
+  page.on('pageerror', (e) => console.error(`[${name}] page error:`, args.stack ? e.stack : e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.error(`[${name}] console:`, m.text().slice(0, 3000)); });
   const q = `?start=${place.start}&dpr=${DPR}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&go&day=wed&weather=${args.weather || 'clear'}${args.extra || ''}`;
   // --profile-load: the CPU profile of loading, up to the game starting.

@@ -15,16 +15,20 @@ skill for measuring.
 
 ## Where things stand
 
-Ported (in `src/webgpu.ts`): the ground's patterns, noise, dirt and weather colour
-(`patterned()` in `src/shading.ts`, through `setPatterned`), and the tone curve
-(`sky.ts`, registered with `renderer.library.addToneMapping`).
+Ported: the ground's patterns, noise, dirt and weather colour (`patterned()` in
+`src/shading.ts`, through `setPatterned`; `src/webgpu.ts`), the tone curve (`sky.ts`,
+registered with `renderer.library.addToneMapping`), and the buildings
+(`src/webgpu/buildings.ts`: roofs, windows, facade pictures, grime, lit windows, rain
+and snow, and the cutaway hole, also used by every `cutAway` material: landmarks, trees'
+`cut-*` key, the depth-only ground). Shared helpers and uniforms are in
+`src/webgpu/common.ts`. Buildings cost 0.6–1.4 ms a frame at 2× on WebGPU against
+0.7–1.3 ms on WebGL (`--ab`, three scenes).
 
 Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 
 | Where | What | Notes |
 |---|---|---|
-| `shading.ts` `shadeBuildings` | roofs (tiles, slate, flat), windows, facade pictures (`FACADE_GLSL` in `facades.ts`, a `sampler2DArray` and a const int array), grime, lit windows, rain and snow on buildings, the cutaway hole | the biggest cost left: roof tiles ~12%, facades ~7%, grime ~6% of a frame |
-| `shading.ts` `cutAway` | the round hole over the player in a passage | used by trees and the depth-only ground |
+| `shading.ts` `cutAway` | the hole over the player, for trees | ported for the landmarks and the depth ground (a `maskNode` on every `cut-*` material); trees still need `leafy` |
 | `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | shared by the ground, buildings, cars, figures, trams, boats, signals; needed for night |
 | `map/vegetation.ts` `leafy`, `treeDepth` | leaves in tufts (vertex and fragment), bare twigs, their shadows | `treeDepth` is a `customDepthMaterial`, see below |
 | `figures.ts` `vatMaterial` | people animated from textures (`gl_VertexID`, `texelFetch`) | colour and depth versions |
@@ -109,6 +113,15 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
 
 ## Gotchas found so far
 
+- **Uniforms that follow the game's values go in `renderGroup`.** A `uniform()` in the
+  default (per-object) group kept the value it had when first uploaded: the cutaway hole
+  stayed at the radius it had in its first frames. `follow()` and `uCut`/`uDig` in
+  `webgpu/common.ts` set `.setGroup(renderGroup)`; use them, and check that a value
+  that changes during play really reaches the shader (e.g. swap it for a constant and
+  compare screenshots).
+- **Night on WebGPU crashed** with `camera.updateProjectionMatrix is not a function`: the
+  lamps' light map is drawn with a bare `THREE.Camera`. `createRenderer` gives the base
+  class a no-op; the light map itself is empty until the lamps are ported.
 - **Derivatives only outside branches.** WGSL rejects `fwidth`/`dFdx` (and
   `textureSample` without a level) in non-uniform control flow. Anything computed
   with them must be declared before an `If`: `.toVar()` puts it on the stack where
