@@ -36,7 +36,9 @@ the pixel ratio.
 - Tank controls on foot and in the car: W/S forwards and back, A/D turn, Shift
   runs, Space is the handbrake. E gets into the nearest car, including one driving
   past (its driver runs off). R puts the car back on the road. Scroll zooms; the
-  camera also pulls up with speed.
+  camera also pulls up with speed. Braking hard, the handbrake and sliding round a
+  corner leave dark tyre marks that fade after a minute (`src/skids.ts`); so do the
+  police and cars sent skidding by a crash.
 - In the car, holding Shift is lane assist (`src/assist.ts`): it steers along your
   lane, and A/D then pick the turn at the next junction instead of steering. It also
   keeps you to the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
@@ -136,6 +138,8 @@ the pixel ratio.
   slush with patches of snow by the afternoon, the roads before the pavements, while
   snow still falling covers them again, fastest at night (`WEATHER_GLSL` in `src/shading.ts`). A wet road takes a quarter
   of the tyres' grip and snow nearly half, for the cars you and the police drive.
+  Cars on a wet road throw up spray behind them (`src/spray.ts`), and in snow lying on
+  the street they leave tracks.
   Rain hisses and patters, the tyres hiss louder in the wet, and a wind blows while it
   snows, all made in Web Audio (`src/audio.ts`).
 - **Night** (`src/lamps.ts`): the street lamps are IPR's, about 130,000 of them: on

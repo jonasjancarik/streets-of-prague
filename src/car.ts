@@ -233,6 +233,8 @@ export class Car {
   lastH?: number;
   anim?: Anim;
   crew?: boolean;
+  // How hard the back and front tyres scrub the road (0–1), for their marks (skids.ts).
+  skidBack = 0; skidFront = 0;
   _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number]; stamp?: number;
 
   constructor(type: string, r: () => number, x = 0, y = 0, h = 0) {
@@ -328,6 +330,12 @@ export class Car {
 
     const grip = (ctl.handbrake ? 1.1 : S.grip * (1 - 0.45 * fast)) * road;
     vl *= Math.exp(-grip * dt);
+    // Tyre marks: sliding sideways, the back wheels locked by the handbrake, or all
+    // four braking hard.
+    const slide = clamp((Math.abs(vl) - 1.5) / 4, 0, 1);
+    const braking = (throttle < 0 && vf > 4) || (throttle > 0 && vf < -4) ? 0.6 : 0;
+    this.skidBack = Math.max(slide, braking, ctl.handbrake && Math.abs(vf) > 2 ? 0.8 : 0);
+    this.skidFront = Math.max(slide * 0.7, braking);
 
     const sgn = vf >= 0 ? 1 : -1;
     const maxW = S.turn * (1 - 0.35 * fast) * (ctl.handbrake ? 1.35 : 1);

@@ -15,6 +15,8 @@ import { Sky } from './sky.ts';
 import { Weather, WeatherFx, KINDS } from './weather.ts';
 import type { Kind } from './weather.ts';
 import { Lamps } from './lamps.ts';
+import { Skids } from './skids.ts';
+import { Spray } from './spray.ts';
 import { Graphics } from './graphics.ts';
 import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
@@ -179,6 +181,8 @@ async function main() {
   const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
   const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
+  const skids = new Skids(scene);
+  const spray = new Spray(scene, weatherFx.tint);
 
   // ---- Player ------------------------------------------------------------
   const walker = new Walker(grid, kit);
@@ -898,6 +902,8 @@ async function main() {
       for (const p of police.cars) see(p.car);
     }
     carPool.render(drawn, ground, dt);
+    skids.update(dt * scale, drawn, ground);
+    spray.update(dt * scale, drawn, ground, renderer.domElement.height);
     for (const c of choppers) c.render(dt);
     surfaceT -= dt;
     if (inCar && surfaceT < 0) { surfaceT = 0.2; surface = surfaceUnder(inCar.x, inCar.y); }
@@ -1032,7 +1038,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, graphics, sound, weather, lamps, sky,
+    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, graphics, sound, weather, lamps, sky, skids,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
