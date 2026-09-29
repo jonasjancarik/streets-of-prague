@@ -140,13 +140,19 @@
       /* The start screen's choices (src/startscreen.ts), over the wedge at the left. */
       .ls-start { position: absolute; z-index: 2; left: 5vw; top: 44vh; width: min(44vw, 560px); display: flex; flex-direction: column; gap: 1.4vh; font: 2.6vh/1.1 'Bebas Neue', sans-serif; color: var(--poster-paper); }
       .ls-row { display: flex; flex-direction: column; gap: 0.6vh; }
-      .ls-label { opacity: 0.7; letter-spacing: 0.08em; }
+      .ls-label { opacity: 0.85; letter-spacing: 0.08em; text-shadow: 0 0 6px var(--poster-black), 0 0 3px var(--poster-black); }
       .ls-chips { display: flex; flex-wrap: wrap; gap: 0.6vh 0.8vh; }
-      .ls-chip { font: inherit; letter-spacing: inherit; color: var(--poster-paper); background: rgba(20, 13, 12, 0.7); border: 0.25vh solid rgba(236, 228, 214, 0.5); padding: 0.6vh 1.4vh; cursor: pointer; }
+      .ls-chip { font: inherit; letter-spacing: inherit; color: var(--poster-paper); background: rgba(20, 13, 12, 0.7); border: 0.25vh solid rgba(236, 228, 214, 0.5); padding: max(0.6vh, 6px) max(1.4vh, 10px); cursor: pointer; }
       .ls-chip[aria-pressed='true'] { background: var(--poster-paper); color: var(--poster-black); border-color: var(--poster-paper); }
-      .ls-go { margin-top: 1vh; align-self: flex-start; font: 4vh/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; padding: 1.2vh 3vh; color: var(--poster-paper); background: var(--poster-red); border: 0; cursor: pointer; box-shadow: 0.6vh 0.6vh 0 var(--poster-black); }
+      .ls-go { margin-top: 1vh; align-self: flex-start; font: max(4vh, 20px)/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; padding: max(1.2vh, 8px) max(3vh, 18px); color: var(--poster-paper); background: var(--poster-red); border: 0; cursor: pointer; box-shadow: 0.6vh 0.6vh 0 var(--poster-black); }
       .ls-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; }
       .ls-start button:focus-visible { outline: 0.4vh solid var(--poster-paper); outline-offset: 0.3vh; }
+      @media (max-height: 500px) and (min-aspect-ratio: 1/1) {
+        .ls-start { top: 33vh; width: 54vw; gap: 6px; }
+        .ls-row { flex-direction: row; align-items: center; gap: 10px; }
+        .ls-label { flex: 0 0 56px; }
+        .ls-title { top: 5vh; }
+      }
       @media (max-aspect-ratio: 1/1) {
         .ls-start { width: 90vw; }
         .ls-title { font-size: 17vw; line-height: 0.9; }
