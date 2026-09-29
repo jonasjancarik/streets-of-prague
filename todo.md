@@ -99,10 +99,6 @@ grime on the walls 6%, the shadow map's own pass 7%.
 Left over from putting bridges and tunnels on levels of their own (28 September
 2026, `pipeline/structures.py`).
 
-- **Metro stations count as tunnels.** OSM tags the corridors and stairs of metro
-  stations `tunnel=yes`, so they became walkable tunnels too, several levels deep
-  under Můstek or Muzeum. They could be left out (by `indoor`, `level` or being
-  inside a station's area), or kept on purpose as a way down to the platforms.
 - **Paint and tram tracks where two bridges cross.** A street's road paint and each
   stretch of tram track are drawn on the one level they mostly lie on
   (`mostlyOn` and `splitByLevel` in `src/ground.ts`). Where a flyover crosses
@@ -114,26 +110,9 @@ Left over from putting bridges and tunnels on levels of their own (28 September
 
 Noted on 28 September 2026 while playing, during the TypeScript refactor.
 
-- **Traffic squeezes through parked cars.** In narrow streets some parked cars stick
-  a metre or so into the traffic lane. A car stuck behind one for a few seconds
-  drives on through it (it no longer does that to the car ahead in its lane or to a
-  tram). It could steer round it instead, or parking could keep clear of the lanes.
 - **Taxis.** Let the player hail a taxi in the street or order one through a
   ride-hailing app. The apps stand in for Uber and Bolt under made-up names, and
   their drivers are more reckless than regular street taxis.
-- **Buses on their real routes.** Buses drive the main roads (29 September 2026) but
-  pick their turns at random and don't stop at stops. PID's GTFS in
-  `pipeline/.cache/pid/` already has the bus shapes and stops.
-- **Boats on the Vltava.** The river is empty. It could have pedal boats (rented at
-  Slovanský ostrov and round the islands, some shaped like swans or old cars),
-  tourist cruise boats moored along Náplavka and sailing up and down, and the PID
-  ferries crossing at their fixed points. The player could rent a pedal boat, or
-  jump onto a moored boat. The water is only a ground layer for now (`areas.water`
-  in the tiles), so the boats would need it as the area they can move in, and
-  bridges and weirs as things to stop at or pass under.
-- **Motorbike rider sunk into the ground.** Came across a motorbike with its rider
-  stuck partly in the road surface, not moving. Probably a height that isn't
-  following the terrain (unchecked); could be related to the terrain elevation issues.
 - **Fill the plain beige areas.** Fields, work yards, railway land and building sites
   now have surfaces of their own (from OSM land use). What's left is unmapped ground
   in town: yards, verges, car parks on bare earth. The prototype
@@ -214,8 +193,22 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   triangles if it shows.
 - **Standing on a car that drives off.** You can climb onto a standing car, but if
   it drives away it slides out from under you rather than carrying you.
-- **A stolen police car has no flashing lights**, and the back of a bus swings over
-  the kerb in tight turns.
+- **A stolen police car has no flashing lights.**
+- **Buses.** They follow PID's real lines (`pipeline/build_buses.py`) and stop at the
+  stops, but a line is lost where the map has no street for it (148 at U Nemocnice),
+  buses often crawl in the Old Town's traffic, and they show no line number.
+- **Boats.** Cruise boats and pedal boats are on the river (`src/boats.ts`), but not
+  PID's ferries, no lights at night, and they've only been looked at from above
+  (passing under a bridge is unchecked). One of the tied-up pedal boats can't be
+  reached from the bank.
+- **Parked cars at tile edges and corners.** Parking now keeps clear of the traffic
+  lanes, but a couple of cars at tile edges still overlap a lane of the neighbouring
+  tile, and at junctions a car standing on the corner is still driven through after a
+  few seconds (parking isn't checked against the turning paths).
+- **Rebuild the streets layer for the metro fix.** Metro station corridors and stairs
+  are no longer tunnels (`station_ways` in `pipeline/structures.py`), once the streets
+  layer is rebuilt: `uv run build_tiles.py <area> --layers streets`, then
+  `uv run ipr_terrain.py <area>`.
 - **Raised buildings from IPR.** Passages and walkways over a street are left out of
   the collision only when OSM has `min_height` (3 m or more); raised parts only in
   IPR's 3D buildings still block.
