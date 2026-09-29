@@ -13,7 +13,9 @@ export interface MetroLine {
   perHour: Record<'weekday' | 'saturday' | 'sunday', number[]>;
 }
 interface Station { name: string; entrances: Point2[]; lines: { line: MetroLine; i: number }[]; onMap: boolean }
-interface Entrance { x: number; y: number; station: Station; mesh: THREE.Group; shown: boolean }
+// `placed`: moved out onto the pavement (see place()); `gone`: another of the
+// station's entrances ended up in the same spot.
+interface Entrance { x: number; y: number; station: Station; mesh: THREE.Group; shown: boolean; placed: boolean; gone: boolean }
 interface MetroLeg { line: MetroLine; i: number; j: number }
 // A stretch of the ride: the wait for a train, a change of line, or the ride from
 // station a to the next one, b. `from`/`to` in game seconds; `real`: how many seconds
@@ -33,6 +35,7 @@ export interface MetroView { x: number; y: number; vx: number; vy: number; groun
 // one of the station's entrances. E skips to the end of the ride.
 
 const REACH = 5; // m from an entrance
+const MERGE = 6; // m: a station's entrances closer than this show as one sign
 const TRANSFER = 180; // s to walk between lines at a change
 const SLOWEST = 60; // without a track: at least this many game seconds per real second…
 const LONGEST = 16; // …and a ride takes at most this many real seconds
@@ -82,6 +85,7 @@ export class Metro {
   clock: Clock;
   inMap: (x: number, y: number) => boolean;
   ready: (x: number, y: number) => boolean;
+  standAt: (x: number, y: number) => Point2;
   onArrive: (x: number, y: number, name: string) => void | Promise<void>;
   onStation: (name: string) => void;
   lines: MetroLine[];
@@ -110,15 +114,16 @@ export class Metro {
 
   // `inMap(x, y)`: whether a spot is on the map (you can only come up there);
   // `ready(x, y)`: whether the map there has loaded (or never will);
-  // `terrain(x, y)`: the height of the ground there (once loaded);
+  // `terrain(x, y)`: the height of the ground there (once loaded); `standAt(x, y)`:
+  // the nearest spot there where you can stand (once loaded);
   // `onArrive(x, y, name)`: take the player there; `onStation(name)`: the train
   // stops at a station on the way.
-  constructor(data: { lines: MetroLine[] }, scene: THREE.Scene, el: HTMLElement, { clock, inMap, ready, terrain, onArrive, onStation }: {
+  constructor(data: { lines: MetroLine[] }, scene: THREE.Scene, el: HTMLElement, { clock, inMap, ready, terrain, standAt, onArrive, onStation }: {
     clock: Clock; inMap: (x: number, y: number) => boolean; ready: (x: number, y: number) => boolean;
-    terrain: (x: number, y: number) => number;
+    terrain: (x: number, y: number) => number; standAt: (x: number, y: number) => Point2;
     onArrive: (x: number, y: number, name: string) => void | Promise<void>; onStation: (name: string) => void;
   }) {
-    this.el = el; this.scene = scene; this.clock = clock; this.inMap = inMap; this.ready = ready; this.terrain = terrain;
+    this.el = el; this.scene = scene; this.clock = clock; this.inMap = inMap; this.ready = ready; this.terrain = terrain; this.standAt = standAt;
     this.onArrive = onArrive; this.onStation = onStation;
     this.under = new Underground(scene);
     this.lines = data.lines;
@@ -142,7 +147,7 @@ export class Metro {
         const sign = new THREE.Mesh(signGeometry, signMaterial(st.lines[0].line.colour));
         sign.position.y = 2.85;
         mesh.add(post, sign);
-        this.entrances.push({ x, y, station: st, mesh, shown: false });
+        this.entrances.push({ x, y, station: st, mesh, shown: false, placed: false, gone: false });
       }
     }
     this.active = false; // the metro screen is up
@@ -164,6 +169,7 @@ export class Metro {
   near(x: number, y: number) {
     let best: Station | null = null, bestD = REACH;
     for (const en of this.entrances) {
+      if (en.gone) continue;
       const d = Math.hypot(en.x - x, en.y - y);
       if (d < bestD) { best = en.station; bestD = d; }
     }
@@ -174,7 +180,9 @@ export class Metro {
   // would still be gone through every frame, all 331 of them.
   sync(x: number, y: number, r: number, height: (x: number, y: number) => number) {
     for (const en of this.entrances) {
-      const show = Math.abs(en.x - x) < r && Math.abs(en.y - y) < r;
+      const near = Math.abs(en.x - x) < r && Math.abs(en.y - y) < r;
+      if (near && !en.placed) this.place(en);
+      const show = near && !en.gone;
       if (show !== en.shown) {
         en.shown = show;
         if (show) this.scene.add(en.mesh);
@@ -182,6 +190,17 @@ export class Metro {
       }
       if (show) en.mesh.position.set(en.x, height(en.x, en.y), -en.y);
     }
+  }
+
+  // Many entrances open from an arcade or a passage through a house, and the
+  // timetable puts them inside it, where you can't walk: out onto the pavement in
+  // front, once the map there has loaded. Two of a station's entrances that end up
+  // together make one sign.
+  private place(en: Entrance) {
+    if (!this.ready(en.x, en.y)) return;
+    [en.x, en.y] = this.standAt(en.x, en.y);
+    en.placed = true;
+    en.gone = this.entrances.some((o) => o !== en && o.station === en.station && o.placed && !o.gone && Math.hypot(o.x - en.x, o.y - en.y) < MERGE);
   }
 
   // Trips per hour on a line now, and the hour its trains start again when it's shut.

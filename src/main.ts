@@ -198,6 +198,7 @@ async function main() {
     inMap: (x, y) => world.available.has(world.keyAt(x, y)),
     ready: (x, y) => { const k = world.keyAt(x, y); return !world.available.has(k) || world.loaded.has(k); },
     terrain: (x, y) => world.terrainAt(x, y),
+    standAt: (x, y) => nearestWalkable(grid, x, y, 30),
     onArrive: async (x, y, name) => {
       await teleportTo(x, y);
       walker.mesh.visible = true;
