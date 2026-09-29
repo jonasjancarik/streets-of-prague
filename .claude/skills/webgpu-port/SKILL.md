@@ -50,18 +50,23 @@ buffers) cost +0.3 and +0.1 ms on WebGL against −0.1 and +0.3 ms on WebGPU (Ol
 2×, clear noon; GPU 20% busy before and 76% after). The metro's tunnels and train (`src/webgpu/underground.ts`:
 the hole's discard as a `maskNode`, the earth disc's position and mottling, and its depth written as 1 with
 `depthNode`) cost +0.1 ms on WebGL and +0.1 ms on WebGPU during a ride (Old Town Square, 2×, clear 14:00, GPU 60%
-busy; within the noise).
+busy; within the noise). The lamp glows, signal glows, spray, fire and skid marks
+(`src/webgpu/glows.ts`; each legacy file takes a setter in the style of `setSoftShade`; the spray is drawn as
+small quads for each drop because WebGPU points are one pixel wide) are NodeMaterials that blend before
+the tone curve, so the glows' and flames' strength is scaled by eye (`GG` in `glows.ts`) and the smoke,
+spray and skid alpha is approximate. The lamp glows cost +0.2 ms on WebGL against +0.7 ms on WebGPU (Old Town Square,
+22:00, 2×; GPU about 80% busy). The others only show while they are used, and were not timed.
 
 Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 
 | Where | What | Notes |
 |---|---|---|
 | `shading.ts` `cutAway` | the hole over the player | ported for the landmarks, the depth ground and the trees (a `maskNode`) |
-| `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | ported for the ground, buildings, `cut-*` and poles (`lampLit(node)` in a port); cars, trams, boats, funicular and figures have it too; signals still need it |
+| `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | ported for the ground, buildings, `cut-*` and poles (`lampLit(node)` in a port); cars, trams, boats, funicular, figures and the signals' poles and heads have it too |
 | `map/buildings.ts` `drapeRoofs` | an experiment's roof texture | low priority |
 
 Not drawn at all (every `ShaderMaterial` is hidden by a `visible` accessor on
-`THREE.ShaderMaterial.prototype` in `createRenderer`): rain, snow and mist (`weather.ts`), lamp glows (`lamps.ts`; the pools are ported), signal glows (`signals.ts`), spray, fire, skid marks. A ported one has
+`THREE.ShaderMaterial.prototype` in `createRenderer`): rain, snow and mist (`weather.ts`). A ported one has
 to be built as a node material (not a `ShaderMaterial`) or it stays hidden.
 
 ## How a port is wired

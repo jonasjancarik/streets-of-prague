@@ -45,6 +45,9 @@ type Shader = THREE.WebGLProgramParametersWithUniforms;
 // The WebGPU trial's own version of the pools (webgpu/lamps.ts), set before the lamps are made.
 let poolsBy: ((view: { value: THREE.Vector4 }) => THREE.Material) | null = null;
 export const setPools = (f: typeof poolsBy) => { poolsBy = f; };
+// And of the heads' glows (webgpu/glows.ts).
+let glowsBy: (() => THREE.Material) | null = null;
+export const setGlows = (f: typeof glowsBy) => { glowsBy = f; };
 
 // Lamp light on a Lambert material, inside its onBeforeCompile (after the other
 // replacements). `world`: a varying with the world position the shader already has.
@@ -192,7 +195,7 @@ export class Lamps {
     this.poles.count = 0;
     this.poles.frustumCulled = false;
     const glow = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-    this.glows = new THREE.InstancedMesh(glow, new THREE.ShaderMaterial({
+    this.glows = new THREE.InstancedMesh(glow, glowsBy ? glowsBy() : new THREE.ShaderMaterial({
       uniforms: { uOn: LAMP_ON },
       vertexShader: /* glsl */ `
         varying vec2 vUv; varying vec3 vC;

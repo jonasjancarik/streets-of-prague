@@ -25,8 +25,14 @@ const WHEELS: [number, number][] = [[-1, 1], [-1, -1], [1, 1], [1, -1]];
 interface Wheel { on: boolean; run: number; x: number; y: number; ax: number; ay: number; az: number; bx: number; by: number; bz: number; s: number }
 const wheel = (): Wheel => ({ on: false, run: 0, x: 0, y: 0, ax: 0, ay: 0, az: 0, bx: 0, by: 0, bz: 0, s: 0 });
 
+// The WebGPU trial's own version of the material (webgpu/glows.ts), set before the skids are made:
+// it gets the number the update writes each frame (now) and the scene (for its fog).
+let skidBy: ((now: { value: number }, scene: THREE.Scene, life: number) => THREE.Material) | null = null;
+export const setSkidShade = (f: typeof skidBy) => { skidBy = f; };
+
 export class Skids {
-  readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+  readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
+  private uNow = { value: 0 };
   private pos: THREE.BufferAttribute;
   private mark: THREE.BufferAttribute;
   private next = 0;
@@ -45,8 +51,8 @@ export class Skids {
     const index = new Uint16Array(SLOTS * 6);
     for (let i = 0; i < SLOTS; i++) index.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 2, i * 4 + 1, i * 4 + 3], i * 6);
     g.setIndex(new THREE.BufferAttribute(index, 1));
-    const material = new THREE.ShaderMaterial({
-      uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), uNow: { value: 0 } },
+    const material = skidBy ? skidBy(this.uNow, scene, LIFE) : new THREE.ShaderMaterial({
+      uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), uNow: this.uNow },
       vertexShader: /* glsl */ `
         #include <fog_pars_vertex>
         attribute vec3 mark;
@@ -86,7 +92,7 @@ export class Skids {
   // `cars`: those in view; `height(x, y, car)` the ground (or deck) under a car's wheels.
   update(dt: number, cars: Car[], height: (x: number, y: number, car: Car) => number) {
     this.now += dt;
-    this.mesh.material.uniforms.uNow.value = this.now;
+    this.uNow.value = this.now;
     const first = this.next;
     let laid = 0;
     // Snow on the streets: moving cars leave tracks in it.

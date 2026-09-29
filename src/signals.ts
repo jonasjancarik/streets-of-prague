@@ -9,6 +9,10 @@ import type { DriveEdge, Route } from './network.ts';
 // together just before a green, as in Czech lights. The traffic stops at red and at
 // amber when it still can; each light stands on a pole at the kerb by the stop line.
 
+// The WebGPU trial's own version of the glow (webgpu/glows.ts), set before the signals are made.
+let glowBy: (() => THREE.Material) | null = null;
+export const setSignalGlow = (f: typeof glowBy) => { glowBy = f; };
+
 export const GREEN = 0, AMBER = 1, RED = 2, READY = 3; // READY: red and amber together
 const AMBER_T = 3, CLEAR = 2, READY_T = 1.5;
 // How far ahead cars look for a light (m), and the hardest they brake for one (m/s²):
@@ -69,7 +73,7 @@ export class Signals {
     this.lamps = new THREE.InstancedMesh(lamp, new THREE.MeshBasicMaterial(), MAX_HEADS * 3);
     this.lamps.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3 * 3), 3);
     // The lit lamp's glow, flat and larger than life, so it shows from above; brighter at night.
-    this.glows = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+    this.glows = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), glowBy ? glowBy() : new THREE.ShaderMaterial({
       uniforms: { uOn: LAMP_ON },
       vertexShader: /* glsl */ `
         varying vec2 vUv; varying vec3 vC;

@@ -34,10 +34,14 @@ const FRAG = /* glsl */ `
     gl_FragColor = glow ? vec4(vTint.rgb * a, 1.0) : vec4(vTint.rgb, a);
   }`;
 
+// The WebGPU trial's own version of the puffs' material (webgpu/glows.ts), set before the fires are made.
+let puffBy: ((glow: boolean) => THREE.Material) | null = null;
+export const setPuffShade = (f: typeof puffBy) => { puffBy = f; };
+
 // Soft round puffs lying flat (the view looks down on them), each with its own colour
 // and fade: smoke drawn over the scene, flames and flashes added to it.
 class Puffs {
-  mesh: THREE.InstancedMesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  mesh: THREE.InstancedMesh<THREE.PlaneGeometry, THREE.Material>;
   tint: THREE.InstancedBufferAttribute;
   list: Puff[] = [];
   cap: number;
@@ -49,7 +53,7 @@ class Puffs {
     g.rotateX(-Math.PI / 2);
     this.tint = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
     g.setAttribute('tint', this.tint);
-    const m = new THREE.ShaderMaterial({
+    const m = puffBy ? puffBy(glow) : new THREE.ShaderMaterial({
       vertexShader: VERT, fragmentShader: FRAG, uniforms: { glow: { value: glow } },
       transparent: true, depthWrite: false, blending: glow ? THREE.AdditiveBlending : THREE.NormalBlending,
     });

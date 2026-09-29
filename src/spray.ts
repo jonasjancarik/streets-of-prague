@@ -14,8 +14,21 @@ const LIFE = 0.7;   // s a drop lasts
 const SIZE = 0.9;   // m across a puff
 const RATE = 5;     // drops a wheel throws per metre, on a soaking road
 
+// The WebGPU trial's own version (webgpu/glows.ts), set before the spray is made: WebGPU draws
+// points one pixel wide, so it draws each drop as a small quad instead. It gets the drops'
+// attributes (as instanced ones) and the numbers the update writes each frame.
+export interface SprayParts {
+  from: THREE.BufferAttribute; born: THREE.BufferAttribute; vel: THREE.BufferAttribute;
+  tint: { value: THREE.Color }; scene: THREE.Scene; life: number; size: number;
+  uNow: { value: number }; uScale: { value: number };
+}
+let sprayBy: ((parts: SprayParts) => THREE.Object3D) | null = null;
+export const setSprayDrawing = (f: typeof sprayBy) => { sprayBy = f; };
+
 export class Spray {
-  readonly points: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial>;
+  readonly points: THREE.Object3D;
+  private uNow = { value: 0 };
+  private uScale = { value: 800 };
   private from: THREE.BufferAttribute;
   private born: THREE.BufferAttribute;
   private vel: THREE.BufferAttribute;
@@ -26,42 +39,48 @@ export class Spray {
 
   // `tint`: the light on things (WeatherFx.tint).
   constructor(scene: THREE.Scene, tint: { value: THREE.Color }) {
-    const g = new THREE.BufferGeometry();
     // Where and when each drop was thrown, and how fast.
-    this.from = new THREE.BufferAttribute(new Float32Array(DROPS * 3), 3).setUsage(THREE.DynamicDrawUsage);
-    this.born = new THREE.BufferAttribute(new Float32Array(DROPS).fill(-1e9), 1).setUsage(THREE.DynamicDrawUsage);
-    this.vel = new THREE.BufferAttribute(new Float32Array(DROPS * 3), 3).setUsage(THREE.DynamicDrawUsage);
-    g.setAttribute('position', this.from);
-    g.setAttribute('born', this.born);
-    g.setAttribute('vel', this.vel);
-    this.points = new THREE.Points(g, new THREE.ShaderMaterial({
-      uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), uNow: { value: 0 }, uScale: { value: 800 }, uTint: tint },
-      vertexShader: /* glsl */ `
-        #include <fog_pars_vertex>
-        attribute float born; attribute vec3 vel;
-        uniform float uNow; uniform float uScale;
-        varying float vA;
-        void main() {
-          float t = uNow - born, k = t / ${LIFE.toFixed(2)};
-          vA = t >= 0. && k < 1. ? (1. - k) * min(1., k * 8.) : 0.;
-          vec3 p = position + vel * t + vec3(0., -4.9 * t * t, 0.);
-          vec4 mvPosition = viewMatrix * vec4(p, 1.);
-          gl_PointSize = vA > 0. ? uScale * ${SIZE.toFixed(2)} * (.6 + k) / -mvPosition.z : 0.;
-          gl_Position = projectionMatrix * mvPosition;
-          #include <fog_vertex>
-        }`,
-      fragmentShader: /* glsl */ `
-        #include <fog_pars_fragment>
-        uniform vec3 uTint; varying float vA;
-        void main() {
-          float d = length(gl_PointCoord - .5) * 2.;
-          float a = vA * smoothstep(1., .1, d) * .3;
-          if (a < .004) discard;
-          gl_FragColor = vec4(min(max(uTint * 1.1, vec3(.26, .28, .3)), vec3(.9)), a);
-          #include <fog_fragment>
-        }`,
-      fog: true, transparent: true, depthWrite: false,
-    }));
+    const attribute = (array: Float32Array, size: number): THREE.BufferAttribute =>
+      (sprayBy ? new THREE.InstancedBufferAttribute(array, size) : new THREE.BufferAttribute(array, size)).setUsage(THREE.DynamicDrawUsage);
+    this.from = attribute(new Float32Array(DROPS * 3), 3);
+    this.born = attribute(new Float32Array(DROPS).fill(-1e9), 1);
+    this.vel = attribute(new Float32Array(DROPS * 3), 3);
+    if (sprayBy) {
+      this.points = sprayBy({ from: this.from, born: this.born, vel: this.vel, tint, scene, life: LIFE, size: SIZE, uNow: this.uNow, uScale: this.uScale });
+    } else {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', this.from);
+      g.setAttribute('born', this.born);
+      g.setAttribute('vel', this.vel);
+      this.points = new THREE.Points(g, new THREE.ShaderMaterial({
+        uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), uNow: this.uNow, uScale: this.uScale, uTint: tint },
+        vertexShader: /* glsl */ `
+          #include <fog_pars_vertex>
+          attribute float born; attribute vec3 vel;
+          uniform float uNow; uniform float uScale;
+          varying float vA;
+          void main() {
+            float t = uNow - born, k = t / ${LIFE.toFixed(2)};
+            vA = t >= 0. && k < 1. ? (1. - k) * min(1., k * 8.) : 0.;
+            vec3 p = position + vel * t + vec3(0., -4.9 * t * t, 0.);
+            vec4 mvPosition = viewMatrix * vec4(p, 1.);
+            gl_PointSize = vA > 0. ? uScale * ${SIZE.toFixed(2)} * (.6 + k) / -mvPosition.z : 0.;
+            gl_Position = projectionMatrix * mvPosition;
+            #include <fog_vertex>
+          }`,
+        fragmentShader: /* glsl */ `
+          #include <fog_pars_fragment>
+          uniform vec3 uTint; varying float vA;
+          void main() {
+            float d = length(gl_PointCoord - .5) * 2.;
+            float a = vA * smoothstep(1., .1, d) * .3;
+            if (a < .004) discard;
+            gl_FragColor = vec4(min(max(uTint * 1.1, vec3(.26, .28, .3)), vec3(.9)), a);
+            #include <fog_fragment>
+          }`,
+        fog: true, transparent: true, depthWrite: false,
+      }));
+    }
     this.points.frustumCulled = false;
     this.points.renderOrder = 8; // over the cars, under the mist and the rain
     this.points.visible = false;
@@ -71,9 +90,8 @@ export class Spray {
   // `cars`: those in view; `pixels` how tall the picture is, in pixels.
   update(dt: number, cars: Car[], height: (x: number, y: number, car: Car) => number, pixels: number) {
     this.now += dt;
-    const m = this.points.material;
-    m.uniforms.uNow.value = this.now;
-    m.uniforms.uScale.value = pixels * 1.4;
+    this.uNow.value = this.now;
+    this.uScale.value = pixels * 1.4;
     // Standing water on the road; more of it while it's still raining.
     const wet = WET.value * (0.5 + 0.5 * RAIN.value);
     this.points.visible = wet > 0.05 || this.now - this.last < LIFE;
