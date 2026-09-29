@@ -22,8 +22,8 @@ const LIFT = 0.04;      // m above the ground (and a polygon offset, for the far
 // (the back two first); a motorbike has one line.
 const WHEELS: [number, number][] = [[-1, 1], [-1, -1], [1, 1], [1, -1]];
 
-interface Wheel { on: boolean; x: number; y: number; ax: number; ay: number; az: number; bx: number; by: number; bz: number; s: number }
-const wheel = (): Wheel => ({ on: false, x: 0, y: 0, ax: 0, ay: 0, az: 0, bx: 0, by: 0, bz: 0, s: 0 });
+interface Wheel { on: boolean; run: number; x: number; y: number; ax: number; ay: number; az: number; bx: number; by: number; bz: number; s: number }
+const wheel = (): Wheel => ({ on: false, run: 0, x: 0, y: 0, ax: 0, ay: 0, az: 0, bx: 0, by: 0, bz: 0, s: 0 });
 
 export class Skids {
   readonly mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
@@ -117,14 +117,17 @@ export class Skids {
         if (!w.on || d > 4) {
           this.edge(w, x, y, dx, dy, d, fx, fy, height, c);
           w.s = 0;
+          w.run = 0;
           w.on = true;
           continue;
         }
         if (d < step) continue;
         const ax = w.ax, ay = w.ay, az = w.az, bx = w.bx, by = w.by, bz = w.bz, s0 = w.s;
         this.edge(w, x, y, dx, dy, d, fx, fy, height, c);
-        w.s = s;
-        this.lay(ax, ay, az, bx, by, bz, w, s0 * 0.6, s * 0.6);
+        // (Faint for its first metre, so it doesn't start with a hard edge.)
+        w.run += d;
+        w.s = s * Math.min(1, 0.2 + w.run);
+        this.lay(ax, ay, az, bx, by, bz, w, s0 * 0.6, w.s * 0.6);
         laid++;
       }
     }
@@ -160,7 +163,6 @@ export class Skids {
   }
 
   // One piece of mark from the edges (a, b) where the wheel was to where it is now.
-  // (It starts faint, so a mark doesn't begin with a hard edge.)
   private lay(ax: number, ay: number, az: number, bx: number, by: number, bz: number, w: Wheel, dark0: number, dark1: number) {
     const i = this.next, o = i * 12;
     this.next = (i + 1) % SLOTS;
