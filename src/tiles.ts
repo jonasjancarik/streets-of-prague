@@ -3,7 +3,7 @@ import { Geo, Grid, rng, hash } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { treeMesh } from './map/vegetation.ts';
 import { Surfaces } from './surface.ts';
-import { shadeBuildings, cutAway } from './shading.ts';
+import { shadeBuildings, cutAway, broad } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { Zones, parkCars } from './parking.ts';
 import { decodeHeights, decodeLevels, heightSampler, fetchBinary } from './terrain.ts';
@@ -92,7 +92,8 @@ class TileWorkers {
 }
 
 // Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
-// the same north-west as the sun: 128 = unchanged, darker on slopes facing away.
+// the same north-west as the sun: 1 = unchanged, darker on slopes facing away. The
+// ground's broad variation (broad) is multiplied in, sparing the shader its noise.
 function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds, n: number, step: number, ref: number) {
   // Heights in metres above `ref` (the game's y = 0), bilinear and clamped to the tile.
   const hm = decodeHeights(buffer, n, ref);
@@ -100,20 +101,22 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
   const hs = new Uint16Array(bareBuffer || buffer);
   const L = [-110, 80, 190], ll = Math.hypot(...L);
   const lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
-  const px = new Uint8Array(n * n);
+  const px = new Uint16Array(n * n);
   const at = (i: number, j: number) => hs[Math.min(n - 1, Math.max(0, j)) * n + Math.min(n - 1, Math.max(0, i))] / 10;
+  // (Where the shader reads each texel: its middle, over the box below.)
+  const [x0, y0] = box, span = (n - 1) * step;
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
       const dx = (at(i + 1, j) - at(i - 1, j)) / (2 * step), dy = (at(i, j + 1) - at(i, j - 1)) / (2 * step);
       const nl = Math.hypot(dx, dy, 1);
       const lit = (-dx * lx - dy * ly + lz) / nl / lz; // 1 on flat ground
-      px[j * n + i] = Math.max(0, Math.min(255, Math.round(128 * Math.max(0.55, Math.min(1.35, 1 + 1.1 * (lit - 1))))));
+      const shade = Math.round(128 * Math.max(0.55, Math.min(1.35, 1 + 1.1 * (lit - 1)))) / 127.5;
+      px[j * n + i] = THREE.DataUtils.toHalfFloat(shade * broad(x0 + ((i + 0.5) / n) * span, y0 + ((j + 0.5) / n) * span));
     }
   }
-  const tex = new THREE.DataTexture(px, n, n, THREE.RedFormat, THREE.UnsignedByteType);
+  const tex = new THREE.DataTexture(px, n, n, THREE.RedFormat, THREE.HalfFloatType);
   tex.magFilter = tex.minFilter = THREE.LinearFilter;
   tex.needsUpdate = true;
-  const [x0, y0] = box;
   return { texture: tex, box: [x0, y0, x0 + (n - 1) * step, y0 + (n - 1) * step], sample: heightSampler(hm, box, n, step), hm };
 }
 

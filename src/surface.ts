@@ -97,7 +97,7 @@ export function groundSamples(time: { value: number }) {
     const position = new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, -1]);
     return { position, normal: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0]), alpha: new Float32Array(3), index: new Uint32Array([0, 1, 2]) };
   };
-  const texture = new THREE.DataTexture(new Uint8Array([128]), 1, 1, THREE.RedFormat, THREE.UnsignedByteType);
+  const texture = new THREE.DataTexture(new Uint16Array([THREE.DataUtils.toHalfFloat(1)]), 1, 1, THREE.RedFormat, THREE.HalfFloatType);
   const relief = { texture, box: [0, 0, 1, 1] };
   const layers: GroundLayer[] = Object.keys(PATTERN).map((pattern, order) => ({ order, geometry: plane(), color: '#ffffff', pattern, blend: null }));
   layers.push({ order: layers.length, geometry: plane(), shade: 0.5 });

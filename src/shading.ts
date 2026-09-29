@@ -9,12 +9,15 @@ import { lampLit } from './lamps.ts';
 
 // The value noise's lattice: random values, wrapping round every NOISE_SIZE cells.
 const NOISE_SIZE = 256;
+const LATTICE = (() => {
+  const cells = new Uint8Array(NOISE_SIZE * NOISE_SIZE);
+  let s = 7;
+  for (let i = 0; i < cells.length; i++) cells[i] = ((s = (s * 16807) % 2147483647) >> 7) & 255;
+  return cells;
+})();
 export const NOISE = {
   value: (() => {
-    const cells = new Uint8Array(NOISE_SIZE * NOISE_SIZE);
-    let s = 7;
-    for (let i = 0; i < cells.length; i++) cells[i] = ((s = (s * 16807) % 2147483647) >> 7) & 255;
-    const tex = new THREE.DataTexture(cells, NOISE_SIZE, NOISE_SIZE, THREE.RedFormat, THREE.UnsignedByteType);
+    const tex = new THREE.DataTexture(LATTICE, NOISE_SIZE, NOISE_SIZE, THREE.RedFormat, THREE.UnsignedByteType);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.magFilter = tex.minFilter = THREE.LinearFilter;
     tex.unpackAlignment = 1;
@@ -22,6 +25,24 @@ export const NOISE = {
     return tex;
   })(),
 };
+
+// The same noise in JavaScript, for what's baked into textures ahead (see BROAD_GLSL).
+function vnoise(x: number, y: number) {
+  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const i0 = ((i % NOISE_SIZE) + NOISE_SIZE) % NOISE_SIZE, j0 = ((j % NOISE_SIZE) + NOISE_SIZE) % NOISE_SIZE;
+  const i1 = (i0 + 1) % NOISE_SIZE, j1 = (j0 + 1) % NOISE_SIZE;
+  const v = (a: number, b: number) => LATTICE[b * NOISE_SIZE + a] / 255;
+  return (v(i0, j0) * (1 - ux) + v(i1, j0) * ux) * (1 - uy) + (v(i0, j1) * (1 - ux) + v(i1, j1) * ux) * uy;
+}
+function fbm(x: number, y: number) {
+  let s = 0, a = 0.5;
+  for (let k = 0; k < 4; k++) { s += a * vnoise(x, y); x = x * 2.03 + 11.7; y = y * 2.03 + 11.7; a *= 0.5; }
+  return s;
+}
+// The ground's broadest variation, over a few hundred metres: a factor on its colour
+// (BROAD_GLSL is the same in the shader). Tiles bake it into their hill shading.
+export const broad = (x: number, y: number) => 0.93 + 0.14 * fbm(x * 0.004, y * 0.004);
 
 // Value noise reads its random lattice from a small texture (NOISE, below) instead of
 // hashing four corners per call: the smooth step between lattice points goes into
@@ -46,16 +67,24 @@ vec2 blocks(vec2 p, vec2 size) {
   vec2 c = floor(q), f = fract(q), e = min(f, 1. - f) * size;
   return vec2(min(e.x, e.y), hash12(c));
 }
+// Three random numbers for a cell, for about the price of one hash12.
+vec3 hash32(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
+  p3 += dot(p3, p3.yxz + 33.33);
+  return fract((p3.xxy + p3.yzz) * p3.zyx);
+}
 // Irregular stones (Prague mosaic pavement): x = gap to the neighbouring stone, y = random.
 vec2 stones(vec2 p) {
   vec2 i = floor(p), f = fract(p);
-  float d1 = 8., d2 = 8., id = 0.;
+  float d1 = 64., d2 = 64., id = 0.;
   for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-    vec2 g = vec2(x, y), o = vec2(hash12(i + g), hash12(i + g + 17.3)) * .8 + .1;
-    float d = length(g + o - f);
-    if (d < d1) { d2 = d1; d1 = d; id = hash12(i + g + 5.1); } else if (d < d2) d2 = d;
+    vec2 g = vec2(x, y);
+    vec3 h = hash32(i + g);
+    vec2 r = g + h.xy * .8 + .1 - f;
+    float d = dot(r, r);
+    if (d < d1) { d2 = d1; d1 = d; id = h.z; } else if (d < d2) d2 = d;
   }
-  return vec2(d2 - d1, id);
+  return vec2(sqrt(d2) - sqrt(d1), id);
 }
 float luma(vec3 c) { return dot(c, vec3(.299, .587, .114)); }
 `;
@@ -379,7 +408,8 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
 }
 
 // Add a world-position varying to a Lambert/Standard shader and colour it by pattern.
-// `relief`: optional { texture, box } hill shading for a tile (see tiles.ts).
+// `relief`: optional { texture, box } hill shading for a tile, times broad() (see
+// tiles.ts).
 // `deck`: for a bridge deck, { mask, box } to draw it only where the tile's decks are
 // (mask null: everywhere), and with a hole round the player under it (CUTAWAY).
 export function patterned(
@@ -422,8 +452,10 @@ export function patterned(
       .replace('#include <color_fragment>', `#include <color_fragment>
   vec2 wp = vec2(vWorld.x, -vWorld.z);
 ${deck ? `  if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
-${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = ${photo ? 'texture2D(uPhoto, (wp - uPhotoBox.xy) / (uPhotoBox.zw - uPhotoBox.xy)).rgb' : `pattern(${id}, diffuseColor.rgb, wp)`} * (.93 + .14 * fbm(wp * .004));
-  if (uReliefOn > .5) diffuseColor.rgb *= texture2D(uRelief, (wp - uReliefBox.xy) / (uReliefBox.zw - uReliefBox.xy)).r * 2.;
+${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckBox.xy)).r < .5) discard;\n' : ''}` : ''}  diffuseColor.rgb = ${photo ? 'texture2D(uPhoto, (wp - uPhotoBox.xy) / (uPhotoBox.zw - uPhotoBox.xy)).rgb' : `pattern(${id}, diffuseColor.rgb, wp)`};
+  // Hill shading and the broad variation (broad), baked together for a tile.
+  if (uReliefOn > .5) diffuseColor.rgb *= texture2D(uRelief, (wp - uReliefBox.xy) / (uReliefBox.zw - uReliefBox.xy)).r;
+  else diffuseColor.rgb *= .93 + .14 * fbm(wp * .004);
   float shine = 0.;
 ${sheltered ? '' : `  diffuseColor.rgb = weathered(${id}, diffuseColor.rgb, wp, shine);\n`}${dig ? `  if (distance(vWorld.xz, uDig.xy) < uDig.z) diffuseColor.rgb = vec3(.23, .19, .15) * (.8 + .4 * fbm(wp * .7));
 ` : ''}`);
