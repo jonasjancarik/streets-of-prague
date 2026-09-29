@@ -255,10 +255,31 @@ const toneCurve = Fn(([color, exposure]: N[]) => {
   return select(exposure.lessThan(0), color.mul(exposure.negate()), c.add(vec3(0.016, 0.012, 0.006).mul(c.oneMinus())));
 }).setLayout({ name: 'customToneMapping', type: 'vec3', inputs: [{ name: 'color', type: 'vec3' }, { name: 'exposure', type: 'float' }] });
 
+// Ports of the materials that change three.js's GLSL, chosen by the legacy material's
+// customProgramCacheKey (each of them sets one). When WebGPURenderer builds a shader for a
+// legacy material, it converts it through library.fromMaterial: `port` gets the node
+// material made from it, to set colorNode and the like. The mesh keeps its legacy
+// material, so the module-level ones (cars, trams, funicular, treeDepth) need no lazy
+// creation or boot module, and the shadow pass (which reads the mesh's own material's
+// nodes, not the converted one's) stays plain unless the port sets castShadow nodes on
+// the legacy material.
+type Port = (node: N, legacy: THREE.Material) => void;
+const ports: { match: RegExp; port: Port }[] = [];
+const addPort = (match: RegExp, port: Port) => { ports.push({ match, port }); };
+
 export async function createRenderer() {
   const renderer = new WebGPURenderer({ antialias: true, stencil: true });
   await renderer.init();
   const library = renderer.library as any;
+  const fromMaterial = library.fromMaterial.bind(library);
+  library.fromMaterial = (legacy: THREE.Material) => {
+    const node = fromMaterial(legacy);
+    if (node && node !== legacy && legacy.customProgramCacheKey) {
+      const key = legacy.customProgramCacheKey();
+      for (const p of ports) if (p.match.test(key)) p.port(node, legacy);
+    }
+    return node;
+  };
   library.addToneMapping(toneCurve, THREE.CustomToneMapping);
   // GLSL materials can't be drawn: hide them all. (Material's constructor sets
   // visible through this setter too.)

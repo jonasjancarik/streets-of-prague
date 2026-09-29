@@ -45,12 +45,25 @@ to be built as a node material (not a `ShaderMaterial`) or it stays hidden.
   switched in by a hook the WebGPU module sets, as `setPatterned` does for the
   ground. The module is only loaded with `?renderer=webgpu`, so it adds nothing to
   the normal game.
-- **Load order.** `main.ts` imports the game modules statically, and several make
-  their material at module level (`car.ts`, `trams.ts`, `funicular.ts`,
-  `vegetation.ts`'s `treeDepth`) before `webgpu.ts` has loaded. Either make those
-  materials lazily (a memoised function), or load the WebGPU module first from a
-  small entry module (`index.html` → `src/boot.ts`, which imports `webgpu.ts`
-  when asked and then `main.ts`). Pick one way for the whole port and note it here.
+- **Load order: settled with `addPort`, neither lazy materials nor a boot module.**
+  The game's module-level materials (`car.ts`, `trams.ts`, `funicular.ts`,
+  `vegetation.ts`'s `treeDepth`) and the per-tile ones stay as they are, legacy
+  materials with `onBeforeCompile`, so the game's code needs no change. When
+  `WebGPURenderer` builds a shader for a legacy material it converts it in
+  `library.fromMaterial` (one place, called by the node builder, once per distinct
+  render-object cache key); `createRenderer` wraps that, and `addPort(/^cars$/, (node,
+  legacy) => { node.colorNode = …; })` decorates the converted node material. Ports are
+  chosen by the legacy material's `customProgramCacheKey()`, which every one of these
+  materials sets already. Build each port's node graph once at module level and share it
+  (per-tile numbers as uniforms), or every render object compiles its own shader.
+  **Shadows:** the shadow pass reads `colorNode`/`positionNode`/`maskShadowNode` from the
+  *mesh's own* material (`Renderer._getShadowNodes`), not from the converted one, so a
+  ported building's facade shader never runs in the shadow pass, and the cutaway doesn't
+  cut shadows, as in the GLSL. A port that needs a vertex change or a mask in the
+  shadow pass (trees' twigs, figures' animation) sets it on the legacy material too.
+  A material with no port is drawn plain, as before. `setPatterned` (the ground) still
+  hands over a node material at creation, which is fine because tiles are made after the
+  renderer.
 - A converted legacy material: `WebGPURenderer` turns a `MeshLambertMaterial` into
   a `MeshLambertNodeMaterial` by copying its properties (`NodeLibrary.fromMaterial`).
   Build the node material yourself instead, copying what the callers set (colour,
