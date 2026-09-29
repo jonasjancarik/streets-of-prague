@@ -198,6 +198,17 @@
         .ls-face:nth-child(3) { display: none; }
       }
 
+      /* Bebas has no descenders, so on a full line box its capitals sit high. Where the
+         browser can trim the box to the capitals, it does, and the padding centres them. */
+      @supports (text-box: trim-both cap alphabetic) {
+        .ls-chip, .ls-go, .settings-chip, .metro-tab, #credits-box form button { text-box: trim-both cap alphabetic; }
+        .ls-chip { padding: calc(max(0.6vh, 6px) + 0.2em) max(1.4vh, 10px); }
+        .ls-go { padding: calc(max(1.2vh, 8px) + 0.15em) max(3vh, 18px); }
+        .settings-chip { padding: 9px 11px; }
+        .metro-tab { padding: 7px 14px; }
+        #credits-box form button { padding: 10px 16px; }
+      }
+
       /* A conversation: the portrait rises out of its frame, the line beside it. */
       .dlg { position: fixed; left: 50%; bottom: 24px; z-index: 12; transform: translateX(-50%); width: min(1040px, calc(100vw - 32px)); display: flex; align-items: flex-end; cursor: pointer; }
       .dlg[hidden] { display: none; }
