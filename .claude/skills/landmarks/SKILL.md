@@ -150,8 +150,9 @@ the game to render (see the memory on benchmarking).
   (roofs in shadow are low in saturation); a strict mask leaves speckles on shaded
   slopes. Change both shader versions together, and check with `?renderer=webgl`.
 - **Roof colours to match.** The palette for the other roofs is in `src/map/buildings.ts`
-  and, separately, `pipeline/ipr_buildings.py` (IPR's buildings; run it again for `praha`
-  and `centrum` after a change). Judge colour against photographs of real roofs, as
+  and, separately, `pipeline/ipr_buildings.py` (IPR's buildings, baked into their tile data).
+  Only a change to the palette itself needs `ipr_buildings.py` run again for `praha` and
+  `centrum`; adding or editing a landmark never touches the city's roofs. Judge colour against photographs of real roofs, as
   measured pixels of the rendered result, not the palette's hex values: the render
   shifts hue and brightness.
 - **Baked light.** Walls facing away from the sun at the time of the flight are
