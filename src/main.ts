@@ -20,6 +20,7 @@ import { Spray } from './spray.ts';
 import { Graphics } from './graphics.ts';
 import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
+import { Districts } from './districts.ts';
 import { TileWorld } from './tiles.ts';
 import { groundSamples } from './surface.ts';
 import { CUTAWAY, DIG } from './shading.ts';
@@ -117,6 +118,8 @@ async function main() {
   const drive = new DriveGraph();
   const walk = new WalkGraph();
   const names = new StreetNames(drive.edges, walk.edges);
+  // The part of town you're in, as a title when it changes (pipeline/build_districts.py).
+  const districts = new Districts(AREA, $('district'));
   const time = { value: 0 };
   // People and two-wheelers (parked motorbikes come with the tiles, so load it first).
   const kit = await kitLoad;
@@ -972,6 +975,8 @@ async function main() {
     }
     bannerT -= dt;
     show('banner', clamp(bannerT, 0, 1), 'opacity');
+    if (underway) districts.hide();
+    else districts.update(dt, px(), py(), bannerT > 0);
     show('speed', String(inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : inHeli ? Math.round(inHeli.speed * 3.6)
       : ride.on ? Math.round((ride.v?.speed ?? 0) * 3.6) : '–'));
     if (clock.label() !== clockShown) $('clock').textContent = clockShown = clock.label();
