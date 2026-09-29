@@ -22,6 +22,8 @@ interface Tile {
   cars: Car[]; ms: Record<string, number>; disposables: THREE.Mesh[];
   relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number) => number; hm: Float32Array } | null;
   sample?: (x: number, y: number) => number;
+  // The tile's water (the river and ponds), each polygon with its bounding box.
+  water: { rings: Point2[][]; box: Bounds }[];
 }
 export interface Tracked {
   x: number; y: number; _tx?: number; _ty?: number; level?: number; gz?: number;
@@ -297,6 +299,24 @@ export class TileWorld {
       last.tile = this.byIndex.get(i * 65536 + j);
     }
     return last.tile;
+  }
+
+  // Whether a point is on water: true or false, null where nothing is loaded.
+  waterAt(x: number, y: number): boolean | null {
+    const t = this.tileAt(x, y);
+    if (!t) return null;
+    for (const { rings, box } of t.water) {
+      if (x < box[0] || x > box[2] || y < box[1] || y > box[3]) continue;
+      let inside = false;
+      for (const r of rings) {
+        for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+          const [ax, ay] = r[i], [bx, by] = r[j];
+          if ((ay > y) !== (by > y) && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
+        }
+      }
+      if (inside) return true;
+    }
+    return false;
   }
 
   // Ground height (m above this.ref) at a point, 0 where nothing is loaded.
@@ -692,6 +712,10 @@ export class TileWorld {
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], group, surfaces, grid, levels: onLevels, cars, ms,
       disposables: [...buildings, walls, trees, ...(hidden ? [hidden] : [])], relief: shade, sample: shade?.sample,
+      water: (t.areas.water || []).map((rings) => {
+        const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
+        return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };
+      }),
     };
     this.loaded.set(k, tile);
     this.byIndex.set(t.i * 65536 + t.j, tile);

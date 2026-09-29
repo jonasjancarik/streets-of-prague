@@ -29,6 +29,7 @@ import type { Surface } from './audio.ts';
 import { setupTouch } from './touch.ts';
 import { Police } from './police.ts';
 import { Chopper } from './helicopter.ts';
+import { Boats } from './boats.ts';
 import { isMapIndex } from './contracts.ts';
 import type { MapIndex } from './contracts.ts';
 import type { RawTramLine } from './trams.ts';
@@ -179,6 +180,12 @@ async function main() {
   const traffic = new Traffic(drive, scene, seeded, TRAFFIC);
   const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
+  // Boats on the river; the pedal boats round Slovanský ostrov, if it's in the area.
+  const [ilon, ilat] = [14.4135, 50.0787];
+  const islands = ilon > w0 && ilon < e0 && ilat > s0 && ilat < n0
+    ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [ilon, ilat]) as [number, number]
+    : null;
+  const boats = new Boats(scene, world, islands);
 
   // ---- Player ------------------------------------------------------------
   const walker = new Walker(grid, kit);
@@ -660,6 +667,7 @@ async function main() {
     trams.update(dt, { near: obstacles, x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
     if (ride.on) ride.seat(walker);
     transit.update(dt);
+    boats.update(dt, px(), py());
 
     const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5), ...cops.filter((c) => c.speed > 5)];
     crowd.update(dt, threats);
@@ -1032,7 +1040,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, graphics, sound, weather, lamps, sky,
+    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, graphics, sound, weather, lamps, sky,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
