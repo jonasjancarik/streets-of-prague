@@ -13,6 +13,7 @@ import type { DriveEdge, DriveGraph, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
 import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, WorkerJobs, WorkerKind, WorkerResults, WorkerResponse, HeightGrid, LevelInput } from './contracts.ts';
 import { isTileJSON } from './contracts.ts';
+import { overheadWires } from './wires.ts';
 
 interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer | null; ipr: ArrayBuffer | null; levels: ArrayBuffer | null }
 // A bridge (1, 2, …) or tunnel (-1, -2, …) level in a tile: where it is and how high.
@@ -296,7 +297,7 @@ export class TileWorld {
   pending: Map<string, Promise<TileFiles>>;
   drive: DriveGraph; walk: WalkGraph;
   driveBy: Map<string, DriveEdge[]>; walkBy: Map<string, WalkEdge[]>;
-  onEdges: (drive: DriveEdge[], walk: WalkEdge[]) => void;
+  onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][]) => void;
   onCars: (cars: Car[], tile: Tile) => void;
   onDrop: (tile: Tile) => void;
   building: number; inFlight: Set<string>; builds: Map<string, Promise<Tile>>;
@@ -719,7 +720,7 @@ export class TileWorld {
     if (t.drive && !this.driveBy.has(k)) {
       this.driveBy.set(k, this.drive.add(t.drive));
       this.walkBy.set(k, this.walk.add(t.walk ?? []));
-      this.onEdges(this.driveBy.get(k)!, this.walk.fresh);
+      this.onEdges(this.driveBy.get(k)!, this.walk.fresh, t.buildings.filter(grounded).map((b) => b.rings[0]));
     }
     const ms: Record<string, number> = {};
     let t0 = performance.now();
@@ -823,7 +824,19 @@ export class TileWorld {
     const buildings = [iprArrays, roofArrays].filter((arrays): arrays is BuildingArrays => arrays !== null).map(buildingMesh);
     const walls = wallMesh(land.walls);
     const trees = treeMeshes(land.trees);
-    group.add(surfaces.group, ...buildings, walls, ...trees, ...landmarks);
+    // The overhead wires over the tram tracks, at the height of the lowest bridge deck a
+    // track is on (as ground.ts lays the tracks) or of the ground.
+    const decks = onLevels.filter((l) => l.level > 0).sort((a, b) => a.level - b.level);
+    const trackAt = (x: number, y: number) => {
+      for (const l of decks) {
+        if (!l.grid.at(x, y)) continue;
+        const h = l.sample(x, y);
+        if (!Number.isNaN(h)) return h;
+      }
+      return hAt(x, y);
+    };
+    const wires = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt);
+    group.add(surfaces.group, ...buildings, walls, ...trees, ...landmarks, ...wires);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
     group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
@@ -844,7 +857,7 @@ export class TileWorld {
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), group, surfaces, grid, levels: onLevels, cars, ms,
-      disposables: [...buildings, walls, ...trees, ...(hidden ? [hidden] : [])], relief: shade, sample: shade?.sample,
+      disposables: [...buildings, walls, ...trees, ...wires, ...(hidden ? [hidden] : [])], relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };

@@ -172,7 +172,7 @@ the pixel ratio.
   paths and the trees already there (`gardenTrees` in `src/map/vegetation.ts`).
   Buildings get roof tiles laid down
   each face's slope, slate and gravel on flat roofs. It all stays sharp at any zoom.
-- **Facades** are put together bay by bay and storey by storey from 48 parts: windows,
+- **Facades** are put together bay by bay and storey by storey from 60 parts: windows,
   doors, gateways and shopfronts of tenements, baroque houses, functionalist blocks,
   panel housing and family houses (`src/facades.ts`). A wall's style comes from where
   it stands and how tall it is: baroque in Old Town, Malá Strana and Hradčany, panel
@@ -183,8 +183,9 @@ the pixel ratio.
   plastered without windows. Each building gets its own plaster colour: mostly ochres,
   yellows, creams and stone-like sands and greys, with a few pale greens, pinks and
   blues, mixed differently for each style. The parts were
-  drawn by an image model as four sheets, each asked for with the first sheet as a
-  style reference, and are cut and packed by `assets/facades/build_atlas.py`.
+  drawn by an image model as five sheets, each asked for with the first sheet as a
+  style reference (the fifth, the tenements' windows and portals, after a
+  neo-Renaissance house in Mělnická), and are cut and packed by `assets/facades/build_atlas.py`.
 - **Portraits and the loading screen.** Characters are half-length portraits drawn by
   an image model, ten to a sheet, and cut apart by `assets/portraits/cut.py` into
   `public/portraits/` (the sheets never line up, so the seams are found per row); faces
@@ -375,6 +376,10 @@ the pixel ratio.
   (`assets/trams/build.py` → `public/trams.glb`, `-- --preview DIR` renders them), from
   the real lengths and liveries. They run all over the city at once, so they come into
   view on their own timetable; only the ones near the camera are drawn.
+- **Overhead wires** (`src/wires.ts`) are built with each tile over its tram tracks: a
+  contact wire 5.6 m above every track, where the pantographs reach, and every 30 m or so
+  a span wire across the tracks, anchored to a building front when one is within 11 m
+  (as in the old town's narrow streets) or else hung from a pole beside the track.
 - **Boats** on the Vltava (`src/boats.ts`): a few white cruise boats go slowly up and
   down the river, and pedal boats, every third a swan, paddle about round the islands.
   The river is only a ground layer, so the water of the loaded tiles is where they can
