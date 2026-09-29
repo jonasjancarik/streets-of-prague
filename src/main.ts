@@ -44,6 +44,7 @@ import type { MetroLine } from './metro.ts';
 import type { DriveEdge, WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Tracked } from './tiles.ts';
+import { getLang, onLang, t, tn, translatePage } from './i18n.ts';
 
 interface Obstacle { x: number; y: number; z?: number; r: number; vx: number; vy: number; kind: string; car?: Car }
 type InputKey = 'up' | 'down' | 'left' | 'right' | 'run' | 'brake' | 'jump';
@@ -58,7 +59,8 @@ const $ = (id: string): HTMLElement => {
   if (!el) throw new Error(`Missing interface element: ${id}`);
   return el;
 };
-const status = (t: string) => { $('loading-text').textContent = t; };
+let statusText = '';
+const status = (text: string) => { statusText = text; $('loading-text').textContent = text ? t(text) : ''; };
 
 const TRAFFIC = 40;
 const BUSES = 3; // of the traffic, on the main roads
@@ -71,6 +73,8 @@ const METRO_HEIGHT = 420; // m the view rises to over a metro ride
 
 async function main() {
   dressLoading($('loading'));
+  translatePage();
+  onLang(() => status(statusText));
   // Rolled now, so the start screen can say what the game will begin with.
   const clock = new Clock(params);
   const weather = new Weather(params, clock.t);
@@ -323,7 +327,7 @@ async function main() {
     police.forgive();
     stats.busted++;
     frozen = 2.5;
-    showBanner('Busted', true);
+    showBanner(t('Busted'), true);
   };
   const police = new Police({
     scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, offscreen, onBusted: busted, kit,
@@ -1070,37 +1074,37 @@ async function main() {
       : undefined;
     const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y) : null;
     const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
-    const getIn = enterable?.two ? '<b>E</b> get on' : !enterable && boat ? `<b>E</b> get in the ${boat.kind === 'swan' ? 'swan' : 'pedal boat'}` : '<b>E</b> get in';
+    const getIn = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
     const key = (k: string) => (touch.active ? '' : `<b>${k}</b> `);
     let hint = '';
     if (metro.active) hint = '';
     else if (inHeli) {
-      const up = `${Math.round(inHeli.air)} m up`;
+      const up = t('{n} m up', { n: Math.round(inHeli.air) });
       if (touch.active) hint = inHeli.landed ? '' : up;
-      else hint = inHeli.landed ? '<b>Space</b> take off · <b>E</b> get out' : `${up} · <b>Space</b> climb · <b>Shift</b> down · land to get out`;
+      else hint = inHeli.landed ? t('<b>Space</b> take off · <b>E</b> get out') : `${up} · ${t('<b>Space</b> climb · <b>Shift</b> down · land to get out')}`;
     } else if (inCar) {
-      if (!assisted) hint = touch.active ? '' : `<b>E</b> get ${inCar.two ? 'off' : 'out'} · <b>Shift</b> lane assist`;
-      else hint = `${key('Shift')}Lane assist, keeping to ${assist.limit} km/h${touch.active ? '' : ' (let go to drive faster)'} · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : `straight on (${touch.active ? 'point the stick' : 'A/D'} to turn)`}`;
+      if (!assisted) hint = touch.active ? '' : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
+      else hint = `${key('Shift')}${t('Lane assist, keeping to {limit} km/h', { limit: String(assist.limit) })}${touch.active ? '' : ` ${t('(let go to drive faster)')}`} · ${assist.intent > 0 ? t('turning left at the next junction') : assist.intent < 0 ? t('turning right at the next junction') : t(touch.active ? 'straight on (point the stick to turn)' : 'straight on (A/D to turn)')}`;
     }
-    else if (boats.me) hint = touch.active ? '' : '<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank';
+    else if (boats.me) hint = touch.active ? '' : t('<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank');
     else if (ride.on) {
       const halts = ride.v!.line.halts, dest = ride.dest !== null ? halts[ride.dest].name : null;
       const next = ride.dest !== null && ride.dest === ride.upcoming()[0];
       const parts = [];
-      if (ride.waiting) parts.push('The streets ahead are still loading');
-      else if (scale > 1.5) parts.push(`${Math.round(scale)}× speed`);
-      if (dest) parts.push(next ? `Getting off at ${dest}` : `Riding to ${dest}`);
+      if (ride.waiting) parts.push(t('The streets ahead are still loading'));
+      else if (scale > 1.5) parts.push(t('{n}× speed', { n: Math.round(scale) }));
+      if (dest) parts.push(t(next ? 'Getting off at {name}' : 'Riding to {name}', { name: dest }));
       if (!touch.active) {
-        if (ride.atStop()) parts.push('<b>E</b> get off');
-        else if (ride.stuck) parts.push('<b>E</b> get off here');
-        else if (!next) parts.push('<b>E</b> get off at the next stop');
-        if (!dest) parts.push('<b>W</b>/<b>S</b> pick a stop', 'hold <b>Shift</b> to speed up');
+        if (ride.atStop()) parts.push(t('<b>E</b> get off'));
+        else if (ride.stuck) parts.push(t('<b>E</b> get off here'));
+        else if (!next) parts.push(t('<b>E</b> get off at the next stop'));
+        if (!dest) parts.push(t('<b>W</b>/<b>S</b> pick a stop'), t('hold <b>Shift</b> to speed up'));
       }
       hint = parts.join(' · ');
-    } else if (canBoard && !touch.active) hint = `<b>E</b> get on the ${canBoard.line.ref} to ${ride.headsign(canBoard)}`;
-    else if (station && !touch.active) hint = `<b>E</b> take the metro from ${station.name}`;
+    } else if (canBoard && !touch.active) hint = t('<b>E</b> get on the {line} to {name}', { line: canBoard.line.ref, name: ride.headsign(canBoard) });
+    else if (station && !touch.active) hint = t('<b>E</b> take the metro from {name}', { name: station.name });
     else if (board.shown) {
-      const wait = waitScale > 1.5 ? `Waiting for a tram · ${Math.round(waitScale)}× speed` : touch.active ? '' : 'Hold <b>Space</b> to wait for a tram';
+      const wait = waitScale > 1.5 ? t('Waiting for a tram · {n}× speed', { n: Math.round(waitScale) }) : touch.active ? '' : t('Hold <b>Space</b> to wait for a tram');
       hint = [canEnter && !touch.active ? getIn : '', wait].filter(Boolean).join(' · ');
     } else if (canEnter && !touch.active) hint = getIn;
     hint = (!inCar && !inHeli && !ride.on && taxi.hint(touch.active)) || hint;
@@ -1111,16 +1115,16 @@ async function main() {
     const label = ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : canBoard || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : null;
     touch.update({ car: inCar || inHeli, tram: ride.on || taxi.riding, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station, limit: assisted ? assist.limit : null });
-    show('tally', `${stats.wrecked} cars wrecked · ${stats.knocked} people knocked over${stats.busted ? ` · busted ${stats.busted}×` : ''}`);
+    show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')} · ${tn(stats.knocked, '{n} person knocked over|{n} people knocked over')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
-    const face = `${stars}|${stars && !police.seen}`;
+    const face = `${getLang()}|${stars}|${stars && !police.seen}`;
     if (wanted.dataset.face !== face) {
       wanted.dataset.face = face;
       wanted.innerHTML = [1, 2, 3, 4, 5].map((i) => `<span${i <= stars ? ' class="on"' : ''}>★</span>`).join('');
       wanted.classList.toggle('hidden', stars === 0);
       wanted.classList.toggle('blink', stars > 0 && !police.seen);
-      wanted.setAttribute('aria-label', stars ? `Wanted: ${stars} of 5 stars` : 'Not wanted');
+      wanted.setAttribute('aria-label', stars ? t('Wanted: {stars} of 5 stars', { stars }) : t('Not wanted'));
     }
 
     dev.update();

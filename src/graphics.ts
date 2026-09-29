@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DIRT, LEAVES } from './shading.ts';
 import type { Sky } from './sky.ts';
+import { t } from './i18n.ts';
 
 // Graphics: how sharp the picture is (the pixel ratio, up to the screen's own) and
 // whether the costlier looks are on: the tone curve, dirt on the paving and grime on
@@ -149,7 +150,7 @@ export class Graphics {
   }
 
   label() {
-    const name = (t: Tier) => t[0].toUpperCase() + t.slice(1);
-    return this.choice === 'auto' ? `Graphics: Auto (${name(this.tier).toLowerCase()} now)` : `Graphics: ${name(this.choice)}`;
+    const name = (k: Tier) => t(k[0].toUpperCase() + k.slice(1));
+    return this.choice === 'auto' ? t('Graphics: Auto ({tier} now)', { tier: name(this.tier).toLowerCase() }) : t('Graphics: {name}', { name: name(this.choice) });
   }
 }

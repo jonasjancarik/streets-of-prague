@@ -1,3 +1,5 @@
+import { t } from './i18n.ts';
+
 // The game's clock: the day of the week and the time of day, which set how often the
 // trams run (their timetables, in lines.json). It starts at the time in Prague now,
 // or at ?time=HH:MM and ?day=mon…sun (?night alone starts at half past one), runs at
@@ -45,6 +47,6 @@ export class Clock {
   get night() { return this.hour >= 22 || this.hour < 6; }
   label() {
     const m = Math.floor((this.t % 3600) / 60);
-    return `${DAYS[this.day]} ${String(this.hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    return `${t(DAYS[this.day])} ${String(this.hour).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
 }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WET, SNOW, STREET_SNOW, RAIN, BARE, NOISE, NOISE_GLSL } from './shading.ts';
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
+import { t } from './i18n.ts';
 
 // The weather: clear, cloudy, rain, a thunderstorm, mist or snow. Each is a mix of
 // cloud, rain, storm, snow and mist (0–1), and the weather moves between them
@@ -148,8 +149,8 @@ export class Weather {
     this.set(KINDS[(i + 1) % KINDS.length]);
   }
 
-  label() { return `Weather: ${NAMES[this.kind]}`; }
-  get name() { return NAMES[this.kind]; }
+  label() { return t('Weather: {name}', { name: t(NAMES[this.kind]) }); }
+  get name() { return t(NAMES[this.kind]); }
 
   // `dt`: game seconds (faster on a sped-up tram ride); `clockT` the game's clock;
   // `real` the real seconds since the last frame.

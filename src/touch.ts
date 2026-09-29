@@ -1,4 +1,5 @@
 import { clamp } from './network.ts';
+import { onLang, t } from './i18n.ts';
 import type { Car } from './car.ts';
 import type { Chopper } from './helicopter.ts';
 
@@ -166,6 +167,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }: {
 
   // ---- Per frame -----------------------------------------------------------
   const shown: Record<string, string | boolean> = {};
+  onLang(() => { for (const k of Object.keys(shown)) delete shown[k]; });
   const set = <T extends string | boolean>(key: string, value: T, apply: (value: T) => void) => { if (shown[key] !== value) { shown[key] = value; apply(value); } };
   // `tram`: riding one; `wait`: at a stop; `label`: what the main button does, when it
   // isn't getting in or out of a car; `limit`: the speed lane assist is keeping to.
@@ -184,11 +186,11 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }: {
     set('mode', mode, (m) => {
       $('touch').dataset.mode = m;
       fastUp();
-      fast.textContent = m === 'stop' ? 'Hold to wait' : 'Hold to speed up';
+      fast.textContent = m === 'stop' ? t('Hold to wait') : t('Hold to speed up');
     });
-    set('label', label || (mode === 'car' ? 'Get out' : 'Get in'), (text) => { $('t-action').textContent = text; });
+    set('label', label || (mode === 'car' ? 'Get out' : 'Get in'), (text) => { $('t-action').textContent = t(text); });
     set('toggle', state.run, (on) => toggle.classList.toggle('on', on));
-    set('limit', state.run && limit ? `Lane assist · ${limit}` : 'Lane assist', (text) => { toggle.textContent = text; });
+    set('limit', state.run && limit ? `Lane assist · ${limit}` : 'Lane assist', (text) => { toggle.textContent = text.replace('Lane assist', t('Lane assist')); });
     set('action', !!(inCar || tram || canEnter), (v) => $('t-action').classList.toggle('off', !v));
   };
   return state;

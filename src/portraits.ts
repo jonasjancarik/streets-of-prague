@@ -1,3 +1,4 @@
+import { t } from './i18n.ts';
 // The illustrated layer: the loading screen and conversations with characters.
 //
 // Portraits are cut from generated sheets (assets/portraits/cut.py) and the skylines
@@ -56,7 +57,7 @@ export function dressLoading(root: HTMLElement) {
   el('div', 'ls-stripe', root);
   el('div', 'ls-band', root);
   const title = el('div', 'ls-title', root);
-  title.innerHTML = '<span>Streets</span><span>of Prague</span>';
+  title.innerHTML = '<span data-t>Streets</span><span data-t>of Prague</span>';
   const status = root.querySelector('#loading-text');
   if (status) root.appendChild(status);
 }
@@ -115,13 +116,13 @@ export class Dialog {
     el('p', 'dlg-text', body).textContent = line.text;
     if (line.objective) {
       const goal = el('div', 'dlg-goal', body);
-      el('b', '', goal).textContent = 'New objective';
+      el('b', '', goal).textContent = t('New objective');
       el('span', '', goal).textContent = line.objective;
     }
     const more = this.lines.length > 0;
     el('div', 'dlg-next', body).innerHTML = document.body.classList.contains('touch')
-      ? (more ? 'Tap for more' : 'Tap to continue')
-      : (more ? '<kbd>E</kbd> Next' : '<kbd>E</kbd> Continue');
+      ? t(more ? 'Tap for more' : 'Tap to continue')
+      : `<kbd>E</kbd> ${t(more ? 'Next' : 'Continue')}`;
     r.hidden = false;
     document.body.classList.add('talking');
   }

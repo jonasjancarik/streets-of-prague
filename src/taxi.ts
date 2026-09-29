@@ -13,6 +13,7 @@ import { project } from './assist.ts';
 import { Heap } from './police.ts';
 import type { Traffic, TrafficAgent } from './traffic.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
+import { getLang, t } from './i18n.ts';
 
 // Well-known places to be driven to, as lon, lat (at a street where a taxi can stop).
 export const PLACES: [string, number, number][] = [
@@ -84,6 +85,7 @@ export class Taxis {
   get riding() { return this.state === 'riding'; }
   get busy() { return this.state !== 'off'; }
 
+  private firmName() { return this.firm.app ? this.firm.name : t('Taxi'); }
   private say(text: string) { this.note = text; this.noteT = 5; }
 
   // Keys (on foot or in the taxi). Returns true when the key was taken.
@@ -91,7 +93,7 @@ export class Taxis {
     if (code === 'KeyT' && (onFoot || this.state === 'menu')) {
       if (this.state === 'off') this.state = 'menu';
       else if (this.state === 'menu') this.state = 'off';
-      else if (this.state !== 'riding') { this.cancel(); this.say('Taxi cancelled'); }
+      else if (this.state !== 'riding') { this.cancel(); this.say(t('Taxi cancelled')); }
       return true;
     }
     const n = /^Digit([0-9])$/.exec(code);
@@ -111,7 +113,7 @@ export class Taxis {
   call(firm: Firm) {
     const { walker: w, traffic } = this.o;
     const stop = this.stopNear(w.x, w.y, 30);
-    if (!stop) { this.state = 'off'; this.say('No street here for a taxi to stop in'); return; }
+    if (!stop) { this.state = 'off'; this.say(t('No street here for a taxi to stop in')); return; }
     let best: TrafficAgent | null = null, bestD = REACH;
     for (const a of traffic.agents) {
       if (a.car.type !== 'taxi' || a.hired || a.kerb) continue;
@@ -119,7 +121,7 @@ export class Taxis {
       if (d < bestD) { bestD = d; best = a; }
     }
     best ??= traffic.spawn((x, y) => this.o.offscreen(x, y) && Math.hypot(x - w.x, y - w.y) > 120, this.o.edgesNear(w.x, w.y, 350), 'taxi');
-    if (!best) { this.state = 'off'; this.say('No taxi free nearby. Try again in a moment'); return; }
+    if (!best) { this.state = 'off'; this.say(t('No taxi free nearby. Try again in a moment')); return; }
     this.firm = firm;
     this.agent = best;
     best.hired = true;
@@ -232,7 +234,7 @@ export class Taxis {
     w.mesh.visible = true;
     w.sync();
     const fare = Math.round((this.firm.start + (this.metres / 1000) * this.firm.perKm) / 5) * 5;
-    this.o.banner(`${this.firm.app ? this.firm.name : 'Taxi'} fare: ${fare} Kč`);
+    this.o.banner(t('{firm} fare: {fare} Kč', { firm: this.firmName(), fare }));
     this.cancel();
   }
 
@@ -254,7 +256,7 @@ export class Taxis {
       const was = this.riding;
       if (was) this.leave();
       else this.cancel();
-      this.say(was ? 'The taxi crashed. You got out' : 'Your taxi had an accident on the way');
+      this.say(t(was ? 'The taxi crashed. You got out' : 'Your taxi had an accident on the way'));
       return;
     }
     const c = a.car, w = this.o.walker;
@@ -272,8 +274,8 @@ export class Taxis {
     if (this.state === 'coming' && there) { this.state = 'waiting'; this.wait = PATIENCE; }
     if (this.state === 'waiting') {
       this.wait -= dt;
-      if (this.wait < 0) { this.cancel(); this.say('The taxi gave up waiting and drove off'); }
-      else if (Math.hypot(c.x - w.x, c.y - w.y) > 120) { this.cancel(); this.say('You walked away from your taxi, so it left'); }
+      if (this.wait < 0) { this.cancel(); this.say(t('The taxi gave up waiting and drove off')); }
+      else if (Math.hypot(c.x - w.x, c.y - w.y) > 120) { this.cancel(); this.say(t('You walked away from your taxi, so it left')); }
     }
     if (this.riding && this.dest !== null && there) this.leave();
   }
@@ -312,21 +314,21 @@ export class Taxis {
   // The line in the HUD while a taxi is involved (or a note for a few seconds after).
   hint(touch: boolean) {
     const k = (s: string) => (touch ? '' : `<b>${s}</b> `);
-    const name = this.firm.app ? `Your ${this.firm.name} driver` : 'Your taxi';
+    const name = this.firm.app ? t('Your {name} driver', { name: this.firm.name }) : t('Your taxi');
     if (this.state === 'coming') {
       const a = this.agent!, left = a.stop ? a.route.to(a.stop.edge, a.stop.s) : Infinity;
       const far = Number.isFinite(left) && this.final ? left : Math.hypot(a.car.x - this.o.walker.x, a.car.y - this.o.walker.y) * 1.4;
       const secs = Math.max(10, Math.round(far / (this.firm.app ? 9 : 7) / 10) * 10);
-      return `${name} is on the way, about ${secs} s · ${touch ? '' : 'hold <b>Space</b> to wait · '}${k('T')}cancel`;
+      return `${t('{name} is on the way, about {secs} s', { name, secs })} · ${touch ? '' : `${t('hold <b>Space</b> to wait')} · `}${k('T')}${t('cancel')}`;
     }
-    if (this.state === 'waiting') return `${name} is waiting at the kerb · ${k('E')}get in · ${k('T')}cancel`;
+    if (this.state === 'waiting') return `${t('{name} is waiting at the kerb', { name })} · ${k('E')}${t('get in')} · ${k('T')}${t('cancel')}`;
     if (this.riding) {
       const parts = [];
-      if (this.waiting) parts.push('The streets ahead are still loading');
-      else if (this.agent && this.agent.jam > 15) parts.push('Stuck in traffic');
-      else if (this.scale > 1.5) parts.push(`${Math.round(this.scale)}× speed`);
-      parts.push(this.dest === null ? `Where to? ${touch ? 'Pick a place' : 'Press a number'}` : `To ${this.places[this.dest].name}`);
-      if (!touch) parts.push('<b>E</b> get out here');
+      if (this.waiting) parts.push(t('The streets ahead are still loading'));
+      else if (this.agent && this.agent.jam > 15) parts.push(t('Stuck in traffic'));
+      else if (this.scale > 1.5) parts.push(t('{n}× speed', { n: Math.round(this.scale) }));
+      parts.push(this.dest === null ? `${t('Where to?')} ${t(touch ? 'Pick a place' : 'Press a number')}` : t('To {name}', { name: t(this.places[this.dest].name) }));
+      if (!touch) parts.push(`<b>E</b> ${t('get out here')}`);
       return parts.join(' · ');
     }
     return this.noteT > 0 ? this.note : '';
@@ -338,14 +340,14 @@ export class Taxis {
     const menu = this.state === 'menu', riding = this.riding;
     el.hidden = !menu && !riding;
     if (el.hidden) { this.shown = ''; return; }
-    const key = `${this.state}|${this.dest}|${touch}`;
+    const key = `${getLang()}|${this.state}|${this.dest}|${touch}`;
     if (key === this.shown) return;
     this.shown = key;
     const n = (i: number) => (touch ? '' : `<kbd>${(i + 1) % 10}</kbd> `);
     const items = menu
-      ? FIRMS.map((f, i) => `<li><button data-pick="${i}">${n(i)}${f.app ? `${f.name} app: ${f.start} Kč + ${f.perKm}/km, drives fast` : `Street taxi: ${f.start} Kč + ${f.perKm}/km`}</button></li>`)
-      : this.places.map((p, i) => `<li><button data-pick="${i}" class="${i === this.dest ? 'dest' : ''}">${n(i)}${p.name}</button></li>`);
-    const title = menu ? `Get a taxi${touch ? '' : ' · <b>T</b> close'}` : `${this.firm.app ? this.firm.name : 'Taxi'}: where to?`;
+      ? FIRMS.map((f, i) => `<li><button data-pick="${i}">${n(i)}${f.app ? t('{name} app: {start} Kč + {perKm}/km, drives fast', { name: f.name, start: f.start, perKm: f.perKm }) : t('Street taxi: {start} Kč + {perKm}/km', { start: f.start, perKm: f.perKm })}</button></li>`)
+      : this.places.map((p, i) => `<li><button data-pick="${i}" class="${i === this.dest ? 'dest' : ''}">${n(i)}${t(p.name)}</button></li>`);
+    const title = menu ? `${t('Get a taxi')}${touch ? '' : ` · <b>T</b> ${t('close')}`}` : t('{firm}: where to?', { firm: this.firmName() });
     el.innerHTML = `<div class="ride-line"><span class="ride-ref" style="background:#e9c62f;color:#221f1b">TAXI</span><span>${title}</span></div>
       <ol class="ride-stops">${items.join('')}</ol>`;
   }

@@ -10,6 +10,7 @@
 
 import { headsignAt, frontOf } from './trams.ts';
 import type { Trams, TramVehicle } from './trams.ts';
+import { getLang, t } from './i18n.ts';
 
 interface RideWorld { keyAt(x: number, y: number): string; available: { has(key: string): boolean }; loaded: { has(key: string): boolean } }
 interface RiderPosition { x: number; y: number; h: number; vx: number; vy: number }
@@ -156,16 +157,16 @@ export class TramRide {
     const { v } = this;
     if (!v) return;
     const list = this.upcoming(), halts = v.line.halts;
-    const key = `${v.line.ref}|${this.headsign()}|${list.join(',')}|${this.dest}|${v.dwell > 0}|${this.stuck}`;
+    const key = `${getLang()}|${v.line.ref}|${this.headsign()}|${list.join(',')}|${this.dest}|${v.dwell > 0}|${this.stuck}`;
     if (key === this.shown) return;
     this.shown = key;
     const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
     const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
-    const here = v.dwell > 0 ? `<div class="ride-here">At ${esc(halts[v.halt].name)}</div>`
-      : this.stuck ? '<div class="ride-here">Held up: something is blocking the track</div>' : '';
+    const here = v.dwell > 0 ? `<div class="ride-here">${esc(t('At {name}', { name: halts[v.halt].name }))}</div>`
+      : this.stuck ? `<div class="ride-here">${t('Held up: something is blocking the track')}</div>` : '';
     this.el.innerHTML = `
       <div class="ride-line"><span class="ride-ref" style="background:${esc(v.line.colour || '#c4161c')}">${esc(v.line.ref)}</span>
-      <span>to ${esc(this.headsign())}</span></div>${here}
+      <span>${esc(t('to {name}', { name: this.headsign() }))}</span></div>${here}
       <ol class="ride-stops">${list.map((i, n) => `<li><button data-halt="${i}" class="${i === this.dest ? 'dest' : ''}${n === 0 ? ' next' : ''}">${esc(halts[i].name)}</button></li>`).join('')}</ol>`;
   }
 }

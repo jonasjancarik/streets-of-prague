@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Point2 } from './map/geo.ts';
 import type { Clock } from './clock.ts';
+import { t } from './i18n.ts';
 
 export interface MetroLine {
   ref: string; colour: string;
@@ -39,7 +40,7 @@ const TRAIN = 5, CAR = 19.3; // a train of five cars, each this long (m)
 
 const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
 const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
-const mins = (s: number) => `${Math.max(1, Math.round(s / 60))} min`;
+const mins = (s: number) => t('{n} min', { n: Math.max(1, Math.round(s / 60)) });
 
 // The sign over an entrance: a white M on the line's colour, seen from above.
 const signs = new Map<string, THREE.MeshBasicMaterial>();
@@ -239,7 +240,7 @@ export class Metro {
     return null;
   }
 
-  shutNote(line: MetroLine) { return `The metro isn't running now: the first trains leave after ${this.opens(line) ?? 4}:00`; }
+  shutNote(line: MetroLine) { return t('The metro isn’t running now: the first trains leave after {hour}:00', { hour: this.opens(line) ?? 4 }); }
 
   open(station: Station) {
     this.from = station;
@@ -462,16 +463,16 @@ export class Metro {
       const rows = line.stations.map((s, k) => {
         const st = this.stations.get(s.name), mine = s.name === from.name;
         if (!st) return '';
-        const note = mine ? 'You’re here' : !st.onMap ? 'Off the map' : st.lines.length > 1 ? `Change for ${st.lines.filter((x) => x.line !== line).map((x) => x.line.ref).join(', ')}` : '';
+        const note = mine ? t('You’re here') : !st.onMap ? t('Off the map') : st.lines.length > 1 ? t('Change for {lines}', { lines: st.lines.filter((x) => x.line !== line).map((x) => x.line.ref).join(', ') }) : '';
         return `<li><button data-act="go:${k}" class="${k === this.sel ? 'sel' : ''}"${mine || !st.onMap ? ' disabled' : ''}>`
           + `<span>${esc(s.name)}</span>${note ? `<small>${esc(note)}</small>` : ''}</button></li>`;
       }).join('');
-      html = `<div class="metro-head"><div class="metro-title">Metro · ${esc(from.name)}</div><button data-act="close" class="metro-close" aria-label="Back to the street">×</button></div>
+      html = `<div class="metro-head"><div class="metro-title">${esc(t('Metro · {name}', { name: from.name }))}</div><button data-act="close" class="metro-close" aria-label="${esc(t('Back to the street'))}">×</button></div>
         <div class="metro-tabs">${tabs}</div>
-        ${change ? `<div class="metro-note">Change at ${esc(change)}</div>` : ''}
+        ${change ? `<div class="metro-note">${esc(t('Change at {name}', { name: change }))}</div>` : ''}
         ${this.note ? `<div class="metro-note">${esc(this.note)}</div>` : ''}
         <ol class="metro-stations" style="--line:${esc(line.colour)}">${rows}</ol>
-        <div class="metro-keys"><b>W</b>/<b>S</b> choose · <b>A</b>/<b>D</b> line · <b>E</b> go · <b>Esc</b> back to the street</div>`;
+        <div class="metro-keys">${t('<b>W</b>/<b>S</b> choose · <b>A</b>/<b>D</b> line · <b>E</b> go · <b>Esc</b> back to the street')}</div>`;
     } else {
       const s = this.steps[Math.min(this.k, this.steps.length - 1)];
       if (!s || !this.dest) return;
@@ -479,20 +480,20 @@ export class Metro {
       const towards = line.stations[dir > 0 ? line.stations.length - 1 : 0].name;
       // The station the train is at or has last left.
       let pos = s.a, status;
-      if (this.phase === 'arriving') { pos = j; status = `Arriving at ${this.dest.name}…`; }
-      else if (s.kind === 'wait') status = `Next train to ${towards} in ${mins(s.to - this.t)}`;
-      else if (s.kind === 'change') status = `Changing to line ${line.ref} at ${line.stations[i].name}`;
-      else status = s.b === j ? `Arriving at ${line.stations[j].name}` : `Next: ${line.stations[s.b].name}`;
+      if (this.phase === 'arriving') { pos = j; status = t('Arriving at {name}…', { name: this.dest.name }); }
+      else if (s.kind === 'wait') status = t('Next train to {towards} in {time}', { towards, time: mins(s.to - this.t) });
+      else if (s.kind === 'change') status = t('Changing to line {line} at {name}', { line: line.ref, name: line.stations[i].name });
+      else status = s.b === j ? t('Arriving at {name}', { name: line.stations[j].name }) : t('Next: {name}', { name: line.stations[s.b].name });
       const list = [];
       for (let k = i; ; k += dir) {
         list.push(`<li class="${(k - pos) * dir < 0 ? 'past' : k === pos ? 'now' : ''}${k === j ? ' end' : ''}">${esc(line.stations[k].name)}</li>`);
         if (k === j) break;
       }
-      html = `<div class="metro-head"><div class="metro-title">${pill(line)} to ${esc(towards)}</div></div>
+      html = `<div class="metro-head"><div class="metro-title">${pill(line)} ${esc(t('to {name}', { name: towards }))}</div></div>
         <div class="metro-bar"><div style="width:${((100 * this.t) / this.total).toFixed(1)}%;background:${esc(line.colour)}"></div></div>
         <div class="metro-status">${esc(status)}</div>
         <ol class="metro-ride" style="--line:${esc(line.colour)}">${list.join('')}</ol>
-        ${this.phase === 'ride' ? `<button data-act="skip" class="metro-skip">Skip to ${esc(this.dest.name)}</button><div class="metro-keys"><b>E</b> skip · scroll to zoom</div>` : ''}`;
+        ${this.phase === 'ride' ? `<button data-act="skip" class="metro-skip">${esc(t('Skip to {name}', { name: this.dest.name }))}</button><div class="metro-keys">${t('<b>E</b> skip · scroll to zoom')}</div>` : ''}`;
     }
     if (html !== this.shown) {
       this.el.innerHTML = this.shown = html;

@@ -1,5 +1,6 @@
 import { headsignAt, frontOf, MEAN_SPEED } from './trams.ts';
 import type { Trams, TramLine, TramVehicle } from './trams.ts';
+import { t } from './i18n.ts';
 
 interface StopSpot { line: TramLine; i: number; x: number; y: number; name: string; headsign: string }
 interface DueTram { line: TramLine; headsign: string; eta: number; here: boolean; v: TramVehicle }
@@ -90,12 +91,12 @@ export class StopBoard {
   render(name: string, rows: DueTram[]) {
     const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
     const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
-    const when = (r: DueTram) => (r.here ? 'now' : r.eta < 45 ? 'arriving' : `${Math.round(r.eta / 60)} min`);
+    const when = (r: DueTram) => (r.here ? t('now') : r.eta < 45 ? t('arriving') : t('{n} min', { n: Math.round(r.eta / 60) }));
     const list = rows.length
       ? `<ol class="board-rows">${rows.map((r) => `<li><span class="ride-ref" style="background:${esc(r.line.colour || '#c4161c')}">${esc(r.line.ref)}</span>`
         + `<span class="board-to">${esc(r.headsign)}</span><span class="board-eta">${when(r)}</span></li>`).join('')}</ol>`
-      : '<div class="board-none">No trams due in the next half hour</div>';
-    const html = `<div class="board-title">Trams from ${esc(name)}</div>${list}`;
+      : `<div class="board-none">${t('No trams due in the next half hour')}</div>`;
+    const html = `<div class="board-title">${esc(t('Trams from {name}', { name }))}</div>${list}`;
     if (html === this.key) return;
     this.key = html;
     this.el.innerHTML = html;
