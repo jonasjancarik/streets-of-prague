@@ -324,6 +324,9 @@ export const SNOW = { value: 0 };
 // at night, less and less through the day).
 export const STREET_SNOW = { value: 1 };
 export const RAIN = { value: 0 };
+// How bare the broadleaf trees are (weather.ts): 1 in winter or under snow, their
+// leaves falling as it grows; evergreens keep theirs (vegetation.ts).
+export const BARE = { value: 0 };
 export const SKY_REF = { value: new THREE.Color(0, 0, 0) };
 // Lit windows at night: the share of them (0 by day).
 export const WINDOWS = { value: 0 };

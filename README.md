@@ -105,7 +105,10 @@ the pixel ratio.
   OSM rarely maps the gardens and lawns in a suburb or a housing estate, so a street
   block of family houses, or of flats with plenty of room round them, gets grass
   between the buildings (`_gardens` in `pipeline/osm_area.py`); denser inner-city
-  blocks, shops, offices and schools stay paved. Buildings get roof tiles laid down
+  blocks, shops, offices and schools stay paved. Gardens get a few trees and shrubs,
+  scattered by where they are so they're the same every visit, clear of the houses,
+  paths and the trees already there (`gardenTrees` in `src/map/vegetation.ts`).
+  Buildings get roof tiles laid down
   each face's slope, slate and gravel on flat roofs. It all stays sharp at any zoom.
 - **Facades** are put together bay by bay and storey by storey from 48 parts: windows,
   doors, gateways and shopfronts of tenements, baroque houses, functionalist blocks,
@@ -134,7 +137,9 @@ the pixel ratio.
   of, with fog measured from the camera so the ground is hazier than the roofs. The
   ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,
   rings where the drops hit) and dries over several minutes; snow settles on the
-  ground, the roofs, the cars and the tree tops, and melts slower still. On the roads
+  ground, the roofs, the cars and the tree tops, and melts slower still. Under snow,
+  and from December to February, the broadleaf trees lose their leaves down to the
+  branches; pines, spruces and some of the hedges stay green. On the roads
   and pavements it lies whole through the night; from about six in the morning the
   traffic clears it, a little more with every busy hour (by the game's clock), to wet
   slush with patches of snow by the afternoon, the roads before the pavements, while

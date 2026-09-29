@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WET, SNOW, STREET_SNOW, RAIN, NOISE, NOISE_GLSL } from './shading.ts';
+import { WET, SNOW, STREET_SNOW, RAIN, BARE, NOISE, NOISE_GLSL } from './shading.ts';
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
 
 // The weather: clear, cloudy, rain, a thunderstorm, mist or snow. Each is a mix of
@@ -45,6 +45,10 @@ const CHANCES: Record<'winter' | 'spring' | 'summer' | 'autumn', Record<Kind, nu
   autumn: { clear: 3, cloudy: 4, rain: 2.5, storm: 0.1, mist: 2, snow: 0.2 },
 };
 const season = (month: number) => month === 11 || month < 2 ? 'winter' : month < 5 ? 'spring' : month < 8 ? 'summer' : 'autumn';
+
+// The broadleaf trees are bare from December to February (by the real date, as the
+// seasons' weather above), and under snow any time.
+const WINTER = season(new Date().getMonth()) === 'winter' ? 1 : 0;
 
 const CHANGE = 1 / 25;         // of the full change a second (clear to rain in 25 s)
 const WETTING = 1 / 40, DRYING = 1 / 480;
@@ -119,6 +123,7 @@ export class Weather {
     SNOW.value = this.now.cover;
     STREET_SNOW.value = 1 - this.now.cleared;
     RAIN.value = this.now.rain;
+    BARE.value = Math.max(WINTER, this.now.cover);
   }
 
   set(kind: Kind, instantly = false) {
