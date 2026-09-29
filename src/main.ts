@@ -548,10 +548,14 @@ async function main() {
   // that stand still (thousands of them across the loaded tiles) have a hash of their
   // own, made again only when one of them moves, comes or goes.
   const hash = new SpatialHash<Obstacle>(10), resting = new SpatialHash<Obstacle>(10);
-  function* obstacles(x: number, y: number, rr: number): Generator<Obstacle> {
-    yield* hash.near(x, y, rr);
-    yield* resting.near(x, y, rr);
-  }
+  // (The list is reused: it holds until the next call, and no caller looks up more
+  // obstacles while it goes through one list.)
+  const found: Obstacle[] = [];
+  const obstacles = (x: number, y: number, rr: number) => {
+    found.length = 0;
+    hash.near(x, y, rr, found);
+    return resting.near(x, y, rr, found);
+  };
   const near = (a: { x: number; y: number }, b: { x: number; y: number }, d: number) => Math.abs(a.x - b.x) < d && Math.abs(a.y - b.y) < d;
   // The cars within rr of (x, y), each once, into `out` (reused, to spare the garbage).
   let stamp = 0;

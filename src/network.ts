@@ -47,13 +47,16 @@ export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b
 export class Polyline {
   pts: Point2[];
   cum: number[];
+  angs: number[]; // each segment's heading (made once: at() runs for every walker every step)
   length: number;
 
   constructor(pts: Point2[]) {
     this.pts = pts;
     this.cum = [0];
+    this.angs = [0];
     for (let i = 1; i < pts.length; i++) {
       this.cum.push(this.cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+      this.angs.push(Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]));
     }
     this.length = this.cum[this.cum.length - 1];
   }
@@ -68,7 +71,7 @@ export class Polyline {
     }
     const a = this.pts[lo - 1], b = this.pts[lo];
     const t = (s - this.cum[lo - 1]) / (this.cum[lo] - this.cum[lo - 1] || 1);
-    return { x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t, ang: Math.atan2(b[1] - a[1], b[0] - a[0]) };
+    return { x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t, ang: this.angs[lo] };
   }
 }
 
@@ -332,11 +335,14 @@ export class SpatialHash<T extends { x: number; y: number }> {
     if (!b) this.map.set(k, (b = []));
     b.push(o);
   }
-  *near(x: number, y: number, r: number): Generator<T> {
+  // Everything in the cells within r of (x, y), added to `out`. (An array rather than
+  // a generator: this runs thousands of times a frame.)
+  near(x: number, y: number, r: number, out: T[] = []): T[] {
     const c = this.cell, i0 = Math.floor((x - r) / c), i1 = Math.floor((x + r) / c), j0 = Math.floor((y - r) / c), j1 = Math.floor((y + r) / c);
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
       const b = this.map.get(i * 131072 + j);
-      if (b) yield* b;
+      if (b) for (let k = 0; k < b.length; k++) out.push(b[k]);
     }
+    return out;
   }
 }

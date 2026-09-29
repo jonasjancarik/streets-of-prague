@@ -138,13 +138,16 @@ function signMaterial(ref: string, colour: string | null) {
 class Loop {
   pts: Point2[];
   cum: number[];
+  angs: number[]; // each segment's heading
   length: number;
 
   constructor(pts: Point2[]) {
     this.pts = pts;
     this.cum = [0];
+    this.angs = [0];
     for (let i = 1; i < pts.length; i++) {
       this.cum.push(this.cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+      this.angs.push(Math.atan2(pts[i][1] - pts[i - 1][1], pts[i][0] - pts[i - 1][0]));
     }
     this.length = this.cum[this.cum.length - 1];
   }
@@ -160,7 +163,7 @@ class Loop {
     }
     const a = this.pts[lo - 1], b = this.pts[lo];
     const t = (s - this.cum[lo - 1]) / (this.cum[lo] - this.cum[lo - 1] || 1);
-    return { x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t, ang: Math.atan2(b[1] - a[1], b[0] - a[0]) };
+    return { x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t, ang: this.angs[lo] };
   }
 }
 
@@ -301,10 +304,13 @@ export class Trams {
   // instead of snapping from one piece of the track to the next.
   place(v: TramVehicle) {
     const path = v.line.path;
-    v.parts = [-STEP, 0, STEP].map((o) => {
-      const a = path.at(v.s + o - BOGIE), b = path.at(v.s + o + BOGIE);
-      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, ang: Math.atan2(b.y - a.y, b.x - a.x) };
-    });
+    if (v.parts.length !== 3) v.parts = [{ x: 0, y: 0, ang: 0 }, { x: 0, y: 0, ang: 0 }, { x: 0, y: 0, ang: 0 }];
+    for (let n = 0; n < 3; n++) {
+      const o = (n - 1) * STEP, a = path.at(v.s + o - BOGIE), b = path.at(v.s + o + BOGIE), q = v.parts[n];
+      q.x = (a.x + b.x) / 2;
+      q.y = (a.y + b.y) / 2;
+      q.ang = Math.atan2(b.y - a.y, b.x - a.x);
+    }
   }
 
   // Move every tram on. `near(x, y, r)` finds what else is about (cars, people, the
@@ -324,14 +330,14 @@ export class Trams {
     for (const v of this.list) {
       v.cells ||= [{ v, x: 0, y: 0, c: 0, s: 0 }, { v, x: 0, y: 0, c: 0, s: 0 }, { v, x: 0, y: 0, c: 0, s: 0 }];
       const cells = v.cells;
-      v.parts.forEach((p, n) => {
-        const k = Math.floor(p.x / CELL) * 131072 + Math.floor(p.y / CELL);
+      for (let n = 0; n < v.parts.length; n++) {
+        const p = v.parts[n], k = Math.floor(p.x / CELL) * 131072 + Math.floor(p.y / CELL);
         let b = this.grid.get(k);
         if (!b) this.grid.set(k, (b = []));
         const o = cells[n];
         o.x = p.x; o.y = p.y; o.c = Math.cos(p.ang); o.s = Math.sin(p.ang);
         b.push(o);
-      });
+      }
     }
     // Buckets left empty for a while go, so the map doesn't grow with the city.
     if (++this.gridSweep > 600) {
