@@ -506,8 +506,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 - **Skylines.** `uv run skyline.py hradcany` (or `--all`) draws a real Prague view as a
   red screen-print silhouette into `public/skylines/`, for the loading screen and the
   backdrop behind character portraits. It reads the praha caches of `ipr_buildings.py`
-  and `ipr_terrain.py`; the views (camera spot, direction, field of view) are listed
-  in `VIEWS` at the top of `pipeline/skyline.py`.
+  and `ipr_terrain.py`; the views (camera spot, direction, field of view, landmark) are
+  listed in `VIEWS` at the top of `pipeline/skyline.py`. Each landmark is drawn black and
+  its place in the picture goes to `skylines.json`, which the loading screen uses to
+  stand it tall beside the menu.
 - **Layers.** The map is built in layers, and each step rebuilds only its own
   (`pipeline/layers.py`): `build_tiles.py` makes the OSM buildings, the ground (land
   use, streets and pavements, parking areas, walls, rails, crossings, trees), the
