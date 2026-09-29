@@ -11,7 +11,7 @@ import { SNOW, STREET_SNOW, WET } from './shading.ts';
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
   grip: number; turn: number; weight: number; cabin?: Point2; color?: string;
-  traffic?: number; two?: 'bike' | 'moto'; heavy?: boolean;
+  wheelbase?: number; traffic?: number; two?: 'bike' | 'moto'; heavy?: boolean;
   // Handling when someone drives it (each defaults to the value in brackets): braking
   // (m/s², 16), tightest turning circle (m, 3.6), how fast the steering answers (9),
   // how much speed costs grip (0.45), coasting drag with a driver (m/s², 0.6), top
@@ -51,6 +51,9 @@ export const TYPES: Record<string, CarSpec> = {
   moto: { L: 2.8, W: 1.0, H: 1.6, mass: 260, accel: 12, vmax: 48, grip: 9.5, turn: 2.8, weight: 0.3, traffic: 1.2, two: 'moto', radius: 2.5, response: 12, brake: 22, fade: 0.35, tough: 1.5, weather: 1.5 },
   // A 12 m city bus in PID colours: slow to pick up speed, wide in the turns. Never
   // parked or in the ordinary mix: Traffic.buses keeps a few on their lines.
+  // Lorries: only on the motorways and out in the suburbs (Traffic.spawn), never parked.
+  truck: { L: 8, W: 2.5, H: 3.6, mass: 7500, accel: 3.2, vmax: 25, grip: 7, turn: 1.4, weight: 0, traffic: 0, heavy: true, wheelbase: 4.6, drive: 'rwd', radius: 8, response: 5, brake: 9, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
+  artic: { L: 16.5, W: 2.55, H: 4, mass: 30000, accel: 2, vmax: 24, grip: 6.5, turn: 1.1, weight: 0, traffic: 0, heavy: true, wheelbase: 9, drive: 'rwd', radius: 12, response: 3.5, brake: 7, fade: 0.25, drag: 0.35, reverse: 0.15, tough: 6, weather: 1.2 },
   bus: { L: 12, W: 2.55, H: 3.1, mass: 12000, accel: 2.6, vmax: 24, grip: 7, turn: 1.25, weight: 0, color: '#c8102e', heavy: true, drive: 'rwd', radius: 10, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
 };
 // A variant of a body type: the same geometry (so the same draw call) with its own
@@ -92,6 +95,8 @@ function tuned(type: string, v: Variant): CarSpec {
 const PAINT = ['#e8e6e1', '#bfc3c7', '#8d9398', '#2c2f33', '#1d2a44', '#7a1f1f', '#b33a2c', '#2f5140', '#5b6d7c', '#d9d2c0', '#3f4a5a', '#9a7b4f'];
 const TWO_PAINT: Record<string, string[]> = {
   bike: ['#1d2a44', '#b33a2c', '#2f5140', '#e8e6e1', '#2c2f33', '#d94f8c', '#e0b32a', '#5b6d7c', '#8fb3c9'],
+  truck: ['#1d4fa3', '#b33a2c', '#2f5140', '#e8e6e1', '#e0b32a', '#5b6d7c', '#2c2f33'],
+  artic: ['#1d4fa3', '#b33a2c', '#2f5140', '#e8e6e1', '#e0b32a', '#2c2f33', '#7a1f1f'],
   moto: ['#b3161b', '#1d2a44', '#2c2f33', '#e8e6e1', '#d9d2c0', '#2f5140', '#e07b1f'],
 };
 
@@ -108,6 +113,11 @@ function carGeometry(type: string, paint: string): THREE.BufferGeometry {
   if (S.two) {
     if (!kit) throw new Error('Figures kit is not loaded');
     const geometry = kit.vehicles[S.two](paint);
+    cache.set(k, geometry);
+    return geometry;
+  }
+  if (type === 'truck' || type === 'artic') {
+    const geometry = truckGeometry(type, S, paint);
     cache.set(k, geometry);
     return geometry;
   }
@@ -144,7 +154,7 @@ function carGeometry(type: string, paint: string): THREE.BufferGeometry {
 // white roof with the air conditioning on top, a dark band of glass all round with
 // white pillars, three doors on the right, and the line board over the windscreen.
 // (Forward is +x, right +z, the ground y = 0, as for the car bodies.)
-function busGeometry(S: CarSpec): THREE.BufferGeometry {
+function boxBuilder() {
   const parts: THREE.BufferGeometry[] = [];
   const c = new THREE.Color();
   const add = (g: THREE.BufferGeometry, colour: string, x: number, y: number, z: number) => {
@@ -158,6 +168,21 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
   };
   const box = (colour: string, x0: number, x1: number, y0: number, y1: number, w: number, z = 0) =>
     add(new THREE.BoxGeometry(x1 - x0, y1 - y0, w), colour, (x0 + x1) / 2, (y0 + y1) / 2, z);
+  const wheel = (x: number, W: number, twin = false) => {
+    for (const z of [-1, 1]) {
+      const w = new THREE.CylinderGeometry(0.5, 0.5, twin ? 0.6 : 0.34, 14);
+      w.rotateX(Math.PI / 2);
+      add(w, '#161616', x, 0.5, z * (W / 2 - 0.22));
+      const hub = new THREE.CylinderGeometry(0.24, 0.24, 0.02, 10);
+      hub.rotateX(Math.PI / 2);
+      add(hub, '#70757b', x, 0.5, z * (W / 2 - 0.04));
+    }
+  };
+  return { box, wheel, done: () => mergeGeometries(parts) };
+}
+
+function busGeometry(S: CarSpec): THREE.BufferGeometry {
+  const { box, wheel, done } = boxBuilder();
   const L = S.L / 2, W = S.W, red = S.color || '#c8102e', white = '#eeeeea', glass = '#1b242c', grey = '#8a8f94';
   const sill = 1.15, top = 2.55, roof = 2.95;
   box('#2a2c2f', -L + 0.05, L - 0.05, 0.28, 0.5, W - 0.02); // skirt and bumpers
@@ -197,17 +222,40 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
   box(glass, -L - 0.02, -L + 0.05, 1.4, top - 0.1, W - 0.5);
   box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
   // Wheels: two at the front, twin tyres at the back.
-  for (const x of [L - 2.7, -L + 3.3]) {
-    for (const z of [-1, 1]) {
-      const w = new THREE.CylinderGeometry(0.5, 0.5, 0.34, 14);
-      w.rotateX(Math.PI / 2);
-      add(w, '#161616', x, 0.5, z * (W / 2 - 0.22));
-      const hub = new THREE.CylinderGeometry(0.24, 0.24, 0.02, 10);
-      hub.rotateX(Math.PI / 2);
-      add(hub, '#70757b', x, 0.5, z * (W / 2 - 0.04));
-    }
+  wheel(L - 2.7, W);
+  wheel(-L + 3.3, W);
+  return done();
+}
+
+// Lorries are boxes too: a cab in the paint colour and a white box or trailer behind
+// it (with a stripe in the cab's colour), a dark chassis, tail lamps and a bar at the back.
+// The artic is a tractor with a trailer, the box truck one rigid body.
+function truckGeometry(type: string, S: CarSpec, paint: string): THREE.BufferGeometry {
+  const { box, wheel, done } = boxBuilder();
+  const L = S.L / 2, W = S.W, glass = '#1b242c', artic = type === 'artic';
+  const cab = artic ? 2.5 : 2.2, cabTop = artic ? 3.3 : 2.9, floor = artic ? 1.0 : 0.85, top = artic ? 4.0 : 3.6;
+  const cx = L - cab; // where the cab starts
+  box('#2a2c2f', -L, L, 0.35, floor, W - 0.5); // chassis
+  box(paint, cx, L, floor - 0.2, cabTop, W); // cab
+  box(glass, L - 0.05, L + 0.02, floor + 0.65, cabTop - 0.2, W - 0.25); // windscreen
+  box(glass, cx + 0.5, L - 0.4, floor + 0.7, cabTop - 0.25, W + 0.02); // side windows
+  box(paint, cx + 0.05, cx + 0.5, cabTop, cabTop + (artic ? 0.5 : 0.0), W - 0.3); // roof deflector
+  box('#2a2c2f', L - 0.1, L + 0.15, 0.35, 0.75, W - 0.1); // bumper
+  const bx = artic ? cx - 0.9 : cx - 0.1; // the box's front end
+  box('#e6e7e3', -L, bx, floor, top, W); // box or trailer
+  box(paint, -L, bx, floor + 0.7, floor + 1.05, W + 0.01); // stripe
+  box('#9a9fa3', -L, -L + 0.06, floor + 0.15, top - 0.15, W - 0.3); // rear doors
+  for (const z of [-1, 1]) {
+    box('#fff6d8', L - 0.05, L + 0.05, floor - 0.1, floor + 0.2, 0.4, z * (W / 2 - 0.3));
+    box('#b3161b', -L - 0.03, -L + 0.05, floor - 0.1, floor + 0.3, 0.25, z * (W / 2 - 0.2));
   }
-  return mergeGeometries(parts);
+  box('#3a3c3f', -L - 0.1, -L + 0.05, 0.55, 0.75, W - 0.2); // under-run bar
+  if (artic) box('#2a2c2f', bx, cx + 0.3, floor, floor + 0.3, W - 0.6); // the fifth wheel between them
+  box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
+  wheel(L - 1.1, W);
+  if (artic) { wheel(cx + 0.4, W, true); wheel(-L + 1.6, W, true); wheel(-L + 2.9, W, true); }
+  else { wheel(-L + 1.5, W, true); }
+  return done();
 }
 
 // Car bodies from public/cars.glb (built in Blender by assets/cars/build.py): one per

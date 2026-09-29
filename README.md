@@ -324,6 +324,11 @@ the pixel ratio.
   the main roads and is replaced once out of sight; without `buses.json` all buses just
   drive the main roads. You can take one like any car, but it's slow to pick up speed,
   wide in the turns and shoves smaller cars aside.
+- **Lorries.** Box trucks and articulated lorries (built from boxes in `src/car.ts`, like the
+  bus) use only the motorways and, further than 6.5 km from the Old Town Square, the trunk and
+  primary roads (the suburbs with the depots and warehouses); they never appear in the
+  centre or in parking spaces, and one that turns onto another kind of street is removed.
+  They are slow to pick up speed and swing wide in the bends.
 - **People and two-wheelers** are a small kit built in Blender from code
   (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
   and clips for standing, walking, running, jumping, falling, getting up and riding,
