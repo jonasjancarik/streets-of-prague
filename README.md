@@ -70,6 +70,10 @@ the pixel ratio.
   world runs faster, in short steps so the physics holds; it slows down again while
   the streets ahead are still loading. The police can't arrest you on a tram, and
   your stars fade twice as fast.
+- **Pedal boats**: a few wait tied up at the bank round Slovanský ostrov and the islands;
+  stand next to one (or any passing pedal boat or swan) and press E to get in
+  (`src/boats.ts`). W/S pedal, A/D turn;
+  E gets you out again where the bank is close.
 - **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
   desktop). The left thumb has a round stick: on foot, push it the way you want to go
   and you walk there (a full push runs); in the car, point it the way you want to
@@ -263,6 +267,13 @@ the pixel ratio.
   tram up for a minute gets pushed aside, slowly. Three-section 15T-like cars with the
   line number on the roof in the line's colour. They run all over the city at once, so
   they come into view on their own timetable; only the ones near the camera are drawn.
+- **Boats** on the Vltava (`src/boats.ts`): a few white cruise boats go slowly up and
+  down the river, and pedal boats, every third a swan, paddle about round the islands.
+  The river is only a ground layer, so the water of the loaded tiles is where they can
+  go: each boat looks ahead and to both sides and turns towards the more open water,
+  and turns back short of a weir. They're put on the water near you and taken away
+  when they fall far behind; they keep to the water's height, so they pass under the
+  bridges. Low-poly bodies built from boxes and extrusions, one mesh each.
 - **Sound** (`src/audio.ts`, Web Audio API). Your engine and tyres are made in code:
   the engine's note follows the revs up through the gears (lower for a van, higher for
   a motorbike, none on a bike), and the tyres hiss on asphalt, rumble over setts at the

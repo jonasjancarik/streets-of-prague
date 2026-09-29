@@ -34,6 +34,7 @@ import { setupTouch } from './touch.ts';
 import './credits.ts';
 import { Police } from './police.ts';
 import { Chopper } from './helicopter.ts';
+import { Boats } from './boats.ts';
 import { isMapIndex } from './contracts.ts';
 import type { MapIndex } from './contracts.ts';
 import type { RawTramLine } from './trams.ts';
@@ -193,6 +194,12 @@ async function main() {
   const carPool = new CarPool(scene);
   const skids = new Skids(scene);
   const spray = new Spray(scene, weatherFx.tint);
+  // Boats on the river; the pedal boats round Slovanský ostrov, if it's in the area.
+  const [ilon, ilat] = [14.4135, 50.0787];
+  const islands = ilon > w0 && ilon < e0 && ilat > s0 && ilat < n0
+    ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [ilon, ilat]) as [number, number]
+    : null;
+  const boats = new Boats(scene, world, islands);
 
   // ---- Player ------------------------------------------------------------
   const walker = new Walker(grid, kit);
@@ -341,6 +348,16 @@ async function main() {
       else ride.requestStop();
       return;
     }
+    // Out of a pedal boat onto the bank, when it's beside one.
+    if (boats.me) {
+      const b = boats.me, [x, y] = nearestWalkable(grid, b.x, b.y, 8);
+      if (Math.hypot(x - b.x, y - b.y) > 7 || grid.at(x, y) !== 0) return;
+      boats.me = null;
+      Object.assign(walker, { x, y, h: b.h, vx: 0, vy: 0 });
+      walker.mesh.visible = true;
+      walker.sync();
+      return;
+    }
     if (inHeli) {
       if (!inHeli.landed) return;
       const c = inHeli;
@@ -374,6 +391,12 @@ async function main() {
       inCar = null;
       walker.mesh.visible = true;
       walker.sync();
+      return;
+    }
+    const boat = boats.near(walker.x, walker.y);
+    if (boat) {
+      boats.me = boat;
+      walker.mesh.visible = false;
       return;
     }
     const tram = ride.boardable(walker.x, walker.y);
@@ -640,7 +663,7 @@ async function main() {
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
       if (hit > 6) shake = Math.min(1.2, shake + hit * 0.04);
       jolt = hit;
-    } else if (!inHeli && !ride.on) walker.update(dt, ctl);
+    } else if (!inHeli && !ride.on && !boats.me) walker.update(dt, ctl);
     // In the helicopter Space climbs and Shift comes down.
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
     for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null);
@@ -674,6 +697,8 @@ async function main() {
     trams.update(dt, { near: obstacles, x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
     if (ride.on) ride.seat(walker);
     transit.update(dt);
+    boats.update(dt, px(), py(), ctl);
+    if (boats.me) { walker.x = boats.me.x; walker.y = boats.me.y; walker.h = boats.me.h; walker.vx = walker.vy = 0; }
 
     const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5), ...cops.filter((c) => c.speed > 5)];
     crowd.update(dt, threats);
@@ -994,8 +1019,9 @@ async function main() {
     const enterable = !inCar && !inHeli && !ride.on
       ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8).sort((a, b) => gap(a) - gap(b))[0]
       : undefined;
-    const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
-    const getIn = enterable?.two ? '<b>E</b> get on' : '<b>E</b> get in';
+    const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y) : null;
+    const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
+    const getIn = enterable?.two ? '<b>E</b> get on' : !enterable && boat ? `<b>E</b> get in the ${boat.kind === 'swan' ? 'swan' : 'pedal boat'}` : '<b>E</b> get in';
     const key = (k: string) => (touch.active ? '' : `<b>${k}</b> `);
     let hint = '';
     if (metro.active) hint = '';
@@ -1007,6 +1033,7 @@ async function main() {
       if (!assisted) hint = touch.active ? '' : `<b>E</b> get ${inCar.two ? 'off' : 'out'} · <b>Shift</b> lane assist`;
       else hint = `${key('Shift')}Lane assist, keeping to ${assist.limit} km/h${touch.active ? '' : ' (let go to drive faster)'} · ${assist.intent > 0 ? 'turning left at the next junction' : assist.intent < 0 ? 'turning right at the next junction' : `straight on (${touch.active ? 'point the stick' : 'A/D'} to turn)`}`;
     }
+    else if (boats.me) hint = touch.active ? '' : '<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank';
     else if (ride.on) {
       const halts = ride.v!.line.halts, dest = ride.dest !== null ? halts[ride.dest].name : null;
       const next = ride.dest !== null && ride.dest === ride.upcoming()[0];
@@ -1049,7 +1076,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, graphics, sound, weather, lamps, sky, skids,
+    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, trams, ride, clock, board, metro, graphics, sound, weather, lamps, sky, skids,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
