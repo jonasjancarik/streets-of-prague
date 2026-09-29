@@ -79,7 +79,7 @@ def merge(osm, bbox, tf):
     xs, ys = np.asarray(xs, dtype=float).tolist(), np.asarray(ys, dtype=float).tolist()
     kinds = t[:, 2].astype(int)
     if not osm:
-        return [[round(x, 1), round(y, 1), k] if k else [round(x, 1), round(y, 1)] for x, y, k in zip(xs, ys, kinds)]
+        return [[round(x, 1), round(y, 1), int(k)] if k else [round(x, 1), round(y, 1)] for x, y, k in zip(xs, ys, kinds)]
     ipr = shapely.points(np.column_stack([xs, ys]))
     near_ipr, near_osm = shapely.STRtree(ipr).query(shapely.points([o[0] for o in osm], [o[1] for o in osm]),
                                                     predicate="dwithin", distance=DUPLICATE)[::-1]
