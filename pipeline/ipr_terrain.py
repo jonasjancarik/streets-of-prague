@@ -4,10 +4,14 @@ terrain model (a TIN with ~10 m spacing, CityGML), for hill shading in the game.
     uv run ipr_terrain.py centrum            # after build_tiles.py centrum
     uv run ipr_terrain.py praha --jobs 4     # sheets read side by side (default: cores - 2)
 
-Writes tiles/<i>_<j>.height.bin.gz: a (N+1) x (N+1) grid of heights every 4 m across
-the tile (N = tile / 4), as little-endian uint16 decimetres above 100 m a.s.l.,
-rows from the tile's south edge, gzipped; and "terrain" in index.json with the grid step (kept
-as the terrain layer, see layers.py). The ground stays bare under bridges and over
+Writes tiles/<i>_<j>.height.bin.gz: a (N+1) x (N+1) grid of heights about every 4 m
+across the tile (N = round(tile / 4), step = tile / N, so the grid's first and last rows
+lie on the tile's edges and neighbouring tiles share them), as little-endian uint16
+decimetres above 100 m a.s.l., rows from the tile's south edge, gzipped; and "terrain"
+in index.json with the grid step (kept as the terrain layer, see layers.py). (Before
+2026-09-29 the step was 4 m flat: the grid stopped 2 m short of a 250 m tile's far
+edge and every other tile's grid sat up to 2 m off its own corner, which left a step
+in the ground along tile edges on a slope. The game reads both.) The ground stays bare under bridges and over
 tunnels: those have heights of their own (structures.py), per level in
 tiles/<i>_<j>.levels.bin.gz, on the same lattice but in centimetres (0 off the level),
 one level after another in the order the tile's "structures" lists them, for the
@@ -44,7 +48,7 @@ import structures
 from osm_area import AREAS, OUT
 from ipr_buildings import CACHE, krovak_to_local, search, sheet, sheet_name
 
-STEP = 4.0
+STEP = 4.0  # roughly: the step used divides the tile evenly (grid_step)
 GML = "http://www.opengis.net/gml"
 
 
@@ -104,12 +108,12 @@ def rasterise(tris, x0, y0, nx, ny, step, grid):
         sub[inside] = z[inside]
 
 
-def fill_gaps(tiles, N, T, coarse=8):
+def fill_gaps(tiles, N, T, step, coarse=8):
     """Give grid points no sheet covers the height of the nearest ground that has one,
     so the terrain runs on flat past the edge of the model instead of dropping to a
-    fixed height in a cliff. Works on a coarse grid (coarse x STEP metres) spreading
+    fixed height in a cliff. Works on a coarse grid (coarse x step metres) spreading
     known heights outwards ring by ring, then samples it bilinearly."""
-    corner = {k: (int(round(k[0] * T / STEP)), int(round(k[1] * T / STEP))) for k in tiles}
+    corner = {k: (k[0] * N, k[1] * N) for k in tiles}
     ci0, cj0 = min(c[0] for c in corner.values()), min(c[1] for c in corner.values())
     w = (max(c[0] for c in corner.values()) - ci0 + N) // coarse + 2
     h = (max(c[1] for c in corner.values()) - cj0 + N) // coarse + 2
@@ -155,14 +159,20 @@ def fill_gaps(tiles, N, T, coarse=8):
 PARSED_VERSION = 1  # bump when read_sheet's output changes
 
 
+def grid_step(T):
+    """(steps across a tile, the step): close to STEP and dividing the tile evenly."""
+    N = max(1, round(T / STEP))
+    return N, T / N
+
+
 def read_sheet(job):
-    """One sheet's heights on the area's 4 m lattice: (grid column and row of its first
+    """One sheet's heights on the area's lattice: (grid column and row of its first
     cell, the heights as float32 with NaN where the sheet has none, lowest, highest).
     Kept per area and sheet."""
-    name, path, local, gx0, gy0 = job
+    name, path, local, gx0, gy0, step = job
     cache = CACHE / "parsed" / f"{name}_{zlib.crc32(local.encode()):08x}.pkl"
     st = Path(path).stat()
-    key = [PARSED_VERSION, st.st_mtime_ns, st.st_size, local, gx0, gy0, STEP]
+    key = [PARSED_VERSION, st.st_mtime_ns, st.st_size, local, gx0, gy0, step]
     if cache.exists():
         with open(cache, "rb") as f:
             got = pickle.load(f)
@@ -173,10 +183,10 @@ def read_sheet(job):
     flat = tris.reshape(-1, 3)
     lx, ly = to_local.transform(flat[:, 0], flat[:, 1])
     tris = np.column_stack([lx, ly, flat[:, 2]]).reshape(-1, 3, 3)
-    gi0, gi1 = math.floor((lx.min() - gx0) / STEP), math.ceil((lx.max() - gx0) / STEP)
-    gj0, gj1 = math.floor((ly.min() - gy0) / STEP), math.ceil((ly.max() - gy0) / STEP)
+    gi0, gi1 = math.floor((lx.min() - gx0) / step), math.ceil((lx.max() - gx0) / step)
+    gj0, gj1 = math.floor((ly.min() - gy0) / step), math.ceil((ly.max() - gy0) / step)
     sub = np.full((gj1 - gj0 + 1, gi1 - gi0 + 1), np.nan)
-    rasterise(tris, gx0 + gi0 * STEP, gy0 + gj0 * STEP, sub.shape[1], sub.shape[0], STEP, sub)
+    rasterise(tris, gx0 + gi0 * step, gy0 + gj0 * step, sub.shape[1], sub.shape[0], step, sub)
     grid = (gi0, gj0, sub.astype(np.float32), float(np.nanmin(sub)), float(np.nanmax(sub)), len(tris))
     cache.parent.mkdir(parents=True, exist_ok=True)
     tmp = cache.with_suffix(".tmp")
@@ -186,7 +196,7 @@ def read_sheet(job):
     return name, grid
 
 
-def sampler(tiles, N, T, gx0, gy0):
+def sampler(tiles, N, T, step, gx0, gy0):
     """Bare terrain height (m a.s.l.) at points, bilinear between lattice points, read
     from each tile's corner as the game reads it; NaN outside the tiles."""
     def at(xs, ys):
@@ -197,8 +207,8 @@ def sampler(tiles, N, T, gx0, gy0):
             arr = tiles.get((i, j))
             if arr is None:
                 continue
-            a = min(N - 0.001, max(0.0, (xs[k] - gx0 - i * T) / STEP))
-            b = min(N - 0.001, max(0.0, (ys[k] - gy0 - j * T) / STEP))
+            a = min(N - 0.001, max(0.0, (xs[k] - gx0 - i * T) / step))
+            b = min(N - 0.001, max(0.0, (ys[k] - gy0 - j * T) / step))
             ia, ib = int(a), int(b)
             fa, fb = a - ia, b - ib
             out[k] = ((arr[ib, ia] * (1 - fa) + arr[ib, ia + 1] * fa) * (1 - fb)
@@ -225,9 +235,10 @@ def main() -> None:
     corners = [sheet(*to_krovak.transform(lon, lat)) for lon in (w, e) for lat in (s, n)]
     items = catalogue()
 
-    # Heights on one 4 m lattice over the area (x = -ox + i * STEP), kept per tile and
-    # filled sheet by sheet, so memory follows the tiles that exist, not the bbox.
-    N = int(T // STEP)
+    # Heights on one lattice over the area (x = -ox + i * step), kept per tile and
+    # filled sheet by sheet, so memory follows the tiles that exist, not the bbox. The
+    # step divides the tile, so tile (i, j) starts at lattice point (i * N, j * N).
+    N, step = grid_step(T)
     gx0, gy0 = -ox, -oy
     tiles, boxes, outlines, roads, ways = {}, {}, [], [], []
     for i, j, t in layers.tiles(area, meta):
@@ -249,7 +260,7 @@ def main() -> None:
                 if name:
                     print(f"  {name}: not in the catalogue")
                 continue
-            sheets.append((name, str(path), local, gx0, gy0))
+            sheets.append((name, str(path), local, gx0, gy0, step))
     started = time.perf_counter()
     lo, hi = math.inf, -math.inf
     run = map if args.jobs == 1 or len(sheets) == 1 else ProcessPoolExecutor(args.jobs).map
@@ -257,7 +268,7 @@ def main() -> None:
         gi1, gj1 = gi0 + sub.shape[1] - 1, gj0 + sub.shape[0] - 1
         lo, hi = min(lo, slo), max(hi, shi)
         for (i, j), arr in tiles.items():
-            ci, cj = int(round(i * T / STEP)), int(round(j * T / STEP))
+            ci, cj = i * N, j * N
             a0, a1 = max(ci, gi0), min(ci + N, gi1)
             b0, b1 = max(cj, gj0), min(cj + N, gj1)
             if a0 > a1 or b0 > b1:
@@ -271,11 +282,11 @@ def main() -> None:
     if lo == math.inf:
         print("no terrain")
         return
-    fill_gaps(tiles, N, T)
+    fill_gaps(tiles, N, T, step)
     # Bridges and tunnels, above and below the bare ground (structures.py).
     merged = unary_union(outlines) if outlines else None
-    found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, gx0, gy0),
-                             local, tiles, N, T, STEP, gx0, gy0, boxes)
+    found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0),
+                             local, tiles, N, T, step, gx0, gy0, boxes)
     encode = lambda a: np.clip(np.round((a - 100) * 10), 0, 65535).astype("<u2").tobytes()  # noqa: E731
     # The structures' heights to the centimetre (decimetres would step along a deck).
     fine = lambda a: np.clip(np.round((np.nan_to_num(a, nan=100.0) - 100) * 100), 0, 65535).astype("<u2").tobytes()  # noqa: E731
@@ -294,7 +305,7 @@ def main() -> None:
         layers.remove_bin(out_dir / "tiles", f"{k}.deck.bin")
         layers.remove_bin(out_dir / "tiles", f"{k}.bare.bin")
     layers.write_layer(area, "terrain", {"gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in tiles], "tiles": per_tile,
-                                         "index": {"step": STEP, "n": N + 1, "min": float(lo), "max": float(hi), "structures": sorted(per_tile)}})
+                                         "index": {"step": step, "n": N + 1, "min": float(lo), "max": float(hi), "structures": sorted(per_tile)}})
     print(f"terrain {lo:.0f}–{hi:.0f} m for {len(tiles)} tiles")
     layers.assemble(area)
 
