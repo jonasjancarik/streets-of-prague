@@ -5,6 +5,7 @@ import type { FigureKit, Look } from './figures.ts';
 import type { WalkEdge, WalkGraph } from './network.ts';
 import type { Footfall } from './footfall.ts';
 import type { Point2 } from './map/geo.ts';
+import { fences } from './fences.ts';
 
 interface WalkGrid {
   at(x: number, y: number): number;
@@ -18,17 +19,29 @@ export interface Pedestrian extends WalkSpot {
   lane: number;
   vx: number; vy: number; state: 'walk' | 'flee' | 'down' | 'rejoin';
   t: number; pause: number; z: number; anim: Anim; look: Look;
+  // Stepping aside round something in the way: metres across the path now, and wanted.
+  dodge: number; dodgeTo: number;
+  // How fast they're actually going (for the legs), m/s.
+  pace: number;
   target?: WalkSpot & { x: number; y: number };
   gz?: number;
   // Knocked down by someone taking their bike: which way to run once they're up.
   then?: Point2;
 }
 interface WalkSegment extends WalkSpot { a: Point2; b: Point2; s0: number; len: number }
+// Something standing in the way: a circle of a parked car or bike (see pushCar in main.ts).
+interface Obstruction { x: number; y: number; z?: number; r: number; kind: string; car?: { vx: number; vy: number } }
+type Obstructions = (x: number, y: number, r: number) => Iterable<Obstruction>;
 
 // Pedestrians wander the footpath network, jump out of the way of fast cars,
 // and get knocked over (then get up again) when they don't make it.
 
 const GETUP = 1.25; // seconds of getting up at the end of lying on the ground
+// Walking, people head for a point this far along their path, so they round corners
+// and turn gradually rather than all at once.
+const LOOK = 1.2;
+const CLEAR = 0.6; // m kept between a walker's middle and the side of whatever they pass
+const TURN = 5; // rad/s, the fastest a walker turns
 
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(SCALE, SCALE, SCALE);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -57,6 +70,7 @@ export class Crowd {
   cell: number;
   segs: Map<string, WalkSegment[]>;
   footfall: Footfall | null = null;
+  tick = 0;
 
   constructor(walk: WalkGraph, grid: WalkGrid, scene: THREE.Scene, rng: () => number, count: number, kit: FigureKit) {
     this.walk = walk;
@@ -132,6 +146,7 @@ export class Crowd {
       i, e, s: s ?? 0, fwd: r() > 0.5, side: r() > 0.5 ? 1 : -1, lane: r(),
       speed: 1.1 + r() * 0.6, x: 0, y: 0, h: 0, vx: 0, vy: 0,
       state: 'walk', t: 0, pause: 0, z: 0, anim: new Anim(this.kit, 'walk', r() * 2), look: randomLook(r),
+      dodge: 0, dodgeTo: 0, pace: 0,
     };
     this.fig.look(i, p.look);
     this.fig.mesh.count = this.people.length + 1;
@@ -152,11 +167,18 @@ export class Crowd {
     this.fig.mesh.count = this.people.length;
   }
 
-  // Put a person on their edge, clear of buildings: near the edge of a street without
-  // a pavement of its own, anywhere across a footpath, a pedestrian street or a bridge.
-  place(p: Pedestrian) {
-    const q = p.e.path.at(p.s);
-    let off = p.side * (p.e.side ? Math.max(0, p.e.side - p.lane * 0.6) : p.lane * Math.max(0, p.e.width / 2 - 0.4));
+  // How far across the path someone keeps (to the right of its direction, in metres):
+  // near the edge of a street without a pavement of its own, anywhere across a
+  // footpath, a pedestrian street or a bridge.
+  lane(p: Pedestrian) {
+    return p.side * (p.e.side ? Math.max(0, p.e.side - p.lane * 0.6) : p.lane * Math.max(0, p.e.width / 2 - 0.4));
+  }
+
+  // Where on their path someone is, `ahead` metres on, over in their lane (and round
+  // whatever they're stepping past), clear of buildings.
+  spot(p: Pedestrian, ahead = 0) {
+    const q = p.e.path.at(p.s + (p.fwd ? ahead : -ahead));
+    let off = this.lane(p) + p.dodge;
     const nx = Math.sin(q.ang), ny = -Math.cos(q.ang);
     let x = q.x + nx * off, y = q.y + ny * off;
     for (let k = 0; k < 6 && this.grid.at(x, y); k++) {
@@ -164,9 +186,76 @@ export class Crowd {
       x = q.x + nx * off;
       y = q.y + ny * off;
     }
-    p.x = x;
-    p.y = y;
-    p.h = p.fwd ? q.ang : q.ang + Math.PI;
+    return { x, y, ang: p.fwd ? q.ang : q.ang + Math.PI };
+  }
+
+  // Put a person straight onto their edge (new, or moved).
+  place(p: Pedestrian) {
+    p.dodge = p.dodgeTo = 0;
+    const q = this.spot(p);
+    p.x = q.x;
+    p.y = q.y;
+    p.h = q.ang;
+  }
+
+  // Walking on: after the point ahead on their path, at their own pace (a little
+  // quicker to catch up after a detour).
+  follow(p: Pedestrian, dt: number) {
+    p.dodge += clamp(p.dodgeTo - p.dodge, -1.5 * dt, 1.5 * dt);
+    const q = this.spot(p, LOOK), dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy);
+    const step = p.pause > 0 ? 0 : Math.min(d, p.speed * dt * clamp(d / LOOK, 0.7, 1.5));
+    if (d > 0.01) {
+      let nx = p.x + (dx / d) * step, ny = p.y + (dy / d) * step;
+      // Cutting the corner of a building: back onto the path where they'd be without
+      // the shortcut, briskly. (Where the path itself goes through a building, through
+      // a passage, they go through with it.)
+      if (this.blocked(nx, ny) && !this.blocked(q.x, q.y)) {
+        const on = this.spot(p), bx = on.x - p.x, by = on.y - p.y, bd = Math.hypot(bx, by) || 1;
+        const k = Math.min(1, Math.max(step, p.speed * dt * 2) / bd);
+        nx = p.x + bx * k;
+        ny = p.y + by * k;
+      }
+      p.x = nx;
+      p.y = ny;
+    }
+    p.pace = dt > 0 ? step / dt : 0;
+    // Face where they're going, turning at most TURN a second.
+    const want = d > 0.05 ? Math.atan2(dy, dx) : q.ang;
+    const off = Math.atan2(Math.sin(want - p.h), Math.cos(want - p.h));
+    p.h += clamp(off * Math.min(1, dt * 8), -TURN * dt, TURN * dt);
+  }
+
+  // Look a few metres ahead for parked cars and bikes on the path, and pick the nearest
+  // way past them (or back into their lane once past).
+  avoid(p: Pedestrian, near: Obstructions) {
+    const dir = p.fwd ? 1 : -1, q = p.e.path.at(p.s + dir * 1.5), base = p.e.path.at(p.s);
+    const ux = Math.cos(q.ang) * dir, uy = Math.sin(q.ang) * dir, nx = Math.sin(q.ang), ny = -Math.cos(q.ang);
+    const lane = this.lane(p), now = lane + p.dodge;
+    // Across the path, what each thing blocks, and whether it's already alongside.
+    const spans: [number, number, boolean][] = [];
+    for (const o of near(p.x, p.y, 5)) {
+      if (o.kind !== 'car' || !o.car || Math.abs(o.car.vx) + Math.abs(o.car.vy) > 0.5) continue;
+      if (o.z !== undefined && p.gz !== undefined && Math.abs(o.z - p.gz) > 3) continue;
+      const ax = o.x - base.x, ay = o.y - base.y, along = ax * ux + ay * uy;
+      if (along < -o.r - 0.5 || along > 4.5) continue;
+      const lat = ax * nx + ay * ny, w = o.r + CLEAR;
+      spans.push([lat - w, lat + w, along < o.r + 1]);
+    }
+    const inside = (v: number) => spans.some(([a, b]) => v > a && v < b);
+    const open = (v: number) => {
+      for (const k of [1, 2.5]) if (this.blocked(base.x + ux * k + nx * v, base.y + uy * k + ny * v)) return false;
+      return true;
+    };
+    // Not by stepping sideways through whatever they're passing.
+    const reach = (v: number) => !spans.some(([a, b, beside]) => beside && b > Math.min(v, now) && a < Math.max(v, now));
+    const ok = (v: number) => !inside(v) && open(v) && reach(v);
+    if (ok(lane)) { p.dodgeTo = 0; return; }
+    // The way round nearest to where they're walking now, so they don't dither.
+    let best: number | null = null;
+    for (const [a, b] of spans) {
+      for (const v of [a - 0.01, b + 0.01]) if (ok(v) && (best === null || Math.abs(v - now) < Math.abs(best - now))) best = v;
+    }
+    p.dodgeTo = best === null ? p.dodgeTo : best - lane;
   }
 
   blocked(x: number, y: number) { return this.grid.at(x, y) !== 0; }
@@ -185,8 +274,10 @@ export class Crowd {
     return p;
   }
 
-  update(dt: number, threats: Iterable<{ x: number; y: number; vx: number; vy: number }>) {
+  update(dt: number, threats: Iterable<{ x: number; y: number; vx: number; vy: number }>, near?: Obstructions) {
     const r = this.r;
+    // Each walker looks ahead for things in the way a few times a second, not all at once.
+    this.tick = (this.tick + 1) % 4;
     for (const p of this.people) {
       p.t -= dt;
       if (p.state === 'walk') {
@@ -218,7 +309,8 @@ export class Crowd {
           if (p.s < 0 || p.s > p.e.path.length) this.turn(p);
           if (r() < dt * 0.02) p.pause = 1 + r() * 4;
         }
-        this.place(p);
+        if (near && p.i % 4 === this.tick) this.avoid(p, near);
+        this.follow(p, dt);
       } else if (p.state === 'flee' || p.state === 'down' || p.state === 'rejoin') {
         if (p.state === 'down') {
           const k = Math.exp(-4 * dt);
@@ -262,7 +354,7 @@ export class Crowd {
     const a = p.anim;
     if (p.state === 'down') knocked(a, dt, p.t);
     else if (a.name === 'jump' && !a.done) a.step(dt);
-    else locomote(a, dt, p.state === 'walk' ? (p.pause > 0 ? 0 : p.speed) : Math.hypot(p.vx, p.vy));
+    else locomote(a, dt, p.state === 'walk' ? p.pace : Math.hypot(p.vx, p.vy));
     p.z = a.name === 'jump' ? jumpHeight(a.t, 0.7) : 0;
   }
 
@@ -277,9 +369,12 @@ export class Crowd {
     let x = this.r() * w.reduce((a, b) => a + b, 0), k = 0;
     while (k < opts.length - 1 && (x -= w[k]) > 0) k++;
     const pick = opts.length ? opts[k] : { e: p.e, fwd: !p.fwd };
+    // A dead end: stop and turn round before walking back.
+    if (!opts.length) p.pause = 0.6;
     p.e = pick.e;
     p.fwd = pick.fwd;
     p.s = p.fwd ? 0 : p.e.path.length;
+    p.dodge = p.dodgeTo = 0;
   }
 
   // A gunshot at (x, y): everyone walking within r runs from it.
@@ -379,7 +474,9 @@ export class Walker {
 
   blocked(x: number, y: number) {
     const g = this.ground, r = 0.3;
-    return g.at(x, y) || g.at(x + r, y) || g.at(x - r, y) || g.at(x, y + r) || g.at(x, y - r);
+    if (g.at(x, y) || g.at(x + r, y) || g.at(x - r, y) || g.at(x, y + r) || g.at(x, y - r)) return true;
+    // A fence or a hedge stops you coming up to it, unless you're jumping (or already in it).
+    return this.perch < 0.3 && fences.blocks(x, y, 0.15, this.z) && !fences.blocks(this.x, this.y, 0.15, this.z);
   }
 
   update(dt: number, ctl: { turn: number; move: number; run: boolean; jump: boolean; aim?: { h: number; mag: number } | null }) {

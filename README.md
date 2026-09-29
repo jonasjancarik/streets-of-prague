@@ -299,8 +299,9 @@ the pixel ratio.
   bridge between two houses) leave the way under them open; AI
   traffic that keeps to its lane, brakes for anything ahead, pulls out round a car
   standing in its way where the street has room (and waits behind it where it hasn't)
-  and gives way to the right (`src/traffic.ts`), and stops at red lights; pedestrians on the footpath network who leap out of the way of
-  fast cars and get knocked over, then get up again (`src/people.ts`). Traffic and
+  and gives way to the right (`src/traffic.ts`), and stops at red lights; pedestrians on the footpath network who round its
+  corners, step past parked cars and bikes in their way, leap out of the way of fast
+  cars and get knocked over, then get up again (`src/people.ts`). Traffic and
   people live within about 330 m of the player.
 - **Crowds.** The busier the streets around you, the more people: 500 to 600 round the
   Old Town Square and on Charles Bridge, a couple of hundred in Vinohrady or on a

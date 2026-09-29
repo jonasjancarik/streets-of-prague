@@ -951,7 +951,7 @@ async function main() {
     if (boats.me) { walker.x = boats.me.x; walker.y = boats.me.y; walker.h = boats.me.h; walker.vx = walker.vy = 0; }
 
     const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5), ...cops.filter((c) => c.speed > 5)];
-    crowd.update(dt, threats);
+    crowd.update(dt, threats, obstacles);
 
     // ---- Collisions ------------------------------------------------------
     const active = [...(inCar ? [inCar] : []), ...movers, ...cops];
