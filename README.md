@@ -236,6 +236,13 @@ the pixel ratio.
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.
+- **Trees** are IPR's surveyed ones (about 171,000 on city land, `pipeline/ipr_trees.py`)
+  plus OSM's; where both have a tree within 2.5 m, IPR's stands. IPR says which are
+  conifers and which fruit trees, and so does OSM sometimes (`leaf_type`, `genus`).
+  Conifers are their own shape (`pineGeometry` in `src/map/vegetation.ts`, evergreen in
+  winter), fruit trees are small. The woods, parks and gardens are filled up with made-up
+  trees, 30% of them conifers in woods, but not next to a surveyed one. Rebuild them with
+  `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
 - **Landmarks** (so far Mánes with Šítkovská vodárenská věž) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Geo, Grid, rng, hash } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
-import { treeMesh } from './map/vegetation.ts';
+import { treeMeshes } from './map/vegetation.ts';
 import { Surfaces } from './surface.ts';
 import { shadeBuildings, cutAway, broad } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
@@ -581,7 +581,9 @@ export class TileWorld {
               const key = kind === 'trees' ? 'wood' : `cover_${kind}`;
               value.areas[key] = [...(value.areas[key] || []), ...(polys as NonNullable<TileJSON['areas'][string]>)];
             }
-            value.trees = [...value.trees, ...(c.trees || [])];
+            // (Canopy tops next to a surveyed tree are that tree.)
+            const known = value.trees, fresh = (c.trees || []).filter((p: Point2) => !known.some((q) => Math.abs(q[0] - p[0]) < 2.5 && Math.abs(q[1] - p[1]) < 2.5));
+            value.trees = [...known, ...fresh];
           }
         }
         return value;
@@ -791,8 +793,8 @@ export class TileWorld {
     if (hidden) group.add(hidden);
     const buildings = [iprArrays, roofArrays].filter((arrays): arrays is BuildingArrays => arrays !== null).map(buildingMesh);
     const walls = wallMesh(land.walls);
-    const trees = treeMesh(land.trees);
-    group.add(surfaces.group, ...buildings, walls, trees, ...landmarks);
+    const trees = treeMeshes(land.trees);
+    group.add(surfaces.group, ...buildings, walls, ...trees, ...landmarks);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
     group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
@@ -813,7 +815,7 @@ export class TileWorld {
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), group, surfaces, grid, levels: onLevels, cars, ms,
-      disposables: [...buildings, walls, trees, ...(hidden ? [hidden] : [])], relief: shade, sample: shade?.sample,
+      disposables: [...buildings, walls, ...trees, ...(hidden ? [hidden] : [])], relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };

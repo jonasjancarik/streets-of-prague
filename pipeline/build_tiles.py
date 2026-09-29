@@ -45,6 +45,7 @@ from shapely.geometry import LineString, Polygon, box
 
 from kerbs import NO_PARKING, estimate
 import dtm
+import ipr_trees
 import layers
 import structures
 from osm_area import (AREAS, CAR_ROADS, FEATURE_TAGS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, extract,
@@ -320,7 +321,8 @@ def build_chunk(job):
         crossings = [c for c in x["crossings"] if len(c) > 1]
         lines["crossings"] = [LineString(c) for c in crossings]
         trees = {key: STRtree(v) for key, v in lines.items()}
-        tree_xy = shapely.points(x["trees"]) if x["trees"] else None
+        x["trees"] = ipr_trees.merge(x["trees"], bbox, tf)
+        tree_xy = shapely.points([tr[:2] for tr in x["trees"]]) if x["trees"] else None
         layer = {}
         for (i, j), bx in boxes.items():
             t = {}
@@ -439,6 +441,8 @@ def main() -> None:
         except OSError as e:
             print(f"dtm: couldn't look for a newer map ({e}); using the one here")
         dtm.surfaces()
+    if "ground" in wanted:
+        ipr_trees.download()
 
     todo = layers.chunks(meta)
     jobs = [(area, meta, ci, cj, wanted, area_pbf) for ci, cj in todo]

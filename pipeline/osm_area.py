@@ -249,7 +249,10 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
 
         if col(row, "natural") == "tree" and isinstance(g, Point):
-            trees.append([round(g.x, 1), round(g.y, 1)])
+            tree = [round(g.x, 1), round(g.y, 1)]
+            if _conifer(col(row, "leaf_type"), col(row, "genus"), col(row, "species")):
+                tree.append(1)
+            trees.append(tree)
             continue
 
         if isinstance(g, (Polygon, MultiPolygon)):
@@ -332,6 +335,17 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             "ground_ways": ground_ways,
         "lots": lots, "kerbs": kerbs,
     }
+
+
+CONIFERS = ("picea", "pinus", "abies", "larix", "taxus", "thuja", "juniperus", "cedrus", "pseudotsuga", "cupressus", "tsuga", "chamaecyparis", "metasequoia")
+
+
+def _conifer(leaf_type, genus, species):
+    """Whether an OSM tree's tags say it is a conifer (needles, or a conifer's genus)."""
+    if leaf_type:
+        return str(leaf_type) == "needleleaved"
+    name = str(genus or species or "").strip().lower()
+    return name.startswith(CONIFERS)
 
 
 def passage_tags(hw, get):
