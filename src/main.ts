@@ -16,6 +16,7 @@ import { Weather, WeatherFx, KINDS } from './weather.ts';
 import type { Kind } from './weather.ts';
 import { Lamps } from './lamps.ts';
 import { Skids } from './skids.ts';
+import { Spray } from './spray.ts';
 import { Graphics } from './graphics.ts';
 import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
@@ -180,6 +181,7 @@ async function main() {
   const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
   const skids = new Skids(scene);
+  const spray = new Spray(scene, weatherFx.tint);
 
   // ---- Player ------------------------------------------------------------
   const walker = new Walker(grid, kit);
@@ -876,6 +878,7 @@ async function main() {
     }
     carPool.render(drawn, ground, dt);
     skids.update(dt * scale, drawn, ground);
+    spray.update(dt * scale, drawn, ground, renderer.domElement.height);
     for (const c of choppers) c.render(dt);
     surfaceT -= dt;
     if (inCar && surfaceT < 0) { surfaceT = 0.2; surface = surfaceUnder(inCar.x, inCar.y); }
