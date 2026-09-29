@@ -355,6 +355,20 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (it then says to run `ipr_terrain.py`, which works out the bridges and tunnels from it); after
   changing the street networks, `--layers streets`. The layers are kept in
   `pipeline/.cache/layers/`.
+- **Terrain grid.** A tile's heights are a 63 × 63 grid whose outer rows lie on the
+  tile's edges (a step of 250 / 62 ≈ 4.03 m), so neighbouring tiles share them and
+  the ground meets without a step. Data built before 29 September 2026 used a flat
+  4 m step that stopped 2 m short of the edge, which shows as straight lines across
+  roads and grass on slopes; the game still reads it. To rebuild the terrain for the
+  whole city (from the main checkout, with no other pipeline job running):
+
+  ```bash
+  cd pipeline
+  uv run ipr_terrain.py praha      # then centrum and ujezd, if you use them
+  ```
+
+  Nothing else needs rebuilding. The first run reads every terrain sheet again at the
+  new step, so it takes a few minutes longer than usual.
 - **Caches.** Every OSM chunk and every IPR sheet is read only once. What comes out
   is kept (`pipeline/.cache/osm/*.parsed.pkl`, `pipeline/.cache/ipr/parsed/`) and read
   again only when the source changes. Chunks and sheets are worked on side by side
