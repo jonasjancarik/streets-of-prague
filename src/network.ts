@@ -147,12 +147,17 @@ export class DriveGraph {
 
 // Next edge after `e`: anything but a U-turn, unless the street is a dead end.
 // Null where the network isn't loaded (the far side of the map).
-export function nextEdge(g: DriveGraph, e: DriveEdge, r: Random): DriveEdge | null {
+// With `main`, it keeps to the main roads where it can (a bus).
+export function nextEdge(g: DriveGraph, e: DriveEdge, r: Random, main = false): DriveEdge | null {
   const all = g.out.get(e.v) || [];
-  const opts = all.filter((f) => f !== e.twin);
+  let opts = all.filter((f) => f !== e.twin);
+  if (main && opts.some((f) => MAIN_ROADS.has(f.hw))) opts = opts.filter((f) => MAIN_ROADS.has(f.hw));
   const list = opts.length ? opts : all;
   return list.length ? list[Math.floor(r() * list.length)] : null;
 }
+
+// The streets buses keep to.
+export const MAIN_ROADS = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link', 'busway']);
 
 // A route is a chain of legs: the lane of each edge, trimmed at both ends, and a
 // short curve through each junction so turns are smooth.
@@ -163,10 +168,12 @@ export class Route {
   s: number;
   dead = false;
   ended = false;
+  main: boolean;
 
-  constructor(g: DriveGraph, edge: DriveEdge, s: number, r: Random) {
+  constructor(g: DriveGraph, edge: DriveEdge, s: number, r: Random, main = false) {
     this.g = g;
     this.r = r;
+    this.main = main;
     this.legs = [{ path: edge.path, s0: 0, s1: edge.path.length, edge }];
     this.s = s;
     this.extend();
@@ -179,7 +186,7 @@ export class Route {
       const last = this.legs[this.legs.length - 1];
       const e = last.edge;
       if (!e) return;
-      const f = nextEdge(this.g, e, this.r);
+      const f = nextEdge(this.g, e, this.r, this.main);
       if (!f) { this.dead = true; return; }
       const trim = Math.min(7, e.path.length / 3, f.path.length / 3);
       last.s1 = Math.max(last.s0, e.path.length - trim);

@@ -53,6 +53,7 @@ const $ = (id: string): HTMLElement => {
 const status = (t: string) => { $('loading-text').textContent = t; };
 
 const TRAFFIC = 40;
+const BUSES = 3; // of the traffic, on the main roads
 const PEOPLE = 600; // round the Old Town Square; fewer where it's quieter (src/footfall.ts)
 const FEW_PEOPLE = 40; // on the quietest edge of town
 const PARKED_TWO = 10; // bikes and motorbikes parked around you
@@ -215,6 +216,7 @@ async function main() {
     const d = Math.hypot(sx - x, sy - y);
     return d > rMin && d < LIFE_RADIUS && world.grid.at(sx, sy) !== 255;
   };
+  for (let i = 0; i < BUSES; i++) traffic.buses(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS), BUSES);
   for (let i = 0; i < TRAFFIC; i++) traffic.spawn(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS));
   // How many people are about: from FEW_PEOPLE on the edge of town to PEOPLE round
   // the Old Town Square, by how busy the streets around you are.
@@ -373,7 +375,7 @@ async function main() {
     }
     let best = null, bestD = Infinity;
     for (const c of allCars()) {
-      const d = Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2;
+      const d = c.gap(walker.x, walker.y);
       if (d < bestD) { bestD = d; best = c; }
     }
     if (!best || bestD > 1.8) return;
@@ -802,6 +804,7 @@ async function main() {
     if (spawnT < 0 && traffic.agents.length < TRAFFIC) {
       spawnT = 0.25;
       const edges = edgesNear(px(), py(), LIFE_RADIUS), ok = lifeSpots(px(), py(), 40);
+      traffic.buses((x, y) => offscreen(x, y) && ok(x, y), edges, BUSES);
       for (let n = 0; n < 10 && traffic.agents.length < TRAFFIC; n++) if (!traffic.spawn((x, y) => offscreen(x, y) && ok(x, y), edges)) break;
     }
   };
@@ -948,7 +951,7 @@ async function main() {
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
     const canBoard = !inCar && !inHeli && !ride.on && !metro.active && ride.boardable(walker.x, walker.y);
     const station = !inCar && !inHeli && !ride.on && !metro.active ? metro.near(walker.x, walker.y) : null;
-    const gap = (c: Car) => Math.hypot(c.x - walker.x, c.y - walker.y) - c.spec.L / 2;
+    const gap = (c: Car) => c.gap(walker.x, walker.y);
     const enterable = !inCar && !inHeli && !ride.on
       ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8).sort((a, b) => gap(a) - gap(b))[0]
       : undefined;

@@ -45,6 +45,7 @@ const PLACES = {
   suburb: { start: '14.4760,50.0520', drive: false }, // Vršovice/Strašnice edge: gardens
   river: { start: '14.4125,50.0862', drive: false },  // by Charles Bridge: water, quays, the bridge
   tunnel: { start: '14.3905,50.0780', drive: false }, // over the Strahov tunnel (see --eval for getting into it)
+  square: { start: '14.4185,50.0760', drive: false }, // Karlovo náměstí: main roads with buses
 };
 
 // In the page before anything else: time every animation-frame callback.

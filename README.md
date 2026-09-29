@@ -207,6 +207,9 @@ the pixel ratio.
   and motorbikes stand on the pavements around you: E gets you on one, and it leans
   into the turns. Hit something hard and you're thrown off. On foot, Space jumps (not
   at a tram stop, where it waits for a tram); in the air, a car can't knock you over.
+- **Buses.** A few red and white city buses drive the main roads around you. You can
+  take one like any car, but it's slow to pick up speed, wide in the turns and shoves
+  smaller cars aside. They don't follow real bus lines or stop at the stops yet.
 - **People and two-wheelers** are a small kit built in Blender from code
   (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
   and clips for standing, walking, running, jumping, falling, getting up and riding,
@@ -218,7 +221,7 @@ the pixel ratio.
   low-poly body per type (hatchback, saloon, estate, van, taxi, police), shaped for
   the view from above, where the bonnet, cabin, windows and roof show, with a little
   of the sides, wheels and lights towards the edges of the screen. `src/car.ts` puts
-  each car's colour on the paint. Rebuild with
+  each car's colour on the paint. The bus is built from boxes in `src/car.ts`. Rebuild with
   `blender -b --factory-startup -P assets/cars/build.py`; `-- --preview DIR` renders
   them from above.
 - **Trams** run Prague's real lines (`src/trams.ts`), taken from OSM's route
