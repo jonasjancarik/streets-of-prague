@@ -5,21 +5,29 @@ IPR publishes the mesh (oblique aerial photographs, summer 2023, textures about
 5 cm/px, CC BY) as an I3S scene layer, a tree of ever finer pieces ("nodes"), each
 with its own triangles and a JPEG atlas. For each landmark, this takes the nodes
 over the OSM footprints of its buildings (from the area's tiles), keeps the
-triangles inside them, and writes the result as a GLB in the game's coordinates
-(x east, y up above iprRef, z south), with the footprint the game hides IPR's and
-OSM's buildings in.
+triangles inside them, and bakes their colours in Blender (landmark_bake.py) onto the
+landmark's clean model from IPR's city model (LOD3, from the area's tiles), for
+straight walls and roof edges without the mesh's trees and lumps. The result is a GLB
+in the game's coordinates (x east, y up above iprRef, z south), listed with the
+footprint the game hides IPR's and OSM's buildings in.
 
     uv run landmarks.py centrum                 all landmarks in the area
-    uv run landmarks.py centrum manes --level 15
+    uv run landmarks.py centrum manes --raw     the mesh's triangles as they are
 
-Writes public/data/<area>_now/landmarks/<name>.glb and landmarks.json. The mesh's
-nodes are kept in pipeline/.cache/mesh/.
+Needs the area's tiles with IPR's buildings (build_tiles.py, ipr_buildings.py) and
+Blender (on the PATH, in /Applications, or $BLENDER). Writes
+public/data/<area>_now/landmarks/<name>.glb and landmarks.json. The mesh's nodes are
+kept in pipeline/.cache/mesh/.
 """
 
 import argparse
 import gzip
 import json
+import os
+import shutil
 import struct
+import subprocess
+import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -41,6 +49,7 @@ LANDMARKS = {
     "manes": ["way/7649964", "way/30169179"],  # Mánes and Šítkovská vodárenská věž
 }
 PAD = 1.5
+BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or "/Applications/Blender.app/Contents/MacOS/Blender"
 
 
 def fetch(path: str) -> bytes:
@@ -90,7 +99,43 @@ def footprints(area: str, ids: list[str]):
     return list(polys.values())
 
 
-def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: float, tile: float, origin):
+def lod3(area: str, tiles: list[str], foot) -> np.ndarray:
+    """IPR's city-model triangles in the footprint, from the tiles' .ipr.bin (see
+    ipr_buildings.py), in the game's axes."""
+    out = []
+    for k in tiles:
+        base = OUT / f"{area}_now" / "tiles" / k
+        f = next((g for g in (base.with_name(f"{k}.ipr.bin.gz"), base.with_name(f"{k}.ipr.bin")) if g.exists()), None)
+        if not f:
+            continue
+        b = f.read_bytes()
+        b = gzip.decompress(b) if f.suffix == ".gz" else b
+        x0, y0 = json.loads(base.with_name(f"{k}.json").read_text())["box"][:2]
+        n = struct.unpack_from("<I", b, 0)[0]
+        p = np.frombuffer(b, "<i2", n * 9, 8).reshape(-1, 3, 3).astype(np.float64) / 100
+        x, h, y = p[..., 0] + x0, p[..., 1], p[..., 2] + y0
+        keep = contains_xy(foot, x.mean(1), y.mean(1))
+        out.append(np.stack([x[keep], h[keep], -y[keep]], -1))
+    return np.concatenate(out) if out else np.empty((0, 3, 3))
+
+
+def bake(name: str, parts, clean: np.ndarray, out: Path):
+    """The mesh's colours on the clean model, by Blender."""
+    with tempfile.TemporaryDirectory() as d:
+        high, low = Path(d) / "high.glb", Path(d) / "low.obj"
+        write_glb(high, parts)
+        v = clean.reshape(-1, 3)
+        low.write_text("".join(f"v {a:.3f} {b:.3f} {c:.3f}\n" for a, b, c in v)
+                       + "".join(f"f {i} {i + 1} {i + 2}\n" for i in range(1, len(v), 3)))
+        r = subprocess.run([BLENDER, "-b", "--factory-startup", "-P", str(Path(__file__).with_name("landmark_bake.py")),
+                            "--", str(low), str(high), str(out)], capture_output=True, text=True)
+        said = [l for l in r.stdout.splitlines() if l.startswith("clean model:") or "Error" in l]
+        if r.returncode or not out.exists():
+            raise SystemExit(f"{name}: Blender failed\n{r.stdout[-2000:]}\n{r.stderr[-2000:]}")
+        print(f"{name}: " + "; ".join(said))
+
+
+def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: float, tile: float, origin, raw: bool):
     foot = unary_union(footprints(area, ids)).buffer(PAD, join_style="mitre")
     to3857 = Transformer.from_crs(crs, "EPSG:3857", always_xy=True)
     back = Transformer.from_crs("EPSG:3857", crs, always_xy=True)
@@ -108,15 +153,23 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
             parts.append((p[keep].reshape(-1, 3), uv.reshape(-1, 3, 2)[keep].reshape(-1, 2), fetch(f"nodes/{n['id']}/textures/0")))
     if not parts:
         raise SystemExit(f"{name}: the mesh has nothing there")
-    out = OUT / f"{area}_now" / "landmarks"
-    out.mkdir(parents=True, exist_ok=True)
-    size = write_glb(out / f"{name}.glb", parts)
     ox, oy = origin
     tiles = sorted({f"{i}_{j}" for i in range(int((x0 + ox) // tile), int((x1 + ox) // tile) + 1)
                     for j in range(int((y0 + oy) // tile), int((y1 + oy) // tile) + 1)})
+    print(f"{name}: {sum(len(p) // 3 for p, _, _ in parts)} triangles of the mesh from {len(nodes)} nodes "
+          f"(levels {sorted({n['level'] for n in nodes})})")
+    out = OUT / f"{area}_now" / "landmarks"
+    out.mkdir(parents=True, exist_ok=True)
+    glb = out / f"{name}.glb"
+    clean = np.empty((0, 3, 3)) if raw else lod3(area, tiles, foot)
+    if len(clean):
+        bake(name, parts, clean, glb)
+    else:
+        if not raw:
+            print(f"{name}: no IPR buildings there, so the mesh's triangles as they are")
+        write_glb(glb, parts)
+    print(f"{name}: {glb.stat().st_size / 1e6:.1f} MB")
     cx, cy = foot.centroid.x, foot.centroid.y
-    print(f"{name}: {sum(len(p) // 3 for p, _, _ in parts)} triangles from {len(nodes)} nodes "
-          f"(levels {sorted({n['level'] for n in nodes})}), {size / 1e6:.1f} MB")
     polys = list(foot.geoms) if foot.geom_type == "MultiPolygon" else [foot]
     return {"name": name, "file": f"landmarks/{name}.glb", "polygons": [mapping(q)["coordinates"] for q in polys],
             "home": f"{int((cx + ox) // tile)}_{int((cy + oy) // tile)}", "tiles": tiles}
@@ -159,13 +212,14 @@ def main():
     ap.add_argument("area")
     ap.add_argument("names", nargs="*", help="landmarks to cut (default: all)")
     ap.add_argument("--level", type=int, default=None, help="mesh level to take (default: the finest, 16)")
+    ap.add_argument("--raw", action="store_true", help="the mesh's triangles as they are, not baked onto IPR's city model")
     a = ap.parse_args()
     meta = json.loads((LAYERS / a.area / "meta.json").read_text())
     index = json.loads((OUT / f"{a.area}_now" / "index.json").read_text())
     listing = OUT / f"{a.area}_now" / "landmarks.json"
     done = {l["name"]: l for l in json.loads(listing.read_text())} if listing.exists() else {}
     for name in a.names or LANDMARKS:
-        done[name] = cut(a.area, name, LANDMARKS[name], a.level, meta["crs"], index.get("iprRef", 180.0), index["tile"], index["origin"])
+        done[name] = cut(a.area, name, LANDMARKS[name], a.level, meta["crs"], index.get("iprRef", 180.0), index["tile"], index["origin"], a.raw)
     listing.write_text(json.dumps(list(done.values())))
 
 

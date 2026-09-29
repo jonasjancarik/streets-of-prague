@@ -228,9 +228,12 @@ the pixel ratio.
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
   `pipeline/landmarks.py` takes the mesh's pieces over the landmark's OSM footprints
-  (a little wider), keeps the triangles inside and writes a GLB in the game's
-  coordinates; the game hides IPR's and OSM's buildings in that footprint and draws the
-  model there (`landmarkModel` in `src/tiles.ts`). The photographs have the day's light
+  (a little wider) and keeps the triangles inside. Blender (`pipeline/landmark_bake.py`)
+  then bakes their colours onto the landmark's clean model from IPR's city model
+  (LOD3): straight walls and roof edges, without the mesh's trees and lumps, about 100
+  faces and one texture of about 5 cm per pixel (Mánes: 0.9 MB, against 2 MB and
+  18,000 triangles for the mesh's own). The game hides IPR's and OSM's buildings in that
+  footprint and draws the model there (`landmarkModel` in `src/tiles.ts`). The photographs have the day's light
   in them, so the model is lit evenly, as if every face looked up, and still darkens at
   night. The collision footprint stays OSM's.
 - **Roof colours.** Pitched roofs are red tiles, as nearly all of them are in Prague;
@@ -541,8 +544,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   local metres (going straight to the datum-less local projection puts everything
   ~25 m off); IPR wall bases then sit a median 0.55 m from OSM building edges.
 - **Landmarks.** `LANDMARKS` in `pipeline/landmarks.py` names each landmark and the OSM
-  buildings it replaces; `uv run landmarks.py <area> [name…] [--level N]` cuts them
-  (after `build_tiles.py`, which it takes the footprints from). The mesh's pieces are
+  buildings it replaces; `uv run landmarks.py <area> [name…] [--level N] [--raw]` makes
+  them, after `build_tiles.py` and `ipr_buildings.py` (it takes the footprints and the
+  clean models from the tiles). It needs Blender (on the PATH, in /Applications or
+  `$BLENDER`); `--raw` keeps the mesh's own triangles instead. The mesh's pieces are
   kept in `pipeline/.cache/mesh/`; the finest level (16) is the default.
 - **Roof corrections.** `pipeline/roofs.py` lists landmarks by OSM id, and outlines
   (in WGS84) for parts of buildings OSM draws as one. After changing it, run
