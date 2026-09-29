@@ -26,11 +26,12 @@ interface EngineVoice {
   roar: [number, number, number]; level: [number, number, number]; shift: [number, number]; clutch: number;
 }
 interface EngineSpec { idle: number; redline: number; cylinders: number; gears: number[]; rough: number; voice: EngineVoice }
-// An everyday car heard from outside: a soft hum, muffled, a little fuller with the
-// pedal down, shifting up early as in town.
+// An everyday car heard from outside: a quiet, smooth hum under the tyres, a little
+// fuller with the pedal down, shifting up early as in town. No sub-octave and no
+// intake: between them they make an engine lope and splutter.
 const EVERYDAY: EngineVoice = {
-  harmonics: [0, 1, 0.35, 0.12, 0.08, 0.03], sub: 0.15, drive: 0.8, tone: [150, 1.5, 350],
-  roar: [0.01, 0.04, 3], level: [0.08, 0.04, 0.03], shift: [0.28, 0.5], clutch: 1100,
+  harmonics: [0, 1, 0.25, 0.06, 0.02], sub: 0, drive: 0.3, tone: [120, 1.2, 200],
+  roar: [0, 0, 3], level: [0.03, 0.012, 0.01], shift: [0.28, 0.5], clutch: 1100,
 };
 // A tuned sports car: a buzzing note over a deep sub-octave, uneven firing, the
 // intake roaring and every gear taken nearly to the redline. Not on any car yet;
