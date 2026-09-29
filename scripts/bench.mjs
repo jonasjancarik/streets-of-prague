@@ -69,9 +69,11 @@ async function runScene(browser, name, base = URL_BASE) {
   page.on('pageerror', (e) => console.error(`[${name}] page error:`, e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.error(`[${name}] console:`, m.text().slice(0, 3000)); });
   const q = `?start=${place.start}&dpr=${DPR}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&day=wed&weather=${args.weather || 'clear'}${args.extra || ''}`;
+  const loadStart = Date.now();
   await page.goto(base + q);
   // Loaded: the loading screen is gone and no tiles are being built.
-  await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__drive, null, { timeout: 120000, polling: 500 });
+  await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__drive, null, { timeout: 120000, polling: 100 });
+  const loadTime = (Date.now() - loadStart) / 1000;
   await page.keyboard.press('KeyH'); // fold the help card away
   if (place.drive) {
     await page.keyboard.press('KeyE');
@@ -140,7 +142,7 @@ async function runScene(browser, name, base = URL_BASE) {
     name, fps: res.frames.length / wall, frameMed: pct(dts, 0.5), frame95: pct(dts, 0.95), frame99: pct(dts, 0.99),
     js: mean(res.js), js95: pct(res.js, 0.95), render: mean(res.render), gpu: res.gpu.length ? mean(res.gpu) : NaN, gpu95: pct(res.gpu, 0.95),
     calls: mean(res.calls), tris: mean(res.tris), people: res.people, traffic: res.traffic, loose: res.loose, tiles: res.tiles,
-    ratio: res.ratio, tier: res.tier, speed: res.speed, profile,
+    ratio: res.ratio, tier: res.tier, speed: res.speed, profile, loadTime,
   };
 }
 
@@ -196,7 +198,7 @@ try {
       const r = await runScene(browser, s, base);
       delete r.profile;
       (res[k][s] ||= []).push(r);
-      console.log(`${s.padEnd(7)} ${k === 'vs' ? 'before' : 'after '} ${f1(r.fps).padStart(6)} fps  ${f1(1000 / r.fps)} ms/frame  js ${f1(r.js)} ms  gpu ${f1(r.gpu)} ms  ${Math.round(r.calls)} calls`);
+      console.log(`${s.padEnd(7)} ${k === 'vs' ? 'before' : 'after '} ${f1(r.fps).padStart(6)} fps  ${f1(1000 / r.fps)} ms/frame  js ${f1(r.js)} ms  gpu ${f1(r.gpu)} ms  ${Math.round(r.calls)} calls  loaded in ${f1(r.loadTime)} s`);
     }
     for (const s of SCENES) {
       const ms = (rs) => mean(rs.map((r) => 1000 / r.fps)), a = ms(res.vs[s]), b = ms(res.url[s]);
@@ -212,7 +214,7 @@ try {
       console.log(`${line('off', r.off)}\n${line('on', r.on)}\n${r.name.padEnd(7)} on is ${f1((r.off.ms - r.on.ms) / r.off.ms * 100)}% quicker a frame`);
       continue;
     }
-    console.log(`${r.name.padEnd(7)} ${f1(r.fps).padStart(6)} fps  frame ${f1(r.frameMed)}/${f1(r.frame95)}/${f1(r.frame99)} ms  js ${f1(r.js)} (p95 ${f1(r.js95)}, render ${f1(r.render)}) ms  gpu ${f1(r.gpu)} (p95 ${f1(r.gpu95)}) ms  ${Math.round(r.calls)} calls ${(r.tris / 1e6).toFixed(2)}M tris  ${r.people} people ${r.traffic} traffic ${r.loose} loose ${r.tiles} tiles  ${r.ratio}× ${r.tier}${r.speed ? `  ${Math.round(r.speed)} km/h` : ''}`);
+    console.log(`${r.name.padEnd(7)} ${f1(r.fps).padStart(6)} fps  frame ${f1(r.frameMed)}/${f1(r.frame95)}/${f1(r.frame99)} ms  js ${f1(r.js)} (p95 ${f1(r.js95)}, render ${f1(r.render)}) ms  gpu ${f1(r.gpu)} (p95 ${f1(r.gpu95)}) ms  ${Math.round(r.calls)} calls ${(r.tris / 1e6).toFixed(2)}M tris  ${r.people} people ${r.traffic} traffic ${r.loose} loose ${r.tiles} tiles  ${r.ratio}× ${r.tier}${r.speed ? `  ${Math.round(r.speed)} km/h` : ''}  loaded in ${f1(r.loadTime)} s`);
     if (r.profile) { console.log(topSelf(r.profile).join('\n')); delete r.profile; }
   }
 } finally {
