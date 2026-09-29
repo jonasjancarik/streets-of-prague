@@ -116,8 +116,8 @@
  {
   "id": "hacker",
   "who": "man with glasses and headphones",
-  "w": 267,
-  "h": 500
+  "w": 534,
+  "h": 1000
  },
  {
   "id": "boss",
@@ -134,8 +134,8 @@
  {
   "id": "journalist",
   "who": "man with glasses in tweed",
-  "w": 258,
-  "h": 466
+  "w": 553,
+  "h": 1000
  },
  {
   "id": "policeman",
