@@ -174,6 +174,12 @@ What's in since 29 September 2026: clear, cloudy, rain, mist and snow
 
 ## Landmarks
 
+- **House Okamura (Vila Tomia Okamury, Nad Tejnkou 9a, `way/998156376`) can't be a
+  landmark yet.** IPR's city model (LOD3) has no building there (the house is newer than
+  the model; no neighbour carries it either), so the landmark would be the mesh's raw
+  triangles, a torn dark shape in the game. Needs a clean model from another source, for
+  example OSM's footprint extruded to its height, as the bake's target.
+
 - **A tree baked into Mánes's roof.** The tree at the building's north-east corner,
   on the embankment, reaches over the roof in IPR's photorealistic mesh, so a dark
   smudge of it is baked into the roof's texture (`pipeline/landmarks.py`). A tree of
