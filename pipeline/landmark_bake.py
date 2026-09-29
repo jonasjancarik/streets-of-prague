@@ -2,7 +2,7 @@
 landmark's piece of IPR's photorealistic mesh onto its clean model from IPR's city
 model (LOD3), and writes that as a GLB.
 
-    blender -b --factory-startup -P landmark_bake.py -- low.obj high.glb out.glb [cm_per_px]
+    blender -b --factory-startup -P landmark_bake.py -- low.obj high.glb out.glb [cm_per_px] [sources.glb]
 
 Both inputs are in the game's coordinates (y up), as is the result. The clean model is
 welded, its coplanar triangles merged into faces and its undersides dropped; it gets
@@ -16,6 +16,11 @@ are further apart than that, from a second, longer ray. Where that ray meets the
 underside of something (an onion dome bulging out over the simpler drum the clean
 model has, whose shaded underside the camera never sees), the wall takes what's seen
 from above instead. Anything still missing is filled in from around it.
+
+`sources.glb`, if given, is the same model with each texel coloured by where its colour
+came from, for checking a landmark: red from above on a roof, orange from above on a
+wall (under something), green straight in, blue straight in from further off, white
+filled in (no ray found the mesh).
 """
 import math
 import os
@@ -29,6 +34,7 @@ from mathutils import Vector
 args = sys.argv[sys.argv.index("--") + 1:]
 low_path, high_path, out_path = map(os.path.abspath, args[:3])
 CM = float(args[3]) if len(args) > 3 else 5.0
+sources_path = os.path.abspath(args[4]) if len(args) > 4 else None
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scene = bpy.context.scene
@@ -61,8 +67,14 @@ me = low.data
 bm = bmesh.new()
 bm.from_mesh(me)
 bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.02)
+# A triangle or two the city model lacks (a wall with half of it missing): small holes
+# are filled, the new faces turned to match the faces around them. The model's own
+# normals are kept otherwise: they face out (CityGML), where Blender's guess on a set of
+# touching solids goes wrong.
+filled = bmesh.ops.holes_fill(bm, edges=[e for e in bm.edges if e.is_boundary], sides=4)["faces"]
+bmesh.ops.recalc_face_normals(bm, faces=filled)
+print(f"filled {len(filled)} holes")
 bmesh.ops.dissolve_limit(bm, angle_limit=math.radians(1), verts=bm.verts, edges=bm.edges)
-bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
 # Undersides (floors over the ground or the water) are never seen from above.
 bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.normal.z < -0.7], context="FACES")
 # Roofs and walls baked in different ways, so they share no vertices.
@@ -82,6 +94,7 @@ size = min(4096, max(512, 2 ** math.ceil(math.log2(math.sqrt(area / 0.7) / (CM /
 print(f"clean model: {len(me.polygons)} faces, {area:.0f} m², texture {size}×{size}")
 
 mat = bpy.data.materials.new("landmark")
+mat.use_backface_culling = True  # the faces face out: the GLB says one-sided
 mat.use_nodes = True
 nt = mat.node_tree
 bsdf = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
@@ -182,17 +195,24 @@ def missed(px):
     return px[..., :3].max(-1) < 1e-4
 
 
-near = bake_into("near", 0.8, 2.0)  # where the two models agree
+near = bake_into("near", 1.5, 3.5)  # where the two models agree
 far = bake_into("far", 3.0, 8.0)    # parts the clean model has further off
 use_far = missed(near)
 side = np.where(use_far[..., None], far, near)
 # Which way the mesh faces where those rays met it (see `facing`): below 0.4, its
 # normal points down at least a little.
-up = np.where(use_far, bake_into("far_n", 3.0, 8.0, True)[..., 0], bake_into("near_n", 0.8, 2.0, True)[..., 0])
+up = np.where(use_far, bake_into("far_n", 3.0, 8.0, True)[..., 0], bake_into("near_n", 1.5, 3.5, True)[..., 0])
 under = ~missed(side) & (up > 0.1) & (up < 0.4)
 above = bake_from_above("above")
-px = np.where(((roof_mask() | under) & ~missed(above))[..., None], above, side)
+roofs = roof_mask()
+from_above = (roofs | under) & ~missed(above)
+px = np.where(from_above[..., None], above, side)
 hole = missed(px)
+# Where each texel's colour came from, for sources.glb (see the top), later cases winning.
+sources = np.ones_like(px)
+for mask, colour in ((~hole, (0.2, 0.8, 0.2)), (~hole & use_far, (0.1, 0.3, 0.9)), (from_above & ~roofs, (1, 0.6, 0)),
+                     (from_above & roofs, (0.8, 0.1, 0.1)), (hole, (1, 1, 1))):
+    sources[mask, :3] = colour
 
 # Fill the rest from around it (push-pull: average down, then back up), which also
 # bleeds the islands' edges outwards for the texture's mipmaps.
@@ -214,5 +234,10 @@ tex.image = img
 
 bpy.data.objects.remove(high)
 select(low)
-bpy.ops.export_scene.gltf(filepath=out_path, use_selection=True, export_format="GLB", export_image_format="JPEG",
-                          export_jpeg_quality=88, export_normals=False, export_materials="EXPORT")
+export = dict(use_selection=True, export_format="GLB", export_image_format="JPEG", export_jpeg_quality=88,
+              export_normals=False, export_materials="EXPORT")
+bpy.ops.export_scene.gltf(filepath=out_path, **export)
+if sources_path:
+    img.pixels.foreach_set(sources.ravel())
+    img.pack()
+    bpy.ops.export_scene.gltf(filepath=sources_path, **export)

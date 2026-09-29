@@ -17,7 +17,8 @@ footprint the game hides IPR's and OSM's buildings in.
 Needs the area's tiles with IPR's buildings (build_tiles.py, ipr_buildings.py) and
 Blender (on the PATH, in /Applications, or $BLENDER). Writes
 public/data/<area>_now/landmarks/<name>.glb and landmarks.json. The mesh's nodes are
-kept in pipeline/.cache/mesh/.
+kept in pipeline/.cache/mesh/, and what to check a landmark with in
+pipeline/.cache/landmarks/<area>/ (see KEEP, and .claude/skills/landmarks).
 """
 
 import argparse
@@ -27,7 +28,6 @@ import os
 import shutil
 import struct
 import subprocess
-import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -37,11 +37,15 @@ from shapely import contains_xy
 from shapely.geometry import Polygon, mapping
 from shapely.ops import unary_union
 
+import ipr_buildings as ipr
 from layers import CACHE as LAYERS
-from osm_area import OUT
+from osm_area import AREAS, OUT
 
 MESH = "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/praha2023_merged_WM/SceneServer/layers/0"
 NODES = Path(__file__).parent / ".cache" / "mesh"
+# For checking a landmark: its piece of the mesh as cut (<name>.mesh.glb), its clean
+# model (<name>.lod3.obj) and the baked model coloured by source (<name>.sources.glb).
+KEEP = Path(__file__).parent / ".cache" / "landmarks"
 
 # Each landmark: the OSM buildings it replaces. Its footprint is theirs, a little wider
 # (PAD) so the walls and the eaves stay whole.
@@ -99,44 +103,60 @@ def footprints(area: str, ids: list[str]):
     return list(polys.values())
 
 
-def lod3(area: str, tiles: list[str], foot) -> np.ndarray:
-    """IPR's city-model triangles in the footprint, from the tiles' .ipr.bin (see
-    ipr_buildings.py), in the game's axes."""
-    out = []
-    for k in tiles:
-        base = OUT / f"{area}_now" / "tiles" / k
-        f = next((g for g in (base.with_name(f"{k}.ipr.bin.gz"), base.with_name(f"{k}.ipr.bin")) if g.exists()), None)
-        if not f:
+def lod3(area: str, osm, tile: float, origin):
+    """IPR's city-model buildings that make up the landmark: those at least half inside
+    its OSM footprint (`osm`). Their triangles in the game's axes, and their ground
+    outlines. Whole buildings, from ipr_buildings.py's parsed sheets: IPR's walls can be
+    a metre or two off OSM's outline, so picking triangles by the outline would lose
+    some."""
+    w, s_, e, n = AREAS[area]
+    local = f"+proj=tmerc +lat_0={(s_ + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
+    to_krovak = Transformer.from_crs(local, "EPSG:5514", always_xy=True)
+    x0, y0, x1, y1 = osm.bounds
+    corners = [ipr.sheet(*to_krovak.transform(x, y)) for x in (x0, x1) for y in (y0, y1)]
+    tris, outlines, ox, oy = [], [], *origin
+    for X, Y in sorted(set(corners)):
+        name = f"BD3_{ipr.sheet_name(X, Y)}"
+        path = ipr.download(name, ipr.catalogue())
+        if not path:
             continue
-        b = f.read_bytes()
-        b = gzip.decompress(b) if f.suffix == ".gz" else b
-        x0, y0 = json.loads(base.with_name(f"{k}.json").read_text())["box"][:2]
-        n = struct.unpack_from("<I", b, 0)[0]
-        p = np.frombuffer(b, "<i2", n * 9, 8).reshape(-1, 3, 3).astype(np.float64) / 100
-        x, h, y = p[..., 0] + x0, p[..., 1], p[..., 2] + y0
-        keep = contains_xy(foot, x.mean(1), y.mean(1))
-        out.append(np.stack([x[keep], h[keep], -y[keep]], -1))
-    return np.concatenate(out) if out else np.empty((0, 3, 3))
+        for bid, cx, cy, (i, j), pos, codes, feet in ipr.read_sheet((name, str(path), local, tile, origin))[1]:
+            if pos is None or not (x0 - 50 < cx < x1 + 50 and y0 - 50 < cy < y1 + 50):
+                continue
+            ground = unary_union(feet)
+            if ground.area < 0.5 or ground.intersection(osm).area < 0.5 * ground.area:
+                continue
+            p = pos.reshape(-1, 3, 3).astype(np.float64) / 100
+            tris.append(np.stack([p[..., 0] + i * tile - ox, p[..., 1], -(p[..., 2] + j * tile - oy)], -1))
+            outlines.append(ground)
+    return (np.concatenate(tris) if tris else np.empty((0, 3, 3))), outlines
 
 
-def bake(name: str, parts, clean: np.ndarray, out: Path):
-    """The mesh's colours on the clean model, by Blender."""
-    with tempfile.TemporaryDirectory() as d:
-        high, low = Path(d) / "high.glb", Path(d) / "low.obj"
-        write_glb(high, parts)
-        v = clean.reshape(-1, 3)
-        low.write_text("".join(f"v {a:.3f} {b:.3f} {c:.3f}\n" for a, b, c in v)
-                       + "".join(f"f {i} {i + 1} {i + 2}\n" for i in range(1, len(v), 3)))
-        r = subprocess.run([BLENDER, "-b", "--factory-startup", "-P", str(Path(__file__).with_name("landmark_bake.py")),
-                            "--", str(low), str(high), str(out)], capture_output=True, text=True)
-        said = [l for l in r.stdout.splitlines() if l.startswith("clean model:") or "Error" in l]
-        if r.returncode or not out.exists():
-            raise SystemExit(f"{name}: Blender failed\n{r.stdout[-2000:]}\n{r.stderr[-2000:]}")
-        print(f"{name}: " + "; ".join(said))
+def bake(area: str, name: str, parts, clean: np.ndarray, out: Path):
+    """The mesh's colours on the clean model, by Blender. Its inputs, and the model
+    coloured by where each texel's colour came from, are kept for checking (KEEP)."""
+    keep = KEEP / area
+    keep.mkdir(parents=True, exist_ok=True)
+    high, low, sources = keep / f"{name}.mesh.glb", keep / f"{name}.lod3.obj", keep / f"{name}.sources.glb"
+    write_glb(high, parts)
+    v = clean.reshape(-1, 3)
+    low.write_text("".join(f"v {a:.3f} {b:.3f} {c:.3f}\n" for a, b, c in v)
+                   + "".join(f"f {i} {i + 1} {i + 2}\n" for i in range(1, len(v), 3)))
+    r = subprocess.run([BLENDER, "-b", "--factory-startup", "-P", str(Path(__file__).with_name("landmark_bake.py")),
+                        "--", str(low), str(high), str(out), "5", str(sources)], capture_output=True, text=True)
+    said = [l for l in r.stdout.splitlines() if l.startswith("clean model:") or "Error" in l]
+    if r.returncode or not out.exists():
+        raise SystemExit(f"{name}: Blender failed\n{r.stdout[-2000:]}\n{r.stderr[-2000:]}")
+    print(f"{name}: " + "; ".join(said))
 
 
 def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: float, tile: float, origin, raw: bool):
-    foot = unary_union(footprints(area, ids)).buffer(PAD, join_style="mitre")
+    osm = unary_union(footprints(area, ids))
+    clean, outlines = (np.empty((0, 3, 3)), []) if raw else lod3(area, osm, tile, origin)
+    # What the landmark takes over: OSM's footprint and IPR's buildings in it, a little
+    # wider (the game hides IPR's triangles by where their middles are, which for a wall
+    # is on the outline).
+    foot = unary_union([osm.buffer(PAD, join_style="mitre")] + [g.buffer(0.5, join_style="mitre") for g in outlines])
     to3857 = Transformer.from_crs(crs, "EPSG:3857", always_xy=True)
     back = Transformer.from_crs("EPSG:3857", crs, always_xy=True)
     x0, y0, x1, y1 = foot.bounds
@@ -161,9 +181,9 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
     out = OUT / f"{area}_now" / "landmarks"
     out.mkdir(parents=True, exist_ok=True)
     glb = out / f"{name}.glb"
-    clean = np.empty((0, 3, 3)) if raw else lod3(area, tiles, foot)
     if len(clean):
-        bake(name, parts, clean, glb)
+        print(f"{name}: {len(outlines)} of IPR's buildings, {len(clean)} triangles")
+        bake(area, name, parts, clean, glb)
     else:
         if not raw:
             print(f"{name}: no IPR buildings there, so the mesh's triangles as they are")

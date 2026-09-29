@@ -152,16 +152,17 @@ const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ ve
 
 // A landmark's model (pipeline/landmarks.py), already in the game's coordinates. Its
 // photographs have the day's light in them, so it's lit as if every face looked up:
-// evenly, dimming at night and taking the street lamps' light like the rest.
+// evenly, dimming at night and taking the street lamps' light like the rest. Baked
+// models are one-sided; a raw piece of the mesh (--raw) says it's two-sided.
 async function landmarkModel(url: string) {
   const gltf = await new GLTFLoader().loadAsync(url);
   const model = gltf.scene;
   model.updateMatrixWorld(true);
   model.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
-    const map = (o.material as THREE.MeshStandardMaterial).map;
+    const { map, side } = o.material as THREE.MeshStandardMaterial;
     if (map) map.anisotropy = 4;
-    o.material = cutAway(new THREE.MeshLambertMaterial({ map, side: THREE.DoubleSide }), 'landmark');
+    o.material = cutAway(new THREE.MeshLambertMaterial({ map, side }), 'landmark');
     // Up in the world, in the mesh's own axes (in case the file turns it).
     const up = new THREE.Vector3(0, 1, 0).applyMatrix3(new THREE.Matrix3().getNormalMatrix(o.matrixWorld).invert()).normalize();
     const n = o.geometry.attributes.position.count;
