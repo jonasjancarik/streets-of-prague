@@ -161,6 +161,26 @@
       }
       @media (max-width: 640px) { #help { display: none; } #banner { font-size: 40px; } }
 
+      /* Credits: a quiet line in the corner, and the full list when you open it. */
+      #credits { position: fixed; left: 12px; bottom: 8px; z-index: 4; font: 11px/1.3 Inter, system-ui, sans-serif; color: var(--ink); opacity: 0.6; background: none; border: 0; padding: 2px 4px; text-align: left; cursor: pointer; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
+      #credits:hover { opacity: 1; }
+      #credits u { text-underline-offset: 2px; }
+      #credits .short { display: none; }
+      body.touch #credits { left: auto; bottom: auto; top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); background: var(--paper); border-radius: 8px; padding: 7px 10px; font-size: 12px; opacity: 0.75; text-shadow: none; -webkit-tap-highlight-color: transparent; }
+      /* In the car, "Back on road" has that corner, so the credits go under it. */
+      body.touch:has(#touch[data-mode='car']) #credits { top: calc(max(12px, env(safe-area-inset-top)) + 48px); }
+      body.touch #credits .long { display: none; }
+      body.touch #credits .short { display: inline; }
+      #credits-box { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; overflow: auto; padding: 16px 20px; color: var(--ink); background: rgba(20, 18, 16, 0.94); border: 0; border-radius: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); font: 13px/1.45 Inter, system-ui, sans-serif; }
+      #credits-box::backdrop { background: rgba(0, 0, 0, 0.35); }
+      #credits-box h2 { margin: 0 0 8px; font: 26px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
+      #credits-box ul { margin: 8px 0; padding-left: 18px; }
+      #credits-box li { margin: 5px 0; }
+      #credits-box a { color: var(--accent); }
+      #credits-box p { margin: 8px 0; }
+      #credits-box form { text-align: right; margin: 12px 0 0; }
+      #credits-box form button { font: inherit; color: var(--ink); background: rgba(255, 255, 255, 0.12); border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; }
+      #credits-box form button:hover { background: rgba(255, 255, 255, 0.2); }
       /* Touch controls: left thumb steers, right thumb works the pedals and buttons. */
       #touch { display: none; }
       body.touch { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -267,6 +287,20 @@
       </div>
     </div>
     <div id="metro" class="panel" hidden></div>
+    <button id="credits" type="button"><span class="long">Map data © OpenStreetMap contributors, IPR Praha, PID and TSK Praha · <u>Credits</u></span><span class="short">© Credits</span></button>
+    <dialog id="credits-box" aria-labelledby="credits-title">
+      <h2 id="credits-title">Credits</h2>
+      <p>This Prague is built from open data. Thanks to:</p>
+      <ul>
+        <li>Streets, buildings, parks and places: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>, under the Open Database Licence (ODbL).</li>
+        <li>Building shapes, bridges, hills and slopes, roadways, parking spaces and street lamps: © <a href="https://geoportalpraha.cz/" target="_blank" rel="noopener">IPR Praha</a> (Prague Institute of Planning and Development), CC BY 4.0.</li>
+        <li>Tram and metro timetables: <a href="https://pid.cz/o-systemu/opendata/" target="_blank" rel="noopener">PID / ROPID</a>, CC BY 4.0.</li>
+        <li>Paid parking zones and how full they get: <a href="https://zps.tsk-praha.cz/" target="_blank" rel="noopener">TSK Praha</a>.</li>
+        <li>Tram sounds: recordings from <a href="https://freesound.org" target="_blank" rel="noopener">Freesound</a>, nearly all CC0; the motor's whine is <a href="https://freesound.org/s/621068/" target="_blank" rel="noopener">tramvaj nova prujezd nabrezi MS</a> by ozvuk, CC BY 4.0.</li>
+      </ul>
+      <p>Made with the open-source libraries three.js, proj4, Leaflet and straight-skeleton. <a href="licenses.txt" target="_blank" rel="noopener">Read their licences</a>.</p>
+      <form method="dialog"><button autofocus>Close</button></form>
+    </dialog>
     <div id="loading"><div id="loading-text">Loading…</div></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

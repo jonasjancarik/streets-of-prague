@@ -27,6 +27,7 @@ import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import type { Surface } from './audio.ts';
 import { setupTouch } from './touch.ts';
+import './credits.ts';
 import { Police } from './police.ts';
 import { Chopper } from './helicopter.ts';
 import { isMapIndex } from './contracts.ts';
