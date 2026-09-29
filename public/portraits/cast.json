@@ -55,9 +55,9 @@
  },
  {
   "id": "drifter",
-  "who": "man in a beanie with a cigarette",
-  "w": 262,
-  "h": 468
+  "who": "old man with long grey hair, a beanie and a cigarette",
+  "w": 560,
+  "h": 985
  },
  {
   "id": "rocker",
@@ -79,9 +79,9 @@
  },
  {
   "id": "bouncer",
-  "who": "bald man with tattoos",
-  "w": 281,
-  "h": 479
+  "who": "big crew-cut man with a boxer's nose and tattoos",
+  "w": 587,
+  "h": 989
  },
  {
   "id": "mechanic",
@@ -103,9 +103,9 @@
  },
  {
   "id": "punk",
-  "who": "teenager in a hoodie with badges",
-  "w": 274,
-  "h": 482
+  "who": "teenager with a green mohawk, hoodie and badges",
+  "w": 569,
+  "h": 999
  },
  {
   "id": "inspector",
@@ -151,9 +151,9 @@
  },
  {
   "id": "detective",
-  "who": "grey-haired detective in a trench coat",
-  "w": 281,
-  "h": 503
+  "who": "gaunt detective with a pencil moustache, trench coat",
+  "w": 558,
+  "h": 982
  },
  {
   "id": "paramedic-f",
@@ -175,8 +175,8 @@
  },
  {
   "id": "official",
-  "who": "official with glasses and a lanyard",
-  "w": 277,
-  "h": 497
+  "who": "official with burgundy hair, glasses on a chain, lanyard",
+  "w": 557,
+  "h": 992
  }
 ]
