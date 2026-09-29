@@ -21,7 +21,8 @@ strongest tone over time), not by ear:
   the steadiest stretch of each recording (no loud one-off sound, as even a level at
   the end as at the start), crossfaded over two seconds and only slowly evened out,
   so it keeps its own swell. Birdsong ("song") isn't evened out at all: it's phrases
-  with quiet between them, which evening out would fill with noise. AAC: at 45 s or
+  with quiet between them, which evening out would fill with noise. The Old Town crowds
+  are walla, six stretches at once so no words come through (see WALLA). AAC: at 45 s or
   more a small gap at the seam wouldn't matter as much as the size, and browsers
   decode it without one.
 """
@@ -72,13 +73,25 @@ CLIPS = {
     "depart-2": (461311, None, 3.4, 10.3, "once", SR, None),
     "arrive": (461320, None, 6.5, 15.0, "once", SR, None),
     # The city (src/audio.ts, Ambience): the steadiest stretch of each, found by measuring.
-    "amb-crowd": (212034, "stereo", 119.0, 171.0, "amb", SR, None),  # the Old Town, fewest cars in it
-    "amb-crowd2": (212035, "stereo", 47.0, 89.0, "amb", SR, None),  # layered with it: repeats only every ~200 s
     "amb-traffic": (94309, "stereo", 39.0, 86.0, "amb", SR, None),
     "amb-night": (572530, "stereo", 71.0, 123.0, "amb", SR, None),
     "amb-blackbird": (116791, "stereo", 30.0, 92.0, "song", SR, None),
     "amb-garden": (475836, "stereo", 0.0, 27.5, "song", SR, None),
     "amb-morning": (498378, "stereo", 20.0, 67.0, "amb", SR, None),
+}
+
+
+# The Old Town crowds, as walla: one recording played alone lets the voices close to the
+# microphone through word for word, so each loop is six stretches of the two Old Town
+# recordings at once (every other one with its sides swapped), which mask each other
+# into a murmur. Then the moments louder than the last few seconds (a voice up close)
+# are pulled back, the highs (the consonants) softened and a short reverb added, which
+# puts the crowd at a distance. Measured with the sound-levels skill's speech.py: the
+# rhythm of speech over plain noise went from 5.6 (one recording) to about 2.
+# name: (length s, [(source, start s), ...]); the two loops layered repeat only every ~200 s.
+WALLA = {
+    "amb-crowd": (50.0, [(212034, 96), (212035, 3), (212034, 112), (212035, 22), (212034, 128), (212035, 45)]),
+    "amb-crowd2": (40.0, [(212034, 90), (212035, 10), (212034, 106), (212035, 30), (212034, 140), (212035, 60)]),
 }
 
 
@@ -111,6 +124,16 @@ def envelope(x: np.ndarray, seconds: float) -> np.ndarray:
     return np.sqrt(np.convolve(x * x, k / k.sum(), mode="same")) + 1e-6
 
 
+def envelope_fft(x: np.ndarray, seconds: float) -> np.ndarray:
+    # The same by FFT, far faster over long stretches (kept apart so the other clips
+    # come out byte for byte as before).
+    k = np.hanning(max(1, int(SR * seconds)))
+    k /= k.sum()
+    size = 1 << (len(x) + len(k) - 1).bit_length()
+    y = np.fft.irfft(np.fft.rfft(x * x, size) * np.fft.rfft(k, size), size)[len(k) // 2:len(k) // 2 + len(x)]
+    return np.sqrt(np.maximum(y, 0)) + 1e-6
+
+
 def loop(x: np.ndarray) -> np.ndarray:
     # Level out the swell of a passing tram, then fold the last half second over the
     # start: the end runs on into the beginning.
@@ -132,6 +155,30 @@ def ambience(x: np.ndarray, even=True) -> np.ndarray:
     r = np.linspace(0, 1, fade)[:, None]
     body[:fade] = x[-fade:] * np.sqrt(1 - r) + x[:fade] * np.sqrt(r)
     return body / np.sqrt((body ** 2).mean()) * 0.1  # -20 dBFS
+
+
+def walla(parts: list[tuple[int, float]], length: float) -> np.ndarray:
+    n = int((length + 2) * SR)  # (+2 s: folded over the start by ambience())
+    mix = np.zeros((n, 2))
+    for i, (sid, start) in enumerate(parts):
+        seg = load(sid)[int(start * SR):int(start * SR) + n]
+        seg = seg / envelope_fft(seg.mean(1), 6.0)[:, None]
+        mix += (seg[:, ::-1] if i % 2 else seg) / np.sqrt(len(parts))
+    # A slow, gentle compressor: what's louder than the last ~6 s comes back towards it.
+    fast, slow = envelope_fft(mix.mean(1), 0.25), envelope_fft(mix.mean(1), 6.0)
+    mix = mix / np.maximum(fast / slow, 1.0)[:, None] ** 0.7
+    # Highs 8 dB down above ~2.5 kHz, then a 0.8 s reverb, a third of the sound.
+    f = np.fft.rfftfreq(n, 1 / SR)
+    shelf = 10 ** (-8 / 20 * np.clip((f - 1500) / 2500, 0, 1))
+    rng = np.random.default_rng(1)
+    t = np.arange(int(SR * 0.8)) / SR
+    size = 1 << (n + len(t) - 1).bit_length()
+    for c in (0, 1):
+        ir = rng.standard_normal(len(t)) * np.exp(-t * 6.9 / 0.8)
+        dry = np.fft.irfft(np.fft.rfft(mix[:, c]) * shelf, n)
+        wet = np.fft.irfft(np.fft.rfft(dry, size) * np.fft.rfft(ir / np.sqrt((ir ** 2).sum()), size), size)[:n]
+        mix[:, c] = dry * 0.65 + wet * 0.35
+    return ambience(mix)
 
 
 def once(x: np.ndarray) -> np.ndarray:
@@ -164,6 +211,10 @@ def main():
         x = {"loop": loop, "once": once, "amb": ambience, "song": lambda x: ambience(x, even=False)}[kind](x)
         out = write(name, x, kind, rate)
         print(f"{out.name:14} {len(x) / SR:5.2f} s  {out.stat().st_size / 1000:6.0f} kB  from {sid}")
+    for name, (length, parts) in WALLA.items():
+        x = walla(parts, length)
+        out = write(name, x, "amb", SR)
+        print(f"{out.name:14} {len(x) / SR:5.2f} s  {out.stat().st_size / 1000:6.0f} kB  from {sorted({p[0] for p in parts})}")
 
 
 if __name__ == "__main__":

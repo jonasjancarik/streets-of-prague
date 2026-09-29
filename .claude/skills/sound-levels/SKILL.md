@@ -101,6 +101,12 @@ Only to confirm the clips load and nothing throws; the levels come from the scri
    `cd pipeline && uv run build_audio.py`. Existing clips come out byte-identical.
    Mid-side recordings: channel 0 is the mid, a plain mono recording. Stereo bells
    recorded out of phase: take one channel.
+   **Crowds and voices**: one recording played alone lets the voices near the
+   microphone through word for word (the user heard English). Make it walla
+   (`WALLA` in `build_audio.py`: six stretches at once, loud moments pulled back,
+   highs softened, a short reverb) and check with `speech.py` (next to this file):
+   plain noise is 1, one crowd recording was 5.6, the walla about 2.3–2.6. More
+   than six stretches didn't lower it further.
 5. **Credit it**: `public/audio/SOURCES.md` always; CC BY also in the README's
    Credits, the in-game credits in `index.html` (`data-t="credits.…"`) and the Czech
    text for that key in `src/cs.ts`.

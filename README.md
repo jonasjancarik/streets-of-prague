@@ -386,7 +386,8 @@ the pixel ratio.
   pulling in as it happens, and the bell at you or a car on the track ahead. The
   bogies' clicks over the rail joints are made in code. Under it all is the city's own
   sound, long stereo loops from the same script, each as loud as where you are and the
-  time of day call for: two layered Old Town crowds, as loud as the streets within
+  time of day call for: two layered Old Town crowds (each six stretches of the
+  recordings at once, a murmur with no words to make out), as loud as the streets within
   150 m are busy (the footfall map, 1 at the Old Town Square) and quiet at night;
   distant traffic by day and a low hum by night; and birds where it's quiet (a
   blackbird at dawn and dusk, small garden birds by day, a morning chorus early on),

@@ -15,8 +15,7 @@ come from Freesound's public previews of the recordings (192 kbps Ogg Vorbis).
 | `depart-1.m4a` | [14 Tram leaving the station](https://freesound.org/s/497564/) | 16HPanskaWillheimova_Sara | CC0 |
 | `depart-2.m4a` | [09-1_departure-close](https://freesound.org/s/461311/) | 15GPanskaMatejcovaRebeka | CC0 |
 | `arrive.m4a` | [10_arrival](https://freesound.org/s/461320/) | 15GPanskaMatejcovaRebeka | CC0 |
-| `amb-crowd.m4a` | [Pague, Staro Mesto, City Center part.2](https://freesound.org/s/212034/) | vonfleisch | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
-| `amb-crowd2.m4a` | [Pague, Staro Mesto, City Center part.1](https://freesound.org/s/212035/) | vonfleisch | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| `amb-crowd.m4a`, `amb-crowd2.m4a` | [Pague, Staro Mesto, City Center part.2](https://freesound.org/s/212034/) and [part.1](https://freesound.org/s/212035/), both in each | vonfleisch | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 | `amb-traffic.m4a` | [Prague Atmo Traffic from 5th floor](https://freesound.org/s/94309/) | aUREa | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | `amb-night.m4a` | [180912 Night city rumble quiet distant traffic](https://freesound.org/s/572530/) | TRP | CC0 |
 | `amb-blackbird.m4a` | [Blackbird 252](https://freesound.org/s/116791/) | nigelcoop | CC0 |
@@ -24,5 +23,7 @@ come from Freesound's public previews of the recordings (192 kbps Ogg Vorbis).
 | `amb-morning.m4a` | [01 - atmosphere](https://freesound.org/s/498378/) | 16FHermanovaB | CC0 |
 
 The CC BY recordings are changed: the motor is its mid channel only, a stretch of it
-evened out to a steady level and made into a loop; the crowds and the traffic are a
-stretch of each, their slow swell evened out, made into a loop.
+evened out to a steady level and made into a loop; the traffic is a stretch of it,
+its slow swell evened out, made into a loop; each crowd is six stretches of the two Old
+Town recordings played at once (so no words come through), its loud moments pulled
+back, its highs softened, with a short reverb, made into a loop.
