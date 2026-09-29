@@ -52,6 +52,11 @@ KEEP = Path(__file__).parent / ".cache" / "landmarks"
 LANDMARKS = {
     "manes": ["way/7649964", "way/30169179"],  # Mánes and Šítkovská vodárenská věž
     "tyn": ["way/379512802"],  # Kostel Matky Boží před Týnem (Týnský chrám), Staroměstské náměstí
+    "radnice": ["way/255771323", "way/391354925"],  # Staroměstská radnice and Radniční věž
+    "obecni": ["way/27124435"],  # Obecní dům, and Prašná brána with it: IPR's model has the two as one building
+    "divadlo": ["way/7649971"],  # Národní divadlo
+    "rudolfinum": ["way/30123527"],  # Rudolfinum
+    "mikulas": ["way/27859115"],  # Kostel sv. Mikuláše, Staroměstské náměstí
 }
 PAD = 1.5
 BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or "/Applications/Blender.app/Contents/MacOS/Blender"
