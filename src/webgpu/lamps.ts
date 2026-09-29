@@ -5,15 +5,41 @@
 import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
-  Fn, If, Discard, float, vec2, vec3, vec4, texture, attribute, positionGeometry, positionWorld, normalView, cameraViewMatrix, diffuseColor,
-  dot, smoothstep, abs, select,
+  Fn, If, Discard, float, int, ivec2, vec2, vec3, vec4, texture, attribute, positionGeometry, positionWorld, normalView, cameraViewMatrix, diffuseColor,
+  dot, smoothstep, abs, select, min, max, step, length,
 } from 'three/tsl';
-import { LAMP_MAP, LAMP_BOX, LAMP_ON, setPools } from '../lamps.ts';
+import { LAMP_MAP, LAMP_BOX, LAMP_ON, LAMP_SHADOWS, setPools } from '../lamps.ts';
 import { type N, follow, followVec } from './common.ts';
 
-// The pools of light, one instanced quad each (the ShaderMaterial in the Lamps constructor).
-function poolsMaterial(view: { value: THREE.Vector4 }) {
+// The pools of light, one instanced quad each (the ShaderMaterial in the Lamps constructor,
+// where `cover` is explained too). `cars`: the texture of the cars in the way.
+function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture) {
   const m = new NodeMaterial();
+  const carTex = texture(cars), uShadow = follow(LAMP_SHADOWS);
+  const cover = (id: N, p: N, lamp: N, gy: N): N => {
+    const out = float(0).toVar();
+    If(id.greaterThan(-0.5), () => {
+      const i = int(id.add(0.5));
+      const a = carTex.load(ivec2(i, int(0))).toVar(), b = carTex.load(ivec2(i, int(1))).toVar();
+      const fw = a.zw, sd = vec2(a.w.negate(), a.z);
+      If(uShadow.lessThan(1.5), () => {
+        const o = p.sub(a.xy), l = vec2(dot(o, fw), dot(o, sd));
+        const d = length(max(abs(l).sub(b.xy), 0));
+        out.assign(smoothstep(0, 1.2, d).oneMinus().mul(smoothstep(1.5, 3, abs(gy.sub(b.w))).oneMinus()).mul(0.55));
+      }).Else(() => {
+        const o = lamp.xz.sub(a.xy), e = p.sub(a.xy);
+        const from = vec3(dot(o, fw), lamp.y.sub(b.w), dot(o, sd));
+        const D = vec3(dot(e, fw), gy.sub(b.w), dot(e, sd)).sub(from).toVar();
+        D.addAssign(step(0, D).mul(2).sub(1).mul(1e-4));
+        const t1 = vec3(b.x.negate(), 0.12, b.y.negate()).sub(from).div(D), t2 = vec3(b.x, b.z.sub(b.w), b.y).sub(from).div(D);
+        const tn = min(t1, t2), tf = max(t1, t2);
+        const t0 = max(max(max(tn.x, tn.y), tn.z), 0), t3 = min(min(min(tf.x, tf.y), tf.z), 1);
+        out.assign(smoothstep(0, 0.35, t3.sub(t0).mul(length(D))).mul(0.92));
+      });
+    });
+    return out;
+  };
+  const lift = attribute('iLift', 'float'), carsA = attribute('iCarsA', 'vec4'), carsB = attribute('iCarsB', 'vec4');
   const uView = followVec(view);
   const at = attribute('iAt', 'vec4'), shape = attribute('iShape', 'vec4'), colour = attribute('iColour', 'vec3');
   const q = positionGeometry.xy, dir = shape.xy, side = vec2(dir.y.negate(), dir.x);
@@ -21,6 +47,8 @@ function poolsMaterial(view: { value: THREE.Vector4 }) {
   const l = select(beam, vec2(q.x.mul(0.5).add(0.5), q.y), q);
   const off = select(beam, dir.mul(l.x).mul(shape.z).add(side.mul(q.y).mul(shape.w)), dir.mul(q.x).add(side.mul(q.y)).mul(shape.z));
   m.vertexNode = vec4(at.xy.add(off).sub(uView.xy).mul(uView.z), 0, 1);
+  const vP = at.xy.add(off).toVarying('vP'), vLamp = vec3(at.x, at.z.add(lift), at.y).toVarying('vLamp');
+  const vCa: N = carsA.toVarying('vCa'), vCb: N = carsB.toVarying('vCb');
   const vL = l.toVarying('vL'), vC = colour.toVarying('vC'), vH = at.z.toVarying('vH'), vBeam = at.w.toVarying('vBeam');
   m.fragmentNode = Fn(() => {
     const f = float(0).toVar();
@@ -32,6 +60,11 @@ function poolsMaterial(view: { value: THREE.Vector4 }) {
       f.assign(select(d.lessThan(1), d.oneMinus().mul(d.oneMinus()), 0));
     });
     If(f.lessThan(0.002), () => { Discard(); });
+    If(uShadow.greaterThan(0.5).and(vCa.x.greaterThan(-0.5)), () => {
+      const c = float(0).toVar();
+      for (const k of ['x', 'y', 'z', 'w']) c.assign(max(c, max(cover(vCa[k], vP, vLamp, vH), cover(vCb[k], vP, vLamp, vH))));
+      f.mulAssign(c.oneMinus());
+    });
     return vec4(vC.mul(f), vH.add(500));
   })();
   m.blending = THREE.CustomBlending;

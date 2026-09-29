@@ -46,7 +46,7 @@ vec3 lampLightOn(vec3 w, vec3 n) {
 type Shader = THREE.WebGLProgramParametersWithUniforms;
 
 // The WebGPU trial's own version of the pools (webgpu/lamps.ts), set before the lamps are made.
-let poolsBy: ((view: { value: THREE.Vector4 }) => THREE.Material) | null = null;
+let poolsBy: ((view: { value: THREE.Vector4 }, cars: THREE.Texture) => THREE.Material) | null = null;
 export const setPools = (f: typeof poolsBy) => { poolsBy = f; };
 // And of the heads' glows (webgpu/glows.ts).
 let glowsBy: (() => THREE.Material) | null = null;
@@ -180,7 +180,7 @@ export class Lamps {
     quad.setAttribute('iColour', this.colour);
     quad.instanceCount = 0;
     this.lights = quad;
-    const pools = new THREE.Mesh(quad, poolsBy ? poolsBy(this.view) : new THREE.ShaderMaterial({
+    const pools = new THREE.Mesh(quad, poolsBy ? poolsBy(this.view, this.carMap) : new THREE.ShaderMaterial({
       uniforms: { uView: this.view, uCars: { value: this.carMap }, uShadow: LAMP_SHADOWS },
       vertexShader: /* glsl */ `
         attribute vec4 iAt; attribute vec4 iShape; attribute vec3 iColour;
