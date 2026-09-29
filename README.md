@@ -77,9 +77,11 @@ the pixel ratio.
 - **Police.** Knocking people over, pulling drivers out of their cars, wrecking
   traffic, ramming or stealing a police car and speeding past the police (20 km/h over
   the limit) earn stars, up to five; crimes the police see count three times as much.
-  Police cars chase you along the streets and ram you; when you're on foot or stopped,
-  an officer gets out and runs after you, and if they reach you, you're busted (the
-  police keep the car). You can outrun them on foot. From three stars a helicopter
+  Police cars chase you along the streets and ram you. When you're on foot they stay
+  on the road and stop at the kerb nearest you; then (or when you stop the car) an
+  officer gets out and runs after you, and if they reach you, you're busted (the
+  police keep the car). You can outrun them on foot, or take the police car they've
+  left behind (E) and drive off in it. From three stars a helicopter
   joins in and sees you over the rooftops. Stay out of sight and the stars go one at a
   time; they blink while nobody can see you (`src/police.ts`, `src/helicopter.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
@@ -260,7 +262,10 @@ the pixel ratio.
   metro.
 - **Police** patrol with the traffic. Chasing cars find their way with an A* search over
   the street graph (both ways along every street) and drive it with the same physics as
-  your car; within 40 m and in sight they head straight for you. What the police see
+  your car; within 40 m and in sight of your car they head straight for it. After you
+  on foot, the route ends in the traffic lane nearest you, clear of the parked cars,
+  and a car that finds another police car already stopped just ahead waits behind
+  it. What the police see
   is checked with rays over the collision grid; the helicopter needs no line of sight.
 - **Parking** follows TSK Praha's paid-parking data: each street section gets spaces ×
   measured occupancy cars (day or night), placed in OSM's parking lanes and lots and
