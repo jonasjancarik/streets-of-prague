@@ -395,7 +395,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     float bays = max(1., floor(vFacade.z / 1.9 + .5));
     vec2 cell = vec2(floor(vFacade.x / vFacade.z * bays), floor((vFacade.y - .6) / 3.4));
     float lit = step(fHash(cell.x + fract(vFacade.w) * 97., cell.y), uWindows * (vFacade.y < 4. ? 1.6 : 1.));
-    float glass = 1. - smoothstep(.2, .35, luma(diffuseColor.rgb) / max(luma(vColor.rgb), .02));
+    float glass = 1. - smoothstep(.13, .22, luma(diffuseColor.rgb) / max(luma(vColor.rgb), .02));
     windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(cell.y, cell.x)) * lit * glass * .55;
   }
   // Rain darkens the walls and the roofs; snow lies on the roofs, less on steep ones.

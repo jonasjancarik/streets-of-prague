@@ -131,7 +131,7 @@ const windowGlow = Fn(() => {
     const bays = max(1, floor(f.z.div(1.9).add(0.5)));
     const cell = vec2(floor(f.x.div(f.z).mul(bays)), floor(f.y.sub(0.6).div(3.4)));
     const lit = step(fHash(cell.x.add(fract(f.w).mul(97)), cell.y), uWindows.mul(select(f.y.lessThan(4), 1.6, 1)));
-    const glass = float(1).sub(smoothstep(0.2, 0.35, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
+    const glass = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
     g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(cell.y, cell.x)).mul(lit).mul(glass).mul(0.55));
   });
   return g;
