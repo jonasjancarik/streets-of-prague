@@ -47,7 +47,10 @@ against +0.8 and +1.0 ms on WebGPU (Old Town Square, the drive from Újezd; 2×,
 (`src/webgpu/figures.ts`: the animation textures read with `vertexIndex`, the colour per part, `lampLit`;
 their four colours share one interleaved buffer in `figures.ts` to stay within WebGPU's 8 vertex
 buffers) cost +0.3 and +0.1 ms on WebGL against −0.1 and +0.3 ms on WebGPU (Old Town Square, the drive;
-2×, clear noon; GPU 20% busy before and 76% after).
+2×, clear noon; GPU 20% busy before and 76% after). The metro's tunnels and train (`src/webgpu/underground.ts`:
+the hole's discard as a `maskNode`, the earth disc's position and mottling, and its depth written as 1 with
+`depthNode`) cost +0.1 ms on WebGL and +0.1 ms on WebGPU during a ride (Old Town Square, 2×, clear 14:00, GPU 60%
+busy; within the noise).
 
 Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 
@@ -55,7 +58,6 @@ Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 |---|---|---|
 | `shading.ts` `cutAway` | the hole over the player | ported for the landmarks, the depth ground and the trees (a `maskNode`) |
 | `lamps.ts` `lampLit` | lamp light added to Lambert materials at `lights_fragment_end`, read from a light map render target | ported for the ground, buildings, `cut-*` and poles (`lampLit(node)` in a port); cars, trams, boats, funicular and figures have it too; signals still need it |
-| `underground.ts` | metro hole and earth | |
 | `map/buildings.ts` `drapeRoofs` | an experiment's roof texture | low priority |
 
 Not drawn at all (every `ShaderMaterial` is hidden by a `visible` accessor on
