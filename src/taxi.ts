@@ -343,7 +343,7 @@ export class Taxis {
     this.shown = key;
     const n = (i: number) => (touch ? '' : `<kbd>${(i + 1) % 10}</kbd> `);
     const items = menu
-      ? FIRMS.map((f, i) => `<li><button data-pick="${i}">${n(i)}${f.app ? `Order a ${f.name} (app, cheaper, drivers in a hurry)` : 'Wave down a street taxi'}</button></li>`)
+      ? FIRMS.map((f, i) => `<li><button data-pick="${i}">${n(i)}${f.app ? `Order a ${f.name} on the app (${f.start} Kč + ${f.perKm} Kč a km, the driver's in a hurry)` : `Wave down a street taxi (${f.start} Kč + ${f.perKm} Kč a km)`}</button></li>`)
       : this.places.map((p, i) => `<li><button data-pick="${i}" class="${i === this.dest ? 'dest' : ''}">${n(i)}${p.name}</button></li>`);
     const title = menu ? `Get a taxi${touch ? '' : ' · <b>T</b> close'}` : `${this.firm.app ? this.firm.name : 'Taxi'}: where to?`;
     el.innerHTML = `<div class="ride-line"><span class="ride-ref" style="background:#e9c62f;color:#221f1b">TAXI</span><span>${title}</span></div>
