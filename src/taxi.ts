@@ -323,6 +323,7 @@ export class Taxis {
     if (this.riding) {
       const parts = [];
       if (this.waiting) parts.push('The streets ahead are still loading');
+      else if (this.agent && this.agent.jam > 15) parts.push('Stuck in traffic');
       else if (this.scale > 1.5) parts.push(`${Math.round(this.scale)}× speed`);
       parts.push(this.dest === null ? `Where to? ${touch ? 'Pick a place' : 'Press a number'}` : `To ${this.places[this.dest].name}`);
       if (!touch) parts.push('<b>E</b> get out here');
