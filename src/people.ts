@@ -322,6 +322,8 @@ export class Walker {
   grid: WalkGrid;
   x: number; y: number; h: number; z: number; speed: number; down: number;
   vx: number; vy: number;
+  // Standing on a car: how high its bonnet, roof or boot is under your feet.
+  perch: number;
   anim: Anim;
   look: Look;
   fig: Figures;
@@ -339,6 +341,7 @@ export class Walker {
     this.speed = 0;
     this.down = 0;
     this.vx = this.vy = 0;
+    this.perch = 0;
     this.anim = new Anim(kit, 'idle');
     this.look = { shirt: '#d9612c', trousers: '#2f3a4f', skin: '#e3b99a', hair: '#3a2618', sleeves: false };
     this.fig = new Figures(kit, 1);
@@ -356,7 +359,8 @@ export class Walker {
   }
 
   // In the air, high enough for a car to pass under your feet.
-  get airborne() { return this.z > 0.5; }
+  get airborne() { return this.z + this.perch > 0.5; }
+  get jumping() { return this.anim.name === 'jump' && !this.anim.done; }
 
   // The ground and walls as you meet them: on a bridge deck or under it.
   get ground() { return this.grid.view ? this.grid.view(this) : this.grid; }
@@ -419,7 +423,7 @@ export class Walker {
 
   sync() {
     const g = this.ground, ground = g.height ? g.height(this.x, this.y) : 0;
-    this.mesh.position.set(this.x, ground + this.z, -this.y);
+    this.mesh.position.set(this.x, ground + this.perch + this.z, -this.y);
     this.mesh.rotation.set(0, this.h, 0);
     this.ring.position.y = 0.05 - this.z;
     this.fig.set(0, this.base, this.anim);

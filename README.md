@@ -205,8 +205,11 @@ the pixel ratio.
   tourists crowd.
 - **Bikes and motorbikes.** Cyclists and motorcyclists ride with the traffic, and bikes
   and motorbikes stand on the pavements around you: E gets you on one, and it leans
-  into the turns. Hit something hard and you're thrown off. On foot, Space jumps (not
-  at a tram stop, where it waits for a tram); in the air, a car can't knock you over.
+  into the turns. Take one from someone riding it and they're pushed off (knocked
+  down if it was going), then run. Hit something hard and you're thrown off. On foot,
+  Space jumps (not at a tram stop, where it waits for a tram); in the air, a car can't
+  knock you over. Jump at a car that's standing still and you climb onto it and can
+  walk over its bonnet, roof or boot and drop off the other side.
 - **People and two-wheelers** are a small kit built in Blender from code
   (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
   and clips for standing, walking, running, jumping, falling, getting up and riding,

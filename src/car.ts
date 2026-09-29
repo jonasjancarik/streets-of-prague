@@ -184,6 +184,15 @@ export class Car {
   get driven() { return this.mode === 'player' || this.mode === 'police'; }
   get forwardSpeed() { return this.vx * Math.cos(this.h) + this.vy * Math.sin(this.h); }
 
+  // How high the top of the car is at (x, y), for someone climbing over it: the roof
+  // over the cabin, sloping down to the bonnet in front and the boot behind.
+  topAt(x: number, y: number) {
+    const S = this.spec, u = (x - this.x) * Math.cos(this.h) + (y - this.y) * Math.sin(this.h);
+    const [a, b] = S.cabin ?? [-S.L / 2, S.L / 2], low = Math.min(0.9, S.H * 0.62);
+    const beyond = Math.max(a - u, u - b, 0);
+    return S.H - (S.H - low) * Math.min(1, beyond / 0.6);
+  }
+
   circles(): Point2[] {
     const c = Math.cos(this.h), s = Math.sin(this.h);
     return this.offsets.map((o) => [this.x + c * o, this.y + s * o]);

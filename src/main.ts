@@ -407,6 +407,7 @@ async function main() {
     best.mode = 'player';
     if (best.two) best.rider = walker.look;
     inCar = best;
+    walker.perch = 0;
     walker.mesh.visible = false;
   };
 
@@ -734,7 +735,8 @@ async function main() {
     if (inCar?.two && jolt > 7) throwOff();
 
     // People and cars
-    const bump = (who: { x: number; y: number; gz?: number }, rad: number, onHit: (car: Car, nx: number, ny: number) => void) => {
+    // `onHit` returns true to let `who` in over the car rather than out of it.
+    const bump = (who: { x: number; y: number; gz?: number }, rad: number, onHit: (car: Car, nx: number, ny: number, d: number) => boolean | void) => {
       for (const c of carsNear(who.x, who.y, 5, nearB)) {
         if (!near(who, c, 4) || apart(who, c)) continue;
         // The car as one rounded box (the line through its circles, as wide as they
@@ -746,7 +748,7 @@ async function main() {
         const d = Math.hypot(who.x - cx, who.y - cy);
         if (d >= min) continue;
         const nx = d > 1e-6 ? (who.x - cx) / d : -fy, ny = d > 1e-6 ? (who.y - cy) / d : fx;
-        onHit(c, nx, ny);
+        if (onHit(c, nx, ny, d)) continue;
         if (!grid.at(cx + nx * min, cy + ny * min)) { who.x = cx + nx * min; who.y = cy + ny * min; }
       }
     };
@@ -786,9 +788,19 @@ async function main() {
       offTrams(walker, 0.35, (x, y) => !walker.blocked(x, y), (vx, vy) => {
         if (walker.down <= 0) { walker.knock(vx, vy); shake = 0.8; }
       });
-      bump(walker, 0.35, (c, nx, ny) => {
+      // Jump at a car that's standing still (or step across from one you're already on)
+      // and you scramble up onto it, over its bonnet, roof or boot, and drop off the far
+      // side. Not bikes and motorbikes, and not anything that's moving.
+      let top = 0;
+      bump(walker, 0.35, (c, nx, ny, d) => {
+        if (!c.two && c.speed < 2 && walker.down <= 0 && (walker.jumping || walker.perch > 0.3)) {
+          if (d < c.r) top = Math.max(top, c.topAt(walker.x, walker.y));
+          return true;
+        }
         if (c.speed > 4 && walker.down <= 0 && !walker.airborne) { walker.knock(c.vx + nx * 2, c.vy + ny * 2); shake = 0.6; }
       });
+      // Up quickly, down as fast as you'd drop.
+      walker.perch = top > walker.perch ? walker.perch + (top - walker.perch) * Math.min(1, dt * 14) : Math.max(top, walker.perch - dt * 5);
       walker.sync();
     }
 
