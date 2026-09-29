@@ -37,10 +37,14 @@ def cells(path):
     im = Image.open(path).convert("RGB")
     a = np.asarray(im).astype(int)
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
-    gutter = (r - g > 12) & (b - g > 8)  # anywhere from dusky pink to magenta
-    cols = [c for c in runs(~(gutter.mean(axis=0) > 0.6)) if c[1] - c[0] > a.shape[1] * 0.05]
-    rows = [c for c in runs(~(gutter.mean(axis=1) > 0.6)) if c[1] - c[0] > a.shape[0] * 0.1]
-    if (len(cols), len(rows)) != (COLS, ROWS):
+    # Anywhere from dusky pink to magenta; failing that, the palest pink (sheet 5's
+    # gutters came out barely tinted, next to neutral grey plaster).
+    for gutter in ((r - g > 12) & (b - g > 8), (r - g > 7) & (b - g > 1) & (r - b > 2)):
+        cols = [c for c in runs(~(gutter.mean(axis=0) > 0.6)) if c[1] - c[0] > a.shape[1] * 0.05]
+        rows = [c for c in runs(~(gutter.mean(axis=1) > 0.6)) if c[1] - c[0] > a.shape[0] * 0.1]
+        if (len(cols), len(rows)) == (COLS, ROWS):
+            break
+    else:
         raise SystemExit(f"{path.name}: found {len(cols)} x {len(rows)} cells, not {COLS} x {ROWS}")
     for y0, y1 in rows:
         for x0, x1 in cols:

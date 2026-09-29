@@ -26,9 +26,9 @@ const atlas = texture(standIn).onRenderUpdate(() => { atlas.value = FACADE_ATLAS
 
 // The layer tables of FACADE_GLSL (const int arrays).
 const ints = (v: number[]): N => array(v.map((x) => int(x))).toVar();
-const F_UP = ints([0, 1, 2, 3, 4, 0, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 27, 28, 27, 36, 37, 38, 39, 40, 36]);
-const F_DOOR = ints([7, 8, 9, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45]);
-const F_WALL = ints([6, 6, 10, 11, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43]);
+const F_UP = ints([48, 49, 50, 51, 52, 53, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 27, 28, 27, 36, 37, 38, 39, 40, 36]);
+const F_DOOR = ints([56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45]);
+const F_WALL = ints([54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43]);
 const floats = (v: number[]): N => array(v.map((x) => float(x))).toVar();
 const F_BAY = floats([2.9, 3.1, 2.6, 2.4, 2.8]);
 const F_MOD = floats([1.9, 1.9, 2, 2.4, 1.9]);

@@ -6,7 +6,7 @@ import proj4 from 'proj4';
 // into public/facades.webp, one sheet under another. The shader (shading.ts) picks a
 // module for every bay and storey of a wall, by the wall's style.
 export const CELL = [256, 512];
-export const SHEETS = 4;
+export const SHEETS = 5;
 
 // Styles: 0 tenement, 1 baroque, 2 functionalist, 3 panel housing, 4 family house.
 // A party wall (štítová zeď, see facadeCoords) has its style plus BLANK: plaster, no windows.
@@ -249,6 +249,8 @@ export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Ar
 // For every bay and storey, which module of the wall's style: upper floors, then the
 // ground floor's doors and the rest of the ground floor, as layers of the atlas
 // (sheet × 12 + row × 6 + column). A few bays of each ground floor get a door.
+// Tenements take their windows, portals and barred ground-floor windows from the fifth
+// sheet (neo-Renaissance, after a house in Mělnická), with the first sheet's shops.
 // Window bays are as wide as in Prague's houses (F_BAY, about 3 m between window
 // axes in a tenement): the module takes F_MOD of that in the middle, and its plaster
 // edge (with the cornices and bands) is drawn on across the piers between. Panel
@@ -257,9 +259,9 @@ export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Ar
 export const FACADE_GLSL = /* glsl */ `
 uniform mediump sampler2DArray uFacades;
 uniform float uFacadeOn;
-const int F_UP[30] = int[30](0, 1, 2, 3, 4, 0,   12, 13, 15, 12, 13, 15,   24, 25, 24, 25, 26, 24,   27, 28, 27, 27, 28, 27,   36, 37, 38, 39, 40, 36);
-const int F_DOOR[15] = int[15](7, 8, 9,   18, 19, 20,   31, 31, 34,   32, 32, 34,   42, 44, 45);
-const int F_WALL[20] = int[20](6, 6, 10, 11,   21, 22, 23, 20,   30, 30, 30, 35,   33, 35, 33, 35,   43, 46, 47, 43);
+const int F_UP[30] = int[30](48, 49, 50, 51, 52, 53,   12, 13, 15, 12, 13, 15,   24, 25, 24, 25, 26, 24,   27, 28, 27, 27, 28, 27,   36, 37, 38, 39, 40, 36);
+const int F_DOOR[15] = int[15](56, 57, 8,   18, 19, 20,   31, 31, 34,   32, 32, 34,   42, 44, 45);
+const int F_WALL[20] = int[20](54, 55, 58, 6,   21, 22, 23, 20,   30, 30, 30, 35,   33, 35, 33, 35,   43, 46, 47, 43);
 const float F_BAY[5] = float[5](2.9, 3.1, 2.6, 2.4, 2.8);
 const float F_MOD[5] = float[5](1.9, 1.9, 2., 2.4, 1.9);
 float fHash(float a, float b) { return fract(sin(a * 127.1 + b * 311.7) * 43758.5453); }
