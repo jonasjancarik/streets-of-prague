@@ -29,6 +29,7 @@ export interface TramVehicle {
   held: number; shove: Car | null; look: TramLook | null; pending: number;
   parts: TramPoint[]; cells?: TramCell[]; levels?: { x: number; y: number; gz?: number }[];
   rider?: boolean;
+  hold?: boolean; // stays at its stop, whatever the timetable says (an inspection is under way)
   // The grid buckets its sections are in, and whether it has moved since (see update).
   keys?: number[]; moved?: boolean;
 }
@@ -382,6 +383,7 @@ export class Trams {
     const h = line.halts[v.halt];
     if (v.dwell > 0) {
       v.speed = 0;
+      if (v.hold) return;
       v.dwell -= dt;
       // Moving across to the other track: only where nobody's looking, or after a
       // while (or at once with the player on board: you don't see it from inside).

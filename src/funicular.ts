@@ -32,12 +32,13 @@ interface Spec {
   hours: [number, number][];
   speed: number; acc: number; endWait: number; midWait: number;
   len: number; w: number; bays: number;
+  ticket: boolean; // needs a PID ticket (the hotel's own funicular doesn't)
 }
 const SPECS: Spec[] = [
   { name: 'Lanová dráha na Petřín', bottom: [14.40354, 50.08265], stops: ['Újezd', 'Nebozízek', 'Petřín'], hours: [[7, 22]],
-    speed: 4, acc: 0.5, endWait: 75, midWait: 20, len: 14, w: 2.5, bays: 4 },
+    speed: 4, acc: 0.5, endWait: 75, midWait: 20, len: 14, w: 2.5, bays: 4, ticket: true },
   { name: 'Lanová dráha hotelu NH', bottom: [14.39685, 50.07107], stops: ['', ''], hours: [[10.5, 11.5], [15, 18], [22, 24]],
-    speed: 1.5, acc: 0.3, endWait: 30, midWait: 0, len: 3, w: 1.6, bays: 1 },
+    speed: 1.5, acc: 0.3, endWait: 30, midWait: 0, len: 3, w: 1.6, bays: 1, ticket: false },
 ];
 const BAY = 3.5, BAY_W = 2.5; // the size the compartment's geometry is made at
 const FAST = 6;

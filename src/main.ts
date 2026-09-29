@@ -47,7 +47,7 @@ import type { MapIndex } from './contracts.ts';
 import type { RawTramLine } from './trams.ts';
 import type { MetroLine } from './metro.ts';
 import { BikeShare } from './bikeshare.ts';
-import { Wallet, kc } from './money.ts';
+import { Wallet, PidRide, TICKET, kc } from './money.ts';
 import type { DriveEdge, WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Tracked } from './tiles.ts';
@@ -62,6 +62,7 @@ declare global { interface Window { __drive?: unknown } }
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'praha';
 const wallet = new Wallet(params);
+const pid = new PidRide(wallet);
 const $ = (id: string): HTMLElement => {
   const el = document.getElementById(id);
   if (!el) throw new Error(`Missing interface element: ${id}`);
@@ -215,6 +216,7 @@ async function main() {
       showBanner(name);
     },
     onStation: (name) => showBanner(name),
+    fares: { valid: () => wallet.hasTicket(clock.t), afford: () => wallet.has(TICKET.price), buy: () => wallet.buyTicket(clock.t), price: TICKET.price },
   });
   const footfall = await footfallLoad;
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
@@ -371,7 +373,7 @@ async function main() {
   ];
   let wastedT = 0;
   const wasted = () => {
-    if (funicular.me) funicular.leave();
+    if (funicular.me) { funicular.leave(); pid.leave(); }
     boats.me = null;
     if (inHeli) enterOrExit();
     if (inCar) enterOrExit();
@@ -421,10 +423,17 @@ async function main() {
   // Off the tram onto the pavement beside it.
   const getOff = () => {
     const [x, y, h] = ride.leave();
+    pid.leave();
     [walker.x, walker.y] = nearestWalkable(grid, x, y);
     Object.assign(walker, { h, vx: 0, vy: 0 });
     walker.mesh.visible = true;
     walker.sync();
+  };
+  // A PID ticket, while you're riding without one.
+  const buyTicket = () => {
+    if (pid.state !== 'grace' && pid.state !== 'dodging') return;
+    const price = kc(TICKET.price);
+    showBanner(pid.buy(clock.t) ? t('Ticket for {minutes} minutes: {price}', { minutes: TICKET.minutes, price }) : t('Not enough money for a ticket ({price})', { price }));
   };
   const enterOrExit = () => {
     // In a taxi: out here, and into the one waiting for you.
@@ -438,6 +447,7 @@ async function main() {
       const side = [1, -1].map((k) => [c.x + lx * k * 2.8, c.y + ly * k * 2.8] as [number, number]).find(([x, y]) => !walker.blocked(x, y));
       const [x, y] = side || nearestWalkable(grid, c.x, c.y);
       funicular.leave();
+      pid.leave();
       street = null; // the street here, not the line's name
       $('street').textContent = '';
       Object.assign(walker, { x, y, h: c.h, vx: 0, vy: 0 });
@@ -506,12 +516,14 @@ async function main() {
     const cabin = funicular.near(walker.x, walker.y);
     if (cabin) {
       funicular.board(cabin);
+      if (cabin.line.spec.ticket) pid.board(clock.t);
       walker.mesh.visible = false;
       return;
     }
     const tram = ride.boardable(walker.x, walker.y);
     if (tram) {
       ride.board(tram);
+      pid.board(clock.t);
       walker.mesh.visible = false;
       return;
     }
@@ -663,6 +675,7 @@ async function main() {
     if (keymap[e.code]) { input[keymap[e.code]] = true; e.preventDefault(); }
     if (e.shiftKey) input.run = true;
     if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) enterOrExit();
+    if (e.code === 'KeyB' && !e.repeat) buyTicket();
     if (e.code === 'KeyR') backOnRoad();
     // Space jumps, except at a tram stop, where holding it waits for a tram.
     if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on && taxi.state !== 'coming') input.jump = true;
@@ -687,6 +700,7 @@ async function main() {
   let zoom = 1;
   const zoomBy = (f: number) => { zoom = clamp(zoom * f, 0.5, 4); };
   window.addEventListener('wheel', (e) => zoomBy(Math.exp(e.deltaY * 0.0012)), { passive: true });
+  $('t-ticket').addEventListener('click', buyTicket);
   const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, force: params.has('touch') });
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
@@ -1128,6 +1142,7 @@ async function main() {
     last = now;
     time.value += dt;
     wallet.update(dt);
+    pid.update(dt);
     world.update(camPos.x, -camPos.z, viewRadius() + 220);
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
@@ -1268,6 +1283,9 @@ async function main() {
     const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
     const getIn = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
     const key = (k: string) => (touch.active ? '' : `<b>${k}</b> `);
+    const ticketHint = () => pid.state === 'grace'
+      ? `${touch.active ? t('Buy a ticket ({price})', { price: kc(TICKET.price) }) : t('<b>B</b> buy a ticket ({price})', { price: kc(TICKET.price) })} · ${t('{secs} s left', { secs: Math.ceil(pid.left) })}`
+      : pid.state === 'dodging' ? t('No ticket') : '';
     let hint = '';
     if (metro.active) hint = '';
     else if (inHeli) {
@@ -1279,7 +1297,7 @@ async function main() {
       else hint = `${key('Shift')}${t('Lane assist, keeping to {limit} km/h', { limit: String(assist.limit) })}${touch.active ? '' : ` ${t('(let go to drive faster)')}`} · ${assist.intent > 0 ? t('turning left at the next junction') : assist.intent < 0 ? t('turning right at the next junction') : t(touch.active ? 'straight on (point the stick to turn)' : 'straight on (A/D to turn)')}`;
     }
     else if (boats.me) hint = touch.active ? '' : t('<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank');
-    else if (funicular.me) hint = funicular.hint(touch.active, scale);
+    else if (funicular.me) hint = [funicular.hint(touch.active, scale), ticketHint()].filter(Boolean).join(' · ');
     else if (ride.on) {
       const halts = ride.v!.line.halts, dest = ride.dest !== null ? halts[ride.dest].name : null;
       const next = ride.dest !== null && ride.dest === ride.upcoming()[0];
@@ -1293,7 +1311,8 @@ async function main() {
         else if (!next) parts.push(t('<b>E</b> get off at the next stop'));
         if (!dest) parts.push(t('<b>W</b>/<b>S</b> pick a stop'), t('hold <b>Shift</b> to speed up'));
       }
-      hint = parts.join(' · ');
+      parts.push(ticketHint());
+      hint = parts.filter(Boolean).join(' · ');
     } else if (canBoard && !touch.active) hint = t('<b>E</b> get on the {line} to {name}', { line: canBoard.line.ref, name: ride.headsign(canBoard) });
     else if (station && !touch.active) hint = t('<b>E</b> take the metro from {name}', { name: station.name });
     else if ((cabin && !touch.active) || shut) hint = funicular.offer((cabin || shut)!);
@@ -1308,6 +1327,7 @@ async function main() {
     ride.render();
     const label = ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : canBoard || cabin || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : null;
+    if (shown.ticketBtn !== +(pid.state === 'grace')) { shown.ticketBtn = +(pid.state === 'grace'); $('t-ticket').hidden = pid.state !== 'grace'; }
     touch.update({ car: inCar || inHeli, tram: ride.on || taxi.riding || !!funicular.me, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || funicular.me?.stop != null, limit: assisted ? assist.limit : null });
     show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')} · ${tn(stats.knocked, '{n} person knocked over|{n} people knocked over')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}${stats.wasted ? ` · ${t('wasted {n}×', { n: stats.wasted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
