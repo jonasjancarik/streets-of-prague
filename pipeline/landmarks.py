@@ -106,7 +106,7 @@ def footprints(area: str, ids: list[str]):
                 polys[b["id"]] = Polygon(rings[0], rings[1:])
     missing = set(ids) - set(polys)
     if missing:
-        raise SystemExit(f"Not in {area}'s tiles: {', '.join(sorted(missing))}")
+        raise LookupError(f"Not in {area}'s tiles: {', '.join(sorted(missing))}")
     return list(polys.values())
 
 
@@ -263,7 +263,12 @@ def main():
     listing = OUT / f"{a.area}_now" / "landmarks.json"
     done = {l["name"]: l for l in json.loads(listing.read_text())} if listing.exists() else {}
     for name in a.names or LANDMARKS:
-        done[name] = cut(a.area, name, LANDMARKS[name], a.level, meta["crs"], index.get("iprRef", 180.0), index["tile"], index["origin"], a.raw)
+        try:
+            done[name] = cut(a.area, name, LANDMARKS[name], a.level, meta["crs"], index.get("iprRef", 180.0), index["tile"], index["origin"], a.raw)
+        except LookupError as e:
+            if a.names:
+                raise SystemExit(e)
+            print(f"{name}: skipped, {e}")
     listing.write_text(json.dumps(list(done.values())))
 
 
