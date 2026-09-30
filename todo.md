@@ -282,6 +282,7 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   16–65 GB photo download), and fold it into the build.
   About a third of the beige pieces in town are roofs or site clutter and some are
   roadway the streets don't reach: gaps in the map data rather than missing ground.
+  Next steps, measured in the centre: `plans/013-fill-the-beige-ground.md`.
 - **Painted photo, with stronger filters.** `ground_cover.py ortho` (`?ortho` in the
   game) paints the orthophoto through an anisotropic Kuwahara filter; at 0.5 m/px it
   still looked like a blurry photograph. To try: a bigger, more stretched brush;
