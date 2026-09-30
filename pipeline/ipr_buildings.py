@@ -203,6 +203,7 @@ COVERS = ("tiles", "slate", "copper")
 # (src/tileWorker.ts passes it on as the facade attribute's w on roofs). 0: not known;
 # 1-4 pitched, 5-9 flat.
 MATERIALS = ("", "tiles", "slate", "metal", "copper", "bitumen", "membrane", "gravel", "green", "paving")
+MEASURED_WALL = 15  # on walls: their colour is measured, so the game keeps it (no palette)
 
 
 def colours(bid, osm):
@@ -457,6 +458,7 @@ def main() -> None:
                     w = seen.get("wall") or (seen.get("shade") if args.mesh_colours == "shade" else None)
                     if w:
                         col[codes == 0] = w
+                        mat[codes == 0] = MEASURED_WALL
                     for tris, c, m, _ in seen.get("roofs", []):
                         k = np.array(tris)
                         k = k[~said[k]]

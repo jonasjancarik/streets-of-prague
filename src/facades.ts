@@ -253,12 +253,13 @@ const PLASTER = [
 // one building from its neighbour (walls that touch and came in the same colour are
 // one building). The pick goes by where the building stands, so it's the same every
 // time the tile loads. Whatever shading `col` has on top of the colour is kept.
-export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Array, base: (t: number) => [number, number, number]) {
+export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Array, base: (t: number) => [number, number, number], keep?: (t: number) => boolean) {
   const n = p.length / 9, owner = new Int32Array(n).fill(-1);
   const up = (i: number): number => (owner[i] === i ? i : (owner[i] = up(owner[i])));
   const seen = new Map<string, number>();
   for (let t = 0; t < n; t++) {
     if (!(facade[t * 12 + 2] > 0)) continue; // a roof
+    if (keep?.(t)) continue; // a colour measured on the photo mesh
     owner[t] = t;
     const [r, g, b] = base(t);
     for (let v = t * 9; v < t * 9 + 9; v += 3) {

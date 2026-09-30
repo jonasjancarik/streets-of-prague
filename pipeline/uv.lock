@@ -593,6 +593,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pyproj" },
     { name = "requests" },
+    { name = "scipy" },
     { name = "shapely" },
 ]
 
@@ -611,6 +612,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "pyproj", specifier = ">=3.8.0" },
     { name = "requests", specifier = ">=2.34.2" },
+    { name = "scipy", specifier = ">=1.18.1" },
     { name = "shapely", specifier = ">=2.1.2" },
 ]
 

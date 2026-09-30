@@ -67,10 +67,12 @@ function inPolygon(x: number, y: number, rings: Point2[][]) {
   return inside;
 }
 
+const MEASURED_WALL = 15; // pipeline/ipr_buildings.py
+
 // IPR Praha's 3D buildings for a tile (pipeline/ipr_buildings.py): triangles with
 // positions in centimetres from the tile corner, a colour per triangle and, in newer
-// data, a roof material per triangle. Those in a
-// landmark's footprint (`hide`) are left out: the landmark stands there instead.
+// data, a material per triangle. Those in a landmark's footprint (`hide`) are left
+// out: the landmark stands there instead.
 function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs['ipr']): BuildingArrays {
   const all = new DataView(buffer).getUint32(0, true);
   const p16 = new Int16Array(buffer, 8, all * 9);
@@ -79,6 +81,8 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs
   // Newer data: a byte per triangle after the colours, the roof's material (0 not known;
   // pitched: 1 tiles, 2 slate, 3 sheet metal, 4 copper; flat: 5 bitumen, 6 membrane,
   // 7 gravel, 8 planted, 9 paving), passed on as the facade attribute's w.
+  // On walls, MEASURED_WALL: their colour was measured on the photo mesh, so paintWalls
+  // leaves it as it is.
   const m8 = buffer.byteLength >= colAt + all * 4 ? new Uint8Array(buffer, colAt + all * 3, all) : null;
   const kept: number[] = [];
   for (let t = 0; t < all; t++) {
@@ -105,10 +109,11 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.computeVertexNormals();
   const facade = facadeCoords(pos, groundAt(ground), styleAt(bbox));
-  paintWalls(pos, col, facade, (o) => { const t = kept[o] * 3; return [c8[t], c8[t + 1], c8[t + 2]]; });
+  paintWalls(pos, col, facade, (o) => { const t = kept[o] * 3; return [c8[t], c8[t + 1], c8[t + 2]]; },
+    m8 ? (o) => m8[kept[o]] === MEASURED_WALL : undefined);
   if (m8) for (let o = 0; o < n; o++) {
     const m = m8[kept[o]];
-    if (m) for (let v = 0; v < 3; v++) facade[(o * 3 + v) * 4 + 3] = m; // only roofs have one
+    if (m && m < MEASURED_WALL) for (let v = 0; v < 3; v++) facade[(o * 3 + v) * 4 + 3] = m; // roofs only
   }
   mansardCoords(pos, facade);
   return { position: pos, color: col, normal: g.attributes.normal.array as Float32Array, facade };
