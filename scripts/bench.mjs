@@ -5,7 +5,7 @@
 //
 //   node scripts/bench.mjs [--url http://localhost:5191/] [--scenes stand,drive,woods]
 //     [--seconds 10] [--dpr 2] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
-//     [--profile-load] [--load-progress] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json] [--stack (page errors with their stack)]
+//     [--profile-load] [--load-progress] [--require-webgpu] [--init "js before loading"] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json] [--stack (page errors with their stack)]
 //     [--browser chrome|chromium] [--angle metal|swiftshader (software, drawing like
 //     a desktop GPU that shades every covered pixel: for overdraw)]
 //     [--vs http://localhost:5192/ (compare with another server, taking turns)]
@@ -91,9 +91,11 @@ async function runScene(browser, name, base = URL_BASE) {
   const place = PLACES[name];
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
+  const errors = [];
   await page.addInitScript(INIT);
-  page.on('pageerror', (e) => console.error(`[${name}] page error:`, args.stack ? e.stack : e.message));
-  page.on('console', (m) => { if (m.type() === 'info' && m.text().startsWith('Renderer:')) console.log(`[${name}] ${m.text()}`); if (m.type() === 'error') console.error(`[${name}] console:`, m.text().slice(0, 3000)); });
+  if (args.init) await page.addInitScript(args.init);
+  page.on('pageerror', (e) => { errors.push(e.message); console.error(`[${name}] page error:`, args.stack ? e.stack : e.message); });
+  page.on('console', (m) => { if (m.type() === 'info' && m.text().startsWith('Renderer:')) console.log(`[${name}] ${m.text()}`); if (m.type() === 'error' && !errors.includes(m.text())) { errors.push(m.text()); console.error(`[${name}] console:`, m.text().slice(0, 3000)); } });
   const q = `?start=${place.start}&dpr=${DPR}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&go&day=wed&weather=${args.weather || 'clear'}${args.extra || ''}`;
   // --profile-load: the CPU profile of loading, up to the game starting.
   const loadCdp = args['profile-load'] ? await ctx.newCDPSession(page) : null;
@@ -121,6 +123,11 @@ async function runScene(browser, name, base = URL_BASE) {
   } finally {
     if (progress) clearInterval(progress);
   }
+  const backend = await page.evaluate(() => {
+    const r = window.__drive.renderer;
+    return r.backend ? (r.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL 2') : 'WebGL';
+  });
+  if (args['require-webgpu'] && backend !== 'WebGPU') throw new Error(`Required WebGPU, got ${backend}; refusing to time a fallback`);
   const loadTime = (Date.now() - loadStart) / 1000;
   if (loadCdp) {
     const { profile } = await loadCdp.send('Profiler.stop');
@@ -172,7 +179,11 @@ async function runScene(browser, name, base = URL_BASE) {
     b.gpuAvailable = !!ext;
     b.on = true;
   });
-  if (args.ab) return abScene(page, ctx, name);
+  if (args.ab) {
+    const result = await abScene(page, ctx, name);
+    result.errors = errors;
+    return result;
+  }
   const t0 = Date.now();
   await page.waitForTimeout(SECONDS * 1000);
   const res = await page.evaluate(() => {
@@ -195,7 +206,7 @@ async function runScene(browser, name, base = URL_BASE) {
     name, fps: res.frames.length / wall, frameMed: pct(dts, 0.5), frame95: pct(dts, 0.95), frame99: pct(dts, 0.99),
     js: mean(res.js), js95: pct(res.js, 0.95), render: mean(res.render), gpu: res.gpu.length ? mean(res.gpu) : NaN, gpu95: pct(res.gpu, 0.95),
     calls: mean(res.calls), tris: mean(res.tris), people: res.people, traffic: res.traffic, loose: res.loose, tiles: res.tiles,
-    ratio: res.ratio, tier: res.tier, speed: res.speed, profile, loadTime,
+    ratio: res.ratio, tier: res.tier, speed: res.speed, profile, loadTime, errors, backend,
   };
 }
 
@@ -270,6 +281,7 @@ try {
     const r = await runScene(browser, s);
     all.push(r);
     if (r.ab) {
+      if (r.errors.length) console.warn(`[${r.name}] ${r.errors.length} errors: inspect before trusting these timings`);
       const line = (k, x) => `${r.name.padEnd(7)} ${k.padEnd(4)} ${f1(x.fps).padStart(6)} fps  ${f1(x.ms)} ms/frame  js ${f1(x.js)} ms  gpu ${f1(x.gpu)} ms  [${x.each}]`;
       console.log(`${line('off', r.off)}\n${line('on', r.on)}\n${r.name.padEnd(7)} on is ${f1((r.off.ms - r.on.ms) / r.off.ms * 100)}% quicker a frame`);
       continue;

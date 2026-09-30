@@ -17,6 +17,12 @@ npm run build        # typecheck, then make a production build
 node scripts/bench.mjs   # frame times in Chrome at a few places (options in the script)
 ```
 
+WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer.
+If the browser's GPU adapter request takes more than 5 seconds, or device
+initialization more than 15 seconds, startup continues with WebGL. A GPU device
+that arrives after that timeout is released. Benchmark runs can require WebGPU
+with `--require-webgpu`, and `--load-progress` reports the loading stage every 5 seconds.
+
 The map data is built locally (see [Building the map](#building-the-map)); nothing
 generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
 the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague

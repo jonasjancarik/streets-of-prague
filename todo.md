@@ -41,8 +41,16 @@ uploads down to ~0.2 MB. The crowd is drawn and animated only in view. Open:
   `renderer._samples`, `sun.shadow.mapSize`), and fewer people in the lowest. What each
   costs on WebGPU still has to be measured with `--ab` (MSAA measured ~3% at 2× by the
   Old Town Square, facade pictures ~0–1%, both within noise).
-- **Loading sometimes stalls** past bench.mjs's 120 s (seen on several servers, with
-  the machine otherwise quiet); not explained yet.
+- **Loading stall located:** reproduced beyond 120 s at `Preparing graphics…`, with
+  the adapter ready, `GPUAdapter.requestDevice()` pending and no outstanding network
+  requests. It occurs even in a fresh Chrome process; tiles and shader compilation
+  have not started. Startup now bounds the adapter request at 5 s and renderer
+  initialization at 15 s, then uses the legacy WebGL renderer. GPU material factories
+  are installed only after successful initialization, and any device that arrives
+  late is released. Forced never-returning and delayed-device checks both completed
+  loading in ~18 s, with no console errors. The underlying browser/driver reason
+  remains open. `--load-progress` identifies future waits and `--require-webgpu`
+  prevents a fallback from being reported as WebGPU performance.
 - **Simulating fewer people far away** (a crowd radius round the view, not 330 m)
   halved the people in view, since the crowd bunches round you: tried and dropped.
 

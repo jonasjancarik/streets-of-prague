@@ -244,9 +244,7 @@ const toneCurve = Fn(([color, exposure]: N[]) => {
   return select(exposure.lessThan(0), color.mul(exposure.negate()), c.add(vec3(0.016, 0.012, 0.006).mul(c.oneMinus())));
 }).setLayout({ name: 'customToneMapping', type: 'vec3', inputs: [{ name: 'color', type: 'vec3' }, { name: 'exposure', type: 'float' }] });
 
-export async function createRenderer() {
-  const renderer = new WebGPURenderer({ antialias: true, stencil: true });
-  await renderer.init();
+export function configureRenderer(renderer: WebGPURenderer) {
   const library = renderer.library as any;
   const fromMaterial = library.fromMaterial.bind(library);
   library.fromMaterial = (legacy: THREE.Material) => {

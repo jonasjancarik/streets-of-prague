@@ -56,6 +56,9 @@ export const CS: Record<string, string> = {
   'Loading…': 'Načítání…',
   'Loading the map…': 'Načítání mapy…',
   'Building the streets…': 'Stavba ulic…',
+  'Preparing graphics…': 'Příprava grafiky…',
+  'Loading people and vehicles…': 'Načítání lidí a vozidel…',
+  'Preparing the view…': 'Příprava obrazu…',
   Streets: 'Ulice',
   'of Prague': 'Prahy',
   // Settings (the corner buttons)

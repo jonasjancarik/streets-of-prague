@@ -21,6 +21,7 @@ import { Signals } from './signals.ts';
 import { Skids } from './skids.ts';
 import { Spray } from './spray.ts';
 import { Graphics } from './graphics.ts';
+import { createGameRenderer } from './renderer.ts';
 import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
 import { TramStops } from './tramstops.ts';
@@ -124,9 +125,8 @@ async function main() {
   // shading each pixel of the ground once, see surface.ts.)
   // (three.js's WebGPURenderer, see webgpu.ts. The old WebGLRenderer is no longer kept up to
   // date: it is for ?renderer=webgl and for browsers with no WebGPU.)
-  const renderer = params.get('renderer') === 'webgl' || !(await (navigator as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu?.requestAdapter().catch(() => null))
-    ? new THREE.WebGLRenderer({ antialias: true, stencil: true })
-    : await (await import('./webgpu.ts')).createRenderer();
+  status('Preparing graphics…');
+  const renderer = await createGameRenderer(params);
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -158,6 +158,7 @@ async function main() {
   // The part of town you're in, as a title when it changes (pipeline/build_districts.py).
   const districts = new Districts(AREA, $('district'));
   const time = { value: 0 };
+  status('Loading people and vehicles…');
   // People and two-wheelers (parked motorbikes come with the tiles, so load it first).
   const kit = await kitLoad;
   useKit(kit);
@@ -1209,6 +1210,7 @@ async function main() {
     // (And the metro's tunnels and train, for the first ride.)
     scene.add(samples.group, metro.under.group);
     // The facade pictures must be in first: on WebGPU a building that doesn't move binds
+    status('Preparing the view…');
     // its textures once, so tiles compiled here would keep the black stand-in.
     await loadFacadeAtlas();
     await renderer.compileAsync(scene, camera).catch((e) => console.warn(e));
