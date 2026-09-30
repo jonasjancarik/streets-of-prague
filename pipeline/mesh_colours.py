@@ -935,6 +935,7 @@ def main():
     ap.add_argument("--debug", action="store_true", help="write a debug image and a table per tile")
     ap.add_argument("--calibrate", action="store_true", help="estimate the sun and the shade correction instead")
     ap.add_argument("--every", type=int, default=1, help="with --calibrate: only every n-th tile")
+    ap.add_argument("--resume", action="store_true", help="go on from where a run stopped (it saves every 100 tiles)")
     ap.add_argument("--no-windows", action="store_true", help="don't look for roof windows (saves the level-14 mesh)")
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="tiles measured side by side")
     a = ap.parse_args()
@@ -947,6 +948,22 @@ def main():
     tiles = sorted(by_tile)[::a.every] if a.calibrate else sorted(by_tile)
     started = time.perf_counter()
     sampled, colours = {}, {}
+    path = OUT_DIR / f"{a.area}.json.gz"
+    done_path = OUT_DIR / f"{a.area}.tiles.json"
+    done = []
+    if a.resume and path.exists() and done_path.exists():
+        colours = json.loads(gzip.decompress(path.read_bytes()))
+        done = json.loads(done_path.read_text())
+        tiles = [ij for ij in tiles if f"{ij[0]}_{ij[1]}" not in set(done)]
+        print(f"resuming: {len(done)} tiles done, {len(tiles)} to go")
+
+    def save():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(gzip.compress(json.dumps(colours, separators=(",", ":")).encode()))
+        tmp.replace(path)
+        done_path.write_text(json.dumps(done))
+
     for ij, s, took in sample_tiles(meta, {ij: by_tile[ij] for ij in tiles}, trees, a.jobs, a.debug, not (a.no_windows or a.calibrate)):
         if a.calibrate:
             sampled[ij] = s
@@ -962,6 +979,10 @@ def main():
         print(f"{ij[0]}_{ij[1]}: walls measured for {walls} of {len(measured)} buildings, "
               f"{sum(f['sure'] for f in roofs)} of {len(roofs)} roof faces, "
               f"{sum(bool(f.get('filled')) for f in roofs)} more from the rest of their roof ({took:.0f} s)", flush=True)
+        done.append(f"{ij[0]}_{ij[1]}")
+        # Saved as it goes, so a long run (the whole city) can go on with --resume.
+        if not a.tiles and len(done) % 100 == 0:
+            save()
         if a.debug:
             name = f"{ij[0]}_{ij[1]}"
             debug_tile(meta, ij, by_tile[ij], s["top"], s["fid"], measured, OUT_DIR / a.area / f"{name}.png")
@@ -970,11 +991,9 @@ def main():
     if a.calibrate:
         calibrate(sampled)
         return
-    path = OUT_DIR / f"{a.area}.json.gz"
-    if a.tiles and path.exists():
+    if a.tiles and path.exists() and not a.resume:
         colours = {**json.loads(gzip.decompress(path.read_bytes())), **colours}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(gzip.compress(json.dumps(colours, separators=(",", ":")).encode()))
+    save()
     print(f"{path}: {len(colours)} buildings")
 
 
