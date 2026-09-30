@@ -421,14 +421,15 @@ FACES = 4096  # roof faces per building, for packing (building, face) in one num
 # The light in the photographs, estimated by `--calibrate` on centrum (every 6th tile,
 # 38 tiles, 2026-09-30): the sun was in the east-south-east and low (a summer
 # morning); a surface's brightness goes with how squarely it faces the sun (x, the
-# cosine, 0 when facing away) as SUN * x + SKY, fitted on 5,450 clay tile roof faces
-# (R² 0.60). Shadows are nearly black: a wall in shade would need about ten times the
-# light, and between buildings anything from 4 to 23 times, far too loose to recover
-# its colour, so walls seen only in shade count as unsure. Walls facing the sun more
+# cosine, 0 when facing away) as SUN * x + SKY, fitted on 5,150 clay tile roof faces
+# out of other buildings' shadows (R² 0.59). Shadows are nearly black: guessing a
+# wall's colour in the sun from its shaded side missed by ΔE 17 on 463 buildings seen
+# both ways, worse than taking another building's (11), so walls seen only in shade
+# count as unsure. Walls facing the sun more
 # than LIT (cosine, level) are lit, facing away more than that shaded.
 SUN_AZIMUTH = 100.0  # degrees from north
-SUN_ELEVATION = 32.5
-SUN, SKY = 0.88, 0.12
+SUN_ELEVATION = 35.0
+SUN, SKY = 0.91, 0.09
 LIT = 0.3
 ROOF_LIT = 0.15  # roof faces meeting the sun less squarely than this are in shade
 LUMA = np.array([0.2126, 0.7152, 0.0722])
@@ -436,11 +437,11 @@ LUMA = np.array([0.2126, 0.7152, 0.0722])
 # (linear RGB, green 1), and the brightness (linear luminance) of walls in shade at
 # each twentieth of the city's walls, darkest first, against the same for walls in
 # the sun, the light taken out.
-SHADE_TINT = (1.217, 1.0, 0.799)
+SHADE_TINT = (1.267, 1.0, 0.775)
 SHADE_Y = (0.0036, 0.0086, 0.0131, 0.0172, 0.0212, 0.0243, 0.0281, 0.033, 0.036, 0.0403, 0.0475, 0.0537, 0.0584,
            0.0668, 0.076, 0.0825, 0.0971, 0.1133, 0.1349, 0.1768, 0.6971)
-LIT_Y = (0.0037, 0.0139, 0.0292, 0.0983, 0.3178, 0.5331, 0.6033, 0.6463, 0.6873, 0.7184, 0.75, 0.7831, 0.8164,
-         0.8393, 0.8698, 0.8988, 0.9328, 0.9777, 1.0243, 1.1509, 1.7991)
+LIT_Y = (0.0316, 0.4406, 0.5555, 0.6245, 0.6701, 0.7094, 0.7392, 0.7775, 0.8089, 0.8343, 0.8585, 0.8853, 0.9068,
+         0.9331, 0.9581, 0.9855, 1.0222, 1.0597, 1.118, 1.3666, 2.4252)
 # The camera's cast and the haze (see calibrate): gains per channel (linear RGB) that
 # take the median plaster wall to PLASTER_REFERENCE after the light is taken out, and
 # for roofs the same times one brightness factor that gives the median clay tile roof
@@ -452,9 +453,9 @@ LIT_Y = (0.0037, 0.0139, 0.0292, 0.0983, 0.3178, 0.5331, 0.6033, 0.6463, 0.6873,
 # haze: fitted on light colours, one pushed dark roofs and walls to black.
 TILE_REFERENCE = "#ab5f48"  # the middle of the game's old tile palette
 PLASTER_REFERENCE = "#ddd3bf"  # a light, slightly warm plaster
-ROOF_GAIN = (0.483, 0.456, 0.417)
-ROOF_CHROMA = 1.44
-WALL_GAIN = (0.922, 0.869, 0.796)
+ROOF_GAIN = (0.489, 0.468, 0.434)
+ROOF_CHROMA = 1.47
+WALL_GAIN = (0.796, 0.761, 0.706)
 
 
 def sun_vector(az: float = SUN_AZIMUTH, el: float = SUN_ELEVATION) -> np.ndarray:
@@ -497,6 +498,40 @@ def balance(c: np.ndarray, gain, chroma: float = 1.0) -> np.ndarray:
     return out
 
 
+# Shadows cast by other buildings (and trees): with the sun low, the houses across a
+# street shade facades that face it, and courtyards are in shade all morning. Each
+# sample looks towards the sun over a height map of the mesh, SHADOW_REACH m far.
+SHADOW_REACH = 70.0  # m; a 40 m building's shadow at 32.5° is 63 m long
+SHADOW_RES = 0.5  # m, the height map's pixel
+SHADOW_TOL = 0.5  # m the sun's ray may pass under the height map without being blocked
+
+
+class HeightMap:
+    """The highest surface of the mesh on a square grid, to look for shadows on."""
+
+    def __init__(self, mesh: Mesh, x0: float, y0: float, size: float, res: float = SHADOW_RES):
+        _, _, h = rasterize(mesh.tris, x0, y0, size, res)
+        self.w = int(round(size / res))
+        self.h = np.nan_to_num(h, nan=-np.inf).reshape(self.w, self.w)
+        self.x0, self.y1, self.res = x0, y0 + size, res
+
+    def in_sun(self, pts: np.ndarray) -> np.ndarray:
+        """Whether the sun reaches each point (k, 3)."""
+        s = sun_vector()
+        flat = np.hypot(s[0], s[1])
+        dx, dy, rise = s[0] / flat, s[1] / flat, s[2] / flat
+        steps = np.arange(self.res, SHADOW_REACH, self.res)
+        out = np.ones(len(pts), bool)
+        for a in range(0, len(pts), 20000):
+            p = pts[a:a + 20000]
+            col = np.floor((p[:, 0, None] + dx * steps - self.x0) / self.res).astype(int)
+            row = np.floor((self.y1 - (p[:, 1, None] + dy * steps)) / self.res).astype(int)
+            ok = (col >= 0) & (col < self.w) & (row >= 0) & (row < self.w)
+            h = np.where(ok, self.h[np.clip(row, 0, self.w - 1), np.clip(col, 0, self.w - 1)], -np.inf)
+            out[a:a + 20000] = ~(h > p[:, 2, None] + rise * steps + SHADOW_TOL).any(1)
+        return out
+
+
 def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = False):
     """What the mesh shows of a tile's buildings, before anything depends on the light:
     per building its wall samples (outward normal, L*a*b*, weight) and per roof face
@@ -530,6 +565,11 @@ def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = Fal
         for dx in range(2 * ROOF_SHRINK + 1):
             core &= pad[dy:dy + w, dx:dx + w] == fid
     core = core.ravel() & got & (np.abs(mesh_z - roof_z) < ROOF_GAP)
+    # Roof pixels in another building's shadow are left out.
+    hm = HeightMap(mesh, x0 - SHADOW_REACH, y0 - SHADOW_REACH, T + 2 * SHADOW_REACH)
+    idx = np.nonzero(core)[0]
+    px = np.column_stack((x0 + (idx % w + 0.5) * RES, y0 + T - (idx // w + 0.5) * RES, mesh_z[idx]))
+    core[idx[~hm.in_sun(px)]] = False
     pix_face = fid.ravel()[core]
     pix_lab = lab(colour[core])
     order = np.argsort(pix_face, kind="stable")
@@ -565,7 +605,8 @@ def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = Fal
             wn /= np.maximum(np.linalg.norm(wn, axis=1), 1e-12)[:, None]
             # Where the mesh turns away from the wall, the ray met something else.
             keep = (mn[:, :2] * wn[tri]).sum(1) > 0.5
-            rec["walls"] = (wn[tri[keep]], lab(c[keep]), wgt[keep])
+            sun = hm.in_sun(np.column_stack((p[keep, :2] + wn[tri[keep]] * WALL_OUT, p[keep, 2])))
+            rec["walls"] = (wn[tri[keep]], lab(c[keep]), wgt[keep], sun)
         f = faces[b]
         for face in np.unique(f[f >= 0]):
             labs = roof_samples.get(b * FACES + int(face), np.empty((0, 3)))
@@ -588,11 +629,12 @@ def summarise(sampled, az: float = SUN_AZIMUTH, el: float = SUN_ELEVATION, balan
     for b in sampled["buildings"]:
         rec = {"id": b["id"], "wall": None, "shade": None, "roofs": []}
         if b["walls"] is not None:
-            wn, labs, wgt = b["walls"]
-            # Sun or shade by which way the wall faces, never by how dark it is, or a dark
-            # building would be brightened as "shaded".
+            wn, labs, wgt, sun = b["walls"]
+            # Sun or shade by which way the wall faces and what stands between it and the
+            # sun, never by how dark it is, or a dark building would be brightened as
+            # "shaded".
             facing = wn @ s
-            lit, shaded = facing > LIT, facing < -LIT
+            lit, shaded = (facing > LIT) & sun, facing < -LIT
             dom, share = None, 0.0
             if lit.any():
                 normals = np.column_stack((wn[lit], np.zeros(lit.sum())))
@@ -762,7 +804,7 @@ def sample_job(job):
     allt = np.concatenate([unpack(pos, ij, meta) for _, pos, _, _ in blds])
     lo, hi = allt[:, :, :2].reshape(-1, 2).min(0), allt[:, :, :2].reshape(-1, 2).max(0)
     bounds = (min(lo[0], x0), min(lo[1], y0), max(hi[0], x0 + T), max(hi[1], y0 + T))
-    mesh = load_mesh(meta["crs"], bounds)
+    mesh = load_mesh(meta["crs"], bounds, margin=SHADOW_REACH)
     near = ((trees[:, 0] > bounds[0] - 10) & (trees[:, 0] < bounds[2] + 10)
             & (trees[:, 1] > bounds[1] - 10) & (trees[:, 1] < bounds[3] + 10))
     return ij, sample_tile(meta, ij, blds, mesh, trees[near], debug), time.perf_counter() - started
