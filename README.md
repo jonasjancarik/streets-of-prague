@@ -728,7 +728,8 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   mesh at level 13 (about 110 MB for `centrum`, into `pipeline/.cache/mesh/`, shared
   with the landmarks) and level 14 for the roof windows (about 2 GB for `centrum`;
   `--no-windows` skips it), and measures tiles side by side (`--jobs`); `centrum` takes
-  about 15 minutes. `ipr_buildings.py --no-roof-details` leaves out the chimneys and
+  about 15 minutes. It saves every 100 tiles, and `--resume` goes on after a stop (for
+  the whole city, a night's run). `ipr_buildings.py --no-roof-details` leaves out the chimneys and
   roof windows. `--debug` writes, per tile, the mesh from above next to the measured
   colours and a table; `--calibrate [--every 6]` estimates the light and the white
   balance again and prints the constants to put in the script.
