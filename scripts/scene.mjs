@@ -9,7 +9,8 @@
 //   node scripts/scene.mjs list | stop
 //
 // Common options: [--url http://localhost:5191/] [--out dir for screenshots (default
-// $TMPDIR/scene)] [--place staromak] [--time 14:00] [--weather clear] [--graphics high].
+// $TMPDIR/scene)] [--place staromak] [--time 14:00] [--weather clear] [--graphics high]
+// [--extra "&area=centrum" (more of the game's URL parameters)].
 // With a server running (serve), each command takes a second or two instead of the
 // 30–60 s of loading the map; without one, it opens a browser just for the command.
 // The server follows the dev server's reloads: a command waits for the game to load
@@ -69,7 +70,7 @@ async function openGame({ show = false } = {}) {
     shots.push(path);
   });
   const place = args.place || 'staromak';
-  const q = `?place=${place}&go&day=wed&time=${args.time || '14:00'}&weather=${args.weather || 'clear'}&graphics=${args.graphics || 'high'}&dpr=1`;
+  const q = `?place=${place}&go&day=wed&time=${args.time || '14:00'}&weather=${args.weather || 'clear'}&graphics=${args.graphics || 'high'}&dpr=1${args.extra || ''}`;
   const t0 = Date.now();
   await page.goto(URL_BASE + q);
   const ready = async () => {
