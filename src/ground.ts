@@ -639,7 +639,7 @@ function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
 // where it meets a street's centre line: straight across the street (unless it's
 // mapped 30° to 60° off square, as some are: then along the way it's mapped), as
 // far as the road surface goes on each side, with the bars evened out between them.
-const BAR = 0.5, PITCH = 1, BAR_LEN = 3, KERB_GAP = 0.3, SQUARE = Math.cos(Math.PI / 6);
+const BAR = 0.5, PITCH = 1, BAR_LEN = 3, KERB_GAP = 0.3, REACH_SLACK = 2, SQUARE = Math.cos(Math.PI / 6);
 function zebras(crossings: Point2[][], edges: GroundRoadEdge[], road: Polygons, box: Bounds): Point2[][] {
   const bars: Point2[][] = [];
   const done: Point2[] = [];
@@ -660,8 +660,13 @@ function zebras(crossings: Point2[][], edges: GroundRoadEdge[], road: Polygons, 
       const span = roadSpan(road, px, py, ax, ay) ?? [-half, half];
       const [x0, y0, x1, y1] = box;
       const offTile = (t: number) => { const x = px + ax * t, y = py + ay * t; return x < x0 + 0.5 || x > x1 - 0.5 || y < y0 + 0.5 || y > y1 - 0.5; };
-      const lo = offTile(span[0]) ? Math.min(span[0], -half) : span[0];
-      const hi = offTile(span[1]) ? Math.max(span[1], half) : span[1];
+      let lo = offTile(span[0]) ? Math.min(span[0], -half) : span[0];
+      let hi = offTile(span[1]) ? Math.max(span[1], half) : span[1];
+      // At a junction the surface of the side street and the main street run together,
+      // so the span can be many street widths. A crossing never reaches further than
+      // about one street width past the centre line of the street it crosses.
+      const reach = (hit.width / 2 + REACH_SLACK) / k;
+      lo = Math.max(lo, -reach); hi = Math.min(hi, reach);
       // Bars evened out between the kerbs, a little in from each.
       const width = (hi - lo) * k - 2 * KERB_GAP;
       if (width < BAR || width > 40) continue;
