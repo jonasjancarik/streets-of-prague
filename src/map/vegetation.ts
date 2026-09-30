@@ -235,12 +235,13 @@ function gardenTrees(geo: Geo, grid: Grid, trees: [number, number, number, numbe
 // [tufts, distance from the middle, height, tilt, half size]
 type Tier = [number, number, number, number, number];
 const CROWN_TIERS: Tier[] = [[7, 0.64, -0.08, 62, 0.48], [5, 0.4, 0.2, 40, 0.46], [3, 0.18, 0.4, 20, 0.4], [1, 0, 0.5, 0, 0.36]];
-// A shrub is the same in the same frame with fewer, coarser tufts (about 90 triangles):
-// a metre or two across, it can't show the difference from further than a few metres.
-const SHRUB_TIERS: Tier[] = [[4, 0.62, -0.06, 60, 0.52], [2, 0.26, 0.28, 32, 0.46], [1, 0, 0.5, 0, 0.4]];
+// A shrub is the same in the same frame: nine larger tufts with an eight-point outline
+// round a lighter core (about 90 triangles). The first version, seven small tufts
+// round a dark core, showed gaps and a spiky outline from above; these overlap.
+const SHRUB_TIERS: Tier[] = [[5, 0.6, -0.05, 56, 0.6], [3, 0.3, 0.24, 30, 0.6], [1, 0, 0.44, 0, 0.55]];
 const crownGeometry = () => crownShape(7, 20, CROWN_TIERS);
-const shrubGeometry = () => crownShape(13, 10, SHRUB_TIERS);
-function crownShape(seed0: number, RIM: number, tiers: Tier[]) {
+const shrubGeometry = () => crownShape(13, 8, SHRUB_TIERS, 0.55, 0.45);
+function crownShape(seed0: number, RIM: number, tiers: Tier[], coreSize = 0.56, coreShade = 0.32) {
   const r = rng(seed0);
   const pos: number[] = [], nor: number[] = [], col: number[] = [], tuft: number[] = [], idx: number[] = [];
   const across: number[] = [], along: number[] = []; // each tuft's card, for its leaves
@@ -287,7 +288,7 @@ function crownShape(seed0: number, RIM: number, tiers: Tier[]) {
     }
   });
   // The core, round and dark, behind the tufts.
-  const core = new THREE.IcosahedronGeometry(0.56, 0);
+  const core = new THREE.IcosahedronGeometry(coreSize, 0);
   const cp = core.attributes.position.array;
   for (let i = 0; i < cp.length; i += 3) {
     p.set(cp[i], cp[i + 1] * 0.7, cp[i + 2]);
@@ -295,7 +296,7 @@ function crownShape(seed0: number, RIM: number, tiers: Tier[]) {
     idx.push(pos.length / 3);
     pos.push(p.x, p.y, p.z);
     nor.push(n.x, n.y, n.z);
-    col.push(0.32, 0.32, 0.32);
+    col.push(coreShade, coreShade, coreShade);
     tuft.push(0, 0, -1); // (no leaves)
     across.push(1, 0, 0);
     along.push(0, 0, 1);
