@@ -419,6 +419,10 @@ that without a new renderer.
   corners, step past parked cars and bikes in their way, leap out of the way of fast
   cars and get knocked over, then get up again (`src/people.ts`). Traffic and
   people live within about 330 m of the player.
+  When the game replenishes people and ordinary traffic, it prepares each nearby
+  street's spawn weight once for that pass (`src/spawn.ts`). Cars still check the
+  current traffic before each placement, and pavement-driving cars are gathered
+  before each pedestrian-obstacle step.
 - **Crowds.** The busier the streets around you, the more people: 500 to 600 round the
   Old Town Square and on Charles Bridge, a couple of hundred in Vinohrady or on a
   housing estate, a few dozen on the edge of town. They come and go out of sight as

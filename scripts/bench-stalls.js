@@ -29,6 +29,16 @@
   timed(w, 'drop', 'drop');
   timed(w, 'update', 'world.update', 3);
   timed(d.traffic, 'update', 'traffic.update', 2);
+  const spawnCalls = { n: 0, ms: 0, prepareN: 0, prepareMs: 0 };
+  for (const [key, count, elapsed] of [['spawn', 'n', 'ms'], ['prepareSpawn', 'prepareN', 'prepareMs']]) {
+    const original = d.traffic[key];
+    d.traffic[key] = function (...args) {
+      const start = performance.now();
+      try { return original.apply(this, args); }
+      finally { spawnCalls[count]++; spawnCalls[elapsed] += performance.now() - start; }
+    };
+  }
+  const peopleStart = d.spawnWork && { ...d.spawnWork };
   timed(d.crowd, 'update', 'crowd.update', 2);
   timed(d.trams, 'update', 'trams.update', 2);
   timed(d.lamps, 'update', 'lamps.update', 2);
@@ -106,6 +116,11 @@
     lines.push(`material builds ${sum(S.frames, 'builds')} (${Math.round(sum(S.frames, 'buildMs'))} ms), pipelines ${sum(S.frames, 'pipes')}, shader modules ${sum(S.frames, 'shaders')}`);
     lines.push(`car-body builds ${sum(S.frames, 'carBuilds')} (${Math.round(sum(S.frames, 'carBuildMs'))} ms)`);
     if (S.treesAtStart) lines.push(`tree pages ${JSON.stringify(S.treesAtStart)} → ${JSON.stringify(w.trees.stats())}`);
+    lines.push(`traffic spawn ${spawnCalls.n} calls (${f1(spawnCalls.ms)} ms), prepare ${spawnCalls.prepareN} lists (${f1(spawnCalls.prepareMs)} ms)`);
+    if (peopleStart) {
+      const p = d.spawnWork;
+      lines.push(`people prepare ${p.peoplePasses - peopleStart.peoplePasses} passes (${f1(p.peoplePrepareMs - peopleStart.peoplePrepareMs)} ms), ${p.peopleWeights - peopleStart.peopleWeights} weights, ${p.peoplePicks - peopleStart.peoplePicks} picks`);
+    }
     for (const [kind, [n, ms]] of [...S.kinds].sort((a, b) => b[1][1] - a[1][1])) lines.push(`  build ${n}× ${Math.round(ms)} ms ${kind}`);
     for (const t of S.tiles) lines.push(`tile ${t.k} at ${f1(t.s)}–${f1(t.e)} ms ${JSON.stringify(t.ms)}`);
     const inLong = (f) => S.long.some((l) => f.e >= l.s && f.t <= l.s + l.d);

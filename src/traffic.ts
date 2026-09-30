@@ -5,6 +5,7 @@ import { courierLook, randomLook } from './figures.ts';
 import { MAIN_ROADS, Route, clamp, roadWeight } from './network.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 import type { Signals } from './signals.ts';
+import { prepareTraffic, pickTraffic } from './spawn.ts';
 import * as THREE from 'three';
 
 export interface TrafficAgent {
@@ -98,6 +99,7 @@ export class Traffic {
   // Emergency vehicles with their sirens on (main.ts sets them each frame): cars in front
   // of one move over to let it by.
   emergency: { x: number; y: number; h: number }[] = [];
+  private kerbAgents: TrafficAgent[] = [];
 
   constructor(graph: DriveGraph, scene: THREE.Scene, rng: () => number, count: number) {
     this.g = graph;
@@ -108,17 +110,21 @@ export class Traffic {
   }
 
   // A new car on a random street among `edges` (default: anywhere), where `avoid` allows.
-  spawn(avoid: ((x: number, y: number) => boolean) | null, edges: DriveEdge[] = this.g.edges, type: string | null = null): TrafficAgent | null {
+  prepareSpawn(edges: DriveEdge[], type: string | null = null) {
+    const ordinary = type === null;
+    return prepareTraffic(edges, (e) => e.path.length * (ordinary ? roadWeight(e.hw) : 1), ordinary);
+  }
+
+  spawn(avoid: ((x: number, y: number) => boolean) | null, edges: DriveEdge[] = this.g.edges, type: string | null = null, prepared?: ReturnType<Traffic['prepareSpawn']>): TrafficAgent | null {
     const r = this.r;
     if (!edges.length) return null;
     // Ordinary cars start more often on the bigger roads (and lean towards them at
     // junctions); buses, taxis and police are placed as before.
     const ordinary = type === null;
-    const weight = (e: DriveEdge) => e.path.length * (ordinary ? roadWeight(e.hw) : 1);
-    const total = edges.reduce((a, e) => a + weight(e), 0);
+    const sampler = prepared ?? this.prepareSpawn(edges, type);
+    if (sampler.edges !== edges || sampler.ordinary !== ordinary) throw new Error('Spawn sampler does not match candidates or mode');
     for (let tries = 0; tries < 40; tries++) {
-      let x = r() * total, edge = edges[0];
-      for (const e of edges) if ((x -= weight(e)) < 0) { edge = e; break; }
+      const edge = pickTraffic(sampler, r)!;
       if (edge.path.length < 12) continue;
       const bus = type === 'bus';
       // Now and then a lorry, where lorries may go.
@@ -182,8 +188,13 @@ export class Traffic {
   }
 
   // Whether a car driving along the pavement is near (x, y).
+  gatherPavementCars() {
+    this.kerbAgents.length = 0;
+    for (const a of this.agents) if (a.kerb) this.kerbAgents.push(a);
+  }
+
   pavementNear(x: number, y: number, d: number) {
-    return this.agents.some((a) => a.kerb && Math.abs(a.car.x - x) < d && Math.abs(a.car.y - y) < d);
+    return this.kerbAgents.some((a) => Math.abs(a.car.x - x) < d && Math.abs(a.car.y - y) < d);
   }
 
   release(agent: TrafficAgent) {

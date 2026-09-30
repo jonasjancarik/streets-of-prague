@@ -131,4 +131,19 @@ Maintain pass-local sampler ownership. If future work caches across passes, its 
 
 ## Result
 
-Not started. Record revision, deterministic cases, operation counts, population checks and alternating-drive results here. List staggering as deferred unless separately approved.
+Implementation in progress from `a3032fbf44451e97a9e13248af6c5cb4a17844f7`.
+`src/spawn.ts` keeps the old pedestrian cumulative comparison and traffic's
+subtraction loop, with weights prepared once per pass/list. Main refreshes the
+kerb-agent subset before each pedestrian-obstacle collection. The initial traffic
+placement also reuses one prepared list. No radius, cap, count, route, or clock rule
+was changed.
+
+Checks so far: `node --check scripts/check-spawn-work.mjs`,
+`node scripts/check-spawn-work.mjs --url http://localhost:5241/ --case all`,
+`npm run typecheck`, `npm run build`, and `git diff --check` pass. The browser
+fixtures compare 54 pedestrian selections and 56 traffic selections, plus
+successive spawns, 8/40 rejection exhaustion, exact cumulative boundaries and
+RNG counts. Six pedestrian picks use one three-edge weight build instead of six.
+The pavement fixtures cover empty lists, adopt, release, kerb completion and
+successive substeps. Full-game population, visual, and alternating-drive checks
+remain pending; no timing benefit is claimed yet. Staggering remains deferred.
