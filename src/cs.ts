@@ -1,6 +1,11 @@
 // The Czech text, by the English text it stands for (see i18n.ts). A line with no entry
 // here shows in English. Counts use 'one|few|many'. Names that are already Czech
 // (streets, stops, stations, districts) come from the map data and aren't listed.
+//
+// For now the player's gender is left open: word the Czech so it doesn't show it. Use
+// the imperative ('Zaplať', 'Schovej se'), impersonal or passive lines ('Došly ti
+// peníze', 'Dostali tě'), or the third person, and avoid past-tense forms that say 'you'
+// as a man or a woman ('odešel jsi', 'chycena').
 export const CS: Record<string, string> = {
   // Money
   'Not enough money for a bike ({price})': 'Nemáš dost peněz na kolo ({price})',
