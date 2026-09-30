@@ -342,6 +342,25 @@ def main() -> None:
         for k, t in layers.read_chunk(area, "buildings", ci, cj)["tiles"].items():
             if t.get("parts"):
                 parts_by_tile[tuple(map(int, k.split("_")))] = t["parts"]
+    # The river and ponds: IPR's model also holds moored boats, which aren't houses.
+    water = []
+    for ci, cj in layers.chunks(meta):
+        for t in layers.read_chunk(area, "ground", ci, cj)["tiles"].values():
+            water += [Polygon(r[0], r[1:]).buffer(0) for r in t["areas"].get("water", [])]
+    water_tree = STRtree(water)
+    afloat = 0
+
+    def on_water(fp):
+        """Most of the building's footprint is over water."""
+        area_sum = sum(g.area for g in fp)
+        if area_sum <= 0:
+            return False
+        hit = 0.0
+        for g in fp:
+            for k in water_tree.query(g, predicate="intersects"):
+                hit += g.intersection(water[k]).area
+        return hit >= 0.6 * area_sum
+
     to_local = Transformer.from_crs("EPSG:4326", local, always_xy=True)
     hand = [(Polygon([to_local.transform(lon, lat) for lon, lat in ring]), cover) for cover, _, ring in roofs.REGIONS]
     regions_by_tile = {}
@@ -383,6 +402,9 @@ def main() -> None:
         for bid, cx, cy, (i, j), pos, codes, fp in found:
             if (i, j) not in osm_by_tile:
                 continue
+            if fp and water and on_water(fp):
+                afloat += 1
+                continue
             osm = osm_at(i, j, Point(cx, cy))
             wall, roof, default = colours(bid or f"{name}/{count}", osm)
             if pos is not None:
@@ -400,7 +422,7 @@ def main() -> None:
                 per_tile.setdefault((i, j), []).append((pos, palette[which].ravel()))
             count += 1
         print(f"  {name}: {count} buildings in the area", flush=True)
-    print(f"  sheets read in {time.perf_counter() - started:.0f} s")
+    print(f"  sheets read in {time.perf_counter() - started:.0f} s; {afloat} buildings left out for standing on water")
 
     # An OSM building counts as IPR's if IPR buildings stand on at least 40 % of it.
     tree = STRtree(footprints)

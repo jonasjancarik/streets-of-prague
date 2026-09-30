@@ -294,6 +294,8 @@ that without a new renderer.
   out, including wings of the Castle that both OSM and IPR draw as one building.
   Churches OSM says nothing about get slate. IPR's roofs take their colour triangle by
   triangle, from the OSM building or part they lie in.
+- **Building import over water.** IPR footprints with at least 60% of their area
+  over mapped water are omitted, keeping moored boats out of the building model.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,
   walls, trees, cars, people, trams and the camera sit at their real height, cars
   pitch, roll and roll downhill, and the ground is hill-shaded.
