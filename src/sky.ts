@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SKY_REF, WINDOWS } from './shading.ts';
 import { CLEAR } from './weather.ts';
+import { updateClouds } from './clouds.ts';
 import type { Conditions } from './weather.ts';
 
 // The light of the time of day: where the sun is over Prague, and the colour and
@@ -122,6 +123,10 @@ export class Sky {
     // little stronger, as the whole sky shines, or orange from the city at night.
     const night = THREE.MathUtils.clamp((2 - deg) / 8, 0, 1);
     this.sun.intensity *= 1 - 0.92 * w.cloud;
+    // Drifting shadows of single clouds in fair weather only: under a clouded sky the sun is
+    // hidden already, and at night there's no sun to hide.
+    const patchy = 0.6 * (1 - THREE.MathUtils.smoothstep(w.cloud, 0.15, 0.6)) * (1 - w.mist) * THREE.MathUtils.smoothstep(deg, 4, 16);
+    updateClouds(performance.now() / 1000, patchy);
     this.hemi.color.lerp(cc.copy(OVERCAST).lerp(CITY_GLOW, night), w.cloud * 0.75);
     this.hemi.intensity *= 1 + 0.3 * w.cloud * (1 - night);
     this.hemi.groundColor.lerp(SNOWY_GROUND, w.cover * 0.5 * (1 - night * 0.6));

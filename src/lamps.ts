@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { fetchBinary } from './terrain.ts';
+import { CLOUD, CLOUD_MAP, CLOUD_GLSL } from './clouds.ts';
 import { posts, fall, type Post } from './posts.ts';
 import { armLamp, gasPair, gasSingle, wallLantern, globeLamp, hungLamp } from './lampmodels.ts';
 
@@ -56,10 +57,14 @@ export const setGlows = (f: typeof glowsBy) => { glowsBy = f; };
 
 // Lamp light on a Lambert material, inside its onBeforeCompile (after the other
 // replacements). `world`: a varying with the world position the shader already has.
+const CLOUDS = !location.search.includes('nocloud');
+
 export function lampLit(sh: Shader, world?: string) {
   sh.uniforms.uLampMap = LAMP_MAP;
   sh.uniforms.uLampBox = LAMP_BOX;
   sh.uniforms.uLampOn = LAMP_ON;
+  sh.uniforms.uCloudMap = CLOUD_MAP;
+  sh.uniforms.uCloud = CLOUD;
   let w = world;
   if (!w) {
     w = 'vLampW';
@@ -70,8 +75,9 @@ export function lampLit(sh: Shader, world?: string) {
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vLampW;');
   }
   sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', `#include <common>\n${LAMP_GLSL}`)
-    .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  reflectedLight.directDiffuse += diffuseColor.rgb * lampLightOn(${w}, normal);`);
+    .replace('#include <common>', `#include <common>\n${LAMP_GLSL}\n${CLOUD_GLSL}`)
+    // Only the sun is in directDiffuse at this point: the clouds dim it before the lamps' light is added.
+    .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n${CLOUDS ? `  reflectedLight.directDiffuse *= cloudLit(${w});\n` : ''}  reflectedLight.directDiffuse += diffuseColor.rgb * lampLightOn(${w}, normal);`);
 }
 
 // Kinds of lamp (pipeline/build_lamps.py): the height of the head, the pole under it,

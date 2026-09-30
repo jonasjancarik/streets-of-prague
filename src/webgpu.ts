@@ -26,6 +26,7 @@ import './webgpu/figures.ts';
 import './webgpu/glows.ts';
 import './webgpu/weather.ts';
 import './webgpu/underground.ts';
+import { CloudSunNode } from './webgpu/clouds.ts';
 
 // PATTERNS_GLSL.
 function pAsphalt(c0: N, p: N) {
@@ -262,6 +263,9 @@ export async function createRenderer() {
   const attributes = (renderer as any)._geometries.attributes;
   const deleteAttribute = attributes.delete.bind(attributes);
   attributes.delete = (attribute: { shared?: boolean }) => (attribute.shared ? null : deleteAttribute(attribute));
+  // The sun's light node is swapped for one that takes the cloud shadows into account.
+  // (`&nocloud` in the address leaves them out, to compare with and without.)
+  if (!location.search.includes('nocloud')) library.lightNodes.set(THREE.DirectionalLight, CloudSunNode);
   library.addToneMapping(toneCurve, THREE.CustomToneMapping);
   // GLSL materials can't be drawn: hide them all. (Material's constructor sets
   // visible through this setter too.)

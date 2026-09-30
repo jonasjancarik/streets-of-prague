@@ -78,6 +78,13 @@ grime on the walls 6%, the shadow map's own pass 7%.
   worker and applied to the ambient light only. Loose ends: the wall values are made once, so a wall at a tile's
   edge doesn't learn about a neighbour that arrives later (the ground's texture is refreshed); landmarks have no
   sky view; `fill()` could skip buildings far from the tile instead of testing every one.
+- **Cloud shadows** (`src/clouds.ts`, `src/webgpu/clouds.ts`, 30 September 2026): one 256² tiling rank map read once a
+  pixel, drifting with the wind, dims the sun only (never the sky's light or the lamps). WebGPU swaps the sun's light
+  node (`CloudSunNode`); the GLSL path multiplies `directDiffuse` in `lampLit`. Strength comes from `Sky.update`: none at
+  night, under cloud, in mist, rain or snow. `&nocloud` leaves them out. Cost is within the noise of the bench.
+  Loose ends: at gameplay zoom (~100 m) a patch is ~340 m across, so most frames sit fully inside or outside one and it
+  reads as a slow brightness drift; the edges show when zoomed out. Patch size and coverage (`CLOUD_EDGE`, the octaves in
+  `makeMap`) are tunable. Trees have no cloud shadow on the GLSL path, and the wet ground's mirror ignores the mask.
 - **What's left on the main thread** (in order, with the CPU slowed 4×): the trams'
   steps and look-ahead, traffic, placing people (`Crowd.place`) and following
   everyone's height (`TileWorld.track`, `surfaceAt`), then three.js's own work.
