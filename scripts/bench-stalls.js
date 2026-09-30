@@ -11,13 +11,15 @@
   new PerformanceObserver((l) => { for (const e of l.getEntries()) S.long.push({ s: e.startTime, d: e.duration }); }).observe({ type: 'longtask' });
 
   // Calls that take at least `min` ms, with when they ran.
-  const timed = (obj, key, name, min = 1) => {
+  const updateCalls = { traffic: { n: 0, ms: 0 }, crowd: { n: 0, ms: 0 } };
+  const timed = (obj, key, name, min = 1, aggregate = null) => {
     const f = obj?.[key];
     if (typeof f !== 'function') return;
     obj[key] = function (...a) {
       const t0 = performance.now();
       const out = f.apply(this, a);
       const t1 = performance.now();
+      if (aggregate) { aggregate.n++; aggregate.ms += t1 - t0; }
       if (t1 - t0 >= min) S.calls.push({ n: name, s: t0, d: t1 - t0 });
       return out;
     };
@@ -28,7 +30,7 @@
   timed(w, 'onCars', 'onCars');
   timed(w, 'drop', 'drop');
   timed(w, 'update', 'world.update', 3);
-  timed(d.traffic, 'update', 'traffic.update', 2);
+  timed(d.traffic, 'update', 'traffic.update', 2, updateCalls.traffic);
   const spawnCalls = { n: 0, ms: 0, prepareN: 0, prepareMs: 0 };
   for (const [key, count, elapsed] of [['spawn', 'n', 'ms'], ['prepareSpawn', 'prepareN', 'prepareMs']]) {
     const original = d.traffic[key];
@@ -39,7 +41,7 @@
     };
   }
   const peopleStart = d.spawnWork && { ...d.spawnWork };
-  timed(d.crowd, 'update', 'crowd.update', 2);
+  timed(d.crowd, 'update', 'crowd.update', 2, updateCalls.crowd);
   timed(d.trams, 'update', 'trams.update', 2);
   timed(d.lamps, 'update', 'lamps.update', 2);
   timed(d.lamps, 'fill', 'lamps.fill');
@@ -117,6 +119,7 @@
     lines.push(`car-body builds ${sum(S.frames, 'carBuilds')} (${Math.round(sum(S.frames, 'carBuildMs'))} ms)`);
     if (S.treesAtStart) lines.push(`tree pages ${JSON.stringify(S.treesAtStart)} → ${JSON.stringify(w.trees.stats())}`);
     lines.push(`traffic spawn ${spawnCalls.n} calls (${f1(spawnCalls.ms)} ms), prepare ${spawnCalls.prepareN} lists (${f1(spawnCalls.prepareMs)} ms)`);
+    lines.push(`updates traffic ${updateCalls.traffic.n} calls (${f1(updateCalls.traffic.ms)} ms), crowd ${updateCalls.crowd.n} calls (${f1(updateCalls.crowd.ms)} ms)`);
     if (peopleStart) {
       const p = d.spawnWork;
       lines.push(`people prepare ${p.peoplePasses - peopleStart.peoplePasses} passes (${f1(p.peoplePrepareMs - peopleStart.peoplePrepareMs)} ms), ${p.peopleWeights - peopleStart.peopleWeights} weights, ${p.peoplePicks - peopleStart.peoplePicks} picks`);
