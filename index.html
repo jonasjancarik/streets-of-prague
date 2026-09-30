@@ -43,6 +43,9 @@
       .ride-stops button:hover { background: var(--key); }
       .ride-stops button.next { font-weight: 600; }
       .ride-stops button.dest { background: var(--ink); color: #140d0c; }
+      .ride-turns { display: flex; gap: 6px; margin-top: 8px; }
+      .ride-turns button { flex: 1; font: inherit; font-weight: 600; color: var(--ink); background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 6px 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      .ride-turns button.dest { background: var(--ink); color: #140d0c; }
       /* At a tram stop: the next trams due, counting down. */
       #board { margin-top: 8px; max-width: 260px; }
       #board[hidden] { display: none; }
@@ -91,10 +94,14 @@
       #wanted.blink .on { animation: blink 0.8s steps(2, jump-none) infinite; }
       #money { margin-top: 6px; font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; opacity: 0.85; }
       #money .paid { color: var(--accent); margin-left: 6px; }
+      #money .valid { font-size: 14px; opacity: 0.7; margin-left: 10px; }
       #health { height: 5px; margin-top: 8px; background: var(--key); border-radius: 3px; overflow: hidden; }
       #health:empty { display: none; }
       #health span { display: block; height: 100%; background: #7fc97a; transition: width 0.2s; }
       #health span.low { background: var(--accent); }
+      #tank { height: 5px; margin-top: 6px; background: var(--key); border-radius: 3px; overflow: hidden; }
+      #tank:empty { display: none; }
+      #tank span { display: block; height: 100%; background: #6fb4e8; transition: width 0.2s; }
       #hurt { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 16, 0.55) 100%); }
       @keyframes blink { 50% { opacity: 0.25; } }
       #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.8s ease-in-out; }
@@ -119,7 +126,7 @@
       #help kbd { display: inline-block; font: 600 11px/1 Inter, system-ui, sans-serif; background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 3px 5px 2px; min-width: 1em; text-align: center; }
       #help .foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(236, 228, 214, 0.15); opacity: 0.7; }
       #help section { display: none; }
-      #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='tram'] .tram-only, #help[data-mode='funicular'] .funicular-only, #help[data-mode='heli'] .heli-only { display: block; }
+      #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='drive'] .drive-only, #help[data-mode='tram'] .tram-only, #help[data-mode='funicular'] .funicular-only, #help[data-mode='heli'] .heli-only { display: block; }
       #help.folded { width: auto; padding: 6px 10px; }
       #help.folded > :not(.unfold), #help:not(.folded) .unfold { display: none; }
       #dev { top: 16px; right: 16px; width: 340px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
@@ -144,7 +151,7 @@
       #loading.done { opacity: 0; pointer-events: none; }
       .portrait { display: block; opacity: 0; transition: opacity 0.4s; }
       .portrait.in { opacity: 1; }
-      .ls-sky { position: absolute; inset: 0; background: center 70% / cover no-repeat; }
+      .ls-sky { position: absolute; inset: 0; background: center 70% / cover repeat-x; } /* repeat-x: where it ends under the wedge, the same sky goes on */
       /* The dark wedge carries the title and the menu; the skyline's landmark stands just right of it (portraits.ts). */
       .ls-wedge { position: absolute; inset: 0; background: var(--poster-black); clip-path: polygon(0 0, 46% 0, 36% 100%, 0 100%); opacity: 0.93; }
       .ls-cast { position: absolute; z-index: 0; right: 2vw; bottom: 9vh; height: 66vh; display: flex; align-items: flex-end; }
@@ -205,6 +212,45 @@
       .ls-go:not(:disabled):active { transform: translate(0.4vh, 0.4vh); box-shadow: 0.2vh 0.2vh 0 var(--poster-black); }
       .ls-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; }
       .ls-start button:focus-visible { outline: 0.4vh solid var(--poster-paper); outline-offset: 0.3vh; }
+      .ls-row + .ls-row { border-top: 1px solid rgba(236, 228, 214, 0.14); padding-top: 1vh; }
+      .ls-go:not(:disabled)::before { content: ''; display: inline-block; width: 0.6em; height: 0.7em; margin-right: 0.4em; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%); }
+      /* The band printed like the sky: a dot screen, fading out towards its top edge. */
+      .ls-band::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle, rgba(20, 13, 12, 0.22) 38%, transparent 42%) 0 0 / 0.9vh 0.9vh; -webkit-mask-image: linear-gradient(transparent 5%, #000 70%); mask-image: linear-gradient(transparent 5%, #000 70%); }
+      /* The poster shows the time and weather picked (startscreen.ts sets data-time and
+         data-weather). The sky's light changes with a filter; the sun is a disc that
+         colour-dodges the sky, so it glows on the red and leaves the black roofs black. */
+      #loading { --sky-time: brightness(1); --sky-weather: brightness(1); }
+      .ls-sky { filter: var(--sky-time) var(--sky-weather); transition: filter 0.8s; }
+      #loading[data-time='morning'] { --sky-time: hue-rotate(16deg) saturate(0.85) brightness(1.3); }
+      #loading[data-time='midday'] { --sky-time: sepia(0.45) saturate(0.7) brightness(1.55); }
+      #loading[data-time='night'] { --sky-time: brightness(0.45) hue-rotate(-10deg); }
+      #loading[data-weather='cloudy'] { --sky-weather: saturate(0.45) brightness(0.85); }
+      #loading[data-weather='rain'] { --sky-weather: saturate(0.5) brightness(0.75); }
+      #loading[data-weather='storm'] { --sky-weather: saturate(0.45) brightness(0.6); }
+      #loading[data-weather='mist'] { --sky-weather: saturate(0.4) contrast(0.7) brightness(1.15); }
+      #loading[data-weather='snow'] { --sky-weather: saturate(0.3) contrast(0.85) brightness(1.2); }
+      .ls-sun { position: absolute; right: 9%; top: 5%; width: 19vh; aspect-ratio: 1; border-radius: 50%; background: var(--poster-paper); mix-blend-mode: color-dodge; transition: right 0.8s, top 0.8s, width 0.8s, opacity 0.8s; }
+      #loading[data-time='morning'] .ls-sun { right: 30%; top: 7%; width: 15vh; }
+      #loading[data-time='midday'] .ls-sun { right: 16%; top: 3%; width: 12vh; }
+      /* The morning sun and the moon are plain paper: dodging the orange sky turns it lemon
+         yellow, and the dark night sky pink. */
+      #loading[data-time='night'] .ls-sun { right: 12%; top: 6%; width: 9vh; }
+      #loading:is([data-time='morning'], [data-time='night']) .ls-sun { mix-blend-mode: normal; opacity: 0.92; }
+      #loading:is([data-weather='cloudy'], [data-weather='rain'], [data-weather='storm'], [data-weather='snow']) .ls-sun { opacity: 0; }
+      #loading[data-weather='mist'] .ls-sun { opacity: 0.45; }
+      /* Rain and snow are a repeating tile moved by exactly one tile, over and over. */
+      .ls-weather { position: absolute; left: 0; right: 0; top: -160px; height: calc(100% + 160px); pointer-events: none; opacity: 0; transition: opacity 0.8s; }
+      #loading:is([data-weather='rain'], [data-weather='storm']) .ls-weather { opacity: 1; animation: ls-fall 0.45s linear infinite;
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='160'%3E%3Cg stroke='%23ece4d6' stroke-opacity='.45' stroke-width='1.5'%3E%3Cpath d='M22 6l-5 30M84 38l-5 30M50 92l-5 30M104 110l-5 30M12 118l-5 30M68 2l-4 22'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 120px 160px; }
+      #loading[data-weather='storm'] .ls-weather { animation-duration: 0.3s; }
+      #loading[data-weather='snow'] .ls-weather { opacity: 1; animation: ls-fall 7s linear infinite;
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cg fill='%23ece4d6' fill-opacity='.8'%3E%3Ccircle cx='20' cy='24' r='2.5'/%3E%3Ccircle cx='96' cy='12' r='1.6'/%3E%3Ccircle cx='60' cy='70' r='3'/%3E%3Ccircle cx='132' cy='60' r='2'/%3E%3Ccircle cx='28' cy='112' r='1.8'/%3E%3Ccircle cx='110' cy='124' r='2.8'/%3E%3Ccircle cx='76' cy='148' r='1.5'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 160px 160px; }
+      #loading[data-weather='mist'] .ls-weather { opacity: 1; background: linear-gradient(to top, rgba(236, 228, 214, 0.5), rgba(236, 228, 214, 0.18) 45%, transparent 75%); }
+      #loading[data-weather='cloudy'] .ls-weather { opacity: 1; background: linear-gradient(rgba(20, 13, 12, 0.5), transparent 50%); }
+      @keyframes ls-fall { to { transform: translateY(160px); } }
+      /* A storm: now and then the sky flashes. */
+      #loading[data-weather='storm'] .ls-weather::after { content: ''; position: absolute; inset: 0; background: var(--poster-paper); opacity: 0; animation: ls-flash 5s 1s infinite; }
+      @keyframes ls-flash { 0%, 90%, 94%, 100% { opacity: 0; } 91% { opacity: 0.5; } 92% { opacity: 0.1; } 93% { opacity: 0.35; } }
       /* Squarer screens: two figures, so they stay clear of the menu. */
       @media (min-aspect-ratio: 1/1) and (max-aspect-ratio: 3/2) {
         .ls-cast { height: 60vh; }
@@ -324,7 +370,8 @@
       #t-toggle { position: fixed; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 160px); width: 136px; height: 44px; padding: 0 10px; white-space: nowrap; }
       #touch button.down, .t-pedal.down { background: rgba(236, 228, 214, 0.3); }
       #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
-      #t-fast, #t-taxi, #t-ticket { height: 52px; padding: 0 18px; }
+      #t-fast, #t-steal, #t-doors, #t-taxi, #t-ticket, #t-cannon { height: 52px; padding: 0 18px; }
+      #touch #t-cannon[hidden] { display: none; }
       #touch #t-ticket[hidden] { display: none; }
       #t-action.off { visibility: hidden; }
       #t-pedals { display: flex; align-items: flex-end; gap: 10px; touch-action: none; }
@@ -333,7 +380,9 @@
       #t-gas { width: 96px; height: 128px; border-color: var(--accent); }
       #t-gas.down { background: var(--edge); color: var(--ink); }
       #touch:not([data-mode='foot']):not([data-mode='stop']) .foot-only,
-      #touch:not([data-mode='car']) .car-only, #touch:not([data-mode='tram']):not([data-mode='stop']) .tram-only { display: none; }
+      #touch:not([data-mode='car']):not([data-mode='drive']) .car-only, #touch:not([data-mode='tram']):not([data-mode='stop']) .tram-only { display: none; }
+      #touch[data-mode='drive'] #t-toggle, #touch[data-mode='drive'] #t-road { display: none; }
+      #touch:not([data-mode='tram']) #t-steal, #touch:not([data-mode='drive']) #t-doors { display: none; }
       #touch[data-mode='tram'] #t-steer { display: none; }
       #t-road { position: fixed; top: calc(max(12px, env(safe-area-inset-top)) + 52px); right: max(12px, env(safe-area-inset-right)); height: 40px; padding: 0 14px; }
       @media (max-height: 460px) { #t-gas { height: 104px; } #t-brake { height: 72px; } #t-action { height: 44px; } }
@@ -369,6 +418,7 @@
       <div id="wanted" class="hidden" role="status" aria-label="Not wanted"></div>
       <div id="money" role="status"></div>
       <div id="health"></div>
+      <div id="tank"></div>
       <div id="hint"></div>
       <div id="tally"></div>
       <div id="ride" hidden></div>
@@ -398,9 +448,22 @@
           <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Steer</dd>
           <dt><kbd>Space</kbd></dt><dd data-t>Handbrake</dd>
           <dt><kbd>Shift</kbd></dt><dd data-t>Hold to keep to the lane and the speed limit, while A and D pick the next turn</dd>
+          <dt><kbd>Q</kbd></dt><dd data-t>Horn (hold it)</dd>
+          <dt><kbd>F</kbd></dt><dd data-t>Water cannon of a fire engine (hold it)</dd>
           <dt><kbd>R</kbd></dt><dd data-t>Back on the road</dd>
           <dt><kbd>N</kbd></dt><dd data-t>Radio: next station, and off (or use the buttons under the speed)</dd>
           <dt><kbd>E</kbd></dt><dd data-t>Get out, or off a bike</dd>
+        </dl>
+      </section>
+      <section class="drive-only">
+        <h2 data-t>Driving the tram</h2>
+        <dl>
+          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Pull away and brake</dd>
+          <dt><kbd>Space</kbd></dt><dd data-t>Brake hard</dd>
+          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Pick the way at the next junction (straight on if you don't)</dd>
+          <dt><kbd>Q</kbd></dt><dd data-t>Ring the bell</dd>
+          <dt><kbd>X</kbd></dt><dd data-t>Open and close the doors at a stop (people get off and on)</dd>
+          <dt><kbd>E</kbd></dt><dd data-t>Get off once it has stopped</dd>
         </dl>
       </section>
       <section class="tram-only">
@@ -409,6 +472,7 @@
           <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Pick where to get off</dd>
           <dt><kbd>Shift</kbd></dt><dd data-t>Speed up the ride</dd>
           <dt><kbd>E</kbd></dt><dd data-t>Get off at the next stop</dd>
+          <dt><kbd>F</kbd></dt><dd data-t>Take over the tram and drive it yourself</dd>
         </dl>
       </section>
       <section class="funicular-only">
@@ -436,11 +500,14 @@
       <button id="t-toggle" class="car-only">Lane assist</button>
       <button id="t-road" class="car-only" data-t>Back on road</button>
       <div id="t-right">
+        <button id="t-steal" class="tram-only" data-t>Take over the tram</button>
+        <button id="t-doors" data-t>Doors</button>
         <button id="t-fast" class="tram-only">Hold to speed up</button>
         <button id="t-ticket" data-t hidden>Buy a ticket</button>
         <button id="t-taxi" class="foot-only" data-t>Taxi</button>
         <button id="t-action" class="off">Get in</button>
-        <div class="t-row car-only"><button id="t-hand" data-t>Handbrake</button></div>
+        <button id="t-cannon" class="car-only" data-t hidden>Water cannon</button>
+        <div class="t-row car-only"><button id="t-horn" data-t>Horn</button><button id="t-hand" data-t>Handbrake</button></div>
         <div id="t-pedals" class="car-only"><div id="t-brake" class="t-pedal" data-t>Brake</div><div id="t-gas" class="t-pedal" data-t>Gas</div></div>
       </div>
     </div>

@@ -36,6 +36,15 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
   let time: string = 'now', weather: Kind = opts.weather, sound = opts.sound;
   let weatherPicked = false;
 
+  // The poster behind shows what is picked: the sky's light for the time of day, and
+  // the weather over it (index.html). "Now" shows the part of the day it is now.
+  const hour = Number(opts.now.split(':')[0]);
+  const nowPart = hour >= 5 && hour < 11 ? 'morning' : hour >= 11 && hour < 17 ? 'midday' : hour >= 17 && hour < 21 ? 'evening' : 'night';
+  const show = () => {
+    root.dataset.time = time === 'now' ? nowPart : time;
+    root.dataset.weather = weather;
+  };
+
   // Text that follows the language: each is given again when it changes.
   const relabel: (() => void)[] = [];
   onLang(() => { for (const f of relabel) f(); });
@@ -54,6 +63,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
       b.addEventListener('click', () => {
         pick(it.id);
         for (const o of buttons) o.setAttribute('aria-pressed', String(o === b));
+        show();
       });
       return b;
     });
@@ -72,6 +82,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
   go.type = 'button';
   go.disabled = true;
   for (const f of relabel) f();
+  show();
 
   // Enables the button; resolves with the choice when it's pressed.
   return {
@@ -85,6 +96,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
       const choose = () => {
         weather = kind;
         for (const o of weatherRow.buttons) o.setAttribute('aria-pressed', String(o === b));
+        show();
       };
       weatherRow.buttons.push(b);
       b.addEventListener('click', () => { choose(); weatherPicked = true; });

@@ -11,14 +11,15 @@ const check = `(async () => {
   const { LAMP_SHADOWS } = await import('/src/lamps.ts');
   const { AutoTier } = await import('/src/graphics.ts');
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
-  for (const [tier, size, samples, look, cars, crowd] of [
-    ['lowest',1024,0,0,0,0.5], ['high',2048,4,1,2,1],
-    ['low',1024,4,1,1,1], ['medium',2048,4,1,1,1], ['lowest',1024,0,0,0,0.5],
+  for (const [tier, size, samples, look, cars, crowd, blur] of [
+    ['lowest',1024,0,0,0,0.5,1], ['high',2048,4,1,2,1,1], ['ultra',4096,4,1,2,1,2],
+    ['low',1024,4,1,1,1,1], ['medium',2048,4,1,1,1,1], ['lowest',1024,0,0,0,0.5,1],
   ]) {
     g.set(tier);
     await new Promise(resolve => setTimeout(resolve, 600));
     assert(d.sky.sun.shadow.mapSize.x === size, tier + ': requested shadow size');
     assert(d.sky.sun.shadow.map.width === size, tier + ': actual shadow size');
+    assert(d.sky.sun.shadow.radius === blur, tier + ': shadow edge softening');
     assert(DIRT.value === look && LEAVES.value === look && ROOF_DETAIL.value === look, tier + ': detail');
     assert(LAMP_SHADOWS.value === cars && g.crowd === crowd, tier + ': lamps/crowd');
     assert(r.getPixelRatio() === 1, tier + ': fixed DPR');
@@ -36,6 +37,9 @@ const check = `(async () => {
   for(let i=0;i<60;i++) assert(auto.record(35,4000+i) === null,'Auto warmup');
   for(let i=0;i<60;i++) next=auto.record(35,9000+i*35);
   assert(next === 'low', 'Auto can reach the smaller shadow map');
+  g.set('ultra');
+  g.set('auto');
+  assert(g.tier === 'high', 'Auto goes no higher than High');
   g.set('high');
   return 'Graphics checks passed: ' + (r.backend ? 'WebGPU' : 'WebGL');
 })()`;

@@ -18,6 +18,7 @@ interface Helicopter {
 const ALT = 55; // m above the ground
 const TOP = 26; // m/s
 const ACCEL = 7;
+const OFFSET = 16; // m to the side of you
 export const HELI_SIGHT = 160;
 
 const POLICE = { body: '#eef1f4', band: '#1d4fa3', stripe: '#d4e02b' };
@@ -37,8 +38,11 @@ function model(paint = POLICE) {
   // Local +x is the nose, +y up; the car models use the same axes.
   add(ball(2.4, 1.15, 1.1), paint.body, [0.3, 1.5, 0]);
   add(ball(1.3, 0.8, 0.95), '#1b232b', [1.45, 1.8, 0]);
-  add(box(4.1, 0.34, 2.22), paint.band, [0.2, 1.3, 0]);
-  add(box(3.9, 0.12, 2.24), paint.stripe, [0.2, 1.54, 0]);
+  // The band and stripe wrap the body just outside it, stopping short of the canopy;
+  // `from` and `to` are heights on the body, -1 at the bottom and 1 at the top.
+  const wrap = (from: number, to: number) => new THREE.SphereGeometry(1, 36, 2, Math.PI + 0.7, Math.PI * 2 - 1.4, Math.acos(to), Math.acos(from) - Math.acos(to)).scale(2.46, 1.18, 1.14);
+  add(wrap(-0.32, -0.02), paint.band, [0.3, 1.5, 0]);
+  add(wrap(-0.02, 0.09), paint.stripe, [0.3, 1.5, 0]);
   add(box(5.2, 0.42, 0.42), paint.body, [-3.8, 1.8, 0]);
   add(box(1.0, 1.5, 0.12), paint.band, [-6.2, 2.45, 0]);
   add(box(0.3, 0.08, 1.8), paint.band, [-5.9, 1.85, 0]);
@@ -110,11 +114,11 @@ export class Helicopters {
     for (const h of on.slice(want)) h.leaving = true;
 
     for (const h of this.list) {
-      // Keep over you, a little ahead when you move; circle when you stand still.
+      // Circle a little off to one side so it never hides you. The lead makes up for
+      // the lag of the chase below, so a steady pace keeps it on the circle.
       h.orbit += dt * 0.35;
-      const slow = clamp(1 - Math.hypot(me.vx, me.vy) / 8, 0, 1);
-      let tx = me.x + me.vx * 1.2 + Math.cos(h.orbit) * 18 * slow;
-      let ty = me.y + me.vy * 1.2 + Math.sin(h.orbit) * 18 * slow;
+      let tx = me.x + me.vx / 0.8 + Math.cos(h.orbit) * OFFSET;
+      let ty = me.y + me.vy / 0.8 + Math.sin(h.orbit) * OFFSET;
       if (h.leaving) {
         const dx = h.x - me.x, dy = h.y - me.y, d = Math.hypot(dx, dy) || 1;
         tx = h.x + (dx / d) * 500;

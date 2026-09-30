@@ -15,7 +15,25 @@ npm run dev          # http://localhost:5191
 npm run typecheck    # check browser source with strict TypeScript
 npm run build        # typecheck, then make a production build
 node scripts/bench.mjs   # frame times in Chrome at a few places (options in the script)
+node scripts/scene.mjs run all   # test scenarios in headless Chrome (see Testing below)
 ```
+
+### Testing
+
+`scenarios/*.ts` are scripted situations with checks, e.g. "a car at 50 km/h knocks a
+lamp post over". They drive the real game through the test API in `src/testkit.ts`
+(`window.__test`, `t` in a scenario): go to a place (named test places, or
+latitude/longitude), set the time, weather, money, stars and health, get into a new
+car, aim it at the nearest post, push it to a speed, run the world for a few seconds
+with given controls, read back the numbers (`t.probe()`), look from anywhere with
+`t.camera()`, and take screenshots.
+
+`node scripts/scene.mjs serve` keeps headless Chrome open with the game loaded; then
+`run <name…|all>`, `eval "<js with t>"` and `shot` take a second or two each, and follow
+the dev server's reloads. Without a server each command loads the game itself.
+Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
+("Run and watch" plays one in real time), and "Copy this situation" there copies where
+you are, the time, weather, money, stars, car and camera as the start of a new scenario.
 
 WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer.
 If the browser's GPU adapter request takes more than 5 seconds, or device
@@ -31,24 +49,27 @@ the historic centre and `?area=ujezd` a small test area. The game's clock starts
 now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
 (with night-time parking). The weather changes by itself every half hour or so of the game's clock;
 `?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen (the loading screen's language, time, weather and sound choices and its Start button; the weather is the real weather in Prague now, from Open-Meteo (`src/liveweather.ts`), or else rolled anew on each visit), and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
-developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. Elements in `index.html` marked `data-t` work the same way.
+developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. The Czech is kept gender-neutral towards the player for now (see the note at the top of `src/cs.ts`). Elements in `index.html` marked `data-t` work the same way.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 
-| Setting | High | Medium | Low | Lowest |
-|---|---|---|---|---|
-| Pixel ratio, up to the screen's own | 2 | 1.5 | 1 | 1 |
-| MSAA on WebGPU | 4 samples | 4 samples | 4 samples | Off |
-| Sun shadow map | 2048² | 2048² | 1024² | 1024² |
-| Dirt, grime, small leaves and tone curve | On | On | On | Off |
-| Roof tiles and weathering | On | On | On | Off |
-| Car shadows in lamplight | Full | Soft | Soft | Off |
-| Maximum crowd | 1200 | 1200 | 1200 | 600 |
+| Setting | Ultra | High | Medium | Low | Lowest |
+|---|---|---|---|---|---|
+| Pixel ratio, up to the screen's own | 2 | 2 | 1.5 | 1 | 1 |
+| MSAA on WebGPU | 4 samples | 4 samples | 4 samples | 4 samples | Off |
+| Sun shadow map | 4096², softer edges | 2048² | 2048² | 1024² | 1024² |
+| Dirt, grime, small leaves and tone curve | On | On | On | On | Off |
+| Roof tiles and weathering | On | On | On | On | Off |
+| Car shadows in lamplight | Full | Full | Soft | Soft | Off |
+| Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
 
-Street patterns and facade pictures stay on at every tier. Quieter streets have
+The sun shadow map covers just what is on screen, as the sun sees it, so shadows stay
+sharp when you drive and when the sun is low. Street patterns and facade pictures
+stay on at every tier. Quieter streets have
 fewer people; changing tiers lets surplus people leave out of sight.
 Auto, the default, starts High (Medium on touch devices) and moves between tiers
-by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds.
-`?graphics=auto|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
+by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds;
+it never picks Ultra, which only choosing it turns on.
+`?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. WebGL keeps MSAA on at every tier because it cannot change
 that without a new renderer.
 
@@ -169,10 +190,35 @@ that without a new renderer.
   people over, hurts you if you're near, shoves the cars around and can set them going
   too; blowing up a car you've crashed into is a crime, a police car more so
   (`src/fire.ts`).
+- **Fire brigade.** When a car catches fire, a fire engine is called from a few hundred
+  metres away, drives to it by the streets, and its crew of three gets out and sprays
+  the car with hoses. A car nobody is driving burns 45–75 seconds before it blows up,
+  which gives the engine time to arrive; your own car and cars chased by the police
+  still go in 4–6 seconds. Once the fire is out, the crew climbs back aboard and the
+  engine drives away. Crew and engines can be run over. Engines flash blue lights
+  (police cars chasing you use the same code) and sound a siren: a slow two-tone for the
+  engine, a faster rising and falling wail for the police, both gone by about 450 m. Cars
+  ahead of one slow down and keep right as far as the street allows, and the police and
+  engines take red lights at no more than 5 m/s (`src/brigade.ts`, `src/water.ts`,
+  `src/beacons.ts`). The developer panel's "Set the nearest car on fire" button is the
+  quickest way to see it.
+  You can take an engine like any car (it counts as a carjack, and the crew who are out
+  run after you for a while). Hold <kbd>F</kbd> in it (a button on phones) to spray the
+  water cannon 17 m ahead: it puts out burning cars and knocks people and officers over
+  gently, which counts as a crime. The tank lasts about 30 seconds and refills slowly;
+  a blue bar under the health bar shows it (`src/cannon.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
-  OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads
-  the tiles there and drops you on the pavement. "Copy link" gives a `?start=` link.
+  OpenStreetMap's Nominatim, paste coordinates or a Google Maps / Mapy.cz link, or pick
+  a spot on an OpenStreetMap map (right-click there copies its coordinates); the game
+  loads the tiles there and drops you on the pavement. "Copy link" gives a `?start=`
+  link; `?place=` takes one of the test places in `src/testkit.ts`. The panel shows your
+  coordinates (with a copy button) and links to the spot on Google Maps, Street View
+  (facing your way) and Mapy.cz. The free camera stops following you: drag to move it,
+  the wheel zooms, right-drag or Shift-drag turns and tilts it, and searching or the map
+  then move the camera instead of you. Under Testing: pause, one frame at a time, slow
+  motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,
+  the test places, and the scenarios (see Testing above).
   "Helicopter next to me" parks one on the nearest open ground: E gets in, W/S fly,
   A/D turn, Space climbs, Shift comes down. Below 30 m the buildings are in the way;
   land on open ground to get out.
@@ -414,8 +460,8 @@ that without a new renderer.
   has out follows PID's timetable for the game clock's day and hour (`src/clock.ts`):
   a tram every few minutes on a weekday afternoon, fewer at weekends and in the
   evening, and only the night lines 91–99 after midnight. Trams join a line where the
-  gap is widest and leave service out of sight; the dev panel moves the clock an hour
-  either way. The departure boards count down from where the trams really are, so a
+  gap is widest and leave service out of sight; the dev panel's time slider moves the
+  clock. The departure boards count down from where the trams really are, so a
   tram held up in traffic shows up late there too. They stop at
   every stop, keep to the track's speed limit, slow down for curves and brake for the
   tram in front and for anything on the track. A car left on the track that holds a

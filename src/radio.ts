@@ -142,7 +142,7 @@ export class Radio {
     const src = ctx.createBufferSource(), g = ctx.createGain(), band = biquad(ctx, 'bandpass', 2600, 0.5);
     src.buffer = this.noise;
     src.loop = true;
-    g.gain.setValueAtTime(0.3, t);
+    g.gain.setValueAtTime(0.15, t);
     src.connect(band).connect(g).connect(this.out);
     src.start(t);
     this.stopStatic = () => {

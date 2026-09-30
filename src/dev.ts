@@ -4,19 +4,45 @@ import type { MapIndex } from './contracts.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Graphics, Choice } from './graphics.ts';
 import type { Kind } from './weather.ts';
+import type { Testkit } from './testkit.ts';
 
 interface DevHit { label: string; x: number; y: number }
 interface StreetName { name: string; key: string; x: number; y: number }
 
-// Developer panel (` key or ?dev): jump to a street or an address, or pick a spot on
-// a map; set the time of day, the weather and the graphics. Street names come from the area's own index (offline); addresses are looked
-// up on OpenStreetMap's Nominatim only when you ask for it.
+// Developer panel (` key or ?dev): jump to a street, an address, coordinates or a
+// Google Maps / Mapy.cz link, or pick a spot on a map; see where you are on those maps;
+// set the time of day, the weather and the graphics; and the testing tools (pause, slow
+// motion, money, stars, scenarios). Street names come from the area's own index
+// (offline); addresses are looked up on OpenStreetMap's Nominatim only when you ask.
 
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-export function setupDev({ area, index, teleport, position, helicopter, shiftTime, timeOfDay, setTimeOfDay, graphics, weather }: {
+// Latitude and longitude from what you paste: "50.0873, 14.4206" (either way round:
+// in Prague the latitude is the bigger number), or a Google Maps or Mapy.cz link.
+export function parseSpot(q: string): Point2 | null {
+  const at = /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(q);
+  if (at) return [+at[1], +at[2]];
+  if (/^https?:/.test(q)) {
+    try {
+      const u = new URL(q), x = u.searchParams.get('x'), y = u.searchParams.get('y');
+      if (x && y && Number.isFinite(+x) && Number.isFinite(+y)) return [+y, +x];
+      q = u.searchParams.get('query') ?? u.searchParams.get('q') ?? u.searchParams.get('viewpoint') ?? '';
+    } catch { return null; }
+  }
+  const m = /^\s*(-?\d{1,3}\.\d{3,})°?\s*[NS]?\s*[,;\s]\s*(-?\d{1,3}\.\d{3,})°?\s*[EW]?\s*$/i.exec(q);
+  if (!m) return null;
+  const a = +m[1], b = +m[2];
+  return a >= b ? [a, b] : [b, a];
+}
+
+const fixed = (lat: number, lon: number) => `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+export const googleMaps = (lat: number, lon: number) => `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lon.toFixed(6)}`;
+export const streetView = (lat: number, lon: number, heading: number) => `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}&heading=${Math.round(heading)}`;
+export const mapyCz = (lat: number, lon: number) => `https://mapy.com/zakladni?x=${lon.toFixed(6)}&y=${lat.toFixed(6)}&z=19&source=coor&id=${lon.toFixed(6)}%2C${lat.toFixed(6)}`;
+
+export function setupDev({ area, index, teleport, position, helicopter, setFire, timeOfDay, setTimeOfDay, graphics, weather }: {
   area: string; index: MapIndex; teleport: (x: number, y: number) => Promise<void>;
-  position: () => Point2; helicopter: () => boolean; shiftTime: (hours: number) => void;
+  position: () => Point2; helicopter: () => boolean; setFire: () => boolean;
   // Seconds since midnight on the game's clock.
   timeOfDay: () => number; setTimeOfDay: (sec: number) => void;
   graphics: Graphics;
@@ -28,6 +54,9 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
   const toLocal = (lon: number, lat: number): Point2 => proj4('EPSG:4326', local, [lon, lat]) as Point2;
   const toLonLat = (x: number, y: number): Point2 => proj4(local, 'EPSG:4326', [x, y]) as Point2;
   let names: StreetName[] | null = null;
+  let bench: ReturnType<typeof setupBench> | null = null;
+  // Where the free camera looks while it's on; otherwise where you are.
+  const here = (): Point2 => bench?.spot() ?? position();
   const loadNames = async () => {
     if (!names) {
       const r = await fetch(`data/${area}_now/names.json`);
@@ -45,18 +74,24 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
   panel.className = 'panel';
   panel.innerHTML = `
     <div class="dev-title">Developer tools <kbd>\`</kbd></div>
-    <input id="dev-q" type="search" placeholder="Street or address, e.g. Vodičkova or Karlovo náměstí 13" autocomplete="off" />
+    <input id="dev-q" type="search" placeholder="Street, address, coordinates or a map link" autocomplete="off" />
     <div id="dev-results"></div>
     <div class="dev-row">
       <button id="dev-map">Pick a spot on the map</button>
       <button id="dev-link" title="Copies a link that starts the game here">Copy link to this spot</button>
     </div>
-    <div class="dev-row">
-      <button id="dev-heli" title="Walk up to it and press E to fly it">Helicopter next to me</button>
+    <div class="dev-row dev-here">
+      <span id="dev-pos"></span>
+      <button id="dev-copy" title="Copies your latitude and longitude, e.g. to paste into a conversation">Copy coordinates</button>
     </div>
     <div class="dev-row">
-      <button id="dev-earlier" title="The trams follow the timetable for the new time">An hour earlier</button>
-      <button id="dev-later" title="The trams follow the timetable for the new time">An hour later</button>
+      <a id="dev-google" target="_blank" rel="noopener">Google Maps</a>
+      <a id="dev-street" target="_blank" rel="noopener" title="Google Street View here, looking the way you face">Street View</a>
+      <a id="dev-mapy" target="_blank" rel="noopener">Mapy.cz</a>
+    </div>
+    <div class="dev-row">
+      <button id="dev-heli" title="Walk up to it and press E to fly it">Helicopter next to me</button>
+      <button id="dev-fire" title="The fire brigade comes from out of view">Set the nearest car on fire</button>
     </div>
     <label class="dev-time">Time of day <span id="dev-time-label"></span>
       <input id="dev-time" type="range" min="0" max="1439" step="5" title="The trams follow the timetable for the new time" />
@@ -71,7 +106,21 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
         <option value="auto">Changing by itself</option>${weather.kinds.map((k) => `<option value="${k}">${k[0].toUpperCase()}${k.slice(1)}</option>`).join('')}
       </select>
     </label>
-    <div id="dev-pos"></div>`;
+    <div id="dev-bench"></div>`;
+  panel.style.maxHeight = 'calc(100vh - 32px)';
+  panel.style.overflowY = 'auto';
+  const style = document.createElement('style');
+  style.textContent = `
+    #dev a { color: var(--ink); opacity: 0.85; font-size: 13px; }
+    #dev .dev-here { align-items: center; }
+    #dev .dev-here span { flex: 1; font-variant-numeric: tabular-nums; }
+    #dev .dev-sub { font-weight: 600; margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.15); }
+    #dev input[type=number] { width: 90px; padding: 4px 6px; }
+    #dev .dev-check { display: flex; gap: 6px; align-items: center; }
+    #dev .dev-check input { margin: 0; }
+    #dev .dev-pass { color: #8fd18f; } #dev .dev-fail { color: #ff8f7a; }
+    #dev-out { font-size: 12px; white-space: pre-wrap; max-height: 220px; overflow: auto; }`;
+  document.head.appendChild(style);
   panel.hidden = true;
   document.body.appendChild(panel);
   const $ = (id: string): HTMLElement => {
@@ -83,9 +132,13 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
   const query = $('dev-q');
   if (!(query instanceof HTMLInputElement)) throw new Error('Developer search field is missing');
 
+  const flash = (el: HTMLElement, now: string, then: string) => {
+    el.textContent = now;
+    setTimeout(() => { el.textContent = then; }, 1500);
+  };
   const go = async (x: number, y: number, label: string) => {
     results.innerHTML = `<div class="dev-note">Going to ${label}…</div>`;
-    await teleport(x, y);
+    if (bench?.free()) { const [lon, lat] = toLonLat(x, y); await bench.look(lat, lon); } else await teleport(x, y);
     results.innerHTML = '';
   };
   const show = (items: DevHit[], note = '') => {
@@ -101,6 +154,8 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
 
   // Streets as you type; the whole address on Enter.
   query.addEventListener('input', async () => {
+    const spot = parseSpot(query.value.trim());
+    if (spot) { show([{ label: `Go to ${fixed(...spot)}`, x: toLocal(spot[1], spot[0])[0], y: toLocal(spot[1], spot[0])[1] }]); return; }
     const q = fold(query.value.trim());
     if (q.length < 2) { results.innerHTML = ''; return; }
     const list = await loadNames();
@@ -113,6 +168,8 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
     if (ev.key !== 'Enter') return;
     const q = query.value.trim();
     if (!q) return;
+    const spot = parseSpot(q);
+    if (spot) { void go(...toLocal(spot[1], spot[0]), fixed(...spot)); return; }
     results.innerHTML = '<div class="dev-note">Looking the address up on OpenStreetMap…</div>';
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&bounded=1&viewbox=${w},${n},${e},${s}&q=${encodeURIComponent(q)}`;
@@ -137,8 +194,7 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
     const u = new URL(location.href);
     u.searchParams.set('start', `${lon.toFixed(5)},${lat.toFixed(5)}`);
     await navigator.clipboard?.writeText(u.toString()).catch(() => {});
-    $('dev-link').textContent = 'Link copied';
-    setTimeout(() => { $('dev-link').textContent = 'Copy link to this spot'; }, 1500);
+    flash($('dev-link'), 'Link copied', 'Copy link to this spot');
   };
 
   const pick = $('dev-graphics') as HTMLSelectElement;
@@ -156,8 +212,16 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
   // Arrow keys move the slider, not the player.
   time.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   time.addEventListener('keyup', (ev) => ev.stopPropagation());
-  $('dev-earlier').onclick = () => shiftTime(-1);
-  $('dev-later').onclick = () => shiftTime(1);
+  $('dev-copy').onclick = async () => {
+    const [lon, lat] = toLonLat(...here());
+    await navigator.clipboard?.writeText(fixed(lat, lon)).catch(() => {});
+    flash($('dev-copy'), 'Copied', 'Copy coordinates');
+  };
+  $('dev-fire').onclick = () => {
+    const ok = setFire();
+    $('dev-fire').textContent = ok ? 'On fire, engine called' : 'No car nearby';
+    setTimeout(() => { $('dev-fire').textContent = 'Set the nearest car on fire'; }, 1800);
+  };
   $('dev-heli').onclick = () => {
     const ok = helicopter();
     $('dev-heli').textContent = ok ? 'Helicopter parked nearby' : 'No open space for it here';
@@ -169,7 +233,7 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
   const overlay = document.createElement('div');
   overlay.id = 'dev-mapbox';
   overlay.hidden = true;
-  overlay.innerHTML = '<div id="dev-leaflet"></div><div class="dev-maphint">Click where you want to be · <kbd>Esc</kbd> closes the map</div>';
+  overlay.innerHTML = '<div id="dev-leaflet"></div><div class="dev-maphint">Click where you want to be · right-click copies the coordinates · <kbd>Esc</kbd> closes the map</div>';
   document.body.appendChild(overlay);
   $('dev-map').onclick = async () => {
     overlay.hidden = false;
@@ -183,6 +247,11 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
       }).addTo(map);
       L.rectangle([[s, w], [n, e]], { color: '#ffd23f', weight: 2, fill: false }).addTo(map);
       marker = L.circleMarker([lat, lon], { radius: 7, color: '#d9612c', fillOpacity: 0.9 }).addTo(map);
+      map.on('contextmenu', (ev) => {
+        const text = fixed(ev.latlng.lat, ev.latlng.lng);
+        void navigator.clipboard?.writeText(text).catch(() => {});
+        L.popup().setLatLng(ev.latlng).setContent(`Copied ${text}`).openOn(map!);
+      });
       map.on('click', (ev) => {
         overlay.hidden = true;
         const [x, y] = toLocal(ev.latlng.lng, ev.latlng.lat);
@@ -209,9 +278,16 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
   return {
     update() {
       if (panel.hidden) return;
-      const [x, y] = position();
+      const [x, y] = here();
       const [lon, lat] = toLonLat(x, y);
-      $('dev-pos').textContent = `${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`;
+      const text = fixed(lat, lon);
+      if ($('dev-pos').textContent !== text) {
+        $('dev-pos').textContent = text;
+        ($('dev-google') as HTMLAnchorElement).href = googleMaps(lat, lon);
+        ($('dev-mapy') as HTMLAnchorElement).href = mapyCz(lat, lon);
+      }
+      ($('dev-street') as HTMLAnchorElement).href = streetView(lat, lon, bench?.heading() ?? 0);
+      bench?.update();
       $('dev-graphics-label').textContent = graphics.choice === 'auto' ? `(${graphics.tier} now)` : '';
       if (document.activeElement !== pick) pick.value = graphics.choice;
       if (document.activeElement !== sky) sky.value = weather.get();
@@ -220,6 +296,122 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
       if (!dragging) time.value = String(min);
       $('dev-time-label').textContent = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
     },
-    toLocal,
+    toLocal, toLonLat,
+    attach(kit: Testkit) { bench = setupBench(kit, $); },
+  };
+}
+
+// The testing tools, under the others.
+function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
+  const box = $('dev-bench');
+  box.innerHTML = `
+    <div class="dev-sub">Camera</div>
+    <label class="dev-check" title="The camera stops following you. Searching or picking a spot on the map now moves the camera, not you."><input id="dev-free" type="checkbox" /> Free camera</label>
+    <div class="dev-note" id="dev-free-hint" hidden>Drag to move it · wheel to zoom · right-drag or Shift-drag to turn and tilt</div>
+    <div class="dev-row" id="dev-free-row" hidden>
+      <button id="dev-top" title="Looking straight down, north up">Straight down</button>
+      <button id="dev-back" title="The camera follows you again">Back to me</button>
+    </div>
+    <div class="dev-sub">Testing</div>
+    <div class="dev-row">
+      <button id="dev-pause">Pause</button>
+      <button id="dev-step" title="Moves the world on by one frame">One frame</button>
+      <select id="dev-speed" title="How fast the world runs"><option value="0.1">0.1×</option><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>Normal speed</option><option value="2">2×</option><option value="4">4×</option></select>
+    </div>
+    <div class="dev-row dev-here">
+      <label class="dev-check">Money <input id="dev-money" type="number" min="0" step="100" /></label>
+      <label class="dev-check">Wanted <select id="dev-stars">${[0, 1, 2, 3, 4, 5].map((n) => `<option value="${n}">${n ? '★'.repeat(n) : 'no stars'}</option>`).join('')}</select></label>
+    </div>
+    <div class="dev-row dev-here">
+      <button id="dev-heal">Full health</button>
+      <label class="dev-check" title="Crashes, shots and explosions don't hurt you"><input id="dev-unhurt" type="checkbox" /> Nothing hurts</label>
+    </div>
+    <div class="dev-row">
+      <button id="dev-car" title="A car on clear ground ahead of you, with you in it">Into a new car</button>
+      <select id="dev-car-kind">${['hatch', 'sedan', 'suv', 'van', 'taxi', 'police', 'pickup', 'truck', 'bus', 'moto', 'bike'].map((k) => `<option>${k}</option>`).join('')}</select>
+    </div>
+    <label class="dev-time">Test places
+      <select id="dev-place"><option value="">Go to…</option>${Object.entries(kit.PLACES).map(([k, p]) => `<option value="${k}">${p.note}</option>`).join('')}</select>
+    </label>
+    <label class="dev-time">Scenarios
+      <select id="dev-scenario">${kit.scenarios.map((n) => `<option>${n}</option>`).join('')}</select>
+    </label>
+    <div class="dev-row">
+      <button id="dev-run">Run and watch</button>
+      <button id="dev-all" title="Runs every scenario as fast as it can and lists which pass">Run all</button>
+    </div>
+    <div class="dev-row">
+      <button id="dev-snap" title="Copies where you are, the time, the weather, your money, stars and car as the start of a scenario, to paste into a conversation">Copy this situation</button>
+    </div>
+    <div id="dev-out"></div>`;
+  const free = $('dev-free') as HTMLInputElement;
+  free.onchange = () => { void kit.camera(free.checked ? {} : null); };
+  $('dev-top').onclick = () => { void kit.camera({ tilt: 0, heading: 0 }); };
+  $('dev-back').onclick = () => { void kit.camera(null); };
+  const keep = (el: HTMLElement) => el.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+  const out = $('dev-out');
+  const pause = $('dev-pause');
+  pause.onclick = () => { kit.paused = !kit.paused; };
+  $('dev-step').onclick = () => { kit.paused = true; kit.step(); };
+  const speed = $('dev-speed') as HTMLSelectElement;
+  speed.onchange = () => { kit.speed = +speed.value; };
+  const money = $('dev-money') as HTMLInputElement;
+  keep(money);
+  money.onchange = () => kit.set({ money: +money.value });
+  const stars = $('dev-stars') as HTMLSelectElement;
+  stars.onchange = () => kit.set({ stars: +stars.value });
+  $('dev-heal').onclick = () => kit.set({ health: 100 });
+  const unhurt = $('dev-unhurt') as HTMLInputElement;
+  unhurt.onchange = () => { kit.unhurt = unhurt.checked; };
+  const kind = $('dev-car-kind') as HTMLSelectElement;
+  $('dev-car').onclick = async () => {
+    try { await kit.drive(kind.value); } catch (e) { out.textContent = e instanceof Error ? e.message : String(e); }
+  };
+  const place = $('dev-place') as HTMLSelectElement;
+  place.onchange = async () => {
+    if (!place.value) return;
+    await kit.go(place.value);
+    place.value = '';
+  };
+  for (const el of [speed, stars, kind, place, $('dev-scenario')]) keep(el);
+  const line = (r: Awaited<ReturnType<Testkit['run']>>) =>
+    `<div class="${r.pass ? 'dev-pass' : 'dev-fail'}">${r.pass ? '✓' : '✗'} ${r.title}</div>` +
+    r.checks.map((c) => `<div class="${c.pass ? 'dev-pass' : 'dev-fail'}">  ${c.pass ? '✓' : '✗'} ${c.name}${c.detail ? ` <span class="dev-note">${c.detail}</span>` : ''}</div>`).join('') +
+    (r.error ? `<div class="dev-fail">  ${r.error}</div>` : '');
+  const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+  const run = async (names: string[], watch: boolean) => {
+    out.innerHTML = '<div class="dev-note">Running…</div>';
+    kit.watch = watch;
+    let html = '';
+    try {
+      for (const n of names) { html += line(await kit.run(n)); out.innerHTML = html; }
+    } catch (e) {
+      out.innerHTML = html + `<div class="dev-fail">${esc(e instanceof Error ? e.message : String(e))}</div>`;
+    } finally {
+      kit.watch = false;
+    }
+  };
+  $('dev-run').onclick = () => run([($('dev-scenario') as HTMLSelectElement).value], true);
+  $('dev-all').onclick = () => run(kit.scenarios, false);
+  $('dev-snap').onclick = async () => {
+    const text = kit.snapshot();
+    await navigator.clipboard?.writeText(text).catch(() => {});
+    out.textContent = text;
+    $('dev-snap').textContent = 'Copied';
+    setTimeout(() => { $('dev-snap').textContent = 'Copy this situation'; }, 1500);
+  };
+  return {
+    heading: () => kit.cam ? kit.cam.heading : kit.where().heading,
+    spot: (): Point2 | null => (kit.cam ? [kit.cam.x, kit.cam.y] : null),
+    free: () => !!kit.cam,
+    look: (lat: number, lon: number) => kit.camera({ at: [lat, lon] }),
+    update() {
+      free.checked = !!kit.cam;
+      $('dev-free-hint').hidden = $('dev-free-row').hidden = !kit.cam;
+      pause.textContent = kit.paused ? 'Carry on' : 'Pause';
+      const p = kit.probe();
+      if (document.activeElement !== money) money.value = String(p.money);
+      if (document.activeElement !== stars) stars.value = String(p.stars);
+    },
   };
 }

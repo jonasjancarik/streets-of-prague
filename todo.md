@@ -138,9 +138,12 @@ grime on the walls 6%, the shadow map's own pass 7%.
   target that Auto can switch, with a pass to the screen after. A decision on the
   look first. (Playwright's own Chromium makes MSAA look far costlier, 4.5× a
   fragment against Chrome's 1.5×: benchmark in Chrome.)
-- **The mosaic's stones at the usual height on foot** are drawn at about a tenth of
-  their contrast (they fade out as they get smaller than a pixel) yet cost 14% of the
-  frame. A tighter fade would save most of that, but it's a change to the look.
+- **The mosaic's stones** are a texture on WebGPU since 30 September 2026
+  (`src/webgpu/mosaic.ts`), one read a pixel instead of the stones worked out anew,
+  which cost 14% of a frame on WebGL; not measured on WebGPU yet. The WebGL renderer
+  still works them out. Laying the old Prague patterns along the kerbs was tried
+  (branch `mosaic-ornaments`) and set aside: the pavements' and roads' shapes break
+  them up at every junction and parking bay.
 - **Ground overdraw** is gone: the stencil lets only the top solid layer shade a pixel
   (1.4–2.1 layers a pixel before). Apple's GPUs skipped covered pixels on their own,
   so it measured the same on a Mac; the gain is for GPUs that don't, untested. The
@@ -292,6 +295,16 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   since the photographs are a morning's and walls facing west or north are in shade
   (their colour can't be recovered; the rest keep the palette); mansard windows
   lined up with the facade's bays; roof windows, dormers and chimneys (phase 3).
+- **Firefighter job.** Phase 4 of `plans/006-firefighters.md`: firefighting as a job,
+  once the mission engine from plan 004 exists. The rest of the fire brigade (engines,
+  crews, lights, sirens, giving way, stealing an engine, the water cannon) is in.
+- **Fire engine polish.**
+  - A driven engine uses the petrol-car engine sound; give it a heavy diesel voice.
+  - After a fire is out, an engine can take about 40 s to clear a narrow street.
+  - Cars give little room on narrow Old Town streets (no space on the right).
+  - Not measured yet: `scripts/bench.mjs --vs` with the jets, the water cannon on a
+    phone, and the siren levels in a real browser.
+
 ## Weather and night
 
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow

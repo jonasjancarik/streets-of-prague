@@ -1,0 +1,120 @@
+---
+name: scene-testing
+description: How to check what happens in Streets of Prague (driving, crashes, police, fares, trams, weather, camera views) by scripting the real game in headless Chrome with scripts/scene.mjs, the test API in src/testkit.ts (window.__test) and the scenarios in scenarios/. Use when verifying a gameplay change, reproducing a bug the user describes, replaying coordinates or a "Copy this situation" snippet the user pasted, taking a screenshot of a place or from a camera angle, or adding a regression scenario. Not for frame times (use scripts/bench.mjs and the performance skill).
+---
+
+# Testing in the game
+
+Don't write throwaway Playwright scripts. The game has a test API and a runner that
+keeps it loaded, so a check takes seconds, not a minute of loading per attempt.
+
+## The loop
+
+1. The dev server must be up (`npm run dev`, port 5191; check with
+   `lsof -nP -iTCP:5191 -sTCP:LISTEN`).
+2. Start the scene server in the background: `node scripts/scene.mjs serve`
+   (loads the game once in headless Chrome, listens on 5199). It follows the dev
+   server's reloads: after you edit source, the next command waits for the page to
+   load again.
+3. Explore with `eval`, one shot of JS with `t` = `window.__test` (and `__drive`,
+   the game's raw objects):
+   `node scripts/scene.mjs eval "await t.go('karlova'); await t.drive('sedan'); return t.probe()"`
+   A bare expression is returned as it is; with `;` or `return`, it's a function body.
+4. If the check is worth repeating, make it a scenario (below) and run it:
+   `node scripts/scene.mjs run <name>`; `run all` before committing gameplay changes.
+5. Look at screenshots with Read (they go to `$TMPDIR/scene/<name>.png`), and show
+   the user the ones that matter.
+6. `node scripts/scene.mjs stop` when done (it holds a Chrome with a GPU context).
+
+Without `serve`, each command loads the game itself (fine for a one-off).
+Options: `--place`, `--time`, `--weather`, `--graphics`, `--show` (a visible window),
+`--out`.
+
+## The API (`src/testkit.ts`)
+
+Units are the everyday ones: places as `[lat, lon]` or a name from `PLACES`, headings
+in compass degrees (0 north, 90 east), speeds in km/h.
+
+- `t.go(where, { heading })`: loads the tiles and puts you there on foot (or in your
+  vehicle). `t.where()`: lat/lon, heading, street, mode.
+- `t.time('21:30')`, `t.weather('rain' | … | 'auto')`, `t.set({ money, stars, health })`.
+- `t.drive(type)`: gets out of whatever you're in and into a new car on clear ground
+  ahead (`hatch`, `sedan`, `suv`, `van`, `taxi`, `police`, `pickup`, `truck`, `bus`,
+  `moto`, `bike`…, the keys of `SPECS` in `src/car.ts`). `t.car(type, opt)`: just
+  parks one.
+- `t.push(kmh, heading?)`: sets your car going. `t.post(r)`: the nearest standing
+  lamp or pole. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
+  on a run clear of walls and other cars. `t.runway(heading)`: metres to the first wall.
+- `t.wait(seconds, controls)`: runs the world in 1/60 s steps with
+  `{ move, turn, run, brake, jump }` held (the live loop pauses meanwhile).
+- `t.probe()`: position, speed, car type/damage/burning, money, stars, police cars,
+  health, ticket, time, weather.
+- `t.camera({ at, height, tilt, heading })` looks from anywhere without moving you
+  (tilt 0 = straight down, up to 75); `t.camera(null)` follows you again.
+  `t.view(zoom)` zooms the ordinary camera.
+- `t.shot(name)`: a screenshot (the car-name and district captions hidden).
+- `t.check(name, pass, detail)` records a result in a scenario.
+- `t.paused`, `t.speed`, `t.unhurt`, `t.snapshot()`, `t.run(name)` are what the
+  developer panel uses.
+
+Missing something? Add it to `src/testkit.ts` (and the `Game` interface, wired in at
+the end of `main()` in `src/main.ts`) rather than reaching into `__drive` from a
+scenario, and mention it in this file.
+
+## Scenarios
+
+`scenarios/<name>.ts`, typechecked with the rest:
+
+```ts
+import type { Scenario } from '../src/testkit.ts';
+
+export default {
+  title: 'A car at 50 km/h knocks a lamp post over',
+  async run(t) {
+    await t.go('vodickova');
+    t.time('14:00');
+    t.weather('clear');
+    await t.drive('hatch');
+    const post = t.post(80);
+    if (!t.check('a post nearby', !!post)) return;
+    t.aimAt(post!, 18);
+    t.push(50);
+    await t.wait(2);
+    t.check('the post is down', !!post!.down);
+    await t.shot('lamp-knock');
+  },
+} satisfies Scenario;
+```
+
+Set the time and weather yourself: the server's page keeps whatever the last command
+left. Check numbers with ranges and put the measured value in `detail`, so a failure
+says how far off it was. A scenario with no checks counts as failed.
+
+The same scenarios run in the developer panel (`` ` ``, Testing): "Run and watch" plays
+one in real time, "Run all" lists which pass.
+
+## What the user sends
+
+- **Coordinates** like `50.08730, 14.42060` (latitude first, copied from the panel or
+  its map): `t.go([50.0873, 14.4206])`, or `t.camera({ at: [...] })` to look without
+  going.
+- **"Copy this situation"**: a few lines starting with `await t.go(...)` (place,
+  heading, time, weather, money, stars, car, camera). Paste it into `eval` as it is to
+  get to the same state, then investigate or turn it into a scenario.
+- Google Maps / Mapy.cz links work in the panel's search; to use one here, take the
+  numbers out (`parseSpot` in `src/dev.ts` shows the formats).
+
+## Pitfalls met so far
+
+- A car put down touching another stops dead in its first step (it's pushed apart).
+  `t.aimAt` and `t.car` check for that; do the same if you place cars by hand.
+- Crashing a car doesn't hurt the driver. Only shots, explosions and being thrown off a
+  bike or motorbike do (`hurt` in `src/main.ts`), so don't test for health after a crash.
+- Tiles near where you go are loaded by `t.go` / `t.camera({ at })`; far from you,
+  traffic and people aren't spawned, so the free camera shows empty streets away from
+  the player.
+- Import game modules through `t`, not by URL: after an edit Vite serves a file under a
+  versioned URL, and importing it again gives a second, empty copy (that's how
+  `posts` once looked empty).
+- Headless Chrome here is fine for behaviour and screenshots, not for timing (see the
+  performance skill and `scripts/bench.mjs`).

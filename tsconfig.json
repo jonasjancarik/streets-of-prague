@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "allowJs": false
   },
-  "include": ["src"]
+  "include": ["src", "scenarios"]
 }

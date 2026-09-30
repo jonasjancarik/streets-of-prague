@@ -1,6 +1,11 @@
 // The Czech text, by the English text it stands for (see i18n.ts). A line with no entry
 // here shows in English. Counts use 'one|few|many'. Names that are already Czech
 // (streets, stops, stations, districts) come from the map data and aren't listed.
+//
+// For now the player's gender is left open: word the Czech so it doesn't show it. Use
+// the imperative ('Zaplať', 'Schovej se'), impersonal or passive lines ('Došly ti
+// peníze', 'Dostali tě'), or the third person, and avoid past-tense forms that say 'you'
+// as a man or a woman ('odešel jsi', 'chycena').
 export const CS: Record<string, string> = {
   // Money
   'Not enough money for a bike ({price})': 'Nemáš dost peněz na kolo ({price})',
@@ -20,7 +25,8 @@ export const CS: Record<string, string> = {
   'The inspector called the police': 'Revizor zavolal policii',
   'Busted · fine for riding without a ticket: {fine}': 'Zatčení · pokuta za jízdu bez jízdenky: {fine}',
   'Pay the fine': 'Zaplatit pokutu',
-  'Ticket for {minutes} minutes: {price}': 'Jízdenka na {minutes} minut: {price}',
+  'Ticket for {validity}: {price}': 'Jízdenka na {validity}: {price}',
+  'ticket: {left}': 'jízdenka: {left}',
   'Not enough money for a ticket ({price})': 'Nemáš dost peněz na jízdenku ({price})',
   '<b>B</b> buy a ticket ({price})': '<b>B</b> koupit jízdenku ({price})',
   'Buy a ticket ({price})': 'Koupit jízdenku ({price})',
@@ -28,10 +34,10 @@ export const CS: Record<string, string> = {
   '{secs} s left': 'zbývá {secs} s',
   'No ticket': 'Bez jízdenky',
   'Going in without a ticket?': 'Půjdeš bez jízdenky?',
-  'Buy a ticket for {minutes} minutes': 'Koupit jízdenku na {minutes} minut',
+  'Ticket for {validity}': 'Jízdenka na {validity}',
   'Go in without a ticket': 'Jít bez jízdenky',
   'Not enough money ({price})': 'Nemáš dost peněz ({price})',
-  '<b>W</b>/<b>S</b> choose · <b>E</b> confirm · <b>Esc</b> back to the street': '<b>W</b>/<b>S</b> výběr · <b>E</b> potvrdit · <b>Esc</b> zpět na ulici',
+  '<b>W</b>/<b>S</b> choose · <b>E</b> confirm · <b>1</b>–<b>4</b> buy · <b>Esc</b> back to the street': '<b>W</b>/<b>S</b> výběr · <b>E</b> potvrdit · <b>1</b>–<b>4</b> koupit · <b>Esc</b> zpět na ulici',
   // Start screen and loading
   Language: 'Jazyk',
   Time: 'Čas',
@@ -74,11 +80,12 @@ export const CS: Record<string, string> = {
   'Weather: {name}': 'Počasí: {name}',
   'Graphics: Auto ({tier} now)': 'Grafika: automaticky (teď {tier})',
   'Graphics: {name}': 'Grafika: {name}',
+  Ultra: 'Nejvyšší',
   High: 'Vysoká',
   Medium: 'Střední',
   Low: 'Nízká',
   Lowest: 'Nejnižší',
-  Busted: 'Chycen',
+  Busted: 'Dostali tě',
   Wasted: 'Zabit',
 
   // Dialogues
@@ -100,9 +107,13 @@ export const CS: Record<string, string> = {
   // The HUD
   '{n} car wrecked|{n} cars wrecked': '{n} rozbité auto|{n} rozbitá auta|{n} rozbitých aut',
   '{n} person knocked over|{n} people knocked over': '{n} sražený člověk|{n} sražení lidé|{n} sražených lidí',
-  'busted {n}×': 'chycen {n}×',
+  'busted {n}×': 'dostali tě {n}×',
   'wasted {n}×': 'zabit {n}×',
   'Health: {n}%': 'Zdraví: {n} %',
+  'Water: {n}%': 'Voda: {n} %',
+  '<b>E</b> get out · <b>F</b> water cannon · <b>Shift</b> lane assist': '<b>E</b> vystoupit · <b>F</b> vodní dělo · <b>Shift</b> asistent jízdního pruhu',
+  'Water cannon of a fire engine (hold it)': 'Vodní dělo hasičského auta (podrž)',
+  'Water cannon': 'Vodní dělo',
   'Your car is on fire!': 'Auto hoří!',
   'Wanted: {stars} of 5 stars': 'Hledaný: {stars} z 5 hvězd',
   'Not wanted': 'Nehledaný',
@@ -203,7 +214,7 @@ export const CS: Record<string, string> = {
   '{firm} fare: {fare}': 'Jízdné {firm}: {fare}',
   'Your taxi had an accident on the way': 'Tvoje taxi cestou mělo nehodu',
   'The taxi gave up waiting and drove off': 'Taxi čekání vzdalo a odjelo',
-  'You walked away from your taxi, so it left': 'Odešel jsi od taxi, tak odjelo',
+  'You walked away from your taxi, so it left': 'Jsi moc daleko, taxi ti odjelo',
   'Your {name} driver': 'Řidič {name}',
   'Your taxi': 'Tvoje taxi',
   '{name} is on the way, about {secs} s': '{name} je na cestě, asi {secs} s',
@@ -239,6 +250,36 @@ export const CS: Record<string, string> = {
   Steer: 'Zatáčení',
   'Hold to keep to the lane and the speed limit, while A and D pick the next turn': 'Podržením držíš pruh a povolenou rychlost, klávesami A a D vybereš příští odbočku',
   'Back on the road': 'Zpět na silnici',
+  // Driving a tram
+  'Take over the tram and drive it yourself': 'Převzít tramvaj a řídit ji',
+  'Take over the tram': 'Převzít tramvaj',
+  'You took over the tram': 'Tramvaj je tvoje',
+  'Stop the tram first': 'Nejdřív tramvaj zastav',
+  'Driving the tram': 'Řízení tramvaje',
+  'Pull away and brake': 'Rozjet se a brzdit',
+  'Brake hard': 'Brzdit naplno',
+  'Pick the way at the next junction (straight on if you don\'t)': 'Vybrat směr na příští křižovatce (bez výběru pojedeš rovně)',
+  'Ring the bell': 'Cinknout zvonkem',
+  'Open and close the doors at a stop (people get off and on)': 'Otevřít a zavřít dveře na zastávce (lidé vystupují a nastupují)',
+  'Doors': 'Dveře',
+  'Doors open at {name} · {off} off, {on} on': 'Dveře otevřené, {name} · vystoupilo {off}, nastoupilo {on}',
+  'Next stop: {name}, {m} m': 'Příští zastávka: {name}, {m} m',
+  '<b>X</b> open the doors': '<b>X</b> otevřít dveře',
+  '<b>X</b> close the doors': '<b>X</b> zavřít dveře',
+  'Get off once it has stopped': 'Vystoupit, až tramvaj stojí',
+  'Horn (hold it)': 'Troubit (podrž)',
+  'Horn': 'Klakson',
+  'Bell': 'Zvonek',
+  'You are driving': 'Řídíš tramvaj',
+  'Junction in {m} m': 'Křižovatka za {m} m',
+  'No junction in sight': 'Žádná křižovatka v dohledu',
+  '◀ Left': '◀ Vlevo',
+  '▲ Straight on': '▲ Rovně',
+  'Right ▶': 'Vpravo ▶',
+  '<b>F</b> take over the tram': '<b>F</b> převzít tramvaj',
+  '<b>W</b> drive · <b>S</b> brake · <b>Q</b> bell': '<b>W</b> jet · <b>S</b> brzdit · <b>Q</b> zvonek',
+  '<b>A</b>/<b>D</b> pick the way at the junction': '<b>A</b>/<b>D</b> vybrat směr na křižovatce',
+  'stop to get off': 'pro výstup zastav',
   'Get out, or off a bike': 'Vystoupit nebo sesednout z kola',
   'Radio: next station, and off (or use the buttons under the speed)': 'Rádio: další stanice, a vypnout (nebo tlačítky pod rychlostí)',
   'Radio off': 'Rádio vypnuto',

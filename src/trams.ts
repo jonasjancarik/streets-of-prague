@@ -14,8 +14,15 @@ export interface RawTramLine {
 }
 export interface TramHalt { s: number; dwell: number; name: string; to?: number }
 export interface TramPoint { x: number; y: number; ang: number }
+// A track a tram runs along: a line's closed loop, or the open route of a tram someone is driving.
+export interface Path {
+  length: number;
+  wrap(s: number): number;
+  ahead(from: number, to: number): number;
+  at(s: number): TramPoint;
+}
 export interface TramLine extends RawTramLine {
-  path: Loop; halts: TramHalt[]; haltS: number[]; limitS: number[]; limitV: number[];
+  path: Path; halts: TramHalt[]; haltS: number[]; limitS: number[]; limitV: number[];
   trams: TramVehicle[];
 }
 interface TramLook {
@@ -31,6 +38,8 @@ export interface TramVehicle {
   held: number; shove: Car | null; look: TramLook | null; pending: number;
   parts: TramPoint[]; cells?: TramCell[]; levels?: { x: number; y: number; gz?: number }[];
   rider?: boolean;
+  driven?: boolean; // someone is driving it (src/tramdrive.ts): the timetable no longer moves it
+  ring?: number; // how many times its driver has rung the bell
   hold?: boolean; // stays at its stop, whatever the timetable says (an inspection is under way)
   // The grid buckets its sections are in, and whether it has moved since (see update).
   keys?: number[]; moved?: boolean;
@@ -52,7 +61,7 @@ type Nearby = (x: number, y: number, radius: number) => Iterable<TrackObstacle>;
 
 const SECTION = 10.2, GAP = 0.25, W = 2.5;
 const STEP = SECTION + GAP;
-const HALF = STEP + SECTION / 2; // from the middle of a tram to its front
+export const HALF = STEP + SECTION / 2; // from the middle of a tram to its front
 const BOGIE = SECTION / 2 - 1.6; // from the middle of a section to each of its bogies
 // How far behind a tram's front each of its bogies runs (they click over the rail joints).
 export const BOGIES = [STEP, 0, -STEP].flatMap((o) => [HALF - o - BOGIE, HALF - o + BOGIE]);
@@ -164,7 +173,7 @@ function signMaterial(ref: string, colour: string | null) {
 }
 
 // A line's closed loop: position and heading at any distance along it.
-class Loop {
+class Loop implements Path {
   pts: Point2[];
   cum: number[];
   angs: number[]; // each segment's heading
@@ -300,6 +309,11 @@ export class Trams {
   // time: a new one in the middle of the widest gap, and the one whose leaving opens
   // the smallest gap taken out, both only where nobody's looking.
   manage(seen: (x: number, y: number) => boolean) {
+    // A tram someone left standing goes once nobody's looking at it.
+    for (const v of [...this.list]) {
+      const p = v.parts[1];
+      if (v.driven && !v.rider && !seen(p.x, p.y)) this.remove(v);
+    }
     for (const line of this.lines) {
       const want = this.target(line), have = line.trams.length, L = line.path.length;
       if (want === have) continue;
@@ -322,6 +336,35 @@ export class Trams {
         if (best) this.remove(best);
       }
     }
+  }
+
+  // Someone takes the tram over: it leaves its line for a track of its own (`line.path`
+  // is the route `path` it will be driven along), and the line gets another tram in
+  // its place, out of sight, when the timetable wants one.
+  steal(v: TramVehicle, path: Path, s: number) {
+    v.line.trams.splice(v.line.trams.indexOf(v), 1);
+    const line: TramLine = { ...v.line, path, halts: [], haltS: [], limitS: [], limitV: [], trams: [v] };
+    Object.assign(v, { line, s, driven: true, rider: true, dwell: 0, speed: Math.max(0, v.speed), hold: false, waitFor: null, blocker: null, shove: null, held: 0, stuck: 0, ghost: 0, ring: v.ring ?? 0 });
+    this.place(v);
+  }
+
+  // How far ahead of `front` (up to `reach` m) another tram is in the way, or Infinity.
+  gapToTram(v: TramVehicle, front: number, reach: number) {
+    const path = v.line.path;
+    for (let d = 1; d <= reach; d += 2.5) {
+      const p = path.at(front + d);
+      for (let i = Math.floor((p.x - 8) / CELL); i <= Math.floor((p.x + 8) / CELL); i++) {
+        for (let j = Math.floor((p.y - 8) / CELL); j <= Math.floor((p.y + 8) / CELL); j++) {
+          for (const o of this.grid.get(i * 131072 + j) || NONE) {
+            if (o.v === v) continue;
+            const dx = p.x - o.x, dy = p.y - o.y;
+            const along = dx * o.c + dy * o.s, clamped = Math.max(-SECTION / 2, Math.min(SECTION / 2, along));
+            if (Math.hypot(along - clamped, dx * o.s - dy * o.c) <= 1.5) return d;
+          }
+        }
+      }
+    }
+    return Infinity;
   }
 
   nextHalt(v: TramVehicle) {
@@ -389,6 +432,7 @@ export class Trams {
       for (const [k, b] of this.grid) if (!b.length) this.grid.delete(k);
     }
     for (const v of this.list) {
+      if (v.driven) { this.place(v); continue; }
       const mid = v.parts[1], d = Math.hypot(mid.x - x, mid.y - y);
       // Far from the player a tram moves in bigger steps: nobody sees it, and it keeps
       // fast-forwarding cheap.
