@@ -388,19 +388,28 @@ def dominant(labs: np.ndarray, weight: np.ndarray):
     return np.median(labs[near], axis=0), float(weight[near].sum() / weight.sum())
 
 
-# Roof material classes, by the roof's measured colour (L*a*b*).
+# Roof material classes, by the roof's measured colour (L*a*b*). Pitched roofs:
 COPPER_A = -5.0  # a* below this, with some chroma: green-cyan patina
 COPPER_CHROMA = 6.0
 TILE_CHROMA = 12.0  # warm (a*, b* > 0) with at least this much chroma: clay tiles
 SLATE_L = 50.0  # grey roofs darker than this are slate, lighter ones sheet metal
-MATERIALS = ("tiles", "slate", "metal", "copper", "flat")
+# Flat roofs (in centrum about a sixth each dark, light and warm, a third mid grey):
+GREEN_A, GREEN_B = -5.0, 6.0  # a* below and b* above: yellow-green, a planted roof
+PAVING_CHROMA = 14.0  # warm with this much chroma: a terrace of tiles or paving
+BITUMEN_L = 40.0  # grey and darker than this: bitumen or tar sheets
+MEMBRANE_L = 68.0  # grey and lighter than this: a plastic membrane; between: gravel
+MATERIALS = ("tiles", "slate", "metal", "copper", "bitumen", "membrane", "gravel", "green", "paving")
 
 
 def material(c, flat: bool) -> str:
-    if flat:
-        return "flat"
     L, a, b = c
     chroma = float(np.hypot(a, b))
+    if flat:
+        if a < GREEN_A and b > GREEN_B:
+            return "green"
+        if a > 0 and b > 0 and chroma >= PAVING_CHROMA:
+            return "paving"
+        return "bitumen" if L < BITUMEN_L else "membrane" if L > MEMBRANE_L else "gravel"
     if a < COPPER_A and chroma > COPPER_CHROMA:
         return "copper"
     if a > 0 and b > 0 and chroma >= TILE_CHROMA:
@@ -703,7 +712,7 @@ def from_shade(c) -> np.ndarray:
 
 # ΔE; a building's roof faces of one material closer than this are one colour. More for
 # metal and slate: they shine, and a shine doesn't follow the light model.
-ROOF_SAME = {"tiles": 12.0, "copper": 12.0, "slate": 25.0, "metal": 25.0}
+ROOF_SAME = {"tiles": 12.0, "copper": 12.0, "slate": 25.0, "metal": 25.0}  # (flat roofs aren't evened)
 
 
 def even_roofs(rec) -> None:

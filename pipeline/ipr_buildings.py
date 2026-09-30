@@ -200,8 +200,9 @@ def flat_roof(c):
 
 COVERS = ("tiles", "slate", "copper")
 # A byte per triangle after the colours: the roof's material, which the shader draws
-# (src/tileWorker.ts passes it on as the facade attribute's w on roofs). 0: not known.
-MATERIALS = ("", "tiles", "slate", "metal", "copper")
+# (src/tileWorker.ts passes it on as the facade attribute's w on roofs). 0: not known;
+# 1-4 pitched, 5-9 flat.
+MATERIALS = ("", "tiles", "slate", "metal", "copper", "bitumen", "membrane", "gravel", "green", "paving")
 
 
 def colours(bid, osm):

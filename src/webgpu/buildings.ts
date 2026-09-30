@@ -76,6 +76,22 @@ function sheetRoof(c0: N, wp: N, n: N, wpWidth: N, copper: N) {
 function flatRoof(c: N, wp: N, wpWidth: N) {
   return c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).add(vnoise(wp.mul(18)).sub(0.5).mul(0.08).mul(fade(wpWidth, 0.05)));
 }
+// Flat roofs of sheets, planted and paved (sheetsRoof, plantedRoof, pavingRoof in shading.ts).
+function sheetsRoof(c: N, wp: N, wpWidth: N, width: N) {
+  const s = fract(wp.x.div(width));
+  const t = c.mul(float(1).add(float(1).sub(smoothstep(0, 0.025, s)).mul(0.06)).sub(smoothstep(0.97, 1, s).mul(0.03)));
+  return mix(c, t, fade(wpWidth, 0.3)).mul(fbm(wp.mul(0.12)).mul(0.12).add(0.94));
+}
+function plantedRoof(c: N, wp: N, wpWidth: N) {
+  const t = mix(c.mul(vec3(0.85, 0.78, 0.62)), c.mul(vec3(0.92, 1.12, 0.86)), smoothstep(0.35, 0.7, fbm2(wp.mul(0.6))));
+  return t.mul(float(1).add(vnoise(wp.mul(3)).sub(0.5).mul(0.3).mul(fade(wpWidth, 0.2))));
+}
+function pavingRoof(c: N, wp: N, wpWidth: N) {
+  const b = blocks(wp, float(0.5), float(0.5));
+  const t = c.mul(b.y.mul(0.12).add(0.93)).toVar();
+  t.assign(mix(t.mul(0.72), t, smoothstep(0, 0.02, b.x)));
+  return mix(c, t, fade(wpWidth, 0.5)).mul(fbm(wp.mul(0.2)).mul(0.12).add(0.93));
+}
 
 // Age on top of any roof colour (roofWeather in shading.ts): moss in clumps, more on the
 // shaded north slopes, dark streaks running down from the ridge, and stains. A building's
@@ -149,15 +165,24 @@ const buildingColor = Fn(() => {
   const fWidth = length(abs(fdx.xy).add(abs(fdy.xy))).toVar();
   const c = vec3(materialColor).mul(vertexColor().rgb).toVar();
   const base = c.toVar();
-  // Flat roofs, unless a material says it's a shallow roof of tiles or metal.
-  If(bn.y.greaterThan(0.97).and(f.w.lessThan(0.5)), () => {
-    If(uRoofDetail.greaterThan(0.5), () => { c.assign(roofWeather(flatRoof(base, bwp, wpWidth), base, bwp, bn, wpWidth)); });
+  // Flat roofs by their material (tileWorker.ts: the facade attribute's w on roofs;
+  // 5-9 flat ones, 0 not known), unless it says it's a shallow roof of tiles or metal.
+  If(bn.y.greaterThan(0.97).and(f.w.lessThan(0.5).or(f.w.greaterThan(4.5))), () => {
+    If(uRoofDetail.greaterThan(0.5), () => {
+      const m = f.w;
+      const r = vec3(0).toVar();
+      If(m.greaterThan(8.5), () => { r.assign(pavingRoof(base, bwp, wpWidth)); })
+        .ElseIf(m.greaterThan(7.5), () => { r.assign(plantedRoof(base, bwp, wpWidth)); })
+        .ElseIf(m.greaterThan(4.5).and(m.lessThan(6.5)), () => { r.assign(sheetsRoof(base, bwp, wpWidth, select(m.greaterThan(5.5), float(2), float(1)))); })
+        .Else(() => { r.assign(flatRoof(base, bwp, wpWidth)); });
+      c.assign(roofWeather(r, base, bwp, bn, wpWidth));
+    });
   }).ElseIf(bn.y.greaterThan(0.15), () => {
     If(uRoofDetail.greaterThan(0.5), () => {
       // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
       const m = f.w;
-      If(m.greaterThan(2.5), () => { c.assign(roofWeather(sheetRoof(base, bwp, bn, wpWidth, step(3.5, m)), base, bwp, bn, wpWidth)); })
-        .ElseIf(m.greaterThan(0.5), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, step(1.5, m)), base, bwp, bn, wpWidth)); })
+      If(m.greaterThan(2.5).and(m.lessThan(4.5)), () => { c.assign(roofWeather(sheetRoof(base, bwp, bn, wpWidth, step(3.5, m)), base, bwp, bn, wpWidth)); })
+        .ElseIf(m.greaterThan(0.5).and(m.lessThan(2.5)), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, step(1.5, m)), base, bwp, bn, wpWidth)); })
         .Else(() => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
     });
   }).Else(() => {

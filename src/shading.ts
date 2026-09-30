@@ -359,6 +359,25 @@ vec3 flatRoof(vec3 c, vec2 wp) {
   c *= .86 + .22 * fbm(wp * .5);
   return c + (vnoise(wp * 18.) - .5) * .08 * detail(wp, .05);
 }
+// Flat roofs of sheets (bitumen rolls 1 m wide, a membrane's 2 m): smooth, with the
+// welded seams a little lighter and some dirt.
+vec3 sheetsRoof(vec3 c, vec2 wp, float width) {
+  float s = fract(wp.x / width);
+  vec3 t = c * (1. + .06 * (1. - smoothstep(0., .025, s)) - .03 * smoothstep(.97, 1., s));
+  return mix(c, t, detail(wp, .3)) * (.94 + .12 * fbm(wp * .12));
+}
+// A planted roof: clumps of green and dry brown.
+vec3 plantedRoof(vec3 c, vec2 wp) {
+  vec3 t = mix(c * vec3(.85, .78, .62), c * vec3(.92, 1.12, .86), smoothstep(.35, .7, fbm2(wp * .6)));
+  return t * (1. + (vnoise(wp * 3.) - .5) * .3 * detail(wp, .2));
+}
+// A terrace: slabs half a metre across with dark joints.
+vec3 pavingRoof(vec3 c, vec2 wp) {
+  vec2 b = blocks(wp, vec2(.5));
+  vec3 t = c * (.93 + .12 * b.y);
+  t = mix(t * .72, t, smoothstep(0., .02, b.x));
+  return mix(c, t, detail(wp, .5)) * (.93 + .12 * fbm(wp * .2));
+}
 // Age on top of any roof colour: moss in clumps (more on the shaded north slopes), dark
 // streaks running down from the ridge, and stains. Each building ages differently, by a
 // number taken from its colour. Flat roofs get only a little. c0: the colour before shading.
@@ -522,14 +541,23 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   vec4 fdx = dFdx(vFacade), fdy = dFdy(vFacade);
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
   vec3 roofBase = diffuseColor.rgb;
-  // Flat roofs, unless a material says it's a shallow roof of tiles or metal.
-  if (uRoofDetail > .5 && bn.y > .97 && vFacade.w < .5) diffuseColor.rgb = roofWeather(flatRoof(roofBase, bwp), roofBase, bwp, bn);
+  // Flat roofs by their material (tileWorker.ts: the facade attribute's w on roofs;
+  // 5-9 flat ones, 0 not known), unless it says it's a shallow roof of tiles or metal.
+  if (uRoofDetail > .5 && bn.y > .97 && (vFacade.w < .5 || vFacade.w > 4.5)) {
+    float m = vFacade.w;
+    vec3 r;
+    if (m > 8.5) r = pavingRoof(roofBase, bwp);
+    else if (m > 7.5) r = plantedRoof(roofBase, bwp);
+    else if (m > 4.5 && m < 6.5) r = sheetsRoof(roofBase, bwp, m > 5.5 ? 2. : 1.);
+    else r = flatRoof(roofBase, bwp);
+    diffuseColor.rgb = roofWeather(r, roofBase, bwp, bn);
+  }
   else if (uRoofDetail > .5 && bn.y > .15) {
     // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
     float m = vFacade.w;
     vec3 r;
-    if (m > 2.5) r = sheetRoof(roofBase, bwp, bn, step(3.5, m));
-    else if (m > .5) r = roofTilesAs(roofBase, bwp, bn, step(1.5, m));
+    if (m > 2.5 && m < 4.5) r = sheetRoof(roofBase, bwp, bn, step(3.5, m));
+    else if (m > .5 && m < 2.5) r = roofTilesAs(roofBase, bwp, bn, step(1.5, m));
     else r = roofTiles(roofBase, bwp, bn);
     diffuseColor.rgb = roofWeather(r, roofBase, bwp, bn);
   }

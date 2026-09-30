@@ -76,8 +76,9 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs
   const p16 = new Int16Array(buffer, 8, all * 9);
   const colAt = 8 + all * 18 + ((4 - ((8 + all * 18) % 4)) % 4);
   const c8 = new Uint8Array(buffer, colAt, all * 3);
-  // Newer data: a byte per triangle after the colours, the roof's material (0 not known,
-  // 1 tiles, 2 slate, 3 sheet metal, 4 copper), passed on as the facade attribute's w.
+  // Newer data: a byte per triangle after the colours, the roof's material (0 not known;
+  // pitched: 1 tiles, 2 slate, 3 sheet metal, 4 copper; flat: 5 bitumen, 6 membrane,
+  // 7 gravel, 8 planted, 9 paving), passed on as the facade attribute's w.
   const m8 = buffer.byteLength >= colAt + all * 4 ? new Uint8Array(buffer, colAt + all * 3, all) : null;
   const kept: number[] = [];
   for (let t = 0; t < all; t++) {
