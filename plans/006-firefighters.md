@@ -11,6 +11,7 @@
 
 ## Status
 
+- State: phases 1–3 DONE (1 October 2026, branch `worktree-firefighters`, merged into `main`). Phase 4 (the job) is not built; it waits for plan 004 phase 1.
 - Priority: P2 (the city reacting to the chaos you cause; not a prerequisite for anything)
 - Effort: phase 1 M (about 1.5 days), phase 2 S–M, phase 3 M, phase 4 depends on plan 004
 - Risk: medium. New code mostly lives in its own module, but it touches `src/fire.ts`,
