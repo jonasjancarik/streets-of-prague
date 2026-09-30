@@ -338,9 +338,34 @@ vec3 roofTilesAs(vec3 c, vec2 wp, vec3 n, float slate) {
   c *= .88 + .24 * fbm(wp * .22);                                              // weathering
   return mix(c, c * vec3(.86, .9, .8), smoothstep(.62, .75, fbm(wp * .09 + 4.)) * .7);
 }
+// Beaver-tail tiles (bobrovky), as on most of the old town's roofs, laid double: the
+// rows one above the other without offset, and under each row a second layer half a
+// tile over, whose round ends show in the gaps between the round ends above. Tile to
+// tile from orange to brown, darker in patches.
+float beaverEnd(float x) { float u = fract(x) * 2. - 1.; return 1. - .32 * (1. - sqrt(max(0., 1. - u * u))); }
+vec3 beaverTiles(vec3 c, vec2 wp, vec3 n) {
+  vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));
+  vec2 q = vec2(dot(wp, vec2(-down.y, down.x)), dot(wp, down) / max(n.y, .3)) / vec2(.18, .3);
+  float row = floor(q.y), fy = fract(q.y);
+  // The top layer, or where its round end leaves a gap, the layer under it, or deeper.
+  float top = step(fy, beaverEnd(q.x)), under = (1. - top) * step(fy, beaverEnd(q.x + .5));
+  float x = q.x + .5 * (1. - top);
+  float col = floor(x), fx = fract(x);
+  float h = hash12(vec2(col, row * 2. + 1. - top));
+  float patch_ = vnoise(vec2(col, row) * .23);
+  vec3 t = c * (.8 + .28 * h) * (1.08 - .28 * smoothstep(.55, .85, patch_));
+  t *= mix(vec3(1.06, .97, .9), vec3(.9, .94, 1.), fract(h * 7.3));
+  t *= .9 + .14 * smoothstep(0., .6, fy);
+  t *= mix(1., mix(.45, .72, under), 1. - top);  // under the top layer, in its shadow
+  t *= mix(.62, 1., smoothstep(0., .05, min(fx, 1. - fx)));
+  c = mix(c * .95, t, detail(wp, .18));
+  c *= .9 + .2 * fbm(wp * .22);
+  return mix(c, c * vec3(.86, .9, .8), smoothstep(.62, .75, fbm(wp * .09 + 4.)) * .7);
+}
 // Clay tiles, or slate on grey roofs where the material isn't known.
 vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
-  return roofTilesAs(c, wp, n, step(max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)), .08));
+  if (max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) > .08) return beaverTiles(c, wp, n);
+  return roofTilesAs(c, wp, n, 1.);
 }
 // Sheet metal: smooth pans running down the slope between thin standing seams (a lit
 // edge and a faint shadow beside it), with a broad, soft sheen; copper with verdigris
@@ -579,7 +604,8 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     float m = vFacade.w;
     vec3 r;
     if (m > 2.5 && m < 4.5) r = sheetRoof(roofBase, bwp, bn, step(3.5, m));
-    else if (m > .5 && m < 2.5) r = roofTilesAs(roofBase, bwp, bn, step(1.5, m));
+    else if (m > .5 && m < 1.5) r = beaverTiles(roofBase, bwp, bn);
+    else if (m > 1.5 && m < 2.5) r = roofTilesAs(roofBase, bwp, bn, 1.);
     else r = roofTiles(roofBase, bwp, bn);
     r = roofWeather(r, roofBase, bwp, bn);
     if (bn.y < .5 && vFacade.z > .1) r = mansardWindows(r, vFacade);

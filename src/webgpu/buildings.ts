@@ -7,12 +7,12 @@
 import * as THREE from 'three';
 import {
   Fn, If, Discard, float, int, vec2, vec3, vec4, array, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
-  materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross,
+  materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON, BLANK } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, LANDMARK_ROOF as R } from '../shading.ts';
 import { lampLit } from './lamps.ts';
-import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, skyAmbient } from './common.ts';
+import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
 
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL);
 
@@ -43,6 +43,31 @@ const LANDMARK_TILE = vec3(...R.rgb);
 const luma = (c: N) => dot(c, vec3(0.299, 0.587, 0.114));
 // detail() with the pixel's footprint worked out once, outside any branch (derivatives).
 const fade = (width: N, cell: number) => float(1).sub(smoothstep(cell * 0.2, cell * 0.7, width));
+
+// Beaver-tail tiles, laid double (beaverTiles in shading.ts): rows without offset, and
+// the round ends of a second layer, half a tile over, in the gaps between theirs.
+const beaverEnd = (x: N) => {
+  const u = fract(x).mul(2).sub(1);
+  return float(1).sub(float(1).sub(sqrt(max(0, float(1).sub(u.mul(u))))).mul(0.32));
+};
+function beaverTiles(c0: N, wp: N, n: N, wpWidth: N) {
+  const down = normalize(vec2(n.x, n.z.negate()).add(vec2(0, 0.0001)));
+  const q = vec2(dot(wp, vec2(down.y.negate(), down.x)), dot(wp, down).div(max(n.y, 0.3))).div(vec2(0.18, 0.3));
+  const row = floor(q.y), fy = fract(q.y);
+  const top = step(fy, beaverEnd(q.x)), under = top.oneMinus().mul(step(fy, beaverEnd(q.x.add(0.5))));
+  const x = q.x.add(top.oneMinus().mul(0.5));
+  const col = floor(x), fx = fract(x);
+  const h = hash12(vec2(col, row.mul(2).add(top.oneMinus())));
+  const patch = vnoise(vec2(col, row).mul(0.23));
+  const t = c0.mul(h.mul(0.28).add(0.8)).mul(float(1.08).sub(smoothstep(0.55, 0.85, patch).mul(0.28))).toVar();
+  t.mulAssign(mix(vec3(1.06, 0.97, 0.9), vec3(0.9, 0.94, 1), fract(h.mul(7.3))));
+  t.mulAssign(smoothstep(0, 0.6, fy).mul(0.14).add(0.9));
+  t.mulAssign(mix(float(1), mix(0.45, 0.72, under), top.oneMinus()));
+  t.mulAssign(mix(0.62, 1, smoothstep(0, 0.05, min(fx, fx.oneMinus()))));
+  const c = mix(c0.mul(0.95), t, fade(wpWidth, 0.18)).toVar();
+  c.mulAssign(fbm(wp.mul(0.22)).mul(0.2).add(0.9));
+  return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.7));
+}
 
 // Clay tiles, or slate on grey roofs where the material isn't known (`slate` not given).
 function roofTiles(c0: N, wp: N, n: N, wpWidth: N, slateGiven?: N) {
@@ -201,8 +226,14 @@ const buildingColor = Fn(() => {
       // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
       const m = f.w;
       If(m.greaterThan(2.5).and(m.lessThan(4.5)), () => { c.assign(roofWeather(sheetRoof(base, bwp, bn, wpWidth, step(3.5, m)), base, bwp, bn, wpWidth)); })
-        .ElseIf(m.greaterThan(0.5).and(m.lessThan(2.5)), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, step(1.5, m)), base, bwp, bn, wpWidth)); })
-        .Else(() => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
+        .ElseIf(m.greaterThan(0.5).and(m.lessThan(1.5)), () => { c.assign(roofWeather(beaverTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); })
+        .ElseIf(m.greaterThan(1.5).and(m.lessThan(2.5)), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, float(1)), base, bwp, bn, wpWidth)); })
+        .Else(() => {
+          // Not known: slate where grey, else clay tiles.
+          const grey = max(base.r, max(base.g, base.b)).sub(min(base.r, min(base.g, base.b))).lessThan(0.08);
+          If(grey, () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, float(1)), base, bwp, bn, wpWidth)); })
+            .Else(() => { c.assign(roofWeather(beaverTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
+        });
       If(bn.y.lessThan(0.5).and(f.z.greaterThan(0.1)), () => { c.assign(mansardWindows(c, f)); });
     });
   }).Else(() => {
