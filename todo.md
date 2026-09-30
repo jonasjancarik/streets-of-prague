@@ -35,12 +35,84 @@ check never held), instance buffers went up whole, and DynamicDrawUsage makes
 three.js's WebGPU renderer upload a buffer every frame: 3.0–3.5 MB a frame of
 uploads down to ~0.2 MB. The crowd is drawn and animated only in view. Open:
 
-- **Graphics tiers** still switch only the pixel ratio, the looks (dirt, grime, small
-  leaves, tone curve) and the cars in the lamps' light. Proposed: MSAA off and a
-  1024 shadow map in the low tiers (both can change at runtime on WebGPU:
-  `renderer._samples`, `sun.shadow.mapSize`), and fewer people in the lowest. What each
-  costs on WebGPU still has to be measured with `--ab` (MSAA measured ~3% at 2× by the
-  Old Town Square, facade pictures ~0–1%, both within noise).
+The tiers now control MSAA, sun shadow size, roof detail and the crowd cap too:
+
+| | High | Medium | Low | Lowest |
+|---|---|---|---|---|
+| Pixel ratio maximum | 2 | 1.5 | 1 | 1 |
+| WebGPU MSAA | 4 | 4 | 4 | 0 |
+| Sun shadow map | 2048² | 2048² | 1024² | 1024² |
+| Dirt, grime, small leaves, tone curve | On | On | On | Off |
+| Roof detail (tiles, gravel, weathering) | On | On | On | Off |
+| Car shadows in lamplight | Full (2) | Soft (1) | Soft (1) | None (0) |
+| Maximum crowd | 1200 | 1200 | 1200 | 600 |
+
+Auto still starts High (Medium on touch devices) and steps by frame time. `?dpr`
+changes only resolution. Lowest retires surplus people out of sight; the 330 m
+simulation radius stays the same. Ground patterns and facade pictures stay on to
+keep the street surfaces and buildings readable. Sun shadows stay on for the same
+reason; halving their map saves three quarters of its texels, with little measured
+frame-time benefit here. Detail goes only on Lowest as an option for weak GPUs;
+the smaller crowd cap also gives Auto a CPU-saving step on 1× screens.
+
+WebGPU costs on 30 September, M5, Chrome 154, 1440×900 at 2×, High, clear 14:00:
+32 s `--ab`, 2 s windows, one process at a time. Values are added milliseconds per
+frame, feature on minus off; a negative small difference is noise. These supersede
+the old WebGL costs below.
+
+| Feature | Old Town Square | Malá Strana |
+|---|---:|---:|
+| MSAA, 4 samples vs none | +0.20 (+6.1%) | +0.49 (+8.7%) |
+| Sun shadows, on vs off | +1.18 (+27.8%) | +1.56 (+34.3%) |
+| Shadow map, 2048 vs 1024 | +0.05 (+0.9%) | −0.04 (−0.6%): noise |
+| Dirt and grime | −0.14 | −0.21: within 3% noise |
+| Facade pictures | −0.02 | +0.04: within 1% noise |
+| Ground patterns vs `flatten()` | +0.70 (+11.8%) | +0.57 (+8.7%) |
+| Roof tiles and weathering | +0.06 | −0.17: within 2% noise |
+
+Small leaves in Petřín: +0.02 ms (0.4%, noise). At 22:00, Old Town Square / Karlovo
+náměstí: full car shadows over soft −0.02 / +0.11 ms (within 2%); soft over none
++0.24 / +0.06 ms (4.1% / 1.0%). These CPU-limited results do not establish how
+cheap detail will be on another GPU. GPU use was 6% before the batch; Spotlight
+later used a core and CodexBar rose to 46% CPU, so CodexBar was quit as authorized.
+Within-page alternation controls drift better than comparing the absolute rates.
+
+MSAA needed a correction: `_samples` alone produced byte-identical screenshots,
+because the tone-mapping target retained its startup sample count. `Graphics` now
+updates the cached canvas target too, without disposing it. Matched zoomed images
+at 1× and 2× show smoother edges. Shadow resizing also required refreshing material
+render caches to release stale depth-texture bindings. Repeated lowest/high/low/
+medium switches pass on both WebGPU and WebGL, with actual map sizes and GPU sample
+counts checked. MSAA and sun-shadow costs above were repeated with both paths warmed
+and no console errors; the cold shadow window and target-disposal runs were discarded.
+
+Before/after: `cac0d0b` against the perf snapshot with these tiers, High, clear 14:00,
+1440×900, `--vs --runs 2`, stand / drive / strana. Mean milliseconds per frame
+(mean of each run's reciprocal fps); positive change means more time:
+
+| Scene | 2× before → after | Time change | 1×, CPU slowed 4× | Time change |
+|---|---:|---:|---:|---:|
+| Old Town Square, standing | 5.40 → 5.57 | +3.1% | 12.42 → 7.28 | −41.4% |
+| Drive from Újezd | 5.32 → 5.45 | +2.3% | 11.15 → 9.85 | −11.6% |
+| Malá Strana | 7.95 → 6.76 | −14.9% | 13.67 → 8.37 | −38.8% |
+
+The 2× stand/drive differences are small relative to run-to-run drift; this does not
+show a consistent 2× speedup. The slower-CPU gains repeat in both rounds. All 24
+completed comparisons used WebGPU and had no console errors; no fallback or aborted
+run was averaged. Most loads took 13–16 s; one baseline device wait took 83 s.
+
+Baseline qualification: `cac0d0b` is not runnable unchanged: `people.ts` imports
+`fences.ts`, absent from that commit. The comparison-only baseline added an empty
+`fences.blocks()` shim returning false, matching its lack of fence meshes/sections.
+Its sources otherwise stay at `cac0d0b`; the later fence implementation was not
+backported. The current perf branch includes the subsequent fence feature too.
+Chrome runs were isolated with `--fresh-browser`. The remaining second-round 2×
+drive/strana pairs and all CPU-4× pairs used a loading-only RAF heartbeat, equivalent
+to `--loading-frames`; it stopped before sampling. Completed pairs were preserved
+when startup hung. Raw results and console logs are under `/tmp/perfab`.
+
+Open:
+
 - **Loading stall located:** reproduced beyond 120 s at `Preparing graphics…`, with
   the adapter ready, `GPUAdapter.requestDevice()` pending and no outstanding network
   requests. It occurs even in a fresh Chrome process; tiles and shader compilation
@@ -54,12 +126,12 @@ uploads down to ~0.2 MB. The crowd is drawn and animated only in view. Open:
 - **Simulating fewer people far away** (a crowd radius round the view, not 330 m)
   halved the people in view, since the crowd bunches round you: tried and dropped.
 
-What a frame costs now, at 2× standing by the Old Town Square (switched off one at a
-time with `--ab`): the ground's patterns about 29% (the mosaic's stones 14%; the dirt on
+Earlier WebGL measurements, at 2× standing by the Old Town Square (switched off
+one at a time with `--ab`; these are not the current WebGPU costs): the ground's patterns about 29% (the mosaic's stones 14%; the dirt on
 the paving was 12% until 30 September 2026, when it was baked into a texture: now under 1%), shadows on the ground 11%, roof tiles 12%, the facade pictures 7%,
 grime on the walls 6%, the shadow map's own pass 7%.
 
-- **MSAA costs about a fifth of a frame at 2×** (57 → 71 fps without it, Chrome on
+- **WebGL MSAA costs about a fifth of a frame at 2×** (57 → 71 fps without it, Chrome on
   an M5). At a pixel ratio of 2 the jagged edges are small. The renderer picks
   antialiasing once, when it's made, so leaving it out at 2× (or in some graphics
   tiers) means either choosing at start or drawing into a multisampled render
@@ -113,12 +185,14 @@ grime on the walls 6%, the shadow map's own pass 7%.
 - **Roof weathering** (`roofWeather` in `src/shading.ts` and `src/webgpu/buildings.ts`, 30 September 2026): moss in clumps
   (more on north slopes), dark streaks running down each face and stains, on top of whatever colour the roof has, so it
   stays valid when plan 005 changes the colours. The per-building number comes from the roof's colour (roofs carry no
-  building id). Flat roofs get little. Not timed with `--ab` (the GPU was busy); it adds about four noise reads on roofs.
-  Deferred, needs a decision: roof clutter (chimneys, vents, dormers, aerials); moss barely shows on red clay, so
+  building id). Flat roofs get little. It adds about four noise reads on roofs.
+  The WebGPU roof-detail A/B above includes the tile pattern and weathering together;
+  their net cost here is within 2% noise. Deferred, needs a decision: roof clutter (chimneys, vents, dormers, aerials); moss barely shows on red clay, so
   strengthen it if wanted; landmarks use their own roof and are not weathered.
-- **What's left on the main thread** (in order, with the CPU slowed 4×): the trams'
-  steps and look-ahead, traffic, placing people (`Crowd.place`) and following
-  everyone's height (`TileWorld.track`, `surfaceAt`), then three.js's own work.
+- **What's left on the main thread** (the supplied profile after the upload and crowd
+  fixes, with the CPU slowed 4×): the crowd's `spot` / `follow` / `avoid`, `simulate`,
+  `traffic.update`, `trams.clearAhead`, then `writeBuffer` (~6%, uniform buffers of
+  ~160 KB a frame and ~1200 figure matrices). Tile-load parking hitches remain above.
 
 ## Pipeline
 

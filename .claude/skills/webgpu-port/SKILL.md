@@ -76,7 +76,7 @@ Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
 | `map/buildings.ts` `drapeRoofs` | an experiment's roof texture | low priority |
 
 Every `ShaderMaterial` is hidden by a `visible` accessor on `THREE.ShaderMaterial.prototype` in
-`createRenderer`, so a ported one has to be built as a node material (not a `ShaderMaterial`) or it stays hidden.
+`configureRenderer`, so a ported one has to be built as a node material (not a `ShaderMaterial`) or it stays hidden.
 All the effects are ported now; what's left of the plain-material list above is the roofs experiment.
 
 Whole frame, 2×, high, 12 s each, `bench.mjs --extra "&renderer=webgpu"` (run each scene in its own process: a second
@@ -103,7 +103,7 @@ keeping the GPU 78–91% busy, WebGL at 21% (clear) and 80% (rain), so the pairs
   materials with `onBeforeCompile`, so the game's code needs no change. When
   `WebGPURenderer` builds a shader for a legacy material it converts it in
   `library.fromMaterial` (one place, called by the node builder, once per distinct
-  render-object cache key); `createRenderer` wraps that, and `addPort(/^cars$/, (node,
+  render-object cache key); `configureRenderer` wraps that, and `addPort(/^cars$/, (node,
   legacy) => { node.colorNode = …; })` decorates the converted node material. Ports are
   chosen by the legacy material's `customProgramCacheKey()`, which every one of these
   materials sets already. Build each port's node graph once at module level and share it
@@ -172,7 +172,7 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
   that changes during play really reaches the shader (e.g. swap it for a constant and
   compare screenshots).
 - **Night on WebGPU crashed** with `camera.updateProjectionMatrix is not a function`: the
-  lamps' light map is drawn with a bare `THREE.Camera`. `createRenderer` gives the base
+  lamps' light map is drawn with a bare `THREE.Camera`. `configureRenderer` gives the base
   class a no-op.
 - **A texture a port swaps later never reaches objects that don't move.** three.js checks
   the *legacy* material for nodes, finds none, and gives an unchanged object only the shared
@@ -197,7 +197,7 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
 - **Geometries that share a buffer need it marked `shared`.** Disposing one geometry makes
   three.js destroy the buffer for all, and an object that hasn't changed is never checked
   again, so it draws without it (validation errors after 20–30 s of driving). Set
-  `attribute.shared = true` (the tree crown's do); `createRenderer` skips deleting those.
+  `attribute.shared = true` (the tree crown's do); `configureRenderer` skips deleting those.
 - **Shadows use the object's own material.** WebGPU ignores `customDepthMaterial`
   (`treeDepth`, the cars' and figures' depth materials): the shadow pass takes the
   material's `positionNode` (or `castShadowPositionNode`) and `maskShadowNode`. It
@@ -212,16 +212,28 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
   for `exceeds the maximum (16)` in the bench's console lines.
 - **`DynamicDrawUsage` means "upload every frame"** in the WebGPU renderer, changed or
   not. Leave it off and set `needsUpdate` (with an update range, `src/gpu.ts`).
-- **Runtime switches that work:** `renderer._samples` (MSAA 4 or 0: ran without errors in an
-  `--ab`, not yet checked on screen) and `sun.shadow.mapSize` (the shadow map is resized each update).
-  The WebGL renderer can do neither without being made again.
+- **Runtime MSAA needs the canvas target too:** `_samples` alone leaves the picture
+  byte-for-byte unchanged: the tone-mapping framebuffer retains its startup samples.
+  Set `_samples` and the samples of `_frameBufferTargets.get(_canvasTarget)`, as
+  `Graphics` does. Do not dispose it: three rebuilds its attachments on the next
+  render, and disposal can invalidate textures used by background compilation.
+  Checked with matched zoomed screenshots at 1× and 2× and actual GPU sample counts.
+- **Runtime shadow resizing needs fresh bindings:** `sun.shadow.mapSize` resizes the
+  target, but converted legacy materials can retain the destroyed texture. `Graphics`
+  releases their render caches once on a resize, including stationary meshes. WebGL
+  needs `shadow.map` disposed and set to null. Test repeated low/high switches and
+  read the console; matching dimensions alone is not proof of a valid render.
+- **A startup stall can precede all shaders:** the 120 s stall was reproduced inside
+  `GPUAdapter.requestDevice`, with no network requests outstanding. `renderer.ts`
+  bounds initialization and falls back to legacy WebGL before loading GPU factories;
+  `bench.mjs --require-webgpu` rejects that fallback for measurements.
 - **Inspect the generated shader** with `await
   renderer.debug.getShaderAsync(scene, camera, mesh)`.
 - **`compileAsync` never finishes** in headless Chrome with
-  `--disable-frame-rate-limit` (which `scripts/bench.mjs` uses); `createRenderer`
+  `--disable-frame-rate-limit` (which `scripts/bench.mjs` uses); `configureRenderer`
   gives up after 10 s and the rest compiles when first drawn. Without that flag,
   frames are capped at 60 fps and differences hide.
-- Look at `console.info` in the page: `createRenderer` says whether it got WebGPU
+- Look at `console.info` in the page: `configureRenderer` says whether it got WebGPU
   or fell back to WebGL 2. A benchmark on the fallback measures nothing useful.
 
 ## Checking a port

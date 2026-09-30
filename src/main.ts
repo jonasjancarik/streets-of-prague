@@ -147,7 +147,6 @@ async function main() {
   // How sharp the picture is and whether the costlier looks are on; Auto adapts.
   const graphics = new Graphics(renderer, sky, params);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048); // about 9 cm a texel across the ±90 m it covers on foot
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.4;
 
@@ -158,8 +157,8 @@ async function main() {
   // The part of town you're in, as a title when it changes (pipeline/build_districts.py).
   const districts = new Districts(AREA, $('district'));
   const time = { value: 0 };
-  status('Loading people and vehicles…');
   // People and two-wheelers (parked motorbikes come with the tiles, so load it first).
+  status('Loading people and vehicles…');
   const kit = await kitLoad;
   useKit(kit);
   await carsLoad;
@@ -286,14 +285,14 @@ async function main() {
   for (let i = trafficWanted(clock.t); i > 0; i--) traffic.spawn(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS));
   // How many people are about: CROWD a metre along each footpath around you, times
   // how strongly it draws people, so a busy street adds its own crowd (Karlův most,
-  // Anděl) rather than sharing out a fixed number. At most PEOPLE.
+  // Anděl) rather than sharing out a fixed number. At most PEOPLE, half on Lowest.
   const peopleWanted = () => {
     let draw = 0;
     for (const e of walkNear(px(), py(), LIFE_RADIUS)) {
       const [x, y] = e.pts[e.pts.length >> 1];
       if (Math.hypot(x - px(), y - py()) < LIFE_RADIUS) draw += e.path.length * footfall.pull(e);
     }
-    return Math.min(PEOPLE, Math.round(FEW_PEOPLE + CROWD * draw));
+    return Math.min(Math.round(PEOPLE * graphics.crowd), Math.round(FEW_PEOPLE + CROWD * draw));
   };
   // A spot on one of the footpaths, busier ones likelier; `ok` can turn spots down.
   const pickSpot = (edges: WalkEdge[], ok: ((x: number, y: number) => boolean) | null) => {
@@ -1210,8 +1209,8 @@ async function main() {
     // (And the metro's tunnels and train, for the first ride.)
     scene.add(samples.group, metro.under.group);
     // The facade pictures must be in first: on WebGPU a building that doesn't move binds
-    status('Preparing the view…');
     // its textures once, so tiles compiled here would keep the black stand-in.
+    status('Preparing the view…');
     await loadFacadeAtlas();
     await renderer.compileAsync(scene, camera).catch((e) => console.warn(e));
     scene.remove(samples.group);

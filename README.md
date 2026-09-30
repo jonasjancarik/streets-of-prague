@@ -22,6 +22,8 @@ If the browser's GPU adapter request takes more than 5 seconds, or device
 initialization more than 15 seconds, startup continues with WebGL. A GPU device
 that arrives after that timeout is released. Benchmark runs can require WebGPU
 with `--require-webgpu`, and `--load-progress` reports the loading stage every 5 seconds.
+For Chrome/Metal loading hangs, `--fresh-browser --loading-frames` keeps runs separate
+and the frame scheduler active during loading; the heartbeat stops before timing.
 
 The map data is built locally (see [Building the map](#building-the-map)); nothing
 generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
@@ -30,12 +32,25 @@ now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` sta
 (with night-time parking). The weather changes by itself every half hour or so of the game's clock;
 `?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen (the loading screen's language, time, weather and sound choices and its Start button; the weather is the real weather in Prague now, from Open-Meteo (`src/liveweather.ts`), or else rolled anew on each visit), and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. Elements in `index.html` marked `data-t` work the same way.
-Graphics (<kbd>G</kbd> cycles it, remembered in the browser): High draws at the screen's
-pixel ratio up to 2, Medium up to 1.5, Low at 1, all with the tone curve, dirt and grime
-and the trees' small leaves; Lowest at 1 without them. Auto, the default, moves between
-them by how steady the frames are (`src/graphics.ts`).
-`?graphics=auto|high|medium|low|lowest` overrides it for one visit and `?dpr=1` fixes
-the pixel ratio.
+Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
+
+| Setting | High | Medium | Low | Lowest |
+|---|---|---|---|---|
+| Pixel ratio, up to the screen's own | 2 | 1.5 | 1 | 1 |
+| MSAA on WebGPU | 4 samples | 4 samples | 4 samples | Off |
+| Sun shadow map | 2048² | 2048² | 1024² | 1024² |
+| Dirt, grime, small leaves and tone curve | On | On | On | Off |
+| Roof tiles and weathering | On | On | On | Off |
+| Car shadows in lamplight | Full | Soft | Soft | Off |
+| Maximum crowd | 1200 | 1200 | 1200 | 600 |
+
+Street patterns and facade pictures stay on at every tier. Quieter streets have
+fewer people; changing tiers lets surplus people leave out of sight.
+Auto, the default, starts High (Medium on touch devices) and moves between tiers
+by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds.
+`?graphics=auto|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
+only the pixel ratio. WebGL keeps MSAA on at every tier because it cannot change
+that without a new renderer.
 
 ## Playing
 

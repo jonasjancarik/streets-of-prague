@@ -10,11 +10,11 @@ import {
   materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON, BLANK } from '../facades.ts';
-import { WINDOWS, LANDMARK_ROOF as R } from '../shading.ts';
+import { WINDOWS, ROOF_DETAIL, LANDMARK_ROOF as R } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, skyAmbient } from './common.ts';
 
-const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS);
+const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL);
 
 // The atlas loads after the first frames: a one-layer stand-in keeps the binding's type.
 const standIn = new THREE.DataArrayTexture(new Uint8Array(4), 1, 1, 1);
@@ -137,9 +137,9 @@ const buildingColor = Fn(() => {
   const c = vec3(materialColor).mul(vertexColor().rgb).toVar();
   const base = c.toVar();
   If(bn.y.greaterThan(0.97), () => {
-    c.assign(roofWeather(flatRoof(base, bwp, wpWidth), base, bwp, bn, wpWidth));
+    If(uRoofDetail.greaterThan(0.5), () => { c.assign(roofWeather(flatRoof(base, bwp, wpWidth), base, bwp, bn, wpWidth)); });
   }).ElseIf(bn.y.greaterThan(0.15), () => {
-    c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth));
+    If(uRoofDetail.greaterThan(0.5), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
   }).Else(() => {
     const bays = fBays(f).toVar();
     If(bays.lessThan(0.5), () => {
@@ -205,8 +205,11 @@ const landmarkColor = Fn(() => {
   const roofFace = smoothstep(R.face[0], R.face[1], up.y);
   const reddish = step(max(c.g, c.b), c.r.add(0.01));
   const warm = max(smoothstep(R.sat[0], R.sat[1], sat).mul(float(1).sub(smoothstep(R.hue[0], R.hue[1], hue))), float(1).sub(smoothstep(R.black[0], R.black[1], luma(c)))).mul(reddish).mul(roofFace);
-  const tile = roofTiles(LANDMARK_TILE.mul(clamp(luma(c).div(R.light), R.minLight, R.maxLight)), bwp, up, wpWidth);
-  return mix(c, tile, warm);
+  If(uRoofDetail.greaterThan(0.5), () => {
+    const tile = roofTiles(LANDMARK_TILE.mul(clamp(luma(c).div(R.light), R.minLight, R.maxLight)), bwp, up, wpWidth);
+    c.assign(mix(c, tile, warm));
+  });
+  return c;
 });
 addPort(/^landmark-roof$/, (node) => {
   const w = positionWorld;

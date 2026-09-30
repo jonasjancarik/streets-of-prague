@@ -391,6 +391,8 @@ vec3 facade(vec3 c, vec2 f, float bayWidth) {
 // 0 off), and the small leaves on the trees (vegetation.ts).
 export const DIRT = { value: 1 };
 export const LEAVES = { value: 1 };
+// Roof tiles, gravel and weathering; kept separate from wall and ground dirt.
+export const ROOF_DETAIL = { value: 1 };
 
 // The weather (weather.ts): how wet the ground is, how much snow lies, how hard it's
 // raining (0–1 each), and the colour of the sky mirrored in the puddles.
@@ -460,8 +462,9 @@ export function shadeLandmark(material: THREE.MeshLambertMaterial) {
   material.onBeforeCompile = (sh, r) => {
     cut(sh, r);
     sh.uniforms.uNoise = NOISE;
+    sh.uniforms.uRoofDetail = ROOF_DETAIL;
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${NOISE_GLSL}\n${BUILDING_GLSL}`)
+      .replace('#include <common>', `#include <common>\nuniform float uRoofDetail;\n${NOISE_GLSL}\n${BUILDING_GLSL}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
   vec3 lmFn = cross(dFdx(vCutWorld), dFdy(vCutWorld));
   vec3 lmUp = normalize(lmFn * (lmFn.y < 0. ? -1. : 1.));
@@ -471,8 +474,10 @@ export function shadeLandmark(material: THREE.MeshLambertMaterial) {
   float lmWarm = max(smoothstep(${R.sat[0]}, ${R.sat[1]}, (lmMax - lmMin) / max(lmMax, .001)) * (1. - smoothstep(${R.hue[0]}, ${R.hue[1]}, lmHue)),
     1. - smoothstep(${R.black[0]}, ${R.black[1]}, dot(lmC, vec3(.299, .587, .114))))
     * step(max(lmC.g, lmC.b), lmC.r + .01) * smoothstep(${R.face[0]}, ${R.face[1]}, lmUp.y);
+  if (uRoofDetail > .5) {
   vec3 lmTile = roofTiles(vec3(${R.rgb.map((v) => v.toFixed(4)).join(',')}) * clamp(dot(lmC, vec3(.299, .587, .114)) / ${R.light}, ${R.minLight}, ${R.maxLight}), vec2(vCutWorld.x, -vCutWorld.z), lmUp);
-  diffuseColor.rgb = mix(lmC, lmTile, lmWarm);`);
+  diffuseColor.rgb = mix(lmC, lmTile, lmWarm);
+  }`);
   };
   material.customProgramCacheKey = () => 'landmark-roof';
   return material;
@@ -483,6 +488,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uCut = CUTAWAY;
     sh.uniforms.uNoise = NOISE;
     sh.uniforms.uDirt = DIRT;
+    sh.uniforms.uRoofDetail = ROOF_DETAIL;
     sh.uniforms.uFacades = FACADE_ATLAS;
     sh.uniforms.uFacadeOn = FACADE_ON;
     sh.uniforms.uWet = WET;
@@ -493,16 +499,16 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
       .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nattribute float sky;\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;\n  vSky = sky;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uRoofDetail;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);
   vec4 fdx = dFdx(vFacade), fdy = dFdy(vFacade);
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
   vec3 roofBase = diffuseColor.rgb;
-  if (bn.y > .97) diffuseColor.rgb = roofWeather(flatRoof(roofBase, bwp), roofBase, bwp, bn);
-  else if (bn.y > .15) diffuseColor.rgb = roofWeather(roofTiles(roofBase, bwp, bn), roofBase, bwp, bn);
-  else {
+  if (uRoofDetail > .5 && bn.y > .97) diffuseColor.rgb = roofWeather(flatRoof(roofBase, bwp), roofBase, bwp, bn);
+  else if (uRoofDetail > .5 && bn.y > .15) diffuseColor.rgb = roofWeather(roofTiles(roofBase, bwp, bn), roofBase, bwp, bn);
+  else if (bn.y <= .15) {
     if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
     else if (fBays(vFacade) > .5) diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy, vFacade.z / fBays(vFacade));
     if (uDirt > .5) diffuseColor.rgb = grime(diffuseColor.rgb, vFacade);
