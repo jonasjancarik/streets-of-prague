@@ -103,60 +103,69 @@ def rasterize(tris: np.ndarray, x0: float, y0: float, size: float, res: float = 
     """Which of `tris` (local metres) is highest over each pixel of the square from
     (x0, y0) of `size` m, seen straight from above: triangle index (-1 for none),
     barycentric weights and height, each per pixel, row 0 at the north edge. Walls,
-    seen edge on, are left out."""
+    seen edge on, are left out. Scanline by scanline: each triangle's pixels row by
+    row, only the ones inside it."""
     w = int(round(size / res))
     height = np.full(w * w, -np.inf)
     which = np.full(w * w, -1)
     weights = np.zeros((w * w, 3))
     t = tris
+    if not len(t):
+        height[:] = np.nan
+        return which, weights, height
     nrm = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
     up = np.abs(nrm[:, 2]) / np.maximum(np.linalg.norm(nrm, axis=1), 1e-12)
     keep = np.nonzero(up > 0.1)[0]
-    # Pixel coordinates: column from the west edge, row from the north edge.
+    # Pixel coordinates: pixel centres at whole numbers, column from the west edge, row
+    # from the north edge.
     gx = (t[keep, :, 0] - x0) / res - 0.5
     gy = (y0 + size - t[keep, :, 1]) / res - 0.5
-    lo_x = np.clip(np.floor(gx.min(1)).astype(int), 0, w - 1)
-    hi_x = np.clip(np.ceil(gx.max(1)).astype(int), 0, w - 1)
-    lo_y = np.clip(np.floor(gy.min(1)).astype(int), 0, w - 1)
-    hi_y = np.clip(np.ceil(gy.max(1)).astype(int), 0, w - 1)
-    bw, bh = hi_x - lo_x + 1, hi_y - lo_y + 1
-    # Batches of triangles of similar size, each tested against its bounding box.
-    order = np.argsort(bw * bh)
+    row0 = np.clip(np.ceil(gy.min(1)).astype(int), 0, w)
+    row1 = np.clip(np.floor(gy.max(1)).astype(int), -1, w - 1)
+    rows = np.maximum(row1 - row0 + 1, 0)
+    # Batches of about a million rows' worth of triangles.
+    cum = np.cumsum(rows)
+    cuts = np.searchsorted(cum, np.arange(1, cum[-1] // 1_000_000 + 2) * 1_000_000) if len(cum) and cum[-1] else []
     start = 0
-    while start < len(order):
-        end = start + 1
-        cw, ch = bw[order[start]], bh[order[start]]
-        while end < len(order):
-            nw, nh = max(cw, bw[order[end]]), max(ch, bh[order[end]])
-            if (end - start + 1) * nw * nh > 4_000_000:
-                break
-            cw, ch, end = nw, nh, end + 1
-        idx = order[start:end]
-        ox, oy = np.meshgrid(np.arange(cw), np.arange(ch))
-        px = lo_x[idx, None] + ox.ravel()[None]
-        py = lo_y[idx, None] + oy.ravel()[None]
-        ax, ay = gx[idx, 0, None], gy[idx, 0, None]
-        bx, by = gx[idx, 1, None], gy[idx, 1, None]
-        cx, cy = gx[idx, 2, None], gy[idx, 2, None]
-        det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
-        det = np.where(np.abs(det) < 1e-12, 1e-12, det)
-        l1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / det
-        l2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / det
-        l3 = 1 - l1 - l2
-        inside = (l1 >= -1e-6) & (l2 >= -1e-6) & (l3 >= -1e-6) & (px < w) & (py < w)
-        k, s = np.nonzero(inside)
-        if len(k):
-            tri = keep[idx[k]]
-            b = np.column_stack((l1[k, s], l2[k, s], l3[k, s]))
-            z = (b * t[tri, :, 2]).sum(1)
-            pix = py[k, s] * w + px[k, s]
-            # The highest surface per pixel in this batch, then against what's there.
-            o = np.lexsort((z, pix))
-            o = o[np.r_[pix[o][1:] != pix[o][:-1], True]]
-            better = z[o] > height[pix[o]]
-            o = o[better]
-            height[pix[o]], which[pix[o]], weights[pix[o]] = z[o], tri[o], b[o]
+    for end in [*cuts, len(keep)]:
+        end = min(max(end, start + 1), len(keep))
+        if start >= end:
+            break
+        k = np.arange(start, end)
         start = end
+        n = rows[k]
+        if not n.sum():
+            continue
+        # One entry per (triangle, row).
+        tk = np.repeat(k, n)
+        py = np.repeat(row0[k], n) + np.arange(n.sum()) - np.repeat(np.cumsum(n) - n, n)
+        ax, ay = gx[tk].T, gy[tk].T  # (3, m)
+        bx, by = np.roll(ax, -1, 0), np.roll(ay, -1, 0)
+        span = ((ay - py) * (by - py) <= 0) & (ay != by)
+        xs = np.where(span, ax + (py - ay) * (bx - ax) / np.where(ay != by, by - ay, 1), np.nan)
+        xl = np.clip(np.ceil(np.nanmin(np.where(span, xs, np.inf), 0)), 0, w)
+        xr = np.clip(np.floor(np.nanmax(np.where(span, xs, -np.inf), 0)), -1, w - 1)
+        cnt = np.maximum(xr - xl + 1, 0).astype(int)
+        if not cnt.sum():
+            continue
+        # One entry per pixel.
+        pt = np.repeat(tk, cnt)
+        pyy = np.repeat(py, cnt)
+        pxx = np.repeat(xl.astype(int), cnt) + np.arange(cnt.sum()) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+        vx, vy = gx[pt], gy[pt]
+        det = (vy[:, 1] - vy[:, 2]) * (vx[:, 0] - vx[:, 2]) + (vx[:, 2] - vx[:, 1]) * (vy[:, 0] - vy[:, 2])
+        det = np.where(np.abs(det) < 1e-12, 1e-12, det)
+        l1 = ((vy[:, 1] - vy[:, 2]) * (pxx - vx[:, 2]) + (vx[:, 2] - vx[:, 1]) * (pyy - vy[:, 2])) / det
+        l2 = ((vy[:, 2] - vy[:, 0]) * (pxx - vx[:, 2]) + (vx[:, 0] - vx[:, 2]) * (pyy - vy[:, 2])) / det
+        b = np.clip(np.column_stack((l1, l2, 1 - l1 - l2)), 0, 1)
+        tri = keep[pt]
+        z = (b * t[tri, :, 2]).sum(1)
+        pix = pyy * w + pxx
+        # The highest surface per pixel in this batch, then against what's there.
+        o = np.lexsort((z, pix))
+        o = o[np.r_[pix[o][1:] != pix[o][:-1], True]]
+        o = o[z[o] > height[pix[o]]]
+        height[pix[o]], which[pix[o]], weights[pix[o]] = z[o], tri[o], b[o]
     height[which < 0] = np.nan
     return which, weights, height
 
@@ -679,7 +688,6 @@ def detect_windows(meta, ij, blds, debug: bool = False):
     x0, y0 = ij[0] * T - ox, ij[1] * T - oy
     w = int(round(T / WINDOW_RES))
     mesh = load_mesh(meta["crs"], (x0, y0, x0 + T, y0 + T), level=WINDOW_LEVEL)
-    which, weights, _ = rasterize(mesh.tris, x0, y0, T, WINDOW_RES)
     tris = [unpack(pos, ij, meta) for _, pos, _, _ in blds]
     roofs, owner, normals = [], [], {}
     for b, ((_, _, codes, _), t) in enumerate(zip(blds, tris)):
@@ -694,6 +702,21 @@ def detect_windows(meta, ij, blds, debug: bool = False):
     roofs = np.concatenate(roofs) if roofs else np.empty((0, 3, 3))
     owner = np.concatenate(owner) if owner else np.empty(0, int)
     rw, _, rz = rasterize(roofs, x0, y0, T, WINDOW_RES)
+    # Only the mesh over the pitched roofs (a third or so of the tile): its triangles whose
+    # bounding box meets a metre square with roof in it.
+    cell = int(round(1 / WINDOW_RES))
+    m = w // cell
+    occ = (rw >= 0).reshape(m, cell, m, cell).any((1, 3))
+    sat = np.pad(occ.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+    mt = mesh.tris
+    c0 = np.clip(((mt[:, :, 0].min(1) - x0) // 1).astype(int), 0, m - 1)
+    c1 = np.clip(((mt[:, :, 0].max(1) - x0) // 1).astype(int), 0, m - 1)
+    r0 = np.clip(((y0 + T - mt[:, :, 1].max(1)) // 1).astype(int), 0, m - 1)
+    r1 = np.clip(((y0 + T - mt[:, :, 1].min(1)) // 1).astype(int), 0, m - 1)
+    near = (sat[r1 + 1, c1 + 1] - sat[r0, c1 + 1] - sat[r1 + 1, c0] + sat[r0, c0]) > 0
+    which, weights, _ = rasterize(mt[near], x0, y0, T, WINDOW_RES)
+    if near.any():
+        which = np.where(which >= 0, np.nonzero(near)[0][np.maximum(which, 0)], -1)
     fid = np.where(rw >= 0, owner[np.maximum(rw, 0)] if len(owner) else -1, -1).reshape(w, w)
     core = fid >= 0
     pad = np.pad(fid, 2, constant_values=-1)
@@ -710,13 +733,19 @@ def detect_windows(meta, ij, blds, debug: bool = False):
     labs[idx] = lab(colour[idx])
     # What stands out from each face's own colour: grey and much brighter (the sky in
     # the glass), or much darker or bluer.
+    # Each face's median, all faces at once: pixels sorted by face and value.
     faces = fid[idx]
+    ref = np.empty((len(idx), 3))
+    for ch in range(3 if len(idx) else 0):
+        o = np.lexsort((labs[idx, ch], faces))
+        fs = faces[o]
+        starts = np.r_[0, np.nonzero(np.diff(fs))[0] + 1]
+        ends = np.r_[starts[1:], len(fs)]
+        ref[o, ch] = np.repeat(labs[idx[o[(starts + ends - 1) // 2]], ch], ends - starts)
+    d = labs[idx] - ref
     bright, dark = np.zeros(w * w, bool), np.zeros(w * w, bool)
-    for f in np.unique(faces):
-        k = idx[faces == f]
-        d = labs[k] - np.median(labs[k], axis=0)
-        bright[k] = (d[:, 0] > WINDOW_BRIGHT) & (np.hypot(labs[k, 1], labs[k, 2]) < WINDOW_BRIGHT_CHROMA)
-        dark[k] = (d[:, 0] < -WINDOW_DARK) | ((d[:, 2] < -WINDOW_BLUE) & (d[:, 0] < -5))
+    bright[idx] = (d[:, 0] > WINDOW_BRIGHT) & (np.hypot(labs[idx, 1], labs[idx, 2]) < WINDOW_BRIGHT_CHROMA)
+    dark[idx] = (d[:, 0] < -WINDOW_DARK) | ((d[:, 2] < -WINDOW_BLUE) & (d[:, 0] < -5))
 
     def window(pix, is_dark):
         f = int(np.bincount(fid[pix] - fid[pix].min()).argmax() + fid[pix].min())
