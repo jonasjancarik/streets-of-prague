@@ -22,13 +22,11 @@ pipeline/.cache/landmarks/<area>/ (see KEEP, and .claude/skills/landmarks).
 """
 
 import argparse
-import gzip
 import json
 import os
 import shutil
 import struct
 import subprocess
-import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -40,9 +38,8 @@ from shapely.ops import unary_union
 import ipr_buildings as ipr
 from layers import CACHE as LAYERS
 from osm_area import AREAS, OUT
+from photomesh import fetch, nodes_over, triangles
 
-MESH = "https://tiles.arcgis.com/tiles/SBTXIEUGWbqzUecw/arcgis/rest/services/praha2023_merged_WM/SceneServer/layers/0"
-NODES = Path(__file__).parent / ".cache" / "mesh"
 # For checking a landmark: its piece of the mesh as cut (<name>.mesh.glb), its clean
 # model (<name>.lod3.obj) and the baked model coloured by source (<name>.sources.glb).
 KEEP = Path(__file__).parent / ".cache" / "landmarks"
@@ -61,39 +58,6 @@ LANDMARKS = {
 }
 PAD = 1.5
 BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or "/Applications/Blender.app/Contents/MacOS/Blender"
-
-
-def fetch(path: str) -> bytes:
-    f = NODES / path.replace("/", "_")
-    if not f.exists():
-        NODES.mkdir(parents=True, exist_ok=True)
-        f.write_bytes(urllib.request.urlopen(f"{MESH}/{path}", timeout=60).read())
-    b = f.read_bytes()
-    return gzip.decompress(b) if b[:2] == b"\x1f\x8b" else b
-
-
-def nodes_over(bounds, level: int | None, nid="root"):
-    """The nodes whose bounding sphere reaches `bounds` (EPSG:3857): at `level`, or the
-    finest there are where the tree stops sooner."""
-    n = json.loads(fetch(f"nodes/{nid}"))
-    cx, cy, _, r = n["mbs"]
-    x0, y0, x1, y1 = bounds
-    dx, dy = max(x0 - cx, 0, cx - x1), max(y0 - cy, 0, cy - y1)
-    if dx * dx + dy * dy > r * r:
-        return []
-    children = n.get("children") or []
-    if n.get("geometryData") and (not children or n.get("level") == level):
-        return [n]
-    return [m for c in children for m in nodes_over(bounds, level, c["id"])]
-
-
-def triangles(n):
-    """A node's triangles (EPSG:3857 and metres above sea level) and their UVs."""
-    b = fetch(f"nodes/{n['id']}/geometries/0")
-    count = struct.unpack_from("<I", b, 0)[0]
-    pos = np.frombuffer(b, "<f4", count * 3, 8).reshape(-1, 3).astype(np.float64) + n["mbs"][:3]
-    uv = np.frombuffer(b, "<f4", count * 2, 8 + count * 12).reshape(-1, 2)
-    return pos, uv
 
 
 def footprints(area: str, ids: list[str]):
