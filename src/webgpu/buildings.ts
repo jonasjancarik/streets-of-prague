@@ -7,12 +7,12 @@
 import * as THREE from 'three';
 import {
   Fn, If, Discard, float, int, vec2, vec3, vec4, array, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
-  materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross,
+  materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON, BLANK } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, LANDMARK_ROOF as R } from '../shading.ts';
 import { lampLit } from './lamps.ts';
-import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, skyAmbient } from './common.ts';
+import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
 
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL);
 
@@ -44,9 +44,35 @@ const luma = (c: N) => dot(c, vec3(0.299, 0.587, 0.114));
 // detail() with the pixel's footprint worked out once, outside any branch (derivatives).
 const fade = (width: N, cell: number) => float(1).sub(smoothstep(cell * 0.2, cell * 0.7, width));
 
-function roofTiles(c0: N, wp: N, n: N, wpWidth: N) {
+// Beaver-tail tiles, laid double (beaverTiles in shading.ts): rows without offset, and
+// the round ends of a second layer, half a tile over, in the gaps between theirs.
+const beaverEnd = (x: N) => {
+  const u = fract(x).mul(2).sub(1);
+  return float(1).sub(float(1).sub(sqrt(max(0, float(1).sub(u.mul(u))))).mul(0.32));
+};
+function beaverTiles(c0: N, wp: N, n: N, wpWidth: N) {
+  const down = normalize(vec2(n.x, n.z.negate()).add(vec2(0, 0.0001)));
+  const q = vec2(dot(wp, vec2(down.y.negate(), down.x)), dot(wp, down).div(max(n.y, 0.3))).div(vec2(0.18, 0.3));
+  const row = floor(q.y), fy = fract(q.y);
+  const top = step(fy, beaverEnd(q.x)), under = top.oneMinus().mul(step(fy, beaverEnd(q.x.add(0.5))));
+  const x = q.x.add(top.oneMinus().mul(0.5));
+  const col = floor(x), fx = fract(x);
+  const h = hash12(vec2(col, row.mul(2).add(top.oneMinus())));
+  const patch = vnoise(vec2(col, row).mul(0.23));
+  const t = c0.mul(h.mul(0.28).add(0.8)).mul(float(1.08).sub(smoothstep(0.55, 0.85, patch).mul(0.28))).toVar();
+  t.mulAssign(mix(vec3(1.06, 0.97, 0.9), vec3(0.9, 0.94, 1), fract(h.mul(7.3))));
+  t.mulAssign(smoothstep(0, 0.6, fy).mul(0.14).add(0.9));
+  t.mulAssign(mix(float(1), mix(0.45, 0.72, under), top.oneMinus()));
+  t.mulAssign(mix(0.62, 1, smoothstep(0, 0.05, min(fx, fx.oneMinus()))));
+  const c = mix(c0.mul(0.95), t, fade(wpWidth, 0.18)).toVar();
+  c.mulAssign(fbm(wp.mul(0.22)).mul(0.2).add(0.9));
+  return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.7));
+}
+
+// Clay tiles, or slate on grey roofs where the material isn't known (`slate` not given).
+function roofTiles(c0: N, wp: N, n: N, wpWidth: N, slateGiven?: N) {
   const down = normalize(vec2(n.x, n.z.negate()).add(vec2(0, 0.0001))), across = vec2(down.y.negate(), down.x);
-  const slate = step(max(c0.r, max(c0.g, c0.b)).sub(min(c0.r, min(c0.g, c0.b))), 0.08);
+  const slate = slateGiven ?? step(max(c0.r, max(c0.g, c0.b)).sub(min(c0.r, min(c0.g, c0.b))), 0.08);
   const size = mix(vec2(0.26, 0.32), vec2(0.3, 0.22), slate);
   const q = vec2(dot(wp, across), dot(wp, down).div(max(n.y, 0.3)));
   const b = blocks(q, size.x, size.y);
@@ -60,8 +86,54 @@ function roofTiles(c0: N, wp: N, n: N, wpWidth: N) {
   c.mulAssign(fbm(wp.mul(0.22)).mul(0.24).add(0.88));
   return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.7));
 }
+// Sheet metal and copper (sheetRoof in shading.ts): smooth pans between thin standing
+// seams, a broad soft sheen, verdigris on copper.
+function sheetRoof(c0: N, wp: N, n: N, wpWidth: N, copper: N) {
+  const down = normalize(vec2(n.x, n.z.negate()).add(vec2(0, 0.0001)));
+  const a = dot(wp, vec2(down.y.negate(), down.x)).div(0.6);
+  const seam = fract(a);
+  const t = c0.mul(float(1).add(float(1).sub(smoothstep(0, 0.035, seam)).mul(0.07)).sub(smoothstep(0.94, 1, seam).mul(0.06))).toVar();
+  t.mulAssign(fract(sin(floor(a).mul(12.9898)).mul(43758.5453)).mul(0.03).add(0.96));
+  t.assign(mix(t, t.mul(vec3(0.82, 1.1, 1.02)).add(vec3(0.02, 0.06, 0.05)), copper.mul(smoothstep(0.45, 0.8, fbm(wp.mul(0.25)))).mul(0.7)));
+  const sheen = fbm(wp.mul(0.04)).mul(0.1).add(0.95);
+  return mix(c0.mul(sheen), t.mul(sheen), fade(wpWidth, 0.3));
+}
+// A mansard's steep lower slope (mansardWindows in shading.ts): a window in every bay of
+// about 3.2 m in a light frame.
+function mansardGlass(f: N, grow: number) {
+  const bays = max(1, floor(f.z.div(3.2).add(0.5)));
+  const bay = fract(f.x.div(f.z).mul(bays)).mul(f.z).div(bays), half = f.z.div(bays).mul(0.5);
+  return step(abs(bay.sub(half)), 0.45 + grow).mul(step(0.6 - grow, f.y)).mul(step(f.y, 1.9 + grow));
+}
+function mansardWindows(c: N, f: N) {
+  return mix(mix(c, vec3(0.74, 0.72, 0.68), mansardGlass(f, 0.08)), vec3(0.16, 0.19, 0.23), mansardGlass(f, 0));
+}
+// A roof window (roofWindow in shading.ts): a grey metal frame round glass that shows
+// more sky towards the top.
+function roofGlass(f: N) {
+  return step(0.1, min(min(f.x, f.x.oneMinus()), min(f.y, f.y.oneMinus())));
+}
+function roofWindow(f: N) {
+  return mix(vec3(0.42, 0.4, 0.38), mix(vec3(0.12, 0.15, 0.19), vec3(0.3, 0.36, 0.43), f.y), roofGlass(f));
+}
 function flatRoof(c: N, wp: N, wpWidth: N) {
   return c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).add(vnoise(wp.mul(18)).sub(0.5).mul(0.08).mul(fade(wpWidth, 0.05)));
+}
+// Flat roofs of sheets, planted and paved (sheetsRoof, plantedRoof, pavingRoof in shading.ts).
+function sheetsRoof(c: N, wp: N, wpWidth: N, width: N) {
+  const s = fract(wp.x.div(width));
+  const t = c.mul(float(1).add(float(1).sub(smoothstep(0, 0.025, s)).mul(0.06)).sub(smoothstep(0.97, 1, s).mul(0.03)));
+  return mix(c, t, fade(wpWidth, 0.3)).mul(fbm(wp.mul(0.12)).mul(0.12).add(0.94));
+}
+function plantedRoof(c: N, wp: N, wpWidth: N) {
+  const t = mix(c.mul(vec3(0.85, 0.78, 0.62)), c.mul(vec3(0.92, 1.12, 0.86)), smoothstep(0.35, 0.7, fbm2(wp.mul(0.6))));
+  return t.mul(float(1).add(vnoise(wp.mul(3)).sub(0.5).mul(0.3).mul(fade(wpWidth, 0.2))));
+}
+function pavingRoof(c: N, wp: N, wpWidth: N) {
+  const b = blocks(wp, float(0.5), float(0.5));
+  const t = c.mul(b.y.mul(0.12).add(0.93)).toVar();
+  t.assign(mix(t.mul(0.72), t, smoothstep(0, 0.02, b.x)));
+  return mix(c, t, fade(wpWidth, 0.5)).mul(fbm(wp.mul(0.2)).mul(0.12).add(0.93));
 }
 
 // Age on top of any roof colour (roofWeather in shading.ts): moss in clumps, more on the
@@ -136,10 +208,34 @@ const buildingColor = Fn(() => {
   const fWidth = length(abs(fdx.xy).add(abs(fdy.xy))).toVar();
   const c = vec3(materialColor).mul(vertexColor().rgb).toVar();
   const base = c.toVar();
-  If(bn.y.greaterThan(0.97), () => {
-    If(uRoofDetail.greaterThan(0.5), () => { c.assign(roofWeather(flatRoof(base, bwp, wpWidth), base, bwp, bn, wpWidth)); });
+  // Flat roofs by their material (tileWorker.ts: the facade attribute's w on roofs;
+  // 5-9 flat ones, 0 not known), unless it says it's a shallow roof of tiles or metal.
+  const roofWin = abs(f.w.sub(10)).lessThan(0.5).and(bn.y.greaterThan(0.15));
+  If(roofWin, () => { c.assign(roofWindow(f)); }).ElseIf(bn.y.greaterThan(0.97).and(f.w.lessThan(0.5).or(f.w.greaterThan(4.5))), () => {
+    If(uRoofDetail.greaterThan(0.5), () => {
+      const m = f.w;
+      const r = vec3(0).toVar();
+      If(m.greaterThan(8.5), () => { r.assign(pavingRoof(base, bwp, wpWidth)); })
+        .ElseIf(m.greaterThan(7.5), () => { r.assign(plantedRoof(base, bwp, wpWidth)); })
+        .ElseIf(m.greaterThan(4.5).and(m.lessThan(6.5)), () => { r.assign(sheetsRoof(base, bwp, wpWidth, select(m.greaterThan(5.5), float(2), float(1)))); })
+        .Else(() => { r.assign(flatRoof(base, bwp, wpWidth)); });
+      c.assign(roofWeather(r, base, bwp, bn, wpWidth));
+    });
   }).ElseIf(bn.y.greaterThan(0.15), () => {
-    If(uRoofDetail.greaterThan(0.5), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
+    If(uRoofDetail.greaterThan(0.5), () => {
+      // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
+      const m = f.w;
+      If(m.greaterThan(2.5).and(m.lessThan(4.5)), () => { c.assign(roofWeather(sheetRoof(base, bwp, bn, wpWidth, step(3.5, m)), base, bwp, bn, wpWidth)); })
+        .ElseIf(m.greaterThan(0.5).and(m.lessThan(1.5)), () => { c.assign(roofWeather(beaverTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); })
+        .ElseIf(m.greaterThan(1.5).and(m.lessThan(2.5)), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, float(1)), base, bwp, bn, wpWidth)); })
+        .Else(() => {
+          // Not known: slate where grey, else clay tiles.
+          const grey = max(base.r, max(base.g, base.b)).sub(min(base.r, min(base.g, base.b))).lessThan(0.08);
+          If(grey, () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, float(1)), base, bwp, bn, wpWidth)); })
+            .Else(() => { c.assign(roofWeather(beaverTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
+        });
+      If(bn.y.lessThan(0.5).and(f.z.greaterThan(0.1)), () => { c.assign(mansardWindows(c, f)); });
+    });
   }).Else(() => {
     const bays = fBays(f).toVar();
     If(bays.lessThan(0.5), () => {
@@ -169,6 +265,16 @@ const windowGlow = Fn(() => {
     const lit = step(fHash(cell.x.add(fract(f.w).mul(97)), cell.y), uWindows.mul(select(f.y.lessThan(4), 1.6, 1)));
     const glass = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
     g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(cell.y, cell.x)).mul(lit).mul(glass).mul(0.55));
+  }).ElseIf(uWindows.greaterThan(0.005).and(abs(f.w.sub(10)).lessThan(0.5)).and(bn.y.greaterThan(0.15)), () => {
+    // Roof windows (roofGlass).
+    const w = positionWorld;
+    const lit = step(fHash(floor(w.x.mul(0.7)), floor(w.z.mul(0.7))), uWindows.mul(0.6));
+    g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(floor(w.z), float(3))).mul(lit).mul(roofGlass(f)).mul(0.45));
+  }).ElseIf(uWindows.greaterThan(0.005).and(bn.y.greaterThan(0.15)).and(bn.y.lessThan(0.5)).and(f.z.greaterThan(0.1)), () => {
+    // A mansard's windows (mansardGlass).
+    const cell = floor(f.x.div(f.z).mul(max(1, floor(f.z.div(3.2).add(0.5)))));
+    const lit = step(fHash(cell.add(f.z.mul(0.37)), float(7)), uWindows);
+    g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(float(7), cell)).mul(lit).mul(mansardGlass(f, 0)).mul(0.55));
   });
   return g;
 });

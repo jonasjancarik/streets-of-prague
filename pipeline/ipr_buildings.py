@@ -5,7 +5,8 @@ shapes, towers, domes and dormers) for the tiles made by build_tiles.py.
     uv run ipr_buildings.py praha --jobs 4     # sheets read side by side (default: cores - 2)
 
 For every tile it writes tiles/<i>_<j>.ipr.bin.gz next to the tile JSON: the triangles of
-every building whose footprint centre is in the tile, with roof or wall colours; the
+every building whose footprint centre is in the tile, with roof or wall colours and a
+roof material per triangle (MATERIALS); the
 tile JSON gets "ipr" so the game draws these instead of extruding OSM footprints. OSM
 buildings that no IPR building stands on (newer ones, sheds, anything past the edge of
 the model) get "noIpr" and are still extruded. OSM footprints still drive collisions
@@ -21,6 +22,7 @@ pipeline/.cache/ipr/ from IPR's ArcGIS Online catalogue (each is ~150-250 MB).
 """
 
 import argparse
+import gzip
 import json
 import math
 import os
@@ -40,10 +42,12 @@ from shapely import STRtree, constrained_delaunay_triangles
 from shapely.geometry import MultiPoint, Point, Polygon
 
 import layers
+import roof_details
 import roofs
 from osm_area import AREAS, OUT
 
 CACHE = Path(__file__).parent / ".cache" / "ipr"
+MESH_COLOURS = Path(__file__).parent / ".cache" / "mesh_colours"
 ORG = "SBTXIEUGWbqzUecw"
 NS = {"gml": "http://www.opengis.net/gml", "bldg": "http://www.opengis.net/citygml/building/2.0"}
 BUILDING = f"{{{NS['bldg']}}}Building"
@@ -196,6 +200,11 @@ def flat_roof(c):
 
 
 COVERS = ("tiles", "slate", "copper")
+# A byte per triangle after the colours: the roof's material, which the shader draws
+# (src/tileWorker.ts passes it on as the facade attribute's w on roofs). 0: not known;
+# 1-4 pitched, 5-9 flat.
+MATERIALS = ("", "tiles", "slate", "metal", "copper", "bitumen", "membrane", "gravel", "green", "paving")
+MEASURED_WALL = 15  # on walls: their colour is measured, so the game keeps it (no palette)
 
 
 def colours(bid, osm):
@@ -298,19 +307,37 @@ def read_sheet(job):
     return name, out
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description="IPR Praha's 3D buildings for an area's tiles")
-    ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
-    ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
-    args = ap.parse_args()
-    area = args.area
-    out_dir = OUT / f"{area}_now"
-    meta = layers.read_meta(area)
-    if not meta:
-        raise SystemExit(f"{area}: run build_tiles.py {area} first")
+def add_roof_details(bid, pos, codes, col, mat, corner, windows, church=False):
+    """A building with chimneys (by rule, not on churches) and roof windows (found on the
+    photo mesh) added as triangles of its own (roof_details.py): its packed positions,
+    colours and materials with theirs after them."""
+    x0, y0 = corner
+    v = pos.reshape(-1, 3).astype(np.float64) / 100
+    t = np.column_stack([v[:, 0] + x0, v[:, 2] + y0, v[:, 1]]).reshape(-1, 3, 3)
+    extra, extra_col, extra_mat = [], [], []
+    if not church:
+        ct, cc, ccol = roof_details.chimneys(bid, t, codes)
+        if len(ct):
+            extra.append(ct)
+            extra_col.append(ccol)
+            # The chimney's sides keep their colour (paintWalls would give them a facade's).
+            extra_mat.append(np.where(cc == 0, MEASURED_WALL, 0).astype(np.uint8))
+    for w in windows:
+        extra.append(roof_details.window_quad(w))
+        extra_col.append(np.array([roof_details.WINDOW_COLOUR] * 2, np.uint8))
+        extra_mat.append(np.full(2, roof_details.WINDOW, np.uint8))
+    if not extra:
+        return pos, col, mat
+    e = np.concatenate(extra).reshape(-1, 3)
+    packed = np.column_stack([(e[:, 0] - x0) * 100, e[:, 2] * 100, (e[:, 1] - y0) * 100])
+    packed = np.clip(np.round(packed), -32768, 32767).astype("<i2").ravel()
+    return np.concatenate([pos, packed]), np.concatenate([col, *extra_col]), np.concatenate([mat, *extra_mat])
+
+
+def sheet_jobs(area, meta):
+    """The area's local projection, and a read_sheet job for each sheet over the area
+    (downloaded if it isn't yet)."""
     w, s, e, n = AREAS[area]
-    T = meta["tile"]
-    origin = meta["origin"]
     local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
     to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
     corners = [to_krovak.transform(lon, lat) for lon in (w, e) for lat in (s, n)]
@@ -318,6 +345,37 @@ def main() -> None:
     X0, X1 = min(c[0] for c in xs), max(c[0] for c in xs)
     Y0, Y1 = min(c[1] for c in xs), max(c[1] for c in xs)
     items = catalogue()
+    jobs = []
+    for X in range(X0, X1 + 1):
+        for Y in range(Y0, Y1 + 1):
+            if not sheet_name(X, Y):
+                continue
+            name = f"BD3_{sheet_name(X, Y)}"
+            path = download(name, items)
+            if not path:
+                print(f"  {name}: not in the catalogue")
+                continue
+            jobs.append((name, str(path), local, meta["tile"], meta["origin"]))
+    return local, jobs
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="IPR Praha's 3D buildings for an area's tiles")
+    ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
+    ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
+    ap.add_argument("--mesh-colours", choices=["lit", "shade", "off"], default="lit",
+                    help="colours measured on the photo mesh (mesh_colours.py), if there are any: walls measured in the sun "
+                         "only, also walls guessed from the shade, or none")
+    ap.add_argument("--no-roof-details", action="store_true", help="no chimneys or roof windows (roof_details.py)")
+    args = ap.parse_args()
+    area = args.area
+    out_dir = OUT / f"{area}_now"
+    meta = layers.read_meta(area)
+    if not meta:
+        raise SystemExit(f"{area}: run build_tiles.py {area} first")
+    T = meta["tile"]
+    origin = meta["origin"]
+    local, sheets = sheet_jobs(area, meta)
 
     # OSM buildings per tile, to borrow tags (church, roof shape, roof cover) for colours.
     osm_by_tile = {}
@@ -381,17 +439,11 @@ def main() -> None:
             regions_by_tile[(i, j)] = RoofRegions(shapes)
         return regions_by_tile[(i, j)]
 
-    sheets = []
-    for X in range(X0, X1 + 1):
-        for Y in range(Y0, Y1 + 1):
-            if not sheet_name(X, Y):
-                continue
-            name = f"BD3_{sheet_name(X, Y)}"
-            path = download(name, items)
-            if not path:
-                print(f"  {name}: not in the catalogue")
-                continue
-            sheets.append((name, str(path), local, T, origin))
+    measured = {}
+    table = MESH_COLOURS / f"{area}.json.gz"
+    if args.mesh_colours != "off" and table.exists():
+        measured = json.loads(gzip.decompress(table.read_bytes()))
+        print(f"  colours from the photo mesh for {len(measured)} buildings ({table.name}, walls: {args.mesh_colours})")
 
     started = time.perf_counter()
     per_tile = {}  # (i, j) → list of (int16 positions, uint8 colours), one pair per building
@@ -413,13 +465,38 @@ def main() -> None:
                 palette = np.array([wall] + [roof[c] for c in COVERS] + [flat_roof(roof[c]) for c in COVERS], dtype=np.uint8)
                 which = np.zeros(len(codes), dtype=np.int8)
                 top = codes != 0
+                said = np.zeros(len(codes), dtype=bool)  # roofs whose cover OSM or roofs.py gives
                 if top.any():
                     v = pos.reshape(-1, 3, 3)[top].astype(np.float64) / 100
                     xy = np.column_stack([v[:, :, 0].mean(1) + i * T - origin[0], v[:, :, 2].mean(1) + j * T - origin[1]])
                     cover = regions(i, j)(xy)
+                    said[top] = cover >= 0
                     cover[cover < 0] = COVERS.index(default)
                     which[top] = 1 + cover + np.where(codes[top] == 2, 3, 0)
-                per_tile.setdefault((i, j), []).append((pos, palette[which].ravel()))
+                col = palette[which]
+                # The roof's material for the shader (MATERIALS): a cover given by hand or in
+                # OSM, else the mesh's; 0 where nothing says (the shader goes by the colour).
+                mat = np.zeros(len(codes), dtype=np.uint8)
+                if top.any():
+                    given = np.array([MATERIALS.index(c) for c in COVERS], dtype=np.uint8)[cover]
+                    mat[top] = np.where(said[top] & (codes[top] == 1), given, 0)
+                seen = measured.get(bid)
+                if seen:
+                    # The photo mesh's colours (mesh_colours.py) beat the palette and the
+                    # defaults; a roof cover given by hand or in OSM beats the mesh.
+                    w = seen.get("wall") or (seen.get("shade") if args.mesh_colours == "shade" else None)
+                    if w:
+                        col[codes == 0] = w
+                        mat[codes == 0] = MEASURED_WALL
+                    for tris, c, m, _ in seen.get("roofs", []):
+                        k = np.array(tris)
+                        k = k[~said[k]]
+                        col[k] = c
+                        mat[k] = MATERIALS.index(m) if m in MATERIALS else 0
+                if not args.no_roof_details and (codes == 1).any():
+                    pos, col, mat = add_roof_details(bid or f"{name}/{count}", pos, codes, col, mat, (i * T - origin[0], j * T - origin[1]),
+                                                     seen.get("windows", []) if seen else [], church=bool(osm and osm.get("church")))
+                per_tile.setdefault((i, j), []).append((pos, col.ravel(), mat))
             count += 1
         print(f"  {name}: {count} buildings in the area", flush=True)
     print(f"  sheets read in {time.perf_counter() - started:.0f} s; {afloat} buildings left out for standing on water")
@@ -437,11 +514,12 @@ def main() -> None:
     total = extra = 0
     tiles = {}
     for (i, j), blist in per_tile.items():
-        pos_arr = np.concatenate([p for p, _ in blist])
-        col = np.concatenate([c for _, c in blist])
+        pos_arr = np.concatenate([p for p, _, _ in blist])
+        col = np.concatenate([c for _, c, _ in blist])
+        mat = np.concatenate([m for _, _, m in blist])
         n_tris = len(col) // 3
         pad = (4 - (8 + pos_arr.nbytes) % 4) % 4
-        blob = struct.pack("<II", n_tris, len(blist)) + pos_arr.tobytes() + b"\0" * pad + col.tobytes()
+        blob = struct.pack("<II", n_tris, len(blist)) + pos_arr.tobytes() + b"\0" * pad + col.tobytes() + mat.tobytes()
         layers.write_bin(out_dir / "tiles", f"{i}_{j}.ipr.bin", blob)
         missing = [layers.building_key(b) for b in osm_by_tile[(i, j)][0] if b["own"] and not covered(b)]
         extra += len(missing)

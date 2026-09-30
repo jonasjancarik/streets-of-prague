@@ -322,10 +322,9 @@ export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, 
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
 // windows on the walls, one row per 3.4 m storey with shopfronts at street level.
 const BUILDING_GLSL = /* glsl */ `
-vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
+vec3 roofTilesAs(vec3 c, vec2 wp, vec3 n, float slate) {
   vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));   // the nudge keeps a flat face from being 0/0
   vec2 across = vec2(-down.y, down.x);
-  float slate = step(max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)), .08);   // grey roofs
   vec2 size = mix(vec2(.26, .32), vec2(.3, .22), slate);
   vec2 q = vec2(dot(wp, across), dot(wp, down) / max(n.y, .3));
   vec2 b = blocks(q, size);
@@ -339,9 +338,90 @@ vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
   c *= .88 + .24 * fbm(wp * .22);                                              // weathering
   return mix(c, c * vec3(.86, .9, .8), smoothstep(.62, .75, fbm(wp * .09 + 4.)) * .7);
 }
+// Beaver-tail tiles (bobrovky), as on most of the old town's roofs, laid double: the
+// rows one above the other without offset, and under each row a second layer half a
+// tile over, whose round ends show in the gaps between the round ends above. Tile to
+// tile from orange to brown, darker in patches.
+float beaverEnd(float x) { float u = fract(x) * 2. - 1.; return 1. - .32 * (1. - sqrt(max(0., 1. - u * u))); }
+vec3 beaverTiles(vec3 c, vec2 wp, vec3 n) {
+  vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));
+  vec2 q = vec2(dot(wp, vec2(-down.y, down.x)), dot(wp, down) / max(n.y, .3)) / vec2(.18, .3);
+  float row = floor(q.y), fy = fract(q.y);
+  // The top layer, or where its round end leaves a gap, the layer under it, or deeper.
+  float top = step(fy, beaverEnd(q.x)), under = (1. - top) * step(fy, beaverEnd(q.x + .5));
+  float x = q.x + .5 * (1. - top);
+  float col = floor(x), fx = fract(x);
+  float h = hash12(vec2(col, row * 2. + 1. - top));
+  float patch_ = vnoise(vec2(col, row) * .23);
+  vec3 t = c * (.8 + .28 * h) * (1.08 - .28 * smoothstep(.55, .85, patch_));
+  t *= mix(vec3(1.06, .97, .9), vec3(.9, .94, 1.), fract(h * 7.3));
+  t *= .9 + .14 * smoothstep(0., .6, fy);
+  t *= mix(1., mix(.45, .72, under), 1. - top);  // under the top layer, in its shadow
+  t *= mix(.62, 1., smoothstep(0., .05, min(fx, 1. - fx)));
+  c = mix(c * .95, t, detail(wp, .18));
+  c *= .9 + .2 * fbm(wp * .22);
+  return mix(c, c * vec3(.86, .9, .8), smoothstep(.62, .75, fbm(wp * .09 + 4.)) * .7);
+}
+// Clay tiles, or slate on grey roofs where the material isn't known.
+vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
+  if (max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) > .08) return beaverTiles(c, wp, n);
+  return roofTilesAs(c, wp, n, 1.);
+}
+// Sheet metal: smooth pans running down the slope between thin standing seams (a lit
+// edge and a faint shadow beside it), with a broad, soft sheen; copper with verdigris
+// in patches.
+vec3 sheetRoof(vec3 c, vec2 wp, vec3 n, float copper) {
+  vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));
+  float a = dot(wp, vec2(-down.y, down.x)) / .6;
+  float seam = fract(a);
+  vec3 t = c * (1. + .07 * (1. - smoothstep(0., .035, seam)) - .06 * smoothstep(.94, 1., seam));
+  t *= .96 + .03 * fract(sin(floor(a) * 12.9898) * 43758.5453);
+  t = mix(t, t * vec3(.82, 1.1, 1.02) + vec3(.02, .06, .05), copper * smoothstep(.45, .8, fbm(wp * .25)) * .7);
+  t *= .95 + .1 * fbm(wp * .04);
+  return mix(c * (.95 + .1 * fbm(wp * .04)), t, detail(wp, .3));
+}
+// A mansard's steep lower slope (facades.ts, mansardCoords): a window in every bay of
+// about 3.2 m, 1.3 m high from 0.6 m up the slope, in a light frame. mansardGlass is 1 on
+// the glass, for the windows lit at night.
+float mansardGlass(vec4 f, float grow) {
+  float bays = max(1., floor(f.z / 3.2 + .5)), bay = fract(f.x / f.z * bays) * f.z / bays;
+  float half_ = f.z / bays * .5;
+  return step(abs(bay - half_), .45 + grow) * step(.6 - grow, f.y) * step(f.y, 1.9 + grow);
+}
+vec3 mansardWindows(vec3 c, vec4 f) {
+  c = mix(c, vec3(.74, .72, .68), mansardGlass(f, .08));
+  return mix(c, vec3(.16, .19, .23), mansardGlass(f, 0.));
+}
+// A roof window (pipeline/roof_details.py; f.xy 0-1 across and up it): a grey metal
+// frame round glass that shows more sky towards the top.
+float roofGlass(vec4 f) {
+  return step(.1, min(min(f.x, 1. - f.x), min(f.y, 1. - f.y)));
+}
+vec3 roofWindow(vec4 f) {
+  return mix(vec3(.42, .4, .38), mix(vec3(.12, .15, .19), vec3(.3, .36, .43), f.y), roofGlass(f));
+}
 vec3 flatRoof(vec3 c, vec2 wp) {
   c *= .86 + .22 * fbm(wp * .5);
   return c + (vnoise(wp * 18.) - .5) * .08 * detail(wp, .05);
+}
+// Flat roofs of sheets (bitumen rolls 1 m wide, a membrane's 2 m): smooth, with the
+// welded seams a little lighter and some dirt.
+vec3 sheetsRoof(vec3 c, vec2 wp, float width) {
+  float s = fract(wp.x / width);
+  vec3 t = c * (1. + .06 * (1. - smoothstep(0., .025, s)) - .03 * smoothstep(.97, 1., s));
+  return mix(c, t, detail(wp, .3)) * (.94 + .12 * fbm(wp * .12));
+}
+// A planted roof: clumps of green and dry brown.
+vec3 plantedRoof(vec3 c, vec2 wp) {
+  vec3 t = mix(c * vec3(.85, .78, .62), c * vec3(.92, 1.12, .86), smoothstep(.35, .7, fbm2(wp * .6)));
+  return t * (1. + (vnoise(wp * 3.) - .5) * .3 * detail(wp, .2));
+}
+// A terrace: slabs half a metre across with dark joints.
+vec3 pavingRoof(vec3 c, vec2 wp) {
+  vec2 b = blocks(wp, vec2(.5));
+  vec3 t = c * (.93 + .12 * b.y);
+  t = mix(t * .72, t, smoothstep(0., .02, b.x));
+  return mix(c, t, detail(wp, .5)) * (.93 + .12 * fbm(wp * .2));
 }
 // Age on top of any roof colour: moss in clumps (more on the shaded north slopes), dark
 // streaks running down from the ridge, and stains. Each building ages differently, by a
@@ -506,8 +586,31 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   vec4 fdx = dFdx(vFacade), fdy = dFdy(vFacade);
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
   vec3 roofBase = diffuseColor.rgb;
-  if (uRoofDetail > .5 && bn.y > .97) diffuseColor.rgb = roofWeather(flatRoof(roofBase, bwp), roofBase, bwp, bn);
-  else if (uRoofDetail > .5 && bn.y > .15) diffuseColor.rgb = roofWeather(roofTiles(roofBase, bwp, bn), roofBase, bwp, bn);
+  // Flat roofs by their material (tileWorker.ts: the facade attribute's w on roofs;
+  // 5-9 flat ones, 0 not known), unless it says it's a shallow roof of tiles or metal.
+  bool roofWin = abs(vFacade.w - 10.) < .5 && bn.y > .15;
+  if (roofWin) diffuseColor.rgb = roofWindow(vFacade);
+  else if (uRoofDetail > .5 && bn.y > .97 && (vFacade.w < .5 || vFacade.w > 4.5)) {
+    float m = vFacade.w;
+    vec3 r;
+    if (m > 8.5) r = pavingRoof(roofBase, bwp);
+    else if (m > 7.5) r = plantedRoof(roofBase, bwp);
+    else if (m > 4.5 && m < 6.5) r = sheetsRoof(roofBase, bwp, m > 5.5 ? 2. : 1.);
+    else r = flatRoof(roofBase, bwp);
+    diffuseColor.rgb = roofWeather(r, roofBase, bwp, bn);
+  }
+  else if (uRoofDetail > .5 && bn.y > .15) {
+    // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
+    float m = vFacade.w;
+    vec3 r;
+    if (m > 2.5 && m < 4.5) r = sheetRoof(roofBase, bwp, bn, step(3.5, m));
+    else if (m > .5 && m < 1.5) r = beaverTiles(roofBase, bwp, bn);
+    else if (m > 1.5 && m < 2.5) r = roofTilesAs(roofBase, bwp, bn, 1.);
+    else r = roofTiles(roofBase, bwp, bn);
+    r = roofWeather(r, roofBase, bwp, bn);
+    if (bn.y < .5 && vFacade.z > .1) r = mansardWindows(r, vFacade);
+    diffuseColor.rgb = r;
+  }
   else if (bn.y <= .15) {
     if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
     else if (fBays(vFacade) > .5) diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy, vFacade.z / fBays(vFacade));
@@ -522,6 +625,13 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     float lit = step(fHash(cell.x + fract(vFacade.w) * 97., cell.y), uWindows * (vFacade.y < 4. ? 1.6 : 1.));
     float glass = 1. - smoothstep(.13, .22, luma(diffuseColor.rgb) / max(luma(vColor.rgb), .02));
     windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(cell.y, cell.x)) * lit * glass * .55;
+  } else if (uWindows > .005 && roofWin) {
+    float lit = step(fHash(floor(vWorld.x * .7), floor(vWorld.z * .7)), uWindows * .6);
+    windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(floor(vWorld.z), 3.)) * lit * roofGlass(vFacade) * .45;
+  } else if (uWindows > .005 && bn.y > .15 && bn.y < .5 && vFacade.z > .1) {
+    float cell = floor(vFacade.x / vFacade.z * max(1., floor(vFacade.z / 3.2 + .5)));
+    float lit = step(fHash(cell + vFacade.z * .37, 7.), uWindows);
+    windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(7., cell)) * lit * mansardGlass(vFacade, 0.) * .55;
   }
   // Rain darkens the walls and the roofs; snow lies on the roofs, less on steep ones.
   diffuseColor.rgb *= mix(1., bn.y > .15 ? .72 : .84, uWet);

@@ -149,6 +149,50 @@ export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) =
   return out;
 }
 
+// Mansards: the steep lower slope of a mansard roof (steeper than 60°) gets a row of
+// windows in the shader, and for that facade coordinates of its own: the position along
+// the eave, the height up the slope from its lower edge, and its length along the eave
+// (x, y, z; w keeps the roof's material). Faces shorter than 4 m or lower than 2 m (the
+// gables of hips, a dormer's cheeks) get none. Faces are told apart by their normal and
+// plane.
+export const MANSARD_UP = 0.5; // the steepest a roof face may be: its normal's up component
+export function mansardCoords(p: Float32Array, out: Float32Array) {
+  const n = p.length / 9, faces = new Map<string, number[]>();
+  const nrm = new Float32Array(n * 3);
+  for (let t = 0; t < n; t++) {
+    const i = t * 9;
+    const ax = p[i + 3] - p[i], ay = p[i + 4] - p[i + 1], az = p[i + 5] - p[i + 2];
+    const bx = p[i + 6] - p[i], by = p[i + 7] - p[i + 1], bz = p[i + 8] - p[i + 2];
+    let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+    const l = Math.hypot(nx, ny, nz);
+    if (!(l > 0)) continue;
+    nx /= l; ny /= l; nz /= l;
+    if (ny <= 0.15 || ny >= MANSARD_UP) continue;
+    nrm.set([nx, ny, nz], t * 3);
+    const d = nx * p[i] + ny * p[i + 1] + nz * p[i + 2];
+    const k = `${Math.round(nx * 40)},${Math.round(ny * 40)},${Math.round(nz * 40)},${Math.round(d / 0.5)}`;
+    faces.has(k) ? faces.get(k)!.push(t) : faces.set(k, [t]);
+  }
+  for (const tris of faces.values()) {
+    const t0 = tris[0] * 3, nx = nrm[t0], ny = nrm[t0 + 1], nz = nrm[t0 + 2];
+    // Along the eave (level), and up the slope.
+    const h = Math.hypot(nx, nz), ex = -nz / h, ez = nx / h;
+    const ux = -ny * ez, uy = nx * ez - nz * ex, uz = ny * ex; // e × n, pointing up
+    let lo = Infinity, hi = -Infinity, bottom = Infinity, top = -Infinity;
+    for (const t of tris) for (let v = t * 9; v < t * 9 + 9; v += 3) {
+      const s = p[v] * ex + p[v + 2] * ez, u = p[v] * ux + p[v + 1] * uy + p[v + 2] * uz;
+      lo = Math.min(lo, s); hi = Math.max(hi, s); bottom = Math.min(bottom, u); top = Math.max(top, u);
+    }
+    if (hi - lo < 4 || top - bottom < 2) continue;
+    for (const t of tris) for (let v = 0; v < 3; v++) {
+      const q = t * 9 + v * 3, o = (t * 3 + v) * 4;
+      out[o] = p[q] * ex + p[q + 2] * ez - lo;
+      out[o + 1] = p[q] * ux + p[q + 1] * uy + p[q + 2] * uz - bottom;
+      out[o + 2] = hi - lo;
+    }
+  }
+}
+
 interface WallEnds { tris: number[]; nx: number; nz: number; ax: number; az: number; bx: number; bz: number; len: number }
 
 // Party walls: walls standing back to back with another building's, in one plane and
@@ -209,12 +253,13 @@ const PLASTER = [
 // one building from its neighbour (walls that touch and came in the same colour are
 // one building). The pick goes by where the building stands, so it's the same every
 // time the tile loads. Whatever shading `col` has on top of the colour is kept.
-export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Array, base: (t: number) => [number, number, number]) {
+export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Array, base: (t: number) => [number, number, number], keep?: (t: number) => boolean) {
   const n = p.length / 9, owner = new Int32Array(n).fill(-1);
   const up = (i: number): number => (owner[i] === i ? i : (owner[i] = up(owner[i])));
   const seen = new Map<string, number>();
   for (let t = 0; t < n; t++) {
     if (!(facade[t * 12 + 2] > 0)) continue; // a roof
+    if (keep?.(t)) continue; // a colour measured on the photo mesh
     owner[t] = t;
     const [r, g, b] = base(t);
     for (let v = t * 9; v < t * 9 + 9; v += 3) {

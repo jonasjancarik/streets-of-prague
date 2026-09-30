@@ -11,7 +11,7 @@ import { initRoofs, buildBuildings, wallArrays } from './map/buildings.ts';
 import { fenceArrays } from './map/fences.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
-import { styleFor, facadeCoords, paintWalls } from './facades.ts';
+import { styleFor, facadeCoords, paintWalls, mansardCoords } from './facades.ts';
 import { groundLayers, layerBuffers } from './ground.ts';
 import { heightSampler } from './terrain.ts';
 import { skyView } from './map/skyView.ts';
@@ -67,14 +67,25 @@ function inPolygon(x: number, y: number, rings: Point2[][]) {
   return inside;
 }
 
+const MEASURED_WALL = 15; // pipeline/ipr_buildings.py
+const ROOF_WINDOW = 10; // pipeline/roof_details.py
+
 // IPR Praha's 3D buildings for a tile (pipeline/ipr_buildings.py): triangles with
-// positions in centimetres from the tile corner and a colour per triangle. Those in a
-// landmark's footprint (`hide`) are left out: the landmark stands there instead.
+// positions in centimetres from the tile corner, a colour per triangle and, in newer
+// data, a material per triangle. Those in a landmark's footprint (`hide`) are left
+// out: the landmark stands there instead.
 function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs['ipr']): BuildingArrays {
   const all = new DataView(buffer).getUint32(0, true);
   const p16 = new Int16Array(buffer, 8, all * 9);
   const colAt = 8 + all * 18 + ((4 - ((8 + all * 18) % 4)) % 4);
   const c8 = new Uint8Array(buffer, colAt, all * 3);
+  // Newer data: a byte per triangle after the colours, the roof's material (0 not known;
+  // pitched: 1 tiles, 2 slate, 3 sheet metal, 4 copper; flat: 5 bitumen, 6 membrane,
+  // 7 gravel, 8 planted, 9 paving; 10 a roof window), passed on as the facade
+  // attribute's w.
+  // On walls, MEASURED_WALL: their colour was measured on the photo mesh, so paintWalls
+  // leaves it as it is.
+  const m8 = buffer.byteLength >= colAt + all * 4 ? new Uint8Array(buffer, colAt + all * 3, all) : null;
   const kept: number[] = [];
   for (let t = 0; t < all; t++) {
     const x = x0 + (p16[t * 9] + p16[t * 9 + 3] + p16[t * 9 + 6]) / 300, y = y0 + (p16[t * 9 + 2] + p16[t * 9 + 5] + p16[t * 9 + 8]) / 300;
@@ -100,7 +111,30 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.computeVertexNormals();
   const facade = facadeCoords(pos, groundAt(ground), styleAt(bbox));
-  paintWalls(pos, col, facade, (o) => { const t = kept[o] * 3; return [c8[t], c8[t + 1], c8[t + 2]]; });
+  paintWalls(pos, col, facade, (o) => { const t = kept[o] * 3; return [c8[t], c8[t + 1], c8[t + 2]]; },
+    m8 ? (o) => m8[kept[o]] === MEASURED_WALL : undefined);
+  if (m8) for (let o = 0; o < n; o++) {
+    const m = m8[kept[o]];
+    if (m && m < MEASURED_WALL) for (let v = 0; v < 3; v++) facade[(o * 3 + v) * 4 + 3] = m; // roofs only
+  }
+  mansardCoords(pos, facade);
+  // Roof windows (pipeline/roof_details.py): two triangles (A, B, C) and (A, C, D), B
+  // across the slope from A and D up it. Their facade coordinates: 0-1 across and up
+  // the window, and its width.
+  if (m8) for (let o = 0; o + 1 < n; o++) {
+    if (m8[kept[o]] !== ROOF_WINDOW || m8[kept[o + 1]] !== ROOF_WINDOW) continue;
+    const a = o * 9, ux = pos[a + 3] - pos[a], uy = pos[a + 4] - pos[a + 1], uz = pos[a + 5] - pos[a + 2];
+    const d = (o + 1) * 9 + 6, vx = pos[d] - pos[a], vy = pos[d + 1] - pos[a + 1], vz = pos[d + 2] - pos[a + 2];
+    const lu = ux * ux + uy * uy + uz * uz || 1, lv = vx * vx + vy * vy + vz * vz || 1;
+    for (let t = o; t <= o + 1; t++) for (let v = 0; v < 3; v++) {
+      const q = t * 9 + v * 3, f = (t * 3 + v) * 4;
+      const px = pos[q] - pos[a], py = pos[q + 1] - pos[a + 1], pz = pos[q + 2] - pos[a + 2];
+      facade[f] = (px * ux + py * uy + pz * uz) / lu;
+      facade[f + 1] = (px * vx + py * vy + pz * vz) / lv;
+      facade[f + 2] = Math.sqrt(lu);
+    }
+    o++;
+  }
   return { position: pos, color: col, normal: g.attributes.normal.array as Float32Array, facade };
 }
 
