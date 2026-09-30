@@ -6,7 +6,7 @@ import type { Chopper } from './helicopter.ts';
 export interface TouchState {
   active: boolean; move: number; turn: number; aim: { h: number; mag: number } | null;
   brake: boolean; run: boolean; fast: boolean;
-  update(options: { car: Car | Chopper | null; driving?: boolean; tram?: boolean; wait?: boolean; label?: string | null; canEnter: boolean; limit?: number | null }): void;
+  update(options: { car: Car | Chopper | null; engine?: boolean; driving?: boolean; tram?: boolean; wait?: boolean; label?: string | null; canEnter: boolean; limit?: number | null }): void;
 }
 
 // On-screen controls for phones and tablets. They appear on touch screens (or with
@@ -26,9 +26,9 @@ const DEAD = 0.12;
 const capture = (el: HTMLElement, e: PointerEvent) => { try { el.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } };
 const dead = (v: number) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD));
 
-export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, doors, force }: {
+export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, doors, force }: {
   action: () => void; backOnRoad: () => void; zoomBy: (factor: number) => void;
-  horn: (on: boolean) => void; steal: () => void; doors: () => void; force: boolean;
+  horn: (on: boolean) => void; steal: () => void; cannon: (on: boolean) => void; doors: () => void; force: boolean;
 }): TouchState {
   const $ = (id: string): HTMLElement => {
     const el = document.getElementById(id);
@@ -146,6 +146,17 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, doors, for
   tap($('t-road'), backOnRoad);
   tap($('t-steal'), steal);
   tap($('t-doors'), doors);
+  // The water cannon of a fire engine sprays for as long as it's held.
+  const cannonButton = $('t-cannon');
+  const cannonUp = () => { cannon(false); cannonButton.classList.remove('down'); };
+  cannonButton.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    capture(cannonButton, e);
+    cannon(true);
+    cannonButton.classList.add('down');
+  });
+  cannonButton.addEventListener('pointerup', cannonUp);
+  cannonButton.addEventListener('pointercancel', cannonUp);
   // The horn (a tram's bell) sounds for as long as it's held.
   const hornButton = $('t-horn');
   const hornUp = () => { horn(false); hornButton.classList.remove('down'); };
@@ -185,7 +196,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, doors, for
   const set = <T extends string | boolean>(key: string, value: T, apply: (value: T) => void) => { if (shown[key] !== value) { shown[key] = value; apply(value); } };
   // `tram`: riding one; `wait`: at a stop; `label`: what the main button does, when it
   // isn't getting in or out of a car; `limit`: the speed lane assist is keeping to.
-  state.update = ({ car, driving = false, tram = false, wait = false, label = null, canEnter, limit = null }) => {
+  state.update = ({ car, engine = false, driving = false, tram = false, wait = false, label = null, canEnter, limit = null }) => {
     if (!state.active) return;
     if (car !== inCar) {
       // Lane assist starts off in every car you take.
@@ -204,6 +215,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, doors, for
     });
     set('horn', mode === 'drive', (drive) => { hornButton.textContent = t(drive ? 'Bell' : 'Horn'); });
     set('label', label || (mode === 'car' || mode === 'drive' ? 'Get out' : 'Get in'), (text) => { $('t-action').textContent = t(text); });
+    set('engine', engine, (on) => { cannonButton.hidden = !on; if (!on) cannonUp(); });
     set('toggle', state.run, (on) => toggle.classList.toggle('on', on));
     set('limit', state.run && limit ? `Lane assist · ${limit}` : 'Lane assist', (text) => { toggle.textContent = text.replace('Lane assist', t('Lane assist')); });
     set('action', !!(inCar || driving || tram || canEnter), (v) => $('t-action').classList.toggle('off', !v));

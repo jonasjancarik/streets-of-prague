@@ -99,6 +99,9 @@
       #health:empty { display: none; }
       #health span { display: block; height: 100%; background: #7fc97a; transition: width 0.2s; }
       #health span.low { background: var(--accent); }
+      #tank { height: 5px; margin-top: 6px; background: var(--key); border-radius: 3px; overflow: hidden; }
+      #tank:empty { display: none; }
+      #tank span { display: block; height: 100%; background: #6fb4e8; transition: width 0.2s; }
       #hurt { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 16, 0.55) 100%); }
       @keyframes blink { 50% { opacity: 0.25; } }
       #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.8s ease-in-out; }
@@ -328,7 +331,8 @@
       #t-toggle { position: fixed; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 160px); width: 136px; height: 44px; padding: 0 10px; white-space: nowrap; }
       #touch button.down, .t-pedal.down { background: rgba(236, 228, 214, 0.3); }
       #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
-      #t-fast, #t-steal, #t-doors, #t-taxi, #t-ticket { height: 52px; padding: 0 18px; }
+      #t-fast, #t-steal, #t-doors, #t-taxi, #t-ticket, #t-cannon { height: 52px; padding: 0 18px; }
+      #touch #t-cannon[hidden] { display: none; }
       #touch #t-ticket[hidden] { display: none; }
       #t-action.off { visibility: hidden; }
       #t-pedals { display: flex; align-items: flex-end; gap: 10px; touch-action: none; }
@@ -375,6 +379,7 @@
       <div id="wanted" class="hidden" role="status" aria-label="Not wanted"></div>
       <div id="money" role="status"></div>
       <div id="health"></div>
+      <div id="tank"></div>
       <div id="hint"></div>
       <div id="tally"></div>
       <div id="ride" hidden></div>
@@ -405,6 +410,7 @@
           <dt><kbd>Space</kbd></dt><dd data-t>Handbrake</dd>
           <dt><kbd>Shift</kbd></dt><dd data-t>Hold to keep to the lane and the speed limit, while A and D pick the next turn</dd>
           <dt><kbd>Q</kbd></dt><dd data-t>Horn (hold it)</dd>
+          <dt><kbd>F</kbd></dt><dd data-t>Water cannon of a fire engine (hold it)</dd>
           <dt><kbd>R</kbd></dt><dd data-t>Back on the road</dd>
           <dt><kbd>N</kbd></dt><dd data-t>Radio: next station, and off (or use the buttons under the speed)</dd>
           <dt><kbd>E</kbd></dt><dd data-t>Get out, or off a bike</dd>
@@ -461,6 +467,7 @@
         <button id="t-ticket" data-t hidden>Buy a ticket</button>
         <button id="t-taxi" class="foot-only" data-t>Taxi</button>
         <button id="t-action" class="off">Get in</button>
+        <button id="t-cannon" class="car-only" data-t hidden>Water cannon</button>
         <div class="t-row car-only"><button id="t-horn" data-t>Horn</button><button id="t-hand" data-t>Handbrake</button></div>
         <div id="t-pedals" class="car-only"><div id="t-brake" class="t-pedal" data-t>Brake</div><div id="t-gas" class="t-pedal" data-t>Gas</div></div>
       </div>

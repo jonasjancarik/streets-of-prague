@@ -25,6 +25,7 @@ import { Skids } from './skids.ts';
 import { Spray } from './spray.ts';
 import { Water } from './water.ts';
 import { Beacons } from './beacons.ts';
+import { Cannon, TANK, HOSE } from './cannon.ts';
 import { Graphics } from './graphics.ts';
 import { createGameRenderer } from './renderer.ts';
 import { StopBoard } from './board.ts';
@@ -248,6 +249,8 @@ async function main() {
   const spray = new Spray(scene, weatherFx.tint);
   const water = new Water(scene, weatherFx.tint);
   const beacons = new Beacons(scene);
+  const cannon = new Cannon();
+  let cannonHeld = false;
   // Boats on the river; the pedal boats round Slovanský ostrov, if it's in the area.
   const [ilon, ilat] = [14.4135, 50.0787];
   const islands = ilon > w0 && ilon < e0 && ilat > s0 && ilat < n0
@@ -842,7 +845,7 @@ async function main() {
     const pick = /^Digit([1-4])$/.exec(e.code);
     if (pick && !e.repeat && inspector.phase !== 'decide') buyTicket(TICKETS[Number(pick[1]) - 1]);
     if (e.code === 'KeyR') backOnRoad();
-    if (e.code === 'KeyF' && !e.repeat) stealTram();
+    if (e.code === 'KeyF') { cannonHeld = true; if (!e.repeat) stealTram(); }
     if (e.code === 'KeyX' && !e.repeat) ride.doors();
     if (e.code === 'KeyQ' && !e.repeat) honk(true);
     // Space jumps, except at a tram stop, where holding it waits for a tram.
@@ -869,12 +872,13 @@ async function main() {
     if (keymap[e.code]) input[keymap[e.code]] = false;
     if (!e.shiftKey) input.run = false;
     if (e.code === 'KeyQ') honk(false);
+    if (e.code === 'KeyF') cannonHeld = false;
   });
   let zoom = 1;
   const zoomBy = (f: number) => { zoom = clamp(zoom * f, 0.5, 4); };
   window.addEventListener('wheel', (e) => zoomBy(Math.exp(e.deltaY * 0.0012)), { passive: true });
   $('t-ticket').addEventListener('click', pressB);
-  const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, doors: () => ride.doors(), force: params.has('touch') });
+  const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, doors: () => ride.doors(), force: params.has('touch') });
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -1078,6 +1082,24 @@ async function main() {
     police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || taxi.riding, riding: ride.on || taxi.riding });
     inspector.update(dt, { x: me.x, y: me.y, h: inCar ? inCar.h : walker.h, onFoot: !inCar && !inHeli && !ride.on && !taxi.riding && !boats.me && !funicular.me, inVehicle: !!inCar || !!inHeli || taxi.riding || !!boats.me });
     brigade.update(dt, me);
+    cannon.update(dt, inCar, cannonHeld, (x, y) => ground(x, y));
+    if (cannon.jet && inCar) {
+      // The water puts out burning cars and knocks people (and officers) over, gently.
+      const car = inCar, { x: dx, y: dy } = cannon.dir;
+      for (const c of allCars()) if (c !== car && fires.onFire(c) && cannon.hit(car, c.x, c.y, 2 + c.spec.L / 2) >= 0) fires.douse(c, dt * HOSE);
+      for (const p of crowd.people) {
+        if (p.state === 'down' || cannon.hit(car, p.x, p.y, 1.8) < 0) continue;
+        crowd.knock(p, dx * 3, dy * 3);
+        stats.knocked++;
+        police.crime('knock', p.x, p.y);
+      }
+      for (const o of police.officers) {
+        if (o.down > 0 || cannon.hit(car, o.x, o.y, 1.8) < 0) continue;
+        police.knock(o, dx * 3, dy * 3);
+        police.crime('hitCop', o.x, o.y);
+      }
+      for (const f of brigade.crew) if (f.down <= 0 && cannon.hit(car, f.x, f.y, 1.8) >= 0) brigade.knock(f, dx * 3, dy * 3);
+    }
     const cops = [...police.cars.map((p) => p.car), ...brigade.engines.map((e) => e.car)];
 
     // Everything the traffic, trams and people need to look out for.
@@ -1483,7 +1505,7 @@ async function main() {
     carPool.render(drawn, ground, dt);
     skids.update(dt * scale, drawn, ground);
     spray.update(dt * scale, drawn, ground, renderer.domElement.height);
-    water.update(dt * scale, brigade.jets, renderer.domElement.height);
+    water.update(dt * scale, cannon.jet ? [...brigade.jets, cannon.jet] : brigade.jets, renderer.domElement.height);
     for (const c of choppers) c.render(dt);
     surfaceT -= dt;
     if (inCar && surfaceT < 0) { surfaceT = 0.2; surface = surfaceUnder(inCar.x, inCar.y); }
@@ -1595,7 +1617,7 @@ async function main() {
       if (touch.active) hint = inHeli.landed ? '' : up;
       else hint = inHeli.landed ? t('<b>Space</b> take off · <b>E</b> get out') : `${up} · ${t('<b>Space</b> climb · <b>Shift</b> down · land to get out')}`;
     } else if (inCar) {
-      if (!assisted) hint = touch.active ? '' : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
+      if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
       else hint = `${key('Shift')}${t('Lane assist, keeping to {limit} km/h', { limit: String(assist.limit) })}${touch.active ? '' : ` ${t('(let go to drive faster)')}`} · ${assist.intent > 0 ? t('turning left at the next junction') : assist.intent < 0 ? t('turning right at the next junction') : t(touch.active ? 'straight on (point the stick to turn)' : 'straight on (A/D to turn)')}`;
     }
     else if (boats.me) hint = touch.active ? '' : t('<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank');
@@ -1660,7 +1682,7 @@ async function main() {
       $('t-ticket').hidden = !ticketBtn;
       $('t-ticket').textContent = t(ticketBtn === 2 ? 'Pay the fine' : 'Buy a ticket');
     }
-    touch.update({ car: inCar || inHeli, driving: ride.driving, tram: (ride.on && !ride.driving) || taxi.riding || !!funicular.me, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || funicular.me?.stop != null, limit: assisted ? assist.limit : null });
+    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', driving: ride.driving, tram: (ride.on && !ride.driving) || taxi.riding || !!funicular.me, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || funicular.me?.stop != null, limit: assisted ? assist.limit : null });
     show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')} · ${tn(stats.knocked, '{n} person knocked over|{n} people knocked over')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}${stats.wasted ? ` · ${t('wasted {n}×', { n: stats.wasted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
@@ -1680,6 +1702,9 @@ async function main() {
     const hp = Math.ceil(health.value);
     show('health', hp < MAX_HEALTH ? `<span role="img" aria-label="${t('Health: {n}%', { n: hp })}" style="width:${hp}%"${hp <= 30 ? ' class="low"' : ''}></span>` : '', 'html');
     show('hurt', Math.round(health.flash * 50) / 50, 'opacity');
+    // The water left in an engine's tank, while it's being used or isn't full.
+    const water_ = Math.ceil((cannon.tank / TANK) * 100);
+    show('tank', inCar?.type === 'fire' && water_ < 100 ? `<span role="img" aria-label="${t('Water: {n}%', { n: water_ })}" style="width:${water_}%"></span>` : '', 'html');
 
     dev.update();
     renderer.render(scene, camera);
