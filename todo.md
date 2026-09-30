@@ -74,6 +74,10 @@ grime on the walls 6%, the shadow map's own pass 7%.
   on WebGPU against +2.4–3.1 ms on WebGL (Old Town Square, Karlovo náměstí,
   Petřín), with another app keeping the GPU 70–80% busy. Headless Chrome with `--disable-frame-rate-limit` never
   finishes `compileAsync` on WebGPU (webgpu.ts gives up after 10 s).
+- **Sky view** (`src/map/skyView.ts`, 30 September 2026): how much sky each spot sees, baked per tile in the
+  worker and applied to the ambient light only. Loose ends: the wall values are made once, so a wall at a tile's
+  edge doesn't learn about a neighbour that arrives later (the ground's texture is refreshed); landmarks have no
+  sky view; `fill()` could skip buildings far from the tile instead of testing every one.
 - **What's left on the main thread** (in order, with the CPU slowed 4×): the trams'
   steps and look-ahead, traffic, placing people (`Crowd.place`) and following
   everyone's height (`TileWorld.track`, `surfaceAt`), then three.js's own work.

@@ -15,7 +15,7 @@ import {
 } from 'three/tsl';
 import { setPatterned, SKY_REF, GRIT, GRIT_M } from './shading.ts';
 import {
-  type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports,
+  type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports, skyAmbient,
 } from './webgpu/common.ts';
 import { lampLight } from './webgpu/lamps.ts';
 import './webgpu/buildings.ts';
@@ -187,7 +187,7 @@ const inBox = (p: N, box: number[]) => {
 // patterned() in shading.ts, as a node material.
 function groundMaterial(
   base: THREE.MeshLambertMaterial, id: number, time: { value: number },
-  relief: { texture: THREE.Texture; box: number[] } | null = null, deck: { mask: THREE.Texture | null; box?: number[] } | null = null,
+  relief: { texture: THREE.Texture; box: number[]; sky?: { texture: THREE.Texture; box: number[] } | null } | null = null, deck: { mask: THREE.Texture | null; box?: number[] } | null = null,
   dig = false, photo: { texture: THREE.Texture; box: number[] } | null = null, sheltered = false,
 ) {
   const m = new MeshLambertNodeMaterial();
@@ -196,6 +196,8 @@ function groundMaterial(
   const shade = (n: N, pattern: number) => {
     const g = groundColor(pattern, timeOf(time), relief, deck, dig, photo, sheltered).toVar();
     n.colorNode = vec4(g.rgb, 1);
+    // Courtyards and lanes see less of the sky: less of the ambient light, none of the sun's or the lamps'.
+    if (relief?.sky) n.aoNode = skyAmbient(texture(relief.sky.texture, inBox(vec2(positionWorld.x, positionWorld.z.negate()), relief.sky.box)).r);
     // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
     n.emissiveNode = Fn(() => {
       const l = lampLight(positionWorld, normalView);

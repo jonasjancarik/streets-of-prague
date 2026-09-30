@@ -87,8 +87,9 @@ export function buildBuildings(data: BuildingTile) {
       return rr;
     });
 
-    // Walls, darkened towards the ground for a bit of ambient occlusion.
-    const dark = cWall.clone().multiplyScalar(0.62);
+    // Walls, a little darker at the foot. The sky view (map/skyView.ts) does most of the
+    // darkening of lower walls in narrow streets, so this is only a hint.
+    const dark = cWall.clone().multiplyScalar(0.82);
     for (const ring of rings) {
       for (let i = 0; i < ring.length; i++) {
         const [x1, y1] = ring[i];

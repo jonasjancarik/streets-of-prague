@@ -51,6 +51,9 @@ export const broad = (x: number, y: number) => 0.93 + 0.14 * fbm(x * 0.004, y * 
 // about 12% of a frame at 2×. Its own noise, wrapping round the texture's width, so it
 // repeats without a seam.
 export const GRIT_M = 512;
+
+// The least share of the ambient (sky) light a spot in the deepest courtyard gets; see map/skyView.ts.
+export const SKY_LEAST = 0.3;
 const GRIT_SIZE = 1024;
 export const GRIT = {
   value: (() => {
@@ -469,10 +472,10 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uWindows = WINDOWS;
     lampLit(sh, 'vWorld');
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;')
-      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;');
+      .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nattribute float sky;\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;\n  vSky = sky;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);
@@ -501,7 +504,8 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     float cover = smoothstep(.0, .25, uSnow * smoothstep(.25, .7, bn.y) * 1.2 - .45 * fbm2(bwp * .4));
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.8, .82, .86) * (.93 + .07 * vnoise(bwp * 3.)), cover);
   }`)
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += windowGlow;');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += windowGlow;')
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  reflectedLight.indirectDiffuse *= mix(${SKY_LEAST.toFixed(2)}, 1., vSky);`);
   };
   material.customProgramCacheKey = () => 'buildings-procedural';
   material.needsUpdate = true;
@@ -523,7 +527,7 @@ export function patterned(
   material: THREE.MeshLambertMaterial,
   id: number,
   time: { value: number },
-  relief: { texture: THREE.Texture; box: number[] } | null = null,
+  relief: { texture: THREE.Texture; box: number[]; sky?: { texture: THREE.Texture; box: number[] } | null } | null = null,
   deck: { mask: THREE.Texture | null; box?: number[] } | null = null,
   dig = false,
   photo: { texture: THREE.Texture; box: number[] } | null = null,
@@ -548,6 +552,9 @@ export function patterned(
     sh.uniforms.uRelief = { value: relief?.texture || null };
     sh.uniforms.uReliefBox = { value: relief?.box || [0, 0, 1, 1] };
     sh.uniforms.uReliefOn = { value: relief ? 1 : 0 };
+    sh.uniforms.uSky = { value: relief?.sky?.texture || null };
+    sh.uniforms.uSkyBox = { value: relief?.sky?.box || [0, 0, 1, 1] };
+    sh.uniforms.uSkyOn = { value: relief?.sky ? 1 : 0 };
     if (dig) sh.uniforms.uDig = DIG;
     if (deck) {
       sh.uniforms.uCut = CUTAWAY;
@@ -558,7 +565,7 @@ export function patterned(
       .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}\n${WEATHER_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\nuniform sampler2D uSky; uniform vec4 uSkyBox; uniform float uSkyOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}\n${WEATHER_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   vec2 wp = vec2(vWorld.x, -vWorld.z);
 ${deck ? `  if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
@@ -571,8 +578,8 @@ ${sheltered ? '' : `  diffuseColor.rgb = weathered(${id}, diffuseColor.rgb, wp, 
 ` : ''}`);
     lampLit(sh, 'vWorld');
     // Wet ground mirrors the sky and the lamps.
-    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += shine * (uSkyRef + lampLightOn(vWorld, normal) * .85);');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  reflectedLight.directDiffuse += shine * (uSkyRef + lampLightOn(vWorld, normal) * .85);\n  // Courtyards and lanes see less of the sky: less ambient light, never less sun or lamplight.\n  if (uSkyOn > .5) reflectedLight.indirectDiffuse *= mix(${SKY_LEAST.toFixed(2)}, 1., texture2D(uSky, (wp - uSkyBox.xy) / (uSkyBox.zw - uSkyBox.xy)).r);`);
   };
-  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}-${dig ? 'dig' : ''}${photo ? '-photo' : ''}${sheltered ? '-in' : ''}`;
+  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}${relief?.sky ? 's' : ''}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}-${dig ? 'dig' : ''}${photo ? '-photo' : ''}${sheltered ? '-in' : ''}`;
   return material;
 }

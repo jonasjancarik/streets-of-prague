@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import {
   float, vec2, vec3, uniform, renderGroup, texture, fract, floor, mod, dot, smoothstep, step, length, fwidth, min, sqrt, If,
 } from 'three/tsl';
-import { NOISE, DIRT, WET, SNOW, STREET_SNOW, RAIN, CUTAWAY, DIG } from '../shading.ts';
+import { NOISE, DIRT, WET, SNOW, STREET_SNOW, RAIN, CUTAWAY, DIG, SKY_LEAST } from '../shading.ts';
 
 export type N = any; // TSL nodes (their typings don't follow the chained arithmetic well)
 
@@ -66,3 +66,7 @@ export const stones = (p: N) => {
 export type Port = (node: N, legacy: THREE.Material) => void;
 export const ports: { match: RegExp; port: Port }[] = [];
 export const addPort = (match: RegExp, port: Port) => { ports.push({ match, port }); };
+
+// The share of the ambient (sky) light left where a spot sees `open` of the sky (baked in
+// map/skyView.ts; 1 on roofs and squares). Even a deep courtyard is lit by light bounced off its walls.
+export const skyAmbient = (open: N) => open.mul(1 - SKY_LEAST).add(SKY_LEAST);

@@ -14,6 +14,7 @@ import { styleFor, facadeCoords, paintWalls } from './facades.ts';
 import { groundLayers, layerBuffers } from './ground.ts';
 import { heightSampler } from './terrain.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
+import { skyView } from './map/skyView.ts';
 import type { HeightGrid, BuildingArrays, LandResult, WorkerJobs, WorkerRequest, WorkerResponse } from './contracts.ts';
 
 type LandData = WorkerJobs['land']['data'];
@@ -193,7 +194,7 @@ function land({ data, seeds, ground, bridges }: WorkerJobs['land']): LandResult 
 function isRequest(value: unknown): value is WorkerRequest {
   if (typeof value !== 'object' || value === null) return false;
   const message = value as Record<string, unknown>;
-  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land'].includes(String(message.type))
+  return typeof message.id === 'number' && ['roofs', 'ipr', 'ground', 'land', 'sky'].includes(String(message.type))
     && typeof message.data === 'object' && message.data !== null;
 }
 
@@ -230,6 +231,11 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,
         });
         worker.postMessage({ id, result } satisfies WorkerResponse, layerBuffers(result));
+        break;
+      }
+      case 'sky': {
+        const result = skyView(event.data.data);
+        worker.postMessage({ id, result } satisfies WorkerResponse, [result.texels.buffer, ...result.walls.map((a) => a.buffer)] as ArrayBuffer[]);
         break;
       }
       case 'land': {

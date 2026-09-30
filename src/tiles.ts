@@ -8,6 +8,8 @@ import { shadeBuildings, shadeLandmark, cutAway, broad } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { Zones, parkCars, inRing } from './parking.ts';
 import { decodeHeights, decodeLevels, heightSampler, fetchBinary } from './terrain.ts';
+import { SKY_STEP } from './map/skyView.ts';
+import type { Shadower } from './map/skyView.ts';
 import type { Point2, Bounds } from './map/geo.ts';
 import type { DriveEdge, DriveGraph, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
@@ -229,13 +231,14 @@ function depthOnlyGround(hm: Float32Array, [x0, y0]: Bounds, n: number, step: nu
 
 // Buildings from a worker's arrays: IPR's or extruded from OSM footprints, with their
 // facade coordinates (facades.ts).
-function buildingMesh(arrays: BuildingArrays) {
+function buildingMesh(arrays: BuildingArrays, sky: Float32Array | null) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(arrays.position, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(arrays.normal, 3));
   g.setAttribute('color', new THREE.BufferAttribute(arrays.color, 3));
   if (arrays.drapeUv) g.setAttribute('drapeUv', new THREE.BufferAttribute(arrays.drapeUv, 2));
   g.setAttribute('facade', new THREE.BufferAttribute(arrays.facade, 4));
+  g.setAttribute('sky', new THREE.BufferAttribute(sky ?? new Float32Array(arrays.position.length / 3).fill(1), 1));
   const mesh = new THREE.Mesh(g, buildingMaterial());
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -297,6 +300,8 @@ export class TileWorld {
   loaded: Map<string, Tile>; byIndex: Map<number, Tile>;
   last: { i: number; j: number; tile: Tile | undefined };
   pending: Map<string, Promise<TileFiles>>;
+  // Each loaded tile's buildings as shadow casters, and its sky-view texture (see map/skyView.ts).
+  sky: Map<number, { shapes: Shadower[]; texture: THREE.DataTexture | null; tileBox: Bounds; ground: { hm: Float32Array; box: Bounds; n: number; step: number } | null; timer: ReturnType<typeof setTimeout> | null }>;
   drive: DriveGraph; walk: WalkGraph;
   driveBy: Map<string, DriveEdge[]>; walkBy: Map<string, WalkEdge[]>;
   onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][]) => void;
@@ -338,6 +343,7 @@ export class TileWorld {
     this.byIndex = new Map(); // i * 65536 + j → tile, for lookups by position
     this.last = { i: NaN, j: NaN, tile: undefined };
     this.pending = new Map(); // key → Promise of the tile's files
+    this.sky = new Map();
     this.drive = drive;
     this.walk = walk;
     // Each tile's street graph edges, joined into drive/walk as tiles load.
@@ -772,6 +778,7 @@ export class TileWorld {
     }
     const seedArray = new Float64Array(seeds);
     const outlines = t.buildings.filter(grounded).map((b) => ({ rings: b.rings }));
+    const shapes: Shadower[] = t.buildings.filter(grounded).map((b) => ({ rings: b.rings, h: b.h }));
     const w = this.workers;
     const jobs = Promise.all([
       w.run('ground', {
@@ -799,6 +806,29 @@ export class TileWorld {
     const [{ layers, masks }, land, iprArrays, roofArrays] = await jobs;
     const landmarks = (await models).filter((m): m is THREE.Group => m !== null);
     if (this.loaded.has(k)) return this.loaded.get(k)!;
+    lap('workers');
+    // How much sky the ground and the walls see: the ground's texture, and a value for each wall vertex.
+    const arraysOf = [iprArrays, roofArrays].filter((arrays): arrays is BuildingArrays => arrays !== null);
+    const skyBox = [x0, y0, x0 + Math.ceil(Math.max(x1 - x0, y1 - y0) / SKY_STEP) * SKY_STEP, y0 + Math.ceil(Math.max(x1 - x0, y1 - y0) / SKY_STEP) * SKY_STEP];
+    const neighboursThen = this.neighbourCount(t.i, t.j);
+    const skyResult = await this.workers.run('sky', {
+      box: t.box, ground, shapes: this.shadowersFor(t.i, t.j, shapes),
+      meshes: arraysOf.map((a) => ({ position: a.position.slice(), normal: a.normal.slice(), facade: a.facade.slice() })),
+    }).catch((e) => { console.warn(`Sky view of tile ${k} failed`, e); return null; });
+    let skyTexture: THREE.DataTexture | null = null;
+    // `&nosky` in the address leaves the sky view out, to compare with and without it.
+    if (skyResult && !location.search.includes('nosky')) {
+      skyTexture = new THREE.DataTexture(skyResult.texels, skyResult.n, skyResult.n, THREE.RedFormat, THREE.UnsignedByteType);
+      skyTexture.unpackAlignment = 1;
+      skyTexture.magFilter = skyTexture.minFilter = THREE.LinearFilter;
+      skyTexture.needsUpdate = true;
+    }
+    this.sky.set(t.i * 65536 + t.j, { shapes, texture: skyTexture, tileBox: t.box, ground, timer: null });
+    // The neighbours' ground next to this tile's buildings.
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) if (di || dj) this.refreshSky(t.i + di, t.j + dj);
+    // (A neighbour that came while the worker was busy is only known now.)
+    if (this.neighbourCount(t.i, t.j) !== neighboursThen) this.refreshSky(t.i, t.j);
+    lap('sky');
     t0 = performance.now();
 
     const group = new THREE.Group();
@@ -818,12 +848,12 @@ export class TileWorld {
       });
     }
     const photo = this.ortho ? await this.photos.get(k) : null;
-    const surfaces = new Surfaces(layers, { time: this.time, relief: shade, masks: levelMasks, photo: photo ? { texture: photo, box: [x0, y0, x1, y1] } : null });
+    const surfaces = new Surfaces(layers, { time: this.time, relief: shade ? { texture: shade.texture, box: shade.box, sky: skyTexture ? { texture: skyTexture, box: skyBox } : null } : null, masks: levelMasks, photo: photo ? { texture: photo, box: [x0, y0, x1, y1] } : null });
     // Under a tunnel, the ground hides what's below it (the tunnel, the cars in it)
     // except round you (CUTAWAY): the ground's own layers are drawn without depth.
     const hidden = shade && terrain && onLevels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step) : null;
     if (hidden) group.add(hidden);
-    const buildings = [iprArrays, roofArrays].filter((arrays): arrays is BuildingArrays => arrays !== null).map(buildingMesh);
+    const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
     const walls = wallMesh(land.walls);
     const trees = treeMeshes(land.trees);
     // The overhead wires over the tram tracks, at the height of the lowest bridge deck a
@@ -877,12 +907,44 @@ export class TileWorld {
     return tile;
   }
 
+  // The buildings of a tile and the tiles round it that can shade its ground: the outlines
+  // reach only so far, so a building across the street in the next tile has to come from there.
+  shadowersFor(i: number, j: number, own: Shadower[]): Shadower[] {
+    const out = own.slice();
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) if (di || dj) out.push(...(this.sky.get((i + di) * 65536 + j + dj)?.shapes ?? []));
+    return out;
+  }
+
+  neighbourCount(i: number, j: number) {
+    let n = 0;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) if ((di || dj) && this.sky.has((i + di) * 65536 + j + dj)) n++;
+    return n;
+  }
+
+  // A tile's sky-view texture again, once a neighbour whose buildings it lacked has come.
+  refreshSky(i: number, j: number) {
+    const entry = this.sky.get(i * 65536 + j);
+    if (!entry?.texture) return;
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.timer = setTimeout(async () => {
+      entry.timer = null;
+      const result = await this.workers.run('sky', { box: entry.tileBox, ground: entry.ground, shapes: this.shadowersFor(i, j, entry.shapes), meshes: [] }).catch(() => null);
+      if (!result || this.sky.get(i * 65536 + j) !== entry || !entry.texture) return;
+      (entry.texture.image.data as Uint8Array).set(result.texels);
+      entry.texture.needsUpdate = true;
+    }, 400);
+  }
+
   drop(k: string) {
     const t = this.loaded.get(k);
     if (!t) return;
     this.scene.remove(t.group);
     t.surfaces.dispose();
     t.relief?.texture.dispose();
+    const sky = this.sky.get(t.i * 65536 + t.j);
+    if (sky?.timer) clearTimeout(sky.timer);
+    sky?.texture?.dispose();
+    this.sky.delete(t.i * 65536 + t.j);
     this.photos.get(k)?.then((tex) => tex?.dispose());
     this.photos.delete(k);
     for (const m of t.disposables) {

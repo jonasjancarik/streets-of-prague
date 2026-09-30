@@ -19,7 +19,7 @@ export interface GroundLayer {
   base?: boolean; // the plain ground under everything (see `photo`)
 }
 
-interface SurfaceTexture { texture: THREE.DataTexture; box: number[] }
+interface SurfaceTexture { texture: THREE.DataTexture; box: number[]; sky?: { texture: THREE.Texture; box: number[] } | null }
 // `photo`: prototype (?ortho): the tile's painted aerial photograph on the plain ground.
 interface SurfaceOptions {
   time?: { value: number }; relief?: SurfaceTexture | null; masks?: Map<number, SurfaceTexture>;

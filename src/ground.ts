@@ -542,10 +542,10 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(strips(solid, 0.13), COLORS.paint);
     add(strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5), COLORS.paint);
 
-    // Soft contact shadow round every building: a tight dark one where the wall meets
-    // the ground, and a wide faint one, which adds up in courtyards and narrow lanes.
+    // Soft contact shadow where each wall meets the ground. The wider, fainter one that
+    // used to darken courtyards and lanes is the sky view now (map/skyView.ts), which
+    // dims only the ambient light and not the sun's.
     const rings = buildings.map((b) => b.rings);
-    shade(skirts(rings, 7, true), 0.38);
     shade(skirts(rings, 1.8, true), 0.5);
   return out;
 }

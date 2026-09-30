@@ -12,7 +12,7 @@ import {
 import { FACADE_ATLAS, FACADE_ON, BLANK } from '../facades.ts';
 import { WINDOWS, LANDMARK_ROOF as R } from '../shading.ts';
 import { lampLit } from './lamps.ts';
-import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks } from './common.ts';
+import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, skyAmbient } from './common.ts';
 
 const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS);
 
@@ -156,6 +156,8 @@ addPort(/^buildings-procedural$/, (node) => {
   node.vertexColors = false; // the colour node multiplies the vertex colour in itself
   node.colorNode = buildingColor();
   node.emissiveNode = windowGlow();
+  // Lower walls that look onto a narrow street or a courtyard get less of the sky's light, never less sun or lamplight.
+  node.aoNode = skyAmbient(attribute('sky', 'float'));
   lampLit(node);
 });
 
