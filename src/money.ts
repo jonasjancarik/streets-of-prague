@@ -14,8 +14,13 @@ export const DECIDE = 5; // s to pay or run when inspected
 
 const WEEK = 7 * 86400;
 
+// (One formatter a language: making one is slow, and the HUD shows money every frame.)
+const formats = new Map<string, Intl.NumberFormat>();
 export function kc(n: number) {
-  return `${new Intl.NumberFormat(getLang() === 'cs' ? 'cs-CZ' : 'en-GB').format(Math.round(n))} Kč`;
+  const locale = getLang() === 'cs' ? 'cs-CZ' : 'en-GB';
+  let f = formats.get(locale);
+  if (!f) formats.set(locale, (f = new Intl.NumberFormat(locale)));
+  return `${f.format(Math.round(n))} Kč`;
 }
 
 export class Wallet {

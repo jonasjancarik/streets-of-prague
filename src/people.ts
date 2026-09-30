@@ -45,6 +45,7 @@ const TURN = 5; // rad/s, the fastest a walker turns
 
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(SCALE, SCALE, SCALE);
 const UP = new THREE.Vector3(0, 1, 0);
+const _m = new THREE.Matrix4();
 
 // Standing, or walking to running, for someone on their feet going at `speed`
 // (negative: backwards).
@@ -274,7 +275,8 @@ export class Crowd {
     return p;
   }
 
-  update(dt: number, threats: Iterable<{ x: number; y: number; vx: number; vy: number }>, near?: Obstructions) {
+  // `seen`: whether a spot is in view; out of it, nobody's walk or fall is animated.
+  update(dt: number, threats: Iterable<{ x: number; y: number; vx: number; vy: number }>, near?: Obstructions, seen: (x: number, y: number) => boolean = () => true) {
     const r = this.r;
     // Each walker looks ahead for things in the way a few times a second, not all at once.
     this.tick = (this.tick + 1) % 4;
@@ -346,7 +348,7 @@ export class Crowd {
           } else p.state = 'walk';
         }
       }
-      this.animate(p, dt);
+      if (seen(p.x, p.y)) this.animate(p, dt);
     }
   }
 
@@ -397,13 +399,19 @@ export class Crowd {
     p.anim.play('fall', true, 0.08);
   }
 
-  render(height: (x: number, y: number, p: Pedestrian) => number = () => 0) {
-    const m = new THREE.Matrix4();
+  // Only those `seen` (in view, with room for their shadows) are drawn, packed into the
+  // first slots: most of the crowd round you is out of sight.
+  render(height: (x: number, y: number, p: Pedestrian) => number = () => 0, seen: (x: number, y: number) => boolean = () => true) {
+    const m = _m;
+    let n = 0;
     for (const p of this.people) {
+      if (!seen(p.x, p.y)) continue;
       m.compose(_p.set(p.x, height(p.x, p.y, p) + p.z, -p.y), _q.setFromAxisAngle(UP, p.h), _s);
-      this.fig.set(p.i, m, p.anim);
+      this.fig.wear(n, p.i);
+      this.fig.set(n, m, p.anim);
+      n++;
     }
-    this.fig.commit(this.people.length);
+    this.fig.commit(n);
   }
 }
 

@@ -225,7 +225,7 @@ export class Figures {
       this.attr[k] = a;
     }
     // The four colours share one vertex buffer (WebGPU allows eight).
-    const worn = new THREE.InstancedInterleavedBuffer(new Float32Array(capacity * 12), 12, 1);
+    const worn = this.worn = new THREE.InstancedInterleavedBuffer(new Float32Array(capacity * 12), 12, 1);
     this.looks = {};
     ['aShirt', 'aTrousers', 'aSkin', 'aHair'].forEach((k, n) => {
       g.setAttribute(k, (this.looks[k] = new THREE.InterleavedBufferAttribute(worn, 3, n * 3)));
@@ -237,16 +237,37 @@ export class Figures {
     this.mesh.count = 0;
     this.capacity = capacity;
     this.sleeves = new Uint8Array(capacity);
+    this.wardrobe = new Float32Array(capacity * 12);
+    this.wardrobeSleeves = new Uint8Array(capacity);
+    this.wearing = new Int32Array(capacity).fill(-1);
   }
 
+  // Each person's colours by their own number, copied into whichever slot they're drawn
+  // in (wear), so a group can draw only the people in view, packed at the front.
+  private wardrobe: Float32Array;
+  private wardrobeSleeves: Uint8Array;
+  private wearing: Int32Array; // whose colours each slot holds
+  private worn: THREE.InstancedInterleavedBuffer;
+  private lookLo = Infinity;
+  private lookHi = -1;
+
   look(i: number, look: Look) {
-    const c = new THREE.Color();
-    for (const [k, v] of ([['aShirt', look.shirt], ['aTrousers', look.trousers], ['aSkin', look.skin], ['aHair', look.hair]] as [string, string][])) {
-      c.set(v);
-      this.looks[k].setXYZ(i, c.r, c.g, c.b);
-      this.looks[k].data.needsUpdate = true;
-    }
-    this.sleeves[i] = look.sleeves ? 1 : 0;
+    const c = new THREE.Color(), w = this.wardrobe;
+    ([look.shirt, look.trousers, look.skin, look.hair]).forEach((v, n) => { c.set(v); w[i * 12 + n * 3] = c.r; w[i * 12 + n * 3 + 1] = c.g; w[i * 12 + n * 3 + 2] = c.b; });
+    this.wardrobeSleeves[i] = look.sleeves ? 1 : 0;
+    // Wherever they're drawn now, and slot i (for groups that draw everyone in place).
+    for (let k = 0; k < this.capacity; k++) if (this.wearing[k] === i) this.wearing[k] = -1;
+    this.wear(i, i);
+  }
+
+  // Slot `slot` in person `id`'s colours.
+  wear(slot: number, id: number) {
+    if (this.wearing[slot] === id) return;
+    this.wearing[slot] = id;
+    this.worn.array.set(this.wardrobe.subarray(id * 12, id * 12 + 12), slot * 12);
+    this.sleeves[slot] = this.wardrobeSleeves[id];
+    this.lookLo = Math.min(this.lookLo, slot);
+    this.lookHi = Math.max(this.lookHi, slot);
   }
 
   set(i: number, matrix: THREE.Matrix4, anim: Anim) {
@@ -259,6 +280,13 @@ export class Figures {
     send(this.mesh.instanceMatrix, count);
     send(this.attr.aAnimA, count);
     send(this.attr.aAnimB, count);
+    if (this.lookHi >= this.lookLo) {
+      this.worn.clearUpdateRanges();
+      this.worn.addUpdateRange(this.lookLo * 12, (this.lookHi - this.lookLo + 1) * 12);
+      this.worn.needsUpdate = true;
+      this.lookLo = Infinity;
+      this.lookHi = -1;
+    }
   }
 }
 

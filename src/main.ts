@@ -841,6 +841,8 @@ async function main() {
   // that stand still (thousands of them across the loaded tiles) have a hash of their
   // own, made again only when one of them moves, comes or goes.
   const hash = new SpatialHash<Obstacle>(10), resting = new SpatialHash<Obstacle>(10);
+  // The moving cars alone, again: carsNear, run for every person near you, needn't wade through the crowd in `hash`.
+  const carHash = new SpatialHash<Obstacle>(10);
   // (The list is reused: it holds until the next call, and no caller looks up more
   // obstacles while it goes through one list.)
   const found: Obstacle[] = [];
@@ -855,11 +857,26 @@ async function main() {
   const carsNear = (x: number, y: number, rr: number, out: Car[] = []) => {
     stamp++;
     out.length = 0;
-    for (const o of obstacles(x, y, rr)) if (o.car && o.car.stamp !== stamp) { o.car.stamp = stamp; out.push(o.car); }
+    found.length = 0;
+    carHash.near(x, y, rr, found);
+    resting.near(x, y, rr, found);
+    for (const o of found) if (o.car && o.car.stamp !== stamp) { o.car.stamp = stamp; out.push(o.car); }
     return out;
   };
   const nearA: Car[] = [], nearB: Car[] = [];
-  const pushCar = (h: SpatialHash<Obstacle>, c: Car) => { for (const [x, y] of c.circles()) h.add({ x, y, z: c.gz, r: c.r, vx: c.vx, vy: c.vy, kind: c.mode === 'player' ? 'player' : 'car', car: c }); };
+  // The cars (moving and resting) near a spot, as obstacles: what a walker steps round.
+  const carsOnly = (x: number, y: number, rr: number) => {
+    found.length = 0;
+    carHash.near(x, y, rr, found);
+    return resting.near(x, y, rr, found);
+  };
+  const pushCar = (h: SpatialHash<Obstacle>, c: Car) => {
+    for (const [x, y] of c.circles()) {
+      const o: Obstacle = { x, y, z: c.gz, r: c.r, vx: c.vx, vy: c.vy, kind: c.mode === 'player' ? 'player' : 'car', car: c };
+      h.add(o);
+      if (h === hash) carHash.add(o);
+    }
+  };
   // On a bridge and under it: two things that don't meet.
   const apart = (a: { gz?: number }, b: { gz?: number }) => a.gz !== undefined && b.gz !== undefined && Math.abs(a.gz - b.gz) > 3;
   const moving = (c: Car) => c.mode === 'player' || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s
@@ -921,6 +938,7 @@ async function main() {
 
     // Everything the traffic, trams and people need to look out for.
     hash.clear();
+    carHash.clear();
     for (const a of traffic.agents) pushCar(hash, a.car);
     for (const c of movers) pushCar(hash, c);
     syncResting();
@@ -951,7 +969,7 @@ async function main() {
     if (boats.me) { walker.x = boats.me.x; walker.y = boats.me.y; walker.h = boats.me.h; walker.vx = walker.vy = 0; }
 
     const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5), ...cops.filter((c) => c.speed > 5)];
-    crowd.update(dt, threats, obstacles);
+    crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y));
 
     // ---- Collisions ------------------------------------------------------
     const active = [...(inCar ? [inCar] : []), ...movers, ...cops];
@@ -1272,7 +1290,7 @@ async function main() {
     metro.update(dt);
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
-    crowd.render(ground);
+    crowd.render(ground, (x, y) => !offscreen(x, y));
     police.render(ground, time.value, inCar);
     inspector.render(ground);
     tracers.update(dt);
