@@ -27,7 +27,7 @@ implementation steps, regression cases, future verification commands and stop co
 | 2 | [008: Prepare and retain car meshes](008-prepare-car-meshes.md) | P1 | One to two days | DONE (local; timing benefit inconclusive) |
 | 3 | [009: Reuse spatial tree batches](009-reuse-tree-batches.md) | P1 | Several days | DONE (local; timing inconclusive) |
 | 4 | [010: Bake landmark colour adjustments into assets](010-prebake-landmark-colours.md) | P2 | One to two days plus asset checks | DONE (local code and isolated assets; shared data/deployment pending, timing inconclusive) |
-| 5 | [011: Reuse spawn weights and pavement-traffic lookups](011-reuse-spawn-sampling.md) | P2 | About a day | IN PROGRESS (runtime verification) |
+| 5 | [011: Reuse spawn weights and pavement-traffic lookups](011-reuse-spawn-sampling.md) | P2 | About a day | DONE (local; timing benefit inconclusive) |
 | 6 | [012: Schedule streaming and update parked-car collisions](012-schedule-streaming-and-update-collisions.md) | P2 | Several days | PLANNED |
 
 ### Order and dependencies

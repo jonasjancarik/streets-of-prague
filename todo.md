@@ -215,8 +215,9 @@ grime on the walls 6%, the shadow map's own pass 7%.
 - **Spawn sampling** (plan 011): pedestrian and ordinary-traffic weights are reused
   within each replenishment pass, and pavement-driving cars are gathered once per
   simulation step. `scripts/check-spawn-work.mjs` compares the selectors and their RNG
-  calls with the previous loops. The `--stalls` report separates preparation and
-  spawn calls; timing benefit still needs a controlled alternating drive.
+  calls with the previous loops. The `--stalls` report separates preparation,
+  spawning and update totals. Two three-run alternating drives gave opposite
+  frame-time results, so there is no confirmed timing benefit; see plan 011.
 - **Stalls while driving** (30 September 2026; details and how to measure them in the
   performance skill). The 50–100 ms stalls on the drive from Újezd are mostly three.js
   building shaders for things drawn for the first time (~180 builds in 40 s: 0.7 s at 1×
