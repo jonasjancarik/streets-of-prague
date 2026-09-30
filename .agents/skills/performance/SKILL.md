@@ -169,9 +169,18 @@ The ground is shaded on every pixel. Measure anything you add to `PATTERNS_GLSL`
   person near you through a hash holding the whole crowd; cars now also go into
   `carHash` of their own.
 - **Tile loading happens on the main thread** after the workers finish: meshes,
-  street graphs, and parking (`parkCars`, 0–4 ms a tile when warm, up to ~30 ms
-  cold on an M5). Numeric map keys, not template strings; share per-type data;
+  street graphs, and parking. Numeric map keys, not template strings; share per-type data;
   compute outlines once.
+- **Parking isn't worth moving to the worker** (measured 30 September 2026). `parkCars`
+  takes 21–23 ms for the first tile, behind the loading screen, then 1.6 ms a tile on
+  average during play (7 ms at most) on an M5, and 5 ms (10–24 ms at most) with the CPU
+  slowed 4×. On a 4×-slowed drive the main thread stalls for 50–100 ms at a time for
+  other reasons, and `parkCars` isn't among the hottest functions. Moving it would
+  also be costly: `place()` makes a real `Car` for each spot tried (its outline, and
+  random draws mixed with the placement's, from `car.ts`, which pulls in three.js),
+  checks the shared `posts` of all loaded tiles, and hands back `DriveEdge` objects
+  from the shared street graph (`onPavement`). The bench only slows the CPU after
+  loading; to time tile loads slowed, set the throttle before `--eval`.
 - Check behaviour after simulation changes: trams, traffic and people still move,
   some stop for obstacles, and the grids hold no stale entries.
 

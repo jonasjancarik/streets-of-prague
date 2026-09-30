@@ -147,9 +147,6 @@ grime on the walls 6%, the shadow map's own pass 7%.
   ground under buildings is still shaded where a GPU doesn't skip it: drawing the
   ground after the buildings would need the tunnels' contents to be drawn after it
   too.
-- **Parking a tile's cars runs on the main thread**: 0–4 ms a tile once warmed up,
-  but up to 30 ms for the first tiles on an M5, several times that on a phone. The
-  spots could be worked out in the tile worker, with only the cars made here.
 - **The street graphs only grow.** The drive and walk graphs, street names and the
   crowd's index keep the edges of every tile ever loaded, so memory grows over a
   long session across the city. The police's route search runs over the graph,
@@ -192,7 +189,7 @@ grime on the walls 6%, the shadow map's own pass 7%.
 - **What's left on the main thread** (the supplied profile after the upload and crowd
   fixes, with the CPU slowed 4×): the crowd's `spot` / `follow` / `avoid`, `simulate`,
   `traffic.update`, `trams.clearAhead`, then `writeBuffer` (~6%, uniform buffers of
-  ~160 KB a frame and ~1200 figure matrices). Tile-load parking hitches remain above.
+  ~160 KB a frame and ~1200 figure matrices).
 
 ## Pipeline
 
