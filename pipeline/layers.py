@@ -155,6 +155,23 @@ def tiles(area: str, meta: dict | None = None):
             yield i, j, {"i": i, "j": j, "box": [round(v, 2) for v in tile_box(meta, i, j)], **{key: t[key] for key in ORDER}}
 
 
+def tunnel_shapes(terrain):
+    """The tunnel levels' outlines of every tile, as one shape (None without any)."""
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    shapes = [Polygon(p[0], p[1:]).buffer(0) for tile in (terrain or {}).get("tiles", {}).values()
+              for lv in tile if lv["kind"] == "tunnel" for p in lv["polys"]]
+    return unary_union(shapes) if shapes else None
+
+
+def in_tunnel(shape, pts):
+    """Whether a street (its points in local metres) runs along a tunnel level."""
+    if shape is None:
+        return False
+    from shapely.geometry import LineString
+    return LineString(pts).intersection(shape).length > 1.0
+
+
 def assemble(area: str) -> dict:
     """Write the game's tiles, index.json and names.json from the layers."""
     meta = read_meta(area)
@@ -171,6 +188,7 @@ def assemble(area: str) -> dict:
     ipr = ipr if ipr and ipr.get("tile") == meta["tile"] else None
     terrain = terrain if terrain and terrain.get("tile") == meta["tile"] else None
     listed, rails, names, written = [], [], {}, 0
+    tunnels = tunnel_shapes(terrain)
     for ci, cj in chunks(meta):
         rails += read_chunk(area, "ground", ci, cj)["rails"]
         for name, (length, x, y) in read_chunk(area, "streets", ci, cj)["names"].items():
@@ -185,6 +203,12 @@ def assemble(area: str) -> dict:
                 if b["own"] and building_key(b) in missing:
                     b["noIpr"] = True
             t["ipr"] = {"buildings": got["buildings"], "triangles": got["triangles"]}
+        # A way tagged as a tunnel that no tunnel level has (structures.drop_shallow) is on the ground.
+        if terrain:
+            for edges in (t["drive"], t["walk"]):
+                for e in edges:
+                    if e.get("tunnel") and not in_tunnel(tunnels, e["pts"]):
+                        del e["tunnel"]
         # Its bridges and tunnels (the heights are in its .levels.bin).
         if terrain and terrain.get("tiles", {}).get(k):
             t["structures"] = terrain["tiles"][k]

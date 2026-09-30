@@ -46,6 +46,7 @@ DENSE = 5.0  # m between the points a structure's heights are worked out at
 PAD = 6.0  # m of heights past a structure's edge (more than a lattice diagonal)
 COVER = 8.0  # m of ground over a tunnel, away from its portals
 COVER_SLOPE = 0.25  # how quickly a tunnel goes under that cover from a portal
+SHALLOW = 2.5  # m: a tunnel that never gets this far under the ground is just a passage on it
 CLEAR = 5.5  # m between a bridge or tunnel and one crossing it on another layer
 SAME = 3.0  # m: two structures further apart in height than this can't share a level
 NO_HIGHWAY = {"proposed", "construction", "elevator", "platform", "bus_stop", "abandoned", "razed", "planned"}
@@ -380,6 +381,23 @@ def solve(ways, ground, decks):
     return net, profiles
 
 
+def drop_shallow(ways, net, profiles, ground):
+    """Without the tunnels that never go under the ground: a short way tagged as a tunnel
+    (an underpass, say) has both ends on the ground, so it dips only a metre or so. As a
+    level it would sit at the street's own height and swallow whoever walked past it.
+    A tunnel is judged with the ways joined to it, so a real tunnel's ends stay."""
+    depth = ground(net.xy[:, 0], net.xy[:, 1]) - net.h
+    comp = components(net)
+    deepest = defaultdict(float)
+    for i, c in enumerate(comp):
+        if net.kind[i] == "tunnel" and not np.isnan(depth[i]):
+            deepest[c] = max(deepest[c], float(depth[i]))
+    keep = [w["kind"] != "tunnel" or deepest[comp[net.key[("n", w["nodes"][0])]]] >= SHALLOW for w in ways]
+    if not all(keep):
+        print(f"  {len(keep) - sum(keep)} tunnel ways never go {SHALLOW} m under the ground: left on it")
+    return [w for w, k in zip(ways, keep) if k], [p for p, k in zip(profiles, keep) if k]
+
+
 def portal(ground, x, y):
     """The height of a tunnel's portal: the lowest ground round it, which is the road
     cut into the slope (the terrain model rises up the face above the portal)."""
@@ -704,6 +722,7 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     ways = sorted(merged.values(), key=lambda w: w["id"])
     decks = ipr_decks(local)
     net, profiles = solve(ways, ground, decks)
+    ways, profiles = drop_shallow(ways, net, profiles, ground)
     road_tree = STRtree(roads) if roads else None
     all_pieces, groups = pieces(ways, profiles, outlines, ground, decks, road_tree)
     deepest = assign_levels(groups)

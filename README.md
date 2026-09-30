@@ -296,22 +296,24 @@ that without a new renderer.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,
   walls, trees, cars, people, trams and the camera sit at their real height, cars
   pitch, roll and roll downhill, and the ground is hill-shaded.
+- **Street placement.** Traffic-light poles and shared-bike rows move towards the
+  pavement when their mapped positions fall on a carriageway. Tram-wire supports
+  move out of the road too; a span is omitted when neither side can support it.
 - **Bridges and tunnels** have heights of their own, above and below the bare ground
   (`pipeline/structures.py`). Where one meets a street on the ground it's at the
   ground's height, and in between its height runs evenly from end to end, along the
   ways and through junctions (Blanka's underground ramps). Bridges follow IPR's 3D
   model of Prague's bridges wherever it has them, so a deck rises and falls as the
   real one does. Tunnels keep a few metres of ground over them, more away from their
-- **Street placement.** Traffic-light poles and shared-bike rows move towards the
-  pavement when their mapped positions fall on a carriageway. Tram-wire supports
-  move out of the road too; a span is omitted when neither side can support it.
   portals, and wherever two cross on different OSM layers, the upper one clears the
   lower. They're put on levels (bridges 1, 2, …, tunnels -1, -2, …) so that ones
   crossing at different heights never share one. The metro stations' corridors and
   stairs (OSM tags them as tunnels too) are left out, both as tunnels and from the
   walking network: footways and stairs underground that are indoors, reach a metro
   entrance or come within 30 m of a station or platform. Underpasses away from the
-  metro stay.
+  metro stay. A connected tunnel that never reaches 2.5 m below the ground is
+  treated as a passage at street level; its streets lose their tunnel tag when no
+  underground level covers them.
   Cars, trams and people drive or walk onto a bridge or into a tunnel where it meets
   the street and off it at the far end; parapets and tunnel walls keep them in, and
   whatever is on one level and another passes by. Under a bridge a round hole opens in
