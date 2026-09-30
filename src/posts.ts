@@ -82,45 +82,57 @@ class Posts {
     let impact = 0;
     for (const p of this.near(car.x, car.y, Math.hypot(L, W))) {
       if (!Number.isNaN(p.z) && car.gz !== undefined && Math.abs(car.gz - p.z) > 2.5) continue;
-      // The post in the car's frame, and the nearest point of the car's box to it.
-      const dx = p.x - car.x, dy = p.y - car.y, lx = dx * c + dy * s, ly = -dx * s + dy * c;
-      const qx = Math.max(-L, Math.min(L, lx)), qy = Math.max(-W, Math.min(W, ly));
-      let ex = lx - qx, ey = ly - qy, d = Math.hypot(ex, ey), pen: number;
-      if (d >= p.r) continue;
-      if (d > 1e-6) {
-        pen = p.r - d;
-        ex /= d; ey /= d;
-      } else {
-        // Its middle is inside the box: out the nearer side.
-        const px = L - Math.abs(lx), py = W - Math.abs(ly);
-        if (px < py) { ex = Math.sign(lx) || 1; ey = 0; pen = px + p.r; } else { ex = 0; ey = Math.sign(ly) || 1; pen = py + p.r; }
-      }
-      // (ex, ey): from the car towards the post; the car goes the other way.
-      const nx = -(ex * c - ey * s), ny = -(ex * s + ey * c);
-      car.x += nx * pen;
-      car.y += ny * pen;
-      const vn = car.vx * nx + car.vy * ny;
-      if (vn >= 0) continue;
-      if (-vn > p.tough) {
-        this.knock(p, Math.atan2(car.vy, car.vx));
-        car.vx -= p.give * vn * nx;
-        car.vy -= p.give * vn * ny;
-        car.damage += p.give * 2;
-        impact = Math.max(impact, -vn * p.give);
-        continue;
-      }
-      car.vx -= 1.3 * vn * nx;
-      car.vy -= 1.3 * vn * ny;
-      car.vx *= 0.92;
-      car.vy *= 0.92;
-      // Off-centre hits make the car spin.
-      const rx = p.x - car.x, ry = p.y - car.y;
-      car.w += (rx * ny - ry * nx) * vn * 0.09;
-      car.damage += Math.max(0, -vn - (car.spec.tough ?? 3));
-      impact = Math.max(impact, -vn);
+      impact = Math.max(impact, bump(car, p, c, s, L, W));
+      if (hit.over) this.knock(p, Math.atan2(car.vy, car.vx));
     }
     return impact;
   }
+}
+
+// Whether the last bump was hard enough to go through what it hit.
+export const hit = { over: false };
+
+// A car against one round thing (fixed, or a post): pushed out of it, and bounced off it,
+// or (faster into it than `tough`) carrying on through it, slowed by `give` of its speed
+// into it. `c`, `s`: the car's heading, `L`, `W`: half its length and width. Returns how
+// hard it hit (m/s); `hit.over` says whether it went through.
+export function bump(car: Car, p: { x: number; y: number; r: number; tough: number; give: number }, c: number, s: number, L: number, W: number) {
+  hit.over = false;
+  // The post in the car's frame, and the nearest point of the car's box to it.
+  const dx = p.x - car.x, dy = p.y - car.y, lx = dx * c + dy * s, ly = -dx * s + dy * c;
+  const qx = Math.max(-L, Math.min(L, lx)), qy = Math.max(-W, Math.min(W, ly));
+  let ex = lx - qx, ey = ly - qy, d = Math.hypot(ex, ey), pen: number;
+  if (d >= p.r) return 0;
+  if (d > 1e-6) {
+    pen = p.r - d;
+    ex /= d; ey /= d;
+  } else {
+    // Its middle is inside the box: out the nearer side.
+    const px = L - Math.abs(lx), py = W - Math.abs(ly);
+    if (px < py) { ex = Math.sign(lx) || 1; ey = 0; pen = px + p.r; } else { ex = 0; ey = Math.sign(ly) || 1; pen = py + p.r; }
+  }
+  // (ex, ey): from the car towards the post; the car goes the other way.
+  const nx = -(ex * c - ey * s), ny = -(ex * s + ey * c);
+  car.x += nx * pen;
+  car.y += ny * pen;
+  const vn = car.vx * nx + car.vy * ny;
+  if (vn >= 0) return 0;
+  if (-vn > p.tough) {
+    hit.over = true;
+    car.vx -= p.give * vn * nx;
+    car.vy -= p.give * vn * ny;
+    car.damage += p.give * 2;
+    return -vn * p.give;
+  }
+  car.vx -= 1.3 * vn * nx;
+  car.vy -= 1.3 * vn * ny;
+  car.vx *= 0.92;
+  car.vy *= 0.92;
+  // Off-centre hits make the car spin.
+  const rx = p.x - car.x, ry = p.y - car.y;
+  car.w += (rx * ny - ry * nx) * vn * 0.09;
+  car.damage += Math.max(0, -vn - (car.spec.tough ?? 3));
+  return -vn;
 }
 
 export const posts = new Posts();

@@ -316,7 +316,7 @@ def build_chunk(job):
         rails = [{**r, "pts": _coords(ls)} for r in x["rails"] for ls in _lines(LineString(r["pts"]).intersection(core_box))]
         ltree = STRtree([lot["poly"] for lot in x["lots"]])
         # Lines looked up by tile through a tree; sorted hits keep the order they came in.
-        lines = {key: [LineString(item["pts"]) for item in x[key]] for key in ("walls", "rails", "passages")}
+        lines = {key: [LineString(item["pts"]) for item in x[key]] for key in ("walls", "fences", "rails", "passages")}
         lines["weirs"] = [LineString(wr) for wr in x["weirs"]]
         crossings = [c for c in x["crossings"] if len(c) > 1]
         lines["crossings"] = [LineString(c) for c in crossings]
@@ -332,7 +332,7 @@ def build_chunk(job):
                          for p in _polys(x["lots"][k]["poly"].intersection(bx)) if p.area > 4]
             # Finer for the streets, whose rounded corners (dtm.py) the coarser tolerance undoes.
             t["roads"] = {k: v for k, g in x["roads"].items() if (v := [_rings(p, ROAD_TOLERANCE) for p in _polys(g.intersection(bx))])}
-            for key in ("walls", "rails", "passages"):
+            for key in ("walls", "fences", "rails", "passages"):
                 t[key] = [{**x[key][k], "pts": _coords(ls)} for k in sorted(trees[key].query(bx))
                           for ls in _lines(lines[key][k].intersection(bx))]
             t["weirs"] = [_coords(ls) for k in sorted(trees["weirs"].query(bx)) for ls in _lines(lines["weirs"][k].intersection(bx))]

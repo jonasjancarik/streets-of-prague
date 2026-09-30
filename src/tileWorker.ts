@@ -8,13 +8,14 @@
 // Everything stands on the tile's terrain, sampled from the heights sent along.
 import * as THREE from 'three';
 import { initRoofs, buildBuildings, wallArrays } from './map/buildings.ts';
+import { fenceArrays } from './map/fences.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls } from './facades.ts';
 import { groundLayers, layerBuffers } from './ground.ts';
 import { heightSampler } from './terrain.ts';
-import type { Bounds, Point2 } from './map/geo.ts';
 import { skyView } from './map/skyView.ts';
+import type { Bounds, Point2 } from './map/geo.ts';
 import type { HeightGrid, BuildingArrays, LandResult, WorkerJobs, WorkerRequest, WorkerResponse } from './contracts.ts';
 
 type LandData = WorkerJobs['land']['data'];
@@ -186,9 +187,10 @@ function land({ data, seeds, ground, bridges }: WorkerJobs['land']): LandResult 
   };
   const trees = treeInstances(geo, hAt, room);
   const walls = wallArrays(data, hAt);
+  const fences = fenceArrays(data, hAt);
   const grid = tileGrid(geo, data, seeds);
   stampTrunks(grid, geo, trees);
-  return { trees, walls, cells: grid.cells };
+  return { trees, walls, fences, cells: grid.cells };
 }
 
 function isRequest(value: unknown): value is WorkerRequest {
@@ -240,7 +242,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
       }
       case 'land': {
         const result = land(event.data.data);
-        const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.evergreen.buffer, result.walls.position.buffer, result.walls.normal.buffer, result.cells.buffer];
+        const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.evergreen.buffer, result.walls.position.buffer, result.walls.normal.buffer, ...Object.values(result.fences.fence).map((a) => a.buffer), ...Object.values(result.fences.hedge).map((a) => a.buffer), result.fences.sections.buffer, result.cells.buffer];
         if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Land transfer requires ArrayBuffer storage');
         worker.postMessage({ id, result } satisfies WorkerResponse, buffers as ArrayBuffer[]);
         break;

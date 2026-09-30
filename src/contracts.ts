@@ -2,6 +2,7 @@ import type { Bounds, GeoData, Point2, Polygons } from './map/geo.ts';
 import type { RawStreetEdge } from './network.ts';
 import type { GroundResult, GroundRoadEdge, GroundTileData } from './ground.ts';
 import type { TreeSpot, TreeTileData } from './map/vegetation.ts';
+import type { FenceBuffers, FenceTile } from './map/fences.ts';
 import type { BuildingTile } from './map/buildings.ts';
 import type { SkyJob, SkyResult } from './map/skyView.ts';
 
@@ -63,6 +64,7 @@ export interface TileJSON extends GroundTileData {
   box: Bounds;
   buildings: TileBuilding[];
   walls: { kind: string; pts: Point2[] }[];
+  fences?: { kind: string; h?: number; pts: Point2[] }[]; // fences and hedges (not in older tiles)
   trees: TreeSpot[];
   lots?: { o: 'parallel' | 'diagonal' | 'perpendicular' | null; rings: Point2[][] }[];
   sections?: TileSection[];
@@ -88,6 +90,7 @@ export interface BuildingArrays {
 export interface LandResult {
   trees: { matrices: Float32Array; colours: Float32Array; evergreen: Float32Array; count: number; conifers: number };
   walls: { position: Float32Array; normal: Float32Array };
+  fences: FenceBuffers;
   cells: Uint8Array;
 }
 
@@ -102,17 +105,17 @@ export interface WorkerJobs {
   };
   sky: SkyJob;
   land: {
-    data: TreeTileData & { passages: TilePassage[]; levels: boolean };
+    data: TreeTileData & { passages: TilePassage[]; levels: boolean; fences: FenceTile['fences'] };
     seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
   };
 }
 
 export interface WorkerResults {
-  sky: SkyResult;
   roofs: BuildingArrays;
   ipr: BuildingArrays;
   ground: GroundResult;
   land: LandResult;
+  sky: SkyResult;
 }
 
 export type WorkerKind = keyof WorkerJobs;

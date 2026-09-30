@@ -386,6 +386,15 @@ the pixel ratio.
   than 18 km/h or a wire pole at more than 32 km/h and it goes over the way you were
   going, and you carry on slowed. A fallen lamp goes dark, and a fallen wire pole
   brings its span wire down with it.
+- **Fences and hedges** (`src/fences.ts`, `src/map/fences.ts`): OSM's `barrier=fence` and
+  `barrier=hedge` lines are cut into sections of up to 3 m, drawn as pickets between two
+  rails and as a leafy box (a tagged `height` is used, else 1.2 m and 1.5 m). A car
+  goes through a fence at more than about 5 km/h, and the section it hits lies down
+  the way it was going (and stays down); a hedge takes 18 km/h, slower than that a car
+  bounces off. On foot you can't walk through either, but you can jump a fence lower than
+  about 1.6 m. Unlike the walls, they aren't in the tile's collision grid (the people
+  and traffic of the city ignore them). Older tiles have none: rebuild the `ground`
+  layer (`uv run build_tiles.py <area> --layers ground`).
 - **Boats** on the Vltava (`src/boats.ts`): a few white cruise boats go slowly up and
   down the river, and pedal boats, every third a swan, paddle about round the islands.
   The river is only a ground layer, so the water of the loaded tiles is where they can

@@ -59,6 +59,7 @@ COBBLES = ("sett", "cobblestone", "unhewn_cobblestone", "paving_stones")
 SURVEYED = 0.5
 # How far past its kerb a cobbled street's cobbles may reach (into its parking bays).
 SETT_REACH = 4.0
+FENCE_TOLERANCE = 0.25  # m: how far a fence's line may be straightened
 GRID = 0.01  # metres, for overlaying the survey's surface
 
 
@@ -75,7 +76,7 @@ def road_width(hw, width=None, lanes=None):
 FEATURE_TAGS = {
     "building": True, "building:part": True, "highway": True, "landuse": True, "leisure": True,
     "natural": True, "waterway": True, "railway": True, "amenity": True,
-    "barrier": ["wall", "city_wall"], "man_made": ["bridge", "pier"],
+    "barrier": ["wall", "city_wall", "fence", "hedge"], "man_made": ["bridge", "pier"],
     "place": ["islet", "island"], "historic": ["city_gate", "castle_wall"],
     "bridge": True, "area:highway": True,
 }
@@ -166,7 +167,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     parts = []  # building parts whose roof OSM describes (roofs.py), to colour IPR's roofs by
     areas: dict[str, list] = {}
     road_lines: dict[str, list] = {}
-    rails, walls, trees, weirs, crossings, passages = [], [], [], [], [], []
+    rails, walls, fences, trees, weirs, crossings, passages = [], [], [], [], [], [], []
     lots = []  # each parking area on its own, with how the cars stand in it
     homes = []  # landuse=residential, where gardens may be (see _gardens)
     streets = []  # car roads other than service roads, which cut residential areas into blocks
@@ -237,6 +238,18 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 rails.append({"kind": rw, "pts": _coords(ls)})
             continue
 
+        if col(row, "barrier") in ("fence", "hedge"):
+            # A fence or hedge round a plot is a closed way, which osmnx may hand over as a polygon.
+            line = g.boundary if isinstance(g, (Polygon, MultiPolygon)) else g
+            if isinstance(line, (LineString, MultiLineString)):
+                item = {"kind": col(row, "barrier")}
+                h = _metres(col(row, "height"))
+                if h and 0.3 <= h <= 4:
+                    item["h"] = round(h, 1)
+                for ls in _lines(line.intersection(clip)):
+                    fences.append({**item, "pts": _coords(ls.simplify(FENCE_TOLERANCE))})
+            continue
+
         if col(row, "barrier") in ("wall", "city_wall") or col(row, "historic") in ("city_gate", "castle_wall"):
             if isinstance(g, (LineString, MultiLineString)):
                 for ls in _lines(g.intersection(clip)):
@@ -290,7 +303,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         return {
             "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
             "buildings": buildings, "parts": parts, "areas": {}, "roads": {}, "rails": rails,
-            "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
+            "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "ground_ways": ground_ways,
             "lots": lots, "kerbs": kerbs,
         }
@@ -331,7 +344,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
-        "walls": walls, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
+        "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "ground_ways": ground_ways,
         "lots": lots, "kerbs": kerbs,
     }
@@ -568,6 +581,14 @@ def _lines(g):
 
 def _coords(ls):
     return [[round(x, 2), round(y, 2)] for x, y in ls.coords]
+
+
+def _metres(v):
+    """A height tag ("1.8", "1,8 m") in metres, or None."""
+    try:
+        return float(str(v).replace(",", ".").replace("m", "").strip()) if v is not None else None
+    except ValueError:
+        return None
 
 
 def _rings(poly: Polygon, tolerance=0.15):

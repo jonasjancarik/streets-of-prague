@@ -5,7 +5,7 @@ rebuilds that layer alone:
     buildings  OSM buildings                       build_tiles.py --layers buildings
     ground     land use, streets and pavements     build_tiles.py --layers ground
                (kerbs, gardens), parking areas,
-               walls, rails, crossings, trees
+               walls, fences, rails, crossings, trees
     streets    the car and footpath networks       build_tiles.py --layers streets
     parking    paid-parking sections               build_tiles.py --layers parking
     ipr        IPR's 3D buildings                  ipr_buildings.py
@@ -38,11 +38,11 @@ CHUNKED = ("buildings", "ground", "streets", "parking")
 # What a tile has when a layer has nothing there, in the order the tile JSON lists it.
 EMPTY = {
     "buildings": {"buildings": []},
-    "ground": {"areas": {}, "lots": [], "roads": {}, "walls": [], "rails": [], "passages": [], "weirs": [], "crossings": [], "trees": []},
+    "ground": {"areas": {}, "lots": [], "roads": {}, "walls": [], "fences": [], "rails": [], "passages": [], "weirs": [], "crossings": [], "trees": []},
     "streets": {"drive": [], "walk": []},
     "parking": {"sections": []},
 }
-ORDER = ["areas", "lots", "roads", "buildings", "walls", "rails", "passages", "weirs", "crossings", "trees", "drive", "walk", "sections"]
+ORDER = ["areas", "lots", "roads", "buildings", "walls", "fences", "rails", "passages", "weirs", "crossings", "trees", "drive", "walk", "sections"]
 
 
 def gzip_bytes(raw: bytes) -> bytes:
@@ -149,6 +149,7 @@ def tiles(area: str, meta: dict | None = None):
             t = {}
             for layer in CHUNKED:
                 t.update(parts[layer].get(k) or EMPTY[layer])
+            t.setdefault("fences", [])  # (chunks built before fences were)
             if not (t["buildings"] or t["areas"] or t["roads"] or t["walk"]):
                 continue
             yield i, j, {"i": i, "j": j, "box": [round(v, 2) for v in tile_box(meta, i, j)], **{key: t[key] for key in ORDER}}
