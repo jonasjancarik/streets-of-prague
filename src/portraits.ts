@@ -60,6 +60,9 @@ export function dressLoading(root: HTMLElement) {
   const sky = el('div', 'ls-sky', root);
   const skyline = pick(SKYLINES, 1)[0];
   sky.style.backgroundImage = `url(skylines/${skyline}.webp)`;
+  // The sun or the moon, and the weather, for the time and weather picked (startscreen.ts).
+  el('div', 'ls-sun', root);
+  el('div', 'ls-weather', root);
   el('div', 'ls-wedge', root);
   const cast = el('div', 'ls-cast', root);
   for (const id of pick(POSTER_CAST, 3)) portrait(id, el('div', 'ls-face', cast));
