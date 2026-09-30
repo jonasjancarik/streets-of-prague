@@ -45,7 +45,7 @@ interface PoliceOptions {
 
 const STARS = [1, 4, 9, 16, 25]; // heat for each star
 const CHASERS = [0, 1, 2, 3, 4, 6]; // police cars after you, by stars
-const HELIS = [0, 0, 0, 1, 1, 2];
+const HELIS = [0, 0, 0, 1, 1, 1];
 const PATROLS = 3;
 const POINTS = { knock: 1, carjack: 1, wreck: 0.6, hitCop: 2, stealCop: 3, blowUp: 1.5, blowUpCop: 3, fareDodge: 2 };
 const COOLDOWN: Partial<Record<keyof typeof POINTS, number>> = { hitCop: 1 }; // one scrape shouldn't count ten times
