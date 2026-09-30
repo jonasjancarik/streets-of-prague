@@ -190,6 +190,23 @@ that without a new renderer.
   people over, hurts you if you're near, shoves the cars around and can set them going
   too; blowing up a car you've crashed into is a crime, a police car more so
   (`src/fire.ts`).
+- **Fire brigade.** When a car catches fire, a fire engine is called from a few hundred
+  metres away, drives to it by the streets, and its crew of three gets out and sprays
+  the car with hoses. A car nobody is driving burns 45–75 seconds before it blows up,
+  which gives the engine time to arrive; your own car and cars chased by the police
+  still go in 4–6 seconds. Once the fire is out, the crew climbs back aboard and the
+  engine drives away. Crew and engines can be run over. Engines flash blue lights
+  (police cars chasing you use the same code) and sound a siren: a slow two-tone for the
+  engine, a faster rising and falling wail for the police, both gone by about 450 m. Cars
+  ahead of one slow down and keep right as far as the street allows, and the police and
+  engines take red lights at no more than 5 m/s (`src/brigade.ts`, `src/water.ts`,
+  `src/beacons.ts`). The developer panel's "Set the nearest car on fire" button is the
+  quickest way to see it.
+  You can take an engine like any car (it counts as a carjack, and the crew who are out
+  run after you for a while). Hold <kbd>F</kbd> in it (a button on phones) to spray the
+  water cannon 17 m ahead: it puts out burning cars and knocks people and officers over
+  gently, which counts as a crime. The tank lasts about 30 seconds and refills slowly;
+  a blue bar under the health bar shows it (`src/cannon.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, paste coordinates or a Google Maps / Mapy.cz link, or pick

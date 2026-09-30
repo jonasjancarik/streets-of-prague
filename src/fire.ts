@@ -11,9 +11,14 @@ import { send, sendInstances } from './gpu.ts';
 export const SMOKING = 50; // damage at which a car starts to smoke
 export const BURNING = 90; // and catches fire (the police give up a car at the same point)
 const FUSE = [4, 6]; // seconds from catching fire to the explosion
+// A car nobody is driving burns this long, enough for a fire engine to get there.
+const LONG_FUSE = [45, 75];
+const LONG_RATE = 0.55; // those fires smoke and flame less thickly, so a few in view stay within the puffs' caps
+// Seconds of water it takes to put out a burning car (a crew of three sprays for about 3 s); a wreck needs the same to stop smouldering.
+export const DOUSE = 10;
 const SMOULDER = 25; // seconds a wreck gives off smoke, flames for the first half
 
-interface Blaze { fuse: number; t: number; emit: number; flame: number }
+interface Blaze { fuse: number; t: number; emit: number; flame: number; wet: number; steam: number; rate: number }
 interface Puff { x: number; y: number; z: number; vx: number; vy: number; vz: number; r0: number; r1: number; age: number; life: number; rgb: [number, number, number]; a: number }
 
 const VERT = /* glsl */ `
@@ -129,7 +134,7 @@ export class Fires {
   // don't burn.)
   check(c: Car) {
     if (c.burnt || c.two === 'bike' || c.damage < SMOKING || this.blazes.has(c)) return;
-    this.blazes.set(c, { fuse: -1, t: 0, emit: 0, flame: 0 });
+    this.blazes.set(c, { fuse: -1, t: 0, emit: 0, flame: 0, wet: 0, steam: 0, rate: 1 });
   }
 
   // `cars`: those that may have taken damage this step. `view`: where the camera looks,
@@ -143,20 +148,64 @@ export class Fires {
       if (c.burnt) {
         if (b.t > SMOULDER) { this.blazes.delete(c); continue; }
         if (seen) this.emit(c, b, dt, b.t < SMOULDER / 2 ? 0.5 : 0, 1 - b.t / SMOULDER);
+        if (seen && b.steam > 0) this.steam(c, b, dt);
+        b.steam = Math.max(0, b.steam - dt);
         continue;
       }
       if (c.damage >= BURNING) {
         if (b.fuse < 0) {
-          b.fuse = FUSE[0] + this.r() * (FUSE[1] - FUSE[0]);
+          // Your own car (or a police car after you) is the quick one; any other has time.
+          const [lo, hi] = c.driven ? FUSE : LONG_FUSE;
+          b.fuse = lo + this.r() * (hi - lo);
+          b.rate = c.driven ? 1 : LONG_RATE;
           this.onIgnite(c);
         }
         b.fuse -= dt;
         if (b.fuse <= 0) { this.explode(c, seen); b.t = 0; continue; }
-        if (seen) this.emit(c, b, dt, 1, 1);
+        if (seen) this.emit(c, b, dt, 1 - b.wet / DOUSE, 1);
       } else if (seen) this.emit(c, b, dt, 0, (c.damage - SMOKING) / (BURNING - SMOKING));
+      if (seen && b.steam > 0 && !c.burnt) this.steam(c, b, dt);
+      b.steam = Math.max(0, b.steam - dt);
     }
     this.smoke.update(dt);
     this.flames.update(dt);
+  }
+
+  // Whether `c` is on fire right now: burning and waiting to explode, or a wreck still in flames.
+  onFire(c: Car) {
+    const b = this.blazes.get(c);
+    if (!b) return false;
+    return c.burnt ? b.t < SMOULDER / 2 && b.wet < DOUSE / 2 : b.fuse >= 0;
+  }
+
+  // Water on a car, `amount` seconds' worth from one hose. Enough of it brings a burning
+  // car back under the point where it catches fire: it only smokes, steaming for a few
+  // seconds, and won't explode. A wreck in flames loses them, and stops smouldering.
+  douse(c: Car, amount: number) {
+    const b = this.blazes.get(c);
+    if (!b) return;
+    b.wet += amount;
+    b.steam = Math.max(b.steam, 3);
+    if (c.burnt) {
+      if (b.wet >= DOUSE / 2) b.t = Math.max(b.t, SMOULDER / 2);
+      if (b.wet >= DOUSE) b.t = SMOULDER;
+    } else if (b.fuse >= 0 && b.wet >= DOUSE) {
+      c.damage = Math.min(c.damage, BURNING - 1);
+      b.fuse = -1;
+      b.wet = 0;
+      b.rate = 1;
+      b.steam = 6;
+    }
+  }
+
+  // White steam where the water hits.
+  steam(c: Car, b: Blaze, dt: number) {
+    const S = c.spec, r = this.r, fx = Math.cos(c.h), fy = Math.sin(c.h), z = this.height(c.x, c.y, c) + S.H * 0.8;
+    b.emit += dt * 10;
+    for (; b.emit >= 1; b.emit--) {
+      this.smoke.add({ x: c.x + fx * S.L * 0.2 + (r() - 0.5) * S.W, y: c.y + fy * S.L * 0.2 + (r() - 0.5) * S.W, z, vx: (r() - 0.5) * 0.8 + 0.6, vy: (r() - 0.5) * 0.8 + 0.4, vz: 1.6 + r(),
+        r0: 0.5, r1: 1.6 + r(), life: 1.4 + r(), rgb: [0.92, 0.94, 0.96], a: 0.5 });
+    }
   }
 
   // Smoke (and flames, `fire` 0–1) from under the bonnet; `thick` 0–1.
@@ -164,13 +213,13 @@ export class Fires {
     const S = c.spec, fx = Math.cos(c.h), fy = Math.sin(c.h), r = this.r;
     const x = c.x + fx * S.L * 0.3, y = c.y + fy * S.L * 0.3, z = this.height(c.x, c.y, c) + S.H * 0.75;
     // (Smoke drifts off a little to the north-east, as if on a light breeze.)
-    b.emit += dt * (4 + 6 * thick + 4 * fire);
+    b.emit += dt * (4 + 6 * thick + 4 * fire) * b.rate;
     for (; b.emit >= 1; b.emit--) {
       const grey = fire > 0 ? 0.1 + r() * 0.08 : 0.6 - thick * 0.35 + r() * 0.1;
       this.smoke.add({ x: x + (r() - 0.5) * 0.6, y: y + (r() - 0.5) * 0.6, z, vx: (r() - 0.5) * 0.8 + 0.8, vy: (r() - 0.5) * 0.8 + 0.6, vz: 2.5 + r(),
         r0: 0.5, r1: 1.8 + thick * 1.5 + fire * 1.5, life: 2 + r() * 1.2 + fire, rgb: [grey, grey * 0.97, grey * 0.95], a: 0.45 + 0.35 * Math.max(thick, fire) });
     }
-    b.flame += dt * 30 * fire;
+    b.flame += dt * 30 * fire * b.rate;
     for (; b.flame >= 1; b.flame--) {
       this.flames.add({ x: x + (r() - 0.5) * S.W * 0.7, y: y + (r() - 0.5) * S.W * 0.7, z: z + 0.1, vx: 0.3, vy: 0.2, vz: 1.5,
         r0: 0.5 + r() * 0.4, r1: 1 + r() * 0.6, life: 0.35 + r() * 0.3, rgb: [1.3, 0.5 + r() * 0.25, 0.1], a: 0.85 });

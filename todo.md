@@ -288,6 +288,16 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   fewer colours (the game's own ground palette); 1–2 m/px; evening out the photo's
   own shadows; darker edges; and painting each tile with a margin from its
   neighbours so the tiles don't show seams.
+- **Firefighter job.** Phase 4 of `plans/006-firefighters.md`: firefighting as a job,
+  once the mission engine from plan 004 exists. The rest of the fire brigade (engines,
+  crews, lights, sirens, giving way, stealing an engine, the water cannon) is in.
+- **Fire engine polish.**
+  - A driven engine uses the petrol-car engine sound; give it a heavy diesel voice.
+  - After a fire is out, an engine can take about 40 s to clear a narrow street.
+  - Cars give little room on narrow Old Town streets (no space on the right).
+  - Not measured yet: `scripts/bench.mjs --vs` with the jets, the water cannon on a
+    phone, and the siren levels in a real browser.
+
 ## Weather and night
 
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow

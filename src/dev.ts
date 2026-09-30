@@ -40,9 +40,9 @@ export const googleMaps = (lat: number, lon: number) => `https://www.google.com/
 export const streetView = (lat: number, lon: number, heading: number) => `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}&heading=${Math.round(heading)}`;
 export const mapyCz = (lat: number, lon: number) => `https://mapy.com/zakladni?x=${lon.toFixed(6)}&y=${lat.toFixed(6)}&z=19&source=coor&id=${lon.toFixed(6)}%2C${lat.toFixed(6)}`;
 
-export function setupDev({ area, index, teleport, position, helicopter, timeOfDay, setTimeOfDay, graphics, weather }: {
+export function setupDev({ area, index, teleport, position, helicopter, setFire, timeOfDay, setTimeOfDay, graphics, weather }: {
   area: string; index: MapIndex; teleport: (x: number, y: number) => Promise<void>;
-  position: () => Point2; helicopter: () => boolean;
+  position: () => Point2; helicopter: () => boolean; setFire: () => boolean;
   // Seconds since midnight on the game's clock.
   timeOfDay: () => number; setTimeOfDay: (sec: number) => void;
   graphics: Graphics;
@@ -91,6 +91,7 @@ export function setupDev({ area, index, teleport, position, helicopter, timeOfDa
     </div>
     <div class="dev-row">
       <button id="dev-heli" title="Walk up to it and press E to fly it">Helicopter next to me</button>
+      <button id="dev-fire" title="The fire brigade comes from out of view">Set the nearest car on fire</button>
     </div>
     <label class="dev-time">Time of day <span id="dev-time-label"></span>
       <input id="dev-time" type="range" min="0" max="1439" step="5" title="The trams follow the timetable for the new time" />
@@ -215,6 +216,11 @@ export function setupDev({ area, index, teleport, position, helicopter, timeOfDa
     const [lon, lat] = toLonLat(...here());
     await navigator.clipboard?.writeText(fixed(lat, lon)).catch(() => {});
     flash($('dev-copy'), 'Copied', 'Copy coordinates');
+  };
+  $('dev-fire').onclick = () => {
+    const ok = setFire();
+    $('dev-fire').textContent = ok ? 'On fire, engine called' : 'No car nearby';
+    setTimeout(() => { $('dev-fire').textContent = 'Set the nearest car on fire'; }, 1800);
   };
   $('dev-heli').onclick = () => {
     const ok = helicopter();

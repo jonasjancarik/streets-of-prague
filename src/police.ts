@@ -11,9 +11,8 @@ import type { Traffic } from './traffic.ts';
 import type { FigureKit } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Point3 } from './guns.ts';
-import { sendInstances } from './gpu.ts';
 
-interface ChaseCar { car: Car; path: Polyline | null; s: number; replan: number; stuck: number; reverse: number; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
+interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
 interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number; reload?: number }
 interface Link { to: string; e: DriveEdge; back: boolean }
 interface PlayerTarget { x: number; y: number; z: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean }
@@ -126,6 +125,40 @@ export function steer(o: { x: number; y: number; vx: number; vy: number; h: numb
   o.h = ang;
 }
 
+// What a car driving along a route needs to keep track of (police chasing, engines on call).
+export interface Follower { path: Polyline | null; s: number; replan: number; stuck: number; reverse: number }
+
+// Where a car on `p.path` should head (a little way ahead along it) and how fast: no
+// more than `top` m/s, less for the bends coming up (`bendy` m/s off for a right angle).
+// A car that's strayed off the route asks for a new one soon.
+export function along(c: Car, p: Follower, path: Polyline, top = 24, bendy = 14) {
+  const q = project(path, c.x, c.y, p.s - 10, p.s + 40);
+  p.s = q.s;
+  // Off the route: a new one soon (still no more than a few times a second).
+  if (q.d > 12) p.replan = Math.min(p.replan, 0.3);
+  const t = path.at(p.s + 6 + Math.abs(c.forwardSpeed) * 0.6);
+  let bend = 0;
+  for (const d of [8, 18, 30]) bend = Math.max(bend, Math.abs(turnOf(c.h, path.at(p.s + d).ang)));
+  return { tx: t.x, ty: t.y, want: clamp(top - bend * bendy, 7, top) };
+}
+
+// Steering and pedals for heading at (tx, ty) at `want` m/s, backing up and trying again
+// when stuck.
+export function pedals(c: Car, p: Follower, tx: number, ty: number, want: number, dt: number) {
+  const vf = c.forwardSpeed;
+  let steer = clamp(turnOf(c.h, Math.atan2(ty - c.y, tx - c.x)) * 2.2, -1, 1);
+  let throttle = vf < want - 1 ? 1 : vf > want + 2 ? -1 : 0;
+  if (throttle > 0 && Math.abs(vf) < 1.2) p.stuck += dt;
+  else p.stuck = Math.max(0, p.stuck - dt);
+  if (p.stuck > 1.2) { p.reverse = 1.1; p.stuck = 0; }
+  if (p.reverse > 0) {
+    p.reverse -= dt;
+    throttle = -1;
+    steer = -steer;
+  }
+  return { throttle, steer };
+}
+
 export class Police {
   scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
   r: () => number; edgesNear: PoliceOptions['edgesNear']; offscreen: PoliceOptions['offscreen'];
@@ -134,9 +167,7 @@ export class Police {
   spare: Figures[]; helis: Helicopters; heat: number; cars: ChaseCar[]; officers: Officer[];
   seen: boolean; lose: number; cool: Record<string, number>; spawnT: number; checkT: number; limit: number;
   nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number;
-  lamps: THREE.InstancedMesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
-  glow: THREE.InstancedMesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
-  dummy: THREE.Object3D; lastT?: number; stolen: WeakSet<Car>;
+  lastT?: number; stolen: WeakSet<Car>;
 
   constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {} }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
@@ -159,19 +190,6 @@ export class Police {
     this.nodes = new Map();
     this.links = new Map();
     this.linked = 0;
-
-    const lamp = new THREE.BoxGeometry(0.26, 0.14, 0.3);
-    this.lamps = new THREE.InstancedMesh(lamp, new THREE.MeshBasicMaterial(), 32);
-    const glow = new THREE.CircleGeometry(5, 28);
-    glow.rotateX(-Math.PI / 2);
-    this.glow = new THREE.InstancedMesh(glow, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }), 16);
-    for (const m of [this.lamps, this.glow]) {
-      m.count = 0;
-      m.frustumCulled = false;
-      m.setColorAt(0, new THREE.Color());
-      scene.add(m);
-    }
-    this.dummy = new THREE.Object3D();
   }
 
   get stars() { return STARS.filter((t) => this.heat >= t).length; }
@@ -385,17 +403,7 @@ export class Police {
       }
       if (!p.path) { tx = me.x; ty = me.y; want = 8; }
       else {
-        const q = project(p.path, c.x, c.y, p.s - 10, p.s + 40);
-        p.s = q.s;
-        // Off the route: a new one soon (still no more than a few times a second).
-        if (q.d > 12) p.replan = Math.min(p.replan, 0.3);
-        const L = 6 + Math.abs(vf) * 0.6, t = p.path.at(p.s + L);
-        tx = t.x;
-        ty = t.y;
-        // Slow down for the bends coming up.
-        let bend = 0;
-        for (const d of [8, 18, 30]) bend = Math.max(bend, Math.abs(turnOf(c.h, p.path.at(p.s + d).ang)));
-        want = clamp(24 - bend * 14, 7, 24);
+        ({ tx, ty, want } = along(c, p, p.path));
         // On foot: slow down for the end of the way and stop there.
         if (!me.car) want = Math.min(want, clamp((p.path.length - p.s - 4) * 0.9, 0, 24));
       }
@@ -409,17 +417,9 @@ export class Police {
     if (behind) want = 0;
     // An officer out on foot: the car waits.
     if (!c.crew) want = 0;
-    const alpha = turnOf(c.h, Math.atan2(ty - c.y, tx - c.x));
-    let steer = clamp(alpha * 2.2, -1, 1);
-    let throttle = vf < want - 1 ? 1 : vf > want + 2 ? -1 : 0;
-    if (throttle > 0 && Math.abs(vf) < 1.2) p.stuck += dt;
-    else p.stuck = Math.max(0, p.stuck - dt);
-    if (p.stuck > 1.2) { p.reverse = 1.1; p.stuck = 0; }
-    if (p.reverse > 0) {
-      p.reverse -= dt;
-      throttle = -1;
-      steer = -steer;
-    }
+    // Through a red light with care.
+    if (!p.calm && this.traffic.signals?.against(c.x, c.y, c.h, 22)) want = Math.min(want, 5);
+    const { throttle, steer } = pedals(c, p, tx, ty, want, dt);
     // Close enough and you're not going anywhere: an officer gets out.
     // On foot, also once the car has got as near as the road goes: the officer runs
     // the rest of the way.
@@ -598,44 +598,17 @@ export class Police {
     for (const p of this.cars) p.calm = true;
   }
 
-  // `mine`: the car the player is driving; a stolen police car keeps its lights going
-  // while it moves.
-  render(height: (x: number, y: number, who: Car | Officer) => number, time: number, mine: Car | null = null) {
-    this.helis.render(time, time - (this.lastT ?? time));
-    this.lastT = time;
-    const d = this.dummy, col = new THREE.Color(), blue = new THREE.Color('#3d7bff'), dim = new THREE.Color('#0d1a3a');
-    const flip = Math.floor(time * 5) % 2;
-    let n = 0, g = 0;
+  // The cars with their lights going: those chasing you, and a stolen police car while it moves
+  // (`mine`: the car the player is driving).
+  lit(mine: Car | null = null) {
     const lit = this.cars.filter((p) => !p.calm && !p.wrecked).map((p) => p.car);
     if (mine?.type === 'police' && mine.speed > 0.5) lit.push(mine);
-    for (const c of lit) {
-      const S = c.spec, cabin = S.cabin ?? [0, 0], mid = (cabin[0] + cabin[1]) / 2;
-      const fx = Math.cos(c.h), fy = Math.sin(c.h);
-      const base = height(c.x, c.y, c);
-      for (const side of [-1, 1]) {
-        if (n >= this.lamps.instanceMatrix.count) break;
-        const off = side * S.W * 0.24;
-        d.position.set(c.x + fx * mid - fy * off, base + S.H + 0.18, -(c.y + fy * mid + fx * off));
-        d.rotation.set(0, c.h, 0);
-        d.scale.setScalar(1);
-        d.updateMatrix();
-        this.lamps.setMatrixAt(n, d.matrix);
-        this.lamps.setColorAt(n, (side > 0) === !!flip ? blue : dim);
-        n++;
-      }
-      if (g < this.glow.instanceMatrix.count) {
-        d.position.set(c.x, base + 0.2, -c.y);
-        d.rotation.set(0, 0, 0);
-        d.updateMatrix();
-        this.glow.setMatrixAt(g, d.matrix);
-        this.glow.setColorAt(g, col.set('#2a5cff').multiplyScalar(0.25 + 0.2 * Math.abs(Math.sin(time * 8))));
-        g++;
-      }
-    }
-    for (const [m, k] of [[this.lamps, n], [this.glow, g]] as [THREE.InstancedMesh, number][]) {
-      m.count = k;
-      sendInstances(m);
-    }
+    return lit;
+  }
+
+  render(height: (x: number, y: number, who: Car | Officer) => number, time: number) {
+    this.helis.render(time, time - (this.lastT ?? time));
+    this.lastT = time;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
     for (const o of this.officers) {
       m.compose(p.set(o.x, height(o.x, o.y, o), -o.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, o.h), sc);

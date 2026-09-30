@@ -24,6 +24,7 @@ export interface SprayParts {
 }
 let sprayBy: ((parts: SprayParts) => THREE.Object3D) | null = null;
 export const setSprayDrawing = (f: typeof sprayBy) => { sprayBy = f; };
+export const sprayDrawing = () => sprayBy;
 
 export class Spray {
   readonly points: THREE.Object3D;
