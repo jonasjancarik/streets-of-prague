@@ -307,18 +307,16 @@ def read_sheet(job):
     return name, out
 
 
-def add_roof_details(bid, pos, codes, col, mat, corner, wall, windows, church=False):
+def add_roof_details(bid, pos, codes, col, mat, corner, windows, church=False):
     """A building with chimneys (by rule, not on churches) and roof windows (found on the
     photo mesh) added as triangles of its own (roof_details.py): its packed positions,
     colours and materials with theirs after them."""
     x0, y0 = corner
     v = pos.reshape(-1, 3).astype(np.float64) / 100
     t = np.column_stack([v[:, 0] + x0, v[:, 2] + y0, v[:, 1]]).reshape(-1, 3, 3)
-    walls = codes == 0
-    body = tuple(int(c) for c in col[walls][0]) if walls.any() else wall
     extra, extra_col, extra_mat = [], [], []
     if not church:
-        ct, cc, ccol = roof_details.chimneys(bid, t, codes, body)
+        ct, cc, ccol = roof_details.chimneys(bid, t, codes)
         if len(ct):
             extra.append(ct)
             extra_col.append(ccol)
@@ -497,7 +495,7 @@ def main() -> None:
                         mat[k] = MATERIALS.index(m) if m in MATERIALS else 0
                 if not args.no_roof_details and (codes == 1).any():
                     pos, col, mat = add_roof_details(bid or f"{name}/{count}", pos, codes, col, mat, (i * T - origin[0], j * T - origin[1]),
-                                                     wall, seen.get("windows", []) if seen else [], church=bool(osm and osm.get("church")))
+                                                     seen.get("windows", []) if seen else [], church=bool(osm and osm.get("church")))
                 per_tile.setdefault((i, j), []).append((pos, col.ravel(), mat))
             count += 1
         print(f"  {name}: {count} buildings in the area", flush=True)

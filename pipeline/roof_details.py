@@ -19,8 +19,13 @@ RIDGE_MIN = 3.0  # m; shorter ridges get no chimney
 CHIMNEY_EVERY = 10.0  # m between chimneys along a long ridge
 CHIMNEY_END = 1.5  # m in from a ridge's end
 CHIMNEY_SKIP = 0.2  # share of places left without one
-BRICK = [(139, 74, 54), (128, 70, 52), (150, 86, 62)]
-SOOT = (58, 54, 51)
+# Prague's chimneys are nearly all plastered white, greyed by the weather; bare brick
+# is rare.
+PLASTER = [(214, 210, 200), (204, 201, 193), (196, 194, 188), (210, 204, 190), (186, 184, 179)]
+BRICK = [(139, 74, 54), (128, 70, 52)]
+BRICK_SHARE = 0.05
+CAP = (150, 147, 141)  # a concrete or sheet cap
+FLUE = (70, 67, 64)  # its top, with the flues
 
 
 def ridges(t: np.ndarray, codes: np.ndarray):
@@ -92,12 +97,12 @@ def box(centre, along, across, size_along, size_across, bottom, top):
     return np.array(tris, dtype=np.float64)
 
 
-def chimneys(bid: str, t: np.ndarray, codes: np.ndarray, wall):
+def chimneys(bid: str, t: np.ndarray, codes: np.ndarray):
     """Chimneys for one building: triangles (k, 3, 3), a code per triangle (0 wall, 2
     flat top) and an RGB colour per triangle."""
     rng = np.random.default_rng(zlib.crc32(bid.encode()))
-    brick = rng.random() < 0.45
-    body = np.array(BRICK[rng.integers(len(BRICK))] if brick else [round(v * 0.88) for v in wall], dtype=np.uint8)
+    colours_ = BRICK if rng.random() < BRICK_SHARE else PLASTER
+    body = np.array(colours_[rng.integers(len(colours_))], dtype=np.uint8)
     tris, codes_out, colours = [], [], []
     for a, b in ridges(t, codes):
         length = float(np.linalg.norm(b[:2] - a[:2]))
@@ -121,7 +126,7 @@ def chimneys(bid: str, t: np.ndarray, codes: np.ndarray, wall):
             cap = box(centre, d, side, along + 0.12, across + 0.12, top, top + 0.08)
             tris += [body_tris, cap]
             codes_out += [[0] * 8 + [2] * 2, [0] * 8 + [2] * 2]
-            colours += [[body] * 8 + [SOOT] * 2, [SOOT] * 10]
+            colours += [[body] * 8 + [FLUE] * 2, [CAP] * 8 + [FLUE] * 2]
     if not tris:
         return np.empty((0, 3, 3)), np.empty(0, np.uint8), np.empty((0, 3), np.uint8)
     return (np.concatenate(tris), np.concatenate([np.array(c, np.uint8) for c in codes_out]),
