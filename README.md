@@ -296,8 +296,9 @@ that without a new renderer.
   triangle, from the OSM building or part they lie in.
 - **Colours from the photo mesh.** Where `pipeline/mesh_colours.py` has run, IPR's
   buildings take their real colours from IPR's photorealistic mesh instead of the
-  palette: each roof face its colour and material (tiles, slate, sheet metal, copper,
-  flat), and each building its plaster. The photographs were taken on a summer
+  palette: each roof face its colour and material (tiles, slate, sheet metal, copper;
+  flat roofs bitumen, membrane, gravel, planted or paving), and each building its
+  plaster. The photographs were taken on a summer
   morning, so the light is taken out first: the sun's direction and a light model are
   measured on the data itself (`--calibrate`), samples in the shade of other buildings
   are left out, and walls or roof faces seen only in shade count as unsure (their
@@ -306,7 +307,8 @@ that without a new renderer.
   only a little are evened out; unsure walls keep the palette. A roof cover given in
   `roofs.py` or OSM still wins. Only colours and material classes leave the pipeline;
   the game draws its own tiles, slate, metal pans between standing seams (`sheetRoof`
-  in `src/shading.ts` and `src/webgpu/buildings.ts`), weathering and facades on top.
+  in `src/shading.ts` and `src/webgpu/buildings.ts`), sheets, planted roofs and paving
+  on flat roofs, weathering and facades on top.
   In `centrum`, walls are measured for 42 % of buildings and 93 % of roof faces get a
   colour.
 - **Building import over water.** IPR footprints with at least 60% of their area
