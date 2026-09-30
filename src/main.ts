@@ -381,12 +381,29 @@ async function main() {
     }
     police.forgive();
     stats.busted++;
-    frozen = 2.5;
-    if (inMap(cell[0], cell[1])) {
-      const [cx, cy] = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, cell);
-      void teleportTo(cx, cy);
-    }
+    // Not a jump: the banner comes up while the officers stand round you, then the screen
+    // fades out, you're taken to the station, and it fades back in.
+    frozen = 3.2;
+    arrest = { t: 0, cell: inMap(cell[0], cell[1]) ? cell : null, taken: false };
     showBanner(text, true);
+  };
+  let arrest: { t: number; cell: number[] | null; taken: boolean } | null = null;
+  const stepArrest = (dt: number) => {
+    if (!arrest) return;
+    const a = arrest;
+    a.t += dt;
+    if (a.t > 1.3 && !a.taken) {
+      $('fade').classList.add('on');
+      if (a.t > 2.1) {
+        a.taken = true;
+        police.forgive();
+        if (a.cell) {
+          const [cx, cy] = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, a.cell);
+          void teleportTo(cx, cy);
+        }
+      }
+    }
+    if (a.taken && a.t > 2.7) { $('fade').classList.remove('on'); arrest = null; }
   };
   // Wasted: you drop where you are, and a few seconds later you come round outside the
   // nearest hospital, patched up and no longer wanted.
@@ -911,6 +928,7 @@ async function main() {
       frozen -= dt;
       Object.assign(ctl, { move: 0, turn: 0, aim: null, run: false, brake: true });
     }
+    stepArrest(dt);
     health.update(dt);
     if (wastedT > 0 && (wastedT -= dt) <= 0) comeRound();
     assisted = false;

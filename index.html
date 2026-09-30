@@ -90,6 +90,8 @@
       #health span.low { background: var(--accent); }
       #hurt { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 16, 0.55) 100%); }
       @keyframes blink { 50% { opacity: 0.25; } }
+      #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.8s ease-in-out; }
+      #fade.on { opacity: 1; }
       #banner { position: fixed; top: 14%; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none; opacity: 0; }
       #banner .big { text-align: center; font: 64px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0.05em 0.05em 0 var(--edge), 0 0 24px rgba(0, 0, 0, 0.6); }
       #banner.alert .big { color: var(--accent); font-size: 88px; text-shadow: 0.05em 0.05em 0 #140d0c, 0 0 24px rgba(0, 0, 0, 0.6); }
@@ -361,6 +363,7 @@
       <div id="board" hidden></div>
     </div>
     <div id="hurt"></div>
+    <div id="fade"></div>
     <div id="banner"></div>
     <div id="district" aria-live="polite"></div>
     <div id="help" class="panel" data-mode="foot">

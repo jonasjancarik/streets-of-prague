@@ -148,7 +148,8 @@ that without a new renderer.
   Police cars chase you along the streets and ram you. When you're on foot they stay
   on the road and stop at the kerb nearest you; then (or when you stop the car) an
   officer gets out and runs after you, and if they reach you, you're busted (the
-  police keep the car). You can outrun them on foot, or take the police car they've
+  police keep the car). The arrest banner appears before the screen fades to black;
+  you are then taken to the station and the picture fades back in. You can outrun them on foot, or take the police car they've
   left behind (E) and drive off in it, its blue lights flashing as you go. From three stars a helicopter
   joins in and sees you over the rooftops, and the officers carry pistols: once they can
   see you from close enough they stop and shoot instead of running you down, and from
