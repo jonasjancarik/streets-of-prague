@@ -24,6 +24,7 @@ import { Signals } from './signals.ts';
 import { Skids } from './skids.ts';
 import { Spray } from './spray.ts';
 import { Water } from './water.ts';
+import { Beacons } from './beacons.ts';
 import { Graphics } from './graphics.ts';
 import { createGameRenderer } from './renderer.ts';
 import { StopBoard } from './board.ts';
@@ -246,6 +247,7 @@ async function main() {
   const skids = new Skids(scene);
   const spray = new Spray(scene, weatherFx.tint);
   const water = new Water(scene, weatherFx.tint);
+  const beacons = new Beacons(scene);
   // Boats on the river; the pedal boats round Slovanský ostrov, if it's in the area.
   const [ilon, ilat] = [14.4135, 50.0787];
   const islands = ilon > w0 && ilon < e0 && ilat > s0 && ilat < n0
@@ -1457,7 +1459,8 @@ async function main() {
     metro.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     crowd.render(ground, (x, y) => !offscreen(x, y));
-    police.render(ground, time.value, inCar);
+    police.render(ground, time.value);
+    beacons.draw([...police.lit(inCar), ...brigade.lit], ground, time.value);
     brigade.render();
     inspector.render(ground);
     tracers.update(dt);

@@ -100,6 +100,9 @@ export class Brigade {
   }
 
   // Dev teleport: nobody is left behind.
+  // Engines with their lights going: on the way and while the crew works.
+  get lit() { return this.engines.filter((e) => !e.wrecked && !e.gone).map((e) => e.car); }
+
   reset() {
     for (const f of this.crew) this.dismiss(f);
     this.crew = [];

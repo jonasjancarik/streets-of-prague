@@ -11,7 +11,6 @@ import type { Traffic } from './traffic.ts';
 import type { FigureKit } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Point3 } from './guns.ts';
-import { sendInstances } from './gpu.ts';
 
 interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
 interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number; reload?: number }
@@ -168,9 +167,7 @@ export class Police {
   spare: Figures[]; helis: Helicopters; heat: number; cars: ChaseCar[]; officers: Officer[];
   seen: boolean; lose: number; cool: Record<string, number>; spawnT: number; checkT: number; limit: number;
   nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number;
-  lamps: THREE.InstancedMesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
-  glow: THREE.InstancedMesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
-  dummy: THREE.Object3D; lastT?: number; stolen: WeakSet<Car>;
+  lastT?: number; stolen: WeakSet<Car>;
 
   constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {} }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
@@ -193,19 +190,6 @@ export class Police {
     this.nodes = new Map();
     this.links = new Map();
     this.linked = 0;
-
-    const lamp = new THREE.BoxGeometry(0.26, 0.14, 0.3);
-    this.lamps = new THREE.InstancedMesh(lamp, new THREE.MeshBasicMaterial(), 32);
-    const glow = new THREE.CircleGeometry(5, 28);
-    glow.rotateX(-Math.PI / 2);
-    this.glow = new THREE.InstancedMesh(glow, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }), 16);
-    for (const m of [this.lamps, this.glow]) {
-      m.count = 0;
-      m.frustumCulled = false;
-      m.setColorAt(0, new THREE.Color());
-      scene.add(m);
-    }
-    this.dummy = new THREE.Object3D();
   }
 
   get stars() { return STARS.filter((t) => this.heat >= t).length; }
@@ -612,44 +596,17 @@ export class Police {
     for (const p of this.cars) p.calm = true;
   }
 
-  // `mine`: the car the player is driving; a stolen police car keeps its lights going
-  // while it moves.
-  render(height: (x: number, y: number, who: Car | Officer) => number, time: number, mine: Car | null = null) {
-    this.helis.render(time, time - (this.lastT ?? time));
-    this.lastT = time;
-    const d = this.dummy, col = new THREE.Color(), blue = new THREE.Color('#3d7bff'), dim = new THREE.Color('#0d1a3a');
-    const flip = Math.floor(time * 5) % 2;
-    let n = 0, g = 0;
+  // The cars with their lights going: those chasing you, and a stolen police car while it moves
+  // (`mine`: the car the player is driving).
+  lit(mine: Car | null = null) {
     const lit = this.cars.filter((p) => !p.calm && !p.wrecked).map((p) => p.car);
     if (mine?.type === 'police' && mine.speed > 0.5) lit.push(mine);
-    for (const c of lit) {
-      const S = c.spec, cabin = S.cabin ?? [0, 0], mid = (cabin[0] + cabin[1]) / 2;
-      const fx = Math.cos(c.h), fy = Math.sin(c.h);
-      const base = height(c.x, c.y, c);
-      for (const side of [-1, 1]) {
-        if (n >= this.lamps.instanceMatrix.count) break;
-        const off = side * S.W * 0.24;
-        d.position.set(c.x + fx * mid - fy * off, base + S.H + 0.18, -(c.y + fy * mid + fx * off));
-        d.rotation.set(0, c.h, 0);
-        d.scale.setScalar(1);
-        d.updateMatrix();
-        this.lamps.setMatrixAt(n, d.matrix);
-        this.lamps.setColorAt(n, (side > 0) === !!flip ? blue : dim);
-        n++;
-      }
-      if (g < this.glow.instanceMatrix.count) {
-        d.position.set(c.x, base + 0.2, -c.y);
-        d.rotation.set(0, 0, 0);
-        d.updateMatrix();
-        this.glow.setMatrixAt(g, d.matrix);
-        this.glow.setColorAt(g, col.set('#2a5cff').multiplyScalar(0.25 + 0.2 * Math.abs(Math.sin(time * 8))));
-        g++;
-      }
-    }
-    for (const [m, k] of [[this.lamps, n], [this.glow, g]] as [THREE.InstancedMesh, number][]) {
-      m.count = k;
-      sendInstances(m);
-    }
+    return lit;
+  }
+
+  render(height: (x: number, y: number, who: Car | Officer) => number, time: number) {
+    this.helis.render(time, time - (this.lastT ?? time));
+    this.lastT = time;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
     for (const o of this.officers) {
       m.compose(p.set(o.x, height(o.x, o.y, o), -o.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, o.h), sc);
