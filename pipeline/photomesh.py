@@ -16,6 +16,7 @@ import json
 import struct
 import time
 import urllib.request
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -42,7 +43,7 @@ def fetch(path: str) -> bytes:
                 time.sleep(2 ** attempt)
         # Written under another name and renamed, so a half-written file is never read,
         # here or by another checkout sharing the cache.
-        tmp = f.with_name(f"{f.name}.{time.monotonic_ns()}.part")
+        tmp = f.with_name(f"{f.name}.{uuid.uuid4().hex}.part")
         tmp.write_bytes(data)
         tmp.replace(f)
     b = f.read_bytes()
