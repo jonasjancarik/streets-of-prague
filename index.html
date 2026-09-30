@@ -19,6 +19,13 @@
       #speedo { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
       #speed { font: 44px/1 'Bebas Neue', sans-serif; color: var(--ink); min-width: 2.2ch; }
       #speedo small { opacity: 0.7; }
+      #radio { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+      #radio[hidden] { display: none; }
+      #radio .name { flex: 1; min-width: 0; font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; color: var(--ink); background: var(--key); border: 0; padding: 3px 4px; cursor: pointer; }
+      #radio .name option { color: #140d0c; background: #ece4d6; }
+      #radio .name.off { opacity: 0.5; }
+      #radio button { font: inherit; line-height: 1; color: var(--ink); background: var(--key); border: 0; padding: 3px 7px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      #radio button:hover { background: var(--ink); color: #140d0c; }
       #hint { margin-top: 4px; min-height: 18px; }
       #hint b { display: inline-block; background: var(--ink); color: #140d0c; padding: 0 6px; margin-right: 4px; }
       #tally { opacity: 0.6; font-size: 12px; margin-top: 4px; }
@@ -353,6 +360,12 @@
     <div id="hud" class="panel">
       <div class="hud-top"><div id="street">Praha</div><div id="clock"></div></div>
       <div id="speedo"><span id="speed">–</span><small>km/h</small></div>
+      <div id="radio" hidden>
+        <button type="button" data-radio="prev" aria-label="Previous station">&#9664;</button>
+        <select class="name" aria-label="Station"></select>
+        <button type="button" data-radio="next" aria-label="Next station">&#9654;</button>
+        <button type="button" data-radio="power" aria-label="Radio on or off">&#9211;</button>
+      </div>
       <div id="wanted" class="hidden" role="status" aria-label="Not wanted"></div>
       <div id="money" role="status"></div>
       <div id="health"></div>
@@ -386,7 +399,7 @@
           <dt><kbd>Space</kbd></dt><dd data-t>Handbrake</dd>
           <dt><kbd>Shift</kbd></dt><dd data-t>Hold to keep to the lane and the speed limit, while A and D pick the next turn</dd>
           <dt><kbd>R</kbd></dt><dd data-t>Back on the road</dd>
-          <dt><kbd>N</kbd></dt><dd data-t>Radio: next station, and off</dd>
+          <dt><kbd>N</kbd></dt><dd data-t>Radio: next station, and off (or use the buttons under the speed)</dd>
           <dt><kbd>E</kbd></dt><dd data-t>Get out, or off a bike</dd>
         </dl>
       </section>

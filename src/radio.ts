@@ -18,20 +18,19 @@ export const STATIONS: Station[] = [
   { id: 'paradise', name: 'Radio Paradise', url: 'https://stream.radioparadise.com/mp3-128' },
 ];
 
-// What's remembered: a station's id, or 'off'. Nothing yet means the first station.
+// What's remembered: whether the radio is on. Which station plays is picked at random.
 const KEY = 'radio';
-const readSaved = () => {
-  let saved: string | null = null;
-  try { saved = localStorage.getItem(KEY); } catch {}
-  return saved === null ? 0 : STATIONS.findIndex((s) => s.id === saved);
-};
-const save = (i: number) => { try { localStorage.setItem(KEY, STATIONS[i]?.id ?? 'off'); } catch {} };
-// Whether a station is set to play; known before the sound has started.
-export const radioOn = () => readSaved() >= 0;
-export const setRadioSaved = (on: boolean) => save(on ? 0 : -1);
+export const radioOn = () => { try { return localStorage.getItem(KEY) !== 'off'; } catch { return true; } };
+export const setRadioSaved = (on: boolean) => { try { localStorage.setItem(KEY, on ? 'on' : 'off'); } catch {} };
 
 const LEVEL = 0.55; // how loud a station plays, before the master volume
 const FADE = 0.25; // s
+
+const randomOther = (not: number) => {
+  let i = Math.floor(Math.random() * STATIONS.length);
+  if (i === not) i = (i + 1) % STATIONS.length;
+  return i;
+};
 
 export class Radio {
   private ctx: AudioContext;
@@ -41,8 +40,9 @@ export class Radio {
   private el: HTMLAudioElement | null = null;
   private tuned = -1; // the index in STATIONS being played, or -1 when it's off
   private want = false; // whether a station should be heard right now
-  private pauser = 0;
-  // Called when a station can't be reached.
+  private away = 0;
+  private stopStatic: (() => void) | null = null;
+  // Called when a station can't be reached while you're listening.
   onFail: (station: Station) => void = () => {};
 
   constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode) {
@@ -55,25 +55,33 @@ export class Radio {
     this.out.gain.value = 0;
     hp.connect(body).connect(lp).connect(this.out).connect(dest);
     this.input = hp;
-    this.tuned = readSaved();
+    if (radioOn()) this.tuned = randomOther(-1);
   }
   get station(): Station | null { return STATIONS[this.tuned] ?? null; }
 
   // The next station, and after the last one, off.
   next(): Station | null {
-    return this.tune(this.tuned + 1 >= STATIONS.length ? -1 : this.tuned + 1);
+    return this.tune(this.tuned < 0 ? 0 : this.tuned + 1 >= STATIONS.length ? -1 : this.tuned + 1);
   }
 
-  // The first station, or off.
+  // The station before this one, and before the first, off.
+  prev(): Station | null {
+    return this.tune(this.tuned < 0 ? STATIONS.length - 1 : this.tuned - 1);
+  }
+
+  // A chosen station, or -1 for off.
+  pick(i: number) { if (i !== this.tuned) this.tune(i); }
+
+  // Turns the radio on at a random station, or off.
   set(on: boolean) {
-    if (on !== (this.tuned >= 0)) this.tune(on ? 0 : -1);
+    if (on !== (this.tuned >= 0)) this.tune(on ? randomOther(-1) : -1);
   }
 
   private tune(i: number) {
     this.tuned = i;
-    save(i);
+    setRadioSaved(i >= 0);
     this.close();
-    if (this.station) { this.hiss(); if (this.want) this.open(); }
+    if (this.station) this.open(this.want);
     return this.station;
   }
 
@@ -82,34 +90,44 @@ export class Radio {
     if (want === this.want) return;
     this.want = want;
     const t = this.ctx.currentTime;
-    clearTimeout(this.pauser);
     this.out.gain.cancelScheduledValues(t);
     if (want && this.station) {
-      if (!this.el) this.open();
+      if (!this.el) this.open(true);
       else this.el.play().catch(() => {});
       this.out.gain.setTargetAtTime(LEVEL, t, FADE / 3);
     } else {
       this.out.gain.setTargetAtTime(0, t, FADE / 3);
-      // Left playing in the background it would keep downloading the stream.
-      this.pauser = window.setTimeout(() => { if (!this.want) this.close(); }, FADE * 3000);
+      // The next car gets another station.
+      if (this.station) window.setTimeout(() => { if (!this.want && this.station) { this.close(); this.tuned = randomOther(this.tuned); } }, FADE * 1000);
     }
   }
 
-  private open() {
+  // On foot, the station is only downloaded (silently) while you're near a car, so it's buffered
+  // when you get in, and dropped again a little after you walk away.
+  warm(near: boolean, dt: number) {
+    if (this.want || !this.station) return;
+    if (near) {
+      this.away = 0;
+      if (!this.el) this.open(false);
+    } else if (this.el && (this.away += dt) > 20) this.close();
+  }
+
+  private open(withStatic = false) {
     const station = this.station;
     if (!station) return;
     const el = new Audio();
     el.crossOrigin = 'anonymous';
-    el.preload = 'none';
     el.src = station.url;
-    el.addEventListener('error', () => { if (this.el === el) this.onFail(station); });
+    el.addEventListener('error', () => { if (this.el === el) { this.endStatic(); if (this.want) this.onFail(station); } });
+    el.addEventListener('playing', () => { if (this.el === el) this.endStatic(); });
     this.ctx.createMediaElementSource(el).connect(this.input);
     this.el = el;
-    this.out.gain.setTargetAtTime(this.want ? LEVEL : 0, this.ctx.currentTime, FADE / 3);
+    if (withStatic) this.startStatic();
     el.play().catch(() => {});
   }
 
   private close() {
+    this.endStatic();
     if (!this.el) return;
     this.el.pause();
     this.el.removeAttribute('src');
@@ -117,17 +135,28 @@ export class Radio {
     this.el = null;
   }
 
-  // The static between two stations.
-  private hiss() {
-    if (!this.want) return;
+  // Static that fills the gap until a station starts playing.
+  private startStatic() {
+    this.endStatic();
     const ctx = this.ctx, t = ctx.currentTime;
     const src = ctx.createBufferSource(), g = ctx.createGain(), band = biquad(ctx, 'bandpass', 2600, 0.5);
     src.buffer = this.noise;
-    g.gain.setValueAtTime(0.35, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+    src.loop = true;
+    g.gain.setValueAtTime(0.3, t);
     src.connect(band).connect(g).connect(this.out);
     src.start(t);
-    src.stop(t + 0.5);
+    this.stopStatic = () => {
+      const n = ctx.currentTime;
+      g.gain.cancelScheduledValues(n);
+      g.gain.setValueAtTime(g.gain.value, n);
+      g.gain.linearRampToValueAtTime(0, n + 0.25);
+      src.stop(n + 0.3);
+    };
+  }
+
+  private endStatic() {
+    this.stopStatic?.();
+    this.stopStatic = null;
   }
 }
 

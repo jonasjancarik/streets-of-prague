@@ -454,6 +454,11 @@ that without a new renderer.
   and well down and muffled in side streets, by how busy the streets within 150 m are
   (the footfall map, 1 at the Old Town Square), and quiet at night;
   distant traffic by day and a low hum by night; and birds where it's quiet (a
+- **Car radio.** While driving a car, use N to cycle stations or the controls under
+  the speed display to pick one, step backwards/forwards or switch the radio off.
+  Its on/off state is remembered; a station is selected randomly when it starts,
+  and leaving a car prepares another station for the next car. Static ends when
+  the stream plays or fails.
   blackbird at dawn and dusk, small garden birds by day, a morning chorus early on),
   none in rain or snow. It starts with the first key press or tap (the browser's rule);
   M turns it off and on, and it goes quiet in the metro.

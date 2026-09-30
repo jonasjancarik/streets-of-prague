@@ -240,7 +240,7 @@ export const CS: Record<string, string> = {
   'Hold to keep to the lane and the speed limit, while A and D pick the next turn': 'Podržením držíš pruh a povolenou rychlost, klávesami A a D vybereš příští odbočku',
   'Back on the road': 'Zpět na silnici',
   'Get out, or off a bike': 'Vystoupit nebo sesednout z kola',
-  'Radio: next station, and off': 'Rádio: další stanice, a vypnout',
+  'Radio: next station, and off (or use the buttons under the speed)': 'Rádio: další stanice, a vypnout (nebo tlačítky pod rychlostí)',
   'Radio off': 'Rádio vypnuto',
   '{name} isn’t playing right now': '{name} teď nehraje',
   'Pick where to get off': 'Vybrat, kde vystoupit',

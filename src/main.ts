@@ -1,3 +1,4 @@
+import { STATIONS } from './radio.ts';
 import * as THREE from 'three';
 import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
@@ -355,8 +356,8 @@ async function main() {
   const bikeShare = new BikeShare(AREA);
   const bikeWorld = {
     loose, seeded, walkNear, free: (x: number, y: number) => grid.at(x, y) === 0, loaded: (x: number, y: number) => grid.at(x, y) !== 255,
-    standAt: (x: number, y: number) => nearestWalkable(grid, x, y, 20),
     onRoad: (x: number, y: number) => world.onRoad(x, y),
+    standAt: (x: number, y: number) => nearestWalkable(grid, x, y, 20),
   };
 
   // Busted: out of the car (the police keep it), and a moment before you can move again.
@@ -379,7 +380,6 @@ async function main() {
       text = t('Busted · fine for riding without a ticket: {fine}', { fine: kc(wallet.take(inspector.owed)) });
       inspector.owed = 0;
     }
-    police.forgive();
     stats.busted++;
     // Not a jump: the banner comes up while the officers stand round you, then the screen
     // fades out, you're taken to the station, and it fades back in.
@@ -831,6 +831,16 @@ async function main() {
   // The HUD is only written when what it says changes: every write makes the browser
   // lay the page out again.
   const shown: Record<string, string | number> = {};
+  let radioShown = '';
+  const stationList = $('radio').querySelector('select')!;
+  for (const [i, label] of [[-1, t('Radio off')], ...STATIONS.map((s, i) => [i, s.name] as const)] as [number, string][]) stationList.add(new Option(label, String(i)));
+  stationList.addEventListener('change', () => { sound.radio?.pick(Number(stationList.value)); stationList.blur(); });
+  $('radio').addEventListener('click', (e) => {
+    const radio = sound.radio, what = (e.target as HTMLElement).closest('button')?.dataset.radio;
+    if (!radio || !what) return;
+    if (what === 'prev') radio.prev(); else if (what === 'next') radio.next(); else radio.set(!radio.station);
+    (document.activeElement as HTMLElement | null)?.blur();
+  });
   const show = (id: string, value: string | number, how: 'text' | 'html' | 'opacity' = 'text') => {
     const key = `${id}/${how}`;
     if (shown[key] === value) return;
@@ -1405,6 +1415,20 @@ async function main() {
     else districts.update(dt, px(), py(), bannerT > 0);
     show('speed', String(inCar ? Math.round(Math.abs(inCar.forwardSpeed) * 3.6) : inHeli ? Math.round(inHeli.speed * 3.6)
       : ride.on ? Math.round((ride.v?.speed ?? 0) * 3.6) : funicular.me ? Math.round(Math.hypot(funicular.me.vx, funicular.me.vy) * 3.6) : taxi.riding ? Math.round((taxi.agent?.speed ?? 0) * 3.6) : '–'));
+    if (sound.radio) {
+      const near = !inCar && !inHeli && !ride.on && [...carsNear(walker.x, walker.y, 25)].some((c) => !c.two && !c.burnt && c.gap(walker.x, walker.y) < 20);
+      sound.radio.warm(near, dt);
+    }
+    const radio = inCar && !inCar.two ? sound.radio : null;
+    const radioText = radio ? radio.station?.name ?? t('Radio off') : '';
+    if (radioText !== radioShown) {
+      radioShown = radioText;
+      const box = $('radio');
+      box.hidden = !radio;
+      const name = box.querySelector('select')!;
+      name.value = String(radio?.station ? STATIONS.indexOf(radio.station) : -1);
+      name.classList.toggle('off', !radio?.station);
+    }
     if (clock.label() !== clockShown) $('clock').textContent = clockShown = clock.label();
     // On a touch screen the buttons say what they do, so the hint only reports lane assist.
     const canBoard = !inCar && !inHeli && !ride.on && !metro.active && ride.boardable(walker.x, walker.y);
