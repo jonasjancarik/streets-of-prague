@@ -172,6 +172,14 @@ that without a new renderer.
   people over, hurts you if you're near, shoves the cars around and can set them going
   too; blowing up a car you've crashed into is a crime, a police car more so
   (`src/fire.ts`).
+- **Fire brigade.** When a car catches fire, a fire engine is called from a few hundred
+  metres away, drives to it by the streets, and its crew of three gets out and sprays
+  the car with hoses. A car nobody is driving burns 45–75 seconds before it blows up,
+  which gives the engine time to arrive; your own car and cars chased by the police
+  still go in 4–6 seconds. Once the fire is out, the crew climbs back aboard and the
+  engine drives away. Crew and engines can be run over
+  (`src/brigade.ts`, `src/water.ts`). The developer panel's "Set the nearest car on
+  fire" button is the quickest way to see it.
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads
