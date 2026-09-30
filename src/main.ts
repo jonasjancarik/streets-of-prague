@@ -23,6 +23,7 @@ import { Lamps } from './lamps.ts';
 import { Signals } from './signals.ts';
 import { Skids } from './skids.ts';
 import { Spray } from './spray.ts';
+import { Water } from './water.ts';
 import { Graphics } from './graphics.ts';
 import { createGameRenderer } from './renderer.ts';
 import { StopBoard } from './board.ts';
@@ -244,6 +245,7 @@ async function main() {
   const carPool = new CarPool(scene);
   const skids = new Skids(scene);
   const spray = new Spray(scene, weatherFx.tint);
+  const water = new Water(scene, weatherFx.tint);
   // Boats on the river; the pedal boats round Slovanský ostrov, if it's in the area.
   const [ilon, ilat] = [14.4135, 50.0787];
   const islands = ilon > w0 && ilon < e0 && ilat > s0 && ilat < n0
@@ -1476,6 +1478,7 @@ async function main() {
     carPool.render(drawn, ground, dt);
     skids.update(dt * scale, drawn, ground);
     spray.update(dt * scale, drawn, ground, renderer.domElement.height);
+    water.update(dt * scale, brigade.jets, renderer.domElement.height);
     for (const c of choppers) c.render(dt);
     surfaceT -= dt;
     if (inCar && surfaceT < 0) { surfaceT = 0.2; surface = surfaceUnder(inCar.x, inCar.y); }
