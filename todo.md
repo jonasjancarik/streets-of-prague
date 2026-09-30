@@ -285,6 +285,13 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   fewer colours (the game's own ground palette); 1–2 m/px; evening out the photo's
   own shadows; darker edges; and painting each tile with a margin from its
   neighbours so the tiles don't show seams.
+- **Roof and wall colours from the photo mesh** (plan 005, since 30 September 2026:
+  `pipeline/mesh_colours.py`, roof materials in the shader). Done for `ujezd` and
+  `centrum`. Left: the whole city (about 3 GB of mesh, an hour or two of measuring);
+  walls measured only for about 42 % of buildings, since the photographs are a morning's
+  and walls facing west or north are in shade (their colour can't be recovered; the
+  rest keep the palette); mansards (phase 2) and roof windows, dormers and chimneys
+  (phase 3). The shader's metal and material branch is not benchmarked yet.
 ## Weather and night
 
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow

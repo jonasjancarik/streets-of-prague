@@ -294,6 +294,21 @@ that without a new renderer.
   out, including wings of the Castle that both OSM and IPR draw as one building.
   Churches OSM says nothing about get slate. IPR's roofs take their colour triangle by
   triangle, from the OSM building or part they lie in.
+- **Colours from the photo mesh.** Where `pipeline/mesh_colours.py` has run, IPR's
+  buildings take their real colours from IPR's photorealistic mesh instead of the
+  palette: each roof face its colour and material (tiles, slate, sheet metal, copper,
+  flat), and each building its plaster. The photographs were taken on a summer
+  morning, so the light is taken out first: the sun's direction and a light model are
+  measured on the data itself (`--calibrate`), samples in the shade of other buildings
+  are left out, and walls or roof faces seen only in shade count as unsure (their
+  colour can't be recovered from the near-black shadows). Unsure roof faces take the
+  colour of the rest of their roof, and a building's faces of one material that differ
+  only a little are evened out; unsure walls keep the palette. A roof cover given in
+  `roofs.py` or OSM still wins. Only colours and material classes leave the pipeline;
+  the game draws its own tiles, slate, metal pans between standing seams (`sheetRoof`
+  in `src/shading.ts` and `src/webgpu/buildings.ts`), weathering and facades on top.
+  In `centrum`, walls are measured for 42 % of buildings and 93 % of roof faces get a
+  colour.
 - **Building import over water.** IPR footprints with at least 60% of their area
   over mapped water are omitted, keeping moored boats out of the building model.
 - **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited
@@ -565,6 +580,7 @@ Requirements: [uv](https://docs.astral.sh/uv/), Node.js, and for a local OSM ext
 cd pipeline
 uv run build_parking.py centrum    # TSK paid-parking sections (read by build_tiles)
 uv run build_tiles.py centrum      # today's map + street graphs in tiles → public/data/centrum_now/
+uv run mesh_colours.py centrum     # real roof and wall colours from IPR's photo mesh (optional)
 uv run ipr_buildings.py centrum    # IPR's 3D buildings into the tiles
 uv run ipr_terrain.py centrum      # IPR's terrain, bridges and tunnels, hill shading
 uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
@@ -654,6 +670,14 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   kept in `pipeline/.cache/mesh/`; the finest level (16) is the default. How to add
   one, check it and fix what goes wrong: `.agents/skills/landmarks/SKILL.md`.
   Repository skills live in `.agents/skills`; `.claude/skills` is a compatibility symlink.
+- **Mesh colours.** `mesh_colours.py <area>` needs the area's IPR sheets parsed
+  (`ipr_buildings.py` once) and writes `pipeline/.cache/mesh_colours/<area>.json.gz`,
+  which `ipr_buildings.py` reads (`--mesh-colours off` to leave it out). It downloads the
+  mesh at level 13 (about 110 MB for `centrum`, into `pipeline/.cache/mesh/`, shared
+  with the landmarks) and measures tiles side by side (`--jobs`); `centrum` takes about
+  12 minutes. `--debug` writes, per tile, the mesh from above next to the measured
+  colours and a table; `--calibrate [--every 6]` estimates the light and the white
+  balance again and prints the constants to put in the script.
 - **Roof corrections.** `pipeline/roofs.py` lists landmarks by OSM id, and outlines
   (in WGS84) for parts of buildings OSM draws as one. After changing it, run
   `build_tiles.py <area> --layers buildings` and then `ipr_buildings.py <area>`.
@@ -733,7 +757,7 @@ libraries to `dist/licenses.txt` (a small plugin in `vite.config.js`).
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
 - Tram and metro timetables: [PID / ROPID](https://pid.cz/o-systemu/opendata/), CC BY 4.0, reduced to trips per hour.
 - 3D buildings, bridges and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
-- Landmarks: photorealistic 3D model of Prague, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh), CC BY.
+- Landmarks, and the roof and wall colours: photorealistic 3D model of Prague, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh), CC BY.
 - Carriageways and parking bays: Digitální technická mapa kraje, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/28A24EB4-5EE8-436E-B0BB-357025258211), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Street lamps: the surface marks of the archived utility map (DTMP_CUR_TMISZNAK_B), datový podklad © [IPR Praha](https://geoportalpraha.cz/), CC BY.
