@@ -6,7 +6,7 @@ import type { Chopper } from './helicopter.ts';
 export interface TouchState {
   active: boolean; move: number; turn: number; aim: { h: number; mag: number } | null;
   brake: boolean; run: boolean; fast: boolean;
-  update(options: { car: Car | Chopper | null; tram?: boolean; wait?: boolean; label?: string | null; canEnter: boolean; limit?: number | null }): void;
+  update(options: { car: Car | Chopper | null; driving?: boolean; tram?: boolean; wait?: boolean; label?: string | null; canEnter: boolean; limit?: number | null }): void;
 }
 
 // On-screen controls for phones and tablets. They appear on touch screens (or with
@@ -26,8 +26,9 @@ const DEAD = 0.12;
 const capture = (el: HTMLElement, e: PointerEvent) => { try { el.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } };
 const dead = (v: number) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD));
 
-export function setupTouch({ action, backOnRoad, zoomBy, force }: {
-  action: () => void; backOnRoad: () => void; zoomBy: (factor: number) => void; force: boolean;
+export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, doors, force }: {
+  action: () => void; backOnRoad: () => void; zoomBy: (factor: number) => void;
+  horn: (on: boolean) => void; steal: () => void; doors: () => void; force: boolean;
 }): TouchState {
   const $ = (id: string): HTMLElement => {
     const el = document.getElementById(id);
@@ -143,6 +144,19 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }: {
   tap(toggle, () => { assistOn = !assistOn; });
   tap($('t-action'), action);
   tap($('t-road'), backOnRoad);
+  tap($('t-steal'), steal);
+  tap($('t-doors'), doors);
+  // The horn (a tram's bell) sounds for as long as it's held.
+  const hornButton = $('t-horn');
+  const hornUp = () => { horn(false); hornButton.classList.remove('down'); };
+  hornButton.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    capture(hornButton, e);
+    horn(true);
+    hornButton.classList.add('down');
+  });
+  hornButton.addEventListener('pointerup', hornUp);
+  hornButton.addEventListener('pointercancel', hornUp);
 
   // ---- Pinch to zoom -----------------------------------------------------
   const app = $('app'), fingers = new Map<number, { x: number; y: number }>();
@@ -171,7 +185,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }: {
   const set = <T extends string | boolean>(key: string, value: T, apply: (value: T) => void) => { if (shown[key] !== value) { shown[key] = value; apply(value); } };
   // `tram`: riding one; `wait`: at a stop; `label`: what the main button does, when it
   // isn't getting in or out of a car; `limit`: the speed lane assist is keeping to.
-  state.update = ({ car, tram = false, wait = false, label = null, canEnter, limit = null }) => {
+  state.update = ({ car, driving = false, tram = false, wait = false, label = null, canEnter, limit = null }) => {
     if (!state.active) return;
     if (car !== inCar) {
       // Lane assist starts off in every car you take.
@@ -182,16 +196,17 @@ export function setupTouch({ action, backOnRoad, zoomBy, force }: {
     const mag = Math.min(1, Math.hypot(push.x, push.y));
     state.aim = mag > DEAD ? { h: Math.atan2(push.y, push.x), mag: dead(mag) } : null;
     state.run = !!inCar && assistOn;
-    const mode = inCar ? 'car' : tram ? 'tram' : wait ? 'stop' : 'foot';
+    const mode = inCar ? 'car' : driving ? 'drive' : tram ? 'tram' : wait ? 'stop' : 'foot';
     set('mode', mode, (m) => {
       $('touch').dataset.mode = m;
       fastUp();
       fast.textContent = m === 'stop' ? t('Hold to wait') : t('Hold to speed up');
     });
-    set('label', label || (mode === 'car' ? 'Get out' : 'Get in'), (text) => { $('t-action').textContent = t(text); });
+    set('horn', mode === 'drive', (drive) => { hornButton.textContent = t(drive ? 'Bell' : 'Horn'); });
+    set('label', label || (mode === 'car' || mode === 'drive' ? 'Get out' : 'Get in'), (text) => { $('t-action').textContent = t(text); });
     set('toggle', state.run, (on) => toggle.classList.toggle('on', on));
     set('limit', state.run && limit ? `Lane assist · ${limit}` : 'Lane assist', (text) => { toggle.textContent = text.replace('Lane assist', t('Lane assist')); });
-    set('action', !!(inCar || tram || canEnter), (v) => $('t-action').classList.toggle('off', !v));
+    set('action', !!(inCar || driving || tram || canEnter), (v) => $('t-action').classList.toggle('off', !v));
   };
   return state;
 }
