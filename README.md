@@ -635,7 +635,8 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   clean models from the tiles). It needs Blender (on the PATH, in /Applications or
   `$BLENDER`); `--raw` keeps the mesh's own triangles instead. The mesh's pieces are
   kept in `pipeline/.cache/mesh/`; the finest level (16) is the default. How to add
-  one, check it and fix what goes wrong: `.claude/skills/landmarks/SKILL.md`.
+  one, check it and fix what goes wrong: `.agents/skills/landmarks/SKILL.md`.
+  Repository skills live in `.agents/skills`; `.claude/skills` is a compatibility symlink.
 - **Roof corrections.** `pipeline/roofs.py` lists landmarks by OSM id, and outlines
   (in WGS84) for parts of buildings OSM draws as one. After changing it, run
   `build_tiles.py <area> --layers buildings` and then `ipr_buildings.py <area>`.
