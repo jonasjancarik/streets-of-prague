@@ -8,6 +8,8 @@
   const d = window.__drive, w = d.world, r = d.renderer, dev = r.backend?.device ?? null;
   const fresh = () => ({ t: performance.now(), wb: 0, wbN: 0, ua: 0, pipes: 0, shaders: 0, bufs: 0, bufBytes: 0, builds: 0, buildMs: 0, carBuilds: 0, carBuildMs: 0, render: 0, e: 0 });
   const S = { long: [], calls: [], frames: [], tiles: [], kinds: new Map(), acc: fresh(), treesAtStart: w.trees?.stats() ?? null };
+  S.gaps = { samples: 0, player: 0, ahead: 0 };
+  S.resting = { scans: 0, changed: 0, total: 0, circles: 0, touchedBuckets: 0 };
   new PerformanceObserver((l) => { for (const e of l.getEntries()) S.long.push({ s: e.startTime, d: e.duration }); }).observe({ type: 'longtask' });
 
   // Calls that take at least `min` ms, with when they ran.
@@ -46,6 +48,18 @@
   timed(d.lamps, 'update', 'lamps.update', 2);
   timed(d.lamps, 'fill', 'lamps.fill');
   timed(d.crowd, 'index', 'crowd.index');
+  if (d.resting) {
+    const sync = d.resting.sync;
+    d.resting.sync = function (...a) {
+      const out = sync.apply(this, a);
+      S.resting.scans++;
+      S.resting.changed += out.changedCars;
+      S.resting.total += out.indexedCars;
+      S.resting.circles += out.allocatedCircles;
+      S.resting.touchedBuckets += out.touchedBuckets;
+      return out;
+    };
+  }
   // Tile builds: noted when each finishes, with its laps (tile.ms).
   const make = w.make;
   w.make = async function (k, files) {
@@ -102,6 +116,12 @@
     const t1 = performance.now();
     S.acc.render += t1 - t0;
     if (s === d.scene) {
+      const car = d.car;
+      if (car) {
+        S.gaps.samples++;
+        if (!w.tileAt(car.x, car.y)) S.gaps.player++;
+        if (!w.tileAt(car.x + Math.cos(car.h) * w.T, car.y + Math.sin(car.h) * w.T)) S.gaps.ahead++;
+      }
       S.acc.e = t1;
       S.frames.push(S.acc);
       S.acc = fresh();
@@ -136,6 +156,9 @@
     }
     const calm = S.frames.filter((f) => !inLong(f)), avg = (k) => sum(calm, k) / Math.max(1, calm.length);
     lines.push(`frames outside long tasks ${calm.length}: render ${f1(avg('render'))} ms, writeBuffer ${mb(avg('wb'))} MB/${f1(avg('wbN'))}, attributes ${mb(avg('ua'))} MB a frame`);
+    const q = w.streamingStats;
+    if (q) lines.push(`streaming: required ${q.queuedRequired} queued/${q.runningRequired} running, optional ${q.queuedOptional} queued/${q.runningOptional} running; completed ${q.completedRequired} required/${q.completedOptional} optional; refreshes ${q.coalesced} coalesced/${q.cancelled} cancelled; tile build ${q.buildTimes.length} samples, p95 ${f1(q.buildTimes.slice().sort((a, b) => a - b)[Math.ceil(q.buildTimes.length * .95) - 1] || 0)} ms; missing player ${S.gaps.player}/${S.gaps.samples}, ahead ${S.gaps.ahead}/${S.gaps.samples} frames`);
+    if (S.resting.scans) lines.push(`resting: ${S.resting.changed} changed / ${S.resting.total} indexed-car scans, ${S.resting.circles} circles allocated, ${S.resting.touchedBuckets} buckets touched`);
     return lines;
   };
   window.__stalls = S;

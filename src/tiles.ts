@@ -13,8 +13,10 @@ import type { Shadower } from './map/skyView.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
 import type { DriveEdge, DriveGraph, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
-import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, WorkerJobs, WorkerKind, WorkerResults, WorkerResponse, HeightGrid, LevelInput } from './contracts.ts';
+import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightGrid, LevelInput } from './contracts.ts';
 import { isTileJSON } from './contracts.ts';
+import { TileWorkers } from './tileWorkers.ts';
+import { SkyRefresh } from './skyRefresh.ts';
 import { overheadWires } from './wires.ts';
 import { posts, type Post } from './posts.ts';
 import { fences, type FenceSection } from './fences.ts';
@@ -46,12 +48,6 @@ export interface Tracked {
   e?: { bridge?: boolean; tunnel?: boolean }; _view?: { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
 }
 
-function isWorkerResponse(value: unknown): value is WorkerResponse {
-  if (typeof value !== 'object' || value === null) return false;
-  const response = value as Record<string, unknown>;
-  return typeof response.id === 'number' && (typeof response.error === 'string' || 'result' in response);
-}
-
 // Streams the map in square tiles (pipeline/build_tiles.py) around the camera. Each
 // loaded tile has its own ground, buildings, trees, collision grid and parked cars;
 // tiles far behind are dropped again. The street graphs stay global. The heavy part
@@ -65,48 +61,6 @@ const RAISED = 3; // a building whose underside is this high (m) or more doesn't
 // ends), they drive onto it; further apart, it's overhead, or the ground is below the
 // parapet.
 const CLIMB = 1.5;
-
-// A small pool of workers that build tiles (see tileWorker.ts).
-class TileWorkers {
-  workers: Worker[];
-  jobs: Map<number, { worker: Worker; resolve: (result: unknown) => void; reject: (error: Error) => void }>;
-  next: number;
-  size: number;
-
-  constructor(n = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 4) - 2))) {
-    this.workers = [];
-    this.jobs = new Map();
-    this.next = 0;
-    for (let i = 0; i < n; i++) {
-      const w = new Worker(new URL('./tileWorker.ts', import.meta.url), { type: 'module' });
-      w.onmessage = (e: MessageEvent<unknown>) => {
-        if (!isWorkerResponse(e.data)) return;
-        const job = this.jobs.get(e.data.id);
-        if (!job) return;
-        this.jobs.delete(e.data.id);
-        if ('error' in e.data && e.data.error) job.reject(new Error(e.data.error));
-        else job.resolve(e.data.result);
-      };
-      w.onerror = (event) => {
-        for (const [id, job] of this.jobs) if (job.worker === w) {
-          this.jobs.delete(id);
-          job.reject(new Error(event.message || 'Tile worker failed'));
-        }
-      };
-      this.workers.push(w);
-    }
-    this.size = n;
-  }
-
-  run<K extends WorkerKind>(type: K, data: WorkerJobs[K], transfer: Transferable[] = []): Promise<WorkerResults[K]> {
-    const id = this.next++;
-    return new Promise<WorkerResults[K]>((resolve, reject) => {
-      const worker = this.workers[id % this.workers.length];
-      this.jobs.set(id, { worker, resolve: (result) => resolve(result as WorkerResults[K]), reject });
-      worker.postMessage({ id, type, data }, transfer);
-    });
-  }
-}
 
 // Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
 // the same north-west as the sun: 1 = unchanged, darker on slopes facing away. The
@@ -317,7 +271,7 @@ export class TileWorld {
   last: { i: number; j: number; tile: Tile | undefined };
   pending: Map<string, Promise<TileFiles>>;
   // Each loaded tile's buildings as shadow casters, and its sky-view texture (see map/skyView.ts).
-  sky: Map<number, { shapes: Shadower[]; texture: THREE.DataTexture | null; tileBox: Bounds; ground: { hm: Float32Array; box: Bounds; n: number; step: number } | null; timer: ReturnType<typeof setTimeout> | null }>;
+  sky: Map<number, { shapes: Shadower[]; texture: THREE.DataTexture | null; tileBox: Bounds; ground: { hm: Float32Array; box: Bounds; n: number; step: number } | null; refresh: SkyRefresh<Uint8Array> | null }>;
   drive: DriveGraph; walk: WalkGraph;
   driveBy: Map<string, DriveEdge[]>; walkBy: Map<string, WalkEdge[]>;
   onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][]) => void;
@@ -325,6 +279,8 @@ export class TileWorld {
   onDrop: (tile: Tile) => void;
   building: number; inFlight: Set<string>; builds: Map<string, Promise<Tile>>;
   retry: Map<string, number>; workers: TileWorkers; ref: number;
+  buildTimes: number[];
+  skyTotals: { coalesced: number; cancelled: number };
   landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
@@ -374,6 +330,8 @@ export class TileWorld {
     this.builds = new Map(); // key → Promise of the tile, while it's being built
     this.retry = new Map(); // key → when to try a tile that failed again
     this.workers = new TileWorkers();
+    this.buildTimes = [];
+    this.skyTotals = { coalesced: 0, cancelled: 0 };
     // Landmarks from IPR's photorealistic mesh, where the area has any (?osm: none).
     this.landmarks = osmBuildings ? Promise.resolve([]) : fetch(`data/${area}_now/landmarks.json`)
       .then((r) => (r.ok ? r.json() as Promise<Landmark[]> : [])).catch(() => []);
@@ -723,7 +681,9 @@ export class TileWorld {
   build(k: string, files: TileFiles): Promise<Tile> {
     if (this.loaded.has(k)) return Promise.resolve(this.loaded.get(k)!);
     if (!this.builds.has(k)) {
+      const started = performance.now();
       const made = this.make(k, files)
+        .then((tile) => { this.buildTimes.push(performance.now() - started); if (this.buildTimes.length > 256) this.buildTimes.shift(); return tile; })
         .catch((e) => { this.failed(k); throw e; })
         .finally(() => this.builds.delete(k));
       this.builds.set(k, made);
@@ -846,7 +806,7 @@ export class TileWorld {
       skyTexture.magFilter = skyTexture.minFilter = THREE.LinearFilter;
       skyTexture.needsUpdate = true;
     }
-    this.sky.set(t.i * 65536 + t.j, { shapes, texture: skyTexture, tileBox: t.box, ground, timer: null });
+    this.sky.set(t.i * 65536 + t.j, { shapes, texture: skyTexture, tileBox: t.box, ground, refresh: null });
     // The neighbours' ground next to this tile's buildings.
     for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) if (di || dj) this.refreshSky(t.i + di, t.j + dj);
     // (A neighbour that came while the worker was busy is only known now.)
@@ -960,16 +920,30 @@ export class TileWorld {
 
   // A tile's sky-view texture again, once a neighbour whose buildings it lacked has come.
   refreshSky(i: number, j: number) {
-    const entry = this.sky.get(i * 65536 + j);
+    const key = i * 65536 + j;
+    const entry = this.sky.get(key);
     if (!entry?.texture) return;
-    if (entry.timer) clearTimeout(entry.timer);
-    entry.timer = setTimeout(async () => {
-      entry.timer = null;
-      const result = await this.workers.run('sky', { box: entry.tileBox, ground: entry.ground, shapes: this.shadowersFor(i, j, entry.shapes), meshes: [] }).catch(() => null);
-      if (!result || this.sky.get(i * 65536 + j) !== entry || !entry.texture) return;
-      (entry.texture.image.data as Uint8Array).set(result.texels);
+    entry.refresh ??= new SkyRefresh<Uint8Array>((started) => {
+      const job = this.workers.submit('sky', () => {
+        started();
+        return { box: entry.tileBox, ground: entry.ground, shapes: this.shadowersFor(i, j, entry.shapes), meshes: [] };
+      }, [], 'optional');
+      return { promise: job.promise.then((result) => result.texels), cancel: job.cancel };
+    }, (texels) => {
+      if (this.sky.get(key) !== entry || !entry.texture) return;
+      (entry.texture.image.data as Uint8Array).set(texels);
       entry.texture.needsUpdate = true;
-    }, 400);
+    });
+    entry.refresh.request();
+  }
+
+  get streamingStats() {
+    let coalesced = this.skyTotals.coalesced, cancelled = this.skyTotals.cancelled;
+    for (const entry of this.sky.values()) {
+      coalesced += entry.refresh?.coalesced ?? 0;
+      cancelled += entry.refresh?.cancelled ?? 0;
+    }
+    return { ...this.workers.counts, coalesced, cancelled, buildTimes: this.buildTimes };
   }
 
   drop(k: string) {
@@ -980,7 +954,9 @@ export class TileWorld {
     t.surfaces.dispose();
     t.relief?.texture.dispose();
     const sky = this.sky.get(t.i * 65536 + t.j);
-    if (sky?.timer) clearTimeout(sky.timer);
+    sky?.refresh?.drop();
+    this.skyTotals.coalesced += sky?.refresh?.coalesced ?? 0;
+    this.skyTotals.cancelled += sky?.refresh?.cancelled ?? 0;
     sky?.texture?.dispose();
     this.sky.delete(t.i * 65536 + t.j);
     this.photos.get(k)?.then((tex) => tex?.dispose());
