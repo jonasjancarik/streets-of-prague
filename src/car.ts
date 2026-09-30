@@ -58,6 +58,8 @@ export const TYPES: Record<string, CarSpec> = {
   truck: { L: 8, W: 2.5, H: 3.6, mass: 7500, accel: 3.2, vmax: 25, grip: 7, turn: 1.4, weight: 0, traffic: 0, heavy: true, wheelbase: 4.6, drive: 'rwd', radius: 8, response: 5, brake: 9, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
   artic: { L: 16.5, W: 2.55, H: 4, mass: 30000, accel: 2, vmax: 24, grip: 6.5, turn: 1.1, weight: 0, traffic: 0, heavy: true, wheelbase: 9, drive: 'rwd', radius: 12, response: 3.5, brake: 7, fade: 0.25, drag: 0.35, reverse: 0.15, tough: 6, weather: 1.2 },
   bus: { L: 12, W: 2.55, H: 3.1, mass: 12000, accel: 2.6, vmax: 24, grip: 7, turn: 1.25, weight: 0, color: '#c8102e', heavy: true, drive: 'rwd', radius: 10, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
+  // A fire engine: src/brigade.ts sends these to burning cars. Never parked or in traffic.
+  fire: { L: 8.5, W: 2.5, H: 3.2, mass: 14000, accel: 2.4, vmax: 25, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#c4161c', heavy: true, wheelbase: 5, drive: 'rwd', radius: 8.5, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
 };
 // A variant of a body type: the same geometry (so the same draw call) with its own
 // handling and engine. `id` picks the engine in audio.ts, `name` (a model's own name,
@@ -154,6 +156,11 @@ function carGeometry(type: string, paint: string, box?: string): THREE.BufferGeo
   }
   if (type === 'bus') {
     const geometry = busGeometry(S);
+    cache.set(k, geometry);
+    return geometry;
+  }
+  if (type === 'fire') {
+    const geometry = fireGeometry(S);
     cache.set(k, geometry);
     return geometry;
   }
@@ -255,6 +262,69 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
   // Wheels: two at the front, twin tyres at the back.
   wheel(L - 2.7, W);
   wheel(-L + 3.3, W);
+  return done();
+}
+
+// The word on the front of the fire engine, as a 5 × 7 pixel font (Č has a caron row above).
+const GLYPHS: Record<string, string[]> = {
+  H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
+  A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+  S: ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
+  I: ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
+  Č: ['01010', '01110', '10001', '10000', '10000', '10000', '10001', '01110'],
+};
+
+// A fire engine from boxes: a red cab and body, grey roller shutters along the sides
+// under a yellow stripe, a ladder on the roof, HASIČI on the front and chevrons at the back.
+function fireGeometry(S: CarSpec): THREE.BufferGeometry {
+  const { box, wheel, done } = boxBuilder();
+  const L = S.L / 2, W = S.W, red = S.color || '#c4161c', glass = '#1b242c', grey = '#8c9196';
+  const cab = 2.3, cx = L - cab, floor = 0.55, top = 2.7, cabTop = 3.0;
+  box('#2a2c2f', -L + 0.05, L - 0.05, 0.3, floor, W - 0.3); // chassis and bumpers
+  box(red, -L, cx, floor, top, W); // body
+  box(red, cx, L, floor, cabTop, W); // cab
+  box(glass, L - 0.05, L + 0.02, 1.65, cabTop - 0.15, W - 0.25); // windscreen
+  box(glass, cx + 0.5, L - 0.45, 1.65, cabTop - 0.2, W + 0.02); // side windows
+  box('#2a2c2f', L - 0.05, L + 0.06, 0.75, 1.15, W - 0.5); // grille
+  box('#d8d8d4', L - 0.05, L + 0.03, 1.2, 1.7, W - 0.3); // the band HASIČI is on
+  box('#2a2c2f', L - 0.1, L + 0.18, 0.3, 0.7, W - 0.05); // front bumper
+  for (const side of [-1, 1]) {
+    box('#e8d21a', -L, L, 1.35, 1.5, 0.03, side * W / 2); // reflective stripe
+    for (let i = 0; i < 3; i++) {
+      const a = -L + 0.35 + i * 1.5, b = a + 1.35;
+      box(grey, a, Math.min(b, cx - 0.2), 0.75, 1.3, 0.05, side * W / 2); // shutters
+      box(grey, a, Math.min(b, cx - 0.2), 1.55, 2.4, 0.05, side * W / 2);
+    }
+    box('#fff6d8', L - 0.05, L + 0.05, 0.75, 1.0, 0.35, side * (W / 2 - 0.3)); // headlamps
+    box('#b3161b', -L - 0.03, -L + 0.05, 0.7, 1.0, 0.22, side * (W / 2 - 0.2)); // tail lamps
+  }
+  // The ladder lies on the roof, two rails with rungs; tool boxes and a hose reel beside it.
+  for (const z of [-0.45, 0.45]) box('#c4c8cb', -L + 0.3, cx - 0.3, top, top + 0.2, 0.08, z);
+  for (let x = -L + 0.5; x < cx - 0.3; x += 0.4) box('#9a9fa3', x - 0.03, x + 0.03, top + 0.12, top + 0.18, 0.9);
+  for (const z of [-0.95, 0.95]) box('#a8adb1', -L + 0.5, cx - 0.6, top, top + 0.12, 0.3, z);
+  box('#a8adb1', cx + 0.1, L - 0.3, cabTop, cabTop + 0.06, W - 0.6); // the cab's roof rail
+  // Red and white chevrons across the back.
+  for (let i = 0; i < 6; i++) box(i % 2 ? '#d8d8d4' : '#c4161c', -L - 0.04, -L + 0.04, 1.1, 1.5, (W - 0.3) / 6, -W / 2 + 0.15 + (i + 0.5) * ((W - 0.3) / 6));
+  box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
+  // HASIČI on the band, read from the front: the right-hand side of someone facing the
+  // engine is -z, so the letters run from +z to -z.
+  const px = 0.05, word = [...'HASIČI'], pitch = 6 * px, z0 = (word.length * pitch - px) / 2;
+  word.forEach((ch, i) => {
+    const rows = GLYPHS[ch];
+    rows.forEach((row, r) => {
+      const y1 = 1.68 - r * px - (rows.length === 8 ? 0 : px);
+      for (let c = 0; c < 5;) {
+        if (row[c] !== '1') { c++; continue; }
+        let e = c;
+        while (e < 5 && row[e] === '1') e++;
+        box('#b3121a', L + 0.03, L + 0.05, y1 - px, y1, (e - c) * px, z0 - i * pitch - ((c + e) / 2) * px + 0.0);
+        c = e;
+      }
+    });
+  });
+  wheel(L - 1.45, W);
+  wheel(-L + 1.5, W, true);
+  wheel(-L + 2.8, W, true);
   return done();
 }
 
