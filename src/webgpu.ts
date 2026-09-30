@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { WebGPURenderer, MeshLambertNodeMaterial } from 'three/webgpu';
 import {
-  Fn, If, Discard, float, vec2, vec3, vec4, uniform, texture, positionWorld, normalView, materialColor, fract, floor, mod, dot,
+  Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select,
 } from 'three/tsl';
 import { setPatterned, SKY_REF, GRIT, GRIT_M } from './shading.ts';
@@ -180,30 +180,40 @@ function ripples(p0: N, time: N) {
 }
 
 const uSkyRef: N = followColor(SKY_REF);
-const inBox = (p: N, box: number[]) => {
-  const b = uniform(new THREE.Vector4(box[0], box[1], box[2], box[3]));
-  return p.sub(b.xy).div(b.zw.sub(b.xy));
+// A tile's texture, read from the material drawn: the ground's node graphs are shared by every
+// tile (three.js builds a shader for each graph it hasn't seen, 7–60 ms on the main thread), and
+// each material carries its own tile's textures and their boxes (`${name}Map`, `${name}Box`).
+const tileTexture = (name: string, p: N) => {
+  const b: N = materialReference(`${name}Box`, 'vec4');
+  const uv = p.sub(b.xy).div(b.zw.sub(b.xy));
+  return (materialReference(`${name}Map`, 'texture') as N).context({ getUV: () => uv });
 };
+const boxOf = (box: number[]) => new THREE.Vector4(box[0], box[1], box[2], box[3]);
+
+type GroundInputs = {
+  relief: { texture: THREE.Texture; box: number[]; sky?: { texture: THREE.Texture; box: number[] } | null } | null;
+  deck: { mask: THREE.Texture | null; box?: number[] } | null;
+  photo: { texture: THREE.Texture; box: number[] } | null;
+};
+const groundGraphs = new Map<{ value: number }, Map<string, { color: N; ao: N | null; emissive: N }>>();
 
 // patterned() in shading.ts, as a node material.
 function groundMaterial(
   base: THREE.MeshLambertMaterial, id: number, time: { value: number },
-  relief: { texture: THREE.Texture; box: number[]; sky?: { texture: THREE.Texture; box: number[] } | null } | null = null, deck: { mask: THREE.Texture | null; box?: number[] } | null = null,
-  dig = false, photo: { texture: THREE.Texture; box: number[] } | null = null, sheltered = false,
+  relief: GroundInputs['relief'] = null, deck: GroundInputs['deck'] = null,
+  dig = false, photo: GroundInputs['photo'] = null, sheltered = false,
 ) {
   const m = new MeshLambertNodeMaterial();
   m.color.copy(base.color);
   Object.assign(m, { side: base.side, depthWrite: base.depthWrite, depthTest: base.depthTest, transparent: base.transparent, opacity: base.opacity });
+  const inputs = { relief, deck, photo };
   const shade = (n: N, pattern: number) => {
-    const g = groundColor(pattern, timeOf(time), relief, deck, dig, photo, sheltered).toVar();
-    n.colorNode = vec4(g.rgb, 1);
-    // Courtyards and lanes see less of the sky: less of the ambient light, none of the sun's or the lamps'.
-    if (relief?.sky) n.aoNode = skyAmbient(texture(relief.sky.texture, inBox(vec2(positionWorld.x, positionWorld.z.negate()), relief.sky.box)).r);
-    // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
-    n.emissiveNode = Fn(() => {
-      const l = lampLight(positionWorld, normalView);
-      return g.rgb.mul(l).add(uSkyRef.add(l.mul(0.85)).mul(g.a));
-    })();
+    const g = groundGraph(pattern, time, inputs, dig, sheltered);
+    Object.assign(n, {
+      colorNode: g.color, aoNode: g.ao, emissiveNode: g.emissive,
+      reliefMap: relief?.texture, reliefBox: relief && boxOf(relief.box), skyMap: relief?.sky?.texture, skyBox: relief?.sky && boxOf(relief.sky.box),
+      maskMap: deck?.mask, maskBox: deck?.mask && boxOf(deck.box!), photoMap: photo?.texture, photoBox: photo && boxOf(photo.box),
+    });
   };
   shade(m, id);
   m.userData.flatten = () => {
@@ -213,20 +223,38 @@ function groundMaterial(
   };
   return m as unknown as THREE.MeshLambertMaterial;
 }
-function groundColor(
-  id: number, time: N, relief: { texture: THREE.Texture; box: number[] } | null, deck: { mask: THREE.Texture | null; box?: number[] } | null,
-  dig: boolean, photo: { texture: THREE.Texture; box: number[] } | null, sheltered: boolean,
-) {
+function groundGraph(id: number, time: { value: number }, { relief, deck, photo }: GroundInputs, dig: boolean, sheltered: boolean) {
+  const key = `${id} ${!!relief} ${!!relief?.sky} ${!!deck} ${!!deck?.mask} ${!!photo} ${dig} ${sheltered}`;
+  let byKey = groundGraphs.get(time);
+  if (!byKey) groundGraphs.set(time, (byKey = new Map()));
+  let graph = byKey.get(key);
+  if (graph) return graph;
+  const g = groundColor(id, timeOf(time), !!relief, deck ? !!deck.mask : null, dig, !!photo, sheltered).toVar();
+  graph = {
+    color: vec4(g.rgb, 1),
+    // Courtyards and lanes see less of the sky: less of the ambient light, none of the sun's or the lamps'.
+    ao: relief?.sky ? skyAmbient(tileTexture('sky', vec2(positionWorld.x, positionWorld.z.negate())).r) : null,
+    // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
+    emissive: Fn(() => {
+      const l = lampLight(positionWorld, normalView);
+      return g.rgb.mul(l).add(uSkyRef.add(l.mul(0.85)).mul(g.a));
+    })(),
+  };
+  byKey.set(key, graph);
+  return graph;
+}
+// deck: null off the bridges and out of the tunnels, else whether its level has a mask.
+function groundColor(id: number, time: N, relief: boolean, deck: boolean | null, dig: boolean, photo: boolean, sheltered: boolean) {
   return Fn(() => {
     const w = positionWorld.toVar();
     const wp = vec2(w.x, w.z.negate()).toVar();
-    if (deck) {
+    if (deck !== null) {
       If(w.y.greaterThan(uCut.y).and(distance(w.xz, uCut.xz).lessThan(uCut.w)), () => { Discard(); });
-      if (deck.mask) If(texture(deck.mask, inBox(wp, deck.box!)).r.lessThan(0.5), () => { Discard(); });
+      if (deck) If(tileTexture('mask', wp).r.lessThan(0.5), () => { Discard(); });
     }
-    const c = vec3(photo ? texture(photo.texture, inBox(wp, photo.box)).rgb : pattern(id, vec3(materialColor), wp, time)).toVar();
+    const c = vec3(photo ? tileTexture('photo', wp).rgb : pattern(id, vec3(materialColor), wp, time)).toVar();
     // Hill shading and the broad variation (broad), baked together for a tile.
-    if (relief) c.mulAssign(texture(relief.texture, inBox(wp, relief.box)).r);
+    if (relief) c.mulAssign(tileTexture('relief', wp).r);
     else c.mulAssign(fbm(wp.mul(0.004)).mul(0.14).add(0.93));
     const shine = float(0).toVar();
     if (!sheltered) { const wc = weathered(id, c, wp, time); c.assign(wc.rgb); shine.assign(wc.a); }
