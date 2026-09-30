@@ -36,6 +36,9 @@ Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
 you are, the time, weather, money, stars, car and camera as the start of a new scenario.
 
 WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer.
+WebGPU reuses the same building, landmark, cutaway and lamp-light shader graphs
+across equivalent meshes. Each mesh keeps its own material, textures and sky-view
+attribute, so unloading one tile does not change another tile's appearance.
 If the browser's GPU adapter request takes more than 5 seconds, or device
 initialization more than 15 seconds, startup continues with WebGL. A GPU device
 that arrives after that timeout is released. Benchmark runs can require WebGPU

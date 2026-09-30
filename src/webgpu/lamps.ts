@@ -103,12 +103,26 @@ export function lampLight(w: N, n?: N) {
   return out;
 }
 
+// Cache by both graph inputs. In particular, a converted material's own emissive
+// graph may differ even when its port key is the same.
+const litGraphs = new WeakMap<N, WeakMap<N, N>>();
+const unlitGraphs = new WeakMap<N, N>();
+const applied = new WeakMap<N, { graph: N }>();
+
 // Adds the lamps' light to what a material already gives out, over its own diffuse colour.
 export function lampLit(node: N, world: N = positionWorld) {
-  const emissive = node.emissiveNode;
-  node.emissiveNode = Fn(() => {
+  const previous = applied.get(node);
+  if (previous && node.emissiveNode === previous.graph) return;
+  const emissive = node.emissiveNode ?? null;
+  let byWorld = emissive === null ? unlitGraphs : litGraphs.get(emissive);
+  if (!byWorld) litGraphs.set(emissive, (byWorld = new WeakMap()));
+  let graph = byWorld.get(world);
+  if (!graph) graph = Fn(() => {
     const e = vec3(emissive ?? 0).toVar();
     e.addAssign(diffuseColor.rgb.mul(lampLight(world, normalView)));
     return e;
   })();
+  byWorld.set(world, graph);
+  node.emissiveNode = graph;
+  applied.set(node, { graph });
 }
