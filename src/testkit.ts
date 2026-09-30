@@ -306,7 +306,7 @@ export function setupTestkit(g: Game) {
   g.canvas.addEventListener('pointerdown', (e) => {
     if (!kit.cam || e.pointerType === 'touch') return;
     drag = { x: e.clientX, y: e.clientY, turn: e.button === 2 || e.shiftKey };
-    g.canvas.setPointerCapture(e.pointerId);
+    try { g.canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic event (tests) */ }
   });
   g.canvas.addEventListener('pointermove', (e) => {
     const cam = kit.cam;
