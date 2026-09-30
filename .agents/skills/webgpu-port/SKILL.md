@@ -106,8 +106,16 @@ keeping the GPU 78–91% busy, WebGL at 21% (clear) and 80% (rain), so the pairs
   render-object cache key); `configureRenderer` wraps that, and `addPort(/^cars$/, (node,
   legacy) => { node.colorNode = …; })` decorates the converted node material. Ports are
   chosen by the legacy material's `customProgramCacheKey()`, which every one of these
-  materials sets already. Build each port's node graph once at module level and share it
-  (per-tile numbers as uniforms), or every render object compiles its own shader.
+  materials sets already. Build each port's node graph once at module level and share it,
+  or every render object compiles its own shader (7 ms on an M5, up to ~90 ms on a
+  phone, on the main thread: the stalls while driving). three.js keys a build by its
+  nodes' ids, so a `uniform()` or `texture()` made per tile makes a new shader per tile:
+  have one shared graph read per-material values with `materialReference(name, type)`
+  (a texture at your coordinates: `.context({ getUV: () => uv })`), as `groundGraph` in
+  `webgpu.ts` does. Nodes made inside an `addPort` callback are new for every converted
+  material (the trees' port still does this). Every `InstancedMesh` gets a build of its
+  own anyway (three.js keys it by `uuid`), so reuse instanced meshes rather than making
+  new ones. `--stalls` in the bench lists the builds by kind (see the performance skill).
   **Shadows:** the shadow pass reads `colorNode`/`positionNode`/`maskShadowNode` from the
   *mesh's own* material (`Renderer._getShadowNodes`), not from the converted one, so a
   ported building's facade shader never runs in the shadow pass, and the cutaway doesn't

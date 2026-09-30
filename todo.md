@@ -198,10 +198,11 @@ grime on the walls 6%, the shadow map's own pass 7%.
   main thread, the street-graph merge and parking are small. Fixed: the ground's layers
   now share one shader per kind of layer across tiles (ground builds ~70 → ~4 a drive on
   the M5, 16 → 2 on the Pixel 5). `--vs --runs 2 --fresh-browser`, 4×: long tasks 9, 11 →
-  3, 3; slowest 1% of frames 12.7, 15.2 → 9.7, 10.4 ms; build time 2.0 → 0.8 s; and
-  `writeBuffer` calls a frame 315 → 180. At 1× no change beyond drift. On the Pixel 5 the
-  time in long tasks with a build fell from 2.5–2.7 s to 1.2–1.8 s a drive, but its
-  slowest 1% stayed ~115 ms (the frames below). Open, biggest first:
+  3, 3; 10.4, 10.2 → 9.2, 9.4 ms a frame; build time 2.0 → 0.8 s; and `writeBuffer`
+  calls ~630 → ~360 a frame. At 1× no change beyond drift. On the Pixel 5 the time in
+  long tasks with a build fell from 2.5–2.7 s to 1.2–1.8 s a drive, but its slowest 1% of
+  frames stayed at 115–120 ms (the frames below). The phone draws the drive at 1× and
+  High at ~23 fps (median frame ~33 ms). Open, biggest first:
   - **Tree meshes:** every tile makes three new instanced tree meshes, and three.js
     builds every instanced mesh on its own (its key has the mesh's `uuid`): ~60 ms each
     on a Pixel 5 for the tuft shader. One set of tree meshes shared by all tiles
@@ -210,8 +211,8 @@ grime on the walls 6%, the shadow map's own pass 7%.
     first appears and again when a model's mesh grows past its capacity
     (`CarDrawer.render`, `max(8, 1.5 × n)`). Making every model's mesh during loading
     with room to spare would move them behind the loading screen.
-  - **Tile workers crowd a phone's main thread:** on a Pixel 5, frames swell (render 9 →
-    30 ms) while tiles load, with no build involved; 1 worker instead of 3 halved those
+  - **Tile workers crowd a phone's main thread:** on a Pixel 5, frames swell (render ~17 →
+    ~30 ms) while tiles load, with no build involved; 1 worker instead of 3 halved those
     long tasks, but tiles took 2–3× longer to arrive. A decision: fewer workers on
     phones, or leave it.
   - On a warm Pixel 5 there are also 20–24 ms spikes in `crowd.update` and 12 ms in

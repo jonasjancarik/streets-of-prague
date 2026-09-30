@@ -237,14 +237,18 @@ Pixel 5 (see "On a phone" below).
   graph merge under 1 ms). The workers and the sky view take 100–500 ms, off it.
 - **Chrome's CPU throttling slows only the page's main thread**, not the tile workers or
   the GPU process, so `--cpu 4` shows JavaScript costs but hides contention. On a Pixel 5,
-  frames also swell while tiles load (render 9 → 30 ms, no build involved). With 1 tile
+  frames also swell while tiles load (render ~17 → ~30 ms, no build involved). With 1 tile
   worker instead of 3, about half as many long tasks without a build, but a tile takes
   2–3× as long to arrive.
-- **Counting builds:** wrap `renderer._nodes.getForRender` and see whether
-  `nodeBuilderCache.size` grew; `ro.material`, `ro.object`, `ro.geometry` tell what it
-  was. Count `device.createRenderPipeline` too. Line them up with a
-  `PerformanceObserver({ type: 'longtask' })` from `--eval`, and report from a
-  `setTimeout` with `console.info('Renderer: …')`.
+- **`--stalls`** (`scripts/bench-stalls.js`) prints what each long task was: builds (a new
+  entry in `renderer._nodes.nodeBuilderCache`, sorted by kind of object), pipelines,
+  uploads, new buffers, tiles finished (with their laps) and the world's slow updates,
+  then the same counters for the frames outside long tasks. Start there.
+- **`renderer.render` is called more than once a frame:** three.js renders the shadow maps
+  from inside the main render (`ShadowNode.renderShadow`), and the lamps' light map is a
+  render of its own. Count frames at the outermost render of `__drive.scene`, and add
+  the render times up per frame. (Until 30 September 2026 the bench averaged them per
+  call, so its `render` read about half the real time.)
 - **A Chrome trace** shows what ran inside a stall, including the GPU process: from a
   browser CDP session, `Tracing.start` with `transferMode: 'ReturnAsStream'` and the
   `disabled-by-default-v8.cpu_profiler` category, then `IO.read` the stream. 40 s is
@@ -253,20 +257,23 @@ Pixel 5 (see "On a phone" below).
 
 ### On a phone
 
-A Pixel 5 (Android 14, Chrome 153, WebGPU on its Adreno 6xx) can be driven over adb:
-`adb reverse tcp:5195 tcp:5195` (the phone's `localhost` is a secure context, which
-WebGPU needs), start Chrome (`am start -a android.intent.action.VIEW -d about:blank
-com.android.chrome`), `adb forward tcp:9222 localabstract:chrome_devtools_remote`, then
-Playwright's `chromium.connectOverCDP('http://localhost:9222')` and a new page in its
-first context. Give the serial (`adb -s`, or `ANDROID_SERIAL`) when other devices are
-attached. Keys work for driving (`KeyE`, `ShiftLeft` + `KeyW`); `addInitScript` can fake
-`navigator.hardwareConcurrency` to change the number of tile workers.
+`node scripts/bench.mjs --android [serial] --url http://localhost:5196/ --scenes drive
+--dpr 1 --stalls` runs the bench on a phone attached over adb (a Pixel 5: Android 14,
+Chrome 153, WebGPU on its Adreno 6xx). It passes the dev servers' ports through
+(`adb reverse`; the phone's `localhost` is a secure context, which WebGPU needs), starts
+Chrome, connects to its DevTools (`adb forward` to port 9333, `--android-port` to
+change it), prints the battery temperature after each scene, and removes the port
+routes at the end. `--vs` works too. Name the serial (or set `ANDROID_SERIAL`) when more
+than one device is attached. The phone's screen size and pixel ratio apply, not
+1440×900; `?dpr` still caps the ratio. To change the number of tile workers, fake the
+core count: `--init "Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 3 })"`
+(3 cores → 1 worker).
 
 - Tracing slows the phone several times over: use a trace to see what runs, not how long.
 - The phone warms over repeated runs (battery 33 → 35 °C in eight drives) and gets slower:
   alternate A and B, and don't compare runs far apart.
-- It's much slower than the M5 at 4×: 40–60 long tasks in the 40 s drive, the slowest 1%
-  of frames ~115 ms.
+- It's much slower than the M5 at 4×: ~23 fps on the drive at 1× and High (median frame
+  ~33 ms), 40–60 long tasks in 40 s, the slowest 1% of frames 115–120 ms.
 
 ## Before you commit
 
