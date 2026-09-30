@@ -18,6 +18,7 @@ interface Helicopter {
 const ALT = 55; // m above the ground
 const TOP = 26; // m/s
 const ACCEL = 7;
+const OFFSET = 16; // m to the side of you
 export const HELI_SIGHT = 160;
 
 const POLICE = { body: '#eef1f4', band: '#1d4fa3', stripe: '#d4e02b' };
@@ -113,11 +114,11 @@ export class Helicopters {
     for (const h of on.slice(want)) h.leaving = true;
 
     for (const h of this.list) {
-      // Keep over you, a little ahead when you move; circle when you stand still.
+      // Circle a little off to one side so it never hides you. The lead makes up for
+      // the lag of the chase below, so a steady pace keeps it on the circle.
       h.orbit += dt * 0.35;
-      const slow = clamp(1 - Math.hypot(me.vx, me.vy) / 8, 0, 1);
-      let tx = me.x + me.vx * 1.2 + Math.cos(h.orbit) * 18 * slow;
-      let ty = me.y + me.vy * 1.2 + Math.sin(h.orbit) * 18 * slow;
+      let tx = me.x + me.vx / 0.8 + Math.cos(h.orbit) * OFFSET;
+      let ty = me.y + me.vy / 0.8 + Math.sin(h.orbit) * OFFSET;
       if (h.leaving) {
         const dx = h.x - me.x, dy = h.y - me.y, d = Math.hypot(dx, dy) || 1;
         tx = h.x + (dx / d) * 500;
