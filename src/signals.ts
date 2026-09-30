@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { lampLit, LAMP_ON } from './lamps.ts';
 import { Polyline, offsetLine } from './network.ts';
 import type { DriveEdge, Route } from './network.ts';
@@ -45,14 +46,15 @@ export class Signals {
   private pending: DriveEdge[][] = [];
   private loaded = false;
   private time: () => number;
-  private height: (x: number, y: number, bridge: boolean) => number;
   private onRoad: (x: number, y: number) => boolean;
+  private height: (x: number, y: number, bridge: boolean) => number;
   private near: Head[] = [];
   private nearAt = { x: Infinity, y: Infinity, r: 0, asked: 0, t: 0 }; // r: the radius gathered, asked: the one asked for
   private poles: THREE.InstancedMesh;
   private boxes: THREE.InstancedMesh;
   private lamps: THREE.InstancedMesh;
   private glows: THREE.InstancedMesh;
+  private beams: THREE.InstancedMesh;
   private dummy = new THREE.Object3D();
   private c = new THREE.Color();
   private m = new THREE.Matrix4();
@@ -61,19 +63,38 @@ export class Signals {
   // `onRoad(x, y)`: whether the ground there is carriageway, to keep the poles off it.
   constructor(scene: THREE.Scene, area: string, time: () => number, height: (x: number, y: number, bridge: boolean) => number, onRoad: (x: number, y: number) => boolean = () => false) {
     this.time = time;
+    this.onRoad = onRoad;
     this.height = height;
     const lit = (m: THREE.MeshLambertMaterial, key: string) => {
-    this.onRoad = onRoad;
       m.onBeforeCompile = (sh) => lampLit(sh);
       m.customProgramCacheKey = () => key;
       return m;
     };
     // A pole, and on it a head with three lamps facing the traffic (+z before it's turned).
     const pole = new THREE.CylinderGeometry(0.06, 0.08, 3.1, 6).translate(0, 1.55, 0);
-    const box = new THREE.BoxGeometry(0.34, 0.98, 0.24).translate(0, 2.55, 0.1);
+    // The head: a housing with a hood over it and a wider backplate behind, so the way it faces reads from above.
+    const box = mergeGeometries([
+      new THREE.BoxGeometry(0.36, 0.98, 0.26).translate(0, 2.55, 0.12),
+      new THREE.BoxGeometry(0.62, 1.16, 0.05).translate(0, 2.55, -0.03),
+      new THREE.BoxGeometry(0.3, 0.03, 0.42).translate(0, 3.06, 0.3),
+      new THREE.BoxGeometry(0.3, 0.03, 0.34).translate(0, 2.87, 0.3),
+      new THREE.BoxGeometry(0.3, 0.03, 0.34).translate(0, 2.55, 0.3),
+      new THREE.BoxGeometry(0.3, 0.03, 0.34).translate(0, 2.25, 0.3),
+    ])!;
     const lamp = new THREE.SphereGeometry(0.105, 10, 6).scale(1, 1, 0.8).translate(0, 0, 0.23);
     this.poles = new THREE.InstancedMesh(pole, lit(new THREE.MeshLambertMaterial({ color: '#3b3d3f' }), 'signal-pole'), MAX_HEADS);
     this.boxes = new THREE.InstancedMesh(box, lit(new THREE.MeshLambertMaterial({ color: '#23251f' }), 'signal-head'), MAX_HEADS);
+    // The lit lamp's beam on the ground, a wedge widening towards the traffic it faces.
+    const beam = new THREE.BufferGeometry();
+    beam.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.3, -0.25, 0, 0.3, 0.25, 0, 0.3, -0.9, 0, 3, 0.9, 0, 3, -1.8, 0, 6.5, 1.8, 0, 6.5], 3));
+    beam.setAttribute('color', new THREE.Float32BufferAttribute([1, 1, 1, 1, 1, 1, 1, 1, 1, .3, .3, .3, .3, .3, .3, 0, 0, 0, 0, 0, 0], 3));
+    beam.setIndex([0, 3, 1, 1, 3, 4, 1, 4, 2, 3, 5, 4, 4, 5, 6]);
+    this.beams = new THREE.InstancedMesh(beam, new THREE.MeshBasicMaterial({
+      vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide,
+    }), MAX_HEADS);
+    this.beams.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3), 3);
+    this.beams.renderOrder = 4;
     this.lamps = new THREE.InstancedMesh(lamp, new THREE.MeshBasicMaterial(), MAX_HEADS * 3);
     this.lamps.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3 * 3), 3);
     // The lit lamp's glow, flat and larger than life, so it shows from above; brighter at night.
@@ -92,11 +113,11 @@ export class Signals {
     }), MAX_HEADS);
     this.glows.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3), 3);
     this.glows.renderOrder = 5;
-    for (const m of [this.poles, this.boxes, this.lamps, this.glows]) {
+    for (const m of [this.poles, this.boxes, this.lamps, this.glows, this.beams]) {
       m.count = 0;
       m.frustumCulled = false;
     }
-    scene.add(this.poles, this.boxes, this.lamps, this.glows);
+    scene.add(this.poles, this.boxes, this.lamps, this.glows, this.beams);
 
     void fetch(`data/${area}_now/signals.json`).then((r) => (r.ok ? r.json() as Promise<SignalsJSON> : null)).then((data) => {
       if (!data) return;
@@ -170,15 +191,19 @@ export class Signals {
       d.updateMatrix();
       this.poles.setMatrixAt(i, d.matrix);
       this.boxes.setMatrixAt(i, d.matrix);
+      d.position.y += 0.15;
+      d.updateMatrix();
+      this.beams.setMatrixAt(i, d.matrix);
+      d.position.y -= 0.15;
       for (let k = 0; k < 3; k++) {
         d.position.y += k ? -0.3 : 2.85;
         d.updateMatrix();
         this.lamps.setMatrixAt(i * 3 + k, d.matrix);
       }
     });
-    this.poles.count = this.boxes.count = this.near.length;
+    this.poles.count = this.boxes.count = this.beams.count = this.near.length;
     this.lamps.count = this.near.length * 3;
-    for (const m of [this.poles, this.boxes, this.lamps]) send(m.instanceMatrix, m.count);
+    for (const m of [this.poles, this.boxes, this.lamps, this.beams]) send(m.instanceMatrix, m.count);
   }
 
   // Once a frame: the lights round the view (x, y), within r.
@@ -201,9 +226,11 @@ export class Signals {
       d.scale.setScalar(1);
       this.glows.setMatrixAt(i, d.matrix);
       this.glows.setColorAt(i, this.c.copy(COLOURS[2 - k]));
+      this.beams.setColorAt(i, this.c.copy(COLOURS[2 - k]).multiplyScalar(0.22 + 0.3 * LAMP_ON.value));
     });
-    this.glows.count = this.near.length;
+    this.glows.count = this.beams.count = this.near.length;
     sendInstances(this.glows);
+    if (this.beams.instanceColor) send(this.beams.instanceColor, this.beams.count);
     if (this.lamps.instanceColor) send(this.lamps.instanceColor, this.lamps.count);
   }
 }

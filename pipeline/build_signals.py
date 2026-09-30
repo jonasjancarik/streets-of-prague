@@ -8,7 +8,8 @@ usually at the stop line, and then mostly with traffic_signals:direction saying 
 way along the street they face. Each light is put on the car network's edges that
 pass it and run the way it faces (or, without a direction, towards the nearer end),
 if that end is a junction within MAX_BEFORE. The cars stop at the light, or, where it
-stands on the junction itself, short of the streets crossing there.
+stands on the junction itself, short of the streets crossing there. Streets into a
+junction that has lights but none mapped for them get one at the usual distance.
 
 Junction nodes whose lights are close together (a crossing of two dual carriageways
 is four nodes) are one junction with one cycle. Its streets get the green in two
@@ -150,6 +151,12 @@ def build(area: str):
                 continue  # nearer the other end: the light is for the junction there
             s = max(before, clearance(k))
             stop[k] = min(stop.get(k, math.inf), s)
+
+    # A junction with lights has them on every street leading in, mapped or not.
+    for v in {edges[k]["v"] for k in stop}:
+        for k in into[v]:
+            if k not in stop and lines[k].length > 2 * NEAR:
+                stop[k] = clearance(k)
 
     # Junction nodes whose lights work together.
     nodes = sorted({edges[k]["v"] for k in stop})
