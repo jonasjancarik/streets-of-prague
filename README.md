@@ -346,12 +346,13 @@ that without a new renderer.
   knock you over. Jump at a car that's standing still and you climb onto it and can
   walk over its bonnet, roof or boot and drop off the other side. If it drives off with
   you on top, you ride along until it goes faster than about 30 km/h and throws you off.
-- **Shared bikes.** At the real stations of nextbike (and of Rekola and the others,
-  when the data has them; see `build_bikes.py` below) stands a row of the system's
-  bikes, nextbike's blue, Rekola's pink (`src/bikeshare.ts`). Taking one starts a rental,
+- **Shared bikes.** Rows of bikes use real station locations, but fictional operator
+  names: Pedálek for the blue nextbike bikes and Šlapeto for the pink Rekola bikes
+  (`src/bikeshare.ts`, `build_bikes.py` below). Taking one starts a rental,
   and leaving it within 25 m of a station of the same system returns it and ends the
   rental; left anywhere else it's only parked and still yours. You pay as you go by the
-  system's GBFS pricing plan (nextbike: 39 Kč per begun half hour, at most 500 Kč a day): each
+  system's GBFS pricing plan where available (nextbike: 39 Kč per begun half hour,
+  at most 500 Kč a day); Šlapeto uses a fictional game price of 1 Kč/minute. Each
   interval is charged when it begins, and the hint shows the price so far. A rented bike left
   more than 300 m from you, burnt out or gone costs a fee of 500 Kč (1,000 Kč when the nearest
   station of its system is over 3 km away).
@@ -567,12 +568,12 @@ uv run landmarks.py centrum        # landmarks from IPR's photorealistic mesh �
 
 Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 
-- **Shared bikes.** PID's own open data has no shared bikes: the stations the PID
-  Lítačka app shows come from the operators' GBFS feeds. `build_bikes.py` reads
-  nextbike Praha's public feed, and with `GOLEMIO_API_KEY` set (free, from
-  [api.golemio.cz/api-keys](https://api.golemio.cz/api-keys)) every system with stations
-  in Golemio's `/v2/vehiclesharing/gbfs`, which is where Rekola's are. Feeds are cached
-  in `.cache/bikes/` for a day.
+- **Shared bikes.** `build_bikes.py` reads nextbike Praha's public GBFS feed and
+  Rekola's parking-map station feed directly. With `GOLEMIO_API_KEY` set (from
+  [api.golemio.cz/api-keys](https://api.golemio.cz/api-keys)), it can add other systems
+  from Golemio's `/v2/vehiclesharing/gbfs`. Feeds are cached in `.cache/bikes/` for a
+  day. Operator names in the output are fictional, real operator/app links are
+  omitted, and Rekola's data is paired with the fictional game price above.
 
 - **Skylines.** `uv run skyline.py hradcany` (or `--all`) draws a real Prague view as a
   red screen-print silhouette into `public/skylines/`, for the loading screen and the
