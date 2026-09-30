@@ -44,9 +44,10 @@ const luma = (c: N) => dot(c, vec3(0.299, 0.587, 0.114));
 // detail() with the pixel's footprint worked out once, outside any branch (derivatives).
 const fade = (width: N, cell: number) => float(1).sub(smoothstep(cell * 0.2, cell * 0.7, width));
 
-function roofTiles(c0: N, wp: N, n: N, wpWidth: N) {
+// Clay tiles, or slate on grey roofs where the material isn't known (`slate` not given).
+function roofTiles(c0: N, wp: N, n: N, wpWidth: N, slateGiven?: N) {
   const down = normalize(vec2(n.x, n.z.negate()).add(vec2(0, 0.0001))), across = vec2(down.y.negate(), down.x);
-  const slate = step(max(c0.r, max(c0.g, c0.b)).sub(min(c0.r, min(c0.g, c0.b))), 0.08);
+  const slate = slateGiven ?? step(max(c0.r, max(c0.g, c0.b)).sub(min(c0.r, min(c0.g, c0.b))), 0.08);
   const size = mix(vec2(0.26, 0.32), vec2(0.3, 0.22), slate);
   const q = vec2(dot(wp, across), dot(wp, down).div(max(n.y, 0.3)));
   const b = blocks(q, size.x, size.y);
@@ -59,6 +60,17 @@ function roofTiles(c0: N, wp: N, n: N, wpWidth: N) {
   const c = mix(c0.mul(0.95), t, d).toVar();
   c.mulAssign(fbm(wp.mul(0.22)).mul(0.24).add(0.88));
   return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.7));
+}
+// Sheet metal and copper (sheetRoof in shading.ts).
+function sheetRoof(c0: N, wp: N, n: N, wpWidth: N, copper: N) {
+  const down = normalize(vec2(n.x, n.z.negate()).add(vec2(0, 0.0001)));
+  const a = dot(wp, vec2(down.y.negate(), down.x)).div(0.55), along = dot(wp, down);
+  const seam = fract(a);
+  const t = c0.mul(fract(sin(floor(a).mul(12.9898)).mul(43758.5453)).mul(0.1).add(0.95)).toVar();
+  t.mulAssign(float(1).add(float(1).sub(smoothstep(0, 0.05, seam)).mul(0.16)).sub(smoothstep(0.9, 1, seam).mul(0.2)));
+  t.mulAssign(vnoise(vec2(a.mul(3), along.mul(0.15))).mul(0.1).add(0.94));
+  t.assign(mix(t, t.mul(vec3(0.82, 1.1, 1.02)).add(vec3(0.02, 0.06, 0.05)), copper.mul(smoothstep(0.45, 0.8, fbm(wp.mul(0.25)))).mul(0.7)));
+  return mix(c0, t, fade(wpWidth, 0.4));
 }
 function flatRoof(c: N, wp: N, wpWidth: N) {
   return c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).add(vnoise(wp.mul(18)).sub(0.5).mul(0.08).mul(fade(wpWidth, 0.05)));
@@ -139,7 +151,13 @@ const buildingColor = Fn(() => {
   If(bn.y.greaterThan(0.97), () => {
     If(uRoofDetail.greaterThan(0.5), () => { c.assign(roofWeather(flatRoof(base, bwp, wpWidth), base, bwp, bn, wpWidth)); });
   }).ElseIf(bn.y.greaterThan(0.15), () => {
-    If(uRoofDetail.greaterThan(0.5), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
+    If(uRoofDetail.greaterThan(0.5), () => {
+      // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
+      const m = f.w;
+      If(m.greaterThan(2.5), () => { c.assign(roofWeather(sheetRoof(base, bwp, bn, wpWidth, step(3.5, m)), base, bwp, bn, wpWidth)); })
+        .ElseIf(m.greaterThan(0.5), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, step(1.5, m)), base, bwp, bn, wpWidth)); })
+        .Else(() => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
+    });
   }).Else(() => {
     const bays = fBays(f).toVar();
     If(bays.lessThan(0.5), () => {

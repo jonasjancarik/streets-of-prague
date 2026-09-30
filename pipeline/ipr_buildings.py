@@ -5,7 +5,8 @@ shapes, towers, domes and dormers) for the tiles made by build_tiles.py.
     uv run ipr_buildings.py praha --jobs 4     # sheets read side by side (default: cores - 2)
 
 For every tile it writes tiles/<i>_<j>.ipr.bin.gz next to the tile JSON: the triangles of
-every building whose footprint centre is in the tile, with roof or wall colours; the
+every building whose footprint centre is in the tile, with roof or wall colours and a
+roof material per triangle (MATERIALS); the
 tile JSON gets "ipr" so the game draws these instead of extruding OSM footprints. OSM
 buildings that no IPR building stands on (newer ones, sheds, anything past the edge of
 the model) get "noIpr" and are still extruded. OSM footprints still drive collisions
@@ -198,6 +199,9 @@ def flat_roof(c):
 
 
 COVERS = ("tiles", "slate", "copper")
+# A byte per triangle after the colours: the roof's material, which the shader draws
+# (src/tileWorker.ts passes it on as the facade attribute's w on roofs). 0: not known.
+MATERIALS = ("", "tiles", "slate", "metal", "copper")
 
 
 def colours(bid, osm):
@@ -439,6 +443,12 @@ def main() -> None:
                     cover[cover < 0] = COVERS.index(default)
                     which[top] = 1 + cover + np.where(codes[top] == 2, 3, 0)
                 col = palette[which]
+                # The roof's material for the shader (MATERIALS): a cover given by hand or in
+                # OSM, else the mesh's; 0 where nothing says (the shader goes by the colour).
+                mat = np.zeros(len(codes), dtype=np.uint8)
+                if top.any():
+                    given = np.array([MATERIALS.index(c) for c in COVERS], dtype=np.uint8)[cover]
+                    mat[top] = np.where(said[top] & (codes[top] == 1), given, 0)
                 seen = measured.get(bid)
                 if seen:
                     # The photo mesh's colours (mesh_colours.py) beat the palette and the
@@ -446,10 +456,12 @@ def main() -> None:
                     w = seen.get("wall") or (seen.get("shade") if args.mesh_colours == "shade" else None)
                     if w:
                         col[codes == 0] = w
-                    for tris, c, _, _ in seen.get("roofs", []):
+                    for tris, c, m, _ in seen.get("roofs", []):
                         k = np.array(tris)
-                        col[k[~said[k]]] = c
-                per_tile.setdefault((i, j), []).append((pos, col.ravel()))
+                        k = k[~said[k]]
+                        col[k] = c
+                        mat[k] = MATERIALS.index(m) if m in MATERIALS else 0
+                per_tile.setdefault((i, j), []).append((pos, col.ravel(), mat))
             count += 1
         print(f"  {name}: {count} buildings in the area", flush=True)
     print(f"  sheets read in {time.perf_counter() - started:.0f} s; {afloat} buildings left out for standing on water")
@@ -467,11 +479,12 @@ def main() -> None:
     total = extra = 0
     tiles = {}
     for (i, j), blist in per_tile.items():
-        pos_arr = np.concatenate([p for p, _ in blist])
-        col = np.concatenate([c for _, c in blist])
+        pos_arr = np.concatenate([p for p, _, _ in blist])
+        col = np.concatenate([c for _, c, _ in blist])
+        mat = np.concatenate([m for _, _, m in blist])
         n_tris = len(col) // 3
         pad = (4 - (8 + pos_arr.nbytes) % 4) % 4
-        blob = struct.pack("<II", n_tris, len(blist)) + pos_arr.tobytes() + b"\0" * pad + col.tobytes()
+        blob = struct.pack("<II", n_tris, len(blist)) + pos_arr.tobytes() + b"\0" * pad + col.tobytes() + mat.tobytes()
         layers.write_bin(out_dir / "tiles", f"{i}_{j}.ipr.bin", blob)
         missing = [layers.building_key(b) for b in osm_by_tile[(i, j)][0] if b["own"] and not covered(b)]
         extra += len(missing)

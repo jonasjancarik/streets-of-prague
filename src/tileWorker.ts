@@ -68,13 +68,17 @@ function inPolygon(x: number, y: number, rings: Point2[][]) {
 }
 
 // IPR Praha's 3D buildings for a tile (pipeline/ipr_buildings.py): triangles with
-// positions in centimetres from the tile corner and a colour per triangle. Those in a
+// positions in centimetres from the tile corner, a colour per triangle and, in newer
+// data, a roof material per triangle. Those in a
 // landmark's footprint (`hide`) are left out: the landmark stands there instead.
 function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs['ipr']): BuildingArrays {
   const all = new DataView(buffer).getUint32(0, true);
   const p16 = new Int16Array(buffer, 8, all * 9);
   const colAt = 8 + all * 18 + ((4 - ((8 + all * 18) % 4)) % 4);
   const c8 = new Uint8Array(buffer, colAt, all * 3);
+  // Newer data: a byte per triangle after the colours, the roof's material (0 not known,
+  // 1 tiles, 2 slate, 3 sheet metal, 4 copper), passed on as the facade attribute's w.
+  const m8 = buffer.byteLength >= colAt + all * 4 ? new Uint8Array(buffer, colAt + all * 3, all) : null;
   const kept: number[] = [];
   for (let t = 0; t < all; t++) {
     const x = x0 + (p16[t * 9] + p16[t * 9 + 3] + p16[t * 9 + 6]) / 300, y = y0 + (p16[t * 9 + 2] + p16[t * 9 + 5] + p16[t * 9 + 8]) / 300;
@@ -101,6 +105,10 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs
   g.computeVertexNormals();
   const facade = facadeCoords(pos, groundAt(ground), styleAt(bbox));
   paintWalls(pos, col, facade, (o) => { const t = kept[o] * 3; return [c8[t], c8[t + 1], c8[t + 2]]; });
+  if (m8) for (let o = 0; o < n; o++) {
+    const m = m8[kept[o]];
+    if (m) for (let v = 0; v < 3; v++) facade[(o * 3 + v) * 4 + 3] = m; // only roofs have one
+  }
   return { position: pos, color: col, normal: g.attributes.normal.array as Float32Array, facade };
 }
 

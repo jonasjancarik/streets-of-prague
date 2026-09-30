@@ -322,10 +322,9 @@ export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, 
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
 // windows on the walls, one row per 3.4 m storey with shopfronts at street level.
 const BUILDING_GLSL = /* glsl */ `
-vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
+vec3 roofTilesAs(vec3 c, vec2 wp, vec3 n, float slate) {
   vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));   // the nudge keeps a flat face from being 0/0
   vec2 across = vec2(-down.y, down.x);
-  float slate = step(max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)), .08);   // grey roofs
   vec2 size = mix(vec2(.26, .32), vec2(.3, .22), slate);
   vec2 q = vec2(dot(wp, across), dot(wp, down) / max(n.y, .3));
   vec2 b = blocks(q, size);
@@ -338,6 +337,23 @@ vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
   c = mix(c * .95, t, d);
   c *= .88 + .24 * fbm(wp * .22);                                              // weathering
   return mix(c, c * vec3(.86, .9, .8), smoothstep(.62, .75, fbm(wp * .09 + 4.)) * .7);
+}
+// Clay tiles, or slate on grey roofs where the material isn't known.
+vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
+  return roofTilesAs(c, wp, n, step(max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)), .08));
+}
+// Sheet metal: pans running down the slope between standing seams (a lit ridge and a
+// shadow beside it), each pan a little different, streaked by the rain; copper with
+// verdigris in patches.
+vec3 sheetRoof(vec3 c, vec2 wp, vec3 n, float copper) {
+  vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));
+  float a = dot(wp, vec2(-down.y, down.x)) / .55, along = dot(wp, down);
+  float seam = fract(a);
+  vec3 t = c * (.95 + .1 * fract(sin(floor(a) * 12.9898) * 43758.5453));
+  t *= 1. + .16 * (1. - smoothstep(0., .05, seam)) - .2 * smoothstep(.9, 1., seam);
+  t *= .94 + .1 * vnoise(vec2(a * 3., along * .15));
+  t = mix(t, t * vec3(.82, 1.1, 1.02) + vec3(.02, .06, .05), copper * smoothstep(.45, .8, fbm(wp * .25)) * .7);
+  return mix(c, t, detail(wp, .4));
 }
 vec3 flatRoof(vec3 c, vec2 wp) {
   c *= .86 + .22 * fbm(wp * .5);
@@ -507,7 +523,15 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
   vec3 roofBase = diffuseColor.rgb;
   if (uRoofDetail > .5 && bn.y > .97) diffuseColor.rgb = roofWeather(flatRoof(roofBase, bwp), roofBase, bwp, bn);
-  else if (uRoofDetail > .5 && bn.y > .15) diffuseColor.rgb = roofWeather(roofTiles(roofBase, bwp, bn), roofBase, bwp, bn);
+  else if (uRoofDetail > .5 && bn.y > .15) {
+    // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
+    float m = vFacade.w;
+    vec3 r;
+    if (m > 2.5) r = sheetRoof(roofBase, bwp, bn, step(3.5, m));
+    else if (m > .5) r = roofTilesAs(roofBase, bwp, bn, step(1.5, m));
+    else r = roofTiles(roofBase, bwp, bn);
+    diffuseColor.rgb = roofWeather(r, roofBase, bwp, bn);
+  }
   else if (bn.y <= .15) {
     if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
     else if (fBays(vFacade) > .5) diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy, vFacade.z / fBays(vFacade));
