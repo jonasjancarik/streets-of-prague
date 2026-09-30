@@ -290,11 +290,14 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   neighbours so the tiles don't show seams.
 - **Roof and wall colours from the photo mesh** (plan 005, since 30 September 2026:
   `pipeline/mesh_colours.py`, roof materials in the shader, flat roof materials,
-  mansard windows). Done for `ujezd` and `centrum`. Left: the whole city (about 3 GB of
-  mesh, an hour or two of measuring); walls measured only for about 42 % of buildings,
-  since the photographs are a morning's and walls facing west or north are in shade
-  (their colour can't be recovered; the rest keep the palette); mansard windows
-  lined up with the facade's bays; roof windows, dormers and chimneys (phase 3).
+  mansard windows, roof windows found on the mesh, chimneys by rule). Done for `ujezd`
+  and `centrum`. Left: the whole city (about 3 GB of mesh at level 13 and more for the
+  roof windows at 14, an hour or two of measuring); walls measured only for about 42 %
+  of buildings, since the photographs are a morning's and walls facing west or north
+  are in shade (their colour can't be recovered; the rest keep the palette); mansard
+  windows and chimneys lined up with the facade's bays; checking the roof-window
+  detection for false finds (ujezd has 3,851 on 710 of 938 buildings); how much the
+  chimneys and windows cost (ujezd's buildings grew from 1.9 to 3.0 MB).
 - **Firefighter job.** Phase 4 of `plans/006-firefighters.md`: firefighting as a job,
   once the mission engine from plan 004 exists. The rest of the fire brigade (engines,
   crews, lights, sirens, giving way, stealing an engine, the water cannon) is in.

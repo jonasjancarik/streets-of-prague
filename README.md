@@ -354,7 +354,11 @@ that without a new renderer.
   `roofs.py` or OSM still wins. Only colours and material classes leave the pipeline;
   the game draws its own tiles, slate, metal pans between standing seams (`sheetRoof`
   in `src/shading.ts` and `src/webgpu/buildings.ts`), sheets, planted roofs and paving
-  on flat roofs, weathering and facades on top.
+  on flat roofs, weathering and facades on top. Mansards (roof faces steeper than 60°)
+  get a row of windows (`mansardCoords` in `src/facades.ts`). Roof windows are found in
+  the mesh's colours (level 14, `detect_windows`); chimneys are placed by rule on the
+  ridges (`pipeline/roof_details.py`), since the mesh is too coarse to show them; both
+  go into the building's own triangles, so they cast shadows and take the weather.
   In `centrum`, walls are measured for 42 % of buildings and 93 % of roof faces get a
   colour.
 - **Building import over water.** IPR footprints with at least 60% of their area
@@ -722,8 +726,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (`ipr_buildings.py` once) and writes `pipeline/.cache/mesh_colours/<area>.json.gz`,
   which `ipr_buildings.py` reads (`--mesh-colours off` to leave it out). It downloads the
   mesh at level 13 (about 110 MB for `centrum`, into `pipeline/.cache/mesh/`, shared
-  with the landmarks) and measures tiles side by side (`--jobs`); `centrum` takes about
-  12 minutes. `--debug` writes, per tile, the mesh from above next to the measured
+  with the landmarks) and level 14 for the roof windows (about 2 GB for `centrum`;
+  `--no-windows` skips it), and measures tiles side by side (`--jobs`); `centrum` takes
+  about 15 minutes. `ipr_buildings.py --no-roof-details` leaves out the chimneys and
+  roof windows. `--debug` writes, per tile, the mesh from above next to the measured
   colours and a table; `--calibrate [--every 6]` estimates the light and the white
   balance again and prints the constants to put in the script.
 - **Roof corrections.** `pipeline/roofs.py` lists landmarks by OSM id, and outlines
