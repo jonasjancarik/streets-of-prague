@@ -230,7 +230,7 @@ async function main() {
       metro.dodging = false;
     },
     onStation: (name) => showBanner(name),
-    fares: { valid: () => wallet.hasTicket(clock.t), afford: () => wallet.has(TICKET.price), buy: () => wallet.buyTicket(clock.t), price: TICKET.price },
+    fares: { valid: () => wallet.hasTicket(clock.t), afford: (k) => wallet.has(k.price), buy: (k) => wallet.buyTicket(clock.t, k) },
   });
   const footfall = await footfallLoad;
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);

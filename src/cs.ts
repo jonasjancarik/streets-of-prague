@@ -29,10 +29,10 @@ export const CS: Record<string, string> = {
   '{secs} s left': 'zbývá {secs} s',
   'No ticket': 'Bez jízdenky',
   'Going in without a ticket?': 'Půjdeš bez jízdenky?',
-  'Buy a ticket for {minutes} minutes': 'Koupit jízdenku na {minutes} minut',
+  'Ticket for {validity}': 'Jízdenka na {validity}',
   'Go in without a ticket': 'Jít bez jízdenky',
   'Not enough money ({price})': 'Nemáš dost peněz ({price})',
-  '<b>W</b>/<b>S</b> choose · <b>E</b> confirm · <b>Esc</b> back to the street': '<b>W</b>/<b>S</b> výběr · <b>E</b> potvrdit · <b>Esc</b> zpět na ulici',
+  '<b>W</b>/<b>S</b> choose · <b>E</b> confirm · <b>1</b>–<b>4</b> buy · <b>Esc</b> back to the street': '<b>W</b>/<b>S</b> výběr · <b>E</b> potvrdit · <b>1</b>–<b>4</b> koupit · <b>Esc</b> zpět na ulici',
   // Start screen and loading
   Language: 'Jazyk',
   Time: 'Čas',

@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import type { Point2 } from './map/geo.ts';
 import type { Clock } from './clock.ts';
 import { t } from './i18n.ts';
-import { TICKET, kc } from './money.ts';
+import { TICKETS, validity, kc } from './money.ts';
+import type { TicketKind } from './money.ts';
+
+interface Fares { valid(): boolean; afford(kind: TicketKind): boolean; buy(kind: TicketKind): boolean }
 import { Track, Underground, DEPTH } from './underground.ts';
 
 export interface MetroLine {
@@ -96,8 +99,8 @@ export class Metro {
   active: boolean;
   phase: 'ticket' | 'pick' | 'ride' | 'arriving' | null;
   dodging = false; // going without a ticket, on this trip
-  choice = 0; // the ticket screen's pick: 0 buy, 1 go in without
-  fares: { valid(): boolean; afford(): boolean; buy(): boolean; price: number } | null;
+  choice = 1; // the ticket screen's pick: a ticket (0 to 3, by TICKETS), or 4 to go in without
+  fares: Fares | null;
   tab = 0;
   sel = 0;
   from: Station | null = null;
@@ -126,7 +129,7 @@ export class Metro {
     clock: Clock; inMap: (x: number, y: number) => boolean; ready: (x: number, y: number) => boolean;
     terrain: (x: number, y: number) => number; standAt: (x: number, y: number) => Point2;
     onArrive: (x: number, y: number, name: string) => void | Promise<void>; onStation: (name: string) => void;
-    fares?: { valid(): boolean; afford(): boolean; buy(): boolean; price: number };
+    fares?: Fares;
   }) {
     this.fares = fares ?? null;
     this.el = el; this.scene = scene; this.clock = clock; this.inMap = inMap; this.ready = ready; this.terrain = terrain; this.standAt = standAt;
@@ -166,8 +169,8 @@ export class Metro {
       const [act, arg] = (b.dataset.act ?? '').split(':');
       if (act === 'close') this.close();
       if (act === 'tab') { this.tab = +arg; this.sel = 0; this.render(); }
-      if (act === 'buy') this.ticket(true);
-      if (act === 'nobuy') this.ticket(false);
+      if (act?.startsWith('buy:')) this.ticket(Number(act.slice(4)));
+      if (act === 'nobuy') this.ticket(null);
       if (act === 'go') this.go(this.tabLine().stations[+arg].name);
       if (act === 'skip') this.skip();
     });
@@ -226,7 +229,7 @@ export class Metro {
     this.dodging = false;
     const shut = station.lines.find(({ line }) => this.perHour(line) === 0);
     this.phase = this.fares && !this.fares.valid() && !shut ? 'ticket' : 'pick';
-    this.choice = 0;
+    this.choice = 1;
     this.note = shut ? this.shutNote(shut.line) : '';
     this.tab = this.lines.indexOf(station.lines[0].line);
     this.sel = station.lines[0].i;
@@ -245,10 +248,10 @@ export class Metro {
   tabLine() { return this.lines[this.tab]; }
 
   // The ticket screen: buy one (if you can), or go in without.
-  private ticket(buy: boolean) {
+  private ticket(pick: number | null) {
     if (this.phase !== 'ticket') return;
-    if (buy && !this.fares?.buy()) return;
-    this.dodging = !buy;
+    if (pick !== null && !this.fares?.buy(TICKETS[pick])) return;
+    this.dodging = pick === null;
     this.phase = 'pick';
     this.render();
   }
@@ -258,10 +261,11 @@ export class Metro {
     if (this.phase === 'ride' && !repeat && ['KeyE', 'Enter', 'Space'].includes(code)) this.skip();
     if (this.phase === 'ticket') {
       if (code === 'Escape' || code === 'Backspace') this.close();
-      else if (code === 'Digit1') this.ticket(true);
-      else if (code === 'Digit2') this.ticket(false);
-      else if (['KeyW', 'ArrowUp', 'KeyS', 'ArrowDown'].includes(code)) { this.choice = 1 - this.choice; this.render(); }
-      else if (code === 'KeyE' || code === 'Enter' || code === 'Space') this.ticket(this.choice === 0);
+      else if (/^Digit[1-4]$/.test(code)) this.ticket(Number(code.slice(5)) - 1);
+      else if (code === 'Digit5') this.ticket(null);
+      else if (['KeyW', 'ArrowUp'].includes(code)) { this.choice = (this.choice + TICKETS.length) % (TICKETS.length + 1); this.render(); }
+      else if (['KeyS', 'ArrowDown'].includes(code)) { this.choice = (this.choice + 1) % (TICKETS.length + 1); this.render(); }
+      else if (code === 'KeyE' || code === 'Enter' || code === 'Space') this.ticket(this.choice < TICKETS.length ? this.choice : null);
       return;
     }
     if (this.phase !== 'pick') return;
@@ -445,14 +449,13 @@ export class Metro {
     if (!from) return;
     let html;
     if (this.phase === 'ticket' && this.fares) {
-      const can = this.fares.afford();
       html = `<div class="metro-head"><div class="metro-title">${esc(t('Metro · {name}', { name: from.name }))}</div><button data-act="close" class="metro-close" aria-label="${esc(t('Back to the street'))}">×</button></div>
         <div class="metro-note">${esc(t('Going in without a ticket?'))}</div>
         <ol class="metro-stations" style="--line:var(--accent)">
-          <li><button data-act="buy" class="${this.choice === 0 ? 'sel' : ''}"${can ? '' : ' disabled'}><span>${esc(t('Buy a ticket for {minutes} minutes', { minutes: TICKET.minutes }))}</span><small>${esc(can ? kc(this.fares.price) : t('Not enough money ({price})', { price: kc(this.fares.price) }))}</small></button></li>
-          <li><button data-act="nobuy" class="${this.choice === 1 ? 'sel' : ''}"><span>${esc(t('Go in without a ticket'))}</span></button></li>
+          ${TICKETS.map((k, i) => { const can = this.fares!.afford(k); return `<li><button data-act="buy:${i}" class="${this.choice === i ? 'sel' : ''}"${can ? '' : ' disabled'}><span>${esc(t('Ticket for {validity}', { validity: validity(k.minutes) }))}</span><small>${esc(can ? kc(k.price) : t('Not enough money ({price})', { price: kc(k.price) }))}</small></button></li>`; }).join('')}
+          <li><button data-act="nobuy" class="${this.choice === TICKETS.length ? 'sel' : ''}"><span>${esc(t('Go in without a ticket'))}</span></button></li>
         </ol>
-        <div class="metro-keys">${t('<b>W</b>/<b>S</b> choose · <b>E</b> confirm · <b>Esc</b> back to the street')}</div>`;
+        <div class="metro-keys">${t('<b>W</b>/<b>S</b> choose · <b>E</b> confirm · <b>1</b>–<b>4</b> buy · <b>Esc</b> back to the street')}</div>`;
     } else if (this.phase === 'pick') {
       const line = this.tabLine(), here = line.stations.findIndex((s) => s.name === from.name);
       // A line that doesn't stop here: where to change onto it.
