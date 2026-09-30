@@ -37,7 +37,7 @@ export function inRing(x: number, y: number, ring: Point2[]) {
   return inside;
 }
 
-const inPoly = (x: number, y: number, rings: Point2[][]) => inRing(x, y, rings[0]) && !rings.slice(1).some((h) => inRing(x, y, h));
+export const inPoly = (x: number, y: number, rings: Point2[][]) => inRing(x, y, rings[0]) && !rings.slice(1).some((h) => inRing(x, y, h));
 
 export class Zones {
   sections: LocatedSection[];

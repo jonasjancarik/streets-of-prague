@@ -17,6 +17,7 @@ const SPAN = 30; // m between supports along a track
 const ACROSS = 8; // m either side of a track to look for the tracks beside it
 const REACH = 11; // m from the outermost track to a building front it may be anchored to
 const POLE_OUT = 3.3, POLE_H = 8.2; // a pole: how far out from the outermost track, how tall
+const POLE_MAX_OUT = 40; // m from the outermost track a pole may be moved to get off the carriageway; beyond it the span wire is left out
 const ANCHOR_H = 7; // m up a building front
 const SAG = 0.35; // m the span wire sags in the middle
 // How wide a wire is drawn: a little wider than it is, or from up where the camera is it
@@ -58,7 +59,7 @@ function segments(lines: Point2[][]): Seg[] {
 // `rails`: the tile's tram tracks; `buildings`: the outer rings of the buildings in and
 // round it; `ground`: the height a track is at (on a bridge deck where there is one),
 // `terrain`: the ground's own height.
-export function overheadWires(rails: Point2[][], buildings: Point2[][], ground: HeightAt, terrain: HeightAt) {
+export function overheadWires(rails: Point2[][], buildings: Point2[][], ground: HeightAt, terrain: HeightAt, onRoad: (x: number, y: number) => boolean = () => false) {
   // Each wire a flat ribbon facing up, THICK wide.
   const lines: number[] = [];
   const poles: THREE.BufferGeometry[] = [];
@@ -131,15 +132,20 @@ export function overheadWires(rails: Point2[][], buildings: Point2[][], ground: 
           const wall = cast(walls, ox, oy, nx * s, ny * s, REACH);
           if (Number.isFinite(wall)) {
             const x = ox + nx * s * wall, y = oy + ny * s * wall, h = Math.max(terrain(x, y) + ANCHOR_H, z + WIRE + 0.8);
-            rosette(x, y, h);
-            return { x, y, z: h };
+            return { x, y, z: h, build: () => rosette(x, y, h) };
           }
-          const x = ox + nx * s * POLE_OUT, y = oy + ny * s * POLE_OUT;
-          pole(x, y);
-          return { x, y, z: Math.max(terrain(x, y) + POLE_H - 0.6, z + WIRE + 0.6) };
+          // Beside the tracks, but not in the carriageway: out to the pavement when the street is wide.
+          let out = POLE_OUT;
+          while (out <= POLE_MAX_OUT && onRoad(ox + nx * s * out, oy + ny * s * out)) out += 0.5;
+          if (out > POLE_MAX_OUT) return null;
+          const x = ox + nx * s * out, y = oy + ny * s * out;
+          return { x, y, z: Math.max(terrain(x, y) + POLE_H - 0.6, z + WIRE + 0.6), build: () => pole(x, y) };
         });
+        // No pavement to stand a pole on: no span wire here.
+        if (ends.some((e) => !e)) continue;
+        for (const e of ends) e!.build();
         // The span wire, sagging a little.
-        const [a, b] = ends, n = 6, pt = (k: number) => {
+        const [a, b] = ends as NonNullable<(typeof ends)[number]>[], n = 6, pt = (k: number) => {
           const u = k / n;
           return [a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, a.z + (b.z - a.z) * u - SAG * 4 * u * (1 - u)];
         };

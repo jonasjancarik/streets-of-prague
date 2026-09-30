@@ -171,7 +171,7 @@ async function main() {
   const ground = (x: number, y: number, who?: Tracked | null) => (who ? world.groundFor(who, x, y) : world.heightAt(x, y));
   let crowd: Crowd | null = null;
   const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y));
-  const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)));
+  const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)), (x, y) => world.onRoad(x, y));
   world.onEdges = (d, w, b) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(d, b); signals.add(d); };
 
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
@@ -356,6 +356,7 @@ async function main() {
   const bikeWorld = {
     loose, seeded, walkNear, free: (x: number, y: number) => grid.at(x, y) === 0, loaded: (x: number, y: number) => grid.at(x, y) !== 255,
     standAt: (x: number, y: number) => nearestWalkable(grid, x, y, 20),
+    onRoad: (x: number, y: number) => world.onRoad(x, y),
   };
 
   // Busted: out of the car (the police keep it), and a moment before you can move again.

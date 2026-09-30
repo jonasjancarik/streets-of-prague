@@ -6,11 +6,11 @@ import { treeMeshes } from './map/vegetation.ts';
 import { Surfaces } from './surface.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
-import { Zones, parkCars, inRing } from './parking.ts';
+import { Zones, parkCars, inRing, inPoly } from './parking.ts';
 import { decodeHeights, decodeLevels, heightSampler, fetchBinary } from './terrain.ts';
 import { SKY_STEP } from './map/skyView.ts';
 import type { Shadower } from './map/skyView.ts';
-import type { Point2, Bounds } from './map/geo.ts';
+import type { Point2, Bounds, Polygons } from './map/geo.ts';
 import type { DriveEdge, DriveGraph, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
 import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, WorkerJobs, WorkerKind, WorkerResults, WorkerResponse, HeightGrid, LevelInput } from './contracts.ts';
@@ -27,6 +27,7 @@ interface Tile {
   k: string; i: number; j: number; box: Bounds; passages: TilePassage[]; raised: Point2[][][];
   group: THREE.Group; surfaces: Surfaces; grid: Grid; levels: TileLevel[];
   cars: Car[]; ms: Record<string, number>; disposables: THREE.Mesh[];
+  roads: Polygons; // the carriageways (asphalt, setts, dirt)
   poles: Post[]; // the wires' poles, among the posts a car can hit
   fences: FenceSection[];
   relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number) => number; hm: Float32Array; edges: () => void } | null;
@@ -393,6 +394,12 @@ export class TileWorld {
       last.tile = this.byIndex.get(i * 65536 + j);
     }
     return last.tile;
+  }
+
+  // Whether a point is on a carriageway (not a pavement): false too where nothing is loaded.
+  onRoad(x: number, y: number) {
+    const t = this.tileAt(x, y);
+    return !!t && t.roads.some((rings) => inPoly(x, y, rings));
   }
 
   // Whether a point is on open water: true or false, null where nothing is loaded.
@@ -872,7 +879,8 @@ export class TileWorld {
       }
       return hAt(x, y);
     };
-    const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt);
+    const roads = [...(t.roads.road || []), ...(t.roads.sett || []), ...(t.roads.dirt || [])];
+    const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt, (x, y) => roads.some((rings) => inPoly(x, y, rings)));
     group.add(surfaces.group, ...buildings, walls, fenceRows.fence, fenceRows.hedge, ...trees, ...landmarks, ...wires);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
@@ -897,7 +905,7 @@ export class TileWorld {
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), group, surfaces, grid, levels: onLevels, cars, ms,
-      disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, ...trees, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, relief: shade, sample: shade?.sample,
+      roads, disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, ...trees, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };

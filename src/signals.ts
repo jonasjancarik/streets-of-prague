@@ -46,6 +46,7 @@ export class Signals {
   private loaded = false;
   private time: () => number;
   private height: (x: number, y: number, bridge: boolean) => number;
+  private onRoad: (x: number, y: number) => boolean;
   private near: Head[] = [];
   private nearAt = { x: Infinity, y: Infinity, r: 0, asked: 0, t: 0 }; // r: the radius gathered, asked: the one asked for
   private poles: THREE.InstancedMesh;
@@ -57,10 +58,12 @@ export class Signals {
   private m = new THREE.Matrix4();
 
   // `height(x, y, bridge)`: of the ground, or of a bridge's deck where there is one.
-  constructor(scene: THREE.Scene, area: string, time: () => number, height: (x: number, y: number, bridge: boolean) => number) {
+  // `onRoad(x, y)`: whether the ground there is carriageway, to keep the poles off it.
+  constructor(scene: THREE.Scene, area: string, time: () => number, height: (x: number, y: number, bridge: boolean) => number, onRoad: (x: number, y: number) => boolean = () => false) {
     this.time = time;
     this.height = height;
     const lit = (m: THREE.MeshLambertMaterial, key: string) => {
+    this.onRoad = onRoad;
       m.onBeforeCompile = (sh) => lampLit(sh);
       m.customProgramCacheKey = () => key;
       return m;
@@ -116,7 +119,12 @@ export class Signals {
       // At the kerb, right of the street's centre line.
       const line = new Polyline(offsetLine(e.pts, e.width / 2 + 0.6));
       const p = line.at(line.length - sig.stop);
-      this.heads.push({ e, sig, x: p.x, y: p.y, ang: p.ang });
+      // Where the junction flares the carriageway is wider than the street: out to its kerb.
+      const nx = Math.sin(p.ang), ny = -Math.cos(p.ang);
+      let out = 0;
+      if (!e.bridge) while (out < 12 && this.onRoad(p.x + nx * out, p.y + ny * out)) out += 0.5;
+      if (out) out += 0.5;
+      this.heads.push({ e, sig, x: p.x + nx * out, y: p.y + ny * out, ang: p.ang });
     }
     this.nearAt.x = Infinity;
   }

@@ -301,6 +301,9 @@ that without a new renderer.
   ways and through junctions (Blanka's underground ramps). Bridges follow IPR's 3D
   model of Prague's bridges wherever it has them, so a deck rises and falls as the
   real one does. Tunnels keep a few metres of ground over them, more away from their
+- **Street placement.** Traffic-light poles and shared-bike rows move towards the
+  pavement when their mapped positions fall on a carriageway. Tram-wire supports
+  move out of the road too; a span is omitted when neither side can support it.
   portals, and wherever two cross on different OSM layers, the upper one clears the
   lower. They're put on levels (bridges 1, 2, …, tunnels -1, -2, …) so that ones
   crossing at different heights never share one. The metro stations' corridors and

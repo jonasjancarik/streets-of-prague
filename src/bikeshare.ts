@@ -37,6 +37,7 @@ export interface BikeWorld {
   loose: Car[];
   free: (x: number, y: number) => boolean; // loaded and open ground
   loaded: (x: number, y: number) => boolean;
+  onRoad: (x: number, y: number) => boolean; // on a carriageway
   walkNear: (x: number, y: number, r: number) => WalkEdge[];
   standAt: (x: number, y: number) => Point2;
   seeded: () => number;
@@ -94,7 +95,7 @@ export class BikeShare {
   // A row of bikes along the nearest footpath, side by side, their fronts to the path.
   private stock(st: Station, w: BikeWorld) {
     st.stocked = true;
-    const [ax, ay] = w.free(st.x, st.y) ? [st.x, st.y] : w.standAt(st.x, st.y);
+    let [ax, ay] = w.free(st.x, st.y) ? [st.x, st.y] : w.standAt(st.x, st.y);
     let ang = 0, best = Infinity;
     for (const e of w.walkNear(ax, ay, 40)) {
       for (let s = 0; s <= e.path.length; s += 2) {
@@ -103,12 +104,20 @@ export class BikeShare {
       }
     }
     const n = Math.min(st.left, MOST), ux = Math.cos(ang), uy = Math.sin(ang);
+    // The stations' spots are the operators' and may fall in the street: move the row
+    // sideways, to the nearer pavement.
+    const clear = (px: number, py: number) => [-n / 2, 0, n / 2].every((k) => !w.onRoad(px + ux * k * GAP, py + uy * k * GAP));
+    for (let d = 0.5; d <= 8 && !clear(ax, ay); d += 0.5) {
+      const tries = [[ax - uy * d, ay + ux * d], [ax + uy * d, ay - ux * d]];
+      const ok = tries.find(([px, py]) => clear(px, py) && w.free(px, py));
+      if (ok) [ax, ay] = ok;
+    }
     const sys = this.systems[st.system], cars: Car[] = [];
     for (let i = 0; i < n; i++) {
       const o = (i - (n - 1) / 2) * GAP, x = ax + ux * o, y = ay + uy * o;
       if (w.loose.some((c) => Math.abs(c.x - x) < 0.6 && Math.abs(c.y - y) < 0.6)) continue;
       const c = new Car('bike', w.seeded, x, y, ang + Math.PI / 2 + (w.seeded() - 0.5) * 0.12, sys?.colour);
-      if (!c.worldSamples().every(([sx, sy]) => w.free(sx, sy))) continue;
+      if (!c.worldSamples().every(([sx, sy]) => w.free(sx, sy) && !w.onRoad(sx, sy))) continue;
       c.share = { system: st.system, station: st.id };
       w.loose.push(c);
       cars.push(c);
