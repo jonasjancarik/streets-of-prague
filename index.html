@@ -148,7 +148,7 @@
       #loading.done { opacity: 0; pointer-events: none; }
       .portrait { display: block; opacity: 0; transition: opacity 0.4s; }
       .portrait.in { opacity: 1; }
-      .ls-sky { position: absolute; inset: 0; background: center 70% / cover no-repeat; }
+      .ls-sky { position: absolute; inset: 0; background: center 70% / cover repeat-x; } /* repeat-x: where it ends under the wedge, the same sky goes on */
       /* The dark wedge carries the title and the menu; the skyline's landmark stands just right of it (portraits.ts). */
       .ls-wedge { position: absolute; inset: 0; background: var(--poster-black); clip-path: polygon(0 0, 46% 0, 36% 100%, 0 100%); opacity: 0.93; }
       .ls-cast { position: absolute; z-index: 0; right: 2vw; bottom: 9vh; height: 66vh; display: flex; align-items: flex-end; }
