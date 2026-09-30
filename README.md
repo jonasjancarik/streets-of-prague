@@ -34,21 +34,24 @@ now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` sta
 developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. Elements in `index.html` marked `data-t` work the same way.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 
-| Setting | High | Medium | Low | Lowest |
-|---|---|---|---|---|
-| Pixel ratio, up to the screen's own | 2 | 1.5 | 1 | 1 |
-| MSAA on WebGPU | 4 samples | 4 samples | 4 samples | Off |
-| Sun shadow map | 2048² | 2048² | 1024² | 1024² |
-| Dirt, grime, small leaves and tone curve | On | On | On | Off |
-| Roof tiles and weathering | On | On | On | Off |
-| Car shadows in lamplight | Full | Soft | Soft | Off |
-| Maximum crowd | 1200 | 1200 | 1200 | 600 |
+| Setting | Ultra | High | Medium | Low | Lowest |
+|---|---|---|---|---|---|
+| Pixel ratio, up to the screen's own | 2 | 2 | 1.5 | 1 | 1 |
+| MSAA on WebGPU | 4 samples | 4 samples | 4 samples | 4 samples | Off |
+| Sun shadow map | 4096², softer edges | 2048² | 2048² | 1024² | 1024² |
+| Dirt, grime, small leaves and tone curve | On | On | On | On | Off |
+| Roof tiles and weathering | On | On | On | On | Off |
+| Car shadows in lamplight | Full | Full | Soft | Soft | Off |
+| Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
 
-Street patterns and facade pictures stay on at every tier. Quieter streets have
+The sun shadow map covers just what is on screen, as the sun sees it, so shadows stay
+sharp when you drive and when the sun is low. Street patterns and facade pictures
+stay on at every tier. Quieter streets have
 fewer people; changing tiers lets surplus people leave out of sight.
 Auto, the default, starts High (Medium on touch devices) and moves between tiers
-by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds.
-`?graphics=auto|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
+by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds;
+it never picks Ultra, which only choosing it turns on.
+`?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
 only the pixel ratio. WebGL keeps MSAA on at every tier because it cannot change
 that without a new renderer.
 

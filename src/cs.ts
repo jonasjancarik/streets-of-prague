@@ -74,6 +74,7 @@ export const CS: Record<string, string> = {
   'Weather: {name}': 'Počasí: {name}',
   'Graphics: Auto ({tier} now)': 'Grafika: automaticky (teď {tier})',
   'Graphics: {name}': 'Grafika: {name}',
+  Ultra: 'Nejvyšší',
   High: 'Vysoká',
   Medium: 'Střední',
   Low: 'Nízká',
