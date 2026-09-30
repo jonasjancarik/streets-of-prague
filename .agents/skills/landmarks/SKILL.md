@@ -153,6 +153,14 @@ the game to render (see the memory on benchmarking).
   all "up" for the light. Mask by hue and saturation, and let dark texels through too
   (roofs in shadow are low in saturation); a strict mask leaves speckles on shaded
   slopes. Change both shader versions together, and check with `?renderer=webgl`.
+- **Black flat roofs.** `roofTiles` turns the face's downhill direction into a
+  `normalize`; on a perfectly flat face that is 0/0, NaN, and the roof draws black
+  (the National Theatre's rear block and courtyard, 30 September 2026). The direction
+  is nudged so it is always defined, and near-flat faces (`LANDMARK_ROOF.flat`) are left
+  out of the red-roof mask, so grey gravel and dark flat roofs keep the photograph's
+  colour instead of turning into clay tiles. Both shader versions. If a landmark shows
+  black in the game but not on the sheet, look at the shader before re-baking: the
+  sheet reads the GLB's texture, which is fine.
 - **Roof colours to match.** The palette for the other roofs is `ROOF_TILES` in
   `src/map/roofPalette.ts` (landmark roofs use its mean, and the mask and brightness
   limits are `LANDMARK_ROOF` in `src/shading.ts`, used by both shaders) and, separately,

@@ -15,7 +15,25 @@ npm run dev          # http://localhost:5191
 npm run typecheck    # check browser source with strict TypeScript
 npm run build        # typecheck, then make a production build
 node scripts/bench.mjs   # frame times in Chrome at a few places (options in the script)
+node scripts/scene.mjs run all   # test scenarios in headless Chrome (see Testing below)
 ```
+
+### Testing
+
+`scenarios/*.ts` are scripted situations with checks, e.g. "a car at 50 km/h knocks a
+lamp post over". They drive the real game through the test API in `src/testkit.ts`
+(`window.__test`, `t` in a scenario): go to a place (named test places, or
+latitude/longitude), set the time, weather, money, stars and health, get into a new
+car, aim it at the nearest post, push it to a speed, run the world for a few seconds
+with given controls, read back the numbers (`t.probe()`), look from anywhere with
+`t.camera()`, and take screenshots.
+
+`node scripts/scene.mjs serve` keeps headless Chrome open with the game loaded; then
+`run <name…|all>`, `eval "<js with t>"` and `shot` take a second or two each, and follow
+the dev server's reloads. Without a server each command loads the game itself.
+Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
+("Run and watch" plays one in real time), and "Copy this situation" there copies where
+you are, the time, weather, money, stars, car and camera as the start of a new scenario.
 
 WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer.
 If the browser's GPU adapter request takes more than 5 seconds, or device
@@ -191,8 +209,16 @@ that without a new renderer.
   a blue bar under the health bar shows it (`src/cannon.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
-  OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads
-  the tiles there and drops you on the pavement. "Copy link" gives a `?start=` link.
+  OpenStreetMap's Nominatim, paste coordinates or a Google Maps / Mapy.cz link, or pick
+  a spot on an OpenStreetMap map (right-click there copies its coordinates); the game
+  loads the tiles there and drops you on the pavement. "Copy link" gives a `?start=`
+  link; `?place=` takes one of the test places in `src/testkit.ts`. The panel shows your
+  coordinates (with a copy button) and links to the spot on Google Maps, Street View
+  (facing your way) and Mapy.cz. The free camera stops following you: drag to move it,
+  the wheel zooms, right-drag or Shift-drag turns and tilts it, and searching or the map
+  then move the camera instead of you. Under Testing: pause, one frame at a time, slow
+  motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,
+  the test places, and the scenarios (see Testing above).
   "Helicopter next to me" parks one on the nearest open ground: E gets in, W/S fly,
   A/D turn, Space climbs, Shift comes down. Below 30 m the buildings are in the way;
   land on open ground to get out.
@@ -417,8 +443,8 @@ that without a new renderer.
   has out follows PID's timetable for the game clock's day and hour (`src/clock.ts`):
   a tram every few minutes on a weekday afternoon, fewer at weekends and in the
   evening, and only the night lines 91–99 after midnight. Trams join a line where the
-  gap is widest and leave service out of sight; the dev panel moves the clock an hour
-  either way. The departure boards count down from where the trams really are, so a
+  gap is widest and leave service out of sight; the dev panel's time slider moves the
+  clock. The departure boards count down from where the trams really are, so a
   tram held up in traffic shows up late there too. They stop at
   every stop, keep to the track's speed limit, slow down for curves and brake for the
   tram in front and for anything on the track. A car left on the track that holds a

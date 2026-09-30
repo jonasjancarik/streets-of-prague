@@ -138,9 +138,12 @@ grime on the walls 6%, the shadow map's own pass 7%.
   target that Auto can switch, with a pass to the screen after. A decision on the
   look first. (Playwright's own Chromium makes MSAA look far costlier, 4.5× a
   fragment against Chrome's 1.5×: benchmark in Chrome.)
-- **The mosaic's stones at the usual height on foot** are drawn at about a tenth of
-  their contrast (they fade out as they get smaller than a pixel) yet cost 14% of the
-  frame. A tighter fade would save most of that, but it's a change to the look.
+- **The mosaic's stones** are a texture on WebGPU since 30 September 2026
+  (`src/webgpu/mosaic.ts`), one read a pixel instead of the stones worked out anew,
+  which cost 14% of a frame on WebGL; not measured on WebGPU yet. The WebGL renderer
+  still works them out. Laying the old Prague patterns along the kerbs was tried
+  (branch `mosaic-ornaments`) and set aside: the pavements' and roads' shapes break
+  them up at every junction and parking bay.
 - **Ground overdraw** is gone: the stencil lets only the top solid layer shade a pixel
   (1.4–2.1 layers a pixel before). Apple's GPUs skipped covered pixels on their own,
   so it measured the same on a Mac; the gain is for GPUs that don't, untested. The

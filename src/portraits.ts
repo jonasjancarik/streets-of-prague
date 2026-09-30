@@ -60,25 +60,30 @@ export function dressLoading(root: HTMLElement) {
   const sky = el('div', 'ls-sky', root);
   const skyline = pick(SKYLINES, 1)[0];
   sky.style.backgroundImage = `url(skylines/${skyline}.webp)`;
+  // The sun or the moon, and the weather, for the time and weather picked (startscreen.ts).
+  el('div', 'ls-sun', root);
+  el('div', 'ls-weather', root);
   el('div', 'ls-wedge', root);
   const cast = el('div', 'ls-cast', root);
   for (const id of pick(POSTER_CAST, 3)) portrait(id, el('div', 'ls-face', cast));
   // Grow and slide the skyline so its landmark stands tall in the open, its tip near
   // the top and its left side just clear of the dark wedge. The picture always covers
-  // the top and the sides; its foot may go under the red band.
+  // the top and the right side; its foot may go under the red band, and its left edge
+  // may end under the wedge, which keeps it small enough to show the city around the
+  // landmark, not only the landmark.
   let mark: Mark | undefined;
   const place = () => {
     if (!mark) return;
     const w = root.clientWidth, h = root.clientHeight, sw = sky.offsetWidth;
     const [IW, IH] = SKY_SIZE;
-    const tipY = h * 0.1, footY = h * 0.82;
+    const tipY = h * 0.07, footY = h * 0.82;
     const edge = w * (WEDGE[0] + (WEDGE[1] - WEDGE[0]) * 0.1); // at the tip's height
     const x = edge + w * 0.02 - sky.offsetLeft; // where its left side goes
     const scale = Math.max(
       sw / IW, h / IH, // cover
       tipY / (mark.top * IH), // nothing uncovered above
       (footY - tipY) / ((1 - mark.top) * IH), // nor below, down to the band
-      x / (mark.left * IW), (sw - x) / ((1 - mark.left) * IW), // nor at the sides
+      (sw - x) / ((1 - mark.left) * IW), // nor at the right
     );
     sky.style.backgroundSize = `${IW * scale}px ${IH * scale}px`;
     sky.style.backgroundPosition = `${x - mark.left * IW * scale}px ${tipY - mark.top * IH * scale}px`;

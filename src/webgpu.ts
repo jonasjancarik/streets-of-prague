@@ -27,6 +27,7 @@ import './webgpu/glows.ts';
 import './webgpu/weather.ts';
 import './webgpu/underground.ts';
 import { CloudSunNode } from './webgpu/clouds.ts';
+import { mosaicStones } from './webgpu/mosaic.ts';
 
 // PATTERNS_GLSL.
 function pAsphalt(c0: N, p: N) {
@@ -50,15 +51,8 @@ function pSetts(c: N, p: N, sx: number, sy: number) {
   });
   return s.mul(fbm(p.mul(0.2)).mul(0.12).add(0.94));
 }
-function pMosaic(c: N, p: N) {
-  const d = detail(p, 0.09), m = c.mul(0.9).toVar();
-  If(d.greaterThan(0), () => {
-    const s = stones(p.mul(11));
-    const stone = mix(c.mul(s.y.mul(0.18).add(0.9)), c.mul(0.62), step(0.9, s.y));
-    m.assign(mix(m, mix(c.mul(0.6), stone, smoothstep(0.03, 0.12, s.x)), d));
-  });
-  return m.mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
-}
+// (The stones are a texture: webgpu/mosaic.ts.)
+const pMosaic = (c: N, p: N) => c.mul(mosaicStones(p)).mul(fbm(p.mul(0.25)).mul(0.1).add(0.95));
 function pSlabs(c: N, p: N) {
   const d = detail(p, 0.4), s = c.mul(0.95).toVar();
   If(d.greaterThan(0), () => {
