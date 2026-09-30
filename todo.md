@@ -291,7 +291,7 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   walls measured only for about 42 % of buildings, since the photographs are a morning's
   and walls facing west or north are in shade (their colour can't be recovered; the
   rest keep the palette); mansards (phase 2) and roof windows, dormers and chimneys
-  (phase 3). The shader's metal and material branch is not benchmarked yet.
+  (phase 3).
 ## Weather and night
 
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow
