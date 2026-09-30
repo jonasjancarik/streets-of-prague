@@ -675,6 +675,35 @@ def from_shade(c) -> np.ndarray:
     return linear_lab(tint[None] * np.interp(y, SHADE_Y, LIT_Y))[0]
 
 
+ROOF_SAME = 12.0  # ΔE; a building's roof faces of one material closer than this are one colour
+
+
+def even_roofs(rec) -> None:
+    """Gives a building's measured pitched roof faces of one material the same colour
+    (the median by pixels) where they're close to it: what's left of the light
+    between the slopes, not a real difference. A patch really different, a repair in
+    other tiles say, keeps its own."""
+    sure = [f for f in rec["roofs"] if f["sure"] and not f["flat"]]
+    for m in {f["material"] for f in sure}:
+        same = [f for f in sure if f["material"] == m]
+        if len(same) < 2:
+            continue
+        labs = np.array([f["lab"] for f in same])
+        mid = weighted_median(labs, np.array([f["n"] for f in same], float))
+        for f, c in zip(same, labs):
+            if np.linalg.norm(c - mid) < ROOF_SAME:
+                f["lab"] = mid
+
+
+def weighted_median(labs: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    """The weighted median of each of L*, a* and b*."""
+    out = np.empty(3)
+    for k in range(3):
+        o = np.argsort(labs[:, k])
+        out[k] = labs[o[np.searchsorted(np.cumsum(weights[o]), weights.sum() / 2)], k]
+    return out
+
+
 def fill_roofs(rec) -> None:
     """Gives a building's unsure roof faces the colour of its sure ones (the median,
     by pixels, of the sure pitched ones for pitched faces, of the flat ones for flat
@@ -756,6 +785,7 @@ def main():
             continue
         measured = summarise(s)
         for r in measured:
+            even_roofs(r)
             fill_roofs(r)
             if r["id"]:
                 colours[r["id"]] = entry(r)
