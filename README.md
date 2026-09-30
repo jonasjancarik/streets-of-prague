@@ -294,10 +294,10 @@ that without a new renderer.
   out, including wings of the Castle that both OSM and IPR draw as one building.
   Churches OSM says nothing about get slate. IPR's roofs take their colour triangle by
   triangle, from the OSM building or part they lie in.
-- **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited
-  to the crossed street's width plus 2 m on each side, adjusted for the crossing angle.
 - **Building import over water.** IPR footprints with at least 60% of their area
   over mapped water are omitted, keeping moored boats out of the building model.
+- **Crossing widths.** At junctions where road surfaces merge, zebra bars are limited
+  to the crossed street's width plus 2 m on each side, adjusted for the crossing angle.
 - **Terrain.** IPR's bare-earth model on a 4 m grid per tile: the ground, buildings,
   walls, trees, cars, people, trams and the camera sit at their real height, cars
   pitch, roll and roll downhill, and the ground is hill-shaded.
@@ -454,14 +454,14 @@ that without a new renderer.
   and well down and muffled in side streets, by how busy the streets within 150 m are
   (the footfall map, 1 at the Old Town Square), and quiet at night;
   distant traffic by day and a low hum by night; and birds where it's quiet (a
+  blackbird at dawn and dusk, small garden birds by day, a morning chorus early on),
+  none in rain or snow. It starts with the first key press or tap (the browser's rule);
+  M turns it off and on, and it goes quiet in the metro.
 - **Car radio.** While driving a car, use N to cycle stations or the controls under
   the speed display to pick one, step backwards/forwards or switch the radio off.
   Its on/off state is remembered; a station is selected randomly when it starts,
   and leaving a car prepares another station for the next car. Static ends when
   the stream plays or fails.
-  blackbird at dawn and dusk, small garden birds by day, a morning chorus early on),
-  none in rain or snow. It starts with the first key press or tap (the browser's rule);
-  M turns it off and on, and it goes quiet in the metro.
 - **Police** patrol with the traffic. Chasing cars find their way with an A* search over
   the street graph (both ways along every street) and drive it with the same physics as
   your car; within 40 m and in sight of your car they head straight for it. After you
