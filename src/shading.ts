@@ -355,6 +355,18 @@ vec3 sheetRoof(vec3 c, vec2 wp, vec3 n, float copper) {
   t *= .95 + .1 * fbm(wp * .04);
   return mix(c * (.95 + .1 * fbm(wp * .04)), t, detail(wp, .3));
 }
+// A mansard's steep lower slope (facades.ts, mansardCoords): a window in every bay of
+// about 3.2 m, 1.3 m high from 0.6 m up the slope, in a light frame. mansardGlass is 1 on
+// the glass, for the windows lit at night.
+float mansardGlass(vec4 f, float grow) {
+  float bays = max(1., floor(f.z / 3.2 + .5)), bay = fract(f.x / f.z * bays) * f.z / bays;
+  float half_ = f.z / bays * .5;
+  return step(abs(bay - half_), .45 + grow) * step(.6 - grow, f.y) * step(f.y, 1.9 + grow);
+}
+vec3 mansardWindows(vec3 c, vec4 f) {
+  c = mix(c, vec3(.74, .72, .68), mansardGlass(f, .08));
+  return mix(c, vec3(.16, .19, .23), mansardGlass(f, 0.));
+}
 vec3 flatRoof(vec3 c, vec2 wp) {
   c *= .86 + .22 * fbm(wp * .5);
   return c + (vnoise(wp * 18.) - .5) * .08 * detail(wp, .05);
@@ -559,7 +571,9 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     if (m > 2.5 && m < 4.5) r = sheetRoof(roofBase, bwp, bn, step(3.5, m));
     else if (m > .5 && m < 2.5) r = roofTilesAs(roofBase, bwp, bn, step(1.5, m));
     else r = roofTiles(roofBase, bwp, bn);
-    diffuseColor.rgb = roofWeather(r, roofBase, bwp, bn);
+    r = roofWeather(r, roofBase, bwp, bn);
+    if (bn.y < .5 && vFacade.z > .1) r = mansardWindows(r, vFacade);
+    diffuseColor.rgb = r;
   }
   else if (bn.y <= .15) {
     if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
@@ -575,6 +589,10 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     float lit = step(fHash(cell.x + fract(vFacade.w) * 97., cell.y), uWindows * (vFacade.y < 4. ? 1.6 : 1.));
     float glass = 1. - smoothstep(.13, .22, luma(diffuseColor.rgb) / max(luma(vColor.rgb), .02));
     windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(cell.y, cell.x)) * lit * glass * .55;
+  } else if (uWindows > .005 && bn.y > .15 && bn.y < .5 && vFacade.z > .1) {
+    float cell = floor(vFacade.x / vFacade.z * max(1., floor(vFacade.z / 3.2 + .5)));
+    float lit = step(fHash(cell + vFacade.z * .37, 7.), uWindows);
+    windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(7., cell)) * lit * mansardGlass(vFacade, 0.) * .55;
   }
   // Rain darkens the walls and the roofs; snow lies on the roofs, less on steep ones.
   diffuseColor.rgb *= mix(1., bn.y > .15 ? .72 : .84, uWet);

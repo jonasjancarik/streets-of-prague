@@ -11,7 +11,7 @@ import { initRoofs, buildBuildings, wallArrays } from './map/buildings.ts';
 import { fenceArrays } from './map/fences.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
-import { styleFor, facadeCoords, paintWalls } from './facades.ts';
+import { styleFor, facadeCoords, paintWalls, mansardCoords } from './facades.ts';
 import { groundLayers, layerBuffers } from './ground.ts';
 import { heightSampler } from './terrain.ts';
 import { skyView } from './map/skyView.ts';
@@ -110,6 +110,7 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs
     const m = m8[kept[o]];
     if (m) for (let v = 0; v < 3; v++) facade[(o * 3 + v) * 4 + 3] = m; // only roofs have one
   }
+  mansardCoords(pos, facade);
   return { position: pos, color: col, normal: g.attributes.normal.array as Float32Array, facade };
 }
 

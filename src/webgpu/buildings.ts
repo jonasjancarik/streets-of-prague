@@ -73,6 +73,16 @@ function sheetRoof(c0: N, wp: N, n: N, wpWidth: N, copper: N) {
   const sheen = fbm(wp.mul(0.04)).mul(0.1).add(0.95);
   return mix(c0.mul(sheen), t.mul(sheen), fade(wpWidth, 0.3));
 }
+// A mansard's steep lower slope (mansardWindows in shading.ts): a window in every bay of
+// about 3.2 m in a light frame.
+function mansardGlass(f: N, grow: number) {
+  const bays = max(1, floor(f.z.div(3.2).add(0.5)));
+  const bay = fract(f.x.div(f.z).mul(bays)).mul(f.z).div(bays), half = f.z.div(bays).mul(0.5);
+  return step(abs(bay.sub(half)), 0.45 + grow).mul(step(0.6 - grow, f.y)).mul(step(f.y, 1.9 + grow));
+}
+function mansardWindows(c: N, f: N) {
+  return mix(mix(c, vec3(0.74, 0.72, 0.68), mansardGlass(f, 0.08)), vec3(0.16, 0.19, 0.23), mansardGlass(f, 0));
+}
 function flatRoof(c: N, wp: N, wpWidth: N) {
   return c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).add(vnoise(wp.mul(18)).sub(0.5).mul(0.08).mul(fade(wpWidth, 0.05)));
 }
@@ -184,6 +194,7 @@ const buildingColor = Fn(() => {
       If(m.greaterThan(2.5).and(m.lessThan(4.5)), () => { c.assign(roofWeather(sheetRoof(base, bwp, bn, wpWidth, step(3.5, m)), base, bwp, bn, wpWidth)); })
         .ElseIf(m.greaterThan(0.5).and(m.lessThan(2.5)), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, step(1.5, m)), base, bwp, bn, wpWidth)); })
         .Else(() => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); });
+      If(bn.y.lessThan(0.5).and(f.z.greaterThan(0.1)), () => { c.assign(mansardWindows(c, f)); });
     });
   }).Else(() => {
     const bays = fBays(f).toVar();
@@ -214,6 +225,11 @@ const windowGlow = Fn(() => {
     const lit = step(fHash(cell.x.add(fract(f.w).mul(97)), cell.y), uWindows.mul(select(f.y.lessThan(4), 1.6, 1)));
     const glass = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
     g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(cell.y, cell.x)).mul(lit).mul(glass).mul(0.55));
+  }).ElseIf(uWindows.greaterThan(0.005).and(bn.y.greaterThan(0.15)).and(bn.y.lessThan(0.5)).and(f.z.greaterThan(0.1)), () => {
+    // A mansard's windows (mansardGlass).
+    const cell = floor(f.x.div(f.z).mul(max(1, floor(f.z.div(3.2).add(0.5)))));
+    const lit = step(fHash(cell.add(f.z.mul(0.37)), float(7)), uWindows);
+    g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(float(7), cell)).mul(lit).mul(mansardGlass(f, 0)).mul(0.55));
   });
   return g;
 });
