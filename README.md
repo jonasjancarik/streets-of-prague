@@ -91,7 +91,8 @@ that without a new renderer.
   along the boundary doesn't keep showing titles.
 - **Tram stops**: stand at one and the HUD lists the next trams due, counting down
   (`src/board.ts`). Hold Space (on touch, "Hold to wait") to fast-forward until one is
-  about to arrive.
+  about to arrive. Stops have blue-and-white plates with a black tram in side view
+  and the stop name on the pole.
 - **Trams**: press E next to a tram waiting at a stop to get on (`src/ride.ts`). The
   panel lists the stops ahead. Pick one with W/S (or tap it) and the ride runs at 6×,
   stops on the way included, until about 250 m before your stop; then you watch the

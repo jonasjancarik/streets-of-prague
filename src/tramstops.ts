@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { Trams } from './trams.ts';
 
-// A sign at every tram stop: a red plate with a white tram seen from above (as the
-// metro has its M) and, on the pole, the stop's name facing across the track.
+// A sign at every tram stop: a blue plate with a black tram in side view, as on the real
+// stops, lying flat so it reads from above, and, on the pole, the stop's name facing across the track.
 
 const SIDE = 2.9; // m from the track, on the right of the way the trams go
 const MERGE = 14; // m: stops this close, with the same heading, share a sign
@@ -14,23 +14,31 @@ const topMaterial = (() => {
   c.width = c.height = 64;
   const g = c.getContext('2d');
   if (!g) throw new Error('Cannot create tram stop sign canvas');
-  g.fillStyle = '#c8202f';
+  // The blue "H" style plate used at real stops: white frame, pale field, black tram.
+  g.fillStyle = '#0b4a9c';
   g.beginPath();
-  g.roundRect(2, 2, 60, 60, 12);
+  g.roundRect(1, 1, 62, 62, 5);
   g.fill();
-  g.fillStyle = '#fff';
+  g.strokeStyle = '#fff';
+  g.lineWidth = 2.5;
+  g.strokeRect(6, 6, 52, 52);
+  g.fillStyle = '#eef0ee';
+  g.fillRect(10, 10, 44, 44);
+  g.fillStyle = '#16181a';
+  g.fillRect(29, 21, 6, 1.5); // pantograph bar
   g.beginPath();
-  g.roundRect(14, 17, 36, 28, 6);
+  g.moveTo(32, 22.5); g.lineTo(28, 27); g.lineTo(32, 27); g.lineTo(36, 27); g.closePath();
   g.fill();
-  g.fillStyle = '#c8202f';
-  g.fillRect(19, 22, 8, 9);
-  g.fillRect(37, 22, 8, 9);
-  g.fillStyle = '#fff';
-  g.fillRect(12, 49, 40, 4);
-  g.fillRect(30, 8, 4, 8);
+  g.beginPath();
+  g.roundRect(14, 27, 36, 14, 3); // body
+  g.fill();
+  g.fillStyle = '#eef0ee';
+  for (const x of [17, 24, 31, 38, 45]) g.fillRect(x, 29.5, 5, 5); // windows
+  g.fillStyle = '#16181a';
+  g.fillRect(13, 43, 38, 1.5); // rail
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+  return new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
 })();
 
 const names = new Map<string, THREE.MeshBasicMaterial>();
@@ -41,7 +49,7 @@ function nameMaterial(name: string) {
     c.width = 256; c.height = 48;
     const g = c.getContext('2d');
     if (!g) throw new Error('Cannot create tram stop name canvas');
-    g.fillStyle = '#c8202f';
+    g.fillStyle = '#12233b';
     g.fillRect(0, 0, 256, 48);
     g.fillStyle = '#fff';
     g.font = 'bold 26px system-ui, sans-serif';
