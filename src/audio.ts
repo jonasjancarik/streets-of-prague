@@ -1,6 +1,6 @@
 import { clamp } from './network.ts';
 import { BOGIES, frontOf } from './trams.ts';
-import { AMBIENCE, ambienceGains, ambienceMuffle } from './soundmix.ts';
+import { AMBIENCE, ambienceGains, ambienceMuffle, sirenGain, SIREN_RANGE } from './soundmix.ts';
 import { Radio, radioOn, setRadioSaved } from './radio.ts';
 import type { Station } from './radio.ts';
 import type { Car } from './car.ts';
@@ -87,6 +87,7 @@ const SETTS = new Set(['sett', 'cobblestone', 'unhewn_cobblestone']);
 export const surfaceOf = (tag: string | undefined | null): Surface => (SETTS.has(tag ?? '') ? 'setts' : tag === 'paving_stones' ? 'pavers' : 'asphalt');
 
 const TRAM_VOICES = 4, TRAM_RANGE = 170; // the nearest trams you can hear, as far as this (m)
+const SIREN_VOICES = 3; // the nearest sirens you can hear at once
 const JOINT = 24; // m between the rail joints
 const SMOOTH = 0.06; // s: how quickly a sound follows what it's following
 const LOOPS = ['roll', 'motor', 'squeal'], ONCE = ['bell-1', 'bell-2', 'bell-3', 'depart-1', 'depart-2', 'arrive'];
@@ -102,7 +103,11 @@ export interface SoundState {
   strikes?: number; // lightning so far: each new one thunders a moment later
   busy?: number; // how busy the streets around you are, 0 (the edge of town) to 1 (the Old Town)
   hour?: number; // the time of day, in hours (13.5 is half past one)
+  sirens?: Siren[]; // emergency vehicles with their sirens on
 }
+
+// One siren sounding: `key` tells it from the others from one frame to the next, and (vx, vy) is its speed.
+export interface Siren { key: object; kind: 'fire' | 'police'; x: number; y: number; vx: number; vy: number }
 
 export class Sound {
   ctx: AudioContext | null = null;
@@ -120,6 +125,7 @@ export class Sound {
   private strikes = -1;
   voices: TramVoice[] = [];
   private horns: Horn | null = null;
+  sirens: SirenVoice[] = [];
 
   constructor() {
     let saved = '';
@@ -169,6 +175,7 @@ export class Sound {
     this.weather = new WeatherSound(ctx, this.noise, this.master);
     this.radio = new Radio(ctx, this.noise, this.master);
     this.radio.onFail = (station) => this.onRadioFail(station);
+    for (let i = 0; i < SIREN_VOICES; i++) this.sirens.push(new SirenVoice(ctx, this.master));
     // The trams are heard once their recordings are in.
     Promise.all([...LOOPS, ...ONCE].map(async (name) => {
       const r = await fetch(`audio/${name}.${LOOPS.includes(name) ? 'wav' : 'm4a'}`);
@@ -224,6 +231,15 @@ export class Sound {
     if (s.strikes !== undefined) {
       if (this.strikes >= 0 && s.strikes > this.strikes) this.weather!.thunder(t + 0.6 + Math.random() * 3.5);
       this.strikes = s.strikes;
+    }
+
+    // The nearest sirens, each keeping its voice while it sounds.
+    const heard = (s.sirens ?? []).map((q) => ({ q, d: Math.hypot(q.x - s.x, q.y - s.y) })).filter((h) => h.d < SIREN_RANGE).sort((a, b) => a.d - b.d);
+    heard.length = Math.min(heard.length, SIREN_VOICES);
+    for (const v of this.sirens) if (v.key && !heard.some((h) => h.q.key === v.key)) v.release();
+    for (const h of heard) {
+      const v = this.sirens.find((x) => x.key === h.q.key) ?? this.sirens.find((x) => !x.key);
+      v?.update(h.q, h.d, s.x, s.y, s.car);
     }
 
     // The nearest trams, each keeping its voice while it's among them.
@@ -396,6 +412,59 @@ class Engine {
     const t = this.ctx.currentTime;
     this.out.gain.setTargetAtTime(0, t, 0.08);
     for (const n of [this.osc, this.sub, this.wobble, this.intake]) n.stop(t + 0.6);
+  }
+}
+
+// A siren: a bright buzzing note through a filter that closes with distance, shifted in
+// pitch as the vehicle comes or goes. An engine's is a slow two-tone (high, low, about
+// once a second); a police car's a faster wail that rises and falls.
+const SONIC = 343; // m/s
+class SirenVoice {
+  ctx: AudioContext;
+  key: object | null = null;
+  osc: OscillatorNode; top: OscillatorNode; tone: BiquadFilterNode; out: GainNode; pan: StereoPannerNode;
+  phase = Math.random();
+  private last = 0;
+
+  constructor(ctx: AudioContext, dest: AudioNode) {
+    this.ctx = ctx;
+    this.osc = ctx.createOscillator();
+    this.osc.type = 'sawtooth';
+    this.top = ctx.createOscillator();
+    this.top.type = 'square';
+    const topGain = gain(ctx, 0.18);
+    this.tone = filter(ctx, 'lowpass', 3000, 0.7);
+    this.out = gain(ctx, 0);
+    this.pan = ctx.createStereoPanner();
+    this.osc.connect(this.tone);
+    this.top.connect(topGain).connect(this.tone);
+    this.tone.connect(this.out).connect(this.pan).connect(dest);
+    this.osc.start();
+    this.top.start();
+  }
+
+  update(q: Siren, d: number, lx: number, ly: number, me: Car | null) {
+    const t = this.ctx.currentTime;
+    if (this.key !== q.key) { this.key = q.key; this.last = t; this.phase = Math.random(); }
+    this.phase = (this.phase + (t - this.last) * (q.kind === 'fire' ? 1 : 1.6)) % 1;
+    this.last = t;
+    // Pitch: high and low for an engine, a sweep up and down for the police.
+    const hz = q.kind === 'fire' ? (this.phase < 0.5 ? 660 : 495) : 650 + 550 * (0.5 - 0.5 * Math.cos(this.phase * Math.PI * 2));
+    // Doppler: the speed of the siren towards you, less your own.
+    const dx = lx - q.x, dy = ly - q.y, n = Math.max(d, 1);
+    const toward = ((q.vx - (me?.vx ?? 0)) * dx + (q.vy - (me?.vy ?? 0)) * dy) / n;
+    const f = hz * SONIC / (SONIC - clamp(toward, -40, 40));
+    const tc = q.kind === 'fire' ? 0.02 : 0.05;
+    this.osc.frequency.setTargetAtTime(f, t, tc);
+    this.top.frequency.setTargetAtTime(f * 2, t, tc);
+    this.tone.frequency.setTargetAtTime(clamp(3600 - d * 7, 800, 3600), t, 0.1);
+    this.out.gain.setTargetAtTime(sirenGain(q.kind, d), t, 0.1);
+    this.pan.pan.setTargetAtTime(clamp(-dx / 45, -0.85, 0.85), t, 0.1);
+  }
+
+  release() {
+    this.key = null;
+    this.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
   }
 }
 

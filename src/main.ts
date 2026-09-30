@@ -1489,7 +1489,10 @@ async function main() {
     if (busyT < 0) { busyT = 0.5; busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1); }
     if (hornHeld && !inCar && !ride.driving) honk(false);
     if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
-    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, hour: (clock.t % 86400) / 3600 });
+    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, hour: (clock.t % 86400) / 3600, sirens: [
+      ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
+      ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
+    ] });
 
     // ---- Camera ----------------------------------------------------------
     const vehicle = inCar || inHeli, sp = vehicle ? vehicle.speed : 0;
