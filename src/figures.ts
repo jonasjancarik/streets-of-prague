@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { lampLit } from './lamps.ts';
+import { send } from './gpu.ts';
 
 // People and two-wheelers from public/figures.glb (built in Blender by
 // assets/figures/build.py): a low-poly person with a skeleton and a few clips, a bike
@@ -218,8 +219,8 @@ export class Figures {
     for (const k of ['position', 'normal', 'aPart']) g.setAttribute(k, base.attributes[k]);
     this.attr = {};
     for (const k of ['aAnimA', 'aAnimB']) {
+      // (No DynamicDrawUsage: three.js's WebGPU renderer sends such a buffer whole every frame, needed or not.)
       const a = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
-      a.setUsage(THREE.DynamicDrawUsage);
       g.setAttribute(k, a);
       this.attr[k] = a;
     }
@@ -255,8 +256,9 @@ export class Figures {
 
   commit(count = this.mesh.count) {
     this.mesh.count = count;
-    this.mesh.instanceMatrix.needsUpdate = true;
-    this.attr.aAnimA.needsUpdate = this.attr.aAnimB.needsUpdate = true;
+    send(this.mesh.instanceMatrix, count);
+    send(this.attr.aAnimA, count);
+    send(this.attr.aAnimB, count);
   }
 }
 

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { sendInstances } from './gpu.ts';
 
 // Gunfire and your health. Only the police have guns so far (src/police.ts decides
 // who shoots and whether it hits); this draws the shots and keeps count of what
@@ -73,8 +74,7 @@ export class Tracers {
     this.shots = this.shots.filter((s) => s.age < FLASH || s.age * SPEED - STREAK < s.len);
     for (const [m, k] of [[this.streaks, n], [this.flashes, f]] as [THREE.InstancedMesh, number][]) {
       m.count = k;
-      m.instanceMatrix.needsUpdate = true;
-      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+      sendInstances(m);
     }
   }
 }

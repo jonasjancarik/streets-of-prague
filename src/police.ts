@@ -11,6 +11,7 @@ import type { Traffic } from './traffic.ts';
 import type { FigureKit } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Point3 } from './guns.ts';
+import { sendInstances } from './gpu.ts';
 
 interface ChaseCar { car: Car; path: Polyline | null; s: number; replan: number; stuck: number; reverse: number; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
 interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number; reload?: number }
@@ -633,8 +634,7 @@ export class Police {
     }
     for (const [m, k] of [[this.lamps, n], [this.glow, g]] as [THREE.InstancedMesh, number][]) {
       m.count = k;
-      m.instanceMatrix.needsUpdate = true;
-      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+      sendInstances(m);
     }
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
     for (const o of this.officers) {

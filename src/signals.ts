@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { lampLit, LAMP_ON } from './lamps.ts';
 import { Polyline, offsetLine } from './network.ts';
 import type { DriveEdge, Route } from './network.ts';
+import { send, sendInstances } from './gpu.ts';
 
 // Traffic lights at junctions (pipeline/build_signals.py, data/<area>_now/signals.json).
 // Each junction runs a cycle of two phases, the streets along its main street and
@@ -46,7 +47,7 @@ export class Signals {
   private time: () => number;
   private height: (x: number, y: number, bridge: boolean) => number;
   private near: Head[] = [];
-  private nearAt = { x: Infinity, y: Infinity, r: 0, t: 0 };
+  private nearAt = { x: Infinity, y: Infinity, r: 0, asked: 0, t: 0 }; // r: the radius gathered, asked: the one asked for
   private poles: THREE.InstancedMesh;
   private boxes: THREE.InstancedMesh;
   private lamps: THREE.InstancedMesh;
@@ -149,9 +150,9 @@ export class Signals {
 
   private gather(x: number, y: number, r: number, now: number) {
     const a = this.nearAt;
-    if (Math.hypot(x - a.x, y - a.y) < 25 && r <= a.r && r > a.r * 0.6 && now - a.t < 3000) return;
+    if (Math.hypot(x - a.x, y - a.y) < 25 && r + 25 <= a.r && r > a.asked * 0.6 && now - a.t < 3000) return;
     const R = r * 1.25 + 40;
-    Object.assign(a, { x, y, r: R, t: now });
+    Object.assign(a, { x, y, r: R, asked: r, t: now });
     this.near = this.heads.filter((h) => Math.abs(h.x - x) < R && Math.abs(h.y - y) < R).slice(0, MAX_HEADS);
     const d = this.dummy;
     this.near.forEach((h, i) => {
@@ -169,7 +170,7 @@ export class Signals {
     });
     this.poles.count = this.boxes.count = this.near.length;
     this.lamps.count = this.near.length * 3;
-    this.poles.instanceMatrix.needsUpdate = this.boxes.instanceMatrix.needsUpdate = this.lamps.instanceMatrix.needsUpdate = true;
+    for (const m of [this.poles, this.boxes, this.lamps]) send(m.instanceMatrix, m.count);
   }
 
   // Once a frame: the lights round the view (x, y), within r.
@@ -194,8 +195,7 @@ export class Signals {
       this.glows.setColorAt(i, this.c.copy(COLOURS[2 - k]));
     });
     this.glows.count = this.near.length;
-    this.glows.instanceMatrix.needsUpdate = true;
-    if (this.glows.instanceColor) this.glows.instanceColor.needsUpdate = true;
-    if (this.lamps.instanceColor) this.lamps.instanceColor.needsUpdate = true;
+    sendInstances(this.glows);
+    if (this.lamps.instanceColor) send(this.lamps.instanceColor, this.lamps.count);
   }
 }

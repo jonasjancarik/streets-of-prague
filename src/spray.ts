@@ -40,8 +40,9 @@ export class Spray {
   // `tint`: the light on things (WeatherFx.tint).
   constructor(scene: THREE.Scene, tint: { value: THREE.Color }) {
     // Where and when each drop was thrown, and how fast.
+    // (No DynamicDrawUsage: three.js's WebGPU renderer sends such a buffer whole every frame, needed or not.)
     const attribute = (array: Float32Array, size: number): THREE.BufferAttribute =>
-      (sprayBy ? new THREE.InstancedBufferAttribute(array, size) : new THREE.BufferAttribute(array, size)).setUsage(THREE.DynamicDrawUsage);
+      sprayBy ? new THREE.InstancedBufferAttribute(array, size) : new THREE.BufferAttribute(array, size);
     this.from = attribute(new Float32Array(DROPS * 3), 3);
     this.born = attribute(new Float32Array(DROPS).fill(-1e9), 1);
     this.vel = attribute(new Float32Array(DROPS * 3), 3);

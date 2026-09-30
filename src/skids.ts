@@ -41,11 +41,12 @@ export class Skids {
 
   constructor(scene: THREE.Scene) {
     const g = new THREE.BufferGeometry();
-    this.pos = new THREE.BufferAttribute(new Float32Array(SLOTS * 4 * 3), 3).setUsage(THREE.DynamicDrawUsage);
+    // (No DynamicDrawUsage: three.js's WebGPU renderer sends such a buffer whole every frame, needed or not.)
+    this.pos = new THREE.BufferAttribute(new Float32Array(SLOTS * 4 * 3), 3);
     // (time laid, how dark, across the tyre -1..1)
     const mark = new Float32Array(SLOTS * 4 * 3);
     for (let i = 0; i < SLOTS * 4; i++) { mark[i * 3] = -1e9; mark[i * 3 + 2] = i % 2 ? 1 : -1; }
-    this.mark = new THREE.BufferAttribute(mark, 3).setUsage(THREE.DynamicDrawUsage);
+    this.mark = new THREE.BufferAttribute(mark, 3);
     g.setAttribute('position', this.pos);
     g.setAttribute('mark', this.mark);
     const index = new Uint16Array(SLOTS * 6);

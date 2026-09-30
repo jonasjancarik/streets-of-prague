@@ -9,6 +9,7 @@ import { posts } from './posts.ts';
 import { fences } from './fences.ts';
 import { lampLit } from './lamps.ts';
 import { SNOW, STREET_SNOW, WET } from './shading.ts';
+import { sendInstances } from './gpu.ts';
 
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
@@ -698,7 +699,7 @@ export class CarPool {
         }
       });
       m.count = list.length;
-      m.instanceMatrix.needsUpdate = true;
+      sendInstances(m);
     }
     this.riders.commit(riders);
     for (let i = 0; i < this.boards.length; i++) this.boards[i].visible = i < nb;

@@ -3,6 +3,7 @@ import { fetchBinary } from './terrain.ts';
 import { CLOUD, CLOUD_MAP, CLOUD_GLSL } from './clouds.ts';
 import { posts, fall, type Post } from './posts.ts';
 import { armLamp, gasPair, gasSingle, wallLantern, globeLamp, hungLamp } from './lampmodels.ts';
+import { send, sendInstances } from './gpu.ts';
 
 // Street lighting at night. The lamps come from IPR's utility map
 // (pipeline/build_lamps.py, data/<area>_now/lamps.bin.gz); round the camera they get
@@ -195,7 +196,7 @@ export class Lamps {
   private facing = new Map<number, number>(); // a lamp → the way (radians) its arm points
   private glows: THREE.InstancedMesh;
   private near: number[] = []; // the lamps round the camera
-  private nearAt = { x: Infinity, y: Infinity, r: 0, t: 0 };
+  private nearAt = { x: Infinity, y: Infinity, r: 0, asked: 0, t: 0 }; // r: the radius gathered, asked: the one asked for
   private dummy = new THREE.Object3D();
   private c = new THREE.Color();
   // The lamps on poles are posts a car can knock over (posts.ts): each one's, and until
@@ -215,12 +216,13 @@ export class Lamps {
     const quad = new THREE.InstancedBufferGeometry();
     quad.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
     quad.setIndex([0, 1, 2, 0, 2, 3]);
-    this.at = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4).setUsage(THREE.DynamicDrawUsage);
-    this.shape = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4).setUsage(THREE.DynamicDrawUsage);
-    this.colour = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 3), 3).setUsage(THREE.DynamicDrawUsage);
-    this.lift = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS), 1).setUsage(THREE.DynamicDrawUsage);
-    this.carsA = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4).setUsage(THREE.DynamicDrawUsage);
-    this.carsB = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4).setUsage(THREE.DynamicDrawUsage);
+    // (No DynamicDrawUsage: three.js's WebGPU renderer sends such a buffer whole every frame, needed or not.)
+    this.at = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4);
+    this.shape = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4);
+    this.colour = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 3), 3);
+    this.lift = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS), 1);
+    this.carsA = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4);
+    this.carsB = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4);
     this.carMap.minFilter = this.carMap.magFilter = THREE.NearestFilter;
     quad.setAttribute('iLift', this.lift);
     quad.setAttribute('iCarsA', this.carsA);
@@ -456,9 +458,9 @@ export class Lamps {
   // seconds for the heights of tiles that have loaded since.
   private gather(x: number, y: number, r: number, now: number) {
     const a = this.nearAt;
-    if (Math.hypot(x - a.x, y - a.y) < 25 && r <= a.r && r > a.r * 0.6 && now - a.t < 3000 && performance.now() > this.falling) return;
+    if (Math.hypot(x - a.x, y - a.y) < 25 && r + 25 <= a.r && r > a.asked * 0.6 && now - a.t < 3000 && performance.now() > this.falling) return;
     const R = r * 1.25 + 40;
-    Object.assign(a, { x, y, r: R, t: now });
+    Object.assign(a, { x, y, r: R, asked: r, t: now });
     this.near.length = 0;
     for (let cx = Math.floor((x - R) / CELL); cx <= Math.floor((x + R) / CELL); cx++) {
       for (let cy = Math.floor((y - R) / CELL); cy <= Math.floor((y + R) / CELL); cy++) {
@@ -523,12 +525,12 @@ export class Lamps {
         this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], i)).multiplyScalar(k.glow * 2));
       }
     }
-    this.models.forEach((mesh, m) => { mesh.count = used[m]; mesh.instanceMatrix.needsUpdate = true; });
-    cable.needsUpdate = true;
+    this.models.forEach((mesh, m) => { mesh.count = used[m]; sendInstances(mesh); });
+    send(cable, c * 2);
     this.cables.geometry.setDrawRange(0, c * 2);
     this.heads = g;
-    this.glows.instanceMatrix.needsUpdate = true;
-    if (this.glows.instanceColor) this.glows.instanceColor.needsUpdate = true;
+    this.glows.count = g;
+    sendInstances(this.glows);
   }
   private heads = 0;
 
@@ -654,12 +656,10 @@ export class Lamps {
       }
     }
     this.glows.count = g;
-    this.glows.instanceMatrix.needsUpdate = true;
-    if (this.glows.instanceColor) this.glows.instanceColor.needsUpdate = true;
+    sendInstances(this.glows);
     this.lights.instanceCount = n;
     if (!n) return;
-    this.at.needsUpdate = this.shape.needsUpdate = this.colour.needsUpdate = true;
-    this.lift.needsUpdate = this.carsA.needsUpdate = this.carsB.needsUpdate = true;
+    for (const a of [this.at, this.shape, this.colour, this.lift, this.carsA, this.carsB]) send(a, n);
 
     // The light map: a square over the view, its centre on a texel so the pools don't shimmer.
     const half = r + 20, texel = (2 * half) / MAP_SIZE;

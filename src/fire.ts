@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Car } from './car.ts';
+import { send, sendInstances } from './gpu.ts';
 
 // Cars that catch fire and blow up, GTA 2 style. A car that's taken enough knocks
 // (crashes, shots, a blast nearby) starts to smoke from under the bonnet; more and it
@@ -90,8 +91,8 @@ class Puffs {
     }
     this.list = this.list.filter((p) => p.age < p.life);
     this.mesh.count = n;
-    this.mesh.instanceMatrix.needsUpdate = true;
-    this.tint.needsUpdate = true;
+    sendInstances(this.mesh);
+    send(this.tint, n);
   }
 }
 
