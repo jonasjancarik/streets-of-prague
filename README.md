@@ -461,7 +461,13 @@ that without a new renderer.
   of the sides, wheels and lights towards the edges of the screen. `src/car.ts` puts
   each car's colour on the paint. The bus is built from boxes in `src/car.ts`. Rebuild with
   `blender -b --factory-startup -P assets/cars/build.py`; `-- --preview DIR` renders
-  them from above.
+  them from above. During loading, `CarPool.prepare` creates the ordinary paint and
+  courier-box bodies without consuming the game's random numbers. Each body keeps a
+  16-car instance page; denser views get another retained page, so no visible car is
+  dropped. A shared-bike colour that arrives after preparation, an unusual custom
+  colour, or the first burnt body gets its page when first seen. Check preparation,
+  page reuse and renderer behaviour with `node scripts/check-car-pool.mjs --url
+  http://localhost:5191/ --case all` against a running dev server.
 - **Trams** run Prague's real lines (`src/trams.ts`), taken from OSM's route
   relations: each line goes round its whole route there and back. How many trams a line
   has out follows PID's timetable for the game clock's day and hour (`src/clock.ts`):

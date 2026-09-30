@@ -67,6 +67,10 @@ export class BikeShare {
     }).catch(() => {});
   }
 
+  // Read whatever operator colours have arrived by graphics preparation time.
+  // The feed remains optional and does not add a loading wait.
+  colours() { return this.systems.map((system) => system.colour).filter(Boolean); }
+
   private near(x: number, y: number, r: number) {
     const out: Station[] = [];
     for (let i = Math.floor((x - r) / CELL); i <= Math.floor((x + r) / CELL); i++)

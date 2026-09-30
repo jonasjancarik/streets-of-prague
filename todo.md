@@ -217,10 +217,11 @@ grime on the walls 6%, the shadow map's own pass 7%.
     builds every instanced mesh on its own (its key has the mesh's `uuid`): ~60 ms each
     on a Pixel 5 for the tuft shader. One set of tree meshes shared by all tiles
     (refilled when tiles come and go) would build once.
-  - **Car models:** ~25 builds a drive (~13 ms each on the Pixel 5), one per model as it
-    first appears and again when a model's mesh grows past its capacity
-    (`CarDrawer.render`, `max(8, 1.5 × n)`). Making every model's mesh during loading
-    with room to spare would move them behind the loading screen.
+  - **Car models:** plan 008 now prepares ordinary models during loading and retains
+    16-car pages instead of replacing a model's mesh when it grows. The old drive had
+    70 active body meshes, 299 instances and at most 16 of one key after settling.
+    Browser, startup and alternating drive checks are still required before claiming
+    fewer hitches; late shared-bike colours and burnt bodies can still build once.
   - **Tile workers crowd a phone's main thread:** on a Pixel 5, frames swell (render ~17 →
     ~30 ms) while tiles load, with no build involved; 1 worker instead of 3 halved those
     long tasks, but tiles took 2–3× longer to arrive. A decision: fewer workers on

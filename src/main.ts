@@ -4,7 +4,7 @@ import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
 import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
-import { Car, CarPool, collideBodies, loadCars, useKit } from './car.ts';
+import { Car, CarPool, collideBodies, loadCars, ordinaryCarBodies, useKit } from './car.ts';
 import { loadKit } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
 import { PavementDrivers } from './pavement.ts';
@@ -1401,6 +1401,7 @@ async function main() {
 
   // Every kind of ground's shader, compiled before the game starts.
   {
+    carPool.prepare(ordinaryCarBodies(bikeShare.colours()));
     const samples = groundSamples(time);
     // (And the metro's tunnels and train, for the first ride.)
     scene.add(samples.group, metro.under.group);
@@ -1408,7 +1409,7 @@ async function main() {
     // its textures once, so tiles compiled here would keep the black stand-in.
     status('Preparing the view…');
     await loadFacadeAtlas();
-    await renderer.compileAsync(scene, camera).catch((e) => console.warn(e));
+    await carPool.warm(() => renderer.compileAsync(scene, camera)).catch((e) => console.warn(e));
     scene.remove(samples.group);
     metro.under.hide();
     samples.dispose();
@@ -1732,7 +1733,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare,
+    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
