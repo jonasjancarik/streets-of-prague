@@ -1401,7 +1401,6 @@ async function main() {
 
   // Every kind of ground's shader, compiled before the game starts.
   {
-    carPool.prepare(ordinaryCarBodies(bikeShare.colours()));
     const samples = groundSamples(time);
     // (And the metro's tunnels and train, for the first ride.)
     scene.add(samples.group, metro.under.group);
@@ -1409,6 +1408,10 @@ async function main() {
     // its textures once, so tiles compiled here would keep the black stand-in.
     status('Preparing the view…');
     await loadFacadeAtlas();
+    // Give the already-started optional bike feed a short chance to supply its
+    // operator colours; a slow or missing feed must never hold the loading screen.
+    await Promise.race([bikeShare.ready, new Promise<void>((resolve) => setTimeout(resolve, 250))]);
+    carPool.prepare(ordinaryCarBodies(bikeShare.colours()));
     await carPool.warm(() => renderer.compileAsync(scene, camera)).catch((e) => console.warn(e));
     scene.remove(samples.group);
     metro.under.hide();

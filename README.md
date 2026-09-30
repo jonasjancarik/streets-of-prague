@@ -462,7 +462,8 @@ that without a new renderer.
   each car's colour on the paint. The bus is built from boxes in `src/car.ts`. Rebuild with
   `blender -b --factory-startup -P assets/cars/build.py`; `-- --preview DIR` renders
   them from above. During loading, `CarPool.prepare` creates the ordinary paint and
-  courier-box bodies without consuming the game's random numbers. Each body keeps a
+  courier-box bodies without consuming the game's random numbers. The already-started
+  bike feed gets up to 250 ms to provide its operator colours. Each body keeps a
   16-car instance page; denser views get another retained page, so no visible car is
   dropped. A shared-bike colour that arrives after preparation, an unusual custom
   colour, or the first burnt body gets its page when first seen. Check preparation,
