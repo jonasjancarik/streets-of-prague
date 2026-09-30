@@ -54,7 +54,7 @@ import type { RawTramLine } from './trams.ts';
 import type { MetroLine } from './metro.ts';
 import { BikeShare } from './bikeshare.ts';
 import { rentalCost } from './pricing.ts';
-import { Wallet, PidRide, TICKET, FINE, CHECK_STOP, CHECK_METRO, kc } from './money.ts';
+import { Wallet, PidRide, TICKET, TICKETS, validity, FINE, CHECK_STOP, CHECK_METRO, kc } from './money.ts';
 import { Inspector } from './inspector.ts';
 import type { DriveEdge, WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
@@ -235,7 +235,7 @@ async function main() {
   const footfall = await footfallLoad;
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
-  ride.passengers = new Passengers(trams, () => crowd, (kc) => wallet.give(kc), seeded);
+  ride.passengers = new Passengers(trams, () => crowd, seeded);
   const traffic = new Traffic(drive, scene, seeded, trafficWanted(clock.t));
   traffic.signals = signals;
   traffic.busLines = await busLines;
@@ -486,10 +486,10 @@ async function main() {
     if (inspector.phase === 'decide') inspector.run(walker.x, walker.y, h);
   };
   // A PID ticket, while you're riding without one.
-  const buyTicket = () => {
+  const buyTicket = (kind = TICKET) => {
     if (pid.state !== 'grace' && pid.state !== 'dodging') return;
-    const price = kc(TICKET.price);
-    showBanner(pid.buy(clock.t) ? t('Ticket for {minutes} minutes: {price}', { minutes: TICKET.minutes, price }) : t('Not enough money for a ticket ({price})', { price }));
+    const price = kc(kind.price);
+    showBanner(pid.buy(clock.t, kind) ? t('Ticket for {validity}: {price}', { validity: validity(kind.minutes), price }) : t('Not enough money for a ticket ({price})', { price }));
   };
   // Take the tram you're on: the driver gets out of the way and it's yours.
   const stealTram = () => {
@@ -779,6 +779,8 @@ async function main() {
     if (e.shiftKey) input.run = true;
     if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) enterOrExit();
     if (e.code === 'KeyB' && !e.repeat) pressB();
+    const pick = /^Digit([1-4])$/.exec(e.code);
+    if (pick && !e.repeat && inspector.phase !== 'decide') buyTicket(TICKETS[Number(pick[1]) - 1]);
     if (e.code === 'KeyR') backOnRoad();
     if (e.code === 'KeyF' && !e.repeat) stealTram();
     if (e.code === 'KeyX' && !e.repeat) ride.doors();
@@ -868,6 +870,7 @@ async function main() {
     },
   });
   let waitScale = 1, clockShown = '';
+  let ticketWas = false;
   let rideAt: boolean | null = null, funiAt: number | null | undefined;
   let street: string | null = null, bannerT = 0, lifeT = 0;
   // The HUD is only written when what it says changes: every write makes the browser
@@ -1354,6 +1357,10 @@ async function main() {
     for (let i = 0; i < steps; i++) simulate((dt * scale) / steps, ctl);
     weather.update(dt * scale, clock.t, dt);
     input.jump = false;
+    // A ticket that runs out while you ride gives you a moment to buy another.
+    const ticketNow = wallet.hasTicket(clock.t);
+    if (ticketWas && !ticketNow && ((ride.on && !ride.driving) || funicular.me)) pid.board(clock.t);
+    ticketWas = ticketNow;
     if (ride.on) ride.watch(dt);
     // Ticket inspections: at a stop you've ridden to (not the one you got on at), and at
     // a funicular station. The tram waits for your answer; the funicular doesn't.
@@ -1502,7 +1509,7 @@ async function main() {
     const getIn = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
     const key = (k: string) => (touch.active ? '' : `<b>${k}</b> `);
     const ticketHint = () => pid.state === 'grace'
-      ? `${touch.active ? t('Buy a ticket ({price})', { price: kc(TICKET.price) }) : t('<b>B</b> buy a ticket ({price})', { price: kc(TICKET.price) })} · ${t('{secs} s left', { secs: Math.ceil(pid.left) })}`
+      ? `${touch.active ? t('Buy a ticket ({price})', { price: kc(TICKET.price) }) : TICKETS.map((k, i) => `<b>${i + 1}</b> ${validity(k.minutes)} ${kc(k.price)}`).join(' · ')} · ${t('{secs} s left', { secs: Math.ceil(pid.left) })}`
       : pid.state === 'dodging' ? t('No ticket') : '';
     let hint = '';
     if (metro.active) hint = '';
@@ -1589,7 +1596,8 @@ async function main() {
       wanted.setAttribute('aria-label', stars ? t('Wanted: {stars} of 5 stars', { stars }) : t('Not wanted'));
     }
     const money = kc(wallet.balance), paid = wallet.paidT > 0 ? wallet.paid : 0;
-    show('money', `${money}${paid ? ` <span class="paid">−${kc(paid)}</span>` : ''}`, 'html');
+    const left = wallet.ticketLeft(clock.t), validFor = left > 0 ? (left < 5400 ? t('{n} min', { n: Math.ceil(left / 60) }) : t('{n} h', { n: Math.ceil(left / 3600) })) : '';
+    show('money', `${money}${paid ? ` <span class="paid">−${kc(paid)}</span>` : ''}${validFor ? ` <span class="valid">${t('ticket: {left}', { left: validFor })}</span>` : ''}`, 'html');
     if (shown.moneyLabel !== money) { shown.moneyLabel = money; $('money').setAttribute('aria-label', t('Money: {money}', { money })); }
     // Health: a bar once you're hurt, and red at the edges of the screen as you're hit.
     const hp = Math.ceil(health.value);

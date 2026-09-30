@@ -4,14 +4,12 @@ import { HALF } from './trams.ts';
 
 // People getting off and on the tram you drive, at the real stops. Stop with the front
 // of the tram at a stop's sign and open the doors (X): some of the passengers step
-// out, and people waiting nearby walk over and get in, each paying you a fare. The
-// doors shut by themselves when everyone is in or out, and the tram can't move while
-// they're open.
+// out, and people waiting nearby walk over and get in. The doors shut by themselves
+// when everyone is in or out, and the tram can't move while they're open.
 
 export interface Stop { x: number; y: number; ang: number; name: string }
 export interface StopAhead { stop: Stop; dist: number }
 
-const FARE = 20; // Kč from each person who gets on
 const CELL = 50;
 const AT_SIGN = 9; // m: how near the front has to be to a stop's sign to open the doors there
 const WAITING = 28; // m: people this near the stop come to get on
@@ -30,7 +28,7 @@ export class Passengers {
   private boarding: Pedestrian[] = [];
   private v: TramVehicle | null = null;
 
-  constructor(trams: Trams, private crowd: () => Crowd, private pay: (kc: number) => void, private rng: () => number) {
+  constructor(trams: Trams, private crowd: () => Crowd, private rng: () => number) {
     for (const line of trams.lines) {
       for (const h of line.halts) {
         const p = line.path.at(h.s);
@@ -126,7 +124,6 @@ export class Passengers {
       if (bd < 1.1) {
         crowd.retire(p);
         this.on++;
-        this.pay(FARE);
         return false;
       }
       Object.assign(p, { state: 'flee', t: 2, vx: ((best.x - p.x) / bd) * 1.8, vy: ((best.y - p.y) / bd) * 1.8 });
