@@ -13,7 +13,7 @@ import type { Point2 } from './map/geo.ts';
 import type { Point3 } from './guns.ts';
 import { sendInstances } from './gpu.ts';
 
-interface ChaseCar { car: Car; path: Polyline | null; s: number; replan: number; stuck: number; reverse: number; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
+interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
 interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number; reload?: number }
 interface Link { to: string; e: DriveEdge; back: boolean }
 interface PlayerTarget { x: number; y: number; z: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean }
@@ -124,6 +124,40 @@ export function steer(o: { x: number; y: number; vx: number; vy: number; h: numb
   o.vx = Math.cos(ang) * speed;
   o.vy = Math.sin(ang) * speed;
   o.h = ang;
+}
+
+// What a car driving along a route needs to keep track of (police chasing, engines on call).
+export interface Follower { path: Polyline | null; s: number; replan: number; stuck: number; reverse: number }
+
+// Where a car on `p.path` should head (a little way ahead along it) and how fast: no
+// more than `top` m/s, less for the bends coming up (`bendy` m/s off for a right angle).
+// A car that's strayed off the route asks for a new one soon.
+export function along(c: Car, p: Follower, path: Polyline, top = 24, bendy = 14) {
+  const q = project(path, c.x, c.y, p.s - 10, p.s + 40);
+  p.s = q.s;
+  // Off the route: a new one soon (still no more than a few times a second).
+  if (q.d > 12) p.replan = Math.min(p.replan, 0.3);
+  const t = path.at(p.s + 6 + Math.abs(c.forwardSpeed) * 0.6);
+  let bend = 0;
+  for (const d of [8, 18, 30]) bend = Math.max(bend, Math.abs(turnOf(c.h, path.at(p.s + d).ang)));
+  return { tx: t.x, ty: t.y, want: clamp(top - bend * bendy, 7, top) };
+}
+
+// Steering and pedals for heading at (tx, ty) at `want` m/s, backing up and trying again
+// when stuck.
+export function pedals(c: Car, p: Follower, tx: number, ty: number, want: number, dt: number) {
+  const vf = c.forwardSpeed;
+  let steer = clamp(turnOf(c.h, Math.atan2(ty - c.y, tx - c.x)) * 2.2, -1, 1);
+  let throttle = vf < want - 1 ? 1 : vf > want + 2 ? -1 : 0;
+  if (throttle > 0 && Math.abs(vf) < 1.2) p.stuck += dt;
+  else p.stuck = Math.max(0, p.stuck - dt);
+  if (p.stuck > 1.2) { p.reverse = 1.1; p.stuck = 0; }
+  if (p.reverse > 0) {
+    p.reverse -= dt;
+    throttle = -1;
+    steer = -steer;
+  }
+  return { throttle, steer };
 }
 
 export class Police {
@@ -385,17 +419,7 @@ export class Police {
       }
       if (!p.path) { tx = me.x; ty = me.y; want = 8; }
       else {
-        const q = project(p.path, c.x, c.y, p.s - 10, p.s + 40);
-        p.s = q.s;
-        // Off the route: a new one soon (still no more than a few times a second).
-        if (q.d > 12) p.replan = Math.min(p.replan, 0.3);
-        const L = 6 + Math.abs(vf) * 0.6, t = p.path.at(p.s + L);
-        tx = t.x;
-        ty = t.y;
-        // Slow down for the bends coming up.
-        let bend = 0;
-        for (const d of [8, 18, 30]) bend = Math.max(bend, Math.abs(turnOf(c.h, p.path.at(p.s + d).ang)));
-        want = clamp(24 - bend * 14, 7, 24);
+        ({ tx, ty, want } = along(c, p, p.path));
         // On foot: slow down for the end of the way and stop there.
         if (!me.car) want = Math.min(want, clamp((p.path.length - p.s - 4) * 0.9, 0, 24));
       }
@@ -409,17 +433,7 @@ export class Police {
     if (behind) want = 0;
     // An officer out on foot: the car waits.
     if (!c.crew) want = 0;
-    const alpha = turnOf(c.h, Math.atan2(ty - c.y, tx - c.x));
-    let steer = clamp(alpha * 2.2, -1, 1);
-    let throttle = vf < want - 1 ? 1 : vf > want + 2 ? -1 : 0;
-    if (throttle > 0 && Math.abs(vf) < 1.2) p.stuck += dt;
-    else p.stuck = Math.max(0, p.stuck - dt);
-    if (p.stuck > 1.2) { p.reverse = 1.1; p.stuck = 0; }
-    if (p.reverse > 0) {
-      p.reverse -= dt;
-      throttle = -1;
-      steer = -steer;
-    }
+    const { throttle, steer } = pedals(c, p, tx, ty, want, dt);
     // Close enough and you're not going anywhere: an officer gets out.
     // On foot, also once the car has got as near as the road goes: the officer runs
     // the rest of the way.
