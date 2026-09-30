@@ -21,7 +21,7 @@ const WALK = 1.9; // firefighters on foot, m/s
 const CREW = 3;
 const SPRAY = 7; // m: how far a hose reaches
 const STAND = 5; // m from the fire they stand at
-const HOSE = 1; // seconds of water (for `douse`) per second of spraying
+const HOSE = 1.3; // seconds of water (for `douse`) per second of spraying
 const GIVE_UP = 30; // seconds a call waits for a street to spawn an engine on
 const WRECKED = 90; // damage that puts an engine out of action
 
@@ -68,10 +68,11 @@ export class Brigade {
       if (e.bridge || e.tunnel || e.path.length < 14) continue;
       const q = e.path.at(r() * e.path.length), d = Math.hypot(q.x - target.x, q.y - target.y);
       if (d < 150 || d > 300 || !o.offscreen(q.x, q.y)) continue;
-      const car = new Car('fire', r, q.x, q.y, q.ang);
-      if (car.worldSamples().some(([sx, sy]) => o.grid.at(sx, sy))) continue;
       const path = o.police.route(q.x, q.y, stop.x, stop.y);
       if (!path) continue;
+      // Facing the way it's to go: a long engine can't turn round in a narrow street.
+      const car = new Car('fire', r, q.x, q.y, path.at(Math.min(6, path.length)).ang);
+      if (car.worldSamples().some(([sx, sy]) => o.grid.at(sx, sy))) continue;
       car.mode = 'fire';
       this.engines.push({ car, target, path, s: 0, replan: 2, stuck: 0, reverse: 0, phase: 'go', t: 0, wrecked: false, crew: true });
       return true;
@@ -219,13 +220,18 @@ export class Brigade {
     e.t = 0;
     e.path = null;
     const edges = o.edgesNear(c.x, c.y, 350);
-    for (let t = 0; t < 20 && edges.length; t++) {
+    // Of a few ways out, the one that doesn't start with a U-turn.
+    let best = -2;
+    for (let t = 0; t < 24 && edges.length; t++) {
       const ed = edges[Math.floor(o.rng() * edges.length)];
       if (ed.bridge || ed.tunnel) continue;
       const q = ed.path.at(o.rng() * ed.path.length);
       if (Math.hypot(q.x - c.x, q.y - c.y) < 250) continue;
-      e.path = o.police.route(c.x, c.y, q.x, q.y);
-      if (e.path) break;
+      const path = o.police.route(c.x, c.y, q.x, q.y);
+      if (!path) continue;
+      const ahead = Math.cos(path.at(Math.min(10, path.length)).ang - c.h);
+      if (ahead > best) { best = ahead; e.path = path; }
+      if (best > 0.8) break;
     }
     e.s = 0;
   }
