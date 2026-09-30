@@ -321,6 +321,7 @@ const depthMaterial = new THREE.MeshDepthMaterial();
 // Points round a car's outline for its collisions, the same for every car of a type
 // (shared: parking tries thousands of cars when a tile loads).
 const outlines = new Map<string, Point2[]>();
+const denseOutlines = new Map<string, Point2[]>();
 function samplesOf(type: string, L: number, W: number) {
   let out = outlines.get(type);
   if (!out) {
@@ -511,6 +512,22 @@ export class Car {
     return impact;
   }
 
+  // The whole outline every ~0.4 m, for checking against walls: a wall's corner can
+  // slip between the few points `samples` holds.
+  worldOutline(): Point2[] {
+    let local = denseOutlines.get(this.type);
+    if (!local) {
+      const [L, W] = [this.samples[0][0] * 2, this.samples[0][1] * 2];
+      const nL = Math.ceil(L / 0.4), nW = Math.ceil(W / 0.4);
+      local = [];
+      for (let i = 0; i <= nL; i++) { const a = (i / nL - 0.5) * L; local.push([a, W / 2], [a, -W / 2]); }
+      for (let i = 1; i < nW; i++) { const b = (i / nW - 0.5) * W; local.push([L / 2, b], [-L / 2, b]); }
+      denseOutlines.set(this.type, local);
+    }
+    const c = Math.cos(this.h), s = Math.sin(this.h);
+    return local.map(([a, b]) => [this.x + c * a - s * b, this.y + s * a + c * b]);
+  }
+
   worldSamples(): Point2[] {
     const c = Math.cos(this.h), s = Math.sin(this.h);
     return this.samples.map(([a, b]) => [this.x + c * a - s * b, this.y + s * a + c * b]);
@@ -519,7 +536,7 @@ export class Car {
   collideGrid(grid: CarGrid) {
     const solid = (x: number, y: number) => (grid.at(x, y) ? 1 : 0);
     let nx = 0, ny = 0, hits = 0, cx = 0, cy = 0;
-    for (const [x, y] of this.worldSamples()) {
+    for (const [x, y] of this.worldOutline()) {
       if (!solid(x, y)) continue;
       const d = 0.7;
       nx += solid(x - d, y) - solid(x + d, y);
@@ -536,7 +553,7 @@ export class Car {
     for (let k = 0; k < 30; k++) {
       this.x += nx * 0.06;
       this.y += ny * 0.06;
-      if (!this.worldSamples().some(([x, y]) => solid(x, y))) break;
+      if (!this.worldOutline().some(([x, y]) => solid(x, y))) break;
     }
     const vn = this.vx * nx + this.vy * ny;
     if (vn >= 0) return 0;
