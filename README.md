@@ -184,6 +184,11 @@ that without a new renderer.
   engines take red lights at no more than 5 m/s (`src/brigade.ts`, `src/water.ts`,
   `src/beacons.ts`). The developer panel's "Set the nearest car on fire" button is the
   quickest way to see it.
+  You can take an engine like any car (it counts as a carjack, and the crew who are out
+  run after you for a while). Hold <kbd>F</kbd> in it (a button on phones) to spray the
+  water cannon 17 m ahead: it puts out burning cars and knocks people and officers over
+  gently, which counts as a crime. The tank lasts about 30 seconds and refills slowly;
+  a blue bar under the health bar shows it (`src/cannon.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, or pick a spot on an OpenStreetMap map; the game loads
