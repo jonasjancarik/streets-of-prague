@@ -431,7 +431,10 @@ SUN_AZIMUTH = 100.0  # degrees from north
 SUN_ELEVATION = 35.0
 SUN, SKY = 0.91, 0.09
 LIT = 0.3
-ROOF_LIT = 0.15  # roof faces meeting the sun less squarely than this are in shade
+# Roof faces meeting the sun less squarely than this count as in shade: the gain that
+# would bring them to full sun (2.4 or more) also blows up the sky's blue in them.
+ROOF_LIT = 0.35
+FLAT = 0.995  # a roof face whose normal is steeper than this (under 6°) is flat
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 # Walls seen only in shade (see from_shade and calibrate): the sky's tint to take out
 # (linear RGB, green 1), and the brightness (linear luminance) of walls in shade at
@@ -472,21 +475,42 @@ def unlight(labs: np.ndarray, normals: np.ndarray, az: float = SUN_AZIMUTH, el: 
 
 
 def roof_faces(t: np.ndarray, codes: np.ndarray) -> np.ndarray:
-    """Groups a building's roof triangles into planes: a face number per triangle,
-    -1 for walls."""
+    """Groups a building's roof triangles into faces: a face number per triangle, -1 for
+    walls. Triangles facing the same way join when they share an edge (IPR's roof
+    quads are often a little warped, so their two halves aren't quite one plane) or lie
+    in one plane."""
+    roof = np.nonzero(codes != 0)[0]
     face = np.full(len(t), -1)
-    planes = []
+    if not len(roof):
+        return face
     nrm = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
     nrm /= np.maximum(np.linalg.norm(nrm, axis=1), 1e-12)[:, None]
-    for k in np.nonzero(codes != 0)[0]:
+    parent = {int(k): int(k) for k in roof}
+
+    def find(k):
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    edges, planes = {}, []
+    for k in map(int, roof):
+        v = [tuple(np.round(t[k, i], 2)) for i in range(3)]
+        for a, b in ((0, 1), (1, 2), (2, 0)):
+            e = (v[a], v[b]) if v[a] < v[b] else (v[b], v[a])
+            o = edges.setdefault(e, k)
+            if o != k and nrm[k] @ nrm[o] > 0.99:
+                parent[find(k)] = find(o)
         d = nrm[k] @ t[k, 0]
-        for f, (n, dd) in enumerate(planes):
+        for o, n, dd in planes:
             if n @ nrm[k] > 0.995 and abs(dd - d) < 0.3:
-                face[k] = f
+                parent[find(k)] = find(o)
                 break
         else:
-            face[k] = len(planes)
-            planes.append((nrm[k], d))
+            planes.append((k, nrm[k], d))
+    roots = {}
+    for k in map(int, roof):
+        face[k] = roots.setdefault(find(k), len(roots))
     return face
 
 
@@ -615,7 +639,9 @@ def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = Fal
             fn = np.cross(ft[:, 1] - ft[:, 0], ft[:, 2] - ft[:, 0]).sum(0)
             rec["roofs"].append({"face": int(face), "tris": np.nonzero(f == face)[0], "raw": dom, "share": share,
                                  "n": len(labs), "normal": fn / max(np.linalg.norm(fn), 1e-12),
-                                 "flat": bool((codes[f == face] == 2).all())})
+                                 # Only really flat: IPR also counts roofs up to 14° as flat,
+                                 # and those are tiles or metal as often as not.
+                                 "flat": bool((codes[f == face] == 2).all()) and fn[2] / max(np.linalg.norm(fn), 1e-12) > FLAT})
         out.append(rec)
     return {"buildings": out, "top": colour.reshape(w, w, 3) if debug else None, "fid": fid if debug else None}
 
@@ -675,7 +701,9 @@ def from_shade(c) -> np.ndarray:
     return linear_lab(tint[None] * np.interp(y, SHADE_Y, LIT_Y))[0]
 
 
-ROOF_SAME = 12.0  # ΔE; a building's roof faces of one material closer than this are one colour
+# ΔE; a building's roof faces of one material closer than this are one colour. More for
+# metal and slate: they shine, and a shine doesn't follow the light model.
+ROOF_SAME = {"tiles": 12.0, "copper": 12.0, "slate": 25.0, "metal": 25.0}
 
 
 def even_roofs(rec) -> None:
@@ -691,7 +719,7 @@ def even_roofs(rec) -> None:
         labs = np.array([f["lab"] for f in same])
         mid = weighted_median(labs, np.array([f["n"] for f in same], float))
         for f, c in zip(same, labs):
-            if np.linalg.norm(c - mid) < ROOF_SAME:
+            if np.linalg.norm(c - mid) < ROOF_SAME[m]:
                 f["lab"] = mid
 
 

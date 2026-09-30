@@ -342,18 +342,18 @@ vec3 roofTilesAs(vec3 c, vec2 wp, vec3 n, float slate) {
 vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
   return roofTilesAs(c, wp, n, step(max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)), .08));
 }
-// Sheet metal: pans running down the slope between standing seams (a lit ridge and a
-// shadow beside it), each pan a little different, streaked by the rain; copper with
-// verdigris in patches.
+// Sheet metal: smooth pans running down the slope between thin standing seams (a lit
+// edge and a faint shadow beside it), with a broad, soft sheen; copper with verdigris
+// in patches.
 vec3 sheetRoof(vec3 c, vec2 wp, vec3 n, float copper) {
   vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));
-  float a = dot(wp, vec2(-down.y, down.x)) / .55, along = dot(wp, down);
+  float a = dot(wp, vec2(-down.y, down.x)) / .6;
   float seam = fract(a);
-  vec3 t = c * (.95 + .1 * fract(sin(floor(a) * 12.9898) * 43758.5453));
-  t *= 1. + .16 * (1. - smoothstep(0., .05, seam)) - .2 * smoothstep(.9, 1., seam);
-  t *= .94 + .1 * vnoise(vec2(a * 3., along * .15));
+  vec3 t = c * (1. + .07 * (1. - smoothstep(0., .035, seam)) - .06 * smoothstep(.94, 1., seam));
+  t *= .96 + .03 * fract(sin(floor(a) * 12.9898) * 43758.5453);
   t = mix(t, t * vec3(.82, 1.1, 1.02) + vec3(.02, .06, .05), copper * smoothstep(.45, .8, fbm(wp * .25)) * .7);
-  return mix(c, t, detail(wp, .4));
+  t *= .95 + .1 * fbm(wp * .04);
+  return mix(c * (.95 + .1 * fbm(wp * .04)), t, detail(wp, .3));
 }
 vec3 flatRoof(vec3 c, vec2 wp) {
   c *= .86 + .22 * fbm(wp * .5);
@@ -522,7 +522,8 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   vec4 fdx = dFdx(vFacade), fdy = dFdy(vFacade);
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
   vec3 roofBase = diffuseColor.rgb;
-  if (uRoofDetail > .5 && bn.y > .97) diffuseColor.rgb = roofWeather(flatRoof(roofBase, bwp), roofBase, bwp, bn);
+  // Flat roofs, unless a material says it's a shallow roof of tiles or metal.
+  if (uRoofDetail > .5 && bn.y > .97 && vFacade.w < .5) diffuseColor.rgb = roofWeather(flatRoof(roofBase, bwp), roofBase, bwp, bn);
   else if (uRoofDetail > .5 && bn.y > .15) {
     // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
     float m = vFacade.w;
