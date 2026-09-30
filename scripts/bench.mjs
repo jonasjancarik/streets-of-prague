@@ -42,6 +42,8 @@ const PLACES = {
   stand: { start: '14.4206,50.0873', drive: false },  // Old Town Square
   drive: { start: '14.4052,50.0808', drive: true },   // from Újezd (the game's start, with a car at the kerb), with lane assist
   woods: { start: '14.3965,50.0830', drive: false },  // Petřín: trees and slopes
+  slatiny: { start: '14.4845,50.0610', drive: false }, // Na Slatinách, Strašnice: garden suburb, many shrubs
+  park: { start: '14.4275,50.0930', drive: false },   // Letná park
   suburb: { start: '14.4760,50.0520', drive: false }, // Vršovice/Strašnice edge: gardens
   river: { start: '14.4125,50.0862', drive: false },  // by Charles Bridge: water, quays, the bridge
   tunnel: { start: '14.3905,50.0780', drive: false }, // over the Strahov tunnel (see --eval for getting into it)
