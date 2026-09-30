@@ -10,17 +10,25 @@
 //     a desktop GPU that shades every covered pixel: for overdraw)]
 //     [--vs http://localhost:5192/ (compare with another server, taking turns)] [--fresh-browser] [--loading-frames]
 //     [--ab "window.__ab = (on) => { … }" [--window 2] [--warmup 2]] [--shot /tmp/look-%s.png [--zoom 0.5]]
+//     [--stalls (what each long task was: shader builds, pipelines, uploads, tile builds)]
+//     [--android [serial] (Chrome on a phone over adb instead of headless Chrome here)]
 //
 // Per scene it reports the frame rate, frame times (median, 95th, 99th percentile),
 // the JavaScript time per frame (the whole requestAnimationFrame callback), how much of
 // that is renderer.render, the GPU time (a timer query round render, where the browser
 // offers one), draw calls and triangles. --profile adds the functions with the most
 // self time (and writes the .cpuprofile to /tmp). --cpu 4 slows the CPU down 4× (a
-// stand-in for a phone). Needs the dev server (npm run dev) and Playwright; it takes
-// Playwright from PLAYWRIGHT_PATH or the usual places.
+// stand-in for a phone, but only for the page's main thread: not its workers or the GPU
+// process). --android runs on a real phone instead: its Chrome is started and driven over
+// adb (the dev server's ports are passed through, so the phone reaches it on its own
+// localhost), the battery temperature is printed after each scene (a phone slows as it
+// warms), and the phone's screen and pixel ratio stand in for the window here. Needs the
+// dev server (npm run dev) and Playwright; it takes Playwright from PLAYWRIGHT_PATH or
+// the usual places.
 
 import { createRequire } from 'node:module';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => {
   if (a.startsWith('--')) acc.push([a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]);
@@ -37,6 +45,36 @@ const require = createRequire(import.meta.url);
 const tryReq = (p) => { try { return require(p); } catch { return null; } };
 const pw = tryReq(process.env.PLAYWRIGHT_PATH || 'playwright') || tryReq(`${process.env.HOME}/projects/micromachines-clone/node_modules/playwright`);
 if (!pw) { console.error('Playwright not found; set PLAYWRIGHT_PATH'); process.exit(1); }
+
+// --android: the phone, its Chrome's DevTools on a local port, and the dev servers'
+// ports passed through to it.
+const ANDROID = args.android ? setUpAndroid(typeof args.android === 'string' ? args.android : process.env.ANDROID_SERIAL) : null;
+function setUpAndroid(serial) {
+  const run = (...a) => execFileSync('adb', serial ? ['-s', serial, ...a] : a, { encoding: 'utf8' }).trim();
+  if (!serial) {
+    const devices = execFileSync('adb', ['devices'], { encoding: 'utf8' }).split('\n').slice(1).filter((l) => /\tdevice$/.test(l)).map((l) => l.split('\t')[0]);
+    if (devices.length !== 1) { console.error(`--android: ${devices.length} devices attached (${devices.join(', ')}); give one: --android <serial>`); process.exit(1); }
+    serial = devices[0];
+  }
+  const ports = [...new Set([URL_BASE, args.vs].filter(Boolean).map((u) => {
+    const url = new URL(u);
+    if (!['localhost', '127.0.0.1'].includes(url.hostname)) { console.error(`--android needs a local dev server, not ${u}`); process.exit(1); }
+    return url.port || '80';
+  }))];
+  for (const p of ports) run('reverse', `tcp:${p}`, `tcp:${p}`);
+  run('shell', 'input', 'keyevent', 'KEYCODE_WAKEUP');
+  run('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', 'about:blank', 'com.android.chrome');
+  const devtools = String(args['android-port'] || 9333);
+  run('forward', `tcp:${devtools}`, 'localabstract:chrome_devtools_remote');
+  const model = run('shell', 'getprop', 'ro.product.model'), version = run('shell', 'getprop', 'ro.build.version.release');
+  const temperature = () => { const m = run('shell', 'dumpsys', 'battery').match(/temperature: (\d+)/); return m ? Number(m[1]) / 10 : NaN; };
+  console.log(`On ${model} (Android ${version}, ${serial}), battery at ${temperature()} °C`);
+  const cleanUp = () => {
+    for (const p of ports) try { run('reverse', '--remove', `tcp:${p}`); } catch {}
+    try { run('forward', '--remove', `tcp:${devtools}`); } catch {}
+  };
+  return { devtools, temperature, cleanUp };
+}
 
 const PLACES = {
   stand: { start: '14.4206,50.0873', drive: false },  // Old Town Square
@@ -76,7 +114,7 @@ const INIT = (loadingFrames = false) => {
     };
   }
   const raf = window.requestAnimationFrame.bind(window);
-  window.__bench = { frames: [], js: [], render: [], gpu: [], calls: [], tris: [], on: false };
+  window.__bench = { frames: [], js: [], render: [], gpu: [], calls: [], tris: [], on: false, rendering: 0 };
   if (loadingFrames) {
     // Keep headless Chrome's frame scheduler active while it creates the device.
     // Use the original RAF and stop at startup, so this never contributes samples.
@@ -85,9 +123,11 @@ const INIT = (loadingFrames = false) => {
   }
   window.requestAnimationFrame = (cb) => raf((t) => {
     const t0 = performance.now();
-    cb(t);
     const b = window.__bench;
-    if (b.on) { b.frames.push(t); b.js.push(performance.now() - t0); }
+    b.rendering = 0;
+    cb(t);
+    // (render: all of renderer.render in the frame, e.g. the lamps' light map and the scene.)
+    if (b.on) { b.frames.push(t); b.js.push(performance.now() - t0); b.render.push(b.rendering); }
   });
 };
 
@@ -97,7 +137,8 @@ const f1 = (x) => (Number.isFinite(x) ? x.toFixed(1) : '–');
 
 async function runScene(browser, name, base = URL_BASE) {
   const place = PLACES[name];
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  // (On a phone: its Chrome's own context, and a new tab in it.)
+  const ctx = ANDROID ? browser.contexts()[0] : await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
   const errors = [];
   let closing = false;
@@ -110,7 +151,8 @@ async function runScene(browser, name, base = URL_BASE) {
       r?.setAnimationLoop(null);
       r?.backend?.device?.destroy();
     }).catch(() => {});
-    await ctx.close();
+    if (ANDROID) await page.close();
+    else await ctx.close();
   };
   await page.addInitScript(INIT, !!args['loading-frames']);
   if (args.init) await page.addInitScript(args.init);
@@ -183,13 +225,22 @@ async function runScene(browser, name, base = URL_BASE) {
     const ext = gl.getExtension ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null; // (none on WebGPU)
     const pending = [];
     const render = r.render.bind(r);
+    let depth = 0;
     r.render = (s, c) => {
+      // Only the outermost render: three.js's WebGPU renderer draws the shadow maps with
+      // renderer.render from inside the main one.
+      if (depth) return render(s, c);
+      depth++;
+      try { return outer(s, c); } finally { depth--; }
+    };
+    const outer = (s, c) => {
       const t0 = performance.now();
       let q = null;
       if (ext && b.on) { q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); }
       render(s, c);
       if (q) { gl.endQuery(ext.TIME_ELAPSED_EXT); pending.push(q); }
-      if (b.on) { b.render.push(performance.now() - t0); b.calls.push(r.info.render.drawCalls ?? r.info.render.calls); b.tris.push(r.info.render.triangles); }
+      b.rendering += performance.now() - t0;
+      if (b.on && s === d.scene) { b.calls.push(r.info.render.drawCalls ?? r.info.render.calls); b.tris.push(r.info.render.triangles); }
       while (pending.length && gl.getQueryParameter(pending[0], gl.QUERY_RESULT_AVAILABLE)) {
         const p = pending.shift();
         if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) b.gpu.push(gl.getQueryParameter(p, gl.QUERY_RESULT) / 1e6);
@@ -199,6 +250,7 @@ async function runScene(browser, name, base = URL_BASE) {
     b.gpuAvailable = !!ext;
     b.on = true;
   });
+  if (args.stalls && !args.ab) await page.evaluate(readFileSync(new URL('./bench-stalls.js', import.meta.url), 'utf8'));
   if (args.ab) {
     const result = await abScene(page, ctx, name, close);
     result.errors = errors;
@@ -214,6 +266,7 @@ async function runScene(browser, name, base = URL_BASE) {
       ratio: d.renderer.getPixelRatio(), tier: d.graphics.tier, speed: d.car ? d.car.speed * 3.6 : 0 };
   });
   const wall = (Date.now() - t0) / 1000;
+  if (args.stalls && !args.ab) for (const line of await page.evaluate(() => window.__stalls.report())) console.log(`[${name}] ${line}`);
   let profile = null;
   if (args.profile) {
     ({ profile } = await cdp.send('Profiler.stop'));
@@ -226,7 +279,7 @@ async function runScene(browser, name, base = URL_BASE) {
     name, fps: res.frames.length / wall, frameMed: pct(dts, 0.5), frame95: pct(dts, 0.95), frame99: pct(dts, 0.99),
     js: mean(res.js), js95: pct(res.js, 0.95), render: mean(res.render), gpu: res.gpu.length ? mean(res.gpu) : NaN, gpu95: pct(res.gpu, 0.95),
     calls: mean(res.calls), tris: mean(res.tris), people: res.people, traffic: res.traffic, loose: res.loose, tiles: res.tiles,
-    ratio: res.ratio, tier: res.tier, speed: res.speed, profile, loadTime, errors, backend,
+    ratio: res.ratio, tier: res.tier, speed: res.speed, profile, loadTime, errors, backend, temperature: ANDROID ? ANDROID.temperature() : null,
   };
 }
 
@@ -274,10 +327,10 @@ function topSelf(profile, n = 25) {
 
 // Google Chrome itself by default (--browser chromium for Playwright's own build, whose
 // MSAA costs several times more than Chrome's on a Mac).
-const launchBrowser = () => pw.chromium.launch({
+const launchBrowser = () => (ANDROID ? pw.chromium.connectOverCDP(`http://localhost:${ANDROID.devtools}`) : pw.chromium.launch({
   headless: true, channel: args.browser === 'chromium' ? undefined : 'chrome',
   args: [`--use-angle=${args.angle || 'metal'}`, '--enable-gpu', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--enable-unsafe-webgpu'],
-});
+}));
 // Some Chrome/Metal sessions leave the next context's requestDevice pending.
 // A fresh process per scene keeps the same --vs order without timing fallbacks.
 const browser = args['fresh-browser'] ? null : await launchBrowser();
@@ -297,7 +350,7 @@ try {
       delete r.profile;
       (res[k][s] ||= []).push(r);
       if (args.json) writeFileSync(args.json, JSON.stringify([{ comparison: true, before: res.vs, after: res.url }], null, 2));
-      console.log(`${s.padEnd(7)} ${k === 'vs' ? 'before' : 'after '} ${f1(r.fps).padStart(6)} fps  ${f1(1000 / r.fps)} ms/frame  js ${f1(r.js)} ms  gpu ${f1(r.gpu)} ms  ${Math.round(r.calls)} calls  loaded in ${f1(r.loadTime)} s`);
+      console.log(`${s.padEnd(7)} ${k === 'vs' ? 'before' : 'after '} ${f1(r.fps).padStart(6)} fps  ${f1(1000 / r.fps)} ms/frame  js ${f1(r.js)} ms  gpu ${f1(r.gpu)} ms  ${Math.round(r.calls)} calls  loaded in ${f1(r.loadTime)} s${r.temperature ? `  ${r.temperature} °C` : ''}`);
     }
     all.push({ comparison: true, before: res.vs, after: res.url });
     for (const s of SCENES) {
@@ -315,10 +368,11 @@ try {
       console.log(`${line('off', r.off)}\n${line('on', r.on)}\n${r.name.padEnd(7)} on is ${f1((r.off.ms - r.on.ms) / r.off.ms * 100)}% quicker a frame`);
       continue;
     }
-    console.log(`${r.name.padEnd(7)} ${f1(r.fps).padStart(6)} fps  frame ${f1(r.frameMed)}/${f1(r.frame95)}/${f1(r.frame99)} ms  js ${f1(r.js)} (p95 ${f1(r.js95)}, render ${f1(r.render)}) ms  gpu ${f1(r.gpu)} (p95 ${f1(r.gpu95)}) ms  ${Math.round(r.calls)} calls ${(r.tris / 1e6).toFixed(2)}M tris  ${r.people} people ${r.traffic} traffic ${r.loose} loose ${r.tiles} tiles  ${r.ratio}× ${r.tier}${r.speed ? `  ${Math.round(r.speed)} km/h` : ''}  loaded in ${f1(r.loadTime)} s`);
+    console.log(`${r.name.padEnd(7)} ${f1(r.fps).padStart(6)} fps  frame ${f1(r.frameMed)}/${f1(r.frame95)}/${f1(r.frame99)} ms  js ${f1(r.js)} (p95 ${f1(r.js95)}, render ${f1(r.render)}) ms  gpu ${f1(r.gpu)} (p95 ${f1(r.gpu95)}) ms  ${Math.round(r.calls)} calls ${(r.tris / 1e6).toFixed(2)}M tris  ${r.people} people ${r.traffic} traffic ${r.loose} loose ${r.tiles} tiles  ${r.ratio}× ${r.tier}${r.speed ? `  ${Math.round(r.speed)} km/h` : ''}  loaded in ${f1(r.loadTime)} s${r.temperature ? `  ${r.temperature} °C` : ''}`);
     if (r.profile) { console.log(topSelf(r.profile).join('\n')); delete r.profile; }
   }
 } finally {
   if (browser) await browser.close();
+  ANDROID?.cleanUp();
 }
 if (args.json) writeFileSync(args.json, JSON.stringify(all, null, 2));
