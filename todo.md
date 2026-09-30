@@ -35,6 +35,14 @@ check never held), instance buffers went up whole, and DynamicDrawUsage makes
 three.js's WebGPU renderer upload a buffer every frame: 3.0–3.5 MB a frame of
 uploads down to ~0.2 MB. The crowd is drawn and animated only in view. Open:
 
+Tree rendering now leases retained pages by tile and shape (256 broadleaf or 128
+shrub/conifer instances). Startup prepares a finite envelope (64 broadleaf, 20 shrub,
+24 conifer pages); later tiles
+reuse their mesh UUIDs, attributes and shader bindings. A denser view can grow the
+pool without thinning trees. See plan 009 for the measured startup, visual and drive
+checks; WebGPU uniform instance buffers may still upload on a drawn frame even when
+the application has not marked an attribute dirty.
+
 The tiers now control MSAA, sun shadow size, roof detail and the crowd cap too:
 
 | | High | Medium | Low | Lowest |

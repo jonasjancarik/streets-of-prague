@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Geo, Grid, rng, hash } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
-import { treeMeshes } from './map/vegetation.ts';
+import { TreePool } from './trees.ts';
 import { Surfaces } from './surface.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
@@ -296,6 +296,7 @@ export class TileWorld {
   area: string;
   index: MapIndex;
   scene: THREE.Scene;
+  trees: TreePool;
   time: { value: number };
   night: boolean;
   T: number; ox: number; oy: number;
@@ -331,6 +332,7 @@ export class TileWorld {
     this.index = index;
     loadFacadeAtlas();
     this.scene = scene;
+    this.trees = new TreePool(scene);
     this.time = time;
     this.night = night;
     this.T = index.tile;
@@ -867,7 +869,6 @@ export class TileWorld {
     const walls = wallMesh(land.walls);
     const fenceRows = fenceMeshes(land.fences);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
-    const trees = treeMeshes(land.trees);
     // The overhead wires over the tram tracks, at the height of the lowest bridge deck a
     // track is on (as ground.ts lays the tracks) or of the ground.
     const decks = onLevels.filter((l) => l.level > 0).sort((a, b) => a.level - b.level);
@@ -881,7 +882,7 @@ export class TileWorld {
     };
     const roads = [...(t.roads.road || []), ...(t.roads.sett || []), ...(t.roads.dirt || [])];
     const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt, (x, y) => roads.some((rings) => inPoly(x, y, rings)));
-    group.add(surfaces.group, ...buildings, walls, fenceRows.fence, fenceRows.hedge, ...trees, ...landmarks, ...wires);
+    group.add(surfaces.group, ...buildings, walls, fenceRows.fence, fenceRows.hedge, ...landmarks, ...wires);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
     group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
@@ -901,24 +902,35 @@ export class TileWorld {
       solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) : false),
     });
     lap('parking');
-    this.scene.add(group);
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), group, surfaces, grid, levels: onLevels, cars, ms,
-      roads, disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, ...trees, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, relief: shade, sample: shade?.sample,
+      roads, disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };
       }),
       weirs: t.weirs || [],
     };
-    this.loaded.set(k, tile);
-    this.byIndex.set(t.i * 65536 + t.j, tile);
-    // The neighbours' hill shading along the shared edges, now that this side is known.
-    if (shared) for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.edges();
-    this.last.i = NaN;
-    this.onCars(cars, tile);
-    return tile;
+    // Commit the lease only once construction is finished. If installation or a
+    // callback fails, a retry must not inherit pages from the interrupted attempt.
+    try {
+      this.trees.add(k, land.trees);
+      this.scene.add(group);
+      this.loaded.set(k, tile);
+      this.byIndex.set(t.i * 65536 + t.j, tile);
+      // The neighbours' hill shading along the shared edges, now that this side is known.
+      if (shared) for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.edges();
+      this.last.i = NaN;
+      this.onCars(cars, tile);
+      return tile;
+    } catch (error) {
+      this.trees.remove(k);
+      this.scene.remove(group);
+      this.loaded.delete(k);
+      this.byIndex.delete(t.i * 65536 + t.j);
+      throw error;
+    }
   }
 
   // The buildings of a tile and the tiles round it that can shade its ground: the outlines
@@ -952,6 +964,7 @@ export class TileWorld {
   drop(k: string) {
     const t = this.loaded.get(k);
     if (!t) return;
+    this.trees.remove(k);
     this.scene.remove(t.group);
     t.surfaces.dispose();
     t.relief?.texture.dispose();

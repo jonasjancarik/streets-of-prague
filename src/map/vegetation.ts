@@ -14,8 +14,8 @@ export interface TreeTileData extends GeoData {
 // A tree's place in metres, and what kind it is when the map knows: 1 a conifer, 2 a fruit tree.
 export type TreeSpot = [number, number, number?];
 
-// The instances run broadleaf, then `shrubs`, then `conifers`: a mesh each (see treeMeshes).
-interface TreeInstances { matrices: Float32Array; colours: Float32Array; evergreen: Float32Array; count: number; shrubs: number; conifers: number }
+// The instances run broadleaf, then `shrubs`, then `conifers`: one page kind each.
+export interface TreeInstances { matrices: Float32Array; colours: Float32Array; evergreen: Float32Array; count: number; shrubs: number; conifers: number }
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
@@ -321,10 +321,11 @@ function crownBuffers({ pos, nor, col, tuft, across, along, idx }: CrownArrays) 
   geom.setAttribute('along', new THREE.InterleavedBufferAttribute(leaves, 3, 6));
   geom.setIndex(idx);
   // Every tile's trees use these buffers: the WebGPU renderer must keep them when one tile goes.
-  for (const a of [idx, ...Object.values(geom.attributes)]) (a as { shared?: boolean }).shared = true;
+  for (const a of [geom.index, ...Object.values(geom.attributes)]) if (a) (a as { shared?: boolean }).shared = true;
   return geom;
 }
 let crown: THREE.BufferGeometry | null = null, shrub: THREE.BufferGeometry | null = null;
+let treeFactories = 0;
 
 // A conifer: tiers of spiky skirts, one on top of the next and narrowing to a tip,
 // round a bare trunk. Its local frame is the broadleaf crown's (scaled the same way
@@ -498,33 +499,44 @@ function leafy(material: THREE.MeshLambertMaterial) {
   return material;
 }
 
-// One mesh each for the broadleaf trees, the shrubs and the conifers, sharing a material.
-export function treeMeshes({ matrices, colours, evergreen, count, shrubs, conifers }: TreeInstances) {
+// The renderer owns these shapes and this material for the whole forest's lifetime.
+// Tile workers import this module too, so create them only when the renderer asks.
+export function treePageFactory() {
   crown ??= crownGeometry();
   shrub ??= shrubGeometry();
   pine ??= pineGeometry();
+  const shapes = [crown, shrub, pine];
+  treeFactories++;
   // Opened round you, like the buildings, when you're in a tunnel under a park.
-  const mat = leafy(cutAway(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), 'trees'));
-  const part = (shape: THREE.BufferGeometry, from: number, to: number) => {
-    const n = to - from;
-    // The shared shape, with the tile's own list of which trees are evergreen.
+  const material = leafy(cutAway(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), 'trees'));
+  const create = (kind: number, capacity: number) => {
     const geom = new THREE.BufferGeometry();
+    const shape = shapes[kind];
     geom.setIndex(shape.index);
     for (const [name, attr] of Object.entries(shape.attributes)) geom.setAttribute(name, attr);
-    geom.setAttribute('evergreen', new THREE.InstancedBufferAttribute(n ? evergreen.slice(from, to) : new Float32Array(1), 1));
-    const mesh = new THREE.InstancedMesh(geom, mat, n);
-    (mesh.instanceMatrix.array as Float32Array).set(matrices.subarray(from * 16, to * 16));
-    if (n) mesh.instanceColor = new THREE.InstancedBufferAttribute(colours.slice(from * 3, to * 3), 3);
+    geom.setAttribute('evergreen', new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+    const mesh = new THREE.InstancedMesh(geom, material, capacity);
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
+    mesh.count = 0;
+    mesh.visible = false;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    // A depth material of their own for the shadows: three.js's shared one, switching
-    // between instanced and plain meshes (the buildings), works out its shader again at
-    // every switch.
+    // WebGL's depth pass needs its own variant when switching between trees and buildings.
     mesh.customDepthMaterial = treeDepth;
     return mesh;
   };
-  const broadleaf = count - shrubs - conifers;
-  return [part(crown, 0, broadleaf), part(shrub, broadleaf, broadleaf + shrubs), part(pine, broadleaf + shrubs, count)];
+  return { create, dispose: () => {
+    material.dispose();
+    if (--treeFactories === 0) {
+      // Shared attributes survive individual page disposal. The last forest owner
+      // releases them explicitly, after every page has gone.
+      for (const shape of shapes) {
+        for (const a of [shape.index, ...Object.values(shape.attributes)]) if (a) (a as { shared?: boolean }).shared = false;
+        shape.dispose();
+      }
+      crown = shrub = pine = null;
+    }
+  } };
 }
 // (Bare trees throw the shadows of their twigs.)
 const treeDepth = new THREE.MeshDepthMaterial();

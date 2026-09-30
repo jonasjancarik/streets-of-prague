@@ -1408,11 +1408,15 @@ async function main() {
     // its textures once, so tiles compiled here would keep the black stand-in.
     status('Preparing the view…');
     await loadFacadeAtlas();
+    // Keep tree variants prepared while warming the car meshes and scene.
+    const releaseTreeReserve = world.trees.prepare([64, 20, 24]);
+    try {
     // Give the already-started optional bike feed a short chance to supply its
     // operator colours; a slow or missing feed must never hold the loading screen.
     await Promise.race([bikeShare.ready, new Promise<void>((resolve) => setTimeout(resolve, 250))]);
     carPool.prepare(ordinaryCarBodies(bikeShare.colours()));
     await carPool.warm(() => renderer.compileAsync(scene, camera)).catch((e) => console.warn(e));
+    } finally { releaseTreeReserve(); }
     scene.remove(samples.group);
     metro.under.hide();
     samples.dispose();

@@ -303,7 +303,7 @@ that without a new renderer.
   lamps come on at dusk (earlier under heavy cloud), and a share of the windows is lit
   by the hour, most in the evening.
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.ts`) around the camera. Each
-  tile has its own ground, buildings, trees, collision grid, parked cars and piece of
+  tile has its own ground, buildings, tree-page leases, collision grid, parked cars and piece of
   the street graphs (joined across tiles by OSM node ids), so start-up doesn't depend
   on the area's size. A tile's files are fetched all at once, and the heavy part of
   building it runs in web workers (`src/tileWorker.ts`): the ground's geometry
@@ -321,6 +321,11 @@ that without a new renderer.
   winter), fruit trees are small. The woods, parks and gardens are filled up with made-up
   trees, 30% of them conifers in woods, but not next to a surveyed one. Rebuild them with
   `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
+  Rendering keeps fixed-capacity mesh pages per tree shape (`src/trees.ts`). A tile
+  leases pages containing only its own trees; unloading the tile clears the pages
+  for reuse without changing the surveyed or generated tree data. Pages hold 256
+  broadleaf or 128 shrub/conifer instances. Startup prepares 64 broadleaf, 20 shrub
+  and 24 conifer pages; a denser view can add pages without dropping trees.
 - **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, and House Okamura in Břevnov) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.

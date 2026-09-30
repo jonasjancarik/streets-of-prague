@@ -8,7 +8,7 @@ This is step 3 of the driving-stutter work. Preserve every tree and its appearan
 
 ## Status and starting point
 
-- Status: PLANNED; no implementation or new measurements.
+- Status: IN PROGRESS; retained pages implemented, verification underway.
 - Priority: P1. Effort: several days. Risk: medium–high because rendering ownership and tile disposal change.
 - Category: performance. Dependencies: none technically; follow 007 and 008 for separate before/after attribution. Retain their work if present.
 - Planned at: `5162c1fcf11e51df8ceda46049cac217fc7a12cd`, 2026-09-30.
