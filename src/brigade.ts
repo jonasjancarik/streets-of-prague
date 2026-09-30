@@ -23,9 +23,11 @@ const SPRAY = 7; // m: how far a hose reaches
 const STAND = 5; // m from the fire they stand at
 const HOSE = 1.3; // seconds of water (for `douse`) per second of spraying
 const GIVE_UP = 30; // seconds a call waits for a street to spawn an engine on
+const CHASE = 25; // seconds the crew runs after someone who took their engine
+const RUN = 4.6; // m/s
 const WRECKED = 90; // damage that puts an engine out of action
 
-interface Fighter { x: number; y: number; h: number; vx: number; vy: number; engine: Engine; fig: Figures; anim: Anim; down: number; spot: { x: number; y: number }; back: boolean; spraying: boolean; gone?: boolean; gz?: number; detour?: number }
+interface Fighter { x: number; y: number; h: number; vx: number; vy: number; engine: Engine; fig: Figures; anim: Anim; down: number; spot: { x: number; y: number }; back: boolean; spraying: boolean; gone?: boolean; gz?: number; detour?: number; chase?: number }
 interface Engine extends Follower { car: Car; target: Car; phase: 'go' | 'work' | 'leave'; t: number; wrecked: boolean; crew: boolean; gone?: boolean }
 interface Call { target: Car; t: number }
 interface BrigadeOptions {
@@ -80,13 +82,15 @@ export class Brigade {
     return false;
   }
 
-  // You got into an engine: it's yours, and its crew walks off.
+  // You got into an engine: it's yours. Whoever of its crew is out runs after you for a
+  // while. Returns whether it was an engine (taking one is a crime).
   take(car: Car) {
     const i = this.engines.findIndex((e) => e.car === car);
-    if (i < 0) return;
+    if (i < 0) return false;
     this.engines.splice(i, 1);
     car.crew = false;
-    for (const f of this.crew) if (f.engine.car === car) f.back = true;
+    for (const f of this.crew) if (f.engine.car === car) { f.back = true; f.chase = CHASE; }
+    return true;
   }
 
   knock(f: Fighter, vx: number, vy: number) {
@@ -99,10 +103,10 @@ export class Brigade {
     this.spare.push(f.fig);
   }
 
-  // Dev teleport: nobody is left behind.
   // Engines with their lights going: on the way and while the crew works.
   get lit() { return this.engines.filter((e) => !e.wrecked && !e.gone).map((e) => e.car); }
 
+  // Dev teleport: nobody is left behind.
   reset() {
     for (const f of this.crew) this.dismiss(f);
     this.crew = [];
@@ -140,10 +144,15 @@ export class Brigade {
     return g.at(x, y) || g.at(x + r, y) || g.at(x - r, y) || g.at(x, y + r) || g.at(x, y - r);
   }
 
-  walk(f: Fighter, dt: number) {
+  walk(f: Fighter, dt: number, me: { x: number; y: number }) {
     const { o } = this, e = f.engine, tc = e.target;
     f.spraying = false;
-    if (f.down > 0) {
+    if (f.chase !== undefined && f.down <= 0) {
+      // Their engine is gone: after whoever took it, until they lose them.
+      f.chase -= dt;
+      if (f.chase <= 0 || Math.hypot(me.x - f.x, me.y - f.y) > 70) f.chase = undefined;
+      else steer(f, me.x, me.y, RUN, o.bodyAt, null, o.rng);
+    } else if (f.down > 0) {
       f.down -= dt;
       const k = Math.exp(-4 * dt);
       f.vx *= k;
@@ -262,7 +271,7 @@ export class Brigade {
       e.gone = !waiting && o.offscreen(c.x, c.y) && (e.wrecked ? d > 120 : d > 250 && (e.phase === 'leave'));
     }
     this.engines = this.engines.filter((e) => !e.gone);
-    for (const f of this.crew) this.walk(f, dt);
+    for (const f of this.crew) this.walk(f, dt, me);
     for (const f of this.crew) if (f.gone) this.dismiss(f);
     this.crew = this.crew.filter((f) => !f.gone);
 

@@ -686,7 +686,8 @@ async function main() {
     // A police car: the officer in it gets out and comes after you.
     const cop = best.type === 'police';
     if (cop) police.take(best);
-    brigade.take(best);
+    const engine = brigade.take(best);
+    if (engine) police.crime('carjack', best.x, best.y);
     if (agent) {
       traffic.release(agent);
       if (!cop) {
