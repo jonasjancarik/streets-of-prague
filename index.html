@@ -43,6 +43,9 @@
       .ride-stops button:hover { background: var(--key); }
       .ride-stops button.next { font-weight: 600; }
       .ride-stops button.dest { background: var(--ink); color: #140d0c; }
+      .ride-turns { display: flex; gap: 6px; margin-top: 8px; }
+      .ride-turns button { flex: 1; font: inherit; font-weight: 600; color: var(--ink); background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 6px 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      .ride-turns button.dest { background: var(--ink); color: #140d0c; }
       /* At a tram stop: the next trams due, counting down. */
       #board { margin-top: 8px; max-width: 260px; }
       #board[hidden] { display: none; }
@@ -119,7 +122,7 @@
       #help kbd { display: inline-block; font: 600 11px/1 Inter, system-ui, sans-serif; background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 3px 5px 2px; min-width: 1em; text-align: center; }
       #help .foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(236, 228, 214, 0.15); opacity: 0.7; }
       #help section { display: none; }
-      #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='tram'] .tram-only, #help[data-mode='funicular'] .funicular-only, #help[data-mode='heli'] .heli-only { display: block; }
+      #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='drive'] .drive-only, #help[data-mode='tram'] .tram-only, #help[data-mode='funicular'] .funicular-only, #help[data-mode='heli'] .heli-only { display: block; }
       #help.folded { width: auto; padding: 6px 10px; }
       #help.folded > :not(.unfold), #help:not(.folded) .unfold { display: none; }
       #dev { top: 16px; right: 16px; width: 340px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
@@ -324,7 +327,7 @@
       #t-toggle { position: fixed; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 160px); width: 136px; height: 44px; padding: 0 10px; white-space: nowrap; }
       #touch button.down, .t-pedal.down { background: rgba(236, 228, 214, 0.3); }
       #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
-      #t-fast, #t-taxi, #t-ticket { height: 52px; padding: 0 18px; }
+      #t-fast, #t-steal, #t-taxi, #t-ticket { height: 52px; padding: 0 18px; }
       #touch #t-ticket[hidden] { display: none; }
       #t-action.off { visibility: hidden; }
       #t-pedals { display: flex; align-items: flex-end; gap: 10px; touch-action: none; }
@@ -333,7 +336,9 @@
       #t-gas { width: 96px; height: 128px; border-color: var(--accent); }
       #t-gas.down { background: var(--edge); color: var(--ink); }
       #touch:not([data-mode='foot']):not([data-mode='stop']) .foot-only,
-      #touch:not([data-mode='car']) .car-only, #touch:not([data-mode='tram']):not([data-mode='stop']) .tram-only { display: none; }
+      #touch:not([data-mode='car']):not([data-mode='drive']) .car-only, #touch:not([data-mode='tram']):not([data-mode='stop']) .tram-only { display: none; }
+      #touch[data-mode='drive'] #t-toggle, #touch[data-mode='drive'] #t-road { display: none; }
+      #touch:not([data-mode='tram']) #t-steal { display: none; }
       #touch[data-mode='tram'] #t-steer { display: none; }
       #t-road { position: fixed; top: calc(max(12px, env(safe-area-inset-top)) + 52px); right: max(12px, env(safe-area-inset-right)); height: 40px; padding: 0 14px; }
       @media (max-height: 460px) { #t-gas { height: 104px; } #t-brake { height: 72px; } #t-action { height: 44px; } }
@@ -398,9 +403,20 @@
           <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Steer</dd>
           <dt><kbd>Space</kbd></dt><dd data-t>Handbrake</dd>
           <dt><kbd>Shift</kbd></dt><dd data-t>Hold to keep to the lane and the speed limit, while A and D pick the next turn</dd>
+          <dt><kbd>Q</kbd></dt><dd data-t>Horn (hold it)</dd>
           <dt><kbd>R</kbd></dt><dd data-t>Back on the road</dd>
           <dt><kbd>N</kbd></dt><dd data-t>Radio: next station, and off (or use the buttons under the speed)</dd>
           <dt><kbd>E</kbd></dt><dd data-t>Get out, or off a bike</dd>
+        </dl>
+      </section>
+      <section class="drive-only">
+        <h2 data-t>Driving the tram</h2>
+        <dl>
+          <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Pull away and brake</dd>
+          <dt><kbd>Space</kbd></dt><dd data-t>Brake hard</dd>
+          <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Pick the way at the next junction (straight on if you don't)</dd>
+          <dt><kbd>Q</kbd></dt><dd data-t>Ring the bell</dd>
+          <dt><kbd>E</kbd></dt><dd data-t>Get off once it has stopped</dd>
         </dl>
       </section>
       <section class="tram-only">
@@ -409,6 +425,7 @@
           <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Pick where to get off</dd>
           <dt><kbd>Shift</kbd></dt><dd data-t>Speed up the ride</dd>
           <dt><kbd>E</kbd></dt><dd data-t>Get off at the next stop</dd>
+          <dt><kbd>F</kbd></dt><dd data-t>Take over the tram and drive it yourself</dd>
         </dl>
       </section>
       <section class="funicular-only">
@@ -436,11 +453,12 @@
       <button id="t-toggle" class="car-only">Lane assist</button>
       <button id="t-road" class="car-only" data-t>Back on road</button>
       <div id="t-right">
+        <button id="t-steal" class="tram-only" data-t>Take over the tram</button>
         <button id="t-fast" class="tram-only">Hold to speed up</button>
         <button id="t-ticket" data-t hidden>Buy a ticket</button>
         <button id="t-taxi" class="foot-only" data-t>Taxi</button>
         <button id="t-action" class="off">Get in</button>
-        <div class="t-row car-only"><button id="t-hand" data-t>Handbrake</button></div>
+        <div class="t-row car-only"><button id="t-horn" data-t>Horn</button><button id="t-hand" data-t>Handbrake</button></div>
         <div id="t-pedals" class="car-only"><div id="t-brake" class="t-pedal" data-t>Brake</div><div id="t-gas" class="t-pedal" data-t>Gas</div></div>
       </div>
     </div>

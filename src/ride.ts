@@ -5,11 +5,16 @@
 // tram held up between stops for a while (by something on the track) lets you off
 // where it stands.
 //
+// Or take it over (F) and drive it yourself, along the real tracks (src/tramdrive.ts).
+//
 // Speeding up runs the whole world faster (see simulate() in main.ts), so the city
 // keeps moving around you; it holds back while the streets ahead are still loading.
 
 import { headsignAt, frontOf } from './trams.ts';
 import type { Trams, TramVehicle } from './trams.ts';
+import { TramDrive } from './tramdrive.ts';
+import type { DriveControls } from './tramdrive.ts';
+import type { TrackNet, Turn } from './tracks.ts';
 import { getLang, t } from './i18n.ts';
 
 interface RideWorld { keyAt(x: number, y: number): string; available: { has(key: string): boolean }; loaded: { has(key: string): boolean } }
@@ -30,8 +35,12 @@ export class TramRide {
   held: number;
   waiting: boolean;
   shown: string;
+  net: TrackNet;
+  drive: TramDrive | null;
 
-  constructor(trams: Trams, world: RideWorld, el: HTMLElement) {
+  constructor(trams: Trams, world: RideWorld, el: HTMLElement, net: TrackNet) {
+    this.net = net;
+    this.drive = null; // set while you're driving the tram you're on
     this.trams = trams;
     this.world = world;
     this.el = el;
@@ -42,8 +51,17 @@ export class TramRide {
     this.waiting = false; // held back by streets still loading
     this.shown = '';
     el.addEventListener('pointerdown', (e) => {
-      const b = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-halt]') : null;
-      if (!b || !this.v) return;
+      const target = e.target instanceof Element ? e.target : null;
+      const turn = target?.closest<HTMLElement>('[data-turn]');
+      if (turn && this.drive) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.drive.choose(Number(turn.dataset.turn) as Turn);
+        this.shown = '';
+        return;
+      }
+      const b = target?.closest<HTMLElement>('[data-halt]');
+      if (!b || !this.v || this.drive) return;
       e.preventDefault();
       e.stopPropagation();
       const i = Number(b.dataset.halt);
@@ -52,6 +70,7 @@ export class TramRide {
   }
 
   get on() { return !!this.v; }
+  get driving() { return !!this.drive; }
   private get riding(): TramVehicle {
     if (!this.v) throw new Error('No tram ride is active');
     return this.v;
@@ -78,12 +97,27 @@ export class TramRide {
     this.el.hidden = false;
   }
 
+  // Take the tram over: its driver is out, and it's yours to drive.
+  steal() {
+    if (!this.v || this.drive) return false;
+    this.drive = new TramDrive(this.trams, this.net, this.v);
+    this.dest = null;
+    this.scale = 1;
+    this.shown = '';
+    return true;
+  }
+
+  // One step of driving (see TramDrive.update).
+  drives(dt: number, ctl: DriveControls) { this.drive?.update(dt, ctl); }
+
   // Off the tram: where to stand (beside its middle door, on the right, the side
   // Prague's platforms are on) and which way to face.
   leave() {
     const v = this.riding, p = v.parts[1];
     v.rider = false;
     v.hold = false;
+    if (this.drive) v.speed = 0; // left standing where it is
+    this.drive = null;
     this.v = null;
     this.dest = null;
     this.scale = 1;
@@ -95,7 +129,8 @@ export class TramRide {
   atStop() { return this.riding.dwell > 0; }
   // Held up between stops long enough that you may as well walk.
   get stuck() { return this.held > STUCK; }
-  canLeave() { return this.atStop() || this.stuck; }
+  // (Driving, once it has nearly stopped.)
+  canLeave() { return this.drive ? this.riding.speed < 1.5 : this.atStop() || this.stuck; }
   watch(dt: number) { this.held = this.riding.speed < 0.2 && this.riding.dwell <= 0 ? this.held + dt : 0; }
   arrived() { return this.riding.dwell > 0 && this.riding.halt === this.dest; }
   // Get off at the next stop.
@@ -129,6 +164,10 @@ export class TramRide {
   // your stop (stops on the way included) until you're nearly there, as long as the
   // streets ahead have loaded.
   speedUp(dt: number, hold: boolean) {
+    if (this.drive) { // the world keeps its own pace while you drive
+      this.waiting = false;
+      return (this.scale = 1);
+    }
     const want = hold || (this.dest !== null && !this.arrived() && this.toDest() > SLOW_BEFORE);
     this.waiting = want && !this.loadedAhead();
     const target = want && !this.waiting ? FAST : 1;
@@ -157,6 +196,7 @@ export class TramRide {
   render() {
     const { v } = this;
     if (!v) return;
+    if (this.drive) { this.renderDriving(v, this.drive); return; }
     const list = this.upcoming(), halts = v.line.halts;
     const key = `${getLang()}|${v.line.ref}|${this.headsign()}|${list.join(',')}|${this.dest}|${v.dwell > 0}|${this.stuck}`;
     if (key === this.shown) return;
@@ -169,5 +209,21 @@ export class TramRide {
       <div class="ride-line"><span class="ride-ref" style="background:${esc(v.line.colour || '#c4161c')}">${esc(v.line.ref)}</span>
       <span>${esc(t('to {name}', { name: this.headsign() }))}</span></div>${here}
       <ol class="ride-stops">${list.map((i, n) => `<li><button data-halt="${i}" class="${i === this.dest ? 'dest' : ''}${n === 0 ? ' next' : ''}">${esc(halts[i].name)}</button></li>`).join('')}</ol>`;
+  }
+
+  // The strip while driving: the line's number, and the junction ahead with the ways on.
+  private renderDriving(v: TramVehicle, d: TramDrive) {
+    const near = d.junction < 400 && d.options.length > 1;
+    const key = `${getLang()}|${v.line.ref}|driving|${near ? `${Math.round(d.junction / 10)}|${d.pref}|${d.options.map((o) => o.turn)}` : 'none'}`;
+    if (key === this.shown) return;
+    this.shown = key;
+    const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
+    const esc = (s: string) => String(s).replace(/[&<>"]/g, (c) => `&${chars[c]};`);
+    const name: Record<number, string> = { 1: t('◀ Left'), 0: t('▲ Straight on'), [-1]: t('Right ▶') };
+    const here = near ? t('Junction in {m} m', { m: Math.max(0, Math.round(d.junction / 10) * 10) }) : t('No junction in sight');
+    this.el.innerHTML = `
+      <div class="ride-line"><span class="ride-ref" style="background:${esc(v.line.colour || '#c4161c')}">${esc(v.line.ref)}</span>
+      <span>${t('You are driving')}</span></div><div class="ride-here">${here}</div>
+      ${near ? `<div class="ride-turns">${[1, 0, -1].filter((k) => d.options.some((o) => o.turn === k)).map((k) => `<button data-turn="${k}" class="${k === d.pref ? 'dest' : ''}">${esc(name[k])}</button>`).join('')}</div>` : ''}`;
   }
 }

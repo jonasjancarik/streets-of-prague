@@ -12,6 +12,7 @@ import { Crowd, Walker, nearestWalkable } from './people.ts';
 import { loadFootfall } from './footfall.ts';
 import { Trams, loadTrams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
+import { TrackNet } from './tracks.ts';
 import { Taxis } from './taxi.ts';
 import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
@@ -38,7 +39,7 @@ import { startScreen } from './startscreen.ts';
 import { liveWeather } from './liveweather.ts';
 import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
-import type { Surface } from './audio.ts';
+import type { Surface, HornKind } from './audio.ts';
 import { setupTouch } from './touch.ts';
 import './credits.ts';
 import { Police } from './police.ts';
@@ -208,8 +209,9 @@ async function main() {
     terrain: (x, y) => (world.loaded.has(world.keyAt(x, y)) ? world.terrainAt(x, y) : null),
     toLocal: (lon, lat) => (lon > w0 && lon < e0 && lat > s0 && lat < n0 ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [lon, lat]) as [number, number] : null),
   });
-  const trams = new Trams((await lines).lines, scene, { clock, rng: seeded });
-  const ride = new TramRide(trams, world, $('ride'));
+  const tramLines = (await lines).lines;
+  const trams = new Trams(tramLines, scene, { clock, rng: seeded });
+  const ride = new TramRide(trams, world, $('ride'), new TrackNet(tramLines));
   const board = new StopBoard(trams, $('board'));
   const tramStops = new TramStops(trams, scene);
   // Down into the metro and up again at the station you picked (the police lose you).
@@ -487,6 +489,39 @@ async function main() {
     const price = kc(TICKET.price);
     showBanner(pid.buy(clock.t) ? t('Ticket for {minutes} minutes: {price}', { minutes: TICKET.minutes, price }) : t('Not enough money for a ticket ({price})', { price }));
   };
+  // Take the tram you're on: the driver gets out of the way and it's yours.
+  const stealTram = () => {
+    if (!ride.on || ride.driving || inspector.phase === 'decide') return;
+    const p = ride.v!.parts[1];
+    if (!ride.steal()) return;
+    pid.leave(); // no fare, no inspector: you're the driver now
+    police.crime('stealTram', p.x, p.y);
+    showBanner(t('You took over the tram'));
+  };
+  // The horn (and a tram's bell), for as long as the key is down: people ahead step aside.
+  let hornHeld = false, hornT = 0;
+  const hornKind = (c: Car): HornKind => (c.two === 'bike' ? 'bike' : c.two === 'moto' ? 'moto' : c.spec.heavy ? 'heavy' : 'car');
+  const honk = (on: boolean) => {
+    if (ride.driving) {
+      if (on) { ride.drive!.ring(); hornT = 0; hornHeld = true; } else hornHeld = false;
+      return;
+    }
+    if (inCar && !inHeli) {
+      hornHeld = on;
+      hornT = 0;
+      sound.horn(on, hornKind(inCar));
+      return;
+    }
+    hornHeld = false;
+    sound.horn(false);
+  };
+  // Whoever is walking about in front of you (of the car, or along the track) hurries off.
+  const scareAhead = () => {
+    const f = ride.driving ? ride.v!.parts[0] : inCar;
+    if (!f) return;
+    const h = 'ang' in f ? f.ang : f.h, reach = ride.driving ? 14 : 8;
+    crowd.scare(f.x + Math.cos(h) * reach, f.y + Math.sin(h) * reach, ride.driving ? 10 : 8);
+  };
   const pressB = () => { if (inspector.phase === 'decide') inspector.pay(); else buyTicket(); };
   const enterOrExit = () => {
     // In a taxi: out here, and into the one waiting for you.
@@ -512,6 +547,7 @@ async function main() {
     // On a tram: off at this stop (or here, if it's stuck), or at the next one.
     if (ride.on) {
       if (ride.canLeave()) getOff();
+      else if (ride.driving) showBanner(t('Stop the tram first'));
       else ride.requestStop();
       return;
     }
@@ -742,6 +778,8 @@ async function main() {
     if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) enterOrExit();
     if (e.code === 'KeyB' && !e.repeat) pressB();
     if (e.code === 'KeyR') backOnRoad();
+    if (e.code === 'KeyF' && !e.repeat) stealTram();
+    if (e.code === 'KeyQ' && !e.repeat) honk(true);
     // Space jumps, except at a tram stop, where holding it waits for a tram.
     if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on && taxi.state !== 'coming') input.jump = true;
     if (e.code === 'KeyM' && !e.repeat) sound.toggle();
@@ -765,12 +803,13 @@ async function main() {
   window.addEventListener('keyup', (e) => {
     if (keymap[e.code]) input[keymap[e.code]] = false;
     if (!e.shiftKey) input.run = false;
+    if (e.code === 'KeyQ') honk(false);
   });
   let zoom = 1;
   const zoomBy = (f: number) => { zoom = clamp(zoom * f, 0.5, 4); };
   window.addEventListener('wheel', (e) => zoomBy(Math.exp(e.deltaY * 0.0012)), { passive: true });
   $('t-ticket').addEventListener('click', pressB);
-  const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, force: params.has('touch') });
+  const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, force: params.has('touch') });
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -989,6 +1028,12 @@ async function main() {
 
     // Trams stop for whatever is on the track in front of them; one waiting to move
     // across to the other track at a terminus with no loop does it out of sight.
+    if (ride.driving) {
+      ride.drives(dt, ctl);
+      const hit = ride.drive!.hit;
+      ride.drive!.hit = 0;
+      if (hit > 0) shake = Math.min(1.2, shake + hit * 0.06);
+    }
     trams.update(dt, { near: obstacles, x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
     if (ride.on) ride.seat(walker);
     taxi.seat();
@@ -1062,6 +1107,7 @@ async function main() {
           traffic.release(ag);
           a.mode = 'loose';
           loose.push(a);
+          if (t.v.driven && t.v.rider) { stats.wrecked++; police.crime('wreck', a.x, a.y, a); }
         }
         const hit = collideBodies(t, t.circles, 1.25, 0, a, ca, a.r, 1 / a.mass);
         // Pushing a car off the track: ahead, and to the right, away from the other track.
@@ -1107,19 +1153,25 @@ async function main() {
     // Nobody walks through a tram or a funicular car: out to the nearer side (knocked over if it's moving).
     const closeTrams = tramBodies.filter((t) => near(t, { x: px(), y: py() }, 150));
     const open = (x: number, y: number) => !grid.at(x, y);
-    const offTrams = (who: { x: number; y: number; gz?: number }, rad: number, free: (x: number, y: number) => boolean, onHit?: (vx: number, vy: number) => void) => {
+    const offTrams = (who: { x: number; y: number; gz?: number }, rad: number, free: (x: number, y: number) => boolean, onHit?: (vx: number, vy: number, driven: boolean) => void) => {
       for (const t of closeTrams) {
         if (!near(who, t, 18)) continue;
         const n = pushOutOfTram(t, who, rad, free);
-        if (n && onHit && t.vx * n[0] + t.vy * n[1] > 2) onHit(t.vx + n[0] * 2, t.vy + n[1] * 2);
+        if (n && onHit && t.vx * n[0] + t.vy * n[1] > 2) onHit(t.vx + n[0] * 2, t.vy + n[1] * 2, !!t.v.driven && !!t.v.rider);
       }
       // (And out of a funicular car; knocked over if it's coming at them.)
       const f = funiBodies.length ? funicular.pushOut(who, rad, free) : null;
-      if (f && onHit && f.c.vx * f.nx + f.c.vy * f.ny > 1) onHit(f.c.vx + f.nx * 2, f.c.vy + f.ny * 2);
+      if (f && onHit && f.c.vx * f.nx + f.c.vy * f.ny > 1) onHit(f.c.vx + f.nx * 2, f.c.vy + f.ny * 2, false);
     };
     for (const p of crowd.people) {
       if (!near(p, { x: px(), y: py() }, 120)) continue;
-      offTrams(p, 0.3, open);
+      offTrams(p, 0.3, open, (vx, vy, yours) => {
+        // Run down by the tram you're driving.
+        if (!yours || p.state === 'down') return;
+        crowd.knock(p, vx, vy);
+        stats.knocked++;
+        police.crime('knock', p.x, p.y);
+      });
       bump(p, 0.3, (c, nx, ny) => {
         if (c.speed > 3 && p.state !== 'down' && c.mode !== 'traffic') {
           crowd.knock(p, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
@@ -1345,6 +1397,8 @@ async function main() {
     if (inCar && surfaceT < 0) { surfaceT = 0.2; surface = surfaceUnder(inCar.x, inCar.y); }
     busyT -= dt;
     if (busyT < 0) { busyT = 0.5; busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1); }
+    if (hornHeld && !inCar && !ride.driving) honk(false);
+    if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
     sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, hour: (clock.t % 86400) / 3600 });
 
     // ---- Camera ----------------------------------------------------------
@@ -1352,9 +1406,9 @@ async function main() {
     // On the metro, over the train as it goes (see Metro.view).
     const underway = metro.view();
     // In the air the camera rises with the helicopter, so it stays well above it.
-    const want = (underway ? underway.height : inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.air : 0);
+    const want = (underway ? underway.height : inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.driving ? 120 + (ride.v?.speed ?? 0) * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.air : 0);
     height += (want - height) * Math.min(1, dt * (want > height ? 1.6 : 0.9));
-    const lead = underway ? 0.25 : vehicle ? 0.7 : ride.on ? 0.5 : 0.3;
+    const lead = underway ? 0.25 : vehicle || ride.driving ? 0.7 : ride.on ? 0.5 : 0.3;
     if (underway) look.set(underway.x + underway.vx * lead, 0, -(underway.y + underway.vy * lead));
     else look.set(px() + (vehicle || walker).vx * lead, 0, -(py() + (vehicle || walker).vy * lead));
     camPos.lerp(look, Math.min(1, dt * 4));
@@ -1459,7 +1513,16 @@ async function main() {
     }
     else if (boats.me) hint = touch.active ? '' : t('<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank');
     else if (funicular.me) hint = [funicular.hint(touch.active, scale), ticketHint()].filter(Boolean).join(' · ');
-    else if (ride.on) {
+    else if (ride.driving) {
+      const d = ride.drive!, parts: string[] = [];
+      if (touch.active) { if (d.junction < 400 && d.options.length > 1) parts.push(t('Junction in {m} m', { m: Math.max(0, Math.round(d.junction / 10) * 10) })); }
+      else {
+        parts.push(t('<b>W</b> drive · <b>S</b> brake · <b>Q</b> bell'));
+        if (d.junction < 400 && d.options.length > 1) parts.push(t('<b>A</b>/<b>D</b> pick the way at the junction'));
+        parts.push(ride.canLeave() ? t('<b>E</b> get off') : t('stop to get off'));
+      }
+      hint = parts.join(' · ');
+    } else if (ride.on) {
       const halts = ride.v!.line.halts, dest = ride.dest !== null ? halts[ride.dest].name : null;
       const next = ride.dest !== null && ride.dest === ride.upcoming()[0];
       const parts = [];
@@ -1471,6 +1534,7 @@ async function main() {
         else if (ride.stuck) parts.push(t('<b>E</b> get off here'));
         else if (!next) parts.push(t('<b>E</b> get off at the next stop'));
         if (!dest) parts.push(t('<b>W</b>/<b>S</b> pick a stop'), t('hold <b>Shift</b> to speed up'));
+        parts.push(t('<b>F</b> take over the tram'));
       }
       parts.push(ticketHint());
       hint = parts.filter(Boolean).join(' · ');
@@ -1498,9 +1562,9 @@ async function main() {
     if (inspector.phase === 'decide') hint = touch.active ? t('Ticket inspection! Pay the fine ({fine}) or get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) }) : t('Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) });
     taxi.render(touch.active);
     show('hint', hint, 'html');
-    $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.on ? 'tram' : funicular.me ? 'funicular' : 'foot';
+    $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.driving ? 'drive' : ride.on ? 'tram' : funicular.me ? 'funicular' : 'foot';
     ride.render();
-    const label = ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : canBoard || cabin || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
+    const label = ride.driving ? (ride.canLeave() ? 'Get off' : null) : ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : canBoard || cabin || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : null;
     const ticketBtn = inspector.phase === 'decide' ? 2 : pid.state === 'grace' ? 1 : 0;
     if (shown.ticketBtn !== ticketBtn) {
@@ -1508,7 +1572,7 @@ async function main() {
       $('t-ticket').hidden = !ticketBtn;
       $('t-ticket').textContent = t(ticketBtn === 2 ? 'Pay the fine' : 'Buy a ticket');
     }
-    touch.update({ car: inCar || inHeli, tram: ride.on || taxi.riding || !!funicular.me, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || funicular.me?.stop != null, limit: assisted ? assist.limit : null });
+    touch.update({ car: inCar || inHeli, driving: ride.driving, tram: (ride.on && !ride.driving) || taxi.riding || !!funicular.me, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || funicular.me?.stop != null, limit: assisted ? assist.limit : null });
     show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')} · ${tn(stats.knocked, '{n} person knocked over|{n} people knocked over')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}${stats.wasted ? ` · ${t('wasted {n}×', { n: stats.wasted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');

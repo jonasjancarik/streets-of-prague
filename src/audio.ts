@@ -119,6 +119,7 @@ export class Sound {
   onRadioFail: (station: Station) => void = () => {};
   private strikes = -1;
   voices: TramVoice[] = [];
+  private horns: Horn | null = null;
 
   constructor() {
     let saved = '';
@@ -184,6 +185,15 @@ export class Sound {
     })).then((clips) => {
       this.ambience = new Ambience(ctx, Object.fromEntries(clips), this.master);
     }).catch((e) => console.warn('The city sounds could not be loaded', e));
+  }
+
+  // Your horn, for as long as it's held: a car's two notes, deeper on a lorry or a bus,
+  // a thin beep on a motorbike. A bicycle has a bell instead, one ring at a press.
+  horn(on: boolean, kind: HornKind = 'car') {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.on) { this.horns?.set(false, kind); return; }
+    this.horns ||= new Horn(ctx, this.master);
+    this.horns.set(on, kind);
   }
 
   // One of the clips whose names start with `name`, at random.
@@ -451,7 +461,7 @@ class TramVoice {
   roll: AudioBufferSourceNode; rollGain: GainNode;
   squeal: AudioBufferSourceNode; squealGain: GainNode;
   hum: GainNode;
-  lastSpeed = 0; joint = 0; bellT = 0;
+  lastSpeed = 0; joint = 0; bellT = 0; rung = 0;
   dwelling = false; halt = -1; arrived = false; clipT = 0; // (clipT: s left of a departure or arrival)
 
   constructor(sound: Sound, dest: AudioNode) {
@@ -498,6 +508,7 @@ class TramVoice {
       this.lastSpeed = v.speed;
       this.joint = Math.floor(frontOf(v) / JOINT);
       this.bellT = 0;
+      this.rung = v.ring ?? 0;
       this.dwelling = v.dwell > 0;
       this.halt = v.halt;
       this.arrived = this.braking(v); // not halfway into pulling in
@@ -548,12 +559,80 @@ class TramVoice {
       }
     }
 
-    // The bell: at you or a car on the track ahead, again every few seconds while it's there.
+    // The bell: at you or a car on the track ahead, again every few seconds while it's
+    // there, and whenever whoever's driving it rings.
     this.bellT -= dt;
+    if ((v.ring ?? 0) !== this.rung) {
+      this.rung = v.ring ?? 0;
+      sound.play(sound.pick('bell'), t, 0.9, this.out);
+    }
     // (What the driver sees can come and go from one step to the next.)
     if ((v.spotted > 0 || v.forPlayer || (!!v.blocker && speed < 1)) && this.bellT < 0) {
       sound.play(sound.pick('bell'), t, 0.7, this.out);
       this.bellT = v.forPlayer ? 2 : 4;
+    }
+  }
+}
+
+export type HornKind = 'car' | 'heavy' | 'moto' | 'bike';
+const HORNS: Record<HornKind, number[]> = { car: [415, 523], heavy: [262, 330], moto: [620, 780], bike: [] };
+
+// A horn: two notes held together, buzzing a little, for as long as it's on.
+class Horn {
+  ctx: AudioContext;
+  dest: AudioNode;
+  out: GainNode;
+  notes: OscillatorNode[] = [];
+  on = false;
+  kind: HornKind = 'car';
+
+  constructor(ctx: AudioContext, dest: AudioNode) {
+    this.ctx = ctx;
+    this.dest = dest;
+    this.out = gain(ctx, 0);
+    this.out.connect(dest);
+    const lp = filter(ctx, 'lowpass', 2600), am = gain(ctx, 0.85);
+    const buzz = ctx.createOscillator(), depth = gain(ctx, 0.15);
+    buzz.frequency.value = 95;
+    buzz.connect(depth).connect(am.gain);
+    buzz.start();
+    for (let i = 0; i < 2; i++) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = 440;
+      o.connect(lp);
+      o.start();
+      this.notes.push(o);
+    }
+    lp.connect(am).connect(this.out);
+  }
+
+  set(on: boolean, kind: HornKind) {
+    const t = this.ctx.currentTime;
+    if (on && kind === 'bike') {
+      if (!this.on) this.ding(t);
+      this.on = true;
+      return;
+    }
+    if (on === this.on && kind === this.kind) return;
+    this.on = on;
+    this.kind = kind;
+    const freqs = HORNS[kind];
+    if (freqs.length) this.notes.forEach((o, i) => o.frequency.setTargetAtTime(freqs[i], t, 0.005));
+    this.out.gain.setTargetAtTime(on ? 0.16 : 0, t, on ? 0.012 : 0.05);
+  }
+
+  // A bicycle bell: two bright notes that ring out.
+  private ding(t: number) {
+    for (const f of [2350, 3130]) {
+      const o = this.ctx.createOscillator(), g = gain(this.ctx, 0);
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.22, t + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.9);
+      o.connect(g).connect(this.dest);
+      o.start(t);
+      o.stop(t + 1);
     }
   }
 }
