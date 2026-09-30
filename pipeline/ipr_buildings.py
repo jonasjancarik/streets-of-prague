@@ -298,6 +298,31 @@ def read_sheet(job):
     return name, out
 
 
+def sheet_jobs(area, meta):
+    """The area's local projection, and a read_sheet job for each sheet over the area
+    (downloaded if it isn't yet)."""
+    w, s, e, n = AREAS[area]
+    local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
+    to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
+    corners = [to_krovak.transform(lon, lat) for lon in (w, e) for lat in (s, n)]
+    xs = [sheet(x, y) for x, y in corners]
+    X0, X1 = min(c[0] for c in xs), max(c[0] for c in xs)
+    Y0, Y1 = min(c[1] for c in xs), max(c[1] for c in xs)
+    items = catalogue()
+    jobs = []
+    for X in range(X0, X1 + 1):
+        for Y in range(Y0, Y1 + 1):
+            if not sheet_name(X, Y):
+                continue
+            name = f"BD3_{sheet_name(X, Y)}"
+            path = download(name, items)
+            if not path:
+                print(f"  {name}: not in the catalogue")
+                continue
+            jobs.append((name, str(path), local, meta["tile"], meta["origin"]))
+    return local, jobs
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="IPR Praha's 3D buildings for an area's tiles")
     ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
@@ -308,16 +333,9 @@ def main() -> None:
     meta = layers.read_meta(area)
     if not meta:
         raise SystemExit(f"{area}: run build_tiles.py {area} first")
-    w, s, e, n = AREAS[area]
     T = meta["tile"]
     origin = meta["origin"]
-    local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
-    to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
-    corners = [to_krovak.transform(lon, lat) for lon in (w, e) for lat in (s, n)]
-    xs = [sheet(x, y) for x, y in corners]
-    X0, X1 = min(c[0] for c in xs), max(c[0] for c in xs)
-    Y0, Y1 = min(c[1] for c in xs), max(c[1] for c in xs)
-    items = catalogue()
+    local, sheets = sheet_jobs(area, meta)
 
     # OSM buildings per tile, to borrow tags (church, roof shape, roof cover) for colours.
     osm_by_tile = {}
@@ -380,18 +398,6 @@ def main() -> None:
                             shapes.append((Polygon(b["rings"][0], b["rings"][1:]), b["cover"], False))
             regions_by_tile[(i, j)] = RoofRegions(shapes)
         return regions_by_tile[(i, j)]
-
-    sheets = []
-    for X in range(X0, X1 + 1):
-        for Y in range(Y0, Y1 + 1):
-            if not sheet_name(X, Y):
-                continue
-            name = f"BD3_{sheet_name(X, Y)}"
-            path = download(name, items)
-            if not path:
-                print(f"  {name}: not in the catalogue")
-                continue
-            sheets.append((name, str(path), local, T, origin))
 
     started = time.perf_counter()
     per_tile = {}  # (i, j) → list of (int16 positions, uint8 colours), one pair per building
