@@ -5,11 +5,11 @@
 //
 //   node scripts/bench.mjs [--url http://localhost:5191/] [--scenes stand,drive,woods]
 //     [--seconds 10] [--dpr 2] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
-//     [--profile-load] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json] [--stack (page errors with their stack)]
+//     [--profile-load] [--load-progress] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json] [--stack (page errors with their stack)]
 //     [--browser chrome|chromium] [--angle metal|swiftshader (software, drawing like
 //     a desktop GPU that shades every covered pixel: for overdraw)]
 //     [--vs http://localhost:5192/ (compare with another server, taking turns)]
-//     [--ab "window.__ab = (on) => { … }" [--window 2]] [--shot /tmp/look-%s.png [--zoom 0.5]]
+//     [--ab "window.__ab = (on) => { … }" [--window 2] [--warmup 2]] [--shot /tmp/look-%s.png [--zoom 0.5]]
 //
 // Per scene it reports the frame rate, frame times (median, 95th, 99th percentile),
 // the JavaScript time per frame (the whole requestAnimationFrame callback), how much of
@@ -51,6 +51,28 @@ const PLACES = {
 
 // In the page before anything else: time every animation-frame callback.
 const INIT = () => {
+  window.__benchLoad = { adapter: 'not requested', device: 'not requested' };
+  // A pending GPU request has no network request or page error. Record it so a
+  // loading timeout can distinguish browser/driver startup from tile building.
+  if (navigator.gpu) {
+    const requestAdapter = navigator.gpu.requestAdapter.bind(navigator.gpu);
+    navigator.gpu.requestAdapter = async (...args) => {
+      window.__benchLoad.adapter = 'pending';
+      const adapter = await requestAdapter(...args);
+      window.__benchLoad.adapter = adapter ? 'ready' : 'unavailable';
+      if (adapter) {
+        const requestDevice = adapter.requestDevice.bind(adapter);
+        adapter.requestDevice = async (...args) => {
+          window.__benchLoad.device = 'pending';
+          const device = await requestDevice(...args);
+          window.__benchLoad.device = 'ready';
+          device.lost.then((info) => { window.__benchLoad.device = `lost: ${info.reason} ${info.message}`; });
+          return device;
+        };
+      }
+      return adapter;
+    };
+  }
   const raf = window.requestAnimationFrame.bind(window);
   window.__bench = { frames: [], js: [], render: [], gpu: [], calls: [], tris: [], on: false };
   window.requestAnimationFrame = (cb) => raf((t) => {
@@ -71,15 +93,34 @@ async function runScene(browser, name, base = URL_BASE) {
   const page = await ctx.newPage();
   await page.addInitScript(INIT);
   page.on('pageerror', (e) => console.error(`[${name}] page error:`, args.stack ? e.stack : e.message));
-  page.on('console', (m) => { if (m.type() === 'error') console.error(`[${name}] console:`, m.text().slice(0, 3000)); });
+  page.on('console', (m) => { if (m.type() === 'info' && m.text().startsWith('Renderer:')) console.log(`[${name}] ${m.text()}`); if (m.type() === 'error') console.error(`[${name}] console:`, m.text().slice(0, 3000)); });
   const q = `?start=${place.start}&dpr=${DPR}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&go&day=wed&weather=${args.weather || 'clear'}${args.extra || ''}`;
   // --profile-load: the CPU profile of loading, up to the game starting.
   const loadCdp = args['profile-load'] ? await ctx.newCDPSession(page) : null;
   if (loadCdp) { await loadCdp.send('Profiler.enable'); await loadCdp.send('Profiler.setSamplingInterval', { interval: 200 }); await loadCdp.send('Profiler.start'); }
   const loadStart = Date.now();
+  const pending = new Set();
+  page.on('request', (r) => pending.add(r.url()));
+  page.on('requestfinished', (r) => pending.delete(r.url()));
+  page.on('requestfailed', (r) => pending.delete(r.url()));
   await page.goto(base + q);
-  // Loaded: the loading screen is gone and no tiles are being built.
-  await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__drive, null, { timeout: 120000, polling: 100 });
+  // Loaded: the loading screen is gone and the game is available.
+  const loadingState = () => page.evaluate(() => ({
+    stage: document.getElementById('loading-text')?.textContent,
+    done: document.getElementById('loading')?.classList.contains('done'),
+    game: !!window.__drive, hidden: document.hidden, ...window.__benchLoad,
+  }));
+  const progress = args['load-progress'] ? setInterval(async () => {
+    try { console.log(`[${name}] loading ${f1((Date.now() - loadStart) / 1000)} s`, await loadingState(), 'requests', [...pending]); } catch {}
+  }, 5000) : null;
+  try {
+    await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__drive, null, { timeout: 120000, polling: 100 });
+  } catch (e) {
+    console.error(`[${name}] load did not finish`, await loadingState().catch(() => null), 'requests', [...pending]);
+    throw e;
+  } finally {
+    if (progress) clearInterval(progress);
+  }
   const loadTime = (Date.now() - loadStart) / 1000;
   if (loadCdp) {
     const { profile } = await loadCdp.send('Profiler.stop');
@@ -121,7 +162,7 @@ async function runScene(browser, name, base = URL_BASE) {
       if (ext && b.on) { q = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, q); }
       render(s, c);
       if (q) { gl.endQuery(ext.TIME_ELAPSED_EXT); pending.push(q); }
-      if (b.on) { b.render.push(performance.now() - t0); b.calls.push(r.info.render.calls); b.tris.push(r.info.render.triangles); }
+      if (b.on) { b.render.push(performance.now() - t0); b.calls.push(r.info.render.drawCalls ?? r.info.render.calls); b.tris.push(r.info.render.triangles); }
       while (pending.length && gl.getQueryParameter(pending[0], gl.QUERY_RESULT_AVAILABLE)) {
         const p = pending.shift();
         if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) b.gpu.push(gl.getQueryParameter(p, gl.QUERY_RESULT) / 1e6);
@@ -163,6 +204,12 @@ async function runScene(browser, name, base = URL_BASE) {
 // --seconds in all, so a machine that gets busier or cooler meanwhile affects both alike.
 async function abScene(page, ctx, name) {
   await page.evaluate(args.ab);
+  // Both paths must draw before timing: shadow/MSAA changes create new pipelines,
+  // which can take longer than the short gap between measurement windows.
+  for (const on of [false, true]) {
+    await page.evaluate((on) => { window.__ab(on); window.__bench.on = false; }, on);
+    await page.waitForTimeout(Number(args.warmup || 2) * 1000);
+  }
   const win = Number(args.window || 2) * 1000, sums = { off: [], on: [] };
   for (let t = 0, k = 0; t < SECONDS * 1000; t += win, k++) {
     const on = k % 2 === 1;
@@ -212,6 +259,7 @@ try {
       (res[k][s] ||= []).push(r);
       console.log(`${s.padEnd(7)} ${k === 'vs' ? 'before' : 'after '} ${f1(r.fps).padStart(6)} fps  ${f1(1000 / r.fps)} ms/frame  js ${f1(r.js)} ms  gpu ${f1(r.gpu)} ms  ${Math.round(r.calls)} calls  loaded in ${f1(r.loadTime)} s`);
     }
+    all.push({ comparison: true, before: res.vs, after: res.url });
     for (const s of SCENES) {
       const ms = (rs) => mean(rs.map((r) => 1000 / r.fps)), a = ms(res.vs[s]), b = ms(res.url[s]);
       console.log(`${s.padEnd(7)} ${f1(a)} → ${f1(b)} ms a frame (${f1((a - b) / a * 100)}% quicker), js ${f1(mean(res.vs[s].map((r) => r.js)))} → ${f1(mean(res.url[s].map((r) => r.js)))} ms`);
