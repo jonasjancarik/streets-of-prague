@@ -45,7 +45,7 @@ const luma = (c: N) => dot(c, vec3(0.299, 0.587, 0.114));
 const fade = (width: N, cell: number) => float(1).sub(smoothstep(cell * 0.2, cell * 0.7, width));
 
 function roofTiles(c0: N, wp: N, n: N, wpWidth: N) {
-  const down = normalize(vec2(n.x, n.z.negate())), across = vec2(down.y.negate(), down.x);
+  const down = normalize(vec2(n.x, n.z.negate()).add(vec2(0, 0.0001))), across = vec2(down.y.negate(), down.x);
   const slate = step(max(c0.r, max(c0.g, c0.b)).sub(min(c0.r, min(c0.g, c0.b))), 0.08);
   const size = mix(vec2(0.26, 0.32), vec2(0.3, 0.22), slate);
   const q = vec2(dot(wp, across), dot(wp, down).div(max(n.y, 0.3)));
@@ -202,7 +202,7 @@ const landmarkColor = Fn(() => {
   const mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
   const sat = mx.sub(mn).div(max(mx, 0.001));
   const hue = c.g.sub(c.b).div(max(mx.sub(mn), 0.001)).div(6);
-  const roofFace = smoothstep(R.face[0], R.face[1], up.y);
+  const roofFace = smoothstep(R.face[0], R.face[1], up.y).mul(float(1).sub(smoothstep(R.flat[0], R.flat[1], up.y)));
   const reddish = step(max(c.g, c.b), c.r.add(0.01));
   const warm = max(smoothstep(R.sat[0], R.sat[1], sat).mul(float(1).sub(smoothstep(R.hue[0], R.hue[1], hue))), float(1).sub(smoothstep(R.black[0], R.black[1], luma(c)))).mul(reddish).mul(roofFace);
   If(uRoofDetail.greaterThan(0.5), () => {

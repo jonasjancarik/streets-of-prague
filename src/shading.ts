@@ -323,7 +323,7 @@ export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, 
 // windows on the walls, one row per 3.4 m storey with shopfronts at street level.
 const BUILDING_GLSL = /* glsl */ `
 vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
-  vec2 down = normalize(vec2(n.x, -n.z));
+  vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));   // the nudge keeps a flat face from being 0/0
   vec2 across = vec2(-down.y, down.x);
   float slate = step(max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)), .08);   // grey roofs
   vec2 size = mix(vec2(.26, .32), vec2(.3, .22), slate);
@@ -449,7 +449,7 @@ export const LANDMARK_ROOF = {
     return [mean.r, mean.g, mean.b];
   })(),
   light: 0.15, minLight: 0.15, maxLight: 1.7,
-  sat: [0.18, 0.3], hue: [0.11, 0.16], black: [0.02, 0.06], face: [0.15, 0.3],
+  sat: [0.18, 0.3], hue: [0.11, 0.16], black: [0.02, 0.06], face: [0.15, 0.3], flat: [0.94, 0.98],
 };
 
 // A landmark: the cutaway, and its roofs, where the photograph shows a red one, drawn with
@@ -473,7 +473,7 @@ export function shadeLandmark(material: THREE.MeshLambertMaterial) {
   float lmHue = (lmC.g - lmC.b) / max(lmMax - lmMin, .001) / 6.;
   float lmWarm = max(smoothstep(${R.sat[0]}, ${R.sat[1]}, (lmMax - lmMin) / max(lmMax, .001)) * (1. - smoothstep(${R.hue[0]}, ${R.hue[1]}, lmHue)),
     1. - smoothstep(${R.black[0]}, ${R.black[1]}, dot(lmC, vec3(.299, .587, .114))))
-    * step(max(lmC.g, lmC.b), lmC.r + .01) * smoothstep(${R.face[0]}, ${R.face[1]}, lmUp.y);
+    * step(max(lmC.g, lmC.b), lmC.r + .01) * smoothstep(${R.face[0]}, ${R.face[1]}, lmUp.y) * (1. - smoothstep(${R.flat[0]}, ${R.flat[1]}, lmUp.y));
   if (uRoofDetail > .5) {
   vec3 lmTile = roofTiles(vec3(${R.rgb.map((v) => v.toFixed(4)).join(',')}) * clamp(dot(lmC, vec3(.299, .587, .114)) / ${R.light}, ${R.minLight}, ${R.maxLight}), vec2(vCutWorld.x, -vCutWorld.z), lmUp);
   diffuseColor.rgb = mix(lmC, lmTile, lmWarm);
