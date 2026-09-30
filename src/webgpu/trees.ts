@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, mat4, attribute, instancedBufferAttribute, normalViewGeometry, faceDirection, modelViewMatrix,
   cameraViewMatrix, positionGeometry, positionLocal, positionWorld, diffuseColor, floor, fract, dot, sin, cos, atan, mix, smoothstep, step, length, abs, max, min,
-  normalize, cross, sqrt, fwidth, distance, select,
+  normalize, cross, sqrt, fwidth, distance, select, storage, buffer, instanceIndex,
 } from 'three/tsl';
 import { BARE, LEAVES } from '../shading.ts';
 import { lampLit } from './lamps.ts';
@@ -53,15 +53,30 @@ const bareTwig = Fn(([t, bare]: N[]) => {
 const vBare = () => uBare.mul(float(1).sub(evergreen));
 
 // The tree's instance matrix, for the parts that need the plain crown (a tile's trees
-// are one InstancedMesh; three.js keeps its own copy of the node inside).
+// are one InstancedMesh). Read the way three.js's own instancing reads it: from a uniform
+// buffer while the matrices fit in one, else, where the GPU has them, from a storage buffer
+// both share (see shareInstances), since as vertex inputs each copy takes four of the 16 a
+// pipeline may have (with more than ~1000 trees in a tile, the crowns went undrawn).
 const matrixBuffers = new WeakMap<THREE.InstancedBufferAttribute, THREE.InstancedInterleavedBuffer>();
 export const instanceMatrix = Fn((builder: N) => {
-  const m = builder.object.instanceMatrix as THREE.InstancedBufferAttribute;
-  let buffer = matrixBuffers.get(m);
-  if (!buffer) matrixBuffers.set(m, (buffer = new THREE.InstancedInterleavedBuffer(m.array as Float32Array, 16, 1)));
-  const col = (o: number): N => instancedBufferAttribute(buffer, 'vec4', 16, o);
+  shareInstances(builder);
+  const m = builder.object.instanceMatrix as THREE.InstancedBufferAttribute & { isStorageInstancedBufferAttribute?: boolean };
+  const count = Math.max(m.count, 1);
+  if (m.isStorageInstancedBufferAttribute) return storage(m as any, 'mat4', count).element(instanceIndex);
+  if (count * 64 <= builder.getUniformBufferLimit()) return (buffer(m.array as any, 'mat4', count) as N).element(instanceIndex);
+  let interleaved = matrixBuffers.get(m);
+  if (!interleaved) matrixBuffers.set(m, (interleaved = new THREE.InstancedInterleavedBuffer(m.array as Float32Array, 16, 1)));
+  const col = (o: number): N => instancedBufferAttribute(interleaved, 'vec4', 16, o);
   return mat4(col(0), col(4), col(8), col(12));
 });
+// Before three.js's instancing is set up (setupPosition): too many matrices for a uniform
+// buffer go in a storage buffer, which it then reads too (it checks this flag).
+export const shareInstances = (builder: N) => {
+  const m = builder.object.instanceMatrix as (THREE.InstancedBufferAttribute & { isStorageInstancedBufferAttribute?: boolean }) | undefined;
+  if (m && !m.isStorageInstancedBufferAttribute && Math.max(m.count, 1) * 64 > builder.getUniformBufferLimit() && builder.isAvailable('storageBuffer')) {
+    m.isStorageInstancedBufferAttribute = true;
+  }
+};
 const inView = (v: N) => modelViewMatrix.mul(vec4(instanceMatrix().mul(vec4(v, 0)).xyz, 0)).xyz;
 
 // The leaves' layout: returns (normal, crease) in view space. tw and sd are the
@@ -110,6 +125,7 @@ addPort(/^tufts-cut$/, (node) => {
   // Twigs alone are left of a bare tree's core, which shrinks to its thicker branches.
   const shrink = () => select(tuft.z.lessThan(0), float(1).sub(vBare().mul(0.5)), float(1));
   node.setupPosition = function (builder: N) {
+    shareInstances(builder);
     positionLocal.mulAssign(shrink());
     return proto.setupPosition.call(this, builder);
   };

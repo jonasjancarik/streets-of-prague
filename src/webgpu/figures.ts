@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { vec3, vec4, int, ivec2, attribute, vertexIndex, texture, positionLocal, normalLocal, diffuseColor, mix, normalize, select, varying } from 'three/tsl';
 import { lampLit } from './lamps.ts';
-import { instanceMatrix } from './trees.ts';
+import { instanceMatrix, shareInstances } from './trees.ts';
 import { type N, addPort } from './common.ts';
 
 addPort(/^figures-true$/, (node, legacy) => {
@@ -25,6 +25,7 @@ addPort(/^figures-true$/, (node, legacy) => {
 
   // The instance's own transform goes on afterwards (setupPosition).
   node.setupPosition = function (builder: N) {
+    shareInstances(builder);
     positionLocal.assign(position);
     normalLocal.assign(normalize(vat(normals)));
     return proto.setupPosition.call(this, builder);
