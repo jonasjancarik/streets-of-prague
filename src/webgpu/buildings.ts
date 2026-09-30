@@ -83,6 +83,14 @@ function mansardGlass(f: N, grow: number) {
 function mansardWindows(c: N, f: N) {
   return mix(mix(c, vec3(0.74, 0.72, 0.68), mansardGlass(f, 0.08)), vec3(0.16, 0.19, 0.23), mansardGlass(f, 0));
 }
+// A roof window (roofWindow in shading.ts): a grey metal frame round glass that shows
+// more sky towards the top.
+function roofGlass(f: N) {
+  return step(0.1, min(min(f.x, f.x.oneMinus()), min(f.y, f.y.oneMinus())));
+}
+function roofWindow(f: N) {
+  return mix(vec3(0.42, 0.4, 0.38), mix(vec3(0.12, 0.15, 0.19), vec3(0.3, 0.36, 0.43), f.y), roofGlass(f));
+}
 function flatRoof(c: N, wp: N, wpWidth: N) {
   return c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).add(vnoise(wp.mul(18)).sub(0.5).mul(0.08).mul(fade(wpWidth, 0.05)));
 }
@@ -177,7 +185,8 @@ const buildingColor = Fn(() => {
   const base = c.toVar();
   // Flat roofs by their material (tileWorker.ts: the facade attribute's w on roofs;
   // 5-9 flat ones, 0 not known), unless it says it's a shallow roof of tiles or metal.
-  If(bn.y.greaterThan(0.97).and(f.w.lessThan(0.5).or(f.w.greaterThan(4.5))), () => {
+  const roofWin = abs(f.w.sub(10)).lessThan(0.5).and(bn.y.greaterThan(0.15));
+  If(roofWin, () => { c.assign(roofWindow(f)); }).ElseIf(bn.y.greaterThan(0.97).and(f.w.lessThan(0.5).or(f.w.greaterThan(4.5))), () => {
     If(uRoofDetail.greaterThan(0.5), () => {
       const m = f.w;
       const r = vec3(0).toVar();
@@ -225,6 +234,11 @@ const windowGlow = Fn(() => {
     const lit = step(fHash(cell.x.add(fract(f.w).mul(97)), cell.y), uWindows.mul(select(f.y.lessThan(4), 1.6, 1)));
     const glass = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
     g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(cell.y, cell.x)).mul(lit).mul(glass).mul(0.55));
+  }).ElseIf(uWindows.greaterThan(0.005).and(abs(f.w.sub(10)).lessThan(0.5)).and(bn.y.greaterThan(0.15)), () => {
+    // Roof windows (roofGlass).
+    const w = positionWorld;
+    const lit = step(fHash(floor(w.x.mul(0.7)), floor(w.z.mul(0.7))), uWindows.mul(0.6));
+    g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(floor(w.z), float(3))).mul(lit).mul(roofGlass(f)).mul(0.45));
   }).ElseIf(uWindows.greaterThan(0.005).and(bn.y.greaterThan(0.15)).and(bn.y.lessThan(0.5)).and(f.z.greaterThan(0.1)), () => {
     // A mansard's windows (mansardGlass).
     const cell = floor(f.x.div(f.z).mul(max(1, floor(f.z.div(3.2).add(0.5)))));

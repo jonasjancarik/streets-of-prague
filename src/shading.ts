@@ -367,6 +367,14 @@ vec3 mansardWindows(vec3 c, vec4 f) {
   c = mix(c, vec3(.74, .72, .68), mansardGlass(f, .08));
   return mix(c, vec3(.16, .19, .23), mansardGlass(f, 0.));
 }
+// A roof window (pipeline/roof_details.py; f.xy 0-1 across and up it): a grey metal
+// frame round glass that shows more sky towards the top.
+float roofGlass(vec4 f) {
+  return step(.1, min(min(f.x, 1. - f.x), min(f.y, 1. - f.y)));
+}
+vec3 roofWindow(vec4 f) {
+  return mix(vec3(.42, .4, .38), mix(vec3(.12, .15, .19), vec3(.3, .36, .43), f.y), roofGlass(f));
+}
 vec3 flatRoof(vec3 c, vec2 wp) {
   c *= .86 + .22 * fbm(wp * .5);
   return c + (vnoise(wp * 18.) - .5) * .08 * detail(wp, .05);
@@ -555,7 +563,9 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   vec3 roofBase = diffuseColor.rgb;
   // Flat roofs by their material (tileWorker.ts: the facade attribute's w on roofs;
   // 5-9 flat ones, 0 not known), unless it says it's a shallow roof of tiles or metal.
-  if (uRoofDetail > .5 && bn.y > .97 && (vFacade.w < .5 || vFacade.w > 4.5)) {
+  bool roofWin = abs(vFacade.w - 10.) < .5 && bn.y > .15;
+  if (roofWin) diffuseColor.rgb = roofWindow(vFacade);
+  else if (uRoofDetail > .5 && bn.y > .97 && (vFacade.w < .5 || vFacade.w > 4.5)) {
     float m = vFacade.w;
     vec3 r;
     if (m > 8.5) r = pavingRoof(roofBase, bwp);
@@ -589,6 +599,9 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     float lit = step(fHash(cell.x + fract(vFacade.w) * 97., cell.y), uWindows * (vFacade.y < 4. ? 1.6 : 1.));
     float glass = 1. - smoothstep(.13, .22, luma(diffuseColor.rgb) / max(luma(vColor.rgb), .02));
     windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(cell.y, cell.x)) * lit * glass * .55;
+  } else if (uWindows > .005 && roofWin) {
+    float lit = step(fHash(floor(vWorld.x * .7), floor(vWorld.z * .7)), uWindows * .6);
+    windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(floor(vWorld.z), 3.)) * lit * roofGlass(vFacade) * .45;
   } else if (uWindows > .005 && bn.y > .15 && bn.y < .5 && vFacade.z > .1) {
     float cell = floor(vFacade.x / vFacade.z * max(1., floor(vFacade.z / 3.2 + .5)));
     float lit = step(fHash(cell + vFacade.z * .37, 7.), uWindows);

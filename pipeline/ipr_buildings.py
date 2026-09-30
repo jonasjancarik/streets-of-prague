@@ -42,6 +42,7 @@ from shapely import STRtree, constrained_delaunay_triangles
 from shapely.geometry import MultiPoint, Point, Polygon
 
 import layers
+import roof_details
 import roofs
 from osm_area import AREAS, OUT
 
@@ -306,6 +307,35 @@ def read_sheet(job):
     return name, out
 
 
+def add_roof_details(bid, pos, codes, col, mat, corner, wall, windows, church=False):
+    """A building with chimneys (by rule, not on churches) and roof windows (found on the
+    photo mesh) added as triangles of its own (roof_details.py): its packed positions,
+    colours and materials with theirs after them."""
+    x0, y0 = corner
+    v = pos.reshape(-1, 3).astype(np.float64) / 100
+    t = np.column_stack([v[:, 0] + x0, v[:, 2] + y0, v[:, 1]]).reshape(-1, 3, 3)
+    walls = codes == 0
+    body = tuple(int(c) for c in col[walls][0]) if walls.any() else wall
+    extra, extra_col, extra_mat = [], [], []
+    if not church:
+        ct, cc, ccol = roof_details.chimneys(bid, t, codes, body)
+        if len(ct):
+            extra.append(ct)
+            extra_col.append(ccol)
+            # The chimney's sides keep their colour (paintWalls would give them a facade's).
+            extra_mat.append(np.where(cc == 0, MEASURED_WALL, 0).astype(np.uint8))
+    for w in windows:
+        extra.append(roof_details.window_quad(w))
+        extra_col.append(np.array([roof_details.WINDOW_COLOUR] * 2, np.uint8))
+        extra_mat.append(np.full(2, roof_details.WINDOW, np.uint8))
+    if not extra:
+        return pos, col, mat
+    e = np.concatenate(extra).reshape(-1, 3)
+    packed = np.column_stack([(e[:, 0] - x0) * 100, e[:, 2] * 100, (e[:, 1] - y0) * 100])
+    packed = np.clip(np.round(packed), -32768, 32767).astype("<i2").ravel()
+    return np.concatenate([pos, packed]), np.concatenate([col, *extra_col]), np.concatenate([mat, *extra_mat])
+
+
 def sheet_jobs(area, meta):
     """The area's local projection, and a read_sheet job for each sheet over the area
     (downloaded if it isn't yet)."""
@@ -338,6 +368,7 @@ def main() -> None:
     ap.add_argument("--mesh-colours", choices=["lit", "shade", "off"], default="lit",
                     help="colours measured on the photo mesh (mesh_colours.py), if there are any: walls measured in the sun "
                          "only, also walls guessed from the shade, or none")
+    ap.add_argument("--no-roof-details", action="store_true", help="no chimneys or roof windows (roof_details.py)")
     args = ap.parse_args()
     area = args.area
     out_dir = OUT / f"{area}_now"
@@ -464,6 +495,9 @@ def main() -> None:
                         k = k[~said[k]]
                         col[k] = c
                         mat[k] = MATERIALS.index(m) if m in MATERIALS else 0
+                if not args.no_roof_details and (codes == 1).any():
+                    pos, col, mat = add_roof_details(bid or f"{name}/{count}", pos, codes, col, mat, (i * T - origin[0], j * T - origin[1]),
+                                                     wall, seen.get("windows", []) if seen else [], church=bool(osm and osm.get("church")))
                 per_tile.setdefault((i, j), []).append((pos, col.ravel(), mat))
             count += 1
         print(f"  {name}: {count} buildings in the area", flush=True)

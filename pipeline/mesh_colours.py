@@ -655,6 +655,107 @@ def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = Fal
     return {"buildings": out, "top": colour.reshape(w, w, 3) if debug else None, "fid": fid if debug else None}
 
 
+# Roof windows, found in the mesh's colours (its geometry is too coarse for anything as
+# small): on level 14 (about 11 cm per pixel), from above at 10 cm, dark or bluish
+# patches in a pitched roof face the size and shape of a roof window.
+WINDOW_LEVEL = 14
+WINDOW_RES = 0.1
+WINDOW_BRIGHT = 20.0  # L* this much above the face's own colour, grey: the sky in the glass
+WINDOW_BRIGHT_CHROMA = 20.0
+WINDOW_DARK = 18.0  # or this much below it: dark glass
+WINDOW_BLUE = 10.0  # or b* this much below it (a blue sky) and a little darker
+WINDOW_W = (0.55, 1.7)  # m across the slope
+WINDOW_H = (0.7, 1.9)  # m down the slope
+WINDOW_FILL = 0.5  # the share of its rectangle the patch fills
+CHIMNEY_SIZE = 0.75  # m; a dark patch no bigger than this either way is a chimney and its shadow
+
+
+def detect_windows(meta, ij, blds, debug: bool = False):
+    """Roof windows in a tile's pitched roofs: per building (by its index in `blds`),
+    [centre x, y, z, across-the-slope x, y, z, down-the-slope x, y, z, width, height]
+    in the area's local metres, on IPR's roof plane."""
+    from scipy import ndimage
+    T, (ox, oy) = meta["tile"], meta["origin"]
+    x0, y0 = ij[0] * T - ox, ij[1] * T - oy
+    w = int(round(T / WINDOW_RES))
+    mesh = load_mesh(meta["crs"], (x0, y0, x0 + T, y0 + T), level=WINDOW_LEVEL)
+    which, weights, _ = rasterize(mesh.tris, x0, y0, T, WINDOW_RES)
+    tris = [unpack(pos, ij, meta) for _, pos, _, _ in blds]
+    roofs, owner, normals = [], [], {}
+    for b, ((_, _, codes, _), t) in enumerate(zip(blds, tris)):
+        f = roof_faces(t, codes)
+        sel = codes == 1
+        roofs.append(t[sel])
+        owner.append(b * FACES + f[sel])
+        for face in np.unique(f[sel]):
+            ft = t[f == face]
+            n = np.cross(ft[:, 1] - ft[:, 0], ft[:, 2] - ft[:, 0]).sum(0)
+            normals[b * FACES + int(face)] = n / max(np.linalg.norm(n), 1e-12)
+    roofs = np.concatenate(roofs) if roofs else np.empty((0, 3, 3))
+    owner = np.concatenate(owner) if owner else np.empty(0, int)
+    rw, _, rz = rasterize(roofs, x0, y0, T, WINDOW_RES)
+    fid = np.where(rw >= 0, owner[np.maximum(rw, 0)] if len(owner) else -1, -1).reshape(w, w)
+    core = fid >= 0
+    pad = np.pad(fid, 2, constant_values=-1)
+    for dy in range(5):
+        for dx in range(5):
+            core &= pad[dy:dy + w, dx:dx + w] == fid
+    fid = fid.ravel()
+    core = core.ravel() & (which >= 0)
+    idx = np.nonzero(core)[0]
+    colour = np.zeros((w * w, 3), np.uint8)
+    got = which[idx]
+    colour[idx] = mesh.colour(mesh.tex[got], (weights[idx, :, None] * mesh.uv[got]).sum(1))
+    labs = np.full((w * w, 3), np.nan)
+    labs[idx] = lab(colour[idx])
+    # What stands out from each face's own colour: grey and much brighter (the sky in
+    # the glass), or much darker or bluer.
+    faces = fid[idx]
+    bright, dark = np.zeros(w * w, bool), np.zeros(w * w, bool)
+    for f in np.unique(faces):
+        k = idx[faces == f]
+        d = labs[k] - np.median(labs[k], axis=0)
+        bright[k] = (d[:, 0] > WINDOW_BRIGHT) & (np.hypot(labs[k, 1], labs[k, 2]) < WINDOW_BRIGHT_CHROMA)
+        dark[k] = (d[:, 0] < -WINDOW_DARK) | ((d[:, 2] < -WINDOW_BLUE) & (d[:, 0] < -5))
+
+    def window(pix, is_dark):
+        f = int(np.bincount(fid[pix] - fid[pix].min()).argmax() + fid[pix].min())
+        n = normals.get(f)
+        if n is None or len(pix) < 20:
+            return None
+        rr, cc = np.divmod(pix, w)
+        e = np.array([-n[1], n[0], 0.0]) / max(np.hypot(n[0], n[1]), 1e-9)
+        d = np.cross(n, e)
+        d = d if d[2] < 0 else -d
+        p = np.column_stack((x0 + (cc + 0.5) * WINDOW_RES, y0 + T - (rr + 0.5) * WINDOW_RES, rz[pix]))
+        a, dn = p @ e, p @ d
+        width, height = np.ptp(a) + WINDOW_RES, np.ptp(dn) + WINDOW_RES / max(n[2], 0.3)
+        fill = len(pix) * WINDOW_RES ** 2 / max(n[2], 0.3) / (width * height)
+        if not (WINDOW_W[0] <= width <= WINDOW_W[1] and WINDOW_H[0] <= height <= WINDOW_H[1] and fill >= WINDOW_FILL):
+            return None
+        if is_dark and max(width, height) <= CHIMNEY_SIZE:
+            return None
+        centre = e * (a.min() + a.max()) / 2 + d * (dn.min() + dn.max()) / 2
+        centre += n * float((p.mean(0) - centre) @ n)  # back onto the roof plane
+        win = [*np.round(centre, 2), *np.round(e, 3), *np.round(d, 3), round(float(width), 2), round(float(height), 2)]
+        return f, win, (rr.min(), cc.min(), rr.max(), cc.max())
+
+    out, boxes = {}, []
+    for mask, is_dark in ((bright, False), (dark, True)):
+        comps, _ = ndimage.label(mask.reshape(w, w))
+        for c, sl in enumerate(ndimage.find_objects(comps), 1):
+            if sl is None:
+                continue
+            rr, cc = np.nonzero(comps[sl] == c)
+            got = window((rr + sl[0].start) * w + cc + sl[1].start, is_dark)
+            if got:
+                out.setdefault(got[0] // FACES, []).append(got[1])
+                boxes.append(got[2])
+    if debug:
+        return out, colour.reshape(w, w, 3), boxes
+    return out
+
+
 def summarise(sampled, az: float = SUN_AZIMUTH, el: float = SUN_ELEVATION, balanced: bool = True):
     """The colours of a tile's buildings from its samples (sample_tile): per building
     the walls' colour and per roof face its colour and material, each with how sure it
@@ -805,6 +906,7 @@ def main():
     ap.add_argument("--debug", action="store_true", help="write a debug image and a table per tile")
     ap.add_argument("--calibrate", action="store_true", help="estimate the sun and the shade correction instead")
     ap.add_argument("--every", type=int, default=1, help="with --calibrate: only every n-th tile")
+    ap.add_argument("--no-windows", action="store_true", help="don't look for roof windows (saves the level-14 mesh)")
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="tiles measured side by side")
     a = ap.parse_args()
     meta = layers.read_meta(a.area)
@@ -816,16 +918,16 @@ def main():
     tiles = sorted(by_tile)[::a.every] if a.calibrate else sorted(by_tile)
     started = time.perf_counter()
     sampled, colours = {}, {}
-    for ij, s, took in sample_tiles(meta, {ij: by_tile[ij] for ij in tiles}, trees, a.jobs, a.debug):
+    for ij, s, took in sample_tiles(meta, {ij: by_tile[ij] for ij in tiles}, trees, a.jobs, a.debug, not (a.no_windows or a.calibrate)):
         if a.calibrate:
             sampled[ij] = s
             continue
         measured = summarise(s)
-        for r in measured:
+        for b, r in enumerate(measured):
             even_roofs(r)
             fill_roofs(r)
             if r["id"]:
-                colours[r["id"]] = entry(r)
+                colours[r["id"]] = entry(r, s["windows"].get(b))
         walls = sum(1 for r in measured if r["wall"] and r["wall"]["sure"])
         roofs = [f for r in measured for f in r["roofs"]]
         print(f"{ij[0]}_{ij[1]}: walls measured for {walls} of {len(measured)} buildings, "
@@ -847,11 +949,11 @@ def main():
     print(f"{path}: {len(colours)} buildings")
 
 
-def entry(r) -> dict:
+def entry(r, windows=None) -> dict:
     """A building's colours for ipr_buildings.py: its walls' measured in the sun, or
     guessed from the shade ("shade"), and its roof faces' (triangle numbers in
     read_sheet's order, colour, material, and whether it's taken from the rest of the
-    roof), all as sRGB bytes."""
+    roof), all as sRGB bytes; and its roof windows (detect_windows)."""
     out = {}
     if r["wall"] and r["wall"]["sure"]:
         out["wall"] = rgb(r["wall"]["lab"])[0].tolist()
@@ -861,10 +963,12 @@ def entry(r) -> dict:
              for f in r["roofs"] if f["lab"] is not None and (f["sure"] or f.get("filled"))]
     if roofs:
         out["roofs"] = roofs
+    if windows:
+        out["windows"] = windows
     return out
 
 def sample_job(job):
-    meta, ij, blds, trees, debug = job
+    meta, ij, blds, trees, debug, windows = job
     started = time.perf_counter()
     T, (ox, oy) = meta["tile"], meta["origin"]
     x0, y0 = ij[0] * T - ox, ij[1] * T - oy
@@ -874,13 +978,15 @@ def sample_job(job):
     mesh = load_mesh(meta["crs"], bounds, margin=SHADOW_REACH)
     near = ((trees[:, 0] > bounds[0] - 10) & (trees[:, 0] < bounds[2] + 10)
             & (trees[:, 1] > bounds[1] - 10) & (trees[:, 1] < bounds[3] + 10))
-    return ij, sample_tile(meta, ij, blds, mesh, trees[near], debug), time.perf_counter() - started
+    sampled = sample_tile(meta, ij, blds, mesh, trees[near], debug)
+    sampled["windows"] = detect_windows(meta, ij, blds) if windows else {}
+    return ij, sampled, time.perf_counter() - started
 
 
-def sample_tiles(meta, by_tile, trees, jobs: int, debug: bool):
+def sample_tiles(meta, by_tile, trees, jobs: int, debug: bool, windows: bool = False):
     """sample_tile for each tile, `jobs` tiles side by side: yields (tile, samples,
     seconds) as they're done."""
-    work = [(meta, ij, by_tile[ij], trees, debug) for ij in sorted(by_tile)]
+    work = [(meta, ij, by_tile[ij], trees, debug, windows) for ij in sorted(by_tile)]
     if jobs <= 1 or len(work) == 1:
         yield from map(sample_job, work)
         return
