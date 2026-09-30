@@ -14,8 +14,8 @@ export interface TreeTileData extends GeoData {
 // A tree's place in metres, and what kind it is when the map knows: 1 a conifer, 2 a fruit tree.
 export type TreeSpot = [number, number, number?];
 
-// `conifers` of the last instances are conifers (their own mesh, see treeMeshes).
-interface TreeInstances { matrices: Float32Array; colours: Float32Array; evergreen: Float32Array; count: number; conifers: number }
+// The instances run broadleaf, then `shrubs`, then `conifers`: a mesh each (see treeMeshes).
+interface TreeInstances { matrices: Float32Array; colours: Float32Array; evergreen: Float32Array; count: number; shrubs: number; conifers: number }
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
@@ -109,10 +109,10 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   }
   gardenTrees(geo, grid, trees);
 
-  // Conifers last, for their own mesh.
-  const pines = trees.filter((t) => t[3] === CONIFER);
-  trees.splice(0, trees.length, ...trees.filter((t) => t[3] !== CONIFER), ...pines);
-  const conifers = pines.length;
+  // Shrubs, then conifers, last: each has its own mesh.
+  const bushes = trees.filter((t) => t[3] === SHRUB), pines = trees.filter((t) => t[3] === CONIFER);
+  trees.splice(0, trees.length, ...trees.filter((t) => t[3] !== SHRUB && t[3] !== CONIFER), ...bushes, ...pines);
+  const shrubs = bushes.length, conifers = pines.length;
   const matrices = new Float32Array(trees.length * 16), colours = new Float32Array(trees.length * 3);
   const evergreen = new Float32Array(trees.length);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
@@ -146,7 +146,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     // (By where it stands, so the other trees' looks don't change.)
     evergreen[i] = kind === CONIFER ? 1 : rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663))() < EVERGREEN[kind] ? 1 : 0;
   });
-  return { matrices, colours, evergreen, count: trees.length, conifers };
+  return { matrices, colours, evergreen, count: trees.length, shrubs, conifers };
 }
 
 const SHRUB = 3, CONIFER = 4;
@@ -232,9 +232,16 @@ function gardenTrees(geo: Geo, grid: Grid, trees: [number, number, number, numbe
 // and the shadows need no material of their own. Top tier first, so what it covers is
 // skipped. About 340 triangles, shared by every tree of a tile.
 // `tuft`: where on the tuft a vertex is (-1…1 across) and the tuft's seed.
-const RIM = 20;
-function crownGeometry() {
-  const r = rng(7);
+// [tufts, distance from the middle, height, tilt, half size]
+type Tier = [number, number, number, number, number];
+const CROWN_TIERS: Tier[] = [[7, 0.64, -0.08, 62, 0.48], [5, 0.4, 0.2, 40, 0.46], [3, 0.18, 0.4, 20, 0.4], [1, 0, 0.5, 0, 0.36]];
+// A shrub is the same in the same frame with fewer, coarser tufts (about 90 triangles):
+// a metre or two across, it can't show the difference from further than a few metres.
+const SHRUB_TIERS: Tier[] = [[4, 0.62, -0.06, 60, 0.52], [2, 0.26, 0.28, 32, 0.46], [1, 0, 0.5, 0, 0.4]];
+const crownGeometry = () => crownShape(7, 20, CROWN_TIERS);
+const shrubGeometry = () => crownShape(13, 10, SHRUB_TIERS);
+function crownShape(seed0: number, RIM: number, tiers: Tier[]) {
+  const r = rng(seed0);
   const pos: number[] = [], nor: number[] = [], col: number[] = [], tuft: number[] = [], idx: number[] = [];
   const across: number[] = [], along: number[] = []; // each tuft's card, for its leaves
   const up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3(1, 0, 0);
@@ -268,10 +275,6 @@ function crownGeometry() {
     }
     for (let j = 0; j < RIM; j++) idx.push(base, base + 1 + j, base + 1 + ((j + 1) % RIM));
   };
-  // [tufts, distance from the middle, height, tilt, half size]
-  const tiers: [number, number, number, number, number][] = [
-    [7, 0.64, -0.08, 62, 0.48], [5, 0.4, 0.2, 40, 0.46], [3, 0.18, 0.4, 20, 0.4], [1, 0, 0.5, 0, 0.36],
-  ];
   const c = new THREE.Vector3(), normal = new THREE.Vector3();
   tiers.map((t, tier) => [t, tier] as const).reverse().forEach(([[count, dist, y, tilt, size], tier]) => {
     const phase = r() * Math.PI * 2, lift = tier / (tiers.length - 1);
@@ -320,7 +323,7 @@ function crownBuffers({ pos, nor, col, tuft, across, along, idx }: CrownArrays) 
   for (const a of [idx, ...Object.values(geom.attributes)]) (a as { shared?: boolean }).shared = true;
   return geom;
 }
-let crown: THREE.BufferGeometry | null = null;
+let crown: THREE.BufferGeometry | null = null, shrub: THREE.BufferGeometry | null = null;
 
 // A conifer: tiers of spiky skirts, one on top of the next and narrowing to a tip,
 // round a bare trunk. Its local frame is the broadleaf crown's (scaled the same way
@@ -494,9 +497,10 @@ function leafy(material: THREE.MeshLambertMaterial) {
   return material;
 }
 
-// One mesh for the broadleaf trees and one for the conifers, sharing a material.
-export function treeMeshes({ matrices, colours, evergreen, count, conifers }: TreeInstances) {
+// One mesh each for the broadleaf trees, the shrubs and the conifers, sharing a material.
+export function treeMeshes({ matrices, colours, evergreen, count, shrubs, conifers }: TreeInstances) {
   crown ??= crownGeometry();
+  shrub ??= shrubGeometry();
   pine ??= pineGeometry();
   // Opened round you, like the buildings, when you're in a tunnel under a park.
   const mat = leafy(cutAway(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), 'trees'));
@@ -518,7 +522,8 @@ export function treeMeshes({ matrices, colours, evergreen, count, conifers }: Tr
     mesh.customDepthMaterial = treeDepth;
     return mesh;
   };
-  return [part(crown, 0, count - conifers), part(pine, count - conifers, count)];
+  const broadleaf = count - shrubs - conifers;
+  return [part(crown, 0, broadleaf), part(shrub, broadleaf, broadleaf + shrubs), part(pine, broadleaf + shrubs, count)];
 }
 // (Bare trees throw the shadows of their twigs.)
 const treeDepth = new THREE.MeshDepthMaterial();
