@@ -203,6 +203,18 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
   material's `positionNode` (or `castShadowPositionNode`) and `maskShadowNode`. It
   also multiplies in `colorNode.a`, so a shadow caster with an expensive
   `colorNode` may run it in the shadow pass: check the shadow shader.
+- **A pipeline may have 16 vertex inputs** (a `vec4` each; a matrix is four). Past a
+  uniform buffer's size (~1000 instances) three.js reads the instance matrix as four
+  vertex inputs, so don't add a second copy of it: `instanceMatrix()` in
+  `webgpu/trees.ts` reads it the way three.js does, and `shareInstances` (called in
+  `setupPosition`, before three.js's instancing) puts big ones in a storage buffer both
+  share. A pipeline over the limit fails and its objects silently aren't drawn: look
+  for `exceeds the maximum (16)` in the bench's console lines.
+- **`DynamicDrawUsage` means "upload every frame"** in the WebGPU renderer, changed or
+  not. Leave it off and set `needsUpdate` (with an update range, `src/gpu.ts`).
+- **Runtime switches that work:** `renderer._samples` (MSAA 4 or 0: ran without errors in an
+  `--ab`, not yet checked on screen) and `sun.shadow.mapSize` (the shadow map is resized each update).
+  The WebGL renderer can do neither without being made again.
 - **Inspect the generated shader** with `await
   renderer.debug.getShaderAsync(scene, camera, mesh)`.
 - **`compileAsync` never finishes** in headless Chrome with

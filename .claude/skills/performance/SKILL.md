@@ -5,7 +5,7 @@ description: How to measure and speed up Streets of Prague (frame rate, GPU shad
 
 # Performance in Streets of Prague
 
-What was learned measuring and optimising the game (29 September 2026, M5
+What was learned measuring and optimising the game (29–30 September 2026, M5
 MacBook Air). The state of play and the open items are in `todo.md` under
 "Game performance"; read that too.
 
@@ -27,9 +27,23 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
     piece costs. To patch a shader piece out: clone the material, wrap its
     `onBeforeCompile`, string-replace the GLSL, give it a new
     `customProgramCacheKey`, and swap materials in `__ab`.
+  - `--ab` (and `--eval`) code can `await import('/src/shading.ts')`: Vite hands the
+    page the same module instance the game uses, so any exported `{ value }` switch
+    (`DIRT`, `LEAVES`, `FACADE_ON`, `LAMP_SHADOWS`) toggles without changing code.
+    Wrap it in an async function; the bench waits for the promise.
+  - **Benchmark a snapshot, not the checkout you're editing.** Saving a file makes Vite
+    reload the page mid-run, and the run dies waiting for the map (`waitForFunction`
+    timeout). Serve a detached worktree of your branch on its own port and move it
+    forward (`git checkout --detach <branch>`) after each commit.
+- **One benchmark at a time.** Two headless Chromes loading at once (or a bench plus
+  a long `--eval`) push loads past the 120 s limit and skew each other.
 - **Use Chrome, not Playwright's bundled Chromium.** The bundled build's MSAA costs
   about 4.5× per fragment on a Mac, against 1.5× in Chrome, which inflates every
   per-pixel cost. The bench uses `channel: 'chrome'` by default.
+- **Check what else is using the CPU too** (`ps aux | sort -k3 -nr | head`), not only
+  the GPU: menu-bar apps and Spotlight took 2–3 cores one morning, and the same code
+  measured 13 ms a frame of JavaScript, then 4 ms once they were gone. Ask the user
+  before quitting their apps.
 - **Check what else is using the GPU first**: `ioreg -r -d 1 -c IOAccelerator |
   grep "Device Utilization"`. The Claude app's browser pane keeps rendering the
   game if it's open on the dev server, and takes most of the GPU. It's the user's,
@@ -45,6 +59,15 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
 - Before trusting a big speed-up, take a `--shot` (and run with `--extra "&dev"`,
   which prints shader compile errors). A shader that fails to compile draws
   nothing, and nothing is fast: a "3.8× faster" ground was really no ground.
+- **Read the console lines the bench prints**, above the numbers. A WebGPU pipeline
+  that fails (`Vertex input variable … exceeds the maximum (16)`, `Invalid
+  RenderPipeline`) leaves its objects undrawn: fewer triangles, and a frame that looks
+  quicker than it is.
+- **Count work, not only time.** Counts don't drift with the machine. Wrap
+  `renderer.backend.updateAttribute` (bytes: the attribute's, or its `.data`'s for an
+  interleaved one, `updateRanges`), `backend.updateBinding`, `backend.draw` and
+  `device.queue.writeBuffer` in an `--eval`, let it run 3 s, and divide by the frames
+  (`window.__bench.frames`). That's how 3 MB a frame of uploads turned up (see below).
 - Anything that should look the same: compare screenshots (`--shot`, `--zoom 0.3`
   for close-ups) and check that the stats match (e.g. the share of dark pixels),
   not that the pixels match. For simulation changes, compare an order-independent
@@ -52,7 +75,9 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
 
 ## Where the time goes (2× on an M5, Chrome, by the Old Town Square)
 
-The GPU is the limit at 2×. Per frame, roughly:
+On WebGPU (30 September) the main thread, not the GPU, was the limit at 2×, and
+`writeBuffer` (uploads) was its biggest item: profile before assuming the shaders.
+On WebGL (29 September) the GPU was the limit at 2×. Per frame, roughly:
 - **Ground patterns: ~29%.** The mosaic's stones 14%, dirt on the paving was 12% until it was baked into a texture (`GRIT` in `shading.ts`, one read: now under 1%).
 - **Shadows on the ground: 11%.**
 - **Roof tiles: 12%.**
@@ -118,7 +143,19 @@ The ground is shaded on every pixel. Measure anything you add to `PATTERNS_GLSL`
 - **Static groups skip the per-frame matrix walk:** tile groups set
   `updateMatrixWorld = () => {}` once their matrices are made.
 - **Skip work nobody sees:** by day the lamps return right after gathering the
-  poles.
+  poles. The crowd draws and animates only the people in view (`Crowd.render`,
+  packed into the first slots; `Figures.wear` copies each one's colours in).
+- **Check that a "re-gather only when needed" cache ever holds.** The lamps' check
+  compared the radius asked for with the padded radius gathered, so at the usual view
+  it failed every frame and rebuilt and re-uploaded every lamp. Count how often the
+  expensive branch runs, don't assume.
+- **Don't shrink the crowd's radius to save work.** People bunch round you (those who
+  wander off are moved to just outside the view), so keeping them within ~190 m instead
+  of 330 m halved the people in view even with the cap scaled to the area. Tried and
+  dropped; off-screen people cost little now that they're neither drawn nor animated.
+- **Spatial lookups for one kind shouldn't walk the others.** `carsNear` ran for every
+  person near you through a hash holding the whole crowd; cars now also go into
+  `carHash` of their own.
 - **Tile loading happens on the main thread** after the workers finish: meshes,
   street graphs, and parking (`parkCars`, 0–4 ms a tile when warm, up to ~30 ms
   cold on an M5). Numeric map keys, not template strings; share per-type data;
@@ -126,10 +163,21 @@ The ground is shaded on every pixel. Measure anything you add to `PATTERNS_GLSL`
 - Check behaviour after simulation changes: trams, traffic and people still move,
   some stop for obstacles, and the grids hold no stale entries.
 
-## WebGPU trial
+## Uploads to the GPU
 
-`?renderer=webgpu` (with `--extra "&renderer=webgpu"`) draws with three.js's
-WebGPU renderer, where only the ground is ported (see `src/webgpu.ts` and `todo.md`).
+- **Send only what's drawn**: `send(attr, n)` / `sendInstances(mesh)` in `src/gpu.ts`
+  set an update range for the first `n` items and skip empty meshes. Instance buffers
+  are sized for the worst case (4000 of a lamp model), and `needsUpdate` alone sends
+  the whole buffer.
+- **No `DynamicDrawUsage`.** three.js's WebGPU renderer uploads such an attribute every
+  frame whether it changed or not, and whole once its ranges are used up.
+- An instanced mesh whose matrices fit a uniform buffer (≤ ~1000) is uploaded as a
+  uniform buffer every frame it's drawn; past that, as vertex data only when changed.
+
+## WebGPU
+
+WebGPU is the default renderer (`?renderer=webgl` for the old one; see
+`src/webgpu.ts`, the `webgpu-port` skill and `todo.md`).
 Measure the ground's patterns in either renderer by swapping each ground material
 for its `userData.flatten()` (the same ground without the pattern):
 
