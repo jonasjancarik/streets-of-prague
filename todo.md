@@ -371,6 +371,23 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   were too noisy to read (the machine was busy). What's left is the number of
   trees, not their triangles: thinning the garden scatter or giving far crowns fewer
   triangles is a separate decision.
+- **Garden trees: cut the number of meshes and trees, not triangles.** The shrub mesh
+  above saved triangles but no frame time, so the cost is per tree and per mesh. Options
+  to try, separately from the scatter density and the tree crowns:
+  - Thin the garden scatter with distance, or give far trees a cheaper shape.
+  - Use simpler trees throughout the suburbs: one low-triangle crown for every garden
+    tree (broadleaf as well as shrubs), or a plain blob beyond a few tens of metres.
+    Judge it by frame time on a phone first (`--android --vs`), then by how the
+    suburb looks from the street.
+- **Third tree mesh: check its shader-build cost.** Each tile now makes three instanced
+  tree meshes, and every `InstancedMesh` pays its own shader build (~14 ms at 1× on an
+  M5, ~60 ms on a Pixel 5). Run `--stalls` on the drive scene, old against new, and
+  look for extra builds or hitches as tiles arrive. If there are any, merge shrubs and
+  broadleaf trees into one mesh, or don't make the shrub mesh for a tile with no shrubs.
+- **Shrub mesh: measure again on an idle M5.** The M5 pairs were too noisy to read (the
+  GPU was busy with other apps, the new build always ran second, and one run fell to
+  37 fps). Redo `--vs` with alternating and swapped order, three or more pairs, after
+  checking CPU and GPU load. The phone already showed no change in frame time.
 - **A stolen police car has no flashing lights.**
 - **Buses.** They follow PID's real lines (`pipeline/build_buses.py`) and stop at the
   stops, but a line is lost where the map has no street for it (148 at U Nemocnice),
