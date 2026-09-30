@@ -29,6 +29,23 @@ shaded once a pixel, less per-frame bookkeeping), at 2× on an M5 in Chrome: 32�
 less time a frame than before it, and 32–42% less with the CPU slowed 4× at 1×.
 Still worth checking on a real phone.
 
+On 30 September 2026 (WebGPU, the default now) the main thread, not the GPU, was
+the limit on an M5 at 2×. Fixed then: the lamps re-gathered every frame (their cache
+check never held), instance buffers went up whole, and DynamicDrawUsage makes
+three.js's WebGPU renderer upload a buffer every frame: 3.0–3.5 MB a frame of
+uploads down to ~0.2 MB. The crowd is drawn and animated only in view. Open:
+
+- **Graphics tiers** still switch only the pixel ratio, the looks (dirt, grime, small
+  leaves, tone curve) and the cars in the lamps' light. Proposed: MSAA off and a
+  1024 shadow map in the low tiers (both can change at runtime on WebGPU:
+  `renderer._samples`, `sun.shadow.mapSize`), and fewer people in the lowest. What each
+  costs on WebGPU still has to be measured with `--ab` (MSAA measured ~3% at 2× by the
+  Old Town Square, facade pictures ~0–1%, both within noise).
+- **Loading sometimes stalls** past bench.mjs's 120 s (seen on several servers, with
+  the machine otherwise quiet); not explained yet.
+- **Simulating fewer people far away** (a crowd radius round the view, not 330 m)
+  halved the people in view, since the crowd bunches round you: tried and dropped.
+
 What a frame costs now, at 2× standing by the Old Town Square (switched off one at a
 time with `--ab`): the ground's patterns about 29% (the mosaic's stones 14%; the dirt on
 the paving was 12% until 30 September 2026, when it was baked into a texture: now under 1%), shadows on the ground 11%, roof tiles 12%, the facade pictures 7%,
