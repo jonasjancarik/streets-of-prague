@@ -44,6 +44,7 @@ import type { Surface, HornKind } from './audio.ts';
 import { setupTouch } from './touch.ts';
 import './credits.ts';
 import { Police } from './police.ts';
+import { Brigade } from './brigade.ts';
 import { Tracers, Health, MAX_HEALTH } from './guns.ts';
 import { Fires } from './fire.ts';
 import { Chopper } from './helicopter.ts';
@@ -509,7 +510,7 @@ async function main() {
       : t('Ticket inspection! Fine for riding without a ticket: {fine}', { fine: kc(paid) }), true),
     banner: (text) => showBanner(text),
   });
-  const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car)];
+  const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car), ...brigade.engines.map((e) => e.car)];
   const drawn: Car[] = []; // the cars drawn this frame
   // Off the tram onto the pavement beside it.
   const getOff = () => {
@@ -681,6 +682,7 @@ async function main() {
     // A police car: the officer in it gets out and comes after you.
     const cop = best.type === 'police';
     if (cop) police.take(best);
+    brigade.take(best);
     if (agent) {
       traffic.release(agent);
       if (!cop) {
@@ -754,6 +756,7 @@ async function main() {
     else if (!inHeli) { [walker.x, walker.y] = nearestWalkable(grid, x, y, 150); walker.sync(); }
     for (const a of [...traffic.agents]) traffic.release(a);
     police.reset();
+    brigade.reset();
     fires.reset();
     scatterPeople(false);
     camPos.set(px(), 0, -py());
@@ -868,7 +871,10 @@ async function main() {
   const BLAST = 9;
   const fires = new Fires({
     scene, height: ground, rng: seeded,
-    onIgnite: (c) => { if (c === inCar) showBanner(t('Your car is on fire!'), true); },
+    onIgnite: (c) => {
+      if (c === inCar) showBanner(t('Your car is on fire!'), true);
+      brigade.call(c);
+    },
     onBlast: (c, blamed) => {
       const { x, y } = c, near = (p: { x: number; y: number }) => 1 - Math.hypot(p.x - x, p.y - y) / BLAST;
       const away = (p: { x: number; y: number }, v: number) => {
@@ -888,6 +894,8 @@ async function main() {
       for (const p of crowd.people) if (near(p) > 0 && p.state !== 'down') crowd.knock(p, ...away(p, 3 + 7 * near(p)));
       crowd.scare(x, y, 45);
       for (const o of police.officers) if (near(o) > 0 && o.down <= 0) police.knock(o, ...away(o, 3 + 7 * near(o)));
+      for (const f of brigade.crew) if (near(f) > 0 && f.down <= 0) brigade.knock(f, ...away(f, 3 + 7 * near(f)));
+      brigade.call(c);
       if (inspector.person && near(inspector.person) > 0 && inspector.person.down <= 0) inspector.knock(...away(inspector.person, 3 + 7 * near(inspector.person)));
       for (const b of [...carsNear(x, y, BLAST)]) {
         const k = near(b);
@@ -904,6 +912,10 @@ async function main() {
       }
       if (blamed) police.crime(c.type === 'police' ? 'blowUpCop' : 'blowUp', x, y);
     },
+  });
+  const brigade = new Brigade({
+    scene, police, grid, fires, kit, height: ground, rng: seeded, edgesNear, offscreen,
+    bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),
   });
   let waitScale = 1, clockShown = '';
   let ticketWas = false;
@@ -1044,7 +1056,8 @@ async function main() {
     const me = inCar || inHeli || walker;
     police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || taxi.riding, riding: ride.on || taxi.riding });
     inspector.update(dt, { x: me.x, y: me.y, h: inCar ? inCar.h : walker.h, onFoot: !inCar && !inHeli && !ride.on && !taxi.riding && !boats.me && !funicular.me, inVehicle: !!inCar || !!inHeli || taxi.riding || !!boats.me });
-    const cops = police.cars.map((p) => p.car);
+    brigade.update(dt, me);
+    const cops = [...police.cars.map((p) => p.car), ...brigade.engines.map((e) => e.car)];
 
     // Everything the traffic, trams and people need to look out for.
     hash.clear();
@@ -1058,6 +1071,7 @@ async function main() {
     // (People walking along the pavement only where a car is driving along it too.)
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0 || traffic.pavementNear(p.x, p.y, 12)) hash.add({ x: p.x, y: p.y, z: p.gz, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
+    for (const o of brigade.crew) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     if (inspector.person) hash.add({ x: inspector.person.x, y: inspector.person.y, z: inspector.person.gz, r: 0.4, vx: inspector.person.vx, vy: inspector.person.vy, kind: 'person' });
     const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const t of tramBodies) for (const [x, y] of t.circles) hash.add({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
@@ -1231,6 +1245,12 @@ async function main() {
           police.knock(o, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
           if (c === inCar) police.crime('hitCop', o.x, o.y);
         }
+      });
+    }
+    for (const f of brigade.crew) {
+      offTrams(f, 0.3, open);
+      bump(f, 0.3, (c, nx, ny) => {
+        if (c.speed > 3 && f.down <= 0) brigade.knock(f, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
       });
     }
     const ip = inspector.person;
@@ -1420,6 +1440,7 @@ async function main() {
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     crowd.render(ground, (x, y) => !offscreen(x, y));
     police.render(ground, time.value, inCar);
+    brigade.render();
     inspector.render(ground);
     tracers.update(dt);
     // Only the cars in view (and a little round it, for their shadows) are drawn.
@@ -1434,6 +1455,7 @@ async function main() {
       loose.forEach(see);
       for (const a of traffic.agents) see(a.car);
       for (const p of police.cars) see(p.car);
+      for (const e of brigade.engines) see(e.car);
     }
     carPool.render(drawn, ground, dt);
     skids.update(dt * scale, drawn, ground);

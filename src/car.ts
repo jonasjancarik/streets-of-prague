@@ -467,7 +467,7 @@ export class Car {
     this.y = y;
     this.h = h;
     this.vx = this.vy = this.w = 0;
-    this.mode = 'loose'; // 'traffic' (driven by AI), 'loose' (free body), 'player', 'police' (chasing you)
+    this.mode = 'loose'; // 'traffic' (driven by AI), 'loose' (free body), 'player', 'police' (chasing you), 'fire' (an engine on call)
     this.damage = 0;
     this.rider = null; // on a two-wheeler: the look of whoever is riding it
     this.lean = 0;
@@ -483,7 +483,7 @@ export class Car {
   get speed() { return Math.hypot(this.vx, this.vy); }
   get two() { return this.spec.two; }
   // Someone at the wheel: the player, or the police chasing them.
-  get driven() { return this.mode === 'player' || this.mode === 'police'; }
+  get driven() { return this.mode === 'player' || this.mode === 'police' || this.mode === 'fire'; }
   get forwardSpeed() { return this.vx * Math.cos(this.h) + this.vy * Math.sin(this.h); }
 
   // How far (x, y) is from the car, for getting in: from its middle less half its

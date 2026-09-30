@@ -14,8 +14,8 @@ const FUSE = [4, 6]; // seconds from catching fire to the explosion
 // A car nobody is driving burns this long, enough for a fire engine to get there.
 const LONG_FUSE = [45, 75];
 const LONG_RATE = 0.55; // those fires smoke and flame less thickly, so a few in view stay within the puffs' caps
-// Seconds of water (from one hose) it takes to put out a burning car; a wreck needs the same to stop smouldering.
-export const DOUSE = 2.5;
+// Seconds of water it takes to put out a burning car (a crew of three sprays for about 3 s); a wreck needs the same to stop smouldering.
+export const DOUSE = 10;
 const SMOULDER = 25; // seconds a wreck gives off smoke, flames for the first half
 
 interface Blaze { fuse: number; t: number; emit: number; flame: number; wet: number; steam: number; rate: number }
