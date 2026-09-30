@@ -79,7 +79,7 @@ export const CS: Record<string, string> = {
   Medium: 'Střední',
   Low: 'Nízká',
   Lowest: 'Nejnižší',
-  Busted: 'Chycen',
+  Busted: 'Dostali tě',
   Wasted: 'Zabit',
 
   // Dialogues
@@ -101,7 +101,7 @@ export const CS: Record<string, string> = {
   // The HUD
   '{n} car wrecked|{n} cars wrecked': '{n} rozbité auto|{n} rozbitá auta|{n} rozbitých aut',
   '{n} person knocked over|{n} people knocked over': '{n} sražený člověk|{n} sražení lidé|{n} sražených lidí',
-  'busted {n}×': 'chycen {n}×',
+  'busted {n}×': 'dostali tě {n}×',
   'wasted {n}×': 'zabit {n}×',
   'Health: {n}%': 'Zdraví: {n} %',
   'Your car is on fire!': 'Auto hoří!',
@@ -204,7 +204,7 @@ export const CS: Record<string, string> = {
   '{firm} fare: {fare}': 'Jízdné {firm}: {fare}',
   'Your taxi had an accident on the way': 'Tvoje taxi cestou mělo nehodu',
   'The taxi gave up waiting and drove off': 'Taxi čekání vzdalo a odjelo',
-  'You walked away from your taxi, so it left': 'Odešel jsi od taxi, tak odjelo',
+  'You walked away from your taxi, so it left': 'Jsi moc daleko, taxi ti odjelo',
   'Your {name} driver': 'Řidič {name}',
   'Your taxi': 'Tvoje taxi',
   '{name} is on the way, about {secs} s': '{name} je na cestě, asi {secs} s',
