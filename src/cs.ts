@@ -247,9 +247,9 @@ export const CS: Record<string, string> = {
   'Hold to keep to the lane and the speed limit, while A and D pick the next turn': 'Podržením držíš pruh a povolenou rychlost, klávesami A a D vybereš příští odbočku',
   'Back on the road': 'Zpět na silnici',
   // Driving a tram
-  'Take over the tram and drive it yourself': 'Převzít tramvaj a řídit ji sám',
+  'Take over the tram and drive it yourself': 'Převzít tramvaj a řídit ji',
   'Take over the tram': 'Převzít tramvaj',
-  'You took over the tram': 'Převzal jsi tramvaj',
+  'You took over the tram': 'Tramvaj je tvoje',
   'Stop the tram first': 'Nejdřív tramvaj zastav',
   'Driving the tram': 'Řízení tramvaje',
   'Pull away and brake': 'Rozjet se a brzdit',
