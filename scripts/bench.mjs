@@ -8,7 +8,7 @@
 //     [--profile-load] [--load-progress] [--require-webgpu] [--init "js before loading"] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json] [--stack (page errors with their stack)]
 //     [--browser chrome|chromium] [--angle metal|swiftshader (software, drawing like
 //     a desktop GPU that shades every covered pixel: for overdraw)]
-//     [--vs http://localhost:5192/ (compare with another server, taking turns)]
+//     [--vs http://localhost:5192/ (compare with another server, taking turns)] [--fresh-browser] [--loading-frames]
 //     [--ab "window.__ab = (on) => { … }" [--window 2] [--warmup 2]] [--shot /tmp/look-%s.png [--zoom 0.5]]
 //
 // Per scene it reports the frame rate, frame times (median, 95th, 99th percentile),
@@ -50,7 +50,7 @@ const PLACES = {
 };
 
 // In the page before anything else: time every animation-frame callback.
-const INIT = () => {
+const INIT = (loadingFrames = false) => {
   window.__benchLoad = { adapter: 'not requested', device: 'not requested' };
   // A pending GPU request has no network request or page error. Record it so a
   // loading timeout can distinguish browser/driver startup from tile building.
@@ -75,6 +75,12 @@ const INIT = () => {
   }
   const raf = window.requestAnimationFrame.bind(window);
   window.__bench = { frames: [], js: [], render: [], gpu: [], calls: [], tris: [], on: false };
+  if (loadingFrames) {
+    // Keep headless Chrome's frame scheduler active while it creates the device.
+    // Use the original RAF and stop at startup, so this never contributes samples.
+    const tick = () => { if (!window.__drive) raf(tick); };
+    raf(tick);
+  }
   window.requestAnimationFrame = (cb) => raf((t) => {
     const t0 = performance.now();
     cb(t);
@@ -92,10 +98,22 @@ async function runScene(browser, name, base = URL_BASE) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
   const errors = [];
-  await page.addInitScript(INIT);
+  let closing = false;
+  const close = async () => {
+    closing = true;
+    // Release the owned device before opening the next context. Context closure
+    // alone can leave GPU resources queued for reclamation between --vs scenes.
+    await page.evaluate(() => {
+      const r = window.__drive?.renderer;
+      r?.setAnimationLoop(null);
+      r?.backend?.device?.destroy();
+    }).catch(() => {});
+    await ctx.close();
+  };
+  await page.addInitScript(INIT, !!args['loading-frames']);
   if (args.init) await page.addInitScript(args.init);
-  page.on('pageerror', (e) => { errors.push(e.message); console.error(`[${name}] page error:`, args.stack ? e.stack : e.message); });
-  page.on('console', (m) => { if (m.type() === 'info' && m.text().startsWith('Renderer:')) console.log(`[${name}] ${m.text()}`); if (m.type() === 'error' && !errors.includes(m.text())) { errors.push(m.text()); console.error(`[${name}] console:`, m.text().slice(0, 3000)); } });
+  page.on('pageerror', (e) => { if (closing) return; errors.push(e.message); console.error(`[${name}] page error:`, args.stack ? e.stack : e.message); });
+  page.on('console', (m) => { if (closing) return; if (m.type() === 'info' && m.text().startsWith('Renderer:')) console.log(`[${name}] ${m.text()}`); if (m.type() === 'error' && !errors.includes(m.text())) { errors.push(m.text()); console.error(`[${name}] console:`, m.text().slice(0, 3000)); } });
   const q = `?start=${place.start}&dpr=${DPR}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&go&day=wed&weather=${args.weather || 'clear'}${args.extra || ''}`;
   // --profile-load: the CPU profile of loading, up to the game starting.
   const loadCdp = args['profile-load'] ? await ctx.newCDPSession(page) : null;
@@ -180,7 +198,7 @@ async function runScene(browser, name, base = URL_BASE) {
     b.on = true;
   });
   if (args.ab) {
-    const result = await abScene(page, ctx, name);
+    const result = await abScene(page, ctx, name, close);
     result.errors = errors;
     return result;
   }
@@ -199,7 +217,7 @@ async function runScene(browser, name, base = URL_BASE) {
     ({ profile } = await cdp.send('Profiler.stop'));
     writeFileSync(`/tmp/bench-${name}.cpuprofile`, JSON.stringify(profile));
   }
-  await ctx.close();
+  await close();
 
   const dts = res.frames.slice(1).map((t, i) => t - res.frames[i]);
   return {
@@ -213,7 +231,7 @@ async function runScene(browser, name, base = URL_BASE) {
 // --ab "js": the code defines window.__ab(on), which switches a change on or off in
 // the page. Off and on take turns in short windows (--window seconds, default 2) for
 // --seconds in all, so a machine that gets busier or cooler meanwhile affects both alike.
-async function abScene(page, ctx, name) {
+async function abScene(page, ctx, name, close) {
   await page.evaluate(args.ab);
   // Both paths must draw before timing: shadow/MSAA changes create new pipelines,
   // which can take longer than the short gap between measurement windows.
@@ -232,7 +250,7 @@ async function abScene(page, ctx, name) {
     const res = await page.evaluate(() => { const b = window.__bench; b.on = false; return { n: b.frames.length, js: b.js, gpu: b.gpu }; });
     sums[on ? 'on' : 'off'].push({ fps: res.n / ((Date.now() - t0) / 1000), js: mean(res.js), gpu: res.gpu.length ? mean(res.gpu) : NaN });
   }
-  await ctx.close();
+  await close();
   const agg = (xs) => ({ fps: mean(xs.map((x) => x.fps)), ms: mean(xs.map((x) => 1000 / x.fps)), js: mean(xs.map((x) => x.js)), gpu: mean(xs.map((x) => x.gpu)), each: xs.map((x) => Math.round(x.fps)).join(' ') });
   const off = agg(sums.off), on = agg(sums.on);
   return { name, ab: true, off, on };
@@ -254,10 +272,18 @@ function topSelf(profile, n = 25) {
 
 // Google Chrome itself by default (--browser chromium for Playwright's own build, whose
 // MSAA costs several times more than Chrome's on a Mac).
-const browser = await pw.chromium.launch({
+const launchBrowser = () => pw.chromium.launch({
   headless: true, channel: args.browser === 'chromium' ? undefined : 'chrome',
   args: [`--use-angle=${args.angle || 'metal'}`, '--enable-gpu', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--enable-unsafe-webgpu'],
 });
+// Some Chrome/Metal sessions leave the next context's requestDevice pending.
+// A fresh process per scene keeps the same --vs order without timing fallbacks.
+const browser = args['fresh-browser'] ? null : await launchBrowser();
+async function measure(name, base = URL_BASE) {
+  const current = browser || await launchBrowser();
+  try { return await runScene(current, name, base); }
+  finally { if (!browser) await current.close(); }
+}
 const all = [];
 try {
   if (args.vs) {
@@ -265,9 +291,10 @@ try {
     // times each, and the means are compared.
     const res = { vs: {}, url: {} };
     for (let run = 0; run < RUNS; run++) for (const s of SCENES) for (const [k, base] of [['vs', args.vs], ['url', URL_BASE]]) {
-      const r = await runScene(browser, s, base);
+      const r = await measure(s, base);
       delete r.profile;
       (res[k][s] ||= []).push(r);
+      if (args.json) writeFileSync(args.json, JSON.stringify([{ comparison: true, before: res.vs, after: res.url }], null, 2));
       console.log(`${s.padEnd(7)} ${k === 'vs' ? 'before' : 'after '} ${f1(r.fps).padStart(6)} fps  ${f1(1000 / r.fps)} ms/frame  js ${f1(r.js)} ms  gpu ${f1(r.gpu)} ms  ${Math.round(r.calls)} calls  loaded in ${f1(r.loadTime)} s`);
     }
     all.push({ comparison: true, before: res.vs, after: res.url });
@@ -278,7 +305,7 @@ try {
     process.exitCode = 0;
   }
   for (let run = 0; run < (args.vs ? 0 : RUNS); run++) for (const s of SCENES) {
-    const r = await runScene(browser, s);
+    const r = await measure(s);
     all.push(r);
     if (r.ab) {
       if (r.errors.length) console.warn(`[${r.name}] ${r.errors.length} errors: inspect before trusting these timings`);
@@ -290,6 +317,6 @@ try {
     if (r.profile) { console.log(topSelf(r.profile).join('\n')); delete r.profile; }
   }
 } finally {
-  await browser.close();
+  if (browser) await browser.close();
 }
 if (args.json) writeFileSync(args.json, JSON.stringify(all, null, 2));

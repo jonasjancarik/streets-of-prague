@@ -37,6 +37,18 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
     forward (`git checkout --detach <branch>`) after each commit.
 - **One benchmark at a time.** Two headless Chromes loading at once (or a bench plus
   a long `--eval`) push loads past the 120 s limit and skew each other.
+- **Warm both A/B states before timing.** The benchmark now does that (`--warmup`,
+  2 s each by default). The first cold shadow-off window measured 43 fps before
+  recovering above 200, which made the combined average misleading.
+- **Chrome/Metal can leave the next GPU device request pending even after cleanup.**
+  `--fresh-browser` starts one Chrome process per scene while retaining the --vs
+  alternation. `--loading-frames` runs a loading-only frame heartbeat, stopping before
+  timing. The diagnostic with a heartbeat loaded reliably; the comparison without one
+  hit long device waits even in a fresh process. Do not include aborted/fallback runs.
+- **Require the backend you mean to measure:** `--require-webgpu` rejects a recovery
+  fallback. `--load-progress` prints startup stages, adapter/device state and pending
+  requests. The intermittent 120 s startup stall was traced to `requestDevice`,
+  before tile loading; do not infer slow tile workers from the old generic label.
 - **Use Chrome, not Playwright's bundled Chromium.** The bundled build's MSAA costs
   about 4.5× per fragment on a Mac, against 1.5× in Chrome, which inflates every
   per-pixel cost. The bench uses `channel: 'chrome'` by default.
