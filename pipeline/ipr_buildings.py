@@ -21,6 +21,7 @@ pipeline/.cache/ipr/ from IPR's ArcGIS Online catalogue (each is ~150-250 MB).
 """
 
 import argparse
+import gzip
 import json
 import math
 import os
@@ -44,6 +45,7 @@ import roofs
 from osm_area import AREAS, OUT
 
 CACHE = Path(__file__).parent / ".cache" / "ipr"
+MESH_COLOURS = Path(__file__).parent / ".cache" / "mesh_colours"
 ORG = "SBTXIEUGWbqzUecw"
 NS = {"gml": "http://www.opengis.net/gml", "bldg": "http://www.opengis.net/citygml/building/2.0"}
 BUILDING = f"{{{NS['bldg']}}}Building"
@@ -327,6 +329,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="IPR Praha's 3D buildings for an area's tiles")
     ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
+    ap.add_argument("--mesh-colours", choices=["lit", "shade", "off"], default="lit",
+                    help="colours measured on the photo mesh (mesh_colours.py), if there are any: walls measured in the sun "
+                         "only, also walls guessed from the shade, or none")
     args = ap.parse_args()
     area = args.area
     out_dir = OUT / f"{area}_now"
@@ -399,6 +404,12 @@ def main() -> None:
             regions_by_tile[(i, j)] = RoofRegions(shapes)
         return regions_by_tile[(i, j)]
 
+    measured = {}
+    table = MESH_COLOURS / f"{area}.json.gz"
+    if args.mesh_colours != "off" and table.exists():
+        measured = json.loads(gzip.decompress(table.read_bytes()))
+        print(f"  colours from the photo mesh for {len(measured)} buildings ({table.name}, walls: {args.mesh_colours})")
+
     started = time.perf_counter()
     per_tile = {}  # (i, j) → list of (int16 positions, uint8 colours), one pair per building
     footprints = []  # ground outlines of every IPR building, to find OSM ones it doesn't cover
@@ -419,13 +430,26 @@ def main() -> None:
                 palette = np.array([wall] + [roof[c] for c in COVERS] + [flat_roof(roof[c]) for c in COVERS], dtype=np.uint8)
                 which = np.zeros(len(codes), dtype=np.int8)
                 top = codes != 0
+                said = np.zeros(len(codes), dtype=bool)  # roofs whose cover OSM or roofs.py gives
                 if top.any():
                     v = pos.reshape(-1, 3, 3)[top].astype(np.float64) / 100
                     xy = np.column_stack([v[:, :, 0].mean(1) + i * T - origin[0], v[:, :, 2].mean(1) + j * T - origin[1]])
                     cover = regions(i, j)(xy)
+                    said[top] = cover >= 0
                     cover[cover < 0] = COVERS.index(default)
                     which[top] = 1 + cover + np.where(codes[top] == 2, 3, 0)
-                per_tile.setdefault((i, j), []).append((pos, palette[which].ravel()))
+                col = palette[which]
+                seen = measured.get(bid)
+                if seen:
+                    # The photo mesh's colours (mesh_colours.py) beat the palette and the
+                    # defaults; a roof cover given by hand or in OSM beats the mesh.
+                    w = seen.get("wall") or (seen.get("shade") if args.mesh_colours == "shade" else None)
+                    if w:
+                        col[codes == 0] = w
+                    for tris, c, _, _ in seen.get("roofs", []):
+                        k = np.array(tris)
+                        col[k[~said[k]]] = c
+                per_tile.setdefault((i, j), []).append((pos, col.ravel()))
             count += 1
         print(f"  {name}: {count} buildings in the area", flush=True)
     print(f"  sheets read in {time.perf_counter() - started:.0f} s; {afloat} buildings left out for standing on water")

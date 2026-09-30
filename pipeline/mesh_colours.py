@@ -21,6 +21,8 @@ pipeline/.cache/mesh_colours/<area>/.
 """
 
 import argparse
+import gzip
+import json
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -320,24 +322,36 @@ def unpack(pos: np.ndarray, ij, meta: dict) -> np.ndarray:
     return np.column_stack((v[:, 0] + ij[0] * T - ox, v[:, 2] + ij[1] * T - oy, v[:, 1])).reshape(-1, 3, 3)
 
 
-def lab(rgb: np.ndarray) -> np.ndarray:
-    """sRGB (k, 3) 0-255 → CIELAB (k, 3), D65."""
-    c = np.asarray(rgb, np.float64).reshape(-1, 3) / 255
-    c = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
-    xyz = c @ np.array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]]).T
-    xyz /= [0.95047, 1.0, 1.08883]
+RGB_XYZ = np.array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]])
+WHITE = np.array([0.95047, 1.0, 1.08883])
+
+
+def linear_lab(lin: np.ndarray) -> np.ndarray:
+    """Linear RGB (k, 3; may go past 1) → CIELAB (k, 3), D65."""
+    xyz = np.asarray(lin, np.float64).reshape(-1, 3) @ RGB_XYZ.T / WHITE
     f = np.where(xyz > 216 / 24389, np.cbrt(xyz), (24389 / 27 * xyz + 16) / 116)
     return np.column_stack((116 * f[:, 1] - 16, 500 * (f[:, 0] - f[:, 1]), 200 * (f[:, 1] - f[:, 2])))
 
 
-def rgb(c: np.ndarray) -> np.ndarray:
-    """CIELAB (k, 3) → sRGB (k, 3) uint8."""
+def labs_linear(c) -> np.ndarray:
+    """CIELAB (k, 3) → linear RGB (k, 3), not clipped."""
     L, a, b = np.atleast_2d(c).T
     fy = (L + 16) / 116
     f = np.column_stack((fy + a / 500, fy, fy - b / 200))
-    xyz = np.where(f ** 3 > 216 / 24389, f ** 3, (116 * f - 16) / (24389 / 27)) * [0.95047, 1.0, 1.08883]
-    s = xyz @ np.array([[3.2406, -1.5372, -0.4986], [-0.9689, 1.8758, 0.0415], [0.0557, -0.2040, 1.0570]]).T
-    s = np.where(s <= 0.0031308, 12.92 * s, 1.055 * np.clip(s, 0, None) ** (1 / 2.4) - 0.055)
+    xyz = np.where(f ** 3 > 216 / 24389, f ** 3, (116 * f - 16) / (24389 / 27)) * WHITE
+    return xyz @ np.linalg.inv(RGB_XYZ).T
+
+
+def lab(rgb: np.ndarray) -> np.ndarray:
+    """sRGB (k, 3) 0-255 → CIELAB (k, 3)."""
+    c = np.asarray(rgb, np.float64).reshape(-1, 3) / 255
+    return linear_lab(np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4))
+
+
+def rgb(c: np.ndarray) -> np.ndarray:
+    """CIELAB (k, 3) → sRGB (k, 3) uint8, clipped."""
+    s = np.clip(labs_linear(c), 0, 1)
+    s = np.where(s <= 0.0031308, 12.92 * s, 1.055 * s ** (1 / 2.4) - 0.055)
     return np.clip(np.round(s * 255), 0, 255).astype(np.uint8)
 
 
@@ -417,16 +431,30 @@ SUN_ELEVATION = 32.5
 SUN, SKY = 0.88, 0.12
 LIT = 0.3
 ROOF_LIT = 0.15  # roof faces meeting the sun less squarely than this are in shade
-# The camera's cast and the haze, one correction for the whole city (see calibrate): a
-# gain per channel (linear RGB) that brings the median clay tile roof nearest
-# TILE_REFERENCE and the median plaster wall nearest PLASTER_REFERENCE, both after the
-# light is taken out, then CHROMA times the colourfulness (L*a*b* a* and b*), which
-# the haze took, to give the median tile roof the reference's. No offset: fitted on two
-# light colours, one pushed dark roofs and walls to black.
+LUMA = np.array([0.2126, 0.7152, 0.0722])
+# Walls seen only in shade (see from_shade and calibrate): the sky's tint to take out
+# (linear RGB, green 1), and the brightness (linear luminance) of walls in shade at
+# each twentieth of the city's walls, darkest first, against the same for walls in
+# the sun, the light taken out.
+SHADE_TINT = (1.217, 1.0, 0.799)
+SHADE_Y = (0.0036, 0.0086, 0.0131, 0.0172, 0.0212, 0.0243, 0.0281, 0.033, 0.036, 0.0403, 0.0475, 0.0537, 0.0584,
+           0.0668, 0.076, 0.0825, 0.0971, 0.1133, 0.1349, 0.1768, 0.6971)
+LIT_Y = (0.0037, 0.0139, 0.0292, 0.0983, 0.3178, 0.5331, 0.6033, 0.6463, 0.6873, 0.7184, 0.75, 0.7831, 0.8164,
+         0.8393, 0.8698, 0.8988, 0.9328, 0.9777, 1.0243, 1.1509, 1.7991)
+# The camera's cast and the haze (see calibrate): gains per channel (linear RGB) that
+# take the median plaster wall to PLASTER_REFERENCE after the light is taken out, and
+# for roofs the same times one brightness factor that gives the median clay tile roof
+# TILE_REFERENCE's brightness (not its hue: the old palette is redder than Prague's
+# roofs), and ROOF_CHROMA times the colourfulness (L*a*b* a* and b*), which the haze
+# took, to give it the reference's too. Walls and roofs differ in brightness since the light model is fitted on
+# roofs, and a wall sees only half the sky and the street's light besides; with one
+# gain for both the roofs came out pale. No offset for the
+# haze: fitted on light colours, one pushed dark roofs and walls to black.
 TILE_REFERENCE = "#ab5f48"  # the middle of the game's old tile palette
 PLASTER_REFERENCE = "#ddd3bf"  # a light, slightly warm plaster
-BALANCE_GAIN = (0.803, 0.751, 0.693)
-CHROMA = 1.28
+ROOF_GAIN = (0.483, 0.456, 0.417)
+ROOF_CHROMA = 1.44
+WALL_GAIN = (0.922, 0.869, 0.796)
 
 
 def sun_vector(az: float = SUN_AZIMUTH, el: float = SUN_ELEVATION) -> np.ndarray:
@@ -439,7 +467,7 @@ def unlight(labs: np.ndarray, normals: np.ndarray, az: float = SUN_AZIMUTH, el: 
     be facing the sun squarely."""
     x = np.maximum(0.0, np.atleast_2d(normals) @ sun_vector(az, el))
     gain = (SUN + SKY) / (SUN * x + SKY)
-    return lab(linear_rgb(labs_linear(labs) * gain[:, None]))
+    return linear_lab(labs_linear(labs) * gain[:, None])
 
 
 def roof_faces(t: np.ndarray, codes: np.ndarray) -> np.ndarray:
@@ -461,22 +489,11 @@ def roof_faces(t: np.ndarray, codes: np.ndarray) -> np.ndarray:
     return face
 
 
-def labs_linear(c) -> np.ndarray:
-    """L*a*b* (k, 3) → linear RGB (k, 3), 0-1."""
-    s = rgb(c) / 255
-    return np.where(s <= 0.04045, s / 12.92, ((s + 0.055) / 1.055) ** 2.4)
-
-
-def linear_rgb(lin) -> np.ndarray:
-    """Linear RGB (k, 3), 0-1 → sRGB 0-255 (float, for lab())."""
-    s = np.clip(lin, 0, 1)
-    return np.where(s <= 0.0031308, 12.92 * s, 1.055 * s ** (1 / 2.4) - 0.055) * 255
-
-
-def balance(c: np.ndarray) -> np.ndarray:
-    """Takes the camera's cast and haze out of colours (k, 3 L*a*b*)."""
-    out = lab(linear_rgb(labs_linear(c) * np.array(BALANCE_GAIN)))
-    out[:, 1:] *= CHROMA
+def balance(c: np.ndarray, gain, chroma: float = 1.0) -> np.ndarray:
+    """Takes the camera's cast and haze out of colours (k, 3 L*a*b*), with ROOF_GAIN and
+    ROOF_CHROMA or WALL_GAIN."""
+    out = linear_lab(labs_linear(c) * np.array(gain))
+    out[:, 1:] *= chroma
     return out
 
 
@@ -567,33 +584,70 @@ def summarise(sampled, az: float = SUN_AZIMUTH, el: float = SUN_ELEVATION, balan
     the walls' colour and per roof face its colour and material, each with how sure it
     is, the light (and with `balanced`, the camera's cast) taken out."""
     out = []
+    s = np.array([np.sin(np.radians(az)), np.cos(np.radians(az))])
     for b in sampled["buildings"]:
-        rec = {"id": b["id"], "wall": None, "roofs": []}
+        rec = {"id": b["id"], "wall": None, "shade": None, "roofs": []}
         if b["walls"] is not None:
             wn, labs, wgt = b["walls"]
             # Sun or shade by which way the wall faces, never by how dark it is, or a dark
-            # building would be brightened as "shaded". Only lit walls are measured.
-            lit = wn @ np.array([np.sin(np.radians(az)), np.cos(np.radians(az))]) > LIT
+            # building would be brightened as "shaded".
+            facing = wn @ s
+            lit, shaded = facing > LIT, facing < -LIT
             dom, share = None, 0.0
             if lit.any():
                 normals = np.column_stack((wn[lit], np.zeros(lit.sum())))
                 dom, share = dominant(unlight(labs[lit], normals, az, el), wgt[lit])
             n = int(lit.sum())
             if dom is not None and balanced:
-                dom = balance(dom)[0]
+                dom = balance(dom, WALL_GAIN)[0]
             rec["wall"] = {"lab": dom, "share": share, "n": n, "sure": dom is not None and n >= MIN_SAMPLES and share >= MIN_SHARE}
+            dom, share = dominant(labs[shaded], wgt[shaded])
+            n = int(shaded.sum())
+            rec["shade"] = {"raw": dom, "share": share, "n": n, "sure": dom is not None and n >= MIN_SAMPLES and share >= MIN_SHARE}
+            if dom is not None:
+                est = from_shade(dom)
+                rec["shade"]["lab"] = balance(est, WALL_GAIN)[0] if balanced else est
         for f in b["roofs"]:
             dom = f["raw"]
             if dom is not None:
                 dom = unlight(dom, f["normal"], az, el)[0]
                 if balanced:
-                    dom = balance(dom)[0]
+                    dom = balance(dom, ROOF_GAIN, ROOF_CHROMA)[0]
             # A face in its own shade is as unsure as a wall in shade.
             lit = float(f["normal"] @ sun_vector(az, el)) > ROOF_LIT
             rec["roofs"].append(dict(f, lab=dom, material=material(dom, f["flat"]) if dom is not None else None,
                                      sure=dom is not None and lit and f["n"] >= MIN_SAMPLES and f["share"] >= MIN_SHARE))
         out.append(rec)
     return out
+
+
+def from_shade(c) -> np.ndarray:
+    """A wall's colour in the sun (L*a*b*, before balance) guessed from its colour in
+    shade: the hue with the sky's blue taken out (SHADE_TINT), and the brightness a
+    wall as far up the city's walls in shade would have in the sun (SHADE_Y → LIT_Y),
+    so dark buildings stay dark."""
+    lin = labs_linear(np.atleast_2d(c))[0]
+    y = lin @ LUMA
+    tint = lin * np.array(SHADE_TINT)
+    tint /= max(tint @ LUMA, 1e-6)
+    return linear_lab(tint[None] * np.interp(y, SHADE_Y, LIT_Y))[0]
+
+
+def fill_roofs(rec) -> None:
+    """Gives a building's unsure roof faces the colour of its sure ones (the median,
+    by pixels, of the sure pitched ones for pitched faces, of the flat ones for flat
+    faces). Faces with no sure neighbour keep none."""
+    for flat in (False, True):
+        sure = [f for f in rec["roofs"] if f["sure"] and f["flat"] == flat]
+        if not sure:
+            continue
+        labs = np.array([f["lab"] for f in sure])
+        wts = np.array([f["n"] for f in sure], float)
+        order = np.argsort(labs[:, 0])
+        mid = order[np.searchsorted(np.cumsum(wts[order]), wts.sum() / 2)]
+        for f in rec["roofs"]:
+            if not f["sure"] and f["flat"] == flat:
+                f["lab"], f["material"], f["filled"] = sure[mid]["lab"], sure[mid]["material"], True
 
 
 def debug_tile(meta: dict, ij, blds, colour, fid, measured, out: Path):
@@ -610,7 +664,7 @@ def debug_tile(meta: dict, ij, blds, colour, fid, measured, out: Path):
     for key in np.unique(fid[fid >= 0]):
         r = faces.get(int(key))
         m = fid == key
-        if r and r["sure"]:
+        if r and (r["sure"] or r.get("filled")):
             img[m] = rgb(r["lab"])[0]
         else:
             img[m & stripes] = (150, 150, 150)
@@ -653,16 +707,21 @@ def main():
     trees = area_trees(meta)
     tiles = sorted(by_tile)[::a.every] if a.calibrate else sorted(by_tile)
     started = time.perf_counter()
-    sampled = {}
+    sampled, colours = {}, {}
     for ij, s, took in sample_tiles(meta, {ij: by_tile[ij] for ij in tiles}, trees, a.jobs, a.debug):
         if a.calibrate:
             sampled[ij] = s
             continue
         measured = summarise(s)
+        for r in measured:
+            fill_roofs(r)
+            if r["id"]:
+                colours[r["id"]] = entry(r)
         walls = sum(1 for r in measured if r["wall"] and r["wall"]["sure"])
         roofs = [f for r in measured for f in r["roofs"]]
         print(f"{ij[0]}_{ij[1]}: walls measured for {walls} of {len(measured)} buildings, "
-              f"{sum(f['sure'] for f in roofs)} of {len(roofs)} roof faces ({took:.0f} s)", flush=True)
+              f"{sum(f['sure'] for f in roofs)} of {len(roofs)} roof faces, "
+              f"{sum(bool(f.get('filled')) for f in roofs)} more from the rest of their roof ({took:.0f} s)", flush=True)
         if a.debug:
             name = f"{ij[0]}_{ij[1]}"
             debug_tile(meta, ij, by_tile[ij], s["top"], s["fid"], measured, OUT_DIR / a.area / f"{name}.png")
@@ -670,7 +729,30 @@ def main():
     print(f"{len(tiles)} tiles in {time.perf_counter() - started:.0f} s")
     if a.calibrate:
         calibrate(sampled)
+        return
+    path = OUT_DIR / f"{a.area}.json.gz"
+    if a.tiles and path.exists():
+        colours = {**json.loads(gzip.decompress(path.read_bytes())), **colours}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(gzip.compress(json.dumps(colours, separators=(",", ":")).encode()))
+    print(f"{path}: {len(colours)} buildings")
 
+
+def entry(r) -> dict:
+    """A building's colours for ipr_buildings.py: its walls' measured in the sun, or
+    guessed from the shade ("shade"), and its roof faces' (triangle numbers in
+    read_sheet's order, colour, material, and whether it's taken from the rest of the
+    roof), all as sRGB bytes."""
+    out = {}
+    if r["wall"] and r["wall"]["sure"]:
+        out["wall"] = rgb(r["wall"]["lab"])[0].tolist()
+    elif r["shade"] and r["shade"]["sure"]:
+        out["shade"] = rgb(r["shade"]["lab"])[0].tolist()
+    roofs = [[f["tris"].tolist(), rgb(f["lab"])[0].tolist(), f["material"], bool(f.get("filled"))]
+             for f in r["roofs"] if f["lab"] is not None and (f["sure"] or f.get("filled"))]
+    if roofs:
+        out["roofs"] = roofs
+    return out
 
 def sample_job(job):
     meta, ij, blds, trees, debug = job
@@ -741,25 +823,58 @@ def calibrate(sampled):
           f"so SUN, SKY = {SUN:.2f}, {SKY:.2f}")
     # The camera's cast: the median tile roof and the median plaster wall, the light
     # taken out, onto their references.
-    tiles, walls = [], []
+    tiles, walls, shades, both = [], [], [], []
     for s in sampled.values():
         for r in summarise(s, sun, el, balanced=False):
             if r["wall"] and r["wall"]["sure"]:
                 walls.append(r["wall"]["lab"])
+            if r["shade"] and r["shade"]["sure"]:
+                shades.append(r["shade"]["raw"])
+                if r["wall"]["sure"]:
+                    both.append((r["wall"]["lab"], r["shade"]["raw"]))
             tiles += [f["lab"] for f in r["roofs"] if f["sure"] and f["material"] == "tiles"]
+    # Walls seen only in shade: the brightness by rank, and the sky's tint from
+    # buildings seen both ways.
+    global SHADE_TINT, SHADE_Y, LIT_Y
+    q = np.linspace(0, 100, 21)
+    LIT_Y = tuple(np.percentile(labs_linear(np.array(walls)) @ LUMA, q))
+    SHADE_Y = tuple(np.percentile(labs_linear(np.array(shades)) @ LUMA, q))
+    lit_lin = labs_linear(np.array([b[0] for b in both]))
+    sh_lin = labs_linear(np.array([b[1] for b in both]))
+    ratio = (lit_lin / np.maximum(lit_lin @ LUMA, 1e-6)[:, None]) / np.maximum(sh_lin / np.maximum(sh_lin @ LUMA, 1e-6)[:, None], 1e-6)
+    tint = np.median(ratio, axis=0)
+    SHADE_TINT = tuple(tint / tint[1])
+    actual = np.array([b[0] for b in both])
+    mid = np.median(np.array(walls), axis=0)
+    y_mid = float(labs_linear(mid[None])[0] @ LUMA)
+
+    def hue_only(c):
+        lin = labs_linear(np.atleast_2d(c))[0] * np.array(SHADE_TINT)
+        return linear_lab(lin / max(lin @ LUMA, 1e-6) * y_mid)[0]
+
+    print(f"walls in shade: SHADE_TINT = {tuple(round(float(t), 3) for t in SHADE_TINT)}; "
+          f"on {len(both)} buildings seen both ways, their colour in the sun guessed from the shade misses by (ΔE, median and quartiles):")
+    for name, guess in (("hue and brightness by rank", [from_shade(b[1]) for b in both]),
+                        ("hue, the city's median brightness", [hue_only(b[1]) for b in both]),
+                        ("the city's median wall", [mid] * len(both)),
+                        ("another building's colour", np.roll(actual, 1, axis=0))):
+        err = np.linalg.norm(np.array(guess) - actual, axis=1)
+        print(f"  {name:36s} {np.median(err):5.1f}  ({np.percentile(err, 25):.1f}-{np.percentile(err, 75):.1f})")
+    print(f"SHADE_Y = {tuple(round(float(v), 4) for v in SHADE_Y)}")
+    print(f"LIT_Y = {tuple(round(float(v), 4) for v in LIT_Y)}")
     mt = labs_linear(np.median(tiles, axis=0)[None])[0]
     mw = labs_linear(np.median(walls, axis=0)[None])[0]
     rt = labs_linear(lab(np.array(ipr.hexrgb(TILE_REFERENCE))))[0]
     rw = labs_linear(lab(np.array(ipr.hexrgb(PLASTER_REFERENCE))))[0]
-    gain = (rt * mt + rw * mw) / (mt * mt + mw * mw)
-    tile = lab(linear_rgb(mt * gain))[0]
-    ref = lab(linear_rgb(rt))[0]
-    chroma = np.hypot(*ref[1:]) / np.hypot(*tile[1:])
-    wall = lab(linear_rgb(mw * gain))[0]
+    wall_gain = rw / mw
+    k = float(rt @ LUMA) / float((mt * wall_gain) @ LUMA)
+    tile = linear_lab(mt * wall_gain * k)[0]
+    ref = linear_lab(rt[None])[0]
+    chroma = float(np.hypot(*ref[1:]) / np.hypot(*tile[1:]))
     print(f"median tile roof {hexc(np.median(tiles, axis=0))} ({len(tiles)} faces), median wall "
-          f"{hexc(np.median(walls, axis=0))} ({len(walls)} buildings), so "
-          f"BALANCE_GAIN = {tuple(round(float(g), 3) for g in gain)}, CHROMA = {chroma:.2f}; they become "
-          f"{hexc(tile * [1, chroma, chroma])} and {hexc(wall * [1, chroma, chroma])}")
+          f"{hexc(np.median(walls, axis=0))} ({len(walls)} buildings), so WALL_GAIN = "
+          f"{tuple(round(float(g), 3) for g in wall_gain)}, ROOF_GAIN = {tuple(round(float(g), 3) for g in wall_gain * k)}; "
+          f"ROOF_CHROMA = {chroma:.2f}; the median tile roof becomes {hexc(tile * [1, chroma, chroma])}")
 
 
 def table(measured) -> str:

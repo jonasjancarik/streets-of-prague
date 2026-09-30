@@ -87,6 +87,7 @@ const PLACES = {
   tunnel: { start: '14.3905,50.0780', drive: false }, // over the Strahov tunnel (see --eval for getting into it)
   strana: { start: '14.4030,50.0883', drive: false }, // Malá Strana, by the Malostranské náměstí: courtyards and lanes
   square: { start: '14.4185,50.0760', drive: false }, // Karlovo náměstí: main roads with buses
+  plaska: { start: '14.4070,50.0782', drive: false },  // Plaská, Malá Strana/Smíchov: roofs and facades from above (plan 005)
 };
 
 // In the page before anything else: time every animation-frame callback.
