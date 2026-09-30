@@ -273,6 +273,42 @@ async function main() {
   let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
   const viewRadius = () => height * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
+  // The sun's shadow map covers only what is on screen: the view's rectangle from a
+  // little below the lowest ground in it to 40 m above the highest (the roofs), as the
+  // sun sees it. Its sides follow the screen's, and a low sun no longer spreads it over
+  // ground far past the screen's top or bottom. Rounded out to 4 m so small changes
+  // don't move it.
+  const sunX = new THREE.Vector3(), sunY = new THREE.Vector3(), sunZ = new THREE.Vector3(), corner = new THREE.Vector3();
+  const fitShadow = () => {
+    const sc = sun.shadow.camera;
+    sunZ.copy(sky.offset).normalize();
+    sunX.set(1, 0, 0).addScaledVector(sunZ, -sunZ.x).normalize();
+    sunY.crossVectors(sunZ, sunX);
+    sc.up.copy(sunY); // (three.js aims the shadow camera at the target with this up)
+    const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const hx = height * tan * camera.aspect, hz = height * tan;
+    let low = Infinity, high = -Infinity;
+    for (const sx of [-1, 0, 1]) for (const sz of [-1, 0, 1]) {
+      const h = world.terrainAt(camPos.x + sx * hx, -camPos.z - sz * hz) - camGround;
+      low = Math.min(low, h); high = Math.max(high, h);
+    }
+    let l = Infinity, r = -Infinity, b = Infinity, t = -Infinity;
+    for (const dy of [Math.min(0, low) - 5, Math.max(0, high) + 40]) {
+      const d = Math.max(0, height - dy);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        corner.set(sx * d * tan * camera.aspect, dy, sz * d * tan);
+        const u = corner.dot(sunX), v = corner.dot(sunY);
+        l = Math.min(l, u); r = Math.max(r, u); b = Math.min(b, v); t = Math.max(t, v);
+      }
+    }
+    const out = (x: number, dir: number) => (dir < 0 ? Math.floor(x / 4) - 1 : Math.ceil(x / 4) + 1) * 4;
+    l = out(l, -1); r = out(r, 1); b = out(b, -1); t = out(t, 1);
+    if (sc.left !== l || sc.right !== r || sc.bottom !== b || sc.top !== t || sc.far !== 1400) {
+      sc.left = l; sc.right = r; sc.bottom = b; sc.top = t;
+      sc.far = 1400;
+      sc.updateProjectionMatrix();
+    }
+  };
   const px = () => (inCar || inHeli || walker).x, py = () => (inCar || inHeli || walker).y;
   const offscreen = (x: number, y: number) => Math.hypot(x - camPos.x, y + camPos.z) > viewRadius();
   const edgesNear = (x: number, y: number, rMax: number) => world.around(x, y, rMax).flatMap((k) => world.driveBy.get(k) || []);
@@ -1383,18 +1419,10 @@ async function main() {
     CUTAWAY.value.set(hx, (underway ? underway.floor : ground(px(), py(), body)) + 2.5, -hy, cutR > 0.3 ? cutR : 0);
     DIG.value.set(hx, -hy, (deep || underway) && cutR > 0.3 ? cutR : 0, 0);
 
-    // The shadows have to reach the corners of the screen, whichever way the sun shines.
-    const ext = Math.max(90, viewRadius());
-    const sc = sun.shadow.camera;
-    if (Math.abs(sc.right - ext) > 4) {
-      sc.left = sc.bottom = -ext;
-      sc.right = sc.top = ext;
-      sc.far = 1400;
-      sc.updateProjectionMatrix();
-    }
     sun.target.position.set(camPos.x, camGround, camPos.z);
     sky.update(clock.t % 86400, weather.now, height);
     sun.position.copy(sun.target.position).add(sky.offset);
+    fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.
     lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list);
     signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);
