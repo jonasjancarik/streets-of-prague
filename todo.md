@@ -190,6 +190,32 @@ grime on the walls 6%, the shadow map's own pass 7%.
   fixes, with the CPU slowed 4×): the crowd's `spot` / `follow` / `avoid`, `simulate`,
   `traffic.update`, `trams.clearAhead`, then `writeBuffer` (~6%, uniform buffers of
   ~160 KB a frame and ~1200 figure matrices).
+- **Stalls while driving** (30 September 2026; details and how to measure them in the
+  performance skill). The 50–100 ms stalls on the drive from Újezd are mostly three.js
+  building shaders for things drawn for the first time (~180 builds in 40 s: 0.7 s at 1×
+  on an M5, 2–4 s at 4×, 1.4 s on a Pixel 5), plus the GPU process compiling their
+  pipelines, which once held the main thread 253 ms in `writeBuffer`. Tile loading on the
+  main thread, the street-graph merge and parking are small. Fixed: the ground's layers
+  now share one shader per kind of layer across tiles (ground builds ~70 → ~4 a drive on
+  the M5, 16 → 2 on the Pixel 5). `--vs --runs 2 --fresh-browser`, 4×: long tasks 9, 11 →
+  3, 3; slowest 1% of frames 12.7, 15.2 → 9.7, 10.4 ms; build time 2.0 → 0.8 s; and
+  `writeBuffer` calls a frame 315 → 180. At 1× no change beyond drift. On the Pixel 5 the
+  time in long tasks with a build fell from 2.5–2.7 s to 1.2–1.8 s a drive, but its
+  slowest 1% stayed ~115 ms (the frames below). Open, biggest first:
+  - **Tree meshes:** every tile makes three new instanced tree meshes, and three.js
+    builds every instanced mesh on its own (its key has the mesh's `uuid`): ~60 ms each
+    on a Pixel 5 for the tuft shader. One set of tree meshes shared by all tiles
+    (refilled when tiles come and go) would build once.
+  - **Car models:** ~25 builds a drive (~13 ms each on the Pixel 5), one per model as it
+    first appears and again when a model's mesh grows past its capacity
+    (`CarDrawer.render`, `max(8, 1.5 × n)`). Making every model's mesh during loading
+    with room to spare would move them behind the loading screen.
+  - **Tile workers crowd a phone's main thread:** on a Pixel 5, frames swell (render 9 →
+    30 ms) while tiles load, with no build involved; 1 worker instead of 3 halved those
+    long tasks, but tiles took 2–3× longer to arrive. A decision: fewer workers on
+    phones, or leave it.
+  - On a warm Pixel 5 there are also 20–24 ms spikes in `crowd.update` and 12 ms in
+    `trams.update`.
 
 ## Pipeline
 

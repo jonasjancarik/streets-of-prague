@@ -175,7 +175,7 @@ The ground is shaded on every pixel. Measure anything you add to `PATTERNS_GLSL`
   takes 21–23 ms for the first tile, behind the loading screen, then 1.6 ms a tile on
   average during play (7 ms at most) on an M5, and 5 ms (10–24 ms at most) with the CPU
   slowed 4×. On a 4×-slowed drive the main thread stalls for 50–100 ms at a time for
-  other reasons, and `parkCars` isn't among the hottest functions. Moving it would
+  other reasons (shader builds, see "Stalls while driving"), and `parkCars` isn't among the hottest functions. Moving it would
   also be costly: `place()` makes a real `Car` for each spot tried (its outline, and
   random draws mixed with the placement's, from `car.ts`, which pulls in three.js),
   checks the shared `posts` of all loaded tiles, and hands back `DriveEdge` objects
@@ -208,6 +208,65 @@ for its `userData.flatten()` (the same ground without the pattern):
 
 Only compare such differences between the renderers, not whole frames: on WebGPU
 everything written in GLSL is drawn plain or not at all. There's no GPU timer there.
+
+## Stalls while driving (hitches)
+
+Measured 30 September 2026: the drive from Újezd, 40 s, on an M5 at 1× and 4× and on a
+Pixel 5 (see "On a phone" below).
+
+- **Most stalls are three.js building a material's shader** (TSL into WGSL, on the main
+  thread) the first time something is drawn with it: 7 ms at 1× on an M5, 15–60 ms at
+  4×, 10–90 ms on a Pixel 5. They come as things come into view, not when a tile loads.
+  The pipeline compile that follows runs in the GPU process (50–380 ms there on a Mac)
+  and can block the main thread inside `writeBuffer` when the GPU process falls behind
+  (one 253 ms stall).
+- **three.js reuses a build only for the same node objects.** A node's cache key is its
+  `id` unless its type overrides `customCacheKey`, so a material whose node graph is made
+  afresh is built afresh, however alike. Make each graph once per variant and let it
+  read per-material values with `materialReference(name, type)`, as three.js does for
+  `map` and `color` (a texture at your own coordinates: `.context({ getUV: () => uv })`).
+  That's what `groundGraph` in `webgpu.ts` does: the ground's builds went from ~70 to ~4
+  a drive.
+- **Every `InstancedMesh` gets a build of its own:** three.js puts `object.uuid` into the
+  render cache key (its instancing nodes bind that mesh's buffers), whatever the
+  material. Each tile's tree meshes pay for the whole tuft shader (~14 ms at 1× on an
+  M5, ~60 ms on a Pixel 5), and a car model's mesh pays when it first appears and each
+  time it grows (`CarDrawer.render`). Keep and reuse instanced meshes rather than making
+  new ones. Don't patch the key: a shared build would bind the first mesh's buffers.
+- **Tile loading itself is cheap on the main thread** (each lap of `make` 1–30 ms; the
+  graph merge under 1 ms). The workers and the sky view take 100–500 ms, off it.
+- **Chrome's CPU throttling slows only the page's main thread**, not the tile workers or
+  the GPU process, so `--cpu 4` shows JavaScript costs but hides contention. On a Pixel 5,
+  frames also swell while tiles load (render 9 → 30 ms, no build involved). With 1 tile
+  worker instead of 3, about half as many long tasks without a build, but a tile takes
+  2–3× as long to arrive.
+- **Counting builds:** wrap `renderer._nodes.getForRender` and see whether
+  `nodeBuilderCache.size` grew; `ro.material`, `ro.object`, `ro.geometry` tell what it
+  was. Count `device.createRenderPipeline` too. Line them up with a
+  `PerformanceObserver({ type: 'longtask' })` from `--eval`, and report from a
+  `setTimeout` with `console.info('Renderer: …')`.
+- **A Chrome trace** shows what ran inside a stall, including the GPU process: from a
+  browser CDP session, `Tracing.start` with `transferMode: 'ReturnAsStream'` and the
+  `disabled-by-default-v8.cpu_profiler` category, then `IO.read` the stream. 40 s is
+  ~0.5 GB, one event a line: parse it line by line. Samples from the tile workers are in
+  the same process: keep the main thread's `Profile` id only.
+
+### On a phone
+
+A Pixel 5 (Android 14, Chrome 153, WebGPU on its Adreno 6xx) can be driven over adb:
+`adb reverse tcp:5195 tcp:5195` (the phone's `localhost` is a secure context, which
+WebGPU needs), start Chrome (`am start -a android.intent.action.VIEW -d about:blank
+com.android.chrome`), `adb forward tcp:9222 localabstract:chrome_devtools_remote`, then
+Playwright's `chromium.connectOverCDP('http://localhost:9222')` and a new page in its
+first context. Give the serial (`adb -s`, or `ANDROID_SERIAL`) when other devices are
+attached. Keys work for driving (`KeyE`, `ShiftLeft` + `KeyW`); `addInitScript` can fake
+`navigator.hardwareConcurrency` to change the number of tile workers.
+
+- Tracing slows the phone several times over: use a trace to see what runs, not how long.
+- The phone warms over repeated runs (battery 33 → 35 °C in eight drives) and gets slower:
+  alternate A and B, and don't compare runs far apart.
+- It's much slower than the M5 at 4×: 40–60 long tasks in the 40 s drive, the slowest 1%
+  of frames ~115 ms.
 
 ## Before you commit
 
