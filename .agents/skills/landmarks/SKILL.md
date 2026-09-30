@@ -143,10 +143,12 @@ the game to render (see the memory on benchmarking).
   rays find nothing and the texels are filled in from around them. Not fixed; see
   `todo.md`, "Landmarks".
 - **Landmark roofs look like another material.** The photographs' roofs are paler and
-  yellower than the city's tiled roofs. Two things in the game handle it, both after
-  the bake, so a landmark's GLB never needs remaking for colour: `warmUp` in
-  `src/tiles.ts` shifts warm colours of the texture redder when it loads (gently: too
-  much and the plaster goes orange too), and `shadeLandmark` (`src/shading.ts`, and its
+  yellower than the city's tiled roofs. `pipeline/landmark_colours.py` shifts warm
+  colours in each final `.warm-v1.glb` (JPEG quality 88), retaining the unconverted
+  file and leaving Blender's source and diagnostic models alone. Its active scene
+  carries `landmarkColourVersion: 1`. Older unmarked GLBs still get the same `warmUp`
+  pass in `src/tiles.ts`; do not activate a warmed manifest before the new browser
+  code is live, or an old client will adjust it twice. `shadeLandmark` (`src/shading.ts`, and its
   TSL port in `src/webgpu/buildings.ts`, key `landmark-roof`) draws the city's tile
   pattern wherever a texel is a red roof on an up-facing face, at the photograph's
   brightness. The face's normal comes from derivatives, because the model's normals are

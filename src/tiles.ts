@@ -192,14 +192,25 @@ function warmUp(map: THREE.Texture) {
   map.needsUpdate = true;
 }
 
-async function landmarkModel(url: string) {
+export async function landmarkModel(url: string) {
   const gltf = await new GLTFLoader().loadAsync(url);
   const model = gltf.scene;
+  const colourVersion = model.userData.landmarkColourVersion;
+  if (colourVersion !== undefined && colourVersion !== 1) {
+    throw new Error(`Unsupported landmark colour version ${String(colourVersion)} in ${url}`);
+  }
+  const legacyMaps = new Set<THREE.Texture>();
   model.updateMatrixWorld(true);
   model.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     const { map, side } = o.material as THREE.MeshStandardMaterial;
-    if (map) { map.anisotropy = 4; warmUp(map); }
+    if (map) {
+      map.anisotropy = 4;
+      if (colourVersion === undefined && !legacyMaps.has(map)) {
+        warmUp(map);
+        legacyMaps.add(map);
+      }
+    }
     o.material = shadeLandmark(new THREE.MeshLambertMaterial({ map, side }));
     // Up in the world, in the mesh's own axes (in case the file turns it).
     const up = new THREE.Vector3(0, 1, 0).applyMatrix3(new THREE.Matrix3().getNormalMatrix(o.matrixWorld).invert()).normalize();

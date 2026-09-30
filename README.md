@@ -340,8 +340,17 @@ that without a new renderer.
   the camera never sees, so they take what's above instead. The game hides IPR's and OSM's buildings in that
   footprint and draws the model there (`landmarkModel` in `src/tiles.ts`). The photographs have the day's light
   in them, so the model is lit evenly, as if every face looked up, and still darkens at
-  night. The collision footprint stays OSM's.
-- **Roof colours.** Pitched roofs are terracotta tiles (a palette matched to reference photos of Prague's roofs, brick-red rather than orange, with each tile a little redder or duller than the next; the landmarks' photographs get the same warming when they load, in `warmUp` in `src/tiles.ts`, and where a landmark's photograph shows a red roof, the roof shader draws the same tiles at the photograph's brightness: `shadeLandmark` in `src/shading.ts` and its port in `src/webgpu/buildings.ts`), as nearly all of them are in Prague;
+  night. The collision footprint stays OSM's. `pipeline/landmark_colours.py` writes a
+  separate `.warm-v1.glb` final model with the photograph's warm-colour adjustment
+  baked in; the active GLB scene carries `landmarkColourVersion: 1`. The browser skips
+  its pixel pass for that marker and still adjusts older unmarked GLBs. The output
+  manifest references the versioned files. To convert existing assets without
+  rebuilding geometry, run `uv run --project pipeline python pipeline/landmark_colours.py
+  --area-root public/data/centrum_now --output-root /tmp/sop-landmark-colours/centrum_now`
+  (add `--dry-run` to validate without writing). Keep the old GLBs and original
+  manifest until the new app is live: an older client would adjust the warmed files
+  again. Review the staged manifest and assets before activating them in shared data.
+- **Roof colours.** Pitched roofs are terracotta tiles (a palette matched to reference photos of Prague's roofs, brick-red rather than orange, with each tile a little redder or duller than the next; the landmarks' photographs get the same warming in the final GLB, or on load for older models, and where a landmark's photograph shows a red roof, the roof shader draws the same tiles at the photograph's brightness: `shadeLandmark` in `src/shading.ts` and its port in `src/webgpu/buildings.ts`), as nearly all of them are in Prague;
   flat ones are grey. OSM's `roof:material` and `roof:colour` can make a roof grey slate
   or green copper instead, down to single building parts (the cathedral's grey roofs
   and copper domes), and `pipeline/roofs.py` corrects landmarks OSM gets wrong or leaves
@@ -737,7 +746,8 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   clean models from the tiles). It needs Blender (on the PATH, in /Applications or
   `$BLENDER`); `--raw` keeps the mesh's own triangles instead. The mesh's pieces are
   kept in `pipeline/.cache/mesh/`; the finest level (16) is the default. How to add
-  one, check it and fix what goes wrong: `.agents/skills/landmarks/SKILL.md`.
+  one, check it and fix what goes wrong: `.agents/skills/landmarks/SKILL.md`. The
+  generated final manifest names `.warm-v1.glb` files; originals remain beside them.
   Repository skills live in `.agents/skills`; `.claude/skills` is a compatibility symlink.
 - **Mesh colours.** `mesh_colours.py <area>` needs the area's IPR sheets parsed
   (`ipr_buildings.py` once) and writes `pipeline/.cache/mesh_colours/<area>.json.gz`,
