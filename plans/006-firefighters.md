@@ -6,9 +6,8 @@
 > `src/settings.ts`). Check `git status` and `git diff` before you start, don't revert
 > changes you didn't make, and commit only your own hunks (`git add -p`).
 >
-> **A few design questions are still open** (see [Open questions](#open-questions)).
-> Each phase says which ones it needs. Where this plan names a default, it's a
-> suggestion for the user, not a decision: where a phase is blocked, stop and ask.
+> The user settled the design questions on 2026-09-30 (see
+> [Decisions made](#decisions-made-dont-change-them-without-asking)).
 
 ## Status
 
@@ -43,6 +42,18 @@ cost too much per pixel for now), ambulances and paramedics (the lights module i
 phase 2 is made so they can use it later), fire hydrants, ladders that move, and the
 Prague fire brigade's real livery or name on the vehicle beyond the generic word
 HASIČI.
+
+## Decisions made (don't change them without asking)
+
+- **Cars nobody drives burn longer.** A car that catches fire while nobody is at the
+  wheel (traffic, parked, abandoned) burns for 45–75 s before it explodes, long enough
+  for an engine to arrive and put it out; put out in time, it doesn't explode. The car
+  you're driving and police cars chasing you keep the short 4–6 s fuse.
+- **Engines come from out of view**, 150–300 m away, like police cars. Real fire
+  stations are not used for now.
+- **A siren for the police too, but a different one**, so the two can be told apart
+  by ear: the engine a slow two-tone, the police a faster rising and falling wail.
+- **The water cannon is F**, held down to spray. F isn't used anywhere else in the game.
 
 ## Current state (what the plan relies on)
 
@@ -113,19 +124,28 @@ A class like `Police`, owning its engines and crews (they belong to it, not to a
 
 ### Fires last long enough to be put out (`src/fire.ts`)
 
-The fuse is 4–6 s, so no engine can get there before the explosion, and that GTA
-moment should stay. Firefighters put out the **wreck** instead. Default (open
-question 1): while an engine is on its way or at work, a burnt wreck keeps its flames
-until it's put out, for at most 120 s. Without an engine it smoulders as today.
+Today the fuse is 4–6 s, so no engine could get there before the explosion. The fuse
+is picked when the car catches fire (`b.fuse` in `Fires.update`):
+
+- `c.driven` (the player's car, a police car chasing you): `FUSE`, 4–6 s, as now, so
+  your own burning car is still the GTA moment where you jump out and run.
+- anything else: a new `LONG_FUSE`, 45–75 s. It burns with full flames and thick smoke
+  all that time (check the `Puffs` caps of 600 and 300 still hold with several such
+  fires in view; lower the emission rate for fires that burn long rather than raise the
+  caps). Getting out of a burning car doesn't change the fuse it already has.
+
+An engine 150–300 m away takes roughly 25–40 s to arrive and get the crew out, so most
+fires are put out in time, but not all.
 
 New in `Fires`:
 
-- `douse(c, amount)`: water on a car. On a wreck it cuts the flames and turns the
-  smoke white (steam) for a few seconds, then stops. On a car that's burning but hasn't
-  blown up yet (the player with the water cannon in phase 3), enough water brings its
-  damage back under `BURNING` and clears the fuse, so it only smokes.
-- `burning()`: the fires the brigade should know about, or `onIgnite` and `onBlast`
-  passing to `brigade.call` in `src/main.ts`.
+- `douse(c, amount)`: water on a car. On a car that's burning, enough water brings its
+  damage back under `BURNING` and clears the fuse, so it only smokes, with white steam
+  for a few seconds; it doesn't explode. On a wreck that's still in flames it cuts
+  them and ends the smouldering early.
+- `onIgnite` and `onBlast` in `src/main.ts` pass the car to `brigade.call`; a crew
+  called to a car that has already blown up puts out the wreck if it's still in
+  flames, or turns back.
 
 ### Water
 
@@ -145,8 +165,9 @@ with the night lighting on.
 
 ### Siren
 
-A two-tone siren for the engine, and for police cars that are chasing you (open
-question 3). Suggested: made from oscillators in `src/audio.ts` like the engine sound,
+Two sirens that sound clearly different: the engine a slow two-tone (high, low, about
+once a second), police cars chasing you a faster wail rising and falling. Both are
+made from oscillators in `src/audio.ts` like the engine sound,
 so there's nothing to download, with its level in `src/soundmix.ts`, fading with
 distance and a slight Doppler shift. A recording from Freesound through
 `pipeline/build_audio.py` is the alternative if the made-up one sounds cheap. Tune the
@@ -166,8 +187,8 @@ few emergency vehicles.
 
 - The engine can be stolen like any car; the crew get out and chase you on foot like
   officers do. It counts as `carjack`.
-- A key (open question 4) fires the water cannon forward from the roof while you're
-  in the engine. It puts out burning cars (`douse`), knocks people and officers over
+- Holding **F** sprays the water cannon forward from the roof while you're in the
+  engine; a touch button does the same on phones. It puts out burning cars (`douse`), knocks people and officers over
   (as a car does, but gently), and is a crime when it hits people (`knock`) or police
   (`hitCop`).
 - Water runs out after about 30 s of spraying and refills slowly; the HUD shows the
@@ -180,28 +201,12 @@ An odd job on the mission engine: while you're in an engine, a fire starts somew
 put it out before it spreads to the cars around it; pay grows with how quickly. Then
 the next one, as in GTA's side missions.
 
-## Open questions
-
-1. **Can the fire be put out before the explosion?** Suggested: no, the fuse stays
-   4–6 s; firefighters put out the wreck, which keeps burning until they do (at most
-   120 s). The alternative is a longer fuse for cars nobody's driving. *Needed for
-   phase 1.*
-2. **Where engines come from.** Suggested: out of view, 150–300 m away, like police.
-   Real stations from OSM (`amenity=fire_station`, which `pipeline/osm_area.py`
-   already reads) would mean engines driving from them, sometimes for minutes.
-   *Needed for phase 1.*
-3. **A siren for the police too?** Suggested: yes, for cars chasing you, sharing the
-   code. *Needed for phase 2.*
-4. **The water cannon key.** Suggested: the one used for the horn or an action key,
-   whichever is free; check `src/main.ts` and the touch controls. *Needed for phase 3.*
-
 ## Steps
 
-### Phase 1: call-out and putting out (needs questions 1, 2)
+### Phase 1: call-out and putting out
 
 1. The `fire` type and its body in `src/car.ts`.
-2. `Fires.douse()` and the longer-burning wreck while a crew is coming, in
-   `src/fire.ts`.
+2. The long fuse for cars nobody drives and `Fires.douse()`, in `src/fire.ts`.
 3. The shared route following taken out of `Police.chase`.
 4. `src/brigade.ts`: calling, driving, the crew, the hose, leaving; wired into
    `src/main.ts` (`onIgnite`/`onBlast`, `allCars`, collisions, the spatial hash, render,
@@ -209,16 +214,17 @@ the next one, as in GTA's side missions.
 5. The water jet and steam.
 6. A developer panel button (`src/dev.ts`) to set the nearest car on fire.
 
-### Phase 2: lights, siren, giving way (needs question 3)
+### Phase 2: lights, sirens, giving way
 
 1. `src/beacons.ts`, used by police and brigade.
-2. The siren in `src/audio.ts` and `src/soundmix.ts`, levels checked offline.
+2. Both sirens in `src/audio.ts` and `src/soundmix.ts`, levels checked offline.
 3. Giving way and careful red lights in `src/traffic.ts`.
 
-### Phase 3: the player (needs question 4)
+### Phase 3: the player
 
 1. Stealing the engine, the crew coming after you.
-2. The water cannon, its tank in the HUD, crimes, touch control.
+2. The water cannon on F, its tank in the HUD, crimes, the touch button, F in the
+   controls card.
 
 ### Phase 4: the job (needs plan 004 phase 1)
 
@@ -230,13 +236,16 @@ After each phase: Czech text in `src/cs.ts` for anything shown, and the README
 ## Verification
 
 - `npm run typecheck` and `npm run build` after each phase.
-- In the game (`?area=centrum&go`), with the developer button: a car burns, explodes,
-  an engine arrives out of view, the crew puts out the wreck and they leave. Twice at
+- In the game (`?area=centrum&go`), with the developer button: a parked car burns, an
+  engine arrives from out of view, the crew puts it out before it explodes and they
+  leave. Your own car on fire still explodes in 4–6 s. One the crew doesn't reach in
+  time explodes and they put out the wreck. Twice at
   once; one on a narrow street; one next to a tram line; a teleport while the engine is
   on its way (nothing left behind).
 - At night: the blue lights and their glow on the ground.
 - Traffic moves over for the engine and doesn't run into it or the parked cars.
-- Sound levels with the sound-levels skill; the siren fades with distance.
+- Sound levels with the sound-levels skill; both sirens fade with distance and are
+  easy to tell apart.
 - Frame times at the bench places with an engine spraying in view
   (`node scripts/bench.mjs --vs`), on a quiet machine. Show screenshots of the engine,
   the crew at work and the lights at night.
