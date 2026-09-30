@@ -14,9 +14,9 @@ interface StreetName { name: string; key: string; x: number; y: number }
 
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-export function setupDev({ area, index, teleport, position, helicopter, shiftTime, timeOfDay, setTimeOfDay, graphics, weather }: {
+export function setupDev({ area, index, teleport, position, helicopter, setFire, shiftTime, timeOfDay, setTimeOfDay, graphics, weather }: {
   area: string; index: MapIndex; teleport: (x: number, y: number) => Promise<void>;
-  position: () => Point2; helicopter: () => boolean; shiftTime: (hours: number) => void;
+  position: () => Point2; helicopter: () => boolean; setFire: () => boolean; shiftTime: (hours: number) => void;
   // Seconds since midnight on the game's clock.
   timeOfDay: () => number; setTimeOfDay: (sec: number) => void;
   graphics: Graphics;
@@ -53,6 +53,7 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
     </div>
     <div class="dev-row">
       <button id="dev-heli" title="Walk up to it and press E to fly it">Helicopter next to me</button>
+      <button id="dev-fire" title="The fire brigade comes from out of view">Set the nearest car on fire</button>
     </div>
     <div class="dev-row">
       <button id="dev-earlier" title="The trams follow the timetable for the new time">An hour earlier</button>
@@ -158,6 +159,11 @@ export function setupDev({ area, index, teleport, position, helicopter, shiftTim
   time.addEventListener('keyup', (ev) => ev.stopPropagation());
   $('dev-earlier').onclick = () => shiftTime(-1);
   $('dev-later').onclick = () => shiftTime(1);
+  $('dev-fire').onclick = () => {
+    const ok = setFire();
+    $('dev-fire').textContent = ok ? 'On fire, engine called' : 'No car nearby';
+    setTimeout(() => { $('dev-fire').textContent = 'Set the nearest car on fire'; }, 1800);
+  };
   $('dev-heli').onclick = () => {
     const ok = helicopter();
     $('dev-heli').textContent = ok ? 'Helicopter parked nearby' : 'No open space for it here';

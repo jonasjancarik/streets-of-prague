@@ -783,6 +783,22 @@ async function main() {
     }
     return false;
   };
+  // Developer tools: the nearest car (not yours) is set on fire.
+  const setFire = () => {
+    let best: Car | null = null, bestD = 80;
+    for (const c of allCars()) {
+      const d = Math.hypot(c.x - px(), c.y - py());
+      if (c === inCar || c.burnt || c.two === 'bike' || c.type === 'fire' || d >= bestD) continue;
+      best = c;
+      bestD = d;
+    }
+    if (!best) return false;
+    const ag = traffic.agents.find((a) => a.car === best);
+    if (ag) { traffic.release(ag); best.mode = 'loose'; loose.push(best); }
+    best.damage = 100;
+    fires.check(best);
+    return true;
+  };
   const sound = new Sound();
   // What the ground under a car is made of, for its tyres: the OSM surface of the street
   // it's on, or the pavement off the streets.
@@ -796,7 +812,7 @@ async function main() {
     }
     return best && bestD < 1 ? surfaceOf(best.surface) : 'pavement';
   };
-  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, shiftTime: (h) => clock.advance(h * 3600),
+  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, setFire, shiftTime: (h) => clock.advance(h * 3600),
     timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics,
     weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); }, label: () => weather.name } });
   setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } } });
@@ -1659,7 +1675,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare,
+    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
