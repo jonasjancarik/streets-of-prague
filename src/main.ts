@@ -60,12 +60,14 @@ import type { DriveEdge, WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Tracked } from './tiles.ts';
 import { getLang, onLang, t, tn, translatePage } from './i18n.ts';
+import { setupTestkit, PLACES } from './testkit.ts';
+import type { Testkit } from './testkit.ts';
 
 interface Obstacle { x: number; y: number; z?: number; r: number; vx: number; vy: number; kind: string; car?: Car }
 type InputKey = 'up' | 'down' | 'left' | 'right' | 'run' | 'brake' | 'jump';
 interface Controls { move: number; turn: number; run: boolean; brake: boolean; jump: boolean; aim: { h: number; mag: number } | null }
 
-declare global { interface Window { __drive?: unknown } }
+declare global { interface Window { __drive?: unknown; __test?: Testkit } }
 
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'praha';
@@ -190,7 +192,9 @@ async function main() {
 
   // Start on Újezd (or ?start=lon,lat) if it's in the area, otherwise in the middle.
   const [w0, s0, e0, n0] = index.bbox_wgs84, lon0 = (w0 + e0) / 2, lat0 = (s0 + n0) / 2;
-  const [slon, slat] = (params.get('start') || '14.4052,50.0808').split(',').map(Number);
+  // ?start=lon,lat, or ?place= one of the test places (testkit.ts).
+  const named = PLACES[params.get('place') ?? ''];
+  const [slon, slat] = named ? [named.at[1], named.at[0]] : (params.get('start') || '14.4052,50.0808').split(',').map(Number);
   const inArea = slon > w0 && slon < e0 && slat > s0 && slat < n0;
   // The pipeline's local metres: a transverse Mercator centred on the area.
   const [sx, sy] = inArea
@@ -478,7 +482,8 @@ async function main() {
     walker.anim.play('idle', true);
     if (near) void teleportTo(near[0], near[1]);
   };
-  const hurt = (points: number) => { if (wastedT <= 0 && health.hurt(points)) wasted(); };
+  let testkit: Testkit | null = null;
+  const hurt = (points: number) => { if (!testkit?.unhurt && wastedT <= 0 && health.hurt(points)) wasted(); };
   const police = new Police({
     scene, drive, traffic, grid, height: ground, rng: seeded, edgesNear, offscreen, onBusted: busted, kit,
     // A shot is heard, seen and sends people running; one that hits you in a car mostly
@@ -793,7 +798,7 @@ async function main() {
     }
     return best && bestD < 1 ? surfaceOf(best.surface) : 'pavement';
   };
-  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, shiftTime: (h) => clock.advance(h * 3600),
+  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper,
     timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics,
     weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); }, label: () => weather.name } });
   setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } } });
@@ -848,7 +853,11 @@ async function main() {
   });
   let zoom = 1;
   const zoomBy = (f: number) => { zoom = clamp(zoom * f, 0.5, 4); };
-  window.addEventListener('wheel', (e) => zoomBy(Math.exp(e.deltaY * 0.0012)), { passive: true });
+  window.addEventListener('wheel', (e) => {
+    const f = Math.exp(e.deltaY * 0.0012);
+    if (testkit?.cam) testkit.cam.height = clamp(testkit.cam.height * f, 5, 1500);
+    else zoomBy(f);
+  }, { passive: true });
   $('t-ticket').addEventListener('click', pressB);
   const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, doors: () => ride.doors(), force: params.has('touch') });
   window.addEventListener('resize', () => {
@@ -1389,9 +1398,11 @@ async function main() {
     if (Math.abs(waitScale - (waiting ? FAST : 1)) < 0.02) waitScale = waiting ? FAST : 1;
     taxi.update(dt);
     const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : funicular.me ? funicular.speedUp(dt, ctl.run || touch.fast) : taxi.riding ? taxi.speedUp(dt, ctl.run || touch.fast) : waitScale;
-    const steps = metro.active ? 0 : Math.ceil(scale - 1e-6); // underground, the street waits
-    for (let i = 0; i < steps; i++) simulate((dt * scale) / steps, ctl);
-    weather.update(dt * scale, clock.t, dt);
+    // (The developer panel can pause the world or slow it down.)
+    const run = testkit?.paused ? 0 : scale * (testkit?.speed ?? 1);
+    const steps = metro.active ? 0 : Math.ceil(run - 1e-6); // underground, the street waits
+    for (let i = 0; i < steps; i++) simulate((dt * run) / steps, ctl);
+    weather.update(dt * run, clock.t, dt);
     input.jump = false;
     // A ticket that runs out while you ride gives you a moment to buy another.
     const ticketNow = wallet.hasTicket(clock.t);
@@ -1469,8 +1480,18 @@ async function main() {
     const below = underway ? underway.ground
       : deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body);
     camGround += (below - camGround) * Math.min(1, dt * 3);
-    camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
-    camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
+    const free = testkit?.cam;
+    if (free) {
+      // The developer panel's free camera: tilted back from the spot it looks at.
+      camPos.set(free.x, 0, -free.y);
+      camGround = world.terrainAt(free.x, free.y);
+      const hd = ((90 - free.heading) * Math.PI) / 180, back = free.height * Math.tan((free.tilt * Math.PI) / 180);
+      camera.position.set(free.x - Math.cos(hd) * back, camGround + free.height, -(free.y - Math.sin(hd) * back));
+      camera.lookAt(free.x, camGround, -free.y);
+    } else {
+      camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
+      camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
+    }
 
     // In a passage under a building, open a hole in the floors above so you stay in view.
     // The same under a bridge, and a wider one down into a tunnel.
@@ -1647,6 +1668,23 @@ async function main() {
     simulate: (dt: number, ctl: Partial<Controls> = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z: number) => { zoom = z; height = (inCar ? 120 : 100) * z; },
   };
+  testkit = setupTestkit({
+    toLocal: dev.toLocal, toLonLat: dev.toLonLat, teleport: teleportTo,
+    me: () => inCar || inHeli || walker, car: () => inCar,
+    mode: () => (inCar ? 'car' : inHeli ? 'helicopter' : ride.on ? 'tram' : taxi.riding ? 'taxi' : boats.me ? 'boat' : funicular.me ? 'funicular' : metro.active ? 'metro' : 'foot'),
+    street: () => street, enterOrExit,
+    addCar: (c) => { loose.push(c); restingStale = true; },
+    simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
+    view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
+    loaded: (x, y) => world.loadNow(x, y, 300),
+    grid, wallet, police, health, clock, fires, rng: seeded,
+    carsNear: (x, y, r) => [...carsNear(x, y, r)],
+    view0: () => ({ x: camPos.x, y: -camPos.z, height }),
+    canvas: renderer.domElement, fov: camera.fov,
+    weather: { set: (k) => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, kind: () => weather.kind },
+  });
+  window.__test = testkit;
+  dev.attach(testkit);
 }
 
 // The touch stick in a car points where you want to go on screen, as it does on foot:
