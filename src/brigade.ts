@@ -212,6 +212,7 @@ export class Brigade {
       e.t += dt;
     }
     if (!e.crew) want = 0;
+    if (e.phase === 'go' && o.police.traffic.signals?.against(c.x, c.y, c.h, 22)) want = Math.min(want, 5);
     const { throttle, steer: st } = pedals(c, e, tx, ty, want, dt);
     return { throttle, steer: st, handbrake: want === 0 && Math.abs(c.forwardSpeed) < 3 };
   }

@@ -417,6 +417,8 @@ export class Police {
     if (behind) want = 0;
     // An officer out on foot: the car waits.
     if (!c.crew) want = 0;
+    // Through a red light with care.
+    if (!p.calm && this.traffic.signals?.against(c.x, c.y, c.h, 22)) want = Math.min(want, 5);
     const { throttle, steer } = pedals(c, p, tx, ty, want, dt);
     // Close enough and you're not going anywhere: an officer gets out.
     // On foot, also once the car has got as near as the road goes: the officer runs

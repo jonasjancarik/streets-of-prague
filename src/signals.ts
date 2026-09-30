@@ -177,6 +177,16 @@ export class Signals {
     return stop;
   }
 
+  // Whether a light against traffic stands within `d` metres ahead of a vehicle at (x, y)
+  // heading `h` (only those gathered round the view).
+  against(x: number, y: number, h: number, d: number) {
+    const t = this.time(), fx = Math.cos(h), fy = Math.sin(h);
+    return this.near.some((q) => {
+      const dx = q.x - x, dy = q.y - y, ahead = dx * fx + dy * fy;
+      return ahead > -2 && ahead < d && Math.abs(dx * fy - dy * fx) < 8 && Math.cos(q.ang - h) > 0.7 && light(q.sig, t) !== GREEN;
+    });
+  }
+
   private gather(x: number, y: number, r: number, now: number) {
     const a = this.nearAt;
     if (Math.hypot(x - a.x, y - a.y) < 25 && r + 25 <= a.r && r > a.asked * 0.6 && now - a.t < 3000) return;

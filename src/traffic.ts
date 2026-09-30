@@ -95,6 +95,9 @@ export class Traffic {
   swerving = new Set<Car>();
   // The traffic lights at junctions.
   signals: Signals | null = null;
+  // Emergency vehicles with their sirens on (main.ts sets them each frame): cars in front
+  // of one move over to let it by.
+  emergency: { x: number; y: number; h: number }[] = [];
 
   constructor(graph: DriveGraph, scene: THREE.Scene, rng: () => number, count: number) {
     this.g = graph;
@@ -276,6 +279,20 @@ export class Traffic {
       let want = clamp(0, lo, hi);
       const room = lo <= hi && want >= -left && want <= right;
       if (!room || a.kerb || (want < a.off - 0.05 && a.off > -0.3 && oncoming)) want = a.kerb ? 0 : a.off;
+      // An emergency vehicle close behind on the same street: move over to the right as far
+      // as the lane and the parked cars allow, slowly, and stay there till it has passed.
+      // (One standing at a red light stays put.)
+      let giving = false;
+      for (const q of this.emergency) {
+        const dx = c.x - q.x, dy = c.y - q.y, ahead = dx * fx + dy * fy;
+        if (ahead < 1 || ahead > 45 || Math.abs(dx * fy - dy * fx) > 5 || Math.cos(q.h - c.h) < 0.6) continue;
+        giving = true;
+        break;
+      }
+      if (giving && room && !a.kerb && (a.speed > 1 || Math.abs(a.off) > 0.3)) {
+        want = clamp(right, lo, hi);
+        target = Math.min(target, 5);
+      }
       if (!room && still && stillGap < gap) { gap = stillGap; blocker = still; }
       if (blocker) target = Math.min(target, Math.max(0, a.reckless ? (gap - 0.8) * 1.3 : (gap - 1.5) * 0.9));
       // Round a car in the way it slows down, and edges up to it while it pulls out.

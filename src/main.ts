@@ -1098,6 +1098,7 @@ async function main() {
     const funiBodies = funicular.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const f of funiBodies) for (const [x, y] of f.circles) hash.add({ x, y, z: f.gz, r: f.line.spec.w / 2, vx: f.vx, vy: f.vy, kind: 'tram' });
 
+    traffic.emergency = [...police.chasing, ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked)].map((e) => e.car);
     traffic.update(dt, obstacles);
     // In view or not, each car keeps track of whether it's on a bridge or under it.
     for (const a of traffic.agents) world.track(a.car);
