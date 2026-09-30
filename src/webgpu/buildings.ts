@@ -64,6 +64,26 @@ function flatRoof(c: N, wp: N, wpWidth: N) {
   return c.mul(fbm(wp.mul(0.5)).mul(0.22).add(0.86)).add(vnoise(wp.mul(18)).sub(0.5).mul(0.08).mul(fade(wpWidth, 0.05)));
 }
 
+// Age on top of any roof colour (roofWeather in shading.ts): moss in clumps, more on the
+// shaded north slopes, dark streaks running down from the ridge, and stains. A building's
+// number comes from its colour. Flat roofs get only a little.
+function roofWeather(c: N, c0: N, wp: N, n: N, wpWidth: N) {
+  const seed = fract(sin(dot(c0, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+  const age = smoothstep(0.2, 0.9, fract(seed.mul(7.3).add(vnoise(wp.mul(0.02)).mul(0.35)))).mul(0.75).add(0.25);
+  const flat = smoothstep(0.85, 0.97, n.y);
+  const down = normalize(vec2(n.x, n.z.negate()));
+  const s = vec2(dot(wp, vec2(down.y.negate(), down.x)), dot(wp, down));
+  const north = down.y.mul(0.5).add(0.5);
+  const d = fade(wpWidth, 0.3);
+  const clump = fbm2(wp.mul(0.35).add(seed.mul(40)));
+  const moss = smoothstep(0.5, 0.72, clump.add(north.sub(0.5).mul(0.18))).mul(age).mul(mix(0.9, 0.2, flat)).mul(d);
+  const m = mix(c, c.mul(vec3(0.62, 0.82, 0.42)).add(vec3(0.01, 0.03, 0)), moss.mul(0.75));
+  const streak = smoothstep(0.5, 0.85, vnoise(vec2(s.x.mul(2.2).add(seed.mul(50)), s.y.mul(0.1))));
+  const dark = float(1).sub(streak.mul(0.22).mul(age).mul(float(1).sub(flat)).mul(d));
+  const stain = float(1).sub(flat.mul(0.1).mul(age).mul(smoothstep(0.5, 0.8, fbm2(wp.mul(0.12).add(seed.mul(9))))));
+  return m.mul(dark).mul(stain);
+}
+
 function facadeWalls(c: N, f: N, bayWidth: N, fWidth: N) {
   const along = f.x, h = f.y;
   const bay = fract(along.div(bayWidth)), storey = fract(h.sub(0.6).div(3.4));
@@ -115,10 +135,11 @@ const buildingColor = Fn(() => {
   const wpWidth = length(abs(dFdx(bwp)).add(abs(dFdy(bwp)))).toVar();
   const fWidth = length(abs(fdx.xy).add(abs(fdy.xy))).toVar();
   const c = vec3(materialColor).mul(vertexColor().rgb).toVar();
+  const base = c.toVar();
   If(bn.y.greaterThan(0.97), () => {
-    c.assign(flatRoof(c, bwp, wpWidth));
+    c.assign(roofWeather(flatRoof(base, bwp, wpWidth), base, bwp, bn, wpWidth));
   }).ElseIf(bn.y.greaterThan(0.15), () => {
-    c.assign(roofTiles(c, bwp, bn, wpWidth));
+    c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth));
   }).Else(() => {
     const bays = fBays(f).toVar();
     If(bays.lessThan(0.5), () => {

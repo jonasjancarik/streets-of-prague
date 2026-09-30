@@ -343,6 +343,24 @@ vec3 flatRoof(vec3 c, vec2 wp) {
   c *= .86 + .22 * fbm(wp * .5);
   return c + (vnoise(wp * 18.) - .5) * .08 * detail(wp, .05);
 }
+// Age on top of any roof colour: moss in clumps (more on the shaded north slopes), dark
+// streaks running down from the ridge, and stains. Each building ages differently, by a
+// number taken from its colour. Flat roofs get only a little. c0: the colour before shading.
+vec3 roofWeather(vec3 c, vec3 c0, vec2 wp, vec3 n) {
+  float seed = fract(sin(dot(c0, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+  float age = .25 + .75 * smoothstep(.2, .9, fract(seed * 7.3 + vnoise(wp * .02) * .35));
+  float flat_ = smoothstep(.85, .97, n.y);
+  vec2 down = normalize(vec2(n.x, -n.z));
+  vec2 s = vec2(dot(wp, vec2(-down.y, down.x)), dot(wp, down));
+  float north = .5 + .5 * down.y;
+  float d = detail(wp, .3);
+  float clump = fbm2(wp * .35 + seed * 40.);
+  float moss = smoothstep(.5, .72, clump + (north - .5) * .18) * age * mix(.9, .2, flat_) * d;
+  c = mix(c, c * vec3(.62, .82, .42) + vec3(.01, .03, 0.), moss * .75);
+  float streak = smoothstep(.5, .85, vnoise(vec2(s.x * 2.2 + seed * 50., s.y * .1)));
+  c *= 1. - streak * .22 * age * (1. - flat_) * d;
+  return c * (1. - .1 * flat_ * age * smoothstep(.5, .8, fbm2(wp * .12 + seed * 9.)));
+}
 // Weathering on every wall: soot in broad patches, rain streaks running down, and the
 // splashed dirt along the bottom. f: along the wall, height, length, style.seed.
 vec3 grime(vec3 c, vec4 f) {
@@ -481,8 +499,9 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   vec3 bn = normalize(vWN);
   vec4 fdx = dFdx(vFacade), fdy = dFdy(vFacade);
   vec2 bwp = vec2(vWorld.x, -vWorld.z);
-  if (bn.y > .97) diffuseColor.rgb = flatRoof(diffuseColor.rgb, bwp);
-  else if (bn.y > .15) diffuseColor.rgb = roofTiles(diffuseColor.rgb, bwp, bn);
+  vec3 roofBase = diffuseColor.rgb;
+  if (bn.y > .97) diffuseColor.rgb = roofWeather(flatRoof(roofBase, bwp), roofBase, bwp, bn);
+  else if (bn.y > .15) diffuseColor.rgb = roofWeather(roofTiles(roofBase, bwp, bn), roofBase, bwp, bn);
   else {
     if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
     else if (fBays(vFacade) > .5) diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy, vFacade.z / fBays(vFacade));

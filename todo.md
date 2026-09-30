@@ -85,6 +85,12 @@ grime on the walls 6%, the shadow map's own pass 7%.
   Loose ends: at gameplay zoom (~100 m) a patch is ~340 m across, so most frames sit fully inside or outside one and it
   reads as a slow brightness drift; the edges show when zoomed out. Patch size and coverage (`CLOUD_EDGE`, the octaves in
   `makeMap`) are tunable. Trees have no cloud shadow on the GLSL path, and the wet ground's mirror ignores the mask.
+- **Roof weathering** (`roofWeather` in `src/shading.ts` and `src/webgpu/buildings.ts`, 30 September 2026): moss in clumps
+  (more on north slopes), dark streaks running down each face and stains, on top of whatever colour the roof has, so it
+  stays valid when plan 005 changes the colours. The per-building number comes from the roof's colour (roofs carry no
+  building id). Flat roofs get little. Not timed with `--ab` (the GPU was busy); it adds about four noise reads on roofs.
+  Deferred, needs a decision: roof clutter (chimneys, vents, dormers, aerials); moss barely shows on red clay, so
+  strengthen it if wanted; landmarks use their own roof and are not weathered.
 - **What's left on the main thread** (in order, with the CPU slowed 4×): the trams'
   steps and look-ahead, traffic, placing people (`Crowd.place`) and following
   everyone's height (`TileWorld.track`, `surfaceAt`), then three.js's own work.
