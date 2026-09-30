@@ -13,6 +13,7 @@ import { loadFootfall } from './footfall.ts';
 import { Trams, loadTrams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
 import { TrackNet } from './tracks.ts';
+import { Passengers } from './passengers.ts';
 import { Taxis } from './taxi.ts';
 import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
@@ -234,6 +235,7 @@ async function main() {
   const footfall = await footfallLoad;
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
+  ride.passengers = new Passengers(trams, () => crowd, (kc) => wallet.give(kc), seeded);
   const traffic = new Traffic(drive, scene, seeded, trafficWanted(clock.t));
   traffic.signals = signals;
   traffic.busLines = await busLines;
@@ -779,6 +781,7 @@ async function main() {
     if (e.code === 'KeyB' && !e.repeat) pressB();
     if (e.code === 'KeyR') backOnRoad();
     if (e.code === 'KeyF' && !e.repeat) stealTram();
+    if (e.code === 'KeyX' && !e.repeat) ride.doors();
     if (e.code === 'KeyQ' && !e.repeat) honk(true);
     // Space jumps, except at a tram stop, where holding it waits for a tram.
     if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on && taxi.state !== 'coming') input.jump = true;
@@ -809,7 +812,7 @@ async function main() {
   const zoomBy = (f: number) => { zoom = clamp(zoom * f, 0.5, 4); };
   window.addEventListener('wheel', (e) => zoomBy(Math.exp(e.deltaY * 0.0012)), { passive: true });
   $('t-ticket').addEventListener('click', pressB);
-  const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, force: params.has('touch') });
+  const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, doors: () => ride.doors(), force: params.has('touch') });
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -1518,6 +1521,7 @@ async function main() {
       if (touch.active) { if (d.junction < 400 && d.options.length > 1) parts.push(t('Junction in {m} m', { m: Math.max(0, Math.round(d.junction / 10) * 10) })); }
       else {
         parts.push(t('<b>W</b> drive · <b>S</b> brake · <b>Q</b> bell'));
+        if (ride.atName) parts.push(ride.passengers?.doors ? t('<b>X</b> close the doors') : t('<b>X</b> open the doors'));
         if (d.junction < 400 && d.options.length > 1) parts.push(t('<b>A</b>/<b>D</b> pick the way at the junction'));
         parts.push(ride.canLeave() ? t('<b>E</b> get off') : t('stop to get off'));
       }

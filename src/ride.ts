@@ -15,6 +15,7 @@ import type { Trams, TramVehicle } from './trams.ts';
 import { TramDrive } from './tramdrive.ts';
 import type { DriveControls } from './tramdrive.ts';
 import type { TrackNet, Turn } from './tracks.ts';
+import type { Passengers, StopAhead } from './passengers.ts';
 import { getLang, t } from './i18n.ts';
 
 interface RideWorld { keyAt(x: number, y: number): string; available: { has(key: string): boolean }; loaded: { has(key: string): boolean } }
@@ -37,6 +38,10 @@ export class TramRide {
   shown: string;
   net: TrackNet;
   drive: TramDrive | null;
+  passengers: Passengers | null = null; // set once the crowd exists
+  next: StopAhead | null = null; // the next stop on your track while driving
+  atName: string | null = null; // the stop you stand at
+  private lookT = 0;
 
   constructor(trams: Trams, world: RideWorld, el: HTMLElement, net: TrackNet) {
     this.net = net;
@@ -108,7 +113,27 @@ export class TramRide {
   }
 
   // One step of driving (see TramDrive.update).
-  drives(dt: number, ctl: DriveControls) { this.drive?.update(dt, ctl); }
+  drives(dt: number, ctl: DriveControls) {
+    const d = this.drive, p = this.passengers;
+    if (!d) return;
+    if (p) {
+      d.locked = p.doors;
+      p.update(dt);
+      if ((this.lookT -= dt) < 0) {
+        this.lookT = 0.25;
+        this.next = p.ahead(d.v);
+        this.atName = p.at(d.v)?.name ?? null;
+      }
+    }
+    d.update(dt, ctl);
+  }
+
+  // Doors: open at a stop, or shut again.
+  doors() {
+    const p = this.passengers;
+    if (!this.drive || !p) return;
+    if (p.doors) p.close(); else p.open(this.riding);
+  }
 
   // Off the tram: where to stand (beside its middle door, on the right, the side
   // Prague's platforms are on) and which way to face.
@@ -116,6 +141,8 @@ export class TramRide {
     const v = this.riding, p = v.parts[1];
     v.rider = false;
     v.hold = false;
+    this.passengers?.close();
+    this.next = this.atName = null;
     if (this.drive) v.speed = 0; // left standing where it is
     this.drive = null;
     this.v = null;
@@ -214,7 +241,10 @@ export class TramRide {
   // The strip while driving: the line's number, and the junction ahead with the ways on.
   private renderDriving(v: TramVehicle, d: TramDrive) {
     const near = d.junction < 400 && d.options.length > 1;
-    const key = `${getLang()}|${v.line.ref}|driving|${near ? `${Math.round(d.junction / 10)}|${d.pref}|${d.options.map((o) => o.turn)}` : 'none'}`;
+    const p = this.passengers, next = this.next;
+    const stop = this.atName ? (p?.doors ? t('Doors open at {name} · {off} off, {on} on', { name: this.atName, off: p.off, on: p.on }) : t('At {name}', { name: this.atName }))
+      : next ? t('Next stop: {name}, {m} m', { name: next.stop.name, m: Math.round(next.dist / 10) * 10 }) : '';
+    const key = `${getLang()}|${v.line.ref}|driving|${stop}|${near ? `${Math.round(d.junction / 10)}|${d.pref}|${d.options.map((o) => o.turn)}` : 'none'}`;
     if (key === this.shown) return;
     this.shown = key;
     const chars: Record<string, string> = { '&': 'amp', '<': 'lt', '>': 'gt', '"': 'quot' };
@@ -223,7 +253,7 @@ export class TramRide {
     const here = near ? t('Junction in {m} m', { m: Math.max(0, Math.round(d.junction / 10) * 10) }) : t('No junction in sight');
     this.el.innerHTML = `
       <div class="ride-line"><span class="ride-ref" style="background:${esc(v.line.colour || '#c4161c')}">${esc(v.line.ref)}</span>
-      <span>${t('You are driving')}</span></div><div class="ride-here">${here}</div>
+      <span>${t('You are driving')}</span></div><div class="ride-here">${esc(stop)}</div><div class="ride-here">${here}</div>
       ${near ? `<div class="ride-turns">${[1, 0, -1].filter((k) => d.options.some((o) => o.turn === k)).map((k) => `<button data-turn="${k}" class="${k === d.pref ? 'dest' : ''}">${esc(name[k])}</button>`).join('')}</div>` : ''}`;
   }
 }

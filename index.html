@@ -327,7 +327,7 @@
       #t-toggle { position: fixed; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 160px); width: 136px; height: 44px; padding: 0 10px; white-space: nowrap; }
       #touch button.down, .t-pedal.down { background: rgba(236, 228, 214, 0.3); }
       #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
-      #t-fast, #t-steal, #t-taxi, #t-ticket { height: 52px; padding: 0 18px; }
+      #t-fast, #t-steal, #t-doors, #t-taxi, #t-ticket { height: 52px; padding: 0 18px; }
       #touch #t-ticket[hidden] { display: none; }
       #t-action.off { visibility: hidden; }
       #t-pedals { display: flex; align-items: flex-end; gap: 10px; touch-action: none; }
@@ -338,7 +338,7 @@
       #touch:not([data-mode='foot']):not([data-mode='stop']) .foot-only,
       #touch:not([data-mode='car']):not([data-mode='drive']) .car-only, #touch:not([data-mode='tram']):not([data-mode='stop']) .tram-only { display: none; }
       #touch[data-mode='drive'] #t-toggle, #touch[data-mode='drive'] #t-road { display: none; }
-      #touch:not([data-mode='tram']) #t-steal { display: none; }
+      #touch:not([data-mode='tram']) #t-steal, #touch:not([data-mode='drive']) #t-doors { display: none; }
       #touch[data-mode='tram'] #t-steer { display: none; }
       #t-road { position: fixed; top: calc(max(12px, env(safe-area-inset-top)) + 52px); right: max(12px, env(safe-area-inset-right)); height: 40px; padding: 0 14px; }
       @media (max-height: 460px) { #t-gas { height: 104px; } #t-brake { height: 72px; } #t-action { height: 44px; } }
@@ -416,6 +416,7 @@
           <dt><kbd>Space</kbd></dt><dd data-t>Brake hard</dd>
           <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Pick the way at the next junction (straight on if you don't)</dd>
           <dt><kbd>Q</kbd></dt><dd data-t>Ring the bell</dd>
+          <dt><kbd>X</kbd></dt><dd data-t>Open and close the doors at a stop (people get off and on)</dd>
           <dt><kbd>E</kbd></dt><dd data-t>Get off once it has stopped</dd>
         </dl>
       </section>
@@ -454,6 +455,7 @@
       <button id="t-road" class="car-only" data-t>Back on road</button>
       <div id="t-right">
         <button id="t-steal" class="tram-only" data-t>Take over the tram</button>
+        <button id="t-doors" data-t>Doors</button>
         <button id="t-fast" class="tram-only">Hold to speed up</button>
         <button id="t-ticket" data-t hidden>Buy a ticket</button>
         <button id="t-taxi" class="foot-only" data-t>Taxi</button>

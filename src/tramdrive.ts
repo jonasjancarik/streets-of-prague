@@ -25,6 +25,7 @@ export class TramDrive {
   options: Option[] = []; // the ways on at the next junction
   pref: Turn = 0;
   junction = Infinity; // m to the next junction (Infinity: none in sight)
+  locked = false; // the doors are open: it stays where it is
   hit = 0; // the speed of the last knock against another tram (for a jolt), until it's read
   private pending = -1;
   private turning = 0;
@@ -110,6 +111,7 @@ export class TramDrive {
     if (turn !== this.turning && turn) this.nudge(turn);
     this.turning = turn;
 
+    if (this.locked) { v.speed = 0; this.extend(); return; }
     const a = ctl.brake ? -HARD : ctl.move > 0 ? ACCEL * (1 - 0.6 * v.speed / TOP) : ctl.move < 0 ? -BRAKE : -COAST;
     v.speed = clamp(v.speed + a * dt, 0, TOP);
     let travel = v.speed * dt;

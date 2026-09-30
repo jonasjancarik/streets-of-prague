@@ -26,9 +26,9 @@ const DEAD = 0.12;
 const capture = (el: HTMLElement, e: PointerEvent) => { try { el.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } };
 const dead = (v: number) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD));
 
-export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, force }: {
+export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, doors, force }: {
   action: () => void; backOnRoad: () => void; zoomBy: (factor: number) => void;
-  horn: (on: boolean) => void; steal: () => void; force: boolean;
+  horn: (on: boolean) => void; steal: () => void; doors: () => void; force: boolean;
 }): TouchState {
   const $ = (id: string): HTMLElement => {
     const el = document.getElementById(id);
@@ -145,6 +145,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, force }: {
   tap($('t-action'), action);
   tap($('t-road'), backOnRoad);
   tap($('t-steal'), steal);
+  tap($('t-doors'), doors);
   // The horn (a tram's bell) sounds for as long as it's held.
   const hornButton = $('t-horn');
   const hornUp = () => { horn(false); hornButton.classList.remove('down'); };

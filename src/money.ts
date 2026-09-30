@@ -36,6 +36,8 @@ export class Wallet {
 
   has(n: number) { return this.balance >= n; }
 
+  give(n: number) { this.balance += Math.round(n); }
+
   // Takes up to n, and returns what was actually taken.
   take(n: number) {
     const got = Math.max(0, Math.min(this.balance, Math.round(n)));
