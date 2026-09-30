@@ -59,9 +59,12 @@ own pipeline), OSM-only buildings (no IPR model to colour, keep today's rules), 
   use level 14 (~11 cm/px) where it's needed, only over roofs.
 - **Start with one area and compare, then the city.** The Plaská block and
   Staroměstské náměstí first, before anything citywide.
-- **Hand corrections win.** `pipeline/roofs.py` regions and OSM's `roof:material` /
-  `roof:colour` / `building:colour` where someone set them on purpose stay above the
+- **Hand corrections win for roofs.** `pipeline/roofs.py` regions and OSM's
+  `roof:material` / `roof:colour` where someone set them on purpose stay above the
   mesh. The mesh beats the random palette and the defaults.
+- **The mesh wins over OSM's `building:colour`** (decided by the user, 2026-09-30):
+  it's often guessed, and the photographs show the real plaster. OSM's wall colour is
+  used only where the mesh measurement isn't confident.
 - **When unsure, keep today's colour.** A building or face whose measurement isn't
   clear (see "Confidence") keeps what it has now. Fewer buildings right is better than
   all of them wrong.
@@ -198,7 +201,8 @@ per sheet): per IPR building id, the wall colour and, per roof triangle index (i
 `read_sheet`'s order), a colour and class, plus the confidence. `ipr_buildings.py`
 then, in the loop that builds `palette` and `which`:
 
-- wall colour: OSM's `building:colour` if set, else the mesh's, else `WALLS` as now;
+- wall colour: the mesh's if confident, else OSM's `building:colour` if set, else
+  `WALLS` as now;
 - roof triangles: a `roofs.py` region or OSM's roof cover if set, else the mesh's
   colour and class, else today's default;
 - flat roofs: the mesh's colour as measured, no `flat_roof()` greying.
@@ -317,8 +321,6 @@ what was measured and any trade-off. Generated data stays out of git.
 
 ## Open questions for the user
 
-- Should mesh colours override **OSM's `building:colour`**, which is sometimes set by
-  hand but often guessed? The plan keeps OSM's where set; the other way is possible.
 - Mansard windows: every bay, or only where the mesh shows windows in the steep face
   (detected like roof windows)?
 - How far phase 3 should go outside the centre: the detection works anywhere, but the
