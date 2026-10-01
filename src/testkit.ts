@@ -269,7 +269,9 @@ export function setupTestkit(g: Game) {
     // Footage: `seconds` of the world at `fps` frames a second, each saved as a screenshot
     // (name-0001.png …). The world runs in 1/60 s steps with `ctl` held, however long a
     // frame takes to save, so the film is smooth. Without `hud`, only the game's picture.
-    async film(name: string, seconds: number, ctl: Partial<Controls> = {}, { fps = 30, hud = false } = {}) {
+    // `each(i, n)` runs before every frame: move the free camera (set `t.cam`), set the
+    // car's speed, note down numbers to go with the footage.
+    async film(name: string, seconds: number, ctl: Partial<Controls> = {}, { fps = 30, hud = false, each }: { fps?: number; hud?: boolean; each?: (i: number, n: number) => void | Promise<void> } = {}) {
       const save = (window as { __shot?: (n: string) => Promise<void> }).__shot;
       if (!save) return;
       const canvas = g.canvas;
@@ -279,6 +281,7 @@ export function setupTestkit(g: Game) {
       for (const el of hide) el.style.visibility = 'hidden';
       try {
         for (let i = 0, n = Math.round(seconds * fps); i < n; i++) {
+          if (each) await each(i, n);
           for (let k = 0; k < Math.round(60 / fps); k++) g.simulate(1 / 60, ctl);
           await frame();
           await frame();

@@ -12,6 +12,9 @@ use fframes::{
 };
 use std::sync::LazyLock;
 
+pub mod atmo;
+mod atmo_data;
+
 // The fonts and the sound in `media/` are embedded into the binary (fonts are used by
 // family name); the clips are read from `clips/` when it runs (see main.rs).
 include_media_dir!(pub struct TrailerMedia, "media");

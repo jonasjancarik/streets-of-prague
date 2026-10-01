@@ -30,3 +30,37 @@ Traffic and people differ from take to take, so look at a clip before keeping it
 (`cargo run --release -- strip -n 12` writes a contact sheet, `frame 22s` one frame,
 `preview` plays it). A clip must be at least as long as its scene in `CLIPS` (`src/lib.rs`).
 There is no music: `soundtrack.sh` is the place to add a track.
+
+## The atmospheric trailer ("silence / engine")
+
+`atmo.mp4`, 50 seconds: one red car gets faster from dawn to night in bursts that keep
+getting shorter, cut against still places (Petřín, the Old Town Square, Charles Bridge,
+Letná…); then the dark, and the camera pulls back from the car on most Legií until
+every street lamp of the city is in the picture, with what the map holds counted up.
+
+Everything follows one timeline, `atmo/timeline.py`:
+
+| File | What |
+| --- | --- |
+| `atmo/timeline.py` | how long each quiet shot and burst is, the car's speed, the camera's height through the pull back → `timeline.json` |
+| `atmo/shots.js`, `lib.js`, `film.sh` | the shots: places, times, cameras; `film.sh [names]` films them into `clips/` |
+| `atmo/engine.js`, `engine.py` | the engine, rendered offline by the game's own engine sound (the `SPORTY` voice in `src/audio.ts`) along the timeline's speed → `engine.wav`, and its revs and gears → `engine.json` |
+| `atmo/map.py` | the night maps of the pull back (three pictures, each wider) with all the lamps of `lamps.bin.gz`, and the numbers shown (`stats.json`) |
+| `atmo/soundtrack.py` | the sound: engine against near silence, thumps on the cuts, the rush's rising noise, the chord under the pull back → `media/atmo.wav` |
+| `atmo/build_data.py` | `src/atmo_data.rs` for the cut |
+| `src/atmo.rs`, `src/bin/atmo.rs` | the cut: captions, bars, speed and revs, the maps, the title |
+
+```sh
+cd trailer/atmo
+python3 timeline.py && python3 map.py         # the map needs numpy and Pillow
+./film.sh                                     # with the scene server running as above (about 25 minutes)
+python3 engine.py && python3 build_data.py && python3 soundtrack.py
+cd .. && touch src/lib.rs && cargo run --release --bin atmo -- render && mv out.mp4 atmo.mp4
+```
+
+The speed on screen is the speed the car is held at while it is filmed, and the revs and
+gear are the ones the engine sound was rendered with. The numbers at the end are counted
+from the map data: lamps in the utility map, buildings and street length (each street
+once) in the tiles, and the area the tiles cover, which is more than the city itself.
+`atmo-zoom-teaser.mp4` is the last 16 seconds cut out with ffmpeg.
+The birds, the night and the bell are the game's CC0 recordings; the rest is synthesized.

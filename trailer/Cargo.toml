@@ -21,6 +21,10 @@ doctest = false
 name = "trailer"
 path = "src/main.rs"
 
+[[bin]]
+name = "atmo"
+path = "src/bin/atmo.rs"
+
 [workspace]
 
 [profile.dev]

@@ -14,3 +14,10 @@ _frame_snapshots/*.diff.png
 # The filmed clips (record.sh makes them again) and the mixed sound (soundtrack.sh).
 /clips/
 media/soundtrack.wav
+
+# The atmospheric trailer: the rendered engine, the mixed sound and the map pictures are made by atmo/.
+/atmo/engine.wav
+/atmo/engine.json
+media/atmo.wav
+media/map-*.png
+/atmo/engine.out
