@@ -5,11 +5,11 @@
 //
 //   node scripts/bench.mjs [--url http://localhost:5191/] [--scenes stand,drive,woods]
 //     [--seconds 10] [--dpr 2] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
-//     [--profile-load] [--load-progress] [--require-webgpu] [--init "js before loading"] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js run in the page after loading"] [--json out.json] [--stack (page errors with their stack)]
+//     [--profile-load] [--load-progress] [--require-webgpu] [--init "js before loading"] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js after loading"] [--eval-after "js after timing"] [--json out.json] [--stack (page errors with their stack)]
 //     [--browser chrome|chromium] [--angle metal|swiftshader (software, drawing like
 //     a desktop GPU that shades every covered pixel: for overdraw)]
 //     [--vs http://localhost:5192/ (compare with another server, taking turns)] [--fresh-browser] [--loading-frames]
-//     [--ab "window.__ab = (on) => { … }" [--window 2] [--warmup 2]] [--shot /tmp/look-%s.png [--zoom 0.5]]
+//     [--ab "window.__ab = (on) => { … }" [--window 2] [--warmup 2]] [--shot /tmp/look-%v-%s.png (%v = baseline/candidate, %s = scene) [--zoom 0.5]]
 //     [--stalls (what each long task was: shader builds, pipelines, uploads, tile builds)]
 //     [--android [serial] (Chrome on a phone over adb instead of headless Chrome here)]
 //
@@ -214,7 +214,7 @@ async function runScene(browser, name, base = URL_BASE) {
     // A still for comparing looks: the clock and the crowd held, so two runs match.
     if (args.zoom) await page.evaluate((z) => window.__drive.view(z), Number(args.zoom));
     await page.waitForTimeout(1500);
-    await page.screenshot({ path: String(args.shot).replace('%s', name) });
+    await page.screenshot({ path: String(args.shot).replace('%v', base === args.vs ? 'baseline' : 'candidate').replace('%s', name), timeout: 60000 });
   }
 
   const cdp = CPU > 1 || args.profile ? await ctx.newCDPSession(page) : null;
@@ -268,6 +268,10 @@ async function runScene(browser, name, base = URL_BASE) {
   });
   const wall = (Date.now() - t0) / 1000;
   if (args.stalls && !args.ab) for (const line of await page.evaluate(() => window.__stalls.report())) console.log(`[${name}] ${line}`);
+  if (args['eval-after']) {
+    const out = await page.evaluate(args['eval-after']);
+    if (out !== undefined) console.log(`[${name}] after timing`, typeof out === 'string' ? out : JSON.stringify(out));
+  }
   let profile = null;
   if (args.profile) {
     ({ profile } = await cdp.send('Profiler.stop'));

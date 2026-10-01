@@ -6,7 +6,7 @@
 // lines the bench prints. See "Stalls while driving" in the performance skill.
 (() => {
   const d = window.__drive, w = d.world, r = d.renderer, dev = r.backend?.device ?? null;
-  const fresh = () => ({ t: performance.now(), wb: 0, wbN: 0, ua: 0, pipes: 0, shaders: 0, bufs: 0, bufBytes: 0, builds: 0, buildMs: 0, render: 0, e: 0 });
+  const fresh = () => ({ t: performance.now(), wb: 0, wbN: 0, ua: 0, pipes: 0, shaders: 0, bufs: 0, bufBytes: 0, builds: 0, buildMs: 0, carBuilds: 0, carBuildMs: 0, render: 0, e: 0 });
   const S = { long: [], calls: [], frames: [], tiles: [], kinds: new Map(), acc: fresh() };
   new PerformanceObserver((l) => { for (const e of l.getEntries()) S.long.push({ s: e.startTime, d: e.duration }); }).observe({ type: 'longtask' });
 
@@ -65,6 +65,9 @@
       if (cache.size > before) {
         const dt = performance.now() - t0, o = ro.object;
         S.acc.builds++; S.acc.buildMs += dt;
+        if (o.isInstancedMesh && o.material?.customProgramCacheKey?.() === 'cars') {
+          S.acc.carBuilds++; S.acc.carBuildMs += dt;
+        }
         const kind = `${ro.material.type}${ro.material.userData?.flatten ? ' ground' : ''}${o.isInstancedMesh ? ` instanced(${o.instanceMatrix.count})` : ''}${o.name ? ` ${o.name}` : ''} [${Object.keys(ro.geometry.attributes).join(',')}]`;
         const k = S.kinds.get(kind) || [0, 0];
         S.kinds.set(kind, [k[0] + 1, k[1] + dt]);
@@ -101,6 +104,7 @@
     const at = (p) => f1(gaps[Math.min(gaps.length - 1, Math.floor(p * gaps.length))] ?? NaN);
     const lines = [`frames ${S.frames.length}: median ${at(0.5)}, 99th percentile ${at(0.99)}, slowest ${at(1)} ms; long tasks ${S.long.length} (${Math.round(S.long.reduce((a, l) => a + l.d, 0))} ms); tiles built ${S.tiles.length}`];
     lines.push(`material builds ${sum(S.frames, 'builds')} (${Math.round(sum(S.frames, 'buildMs'))} ms), pipelines ${sum(S.frames, 'pipes')}, shader modules ${sum(S.frames, 'shaders')}`);
+    lines.push(`car-body builds ${sum(S.frames, 'carBuilds')} (${Math.round(sum(S.frames, 'carBuildMs'))} ms)`);
     for (const [kind, [n, ms]] of [...S.kinds].sort((a, b) => b[1][1] - a[1][1])) lines.push(`  build ${n}× ${Math.round(ms)} ms ${kind}`);
     for (const t of S.tiles) lines.push(`tile ${t.k} at ${f1(t.s)}–${f1(t.e)} ms ${JSON.stringify(t.ms)}`);
     const inLong = (f) => S.long.some((l) => f.e >= l.s && f.t <= l.s + l.d);
