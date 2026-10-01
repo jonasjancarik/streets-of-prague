@@ -50,11 +50,42 @@ HASIČI.
   wheel (traffic, parked, abandoned) burns for 45–75 s before it explodes, long enough
   for an engine to arrive and put it out; put out in time, it doesn't explode. The car
   you're driving and police cars chasing you keep the short 4–6 s fuse.
+  Since 1 October 2026 a fire also waits for an engine that is on its way: the last 8 s
+  of the long fuse, and a wreck's flames, are held back for up to 60 s more while one is
+  coming or its crew is at work (`WAIT` in `src/fire.ts`, `awaited` in `src/brigade.ts`).
+  Measured before that, the engine got there in time in about half the cases, and
+  never to the wreck of the car you'd been driving (it blows up in 4–6 s and its flames
+  lasted 12 s). Your own car's short fuse is as it was.
 - **Engines come from out of view**, 150–300 m away, like police cars. Real fire
   stations are not used for now.
 - **A siren for the police too, but a different one**, so the two can be told apart
   by ear: the engine a slow two-tone, the police a faster rising and falling wail.
 - **The water cannon is F**, held down to spray. F isn't used anywhere else in the game.
+
+## What makes the engine late (measured 1 October 2026)
+
+Timed with `t.ignite` / `t.fire` in headless Chrome at six places, and fixed in
+`src/brigade.ts` unless said otherwise; `scenarios/fire-brigade.ts` checks the outcome.
+
+- The street it starts from was picked by distance as the crow flies, and the way round
+  was often twice that. Now the shortest way of up to four candidates.
+- It could start inside a tram or a queue of cars and stay wedged there. The starting
+  place is now checked for cars and trams too.
+- A new way there was worked out every 3 s from wherever the engine was, which sometimes
+  began the other way down the street; the engine is too long to turn round and ended
+  up wedged across the road. Now only when it has strayed or the burning car has moved.
+- An engine that gets nowhere for 6 s within 70 m of the fire lets the crew out to run
+  the rest; one stuck for 8 s out of view is taken away and another sent.
+- The crew walked straight at the fire, into walls, and stood there. They now go round
+  walls as they do round cars, run when the engine had to stop far off, and spray from
+  up to 26 m if they can get no nearer and no wall is in between (a lane full of cars).
+- A second car burning near the first (set off by its blast) was nobody's: the call was
+  dropped as a duplicate and the crew left after the first. The crew now turns to it.
+- Engines on their way home counted towards the two that may be out, so a new call waited.
+
+Still as they were: a fire with no road near it (Můstek's pedestrian zone, a closed
+courtyard) gets no engine, and the engine's steering can still wedge it in a tight turn
+(it is then replaced, which costs 10–20 s).
 
 ## Current state (what the plan relies on)
 
