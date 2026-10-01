@@ -1,17 +1,17 @@
 ---
 name: webgpu-port
-description: How to port Streets of Prague's shaders from GLSL (onBeforeCompile, ShaderMaterial) to three.js TSL for the WebGPU renderer trial (?renderer=webgpu, src/webgpu.ts), and how to check and measure each port. Use when working on src/webgpu.ts, porting a material to TSL or node materials, or comparing WebGL and WebGPU.
+description: How to port and optimize Streets of Prague's shaders with three.js TSL for the default WebGPU renderer (src/webgpu.ts), and how to check and measure each change. Use when working on src/webgpu.ts, porting a material from GLSL to TSL or node materials, sharing shader graphs, or comparing WebGL and WebGPU.
 ---
 
 # Porting the game to three.js's WebGPU renderer
 
-The game draws with `THREE.WebGLRenderer` and changes three.js's shaders in GLSL.
-`?renderer=webgpu` swaps in `WebGPURenderer` (three r186, `src/webgpu.ts`), where
-GLSL can't run: every shader has to be written in TSL (three's node language, which
-compiles to WGSL, and to GLSL on the WebGL 2 fallback backend). The port happens
-piece by piece next to the GLSL, so the default game never changes. Read `todo.md`
-"Game performance" for the state and the numbers so far, and the `performance`
-skill for measuring.
+WebGPU is the default renderer (three r186, `src/webgpu.ts`); `?renderer=webgl`
+selects the legacy `THREE.WebGLRenderer`. The default path uses TSL, three's node
+language, which compiles to WGSL and can also target three's WebGL 2 backend.
+Legacy GLSL customizations need explicit TSL ports. Read `todo.md` under "Game
+performance" and `docs/optimisation-findings-007-012.md` for current results, and
+the `performance` skill before measuring. The older per-port timings below are
+historical observations, not claims about the current combined renderer.
 
 ## Where things stand
 
@@ -67,7 +67,7 @@ WebGL and +0.4 ms on WebGPU for rain and its mist, +0.0 and +0.1 ms for snow (Ol
 `layers.mask`). At night they are much fainter on WebGPU than on WebGL, because the whole night frame is lighter there
 (fog before the tone curve).
 
-Not ported, drawn with the plain material (their `onBeforeCompile` is ignored):
+Legacy hooks and port status:
 
 | Where | What | Notes |
 |---|---|---|
@@ -95,8 +95,8 @@ keeping the GPU 78–91% busy, WebGL at 21% (clear) and 80% (rain), so the pairs
 - Keep the GLSL path exactly as it is. The TSL version lives in `src/webgpu.ts`
   (split into `src/webgpu/*.ts` once it grows past a few hundred more lines) and is
   switched in by a hook the WebGPU module sets, as `setPatterned` does for the
-  ground. The module is only loaded with `?renderer=webgpu`, so it adds nothing to
-  the normal game.
+  ground. The module is loaded for the default WebGPU path after renderer
+  initialization, not for the legacy `?renderer=webgl` path.
 - **Load order: settled with `addPort`, neither lazy materials nor a boot module.**
   The game's module-level materials (`car.ts`, `trams.ts`, `funicular.ts`,
   `vegetation.ts`'s `treeDepth`) and the per-tile ones stay as they are, legacy
@@ -130,6 +130,41 @@ keeping the GPU 78–91% busy, WebGL at 21% (clear) and 80% (rain), so the pairs
   side, depth, blending, stencil, polygon offset), as `groundMaterial` does.
 - Give each ported material `userData.flatten()` in both paths if there's a useful
   "without it" to measure against (see Measuring).
+
+### Graph sharing and retained meshes
+
+- **Share the final graph, including wrappers.** Hoisting a `Fn` definition while
+  calling it for every converted material still creates fresh call nodes. Reuse
+  colour, ambient, mask and final emissive nodes per compatible variant. A light
+  wrapper such as `lampLit()` must distinguish the original emissive and position
+  inputs; sharing the building colour alone is not enough. Keep texture-node
+  initialization late enough that required maps exist.
+- **Equal graph identities are only the first check.** Render two materials with
+  different textures/attributes, change shared uniforms, then dispose one and
+  render the other again. A graph must read the current material's inputs rather
+  than retaining the first material's texture. `check-material-sharing.mjs` covers
+  this alongside the graphics-switch checks; recheck disposal and shadow bindings
+  after changes to caching.
+- **Warm the objects that will actually draw.** Instance builds depend on retained
+  mesh/buffer identity, including shadow-pass variants. Verify first visible use
+  after preparation, not just that `compileAsync` resolved or timed out. Reserve
+  capacity explicitly and exercise overflow/reuse without hiding instances. Pooling
+  trades startup and memory for less first-use work; a smaller builder count is
+  not by itself a faster-frame result.
+- **Distinguish graph builds from GPU pipeline compilation.** Different objects
+  can require separate JavaScript node builds yet produce identical shader text
+  that shares a GPU pipeline. Track builder events, generated shader variants and
+  pipeline events separately rather than calling all three "compiles". Instance
+  capacity can appear in shader array lengths, so exact-size allocations can add
+  variants even when the material looks unchanged.
+- **Treat per-instance appearance as a separate experiment.** Quiet Blocks reduced
+  body batches by moving colour and material variation into instance attributes.
+  This is a useful precedent for the deferred car-paint idea, not proof of a gain
+  here. Preserve material differences that require separate groups, measure extra
+  attribute/upload costs, and inspect the current Three version before borrowing
+  its shader-name/cache patches. Never remove object identity from cache keys that
+  bind object-specific buffers. Sources are in the performance skill's cross-project
+  references.
 
 ## GLSL → TSL here
 
@@ -248,9 +283,9 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
 
 1. `npm run typecheck`.
 2. Screenshots of the same place in both renderers, and the port's condition
-   (`&time=22:00` for lamps, `&weather=rain`/`snow` for weather): `node
-   scripts/bench.mjs --scenes stand --seconds 2 --shot /tmp/gl-%s.png` and the same
-   with `--extra "&renderer=webgpu" --shot /tmp/gpu-%s.png`. Look at them. Compare
+   (`--time 22:00` for lamps, `--weather rain`/`snow` for weather): `node
+   scripts/bench.mjs --scenes stand --seconds 2 --extra "&renderer=webgl&dev" --shot /tmp/gl-%s.png`
+   and the same without `--extra`, with `--require-webgpu --shot /tmp/gpu-%s.png`. Look at them. Compare
    the ported surfaces, not the pixels: tone mapping and filtering differ slightly.
 3. No new errors in the console. Page errors and console errors are printed by
    `bench.mjs`; add `&dev` to `--extra` for shader errors on WebGL.
@@ -259,17 +294,19 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
 
 ## Measuring
 
-Only compare **what a piece costs** in each renderer, never whole frames, until
-everything is ported (on WebGPU the unported parts are cheaper because they're
-plain or missing). Use `--ab` with a toggle that swaps each material for its
-`userData.flatten()`, in both renderers, at `--dpr 2`, a few scenes, `--seconds 32
---window 2`. The ground's toggle is in the `performance` skill ("WebGPU trial");
-write the same for other pieces. Check first what else is using the GPU (`ioreg -r
--d 1 -c IOAccelerator | grep "Device Utilization"`) and report it with the numbers.
+Use `--ab` with a toggle that swaps each material for its `userData.flatten()` to
+compare steady-state feature cost, with both states warmed. The ground's toggle
+is in the `performance` skill. To compare first-use builds, install attribution
+before the cold transition instead; a warmed material toggle cannot measure that
+hitch. Whole-frame comparisons require equivalent visible work: missing/unported
+objects make a renderer look faster for the wrong reason.
 
-Once buildings, lamp light and trees are ported, compare whole frames with `--vs`
-between WebGL and WebGPU on the same server: that's the number that decides
-whether to switch.
+Follow the performance skill's one-active-game rule, unchanged-build noise control,
+reversed run order and device/temperature checks. Record builder and upload counts
+separately from frame timings. Compare code changes on the same backend first;
+switching backend at the same time confounds the result. Independent port results
+do not add up to a combined speedup: test the selected integrated revision after
+concurrent work has settled. Noisy or contradictory timings remain inconclusive.
 
 ## Committing
 
