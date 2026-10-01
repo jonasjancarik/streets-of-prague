@@ -45,6 +45,27 @@ shaded once a pixel, less per-frame bookkeeping), at 2× on an M5 in Chrome: 32�
 less time a frame than before it, and 32–42% less with the CPU slowed 4× at 1×.
 Still worth checking on a real phone.
 
+On 1 October 2026 the Pixel 5 turned out to be limited by pixels, and by one thing in
+them. At the Old Town Square a frame took about 17 ms plus 28 ms for every 1×-screen
+of pixels (22 ms at 0.5×, 45 at 1×, 78 at 1.5×, 128 at 2×, High). Swapping pieces of
+the building material in and out on the phone found nearly all of it in the wall
+branch of the buildings' colour graph: its five facade lookup tables were TSL arrays
+with `.toVar()`, which three.js writes as WGSL variables filled in again for every
+pixel. The Adreno driver handles that very badly; a Mac shows no cost. As uniform
+arrays (`b978d56`): 142 → 61 ms a frame standing and 163 → 69 ms driving at 2×, and
+about 45 fps standing at 1× (21–23 ms, of which JavaScript 16–20 ms) on a phone at
+35 °C. A hot phone (37–38 °C) is slower by half again, in JavaScript. Also measured
+there at 1×: sun shadows about 11 ms, MSAA 2 ms, the sky's shading of walls 2 ms,
+ground patterns 1 ms; the roof patterns, branches a pixel doesn't take and the
+cutaway's `discard` nothing measurable; hiding the trees nothing. Open:
+- Touch devices start Auto at Medium (1.5×). With the shader fixed, check on the
+  phone whether that holds 40 fps or still steps down to 1×.
+- Sun shadows are now the largest single piece of shading on the phone.
+- The crowd in a worker (plan 019) gave no gain on the M5 or, after the shader fix,
+  on the phone; shelved on its branch.
+- The same check on another phone GPU (Mali, Apple) would say whether this was
+  Adreno's alone.
+
 On 30 September 2026 (WebGPU, the default now) the main thread, not the GPU, was
 the limit on an M5 at 2×. Fixed then: the lamps re-gathered every frame (their cache
 check never held), instance buffers went up whole, and DynamicDrawUsage makes
@@ -241,7 +262,7 @@ grime on the walls 6%, the shadow map's own pass 7%.
   calls ~630 → ~360 a frame. At 1× no change beyond drift. On the Pixel 5 the time in
   long tasks with a build fell from 2.5–2.7 s to 1.2–1.8 s a drive, but its slowest 1% of
   frames stayed at 115–120 ms (the frames below). The phone draws the drive at 1× and
-  High at ~23 fps (median frame ~33 ms). Plan 007 now shares the complete building,
+  High at ~23 fps (median frame ~33 ms; before the wall shader's tables were fixed on 1 October). Plan 007 now shares the complete building,
   landmark, cutaway and lamp-light graphs across equivalent materials. Its IPR and OSM
   binding checks pass. In three alternating 4× WebGPU drives on the M5, the mean frame
   time was 15.3 → 13.0 ms, but individual pairs disagreed (11.2 → 13.9, 20.1 → 12.7,

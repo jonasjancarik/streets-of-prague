@@ -11,7 +11,7 @@ what has to meet the rest of the game: who exists, what hits them, and drawing t
 
 ## Status and starting point
 
-- Status: PLANNED.
+- Status: SHELVED (built on branch `worktree-crowd-worker`, not merged: no measured gain; see Result).
 - Priority: P1. Effort: five to eight days. Risk: medium to high (the crowd is read
   and changed from many places in `main.ts`, and results arrive a frame late).
 - Category: performance (main-thread time per simulation step).
@@ -281,4 +281,34 @@ default, keep the split (it is what any later move needs), and say so in the Res
 
 ## Result
 
-Not started.
+Built on 1 October 2026 on branch `worktree-crowd-worker` (steps 1 to 5), not merged.
+That branch's copy of this plan has the full record; in short:
+
+- **Step 1:** freezing `crowd.update` made a frame 12–23% quicker at `--cpu 4` on an
+  M5 and changed nothing at 1× (the GPU limits that run). `Crowd.update` and what it
+  calls were about 17% of main-thread self time. The freeze also removed the hash,
+  collision and drawing work for people, so it overstated what a worker could take.
+- **What was built:** `src/crowdSim.ts` (the walking, with no three.js or DOM),
+  `src/crowdWorker.ts`, `Crowd` as roster, mirror and numbered commands, an inline
+  transport for scenarios and as the fallback, `scripts/check-crowd-worker.mjs`,
+  `scenarios/crowd-walk.ts`, and `--vs-extra` in `scripts/bench.mjs`.
+- **The walking did leave the main thread:** with the worker on, the crowd's share of
+  main-thread self time fell from about 17% to about 4%.
+- **The frame did not get quicker.** M5, `--cpu 4`, Old Town Square, worker against
+  the old code, four alternating pairs: 8.0 → 8.9, 8.7 → 8.4, 8.3 → 7.7, 8.1 → 8.2 ms.
+  New inline against the old code: 9.4 → 9.7 ms (one clean pair).
+- **Pixel 5, first run** (2×, stand): 138.5 → 143.0 ms a frame with 29 ms of
+  JavaScript. That run was limited by the buildings' wall shader, since fixed
+  (`b978d56`, see `todo.md` under "Game performance").
+- **Pixel 5, again with the shader fix** (1×, High, the branch plus `b978d56`, inline
+  against worker from one server, three alternating pairs, phone at 35–38 °C):
+  stand 21.6 / 21.6, 22.3 / 22.4, 23.2 / 33.6 ms; drive 27.6 / 27.8, 32.9 / 28.8,
+  35.0 / 34.4 ms. JavaScript a frame: 18.3 against 21.0 ms standing, 22.3 against
+  20.3 ms driving. No gain, in the one setting where the main thread was close to
+  being the limit.
+- **Conclusion:** shelved. The branch is a refactor of about 1,000 lines with a
+  dormant worker; inline it measured a few percent slower than the old code. Revisit
+  only if the crowd grows several-fold.
+- **If the branch is ever merged:** it has `public/data` committed as a symlink, which
+  must be dropped first. Not done there: the ten-minute drive across tile loads on
+  the worker.

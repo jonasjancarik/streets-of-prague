@@ -441,8 +441,20 @@ core count: `--init "Object.defineProperty(navigator, 'hardwareConcurrency', { g
   the later runs keep getting warmer. Battery temperature is a useful indicator,
   not a direct measurement of GPU throttling. Mac game instances do not directly
   contend for the phone's GPU, though a busy local server can delay asset delivery.
-- It's much slower than the M5 at 4×: ~23 fps on the drive at 1× and High (median frame
-  ~33 ms), 40–60 long tasks in 40 s, the slowest 1% of frames 115–120 ms.
+- It's much slower than the M5 at 4×. Until 1 October 2026: ~23 fps on the drive at 1×
+  and High (median frame ~33 ms), 40–60 long tasks in 40 s, the slowest 1% of frames
+  115–120 ms. Since the wall shader's tables became uniform arrays: about 45 fps
+  standing on the Old Town Square and 30–36 fps on the drive at 1× and High, and about
+  16 fps standing at 2×.
+- **Find out what limits the phone before optimising for it.** Run the same scene at
+  `--dpr 0.5`, `1`, `1.5` and `2`: frame time that rises in a straight line with the
+  pixels is shading, and the part left at zero pixels is roughly the JavaScript. The
+  bench's `js` figure against the frame time says the same. A frame five times its
+  JavaScript time is not a main-thread problem, whatever the desktop profile says.
+- **A hot phone is a different phone.** At 37–38 °C the Pixel 5's JavaScript took
+  28–36 ms a frame, against 16–20 ms at 35 °C. Note the temperature with every result.
+- The phone has no GPU timer here (`gpu –`), and vsync holds frames to multiples of
+  11.1 ms, so small costs show only in the mean over a window, not in the median.
 
 ## Cross-project references
 
