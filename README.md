@@ -917,8 +917,12 @@ assets, with a small Worker for the newsletter signup and the feedback form (bel
 Cloudflare Redirect Rule on `jonasjancarik.cz`, preserving paths and query strings.
 <https://streets-cf.jonasjancarik.cz> remains an alternate Cloudflare address.
 Its map data comes from the R2 bucket at
-<https://streets-data.jonasjancarik.cz>, under the immutable prefix named in
-`deploy/data-version`. Local development loads `data/` next to the app, and mbxp
+<https://data.streetsofprague.com>, under the immutable prefix named in
+`deploy/data-version`. The bucket also answers at
+<https://streets-data.jonasjancarik.cz>, which has to stay connected: releases up to
+v0.1.0 have that address built in. Each of the two hostnames needs its own Cache Rule
+in its zone (eligible for cache, edge TTL from the origin's `Cache-Control`), or
+Cloudflare serves every file straight from R2 without caching it. Local development loads `data/` next to the app, and mbxp
 its own copy (above); only `scripts/deploy-cloudflare.sh` sets the R2 URL at build
 time.
 

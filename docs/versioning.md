@@ -49,7 +49,7 @@ After raising it, rebuild the map, upload it under a new version name and commit
 map and the code agree.
 
 `node scripts/check-data-format.mjs <folder or URL>` does that comparison by hand, for
-`public/data` or for `https://streets-data.jonasjancarik.cz/<version>/`. It also fails
+`public/data` or for `https://data.streetsofprague.com/<version>/`. It also fails
 if the two constants differ from each other.
 
 ## Uploading a map

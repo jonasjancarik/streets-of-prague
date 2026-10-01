@@ -30,7 +30,7 @@ fi
 # typechecks and the map this commit names is on R2 in the format the code reads.
 DATA=$(tr -d '\n' < deploy/data-version)
 npm run typecheck
-node scripts/check-data-format.mjs "https://streets-data.jonasjancarik.cz/$DATA/"
+node scripts/check-data-format.mjs "https://data.streetsofprague.com/$DATA/"
 
 git tag -a "$TAG" -m "$TAG"
 git push origin "$TAG"

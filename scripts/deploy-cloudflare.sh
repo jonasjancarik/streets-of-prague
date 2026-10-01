@@ -18,7 +18,7 @@ if [[ -z $RELEASE && ${1:-} != --untagged ]]; then
 fi
 echo "Deploying ${RELEASE:-$(git describe --tags --always), which is not a release}."
 VERSION=$(tr -d '\n' < deploy/data-version)
-DATA_URL=https://streets-data.jonasjancarik.cz/$VERSION/
+DATA_URL=https://data.streetsofprague.com/$VERSION/
 # The map must be there and in the format this code reads.
 node scripts/check-data-format.mjs "$DATA_URL"
 npm run typecheck
