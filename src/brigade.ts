@@ -22,7 +22,7 @@ const CREW = 3;
 const SPRAY = 7; // m: how far a hose reaches
 const STAND = 5; // m from the fire they stand at
 const HOSE = 1.3; // seconds of water (for `douse`) per second of spraying
-const GIVE_UP = 30; // seconds a call waits for a street to spawn an engine on
+const GIVE_UP = 60; // seconds a call waits for a street to spawn an engine on
 const CHASE = 25; // seconds the crew runs after someone who took their engine
 const RUN = 4.6; // m/s
 const WRECKED = 90; // damage that puts an engine out of action
@@ -35,6 +35,7 @@ interface BrigadeOptions {
   height: (x: number, y: number, who?: Car | Fighter) => number;
   rng: () => number; edgesNear: (x: number, y: number, radius: number) => DriveEdge[];
   offscreen: (x: number, y: number) => boolean;
+  viewRadius: () => number; // how far from the camera is out of view
   bodyAt: (x: number, y: number, r: number, skip: Car | null) => boolean;
 }
 
@@ -59,17 +60,19 @@ export class Brigade {
     this.calls.push({ target, t: 0 });
   }
 
-  // A new engine on a street out of view, 150–300 m from `target`, on its way there.
+  // A new engine on a street out of view, 150–300 m from `target` (further, when the
+  // camera is zoomed out or high up and the view reaches that far), on its way there.
   dispatch(target: Car) {
     const { o } = this, r = o.rng;
-    const edges = o.edgesNear(target.x, target.y, 300);
+    const far = Math.max(300, o.viewRadius() + 120);
+    const edges = o.edgesNear(target.x, target.y, far);
     const stop = o.police.roadside(target.x, target.y);
     if (!stop) return false;
     for (let t = 0; t < 30 && edges.length; t++) {
       const e = edges[Math.floor(r() * edges.length)];
       if (e.bridge || e.tunnel || e.path.length < 14) continue;
       const q = e.path.at(r() * e.path.length), d = Math.hypot(q.x - target.x, q.y - target.y);
-      if (d < 150 || d > 300 || !o.offscreen(q.x, q.y)) continue;
+      if (d < 150 || d > far || !o.offscreen(q.x, q.y)) continue;
       const path = o.police.route(q.x, q.y, stop.x, stop.y);
       if (!path) continue;
       // Facing the way it's to go: a long engine can't turn round in a narrow street.

@@ -114,6 +114,10 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
   const pedalUp = (e: PointerEvent) => { onPedal.delete(e.pointerId); pedalsChanged(); };
   pedals.addEventListener('pointerup', pedalUp);
   pedals.addEventListener('pointercancel', pedalUp);
+  // The pedals vanish when you leave the vehicle (a fall, say) while a thumb is still on
+  // one, and the browser may never say that thumb lifted: let go of them ourselves.
+  pedals.addEventListener('lostpointercapture', pedalUp);
+  const releasePedals = () => { onPedal.clear(); pedalsChanged(); };
 
   // ---- Buttons -----------------------------------------------------------
   const tap = (el: HTMLElement, fn: () => void) => el.addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); });
@@ -211,6 +215,8 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
     set('mode', mode, (m) => {
       $('touch').dataset.mode = m;
       fastUp();
+      handUp();
+      releasePedals();
       fast.textContent = m === 'stop' ? t('Hold to wait') : t('Hold to speed up');
     });
     set('horn', mode === 'drive', (drive) => { hornButton.textContent = t(drive ? 'Bell' : 'Horn'); });

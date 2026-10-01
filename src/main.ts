@@ -1067,7 +1067,7 @@ async function main() {
     },
   });
   const brigade = new Brigade({
-    scene, police, grid, fires, kit, height: ground, rng: seeded, edgesNear, offscreen,
+    scene, police, grid, fires, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,
     bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),
   });
   let waitScale = 1, clockShown = '';
