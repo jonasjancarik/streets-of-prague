@@ -934,8 +934,8 @@ key and secret outside this repository. Run `scripts/upload-data.sh <new-version
 to upload and checksum-check every file. It refuses a version name that is
 already on R2; `--resume` finishes an interrupted upload of the same files, and
 fails if an object in that version has changed. Commit the updated
-`deploy/data-version` and app code, then run `scripts/deploy-cloudflare.sh`.
-That script checks the R2 index and its format, typechecks, builds only the app assets, validates
+`deploy/data-version` and app code, then release (below), which runs
+`scripts/deploy-cloudflare.sh`. That script checks the R2 index and its format, typechecks, builds only the app assets, validates
 Cloudflare Build Output with `cf deploy --prebuilt --dry-run`, and deploys it.
 The two targets can be updated independently.
 
@@ -946,11 +946,16 @@ to roll back, is in [docs/versioning.md](docs/versioning.md).
 
 Versions are git tags on `main` (`v1.2.3`), published as GitHub releases at
 <https://github.com/jonasjancarik/streets-of-prague/releases>. With main committed
-and pushed, `scripts/release.sh v1.2.3` typechecks, checks that the map named in
+and pushed, `scripts/release.sh patch` (or `minor`, `major`, or a number such as
+`v1.2.3`) works out the next version from the latest one, typechecks, checks that the map named in
 `deploy/data-version` is on R2 in the format the code reads, then tags the commit,
 creates the release with notes generated from the commits since the previous one
 (headed by the map data version), and runs
-`scripts/deploy-cloudflare.sh` (`--no-deploy` skips that). The build reads
+`scripts/deploy-cloudflare.sh` (`--no-deploy` skips that). Production only runs
+released versions: the deploy script refuses a commit that isn't a release tag, so
+new code reaches production through `release.sh` and a rollback by checking out an
+earlier tag. `scripts/deploy-cloudflare.sh --untagged` is the way round it for an
+emergency. Code that isn't ready for a version goes to the beta. The build reads
 `git describe` (see `vite.config.js`), and the settings panel shows it with the
 build date: `v1.2.3`, or `v1.2.3-5-gabc1234` for commits made after the tag, followed by the map data version
 (`deploy/data-version` on Cloudflare; elsewhere the day the map was built).

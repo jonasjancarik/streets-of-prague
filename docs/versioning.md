@@ -67,12 +67,22 @@ others: a corrected map always gets a new name.
 
 ## Releasing
 
-    scripts/release.sh v1.2.3
+    scripts/release.sh patch
 
-With `main` committed and pushed, it typechecks, checks that the map named in
+`patch`, `minor` and `major` count up from the latest release (after `v0.2.3`:
+`v0.2.4`, `v0.3.0`, `v1.0.0`); a number such as `v1.2.3` can be given instead. With
+`main` committed and pushed, it typechecks, checks that the map named in
 `deploy/data-version` is on R2 in the format the code reads, and only then tags the
 commit, publishes the GitHub release (the notes start with the map data version) and
 runs `scripts/deploy-cloudflare.sh`. `--no-deploy` stops after the release.
+
+Production only runs released versions. `scripts/deploy-cloudflare.sh` refuses a commit
+that isn't a release tag, so what is live always has a version number, a GitHub release
+with notes and a named map, and the previous state to go back to is always the previous
+tag. A fix that can't wait is a `patch` release. Code that isn't ready for a version
+goes to the beta. For an emergency, `scripts/deploy-cloudflare.sh --untagged` deploys
+the current commit anyway; the settings panel then shows something like
+`v1.2.3-2-gabc1234`, and the next release puts things right.
 
 ## The two sites
 
@@ -105,7 +115,7 @@ built before that was recorded.
   `scripts/deploy-cloudflare.sh`. The tag brings its own `deploy/data-version`, and that
   map is still on R2.
 - **A bad map on Cloudflare.** Revert the commit that changed `deploy/data-version` and
-  deploy. Nothing is uploaded or deleted.
+  release that as a patch. Nothing is uploaded or deleted.
 - **mbxp.** Check out the earlier commit and run
   `DATA_ID=<id> scripts/deploy-mbxp.sh`, with the id from that release's `data-id` file,
   to deploy it with the map it had. Without `DATA_ID` it takes the local map.

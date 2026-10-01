@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
 # Publish the app as a static-assets Worker. Map data is uploaded to R2 separately.
+# Production only runs released versions: the commit must be a release tag, which is
+# what scripts/release.sh makes before it calls this, and what a rollback checks out.
+# --untagged deploys any commit all the same, for an emergency.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+[[ ${1:---untagged} == --untagged ]] || { echo 'Usage: scripts/deploy-cloudflare.sh [--untagged]' >&2; exit 1; }
 if ! git diff --quiet HEAD; then
   echo 'Commit source changes before deploying.' >&2
   exit 1
 fi
+RELEASE=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --points-at HEAD | head -n 1)
+if [[ -z $RELEASE && ${1:-} != --untagged ]]; then
+  echo 'This commit is not a release. Run scripts/release.sh patch (or minor, major) to release and deploy it; try it out on the beta with scripts/deploy-mbxp.sh.' >&2
+  exit 1
+fi
+echo "Deploying ${RELEASE:-$(git describe --tags --always), which is not a release}."
 VERSION=$(tr -d '\n' < deploy/data-version)
 DATA_URL=https://streets-data.jonasjancarik.cz/$VERSION/
 # The map must be there and in the format this code reads.
