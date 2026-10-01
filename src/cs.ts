@@ -237,6 +237,7 @@ export const CS: Record<string, string> = {
   'Back on road': 'Zpět na silnici',
   Handbrake: 'Ruční brzda',
   Taxi: 'Taxi',
+  'The car radio is missing here because iPads and iPhones play it on their own, outside the game. Use the volume buttons on the device to set it; the other sounds are louder to match.': 'Autorádio tu chybí, protože ho iPady a iPhony přehrávají samy, mimo hru. Hlasitost nastavíš tlačítky na zařízení, ostatní zvuky jsou o to hlasitější.',
   Brake: 'Brzda',
   Gas: 'Plyn',
 

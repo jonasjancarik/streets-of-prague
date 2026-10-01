@@ -2,7 +2,7 @@ import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import type { Graphics, Choice } from './graphics.ts';
 import type { Bus } from './audio.ts';
-import { BUSES } from './audio.ts';
+import { BUSES, IOS } from './audio.ts';
 import type { Kind } from './weather.ts';
 import { describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
@@ -133,10 +133,8 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   const mixer = el('div', 'settings-row', rows);
   const mixName = el('span', 'settings-label', mixer);
   relabel.push(() => { mixName.textContent = t('Mixer'); });
-  // (iPads and iPhones play a radio stream straight to the speakers, past the mixer, so its slider would do nothing.)
-  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   for (const b of BUSES) {
-    if (b === 'radio' && ios) continue;
+    if (b === 'radio' && IOS) continue;
     const line = el('label', 'settings-mix', mixer);
     const name = el('span', '', line);
     const slider = el('input', '', line) as HTMLInputElement;
@@ -147,6 +145,11 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     slider.addEventListener('keydown', (e) => e.stopPropagation());
     relabel.push(() => { name.textContent = t(MIX[b]); });
     refresh.push(() => { slider.value = String(Math.round(sound.volumes[b] * 100)); pct.textContent = `${slider.value} %`; });
+  }
+
+  if (IOS) {
+    const why = el('p', 'settings-note', mixer);
+    relabel.push(() => { why.textContent = t('The car radio is missing here because iPads and iPhones play it on their own, outside the game. Use the volume buttons on the device to set it; the other sounds are louder to match.'); });
   }
 
   // The saved games: as many as you like. Loading one, deleting one and starting again
