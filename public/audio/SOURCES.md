@@ -21,9 +21,13 @@ come from Freesound's public previews of the recordings (192 kbps Ogg Vorbis).
 | `amb-blackbird.m4a` | [Blackbird 252](https://freesound.org/s/116791/) | nigelcoop | CC0 |
 | `amb-garden.m4a` | [Birds in the garden 1](https://freesound.org/s/475836/) | rionka | CC0 |
 | `amb-morning.m4a` | [01 - atmosphere](https://freesound.org/s/498378/) | 16FHermanovaB | CC0 |
+| `engine-idle.wav` | [Hyundai Kona, Engine Static Idle Exterior 01](https://freesound.org/s/845611/) | KVV_Audio | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| `engine-mid.wav` | [Hyundai Kona, Engine Static 2000Rpm Exterior 01](https://freesound.org/s/845607/) | KVV_Audio | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| `engine-high.wav` | [Hyundai Kona, Engine Static 3000Rpm Exterior 01](https://freesound.org/s/845609/) | KVV_Audio | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 
 The CC BY recordings are changed: the motor is its mid channel only, a stretch of it
 evened out to a steady level and made into a loop; the traffic is a stretch of it,
 its slow swell evened out, made into a loop; each crowd is six stretches of the two Old
 Town recordings played at once (so no words come through), its loud moments pulled
-back, its highs softened, with a short reverb, made into a loop.
+back, its highs softened, with a short reverb, made into a loop; each engine clip is a
+stretch of its recording, evened out to a steady level and made into a loop.

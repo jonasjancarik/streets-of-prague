@@ -30,6 +30,10 @@ export type Surface = 'asphalt' | 'setts' | 'pavers' | 'pavement';
 export interface EngineVoice {
   harmonics: number[]; sub: number; drive: number; tone: [number, number, number];
   roar: [number, number, number]; level: [number, number, number]; shift: [number, number]; clutch: number; blip: number;
+  // A recorded engine: its loops (public/audio/engine-*.wav) and how many times a second
+  // the cylinders fire in each, lowest first. `tone` and `level` then shape the recording,
+  // and the overtones, sub-octave, distortion and intake aren't used.
+  loops?: [name: string, hz: number][];
 }
 export interface EngineSpec { idle: number; redline: number; cylinders: number; gears: number[]; rough: number; voice: EngineVoice }
 // An everyday car heard from outside: a quiet, smooth hum under the tyres, a little
@@ -51,6 +55,15 @@ const DIESEL: EngineVoice = {
   harmonics: [0, 1, 0.45, 0.2, 0.06], sub: 0, drive: 0.5, tone: [110, 1.4, 100],
   roar: [0.003, 0.008, 3], level: [0.018, 0.006, 0.005], shift: [0.2, 0.5], clutch: 450, blip: 0.4,
 };
+// A petrol car from recordings: a Hyundai Kona held at idle, about 2240 and 2910 rpm
+// (measured), played faster or slower to the revs and faded from one to the next.
+// Only on the sound test page so far.
+const KONA: EngineVoice = {
+  harmonics: [], sub: 0, drive: 0, tone: [900, 25, 5000],
+  roar: [0, 0, 3], level: [0.1, 0.08, 0.1], shift: [0.28, 0.5], clutch: 500, blip: 0.5,
+  loops: [['engine-idle', 24], ['engine-mid', 74.5], ['engine-high', 97]],
+};
+export const RECORDED: EngineSpec = { idle: 720, redline: 6200, cylinders: 4, gears: [0.25, 0.42, 0.6, 0.8, 1.02], rough: 0, voice: KONA };
 // An electric motor: a thin whine that rises with speed, silent when standing, a single
 // gear (so no shifts) and no clutch or irregular firing.
 const ELECTRIC_VOICE: EngineVoice = {
@@ -139,7 +152,7 @@ export class Sound {
   noise!: AudioBuffer;
   clack!: AudioBuffer;
   clips: Record<string, AudioBuffer> = {};
-  engine: Engine | null = null;
+  engine: Drivetrain | null = null;
   tyres: Tyres | null = null;
   weather: WeatherSound | null = null;
   ambience: Ambience | null = null;
@@ -394,22 +407,72 @@ function place(gain: GainNode, pan: StereoPannerNode, d: number, dx: number, t: 
   pan.pan.setTargetAtTime(clamp(dx / 45, -0.85, 0.85), t, 0.1);
 }
 
-// An engine's note: harmonics of the cylinders' firing rate, roughened with a little
-// wobble, through a filter that opens up with the throttle; plus the intake's roar.
-export class Engine {
+// What every engine shares, however its sound is made: the gears, and from them the revs.
+export abstract class Drivetrain {
   ctx: AudioContext;
   car: Car;
   spec: EngineSpec;
+  gear = 0; shift = 0; blip = 0; load = 0; rpm = 0;
+
+  constructor(ctx: AudioContext, car: Car, spec: EngineSpec) {
+    this.ctx = ctx;
+    this.car = car;
+    this.spec = spec;
+  }
+
+  // One step of driving. `throttle`: -1..1 as driven, braking or reversing when it's
+  // below 0. Gives the revs, how many times a second the cylinders fire at them, how hard
+  // the engine is pulling (0–1) and whether the clutch is pressed.
+  protected drive(dt: number, throttle: number) {
+    const { car, spec } = this, voice = spec.voice;
+    const v = Math.abs(car.forwardSpeed), vmax = car.spec.vmax;
+    const load = car.forwardSpeed < 0.5 && throttle < 0 ? -throttle : clamp(throttle, 0, 1);
+    const hard = car.forwardSpeed > 0.5 && throttle < -0.5;
+    // Revs in a gear: redline at the gear's top speed. Up a gear where the voice says
+    // (later with the pedal down), and down once the revs sag.
+    const revs = (g: number) => spec.idle + (spec.redline - spec.idle) * clamp(v / (spec.gears[g] * vmax), 0, 1);
+    // The shift point follows the pedal slowly, so tapping it doesn't flick between two gears.
+    this.load += (load - this.load) * Math.min(1, dt / 0.3);
+    const up = spec.idle + (spec.redline - spec.idle) * (voice.shift[0] + (voice.shift[1] - voice.shift[0]) * this.load);
+    if (this.gear < spec.gears.length - 1 && revs(this.gear) > up) { this.gear++; this.shift = 0.18; }
+    // Hard on the brake, the driver stays in gear and the revs fall with the speed, then
+    // presses the clutch before the engine would stall; the gear for the speed is taken
+    // once the brake is let go. Lifting off or braking gently goes down through the gears.
+    else if (!hard && this.gear > 0 && revs(this.gear) < spec.idle * 1.9 && revs(this.gear - 1) < up * 0.9) {
+      this.gear--;
+      if (v > 2) this.blip = BLIP; // not while finding first gear at a standstill
+    }
+    this.shift = Math.max(0, this.shift - dt);
+    this.blip = Math.max(0, this.blip - dt);
+    // The blip: the revs overshoot the lower gear's and the engine speaks up, fading out.
+    const kick = voice.blip * (this.blip / BLIP);
+    let rpm = revs(this.gear);
+    const declutched = hard && rpm < spec.idle * 1.25;
+    if (declutched) rpm = spec.idle;
+    // Pulling away, the clutch lets the revs rise ahead of the speed.
+    if (this.gear === 0) rpm = Math.max(rpm, spec.idle + load * voice.clutch);
+    rpm *= 1 + 0.12 * kick;
+    this.rpm = rpm;
+    const pull = this.shift > 0 ? 0.1 : Math.max(load, kick * 0.7);
+    return { rpm, hz: ((rpm / 60) * spec.cylinders) / 2, pull, declutched };
+  }
+
+  abstract update(dt: number, throttle: number): void;
+  abstract stop(): void;
+  // Takes again what of the voice is set up once: for the sound test page.
+  revoice() {}
+}
+
+// An engine's note: harmonics of the cylinders' firing rate, roughened with a little
+// wobble, through a filter that opens up with the throttle; plus the intake's roar.
+export class Engine extends Drivetrain {
   out: GainNode;
   osc: OscillatorNode; sub: OscillatorNode; wobble: AudioBufferSourceNode; intake: AudioBufferSourceNode;
   depth: GainNode; tone: BiquadFilterNode; roar: BiquadFilterNode; roarGain: GainNode;
   subGain: GainNode; shaper: WaveShaperNode;
-  gear = 0; shift = 0; blip = 0; load = 0; rpm = 0;
 
   constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode, car: Car, spec: EngineSpec) {
-    this.ctx = ctx;
-    this.car = car;
-    this.spec = spec;
+    super(ctx, car, spec);
     const t = ctx.currentTime;
     const voice = spec.voice;
     this.osc = ctx.createOscillator();
@@ -452,39 +515,9 @@ export class Engine {
     this.shaper.curve = softClip(voice.drive);
   }
 
-  // `throttle`: -1..1 as driven, braking or reversing when it's below 0.
   update(dt: number, throttle: number) {
-    const { car, spec } = this, voice = spec.voice, t = this.ctx.currentTime;
-    const v = Math.abs(car.forwardSpeed), vmax = car.spec.vmax;
-    const load = car.forwardSpeed < 0.5 && throttle < 0 ? -throttle : clamp(throttle, 0, 1);
-    const hard = car.forwardSpeed > 0.5 && throttle < -0.5;
-    // Revs in a gear: redline at the gear's top speed. Up a gear where the voice says
-    // (later with the pedal down), and down once the revs sag.
-    const revs = (g: number) => spec.idle + (spec.redline - spec.idle) * clamp(v / (spec.gears[g] * vmax), 0, 1);
-    // The shift point follows the pedal slowly, so tapping it doesn't flick between two gears.
-    this.load += (load - this.load) * Math.min(1, dt / 0.3);
-    const up = spec.idle + (spec.redline - spec.idle) * (voice.shift[0] + (voice.shift[1] - voice.shift[0]) * this.load);
-    if (this.gear < spec.gears.length - 1 && revs(this.gear) > up) { this.gear++; this.shift = 0.18; }
-    // Hard on the brake, the driver stays in gear and the revs fall with the speed, then
-    // presses the clutch before the engine would stall; the gear for the speed is taken
-    // once the brake is let go. Lifting off or braking gently goes down through the gears.
-    else if (!hard && this.gear > 0 && revs(this.gear) < spec.idle * 1.9 && revs(this.gear - 1) < up * 0.9) {
-      this.gear--;
-      if (v > 2) this.blip = BLIP; // not while finding first gear at a standstill
-    }
-    this.shift = Math.max(0, this.shift - dt);
-    this.blip = Math.max(0, this.blip - dt);
-    // The blip: the revs overshoot the lower gear's and the engine speaks up, fading out.
-    const kick = voice.blip * (this.blip / BLIP);
-    let rpm = revs(this.gear);
-    const declutched = hard && rpm < spec.idle * 1.25;
-    if (declutched) rpm = spec.idle;
-    // Pulling away, the clutch lets the revs rise ahead of the speed.
-    if (this.gear === 0) rpm = Math.max(rpm, spec.idle + load * voice.clutch);
-    rpm *= 1 + 0.12 * kick;
-    this.rpm = rpm;
-    const pull = this.shift > 0 ? 0.1 : Math.max(load, kick * 0.7);
-    const hz = ((rpm / 60) * spec.cylinders) / 2;
+    const { spec } = this, voice = spec.voice, t = this.ctx.currentTime;
+    const { rpm, hz, pull, declutched } = this.drive(dt, throttle);
     // With the clutch in, the revs settle to idle rather than jump there.
     const settle = declutched ? 0.2 : SMOOTH;
     this.osc.frequency.setTargetAtTime(hz, t, settle);
@@ -500,6 +533,56 @@ export class Engine {
     const t = this.ctx.currentTime;
     this.out.gain.setTargetAtTime(0, t, 0.08);
     for (const n of [this.osc, this.sub, this.wobble, this.intake]) n.stop(t + 0.6);
+  }
+}
+
+// An engine from recordings of a car held at steady revs (the voice's `loops`): all of
+// them play at once, each sped up or slowed down to the revs, and only the one or two
+// recorded nearest to them are heard, one fading into the next as the revs go between.
+// A filter opens with the throttle, as the recordings are of an engine without load.
+export class RecordedEngine extends Drivetrain {
+  out: GainNode; tone: BiquadFilterNode;
+  loops: { src: AudioBufferSourceNode; gain: GainNode; hz: number }[] = [];
+
+  constructor(ctx: AudioContext, clips: Record<string, AudioBuffer>, dest: AudioNode, car: Car, spec: EngineSpec) {
+    super(ctx, car, spec);
+    const t = ctx.currentTime;
+    this.tone = filter(ctx, 'lowpass', 2000, 0.7);
+    this.out = gain(ctx, 0);
+    this.tone.connect(this.out).connect(dest);
+    for (const [name, hz] of spec.voice.loops ?? []) {
+      if (!clips[name]) continue;
+      const src = loop(ctx, clips[name]), g = gain(ctx, 0);
+      src.connect(g).connect(this.tone);
+      src.start(t, Math.random() * clips[name].duration);
+      this.loops.push({ src, gain: g, hz });
+    }
+    this.update(0, 0);
+  }
+
+  update(dt: number, throttle: number) {
+    const { spec, loops } = this, voice = spec.voice, t = this.ctx.currentTime;
+    const { rpm, hz, pull, declutched } = this.drive(dt, throttle);
+    const settle = declutched ? 0.2 : SMOOTH;
+    // Where the revs are among the recordings, by pitch: 1.5 is halfway from the second to the third.
+    let at = 0;
+    while (at < loops.length - 1 && hz > loops[at + 1].hz) at++;
+    const next = loops[Math.min(at + 1, loops.length - 1)];
+    const mix = next === loops[at] ? 0 : clamp(Math.log(hz / loops[at].hz) / Math.log(next.hz / loops[at].hz), 0, 1);
+    loops.forEach((l, i) => {
+      l.src.playbackRate.setTargetAtTime(clamp(hz / l.hz, 0.25, 4), t, settle);
+      // Equal power: the two recordings aren't in step, so their loudness adds, not their waves.
+      const share = i === at ? Math.cos((mix * Math.PI) / 2) : l === next ? Math.sin((mix * Math.PI) / 2) : 0;
+      l.gain.gain.setTargetAtTime(share, t, SMOOTH);
+    });
+    this.tone.frequency.setTargetAtTime(voice.tone[0] + hz * voice.tone[1] + pull * voice.tone[2], t, SMOOTH);
+    this.out.gain.setTargetAtTime(voice.level[0] + pull * voice.level[1] + (rpm / spec.redline) * voice.level[2], t, 0.1);
+  }
+
+  stop() {
+    const t = this.ctx.currentTime;
+    this.out.gain.setTargetAtTime(0, t, 0.08);
+    for (const l of this.loops) l.src.stop(t + 0.6);
   }
 }
 

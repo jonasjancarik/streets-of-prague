@@ -1032,6 +1032,9 @@ libraries to `dist/licenses.txt` (a small plugin in `vite.config.js`).
   by vonfleisch, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), the traffic
   [Prague Atmo Traffic from 5th floor](https://freesound.org/s/94309/) by aUREa,
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), the rest CC0.
+- Recorded car engine (on the sound test page so far): three recordings of a
+  [Hyundai Kona](https://freesound.org/s/845607/) by KVV_Audio,
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (see `public/audio/SOURCES.md`).
 - Drawing: [three.js](https://threejs.org/) (MIT); map projections: [proj4js](https://proj4js.github.io/proj4js/) (MIT).
 - Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - Maps in the developer panel: [Leaflet](https://leafletjs.com/) (BSD-2-Clause) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).

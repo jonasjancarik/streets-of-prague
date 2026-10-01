@@ -1,5 +1,5 @@
-import { Engine, Tyres, ENGINES, PETROL, SPORTY, TYRE, noiseBuffer } from './audio.ts';
-import type { EngineSpec, Surface } from './audio.ts';
+import { Engine, RecordedEngine, Tyres, ENGINES, PETROL, RECORDED, SPORTY, TYRE, noiseBuffer } from './audio.ts';
+import type { Drivetrain, EngineSpec, Surface } from './audio.ts';
 import type { Car } from './car.ts';
 
 // A page for listening to the engines and tyres on their own (sound-test.html, on the
@@ -7,6 +7,7 @@ import type { Car } from './car.ts';
 // with a slider for every number of the sound.
 
 const CARS: Record<string, { name: string; spec: EngineSpec; vmax: number; accel: number }> = {
+  kona: { name: 'Recorded petrol car', spec: RECORDED, vmax: 42, accel: 10 },
   petrol: { name: 'Most cars', spec: PETROL, vmax: 42, accel: 10 },
   fabia: { name: 'Škoda Fabia', spec: ENGINES.fabia!, vmax: 33, accel: 6 },
   diesel: { name: 'Diesel', spec: ENGINES.diesel!, vmax: 40, accel: 9 },
@@ -54,6 +55,20 @@ const ENGINE_GROUPS: Group[] = [
     { path: 'voice.blip', label: 'Blip of throttle on a downshift', hint: 'none to keen', min: 0, max: 1.5, step: 0.05 },
   ] },
 ];
+// A recorded engine has no overtones or intake to set, and its filter works higher up.
+const RECORDED_GROUPS: Group[] = [
+  { title: 'Loudness', fields: [
+    { path: 'voice.level', i: 0, label: 'Always', min: 0, max: 0.6, step: 0.005 },
+    { path: 'voice.level', i: 1, label: 'Extra with the pedal down', min: 0, max: 0.6, step: 0.005 },
+    { path: 'voice.level', i: 2, label: 'Extra at high revs', min: 0, max: 0.6, step: 0.005 },
+  ] },
+  { title: 'Brightness', note: 'Low is muffled, as heard through a wall. High is the recording as it is.', fields: [
+    { path: 'voice.tone', i: 0, label: 'Always', hint: 'Hz', min: 100, max: 8000, step: 50 },
+    { path: 'voice.tone', i: 1, label: 'Rising with the revs', min: 0, max: 100, step: 1 },
+    { path: 'voice.tone', i: 2, label: 'Extra with the pedal down', hint: 'Hz', min: 0, max: 12000, step: 100 },
+  ] },
+  ENGINE_GROUPS[5],
+];
 const TYRE_GROUPS: Group[] = [
   { title: 'Road noise', note: 'Heard on every road.', fields: [
     { path: 'level', label: 'Loudness', hint: 'at 108 km/h', min: 0, max: 0.5, step: 0.005 },
@@ -74,8 +89,9 @@ const TYRE_WAS = structuredClone(TYRE);
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const num = (id: string) => +$<HTMLInputElement>(id).value;
 const car = { forwardSpeed: 0, speed: 0, vx: 0, vy: 0, h: 0, two: false, spec: { vmax: 42 } };
-let key = 'petrol', spec: EngineSpec = structuredClone(CARS[key].spec);
-let ctx: AudioContext | null = null, engine: Engine | null = null, tyres: Tyres | null = null;
+let key = 'kona', spec: EngineSpec = structuredClone(CARS[key].spec);
+const clips: Record<string, AudioBuffer> = {};
+let ctx: AudioContext | null = null, engine: Drivetrain | null = null, tyres: Tyres | null = null;
 let noise: AudioBuffer, engineBus: GainNode, tyreBus: GainNode;
 let gas = false, brake = false, dragging = false; // dragging: the speed is being set by hand
 
@@ -103,7 +119,17 @@ function start() {
 function rebuild() {
   if (!ctx) return;
   engine?.stop();
-  engine = new Engine(ctx, noise, engineBus, car as unknown as Car, spec);
+  engine = null;
+  const names = (spec.voice.loops ?? []).map(([name]) => name), built = spec;
+  if (!names.length) { engine = new Engine(ctx, noise, engineBus, car as unknown as Car, spec); return; }
+  // A recorded engine starts once its recordings are in.
+  Promise.all(names.filter((n) => !clips[n]).map(async (n) => {
+    const r = await fetch(`audio/${n}.wav`);
+    if (!r.ok) throw new Error(`${n}: ${r.status}`);
+    clips[n] = await ctx!.decodeAudioData(await r.arrayBuffer());
+  })).then(() => {
+    if (spec === built && !engine) engine = new RecordedEngine(ctx!, clips, engineBus, car as unknown as Car, spec);
+  }).catch((e) => { $('dash').textContent = 'The recordings could not be loaded'; console.warn(e); });
 }
 
 function silence() {
@@ -183,7 +209,7 @@ function choose(k: string) {
   car.spec.vmax = CARS[k].vmax;
   car.forwardSpeed = car.speed = 0;
   for (const b of $('cars').children) b.classList.toggle('on', (b as HTMLElement).dataset.k === k);
-  render($('engine'), ENGINE_GROUPS, spec, CARS[k].spec, () => engine?.revoice());
+  render($('engine'), spec.voice.loops ? RECORDED_GROUPS : ENGINE_GROUPS, spec, CARS[k].spec, () => engine?.revoice());
   showSettings();
   if (engine) rebuild();
 }

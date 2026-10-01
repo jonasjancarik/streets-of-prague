@@ -15,6 +15,10 @@ strongest tone over time), not by ear:
   out to a steady level, so the game alone decides how loud they are, and crossfaded
   end into start so they repeat without a seam. They're WAV: compressed formats pad
   the start of a file, which leaves a gap in a loop.
+- A car's engine (engine-*) is three loops of one car held at steady revs, which the
+  game plays faster or slower and fades between as the revs change. An engine's sound
+  repeats with every turn, so each loop ends where the recording best matches its own
+  start: the seam falls on the same point of the engine's cycle.
 - One-off sounds (the bell, pulling away, arriving at a stop) are AAC, faded in and
   out at the cuts.
 - The city's sound (amb-*: the crowd, traffic, the night, birds) is long stereo loops,
@@ -56,6 +60,9 @@ SOURCES = {
     116791: "116/116791_1088850-hq.ogg",  # Blackbird 252 (nigelcoop)
     475836: "475/475836_3374104-hq.ogg",  # Birds in the garden 1 (rionka, Brno)
     498378: "498/498378_10815958-hq.ogg",  # 01 - atmosphere, a garden in the morning (16FHermanovaB)
+    845611: "845/845611_12846320-hq.ogg",  # Hyundai Kona, engine idle, exterior (CC BY 4.0, KVV_Audio)
+    845607: "845/845607_12846320-hq.ogg",  # Hyundai Kona, engine at 2000 rpm, exterior (CC BY 4.0, KVV_Audio)
+    845609: "845/845609_12846320-hq.ogg",  # Hyundai Kona, engine at 3000 rpm, exterior (CC BY 4.0, KVV_Audio)
 }
 
 # name: (source, channel (None: both mixed, "stereo": both kept), start s, end s, kind, rate, high-pass Hz)
@@ -78,6 +85,11 @@ CLIPS = {
     "amb-blackbird": (116791, "stereo", 30.0, 92.0, "song", SR, None),
     "amb-garden": (475836, "stereo", 0.0, 27.5, "song", SR, None),
     "amb-morning": (498378, "stereo", 20.0, 67.0, "amb", SR, None),
+    # A petrol car's engine at steady revs (src/audio.ts, RecordedEngine). Measured, the
+    # cylinders fire 24, 74.5 and 97 times a second in them: about 720, 2240 and 2910 rpm.
+    "engine-idle": (845611, None, 10.0, 16.5, "engine", 32000, None),
+    "engine-mid": (845607, None, 6.0, 12.5, "engine", 32000, None),
+    "engine-high": (845609, None, 8.0, 14.5, "engine", 32000, None),
 }
 
 
@@ -145,6 +157,21 @@ def loop(x: np.ndarray) -> np.ndarray:
     return body / np.sqrt((body ** 2).mean()) * 0.1  # -20 dBFS
 
 
+def engine(x: np.ndarray) -> np.ndarray:
+    # As loop(), but the end is put where the next quarter second is most like the first
+    # (looked for over the last 0.3 s), so the engine's cycle carries on over the seam.
+    x = x / envelope(x, 0.4)
+    fade, search = int(SR * 0.25), int(SR * 0.3)
+    head = x[:fade]
+    first = len(x) - fade - search
+    score = [np.dot(x[e:e + fade], head) / np.sqrt((x[e:e + fade] ** 2).sum()) for e in range(first, len(x) - fade)]
+    end = first + int(np.argmax(score))
+    body = x[:end].copy()
+    r = np.linspace(0, 1, fade)
+    body[:fade] = x[end:end + fade] * (1 - r) + head * r
+    return body / np.sqrt((body ** 2).mean()) * 0.1  # -20 dBFS
+
+
 def ambience(x: np.ndarray, even=True) -> np.ndarray:
     # Stereo: even out only the slow drift (a 6 s window over both channels), then fold
     # the last two seconds over the start.
@@ -192,8 +219,8 @@ def once(x: np.ndarray) -> np.ndarray:
 def write(name: str, x: np.ndarray, kind: str, rate: int):
     OUT.mkdir(parents=True, exist_ok=True)
     pcm = np.clip(x, -1, 1).astype(np.float32).tobytes()
-    out = OUT / (f"{name}.wav" if kind == "loop" else f"{name}.m4a")
-    codec = {"loop": ["-c:a", "pcm_s16le"], "once": ["-c:a", "aac", "-b:a", "96k"], "amb": ["-c:a", "aac", "-b:a", "80k"], "song": ["-c:a", "aac", "-b:a", "80k"]}[kind]
+    out = OUT / (f"{name}.wav" if kind in ("loop", "engine") else f"{name}.m4a")
+    codec = {"loop": ["-c:a", "pcm_s16le"], "engine": ["-c:a", "pcm_s16le"], "once": ["-c:a", "aac", "-b:a", "96k"], "amb": ["-c:a", "aac", "-b:a", "80k"], "song": ["-c:a", "aac", "-b:a", "80k"]}[kind]
     channels = "2" if x.ndim == 2 else "1"
     # (Resampled before the crossfade point matters: the loop's length changes with
     # the rate, not its seam.)
@@ -208,7 +235,7 @@ def main():
         x = s if channel == "stereo" else s[:, channel] if channel is not None else s.mean(1)
         if hp:
             x = highpass(x, hp)
-        x = {"loop": loop, "once": once, "amb": ambience, "song": lambda x: ambience(x, even=False)}[kind](x)
+        x = {"loop": loop, "engine": engine, "once": once, "amb": ambience, "song": lambda x: ambience(x, even=False)}[kind](x)
         out = write(name, x, kind, rate)
         print(f"{out.name:14} {len(x) / SR:5.2f} s  {out.stat().st_size / 1000:6.0f} kB  from {sid}")
     for name, (length, parts) in WALLA.items():
