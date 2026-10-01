@@ -194,6 +194,34 @@ export class Sound {
     const box = document.createElement('pre');
     box.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;margin:0;padding:6px;max-width:100vw;font:11px/1.3 monospace;color:#0f0;background:#000c;pointer-events:none;white-space:pre-wrap';
     document.body.append(box);
+    // Two buttons: a test tone straight to the speakers, and one through the game's mixer.
+    const beep = (label: string, left: string, through: boolean) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.style.cssText = `position:fixed;top:80px;left:${left};z-index:99999;padding:14px 18px;font:16px sans-serif`;
+      b.addEventListener('click', () => {
+        const c = this.ctx;
+        if (!c) return;
+        const o = c.createOscillator(), g = c.createGain();
+        g.gain.value = 0.3;
+        o.frequency.value = 440;
+        o.connect(g).connect(through ? this.master : c.destination);
+        o.start();
+        o.stop(c.currentTime + 0.6);
+      });
+      document.body.append(b);
+    };
+    beep('Beep direct', '0px', false);
+    beep('Beep mixer', '130px', true);
+    let meter: AnalyserNode | null = null;
+    const level = () => {
+      const c = this.ctx;
+      if (!c || !this.master) return '-';
+      if (!meter) { meter = c.createAnalyser(); meter.fftSize = 256; this.master.connect(meter); }
+      const a = new Float32Array(meter.fftSize);
+      meter.getFloatTimeDomainData(a);
+      return Math.sqrt(a.reduce((x, v) => x + v * v, 0) / a.length).toFixed(4);
+    };
     const errors: string[] = [];
     const note = (m: unknown) => { errors.push(String((m as Error)?.stack ?? m).slice(0, 220)); if (errors.length > 4) errors.shift(); };
     addEventListener('error', (e) => note(e.error ?? e.message));
@@ -204,6 +232,7 @@ export class Sound {
     setInterval(() => {
       const c = this.ctx;
       box.textContent = [
+        `rate ${c?.sampleRate} · level ${level()} · ${navigator.userAgent.match(/OS [\d_]+/)?.[0]}`,
         `ctx ${c ? c.state : 'none'} · on ${this.on} · master ${this.master ? this.master.gain.value.toFixed(2) : '-'}`,
         `engine ${!!this.engine} tyres ${!!this.tyres} weather ${!!this.weather} city ${!!this.ambience} radio ${!!this.radio} clips ${Object.keys(this.clips).length} trams ${this.voices.length}`,
         ...errors,
