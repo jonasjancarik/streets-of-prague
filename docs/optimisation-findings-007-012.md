@@ -67,8 +67,8 @@ The selected integration passed `npm run build` (including typecheck),
 and `check-spawn-work` with `--case all`, graphics switching on WebGPU and WebGL,
 eight `test_landmark_colours.py` tests, the staged landmark browser check on both
 renderers, all three `scene.mjs run all` scenarios, and `git diff --check`.
-The combined gameplay screenshot retains the buildings, parked vehicles and tree
-canopy. Logs and scenario images are in `/tmp/streets-optimisation-merge-checks/`.
+The inspected combined gameplay screenshot retains the buildings and vehicles;
+the tree runner checks instance counts and retained-page reuse. Logs and scenario images are in `/tmp/streets-optimisation-merge-checks/`.
 The final merge revision is recorded at handoff. A new
 combined timing comparison is intentionally deferred: concurrent plan-013 graphics
 work could invalidate it, and the existing results do not justify a combined FPS
