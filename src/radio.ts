@@ -147,6 +147,9 @@ export class Radio {
     for (const [i, s] of this.streams) {
       s.gain.gain.cancelScheduledValues(t);
       s.gain.gain.setTargetAtTime(i === this.tuned && this.want ? 1 : 0, t, FADE / 3);
+      // A station only downloading must be silent whatever the audio graph does (Safari on an
+      // iPad can let a stream through before the context runs), so the element itself is muted.
+      s.el.muted = !(i === this.tuned && this.want);
       if (i === this.tuned && this.want && s.el.paused) s.el.play().catch(() => {});
     }
   }
@@ -155,6 +158,7 @@ export class Radio {
     const station = STATIONS[i];
     const el = new Audio();
     el.crossOrigin = 'anonymous';
+    el.muted = true;
     el.src = station.url;
     const gain = this.ctx.createGain();
     gain.gain.value = 0;
