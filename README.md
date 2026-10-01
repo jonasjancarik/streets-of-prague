@@ -953,6 +953,8 @@ changing. The beta has no Worker of its own and uses production's. One visitor a
 can try five times a minute and only the game's own pages are let in, since every use
 sends an email. `node scripts/check-worker.mjs` checks the Worker with the services
 behind it replaced by stand-ins. Each form stays out of the game until it is set up.
+How to change, test and debug the forms without sending real email is in
+`.agents/skills/player-forms/SKILL.md`.
 
 **Newsletter.** The start screen and the settings have a link to sign up for news about
 the game by email (`src/newsletter.ts`). `/api/subscribe` passes the address to
