@@ -129,7 +129,7 @@ async function main() {
   try { savedSound = localStorage.getItem('sound') ?? ''; } catch {}
   // The game saved by itself last time, unless it's a test run (?go).
   const saved = params.has('go') ? null : readSave('auto', AREA);
-  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off', saved: saved && (() => describe(saved)), lost: !saved && !params.has('go') && unreadable('auto', AREA) });
+  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.kind } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
   status('Loading the map…');

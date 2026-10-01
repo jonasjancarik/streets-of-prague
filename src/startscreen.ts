@@ -36,18 +36,21 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
   return e;
 };
 
-export function startScreen(root: HTMLElement, opts: { now: string; weather: Kind; sound: boolean; saved: (() => string) | null; lost: boolean }) {
+export function startScreen(root: HTMLElement, opts: { now: string; weather: Kind; sound: boolean; saved: (() => string) | null; savedLook?: { clock: number; weather: Kind }; lost: boolean }) {
   const panel = el('div', 'ls-start', root);
   let time: string = 'now', weather: Kind = opts.weather, sound = opts.sound;
   let weatherPicked = false;
+  let resuming = !!opts.saved;
 
   // The poster behind shows what is picked: the sky's light for the time of day, and
   // the weather over it (index.html). "Now" shows the part of the day it is now.
-  const hour = Number(opts.now.split(':')[0]);
-  const nowPart = hour >= 5 && hour < 11 ? 'morning' : hour >= 11 && hour < 17 ? 'midday' : hour >= 17 && hour < 21 ? 'evening' : 'night';
+  // Carrying on a saved game shows the save's own time and weather.
+  const part = (hour: number) => hour >= 5 && hour < 11 ? 'morning' : hour >= 11 && hour < 17 ? 'midday' : hour >= 17 && hour < 21 ? 'evening' : 'night';
+  const nowPart = part(Number(opts.now.split(':')[0]));
   const show = () => {
-    root.dataset.time = time === 'now' ? nowPart : time;
-    root.dataset.weather = weather;
+    const look = resuming ? opts.savedLook : undefined;
+    root.dataset.time = look ? part(Math.floor((look.clock % 86400) / 3600)) : time === 'now' ? nowPart : time;
+    root.dataset.weather = look ? look.weather : weather;
   };
 
   // Text that follows the language: each is given again when it changes.
@@ -81,16 +84,26 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
   const weatherRow = row('Weather', KINDS.map((k) => ({ id: k, label: () => t(WEATHER[k]) })), weather, (id) => { weather = id; weatherPicked = true; });
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], sound ? 'on' : 'off', (id) => { sound = id === 'on'; });
 
-  let resuming = !!opts.saved;
+  // The saved game as a card: where you were, big, and the rest (on foot, the time,
+  // money, how long ago) on a line under it.
   const found = el('div', 'ls-saved', panel);
   panel.insertBefore(found, panel.firstChild);
-  relabel.push(() => { found.textContent = opts.saved ? `${t('Saved game')}: ${opts.saved()}` : ''; });
+  const foundLabel = el('span', 'ls-saved-label', found);
+  const foundPlace = el('span', 'ls-saved-place', found);
+  const foundInfo = el('span', 'ls-saved-info', found);
+  relabel.push(() => {
+    const [place, ...rest] = opts.saved ? opts.saved().split(' · ') : [''];
+    foundLabel.textContent = t('Saved game');
+    foundPlace.textContent = place;
+    foundInfo.textContent = rest.join(' · ');
+  });
   // A save this version can't open: said so, and kept in the browser, not dropped.
-  const lost = el('div', 'ls-saved', panel);
+  const lost = el('div', 'ls-lost', panel);
   relabel.push(() => { lost.textContent = opts.lost ? t('The saved game from an earlier version can’t be opened.') : ''; });
   lost.hidden = !opts.lost;
-  const go = el('button', 'ls-go', panel) as HTMLButtonElement;
-  const fresh = el('button', 'ls-new', panel) as HTMLButtonElement;
+  const actions = el('div', 'ls-actions', panel);
+  const go = el('button', 'ls-go', actions) as HTMLButtonElement;
+  const fresh = el('button', 'ls-new', actions) as HTMLButtonElement;
   let ready = false;
   const sync = () => {
     panel.classList.toggle('resume', resuming);
@@ -101,7 +114,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
   };
   relabel.push(sync);
   go.type = fresh.type = 'button';
-  fresh.addEventListener('click', () => { resuming = false; sync(); go.focus(); });
+  fresh.addEventListener('click', () => { resuming = false; sync(); show(); go.focus(); });
   go.disabled = true;
   newsletterLink(panel, 'ls-news', { thanks: true });
   for (const f of relabel) f();

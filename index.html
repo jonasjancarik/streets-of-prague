@@ -223,13 +223,24 @@
       .ls-go:not(:disabled):active { transform: translate(0.4vh, 0.4vh); box-shadow: 0.2vh 0.2vh 0 var(--poster-black); }
       .ls-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; }
       .ls-start [hidden] { display: none; }
-      .ls-saved { letter-spacing: 0.06em; opacity: 0.9; text-shadow: 0 0 6px var(--poster-black), 0 0 3px var(--poster-black); }
-      .ls-new { align-self: flex-start; font: inherit; letter-spacing: 0.06em; color: var(--poster-paper); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 0.3em; cursor: pointer; opacity: 0.85; }
-      .ls-new:hover { opacity: 1; }
-      /* Signing up for news by email (src/newsletter.ts): a quiet link under the button. */
-      .ls-news { align-self: flex-start; margin-top: var(--u); font: inherit; letter-spacing: 0.06em; color: var(--poster-paper); background: none; border: 0; padding: 0; text-align: left; opacity: 0.75; text-shadow: 0 0 6px var(--poster-black), 0 0 3px var(--poster-black); }
-      button.ls-news { text-decoration: underline; text-underline-offset: 0.3em; cursor: pointer; }
+      /* The saved game, as a card: what it is in small letters, the place big, the rest under it. */
+      .ls-saved { display: flex; flex-direction: column; gap: calc(0.4 * var(--u)); margin-bottom: var(--u); padding: var(--u) calc(1.6 * var(--u)); background: rgba(20, 13, 12, 0.75); border-left: max(calc(0.6 * var(--u)), 3px) solid var(--poster-red); letter-spacing: 0.06em; }
+      .ls-saved-label { font-size: 0.8em; letter-spacing: 0.12em; opacity: 0.6; }
+      .ls-saved-place { font-size: 1.9em; line-height: 0.95; }
+      .ls-saved-info { opacity: 0.8; }
+      .ls-lost { letter-spacing: 0.06em; opacity: 0.8; }
+      .ls-saved[hidden], .ls-lost[hidden], .ls-new[hidden] { display: none; }
+      /* The big button, and "New game" beside it as a plain outlined one. */
+      .ls-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--u) calc(1.6 * var(--u)); margin-top: var(--u); }
+      .ls-actions .ls-go { margin-top: 0; }
+      .ls-new { font: max(calc(2.2 * var(--u)), 13px)/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--poster-paper); background: none; border: max(calc(0.25 * var(--u)), 1px) solid rgba(236, 228, 214, 0.5); padding: max(calc(1 * var(--u)), 7px) max(calc(1.8 * var(--u)), 12px); cursor: pointer; transition: background 0.12s, border-color 0.12s; }
+      .ls-new:hover { background: rgba(236, 228, 214, 0.15); border-color: var(--poster-paper); }
+      /* Signing up for news by email (src/newsletter.ts): a quiet link under the buttons. */
+      .ls-news { align-self: flex-start; margin-top: calc(1.6 * var(--u)); font: inherit; font-size: 0.9em; letter-spacing: 0.06em; color: var(--poster-paper); background: none; border: 0; padding: 0; text-align: left; opacity: 0.6; text-shadow: 0 0 6px var(--poster-black), 0 0 3px var(--poster-black); }
+      button.ls-news { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.25em; cursor: pointer; }
       button.ls-news:hover, .ls-news.done { opacity: 1; }
+      /* Focused on its own when the map is ready: lifted like on hover, not boxed in. */
+      .ls-start .ls-go:focus-visible { outline: none; background: #e2342b; transform: translate(-0.2vh, -0.2vh); box-shadow: 0.8vh 0.8vh 0 var(--poster-black); }
       .ls-start button:focus-visible { outline: 0.4vh solid var(--poster-paper); outline-offset: 0.3vh; }
       .ls-row + .ls-row { border-top: 1px solid rgba(236, 228, 214, 0.14); padding-top: var(--u); }
       .ls-go:not(:disabled)::before { content: ''; display: inline-block; width: 0.6em; height: 0.7em; margin-right: 0.4em; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%); }
