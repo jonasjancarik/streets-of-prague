@@ -179,12 +179,35 @@ export class Sound {
       if (this.ctx?.state === 'running') for (const k of keys) removeEventListener(k, start);
     };
     for (const k of keys) addEventListener(k, start);
+    if (location.search.includes('audiodebug')) this.debugPanel();
     // The game stops in a hidden tab, so the sound does too.
     document.addEventListener('visibilitychange', () => {
       if (!this.ctx) return;
       if (document.hidden) this.ctx.suspend();
       else if (this.on) this.ctx.resume();
     });
+  }
+
+  // ?audiodebug: what the sound is doing, on screen (for a device with no console at hand).
+  private debugPanel() {
+    const box = document.createElement('pre');
+    box.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;margin:0;padding:6px;max-width:100vw;font:11px/1.3 monospace;color:#0f0;background:#000c;pointer-events:none;white-space:pre-wrap';
+    document.body.append(box);
+    const errors: string[] = [];
+    const note = (m: unknown) => { errors.push(String((m as Error)?.stack ?? m).slice(0, 220)); if (errors.length > 4) errors.shift(); };
+    addEventListener('error', (e) => note(e.error ?? e.message));
+    addEventListener('unhandledrejection', (e) => note(e.reason));
+    const warn = console.warn, error = console.error;
+    console.warn = (...a) => { note(a.join(' ')); warn(...a); };
+    console.error = (...a) => { note(a.join(' ')); error(...a); };
+    setInterval(() => {
+      const c = this.ctx;
+      box.textContent = [
+        `ctx ${c ? c.state : 'none'} · on ${this.on} · master ${this.master ? this.master.gain.value.toFixed(2) : '-'}`,
+        `engine ${!!this.engine} tyres ${!!this.tyres} weather ${!!this.weather} city ${!!this.ambience} radio ${!!this.radio} clips ${Object.keys(this.clips).length} trams ${this.voices.length}`,
+        ...errors,
+      ].join('\n');
+    }, 500);
   }
 
   // The car radio, on or off; works before the sound has started (a browser only allows it after a key press).
