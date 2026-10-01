@@ -27,11 +27,11 @@ export type Surface = 'asphalt' | 'setts' | 'pavers' | 'pavement';
 // (base, pedal down, share of the redline), where it shifts up (a share of the rev
 // range: easing along, pedal down) and how far the clutch lets the revs rise pulling
 // away.
-interface EngineVoice {
+export interface EngineVoice {
   harmonics: number[]; sub: number; drive: number; tone: [number, number, number];
   roar: [number, number, number]; level: [number, number, number]; shift: [number, number]; clutch: number;
 }
-interface EngineSpec { idle: number; redline: number; cylinders: number; gears: number[]; rough: number; voice: EngineVoice }
+export interface EngineSpec { idle: number; redline: number; cylinders: number; gears: number[]; rough: number; voice: EngineVoice }
 // An everyday car heard from outside: a quiet, smooth hum under the tyres, a little
 // fuller with the pedal down, shifting up early as in town. No sub-octave and no
 // intake: between them they make an engine lope and splutter.
@@ -63,8 +63,8 @@ const V8_VOICE: EngineVoice = {
   harmonics: [0, 1, 0.6, 0.35, 0.15, 0.06], sub: 0.35, drive: 1, tone: [140, 1.6, 300],
   roar: [0.01, 0.06, 3], level: [0.05, 0.03, 0.015], shift: [0.3, 0.55], clutch: 1200,
 };
-const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.006, voice: EVERYDAY };
-const ENGINES: Record<string, EngineSpec | null> = {
+export const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.006, voice: EVERYDAY };
+export const ENGINES: Record<string, EngineSpec | null> = {
   // By variant (see VARIANTS in car.ts), before the type.
   model3: ELECTRIC,
   modely: ELECTRIC,
@@ -104,6 +104,7 @@ export interface SoundState {
   busy?: number; // how busy the streets around you are, 0 (the edge of town) to 1 (the Old Town)
   hour?: number; // the time of day, in hours (13.5 is half past one)
   sirens?: Siren[]; // emergency vehicles with their sirens on
+  aloft?: number; // 0 on the ground to 1 high up in a helicopter: the city fades, sirens stay faint
 }
 
 // One siren sounding: `key` tells it from the others from one frame to the next, and (vx, vy) is its speed.
@@ -249,7 +250,9 @@ export class Sound {
     this.radio?.update(!!car && !car.two && !s.quiet, car);
     this.tyres!.update(car, s.surface, s.wet ?? 0);
     this.weather!.update(s.rain ?? 0, s.snow ?? 0);
-    this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0));
+    const aloft = clamp(s.aloft ?? 0, 0, 1);
+    this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0), aloft);
+    this.buses.trams.gain.setTargetAtTime(this.volumes.trams * (1 - 0.9 * aloft), t, 0.5);
     if (s.strikes !== undefined) {
       if (this.strikes >= 0 && s.strikes > this.strikes) this.weather!.thunder(t + 0.6 + Math.random() * 3.5);
       this.strikes = s.strikes;
@@ -261,7 +264,7 @@ export class Sound {
     for (const v of this.sirens) if (v.key && !heard.some((h) => h.q.key === v.key)) v.release();
     for (const h of heard) {
       const v = this.sirens.find((x) => x.key === h.q.key) ?? this.sirens.find((x) => !x.key);
-      v?.update(h.q, h.d, s.x, s.y, s.car);
+      v?.update(h.q, h.d, s.x, s.y, s.car, aloft);
     }
 
     // The nearest trams, each keeping its voice while it's among them.
@@ -358,14 +361,14 @@ function place(gain: GainNode, pan: StereoPannerNode, d: number, dx: number, t: 
 
 // An engine's note: harmonics of the cylinders' firing rate, roughened with a little
 // wobble, through a filter that opens up with the throttle; plus the intake's roar.
-class Engine {
+export class Engine {
   ctx: AudioContext;
   car: Car;
   spec: EngineSpec;
   out: GainNode;
   osc: OscillatorNode; sub: OscillatorNode; wobble: AudioBufferSourceNode; intake: AudioBufferSourceNode;
   depth: GainNode; tone: BiquadFilterNode; roar: BiquadFilterNode; roarGain: GainNode;
-  gear = 0; shift = 0; load = 0;
+  gear = 0; shift = 0; load = 0; rpm = 0;
 
   constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode, car: Car, spec: EngineSpec) {
     this.ctx = ctx;
@@ -421,6 +424,7 @@ class Engine {
     let rpm = revs(this.gear);
     // Pulling away, the clutch lets the revs rise ahead of the speed.
     if (this.gear === 0) rpm = Math.max(rpm, spec.idle + load * voice.clutch);
+    this.rpm = rpm;
     const pull = this.shift > 0 ? 0.1 : load;
     const hz = ((rpm / 60) * spec.cylinders) / 2;
     this.osc.frequency.setTargetAtTime(hz, t, SMOOTH);
@@ -467,7 +471,7 @@ class SirenVoice {
     this.top.start();
   }
 
-  update(q: Siren, d: number, lx: number, ly: number, me: Car | null) {
+  update(q: Siren, d: number, lx: number, ly: number, me: Car | null, aloft = 0) {
     const t = this.ctx.currentTime;
     if (this.key !== q.key) { this.key = q.key; this.last = t; this.phase = Math.random(); }
     this.phase = (this.phase + (t - this.last) * (q.kind === 'fire' ? 1 : 1.6)) % 1;
@@ -481,8 +485,8 @@ class SirenVoice {
     const tc = q.kind === 'fire' ? 0.02 : 0.05;
     this.osc.frequency.setTargetAtTime(f, t, tc);
     this.top.frequency.setTargetAtTime(f * 2, t, tc);
-    this.tone.frequency.setTargetAtTime(clamp(3600 - d * 7, 800, 3600), t, 0.1);
-    this.out.gain.setTargetAtTime(sirenGain(q.kind, d), t, 0.1);
+    this.tone.frequency.setTargetAtTime(clamp(3600 - d * 7, 800, 3600) * (1 - 0.6 * aloft), t, 0.1);
+    this.out.gain.setTargetAtTime(sirenGain(q.kind, d) * (1 - 0.65 * aloft), t, 0.1);
     this.pan.pan.setTargetAtTime(clamp(-dx / 45, -0.85, 0.85), t, 0.1);
   }
 
@@ -494,7 +498,7 @@ class SirenVoice {
 
 // Tyres on the road: a hiss on asphalt, a rumble at the rate the wheels hit the stones
 // on setts, and a squeal when the car slides sideways.
-class Tyres {
+export class Tyres {
   ctx: AudioContext;
   hiss: BiquadFilterNode; hissGain: GainNode;
   bumps: OscillatorNode; rumble: BiquadFilterNode; rumbleGain: GainNode;
@@ -750,10 +754,11 @@ class Ambience {
   }
 
   // `busy` 0–1, `hour` 0–24, `wet` how hard it rains or snows 0–1.
-  update(busy: number, hour: number, wet: number) {
+  update(busy: number, hour: number, wet: number, aloft = 0) {
     const t = this.ctx.currentTime, gains = ambienceGains(busy, hour, wet), muffle = ambienceMuffle(busy);
-    for (const [name, g] of Object.entries(this.gains)) g.gain.setTargetAtTime(gains[name] ?? 0, t, 2);
-    for (const [name, lp] of Object.entries(this.muffles)) lp.frequency.setTargetAtTime(muffle[name] ?? 20000, t, 2);
+    // High up the city is a faint murmur: much quieter, and only its lows reach you.
+    for (const [name, g] of Object.entries(this.gains)) g.gain.setTargetAtTime((gains[name] ?? 0) * (1 - 0.93 * aloft), t, 2);
+    for (const [name, lp] of Object.entries(this.muffles)) lp.frequency.setTargetAtTime(Math.min(muffle[name] ?? 20000, 20000 - 18500 * aloft), t, 2);
   }
 }
 
@@ -834,7 +839,7 @@ function softClip(drive: number) {
   for (let i = 0; i < n; i++) curve[i] = Math.tanh(((i / (n - 1)) * 2 - 1) * drive) / Math.tanh(drive);
   return curve;
 }
-function noiseBuffer(ctx: AudioContext) {
+export function noiseBuffer(ctx: AudioContext) {
   const b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = b.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   return b;
