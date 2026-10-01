@@ -15,9 +15,11 @@ changing a script or when something below doesn't fit the situation.
 | Beta | <https://beta.streetsofprague.com> (mbxp) | `scripts/deploy-mbxp.sh` | the local `public/data` |
 | Production | <https://streetsofprague.com> (Cloudflare) | `scripts/release.sh` (which runs `scripts/deploy-cloudflare.sh`) | the R2 version named in `deploy/data-version` |
 
-The earlier `streets-beta.jonasjancarik.cz`, `streets.jonasjancarik.cz`, and
-`streets-cf.jonasjancarik.cz` addresses remain working aliases. Use the new
-domain in links and deployment reports.
+The earlier `streets-beta.jonasjancarik.cz` and `streets-cf.jonasjancarik.cz`
+addresses remain working aliases. `streets.jonasjancarik.cz` permanently redirects
+to `https://streetsofprague.com` through a Cloudflare Redirect Rule on
+`jonasjancarik.cz`, preserving paths and query strings. Use the new domain in links
+and deployment reports.
 
 Deploy only what the user asked for. "Deploy to beta" doesn't include production.
 "Deploy to prod" always means a release, since production takes nothing else: if the

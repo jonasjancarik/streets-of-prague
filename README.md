@@ -912,8 +912,10 @@ The `urad-ai-poc` tunnel routes the hostname there. `scripts/httpd.conf` gives
 JSON the content type Cloudflare needs for compression.
 
 The main site at <https://streetsofprague.com> serves the app as Worker static
-assets, with a small Worker for the newsletter signup and the feedback form (below). <https://streets.jonasjancarik.cz> and
-<https://streets-cf.jonasjancarik.cz> remain alternate Cloudflare addresses.
+assets, with a small Worker for the newsletter signup and the feedback form (below).
+<https://streets.jonasjancarik.cz> permanently redirects to the main site through a
+Cloudflare Redirect Rule on `jonasjancarik.cz`, preserving paths and query strings.
+<https://streets-cf.jonasjancarik.cz> remains an alternate Cloudflare address.
 Its map data comes from the R2 bucket at
 <https://streets-data.jonasjancarik.cz>, under the immutable prefix named in
 `deploy/data-version`. Local development loads `data/` next to the app, and mbxp
