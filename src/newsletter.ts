@@ -10,7 +10,7 @@ import { getLang, onLang, t } from './i18n.ts';
 const URL_ = import.meta.env.VITE_SUBSCRIBE_URL as string | undefined;
 const confirmed = new URLSearchParams(location.search).has('subscribed');
 
-const el = (tag: string, cls: string, parent: HTMLElement) => {
+export const el = (tag: string, cls: string, parent: HTMLElement) => {
   const e = document.createElement(tag);
   e.className = cls;
   parent.appendChild(e);
@@ -22,15 +22,40 @@ const PROBLEMS: Record<string, string> = {
   busy: 'Too many tries from here. Please wait a minute and try again.',
 };
 
-let box: HTMLDialogElement | null = null;
-
-function build() {
+// A panel like the settings', with a title and a cross: the frame of this form and of
+// the feedback form (feedback.ts).
+export function sheet() {
   const d = el('dialog', 'settings news', document.body) as HTMLDialogElement;
   const head = el('div', 'settings-head', d);
   const title = el('h2', '', head);
   const close = el('button', 'settings-close', head) as HTMLButtonElement;
   close.type = 'button';
   close.textContent = '×';
+  onLang(() => { close.ariaLabel = t('Close'); });
+  close.addEventListener('click', () => d.close());
+  // While it's open, keys don't reach the game (Escape still closes it).
+  d.addEventListener('keydown', (e) => e.stopPropagation());
+  d.addEventListener('click', (e) => {
+    const r = d.getBoundingClientRect();
+    if (e.target === d && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) d.close();
+  });
+  return { d, title };
+}
+
+// A field people don't see; scripts that fill in every field give themselves away.
+export function trapField(form: HTMLFormElement) {
+  const trap = el('input', 'news-trap', form) as HTMLInputElement;
+  trap.name = 'website';
+  trap.tabIndex = -1;
+  trap.autocomplete = 'off';
+  trap.setAttribute('aria-hidden', 'true');
+  return trap;
+}
+
+let box: HTMLDialogElement | null = null;
+
+function build() {
+  const { d, title } = sheet();
   const intro = el('p', '', d);
   const form = el('form', '', d) as HTMLFormElement;
   const email = el('input', '', form) as HTMLInputElement;
@@ -39,12 +64,7 @@ function build() {
   email.required = true;
   email.autocomplete = 'email';
   email.autofocus = true; // or the dialog would start on its close button
-  // People don't see this one; scripts that fill in every field give themselves away.
-  const trap = el('input', 'news-trap', form) as HTMLInputElement;
-  trap.name = 'website';
-  trap.tabIndex = -1;
-  trap.autocomplete = 'off';
-  trap.setAttribute('aria-hidden', 'true');
+  const trap = trapField(form);
   const go = el('button', 'news-go', form) as HTMLButtonElement;
   go.type = 'submit';
   const status = el('p', 'news-status', d);
@@ -55,7 +75,6 @@ function build() {
   let message = '', sending = false, done = false;
   const label = () => {
     title.textContent = t('News about the game');
-    close.ariaLabel = t('Close');
     intro.textContent = t('Leave your email address and you\'ll get a message when there is something new in the game.');
     email.placeholder = email.ariaLabel = t('Your email address');
     go.textContent = sending ? t('Sending…') : t('Sign up');
@@ -84,13 +103,6 @@ function build() {
     label();
   });
 
-  close.addEventListener('click', () => d.close());
-  // While it's open, keys don't reach the game (Escape still closes it).
-  d.addEventListener('keydown', (e) => e.stopPropagation());
-  d.addEventListener('click', (e) => {
-    const r = d.getBoundingClientRect();
-    if (e.target === d && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) d.close();
-  });
   return d;
 }
 

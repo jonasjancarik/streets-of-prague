@@ -8,6 +8,7 @@ import { describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
 import { mapData } from './data.ts';
 import { newsletterLink } from './newsletter.ts';
+import { feedbackLink } from './feedback.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
@@ -167,6 +168,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     }
   });
 
+  feedbackLink(box, 'settings-news', { before: () => box.close(), extra: () => `Graphics: ${graphics.choice}${graphics.choice === 'auto' ? ` (${graphics.tier} now)` : ''}` });
   newsletterLink(box, 'settings-news', { before: () => box.close() });
 
   // On a phone the credits live here (their corner has these buttons now).

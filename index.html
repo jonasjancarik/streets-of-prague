@@ -386,13 +386,17 @@
       .settings-credits { display: none; margin-top: 16px; font: inherit; color: var(--ink); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; opacity: 0.8; }
       body.touch .settings-credits { display: block; }
       .settings-news { display: block; margin-top: 16px; font: inherit; color: var(--ink); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; opacity: 0.8; }
-      .settings-news + .settings-credits { margin-top: 8px; }
+      .settings-news + .settings-news, .settings-news + .settings-credits { margin-top: 8px; }
       /* The signup form itself, in a panel like the settings'. */
       .news p { margin: 8px 0; }
       .news form { display: flex; gap: 8px; margin: 14px 0 10px; }
       .news form[hidden] { display: none; }
-      .news input[type='email'] { flex: 1; min-width: 0; font: 16px/1.2 Inter, system-ui, sans-serif; color: var(--ink); background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(236, 228, 214, 0.35); padding: 8px 10px; user-select: text; -webkit-user-select: text; }
-      .news input[type='email']:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+      .news form.news-stack { flex-direction: column; }
+      .news-stack .news-go { align-self: flex-end; }
+      .news input[type='email'], .news textarea { flex: 1; min-width: 0; font: 16px/1.2 Inter, system-ui, sans-serif; color: var(--ink); background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(236, 228, 214, 0.35); padding: 8px 10px; user-select: text; -webkit-user-select: text; }
+      .news textarea { flex: none; resize: vertical; min-height: 5em; }
+      .news-stack input[type='email'] { flex: none; }
+      .news input[type='email']:focus-visible, .news textarea:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
       .news-trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
       .news-go { font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); background: var(--edge); border: 0; padding: 8px 16px 6px; cursor: pointer; box-shadow: 3px 3px 0 #000; white-space: nowrap; }
       .news-go:hover:not(:disabled) { background: var(--accent); }

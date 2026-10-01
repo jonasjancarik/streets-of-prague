@@ -1,6 +1,7 @@
-// Does the newsletter signup (worker/index.js) take what it should and refuse the rest?
-// Runs the Worker's handler here with Brevo replaced by a stand-in, so nothing is sent.
-// Usage: node scripts/check-subscribe.mjs
+// Do the newsletter signup and the feedback form (worker/index.js) take what they should
+// and refuse the rest? Runs the Worker's handler here with Brevo and the email sending
+// replaced by stand-ins, so nothing is sent.
+// Usage: node scripts/check-worker.mjs
 import assert from 'node:assert/strict';
 import worker from '../worker/index.js';
 
@@ -14,9 +15,9 @@ let answer = () => new Response('{}', { status: 201 });
 globalThis.fetch = async (url, init) => { sent.push({ url, headers: init.headers, body: JSON.parse(init.body) }); return answer(); };
 console.error = () => {};
 
-const post = (body, { origin = SITE, method = 'POST', e = env } = {}) => {
+const post = (body, { origin = SITE, method = 'POST', e = env, path = '/api/subscribe' } = {}) => {
   sent = [];
-  return worker.fetch(new Request(`${SITE}/api/subscribe`, { method, headers: { Origin: origin, 'Content-Type': 'application/json' }, body: method === 'POST' ? JSON.stringify(body) : undefined }), e);
+  return worker.fetch(new Request(`${SITE}${path}`, { method, headers: { Origin: origin, 'Content-Type': 'application/json' }, body: method === 'POST' ? JSON.stringify(body) : undefined }), e);
 };
 
 let res = await post({ email: ' player@example.com ', lang: 'en' });
@@ -73,4 +74,42 @@ assert.equal((await post(null, { method: 'GET' })).status, 405);
 // Everything else is the game's files.
 assert.equal(await (await worker.fetch(new Request(`${SITE}/index.html`), env)).text(), 'asset');
 
-console.log('The newsletter signup behaves as expected.');
+// ---- Feedback ----
+let mail = [];
+const mailer = { send: async (m) => { mail.push(m); return { messageId: 'x' }; } };
+const fenv = { ...env, EMAIL: mailer, FEEDBACK_TO: 'author@example.com', FEEDBACK_FROM: 'feedback@streetsofprague.com' };
+const say = (body, opts = {}) => { mail = []; return post(body, { path: '/api/feedback', e: fenv, ...opts }); };
+
+res = await say({ message: ' The tram at Anděl drove through my car.\nSecond line. ', email: 'player@example.com', context: 'Version v1.2.3\nChrome' });
+assert.equal(res.status, 200);
+assert.equal(mail.length, 1);
+assert.equal(mail[0].to, 'author@example.com');
+assert.deepEqual(mail[0].from, { email: 'feedback@streetsofprague.com', name: 'Streets of Prague' });
+assert.equal(mail[0].replyTo, 'player@example.com');
+assert.equal(mail[0].subject, 'Feedback: The tram at Anděl drove through my car.');
+assert.match(mail[0].text, /^The tram at Anděl drove through my car\.\nSecond line\.\n\n--\nFrom: player@example\.com\nVersion v1\.2\.3\nChrome$/);
+
+// No address is fine; there is then nobody to reply to.
+res = await say({ message: 'Nice game' });
+assert.equal(res.status, 200);
+assert.equal('replyTo' in mail[0], false);
+assert.match(mail[0].text, /From: no address given/);
+
+// Long messages are cut, not refused.
+await say({ message: 'x'.repeat(9000), context: 'y'.repeat(9000) });
+assert.ok(mail[0].text.length < 9100);
+assert.ok(mail[0].subject.length < 85);
+
+assert.equal((await say({ message: '   ' })).status, 400);
+assert.equal((await say({ message: 'Hi', email: 'not an address' })).status, 400);
+assert.equal(mail.length, 0);
+assert.equal((await say('just text')).status, 400);
+res = await say({ message: 'Buy pills', website: 'https://spam.example' });
+assert.equal(res.status, 200);
+assert.equal(mail.length, 0);
+assert.equal((await say({ message: 'Hi' }, { origin: 'https://example.com' })).status, 403);
+assert.equal((await say({ message: 'Hi' }, { origin: BETA })).headers.get('Access-Control-Allow-Origin'), BETA);
+assert.equal((await say({ message: 'Hi' }, { e: { ...fenv, FEEDBACK_TO: '' } })).status, 503);
+assert.equal((await say({ message: 'Hi' }, { e: { ...fenv, EMAIL: { send: async () => { throw new Error('refused'); } } } })).status, 502);
+
+console.log('The newsletter signup and the feedback form behave as expected.');

@@ -912,7 +912,7 @@ The `urad-ai-poc` tunnel routes the hostname there. `scripts/httpd.conf` gives
 JSON the content type Cloudflare needs for compression.
 
 The main site at <https://streetsofprague.com> serves the app as Worker static
-assets, with a small Worker for the newsletter signup (below). <https://streets.jonasjancarik.cz> and
+assets, with a small Worker for the newsletter signup and the feedback form (below). <https://streets.jonasjancarik.cz> and
 <https://streets-cf.jonasjancarik.cz> remain alternate Cloudflare addresses.
 Its map data comes from the R2 bucket at
 <https://streets-data.jonasjancarik.cz>, under the immutable prefix named in
@@ -939,18 +939,20 @@ fails if an object in that version has changed. Commit the updated
 Cloudflare Build Output with `cf deploy --prebuilt --dry-run`, and deploys it.
 The two targets can be updated independently.
 
-### Newsletter
+### Newsletter and feedback
 
-The start screen and the settings have a link to sign up for news about the game by
-email (`src/newsletter.ts`). The form posts to `/api/subscribe`, answered by the small
-Worker in `worker/index.js`, which passes the address to [Brevo](https://www.brevo.com).
-Brevo sends an email with a link to confirm; only then is the address on the list, and
-the link leads back to the game, which says so. The beta has no Worker of its own and
-signs up through production's. Nothing is stored outside Brevo, and since the game only
-talks to `/api/subscribe`, moving to another service means changing the Worker alone.
-`node scripts/check-subscribe.mjs` checks the Worker with Brevo replaced by a stand-in.
+The game has two small forms, both answered by the Worker in `worker/index.js`, which
+is the only thing they talk to, so either can move to another service without the game
+changing. The beta has no Worker of its own and uses production's. One visitor address
+can try five times a minute and only the game's own pages are let in, since every use
+sends an email. `node scripts/check-worker.mjs` checks the Worker with the services
+behind it replaced by stand-ins. Each form stays out of the game until it is set up.
 
-The game shows no signup link until the newsletter is set up:
+**Newsletter.** The start screen and the settings have a link to sign up for news about
+the game by email (`src/newsletter.ts`). `/api/subscribe` passes the address to
+[Brevo](https://www.brevo.com), which sends an email with a link to confirm; only then
+is the address on the list, and the link leads back to the game, which says so. Nothing
+is stored outside Brevo. To set it up:
 
 1. In Brevo, create a list for the newsletter and a double opt-in confirmation email
    template (it needs the confirmation link Brevo's default template has; a second one
@@ -960,8 +962,18 @@ The game shows no signup link until the newsletter is set up:
    `CLOUDFLARE_ACCOUNT_ID=7756b12931ecfb3900a31049e157d706 cf workers secrets update BREVO_API_KEY --worker streets-of-prague --type secret_text --text <key>`
 4. Release, then sign up once with your own address to see the whole round trip.
 
-One visitor address can try five times a minute, and only the game's own pages are let
-in, since every try sends an email to whatever address was typed.
+**Feedback.** The settings have a "Send feedback" link (`src/feedback.ts`).
+`/api/feedback` emails the message to the address in `deploy/feedback` through
+Cloudflare's email sending, with the player's address (if they gave one) as the one a
+reply goes to. The game adds its version, the browser, the graphics level and where the
+player was, in the form the scenarios use, so the spot can be replayed (the
+scene-testing skill). Sending to an address verified in the Cloudflare account is free
+on every plan. To set it up:
+
+1. In the Cloudflare dashboard, turn on email sending for `streetsofprague.com` (it adds
+   DNS records) and verify the address the feedback should arrive at as a destination.
+2. Put that address in `deploy/feedback` as `FEEDBACK_TO` and commit it.
+3. Release, then send yourself a message from the settings.
 
 ### Releases
 

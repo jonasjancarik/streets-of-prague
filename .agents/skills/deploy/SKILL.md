@@ -118,14 +118,16 @@ checked.
   one in `current-data`. From the earlier commit, run
   `DATA_ID=<id> scripts/deploy-mbxp.sh` to deploy it with the map it had.
 
-## The newsletter signup
+## The newsletter signup and the feedback form
 
-Production's Worker (`worker/index.js`) answers `/api/subscribe`, for the beta too. Its
-settings are in `deploy/newsletter` and one secret; the README's "Newsletter" has the
-steps. After a release that changed any of it, check that
+Production's Worker (`worker/index.js`) answers `/api/subscribe` and `/api/feedback`,
+for the beta too. Its settings are in `deploy/newsletter`, `deploy/feedback` and one
+secret; the README's "Newsletter and feedback" has the steps. After a release that
+changed any of it, check that
 `curl -s -X POST https://streetsofprague.com/api/subscribe -H 'Origin: https://streetsofprague.com' -H 'Content-Type: application/json' -d '{"email":"nobody"}'`
 answers `{"error":"email"}` (the Worker is there and set up) and not `unavailable` (the
-secret or the numbers are missing). Signing up for real sends an email, so do that only
+secret or the numbers are missing); the same with `/api/feedback` and `'{"message":""}'`
+answers `{"error":"message"}`. A real signup or message sends an email, so do that only
 with the user's own address.
 
 ## Things that go wrong

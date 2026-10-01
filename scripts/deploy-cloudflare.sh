@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Publish the app as a Worker: the game's files as static assets, and worker/index.js
-# for the newsletter signup (/api/*). Map data is uploaded to R2 separately.
+# for the newsletter signup and the feedback form (/api/*). Map data is uploaded to R2 separately.
 # Production only runs released versions: the commit must be a release tag, which is
 # what scripts/release.sh makes before it calls this, and what a rollback checks out.
 # --untagged deploys any commit all the same, for an emergency.
@@ -22,10 +22,12 @@ DATA_URL=https://streets-data.jonasjancarik.cz/$VERSION/
 # The map must be there and in the format this code reads.
 node scripts/check-data-format.mjs "$DATA_URL"
 npm run typecheck
-node scripts/check-subscribe.mjs
-# The newsletter (deploy/newsletter): the game shows its signup form once a list is named.
-set -a; source deploy/newsletter; set +a
-if [[ -n ${BREVO_LIST_ID:-} ]]; then export VITE_SUBSCRIBE_URL=/api/subscribe; fi
+node scripts/check-worker.mjs
+# The newsletter and feedback (deploy/newsletter, deploy/feedback): the game shows each
+# form once it is set up.
+set -a; source deploy/newsletter; source deploy/feedback; set +a
+if [[ -n ${BREVO_LIST_ID:-} && -n ${BREVO_DOI_TEMPLATE_ID:-} ]]; then export VITE_SUBSCRIBE_URL=/api/subscribe; fi
+if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=/api/feedback; fi
 VITE_DATA_URL=$DATA_URL VITE_DATA_VERSION=$VERSION node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false, build: { outDir: 'dist-cf' } })"
 (cd public && git ls-files -z) | rsync -a --from0 --files-from=- public/ dist-cf/
 cat > dist-cf/_headers <<'HEADERS'
@@ -43,7 +45,8 @@ CONFIG
 mkdir -p "$OUTPUT/workers/default/bundle"
 cp worker/index.js "$OUTPUT/workers/default/bundle/index.js"
 # Only /api/* runs the Worker; every other request is answered from the assets directly.
-# BREVO_API_KEY is a secret set on the Worker once (README, "Newsletter"), not here.
+# BREVO_API_KEY is a secret set on the Worker once (README, "Newsletter and feedback"),
+# not here. Feedback can only be emailed to the one address named in deploy/feedback.
 node -e '
 const e = process.env, text = (value) => ({ type: "text", value: value ?? "" });
 console.log(JSON.stringify({
@@ -57,6 +60,9 @@ console.log(JSON.stringify({
     BREVO_LIST_ID: text(e.BREVO_LIST_ID),
     BREVO_DOI_TEMPLATE_ID: text(e.BREVO_DOI_TEMPLATE_ID),
     BREVO_DOI_TEMPLATE_ID_CS: text(e.BREVO_DOI_TEMPLATE_ID_CS),
+    FEEDBACK_TO: text(e.FEEDBACK_TO),
+    FEEDBACK_FROM: text(e.FEEDBACK_FROM),
+    ...(e.FEEDBACK_TO ? { EMAIL: { type: "send-email", destinationAddress: e.FEEDBACK_TO } } : {}),
     RATE: { type: "rate-limit", namespace: "1001", simple: { limit: 5, period: 60 } },
   },
 }))' > "$OUTPUT/workers/default/worker.config.json"
