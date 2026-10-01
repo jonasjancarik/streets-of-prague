@@ -939,6 +939,9 @@ The two targets can be updated independently.
 
 ### Releases
 
+How the game's version, the map data version and the map format fit together, and how
+to roll back, is in [docs/versioning.md](docs/versioning.md).
+
 Versions are git tags on `main` (`v1.2.3`), published as GitHub releases at
 <https://github.com/jonasjancarik/streets-of-prague/releases>. With main committed
 and pushed, `scripts/release.sh v1.2.3` typechecks, checks that the map named in
