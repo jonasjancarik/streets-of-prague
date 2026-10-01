@@ -5,6 +5,13 @@
 > `src/webgpu/lamps.ts`). Check `git status` and `git diff` before you start, don't
 > revert changes you didn't make, and commit only your own hunks.
 
+> Implemented phase 1 on 2026-10-01. The app is live at
+> <https://streets-cf.jonasjancarik.cz> with 37,902 checksum-verified R2 objects
+> under `2026-10-01-b2`; mbxp remains at <https://streets.jonasjancarik.cz>.
+> The S3 upload serves `.bin.gz` as `application/octet-stream` without
+> `Content-Encoding`; `fetchBinary` recognizes and unpacks the gzip bytes.
+> The optional hostname swap has not been performed.
+
 ## Status
 
 - Priority: P2
