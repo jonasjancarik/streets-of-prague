@@ -122,6 +122,9 @@ class GlbTests(unittest.TestCase):
         doc["scenes"][0]["extras"]["landmarkColourVersion"] = 2
         with self.assertRaisesRegex(ValueError, "unsupported landmark colour version"):
             convert_glb(pack_glb(doc, blob))
+        doc["scenes"][0]["extras"]["landmarkColourVersion"] = True
+        with self.assertRaisesRegex(ValueError, "unsupported landmark colour version"):
+            convert_glb(pack_glb(doc, blob))
 
     def test_migration_preserves_source_and_reports_partial_failure(self):
         with tempfile.TemporaryDirectory() as root:

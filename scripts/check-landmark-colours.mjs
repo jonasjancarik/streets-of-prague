@@ -14,7 +14,9 @@ const url = String(args.url || 'http://localhost:5240/');
 const fixtures = String(args.fixtures || '');
 const area = String(args.area || 'centrum');
 const variant = args.legacy ? 'legacy' : 'staged';
+const time = String(args.time || '14:00');
 if (!fixtures) throw new Error('--fixtures must name a staged area directory');
+if (!['14:00', '22:00'].includes(time)) throw new Error('--time must be 14:00 or 22:00');
 const manifest = JSON.parse(readFileSync(join(fixtures, 'landmarks.json'), 'utf8'));
 const chosen = manifest.find((item) => item.name === (args.name || (area === 'praha' ? 'okamura' : 'manes')));
 if (!chosen) throw new Error('requested landmark is missing from staged manifest');
@@ -75,12 +77,13 @@ try {
       });
     }
     const gameUrl = new URL(url);
-    gameUrl.search = `?place=14.416,50.082&go&day=wed&time=14:00&weather=clear&graphics=high&dpr=1&area=${area}&renderer=${renderer}`;
+    gameUrl.search = `?place=14.416,50.082&go&day=wed&time=${time}&weather=clear&graphics=high&dpr=1&area=${area}&renderer=${renderer}`;
     await page.goto(gameUrl.href);
     await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__drive, null, { timeout: 180000, polling: 200 });
+    await page.waitForFunction((value) => value === '22:00' ? window.__drive.sky.dark > 0.9 : window.__drive.sky.dark < 0.1, time, { timeout: 10000 });
     const actualRenderer = await page.evaluate(() => window.__drive.renderer.backend?.isWebGPUBackend ? 'webgpu' : 'webgl');
     if (actualRenderer !== renderer) throw new Error(`requested ${renderer} but got ${actualRenderer}`);
-    const direct = await page.evaluate(async (expectedLegacyPasses) => {
+    const runDirect = () => page.evaluate(async (expectedLegacyPasses) => {
       const { landmarkModel } = await import('/src/tiles.ts');
       const assert = (condition, message) => { if (!condition) throw new Error(message); };
       const original = CanvasRenderingContext2D.prototype.putImageData;
@@ -141,17 +144,21 @@ try {
       }
       return { elapsedMs, images, canvases, pixelPasses };
     }, { name: chosen.name, x, y, variant });
+    const direct = await runDirect();
     if (errors.length) throw new Error(`${renderer} page errors: ${errors.join(' | ')}`);
     const shots = [];
     if (args.shot) {
-      await page.keyboard.press('KeyH');
-      for (const time of ['14:00', '22:00']) {
-        await page.evaluate((value) => window.__test.time(value), time);
-        await page.waitForTimeout(300);
-        const shot = String(args.shot).replace('%s', renderer).replace('%t', time.replace(':', '')).replace('%v', variant);
-        await page.screenshot({ path: shot });
-        shots.push(shot);
+      if (args.tilt) {
+        await page.evaluate(async ({ x, y, tilt, height, heading }) => {
+          const [lon, lat] = window.__drive.dev.toLonLat(x, y);
+          await window.__test.camera({ at: [lat, lon], tilt, height, heading });
+        }, { x, y, tilt: Number(args.tilt), height: Number(args.height || 80), heading: Number(args.heading || 135) });
       }
+      await page.keyboard.press('KeyH');
+      await page.waitForTimeout(2000); // Let the scene settle before comparing images.
+      const shot = String(args.shot).replace('%s', renderer).replace('%t', time.replace(':', '')).replace('%v', variant);
+      await page.screenshot({ path: shot });
+      shots.push(shot);
     }
     results.push({ renderer, variant, direct, cold, screenshots: shots });
     await ctx.close();
@@ -159,5 +166,5 @@ try {
 } finally {
   await browser.close();
 }
-console.log(JSON.stringify({ area, landmark: chosen.name, variant, results }, null, 2));
-if (args.json) writeFileSync(String(args.json), JSON.stringify({ area, landmark: chosen.name, variant, results }, null, 2));
+console.log(JSON.stringify({ area, landmark: chosen.name, variant, time, results }, null, 2));
+if (args.json) writeFileSync(String(args.json), JSON.stringify({ area, landmark: chosen.name, variant, time, results }, null, 2));

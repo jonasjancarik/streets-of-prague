@@ -22,8 +22,8 @@ tile files, cheaper ground shading). Rough order: quick wins first.
 
 Landmark colour warming now has a pipeline conversion and a browser marker check
 (`plans/010-prebake-landmark-colours.md`). The original GLBs remain the live assets;
-activate staged `.warm-v1.glb` files only after the new client is live and the
-visual and cold-load checks are accepted.
+the staged `.warm-v1.glb` files passed local visual and cold-load checks. Activate
+them only after the new client is live.
 
 `scripts/bench.mjs` measures frame times in Google Chrome (headless, on the GPU) at
 fixed places; `--vs` compares with another server taking turns, `--ab` switches a

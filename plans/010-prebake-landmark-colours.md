@@ -8,7 +8,7 @@ This is step 4 of the driving-stutter work. Move the existing landmark texture c
 
 ## Status and starting point
 
-- Status: PLANNED; no implementation, asset conversion or measurements.
+- Status: DONE for local code and isolated asset staging; shared map data and deployment remain pending. Cold-load timing benefit is inconclusive.
 - Priority: P2, or P1 if pauses are specifically associated with approaching landmarks.
 - Effort: one to two days plus asset verification. Risk: medium.
 - Category: performance. Dependencies: none technically; keep the graph-sharing work from 007 if present.
@@ -109,12 +109,12 @@ For first-load attribution, load a non-landmark location, install instrumentatio
 
 Browser checks use the existing Chrome/Playwright discovery in `scripts/bench.mjs`; no dependency installation is required by the plan. There is no generic npm test/lint script. Use `npm run dev` only during authorized execution, after checking port ownership, and follow the user's server/PortPilot and access-URL instructions. Do not edit a snapshot while timing it. Python tests use uv with the existing pipeline dependencies, not a replacement runtime. Assets in `public/data` can be shared by other sessions and are not tracked by git.
 
-- [ ] Formula tests agree with the browser reference before image encoding.
-- [ ] GLB tests preserve non-image data and metadata, validate the marker and alignment, and prevent double adjustment.
-- [ ] Both baked and raw final-output paths support conversion; Blender source/debug assets remain untouched.
-- [ ] Marked assets incur no browser colour pixel pass; old assets keep the compatibility path.
-- [ ] Visual checks, asset-size accounting, cold-load verification, typecheck/build and documentation are complete.
-- [ ] The index distinguishes code completion from staged/shared/deployed asset status.
+- [x] Formula tests agree with the scalar browser reference before image encoding.
+- [x] GLB tests preserve non-image data and metadata, validate the marker and alignment, and prevent double adjustment.
+- [x] Both baked and raw final-output paths support conversion; Blender source/debug assets remain untouched.
+- [x] Marked assets incur no browser colour pixel pass; old assets keep the compatibility path.
+- [x] Visual checks, asset-size accounting, corrected cold-load verification, typecheck/build and documentation are complete.
+- [x] The index distinguishes code completion from staged/shared/deployed asset status.
 
 Stop if unsupported GLB layouts appear, image colour-space handling cannot match the browser, shared sources would be overwritten, or a colour change from plan 005 makes the reference ambiguous. Do not hide an asset mismatch with a shader recolouring change. If the JPEG round trip changes the look materially, bring back the measured quality/size options.
 
@@ -122,4 +122,12 @@ Version the marker whenever the baked formula changes. Future clients must conti
 
 ## Result
 
-Not started. Record code revision, fixture roots, asset coverage, byte/dimension checks, colour tests, visual/cold-load results and rollout status here.
+Implementation began at `a3032fbf44451e97a9e13248af6c5cb4a17844f7`, with core code in `30d3ab0`. The Python converter preserves originals and other GLB buffer-view bytes, embeds `landmarkColourVersion: 1` in the active scene, and writes separate `.warm-v1.glb` files. `landmarks.cut()` calls it after either Blender-baked or raw final export; it does not touch Blender's source or source-classification files. The browser checks the loaded scene marker before traversal, warms shared legacy maps once, and rejects unknown versions.
+
+Source data was read only from `/Users/janca/projects/streets-of-prague/public/data`. The isolated output roots are `/tmp/sop-landmark-colours-010/centrum_now` and `/tmp/sop-landmark-colours-010/praha_now`; neither source manifest nor source GLB changed. Dry-run validated all 7 centre and 8 city entries without writing. A separate parse compared every staged manifest field except the filename, plus geometry and non-image buffer-view bytes, across all 15 models; they matched the originals. The staged centre GLBs total 10,928,568 bytes versus 8,190,312 original (+33.4%); city GLBs total 11,528,728 versus 8,673,904 (+32.9%). Baked atlases retained their 4096² dimensions, except St Nicholas at 2048²; raw Okamura retained four 1024×512 atlases. Sample decoded JPEG error against the warmed source pixels was 0.226–0.562 mean absolute byte value per channel, with 95th percentile at most 2. The added JPEG encode at quality 88 caused no visible colour loss in the checked game views, though the file-size increase is real.
+
+Verification passed: `uv run --no-sync --offline --project pipeline python -m unittest discover -s pipeline -p test_landmark_colours.py` (8 tests; using the existing pipeline venv and an isolated uv cache because the default cache was sandbox-blocked), `npm run typecheck`, `npm run build`, `node --check scripts/check-landmark-colours.mjs`, and `git diff --check`. The browser runner was called with `--url http://localhost:5240/ --fixtures /tmp/sop-landmark-colours-010/{centrum,praha}_now` for staged and `--legacy` data, on headless Chrome at 1280×800, DPR 1, High, clear 14:00 and fresh 22:00 scenes, in WebGPU and WebGL. It verified that three.js copies scene extras into `gltf.scene.userData`, that converted maps remain images and make zero `putImageData` calls, that legacy maps become canvases, that shared maps get one pass, and that version 999 is rejected. There were no page or console errors. First-load JSON and screenshot evidence is under `/tmp/sop010-*.json` and `/tmp/sop010-*.png`.
+
+Matched screenshots of Old Town Hall's terracotta and shaded roofs, grey tower and walls, Mánes's grey/blue roof, and raw Okamura were inspected at day and night. Staged and legacy landmark surfaces looked consistent in both renderers; people and transient place labels differ between runs. In selected landmark image regions, the screenshot comparison had mean absolute RGB differences below one byte per channel. The first timing samples were taken after direct GLB assertions loaded the same photographs, so they were excluded from cold-load attribution. The corrected runner instruments `teleportTo` before any direct model assertion on each fresh page. In an alternating staged/legacy/legacy/staged Mánes sequence, WebGPU transitions were 427/488 ms staged against 623/651 ms legacy; WebGL was 577/429 ms staged against 565/443 ms legacy. A raw Okamura pair was 423/425 ms staged against 540/662 ms legacy (WebGPU/WebGL). The browser loaded nearby tiles and other landmarks during these transitions, and the WebGL Mánes pairs changed direction, so a general whole-transition timing benefit is not established. The verified reduction is zero colour pixel passes for marked assets, against two passes for the Mánes legacy transition (including a nearby landmark) and four for raw Okamura. Corrected JSON evidence is in `/tmp/sop010-cold-*.json`.
+
+Shared `public/data` still points to the original manifests and GLBs. Activate the versioned assets only after a client containing the marker check is live; an older client would warm them a second time. No push, merge, shared-data replacement, or deployment was done.

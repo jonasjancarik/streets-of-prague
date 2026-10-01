@@ -89,10 +89,10 @@ def _image_roles(doc: dict) -> set[int]:
             for key, child in value.items():
                 if key.endswith("Texture") and isinstance(child, dict) and "index" in child:
                     index = child["index"]
-                    if not isinstance(index, int) or not 0 <= index < len(textures):
+                    if type(index) is not int or not 0 <= index < len(textures):
                         raise ValueError(f"invalid texture index {index}")
                     source = textures[index].get("source")
-                    if not isinstance(source, int) or not 0 <= source < len(doc.get("images", [])):
+                    if type(source) is not int or not 0 <= source < len(doc.get("images", [])):
                         raise ValueError(f"unsupported texture source {source}")
                     (colour if key == "baseColorTexture" and path == ("pbrMetallicRoughness",) else other).add(source)
                 else:
@@ -111,13 +111,13 @@ def _image_roles(doc: dict) -> set[int]:
 def convert_glb(raw: bytes) -> tuple[bytes, list[dict]]:
     doc, blob = parse_glb(raw)
     scene = doc.get("scene", 0)
-    if not isinstance(scene, int) or not 0 <= scene < len(doc.get("scenes", [])):
+    if type(scene) is not int or not 0 <= scene < len(doc.get("scenes", [])):
         raise ValueError("missing active scene")
     extras = doc["scenes"][scene].setdefault("extras", {})
     if not isinstance(extras, dict):
         raise ValueError("scene extras must be an object")
     if "landmarkColourVersion" in extras:
-        if extras["landmarkColourVersion"] == VERSION:
+        if type(extras["landmarkColourVersion"]) is int and extras["landmarkColourVersion"] == VERSION:
             return raw, []
         raise ValueError(f"unsupported landmark colour version {extras['landmarkColourVersion']}")
     images = doc.get("images", [])
@@ -130,7 +130,7 @@ def convert_glb(raw: bytes) -> tuple[bytes, list[dict]]:
         if "uri" in image or "bufferView" not in image:
             raise ValueError("external image references are unsupported")
         view_index = image["bufferView"]
-        if not isinstance(view_index, int) or not 0 <= view_index < len(views):
+        if type(view_index) is not int or not 0 <= view_index < len(views):
             raise ValueError("invalid image bufferView")
         if index not in colour:
             continue
