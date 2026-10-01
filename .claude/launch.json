@@ -12,6 +12,17 @@
       "autoPort": true
     },
     {
+      "name": "ipad-audio",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        ".claude/worktrees/ipad-audio",
+        "run",
+        "dev"
+      ],
+      "port": 5191
+    },
+    {
       "name": "streets-of-prague-build",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
