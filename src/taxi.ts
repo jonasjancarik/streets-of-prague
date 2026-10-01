@@ -147,6 +147,7 @@ export class Taxis {
     this.agent = best;
     best.hired = true;
     best.reckless = firm.app;
+    if (firm.app) best.car.refit(Math.random, true);
     this.state = 'coming';
     this.head(stop, true);
   }

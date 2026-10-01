@@ -68,7 +68,9 @@ export const TYPES: Record<string, CarSpec> = {
 // you drive it, `id` picks the engine in audio.ts (a type's own engine when it has none),
 // `freq` is how common it is among the variants of its type. Types without an entry
 // (taxi, police, two-wheelers, bus) have none.
-export interface Variant { id: string; make: string; model: string; freq: number; tune: Partial<CarSpec> }
+// `app` is the weight among the cars of the ride-hailing apps' drivers (taxi only), who
+// drive older cars than the street taxis; the ones without it are never app cars.
+export interface Variant { id: string; make: string; model: string; freq: number; app?: number; tune: Partial<CarSpec> }
 export const variantName = (v: Variant) => `${v.make} ${v.model}`;
 export const VARIANTS: Record<string, Variant[]> = {
   hatch: [
@@ -122,6 +124,28 @@ export const VARIANTS: Record<string, Variant[]> = {
     { id: 'suv', make: 'Audi', model: 'Q5 2.0 TFSI', freq: 0.04, tune: { accel: 10.5, vmax: 44, mass: 1900, drive: 'awd' } },
     { id: 'suv', make: 'Mazda', model: 'CX-5 2.0', freq: 0.03, tune: { accel: 9, vmax: 40, mass: 1500 } },
     { id: 'suv', make: 'Peugeot', model: '3008 1.2 PureTech', freq: 0.04, tune: { accel: 9, vmax: 39, mass: 1400 } },
+  ],
+  taxi: [
+    // Street taxis (freq): the newer cars of the fleets and the big ranks.
+    { id: 'taxi', make: 'Škoda', model: 'Octavia 1.5 TSI', freq: 0.18, app: 0.04, tune: { accel: 10.5, vmax: 43 } },
+    { id: 'taxi', make: 'Škoda', model: 'Superb iV', freq: 0.1, tune: { accel: 11, vmax: 45, mass: 1700, brake: 15 } },
+    { id: 'taxi', make: 'Toyota', model: 'Corolla 1.8 Hybrid', freq: 0.14, app: 0.03, tune: { accel: 9.8, vmax: 40, mass: 1400, brake: 15 } },
+    { id: 'taxi', make: 'Toyota', model: 'Camry 2.5 Hybrid', freq: 0.08, tune: { accel: 10.5, vmax: 42, mass: 1600, brake: 15 } },
+    { id: 'taxi', make: 'Hyundai', model: 'Ioniq 5', freq: 0.05, tune: { accel: 12, vmax: 42, drag: 1.1, mass: 2000, drive: 'rwd' } },
+    { id: 'model3', make: 'Tesla', model: 'Model 3', freq: 0.08, app: 0.02, tune: { accel: 13, vmax: 45, drag: 1.2, mass: 1850, drive: 'awd' } },
+    { id: 'diesel', make: 'Mercedes-Benz', model: 'E 220 d', freq: 0.1, tune: { accel: 11.5, vmax: 46, mass: 1650, drive: 'rwd' } },
+    { id: 'diesel', make: 'Škoda', model: 'Superb 2.0 TDI', freq: 0.13, app: 0.05, tune: { accel: 11, vmax: 44, mass: 1600 } },
+    { id: 'diesel', make: 'Volkswagen', model: 'Passat 2.0 TDI', freq: 0.08, app: 0.1, tune: { accel: 11, vmax: 43, mass: 1550 } },
+    { id: 'diesel', make: 'Škoda', model: 'Octavia 2.0 TDI', freq: 0.06, app: 0.2, tune: { accel: 11.5, vmax: 41, tough: 4 } },
+    // Ride-hailing cars (app): older and cheaper, diesels and small petrols with plenty of miles.
+    { id: 'diesel', make: 'Škoda', model: 'Octavia 1.9 TDI', freq: 0, app: 0.16, tune: { accel: 10.5, vmax: 39, tough: 4 } },
+    { id: 'diesel', make: 'Škoda', model: 'Octavia 1.6 TDI', freq: 0, app: 0.12, tune: { accel: 10, vmax: 40, tough: 4 } },
+    { id: 'diesel', make: 'Škoda', model: 'Rapid 1.6 TDI', freq: 0, app: 0.1, tune: { accel: 9.5, vmax: 40, mass: 1300 } },
+    { id: 'diesel', make: 'Dacia', model: 'Logan 1.5 dCi', freq: 0, app: 0.07, tune: { accel: 8, vmax: 36, mass: 1150, tough: 4 } },
+    { id: 'diesel', make: 'Ford', model: 'Mondeo 2.0 TDCi', freq: 0, app: 0.07, tune: { accel: 10.5, vmax: 42, mass: 1550 } },
+    { id: 'diesel', make: 'Opel', model: 'Astra 1.7 CDTI', freq: 0, app: 0.06, tune: { accel: 9, vmax: 38, mass: 1350 } },
+    { id: 'fabia', make: 'Škoda', model: 'Fabia 1.2', freq: 0, app: 0.05, tune: { accel: 6, vmax: 33, brake: 14, weather: 1.2, mass: 1000 } },
+    { id: 'taxi', make: 'Toyota', model: 'Auris 1.6', freq: 0, app: 0.03, tune: { accel: 9, vmax: 39, mass: 1300 } },
   ],
   pickup: [{ id: 'f150', make: 'Ford', model: 'F-150', freq: 1, tune: {} }],
   estate: [
@@ -539,12 +563,7 @@ export class Car {
     const paints = TWO_PAINT[type] || PAINT;
     // (One colour for the types painted alike, so they share a draw call.)
     const pick = paints[Math.floor(r() * paints.length)], paint = colour || this.spec.color || pick;
-    const options = VARIANTS[type];
-    if (options) {
-      let x = r() * options.reduce((a, v) => a + v.freq, 0);
-      this.variant = options.find((v) => (x -= v.freq) < 0) ?? options[options.length - 1];
-      this.spec = tuned(type, this.variant);
-    }
+    this.refit(r);
     this.mass = this.spec.mass;
     this.key = box ? `${type}|${paint}|${box}` : `${type}|${paint}`;
     carGeometry(type, paint, box);
@@ -571,6 +590,17 @@ export class Car {
   // Someone at the wheel: the player, or the police chasing them.
   get driven() { return this.mode === 'player' || this.mode === 'police' || this.mode === 'fire'; }
   get forwardSpeed() { return this.vx * Math.cos(this.h) + this.vy * Math.sin(this.h); }
+
+  // Choose (or choose again) which model of its type this is, by the variants' weights.
+  refit(r: () => number, app = false) {
+    const options = VARIANTS[this.type];
+    if (!options) return;
+    const w = (v: Variant) => (app && this.type === 'taxi' ? v.app ?? 0 : v.freq);
+    let x = r() * options.reduce((a, v) => a + w(v), 0);
+    this.variant = options.find((v) => w(v) > 0 && (x -= w(v)) < 0) ?? options[0];
+    this.spec = tuned(this.type, this.variant);
+    this.mass = this.spec.mass;
+  }
 
   // How far (x, y) is from the car, for getting in: from its middle less half its
   // length, as for any car, but for a bus from the nearest point along its middle, or
