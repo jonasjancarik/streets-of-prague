@@ -39,8 +39,10 @@ export class Beacons {
     }
   }
 
-  // `lit`: the cars with their lights on. `height`: ground height under a car.
-  draw(lit: Car[], height: (x: number, y: number, who: Car) => number, time: number) {
+  // `lit`: the cars with their lights on. `height`: ground height under a car. `dark`: how
+  // dark it is (0 by day … 1), when the lamps' light map shows their light on the street
+  // (lamps.ts) and the glow here is only a trace.
+  draw(lit: Car[], height: (x: number, y: number, who: Car) => number, time: number, dark = 0) {
     const d = this.dummy;
     let n = 0, g = 0;
     for (const c of lit) {
@@ -66,7 +68,7 @@ export class Beacons {
         d.scale.setScalar(bar.glow);
         d.updateMatrix();
         this.glow.setMatrixAt(g, d.matrix);
-        this.glow.setColorAt(g, this.col.set('#2a5cff').multiplyScalar(0.25 + 0.2 * Math.abs(Math.sin(time * 8))));
+        this.glow.setColorAt(g, this.col.set('#2a5cff').multiplyScalar((0.25 + 0.2 * Math.abs(Math.sin(time * 8))) * (1 - 0.8 * dark)));
         g++;
       }
     }

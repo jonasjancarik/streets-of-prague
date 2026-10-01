@@ -8,14 +8,17 @@ import {
   Fn, If, Discard, float, int, ivec2, vec2, vec3, vec4, texture, attribute, positionGeometry, positionWorld, normalView, cameraViewMatrix, diffuseColor,
   dot, smoothstep, abs, select, min, max, step, length,
 } from 'three/tsl';
-import { LAMP_MAP, LAMP_BOX, LAMP_ON, LAMP_SHADOWS, setPools } from '../lamps.ts';
+import { LAMP_MAP, LAMP_MAP_HIGH, LAMP_BOX, LAMP_REF, LAMP_ON, LAMP_SHADOWS, setPools } from '../lamps.ts';
+
+const LUMA = vec3(0.3, 0.59, 0.11);
 import { type N, follow, followVec } from './common.ts';
 
 // The pools of light, one instanced quad each (the ShaderMaterial in the Lamps constructor,
-// where `cover` is explained too). `cars`: the texture of the cars in the way.
-function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture) {
+// where `cover` is explained too). `cars`: the texture of the boxes in the way; `layer`:
+// which of the two maps it draws (0 the ground's, 1 the bridges').
+function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture, layer: number) {
   const m = new NodeMaterial();
-  const carTex = texture(cars), uShadow = follow(LAMP_SHADOWS);
+  const carTex = texture(cars), uShadow = follow(LAMP_SHADOWS), uRef = followVec(LAMP_REF);
   const cover = (id: N, p: N, lamp: N, gy: N): N => {
     const out = float(0).toVar();
     If(id.greaterThan(-0.5), () => {
@@ -33,23 +36,27 @@ function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture) {
         D.addAssign(step(0, D).mul(2).sub(1).mul(1e-4));
         const t1 = vec3(b.x.negate(), 0.12, b.y.negate()).sub(from).div(D), t2 = vec3(b.x, b.z.sub(b.w), b.y).sub(from).div(D);
         const tn = min(t1, t2), tf = max(t1, t2);
-        const t0 = max(max(max(tn.x, tn.y), tn.z), 0), t3 = min(min(min(tf.x, tf.y), tf.z), 1);
-        out.assign(smoothstep(0, 0.35, t3.sub(t0).mul(length(D))).mul(0.92));
+        const t0 = max(max(max(tn.x, tn.y), tn.z), 0), t3 = min(min(min(tf.x, tf.y), tf.z), 1).toVar();
+        // The edge is softer the further the shadow falls behind the box (and never sharper than the map's texels).
+        const len = length(D), soft = max(uRef.z, t3.oneMinus().mul(len).mul(0.06).add(0.2));
+        out.assign(smoothstep(0, soft, t3.sub(t0).mul(len)).mul(0.92));
       });
     });
     return out;
   };
-  const lift = attribute('iLift', 'float'), carsA = attribute('iCarsA', 'vec4'), carsB = attribute('iCarsB', 'vec4');
+  const carsA = attribute('iCarsA', 'vec4'), carsB = attribute('iCarsB', 'vec4'), carsC = attribute('iCarsC', 'vec4');
   const uView = followVec(view);
-  const at = attribute('iAt', 'vec4'), shape = attribute('iShape', 'vec4'), colour = attribute('iColour', 'vec3');
+  const at = attribute('iAt', 'vec4'), shape = attribute('iShape', 'vec4'), colour = attribute('iColour', 'vec4');
   const q = positionGeometry.xy, dir = shape.xy, side = vec2(dir.y.negate(), dir.x);
-  const beam = at.w.greaterThan(0.5);
+  const high = at.w.greaterThan(1.5), beam = at.w.sub(select(high, 2, 0)).greaterThan(0.5);
   const l = select(beam, vec2(q.x.mul(0.5).add(0.5), q.y), q);
   const off = select(beam, dir.mul(l.x).mul(shape.z).add(side.mul(q.y).mul(shape.w)), dir.mul(q.x).add(side.mul(q.y)).mul(shape.z));
-  m.vertexNode = vec4(at.xy.add(off).sub(uView.xy).mul(uView.z), 0, 1);
-  const vP = at.xy.add(off).toVarying('vP'), vLamp = vec3(at.x, at.z.add(lift), at.y).toVarying('vLamp');
-  const vCa: N = carsA.toVarying('vCa'), vCb: N = carsB.toVarying('vCb');
-  const vL = l.toVarying('vL'), vC = colour.toVarying('vC'), vH = at.z.toVarying('vH'), vBeam = at.w.toVarying('vBeam');
+  // (A light of the other map is put outside the picture.)
+  const mine = layer ? high : high.not();
+  m.vertexNode = select(mine, vec4(at.xy.add(off).sub(uView.xy).mul(uView.zw), 0, 1), vec4(2, 2, 2, 1));
+  const vP = at.xy.add(off).toVarying('vP'), vLamp = vec3(at.x, at.z.add(colour.a), at.y).toVarying('vLamp');
+  const vCa: N = carsA.toVarying('vCa'), vCb: N = carsB.toVarying('vCb'), vCc: N = carsC.toVarying('vCc');
+  const vL = l.toVarying('vL'), vC = colour.rgb.toVarying('vC'), vH = at.z.toVarying('vH'), vBeam = select(beam, 1, 0).toVarying('vBeam');
   m.fragmentNode = Fn(() => {
     const f = float(0).toVar();
     If(vBeam.greaterThan(0.5), () => {
@@ -63,42 +70,53 @@ function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture) {
     If(uShadow.greaterThan(0.5).and(vCa.x.greaterThan(-0.5)), () => {
       const c = float(0).toVar();
       for (const k of ['x', 'y', 'z', 'w']) c.assign(max(c, max(cover(vCa[k], vP, vLamp, vH), cover(vCb[k], vP, vLamp, vH))));
+      If(vCc.x.greaterThan(-0.5), () => {
+        for (const k of ['x', 'y', 'z', 'w']) c.assign(max(c, cover(vCc[k], vP, vLamp, vH)));
+      });
       f.mulAssign(c.oneMinus());
     });
-    return vec4(vC.mul(f), vH.add(500));
+    // The height the light falls at, weighted by its brightness (see lampLight).
+    return vec4(vC.mul(f), vH.sub(uRef.x).mul(dot(vC, LUMA)).mul(f));
   })();
   m.blending = THREE.CustomBlending;
   m.blendEquation = THREE.AddEquation;
   m.blendSrc = THREE.OneFactor;
   m.blendDst = THREE.OneFactor;
-  m.blendEquationAlpha = THREE.MaxEquation;
   Object.assign(m, { depthTest: false, depthWrite: false, side: THREE.DoubleSide, toneMapped: false, fog: false });
   return m;
 }
 setPools(poolsMaterial);
 
 export const uLampOn = follow(LAMP_ON);
-const uLampBox = followVec(LAMP_BOX);
-let map: N = null;
+const uLampBox = followVec(LAMP_BOX), uLampRef = followVec(LAMP_REF);
+let map: N = null, mapHigh: N = null;
 
 // The lamps' light at a point in the world (0 by day and off the map); with a normal,
 // what faces up and is well above the lamp gets none (lampLightOn).
+// Each map's light reaches the walls a few metres up from the ground it falls on. The
+// ground's own lights also reach down (a floodlit square, a cutting); a bridge's don't,
+// so the street under a deck isn't lit from it.
 export function lampLight(w: N, n?: N) {
   map ??= texture(LAMP_MAP.value ?? new THREE.Texture());
+  mapHigh ??= texture(LAMP_MAP_HIGH.value ?? new THREE.Texture());
   const out = vec3(0).toVar();
   // Worked out here, not first inside the branch below: the lighting after it needs the normal too.
   const nv = n ? n.toVar() : null;
-  const uv = w.xz.sub(uLampBox.xy).mul(uLampBox.z).mul(0.5).add(0.5).toVar();
+  const uv = w.xz.sub(uLampBox.xy).mul(uLampBox.zw).mul(0.5).add(0.5).toVar();
   const inside = uv.x.greaterThanEqual(0).and(uv.y.greaterThanEqual(0)).and(uv.x.lessThanEqual(1)).and(uv.y.lessThanEqual(1));
   If(uLampOn.greaterThan(0.005).and(inside), () => {
-    const l = map.sample(vec2(uv.x, uv.y.oneMinus())).level(float(0)).toVar();
-    const dy = w.y.sub(l.a.sub(500));
-    const k = smoothstep(3, 11, dy).oneMinus().mul(smoothstep(-5, -2.5, dy)).toVar();
-    if (nv) {
-      const up = smoothstep(0.5, 0.8, dot(nv, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz));
-      k.mulAssign(select(up.lessThan(0.01), float(1), up.mul(smoothstep(3.5, 5.5, dy)).oneMinus()));
-    }
-    out.assign(l.rgb.mul(uLampOn).mul(k));
+    const at = vec2(uv.x, uv.y.oneMinus()).toVar();
+    const up = nv ? smoothstep(0.5, 0.8, dot(nv, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz)).toVar() : null;
+    const from = (tex: N, low: [number, number]) => {
+      const l = tex.sample(at).level(float(0)).toVar();
+      const dy = w.y.sub(l.a.div(max(dot(l.rgb, LUMA), 1e-4)).add(uLampRef.x)).toVar();
+      const k = smoothstep(3, 11, dy).oneMinus().mul(smoothstep(low[0], low[1], dy)).toVar();
+      if (up) k.mulAssign(up.mul(smoothstep(3.5, 5.5, dy)).oneMinus());
+      return l.rgb.mul(k);
+    };
+    out.assign(from(map, [-22, -16]));
+    If(uLampRef.y.greaterThan(0.5), () => { out.addAssign(from(mapHigh, [-5, -2.5])); });
+    out.mulAssign(uLampOn);
   });
   return out;
 }

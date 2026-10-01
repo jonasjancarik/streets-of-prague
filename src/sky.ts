@@ -89,6 +89,8 @@ export class Sky {
   curve = true;
   // How dark it is, for the street lamps: 0 by day, 1 at night.
   dark = 0;
+  // How hazy the air is (0 clear … about 0.55 in thick mist), for the lights' beams.
+  murk = 0;
   // Always there (switching it on and off would compile every shader again); it
   // starts beyond the view when there's nothing to see.
   readonly fog = new THREE.Fog(0xffffff, 1e5, 1e5 + 1);
@@ -146,6 +148,7 @@ export class Sky {
     // Fog, measured from the camera: `amount` of it on the ground right below, more
     // further off, less on the roofs.
     const amount = Math.max(0.08 * w.cloud, 0.2 * w.rain, 0.3 * w.snow, 0.55 * w.mist);
+    this.murk = amount;
     const day = 1 - night;
     this.haze.copy(FOG_NIGHT).lerp(FOG_GLOW, w.cloud).lerp(FOG_DAY, day).convertLinearToSRGB();
     this.tint.copy(this.haze).multiplyScalar(0.8 + 0.3 * day);

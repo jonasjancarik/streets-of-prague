@@ -1,14 +1,16 @@
 import * as THREE from 'three';
 import { DIRT, LEAVES, ROOF_DETAIL } from './shading.ts';
-import { LAMP_SHADOWS } from './lamps.ts';
+import { LAMP_SHADOWS, LAMP_SIZE, LIGHT_FX } from './lamps.ts';
 import type { Sky } from './sky.ts';
 import { t } from './i18n.ts';
 
 // Graphics tiers keep the street surfaces and facade pictures at every level. High,
 // Medium and Low keep the dirt, grime, leaves, tone curve and detailed roofs too.
 // The pixel ratio does most of the GPU scaling; Low also halves the sun shadow map.
-// Ultra is High with a sun shadow map twice as sharp and softer shadow edges; only
-// choosing it turns it on, Auto goes no higher than High.
+// Ultra is High with a sun shadow map twice as sharp and softer shadow edges, and more
+// from the lights at night: a light map twice as sharp, shadows from people, trams and
+// posts as well as cars, cones of light in the air and glints on cars and wet ground.
+// Only choosing it turns it on, Auto goes no higher than High.
 // Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd cap.
 // Car shadows in lamplight go from full to soft to none (2 / 1 / 0).
 //
@@ -23,15 +25,16 @@ export type Tier = 'lowest' | 'low' | 'medium' | 'high' | 'ultra';
 export type Choice = Tier | 'auto';
 const ORDER: Tier[] = ['lowest', 'low', 'medium', 'high']; // (Auto's)
 const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'lowest'];
-// `cars`: what cars do to the lamps' light at night: 2 shadows from every lamp and
-// headlight, 1 a soft darkening round each car, 0 nothing.
+// `cars`: what gets in the way of the lamps' light at night: 3 cars, people, trams and
+// posts cast shadows from every lamp and headlight, 2 only the cars do, 1 a soft darkening
+// round each car, 0 nothing. `lights`: the cones and glints, and the sharper light map.
 // `shadowBlur`: how far the sun shadow's edge is softened, in shadow-map texels.
-const TIERS: Record<Tier, { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; roofs: boolean; crowd: number; cars: 0 | 1 | 2 }> = {
-  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, roofs: true, crowd: 1, cars: 2 },
-  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, crowd: 1, cars: 2 },
-  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, crowd: 1, cars: 1 },
-  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, roofs: true, crowd: 1, cars: 1 },
-  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, roofs: false, crowd: 0.5, cars: 0 },
+const TIERS: Record<Tier, { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; roofs: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean }> = {
+  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, roofs: true, crowd: 1, cars: 3, lights: true },
+  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, crowd: 1, cars: 2, lights: false },
+  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, crowd: 1, cars: 1, lights: false },
+  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, roofs: true, crowd: 1, cars: 1, lights: false },
+  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, roofs: false, crowd: 0.5, cars: 0, lights: false },
 };
 
 // three r186 has no public sample setter. Its tone-mapping pass caches a target
@@ -139,7 +142,7 @@ export class Graphics {
   private ratio(t: Tier) { return this.fixedRatio ?? Math.min(devicePixelRatio, TIERS[t].maxRatio); }
   private same(a: Tier, b: Tier) {
     const x = TIERS[a], y = TIERS[b];
-    return x.look === y.look && x.cars === y.cars && x.shadowSize === y.shadowSize && x.shadowBlur === y.shadowBlur
+    return x.look === y.look && x.cars === y.cars && x.lights === y.lights && x.shadowSize === y.shadowSize && x.shadowBlur === y.shadowBlur
       && x.roofs === y.roofs && x.crowd === y.crowd
       && (!(this.renderer as GPURenderer).backend?.isWebGPUBackend || x.samples === y.samples)
       && this.ratio(a) === this.ratio(b);
@@ -149,15 +152,19 @@ export class Graphics {
   get crowd() { return TIERS[this.tier].crowd; }
 
   private apply() {
-    const { look, samples, shadowSize, shadowBlur, roofs, cars } = TIERS[this.tier];
+    const { look, samples, shadowSize, shadowBlur, roofs, cars, lights } = TIERS[this.tier];
     DIRT.value = LEAVES.value = look ? 1 : 0;
     this.sky.curve = look;
     LAMP_SHADOWS.value = cars;
+    LIGHT_FX.value = lights ? 1 : 0;
+    // (The lamps resize their maps at the next frame; the materials are bound afresh below.)
+    const lampSize = lights ? 2048 : 1024, resized = LAMP_SIZE.value !== lampSize;
+    LAMP_SIZE.value = lampSize;
     ROOF_DETAIL.value = roofs ? 1 : 0;
     setSamples(this.renderer, samples);
     const shadow = this.sky.sun.shadow;
     shadow.radius = shadowBlur;
-    if (shadow.mapSize.x !== shadowSize || shadow.mapSize.y !== shadowSize) {
+    if (shadow.mapSize.x !== shadowSize || shadow.mapSize.y !== shadowSize || resized) {
       shadow.mapSize.set(shadowSize, shadowSize);
       // WebGPU resizes the shadow target itself; WebGL needs a new one.
       if (!(this.renderer as GPURenderer).backend) { shadow.map?.dispose(); shadow.map = null; }

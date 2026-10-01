@@ -17,8 +17,11 @@ const LONG_RATE = 0.55; // those fires smoke and flame less thickly, so a few in
 // Seconds of water it takes to put out a burning car (a crew of three sprays for about 3 s); a wreck needs the same to stop smouldering.
 export const DOUSE = 10;
 const SMOULDER = 25; // seconds a wreck gives off smoke, flames for the first half
+// A fire with an engine on its way waits for it: this many seconds longer at most, before the car blows up or the wreck's flames die down.
+const WAIT = 60;
+const LAST = 8; // seconds of fuse that are kept back for the crew
 
-interface Blaze { fuse: number; t: number; emit: number; flame: number; wet: number; steam: number; rate: number }
+interface Blaze { fuse: number; t: number; emit: number; flame: number; wet: number; steam: number; rate: number; held: number }
 interface Puff { x: number; y: number; z: number; vx: number; vy: number; vz: number; r0: number; r1: number; age: number; life: number; rgb: [number, number, number]; a: number }
 
 const VERT = /* glsl */ `
@@ -107,6 +110,8 @@ export interface FiresOptions {
   rng: () => number;
   // A car has caught fire.
   onIgnite?: (c: Car) => void;
+  // Whether a fire engine is on its way to this car, or its crew is at work on it.
+  awaited?: (c: Car) => boolean;
   // A car has blown up; `blamed` if the player set it going.
   onBlast: (c: Car, blamed: boolean) => void;
 }
@@ -117,13 +122,15 @@ export class Fires {
   smoke: Puffs; flames: Puffs;
   height: FiresOptions['height']; r: () => number;
   onIgnite: NonNullable<FiresOptions['onIgnite']>; onBlast: FiresOptions['onBlast'];
+  awaited: NonNullable<FiresOptions['awaited']>;
 
-  constructor({ scene, height, rng, onIgnite = () => {}, onBlast }: FiresOptions) {
+  constructor({ scene, height, rng, onIgnite = () => {}, awaited = () => false, onBlast }: FiresOptions) {
     this.smoke = new Puffs(scene, 600, false);
     this.flames = new Puffs(scene, 300, true);
     this.height = height;
     this.r = rng;
     this.onIgnite = onIgnite;
+    this.awaited = awaited;
     this.onBlast = onBlast;
   }
 
@@ -134,7 +141,7 @@ export class Fires {
   // don't burn.)
   check(c: Car) {
     if (c.burnt || c.two === 'bike' || c.damage < SMOKING || this.blazes.has(c)) return;
-    this.blazes.set(c, { fuse: -1, t: 0, emit: 0, flame: 0, wet: 0, steam: 0, rate: 1 });
+    this.blazes.set(c, { fuse: -1, t: 0, emit: 0, flame: 0, wet: 0, steam: 0, rate: 1, held: 0 });
   }
 
   // `cars`: those that may have taken damage this step. `view`: where the camera looks,
@@ -146,6 +153,9 @@ export class Fires {
       if (d > 700) { this.blazes.delete(c); continue; }
       b.t += dt;
       if (c.burnt) {
+        // The wreck stays in flames while an engine is coming for it.
+        const dying = b.t > SMOULDER / 2 - 2 && b.t < SMOULDER / 2 && b.wet < DOUSE / 2;
+        if (dying && this.hold(c, b, dt)) b.t -= dt;
         if (b.t > SMOULDER) { this.blazes.delete(c); continue; }
         if (seen) this.emit(c, b, dt, b.t < SMOULDER / 2 ? 0.5 : 0, 1 - b.t / SMOULDER);
         if (seen && b.steam > 0) this.steam(c, b, dt);
@@ -160,7 +170,8 @@ export class Fires {
           b.rate = c.driven ? 1 : LONG_RATE;
           this.onIgnite(c);
         }
-        b.fuse -= dt;
+        // (Not the quick fuse of your own car: that one goes off whoever is coming.)
+        if (!(b.rate < 1 && b.fuse < LAST && this.hold(c, b, dt))) b.fuse -= dt;
         if (b.fuse <= 0) { this.explode(c, seen); b.t = 0; continue; }
         if (seen) this.emit(c, b, dt, 1 - b.wet / DOUSE, 1);
       } else if (seen) this.emit(c, b, dt, 0, (c.damage - SMOKING) / (BURNING - SMOKING));
@@ -169,6 +180,13 @@ export class Fires {
     }
     this.smoke.update(dt);
     this.flames.update(dt);
+  }
+
+  // Whether this fire waits another step for the engine that's coming to it.
+  hold(c: Car, b: Blaze, dt: number) {
+    if (b.held >= WAIT || !this.awaited(c)) return false;
+    b.held += dt;
+    return true;
   }
 
   // Whether `c` is on fire right now: burning and waiting to explode, or a wreck still in flames.

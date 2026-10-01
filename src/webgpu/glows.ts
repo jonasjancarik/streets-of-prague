@@ -8,11 +8,12 @@
 import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
-  Fn, If, Discard, float, vec2, vec3, vec4, uv, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, cameraViewMatrix,
+  Fn, If, Discard, float, vec2, vec3, vec4, uv, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, positionViewDirection, normalView, cameraViewMatrix,
   cameraProjectionMatrix, smoothstep, mix, min, max, clamp, dot, sqrt, length, select, sRGBTransferEOTF, toneMappingExposure,
 } from 'three/tsl';
 import { setGlows } from '../lamps.ts';
 import { setSignalGlow } from '../signals.ts';
+import { setBeamShade, setGlintShade, BEAM_ON } from '../lightfx.ts';
 import { setSprayDrawing } from '../spray.ts';
 import { setPuffShade } from '../fire.ts';
 import { setSkidShade } from '../skids.ts';
@@ -68,6 +69,34 @@ setGlows(() => additive(() => {
   const g = f.mul(f).mul(0.5).add(smoothDown(0.16, 0.08, d));
   return vec4(unmap(instanceColor.mul(g).mul(uLampOn), true), 1);
 }));
+
+// ---- The lights' cones in the air and their glints (lightfx.ts) ----
+// A cone is brightest where you look through the most of it: along its middle, fading to
+// nothing at its outline, and thinning out along its length.
+
+setBeamShade(() => {
+  const strength = follow(BEAM_ON);
+  const t: N = positionGeometry.x.toVarying('vBeamT');
+  const m = additive(() => {
+    const through = dot(normalView, positionViewDirection).abs();
+    const a = t.oneMinus().pow(1.6).mul(smoothstep(0, 0.07, t)).mul(through.pow(1.5)).mul(strength).mul(0.5);
+    return vec4(unmap(instanceColor.mul(a), true), 1);
+  });
+  m.side = THREE.DoubleSide;
+  return m;
+});
+
+// A glint: a small bright core in a soft patch, lying flat (stretched by its instance).
+setGlintShade(() => {
+  const m = additive(() => {
+    const d = length(uv().mul(2).sub(1));
+    const f = smoothDown(1, 0, d);
+    const g = f.mul(f).mul(0.45).add(smoothDown(0.45, 0.1, d).mul(0.55));
+    return vec4(unmap(instanceColor.mul(g).mul(uLampOn), true), 1);
+  });
+  Object.assign(m, { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -12 });
+  return m;
+});
 
 // ---- Glows round the traffic lights that are lit (signals.ts) ----
 

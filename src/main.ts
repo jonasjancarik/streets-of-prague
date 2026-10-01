@@ -21,7 +21,7 @@ import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
 import { Weather, WeatherFx, KINDS } from './weather.ts';
 import type { Kind } from './weather.ts';
-import { Lamps } from './lamps.ts';
+import { Lamps, type Flashing } from './lamps.ts';
 import { Signals } from './signals.ts';
 import { Skids } from './skids.ts';
 import { Spray } from './spray.ts';
@@ -218,7 +218,17 @@ async function main() {
   // on there: the ground, or a bridge deck (see TileWorld.track).
   const ground = (x: number, y: number, who?: Tracked | null) => (who ? world.groundFor(who, x, y) : world.heightAt(x, y));
   let crowd: Crowd | null = null;
-  const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y));
+  // The deck of a bridge at a point, or within a few metres of it (a lamp on the parapet is just off it).
+  const deckAt = (x: number, y: number, within: number) => {
+    for (let r = 0; r <= within; r += 2) {
+      for (let a = 0; a < (r ? 8 : 1); a++) {
+        const b = world.lowestBridge(x + Math.cos(a * Math.PI / 4) * r, y + Math.sin(a * Math.PI / 4) * r);
+        if (b) return b.h;
+      }
+    }
+    return null;
+  };
+  const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y), deckAt);
   const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)), (x, y) => world.onRoad(x, y));
   world.onEdges = (d, w, b) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(d, b); signals.add(d); };
 
@@ -293,6 +303,23 @@ async function main() {
   const spray = new Spray(scene, weatherFx.tint);
   const water = new Water(scene, weatherFx.tint);
   const beacons = new Beacons(scene);
+  // The emergency vehicles with their lights going, and what the lamps need each frame
+  // besides the cars (the people in view stand in their light too).
+  const flashing: Flashing[] = [];
+  const lightOpt: Parameters<Lamps['update']>[8] & object = {
+    flashing, eye: camera.position,
+    blocks: (put) => {
+      const person = (p: { x: number; y: number; h: number; gz?: number; state?: string; down?: number }) => {
+        if (offscreen(p.x, p.y)) return;
+        const lying = p.state === 'down' || (p.down ?? 0) > 0;
+        put(p.x, p.y, p.h, lying ? 0.8 : 0.22, 0.25, p.gz ?? ground(p.x, p.y), lying ? 0.3 : 1.75);
+      };
+      crowd.people.forEach(person);
+      police.officers.forEach(person);
+      brigade.crew.forEach(person);
+      if (!inCar && !inHeli && !ride.on && !taxi.riding) person(walker);
+    },
+  };
   const cannon = new Cannon();
   let cannonHeld = false;
   // Boats on the river; the pedal boats round Slovanský ostrov, if it's in the area.
@@ -1019,13 +1046,14 @@ async function main() {
   // and damages them (close by, enough to set them going too), and kills you if you're
   // still inside. Setting it going yourself is a crime.
   const BLAST = 9;
-  const fires = new Fires({
+  const fires: Fires = new Fires({
     scene, height: ground, rng: seeded,
     onIgnite: (c) => {
       if (c === inCar) telemetry.did('own car caught fire');
       if (c === inCar) showBanner(t('Your car is on fire!'), true);
       brigade.call(c);
     },
+    awaited: (c) => brigade.awaited(c),
     onBlast: (c, blamed) => {
       if (!blamed) telemetry.did('a car blew up nearby'); // (one you set off is a crime, counted in police.ts)
       const { x, y } = c, near = (p: { x: number; y: number }) => 1 - Math.hypot(p.x - x, p.y - y) / BLAST;
@@ -1066,7 +1094,7 @@ async function main() {
       if (blamed) police.crime(c.type === 'police' ? 'blowUpCop' : 'blowUp', x, y);
     },
   });
-  const brigade = new Brigade({
+  const brigade: Brigade = new Brigade({
     scene, police, grid, fires, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,
     bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),
   });
@@ -1663,7 +1691,13 @@ async function main() {
     tramStops.sync(camPos.x, -camPos.z, viewRadius() + 60, ground);
     crowd.render(ground, (x, y) => !offscreen(x, y));
     police.render(ground, time.value);
-    beacons.draw([...police.lit(inCar), ...brigade.lit], ground, time.value);
+    {
+      const chasing = police.lit(inCar), engines = brigade.lit;
+      flashing.length = 0;
+      for (const car of chasing) flashing.push({ car, reach: 22, rate: 1.3 });
+      for (const car of engines) flashing.push({ car, reach: 28, rate: 1.1 });
+      beacons.draw([...chasing, ...engines], ground, time.value, sky.dark);
+    }
     brigade.render();
     inspector.render(ground);
     tracers.update(dt);
@@ -1748,7 +1782,15 @@ async function main() {
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.
-    lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list);
+    {
+      // Looking straight down, the light map covers what's in view; the free camera sees further.
+      const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+      lightOpt.box = free ? undefined : [height * tan * camera.aspect + 6, height * tan + 6];
+      lightOpt.time = time.value;
+      lightOpt.wet = weather.now.wet;
+      lightOpt.murk = sky.murk;
+      lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list, lightOpt);
+    }
     signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
@@ -1927,7 +1969,7 @@ async function main() {
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300),
-    grid, wallet, police, health, clock, fires, rng: seeded,
+    grid, wallet, police, health, clock, fires, brigade, rng: seeded,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
     canvas: renderer.domElement, fov: camera.fov,

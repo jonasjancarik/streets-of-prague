@@ -5,6 +5,7 @@ import { CLOUD, CLOUD_MAP, CLOUD_GLSL } from './clouds.ts';
 import { posts, fall, type Post } from './posts.ts';
 import { armLamp, gasPair, gasSingle, wallLantern, globeLamp, hungLamp } from './lampmodels.ts';
 import { send, sendInstances } from './gpu.ts';
+import { LightFx } from './lightfx.ts';
 
 // Street lighting at night. The lamps come from IPR's utility map
 // (pipeline/build_lamps.py, data/<area>_now/lamps.bin.gz); round the camera they get
@@ -12,46 +13,53 @@ import { send, sendInstances } from './gpu.ts';
 // texture over the view, seen from above, into which every lamp, and every car's
 // headlights, adds a pool of light. Materials read it by their position (LAMP_GLSL,
 // lampLit), so lighting costs one texture read a pixel however many lamps there are.
-// Its alpha holds the height of the ground under the brightest lamp, so the light
-// stays on the ground and the lower walls and doesn't reach the roofs above.
+// Its alpha holds the height of the ground the light falls on (each light's, weighted by
+// its brightness: divide by the brightness to get the height), so the light stays on the
+// ground and the lower walls and doesn't reach the roofs above. Everything is added up,
+// so both the light and the height blend smoothly from texel to texel.
+// There are two such maps: the second takes the lights up on a bridge, well above the
+// ground under it, so a deck and the street or the island below each keep their own.
 
 export const LAMP_MAP: { value: THREE.Texture | null } = { value: null };
-// (x, z of the map's centre, 1 / its half width, 0)
-export const LAMP_BOX = { value: new THREE.Vector4(0, 0, 1, 0) };
+export const LAMP_MAP_HIGH: { value: THREE.Texture | null } = { value: null };
+// (x, z of the map's centre, 1 / its half width, 1 / its half depth)
+export const LAMP_BOX = { value: new THREE.Vector4(0, 0, 1, 1) };
+// (the height the map's heights are measured from, 1 when the second map has lights in it,
+// the softest a shadow's edge may be (m): a texel and a half, 0)
+export const LAMP_REF = { value: new THREE.Vector4(0, 0, 0.3, 0) };
 // How much the lamps are on: 0 by day, 1 at night.
 export const LAMP_ON = { value: 0 };
-// How the cars treat the lamps' light: 0 not at all, 1 a soft darkening round each car
-// (cheap), 2 they block it, casting shadows away from every lamp and headlight.
+// What gets in the way of the lamps' light: 0 nothing, 1 a soft darkening round each car
+// (cheap), 2 the cars block it, casting shadows away from every lamp and headlight,
+// 3 people, trams and posts do too.
 export const LAMP_SHADOWS = { value: 0 };
+// Texels across the light map (graphics.ts).
+export const LAMP_SIZE = { value: 1024 };
+// The lights' beams in the air and their glints on cars and wet ground (lightfx.ts): 0 or 1.
+export const LIGHT_FX = { value: 0 };
 
 export const LAMP_GLSL = /* glsl */ `
-uniform sampler2D uLampMap; uniform vec4 uLampBox; uniform float uLampOn;
-// The lamps' light at a point in the world (0 by day and off the map).
-vec3 lampLight(vec3 w) {
+uniform sampler2D uLampMap; uniform vec4 uLampBox; uniform vec4 uLampRef; uniform float uLampOn;
+// The lamps' light at a point in the world (0 by day and off the map). With a surface
+// (n): what faces up and is well above the lamp (a bridge deck over the street, whose
+// cars' lights would otherwise show through it) gets none.
+vec3 lampLightOn(vec3 w, vec3 n) {
   if (uLampOn < .005) return vec3(0.);
-  vec2 uv = (w.xz - uLampBox.xy) * uLampBox.z * .5 + .5;
+  vec2 uv = (w.xz - uLampBox.xy) * uLampBox.zw * .5 + .5;
   if (uv.x < 0. || uv.y < 0. || uv.x > 1. || uv.y > 1.) return vec3(0.);
   vec4 l = texture2D(uLampMap, uv);
-  float dy = w.y - (l.a - 500.);
-  // Not far below the lamp either: the street under a bridge isn't lit from the deck.
-  return l.rgb * uLampOn * (1. - smoothstep(3., 11., dy)) * smoothstep(-5., -2.5, dy);
-}
-// The same for something with a surface: what faces up and is well above the lamp
-// (a bridge deck over the street, whose cars' lights would otherwise show through it)
-// gets none.
-vec3 lampLightOn(vec3 w, vec3 n) {
+  float dy = w.y - (l.a / max(dot(l.rgb, vec3(.3, .59, .11)), 1e-4) + uLampRef.x);
   float up = smoothstep(.5, .8, dot(n, viewMatrix[1].xyz));
-  vec3 l = lampLight(w);
-  if (up < .01 || l.r + l.g + l.b <= 0.) return l;
-  vec4 m = texture2D(uLampMap, (w.xz - uLampBox.xy) * uLampBox.z * .5 + .5);
-  return l * (1. - up * smoothstep(3.5, 5.5, w.y - (m.a - 500.)));
+  // Not far below the lamp either: the street under a bridge isn't lit from the deck.
+  return l.rgb * uLampOn * (1. - smoothstep(3., 11., dy)) * smoothstep(-5., -2.5, dy) * (1. - up * smoothstep(3.5, 5.5, dy));
 }
+vec3 lampLight(vec3 w) { return lampLightOn(w, vec3(0.)); }
 `;
 
 type Shader = THREE.WebGLProgramParametersWithUniforms;
 
 // The WebGPU trial's own version of the pools (webgpu/lamps.ts), set before the lamps are made.
-let poolsBy: ((view: { value: THREE.Vector4 }, cars: THREE.Texture) => THREE.Material) | null = null;
+let poolsBy: ((view: { value: THREE.Vector4 }, cars: THREE.Texture, layer: number) => THREE.Material) | null = null;
 export const setPools = (f: typeof poolsBy) => { poolsBy = f; };
 // And of the heads' glows (webgpu/glows.ts).
 let glowsBy: (() => THREE.Material) | null = null;
@@ -64,6 +72,7 @@ const CLOUDS = !location.search.includes('nocloud');
 export function lampLit(sh: Shader, world?: string) {
   sh.uniforms.uLampMap = LAMP_MAP;
   sh.uniforms.uLampBox = LAMP_BOX;
+  sh.uniforms.uLampRef = LAMP_REF;
   sh.uniforms.uLampOn = LAMP_ON;
   sh.uniforms.uCloudMap = CLOUD_MAP;
   sh.uniforms.uCloud = CLOUD;
@@ -95,7 +104,7 @@ const KINDS = [
   { head: 0, pole: false, r: 3, i: 0.4, raise: 0, glow: 0 }, // set into the ground
   { head: 6.3, pole: false, r: 14, i: 0.9, raise: 0, glow: 0.5 }, // added: hung over a street on cables (see fill)
 ];
-const HUNG = 7;
+const HUNG = 7, ON_BRIDGE = 3;
 // The models (lampmodels.ts) and where their lights are (x along the arm, y, z across it).
 // A kind's lamps take one by hash: the Old Town has big two-lantern gas posts and small
 // single lanterns both.
@@ -121,6 +130,7 @@ const UNLIT = new Set(['motorway', 'motorway_link', 'track', 'service']);
 // Warm LED, old sodium, neutral LED; gas; floodlights.
 const WARM = new THREE.Color('#ffcf8f'), SODIUM = new THREE.Color('#ffa850'), NEUTRAL = new THREE.Color('#f1ece0');
 const GAS = new THREE.Color('#ffbb6e'), FLOOD = new THREE.Color('#ffe0b0');
+const BEACON = new THREE.Color(0.12, 0.38, 1);
 const HEAD = new THREE.Color('#fff4df'), TAIL = new THREE.Color('#ff2a1a'), CABIN = new THREE.Color('#fff0d8');
 const TRAM_SECTION = 10.2; // m (trams.ts)
 
@@ -134,7 +144,6 @@ function colourOf(kind: number, i: number) {
 }
 
 const CELL = 100; // m, the lamps' grid
-const MAP_SIZE = 1024; // texels across the light map
 const MAX_LIGHTS = 6000;
 const MAX_POLES = 4000;
 
@@ -153,16 +162,26 @@ function cast(segs: Seg[], px: number, py: number, dx: number, dy: number, max: 
   return best;
 }
 
-interface Street { hw: string; pts: [number, number][]; tunnel?: boolean }
+interface Street { hw: string; pts: [number, number][]; tunnel?: boolean; bridge?: boolean }
 interface LitTram { parts: { x: number; y: number; ang: number }[]; look: unknown; levels?: { gz?: number }[] }
-interface LitCar { x: number; y: number; h: number; spec: { L: number; W: number; H: number }; mode: string; two?: string; speed: number }
+export interface LitCar { x: number; y: number; h: number; spec: { L: number; W: number; H: number }; mode: string; two?: string; speed: number }
 
-// The cars that get in the lamps' way: a texel each, two rows in a float texture
-// (x, z, forward x, forward z / half length, half width, top, ground), and for every
-// light the few nearest ones (never the car the light is on).
-const MAX_CARS = 256;
+// What gets in the lamps' way, as boxes: the cars, and with LAMP_SHADOWS at 3 the people,
+// the trams' sections and the posts. A texel each, two rows in a float
+// texture (x, z, forward x, forward z / half length, half width, top, ground), and for
+// every light the few nearest ones (never the car the light is on).
+const MAX_CARS = 1024;
 const CAR_CELL = 12;
-const NEAR_CARS = 8;
+const NEAR_CARS = 12; // (8 of them used below LAMP_SHADOWS 3)
+// Above this over the ground under it, a light is on a bridge: it goes in the second map.
+const DECK = 4;
+const LUMA = [0.3, 0.59, 0.11];
+
+// Something standing in the light: where, which way it faces (radians), half its length
+// and width, the ground under it and how tall it is.
+export type Block = (x: number, y: number, h: number, halfL: number, halfW: number, ground: number, tall: number) => void;
+// The flashing lights on the roof of an emergency vehicle: `reach` m, turning `rate` times a second.
+export interface Flashing { car: LitCar; reach: number; rate: number }
 
 export class Lamps {
   private xy: number[] = [];
@@ -174,7 +193,16 @@ export class Lamps {
   private grid = new Map<number, number[]>();
   private renderer: THREE.WebGLRenderer;
   private height: (x: number, y: number) => number;
+  private deck: (x: number, y: number, within: number) => number | null;
   private target: THREE.WebGLRenderTarget;
+  private targetHigh: THREE.WebGLRenderTarget;
+  private highScene = new THREE.Scene();
+  // Each lamp near the camera: how far over the ground its light falls (on a bridge's deck,
+  // or a floodlight's up the walls), and whether it's on a bridge.
+  private spots: number[] = []; // where a bridge is to get a lamp: x, y, and the way to its edge
+  private rise: number[] = [];
+  private high: boolean[] = [];
+  readonly fx: LightFx;
   private lightScene = new THREE.Scene();
   private lightCam = new THREE.Camera();
   private lights: THREE.InstancedBufferGeometry;
@@ -182,15 +210,19 @@ export class Lamps {
   private carMap = new THREE.DataTexture(this.carData, MAX_CARS, 2, THREE.RGBAFormat, THREE.FloatType);
   private carGrid = new Map<number, number[]>();
   private carZ: number[] = [];
-  private cars: LitCar[] = [];
+  private carIndex = new Map<LitCar, number>();
+  private postIndex = new Map<Post, number>();
+  // The boxes in the way (cars first, in their order): x, y, and how far one reaches from its middle.
+  private blocks = 0;
+  private blockAt = new Float32Array(MAX_CARS * 3);
   private pickIds = new Float32Array(NEAR_CARS);
   private pickD = new Float32Array(NEAR_CARS);
-  private lift: THREE.InstancedBufferAttribute; // height of the light over the ground
-  private carsA: THREE.InstancedBufferAttribute; // the cars near it (indices, -1 for none)
+  private carsA: THREE.InstancedBufferAttribute; // the boxes near it (indices, -1 for none)
   private carsB: THREE.InstancedBufferAttribute;
-  private at: THREE.InstancedBufferAttribute; // x, z, ground height, 0 round / 1 beam
+  private carsC: THREE.InstancedBufferAttribute;
+  private at: THREE.InstancedBufferAttribute; // x, z, ground height, 0 round / 1 beam (+ 2 in the second map)
   private shape: THREE.InstancedBufferAttribute; // direction x, z, length (or radius), width
-  private colour: THREE.InstancedBufferAttribute;
+  private colour: THREE.InstancedBufferAttribute; // (and the height of the light over the ground)
   private view = { value: new THREE.Vector4() };
   private models: THREE.InstancedMesh[] = [];
   private streets = new Map<number, number[]>();
@@ -207,18 +239,23 @@ export class Lamps {
   private tilt = new THREE.Quaternion();
   private axis = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer, area: string, height: (x: number, y: number) => number) {
+  // `deck(x, y, within)`: the height of a bridge's deck at a point or within so many metres of it, null where there's none.
+  constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer, area: string, height: (x: number, y: number) => number, deck: (x: number, y: number, within: number) => number | null = () => null) {
     this.renderer = renderer;
     this.height = height;
-    this.target = new THREE.WebGLRenderTarget(MAP_SIZE, MAP_SIZE, { type: THREE.HalfFloatType, depthBuffer: false, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter });
+    this.deck = deck;
+    this.fx = new LightFx(scene);
+    const size = LAMP_SIZE.value;
+    const target = () => new THREE.WebGLRenderTarget(size, size, { type: THREE.HalfFloatType, depthBuffer: false, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter });
+    this.target = target();
+    this.targetHigh = target();
     LAMP_MAP.value = this.target.texture;
-    // By day nothing draws into the map, so the materials would bind it as a plain texture.
+    LAMP_MAP_HIGH.value = this.targetHigh.texture;
+    // By day nothing draws into the maps, so the materials would bind them as plain textures.
     // When the lamps first come on, WebGPU sets the target up and replaces that texture,
     // the materials keep pointing at the destroyed one, and every frame after fails.
-    // Setting the target up now, before anything binds it, avoids that.
-    renderer.setRenderTarget(this.target);
-    renderer.clear(true, false, false);
-    renderer.setRenderTarget(null);
+    // Setting the targets up now, before anything binds them, avoids that.
+    this.wipe();
 
     // The pools of light, one instanced quad each.
     const quad = new THREE.InstancedBufferGeometry();
@@ -227,42 +264,44 @@ export class Lamps {
     // (No DynamicDrawUsage: three.js's WebGPU renderer sends such a buffer whole every frame, needed or not.)
     this.at = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4);
     this.shape = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4);
-    this.colour = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 3), 3);
-    this.lift = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS), 1);
+    this.colour = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4);
     this.carsA = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4);
     this.carsB = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4);
+    this.carsC = new THREE.InstancedBufferAttribute(new Float32Array(MAX_LIGHTS * 4), 4);
     this.carMap.minFilter = this.carMap.magFilter = THREE.NearestFilter;
-    quad.setAttribute('iLift', this.lift);
     quad.setAttribute('iCarsA', this.carsA);
     quad.setAttribute('iCarsB', this.carsB);
+    quad.setAttribute('iCarsC', this.carsC);
     quad.setAttribute('iAt', this.at);
     quad.setAttribute('iShape', this.shape);
     quad.setAttribute('iColour', this.colour);
     quad.instanceCount = 0;
     this.lights = quad;
-    const pools = new THREE.Mesh(quad, poolsBy ? poolsBy(this.view, this.carMap) : new THREE.ShaderMaterial({
-      uniforms: { uView: this.view, uCars: { value: this.carMap }, uShadow: LAMP_SHADOWS },
+    // (The legacy renderer's pools: one map for every light, and the first eight boxes.)
+    const pools = new THREE.Mesh(quad, poolsBy ? poolsBy(this.view, this.carMap, 0) : new THREE.ShaderMaterial({
+      uniforms: { uView: this.view, uCars: { value: this.carMap }, uShadow: LAMP_SHADOWS, uRef: LAMP_REF },
       vertexShader: /* glsl */ `
-        attribute vec4 iAt; attribute vec4 iShape; attribute vec3 iColour;
-        attribute float iLift; attribute vec4 iCarsA; attribute vec4 iCarsB;
+        attribute vec4 iAt; attribute vec4 iShape; attribute vec4 iColour;
+        attribute vec4 iCarsA; attribute vec4 iCarsB;
         uniform vec4 uView;
         varying vec2 vL; varying vec3 vC; varying float vH; varying float vBeam;
         varying vec2 vP; varying vec3 vLamp; varying vec4 vCa; varying vec4 vCb;
         void main() {
           vec2 dir = iShape.xy, side = vec2(-dir.y, dir.x), q = position.xy, off;
-          if (iAt.w > .5) { vL = vec2(q.x * .5 + .5, q.y); off = dir * vL.x * iShape.z + side * q.y * iShape.w; }
+          float beam = mod(iAt.w, 2.);
+          if (beam > .5) { vL = vec2(q.x * .5 + .5, q.y); off = dir * vL.x * iShape.z + side * q.y * iShape.w; }
           else { vL = q; off = (dir * q.x + side * q.y) * iShape.z; }
-          vC = iColour; vH = iAt.z; vBeam = iAt.w;
-          vP = iAt.xy + off; vLamp = vec3(iAt.x, iAt.z + iLift, iAt.y); vCa = iCarsA; vCb = iCarsB;
-          gl_Position = vec4((iAt.xy + off - uView.xy) * uView.z, 0., 1.);
+          vC = iColour.rgb; vH = iAt.z; vBeam = beam;
+          vP = iAt.xy + off; vLamp = vec3(iAt.x, iAt.z + iColour.a, iAt.y); vCa = iCarsA; vCb = iCarsB;
+          gl_Position = vec4((iAt.xy + off - uView.xy) * uView.zw, 0., 1.);
         }`,
       fragmentShader: /* glsl */ `
         varying vec2 vL; varying vec3 vC; varying float vH; varying float vBeam;
         varying vec2 vP; varying vec3 vLamp; varying vec4 vCa; varying vec4 vCb;
-        uniform sampler2D uCars; uniform float uShadow;
-        // How much car i keeps the light from the ground point p (0..1): the ray from the
-        // lamp to the point through the car's box, its depth softening the edge; or, for the
-        // cheap version, closeness to the car's outline.
+        uniform sampler2D uCars; uniform float uShadow; uniform vec4 uRef;
+        // How much box i keeps the light from the ground point p (0..1): the ray from the
+        // lamp to the point through the box, the edge softer the further the shadow falls
+        // behind it; or, for the cheap version, closeness to the box's outline.
         float cover(float id, vec2 p) {
           if (id < -.5) return 0.;
           int i = int(id + .5);
@@ -280,7 +319,8 @@ export class Lamps {
           vec3 t1 = (vec3(-b.x, .12, -b.y) - O) / D, t2 = (vec3(b.x, b.z - b.w, b.y) - O) / D;
           vec3 tn = min(t1, t2), tf = max(t1, t2);
           float t0 = max(max(max(tn.x, tn.y), tn.z), 0.), t3 = min(min(min(tf.x, tf.y), tf.z), 1.);
-          return .92 * smoothstep(0., .35, (t3 - t0) * length(D));
+          float len = length(D);
+          return .92 * smoothstep(0., max(uRef.z, .2 + .06 * (1. - t3) * len), (t3 - t0) * len);
         }
         void main() {
           float f;
@@ -297,13 +337,20 @@ export class Lamps {
             for (int k = 0; k < 4; k++) c = max(c, max(cover(vCa[k], vP), cover(vCb[k], vP)));
             f *= 1. - c;
           }
-          gl_FragColor = vec4(vC * f, vH + 500.);
+          gl_FragColor = vec4(vC * f, (vH - uRef.x) * dot(vC, vec3(.3, .59, .11)) * f);
         }`,
       blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
-      blendEquationAlpha: THREE.MaxEquation, depthTest: false, depthWrite: false,
+      depthTest: false, depthWrite: false,
     }));
     pools.frustumCulled = false;
     this.lightScene.add(pools);
+    // The same lights again for the second map (a material of its own: which map a light
+    // belongs in is decided in its shader).
+    if (poolsBy) {
+      const high = new THREE.Mesh(quad, poolsBy(this.view, this.carMap, 1));
+      high.frustumCulled = false;
+      this.highScene.add(high);
+    }
 
     // Poles with a head, and the heads' glow at night.
     const poleMaterial = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -355,12 +402,25 @@ export class Lamps {
     });
   }
 
-  private add(x: number, y: number, kind: number) {
+  // Both maps cleared (and made on the GPU, at their size).
+  private wipe() {
+    const renderer = this.renderer, before = renderer.getRenderTarget(), clear = renderer.getClearColor(this.c).getHex(), alpha = renderer.getClearAlpha();
+    renderer.setClearColor(0x000000, 0);
+    for (const t of [this.target, this.targetHigh]) {
+      renderer.setRenderTarget(t);
+      renderer.clear(true, false, false);
+    }
+    renderer.setRenderTarget(before);
+    renderer.setClearColor(clear, alpha);
+  }
+
+  // `z`: the height it stands at, where that's known and matters (on a bridge).
+  private add(x: number, y: number, kind: number, z = NaN) {
     const k = this.key(x, y);
     let list = this.grid.get(k);
     if (!list) this.grid.set(k, list = []);
     if (KINDS[kind].pole) {
-      const post: Post = { x, y, z: NaN, r: 0.15, tough: 5, give: 0.2, down: null, knocked: () => { this.falling = performance.now() + 1300; this.nearAt.x = Infinity; } };
+      const post: Post = { x, y, z, r: 0.15, tough: 5, give: 0.2, down: null, knocked: () => { this.falling = performance.now() + 1300; this.nearAt.x = Infinity; } };
       this.posts[this.kind.length] = post;
       posts.add(post);
     }
@@ -422,13 +482,22 @@ export class Lamps {
     for (const e of edges) {
       if (e.tunnel || UNLIT.has(e.hw)) continue;
       let next = SPACING / 2;
-      for (let i = 1, s = 0; i < e.pts.length; i++) {
+      for (let i = 1, s = 0, side = 1; i < e.pts.length; i++) {
         const [ax, ay] = e.pts[i - 1], [bx, by] = e.pts[i], len = Math.hypot(bx - ax, by - ay);
         for (; next <= s + len; next += SPACING) {
           const t = (next - s) / len, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
           if (this.lampWithin(x, y, REACH)) continue;
+          const nx = -(by - ay) / len, ny = (bx - ax) / len;
+          // On a bridge the utility map often has none either: lamps on posts along its
+          // edges, one side then the other.
+          // (Put up once the deck there has loaded: see gather.)
+          if (e.bridge) {
+            this.spots.push(x, y, nx * side, ny * side);
+            side = -side;
+            continue;
+          }
           // Across the street, to the first wall each way.
-          const nx = -(by - ay) / len, ny = (bx - ax) / len, walls = near(x, y);
+          const walls = near(x, y);
           const l = cast(walls, x, y, nx, ny, WALL), r = cast(walls, x, y, -nx, -ny, WALL);
           if (!Number.isFinite(l) || !Number.isFinite(r)) continue;
           this.hung.set(this.kind.length, [x + nx * l, y + ny * l, x - nx * r, y - ny * r]);
@@ -469,6 +538,20 @@ export class Lamps {
     if (Math.hypot(x - a.x, y - a.y) < 25 && r + 25 <= a.r && r > a.asked * 0.6 && now - a.t < 3000 && performance.now() > this.falling) return;
     const R = r * 1.25 + 40;
     Object.assign(a, { x, y, r: R, asked: r, t: now });
+    // The bridges' lamps whose deck is there now: at its edge, on the side chosen.
+    const spots = this.spots;
+    for (let j = spots.length - 4; j >= 0; j -= 4) {
+      const sx = spots[j], sy = spots[j + 1], nx = spots[j + 2], ny = spots[j + 3];
+      if (Math.abs(sx - x) > R || Math.abs(sy - y) > R) continue;
+      const h = this.deck(sx, sy, 0);
+      if (h === null) continue;
+      spots.splice(j, 4);
+      if (this.lampWithin(sx, sy, REACH)) continue;
+      let out = 0;
+      while (out < 16 && this.deck(sx + nx * (out + 0.5), sy + ny * (out + 0.5), 0) !== null) out += 0.5;
+      out = Math.max(0, out - 0.6);
+      this.add(sx + nx * out, sy + ny * out, ON_BRIDGE, h);
+    }
     this.near.length = 0;
     for (let cx = Math.floor((x - R) / CELL); cx <= Math.floor((x + R) / CELL); cx++) {
       for (let cy = Math.floor((y - R) / CELL); cy <= Math.floor((y + R) / CELL); cy++) {
@@ -484,8 +567,13 @@ export class Lamps {
     const cable = this.cables.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (const i of this.near) {
       const k = KINDS[this.kind[i]], lx = this.xy[i * 2], ly = this.xy[i * 2 + 1];
+      // A lamp with a head where a bridge is stands on its deck, not on the ground below.
+      // (A floodlight under or beside one lights what's down there, not the walls higher up.)
+      const below = this.height(lx, ly), deck = k.raise ? this.deck(lx, ly, 8) : k.head >= 3 ? this.deck(lx, ly, 2) : null;
+      const z = k.raise || deck === null ? below : deck;
+      this.rise[i] = k.raise ? (deck === null ? k.raise : 0) : z - below;
+      this.high[i] = z - below > DECK;
       if (!k.head) continue;
-      const z = this.height(lx, ly);
       const walls = this.hung.get(i);
       if (walls && c < MAX_HUNG * 2 * HALVES) {
         // From each wall down to the lamp, sagging a little between.
@@ -542,27 +630,50 @@ export class Lamps {
   }
   private heads = 0;
 
-  // The cars into the texture the pools read, and a grid to find the near ones by.
-  private stand(cars: LitCar[], carHeight: (x: number, y: number, car: never) => number, on: boolean) {
-    this.cars = cars;
+  // The cars into the texture the pools read, and a grid to find the near ones by; then,
+  // with LAMP_SHADOWS at 3, whatever else stands in the light (`more`, the trams, the posts).
+  private stand(cars: LitCar[], carHeight: (x: number, y: number, car: never) => number, on: boolean, x: number, y: number, r: number, trams: LitTram[], more?: (put: Block) => void) {
     this.carGrid.clear();
-    const data = this.carData;
+    this.carIndex.clear();
+    this.postIndex.clear();
+    this.blocks = 0;
+    const data = this.carData, at = this.blockAt;
+    const put = (bx: number, by: number, h: number, halfL: number, halfW: number, ground: number, tall: number) => {
+      const i = this.blocks;
+      if (i >= MAX_CARS) return -1;
+      this.blocks++;
+      data[i * 4] = bx; data[i * 4 + 1] = -by; data[i * 4 + 2] = Math.cos(h); data[i * 4 + 3] = -Math.sin(h);
+      const o = MAX_CARS * 4 + i * 4;
+      data[o] = halfL; data[o + 1] = halfW; data[o + 2] = ground + tall; data[o + 3] = ground;
+      at[i * 3] = bx; at[i * 3 + 1] = by; at[i * 3 + 2] = Math.max(halfL, halfW);
+      const k = Math.floor(bx / CAR_CELL) * 4096 + Math.floor(by / CAR_CELL);
+      const list = this.carGrid.get(k);
+      if (list) list.push(i); else this.carGrid.set(k, [i]);
+      return i;
+    };
     for (let i = 0; i < cars.length; i++) {
       const c = cars[i], z = carHeight(c.x, c.y, c as never);
       this.carZ[i] = z;
-      if (!on || i >= MAX_CARS) continue;
-      data.set([c.x, -c.y, Math.cos(c.h), -Math.sin(c.h)], i * 4);
-      data.set([c.spec.L / 2, c.spec.W / 2, z + c.spec.H, z], MAX_CARS * 4 + i * 4);
-      const k = Math.floor(c.x / CAR_CELL) * 4096 + Math.floor(c.y / CAR_CELL);
-      const list = this.carGrid.get(k);
-      if (list) list.push(i); else this.carGrid.set(k, [i]);
+      if (on) this.carIndex.set(c, put(c.x, c.y, c.h, c.spec.L / 2, c.spec.W / 2, z, c.spec.H));
     }
-    if (on) this.carMap.needsUpdate = true;
+    if (on && LAMP_SHADOWS.value > 2.5) {
+      more?.(put);
+      for (const v of trams) {
+        if (!v.look) continue;
+        v.parts.forEach((p, i) => {
+          if (Math.abs(p.x - x) < r + 30 && Math.abs(p.y - y) < r + 30) put(p.x, p.y, p.ang, TRAM_SECTION / 2, 1.2, v.levels?.[i]?.gz ?? this.height(p.x, p.y), 3.2);
+        });
+      }
+      for (const p of posts.near(x, y, r)) this.postIndex.set(p, put(p.x, p.y, 0, p.r, p.r, Number.isNaN(p.z) ? this.height(p.x, p.y) : p.z, 6));
+    }
+    if (on) {
+      this.carMap.needsUpdate = true;
+    }
   }
 
-  // The NEAR_CARS nearest cars within reach of a spot, closest first, into pickIds.
-  private pick(x: number, y: number, reach: number, skip: number) {
-    const ids = this.pickIds, ds = this.pickD;
+  // The nearest boxes within reach of a spot, closest first, into pickIds (`most` of them).
+  private pick(x: number, y: number, reach: number, skip: number, most: number) {
+    const ids = this.pickIds, ds = this.pickD, at = this.blockAt;
     ids.fill(-1);
     const R = reach + 3;
     for (let cx = Math.floor((x - R) / CAR_CELL); cx <= Math.floor((x + R) / CAR_CELL); cx++) {
@@ -571,9 +682,9 @@ export class Lamps {
         if (!list) continue;
         for (const i of list) {
           if (i === skip) continue;
-          const c = this.cars[i], d = Math.hypot(c.x - x, c.y - y);
-          if (d > reach + c.spec.L / 2) continue;
-          let k = NEAR_CARS - 1;
+          const d = Math.hypot(at[i * 3] - x, at[i * 3 + 1] - y);
+          if (d > reach + at[i * 3 + 2]) continue;
+          let k = most - 1;
           if (ids[k] >= 0 && ds[k] <= d) continue;
           for (; k > 0 && (ids[k - 1] < 0 || ds[k - 1] > d); k--) { ids[k] = ids[k - 1]; ds[k] = ds[k - 1]; }
           ids[k] = i;
@@ -586,61 +697,92 @@ export class Lamps {
   // Once a frame before the scene is drawn. `on`: how dark it is (Sky.dark); `cars`:
   // the cars in view, lit when they're driving; `carHeight(x, y, car)` the ground
   // under them; `trams`, the ones drawn (with a look) light the street round them.
-  update<C extends LitCar>(x: number, y: number, r: number, on: number, cars: C[], carHeight: (x: number, y: number, car: C) => number, now: number, trams: LitTram[] = []) {
+  // `opt.box`: half the width and depth of what the camera sees on the ground, when it
+  // looks straight down (the map then covers just that, not the whole circle of radius r);
+  // `opt.flashing`: the emergency vehicles with their lights going, `opt.time` the game's
+  // clock for them (s); `opt.blocks`: the people in view, as boxes; `opt.eye`: where the
+  // camera is (three.js's coordinates), `opt.wet` and `opt.murk` how wet the ground is and
+  // how hazy the air (0..1), for the beams and glints.
+  update<C extends LitCar>(x: number, y: number, r: number, on: number, cars: C[], carHeight: (x: number, y: number, car: C) => number, now: number, trams: LitTram[] = [], opt: {
+    box?: [number, number]; flashing?: Flashing[]; time?: number; blocks?: (put: Block) => void; eye?: THREE.Vector3; wet?: number; murk?: number;
+  } = {}) {
     LAMP_ON.value = on;
+    if (this.target.width !== LAMP_SIZE.value) {
+      this.target.setSize(LAMP_SIZE.value, LAMP_SIZE.value);
+      this.targetHigh.setSize(LAMP_SIZE.value, LAMP_SIZE.value);
+      this.wipe();
+    }
     this.gather(x, y, r, now);
+    const fx = LIGHT_FX.value > 0 && on > 0.005 && opt.eye ? this.fx : null;
+    this.fx.begin(fx ? opt.eye! : null, on, opt.wet ?? 0, opt.murk ?? 0);
     // By day nothing glows or lights the street: only the poles (gathered above) show.
     if (on <= 0.005) {
       this.glows.count = 0;
       this.lights.instanceCount = 0;
       return;
     }
+    // The map: a box over the view, its centre on a texel so the pools don't shimmer.
+    const size = this.target.width;
+    const halfX = (opt.box ? opt.box[0] : r) + 20, halfZ = (opt.box ? opt.box[1] : r) + 20;
+    const texelX = (2 * halfX) / size, texelZ = (2 * halfZ) / size;
+    const cx = Math.round(x / texelX) * texelX, cz = Math.round(-y / texelZ) * texelZ;
+    this.view.value.set(cx, cz, 1 / halfX, 1 / halfZ);
+    LAMP_BOX.value.copy(this.view.value);
+    const ref = this.height(x, y);
+    LAMP_REF.value.set(ref, 0, 1.5 * Math.max(texelX, texelZ), 0);
+
     // The cars' own lights glow too (after the lamps' heads in the same instances).
-    let g = this.heads, n = 0;
+    let g = this.heads, n = 0, raised = 0;
     const at = this.at.array as Float32Array, sh = this.shape.array as Float32Array, col = this.colour.array as Float32Array;
-    const shading = LAMP_SHADOWS.value > 0;
-    this.stand(cars, carHeight, shading);
-    const ca = this.carsA.array as Float32Array, cb = this.carsB.array as Float32Array, lift = this.lift.array as Float32Array;
-    // `up`: how high the light is over the ground; `own`: the car it is on, which it doesn't
-    // shine through; `lit` false for the lights the cars don't get in the way of.
-    const add = (lx: number, ly: number, z: number, beam: number, dx: number, dy: number, len: number, wid: number, c: THREE.Color, i: number, up = 0, own = -1) => {
+    const shading = LAMP_SHADOWS.value > 0, most = LAMP_SHADOWS.value > 2.5 ? NEAR_CARS : 8;
+    this.stand(cars, carHeight, shading, x, y, r, trams, opt.blocks);
+    const ca = this.carsA.array as Float32Array, cb = this.carsB.array as Float32Array, cc = this.carsC.array as Float32Array;
+    // `up`: how high the light is over the ground (0: nothing gets in its way); `own`: the
+    // car it is on, which it doesn't shine through; `high`: on a bridge (unknown: by its height).
+    const add = (lx: number, ly: number, z: number, beam: number, dx: number, dy: number, len: number, wid: number, c: THREE.Color, i: number, up = 0, own = -1, high?: boolean) => {
       if (n >= MAX_LIGHTS) return;
-      at.set([lx, -ly, z, beam], n * 4);
+      const layer = high ?? z - this.height(lx, ly) > DECK;
+      if (layer) raised++;
+      at.set([lx, -ly, z, beam + (layer ? 2 : 0)], n * 4);
       sh.set([dx, -dy, len, wid], n * 4);
-      col.set([c.r * i, c.g * i, c.b * i], n * 3);
-      lift[n] = up;
+      col.set([c.r * i, c.g * i, c.b * i, up], n * 4);
       const ids = this.pickIds;
       if (shading && up > 0) {
-        if (beam) this.pick(lx + dx * len / 2, ly + dy * len / 2, len / 2 + wid, own);
-        else this.pick(lx, ly, len, own);
+        if (beam) this.pick(lx + dx * len / 2, ly + dy * len / 2, len / 2 + wid, own, most);
+        else this.pick(lx, ly, len, own, most);
       } else ids.fill(-1);
-      for (let k = 0; k < 4; k++) { ca[n * 4 + k] = ids[k]; cb[n * 4 + k] = ids[4 + k]; }
+      for (let k = 0; k < 4; k++) { ca[n * 4 + k] = ids[k]; cb[n * 4 + k] = ids[4 + k]; cc[n * 4 + k] = ids[8 + k]; }
       n++;
     };
     for (const i of this.near) {
       const k = KINDS[this.kind[i]], lx = this.xy[i * 2], ly = this.xy[i * 2 + 1];
       if (Math.abs(lx - x) > r + k.r || Math.abs(ly - y) > r + k.r || this.posts[i]?.down) continue;
+      const colour = colourOf(this.kind[i], i);
       // (Only the lamps up on poles and walls: not the floodlights or those in tunnels.)
-      add(lx, ly, this.height(lx, ly) + k.raise, 0, 1, 0, k.r, k.r, colourOf(this.kind[i], i), k.i, k.raise || k.head < 3 ? 0 : k.head);
+      const post = this.posts[i];
+      const z = this.height(lx, ly) + (this.rise[i] ?? 0);
+      add(lx, ly, z, 0, 1, 0, k.r, k.r, colour, k.i, k.raise || k.head < 3 ? 0 : k.head, (post && this.postIndex.get(post)) ?? -1, this.high[i]);
+      if (fx && k.head >= 3) fx.lamp(lx, ly, z, k.head, colour, k.i, this.carGrid, this.blockAt, cars, this.carZ);
     }
     const d = this.dummy;
     cars.forEach((c, ci) => {
       if (c.mode === 'loose' && c.speed < 0.5) return; // parked: lights off
-      const fx = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
-      const z = this.carZ[ci];
-      add(c.x + fx * L, c.y + fy * L, z, 1, fx, fy, c.two ? 16 : 24, c.two ? 3 : 5, HEAD, c.two ? 1.2 : 2.2, 0.75, ci);
+      const fx0 = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
+      const z = this.carZ[ci], own = this.carIndex.get(c) ?? -1;
+      add(c.x + fx0 * L, c.y + fy * L, z, 1, fx0, fy, c.two ? 16 : 24, c.two ? 3 : 5, HEAD, c.two ? 1.2 : 2.2, 0.75, own);
       // The rear lights shine backwards onto the road from the bumper, a short beam from
       // each (not a round pool on the car, which would redden its roof and bonnet).
       for (const s of c.two ? [0] : [-1, 1]) {
         const across = s * (W - 0.3);
-        add(c.x - fx * L - fy * across, c.y - fy * L + fx * across, z, 1, -fx, -fy, c.two ? 2 : 3.5, c.two ? 0.6 : 1.2, TAIL, c.two ? 0.3 : 0.22, 0.75, ci);
+        add(c.x - fx0 * L - fy * across, c.y - fy * L + fx0 * across, z, 1, -fx0, -fy, c.two ? 2 : 3.5, c.two ? 0.6 : 1.2, TAIL, c.two ? 0.3 : 0.22, 0.75, own);
+        if (fx) fx.beam(c.x + fx0 * (L - 0.05) - fy * across, c.y + fy * (L - 0.05) + fx0 * across, z + 0.75, fx0, fy, c.two ? 11 : 16, c.two ? 1.3 : 1.9, HEAD, 1);
       }
       // Two headlights and two rear lights (one each on a bike).
       for (const [along, colour, size] of [[L - 0.05, HEAD, 0.9], [-L - 0.05, TAIL, 0.5]] as [number, THREE.Color, number][]) {
         for (const s of c.two ? [0] : [-1, 1]) {
           if (g >= this.glows.instanceMatrix.count) break;
           const across = s * (W - 0.3);
-          d.position.set(c.x + fx * along - fy * across, z + 0.75, -(c.y + fy * along + fx * across));
+          d.position.set(c.x + fx0 * along - fy * across, z + 0.75, -(c.y + fy * along + fx0 * across));
           d.scale.set(size, 1, size);
           d.updateMatrix();
           this.glows.setMatrixAt(g, d.matrix);
@@ -648,6 +790,18 @@ export class Lamps {
         }
       }
     });
+    // Emergency vehicles: two beams turning on the roof, and a flash all round.
+    for (const f of opt.flashing ?? []) {
+      const c = f.car, ci = cars.indexOf(c as C);
+      if (ci < 0) continue;
+      const z = this.carZ[ci], own = this.carIndex.get(c) ?? -1, t = (opt.time ?? 0) * f.rate + ci * 0.37;
+      const ang = t * Math.PI * 2, bx = Math.cos(ang), by = Math.sin(ang), up = c.spec.H + 0.25;
+      for (const s of [1, -1]) {
+        add(c.x, c.y, z, 1, bx * s, by * s, f.reach, f.reach * 0.3, BEACON, 3.2, up, own);
+        if (fx) fx.beam(c.x, c.y, z + up, bx * s, by * s, f.reach * 0.55, f.reach * 0.1, BEACON, 1.5, 0);
+      }
+      add(c.x, c.y, z, 0, 1, 0, f.reach * 0.6, f.reach * 0.6, BEACON, 0.5 + 0.9 * (Math.floor(t * 4) % 2), up, own);
+    }
     for (const v of trams) {
       if (!v.look || !v.parts.length) continue;
       v.parts.forEach((p, i) => {
@@ -655,37 +809,39 @@ export class Lamps {
         add(p.x, p.y, v.levels?.[i]?.gz ?? this.height(p.x, p.y), 0, 1, 0, 6, 6, CABIN, 0.3);
       });
       const f = v.parts[v.parts.length - 1], b = v.parts[0], half = TRAM_SECTION / 2;
-      const fx = Math.cos(f.ang), fy = Math.sin(f.ang), bx = Math.cos(b.ang), by = Math.sin(b.ang);
+      const fx0 = Math.cos(f.ang), fy = Math.sin(f.ang), bx = Math.cos(b.ang), by = Math.sin(b.ang);
       const z = v.levels?.[v.parts.length - 1]?.gz ?? this.height(f.x, f.y);
-      add(f.x + fx * half, f.y + fy * half, z, 1, fx, fy, 28, 5, HEAD, 1.8);
+      add(f.x + fx0 * half, f.y + fy * half, z, 1, fx0, fy, 28, 5, HEAD, 1.8, LAMP_SHADOWS.value > 2.5 ? 0.9 : 0);
       add(b.x - bx * half, b.y - by * half, v.levels?.[0]?.gz ?? this.height(b.x, b.y), 0, 1, 0, 2.6, 2.6, TAIL, 0.5);
       for (const s of [-1, 1]) {
+        if (fx) fx.beam(f.x + fx0 * (half + 0.1) - fy * s * 0.9, f.y + fy * (half + 0.1) + fx0 * s * 0.9, z + 0.9, fx0, fy, 18, 2, HEAD, 1);
         if (g >= this.glows.instanceMatrix.count) break;
-        d.position.set(f.x + fx * (half + 0.1) - fy * s * 0.9, z + 0.9, -(f.y + fy * (half + 0.1) + fx * s * 0.9));
+        d.position.set(f.x + fx0 * (half + 0.1) - fy * s * 0.9, z + 0.9, -(f.y + fy * (half + 0.1) + fx0 * s * 0.9));
         d.scale.set(1, 1, 1);
         d.updateMatrix();
         this.glows.setMatrixAt(g, d.matrix);
         this.glows.setColorAt(g++, this.c.copy(HEAD).multiplyScalar(0.8));
       }
     }
+    this.fx.commit();
     this.glows.count = g;
     sendInstances(this.glows);
     this.lights.instanceCount = n;
     if (!n) return;
-    for (const a of [this.at, this.shape, this.colour, this.lift, this.carsA, this.carsB]) send(a, n);
+    for (const a of [this.at, this.shape, this.colour, this.carsA, this.carsB, this.carsC]) send(a, n);
+    // The second map only where something is up on a bridge (the legacy renderer draws every light into the first).
+    const layers = poolsBy && raised ? 2 : 1;
+    LAMP_REF.value.y = layers - 1;
 
-    // The light map: a square over the view, its centre on a texel so the pools don't shimmer.
-    const half = r + 20, texel = (2 * half) / MAP_SIZE;
-    const cx = Math.round(x / texel) * texel, cz = Math.round(-y / texel) * texel;
-    this.view.value.set(cx, cz, 1 / half, 0);
-    LAMP_BOX.value.set(cx, cz, 1 / half, 0);
     const renderer = this.renderer, before = renderer.getRenderTarget(), clear = renderer.getClearColor(this.c).getHex(), alpha = renderer.getClearAlpha();
     const shadows = renderer.shadowMap.autoUpdate;
     renderer.shadowMap.autoUpdate = false;
-    renderer.setRenderTarget(this.target);
     renderer.setClearColor(0x000000, 0);
-    renderer.clear(true, false, false);
-    renderer.render(this.lightScene, this.lightCam);
+    for (let l = 0; l < layers; l++) {
+      renderer.setRenderTarget(l ? this.targetHigh : this.target);
+      renderer.clear(true, false, false);
+      renderer.render(l ? this.highScene : this.lightScene, this.lightCam);
+    }
     renderer.setRenderTarget(before);
     renderer.setClearColor(clear, alpha);
     renderer.shadowMap.autoUpdate = shadows;
