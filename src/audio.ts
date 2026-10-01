@@ -141,7 +141,7 @@ const SILENCE = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAIA+A
 // distorting), which makes the radio quieter beside it, and the device's volume then turns
 // all of it down together.
 export const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const MASTER = IOS ? 1.8 : 0.8;
+const MASTER = IOS ? 4 : 0.8;
 export const BUSES = ['engine', 'tyres', 'horns', 'trams', 'city', 'weather', 'radio', 'bangs'] as const;
 export type Bus = (typeof BUSES)[number];
 // Noise cancelling: the steady rumble of engine, tyres, weather and city is cut, mostly its lows; horns, sirens, radio and bangs get through.

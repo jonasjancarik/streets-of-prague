@@ -22,9 +22,9 @@ confirmed). So there the radio ignores the mixer's radio slider, the master leve
 small-speaker filter, and always plays at the device's volume. What the game does about it:
 
 - the radio slider is left out of the mixer on iOS, with a note saying why (`src/settings.ts`);
-- the master level of everything else is 1.8 instead of 0.8 (`MASTER` in `src/audio.ts`),
+- the master level of everything else is 4 instead of 0.8 (`MASTER` in `src/audio.ts`),
   so the radio sits quieter beside it and the device's volume buttons turn all of it down
-  together. The number was chosen by ear-free guesswork; adjust it if the balance is off;
+  together. The number is a guess, not measured against a listen; adjust it if the balance is off (at 1.8 the radio still drowned the engine on an iPad);
 - a station that is only downloading (before you get in a car) is muted on the `<audio>`
   element itself, since it can't be silenced through the mixer there.
 
