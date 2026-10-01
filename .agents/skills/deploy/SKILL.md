@@ -133,6 +133,21 @@ secret or the numbers are missing); the same with `/api/feedback` and `'{"messag
 answers `{"error":"message"}`. A real signup or message sends an email, so do that only
 with the user's own address.
 
+## The anonymous statistics
+
+Production's Worker also takes the game's anonymous statistics at `/api/report`
+(`worker/stats.js`; what is sent and how to read it is in `docs/telemetry.md`). The beta
+sends none. After a release that changed `src/telemetry.ts` or `worker/stats.js`, check
+that
+`curl -s -o /dev/null -w '%{http_code}' -X POST https://streetsofprague.com/api/report -H 'Origin: https://streetsofprague.com' -d '{"e":"nope"}'`
+answers `400` (the Worker is there and has its dataset; `503` means the `TELEMETRY`
+binding is missing, `404` or the game's page that the Worker isn't taking the address).
+That request stores nothing. Then open the site, start a game, and after a few minutes
+`node scripts/telemetry-dashboard.mjs` should show it; filter by the new version.
+
+`scripts/deploy-cloudflare.sh --dry-run` builds and validates any commit and deploys
+nothing: use it to check a change to the Worker's settings before releasing.
+
 ## Things that go wrong
 
 - **"This commit is not a release."** Production was asked to take an untagged commit:
