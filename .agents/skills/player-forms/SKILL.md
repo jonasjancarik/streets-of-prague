@@ -226,8 +226,8 @@ Work down from the game to the service:
    (`Brevo answered …`, `Sending feedback failed: …`): look in the Worker's logs in the
    Cloudflare dashboard. Common causes: a template that isn't a double opt-in one, a
    wrong list number, an attribute named in `BREVO_LANGUAGE_ATTRIBUTE` that doesn't
-   exist in Brevo, a feedback address that isn't verified in the Cloudflare account or
-   a domain not set up for sending.
+   exist in Brevo, a feedback address that isn't verified in the Cloudflare account, or
+   Email Routing switched off for the domain.
 5. **200 but no email.** Brevo accepted it: look in Brevo's transactional log and the
    spam folder, and check the sending domain is authenticated there.
 
