@@ -11,7 +11,7 @@ sets it to `/api/report`.
 
 ## What is sent
 
-`src/telemetry.ts` sends five kinds of report. `SCHEMA` in `worker/stats.js` lists
+`src/telemetry.ts` sends six kinds of report. `SCHEMA` in `worker/stats.js` lists
 every field of each and is the only place the format is defined.
 
 | Report | When | What it holds |
@@ -19,11 +19,37 @@ every field of each and is the only place the format is defined.
 | `start` | the game begins after the start screen | renderer (WebGPU, WebGL 2, or the legacy WebGL renderer), graphics card name, graphics setting and level, language, keyboard or touch, new or continued game, browser and its major version, operating system, the site the visitor came from, loading time, screen size, pixel ratio, memory and processor cores as the browser reports them |
 | `frames` | the tab is hidden or closed | time played, frames drawn, middle and 95th-percentile frame time, frames over 100 ms and over 250 ms, how often Auto changed the graphics level, map tiles that failed to load |
 | `play` | with `frames` | seconds on foot, driving, on a tram, in a taxi and on anything else; metres travelled; cars wrecked, people knocked over, arrests, deaths; money; the most stars reached; tickets bought; games saved by hand |
+| `activity` | with `frames`, one for each thing done or paid for | `did`: the name of something the player did, how many times, and how many seconds into the session the first time. `spent`: what money went on, how many payments, the first one's time and the amount in Kč |
 | `setting` | a setting is changed in the panel, or with G or P | which one and the new value |
 | `error` | an uncaught error, a failed start, WebGPU falling back to WebGL, the graphics device being lost | the message and the first lines of the stack; five a session at most, each distinct error once |
 
-`frames` and `play` hold totals since the start of the session and may be sent several
-times (each time the tab is hidden); `seq` counts them and the last one is the session.
+`frames`, `play` and `activity` hold totals since the start of the session and may be
+sent several times (each time the tab is hidden); `seq` counts them and the last one is
+the session. Activities that changed since the last time go out together in one request
+(`rows`, 40 at most).
+
+### Activities
+
+An activity is a name and nothing more, so tracking a new one is one line where it
+happens and no change to the Worker or the dashboard, which shows whatever names arrive:
+
+- `telemetry.did('rode a tram')` for something that happens at a moment;
+- `telemetry.doing('used lane assist', on)` once a frame for something that lasts, which
+  counts each time it begins;
+- money is counted by itself: `Wallet.take(amount, what)` names what it went on.
+
+Names are lower-case English as a person would say it, with a group in front where there
+are several of a kind. Renaming one splits its history in two. What is tracked now:
+
+| Group | Names |
+|---|---|
+| Vehicles | `drove: car`, `drove: van`, `drove: taxi`, `drove: police car`, `drove: bicycle`, `drove: motorbike`, `drove: lorry`, `drove: articulated lorry`, `drove: bus`, `drove: minibus`, `drove: fire engine`; `rented a shared bike`; `thrown off a bike`; `flew a helicopter`; `took a pedal boat` |
+| Public transport | `rode a tram`, `took over a tram`, `opened the tram doors`, `rode the funicular`, `went down into the metro`, `travelled by metro`, `called a taxi`, `rode in a taxi`, `sped up a ride or a wait`, `rode without a ticket`, `ticket inspection`, `ran from the inspector` |
+| Driving | `honked`, `used lane assist`, `changed the radio station`, `sprayed the water cannon` |
+| Trouble | `crime: knocked someone over`, `crime: took a car from its driver`, `crime: wrecked a car`, `crime: hit the police`, `crime: took a police car`, `crime: took a tram`, `crime: blew up a car`, `crime: blew up a police car`, `crime: ran from a ticket inspector` (each as the police count it, in `Police.crime`); `wanted: 1 star` to `wanted: 5 stars` (each time the level is reached); `arrested`, `killed`, `shot by the police`, `own car caught fire`, `a car blew up nearby` |
+| On foot | `jumped` |
+| Around the game | `opened the settings`, `saved the game by hand`, `loaded a saved game`, `started a new game from the settings`, `signed up for news`, `sent feedback` |
+| Money (`spent`) | `ticket`, `fine`, `taxi`, `shared bike`, `shared bike left outside a station` |
 
 Every report also carries the game's version and the map data version (see
 [versioning.md](versioning.md)), the domain the game was opened on, a random session
