@@ -917,8 +917,16 @@ to upload and checksum-check every file. It safely resumes a partial upload but
 fails if an object in that version has changed. Commit the updated
 `deploy/data-version` and app code, then run `scripts/deploy-cloudflare.sh`.
 That script checks the R2 index, typechecks, builds only the app assets, validates
-Cloudflare Build Output with `cf deploy --prebuilt --dry-run`, and deploys it.
+Cloudflare Build Output with `cf deploy --prebuilt --dry-run`, and deploys it. With
+`--dry-run` it stops before deploying.
 The two targets can be updated independently.
+
+### Anonymous statistics
+
+The Cloudflare build reports how well the game runs, errors and what gets played,
+without anything that identifies a player, to the Worker in `deploy/worker.js`;
+players can switch it off in the settings. `node scripts/telemetry-dashboard.mjs`
+builds a local dashboard from the reports. See [docs/telemetry.md](docs/telemetry.md).
 
 ### Releases
 
