@@ -11,4 +11,4 @@ BREVO_DOI_TEMPLATE_ID_CS=
 BREVO_LANGUAGE_ATTRIBUTE=
 # The site key of the Turnstile widget that keeps scripts from signing addresses up.
 # Its secret key is a secret on the Worker. Left empty, signups aren't checked.
-TURNSTILE_SITE_KEY=
+TURNSTILE_SITE_KEY=0x4AAAAAAFLKXlUuevM3UXKF
