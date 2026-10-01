@@ -10,9 +10,27 @@
 | [006: Firefighters](006-firefighters.md) | Fire engines called to burning cars, crews putting out wrecks, blue lights and sirens, traffic giving way, the player's water cannon, a firefighter job | PHASES 1–3 DONE (the job waits for plan 004) |
 | [013: Fill the beige ground](013-fill-the-beige-ground.md) | Squares' surfaces from OSM, an asphalt-grey pavement palette, and DTM courtyards and green | PHASES 0–3 DONE (main and shared local tiles; photo classification is plan 014) |
 | [014: Identify courtyard surfaces](014-classify-courtyard-surfaces.md) | Deferred photo classification within DTM courtyard outlines | PLANNED |
+| [018: Simplify paths and pavements](018-simplify-paths-and-pavements.md) | No path ribbons across squares, islands or matching surfaces; tidier path shapes; pavements from the technical map later | PLANNED |
 
 Plans 001–006 were indexed from `c6b5350`. Check the working tree and each plan's
 starting revision before implementation; preserve unrelated changes.
+
+## Fewer objects and draw calls
+
+Planned on 1 October 2026 at `1b5756cdf775c7fbde3e5522fb57de5658664bcf` from reading
+the code, after plans 007–012 showed no general frame-rate gain. Buildings and ground
+have few triangles; the aim here is fewer objects and draw calls, since the main
+thread limits the frame on WebGPU. Each plan starts with a counting step and a stop
+condition, because none of the expected gains has been measured yet.
+
+| Plan | Scope | Priority | Estimated effort | Status |
+| --- | --- | --- | --- | --- |
+| [015: Paint cars per instance](015-paint-cars-per-instance.md) | One retained mesh per car type, with the paint as a per-instance colour | P1 | One to two days | PLANNED |
+| [016: Draw only nearby tiles](016-draw-only-nearby-tiles.md) | Keep collisions, graphs and parking out to 300 m; make a tile's meshes only near the view | P1 | Three to five days | PLANNED |
+| [017: Cheaper trees on phones](017-cheaper-trees-on-phones.md) | Measure whether a Pixel 5 is limited by tree vertices; then a simpler shadow crown, a simpler crown on low tiers, or smaller pages | P3 | Half a day to measure, two to three days after | PLANNED (measurement decides) |
+
+The three are independent. 015 is the smallest and most contained. If 016 goes
+ahead, repeat 017's measurement after it.
 
 ## Driving stutter
 
