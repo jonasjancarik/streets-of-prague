@@ -999,6 +999,11 @@ on every plan. To set it up:
 2. Put that address in `deploy/feedback` as `FEEDBACK_TO` and commit it.
 3. Release, then send yourself a message from the settings.
 
+Incoming mail to `news@streetsofprague.com` and `jonas@streetsofprague.com` is
+archived privately in R2 and forwarded to Gmail by a separate mail Worker.
+See [Email for Streets of Prague](docs/email.md) for configuration, deployment
+and the distinction between receiving mail and sending replies.
+
 ### Releases
 
 How the game's version, the map data version and the map format fit together, and how
