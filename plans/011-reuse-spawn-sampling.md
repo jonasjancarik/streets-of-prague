@@ -8,7 +8,7 @@ This is step 5 of the driving-stutter work. Remove repeated calculations within 
 
 ## Status and starting point
 
-- Status: PLANNED; source inspection only, with no new measurements.
+- Status: DONE locally; operation reduction verified, frame-time benefit inconclusive.
 - Priority: P2. Effort: about a day. Risk: low–medium.
 - Category: performance. Dependencies: none technically; run after the rendering steps so residual simulation work is easier to attribute.
 - Planned at: `5162c1fcf11e51df8ceda46049cac217fc7a12cd`, 2026-09-30.
@@ -131,4 +131,64 @@ Maintain pass-local sampler ownership. If future work caches across passes, its 
 
 ## Result
 
-Not started. Record revision, deterministic cases, operation counts, population checks and alternating-drive results here. List staggering as deferred unless separately approved.
+Implemented from `a3032fbf44451e97a9e13248af6c5cb4a17844f7` in local commits
+`a348b3d` and `51710bc`.
+`src/spawn.ts` keeps the old pedestrian cumulative comparison and traffic's
+subtraction loop, with weights prepared once per pass/list. Main refreshes the
+kerb-agent subset before each pedestrian-obstacle collection. The initial traffic
+placement also reuses one prepared list. No radius, cap, count, route, or clock rule
+was changed.
+
+Checks: `node --check scripts/check-spawn-work.mjs`,
+`node scripts/check-spawn-work.mjs --url http://localhost:5241/ --case all`,
+`npm run typecheck`, `npm run build`, and `git diff --check` pass. The browser
+fixtures compare 54 pedestrian selections and 56 traffic selections, plus
+successive spawns, 8/40 rejection exhaustion, exact cumulative boundaries and
+RNG counts. The actual `Traffic.spawn()` bus rejection case uses 80 draws for
+40 attempts in both versions. Six pedestrian picks use one three-edge weight
+build instead of six. During a 40-second drive, 78–80 people passes prepared
+40,530–41,579 edge weights for 460–479 picks; the old loop rebuilt the weights
+for every pick. Traffic weights are computed once per prepared list/mode and
+cached through its 40 attempts. Its cached subtraction order matches the old
+loop, including floating-point boundary fixtures.
+The pavement fixtures cover empty lists, adopt, release, kerb completion and
+successive substeps. In the real game, six manual simulation substeps rebuilt
+the subset six times; 173 qualifying pedestrian queries included one positive
+kerb-car hit and had zero mismatches against the original all-agent scan.
+
+The candidate and baseline both loaded at Old Town Square with 1,200 people
+and 41 traffic agents, and both had 1,200/40 after the same short drive. A
+teleport to Petřín immediately placed 223 people on both versions; traffic
+replenished afterward. Overlay-free screenshots at both sites showed comparable
+visible density, with no new popping observed. Captures are under
+`/tmp/streets-011-scenes/plan011-{candidate,baseline}-{clear,petrin}.png`.
+Map data was copied to this worktree for serving; the shared source and its
+manifests were not modified. There is no asset migration in this plan.
+
+Two alternating comparisons used an Apple M5 MacBook Air (32 GB), Chrome
+WebGPU, High, 14:00 clear, DPR 1, CPU throttle 4, 40-second drives, three
+baseline/candidate pairs each, fresh browser, loading frames and stall counters.
+The exact command was:
+
+```sh
+node scripts/bench.mjs --url http://localhost:5241/ --vs http://localhost:5246/ --scenes drive --seconds 40 --dpr 1 --cpu 4 --graphics high --time 14:00 --weather clear --stalls --runs 3 --fresh-browser --loading-frames --require-webgpu
+```
+
+The first series averaged 11.9 → 12.9 ms/frame (baseline → candidate);
+long-task counts were 5/10/7 → 34/6/5 and p99 frames were
+30.9/34.4/32.3 → 61.1/32.1/29.6 ms. The second averaged 13.0 → 11.5
+ms/frame; long tasks were 13/13/4 → 5/6/8, p95 frames
+30.8/28.1/21.0 → 13.6/15.7/23.2 ms, and p99 frames
+40.0/43.5/32.4 → 27.9/31.1/33.1 ms. There were no page errors or renderer
+fallbacks, and both versions kept about 347–351 visible people and 40–41
+traffic agents during the drives. The opposing series and variable shader-build
+stalls make the overall frame-time benefit inconclusive.
+
+In the second series, traffic spawning took 5.5–7.5 ms over 22–26 baseline
+calls and 4.0–8.9 ms over 22–26 candidate calls, plus 1.1–1.9 ms to prepare
+21–23 candidate lists. Traffic update totaled 2.09–2.17 seconds and crowd
+update 2.18–2.22 seconds per baseline drive; candidate totals were
+2.12–2.16 and 2.15–2.26 seconds, respectively. Calls per drive differed with
+frame rate, so these totals do not isolate this optimization's effect. Detailed
+logs and JSON are `/tmp/streets-011-compare{,-update}.{log,json}`.
+Staggering remains deferred because it would change timing and RNG order.

@@ -36,6 +36,9 @@ Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
 you are, the time, weather, money, stars, car and camera as the start of a new scenario.
 
 WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer.
+WebGPU reuses the same building, landmark, cutaway and lamp-light shader graphs
+across equivalent meshes. Each mesh keeps its own material, textures and sky-view
+attribute, so unloading one tile does not change another tile's appearance.
 If the browser's GPU adapter request takes more than 5 seconds, or device
 initialization more than 15 seconds, startup continues with WebGL. A GPU device
 that arrives after that timeout is released. Benchmark runs can require WebGPU
@@ -225,6 +228,9 @@ that without a new renderer.
 
 ## How it works
 
+The [findings for optimisation plans 007–012](docs/optimisation-findings-007-012.md)
+record the measurements, merge decisions and pending landmark asset activation.
+
 - **Procedural look.** The ground is real geometry, one mesh per surface kind
   triangulated from OSM and coloured by world-space GLSL patterns (`src/shading.ts`,
   `src/surface.ts`): asphalt, granite setts, Prague mosaic pavement, slabs, grass,
@@ -300,14 +306,16 @@ that without a new renderer.
   lamps come on at dusk (earlier under heavy cloud), and a share of the windows is lit
   by the hour, most in the evening.
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.ts`) around the camera. Each
-  tile has its own ground, buildings, trees, collision grid, parked cars and piece of
+  tile has its own ground, buildings, tree-page leases, collision grid, parked cars and piece of
   the street graphs (joined across tiles by OSM node ids), so start-up doesn't depend
   on the area's size. A tile's files are fetched all at once, and the heavy part of
   building it runs in web workers (`src/tileWorker.ts`): the ground's geometry
   (`src/ground.ts`), IPR's buildings, straight-skeleton roofs for OSM buildings, the
   windows' positions on every wall, trees, walls and the collision grid. The main
-  thread only joins up the street graphs, makes the meshes and parks the cars, so
-  driving into new streets doesn't stutter.
+  thread joins up the street graphs, makes the meshes and parks the cars.
+  `src/tileWorkers.ts` dispatches one job per worker and gives required tile jobs
+  priority over optional neighbour lighting. `src/skyRefresh.ts` coalesces lighting
+  refreshes and ignores stale results; the worker-count default is unchanged.
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.
@@ -318,6 +326,11 @@ that without a new renderer.
   winter), fruit trees are small. The woods, parks and gardens are filled up with made-up
   trees, 30% of them conifers in woods, but not next to a surveyed one. Rebuild them with
   `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
+  Rendering keeps fixed-capacity mesh pages per tree shape (`src/trees.ts`). A tile
+  leases pages containing only its own trees; unloading the tile clears the pages
+  for reuse without changing the surveyed or generated tree data. Pages hold 1,200
+  broadleaf or 128 shrub/conifer instances. Startup prepares 30 broadleaf, 20 shrub
+  and 24 conifer pages; a denser view can add pages without dropping trees.
 - **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, and House Okamura in Břevnov) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
@@ -332,8 +345,17 @@ that without a new renderer.
   the camera never sees, so they take what's above instead. The game hides IPR's and OSM's buildings in that
   footprint and draws the model there (`landmarkModel` in `src/tiles.ts`). The photographs have the day's light
   in them, so the model is lit evenly, as if every face looked up, and still darkens at
-  night. The collision footprint stays OSM's.
-- **Roof colours.** Pitched roofs are terracotta tiles (a palette matched to reference photos of Prague's roofs, brick-red rather than orange, with each tile a little redder or duller than the next; the landmarks' photographs get the same warming when they load, in `warmUp` in `src/tiles.ts`, and where a landmark's photograph shows a red roof, the roof shader draws the same tiles at the photograph's brightness: `shadeLandmark` in `src/shading.ts` and its port in `src/webgpu/buildings.ts`), as nearly all of them are in Prague;
+  night. The collision footprint stays OSM's. `pipeline/landmark_colours.py` writes a
+  separate `.warm-v1.glb` final model with the photograph's warm-colour adjustment
+  baked in; the active GLB scene carries `landmarkColourVersion: 1`. The browser skips
+  its pixel pass for that marker and still adjusts older unmarked GLBs. The output
+  manifest references the versioned files. To convert existing assets without
+  rebuilding geometry, run `uv run --project pipeline python pipeline/landmark_colours.py
+  --area-root public/data/centrum_now --output-root /tmp/sop-landmark-colours/centrum_now`
+  (add `--dry-run` to validate without writing). Keep the old GLBs and original
+  manifest until the new app is live: an older client would adjust the warmed files
+  again. Review the staged manifest and assets before activating them in shared data.
+- **Roof colours.** Pitched roofs are terracotta tiles (a palette matched to reference photos of Prague's roofs, brick-red rather than orange, with each tile a little redder or duller than the next; the landmarks' photographs get the same warming in the final GLB, or on load for older models, and where a landmark's photograph shows a red roof, the roof shader draws the same tiles at the photograph's brightness: `shadeLandmark` in `src/shading.ts` and its port in `src/webgpu/buildings.ts`), as nearly all of them are in Prague;
   flat ones are grey. OSM's `roof:material` and `roof:colour` can make a roof grey slate
   or green copper instead, down to single building parts (the cathedral's grey roofs
   and copper domes), and `pipeline/roofs.py` corrects landmarks OSM gets wrong or leaves
@@ -402,6 +424,10 @@ that without a new renderer.
   corners, step past parked cars and bikes in their way, leap out of the way of fast
   cars and get knocked over, then get up again (`src/people.ts`). Traffic and
   people live within about 330 m of the player.
+  When the game replenishes people and ordinary traffic, it prepares each nearby
+  street's spawn weight once for that pass (`src/spawn.ts`). Cars still check the
+  current traffic before each placement, and pavement-driving cars are gathered
+  before each pedestrian-obstacle step.
 - **Crowds.** The busier the streets around you, the more people: 500 to 600 round the
   Old Town Square and on Charles Bridge, a couple of hundred in Vinohrady or on a
   housing estate, a few dozen on the edge of town. They come and go out of sight as
@@ -458,7 +484,16 @@ that without a new renderer.
   of the sides, wheels and lights towards the edges of the screen. `src/car.ts` puts
   each car's colour on the paint. The bus is built from boxes in `src/car.ts`. Rebuild with
   `blender -b --factory-startup -P assets/cars/build.py`; `-- --preview DIR` renders
-  them from above.
+  them from above. During loading, `CarPool.prepare` creates the ordinary paint and
+  courier-box bodies without consuming the game's random numbers. The already-started
+  bike feed gets up to 250 ms to provide its operator colours. Each body keeps a
+  16-car instance page; yellow taxis and silver hatchbacks reserve a second page
+  because they exceeded 16 in the comparison drive. Empty pages stay hidden, and
+  denser views get another retained page, so no visible car is dropped. A shared-bike
+  colour that arrives after preparation, an unusual custom colour, or the first burnt
+  body gets its page when first seen. Check preparation,
+  page reuse and renderer behaviour with `node scripts/check-car-pool.mjs --url
+  http://localhost:5191/ --case all` against a running dev server.
 - **Trams** run Prague's real lines (`src/trams.ts`), taken from OSM's route
   relations: each line goes round its whole route there and back. How many trams a line
   has out follows PID's timetable for the game clock's day and hour (`src/clock.ts`):
@@ -720,7 +755,8 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   clean models from the tiles). It needs Blender (on the PATH, in /Applications or
   `$BLENDER`); `--raw` keeps the mesh's own triangles instead. The mesh's pieces are
   kept in `pipeline/.cache/mesh/`; the finest level (16) is the default. How to add
-  one, check it and fix what goes wrong: `.agents/skills/landmarks/SKILL.md`.
+  one, check it and fix what goes wrong: `.agents/skills/landmarks/SKILL.md`. The
+  generated final manifest names `.warm-v1.glb` files; originals remain beside them.
   Repository skills live in `.agents/skills`; `.claude/skills` is a compatibility symlink.
 - **Mesh colours.** `mesh_colours.py <area>` needs the area's IPR sheets parsed
   (`ipr_buildings.py` once) and writes `pipeline/.cache/mesh_colours/<area>.json.gz`,

@@ -107,6 +107,30 @@ const TWO_PAINT: Record<string, string[]> = {
 
 // Delivery couriers' boxes: pink, green and blue, as on the streets.
 export const COURIER_BOXES = ['#d70f64', '#2fbf71', '#0a9fdc'];
+export interface CarBody { type: string; paint: string; box?: string; pages?: number }
+
+// The comparison drive reached 28 yellow taxis and 17 silver hatchbacks at once.
+// Two 16-instance pages cover those measured peaks without a live allocation.
+const PREPARED_PAGES: Record<string, number> = {
+  'taxi|#e9c62f': 2,
+  'hatch|#bfc3c7': 2,
+};
+
+// The ordinary body inventory is data, not dummy cars: preparing it must not advance
+// the game's seeded random sequence. Colours found in the bike feed are optional; a
+// later feed or an unusual colour still gets a retained page on first use.
+export function ordinaryCarBodies(bikeColours: readonly string[] = []): CarBody[] {
+  const bodies: CarBody[] = [];
+  for (const [type, spec] of Object.entries(TYPES)) {
+    const paints = spec.color ? [spec.color] : type === 'bike'
+      ? [...new Set([...TWO_PAINT.bike, ...bikeColours])] : TWO_PAINT[type] || PAINT;
+    for (const paint of paints) {
+      bodies.push({ type, paint, pages: PREPARED_PAGES[`${type}|${paint}`] || 1 });
+      if (spec.two) for (const box of COURIER_BOXES) bodies.push({ type, paint, box });
+    }
+  }
+  return bodies;
+}
 // Where the box sits on the rider's back, in the figures kit's units, and how far it
 // leans forward with them (radians).
 const BOX_AT: Record<string, { x: number; y: number; lean: number }> = {
@@ -722,7 +746,13 @@ const ROOF = new THREE.Matrix4().compose(new THREE.Vector3(TYPES.bus.L / 2 - 1.9
 // Riders are drawn here too, sitting on their bikes.
 export class CarPool {
   scene: THREE.Scene;
-  meshes: Map<string, THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>>;
+  // Each page holds 16 cars (1 KiB of matrices). Measured dense keys reserve two
+  // pages above; exceptional overflow adds another without replacing an old page.
+  static readonly pageCapacity = 16;
+  meshes: Map<string, THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>[]>;
+  prepared = new Set<string>();
+  overflowPages = 0;
+  latePages = 0;
   groups: Map<string, Car[]>;
   dummy: THREE.Object3D;
   riders: Figures;
@@ -742,6 +772,58 @@ export class CarPool {
     this.m = new THREE.Matrix4();
   }
 
+  private page(key: string) {
+    const geometry = cache.get(key);
+    if (!geometry) throw new Error(`Missing car geometry: ${key}`);
+    const mesh = new THREE.InstancedMesh(geometry, material, CarPool.pageCapacity);
+    mesh.count = 0;
+    mesh.visible = false;
+    mesh.castShadow = true;
+    mesh.customDepthMaterial = depthMaterial;
+    mesh.frustumCulled = false;
+    this.scene.add(mesh);
+    const pages = this.meshes.get(key) || [];
+    pages.push(mesh);
+    this.meshes.set(key, pages);
+    return mesh;
+  }
+
+  prepare(bodies: readonly CarBody[]) {
+    for (const { type, paint, box, pages = 1 } of bodies) {
+      const key = box ? `${type}|${paint}|${box}` : `${type}|${paint}`;
+      carGeometry(type, paint, box);
+      while ((this.meshes.get(key)?.length || 0) < pages) this.page(key);
+      this.prepared.add(key);
+    }
+  }
+
+  // Compile the actual retained meshes with a valid instance, then restore every
+  // count and matrix even if the renderer's guarded compile times out.
+  async warm(compile: () => Promise<unknown>) {
+    const saved: { mesh: THREE.InstancedMesh; count: number; visible: boolean; matrix: number[] }[] = [];
+    try {
+      for (const pages of this.meshes.values()) for (const mesh of pages) {
+        saved.push({ mesh, count: mesh.count, visible: mesh.visible, matrix: Array.from(mesh.instanceMatrix.array.slice(0, 16)) });
+        mesh.setMatrixAt(0, this.m.identity());
+        mesh.count = 1;
+        mesh.visible = true;
+        sendInstances(mesh);
+      }
+      await compile();
+    } finally {
+      for (const { mesh, count, visible, matrix } of saved) {
+        mesh.instanceMatrix.array.set(matrix, 0);
+        mesh.count = count;
+        mesh.visible = visible;
+        if (count) sendInstances(mesh);
+      }
+    }
+  }
+
+  get matrixBytes() {
+    return [...this.meshes.values()].reduce((sum, pages) => sum + pages.reduce((n, page) => n + page.instanceMatrix.array.byteLength, 0), 0);
+  }
+
   // `height(x, y, car)`: the height of the ground (or the bridge deck) under a car's
   // wheels; cars sit on it, pitched and rolled to the slope.
   render(cars: Car[], height: ((x: number, y: number, car: Car) => number) | null = null, dt = 0) {
@@ -754,19 +836,12 @@ export class CarPool {
     const d = this.dummy;
     let riders = 0, nb = 0;
     for (const [k, list] of this.groups) {
-      let m = this.meshes.get(k);
-      if (!m || m.instanceMatrix.count < list.length) {
-        if (m) { this.scene.remove(m); m.dispose(); }
-        const geometry = cache.get(k);
-        if (!geometry) throw new Error(`Missing car geometry: ${k}`);
-        m = new THREE.InstancedMesh(geometry, material, Math.max(8, Math.ceil(list.length * 1.5)));
-        m.castShadow = true;
-        m.customDepthMaterial = depthMaterial; // (see treeMesh)
-        m.frustumCulled = false;
-        this.scene.add(m);
-        this.meshes.set(k, m);
-      }
+      let pages = this.meshes.get(k);
+      if (!pages) { this.latePages++; this.page(k); pages = this.meshes.get(k)!; }
+      while (pages.length * CarPool.pageCapacity < list.length) { this.page(k); this.overflowPages++; }
       list.forEach((c, i) => {
+        const m = pages[Math.floor(i / CarPool.pageCapacity)];
+        const slot = i % CarPool.pageCapacity;
         if (height) {
           const fx = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
           const hf = height(c.x + fx * L, c.y + fy * L, c), hb = height(c.x - fx * L, c.y - fy * L, c);
@@ -778,15 +853,19 @@ export class CarPool {
           d.rotation.set(-c.lean, c.h, 0, 'YZX');
         }
         d.updateMatrix();
-        m.setMatrixAt(i, d.matrix);
+        m.setMatrixAt(slot, d.matrix);
         if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
         if (c.line) {
           for (const at of BOARDS) this.board(nb++, boardMaterial(c.line.ref, c.line.to), d.matrix, at);
           this.board(nb++, roofMaterial(c.line.ref), d.matrix, ROOF);
         }
       });
-      m.count = list.length;
-      sendInstances(m);
+      for (let i = 0; i < pages.length; i++) {
+        const m = pages[i];
+        m.count = Math.max(0, Math.min(CarPool.pageCapacity, list.length - i * CarPool.pageCapacity));
+        m.visible = m.count > 0;
+        sendInstances(m);
+      }
     }
     this.riders.commit(riders);
     for (let i = 0; i < this.boards.length; i++) this.boards[i].visible = i < nb;

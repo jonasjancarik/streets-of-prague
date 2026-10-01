@@ -20,6 +20,17 @@ tile files, cheaper ground shading). Rough order: quick wins first.
 
 ## Game performance
 
+Plans 007–011 and plan 012 Part A are selected for main; see
+[the findings and merge summary](docs/optimisation-findings-007-012.md). Part B
+(the incremental resting-car index) stays experimental: it was consistently 3.5%
+slower per frame on desktop despite fewer index updates. Main retains the original
+collision index. No general FPS improvement is established for this set.
+
+Landmark colour warming now has a pipeline conversion and a browser marker check
+(`plans/010-prebake-landmark-colours.md`). The original GLBs remain the live assets;
+the staged `.warm-v1.glb` files passed local visual and cold-load checks. Activate
+them only after the new client is live.
+
 `scripts/bench.mjs` measures frame times in Google Chrome (headless, on the GPU) at
 fixed places; `--vs` compares with another server taking turns, `--ab` switches a
 change on and off within one page (both hold up when the machine is busy), `--cpu 4`
@@ -34,6 +45,20 @@ the limit on an M5 at 2×. Fixed then: the lamps re-gathered every frame (their 
 check never held), instance buffers went up whole, and DynamicDrawUsage makes
 three.js's WebGPU renderer upload a buffer every frame: 3.0–3.5 MB a frame of
 uploads down to ~0.2 MB. The crowd is drawn and animated only in view. Open:
+
+Tree rendering now leases retained pages by tile and shape (1,200 broadleaf or 128
+shrub/conifer instances). Startup prepares a finite envelope (30 broadleaf, 20 shrub,
+24 conifer pages); later tiles
+reuse their mesh UUIDs, attributes and shader bindings. A denser view can grow the
+pool without thinning trees. See plan 009 for the measured startup, visual and drive
+checks; WebGPU uniform instance buffers may still upload on a drawn frame even when
+the application has not marked an attribute dirty.
+Startup also draws the prepared pages once behind the loading screen so later tree
+shadows use the same retained render objects.
+Three controlled drives recorded zero tree shader builds and zero pool growth after
+startup. Frame-time comparisons under heavy machine load did not establish an overall
+speedup; see plan 009 for the paired results. A Pixel 5 or quieter desktop run would
+be useful before claiming a player-visible frame-time improvement.
 
 The tiers now control MSAA, sun shadow size, roof detail and the crowd cap too:
 
@@ -193,6 +218,12 @@ grime on the walls 6%, the shadow map's own pass 7%.
   fixes, with the CPU slowed 4×): the crowd's `spot` / `follow` / `avoid`, `simulate`,
   `traffic.update`, `trams.clearAhead`, then `writeBuffer` (~6%, uniform buffers of
   ~160 KB a frame and ~1200 figure matrices).
+- **Spawn sampling** (plan 011): pedestrian and ordinary-traffic weights are reused
+  within each replenishment pass, and pavement-driving cars are gathered once per
+  simulation step. `scripts/check-spawn-work.mjs` compares the selectors and their RNG
+  calls with the previous loops. The `--stalls` report separates preparation,
+  spawning and update totals. Two three-run alternating drives gave opposite
+  frame-time results, so there is no confirmed timing benefit; see plan 011.
 - **Stalls while driving** (30 September 2026; details and how to measure them in the
   performance skill). The 50–100 ms stalls on the drive from Újezd are mostly three.js
   building shaders for things drawn for the first time (~180 builds in 40 s: 0.7 s at 1×
@@ -205,19 +236,30 @@ grime on the walls 6%, the shadow map's own pass 7%.
   calls ~630 → ~360 a frame. At 1× no change beyond drift. On the Pixel 5 the time in
   long tasks with a build fell from 2.5–2.7 s to 1.2–1.8 s a drive, but its slowest 1% of
   frames stayed at 115–120 ms (the frames below). The phone draws the drive at 1× and
-  High at ~23 fps (median frame ~33 ms). Open, biggest first:
-  - **Tree meshes:** every tile makes three new instanced tree meshes, and three.js
-    builds every instanced mesh on its own (its key has the mesh's `uuid`): ~60 ms each
-    on a Pixel 5 for the tuft shader. One set of tree meshes shared by all tiles
-    (refilled when tiles come and go) would build once.
-  - **Car models:** ~25 builds a drive (~13 ms each on the Pixel 5), one per model as it
-    first appears and again when a model's mesh grows past its capacity
-    (`CarDrawer.render`, `max(8, 1.5 × n)`). Making every model's mesh during loading
-    with room to spare would move them behind the loading screen.
-  - **Tile workers crowd a phone's main thread:** on a Pixel 5, frames swell (render ~17 →
-    ~30 ms) while tiles load, with no build involved; 1 worker instead of 3 halved those
-    long tasks, but tiles took 2–3× longer to arrive. A decision: fewer workers on
-    phones, or leave it.
+  High at ~23 fps (median frame ~33 ms). Plan 007 now shares the complete building,
+  landmark, cutaway and lamp-light graphs across equivalent materials. Its IPR and OSM
+  binding checks pass. In three alternating 4× WebGPU drives on the M5, the mean frame
+  time was 15.3 → 13.0 ms, but individual pairs disagreed (11.2 → 13.9, 20.1 → 12.7,
+  14.5 → 12.4 ms), total material builds were 339 → 344, and no new building shader
+  builds appeared in the stall logs. The timing benefit is inconclusive; details and
+  matched visual checks are in `plans/007-share-building-shader-graphs.md`. Open,
+  biggest first:
+  - **Tree meshes:** plan 009 retains and warms pages, including shadow variants.
+    Final comparison drives had zero tree builder events and zero pool growth.
+    A quieter desktop and real-phone comparison remain useful before claiming
+    an overall frame-time or startup benefit.
+  - **Car models:** plan 008 prepares ordinary models during loading, hides empty
+    pages and retains 16-car pages instead of replacing live meshes. The measured
+    dense taxi and hatchback colours reserve a second page. On a 40 s drive,
+    car-body builder events fell from 74–76 to 13–15 with no overflow; the paired
+    frame times averaged 13.8 → 13.5 ms, too close and variable for a firm speedup
+    claim. Benchmark loading took about 0.8 s longer and 164 prepared pages reserve
+    168 KB of matrices. Late colours and burnt bodies can still build once. See
+    [plan 008](plans/008-prepare-car-meshes.md) for tests and trade-offs.
+  - **Worker scheduling:** plan 012 Part A prioritizes required jobs, allows one
+    job per worker and coalesces optional sky refreshes. Desktop and Pixel 5
+    comparisons had no missing player/ahead-tile frames. Frame-time differences
+    were inconclusive; keep the existing worker count.
   - On a warm Pixel 5 there are also 20–24 ms spikes in `crowd.update` and 12 ms in
     `trams.update`.
 

@@ -8,7 +8,7 @@ This is step 6 of the driving-stutter work. It has two independently verifiable 
 
 ## Status and starting point
 
-- Status: PLANNED; no implementation or new measurements.
+- Status: implementation and separate verification DONE locally. Merge decision on 1 October 2026: Part A accepted; Part B held off main because desktop frame time regressed 3.5%.
 - Priority: P2. Effort: several days. Risk: medium–high because jobs and collision entries have lifetimes that outlast individual frames.
 - Category: performance. Dependencies: none technically; execute after 007–011 to isolate residual streaming hitches and reconcile their edits to `tiles.ts`/`main.ts`.
 - Planned at: `5162c1fcf11e51df8ceda46049cac217fc7a12cd`, 2026-09-30.
@@ -155,12 +155,12 @@ During authorized execution, verify port ownership before starting `npm run dev`
 
 ## Done criteria and stop conditions
 
-- [ ] Worker tests prove priority, one-job-per-worker dispatch, single transfer, error settlement and continued progress.
-- [ ] Sky tests prove coalescing, revision checks, drop/reload safety and eventual refresh when work settles.
-- [ ] Loading/startup/teleport paths remain usable; required-tile latency and road gaps are reported with frame timing.
-- [ ] Resting-car tests match the full-rebuild oracle across movement, membership, height and multi-collision cases.
-- [ ] Unchanged cars retain obstacle entries; one changed tile/car does not trigger a full resting-index rebuild.
-- [ ] Both parts pass focused checks, typecheck/build, scope review and documentation; comparisons are separate.
+- [x] Worker tests prove priority, one-job-per-worker dispatch, single transfer, error settlement and continued progress.
+- [x] Sky tests prove coalescing, revision checks, drop/reload safety and eventual refresh when work settles.
+- [x] Loading/startup/teleport paths remain usable; required-tile latency and road gaps are reported with frame timing.
+- [x] Resting-car tests match the full-rebuild oracle across movement, membership, height and multi-collision cases.
+- [x] Unchanged cars retain obstacle entries; one changed tile/car does not trigger a full resting-index rebuild.
+- [x] Both parts pass focused checks, typecheck/build, scope review and documentation; comparisons are separate.
 
 Stop if queued buffers are detached before dispatch, cancellation leaves a hanging promise, stale jobs touch disposed textures, collision order cannot be preserved, or ghost obstacles appear. Do not compensate by increasing streaming distance, reducing population, weakening collisions, or changing sky quality. If lower concurrency causes new visible road gaps, keep the existing worker-count default and report the result.
 
@@ -168,4 +168,82 @@ Maintain worker job priority separately from job type. Future optional bakes mus
 
 ## Result
 
-Not started. Record separate Part A and Part B revisions/results, job/refresh counters, collision oracle tests, device evidence, road-gap checks and any deferred worker-count policy here.
+Part A (`ac90ca1`) queues required jobs ahead of optional neighbour lighting,
+dispatches one job per worker, retains transfers until dispatch, settles failures,
+and coalesces refreshes with revision checks. The worker-count default remains
+unchanged. `check-streaming --case all` passes reverse completion, transfer,
+cancellation, worker failure, stale result, drop/reload and retry cases. A real
+teleport completed with the destination tile loaded and both queues drained: 74
+required and 14 optional jobs completed, with no worker failures.
+
+Part B (`35b141a`, `2e91f54`, `1bb1585`, `3d60b16`) retains unchanged obstacle
+objects, removes changed entries from their old numeric buckets, and restores
+loose-car/circle order only in affected buckets. The fast scan keeps `Car.restAt`
+numeric and compares height, radius, velocity and constructor-owned circle-offset
+array identity separately. Existing code never mutates offset elements after
+construction; future shape changes must replace that array or add an explicit dirty
+signal. `check-resting-cars --case all` matches a full-rebuild
+ordered oracle across pose, height, bus circles, rest/move/rest, tile changes and
+membership loss; its live-game transitions pass. No normal-play `resting.clear()`
+remains. In the final desktop drives, about 1,500 cars changed across roughly
+5.2 million indexed-car scans per 40-second run; on the phone, 756–765 changed
+across 0.84–0.85 million scans. The original incremental version measured 5.1%
+slower than Part A on desktop; the final fast-scan version narrowed that to 3.5%
+slower. This is a measured steady-driving cost, not a speedup claim.
+
+The table reports three alternating 40-second WebGPU drives per comparison at
+14:00, clear weather, High graphics. Desktop used DPR 1 and CPU throttle 4;
+Pixel 5 used its own display with CPU throttle 1. Values are means across runs.
+
+| Comparison | Mean frame ms | p95 / p99 frame ms | Long tasks | Loading s | Missing player / ahead tile frames |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Part A desktop: base → queue | 10.18 → 10.04 | 12.60 / 27.40 → 12.37 / 27.03 | 6 → 6 | 13.44 → 13.40 | 0 / 0 on both |
+| Part A Pixel 5: base → queue | 55.83 → 56.29 | 137.17 / 196.60 → 133.77 / 189.67 | 207 → 208 | 25.43 → 24.19 | 0 / 0 on both |
+| Part B desktop: queue → index | 10.10 → 10.46 | 12.57 / 27.47 → 13.00 / 27.93 | 5 → 8 | 14.43 → 13.76 | 0 / 0 on both |
+| Part B Pixel 5: queue → index | 56.46 → 56.79 | 126.47 / 190.00 → 130.13 / 189.10 | 283 → 233 | 25.46 → 24.97 | 0 / 0 on both |
+
+All 24 full runs used WebGPU, reported no page errors and built three tiles during
+each Pixel 5 drive. Part A's candidate completed 92 required and 28 optional jobs
+per desktop drive, coalescing 41 refresh requests; on the phone it completed 77
+required and 23–24 optional jobs, coalescing 36–37. Its required-tile build p95 was
+1.25–1.30 seconds on desktop and 5.28–5.99 seconds on the phone. Both queues drained
+at the end of every candidate drive. The phone runs used serial `09081FDD4001DA`,
+Pixel 5, Android 14, Chrome 154.0.8037.57. Battery readings rose from 27.4 to
+31.5 °C in Part A and 31.8 to 33.6 °C in Part B; later candidates were warmer.
+The phone long-task reduction in Part B is dominated by one 151-task baseline run.
+The small Part A timing difference and Part B phone difference are inconclusive;
+the Part B desktop steady-frame regression is consistent across three pairs.
+No worker-count policy change follows from these results.
+
+The first phone connection failed before loading because Chrome's DevTools socket
+was not ready. A subsequent attempt was excluded: Chrome was dozing behind the
+notification shade and recorded zero frames. After waking it, a short smoke test
+and both full comparisons recorded frames. The temporary AC keep-awake setting
+was restored to its original value of zero, and ADB port mappings were removed.
+One `scene.mjs run all` pass had a transient wall-crash zero-damage assertion;
+the isolated scenario and the next full pass succeeded. Both browser check scripts,
+`npm run build` (including
+typecheck), `node --check` for both scripts, and `git diff --check` pass. Matched
+WebGPU screenshots show the same streets, buildings, parked cars and sky shading.
+
+Evidence: `/private/tmp/streets-012-part-a-compare.{json,log}`,
+`/private/tmp/streets-012-part-b-numeric-compare.{json,log}`,
+`/private/tmp/streets-012-phone-part-a.{json,log}`,
+`/private/tmp/streets-012-phone-part-b.{json,log}`, and matched
+`/private/tmp/streets-012-{a,b}-drive.png` screenshots. Fixed snapshots at
+`/private/tmp/streets-012-base` (`a3032fb`), `streets-012-part-a` (`ac90ca1`)
+and `streets-012-part-b-numeric` (`3d60b16`) read the same untouched shared map
+data. Their test servers are stopped. No generated assets were changed or deployed.
+
+## Merge decision, 1 October 2026
+
+Part A is selected for main with the original worker-count default. Part B remains
+only in the experiment worktree `/Users/janca/.codex/worktrees/811c/streets-of-prague`
+and the separately launched plan-013 integration worktree. Its correctness tests
+passed, but a consistent desktop regression is insufficient reason to replace the
+existing collision implementation. Main keeps `syncResting()` and its existing
+full-rebuild-on-change behavior; it does not contain `src/restingCars.ts` or the
+experimental `check-resting-cars.mjs`. References to that runner and the Part B
+Result above describe the completed experiment, not main.
+
+See [the findings and merge summary](../docs/optimisation-findings-007-012.md).

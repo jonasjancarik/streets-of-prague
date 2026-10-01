@@ -36,6 +36,7 @@ from shapely.geometry import Polygon, mapping
 from shapely.ops import unary_union
 
 import ipr_buildings as ipr
+from landmark_colours import convert_file
 from layers import CACHE as LAYERS
 from osm_area import AREAS, OUT
 from photomesh import fetch, nodes_over, triangles
@@ -176,10 +177,12 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
         if not raw:
             print(f"{name}: no IPR buildings there, so the mesh's triangles as they are")
         write_glb(glb, parts)
-    print(f"{name}: {glb.stat().st_size / 1e6:.1f} MB")
+    warmed = out / f"{name}.warm-v1.glb"
+    convert_file(glb, warmed)  # Only the final output, never Blender's inputs or diagnostic model.
+    print(f"{name}: {glb.stat().st_size / 1e6:.1f} MB original, {warmed.stat().st_size / 1e6:.1f} MB warmed")
     cx, cy = foot.centroid.x, foot.centroid.y
     polys = list(foot.geoms) if foot.geom_type == "MultiPolygon" else [foot]
-    return {"name": name, "file": f"landmarks/{name}.glb", "polygons": [mapping(q)["coordinates"] for q in polys],
+    return {"name": name, "file": f"landmarks/{name}.warm-v1.glb", "polygons": [mapping(q)["coordinates"] for q in polys],
             "home": f"{int((cx + ox) // tile)}_{int((cy + oy) // tile)}", "tiles": tiles}
 
 

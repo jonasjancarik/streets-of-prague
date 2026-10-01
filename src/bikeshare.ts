@@ -45,6 +45,7 @@ export interface BikeWorld {
 
 export class BikeShare {
   systems: BikeSystem[] = [];
+  readonly ready: Promise<void>;
   stations: Station[] = [];
   done: Rental[] = [];
   private grid = new Map<string, Station[]>();
@@ -53,7 +54,7 @@ export class BikeShare {
   private gone: { rental: Rental; fee: number }[] = [];
 
   constructor(area: string) {
-    void fetch(`data/${area}_now/bikes.json`).then((r) => (r.ok ? r.json() as Promise<Data> : null)).then((d) => {
+    this.ready = fetch(`data/${area}_now/bikes.json`).then((r) => (r.ok ? r.json() as Promise<Data> : null)).then((d) => {
       if (!d) return;
       this.systems = d.systems;
       for (const [x, y, system, capacity, id, name] of d.stations) {
@@ -66,6 +67,10 @@ export class BikeShare {
       }
     }).catch(() => {});
   }
+
+  // Read whatever operator colours have arrived by graphics preparation time.
+  // The feed remains optional and does not add a loading wait.
+  colours() { return this.systems.map((system) => system.colour).filter(Boolean); }
 
   private near(x: number, y: number, r: number) {
     const out: Station[] = [];

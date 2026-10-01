@@ -8,7 +8,7 @@ This is step 1 of six plans to reduce driving stutter without reducing the game'
 
 ## Status and starting point
 
-- Status: PLANNED; source inspection only. No implementation or new measurements were performed to write this plan.
+- Status: DONE (local); graph sharing, browser regression, matched visual checks and the controlled drive comparison are complete. The observed frame-time benefit is inconclusive.
 - Priority: P1. Estimated effort: about a day. Change risk: medium.
 - Category: performance. Dependencies: none.
 - Planned at: `5162c1fcf11e51df8ceda46049cac217fc7a12cd`, 2026-09-30.
@@ -111,11 +111,11 @@ For screenshots, an existing command is `node scripts/bench.mjs --url http://loc
 
 ## Done criteria and stop conditions
 
-- [ ] Typecheck, focused graph/binding checks, graphics-switch regression, and build pass.
-- [ ] Equivalent converted materials share complete graph nodes; distinct textures, sky attributes and emissive variants still render correctly.
-- [ ] Disposal of one tile does not invalidate a surviving tile's material inputs.
-- [ ] Controlled drive comparison and matched visual checks are recorded, with no unsupported speedup claim.
-- [ ] `git diff --check` passes; changed files are within scope; this plan and the index state the outcome.
+- [x] Typecheck, focused graph/binding checks, graphics-switch regression, and build pass.
+- [x] Equivalent converted materials share complete graph nodes; distinct textures, sky attributes and emissive variants still render correctly.
+- [x] Disposal of one tile does not invalidate a surviving tile's material inputs.
+- [x] Controlled drive comparison and matched visual checks are recorded, with no unsupported speedup claim.
+- [x] `git diff --check` passes; changed files are within scope; this plan and the index state the outcome.
 
 Stop if sharing requires a three.js cache-key patch, captures object-specific instance buffers, produces stale textures, or requires changing Auto shadow disposal. Those are separate problems. If focused checks fail after two reasonable attempts, preserve the evidence and report the blocker rather than hiding a material or disabling its lighting.
 
@@ -123,4 +123,24 @@ Future ports must share the final node objects, not just their constructor funct
 
 ## Result
 
-Not started. Record implementation revision, verification commands/results, comparison environment, measured results, visual checks, and any remaining limitations here.
+Implementation: `ef4727204472d53afa70692cc17138de08adf0a5` in the dedicated plan 007 worktree. Buildings, landmarks and cutaway materials now reuse complete node graphs. `lampLit` caches the final graph by original emissive and world-position node identity with weak references, and applying it twice to a material is idempotent. Each mesh still owns its material and texture bindings.
+
+Verification:
+
+- `npm run typecheck`, `npm run build`, `node --check scripts/check-material-sharing.mjs` and `git diff --check` passed.
+- On WebGPU, `node scripts/check-material-sharing.mjs --url http://localhost:5237/ --case all` passed for the IPR scene. It found 14 ordinary building meshes and 13 meshes with `drapeUv`, and checked graph identity, cache keys, distinct landmark textures and sky attributes, disposal, rain, snow, a lit roof window, and a changing landmark cutaway by rendered pixels. `--case bindings --layout osm` passed with 14 OSM meshes with `drapeUv`. Neither run reported console or page errors.
+- The final binding check also rendered a second landmark with a different texture and a second building with different sky data after the first had warmed. In each case `renderer._nodes.nodeBuilderCache.size` stayed at 159; the equivalent live builder state was reused.
+- `node scripts/check-graphics.mjs --url http://localhost:5237/` passed on WebGPU and legacy WebGL.
+- The same graph check against the unchanged `a3032fbf44451e97a9e13248af6c5cb4a17844f7` baseline on port 5245 failed specifically with `building colorNode is duplicated`; the captured log is `/tmp/streets-007-baseline-graphs.log`.
+
+The unchanged baseline was served from an archive of `a3032fbf44451e97a9e13248af6c5cb4a17844f7` on port 5245; the candidate was served from the committed plan 007 worktree on port 5237. Both read the same generated `public/data` through read-only symlinks. On an Apple M5 MacBook Air with Chrome 154, the prescribed alternating three-run 40-second WebGPU drive used High graphics, DPR 1, CPU throttle 4, 14:00 clear weather, `--stalls`, fresh browsers and loading frames. Its full log and JSON are `/tmp/streets-007-drive.log` and `/tmp/streets-007-drive.json`; all six runs reported WebGPU and no page or console errors.
+
+| Drive run | Baseline ms/frame | Candidate ms/frame | Baseline/candidate material builds | Baseline/candidate build time |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 11.2 | 13.9 | 118 / 112 | 807 / 1004 ms |
+| 2 | 20.1 | 12.7 | 107 / 114 | 1479 / 946 ms |
+| 3 | 14.5 | 12.4 | 114 / 118 | 1101 / 824 ms |
+
+The means were 15.3 → 13.0 ms/frame, frame p95 30.1 → 27.4 ms, frame p99 49.5 → 36.2 ms, and ordinary-frame render time about 7.9 → 7.0 ms. Long tasks were 3/43/22 baseline and 13/10/9 candidate. The pairs moved in opposite directions, the total material-build counts were 339 baseline and 344 candidate, and the stall reports contained no new building mesh (`facade`/`sky`) builder entries. The mean timing difference is therefore inconclusive for this shader change; it must not be presented as a proven frame-time gain.
+
+Matched 1440 × 900 screenshots at `stand` and `strana`, 14:00 clear and 22:00 rain, show the same buildings, roofs, facade pictures, lit windows, lamp pools and weather in baseline and candidate. Traffic and pedestrians differ between captures. The legacy WebGL `stand` pair also matches. An actual metro ride from Můstek toward Staroměstská opened the tunnel cutaway on both WebGPU versions: the cut radius was about 62 m, the track remained visible in the circular opening, and four real landmark meshes plus the loaded facade atlas were present. The baseline and candidate cutaway images are `/tmp/streets-007-{baseline,candidate}-metro-cutaway-stand.png`; the other image paths start `/tmp/streets-007-{baseline,candidate}-{day,night,webgl}-`. One candidate attempt received `net::ERR_EMPTY_RESPONSE` from a resource request; an immediate server check returned HTTP 200 and the retry passed with no browser errors. No map assets were rebuilt or migrated.

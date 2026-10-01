@@ -4,9 +4,10 @@ import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
 import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
-import { Car, CarPool, collideBodies, loadCars, useKit } from './car.ts';
+import { Car, CarPool, collideBodies, loadCars, ordinaryCarBodies, useKit } from './car.ts';
 import { loadKit } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
+import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
 import { loadFootfall } from './footfall.ts';
@@ -335,7 +336,9 @@ async function main() {
     return d > rMin && d < LIFE_RADIUS && world.grid.at(sx, sy) !== 255;
   };
   for (let i = 0; i < BUSES; i++) traffic.buses(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS), BUSES);
-  for (let i = trafficWanted(clock.t); i > 0; i--) traffic.spawn(lifeSpots(walker.x, walker.y, 25), edgesNear(walker.x, walker.y, LIFE_RADIUS));
+  const firstTrafficEdges = edgesNear(walker.x, walker.y, LIFE_RADIUS);
+  const firstTrafficSampler = traffic.prepareSpawn(firstTrafficEdges);
+  for (let i = trafficWanted(clock.t); i > 0; i--) traffic.spawn(lifeSpots(walker.x, walker.y, 25), firstTrafficEdges, null, firstTrafficSampler);
   // How many people are about: CROWD a metre along each footpath around you, times
   // how strongly it draws people, so a busy street adds its own crowd (Karlův most,
   // Anděl) rather than sharing out a fixed number. At most PEOPLE, half on Lowest.
@@ -347,25 +350,18 @@ async function main() {
     }
     return Math.min(Math.round(PEOPLE * graphics.crowd), Math.round(FEW_PEOPLE + CROWD * draw));
   };
-  // A spot on one of the footpaths, busier ones likelier; `ok` can turn spots down.
-  const pickSpot = (edges: WalkEdge[], ok: ((x: number, y: number) => boolean) | null) => {
-    let total = 0;
-    const upTo = edges.map((e) => (total += e.path.length * footfall.pull(e)));
-    for (let t = 0; t < 8; t++) {
-      const x = seeded() * total;
-      let lo = 0, hi = upTo.length - 1;
-      while (lo < hi) { const mid = (lo + hi) >> 1; if (upTo[mid] < x) lo = mid + 1; else hi = mid; }
-      const e = edges[lo], s = seeded() * e.path.length, at = e.path.at(s);
-      if (!ok || ok(at.x, at.y)) return { e, s };
-    }
-    return null;
-  };
+  const spawnWork = { peoplePasses: 0, peopleWeights: 0, peoplePicks: 0, peoplePrepareMs: 0 };
   // People who wander too far are moved to just outside the view, so they walk into it.
   // Where it's getting quieter some go home, out of sight; where it's getting busier
   // more turn up. `onlyFar` false: everyone at once, anywhere around you.
   const scatterPeople = (onlyFar: boolean) => {
     const edges = walkNear(px(), py(), onlyFar ? Math.min(LIFE_RADIUS, viewRadius() + 90) : LIFE_RADIUS * 0.6);
     if (!edges.length) return;
+    const prepareStart = performance.now();
+    const sampler = preparePeople(edges, (e) => e.path.length * footfall.pull(e));
+    spawnWork.peoplePasses++;
+    spawnWork.peopleWeights += edges.length;
+    spawnWork.peoplePrepareMs += performance.now() - prepareStart;
     const ok = onlyFar ? offscreen : null, most = onlyFar ? 20 : Infinity, want = peopleWanted();
     for (let k = crowd.people.length - 1, n = 0; k >= 0 && crowd.people.length > want && n < most; k--) {
       const p = crowd.people[k];
@@ -373,13 +369,15 @@ async function main() {
     }
     for (const p of crowd.people) {
       if (onlyFar && Math.hypot(p.x - px(), p.y - py()) < LIFE_RADIUS) continue;
-      const at = pickSpot(edges, ok);
+      spawnWork.peoplePicks++;
+      const at = pickPerson(sampler, seeded, ok);
       if (!at) continue;
       Object.assign(p, { ...at, state: 'walk', vx: 0, vy: 0 });
       crowd.place(p);
     }
     for (let n = 0; crowd.people.length < want && n < most; n++) {
-      const at = pickSpot(edges, ok);
+      spawnWork.peoplePicks++;
+      const at = pickPerson(sampler, seeded, ok);
       if (!at) break;
       crowd.add(at);
     }
@@ -1121,6 +1119,7 @@ async function main() {
     if (inCar) pushCar(hash, inCar);
     else if (!inHeli && !ride.on && !taxi.riding) hash.add({ x: walker.x, y: walker.y, z: walker.gz, r: 0.5, vx: walker.vx, vy: walker.vy, kind: 'player' });
     // (People walking along the pavement only where a car is driving along it too.)
+    traffic.gatherPavementCars();
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0 || traffic.pavementNear(p.x, p.y, 12)) hash.add({ x: p.x, y: p.y, z: p.gz, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     for (const o of brigade.crew) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
@@ -1395,7 +1394,8 @@ async function main() {
       spawnT = 0.25;
       const edges = edgesNear(px(), py(), LIFE_RADIUS), ok = lifeSpots(px(), py(), 40);
       traffic.buses((x, y) => offscreen(x, y) && ok(x, y), edges, BUSES);
-      for (let n = 0; n < 10 && traffic.agents.length < wanted; n++) if (!traffic.spawn((x, y) => offscreen(x, y) && ok(x, y), edges)) break;
+      const sampler = traffic.prepareSpawn(edges);
+      for (let n = 0; n < 10 && traffic.agents.length < wanted; n++) if (!traffic.spawn((x, y) => offscreen(x, y) && ok(x, y), edges, null, sampler)) break;
     }
   };
 
@@ -1408,7 +1408,19 @@ async function main() {
     // its textures once, so tiles compiled here would keep the black stand-in.
     status('Preparing the view…');
     await loadFacadeAtlas();
-    await renderer.compileAsync(scene, camera).catch((e) => console.warn(e));
+    // Keep tree variants prepared while warming the car meshes and scene.
+    const releaseTreeReserve = world.trees.prepare([30, 20, 24]);
+    try {
+      // Give the already-started optional bike feed a short chance to supply its
+      // operator colours; a slow or missing feed must never hold the loading screen.
+      await Promise.race([bikeShare.ready, new Promise<void>((resolve) => setTimeout(resolve, 250))]);
+      carPool.prepare(ordinaryCarBodies(bikeShare.colours()));
+      await carPool.warm(() => renderer.compileAsync(scene, camera)).catch((e) => console.warn(e));
+      // compileAsync prepares the main view, while tree shadows get their own
+      // renderer pass. Draw once behind the loading screen with every retained
+      // page visible, then hide the empty reserve again.
+      renderer.render(scene, camera);
+    } finally { releaseTreeReserve(); }
     scene.remove(samples.group);
     metro.under.hide();
     samples.dispose();
@@ -1732,7 +1744,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare,
+    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

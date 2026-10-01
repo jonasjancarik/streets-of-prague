@@ -23,12 +23,12 @@ implementation steps, regression cases, future verification commands and stop co
 
 | Step | Plan | Priority | Estimated effort | Status |
 | --- | --- | --- | --- | --- |
-| 1 | [007: Share building and lighting shader graphs](007-share-building-shader-graphs.md) | P1 | About a day | PLANNED |
-| 2 | [008: Prepare and retain car meshes](008-prepare-car-meshes.md) | P1 | One to two days | PLANNED |
-| 3 | [009: Reuse spatial tree batches](009-reuse-tree-batches.md) | P1 | Several days | PLANNED |
-| 4 | [010: Bake landmark colour adjustments into assets](010-prebake-landmark-colours.md) | P2 | One to two days plus asset checks | PLANNED |
-| 5 | [011: Reuse spawn weights and pavement-traffic lookups](011-reuse-spawn-sampling.md) | P2 | About a day | PLANNED |
-| 6 | [012: Schedule streaming and update parked-car collisions](012-schedule-streaming-and-update-collisions.md) | P2 | Several days | PLANNED |
+| 1 | [007: Share building and lighting shader graphs](007-share-building-shader-graphs.md) | P1 | About a day | DONE (main; timing benefit inconclusive) |
+| 2 | [008: Prepare and retain car meshes](008-prepare-car-meshes.md) | P1 | One to two days | DONE (main; timing benefit inconclusive) |
+| 3 | [009: Reuse spatial tree batches](009-reuse-tree-batches.md) | P1 | Several days | DONE (main; timing inconclusive) |
+| 4 | [010: Bake landmark colour adjustments into assets](010-prebake-landmark-colours.md) | P2 | One to two days plus asset checks | DONE (main code and isolated assets; shared data/deployment pending, timing inconclusive) |
+| 5 | [011: Reuse spawn weights and pavement-traffic lookups](011-reuse-spawn-sampling.md) | P2 | About a day | DONE (main; timing benefit inconclusive) |
+| 6 | [012: Schedule streaming and update parked-car collisions](012-schedule-streaming-and-update-collisions.md) | P2 | Several days | VERIFIED locally; Part A accepted for main, Part B held (desktop regression) |
 
 ### Order and dependencies
 
@@ -90,3 +90,7 @@ operator's separate authorization.
   pooling and offline sky baking:** possible follow-ups, not part of this scope.
 - **Staggering the life tick:** reconsider only if the narrower step-5 changes leave
   a measured burst; scheduling changes must not alter population or accounting.
+
+Merge findings for plans 007–012 are recorded in
+[the summary](../docs/optimisation-findings-007-012.md). Implementation completion
+does not imply that every experiment is recommended for main.

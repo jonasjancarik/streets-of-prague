@@ -6,18 +6,22 @@
 // lines the bench prints. See "Stalls while driving" in the performance skill.
 (() => {
   const d = window.__drive, w = d.world, r = d.renderer, dev = r.backend?.device ?? null;
-  const fresh = () => ({ t: performance.now(), wb: 0, wbN: 0, ua: 0, pipes: 0, shaders: 0, bufs: 0, bufBytes: 0, builds: 0, buildMs: 0, render: 0, e: 0 });
-  const S = { long: [], calls: [], frames: [], tiles: [], kinds: new Map(), acc: fresh() };
+  const fresh = () => ({ t: performance.now(), wb: 0, wbN: 0, ua: 0, pipes: 0, shaders: 0, bufs: 0, bufBytes: 0, builds: 0, buildMs: 0, carBuilds: 0, carBuildMs: 0, render: 0, e: 0 });
+  const S = { long: [], calls: [], frames: [], tiles: [], kinds: new Map(), acc: fresh(), treesAtStart: w.trees?.stats() ?? null };
+  S.gaps = { samples: 0, player: 0, ahead: 0 };
+  S.resting = { scans: 0, changed: 0, total: 0, circles: 0, touchedBuckets: 0 };
   new PerformanceObserver((l) => { for (const e of l.getEntries()) S.long.push({ s: e.startTime, d: e.duration }); }).observe({ type: 'longtask' });
 
   // Calls that take at least `min` ms, with when they ran.
-  const timed = (obj, key, name, min = 1) => {
+  const updateCalls = { traffic: { n: 0, ms: 0 }, crowd: { n: 0, ms: 0 } };
+  const timed = (obj, key, name, min = 1, aggregate = null) => {
     const f = obj?.[key];
     if (typeof f !== 'function') return;
     obj[key] = function (...a) {
       const t0 = performance.now();
       const out = f.apply(this, a);
       const t1 = performance.now();
+      if (aggregate) { aggregate.n++; aggregate.ms += t1 - t0; }
       if (t1 - t0 >= min) S.calls.push({ n: name, s: t0, d: t1 - t0 });
       return out;
     };
@@ -28,12 +32,34 @@
   timed(w, 'onCars', 'onCars');
   timed(w, 'drop', 'drop');
   timed(w, 'update', 'world.update', 3);
-  timed(d.traffic, 'update', 'traffic.update', 2);
-  timed(d.crowd, 'update', 'crowd.update', 2);
+  timed(d.traffic, 'update', 'traffic.update', 2, updateCalls.traffic);
+  const spawnCalls = { n: 0, ms: 0, prepareN: 0, prepareMs: 0 };
+  for (const [key, count, elapsed] of [['spawn', 'n', 'ms'], ['prepareSpawn', 'prepareN', 'prepareMs']]) {
+    const original = d.traffic[key];
+    d.traffic[key] = function (...args) {
+      const start = performance.now();
+      try { return original.apply(this, args); }
+      finally { spawnCalls[count]++; spawnCalls[elapsed] += performance.now() - start; }
+    };
+  }
+  const peopleStart = d.spawnWork && { ...d.spawnWork };
+  timed(d.crowd, 'update', 'crowd.update', 2, updateCalls.crowd);
   timed(d.trams, 'update', 'trams.update', 2);
   timed(d.lamps, 'update', 'lamps.update', 2);
   timed(d.lamps, 'fill', 'lamps.fill');
   timed(d.crowd, 'index', 'crowd.index');
+  if (d.resting) {
+    const sync = d.resting.sync;
+    d.resting.sync = function (...a) {
+      const out = sync.apply(this, a);
+      S.resting.scans++;
+      S.resting.changed += out.changedCars;
+      S.resting.total += out.indexedCars;
+      S.resting.circles += out.allocatedCircles;
+      S.resting.touchedBuckets += out.touchedBuckets;
+      return out;
+    };
+  }
   // Tile builds: noted when each finishes, with its laps (tile.ms).
   const make = w.make;
   w.make = async function (k, files) {
@@ -65,6 +91,9 @@
       if (cache.size > before) {
         const dt = performance.now() - t0, o = ro.object;
         S.acc.builds++; S.acc.buildMs += dt;
+        if (o.isInstancedMesh && o.material?.customProgramCacheKey?.() === 'cars') {
+          S.acc.carBuilds++; S.acc.carBuildMs += dt;
+        }
         const kind = `${ro.material.type}${ro.material.userData?.flatten ? ' ground' : ''}${o.isInstancedMesh ? ` instanced(${o.instanceMatrix.count})` : ''}${o.name ? ` ${o.name}` : ''} [${Object.keys(ro.geometry.attributes).join(',')}]`;
         const k = S.kinds.get(kind) || [0, 0];
         S.kinds.set(kind, [k[0] + 1, k[1] + dt]);
@@ -87,6 +116,12 @@
     const t1 = performance.now();
     S.acc.render += t1 - t0;
     if (s === d.scene) {
+      const car = d.car;
+      if (car) {
+        S.gaps.samples++;
+        if (!w.tileAt(car.x, car.y)) S.gaps.player++;
+        if (!w.tileAt(car.x + Math.cos(car.h) * w.T, car.y + Math.sin(car.h) * w.T)) S.gaps.ahead++;
+      }
       S.acc.e = t1;
       S.frames.push(S.acc);
       S.acc = fresh();
@@ -101,6 +136,14 @@
     const at = (p) => f1(gaps[Math.min(gaps.length - 1, Math.floor(p * gaps.length))] ?? NaN);
     const lines = [`frames ${S.frames.length}: median ${at(0.5)}, 99th percentile ${at(0.99)}, slowest ${at(1)} ms; long tasks ${S.long.length} (${Math.round(S.long.reduce((a, l) => a + l.d, 0))} ms); tiles built ${S.tiles.length}`];
     lines.push(`material builds ${sum(S.frames, 'builds')} (${Math.round(sum(S.frames, 'buildMs'))} ms), pipelines ${sum(S.frames, 'pipes')}, shader modules ${sum(S.frames, 'shaders')}`);
+    lines.push(`car-body builds ${sum(S.frames, 'carBuilds')} (${Math.round(sum(S.frames, 'carBuildMs'))} ms)`);
+    if (S.treesAtStart) lines.push(`tree pages ${JSON.stringify(S.treesAtStart)} → ${JSON.stringify(w.trees.stats())}`);
+    lines.push(`traffic spawn ${spawnCalls.n} calls (${f1(spawnCalls.ms)} ms), prepare ${spawnCalls.prepareN} lists (${f1(spawnCalls.prepareMs)} ms)`);
+    lines.push(`updates traffic ${updateCalls.traffic.n} calls (${f1(updateCalls.traffic.ms)} ms), crowd ${updateCalls.crowd.n} calls (${f1(updateCalls.crowd.ms)} ms)`);
+    if (peopleStart) {
+      const p = d.spawnWork;
+      lines.push(`people prepare ${p.peoplePasses - peopleStart.peoplePasses} passes (${f1(p.peoplePrepareMs - peopleStart.peoplePrepareMs)} ms), ${p.peopleWeights - peopleStart.peopleWeights} weights, ${p.peoplePicks - peopleStart.peoplePicks} picks`);
+    }
     for (const [kind, [n, ms]] of [...S.kinds].sort((a, b) => b[1][1] - a[1][1])) lines.push(`  build ${n}× ${Math.round(ms)} ms ${kind}`);
     for (const t of S.tiles) lines.push(`tile ${t.k} at ${f1(t.s)}–${f1(t.e)} ms ${JSON.stringify(t.ms)}`);
     const inLong = (f) => S.long.some((l) => f.e >= l.s && f.t <= l.s + l.d);
@@ -113,6 +156,10 @@
     }
     const calm = S.frames.filter((f) => !inLong(f)), avg = (k) => sum(calm, k) / Math.max(1, calm.length);
     lines.push(`frames outside long tasks ${calm.length}: render ${f1(avg('render'))} ms, writeBuffer ${mb(avg('wb'))} MB/${f1(avg('wbN'))}, attributes ${mb(avg('ua'))} MB a frame`);
+    const q = w.streamingStats;
+    if (q) lines.push(`streaming: required ${q.queuedRequired} queued/${q.runningRequired} running, optional ${q.queuedOptional} queued/${q.runningOptional} running; completed ${q.completedRequired} required/${q.completedOptional} optional; refreshes ${q.coalesced} coalesced/${q.cancelled} cancelled; tile build ${q.buildTimes.length} samples, p95 ${f1(q.buildTimes.slice().sort((a, b) => a - b)[Math.ceil(q.buildTimes.length * .95) - 1] || 0)} ms`);
+    lines.push(`road gaps: missing player ${S.gaps.player}/${S.gaps.samples}, ahead ${S.gaps.ahead}/${S.gaps.samples} driving frames`);
+    if (S.resting.scans) lines.push(`resting: ${S.resting.changed} changed / ${S.resting.total} indexed-car scans, ${S.resting.circles} circles allocated, ${S.resting.touchedBuckets} buckets touched`);
     return lines;
   };
   window.__stalls = S;

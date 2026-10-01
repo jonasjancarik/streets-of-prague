@@ -279,19 +279,27 @@ const windowGlow = Fn(() => {
   return g;
 });
 
+// These nodes describe the layout, not a tile. Material colour and the sky vertex
+// attribute are resolved for each mesh when the shared graph is built.
+const buildingGraph = {
+  color: buildingColor(),
+  glow: windowGlow(),
+  ambient: skyAmbient(attribute('sky', 'float')),
+};
+const cutMask = positionWorld.y.greaterThan(uCut.y).and(distance(positionWorld.xz, uCut.xz).lessThan(uCut.w)).not();
+
 addPort(/^buildings-procedural$/, (node) => {
   node.vertexColors = false; // the colour node multiplies the vertex colour in itself
-  node.colorNode = buildingColor();
-  node.emissiveNode = windowGlow();
+  node.colorNode = buildingGraph.color;
+  node.emissiveNode = buildingGraph.glow;
   // Lower walls that look onto a narrow street or a courtyard get less of the sky's light, never less sun or lamplight.
-  node.aoNode = skyAmbient(attribute('sky', 'float'));
+  node.aoNode = buildingGraph.ambient;
   lampLit(node);
 });
 
 // The same hole in the landmarks, trees and the ground's depth pass (cutAway in shading.ts).
 addPort(/^cut-/, (node) => {
-  const w = positionWorld;
-  node.maskNode = w.y.greaterThan(uCut.y).and(distance(w.xz, uCut.xz).lessThan(uCut.w)).not();
+  node.maskNode = cutMask;
   lampLit(node);
 });
 
@@ -317,10 +325,10 @@ const landmarkColor = Fn(() => {
   });
   return c;
 });
+const landmarkGraph = landmarkColor();
 addPort(/^landmark-roof$/, (node) => {
-  const w = positionWorld;
-  node.maskNode = w.y.greaterThan(uCut.y).and(distance(w.xz, uCut.xz).lessThan(uCut.w)).not();
-  node.colorNode = landmarkColor();
+  node.maskNode = cutMask;
+  node.colorNode = landmarkGraph;
   lampLit(node);
 });
 
