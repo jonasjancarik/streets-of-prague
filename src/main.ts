@@ -5,7 +5,7 @@ import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
 import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
-import { Car, CarPool, collideBodies, loadCars, ordinaryCarBodies, useKit } from './car.ts';
+import { Car, CarPool, collideBodies, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { loadKit } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
@@ -66,6 +66,10 @@ import type { DriveEdge, WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Tracked } from './tiles.ts';
 import { getLang, onLang, t, tn, translatePage } from './i18n.ts';
+const VEHICLE_NAMES: Record<string, string> = {
+  van: 'Van', taxi: 'Taxi', police: 'Police car', bike: 'Bicycle', moto: 'Motorbike',
+  truck: 'Lorry', artic: 'Articulated lorry', bus: 'Bus', minibus: 'Minibus', fire: 'Fire engine',
+};
 import { setupTestkit, PLACES } from './testkit.ts';
 import type { Testkit } from './testkit.ts';
 
@@ -721,7 +725,7 @@ async function main() {
     best.mode = 'player';
     if (best.two) best.rider = walker.look;
     inCar = best;
-    if (best.variant?.name) showBanner(best.variant.name);
+    if (best.variant) showBanner(variantName(best.variant));
     walker.perch = 0;
     walker.mesh.visible = false;
   };
@@ -957,6 +961,7 @@ async function main() {
   // lay the page out again.
   const shown: Record<string, string | number> = {};
   let radioShown = '';
+  let carShown = '';
   const stationList = $('radio').querySelector('select')!;
   for (const [i, label] of [[-1, t('Radio off')], ...STATIONS.map((s, i) => [i, s.name] as const)] as [number, string][]) stationList.add(new Option(label, String(i)));
   stationList.addEventListener('change', () => { sound.radio?.pick(Number(stationList.value)); stationList.blur(); });
@@ -1605,6 +1610,13 @@ async function main() {
       street = name;
       $('street').textContent = name;
     }
+    const carName = inCar ? (inCar.variant ? variantName(inCar.variant) : t(VEHICLE_NAMES[inCar.type] ?? inCar.type)) : '';
+    if (carName !== carShown) {
+      carShown = carName;
+      const box = $('vehicle');
+      box.textContent = carName;
+      box.hidden = !carName;
+    }
     bannerT -= dt;
     show('banner', clamp(bannerT, 0, 1), 'opacity');
     if (underway) districts.hide();
@@ -1613,7 +1625,8 @@ async function main() {
       : ride.on ? Math.round((ride.v?.speed ?? 0) * 3.6) : funicular.me ? Math.round(Math.hypot(funicular.me.vx, funicular.me.vy) * 3.6) : taxi.riding ? Math.round((taxi.agent?.speed ?? 0) * 3.6) : '–'));
     if (sound.radio) {
       const near = !inCar && !inHeli && !ride.on && [...carsNear(walker.x, walker.y, 25)].some((c) => !c.two && !c.burnt && c.gap(walker.x, walker.y) < 20);
-      sound.radio.warm(near, dt);
+      const lc = sound.radio.lingering as Car | null;
+      sound.radio.warm(near, dt, !!lc && lc.gap(walker.x, walker.y) < 30);
     }
     const radio = inCar && !inCar.two ? sound.radio : null;
     const radioText = radio ? radio.station?.name ?? t('Radio off') : '';

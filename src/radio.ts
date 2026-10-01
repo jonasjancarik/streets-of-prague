@@ -32,15 +32,26 @@ const randomOther = (not: number) => {
   return i;
 };
 
+interface Stream { el: HTMLAudioElement; gain: GainNode }
+type Owner = { radio?: number };
+
+const LINGER = 60; // s a car's station keeps downloading after you leave it (as long as you're away from it)
+const WARM = 20; // s the next station keeps downloading after you walk away from every car
+
 export class Radio {
   private ctx: AudioContext;
   private noise: AudioBuffer;
   private out: GainNode;
   private input: AudioNode; // where a station's sound comes in
-  private el: HTMLAudioElement | null = null;
+  // Stations being downloaded: the one for the next car, and the one you just left (so getting
+  // back into that car has no wait). Only the tuned one is audible, and only in a car.
+  private streams = new Map<number, Stream>();
   private tuned = -1; // the index in STATIONS being played, or -1 when it's off
   private want = false; // whether a station should be heard right now
   private away = 0;
+  private warmOn = false;
+  private owner: Owner | null = null; // the car you're in, which remembers its station
+  private linger: { car: Owner; idx: number; away: number } | null = null;
   private stopStatic: (() => void) | null = null;
   // Called when a station can't be reached while you're listening.
   onFail: (station: Station) => void = () => {};
@@ -58,6 +69,8 @@ export class Radio {
     if (radioOn()) this.tuned = randomOther(-1);
   }
   get station(): Station | null { return STATIONS[this.tuned] ?? null; }
+  // The car whose station is still downloading after you left it.
+  get lingering(): Owner | null { return this.linger?.car ?? null; }
 
   // The next station, and after the last one, off.
   next(): Station | null {
@@ -79,60 +92,89 @@ export class Radio {
 
   private tune(i: number) {
     this.tuned = i;
+    if (this.owner) this.owner.radio = i;
     setRadioSaved(i >= 0);
-    this.close();
-    if (this.station) this.open(this.want);
+    this.endStatic();
+    this.sync();
     return this.station;
   }
 
   // Whether the radio should be heard now: you're in a car, with the sound on.
-  update(want: boolean) {
-    if (want === this.want) return;
+  update(want: boolean, car: Owner | null = null) {
+    const owner = want ? car : null;
+    const moved = owner !== this.owner;
+    if (!moved && want === this.want) return;
+    if (moved) {
+      // Leaving a car: its station goes on downloading for a while and the next car gets another one.
+      if (this.owner) {
+        if (this.tuned >= 0) this.linger = { car: this.owner, idx: this.tuned, away: 0 };
+        this.tuned = this.tuned >= 0 ? randomOther(this.tuned) : -1;
+      }
+      // Getting into a car brings back its station; one not yet sat in takes what's tuned now.
+      if (owner) {
+        if (owner.radio === undefined) owner.radio = this.tuned;
+        else this.tuned = owner.radio;
+        if (this.linger?.car === owner) this.linger = null;
+      }
+      this.owner = owner;
+    }
     this.want = want;
     const t = this.ctx.currentTime;
     this.out.gain.cancelScheduledValues(t);
-    if (want && this.station) {
-      if (!this.el) this.open(true);
-      else this.el.play().catch(() => {});
-      this.out.gain.setTargetAtTime(LEVEL, t, FADE / 3);
-    } else {
-      this.out.gain.setTargetAtTime(0, t, FADE / 3);
-      // The next car gets another station.
-      if (this.station) window.setTimeout(() => { if (!this.want && this.station) { this.close(); this.tuned = randomOther(this.tuned); } }, FADE * 1000);
+    this.out.gain.setTargetAtTime(want && this.station ? LEVEL : 0, t, FADE / 3);
+    this.sync();
+  }
+
+  // On foot, the next station is only downloaded (silently) while you're near a car, so it's
+  // buffered when you get in, and dropped again a little after you walk away. The station of the
+  // car you just left stays a minute, longer while you're still by it.
+  warm(near: boolean, dt: number, nearLinger = false) {
+    if (this.linger) {
+      if (nearLinger) this.linger.away = 0;
+      else if ((this.linger.away += dt) > LINGER) this.linger = null;
+    }
+    if (near) { this.away = 0; this.warmOn = true; }
+    else if ((this.away += dt) > WARM) this.warmOn = false;
+    this.sync();
+  }
+
+  // Opens the stations that should be downloading, closes the others, and lets only the tuned one be heard.
+  private sync() {
+    const keep = (i: number) => (i === this.tuned && (this.want || this.warmOn)) || this.linger?.idx === i;
+    for (const i of [...this.streams.keys()]) if (!keep(i)) this.close(i);
+    if (this.tuned >= 0 && keep(this.tuned) && !this.streams.has(this.tuned)) this.open(this.tuned, this.want);
+    const t = this.ctx.currentTime;
+    for (const [i, s] of this.streams) {
+      s.gain.gain.cancelScheduledValues(t);
+      s.gain.gain.setTargetAtTime(i === this.tuned && this.want ? 1 : 0, t, FADE / 3);
+      if (i === this.tuned && this.want && s.el.paused) s.el.play().catch(() => {});
     }
   }
 
-  // On foot, the station is only downloaded (silently) while you're near a car, so it's buffered
-  // when you get in, and dropped again a little after you walk away.
-  warm(near: boolean, dt: number) {
-    if (this.want || !this.station) return;
-    if (near) {
-      this.away = 0;
-      if (!this.el) this.open(false);
-    } else if (this.el && (this.away += dt) > 20) this.close();
-  }
-
-  private open(withStatic = false) {
-    const station = this.station;
-    if (!station) return;
+  private open(i: number, withStatic: boolean) {
+    const station = STATIONS[i];
     const el = new Audio();
     el.crossOrigin = 'anonymous';
     el.src = station.url;
-    el.addEventListener('error', () => { if (this.el === el) { this.endStatic(); if (this.want) this.onFail(station); } });
-    el.addEventListener('playing', () => { if (this.el === el) this.endStatic(); });
-    this.ctx.createMediaElementSource(el).connect(this.input);
-    this.el = el;
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    el.addEventListener('error', () => { if (this.streams.get(i)?.el === el && i === this.tuned) { this.endStatic(); if (this.want) this.onFail(station); } });
+    el.addEventListener('playing', () => { if (i === this.tuned) this.endStatic(); });
+    this.ctx.createMediaElementSource(el).connect(gain).connect(this.input);
+    this.streams.set(i, { el, gain });
     if (withStatic) this.startStatic();
     el.play().catch(() => {});
   }
 
-  private close() {
-    this.endStatic();
-    if (!this.el) return;
-    this.el.pause();
-    this.el.removeAttribute('src');
-    this.el.load(); // stops the download
-    this.el = null;
+  private close(i: number) {
+    const s = this.streams.get(i);
+    if (!s) return;
+    if (i === this.tuned) this.endStatic();
+    s.el.pause();
+    s.el.removeAttribute('src');
+    s.el.load(); // stops the download
+    s.gain.disconnect();
+    this.streams.delete(i);
   }
 
   // Static that fills the gap until a station starts playing.
