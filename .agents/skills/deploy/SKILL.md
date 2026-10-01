@@ -144,5 +144,8 @@ with the user's own address.
   again; the account id is set in the script.
 - **mbxp is unreachable.** The script tries `mbxp-remote`; if that fails too, see the
   mbxp-server-management skill.
+- **Map files load slowly or the data address changed.** The addresses the bucket
+  answers at, the Cache Rule each needs and how to check caching are in
+  `docs/versioning.md`, "Where the map is served".
 - **Old maps pile up on mbxp** in `data/`. They share unchanged files, so they cost
   little; removing them is the user's decision.

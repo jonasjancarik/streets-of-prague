@@ -120,6 +120,32 @@ built before that was recorded.
   `DATA_ID=<id> scripts/deploy-mbxp.sh`, with the id from that release's `data-id` file,
   to deploy it with the map it had. Without `DATA_ID` it takes the local map.
 
+## Where the map is served
+
+The bucket answers at two addresses:
+
+- `https://data.streetsofprague.com/<version>/`, which the deploy and release scripts
+  use.
+- `https://streets-data.jonasjancarik.cz/<version>/`, the earlier address. Releases up
+  to v0.1.0 have it built into their code, so it stays connected to the bucket for as
+  long as any of them might be deployed again.
+
+Each address has a Cache Rule in its own Cloudflare zone: files are eligible for cache
+and kept as long as their `Cache-Control` header says. Without the rule Cloudflare
+caches the `.bin.gz` files but fetches every `.json` from R2 on each request. A new
+address for the bucket needs its own rule. The `cf` login used for deploys can connect
+a domain to the bucket but is not allowed to read or change Cache Rules; those are made
+in the dashboard (the zone → Caching → Cache Rules) or with a token that has that
+permission.
+
+To check that an address caches, download a file twice and read `cf-cache-status` on
+the second response; it should be `HIT`:
+
+    curl -s -o /dev/null -D - https://data.streetsofprague.com/<version>/praha_now/index.json | grep -i cf-cache-status
+
+Use a full download as above, not `curl -I`: a header-only request reports `DYNAMIC`
+here even for a file that is cached.
+
 ## Keeping old maps
 
 Every tag depends on its map version staying on R2 unchanged, so versions are not
