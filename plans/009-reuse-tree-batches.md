@@ -8,7 +8,7 @@ This is step 3 of the driving-stutter work. Preserve every tree and its appearan
 
 ## Status and starting point
 
-- Status: IN PROGRESS; retained pages implemented, verification underway.
+- Status: DONE (local); retained pages verified, whole-frame timing inconclusive.
 - Priority: P1. Effort: several days. Risk: medium–high because rendering ownership and tile disposal change.
 - Category: performance. Dependencies: none technically; follow 007 and 008 for separate before/after attribution. Retain their work if present.
 - Planned at: `5162c1fcf11e51df8ceda46049cac217fc7a12cd`, 2026-09-30.
@@ -105,12 +105,12 @@ Only during implementation, verify port ownership before starting candidate/base
 
 ## Done criteria and stop conditions
 
-- [ ] Lifecycle tests prove exact tree data preservation, correct overflow/reuse, valid bounds and cleanup.
-- [ ] Tile unloads do not dispose pooled meshes, shared materials or shared shape attributes.
-- [ ] Reusing prepared pages retains UUIDs/buffers and avoids a new tree build under the same variant.
-- [ ] Unchanged frames do not dirty all tree arrays; memory and normal-frame costs are recorded.
-- [ ] Visual/shadow/season/cutaway checks, legacy WebGL smoke check, graphics switching, typecheck and build pass.
-- [ ] Controlled drive evidence and remaining pool-growth cases are documented; changes stay in scope.
+- [x] Lifecycle tests prove exact tree data preservation, correct overflow/reuse, valid bounds and cleanup.
+- [x] Tile unloads do not dispose pooled meshes, shared materials or shared shape attributes.
+- [x] Reusing prepared pages retains UUIDs/buffers and avoids a new tree build under the same variant.
+- [x] Unchanged frames do not dirty all tree arrays; memory and normal-frame costs are recorded.
+- [x] Visual/shadow/season/cutaway checks, legacy WebGL smoke check, graphics switching, typecheck and build pass.
+- [x] Controlled drive evidence and remaining pool-growth cases are documented; changes stay in scope.
 
 Stop if retaining pages still causes per-reassignment builds, if another object's buffers are bound, if the 16-input limit is exceeded, or if correct spatial culling cannot be preserved. Do not solve any of these by disabling shadows or thinning vegetation. If a viable reserve needs unacceptable memory or startup time, report the measured trade-off before further redesign.
 
@@ -134,4 +134,8 @@ The second three-pair comparison, with 1,200-slot broadleaf pages (`c467563`), u
 
 Those five pages were already allocated. Startup `compileAsync` had excluded active pages outside the initial camera frustum; it also did not draw the tree-shadow pass. The current candidate temporarily disables culling for all retained pages during preparation and renders one frame behind the loading screen before restoring empty pages and normal culling. A focused 40-second WebGPU drive (`/tmp/plan009-diagnostic.log`) then showed **zero tree builder events**, zero page growth, six tiles built, zero long tasks and 0.33 MB/frame of uploads outside long tasks. Its 14.4-second startup was in the range of the preceding measured starts, but one run alone does not establish a startup-time effect. The expanded browser test verifies first use of a prepared page and active-page culling restoration; graphics switching passed on both renderers after this change.
 
-Still required before DONE: an alternating final-candidate drive, a dense-scene ordinary-frame check, final storage-backed seasonal/cutaway screenshots, and the final production build. The shared benchmark lock serialized timed comparisons with other plan chats.
+The final candidate (`80c8dd1`) passed three alternating 40-second WebGPU drives with the same CPU, graphics, time and weather settings. Baseline and candidate each built six tiles per drive. **Tree builder events were zero in all three candidate drives; pool growth stayed [0,0,0].** Total material-build counts were 120/109/114 baseline versus 93/94/99 candidate, but those totals include unrelated cars, ground and other objects. Long tasks were 4/11/10 baseline versus 0/19/2 candidate. Paired mean frame times were 10.7→11.6, 14.8→19.0 and 12.2→13.5 ms, or 12.6→14.7 ms across the set. This is not evidence of a whole-frame speedup; the candidate ran second in each pair while GPU use reached 87% and Spotlight, media analysis and other processes were busy. The drive's mean draw calls were 241–244 baseline and 242–246 candidate; triangles remained about 1.2–1.25 million per frame. Outside long tasks, candidate uploads were about 0.33–0.34 MB/frame versus 0.36–0.44 baseline. Full output is `/tmp/plan009-drive.log` and `/tmp/plan009-drive.json`.
+
+A reversed-order startup check (candidate first, baseline second, three one-second drive loads) found candidate load times of 14.3/15.4/15.6 seconds versus baseline 14.4/13.8/15.1. That does not confirm the 4–9-second candidate penalty seen with candidate always second in the full drive; startup cost remains uncertain under this machine load (`/tmp/plan009-startup.log`). In dense Slatiny, two 20-second paired runs drew 187–191 calls and about 1.22 million triangles in both versions. Mean frame time was 9.0→8.9 ms, within noise, and candidate uploads outside long tasks were about 0.28 MB/frame versus 0.30–0.38 baseline (`/tmp/plan009-suburb.log`). Small uniform-matrix buffers for shrubs and conifers may still upload internally each drawn frame, but the application leaves their attribute versions unchanged until a lease changes.
+
+The final candidate's snow, Slatiny, tree-rich Letná and real tunnel-cell images were inspected against the baseline: `/tmp/trees-final-snow-woods.png`, `/tmp/trees-final-day-slatiny.png`, `/tmp/trees-final-park-view-park.png`, `/tmp/trees-final-real-cutaway-tunnel.png`. Bare twigs, evergreen crowns, the park canopy, nearby street shadows and the tunnel cutaway remain visible; no `exceeds the maximum (16)` or pipeline errors appeared. `node scripts/check-tree-pool.mjs --url http://localhost:5239/ --case all`, `node scripts/check-graphics.mjs --url http://localhost:5239/` (WebGPU and WebGL), `node --check scripts/check-tree-pool.mjs`, `npm run typecheck`, `npm run build` and `git diff --check` passed on the final source. One earlier graphics-check attempt encountered a WebGPU device-startup fallback and was discarded; the retry passed. No shared generated data was rebuilt or replaced. Timed phone performance and a quieter machine comparison remain unverified, so no numerical driving-frame benefit is claimed.

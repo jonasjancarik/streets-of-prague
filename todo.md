@@ -44,6 +44,10 @@ checks; WebGPU uniform instance buffers may still upload on a drawn frame even w
 the application has not marked an attribute dirty.
 Startup also draws the prepared pages once behind the loading screen so later tree
 shadows use the same retained render objects.
+Three controlled drives recorded zero tree shader builds and zero pool growth after
+startup. Frame-time comparisons under heavy machine load did not establish an overall
+speedup; see plan 009 for the paired results. A Pixel 5 or quieter desktop run would
+be useful before claiming a player-visible frame-time improvement.
 
 The tiers now control MSAA, sun shadow size, roof detail and the crowd cap too:
 
