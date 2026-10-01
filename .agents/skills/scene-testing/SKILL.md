@@ -56,6 +56,10 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   (tilt 0 = straight down, up to 75); `t.camera(null)` follows you again.
   `t.view(zoom)` zooms the ordinary camera.
 - `t.shot(name)`: a screenshot (the car-name and district captions hidden).
+- `t.film(name, seconds, controls, { fps, hud })`: footage as numbered screenshots
+  (`name-0001.png` …), the world stepped evenly between them, the HUD hidden unless
+  asked for. Start the server with `--size 1920x1080` for full-HD frames; ffmpeg or the
+  trailer project (`trailer/`) turns them into video.
 - `t.check(name, pass, detail)` records a result in a scenario.
 - `t.paused`, `t.speed`, `t.unhurt`, `t.snapshot()`, `t.run(name)` are what the
   developer panel uses.

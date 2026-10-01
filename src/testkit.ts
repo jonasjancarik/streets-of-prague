@@ -266,6 +266,30 @@ export function setupTestkit(g: Game) {
       try { await save(name); } finally { for (const el of hide) el.style.visibility = ''; }
     },
 
+    // Footage: `seconds` of the world at `fps` frames a second, each saved as a screenshot
+    // (name-0001.png …). The world runs in 1/60 s steps with `ctl` held, however long a
+    // frame takes to save, so the film is smooth. Without `hud`, only the game's picture.
+    async film(name: string, seconds: number, ctl: Partial<Controls> = {}, { fps = 30, hud = false } = {}) {
+      const save = (window as { __shot?: (n: string) => Promise<void> }).__shot;
+      if (!save) return;
+      const canvas = g.canvas;
+      const hide = hud ? [] : [...document.body.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el !== canvas && !el.contains(canvas));
+      const was = kit.paused, shown = hide.map((el) => el.style.visibility);
+      kit.paused = true;
+      for (const el of hide) el.style.visibility = 'hidden';
+      try {
+        for (let i = 0, n = Math.round(seconds * fps); i < n; i++) {
+          for (let k = 0; k < Math.round(60 / fps); k++) g.simulate(1 / 60, ctl);
+          await frame();
+          await frame();
+          await save(`${name}-${String(i + 1).padStart(4, '0')}`);
+        }
+      } finally {
+        kit.paused = was;
+        hide.forEach((el, i) => { el.style.visibility = shown[i]; });
+      }
+    },
+
     // What's going on, as numbers.
     probe() {
       const c = g.car();

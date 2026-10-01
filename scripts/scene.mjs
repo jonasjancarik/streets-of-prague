@@ -10,7 +10,8 @@
 //
 // Common options: [--url http://localhost:5191/] [--out dir for screenshots (default
 // $TMPDIR/scene)] [--place staromak] [--time 14:00] [--weather clear] [--graphics high]
-// [--extra "&area=centrum" (more of the game's URL parameters)].
+// [--extra "&area=centrum" (more of the game's URL parameters)] [--size 1920x1080 (the
+// window; t.film saves footage frame by frame at that size)].
 // With a server running (serve), each command takes a second or two instead of the
 // 30–60 s of loading the map; without one, it opens a browser just for the command.
 // The server follows the dev server's reloads: a command waits for the game to load
@@ -57,7 +58,8 @@ async function openGame({ show = false } = {}) {
     headless: !show, channel: args.browser === 'chromium' ? undefined : 'chrome',
     args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu'],
   });
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1 });
+  const [width, height] = String(args.size || '1280x800').split('x').map(Number);
+  const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
   const page = await ctx.newPage();
   let errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
