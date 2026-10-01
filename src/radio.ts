@@ -23,7 +23,7 @@ const KEY = 'radio';
 export const radioOn = () => { try { return localStorage.getItem(KEY) !== 'off'; } catch { return true; } };
 export const setRadioSaved = (on: boolean) => { try { localStorage.setItem(KEY, on ? 'on' : 'off'); } catch {} };
 
-const LEVEL = 0.55; // how loud a station plays, before the master volume
+const LEVEL = 0.14; // how loud a station plays, before the master volume
 const FADE = 0.25; // s
 
 const randomOther = (not: number) => {

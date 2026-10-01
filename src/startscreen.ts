@@ -36,7 +36,7 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
   return e;
 };
 
-export function startScreen(root: HTMLElement, opts: { now: string; weather: Kind; sound: boolean; saved: (() => string) | null }) {
+export function startScreen(root: HTMLElement, opts: { now: string; weather: Kind; sound: boolean; saved: (() => string) | null; lost: boolean }) {
   const panel = el('div', 'ls-start', root);
   let time: string = 'now', weather: Kind = opts.weather, sound = opts.sound;
   let weatherPicked = false;
@@ -85,6 +85,10 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
   const found = el('div', 'ls-saved', panel);
   panel.insertBefore(found, panel.firstChild);
   relabel.push(() => { found.textContent = opts.saved ? `${t('Saved game')}: ${opts.saved()}` : ''; });
+  // A save this version can't open: said so, and kept in the browser, not dropped.
+  const lost = el('div', 'ls-saved', panel);
+  relabel.push(() => { lost.textContent = opts.lost ? t('The saved game from an earlier version can’t be opened.') : ''; });
+  lost.hidden = !opts.lost;
   const go = el('button', 'ls-go', panel) as HTMLButtonElement;
   const fresh = el('button', 'ls-new', panel) as HTMLButtonElement;
   let ready = false;

@@ -36,8 +36,8 @@ interface EngineSpec { idle: number; redline: number; cylinders: number; gears: 
 // fuller with the pedal down, shifting up early as in town. No sub-octave and no
 // intake: between them they make an engine lope and splutter.
 const EVERYDAY: EngineVoice = {
-  harmonics: [0, 1, 0.25, 0.06, 0.02], sub: 0, drive: 0.3, tone: [120, 1.2, 200],
-  roar: [0, 0, 3], level: [0.03, 0.012, 0.01], shift: [0.28, 0.5], clutch: 1100,
+  harmonics: [0, 1, 0.18, 0.03], sub: 0, drive: 0.3, tone: [120, 1.2, 80],
+  roar: [0, 0, 3], level: [0.014, 0.004, 0.004], shift: [0.28, 0.42], clutch: 500,
 };
 // A tuned sports car: a buzzing note over a deep sub-octave, uneven firing, the
 // intake roaring and every gear taken nearly to the redline. Not on any car yet;
@@ -48,8 +48,8 @@ export const SPORTY: EngineVoice = {
 };
 // A turbo diesel: a fuller, lower note with a bit of clatter, shifting up early.
 const DIESEL: EngineVoice = {
-  harmonics: [0, 1, 0.55, 0.3, 0.12, 0.05], sub: 0, drive: 0.6, tone: [110, 1.4, 220],
-  roar: [0.005, 0.02, 3], level: [0.035, 0.014, 0.01], shift: [0.2, 0.4], clutch: 800,
+  harmonics: [0, 1, 0.45, 0.2, 0.06], sub: 0, drive: 0.5, tone: [110, 1.4, 100],
+  roar: [0.003, 0.008, 3], level: [0.018, 0.006, 0.005], shift: [0.2, 0.34], clutch: 450,
 };
 // An electric motor: a thin whine that rises with speed, silent when standing, a single
 // gear (so no shifts) and no clutch or irregular firing.
@@ -365,7 +365,7 @@ class Engine {
   out: GainNode;
   osc: OscillatorNode; sub: OscillatorNode; wobble: AudioBufferSourceNode; intake: AudioBufferSourceNode;
   depth: GainNode; tone: BiquadFilterNode; roar: BiquadFilterNode; roarGain: GainNode;
-  gear = 0; shift = 0;
+  gear = 0; shift = 0; load = 0;
 
   constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode, car: Car, spec: EngineSpec) {
     this.ctx = ctx;
@@ -412,7 +412,9 @@ class Engine {
     // Revs in a gear: redline at the gear's top speed. Up a gear where the voice says
     // (later with the pedal down), and down once the revs sag.
     const revs = (g: number) => spec.idle + (spec.redline - spec.idle) * clamp(v / (spec.gears[g] * vmax), 0, 1);
-    const up = spec.idle + (spec.redline - spec.idle) * (voice.shift[0] + (voice.shift[1] - voice.shift[0]) * load);
+    // The shift point follows the pedal slowly, so tapping it doesn't flick between two gears.
+    this.load += (load - this.load) * Math.min(1, dt / 0.8);
+    const up = spec.idle + (spec.redline - spec.idle) * (voice.shift[0] + (voice.shift[1] - voice.shift[0]) * this.load);
     if (this.gear < spec.gears.length - 1 && revs(this.gear) > up) { this.gear++; this.shift = 0.18; }
     else if (this.gear > 0 && revs(this.gear) < spec.idle * 1.9 && revs(this.gear - 1) < up * 0.9) this.gear--;
     this.shift = Math.max(0, this.shift - dt);
@@ -505,15 +507,15 @@ class Tyres {
     this.hissGain = gain(ctx, 0);
     const a = loop(ctx, noise);
     a.connect(filter(ctx, 'highpass', 60)).connect(this.hiss).connect(this.hissGain).connect(dest);
-    // The stones: noise switched on and off at the rate the wheels meet them.
+    // The stones: noise swelling and fading at the rate the wheels meet them (smoothly, and
+    // filtered afterwards: switching it on and off crackles).
     this.rumble = filter(ctx, 'lowpass', 200, 0.7);
     const chop = gain(ctx, 0.5);
     this.bumps = ctx.createOscillator();
-    this.bumps.type = 'square';
     this.bumps.connect(gain(ctx, 0.5)).connect(chop.gain);
     this.rumbleGain = gain(ctx, 0);
     const b = loop(ctx, noise, 0.7);
-    b.connect(this.rumble).connect(chop).connect(this.rumbleGain).connect(dest);
+    b.connect(chop).connect(this.rumble).connect(this.rumbleGain).connect(dest);
     this.squeal = filter(ctx, 'bandpass', 1900, 12);
     this.squealGain = gain(ctx, 0);
     const c = loop(ctx, noise, 1.3);

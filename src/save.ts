@@ -17,7 +17,9 @@ export interface SaveData {
   v: 1;
   area: string;
   at: number; // Date.now() when it was saved
-  x: number; y: number; h: number; // the game's local metres and heading, of you or of your car
+  // Where you are (or your car is) as latitude and longitude and a compass heading, not
+  // as the map's local metres, so a save survives a change to the map's origin.
+  lat: number; lon: number; heading: number;
   street: string | null;
   car: { type: string; paint: string; box?: string; variant: string | null; damage: number; radio?: number } | null;
   money: number;
@@ -31,32 +33,49 @@ export interface SaveData {
 const key = (slot: Slot) => `save:${slot}`;
 const num = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
 
-export function readSave(slot: Slot, area: string): SaveData | null {
+type Check = 'ok' | 'other area' | 'unreadable';
+
+// Whether a save is one this version can open. A format change must be handled here,
+// by upgrading older `v` values to the current shape, not by dropping them: the
+// player's progress would vanish. What can't be opened is kept and shown as such.
+function check(raw: string, area: string): { how: Check; data?: SaveData } {
   try {
-    const raw = localStorage.getItem(key(slot));
-    if (!raw) return null;
     const s = JSON.parse(raw) as SaveData;
-    if (s.v !== 1 || s.area !== area || ![s.x, s.y, s.h, s.money, s.health, s.heat, s.clock, s.at].every(num) || !s.weather) return null;
-    return s;
-  } catch { return null; }
+    if (s.v !== 1 || ![s.lat, s.lon, s.heading, s.money, s.health, s.heat, s.clock, s.at].every(num) || !s.weather) return { how: 'unreadable' };
+    return s.area === area ? { how: 'ok', data: s } : { how: 'other area' };
+  } catch { return { how: 'unreadable' }; }
+}
+
+const get = (slot: Slot) => { try { return localStorage.getItem(key(slot)); } catch { return null; } };
+
+export function readSave(slot: Slot, area: string): SaveData | null {
+  const raw = get(slot);
+  return raw ? check(raw, area).data ?? null : null;
+}
+
+// There is a save in this slot that this version can't open.
+export function unreadable(slot: Slot, area: string) {
+  const raw = get(slot);
+  return !!raw && check(raw, area).how === 'unreadable';
 }
 
 export function writeSave(slot: Slot, data: SaveData) {
   try { localStorage.setItem(key(slot), JSON.stringify(data)); } catch { /* full or blocked: the game goes on unsaved */ }
 }
 
-// The hand-made saves of this area, newest first.
-export function listSaves(area: string): { slot: Slot; data: SaveData }[] {
-  const out: { slot: Slot; data: SaveData }[] = [];
+// The hand-made saves of this area, newest first; `data` is null for one that this
+// version can't open (it can still be deleted).
+export function listSaves(area: string): { slot: Slot; data: SaveData | null }[] {
+  const out: { slot: Slot; data: SaveData | null }[] = [];
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k?.startsWith(HAND)) continue;
-      const slot = k.slice('save:'.length), data = readSave(slot, area);
-      if (data) out.push({ slot, data });
+      const c = check(localStorage.getItem(k) ?? '', area);
+      if (c.how !== 'other area') out.push({ slot: k.slice('save:'.length), data: c.data ?? null });
     }
   } catch { /* storage blocked */ }
-  return out.sort((a, b) => b.data.at - a.data.at);
+  return out.sort((a, b) => (b.data?.at ?? 0) - (a.data?.at ?? 0));
 }
 
 // A new name for a hand-made save.

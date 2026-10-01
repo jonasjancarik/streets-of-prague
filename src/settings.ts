@@ -49,7 +49,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   weather: { kinds: Kind[]; get: () => Kind | 'auto'; set: (k: Kind | 'auto') => void };
   // Saved games: the list, saving the game as a new one, loading one (which restarts
   // the page, see main.ts), deleting one and starting again from the beginning.
-  saves: { list: () => { slot: Slot; data: SaveData }[]; save: () => void; load: (slot: Slot) => void; remove: (slot: Slot) => void; newGame: () => void };
+  saves: { list: () => { slot: Slot; data: SaveData | null }[]; save: () => void; load: (slot: Slot) => void; remove: (slot: Slot) => void; newGame: () => void };
 }) {
   const corner = el('div', 'corner', document.body);
   // Full screen, where the browser allows it (not on an iPhone) and there's a touch
@@ -159,10 +159,11 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     list.textContent = '';
     for (const { slot, data } of saves.list()) {
       const line = el('div', 'settings-slot', list);
-      el('span', 'settings-slot-text', line, describe(data));
+      el('span', 'settings-slot-text', line, data ? describe(data) : t('A saved game this version can’t open'));
       const load = el('button', 'settings-chip', line) as HTMLButtonElement;
       const del = el('button', 'settings-chip', line) as HTMLButtonElement;
       load.type = del.type = 'button';
+      load.hidden = !data;
       sure(load, () => t('Load'), () => saves.load(slot));
       sure(del, () => t('Delete'), () => saves.remove(slot));
     }
