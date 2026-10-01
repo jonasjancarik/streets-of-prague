@@ -5,12 +5,12 @@
 > `src/webgpu/lamps.ts`). Check `git status` and `git diff` before you start, don't
 > revert changes you didn't make, and commit only your own hunks.
 
-> Implemented phase 1 on 2026-10-01. The app is live at
-> <https://streets-cf.jonasjancarik.cz> with 37,902 checksum-verified R2 objects
-> under `2026-10-01-b2`; mbxp remains at <https://streets.jonasjancarik.cz>.
-> The S3 upload serves `.bin.gz` as `application/octet-stream` without
-> `Content-Encoding`; `fetchBinary` recognizes and unpacks the gzip bytes.
-> The optional hostname swap has not been performed.
+> Implemented on 2026-10-01. Cloudflare serves
+> <https://streets.jonasjancarik.cz> (also <https://streets-cf.jonasjancarik.cz>)
+> with 37,902 checksum-verified R2 objects under `2026-10-01-b2`. mbxp serves
+> <https://streets-beta.jonasjancarik.cz>. The S3 upload serves `.bin.gz` as
+> `application/octet-stream` without `Content-Encoding`; `fetchBinary` recognizes
+> and unpacks the gzip bytes. The original plan below describes the prior routing.
 
 ## Status
 
@@ -174,7 +174,7 @@ only if Vite leaves nothing behind when the variable is unset. Otherwise add it 
   Worker gets its own custom domain, e.g. `streets-cf.jonasjancarik.cz` (and its
   `*.workers.dev` URL). No DNS record or tunnel rule of mbxp changes.
 - Phase 2, optional and only after the user decides: Cloudflare takes
-  `streets.jonasjancarik.cz` and mbxp moves to e.g. `streets-mbxp.jonasjancarik.cz`.
+  `streets.jonasjancarik.cz` and mbxp moves to `streets-beta.jonasjancarik.cz`.
   The steps are:
   - Add the new mbxp hostname to the tunnel first. The ingress update replaces the
     whole configuration, so read it, keep every rule with the catch-all last, dry-run,
@@ -203,13 +203,13 @@ only if Vite leaves nothing behind when the variable is unset. Otherwise add it 
 ## Verification
 
 1. **mbxp unchanged:** after `scripts/deploy-mbxp.sh`, the page on
-   `streets.jonasjancarik.cz` makes no requests to `streets-data.*` (DevTools Network),
+   `streets-beta.jonasjancarik.cz` makes no requests to `streets-data.*` (DevTools Network),
    and `grep -r streets-data dist/` finds nothing.
-2. **Cloudflare:** on `streets-cf.jonasjancarik.cz`, walk and drive across several
+2. **Cloudflare:** on `streets.jonasjancarik.cz`, walk and drive across several
    districts. Tiles, IPR buildings, terrain, landmarks (Mánes), lamps, signals, bikes
    and footfall should all load, with no CORS errors in the console.
 3. **Headers:**
-   - Run `curl -sI -H 'Origin: https://streets-cf.jonasjancarik.cz'` on a tile `.json`
+   - Run `curl -sI -H 'Origin: https://streets.jonasjancarik.cz'` on a tile `.json`
      and `.bin.gz` twice. The second time should show `cf-cache-status: HIT`, the
      `Access-Control-Allow-Origin` header and the long `Cache-Control`.
    - The `.json` should be `application/json` and arrive compressed with
@@ -221,10 +221,8 @@ only if Vite leaves nothing behind when the variable is unset. Otherwise add it 
    real Chrome if it's close.
 5. `npm run build` (typecheck plus build) passes.
 
-## Open questions for the user
+## Remaining question
 
-- Which deployment should own `streets.jonasjancarik.cz` in the end? The plan keeps
-  mbxp there and adds `streets-cf.` until the user decides.
 - The dev panel (`src/dev.ts`) ships to production and calls Nominatim and OSM's tile
   server. Their usage policies don't welcome public traffic, so should the panel be
   hidden outside dev? This is a separate change, not part of this plan.
