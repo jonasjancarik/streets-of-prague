@@ -20,6 +20,7 @@ addPort(/^cars$/, (node) => {
   const proto = Object.getPrototypeOf(node);
   node.setupDiffuseColor = function (builder: N) {
     proto.setupDiffuseColor.call(this, builder);
+    diffuseColor.rgb.mulAssign(mix(vec3(1), attribute('paint', 'vec3'), attribute('painted', 'float')));
     const up = dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);
     const cover = smoothstep(0.75, 0.95, up).mul(smoothstep(0.1, 0.6, uSnow)).mul(0.6);
     diffuseColor.assign(vec4(mix(diffuseColor.rgb, vec3(0.8, 0.82, 0.86), cover), diffuseColor.a));

@@ -9,7 +9,7 @@ import { posts } from './posts.ts';
 import { fences } from './fences.ts';
 import { lampLit } from './lamps.ts';
 import { SNOW, STREET_SNOW, WET } from './shading.ts';
-import { sendInstances } from './gpu.ts';
+import { send, sendInstances } from './gpu.ts';
 
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
@@ -183,27 +183,19 @@ const TWO_PAINT: Record<string, string[]> = {
 
 // Delivery couriers' boxes: pink, green and blue, as on the streets.
 export const COURIER_BOXES = ['#d70f64', '#2fbf71', '#0a9fdc'];
-export interface CarBody { type: string; paint: string; box?: string; pages?: number }
+export interface CarBody { type: string; box?: string; pages?: number }
 
-// The comparison drive reached 28 yellow taxis and 17 silver hatchbacks at once.
-// Two 16-instance pages cover those measured peaks without a live allocation.
-const PREPARED_PAGES: Record<string, number> = {
-  'taxi|#e9c62f': 2,
-  'hatch|#bfc3c7': 2,
-};
+// The counting drive peaked at 104 hatchbacks, 83 sedans and 59 SUVs. One
+// 128-instance page per type covers those peaks, well below the matrix UBO limit.
+const bodyKey = (type: string, box?: string) => box ? `${type}|box:${box}` : type;
 
-// The ordinary body inventory is data, not dummy cars: preparing it must not advance
-// the game's seeded random sequence. Colours found in the bike feed are optional; a
-// later feed or an unusual colour still gets a retained page on first use.
-export function ordinaryCarBodies(bikeColours: readonly string[] = []): CarBody[] {
+// Preparation is independent of paint, including colours from the bike feed, and
+// never constructs dummy cars or advances the game's seeded random sequence.
+export function ordinaryCarBodies(_bikeColours: readonly string[] = []): CarBody[] {
   const bodies: CarBody[] = [];
   for (const [type, spec] of Object.entries(TYPES)) {
-    const paints = spec.color ? [spec.color] : type === 'bike'
-      ? [...new Set([...TWO_PAINT.bike, ...bikeColours])] : TWO_PAINT[type] || PAINT;
-    for (const paint of paints) {
-      bodies.push({ type, paint, pages: PREPARED_PAGES[`${type}|${paint}`] || 1 });
-      if (spec.two) for (const box of COURIER_BOXES) bodies.push({ type, paint, box });
-    }
+    bodies.push({ type });
+    if (spec.two) for (const box of COURIER_BOXES) bodies.push({ type, box });
   }
   return bodies;
 }
@@ -226,6 +218,7 @@ function boxGeometry(kind: string, colour: string): THREE.BufferGeometry {
     const col = new Float32Array(g.attributes.position.count * 3);
     for (let i = 0; i < col.length; i += 3) col.set([c.r * shade, c.g * shade, c.b * shade], i);
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1));
     parts.push(g);
   };
   add(0.34, 0.36, 0.44, 0, 1);
@@ -238,19 +231,19 @@ let kit: FigureKit | null = null;
 export function useKit(k: FigureKit) { kit = k; }
 
 const cache = new Map<string, THREE.BufferGeometry>();
-function carGeometry(type: string, paint: string, box?: string): THREE.BufferGeometry {
-  const k = box ? `${type}|${paint}|${box}` : `${type}|${paint}`;
+function carGeometry(type: string, box?: string): THREE.BufferGeometry {
+  const k = bodyKey(type, box);
   const known = cache.get(k);
   if (known) return known;
   const S = TYPES[type];
   if (S.two) {
     if (!kit) throw new Error('Figures kit is not loaded');
-    const geometry = box ? mergeGeometries([kit.vehicles[S.two](paint), boxGeometry(S.two, box)]) : kit.vehicles[S.two](paint);
+    const geometry = box ? mergeGeometries([kit.vehicles[S.two](), boxGeometry(S.two, box)]) : kit.vehicles[S.two]();
     cache.set(k, geometry);
     return geometry;
   }
   if (type === 'truck' || type === 'artic') {
-    const geometry = truckGeometry(type, S, paint);
+    const geometry = truckGeometry(type, S);
     cache.set(k, geometry);
     return geometry;
   }
@@ -277,10 +270,11 @@ function carGeometry(type: string, paint: string, box?: string): THREE.BufferGeo
     g.setAttribute('normal', o.geometry.attributes.normal.clone());
     g.applyMatrix4(o.matrixWorld);
     const name = (Array.isArray(o.material) ? o.material[0] : o.material).name;
-    c.set(name === 'Paint' ? S.color || paint : PART[name] || '#777777');
+    c.set(name === 'Paint' ? '#ffffff' : PART[name] || '#777777');
     const col = new Float32Array(g.attributes.position.count * 3);
     for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(name === 'Paint' ? 1 : 0), 1));
     parts.push(g);
   });
   const g = mergeGeometries(parts);
@@ -292,16 +286,17 @@ function carGeometry(type: string, paint: string, box?: string): THREE.BufferGeo
 // white roof with the air conditioning on top, a dark band of glass all round with
 // white pillars, three doors on the right, and the line board over the windscreen.
 // (Forward is +x, right +z, the ground y = 0, as for the car bodies.)
-function boxBuilder() {
+function boxBuilder(paintColour?: string) {
   const parts: THREE.BufferGeometry[] = [];
   const c = new THREE.Color();
   const add = (g: THREE.BufferGeometry, colour: string, x: number, y: number, z: number) => {
     g.deleteAttribute('uv');
     g.translate(x, y, z);
-    c.set(colour);
+    c.set(colour === paintColour ? '#ffffff' : colour);
     const col = new Float32Array(g.attributes.position.count * 3);
     for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(colour === paintColour ? 1 : 0), 1));
     parts.push(g.index ? g.toNonIndexed() : g);
   };
   const box = (colour: string, x0: number, x1: number, y0: number, y1: number, w: number, z = 0) =>
@@ -320,7 +315,7 @@ function boxBuilder() {
 }
 
 function busGeometry(S: CarSpec): THREE.BufferGeometry {
-  const { box, wheel, done } = boxBuilder();
+  const { box, wheel, done } = boxBuilder(S.color || '#c8102e');
   const L = S.L / 2, W = S.W, red = S.color || '#c8102e', white = '#eeeeea', glass = '#1b242c', grey = '#8a8f94';
   const small = S.L < 10;
   const sill = 1.15, top = small ? 2.3 : 2.55, roof = small ? 2.65 : 2.95;
@@ -381,7 +376,7 @@ const GLYPHS: Record<string, string[]> = {
 // A fire engine from boxes: a red cab and body, grey roller shutters along the sides
 // under a yellow stripe, a ladder on the roof, HASIČI on the front and chevrons at the back.
 function fireGeometry(S: CarSpec): THREE.BufferGeometry {
-  const { box, wheel, done } = boxBuilder();
+  const { box, wheel, done } = boxBuilder(S.color || '#c4161c');
   const L = S.L / 2, W = S.W, red = S.color || '#c4161c', glass = '#1b242c', grey = '#8c9196';
   const cab = 2.3, cx = L - cab, floor = 0.55, top = 2.7, cabTop = 3.0;
   box('#2a2c2f', -L + 0.05, L - 0.05, 0.3, floor, W - 0.3); // chassis and bumpers
@@ -435,8 +430,9 @@ function fireGeometry(S: CarSpec): THREE.BufferGeometry {
 // Lorries are boxes too: a cab in the paint colour and a white box or trailer behind
 // it (with a stripe in the cab's colour), a dark chassis, tail lamps and a bar at the back.
 // The artic is a tractor with a trailer, the box truck one rigid body.
-function truckGeometry(type: string, S: CarSpec, paint: string): THREE.BufferGeometry {
-  const { box, wheel, done } = boxBuilder();
+function truckGeometry(type: string, S: CarSpec): THREE.BufferGeometry {
+  const paint = '#ffffff';
+  const { box, wheel, done } = boxBuilder(paint);
   const L = S.L / 2, W = S.W, glass = '#1b242c', artic = type === 'artic';
   const cab = artic ? 2.5 : 2.2, cabTop = artic ? 3.3 : 2.9, floor = artic ? 1.0 : 0.85, top = artic ? 4.0 : 3.6;
   const cx = L - cab; // where the cab starts
@@ -484,6 +480,9 @@ material.shadowSide = THREE.DoubleSide;
 // Snow settles on the roofs and bonnets (weather.ts).
 material.onBeforeCompile = (sh) => {
   lampLit(sh);
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute float painted;\nattribute vec3 paint;')
+    .replace('#include <color_vertex>', '#include <color_vertex>\nvColor.rgb *= mix(vec3(1.), paint, painted);');
   sh.uniforms.uSnow = SNOW;
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', '#include <common>\nuniform float uSnow;')
@@ -526,6 +525,7 @@ export class Car {
   spec: CarSpec;
   mass: number;
   key: string;
+  paint: string;
   x: number; y: number; h: number;
   vx: number; vy: number; w: number;
   mode: string;
@@ -561,12 +561,13 @@ export class Car {
     this.type = type;
     this.spec = TYPES[type];
     const paints = TWO_PAINT[type] || PAINT;
-    // (One colour for the types painted alike, so they share a draw call.)
+    // Keep the colour pick before refitting, even for a fixed or explicit colour.
     const pick = paints[Math.floor(r() * paints.length)], paint = colour || this.spec.color || pick;
     this.refit(r);
     this.mass = this.spec.mass;
-    this.key = box ? `${type}|${paint}|${box}` : `${type}|${paint}`;
-    carGeometry(type, paint, box);
+    this.paint = this.spec.color || paint;
+    this.key = bodyKey(type, box);
+    carGeometry(type, box);
     this.courier = box;
     this.x = x;
     this.y = y;
@@ -768,12 +769,16 @@ export class Car {
   burn() {
     const k = `${this.type}|burnt`;
     if (!cache.has(k)) {
-      const [paint, box] = this.key.slice(this.type.length + 1).split('|');
-      const g = carGeometry(this.type, paint, box).clone(), col = g.getAttribute('color');
+      const g = carGeometry(this.type, this.courier).clone(), col = g.getAttribute('color');
+      const painted = g.getAttribute('painted'), paint = new THREE.Color(this.paint);
       if (col) for (let i = 0; i < col.count; i++) {
-        const v = 0.02 + 0.05 * (col.getX(i) + col.getY(i) + col.getZ(i)) / 3;
+        // Reproduce the old baked colour before charring the first wreck of a type.
+        const tint = painted.getX(i);
+        const v = 0.02 + 0.05 * (col.getX(i) * (1 + (paint.r - 1) * tint)
+          + col.getY(i) * (1 + (paint.g - 1) * tint) + col.getZ(i) * (1 + (paint.b - 1) * tint)) / 3;
         col.setXYZ(i, v, v, v * 1.05);
       }
+      painted.array.fill(0);
       cache.set(k, g);
     }
     this.key = k;
@@ -846,13 +851,12 @@ const boardPlacement = (type: 'bus' | 'minibus') => {
 };
 const BOARD_AT = { bus: boardPlacement('bus'), minibus: boardPlacement('minibus') };
 
-// Every car is an instance: one draw call per type and colour, however many are parked.
+// Every car is an instance: one draw per type/page, with paint per instance.
 // Riders are drawn here too, sitting on their bikes.
 export class CarPool {
   scene: THREE.Scene;
-  // Each page holds 16 cars (1 KiB of matrices). Measured dense keys reserve two
-  // pages above; exceptional overflow adds another without replacing an old page.
-  static readonly pageCapacity = 16;
+  // 128 cars (8 KiB of matrices); overflow retains the original page.
+  static readonly pageCapacity = 128;
   meshes: Map<string, THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>[]>;
   prepared = new Set<string>();
   overflowPages = 0;
@@ -863,6 +867,7 @@ export class CarPool {
   scale: THREE.Matrix4;
   m: THREE.Matrix4;
   boards: THREE.Mesh[] = [];
+  private colours = new Map<string, THREE.Color>();
 
   constructor(scene: THREE.Scene) {
     if (!kit) throw new Error('Figures kit is not loaded');
@@ -877,8 +882,18 @@ export class CarPool {
   }
 
   private page(key: string) {
-    const geometry = cache.get(key);
-    if (!geometry) throw new Error(`Missing car geometry: ${key}`);
+    const body = cache.get(key);
+    if (!body) throw new Error(`Missing car geometry: ${key}`);
+    // Each page owns its paint buffer; fixed vertex/index buffers are shared.
+    const geometry = new THREE.BufferGeometry();
+    geometry.setIndex(body.index);
+    for (const [name, attr] of Object.entries(body.attributes)) {
+      (attr as THREE.BufferAttribute & { shared?: boolean }).shared = true;
+      geometry.setAttribute(name, attr);
+    }
+    if (body.index) (body.index as THREE.BufferAttribute & { shared?: boolean }).shared = true;
+    const paint = new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 3).fill(1), 3);
+    geometry.setAttribute('paint', paint);
     const mesh = new THREE.InstancedMesh(geometry, material, CarPool.pageCapacity);
     mesh.count = 0;
     mesh.visible = false;
@@ -893,9 +908,9 @@ export class CarPool {
   }
 
   prepare(bodies: readonly CarBody[]) {
-    for (const { type, paint, box, pages = 1 } of bodies) {
-      const key = box ? `${type}|${paint}|${box}` : `${type}|${paint}`;
-      carGeometry(type, paint, box);
+    for (const { type, box, pages = 1 } of bodies) {
+      const key = bodyKey(type, box);
+      carGeometry(type, box);
       while ((this.meshes.get(key)?.length || 0) < pages) this.page(key);
       this.prepared.add(key);
     }
@@ -958,6 +973,9 @@ export class CarPool {
         }
         d.updateMatrix();
         m.setMatrixAt(slot, d.matrix);
+        let paint = this.colours.get(c.paint);
+        if (!paint) { paint = new THREE.Color(c.paint); this.colours.set(c.paint, paint); }
+        (m.geometry.getAttribute('paint') as THREE.InstancedBufferAttribute).setXYZ(slot, paint.r, paint.g, paint.b);
         if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
         if (c.line) {
           const at = BOARD_AT[c.type === 'minibus' ? 'minibus' : 'bus'];
@@ -970,6 +988,7 @@ export class CarPool {
         m.count = Math.max(0, Math.min(CarPool.pageCapacity, list.length - i * CarPool.pageCapacity));
         m.visible = m.count > 0;
         sendInstances(m);
+        send(m.geometry.getAttribute('paint') as THREE.InstancedBufferAttribute, m.count);
       }
     }
     this.riders.commit(riders);

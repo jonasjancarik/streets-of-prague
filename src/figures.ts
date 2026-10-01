@@ -28,7 +28,7 @@ export interface FigureKit {
   nrm: THREE.DataTexture;
   material: THREE.MeshLambertMaterial;
   depthMaterial: THREE.MeshDepthMaterial;
-  vehicles: { bike: (paint: string) => THREE.BufferGeometry; moto: (paint: string) => THREE.BufferGeometry };
+  vehicles: { bike: () => THREE.BufferGeometry; moto: () => THREE.BufferGeometry };
 }
 
 // Where the jump clip leaves the ground and lands again, in seconds.
@@ -115,18 +115,16 @@ export async function loadKit(url = 'figures.glb') {
   } satisfies FigureKit;
 }
 
-// A two-wheeler as one geometry with its colours per vertex; `paint(hex)` gives a
-// copy with the frame (the Paint parts) in that colour.
+// A two-wheeler with fixed part colours and a mask for per-instance frame paint.
 function vehicle(root: THREE.Object3D, name: string) {
   const node = root.getObjectByName(name);
   if (!node) throw new Error(`Missing ${name} in figures kit`);
   const meshes: THREE.Mesh[] = [];
   node.traverse((o) => { if (o instanceof THREE.Mesh) meshes.push(o); });
   const COLOUR: Record<string, string> = { Tyre: '#141414', Metal: '#9aa0a6', Seat: '#1c1a19', Engine: '#43464b', Lamp: '#fff1c9' };
-  const cache = new Map<string, THREE.BufferGeometry>();
-  return (paint: string): THREE.BufferGeometry => {
-    const known = cache.get(paint);
-    if (known) return known;
+  let cached: THREE.BufferGeometry | undefined;
+  return (): THREE.BufferGeometry => {
+    if (cached) return cached;
     const c = new THREE.Color(), red = new THREE.Color('#c0171d');
     const geos = meshes.map((m) => {
       const g = new THREE.BufferGeometry();
@@ -136,15 +134,16 @@ function vehicle(root: THREE.Object3D, name: string) {
       g.applyMatrix4(m.matrixWorld);
       g.scale(SCALE, SCALE, SCALE);
       const material = Array.isArray(m.material) ? m.material[0] : m.material;
-      c.set(material.name === 'Paint' ? paint : COLOUR[material.name] || '#777777');
+      c.set(material.name === 'Paint' ? '#ffffff' : COLOUR[material.name] || '#777777');
       const p = g.attributes.position, col = new Float32Array(p.count * 3);
       // Lamps at the back are rear lights.
       for (let i = 0; i < p.count; i++) col.set(material.name === 'Lamp' && p.getX(i) < 0 ? [red.r, red.g, red.b] : [c.r, c.g, c.b], i * 3);
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(p.count).fill(material.name === 'Paint' ? 1 : 0), 1));
       return g;
     });
     const g = mergeGeometries(geos);
-    cache.set(paint, g);
+    cached = g;
     return g;
   };
 }

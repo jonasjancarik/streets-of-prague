@@ -253,14 +253,23 @@ grime on the walls 6%, the shadow map's own pass 7%.
     Final comparison drives had zero tree builder events and zero pool growth.
     A quieter desktop and real-phone comparison remain useful before claiming
     an overall frame-time or startup benefit.
-  - **Car models:** plan 008 prepares ordinary models during loading, hides empty
-    pages and retains 16-car pages instead of replacing live meshes. The measured
-    dense taxi and hatchback colours reserve a second page. On a 40 s drive,
+  - **Car models:** plan 008 introduced ordinary-model preparation during loading,
+    hidden empty pages and retained 16-car pages instead of replacing live meshes.
+    The measured dense taxi and hatchback colours reserved a second page. On a 40 s drive,
     car-body builder events fell from 74–76 to 13–15 with no overflow; the paired
     frame times averaged 13.8 → 13.5 ms, too close and variable for a firm speedup
-    claim. Benchmark loading took about 0.8 s longer and 164 prepared pages reserve
-    168 KB of matrices. Late colours and burnt bodies can still build once. See
+    claim. Benchmark loading took about 0.8 s longer and 164 prepared pages reserved
+    168 KB of matrices. Late colours and burnt bodies could still build once. See
     [plan 008](plans/008-prepare-car-meshes.md) for tests and trade-offs.
+    Plan 015 now separates paint from body geometry on both renderers, retaining
+    128-car pages per type and courier-box variant. Car-body draws fell about 84%
+    on the counting drive (72 → 12 per pass) and 81% standing (36 → 7), with no
+    overflow or late pages. Pool checks, palette/wreck equivalence, seeded and
+    parked-car hashes, WebGPU day/night/snow screenshots and the build passed.
+    Both renderers passed day/night/snow screenshot comparisons. Three alternating
+    drive pairs favoured the change (12.7 → 9.6 ms/frame), but loading-time drift
+    and the lack of an unchanged-build control leave the timing benefit provisional. See
+    [plan 015](plans/015-paint-cars-per-instance.md) for evidence and limits.
   - **Worker scheduling:** plan 012 Part A prioritizes required jobs, allows one
     job per worker and coalesces optional sky refreshes. Desktop and Pixel 5
     comparisons had no missing player/ahead-tile frames. Frame-time differences

@@ -21,11 +21,11 @@ Planned on 1 October 2026 at `1b5756cdf775c7fbde3e5522fb57de5658664bcf` from rea
 the code, after plans 007–012 showed no general frame-rate gain. Buildings and ground
 have few triangles; the aim here is fewer objects and draw calls, since the main
 thread limits the frame on WebGPU. Each plan starts with a counting step and a stop
-condition, because none of the expected gains has been measured yet.
+condition to establish how much of the frame the proposed change affects.
 
 | Plan | Scope | Priority | Estimated effort | Status |
 | --- | --- | --- | --- | --- |
-| [015: Paint cars per instance](015-paint-cars-per-instance.md) | One retained mesh per car type, with the paint as a per-instance colour | P1 | One to two days | PLANNED |
+| [015: Paint cars per instance](015-paint-cars-per-instance.md) | One retained mesh per car type, with the paint as a per-instance colour | P1 | One to two days | DONE (local; draw reduction verified, timing benefit provisional) |
 | [016: Draw only nearby tiles](016-draw-only-nearby-tiles.md) | Keep collisions, graphs and parking out to 300 m; make a tile's meshes only near the view | P1 | Three to five days | PLANNED |
 | [017: Cheaper trees on phones](017-cheaper-trees-on-phones.md) | Measure whether a Pixel 5 is limited by tree vertices; then a simpler shadow crown, a simpler crown on low tiers, or smaller pages | P3 | Half a day to measure, two to three days after | PLANNED (measurement decides) |
 

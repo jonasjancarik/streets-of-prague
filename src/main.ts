@@ -881,11 +881,11 @@ async function main() {
   let saving = true; // off while the page restarts into another game
   let saveT = 0;
   const capture = (): SaveData => {
-    const c = inCar && !inCar.burnt ? inCar : null, who = c || walker, [, paint, box] = c ? c.key.split('|') : [];
+    const c = inCar && !inCar.burnt ? inCar : null, who = c || walker;
     const [lon, lat] = dev.toLonLat(who.x, who.y);
     return {
       v: 1, area: AREA, at: Date.now(), lat, lon, heading: ((((90 - (who.h * 180) / Math.PI) % 360) + 360) % 360), street,
-      car: c ? { type: c.type, paint, box, variant: c.modelName, damage: c.damage, radio: c.radio } : null,
+      car: c ? { type: c.type, paint: c.paint, box: c.courier, variant: c.modelName, damage: c.damage, radio: c.radio } : null,
       money: wallet.balance, ticket: wallet.held, health: health.value, heat: police.heat,
       clock: clock.t, weather: { kind: weather.kind, fixed: weather.fixed },
     };

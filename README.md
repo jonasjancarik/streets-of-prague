@@ -492,16 +492,20 @@ record the measurements, merge decisions and pending landmark asset activation.
   of the sides, wheels and lights towards the edges of the screen. `src/car.ts` puts
   each car's colour on the paint. The bus is built from boxes in `src/car.ts`. Rebuild with
   `blender -b --factory-startup -P assets/cars/build.py`; `-- --preview DIR` renders
-  them from above. During loading, `CarPool.prepare` creates the ordinary paint and
-  courier-box bodies without consuming the game's random numbers. The already-started
-  bike feed gets up to 250 ms to provide its operator colours. Each body keeps a
-  16-car instance page; yellow taxis and silver hatchbacks reserve a second page
-  because they exceeded 16 in the comparison drive. Empty pages stay hidden, and
-  denser views get another retained page, so no visible car is dropped. A shared-bike
-  colour that arrives after preparation, an unusual custom colour, or the first burnt
-  body gets its page when first seen. Check preparation,
-  page reuse and renderer behaviour with `node scripts/check-car-pool.mjs --url
-  http://localhost:5191/ --case all` against a running dev server.
+  them from above. During loading, `CarPool.prepare` creates one body per type
+  and separate courier-box variants without consuming the game's random numbers.
+  Each body keeps a 128-car instance page, covering the measured peak of 104
+  hatchbacks. Paint is a linear per-instance colour applied only to vertices marked
+  as painted; glass, tyres and courier boxes retain their fixed colours on both
+  renderers. Empty pages stay hidden, and denser views get another retained page,
+  so no visible car is dropped. New shared-bike or custom colours use the existing
+  type page; the first burnt body of each type gets its own page when first seen.
+  Check preparation, page reuse, paint uploads and renderer behaviour with
+  `node scripts/check-car-pool.mjs --url http://localhost:5191/ --case all` against
+  a running dev server. Add `--baseline http://localhost:5192/` with a pre-plan-015
+  server to compare every palette/box combination vertex by vertex, burnt colours,
+  and an order-independent hash of 1,000 seeded cars. See
+  [plan 015](plans/015-paint-cars-per-instance.md) for measured draw counts.
 - **Trams** run Prague's real lines (`src/trams.ts`), taken from OSM's route
   relations: each line goes round its whole route there and back. How many trams a line
   has out follows PID's timetable for the game clock's day and hour (`src/clock.ts`):
