@@ -113,10 +113,15 @@ export interface Siren { key: object; kind: 'fire' | 'police'; x: number; y: num
 // The sound's groups, each with its own volume in the mixer (settings.ts), 1 being as built.
 export const BUSES = ['engine', 'tyres', 'horns', 'trams', 'city', 'weather', 'radio', 'bangs'] as const;
 export type Bus = (typeof BUSES)[number];
+// Noise cancelling: the steady rumble of engine, tyres, weather and city is cut, mostly its lows; horns, sirens, radio and bangs get through.
+const NOISY: Bus[] = ['engine', 'tyres', 'trams', 'city', 'weather'];
+const ANC_CUT = 0.5, ANC_SHELF = -22; // volume left, and dB taken off the lows
 
 export class Sound {
   buses = {} as Record<Bus, GainNode>;
   volumes = Object.fromEntries(BUSES.map((b) => [b, 1])) as Record<Bus, number>;
+  anc = false;
+  private shelves = {} as Record<Bus, BiquadFilterNode>;
   ctx: AudioContext | null = null;
   on: boolean;
   master!: GainNode;
@@ -142,6 +147,7 @@ export class Sound {
       const mix = JSON.parse(localStorage.getItem('mix') ?? '{}');
       for (const b of BUSES) if (typeof mix[b] === 'number') this.volumes[b] = clamp(mix[b], 0, 2);
     } catch {}
+    try { this.anc = localStorage.getItem('anc') === 'on'; } catch {}
     const start = () => {
       this.start();
       if (this.ctx?.state === 'running') for (const k of ['keydown', 'pointerdown'] as const) removeEventListener(k, start);
@@ -165,7 +171,21 @@ export class Sound {
   setVolume(bus: Bus, v: number) {
     this.volumes[bus] = clamp(v, 0, 2);
     try { localStorage.setItem('mix', JSON.stringify(this.volumes)); } catch {}
-    if (this.ctx) this.buses[bus].gain.setTargetAtTime(this.volumes[bus], this.ctx.currentTime, 0.05);
+    if (this.ctx) this.buses[bus].gain.setTargetAtTime(this.level(bus), this.ctx.currentTime, 0.05);
+  }
+
+  // What a bus is set to, with noise cancelling taken into account.
+  private level(bus: Bus) { return this.volumes[bus] * (this.anc && NOISY.includes(bus) ? ANC_CUT : 1); }
+
+  setAnc(on: boolean) {
+    this.anc = on;
+    try { localStorage.setItem('anc', on ? 'on' : 'off'); } catch {}
+    const ctx = this.ctx;
+    if (!ctx) return;
+    for (const b of NOISY) {
+      this.buses[b].gain.setTargetAtTime(this.level(b), ctx.currentTime, 0.4);
+      this.shelves[b].gain.setTargetAtTime(on ? ANC_SHELF : 0, ctx.currentTime, 0.4);
+    }
   }
 
   toggle() {
@@ -188,8 +208,12 @@ export class Sound {
     this.master.connect(comp).connect(ctx.destination);
     for (const b of BUSES) {
       this.buses[b] = ctx.createGain();
-      this.buses[b].gain.value = this.volumes[b];
-      this.buses[b].connect(this.master);
+      this.buses[b].gain.value = this.level(b);
+      if (NOISY.includes(b)) {
+        const shelf = (this.shelves[b] = filter(ctx, 'lowshelf', 500));
+        shelf.gain.value = this.anc ? ANC_SHELF : 0;
+        this.buses[b].connect(shelf).connect(this.master);
+      } else this.buses[b].connect(this.master);
     }
     const bus = this.buses;
     this.noise = noiseBuffer(ctx);
@@ -252,7 +276,7 @@ export class Sound {
     this.weather!.update(s.rain ?? 0, s.snow ?? 0);
     const aloft = clamp(s.aloft ?? 0, 0, 1);
     this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0), aloft);
-    this.buses.trams.gain.setTargetAtTime(this.volumes.trams * (1 - 0.9 * aloft), t, 0.5);
+    this.buses.trams.gain.setTargetAtTime(this.level('trams') * (1 - 0.9 * aloft), t, 0.5);
     if (s.strikes !== undefined) {
       if (this.strikes >= 0 && s.strikes > this.strikes) this.weather!.thunder(t + 0.6 + Math.random() * 3.5);
       this.strikes = s.strikes;

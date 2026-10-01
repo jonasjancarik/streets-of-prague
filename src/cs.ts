@@ -52,6 +52,7 @@ export const CS: Record<string, string> = {
   Bangs: 'Výstřely a výbuchy',
   Sound: 'Zvuk',
   'Car radio': 'Rádio v autě',
+  'Noise cancelling': 'Potlačení hluku',
   'Now {time}': 'Teď {time}',
   'Now: {weather}': 'Teď: {weather}',
   Morning: 'Ráno',
