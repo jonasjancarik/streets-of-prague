@@ -71,7 +71,7 @@ const ENGINES: Record<string, EngineSpec | null> = {
   enyaq: ELECTRIC,
   f150: { idle: 650, redline: 5500, cylinders: 8, gears: [0.16, 0.28, 0.42, 0.58, 0.78, 1.02], rough: 0.015, voice: V8_VOICE },
   fabia: { idle: 900, redline: 5500, cylinders: 3, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.02, voice: EVERYDAY },
-  octavia: { idle: 800, redline: 4500, cylinders: 4, gears: [0.16, 0.3, 0.46, 0.68, 1.02], rough: 0.012, voice: DIESEL },
+  diesel: { idle: 800, redline: 4500, cylinders: 4, gears: [0.16, 0.3, 0.46, 0.68, 1.02], rough: 0.012, voice: DIESEL },
   van: { idle: 750, redline: 4200, cylinders: 4, gears: [0.2, 0.38, 0.58, 0.8, 1.02], rough: 0.02, voice: EVERYDAY },
   moto: { idle: 1300, redline: 10500, cylinders: 2, gears: [0.14, 0.26, 0.4, 0.55, 0.75, 1.02], rough: 0.025, voice: EVERYDAY },
   bike: null,
@@ -109,7 +109,13 @@ export interface SoundState {
 // One siren sounding: `key` tells it from the others from one frame to the next, and (vx, vy) is its speed.
 export interface Siren { key: object; kind: 'fire' | 'police'; x: number; y: number; vx: number; vy: number }
 
+// The sound's groups, each with its own volume in the mixer (settings.ts), 1 being as built.
+export const BUSES = ['engine', 'tyres', 'horns', 'trams', 'city', 'weather', 'radio', 'bangs'] as const;
+export type Bus = (typeof BUSES)[number];
+
 export class Sound {
+  buses = {} as Record<Bus, GainNode>;
+  volumes = Object.fromEntries(BUSES.map((b) => [b, 1])) as Record<Bus, number>;
   ctx: AudioContext | null = null;
   on: boolean;
   master!: GainNode;
@@ -131,6 +137,10 @@ export class Sound {
     let saved = '';
     try { saved = localStorage.getItem('sound') ?? ''; } catch {}
     this.on = saved !== 'off';
+    try {
+      const mix = JSON.parse(localStorage.getItem('mix') ?? '{}');
+      for (const b of BUSES) if (typeof mix[b] === 'number') this.volumes[b] = clamp(mix[b], 0, 2);
+    } catch {}
     const start = () => {
       this.start();
       if (this.ctx?.state === 'running') for (const k of ['keydown', 'pointerdown'] as const) removeEventListener(k, start);
@@ -151,6 +161,12 @@ export class Sound {
     else setRadioSaved(on);
   }
 
+  setVolume(bus: Bus, v: number) {
+    this.volumes[bus] = clamp(v, 0, 2);
+    try { localStorage.setItem('mix', JSON.stringify(this.volumes)); } catch {}
+    if (this.ctx) this.buses[bus].gain.setTargetAtTime(this.volumes[bus], this.ctx.currentTime, 0.05);
+  }
+
   toggle() {
     this.on = !this.on;
     try { localStorage.setItem('sound', this.on ? '' : 'off'); } catch {}
@@ -169,20 +185,26 @@ export class Sound {
     this.master = ctx.createGain();
     this.master.gain.value = this.on ? 0.8 : 0;
     this.master.connect(comp).connect(ctx.destination);
+    for (const b of BUSES) {
+      this.buses[b] = ctx.createGain();
+      this.buses[b].gain.value = this.volumes[b];
+      this.buses[b].connect(this.master);
+    }
+    const bus = this.buses;
     this.noise = noiseBuffer(ctx);
     this.clack = clackBuffer(ctx);
-    this.tyres = new Tyres(ctx, this.noise, this.master);
-    this.weather = new WeatherSound(ctx, this.noise, this.master);
-    this.radio = new Radio(ctx, this.noise, this.master);
+    this.tyres = new Tyres(ctx, this.noise, bus.tyres);
+    this.weather = new WeatherSound(ctx, this.noise, bus.weather);
+    this.radio = new Radio(ctx, this.noise, bus.radio);
     this.radio.onFail = (station) => this.onRadioFail(station);
-    for (let i = 0; i < SIREN_VOICES; i++) this.sirens.push(new SirenVoice(ctx, this.master));
+    for (let i = 0; i < SIREN_VOICES; i++) this.sirens.push(new SirenVoice(ctx, bus.horns));
     // The trams are heard once their recordings are in.
     Promise.all([...LOOPS, ...ONCE].map(async (name) => {
       const r = await fetch(`audio/${name}.${LOOPS.includes(name) ? 'wav' : 'm4a'}`);
       if (!r.ok) throw new Error(`${name}: ${r.status}`);
       this.clips[name] = await ctx.decodeAudioData(await r.arrayBuffer());
     })).then(() => {
-      for (let i = 0; i < TRAM_VOICES; i++) this.voices.push(new TramVoice(this, this.master));
+      for (let i = 0; i < TRAM_VOICES; i++) this.voices.push(new TramVoice(this, this.buses.trams));
     }).catch((e) => console.warn('The tram sounds could not be loaded', e));
     // And the city around you, once its recordings are in.
     Promise.all(Object.keys(AMBIENCE).map(async (name) => {
@@ -190,7 +212,7 @@ export class Sound {
       if (!r.ok) throw new Error(`${name}: ${r.status}`);
       return [name, await ctx.decodeAudioData(await r.arrayBuffer())] as const;
     })).then((clips) => {
-      this.ambience = new Ambience(ctx, Object.fromEntries(clips), this.master);
+      this.ambience = new Ambience(ctx, Object.fromEntries(clips), bus.city);
     }).catch((e) => console.warn('The city sounds could not be loaded', e));
   }
 
@@ -199,7 +221,7 @@ export class Sound {
   horn(on: boolean, kind: HornKind = 'car') {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.on) { this.horns?.set(false, kind); return; }
-    this.horns ||= new Horn(ctx, this.master);
+    this.horns ||= new Horn(ctx, this.buses.horns);
     this.horns.set(on, kind);
   }
 
@@ -221,7 +243,7 @@ export class Sound {
     if (car && !this.engine) {
       const id = car.variant && car.variant.id in ENGINES ? car.variant.id : car.type;
       const spec = id in ENGINES ? ENGINES[id] : PETROL;
-      if (spec) this.engine = new Engine(ctx, this.noise, this.master, car, spec);
+      if (spec) this.engine = new Engine(ctx, this.noise, this.buses.engine, car, spec);
     }
     this.engine?.update(dt, s.throttle);
     this.radio?.update(!!car && !car.two && !s.quiet, car);
@@ -268,7 +290,7 @@ export class Sound {
     if (!ctx || ctx.state !== 'running' || !this.on) return;
     const t = ctx.currentTime, loud = 20 / (20 + d), pan = ctx.createStereoPanner();
     pan.pan.value = clamp(dx / 45, -0.85, 0.85);
-    pan.connect(this.master);
+    pan.connect(this.buses.bangs);
     for (const [at, level, top] of [[0, 1, 6000 - Math.min(d, 200) * 22], [0.07 + Math.random() * 0.1, 0.25, 1400]]) {
       const src = loop(ctx, this.noise, 0.9 + Math.random() * 0.3), lp = filter(ctx, 'lowpass', top), g = gain(ctx, 0);
       g.gain.setValueAtTime(loud * level, t + at);
@@ -294,7 +316,7 @@ export class Sound {
     if (!ctx || ctx.state !== 'running' || !this.on) return;
     const t = ctx.currentTime, loud = 40 / (40 + d), pan = ctx.createStereoPanner();
     pan.pan.value = clamp(dx / 45, -0.85, 0.85);
-    pan.connect(this.master);
+    pan.connect(this.buses.bangs);
     const src = loop(ctx, this.noise, 0.6), lp = filter(ctx, 'lowpass', 2400 - Math.min(d, 300) * 6), g = gain(ctx, 0);
     lp.frequency.setTargetAtTime(160, t + 0.05, 0.4);
     g.gain.setValueAtTime(loud * 1.3, t);

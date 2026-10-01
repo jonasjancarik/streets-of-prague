@@ -4,7 +4,7 @@ import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
 import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
-import { Car, CarPool, collideBodies, loadCars, ordinaryCarBodies, useKit } from './car.ts';
+import { Car, CarPool, collideBodies, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { loadKit } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
@@ -724,7 +724,7 @@ async function main() {
     best.mode = 'player';
     if (best.two) best.rider = walker.look;
     inCar = best;
-    if (best.variant?.name) showBanner(best.variant.name);
+    if (best.variant) showBanner(variantName(best.variant));
     walker.perch = 0;
     walker.mesh.visible = false;
   };
@@ -1609,7 +1609,7 @@ async function main() {
       street = name;
       $('street').textContent = name;
     }
-    const carName = inCar ? inCar.variant?.name ?? t(VEHICLE_NAMES[inCar.type] ?? inCar.type) : '';
+    const carName = inCar ? (inCar.variant ? variantName(inCar.variant) : t(VEHICLE_NAMES[inCar.type] ?? inCar.type)) : '';
     if (carName !== carShown) {
       carShown = carName;
       const box = $('vehicle');

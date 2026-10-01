@@ -64,35 +64,82 @@ export const TYPES: Record<string, CarSpec> = {
   fire: { L: 8.5, W: 2.5, H: 3.2, mass: 14000, accel: 2.4, vmax: 25, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#c4161c', heavy: true, wheelbase: 5, drive: 'rwd', radius: 8.5, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
 };
 // A variant of a body type: the same geometry (so the same draw call) with its own
-// handling and engine. `id` picks the engine in audio.ts, `name` (a model's own name,
-// never translated) is shown when you get in, `freq` is how common it is among the
-// variants of its type. Types without an entry (taxi, police, two-wheelers, bus) have none.
-export interface Variant { id: string; name?: string; freq: number; tune: Partial<CarSpec> }
+// handling and engine. `make` and `model` (real names, never translated) are shown when
+// you drive it, `id` picks the engine in audio.ts (a type's own engine when it has none),
+// `freq` is how common it is among the variants of its type. Types without an entry
+// (taxi, police, two-wheelers, bus) have none.
+export interface Variant { id: string; make: string; model: string; freq: number; tune: Partial<CarSpec> }
+export const variantName = (v: Variant) => `${v.make} ${v.model}`;
 export const VARIANTS: Record<string, Variant[]> = {
   hatch: [
     // The Fabia I 1.2 HTP: three light cylinders, slow but willing, soft brakes.
-    { id: 'fabia', name: 'Škoda Fabia 1.2', freq: 0.4, tune: { accel: 6, vmax: 33, brake: 14, weather: 1.2, mass: 1000 } },
-    { id: 'hatch', name: 'Volkswagen Golf 1.6', freq: 0.6, tune: {} },
+    { id: 'fabia', make: 'Škoda', model: 'Fabia 1.2', freq: 0.16, tune: { accel: 6, vmax: 33, brake: 14, weather: 1.2, mass: 1000 } },
+    { id: 'hatch', make: 'Volkswagen', model: 'Golf 1.6', freq: 0.1, tune: {} },
+    { id: 'hatch', make: 'Škoda', model: 'Rapid 1.2 TSI', freq: 0.1, tune: { accel: 9.5, vmax: 37 } },
+    { id: 'hatch', make: 'Škoda', model: 'Scala 1.0 TSI', freq: 0.08, tune: { accel: 9.2, vmax: 36, mass: 1150 } },
+    { id: 'diesel', make: 'Renault', model: 'Clio 1.5 dCi', freq: 0.08, tune: { accel: 8, vmax: 34, mass: 1150 } },
+    { id: 'hatch', make: 'Ford', model: 'Fiesta 1.0 EcoBoost', freq: 0.08, tune: { accel: 9.5, vmax: 36, mass: 1050 } },
+    { id: 'hatch', make: 'Hyundai', model: 'i30 1.4', freq: 0.08, tune: { accel: 8.8, vmax: 36, mass: 1250 } },
+    { id: 'diesel', make: 'Kia', model: 'Ceed 1.6 CRDi', freq: 0.07, tune: { accel: 9, vmax: 37, mass: 1350 } },
+    { id: 'hatch', make: 'Peugeot', model: '208 1.2 PureTech', freq: 0.06, tune: { accel: 9.3, vmax: 36, mass: 1050 } },
+    { id: 'hatch', make: 'Toyota', model: 'Yaris 1.5 Hybrid', freq: 0.05, tune: { accel: 9.5, vmax: 35, mass: 1100, brake: 15 } },
+    { id: 'hatch', make: 'Opel', model: 'Corsa 1.2', freq: 0.05, tune: { accel: 8.5, vmax: 35, mass: 1050 } },
+    { id: 'hatch', make: 'Škoda', model: 'Citigo 1.0', freq: 0.04, tune: { accel: 6.5, vmax: 32, mass: 900, weather: 1.2 } },
+    { id: 'hatch', make: 'Volkswagen', model: 'Polo 1.0 TSI', freq: 0.05, tune: { accel: 9, vmax: 36, mass: 1100 } },
   ],
   sedan: [
     // The Octavia I 1.9 TDI: strong from low revs, a little short at the top.
-    { id: 'octavia', name: 'Škoda Octavia 1.9 TDI', freq: 0.25, tune: { accel: 10.5, vmax: 39, tough: 4 } },
+    { id: 'diesel', make: 'Škoda', model: 'Octavia 1.9 TDI', freq: 0.14, tune: { accel: 10.5, vmax: 39, tough: 4 } },
     // The Octavia II 2.0 TDI (103 kW): the same diesel character, a little quicker.
-    { id: 'octavia', name: 'Škoda Octavia 2.0 TDI', freq: 0.15, tune: { accel: 11.5, vmax: 41, tough: 4 } },
+    { id: 'diesel', make: 'Škoda', model: 'Octavia 2.0 TDI', freq: 0.1, tune: { accel: 11.5, vmax: 41, tough: 4 } },
+    { id: 'sedan', make: 'Škoda', model: 'Octavia 1.4 TSI', freq: 0.1, tune: { accel: 10.5, vmax: 42 } },
+    { id: 'sedan', make: 'Škoda', model: 'Superb 2.0 TSI', freq: 0.08, tune: { accel: 11.5, vmax: 45, mass: 1600 } },
+    { id: 'diesel', make: 'Volkswagen', model: 'Passat 2.0 TDI', freq: 0.08, tune: { accel: 11, vmax: 43, mass: 1550 } },
+    { id: 'diesel', make: 'Audi', model: 'A4 2.0 TDI', freq: 0.07, tune: { accel: 11.5, vmax: 44, mass: 1550 } },
+    { id: 'diesel', make: 'BMW', model: '320d', freq: 0.07, tune: { accel: 12, vmax: 46, mass: 1500, drive: 'rwd' } },
+    { id: 'diesel', make: 'Mercedes-Benz', model: 'C 220 d', freq: 0.05, tune: { accel: 11.8, vmax: 45, mass: 1550, drive: 'rwd' } },
+    { id: 'sedan', make: 'Mazda', model: '6 2.0', freq: 0.05, tune: { accel: 10.5, vmax: 43, mass: 1400 } },
+    { id: 'sedan', make: 'Toyota', model: 'Corolla 1.8 Hybrid', freq: 0.05, tune: { accel: 9.8, vmax: 40, mass: 1400, brake: 15 } },
+    { id: 'diesel', make: 'Volvo', model: 'S60 D4', freq: 0.04, tune: { accel: 11.5, vmax: 44, mass: 1600 } },
+    { id: 'sedan', make: 'Hyundai', model: 'Elantra 1.6', freq: 0.04, tune: { accel: 9.5, vmax: 40, mass: 1300 } },
     // An electric car: quick off the line, regenerative braking when you lift off, all-wheel drive.
-    { id: 'model3', name: 'Tesla Model 3', freq: 0.06, tune: { accel: 13, vmax: 45, drag: 1.2, mass: 1850, drive: 'awd' } },
-    { id: 'sedan', name: 'Škoda Superb 2.0 TSI', freq: 0.54, tune: {} },
+    { id: 'model3', make: 'Tesla', model: 'Model 3', freq: 0.05, tune: { accel: 13, vmax: 45, drag: 1.2, mass: 1850, drive: 'awd' } },
+    { id: 'sedan', make: 'Škoda', model: 'Rapid Spaceback 1.6 TDI', freq: 0.04, tune: { accel: 9.5, vmax: 40, mass: 1300 } },
   ],
   suv: [
-    { id: 'enyaq', name: 'Škoda Enyaq iV 80', freq: 0.15, tune: { accel: 10.5, vmax: 40, drag: 1.1, mass: 2100, drive: 'rwd' } },
-    { id: 'modely', name: 'Tesla Model Y', freq: 0.08, tune: { accel: 12.5, vmax: 44, drag: 1.2, mass: 2000, drive: 'awd' } },
-    { id: 'suv', name: 'Škoda Kodiaq 2.0 TDI', freq: 0.77, tune: {} },
+    { id: 'enyaq', make: 'Škoda', model: 'Enyaq iV 80', freq: 0.1, tune: { accel: 10.5, vmax: 40, drag: 1.1, mass: 2100, drive: 'rwd' } },
+    { id: 'modely', make: 'Tesla', model: 'Model Y', freq: 0.06, tune: { accel: 12.5, vmax: 44, drag: 1.2, mass: 2000, drive: 'awd' } },
+    { id: 'diesel', make: 'Škoda', model: 'Kodiaq 2.0 TDI', freq: 0.12, tune: { accel: 9.5, vmax: 41, mass: 1900, drive: 'awd' } },
+    { id: 'suv', make: 'Škoda', model: 'Karoq 1.5 TSI', freq: 0.12, tune: { accel: 9.5, vmax: 41, mass: 1500 } },
+    { id: 'suv', make: 'Škoda', model: 'Kamiq 1.0 TSI', freq: 0.09, tune: { accel: 8.8, vmax: 38, mass: 1300 } },
+    { id: 'diesel', make: 'Volkswagen', model: 'Tiguan 2.0 TDI', freq: 0.08, tune: { accel: 9.5, vmax: 41, mass: 1700, drive: 'awd' } },
+    { id: 'suv', make: 'Hyundai', model: 'Tucson 1.6 T-GDi', freq: 0.07, tune: { accel: 9.5, vmax: 41, mass: 1600 } },
+    { id: 'diesel', make: 'Kia', model: 'Sportage 1.6 CRDi', freq: 0.06, tune: { accel: 9, vmax: 40, mass: 1650 } },
+    { id: 'suv', make: 'Toyota', model: 'RAV4 2.5 Hybrid', freq: 0.05, tune: { accel: 10, vmax: 41, mass: 1700, drive: 'awd', brake: 15 } },
+    { id: 'diesel', make: 'BMW', model: 'X3 xDrive20d', freq: 0.04, tune: { accel: 10.5, vmax: 44, mass: 1900, drive: 'awd' } },
+    { id: 'diesel', make: 'Dacia', model: 'Duster 1.5 dCi', freq: 0.06, tune: { accel: 7.5, vmax: 37, mass: 1350, drive: 'awd', tough: 4 } },
+    { id: 'diesel', make: 'Ford', model: 'Kuga 2.0 EcoBlue', freq: 0.04, tune: { accel: 9.3, vmax: 41, mass: 1700 } },
+    { id: 'suv', make: 'Audi', model: 'Q5 2.0 TFSI', freq: 0.04, tune: { accel: 10.5, vmax: 44, mass: 1900, drive: 'awd' } },
+    { id: 'suv', make: 'Mazda', model: 'CX-5 2.0', freq: 0.03, tune: { accel: 9, vmax: 40, mass: 1500 } },
+    { id: 'suv', make: 'Peugeot', model: '3008 1.2 PureTech', freq: 0.04, tune: { accel: 9, vmax: 39, mass: 1400 } },
   ],
-  pickup: [{ id: 'f150', name: 'Ford F-150', freq: 1, tune: {} }],
+  pickup: [{ id: 'f150', make: 'Ford', model: 'F-150', freq: 1, tune: {} }],
   estate: [
-    { id: 'octavia', name: 'Škoda Octavia Combi 1.9 TDI', freq: 0.25, tune: { accel: 10, vmax: 38, tough: 4 } },
-    { id: 'octavia', name: 'Škoda Octavia Combi 2.0 TDI', freq: 0.15, tune: { accel: 11, vmax: 40, tough: 4 } },
-    { id: 'estate', name: 'Volkswagen Passat Variant 2.0 TDI', freq: 0.6, tune: {} },
+    { id: 'diesel', make: 'Škoda', model: 'Octavia Combi 1.9 TDI', freq: 0.14, tune: { accel: 10, vmax: 38, tough: 4 } },
+    { id: 'diesel', make: 'Škoda', model: 'Octavia Combi 2.0 TDI', freq: 0.1, tune: { accel: 11, vmax: 40, tough: 4 } },
+    { id: 'estate', make: 'Škoda', model: 'Octavia Combi 1.4 TSI', freq: 0.08, tune: { accel: 10, vmax: 41 } },
+    { id: 'diesel', make: 'Škoda', model: 'Superb Combi 2.0 TDI', freq: 0.08, tune: { accel: 11, vmax: 43, mass: 1650 } },
+    { id: 'diesel', make: 'Volkswagen', model: 'Passat Variant 2.0 TDI', freq: 0.09, tune: { accel: 11, vmax: 42, mass: 1600 } },
+    { id: 'diesel', make: 'Volkswagen', model: 'Golf Variant 1.6 TDI', freq: 0.07, tune: { accel: 9.5, vmax: 38, mass: 1350 } },
+    { id: 'fabia', make: 'Škoda', model: 'Fabia Combi 1.2', freq: 0.07, tune: { accel: 6.5, vmax: 34, mass: 1100, brake: 14, weather: 1.2 } },
+    { id: 'diesel', make: 'Ford', model: 'Focus Turnier 1.5 EcoBlue', freq: 0.06, tune: { accel: 9.5, vmax: 39, mass: 1400 } },
+    { id: 'diesel', make: 'Opel', model: 'Insignia Sports Tourer 2.0 CDTI', freq: 0.05, tune: { accel: 10, vmax: 41, mass: 1650 } },
+    { id: 'diesel', make: 'Volvo', model: 'V60 D4', freq: 0.05, tune: { accel: 11, vmax: 42, mass: 1700 } },
+    { id: 'diesel', make: 'Audi', model: 'A4 Avant 2.0 TDI', freq: 0.05, tune: { accel: 11.5, vmax: 44, mass: 1650 } },
+    { id: 'diesel', make: 'BMW', model: '320d Touring', freq: 0.04, tune: { accel: 12, vmax: 45, mass: 1650, drive: 'rwd' } },
+    { id: 'diesel', make: 'Kia', model: 'Ceed SW 1.6 CRDi', freq: 0.05, tune: { accel: 9, vmax: 38, mass: 1450 } },
+    { id: 'estate', make: 'Hyundai', model: 'i30 Wagon 1.4', freq: 0.04, tune: { accel: 8.8, vmax: 37, mass: 1350 } },
+    { id: 'estate', make: 'Toyota', model: 'Corolla Touring Sports 1.8 Hybrid', freq: 0.03, tune: { accel: 9.5, vmax: 38, mass: 1450, brake: 15 } },
   ],
 };
 // The body's spec with a variant's changes, made once for each pair.
