@@ -23,7 +23,7 @@ implementation steps, regression cases, future verification commands and stop co
 
 | Step | Plan | Priority | Estimated effort | Status |
 | --- | --- | --- | --- | --- |
-| 1 | [007: Share building and lighting shader graphs](007-share-building-shader-graphs.md) | P1 | About a day | PLANNED |
+| 1 | [007: Share building and lighting shader graphs](007-share-building-shader-graphs.md) | P1 | About a day | DONE (local; timing benefit inconclusive) |
 | 2 | [008: Prepare and retain car meshes](008-prepare-car-meshes.md) | P1 | One to two days | PLANNED |
 | 3 | [009: Reuse spatial tree batches](009-reuse-tree-batches.md) | P1 | Several days | PLANNED |
 | 4 | [010: Bake landmark colour adjustments into assets](010-prebake-landmark-colours.md) | P2 | One to two days plus asset checks | PLANNED |

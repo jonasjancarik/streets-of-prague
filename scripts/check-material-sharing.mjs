@@ -128,8 +128,13 @@ const check = `(async () => {
       const red = colored([220, 50, 30]), blue = colored([30, 70, 220]);
       const left = converted('landmark-roof', { map: red });
       const right = converted('landmark-roof', { map: blue });
-      const leftMesh = mesh(left.legacy, -1, 1), rightMesh = mesh(right.legacy, 1, 1);
+      const leftMesh = mesh(left.legacy, -1, 1);
+      await pixels();
+      const landmarkBuilders = renderer._nodes.nodeBuilderCache.size;
+      const rightMesh = mesh(right.legacy, 1, 1);
       const landmarkPixels = await pixels();
+      assert(renderer._nodes.nodeBuilderCache.size === landmarkBuilders,
+        'second textured landmark created another material builder');
       assert(difference(...landmarkPixels) > 35, 'landmark textures were not distinct after rendering: ' + landmarkPixels);
       scene.remove(leftMesh); left.legacy.dispose(); leftMesh.geometry.dispose(); red.dispose();
       const survivor = await pixels();
@@ -138,8 +143,13 @@ const check = `(async () => {
 
       const low = converted('buildings-procedural');
       const high = converted('buildings-procedural');
-      const lowMesh = mesh(low.legacy, -1, 0.05), highMesh = mesh(high.legacy, 1, 1);
+      const lowMesh = mesh(low.legacy, -1, 0.05);
+      await pixels();
+      const buildingBuilders = renderer._nodes.nodeBuilderCache.size;
+      const highMesh = mesh(high.legacy, 1, 1);
       const skyPixels = await pixels();
+      assert(renderer._nodes.nodeBuilderCache.size === buildingBuilders,
+        'second building with different sky data created another material builder');
       assert(difference(...skyPixels) > 8, 'building sky attributes were not distinct after rendering: ' + skyPixels);
       scene.remove(lowMesh); low.legacy.dispose(); lowMesh.geometry.dispose();
       const skySurvivor = await pixels();
@@ -179,7 +189,7 @@ const check = `(async () => {
       const restored = await pixels();
       assert(difference(uncut[1], restored[1]) < 12, 'cutaway did not restore the landmark');
       scene.remove(cutMesh); cut.legacy.dispose(); cutMesh.geometry.dispose(); cutMap.dispose();
-      window.__bindingPixels = { landmarkPixels, survivor, skyPixels, skySurvivor, rainPixels, snowPixels, dryRoofPixels, dayPixels, nightPixels, uncut, cutPixels, restored };
+      window.__bindingPixels = { landmarkBuilders, buildingBuilders, landmarkPixels, survivor, skyPixels, skySurvivor, rainPixels, snowPixels, dryRoofPixels, dayPixels, nightPixels, uncut, cutPixels, restored };
     } finally {
       WET.value = prior.wet; SNOW.value = prior.snow; WINDOWS.value = prior.windows;
       CUTAWAY.value.copy(prior.cut); LAMP_ON.value = prior.lamp;

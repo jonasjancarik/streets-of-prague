@@ -205,7 +205,14 @@ grime on the walls 6%, the shadow map's own pass 7%.
   calls ~630 → ~360 a frame. At 1× no change beyond drift. On the Pixel 5 the time in
   long tasks with a build fell from 2.5–2.7 s to 1.2–1.8 s a drive, but its slowest 1% of
   frames stayed at 115–120 ms (the frames below). The phone draws the drive at 1× and
-  High at ~23 fps (median frame ~33 ms). Open, biggest first:
+  High at ~23 fps (median frame ~33 ms). Plan 007 now shares the complete building,
+  landmark, cutaway and lamp-light graphs across equivalent materials. Its IPR and OSM
+  binding checks pass. In three alternating 4× WebGPU drives on the M5, the mean frame
+  time was 15.3 → 13.0 ms, but individual pairs disagreed (11.2 → 13.9, 20.1 → 12.7,
+  14.5 → 12.4 ms), total material builds were 339 → 344, and no new building shader
+  builds appeared in the stall logs. The timing benefit is inconclusive; details and
+  matched visual checks are in `plans/007-share-building-shader-graphs.md`. Open,
+  biggest first:
   - **Tree meshes:** every tile makes three new instanced tree meshes, and three.js
     builds every instanced mesh on its own (its key has the mesh's `uuid`): ~60 ms each
     on a Pixel 5 for the tuft shader. One set of tree meshes shared by all tiles
