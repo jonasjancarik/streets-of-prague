@@ -4,5 +4,5 @@
 # The API key is not here: it is a secret on the Worker.
 BREVO_LIST_ID=3
 # The confirmation email ("double opt-in" template), and its Czech version if there is one.
-BREVO_DOI_TEMPLATE_ID=
+BREVO_DOI_TEMPLATE_ID=1
 BREVO_DOI_TEMPLATE_ID_CS=
