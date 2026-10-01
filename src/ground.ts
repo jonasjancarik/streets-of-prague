@@ -284,7 +284,7 @@ export const layerBuffers = ({ layers, masks }: GroundResult): ArrayBuffer[] => 
 export const DECK_RES = 2; // level mask cells per metre
 
 // A level rasterised: 255 where it is, 0 elsewhere, rows from the north.
-function levelMask([x0, y0, x1, y1]: Bounds, polys: Polygons, level: number): LevelMask {
+export function levelMask([x0, y0, x1, y1]: Bounds, polys: Polygons, level: number): LevelMask {
   const w = Math.ceil((x1 - x0) * DECK_RES), h = Math.ceil((y1 - y0) * DECK_RES);
   const c = new OffscreenCanvas(w, h), ctx = c.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('Cannot create level mask canvas');

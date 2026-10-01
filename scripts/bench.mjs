@@ -208,7 +208,7 @@ async function runScene(browser, name, base = URL_BASE) {
   }
   // Settle: the streets round the view load, the shaders compile.
   await page.waitForTimeout(place.drive ? 3000 : 6000);
-  await page.waitForFunction(() => window.__drive.world.inFlight.size === 0, null, { timeout: 60000, polling: 200 }).catch(() => {});
+  await page.waitForFunction(() => !window.__drive.world.busy, null, { timeout: 60000, polling: 200 }).catch(() => {});
   if (args.eval) { const out = await page.evaluate(args.eval); if (out !== undefined) console.log(typeof out === "string" ? out : JSON.stringify(out, null, 1)); await page.waitForTimeout(1000); }
   if (args.shot) {
     // A still for comparing looks: the clock and the crowd held, so two runs match.

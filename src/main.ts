@@ -244,7 +244,8 @@ async function main() {
     ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [slon, slat])
     : [0, 0];
   status('Building the streets…');
-  await world.loadNow(sx, sy, 380);
+  // (The view at the start is about 85 m across; what's beyond is loaded but not yet drawn.)
+  await world.loadNow(sx, sy, 380, 85 + world.drawBeyond);
   const startEdge = drive.edges.reduce((best, e) => {
     const d = (f: DriveEdge) => Math.hypot(f.pts[0][0] - sx, f.pts[0][1] - sy) + (f.name ? 0 : 60);
     return d(e) < d(best) ? e : best;
@@ -323,11 +324,12 @@ async function main() {
   let inCar: Car | null = null, inHeli: Chopper | null = null;
   const choppers: Chopper[] = []; // helicopters you can fly (from the developer tools)
   let height = 100;
+  let heightWanted = height; // where the camera is heading (zooming out, speeding up)
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
   let camGround = ground(walker.x, walker.y, walker);
   let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
-  const viewRadius = () => height * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
+  const viewRadius = (h = height) => h * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
   // The sun's shadow map covers only what is on screen: the view's rectangle from a
   // little below the lowest ground in it to 40 m above the highest (the roofs), as the
   // sun sees it. Its sides follow the screen's, and a low sun no longer spreads it over
@@ -809,7 +811,7 @@ async function main() {
     if (inHeli) inHeli.z = Math.max(inHeli.z, ground(x, y) + 60);
     if (inCar) inCar.w = 0;
     camPos.set(x, 0, -y);
-    await world.loadNow(x, y, 300);
+    await world.loadNow(x, y, 300, viewRadius() + world.drawBeyond);
     if (inCar) backOnRoad();
     else if (!inHeli) { [walker.x, walker.y] = nearestWalkable(grid, x, y, 150); walker.sync(); }
     for (const a of [...traffic.agents]) traffic.release(a);
@@ -1571,7 +1573,7 @@ async function main() {
 
   renderer.setAnimationLoop((now) => {
     const dt = Math.min(0.05, (now - last) / 1000);
-    graphics.frame(now - last, now, world.inFlight.size > 0);
+    graphics.frame(now - last, now, world.busy);
     telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
     telemetry.most('maxStars', police.stars);
     last = now;
@@ -1579,7 +1581,10 @@ async function main() {
     wallet.update(dt);
     if ((saveT += dt) > 5) { saveT = 0; autosave(); }
     pid.update(dt);
-    world.update(camPos.x, -camPos.z, viewRadius() + 220);
+    // The city lives well beyond the screen; only the tiles near it are drawn.
+    // (The developer panel's free camera can look far across the city: everything is drawn.)
+    // Zooming out, the tiles the view is about to take in are drawn before it gets there.
+    world.update(camPos.x, -camPos.z, viewRadius() + 220, testkit?.cam ? Infinity : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond);
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
     // it steers along your lane, and A/D picks the turn at the next junction instead.
@@ -1674,6 +1679,7 @@ async function main() {
     const underway = metro.view();
     // In the air the camera rises with the helicopter, so it stays well above it.
     const want = (underway ? underway.height : inHeli ? 130 + sp * 2.5 : inCar ? 120 + sp * 3.4 : ride.driving ? 120 + (ride.v?.speed ?? 0) * 3.4 : ride.on ? 125 + (scale - 1) * 12 : 100) * zoom + (inHeli ? inHeli.air : 0);
+    heightWanted = want;
     height += (want - height) * Math.min(1, dt * (want > height ? 1.6 : 0.9));
     const lead = underway ? 0.25 : vehicle || ride.driving ? 0.7 : ride.on ? 0.5 : 0.3;
     if (underway) look.set(underway.x + underway.vx * lead, 0, -(underway.y + underway.vy * lead));
@@ -1897,7 +1903,7 @@ async function main() {
     addCar: (c) => { loose.push(c); restingStale = true; },
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
-    loaded: (x, y) => world.loadNow(x, y, 300),
+    loaded: (x, y) => world.loadNow(x, y, 300, testkit?.cam ? Infinity : viewRadius() + world.drawBeyond),
     grid, wallet, police, health, clock, fires, rng: seeded,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),

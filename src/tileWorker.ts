@@ -4,7 +4,7 @@
 //   ipr     IPR's 3D buildings unpacked from the tile's .ipr.bin, with normals and
 //           facade coordinates
 //   ground  the ground's layers (ground.ts), the bridges above it and the tunnels below
-//   land    trees, walls and the collision grid
+//   land    trees, walls, the collision grid, and where the bridges and tunnels are
 // Everything stands on the tile's terrain, sampled from the heights sent along.
 import * as THREE from 'three';
 import { initRoofs, buildBuildings, wallArrays } from './map/buildings.ts';
@@ -12,7 +12,7 @@ import { fenceArrays } from './map/fences.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords } from './facades.ts';
-import { groundLayers, layerBuffers } from './ground.ts';
+import { groundLayers, layerBuffers, levelMask } from './ground.ts';
 import { heightSampler } from './terrain.ts';
 import { skyView } from './map/skyView.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
@@ -207,7 +207,7 @@ function stampTrunks(grid: Grid, geo: Geo<LandData>, { matrices, count }: LandRe
   }
 }
 
-function land({ data, seeds, ground, bridges }: WorkerJobs['land']): LandResult {
+function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['land']): LandResult {
   const geo = new Geo(data), hAt = groundAt(ground);
   // How much room a tree has under the bridges (Infinity where there's none over it).
   const decks = bridges.map((b) => groundAt(b));
@@ -224,7 +224,7 @@ function land({ data, seeds, ground, bridges }: WorkerJobs['land']): LandResult 
   const fences = fenceArrays(data, hAt);
   const grid = tileGrid(geo, data, seeds);
   stampTrunks(grid, geo, trees);
-  return { trees, walls, fences, cells: grid.cells };
+  return { trees, walls, fences, cells: grid.cells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
 }
 
 function isRequest(value: unknown): value is WorkerRequest {
@@ -276,7 +276,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
       }
       case 'land': {
         const result = land(event.data.data);
-        const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.evergreen.buffer, result.walls.position.buffer, result.walls.normal.buffer, ...Object.values(result.fences.fence).map((a) => a.buffer), ...Object.values(result.fences.hedge).map((a) => a.buffer), result.fences.sections.buffer, result.cells.buffer];
+        const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.evergreen.buffer, result.walls.position.buffer, result.walls.normal.buffer, ...Object.values(result.fences.fence).map((a) => a.buffer), ...Object.values(result.fences.hedge).map((a) => a.buffer), result.fences.sections.buffer, result.cells.buffer, ...result.masks.map((m) => m.cells.buffer)];
         if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Land transfer requires ArrayBuffer storage');
         worker.postMessage({ id, result } satisfies WorkerResponse, buffers as ArrayBuffer[]);
         break;

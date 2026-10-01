@@ -15,7 +15,8 @@ import type { Shadower } from './map/skyView.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
 import type { DriveEdge, DriveGraph, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
-import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightGrid, LevelInput } from './contracts.ts';
+import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightGrid, LevelInput, LandResult, WorkerJobs, WorkerResults } from './contracts.ts';
+import type { LevelMask } from './ground.ts';
 import { isTileJSON } from './contracts.ts';
 import { TileWorkers } from './tileWorkers.ts';
 import { SkyRefresh } from './skyRefresh.ts';
@@ -27,10 +28,33 @@ import { fenceMeshes } from './map/fences.ts';
 interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer | null; ipr: ArrayBuffer | null; levels: ArrayBuffer | null }
 // A bridge (1, 2, …) or tunnel (-1, -2, …) level in a tile: where it is and how high.
 interface TileLevel { level: number; grid: Grid; sample: (x: number, y: number) => number }
+// What a tile's meshes are made from, kept for as long as the tile is loaded.
+interface TileSource {
+  t: TileJSON; size: Point2; origin: Point2; bounds: Bounds;
+  ground: HeightGrid | null; levels: LevelInput[] | null; masks: LevelMask[];
+  marks: Landmark[]; hide: Point2[][][];
+  // IPR's buildings as fetched, until a worker has taken them (then they're fetched again).
+  withIpr: boolean; ipr: ArrayBuffer | null;
+  extrude: (TileJSON['buildings'][number] & { base: number })[];
+  clipped: WorkerJobs['ground']['edges']; parkingZones: (string | null)[];
+  standing: { rings: Point2[][] }[]; // the buildings that stand on the ground
+  shapes: Shadower[]; trees: LandResult['trees'];
+}
+type MeshJobs = Promise<[WorkerResults['ground'], BuildingArrays | null, BuildingArrays | null]>;
+// A tile's meshes while it's near the view: the ground, the buildings and what was
+// made with them (own), all in one group in the scene.
+interface TileMeshes { group: THREE.Group; surfaces: Surfaces; own: THREE.Mesh[] }
 interface Tile {
   k: string; i: number; j: number; box: Bounds; passages: TilePassage[]; raised: Point2[][][];
-  group: THREE.Group; surfaces: Surfaces; grid: Grid; levels: TileLevel[];
-  cars: Car[]; ms: Record<string, number>; disposables: THREE.Mesh[];
+  grid: Grid; levels: TileLevel[];
+  cars: Car[]; ms: Record<string, number>;
+  // Drawn only near the view (see TileWorld.update): `shown` says it should be,
+  // `dressing` that its meshes are on the way, `drawn` holds them once they're in the scene.
+  source: TileSource; shown: boolean; dressing: Promise<void> | null; drawn: TileMeshes | null;
+  drawMs: Record<string, number>; drawAfter: number;
+  // The walls, fences and wires: made with the tile (cars knock the fences and poles
+  // down wherever they are) and put in the scene with the rest.
+  fixtures: THREE.Mesh[];
   roads: Polygons; // the carriageways (asphalt, setts, dirt)
   poles: Post[]; // the wires' poles, among the posts a car can hit
   fences: FenceSection[];
@@ -51,9 +75,12 @@ export interface Tracked {
 }
 
 // Streams the map in square tiles (pipeline/build_tiles.py) around the camera. Each
-// loaded tile has its own ground, buildings, trees, collision grid and parked cars;
-// tiles far behind are dropped again. The street graphs stay global. The heavy part
-// of building a tile runs in workers (tileWorker.ts); the main thread fetches the
+// loaded tile has its own collision grid, heights, bridges and tunnels, fences, posts
+// and parked cars, which the city's traffic and people need well beyond the screen;
+// tiles far behind are dropped again. The street graphs stay global. A tile's ground,
+// buildings and trees are made only when it comes near the view (dress) and taken
+// away again when it's left behind (undress), while the rest of it stays loaded. The
+// heavy part of both runs in workers (tileWorker.ts); the main thread fetches the
 // tile's files, joins up the street graphs and makes the meshes and parked cars.
 
 const RES = 2; // collision grid cells per metre
@@ -63,6 +90,9 @@ const RAISED = 3; // a building whose underside is this high (m) or more doesn't
 // ends), they drive onto it; further apart, it's overhead, or the ground is below the
 // parapet.
 const CLIMB = 1.5;
+// A drawn tile keeps its meshes until it's this much (m) further from the view than
+// where it would be drawn, so one at the edge isn't made and taken away over and over.
+const DRAWN_KEEP = 40;
 
 // Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
 // the same north-west as the sun: 1 = unchanged, darker on slopes facing away. The
@@ -280,6 +310,12 @@ export class TileWorld {
   onCars: (cars: Car[], tile: Tile) => void;
   onDrop: (tile: Tile) => void;
   building: number; inFlight: Set<string>; builds: Map<string, Promise<Tile>>;
+  // The tiles near enough to the view to be drawn, and those whose meshes are being made.
+  shown: Set<string>; dressing: Set<string>; drawTimes: number[];
+  // How far beyond the edge of the view (m) tiles are drawn: far enough for a tile's
+  // meshes to be ready before it comes on screen, and for the shadows a low sun casts
+  // across the edge.
+  drawBeyond = 100;
   retry: Map<string, number>; workers: TileWorkers; ref: number;
   buildTimes: number[];
   skyTotals: { coalesced: number; cancelled: number };
@@ -330,6 +366,9 @@ export class TileWorld {
     this.building = 0;
     this.inFlight = new Set();
     this.builds = new Map(); // key → Promise of the tile, while it's being built
+    this.shown = new Set();
+    this.dressing = new Set();
+    this.drawTimes = [];
     this.retry = new Map(); // key → when to try a tile that failed again
     this.workers = new TileWorkers();
     this.buildTimes = [];
@@ -598,13 +637,39 @@ export class TileWorld {
     return out.sort((a, b) => a[0] - b[0]).map((p) => p[1]);
   }
 
+  // Keys of the tiles that reach within r metres of (x, y), nearest first.
+  near(x: number, y: number, r: number): string[] {
+    const T = this.T, out: [number, string][] = [];
+    const i0 = Math.floor((x - r + this.ox) / T), i1 = Math.floor((x + r + this.ox) / T);
+    const j0 = Math.floor((y - r + this.oy) / T), j1 = Math.floor((y + r + this.oy) / T);
+    for (let i = i0; i <= i1; i++) {
+      for (let j = j0; j <= j1; j++) {
+        const k = `${i}_${j}`;
+        if (!this.available.has(k)) continue;
+        const ax = i * T - this.ox, ay = j * T - this.oy;
+        const d = Math.hypot(Math.max(ax - x, 0, x - ax - T), Math.max(ay - y, 0, y - ay - T));
+        if (d <= r) out.push([d, k]);
+      }
+    }
+    return out.sort((a, b) => a[0] - b[0]).map((p) => p[1]);
+  }
+
+  binary(k: string, name: string) {
+    const gz = !!this.index.gzip;
+    return fetchBinary(`${dataUrl(this.area, `tiles/${k}`)}.${name}.bin${gz ? '.gz' : ''}`, gz);
+  }
+
+  // The tiles to draw: those within `drawn` of the point, or everything loaded (within
+  // r) when that's no less.
+  reach(x: number, y: number, r: number, drawn: number) { return drawn < r ? this.near(x, y, drawn) : this.around(x, y, r); }
+
   // All of a tile's files at once: its JSON, terrain heights, its bridges' and tunnels'
   // heights (or, from before those, the bare ground where bridges were raised) and
   // IPR's buildings.
   fetchTile(k: string): Promise<TileFiles> {
     if (!this.pending.has(k)) {
-      const base = dataUrl(this.area, `tiles/${k}`), gz = !!this.index.gzip;
-      const bin = (name: string) => fetchBinary(`${base}.${name}.bin${gz ? '.gz' : ''}`, gz);
+      const base = dataUrl(this.area, `tiles/${k}`);
+      const bin = (name: string) => this.binary(k, name);
       const json: Promise<TileJSON> = fetch(`${base}.json`).then(async (r) => {
         if (!r.ok) throw new Error(`Tile ${k} could not be loaded (${r.status})`);
         const value: unknown = await r.json();
@@ -651,10 +716,12 @@ export class TileWorld {
     this.retry.set(k, performance.now() + 2000);
   }
 
-  // Load everything within r now (used at start); returns when done. A tile that fails
-  // (a dropped or cut-short download on a busy machine) is tried again a couple of
-  // times, then left for update() to load later, so one bad file never stops the start.
-  async loadNow(x: number, y: number, r: number) {
+  // Load everything within r now (used at start); returns when done, with the tiles
+  // within `drawn` of the point in the scene. A tile that fails (a dropped or cut-short
+  // download on a busy machine) is tried again a couple of times, then left for update()
+  // to load later, so one bad file never stops the start.
+  async loadNow(x: number, y: number, r: number, drawn = r) {
+    this.shown = new Set(this.reach(x, y, r, drawn));
     await Promise.all(this.around(x, y, r).map(async (k) => {
       for (let tries = 1; !this.loaded.has(k); tries++) {
         try {
@@ -669,16 +736,27 @@ export class TileWorld {
           await new Promise((done) => setTimeout(done, 300 * tries));
         }
       }
+      const tile = this.loaded.get(k);
+      if (tile && this.shown.has(k)) await this.dress(tile);
     }));
   }
 
-  // Called every frame: starts building the nearest missing tiles, drops far ones.
-  update(x: number, y: number, r: number) {
+  // Called every frame: starts building the nearest missing tiles within r and drops
+  // far ones; of those loaded, the ones within `drawn` of the point get their meshes.
+  update(x: number, y: number, r: number, drawn = r) {
     const now = performance.now();
     const want = this.around(x, y, r).filter((k) => !((this.retry.get(k) ?? 0) > now));
     for (const k of want.slice(0, 12)) this.fetchTile(k);
-    // One build per worker at a time.
-    while (this.building < this.workers.size) {
+    const show = this.reach(x, y, r, drawn);
+    this.shown = new Set(show);
+    // One build per worker at a time: first the meshes of tiles coming into view, then
+    // the tiles further out.
+    for (const k of show) {
+      if (this.building + this.dressing.size >= this.workers.size) break;
+      const tile = this.loaded.get(k);
+      if (tile && !tile.drawn && !tile.dressing && tile.drawAfter <= now) void this.dress(tile);
+    }
+    while (this.building + this.dressing.size < this.workers.size) {
       const next = want.find((k) => !this.loaded.has(k) && !this.inFlight.has(k));
       if (!next) break;
       this.building++;
@@ -690,12 +768,18 @@ export class TileWorld {
     }
     const keep = new Set(this.around(x, y, r + this.T * 0.5));
     for (const k of [...this.loaded.keys()]) if (!keep.has(k)) this.drop(k);
+    if (drawn < r) {
+      const keepDrawn = new Set(this.near(x, y, drawn + DRAWN_KEEP));
+      for (const tile of this.loaded.values()) if (tile.shown && !keepDrawn.has(tile.k)) this.undress(tile);
+    }
     // Files fetched ahead for tiles that are now far behind aren't needed any more.
     for (const k of [...this.pending.keys()]) if (!keep.has(k) && !this.loaded.has(k) && !this.inFlight.has(k)) this.pending.delete(k);
   }
 
-  // Build a tile (once, however many ask: loadNow and update may both want it, and
-  // its IPR buildings are handed over to a worker, so they can't be used twice).
+  // Whether tiles or their meshes are being made.
+  get busy() { return this.inFlight.size > 0 || this.dressing.size > 0; }
+
+  // Build a tile (once, however many ask: loadNow and update may both want it).
   build(k: string, files: TileFiles): Promise<Tile> {
     if (this.loaded.has(k)) return Promise.resolve(this.loaded.get(k)!);
     if (!this.builds.has(k)) {
@@ -709,6 +793,7 @@ export class TileWorld {
     return this.builds.get(k)!;
   }
 
+  // A tile without its meshes: what the traffic, the people and the parked cars need.
   async make(k: string, { t, height, bare, ipr, levels }: TileFiles): Promise<Tile> {
     const [x0, y0, x1, y1] = t.box;
     const data = { ...t, size: [x1 - x0, y1 - y0] as Point2, origin: [-x0, -y0] as Point2 };
@@ -758,7 +843,6 @@ export class TileWorld {
     const withIpr = !!(t.ipr && !this.osmBuildings && ipr);
     const extrude = own.filter((b) => (!withIpr || b.noIpr) && !givesWay(b.rings))
       .map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))) }));
-    const bbox = this.index.bbox_wgs84;
     const edges = this.driveBy.get(k) || [];
     const clipped = edges.flatMap((e) => clipLine(e.pts, t.box).map((pts) => (
       { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel })));
@@ -780,81 +864,35 @@ export class TileWorld {
     const seedArray = new Float64Array(seeds);
     const outlines = t.buildings.filter(grounded).map((b) => ({ rings: b.rings }));
     const shapes: Shadower[] = t.buildings.filter(grounded).map((b) => ({ rings: b.rings, h: b.h }));
-    const w = this.workers;
-    const jobs = Promise.all([
-      w.run('ground', {
-        d: { areas: t.areas, roads: t.roads, rails: t.rails, weirs: t.weirs, crossings: t.crossings },
-        box: [geo.minX, geo.minY, geo.maxX, geo.maxY] as Bounds, edges: clipped, buildings: own.filter(grounded).map((b) => ({ rings: b.rings })), parkingZones, ground, levels: tileLevels,
-      }),
-      w.run('land', {
-        data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, trees: t.trees, passages: t.passages || [], levels: !!tileLevels },
-        seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
-      }, [seedArray.buffer]),
-      withIpr ? w.run('ipr', { buffer: ipr, box: t.box, absolute: this.index.iprRef != null, ground, bbox, hide }, [ipr]) : null,
-      !withIpr || extrude.length ? w.run('roofs', { buildings: extrude, size: data.size, origin: data.origin, ground, bbox }) : null,
-    ]);
+    const bounds: Bounds = [geo.minX, geo.minY, geo.maxX, geo.maxY];
+    const source: TileSource = {
+      t, size: data.size, origin: data.origin, bounds, ground, levels: tileLevels, masks: [], marks, hide,
+      withIpr, ipr: withIpr ? ipr : null, extrude, clipped, parkingZones, standing: own.filter(grounded).map((b) => ({ rings: b.rings })),
+      shapes, trees: { matrices: new Float32Array(0), colours: new Float32Array(0), evergreen: new Float32Array(0), count: 0, shrubs: 0, conifers: 0 },
+    };
+    // A tile that's in view as soon as it's loaded: its meshes' jobs go to the workers
+    // along with this one.
+    const early = this.shown.has(k) ? this.meshJobs(k, source) : null;
+    early?.catch(() => {});
+    const landJob = this.workers.run('land', {
+      data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, trees: t.trees, passages: t.passages || [], levels: !!tileLevels },
+      seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
+      box: bounds, structures: tileLevels ? structures : [],
+    }, [seedArray.buffer]);
     lap('send');
-    // The landmarks drawn with this tile (each with one tile only, where it mostly is).
-    const models = Promise.all(marks.filter((l) => l.home === k).map((l) => {
-      if (!this.landmarkModels.has(l.name)) {
-        this.landmarkModels.set(l.name, landmarkModel(dataUrl(this.area, `${l.file}`)).catch((e) => {
-          console.warn(`Landmark ${l.name} could not be loaded`, e);
-          return null;
-        }));
-      }
-      return this.landmarkModels.get(l.name)!;
-    }));
-    const [{ layers, masks }, land, iprArrays, roofArrays] = await jobs;
-    const landmarks = (await models).filter((m): m is THREE.Group => m !== null);
+    const land = await landJob;
     if (this.loaded.has(k)) return this.loaded.get(k)!;
     lap('workers');
-    // How much sky the ground and the walls see: the ground's texture, and a value for each wall vertex.
-    const arraysOf = [iprArrays, roofArrays].filter((arrays): arrays is BuildingArrays => arrays !== null);
-    const skyBox = [x0, y0, x0 + Math.ceil(Math.max(x1 - x0, y1 - y0) / SKY_STEP) * SKY_STEP, y0 + Math.ceil(Math.max(x1 - x0, y1 - y0) / SKY_STEP) * SKY_STEP];
-    const neighboursThen = this.neighbourCount(t.i, t.j);
-    const skyResult = await this.workers.run('sky', {
-      box: t.box, ground, shapes: this.shadowersFor(t.i, t.j, shapes),
-      meshes: arraysOf.map((a) => ({ position: a.position.slice(), normal: a.normal.slice(), facade: a.facade.slice() })),
-    }).catch((e) => { console.warn(`Sky view of tile ${k} failed`, e); return null; });
-    let skyTexture: THREE.DataTexture | null = null;
-    // `&nosky` in the address leaves the sky view out, to compare with and without it.
-    if (skyResult && !location.search.includes('nosky')) {
-      skyTexture = new THREE.DataTexture(skyResult.texels, skyResult.n, skyResult.n, THREE.RedFormat, THREE.UnsignedByteType);
-      skyTexture.unpackAlignment = 1;
-      skyTexture.magFilter = skyTexture.minFilter = THREE.LinearFilter;
-      skyTexture.needsUpdate = true;
-    }
-    this.sky.set(t.i * 65536 + t.j, { shapes, texture: skyTexture, tileBox: t.box, ground, refresh: null });
-    // The neighbours' ground next to this tile's buildings.
-    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) if (di || dj) this.refreshSky(t.i + di, t.j + dj);
-    // (A neighbour that came while the worker was busy is only known now.)
-    if (this.neighbourCount(t.i, t.j) !== neighboursThen) this.refreshSky(t.i, t.j);
-    lap('sky');
-    t0 = performance.now();
-
-    const group = new THREE.Group();
-    // Where each level is: for drawing what's on it, and for getting about on it.
-    const levelMasks = new Map<number, { texture: THREE.DataTexture; box: number[] }>();
-    const onLevels: TileLevel[] = [];
-    for (const mask of masks) {
-      const texture = new THREE.DataTexture(mask.cells, mask.w, mask.h, THREE.RedFormat, THREE.UnsignedByteType);
-      texture.unpackAlignment = 1;
-      texture.magFilter = texture.minFilter = THREE.LinearFilter;
-      texture.needsUpdate = true;
-      levelMasks.set(mask.level, { texture, box: [x0, y1, x0 + mask.w / RES, y1 - mask.h / RES] });
+    source.masks = land.masks;
+    source.trees = land.trees;
+    // Where each level is, for getting about on it.
+    const onLevels: TileLevel[] = land.masks.map((mask) => {
       const input = tileLevels?.find((l) => l.level === mask.level);
-      onLevels.push({
+      return {
         level: mask.level, grid: new Grid(geo, RES, null, mask.cells),
         sample: input ? heightSampler(input.heights.hm, t.box, input.heights.n, input.heights.step) : () => NaN,
-      });
-    }
-    const photo = this.ortho ? await this.photos.get(k) : null;
-    const surfaces = new Surfaces(layers, { time: this.time, relief: shade ? { texture: shade.texture, box: shade.box, sky: skyTexture ? { texture: skyTexture, box: skyBox } : null } : null, masks: levelMasks, photo: photo ? { texture: photo, box: [x0, y0, x1, y1] } : null });
-    // Under a tunnel, the ground hides what's below it (the tunnel, the cars in it)
-    // except round you (CUTAWAY): the ground's own layers are drawn without depth.
-    const hidden = shade && terrain && onLevels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step) : null;
-    if (hidden) group.add(hidden);
-    const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
+      };
+    });
     const walls = wallMesh(land.walls);
     const fenceRows = fenceMeshes(land.fences);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
@@ -871,12 +909,6 @@ export class TileWorld {
     };
     const roads = [...(t.roads.road || []), ...(t.roads.sett || []), ...(t.roads.dirt || [])];
     const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt, (x, y) => roads.some((rings) => inPoly(x, y, rings)));
-    group.add(surfaces.group, ...buildings, walls, fenceRows.fence, fenceRows.hedge, ...landmarks, ...wires);
-    // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
-    // and the renderer's walk through the scene each frame skips the tile's objects.
-    group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
-    group.updateMatrixWorld(true);
-    group.updateMatrixWorld = () => {};
     const grid = new Grid(geo, RES, null, land.cells);
     lap('meshes');
 
@@ -893,33 +925,176 @@ export class TileWorld {
     lap('parking');
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
-      k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), group, surfaces, grid, levels: onLevels, cars, ms,
-      roads, disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, relief: shade, sample: shade?.sample,
+      k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, levels: onLevels, cars, ms,
+      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, fenceRows.fence, fenceRows.hedge, ...wires],
+      roads, poles, fences: fenceSections, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };
       }),
       weirs: t.weirs || [],
     };
-    // Commit the lease only once construction is finished. If installation or a
-    // callback fails, a retry must not inherit pages from the interrupted attempt.
+    const key = t.i * 65536 + t.j;
     try {
-      this.trees.add(k, land.trees);
-      this.scene.add(group);
       this.loaded.set(k, tile);
-      this.byIndex.set(t.i * 65536 + t.j, tile);
+      this.byIndex.set(key, tile);
+      // The tile's buildings as shadow casters, for its own sky view and its neighbours':
+      // their ground next to these buildings is worked out again.
+      this.sky.set(key, { shapes, texture: null, tileBox: t.box, ground, refresh: null });
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) if (di || dj) this.refreshSky(t.i + di, t.j + dj);
       // The neighbours' hill shading along the shared edges, now that this side is known.
       if (shared) for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.edges();
       this.last.i = NaN;
       this.onCars(cars, tile);
-      return tile;
     } catch (error) {
-      this.trees.remove(k);
-      this.scene.remove(group);
       this.loaded.delete(k);
-      this.byIndex.delete(t.i * 65536 + t.j);
+      this.byIndex.delete(key);
+      this.sky.delete(key);
       throw error;
     }
+    if (this.shown.has(k)) void this.dress(tile, early ?? undefined);
+    return tile;
+  }
+
+  // The worker jobs for a tile's meshes: the ground's layers and the buildings.
+  private async meshJobs(k: string, s: TileSource): MeshJobs {
+    const w = this.workers, { t } = s;
+    let buffer = s.ipr;
+    s.ipr = null; // (handed over to a worker, so it can't be used twice)
+    if (s.withIpr && !buffer) buffer = await this.binary(k, 'ipr');
+    return Promise.all([
+      w.run('ground', {
+        d: { areas: t.areas, roads: t.roads, rails: t.rails, weirs: t.weirs, crossings: t.crossings },
+        box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
+      }),
+      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide }, [buffer]) : null,
+      !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84 }) : null,
+    ]);
+  }
+
+  // Give a loaded tile its meshes (once, however many ask). If the tile has been left
+  // behind or dropped by the time they're ready, they're thrown away.
+  dress(tile: Tile, jobs?: MeshJobs): Promise<void> {
+    tile.shown = true;
+    if (tile.drawn) return Promise.resolve();
+    if (!tile.dressing) {
+      const started = performance.now(), k = tile.k;
+      this.dressing.add(k);
+      tile.dressing = this.assemble(tile, jobs ?? this.meshJobs(k, tile.source))
+        .then(() => { this.drawTimes.push(performance.now() - started); if (this.drawTimes.length > 256) this.drawTimes.shift(); })
+        .catch((e) => {
+          // Tried again after a pause, like a tile that failed to load.
+          console.warn(`Tile ${k} could not be drawn`, e);
+          telemetry.count('tileFailures');
+          tile.drawAfter = performance.now() + 2000;
+        })
+        .finally(() => { this.dressing.delete(k); tile.dressing = null; });
+    }
+    return tile.dressing;
+  }
+
+  private async assemble(tile: Tile, jobs: MeshJobs) {
+    const { k, source: s } = tile, { t } = s, [x0, y0, x1, y1] = t.box, key = t.i * 65536 + t.j;
+    const ms: Record<string, number> = tile.drawMs = {};
+    let t0 = performance.now();
+    const lap = (name: string) => { const t1 = performance.now(); ms[name] = Math.round(t1 - t0); t0 = t1; };
+    const gone = () => !tile.shown || this.loaded.get(k) !== tile;
+    // The landmarks drawn with this tile (each with one tile only, where it mostly is).
+    const models = Promise.all(s.marks.filter((l) => l.home === k).map((l) => {
+      if (!this.landmarkModels.has(l.name)) {
+        this.landmarkModels.set(l.name, landmarkModel(dataUrl(this.area, `${l.file}`)).catch((e) => {
+          console.warn(`Landmark ${l.name} could not be loaded`, e);
+          return null;
+        }));
+      }
+      return this.landmarkModels.get(l.name)!;
+    }));
+    const [{ layers }, iprArrays, roofArrays] = await jobs;
+    const landmarks = (await models).filter((m): m is THREE.Group => m !== null);
+    if (gone()) return;
+    lap('workers');
+    // How much sky the ground and the walls see: the ground's texture, and a value for each wall vertex.
+    const arraysOf = [iprArrays, roofArrays].filter((arrays): arrays is BuildingArrays => arrays !== null);
+    const skyBox = [x0, y0, x0 + Math.ceil(Math.max(x1 - x0, y1 - y0) / SKY_STEP) * SKY_STEP, y0 + Math.ceil(Math.max(x1 - x0, y1 - y0) / SKY_STEP) * SKY_STEP];
+    const neighboursThen = this.neighbourCount(t.i, t.j);
+    const skyResult = await this.workers.run('sky', {
+      box: t.box, ground: s.ground, shapes: this.shadowersFor(t.i, t.j, s.shapes),
+      meshes: arraysOf.map((a) => ({ position: a.position.slice(), normal: a.normal.slice(), facade: a.facade.slice() })),
+    }).catch((e) => { console.warn(`Sky view of tile ${k} failed`, e); return null; });
+    const photo = this.ortho ? await this.photos.get(k) : null;
+    const entry = this.sky.get(key);
+    if (gone() || !entry) return;
+    let skyTexture: THREE.DataTexture | null = null;
+    // `&nosky` in the address leaves the sky view out, to compare with and without it.
+    if (skyResult && !location.search.includes('nosky')) {
+      skyTexture = new THREE.DataTexture(skyResult.texels, skyResult.n, skyResult.n, THREE.RedFormat, THREE.UnsignedByteType);
+      skyTexture.unpackAlignment = 1;
+      skyTexture.magFilter = skyTexture.minFilter = THREE.LinearFilter;
+      skyTexture.needsUpdate = true;
+    }
+    entry.texture = skyTexture;
+    // (A neighbour that came while the worker was busy is only known now.)
+    if (this.neighbourCount(t.i, t.j) !== neighboursThen) this.refreshSky(t.i, t.j);
+    lap('sky');
+
+    const group = new THREE.Group();
+    // Where each level is, for drawing what's on it.
+    const levelMasks = new Map<number, { texture: THREE.DataTexture; box: number[] }>();
+    for (const mask of s.masks) {
+      const texture = new THREE.DataTexture(mask.cells, mask.w, mask.h, THREE.RedFormat, THREE.UnsignedByteType);
+      texture.unpackAlignment = 1;
+      texture.magFilter = texture.minFilter = THREE.LinearFilter;
+      texture.needsUpdate = true;
+      levelMasks.set(mask.level, { texture, box: [x0, y1, x0 + mask.w / RES, y1 - mask.h / RES] });
+    }
+    const shade = tile.relief, terrain = this.index.terrain;
+    const surfaces = new Surfaces(layers, { time: this.time, relief: shade ? { texture: shade.texture, box: shade.box, sky: skyTexture ? { texture: skyTexture, box: skyBox } : null } : null, masks: levelMasks, photo: photo ? { texture: photo, box: [x0, y0, x1, y1] } : null });
+    // Under a tunnel, the ground hides what's below it (the tunnel, the cars in it)
+    // except round you (CUTAWAY): the ground's own layers are drawn without depth.
+    const hidden = shade && terrain && tile.levels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step) : null;
+    if (hidden) group.add(hidden);
+    const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
+    group.add(surfaces.group, ...buildings, ...tile.fixtures, ...landmarks);
+    // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
+    // and the renderer's walk through the scene each frame skips the tile's objects.
+    group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
+    group.updateMatrixWorld(true);
+    group.updateMatrixWorld = () => {};
+    // The tree pages are leased last: if they can't be, nothing is left half done.
+    this.trees.add(k, s.trees);
+    this.scene.add(group);
+    tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])] };
+    lap('meshes');
+  }
+
+  // Take a tile's meshes away again; the tile stays loaded.
+  undress(tile: Tile) {
+    tile.shown = false;
+    const drawn = tile.drawn;
+    if (!drawn) return;
+    tile.drawn = null;
+    this.trees.remove(tile.k);
+    this.scene.remove(drawn.group);
+    // (The landmarks and what stays with the tile go into a new group next time.)
+    drawn.group.clear();
+    drawn.surfaces.dispose();
+    const sky = this.sky.get(tile.i * 65536 + tile.j);
+    if (sky) {
+      sky.refresh?.drop();
+      this.skyTotals.coalesced += sky.refresh?.coalesced ?? 0;
+      this.skyTotals.cancelled += sky.refresh?.cancelled ?? 0;
+      sky.refresh = null;
+      sky.texture?.dispose();
+      sky.texture = null;
+    }
+    for (const m of drawn.own) {
+      m.geometry.dispose();
+      if (Array.isArray(m.material)) m.material.forEach((material) => material.dispose());
+      else m.material.dispose();
+    }
+    // What stays with the tile gives up its copy on the graphics card until it's drawn again.
+    for (const m of tile.fixtures) m.geometry.dispose();
+    tile.relief?.texture.dispose();
   }
 
   // The buildings of a tile and the tiles round it that can shade its ground: the outlines
@@ -961,29 +1136,20 @@ export class TileWorld {
       coalesced += entry.refresh?.coalesced ?? 0;
       cancelled += entry.refresh?.cancelled ?? 0;
     }
-    return { ...this.workers.counts, coalesced, cancelled, buildTimes: this.buildTimes };
+    return { ...this.workers.counts, coalesced, cancelled, buildTimes: this.buildTimes, drawTimes: this.drawTimes, drawn: [...this.loaded.values()].filter((t) => t.drawn).length };
   }
 
   drop(k: string) {
     const t = this.loaded.get(k);
     if (!t) return;
-    this.trees.remove(k);
-    this.scene.remove(t.group);
-    t.surfaces.dispose();
-    t.relief?.texture.dispose();
-    const sky = this.sky.get(t.i * 65536 + t.j);
-    sky?.refresh?.drop();
-    this.skyTotals.coalesced += sky?.refresh?.coalesced ?? 0;
-    this.skyTotals.cancelled += sky?.refresh?.cancelled ?? 0;
-    sky?.texture?.dispose();
+    this.undress(t);
     this.sky.delete(t.i * 65536 + t.j);
     this.photos.get(k)?.then((tex) => tex?.dispose());
     this.photos.delete(k);
-    for (const m of t.disposables) {
+    for (const m of t.fixtures) {
       m.geometry.dispose();
       if (Array.isArray(m.material)) m.material.forEach((material) => material.dispose());
       else m.material.dispose();
-      if ('dispose' in m && typeof m.dispose === 'function') m.dispose();
     }
     for (const p of t.poles) posts.remove(p);
     fences.remove(t.fences);
