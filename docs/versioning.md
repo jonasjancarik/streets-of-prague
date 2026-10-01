@@ -112,3 +112,8 @@ built before that was recorded.
 
 Every tag depends on its map version staying on R2 unchanged, so versions are not
 deleted or overwritten. Each one is about 0.7 GB.
+
+R2 enforces this: the bucket has a lock rule, `keep-every-map-version`, that refuses to
+overwrite or delete any object, indefinitely. New versions upload as usual. To remove a
+version after all (a failed upload, or to free space), the rule has to be taken off
+first; `cf r2 buckets locks get streets-of-prague-data` shows it.
