@@ -9,6 +9,7 @@ import type { Slot, SaveData } from './save.ts';
 import * as telemetry from './telemetry.ts';
 import { mapData } from './data.ts';
 import { newsletterLink } from './newsletter.ts';
+import { hapticsOn, setHaptics } from './haptics.ts';
 import { feedbackLink } from './feedback.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
@@ -115,6 +116,8 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.on ? 'on' : 'off'), (id) => { if ((id === 'on') !== sound.on) sound.toggle(); });
   row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
   row('Noise cancelling', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.anc ? 'on' : 'off'), (id) => sound.setAnc(id === 'on'));
+  // Only on a touch screen: a computer can't buzz.
+  if (matchMedia('(pointer: coarse)').matches) row('Vibration', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (hapticsOn() ? 'on' : 'off'), (id) => setHaptics(id === 'on'));
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
   row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
 

@@ -13,6 +13,7 @@ const PATTERNS: Record<HapticKind, number | number[]> = {
 const MIN_GAP = 120; // ms between buzzes, so a scrape along a wall isn't one long drone
 
 let on = true;
+try { on = localStorage.getItem('haptics') !== 'off'; } catch { /* no storage: stay on */ }
 let last = 0;
 let label: HTMLLabelElement | null = null;
 
@@ -31,7 +32,13 @@ function iosTick() {
   label.click();
 }
 
-export function setHaptics(enabled: boolean) { on = enabled; }
+export const hapticsOn = () => on;
+
+export function setHaptics(enabled: boolean) {
+  on = enabled;
+  try { localStorage.setItem('haptics', enabled ? 'on' : 'off'); } catch { /* not saved */ }
+  if (enabled) haptic('tick');
+}
 
 export function haptic(kind: HapticKind) {
   if (!on || typeof document === 'undefined') return;

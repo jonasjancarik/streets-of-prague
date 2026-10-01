@@ -53,6 +53,7 @@ export const CS: Record<string, string> = {
   Sound: 'Zvuk',
   'Car radio': 'Rádio v autě',
   'Noise cancelling': 'Potlačení hluku',
+  Vibration: 'Vibrace',
   'Now {time}': 'Teď {time}',
   'Now: {weather}': 'Teď: {weather}',
   Morning: 'Ráno',
