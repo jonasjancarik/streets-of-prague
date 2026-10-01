@@ -1,4 +1,5 @@
 import { getLang, onLang, t } from './i18n.ts';
+import { privacyLink } from './credits.ts';
 import { el, sheet, trapField } from './newsletter.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
@@ -92,6 +93,7 @@ function build(extra: () => string) {
   const status = el('p', 'news-status', d);
   status.setAttribute('role', 'status');
   const small = el('p', 'news-small', d);
+  privacyLink(d);
 
   // What the status line says, kept as the English text so it follows the language.
   let note = '', sending = false, done = false;

@@ -360,6 +360,7 @@
       body.touch #credits .short { display: inline; }
       #credits-box { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; overflow: auto; padding: 16px 20px; color: var(--ink); background: rgba(20, 13, 12, 0.96); border: 0; border-left: 5px solid var(--edge); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4); font: 13px/1.45 Inter, system-ui, sans-serif; }
       #credits-box::backdrop { background: rgba(0, 0, 0, 0.35); }
+      #credits-box #privacy { margin-top: 18px; }
       #credits-box h2 { margin: 0 0 8px; font: 26px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
       #credits-box ul { margin: 8px 0; padding-left: 18px; }
       #credits-box li { margin: 5px 0; }
@@ -421,6 +422,8 @@
       .news-status { font-weight: 600; }
       .news-status.bad { color: var(--accent); }
       .news-small { font-size: 12px; opacity: 0.6; }
+      .news-privacy { font: inherit; font-size: 12px; color: var(--ink); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; opacity: 0.6; }
+      .news-privacy:hover { opacity: 1; }
       .settings-version { margin: 16px 0 0; font-size: 12px; opacity: 0.55; user-select: text; }
       body.touch #credits { display: none; }
       /* Touch controls: left thumb steers, right thumb works the pedals and buttons. */
@@ -584,7 +587,7 @@
       </div>
     </div>
     <div id="metro" class="panel" hidden></div>
-    <button id="credits" type="button"><span class="long" data-t="credits.line">Map data © OpenStreetMap contributors, IPR Praha, PID and TSK Praha · <u>Credits</u></span><span class="short" data-t>© Credits</span></button>
+    <button id="credits" type="button"><span class="long" data-t="credits.line">Map data © OpenStreetMap contributors, IPR Praha, PID and TSK Praha · <u>Credits and privacy</u></span><span class="short" data-t>© Credits</span></button>
     <dialog id="credits-box" aria-labelledby="credits-title">
       <h2 id="credits-title" data-t>Credits</h2>
       <p data-t>This Prague is built from open data. Thanks to:</p>
@@ -598,6 +601,12 @@
         <li data-t="credits.city">City sounds: recordings from <a href="https://freesound.org" target="_blank" rel="noopener">Freesound</a>; the Old Town crowds are <a href="https://freesound.org/s/212034/" target="_blank" rel="noopener">Prague, Staro Mesto, City Center</a> by vonfleisch, CC BY 3.0, the traffic <a href="https://freesound.org/s/94309/" target="_blank" rel="noopener">Prague Atmo Traffic from 5th floor</a> by aUREa, CC BY 4.0, the rest CC0.</li>
       </ul>
       <p data-t="credits.made">Made with the open-source libraries three.js, proj4, Leaflet and straight-skeleton. <a href="licenses.txt" target="_blank" rel="noopener">Read their licences</a>.</p>
+      <h2 id="privacy" data-t>Privacy</h2>
+      <p data-t="privacy.browser">The game has no adverts and no tracking cookies. Your saved games and settings stay in your browser and are never sent anywhere.</p>
+      <p data-t="privacy.servers">The game is sent to you by Cloudflare, which sees your IP address when it does, as any website would. Three other services are asked for something as you play and see your IP address too: Google Fonts for the lettering, Open-Meteo for today's weather in Prague, and a radio station while it plays in a car.</p>
+      <p data-t="privacy.news">If you sign up for news about the game, your email address and the language you picked for the emails are kept by Brevo, the service that sends them, until you unsubscribe with the link in any of them. Cloudflare Turnstile checks that a person is signing up.</p>
+      <p data-t="privacy.feedback">Feedback you send reaches the author by email, with your address if you gave one, the game's version, your browser and graphics card, and where you were in the game. It is used only to fix the game and to answer you.</p>
+      <p data-t="privacy.contact">The game is made by Jonáš Jančařík. To ask what is kept about you, or to have it deleted, write to <a href="mailto:jonas@streetsofprague.com">jonas@streetsofprague.com</a>.</p>
       <form method="dialog"><button autofocus data-t>Close</button></form>
     </dialog>
     <div id="loading"><div id="loading-text">Loading…</div></div>

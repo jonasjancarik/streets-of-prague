@@ -176,7 +176,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   // On a phone the credits live here (their corner has these buttons now).
   const credits = el('button', 'settings-credits', box) as HTMLButtonElement;
   credits.type = 'button';
-  relabel.push(() => { credits.textContent = t('Credits and licences'); });
+  relabel.push(() => { credits.textContent = t('Credits, licences and privacy'); });
   credits.addEventListener('click', () => {
     box.close();
     document.getElementById('credits')?.click();

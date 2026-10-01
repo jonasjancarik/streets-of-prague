@@ -1,5 +1,6 @@
 import { LANGS, getLang, onLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
+import { privacyLink } from './credits.ts';
 
 // Signing up for news about the game by email: a link on the start screen and in the
 // settings, which opens a small form. The address goes to the site's own
@@ -127,6 +128,7 @@ function build() {
   const status = el('p', 'news-status', d);
   status.setAttribute('role', 'status');
   const small = el('p', 'news-small', d);
+  privacyLink(d);
 
   // What the status line says, kept as the English text so it follows the language.
   let message = '', sending = false, done = false;

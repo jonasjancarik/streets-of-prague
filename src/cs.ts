@@ -98,7 +98,7 @@ export const CS: Record<string, string> = {
   'Leave full screen': 'Ukončit celou obrazovku',
   'Sound on (M)': 'Zvuk zapnutý (M)',
   'Sound off (M)': 'Zvuk vypnutý (M)',
-  'Credits and licences': 'Poděkování a licence',
+  'Credits, licences and privacy': 'Poděkování, licence a soukromí',
   // Newsletter signup
   'Get news about the game by email': 'Novinky o hře e-mailem',
   'News about the game': 'Novinky o hře',
@@ -355,7 +355,7 @@ export const CS: Record<string, string> = {
   controls: 'ovládání',
 
   // Credits
-  'credits.line': 'Data map © přispěvatelé OpenStreetMap, IPR Praha, PID a TSK Praha · <u>Poděkování</u>',
+  'credits.line': 'Data map © přispěvatelé OpenStreetMap, IPR Praha, PID a TSK Praha · <u>Poděkování a soukromí</u>',
   '© Credits': '© Poděkování',
   Credits: 'Poděkování',
   'This Prague is built from open data. Thanks to:': 'Tahle Praha je postavená z otevřených dat. Děkujeme:',
@@ -367,5 +367,11 @@ export const CS: Record<string, string> = {
   'credits.tram': 'Zvuky tramvají: nahrávky z <a href="https://freesound.org" target="_blank" rel="noopener">Freesoundu</a>, téměř všechny CC0; kvílení motoru je <a href="https://freesound.org/s/621068/" target="_blank" rel="noopener">tramvaj nova prujezd nabrezi MS</a> od ozvuk, CC BY 4.0.',
   'credits.city': 'Zvuky města: nahrávky z <a href="https://freesound.org" target="_blank" rel="noopener">Freesoundu</a>; davy na Starém Městě jsou <a href="https://freesound.org/s/212034/" target="_blank" rel="noopener">Prague, Staro Mesto, City Center</a> od vonfleisch, CC BY 3.0, provoz <a href="https://freesound.org/s/94309/" target="_blank" rel="noopener">Prague Atmo Traffic from 5th floor</a> od aUREa, CC BY 4.0, zbytek CC0.',
   'credits.made': 'Vytvořeno s open-source knihovnami three.js, proj4, Leaflet a straight-skeleton. <a href="licenses.txt" target="_blank" rel="noopener">Přečti si jejich licence</a>.',
+  Privacy: 'Soukromí',
+  'privacy.browser': 'Hra nemá reklamy ani sledovací cookies. Uložené hry a nastavení zůstávají ve tvém prohlížeči a nikam se neposílají.',
+  'privacy.servers': 'Hru ti posílá Cloudflare, který při tom vidí tvoji IP adresu, jako každý web. Během hraní se hra obrací ještě na tři služby, které tvoji IP adresu vidí také: na Google Fonts kvůli písmu, na Open-Meteo kvůli dnešnímu počasí v Praze a na rozhlasovou stanici, když v autě hraje.',
+  'privacy.news': 'Když se přihlásíš k odběru novinek o hře, tvoji e-mailovou adresu a jazyk zvolený pro e-maily uchovává služba Brevo, která je rozesílá, dokud se neodhlásíš odkazem v kterémkoli z nich. Že se přihlašuje člověk, ověřuje Cloudflare Turnstile.',
+  'privacy.feedback': 'Zpětná vazba, kterou pošleš, přijde autorovi e-mailem spolu s tvojí adresou, pokud ji uvedeš, s verzí hry, tvým prohlížečem a grafickou kartou a s místem, kde ve hře právě jsi. Slouží jen k opravám hry a k odpovědi tobě.',
+  'privacy.contact': 'Hru vytvořil Jonáš Jančařík. Pokud chceš vědět, co se o tobě uchovává, nebo to nechat smazat, napiš na <a href="mailto:jonas@streetsofprague.com">jonas@streetsofprague.com</a>.',
   Close: 'Zavřít',
 };
