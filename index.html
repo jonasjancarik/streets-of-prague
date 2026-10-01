@@ -354,6 +354,12 @@
       .corner-btn[aria-pressed='true'] { color: var(--accent); }
       body.touch .corner-btn { width: 42px; height: 42px; }
       .settings { width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; overflow: auto; padding: 16px 20px 18px; color: var(--ink); background: rgba(20, 13, 12, 0.96); border: 0; border-left: 5px solid var(--edge); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4); font: 13px/1.4 Inter, system-ui, sans-serif; }
+      /* A thin scrollbar in the panel's colours, instead of the browser's white one. */
+      .settings, #credits-box { scrollbar-width: thin; scrollbar-color: rgba(236, 228, 214, 0.35) transparent; }
+      .settings::-webkit-scrollbar, #credits-box::-webkit-scrollbar { width: 8px; }
+      .settings::-webkit-scrollbar-track, #credits-box::-webkit-scrollbar-track { background: transparent; }
+      .settings::-webkit-scrollbar-thumb, #credits-box::-webkit-scrollbar-thumb { background: rgba(236, 228, 214, 0.3); border-radius: 4px; }
+      .settings::-webkit-scrollbar-thumb:hover, #credits-box::-webkit-scrollbar-thumb:hover { background: rgba(236, 228, 214, 0.55); }
       .settings::backdrop { background: rgba(0, 0, 0, 0.35); }
       .settings-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
       .settings h2 { margin: 0; font: 30px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
