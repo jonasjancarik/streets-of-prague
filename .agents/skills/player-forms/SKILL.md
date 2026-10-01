@@ -112,6 +112,12 @@ One domain serves three mail jobs, and their DNS records live side by side in th
    arrives, its link opens the game with "your email address is confirmed", and the
    contact shows in the Brevo list.
 
+All of this is in place since release v0.1.1 (1 October 2026), when the round trip was
+run for real with `jonas@streetsofprague.com`: the real Turnstile widget, Brevo's
+template 1, delivery to Gmail through the incoming route, the confirmation and the
+contact on list 3. The secrets set on the Worker beforehand were still there after the
+release replaced it. Still open: a Czech template and the language attribute.
+
 ### Feedback (Cloudflare email sending)
 
 1. **A verified address to receive it.** `cf email-routing addresses list` (with
@@ -234,8 +240,10 @@ paste the key; don't read a key off a dashboard page or ask for it in the conver
 
     CLOUDFLARE_ACCOUNT_ID=7756b12931ecfb3900a31049e157d706 cf workers secrets update <NAME> --worker streets-of-prague --type secret_text --text <key>
 
-It works before the first release too. A changed line in `deploy/…` takes effect with
-the next release (production) or beta deploy.
+It works before the first release too, and a release keeps the secrets that are already
+on the Worker. A changed line in `deploy/…` takes effect with the next release
+(production) or beta deploy. If a key has been shown anywhere it shouldn't have been,
+make a new one in the service, store it, and revoke the old one there.
 
 The Turnstile widget ("Streets of Prague newsletter signup", managed mode) can't be
 managed with `cf`: its login has no Turnstile permission. Use the Cloudflare dashboard
