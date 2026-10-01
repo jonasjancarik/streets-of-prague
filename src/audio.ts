@@ -211,6 +211,22 @@ export class Sound {
       });
       document.body.append(b);
     };
+    const fresh = document.createElement('button');
+    fresh.textContent = 'Beep new context';
+    fresh.style.cssText = 'position:fixed;top:80px;left:270px;z-index:99999;padding:14px 18px;font:16px sans-serif';
+    fresh.addEventListener('click', () => {
+      const c = new AudioContext(), o = c.createOscillator();
+      o.connect(c.destination);
+      o.start();
+      o.stop(c.currentTime + 0.6);
+      setTimeout(() => c.close(), 1500);
+    });
+    document.body.append(fresh);
+    const restart = document.createElement('button');
+    restart.textContent = 'Suspend+resume';
+    restart.style.cssText = 'position:fixed;top:140px;left:0;z-index:99999;padding:14px 18px;font:16px sans-serif';
+    restart.addEventListener('click', async () => { await this.ctx?.suspend(); await this.ctx?.resume(); });
+    document.body.append(restart);
     beep('Beep direct', '0px', false);
     beep('Beep mixer', '130px', true);
     let meter: AnalyserNode | null = null;
@@ -232,7 +248,7 @@ export class Sound {
     setInterval(() => {
       const c = this.ctx;
       box.textContent = [
-        `rate ${c?.sampleRate} · level ${level()} · ${navigator.userAgent.match(/OS [\d_]+/)?.[0]}`,
+        `time ${c?.currentTime.toFixed(2)} · base ${c?.baseLatency?.toFixed(3)} · rate ${c?.sampleRate} · level ${level()} · ${navigator.userAgent.match(/OS [\d_]+/)?.[0]}`,
         `ctx ${c ? c.state : 'none'} · on ${this.on} · master ${this.master ? this.master.gain.value.toFixed(2) : '-'}`,
         `engine ${!!this.engine} tyres ${!!this.tyres} weather ${!!this.weather} city ${!!this.ambience} radio ${!!this.radio} clips ${Object.keys(this.clips).length} trams ${this.voices.length}`,
         ...errors,
