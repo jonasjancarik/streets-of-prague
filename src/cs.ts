@@ -96,6 +96,7 @@ export const CS: Record<string, string> = {
   'Sound off (M)': 'Zvuk vypnutý (M)',
   'Credits and licences': 'Poděkování a licence',
   'Version': 'Verze',
+  'map data': 'data mapy',
 
   // Banners
   'Weather: {name}': 'Počasí: {name}',

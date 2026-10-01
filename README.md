@@ -928,7 +928,8 @@ and pushed, `scripts/release.sh v1.2.3` tags it, creates the release with notes
 generated from the commits since the previous one, and runs
 `scripts/deploy-cloudflare.sh` (`--no-deploy` skips that). The build reads
 `git describe` (see `vite.config.js`), and the settings panel shows it with the
-build date: `v1.2.3`, or `v1.2.3-5-gabc1234` for commits made after the tag.
+build date: `v1.2.3`, or `v1.2.3-5-gabc1234` for commits made after the tag, followed by the map data version
+(`deploy/data-version` on Cloudflare, `local` elsewhere).
 
 ## Credits
 

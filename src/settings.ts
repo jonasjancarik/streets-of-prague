@@ -9,6 +9,7 @@ import type { Slot, SaveData } from './save.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
+declare const __DATA_VERSION__: string;
 
 // Two buttons in the top right corner: sound on or off, always in view, and the
 // settings (language, sound, graphics, weather) in a panel like the start screen's.
@@ -173,7 +174,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   });
 
   const version = el('p', 'settings-version', box);
-  relabel.push(() => { version.textContent = `${t('Version')} ${__APP_VERSION__} · ${__APP_BUILT__}`; });
+  relabel.push(() => { version.textContent = `${t('Version')} ${__APP_VERSION__} · ${__APP_BUILT__} · ${t('map data')} ${__DATA_VERSION__}`; });
 
   function update() {
     mute.innerHTML = icon(SPEAKER + (sound.on ? WAVES : CROSS));
