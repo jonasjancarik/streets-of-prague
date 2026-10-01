@@ -25,6 +25,10 @@ path = "src/main.rs"
 name = "atmo"
 path = "src/bin/atmo.rs"
 
+[[bin]]
+name = "day"
+path = "src/bin/day.rs"
+
 [workspace]
 
 [profile.dev]

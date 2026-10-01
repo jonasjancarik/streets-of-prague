@@ -64,3 +64,19 @@ from the map data: lamps in the utility map, buildings and street length (each s
 once) in the tiles, and the area the tiles cover, which is more than the city itself.
 `atmo-zoom-teaser.mp4` is the last 16 seconds cut out with ffmpeg.
 The birds, the night and the bell are the game's CC0 recordings; the rest is synthesized.
+
+## "One day"
+
+`day.mp4`, 29 seconds: the Old Town Square from one spot while the game's clock runs from
+04:40 to 23:40, the shadows turning and the lamps coming on, with the time in the corner
+and the day's course along the bottom, then the title.
+
+```sh
+trailer/day/film.sh                    # 720 frames, about 8 minutes, with the scene server running as above
+python3 trailer/day/soundtrack.py      # birds, the garden, the night, a far bell on four of the hours
+cd trailer && touch src/lib.rs && cargo run --release --bin day -- render && mv out.mp4 day.mp4
+```
+
+The film's length and its first and last time of day are written three times: in
+`day/shot.js`, `day/soundtrack.py` and `src/day.rs`. The bell is the tram's, played an
+octave and a half lower to stand in for a tower's.

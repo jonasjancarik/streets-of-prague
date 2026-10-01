@@ -13,6 +13,7 @@ use fframes::{
 use std::sync::LazyLock;
 
 pub mod atmo;
+pub mod day;
 mod atmo_data;
 
 // The fonts and the sound in `media/` are embedded into the binary (fonts are used by
