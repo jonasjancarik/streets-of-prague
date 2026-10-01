@@ -3,7 +3,7 @@
 | Plan | Scope | Status |
 | --- | --- | --- |
 | [001: Transition to TypeScript](001-transition-to-typescript.md) | Browser `src/`, entry page, compiler gate, documentation | DONE (local) |
-| [002: Money](002-money.md) | 10 000 Kč wallet, paid taxis, PID tickets, an inspector who chases you, shared bikes, HUD | PLANNED |
+| [002: Money](002-money.md) | 10 000 Kč wallet, paid taxis, PID tickets, an inspector who chases you, shared bikes, HUD | DONE |
 | [003: Cloudflare deploy](003-cloudflare-deploy.md) | App as a Worker with static assets, map data in R2, mbxp kept alongside | DONE (streetsofprague.com main; beta on mbxp) |
 | [004: Missions and factions](004-missions-and-factions.md) | Mission engine and odd jobs, factions with reputation and turf, story missions; several questions still open | PLANNED (open questions) |
 | [005: Roofs and colours from the photo mesh](005-roofs-and-colours-from-the-photo-mesh.md) | Real wall and roof colours and roof materials measured from IPR's photo mesh, mansards with windows, detected roof windows, dormers and chimneys | PLANNED |
@@ -11,6 +11,7 @@
 | [013: Fill the beige ground](013-fill-the-beige-ground.md) | Squares' surfaces from OSM, an asphalt-grey pavement palette, and DTM courtyards and green | PHASES 0–3 DONE (main and shared local tiles; photo classification is plan 014) |
 | [014: Identify courtyard surfaces](014-classify-courtyard-surfaces.md) | Deferred photo classification within DTM courtyard outlines | PLANNED |
 | [018: Simplify paths and pavements](018-simplify-paths-and-pavements.md) | No path ribbons across squares, islands or matching surfaces; tidier path shapes; pavements from the technical map later | PLANNED |
+| [019: Move the crowd into a worker](019-move-the-crowd-into-a-worker.md) | Pedestrians walk in a worker of their own; the main thread keeps the roster, collisions and drawing, and scenarios run the same code inline | PLANNED (measurement decides) |
 
 Plans 001–006 were indexed from `c6b5350`. Check the working tree and each plan's
 starting revision before implementation; preserve unrelated changes.
