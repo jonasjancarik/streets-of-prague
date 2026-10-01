@@ -15,7 +15,7 @@ interface ParkingData {
   areas: { parking?: Polygons };
   rails: { pts: Point2[] }[];
 }
-interface ParkingSlot { x: number; y: number; h: number; lot: boolean; bay: boolean; angled: boolean; fwd?: boolean }
+interface ParkingSlot { x: number; y: number; h: number; lot: boolean; bay: boolean; angled: boolean; fwd?: boolean; perp?: boolean }
 
 // Cars left up on the pavement, facing the way the traffic beside them goes: the
 // street, and how far along it (see PavementDrivers, which now and then has one of
@@ -171,18 +171,23 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
     // Angled bays slant forwards along the traffic beside them, so drivers pull in nose
     // first: turned right off a lane that has the area on its right, left otherwise.
     // Away from any street (inside a car park) the slant is arbitrary.
-    let slant = ANGLE;
-    const lane = kind === 'diagonal' ? laneBeside(ring, a, edges) : null;
+    let slant = ANGLE, nose = Math.PI / 2;
+    // Parallel cars stand facing the traffic beside them too, so on a one-way street
+    // they all point the way it goes.
+    const lane = laneBeside(ring, a, edges);
     if (lane) {
       if (Math.cos(lane.ang - a) < 0) f = frame(ring, (a += Math.PI));
-      slant = lane.right ? -ANGLE : ANGLE;
+      if (kind === 'diagonal') slant = lane.right ? -ANGLE : ANGLE;
+      // Perpendicular cars nose in towards the pavement, away from the lane.
+      nose = lane.right ? -Math.PI / 2 : Math.PI / 2;
     }
+    const withTraffic = kind === 'parallel' && !!lane;
     const { ux, uy, vx, vy, ox, oy, u0, u1 } = f;
     const uv: Point2[] = ring.map(([x, y]) => [(x - ox) * ux + (y - oy) * uy, (x - ox) * vx + (y - oy) * vy]);
     const lay = {
       parallel: { depth: 2, gap: 0.6, step: 6, end: 2.8, turn: 0 },
       diagonal: { depth: 4.8, gap: 0.7, step: ANGLED_STEP, end: 1.8, turn: slant },
-      perpendicular: { depth: 5, gap: 0.6, step: 2.6, end: 1.3, turn: Math.PI / 2 },
+      perpendicular: { depth: 5, gap: 0.6, step: 2.6, end: 1.3, turn: nose },
     }[kind];
     for (let u = u0 + lay.end; u < u1 - lay.end + 0.5; u += lay.step) {
       // The rows go across the area where it is at u, so they follow a strip that bends.
@@ -191,7 +196,7 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
         if (vs[i + 1] - vs[i] < 1.2) continue;
         for (const v of rows(vs[i], vs[i + 1], lay.depth, lay.gap)) {
           const x = ox + ux * u + vx * v, y = oy + uy * u + vy * v;
-          if (inPoly(x, y, rings)) out.push({ x, y, h: kerbAt(ring, x, y, a) + lay.turn, lot: true, bay: kind !== 'parallel', angled: kind === 'diagonal' });
+          if (inPoly(x, y, rings)) out.push({ x, y, h: kerbAt(ring, x, y, a) + lay.turn, lot: true, bay: kind !== 'parallel', angled: kind === 'diagonal', fwd: withTraffic, perp: kind === 'perpendicular' && !!lane });
         }
       }
     }
@@ -215,7 +220,7 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
       if (o === 'parallel' && Math.abs(side * kerb - e.laneOffset) < 2.3) continue;
       const step = { parallel: 6, diagonal: ANGLED_STEP, perpendicular: 2.6 }[o];
       // Angled cars nose in: turned right on the right-hand side, left on the left.
-      const turn = { parallel: 0, diagonal: -ANGLE * side, perpendicular: Math.PI / 2 }[o];
+      const turn = { parallel: 0, diagonal: -ANGLE * side, perpendicular: -Math.PI / 2 * side }[o];
       const line = new Polyline(e.pts);
       for (let s = 10; s < line.length - 10; s += step) {
         const q = line.at(s);
@@ -223,7 +228,7 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
         // A mapped parking lane already covers this stretch.
         let dup = false;
         for (let i = 0; i < lots && !dup; i++) dup = Math.abs(out[i].x - x) < 4.5 && Math.abs(out[i].y - y) < 4.5;
-        if (!dup) out.push({ x, y, h: q.ang + turn, lot: false, bay: o !== 'parallel', angled: o === 'diagonal' });
+        if (!dup) out.push({ x, y, h: q.ang + turn, lot: false, bay: o !== 'parallel', angled: o === 'diagonal', fwd: o === 'parallel', perp: o === 'perpendicular' });
       }
     }
   }
@@ -329,7 +334,7 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
   };
   const place = (s: ParkingSlot, type = randomType(r)) => {
     // Most people drive into angled bays forwards; elsewhere it's either way round.
-    const car = new Car(type, r, s.x, s.y, s.h + (!s.fwd && r() < (s.angled ? 0.08 : 0.5) ? Math.PI : 0));
+    const car = new Car(type, r, s.x, s.y, s.h + (!s.fwd && r() < (s.angled ? 0.08 : s.perp ? 0.05 : 0.5) ? Math.PI : 0));
     if (s.bay && (car.type === 'van' || car.type === 'pickup')) return false;
     // Nothing sticking out into a lane, where the traffic would have to squeeze past:
     // where the kerb or a mapped parking lane leaves no room, the street has none.
