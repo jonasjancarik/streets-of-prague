@@ -147,9 +147,6 @@ export class Radio {
     for (const [i, s] of this.streams) {
       s.gain.gain.cancelScheduledValues(t);
       s.gain.gain.setTargetAtTime(i === this.tuned && this.want ? 1 : 0, t, FADE / 3);
-      // A station only downloading must be silent whatever the audio graph does (Safari on an
-      // iPad can let a stream through before the context runs), so the element itself is muted.
-      s.el.muted = !(i === this.tuned && this.want);
       if (i === this.tuned && this.want && s.el.paused) s.el.play().catch(() => {});
     }
   }
@@ -158,7 +155,6 @@ export class Radio {
     const station = STATIONS[i];
     const el = new Audio();
     el.crossOrigin = 'anonymous';
-    el.muted = true;
     el.src = station.url;
     const gain = this.ctx.createGain();
     gain.gain.value = 0;
@@ -179,12 +175,6 @@ export class Radio {
     s.el.load(); // stops the download
     s.gain.disconnect();
     this.streams.delete(i);
-  }
-
-  // Lets go of every station; the radio isn't used after this.
-  dispose() {
-    this.stopStatic = null; // the context it would fade on is being closed
-    for (const i of [...this.streams.keys()]) this.close(i);
   }
 
   // Static that fills the gap until a station starts playing.

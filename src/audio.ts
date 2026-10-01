@@ -135,15 +135,6 @@ export interface SoundState {
 export interface Siren { key: object; kind: 'fire' | 'police'; x: number; y: number; vx: number; vy: number }
 
 // The sound's groups, each with its own volume in the mixer (settings.ts), 1 being as built.
-const SILENCE = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YUAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-// iPads and iPhones play a radio stream straight to the speakers, past the mixer, at the
-// device's volume. So everything else is made louder there (the compressor keeps it from
-// distorting), which makes the radio quieter beside it, and the device's volume then turns
-// all of it down together.
-export const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const MASTER = IOS ? 4 : 0.8;
-const STALLED = 3; // s of a clock standing still before the sound counts as dead
-const REBUILD_GAP = 10; // s between two rebuilds at the least
 export const BUSES = ['engine', 'tyres', 'horns', 'trams', 'city', 'weather', 'radio', 'bangs'] as const;
 export type Bus = (typeof BUSES)[number];
 // Noise cancelling: the steady rumble of engine, tyres, weather and city is cut, mostly its lows; horns, sirens, radio and bangs get through.
@@ -171,13 +162,6 @@ export class Sound {
   voices: TramVoice[] = [];
   private horns: Horn | null = null;
   sirens: SirenVoice[] = [];
-  private keep: HTMLAudioElement | null = null;
-  // The watch on the context's clock: how many seconds in a row it has stood still, whether
-  // a resume was already tried for that, and how many times the sound was built again.
-  private stalled = 0;
-  private nudged = false;
-  private rebuilt = 0;
-  private rebuiltAt = 0;
 
   constructor() {
     let saved = '';
@@ -188,162 +172,17 @@ export class Sound {
       for (const b of BUSES) if (typeof mix[b] === 'number') this.volumes[b] = clamp(mix[b], 0, 2);
     } catch {}
     try { this.anc = localStorage.getItem('anc') === 'on'; } catch {}
-    // Safari on an iPad only lets the sound start when a touch ends, not when it begins (and
-    // says "running" while its clock stands still), so it is created and nudged on those.
-    // The listeners stay for good: the same Safari can stop the clock later (coming back
-    // from another app, say), and only a touch may start it again.
-    const touch = matchMedia('(pointer: coarse)').matches;
-    const keys = (touch ? ['keydown', 'touchend', 'click'] : ['keydown', 'pointerdown', 'click']) as ('keydown' | 'touchend' | 'click' | 'pointerdown')[];
     const start = () => {
       this.start();
-      const c = this.ctx;
-      if (!c || !this.on) return;
-      if (this.keep?.paused) this.keep.play().catch(() => {});
-      if (this.stalled >= STALLED) this.revive();
-      else if (c.state !== 'running' || c.currentTime === 0) c.resume().catch(() => {});
+      if (this.ctx?.state === 'running') for (const k of ['keydown', 'pointerdown'] as const) removeEventListener(k, start);
     };
-    for (const k of keys) addEventListener(k, start, true);
-    let last = -1;
-    setInterval(() => {
-      const c = this.ctx;
-      if (!c || !this.on || document.hidden) { this.stalled = 0; last = -1; return; }
-      if (c.state === 'running' && c.currentTime !== last) { this.stalled = 0; this.nudged = false; }
-      else this.stalled++;
-      last = c.currentTime;
-    }, 1000);
-    if (location.search.includes('audiodebug')) this.debugPanel();
-    // The game stops in a hidden tab, so the sound does too. Safari may refuse the resume
-    // here, with no touch behind it; the watch above then leaves it to the next touch.
+    for (const k of ['keydown', 'pointerdown'] as const) addEventListener(k, start);
+    // The game stops in a hidden tab, so the sound does too.
     document.addEventListener('visibilitychange', () => {
       if (!this.ctx) return;
-      if (document.hidden) this.ctx.suspend().catch(() => {});
-      else if (this.on) this.ctx.resume().catch(() => {});
+      if (document.hidden) this.ctx.suspend();
+      else if (this.on) this.ctx.resume();
     });
-  }
-
-  // The clock has stood still for a few seconds, and a touch has just ended. A context that
-  // isn't running gets one resume; one that says it runs, or that the resume didn't help,
-  // is thrown away and the sound built again on a new one.
-  private revive() {
-    const c = this.ctx!;
-    if (c.state !== 'running' && !this.nudged) {
-      this.nudged = true;
-      this.stalled = 0;
-      c.resume().catch(() => {});
-    } else if (performance.now() - this.rebuiltAt > REBUILD_GAP * 1000 || !this.rebuiltAt) this.rebuild();
-  }
-
-  private rebuild() {
-    const old = this.ctx;
-    if (!old) return;
-    this.radio?.dispose();
-    this.keep?.pause();
-    this.keep = null;
-    old.close().catch(() => {});
-    this.ctx = null;
-    this.engine = null;
-    this.tyres = null;
-    this.weather = null;
-    this.ambience = null;
-    this.radio = null;
-    this.horns = null;
-    this.sirens = [];
-    this.voices = [];
-    this.clips = {};
-    this.stalled = 0;
-    this.nudged = false;
-    this.rebuilt++;
-    this.rebuiltAt = performance.now();
-    this.start();
-  }
-
-  // ?audiodebug: what the sound is doing, on screen (for a device with no console at hand).
-  private debugPanel() {
-    const box = document.createElement('pre');
-    box.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;margin:0;padding:6px;max-width:100vw;font:11px/1.3 monospace;color:#0f0;background:#000c;pointer-events:none;white-space:pre-wrap';
-    document.body.append(box);
-    const actions: Record<string, () => void> = { rebuild: () => this.rebuild() };
-    // Two buttons: a test tone straight to the speakers, and one through the game's mixer.
-    const beep = (label: string, left: string, through: boolean) => {
-      const b = document.createElement('button');
-      b.textContent = label;
-      b.style.cssText = `position:fixed;top:80px;left:${left};z-index:99999;padding:14px 18px;font:16px sans-serif`;
-      const play = (actions[through ? 'mixer' : 'direct'] = () => {
-        const c = this.ctx;
-        if (!c) return;
-        const o = c.createOscillator(), g = c.createGain();
-        g.gain.value = 0.3;
-        o.frequency.value = 440;
-        o.connect(g).connect(through ? this.master : c.destination);
-        o.start();
-        o.stop(c.currentTime + 0.6);
-      });
-      b.addEventListener('click', play);
-      document.body.append(b);
-    };
-    const fresh = document.createElement('button');
-    fresh.textContent = 'Beep new context';
-    fresh.style.cssText = 'position:fixed;top:80px;left:270px;z-index:99999;padding:14px 18px;font:16px sans-serif';
-    let freshMoved = '-'; // whether the last new context's clock ran
-    fresh.addEventListener('click', (actions.fresh = () => {
-      const c = new AudioContext(), o = c.createOscillator();
-      o.connect(c.destination);
-      o.start();
-      o.stop(c.currentTime + 0.6);
-      setTimeout(() => { freshMoved = `${c.state} ${c.currentTime.toFixed(2)} @${c.sampleRate}`; c.close(); }, 1500);
-    }));
-    document.body.append(fresh);
-    const restart = document.createElement('button');
-    restart.textContent = 'Suspend+resume';
-    restart.style.cssText = 'position:fixed;top:140px;left:0;z-index:99999;padding:14px 18px;font:16px sans-serif';
-    restart.addEventListener('click', async () => { await this.ctx?.suspend(); await this.ctx?.resume(); });
-    document.body.append(restart);
-    const rebuild = document.createElement('button');
-    rebuild.textContent = 'Rebuild sound';
-    rebuild.style.cssText = 'position:fixed;top:140px;left:190px;z-index:99999;padding:14px 18px;font:16px sans-serif';
-    rebuild.addEventListener('click', () => this.rebuild());
-    document.body.append(rebuild);
-    beep('Beep direct', '0px', false);
-    beep('Beep mixer', '130px', true);
-    let meter: AnalyserNode | null = null;
-    const level = () => {
-      const c = this.ctx;
-      if (!c || !this.master) return '-';
-      if (meter?.context !== c) { meter = c.createAnalyser(); meter.fftSize = 256; this.master.connect(meter); }
-      const a = new Float32Array(meter.fftSize);
-      meter.getFloatTimeDomainData(a);
-      return Math.sqrt(a.reduce((x, v) => x + v * v, 0) / a.length).toFixed(4);
-    };
-    const errors: string[] = [];
-    const note = (m: unknown) => { errors.push(String((m as Error)?.stack ?? m).slice(0, 220)); if (errors.length > 4) errors.shift(); };
-    addEventListener('error', (e) => note(e.error ?? e.message));
-    addEventListener('unhandledrejection', (e) => note(e.reason));
-    const warn = console.warn, error = console.error;
-    console.warn = (...a) => { note(a.join(' ')); warn(...a); };
-    console.error = (...a) => { note(a.join(' ')); error(...a); };
-    let touches = 0;
-    addEventListener('touchend', () => touches++, true);
-    addEventListener('click', () => touches++, true);
-    const id = Math.random().toString(36).slice(2, 6);
-    // With the dev server, the panel is also sent there once a second, and the answer may
-    // carry something to do: one of the buttons above, or another address to load.
-    if (import.meta.env.DEV) setInterval(async () => {
-      try {
-        const r = await fetch('/__audiodebug', { method: 'POST', body: JSON.stringify({ id, search: location.search, touches, hidden: document.hidden, fresh: freshMoved, keep: this.keep ? (this.keep.paused ? 'paused' : 'playing') : 'none', station: this.radio?.station?.id ?? null, text: box.textContent }) });
-        const cmd = await r.json();
-        if (cmd.go) location.search = cmd.go;
-        else actions[cmd.do]?.();
-      } catch {}
-    }, 1000);
-    setInterval(() => {
-      const c = this.ctx;
-      box.textContent = [
-        `time ${c?.currentTime.toFixed(2)} · base ${c?.baseLatency?.toFixed(3)} · rate ${c?.sampleRate} · level ${level()} · ${navigator.userAgent.match(/OS [\d_]+/)?.[0]}`,
-        `ctx ${c ? c.state : 'none'} · on ${this.on} · master ${this.master ? this.master.gain.value.toFixed(2) : '-'} · stalled ${this.stalled}s · rebuilt ${this.rebuilt}×`,
-        `engine ${!!this.engine} tyres ${!!this.tyres} weather ${!!this.weather} city ${!!this.ambience} radio ${!!this.radio} clips ${Object.keys(this.clips).length} trams ${this.voices.length}`,
-        ...errors,
-      ].join('\n');
-    }, 500);
   }
 
   // The car radio, on or off; works before the sound has started (a browser only allows it after a key press).
@@ -377,7 +216,7 @@ export class Sound {
     this.on = !this.on;
     try { localStorage.setItem('sound', this.on ? '' : 'off'); } catch {}
     if (!this.ctx) return;
-    this.master.gain.setTargetAtTime(this.on ? MASTER : 0, this.ctx.currentTime, 0.05);
+    this.master.gain.setTargetAtTime(this.on ? 0.8 : 0, this.ctx.currentTime, 0.05);
     if (this.on) this.ctx.resume();
   }
 
@@ -385,19 +224,11 @@ export class Sound {
   private start() {
     if (this.ctx) { if (this.on && this.ctx.state !== 'running') this.ctx.resume(); return; }
     const ctx = (this.ctx = new AudioContext({ latencyHint: 'interactive' }));
-    // iOS silences Web Audio when the side switch says mute, but not an <audio> element
-    // that is playing: a silent one looping alongside keeps the sound audible.
-    if (!location.search.includes('nokeep')) try {
-      const keep = (this.keep = new Audio(SILENCE));
-      keep.loop = true;
-      keep.setAttribute('playsinline', '');
-      keep.play().catch(() => {});
-    } catch {}
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 4;
     this.master = ctx.createGain();
-    this.master.gain.value = this.on ? MASTER : 0;
+    this.master.gain.value = this.on ? 0.8 : 0;
     this.master.connect(comp).connect(ctx.destination);
     for (const b of BUSES) {
       this.buses[b] = ctx.createGain();
@@ -413,10 +244,8 @@ export class Sound {
     this.clack = clackBuffer(ctx);
     this.tyres = new Tyres(ctx, this.noise, bus.tyres);
     this.weather = new WeatherSound(ctx, this.noise, bus.weather);
-    if (!location.search.includes('noradio')) {
-      this.radio = new Radio(ctx, this.noise, bus.radio);
-      this.radio.onFail = (station) => this.onRadioFail(station);
-    }
+    this.radio = new Radio(ctx, this.noise, bus.radio);
+    this.radio.onFail = (station) => this.onRadioFail(station);
     for (let i = 0; i < SIREN_VOICES; i++) this.sirens.push(new SirenVoice(ctx, bus.horns));
     // The trams are heard once their recordings are in.
     Promise.all([...LOOPS, ...ONCE].map(async (name) => {
@@ -424,7 +253,6 @@ export class Sound {
       if (!r.ok) throw new Error(`${name}: ${r.status}`);
       this.clips[name] = await ctx.decodeAudioData(await r.arrayBuffer());
     })).then(() => {
-      if (this.ctx !== ctx) return;
       for (let i = 0; i < TRAM_VOICES; i++) this.voices.push(new TramVoice(this, this.buses.trams));
     }).catch((e) => console.warn('The tram sounds could not be loaded', e));
     // And the city around you, once its recordings are in.
@@ -433,7 +261,6 @@ export class Sound {
       if (!r.ok) throw new Error(`${name}: ${r.status}`);
       return [name, await ctx.decodeAudioData(await r.arrayBuffer())] as const;
     })).then((clips) => {
-      if (this.ctx !== ctx) return;
       this.ambience = new Ambience(ctx, Object.fromEntries(clips), bus.city);
     }).catch((e) => console.warn('The city sounds could not be loaded', e));
   }
@@ -457,7 +284,7 @@ export class Sound {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.on) { this.radio?.update(false); return; }
     const t = ctx.currentTime;
-    this.master.gain.setTargetAtTime(s.quiet ? 0 : MASTER, t, 0.2);
+    this.master.gain.setTargetAtTime(s.quiet ? 0 : 0.8, t, 0.2);
 
     // Your engine: a new one each time you get in, faded out when you get out.
     const car = s.car;

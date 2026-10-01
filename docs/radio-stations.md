@@ -13,25 +13,6 @@ or stop allowing other sites will just report "isn't playing right now" in the g
 
 To add one, put a line in `STATIONS` in `src/radio.ts` and check it the same way.
 
-## On iPads and iPhones
-
-Safari on iOS plays a live stream straight to the speakers and does not pass it through
-Web Audio, although the stream is wired into the mixer like on other browsers (seen on
-an iPad from 2017; the cause is assumed to be Safari's handling of live streams, not
-confirmed). So there the radio ignores the mixer's radio slider, the master level and the
-small-speaker filter, and always plays at the device's volume. What the game does about it:
-
-- the radio slider is left out of the mixer on iOS, with a note saying why (`src/settings.ts`);
-- the master level of everything else is 4 instead of 0.8 (`MASTER` in `src/audio.ts`),
-  so the radio sits quieter beside it and the device's volume buttons turn all of it down
-  together. The number is a guess, not measured against a listen; adjust it if the balance is off (at 1.8 the radio still drowned the engine on an iPad);
-- a station that is only downloading (before you get in a car) is muted on the `<audio>`
-  element itself, since it can't be silenced through the mixer there.
-
-Also learned on that iPad: the sound only started on `touchend`/`click`, not `pointerdown`
-(see the start code in `Sound`'s constructor), and `?audiodebug` on the address shows the
-audio clock, levels and errors on screen, with test tones; `?noradio` leaves the radio out.
-
 ## In the game
 
 Wave, Radio Beat, Hitrádio Osmdesátka, Hitrádio Devadesátka, Oldies Rádio, Kiss,
