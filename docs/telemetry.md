@@ -1,5 +1,5 @@
 ---
-read_when: changing what the game reports about itself, the Worker in deploy/worker.js, the statistics switch in the settings, or the statistics dashboard
+read_when: changing what the game reports about itself, worker/stats.js or the Worker's /api/report, the statistics switch in the settings, or the statistics dashboard
 ---
 
 # Anonymous statistics
@@ -7,11 +7,11 @@ read_when: changing what the game reports about itself, the Worker in deploy/wor
 The Cloudflare build of the game reports how well it runs, what goes wrong and what
 gets played. Local development, the mbxp site and test runs (`?go`) report nothing:
 only a build with `VITE_TELEMETRY_URL` set does, and `scripts/deploy-cloudflare.sh`
-sets it to `/t`.
+sets it to `/api/report`.
 
 ## What is sent
 
-`src/telemetry.ts` sends five kinds of report. `SCHEMA` in `deploy/worker.js` lists
+`src/telemetry.ts` sends five kinds of report. `SCHEMA` in `worker/stats.js` lists
 every field of each and is the only place the format is defined.
 
 | Report | When | What it holds |
@@ -32,17 +32,22 @@ as Cloudflare derives it. There is no cookie and no stored identifier, the IP ad
 and where the player is on the map is never sent.
 
 Players can turn it off under **Anonymous statistics** in the settings; the choice is
-remembered in the browser (`localStorage` key `telemetry`).
+remembered in the browser (`localStorage` key `telemetry`). The privacy note at the end
+of the credits (`privacy.stats` in `index.html` and `src/cs.ts`) tells players all this;
+keep it true when what is sent changes.
 
 ## Where it goes
 
-`deploy/worker.js` is the Worker in front of the static files. It answers `POST /t`
-only from the game's own pages, drops anything that isn't a known report, and writes
+The Worker in front of the static files (`worker/index.js`, which also takes the
+newsletter and feedback forms) hands `POST /api/report` to `worker/stats.js`. That
+accepts reports only from the game's own pages, drops anything that isn't a known
+report, and writes
 one row to the Analytics Engine dataset `streets_telemetry`: the report's name,
 game version, session, country, domain and map data version in `blob1` to `blob6`, then
 the report's text fields from `blob7` and its numbers from `double1`, in the order `SCHEMA` lists them. Add new
 fields at the end of a list so rows already stored keep their meaning. Analytics
-Engine keeps rows for three months.
+Engine keeps rows for three months. `node scripts/check-worker.mjs`, which every deploy
+runs, checks what the endpoint takes and refuses.
 
 ## The dashboard
 

@@ -40,7 +40,7 @@ import { groundSamples } from './surface.ts';
 import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { setupSettings } from './settings.ts';
-import { readSave, writeSave, clearSave, listSaves, newSlot, describe } from './save.ts';
+import { readSave, writeSave, clearSave, listSaves, newSlot, unreadable, describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
 import { dressLoading, Dialog } from './portraits.ts';
 import { startScreen } from './startscreen.ts';
@@ -94,6 +94,23 @@ const $ = (id: string): HTMLElement => {
 let statusText = '';
 const status = (text: string) => { statusText = text; $('loading-text').textContent = text ? t(text) : ''; };
 
+// Parts of the game load on demand under names that change with every release, so a
+// page opened just as a new version goes online asks for files that are gone. Reload
+// once to pick up the new version; the time kept in sessionStorage stops a real outage
+// from reloading over and over.
+let reloading = false, outdated = false;
+window.addEventListener('vite:preloadError', () => {
+  outdated = true;
+  let last = 0;
+  try {
+    last = Number(sessionStorage.getItem('reloaded-for-update'));
+    sessionStorage.setItem('reloaded-for-update', String(Date.now()));
+  } catch { return; } // no storage to remember the reload in, so don't risk a loop
+  if (Date.now() - last < 60_000) return;
+  reloading = true;
+  location.reload();
+});
+
 const BUSES = 3; // of the traffic, on the main roads
 const PEOPLE = 1200; // at most, round the Old Town Square; fewer where it's quieter (src/footfall.ts)
 const FEW_PEOPLE = 40; // on the quietest edge of town
@@ -113,7 +130,7 @@ async function main() {
   try { savedSound = localStorage.getItem('sound') ?? ''; } catch {}
   // The game saved by itself last time, unless it's a test run (?go).
   const saved = params.has('go') ? null : readSave('auto', AREA);
-  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off', saved: saved && (() => describe(saved)) });
+  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.kind } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
   status('Loading the map…');
@@ -635,7 +652,11 @@ async function main() {
     if (inHeli) {
       if (!inHeli.landed) return;
       const c = inHeli;
-      [walker.x, walker.y] = nearestWalkable(grid, c.x - Math.sin(c.h) * 3, c.y + Math.cos(c.h) * 3);
+      // Out onto what it landed on (a bridge's deck, not the ground under it).
+      const level = c.level, lx = -Math.sin(c.h), ly = Math.cos(c.h);
+      Object.assign(walker, { x: c.x, y: c.y, _tx: c.x, _ty: c.y, level, gz: c.z });
+      const side = [1, -1].map((k) => [c.x + lx * k * 3, c.y + ly * k * 3] as [number, number]).find(([x, y]) => !walker.blocked(x, y));
+      [walker.x, walker.y] = side || (level ? [c.x, c.y] : nearestWalkable(grid, c.x + lx * 3, c.y + ly * 3));
       walker.h = c.h;
       inHeli = null;
       walker.mesh.visible = true;
@@ -652,12 +673,14 @@ async function main() {
     }
     if (inCar) {
       const c = inCar, lx = -Math.sin(c.h), ly = Math.cos(c.h);
+      // Out onto what the car is on (a bridge's deck, not the ground under it).
+      Object.assign(walker, { x: c.x, y: c.y, _tx: c.x, _ty: c.y, level: world.track(c), gz: c.gz });
       let spot = null;
       for (const s of [1, -1]) {
         const x = c.x + lx * s * (c.spec.W / 2 + 0.8), y = c.y + ly * s * (c.spec.W / 2 + 0.8);
         if (!walker.blocked(x, y)) { spot = [x, y]; break; }
       }
-      [walker.x, walker.y] = spot || nearestWalkable(grid, c.x, c.y);
+      [walker.x, walker.y] = spot || (walker.level ? [c.x, c.y] : nearestWalkable(grid, c.x, c.y));
       walker.h = c.h;
       c.mode = 'loose';
       c.rider = null;
@@ -811,7 +834,7 @@ async function main() {
       let open = true;
       for (let dx = -5; dx <= 5 && open; dx += 1) for (let dy = -5; dy <= 5 && open; dy += 1) open = grid.at(x + dx, y + dy) === 0;
       if (!open) continue;
-      choppers.push(new Chopper(scene, grid, ground, x, y, who.h));
+      choppers.push(new Chopper(scene, grid, (x, y, z) => world.below(x, y, z), x, y, who.h, inHeli ? inHeli.z : ground(who.x, who.y, who) + 1));
       return true;
     }
     return false;
@@ -857,8 +880,9 @@ async function main() {
   let saveT = 0;
   const capture = (): SaveData => {
     const c = inCar && !inCar.burnt ? inCar : null, who = c || walker, [, paint, box] = c ? c.key.split('|') : [];
+    const [lon, lat] = dev.toLonLat(who.x, who.y);
     return {
-      v: 1, area: AREA, at: Date.now(), x: who.x, y: who.y, h: who.h, street,
+      v: 1, area: AREA, at: Date.now(), lat, lon, heading: ((((90 - (who.h * 180) / Math.PI) % 360) + 360) % 360), street,
       car: c ? { type: c.type, paint, box, variant: c.modelName, damage: c.damage, radio: c.radio } : null,
       money: wallet.balance, ticket: wallet.held, health: health.value, heat: police.heat,
       clock: clock.t, weather: { kind: weather.kind, fixed: weather.fixed },
@@ -879,10 +903,11 @@ async function main() {
     wallet.balance = Math.max(0, Math.floor(s.money));
     wallet.held = s.ticket;
     health.value = Math.max(1, Math.min(100, s.health));
-    await teleportTo(s.x, s.y);
+    const [x, y] = dev.toLocal(s.lon, s.lat), h = ((90 - s.heading) * Math.PI) / 180;
+    await teleportTo(x, y);
     police.heat = Math.max(0, Math.min(40, s.heat));
     if (!s.car || !TYPES[s.car.type]) return;
-    const car = new Car(s.car.type, seeded, s.x, s.y, s.h, s.car.paint, s.car.box);
+    const car = new Car(s.car.type, seeded, x, y, h, s.car.paint, s.car.box);
     if (s.car.variant) car.setVariant(s.car.variant);
     car.damage = s.car.damage;
     car.radio = s.car.radio;
@@ -1635,7 +1660,7 @@ async function main() {
     if (busyT < 0) { busyT = 0.5; busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1); }
     if (hornHeld && !inCar && !ride.driving) honk(false);
     if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
-    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, hour: (clock.t % 86400) / 3600, sirens: [
+    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, hour: (clock.t % 86400) / 3600, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, sirens: [
       ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
       ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
     ] });
@@ -1929,6 +1954,8 @@ function parseMetroLines(value: unknown): { lines: MetroLine[] } {
 
 main().catch((e) => {
   console.error(e);
+  if (reloading) return;
   telemetry.error('startup', e);
-  status(`Something went wrong: ${e instanceof Error ? e.message : String(e)}`);
+  status(outdated ? 'The game was just updated. Reload the page to continue.'
+    : `Something went wrong: ${e instanceof Error ? e.message : String(e)}`);
 });

@@ -896,7 +896,8 @@ and unpacked by the game. The caches (OSM extract and IPR sheets) are about
 
 ## Deploying
 
-The mbxp site at <https://streets-beta.jonasjancarik.cz> runs from mbxp.
+The mbxp beta site at <https://beta.streetsofprague.com> runs from mbxp.
+<https://streets-beta.jonasjancarik.cz> remains an alternate address.
 `scripts/deploy-mbxp.sh` builds committed code, syncs `public/data/` from this
 machine, and restarts the `streets-of-prague` container on `127.0.0.1:3017`.
 Each map is kept on the server in its own folder, `data/<id>`, named after a
@@ -910,11 +911,18 @@ are not removed automatically.
 The `urad-ai-poc` tunnel routes the hostname there. `scripts/httpd.conf` gives
 JSON the content type Cloudflare needs for compression.
 
-The main site at <https://streets.jonasjancarik.cz> serves the app as Worker
-static assets. <https://streets-cf.jonasjancarik.cz> remains an alternate
-Cloudflare address. Its map data comes from the R2 bucket at
-<https://streets-data.jonasjancarik.cz>, under the immutable prefix named in
-`deploy/data-version`. Local development loads `data/` next to the app, and mbxp
+The main site at <https://streetsofprague.com> serves the app as Worker static
+assets, with a small Worker for the newsletter signup and the feedback form (below).
+<https://streets.jonasjancarik.cz> permanently redirects to the main site through a
+Cloudflare Redirect Rule on `jonasjancarik.cz`, preserving paths and query strings.
+<https://streets-cf.jonasjancarik.cz> remains an alternate Cloudflare address.
+Its map data comes from the R2 bucket at
+<https://data.streetsofprague.com>, under the immutable prefix named in
+`deploy/data-version`. The bucket also answers at
+<https://streets-data.jonasjancarik.cz>, which has to stay connected: releases up to
+v0.1.0 have that address built in. Each of the two hostnames needs its own Cache Rule
+in its zone (eligible for cache, edge TTL from the origin's `Cache-Control`), or
+Cloudflare serves every file straight from R2 without caching it. Local development loads `data/` next to the app, and mbxp
 its own copy (above); only `scripts/deploy-cloudflare.sh` sets the R2 URL at build
 time.
 
@@ -932,8 +940,8 @@ key and secret outside this repository. Run `scripts/upload-data.sh <new-version
 to upload and checksum-check every file. It refuses a version name that is
 already on R2; `--resume` finishes an interrupted upload of the same files, and
 fails if an object in that version has changed. Commit the updated
-`deploy/data-version` and app code, then run `scripts/deploy-cloudflare.sh`.
-That script checks the R2 index and its format, typechecks, builds only the app assets, validates
+`deploy/data-version` and app code, then release (below), which runs
+`scripts/deploy-cloudflare.sh`. That script checks the R2 index and its format, typechecks, builds only the app assets, validates
 Cloudflare Build Output with `cf deploy --prebuilt --dry-run`, and deploys it. With
 `--dry-run` it stops before deploying.
 The two targets can be updated independently.
@@ -941,9 +949,45 @@ The two targets can be updated independently.
 ### Anonymous statistics
 
 The Cloudflare build reports how well the game runs, errors and what gets played,
-without anything that identifies a player, to the Worker in `deploy/worker.js`;
+without anything that identifies a player, to the Worker in `worker/index.js`;
 players can switch it off in the settings. `node scripts/telemetry-dashboard.mjs`
 builds a local dashboard from the reports. See [docs/telemetry.md](docs/telemetry.md).
+
+### Newsletter and feedback
+
+The game has two small forms, both answered by the Worker in `worker/index.js`, which
+is the only thing they talk to, so either can move to another service without the game
+changing. The beta has no Worker of its own and uses production's. One visitor address
+can try five times a minute and only the game's own pages are let in, since every use
+sends an email. Each form stays out of the game until it is set up.
+
+**Newsletter.** The start screen and the settings have a link to sign up for news about
+the game by email (`src/newsletter.ts`). `/api/subscribe` passes the address to
+[Brevo](https://www.brevo.com), which sends an email with a link to confirm; only then
+is the address on the list, and the link leads back to the game, which says so. Nothing
+is stored outside Brevo. The form offers the emails in English or Czech, with the game's
+language picked to begin with. Turnstile, Cloudflare's check that a real browser is
+signing up, keeps scripts from having confirmation emails sent to strangers; most
+players see nothing of it.
+
+**Feedback.** The settings have a "Send feedback" link (`src/feedback.ts`).
+`/api/feedback` emails the message to the address in `deploy/feedback` through
+Cloudflare's email sending, with the player's address (if they gave one) as the one a
+reply goes to. The game adds its version, the browser and graphics card, the graphics
+level and renderer, the frame rate, how long the page has been open, the HUD's tally,
+the last few errors the page saw, and where the player was, in the form the scenarios
+use, so the spot can be replayed (the scene-testing skill).
+
+Setting each part up (Brevo, the domain's mail records, Turnstile, email sending), the
+settings in `deploy/newsletter` and `deploy/feedback`, checking a change without sending
+real email, and what to look at when something doesn't arrive are all in
+`.agents/skills/player-forms/SKILL.md`. `node scripts/check-worker.mjs` checks the
+Worker with the services behind it replaced by stand-ins.
+
+Incoming mail to `news@streetsofprague.com` and `jonas@streetsofprague.com` is
+archived privately in R2 and forwarded to Gmail by a separate mail Worker.
+See [Email for Streets of Prague](docs/email.md) for configuration, deployment
+and the distinction between receiving mail and sending replies.
 
 ### Releases
 
@@ -952,11 +996,16 @@ to roll back, is in [docs/versioning.md](docs/versioning.md).
 
 Versions are git tags on `main` (`v1.2.3`), published as GitHub releases at
 <https://github.com/jonasjancarik/streets-of-prague/releases>. With main committed
-and pushed, `scripts/release.sh v1.2.3` typechecks, checks that the map named in
+and pushed, `scripts/release.sh patch` (or `minor`, `major`, or a number such as
+`v1.2.3`) works out the next version from the latest one, typechecks, checks that the map named in
 `deploy/data-version` is on R2 in the format the code reads, then tags the commit,
 creates the release with notes generated from the commits since the previous one
 (headed by the map data version), and runs
-`scripts/deploy-cloudflare.sh` (`--no-deploy` skips that). The build reads
+`scripts/deploy-cloudflare.sh` (`--no-deploy` skips that). Production only runs
+released versions: the deploy script refuses a commit that isn't a release tag, so
+new code reaches production through `release.sh` and a rollback by checking out an
+earlier tag. `scripts/deploy-cloudflare.sh --untagged` is the way round it for an
+emergency. Code that isn't ready for a version goes to the beta. The build reads
 `git describe` (see `vite.config.js`), and the settings panel shows it with the
 build date: `v1.2.3`, or `v1.2.3-5-gabc1234` for commits made after the tag, followed by the map data version
 (`deploy/data-version` on Cloudflare; elsewhere the day the map was built).

@@ -1,5 +1,5 @@
 // Anonymous statistics: how well the game runs, what goes wrong and what gets played,
-// sent to the Worker in deploy/worker.js, which stores them (docs/telemetry.md has the
+// sent to the Worker (worker/stats.js), which stores them (docs/telemetry.md has the
 // full list). Nothing here identifies anyone: no cookie, no stored id, no position on
 // the map; `session` is a random number that lives until the page is closed.
 //

@@ -174,33 +174,42 @@ export class Helicopters {
 // A helicopter you fly yourself (the developer tools put one next to you). W and S
 // fly forwards and back, A and D turn, Space climbs and Shift comes down; let go and
 // it holds its height. Below the rooftops the buildings are in the way, so either fly
-// along the streets or climb over them. You can only get out once it has landed on
-// open ground.
+// along the streets or climb over them. A bridge's deck is ground to land on from
+// above and a ceiling from below. You can only get out once it has landed on open
+// ground or on a bridge.
 
 const ROOFS = 30; // m above the ground: higher than that, the buildings don't matter
+const TALL = 4; // m: the room it needs under a bridge
+// What's under and over a point in the air (see TileWorld.below).
+type Below = (x: number, y: number, z: number) => { level: number; h: number; roof: number };
 const FLY = { top: 42, accel: 14, yaw: 1.7, climb: 9 };
 
 export class Chopper {
   grid: { at(x: number, y: number): number };
-  height: (x: number, y: number) => number;
+  below: Below;
   x: number; y: number; h: number; z: number;
   vx: number; vy: number; vz: number; w: number; spin: number;
   g: THREE.Group; rotor: THREE.Group; tail: THREE.Group;
   pitch?: number; roll?: number;
 
-  constructor(scene: THREE.Scene, grid: { at(x: number, y: number): number }, height: (x: number, y: number) => number, x: number, y: number, h: number) {
-    this.grid = grid; this.height = height; this.x = x; this.y = y; this.h = h;
+  // `z`: the height to put it down from (onto a bridge's deck, or the ground under it).
+  constructor(scene: THREE.Scene, grid: { at(x: number, y: number): number }, below: Below, x: number, y: number, h: number, z = Infinity) {
+    this.grid = grid; this.below = below; this.x = x; this.y = y; this.h = h;
     this.vx = 0; this.vy = 0; this.vz = 0; this.w = 0; this.spin = 0;
-    this.z = height(x, y);
+    this.z = below(x, y, z).h;
     const m = model({ body: '#c8312b', band: '#f2efe8', stripe: '#2a2d31' });
     this.g = m.g; this.rotor = m.rotor; this.tail = m.tail;
     scene.add(m.g);
   }
 
   get speed() { return Math.hypot(this.vx, this.vy); }
+  // The ground or the bridge deck under it.
+  height(x: number, y: number) { return this.below(x, y, this.z).h; }
+  // The bridge it's over or on (0 for the ground).
+  get level() { return this.below(this.x, this.y, this.z).level; }
   get air() { return this.z - this.height(this.x, this.y); }
   // Rooftop height counts as the floor over buildings.
-  solid(x: number, y: number) { return this.grid.at(x, y) === 255; }
+  solid(x: number, y: number) { return this.grid.at(x, y) === 255 && !this.below(x, y, this.z).level; }
   floor(x: number, y: number) { return this.height(x, y) + (this.solid(x, y) ? ROOFS : 0); }
   get landed() { return this.air < 0.6 && !this.solid(this.x, this.y); }
 
@@ -231,11 +240,15 @@ export class Chopper {
     // Below the rooftops, buildings stop you like walls.
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
     const under = this.z - this.height(nx, ny) < ROOFS;
-    const hits = (x: number, y: number) => under && [[3, 0], [-3, 0], [0, 3], [0, -3], [0, 0]].some(([a, b]) => this.solid(x + a, y + b));
+    // So does the side of a bridge's deck.
+    const hits = (x: number, y: number) => this.below(x, y, this.z).roof - TALL < this.z - 1
+      || (under && [[3, 0], [-3, 0], [0, 3], [0, -3], [0, 0]].some(([a, b]) => this.solid(x + a, y + b)));
     if (!hits(nx, this.y)) this.x = nx; else this.vx *= -0.2;
     if (!hits(this.x, ny)) this.y = ny; else this.vy *= -0.2;
     this.z += this.vz * dt;
-    const floor = this.floor(this.x, this.y);
+    const floor = Math.min(this.floor(this.x, this.y), Math.max(this.height(this.x, this.y), this.below(this.x, this.y, this.z).roof - TALL));
+    const roof = this.below(this.x, this.y, this.z).roof - TALL;
+    if (this.z > roof) { this.z = roof; this.vz = Math.min(0, this.vz); }
     if (this.z < floor) { this.z = floor; this.vz = Math.max(0, this.vz); }
     this.z = Math.min(this.z, this.height(this.x, this.y) + 220);
 

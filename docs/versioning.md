@@ -3,6 +3,8 @@
 read_when: cutting a release; uploading or rebuilding map data; changing the files the
 pipeline writes or how the game reads them; changing a deploy script; rolling back.
 
+Which script to run in which situation, step by step: `.agents/skills/deploy/SKILL.md`.
+
 ## The three numbers
 
 **The game's version** is a git tag on `main` (`v1.2.3`), published as a GitHub release.
@@ -47,7 +49,7 @@ After raising it, rebuild the map, upload it under a new version name and commit
 map and the code agree.
 
 `node scripts/check-data-format.mjs <folder or URL>` does that comparison by hand, for
-`public/data` or for `https://streets-data.jonasjancarik.cz/<version>/`. It also fails
+`public/data` or for `https://data.streetsofprague.com/<version>/`. It also fails
 if the two constants differ from each other.
 
 ## Uploading a map
@@ -65,21 +67,31 @@ others: a corrected map always gets a new name.
 
 ## Releasing
 
-    scripts/release.sh v1.2.3
+    scripts/release.sh patch
 
-With `main` committed and pushed, it typechecks, checks that the map named in
+`patch`, `minor` and `major` count up from the latest release (after `v0.2.3`:
+`v0.2.4`, `v0.3.0`, `v1.0.0`); a number such as `v1.2.3` can be given instead. With
+`main` committed and pushed, it typechecks, checks that the map named in
 `deploy/data-version` is on R2 in the format the code reads, and only then tags the
 commit, publishes the GitHub release (the notes start with the map data version) and
 runs `scripts/deploy-cloudflare.sh`. `--no-deploy` stops after the release.
 
+Production only runs released versions. `scripts/deploy-cloudflare.sh` refuses a commit
+that isn't a release tag, so what is live always has a version number, a GitHub release
+with notes and a named map, and the previous state to go back to is always the previous
+tag. A fix that can't wait is a `patch` release. Code that isn't ready for a version
+goes to the beta. For an emergency, `scripts/deploy-cloudflare.sh --untagged` deploys
+the current commit anyway; the settings panel then shows something like
+`v1.2.3-2-gabc1234`, and the next release puts things right.
+
 ## The two sites
 
-**Cloudflare** (<https://streets.jonasjancarik.cz>) is built by
+**Cloudflare** (<https://streetsofprague.com>) is built by
 `scripts/deploy-cloudflare.sh` with the address of the map version baked into the code.
 An open tab, a cached page and an earlier deployment each keep loading the map they were
 built for.
 
-**mbxp** (<https://streets-beta.jonasjancarik.cz>) is built by `scripts/deploy-mbxp.sh`
+**mbxp** (<https://beta.streetsofprague.com>) is built by `scripts/deploy-mbxp.sh`
 from the local `public/data`, with no upload to R2 and no entry in
 `deploy/data-version`. Each map is kept on the server in `data/<id>` and served at
 `data/<id>/`, where the id is a fingerprint of the files' paths, sizes and modification
@@ -103,10 +115,36 @@ built before that was recorded.
   `scripts/deploy-cloudflare.sh`. The tag brings its own `deploy/data-version`, and that
   map is still on R2.
 - **A bad map on Cloudflare.** Revert the commit that changed `deploy/data-version` and
-  deploy. Nothing is uploaded or deleted.
+  release that as a patch. Nothing is uploaded or deleted.
 - **mbxp.** Check out the earlier commit and run
   `DATA_ID=<id> scripts/deploy-mbxp.sh`, with the id from that release's `data-id` file,
   to deploy it with the map it had. Without `DATA_ID` it takes the local map.
+
+## Where the map is served
+
+The bucket answers at two addresses:
+
+- `https://data.streetsofprague.com/<version>/`, which the deploy and release scripts
+  use.
+- `https://streets-data.jonasjancarik.cz/<version>/`, the earlier address. Releases up
+  to v0.1.0 have it built into their code, so it stays connected to the bucket for as
+  long as any of them might be deployed again.
+
+Each address has a Cache Rule in its own Cloudflare zone: files are eligible for cache
+and kept as long as their `Cache-Control` header says. Without the rule Cloudflare
+caches the `.bin.gz` files but fetches every `.json` from R2 on each request. A new
+address for the bucket needs its own rule. The `cf` login used for deploys can connect
+a domain to the bucket but is not allowed to read or change Cache Rules; those are made
+in the dashboard (the zone → Caching → Cache Rules) or with a token that has that
+permission.
+
+To check that an address caches, download a file twice and read `cf-cache-status` on
+the second response; it should be `HIT`:
+
+    curl -s -o /dev/null -D - https://data.streetsofprague.com/<version>/praha_now/index.json | grep -i cf-cache-status
+
+Use a full download as above, not `curl -I`: a header-only request reports `DYNAMIC`
+here even for a file that is cached.
 
 ## Keeping old maps
 

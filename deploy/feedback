@@ -1,0 +1,7 @@
+# Where the game's feedback form sends messages (see the player-forms skill,
+# .agents/skills/player-forms/SKILL.md). While FEEDBACK_TO is empty the game shows no
+# feedback form.
+# The address that receives them: one verified as a destination in Cloudflare.
+FEEDBACK_TO=jonas.jancarik@gmail.com
+# The address they come from, on a domain with Cloudflare Email Routing switched on.
+FEEDBACK_FROM=feedback@streetsofprague.com

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The dashboard for the game's anonymous statistics (docs/telemetry.md): reads the
-// reports stored by deploy/worker.js through your `cf` login and writes one HTML page.
+// reports stored by worker/stats.js through your `cf` login and writes one HTML page.
 //
 //   node scripts/telemetry-dashboard.mjs              the last 14 days, then opens the page
 //   node scripts/telemetry-dashboard.mjs --days 30
@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMON, SCHEMA } from '../deploy/worker.js';
+import { COMMON, SCHEMA } from '../worker/stats.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ACCOUNT = '7756b12931ecfb3900a31049e157d706', DATASET = 'streets_telemetry';

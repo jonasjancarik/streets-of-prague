@@ -8,6 +8,8 @@ import { describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
 import * as telemetry from './telemetry.ts';
 import { mapData } from './data.ts';
+import { newsletterLink } from './newsletter.ts';
+import { feedbackLink } from './feedback.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
@@ -45,12 +47,12 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
 };
 
 export function setupSettings({ sound, graphics, weather, saves }: {
-  sound: { on: boolean; volumes: Record<Bus, number>; setVolume: (b: Bus, v: number) => void; toggle: () => void; radioOn: boolean; setRadio: (on: boolean) => void };
+  sound: { on: boolean; volumes: Record<Bus, number>; setVolume: (b: Bus, v: number) => void; toggle: () => void; radioOn: boolean; setRadio: (on: boolean) => void; anc: boolean; setAnc: (on: boolean) => void };
   graphics: Graphics;
   weather: { kinds: Kind[]; get: () => Kind | 'auto'; set: (k: Kind | 'auto') => void };
   // Saved games: the list, saving the game as a new one, loading one (which restarts
   // the page, see main.ts), deleting one and starting again from the beginning.
-  saves: { list: () => { slot: Slot; data: SaveData }[]; save: () => void; load: (slot: Slot) => void; remove: (slot: Slot) => void; newGame: () => void };
+  saves: { list: () => { slot: Slot; data: SaveData | null }[]; save: () => void; load: (slot: Slot) => void; remove: (slot: Slot) => void; newGame: () => void };
 }) {
   const corner = el('div', 'corner', document.body);
   // Full screen, where the browser allows it (not on an iPhone) and there's a touch
@@ -101,17 +103,19 @@ export function setupSettings({ sound, graphics, weather, saves }: {
       b.type = 'button';
       relabel.push(() => { b.textContent = it.label(); });
       b.addEventListener('click', () => { pick(it.id); if (label !== STATISTICS) telemetry.setting(label, it.id); update(); });
-      return { b, id: it.id };
+      return { b, id: it.id, label: it.label };
     });
-    refresh.push(() => { for (const { b, id } of buttons) b.setAttribute('aria-pressed', String(id === current())); });
+    refresh.push(() => { for (const { b, id, label } of buttons) { b.setAttribute('aria-pressed', String(id === current())); b.textContent = label(); } });
     return r;
   }
 
+  const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
   const fixed = (s: string) => () => s;
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang, setLang);
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.on ? 'on' : 'off'), (id) => { if ((id === 'on') !== sound.on) sound.toggle(); });
   row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
-  row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => t(g.label) })), () => graphics.choice, (id) => graphics.set(id));
+  row('Noise cancelling', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.anc ? 'on' : 'off'), (id) => sound.setAnc(id === 'on'));
+  row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
   row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
 
   // Only where the game sends statistics at all (src/telemetry.ts).
@@ -167,19 +171,23 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     list.textContent = '';
     for (const { slot, data } of saves.list()) {
       const line = el('div', 'settings-slot', list);
-      el('span', 'settings-slot-text', line, describe(data));
+      el('span', 'settings-slot-text', line, data ? describe(data) : t('A saved game this version can’t open'));
       const load = el('button', 'settings-chip', line) as HTMLButtonElement;
       const del = el('button', 'settings-chip', line) as HTMLButtonElement;
       load.type = del.type = 'button';
+      load.hidden = !data;
       sure(load, () => t('Load'), () => saves.load(slot));
       sure(del, () => t('Delete'), () => saves.remove(slot));
     }
   });
 
+  feedbackLink(box, 'settings-news', { before: () => box.close(), extra: () => `Graphics: ${graphics.choice}${graphics.choice === 'auto' ? ` (${graphics.tier} now)` : ''} · ${graphics.api}` });
+  newsletterLink(box, 'settings-news', { before: () => box.close() });
+
   // On a phone the credits live here (their corner has these buttons now).
   const credits = el('button', 'settings-credits', box) as HTMLButtonElement;
   credits.type = 'button';
-  relabel.push(() => { credits.textContent = t('Credits and licences'); });
+  relabel.push(() => { credits.textContent = t('Credits, licences and privacy'); });
   credits.addEventListener('click', () => {
     box.close();
     document.getElementById('credits')?.click();
