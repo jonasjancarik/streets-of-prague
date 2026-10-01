@@ -90,6 +90,8 @@ export const CS: Record<string, string> = {
   Graphics: 'Grafika',
   Auto: 'Automaticky',
   Changing: 'Proměnlivé',
+  'Full screen': 'Celá obrazovka',
+  'Leave full screen': 'Ukončit celou obrazovku',
   'Sound on (M)': 'Zvuk zapnutý (M)',
   'Sound off (M)': 'Zvuk vypnutý (M)',
   'Credits and licences': 'Poděkování a licence',
