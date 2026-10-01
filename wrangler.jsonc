@@ -3,7 +3,10 @@
   "account_id": "7756b12931ecfb3900a31049e157d706",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
-  "routes": [{ "pattern": "streets-cf.jonasjancarik.cz", "custom_domain": true }],
+  "routes": [
+    { "pattern": "streets.jonasjancarik.cz", "custom_domain": true },
+    { "pattern": "streets-cf.jonasjancarik.cz", "custom_domain": true }
+  ],
   "assets": {
     "directory": "./dist-cf"
   }

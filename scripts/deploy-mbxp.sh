@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy to mbxp as https://streets.jonasjancarik.cz (Cloudflare tunnel urad-ai-poc → 127.0.0.1:3017).
+# Deploy to mbxp as https://streets-beta.jonasjancarik.cz (Cloudflare tunnel urad-ai-poc → 127.0.0.1:3017).
 # The built site goes to releases/<commit>/site; the locally built map data (public/data)
 # is synced to shared/data and mounted over /www/data, so a code release doesn't copy it.
 set -euo pipefail

@@ -25,7 +25,7 @@ cat > "$OUTPUT/config.json" <<'CONFIG'
 {"accountId":"7756b12931ecfb3900a31049e157d706","buildContext":{"isPreview":false}}
 CONFIG
 cat > "$OUTPUT/workers/default/worker.config.json" <<'CONFIG'
-{"name":"streets-of-prague","compatibilityDate":"2026-10-01","workersDev":true,"domains":["streets-cf.jonasjancarik.cz"],"assets":{}}
+{"name":"streets-of-prague","compatibilityDate":"2026-10-01","workersDev":true,"domains":["streets.jonasjancarik.cz","streets-cf.jonasjancarik.cz"],"assets":{}}
 CONFIG
 rsync -a dist-cf/ "$OUTPUT/workers/default/assets/"
 printf 'Cloudflare app data: %s\n' "$DATA_URL"

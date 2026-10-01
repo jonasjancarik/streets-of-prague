@@ -896,14 +896,15 @@ and unpacked by the game. The caches (OSM extract and IPR sheets) are about
 
 ## Deploying
 
-The main site at <https://streets.jonasjancarik.cz> runs from mbxp.
+The mbxp site at <https://streets-beta.jonasjancarik.cz> runs from mbxp.
 `scripts/deploy-mbxp.sh` builds committed code, syncs `public/data/` from this
 machine, and restarts the `streets-of-prague` container on `127.0.0.1:3017`.
 The `urad-ai-poc` tunnel routes the hostname there. `scripts/httpd.conf` gives
 JSON the content type Cloudflare needs for compression.
 
-The separate Cloudflare site at <https://streets-cf.jonasjancarik.cz> serves the
-app as Worker static assets. Its map data comes from the R2 bucket at
+The main site at <https://streets.jonasjancarik.cz> serves the app as Worker
+static assets. <https://streets-cf.jonasjancarik.cz> remains an alternate
+Cloudflare address. Its map data comes from the R2 bucket at
 <https://streets-data.jonasjancarik.cz>, under the immutable prefix named in
 `deploy/data-version`. Local development and mbxp keep loading `data/` next to
 the app; only `scripts/deploy-cloudflare.sh` sets the R2 URL at build time.
