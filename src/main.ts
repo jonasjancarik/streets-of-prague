@@ -40,7 +40,7 @@ import { groundSamples } from './surface.ts';
 import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { setupSettings } from './settings.ts';
-import { readSave, writeSave, clearSave, listSaves, newSlot, describe } from './save.ts';
+import { readSave, writeSave, clearSave, listSaves, newSlot, unreadable, describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
 import { dressLoading, Dialog } from './portraits.ts';
 import { startScreen } from './startscreen.ts';
@@ -93,6 +93,23 @@ const $ = (id: string): HTMLElement => {
 let statusText = '';
 const status = (text: string) => { statusText = text; $('loading-text').textContent = text ? t(text) : ''; };
 
+// Parts of the game load on demand under names that change with every release, so a
+// page opened just as a new version goes online asks for files that are gone. Reload
+// once to pick up the new version; the time kept in sessionStorage stops a real outage
+// from reloading over and over.
+let reloading = false, outdated = false;
+window.addEventListener('vite:preloadError', () => {
+  outdated = true;
+  let last = 0;
+  try {
+    last = Number(sessionStorage.getItem('reloaded-for-update'));
+    sessionStorage.setItem('reloaded-for-update', String(Date.now()));
+  } catch { return; } // no storage to remember the reload in, so don't risk a loop
+  if (Date.now() - last < 60_000) return;
+  reloading = true;
+  location.reload();
+});
+
 const BUSES = 3; // of the traffic, on the main roads
 const PEOPLE = 1200; // at most, round the Old Town Square; fewer where it's quieter (src/footfall.ts)
 const FEW_PEOPLE = 40; // on the quietest edge of town
@@ -112,7 +129,7 @@ async function main() {
   try { savedSound = localStorage.getItem('sound') ?? ''; } catch {}
   // The game saved by itself last time, unless it's a test run (?go).
   const saved = params.has('go') ? null : readSave('auto', AREA);
-  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off', saved: saved && (() => describe(saved)) });
+  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off', saved: saved && (() => describe(saved)), lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
   status('Loading the map…');
@@ -850,8 +867,9 @@ async function main() {
   let saveT = 0;
   const capture = (): SaveData => {
     const c = inCar && !inCar.burnt ? inCar : null, who = c || walker, [, paint, box] = c ? c.key.split('|') : [];
+    const [lon, lat] = dev.toLonLat(who.x, who.y);
     return {
-      v: 1, area: AREA, at: Date.now(), x: who.x, y: who.y, h: who.h, street,
+      v: 1, area: AREA, at: Date.now(), lat, lon, heading: ((((90 - (who.h * 180) / Math.PI) % 360) + 360) % 360), street,
       car: c ? { type: c.type, paint, box, variant: c.modelName, damage: c.damage, radio: c.radio } : null,
       money: wallet.balance, ticket: wallet.held, health: health.value, heat: police.heat,
       clock: clock.t, weather: { kind: weather.kind, fixed: weather.fixed },
@@ -872,10 +890,11 @@ async function main() {
     wallet.balance = Math.max(0, Math.floor(s.money));
     wallet.held = s.ticket;
     health.value = Math.max(1, Math.min(100, s.health));
-    await teleportTo(s.x, s.y);
+    const [x, y] = dev.toLocal(s.lon, s.lat), h = ((90 - s.heading) * Math.PI) / 180;
+    await teleportTo(x, y);
     police.heat = Math.max(0, Math.min(40, s.heat));
     if (!s.car || !TYPES[s.car.type]) return;
-    const car = new Car(s.car.type, seeded, s.x, s.y, s.h, s.car.paint, s.car.box);
+    const car = new Car(s.car.type, seeded, x, y, h, s.car.paint, s.car.box);
     if (s.car.variant) car.setVariant(s.car.variant);
     car.damage = s.car.damage;
     car.radio = s.car.radio;
@@ -1909,5 +1928,7 @@ function parseMetroLines(value: unknown): { lines: MetroLine[] } {
 
 main().catch((e) => {
   console.error(e);
-  status(`Something went wrong: ${e instanceof Error ? e.message : String(e)}`);
+  if (reloading) return;
+  status(outdated ? 'The game was just updated. Reload the page to continue.'
+    : `Something went wrong: ${e instanceof Error ? e.message : String(e)}`);
 });
