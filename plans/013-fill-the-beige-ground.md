@@ -411,10 +411,35 @@ the new structure indexes and moved to Trash individually. The shared-area
 integrity check then passed, followed by all three gameplay scenarios and a
 rendered Old Town Square check from the primary checkout. Build and validation
 logs, screenshots, and the source/stage manifest comparison are in the staging
-directory. No push or server deployment followed.
+directory. The validated local release was later deployed to mbxp at `428ae64`;
+there is no Git remote to push.
 
 The separate efficiency review later committed `8265c15`, changing pipeline
-cache and resume handling. This local data was built with the preceding committed
-pipeline at `2e5bd64` and remains valid for the client. The new opt-in resume
-checks will need to establish their validation records once before reusing these
-legacy cache entries; that is not a reason to regenerate the active tile data now.
+cache and resume handling. The release data was built with the preceding pipeline
+at `2e5bd64` and remains valid for the client. The new cache validation records
+were established after deployment as described below.
+
+### New pipeline cache readiness, 1 October 2026
+
+After the mbxp release, the new pipeline at `8265c15` was run once in the primary
+checkout with `build_tiles.py --resume --no-assemble`, followed by the IPR building
+and terrain steps and `layers.py --strict` for all three areas. A copy-on-write
+rollback snapshot of the active local `public/data` and pipeline cache is at
+`/private/tmp/sop-next-build-ready-20261001`. Strict assembly passed for `ujezd`,
+`centrum` and `praha`, establishing 259 chunk completion records and six IPR/terrain
+completion records.
+
+The repeat `--resume --no-assemble` runs built **zero** chunks and reused all four
+Újezd layer outputs, all 24 centre outputs and all 1,008 city outputs (the tile
+steps took 0.46, 0.43 and 0.98 seconds respectively). The second city IPR building
+pass hit all 128 parsed-sheet caches; the terrain pass hit all 132. A second strict
+city assembly changed zero tile JSON files. The local centre and Újezd data stayed
+byte-for-byte equal to the deployed copy. Two city tile JSON files changed only in
+drive-edge list order: their order-independent edge contents are equal. No frame-time
+measurement was made, and this cache preparation was not redeployed to mbxp.
+
+The validation records use source path, size, mtime and ctime, plus processing code
+and library versions. They are ready in this primary checkout; copying these caches
+to another path does not preserve their validity. A future source or pipeline-code
+change will correctly invalidate affected work. The first-pass and repeat logs are
+in the rollback snapshot directory.
