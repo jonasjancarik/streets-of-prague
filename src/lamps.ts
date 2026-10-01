@@ -1,3 +1,4 @@
+import { dataUrl } from './data.ts';
 import * as THREE from 'three';
 import { fetchBinary } from './terrain.ts';
 import { CLOUD, CLOUD_MAP, CLOUD_GLSL } from './clouds.ts';
@@ -334,7 +335,7 @@ export class Lamps {
     this.cables.frustumCulled = false;
     scene.add(...this.models, this.glows, this.cables);
 
-    void fetchBinary(`data/${area}_now/lamps.bin.gz`, true).then((buf) => {
+    void fetchBinary(dataUrl(area, 'lamps.bin.gz'), true).then((buf) => {
       if (!buf) return;
       const n = new DataView(buf).getUint32(0, true);
       const xy = new Float32Array(buf.slice(4, 4 + n * 8)), kind = new Uint8Array(buf, 4 + n * 8, n);

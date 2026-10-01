@@ -1,3 +1,4 @@
+import { dataUrl } from './data.ts';
 import { Car } from './car.ts';
 import type { WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
@@ -54,7 +55,7 @@ export class BikeShare {
   private gone: { rental: Rental; fee: number }[] = [];
 
   constructor(area: string) {
-    this.ready = fetch(`data/${area}_now/bikes.json`).then((r) => (r.ok ? r.json() as Promise<Data> : null)).then((d) => {
+    this.ready = fetch(dataUrl(area, 'bikes.json')).then((r) => (r.ok ? r.json() as Promise<Data> : null)).then((d) => {
       if (!d) return;
       this.systems = d.systems;
       for (const [x, y, system, capacity, id, name] of d.stations) {

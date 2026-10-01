@@ -1,3 +1,4 @@
+import { dataUrl } from './data.ts';
 // The part of town you're in (data/<area>_now/districts.json, from
 // pipeline/build_districts.py: Smíchov, Malá Strana, Vinohrady… the cadastral areas,
 // which tile the city without gaps). Walk, drive or ride into another one and its name
@@ -53,7 +54,7 @@ export class Districts {
 
   constructor(area: string, el: HTMLElement) {
     this.el = el;
-    fetch(`data/${area}_now/districts.json`)
+    fetch(dataUrl(area, 'districts.json'))
       .then(async (r) => { if (r.ok) this.list = ((await r.json()) as { districts: District[] }).districts ?? []; })
       .catch(() => {});
   }

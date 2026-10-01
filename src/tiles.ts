@@ -1,3 +1,4 @@
+import { dataUrl } from './data.ts';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Geo, Grid, rng, hash } from './map/geo.ts';
@@ -333,7 +334,7 @@ export class TileWorld {
     this.buildTimes = [];
     this.skyTotals = { coalesced: 0, cancelled: 0 };
     // Landmarks from IPR's photorealistic mesh, where the area has any (?osm: none).
-    this.landmarks = osmBuildings ? Promise.resolve([]) : fetch(`data/${area}_now/landmarks.json`)
+    this.landmarks = osmBuildings ? Promise.resolve([]) : fetch(dataUrl(area, 'landmarks.json'))
       .then((r) => (r.ok ? r.json() as Promise<Landmark[]> : [])).catch(() => []);
     this.landmarkModels = new Map();
     // Collision lookups across tiles; anywhere not loaded counts as solid.
@@ -586,14 +587,14 @@ export class TileWorld {
   // IPR's buildings.
   fetchTile(k: string): Promise<TileFiles> {
     if (!this.pending.has(k)) {
-      const base = `data/${this.area}_now/tiles/${k}`, gz = !!this.index.gzip;
+      const base = dataUrl(this.area, `tiles/${k}`), gz = !!this.index.gzip;
       const bin = (name: string) => fetchBinary(`${base}.${name}.bin${gz ? '.gz' : ''}`, gz);
       const json: Promise<TileJSON> = fetch(`${base}.json`).then(async (r) => {
         if (!r.ok) throw new Error(`Tile ${k} could not be loaded (${r.status})`);
         const value: unknown = await r.json();
         if (!isTileJSON(value)) throw new Error(`Tile ${k} has invalid map data`);
         if (this.cover) {
-          const c = await fetch(`data/${this.area}_now/cover/${this.cover}/${k}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+          const c = await fetch(dataUrl(this.area, `cover/${this.cover}/${k}.json`)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
           if (c) {
             // Tree canopy becomes wood, which the game fills with trees of its own.
             for (const [kind, polys] of Object.entries(c.areas || {})) {
@@ -608,7 +609,7 @@ export class TileWorld {
         return value;
       });
       if (this.ortho && !this.photos.has(k)) {
-        this.photos.set(k, new THREE.TextureLoader().loadAsync(`data/${this.area}_now/cover/ortho/${k}.jpg`).then((tex) => {
+        this.photos.set(k, new THREE.TextureLoader().loadAsync(dataUrl(this.area, `cover/ortho/${k}.jpg`)).then((tex) => {
           tex.colorSpace = THREE.SRGBColorSpace;
           tex.anisotropy = 4;
           return tex;
@@ -779,7 +780,7 @@ export class TileWorld {
     // The landmarks drawn with this tile (each with one tile only, where it mostly is).
     const models = Promise.all(marks.filter((l) => l.home === k).map((l) => {
       if (!this.landmarkModels.has(l.name)) {
-        this.landmarkModels.set(l.name, landmarkModel(`data/${this.area}_now/${l.file}`).catch((e) => {
+        this.landmarkModels.set(l.name, landmarkModel(dataUrl(this.area, `${l.file}`)).catch((e) => {
           console.warn(`Landmark ${l.name} could not be loaded`, e);
           return null;
         }));

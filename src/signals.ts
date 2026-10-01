@@ -1,3 +1,4 @@
+import { dataUrl } from './data.ts';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { lampLit, LAMP_ON } from './lamps.ts';
@@ -119,7 +120,7 @@ export class Signals {
     }
     scene.add(this.poles, this.boxes, this.lamps, this.glows, this.beams);
 
-    void fetch(`data/${area}_now/signals.json`).then((r) => (r.ok ? r.json() as Promise<SignalsJSON> : null)).then((data) => {
+    void fetch(dataUrl(area, 'signals.json')).then((r) => (r.ok ? r.json() as Promise<SignalsJSON> : null)).then((data) => {
       if (!data) return;
       const junctions = data.junctions.map(([g0, g1, offset]) => ({ g0, g1, offset }));
       for (const [id, [stop, j, phase]] of Object.entries(data.edges)) this.byId.set(id, { stop, j: junctions[j], phase });

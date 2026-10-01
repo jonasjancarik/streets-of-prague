@@ -6,3 +6,7 @@ pipeline/.cache
 pipeline/.venv
 # Map data is built locally by the pipeline (see README), never committed.
 public/data/
+
+# Cloudflare-only app build and generated Build Output.
+dist-cf/
+.cloudflare/

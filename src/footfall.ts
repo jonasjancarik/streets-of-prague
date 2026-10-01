@@ -1,3 +1,4 @@
+import { dataUrl } from './data.ts';
 // How busy the streets are (data/<area>_now/footfall.png, from
 // pipeline/build_footfall.py): 0 where nobody's about, 1 as busy as the Old Town
 // Square. Without the map every street counts as equally busy, as before.
@@ -26,9 +27,9 @@ interface FootfallEdge {
 
 export async function loadFootfall(area: string) {
   try {
-    const meta: unknown = await fetch(`data/${area}_now/footfall.json`).then((r) => r.json());
+    const meta: unknown = await fetch(dataUrl(area, 'footfall.json')).then((r) => r.json());
     if (!isFootfallMeta(meta)) throw new Error('Invalid footfall metadata');
-    const blob = await fetch(`data/${area}_now/footfall.png`).then((r) => (r.ok ? r.blob() : Promise.reject()));
+    const blob = await fetch(dataUrl(area, 'footfall.png')).then((r) => (r.ok ? r.blob() : Promise.reject()));
     const img = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
     const [w, h] = meta.size;
     const ctx = new OffscreenCanvas(w, h).getContext('2d', { willReadFrequently: true });

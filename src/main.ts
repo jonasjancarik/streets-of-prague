@@ -1,3 +1,4 @@
+import { dataUrl } from './data.ts';
 import { STATIONS } from './radio.ts';
 import * as THREE from 'three';
 import proj4 from 'proj4';
@@ -111,22 +112,22 @@ async function main() {
   const carsLoad = loadCars();
   const tramsLoad = loadTrams();
   const footfallLoad = loadFootfall(AREA);
-  const indexValue: unknown = await fetch(`data/${AREA}_now/index.json`).then((r) => {
+  const indexValue: unknown = await fetch(dataUrl(AREA, 'index.json')).then((r) => {
     if (!r.ok) throw new Error(`Map index could not be loaded (${r.status})`);
     return r.json();
   });
   if (!isMapIndex(indexValue)) throw new Error('The map index has invalid data');
   const index: MapIndex = indexValue;
   // Tram lines (pipeline/build_lines.py); without them there are no trams.
-  const lines: Promise<{ lines: RawTramLine[] }> = fetch(`data/${AREA}_now/lines.json`)
+  const lines: Promise<{ lines: RawTramLine[] }> = fetch(dataUrl(AREA, 'lines.json'))
     .then(async (r) => r.ok ? parseTramLines(await r.json()) : { lines: [] })
     .catch(() => ({ lines: [] }));
   // Bus lines (pipeline/build_buses.py); without them buses wander the main roads.
-  const busLines = fetch(`data/${AREA}_now/buses.json`)
+  const busLines = fetch(dataUrl(AREA, 'buses.json'))
     .then(async (r) => r.ok ? parseBusLines(await r.json()) : [])
     .catch(() => []);
   // The metro (pipeline/build_metro.py); without it there are no entrances.
-  const metroData: Promise<{ lines: MetroLine[] }> = fetch(`data/${AREA}_now/metro.json`)
+  const metroData: Promise<{ lines: MetroLine[] }> = fetch(dataUrl(AREA, 'metro.json'))
     .then(async (r) => r.ok ? parseMetroLines(await r.json()) : { lines: [] })
     .catch(() => ({ lines: [] }));
   const seeded = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();

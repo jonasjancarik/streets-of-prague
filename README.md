@@ -896,12 +896,28 @@ and unpacked by the game. The caches (OSM extract and IPR sheets) are about
 
 ## Deploying
 
-It runs at <https://streets.jonasjancarik.cz> from mbxp. `scripts/deploy-mbxp.sh`
-builds the committed code, uploads it as a new release and syncs your local
-`public/data/` to the server (only changed files go over), then restarts the
-`streets-of-prague` container (busybox httpd) on `127.0.0.1:3017`. `scripts/httpd.conf`
-gives JSON a Content-Type, which Cloudflare needs before it compresses a response. The Cloudflare tunnel
-`urad-ai-poc` routes the hostname there.
+The main site at <https://streets.jonasjancarik.cz> runs from mbxp.
+`scripts/deploy-mbxp.sh` builds committed code, syncs `public/data/` from this
+machine, and restarts the `streets-of-prague` container on `127.0.0.1:3017`.
+The `urad-ai-poc` tunnel routes the hostname there. `scripts/httpd.conf` gives
+JSON the content type Cloudflare needs for compression.
+
+The separate Cloudflare site at <https://streets-cf.jonasjancarik.cz> serves the
+app as Worker static assets. Its map data comes from the R2 bucket at
+<https://streets-data.jonasjancarik.cz>, under the immutable prefix named in
+`deploy/data-version`. Local development and mbxp keep loading `data/` next to
+the app; only `scripts/deploy-cloudflare.sh` sets the R2 URL at build time.
+
+After rebuilding map data, configure a bucket-scoped R2 S3 remote named `streets:`
+in rclone (or set `R2_REMOTE` to another remote and bucket path). Use a temporary
+Object Read & Write key for the `streets-of-prague-data` bucket; keep its access
+key and secret outside this repository. Run `scripts/upload-data.sh <new-version>`
+to upload and checksum-check every file. It safely resumes a partial upload but
+fails if an object in that version has changed. Commit the updated
+`deploy/data-version` and app code, then run `scripts/deploy-cloudflare.sh`.
+That script checks the R2 index, typechecks, builds only the app assets, validates
+Cloudflare Build Output with `cf deploy --prebuilt --dry-run`, and deploys it.
+The two targets can be updated independently.
 
 ## Credits
 

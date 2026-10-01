@@ -1,3 +1,4 @@
+import { dataUrl } from './data.ts';
 import proj4 from 'proj4';
 import type * as Leaflet from 'leaflet';
 import type { MapIndex } from './contracts.ts';
@@ -59,7 +60,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   const here = (): Point2 => bench?.spot() ?? position();
   const loadNames = async () => {
     if (!names) {
-      const r = await fetch(`data/${area}_now/names.json`);
+      const r = await fetch(dataUrl(area, 'names.json'));
       const obj: unknown = r.ok ? await r.json() : {};
       if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) throw new Error('Invalid street names');
       names = Object.entries(obj).filter((entry): entry is [string, Point2] =>
