@@ -41,7 +41,7 @@ export class Beacons {
 
   // `lit`: the cars with their lights on. `height`: ground height under a car. `dark`: how
   // dark it is (0 by day … 1), when the lamps' light map shows their light on the street
-  // (lamps.ts) and the glow here is only a trace.
+  // (lamps.ts) and the glow here isn't needed.
   draw(lit: Car[], height: (x: number, y: number, who: Car) => number, time: number, dark = 0) {
     const d = this.dummy;
     let n = 0, g = 0;
@@ -62,13 +62,13 @@ export class Beacons {
         this.lamps.setColorAt(n, (i % 2 === 0) === !!flip ? BLUE : DIM);
         n++;
       });
-      if (g < GLOWS) {
+      if (g < GLOWS && dark < 0.99) {
         d.position.set(c.x, base + 0.2, -c.y);
         d.rotation.set(0, 0, 0);
         d.scale.setScalar(bar.glow);
         d.updateMatrix();
         this.glow.setMatrixAt(g, d.matrix);
-        this.glow.setColorAt(g, this.col.set('#2a5cff').multiplyScalar((0.25 + 0.2 * Math.abs(Math.sin(time * 8))) * (1 - 0.8 * dark)));
+        this.glow.setColorAt(g, this.col.set('#2a5cff').multiplyScalar((0.25 + 0.2 * Math.abs(Math.sin(time * 8))) * (1 - dark)));
         g++;
       }
     }

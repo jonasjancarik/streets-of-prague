@@ -53,7 +53,7 @@ export class LightFx {
   begin(eye: THREE.Vector3 | null, on: number, wet: number, murk: number) {
     this.eye = this.beams ? eye : null;
     this.nb = this.ng = 0;
-    BEAM_ON.value = on * (0.16 + 0.84 * Math.min(1, murk * 1.6));
+    BEAM_ON.value = on * (0.1 + 0.9 * Math.min(1, murk * 1.6));
     // Dry asphalt and stone mirror a lamp only faintly.
     this.gloss = on * (0.1 + 0.9 * wet);
     if (!this.eye) this.commit();
