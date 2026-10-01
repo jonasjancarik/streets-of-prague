@@ -211,6 +211,13 @@ export class Lamps {
     this.height = height;
     this.target = new THREE.WebGLRenderTarget(MAP_SIZE, MAP_SIZE, { type: THREE.HalfFloatType, depthBuffer: false, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter });
     LAMP_MAP.value = this.target.texture;
+    // By day nothing draws into the map, so the materials would bind it as a plain texture.
+    // When the lamps first come on, WebGPU sets the target up and replaces that texture,
+    // the materials keep pointing at the destroyed one, and every frame after fails.
+    // Setting the target up now, before anything binds it, avoids that.
+    renderer.setRenderTarget(this.target);
+    renderer.clear(true, false, false);
+    renderer.setRenderTarget(null);
 
     // The pools of light, one instanced quad each.
     const quad = new THREE.InstancedBufferGeometry();
