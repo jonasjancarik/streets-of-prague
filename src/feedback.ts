@@ -8,10 +8,43 @@ declare const __DATA_VERSION__: string;
 // Telling the author what's wrong or missing: a link in the settings opens a form, and
 // the message goes to the site's own /api/feedback (worker/index.js), which emails it
 // on. The game adds what a bug report needs and players rarely write: its version, the
-// browser, and where the player was. A build with no address for it (local development,
-// or before it's set up: deploy/feedback) shows none of this.
+// browser and graphics card, how smoothly it runs, anything that went wrong, and where the
+// player was. A build with no address for it (local development, or before it's set up:
+// deploy/feedback) shows none of this.
 
 const URL_ = import.meta.env.VITE_FEEDBACK_URL as string | undefined;
+
+// The frame rate over the last second or so, and the last few errors the page saw:
+// kept as the game runs, for when a message is written.
+let fps = 0;
+const errors: string[] = [];
+if (URL_) {
+  let frames = 0, since = performance.now();
+  const tick = (now: number) => {
+    frames++;
+    if (now - since >= 1000) { fps = Math.round(frames * 1000 / (now - since)); frames = 0; since = now; }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  const keep = (what: unknown) => {
+    const at = Math.round(performance.now() / 1000);
+    errors.push(`${at} s: ${String(what).slice(0, 300)}`);
+    if (errors.length > 5) errors.shift();
+  };
+  window.addEventListener('error', (e) => keep(e.message ? `${e.message} (${e.filename.split('/').pop()}:${e.lineno})` : 'a file failed to load'));
+  window.addEventListener('unhandledrejection', (e) => keep(e.reason instanceof Error ? e.reason.message : e.reason));
+}
+
+// The graphics card, as the browser names it (it may decline to).
+function card() {
+  const gl = document.createElement('canvas').getContext('webgl');
+  const info = gl?.getExtension('WEBGL_debug_renderer_info');
+  const name = gl && info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+  gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  return name || 'not named by the browser';
+}
+
+const duration = (s: number) => (s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
 
 const PROBLEMS: Record<string, string> = {
   message: 'Write a few words first.',
@@ -27,8 +60,14 @@ function context(extra: () => string) {
     `Browser: ${navigator.userAgent}`,
     `Window: ${innerWidth}×${innerHeight} at ${devicePixelRatio}x${matchMedia('(pointer: coarse)').matches ? ' · touch' : ''}`,
   ];
-  // The game's part may not be there yet (the start screen) and must never stop a message.
+  // Each of the rest may not be there (the start screen, a browser that won't say) and
+  // must never stop a message.
+  try { lines.push(`Graphics card: ${card()}`); } catch {}
   try { lines.push(extra()); } catch {}
+  lines.push(`Running at ${fps} frames a second · page open for ${duration(performance.now() / 1000)}`);
+  const tally = document.getElementById('tally')?.textContent;
+  if (tally) lines.push(`Tally: ${tally}`);
+  lines.push(errors.length ? `Errors (seconds since the page opened):\n${errors.map((e) => `  ${e}`).join('\n')}` : 'No errors seen');
   try { const s = window.__test?.snapshot(); if (s) lines.push('', s); } catch {}
   return lines.join('\n');
 }

@@ -168,7 +168,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     }
   });
 
-  feedbackLink(box, 'settings-news', { before: () => box.close(), extra: () => `Graphics: ${graphics.choice}${graphics.choice === 'auto' ? ` (${graphics.tier} now)` : ''}` });
+  feedbackLink(box, 'settings-news', { before: () => box.close(), extra: () => `Graphics: ${graphics.choice}${graphics.choice === 'auto' ? ` (${graphics.tier} now)` : ''} · ${graphics.api}` });
   newsletterLink(box, 'settings-news', { before: () => box.close() });
 
   // On a phone the credits live here (their corner has these buttons now).

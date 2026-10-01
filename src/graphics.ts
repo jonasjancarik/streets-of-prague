@@ -189,6 +189,12 @@ export class Graphics {
     this.apply();
   }
 
+  // What draws the game, for a feedback message.
+  get api() {
+    const b = (this.renderer as GPURenderer).backend;
+    return b?.isWebGPUBackend ? 'WebGPU' : b ? 'WebGL 2 (no WebGPU here)' : 'WebGL';
+  }
+
   // The next choice in turn (the G key).
   cycle() { this.set(CHOICES[(CHOICES.indexOf(this.choice) + 1) % CHOICES.length]); }
 

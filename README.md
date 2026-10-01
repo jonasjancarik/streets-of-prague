@@ -965,8 +965,9 @@ is stored outside Brevo. To set it up:
 **Feedback.** The settings have a "Send feedback" link (`src/feedback.ts`).
 `/api/feedback` emails the message to the address in `deploy/feedback` through
 Cloudflare's email sending, with the player's address (if they gave one) as the one a
-reply goes to. The game adds its version, the browser, the graphics level and where the
-player was, in the form the scenarios use, so the spot can be replayed (the
+reply goes to. The game adds its version, the browser and graphics card, the graphics
+level and renderer, the frame rate, how long the page has been open, the HUD's tally,
+the last few errors the page saw, and where the player was, in the form the scenarios use, so the spot can be replayed (the
 scene-testing skill). Sending to an address verified in the Cloudflare account is free
 on every plan. To set it up:
 
