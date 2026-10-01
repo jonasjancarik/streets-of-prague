@@ -173,13 +173,18 @@ export class Sound {
       for (const b of BUSES) if (typeof mix[b] === 'number') this.volumes[b] = clamp(mix[b], 0, 2);
     } catch {}
     try { this.anc = localStorage.getItem('anc') === 'on'; } catch {}
-    // (Safari on an iPad only lets the sound start when a touch ends, not when it begins.)
-    const keys = ['keydown', 'pointerdown', 'pointerup', 'touchend', 'click'] as const;
+    // Safari on an iPad only lets the sound start when a touch ends, not when it begins (and
+    // says "running" while its clock stands still), so it is created and nudged on those,
+    // until the clock has moved.
+    const touch = matchMedia('(pointer: coarse)').matches;
+    const keys = (touch ? ['keydown', 'touchend', 'click'] : ['keydown', 'pointerdown', 'click']) as ('keydown' | 'touchend' | 'click' | 'pointerdown')[];
     const start = () => {
       this.start();
-      if (this.ctx?.state === 'running') for (const k of keys) removeEventListener(k, start);
+      const c = this.ctx;
+      if (c && this.on && (c.state !== 'running' || c.currentTime === 0)) c.resume().catch(() => {});
+      if (c && c.state === 'running' && c.currentTime > 0) for (const k of keys) removeEventListener(k, start, true);
     };
-    for (const k of keys) addEventListener(k, start);
+    for (const k of keys) addEventListener(k, start, true);
     if (location.search.includes('audiodebug')) this.debugPanel();
     // The game stops in a hidden tab, so the sound does too.
     document.addEventListener('visibilitychange', () => {
