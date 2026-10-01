@@ -29,6 +29,7 @@ import gzip
 import json
 import os
 import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -36,6 +37,10 @@ from osm_area import OUT
 import build_cache
 
 CACHE = Path(__file__).parent / ".cache" / "layers"
+# The format of the files the game reads. Raise it, together with DATA_FORMAT in
+# src/data.ts, whenever a change here means the game's older code can't read the new
+# files (or its newer code the old ones). The game refuses a map with another number.
+FORMAT = 1
 CHUNKED = ("buildings", "ground", "streets", "parking")
 # What a tile has when a layer has nothing there, in the order the tile JSON lists it.
 EMPTY = {
@@ -214,6 +219,15 @@ def in_tunnel(shape, pts):
     return LineString(pts).intersection(shape).length > 1.0
 
 
+def pipeline_commit() -> str:
+    """The commit the map is being built from, with -dirty if files differ from it."""
+    try:
+        return subprocess.run(["git", "describe", "--always", "--dirty", "--abbrev=10", "--exclude", "*"],
+                              cwd=Path(__file__).parent, capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+
+
 def assemble(area: str, strict=False) -> dict:
     """Write the game's tiles, index.json and names.json from the layers."""
     meta = read_meta(area)
@@ -293,6 +307,9 @@ def assemble(area: str, strict=False) -> dict:
         # Whether it has IPR's buildings, so the game can fetch them with the rest.
         listed.append([i, j, sum(b["own"] for b in t["buildings"]), *([int(bool(got))] if ipr else [])])
     index = {
+        # What the game checks before reading anything else, then when and from which
+        # commit this map was built (the settings panel shows the date).
+        "format": FORMAT, "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "pipeline": pipeline_commit(),
         "area": area, "bbox_wgs84": meta["bbox_wgs84"],
         "size": meta["size"], "origin": meta["origin"],
         "tile": meta["tile"], "cols": meta["cols"], "rows": meta["rows"], "tiles": listed, "rails": rails, "graphs": True,

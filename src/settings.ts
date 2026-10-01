@@ -7,9 +7,11 @@ import type { Kind } from './weather.ts';
 import { describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
 import * as telemetry from './telemetry.ts';
+import { mapData } from './data.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
+declare const __DATA_VERSION__: string;
 
 // Two buttons in the top right corner: sound on or off, always in view, and the
 // settings (language, sound, graphics, weather) in a panel like the start screen's.
@@ -30,6 +32,8 @@ const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
 const WAVES = '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>';
 const CROSS = '<path d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>';
 const SLIDERS = '<path d="M3 7h10M19 7h2M3 17h4M13 17h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M16 4.5v5M10 14.5v5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/>';
+const EXPAND = '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>';
+const SHRINK = '<path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>';
 const icon = (paths: string) => `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">${paths}</svg>`;
 
 const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
@@ -49,6 +53,27 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   saves: { list: () => { slot: Slot; data: SaveData }[]; save: () => void; load: (slot: Slot) => void; remove: (slot: Slot) => void; newGame: () => void };
 }) {
   const corner = el('div', 'corner', document.body);
+  // Full screen, where the browser allows it (not on an iPhone) and there's a touch
+  // screen to need it: on a computer the browser has its own key. In a phone's
+  // landscape it also locks the screen that way, as far as the browser lets it.
+  const full = el('button', 'corner-btn', corner) as HTMLButtonElement;
+  full.type = 'button';
+  full.hidden = !(document.fullscreenEnabled && matchMedia('(pointer: coarse)').matches);
+  const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
+  full.addEventListener('click', async () => {
+    full.blur();
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else {
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+        await orientation.lock?.('landscape').catch(() => {});
+      }
+    } catch { /* the browser said no */ }
+  });
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) orientation.unlock?.();
+    update();
+  });
   const mute = el('button', 'corner-btn', corner) as HTMLButtonElement;
   const open = el('button', 'corner-btn', corner) as HTMLButtonElement;
   mute.type = open.type = 'button';
@@ -161,15 +186,22 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   });
 
   const version = el('p', 'settings-version', box);
-  relabel.push(() => { version.textContent = `${t('Version')} ${__APP_VERSION__} · ${__APP_BUILT__}`; });
+  // The map's version where it has one (Cloudflare), else the day it was built, which
+  // is known once the map has loaded.
+  const versionLine = () => { version.textContent = `${t('Version')} ${__APP_VERSION__} · ${__APP_BUILT__} · ${t('map data')} ${__DATA_VERSION__ || mapData.built.slice(0, 10) || 'local'}`; };
+  relabel.push(versionLine);
 
   function update() {
     mute.innerHTML = icon(SPEAKER + (sound.on ? WAVES : CROSS));
     mute.setAttribute('aria-pressed', String(!sound.on));
     mute.title = mute.ariaLabel = sound.on ? t('Sound on (M)') : t('Sound off (M)');
     open.title = open.ariaLabel = t('Settings');
+    const on = !!document.fullscreenElement;
+    full.innerHTML = icon(on ? SHRINK : EXPAND);
+    full.title = full.ariaLabel = on ? t('Leave full screen') : t('Full screen');
     title.textContent = t('Settings');
     close.ariaLabel = t('Close');
+    versionLine();
     for (const f of refresh) f();
   }
   onLang(() => { for (const f of relabel) f(); update(); });

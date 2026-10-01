@@ -50,10 +50,13 @@ function licences(emit) {
 // when commits came after it) and the date. Outside a git checkout it falls back to "dev".
 const git = (args) => { try { return execSync(`git ${args}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } };
 const version = git('describe --tags --always --dirty') || 'dev';
+// The Cloudflare build reads its map from a versioned R2 prefix, and its deploy script
+// passes that version's name. Elsewhere the panel shows the day the map was built.
+const data = process.env.VITE_DATA_VERSION ?? '';
 const built = new Date().toISOString().slice(0, 10);
 
 export default defineConfig({
-  define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built) },
+  define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built), __DATA_VERSION__: JSON.stringify(data) },
   server: { allowedHosts },
   preview: { allowedHosts },
   plugins: [licences(true)],

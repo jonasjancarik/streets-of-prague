@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Deploy to mbxp as https://streets-beta.jonasjancarik.cz (Cloudflare tunnel urad-ai-poc → 127.0.0.1:3017).
-# The built site goes to releases/<commit>/site; the locally built map data (public/data)
-# is synced to shared/data and mounted over /www/data, so a code release doesn't copy it.
+# The built site goes to releases/<commit>/site. The locally built map data (public/data)
+# goes to data/<id>, where the id is a fingerprint of its files: a changed map gets a new
+# folder and a new address (data/<id>/), so the running game keeps the map it started
+# with, browsers never mix files of two maps, and the release remembers which map it
+# was deployed with. Files that haven't changed are hard links to the previous map's, so
+# a new map only sends and stores what differs.
 set -euo pipefail
 
 HOST=${DEPLOY_HOST:-mbxp}
@@ -17,29 +21,52 @@ cd "$(dirname "$0")/.."
 git diff --quiet HEAD || { echo "Commit your changes first." >&2; exit 1; }
 SHA=$(git rev-parse HEAD)
 
-node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
+# DATA_ID=<id> deploys with a map already on the server instead of the local one (to go
+# back to an earlier map; each release's id is in releases/<commit>/data-id).
+if [[ -n ${DATA_ID:-} ]]; then
+  ID=$DATA_ID
+  ssh "$HOST" test -d "$DIR/data/$ID" || { echo "There is no map $ID on $HOST." >&2; exit 1; }
+else
+  node scripts/check-data-format.mjs public/data
+  # Paths, sizes and modification times of every file: what rsync goes by too.
+  ID=$(cd public/data && find . -type f ! -name .DS_Store -exec stat -f '%N %z %m' {} + | LC_ALL=C sort | shasum -a 256 | cut -c1-12)
+fi
+echo "Map data: $ID"
 
-# site/data is the mountpoint for shared/data (it can't be created inside a read-only mount).
-ssh "$HOST" mkdir -p "$DIR/releases/$SHA/site/data" "$DIR/shared/data"
+VITE_DATA_URL=data/$ID/ node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
+
+# site/data/<id> is the mountpoint for the map (it can't be created inside a read-only mount).
+ssh "$HOST" mkdir -p "$DIR/releases/$SHA/site/data/$ID" "$DIR/data"
 rsync -a dist/ "$HOST:$DIR/releases/$SHA/site/"
 # The build leaves public/ out (publicDir: false, for the sake of public/data), so the
 # committed files in it (figures.glb, cars.glb, facades.webp) go over on their own.
 (cd public && git ls-files) | rsync -a --files-from=- public/ "$HOST:$DIR/releases/$SHA/site/"
 rsync -a scripts/httpd.conf "$HOST:$DIR/releases/$SHA/httpd.conf"
-rsync -a public/data/ "$HOST:$DIR/shared/data/"
+# The map is sent to <id>.partial and renamed once it's whole, so an interrupted sync is
+# never served. Unchanged files are linked from the map in use (or, the first time, from
+# shared/data, where the map used to live).
+if ! ssh "$HOST" test -d "$DIR/data/$ID"; then
+  LINKS=$(ssh "$HOST" "for d in $DIR/data/\$(cat $DIR/current-data 2>/dev/null) $DIR/shared/data; do [ -d \$d/praha_now ] && echo --link-dest=\$d; done; true")
+  # shellcheck disable=SC2086
+  rsync -a --exclude .DS_Store $LINKS public/data/ "$HOST:$DIR/data/$ID.partial/"
+  ssh "$HOST" mv "$DIR/data/$ID.partial" "$DIR/data/$ID"
+fi
 
-ssh "$HOST" bash -s -- "$DIR" "$SHA" "$PORT" <<'EOF'
+ssh "$HOST" bash -s -- "$DIR" "$SHA" "$PORT" "$ID" <<'EOF'
 set -euo pipefail
-DIR=$1 SHA=$2 PORT=$3
+DIR=$1 SHA=$2 PORT=$3 ID=$4
 docker rm -f streets-of-prague >/dev/null 2>&1 || true
 docker run -d --name streets-of-prague --restart unless-stopped \
   -p 127.0.0.1:$PORT:80 \
   -v "$DIR/releases/$SHA/site:/www:ro" \
-  -v "$DIR/shared/data:/www/data:ro" \
+  -v "$DIR/data/$ID:/www/data/$ID:ro" \
   -v "$DIR/releases/$SHA/httpd.conf:/etc/httpd.conf:ro" \
   busybox:latest httpd -f -p 80 -h /www -c /etc/httpd.conf >/dev/null
 sleep 1
 curl -fsS -o /dev/null -w "index.html: HTTP %{http_code}\n" http://127.0.0.1:$PORT/
-curl -fsS -o /dev/null -w "praha index: HTTP %{http_code} %{content_type}\n" http://127.0.0.1:$PORT/data/praha_now/index.json
+curl -fsS -o /dev/null -w "praha index: HTTP %{http_code} %{content_type}\n" http://127.0.0.1:$PORT/data/$ID/praha_now/index.json
+# Which code and which map are live, and the map this release went out with.
+echo "$ID" > "$DIR/releases/$SHA/data-id"
 echo "$SHA" > "$DIR/current"
+echo "$ID" > "$DIR/current-data"
 EOF

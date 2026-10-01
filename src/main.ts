@@ -1,4 +1,4 @@
-import { dataUrl } from './data.ts';
+import { DATA_FORMAT, dataUrl, mapData } from './data.ts';
 import { STATIONS } from './radio.ts';
 import * as THREE from 'three';
 import proj4 from 'proj4';
@@ -127,6 +127,12 @@ async function main() {
   });
   if (!isMapIndex(indexValue)) throw new Error('The map index has invalid data');
   const index: MapIndex = indexValue;
+  // The map and the game are made for each other (DATA_FORMAT): stop here rather than
+  // misread the tiles.
+  const format = index.format ?? 1;
+  if (format > DATA_FORMAT) throw new Error('The map is newer than this version of the game. Reload the page to get the latest version.');
+  if (format < DATA_FORMAT) throw new Error('This version of the game needs a newer map, which isn\'t available yet. Please try again later.');
+  mapData.built = index.built ?? '';
   // Tram lines (pipeline/build_lines.py); without them there are no trams.
   const lines: Promise<{ lines: RawTramLine[] }> = fetch(dataUrl(AREA, 'lines.json'))
     .then(async (r) => r.ok ? parseTramLines(await r.json()) : { lines: [] })
