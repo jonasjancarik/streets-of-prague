@@ -16,9 +16,9 @@ classifier decides what the courtyards are made of.
 
 ## Status and starting point
 
-- Status: PHASES 0–3 DONE locally. Phase 4 is deferred to
-  [plan 014](014-classify-courtyard-surfaces.md). No shared map data or deployment
-  was changed.
+- Status: PHASES 0–3 DONE in main and rebuilt into shared local map data.
+  Phase 4 is deferred to [plan 014](014-classify-courtyard-surfaces.md).
+  The server deployment was not changed.
 - Planned at `8f35d7a`, 30 September 2026, from reading the code and measuring the
   data (below). Nothing in the game was changed or rebuilt while planning.
 - Effort: phases 1–2 about a day; phase 3 one to two days; phase 4 open-ended.
@@ -238,9 +238,9 @@ For each phase:
 
 Phases 0–3 are in commit `a1f11e4` in the plan-013 worktree at
 `/Users/janca/.codex/worktrees/2bc4/streets-of-prague`; the result and deferred
-plan are committed separately. Shared `public/data` and shared pipeline caches remain unchanged. The
-worktree's `public/data` and relevant `pipeline/.cache` directories are independent
-copy-on-write copies of the original data. Converted plan-010 landmarks remain only
+plan are committed separately. The initial worktree's `public/data` and relevant
+`pipeline/.cache` directories were independent copy-on-write copies of the original
+data. Converted plan-010 landmarks remain only
 in `/tmp/sop-landmark-colours-010/{centrum,praha}_now` and are not activated.
 
 ### Phase 0: baseline
@@ -372,7 +372,49 @@ unresolved tradeoff; this plan makes no claim that it improved.
 This change does not alter its bridge or tunnel inputs, so the isolated ground
 tiles were assembled with the existing terrain and structure layers. The new
 courtyard surface remains a provisional material because the DTM does not say
-what most yards are made of. Shared assets, plan-010 staged landmarks, any branch,
-and any deployment are unchanged.
+what most yards are made of. The plan-010 staged landmarks and server deployment
+remain unchanged.
 
 Phase 4 remains a separate future plan, [014](014-classify-courtyard-surfaces.md).
+
+### Full local rebuild and activation, 1 October 2026
+
+After the plan-013 code reached main at `2e5bd64`, all four tile layers were
+rebuilt for `praha`, `centrum` and `ujezd` from copied cached OSM, DTM, parking
+and IPR inputs. Each area then ran `ipr_buildings.py` and `ipr_terrain.py` to
+regenerate its building and height/structure binaries. This was done in an
+isolated copy at `/private/tmp/sop-map-rebuild-20261001-2e5bd64`; it did not
+rebuild the separate transit feeds, landmarks or optional photo classifier.
+`praha` took 885 seconds for the tile-layer step, with 7,896 changed tile JSON
+files. The dependent city building and terrain passes completed, as did all
+three steps for `centrum` and `ujezd`.
+
+The stage validator found every indexed tile JSON and required height, IPR and
+level binary: 14,595 city tiles (5,703 with IPR buildings, 2,087 with levels),
+234 centre tiles (228 with IPR, 89 with levels), and 25 Újezd tiles (23 with IPR,
+13 with levels). The centre's plain-ground count remained 72.20 ha out of
+1,289.73 ha. All three gameplay scenarios passed against the staged city map;
+matched screenshots at Old Town Square, Charles Bridge, Malá Strana and Újezd
+were inspected. Terrain structure sampling emitted `All-NaN slice`/`Mean of
+empty slice` warnings in all three areas; each terrain step completed and the
+assembled files passed the integrity check. These warnings were not investigated
+as part of the surface rebuild.
+
+Before activation, a SHA-256 inventory of all 37,934 shared data files showed no
+concurrent changes. The stage differed in exactly 8,550 map-data files and had
+32 obsolete `.levels.bin.gz` files. A copy-on-write rollback snapshot of shared
+`public/data`, the layer cache and DTM parsed cache was retained in
+`/private/tmp/sop-map-rebuild-20261001-2e5bd64/shared-before`. After a dry run,
+the changed tile outputs and matching layer/DTM caches were synced to shared
+local data without a blanket delete. The 32 binaries were confirmed absent from
+the new structure indexes and moved to Trash individually. The shared-area
+integrity check then passed, followed by all three gameplay scenarios and a
+rendered Old Town Square check from the primary checkout. Build and validation
+logs, screenshots, and the source/stage manifest comparison are in the staging
+directory. No push or server deployment followed.
+
+The separate efficiency review later committed `8265c15`, changing pipeline
+cache and resume handling. This local data was built with the preceding committed
+pipeline at `2e5bd64` and remains valid for the client. The new opt-in resume
+checks will need to establish their validation records once before reusing these
+legacy cache entries; that is not a reason to regenerate the active tile data now.

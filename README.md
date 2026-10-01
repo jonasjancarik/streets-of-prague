@@ -888,11 +888,11 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   download). The script's docstring has the rest, including hand-labelling and
   scoring.
 
-Sizes: centrum is 234 tiles and about 22 MB; the whole city 13,609 tiles, 247k OSM
-buildings and IPR buildings in 4,326 tiles, about 580 MB. The tiles' binary files
-(IPR's buildings, the terrain) are gzipped (`.bin.gz`) and unpacked by the game. The
-caches (OSM extract and IPR sheets) are about 7.5 GB, and what the pipeline keeps of
-them once read about 2 GB more.
+Sizes after the 1 October 2026 local rebuild: centrum is 234 tiles and about 38 MB;
+the whole city is 14,595 tiles, 247,013 OSM buildings and IPR buildings in 5,703
+tiles, about 655 MB. IPR building and terrain binaries are gzipped (`.bin.gz`)
+and unpacked by the game. The caches (OSM extract and IPR sheets) are about
+7.5 GB, and what the pipeline keeps of them once read about 2 GB more.
 
 ## Deploying
 
