@@ -321,6 +321,15 @@ record the measurements, merge decisions and pending landmark asset activation.
   (`src/ground.ts`), IPR's buildings, straight-skeleton roofs for OSM buildings, the
   windows' positions on every wall, trees, walls and the collision grid. The main
   thread joins up the street graphs, makes the meshes and parks the cars.
+  A tile is loaded in two stages. The city's traffic and people live up to 300 m from
+  you, so every tile within about that distance gets its collision grid, heights,
+  bridges and tunnels, fences, poles, street graph and parked cars (`make`, one worker
+  job, about 0.1 s). Its ground, buildings, trees and sky view are made only when the
+  tile comes within 100 m of the edge of the view (`dress`, `drawBeyond` in
+  `TileWorld`, about half a second of worker time) and taken away again 40 m further
+  out (`undress`), while the tile itself stays loaded. On foot that is about 6 of the
+  14 loaded tiles. Zooming out, the tiles are drawn for the height the camera is
+  heading for; the developer panel's free camera draws everything loaded.
   `src/tileWorkers.ts` dispatches one job per worker and gives required tile jobs
   priority over optional neighbour lighting. `src/skyRefresh.ts` coalesces lighting
   refreshes and ignores stale results; the worker-count default is unchanged.

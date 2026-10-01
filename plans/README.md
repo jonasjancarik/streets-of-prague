@@ -26,7 +26,7 @@ condition, because none of the expected gains has been measured yet.
 | Plan | Scope | Priority | Estimated effort | Status |
 | --- | --- | --- | --- | --- |
 | [015: Paint cars per instance](015-paint-cars-per-instance.md) | One retained mesh per car type, with the paint as a per-instance colour | P1 | One to two days | PLANNED |
-| [016: Draw only nearby tiles](016-draw-only-nearby-tiles.md) | Keep collisions, graphs and parking out to 300 m; make a tile's meshes only near the view | P1 | Three to five days | PLANNED |
+| [016: Draw only nearby tiles](016-draw-only-nearby-tiles.md) | Keep collisions, graphs and parking out to 300 m; make a tile's meshes only near the view | P1 | Three to five days | DONE (branch `nearby-tiles`, not merged; fewer meshes and worker jobs, frame time unchanged) |
 | [017: Cheaper trees on phones](017-cheaper-trees-on-phones.md) | Measure whether a Pixel 5 is limited by tree vertices; then a simpler shadow crown, a simpler crown on low tiers, or smaller pages | P3 | Half a day to measure, two to three days after | PLANNED (measurement decides) |
 
 The three are independent. 015 is the smallest and most contained. If 016 goes

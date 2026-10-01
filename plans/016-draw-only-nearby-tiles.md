@@ -11,7 +11,8 @@ radius and make a tile's meshes only when it comes near the view.
 
 ## Status and starting point
 
-- Status: PLANNED.
+- Status: DONE on branch `nearby-tiles` (worktree, own map data); not merged. Scene
+  size and tile arrival improved; frame time: see Result.
 - Priority: P1. Effort: three to five days. Risk: medium (tile lifetime, pop-in,
   and code that assumes a loaded tile has meshes).
 - Category: performance (scene size, GPU memory, work on tile arrival).
@@ -163,4 +164,97 @@ Report scene-size and memory changes separately from frame time.
 
 ## Result
 
-Not started.
+Implemented on 1 October 2026 on branch `nearby-tiles` (commit `d3c55f9`, from
+`479cedd`), in a worktree with its own copy of the map data and a full Prague rebuild
+(14,595 tiles, strict check passed). Not merged, pushed or deployed.
+
+### Step 1: what the far tiles cost
+
+Old Town Square (`stand`) and the drive east from it, WebGPU, high graphics, 2×.
+
+| | Loaded | In view |
+| --- | --- | --- |
+| Tiles | 14 | 2 |
+| Meshes in tile groups | 340 (stand), 357 (drive) | 41, 63 |
+| Triangles in tile groups | 674,000, 658,000 | 95,000, 110,000 |
+
+Hiding every tile outside the view (`group.visible = false`, alternating windows)
+moved the frame from 9.5 to 9.4 ms standing and from 12.3 to 12.0 ms driving: 1–3%,
+within the noise. With the main thread slowed 4× the runs scattered too much to say
+anything. So the steady-state gain from a smaller scene is small, as the plan
+suspected: far tiles were already culled.
+
+The arrival work justified going on. A whole tile took about a second of worker time
+and its `sky` job about half of that again, all of it spent on tiles 200–300 m away
+that might never be seen.
+
+### What changed
+
+- `make()` produces the tile's data from one worker job (`land`, which now also
+  rasterises the bridges' and tunnels' level masks). A far tile is ready in
+  0.03–0.12 s instead of about 1 s.
+- `dress()` makes the ground, buildings, trees and sky view when the tile comes
+  within `drawBeyond` (100 m) of the view's edge: 0.5–0.7 s, of which the sky view is
+  0.4–0.5 s. `undress()` removes them 40 m further out.
+- Walls, fences and wires are still made with the tile's data, because cars knock
+  them down wherever they are. They hold no GPU buffers while the tile is undrawn.
+- `land` was kept whole and its arrays held until dressing; it wasn't split.
+- The drawn radius follows the height the camera is heading for.
+
+### Scene size
+
+| | Before | After |
+| --- | --- | --- |
+| Tiles drawn of loaded, standing | 14 of 14 | 6 of 14 |
+| Tiles drawn of loaded, driving (mean) | 14 of 14 | 8.2 of 14.6 |
+| Meshes in tile groups, standing | 340 | 123 |
+| Triangles in tile groups, standing | 674,000 | 289,000 |
+| Renderer's texture memory, standing | 268 MB | 268 MB |
+| Renderer's vertex data, standing | 31 MB | 33 MB |
+
+GPU memory didn't fall. Textures and buffers are uploaded when first drawn, so the
+far tiles that were never on screen held none before either.
+
+### Checks
+
+- Same simulation: 14 tiles, 1,400 parked cars, the same hash over 3.5 million
+  collision cells, 1,200 people, 40 cars in traffic and 63 posts on both versions.
+- `npm run typecheck`, `check-streaming.mjs` and `check-tree-pool.mjs` pass.
+  Scenarios: `bridge-exit`, `heli-bridge`, `police-chase` and `lamp-knock` pass.
+  `wall-crash` fails about one run in three, on main as well (the car sometimes
+  misses the wall); it isn't caused by this change.
+- Driving east and back (2,849 frames): no frame with an undrawn tile in view.
+- Helicopter at top speed, four laps (9,290 frames): none. Geometries (429–431),
+  textures (56–59), memory (457 MB) and tree pages were the same after every lap.
+- Zooming from the closest to the furthest view: over a second, none of 483 frames.
+  An instant jump shows up to two undrawn tiles for 15 of 457 frames (about a
+  quarter of a second). Before the drawn radius followed the target height it was 60
+  of 214 frames and up to five tiles.
+- Low sun (08:00 and 17:30; 07:00 and 19:00 are dark in the game's October) at the
+  Old Town Square and Karlovo náměstí: screenshots with only near tiles drawn and
+  with every loaded tile drawn show the same shadows. They differ in under 1% of
+  pixels, all moving people, cars and signals.
+
+### Frame time and arrival
+
+Three alternating runs against a snapshot of `479cedd`, each in a fresh browser,
+WebGPU, 15 s a scene (`bench.mjs --vs … --runs 3 --fresh-browser --stalls`). Other
+benchmarks were running on the machine that evening, and single runs of the same
+version ranged from 3.6 to 6.8 ms.
+
+| | Before | After |
+| --- | --- | --- |
+| Frame, standing | 5.6 ms | 5.5 ms |
+| Frame, driving | 7.8 ms | 8.0 ms |
+| 99th percentile frame, driving | 14.1–17.4 ms | 14.7–18.6 ms |
+| Worker jobs to start a game | 74 required, 15 optional | 42 required, 7 optional |
+| Slowest tiles at start-up (95th percentile) | 1.4–3.0 s | 0.6–1.1 s |
+| Time to load a game | 14.8–16.9 s | 14.7–15.6 s |
+
+No frame-time difference either way, as step 1 predicted, and no worse hitches from
+dressing nearer the player. The gain is in arrival work: about half the worker jobs,
+and far tiles usable three times sooner. It wasn't measured on a phone, where fewer
+worker jobs should matter more than on this desktop.
+
+`bench.mjs --vs` needs `--fresh-browser` here: the second page in one browser fell
+back to WebGL.
