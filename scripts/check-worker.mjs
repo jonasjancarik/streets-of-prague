@@ -9,14 +9,19 @@ const SITE = 'https://streetsofprague.com';
 const BETA = 'https://beta.streetsofprague.com';
 const env = { BREVO_API_KEY: 'test-key', BREVO_LIST_ID: '7', BREVO_DOI_TEMPLATE_ID: '3', ASSETS: { fetch: async () => new Response('asset') } };
 
-// What the Worker sent to Brevo, and what Brevo answers.
-let sent = [];
+// What the Worker sent to Brevo, and what Brevo answers; the same for Turnstile's check.
+let sent = [], checked = [];
 let answer = () => new Response('{}', { status: 201 });
-globalThis.fetch = async (url, init) => { sent.push({ url, headers: init.headers, body: JSON.parse(init.body) }); return answer(); };
+let verdict = () => new Response('{"success":true}');
+globalThis.fetch = async (url, init) => {
+  if (String(url).includes('turnstile')) { checked.push(JSON.parse(init.body)); return verdict(); }
+  sent.push({ url, headers: init.headers, body: JSON.parse(init.body) });
+  return answer();
+};
 console.error = () => {};
 
 const post = (body, { origin = SITE, method = 'POST', e = env, path = '/api/subscribe' } = {}) => {
-  sent = [];
+  sent = []; checked = [];
   return worker.fetch(new Request(`${SITE}${path}`, { method, headers: { Origin: origin, 'Content-Type': 'application/json' }, body: method === 'POST' ? JSON.stringify(body) : undefined }), e);
 };
 
@@ -32,6 +37,34 @@ await post({ email: 'hrac@example.cz', lang: 'cs' }, { e: { ...env, BREVO_DOI_TE
 assert.equal(sent[0].body.templateId, 4);
 await post({ email: 'hrac@example.cz', lang: 'cs' });
 assert.equal(sent[0].body.templateId, 3);
+
+// The language is kept with the contact where an attribute for it is named; anything
+// but Czech counts as English.
+await post({ email: 'hrac@example.cz', lang: 'cs' }, { e: { ...env, BREVO_LANGUAGE_ATTRIBUTE: 'LANGUAGE' } });
+assert.deepEqual(sent[0].body.attributes, { LANGUAGE: 'cs' });
+await post({ email: 'player@example.com', lang: 'xx' }, { e: { ...env, BREVO_LANGUAGE_ATTRIBUTE: 'LANGUAGE' } });
+assert.deepEqual(sent[0].body.attributes, { LANGUAGE: 'en' });
+
+// With Turnstile set up, a signup needs a token that Cloudflare vouches for.
+const tenv = { ...env, TURNSTILE_SITE_KEY: 'site', TURNSTILE_SECRET_KEY: 'secret' };
+res = await post({ email: 'player@example.com', token: 'good' }, { e: tenv });
+assert.equal(res.status, 200);
+assert.deepEqual(checked, [{ secret: 'secret', response: 'good' }]);
+assert.equal(sent.length, 1);
+res = await post({ email: 'player@example.com' }, { e: tenv });
+assert.equal(res.status, 403);
+assert.deepEqual(await res.json(), { error: 'check' });
+assert.equal(checked.length, 0);
+assert.equal(sent.length, 0);
+verdict = () => new Response('{"success":false,"error-codes":["invalid-input-response"]}');
+assert.equal((await post({ email: 'player@example.com', token: 'forged' }, { e: tenv })).status, 403);
+assert.equal(sent.length, 0);
+verdict = () => { throw new Error('unreachable'); };
+assert.equal((await post({ email: 'player@example.com', token: 'good' }, { e: tenv })).status, 403);
+verdict = () => new Response('{"success":true}');
+// The widget is in the form but the secret is missing: nothing gets through unchecked.
+assert.equal((await post({ email: 'player@example.com', token: 'good' }, { e: { ...tenv, TURNSTILE_SECRET_KEY: undefined } })).status, 503);
+assert.equal(sent.length, 0);
 
 // The beta signs up through production, and is sent back to the beta.
 res = await post({ email: 'player@example.com' }, { origin: BETA });

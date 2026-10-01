@@ -6,3 +6,9 @@ BREVO_LIST_ID=3
 # The confirmation email ("double opt-in" template), and its Czech version if there is one.
 BREVO_DOI_TEMPLATE_ID=1
 BREVO_DOI_TEMPLATE_ID_CS=
+# The contact attribute in Brevo that records the language picked in the form ("en" or
+# "cs"), e.g. LANGUAGE. Create it in Brevo first; left empty, the language isn't kept.
+BREVO_LANGUAGE_ATTRIBUTE=
+# The site key of the Turnstile widget that keeps scripts from signing addresses up.
+# Its secret key is a secret on the Worker. Left empty, signups aren't checked.
+TURNSTILE_SITE_KEY=

@@ -28,6 +28,7 @@ node scripts/check-worker.mjs
 set -a; source deploy/newsletter; source deploy/feedback; set +a
 if [[ -n ${BREVO_LIST_ID:-} && -n ${BREVO_DOI_TEMPLATE_ID:-} ]]; then export VITE_SUBSCRIBE_URL=/api/subscribe; fi
 if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=/api/feedback; fi
+if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY; fi
 VITE_DATA_URL=$DATA_URL VITE_DATA_VERSION=$VERSION node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false, build: { outDir: 'dist-cf' } })"
 (cd public && git ls-files -z) | rsync -a --from0 --files-from=- public/ dist-cf/
 cat > dist-cf/_headers <<'HEADERS'
@@ -45,8 +46,8 @@ CONFIG
 mkdir -p "$OUTPUT/workers/default/bundle"
 cp worker/index.js "$OUTPUT/workers/default/bundle/index.js"
 # Only /api/* runs the Worker; every other request is answered from the assets directly.
-# BREVO_API_KEY is a secret set on the Worker once (README, "Newsletter and feedback"),
-# not here. Feedback can only be emailed to the one address named in deploy/feedback.
+# BREVO_API_KEY and TURNSTILE_SECRET_KEY are secrets set on the Worker once (README,
+# "Newsletter and feedback"), not here. Feedback can only be emailed to the one address named in deploy/feedback.
 node -e '
 const e = process.env, text = (value) => ({ type: "text", value: value ?? "" });
 console.log(JSON.stringify({
@@ -60,6 +61,9 @@ console.log(JSON.stringify({
     BREVO_LIST_ID: text(e.BREVO_LIST_ID),
     BREVO_DOI_TEMPLATE_ID: text(e.BREVO_DOI_TEMPLATE_ID),
     BREVO_DOI_TEMPLATE_ID_CS: text(e.BREVO_DOI_TEMPLATE_ID_CS),
+    BREVO_LANGUAGE_ATTRIBUTE: text(e.BREVO_LANGUAGE_ATTRIBUTE),
+    TURNSTILE_SITE_KEY: text(e.TURNSTILE_SITE_KEY),
+    ...(e.TURNSTILE_SITE_KEY ? { TURNSTILE_SECRET_KEY: { type: "secret" } } : {}),
     FEEDBACK_TO: text(e.FEEDBACK_TO),
     FEEDBACK_FROM: text(e.FEEDBACK_FROM),
     ...(e.FEEDBACK_TO ? { EMAIL: { type: "send-email", destinationAddress: e.FEEDBACK_TO } } : {}),

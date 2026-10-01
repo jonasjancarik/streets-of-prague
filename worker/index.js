@@ -2,11 +2,12 @@
 // assets without it (scripts/deploy-cloudflare.sh sends only /api/* here); it takes the
 // two forms in the game:
 //
-//   POST /api/subscribe  { email, lang }
+//   POST /api/subscribe  { email, lang, token }
 //   POST /api/feedback   { message, email?, context?, lang }
 //
 // A signup is handed to Brevo, which sends the confirmation email; nobody is on the
-// list until they click the link in it. Feedback is sent on as an email to the game's
+// list until they click the link in it; with Turnstile set up, a signup also has to carry
+// a token showing it came from a real browser. Feedback is sent on as an email to the game's
 // author. Nothing is stored here, and the game only ever talks to these two addresses,
 // so either can move to another service without the game changing.
 //
@@ -16,6 +17,9 @@
 //   BREVO_LIST_ID               the list new contacts join
 //   BREVO_DOI_TEMPLATE_ID       the confirmation email
 //   BREVO_DOI_TEMPLATE_ID_CS    the same in Czech, if there is one
+//   BREVO_LANGUAGE_ATTRIBUTE    the contact attribute that gets "en" or "cs", if there is one
+//   TURNSTILE_SITE_KEY          the Turnstile widget in the signup form, if there is one,
+//   TURNSTILE_SECRET_KEY        and its secret
 //   EMAIL                       Cloudflare's email sending, for feedback
 //   FEEDBACK_TO, FEEDBACK_FROM  who gets the feedback, and the address it comes from
 //   RATE                        rate limiter, per visitor address
@@ -23,6 +27,7 @@
 // The beta is served from mbxp, with no Worker of its own, and signs up through this one.
 const OTHER_ORIGINS = ['https://beta.streetsofprague.com', 'https://streets-beta.jonasjancarik.cz'];
 const BREVO = 'https://api.brevo.com/v3/contacts/doubleOptinConfirmation';
+const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const FORMS = { '/api/subscribe': subscribe, '/api/feedback': feedback };
@@ -41,28 +46,51 @@ async function form(request, env, handle) {
 
   // Every use sends an email, a signup to whatever address was typed, so one visitor
   // gets few tries.
+  const ip = request.headers.get('CF-Connecting-IP') ?? '';
   if (env.RATE) {
-    const { success } = await env.RATE.limit({ key: request.headers.get('CF-Connecting-IP') ?? 'unknown' });
+    const { success } = await env.RATE.limit({ key: ip || 'unknown' });
     if (!success) return json({ error: 'busy' }, 429, cors);
   }
   let body;
   try { body = await request.json(); } catch { body = null; }
   if (!body || typeof body !== 'object') return json({ error: 'invalid' }, 400, cors);
-  const [answer, status] = await handle(body, env, origin);
+  const [answer, status] = await handle(body, env, origin, ip);
   return json(answer, status, cors);
 }
 
 const text = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const address = (v) => { const s = text(v, 255); return s.length <= 254 && EMAIL.test(s) ? s : ''; };
 
-async function subscribe(body, env, origin) {
+// Did the token come from the Turnstile widget on our page, just now, and unused?
+async function human(token, env, ip) {
+  if (!token) return false;
+  try {
+    const res = await fetch(SITEVERIFY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: env.TURNSTILE_SECRET_KEY, response: token, ...(ip ? { remoteip: ip } : {}) }),
+    });
+    return (await res.json()).success === true;
+  } catch {
+    return false;
+  }
+}
+
+async function subscribe(body, env, origin, ip) {
   if (!env.BREVO_API_KEY || !env.BREVO_LIST_ID || !env.BREVO_DOI_TEMPLATE_ID) return [{ error: 'unavailable' }, 503];
+  // The form shows the widget but there is no secret to check its token with: refuse
+  // rather than let everything through.
+  if (env.TURNSTILE_SITE_KEY && !env.TURNSTILE_SECRET_KEY) return [{ error: 'unavailable' }, 503];
   const email = address(body.email);
   if (!email) return [{ error: 'email' }, 400];
   // A field people don't see and scripts fill in: say yes and do nothing.
   if (body.website) return [{ ok: true }, 200];
+  if (env.TURNSTILE_SECRET_KEY && !await human(text(body.token, 2048), env, ip)) return [{ error: 'check' }, 403];
 
-  const template = (body.lang === 'cs' && env.BREVO_DOI_TEMPLATE_ID_CS) || env.BREVO_DOI_TEMPLATE_ID;
+  // The language picked in the form: of the confirmation email, and kept with the
+  // contact so later emails can go out in it.
+  const lang = body.lang === 'cs' ? 'cs' : 'en';
+  const template = (lang === 'cs' && env.BREVO_DOI_TEMPLATE_ID_CS) || env.BREVO_DOI_TEMPLATE_ID;
   const res = await fetch(BREVO, {
     method: 'POST',
     headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -70,6 +98,7 @@ async function subscribe(body, env, origin) {
       email,
       includeListIds: [Number(env.BREVO_LIST_ID)],
       templateId: Number(template),
+      ...(env.BREVO_LANGUAGE_ATTRIBUTE ? { attributes: { [env.BREVO_LANGUAGE_ATTRIBUTE]: lang } } : {}),
       // Where the link in the email leads: back to the game, which says thanks.
       redirectionUrl: `${origin}/?subscribed`,
     }),

@@ -397,6 +397,10 @@
       .news textarea { flex: none; resize: vertical; min-height: 5em; }
       .news-stack input[type='email'] { flex: none; }
       .news input[type='email']:focus-visible, .news textarea:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+      .news-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+      .news-row[hidden], .news-check[hidden] { display: none; }
+      .news-row span { margin-right: 4px; opacity: 0.8; }
+      .news-check:not(:empty) { margin: 0 0 10px; }
       .news-trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
       .news-go { font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); background: var(--edge); border: 0; padding: 8px 16px 6px; cursor: pointer; box-shadow: 3px 3px 0 #000; white-space: nowrap; }
       .news-go:hover:not(:disabled) { background: var(--accent); }

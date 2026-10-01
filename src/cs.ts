@@ -100,6 +100,8 @@ export const CS: Record<string, string> = {
   'News about the game': 'Novinky o hře',
   'Leave your email address and you\'ll get a message when there is something new in the game.': 'Nech tu svůj e-mail a ozveme se, až ve hře přibude něco nového.',
   'Your email address': 'Tvůj e-mail',
+  'Emails in': 'Jazyk e-mailů',
+  'We couldn\'t confirm that a person is signing up. Please try again; if a content blocker is on for this page, switching it off may help.': 'Nepodařilo se ověřit, že se přihlašuje člověk. Zkus to znovu; pokud máš pro tuto stránku zapnuté blokování obsahu, může pomoct ho vypnout.',
   'Sign up': 'Přihlásit se',
   'Sending…': 'Odesílání…',
   'Almost done. Open the email that is on its way to you and press the button in it to confirm your address.': 'Skoro hotovo. Otevři e-mail, který ti právě posíláme, a tlačítkem v něm potvrď svou adresu.',

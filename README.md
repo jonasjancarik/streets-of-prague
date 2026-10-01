@@ -958,7 +958,9 @@ behind it replaced by stand-ins. Each form stays out of the game until it is set
 the game by email (`src/newsletter.ts`). `/api/subscribe` passes the address to
 [Brevo](https://www.brevo.com), which sends an email with a link to confirm; only then
 is the address on the list, and the link leads back to the game, which says so. Nothing
-is stored outside Brevo. To set it up:
+is stored outside Brevo. The form offers the emails in English or Czech, with the game's
+language picked to begin with; the choice decides the confirmation email and can be kept
+with the contact. To set it up:
 
 1. In Brevo, create a list for the newsletter and a double opt-in confirmation email
    template (it needs the confirmation link Brevo's default template has; a second one
@@ -967,6 +969,21 @@ is stored outside Brevo. To set it up:
 3. Create a Brevo API key and store it as a secret on the Worker, once:
    `CLOUDFLARE_ACCOUNT_ID=7756b12931ecfb3900a31049e157d706 cf workers secrets update BREVO_API_KEY --worker streets-of-prague --type secret_text --text <key>`
 4. Release, then sign up once with your own address to see the whole round trip.
+
+Two optional additions, each switched on by a line in `deploy/newsletter`:
+
+- **Keeping the language.** Create a text attribute for contacts in Brevo (say
+  `LANGUAGE`) and name it as `BREVO_LANGUAGE_ATTRIBUTE`. Each contact then carries `en`
+  or `cs`, and an edition can go to the segment with one or the other.
+- **Turnstile**, Cloudflare's check that a real browser is signing up, so a script can't
+  have confirmation emails sent to strangers. Create a Turnstile widget in the
+  Cloudflare dashboard (managed mode) for `streetsofprague.com`,
+  `beta.streetsofprague.com` and the alternate addresses, put its site key in
+  `TURNSTILE_SITE_KEY`, and store its secret key on the Worker like the Brevo key, under
+  the name `TURNSTILE_SECRET_KEY`. Most players see nothing; a box to tick appears for
+  those Cloudflare is unsure about. With the site key set and the secret missing, the
+  Worker refuses signups rather than let them through unchecked. For trying the form
+  locally, Cloudflare's test site key `1x00000000000000000000AA` always passes.
 
 **Feedback.** The settings have a "Send feedback" link (`src/feedback.ts`).
 `/api/feedback` emails the message to the address in `deploy/feedback` through
