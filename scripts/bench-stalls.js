@@ -157,7 +157,8 @@
     const calm = S.frames.filter((f) => !inLong(f)), avg = (k) => sum(calm, k) / Math.max(1, calm.length);
     lines.push(`frames outside long tasks ${calm.length}: render ${f1(avg('render'))} ms, writeBuffer ${mb(avg('wb'))} MB/${f1(avg('wbN'))}, attributes ${mb(avg('ua'))} MB a frame`);
     const q = w.streamingStats;
-    if (q) lines.push(`streaming: required ${q.queuedRequired} queued/${q.runningRequired} running, optional ${q.queuedOptional} queued/${q.runningOptional} running; completed ${q.completedRequired} required/${q.completedOptional} optional; refreshes ${q.coalesced} coalesced/${q.cancelled} cancelled; tile build ${q.buildTimes.length} samples, p95 ${f1(q.buildTimes.slice().sort((a, b) => a - b)[Math.ceil(q.buildTimes.length * .95) - 1] || 0)} ms; missing player ${S.gaps.player}/${S.gaps.samples}, ahead ${S.gaps.ahead}/${S.gaps.samples} frames`);
+    if (q) lines.push(`streaming: required ${q.queuedRequired} queued/${q.runningRequired} running, optional ${q.queuedOptional} queued/${q.runningOptional} running; completed ${q.completedRequired} required/${q.completedOptional} optional; refreshes ${q.coalesced} coalesced/${q.cancelled} cancelled; tile build ${q.buildTimes.length} samples, p95 ${f1(q.buildTimes.slice().sort((a, b) => a - b)[Math.ceil(q.buildTimes.length * .95) - 1] || 0)} ms`);
+    lines.push(`road gaps: missing player ${S.gaps.player}/${S.gaps.samples}, ahead ${S.gaps.ahead}/${S.gaps.samples} driving frames`);
     if (S.resting.scans) lines.push(`resting: ${S.resting.changed} changed / ${S.resting.total} indexed-car scans, ${S.resting.circles} circles allocated, ${S.resting.touchedBuckets} buckets touched`);
     return lines;
   };
