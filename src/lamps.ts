@@ -629,9 +629,14 @@ export class Lamps {
       const fx = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
       const z = this.carZ[ci];
       add(c.x + fx * L, c.y + fy * L, z, 1, fx, fy, c.two ? 16 : 24, c.two ? 3 : 5, HEAD, c.two ? 1.2 : 2.2, 0.75, ci);
-      add(c.x - fx * L, c.y - fy * L, z, 0, 1, 0, 2.4, 2.4, TAIL, 0.5, 0.75, ci);
+      // The rear lights shine backwards onto the road from the bumper, a short beam from
+      // each (not a round pool on the car, which would redden its roof and bonnet).
+      for (const s of c.two ? [0] : [-1, 1]) {
+        const across = s * (W - 0.3);
+        add(c.x - fx * L - fy * across, c.y - fy * L + fx * across, z, 1, -fx, -fy, c.two ? 2 : 3.5, c.two ? 0.6 : 1.2, TAIL, c.two ? 0.3 : 0.22, 0.75, ci);
+      }
       // Two headlights and two rear lights (one each on a bike).
-      for (const [along, colour, size] of [[L - 0.05, HEAD, 0.9], [-L + 0.05, TAIL, 0.6]] as [number, THREE.Color, number][]) {
+      for (const [along, colour, size] of [[L - 0.05, HEAD, 0.9], [-L - 0.05, TAIL, 0.5]] as [number, THREE.Color, number][]) {
         for (const s of c.two ? [0] : [-1, 1]) {
           if (g >= this.glows.instanceMatrix.count) break;
           const across = s * (W - 0.3);
