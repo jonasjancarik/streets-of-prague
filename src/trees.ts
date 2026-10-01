@@ -54,6 +54,10 @@ export class TreePool {
       for (let i = total; i < reserve[kind]; i++) free.push(this.create(kind, false));
       prepared.push(...free);
     }
+    // The already-leased pages may lie outside the starting camera. Compile them
+    // too, so driving toward an initially off-screen tile does not build its shader.
+    const culling = this.pages.map((page) => [page, page.mesh.frustumCulled] as const);
+    for (const [page] of culling) page.mesh.frustumCulled = false;
     const identity = new THREE.Matrix4();
     for (const page of prepared) {
       const mesh = page.mesh;
@@ -62,7 +66,6 @@ export class TreePool {
       (mesh.geometry.getAttribute('evergreen') as THREE.InstancedBufferAttribute).setX(0, 0);
       mesh.count = 1;
       mesh.visible = true;
-      mesh.frustumCulled = false;
       send(mesh.instanceMatrix, 1);
       send(mesh.instanceColor!, 1);
       send(mesh.geometry.getAttribute('evergreen') as THREE.InstancedBufferAttribute, 1);
@@ -72,8 +75,8 @@ export class TreePool {
       for (const page of prepared) {
         page.mesh.count = 0;
         page.mesh.visible = false;
-        page.mesh.frustumCulled = true;
       }
+      for (const [page, wasCulled] of culling) page.mesh.frustumCulled = wasCulled;
     };
   }
 

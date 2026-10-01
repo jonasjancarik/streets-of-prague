@@ -1416,6 +1416,10 @@ async function main() {
       await Promise.race([bikeShare.ready, new Promise<void>((resolve) => setTimeout(resolve, 250))]);
       carPool.prepare(ordinaryCarBodies(bikeShare.colours()));
       await carPool.warm(() => renderer.compileAsync(scene, camera)).catch((e) => console.warn(e));
+      // compileAsync prepares the main view, while tree shadows get their own
+      // renderer pass. Draw once behind the loading screen with every retained
+      // page visible, then hide the empty reserve again.
+      renderer.render(scene, camera);
     } finally { releaseTreeReserve(); }
     scene.remove(samples.group);
     metro.under.hide();

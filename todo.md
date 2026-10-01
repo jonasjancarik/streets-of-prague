@@ -42,6 +42,8 @@ reuse their mesh UUIDs, attributes and shader bindings. A denser view can grow t
 pool without thinning trees. See plan 009 for the measured startup, visual and drive
 checks; WebGPU uniform instance buffers may still upload on a drawn frame even when
 the application has not marked an attribute dirty.
+Startup also draws the prepared pages once behind the loading screen so later tree
+shadows use the same retained render objects.
 
 The tiers now control MSAA, sun shadow size, roof detail and the crowd cap too:
 
