@@ -15,7 +15,7 @@ interface ParkingData {
   areas: { parking?: Polygons };
   rails: { pts: Point2[] }[];
 }
-interface ParkingSlot { x: number; y: number; h: number; lot: boolean; bay: boolean; angled: boolean; fwd?: boolean; perp?: boolean }
+interface ParkingSlot { x: number; y: number; h: number; lot: boolean; bay: boolean; angled: boolean; fwd?: boolean; withTraffic?: boolean; perp?: boolean }
 
 // Cars left up on the pavement, facing the way the traffic beside them goes: the
 // street, and how far along it (see PavementDrivers, which now and then has one of
@@ -196,7 +196,7 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
         if (vs[i + 1] - vs[i] < 1.2) continue;
         for (const v of rows(vs[i], vs[i + 1], lay.depth, lay.gap)) {
           const x = ox + ux * u + vx * v, y = oy + uy * u + vy * v;
-          if (inPoly(x, y, rings)) out.push({ x, y, h: kerbAt(ring, x, y, a) + lay.turn, lot: true, bay: kind !== 'parallel', angled: kind === 'diagonal', fwd: withTraffic, perp: kind === 'perpendicular' && !!lane });
+          if (inPoly(x, y, rings)) out.push({ x, y, h: kerbAt(ring, x, y, a) + lay.turn, lot: true, bay: kind !== 'parallel', angled: kind === 'diagonal', withTraffic, perp: kind === 'perpendicular' && !!lane });
         }
       }
     }
@@ -228,7 +228,7 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
         // A mapped parking lane already covers this stretch.
         let dup = false;
         for (let i = 0; i < lots && !dup; i++) dup = Math.abs(out[i].x - x) < 4.5 && Math.abs(out[i].y - y) < 4.5;
-        if (!dup) out.push({ x, y, h: q.ang + turn, lot: false, bay: o !== 'parallel', angled: o === 'diagonal', fwd: o === 'parallel', perp: o === 'perpendicular' });
+        if (!dup) out.push({ x, y, h: q.ang + turn, lot: false, bay: o !== 'parallel', angled: o === 'diagonal', withTraffic: o === 'parallel', perp: o === 'perpendicular' });
       }
     }
   }
@@ -334,7 +334,7 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
   };
   const place = (s: ParkingSlot, type = randomType(r)) => {
     // Most people drive into angled bays forwards; elsewhere it's either way round.
-    const car = new Car(type, r, s.x, s.y, s.h + (!s.fwd && r() < (s.angled ? 0.08 : s.perp ? 0.05 : 0.5) ? Math.PI : 0));
+    const car = new Car(type, r, s.x, s.y, s.h + (!s.fwd && !s.withTraffic && r() < (s.angled ? 0.08 : s.perp ? 0.05 : 0.5) ? Math.PI : 0));
     if (s.bay && (car.type === 'van' || car.type === 'pickup')) return false;
     // Nothing sticking out into a lane, where the traffic would have to squeeze past:
     // where the kerb or a mapped parking lane leaves no room, the street has none.
