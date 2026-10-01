@@ -109,6 +109,7 @@ export const CS: Record<string, string> = {
   'If something breaks, or you have an idea, I\'d love to hear it: press "Feedback" in the corner of the screen at any time.': 'Když se něco rozbije nebo tě něco napadne, rád si to přečtu: kdykoli stiskni „Připomínky“ v rohu obrazovky.',
   'Want to hear when there is something new in the game? Leave your email address.': 'Chceš vědět, když ve hře přibude něco nového? Nech mi svůj e-mail.',
   Feedback: 'Připomínky',
+  'Thanks, Jonáš': 'Díky, Jonáš',
   'Skip, don\'t bother me now': 'Přeskočit, teď mě neruš',
   'Start playing': 'Začít hrát',
   'News about the game': 'Novinky o hře',
