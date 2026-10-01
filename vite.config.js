@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from 'vite';
 
@@ -46,6 +46,34 @@ function licences(emit) {
   };
 }
 
+// ?audiodebug on the dev server: the page posts its sound panel here once a second, which
+// lands in node_modules/.audiodebug/log.jsonl, and is answered with cmd.json from the same
+// folder if there is one (then removed): {"do":"rebuild"} or {"go":"?audiodebug&noradio"}.
+function audioDebug() {
+  const dir = join('node_modules', '.audiodebug');
+  return {
+    name: 'audio-debug',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/__audiodebug', (req, res) => {
+        let body = '';
+        req.on('data', (c) => (body += c));
+        req.on('end', () => {
+          let cmd = '{}';
+          try {
+            mkdirSync(dir, { recursive: true });
+            appendFileSync(join(dir, 'log.jsonl'), `${JSON.stringify({ at: new Date().toISOString().slice(11, 19), ...JSON.parse(body) })}\n`);
+            cmd = readFileSync(join(dir, 'cmd.json'), 'utf8');
+            rmSync(join(dir, 'cmd.json'));
+          } catch {}
+          res.setHeader('Content-Type', 'application/json');
+          res.end(cmd);
+        });
+      });
+    },
+  };
+}
+
 // What the settings panel shows as the build: the release tag (v1.2.0, or v1.2.0-5-gabc1234
 // when commits came after it) and the date. Outside a git checkout it falls back to "dev".
 const git = (args) => { try { return execSync(`git ${args}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } };
@@ -59,6 +87,6 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built), __DATA_VERSION__: JSON.stringify(data) },
   server: { allowedHosts },
   preview: { allowedHosts },
-  plugins: [licences(true)],
+  plugins: [licences(true), audioDebug()],
   worker: { plugins: () => [licences(false)] },
 });

@@ -198,6 +198,7 @@ export class Sound {
       this.start();
       const c = this.ctx;
       if (!c || !this.on) return;
+      if (this.keep?.paused) this.keep.play().catch(() => {});
       if (this.stalled >= STALLED) this.revive();
       else if (c.state !== 'running' || c.currentTime === 0) c.resume().catch(() => {});
     };
@@ -261,12 +262,13 @@ export class Sound {
     const box = document.createElement('pre');
     box.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;margin:0;padding:6px;max-width:100vw;font:11px/1.3 monospace;color:#0f0;background:#000c;pointer-events:none;white-space:pre-wrap';
     document.body.append(box);
+    const actions: Record<string, () => void> = { rebuild: () => this.rebuild() };
     // Two buttons: a test tone straight to the speakers, and one through the game's mixer.
     const beep = (label: string, left: string, through: boolean) => {
       const b = document.createElement('button');
       b.textContent = label;
       b.style.cssText = `position:fixed;top:80px;left:${left};z-index:99999;padding:14px 18px;font:16px sans-serif`;
-      b.addEventListener('click', () => {
+      const play = (actions[through ? 'mixer' : 'direct'] = () => {
         const c = this.ctx;
         if (!c) return;
         const o = c.createOscillator(), g = c.createGain();
@@ -276,18 +278,20 @@ export class Sound {
         o.start();
         o.stop(c.currentTime + 0.6);
       });
+      b.addEventListener('click', play);
       document.body.append(b);
     };
     const fresh = document.createElement('button');
     fresh.textContent = 'Beep new context';
     fresh.style.cssText = 'position:fixed;top:80px;left:270px;z-index:99999;padding:14px 18px;font:16px sans-serif';
-    fresh.addEventListener('click', () => {
+    let freshMoved = '-'; // whether the last new context's clock ran
+    fresh.addEventListener('click', (actions.fresh = () => {
       const c = new AudioContext(), o = c.createOscillator();
       o.connect(c.destination);
       o.start();
       o.stop(c.currentTime + 0.6);
-      setTimeout(() => c.close(), 1500);
-    });
+      setTimeout(() => { freshMoved = `${c.state} ${c.currentTime.toFixed(2)} @${c.sampleRate}`; c.close(); }, 1500);
+    }));
     document.body.append(fresh);
     const restart = document.createElement('button');
     restart.textContent = 'Suspend+resume';
@@ -317,6 +321,20 @@ export class Sound {
     const warn = console.warn, error = console.error;
     console.warn = (...a) => { note(a.join(' ')); warn(...a); };
     console.error = (...a) => { note(a.join(' ')); error(...a); };
+    let touches = 0;
+    addEventListener('touchend', () => touches++, true);
+    addEventListener('click', () => touches++, true);
+    const id = Math.random().toString(36).slice(2, 6);
+    // With the dev server, the panel is also sent there once a second, and the answer may
+    // carry something to do: one of the buttons above, or another address to load.
+    if (import.meta.env.DEV) setInterval(async () => {
+      try {
+        const r = await fetch('/__audiodebug', { method: 'POST', body: JSON.stringify({ id, search: location.search, touches, hidden: document.hidden, fresh: freshMoved, keep: this.keep ? (this.keep.paused ? 'paused' : 'playing') : 'none', station: this.radio?.station?.id ?? null, text: box.textContent }) });
+        const cmd = await r.json();
+        if (cmd.go) location.search = cmd.go;
+        else actions[cmd.do]?.();
+      } catch {}
+    }, 1000);
     setInterval(() => {
       const c = this.ctx;
       box.textContent = [
