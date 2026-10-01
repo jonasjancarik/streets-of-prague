@@ -1,6 +1,8 @@
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import type { Graphics, Choice } from './graphics.ts';
+import type { Bus } from './audio.ts';
+import { BUSES } from './audio.ts';
 import type { Kind } from './weather.ts';
 
 // Two buttons in the top right corner: sound on or off, always in view, and the
@@ -13,6 +15,8 @@ const GRAPHICS: { id: Choice; label: string }[] = [
   { id: 'auto', label: 'Auto' }, { id: 'ultra', label: 'Ultra' }, { id: 'high', label: 'High' }, { id: 'medium', label: 'Medium' }, { id: 'low', label: 'Low' }, { id: 'lowest', label: 'Lowest' },
 ];
 const WEATHER: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
+
+const MIX: Record<Bus, string> = { engine: 'Engine', tyres: 'Tyres', horns: 'Horns and sirens', trams: 'Trams', city: 'City and birds', weather: 'Rain and wind', radio: 'Car radio', bangs: 'Bangs' };
 
 const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
 const WAVES = '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>';
@@ -29,7 +33,7 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
 };
 
 export function setupSettings({ sound, graphics, weather }: {
-  sound: { on: boolean; toggle: () => void; radioOn: boolean; setRadio: (on: boolean) => void };
+  sound: { on: boolean; volumes: Record<Bus, number>; setVolume: (b: Bus, v: number) => void; toggle: () => void; radioOn: boolean; setRadio: (on: boolean) => void };
   graphics: Graphics;
   weather: { kinds: Kind[]; get: () => Kind | 'auto'; set: (k: Kind | 'auto') => void };
 }) {
@@ -72,6 +76,23 @@ export function setupSettings({ sound, graphics, weather }: {
   row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => t(g.label) })), () => graphics.choice, (id) => graphics.set(id));
   row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
+
+  // The mixer: one slider per group of sounds, from silent to twice as loud.
+  const mixer = el('div', 'settings-row', rows);
+  const mixName = el('span', 'settings-label', mixer);
+  relabel.push(() => { mixName.textContent = t('Mixer'); });
+  for (const b of BUSES) {
+    const line = el('label', 'settings-mix', mixer);
+    const name = el('span', '', line);
+    const slider = el('input', '', line) as HTMLInputElement;
+    const pct = el('span', 'settings-mix-pct', line);
+    slider.type = 'range';
+    slider.min = '0'; slider.max = '200'; slider.step = '5';
+    slider.addEventListener('input', () => { sound.setVolume(b, Number(slider.value) / 100); pct.textContent = `${slider.value} %`; });
+    slider.addEventListener('keydown', (e) => e.stopPropagation());
+    relabel.push(() => { name.textContent = t(MIX[b]); });
+    refresh.push(() => { slider.value = String(Math.round(sound.volumes[b] * 100)); pct.textContent = `${slider.value} %`; });
+  }
 
   // On a phone the credits live here (their corner has these buttons now).
   const credits = el('button', 'settings-credits', box) as HTMLButtonElement;

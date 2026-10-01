@@ -360,6 +360,9 @@
       .settings-chip { font: 16px/1 'Bebas Neue', sans-serif; letter-spacing: 0.05em; color: var(--ink); background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 7px 11px 5px; cursor: pointer; }
       .settings-chip:hover { border-color: var(--ink); }
       .settings-chip[aria-pressed='true'] { background: var(--ink); color: #140d0c; border-color: var(--ink); }
+      .settings-mix { display: grid; grid-template-columns: 120px 1fr 48px; align-items: center; gap: 10px; margin-top: 6px; }
+      .settings-mix input { width: 100%; accent-color: var(--accent); }
+      .settings-mix-pct { text-align: right; font-variant-numeric: tabular-nums; opacity: 0.8; }
       .settings-credits { display: none; margin-top: 16px; font: inherit; color: var(--ink); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; opacity: 0.8; }
       body.touch .settings-credits { display: block; }
       body.touch #credits { display: none; }
