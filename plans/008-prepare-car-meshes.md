@@ -8,7 +8,7 @@ This is step 2 of the driving-stutter work. Its goal is to move common car-mesh 
 
 ## Status and starting point
 
-- Status: PLANNED; no implementation or new measurements.
+- Status: DONE (local) at `eb988f2`; builder work fell, while the frame-time benefit remains inconclusive.
 - Priority: P1. Effort: one to two days, including startup-cost checks. Risk: medium.
 - Category: performance. Depends on: none technically; execute after 007 so shader-sharing costs are already separated.
 - Planned at: `5162c1fcf11e51df8ceda46049cac217fc7a12cd`, 2026-09-30.
@@ -119,4 +119,84 @@ Future vehicle types, operator colours and box variants must be considered in th
 
 ## Result
 
-Not started. Record implementation revision, capacity inventory, startup and memory costs, tests, screenshots, alternating drive results and residual first-use variants here.
+Implementation commits, in order: `aeca62c` (explicit preparation, retained pages,
+warm-up and regression runner), `de6e1c3` (a maximum 250 ms wait for the optional
+already-started bike feed after the facade atlas), and `eb988f2` (hide empty pages
+and reserve the two dense keys). The worktree was dedicated to this plan. Preparation
+does not consume the gameplay RNG. All ordinary body, paint and courier-box keys,
+including any operator colours loaded by that short deadline, get a retained page.
+Every intended page is temporarily visible with one valid instance for the existing
+startup compile, then its count, visibility and matrix are restored. A genuinely
+late colour or burnt key gets a retained page on first use. No page or shared geometry
+is disposed when car counts rise.
+
+### Capacity and startup
+
+The unchanged `a3032fbf` drive had 70 active car meshes and 299 visible instances
+after settling, with 16 under the busiest key. A separate 40 s diagnostic drive
+measured peaks of 28 yellow taxis and 17 silver hatchbacks. The final inventory
+therefore prepares two 16-instance pages for each of those keys and one for every
+other key. With two bike-operator colours loaded, it has 162 keys and 164 pages.
+Each page reserves 1,024 matrix bytes: 167,936 bytes total before play, compared
+with 38,336 bytes in the baseline after settling and about 56–57 KB after its drive.
+At the end of the comparison drive, 388–395 visible cars marked about 24.8–25.3 KB
+of active matrix ranges in either version. The renderer's total `writeBuffer` volume
+outside long tasks was 0.35–0.44 MB/frame on the baseline and 0.40–0.49 MB/frame on
+the candidate; these are whole-scene uploads, not car-only bytes.
+
+Alternating benchmark load times were 13.7, 15.3, 15.2 s on the baseline and 14.1,
+16.0, 16.6 s on the candidate: about 0.8 s more on average, before CPU throttling.
+A first cold candidate load took 50.2 s, but there is no matched cold baseline for
+that outlier. In regular capped headless Chrome, two baseline loads took roughly 8
+and 3 s and two candidate loads 4 and 5 s, so that small sample does not isolate a
+startup difference. A real phone was not available for a phone-startup conclusion.
+
+### Drive and visual checks
+
+On 1 October 2026, Chrome/WebGPU on an M5 MacBook Air, 1× DPR, High, clear 14:00,
+the 40 s Újezd drive was alternated three times with a 4× main-thread CPU throttle,
+fresh browser per run and loading-frame heartbeat. The exact command was:
+
+```sh
+node scripts/bench.mjs --url http://localhost:5238/ --vs http://localhost:5192/ --scenes drive --seconds 40 --dpr 1 --cpu 4 --graphics high --time 14:00 --weather clear --stalls --runs 3 --fresh-browser --loading-frames --require-webgpu --shot /tmp/car-pool-%v-%s.png
+```
+
+Car-body builder events during play fell from 76/74/76 to 13/13/15, and total
+material-builder events from 116/113/115 to 53/53/54. No final candidate drive
+created an overflow or late-colour page; an exceptional future density still uses
+retained overflow pages. Paired frame times were 11.8→11.3, 15.4→15.3 and
+14.3→13.8 ms/frame. Their 13.8→13.5 ms average (2.5%) is too small and variable
+to claim a measured frame-time improvement. Frame p99 was 32.3/36.9/48.4 ms on
+the baseline and 31.1/49.4/44.6 ms on the candidate; long-task counts were
+7/12/25 and 7/20/12. Both measures are mixed. An earlier version with visible
+zero-count pages was 17.6% slower on average despite fewer builders; hiding those
+pages removed the excess per-frame renderer work.
+
+Matched [drive baseline](/tmp/car-pool-baseline-drive.png) and
+[candidate](/tmp/car-pool-candidate-drive.png), plus `stand` and `square` shots with
+the same `/tmp/car-pool-{baseline,candidate}-{stand,square}.png` pattern, were
+inspected. Static parked vehicles and model details match. Moving traffic and
+pedestrians are not pixel-identical, so their differing positions are not treated
+as an optimization. One square screenshot timed out in Chrome and succeeded on a
+single-scene retry. No shader, page or console errors were reported in the successful
+comparison runs.
+
+### Verification and remaining first use
+
+`npm run typecheck`, `node --check scripts/check-car-pool.mjs`,
+`node --check scripts/bench.mjs`, `node --check scripts/bench-stalls.js`,
+`node scripts/check-car-pool.mjs --url http://localhost:5238/ --case all`,
+`node scripts/check-graphics.mjs --url http://localhost:5238/`, `npm run build`,
+and `git diff --check` passed. The car-pool runner checked 35 cars over three pages,
+shrink-to-zero, refill and repeat overflow; UUID and buffer retention; zero-count
+visibility; shadow settings; custom and burnt fallbacks; continuous rider and bus
+board indices across pages; and zero fresh builder states when an idle ordinary or
+reserved page first became visible, in WebGPU and WebGL. A scene check mounted and
+exited a bike. It did not test every possible traffic, slope or weather situation.
+
+No generated asset was staged or migrated. `public/data` was read through a local
+symlink and was not rebuilt. First-use builds remain possible for bike operator
+colours arriving after the 250 ms deadline, arbitrary custom colours, the first
+burnt body of each type (still derived from the first actual car), and density beyond
+the measured page reservations. The startup/memory cost is modest on this Mac, but
+the frame-time benefit and phone startup remain unproven.
