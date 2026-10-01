@@ -823,7 +823,7 @@ async function main() {
     }
     return best && bestD < 1 ? surfaceOf(best.surface) : 'pavement';
   };
-  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, setFire,
+  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, setFire, backOnRoad,
     timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics,
     weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); }, label: () => weather.name } });
   setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } } });
@@ -847,14 +847,13 @@ async function main() {
     if (e.code === 'KeyB' && !e.repeat) pressB();
     const pick = /^Digit([1-4])$/.exec(e.code);
     if (pick && !e.repeat && inspector.phase !== 'decide') buyTicket(TICKETS[Number(pick[1]) - 1]);
-    if (e.code === 'KeyR') backOnRoad();
-    if (e.code === 'KeyF') { cannonHeld = true; if (!e.repeat) stealTram(); }
+        if (e.code === 'KeyF') { cannonHeld = true; if (!e.repeat) stealTram(); }
     if (e.code === 'KeyX' && !e.repeat) ride.doors();
     if (e.code === 'KeyQ' && !e.repeat) honk(true);
     // Space jumps, except at a tram stop, where holding it waits for a tram.
     if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on && taxi.state !== 'coming') input.jump = true;
     if (e.code === 'KeyM' && !e.repeat) sound.toggle();
-    if (e.code === 'KeyN' && !e.repeat && inCar && !inCar.two && sound.radio) {
+    if (e.code === 'KeyR' && !e.repeat && inCar && !inCar.two && sound.radio) {
       const station = sound.radio.next();
       showBanner(station ? station.name : t('Radio off'));
     }
@@ -1370,7 +1369,7 @@ async function main() {
       let surplus = Math.min(3, traffic.agents.length - trafficWanted(clock.t));
       for (const a of [...traffic.agents]) {
         if (surplus <= 0) break;
-        if (a.hired || a.car.type === 'bus' || a.car.type === 'police' || !offscreen(a.car.x, a.car.y)) continue;
+        if (a.hired || a.car.type === 'bus' || a.car.type === 'minibus' || a.car.type === 'police' || !offscreen(a.car.x, a.car.y)) continue;
         traffic.release(a);
         surplus--;
       }

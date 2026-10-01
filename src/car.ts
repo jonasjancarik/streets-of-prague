@@ -58,6 +58,8 @@ export const TYPES: Record<string, CarSpec> = {
   truck: { L: 8, W: 2.5, H: 3.6, mass: 7500, accel: 3.2, vmax: 25, grip: 7, turn: 1.4, weight: 0, traffic: 0, heavy: true, wheelbase: 4.6, drive: 'rwd', radius: 8, response: 5, brake: 9, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
   artic: { L: 16.5, W: 2.55, H: 4, mass: 30000, accel: 2, vmax: 24, grip: 6.5, turn: 1.1, weight: 0, traffic: 0, heavy: true, wheelbase: 9, drive: 'rwd', radius: 12, response: 3.5, brake: 7, fade: 0.25, drag: 0.35, reverse: 0.15, tough: 6, weather: 1.2 },
   bus: { L: 12, W: 2.55, H: 3.1, mass: 12000, accel: 2.6, vmax: 24, grip: 7, turn: 1.25, weight: 0, color: '#c8102e', heavy: true, drive: 'rwd', radius: 10, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 5, weather: 1.15 },
+  // The small buses of the centre's lines (194, 207): the same build, 7.5 m long.
+  minibus: { L: 7.5, W: 2.2, H: 2.8, mass: 5500, accel: 3.4, vmax: 24, grip: 7.5, turn: 1.7, weight: 0, color: '#c8102e', heavy: true, drive: 'rwd', radius: 6.5, response: 5, brake: 9, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 4.5, weather: 1.15 },
   // A fire engine: src/brigade.ts sends these to burning cars. Never parked or in traffic.
   fire: { L: 8.5, W: 2.5, H: 3.2, mass: 14000, accel: 2.4, vmax: 25, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#c4161c', heavy: true, wheelbase: 5, drive: 'rwd', radius: 8.5, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
 };
@@ -178,7 +180,7 @@ function carGeometry(type: string, paint: string, box?: string): THREE.BufferGeo
     cache.set(k, geometry);
     return geometry;
   }
-  if (type === 'bus') {
+  if (type === 'bus' || type === 'minibus') {
     const geometry = busGeometry(S);
     cache.set(k, geometry);
     return geometry;
@@ -246,7 +248,8 @@ function boxBuilder() {
 function busGeometry(S: CarSpec): THREE.BufferGeometry {
   const { box, wheel, done } = boxBuilder();
   const L = S.L / 2, W = S.W, red = S.color || '#c8102e', white = '#eeeeea', glass = '#1b242c', grey = '#8a8f94';
-  const sill = 1.15, top = 2.55, roof = 2.95;
+  const small = S.L < 10;
+  const sill = 1.15, top = small ? 2.3 : 2.55, roof = small ? 2.65 : 2.95;
   box('#2a2c2f', -L + 0.05, L - 0.05, 0.28, 0.5, W - 0.02); // skirt and bumpers
   box(red, -L, L, 0.5, sill, W);
   box(glass, -L + 0.02, L - 0.02, sill, top, W - 0.06);
@@ -254,13 +257,16 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
   // board show which way the bus faces.
   box(white, -L, L - 0.4, top, roof, W);
   box('#141414', L - 0.4, L, top, roof - 0.08, W - 0.04);
-  box('#9a9fa3', -3.3, 0.9, roof, roof + 0.18, 1.8); // air conditioning
-  box('#e2e4e2', -3.2, 0.8, roof + 0.18, roof + 0.3, 1.7);
-  box('#9a9fa3', -L + 0.3, -L + 2.0, roof, roof + 0.25, 2.0); // engine vents
-  box('#b9bdbf', 1.9, 2.7, roof, roof + 0.06, 0.8); // roof hatches
-  box('#b9bdbf', -5.0, -4.2, roof, roof + 0.06, 0.8);
+  const ac = small ? 0.6 : 1;
+  box('#9a9fa3', -3.3 * ac, 0.9 * ac, roof, roof + 0.18, 1.8 * (small ? 0.85 : 1)); // air conditioning
+  box('#e2e4e2', -3.2 * ac, 0.8 * ac, roof + 0.18, roof + 0.3, 1.7 * (small ? 0.85 : 1));
+  box('#9a9fa3', -L + 0.3, -L + 2.0, roof, roof + 0.25, W - 0.55); // engine vents
+  if (!small) {
+    box('#b9bdbf', 1.9, 2.7, roof, roof + 0.06, 0.8); // roof hatches
+    box('#b9bdbf', -5.0, -4.2, roof, roof + 0.06, 0.8);
+  }
   // Pillars between the side windows (none where the doors are).
-  const doors = [L - 1.35, 0.6, -3.8];
+  const doors = small ? [L - 1.1, -L + 2.6] : [L - 1.35, 0.6, -3.8];
   for (let x = -L + 0.9; x < L - 2.2; x += 1.45) {
     if (doors.some((d) => Math.abs(x - d) < 0.9)) continue;
     box(white, x - 0.07, x + 0.07, sill, top, W + 0.01);
@@ -284,8 +290,8 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
   box(glass, -L - 0.02, -L + 0.05, 1.4, top - 0.1, W - 0.5);
   box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
   // Wheels: two at the front, twin tyres at the back.
-  wheel(L - 2.7, W);
-  wheel(-L + 3.3, W);
+  wheel(L - (small ? 1.3 : 2.7), W);
+  wheel(-L + (small ? 1.7 : 3.3), W);
   return done();
 }
 
@@ -732,15 +738,17 @@ function roofMaterial(ref: string) {
 const boardPlane = new THREE.PlaneGeometry(1, 1);
 // Where the boards sit on a bus (see busGeometry): over the windscreen, facing
 // forward, and on the right over the glass behind the front door.
-const BOARDS = (() => {
-  const L = TYPES.bus.L / 2, W = TYPES.bus.W, m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
-  const front = m.clone().compose(new THREE.Vector3(L + 0.04, 2.74, 0), q.clone().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), s.clone().set(W - 0.9, 0.2, 1));
-  const side = m.clone().compose(new THREE.Vector3(L - 3.4, 2.38, W / 2 + 0.012), q.clone(), s.clone().set(1.5, 0.19, 1));
-  return [front, side];
-})();
-// On the roof between the hatch and the front, lying flat, reading from the front.
-const ROOF = new THREE.Matrix4().compose(new THREE.Vector3(TYPES.bus.L / 2 - 1.95, 2.955, 0),
-  new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, -Math.PI / 2, 0, 'YXZ')), new THREE.Vector3(2.2, 1.1, 1));
+const boardPlacement = (type: 'bus' | 'minibus') => {
+  const spec = TYPES[type], L = spec.L / 2, W = spec.W, small = type === 'minibus', m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  const top = small ? 2.3 : 2.55, roof = small ? 2.65 : 2.95;
+  const front = m.clone().compose(new THREE.Vector3(L + 0.04, top + 0.19, 0), q.clone().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), s.clone().set(W - 0.9, 0.2, 1));
+  const side = m.clone().compose(new THREE.Vector3(L - (small ? 2.4 : 3.4), top - 0.17, W / 2 + 0.012), q.clone(), s.clone().set(small ? 1.2 : 1.5, 0.19, 1));
+  // On the roof between the hatch and the front, lying flat, reading from the front.
+  const flat = new THREE.Matrix4().compose(new THREE.Vector3(L - (small ? 1.2 : 1.95), roof + 0.005, 0),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, -Math.PI / 2, 0, 'YXZ')), new THREE.Vector3(small ? 1.8 : 2.2, small ? 0.9 : 1.1, 1));
+  return { boards: [front, side], roof: flat };
+};
+const BOARD_AT = { bus: boardPlacement('bus'), minibus: boardPlacement('minibus') };
 
 // Every car is an instance: one draw call per type and colour, however many are parked.
 // Riders are drawn here too, sitting on their bikes.
@@ -856,8 +864,9 @@ export class CarPool {
         m.setMatrixAt(slot, d.matrix);
         if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
         if (c.line) {
-          for (const at of BOARDS) this.board(nb++, boardMaterial(c.line.ref, c.line.to), d.matrix, at);
-          this.board(nb++, roofMaterial(c.line.ref), d.matrix, ROOF);
+          const at = BOARD_AT[c.type === 'minibus' ? 'minibus' : 'bus'];
+          for (const b of at.boards) this.board(nb++, boardMaterial(c.line.ref, c.line.to), d.matrix, b);
+          this.board(nb++, roofMaterial(c.line.ref), d.matrix, at.roof);
         }
       });
       for (let i = 0; i < pages.length; i++) {

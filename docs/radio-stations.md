@@ -1,6 +1,6 @@
 # Car radio stations
 
-The car radio (`src/radio.ts`, key `N` while driving) plays live internet streams. It is on by default with the first station in `STATIONS`, and the settings panel (Car radio: On/Off) or `N` past the last station turns it off; the choice is kept in `localStorage` under `radio`. A
+The car radio (`src/radio.ts`, key `R` while driving) plays live internet streams. It is on by default with the first station in `STATIONS`, and the settings panel (Car radio: On/Off) or `R` past the last station turns it off; the choice is kept in `localStorage` under `radio`. A
 station is usable only if its stream is served over HTTPS and answers with an
 `Access-Control-Allow-Origin` header; without it the browser plays the stream but won't
 let Web Audio filter it. Every URL below was checked on 2026-09-29 with
