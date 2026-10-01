@@ -323,8 +323,10 @@ export class Sound {
     this.clack = clackBuffer(ctx);
     this.tyres = new Tyres(ctx, this.noise, bus.tyres);
     this.weather = new WeatherSound(ctx, this.noise, bus.weather);
-    this.radio = new Radio(ctx, this.noise, bus.radio);
-    this.radio.onFail = (station) => this.onRadioFail(station);
+    if (!location.search.includes('noradio')) {
+      this.radio = new Radio(ctx, this.noise, bus.radio);
+      this.radio.onFail = (station) => this.onRadioFail(station);
+    }
     for (let i = 0; i < SIREN_VOICES; i++) this.sirens.push(new SirenVoice(ctx, bus.horns));
     // The trams are heard once their recordings are in.
     Promise.all([...LOOPS, ...ONCE].map(async (name) => {
