@@ -326,9 +326,6 @@ Left over from putting bridges and tunnels on levels of their own (28 September
 
 Noted on 28 September 2026 while playing, during the TypeScript refactor.
 
-- **Taxis.** Let the player hail a taxi in the street or order one through a
-  ride-hailing app. The apps stand in for Uber and Bolt under made-up names, and
-  their drivers are more reckless than regular street taxis.
 - **Fill the plain beige areas.** Plan 013 phases 0–3 now give squares their OSM
   surface, make the general pavement asphalt grey, and add surveyed courtyards and
   green from the DTM in the shared local tiles. The centre's plain ground fell from
