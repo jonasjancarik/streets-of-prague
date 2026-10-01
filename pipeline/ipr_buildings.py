@@ -31,7 +31,6 @@ import struct
 import time
 import urllib.request
 import zlib
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +43,7 @@ from shapely.geometry import MultiPoint, Point, Polygon
 import layers
 import roof_details
 import roofs
+import build_cache
 from osm_area import AREAS, OUT
 
 CACHE = Path(__file__).parent / ".cache" / "ipr"
@@ -262,17 +262,19 @@ def read_sheet(job):
     for the positions where a building has no triangles. Kept per area and sheet."""
     name, path, local, T, origin = job
     cache = CACHE / "parsed" / f"{name}_{zlib.crc32(local.encode()):08x}.pkl"
-    st = Path(path).stat()
-    key = [PARSED_VERSION, st.st_mtime_ns, st.st_size, local, T, origin, REF_HEIGHT]
-    if cache.exists():
-        with open(cache, "rb") as f:
-            got = pickle.load(f)
-        if got["key"] == key:
-            return name, got["buildings"]
+    started = time.perf_counter()
+    key = [PARSED_VERSION, build_cache.identity(path), build_cache.code_key(), build_cache.runtime_key(), local, T, origin, REF_HEIGHT]
+    got = build_cache.load_pickle(cache, key)
+    if got:
+        print(f"  {name}: area cache hit, {time.perf_counter() - started:.2f} s, worker peak {build_cache.peak_mb():.1f} MB", flush=True)
+        return name, got["buildings"]
     to_local = krovak_to_local(local)
     ox, oy = origin
     out = []
-    for bid, surfaces in buildings(path):
+    stats = {}
+    version = [1, build_cache.function_key(buildings), NS, SURFACES, key[3]]
+    raw_cache = CACHE / "source" / f"{name}.buildings.pkl"
+    for bid, surfaces in build_cache.source_records(path, raw_cache, version, buildings, stats):
         pts = np.vstack([v for _, v in surfaces])
         lx, ly = to_local.transform(pts[:, 0], pts[:, 1])
         cx, cy = float(np.mean(lx)), float(np.mean(ly))
@@ -299,11 +301,11 @@ def read_sheet(job):
             p = np.column_stack([(v[:, 0] - x0) * 100, v[:, 2] * 100, (v[:, 1] - y0) * 100])
             pos = np.clip(np.round(p), -32768, 32767).astype("<i2").ravel()
         out.append((bid, cx, cy, (i, j), pos, np.array(codes, dtype=np.uint8), footprints))
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    tmp = cache.with_suffix(".tmp")
-    with open(tmp, "wb") as f:
-        pickle.dump({"key": key, "buildings": out}, f, protocol=5)
-    tmp.replace(cache)
+    if build_cache.identity(path) != key[1]:
+        raise RuntimeError(f"IPR source changed while processing {name}")
+    build_cache.atomic(cache, pickle.dumps({"key": key, "buildings": out}, protocol=5))
+    print(f"  {name}: area cache miss, source cache {stats['source_cache']}, "
+          f"{time.perf_counter() - started:.2f} s, worker peak {build_cache.peak_mb():.1f} MB", flush=True)
     return name, out
 
 
@@ -360,6 +362,8 @@ def sheet_jobs(area, meta):
 
 
 def main() -> None:
+    command_started = time.perf_counter()
+    timings = build_cache.Timings()
     ap = argparse.ArgumentParser(description="IPR Praha's 3D buildings for an area's tiles")
     ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
@@ -367,7 +371,10 @@ def main() -> None:
                     help="colours measured on the photo mesh (mesh_colours.py), if there are any: walls measured in the sun "
                          "only, also walls guessed from the shade, or none")
     ap.add_argument("--no-roof-details", action="store_true", help="no chimneys or roof windows (roof_details.py)")
+    ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble after terrain finishes")
     args = ap.parse_args()
+    if args.jobs < 1:
+        ap.error("jobs must be positive")
     area = args.area
     out_dir = OUT / f"{area}_now"
     meta = layers.read_meta(area)
@@ -376,6 +383,10 @@ def main() -> None:
     T = meta["tile"]
     origin = meta["origin"]
     local, sheets = sheet_jobs(area, meta)
+    dependencies = layers.dependency_snapshot(area, layers.DEPENDENCIES["ipr"])
+    sources = build_cache.sources([job[1] for job in sheets] + [MESH_COLOURS / f"{area}.json.gz"])
+    processing = [build_cache.code_key(), build_cache.runtime_key()]
+    timings.lap("prepare_downloads")
 
     # OSM buildings per tile, to borrow tags (church, roof shape, roof cover) for colours.
     osm_by_tile = {}
@@ -446,10 +457,10 @@ def main() -> None:
         print(f"  colours from the photo mesh for {len(measured)} buildings ({table.name}, walls: {args.mesh_colours})")
 
     started = time.perf_counter()
+    timings.lap("osm_roofs_water")
     per_tile = {}  # (i, j) → list of (int16 positions, uint8 colours), one pair per building
     footprints = []  # ground outlines of every IPR building, to find OSM ones it doesn't cover
-    run = map if args.jobs == 1 or len(sheets) == 1 else ProcessPoolExecutor(args.jobs).map
-    for name, found in run(read_sheet, sheets):
+    for name, found in build_cache.parallel_map(read_sheet, sheets, args.jobs):
         count = 0
         for bid, cx, cy, (i, j), pos, codes, fp in found:
             if (i, j) not in osm_by_tile:
@@ -500,6 +511,7 @@ def main() -> None:
             count += 1
         print(f"  {name}: {count} buildings in the area", flush=True)
     print(f"  sheets read in {time.perf_counter() - started:.0f} s; {afloat} buildings left out for standing on water")
+    timings.lap("sheets_colours_details")
 
     # An OSM building counts as IPR's if IPR buildings stand on at least 40 % of it.
     tree = STRtree(footprints)
@@ -513,6 +525,8 @@ def main() -> None:
 
     total = extra = 0
     tiles = {}
+    payloads = {}
+    layers.begin_layer(area, "ipr")
     for (i, j), blist in per_tile.items():
         pos_arr = np.concatenate([p for p, _, _ in blist])
         col = np.concatenate([c for _, c, _ in blist])
@@ -520,7 +534,7 @@ def main() -> None:
         n_tris = len(col) // 3
         pad = (4 - (8 + pos_arr.nbytes) % 4) % 4
         blob = struct.pack("<II", n_tris, len(blist)) + pos_arr.tobytes() + b"\0" * pad + col.tobytes() + mat.tobytes()
-        layers.write_bin(out_dir / "tiles", f"{i}_{j}.ipr.bin", blob)
+        layers.write_bin(out_dir / "tiles", f"{i}_{j}.ipr.bin", blob, payloads)
         missing = [layers.building_key(b) for b in osm_by_tile[(i, j)][0] if b["own"] and not covered(b)]
         extra += len(missing)
         tiles[f"{i}_{j}"] = {"buildings": len(blist), "triangles": n_tris, "noIpr": missing}
@@ -530,9 +544,18 @@ def main() -> None:
         if (i, j) not in per_tile:
             layers.remove_bin(out_dir / "tiles", f"{i}_{j}.ipr.bin")
     # Heights in the .ipr.bin are above iprRef, in metres a.s.l.
-    layers.write_layer(area, "ipr", {"iprRef": REF_HEIGHT, "gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in osm_by_tile], "tiles": tiles})
+    if not build_cache.sources_current(sources) or processing != [build_cache.code_key(), build_cache.runtime_key()]:
+        raise RuntimeError("IPR sources or processing code changed; keep output staged and rebuild")
+    layers.write_layer(area, "ipr", {"iprRef": REF_HEIGHT, "gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in osm_by_tile],
+                                     "tiles": tiles, "dependencies": dependencies, "sources": sources, "processing": processing,
+                                     "payloads": payloads})
     print(f"{len(per_tile)} tiles with IPR buildings, {total / 1e6:.1f} MB before gzip; {extra} OSM buildings IPR doesn't have")
-    layers.assemble(area)
+    timings.lap("match_pack_write")
+    if not args.no_assemble:
+        layers.assemble(area)
+    timings.lap("assembly")
+    timings.out["total"] = time.perf_counter() - command_started
+    build_cache.report_times(f"{area} ipr_buildings", timings.out)
 
 
 if __name__ == "__main__":

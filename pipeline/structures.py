@@ -41,6 +41,7 @@ from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
 
 from ipr_buildings import CACHE, krovak_to_local
+import build_cache
 
 DENSE = 5.0  # m between the points a structure's heights are worked out at
 PAD = 6.0  # m of heights past a structure's edge (more than a lattice diagonal)
@@ -174,18 +175,25 @@ def structure_ways(data, tf, ground=frozenset()):
 
 # ---- IPR's bridges ------------------------------------------------------------------
 
-def ipr_decks(local):
+def ipr_decks(local, source_manifest=None):
     """IPR's bridges' flat faces on a 1 m grid in the local metres: {cell: heights},
-    cell = (round(x), round(y)). Kept per area in pipeline/.cache/ipr/parsed/."""
+    cell = (round(x), round(y)). Kept per area in pipeline/.cache/ipr/parsed/.
+    Optional source_manifest receives the shapefile identities used by this cache.
+    """
     cache = CACHE / "parsed" / f"mosty_{zlib.crc32(local.encode()):08x}.pkl"
-    if cache.exists():
-        return pickle.loads(cache.read_bytes())
     shp = CACHE / "mosty" / "mosty.shp"
     if not shp.exists():
         print("  downloading IPR's bridges…")
         data = urllib.request.urlopen(f"https://www.arcgis.com/sharing/rest/content/items/{MOSTY_ITEM}/data").read()
         shp.parent.mkdir(parents=True, exist_ok=True)
         zipfile.ZipFile(io.BytesIO(data)).extractall(shp.parent)
+    sources = build_cache.sources(sorted(p for p in shp.parent.iterdir() if p.is_file()))
+    if source_manifest is not None:
+        source_manifest.update(sources)
+    key = [1, local, sources, build_cache.function_key(ipr_decks), build_cache.runtime_key()]
+    got = build_cache.load_pickle(cache, key)
+    if got:
+        return got["decks"]
     import geopandas as gpd
     polys = [np.asarray(p.exterior.coords) for p in gpd.read_file(shp).geometry if p is not None]
     flat = []
@@ -220,7 +228,9 @@ def ipr_decks(local):
             cells[(int(px), int(py))].append(round(float(a * px + b * py + d), 2))
     out = {k: np.array(v, dtype=np.float32) for k, v in cells.items()}
     cache.parent.mkdir(parents=True, exist_ok=True)
-    cache.write_bytes(pickle.dumps(out, protocol=5))
+    if not build_cache.sources_current(sources):
+        raise RuntimeError("IPR bridge sources changed while parsing")
+    build_cache.atomic(cache, pickle.dumps({"key": key, "decks": out}, protocol=5))
     print(f"  IPR's bridges: {len(flat)} flat faces over {len(out)} m²")
     return out
 
@@ -702,10 +712,13 @@ def outlines_per_tile(all_pieces, tile_boxes):
     return out
 
 
-def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, tile_boxes):
+def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, tile_boxes, source_manifest=None):
     """Everything for the game: per tile, a list of (level, kind, heights, polygons).
     `ways`: structure_ways from every chunk; `outlines`: the man_made=bridge polygons;
-    `roads`: the street polygons (for the ends of bridges with no street on them)."""
+    `roads`: the street polygons (for the ends of bridges with no street on them).
+    `source_manifest`: optional dictionary collecting the IPR bridge inputs for
+    strict assembly's freshness check.
+    """
     # A way cut out of several chunks comes whole in each; where one chunk didn't
     # have the street meeting it, another did.
     merged = {}
@@ -720,7 +733,7 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
             grade = dict(zip(w["nodes"], w["grade"]))
             m["grade"] = [g or grade.get(n, False) for n, g in zip(m["nodes"], m["grade"])]
     ways = sorted(merged.values(), key=lambda w: w["id"])
-    decks = ipr_decks(local)
+    decks = ipr_decks(local, source_manifest)
     net, profiles = solve(ways, ground, decks)
     ways, profiles = drop_shallow(ways, net, profiles, ground)
     road_tree = STRtree(roads) if roads else None

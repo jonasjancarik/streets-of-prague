@@ -29,9 +29,11 @@ import gzip
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 from osm_area import OUT
+import build_cache
 
 CACHE = Path(__file__).parent / ".cache" / "layers"
 CHUNKED = ("buildings", "ground", "streets", "parking")
@@ -50,11 +52,15 @@ def gzip_bytes(raw: bytes) -> bytes:
     return gzip.compress(raw, compresslevel=9, mtime=0)
 
 
-def write_bin(tiles_dir: Path, name: str, raw: bytes) -> bool:
+def write_bin(tiles_dir: Path, name: str, raw: bytes, manifest=None) -> bool:
     """A tile's binary file, gzipped (<name>.gz; the game unpacks it), in place of an
     uncompressed one from before."""
     (tiles_dir / name).unlink(missing_ok=True)
-    return write(tiles_dir / f"{name}.gz", gzip_bytes(raw))
+    blob = gzip_bytes(raw)
+    changed = write(tiles_dir / f"{name}.gz", blob)
+    if manifest is not None:
+        manifest[f"{name}.gz"] = [len(blob), build_cache.digest(blob)]
+    return changed
 
 
 def remove_bin(tiles_dir: Path, name: str):
@@ -111,8 +117,44 @@ def read_layer(area: str, layer: str) -> dict | None:
     return json.loads(p.read_text()) if p.exists() else None
 
 
+def grid_key(meta):
+    return json.loads(json.dumps({k: meta[k] for k in ("area", "bbox_wgs84", "centre", "crs", "box", "origin",
+                                                     "tile", "chunk_tiles", "cols", "rows")}))
+
+
+def dependency_snapshot(area, names):
+    meta = read_meta(area)
+    return {"grid": grid_key(meta), "chunks": {
+        f"{name}/{ci}_{cj}": build_cache.identity(chunk_path(area, name, ci, cj))
+        for name in names for ci, cj in chunks(meta)}}
+
+
+DEPENDENCIES = {"ipr": ("buildings", "ground"), "terrain": ("ground", "streets")}
+
+
+def begin_layer(area, layer):
+    """Invalidate completion before changing any binary, even if inputs are unchanged."""
+    build_cache.write_json(folder(area) / f"{layer}.complete.json", {"complete": False})
+
+
 def write_layer(area: str, layer: str, data: dict):
-    write(folder(area) / f"{layer}.json", dumps(data))
+    if layer in DEPENDENCIES:
+        current = dependency_snapshot(area, DEPENDENCIES[layer])
+        if data.get("dependencies", current) != current:
+            raise RuntimeError(f"{area}: inputs changed while building {layer}; keep output staged and rebuild")
+        data = {**data, "dependencies": current}
+    raw = dumps(data)
+    write(folder(area) / f"{layer}.json", raw)
+    if layer in DEPENDENCIES:
+        build_cache.write_json(folder(area) / f"{layer}.complete.json",
+                               {"complete": True, "metadata": build_cache.digest(raw.encode())})
+
+
+def layer_complete(area, layer):
+    record = build_cache.read_json(folder(area) / f"{layer}.complete.json")
+    path = folder(area) / f"{layer}.json"
+    return (record.get("complete") is True and path.exists()
+            and record.get("metadata") == build_cache.digest(path.read_bytes()))
 
 
 def chunks(meta: dict):
@@ -172,14 +214,49 @@ def in_tunnel(shape, pts):
     return LineString(pts).intersection(shape).length > 1.0
 
 
-def assemble(area: str) -> dict:
+def assemble(area: str, strict=False) -> dict:
     """Write the game's tiles, index.json and names.json from the layers."""
     meta = read_meta(area)
     if not meta:
         raise SystemExit(f"{area}: no layers yet; run build_tiles.py {area} first")
+    started = time.perf_counter()
+    if strict:
+        from chunk_cache import check_complete
+        check_complete(area, meta)
+    ipr, terrain = read_layer(area, "ipr"), read_layer(area, "terrain")
+    processing = [build_cache.code_key(), build_cache.runtime_key()]
+    for name, layer in (("ipr", ipr), ("terrain", terrain)):
+        current = (layer and layer.get("dependencies") == dependency_snapshot(area, DEPENDENCIES[name])
+                   and layer.get("processing") == processing and build_cache.sources_current(layer.get("sources", {}))
+                   and layer_complete(area, name))
+        if not current:
+            message = f"{area}: {name} dependencies are missing or changed; rebuild that step"
+            if strict:
+                raise SystemExit(message)
+            if layer:
+                print(message)
+        if strict and (not layer.get("gzip") or layer.get("tile") != meta["tile"]):
+            raise SystemExit(f"{area}: {name} format/grid does not match; rebuild that step")
+    if strict:
+        # Check coverage and payloads before the first assembled output is changed.
+        keys = {f"{i}_{j}" for i, j, _ in tiles(area, meta)}
+        for name, layer in (("ipr", ipr), ("terrain", terrain)):
+            if keys - set(layer.get("made_for", [])):
+                raise SystemExit(f"{area}: {name} is missing tiles; rebuild that step")
+        tiles_dir = OUT / f"{area}_now" / "tiles"
+        for k in keys:
+            needed = [("terrain", terrain, f"{k}.height.bin.gz")]
+            if k in ipr["tiles"]:
+                needed.append(("ipr", ipr, f"{k}.ipr.bin.gz"))
+            if k in terrain["tiles"]:
+                needed.append(("terrain", terrain, f"{k}.levels.bin.gz"))
+            for name, layer, filename in needed:
+                p = tiles_dir / filename
+                expected = layer.get("payloads", {}).get(filename)
+                if not expected or not p.is_file() or [p.stat().st_size, build_cache.digest(p.read_bytes())] != expected:
+                    raise SystemExit(f"{area}: missing or changed {filename}; rebuild {name}")
     out_dir = OUT / f"{area}_now"
     (out_dir / "tiles").mkdir(parents=True, exist_ok=True)
-    ipr, terrain = read_layer(area, "ipr"), read_layer(area, "terrain")
     # IPR's buildings and the terrain are made for a tile grid; after the tiles changed
     # size they don't fit at all, and tiles that are new since they were made have none.
     for name, layer in (("ipr_buildings", ipr), ("ipr_terrain", terrain)):
@@ -229,7 +306,10 @@ def assemble(area: str) -> dict:
     keys = {f"{i}_{j}" for i, j, *_ in listed}
     for name, layer in (("ipr_buildings", ipr), ("ipr_terrain", terrain)):
         if layer and keys - set(layer["made_for"]):
-            print(f"{len(keys - set(layer['made_for']))} tiles are new since {name}.py ran: run it again")
+            message = f"{len(keys - set(layer['made_for']))} tiles are new since {name}.py ran: run it again"
+            if strict:
+                raise SystemExit(message)
+            print(message)
     # The tiles' .bin files are gzipped (.bin.gz) since both IPR steps do it.
     gz = [bool(layer.get("gzip")) for layer in (ipr, terrain) if layer]
     if gz and all(gz):
@@ -240,6 +320,7 @@ def assemble(area: str) -> dict:
     write(out_dir / "names.json", dumps({k: v[1:] for k, v in sorted(names.items())}))
     print(f"{area}: {len(listed)} tiles, {written} changed → {out_dir.name}/")
     remove_stale(out_dir / "tiles", keys)
+    build_cache.report_times(f"{area} assemble", {"total": time.perf_counter() - started})
     return index
 
 
@@ -259,5 +340,9 @@ def remove_stale(tiles_dir: Path, keys: set):
 
 
 if __name__ == "__main__":
-    import sys
-    assemble(sys.argv[1] if len(sys.argv) > 1 else "centrum")
+    import argparse
+    ap = argparse.ArgumentParser(description="Assemble the map from completed layers")
+    ap.add_argument("area", nargs="?", default="centrum")
+    ap.add_argument("--strict", action="store_true", help="reject incomplete chunks or stale IPR/terrain dependencies before publication")
+    args = ap.parse_args()
+    assemble(args.area, strict=args.strict)

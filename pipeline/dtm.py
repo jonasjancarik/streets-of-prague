@@ -28,6 +28,7 @@ from pyproj import Transformer
 from pyproj.aoi import AreaOfInterest
 from shapely import STRtree
 from shapely.geometry import Polygon, box
+import build_cache
 
 CACHE = Path(__file__).parent / ".cache" / "dtm"
 PACKAGES = CACHE / "ZPS_OPL"
@@ -67,7 +68,9 @@ _land_index = None  # per process: (STRtree, polygons, kind labels)
 def download():
     """Fetch the districts' packages that aren't here yet (a new month's have new names),
     removing the ones they replace."""
+    global _index, _land_index
     listing = json.loads(_get(LIST))
+    _index = _land_index = None
     PACKAGES.mkdir(parents=True, exist_ok=True)
     keep = set()
     for district in listing:
@@ -94,12 +97,12 @@ def surfaces():
     """{kind: (levels, polygons in WGS84)} for all of Prague, read from the packages once
     and kept in surfaces.pkl until they change."""
     packages = sorted(PACKAGES.glob("*.zip"))
-    key = [VERSION, [(p.name, p.stat().st_size) for p in packages]]
-    if PARSED.exists():
-        with open(PARSED, "rb") as f:
-            got = pickle.load(f)
-        if got["key"] == key:
-            return got["kinds"]
+    key = [VERSION, [build_cache.identity(p) for p in packages], KINDS,
+           [build_cache.function_key(f) for f in (surfaces, _read, _wkb)], build_cache.runtime_key()]
+    got = build_cache.load_pickle(PARSED, key)
+    if got:
+        print("dtm: parsed cache hit", flush=True)
+        return got["kinds"]
     to_wgs = Transformer.from_crs("EPSG:5514", "EPSG:4326", always_xy=True,
                                   area_of_interest=AreaOfInterest(14.2, 49.9, 14.8, 50.2))
     found = {k: ([], []) for k in KINDS.values()}
@@ -114,11 +117,25 @@ def surfaces():
                                   lambda c: np.column_stack(to_wgs.transform(c[:, 0], c[:, 1])))
         kinds[kind] = (np.array(levels, dtype=np.int8), geoms)
     CACHE.mkdir(parents=True, exist_ok=True)
-    tmp = PARSED.with_suffix(".tmp")
-    with open(tmp, "wb") as f:
-        pickle.dump({"key": key, "kinds": kinds}, f, protocol=5)
-    tmp.replace(PARSED)
+    if [build_cache.identity(p) for p in sorted(PACKAGES.glob("*.zip"))] != key[1]:
+        raise RuntimeError("DTM packages changed while parsing")
+    build_cache.atomic(PARSED, pickle.dumps({"key": key, "kinds": kinds}, protocol=5))
     return kinds
+
+
+def _indexes():
+    """Both worker indexes from one unpickle; don't retain the unused upper levels."""
+    global _index, _land_index
+    if _index is not None and _land_index is not None:
+        return
+    kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
+    street = [kinds[k][1][kinds[k][0] == 0] for k in STREET_KINDS if k in kinds]
+    geoms = np.concatenate(street) if street else np.array([], dtype=object)
+    _index = (STRtree(geoms), geoms)
+    groups = [(k, kinds[k][1][kinds[k][0] == 0]) for k in LAND_KINDS if k in kinds]
+    geoms = np.concatenate([g for _, g in groups]) if groups else np.array([], dtype=object)
+    labels = np.concatenate([np.full(len(g), k, dtype=object) for k, g in groups]) if groups else np.array([], dtype=object)
+    _land_index = (STRtree(geoms), geoms, labels)
 
 
 def streets(bbox, transform):
@@ -126,12 +143,7 @@ def streets(bbox, transform):
     into a WGS84 box, joined into one geometry in the local metres that `transform`
     (lon, lat arrays → x, y arrays) gives. Empty where the map has nothing (past the
     city limits, or before the map has been downloaded)."""
-    global _index
-    if _index is None:
-        kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
-        geoms = [kinds[k][1][kinds[k][0] == 0] for k in STREET_KINDS if k in kinds]
-        geoms = np.concatenate(geoms) if geoms else np.array([], dtype=object)
-        _index = (STRtree(geoms), geoms)
+    _indexes()
     tree, geoms = _index
     w, s, e, n = bbox
     hits = geoms[tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN))]
@@ -143,13 +155,7 @@ def streets(bbox, transform):
 
 def land(bbox, transform):
     """Ground-level DTM yards and greenery in local metres, without kerb rounding."""
-    global _land_index
-    if _land_index is None:
-        kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
-        groups = [(kind, kinds[kind][1][kinds[kind][0] == 0]) for kind in LAND_KINDS if kind in kinds]
-        geoms = np.concatenate([group for _, group in groups]) if groups else np.array([], dtype=object)
-        labels = np.concatenate([np.full(len(group), kind, dtype=object) for kind, group in groups]) if groups else np.array([], dtype=object)
-        _land_index = (STRtree(geoms), geoms, labels)
+    _indexes()
     tree, geoms, labels = _land_index
     w, s, e, n = bbox
     hits = tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN), predicate="intersects")

@@ -34,7 +34,7 @@ import pickle
 import re
 import subprocess
 import time
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import osmnx as ox
@@ -44,12 +44,14 @@ from shapely import STRtree
 from shapely.geometry import LineString, Polygon, box
 
 from kerbs import NO_PARKING, estimate
+import build_cache
+import chunk_cache
 import dtm
 import ipr_trees
 import layers
 import structures
 from osm_area import (AREAS, CAR_ROADS, FEATURE_TAGS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, extract,
-                      features_from_json, road_width, use_overpass_mirror)
+                      features_from_json, feature_rows, road_width, use_overpass_mirror)
 
 MARGIN = 150.0
 ROAD_TOLERANCE = 0.03  # metres the streets' outlines may be simplified by
@@ -58,12 +60,25 @@ ROAD_TOLERANCE = 0.03  # metres the streets' outlines may be simplified by
 PBF = Path(os.environ.get("OSM_PBF", Path(__file__).parent / ".cache" / "osm" / "czech-republic-latest.osm.pbf"))
 
 
-def cut(bbox, out, source=PBF):
+def cut(bbox, out, source=None, stats=None):
     """The OSM data of a box (.osm XML or .pbf by name), cut from a local extract with osmium."""
-    if not out.exists():
+    out, source = Path(out), Path(PBF if source is None else source)
+    expected = {"version": 1, "source": build_cache.identity(source), "bbox": list(bbox), "strategy": "smart"}
+    record = out.with_name(f"{out.name}.source.json")
+    got = build_cache.read_json(record)
+    hit = out.exists() and got.get("input") == expected and got.get("output") == build_cache.identity(out)
+    if stats is not None:
+        stats["cut_cache"] = "hit" if hit else "miss"
+    if not hit:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        tmp = out.with_name(f"{out.stem}.{os.getpid()}.tmp{out.suffix}")
         w, s, e, n = bbox
         subprocess.run(["osmium", "extract", "-b", f"{w},{s},{e},{n}", "--strategy", "smart",
-                        "--overwrite", "-o", str(out), str(source)], check=True)
+                        "--overwrite", "-o", str(tmp), str(source)], check=True)
+        if build_cache.identity(source) != expected["source"]:
+            raise RuntimeError(f"OSM source changed while cutting {out.name}")
+        tmp.replace(out)
+        build_cache.write_json(record, {"input": expected, "output": build_cache.identity(out)})
     return out
 
 
@@ -208,25 +223,24 @@ def connected(G, tf, core):
 PARSED_VERSION = 2  # bump when what read_osm keeps changes
 
 
-def read_osm(source: Path):
+def read_osm(source: Path, stats=None):
     """A chunk's OSM data read from its .osm cut once: (osmnx's JSON of it, pickled, for
     the street graphs; the features for osm_area.extract). Kept next to the cut and
     read again only when the cut or the tags asked for change."""
     cache = source.with_suffix(".parsed.pkl")
-    st = source.stat()
-    key = [PARSED_VERSION, st.st_mtime_ns, st.st_size, ox.__version__, repr(FEATURE_TAGS)]
-    if cache.exists():
-        with open(cache, "rb") as f:
-            got = pickle.load(f)
-        if got["key"] == key:
-            return got["elements"], got["features"]
+    key = [PARSED_VERSION, build_cache.identity(source), ox.__version__, repr(FEATURE_TAGS),
+           build_cache.function_key(features_from_json), build_cache.function_key(feature_rows)]
+    got = build_cache.load_pickle(cache, key)
+    if stats is not None:
+        stats["parsed_cache"] = "hit" if got else "miss"
+    if got:
+        return got["elements"], got["features"]
     elements = pickle.dumps(ox._osm_xml._overpass_json_from_xml(source, "utf-8"), protocol=5)
     # osmnx may change the data it's handed, so the features get a copy of their own.
     features = features_from_json(pickle.loads(elements))
-    tmp = cache.with_suffix(".tmp")
-    with open(tmp, "wb") as f:
-        pickle.dump({"key": key, "elements": elements, "features": features}, f, protocol=5)
-    tmp.replace(cache)
+    if build_cache.identity(source) != key[1]:
+        raise RuntimeError(f"OSM source changed while parsing {source.name}")
+    build_cache.atomic(cache, pickle.dumps({"key": key, "elements": elements, "features": features}, protocol=5))
     return elements, features
 
 
@@ -259,8 +273,9 @@ _sections = None  # per worker: (sections, STRtree over all their polygons, poly
 def build_chunk(job):
     """Build the asked-for layers of one chunk; writes them and returns what took how long."""
     global _sections
-    area, meta, ci, cj, wanted, area_pbf = job
+    area, meta, ci, cj, wanted, area_pbf, keys = job
     started = time.perf_counter()
+    record = chunk_cache.begin(area, meta, ci, cj, wanted)
     T, centre = meta["tile"], meta["centre"]
     x0, y0, x1, y1 = meta["box"]
     C = meta["chunk_tiles"]
@@ -274,6 +289,7 @@ def build_chunk(job):
     boxes = {(i, j): box(*layers.tile_box(meta, i, j)) for i, j in tiles}
     out = {}
     lap = {}
+    stats, classify = {}, {}
 
     if wanted & {"buildings", "ground", "streets"}:
         t0 = time.perf_counter()
@@ -281,14 +297,16 @@ def build_chunk(job):
         if area_pbf:
             # Chunks of the default size keep their old names; other sizes get their own.
             grid = "" if (T, C) == (250.0, 8) else f"_{T:g}x{C}"
-            osm = cut(bbox, PBF.parent / f"{area}{grid}_{ci}_{cj}.osm", Path(area_pbf))
-            source, features = read_osm(osm)
+            osm = cut(bbox, PBF.parent / f"{area}{grid}_{ci}_{cj}.osm", Path(area_pbf), stats)
+            source, features = read_osm(osm, stats)
         lap["read"] = time.perf_counter() - t0
         t0 = time.perf_counter()
-        x = extract(area, bbox=bbox, centre=centre, source=osm if area_pbf else None, features=features, ground="ground" in wanted)
+        x = extract(area, bbox=bbox, centre=centre, source=osm if area_pbf else None, features=features,
+                    ground="ground" in wanted, buildings_only=not wanted & {"ground", "streets"}, timings=classify, stats=stats)
         lap["classify"] = time.perf_counter() - t0
 
     if "buildings" in wanted:
+        t0 = time.perf_counter()
         shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in x["buildings"]]
         centres = [p.representative_point() for p in shapes]
         btree = STRtree(shapes)
@@ -309,6 +327,7 @@ def build_chunk(job):
             if got:
                 layer.setdefault(f"{i}_{j}", {"buildings": []})["parts"] = got
         out["buildings"] = {"tiles": layer}
+        lap["buildings"] = time.perf_counter() - t0
 
     if "ground" in wanted:
         t0 = time.perf_counter()
@@ -368,6 +387,7 @@ def build_chunk(job):
         lap["streets"] = time.perf_counter() - t0
 
     if "parking" in wanted:
+        t0 = time.perf_counter()
         # Paid-parking sections clipped to the tile, with the share of each section's
         # spaces that falls inside it.
         if _sections is None:
@@ -388,14 +408,22 @@ def build_chunk(job):
             if found:
                 layer[f"{i}_{j}"] = {"sections": found}
         out["parking"] = {"tiles": layer}
+        lap["parking"] = time.perf_counter() - t0
 
-    for name, data in out.items():
-        layers.write(layers.chunk_path(area, name, ci, cj), layers.dumps(data))
+    t0 = time.perf_counter()
+    outputs = {name: layers.dumps(data) for name, data in out.items()}
+    for name, raw in outputs.items():
+        layers.write(layers.chunk_path(area, name, ci, cj), raw)
+    chunk_cache.complete(area, ci, cj, record, outputs, keys)
+    lap["write"] = time.perf_counter() - t0
     lap["total"] = time.perf_counter() - started
+    lap["extract"] = classify
+    lap["stats"] = {**stats, "worker_peak_mb": round(build_cache.peak_mb(), 1)}
     return ci, cj, lap
 
 
 def main() -> None:
+    command_started = time.perf_counter()
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
     ap.add_argument("tile", nargs="?", type=float, default=250.0, help="tile size in metres")
@@ -403,11 +431,15 @@ def main() -> None:
     ap.add_argument("--layers", default=",".join(layers.CHUNKED),
                     help=f"which layers to build, comma-separated (default all: {','.join(layers.CHUNKED)})")
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="chunks built side by side")
+    ap.add_argument("--resume", action="store_true", help="reuse completed chunk layers only when inputs and output hashes match")
+    ap.add_argument("--no-assemble", action="store_true", help="leave layers staged; assemble after IPR buildings and terrain finish")
     args = ap.parse_args()
     area, T = args.area, args.tile
     wanted = set(args.layers.split(","))
-    if wanted - set(layers.CHUNKED):
+    if not wanted or wanted - set(layers.CHUNKED):
         ap.error(f"unknown layers: {', '.join(sorted(wanted - set(layers.CHUNKED)))}")
+    if args.jobs < 1 or not math.isfinite(T) or T <= 0 or not math.isfinite(args.chunk) or args.chunk <= 0:
+        ap.error("jobs, tile size and chunk size must be positive")
     C = max(1, round(args.chunk / T))  # tiles per chunk side
     w, s, e, n = AREAS[area]
     centre = ((w + e) / 2, (s + n) / 2)
@@ -422,15 +454,14 @@ def main() -> None:
         "tile": T, "chunk_tiles": C, "cols": cols, "rows": rows,
     }
     old = layers.read_meta(area)
-    grid = ("tile", "chunk_tiles", "cols", "rows", "box")
-    if wanted != set(layers.CHUNKED) and (not old or any(old[k] != meta[k] for k in grid)):
+    if wanted != set(layers.CHUNKED) and (not old or layers.grid_key(old) != layers.grid_key(meta)):
         ap.error("the tiles or chunks aren't the ones the other layers were built with: build all layers")
     meta["parking"] = bool(load_sections(area)) if "parking" in wanted else old["parking"]
 
     setup()
     # Cut the area out of the country extract once; chunks are cut from that.
     area_pbf = None
-    if PBF.exists():
+    if PBF.exists() and wanted & {"buildings", "ground", "streets"}:
         pad = 0.01
         area_pbf = str(cut((w - pad, s - pad, e + pad, n + pad), PBF.parent / f"{area}.osm.pbf"))
 
@@ -445,19 +476,49 @@ def main() -> None:
         ipr_trees.download()
 
     todo = layers.chunks(meta)
-    jobs = [(area, meta, ci, cj, wanted, area_pbf) for ci, cj in todo]
+    settings = {"margin": MARGIN, "road_tolerance": ROAD_TOLERANCE, "parsed_version": PARSED_VERSION}
+    # Preserve the OSM input for parking-only updates, which don't need to cut it.
+    meta["build_source"] = area_pbf if wanted & {"buildings", "ground", "streets"} else (old or {}).get("build_source")
+    meta["build_settings"] = settings
+    keys = chunk_cache.inputs(area, meta, wanted, area_pbf, settings)
+    jobs = []
+    reused = 0
+    for ci, cj in todo:
+        needed = chunk_cache.remaining(area, meta, ci, cj, wanted, keys) if args.resume else wanted
+        reused += len(wanted) - len(needed)
+        if needed:
+            jobs.append((area, meta, ci, cj, needed, area_pbf, keys))
+    prepared = time.perf_counter() - command_started
     started = time.perf_counter()
-    print(f"{area}: {x1 - x0:.0f} x {y1 - y0:.0f} m, {len(todo)} chunks, layers {', '.join(sorted(wanted))}, {args.jobs} at a time")
-    run = map if args.jobs == 1 or len(jobs) == 1 else ProcessPoolExecutor(args.jobs, initializer=setup).map
-    for number, (ci, cj, lap) in enumerate(run(build_chunk, jobs), 1):
-        steps = ", ".join(f"{k} {v:.1f}" for k, v in lap.items() if k != "total")
+    print(f"{area}: {x1 - x0:.0f} x {y1 - y0:.0f} m, {len(todo)} chunks, layers {', '.join(sorted(wanted))}, {args.jobs} at a time; "
+          f"{len(jobs)} chunks to build, {reused} layer outputs reused", flush=True)
+
+    def results():
+        if args.jobs == 1 or len(jobs) <= 1:
+            yield from map(build_chunk, jobs)
+        else:
+            with ProcessPoolExecutor(args.jobs, initializer=setup) as pool:
+                for future in as_completed([pool.submit(build_chunk, job) for job in jobs]):
+                    yield future.result()
+
+    for number, (ci, cj, lap) in enumerate(results(), 1):
+        steps = ", ".join(f"{k} {v:.1f}" for k, v in lap.items() if k not in ("total", "extract", "stats"))
         print(f"chunk {number}/{len(jobs)} ({ci},{cj}) {lap['total']:.1f} s ({steps})", flush=True)
+        build_cache.report_times(f"  extract {ci},{cj}", lap["extract"])
+        print(f"  counts/cache {ci},{cj}: {json.dumps(lap['stats'], sort_keys=True)}", flush=True)
+    if chunk_cache.inputs(area, meta, wanted, area_pbf, settings) != keys:
+        raise SystemExit("build inputs changed during the run; keep this output staged and rebuild before assembling")
     layers.write_meta(area, meta)
-    print(f"built in {time.perf_counter() - started:.0f} s")
-    layers.assemble(area)
+    worker_wall = time.perf_counter() - started
+    assembly_started = time.perf_counter()
+    if not args.no_assemble:
+        layers.assemble(area)
+    build_cache.report_times(f"{area} build_tiles", {"prepare": prepared, "workers": worker_wall,
+                             "assembly": time.perf_counter() - assembly_started,
+                             "total": time.perf_counter() - command_started})
     later = []
-    if "buildings" in wanted and layers.read_layer(area, "ipr"):
-        later.append(f"ipr_buildings.py {area} (it matches IPR's buildings against OSM's)")
+    if wanted & {"buildings", "ground"} and layers.read_layer(area, "ipr"):
+        later.append(f"ipr_buildings.py {area} (it uses OSM buildings and ground-water polygons)")
     if wanted & {"ground", "streets"} and layers.read_layer(area, "terrain"):
         later.append(f"ipr_terrain.py {area} (it works out the bridges and tunnels)")
     for step in later:

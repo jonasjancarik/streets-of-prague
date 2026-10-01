@@ -22,6 +22,7 @@ from shapely.ops import unary_union
 
 import dtm
 import roofs
+from build_cache import Timings
 from kerbs import Kerbs, estimate
 
 AREAS = {
@@ -103,7 +104,8 @@ def feature_rows(gdf):
     return fr.geometry.values, rows
 
 
-def extract(area: str, bbox=None, centre=None, source=None, features=None, ground=True) -> dict:
+def extract(area: str, bbox=None, centre=None, source=None, features=None, ground=True,
+            buildings_only=False, timings=None, stats=None) -> dict:
     """Fetch and classify everything in the area; geometry stays as shapely objects.
 
     `bbox` (WGS84) overrides the area's box, e.g. for one chunk of a large area, and
@@ -111,8 +113,12 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     `source`: an .osm XML file already cut to the box, instead of asking Overpass;
     `features`: the features already read (features_from_json).
     `ground`: False leaves out the land use and the streets' surfaces ("areas" and
-    "roads" come back empty), which take most of the time here.
+    "roads" come back empty), including unrelated land polygons and parking lots.
+    `buildings_only`: only buildings and roof parts, without DTM or street work.
+    `timings` and `stats`: optional dictionaries filled with durations and counts;
+    they are not included in the returned geometry.
     """
+    timer = Timings(timings)
     w, s, e, n = bbox or AREAS[area]
     lon0, lat0 = centre or ((w + e) / 2, (s + n) / 2)
     tf = Transformer.from_crs(
@@ -130,6 +136,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         use_overpass_mirror()
         features = feature_rows(ox.features_from_xml(source, tags=FEATURE_TAGS) if source else ox.features_from_bbox((w, s, e, n), FEATURE_TAGS))
     geoms, rows = features
+    if stats is not None:
+        stats["features"] = len(rows)
+    timer.lap("features")
 
     def col(row, k):
         v = row.get(k)
@@ -161,7 +170,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             est = estimate(width, lambda k: col(row, k), not col(row, "width") and not col(row, "lanes"))
             car_ways.extend((ls, est, cls, hw != "service") for ls in _lines(g))
             return
-        road_lines.setdefault(cls, []).append(g.buffer(width / 2, cap_style="round", join_style="round"))
+        if ground:
+            road_lines.setdefault(cls, []).append(g.buffer(width / 2, cap_style="round", join_style="round"))
 
     buildings = []
     parts = []  # building parts whose roof OSM describes (roofs.py), to colour IPR's roofs by
@@ -179,7 +189,11 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     ground_ways = set()  # the OSM ids of the passages among the ways tagged as tunnels
 
     # Every geometry into local metres in one go.
+    if buildings_only:
+        chosen = [k for k, row in enumerate(rows) if col(row, "building") or col(row, "building:part")]
+        geoms, rows = np.asarray(geoms, dtype=object)[chosen], [rows[k] for k in chosen]
     geoms = shapely.transform(geoms, lambda c: np.column_stack(tf.transform(c[:, 0], c[:, 1])))
+    timer.lap("project")
     for g, row in zip(geoms, rows):
         if g is None or g.is_empty:
             continue
@@ -213,11 +227,13 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 })
             continue
 
+        if buildings_only:
+            continue
         hw = col(row, "highway")
         if hw and isinstance(g, (LineString, MultiLineString)):
             if hw in ("proposed", "construction", "elevator", "platform", "bus_stop"):
                 continue
-            if (hw in ("pedestrian", "footway", "living_street", "service")
+            if (ground and hw in ("pedestrian", "footway", "living_street", "service")
                     and col(row, "footway") != "crossing" and col(row, "tunnel") in (None, "no")
                     and (_float(col(row, "layer")) or 0) == 0):
                 square_ways.extend((ls, _square_surface(col(row, "surface"))) for ls in _lines(g.intersection(clip)))
@@ -232,7 +248,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 continue
             add_way(row, g, hw, width)
             continue
-        if hw == "pedestrian" and isinstance(g, (Polygon, MultiPolygon)):
+        if ground and hw == "pedestrian" and isinstance(g, (Polygon, MultiPolygon)):
             squares.append((g.buffer(0), col(row, "surface")))
             continue
 
@@ -274,7 +290,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             trees.append(tree)
             continue
 
-        if isinstance(g, (Polygon, MultiPolygon)):
+        if ground and isinstance(g, (Polygon, MultiPolygon)):
             if col(row, "landuse") == "residential":
                 homes.append(g.buffer(0))
             kind = _area_kind(row, col)
@@ -288,6 +304,12 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                     lots.append({"o": o if o in ORIENTATIONS else None, "poly": poly})
             elif (col(row, "man_made") == "bridge" or col(row, "bridge")) and not b:
                 areas.setdefault("bridge", []).append(g.buffer(0))
+
+    timer.lap("feature_loop")
+    if stats is not None:
+        stats.update(buildings=len(buildings), car_ways=len(car_ways), sidewalks=len(sidewalks))
+    if buildings_only:
+        return {"buildings": buildings, "parts": parts}
 
     # Passages tagged as tunnels or as covered ways: the ones that run through buildings.
     if maybe:
@@ -309,10 +331,13 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     for poly, surface_tag in squares:
         kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
         areas.setdefault(kind or "square", []).append(poly)
+    timer.lap("passages_squares")
 
     # The streets as surveyed, where the technical map has them (within Prague).
     surface = shapely.intersection(dtm.streets((w, s, e, n), tf.transform), clip, grid_size=GRID)
+    timer.lap("dtm_streets")
     kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways], surface)
+    timer.lap("kerb_index")
     if not ground:
         return {
             "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
@@ -322,8 +347,11 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             "lots": lots, "kerbs": kerbs,
         }
     lines = [w[0] for w in car_ways]
+    measured = kerbs(lines, [w[1] for w in car_ways])
+    shares = kerbs.surveyed(lines)
+    timer.lap("kerb_measure")
     surveyed, sett_near = [], []  # (centre line, cobbled?) of streets drawn from the survey
-    for (ls, _, cls, street), (left, right), share in zip(car_ways, kerbs(lines, [w[1] for w in car_ways]), kerbs.surveyed(lines)):
+    for (ls, _, cls, street), (left, right), share in zip(car_ways, measured, shares):
         # Each side out to its kerb, and round ends so streets join up at crossroads.
         # (The pieces are merged with all the others below, so not one by one here.)
         pieces = [ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),
@@ -338,6 +366,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 sett_near.append(ls.buffer(max(left, right) + SETT_REACH))
             continue
         road_lines.setdefault(cls, []).extend(pieces)
+    timer.lap("road_buffers")
     if not surface.is_empty:
         # Cobbles where a cobbled street is the nearest and close by, asphalt elsewhere,
         # including the surveyed car parks and lanes OSM doesn't have.
@@ -350,13 +379,17 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             setts = _areas(shapely.intersection(_nearest(surveyed, surface), unary_union(sett_near), grid_size=GRID))
         road_lines.setdefault("sett", []).append(_areas(shapely.intersection(surface, setts, grid_size=GRID)))
         road_lines.setdefault("road", []).append(_areas(shapely.difference(surface, setts, grid_size=GRID)))
+    timer.lap("cobble_voronoi")
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
+    timer.lap("road_land_unions")
     for kind, geom in dtm.land((w, s, e, n), tf.transform).items():
         area_polys[f"dtm_{kind}"] = _areas(geom.intersection(clip))
+    timer.lap("dtm_land")
     gardens = _gardens(homes, buildings, streets, clip)
     if not gardens.is_empty:
         area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])
+    timer.lap("gardens")
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,

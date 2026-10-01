@@ -668,6 +668,8 @@ from (geometry helpers, straight-skeleton buildings, trees).
 
 ## Building the map
 
+<!-- read_when: rebuilding map layers, changing pipeline caches, or validating staged map generations -->
+
 Requirements: [uv](https://docs.astral.sh/uv/), Node.js, and for a local OSM extract
 `brew install osmium-tool`.
 
@@ -715,6 +717,47 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (it then says to run `ipr_terrain.py`, which works out the bridges and tunnels from it); after
   changing the street networks, `--layers streets`. The layers are kept in
   `pipeline/.cache/layers/`.
+- **Staged rebuilds and resume.** For a complete rebuild, work in an isolated copy
+  with its own writable caches and output; keep the active map in place until the
+  new generation has passed validation. No other pipeline job should write to that
+  copy. From its `pipeline/` directory, run this sequence for each required area:
+
+  ```bash
+  uv run build_tiles.py praha --jobs 4 --resume --no-assemble
+  uv run ipr_buildings.py praha --jobs 4 --no-assemble
+  uv run ipr_terrain.py praha --jobs 4 --no-assemble
+  uv run layers.py praha --strict
+  ```
+
+  Repeat for `centrum` and `ujezd` when needed. `--resume` is opt-in: it skips only
+  chunk layers with matching grid, source identities, processing code, library
+  versions and output hashes. Missing, damaged or interrupted outputs are rebuilt.
+  Local OSM cuts also track their parent source and requested box; replacing the
+  country extract invalidates its area and chunk cuts. Overpass builds cannot reuse
+  completed OSM chunk layers through resume because they lack a local source identity.
+  Ordinary commands still rebuild the requested layers and assemble immediately.
+
+  `--no-assemble` defers tile JSON and index assembly; IPR binaries are still written
+  inside the isolated output. `layers.py --strict` checks chunk completion, the full
+  grid, current local dependencies, IPR/terrain completion and binary hashes before
+  writing assembled tiles. It requires both IPR stages and the new completion
+  records, so old caches must be rebuilt once. Validation does not activate or deploy
+  the result; switch the complete validated generation separately.
+
+  IPR buildings depend on OSM buildings **and ground-water polygons**; terrain
+  depends on ground, streets and IPR bridge data. Rebuild the affected IPR stage
+  after those inputs change. Copying sources to another location conservatively
+  invalidates their caches: large sources use path, size, mtime and ctime rather
+  than hashing the whole country extract on every invocation.
+- **Build measurements.** Each builder reports preparation, processing, writing,
+  assembly and complete command durations. OSM chunks also report extraction laps
+  (DTM streets, kerbs, cobble assignment, land unions and gardens), feature counts,
+  cache hits and worker peak memory. Chunk results print as they finish; IPR sheets
+  retain deterministic processing order. Worker durations overlap and must not be
+  added together as whole-build time. Peak memory is the process lifetime maximum.
+  For throughput comparisons, keep source data and settings fixed, distinguish cold
+  and warm caches, and compare complete command durations after other builds finish.
+  The earlier timings below are historical, not a measurement of the current pipeline.
 - **Terrain grid.** A tile's heights are a 63 × 63 grid whose outer rows lie on the
   tile's edges (a step of 250 / 62 ≈ 4.03 m), so neighbouring tiles share them and
   the ground meets without a step. Data built before 29 September 2026 used a flat
@@ -732,7 +775,20 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 - **Caches.** Every OSM chunk and every IPR sheet is read only once. What comes out
   is kept (`pipeline/.cache/osm/*.parsed.pkl`, `pipeline/.cache/ipr/parsed/`) and read
   again only when the source changes. Chunks and sheets are worked on side by side
-  (`--jobs`, by default two fewer than the machine has cores).
+  (`--jobs`, by default two fewer than the machine has cores, capped at eight).
+  IPR XML parsing in source coordinates is also kept in `.cache/ipr/source/`, shared
+  between the three areas; building rings are streamed to keep peak memory down.
+  Projection, triangulation, tile packing and terrain rasterization remain
+  area-specific. This adds disk usage and a cache write on the first parse, while
+  later areas reuse the parsed source. DTM streets and land share one load per
+  worker, and kerb width and survey coverage share samples for the same road lines.
+  Buildings-only extraction skips DTM and unrelated feature geometry.
+  Run the synthetic pipeline regression tests without rebuilding map data:
+
+  ```bash
+  cd pipeline
+  uv run python -B -m unittest discover -s . -p 'test_*.py'
+  ```
 - **OSM.** With `pipeline/.cache/osm/czech-republic-latest.osm.pbf` from
   [Geofabrik](https://download.geofabrik.de/europe/czech-republic.html) (about 950 MB)
   the chunks are cut locally with osmium. The centre builds in under half a minute

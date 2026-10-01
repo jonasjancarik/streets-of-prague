@@ -84,22 +84,32 @@ class Kerbs:
         self.trams = np.array(list(trams), dtype=object)
         self.roads = np.array(list(roads), dtype=object)
         self.sw_tree, self.tram_tree, self.road_tree = STRtree(self.sw), STRtree(self.trams), STRtree(self.roads)
+        self._sample_cache = None
+
+    def _sampled(self, lines):
+        """Reuse only the last identical set of immutable lines, in the same order."""
+        got = self._sample_cache
+        if got is not None and len(got[0]) == len(lines) and all(a is b for a, b in zip(got[0], lines)):
+            return got[1]
+        idx, orig, tang = _samples(lines)
+        on, inside = self._on(orig)
+        data = idx, orig, tang, on, inside
+        self._sample_cache = (tuple(lines), data)
+        return data
 
     def surveyed(self, lines):
         """The share of each street's centre line that runs on the surveyed surface."""
         if not lines:
             return np.zeros(0)
-        idx, orig, _ = _samples(lines)
-        on, _ = self._on(orig)
+        idx, _, _, on, _ = self._sampled(lines)
         return np.bincount(idx, weights=on, minlength=len(lines)) / np.maximum(np.bincount(idx, minlength=len(lines)), 1)
 
     def __call__(self, lines, ests):
         """(left, right) kerb offsets from the centre line of each street, as seen along it."""
         if not lines:
             return []
-        idx, orig, tang = _samples(lines)
+        idx, orig, tang, on, inside = self._sampled(lines)
         left = np.stack([-tang[:, 1], tang[:, 0]], axis=1)
-        on, inside = self._on(orig)
 
         halves = np.array([e["half"] for e in ests])
         out = [[None, None] for _ in lines]

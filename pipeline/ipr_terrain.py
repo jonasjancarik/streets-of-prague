@@ -34,7 +34,6 @@ import time
 import urllib.request
 import zipfile
 import zlib
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +43,7 @@ from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 
 import layers
+import build_cache
 import structures
 from osm_area import AREAS, OUT
 from ipr_buildings import CACHE, krovak_to_local, search, sheet, sheet_name
@@ -171,15 +171,16 @@ def read_sheet(job):
     Kept per area and sheet."""
     name, path, local, gx0, gy0, step = job
     cache = CACHE / "parsed" / f"{name}_{zlib.crc32(local.encode()):08x}.pkl"
-    st = Path(path).stat()
-    key = [PARSED_VERSION, st.st_mtime_ns, st.st_size, local, gx0, gy0, step]
-    if cache.exists():
-        with open(cache, "rb") as f:
-            got = pickle.load(f)
-        if got["key"] == key:
-            return name, got["grid"]
+    started = time.perf_counter()
+    key = [PARSED_VERSION, build_cache.identity(path), build_cache.code_key(), build_cache.runtime_key(), local, gx0, gy0, step]
+    got = build_cache.load_pickle(cache, key)
+    if got:
+        print(f"  {name}: area cache hit, {time.perf_counter() - started:.2f} s, worker peak {build_cache.peak_mb():.1f} MB", flush=True)
+        return name, got["grid"]
     to_local = krovak_to_local(local)
-    tris = triangles(path)
+    stats = {}
+    tris = build_cache.source_data(path, CACHE / "source" / f"{name}.triangles.pkl",
+                                   [1, build_cache.function_key(triangles), GML, key[3]], triangles, stats)
     flat = tris.reshape(-1, 3)
     lx, ly = to_local.transform(flat[:, 0], flat[:, 1])
     tris = np.column_stack([lx, ly, flat[:, 2]]).reshape(-1, 3, 3)
@@ -188,11 +189,11 @@ def read_sheet(job):
     sub = np.full((gj1 - gj0 + 1, gi1 - gi0 + 1), np.nan)
     rasterise(tris, gx0 + gi0 * step, gy0 + gj0 * step, sub.shape[1], sub.shape[0], step, sub)
     grid = (gi0, gj0, sub.astype(np.float32), float(np.nanmin(sub)), float(np.nanmax(sub)), len(tris))
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    tmp = cache.with_suffix(".tmp")
-    with open(tmp, "wb") as f:
-        pickle.dump({"key": key, "grid": grid}, f, protocol=5)
-    tmp.replace(cache)
+    if build_cache.identity(path) != key[1]:
+        raise RuntimeError(f"IPR source changed while processing {name}")
+    build_cache.atomic(cache, pickle.dumps({"key": key, "grid": grid}, protocol=5))
+    print(f"  {name}: area cache miss, source cache {stats['source_cache']}, "
+          f"{time.perf_counter() - started:.2f} s, worker peak {build_cache.peak_mb():.1f} MB", flush=True)
     return name, grid
 
 
@@ -218,10 +219,15 @@ def sampler(tiles, N, T, step, gx0, gy0):
 
 
 def main() -> None:
+    command_started = time.perf_counter()
+    timings = build_cache.Timings()
     ap = argparse.ArgumentParser(description="IPR Praha's terrain for an area's tiles")
     ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
+    ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble the complete generation separately")
     args = ap.parse_args()
+    if args.jobs < 1:
+        ap.error("jobs must be positive")
     area = args.area
     out_dir = OUT / f"{area}_now"
     meta = layers.read_meta(area)
@@ -234,6 +240,8 @@ def main() -> None:
     to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
     corners = [sheet(*to_krovak.transform(lon, lat)) for lon in (w, e) for lat in (s, n)]
     items = catalogue()
+    dependencies = layers.dependency_snapshot(area, layers.DEPENDENCIES["terrain"])
+    processing = [build_cache.code_key(), build_cache.runtime_key()]
 
     # Heights on one lattice over the area (x = -ox + i * step), kept per tile and
     # filled sheet by sheet, so memory follows the tiles that exist, not the bbox. The
@@ -261,10 +269,11 @@ def main() -> None:
                     print(f"  {name}: not in the catalogue")
                 continue
             sheets.append((name, str(path), local, gx0, gy0, step))
+    sources = build_cache.sources([job[1] for job in sheets])
+    timings.lap("prepare_downloads_layers")
     started = time.perf_counter()
     lo, hi = math.inf, -math.inf
-    run = map if args.jobs == 1 or len(sheets) == 1 else ProcessPoolExecutor(args.jobs).map
-    for name, (gi0, gj0, sub, slo, shi, count) in run(read_sheet, sheets):
+    for name, (gi0, gj0, sub, slo, shi, count) in build_cache.parallel_map(read_sheet, sheets, args.jobs):
         gi1, gj1 = gi0 + sub.shape[1] - 1, gj0 + sub.shape[0] - 1
         lo, hi = min(lo, slo), max(hi, shi)
         for (i, j), arr in tiles.items():
@@ -279,24 +288,29 @@ def main() -> None:
             view[ok] = part[ok]
         print(f"  {name}: {count} triangles", flush=True)
     print(f"  sheets read in {time.perf_counter() - started:.0f} s")
+    timings.lap("sheets_raster_merge")
     if lo == math.inf:
         print("no terrain")
         return
     fill_gaps(tiles, N, T, step)
+    timings.lap("fill_gaps")
     # Bridges and tunnels, above and below the bare ground (structures.py).
     merged = unary_union(outlines) if outlines else None
     found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0),
-                             local, tiles, N, T, step, gx0, gy0, boxes)
+                             local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources)
+    timings.lap("bridges_tunnels")
     encode = lambda a: np.clip(np.round((a - 100) * 10), 0, 65535).astype("<u2").tobytes()  # noqa: E731
     # The structures' heights to the centimetre (decimetres would step along a deck).
     fine = lambda a: np.clip(np.round((np.nan_to_num(a, nan=100.0) - 100) * 100), 0, 65535).astype("<u2").tobytes()  # noqa: E731
     per_tile = {}
+    payloads = {}
+    layers.begin_layer(area, "terrain")
     for (i, j), arr in tiles.items():
         k = f"{i}_{j}"
-        layers.write_bin(out_dir / "tiles", f"{k}.height.bin", encode(arr))
+        layers.write_bin(out_dir / "tiles", f"{k}.height.bin", encode(arr), payloads)
         # Each level's heights one after the other, in the order the tile lists them.
         if (i, j) in found:
-            layers.write_bin(out_dir / "tiles", f"{k}.levels.bin", b"".join(fine(h) for _, _, h, _ in found[(i, j)]))
+            layers.write_bin(out_dir / "tiles", f"{k}.levels.bin", b"".join(fine(h) for _, _, h, _ in found[(i, j)]), payloads)
             per_tile[k] = [{"level": lv, "kind": kind, "polys": polys} for lv, kind, _, polys in found[(i, j)]]
         else:
             layers.remove_bin(out_dir / "tiles", f"{k}.levels.bin")
@@ -304,10 +318,18 @@ def main() -> None:
         # bridges were raised into it.
         layers.remove_bin(out_dir / "tiles", f"{k}.deck.bin")
         layers.remove_bin(out_dir / "tiles", f"{k}.bare.bin")
+    if not build_cache.sources_current(sources) or processing != [build_cache.code_key(), build_cache.runtime_key()]:
+        raise RuntimeError("terrain sources or processing code changed; keep output staged and rebuild")
     layers.write_layer(area, "terrain", {"gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in tiles], "tiles": per_tile,
+                                         "dependencies": dependencies, "sources": sources, "processing": processing, "payloads": payloads,
                                          "index": {"step": step, "n": N + 1, "min": float(lo), "max": float(hi), "structures": sorted(per_tile)}})
     print(f"terrain {lo:.0f}–{hi:.0f} m for {len(tiles)} tiles")
-    layers.assemble(area)
+    timings.lap("encode_write")
+    if not args.no_assemble:
+        layers.assemble(area)
+    timings.lap("assembly")
+    timings.out["total"] = time.perf_counter() - command_started
+    build_cache.report_times(f"{area} ipr_terrain", timings.out)
 
 
 if __name__ == "__main__":
