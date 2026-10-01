@@ -1,7 +1,7 @@
-// Taxis. On foot, T brings up a choice: wave down a street taxi, or order one through
+// Taxis. On foot, T brings up a choice: wave down a free taxi that is passing (80 m or nearer), or order one through
 // one of the two ride-hailing apps (Zipp and Hopla, made up, standing in for the real
 // ones: cheaper, and their drivers are in more of a hurry). The nearest free taxi in
-// the traffic (or a new one, out of sight) drives to the kerb next to you and waits.
+// the traffic (for an app, or a new one out of sight) drives to the kerb next to you and waits.
 // Get in with E and pick where to go: it drives there through the streets on its own,
 // sped up like a tram ride, and you pay at the end. E gets you out early.
 //
@@ -40,7 +40,8 @@ const FIRMS: Firm[] = [
 ];
 
 const MINOR = new Set(['service', 'living_street', 'pedestrian', 'track']);
-const REACH = 500; // m round you a free taxi is sent from
+const REACH = 500; // m round you a free taxi is sent from, when ordered through an app
+const HAIL = 80; // m: a street taxi has to be passing this close to be waved down
 const PATIENCE = 90; // s a taxi waits for you at the kerb
 const SLOW_BEFORE = 200; // m before the end of the ride where it goes back to normal speed
 
@@ -135,12 +136,14 @@ export class Taxis {
     if (!this.o.wallet.has(firm.start)) { this.state = 'off'; this.say(t('Not enough money for a taxi (from {fare})', { fare: kc(firm.start) })); return; }
     const stop = this.stopNear(w.x, w.y, 30);
     if (!stop) { this.state = 'off'; this.say(t('No street here for a taxi to stop in')); return; }
-    let best: TrafficAgent | null = null, bestD = REACH;
+    let best: TrafficAgent | null = null, bestD = firm.app ? REACH : HAIL;
     for (const a of traffic.agents) {
       if (a.car.type !== 'taxi' || a.hired || a.kerb) continue;
       const d = Math.hypot(a.car.x - w.x, a.car.y - w.y);
       if (d < bestD) { bestD = d; best = a; }
     }
+    // A street taxi isn't called: it has to be one that happens to be passing.
+    if (!best && !firm.app) { this.state = 'off'; this.say(t('No free taxi passing by. Wait for one, or order one through an app')); return; }
     best ??= traffic.spawn((x, y) => this.o.offscreen(x, y) && Math.hypot(x - w.x, y - w.y) > 120, this.o.edgesNear(w.x, w.y, 350), 'taxi');
     if (!best) { this.state = 'off'; this.say(t('No taxi free nearby. Try again in a moment')); return; }
     this.firm = firm;
@@ -387,7 +390,7 @@ export class Taxis {
     this.shown = key;
     const n = (i: number) => (touch ? '' : `<kbd>${(i + 1) % 10}</kbd> `);
     const items = menu
-      ? FIRMS.map((f, i) => `<li><button data-pick="${i}">${n(i)}${f.app ? t('{name} app: {start} Kč + {perKm}/km, drives fast', { name: f.name, start: f.start, perKm: f.perKm }) : t('Street taxi: {start} Kč + {perKm}/km', { start: f.start, perKm: f.perKm })}</button></li>`)
+      ? FIRMS.map((f, i) => `<li><button data-pick="${i}">${n(i)}${f.app ? t('{name} app: {start} Kč + {perKm}/km, drives fast', { name: f.name, start: f.start, perKm: f.perKm }) : t('Wave down a passing taxi: {start} Kč + {perKm}/km', { start: f.start, perKm: f.perKm })}</button></li>`)
       : this.places.map((p, i) => `<li><button data-pick="${i}" class="${i === this.dest ? 'dest' : ''}">${n(i)}${t(p.name)}</button></li>`);
     const title = menu ? `${t('Get a taxi')}${touch ? '' : ` · <b>T</b> ${t('close')}`}` : t('{firm}: where to?', { firm: this.firmName() });
     el.innerHTML = `<div class="ride-line"><span class="ride-ref" style="background:#e9c62f;color:#221f1b">TAXI</span><span>${title}</span></div>

@@ -143,7 +143,7 @@ that without a new renderer.
   Taxis need money for the fare, and let you out when it reaches your balance. Shared bikes are
   paid as you ride (below).
 - **Taxis**: on foot near a street, press T (on touch, "Taxi") and pick how to get one
-  (`src/taxi.ts`): wave down a street taxi, or order one through Zipp or Hopla, two
+  (`src/taxi.ts`): wave down a free taxi that is passing by, or order one through Zipp or Hopla, two
   made-up ride-hailing apps that cost less and whose drivers speed, tailgate and push
   through gaps. The nearest free taxi in the traffic (or a new one out of sight) drives
   to the lane next to you and waits 90 seconds; the hint says roughly how long it will
