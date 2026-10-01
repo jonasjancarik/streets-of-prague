@@ -142,6 +142,8 @@ const SILENCE = 'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAIA+A
 // all of it down together.
 export const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const MASTER = IOS ? 4 : 0.8;
+const STALLED = 3; // s of a clock standing still before the sound counts as dead
+const REBUILD_GAP = 10; // s between two rebuilds at the least
 export const BUSES = ['engine', 'tyres', 'horns', 'trams', 'city', 'weather', 'radio', 'bangs'] as const;
 export type Bus = (typeof BUSES)[number];
 // Noise cancelling: the steady rumble of engine, tyres, weather and city is cut, mostly its lows; horns, sirens, radio and bangs get through.
@@ -169,6 +171,13 @@ export class Sound {
   voices: TramVoice[] = [];
   private horns: Horn | null = null;
   sirens: SirenVoice[] = [];
+  private keep: HTMLAudioElement | null = null;
+  // The watch on the context's clock: how many seconds in a row it has stood still, whether
+  // a resume was already tried for that, and how many times the sound was built again.
+  private stalled = 0;
+  private nudged = false;
+  private rebuilt = 0;
+  private rebuiltAt = 0;
 
   constructor() {
     let saved = '';
@@ -180,24 +189,71 @@ export class Sound {
     } catch {}
     try { this.anc = localStorage.getItem('anc') === 'on'; } catch {}
     // Safari on an iPad only lets the sound start when a touch ends, not when it begins (and
-    // says "running" while its clock stands still), so it is created and nudged on those,
-    // until the clock has moved.
+    // says "running" while its clock stands still), so it is created and nudged on those.
+    // The listeners stay for good: the same Safari can stop the clock later (coming back
+    // from another app, say), and only a touch may start it again.
     const touch = matchMedia('(pointer: coarse)').matches;
     const keys = (touch ? ['keydown', 'touchend', 'click'] : ['keydown', 'pointerdown', 'click']) as ('keydown' | 'touchend' | 'click' | 'pointerdown')[];
     const start = () => {
       this.start();
       const c = this.ctx;
-      if (c && this.on && (c.state !== 'running' || c.currentTime === 0)) c.resume().catch(() => {});
-      if (c && c.state === 'running' && c.currentTime > 0) for (const k of keys) removeEventListener(k, start, true);
+      if (!c || !this.on) return;
+      if (this.stalled >= STALLED) this.revive();
+      else if (c.state !== 'running' || c.currentTime === 0) c.resume().catch(() => {});
     };
     for (const k of keys) addEventListener(k, start, true);
+    let last = -1;
+    setInterval(() => {
+      const c = this.ctx;
+      if (!c || !this.on || document.hidden) { this.stalled = 0; last = -1; return; }
+      if (c.state === 'running' && c.currentTime !== last) { this.stalled = 0; this.nudged = false; }
+      else this.stalled++;
+      last = c.currentTime;
+    }, 1000);
     if (location.search.includes('audiodebug')) this.debugPanel();
-    // The game stops in a hidden tab, so the sound does too.
+    // The game stops in a hidden tab, so the sound does too. Safari may refuse the resume
+    // here, with no touch behind it; the watch above then leaves it to the next touch.
     document.addEventListener('visibilitychange', () => {
       if (!this.ctx) return;
-      if (document.hidden) this.ctx.suspend();
-      else if (this.on) this.ctx.resume();
+      if (document.hidden) this.ctx.suspend().catch(() => {});
+      else if (this.on) this.ctx.resume().catch(() => {});
     });
+  }
+
+  // The clock has stood still for a few seconds, and a touch has just ended. A context that
+  // isn't running gets one resume; one that says it runs, or that the resume didn't help,
+  // is thrown away and the sound built again on a new one.
+  private revive() {
+    const c = this.ctx!;
+    if (c.state !== 'running' && !this.nudged) {
+      this.nudged = true;
+      this.stalled = 0;
+      c.resume().catch(() => {});
+    } else if (performance.now() - this.rebuiltAt > REBUILD_GAP * 1000 || !this.rebuiltAt) this.rebuild();
+  }
+
+  private rebuild() {
+    const old = this.ctx;
+    if (!old) return;
+    this.radio?.dispose();
+    this.keep?.pause();
+    this.keep = null;
+    old.close().catch(() => {});
+    this.ctx = null;
+    this.engine = null;
+    this.tyres = null;
+    this.weather = null;
+    this.ambience = null;
+    this.radio = null;
+    this.horns = null;
+    this.sirens = [];
+    this.voices = [];
+    this.clips = {};
+    this.stalled = 0;
+    this.nudged = false;
+    this.rebuilt++;
+    this.rebuiltAt = performance.now();
+    this.start();
   }
 
   // ?audiodebug: what the sound is doing, on screen (for a device with no console at hand).
@@ -238,13 +294,18 @@ export class Sound {
     restart.style.cssText = 'position:fixed;top:140px;left:0;z-index:99999;padding:14px 18px;font:16px sans-serif';
     restart.addEventListener('click', async () => { await this.ctx?.suspend(); await this.ctx?.resume(); });
     document.body.append(restart);
+    const rebuild = document.createElement('button');
+    rebuild.textContent = 'Rebuild sound';
+    rebuild.style.cssText = 'position:fixed;top:140px;left:190px;z-index:99999;padding:14px 18px;font:16px sans-serif';
+    rebuild.addEventListener('click', () => this.rebuild());
+    document.body.append(rebuild);
     beep('Beep direct', '0px', false);
     beep('Beep mixer', '130px', true);
     let meter: AnalyserNode | null = null;
     const level = () => {
       const c = this.ctx;
       if (!c || !this.master) return '-';
-      if (!meter) { meter = c.createAnalyser(); meter.fftSize = 256; this.master.connect(meter); }
+      if (meter?.context !== c) { meter = c.createAnalyser(); meter.fftSize = 256; this.master.connect(meter); }
       const a = new Float32Array(meter.fftSize);
       meter.getFloatTimeDomainData(a);
       return Math.sqrt(a.reduce((x, v) => x + v * v, 0) / a.length).toFixed(4);
@@ -260,7 +321,7 @@ export class Sound {
       const c = this.ctx;
       box.textContent = [
         `time ${c?.currentTime.toFixed(2)} · base ${c?.baseLatency?.toFixed(3)} · rate ${c?.sampleRate} · level ${level()} · ${navigator.userAgent.match(/OS [\d_]+/)?.[0]}`,
-        `ctx ${c ? c.state : 'none'} · on ${this.on} · master ${this.master ? this.master.gain.value.toFixed(2) : '-'}`,
+        `ctx ${c ? c.state : 'none'} · on ${this.on} · master ${this.master ? this.master.gain.value.toFixed(2) : '-'} · stalled ${this.stalled}s · rebuilt ${this.rebuilt}×`,
         `engine ${!!this.engine} tyres ${!!this.tyres} weather ${!!this.weather} city ${!!this.ambience} radio ${!!this.radio} clips ${Object.keys(this.clips).length} trams ${this.voices.length}`,
         ...errors,
       ].join('\n');
@@ -308,8 +369,8 @@ export class Sound {
     const ctx = (this.ctx = new AudioContext({ latencyHint: 'interactive' }));
     // iOS silences Web Audio when the side switch says mute, but not an <audio> element
     // that is playing: a silent one looping alongside keeps the sound audible.
-    try {
-      const keep = new Audio(SILENCE);
+    if (!location.search.includes('nokeep')) try {
+      const keep = (this.keep = new Audio(SILENCE));
       keep.loop = true;
       keep.setAttribute('playsinline', '');
       keep.play().catch(() => {});
@@ -345,6 +406,7 @@ export class Sound {
       if (!r.ok) throw new Error(`${name}: ${r.status}`);
       this.clips[name] = await ctx.decodeAudioData(await r.arrayBuffer());
     })).then(() => {
+      if (this.ctx !== ctx) return;
       for (let i = 0; i < TRAM_VOICES; i++) this.voices.push(new TramVoice(this, this.buses.trams));
     }).catch((e) => console.warn('The tram sounds could not be loaded', e));
     // And the city around you, once its recordings are in.
@@ -353,6 +415,7 @@ export class Sound {
       if (!r.ok) throw new Error(`${name}: ${r.status}`);
       return [name, await ctx.decodeAudioData(await r.arrayBuffer())] as const;
     })).then((clips) => {
+      if (this.ctx !== ctx) return;
       this.ambience = new Ambience(ctx, Object.fromEntries(clips), bus.city);
     }).catch((e) => console.warn('The city sounds could not be loaded', e));
   }

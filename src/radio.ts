@@ -181,6 +181,12 @@ export class Radio {
     this.streams.delete(i);
   }
 
+  // Lets go of every station; the radio isn't used after this.
+  dispose() {
+    this.stopStatic = null; // the context it would fade on is being closed
+    for (const i of [...this.streams.keys()]) this.close(i);
+  }
+
   // Static that fills the gap until a station starts playing.
   private startStatic() {
     this.endStatic();
