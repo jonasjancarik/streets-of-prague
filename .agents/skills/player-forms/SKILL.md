@@ -23,8 +23,9 @@ described in `docs/email.md`.
 
 - `worker/index.js`: the Worker. `form()` does what both forms need before the body is
   read (own pages only, CORS for the beta, POST only, the rate limit, JSON); `subscribe`
-  and `feedback` each return `[answer, status]`. Plain JavaScript with no imports, so
-  Node can run it as it is.
+  and `feedback` each return `[answer, status]`. Plain JavaScript whose only import is `worker/stats.js` beside it
+  (the anonymous statistics at `/api/report`, `docs/telemetry.md`), so Node can run it
+  as it is; the deploy copies both files, and a new module has to be added to that copy.
 - `scripts/check-worker.mjs`: runs that handler in Node with Brevo, Turnstile and the
   email sending replaced by stand-ins. The Cloudflare deploy runs it first.
 - `src/newsletter.ts`: the signup form, and the two things the feedback form shares:

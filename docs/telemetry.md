@@ -72,7 +72,9 @@ one row to the Analytics Engine dataset `streets_telemetry`: the report's name,
 game version, session, country, domain and map data version in `blob1` to `blob6`, then
 the report's text fields from `blob7` and its numbers from `double1`, in the order `SCHEMA` lists them. Add new
 fields at the end of a list so rows already stored keep their meaning. Analytics
-Engine keeps rows for three months. `node scripts/check-worker.mjs`, which every deploy
+Engine keeps rows for three months. It has to be enabled once for the account in the
+Cloudflare dashboard (Workers, Analytics Engine) before a Worker with the binding will
+deploy; the dataset itself appears with the first report. `node scripts/check-worker.mjs`, which every deploy
 runs, checks what the endpoint takes and refuses.
 
 ## The dashboard

@@ -156,6 +156,9 @@ nothing: use it to check a change to the Worker's settings before releasing.
   an upload.
 - **The format check fails on production.** The code reads a format the uploaded map
   doesn't have: upload the map (above), don't lower the number.
+- **`cf deploy` fails with "You need to enable Analytics Engine".** A one-time switch for
+  the account, in the dashboard under Workers, Analytics Engine (done on 1 October 2026).
+  The dry run doesn't catch it; the upload does, after the release is already tagged.
 - **`cf deploy` fails on authentication.** `cf auth whoami`, then let the user log in
   again; the account id is set in the script.
 - **mbxp is unreachable.** The script tries `mbxp-remote`; if that fails too, see the
