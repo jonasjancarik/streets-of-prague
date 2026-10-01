@@ -30,7 +30,7 @@ try {
       sent = []; dead = false; throwPost = false;
       postMessage(message, transfer) {
         if (this.throwPost) { this.throwPost = false; throw new Error('post failed'); }
-        this.sent.push({ message, transfer });
+        this.sent.push({ message: transfer?.length ? structuredClone(message, { transfer }) : message, transfer });
       }
       terminate() { this.dead = true; }
       done(result, at = 0) {
@@ -52,6 +52,7 @@ try {
       endpoints[1].done('b'); // deliberately finish in reverse submission order
       assert(await b.promise === 'b' && endpoints[1].sent[1].message.type === 'ipr', 'required before optional');
       assert(endpoints[1].sent[1].transfer[0] === buffer, 'original transferable passed once');
+      assert(buffer.byteLength === 0, 'buffer transferred only on dispatch');
       endpoints[1].done('c', 1);
       assert(await c.promise === 'c' && endpoints[1].sent[2].message.type === 'sky', 'optional progresses after required');
       endpoints[0].done('a'); endpoints[1].done('old', 2);
@@ -71,6 +72,23 @@ try {
       assert(await good.promise === 'good', 'post failure releases slot');
       const noWorkers = new TileWorkers(1, () => { throw new Error('constructor failed'); });
       await noWorkers.submit('roofs', {}).promise.catch((e) => assert(e.message === 'No tile workers available', 'no worker settles queue'));
+      let made = 0, failedEndpoint;
+      const exhausted = new TileWorkers(1, () => {
+        if (made++) throw new Error('replacement failed');
+        return (failedEndpoint = new Fake());
+      });
+      const dying = exhausted.submit('roofs', {}), waiting = exhausted.submit('ground', {});
+      failedEndpoint.fail('last worker failed');
+      await dying.promise.catch((e) => assert(e.message === 'last worker failed', 'last running job settles'));
+      await waiting.promise.catch((e) => assert(e.message === 'No tile workers available', 'pending job settles when replacement fails'));
+      const held = q.submit('roofs', {}), held2 = q.submit('land', {});
+      const retained = new ArrayBuffer(4), cancelled = q.submit('ipr', { buffer: retained }, [retained]);
+      cancelled.cancel();
+      await cancelled.promise.catch((e) => assert(e.message.includes('cancelled'), 'cancelled promise settles'));
+      assert(retained.byteLength === 4, 'cancelled queued transfer stays owned by caller');
+      endpoints[0].done('held', endpoints[0].sent.length - 1);
+      endpoints[2].done('held2', endpoints[2].sent.length - 1);
+      await held.promise; await held2.promise;
     }
     if (which === 'sky' || which === 'all') {
       const endpoints = [];
