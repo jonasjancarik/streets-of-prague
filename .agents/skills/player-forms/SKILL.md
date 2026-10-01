@@ -81,8 +81,8 @@ One domain serves three mail jobs, and their DNS records live side by side in th
 - The DKIM `CNAME`s must be "DNS only" in Cloudflare (grey cloud), not proxied.
 - Keep all of these when changing any mail setting; `docs/email.md` says the same from
   the incoming side.
-- Cloudflare email sending (for feedback) adds records of its own when it is turned
-  on. *Not yet seen*: which ones.
+- Feedback needs no records of its own: the Worker sends through Email Routing, which
+  the `MX` and SPF records above already serve.
 
 ### The newsletter (Brevo)
 
@@ -124,16 +124,22 @@ release replaced it. Still open: a Czech template and the language attribute.
    `CLOUDFLARE_ACCOUNT_ID` set) shows the account's destination addresses and whether
    each is verified. The one incoming mail is forwarded to is. A new one gets a
    verification email from Cloudflare that the user has to click.
-2. **Email sending for the domain.** Turn it on in the Cloudflare dashboard (Compute →
-   Email Service → Email Sending) for `streetsofprague.com`; it adds its DNS records.
-   `cf` can't show its state (its login gets "Unauthorized" there), so look in the
-   dashboard. *Not yet seen.* Sending to a verified address of the account is free on
-   every plan; to anyone else it needs the paid Workers plan, which is why feedback
-   goes to one fixed address.
+2. **Nothing to switch on.** The dashboard's Email Sending page (Compute → Email
+   Service) says it needs the paid Workers plan; that is for sending to anyone. A
+   Worker with a `send-email` binding can email a verified address of the account on
+   the free plan as long as Email Routing is on for the sender's domain, which it is.
+   Tried on 1 October 2026 with a throwaway Worker: `env.EMAIL.send({ to, from,
+   replyTo, subject, text })` and the older `EmailMessage` way both delivered. This is
+   why feedback goes to one fixed address, and the binding is restricted to it.
 3. Put the address in `deploy/feedback` as `FEEDBACK_TO`, commit, release, and have the
    user send a message from the settings. It should arrive from
    `feedback@streetsofprague.com` with the game's state under the message, and a reply
    should go to the player's address if they gave one.
+
+To try sending without a release, deploy a small Worker of its own with the same
+binding from a scratch folder (`cf deploy --prebuilt`, `workersDev: true`, a random
+path it answers on), call it once, and have the user delete it afterwards
+(`cf workers delete <name> --force`). It emails the user, so tell them it is coming.
 
 ### Sending a newsletter
 
