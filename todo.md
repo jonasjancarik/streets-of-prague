@@ -351,6 +351,14 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Firefighter job.** Phase 4 of `plans/006-firefighters.md`: firefighting as a job,
   once the mission engine from plan 004 exists. The rest of the fire brigade (engines,
   crews, lights, sirens, giving way, stealing an engine, the water cannon) is in.
+- **Tyre sounds, switched off.** The road noise and the rumble on stones were filtered
+  noise and sounded like it, so both are at 0 (`TYRE` in `src/audio.ts`; the squeal in
+  a slide is still on). Bring them back as recordings, played louder and higher with
+  speed. Found on Freesound, not downloaded: asphalt 477825 (klankbeeld, CC BY 4.0,
+  a hybrid at 50 km/h) and 425398 (Soundholder, CC BY 3.0); setts 591078 (orlandorizo,
+  CC0, from inside) and 528562 (Garuda1982, CC0, from outside). The engine voices
+  aren't liked yet either: tune them on `sound-test.html` (dev server only), which has
+  sliders for every number of the engine and the tyres.
 - **Fire engine polish.**
   - A driven engine uses the petrol-car engine sound; give it a heavy diesel voice.
   - After a fire is out, an engine can take about 40 s to clear a narrow street.

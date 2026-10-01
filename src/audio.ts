@@ -25,11 +25,11 @@ export type Surface = 'asphalt' | 'setts' | 'pavers' | 'pavement';
 // it's driven into distortion, the filter over it (`tone`: base + per Hz of the note +
 // with the pedal down), the intake's roar (base, pedal down, pitch in notes), how loud
 // (base, pedal down, share of the redline), where it shifts up (a share of the rev
-// range: easing along, pedal down) and how far the clutch lets the revs rise pulling
-// away.
+// range: easing along, pedal down), how far the clutch lets the revs rise pulling
+// away, and how much of a blip of throttle a downshift gets (0 none, 1 a keen driver).
 export interface EngineVoice {
   harmonics: number[]; sub: number; drive: number; tone: [number, number, number];
-  roar: [number, number, number]; level: [number, number, number]; shift: [number, number]; clutch: number;
+  roar: [number, number, number]; level: [number, number, number]; shift: [number, number]; clutch: number; blip: number;
 }
 export interface EngineSpec { idle: number; redline: number; cylinders: number; gears: number[]; rough: number; voice: EngineVoice }
 // An everyday car heard from outside: a quiet, smooth hum under the tyres, a little
@@ -37,41 +37,41 @@ export interface EngineSpec { idle: number; redline: number; cylinders: number; 
 // intake: between them they make an engine lope and splutter.
 const EVERYDAY: EngineVoice = {
   harmonics: [0, 1, 0.18, 0.03], sub: 0, drive: 0.3, tone: [120, 1.2, 80],
-  roar: [0, 0, 3], level: [0.014, 0.004, 0.004], shift: [0.28, 0.42], clutch: 500,
+  roar: [0, 0, 3], level: [0.014, 0.004, 0.004], shift: [0.28, 0.6], clutch: 500, blip: 0.5,
 };
 // A tuned sports car: a buzzing note over a deep sub-octave, uneven firing, the
 // intake roaring and every gear taken nearly to the redline. Not on any car yet;
 // meant for faster ones (use with `rough` about 0.02).
 export const SPORTY: EngineVoice = {
   harmonics: [0, 1, 0.75, 0.45, 0.55, 0.25, 0.3, 0.15, 0.18, 0.08, 0.1, 0.05, 0.06], sub: 0.6, drive: 2.2,
-  tone: [250, 3, 2200], roar: [0.05, 0.35, 4], level: [0.2, 0.14, 0.06], shift: [0.92, 0.92], clutch: 2200,
+  tone: [250, 3, 2200], roar: [0.05, 0.35, 4], level: [0.2, 0.14, 0.06], shift: [0.92, 0.92], clutch: 2200, blip: 1,
 };
 // A turbo diesel: a fuller, lower note with a bit of clatter, shifting up early.
 const DIESEL: EngineVoice = {
   harmonics: [0, 1, 0.45, 0.2, 0.06], sub: 0, drive: 0.5, tone: [110, 1.4, 100],
-  roar: [0.003, 0.008, 3], level: [0.018, 0.006, 0.005], shift: [0.2, 0.34], clutch: 450,
+  roar: [0.003, 0.008, 3], level: [0.018, 0.006, 0.005], shift: [0.2, 0.5], clutch: 450, blip: 0.4,
 };
 // An electric motor: a thin whine that rises with speed, silent when standing, a single
 // gear (so no shifts) and no clutch or irregular firing.
 const ELECTRIC_VOICE: EngineVoice = {
   harmonics: [0, 1, 0, 0.25, 0, 0.08], sub: 0, drive: 0.2, tone: [300, 2, 500],
-  roar: [0, 0, 3], level: [0, 0.01, 0.022], shift: [1, 1], clutch: 0,
+  roar: [0, 0, 3], level: [0, 0.01, 0.022], shift: [1, 1], clutch: 0, blip: 0,
 };
 const ELECTRIC: EngineSpec = { idle: 600, redline: 9000, cylinders: 8, gears: [1.02], rough: 0, voice: ELECTRIC_VOICE };
 // A big V8 pickup: low and burbling, taken easy.
 const V8_VOICE: EngineVoice = {
   harmonics: [0, 1, 0.6, 0.35, 0.15, 0.06], sub: 0.35, drive: 1, tone: [140, 1.6, 300],
-  roar: [0.01, 0.06, 3], level: [0.05, 0.03, 0.015], shift: [0.3, 0.55], clutch: 1200,
+  roar: [0.01, 0.06, 3], level: [0.05, 0.03, 0.015], shift: [0.3, 0.55], clutch: 1200, blip: 0.7,
 };
-export const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.006, voice: EVERYDAY };
+export const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.25, 0.42, 0.6, 0.8, 1.02], rough: 0.006, voice: EVERYDAY };
 export const ENGINES: Record<string, EngineSpec | null> = {
   // By variant (see VARIANTS in car.ts), before the type.
   model3: ELECTRIC,
   modely: ELECTRIC,
   enyaq: ELECTRIC,
   f150: { idle: 650, redline: 5500, cylinders: 8, gears: [0.16, 0.28, 0.42, 0.58, 0.78, 1.02], rough: 0.015, voice: V8_VOICE },
-  fabia: { idle: 900, redline: 5500, cylinders: 3, gears: [0.18, 0.33, 0.5, 0.72, 1.02], rough: 0.02, voice: EVERYDAY },
-  diesel: { idle: 800, redline: 4500, cylinders: 4, gears: [0.16, 0.3, 0.46, 0.68, 1.02], rough: 0.012, voice: DIESEL },
+  fabia: { idle: 900, redline: 5500, cylinders: 3, gears: [0.25, 0.42, 0.6, 0.8, 1.02], rough: 0.02, voice: EVERYDAY },
+  diesel: { idle: 800, redline: 4500, cylinders: 4, gears: [0.24, 0.4, 0.58, 0.78, 1.02], rough: 0.012, voice: DIESEL },
   van: { idle: 750, redline: 4200, cylinders: 4, gears: [0.2, 0.38, 0.58, 0.8, 1.02], rough: 0.02, voice: EVERYDAY },
   moto: { idle: 1300, redline: 10500, cylinders: 2, gears: [0.14, 0.26, 0.4, 0.55, 0.75, 1.02], rough: 0.025, voice: EVERYDAY },
   bike: null,
@@ -83,12 +83,23 @@ const SURFACES: Record<Surface, { rumble: number; spacing: number }> = {
   pavers: { rumble: 0.45, spacing: 0.2 },
   pavement: { rumble: 0.6, spacing: 0.5 },
 };
+// The tyres' sound. `level`: how loud the road noise is at 108 km/h, and `power` how steeply
+// it grows with speed (1 evenly, 2 quiet in town and loud on a fast road). `tone`: its
+// filter in Hz, standing and per m/s. `texture`: how much it wavers, as no road is even.
+// `rumble`: how loud stones are, and `rumbleTone` their filter (Hz, per m/s, resonance).
+// Off for now (level and rumble 0; they were 0.045 and 0.16): filtered noise never sounded
+// like tyres. To come back as recordings, see todo.md. The squeal in a slide stays.
+export const TYRE = {
+  level: 0, power: 2, tone: [180, 16], texture: 0.35,
+  rumble: 0, rumbleTone: [80, 5, 1], squeal: 0.4,
+};
 const SETTS = new Set(['sett', 'cobblestone', 'unhewn_cobblestone']);
 export const surfaceOf = (tag: string | undefined | null): Surface => (SETTS.has(tag ?? '') ? 'setts' : tag === 'paving_stones' ? 'pavers' : 'asphalt');
 
 const TRAM_VOICES = 4, TRAM_RANGE = 170; // the nearest trams you can hear, as far as this (m)
 const SIREN_VOICES = 3; // the nearest sirens you can hear at once
 const JOINT = 24; // m between the rail joints
+const BLIP = 0.25; // s a downshift's blip of throttle lasts
 const SMOOTH = 0.06; // s: how quickly a sound follows what it's following
 const LOOPS = ['roll', 'motor', 'squeal'], ONCE = ['bell-1', 'bell-2', 'bell-3', 'depart-1', 'depart-2', 'arrive'];
 const MOTOR_SPEED = 12; // m/s at which the recorded whine plays at its own pitch
@@ -392,16 +403,16 @@ export class Engine {
   out: GainNode;
   osc: OscillatorNode; sub: OscillatorNode; wobble: AudioBufferSourceNode; intake: AudioBufferSourceNode;
   depth: GainNode; tone: BiquadFilterNode; roar: BiquadFilterNode; roarGain: GainNode;
-  gear = 0; shift = 0; load = 0; rpm = 0;
+  subGain: GainNode; shaper: WaveShaperNode;
+  gear = 0; shift = 0; blip = 0; load = 0; rpm = 0;
 
   constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode, car: Car, spec: EngineSpec) {
     this.ctx = ctx;
     this.car = car;
     this.spec = spec;
     const t = ctx.currentTime;
-    const voice = spec.voice, harmonics = new Float32Array(voice.harmonics);
+    const voice = spec.voice;
     this.osc = ctx.createOscillator();
-    this.osc.setPeriodicWave(ctx.createPeriodicWave(new Float32Array(harmonics.length), harmonics));
     this.sub = ctx.createOscillator();
     this.sub.type = 'triangle';
     // Slow random wobble of the pitch: no engine fires perfectly evenly.
@@ -411,9 +422,10 @@ export class Engine {
     this.wobble.connect(slow).connect(this.depth);
     this.depth.connect(this.osc.frequency);
     this.depth.connect(this.sub.frequency);
-    const subGain = gain(ctx, voice.sub);
-    const shaper = ctx.createWaveShaper();
-    shaper.curve = softClip(voice.drive);
+    this.subGain = gain(ctx, 0);
+    this.shaper = ctx.createWaveShaper();
+    this.revoice();
+    const subGain = this.subGain, shaper = this.shaper;
     this.tone = filter(ctx, 'lowpass', 400, 0.9);
     this.out = gain(ctx, 0);
     this.osc.connect(shaper);
@@ -431,28 +443,52 @@ export class Engine {
     this.update(0, 0);
   }
 
+  // Takes the voice's overtones, sub-octave and distortion again (the rest is read as it
+  // plays): for the sound test page, where they change while the engine runs.
+  revoice() {
+    const voice = this.spec.voice, harmonics = new Float32Array(voice.harmonics);
+    this.osc.setPeriodicWave(this.ctx.createPeriodicWave(new Float32Array(harmonics.length), harmonics));
+    this.subGain.gain.value = voice.sub;
+    this.shaper.curve = softClip(voice.drive);
+  }
+
   // `throttle`: -1..1 as driven, braking or reversing when it's below 0.
   update(dt: number, throttle: number) {
     const { car, spec } = this, voice = spec.voice, t = this.ctx.currentTime;
     const v = Math.abs(car.forwardSpeed), vmax = car.spec.vmax;
     const load = car.forwardSpeed < 0.5 && throttle < 0 ? -throttle : clamp(throttle, 0, 1);
+    const hard = car.forwardSpeed > 0.5 && throttle < -0.5;
     // Revs in a gear: redline at the gear's top speed. Up a gear where the voice says
     // (later with the pedal down), and down once the revs sag.
     const revs = (g: number) => spec.idle + (spec.redline - spec.idle) * clamp(v / (spec.gears[g] * vmax), 0, 1);
     // The shift point follows the pedal slowly, so tapping it doesn't flick between two gears.
-    this.load += (load - this.load) * Math.min(1, dt / 0.8);
+    this.load += (load - this.load) * Math.min(1, dt / 0.3);
     const up = spec.idle + (spec.redline - spec.idle) * (voice.shift[0] + (voice.shift[1] - voice.shift[0]) * this.load);
     if (this.gear < spec.gears.length - 1 && revs(this.gear) > up) { this.gear++; this.shift = 0.18; }
-    else if (this.gear > 0 && revs(this.gear) < spec.idle * 1.9 && revs(this.gear - 1) < up * 0.9) this.gear--;
+    // Hard on the brake, the driver stays in gear and the revs fall with the speed, then
+    // presses the clutch before the engine would stall; the gear for the speed is taken
+    // once the brake is let go. Lifting off or braking gently goes down through the gears.
+    else if (!hard && this.gear > 0 && revs(this.gear) < spec.idle * 1.9 && revs(this.gear - 1) < up * 0.9) {
+      this.gear--;
+      if (v > 2) this.blip = BLIP; // not while finding first gear at a standstill
+    }
     this.shift = Math.max(0, this.shift - dt);
+    this.blip = Math.max(0, this.blip - dt);
+    // The blip: the revs overshoot the lower gear's and the engine speaks up, fading out.
+    const kick = voice.blip * (this.blip / BLIP);
     let rpm = revs(this.gear);
+    const declutched = hard && rpm < spec.idle * 1.25;
+    if (declutched) rpm = spec.idle;
     // Pulling away, the clutch lets the revs rise ahead of the speed.
     if (this.gear === 0) rpm = Math.max(rpm, spec.idle + load * voice.clutch);
+    rpm *= 1 + 0.12 * kick;
     this.rpm = rpm;
-    const pull = this.shift > 0 ? 0.1 : load;
+    const pull = this.shift > 0 ? 0.1 : Math.max(load, kick * 0.7);
     const hz = ((rpm / 60) * spec.cylinders) / 2;
-    this.osc.frequency.setTargetAtTime(hz, t, SMOOTH);
-    this.sub.frequency.setTargetAtTime(hz / 2, t, SMOOTH);
+    // With the clutch in, the revs settle to idle rather than jump there.
+    const settle = declutched ? 0.2 : SMOOTH;
+    this.osc.frequency.setTargetAtTime(hz, t, settle);
+    this.sub.frequency.setTargetAtTime(hz / 2, t, settle);
     this.depth.gain.setTargetAtTime(hz * spec.rough, t, 0.2);
     this.tone.frequency.setTargetAtTime(voice.tone[0] + hz * voice.tone[1] + pull * voice.tone[2], t, SMOOTH);
     this.roar.frequency.setTargetAtTime(hz * voice.roar[2], t, SMOOTH);
@@ -524,20 +560,26 @@ class SirenVoice {
 // on setts, and a squeal when the car slides sideways.
 export class Tyres {
   ctx: AudioContext;
-  hiss: BiquadFilterNode; hissGain: GainNode;
+  hiss: BiquadFilterNode; soft: BiquadFilterNode; hissGain: GainNode; waver: GainNode;
   bumps: OscillatorNode; rumble: BiquadFilterNode; rumbleGain: GainNode;
   squeal: BiquadFilterNode; squealGain: GainNode;
 
   constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode) {
     this.ctx = ctx;
     const t = ctx.currentTime;
-    this.hiss = filter(ctx, 'lowpass', 300);
+    // The road noise: a dull roar (filtered twice, so no hiss is left on top) that wavers
+    // slowly, which is what tells it from plain noise.
+    this.hiss = filter(ctx, 'lowpass', 300, 0.5);
+    this.soft = filter(ctx, 'lowpass', 450, 0.5);
     this.hissGain = gain(ctx, 0);
+    const uneven = gain(ctx, 1), slow = loop(ctx, noise, 0.37);
+    this.waver = gain(ctx, 0);
+    slow.connect(filter(ctx, 'lowpass', 4)).connect(this.waver).connect(uneven.gain);
     const a = loop(ctx, noise);
-    a.connect(filter(ctx, 'highpass', 60)).connect(this.hiss).connect(this.hissGain).connect(dest);
+    a.connect(filter(ctx, 'highpass', 80)).connect(this.hiss).connect(this.soft).connect(uneven).connect(this.hissGain).connect(dest);
     // The stones: noise swelling and fading at the rate the wheels meet them (smoothly, and
     // filtered afterwards: switching it on and off crackles).
-    this.rumble = filter(ctx, 'lowpass', 200, 0.7);
+    this.rumble = filter(ctx, 'lowpass', 200, 1.5);
     const chop = gain(ctx, 0.5);
     this.bumps = ctx.createOscillator();
     this.bumps.connect(gain(ctx, 0.5)).connect(chop.gain);
@@ -548,7 +590,7 @@ export class Tyres {
     this.squealGain = gain(ctx, 0);
     const c = loop(ctx, noise, 1.3);
     c.connect(this.squeal).connect(filter(ctx, 'bandpass', 1900, 6)).connect(this.squealGain).connect(dest);
-    for (const n of [a, b, c, this.bumps]) n.start(t);
+    for (const n of [a, b, c, slow, this.bumps]) n.start(t);
   }
 
   // `wet`: how wet the road is, which makes the hiss louder and brighter.
@@ -558,12 +600,17 @@ export class Tyres {
     const light = car?.two ? 0.35 : 1; // two narrow tyres
     const s = SURFACES[surface];
     const slip = car ? Math.abs(car.vx * Math.sin(car.h) - car.vy * Math.cos(car.h)) : 0;
-    this.hiss.frequency.setTargetAtTime((250 + v * 45) * (1 + wet * 2.5), t, SMOOTH);
-    this.hissGain.gain.setTargetAtTime(light * clamp(v / 30, 0, 1) * 0.3 * (1 - 0.5 * s.rumble) * (1 + wet * 1.2), t, SMOOTH);
+    const top = (TYRE.tone[0] + v * TYRE.tone[1]) * (1 + wet * 2.5);
+    this.hiss.frequency.setTargetAtTime(top, t, SMOOTH);
+    this.soft.frequency.setTargetAtTime(top * 1.5, t, SMOOTH);
+    // The slow noise is faint once filtered: 130 brings it to about 1.
+    this.waver.gain.setTargetAtTime(TYRE.texture * 130, t, SMOOTH);
+    this.hissGain.gain.setTargetAtTime(light * clamp(v / 30, 0, 1.5) ** TYRE.power * TYRE.level * (1 - 0.5 * s.rumble) * (1 + wet * 1.2), t, SMOOTH);
     this.bumps.frequency.setTargetAtTime(clamp(v / s.spacing, 1, 400), t, SMOOTH);
-    this.rumble.frequency.setTargetAtTime(140 + v * 12, t, SMOOTH);
-    this.rumbleGain.gain.setTargetAtTime(light * s.rumble * clamp(v / 12, 0, 1) * 0.55, t, SMOOTH);
-    this.squealGain.gain.setTargetAtTime(light * clamp((slip - 2.5) / 5, 0, 1) * (1 - 0.6 * s.rumble) * 0.4, t, 0.04);
+    this.rumble.frequency.setTargetAtTime(TYRE.rumbleTone[0] + v * TYRE.rumbleTone[1], t, SMOOTH);
+    this.rumble.Q.setTargetAtTime(TYRE.rumbleTone[2], t, SMOOTH);
+    this.rumbleGain.gain.setTargetAtTime(light * s.rumble * clamp(v / 12, 0, 1) * TYRE.rumble, t, SMOOTH);
+    this.squealGain.gain.setTargetAtTime(light * clamp((slip - 2.5) / 5, 0, 1) * (1 - 0.6 * s.rumble) * TYRE.squeal, t, 0.04);
   }
 }
 
