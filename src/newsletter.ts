@@ -77,13 +77,26 @@ let box: HTMLDialogElement | null = null;
 function build() {
   const { d, title } = sheet();
   const intro = el('p', '', d);
+  onLang(() => {
+    title.textContent = t('News about the game');
+    intro.textContent = t('Leave your email address and you\'ll get a message when there is something new in the game.');
+  });
+  signupFields(d, { focus: true, done: () => { intro.hidden = true; } });
+  return d;
+}
+
+// The signup itself, added to `d`: the address, the language of the emails, Cloudflare's
+// check, what came of it and the small print. Nothing, where there is no newsletter.
+// `done` is called once an address has been taken.
+export function signupFields(d: HTMLElement, { focus = false, done: onDone = () => {} } = {}) {
+  if (!URL_) return false;
   const form = el('form', '', d) as HTMLFormElement;
   const email = el('input', '', form) as HTMLInputElement;
   email.type = 'email';
   email.name = 'email';
   email.required = true;
   email.autocomplete = 'email';
-  email.autofocus = true; // or the dialog would start on its close button
+  email.autofocus = focus; // or a dialog with only this in it would start on its close button
   const trap = trapField(form);
   const go = el('button', 'news-go', form) as HTMLButtonElement;
   go.type = 'submit';
@@ -133,14 +146,12 @@ function build() {
   // What the status line says, kept as the English text so it follows the language.
   let message = '', sending = false, done = false;
   const label = () => {
-    title.textContent = t('News about the game');
-    intro.textContent = t('Leave your email address and you\'ll get a message when there is something new in the game.');
     email.placeholder = email.ariaLabel = t('Your email address');
     go.textContent = sending ? t('Sending…') : t('Sign up');
     go.disabled = sending;
     status.textContent = message && t(message);
     status.classList.toggle('bad', !done && !!message);
-    form.hidden = intro.hidden = langRow.hidden = checkBox.hidden = done;
+    form.hidden = langRow.hidden = checkBox.hidden = done;
     langName.textContent = t('Emails in');
     for (const { b, id } of langChips) b.setAttribute('aria-pressed', String(id === lang()));
     small.textContent = t('Your address is used only for these emails and is kept by Brevo, the service that sends them. Every email has a link to unsubscribe.');
@@ -165,11 +176,11 @@ function build() {
       message = 'Signing up didn\'t work this time. Please try again later.';
     }
     if (!done) again();
+    else onDone();
     sending = false;
     label();
   });
-
-  return d;
+  return true;
 }
 
 // The link that opens the form, added to `parent` (nothing, where there is no

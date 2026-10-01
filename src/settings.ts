@@ -35,6 +35,7 @@ const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
 const WAVES = '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>';
 const CROSS = '<path d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>';
 const SLIDERS = '<path d="M3 7h10M19 7h2M3 17h4M13 17h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/><path d="M16 4.5v5M10 14.5v5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/>';
+const BUBBLE = '<path d="M4 5h16v11h-9l-4 4v-4H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter"/>';
 const EXPAND = '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>';
 const SHRINK = '<path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>';
 const icon = (paths: string) => `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">${paths}</svg>`;
@@ -184,8 +185,16 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     }
   });
 
-  feedbackLink(box, 'settings-news', { before: () => box.close(), extra: () => `Graphics: ${graphics.choice}${graphics.choice === 'auto' ? ` (${graphics.tier} now)` : ''} · ${graphics.api}` });
+  const feedback = feedbackLink(box, 'settings-news', { before: () => box.close(), extra: () => `Graphics: ${graphics.choice}${graphics.choice === 'auto' ? ` (${graphics.tier} now)` : ''} · ${graphics.api}` });
   newsletterLink(box, 'settings-news', { before: () => box.close() });
+  // While the game is in beta, feedback is also one press away, beside the corner buttons.
+  if (feedback) {
+    const ask = el('button', 'corner-btn corner-feedback', corner) as HTMLButtonElement;
+    ask.type = 'button';
+    corner.prepend(ask);
+    relabel.push(() => { ask.innerHTML = `${icon(BUBBLE)}<span>${t('Feedback')}</span>`; ask.title = ask.ariaLabel = t('Send feedback'); });
+    ask.addEventListener('click', () => { ask.blur(); feedback(); });
+  }
 
   // On a phone the credits live here (their corner has these buttons now).
   const credits = el('button', 'settings-credits', box) as HTMLButtonElement;

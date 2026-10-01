@@ -105,8 +105,10 @@ export const CS: Record<string, string> = {
   // The beta note before the first game
   'Welcome to the beta': 'Vítej v betaverzi',
   'Thanks for trying Streets of Prague this early. The game isn\'t finished yet.': 'Díky, že zkoušíš Ulice Prahy takhle brzy. Hra ještě není hotová.',
-  'It can run slowly on some computers and phones, and you\'ll come across bugs and things that are missing. We know about many of them and are working on them.': 'Na některých počítačích a telefonech může běžet pomalu a narazíš na chyby i na věci, které ještě chybí. O spoustě z nich víme a pracujeme na nich.',
-  'If something breaks, or you have an idea, we\'d love to hear it: open the settings in the corner of the screen and choose "Send feedback".': 'Když se něco rozbije nebo tě něco napadne, rádi si to přečteme: otevři nastavení v rohu obrazovky a zvol „Poslat připomínku“.',
+  'It can run slowly on some computers and phones, and you\'ll come across bugs and things that are missing. I know about many of them and I\'m working on them.': 'Na některých počítačích a telefonech může běžet pomalu a narazíš na chyby i na věci, které ještě chybí. O spoustě z nich vím a pracuju na nich.',
+  'If something breaks, or you have an idea, I\'d love to hear it: press "Feedback" in the corner of the screen at any time.': 'Když se něco rozbije nebo tě něco napadne, rád si to přečtu: kdykoli stiskni „Připomínky“ v rohu obrazovky.',
+  'Want to hear when there is something new in the game? Leave your email address.': 'Chceš vědět, když ve hře přibude něco nového? Nech mi svůj e-mail.',
+  Feedback: 'Připomínky',
   'Skip, don\'t bother me now': 'Přeskočit, teď mě neruš',
   'Start playing': 'Začít hrát',
   'News about the game': 'Novinky o hře',

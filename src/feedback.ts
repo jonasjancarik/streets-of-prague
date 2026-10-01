@@ -139,14 +139,16 @@ function build(extra: () => string) {
 // The link that opens the form, added to `parent` (nothing, where feedback isn't set
 // up). `extra` is a line about the game's state to send along.
 export function feedbackLink(parent: HTMLElement, cls: string, { before = () => {}, extra = (): string => '' } = {}) {
-  if (!URL_) return;
+  if (!URL_) return null;
   let box: HTMLDialogElement | null = null;
   const link = el('button', cls, parent) as HTMLButtonElement;
   link.type = 'button';
   onLang(() => { link.textContent = t('Send feedback'); });
-  link.addEventListener('click', () => {
+  const open = () => {
     before();
     box ??= build(extra);
     box.showModal();
-  });
+  };
+  link.addEventListener('click', open);
+  return open;
 }

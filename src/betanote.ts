@@ -1,8 +1,8 @@
 import { onLang, t } from './i18n.ts';
-import { el, newsletterLink, sheet } from './newsletter.ts';
+import { el, sheet, signupFields } from './newsletter.ts';
 
-// A word before the first game, while the game is in beta: it isn't finished, feedback
-// is welcome and where to send it, and news by email for those who want it. Shown once
+// A word from the author before the first game, while the game is in beta: it isn't finished, feedback
+// is welcome and where to send it, and the newsletter signup for those who want it. Shown once
 // (remembered in the browser), after "Start game" is pressed and before the game begins.
 
 const KEY = 'beta-note';
@@ -18,20 +18,26 @@ export function betaNote(): Promise<void> {
   d.classList.add('beta');
   const intro = el('p', '', d), rough = el('p', '', d), tell = el('p', '', d);
   tell.hidden = !feedback;
-  const actions = el('div', 'beta-actions', d);
-  let asked = false; // the signup form was opened, so the button no longer turns anything down
-  const go = el('button', 'news-go', actions) as HTMLButtonElement;
-  go.type = 'button';
-  go.autofocus = true; // or the dialog would start on its close button
+  // The newsletter signup, right here.
+  const news = el('p', 'beta-news', d);
+  let asked = false; // an address was given, so the button no longer turns anything down
+  const go = document.createElement('button');
   const label = () => {
     title.textContent = t('Welcome to the beta');
     intro.textContent = t('Thanks for trying Streets of Prague this early. The game isn\'t finished yet.');
-    rough.textContent = t('It can run slowly on some computers and phones, and you\'ll come across bugs and things that are missing. We know about many of them and are working on them.');
-    tell.textContent = t('If something breaks, or you have an idea, we\'d love to hear it: open the settings in the corner of the screen and choose "Send feedback".');
+    rough.textContent = t('It can run slowly on some computers and phones, and you\'ll come across bugs and things that are missing. I know about many of them and I\'m working on them.');
+    tell.textContent = t('If something breaks, or you have an idea, I\'d love to hear it: press "Feedback" in the corner of the screen at any time.');
+    news.textContent = t('Want to hear when there is something new in the game? Leave your email address.');
     go.textContent = asked ? t('Start playing') : t('Skip, don\'t bother me now');
   };
-  newsletterLink(actions, 'beta-news', { before: () => { asked = true; label(); } });
-  actions.appendChild(go); // after the signup link
+  // Signed up: the line about the email to open stays up for a moment, then the game begins.
+  news.hidden = !signupFields(d, { done: () => { asked = true; news.hidden = true; label(); setTimeout(() => d.close(), 5000); } });
+  const actions = el('div', 'beta-actions', d);
+  el('span', 'beta-sign', actions).textContent = 'Jonáš';
+  go.className = 'news-go';
+  go.type = 'button';
+  go.autofocus = true; // or the dialog would start on its close button
+  actions.appendChild(go);
   onLang(label);
   go.addEventListener('click', () => d.close());
   d.showModal();
