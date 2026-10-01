@@ -102,6 +102,13 @@ export const CS: Record<string, string> = {
   'Credits, licences and privacy': 'Poděkování, licence a soukromí',
   // Newsletter signup
   'Get news about the game by email': 'Novinky o hře e-mailem',
+  // The beta note before the first game
+  'Welcome to the beta': 'Vítej v betaverzi',
+  'Thanks for trying Streets of Prague this early. The game isn\'t finished yet.': 'Díky, že zkoušíš Ulice Prahy takhle brzy. Hra ještě není hotová.',
+  'It can run slowly on some computers and phones, and you\'ll come across bugs and things that are missing. We know about many of them and are working on them.': 'Na některých počítačích a telefonech může běžet pomalu a narazíš na chyby i na věci, které ještě chybí. O spoustě z nich víme a pracujeme na nich.',
+  'If something breaks, or you have an idea, we\'d love to hear it: open the settings in the corner of the screen and choose "Send feedback".': 'Když se něco rozbije nebo tě něco napadne, rádi si to přečteme: otevři nastavení v rohu obrazovky a zvol „Poslat připomínku“.',
+  'Skip, don\'t bother me now': 'Přeskočit, teď mě neruš',
+  'Start playing': 'Začít hrát',
   'News about the game': 'Novinky o hře',
   'Leave your email address and you\'ll get a message when there is something new in the game.': 'Nech tu svůj e-mail a ozveme se, až ve hře přibude něco nového.',
   'Your email address': 'Tvůj e-mail',

@@ -419,6 +419,9 @@
       .news-go { font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); background: var(--edge); border: 0; padding: 8px 16px 6px; cursor: pointer; box-shadow: 3px 3px 0 #000; white-space: nowrap; }
       .news-go:hover:not(:disabled) { background: var(--accent); }
       .news-go:disabled { opacity: 0.6; cursor: default; }
+      .beta-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin-top: 16px; }
+      .beta-news { font: inherit; color: var(--ink); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+      .beta-actions .news-go { margin-left: auto; }
       .news-status:empty { display: none; }
       .news-status { font-weight: 600; }
       .news-status.bad { color: var(--accent); }

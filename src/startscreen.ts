@@ -3,6 +3,7 @@ import type { Kind } from './weather.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import { newsletterLink } from './newsletter.ts';
+import { betaNote } from './betanote.ts';
 
 // The start of the game, on the loading screen: the time and weather it will begin
 // with (the time in Prague now and a weather picked for the season, if nothing was
@@ -144,9 +145,11 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
       ready = true;
       sync();
       go.focus();
+      // The first time, the beta note comes between the button and the game.
       return new Promise((resolve) => go.addEventListener('click', () => {
+        go.disabled = true;
         const t = TIMES.find((x) => x.id === time);
-        resolve({ time: t ? t.sec : null, weather, sound, resume: resuming });
+        void betaNote().then(() => resolve({ time: t ? t.sec : null, weather, sound, resume: resuming }));
       }, { once: true }));
     },
   };
