@@ -252,6 +252,15 @@ The ground is shaded on every pixel. Measure anything you add to `PATTERNS_GLSL`
 - **Changing the random lattice changes where patches fall** (asphalt cracks
   appear on other streets, stones change). That's acceptable if the character
   holds, but say so in the commit.
+- **No lookup tables in shader variables.** In TSL, `array([...]).toVar()` becomes a
+  WGSL variable that is filled in again for every pixel. On a Pixel 5 (Adreno) the
+  facade tables in `src/webgpu/buildings.ts` cost 20–80 ms a frame that way, more than
+  the rest of the shading together; on a Mac nothing. Use `uniformArray`. Branches a
+  pixel doesn't take and `discard` measured free there, and the roof patterns cheap.
+- **On a phone, find a shader's cost by swapping materials, not by its switches.**
+  Clone the material with another `customProgramCacheKey` and register a port for that
+  key that leaves a piece out, then `--ab` between the two on `--android`. A uniform
+  switch (`ROOF_DETAIL`, `FACADE_ON`) only skips what sits inside its branch.
 - **Measured and not worth it:** folding the shadow filter's trigonometry together
   (Metal copes already), and 4× instead of 8× anisotropy on the facade pictures.
 - Changes that would help but alter the look are decisions for the user: MSAA off

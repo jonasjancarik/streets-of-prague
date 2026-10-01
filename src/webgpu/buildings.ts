@@ -6,7 +6,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
 import {
-  Fn, If, Discard, float, int, vec2, vec3, vec4, array, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
+  Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
   materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON, BLANK } from '../facades.ts';
@@ -24,12 +24,14 @@ standIn.magFilter = THREE.LinearFilter;
 standIn.needsUpdate = true;
 const atlas = texture(standIn).onRenderUpdate(() => { atlas.value = FACADE_ATLAS.value ?? standIn; });
 
-// The layer tables of FACADE_GLSL (const int arrays).
-const ints = (v: number[]): N => array(v.map((x) => int(x))).toVar();
+// The layer tables of FACADE_GLSL, as uniform arrays. (As arrays in the shader's own
+// variables they were filled in again for every pixel of a wall, which on a phone's GPU
+// (a Pixel 5's Adreno) cost more than everything else drawn put together.)
+const ints = (v: number[]): N => { const a: N = uniformArray(v, 'float'); return { element: (i: N) => int(a.element(i)) }; };
 const F_UP = ints([48, 49, 50, 51, 52, 53, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 27, 28, 27, 36, 37, 38, 39, 40, 36]);
 const F_DOOR = ints([56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45]);
 const F_WALL = ints([54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43]);
-const floats = (v: number[]): N => array(v.map((x) => float(x))).toVar();
+const floats = (v: number[]): N => uniformArray(v, 'float');
 const F_BAY = floats([2.9, 3.1, 2.6, 2.4, 2.8]);
 const F_MOD = floats([1.9, 1.9, 2, 2.4, 1.9]);
 // Window bays across a wall: none on a party wall or one too short for a window.
