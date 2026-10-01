@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: How to put Streets of Prague online, on the mbxp beta (streets-beta.jonasjancarik.cz) and on production at Cloudflare (streets.jonasjancarik.cz), which script to run in which situation, in what order, and what to check afterwards. Use when the user asks to deploy, ship, publish, release, cut a version, update the beta or production, upload new map data, or roll back a bad deploy or a bad map.
+description: How to put Streets of Prague online, on the mbxp beta (beta.streetsofprague.com) and on production at Cloudflare (streetsofprague.com), which script to run in which situation, in what order, and what to check afterwards. Use when the user asks to deploy, ship, publish, release, cut a version, update the beta or production, upload new map data, or roll back a bad deploy or a bad map.
 ---
 
 # Deploying Streets of Prague
@@ -11,8 +11,12 @@ changing a script or when something below doesn't fit the situation.
 
 | Site | Address | Script | Map it serves |
 |---|---|---|---|
-| Beta | <https://streets-beta.jonasjancarik.cz> (mbxp) | `scripts/deploy-mbxp.sh` | the local `public/data` |
-| Production | <https://streets.jonasjancarik.cz> (Cloudflare) | `scripts/deploy-cloudflare.sh`, or `scripts/release.sh` for a release | the R2 version named in `deploy/data-version` |
+| Beta | <https://beta.streetsofprague.com> (mbxp) | `scripts/deploy-mbxp.sh` | the local `public/data` |
+| Production | <https://streetsofprague.com> (Cloudflare) | `scripts/deploy-cloudflare.sh`, or `scripts/release.sh` for a release | the R2 version named in `deploy/data-version` |
+
+The earlier `streets-beta.jonasjancarik.cz`, `streets.jonasjancarik.cz`, and
+`streets-cf.jonasjancarik.cz` addresses remain working aliases. Use the new
+domain in links and deployment reports.
 
 Deploy only what the user asked for. "Deploy to beta" doesn't include production, and a
 plain "deploy to prod" is not a release: tagging a version is the user's call, so ask
