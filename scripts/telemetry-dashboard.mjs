@@ -110,6 +110,18 @@ function sampleRows() {
       metres: seconds * drive * 9, wrecked: Math.round(rnd() * seconds / 90), knocked: Math.round(rnd() * seconds / 60), busted: rnd() < 0.3 ? 1 : 0, wasted: rnd() < 0.2 ? 1 : 0,
       money: 10000 - Math.round(rnd() * 3000), maxStars: Math.floor(rnd() * rnd() * 6), tickets: tram ? Math.round(rnd() * 2) : 0, saves: rnd() < 0.1 ? 1 : 0,
     });
+    // What they did, and what they paid for: [name, how likely, how often, how early].
+    const DID = [['drove: car', 0.9, 4, 40], ['crime: took a car from its driver', 0.7, 3, 70], ['crime: knocked someone over', 0.75, 8, 90], ['crime: wrecked a car', 0.6, 5, 120], ['honked', 0.55, 9, 60], ['jumped', 0.5, 6, 30],
+      ['wanted: 1 star', 0.7, 2, 100], ['wanted: 2 stars', 0.45, 2, 160], ['wanted: 3 stars', 0.2, 1, 260], ['arrested', 0.3, 1, 240], ['killed', 0.2, 1, 300], ['rode a tram', tram ? 1 : 0, 2, 200], ['rode without a ticket', tram ? 0.6 : 0, 1, 215],
+      ['ticket inspection', tram ? 0.15 : 0, 1, 400], ['took over a tram', tram ? 0.3 : 0, 1, 350], ['drove: bicycle', 0.3, 1, 150], ['rented a shared bike', 0.12, 1, 180], ['called a taxi', 0.12, 1, 300], ['rode in a taxi', 0.1, 1, 330],
+      ['went down into the metro', 0.2, 1, 280], ['travelled by metro', 0.15, 1, 300], ['used lane assist', 0.25, 5, 200], ['changed the radio station', 0.35, 3, 110], ['drove: fire engine', 0.05, 1, 500], ['sprayed the water cannon', 0.04, 6, 520],
+      ['took a pedal boat', 0.04, 1, 600], ['rode the funicular', 0.05, 1, 700], ['opened the settings', 0.4, 1, 20], ['saved the game by hand', 0.1, 1, 500], ['sent feedback', 0.02, 1, 600], ['signed up for news', 0.03, 1, 30]];
+    const SPENT = [['ticket', tram ? 0.4 : 0, 46], ['fine', tram ? 0.1 : 0, 1200], ['taxi', 0.1, 320], ['shared bike', 0.12, 45]];
+    for (const [name, chance, often, early] of DID) {
+      const firstAt = Math.round(early * (0.4 + rnd() * 1.6));
+      if (rnd() < chance && firstAt < seconds) put(at, 'activity', version, s, country, { kind: 'did', name, seq: 1, times: 1 + Math.floor(rnd() * often * (seconds / 600)), firstAt });
+    }
+    for (const [name, chance, amount] of SPENT) if (rnd() < chance) put(at, 'activity', version, s, country, { kind: 'spent', name, seq: 1, times: 1, firstAt: Math.round(60 + rnd() * seconds), amount: Math.round(amount * (0.7 + rnd() * 0.8)) });
     if (rnd() < 0.3) put(at, 'setting', version, s, country, pick([[{ name: 'Graphics', value: 'medium' }, 3], [{ name: 'Graphics', value: 'low' }, 3], [{ name: 'Graphics', value: 'ultra' }, 1], [{ name: 'Weather', value: 'rain' }, 3], [{ name: 'Weather', value: 'snow' }, 3], [{ name: 'Language', value: 'cs' }, 1], [{ name: 'Sound', value: 'off' }, 2], [{ name: 'Car radio', value: 'off' }, 1]]));
     if (legacy || rnd() < 0.06) put(at, 'error', version, s, country, pick([
       [{ kind: 'WebGPU could not start', message: 'WebGPU device initialization timed out', where: 'at within (/assets/index.js:1:2210)', renderer: '' }, 3],
@@ -158,6 +170,11 @@ function app(REPORTS, DAYS) {
       const g = errorGroups.get(key);
       g.n++; g.sessions.add(e.session); g.versions.add(e.version); if (e.at > g.last) g.last = e.at;
     }
+    // One row for each thing a session did (or paid for): the last report of it.
+    const latest = new Map();
+    for (const a of of('activity')) { const key = `${a.session}\n${a.kind}\n${a.name}`; if (!latest.has(key) || latest.get(key).seq <= a.seq) latest.set(key, a); }
+    const byName = (kind) => { const m = new Map(); for (const a of latest.values()) if (a.kind === kind) { if (!m.has(a.name)) m.set(a.name, []); m.get(a.name).push(a); } return [...m]; };
+    const paid = byName('spent'), allPaid = paid.reduce((sum, [, as]) => sum + as.reduce((x, a) => x + a.amount, 0), 0) || 1;
     const perHour = (name) => (play.reduce((a, p) => a + p[name], 0) / total) * 3600;
     const did = (test) => pct(play.filter(test).length / (play.length || 1));
     return {
@@ -183,6 +200,9 @@ function app(REPORTS, DAYS) {
       cards: [...cards].map(([gpu, fs]) => ({ gpu, n: fs.length, median: median(fs.map((f) => f.medianMs)), p95: median(fs.map((f) => f.p95Ms)), stutters: mean(fs.map((f) => ((f.hitches + f.stalls) / Math.max(1, f.seconds)) * 60)), tier: tally(fs.map((f) => f.tier))[0][0] })).sort((a, b) => b.median - a.median).slice(0, 12),
       errors: [...errorGroups.values()].sort((a, b) => b.sessions.size - a.sessions.size).slice(0, 20),
       settings: tally(settings.map((s) => `${s.name} → ${s.value}`)).slice(0, 12),
+      did: byName('did').map(([name, as]) => ({ name, games: as.length, share: as.length / (play.length || 1), times: mean(as.map((a) => a.times)), first: median(as.map((a) => a.firstAt)) / 60 })).sort((a, b) => b.games - a.games),
+      spent: paid.map(([name, as]) => { const total = as.reduce((x, a) => x + a.amount, 0); return { name, games: as.length, total, share: total / allPaid, typical: median(as.map((a) => a.amount)) }; }).sort((a, b) => b.total - a.total),
+      spentPerGame: paid.length ? allPaid / (play.length || 1) : NaN,
       play: [
         ['Distance travelled', `${num(mean(play.map((p) => p.metres)) / 1000, 1)} km a session`],
         ['Cars wrecked', `${num(perHour('wrecked'), 1)} an hour`], ['People knocked over', `${num(perHour('knocked'), 1)} an hour`],
@@ -255,6 +275,12 @@ function app(REPORTS, DAYS) {
   ${bars('Time spent', d.modes, { as: 'fraction', note: 'Share of all the time played.' })}
   ${bars('Settings changed', d.settings, { as: 'count', note: 'What players switched to, in the settings or with the G and P keys.' })}
   ${table('In a game', ['', ''], d.play.map(([k, v]) => [esc(k), esc(v)]))}
+  ${table('What players do', ['Activity', 'Games that did it', 'Share of games', 'Times in such a game', 'First done after'],
+    d.did.map((a) => [esc(a.name[0].toUpperCase() + a.name.slice(1)), a.games, `<span class="share"><span style="width:${(a.share * 100).toFixed(1)}%"></span></span>${pct(a.share)}`, num(a.times, 1), `${num(a.first, a.first < 10 ? 1 : 0)} min`]),
+    'Most common first. "First done after" is the middle game: half got to it sooner.')}
+  ${table('What money goes on', ['Spent on', 'Share of all money spent', 'Games that paid', 'Typical amount in such a game', 'In all'],
+    d.spent.map((a) => [esc(a.name[0].toUpperCase() + a.name.slice(1)), `<span class="share"><span style="width:${(a.share * 100).toFixed(1)}%"></span></span>${pct(a.share)}`, a.games, `${num(a.typical)} Kč`, `${num(a.total)} Kč`]),
+    Number.isFinite(d.spentPerGame) ? `${num(d.spentPerGame)} Kč a game on average, out of the 10,000 Kč a new game starts with.` : '')}
 </div>`;
   }
 
@@ -320,6 +346,8 @@ function page(reports, sample) {
   th, td { padding: 6px 12px 6px 0; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--ink-2); font-weight: 500; font-size: 12.5px; white-space: nowrap; }
   tr:last-child td { border-bottom: 0; }
+  .share { display: inline-block; width: 90px; height: 8px; margin-right: 8px; background: var(--track); border-radius: 0 4px 4px 0; vertical-align: middle; }
+  .share span { display: block; height: 100%; min-width: 2px; background: var(--bar); border-radius: 0 4px 4px 0; }
   code { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2); word-break: break-word; }
 </style></head>
 <body><main>
