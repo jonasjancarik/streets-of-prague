@@ -4,7 +4,7 @@ import type { Graphics, Choice } from './graphics.ts';
 import type { Bus } from './audio.ts';
 import { BUSES } from './audio.ts';
 import type { Kind } from './weather.ts';
-import { SLOTS, describe } from './save.ts';
+import { describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
@@ -41,9 +41,9 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   sound: { on: boolean; volumes: Record<Bus, number>; setVolume: (b: Bus, v: number) => void; toggle: () => void; radioOn: boolean; setRadio: (on: boolean) => void };
   graphics: Graphics;
   weather: { kinds: Kind[]; get: () => Kind | 'auto'; set: (k: Kind | 'auto') => void };
-  // Saved games: the numbered slots, saving into one, loading one (which restarts the
-  // page, see main.ts) and starting again from the beginning.
-  saves: { read: (slot: Slot) => SaveData | null; save: (slot: Slot) => void; load: (slot: Slot) => void; newGame: () => void };
+  // Saved games: the list, saving the game as a new one, loading one (which restarts
+  // the page, see main.ts), deleting one and starting again from the beginning.
+  saves: { list: () => { slot: Slot; data: SaveData }[]; save: () => void; load: (slot: Slot) => void; remove: (slot: Slot) => void; newGame: () => void };
 }) {
   const corner = el('div', 'corner', document.body);
   const mute = el('button', 'corner-btn', corner) as HTMLButtonElement;
@@ -102,38 +102,43 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     refresh.push(() => { slider.value = String(Math.round(sound.volumes[b] * 100)); pct.textContent = `${slider.value} %`; });
   }
 
-  // The saved games. Replacing or losing progress takes a second press within 3 s.
+  // The saved games: as many as you like. Loading one, deleting one and starting again
+  // take a second press within 3 s, so progress isn't lost by accident.
   const savesBox = el('div', 'settings-row', rows);
   const savesName = el('span', 'settings-label', savesBox);
   relabel.push(() => { savesName.textContent = t('Saved games'); });
-  const sure = (b: HTMLButtonElement, label: () => string, act: () => void, needed: () => boolean) => {
+  const sure = (b: HTMLButtonElement, label: () => string, act: () => void) => {
     let timer = 0;
     const reset = () => { clearTimeout(timer); timer = 0; b.textContent = label(); };
     b.addEventListener('click', () => {
-      if (!needed() || timer) { reset(); act(); update(); return; }
+      if (timer) { reset(); act(); update(); return; }
       b.textContent = t('Sure?');
       timer = window.setTimeout(reset, 3000);
     });
     relabel.push(reset);
+    reset();
   };
-  for (const slot of SLOTS) {
-    const line = el('div', 'settings-slot', savesBox);
-    const text = el('span', 'settings-slot-text', line);
-    const save = el('button', 'settings-chip', line) as HTMLButtonElement;
-    const load = el('button', 'settings-chip', line) as HTMLButtonElement;
-    save.type = load.type = 'button';
-    sure(save, () => t('Save'), () => saves.save(slot), () => !!saves.read(slot));
-    sure(load, () => t('Load'), () => saves.load(slot), () => true);
-    refresh.push(() => {
-      const s = saves.read(slot);
-      text.textContent = `${slot}. ${s ? describe(s) : t('Empty')}`;
-      load.disabled = !s;
-    });
-  }
-  const again = el('button', 'settings-chip', savesBox) as HTMLButtonElement;
+  const buttons = el('div', 'settings-chips', savesBox);
+  const add = el('button', 'settings-chip', buttons) as HTMLButtonElement;
+  add.type = 'button';
+  relabel.push(() => { add.textContent = t('Save game'); });
+  add.addEventListener('click', () => { saves.save(); update(); });
+  const again = el('button', 'settings-chip', buttons) as HTMLButtonElement;
   again.type = 'button';
-  again.style.marginTop = '8px';
-  sure(again, () => t('New game'), () => saves.newGame(), () => true);
+  sure(again, () => t('New game'), () => saves.newGame());
+  const list = el('div', 'settings-saves', savesBox);
+  refresh.push(() => {
+    list.textContent = '';
+    for (const { slot, data } of saves.list()) {
+      const line = el('div', 'settings-slot', list);
+      el('span', 'settings-slot-text', line, describe(data));
+      const load = el('button', 'settings-chip', line) as HTMLButtonElement;
+      const del = el('button', 'settings-chip', line) as HTMLButtonElement;
+      load.type = del.type = 'button';
+      sure(load, () => t('Load'), () => saves.load(slot));
+      sure(del, () => t('Delete'), () => saves.remove(slot));
+    }
+  });
 
   // On a phone the credits live here (their corner has these buttons now).
   const credits = el('button', 'settings-credits', box) as HTMLButtonElement;

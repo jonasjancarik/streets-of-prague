@@ -40,7 +40,7 @@ import { groundSamples } from './surface.ts';
 import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { setupSettings } from './settings.ts';
-import { readSave, writeSave, clearSave, describe } from './save.ts';
+import { readSave, writeSave, clearSave, listSaves, newSlot, describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
 import { dressLoading, Dialog } from './portraits.ts';
 import { startScreen } from './startscreen.ts';
@@ -884,10 +884,11 @@ async function main() {
   };
   const restart = () => { saving = false; location.reload(); };
   const saves = {
-    read: (slot: Slot) => readSave(slot, AREA),
-    save: (slot: Slot) => writeSave(slot, capture()),
-    // Loading restarts the page into that game (it becomes the auto slot, and the start screen offers it).
+    list: () => listSaves(AREA),
+    save: () => writeSave(newSlot(), capture()),
+    // Loading restarts the page into that game (it becomes the auto save, and the start screen offers it).
     load: (slot: Slot) => { const s = readSave(slot, AREA); if (!s) return; writeSave('auto', s); restart(); },
+    remove: (slot: Slot) => clearSave(slot),
     newGame: () => { clearSave('auto'); restart(); },
   };
   setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });

@@ -4,13 +4,14 @@ import type { Kind } from './weather.ts';
 
 // Saved games, in the browser's localStorage. The game saves itself by itself into the
 // "auto" slot (every few seconds and when the page is left), so a refresh puts you
-// back where you were; the three numbered slots are saved by hand from the settings.
+// back where you were; any number of others are saved by hand from the settings.
 // A save holds you and what you own: where you are, the car you're driving, money,
 // ticket, health, police heat, the time and the weather. The rest of the city (the
 // traffic, the people, a ride in progress) starts fresh, as it does at a teleport.
 
-export type Slot = 'auto' | '1' | '2' | '3';
-export const SLOTS: Slot[] = ['1', '2', '3'];
+// A save is 'auto' or a hand-made one named by when it was made (its Date.now()).
+export type Slot = string;
+const HAND = 'save:hand:';
 
 export interface SaveData {
   v: 1;
@@ -43,6 +44,23 @@ export function readSave(slot: Slot, area: string): SaveData | null {
 export function writeSave(slot: Slot, data: SaveData) {
   try { localStorage.setItem(key(slot), JSON.stringify(data)); } catch { /* full or blocked: the game goes on unsaved */ }
 }
+
+// The hand-made saves of this area, newest first.
+export function listSaves(area: string): { slot: Slot; data: SaveData }[] {
+  const out: { slot: Slot; data: SaveData }[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k?.startsWith(HAND)) continue;
+      const slot = k.slice('save:'.length), data = readSave(slot, area);
+      if (data) out.push({ slot, data });
+    }
+  } catch { /* storage blocked */ }
+  return out.sort((a, b) => b.data.at - a.data.at);
+}
+
+// A new name for a hand-made save.
+export const newSlot = (): Slot => `hand:${Date.now()}`;
 
 export function clearSave(slot: Slot) {
   try { localStorage.removeItem(key(slot)); } catch { /* nothing to remove */ }
