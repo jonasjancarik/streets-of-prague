@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engine and tyre sounds</title>
+<style>
+  :root { --bg: #14161a; --card: #1e2127; --line: #30353e; --text: #e9ebee; --dim: #8f96a1; --accent: #f0a53a; --accent2: #4c9be8; }
+  * { box-sizing: border-box; }
+  body { font: 14px/1.4 system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+  .page { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 24px; max-width: 1280px; margin: 0 auto; padding: 24px; align-items: start; }
+  aside { position: sticky; top: 24px; display: grid; gap: 16px; }
+  main { columns: 380px; column-gap: 16px; }
+  main .card { break-inside: avoid; margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin: 8px 0 10px; column-span: all; font-weight: 600; }
+  h3 { font-size: 15px; margin: 0; }
+  p { margin: 4px 0 0; color: var(--dim); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  button, select, input[type=text] { font: inherit; color: inherit; background: #2a2e36; border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; }
+  button { cursor: pointer; }
+  button:hover { border-color: #56606e; }
+  button.link { background: none; border: 0; padding: 0; color: var(--dim); font-size: 12px; text-decoration: underline; }
+  button.link:hover { color: var(--text); }
+  .cars { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; }
+  .cars button { text-align: left; }
+  .cars button.on { background: var(--accent); border-color: var(--accent); color: #1a1205; font-weight: 600; }
+  .dash { text-align: center; }
+  .speed { font-size: 56px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .speed small { font-size: 15px; font-weight: 400; color: var(--dim); margin-left: 4px; }
+  .sub { color: var(--dim); font-variant-numeric: tabular-nums; margin-top: 6px; }
+  .revs { height: 8px; border-radius: 4px; background: #2a2e36; margin-top: 12px; overflow: hidden; }
+  .revs i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #4cc38a, var(--accent) 70%, #e5534b); border-radius: 4px; }
+  .gears { display: flex; justify-content: center; gap: 6px; margin-top: 12px; min-height: 30px; }
+  .gears b { width: 30px; height: 30px; line-height: 28px; border-radius: 8px; border: 1px solid var(--line); color: var(--dim); font-variant-numeric: tabular-nums; }
+  .gears b.on { background: var(--accent); border-color: var(--accent); color: #1a1205; }
+  .pedals { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-top: 14px; }
+  .pedals button { padding: 18px 8px; font-size: 15px; font-weight: 600; user-select: none; touch-action: none; }
+  .pedals button small { display: block; font-weight: 400; color: var(--dim); font-size: 12px; }
+  #gas.on { background: #2f8f5f; border-color: #4cc38a; }
+  #brake.on { background: #a83a34; border-color: #e5534b; }
+  #gas.on small, #brake.on small { color: inherit; }
+  #stop { width: 100%; margin-top: 8px; }
+  .param { display: grid; grid-template-columns: minmax(0, 1fr) 150px 58px 18px; gap: 10px; align-items: center; padding: 5px 0; }
+  .param + .param { border-top: 1px solid #262a31; }
+  .param label small { display: block; color: var(--dim); font-size: 12px; }
+  .param output { text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
+  .param.changed output { color: var(--accent); font-weight: 600; }
+  .param .undo { visibility: hidden; background: none; border: 0; padding: 0; color: var(--dim); font-size: 15px; }
+  .param.changed .undo { visibility: visible; }
+  input[type=range] { width: 100%; accent-color: var(--accent2); margin: 0; }
+  .param.changed input[type=range] { accent-color: var(--accent); }
+  aside .param { grid-template-columns: 96px minmax(0, 1fr) 62px; }
+  aside .param + .param { border: 0; }
+  select, input[type=text] { width: 100%; }
+  textarea { width: 100%; height: 120px; margin-top: 10px; font: 11px/1.4 ui-monospace, monospace; color: var(--dim); background: #171a1f; border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: vertical; }
+  @media (max-width: 860px) { .page { grid-template-columns: 1fr; padding: 16px; } aside { position: static; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <aside>
+    <div class="card">
+      <h1>Engine and tyre sounds</h1>
+      <p>Pick a car and hold the accelerator. You hear exactly what the game plays.</p>
+      <div class="cars" id="cars"></div>
+    </div>
+    <div class="card dash">
+      <div class="speed"><span id="kmh">0</span><small>km/h</small></div>
+      <div class="sub" id="dash">Pick a car to start the sound</div>
+      <div class="revs"><i id="revs"></i></div>
+      <div class="gears" id="gears"></div>
+      <div class="pedals">
+        <button id="gas">Accelerate<small>W or ↑</small></button>
+        <button id="brake">Brake<small>S or ↓</small></button>
+      </div>
+      <button id="stop">Turn the sound off</button>
+    </div>
+    <div class="card">
+      <div class="param"><label for="speed">Hold a speed</label><input id="speed" type="range" min="0" max="1" step="0.001" value="0"><output id="speedOut"></output></div>
+      <div class="param"><label for="pedal">Pedal pressure<small>both pedals</small></label><input id="pedal" type="range" min="0.1" max="1" step="0.05" value="1"><output id="pedalOut"></output></div>
+      <div class="param"><label for="vol">Engine volume</label><input id="vol" type="range" min="0" max="2" step="0.05" value="1"><output id="volOut"></output></div>
+      <div class="param"><label for="tyreVol">Tyre volume</label><input id="tyreVol" type="range" min="0" max="2" step="0.05" value="1"><output id="tyreVolOut"></output></div>
+      <div class="param"><label for="tyres">Road</label>
+        <select id="tyres"><option value="asphalt">Asphalt</option><option value="setts">Setts</option><option value="pavers">Paving stones</option></select><span></span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="head"><h3>Your settings</h3><button id="copy">Copy</button></div>
+      <p>Changed values are shown in orange. Copy them and paste them into the chat to have them put in the game.</p>
+      <textarea id="out" readonly></textarea>
+    </div>
+  </aside>
+  <main>
+    <h2>Engine</h2>
+    <div id="engine" style="display: contents"></div>
+    <h2>Tyres</h2>
+    <div id="tyre" style="display: contents"></div>
+  </main>
+</div>
+<script type="module" src="/src/soundtest.ts"></script>
+</body>
+</html>
