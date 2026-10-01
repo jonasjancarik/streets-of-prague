@@ -11,6 +11,13 @@ import type { DriveEdge } from './network.ts';
 
 export interface BusLine { ref: string; to: string; path: Polyline; stops: [number, string][] }
 
+// The lines through the centre that run small buses.
+const MINIBUS = new Set(['194', '207']);
+export const busType = (ref: string) => MINIBUS.has(ref) ? 'minibus' : 'bus';
+
+// Buses of the same line and direction keep at least this far (m along it) apart.
+const GAP = 400;
+
 // Off the line by more than this (m) and the street isn't the line's.
 const OFF = 12;
 
@@ -90,7 +97,7 @@ export class BusRun {
 
 // Where on the street network a bus can join a line: a random spot of a line among
 // `edges` (the streets round the player), on a lane that runs the line's way.
-export function busStart(lines: BusLine[], edges: DriveEdge[], rand: () => number, ok: (x: number, y: number) => boolean) {
+export function busStart(lines: BusLine[], edges: DriveEdge[], rand: () => number, ok: (x: number, y: number) => boolean, running: BusRun[] = []) {
   // The lanes a bus can start on, each with its box, and the box round them all.
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const lanes: [DriveEdge, number, number, number, number][] = [];
@@ -102,20 +109,31 @@ export function busStart(lines: BusLine[], edges: DriveEdge[], rand: () => numbe
     x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d);
   }
   // The stretches of line in that box.
-  const spans: [BusLine, number, number][] = [];
-  let total = 0;
+  // Each line is as likely as the next however much of the box it covers, and a
+  // direction that already has a bus nearby is passed over.
+  const perLine = new Map<BusLine, [BusLine, number, number][]>();
   for (const line of lines) {
     const { pts, cum } = line.path;
     for (let i = 1; i < pts.length; i++) {
       const [x, y] = pts[i];
-      if (x > x0 && x < x1 && y > y0 && y < y1) { spans.push([line, cum[i - 1], cum[i]]); total += cum[i] - cum[i - 1]; }
+      if (x > x0 && x < x1 && y > y0 && y < y1) {
+        const list = perLine.get(line) ?? [];
+        list.push([line, cum[i - 1], cum[i]]);
+        perLine.set(line, list);
+      }
     }
   }
-  if (!spans.length) return null;
+  const free = [...perLine.keys()];
+  if (!free.length) return null;
   for (let tries = 0; tries < 12; tries++) {
-    let pick = rand() * total, span = spans[0];
-    for (const sp of spans) if ((pick -= sp[2] - sp[1]) < 0) { span = sp; break; }
-    const line = span[0], along = span[1] + rand() * (span[2] - span[1]);
+    const line = free[Math.floor(rand() * free.length)];
+    const list = perLine.get(line)!;
+    let total = 0;
+    for (const sp of list) total += sp[2] - sp[1];
+    let pick = rand() * total, span = list[0];
+    for (const sp of list) if ((pick -= sp[2] - sp[1]) < 0) { span = sp; break; }
+    const along = span[1] + rand() * (span[2] - span[1]);
+    if (running.some((r) => r.line.ref === line.ref && r.line.to === line.to && Math.abs(r.along - along) < GAP)) continue;
     const p = line.path.at(along);
     if (!ok(p.x, p.y)) continue;
     let best: { edge: DriveEdge; s: number } | null = null, bestD = 8;

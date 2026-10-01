@@ -1,4 +1,4 @@
-import { BusRun, busStart } from './buses.ts';
+import { BusRun, busStart, busType } from './buses.ts';
 import type { BusLine } from './buses.ts';
 import { COURIER_BOXES, Car, randomType } from './car.ts';
 import { courierLook, randomLook } from './figures.ts';
@@ -126,7 +126,7 @@ export class Traffic {
     for (let tries = 0; tries < 40; tries++) {
       const edge = pickTraffic(sampler, r)!;
       if (edge.path.length < 12) continue;
-      const bus = type === 'bus';
+      const bus = type === 'bus' || type === 'minibus';
       // Now and then a lorry, where lorries may go.
       let kind = type || randomType(r, 'traffic');
       if (ordinary && lorryRoad(edge) && r() < (edge.hw.startsWith('motorway') ? 0.15 : 0.05)) kind = r() < 0.6 ? 'artic' : 'truck';
@@ -153,14 +153,14 @@ export class Traffic {
   // among `edges`, where `avoid` allows.
   buses(avoid: (x: number, y: number) => boolean, edges: DriveEdge[], want: number) {
     let n = 0;
-    for (const a of this.agents) if (a.car.type === 'bus') n++;
+    for (const a of this.agents) if (a.car.type === 'bus' || a.car.type === 'minibus') n++;
     if (n >= want) return;
     if (this.busLines.length) {
-      const start = busStart(this.busLines, edges, this.r, (x, y) => avoid(x, y) && !this.agents.some((a) => Math.hypot(a.car.x - x, a.car.y - y) < 20));
+      const start = busStart(this.busLines, edges, this.r, (x, y) => avoid(x, y) && !this.agents.some((a) => Math.hypot(a.car.x - x, a.car.y - y) < 20), this.agents.flatMap((a) => a.bus ?? []));
       if (!start) return;
       const { edge, s, run } = start;
       const p = edge.path.at(s);
-      const car = new Car('bus', this.r, p.x, p.y, p.ang);
+      const car = new Car(busType(run.line.ref), this.r, p.x, p.y, p.ang);
       car.mode = 'traffic';
       car.hint = 'ground';
       car.line = { ref: run.line.ref, to: run.line.to };
@@ -350,7 +350,7 @@ export class Traffic {
       const acc = target > a.speed ? (c.spec.heavy ? 1.2 : 3) : 9;
       a.speed += clamp(target - a.speed, -acc * dt, acc * dt);
       const p = a.route.advance(a.speed * dt);
-      if (a.route.ended || (c.spec.heavy && c.type !== 'bus' && !lorryRoad(a.route.head))) { a.gone = true; continue; }
+      if (a.route.ended || (c.spec.heavy && c.type !== 'bus' && c.type !== 'minibus' && !lorryRoad(a.route.head))) { a.gone = true; continue; }
       const prevX = c.x, prevY = c.y;
       c.x = p.x;
       c.y = p.y;

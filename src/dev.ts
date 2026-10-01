@@ -40,9 +40,9 @@ export const googleMaps = (lat: number, lon: number) => `https://www.google.com/
 export const streetView = (lat: number, lon: number, heading: number) => `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}&heading=${Math.round(heading)}`;
 export const mapyCz = (lat: number, lon: number) => `https://mapy.com/zakladni?x=${lon.toFixed(6)}&y=${lat.toFixed(6)}&z=19&source=coor&id=${lon.toFixed(6)}%2C${lat.toFixed(6)}`;
 
-export function setupDev({ area, index, teleport, position, helicopter, setFire, timeOfDay, setTimeOfDay, graphics, weather }: {
+export function setupDev({ area, index, teleport, position, helicopter, setFire, backOnRoad, timeOfDay, setTimeOfDay, graphics, weather }: {
   area: string; index: MapIndex; teleport: (x: number, y: number) => Promise<void>;
-  position: () => Point2; helicopter: () => boolean; setFire: () => boolean;
+  position: () => Point2; helicopter: () => boolean; setFire: () => boolean; backOnRoad: () => void;
   // Seconds since midnight on the game's clock.
   timeOfDay: () => number; setTimeOfDay: (sec: number) => void;
   graphics: Graphics;
@@ -91,6 +91,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     </div>
     <div class="dev-row">
       <button id="dev-heli" title="Walk up to it and press E to fly it">Helicopter next to me</button>
+      <button id="dev-road" title="Puts the car you are driving back on the nearest road">Back on the road</button>
       <button id="dev-fire" title="The fire brigade comes from out of view">Set the nearest car on fire</button>
     </div>
     <label class="dev-time">Time of day <span id="dev-time-label"></span>
@@ -222,6 +223,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     $('dev-fire').textContent = ok ? 'On fire, engine called' : 'No car nearby';
     setTimeout(() => { $('dev-fire').textContent = 'Set the nearest car on fire'; }, 1800);
   };
+  $('dev-road').onclick = backOnRoad;
   $('dev-heli').onclick = () => {
     const ok = helicopter();
     $('dev-heli').textContent = ok ? 'Helicopter parked nearby' : 'No open space for it here';
@@ -328,7 +330,7 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
     </div>
     <div class="dev-row">
       <button id="dev-car" title="A car on clear ground ahead of you, with you in it">Into a new car</button>
-      <select id="dev-car-kind">${['hatch', 'sedan', 'suv', 'van', 'taxi', 'police', 'pickup', 'truck', 'bus', 'moto', 'bike'].map((k) => `<option>${k}</option>`).join('')}</select>
+      <select id="dev-car-kind">${['hatch', 'sedan', 'suv', 'van', 'taxi', 'police', 'pickup', 'truck', 'bus', 'minibus', 'moto', 'bike'].map((k) => `<option>${k}</option>`).join('')}</select>
     </div>
     <label class="dev-time">Test places
       <select id="dev-place"><option value="">Go to…</option>${Object.entries(kit.PLACES).map(([k, p]) => `<option value="${k}">${p.note}</option>`).join('')}</select>
