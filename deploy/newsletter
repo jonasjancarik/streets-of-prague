@@ -1,0 +1,7 @@
+# The newsletter list at Brevo that the game's signup form adds people to (see the
+# README, "Newsletter"). While BREVO_LIST_ID is empty the game shows no signup form.
+# The API key is not here: it is a secret on the Worker.
+BREVO_LIST_ID=
+# The confirmation email ("double opt-in" template), and its Czech version if there is one.
+BREVO_DOI_TEMPLATE_ID=
+BREVO_DOI_TEMPLATE_ID_CS=

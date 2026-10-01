@@ -33,6 +33,10 @@ else
 fi
 echo "Map data: $ID"
 
+# The beta has no Worker of its own: its signup form posts to production's (worker/index.js
+# lets the beta's address in). No form until the newsletter is set up (deploy/newsletter).
+source deploy/newsletter
+if [[ -n ${BREVO_LIST_ID:-} ]]; then export VITE_SUBSCRIBE_URL=https://streetsofprague.com/api/subscribe; fi
 VITE_DATA_URL=data/$ID/ node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
 
 # site/data/<id> is the mountpoint for the map (it can't be created inside a read-only mount).

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Publish the app as a static-assets Worker. Map data is uploaded to R2 separately.
+# Publish the app as a Worker: the game's files as static assets, and worker/index.js
+# for the newsletter signup (/api/*). Map data is uploaded to R2 separately.
 # Production only runs released versions: the commit must be a release tag, which is
 # what scripts/release.sh makes before it calls this, and what a rollback checks out.
 # --untagged deploys any commit all the same, for an emergency.
@@ -21,6 +22,10 @@ DATA_URL=https://streets-data.jonasjancarik.cz/$VERSION/
 # The map must be there and in the format this code reads.
 node scripts/check-data-format.mjs "$DATA_URL"
 npm run typecheck
+node scripts/check-subscribe.mjs
+# The newsletter (deploy/newsletter): the game shows its signup form once a list is named.
+set -a; source deploy/newsletter; set +a
+if [[ -n ${BREVO_LIST_ID:-} ]]; then export VITE_SUBSCRIBE_URL=/api/subscribe; fi
 VITE_DATA_URL=$DATA_URL VITE_DATA_VERSION=$VERSION node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false, build: { outDir: 'dist-cf' } })"
 (cd public && git ls-files -z) | rsync -a --from0 --files-from=- public/ dist-cf/
 cat > dist-cf/_headers <<'HEADERS'
@@ -35,9 +40,26 @@ mkdir -p "$OUTPUT/workers/default/assets"
 cat > "$OUTPUT/config.json" <<'CONFIG'
 {"accountId":"7756b12931ecfb3900a31049e157d706","buildContext":{"isPreview":false}}
 CONFIG
-cat > "$OUTPUT/workers/default/worker.config.json" <<'CONFIG'
-{"name":"streets-of-prague","compatibilityDate":"2026-10-01","workersDev":true,"domains":["streetsofprague.com","streets.jonasjancarik.cz","streets-cf.jonasjancarik.cz"],"assets":{}}
-CONFIG
+mkdir -p "$OUTPUT/workers/default/bundle"
+cp worker/index.js "$OUTPUT/workers/default/bundle/index.js"
+# Only /api/* runs the Worker; every other request is answered from the assets directly.
+# BREVO_API_KEY is a secret set on the Worker once (README, "Newsletter"), not here.
+node -e '
+const e = process.env, text = (value) => ({ type: "text", value: value ?? "" });
+console.log(JSON.stringify({
+  name: "streets-of-prague", compatibilityDate: "2026-10-01", workersDev: true,
+  domains: ["streetsofprague.com", "streets.jonasjancarik.cz", "streets-cf.jonasjancarik.cz"],
+  assets: { runWorkerFirst: ["/api/*"] },
+  manifest: { type: "partial", mainModule: "index.js", modules: {} },
+  env: {
+    ASSETS: { type: "assets" },
+    BREVO_API_KEY: { type: "secret" },
+    BREVO_LIST_ID: text(e.BREVO_LIST_ID),
+    BREVO_DOI_TEMPLATE_ID: text(e.BREVO_DOI_TEMPLATE_ID),
+    BREVO_DOI_TEMPLATE_ID_CS: text(e.BREVO_DOI_TEMPLATE_ID_CS),
+    RATE: { type: "rate-limit", namespace: "1001", simple: { limit: 5, period: 60 } },
+  },
+}))' > "$OUTPUT/workers/default/worker.config.json"
 rsync -a dist-cf/ "$OUTPUT/workers/default/assets/"
 printf 'Cloudflare app data: %s\n' "$DATA_URL"
 export CLOUDFLARE_ACCOUNT_ID=7756b12931ecfb3900a31049e157d706
