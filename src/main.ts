@@ -72,6 +72,7 @@ const VEHICLE_NAMES: Record<string, string> = {
   van: 'Van', taxi: 'Taxi', police: 'Police car', bike: 'Bicycle', moto: 'Motorbike',
   truck: 'Lorry', artic: 'Articulated lorry', bus: 'Bus', minibus: 'Minibus', fire: 'Fire engine',
 };
+import { haptic, hapticCrash, hapticBlast } from './haptics.ts';
 import { setupTestkit, PLACES } from './testkit.ts';
 import * as telemetry from './telemetry.ts';
 import type { Testkit } from './testkit.ts';
@@ -598,6 +599,7 @@ async function main() {
       hornHeld = on;
       hornT = 0;
       sound.horn(on, hornKind(inCar));
+      if (on) haptic('tick');
       return;
     }
     hornHeld = false;
@@ -1017,6 +1019,7 @@ async function main() {
       };
       const d = Math.hypot(x - px(), y - py());
       sound.boom(d, x - px());
+      hapticBlast(d);
       shake = Math.min(1.6, shake + (1.4 * 30) / (30 + d));
       if (c === inCar) hurt(MAX_HEALTH);
       else if (inCar) hurt(25 * Math.max(0, near(inCar)));
@@ -1179,7 +1182,7 @@ async function main() {
       // Keeping to the lane, you keep to the speed limit too.
       const cap = assisted ? (assist.limit ?? 50) / 3.6 : null;
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
-      if (hit > 6) shake = Math.min(1.2, shake + hit * 0.04);
+      if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
     } else if (!inHeli && !ride.on && !boats.me && !funicular.me && !taxi.riding) walker.update(dt, ctl);
     // In the helicopter Space climbs and Shift comes down.
@@ -1243,7 +1246,7 @@ async function main() {
       ride.drives(dt, ctl);
       const hit = ride.drive!.hit;
       ride.drive!.hit = 0;
-      if (hit > 0) shake = Math.min(1.2, shake + hit * 0.06);
+      if (hit > 0) { shake = Math.min(1.2, shake + hit * 0.06); hapticCrash(hit); }
     }
     trams.update(dt, { near: obstacles, x: px(), y: py(), r: LIFE_RADIUS + 100, seen: (x, y) => !offscreen(x, y) });
     if (ride.on) ride.seat(walker);
@@ -1294,7 +1297,7 @@ async function main() {
         if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
         if (hit > 8 && a === inCar) fires.blame(b);
         else if (hit > 8 && b === inCar) fires.blame(a);
-        if (hit > 6 && (a === inCar || b === inCar)) shake = Math.min(1.2, shake + hit * 0.04);
+        if (hit > 6 && (a === inCar || b === inCar)) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
         // Driving into a police car (not them into you).
         if (a === inCar && b.mode === 'police' && hit > 2) {
           const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
@@ -1327,7 +1330,7 @@ async function main() {
           const lat = a.vx * rx + a.vy * ry;
           if (lat < SHOVE) { a.vx += rx * (SHOVE - lat); a.vy += ry * (SHOVE - lat); }
         }
-        if (hit > 6 && a === inCar) shake = Math.min(1.2, shake + hit * 0.04);
+        if (hit > 6 && a === inCar) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
         if (a === inCar) jolt = Math.max(jolt, hit);
       }
     }
@@ -1337,7 +1340,7 @@ async function main() {
       for (const a of carsNear(f.x, f.y, f.line.spec.len / 2 + 5, nearA)) {
         if (apart(a, f)) continue;
         const hit = collideBodies(f, f.circles, r, 0, a, a.circles(), a.r, 1 / a.mass);
-        if (hit > 6 && a === inCar) shake = Math.min(1.2, shake + hit * 0.04);
+        if (hit > 6 && a === inCar) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
         if (a === inCar) jolt = Math.max(jolt, hit);
       }
     }
