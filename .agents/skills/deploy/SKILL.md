@@ -124,7 +124,8 @@ checked.
 
 Production's Worker (`worker/index.js`) answers `/api/subscribe` and `/api/feedback`,
 for the beta too. Its settings are in `deploy/newsletter`, `deploy/feedback` and one
-secret; the README's "Newsletter and feedback" has the steps. After a release that
+two secrets; the player-forms skill has the setup steps and what to do when a form
+doesn't work. After a release that
 changed any of it, check that
 `curl -s -X POST https://streetsofprague.com/api/subscribe -H 'Origin: https://streetsofprague.com' -H 'Content-Type: application/json' -d '{"email":"nobody"}'`
 answers `{"error":"email"}` (the Worker is there and set up) and not `unavailable` (the

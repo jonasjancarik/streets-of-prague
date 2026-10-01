@@ -11,8 +11,8 @@
 // author. Nothing is stored here, and the game only ever talks to these two addresses,
 // so either can move to another service without the game changing.
 //
-// Settings (deploy/newsletter, deploy/feedback and a secret; see the README's
-// "Newsletter and feedback"):
+// Settings (deploy/newsletter, deploy/feedback and two secrets; see the player-forms
+// skill, .agents/skills/player-forms/SKILL.md):
 //   BREVO_API_KEY               secret
 //   BREVO_LIST_ID               the list new contacts join
 //   BREVO_DOI_TEMPLATE_ID       the confirmation email

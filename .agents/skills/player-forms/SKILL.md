@@ -1,16 +1,16 @@
 ---
 name: player-forms
-description: How the newsletter signup and the feedback form in Streets of Prague work end to end (the forms in the game, the Worker's /api/subscribe and /api/feedback, Brevo, Turnstile, Cloudflare email sending), and how to change, test, set up and debug them. Use when working on src/newsletter.ts, src/feedback.ts or worker/index.js, when adding another form or /api endpoint, when a signup or a feedback message doesn't arrive, when setting up or rotating the Brevo, Turnstile or email settings, or when changing what a feedback message carries.
+description: How the newsletter and the feedback form in Streets of Prague work end to end (the forms in the game, the Worker's /api/subscribe and /api/feedback, Brevo, Turnstile, Cloudflare email sending and the domain's mail DNS records), how to set each part up from nothing, and how to change, test and debug them. Use when working on src/newsletter.ts, src/feedback.ts or worker/index.js, when adding another form or /api endpoint, when a signup or a feedback message doesn't arrive, when setting up or rotating the Brevo, Turnstile or email settings, when touching the domain's SPF, DKIM or DMARC records, when sending a newsletter, or when changing what a feedback message carries.
 ---
 
 # The newsletter signup and the feedback form
 
 Two small forms in the game post to two addresses on production's Worker, and the
 Worker passes each on to a service. The game knows only the two addresses; the Worker
-stores nothing. What the forms are for and the one-time setup steps are in the README
-("Newsletter and feedback"); incoming mail for the domain is a separate Worker,
-described in `docs/email.md`. This file is how to work on the forms without sending
-real email to anyone.
+stores nothing. This file is how to set the parts up, and how to work on the forms
+without sending real email to anyone. Incoming mail for the domain (`news@` and
+`jonas@streetsofprague.com`, archived and forwarded to Gmail) is a separate Worker,
+described in `docs/email.md`.
 
 | | Signup | Feedback |
 |---|---|---|
@@ -56,6 +56,88 @@ purpose: a half-set-up form must never reach players.
 The beta (mbxp) has no Worker. Its forms post to `https://streetsofprague.com/api/…`,
 and the Worker lets the beta's addresses in (`OTHER_ORIGINS`). A new address the game
 is served from has to be added there and to the Turnstile widget's hostnames.
+
+## Setting up, once
+
+Each part below says how to see whether it is already in place; check before doing
+anything again. Steps marked *not yet seen* are written from the services'
+documentation, not from having been done on this project: correct them when they are.
+
+### The domain's mail records
+
+One domain serves three mail jobs, and their DNS records live side by side in the
+`streetsofprague.com` zone at Cloudflare:
+
+| Record | Belongs to | Check |
+|---|---|---|
+| `MX` to `route*.mx.cloudflare.net` and the root `TXT` `v=spf1 include:_spf.mx.cloudflare.net ~all` | Cloudflare Email Routing (incoming mail) | `dig +short MX streetsofprague.com` |
+| Root `TXT` `brevo-code:…` | Brevo's proof the domain is ours | `dig +short TXT streetsofprague.com` |
+| `CNAME` `brevo1._domainkey` and `brevo2._domainkey` to `…dkim.brevo.com` | Brevo's DKIM signatures | `dig +short CNAME brevo1._domainkey.streetsofprague.com` |
+| `TXT` `_dmarc` (`v=DMARC1; p=none; rua=…brevo.com`) | DMARC for the whole domain | `dig +short TXT _dmarc.streetsofprague.com` |
+
+- A domain has one SPF record. If a service ever asks for its own, add its `include:`
+  to the existing record; a second `v=spf1` record breaks both. Brevo's setup here did
+  not ask for one.
+- The DKIM `CNAME`s must be "DNS only" in Cloudflare (grey cloud), not proxied.
+- Keep all of these when changing any mail setting; `docs/email.md` says the same from
+  the incoming side.
+- Cloudflare email sending (for feedback) adds records of its own when it is turned
+  on. *Not yet seen*: which ones.
+
+### The newsletter (Brevo)
+
+1. **Sender.** The newsletter is sent as `news@streetsofprague.com`; replies come back
+   through the incoming route for that address. In Brevo it is under Senders, domains &
+   dedicated IPs.
+2. **Domain.** Authenticate `streetsofprague.com` in the same place. Brevo lists the
+   records to add (the Brevo rows in the table above) and shows the domain as
+   authenticated once it has seen them. They are in place.
+3. **List.** Create a list for the newsletter; its number goes in `BREVO_LIST_ID`.
+4. **Confirmation email.** Create a double opt-in template; its number goes in
+   `BREVO_DOI_TEMPLATE_ID`. It has to be a template Brevo accepts for double opt-in:
+   Brevo's default double opt-in template is, and one made from scratch needs the
+   confirmation link (`{{ doubleoptin }}`) and, per Brevo's documentation, the tag
+   `optin` (*not yet seen*). A Czech one is optional: `BREVO_DOI_TEMPLATE_ID_CS`.
+5. **API key.** Create one in Brevo (SMTP & API → API keys) and have the user store it
+   on the Worker as `BREVO_API_KEY` (the command is under "Settings and secrets").
+6. **Language, optional.** Create a text attribute for contacts (say `LANGUAGE`) and
+   name it in `BREVO_LANGUAGE_ATTRIBUTE`. Contacts then carry `en` or `cs`. An attribute
+   named there that doesn't exist in Brevo may make signups fail (*not yet seen*), so
+   create it first.
+7. **Turnstile.** Done: the widget and how to manage it are under "Settings and
+   secrets". For a new one, managed mode, the hostnames the game is served from, the
+   site key in `TURNSTILE_SITE_KEY`, the secret on the Worker.
+8. Commit `deploy/newsletter`, release, and have the user sign up with their own
+   address. The whole round trip is: the form says "almost done", Brevo's email
+   arrives, its link opens the game with "your email address is confirmed", and the
+   contact shows in the Brevo list.
+
+### Feedback (Cloudflare email sending)
+
+1. **A verified address to receive it.** `cf email-routing addresses list` (with
+   `CLOUDFLARE_ACCOUNT_ID` set) shows the account's destination addresses and whether
+   each is verified. The one incoming mail is forwarded to is. A new one gets a
+   verification email from Cloudflare that the user has to click.
+2. **Email sending for the domain.** Turn it on in the Cloudflare dashboard (Compute →
+   Email Service → Email Sending) for `streetsofprague.com`; it adds its DNS records.
+   `cf` can't show its state (its login gets "Unauthorized" there), so look in the
+   dashboard. *Not yet seen.* Sending to a verified address of the account is free on
+   every plan; to anyone else it needs the paid Workers plan, which is why feedback
+   goes to one fixed address.
+3. Put the address in `deploy/feedback` as `FEEDBACK_TO`, commit, release, and have the
+   user send a message from the settings. It should arrive from
+   `feedback@streetsofprague.com` with the game's state under the message, and a reply
+   should go to the player's address if they gave one.
+
+### Sending a newsletter
+
+*Not yet seen; correct this after the first edition.* An edition is a campaign in
+Brevo, sent from `news@streetsofprague.com` to the list. With the language attribute in
+place, write it twice and send each to the segment whose attribute is `en` or `cs`;
+contacts from before the attribute have none, so decide which edition they get.
+Brevo's free plan sends 300 emails a day, so a list beyond that goes out over several
+days or needs a paid plan. Every campaign carries Brevo's unsubscribe link; people who
+use it stay in the contacts as unsubscribed and are skipped from then on.
 
 ## Checking a change
 

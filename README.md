@@ -951,55 +951,30 @@ The game has two small forms, both answered by the Worker in `worker/index.js`, 
 is the only thing they talk to, so either can move to another service without the game
 changing. The beta has no Worker of its own and uses production's. One visitor address
 can try five times a minute and only the game's own pages are let in, since every use
-sends an email. `node scripts/check-worker.mjs` checks the Worker with the services
-behind it replaced by stand-ins. Each form stays out of the game until it is set up.
-How to change, test and debug the forms without sending real email is in
-`.agents/skills/player-forms/SKILL.md`.
+sends an email. Each form stays out of the game until it is set up.
 
 **Newsletter.** The start screen and the settings have a link to sign up for news about
 the game by email (`src/newsletter.ts`). `/api/subscribe` passes the address to
 [Brevo](https://www.brevo.com), which sends an email with a link to confirm; only then
 is the address on the list, and the link leads back to the game, which says so. Nothing
 is stored outside Brevo. The form offers the emails in English or Czech, with the game's
-language picked to begin with; the choice decides the confirmation email and can be kept
-with the contact. To set it up:
-
-1. In Brevo, create a list for the newsletter and a double opt-in confirmation email
-   template (it needs the confirmation link Brevo's default template has; a second one
-   in Czech is optional). Authenticate the sending domain there too.
-2. Put the list's and the templates' numbers in `deploy/newsletter` and commit it.
-3. Create a Brevo API key and store it as a secret on the Worker, once:
-   `CLOUDFLARE_ACCOUNT_ID=7756b12931ecfb3900a31049e157d706 cf workers secrets update BREVO_API_KEY --worker streets-of-prague --type secret_text --text <key>`
-4. Release, then sign up once with your own address to see the whole round trip.
-
-Two optional additions, each switched on by a line in `deploy/newsletter`:
-
-- **Keeping the language.** Create a text attribute for contacts in Brevo (say
-  `LANGUAGE`) and name it as `BREVO_LANGUAGE_ATTRIBUTE`. Each contact then carries `en`
-  or `cs`, and an edition can go to the segment with one or the other.
-- **Turnstile**, Cloudflare's check that a real browser is signing up, so a script can't
-  have confirmation emails sent to strangers. Create a Turnstile widget in the
-  Cloudflare dashboard (managed mode) for `streetsofprague.com`,
-  `beta.streetsofprague.com` and the alternate addresses, put its site key in
-  `TURNSTILE_SITE_KEY`, and store its secret key on the Worker like the Brevo key, under
-  the name `TURNSTILE_SECRET_KEY`. Most players see nothing; a box to tick appears for
-  those Cloudflare is unsure about. With the site key set and the secret missing, the
-  Worker refuses signups rather than let them through unchecked. For trying the form
-  locally, Cloudflare's test site key `1x00000000000000000000AA` always passes.
+language picked to begin with. Turnstile, Cloudflare's check that a real browser is
+signing up, keeps scripts from having confirmation emails sent to strangers; most
+players see nothing of it.
 
 **Feedback.** The settings have a "Send feedback" link (`src/feedback.ts`).
 `/api/feedback` emails the message to the address in `deploy/feedback` through
 Cloudflare's email sending, with the player's address (if they gave one) as the one a
 reply goes to. The game adds its version, the browser and graphics card, the graphics
 level and renderer, the frame rate, how long the page has been open, the HUD's tally,
-the last few errors the page saw, and where the player was, in the form the scenarios use, so the spot can be replayed (the
-scene-testing skill). Sending to an address verified in the Cloudflare account is free
-on every plan. To set it up:
+the last few errors the page saw, and where the player was, in the form the scenarios
+use, so the spot can be replayed (the scene-testing skill).
 
-1. In the Cloudflare dashboard, turn on email sending for `streetsofprague.com` (it adds
-   DNS records) and verify the address the feedback should arrive at as a destination.
-2. Put that address in `deploy/feedback` as `FEEDBACK_TO` and commit it.
-3. Release, then send yourself a message from the settings.
+Setting each part up (Brevo, the domain's mail records, Turnstile, email sending), the
+settings in `deploy/newsletter` and `deploy/feedback`, checking a change without sending
+real email, and what to look at when something doesn't arrive are all in
+`.agents/skills/player-forms/SKILL.md`. `node scripts/check-worker.mjs` checks the
+Worker with the services behind it replaced by stand-ins.
 
 Incoming mail to `news@streetsofprague.com` and `jonas@streetsofprague.com` is
 archived privately in R2 and forwarded to Gmail by a separate mail Worker.

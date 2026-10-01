@@ -46,8 +46,8 @@ CONFIG
 mkdir -p "$OUTPUT/workers/default/bundle"
 cp worker/index.js "$OUTPUT/workers/default/bundle/index.js"
 # Only /api/* runs the Worker; every other request is answered from the assets directly.
-# BREVO_API_KEY and TURNSTILE_SECRET_KEY are secrets set on the Worker once (README,
-# "Newsletter and feedback"), not here. Feedback can only be emailed to the one address named in deploy/feedback.
+# BREVO_API_KEY and TURNSTILE_SECRET_KEY are secrets set on the Worker once (the
+# player-forms skill), not here. Feedback can only be emailed to the one address named in deploy/feedback.
 node -e '
 const e = process.env, text = (value) => ({ type: "text", value: value ?? "" });
 console.log(JSON.stringify({

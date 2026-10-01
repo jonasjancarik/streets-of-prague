@@ -1,5 +1,6 @@
-# Where the game's feedback form sends messages (see the README, "Newsletter and
-# feedback"). While FEEDBACK_TO is empty the game shows no feedback form.
+# Where the game's feedback form sends messages (see the player-forms skill,
+# .agents/skills/player-forms/SKILL.md). While FEEDBACK_TO is empty the game shows no
+# feedback form.
 # The address that receives them: one verified as a destination in Cloudflare.
 FEEDBACK_TO=
 # The address they come from, on a domain set up for Cloudflare's email sending.
