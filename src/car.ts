@@ -107,7 +107,14 @@ const TWO_PAINT: Record<string, string[]> = {
 
 // Delivery couriers' boxes: pink, green and blue, as on the streets.
 export const COURIER_BOXES = ['#d70f64', '#2fbf71', '#0a9fdc'];
-export interface CarBody { type: string; paint: string; box?: string }
+export interface CarBody { type: string; paint: string; box?: string; pages?: number }
+
+// The comparison drive reached 28 yellow taxis and 17 silver hatchbacks at once.
+// Two 16-instance pages cover those measured peaks without a live allocation.
+const PREPARED_PAGES: Record<string, number> = {
+  'taxi|#e9c62f': 2,
+  'hatch|#bfc3c7': 2,
+};
 
 // The ordinary body inventory is data, not dummy cars: preparing it must not advance
 // the game's seeded random sequence. Colours found in the bike feed are optional; a
@@ -118,7 +125,7 @@ export function ordinaryCarBodies(bikeColours: readonly string[] = []): CarBody[
     const paints = spec.color ? [spec.color] : type === 'bike'
       ? [...new Set([...TWO_PAINT.bike, ...bikeColours])] : TWO_PAINT[type] || PAINT;
     for (const paint of paints) {
-      bodies.push({ type, paint });
+      bodies.push({ type, paint, pages: PREPARED_PAGES[`${type}|${paint}`] || 1 });
       if (spec.two) for (const box of COURIER_BOXES) bodies.push({ type, paint, box });
     }
   }
@@ -739,8 +746,8 @@ const ROOF = new THREE.Matrix4().compose(new THREE.Vector3(TYPES.bus.L / 2 - 1.9
 // Riders are drawn here too, sitting on their bikes.
 export class CarPool {
   scene: THREE.Scene;
-  // A baseline drive reached 16 visible cars under one key. All pages have that
-  // capacity (1 KiB of matrices); overflow adds another page without replacing one.
+  // Each page holds 16 cars (1 KiB of matrices). Measured dense keys reserve two
+  // pages above; exceptional overflow adds another without replacing an old page.
   static readonly pageCapacity = 16;
   meshes: Map<string, THREE.InstancedMesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>[]>;
   prepared = new Set<string>();
@@ -770,6 +777,7 @@ export class CarPool {
     if (!geometry) throw new Error(`Missing car geometry: ${key}`);
     const mesh = new THREE.InstancedMesh(geometry, material, CarPool.pageCapacity);
     mesh.count = 0;
+    mesh.visible = false;
     mesh.castShadow = true;
     mesh.customDepthMaterial = depthMaterial;
     mesh.frustumCulled = false;
@@ -781,10 +789,10 @@ export class CarPool {
   }
 
   prepare(bodies: readonly CarBody[]) {
-    for (const { type, paint, box } of bodies) {
+    for (const { type, paint, box, pages = 1 } of bodies) {
       const key = box ? `${type}|${paint}|${box}` : `${type}|${paint}`;
       carGeometry(type, paint, box);
-      if (!this.meshes.has(key)) this.page(key);
+      while ((this.meshes.get(key)?.length || 0) < pages) this.page(key);
       this.prepared.add(key);
     }
   }
@@ -792,19 +800,21 @@ export class CarPool {
   // Compile the actual retained meshes with a valid instance, then restore every
   // count and matrix even if the renderer's guarded compile times out.
   async warm(compile: () => Promise<unknown>) {
-    const saved: { mesh: THREE.InstancedMesh; count: number; matrix: number[] }[] = [];
+    const saved: { mesh: THREE.InstancedMesh; count: number; visible: boolean; matrix: number[] }[] = [];
     try {
       for (const pages of this.meshes.values()) for (const mesh of pages) {
-        saved.push({ mesh, count: mesh.count, matrix: Array.from(mesh.instanceMatrix.array.slice(0, 16)) });
+        saved.push({ mesh, count: mesh.count, visible: mesh.visible, matrix: Array.from(mesh.instanceMatrix.array.slice(0, 16)) });
         mesh.setMatrixAt(0, this.m.identity());
         mesh.count = 1;
+        mesh.visible = true;
         sendInstances(mesh);
       }
       await compile();
     } finally {
-      for (const { mesh, count, matrix } of saved) {
+      for (const { mesh, count, visible, matrix } of saved) {
         mesh.instanceMatrix.array.set(matrix, 0);
         mesh.count = count;
+        mesh.visible = visible;
         if (count) sendInstances(mesh);
       }
     }
@@ -853,6 +863,7 @@ export class CarPool {
       for (let i = 0; i < pages.length; i++) {
         const m = pages[i];
         m.count = Math.max(0, Math.min(CarPool.pageCapacity, list.length - i * CarPool.pageCapacity));
+        m.visible = m.count > 0;
         sendInstances(m);
       }
     }

@@ -36,6 +36,7 @@ const checks = `(async () => {
     assert(COURIER_BOXES.every(box => keys.includes('bike|#123456|' + box)), 'all courier boxes');
     const before = new Map([...pool.meshes].map(([k, pages]) => [k, pages.map(m => [m.uuid, m.instanceMatrix, m.instanceMatrix.count])]));
     pool.prepare(bodies);
+    assert(pool.meshes.get('taxi|#e9c62f').length === 2 && pool.meshes.get('hatch|#bfc3c7').length === 2, 'measured dense keys reserve a second page');
     const first = new Map([...pool.meshes].map(([k, pages]) => [k, pages.map(m => [m.uuid, m.instanceMatrix, m.instanceMatrix.count])]));
     pool.prepare(bodies);
     assert(pool.meshes.size === first.size && keys.every(k => pool.prepared.has(k)), 'stable prepared keys');
@@ -45,7 +46,8 @@ const checks = `(async () => {
       if (before.has(k)) assert(now[0].uuid === before.get(k)[0][0], k + ': original page retained');
     }
     assert(rngCalls === initialCalls, 'preparation advanced RNG');
-    report.push('prepare: ' + keys.length + ' keys, ' + pool.meshes.size + ' retained pages, additional RNG calls ' + (rngCalls - initialCalls));
+    const retainedPages = [...pool.meshes.values()].reduce((n, pages) => n + pages.length, 0);
+    report.push('prepare: ' + keys.length + ' explicit keys, ' + pool.meshes.size + ' retained keys / ' + retainedPages + ' pages, additional RNG calls ' + (rngCalls - initialCalls));
   }
   if (${selected === 'all' || selected === 'capacity'}) {
     pool.prepare([{type:'hatch', paint:'#010203'}]);
@@ -56,6 +58,7 @@ const checks = `(async () => {
     pool.render(cars);
     let pages = pool.meshes.get(key);
     assert(pages.length >= 3 && pages[0] === old && old.uuid === uuid && old.instanceMatrix === buffer, 'primary page retained on overflow');
+    assert(pages.every(m => m.castShadow && m.customDepthMaterial && !m.frustumCulled), 'page shadow and visibility settings');
     assert(pages.reduce((n, m) => n + m.count, 0) === cars.length, 'all cars present across pages');
     for (let i = 0; i < cars.length; i++) {
       const m = pages[Math.floor(i / pool.constructor.pageCapacity)];
@@ -65,9 +68,9 @@ const checks = `(async () => {
     assert(pool.overflowPages >= beforeOverflow + 2, 'overflow counted');
     const ids = pages.map(m => [m.uuid, m.instanceMatrix]);
     pool.render([]);
-    assert([...pool.meshes.values()].every(group => group.every(m => m.count === 0)), 'empty pages do not draw stale cars');
+    assert([...pool.meshes.values()].every(group => group.every(m => m.count === 0 && !m.visible)), 'empty pages do not draw stale cars');
     pool.render(cars.slice(0, 1));
-    assert(pages[0].count === 1 && pages.slice(1).every(m => m.count === 0), 'shrunken pages empty');
+    assert(pages[0].count === 1 && pages[0].visible && pages.slice(1).every(m => m.count === 0 && !m.visible), 'shrunken pages empty');
     pool.render(cars);
     pages = pool.meshes.get(key);
     assert(pages.length === ids.length && pages.every((m, i) => m.uuid === ids[i][0] && m.instanceMatrix === ids[i][1]), 'overflow pages reused');
@@ -78,32 +81,52 @@ const checks = `(async () => {
     pool.render([custom, burnt]);
     assert(page(custom.key)?.count === 1 && page(burnt.key)?.count === 1, 'late custom and burnt bodies render');
     assert(pool.latePages === beforeLate + expectedLate, 'late variants counted');
+    const buses = Array.from({length:18}, (_, i) => {
+      const bus = new Car('bus', () => .2, 20000 + i, 0);
+      bus.line = {ref:'12', to:'Test'};
+      return bus;
+    });
+    pool.render(buses);
+    assert(pool.meshes.get(buses[0].key).reduce((n, m) => n + m.count, 0) === 18, 'buses span pages');
+    assert(pool.boards.filter(b => b.visible).length === 54, 'board index continues across pages');
+    const bikes = Array.from({length:19}, (_, i) => {
+      const bike = new Car('bike', () => .2, 30000 + i, 0, 0, '#123456');
+      bike.rider = {shirt:'#224466', trousers:'#333333', skin:'#bb8866', hair:'#222222', sleeves:true};
+      return bike;
+    });
+    pool.render(bikes, null, 1 / 60);
+    assert(pool.riders.mesh.count === bikes.length, 'rider index continues across pages');
     pool.render([]);
-    report.push('capacity: ' + cars.length + ' cars, ' + ids.length + ' pages retained, late variants render');
+    assert(pool.boards.every(b => !b.visible) && pool.riders.mesh.count === 0, 'riders and boards reset');
+    report.push('capacity: ' + cars.length + ' cars, ' + ids.length + ' pages retained, riders and boards span pages, late variants render');
   }
   if (${selected === 'all' || selected === 'render'}) {
     const idle = [...pool.prepared].find(k => !k.includes('|#123456') && !pool.groups.has(k) && page(k)?.count === 0 && k.startsWith('hatch|'));
     assert(idle, 'an idle prepared hatch page exists');
     const mesh = page(idle), uuid = mesh.uuid, buffer = mesh.instanceMatrix;
-    assert(mesh.count === 0 && [0,5,10,15].every(i => buffer.array[i] === 1), 'warm instance restored after loading');
+    const reserved = pool.meshes.get('taxi|#e9c62f')[1], reservedUuid = reserved.uuid, reservedBuffer = reserved.instanceMatrix;
+    assert(mesh.count === 0 && !mesh.visible && [0,5,10,15].every(i => buffer.array[i] === 1), 'warm instance restored after loading');
     const nodes = r._nodes, cache = nodes?.nodeBuilderCache;
     let fresh = 0;
     if (cache) {
       const get = nodes.getForRender;
       nodes.getForRender = function(ro, async) {
         const before = cache.size, result = get.call(this, ro, async);
-        if (ro.object === mesh && cache.size > before) fresh++;
+        if ((ro.object === mesh || ro.object === reserved) && cache.size > before) fresh++;
         return result;
       };
       try {
         const [type, paint] = idle.split('|');
         pool.render([new Car(type, () => .1, 0, 0, 0, paint)]);
-        if (r.renderAsync) await r.renderAsync(d.scene, d.camera);
-        else r.render(d.scene, d.camera);
+        r.render(d.scene, d.camera);
+        pool.render(Array.from({length:17}, (_, i) => new Car('taxi', () => .1, i, 0)));
+        assert(reserved.count === 1 && reserved.visible, 'reserved page used');
+        r.render(d.scene, d.camera);
       } finally { nodes.getForRender = get; pool.render([]); }
       assert(fresh === 0, 'first visible prepared page built ' + fresh + ' new body shader state(s)');
     }
-    assert(mesh.uuid === uuid && mesh.instanceMatrix === buffer && mesh.count === 0, 'render retained page and restored count');
+    assert(mesh.uuid === uuid && mesh.instanceMatrix === buffer && mesh.count === 0 && !mesh.visible, 'render retained page and restored count');
+    assert(reserved.uuid === reservedUuid && reserved.instanceMatrix === reservedBuffer && reserved.count === 0 && !reserved.visible, 'reserved page retained and reset');
     report.push('render: prepared page retained; new builder states ' + fresh + '; ' + (r.backend?.isWebGPUBackend ? 'WebGPU' : 'WebGL'));
   }
   return report.join('\\n');
