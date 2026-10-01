@@ -8,7 +8,8 @@
 | [004: Missions and factions](004-missions-and-factions.md) | Mission engine and odd jobs, factions with reputation and turf, story missions; several questions still open | PLANNED (open questions) |
 | [005: Roofs and colours from the photo mesh](005-roofs-and-colours-from-the-photo-mesh.md) | Real wall and roof colours and roof materials measured from IPR's photo mesh, mansards with windows, detected roof windows, dormers and chimneys | PLANNED |
 | [006: Firefighters](006-firefighters.md) | Fire engines called to burning cars, crews putting out wrecks, blue lights and sirens, traffic giving way, the player's water cannon, a firefighter job | PHASES 1–3 DONE (the job waits for plan 004) |
-| [013: Fill the beige ground](013-fill-the-beige-ground.md) | Squares' surfaces from OSM (Old Town Square as setts), a palette that tells the paved kinds apart, courtyards and green from the technical map, then the photo classifier for courtyards | PLANNED |
+| [013: Fill the beige ground](013-fill-the-beige-ground.md) | Squares' surfaces from OSM, an asphalt-grey pavement palette, and DTM courtyards and green | PHASES 0–3 DONE (local; photo classification is plan 014) |
+| [014: Identify courtyard surfaces](014-classify-courtyard-surfaces.md) | Deferred photo classification within DTM courtyard outlines | PLANNED |
 
 Plans 001–006 were indexed from `c6b5350`. Check the working tree and each plan's
 starting revision before implementation; preserve unrelated changes.

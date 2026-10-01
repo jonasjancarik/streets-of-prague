@@ -16,7 +16,9 @@ classifier decides what the courtyards are made of.
 
 ## Status and starting point
 
-- Status: PLANNED. No implementation yet.
+- Status: PHASES 0–3 DONE locally. Phase 4 is deferred to
+  [plan 014](014-classify-courtyard-surfaces.md). No shared map data or deployment
+  was changed.
 - Planned at `8f35d7a`, 30 September 2026, from reading the code and measuring the
   data (below). Nothing in the game was changed or rebuilt while planning.
 - Effort: phases 1–2 about a day; phase 3 one to two days; phase 4 open-ended.
@@ -234,5 +236,143 @@ For each phase:
 
 ## Result
 
-(Fill in per phase: revision, commands, screenshots, `beige_report.py` numbers,
-residual issues.)
+Phases 0–3 are in commit `a1f11e4` in the plan-013 worktree at
+`/Users/janca/.codex/worktrees/2bc4/streets-of-prague`; the result and deferred
+plan are committed separately. Shared `public/data` and shared pipeline caches remain unchanged. The
+worktree's `public/data` and relevant `pipeline/.cache` directories are independent
+copy-on-write copies of the original data. Converted plan-010 landmarks remain only
+in `/tmp/sop-landmark-colours-010/{centrum,praha}_now` and are not activated.
+
+### Phase 0: baseline
+
+All camera captures use `t.time("14:00")`, `t.weather("clear")`, High graphics,
+`?area=centrum`, and `heading: 0`. Each named view was captured from above with
+`tilt: 25`, then low with `tilt: 65`:
+
+| View | Exact `t.camera` calls (`at`, heights) |
+| --- | --- |
+| Old Town Square | `{ at: [50.0873, 14.4208], height: 180, tilt: 25, heading: 0 }`; `{ at: [50.0873, 14.4208], height: 55, tilt: 65, heading: 0 }` |
+| Václavské náměstí | `{ at: [50.08195, 14.4282], height: 180, tilt: 25, heading: 0 }`; `{ at: [50.08195, 14.4282], height: 55, tilt: 65, heading: 0 }` |
+| Karlovo náměstí | `{ at: [50.0753, 14.4195], height: 240, tilt: 25, heading: 0 }`; `{ at: [50.0753, 14.4195], height: 55, tilt: 65, heading: 0 }` |
+| Malostranské náměstí | `{ at: [50.0883, 14.4030], height: 180, tilt: 25, heading: 0 }`; `{ at: [50.0883, 14.4030], height: 55, tilt: 65, heading: 0 }` |
+| Nerudova block | `{ at: [50.08865, 14.3995], height: 180, tilt: 25, heading: 0 }`; `{ at: [50.08865, 14.3995], height: 55, tilt: 65, heading: 0 }` |
+| Vodičkova block | `{ at: [50.0808, 14.4245], height: 180, tilt: 25, heading: 0 }`; `{ at: [50.0808, 14.4245], height: 55, tilt: 65, heading: 0 }` |
+
+The original centre tile copy is served as `centrum_before` to keep the renderer,
+weather and camera identical. Matched baseline and phase-1 images are in
+`/private/tmp/sop-013-images/{before,phase1}/`; phase-3 and palette captures are
+in sibling folders. The first phase-1 screenshots mistakenly used the game's
+default `praha` area and were replaced with `centrum` captures. Initial palette
+captures contained a fading start overlay and were likewise replaced after a
+2.5-second wait; those discarded attempts are not evidence.
+
+`pipeline/beige_report.py` reads assembled tiles and optionally one DTM package.
+It uses the same EPSG:5514 → WGS84 area-of-interest transform as `dtm.surfaces()`.
+The baseline centre count is 182.64 ha plain ground out of 1,289.73 ha in 234 tiles;
+the JSON is `/private/tmp/sop-013-baseline-beige.json`. The Praha 1 DTM package
+split includes 26.89 ha of courtyard and 8.03 ha of maintained green on formerly
+plain ground. A separate report can read copied historical tiles with `--tiles-root`.
+
+### Phase 1: square surfaces
+
+Own tags group setts, slabs, asphalt and loose ground. With no own tag, the chosen
+group must cover at least 60% and 30 m of eligible pedestrian, footway, living-
+street or service lines within the polygon. Crossings, tunnels and nonzero layers
+are excluded. `place=square` is now requested from OSM; it was absent from the old
+feature filter. `square`, `square_setts`, `square_asphalt` and `square_loose` have
+fixed rendering slots, and older tiles still use `square`.
+
+`pipeline/square_report.py` counted 366 centre polygons: 227 explicitly tagged,
+42 inherited, 97 undecided. Of those inherited, 29 became setts, 7 slabs, 5
+asphalt and 1 loose. Its centre report is
+`/private/tmp/sop-013-centrum-squares.json`. The full-city extract yielded 2,721
+polygons: 1,441 explicitly tagged, 154 inherited and 1,126 undecided; the report
+is `/private/tmp/sop-013-praha-squares.json`. The report clips exported OSM areas
+to each area box; its polygon totals therefore differ from the earlier plan's
+raw-extract inventory. Old Town Square and Malostranské náměstí inherit setts;
+Malé náměstí retains its explicit setts, and náměstí Václava Havla retains its
+explicit slabs. Karlovo and Václavské náměstí remain undecided slabs. A square
+without qualifying ways stays slabs.
+
+The isolated `centrum` ground rebuild passed six chunks and changed 211 of 234
+assembled tiles. The plain-ground count fell to 179.75 ha because newly requested
+`place=square` areas are mapped rather than plain. The JSON is
+`/private/tmp/sop-013-phase1-beige.json`. At Old Town Square the new sett surface
+reads as a continuous pedestrian square at 180 m and 55 m; its stone pattern does
+not look like an oversized road-cobble grid in those captures.
+
+### Phase 2: palette
+
+Three lighter pavement variants were captured at all six matched views in
+`/private/tmp/sop-013-images/palette-{a,b,c}/`. The user chose asphalt grey for
+the general pavement instead: `#92908c` with the existing asphalt pattern, near
+the darker road hue. Slab squares remain light (`#d7d3cb`), park paths warm
+(`#d8cbb6`), and pedestrian setts `#9c958a`. The accepted direction is captured
+at `/private/tmp/sop-013-images/asphalt-provisional/`. Colours do not change the
+phase-1 plain-ground area.
+
+### Phase 3: surveyed courtyards and green
+
+`dtm.py` now reads ground-level yards, maintained green, gardens, pitches and
+woods; street surfaces still index only road, roadside and parking kinds. Land
+polygons retain surveyed corners without the kerb smoothing. The layers draw
+between land use and OSM/photo cover, and the vegetation raster follows the same
+precedence. DTM green, garden and wood can grow appropriate vegetation; yards and
+pitches suppress generated trees. The user chose the lighter neutral courtyard
+shade (`#85837e`) after viewing matched Nové Město alternatives; the material
+remains a fallback until plan 014 classifies actual courtyard surfaces.
+
+The isolated `centrum` ground rebuild passed all six chunks and changed 230 of
+234 tiles. Plain ground fell from 179.75 to 72.20 ha; the JSON is
+`/private/tmp/sop-013-phase3-beige.json`. The 234 assembled tile JSON files grew
+from 16,403,145 to 19,213,498 raw bytes, and from 4,038,613 to 4,975,149
+bytes compressed individually with gzip level 9 (+23.2%). Matched phase-3 images
+are in `/private/tmp/sop-013-images/phase3-provisional/`. Additional DTM yard
+close-ups are in `yard-provisional/` and `yard-lighter/`.
+
+The isolated default `praha` rebuild also passed: 252 chunks in 677 seconds,
+14,595 assembled tiles, 7,858 changed. Its data directory grew from 601,828 to
+670,372 KiB (+11.4%). Its Old Town Square tile has `square_setts`, DTM yard and
+DTM green polygons; a final default-area screenshot is
+`/private/tmp/sop-013-images/final-city/old-town-city-above.png`. The final
+12 matched centre images with the chosen asphalt pavement and lighter yard are
+in `/private/tmp/sop-013-images/final-centre/`, paired by filename with `before/`.
+
+Two DTM-yard overlaps with mapped central passages were inspected from above,
+and a cutaway view in pasáž Koruna was compared with the original centre tiles.
+The roofs and visible floor remain in place. Low-angle free-camera views into
+the other arcades were occluded by building facades, so they do not verify every
+covered courtyard. In Malá Strana and Nové Město, the sampled streets and roofs
+remain visible above the DTM courtyard and green layers. `check-ground-areas.mjs`
+also verifies the fixed DTM-before-OSM ground order and no outline on DTM pitches.
+
+### Final checks and limits
+
+`npm run build` (including typecheck), the four `test_square_surfaces.py` cases,
+the `test_dtm_land.py` ground-level/street separation case, the eight existing
+`test_landmark_colours.py` cases, `node scripts/check-ground-areas.mjs`, and
+`git diff --check` passed. The integrated client also passed the material-sharing,
+car-pool, tree-pool, spawn-work, streaming, resting-car, staged-landmark-marker,
+and WebGPU/WebGL graphics checks before plan-013 edits. Final WebGPU and WebGL
+scene captures after the ground edits reported no page errors. The first final
+`scene.mjs run all` attempt had transient police-spawn and clear-ground failures;
+the affected scenarios passed individually, and the next full run passed all three.
+
+No new procedural pattern was added: the new areas reuse the existing asphalt,
+setts, gravel, concrete, grass, wood and pitch patterns. In one completed
+alternating WebGPU observation at 2×, Old Town Square used 123 draw calls on
+the integrated baseline and 129 with the new ground; Malá Strana used 176 and
+187. The user stopped frame-time measurement because it was unreliable, so the
+comparison was interrupted and no timing conclusion is made. The benchmark's
+temporary servers and browser processes were stopped. The plan-012 Part B
+desktop frame-time regression recorded in its own Result remains a separate,
+unresolved tradeoff; this plan makes no claim that it improved.
+
+`build_tiles.py` advises rerunning `ipr_terrain.py` whenever ground is rebuilt.
+This change does not alter its bridge or tunnel inputs, so the isolated ground
+tiles were assembled with the existing terrain and structure layers. The new
+courtyard surface remains a provisional material because the DTM does not say
+what most yards are made of. Shared assets, plan-010 staged landmarks, any branch,
+and any deployment are unchanged.
+
+Phase 4 remains a separate future plan, [014](014-classify-courtyard-surfaces.md).

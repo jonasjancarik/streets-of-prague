@@ -315,16 +315,18 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 - **Taxis.** Let the player hail a taxi in the street or order one through a
   ride-hailing app. The apps stand in for Uber and Bolt under made-up names, and
   their drivers are more reckless than regular street taxis.
-- **Fill the plain beige areas.** Fields, work yards, railway land and building sites
-  now have surfaces of their own (from OSM land use). What's left is unmapped ground
-  in town: yards, verges, car parks on bare earth. The prototype
+- **Fill the plain beige areas.** Plan 013 phases 0–3 now give squares their OSM
+  surface, make the general pavement asphalt grey, and add surveyed courtyards and
+  green from the DTM in isolated local tiles. The centre's plain ground fell from
+  182.64 to 72.20 ha. Shared map data has not been replaced. What's left includes
+  unmapped ground, verges and car parks on bare earth. The prototype
   (`pipeline/ground_cover.py`, `?cover=rules` in the game) classifies IPR's 2024
   orthophoto and 2025 surface model into grass, trees, dirt, gravel, asphalt and "not
   ground"; tried on 49 tiles round Smíchov. Still to do: run it for the whole city (a
   16–65 GB photo download), and fold it into the build.
   About a third of the beige pieces in town are roofs or site clutter and some are
   roadway the streets don't reach: gaps in the map data rather than missing ground.
-  Next steps, measured in the centre: `plans/013-fill-the-beige-ground.md`.
+  Next step for courtyard materials: `plans/014-classify-courtyard-surfaces.md`.
 - **Painted photo, with stronger filters.** `ground_cover.py ortho` (`?ortho` in the
   game) paints the orthophoto through an anisotropic Kuwahara filter; at 0.5 m/px it
   still looked like a blurry photograph. To try: a bigger, more stretched brush;
