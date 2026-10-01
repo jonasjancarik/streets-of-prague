@@ -3,6 +3,8 @@
 read_when: cutting a release; uploading or rebuilding map data; changing the files the
 pipeline writes or how the game reads them; changing a deploy script; rolling back.
 
+Which script to run in which situation, step by step: `.agents/skills/deploy/SKILL.md`.
+
 ## The three numbers
 
 **The game's version** is a git tag on `main` (`v1.2.3`), published as a GitHub release.
