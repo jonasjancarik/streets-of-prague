@@ -87,6 +87,7 @@
       .metro-ride li.now::before { content: '● '; color: var(--line); }
       .metro-ride li.end { color: var(--accent); }
       .hud-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+      #vehicle { font: 15px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; opacity: 0.75; margin-top: 5px; }
       #clock { font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; opacity: 0.8; white-space: nowrap; }
       #wanted { font-size: 20px; line-height: 1; letter-spacing: 0.08em; margin-top: 6px; color: rgba(236, 228, 214, 0.22); }
       #wanted.hidden { display: none; }
@@ -419,6 +420,7 @@
     <div id="app"></div>
     <div id="hud" class="panel">
       <div class="hud-top"><div id="street">Praha</div><div id="clock"></div></div>
+      <div id="vehicle" hidden></div>
       <div id="speedo"><span id="speed">–</span><small>km/h</small></div>
       <div id="radio" hidden>
         <button type="button" data-radio="prev" aria-label="Previous station">&#9664;</button>

@@ -65,6 +65,10 @@ import type { DriveEdge, WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Tracked } from './tiles.ts';
 import { getLang, onLang, t, tn, translatePage } from './i18n.ts';
+const VEHICLE_NAMES: Record<string, string> = {
+  van: 'Van', taxi: 'Taxi', police: 'Police car', bike: 'Bicycle', moto: 'Motorbike',
+  truck: 'Lorry', artic: 'Articulated lorry', bus: 'Bus', minibus: 'Minibus', fire: 'Fire engine',
+};
 import { setupTestkit, PLACES } from './testkit.ts';
 import type { Testkit } from './testkit.ts';
 
@@ -956,6 +960,7 @@ async function main() {
   // lay the page out again.
   const shown: Record<string, string | number> = {};
   let radioShown = '';
+  let carShown = '';
   const stationList = $('radio').querySelector('select')!;
   for (const [i, label] of [[-1, t('Radio off')], ...STATIONS.map((s, i) => [i, s.name] as const)] as [number, string][]) stationList.add(new Option(label, String(i)));
   stationList.addEventListener('change', () => { sound.radio?.pick(Number(stationList.value)); stationList.blur(); });
@@ -1603,6 +1608,13 @@ async function main() {
     if (name && name !== street) {
       street = name;
       $('street').textContent = name;
+    }
+    const carName = inCar ? inCar.variant?.name ?? t(VEHICLE_NAMES[inCar.type] ?? inCar.type) : '';
+    if (carName !== carShown) {
+      carShown = carName;
+      const box = $('vehicle');
+      box.textContent = carName;
+      box.hidden = !carName;
     }
     bannerT -= dt;
     show('banner', clamp(bannerT, 0, 1), 'opacity');

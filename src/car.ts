@@ -72,24 +72,27 @@ export const VARIANTS: Record<string, Variant[]> = {
   hatch: [
     // The Fabia I 1.2 HTP: three light cylinders, slow but willing, soft brakes.
     { id: 'fabia', name: 'Škoda Fabia 1.2', freq: 0.4, tune: { accel: 6, vmax: 33, brake: 14, weather: 1.2, mass: 1000 } },
-    { id: 'hatch', freq: 0.6, tune: {} },
+    { id: 'hatch', name: 'Volkswagen Golf 1.6', freq: 0.6, tune: {} },
   ],
   sedan: [
     // The Octavia I 1.9 TDI: strong from low revs, a little short at the top.
-    { id: 'octavia', name: 'Škoda Octavia 1.9 TDI', freq: 0.4, tune: { accel: 10.5, vmax: 39, tough: 4 } },
+    { id: 'octavia', name: 'Škoda Octavia 1.9 TDI', freq: 0.25, tune: { accel: 10.5, vmax: 39, tough: 4 } },
+    // The Octavia II 2.0 TDI (103 kW): the same diesel character, a little quicker.
+    { id: 'octavia', name: 'Škoda Octavia 2.0 TDI', freq: 0.15, tune: { accel: 11.5, vmax: 41, tough: 4 } },
     // An electric car: quick off the line, regenerative braking when you lift off, all-wheel drive.
     { id: 'model3', name: 'Tesla Model 3', freq: 0.06, tune: { accel: 13, vmax: 45, drag: 1.2, mass: 1850, drive: 'awd' } },
-    { id: 'sedan', freq: 0.54, tune: {} },
+    { id: 'sedan', name: 'Škoda Superb 2.0 TSI', freq: 0.54, tune: {} },
   ],
   suv: [
     { id: 'enyaq', name: 'Škoda Enyaq iV 80', freq: 0.15, tune: { accel: 10.5, vmax: 40, drag: 1.1, mass: 2100, drive: 'rwd' } },
     { id: 'modely', name: 'Tesla Model Y', freq: 0.08, tune: { accel: 12.5, vmax: 44, drag: 1.2, mass: 2000, drive: 'awd' } },
-    { id: 'suv', freq: 0.77, tune: {} },
+    { id: 'suv', name: 'Škoda Kodiaq 2.0 TDI', freq: 0.77, tune: {} },
   ],
   pickup: [{ id: 'f150', name: 'Ford F-150', freq: 1, tune: {} }],
   estate: [
-    { id: 'octavia', name: 'Škoda Octavia 1.9 TDI', freq: 0.4, tune: { accel: 10, vmax: 38, tough: 4 } },
-    { id: 'estate', freq: 0.6, tune: {} },
+    { id: 'octavia', name: 'Škoda Octavia Combi 1.9 TDI', freq: 0.25, tune: { accel: 10, vmax: 38, tough: 4 } },
+    { id: 'octavia', name: 'Škoda Octavia Combi 2.0 TDI', freq: 0.15, tune: { accel: 11, vmax: 40, tough: 4 } },
+    { id: 'estate', name: 'Volkswagen Passat Variant 2.0 TDI', freq: 0.6, tune: {} },
   ],
 };
 // The body's spec with a variant's changes, made once for each pair.
@@ -403,13 +406,13 @@ export async function loadCars(url = 'cars.glb') {
 }
 
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
-// Snow settles on the roofs and bonnets (weather.ts).
-material.onBeforeCompile = (sh) => {
-  lampLit(sh);
 // The bodies are open shells, not closed solids. three.js draws only the back faces into the
 // shadow map by default, so the roof and bonnet (front faces from the sun) cast nothing and
 // the shadow comes out as a hollow outline.
 material.shadowSide = THREE.DoubleSide;
+// Snow settles on the roofs and bonnets (weather.ts).
+material.onBeforeCompile = (sh) => {
+  lampLit(sh);
   sh.uniforms.uSnow = SNOW;
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', '#include <common>\nuniform float uSnow;')
@@ -477,11 +480,11 @@ export class Car {
   // A shared bike (src/bikeshare.ts): its system, and the station it stands at (null
   // while rented).
   share?: { system: number; station: string | null };
+  // The radio station last tuned in this car (an index in STATIONS, -1 for off), heard again when you get back in.
+  radio?: number;
   // How hard the back and front tyres scrub the road (0–1), for their marks (skids.ts).
   skidBack = 0; skidFront = 0;
   _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number]; stamp?: number;
-  // The radio station last tuned in this car (an index in STATIONS, -1 for off), heard again when you get back in.
-  radio?: number;
 
   constructor(type: string, r: () => number, x = 0, y = 0, h = 0, colour?: string, box?: string) {
     this.type = type;
