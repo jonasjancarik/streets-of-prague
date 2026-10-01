@@ -10,3 +10,6 @@ public/data/
 # Cloudflare-only app build and generated Build Output.
 dist-cf/
 .cloudflare/
+
+# The statistics dashboard written by scripts/telemetry-dashboard.mjs.
+.telemetry/
