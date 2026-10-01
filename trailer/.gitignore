@@ -1,0 +1,16 @@
+/target
+out.mp4
+*.mp4
+!media/*.mp4
+frames/
+strip.png
+onion.png
+*.wav
+!media/*.wav
+test_render/
+_frame_snapshots/*.actual.png
+_frame_snapshots/*.diff.png
+
+# The filmed clips (record.sh makes them again) and the mixed sound (soundtrack.sh).
+/clips/
+media/soundtrack.wav
