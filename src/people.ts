@@ -447,6 +447,8 @@ export class Walker {
   ring: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
   gz?: number;
   level?: number;
+  _tx?: number;
+  _ty?: number;
 
   constructor(grid: WalkGrid, kit: FigureKit) {
     this.grid = grid;

@@ -662,6 +662,8 @@ async function main() {
     }
     if (inCar) {
       const c = inCar, lx = -Math.sin(c.h), ly = Math.cos(c.h);
+      // Out onto what the car is on (a bridge's deck, not the ground under it).
+      Object.assign(walker, { x: c.x, y: c.y, _tx: c.x, _ty: c.y, level: world.track(c), gz: c.gz });
       let spot = null;
       for (const s of [1, -1]) {
         const x = c.x + lx * s * (c.spec.W / 2 + 0.8), y = c.y + ly * s * (c.spec.W / 2 + 0.8);
