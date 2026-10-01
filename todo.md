@@ -24,7 +24,9 @@ Plans 007–011 and plan 012 Part A are selected for main; see
 [the findings and merge summary](docs/optimisation-findings-007-012.md). Part B
 (the incremental resting-car index) stays experimental: it was consistently 3.5%
 slower per frame on desktop despite fewer index updates. Main retains the original
-collision index. No general FPS improvement is established for this set.
+collision index. An isolated retest is pending (see plan 012's follow-up); competing
+game instances have not been established as the cause of that result. No general
+FPS improvement is established for this set.
 
 Landmark colour warming now has a pipeline conversion and a browser marker check
 (`plans/010-prebake-landmark-colours.md`). The original GLBs remain the live assets;
@@ -33,8 +35,11 @@ them only after the new client is live.
 
 `scripts/bench.mjs` measures frame times in Google Chrome (headless, on the GPU) at
 fixed places; `--vs` compares with another server taking turns, `--ab` switches a
-change on and off within one page (both hold up when the machine is busy), `--cpu 4`
-stands in for a phone's CPU. After the work of 29 September 2026 (noise from a
+change on and off within one page. Neither removes changing background contention:
+use one active game instance, reverse the starting order for small differences,
+and check an unchanged build against itself when results are noisy (see the
+performance skill). `--cpu 4` slows the main thread, not the workers or GPU, so it
+does not reproduce a whole phone. After the work of 29 September 2026 (noise from a
 texture, the ground's broad variation baked per tile, cheaper stones, the ground
 shaded once a pixel, less per-frame bookkeeping), at 2× on an M5 in Chrome: 32–41%
 less time a frame than before it, and 32–42% less with the CPU slowed 4× at 1×.

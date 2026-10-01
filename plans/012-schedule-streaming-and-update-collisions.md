@@ -8,7 +8,7 @@ This is step 6 of the driving-stutter work. It has two independently verifiable 
 
 ## Status and starting point
 
-- Status: implementation and separate verification DONE locally. Merge decision on 1 October 2026: Part A accepted; Part B held off main because desktop frame time regressed 3.5%.
+- Status: implementation and separate verification DONE locally. Merge decision on 1 October 2026: Part A accepted; Part B held off main after an observed 3.5% desktop regression. An isolated Part B retest is pending to check whether competing game instances or machine load affected that result.
 - Priority: P2. Effort: several days. Risk: medium–high because jobs and collision entries have lifetimes that outlast individual frames.
 - Category: performance. Dependencies: none technically; execute after 007–011 to isolate residual streaming hitches and reconcile their edits to `tiles.ts`/`main.ts`.
 - Planned at: `5162c1fcf11e51df8ceda46049cac217fc7a12cd`, 2026-09-30.
@@ -247,3 +247,35 @@ experimental `check-resting-cars.mjs`. References to that runner and the Part B
 Result above describe the completed experiment, not main.
 
 See [the findings and merge summary](../docs/optimisation-findings-007-012.md).
+
+## Follow-up: retest Part B in isolation
+
+Requested on 1 October 2026; not yet run. The recorded desktop change from 10.10
+to 10.46 ms was consistent across three pairs, but the difference is small enough
+to warrant confirmation under controlled load. Overlapping game/browser instances
+and other machine activity could affect timings; their contribution to this
+particular comparison has not been established. Preserve the original results
+above and keep Part B off main pending the retest.
+
+- [ ] Arrange a quiet test session with only one actively rendering game instance
+  at a time, including headless Chrome and in-app browser views. Coordinate before
+  closing user-owned or shared sessions. Record CPU/GPU load and relevant thermal
+  state; multiple idle dev servers are not equivalent to multiple rendering games.
+- [ ] First compare the same unchanged build against itself through the alternating
+  harness. If that control varies by an amount comparable to 3.5%, resolve the
+  measurement noise before drawing a conclusion about Part B.
+- [ ] Compare matched stable snapshots with Part A in both and only the incremental
+  collision-index change in the candidate. The original `ac90ca1` and `3d60b16`
+  revisions above are the starting references; verify their diff before use. Do not
+  mix in plan 013 or other graphics changes. Use the same generated data and the
+  original 40-second drive, WebGPU, High, clear 14:00, DPR 1 and CPU throttle 4.
+- [ ] Run at least three alternating pairs serially and reverse the starting order
+  in a second series. Confirm the previous browser has exited before starting the
+  next. Record per-run mean, p95/p99, long tasks, index-work counters and road gaps,
+  rather than relying only on pooled averages. If retesting on a phone, track its
+  temperature separately; desktop isolation does not establish phone performance.
+- [ ] Append the new evidence and update the merge decision and findings summary.
+  A repeated regression under stable conditions supports keeping the current
+  implementation. If the result becomes neutral or inconclusive, do not call it a
+  speedup; reconsider integration only with a demonstrated net benefit and the
+  existing collision-correctness checks still passing.

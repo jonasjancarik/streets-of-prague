@@ -5,9 +5,11 @@ description: How to measure and speed up Streets of Prague (frame rate, GPU shad
 
 # Performance in Streets of Prague
 
-What was learned measuring and optimising the game (29–30 September 2026, M5
-MacBook Air). The state of play and the open items are in `todo.md` under
-"Game performance"; read that too.
+What was learned measuring and optimising the game (29 September–1 October 2026,
+M5 MacBook Air and Pixel 5). Read `todo.md` under "Game performance" for current
+work and `docs/optimisation-findings-007-012.md` for the completed experiments and
+integration decisions. Historical timings below describe those runs, not a
+performance baseline for every later revision.
 
 ## Measuring
 
@@ -35,11 +37,25 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
     reload the page mid-run, and the run dies waiting for the map (`waitForFunction`
     timeout). Serve a detached worktree of your branch on its own port and move it
     forward (`git checkout --detach <branch>`) after each commit.
-- **One benchmark at a time.** Two headless Chromes loading at once (or a bench plus
-  a long `--eval`) push loads past the 120 s limit and skew each other.
-- **Warm both A/B states before timing.** The benchmark now does that (`--warmup`,
-  2 s each by default). The first cold shadow-off window measured 43 fps before
-  recovering above 200, which made the combined average misleading.
+- **One actively rendering game at a time on the test device.** This includes
+  benchmark Chrome, browser QA runs, ordinary game tabs and in-app browser views,
+  even when they belong to different worktrees. Two headless Chromes loading at
+  once have pushed loads past the 120 s limit. Multiple idle Vite servers are not
+  equivalent to multiple running games. Coordinate the test window with other
+  sessions; stop owned browser processes and ask before closing user/shared ones.
+- **Reverse run order when judging small differences.** `--vs` currently runs
+  baseline then candidate in every pair. Run a second series with `--url` and
+  `--vs` exchanged, and label results by revision rather than URL role. Alternation
+  helps with gradual drift; it does not correct another game starting or loading
+  tiles midway through a comparison. Confirm each owned browser has closed before
+  starting the next. On a phone, close the test page; do not quit the user's browser.
+- **Warm both A/B states for steady-state cost.** The benchmark does this for
+  `--ab` (`--warmup`, 2 s each by default). The first cold shadow-off window measured
+  43 fps before recovering above 200. For first-use hitches, use a separate cold
+  transition with instrumentation installed before it; warming away the work
+  being investigated would invalidate that test. `--stalls` is installed after
+  startup and settling, and `--cpu 4` is applied after loading, so neither measures
+  the corresponding startup work by default.
 - **Chrome/Metal can leave the next GPU device request pending even after cleanup.**
   `--fresh-browser` starts one Chrome process per scene while retaining the --vs
   alternation. `--loading-frames` runs a loading-only frame heartbeat, stopping before
@@ -57,17 +73,24 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
   measured 13 ms a frame of JavaScript, then 4 ms once they were gone. Ask the user
   before quitting their apps.
 - **Check what else is using the GPU first**: `ioreg -r -d 1 -c IOAccelerator |
-  grep "Device Utilization"`. The Claude app's browser pane keeps rendering the
-  game if it's open on the dev server, and takes most of the GPU. It's the user's,
-  so don't kill it: ask them to close it, or rely on `--vs`/`--ab`.
-- A hidden browser pane doesn't run `requestAnimationFrame` at all, so the game
-  never gets past loading there.
-- `--dpr 2` means GPU-bound (fragment cost). `--dpr 1 --cpu 4` stands in for a
-  phone's CPU. `--profile` prints the hottest functions, and `--profile-load`
-  profiles start-up; the `.cpuprofile` files are written to `/tmp`.
+  grep "Device Utilization"`. The Claude app's browser pane has kept rendering an
+  open game and consumed most of the GPU during other tests. Ask the user to close
+  their active game view or defer the clean comparison. `--vs`/`--ab` do not make
+  changing background contention harmless. Record load before and after the run.
+- Browser visibility can suspend animation: a hidden pane has stalled loading by
+  stopping `requestAnimationFrame`. Other background views can keep rendering.
+  Check actual activity rather than assuming an obscured or minimized view is idle.
+  Hussite Wars also recorded roughly 1 Hz callbacks while `document.hidden` was
+  false. Probe callback intervals before trusting browser-pane FPS; the visibility
+  flag alone does not establish normal cadence. This is a cross-project warning,
+  not a diagnosis of every slow Streets of Prague session.
+- `--dpr 2` increases fragment work; it does not prove the game is GPU-bound.
+  `--dpr 1 --cpu 4` stresses main-thread JavaScript, not a whole phone's CPU/GPU,
+  memory bandwidth or workers. `--profile` prints the hottest functions and
+  `--profile-load` profiles startup; the `.cpuprofile` files are written to `/tmp`.
 - The GPU timer query's numbers aren't reliable on Metal. Trust frame times.
   Headless Chrome still lines frames up to 16.7 ms slots, so a GPU-bound frame
-  shows as 16 or 33 ms. Use the average.
+  shows as 16 or 33 ms. Compare the distribution and sequence as well as the average.
 - Before trusting a big speed-up, take a `--shot` (and run with `--extra "&dev"`,
   which prints shader compile errors). A shader that fails to compile draws
   nothing, and nothing is fast: a "3.8× faster" ground was really no ground.
@@ -75,7 +98,9 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
   that fails (`Vertex input variable … exceeds the maximum (16)`, `Invalid
   RenderPipeline`) leaves its objects undrawn: fewer triangles, and a frame that looks
   quicker than it is.
-- **Count work, not only time.** Counts don't drift with the machine. Wrap
+- **Count work, not only time.** Counts are less sensitive to machine load, but
+  compare the same route, loaded tiles and population: a slower simulation or
+  missing scenery can change the work too. Wrap
   `renderer.backend.updateAttribute` (bytes: the attribute's, or its `.data`'s for an
   interleaved one, `updateRanges`), `backend.updateBinding`, `backend.draw` and
   `device.queue.writeBuffer` in an `--eval`, let it run 3 s, and divide by the frames
@@ -84,6 +109,101 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
   for close-ups) and check that the stats match (e.g. the share of dark pixels),
   not that the pixels match. For simulation changes, compare an order-independent
   hash of results (parked car positions) between the servers.
+  Observe the loading/streaming transition too: a settled screenshot cannot prove
+  that trees, cars or shadows did not briefly disappear or pop into place.
+
+### Checking measurement noise
+
+When results change direction, the machine is busy, or the claimed change is only
+a few percent, compare the same unchanged build against itself before interpreting
+another A/B result. The existing harness accepts the same URL for both roles:
+
+```sh
+node scripts/bench.mjs --url http://localhost:5191/ --vs http://localhost:5191/ --scenes drive --seconds 40 --dpr 1 --cpu 4 --graphics high --time 14:00 --weather clear --stalls --runs 3 --fresh-browser --loading-frames --require-webgpu
+```
+
+Run this only when measurement is authorized, on a stable server whose port owner
+is known. If unchanged-build differences are comparable to the proposed gain or
+regression, the setup cannot resolve it yet. Report the comparison as inconclusive
+and address load/order/thermal effects before collecting more optimization numbers.
+A quiet control run improves confidence; it does not prove every later run is clean.
+
+Keep individual paired results, not just their pooled mean. Report mean and
+p95/p99 frame time, long-task count and duration, relevant work counts, and any
+loading/memory costs. A single extreme run can dominate an apparent tail benefit.
+Retain valid slow runs; exclude runs only for a documented test failure such as
+fallback, zero frames, missing geometry or a known interruption, not because they
+make the result inconvenient. Overlapping games are a possible confounder, not an
+established explanation for every regression; preserve the original evidence.
+
+### Throughput and visible smoothness
+
+The desktop benchmark launches Chrome with `--disable-frame-rate-limit` and
+`--disable-gpu-vsync`. Use that setup for matched cost comparisons, then verify
+the same driving route in a normally paced browser on the target device before
+claiming smoother play. Keep those results separate; an uncapped headless run
+does not establish displayed-frame pacing.
+
+Quiet Blocks documented a Pixel 5 change that removed unused bloom passes and
+improved throughput by about 10%, yet worsened p95 frame intervals from 89 to
+145 ms and median consecutive-interval variation from 11 to 33 ms. This is evidence
+that less work can deliver less evenly, not a recommendation to keep redundant
+rendering in this game.
+
+Record the raw frame-interval sequence alongside mean and tail times. A useful
+additional signal is `abs(interval[n] - interval[n - 1])`: compare its distribution
+and repeated short/long bursts at matching display cadence. Animation callbacks
+are a proxy for presentation, not proof of displayed frames; use a compositor or
+device trace if the visual result and callback timings disagree. Use raw timestamps,
+not clamped simulation `dt`, and retain genuine long stalls in the hitch report.
+Auto-quality sampling may exclude pauses, but that filter is not a stutter metric.
+
+### Follow mutations through rendering
+
+For a tile arrival or departure, distinguish worker completion, main-thread
+assembly, scene insertion/removal, first colour/shadow use, and retirement of GPU
+resources. A short JavaScript mutation can leave expensive work for the next
+renderer submission. A slow submission can in turn appear as a large frame
+interval on the following callback. Correlate adjacent frames and the preceding
+mutation instead of requiring all peaks to have the same timestamp.
+
+Keep main-thread preparation, CPU time inside renderer calls, frame gaps and GPU
+execution as separate measurements. A long interval with a short renderer call
+does not identify the GPU as the cause; inspect simulation, other tasks and browser
+scheduling too. `queue.onSubmittedWorkDone()` observes completion of previously
+submitted work and can alter pacing if awaited every frame; it is not an isolated
+GPU timer. Unsupported counters are unknown, not zero. Global counter changes
+during a particular object's render are leads, not proof that object caused them.
+
+### Interpreting optimization results
+
+The work from plans 007–012 illustrates several distinctions worth keeping:
+
+- **A work reduction is not an FPS claim.** Shared graphs, fewer first-use builders
+  and fewer index mutations prove specific work was removed. They do not prove
+  lower mean frame time or fewer visible hitches. Attribute remaining long frames
+  before assuming the original bottleneck still dominates.
+- **Preparation moves costs.** Retained car/tree pages can avoid driving-time
+  builds while adding loading time and reserved buffers. Report startup, normal
+  frames, first-use frames, memory and overflow separately. Warm the exact retained
+  objects and relevant shadow passes; count-zero/hidden stand-ins can miss them.
+- **Incremental bookkeeping must pay for itself.** Dirty scans, maps, ordering and
+  removals have a cost even when few entries change. Compare the full per-step
+  cost with the old rebuild-on-change path, not just the number of mutations.
+  Plan 012 B remains held off main with an isolated retest pending; its measured
+  desktop regression has not been shown to be caused by background load.
+- **Worker changes need both frame and arrival evidence.** Track required-tile
+  latency and missing player/ahead tiles alongside hitches. Reducing contention is
+  not a win if the road arrives too late. Keep optional refreshes coalesced and
+  distinguish them from initial work required to display a tile.
+- **Code and asset activation are different.** Offline processing can remove a
+  browser pixel pass but increase asset size, and a compatible reader alone does
+  not activate staged assets. Test a cold load with the intended asset version;
+  include download/decode/upload costs as well as the eliminated JavaScript.
+- **Do not add independent speedups together.** Separate candidates compared with
+  one common baseline can interact when combined. Verify the selected integration,
+  then compare that exact combined revision against its matching baseline once
+  concurrent work has settled. Keep excluded experiments out of later merges.
 
 ## Where the time goes (2× on an M5, Chrome, by the Old Town Square)
 
@@ -184,12 +304,44 @@ The ground is shaded on every pixel. Measure anything you add to `PATTERNS_GLSL`
 - Check behaviour after simulation changes: trams, traffic and people still move,
   some stop for obstacles, and the grids hold no stale entries.
 
+## Streaming and resource lifetime
+
+These checks adapt Quiet Blocks' edit/reuse lessons to a moving city:
+
+- **Test warm reuse and exploration separately.** Repeated trips over the same
+  blocks exercise release/refill; a long route through new districts and variants
+  exercises cache growth. Track active objects, reserved pages, retained bytes and
+  final disposal separately. Hidden or empty pooled objects still own resources;
+  ten stable reuse cycles do not prove memory stays flat across the whole city.
+- **Preserve the whole reusable assembly.** Keep parent attachment, mesh,
+  geometry, attributes, typed arrays and materials stable where possible. A stable
+  root or UUID alone does not prove the renderer reused its buffers or bindings.
+  Check the first use after reactivation, including shadows, as well as later frames.
+- **Stage against real renderer progress if staging is needed.** Several animation
+  callbacks can occur between renders when pacing or idle logic skips submissions.
+  Wait for the intended render checkpoint before the next mutation; that checkpoint
+  need not block on GPU queue completion. Include removal/disposal and weight a
+  group by its descendant render work, not just one top-level object. Smaller
+  chunks can multiply draws, shadow refreshes and repeated hitches: compare p99,
+  worst frame and total time until the required tile is usable.
+- **Check final convergence after cancellation.** A new location can supersede
+  queued work while the old tile is partly installed. Reconcile from the actual
+  attached and pending state, and verify the latest required tiles finish once
+  movement settles. A capture ending with required work pending cannot establish
+  complete load time, even if its last recorded frame was fast.
+
 ## Uploads to the GPU
 
 - **Send only what's drawn**: `send(attr, n)` / `sendInstances(mesh)` in `src/gpu.ts`
   set an update range for the first `n` items and skip empty meshes. Instance buffers
   are sized for the worst case (4000 of a lamp model), and `needsUpdate` alone sends
   the whole buffer.
+- **Preserve writes pending the next upload.** If several tile updates touch an
+  attribute before it renders, combine their dirty ranges or send one final active
+  range covering every required write. A later partial update must not clear an
+  earlier unsent range. Test two disjoint writes before one render and unchanged
+  frames afterward; do not infer a bug from `clearUpdateRanges()` alone when the
+  final range already covers all drawn data.
 - **No `DynamicDrawUsage`.** three.js's WebGPU renderer uploads such an attribute every
   frame whether it changed or not, and whole once its ranges are used up.
 - An instanced mesh whose matrices fit a uniform buffer (≤ ~1000) is uploaded as a
@@ -206,13 +358,17 @@ for its `userData.flatten()` (the same ground without the pattern):
 --ab 'window.__ab = (on) => { window.__drive.scene.traverse((o) => { const m = o.material; if (!m || Array.isArray(m)) return; const u = o.userData; if (!u.patterned && m.userData && m.userData.flatten) { u.patterned = m; u.flat = m.userData.flatten(); } if (u.patterned) o.material = on ? u.patterned : u.flat; }); }; window.__ab(false); window.__ab(true);'
 ```
 
-Only compare such differences between the renderers, not whole frames: on WebGPU
-everything written in GLSL is drawn plain or not at all. There's no GPU timer there.
+For a partially ported feature, compare only equivalent rendered work: an unported
+GLSL customization can be plain or missing on WebGPU. The main effects are now
+ported, so whole-frame comparisons are useful once visual parity, backend and test
+conditions are checked. Do not assume GPU timer support or reliability on WebGPU.
 
 ## Stalls while driving (hitches)
 
 Measured 30 September 2026: the drive from Újezd, 40 s, on an M5 at 1× and 4× and on a
-Pixel 5 (see "On a phone" below).
+Pixel 5 (see "On a phone" below). These observations motivated the later shared
+building graphs and retained car/tree pools. Plans 007–012 reduced first-use work,
+but their results do not establish a general frame-rate gain; see the findings doc.
 
 - **Most stalls are three.js building a material's shader** (TSL into WGSL, on the main
   thread) the first time something is drawn with it: 7 ms at 1× on an M5, 15–60 ms at
@@ -229,10 +385,11 @@ Pixel 5 (see "On a phone" below).
   a drive.
 - **Every `InstancedMesh` gets a build of its own:** three.js puts `object.uuid` into the
   render cache key (its instancing nodes bind that mesh's buffers), whatever the
-  material. Each tile's tree meshes pay for the whole tuft shader (~14 ms at 1× on an
-  M5, ~60 ms on a Pixel 5), and a car model's mesh pays when it first appears and each
-  time it grows (`CarDrawer.render`). Keep and reuse instanced meshes rather than making
-  new ones. Don't patch the key: a shared build would bind the first mesh's buffers.
+  material. Before pooling, each tile's new tree meshes paid for the tuft shader
+  (~14 ms at 1× on an M5, ~60 ms on a Pixel 5), and `CarPool.render` replaced meshes
+  on growth. Keep and reuse instanced meshes rather than making new ones. Check
+  stable UUIDs/buffers, bounds after reuse, overflow, and shared-resource disposal.
+  Don't patch the key: a shared build would bind the first mesh's buffers.
 - **Tile loading itself is cheap on the main thread** (each lap of `make` 1–30 ms; the
   graph merge under 1 ms). The workers and the sky view take 100–500 ms, off it.
 - **Chrome's CPU throttling slows only the page's main thread**, not the tile workers or
@@ -271,9 +428,26 @@ core count: `--init "Object.defineProperty(navigator, 'hardwareConcurrency', { g
 
 - Tracing slows the phone several times over: use a trace to see what runs, not how long.
 - The phone warms over repeated runs (battery 33 → 35 °C in eight drives) and gets slower:
-  alternate A and B, and don't compare runs far apart.
+  alternate A and B, reverse starting order, record temperature and let it cool if
+  the later runs keep getting warmer. Battery temperature is a useful indicator,
+  not a direct measurement of GPU throttling. Mac game instances do not directly
+  contend for the phone's GPU, though a busy local server can delay asset delivery.
 - It's much slower than the M5 at 4×: ~23 fps on the drive at 1× and High (median frame
   ~33 ms), 40–60 long tasks in 40 s, the slowest 1% of frames 115–120 ms.
+
+## Cross-project references
+
+Reviewed on 1 October 2026; use the methods, not the other projects' timings or
+renderer policies, as evidence for Streets of Prague:
+
+- `~/projects/quiet-blocks/docs/web-performance.md`: the bloom frame-pacing
+  regression, delayed renderer work and separate resource-lifetime workloads.
+- `~/projects/quiet-blocks/.agents/skills/quiet-blocks-renderer-performance/`:
+  `SKILL.md` and `references/edit-performance.md` cover completed-render staging,
+  pending upload ranges, cancellation and retention growth.
+- `~/projects/oss/hussite-wars-threejs/.claude/skills/3d-performance/SKILL.md`:
+  browser-pane cadence and renderer-counter caveats. Its on-demand idle battle
+  loop is not a drop-in policy for this continuously simulated city.
 
 ## Before you commit
 

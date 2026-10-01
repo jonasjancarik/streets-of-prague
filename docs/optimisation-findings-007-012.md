@@ -24,7 +24,7 @@ same starting revision, and several changed direction under machine load.
 | [010: Landmark colours](../plans/010-prebake-landmark-colours.md) | Versioned GLBs perform zero runtime colour pixel passes; legacy assets retain their old path. All 15 staged models preserve geometry and non-image buffers, with matching checked appearances. | Staged centre/city files are 33.4%/32.9% larger. Cold-transition timing is inconclusive. Original shared manifests and GLBs remain active. | Merge converter and compatible reader. Keep asset activation separate until a marker-aware client is live; consider download-size cost before rollout. |
 | [011: Spawn sampling](../plans/011-reuse-spawn-sampling.md) | Weights are prepared once per replenishment pass and pavement queries scan only the relevant traffic subset. Selector boundaries, RNG consumption, populations and 173 live queries matched the reference. | Two three-pair timing series changed direction: 11.9 → 12.9 ms and 13.0 → 11.5 ms. Preparation itself has a cost. | Merge as a behavior-preserving reduction in repeated calculations; no confirmed FPS gain. |
 | [012 A: Streaming scheduling](../plans/012-schedule-streaming-and-update-collisions.md) | One job per worker, required jobs first, revision-safe coalesced sky refreshes. Desktop/phone queues drained and every comparison had zero player/ahead-tile gaps. | Mean frame-time changes were small and inconclusive. Required-tile build p95 remained 1.25–1.30 s desktop and 5.28–5.99 s phone. | Merge scheduling and diagnostics. Keep the existing worker-count default. |
-| [012 B: Resting-car index](../plans/012-schedule-streaming-and-update-collisions.md) | Ordered collision queries match the full-rebuild oracle; only changed entries are refiled. | Desktop mean consistently worsened 10.10 → 10.46 ms (+3.5%). Phone 56.46 → 56.79 ms is inconclusive; one baseline outlier dominates the apparent long-task reduction. Adds an offset-array immutability assumption. | Hold off main. Keep the existing full-rebuild-on-change collision implementation until a revision demonstrates a net benefit. |
+| [012 B: Resting-car index](../plans/012-schedule-streaming-and-update-collisions.md) | Ordered collision queries match the full-rebuild oracle; only changed entries are refiled. | Desktop mean consistently worsened 10.10 → 10.46 ms (+3.5%). Phone 56.46 → 56.79 ms is inconclusive; one baseline outlier dominates the apparent long-task reduction. Adds an offset-array immutability assumption. | Hold off main; an isolated retest is pending to check the small regression under controlled load. Keep the existing collision implementation unless a net benefit is demonstrated. |
 
 ## Separate plan 012 comparisons
 
@@ -45,6 +45,42 @@ Both phone comparisons built three tiles per drive and had no road gaps. Part A
 coalesced 41 refreshes per desktop drive and 36–37 per phone drive. Part B changed
 roughly 1,500 cars across 5.2 million desktop scans, or 756–765 across 0.84–0.85
 million phone scans; fewer mutations did not translate to faster desktop frames.
+
+## Lessons for future comparisons
+
+The work counts provide stronger evidence here than the timing estimates. Fewer
+shader builds or repeated scans show that particular work was removed, but do not
+establish higher FPS or smoother driving. In the index experiment, extra per-step
+bookkeeping could outweigh less frequent refiling; in the mesh experiments, some
+cost moved into startup and reserved memory. Report those costs separately.
+
+Use one actively rendering game instance per test device, including headless
+benchmarks, QA tabs and in-app browser views. Several idle dev servers are a
+different situation. A suspected overlap should prompt an isolated retest, not
+retroactively invalidate inconvenient results: contention has not been established
+as the cause of plan 012 B's regression. Its
+[retest checklist](../plans/012-schedule-streaming-and-update-collisions.md#follow-up-retest-part-b-in-isolation)
+keeps the original evidence and the decision to hold it off main.
+
+For small or contradictory differences, first compare an unchanged build against
+itself. Then run baseline/candidate pairs serially and reverse their starting
+order in a second series: the current `--vs` loop always runs baseline first.
+Keep per-run results and load/temperature context; pooled means can conceal order
+effects or a single outlier. CPU-throttled desktop runs do not reproduce phone
+worker contention or thermals.
+
+Match the test to the claimed improvement. Startup, a cold landmark transition,
+the first use of a mesh and warmed steady-state frames are different workloads.
+Begin instrumentation before the event being tested. Worker changes also need
+tile-arrival and road-gap checks, while asset pre-baking needs size and activation
+checks. A compatible reader with legacy assets still active has not eliminated
+their runtime processing.
+
+Finally, independent candidates against one baseline cannot establish a combined
+gain. Recheck correctness and measure the exact selected integration after
+concurrent work settles, preserving the exclusions recorded here. The reusable
+procedure lives in the [performance skill](../.agents/skills/performance/SKILL.md);
+these additions record lessons from existing evidence, not new measurements.
 
 ## Verification and scope of integration
 
