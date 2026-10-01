@@ -233,8 +233,16 @@ record the measurements, merge decisions and pending landmark asset activation.
 
 - **Procedural look.** The ground is real geometry, one mesh per surface kind
   triangulated from OSM and coloured by world-space GLSL patterns (`src/shading.ts`,
-  `src/surface.ts`): asphalt, granite setts, Prague mosaic pavement, slabs, grass,
+  `src/surface.ts`): asphalt, granite setts, slabs, grass,
   water. Rails, zebras, lane markings and parking-bay outlines are thin strips on top.
+  The general pavement is asphalt grey; slab squares are lighter, and park paths stay
+  warm. Squares use their own OSM `surface` tag where one exists. Otherwise, a clear
+  majority of mapped pedestrian and service ways crossing the square can supply its
+  surface; Old Town Square takes the setts mapped on the ways through it. The city's
+  technical map supplies ground-level courtyards, maintained green, gardens, pitches
+  and woods where OSM has no more specific surface. OSM ground and roads draw above
+  those surveyed shapes. Rebuild the `ground` layer for these changes; use
+  `pipeline/beige_report.py` to measure the remaining unmapped ground in an area's tiles.
   Land that OSM gives a use but no surface still gets one: fields with crop rows
   (farmland, nurseries), concrete work yards (industrial land, garages, farmyards),
   gravel ballast on railway land, and bare earth on building sites, brownfields and

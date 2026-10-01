@@ -42,6 +42,11 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
       ctx.fillStyle = `rgb(${v},0,0)`;
       fillPolys(ctx, geo, polys, s);
     };
+    fill(d.areas.dtm_yard, 0);
+    fill(d.areas.dtm_green, PARK);
+    fill(d.areas.dtm_garden, GARDEN);
+    fill(d.areas.dtm_wood, WOOD);
+    fill(d.areas.dtm_pitch, 0);
     fill(d.areas.cover_grass, GARDEN);
     fill(d.areas.garden, GARDEN);
     fill(d.areas.park, PARK);
@@ -49,6 +54,9 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fill(d.areas.wood, WOOD);
     // Keep trees off everything built or paved.
     fill(d.areas.square, 0);
+    fill(d.areas.square_setts, 0);
+    fill(d.areas.square_asphalt, 0);
+    fill(d.areas.square_loose, 0);
     fill(d.areas.pitch, 0);
     fill(d.areas.parking, 0);
     fill(d.areas.water, 0);

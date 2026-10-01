@@ -5,10 +5,11 @@
 
 IPR publishes the map every month as one GeoPackage per city district (57 of them,
 about 130 MB zipped), downloaded into pipeline/.cache/dtm/ZPS_OPL/. Each is read
-once: the carriageways, lay-bys and parking, with the level each is on (0 the ground,
+once: carriageways, lay-bys, parking, courtyards and selected greenery, with the level each is on (0 the ground,
 1, 2, … bridges and decks, -1, … under the ground), go into dtm/surfaces.pkl in
 WGS84, the same for every area. The map covers the city only; past its limits
-streets() finds nothing and the pipeline sizes streets from OSM as before.
+streets() finds nothing and the pipeline sizes streets from OSM as before. land()
+returns the surveyed ground polygons without rounding their corners.
 
 Source: DTM kraje – ZPS, datový podklad © IPR Praha (CC BY 4.0).
 """
@@ -41,8 +42,15 @@ KINDS = {
     "010000000503": "road",       # provozní plocha pozemní komunikace: the carriageway
     "010000032003": "roadside",   # přidružená plocha pozemní komunikace: lay-bys, bus bays
     "010000001103": "parking",    # parkoviště, odstavná plocha: parking bays and car parks
+    "010000018903": "yard",       # dvůr, nádvoří
+    "010000021503": "green",      # udržovaná plocha zeleně
+    "010000020903": "garden",     # zahrada
+    "010000015203": "pitch",      # hřiště
+    "010000021103": "wood",       # les
 }
-VERSION = 2  # bump when what surfaces() keeps changes
+VERSION = 3  # bump when what surfaces() keeps changes
+STREET_KINDS = ("road", "roadside", "parking")
+LAND_KINDS = ("yard", "green", "garden", "pitch", "wood")
 # The survey draws a street corner's curve as a few straight pieces, and where two
 # surfaces meet their edges often miss by a hand's width. Gaps and spikes narrower
 # than twice SLIVER go, then each corner is cut ROUNDS times, at most CUT metres
@@ -53,6 +61,7 @@ CUT, ROUNDS = 1.5, 3
 MARGIN = 0.0005  # degrees (~40 m) past the box, so neighbouring boxes round alike
 
 _index = None  # per process: (STRtree, polygons on the ground in WGS84)
+_land_index = None  # per process: (STRtree, polygons, kind labels)
 
 
 def download():
@@ -120,7 +129,7 @@ def streets(bbox, transform):
     global _index
     if _index is None:
         kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
-        geoms = [g[levels == 0] for levels, g in kinds.values()]
+        geoms = [kinds[k][1][kinds[k][0] == 0] for k in STREET_KINDS if k in kinds]
         geoms = np.concatenate(geoms) if geoms else np.array([], dtype=object)
         _index = (STRtree(geoms), geoms)
     tree, geoms = _index
@@ -130,6 +139,28 @@ def streets(bbox, transform):
         return Polygon()
     local = shapely.transform(hits, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
     return _smooth(shapely.union_all(shapely.make_valid(local), grid_size=0.01))
+
+
+def land(bbox, transform):
+    """Ground-level DTM yards and greenery in local metres, without kerb rounding."""
+    global _land_index
+    if _land_index is None:
+        kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
+        groups = [(kind, kinds[kind][1][kinds[kind][0] == 0]) for kind in LAND_KINDS if kind in kinds]
+        geoms = np.concatenate([group for _, group in groups]) if groups else np.array([], dtype=object)
+        labels = np.concatenate([np.full(len(group), kind, dtype=object) for kind, group in groups]) if groups else np.array([], dtype=object)
+        _land_index = (STRtree(geoms), geoms, labels)
+    tree, geoms, labels = _land_index
+    w, s, e, n = bbox
+    hits = tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN), predicate="intersects")
+    out = {}
+    for kind in LAND_KINDS:
+        chosen = geoms[hits[labels[hits] == kind]]
+        if not len(chosen):
+            continue
+        local = shapely.transform(chosen, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
+        out[kind] = shapely.union_all(shapely.make_valid(local), grid_size=0.01)
+    return out
 
 
 def _smooth(g):

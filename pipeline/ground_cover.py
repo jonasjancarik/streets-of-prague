@@ -438,7 +438,8 @@ def label_rasters(area, t, res):
     burn(lab, t, res, A.get("park", []) + A.get("garden", []), L["grass"])
     burn(lab, t, res, A.get("wood", []), L["trees"])
     burn(lab, t, res, R.get("road", []) + A.get("parking", []), L["asphalt"])
-    burn(lab, t, res, R.get("path", []) + A.get("square", []) + R.get("sett", []), L["paving"])
+    burn(lab, t, res, R.get("path", []) + A.get("square", []) + A.get("square_setts", []) +
+         A.get("square_asphalt", []) + A.get("square_loose", []) + R.get("sett", []), L["paving"])
     # Railway ballast: a metre and a half either side of a (non-tram) track.
     rails = [LineString(r["pts"]).buffer(1.5, cap_style="flat") for r in t["rails"] if r["kind"] == "rail" and len(r["pts"]) > 1]
     if rails:

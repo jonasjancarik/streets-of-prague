@@ -77,7 +77,7 @@ FEATURE_TAGS = {
     "building": True, "building:part": True, "highway": True, "landuse": True, "leisure": True,
     "natural": True, "waterway": True, "railway": True, "amenity": True,
     "barrier": ["wall", "city_wall", "fence", "hedge"], "man_made": ["bridge", "pier"],
-    "place": ["islet", "island"], "historic": ["city_gate", "castle_wall"],
+    "place": ["islet", "island", "square"], "historic": ["city_gate", "castle_wall"],
     "bridge": True, "area:highway": True,
 }
 
@@ -174,6 +174,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     car_ways = []  # (line, what its tags say, class, a street?), sized after the loop
     sidewalks = []  # footways and paths with their half widths, which may run along a street
     maybe = []  # ways that are passages if they run through buildings (passage_tags)
+    squares = []  # (polygon, own surface); decide after all the ways have been read
+    square_ways = []  # (line, mapped surface) on the ground, including untagged ways
     ground_ways = set()  # the OSM ids of the passages among the ways tagged as tunnels
 
     # Every geometry into local metres in one go.
@@ -215,6 +217,10 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         if hw and isinstance(g, (LineString, MultiLineString)):
             if hw in ("proposed", "construction", "elevator", "platform", "bus_stop"):
                 continue
+            if (hw in ("pedestrian", "footway", "living_street", "service")
+                    and col(row, "footway") != "crossing" and col(row, "tunnel") in (None, "no")
+                    and (_float(col(row, "layer")) or 0) == 0):
+                square_ways.extend((ls, _square_surface(col(row, "surface"))) for ls in _lines(g.intersection(clip)))
             width = road_width(hw, _float(col(row, "width")), _float(col(row, "lanes")))
             passage = passage_tags(hw, lambda k: col(row, k))
             if passage == "maybe":
@@ -227,7 +233,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             add_way(row, g, hw, width)
             continue
         if hw == "pedestrian" and isinstance(g, (Polygon, MultiPolygon)):
-            areas.setdefault("square", []).append(g)
+            squares.append((g.buffer(0), col(row, "surface")))
             continue
 
         rw = col(row, "railway")
@@ -272,7 +278,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             if col(row, "landuse") == "residential":
                 homes.append(g.buffer(0))
             kind = _area_kind(row, col)
-            if kind:
+            if kind == "square":
+                squares.append((g.buffer(0), col(row, "surface")))
+            elif kind:
                 areas.setdefault(kind, []).append(g.buffer(0))
             if kind == "parking" and col(row, "parking") not in UNDER_COVER:
                 o = col(row, "orientation")
@@ -295,6 +303,12 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             elif col(row, "tunnel"):
                 continue
             add_way(row, g, hw, width)
+
+    square_lines = [line for line, _ in square_ways]
+    square_tree = STRtree(square_lines) if square_lines else None
+    for poly, surface_tag in squares:
+        kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
+        areas.setdefault(kind or "square", []).append(poly)
 
     # The streets as surveyed, where the technical map has them (within Prague).
     surface = shapely.intersection(dtm.streets((w, s, e, n), tf.transform), clip, grid_size=GRID)
@@ -338,6 +352,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         road_lines.setdefault("road", []).append(_areas(shapely.difference(surface, setts, grid_size=GRID)))
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
+    for kind, geom in dtm.land((w, s, e, n), tf.transform).items():
+        area_polys[f"dtm_{kind}"] = _areas(geom.intersection(clip))
     gardens = _gardens(homes, buildings, streets, clip)
     if not gardens.is_empty:
         area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])
@@ -348,6 +364,38 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             "ground_ways": ground_ways,
         "lots": lots, "kerbs": kerbs,
     }
+
+
+SQUARE_SURFACES = {
+    "sett": "square_setts", "cobblestone": "square_setts", "unhewn_cobblestone": "square_setts",
+    "paving_stones": "square", "concrete:plates": "square", "paved": "square", "concrete": "square",
+    "asphalt": "square_asphalt",
+    "compacted": "square_loose", "unpaved": "square_loose", "sand": "square_loose",
+    "gravel": "square_loose", "fine_gravel": "square_loose",
+}
+
+
+def _square_surface(value):
+    """The drawn surface of one square or of a line that crosses it."""
+    return SQUARE_SURFACES.get(str(value).strip().lower()) if value is not None else None
+
+
+def _square_from_ways(poly, ways, tree):
+    """Inherit only a clear majority of at least 30 m of mapped, ground-level ways."""
+    if tree is None:
+        return None
+    lengths = {}
+    total = 0.0
+    for i in tree.query(poly, predicate="intersects"):
+        line, kind = ways[i]
+        length = line.intersection(poly).length
+        total += length
+        if kind:
+            lengths[kind] = lengths.get(kind, 0.0) + length
+    if not lengths or total == 0:
+        return None
+    kind, length = max(lengths.items(), key=lambda item: item[1])
+    return kind if length >= 30 and length >= 0.6 * total else None
 
 
 CONIFERS = ("picea", "pinus", "abies", "larix", "taxus", "thuja", "juniperus", "cedrus", "pseudotsuga", "cupressus", "tsuga", "chamaecyparis", "metasequoia")

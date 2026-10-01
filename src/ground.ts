@@ -31,9 +31,9 @@ type GroundGeometry = GroundLayer['geometry'];
 // workers (tileWorker.ts); surface.ts makes the meshes.
 
 export const COLORS = {
-  pavement: '#cdbfa8', square: '#d0c3ab', path: '#d4c8b2', dirt: '#bfa87e',
+  pavement: '#92908c', square: '#d7d3cb', squareSetts: '#9c958a', path: '#d8cbb6', dirt: '#bfa87e',
   park: '#79a24c', garden: '#80a552', wood: '#52703c', orchard: '#89a858', pitch: '#6c9c55',
-  field: '#b9b27a', yard: '#a9a69e', ballast: '#99948a', bare: '#bba888',
+  field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', asphalt: '#6b6a68', sett: '#8a847a', parking: '#72706c',
   bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', tunnel: '#46484c', tunnelWall: '#a59f93',
@@ -47,6 +47,13 @@ const BAY_PAINT: [string | null, string, Point2 | null][] = [
 // land, ground being dug up. Drawn just above the plain base, under everything else.
 const LAND_USE: [string, string][] = [
   ['field', 'field'], ['yard', 'concrete'], ['ballast', 'gravel'], ['bare', 'dirt'],
+];
+// Surveyed courtyards and greenery fill unmapped ground. OSM and photo cover
+// remain above these layers wherever their more specific shapes overlap.
+const DTM_LAND: [string, string, string][] = [
+  ['dtm_yard', COLORS.dtmYard, 'concrete'],
+  ['dtm_green', COLORS.park, 'grass'], ['dtm_garden', COLORS.garden, 'grass'],
+  ['dtm_wood', COLORS.wood, 'wood'], ['dtm_pitch', COLORS.pitch, 'pitch'],
 ];
 // Prototype (?cover=<method>, ground_cover.py): what the aerial photographs say the
 // unmapped ground is made of, above those and under everything mapped (tree canopy
@@ -494,9 +501,10 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     }
       return out;
     };
-    add(polygons([[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]]), COLORS.pavement, 'mosaic');
+    add(polygons([[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]]), COLORS.pavement, 'asphalt');
     out[out.length - 1].base = true;
     for (const [key, pattern] of LAND_USE) add(polygons(A[key] || []), COLORS[key as keyof typeof COLORS], pattern);
+    for (const [key, color, pattern] of DTM_LAND) add(polygons(A[key] || []), color, pattern);
     for (const [key, color, pattern] of COVER) add(polygons(A[key] || []), color, pattern);
     add(polygons(A.garden || []), COLORS.garden, 'grass');
     add(polygons(A.park || []), COLORS.park, 'grass');
@@ -505,6 +513,9 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.pitch || []), COLORS.pitch, 'pitch');
     add(strips(outlines((A.pitch || []).map((r) => [r[0]])), 0.12), COLORS.paint);
     add(polygons(A.square || []), COLORS.square, 'slabs');
+    add(polygons(A.square_setts || []), COLORS.squareSetts, 'setts');
+    add(polygons(A.square_asphalt || []), COLORS.asphalt, 'asphalt');
+    add(polygons(A.square_loose || []), COLORS.dirt, 'gravel');
     add(polygons(A.water || []), COLORS.water, 'water');
     shade(skirts(A.water || [], 6, false, cut), 0.35);
     add(strips(outlines(A.water || []), 0.9), COLORS.quay, 'slabs');
