@@ -2,6 +2,7 @@ import { KINDS } from './weather.ts';
 import type { Kind } from './weather.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
+import { newsletterLink } from './newsletter.ts';
 
 // The start of the game, on the loading screen: the time and weather it will begin
 // with (the time in Prague now and a weather picked for the season, if nothing was
@@ -98,6 +99,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
   go.type = fresh.type = 'button';
   fresh.addEventListener('click', () => { resuming = false; sync(); go.focus(); });
   go.disabled = true;
+  newsletterLink(panel, 'ls-news', { thanks: true });
   for (const f of relabel) f();
   show();
 

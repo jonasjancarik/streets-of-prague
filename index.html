@@ -226,6 +226,10 @@
       .ls-saved { letter-spacing: 0.06em; opacity: 0.9; text-shadow: 0 0 6px var(--poster-black), 0 0 3px var(--poster-black); }
       .ls-new { align-self: flex-start; font: inherit; letter-spacing: 0.06em; color: var(--poster-paper); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 0.3em; cursor: pointer; opacity: 0.85; }
       .ls-new:hover { opacity: 1; }
+      /* Signing up for news by email (src/newsletter.ts): a quiet link under the button. */
+      .ls-news { align-self: flex-start; margin-top: var(--u); font: inherit; letter-spacing: 0.06em; color: var(--poster-paper); background: none; border: 0; padding: 0; text-align: left; opacity: 0.75; text-shadow: 0 0 6px var(--poster-black), 0 0 3px var(--poster-black); }
+      button.ls-news { text-decoration: underline; text-underline-offset: 0.3em; cursor: pointer; }
+      button.ls-news:hover, .ls-news.done { opacity: 1; }
       .ls-start button:focus-visible { outline: 0.4vh solid var(--poster-paper); outline-offset: 0.3vh; }
       .ls-row + .ls-row { border-top: 1px solid rgba(236, 228, 214, 0.14); padding-top: var(--u); }
       .ls-go:not(:disabled)::before { content: ''; display: inline-block; width: 0.6em; height: 0.7em; margin-right: 0.4em; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%); }
@@ -297,12 +301,12 @@
       /* Bebas has no descenders, so on a full line box its capitals sit high. Where the
          browser can trim the box to the capitals, it does, and the padding centres them. */
       @supports (text-box: trim-both cap alphabetic) {
-        .ls-chip, .ls-go, .settings-chip, .metro-tab, #credits-box form button { text-box: trim-both cap alphabetic; }
+        .ls-chip, .ls-go, .settings-chip, .metro-tab, #credits-box form button, .news-go { text-box: trim-both cap alphabetic; }
         .ls-chip { padding: calc(max(calc(0.6 * var(--u)), 5px) + 0.2em) max(calc(1.4 * var(--u)), 8px); }
         .ls-go { padding: calc(max(calc(1.2 * var(--u)), 8px) + 0.15em) max(calc(3 * var(--u)), 16px); }
         .settings-chip { padding: 9px 11px; }
         .metro-tab { padding: 7px 14px; }
-        #credits-box form button { padding: 10px 16px; }
+        #credits-box form button, .news-go { padding: 10px 16px; }
       }
 
       /* A conversation: the portrait rises out of its frame, the line beside it. */
@@ -381,6 +385,22 @@
       .settings-slot-text { min-width: 0; overflow-wrap: anywhere; font-size: 12px; opacity: 0.85; }
       .settings-credits { display: none; margin-top: 16px; font: inherit; color: var(--ink); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; opacity: 0.8; }
       body.touch .settings-credits { display: block; }
+      .settings-news { display: block; margin-top: 16px; font: inherit; color: var(--ink); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; opacity: 0.8; }
+      .settings-news + .settings-credits { margin-top: 8px; }
+      /* The signup form itself, in a panel like the settings'. */
+      .news p { margin: 8px 0; }
+      .news form { display: flex; gap: 8px; margin: 14px 0 10px; }
+      .news form[hidden] { display: none; }
+      .news input[type='email'] { flex: 1; min-width: 0; font: 16px/1.2 Inter, system-ui, sans-serif; color: var(--ink); background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(236, 228, 214, 0.35); padding: 8px 10px; user-select: text; -webkit-user-select: text; }
+      .news input[type='email']:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+      .news-trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+      .news-go { font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); background: var(--edge); border: 0; padding: 8px 16px 6px; cursor: pointer; box-shadow: 3px 3px 0 #000; white-space: nowrap; }
+      .news-go:hover:not(:disabled) { background: var(--accent); }
+      .news-go:disabled { opacity: 0.6; cursor: default; }
+      .news-status:empty { display: none; }
+      .news-status { font-weight: 600; }
+      .news-status.bad { color: var(--accent); }
+      .news-small { font-size: 12px; opacity: 0.6; }
       .settings-version { margin: 16px 0 0; font-size: 12px; opacity: 0.55; user-select: text; }
       body.touch #credits { display: none; }
       /* Touch controls: left thumb steers, right thumb works the pedals and buttons. */

@@ -912,7 +912,7 @@ The `urad-ai-poc` tunnel routes the hostname there. `scripts/httpd.conf` gives
 JSON the content type Cloudflare needs for compression.
 
 The main site at <https://streetsofprague.com> serves the app as Worker static
-assets. <https://streets.jonasjancarik.cz> and
+assets, with a small Worker for the newsletter signup (below). <https://streets.jonasjancarik.cz> and
 <https://streets-cf.jonasjancarik.cz> remain alternate Cloudflare addresses.
 Its map data comes from the R2 bucket at
 <https://streets-data.jonasjancarik.cz>, under the immutable prefix named in
@@ -938,6 +938,30 @@ fails if an object in that version has changed. Commit the updated
 `scripts/deploy-cloudflare.sh`. That script checks the R2 index and its format, typechecks, builds only the app assets, validates
 Cloudflare Build Output with `cf deploy --prebuilt --dry-run`, and deploys it.
 The two targets can be updated independently.
+
+### Newsletter
+
+The start screen and the settings have a link to sign up for news about the game by
+email (`src/newsletter.ts`). The form posts to `/api/subscribe`, answered by the small
+Worker in `worker/index.js`, which passes the address to [Brevo](https://www.brevo.com).
+Brevo sends an email with a link to confirm; only then is the address on the list, and
+the link leads back to the game, which says so. The beta has no Worker of its own and
+signs up through production's. Nothing is stored outside Brevo, and since the game only
+talks to `/api/subscribe`, moving to another service means changing the Worker alone.
+`node scripts/check-subscribe.mjs` checks the Worker with Brevo replaced by a stand-in.
+
+The game shows no signup link until the newsletter is set up:
+
+1. In Brevo, create a list for the newsletter and a double opt-in confirmation email
+   template (it needs the confirmation link Brevo's default template has; a second one
+   in Czech is optional). Authenticate the sending domain there too.
+2. Put the list's and the templates' numbers in `deploy/newsletter` and commit it.
+3. Create a Brevo API key and store it as a secret on the Worker, once:
+   `CLOUDFLARE_ACCOUNT_ID=7756b12931ecfb3900a31049e157d706 cf workers secrets update BREVO_API_KEY --worker streets-of-prague --type secret_text --text <key>`
+4. Release, then sign up once with your own address to see the whole round trip.
+
+One visitor address can try five times a minute, and only the game's own pages are let
+in, since every try sends an email to whatever address was typed.
 
 ### Releases
 

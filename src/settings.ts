@@ -7,6 +7,7 @@ import type { Kind } from './weather.ts';
 import { describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
 import { mapData } from './data.ts';
+import { newsletterLink } from './newsletter.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
@@ -103,8 +104,8 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     refresh.push(() => { for (const { b, id, label } of buttons) { b.setAttribute('aria-pressed', String(id === current())); b.textContent = label(); } });
   }
 
-  const fixed = (s: string) => () => s;
   const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+  const fixed = (s: string) => () => s;
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang, setLang);
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.on ? 'on' : 'off'), (id) => { if ((id === 'on') !== sound.on) sound.toggle(); });
   row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
@@ -165,6 +166,8 @@ export function setupSettings({ sound, graphics, weather, saves }: {
       sure(del, () => t('Delete'), () => saves.remove(slot));
     }
   });
+
+  newsletterLink(box, 'settings-news', { before: () => box.close() });
 
   // On a phone the credits live here (their corner has these buttons now).
   const credits = el('button', 'settings-credits', box) as HTMLButtonElement;
