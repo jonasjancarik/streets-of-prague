@@ -98,16 +98,17 @@ export function setupSettings({ sound, graphics, weather, saves }: {
       b.type = 'button';
       relabel.push(() => { b.textContent = it.label(); });
       b.addEventListener('click', () => { pick(it.id); update(); });
-      return { b, id: it.id };
+      return { b, id: it.id, label: it.label };
     });
-    refresh.push(() => { for (const { b, id } of buttons) b.setAttribute('aria-pressed', String(id === current())); });
+    refresh.push(() => { for (const { b, id, label } of buttons) { b.setAttribute('aria-pressed', String(id === current())); b.textContent = label(); } });
   }
 
   const fixed = (s: string) => () => s;
+  const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang, setLang);
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.on ? 'on' : 'off'), (id) => { if ((id === 'on') !== sound.on) sound.toggle(); });
   row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
-  row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => t(g.label) })), () => graphics.choice, (id) => graphics.set(id));
+  row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
   row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
 
   // The mixer: one slider per group of sounds, from silent to twice as loud.

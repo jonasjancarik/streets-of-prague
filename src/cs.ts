@@ -114,6 +114,7 @@ export const CS: Record<string, string> = {
   'New objective': 'Nový úkol',
   'Tap for more': 'Klepnutím pokračuj',
   'Tap to continue': 'Klepnutím pokračuj',
+  'Auto ({tier})': 'Auto ({tier})',
   Next: 'Dál',
   Continue: 'Pokračovat',
 
@@ -316,7 +317,6 @@ export const CS: Record<string, string> = {
   'Fly forwards and back': 'Let vpřed a vzad',
   'Climb and come down': 'Stoupání a klesání',
   'Get out, once landed on open ground': 'Vystoupit po přistání na volné ploše',
-  'Cause trouble and the police come after you. Stay out of sight to lose them.': 'Když děláš problémy, začne tě honit policie. Schovej se jim z očí, aby tě ztratila.',
   'Scroll to zoom': 'Kolečkem přiblížíš',
   'dev tools': 'vývojářské nástroje',
   sound: 'zvuk',
