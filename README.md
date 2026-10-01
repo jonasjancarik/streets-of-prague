@@ -323,8 +323,8 @@ that without a new renderer.
   `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
   Rendering keeps fixed-capacity mesh pages per tree shape (`src/trees.ts`). A tile
   leases pages containing only its own trees; unloading the tile clears the pages
-  for reuse without changing the surveyed or generated tree data. Pages hold 256
-  broadleaf or 128 shrub/conifer instances. Startup prepares 64 broadleaf, 20 shrub
+  for reuse without changing the surveyed or generated tree data. Pages hold 1,200
+  broadleaf or 128 shrub/conifer instances. Startup prepares 30 broadleaf, 20 shrub
   and 24 conifer pages; a denser view can add pages without dropping trees.
 - **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, and House Okamura in Břevnov) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial

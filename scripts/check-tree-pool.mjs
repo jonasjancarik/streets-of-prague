@@ -93,7 +93,10 @@ const check = `(async () => {
       inspect(pool.add('retry',make(1,0,0)),make(1,0,0),4);
       pool.remove('retry');
       report.push('lifecycle '+JSON.stringify(pool.stats()));
-    } finally { pool.dispose(); }
+    } finally {
+      pool.dispose();
+      assert(pool.pages.length === 0 && pool.leases.size === 0 && !pool.group.parent, 'final teardown');
+    }
   }
   if (${mode !== 'lifecycle'}) {
     assert(d.renderer.backend?.isWebGPUBackend, 'render case needs WebGPU');

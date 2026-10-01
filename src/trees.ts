@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { send } from './gpu.ts';
 import { treePageFactory, type TreeInstances } from './map/vegetation.ts';
 
-export const TREE_PAGE_CAPACITY = [256, 128, 128] as const;
+export const TREE_PAGE_CAPACITY = [1200, 128, 128] as const;
 export type TreeKind = 0 | 1 | 2; // broadleaf, shrub, conifer
 type Page = { mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null };
 
