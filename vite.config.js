@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from 'vite';
@@ -45,7 +46,14 @@ function licences(emit) {
   };
 }
 
+// What the settings panel shows as the build: the release tag (v1.2.0, or v1.2.0-5-gabc1234
+// when commits came after it) and the date. Outside a git checkout it falls back to "dev".
+const git = (args) => { try { return execSync(`git ${args}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } };
+const version = git('describe --tags --always --dirty') || 'dev';
+const built = new Date().toISOString().slice(0, 10);
+
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built) },
   server: { allowedHosts },
   preview: { allowedHosts },
   plugins: [licences(true)],

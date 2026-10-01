@@ -1,7 +1,7 @@
 import { getLang } from './i18n.ts';
 
 // The player's money: it starts at 10 000 Kč and only goes on taxis, PID tickets and
-// shared bikes. It's not saved and never goes below zero.
+// shared bikes. It never goes below zero (save.ts keeps it between visits).
 
 export const START_MONEY = 10000;
 // PID's time tickets for an adult in Prague from 1 January 2026, at the app's price
@@ -58,6 +58,10 @@ export class Wallet {
   }
 
   hasTicket(now: number) { return this.ticketLeft(now) > 0; }
+
+  // The ticket you hold, as data for a saved game.
+  get held() { return this.ticket && { ...this.ticket }; }
+  set held(t: { from: number; minutes: number } | null) { this.ticket = t && { ...t }; }
 
   buyTicket(now: number, kind: TicketKind = TICKET) {
     if (!this.has(kind.price)) return false;

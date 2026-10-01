@@ -585,6 +585,7 @@ export class Car {
     this.sync();
   }
 
+  get modelName() { return this.variant ? `${this.variant.make}|${this.variant.model}` : null; }
   get speed() { return Math.hypot(this.vx, this.vy); }
   get two() { return this.spec.two; }
   // Someone at the wheel: the player, or the police chasing them.
@@ -599,6 +600,15 @@ export class Car {
     let x = r() * options.reduce((a, v) => a + w(v), 0);
     this.variant = options.find((v) => w(v) > 0 && (x -= w(v)) < 0) ?? options[0];
     this.spec = tuned(this.type, this.variant);
+    this.mass = this.spec.mass;
+  }
+
+  // Be this model of the type (a saved game's), written as `make|model`, if there is one.
+  setVariant(name: string) {
+    const v = VARIANTS[this.type]?.find((o) => `${o.make}|${o.model}` === name);
+    if (!v) return;
+    this.variant = v;
+    this.spec = tuned(this.type, v);
     this.mass = this.spec.mass;
   }
 

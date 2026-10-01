@@ -7,6 +7,8 @@ import type { Lang } from './i18n.ts';
 // with (the time in Prague now and a weather picked for the season, if nothing was
 // asked for in the URL), each one changeable, and sound on or off. The button stays
 // grey while the map loads, and pressing it is also what lets the browser play sound.
+// With a saved game, the button continues it (time and weather come from the save) and
+// "New game" brings the time and weather choices back.
 
 const TIMES: { id: string; label: string; sec: number }[] = [
   { id: 'morning', label: 'Morning', sec: 8 * 3600 },
@@ -21,6 +23,8 @@ export interface StartChoice {
   time: number | null;
   weather: Kind;
   sound: boolean;
+  // Carry on from the saved game (time and weather are then the save's own).
+  resume: boolean;
 }
 
 const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
@@ -31,7 +35,7 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
   return e;
 };
 
-export function startScreen(root: HTMLElement, opts: { now: string; weather: Kind; sound: boolean }) {
+export function startScreen(root: HTMLElement, opts: { now: string; weather: Kind; sound: boolean; saved: string | null }) {
   const panel = el('div', 'ls-start', root);
   let time: string = 'now', weather: Kind = opts.weather, sound = opts.sound;
   let weatherPicked = false;
@@ -67,19 +71,32 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
       });
       return b;
     });
-    return { chips, buttons, pick };
+    return { chips, buttons, pick, row: r };
   }
 
   const fixed = (s: string) => () => s;
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang(), setLang);
-  row('Time', [{ id: 'now', label: () => t('Now {time}', { time: opts.now }) }, ...TIMES.map((x) => ({ id: x.id, label: () => t(x.label) }))], 'now', (id) => { time = id; });
+  const timeRow = row('Time', [{ id: 'now', label: () => t('Now {time}', { time: opts.now }) }, ...TIMES.map((x) => ({ id: x.id, label: () => t(x.label) }))], 'now', (id) => { time = id; });
   const weatherRow = row('Weather', KINDS.map((k) => ({ id: k, label: () => t(WEATHER[k]) })), weather, (id) => { weather = id; weatherPicked = true; });
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], sound ? 'on' : 'off', (id) => { sound = id === 'on'; });
 
+  let resuming = !!opts.saved;
+  const found = el('div', 'ls-saved', panel);
+  panel.insertBefore(found, panel.firstChild);
+  relabel.push(() => { found.textContent = opts.saved ? `${t('Saved game')}: ${opts.saved}` : ''; });
   const go = el('button', 'ls-go', panel) as HTMLButtonElement;
+  const fresh = el('button', 'ls-new', panel) as HTMLButtonElement;
   let ready = false;
-  relabel.push(() => { go.textContent = ready ? t('Start game') : t('Loading…'); });
-  go.type = 'button';
+  const sync = () => {
+    panel.classList.toggle('resume', resuming);
+    found.hidden = fresh.hidden = !resuming;
+    for (const r of [timeRow.row, weatherRow.row]) r.hidden = resuming;
+    go.textContent = !ready ? t('Loading…') : resuming ? t('Continue') : opts.saved ? t('Start new game') : t('Start game');
+    fresh.textContent = t('New game');
+  };
+  relabel.push(sync);
+  go.type = fresh.type = 'button';
+  fresh.addEventListener('click', () => { resuming = false; sync(); go.focus(); });
   go.disabled = true;
   for (const f of relabel) f();
   show();
@@ -106,11 +123,11 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
     ready(): Promise<StartChoice> {
       go.disabled = false;
       ready = true;
-      go.textContent = t('Start game');
+      sync();
       go.focus();
       return new Promise((resolve) => go.addEventListener('click', () => {
         const t = TIMES.find((x) => x.id === time);
-        resolve({ time: t ? t.sec : null, weather, sound });
+        resolve({ time: t ? t.sec : null, weather, sound, resume: resuming });
       }, { once: true }));
     },
   };

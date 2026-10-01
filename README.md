@@ -920,6 +920,16 @@ That script checks the R2 index, typechecks, builds only the app assets, validat
 Cloudflare Build Output with `cf deploy --prebuilt --dry-run`, and deploys it.
 The two targets can be updated independently.
 
+### Releases
+
+Versions are git tags on `main` (`v1.2.3`), published as GitHub releases at
+<https://github.com/jonasjancarik/streets-of-prague/releases>. With main committed
+and pushed, `scripts/release.sh v1.2.3` tags it, creates the release with notes
+generated from the commits since the previous one, and runs
+`scripts/deploy-cloudflare.sh` (`--no-deploy` skips that). The build reads
+`git describe` (see `vite.config.js`), and the settings panel shows it with the
+build date: `v1.2.3`, or `v1.2.3-5-gabc1234` for commits made after the tag.
+
 ## Credits
 
 The game credits the map's sources in the corner of the screen (**Credits** opens the

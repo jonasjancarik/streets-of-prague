@@ -216,6 +216,10 @@
       .ls-go:not(:disabled):hover { background: #e2342b; transform: translate(-0.2vh, -0.2vh); box-shadow: 0.8vh 0.8vh 0 var(--poster-black); }
       .ls-go:not(:disabled):active { transform: translate(0.4vh, 0.4vh); box-shadow: 0.2vh 0.2vh 0 var(--poster-black); }
       .ls-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; }
+      .ls-start [hidden] { display: none; }
+      .ls-saved { letter-spacing: 0.06em; opacity: 0.9; text-shadow: 0 0 6px var(--poster-black), 0 0 3px var(--poster-black); }
+      .ls-new { align-self: flex-start; font: inherit; letter-spacing: 0.06em; color: var(--poster-paper); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 0.3em; cursor: pointer; opacity: 0.85; }
+      .ls-new:hover { opacity: 1; }
       .ls-start button:focus-visible { outline: 0.4vh solid var(--poster-paper); outline-offset: 0.3vh; }
       .ls-row + .ls-row { border-top: 1px solid rgba(236, 228, 214, 0.14); padding-top: var(--u); }
       .ls-go:not(:disabled)::before { content: ''; display: inline-block; width: 0.6em; height: 0.7em; margin-right: 0.4em; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%); }
@@ -363,8 +367,13 @@
       .settings-mix { display: grid; grid-template-columns: 120px 1fr 48px; align-items: center; gap: 10px; margin-top: 6px; }
       .settings-mix input { width: 100%; accent-color: var(--accent); }
       .settings-mix-pct { text-align: right; font-variant-numeric: tabular-nums; opacity: 0.8; }
+      .settings-slot { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 6px; margin-top: 6px; }
+      .settings-slot-text { min-width: 0; overflow-wrap: anywhere; font-size: 12px; opacity: 0.85; }
+      .settings-chip:disabled { opacity: 0.4; cursor: default; }
+      .settings-chip:disabled:hover { border-color: rgba(236, 228, 214, 0.35); }
       .settings-credits { display: none; margin-top: 16px; font: inherit; color: var(--ink); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; opacity: 0.8; }
       body.touch .settings-credits { display: block; }
+      .settings-version { margin: 16px 0 0; font-size: 12px; opacity: 0.55; user-select: text; }
       body.touch #credits { display: none; }
       /* Touch controls: left thumb steers, right thumb works the pedals and buttons. */
       #touch { display: none; }
