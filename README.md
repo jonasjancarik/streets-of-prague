@@ -228,6 +228,9 @@ that without a new renderer.
 
 ## How it works
 
+The [findings for optimisation plans 007–012](docs/optimisation-findings-007-012.md)
+record the measurements, merge decisions and pending landmark asset activation.
+
 - **Procedural look.** The ground is real geometry, one mesh per surface kind
   triangulated from OSM and coloured by world-space GLSL patterns (`src/shading.ts`,
   `src/surface.ts`): asphalt, granite setts, Prague mosaic pavement, slabs, grass,
@@ -309,8 +312,10 @@ that without a new renderer.
   building it runs in web workers (`src/tileWorker.ts`): the ground's geometry
   (`src/ground.ts`), IPR's buildings, straight-skeleton roofs for OSM buildings, the
   windows' positions on every wall, trees, walls and the collision grid. The main
-  thread only joins up the street graphs, makes the meshes and parks the cars, so
-  driving into new streets doesn't stutter.
+  thread joins up the street graphs, makes the meshes and parks the cars.
+  `src/tileWorkers.ts` dispatches one job per worker and gives required tile jobs
+  priority over optional neighbour lighting. `src/skyRefresh.ts` coalesces lighting
+  refreshes and ignores stale results; the worker-count default is unchanged.
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.

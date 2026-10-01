@@ -20,6 +20,12 @@ tile files, cheaper ground shading). Rough order: quick wins first.
 
 ## Game performance
 
+Plans 007–011 and plan 012 Part A are selected for main; see
+[the findings and merge summary](docs/optimisation-findings-007-012.md). Part B
+(the incremental resting-car index) stays experimental: it was consistently 3.5%
+slower per frame on desktop despite fewer index updates. Main retains the original
+collision index. No general FPS improvement is established for this set.
+
 Landmark colour warming now has a pipeline conversion and a browser marker check
 (`plans/010-prebake-landmark-colours.md`). The original GLBs remain the live assets;
 the staged `.warm-v1.glb` files passed local visual and cold-load checks. Activate
@@ -238,10 +244,10 @@ grime on the walls 6%, the shadow map's own pass 7%.
   builds appeared in the stall logs. The timing benefit is inconclusive; details and
   matched visual checks are in `plans/007-share-building-shader-graphs.md`. Open,
   biggest first:
-  - **Tree meshes:** every tile makes three new instanced tree meshes, and three.js
-    builds every instanced mesh on its own (its key has the mesh's `uuid`): ~60 ms each
-    on a Pixel 5 for the tuft shader. One set of tree meshes shared by all tiles
-    (refilled when tiles come and go) would build once.
+  - **Tree meshes:** plan 009 retains and warms pages, including shadow variants.
+    Final comparison drives had zero tree builder events and zero pool growth.
+    A quieter desktop and real-phone comparison remain useful before claiming
+    an overall frame-time or startup benefit.
   - **Car models:** plan 008 prepares ordinary models during loading, hides empty
     pages and retains 16-car pages instead of replacing live meshes. The measured
     dense taxi and hatchback colours reserve a second page. On a 40 s drive,
@@ -250,10 +256,10 @@ grime on the walls 6%, the shadow map's own pass 7%.
     claim. Benchmark loading took about 0.8 s longer and 164 prepared pages reserve
     168 KB of matrices. Late colours and burnt bodies can still build once. See
     [plan 008](plans/008-prepare-car-meshes.md) for tests and trade-offs.
-  - **Tile workers crowd a phone's main thread:** on a Pixel 5, frames swell (render ~17 →
-    ~30 ms) while tiles load, with no build involved; 1 worker instead of 3 halved those
-    long tasks, but tiles took 2–3× longer to arrive. A decision: fewer workers on
-    phones, or leave it.
+  - **Worker scheduling:** plan 012 Part A prioritizes required jobs, allows one
+    job per worker and coalesces optional sky refreshes. Desktop and Pixel 5
+    comparisons had no missing player/ahead-tile frames. Frame-time differences
+    were inconclusive; keep the existing worker count.
   - On a warm Pixel 5 there are also 20–24 ms spikes in `crowd.update` and 12 ms in
     `trams.update`.
 
