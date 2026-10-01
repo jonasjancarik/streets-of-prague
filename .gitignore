@@ -5,7 +5,8 @@ __pycache__
 pipeline/.cache
 pipeline/.venv
 # Map data is built locally by the pipeline (see README), never committed.
-public/data/
+# (No trailing slash: in a worktree it is a symlink to the main checkout's data.)
+public/data
 
 # Cloudflare-only app build and generated Build Output.
 dist-cf/
