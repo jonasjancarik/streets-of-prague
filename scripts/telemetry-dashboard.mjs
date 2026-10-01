@@ -7,10 +7,12 @@
 //   node scripts/telemetry-dashboard.mjs --sample     made-up numbers, to see the page
 //   --out <file>   where to write it (.telemetry/dashboard.html)     --no-open
 //
-// Nothing here is public: the page is a file on this machine.
+// Reading needs the "Account Analytics: Read" permission, which the `cf` login doesn't
+// have: put an API token with it in ~/.config/streets-of-prague/analytics-token (or in
+// CLOUDFLARE_API_TOKEN). Nothing here is public: the page is a file on this machine.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { COMMON, SCHEMA } from '../deploy/worker.js';
@@ -35,11 +37,25 @@ function named(row) {
   return r;
 }
 
-function fetchRows() {
+const TOKEN_FILE = join(homedir(), '.config/streets-of-prague/analytics-token');
+
+async function fetchRows() {
   const blobs = COMMON.length + Math.max(...Object.values(SCHEMA).map((s) => s.blobs.length));
   const doubles = Math.max(...Object.values(SCHEMA).map((s) => s.doubles.length));
   const columns = ['timestamp', ...Array.from({ length: blobs }, (_, i) => `blob${i + 1}`), ...Array.from({ length: doubles }, (_, i) => `double${i + 1}`)];
   const sql = `SELECT ${columns.join(', ')} FROM ${DATASET} WHERE timestamp > NOW() - INTERVAL '${DAYS}' DAY ORDER BY timestamp FORMAT JSON`;
+  const token = process.env.CLOUDFLARE_API_TOKEN || (existsSync(TOKEN_FILE) ? readFileSync(TOKEN_FILE, 'utf8').trim() : '');
+  if (token) {
+    const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/analytics_engine/sql`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: sql });
+    const said = await r.text();
+    if (r.ok) return JSON.parse(said).data ?? [];
+    // The dataset appears with its first report; before that there is nothing to ask for.
+    if (/unknown table|does not exist/i.test(said)) return [];
+    console.error(`The statistics could not be read (${r.status}): ${said.trim()}`);
+    if (r.status === 401 || r.status === 403) console.error('\nThe API token needs the "Account Analytics: Read" permission for this account.');
+    process.exit(1);
+  }
+  // Without a token, try the `cf` login.
   const file = join(tmpdir(), `streets-telemetry-${process.pid}.sql`);
   writeFileSync(file, sql);
   let out;
@@ -51,7 +67,7 @@ function fetchRows() {
     if (/unknown table|does not exist|not found/i.test(said)) return [];
     console.error(said.trim() || e.message);
     console.error(/403|Authorization/.test(said)
-      ? '\nThis login may not read the statistics. Create an API token with the "Account Analytics: Read" permission\nand run this again with CLOUDFLARE_API_TOKEN set to it (docs/telemetry.md).'
+      ? `\nThe \`cf\` login may not read the statistics. Create an API token with the "Account Analytics: Read"\npermission and save it in ${TOKEN_FILE} (docs/telemetry.md).`
       : '\nThe statistics could not be read. Is `cf` logged in? Try `cf auth whoami`.');
     process.exit(1);
   }
@@ -318,7 +334,7 @@ function page(reports, sample) {
 }
 
 const sample = flag('--sample');
-const reports = (sample ? sampleRows() : fetchRows()).map(named).filter(Boolean);
+const reports = (sample ? sampleRows() : await fetchRows()).map(named).filter(Boolean);
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, page(reports, sample));
 console.log(`${reports.length} reports → ${OUT}`);

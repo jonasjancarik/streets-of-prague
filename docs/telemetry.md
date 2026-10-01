@@ -57,14 +57,18 @@ It reads the rows with `cf analytics_engine sql query` and writes
 report and adds them up itself, so the three lists at the top narrow everything on it
 to one game version, one domain or one map data version; the choice is kept in the
 page's address. The page is a file on
-your machine; nothing is published. Reading needs a Cloudflare login that may query
-analytics: if the `cf` login is refused, create an API token with the **Account
-Analytics: Read** permission and run the script with `CLOUDFLARE_API_TOKEN` set to it.
+your machine; nothing is published. Reading needs the **Account Analytics: Read**
+permission, which the `cf` login does not have (checked 2026-10-01: its scopes include
+none for analytics). Create an API token with just that permission for the account, at
+<https://dash.cloudflare.com/profile/api-tokens>, and save it in
+`~/.config/streets-of-prague/analytics-token`, or pass it as `CLOUDFLARE_API_TOKEN`.
+The token can only read analytics; keep it out of the repository all the same.
 
 ## Visits (Cloudflare Web Analytics)
 
-Optional. Add the site in the Cloudflare dashboard under Web Analytics, choose the
-manual JavaScript setup, and put the site token in `deploy/web-analytics-token`
+Optional. Add the game's domain in the Cloudflare dashboard under Web Analytics (the
+`cf` login may not do this either), choose the manual JavaScript setup rather than the
+automatic one, so that the switch in the settings governs it, and put the site token in `deploy/web-analytics-token`
 (the token is public: it ends up in the page). The next deploy then loads
 Cloudflare's cookie-free beacon, behind the same switch in the settings. Its numbers
 are in the Cloudflare dashboard, not in the page above.
