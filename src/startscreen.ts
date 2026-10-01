@@ -35,7 +35,7 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
   return e;
 };
 
-export function startScreen(root: HTMLElement, opts: { now: string; weather: Kind; sound: boolean; saved: string | null }) {
+export function startScreen(root: HTMLElement, opts: { now: string; weather: Kind; sound: boolean; saved: (() => string) | null }) {
   const panel = el('div', 'ls-start', root);
   let time: string = 'now', weather: Kind = opts.weather, sound = opts.sound;
   let weatherPicked = false;
@@ -83,7 +83,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
   let resuming = !!opts.saved;
   const found = el('div', 'ls-saved', panel);
   panel.insertBefore(found, panel.firstChild);
-  relabel.push(() => { found.textContent = opts.saved ? `${t('Saved game')}: ${opts.saved}` : ''; });
+  relabel.push(() => { found.textContent = opts.saved ? `${t('Saved game')}: ${opts.saved()}` : ''; });
   const go = el('button', 'ls-go', panel) as HTMLButtonElement;
   const fresh = el('button', 'ls-new', panel) as HTMLButtonElement;
   let ready = false;

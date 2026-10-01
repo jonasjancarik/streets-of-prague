@@ -5,7 +5,7 @@ import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
 import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
-import { Car, CarPool, collideBodies, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
+import { Car, TYPES, CarPool, collideBodies, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { loadKit } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
@@ -40,6 +40,8 @@ import { groundSamples } from './surface.ts';
 import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { setupSettings } from './settings.ts';
+import { readSave, writeSave, clearSave, describe } from './save.ts';
+import type { Slot, SaveData } from './save.ts';
 import { dressLoading, Dialog } from './portraits.ts';
 import { startScreen } from './startscreen.ts';
 import { liveWeather } from './liveweather.ts';
@@ -108,7 +110,9 @@ async function main() {
   const weather = new Weather(params, clock.t);
   let savedSound = '';
   try { savedSound = localStorage.getItem('sound') ?? ''; } catch {}
-  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off' });
+  // The game saved by itself last time, unless it's a test run (?go).
+  const saved = params.has('go') ? null : readSave('auto', AREA);
+  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off', saved: saved && (() => describe(saved)) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
   status('Loading the map…');
@@ -831,7 +835,62 @@ async function main() {
   const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, setFire, backOnRoad,
     timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics,
     weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); }, label: () => weather.name } });
-  setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } } });
+  // ---- Saved games (save.ts) ---------------------------------------------
+  // The game saves itself into the "auto" slot every few seconds and when the page is
+  // left; a refresh then offers to continue from there (see `resume`). Test runs (?go)
+  // never save, so they can't overwrite a real game.
+  let playing = false; // set once the start screen is done
+  let saving = true; // off while the page restarts into another game
+  let saveT = 0;
+  const capture = (): SaveData => {
+    const c = inCar && !inCar.burnt ? inCar : null, who = c || walker, [, paint, box] = c ? c.key.split('|') : [];
+    return {
+      v: 1, area: AREA, at: Date.now(), x: who.x, y: who.y, h: who.h, street,
+      car: c ? { type: c.type, paint, box, variant: c.modelName, damage: c.damage, radio: c.radio } : null,
+      money: wallet.balance, ticket: wallet.held, health: health.value, heat: police.heat,
+      clock: clock.t, weather: { kind: weather.kind, fixed: weather.fixed },
+    };
+  };
+  const autosave = () => {
+    if (playing && saving && wastedT <= 0 && !arrest && !health.dead && !inHeli) writeSave('auto', capture());
+  };
+  window.addEventListener('pagehide', autosave);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
+  // Back into a saved game: the map is already loaded, so this is a teleport with your
+  // belongings, and into your car if you were driving.
+  const resume = async (s: SaveData) => {
+    clock.t = s.clock;
+    world.night = clock.night;
+    weather.begin(s.weather.kind, clock.t);
+    weather.fixed = s.weather.fixed;
+    wallet.balance = Math.max(0, Math.floor(s.money));
+    wallet.held = s.ticket;
+    health.value = Math.max(1, Math.min(100, s.health));
+    await teleportTo(s.x, s.y);
+    police.heat = Math.max(0, Math.min(40, s.heat));
+    if (!s.car || !TYPES[s.car.type]) return;
+    const car = new Car(s.car.type, seeded, s.x, s.y, s.h, s.car.paint, s.car.box);
+    if (s.car.variant) car.setVariant(s.car.variant);
+    car.damage = s.car.damage;
+    car.radio = s.car.radio;
+    for (let i = loose.length - 1; i >= 0; i--) if (Math.hypot(loose[i].x - car.x, loose[i].y - car.y) < 5) loose.splice(i, 1);
+    car.mode = 'loose';
+    loose.push(car);
+    restingStale = true;
+    const side = car.spec.W / 2 + 0.6;
+    Object.assign(walker, { x: car.x - Math.sin(car.h) * side, y: car.y + Math.cos(car.h) * side, h: car.h, vx: 0, vy: 0 });
+    walker.sync();
+    enterOrExit();
+  };
+  const restart = () => { saving = false; location.reload(); };
+  const saves = {
+    read: (slot: Slot) => readSave(slot, AREA),
+    save: (slot: Slot) => writeSave(slot, capture()),
+    // Loading restarts the page into that game (it becomes the auto slot, and the start screen offers it).
+    load: (slot: Slot) => { const s = readSave(slot, AREA); if (!s) return; writeSave('auto', s); restart(); },
+    newGame: () => { clearSave('auto'); restart(); },
+  };
+  setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
 
   // ---- Input -------------------------------------------------------------
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
@@ -1433,12 +1492,19 @@ async function main() {
   if (start) {
     status('');
     const choice = await start.ready();
-    // "Now" is the time now, not the time the page was opened at.
-    if (choice.time === null && !params.has('time') && !params.has('night')) clock.t = new Clock(params).t;
-    else if (choice.time !== null) clock.setTime(choice.time);
-    world.night = params.has('night') || clock.night;
-    weather.begin(choice.weather, clock.t);
+    if (choice.resume && saved) {
+      status('Building the streets…');
+      await resume(saved);
+      status('');
+    } else {
+      // "Now" is the time now, not the time the page was opened at.
+      if (choice.time === null && !params.has('time') && !params.has('night')) clock.t = new Clock(params).t;
+      else if (choice.time !== null) clock.setTime(choice.time);
+      world.night = params.has('night') || clock.night;
+      weather.begin(choice.weather, clock.t);
+    }
     if (sound.on !== choice.sound) sound.toggle();
+    playing = true;
     last = performance.now();
   }
   $('loading').classList.add('done');
@@ -1456,6 +1522,7 @@ async function main() {
     last = now;
     time.value += dt;
     wallet.update(dt);
+    if ((saveT += dt) > 5) { saveT = 0; autosave(); }
     pid.update(dt);
     world.update(camPos.x, -camPos.z, viewRadius() + 220);
 

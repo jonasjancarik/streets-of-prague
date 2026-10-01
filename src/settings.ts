@@ -123,7 +123,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     const load = el('button', 'settings-chip', line) as HTMLButtonElement;
     save.type = load.type = 'button';
     sure(save, () => t('Save'), () => saves.save(slot), () => !!saves.read(slot));
-    sure(load, () => t('Load'), () => saves.load(slot), () => false);
+    sure(load, () => t('Load'), () => saves.load(slot), () => true);
     refresh.push(() => {
       const s = saves.read(slot);
       text.textContent = `${slot}. ${s ? describe(s) : t('Empty')}`;
