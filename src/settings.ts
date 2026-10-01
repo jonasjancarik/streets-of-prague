@@ -133,7 +133,10 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   const mixer = el('div', 'settings-row', rows);
   const mixName = el('span', 'settings-label', mixer);
   relabel.push(() => { mixName.textContent = t('Mixer'); });
+  // (iPads and iPhones play a radio stream straight to the speakers, past the mixer, so its slider would do nothing.)
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   for (const b of BUSES) {
+    if (b === 'radio' && ios) continue;
     const line = el('label', 'settings-mix', mixer);
     const name = el('span', '', line);
     const slider = el('input', '', line) as HTMLInputElement;
