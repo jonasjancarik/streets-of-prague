@@ -147,6 +147,10 @@
       /* The illustrated layer (src/portraits.ts): black, signal red and paper, like a
          constructivist poster. Portraits end in hard cut edges; something always covers them. */
       :root { --poster-red: #c8241d; --poster-black: #140d0c; --poster-paper: #ece4d6; }
+      /* --u is 1vh on a 16:9 screen or wider, and shrinks with the width on squarer ones, so the
+         title and menu keep the proportions they have at 16:9 and stay on the dark wedge. The
+         height left over (--slack) moves them down a little, so they don't hug the top. */
+      #loading { --u: min(1vh, 0.5625vw); --slack: max(0px, 100vh - 100 * var(--u)); }
       #loading { position: fixed; inset: 0; z-index: 20; overflow: hidden; background: var(--poster-black); transition: opacity 0.6s; font: 28px 'Bebas Neue', sans-serif; letter-spacing: 0.05em; }
       #loading.done { opacity: 0; pointer-events: none; }
       .portrait { display: block; opacity: 0; transition: opacity 0.4s; }
@@ -154,7 +158,7 @@
       .ls-sky { position: absolute; inset: 0; background: center 70% / cover repeat-x; } /* repeat-x: where it ends under the wedge, the same sky goes on */
       /* The dark wedge carries the title and the menu; the skyline's landmark stands just right of it (portraits.ts). */
       .ls-wedge { position: absolute; inset: 0; background: var(--poster-black); clip-path: polygon(0 0, 46% 0, 36% 100%, 0 100%); opacity: 0.93; }
-      .ls-cast { position: absolute; z-index: 0; right: 2vw; bottom: 9vh; height: 66vh; display: flex; align-items: flex-end; }
+      .ls-cast { position: absolute; z-index: 0; right: 2vw; bottom: 9vh; height: min(66vh, 84 * var(--u)); display: flex; align-items: flex-end; }
       /* Each figure is cut out with a paper edge, as if snipped from a print: the sides
          slant in over the panel's cut edges, and the band below hides its foot. */
       .ls-face { position: relative; height: 100%; margin-left: -4vh; display: flex; align-items: flex-end;
@@ -165,8 +169,8 @@
       .ls-face img { height: 100%; width: auto; clip-path: polygon(0 -50%, 100% -50%, 100% 22%, 94% 100%, 6% 100%, 0 22%); }
       .ls-stripe { position: absolute; left: 0; right: 0; bottom: 21vh; height: 1.4vh; background: var(--poster-paper); transform-origin: left; transform: rotate(-4deg) scaleX(1.2); }
       .ls-band { position: absolute; left: -5%; right: -5%; bottom: -14vh; height: 36vh; background: var(--poster-red); transform: rotate(-4deg); box-shadow: 0 -2vh 0 var(--poster-black); }
-      .ls-title { position: absolute; left: 5vw; top: 6vh; display: flex; flex-direction: column; font: 13vh/0.82 'Bebas Neue', sans-serif; letter-spacing: 0.01em; color: var(--poster-paper); text-shadow: 0.6vh 0.6vh 0 var(--poster-red); }
-      .ls-title span + span { color: var(--poster-red); text-shadow: 0.6vh 0.6vh 0 var(--poster-black); }
+      .ls-title { position: absolute; left: 5vw; top: calc(6 * var(--u) + 0.25 * var(--slack)); display: flex; flex-direction: column; font: calc(13 * var(--u))/0.82 'Bebas Neue', sans-serif; letter-spacing: 0.01em; color: var(--poster-paper); text-shadow: calc(0.6 * var(--u)) calc(0.6 * var(--u)) 0 var(--poster-red); }
+      .ls-title span + span { color: var(--poster-red); text-shadow: calc(0.6 * var(--u)) calc(0.6 * var(--u)) 0 var(--poster-black); }
       #loading-text { position: absolute; left: 5vw; bottom: 5vh; font: 5vh/1 'Bebas Neue', sans-serif; color: var(--poster-black); transform: rotate(-4deg); transform-origin: left; }
       /* The poster assembles itself once (shapes, title, then the cast rising behind the
          band), then only drifts: the skyline pans slowly and the figures breathe. Only
@@ -193,26 +197,26 @@
       @keyframes ls-fade { from { opacity: 0; } }
       @media (prefers-reduced-motion: reduce) { #loading, #loading * { animation: none !important; } }
       /* The start screen's choices (src/startscreen.ts), over the wedge at the left. */
-      .ls-start { position: absolute; z-index: 2; left: 5vw; top: 31vh; width: min(32vw, 64vh); display: flex; flex-direction: column; gap: 1vh; font: 2.2vh/1.1 'Bebas Neue', sans-serif; color: var(--poster-paper); }
+      .ls-start { position: absolute; z-index: 2; left: 5vw; top: calc(31 * var(--u) + 0.25 * var(--slack)); width: calc(57 * var(--u)); display: flex; flex-direction: column; gap: var(--u); font: max(calc(2.2 * var(--u)), 11px)/1.1 'Bebas Neue', sans-serif; color: var(--poster-paper); }
       /* A label beside its choices, so the menu stays short and on the dark wedge. */
-      .ls-row { display: flex; align-items: flex-start; gap: 1vh; }
+      .ls-row { display: flex; align-items: flex-start; gap: var(--u); }
       .ls-label { flex: 0 0 5.4em; padding-top: 0.55em; }
       .ls-chips { flex: 1; min-width: 0; }
       .ls-label { opacity: 0.85; letter-spacing: 0.08em; text-shadow: 0 0 6px var(--poster-black), 0 0 3px var(--poster-black); }
-      .ls-chips { display: flex; flex-wrap: wrap; gap: 0.6vh 0.8vh; }
-      .ls-chip { font: inherit; letter-spacing: inherit; color: var(--poster-paper); background: rgba(20, 13, 12, 0.7); border: 0.25vh solid rgba(236, 228, 214, 0.5); padding: max(0.6vh, 6px) max(1.4vh, 10px); cursor: pointer; }
+      .ls-chips { display: flex; flex-wrap: wrap; gap: calc(0.6 * var(--u)) calc(0.8 * var(--u)); }
+      .ls-chip { font: inherit; letter-spacing: inherit; color: var(--poster-paper); background: rgba(20, 13, 12, 0.7); border: max(calc(0.25 * var(--u)), 1px) solid rgba(236, 228, 214, 0.5); padding: max(calc(0.6 * var(--u)), 5px) max(calc(1.4 * var(--u)), 8px); cursor: pointer; }
       .ls-chip[aria-pressed='true'] { background: var(--poster-paper); color: var(--poster-black); border-color: var(--poster-paper); }
       .ls-chip { transition: background 0.12s, border-color 0.12s, transform 0.12s; }
       .ls-chip:hover { background: rgba(236, 228, 214, 0.22); border-color: var(--poster-paper); }
       .ls-chip[aria-pressed='true']:hover { background: var(--poster-paper); }
       .ls-chip:active { transform: translateY(0.2vh); }
-      .ls-go { margin-top: 1vh; align-self: flex-start; font: max(3.4vh, 20px)/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; padding: max(1.2vh, 8px) max(3vh, 18px); color: var(--poster-paper); background: var(--poster-red); border: 0; cursor: pointer; box-shadow: 0.6vh 0.6vh 0 var(--poster-black); }
+      .ls-go { margin-top: var(--u); align-self: flex-start; font: max(calc(3.4 * var(--u)), 18px)/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; padding: max(calc(1.2 * var(--u)), 8px) max(calc(3 * var(--u)), 16px); color: var(--poster-paper); background: var(--poster-red); border: 0; cursor: pointer; box-shadow: calc(0.6 * var(--u)) calc(0.6 * var(--u)) 0 var(--poster-black); }
       .ls-go { transition: background 0.12s, transform 0.12s, box-shadow 0.12s; }
       .ls-go:not(:disabled):hover { background: #e2342b; transform: translate(-0.2vh, -0.2vh); box-shadow: 0.8vh 0.8vh 0 var(--poster-black); }
       .ls-go:not(:disabled):active { transform: translate(0.4vh, 0.4vh); box-shadow: 0.2vh 0.2vh 0 var(--poster-black); }
       .ls-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; }
       .ls-start button:focus-visible { outline: 0.4vh solid var(--poster-paper); outline-offset: 0.3vh; }
-      .ls-row + .ls-row { border-top: 1px solid rgba(236, 228, 214, 0.14); padding-top: 1vh; }
+      .ls-row + .ls-row { border-top: 1px solid rgba(236, 228, 214, 0.14); padding-top: var(--u); }
       .ls-go:not(:disabled)::before { content: ''; display: inline-block; width: 0.6em; height: 0.7em; margin-right: 0.4em; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%); }
       /* The band printed like the sky: a dot screen, fading out towards its top edge. */
       .ls-band::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle, rgba(20, 13, 12, 0.22) 38%, transparent 42%) 0 0 / 0.9vh 0.9vh; -webkit-mask-image: linear-gradient(transparent 5%, #000 70%); mask-image: linear-gradient(transparent 5%, #000 70%); }
@@ -251,24 +255,31 @@
       /* A storm: now and then the sky flashes. */
       #loading[data-weather='storm'] .ls-weather::after { content: ''; position: absolute; inset: 0; background: var(--poster-paper); opacity: 0; animation: ls-flash 5s 1s infinite; }
       @keyframes ls-flash { 0%, 90%, 94%, 100% { opacity: 0; } 91% { opacity: 0.5; } 92% { opacity: 0.1; } 93% { opacity: 0.35; } }
-      /* Squarer screens: two figures, so they stay clear of the menu. */
-      @media (min-aspect-ratio: 1/1) and (max-aspect-ratio: 3/2) {
-        .ls-cast { height: 60vh; }
+      /* Squarer screens: a wider wedge, so the title and menu can stay larger, and two
+         figures, so they stay clear of the menu. */
+      @media (min-aspect-ratio: 4/5) and (max-aspect-ratio: 3/2) {
+        #loading { --u: min(1vh, 0.7vw); }
+        .ls-wedge { clip-path: polygon(0 0, 56% 0, 46% 100%, 0 100%); }
         .ls-face:nth-child(1) { display: none; }
       }
+      /* A phone on its side: a wider wedge, so each row of choices fits on one line. */
       @media (max-height: 500px) and (min-aspect-ratio: 1/1) {
-        .ls-start { top: 30vh; width: 42vw; gap: 4px; font-size: max(2.2vh, 10px); }
-        .ls-go { font-size: 16px; margin-top: 2px; }
-        .ls-row { flex-direction: row; align-items: center; gap: 10px; }
-        .ls-label { flex: 0 0 56px; }
+        .ls-wedge { clip-path: polygon(0 0, 64% 0, 56% 100%, 0 100%); }
         .ls-title { top: 5vh; }
+        .ls-start { top: 28vh; width: 52vw; gap: 3px; font-size: 10px; }
+        .ls-go { font-size: 15px; margin-top: 2px; }
+        .ls-row { align-items: center; gap: 8px; }
+        .ls-label { flex: 0 0 52px; padding-top: 0; }
+        .ls-face:nth-child(1) { display: none; }
       }
-      /* A phone upright: the dark ground behind all of the menu, one figure below it. */
-      @media (max-aspect-ratio: 1/1) {
-        .ls-start { width: 90vw; top: 24vh; }
-        .ls-title { font-size: 17vw; line-height: 0.9; }
-        .ls-wedge { clip-path: polygon(0 0, 100% 0, 100% 52%, 0 72%); }
-        .ls-cast { right: -8vw; height: 30vh; }
+      /* A screen upright: the dark ground behind all of the menu, one figure below it. */
+      @media (max-aspect-ratio: 4/5) {
+        #loading { --u: 1vh; --slack: 0px; }
+        .ls-title { top: 5vh; font-size: 17vw; line-height: 0.9; }
+        .ls-start { width: 90vw; top: calc(8vh + 31vw); font-size: min(2.2vh, 4vw); }
+        .ls-wedge { clip-path: polygon(0 0, 100% 0, 100% 60%, 0 76%); }
+        .ls-cast { right: -6vw; height: 32vh; }
+        .ls-sun { display: none; } /* the wedge covers its sky; it would only show through as a grey disc */
         .ls-face:nth-child(1), .ls-face:nth-child(3) { display: none; }
       }
 
@@ -276,8 +287,8 @@
          browser can trim the box to the capitals, it does, and the padding centres them. */
       @supports (text-box: trim-both cap alphabetic) {
         .ls-chip, .ls-go, .settings-chip, .metro-tab, #credits-box form button { text-box: trim-both cap alphabetic; }
-        .ls-chip { padding: calc(max(0.6vh, 6px) + 0.2em) max(1.4vh, 10px); }
-        .ls-go { padding: calc(max(1.2vh, 8px) + 0.15em) max(3vh, 18px); }
+        .ls-chip { padding: calc(max(calc(0.6 * var(--u)), 5px) + 0.2em) max(calc(1.4 * var(--u)), 8px); }
+        .ls-go { padding: calc(max(calc(1.2 * var(--u)), 8px) + 0.15em) max(calc(3 * var(--u)), 16px); }
         .settings-chip { padding: 9px 11px; }
         .metro-tab { padding: 7px 14px; }
         #credits-box form button { padding: 10px 16px; }
@@ -450,8 +461,7 @@
           <dt><kbd>Shift</kbd></dt><dd data-t>Hold to keep to the lane and the speed limit, while A and D pick the next turn</dd>
           <dt><kbd>Q</kbd></dt><dd data-t>Horn (hold it)</dd>
           <dt><kbd>F</kbd></dt><dd data-t>Water cannon of a fire engine (hold it)</dd>
-          <dt><kbd>R</kbd></dt><dd data-t>Back on the road</dd>
-          <dt><kbd>N</kbd></dt><dd data-t>Radio: next station, and off (or use the buttons under the speed)</dd>
+          <dt><kbd>R</kbd></dt><dd data-t>Radio: next station, and off (or use the buttons under the speed)</dd>
           <dt><kbd>E</kbd></dt><dd data-t>Get out, or off a bike</dd>
         </dl>
       </section>
