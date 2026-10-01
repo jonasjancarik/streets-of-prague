@@ -406,6 +406,10 @@ const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 // Snow settles on the roofs and bonnets (weather.ts).
 material.onBeforeCompile = (sh) => {
   lampLit(sh);
+// The bodies are open shells, not closed solids. three.js draws only the back faces into the
+// shadow map by default, so the roof and bonnet (front faces from the sun) cast nothing and
+// the shadow comes out as a hollow outline.
+material.shadowSide = THREE.DoubleSide;
   sh.uniforms.uSnow = SNOW;
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', '#include <common>\nuniform float uSnow;')
