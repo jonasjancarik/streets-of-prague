@@ -41,7 +41,10 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.drive(type)`: gets out of whatever you're in and into a new car on clear ground
   ahead (`hatch`, `sedan`, `suv`, `van`, `taxi`, `police`, `pickup`, `truck`, `bus`,
   `moto`, `bike`…, the keys of `SPECS` in `src/car.ts`). `t.car(type, opt)`: just
-  parks one.
+  parks one. `t.exit()` gets you out.
+- `t.ignite(car)` sets a car on fire; `t.fire(car)`: whether it burns, is a wreck, still
+  has flames, what the fire engine sent to it is doing (`go`, `work`, `leave`) and how
+  many hoses are on it.
 - `t.push(kmh, heading?)`: sets your car going. `t.post(r)`: the nearest standing
   lamp or pole. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
   on a run clear of walls and other cars. `t.runway(heading)`: metres to the first wall.

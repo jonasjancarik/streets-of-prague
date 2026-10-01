@@ -32,7 +32,15 @@ twigs' shadows). Shared helpers and uniforms are in
 `src/webgpu/common.ts`. The lamps' light is ported too (`src/webgpu/lamps.ts`): the pools
 drawn into the light map (`setPools`, a node material with the same custom blending),
 `lampLight(world, normal)`, and `lampLit(node)`, which adds the light to a port's
-`emissiveNode`. It is on the ground (with the wet ground's mirror, `shine`), the
+`emissiveNode`. Since 1 October 2026 there are two light maps (the ground's, and the
+bridges' for lights well over the ground under them, drawn and read only while one is
+in view), each adding up light and brightness-weighted height (`a / luma(rgb)` is the
+height the light falls at, relative to `LAMP_REF.x`); a material that reads the lamps
+binds both textures. Each map has its own pools material: a uniform set between the two
+renders of one frame did not reach the second. Ultra adds the cones and glints of
+`src/lightfx.ts` (their materials are in `webgpu/glows.ts`); with them and people, trams
+and posts as shadow casters, `--ab` at night in the rain showed no measurable cost on an
+M5 (stand 9.9 against 10.3 ms, drive 8.6 against 8.9 ms, GPU 65% busy with other apps). It is on the ground (with the wet ground's mirror, `shine`), the
 buildings, the landmarks, the trees and the poles. At night (22:00, 2×)
 the whole lamp system costs +0.7 and +0.8 ms a frame on WebGPU against +0.2 and +0.5 ms
 on WebGL (Old Town Square, Karlovo náměstí; `--ab` swapping `lamps.update`'s `on` for

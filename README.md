@@ -62,7 +62,9 @@ Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 | Sun shadow map | 4096², softer edges | 2048² | 2048² | 1024² | 1024² |
 | Dirt, grime, small leaves and tone curve | On | On | On | On | Off |
 | Roof tiles and weathering | On | On | On | On | Off |
-| Car shadows in lamplight | Full | Full | Soft | Soft | Off |
+| Shadows in lamplight | Cars, people, trams, posts | Cars | Soft, cars | Soft, cars | Off |
+| Lamps' light map | 2048² | 1024² | 1024² | 1024² | 1024² |
+| Cones of light in the air, glints on cars and wet ground | On | Off | Off | Off | Off |
 | Maximum crowd | 1200 | 1200 | 1200 | 1200 | 600 |
 
 The sun shadow map covers just what is on screen, as the sun sees it, so shadows stay
