@@ -645,7 +645,11 @@ async function main() {
     if (inHeli) {
       if (!inHeli.landed) return;
       const c = inHeli;
-      [walker.x, walker.y] = nearestWalkable(grid, c.x - Math.sin(c.h) * 3, c.y + Math.cos(c.h) * 3);
+      // Out onto what it landed on (a bridge's deck, not the ground under it).
+      const level = c.level, lx = -Math.sin(c.h), ly = Math.cos(c.h);
+      Object.assign(walker, { x: c.x, y: c.y, _tx: c.x, _ty: c.y, level, gz: c.z });
+      const side = [1, -1].map((k) => [c.x + lx * k * 3, c.y + ly * k * 3] as [number, number]).find(([x, y]) => !walker.blocked(x, y));
+      [walker.x, walker.y] = side || (level ? [c.x, c.y] : nearestWalkable(grid, c.x + lx * 3, c.y + ly * 3));
       walker.h = c.h;
       inHeli = null;
       walker.mesh.visible = true;
@@ -669,7 +673,7 @@ async function main() {
         const x = c.x + lx * s * (c.spec.W / 2 + 0.8), y = c.y + ly * s * (c.spec.W / 2 + 0.8);
         if (!walker.blocked(x, y)) { spot = [x, y]; break; }
       }
-      [walker.x, walker.y] = spot || nearestWalkable(grid, c.x, c.y);
+      [walker.x, walker.y] = spot || (walker.level ? [c.x, c.y] : nearestWalkable(grid, c.x, c.y));
       walker.h = c.h;
       c.mode = 'loose';
       c.rider = null;
@@ -823,7 +827,7 @@ async function main() {
       let open = true;
       for (let dx = -5; dx <= 5 && open; dx += 1) for (let dy = -5; dy <= 5 && open; dy += 1) open = grid.at(x + dx, y + dy) === 0;
       if (!open) continue;
-      choppers.push(new Chopper(scene, grid, ground, x, y, who.h));
+      choppers.push(new Chopper(scene, grid, (x, y, z) => world.below(x, y, z), x, y, who.h, inHeli ? inHeli.z : ground(who.x, who.y, who) + 1));
       return true;
     }
     return false;

@@ -450,6 +450,21 @@ export class TileWorld {
 
   heightAt(x: number, y: number) { return this.surfaceAt(x, y); }
 
+  // What something in the air at height z has under it and over it at a point: the
+  // bridge deck or the ground it would come down on (`level`, `h`), and the lowest
+  // deck above it (`roof`, Infinity under the open sky).
+  below(x: number, y: number, z: number) {
+    const t = this.tileAt(x, y);
+    let level = 0, h = this.terrainAt(x, y), roof = Infinity;
+    if (t) for (const l of t.levels) {
+      if (l.level <= 0 || !l.grid.at(x, y)) continue;
+      const d = this.levelAt(x, y, l.level);
+      if (d > z + CLIMB) roof = Math.min(roof, d);
+      else if (d > h) { level = l.level; h = d; }
+    }
+    return { level, h, roof };
+  }
+
   // Keep track of whether someone or something (anything with x and y) is on the
   // ground, a bridge or in a tunnel: onto a bridge or into a tunnel where it meets the
   // ground (or the level it's on), off it where it ends. Sets `level` and `gz` (the
