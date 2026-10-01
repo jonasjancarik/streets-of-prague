@@ -899,6 +899,14 @@ and unpacked by the game. The caches (OSM extract and IPR sheets) are about
 The mbxp site at <https://streets-beta.jonasjancarik.cz> runs from mbxp.
 `scripts/deploy-mbxp.sh` builds committed code, syncs `public/data/` from this
 machine, and restarts the `streets-of-prague` container on `127.0.0.1:3017`.
+Each map is kept on the server in its own folder, `data/<id>`, named after a
+fingerprint of its files and served at `data/<id>/`, so a deploy never changes the
+map under the running game and browsers never mix files of two maps. Unchanged
+files are hard links to the previous map's, so only what differs is sent and
+stored. `current` and `current-data` on the server name the live commit and map,
+and `releases/<commit>/data-id` the map each release went out with. To put an
+earlier map back, run `DATA_ID=<id> scripts/deploy-mbxp.sh`. Old folders in `data/`
+are not removed automatically.
 The `urad-ai-poc` tunnel routes the hostname there. `scripts/httpd.conf` gives
 JSON the content type Cloudflare needs for compression.
 
@@ -906,17 +914,26 @@ The main site at <https://streets.jonasjancarik.cz> serves the app as Worker
 static assets. <https://streets-cf.jonasjancarik.cz> remains an alternate
 Cloudflare address. Its map data comes from the R2 bucket at
 <https://streets-data.jonasjancarik.cz>, under the immutable prefix named in
-`deploy/data-version`. Local development and mbxp keep loading `data/` next to
-the app; only `scripts/deploy-cloudflare.sh` sets the R2 URL at build time.
+`deploy/data-version`. Local development loads `data/` next to the app, and mbxp
+its own copy (above); only `scripts/deploy-cloudflare.sh` sets the R2 URL at build
+time.
+
+The map's files have a format number: `FORMAT` in `pipeline/layers.py` writes it
+into each `index.json`, with the time and commit the map was built from, and the
+game refuses a map whose number isn't its own `DATA_FORMAT` (`src/data.ts`). Raise
+both together whenever a change means older code couldn't read the new files.
+`scripts/check-data-format.mjs <folder or URL>` compares a map with the committed
+code; the upload, release and both deploy scripts run it first.
 
 After rebuilding map data, configure a bucket-scoped R2 S3 remote named `streets:`
 in rclone (or set `R2_REMOTE` to another remote and bucket path). Use a temporary
 Object Read & Write key for the `streets-of-prague-data` bucket; keep its access
 key and secret outside this repository. Run `scripts/upload-data.sh <new-version>`
-to upload and checksum-check every file. It safely resumes a partial upload but
+to upload and checksum-check every file. It refuses a version name that is
+already on R2; `--resume` finishes an interrupted upload of the same files, and
 fails if an object in that version has changed. Commit the updated
 `deploy/data-version` and app code, then run `scripts/deploy-cloudflare.sh`.
-That script checks the R2 index, typechecks, builds only the app assets, validates
+That script checks the R2 index and its format, typechecks, builds only the app assets, validates
 Cloudflare Build Output with `cf deploy --prebuilt --dry-run`, and deploys it.
 The two targets can be updated independently.
 
@@ -924,12 +941,14 @@ The two targets can be updated independently.
 
 Versions are git tags on `main` (`v1.2.3`), published as GitHub releases at
 <https://github.com/jonasjancarik/streets-of-prague/releases>. With main committed
-and pushed, `scripts/release.sh v1.2.3` tags it, creates the release with notes
-generated from the commits since the previous one, and runs
+and pushed, `scripts/release.sh v1.2.3` typechecks, checks that the map named in
+`deploy/data-version` is on R2 in the format the code reads, then tags the commit,
+creates the release with notes generated from the commits since the previous one
+(headed by the map data version), and runs
 `scripts/deploy-cloudflare.sh` (`--no-deploy` skips that). The build reads
 `git describe` (see `vite.config.js`), and the settings panel shows it with the
 build date: `v1.2.3`, or `v1.2.3-5-gabc1234` for commits made after the tag, followed by the map data version
-(`deploy/data-version` on Cloudflare, `local` elsewhere).
+(`deploy/data-version` on Cloudflare; elsewhere the day the map was built).
 
 ## Credits
 

@@ -10,9 +10,14 @@ TAG=${1:?Usage: scripts/release.sh vX.Y.Z [--no-deploy]}
 git diff --quiet HEAD || { echo 'Commit your changes first.' >&2; exit 1; }
 git fetch --tags origin
 [[ $(git rev-parse HEAD) == $(git rev-parse origin/main) ]] || { echo 'Push main first (or pull).' >&2; exit 1; }
+# Everything that could stop the deploy is checked before the tag exists: the code
+# typechecks and the map this commit names is on R2 in the format the code reads.
+DATA=$(tr -d '\n' < deploy/data-version)
+npm run typecheck
+node scripts/check-data-format.mjs "https://streets-data.jonasjancarik.cz/$DATA/"
 
 git tag -a "$TAG" -m "$TAG"
 git push origin "$TAG"
-gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag --notes "Map data: $DATA"
 # Built from the tag, so the settings panel shows exactly this version.
 [[ ${2:-} == --no-deploy ]] || scripts/deploy-cloudflare.sh

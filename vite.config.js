@@ -50,9 +50,9 @@ function licences(emit) {
 // when commits came after it) and the date. Outside a git checkout it falls back to "dev".
 const git = (args) => { try { return execSync(`git ${args}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } };
 const version = git('describe --tags --always --dirty') || 'dev';
-// Only the Cloudflare build reads its map from the versioned R2 prefix (VITE_DATA_URL);
-// mbxp and local runs use whatever is in public/data.
-const data = process.env.VITE_DATA_URL ? readFileSync('deploy/data-version', 'utf8').trim() : 'local';
+// The Cloudflare build reads its map from a versioned R2 prefix, and its deploy script
+// passes that version's name. Elsewhere the panel shows the day the map was built.
+const data = process.env.VITE_DATA_VERSION ?? '';
 const built = new Date().toISOString().slice(0, 10);
 
 export default defineConfig({

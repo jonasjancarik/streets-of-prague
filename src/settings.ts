@@ -6,6 +6,7 @@ import { BUSES } from './audio.ts';
 import type { Kind } from './weather.ts';
 import { describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
+import { mapData } from './data.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
@@ -174,7 +175,10 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   });
 
   const version = el('p', 'settings-version', box);
-  relabel.push(() => { version.textContent = `${t('Version')} ${__APP_VERSION__} · ${__APP_BUILT__} · ${t('map data')} ${__DATA_VERSION__}`; });
+  // The map's version where it has one (Cloudflare), else the day it was built, which
+  // is known once the map has loaded.
+  const versionLine = () => { version.textContent = `${t('Version')} ${__APP_VERSION__} · ${__APP_BUILT__} · ${t('map data')} ${__DATA_VERSION__ || mapData.built.slice(0, 10) || 'local'}`; };
+  relabel.push(versionLine);
 
   function update() {
     mute.innerHTML = icon(SPEAKER + (sound.on ? WAVES : CROSS));
@@ -186,6 +190,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     full.title = full.ariaLabel = on ? t('Leave full screen') : t('Full screen');
     title.textContent = t('Settings');
     close.ariaLabel = t('Close');
+    versionLine();
     for (const f of refresh) f();
   }
   onLang(() => { for (const f of relabel) f(); update(); });

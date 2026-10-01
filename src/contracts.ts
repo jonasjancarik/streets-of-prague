@@ -21,6 +21,8 @@ export interface Landmark { name: string; file: string; polygons: Point2[][][]; 
 export type TileIndexEntry = [number, number, number] | [number, number, number, number];
 
 export interface MapIndex extends GeoData {
+  format?: number;
+  built?: string;
   area: string;
   bbox_wgs84: Bounds;
   tile: number;
@@ -140,7 +142,9 @@ export function isTileJSON(value: unknown): value is TileJSON {
 
 export function isMapIndex(value: unknown): value is MapIndex {
   if (!record(value)) return false;
-  return typeof value.area === 'string' && numericTuple(value.size, 2) && numericTuple(value.origin, 2)
+  return (value.format === undefined || typeof value.format === 'number')
+    && (value.built === undefined || typeof value.built === 'string')
+    && typeof value.area === 'string' && numericTuple(value.size, 2) && numericTuple(value.origin, 2)
     && numericTuple(value.bbox_wgs84, 4) && typeof value.tile === 'number'
     && Array.isArray(value.tiles) && value.tiles.every((entry) => Array.isArray(entry)
       && (entry.length === 3 || entry.length === 4) && entry.every((part) => typeof part === 'number'))

@@ -8,9 +8,10 @@ if ! git diff --quiet HEAD; then
 fi
 VERSION=$(tr -d '\n' < deploy/data-version)
 DATA_URL=https://streets-data.jonasjancarik.cz/$VERSION/
-curl -fsSI "${DATA_URL}praha_now/index.json" >/dev/null
+# The map must be there and in the format this code reads.
+node scripts/check-data-format.mjs "$DATA_URL"
 npm run typecheck
-VITE_DATA_URL=$DATA_URL node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false, build: { outDir: 'dist-cf' } })"
+VITE_DATA_URL=$DATA_URL VITE_DATA_VERSION=$VERSION node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false, build: { outDir: 'dist-cf' } })"
 (cd public && git ls-files -z) | rsync -a --from0 --files-from=- public/ dist-cf/
 cat > dist-cf/_headers <<'HEADERS'
 /assets/*
