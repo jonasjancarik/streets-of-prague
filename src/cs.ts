@@ -94,6 +94,8 @@ export const CS: Record<string, string> = {
   'Sound off (M)': 'Zvuk vypnutý (M)',
   'Credits and licences': 'Poděkování a licence',
   'Version': 'Verze',
+  'Anonymous statistics': 'Anonymní statistiky',
+  'Tells us how well the game runs for you, which errors come up and what gets played. Nothing in it identifies you.': 'Dozvíme se z nich, jak vám hra běží, jaké chyby se objevují a co se ve hře hraje. Nic v nich neprozradí, kdo jste.',
 
   // Banners
   'Weather: {name}': 'Počasí: {name}',

@@ -6,6 +6,7 @@ import { BUSES } from './audio.ts';
 import type { Kind } from './weather.ts';
 import { describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
+import * as telemetry from './telemetry.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
@@ -22,6 +23,8 @@ const GRAPHICS: { id: Choice; label: string }[] = [
 const WEATHER: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
 
 const MIX: Record<Bus, string> = { engine: 'Engine', tyres: 'Tyres', horns: 'Horns and sirens', trams: 'Trams', city: 'City and birds', weather: 'Rain and wind', radio: 'Car radio', bangs: 'Bangs' };
+
+const STATISTICS = 'Anonymous statistics';
 
 const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
 const WAVES = '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>';
@@ -72,10 +75,11 @@ export function setupSettings({ sound, graphics, weather, saves }: {
       const b = el('button', 'settings-chip', chips) as HTMLButtonElement;
       b.type = 'button';
       relabel.push(() => { b.textContent = it.label(); });
-      b.addEventListener('click', () => { pick(it.id); update(); });
+      b.addEventListener('click', () => { pick(it.id); if (label !== STATISTICS) telemetry.setting(label, it.id); update(); });
       return { b, id: it.id };
     });
     refresh.push(() => { for (const { b, id } of buttons) b.setAttribute('aria-pressed', String(id === current())); });
+    return r;
   }
 
   const fixed = (s: string) => () => s;
@@ -84,6 +88,13 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => t(g.label) })), () => graphics.choice, (id) => graphics.set(id));
   row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
+
+  // Only where the game sends statistics at all (src/telemetry.ts).
+  if (telemetry.available) {
+    const r = row(STATISTICS, [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (telemetry.enabled() ? 'on' : 'off'), (id) => telemetry.setEnabled(id === 'on'));
+    const note = el('p', 'settings-note', r);
+    relabel.push(() => { note.textContent = t('Tells us how well the game runs for you, which errors come up and what gets played. Nothing in it identifies you.'); });
+  }
 
   // The mixer: one slider per group of sounds, from silent to twice as loud.
   const mixer = el('div', 'settings-row', rows);

@@ -73,6 +73,7 @@ const VEHICLE_NAMES: Record<string, string> = {
   truck: 'Lorry', artic: 'Articulated lorry', bus: 'Bus', minibus: 'Minibus', fire: 'Fire engine',
 };
 import { setupTestkit, PLACES } from './testkit.ts';
+import * as telemetry from './telemetry.ts';
 import type { Testkit } from './testkit.ts';
 
 interface Obstacle { x: number; y: number; z?: number; r: number; vx: number; vy: number; kind: string; car?: Car }
@@ -154,6 +155,10 @@ async function main() {
   // only the developer panel's ?dev needs the errors.
   renderer.debug.checkShaderErrors = params.has('dev');
   $('app').appendChild(renderer.domElement);
+  // The graphics card giving up mid-game, for the statistics (src/telemetry.ts).
+  const gpuBackend = (renderer as unknown as { backend?: { isWebGPUBackend?: boolean; device?: { lost?: Promise<{ reason?: string; message?: string }> } } }).backend;
+  void gpuBackend?.device?.lost?.then((info) => telemetry.error('graphics lost', info.message || info.reason || 'WebGPU device lost'));
+  renderer.domElement.addEventListener('webglcontextlost', () => telemetry.error('graphics lost', 'WebGL context lost'));
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#2a2622');
@@ -545,7 +550,9 @@ async function main() {
   const buyTicket = (kind = TICKET) => {
     if (pid.state !== 'grace' && pid.state !== 'dodging') return;
     const price = kc(kind.price);
-    showBanner(pid.buy(clock.t, kind) ? t('Ticket for {validity}: {price}', { validity: validity(kind.minutes), price }) : t('Not enough money for a ticket ({price})', { price }));
+    const bought = pid.buy(clock.t, kind);
+    if (bought) telemetry.count('tickets');
+    showBanner(bought ? t('Ticket for {validity}: {price}', { validity: validity(kind.minutes), price }) : t('Not enough money for a ticket ({price})', { price }));
   };
   // Take the tram you're on: the driver gets out of the way and it's yours.
   const stealTram = () => {
@@ -885,7 +892,7 @@ async function main() {
   const restart = () => { saving = false; location.reload(); };
   const saves = {
     list: () => listSaves(AREA),
-    save: () => writeSave(newSlot(), capture()),
+    save: () => { writeSave(newSlot(), capture()); telemetry.count('saves'); },
     // Loading restarts the page into that game (it becomes the auto save, and the start screen offers it).
     load: (slot: Slot) => { const s = readSave(slot, AREA); if (!s) return; writeSave('auto', s); restart(); },
     remove: (slot: Slot) => clearSave(slot),
@@ -922,8 +929,8 @@ async function main() {
       const station = sound.radio.next();
       showBanner(station ? station.name : t('Radio off'));
     }
-    if (e.code === 'KeyG' && !e.repeat) { graphics.cycle(); showBanner(graphics.label()); }
-    if (e.code === 'KeyP' && !e.repeat) { weather.cycle(); showBanner(weather.label()); }
+    if (e.code === 'KeyG' && !e.repeat) { graphics.cycle(); showBanner(graphics.label()); telemetry.setting('Graphics', graphics.choice); }
+    if (e.code === 'KeyP' && !e.repeat) { weather.cycle(); showBanner(weather.label()); telemetry.setting('Weather', weather.kind); }
     if (e.code === 'KeyH' && !e.repeat) foldHelp(!$('help').classList.contains('folded'));
     // On a tram, W and S move your pick along the stops ahead.
     if (ride.on && ['KeyW', 'ArrowUp'].includes(e.code)) ride.pick(-1);
@@ -1490,10 +1497,13 @@ async function main() {
     metro.under.hide();
     samples.dispose();
   }
+  const loadMs = performance.now(); // the map is ready; what follows waits for the player
+  let resumed = false;
   if (start) {
     status('');
     const choice = await start.ready();
     if (choice.resume && saved) {
+      resumed = true;
       status('Building the streets…');
       await resume(saved);
       status('');
@@ -1516,10 +1526,20 @@ async function main() {
   ]);
 
   graphics.started(performance.now());
+  // Anonymous statistics (src/telemetry.ts): what the game runs on, then once a frame
+  // how long it took and what you're doing, added up there.
+  telemetry.begin({
+    renderer: gpuBackend ? (gpuBackend.isWebGPUBackend ? 'WebGPU' : 'WebGL 2') : 'WebGL (legacy)',
+    graphics: graphics.choice, tier: graphics.tier, lang: getLang(), touch: touch.active, resumed, loadMs,
+  });
+  telemetry.summary(() => ({ ...stats, money: wallet.balance }));
+  const playingAs = (): telemetry.Mode => (ride.on ? 'tram' : taxi.riding ? 'taxi' : inCar ? 'car' : inHeli || boats.me || funicular.me || metro.active ? 'other' : 'foot');
 
   renderer.setAnimationLoop((now) => {
     const dt = Math.min(0.05, (now - last) / 1000);
     graphics.frame(now - last, now, world.inFlight.size > 0);
+    telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
+    telemetry.most('maxStars', police.stars);
     last = now;
     time.value += dt;
     wallet.update(dt);
@@ -1903,5 +1923,6 @@ function parseMetroLines(value: unknown): { lines: MetroLine[] } {
 
 main().catch((e) => {
   console.error(e);
+  telemetry.error('startup', e);
   status(`Something went wrong: ${e instanceof Error ? e.message : String(e)}`);
 });

@@ -1,4 +1,5 @@
 import { dataUrl } from './data.ts';
+import * as telemetry from './telemetry.ts';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Geo, Grid, rng, hash } from './map/geo.ts';
@@ -630,6 +631,7 @@ export class TileWorld {
   // A tile whose files or build failed is fetched afresh, after a pause (a file that
   // keeps failing would otherwise be asked for every frame).
   failed(k: string) {
+    telemetry.count('tileFailures');
     this.pending.delete(k);
     this.retry.set(k, performance.now() + 2000);
   }
