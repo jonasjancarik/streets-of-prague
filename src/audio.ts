@@ -224,7 +224,7 @@ export class Sound {
       if (spec) this.engine = new Engine(ctx, this.noise, this.master, car, spec);
     }
     this.engine?.update(dt, s.throttle);
-    this.radio?.update(!!car && !car.two && !s.quiet);
+    this.radio?.update(!!car && !car.two && !s.quiet, car);
     this.tyres!.update(car, s.surface, s.wet ?? 0);
     this.weather!.update(s.rain ?? 0, s.snow ?? 0);
     this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0));

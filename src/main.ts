@@ -1612,7 +1612,8 @@ async function main() {
       : ride.on ? Math.round((ride.v?.speed ?? 0) * 3.6) : funicular.me ? Math.round(Math.hypot(funicular.me.vx, funicular.me.vy) * 3.6) : taxi.riding ? Math.round((taxi.agent?.speed ?? 0) * 3.6) : '–'));
     if (sound.radio) {
       const near = !inCar && !inHeli && !ride.on && [...carsNear(walker.x, walker.y, 25)].some((c) => !c.two && !c.burnt && c.gap(walker.x, walker.y) < 20);
-      sound.radio.warm(near, dt);
+      const lc = sound.radio.lingering as Car | null;
+      sound.radio.warm(near, dt, !!lc && lc.gap(walker.x, walker.y) < 30);
     }
     const radio = inCar && !inCar.two ? sound.radio : null;
     const radioText = radio ? radio.station?.name ?? t('Radio off') : '';

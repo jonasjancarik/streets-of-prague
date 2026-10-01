@@ -480,6 +480,8 @@ export class Car {
   // How hard the back and front tyres scrub the road (0–1), for their marks (skids.ts).
   skidBack = 0; skidFront = 0;
   _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number]; stamp?: number;
+  // The radio station last tuned in this car (an index in STATIONS, -1 for off), heard again when you get back in.
+  radio?: number;
 
   constructor(type: string, r: () => number, x = 0, y = 0, h = 0, colour?: string, box?: string) {
     this.type = type;
