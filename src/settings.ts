@@ -234,6 +234,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   open.addEventListener('click', () => {
     open.blur();
     update();
+    telemetry.did('opened the settings');
     box.showModal();
   });
   close.addEventListener('click', () => box.close());

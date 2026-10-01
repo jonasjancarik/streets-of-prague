@@ -271,6 +271,7 @@ async function main() {
     standAt: (x, y) => nearestWalkable(grid, x, y, 30),
     onArrive: async (x, y, name) => {
       await teleportTo(x, y);
+      telemetry.did('travelled by metro');
       walker.mesh.visible = true;
       showBanner(name);
       if (metro.dodging && Math.random() < CHECK_METRO) inspector.start('street', walker.x, walker.y);
@@ -465,10 +466,11 @@ async function main() {
     inspector.reset();
     let text = t('Busted');
     if (inspector.owed) {
-      text = t('Busted · fine for riding without a ticket: {fine}', { fine: kc(wallet.take(inspector.owed)) });
+      text = t('Busted · fine for riding without a ticket: {fine}', { fine: kc(wallet.take(inspector.owed, 'fine')) });
       inspector.owed = 0;
     }
     stats.busted++;
+    telemetry.did('arrested');
     // Not a jump: the banner comes up while the officers stand round you, then the screen
     // fades out, you're taken to the station, and it fades back in.
     frozen = 3.2;
@@ -513,6 +515,7 @@ async function main() {
     inspector.owed = 0;
     police.forgive();
     stats.wasted++;
+    telemetry.did('killed');
     frozen = 3.2;
     wastedT = 3;
     showBanner(t('Wasted'), true);
@@ -537,6 +540,7 @@ async function main() {
       sound.shot(Math.hypot(from[0] - px(), from[1] - py()), from[0] - px());
       crowd.scare(from[0], from[1], 35);
       if (!hit) return;
+      telemetry.did('shot by the police');
       if (inCar) { inCar.damage += 6; hurt(inCar.two ? 10 : 3); } else hurt(inHeli ? 3 : 10);
       shake = Math.max(shake, 0.3);
     },
@@ -669,6 +673,7 @@ async function main() {
       const heli = choppers.find((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4);
       if (heli) {
         inHeli = heli;
+        telemetry.did('flew a helicopter');
         walker.mesh.visible = false;
         return;
       }
@@ -688,7 +693,7 @@ async function main() {
       c.rider = null;
       loose.push(c);
       if (c.share) {
-        bikeShare.charge(clock.t, (n) => wallet.take(n));
+        bikeShare.charge(clock.t, (n) => wallet.take(n, 'shared bike'));
         const done = bikeShare.leave(c, clock.t);
         if (done) showBanner(t('{name}: returned after {minutes} min, {price} in all', { name: done.system.name, minutes: String(Math.max(1, Math.round(done.seconds / 60))), price: kc(done.paid) }));
       }
@@ -700,12 +705,14 @@ async function main() {
     const boat = boats.near(walker.x, walker.y);
     if (boat) {
       boats.me = boat;
+      telemetry.did('took a pedal boat');
       walker.mesh.visible = false;
       return;
     }
     const cabin = funicular.near(walker.x, walker.y);
     if (cabin) {
       funicular.board(cabin);
+      telemetry.did('rode the funicular');
       if (cabin.line.spec.ticket) pid.board(clock.t);
       walker.mesh.visible = false;
       return;
@@ -713,6 +720,7 @@ async function main() {
     const tram = ride.boardable(walker.x, walker.y);
     if (tram) {
       ride.board(tram);
+      telemetry.did('rode a tram');
       pid.board(clock.t);
       walker.mesh.visible = false;
       return;
@@ -720,6 +728,7 @@ async function main() {
     const station = metro.near(walker.x, walker.y);
     if (station) {
       metro.open(station);
+      telemetry.did('went down into the metro');
       return;
     }
     let best = null, bestD = Infinity;
@@ -734,7 +743,7 @@ async function main() {
       showBanner(t('Not enough money for a bike ({price})', { price: kc(rentalCost(sys && bikeShare.planOf(sys), 0)) }));
       return;
     }
-    if (best.share) bikeShare.charge(clock.t, (n) => wallet.take(n));
+    if (best.share) bikeShare.charge(clock.t, (n) => wallet.take(n, 'shared bike'));
     const agent = traffic.agents.find((a) => a.car === best);
     // A police car: the officer in it gets out and comes after you.
     const cop = best.type === 'police';
@@ -765,6 +774,9 @@ async function main() {
       tileCars.delete(best); // it's yours now: it stays when its tile unloads
     }
     best.mode = 'player';
+    // (A car taken from its driver also counts as the crime, in police.ts.)
+    telemetry.did(`drove: ${VEHICLE_NAMES[best.type]?.toLowerCase() ?? 'car'}`);
+    if (best.share) telemetry.did('rented a shared bike');
     if (best.two) best.rider = walker.look;
     inCar = best;
     if (best.variant) showBanner(variantName(best.variant));
@@ -776,6 +788,7 @@ async function main() {
   const throwOff = () => {
     const c = inCar;
     if (!c) return;
+    telemetry.did('thrown off a bike');
     enterOrExit();
     hurt(Math.hypot(c.vx, c.vy) * 1.5);
     walker.knock(c.vx * 0.6, c.vy * 0.6);
@@ -925,11 +938,11 @@ async function main() {
   const restart = () => { saving = false; location.reload(); };
   const saves = {
     list: () => listSaves(AREA),
-    save: () => { writeSave(newSlot(), capture()); telemetry.count('saves'); },
+    save: () => { writeSave(newSlot(), capture()); telemetry.count('saves'); telemetry.did('saved the game by hand'); },
     // Loading restarts the page into that game (it becomes the auto save, and the start screen offers it).
-    load: (slot: Slot) => { const s = readSave(slot, AREA); if (!s) return; writeSave('auto', s); restart(); },
+    load: (slot: Slot) => { const s = readSave(slot, AREA); if (!s) return; writeSave('auto', s); telemetry.did('loaded a saved game'); restart(); },
     remove: (slot: Slot) => clearSave(slot),
-    newGame: () => { clearSave('auto'); restart(); },
+    newGame: () => { clearSave('auto'); telemetry.did('started a new game from the settings'); restart(); },
   };
   setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
 
@@ -953,13 +966,14 @@ async function main() {
     const pick = /^Digit([1-4])$/.exec(e.code);
     if (pick && !e.repeat && inspector.phase !== 'decide') buyTicket(TICKETS[Number(pick[1]) - 1]);
         if (e.code === 'KeyF') { cannonHeld = true; if (!e.repeat) stealTram(); }
-    if (e.code === 'KeyX' && !e.repeat) ride.doors();
+    if (e.code === 'KeyX' && !e.repeat) { if (ride.driving) telemetry.did('opened the tram doors'); ride.doors(); }
     if (e.code === 'KeyQ' && !e.repeat) honk(true);
     // Space jumps, except at a tram stop, where holding it waits for a tram.
-    if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on && taxi.state !== 'coming') input.jump = true;
+    if (e.code === 'Space' && !e.repeat && !board.shown && !inCar && !inHeli && !ride.on && taxi.state !== 'coming') { input.jump = true; telemetry.did('jumped'); }
     if (e.code === 'KeyM' && !e.repeat) sound.toggle();
     if (e.code === 'KeyR' && !e.repeat && inCar && !inCar.two && sound.radio) {
       const station = sound.radio.next();
+      telemetry.did('changed the radio station');
       showBanner(station ? station.name : t('Radio off'));
     }
     if (e.code === 'KeyG' && !e.repeat) { graphics.cycle(); showBanner(graphics.label()); telemetry.setting('Graphics', graphics.choice); }
@@ -1008,10 +1022,12 @@ async function main() {
   const fires = new Fires({
     scene, height: ground, rng: seeded,
     onIgnite: (c) => {
+      if (c === inCar) telemetry.did('own car caught fire');
       if (c === inCar) showBanner(t('Your car is on fire!'), true);
       brigade.call(c);
     },
     onBlast: (c, blamed) => {
+      if (!blamed) telemetry.did('a car blew up nearby'); // (one you set off is a crime, counted in police.ts)
       const { x, y } = c, near = (p: { x: number; y: number }) => 1 - Math.hypot(p.x - x, p.y - y) / BLAST;
       const away = (p: { x: number; y: number }, v: number) => {
         const d = Math.hypot(p.x - x, p.y - y) || 1;
@@ -1070,6 +1086,7 @@ async function main() {
     const radio = sound.radio, what = (e.target as HTMLElement).closest('button')?.dataset.radio;
     if (!radio || !what) return;
     if (what === 'prev') radio.prev(); else if (what === 'next') radio.next(); else radio.set(!radio.station);
+    telemetry.did('changed the radio station');
     (document.activeElement as HTMLElement | null)?.blur();
   });
   const show = (id: string, value: string | number, how: 'text' | 'html' | 'opacity' = 'text') => {
@@ -1487,9 +1504,9 @@ async function main() {
       scatterPeople(true);
       parkTwoWheelers(true);
       bikeShare.update(px(), py(), clock.t, bikeWorld);
-      bikeShare.charge(clock.t, (n) => wallet.take(n));
+      bikeShare.charge(clock.t, (n) => wallet.take(n, 'shared bike'));
       for (const { rental, fee } of bikeShare.abandon(px(), py(), clock.t)) {
-        showBanner(t('You left the {name} bike outside a station: fee {price}', { name: rental.system.name, price: kc(wallet.take(fee)) }), true);
+        showBanner(t('You left the {name} bike outside a station: fee {price}', { name: rental.system.name, price: kc(wallet.take(fee, 'shared bike left outside a station')) }), true);
       }
     }
     // New traffic out of sight, a few times a second rather than every step (finding
@@ -1567,6 +1584,8 @@ async function main() {
     graphics: graphics.choice, tier: graphics.tier, lang: getLang(), touch: touch.active, resumed, loadMs,
   });
   telemetry.summary(() => ({ ...stats, money: wallet.balance }));
+  wallet.onSpend = telemetry.spent;
+  let starsWas = 0;
   const playingAs = (): telemetry.Mode => (ride.on ? 'tram' : taxi.riding ? 'taxi' : inCar ? 'car' : inHeli || boats.me || funicular.me || metro.active ? 'other' : 'foot');
 
   renderer.setAnimationLoop((now) => {
@@ -1574,6 +1593,16 @@ async function main() {
     graphics.frame(now - last, now, world.inFlight.size > 0);
     telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
     telemetry.most('maxStars', police.stars);
+    if (police.stars !== starsWas) { if (police.stars > starsWas) telemetry.did(`wanted: ${police.stars} ${police.stars === 1 ? 'star' : 'stars'}`); starsWas = police.stars; }
+    // Things that last, counted each time they begin.
+    telemetry.doing('honked', hornHeld);
+    telemetry.doing('used lane assist', assisted);
+    telemetry.doing('sprayed the water cannon', !!cannon.jet && !!inCar);
+    telemetry.doing('took over a tram', ride.driving);
+    telemetry.doing('rode in a taxi', taxi.riding);
+    telemetry.doing('called a taxi', taxi.state === 'coming');
+    telemetry.doing('rode without a ticket', pid.state === 'dodging' || metro.dodging);
+    telemetry.doing('sped up a ride or a wait', waitScale > 1.5 || ((ride.on || !!funicular.me || taxi.riding) && (input.run || touch.fast)));
     last = now;
     time.value += dt;
     wallet.update(dt);

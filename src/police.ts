@@ -1,3 +1,4 @@
+import * as telemetry from './telemetry.ts';
 import * as THREE from 'three';
 import { Car } from './car.ts';
 import { Polyline, clamp } from './network.ts';
@@ -47,6 +48,11 @@ const CHASERS = [0, 1, 2, 3, 4, 6]; // police cars after you, by stars
 const HELIS = [0, 0, 0, 1, 1, 1];
 const PATROLS = 3;
 const POINTS = { knock: 1, carjack: 1, wreck: 0.6, hitCop: 2, stealCop: 3, stealTram: 1.5, blowUp: 1.5, blowUpCop: 3, fareDodge: 2 };
+// What each is called in the statistics (src/telemetry.ts).
+const CRIME_NAMES: Record<keyof typeof POINTS, string> = {
+  knock: 'knocked someone over', carjack: 'took a car from its driver', wreck: 'wrecked a car', hitCop: 'hit the police',
+  stealCop: 'took a police car', stealTram: 'took a tram', blowUp: 'blew up a car', blowUpCop: 'blew up a police car', fareDodge: 'ran from a ticket inspector',
+};
 const COOLDOWN: Partial<Record<keyof typeof POINTS, number>> = { hitCop: 1 }; // one scrape shouldn't count ten times
 const RUN = 6.4; // officers on foot, m/s: you can outrun them, but not walking
 const WRECKED = 90; // damage that puts a police car out of the chase
@@ -225,6 +231,7 @@ export class Police {
   crime(kind: keyof typeof POINTS, x: number, y: number, car?: Car) {
     if (kind === 'hitCop' && car?.crew) this.getOut(car);
     if (this.cool[kind] > 0) return;
+    telemetry.did(`crime: ${CRIME_NAMES[kind]}`);
     this.cool[kind] = COOLDOWN[kind] || 0;
     const seen = this.sees(x, y);
     this.heat = Math.min(40, this.heat + POINTS[kind] * (seen ? 1.5 : 0.5));

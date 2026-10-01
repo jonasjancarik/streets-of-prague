@@ -269,7 +269,7 @@ export class Taxis {
     Object.assign(w, { x, y, h: c.h, vx: 0, vy: 0 });
     w.mesh.visible = true;
     w.sync();
-    if (pay) this.o.banner(t('{firm} fare: {fare}', { firm: this.firmName(), fare: kc(this.o.wallet.take(this.fare())) }));
+    if (pay) this.o.banner(t('{firm} fare: {fare}', { firm: this.firmName(), fare: kc(this.o.wallet.take(this.fare(), 'taxi')) }));
     this.cancel();
   }
 

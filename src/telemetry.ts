@@ -19,6 +19,7 @@ type Fields = Record<string, string | number>;
 const HITCH = 100;  // ms: a frame this long is felt as a stutter
 const STALL = 250;  // …and this long as a freeze
 const PAUSE = 2000; // longer is the tab coming back, not a frame
+const MOST_ROWS = 40; // activities in one request (worker/stats.js takes no more)
 const MOST_ERRORS = 5; // a session; an error that repeats every frame is sent once
 
 export const available = !!URL_ && !new URLSearchParams(location.search).has('go');
@@ -33,9 +34,10 @@ export function setEnabled(value: boolean) {
 
 const session = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
 
-function send(event: string, fields: Fields) {
+// `rows`: several reports of one kind in one request (the Worker stores each).
+function send(event: string, fields: Fields, rows?: Fields[]) {
   if (!on || !URL_) return;
-  const body = JSON.stringify({ e: event, v: __APP_VERSION__, d: __DATA_VERSION__, s: session, f: fields });
+  const body = JSON.stringify({ e: event, v: __APP_VERSION__, d: __DATA_VERSION__, s: session, ...(rows ? { rows } : { f: fields }) });
   // sendBeacon still goes out while the page is closing.
   try {
     if (!navigator.sendBeacon?.(URL_, body)) void fetch(URL_, { method: 'POST', body, keepalive: true }).catch(() => {});
@@ -115,6 +117,35 @@ const counts: Record<string, number> = {};
 let graphicsNow = '';
 let totals: () => Fields = () => ({});
 
+// Things the player does (riding a tram, honking, being arrested) and what money goes
+// on: how often, and how many seconds into the session the first time. The names are
+// free text, shown as they are on the dashboard, so new ones need no other change.
+interface Activity { times: number; firstAt: number; amount: number }
+const activities = new Map<string, Activity>(), changed = new Set<string>(), going = new Set<string>();
+function activity(key: string) {
+  let a = activities.get(key);
+  if (!a) activities.set(key, (a = { times: 0, firstAt: Math.round(seconds), amount: 0 }));
+  changed.add(key);
+  dirty = true;
+  return a;
+}
+// The player did this, once more.
+export function did(name: string) { if (started) activity(`did\n${name}`).times++; }
+// Something that lasts (holding the horn, lane assist): counted each time it begins.
+export function doing(name: string, on: boolean) {
+  if (!on) { going.delete(name); return; }
+  if (going.has(name)) return;
+  going.add(name);
+  did(name);
+}
+// Money that left the wallet, by what it went on.
+export function spent(what: string, amount: number) {
+  if (!started || amount <= 0) return;
+  const a = activity(`spent\n${what}`);
+  a.times++;
+  a.amount += amount;
+}
+
 // What the game counts itself (cars wrecked, money…), read when a summary is sent.
 export function summary(read: () => Fields) { totals = read; }
 export function count(name: string, by = 1) { counts[name] = (counts[name] ?? 0) + by; }
@@ -155,6 +186,13 @@ function flush() {
     seq, seconds: r(seconds), foot: r(modes.foot), car: r(modes.car), tram: r(modes.tram), taxi: r(modes.taxi), other: r(modes.other),
     metres: r(metres), tickets: counts.tickets ?? 0, saves: counts.saves ?? 0, maxStars: counts.maxStars ?? 0, ...totals(),
   });
+  // Only what changed since the last report, in one request.
+  const rows = [...changed].map((key) => {
+    const [kind, name] = key.split('\n'), a = activities.get(key)!;
+    return { kind, name, seq, times: a.times, firstAt: a.firstAt, amount: a.amount };
+  });
+  changed.clear();
+  for (let i = 0; i < rows.length; i += MOST_ROWS) send('activity', {}, rows.slice(i, i + MOST_ROWS));
 }
 if (available) {
   window.addEventListener('pagehide', flush);

@@ -162,9 +162,16 @@ assert.deepEqual(rows, [{ indexes: ['frames'], blobs: ['frames', 'v1.2.3', 'abc'
 await tell({ e: 'error', f: { message: 'x'.repeat(5000).slice(0, 3000) } });
 assert.equal(rows[0].blobs[7].length, 600);
 
+// Several reports of one kind in a request: one row each, and no more than the limit.
+res = await tell({ e: 'activity', v: 'v1.2.3', s: 'abc', rows: [{ kind: 'did', name: 'rode a tram', seq: 1, times: 2, firstAt: 95 }, { kind: 'spent', name: 'ticket', seq: 1, times: 1, firstAt: 96, amount: 46 }, 'not a report'] });
+assert.equal(res.status, 204);
+assert.deepEqual(rows.map((r) => [...r.blobs.slice(6), ...r.doubles]), [['did', 'rode a tram', 1, 2, 95, 0], ['spent', 'ticket', 1, 1, 96, 46], ['', '', 0, 0, 0, 0]]);
+await tell({ e: 'activity', rows: Array.from({ length: 100 }, () => ({ kind: 'did', name: 'x' })) });
+assert.equal(rows.length, 40);
+
 assert.equal((await tell({ e: 'constructor' })).status, 400);
 assert.equal((await tell('{')).status, 400);
-assert.equal((await tell('x'.repeat(5000))).status, 413);
+assert.equal((await tell('x'.repeat(9000))).status, 413);
 assert.equal((await tell({ e: 'start' }, { origin: 'https://example.com' })).status, 403);
 assert.equal((await tell({ e: 'start' }, { origin: BETA })).status, 403);
 assert.equal((await tell(null, { method: 'GET' })).status, 405);

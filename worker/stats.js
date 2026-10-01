@@ -26,10 +26,15 @@ export const SCHEMA = {
     doubles: ['seq', 'seconds', 'foot', 'car', 'tram', 'taxi', 'other', 'metres', 'wrecked', 'knocked', 'busted', 'wasted', 'money', 'maxStars', 'tickets', 'saves'],
   },
   setting: { blobs: ['name', 'value'], doubles: [] },
+  // One thing the player did (`kind` did) or what money went on (`kind` spent): how often,
+  // how many seconds into the session the first time, and for money the amount. Totals
+  // since the start of the session, like `play`; sent many to a request.
+  activity: { blobs: ['kind', 'name'], doubles: ['seq', 'times', 'firstAt', 'amount'] },
   error: { blobs: ['kind', 'message', 'where', 'renderer'], doubles: [] },
 };
 
-const LONGEST = 4000; // characters in a report
+const LONGEST = 8000; // characters in a request
+const MOST_ROWS = 40; // reports in one request
 const text = (v, most = 600) => (typeof v === 'string' ? v.slice(0, most) : '');
 const number = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -49,11 +54,15 @@ export async function report(request, env) {
   try { sent = JSON.parse(body); } catch { return new Response(null, { status: 400 }); }
   const schema = sent && Object.hasOwn(SCHEMA, sent.e) ? SCHEMA[sent.e] : null;
   if (!schema) return new Response(null, { status: 400 });
-  const fields = sent.f && typeof sent.f === 'object' ? sent.f : {};
-  env.TELEMETRY.writeDataPoint({
-    indexes: [sent.e],
-    blobs: [sent.e, text(sent.v, 40), text(sent.s, 32), text(request.cf?.country, 2), url.hostname.slice(0, 80), text(sent.d, 40), ...schema.blobs.map((name) => text(fields[name]))],
-    doubles: schema.doubles.map((name) => number(fields[name])),
-  });
+  // One report in `f`, or several of the same kind in `rows`.
+  const many = Array.isArray(sent.rows) ? sent.rows.slice(0, MOST_ROWS) : [sent.f];
+  for (const f of many) {
+    const fields = f && typeof f === 'object' ? f : {};
+    env.TELEMETRY.writeDataPoint({
+      indexes: [sent.e],
+      blobs: [sent.e, text(sent.v, 40), text(sent.s, 32), text(request.cf?.country, 2), url.hostname.slice(0, 80), text(sent.d, 40), ...schema.blobs.map((name) => text(fields[name]))],
+      doubles: schema.doubles.map((name) => number(fields[name])),
+    });
+  }
   return new Response(null, { status: 204 });
 }

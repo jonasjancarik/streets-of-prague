@@ -1,3 +1,4 @@
+import * as telemetry from './telemetry.ts';
 import { getLang, onLang, t } from './i18n.ts';
 import { privacyLink } from './credits.ts';
 import { el, sheet, trapField } from './newsletter.ts';
@@ -120,6 +121,7 @@ function build(extra: () => string) {
       const res = await fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: message.value, email: email.value, website: trap.value, lang: getLang(), context: context(extra) }) });
       const answer = await res.json().catch(() => ({})) as { error?: string };
       done = res.ok;
+      if (done) telemetry.did('sent feedback');
       note = done ? 'Thank you. Your message is on its way.' : PROBLEMS[answer.error ?? ''] ?? FAILED;
     } catch {
       note = FAILED;

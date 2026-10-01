@@ -4,6 +4,7 @@ import { locomote, knocked } from './people.ts';
 import { steer } from './police.ts';
 import { DECIDE, FINE, FINE_LATE } from './money.ts';
 import { t } from './i18n.ts';
+import * as telemetry from './telemetry.ts';
 import type { FigureKit } from './figures.ts';
 import type { CarGrid, Car } from './car.ts';
 import type { Wallet } from './money.ts';
@@ -54,6 +55,7 @@ export class Inspector {
 
   start(where: 'tram' | 'funicular' | 'street', x = 0, y = 0) {
     this.reset();
+    telemetry.did('ticket inspection');
     this.phase = 'decide';
     this.where = where;
     this.left = DECIDE;
@@ -63,7 +65,7 @@ export class Inspector {
   // Pay the fine (all you have, if it's not enough).
   pay() {
     if (this.phase === 'off') return;
-    this.o.fined(this.o.wallet.take(FINE));
+    this.o.fined(this.o.wallet.take(FINE, 'fine'));
     this.owed = 0;
     if (this.phase === 'decide') this.reset(); else this.phase = 'leaving';
   }
@@ -71,6 +73,7 @@ export class Inspector {
   // You've got off and run: the inspector comes out beside where you are.
   run(x: number, y: number, h: number) {
     if (this.phase !== 'decide') return;
+    telemetry.did('ran from the inspector');
     this.phase = 'chase';
     this.t = 0;
     this.called = false;

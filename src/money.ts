@@ -34,6 +34,8 @@ export class Wallet {
   paid = 0; // the last payment, shown for a moment
   paidT = 0; // seconds left of showing it
   private ticket: { from: number; minutes: number } | null = null;
+  // Told what money went on, each time some does (main.ts counts it for the statistics).
+  onSpend: ((what: string, amount: number) => void) | null = null;
 
   constructor(params: URLSearchParams) {
     const n = Number(params.get('money'));
@@ -42,11 +44,11 @@ export class Wallet {
 
   has(n: number) { return this.balance >= n; }
 
-  // Takes up to n, and returns what was actually taken.
-  take(n: number) {
+  // Takes up to n, and returns what was actually taken. `what` names what it went on.
+  take(n: number, what: string) {
     const got = Math.max(0, Math.min(this.balance, Math.round(n)));
     this.balance -= got;
-    if (got > 0) { this.paid = got; this.paidT = 3; }
+    if (got > 0) { this.paid = got; this.paidT = 3; this.onSpend?.(what, got); }
     return got;
   }
 
@@ -65,7 +67,7 @@ export class Wallet {
 
   buyTicket(now: number, kind: TicketKind = TICKET) {
     if (!this.has(kind.price)) return false;
-    this.take(kind.price);
+    this.take(kind.price, 'ticket');
     this.ticket = { from: now, minutes: kind.minutes };
     return true;
   }

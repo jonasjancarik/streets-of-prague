@@ -1,3 +1,4 @@
+import * as telemetry from './telemetry.ts';
 import { LANGS, getLang, onLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import { privacyLink } from './credits.ts';
@@ -170,6 +171,7 @@ export function signupFields(d: HTMLElement, { focus = false, done: onDone = () 
         const res = await fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.value, website: trap.value, lang: lang(), token: tk }) });
         const answer = await res.json().catch(() => ({})) as { error?: string };
         done = res.ok;
+        if (done) telemetry.did('signed up for news');
         message = done ? 'Almost done. Open the email that is on its way to you and press the button in it to confirm your address.' : PROBLEMS[answer.error ?? ''] ?? 'Signing up didn\'t work this time. Please try again later.';
       }
     } catch {
