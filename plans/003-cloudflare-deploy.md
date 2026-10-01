@@ -5,10 +5,11 @@
 > `src/webgpu/lamps.ts`). Check `git status` and `git diff` before you start, don't
 > revert changes you didn't make, and commit only your own hunks.
 
-> Implemented on 2026-10-01. Cloudflare serves
-> <https://streets.jonasjancarik.cz> (also <https://streets-cf.jonasjancarik.cz>)
+> Implemented on 2026-10-01. Cloudflare serves <https://streetsofprague.com>
+> (also <https://streets.jonasjancarik.cz> and <https://streets-cf.jonasjancarik.cz>)
 > with 37,902 checksum-verified R2 objects under `2026-10-01-b2`. mbxp serves
-> <https://streets-beta.jonasjancarik.cz>. The S3 upload serves `.bin.gz` as
+> <https://beta.streetsofprague.com> (also <https://streets-beta.jonasjancarik.cz>).
+> The S3 upload serves `.bin.gz` as
 > `application/octet-stream` without `Content-Encoding`; `fetchBinary` recognizes
 > and unpacks the gzip bytes. The original plan below describes the prior routing.
 

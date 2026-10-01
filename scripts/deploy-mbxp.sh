@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy to mbxp as https://streets-beta.jonasjancarik.cz (Cloudflare tunnel urad-ai-poc → 127.0.0.1:3017).
+# Deploy to mbxp as https://beta.streetsofprague.com (Cloudflare tunnel urad-ai-poc → 127.0.0.1:3017).
 # The built site goes to releases/<commit>/site. The locally built map data (public/data)
 # goes to data/<id>, where the id is a fingerprint of its files: a changed map gets a new
 # folder and a new address (data/<id>/), so the running game keeps the map it started

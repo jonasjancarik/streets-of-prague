@@ -74,12 +74,12 @@ runs `scripts/deploy-cloudflare.sh`. `--no-deploy` stops after the release.
 
 ## The two sites
 
-**Cloudflare** (<https://streets.jonasjancarik.cz>) is built by
+**Cloudflare** (<https://streetsofprague.com>) is built by
 `scripts/deploy-cloudflare.sh` with the address of the map version baked into the code.
 An open tab, a cached page and an earlier deployment each keep loading the map they were
 built for.
 
-**mbxp** (<https://streets-beta.jonasjancarik.cz>) is built by `scripts/deploy-mbxp.sh`
+**mbxp** (<https://beta.streetsofprague.com>) is built by `scripts/deploy-mbxp.sh`
 from the local `public/data`, with no upload to R2 and no entry in
 `deploy/data-version`. Each map is kept on the server in `data/<id>` and served at
 `data/<id>/`, where the id is a fingerprint of the files' paths, sizes and modification
