@@ -4,13 +4,14 @@
 // report becomes one row in the Analytics Engine dataset bound as TELEMETRY.
 //
 // SCHEMA is the whole format: which reports exist and which column each field lands
-// in. Text goes to blob5 onwards and numbers to double1 onwards, in the order listed;
-// blob1 to blob4 are the report's name, the game's version, the session and the
-// visitor's country (from Cloudflare; the IP address is not stored). Add new fields at
+// in. Text goes to blob7 onwards and numbers to double1 onwards, in the order listed;
+// blob1 to blob6 are the report's name, the game's version, the session, the
+// visitor's country (from Cloudflare; the IP address is not stored), the domain the
+// game was opened on and the map data version. Add new fields at
 // the end of a list, so rows already stored keep their meaning.
 // scripts/telemetry-dashboard.mjs reads this to name the columns again.
 
-export const COMMON = ['event', 'version', 'session', 'country'];
+export const COMMON = ['event', 'version', 'session', 'country', 'host', 'map'];
 export const SCHEMA = {
   start: {
     blobs: ['renderer', 'gpu', 'graphics', 'tier', 'lang', 'input', 'game', 'browser', 'os', 'referrer'],
@@ -50,7 +51,7 @@ export default {
     const fields = report.f && typeof report.f === 'object' ? report.f : {};
     env.TELEMETRY.writeDataPoint({
       indexes: [report.e],
-      blobs: [report.e, text(report.v, 40), text(report.s, 32), text(request.cf?.country, 2), ...schema.blobs.map((name) => text(fields[name]))],
+      blobs: [report.e, text(report.v, 40), text(report.s, 32), text(request.cf?.country, 2), url.hostname.slice(0, 80), text(report.d, 40), ...schema.blobs.map((name) => text(fields[name]))],
       doubles: schema.doubles.map((name) => number(fields[name])),
     });
     return new Response(null, { status: 204 });

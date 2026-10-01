@@ -11,6 +11,7 @@ const URL_ = import.meta.env.VITE_TELEMETRY_URL as string | undefined;
 // Cloudflare Web Analytics (visits, countries, page load), behind the same switch.
 const BEACON = import.meta.env.VITE_CF_BEACON_TOKEN as string | undefined;
 declare const __APP_VERSION__: string; // set by vite.config.js
+declare const __DATA_VERSION__: string;
 
 export type Mode = 'foot' | 'car' | 'tram' | 'taxi' | 'other';
 type Fields = Record<string, string | number>;
@@ -34,7 +35,7 @@ const session = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.t
 
 function send(event: string, fields: Fields) {
   if (!on || !URL_) return;
-  const body = JSON.stringify({ e: event, v: __APP_VERSION__, s: session, f: fields });
+  const body = JSON.stringify({ e: event, v: __APP_VERSION__, d: __DATA_VERSION__, s: session, f: fields });
   // sendBeacon still goes out while the page is closing.
   try {
     if (!navigator.sendBeacon?.(URL_, body)) void fetch(URL_, { method: 'POST', body, keepalive: true }).catch(() => {});

@@ -25,9 +25,10 @@ every field of each and is the only place the format is defined.
 `frames` and `play` hold totals since the start of the session and may be sent several
 times (each time the tab is hidden); `seq` counts them and the last one is the session.
 
-Every report also carries the game's version, a random session number made when the
-page loads and forgotten when it closes, and the visitor's country as Cloudflare
-derives it. There is no cookie and no stored identifier, the IP address is not kept,
+Every report also carries the game's version and the map data version (see
+[versioning.md](versioning.md)), the domain the game was opened on, a random session
+number made when the page loads and forgotten when it closes, and the visitor's country
+as Cloudflare derives it. There is no cookie and no stored identifier, the IP address is not kept,
 and where the player is on the map is never sent.
 
 Players can turn it off under **Anonymous statistics** in the settings; the choice is
@@ -38,8 +39,8 @@ remembered in the browser (`localStorage` key `telemetry`).
 `deploy/worker.js` is the Worker in front of the static files. It answers `POST /t`
 only from the game's own pages, drops anything that isn't a known report, and writes
 one row to the Analytics Engine dataset `streets_telemetry`: the report's name,
-version, session and country in `blob1` to `blob4`, then the report's text fields from
-`blob5` and its numbers from `double1`, in the order `SCHEMA` lists them. Add new
+game version, session, country, domain and map data version in `blob1` to `blob6`, then
+the report's text fields from `blob7` and its numbers from `double1`, in the order `SCHEMA` lists them. Add new
 fields at the end of a list so rows already stored keep their meaning. Analytics
 Engine keeps rows for three months.
 
@@ -51,8 +52,11 @@ node scripts/telemetry-dashboard.mjs --days 30
 node scripts/telemetry-dashboard.mjs --sample    # made-up numbers, to see the page
 ```
 
-It reads the rows with `cf analytics_engine sql query`, adds them up and writes
-`.telemetry/dashboard.html` (not committed), then opens it. The page is a file on
+It reads the rows with `cf analytics_engine sql query` and writes
+`.telemetry/dashboard.html` (not committed), then opens it. The page holds every
+report and adds them up itself, so the three lists at the top narrow everything on it
+to one game version, one domain or one map data version; the choice is kept in the
+page's address. The page is a file on
 your machine; nothing is published. Reading needs a Cloudflare login that may query
 analytics: if the `cf` login is refused, create an API token with the **Account
 Analytics: Read** permission and run the script with `CLOUDFLARE_API_TOKEN` set to it.
