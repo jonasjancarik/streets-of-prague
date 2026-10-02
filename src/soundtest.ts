@@ -57,7 +57,8 @@ const ENGINE_GROUPS: Group[] = [
 ];
 const HUM_GROUP: Group = { title: 'Warning hum for people on foot', note: 'Electric cars must hum below 20 km/h. It fades out by 30.', fields: [
   { path: 'voice.avas', i: 0, label: 'Loudness', min: 0, max: 0.08, step: 0.001 },
-  { path: 'voice.avas', i: 1, label: 'Pitch standing still', hint: 'Hz', min: 100, max: 800, step: 5 },
+  { path: 'voice.avas', i: 1, label: 'Pitch standing still', hint: 'Hz', min: 80, max: 800, step: 5 },
+  { path: 'voice.avas', i: 2, label: 'Pulse', hint: 'steady to throbbing', min: 0, max: 1, step: 0.05 },
 ] };
 // A recorded engine has no overtones or intake to set, and its filter works higher up.
 const RECORDED_GROUPS: Group[] = [
