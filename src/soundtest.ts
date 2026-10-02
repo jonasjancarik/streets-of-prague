@@ -93,6 +93,7 @@ let key = 'kona', spec: EngineSpec = structuredClone(CARS[key].spec);
 const clips: Record<string, AudioBuffer> = {};
 let ctx: AudioContext | null = null, engine: Drivetrain | null = null, tyres: Tyres | null = null;
 let noise: AudioBuffer, engineBus: GainNode, tyreBus: GainNode;
+let problem = ''; // what to say when the engine can't be started
 let gas = false, brake = false, dragging = false; // dragging: the speed is being set by hand
 
 function start() {
@@ -111,6 +112,7 @@ function start() {
     tyreBus.connect(master);
     noise = noiseBuffer(ctx);
     tyres = new Tyres(ctx, noise, tyreBus);
+    Object.assign(window, { __sound: { ctx, engineBus, tyreBus, get engine() { return engine; } } }); // for measuring from the console
   }
   ctx.resume();
   if (!engine) rebuild();
@@ -120,6 +122,7 @@ function rebuild() {
   if (!ctx) return;
   engine?.stop();
   engine = null;
+  problem = '';
   const names = (spec.voice.loops ?? []).map(([name]) => name), built = spec;
   if (!names.length) { engine = new Engine(ctx, noise, engineBus, car as unknown as Car, spec); return; }
   // A recorded engine starts once its recordings are in.
@@ -129,7 +132,10 @@ function rebuild() {
     clips[n] = await ctx!.decodeAudioData(await r.arrayBuffer());
   })).then(() => {
     if (spec === built && !engine) engine = new RecordedEngine(ctx!, clips, engineBus, car as unknown as Car, spec);
-  }).catch((e) => { $('dash').textContent = 'The recordings could not be loaded'; console.warn(e); });
+  }).catch((e) => {
+    if (spec === built) problem = 'This car\u2019s recordings could not be loaded. Check that the dev server is running, then pick the car again.';
+    console.warn(e);
+  });
 }
 
 function silence() {
@@ -274,7 +280,7 @@ function frame(now: number) {
     [...pips.children].forEach((b, i) => b.classList.toggle('on', i === engine!.gear));
     $('revs').style.width = `${Math.min(100, (engine.rpm / spec.redline) * 100)}%`;
   } else {
-    $('dash').textContent = 'Pick a car to start the sound';
+    $('dash').textContent = problem || (ctx?.state === 'running' && !engine ? 'Loading the recordings…' : 'Pick a car to start the sound');
     $('revs').style.width = '0';
     $('gears').replaceChildren();
   }

@@ -575,7 +575,7 @@ export class RecordedEngine extends Drivetrain {
       const share = i === at ? Math.cos((mix * Math.PI) / 2) : l === next ? Math.sin((mix * Math.PI) / 2) : 0;
       l.gain.gain.setTargetAtTime(share, t, SMOOTH);
     });
-    this.tone.frequency.setTargetAtTime(voice.tone[0] + hz * voice.tone[1] + pull * voice.tone[2], t, SMOOTH);
+    this.tone.frequency.setTargetAtTime(Math.min(voice.tone[0] + hz * voice.tone[1] + pull * voice.tone[2], this.ctx.sampleRate * 0.45), t, SMOOTH);
     this.out.gain.setTargetAtTime(voice.level[0] + pull * voice.level[1] + (rpm / spec.redline) * voice.level[2], t, 0.1);
   }
 
