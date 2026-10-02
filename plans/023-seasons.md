@@ -2,7 +2,7 @@
 read_when: Working on how the city looks through the year (tree leaves, blossom, autumn colours, grass, fields), on the game's date, or on anything in src/weather.ts, src/sky.ts or src/map/vegetation.ts that depends on the month.
 ---
 
-# Plan 022: Seasons
+# Plan 023: Seasons
 
 The city looks like high summer all year, except that broadleaf trees are bare from
 December to February and snow can fall. This plan gives the game a date and lets the
