@@ -56,3 +56,9 @@ Surface commit `5efe19e9c5880a106646333d9fb6649fe03b9a40` is complete with six v
 Surfaces reviewer confirmed furniture follow-up `fdaba9ccbfe17c66343319413fa713d16124b0b7` resolves the explicit slab-paving overlap, including its regression. Parent inspected the same small diff and final feature views. Furniture sequence `6bfee3ea3fb746a9d3162a03e75649b7aa0af808` then `fdaba9ccbfe17c66343319413fa713d16124b0b7` is accepted for isolated integration. Combined validation on corrected surface data remains required. This completed independent review resolves the earlier integration approval concern for furniture.
 
 Surface fixes for surveyed/inferred green and differently surfaced links pass new regressions; awaiting committed checkpoint and independent recheck. Terrain cutter is being committed after fixed-pose WebGPU/WebGL captures and CPU/geometry measurements. Bridge diagnosis found inconsistent on-ground endpoint flags across chunks; surfaces worker is authorized a separate narrow root-cause fix with chunk-order/full-area regressions if confirmed.
+
+## Acceptance at 22:28 UTC
+
+Independent terrain-worker review of pinned surface follow-up `67111992849623c5a11fdee59b4639eb6e8184cb` passed 19 surface tests and extra probes: no named-square overlap with surveyed lawns, retained park paths, contrasting links preserved, explicit paving precedence unchanged, and four independent chunk extractions agreeing on shared cores. Parent accepts surface sequence `5efe19e9c5880a106646333d9fb6649fe03b9a40` then `67111992849623c5a11fdee59b4639eb6e8184cb` for isolated integration.
+
+Cutter `8e9e105` is NOT accepted yet. Independent review passed 400 additional geometry cases but found groundLayers pre-cut refinement leaves a 0.27 m curved-height tile-edge gap (baseline 1.2 m). Author is assigned integrated seam regression and correction. Synthetic dense segment arrangements also show steep scaling; actual-map density evidence is needed to contextualize it.
