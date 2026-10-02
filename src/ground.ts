@@ -271,6 +271,9 @@ function stepWalls(lines: Point2[][]): GroundGeometry {
         const p = [a[0] + dx * (k / n), a[1] + dy * (k / n)], r = [a[0] + dx * ((k + 1) / n), a[1] + dy * ((k + 1) / n)];
         const pl = H(p[0], p[1], left), pr = H(p[0], p[1], right), rl = H(r[0], r[1], left), rr = H(r[0], r[1], right);
         if (Math.abs(pl - pr) < WALL_MIN && Math.abs(rl - rr) < WALL_MIN) continue;
+        // A bank lower than the water (a slipway, a quay awash in the terrain model) has
+        // no wall: it would face the land, and show from the water as a hole in the bank.
+        if (left === WATER ? pl + rl > pr + rr : right === WATER && pr + rr > pl + rl) continue;
         const P0 = [p[0], Math.min(pl, pr), -p[1]], P1 = [p[0], Math.max(pl, pr), -p[1]];
         const R0 = [r[0], Math.min(rl, rr), -r[1]], R1 = [r[0], Math.max(rl, rr), -r[1]];
         // Facing the lower side: the wall is drawn from there only.
@@ -329,10 +332,12 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   const terraces = (steps ?? []).filter((t) => t.label !== WATER);
   let at: typeof sideOf = null;
   if (steps && height && (water.length || terraces.length)) {
+    // (The flat terraces, the last of a street before its bridge, lie over the water too.)
     const wet = onPolygons(water), on = terraces.map((t) => onPolygons(t.polys));
     at = (x, y) => {
+      for (let k = 0; k < on.length; k++) if (terraces[k].h !== undefined && on[k](x, y)) return terraces[k].label;
       if (wet(x, y)) return WATER;
-      for (let k = 0; k < on.length; k++) if (on[k](x, y)) return terraces[k].label;
+      for (let k = 0; k < on.length; k++) if (terraces[k].h === undefined && on[k](x, y)) return terraces[k].label;
       return 0;
     };
   }

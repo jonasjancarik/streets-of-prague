@@ -41,6 +41,7 @@ from pathlib import Path
 import numpy as np
 from lxml import etree
 from pyproj import Transformer
+import shapely
 from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 
@@ -52,6 +53,7 @@ from osm_area import AREAS, OUT
 from ipr_buildings import CACHE, krovak_to_local, search, sheet, sheet_name
 
 STEP = 4.0  # roughly: the step used divides the tile evenly (grid_step)
+NEAR_DECK, OFF_DECK = 0.5, 1.5  # m between a bridge and the ground under or beside it: one with it, nothing to do with it
 GML = "http://www.opengis.net/gml"
 
 
@@ -276,14 +278,17 @@ def main() -> None:
     # step divides the tile, so tile (i, j) starts at lattice point (i * N, j * N).
     N, step = grid_step(T)
     gx0, gy0 = -ox, -oy
-    tiles, boxes, outlines, roads, ways, water, by_water = {}, {}, [], [], [], [], []
+    tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
     for i, j, t in layers.tiles(area, meta):
         tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
         boxes[(i, j)] = box(*t["box"])
         water += [Polygon(r[0], r[1:]).buffer(0) for r in t["areas"].get("water", [])]
         if t["areas"].get("water"):
             for kind in ("road", "sett", "path", "dirt"):
-                by_water += [Polygon(r[0], r[1:]).buffer(0) for r in t["roads"].get(kind, [])]
+                here = [Polygon(r[0], r[1:]).buffer(0) for r in t["roads"].get(kind, [])]
+                by_water += here
+                if kind in ("road", "sett"):
+                    driven += here
         here = t["areas"].get("bridge", [])
         outlines += [Polygon(r[0], r[1:]).buffer(0.05) for r in here]
         if here or t["roads"].get("bridge"):
@@ -330,7 +335,7 @@ def main() -> None:
     labels, terraces = {}, {}
     if not args.no_survey:
         surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes, by_water,
-                                      [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local))
+                                      [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven)
         labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")
@@ -338,6 +343,48 @@ def main() -> None:
     merged = unary_union(outlines) if outlines else None
     found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0, labels),
                              local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources)
+    # Where a bridge is close over the ground (at its ends) the ground comes up, or down,
+    # to it: wholly within NEAR_DECK of it, less and less out to OFF_DECK. The map's bridge
+    # and the street it runs on from rarely meet where the terrain says the abutment is,
+    # and the ground between them was left crumpled.
+    met = 0
+    if not args.no_survey:
+        # The street's last metres before a bridge drawn from past its wall's edge: a flat
+        # terrace at the bridge's height, with its outline (smaller than a lattice cell,
+        # mostly, so the lattice alone couldn't say it).
+        ring = lambda r: np.round(shapely.get_coordinates(r)[:-1], 2).tolist()  # noqa: E731
+        lifted = 0
+        for pad, height in structures.pads(ways):
+            bx0, by0, bx1, by1 = pad.bounds
+            for i in range(math.floor((bx0 - gx0) / T), math.floor((bx1 - gx0) / T) + 1):
+                for j in range(math.floor((by0 - gy0) / T), math.floor((by1 - gy0) / T) + 1):
+                    arr = tiles.get((i, j))
+                    if arr is None:
+                        continue
+                    here = [q for q in shapely.get_parts(pad.intersection(boxes[(i, j)])) if q.geom_type == "Polygon" and q.area > 0.5]
+                    listed = terraces.setdefault((i, j), [])
+                    label = max([t["label"] for t in listed] + [1]) + 1
+                    if not here or label > 255:
+                        continue
+                    listed.append({"label": label, "h": round(height, 2), "polys": [[ring(q.exterior), *(ring(r) for r in q.interiors)] for q in here]})
+                    xs, ys = np.meshgrid(gx0 + i * T + np.arange(N + 1) * step, gy0 + j * T + np.arange(N + 1) * step)
+                    on = shapely.contains_xy(pad, xs, ys)
+                    arr[on] = height
+                    labels.setdefault((i, j), np.zeros((N + 1, N + 1), dtype=np.uint8))[on] = label
+                    lifted += 1
+        print(f"  {lifted} flat terraces under the street before bridges drawn from past their wall")
+        for key, levels in found.items():
+            arr, label = tiles[key], labels.get(key, np.zeros((N + 1, N + 1), dtype=np.uint8))
+            for _, kind, h, _ in levels:
+                if kind != "bridge":
+                    continue
+                with np.errstate(invalid="ignore"):
+                    apart = h - arr
+                    pull = np.clip((OFF_DECK - np.abs(apart)) / (OFF_DECK - NEAR_DECK), 0, 1)
+                near = ~np.isnan(apart) & (label != 1) & (pull > 0)
+                arr[near] += (apart * pull)[near]
+                met += int(near.sum())
+        print(f"  ground brought to the bridges' ends at {met} points")
     timings.lap("bridges_tunnels")
     # The heights, then each point's label as a byte (dtm_heights.py): 0 the plain ground,
     # 1 water, 2 and up the tile's terraces. A bank or a retaining wall is a step in the

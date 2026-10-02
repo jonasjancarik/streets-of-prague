@@ -13,7 +13,7 @@ import { treeInstances } from './map/vegetation.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords } from './facades.ts';
 import { groundLayers, layerBuffers } from './ground.ts';
-import { heightSampler, terraceAt } from './terrain.ts';
+import { flatTerraces, heightSampler, terraceAt } from './terrain.ts';
 import { skyView } from './map/skyView.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
 import type { HeightGrid, BuildingArrays, LandResult, WorkerJobs, WorkerRequest, WorkerResponse } from './contracts.ts';
@@ -31,7 +31,7 @@ const styleAt = (bbox: Bounds): StyleAt => {
   if (!styles) throw new Error('Facade styles are unavailable');
   return styles;
 };
-const groundAt = (g: HeightGrid | null) => (g ? heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces)) : () => 0);
+const groundAt = (g: HeightGrid | null) => (g ? heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, g.ref ?? 0)) : () => 0);
 
 async function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roofs']): Promise<BuildingArrays> {
   await (roofsReady ??= initRoofs());

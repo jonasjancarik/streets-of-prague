@@ -72,22 +72,24 @@ WALLS = {"010000030202": "wall edge", "010000016802": "wall"}
 VERSION = 3
 SPACING = 1.5  # m between the points taken along a surveyed line
 ON_EDGE = 0.15  # m: a surveyed point this close to a surface's edge belongs to it
+OVERHANG = 12.0  # m from a surveyed street: a mapped carriageway this near one is the same street, drawn on past its edge
 UNDER = 2.0  # m below the terrain model, in a tunnel of the map's: surveyed under the ground
 UNDER_SIDE = 4.0  # m either side of the tunnel that counts as in it
 FEW = 3  # a surface with fewer surveyed points than this keeps the terrain model's heights
 WATER_REACH = 16.0  # m: further than the terrain model's ramp at a bank reaches
+AWASH = 0.15  # m above the water: the least the land at its edge is
 BANK = 10.0  # m from the water: the land the terrain model's ramp spoils
 STREET_NEAR = 8.0  # m: a surveyed street this close gives the bank its height
 WALL_NEAR = 6.0  # m: a surveyed wall this close makes the bank a walled one
 INLAND = 24.0  # m: how far the land clear of the ramp may be
 PIECE = 4.0  # m: a wall is judged piece by piece
 PROBE = 7.0  # m either side of a wall: where the ground's heights are compared
-STEP_MIN = 1.2  # m between them: a retaining wall
-STEP_WEAK = 0.7  # m: still one, along a wall that is one elsewhere
+STEP_MIN = 1.5  # m between them: a retaining wall
+STEP_WEAK = 0.9  # m: still one, along a wall that is one elsewhere
 SLOPE = 1.6  # times that much twice as far out, or more: a wall on a hillside, not a step
 WATER_CLEAR = 8.0  # m from the water: nearer, the wall is the bank's, which is a step already
 BESIDE = 1.5  # m: two wall lines this close are one wall's two faces; the lower one is the step
-RUN_MIN = 6.0  # m: shorter stretches of retaining wall are left alone
+RUN_MIN = 12.0  # m: shorter stretches of retaining wall are left alone (their ends make more mess than they make steps)
 REACH = 10.0  # m either side of a retaining wall: as far as the terrain model's ramp reaches
 STRIP = 8.0  # m: the width of the terrace marked at a wall's foot (two lattice cells)
 
@@ -235,13 +237,13 @@ def _retaining(lines, at, dry):
     return runs
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=()):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=()):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
     `water`: the water's polygons in local metres; `boxes`: each tile's box; `roads`: the
     streets and paths on the ground in the tiles with water; `tunnels`: the map's tunnels
-    and underpasses as (line, width); `keep`: places looked at by hand where the terrain
+    and underpasses as (line, width); `carriageways`: those of `roads` that cars drive on; `keep`: places looked at by hand where the terrain
     model does better left as it is (terrain_keep.json), as polygons. Returns what it changed, for
     the log, with "labels" (each tile's lattice of labels) and "terraces" (each tile's
     terraces: their label and outline; and under label 1 its water, where that's not
@@ -313,6 +315,36 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         street[gj[back], gi[back]] = False
         under += int(back.sum())
 
+    # The map draws a street on to where its bridge begins, which is often a little past
+    # the edge of the quay wall the bridge comes off: its last metres lie over the water or
+    # the quay below, and would hang down to them. They're at the height of the surveyed
+    # street they run on from.
+    overhang = 0
+    carriageways = [g for g in carriageways if not g.is_empty]
+    if street.any() and len(carriageways):
+        d, (sj, si) = ndimage.distance_transform_edt(~street, return_indices=True)
+        raised = np.zeros(grid.shape, dtype=bool)
+        for road in carriageways:
+            bx0, by0, bx1, by1 = road.bounds
+            ia, ib = max(0, int(np.ceil((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.floor((bx1 - x_of(0)) / step)))
+            ja, jb = max(0, int(np.ceil((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.floor((by1 - y_of(0)) / step)))
+            if ia > ib or ja > jb:
+                continue
+            gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+            on = ~street[gj, gi] & ~np.isnan(grid[gj, gi]) & (d[gj, gi] * step <= OVERHANG)
+            if not on.any():
+                continue
+            on &= shapely.contains_xy(road, x_of(gi), y_of(gj))
+            # (Up to the street, never down: the nearest surveyed street may as well be
+            # the one along the quay below.)
+            on &= grid[sj[gj, gi], si[gj, gi]] > grid[gj, gi] + 0.3
+            gi, gj = gi[on], gj[on]
+            grid[gj, gi] = grid[sj[gj, gi], si[gj, gi]]
+            raised[gj, gi] = True
+            overhang += len(gi)
+        # (Marked as street only now: one such point doesn't hand its height on to the next.)
+        street |= raised
+
     # The map's water runs on under streets it doesn't call bridges (a causeway, the road
     # across an island's tip, a quay drawn a little too far out): what's a street on the
     # ground, surveyed or mapped, isn't water.
@@ -363,6 +395,15 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
                 take = walled & (d * step <= INLAND)
                 grid[take] = grid[sj[take], si[take]]
                 bank_points += int(take.sum())
+
+    # The land right at the water isn't below it (the terrain model has a quay awash here
+    # and there, by a decimetre or a metre): the bank would be a step down from the water.
+    if wet.any():
+        d, (sj, si) = ndimage.distance_transform_edt(~wet, return_indices=True)
+        edge = ~wet & ~np.isnan(bare) & (d <= 2.5)
+        with np.errstate(invalid="ignore"):
+            low = edge & (grid < grid[sj, si] + AWASH)
+        grid[low] = grid[sj[low], si[low]] + AWASH
 
     # Retaining walls on land: the ground on either side from clear of the ramp, and a
     # terrace marked at each wall's foot.
@@ -477,7 +518,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"surfaces": surfaces, "street_points": street_points, "under_points": under, "water_points": int(wet.sum()), "bank_points": bank_points,
+    return {"surfaces": surfaces, "street_points": street_points, "under_points": under, "overhang_points": overhang, "water_points": int(wet.sum()), "bank_points": bank_points,
             "kept_by_hand": kept, "retaining_walls": len(strips), "retaining_metres": round(wall_length), "wall_points": wall_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}

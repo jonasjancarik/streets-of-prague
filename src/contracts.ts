@@ -81,7 +81,7 @@ export interface TileJSON extends GroundTileData {
 }
 
 // labels, terraces: the steps in the ground (terrain.ts, pointLabels), where the tile has any.
-export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[] }
+export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; ref?: number }
 // A level with its heights, for the tile workers.
 export interface LevelInput extends TileStructure { heights: HeightGrid }
 

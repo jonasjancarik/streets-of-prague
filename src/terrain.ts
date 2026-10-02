@@ -25,11 +25,21 @@ export const WATER = 1;
 // A tile's terrace: its label in the terrain and its outline. Under WATER, the tile's
 // water as the terrain has it, where that's not simply the map's (the map's water runs on
 // under streets it doesn't call bridges).
-export interface Terrace { label: number; polys: Polygons }
+// With `h` (m a.s.l.) it's flat at that height whatever the lattice says: the last metres
+// of a street before its bridge, too small for the lattice (pipeline/structures.py, pads).
+export interface Terrace { label: number; polys: Polygons; h?: number }
 
-// Which terrace a point is on (its label), or 0 for none.
+// The flat terraces' heights above `ref` by label, or null with none.
+export function flatTerraces(all: Terrace[] | null | undefined, ref: number) {
+  const flat = new Map<number, number>();
+  for (const t of all ?? []) if (t.h !== undefined) flat.set(t.label, t.h - ref);
+  return flat.size ? flat : null;
+}
+
+// Which terrace a point is on (its label), or 0 for none. (The flat ones first: they lie
+// over whatever else is there.)
 export function terraceAt(all: Terrace[] | null | undefined) {
-  const terraces = (all ?? []).filter((t) => t.label !== WATER);
+  const terraces = (all ?? []).filter((t) => t.label !== WATER).sort((a, b) => Number(b.h !== undefined) - Number(a.h !== undefined));
   if (!terraces.length) return null;
   const on = terraces.map((t) => onPolygons(t.polys));
   return (x: number, y: number) => {
@@ -54,10 +64,18 @@ export function decodeLevels(buffer: ArrayBuffer, n: number, count: number, ref:
 // With `labels` (pointLabels), in a cell a step crosses only the corners on the point's
 // own side count. `side`: the label of that side; true for the water's; left out, it's
 // the terrace the point is on (`terrace`, see terraceAt) or else the plain ground, and
-// never the water, so what stands by a quay wall stands on the quay.
+// never the water, so what stands by a quay wall stands on the quay. `flat`: the flat
+// terraces' heights (flatTerraces).
 export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [number, number, number, number], n: number, step: number,
-  labels: Uint8Array | null = null, terrace: ((x: number, y: number) => number) | null = null) {
+  labels: Uint8Array | null = null, terrace: ((x: number, y: number) => number) | null = null, flat: Map<number, number> | null = null) {
+  const sideOf = (x: number, y: number, side: number | boolean) => (side === true ? WATER : side === false ? (terrace ? terrace(x, y) : 0) : side);
   return (x: number, y: number, side: number | boolean = false) => {
+    let want = -1;
+    if (flat) {
+      want = sideOf(x, y, side);
+      const level = flat.get(want);
+      if (level !== undefined) return level;
+    }
     const u = Math.min(n - 1.001, Math.max(0, (x - bx) / step)), v = Math.min(n - 1.001, Math.max(0, (y - by) / step));
     const i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j;
     const o = j * n + i;
@@ -68,7 +86,7 @@ export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [nu
       // (In a cell all of one kind, only a side asked for by name can be another: the
       // tip of a quay narrower than a cell, cut out of the water round it.)
       if (mixed || (side !== false && la !== (side === true ? WATER : side))) {
-        const want = side === true ? WATER : side === false ? (terrace ? terrace(x, y) : 0) : side;
+        if (want < 0) want = sideOf(x, y, side);
         let ka = la === want ? 1 : 0, kb = lb === want ? 1 : 0, kc = lc === want ? 1 : 0, kd = ld === want ? 1 : 0;
         if (!(ka + kb + kc + kd)) {
           // No corner of its own (a sliver of a terrace, a spit of land): the points of
