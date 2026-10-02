@@ -63,6 +63,66 @@
     "bytes": 3470,
     "sha256": "6de13819d526da61f1d2a90112be042a34affc124894c3fdcb08ed41f469648a"
   },
+  "seam-fix/after-canonical.log": {
+    "bytes": 1366,
+    "sha256": "9e30244a1ca0066fc84f7ced12890109144d5d844ea3c99188afcaf4531effdd"
+  },
+  "seam-fix/baseline-tests.log": {
+    "bytes": 6465,
+    "sha256": "fedb095f67dfe881ce7d51dd02908ae00b011b1acfc18785f6289ceaf75ddd56"
+  },
+  "seam-fix/before.log": {
+    "bytes": 1081,
+    "sha256": "0cbdccd070d97d2463f030207761d1ea448ea584a31b072ea1bed742d6af566a"
+  },
+  "seam-fix/cost-final.json": {
+    "bytes": 15678,
+    "sha256": "7d85ced531d25254e49724c56034c357bd480dad82378a00267ff3659c9d57b4"
+  },
+  "seam-fix/cost-final.log": {
+    "bytes": 8120,
+    "sha256": "eeab1293994b72e14f0fa5bec44bd4f8a8fee021ce1872432e13bdb724832b5d"
+  },
+  "seam-fix/crossing.json": {
+    "bytes": 8835,
+    "sha256": "dc72bae515c3c83e576409e65b45d0d771bb7b8df6c5f7625a2141fd631f9b8d"
+  },
+  "seam-fix/density.json": {
+    "bytes": 11531,
+    "sha256": "3182ee4a865dbdadb37c26f49cfa47a151671738787ea8fabcca78f98edb999b"
+  },
+  "seam-fix/geometry-tests.log": {
+    "bytes": 2025,
+    "sha256": "3ef66f2bfa01d606cab4bf4cca17f1b24a18234298891108494e85407cacce07"
+  },
+  "seam-fix/kampa-quay.jpg": {
+    "bytes": 93858,
+    "sha256": "d7704a19d47e6221153c475ebe668256100e5ea30f2918a30456bbc3e1760e74"
+  },
+  "seam-fix/legii-west.jpg": {
+    "bytes": 125087,
+    "sha256": "2e813e60c491a8e0ab947f5002d9c18d3bd095cc429155f25c2b89b559da9896"
+  },
+  "seam-fix/reader-files.json": {
+    "bytes": 509,
+    "sha256": "0fb687d2cd7573b60df4ba98d1104761577bd1b8adcba50beb4901988bc6778e"
+  },
+  "seam-fix/summary.json": {
+    "bytes": 516,
+    "sha256": "e10649bc9d437cc57ca47a3cfbff33d44a746719c5b125ea5d4a98708131fe09"
+  },
+  "seam-fix/typecheck.log": {
+    "bytes": 28,
+    "sha256": "dac125c794db702133345f3a0d33f3193f975fddc564ca4f1498b0d4132ed500"
+  },
+  "seam-fix/webgl-cameras.json": {
+    "bytes": 3381,
+    "sha256": "9856cd7b5050bdc8cf1820baeab084c1dd8c20ec676b2284a792fd0b03b96473"
+  },
+  "seam-fix/webgpu-cameras.json": {
+    "bytes": 3384,
+    "sha256": "bee0c5faf98fb764615963658328d1513ccd6a19147c7fa85ea8ea656307058c"
+  },
   "source-map-comparison.json": {
     "bytes": 364,
     "sha256": "5992c32abf1d18eb583adcc00124ee0f76578f2f0c25dbc16c1e183425b21f52"

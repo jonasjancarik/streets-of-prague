@@ -116,7 +116,12 @@ For example, Nosticova's local target is
 `[-0.537299608, 0, 0, 0.843391446]` in both maps. The source comparison sheets are
 the two source comparisons linked above.
 
-## Exact cuts at terrain steps
+## Exact cuts at terrain steps, checkpoint `8e9e105`
+
+The evidence in this section records the first cutter checkpoint. The later
+shared-edge repair below supersedes its perimeter-conformity claim and aggregate
+geometry/loading figures; the original captures and measurements retain their
+original provenance.
 
 The former `cutAtSteps` inspected triangle-corner labels and bisected edges with
 different labels. It missed a terrace wholly inside a triangle, narrow strips
@@ -135,8 +140,9 @@ Merging is necessary: simply extending each segment's supporting line creates
 extra vertices on an unrelated mesh or tile edge. One neighbouring tile can then
 sample a nonlinear height at that extra vertex while the other uses a straight
 edge, opening a crack. The final cutter removes those extensions and their
-collinear edge vertices. Independent tiles keep the original edge tessellation
-plus actual step intersections. Area signs are calculated relative to a local
+collinear edge vertices. This fixes extensions introduced by cutting, but did
+not guarantee matching input tessellation from pre-cut refinement. The integrated
+case and repair are recorded below. Area signs are calculated relative to a local
 origin so tiny pieces at large map coordinates cannot become spurious holes.
 
 The `ground.ts` changes are confined to importing the helper, `cutAtSteps`,
@@ -222,10 +228,84 @@ synthetic case puts 99 outline vertices into an 8 m square
 and produces 204 triangles without leaking the supporting-line arrangement into
 the output. Its runtime is printed for observation, not used as a flaky test gate.
 
+## Shared-edge repair after independent review
+
+Independent review found a case missed by the cut-helper tests. The complete
+`groundLayers` path refined a shared edge by triangle-corner labels before
+cutting. A clipped polygon can classify its right edge as outside and the
+neighbour's left edge as inside, producing vertices `[0, 3.1, 8]` on one side
+and `[0, 2, 3.1, 4, 8]` on the other. With the identical curved height
+`0.1 × y²`, the rendered surfaces differed by 0.27 m at y = 5.
+
+A local outline-contact criterion is insufficient too: an outline touching the
+edge from only one tile can refine just that tile. The repair instead gives every
+lower-ground tile a shared perimeter contract in `src/terrain-edges.ts`, including
+tiles without any steps. Perimeter meshes contain world-aligned 2 m stations and
+their tile endpoints; additional cut vertices interpolate the same piecewise-linear
+height profile on each side. Float32 coordinates and anchor heights are used for
+the interpolation so uploaded meshes stay joined at large coordinates. Each step
+still has its own level. Step walls use the same edge heights. Interiors keep the
+existing refinement; only triangles touching perimeter stations gain extra faces.
+The gameplay height sampler and the stored map data are unchanged.
+
+This is a rendering approximation at 2 m spacing, rather than a claim of exact
+evaluation of an arbitrary curved height field between stations. It avoids the
+coarser, independently selected edge chords. Matching profiles require matching
+underlying height data for that physical side; it does not repair inconsistent
+height payloads or missing level metadata, including the separate 0.3 m bridge/data
+seam noted above.
+
+The [before](evidence/river-terrain/seam-fix/before.log) /
+[after](evidence/river-terrain/seam-fix/after-canonical.log) reproduction records
+zero gap at y = 4.5, 5, 6 and 7 after the repair. Nine new checks exercise the
+complete ground path, reversed rings and differing local terrace labels,
+one-sided tangent outlines, shifted endpoints, horizontal edges, Float32 uploads
+at large coordinates, fractional tile ends, winding, alpha and unchanged interior
+density. Six integrated cases fail against `8e9e105` and pass after the repair;
+the three new helper tests are positive checks of the new helper.
+
+```sh
+node --test scripts/test-ground-seams.mjs scripts/test-terrain-cut.mjs
+npm run typecheck
+```
+
+All [21 geometry checks](evidence/river-terrain/seam-fix/geometry-tests.log) and
+[typechecking](evidence/river-terrain/seam-fix/typecheck.log) pass. The
+[baseline failures](evidence/river-terrain/seam-fix/baseline-tests.log) are retained.
+All 25 lower-ground builds remain finite, and the six representative tiles still
+have [zero sampled step crossings](evidence/river-terrain/seam-fix/crossing.json).
+Compared with `8e9e105`, aggregate geometry changes from 1,200,712 to 1,244,451
+triangles, 771,541 to 806,656 vertices, and 33,185,684 to 34,553,668 bytes
+(+4.12% in bytes). The observed sum of tile medians changes from 646.39 to
+725.81 ms. These are concurrent CPU measurements, not a clean streaming or
+frame-rate result. [Summary](evidence/river-terrain/seam-fix/summary.json),
+[per-tile rows](evidence/river-terrain/seam-fix/cost-final.json),
+[CPU log](evidence/river-terrain/seam-fix/cost-final.log).
+
+The arrangement algorithm still has a dense-input cost: independent review's
+8 m square stress with 103/203/403/803 segments took about 7/21/90/414 ms. The
+algorithm itself was not expanded or optimized on that synthetic evidence.
+A [sweep of the actual Újezd outlines](evidence/river-terrain/seam-fix/density.json)
+made 343,332 queries, using 8 m windows on 2 m centres. The maximum observed
+candidate count was 36 in tile `0_1`, at `[-534.45, -76.12]`; bbox candidates
+overcount finite segments actually entering a triangle. This establishes the
+tested region's sampled density, not a bound for every city tile or every window.
+
+Three scoped views passed again in WebGPU and WebGL, without returned page or
+shader errors. Their target/eye/orientation records match exactly:
+[WebGPU](evidence/river-terrain/seam-fix/webgpu-cameras.json) /
+[WebGL](evidence/river-terrain/seam-fix/webgl-cameras.json).
+[Legií west](evidence/river-terrain/seam-fix/legii-west.jpg) and
+[Kampa quay](evidence/river-terrain/seam-fix/kampa-quay.jpg) preserve representative
+updated views. The [reader file hashes](evidence/river-terrain/seam-fix/reader-files.json)
+identify this repair separately from the historical cutter evidence.
+
 ## Remaining checks
 
-The source and cutter changes are separate local commits, with the source filter
-as the first checkpoint. Neither is pushed, deployed, or merged into main. The
+The source, cutter, evidence preservation and shared-edge repair are separate
+local commits from this worker, with the source filter as the first checkpoint.
+This worker did not push, deploy, or merge into main; integration is managed by
+the parent. The
 review server stays available at port 5201 with the private source-filtered map;
 the owned scene browsers are stopped and the GPU lock released. The Tailscale
 route was unavailable during setup; localhost and the LAN server are available.

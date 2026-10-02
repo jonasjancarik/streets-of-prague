@@ -831,6 +831,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (`abutment` in `pipeline/structures.py`). Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it.
+  Rendered tile edges also share a world-aligned 2 m height profile and perimeter
+  stations (`src/terrain-edges.ts`), including tiles without steps, so differing
+  clipped-outline refinement cannot open a gap on a curved slope. This changes
+  edge geometry, not the stored lattice or gameplay height sampler.
 - **Caches.** Every OSM chunk and every IPR sheet is read only once. What comes out
   is kept (`pipeline/.cache/osm/*.parsed.pkl`, `pipeline/.cache/ipr/parsed/`) and read
   again only when the source changes. Chunks and sheets are worked on side by side

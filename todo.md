@@ -339,6 +339,10 @@ grime on the walls 6%, the shadow map's own pass 7%.
   had 1,516 sampled step-crossing triangles before and zero after; total geometry grew
   by 0.082% in bytes, with a measured CPU loading cost. Full-city and frame-time checks
   remain open; see the same findings document.
+  Independent review then found a pre-cut refinement seam on curved terrain.
+  A shared 2 m perimeter/profile contract fixes it, with nine complete-path checks;
+  geometry is now 4.12% larger than the first cutter checkpoint. Stored-height
+  disagreements remain separate. The findings retain both checkpoints' evidence.
 - **Hill shading for a moving sun.** The shading is baked per tile to the fixed
   north-west sun (`relief()` in `src/tiles.ts`, `SUN_OFFSET` in `src/main.ts`). If
   the sun ever moves with the clock, store the slope per tile instead and light it in

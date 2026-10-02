@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { onPolygons, signedArea } from './map/geo.ts';
 import { WATER } from './terrain.ts';
 import { TerrainStepIndex, cutTerrainSteps } from './terrain-cut.ts';
+import { edgeHeightSampler, conformTerrainEdges } from './terrain-edges.ts';
 import type { Terrace } from './terrain.ts';
 import { offsetLine } from './network.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
@@ -204,6 +205,7 @@ let groundHeight: HeightAt | null = null;
 let sideOf: ((x: number, y: number) => number) | null = null;
 let terraceOutlines: Polygons = []; // (the water's among them)
 let stepIndex: TerrainStepIndex | null = null;
+let groundBox: Bounds | null = null;
 // Set while the water itself is built: all of it lies at the water's level.
 let afloat = false;
 const STEP_FINE = 2; // m between a layer's points along a step, so the cut follows its bends
@@ -264,6 +266,7 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
     let side: number[] | null = null;
     if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf));
     else idx = subdivide(pos, idx, extra, 8);
+    if (groundBox) ({ pos, idx, extra, side } = conformTerrainEdges(pos, idx, extra, side, groundBox, STEP_FINE));
     for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat ? WATER : side ? side[k] : false);
   }
   const nor = new Float32Array(pos.length);
@@ -310,11 +313,12 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   }
   const outlines = at ? [...water, ...terraces.flatMap((t) => t.polys)] : [];
   const stepped = <R>(build: () => R): R => {
-    groundHeight = height;
+    groundHeight = height ? edgeHeightSampler(height, box, STEP_FINE) : null;
+    groundBox = height ? box : null;
     sideOf = at;
     terraceOutlines = outlines;
     stepIndex = at ? new TerrainStepIndex(outlines) : null;
-    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; stepIndex = null; }
+    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; stepIndex = null; groundBox = null; }
   };
   if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones })), masks: [] };
   const T = height || (() => 0);
