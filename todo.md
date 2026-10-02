@@ -334,6 +334,11 @@ grime on the walls 6%, the shadow map's own pass 7%.
   Source spikes near Nosticova and the south-east edge of `ujezd` are fixed by rejecting
   grossly inconsistent survey vertices before interpolation (2 October 2026,
   `docs/river-terrain-findings.md`); verified on private `ujezd` data only.
+  Ground cutting now follows the actual outlines, including narrow enclosed terraces
+  and three levels meeting, with independent tile-edge regressions. Six `ujezd` tiles
+  had 1,516 sampled step-crossing triangles before and zero after; total geometry grew
+  by 0.082% in bytes, with a measured CPU loading cost. Full-city and frame-time checks
+  remain open; see the same findings document.
 - **Hill shading for a moving sun.** The shading is baked per tile to the fixed
   north-west sun (`relief()` in `src/tiles.ts`, `SUN_OFFSET` in `src/main.ts`). If
   the sun ever moves with the clock, store the slope per tile instead and light it in

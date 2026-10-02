@@ -822,7 +822,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   tile's `terraces`), stored after the heights in `<tile>.height.bin`. Where the labels
   in a grid cell differ, the game reads the height at a point from the corners with that
   point's own label (`heightSampler` in `src/terrain.ts`), cuts the ground's layers
-  along the outlines and puts a wall there (`src/ground.ts`). Map format 2. It works
+  along the actual outlines (`src/terrain-cut.ts`, including enclosed terraces and
+  holes) and puts a wall there (`src/ground.ts`). Cuts on the same level are merged
+  before triangulation so temporary line extensions cannot introduce tile-edge
+  cracks. Map format 2. It works
   on arrays over the whole area (a few GB and about a quarter of an hour for `praha`).
   Bridges come off the street above a quay wall, not the quay below it
   (`abutment` in `pipeline/structures.py`). Where the rules make a place worse than the
