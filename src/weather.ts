@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WET, SNOW, STREET_SNOW, RAIN, BARE, NOISE, NOISE_GLSL } from './shading.ts';
+import { WET, SNOW, STREET_SNOW, RAIN, BARE, SEASON, NOISE, NOISE_GLSL } from './shading.ts';
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
 import { t } from './i18n.ts';
 import { SEASONS } from './season.ts';
@@ -138,6 +138,7 @@ export class Weather {
     RAIN.value = this.now.rain;
     // The broadleaf trees are bare while their leaves aren't out, and under snow any time.
     BARE.value = Math.max(1 - this.season.leaf, this.now.cover);
+    SEASON.value.set(this.season.turn, this.season.blossom, this.season.fresh, 0);
   }
 
   set(kind: Kind, instantly = false) {

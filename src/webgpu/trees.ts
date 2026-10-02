@@ -1,5 +1,6 @@
 // The trees in TSL (leafy and treeDepth in map/vegetation.ts): every tuft's leaves as
-// flat tilted facets with creases, the small leaves on top of them, bare twigs in winter,
+// flat tilted facets with creases, the small leaves on top of them, their colour through
+// the year, bare twigs in winter,
 // bark, snow on the crowns, and the warm and cool tint of the light through leaves.
 // Registered as a port of the 'tufts-cut' material (see addPort).
 
@@ -8,14 +9,14 @@ import * as THREE from 'three';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, mat4, attribute, instancedBufferAttribute, normalViewGeometry, faceDirection, modelViewMatrix,
   cameraViewMatrix, positionGeometry, positionLocal, positionWorld, diffuseColor, floor, fract, dot, sin, cos, atan, mix, smoothstep, step, length, abs, max, min,
-  normalize, cross, sqrt, fwidth, distance, select, storage, buffer, instanceIndex,
+  normalize, cross, sqrt, fwidth, distance, select, clamp, storage, buffer, instanceIndex,
 } from 'three/tsl';
-import { BARE, LEAVES } from '../shading.ts';
+import { BARE, LEAVES, SEASON } from '../shading.ts';
 import { lampLit } from './lamps.ts';
-import { type N, follow, addPort, uCut, uWet, uSnow, hash12, detail } from './common.ts';
+import { type N, follow, followVec, addPort, uCut, uWet, uSnow, hash12, detail } from './common.ts';
 
-const uBare = follow(BARE), uLeaves = follow(LEAVES);
-const tuft: N = attribute('tuft', 'vec3'), evergreen: N = attribute('evergreen', 'float');
+const uBare = follow(BARE), uLeaves = follow(LEAVES), uSeason = followVec(SEASON);
+const tuft: N = attribute('tuft', 'vec3'), yearly: N = attribute('yearly', 'float');
 const TAU = 6.2832;
 
 // smallLeaves in vegetation.ts: x = gap to the next leaf, y = random, zw = from the leaf's middle.
@@ -50,7 +51,23 @@ const bareTwig = Fn(([t, bare]: N[]) => {
   return out;
 });
 
-const vBare = () => uBare.mul(float(1).sub(evergreen));
+// `yearly` (vegetation.ts): the tree's own timing, and whether it changes at all.
+const own = fract(yearly), changes = float(1).sub(step(0.995, yearly).mul(step(yearly, 1.5)));
+const vBare = () => clamp(uBare.mul(1.6).sub(own.mul(0.6)), 0, 1).mul(changes);
+
+// YEAR_VERTEX in vegetation.ts: the leaves' colour through the year. What depends on
+// the tree and the tuft alone is worked out at the corners.
+const yearColour = (colour: N) => {
+  const pick = fract(own.mul(7.31).add(0.13));
+  const shade = min(dot(colour, vec3(0.3, 0.59, 0.11)).div(0.15), 1.6);
+  const c = colour.mul(mix(vec3(1), vec3(1.3, 1.25, 0.7), uSeason.z.mul(changes).toVarying('treeFresh'))).toVar();
+  const autumn = mix(mix(vec3(0.58, 0.39, 0.03), vec3(0.32, 0.1, 0.02), smoothstep(0.25, 0.85, pick)), vec3(0.27, 0.03, 0.014), step(0.9, pick)).toVarying('treeAutumn');
+  const turn = clamp(uSeason.x.mul(1.7).sub(clamp(own.add(tuft.z.sub(0.5).mul(0.3)), 0, 1).mul(0.7)), 0, 1).mul(changes).toVarying('treeTurn');
+  c.assign(mix(c, autumn.mul(shade).mul(0.7), turn));
+  const flower = mix(vec3(0.8, 0.78, 0.72), vec3(0.8, 0.6, 0.62), step(0.6, pick)).toVarying('treeFlower');
+  const inFlower = uSeason.y.mul(step(1.5, yearly)).mul(step(0, tuft.z)).mul(0.85).toVarying('treeInFlower');
+  return mix(c, flower.mul(shade).mul(0.7), inFlower);
+};
 
 // The tree's instance matrix, for the parts that need the plain crown (a tile's trees
 // are one InstancedMesh). Read the way three.js's own instancing reads it: from a uniform
@@ -137,7 +154,7 @@ addPort(/^tufts-cut$/, (node) => {
   node.setupDiffuseColor = function (builder: N) {
     proto.setupDiffuseColor.call(this, builder);
     If(twig.lessThan(0), () => { Discard(); });
-    const c = diffuseColor.rgb.mul(state.w).mul(float(1).sub(uWet.mul(0.18))).toVar();
+    const c = yearColour(diffuseColor.rgb).mul(state.w).mul(float(1).sub(uWet.mul(0.18))).toVar();
     c.assign(mix(c, vec3(0.3, 0.27, 0.24), twig));
     If(uSnow.greaterThan(0.01), () => {
       const up = dot(state.xyz, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);

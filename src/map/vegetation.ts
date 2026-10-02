@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
-import { cutAway, NOISE, NOISE_GLSL, LEAVES, SNOW, WET, BARE } from '../shading.ts';
+import { cutAway, NOISE, NOISE_GLSL, LEAVES, SNOW, WET, BARE, SEASON } from '../shading.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
 export interface TreeTileData extends GeoData {
@@ -15,7 +15,10 @@ export interface TreeTileData extends GeoData {
 export type TreeSpot = [number, number, number?];
 
 // The instances run broadleaf, then `shrubs`, then `conifers`: one page kind each.
-export interface TreeInstances { matrices: Float32Array; colours: Float32Array; evergreen: Float32Array; count: number; shrubs: number; conifers: number }
+// `yearly`: how each goes through the year: 1 an evergreen, which doesn't change; below
+// 1 a tree that turns and sheds, and 2 and more a fruit tree, which also flowers. The
+// fraction is the tree's own timing (early or late) and picks its autumn colour.
+export interface TreeInstances { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; count: number; shrubs: number; conifers: number }
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
@@ -122,12 +125,12 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   trees.splice(0, trees.length, ...trees.filter((t) => t[3] !== SHRUB && t[3] !== CONIFER), ...bushes, ...pines);
   const shrubs = bushes.length, conifers = pines.length;
   const matrices = new Float32Array(trees.length * 16), colours = new Float32Array(trees.length * 3);
-  const evergreen = new Float32Array(trees.length);
+  const yearly = new Float32Array(trees.length);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
   const colors = [
     [new THREE.Color('#5a7c38'), new THREE.Color('#4a6a30'), new THREE.Color('#6a8c40')],
     [new THREE.Color('#6f9440'), new THREE.Color('#7f9c45'), new THREE.Color('#5f8638')],
-    [new THREE.Color('#7f9a52'), new THREE.Color('#8ea85c'), new THREE.Color('#c9c7a0')], // blossom in May
+    [new THREE.Color('#7f9a52'), new THREE.Color('#8ea85c'), new THREE.Color('#74924a')], // fruit trees (in flower in spring: leafy)
     [new THREE.Color('#5a7a38'), new THREE.Color('#68883e'), new THREE.Color('#779646'), new THREE.Color('#4e6c3a')], // shrubs, hedges, yews
     [new THREE.Color('#3f5e3a'), new THREE.Color('#34523a'), new THREE.Color('#4a6842')], // conifers
   ];
@@ -152,9 +155,10 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     c.copy(pal[Math.floor(r() * pal.length)]).offsetHSL(0, 0, (r() - 0.5) * 0.05);
     c.toArray(colours, i * 3);
     // (By where it stands, so the other trees' looks don't change.)
-    evergreen[i] = kind === CONIFER ? 1 : rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663))() < EVERGREEN[kind] ? 1 : 0;
+    const own = rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663));
+    yearly[i] = kind === CONIFER || own() < EVERGREEN[kind] ? 1 : (kind === 2 ? 2 : 0) + own() * 0.98;
   });
-  return { matrices, colours, evergreen, count: trees.length, shrubs, conifers };
+  return { matrices, colours, yearly, count: trees.length, shrubs, conifers };
 }
 
 const SHRUB = 3, CONIFER = 4;
@@ -406,7 +410,7 @@ vec4 smallLeaves(vec2 p) {
   return vec4(sqrt(d2) - sqrt(d1), hash12(c1 + 5.1), -o1);
 }
 `;
-// Bare in winter (BARE), each tree but the evergreens: of every tuft only twigs are
+// Bare in winter (BARE), each tree but the evergreens, the early ones first: of every tuft only twigs are
 // left, where the small leaves' cells meet, and a few boughs out from its middle;
 // the rest falls cell by cell as it grows. The core shrinks to the thicker branches.
 // -1 where there's nothing, else how much of a twig it is.
@@ -427,11 +431,29 @@ float bareTwig(vec3 t, float bare) {
   return twig * bare;
 }
 `;
-const TUFT_VERTEX = ['#include <common>', '#include <common>\nattribute vec3 tuft;\nattribute float evergreen;\nuniform float uBare;\nvarying vec3 vTuft;\nvarying float vBare;'] as const;
+const TUFT_VERTEX = ['#include <common>', '#include <common>\nattribute vec3 tuft;\nattribute float yearly;\nuniform float uBare;\nvarying vec3 vTuft;\nvarying float vBare;'] as const;
 const TUFT_BEGIN = ['#include <begin_vertex>', `#include <begin_vertex>
   vTuft = tuft;
-  vBare = uBare * (1. - evergreen);
+  vBare = clamp(uBare * 1.6 - fract(yearly) * .6, 0., 1.) * (1. - step(.995, yearly) * step(yearly, 1.5));
   if (tuft.z < 0.) transformed *= 1. - .5 * vBare;`] as const;
+
+// The leaves' colour through the year (SEASON), worked out for each corner of a tuft:
+// new leaves a light yellow-green; in autumn each tree turns in its own time, tuft by
+// tuft, to its own yellow, ochre, rust or (a few) red; fruit trees white or pale pink
+// while they flower. As bright as the green it replaces was shaded.
+const YEAR_VERTEX = ['#include <color_vertex>', `#include <color_vertex>
+  {
+    float own = fract(yearly), changes = 1. - step(.995, yearly) * step(yearly, 1.5);
+    float pick = fract(own * 7.31 + .13);
+    float shade = min(dot(vColor.rgb, vec3(.3, .59, .11)) / .15, 1.6);
+    vColor.rgb *= mix(vec3(1.), vec3(1.3, 1.25, .7), uSeason.z * changes);
+    vec3 autumn = mix(vec3(.58, .39, .03), vec3(.32, .1, .02), smoothstep(.25, .85, pick));
+    autumn = mix(autumn, vec3(.27, .03, .014), step(.9, pick));
+    float turn = clamp(uSeason.x * 1.7 - clamp(own + (tuft.z - .5) * .3, 0., 1.) * .7, 0., 1.) * changes;
+    vColor.rgb = mix(vColor.rgb, autumn * shade * .7, turn);
+    vec3 flower = mix(vec3(.8, .78, .72), vec3(.8, .6, .62), step(.6, pick));
+    vColor.rgb = mix(vColor.rgb, flower * shade * .7, uSeason.y * step(1.5, yearly) * step(0., tuft.z) * .85);
+  }`] as const;
 
 // Leaves: every tuft is five big leaves with five smaller ones on top, set between
 // them. Each leaf is flat and tilted its own way, outwards (the top ones less), so
@@ -446,7 +468,9 @@ function leafy(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uSnow = SNOW;
     sh.uniforms.uWet = WET;
     sh.uniforms.uBare = BARE;
-    sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN)
+    sh.uniforms.uSeason = SEASON;
+    sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN).replace(...YEAR_VERTEX)
+      .replace('#include <common>', '#include <common>\nuniform vec4 uSeason;')
       .replace('#include <common>', '#include <common>\nattribute vec3 across;\nattribute vec3 along;\nvarying vec3 vAcross;\nvarying vec3 vAlong;')
       .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
   vAcross = normalMatrix * mat3(instanceMatrix) * across;
@@ -522,7 +546,7 @@ export function treePageFactory() {
     const shape = shapes[kind];
     geom.setIndex(shape.index);
     for (const [name, attr] of Object.entries(shape.attributes)) geom.setAttribute(name, attr);
-    geom.setAttribute('evergreen', new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+    geom.setAttribute('yearly', new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
     const mesh = new THREE.InstancedMesh(geom, material, capacity);
     mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     mesh.count = 0;

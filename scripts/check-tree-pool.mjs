@@ -20,13 +20,13 @@ const check = `(async () => {
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   const make = (b, s, c, offset = 0) => {
     const count = b + s + c;
-    const matrices = new Float32Array(count * 16), colours = new Float32Array(count * 3), evergreen = new Float32Array(count);
+    const matrices = new Float32Array(count * 16), colours = new Float32Array(count * 3), yearly = new Float32Array(count);
     for (let i = 0; i < count; i++) {
       matrices.set([1,0,0,0, 0,1,0,0, 0,0,1,0, offset+i*2,0,-offset-i*3,1], i*16);
       colours.set([i/1000, (i+1)/1000, (i+2)/1000], i*3);
-      evergreen[i] = i % 2;
+      yearly[i] = i % 2;
     }
-    return { matrices, colours, evergreen, count, shrubs: s, conifers: c };
+    return { matrices, colours, yearly, count, shrubs: s, conifers: c };
   };
   const hash = (array) => {
     let h = 2166136261;
@@ -44,13 +44,13 @@ const check = `(async () => {
       for (const p of part) {
         gotM.push(...p.mesh.instanceMatrix.array.slice(0,p.mesh.count*16));
         gotC.push(...p.mesh.instanceColor.array.slice(0,p.mesh.count*3));
-        gotE.push(...p.mesh.geometry.getAttribute('evergreen').array.slice(0,p.mesh.count));
+        gotE.push(...p.mesh.geometry.getAttribute('yearly').array.slice(0,p.mesh.count));
         assert(p.mesh.count <= capacity && p.mesh.visible, 'page capacity and visibility');
         assert(p.mesh.boundingSphere && p.mesh.boundingBox, 'fresh bounds');
       }
       assert(unordered(gotM,16) === unordered(input.matrices.slice(starts[kind]*16,ends[kind]*16),16), 'matrices '+kind);
       assert(unordered(gotC,3) === unordered(input.colours.slice(starts[kind]*3,ends[kind]*3),3), 'colours '+kind);
-      assert(unordered(gotE,1) === unordered(input.evergreen.slice(starts[kind],ends[kind]),1), 'evergreen '+kind);
+      assert(unordered(gotE,1) === unordered(input.yearly.slice(starts[kind],ends[kind]),1), 'yearly '+kind);
     }
   };
   const report = [];
@@ -64,10 +64,10 @@ const check = `(async () => {
       const ap = pool.add('A',a), bp = pool.add('B',b);
       inspect(ap,a,4); inspect(bp,b,4);
       assert(pool.add('A',a) === ap && pool.leases.size === 2, 'duplicate add');
-      const before = pool.pages.map(p => [p.mesh.uuid,p.mesh.instanceMatrix,p.mesh.instanceColor,p.mesh.geometry.getAttribute('evergreen')]);
-      const versions = pool.pages.map(p => [p.mesh.instanceMatrix.version,p.mesh.instanceColor.version,p.mesh.geometry.getAttribute('evergreen').version]);
+      const before = pool.pages.map(p => [p.mesh.uuid,p.mesh.instanceMatrix,p.mesh.instanceColor,p.mesh.geometry.getAttribute('yearly')]);
+      const versions = pool.pages.map(p => [p.mesh.instanceMatrix.version,p.mesh.instanceColor.version,p.mesh.geometry.getAttribute('yearly').version]);
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      assert(pool.pages.every((p,i) => versions[i].every((v,j) => v === [p.mesh.instanceMatrix.version,p.mesh.instanceColor.version,p.mesh.geometry.getAttribute('evergreen').version][j])), 'unchanged frames do not dirty arrays');
+      assert(pool.pages.every((p,i) => versions[i].every((v,j) => v === [p.mesh.instanceMatrix.version,p.mesh.instanceColor.version,p.mesh.geometry.getAttribute('yearly').version][j])), 'unchanged frames do not dirty arrays');
       pool.remove('A');
       inspect(bp,b,4);
       assert(ap.every(p => !p.mesh.visible && p.mesh.count === 0), 'released pages invisible');
@@ -76,7 +76,7 @@ const check = `(async () => {
       assert(pool.pages.length === before.length, 'reuse needs no allocation');
       assert(cp.some(p => ap.includes(p)), 'distant C reuses A');
       assert(cp.some(p => p.mesh.boundingSphere.center.length() > 1000), 'reused bounds move');
-      assert(pool.pages.every((p,i) => before[i][0] === p.mesh.uuid && before[i][1] === p.mesh.instanceMatrix && before[i][2] === p.mesh.instanceColor && before[i][3] === p.mesh.geometry.getAttribute('evergreen')), 'UUID and attributes stable');
+      assert(pool.pages.every((p,i) => before[i][0] === p.mesh.uuid && before[i][1] === p.mesh.instanceMatrix && before[i][2] === p.mesh.instanceColor && before[i][3] === p.mesh.geometry.getAttribute('yearly')), 'UUID and attributes stable');
       pool.remove('C'); pool.remove('B');
       assert(pool.stats().active.every(n => n === 0), 'all leases released');
       const conifers = make(0,0,7,20000);

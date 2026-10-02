@@ -63,12 +63,12 @@ export class TreePool {
       const mesh = page.mesh;
       mesh.setMatrixAt(0, identity);
       mesh.instanceColor!.setXYZ(0, 1, 1, 1);
-      (mesh.geometry.getAttribute('evergreen') as THREE.InstancedBufferAttribute).setX(0, 0);
+      (mesh.geometry.getAttribute('yearly') as THREE.InstancedBufferAttribute).setX(0, 0);
       mesh.count = 1;
       mesh.visible = true;
       send(mesh.instanceMatrix, 1);
       send(mesh.instanceColor!, 1);
-      send(mesh.geometry.getAttribute('evergreen') as THREE.InstancedBufferAttribute, 1);
+      send(mesh.geometry.getAttribute('yearly') as THREE.InstancedBufferAttribute, 1);
     }
     this.prepared = true;
     return () => {
@@ -83,9 +83,9 @@ export class TreePool {
   add(tileKey: string, instances: TreeInstances) {
     if (this.disposed) throw new Error('Tree pool disposed');
     if (this.leases.has(tileKey)) return this.leases.get(tileKey)!;
-    const { matrices, colours, evergreen, count, shrubs, conifers } = instances;
+    const { matrices, colours, yearly, count, shrubs, conifers } = instances;
     if (count < 0 || shrubs < 0 || conifers < 0 || shrubs + conifers > count ||
-        matrices.length !== count * 16 || colours.length !== count * 3 || evergreen.length !== count) {
+        matrices.length !== count * 16 || colours.length !== count * 3 || yearly.length !== count) {
       throw new Error(`Invalid tree instances for ${tileKey}`);
     }
     const broadleaf = count - shrubs - conifers;
@@ -102,13 +102,13 @@ export class TreePool {
         const mesh = page.mesh;
         (mesh.instanceMatrix.array as Float32Array).set(matrices.subarray(from * 16, (from + n) * 16));
         (mesh.instanceColor!.array as Float32Array).set(colours.subarray(from * 3, (from + n) * 3));
-        (mesh.geometry.getAttribute('evergreen').array as Float32Array).set(evergreen.subarray(from, from + n));
+        (mesh.geometry.getAttribute('yearly').array as Float32Array).set(yearly.subarray(from, from + n));
         mesh.count = n;
         mesh.computeBoundingBox();
         mesh.computeBoundingSphere();
         send(mesh.instanceMatrix, n);
         send(mesh.instanceColor!, n);
-        send(mesh.geometry.getAttribute('evergreen') as THREE.InstancedBufferAttribute, n);
+        send(mesh.geometry.getAttribute('yearly') as THREE.InstancedBufferAttribute, n);
         mesh.visible = true;
       }
       this.leases.set(tileKey, acquired);

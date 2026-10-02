@@ -276,7 +276,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
       }
       case 'land': {
         const result = land(event.data.data);
-        const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.evergreen.buffer, result.walls.position.buffer, result.walls.normal.buffer, ...Object.values(result.fences.fence).map((a) => a.buffer), ...Object.values(result.fences.hedge).map((a) => a.buffer), result.fences.sections.buffer, result.cells.buffer];
+        const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.yearly.buffer, result.walls.position.buffer, result.walls.normal.buffer, ...Object.values(result.fences.fence).map((a) => a.buffer), ...Object.values(result.fences.hedge).map((a) => a.buffer), result.fences.sections.buffer, result.cells.buffer];
         if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Land transfer requires ArrayBuffer storage');
         worker.postMessage({ id, result } satisfies WorkerResponse, buffers as ArrayBuffer[]);
         break;

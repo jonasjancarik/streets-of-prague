@@ -483,8 +483,12 @@ export const SNOW = { value: 0 };
 export const STREET_SNOW = { value: 1 };
 export const RAIN = { value: 0 };
 // How bare the broadleaf trees are (weather.ts): 1 in winter or under snow, their
-// leaves falling as it grows; evergreens keep theirs (vegetation.ts).
+// leaves falling as it grows, each tree's in its own time; evergreens keep theirs
+// (vegetation.ts).
 export const BARE = { value: 0 };
+// The time of year for the trees (season.ts, set by weather.ts): how far the leaves have
+// turned, how much the fruit trees are in flower, and how fresh the new leaves are.
+export const SEASON = { value: new THREE.Vector4(0, 0, 0, 0) };
 export const SKY_REF = { value: new THREE.Color(0, 0, 0) };
 // The river and ponds (webgpu.ts): waves that mirror the sky, the sun and the lamps
 // (graphics.ts: 1 on, 0 the plain water; a setting, and never on Lowest), and for them where the sun or the
