@@ -152,6 +152,13 @@ Brevo's free plan sends 300 emails a day, so a list beyond that goes out over se
 days or needs a paid plan. Every campaign carries Brevo's unsubscribe link; people who
 use it stay in the contacts as unsubscribed and are skipped from then on.
 
+### Reading the feedback
+
+Besides the email, the Worker keeps each message as `feedback/<date>/<time>-<id>.json`
+in the R2 bucket `streets-of-prague-mail` (binding `FEEDBACK_ARCHIVE`).
+`node scripts/feedback-viewer.mjs` reads them through the `cf` login and opens a local
+searchable page (`--sample` for made-up ones). Not yet run against real messages.
+
 ## Checking a change
 
 **The Worker.** `node scripts/check-worker.mjs`. Add a case there for anything the

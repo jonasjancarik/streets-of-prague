@@ -22,6 +22,7 @@
 //   TURNSTILE_SITE_KEY          the Turnstile widget in the signup form, if there is one,
 //   TURNSTILE_SECRET_KEY        and its secret
 //   EMAIL                       Cloudflare's email sending, for feedback
+//   FEEDBACK_ARCHIVE            R2 bucket streets-of-prague-mail, where each message is also kept
 //   FEEDBACK_TO, FEEDBACK_FROM  who gets the feedback, and the address it comes from
 //   RATE                        rate limiter, per visitor address
 //   TELEMETRY                   the Analytics Engine dataset the statistics go to
@@ -127,6 +128,16 @@ async function feedback(body, env) {
   // What the game adds by itself: its version, the browser, where the player was.
   const context = text(body.context, 4000);
   const first = message.split('\n')[0];
+  // A copy for the feedback viewer (scripts/feedback-viewer.mjs). Losing it never stops the email.
+  if (env.FEEDBACK_ARCHIVE) {
+    const now = new Date();
+    try {
+      await env.FEEDBACK_ARCHIVE.put(`feedback/${now.toISOString().slice(0, 10)}/${now.getTime()}-${crypto.randomUUID()}.json`,
+        JSON.stringify({ time: now.toISOString(), message, email, context, lang: text(body.lang, 8) }), { httpMetadata: { contentType: 'application/json' } });
+    } catch (e) {
+      console.error(`Archiving feedback failed: ${e?.message ?? e}`);
+    }
+  }
   try {
     await env.EMAIL.send({
       to: env.FEEDBACK_TO,

@@ -78,6 +78,7 @@ console.log(JSON.stringify({
     FEEDBACK_TO: text(e.FEEDBACK_TO),
     FEEDBACK_FROM: text(e.FEEDBACK_FROM),
     ...(e.FEEDBACK_TO ? { EMAIL: { type: "send-email", destinationAddress: e.FEEDBACK_TO } } : {}),
+    FEEDBACK_ARCHIVE: { type: "r2", name: "streets-of-prague-mail" },
     TELEMETRY: { type: "analytics-engine-dataset", name: "streets_telemetry" },
     RATE: { type: "rate-limit", namespace: "1001", simple: { limit: 5, period: 60 } },
   },

@@ -122,6 +122,20 @@ assert.equal(mail[0].replyTo, 'player@example.com');
 assert.equal(mail[0].subject, 'Feedback: The tram at Anděl drove through my car.');
 assert.match(mail[0].text, /^The tram at Anděl drove through my car\.\nSecond line\.\n\n--\nFrom: player@example\.com\nVersion v1\.2\.3\nChrome$/);
 
+// A copy is kept for the viewer, and losing it doesn't stop the email.
+{
+  const kept = [];
+  mail = [];
+  res = await post({ message: 'Kept.', email: 'player@example.com', context: 'v1', lang: 'cs' }, { path: '/api/feedback', e: { ...fenv, FEEDBACK_ARCHIVE: { put: async (key, value) => { kept.push([key, JSON.parse(value)]); } } } });
+  assert.equal(res.status, 200);
+  assert.match(kept[0][0], /^feedback\/\d{4}-\d\d-\d\d\/\d+-[0-9a-f-]+\.json$/);
+  assert.deepEqual({ ...kept[0][1], time: 0 }, { time: 0, message: 'Kept.', email: 'player@example.com', context: 'v1', lang: 'cs' });
+  mail = [];
+  res = await post({ message: 'Kept anyway.' }, { path: '/api/feedback', e: { ...fenv, FEEDBACK_ARCHIVE: { put: async () => { throw new Error('r2 down'); } } } });
+  assert.equal(res.status, 200);
+  assert.equal(mail.length, 1);
+}
+
 // No address is fine; there is then nobody to reply to.
 res = await say({ message: 'Nice game' });
 assert.equal(res.status, 200);
