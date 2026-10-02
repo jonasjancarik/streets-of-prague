@@ -11,7 +11,7 @@ July, October and January each look like themselves.
 
 ## Status and starting point
 
-- Status: STEP 1 DONE (2 October 2026). The three decisions below are made.
+- Status: STEPS 1 AND 2 DONE (2 October 2026). The three decisions below are made.
 - Effort: four to five days for phases 1–4. Risk: medium for the trees (two renderers,
   the shadow pass, and the costliest shader in a wood); low for the rest.
 - Planned at: `c2c76265e35c795e07a2b0b33f63ebb3f3db5afa`, 2 October 2026, from reading
@@ -141,7 +141,12 @@ depend on the date.
    (scenario `woods`) and on a tree-lined street. If the tree shader costs more than
    about 3% of the frame there, move the colour mix to the vertex shader (per tuft
    instead of per pixel).
-3. **Ground.** Grass, the floor of the woods, fields. One day, with a bench of the
+   **Done**, except the hedges (moved to step 3). The attribute is `yearly` (1 an
+   evergreen, below 1 a broadleaf tree, 2 and more a fruit tree; the fraction its
+   timing). The colour is mixed per vertex on WebGL and in varyings on WebGPU, so
+   the frame-time check was skipped; `scripts/check-tree-pool.mjs` couldn't run (the
+   bench's Chrome got WebGL instead of WebGPU on 2 October) and is still owed.
+3. **Ground.** Grass, the floor of the woods, fields, hedges. One day, with a bench of the
    ground at 2×.
 4. **Start screen and words.** The season row and the poster's look for each
    (`index.html`), Czech strings (`src/cs.ts`), README, `site/index.html`, a note in

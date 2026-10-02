@@ -117,4 +117,4 @@ operator's separate authorization.
 Merge findings for plans 007–012 are recorded in
 [the summary](../docs/optimisation-findings-007-012.md). Implementation completion
 does not imply that every experiment is recommended for main.
-| [023: Seasons](023-seasons.md) | A date for the game; trees that leaf out, blossom, turn and shed through the year; seasonal grass, fields, light, weather and birds; a season choice on the start screen | STEP 1 OF 4 DONE (the date, wired to the sun, the weather and bare trees) |
+| [023: Seasons](023-seasons.md) | A date for the game; trees that leaf out, blossom, turn and shed through the year; seasonal grass, fields, light, weather and birds; a season choice on the start screen | STEPS 1–2 OF 4 DONE (the date; trees through the year) |
