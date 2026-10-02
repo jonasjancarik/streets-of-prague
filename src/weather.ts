@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { WET, SNOW, STREET_SNOW, RAIN, BARE, NOISE, NOISE_GLSL } from './shading.ts';
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
 import { t } from './i18n.ts';
+import { SEASONS } from './season.ts';
+import type { Season, SeasonName } from './season.ts';
 
 // The weather: clear, cloudy, rain, a thunderstorm, mist or snow. Each is a mix of
 // cloud, rain, storm, snow and mist (0–1), and the weather moves between them
@@ -11,7 +13,8 @@ import { t } from './i18n.ts';
 // from the morning the traffic and the ploughs clear it, more with every busy hour
 // (by the game's clock); falling snow covers them again, fastest at night. The
 // weather changes by itself every half hour or so of the game's clock, more often to
-// rain in summer and to snow and mist in winter, unless it's been picked
+// rain in summer and to snow and mist in winter (by the game's date, season.ts),
+// unless it's been picked
 // (?weather=clear|cloudy|rain|storm|mist|snow, the P key or the developer panel).
 //
 // Sky (sky.ts) turns it into light and fog; WeatherFx draws the falling rain and snow
@@ -38,18 +41,15 @@ const NAMES: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'R
 const STRIKES = 1 / 9;
 const FLICKER: [number, number][] = [[0, 1], [0.07, 0.15], [0.14, 0.85], [0.22, 0.3], [0.3, 0.5], [0.7, 0]];
 
-// How likely each weather is to come next, by season.
-const CHANCES: Record<'winter' | 'spring' | 'summer' | 'autumn', Record<Kind, number>> = {
+// How likely each weather is to come next, in the middle of each season (blended
+// between them by the date).
+const CHANCES: Record<SeasonName, Record<Kind, number>> = {
   winter: { clear: 2, cloudy: 4, rain: 1, storm: 0, mist: 2, snow: 3 },
   spring: { clear: 4, cloudy: 3, rain: 2, storm: 0.3, mist: 0.5, snow: 0.2 },
   summer: { clear: 6, cloudy: 2, rain: 1.5, storm: 0.7, mist: 0.2, snow: 0 },
   autumn: { clear: 3, cloudy: 4, rain: 2.5, storm: 0.1, mist: 2, snow: 0.2 },
 };
-const season = (month: number) => month === 11 || month < 2 ? 'winter' : month < 5 ? 'spring' : month < 8 ? 'summer' : 'autumn';
-
-// The broadleaf trees are bare from December to February (by the real date, as the
-// seasons' weather above), and under snow any time.
-const WINTER = season(new Date().getMonth()) === 'winter' ? 1 : 0;
+const CLEAR_CHANCES: Record<Kind, number> = { clear: 0, cloudy: 0, rain: 0, storm: 0, mist: 0, snow: 0 };
 
 const CHANGE = 1 / 25;         // of the full change a second (clear to rain in 25 s)
 const WETTING = 1 / 40, DRYING = 1 / 480;
@@ -74,7 +74,7 @@ export class Weather {
   private lastT: number; // the clock at the last update (to notice it being set)
   private rng: () => number;
 
-  constructor(params: URLSearchParams, clockT: number) {
+  constructor(params: URLSearchParams, clockT: number, private season: Season) {
     // A new roll every time the game starts.
     let s = Math.floor(Math.random() * 2147483646) + 1;
     this.rng = () => ((s = (s * 16807) % 2147483647) / 2147483647);
@@ -99,7 +99,9 @@ export class Weather {
   private span() { return (20 + this.rng() * 40) * 60; }
 
   private pick(clockT: number): Kind {
-    const chances = { ...CHANCES[season(new Date().getMonth())] };
+    const shares = this.season.shares();
+    const chances = { ...CLEAR_CHANCES };
+    for (const s of SEASONS) for (const k of KINDS) chances[k] += shares[s] * CHANCES[s][k];
     const hour = (clockT % 86400) / 3600;
     if (hour > 4 && hour < 10) chances.mist *= 2.5; // mist mostly in the morning
     const total = KINDS.reduce((a, k) => a + chances[k], 0);
@@ -134,7 +136,8 @@ export class Weather {
     SNOW.value = this.now.cover;
     STREET_SNOW.value = 1 - this.now.cleared;
     RAIN.value = this.now.rain;
-    BARE.value = Math.max(WINTER, this.now.cover);
+    // The broadleaf trees are bare while their leaves aren't out, and under snow any time.
+    BARE.value = Math.max(1 - this.season.leaf, this.now.cover);
   }
 
   set(kind: Kind, instantly = false) {

@@ -6,7 +6,7 @@ import type { Kind } from './weather.ts';
 // "auto" slot (every few seconds and when the page is left), so a refresh puts you
 // back where you were; any number of others are saved by hand from the settings.
 // A save holds you and what you own: where you are, the car you're driving, money,
-// ticket, health, police heat, the time and the weather. The rest of the city (the
+// ticket, health, police heat, the date, the time and the weather. The rest of the city (the
 // traffic, the people, a ride in progress) starts fresh, as it does at a teleport.
 
 // A save is 'auto' or a hand-made one named by when it was made (its Date.now()).
@@ -27,6 +27,8 @@ export interface SaveData {
   health: number;
   heat: number;
   clock: number;
+  // The day of the year (season.ts); saves from before the game had a date lack it.
+  season?: number;
   weather: { kind: Kind; fixed: boolean };
 }
 

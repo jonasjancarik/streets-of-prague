@@ -46,6 +46,7 @@ import type { Slot, SaveData } from './save.ts';
 import { dressLoading, Dialog } from './portraits.ts';
 import { startScreen } from './startscreen.ts';
 import { liveWeather } from './liveweather.ts';
+import { Season, parseDay } from './season.ts';
 import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import type { Surface, HornKind } from './audio.ts';
@@ -128,7 +129,8 @@ async function main() {
   onLang(() => status(statusText));
   // Rolled now, so the start screen can say what the game will begin with.
   const clock = new Clock(params);
-  const weather = new Weather(params, clock.t);
+  const season = new Season(params);
+  const weather = new Weather(params, clock.t, season);
   let savedSound = '';
   try { savedSound = localStorage.getItem('sound') ?? ''; } catch {}
   // The game saved by itself last time, unless it's a test run (?go).
@@ -942,6 +944,7 @@ async function main() {
   };
   const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, setFire, setHurt: () => !!hurtNearest(), backOnRoad,
     timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics,
+    season: { day: () => season.day, set: (day) => season.set(day), label: () => season.label() },
     weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); }, label: () => weather.name } });
   // ---- Saved games (save.ts) ---------------------------------------------
   // The game saves itself into the "auto" slot every few seconds and when the page is
@@ -957,7 +960,7 @@ async function main() {
       v: 1, area: AREA, at: Date.now(), lat, lon, heading: ((((90 - (who.h * 180) / Math.PI) % 360) + 360) % 360), street,
       car: c ? { type: c.type, paint: c.paint, box: c.courier, variant: c.modelName, damage: c.damage, radio: c.radio } : null,
       money: wallet.balance, ticket: wallet.held, health: health.value, heat: police.heat,
-      clock: clock.t, weather: { kind: weather.kind, fixed: weather.fixed },
+      clock: clock.t, season: season.day, weather: { kind: weather.kind, fixed: weather.fixed },
     };
   };
   const autosave = () => {
@@ -970,6 +973,7 @@ async function main() {
   const resume = async (s: SaveData) => {
     clock.t = s.clock;
     world.night = clock.night;
+    if (s.season) season.set(s.season);
     weather.begin(s.weather.kind, clock.t);
     weather.fixed = s.weather.fixed;
     wallet.balance = Math.max(0, Math.floor(s.money));
@@ -1847,7 +1851,7 @@ async function main() {
     DIG.value.set(hx, -hy, (deep || underway) && cutR > 0.3 ? cutR : 0, 0);
 
     sun.target.position.set(camPos.x, camGround, camPos.z);
-    sky.update(clock.t % 86400, weather.now, height);
+    sky.update(clock.t % 86400, weather.now, height, season.day);
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.
@@ -2045,6 +2049,7 @@ async function main() {
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
     canvas: renderer.domElement, fov: camera.fov,
     weather: { set: (k) => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, kind: () => weather.kind },
+    season: { set: (when) => { const day = parseDay(when); if (!day) throw new Error(`A season's name, MM-DD or a day of the year, not ${when}`); season.set(day); }, date: () => season.date },
   });
   window.__test = testkit;
   dev.attach(testkit);

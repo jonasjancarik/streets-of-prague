@@ -27,7 +27,7 @@ keeps it loaded, so a check takes seconds, not a minute of loading per attempt.
 6. `node scripts/scene.mjs stop` when done (it holds a Chrome with a GPU context).
 
 Without `serve`, each command loads the game itself (fine for a one-off).
-Options: `--place`, `--time`, `--weather`, `--graphics`, `--show` (a visible window),
+Options: `--place`, `--time`, `--weather`, `--date` (`10-20` or a season's name; today otherwise), `--graphics`, `--show` (a visible window),
 `--out`.
 
 ## The API (`src/testkit.ts`)
@@ -37,7 +37,7 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 
 - `t.go(where, { heading })`: loads the tiles and puts you there on foot (or in your
   vehicle). `t.where()`: lat/lon, heading, street, mode.
-- `t.time('21:30')`, `t.weather('rain' | … | 'auto')`, `t.set({ money, stars, health })`.
+- `t.time('21:30')`, `t.weather('rain' | … | 'auto')`, `t.season('autumn' | '10-20')` (the game's date), `t.set({ money, stars, health })`.
 - `t.drive(type)`: gets out of whatever you're in and into a new car on clear ground
   ahead (`hatch`, `sedan`, `suv`, `van`, `taxi`, `police`, `pickup`, `truck`, `bus`,
   `moto`, `bike`…, the keys of `SPECS` in `src/car.ts`). `t.car(type, opt)`: just
@@ -51,7 +51,7 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.wait(seconds, controls)`: runs the world in 1/60 s steps with
   `{ move, turn, run, brake, jump }` held (the live loop pauses meanwhile).
 - `t.probe()`: position, speed, car type/damage/burning, money, stars, police cars,
-  health, ticket, time, weather.
+  health, ticket, time, weather, date.
 - `t.camera({ at, height, tilt, heading })` looks from anywhere without moving you
   (tilt 0 = straight down, up to 75); `t.camera(null)` follows you again.
   `t.view(zoom)` zooms the ordinary camera.

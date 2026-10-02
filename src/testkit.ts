@@ -60,6 +60,7 @@ interface Game {
   canvas: HTMLElement; fov: number;
   wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; traffic: { agents: { car: Car }[] }; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
+  season: { set: (when: string | number) => void; date: () => string };
   rng: () => number;
 }
 
@@ -119,6 +120,8 @@ export function setupTestkit(g: Game) {
       g.clock.advance(sec - (g.clock.t % 86400));
     },
     weather(kind: Kind | 'auto') { g.weather.set(kind); },
+    // The date: 'spring', 'summer', 'autumn' or 'winter' (a typical day of it), '10-20' or a day of the year.
+    season(when: string | number) { g.season.set(when); },
 
     // What the arrest does to the chase: the stars go and the police cars stand down.
     forgive() { g.police.forgive(); },
@@ -336,7 +339,7 @@ export function setupTestkit(g: Game) {
         money: g.wallet.balance, stars: g.police.stars, police: g.police.cars.length, health: Math.round(g.health.value),
         ticket: g.wallet.hasTicket(g.clock.t),
         time: `${String(Math.floor((g.clock.t % 86400) / 3600)).padStart(2, '0')}:${String(Math.floor((g.clock.t % 3600) / 60)).padStart(2, '0')}`,
-        weather: g.weather.kind(),
+        weather: g.weather.kind(), date: g.season.date(),
       };
     },
 
@@ -355,6 +358,7 @@ export function setupTestkit(g: Game) {
         `await t.go([${p.lat}, ${p.lon}], { heading: ${p.heading} });`,
         `t.time('${p.time}');`,
         `t.weather('${p.weather}');`,
+        `t.season('${p.date}');`,
         `t.set({ money: ${p.money}, stars: ${p.stars}, health: ${p.health} });`,
         ...(c ? [`await t.drive('${c.type}');`, `t.push(${Math.round(c.speed * 3.6)}, ${Math.round(deg(c.h))});`] : []),
         ...(p.mode !== 'foot' && !c ? [`// (you were ${p.mode})`] : []),

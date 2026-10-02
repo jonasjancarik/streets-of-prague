@@ -41,12 +41,14 @@ export const googleMaps = (lat: number, lon: number) => `https://www.google.com/
 export const streetView = (lat: number, lon: number, heading: number) => `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}&heading=${Math.round(heading)}`;
 export const mapyCz = (lat: number, lon: number) => `https://mapy.com/zakladni?x=${lon.toFixed(6)}&y=${lat.toFixed(6)}&z=19&source=coor&id=${lon.toFixed(6)}%2C${lat.toFixed(6)}`;
 
-export function setupDev({ area, index, teleport, position, helicopter, setFire, setHurt, backOnRoad, timeOfDay, setTimeOfDay, graphics, weather }: {
+export function setupDev({ area, index, teleport, position, helicopter, setFire, setHurt, backOnRoad, timeOfDay, setTimeOfDay, graphics, season, weather }: {
   area: string; index: MapIndex; teleport: (x: number, y: number) => Promise<void>;
   position: () => Point2; helicopter: () => boolean; setFire: () => boolean; setHurt: () => boolean; backOnRoad: () => void;
   // Seconds since midnight on the game's clock.
   timeOfDay: () => number; setTimeOfDay: (sec: number) => void;
   graphics: Graphics;
+  // The game's date, as a day of the year (season.ts).
+  season: { day: () => number; set: (day: number) => void; label: () => string };
   // The weather picked, or 'auto' while it changes by itself.
   weather: { kinds: string[]; get: () => string; set: (kind: Kind | 'auto') => void; label: () => string };
 }) {
@@ -98,6 +100,9 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     </div>
     <label class="dev-time">Time of day <span id="dev-time-label"></span>
       <input id="dev-time" type="range" min="0" max="1439" step="5" title="The trams follow the timetable for the new time" />
+    </label>
+    <label class="dev-time">Date <span id="dev-date-label"></span>
+      <input id="dev-date" type="range" min="1" max="365" step="1" title="The trees, the sun and the weather follow the date" />
     </label>
     <label class="dev-time">Graphics <span id="dev-graphics-label"></span>
       <select id="dev-graphics">
@@ -215,6 +220,10 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   // Arrow keys move the slider, not the player.
   time.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   time.addEventListener('keyup', (ev) => ev.stopPropagation());
+  const date = $('dev-date') as HTMLInputElement;
+  date.oninput = () => season.set(+date.value);
+  date.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+  date.addEventListener('keyup', (ev) => ev.stopPropagation());
   $('dev-copy').onclick = async () => {
     const [lon, lat] = toLonLat(...here());
     await navigator.clipboard?.writeText(fixed(lat, lon)).catch(() => {});
@@ -300,6 +309,8 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
       $('dev-graphics-label').textContent = graphics.choice === 'auto' ? `(${graphics.tier} now)` : '';
       if (document.activeElement !== pick) pick.value = graphics.choice;
       if (document.activeElement !== sky) sky.value = weather.get();
+      if (document.activeElement !== date) date.value = String(season.day());
+      $('dev-date-label').textContent = season.label();
       $('dev-weather-label').textContent = weather.get() === 'auto' ? `(${weather.label().toLowerCase()} now)` : '';
       const min = Math.floor(timeOfDay() / 60);
       if (!dragging) time.value = String(min);

@@ -10,6 +10,7 @@
 //
 // Common options: [--url http://localhost:5191/] [--out dir for screenshots (default
 // $TMPDIR/scene)] [--place staromak] [--time 14:00] [--weather clear] [--graphics high]
+// [--date 10-20 (or spring, summer, autumn, winter; today's date otherwise)]
 // [--extra "&area=centrum" (more of the game's URL parameters)] [--size 1920x1080 (the
 // window; t.film saves footage frame by frame at that size)] [--jpeg (screenshots as JPEG)].
 // With a server running (serve), each command takes a second or two instead of the
@@ -79,7 +80,7 @@ async function openGame({ show = false } = {}) {
     return path;
   });
   const place = args.place || 'staromak';
-  const q = `?place=${place}&go&day=wed&time=${args.time || '14:00'}&weather=${args.weather || 'clear'}&graphics=${args.graphics || 'high'}&dpr=1${args.extra || ''}`;
+  const q = `?place=${place}&go&day=wed&time=${args.time || '14:00'}&weather=${args.weather || 'clear'}&graphics=${args.graphics || 'high'}&dpr=1${args.date ? `&date=${args.date}` : ''}${args.extra || ''}`;
   const t0 = Date.now();
   await page.goto(URL_BASE + q);
   const ready = async () => {

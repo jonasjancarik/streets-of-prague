@@ -12,14 +12,13 @@ import type { Conditions } from './weather.ts';
 const LAT = 50.08 * Math.PI / 180;
 
 // The sun's height and bearing (radians; bearing from north, clockwise) for the time of
-// day in Prague and today's date. Near enough for light: no equation of time.
-function sunAt(secOfDay: number, date: Date) {
-  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
-  const dayOfYear = (date.getTime() - start) / 86400000;
+// day in Prague on a day of the year (the game's date, season.ts). Near enough for
+// light: no equation of time.
+function sunAt(secOfDay: number, dayOfYear: number) {
   const decl = -23.44 * Math.PI / 180 * Math.cos(2 * Math.PI / 365 * (dayOfYear + 10));
   // Solar noon in Prague is about 12:04 in winter time and 13:04 in summer time.
-  const month = date.getUTCMonth();
-  const noon = 12.04 + (month >= 3 && month <= 9 ? 1 : 0);
+  // (Summer time from the end of March to the end of October.)
+  const noon = 12.04 + (dayOfYear >= 89 && dayOfYear < 299 ? 1 : 0);
   const h = (secOfDay / 3600 - noon) * 15 * Math.PI / 180;
   const sinEl = Math.sin(LAT) * Math.sin(decl) + Math.cos(LAT) * Math.cos(decl) * Math.cos(h);
   const el = Math.asin(sinEl);
@@ -106,9 +105,10 @@ export class Sky {
   }
 
   // `sec`: seconds since midnight on the game's clock; `w` the weather; `height` how
-  // high the camera is above the ground (the fog is measured from it).
-  update(sec: number, w: Conditions = CLEAR, height = 100) {
-    const { el, az } = sunAt(sec, new Date());
+  // high the camera is above the ground (the fog is measured from it); `date` the day
+  // of the year.
+  update(sec: number, w: Conditions = CLEAR, height = 100, date = 172) {
+    const { el, az } = sunAt(sec, date);
     const deg = el * 180 / Math.PI;
     let i = 0;
     while (i < MOODS.length - 2 && deg > MOODS[i + 1][0]) i++;

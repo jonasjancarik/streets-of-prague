@@ -50,7 +50,7 @@ The map data is built locally (see [Building the map](#building-the-map)); nothi
 generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
 the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague
 now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
-(with night-time parking). The weather changes by itself every half hour or so of the game's clock;
+(with night-time parking). The game's date is today's in Prague and stays for the whole game (`src/season.ts`): the sun's height, how far out the trees' leaves are and which weather is likely follow it; `?date=MM-DD` or `?season=spring|summer|autumn|winter` starts on another. The weather changes by itself every half hour or so of the game's clock;
 `?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen (the loading screen's language, time, weather and sound choices and its Start button; the weather is the real weather in Prague now, from Open-Meteo (`src/liveweather.ts`), or else rolled anew on each visit), and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?dialog` plays a sample conversation, `?menu` shows only the start screen without loading the map (quick to reload while working on the screen, the beta note or the signup form; the note then shows on every press of Start), `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. The Czech is kept gender-neutral towards the player for now (see the note at the top of `src/cs.ts`). Elements in `index.html` marked `data-t` work the same way.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
@@ -297,7 +297,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   each a mix of cloud, rain, storm, snow and mist that the weather moves between over
   half a minute. In a storm the rain drives in on the wind, and lightning flickers
   every few seconds and thunders a moment later. It
-  picks the next one every 20 to 60 minutes of the game's clock, by season (rain in
+  picks the next one every 20 to 60 minutes of the game's clock, by the game's date (rain in
   summer, snow and mist in winter, mist mostly in the morning); a picked weather stays.
   Clouds hide the sun and fade the shadows, and the sky's light turns grey by day and
   orange from the city at night (`src/sky.ts`). Rain falls as streaks and snow as
