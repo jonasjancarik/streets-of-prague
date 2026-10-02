@@ -87,6 +87,16 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
   longer bridge way is level at the higher of its ends, has that way's height and
   level, and asks for no flat terrace of its own (`SCRAP` in `structures.py`).
 - Where pieces of one level lie over each other, the higher one counts (`rasterise`).
+- Two structures side by side, anywhere more than 3 m apart in height, can't share a
+  level: a level's heights are on the lattice and reach 6 m past each piece, so the
+  lower one pulls the deck's edge down (`BESIDE` in `assign_levels`).
+- A short bridge way steeper than 15 % is a mistake in the map, not a ramp (a service
+  way off Hlávkův most tied to the landing by the water): it's level (`STEEP`).
+- A path down a bank is narrower than the lattice, so only a point here and there took
+  the survey's height and the slope came out in teeth. The ground within 14 m of a
+  surveyed street now moves with it (`FEATHER`); `--no-feather` to compare.
+- `bridges.mjs`'s first sample may be under a footbridge (Nuselský most at Pankrác: a
+  "join" of 6 m, 44 m before the bridge, that isn't there). Look before believing.
 - Where a bridge crosses a tunnel too close, the tunnel goes down. Lifting the bridge
   put a hump in the junction over the underpass at Hlávkův most.
 - "Raise a mapped street to the surveyed one next to it" only over the map's water:

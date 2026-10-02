@@ -12,6 +12,8 @@ the terrain's lattice:
   edge, so the street above a wall never mixes with the quay below it;
   (not where the map has a tunnel or an underpass and the survey is well below the
   terrain model: that's the street in the underpass, and the ground is the one over it);
+- the ground within FEATHER of a surveyed street moves with it: by what the survey
+  changed on the street points round about, fading with the distance;
 - a lattice point on water takes the water's level: the lowest terrain within WATER_REACH
   on the water, which is the river's surface clear of the banks' ramps, and is marked as
   water (the game reads the height on either side of a bank from that side's points);
@@ -72,6 +74,8 @@ WALLS = {"010000030202": "wall edge", "010000016802": "wall"}
 VERSION = 3
 SPACING = 1.5  # m between the points taken along a surveyed line
 ON_EDGE = 0.15  # m: a surveyed point this close to a surface's edge belongs to it
+FEATHER = 14.0  # m from a surveyed street: as far as the ground beside it follows it
+FEATHER_BLUR = 5.0  # m: over how far the streets' changes are averaged
 OVERHANG = 12.0  # m from a surveyed street: a mapped carriageway this near one is the same street, drawn on past its edge
 UNDER = 2.0  # m below the terrain model, in a tunnel of the map's: surveyed under the ground
 UNDER_SIDE = 4.0  # m either side of the tunnel that counts as in it
@@ -237,7 +241,7 @@ def _retaining(lines, at, dry):
     return runs
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=()):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), no_feather=False):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -314,6 +318,24 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         grid[gj[back], gi[back]] = bare[gj[back], gi[back]]
         street[gj[back], gi[back]] = False
         under += int(back.sum())
+
+    # The ground beside a surveyed street follows it. A path down a bank or a street in a
+    # cutting is narrower than the lattice, so only a point here and there falls on it;
+    # with the survey a metre or two off the terrain model there, those points alone made
+    # the slope ragged. What the survey changed on the street (survey minus terrain model)
+    # is carried over to the ground beside it, averaged over the street points round about
+    # and fading out to FEATHER: the slope keeps its shape and meets the street. (Water,
+    # banks and retaining walls come after this and have the last word where they are.)
+    feathered = 0
+    if street.any() and not no_feather:
+        change = np.where(street, np.nan_to_num(grid - bare), 0).astype(np.float32)
+        mean = ndimage.gaussian_filter(change, FEATHER_BLUR / step) / np.maximum(ndimage.gaussian_filter(street.astype(np.float32), FEATHER_BLUR / step), 1e-3)
+        d = ndimage.distance_transform_edt(~street) * step
+        beside = ~street & ~np.isnan(bare) & (d < FEATHER)
+        with np.errstate(invalid="ignore"):
+            beside &= np.abs(mean) > 0.05
+        grid[beside] = bare[beside] + mean[beside] * (1 - d[beside] / FEATHER)
+        feathered = int(beside.sum())
 
     # The map draws a street on to where its bridge begins, which is often a little past
     # the edge of the quay wall the bridge comes off: its last metres lie over the water,
@@ -525,7 +547,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"surfaces": surfaces, "street_points": street_points, "under_points": under, "overhang_points": overhang, "water_points": int(wet.sum()), "bank_points": bank_points,
+    return {"surfaces": surfaces, "street_points": street_points, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "bank_points": bank_points,
             "kept_by_hand": kept, "retaining_walls": len(strips), "retaining_metres": round(wall_length), "wall_points": wall_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}

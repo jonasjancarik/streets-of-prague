@@ -36,6 +36,7 @@ from collections import defaultdict
 
 import numpy as np
 import shapely
+import shapely.ops
 from shapely import STRtree
 from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
@@ -49,6 +50,7 @@ COVER = 8.0  # m of ground over a tunnel, away from its portals
 COVER_SLOPE = 0.25  # how quickly a tunnel goes under that cover from a portal
 SHALLOW = 2.5  # m: a tunnel that never gets this far under the ground is just a passage on it
 CLEAR = 5.5  # m between a bridge or tunnel and one crossing it on another layer
+BESIDE = 10.0  # m: two structures this close share lattice points (PAD, and a cell's diagonal)
 SAME = 3.0  # m: two structures further apart in height than this can't share a level
 NO_HIGHWAY = {"proposed", "construction", "elevator", "platform", "bus_stop", "abandoned", "razed", "planned"}
 STATION_FOOT = {"footway", "steps", "corridor", "pedestrian", "path"}  # a station's ways inside
@@ -367,6 +369,17 @@ def solve(ways, ground, decks):
                     if i in fixed:
                         fixed[i] = max(known)
                 level.add(w["id"])
+    # No bridge that cars or people use drops a storey in a few metres. Where a short
+    # bridge way's two ends on the ground are that far apart in height (a service way off
+    # Hlávkův most whose far end the map ties to the landing by the water, 10 m down in
+    # 40 m), the lower end isn't where the map says: the way is level.
+    for w in ways:
+        if w["kind"] != "bridge" or w["hw"] == "steps" or length[w["id"]] >= STEEP_LENGTH:
+            continue
+        ends = [net.key[("n", w["nodes"][0])], net.key[("n", w["nodes"][-1])]]
+        if all(i in fixed for i in ends) and abs(fixed[ends[0]] - fixed[ends[1]]) > STEEP * max(length[w["id"]], 1):
+            fixed[ends[0]] = fixed[ends[1]] = max(fixed[ends[0]], fixed[ends[1]])
+            w.pop("raised", None)
     # (What's kept for the street's last metres before each end, see pads, at the height it has now.)
     for w in ways:
         for end, (far, _) in list(w.get("raised", {}).items()):
@@ -650,6 +663,7 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
     return out, [g for g in groups if g]
 
 
+STEEP, STEEP_LENGTH = 0.15, 80.0  # a bridge way shorter than this many metres, steeper than this: not a ramp, a mistake in the map
 SCRAP = 25.0  # m: a bridge way shorter than this, lying on a much longer one, is a scrap of that bridge
 PORTAL = 12.0  # m a tunnel reaches out of its portal, at the portal's height
 
@@ -746,17 +760,22 @@ def assign_levels(groups):
     for k in order:
         g, shape, _, kind = info[k]
         taken = set()
-        for o in tree.query(shape, predicate="intersects"):
+        for o in tree.query(shape, predicate="dwithin", distance=BESIDE):
             if o == k or o not in level or info[o][3] != kind:
                 continue
-            both = shape.intersection(info[o][1])
-            if both.area < 1:
+            # Over each other or side by side: a level's heights are on the terrain's lattice
+            # and reach PAD past each piece, so steps going down beside a bridge's deck, or
+            # a jetty at the water's level, would pull the deck's edge down with them. Where
+            # the two are close, are they anywhere more than SAME apart?
+            near = shape.exterior if shape.geom_type == "Polygon" else shape.boundary
+            near = near.intersection(info[o][1].buffer(BESIDE))
+            if near.is_empty or near.length < 0.5:
                 continue
-            ps = [both.representative_point(), *[p for p in shapely.points(np.asarray(both.envelope.exterior.coords)[:4]) if both.contains(p)]]
-            xs, ys = np.array([p.x for p in ps]), np.array([p.y for p in ps])
-            ha = np.nanmean([piece_height(g, xs, ys)])
-            hb = np.nanmean([piece_height(info[o][0], xs, ys)])
-            if abs(ha - hb) > SAME:
+            ps = [near.interpolate(d) for d in np.arange(0, near.length, 3.0)]
+            xs, ys = np.array([q.x for q in ps]), np.array([q.y for q in ps])
+            with np.errstate(invalid="ignore"):
+                apart = np.abs(piece_height(g, xs, ys) - piece_height(info[o][0], xs, ys))
+            if np.nanmax(apart, initial=0) > SAME:
                 taken.add(level[o])
         step = 1 if kind == "bridge" else -1
         lv = step
