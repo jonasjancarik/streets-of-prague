@@ -32,9 +32,11 @@ pub struct StreetVideo<'a> {
 }
 
 impl<'a> StreetVideo<'a> {
-    /// `czech`: the lines in Czech.
-    pub fn new(media: &'a TrailerMedia, czech: bool) -> Self {
-        Self { media, whole: Whole { czech } }
+    /// `czech`: the lines in Czech. `top`: the version filmed straight down throughout
+    /// (clips top-<take>.mp4). `clean`: only the pictures, without bars, labels, lines,
+    /// numbers or title, for working on the graphics elsewhere.
+    pub fn new(media: &'a TrailerMedia, czech: bool, top: bool, clean: bool) -> Self {
+        Self { media, whole: Whole { czech, version: if top { "top" } else { "street" }, clean } }
     }
 }
 
@@ -75,13 +77,15 @@ impl Video for StreetVideo<'_> {
 #[derive(Debug)]
 struct Whole {
     czech: bool,
+    version: &'static str,
+    clean: bool,
 }
 
 /// A take's picture at this frame, the part of it between x0 and x1 (the whole of it: 0 to 1920).
-fn take<'a>(frame: &Frame, ctx: &FFramesContext<'a, '_>, which: usize, x0: f32, x1: f32, zoom: f32) -> Svgr<'a> {
+fn take<'a>(frame: &Frame, ctx: &FFramesContext<'a, '_>, version: &str, which: usize, x0: f32, x1: f32, zoom: f32) -> Svgr<'a> {
     use fframes::FFramesSyncedVideoFrame;
     let picture = frame
-        .get_synced_video_frame(ctx, TAKES[which].0, &SyncVideoFrameInput { start_from: 0.0, looping: false, editor_fallback_image: None })
+        .get_synced_video_frame(ctx, format!("{version}-{}.mp4", TAKES[which].0), &SyncVideoFrameInput { start_from: 0.0, looping: false, editor_fallback_image: None })
         .map(|v| v.into_image());
     let Some(image) = picture else { return fframes::svgr!(<g></g>) };
     let (w, h) = (1920.0 * zoom, 1080.0 * zoom);
@@ -131,7 +135,7 @@ impl Scene for Whole {
             // Each cut lands with a small push in that settles.
             let zoom = 1.0 + 0.035 * (1.0 - settle(i / 7.0)) + 0.012;
             let picture: Vec<Svgr> = if count == 1 {
-                vec![take(&frame, ctx, ids[0], 0.0, 1920.0, zoom)]
+                vec![take(&frame, ctx, self.version, ids[0], 0.0, 1920.0, zoom)]
             } else {
                 // Five takes side by side, one picture: the strips open from the left one after
                 // another, and their edges lean and drift a little.
@@ -140,7 +144,7 @@ impl Scene for Whole {
                         let open = settle((i - k as f32 * 4.0) / 9.0);
                         let drift = |edge: f32| 1920.0 * edge / count as f32 + 26.0 * ((i / 30.0 + edge * 1.7).sin());
                         let (x0, x1) = (if k == 0 { 0.0 } else { drift(k as f32) }, if k == count - 1 { 1920.0 } else { drift(k as f32 + 1.0) });
-                        take(&frame, ctx, ids[k], x0 + 3.0, x0 + (x1 - x0) * open - 3.0, 1.012)
+                        take(&frame, ctx, self.version, ids[k], x0 + 3.0, x0 + (x1 - x0) * open - 3.0, 1.012)
                     })
                     .collect()
             };
@@ -151,6 +155,9 @@ impl Scene for Whole {
             };
             let up = smooth(24.0, 96.0, f as f32);
             let flash = if at > 0 { 0.22 * (1.0 - (i / 3.0).min(1.0)) } else { 0.0 };
+            if self.clean {
+                return fframes::svgr!(<g opacity={up}>{picture}</g>);
+            }
             return fframes::svgr!(<g>
                 <g opacity={up}>{picture}</g>
                 <rect width="1920" height="1080" fill="#ffffff" opacity={flash} />
@@ -162,7 +169,7 @@ impl Scene for Whole {
             </g>);
         }
         if f < DRIVE + DARK {
-            return fframes::svgr!(<g>{line}</g>);
+            return if self.clean { fframes::svgr!(<g></g>) } else { fframes::svgr!(<g>{line}</g>) };
         }
 
         // The pull back and the title (as in atmo.rs).
@@ -174,7 +181,7 @@ impl Scene for Whole {
         let c = (RISE_AT.0 + (CITY.0 - RISE_AT.0) * slide, RISE_AT.1 + (CITY.1 - RISE_AT.1) * slide);
         let t = if titled { (r - RISE) as f32 } else { -1.0 };
         let n = TITLE as f32;
-        let dim = if titled { 0.55 * smooth(0.0, 24.0, t) } else { 0.0 };
+        let dim = if titled && !self.clean { 0.55 * smooth(0.0, 24.0, t) } else { 0.0 };
         let film = if r < FILMED {
             use fframes::FFramesSyncedVideoFrame;
             let picture = frame
@@ -187,7 +194,7 @@ impl Scene for Whole {
         } else {
             fframes::svgr!(<g></g>)
         };
-        let numbers = 1.0 - smooth(RISE as f32 - 20.0, RISE as f32 - 2.0, r as f32);
+        let numbers = if self.clean { 0.0 } else { 1.0 - smooth(RISE as f32 - 20.0, RISE as f32 - 2.0, r as f32) };
         let go = if self.czech { "Projeď se." } else { "Go for a drive." };
         fframes::svgr!(<g>
             <rect width="1920" height="1080" fill="#090b10" />
@@ -200,7 +207,7 @@ impl Scene for Whole {
                 {tally(seconds, 7.0, 3.0, KM2, if self.czech { "KM² MAPY" } else { "KM² OF MAP" })}
                 <text x="1824" y="146" text-anchor="end" font-family={MONO} font-size="26" letter-spacing="5" fill={PAPER} opacity={0.7 * smooth(0.4, 1.4, seconds)}>{format!("{} M", spaced(if h < 1000.0 { h } else { (h / 100.0).round() * 100.0 }))}</text>
             </g>
-            <g opacity={if titled { smooth(4.0, 26.0, t) * (1.0 - smooth(n - 16.0, n - 2.0, t)) } else { 0.0 }}>
+            <g opacity={if titled && !self.clean { smooth(4.0, 26.0, t) * (1.0 - smooth(n - 16.0, n - 2.0, t)) } else { 0.0 }}>
                 <text x="960" y={556.0 + 40.0 * (1.0 - settle(t / 30.0))} text-anchor="middle" font-family={TITLE_FONT} font-size="236" letter-spacing="10" fill={PAPER}>"STREETS OF PRAGUE"</text>
                 <rect x={960.0 - 270.0 * settle((t - 8.0) / 30.0)} y="604" width={(540.0 * settle((t - 8.0) / 30.0)).max(0.5)} height="7" fill={RED} />
                 <text x="960" y="704" text-anchor="middle" font-family={SERIF} font-style="italic" font-size="72" fill={PAPER} opacity={smooth(22.0, 44.0, t)}>{go}</text>

@@ -13,6 +13,12 @@ struct VideoArgs {
     /// The lines in Czech.
     #[arg(long, global = true)]
     czech: bool,
+    /// The version filmed straight down throughout.
+    #[arg(long, global = true)]
+    top: bool,
+    /// Only the pictures: no bars, labels, lines, numbers or title.
+    #[arg(long, global = true)]
+    clean: bool,
 }
 
 fn main() -> ExitCode {
@@ -22,7 +28,7 @@ fn main() -> ExitCode {
     let clips_dir = MediaDirectory::read_folder(concat!(env!("CARGO_MANIFEST_DIR"), "/clips")).expect("the clips folder: run trailer/street/film.sh first");
     let clips = clips_dir.process_media_source().expect("clips");
     let all_media = CombinedMediaProvider::from([&media as &dyn MediaProvider, &clips as &dyn MediaProvider]);
-    let video = StreetVideo::new(&media, args.app.czech);
+    let video = StreetVideo::new(&media, args.app.czech, args.app.top, args.app.clean);
     let gpu = SkiaMetalCtx::new(WIDTH, HEIGHT).expect("GPU context");
 
     cli::new(

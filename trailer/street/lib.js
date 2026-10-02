@@ -24,9 +24,31 @@ const CAMS = {
   high: (c, u) => ({ ...ahead(c, 40), height: mix(52, 60, u), tilt: 56, heading: compass(c.h) }),
   // Low and close behind for the last of it.
   chase: (c, u) => ({ ...ahead(c, 15), height: mix(19, 16, u), tilt: 66, heading: compass(c.h) + mix(6, -3, u) }),
+
+  // ---- The `top` version: straight down throughout (a degree of tilt, so the heading turns the picture).
+  // From high over the river, north up, coming down on the car as it pulls away.
+  drop: (c, u) => ({ ...ahead(c, 6), height: mix(170, 72, ease(u)), tilt: 1, heading: 0 }),
+  // The game's own view, turning a little.
+  follow: (c, u) => ({ ...ahead(c, 10), height: 70, tilt: 1, heading: mix(0, 10, u) }),
+  // Close, the car crossing the picture from left to right.
+  cross: (c, u) => ({ ...ahead(c, mix(3, 11, u)), height: mix(32, 37, u), tilt: 1, heading: compass(c.h) - 90 }),
+  // Turning round the car.
+  spin: (c, u) => ({ ...ahead(c, 5), height: 46, tilt: 1, heading: compass(c.h) + mix(-45, 45, ease(u)) }),
+  // The car low in the picture, the street it is heading into above it.
+  lead: (c, u) => ({ ...ahead(c, 24), height: mix(56, 62, u), tilt: 1, heading: compass(c.h) }),
+  // Half river, half street.
+  river: (c, u) => ({ ...ahead(c, 14, -30), height: mix(98, 88, u), tilt: 1, heading: compass(c.h) }),
+  // Close and closer for the last of it.
+  tight: (c, u) => ({ ...ahead(c, 9), height: mix(28, 23, u), tilt: 1, heading: compass(c.h) + mix(5, -5, u) }),
 };
+// Which version is being filmed, and what its files are called.
+const version = typeof VARIANT === 'string' ? VARIANT : 'street';
+const NAME = `${version}-${TAKE}`;
+// PICTURE_ONLY: without the sound (it is the same drive in both versions). SOUND_ONLY: only the sound.
+const silent = typeof PICTURE_ONLY !== 'undefined' && PICTURE_ONLY;
+const BUSES = ['engine', 'tyres', 'horns', 'trams', 'city', 'weather', 'bangs'];
 const camAt = (i) => {
-  const s = i / PLAN.fps, list = PLAN.cameras;
+  const s = i / PLAN.fps, list = PLAN.cameras[version];
   let k = 0;
   while (k < list.length - 1 && list[k + 1][0] <= s) k++;
   const end = k < list.length - 1 ? list[k + 1][0] : PLAN.routeFrames / PLAN.fps;
@@ -73,8 +95,9 @@ for (const [first, last] of ranges) {
   // The police take: wanted, and given time for them to come.
   if (take.stars) { t.set({ stars: take.stars }); for (let k = 0; k < 14; k++) { put(frameOf(0)); await t.wait(1); } }
 
-  // The game's sound, into a buffer instead of the loudspeakers, a frame's worth at a time.
-  const off = new OfflineAudioContext(2, Math.ceil(SR * ((last - first) / PLAN.fps + 5)), SR);
+  // The game's sound, into a buffer instead of the loudspeakers, a frame's worth at a time:
+  // the whole mix in the first two channels, then each of its buses (engine, tyres, …) in two more.
+  const off = new OfflineAudioContext(2 + 2 * BUSES.length, Math.ceil(SR * ((last - first) / PLAN.fps + 5)), SR);
   off.createMediaElementSource = () => off.createGain();
   // (The game updates its sound only while its context is running; this one stands still between frames.)
   Object.defineProperty(off, 'state', { get: () => 'running' });
@@ -82,12 +105,23 @@ for (const [first, last] of ranges) {
   let started = false, at = 0, done = null;
   const resume = off.resume.bind(off);
   off.resume = () => (started ? resume() : Promise.resolve());
-  window.AudioContext = function () { return off; };
-  Object.assign(s, { ctx: null, engine: null, tyres: null, weather: null, ambience: null, radio: null, voices: [], sirens: [], horns: null, clips: {} });
-  s.on = true; s.start(); s.setRadio(false);
-  window.AudioContext = Real;
-  await new Promise((r) => setTimeout(r, 3000));   // (the recordings load)
-  const step = async () => { at += 1 / PLAN.fps; const p = off.suspend(at); if (!done) { done = off.startRendering(); started = true; } else resume(); await p; };
+  if (!silent) {
+    window.AudioContext = function () { return off; };
+    Object.assign(s, { ctx: null, engine: null, tyres: null, weather: null, ambience: null, radio: null, voices: [], sirens: [], horns: null, clips: {} });
+    s.on = true; s.start(); s.setRadio(false);
+    window.AudioContext = Real;
+    Object.assign(off.destination, { channelCount: 2 + 2 * BUSES.length, channelCountMode: 'explicit', channelInterpretation: 'discrete' });
+    const merger = off.createChannelMerger(2 + 2 * BUSES.length);
+    BUSES.forEach((b, k) => {
+      const split = off.createChannelSplitter(2);
+      s.buses[b].connect(split);
+      split.connect(merger, 0, 2 + 2 * k);
+      split.connect(merger, 1, 3 + 2 * k);
+    });
+    merger.connect(off.destination);
+    await new Promise((r) => setTimeout(r, 3000));   // (the recordings load)
+  }
+  const step = async () => { if (silent) return; at += 1 / PLAN.fps; const p = off.suspend(at); if (!done) { done = off.startRendering(); started = true; } else resume(); await p; };
   // The pedal is down whenever the car moves (the engine's sound follows the pedal).
   const moving = (i) => !take.rise && PLAN.speed[i] > 0;
   key(moving(frameOf(0)) ? 'keydown' : 'keyup');
@@ -96,7 +130,7 @@ for (const [first, last] of ranges) {
   const PRE = 3 * PLAN.fps;
   const was = t.paused;
   t.paused = true;
-  for (let k = 0; k < PRE; k++) { put(frameOf(0)); await tick(); await step(); }
+  for (let k = 0; k < (silent ? 0 : PRE); k++) { put(frameOf(0)); await tick(); await step(); }
   const lead = at;
   const each = async (k) => {
     const i = frameOf(k);
@@ -107,23 +141,30 @@ for (const [first, last] of ranges) {
   };
   if (typeof SOUND_ONLY !== 'undefined' && SOUND_ONLY) {
     for (let k = 0; k < last - first; k++) { await each(k); __drive.simulate(1 / 60, {}); __drive.simulate(1 / 60, {}); await tick(); }
-  } else await t.film(`${TAKE}_${first}`, (last - first) / PLAN.fps, {}, { each });
+  } else await t.film(`${NAME}_${first}`, (last - first) / PLAN.fps, {}, { each });
   t.paused = was;
   key('keyup');
   t.set({ stars: 0 });
+  if (silent) continue;
   resume();
   const buf = await done;
-  const skip = Math.round(lead * SR), n = Math.round(at * SR) - skip, L = buf.getChannelData(0).subarray(skip), R = buf.getChannelData(1).subarray(skip);
-  const wav = new DataView(new ArrayBuffer(44 + n * 4));
-  const str = (o, x) => { for (let i = 0; i < x.length; i++) wav.setUint8(o + i, x.charCodeAt(i)); };
-  str(0, 'RIFF'); wav.setUint32(4, 36 + n * 4, true); str(8, 'WAVEfmt '); wav.setUint32(16, 16, true); wav.setUint16(20, 1, true); wav.setUint16(22, 2, true);
-  wav.setUint32(24, SR, true); wav.setUint32(28, SR * 4, true); wav.setUint16(32, 4, true); wav.setUint16(34, 16, true); str(36, 'data'); wav.setUint32(40, n * 4, true);
-  let peak = 0;
-  for (let i = 0; i < n; i++) { peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i])); wav.setInt16(44 + i * 4, Math.max(-1, Math.min(1, L[i])) * 32767, true); wav.setInt16(46 + i * 4, Math.max(-1, Math.min(1, R[i])) * 32767, true); }
-  let bin = ''; const bytes = new Uint8Array(wav.buffer);
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  await window.__saveFile(`${TAKE}_${first}.wav`, btoa(bin));
-  peaks.push(+peak.toFixed(3));
+  const skip = Math.round(lead * SR), n = Math.round(at * SR) - skip;
+  // A stereo WAV of two of the buffer's channels.
+  const save = async (name, ch) => {
+    const L = buf.getChannelData(ch).subarray(skip), R = buf.getChannelData(ch + 1).subarray(skip);
+    const wav = new DataView(new ArrayBuffer(44 + n * 4));
+    const str = (o, x) => { for (let i = 0; i < x.length; i++) wav.setUint8(o + i, x.charCodeAt(i)); };
+    str(0, 'RIFF'); wav.setUint32(4, 36 + n * 4, true); str(8, 'WAVEfmt '); wav.setUint32(16, 16, true); wav.setUint16(20, 1, true); wav.setUint16(22, 2, true);
+    wav.setUint32(24, SR, true); wav.setUint32(28, SR * 4, true); wav.setUint16(32, 4, true); wav.setUint16(34, 16, true); str(36, 'data'); wav.setUint32(40, n * 4, true);
+    let peak = 0;
+    for (let i = 0; i < n; i++) { peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i])); wav.setInt16(44 + i * 4, Math.max(-1, Math.min(1, L[i])) * 32767, true); wav.setInt16(46 + i * 4, Math.max(-1, Math.min(1, R[i])) * 32767, true); }
+    let bin = ''; const bytes = new Uint8Array(wav.buffer);
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    await window.__saveFile(name, btoa(bin));
+    return peak;
+  };
+  peaks.push(+(await save(`${TAKE}_${first}.wav`, 0)).toFixed(3));
+  for (let k = 0; k < BUSES.length; k++) await save(`${TAKE}_${first}.${BUSES[k]}.wav`, 2 + 2 * k);
 }
 t.cam = null; t.unhurt = false;
-return { take: TAKE, ranges, peaks, where: t.where().street };
+return { take: NAME, ranges, peaks, where: t.where().street };

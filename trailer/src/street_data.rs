@@ -7,18 +7,18 @@ pub const DRIVE: usize = 1200;
 pub const DARK: usize = 78;
 pub const RISE: usize = 285;
 pub const TITLE: usize = 165;
-/// clip, time of day, weather
+/// name (its clip is <version>-<name>.mp4), time of day, weather
 pub const TAKES: [(&str, &str, &str); 10] = [
-    ("street-dawn.mp4", "05:20", "MIST"),
-    ("street-morning.mp4", "08:30", "CLEAR"),
-    ("street-noon.mp4", "13:00", "CLEAR"),
-    ("street-rain.mp4", "16:30", "RAIN"),
-    ("street-golden.mp4", "17:50", "CLEAR"),
-    ("street-dusk.mp4", "18:55", "OVERCAST"),
-    ("street-night.mp4", "22:30", "CLEAR"),
-    ("street-storm.mp4", "23:40", "STORM"),
-    ("street-snow.mp4", "10:00", "SNOW"),
-    ("street-police.mp4", "01:30", "CLEAR"),
+    ("dawn", "05:20", "MIST"),
+    ("morning", "08:30", "CLEAR"),
+    ("noon", "13:00", "CLEAR"),
+    ("rain", "16:30", "RAIN"),
+    ("golden", "17:50", "CLEAR"),
+    ("dusk", "18:55", "OVERCAST"),
+    ("night", "22:30", "CLEAR"),
+    ("storm", "23:40", "STORM"),
+    ("snow", "10:00", "SNOW"),
+    ("police", "01:30", "CLEAR"),
 ];
 /// first frame, the frame after its last, the takes shown (one, or five side by side; unused slots repeat the first)
 pub const CUT: [(usize, usize, usize, [usize; 5]); 54] = [

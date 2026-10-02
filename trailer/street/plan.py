@@ -24,7 +24,11 @@ plan = {
     'speed': [round(speed(i), 3) for i in range(N)],
 }
 # Which camera films which stretch of the route (from this second on).
-plan['cameras'] = [(0, 'wide'), (8.5, 'behind'), (14, 'side'), (19, 'top'), (24, 'front'), (29, 'high'), (34, 'chase')]
+# Two versions of the same drive: `street` with the camera at an angle, `top` straight down throughout.
+plan['cameras'] = {
+    'street': [(0, 'wide'), (8.5, 'behind'), (14, 'side'), (19, 'top'), (24, 'front'), (29, 'high'), (34, 'chase')],
+    'top': [(0, 'drop'), (8.5, 'follow'), (14, 'cross'), (19, 'spin'), (24, 'lead'), (29, 'river'), (34, 'tight')],
+}
 # The takes: the same drive at another hour, in other weather (and once with the police behind).
 plan['takes'] = [
     {'name': 'dawn', 'time': '05:20', 'weather': 'mist'},

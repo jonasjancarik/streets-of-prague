@@ -26,3 +26,6 @@ media/day.wav
 # "The same street": the takes' sound and the mix.
 /street/sound/
 media/street.wav
+
+# What is made for working on a trailer elsewhere: clean pictures, stems.
+/export/
