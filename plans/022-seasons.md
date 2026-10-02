@@ -11,7 +11,7 @@ July, October and January each look like themselves.
 
 ## Status and starting point
 
-- Status: PLANNED. Three decisions to confirm first (below).
+- Status: PLANNED. Two decisions to confirm first (below); the first is decided.
 - Effort: four to five days for phases 1–4. Risk: medium for the trees (two renderers,
   the shadow pass, and the costliest shader in a wood); low for the rest.
 - Planned at: `c2c76265e35c795e07a2b0b33f63ebb3f3db5afa`, 2 October 2026, from reading
@@ -48,10 +48,11 @@ git diff --stat c2c76265e35c795e07a2b0b33f63ebb3f3db5afa..HEAD -- src/weather.ts
 
 ## Decisions to confirm
 
-1. **Which season the game starts in.** Recommended: today's date in Prague, as the
-   time and weather already do, with a row on the start screen to pick another
-   (Now, Spring, Summer, Autumn, Winter). `?date=MM-DD` and `?season=` for links and
-   tests.
+1. **Which season the game starts in.** Decided (2 October 2026): the start screen
+   has a row of the four seasons (Spring, Summer, Autumn, Winter) with the current
+   one picked already; no separate "Now". The current season's button means today's
+   date in Prague, the other three a typical date each (decision 3). `?date=MM-DD`
+   and `?season=` for links and tests.
 2. **Whether the date moves.** Recommended: no. The date is set when a game starts,
    kept in the save, and stays. The clock keeps wrapping after a week. A year that
    passes while you play would need the trees to change under you and a calendar in
@@ -121,7 +122,7 @@ depend on the date.
 - `CHANCES` are blended between neighbouring seasons by the date, so late November
   isn't the same as early September. `WINTER` goes; `BARE` comes from `leaf`.
 - The start screen's "Now: {weather}" button (the real weather in Prague) only shows
-  while the season is Now: real snow doesn't belong in a picked July.
+  while the current season is picked: real snow doesn't belong in a picked July.
 - Lit windows follow the sun as well as the hour, so a January afternoon at five has
   them lit.
 - Birds: most in spring mornings, fewer in late summer, nearly none in winter.
