@@ -55,6 +55,10 @@ const ENGINE_GROUPS: Group[] = [
     { path: 'voice.blip', label: 'Blip of throttle on a downshift', hint: 'none to keen', min: 0, max: 1.5, step: 0.05 },
   ] },
 ];
+const HUM_GROUP: Group = { title: 'Warning hum for people on foot', note: 'Electric cars must hum below 20 km/h. It fades out by 30.', fields: [
+  { path: 'voice.avas', i: 0, label: 'Loudness', min: 0, max: 0.08, step: 0.001 },
+  { path: 'voice.avas', i: 1, label: 'Pitch standing still', hint: 'Hz', min: 100, max: 800, step: 5 },
+] };
 // A recorded engine has no overtones or intake to set, and its filter works higher up.
 const RECORDED_GROUPS: Group[] = [
   { title: 'Loudness', fields: [
@@ -215,7 +219,7 @@ function choose(k: string) {
   car.spec.vmax = CARS[k].vmax;
   car.forwardSpeed = car.speed = 0;
   for (const b of $('cars').children) b.classList.toggle('on', (b as HTMLElement).dataset.k === k);
-  render($('engine'), spec.voice.loops ? RECORDED_GROUPS : ENGINE_GROUPS, spec, CARS[k].spec, () => engine?.revoice());
+  render($('engine'), spec.voice.loops ? RECORDED_GROUPS : spec.voice.avas ? [HUM_GROUP, ...ENGINE_GROUPS] : ENGINE_GROUPS, spec, CARS[k].spec, () => engine?.revoice());
   showSettings();
   if (engine) rebuild();
 }
