@@ -7,7 +7,7 @@ import { Figures, Anim, SCALE } from './figures.ts';
 import { locomote, knocked } from './people.ts';
 import { Helicopters, HELI_SIGHT } from './helicopter.ts';
 import type { CarGrid } from './car.ts';
-import type { DriveEdge, DriveGraph } from './network.ts';
+import type { DriveEdge, DriveGraph, WalkEdge, WalkGraph } from './network.ts';
 import type { Traffic } from './traffic.ts';
 import type { FigureKit } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
@@ -15,12 +15,27 @@ import type { Point3 } from './guns.ts';
 
 interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
 interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number; reload?: number }
-interface Link { to: string; e: DriveEdge; back: boolean }
+// A stretch of the way a police car or a fire engine can take: a street, or (`foot`) a
+// way meant for people.
+type Way = (DriveEdge | WalkEdge) & { mid?: Polyline; twin?: DriveEdge | null };
+interface Link { to: string; e: Way; back: boolean; foot: boolean; cost: number }
+// Where people walk and an emergency vehicle may drive: pedestrian streets and squares,
+// and paths through parks and courtyards wide enough for it. Not steps, footbridges or
+// subways.
+const FOOT_OK = new Set(['pedestrian', 'footway', 'path', 'track']);
+const FOOT_WIDTH = 4; // m (pedestrian streets and squares count whatever width the map gives them)
+// The pavement beside a street: only as the few metres from the street into a park, say.
+const PAVEMENT_COST = 10;
+const FOOT_COST = 3; // a metre there counts as this many by road: the street is taken where there is one
+const FOOT_SPEED = 10; // m/s among people
+const FOOT_FAR = 15; // m: a footpath is where a way starts or ends only if it's this much nearer than any street (a pavement runs beside every street)
 interface PlayerTarget { x: number; y: number; z: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean }
 interface PoliceOptions {
   scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
   height: (x: number, y: number, who?: Car | Officer) => number;
   rng: () => number; edgesNear: (x: number, y: number, radius: number) => DriveEdge[];
+  // The footpath network, for the ways an emergency vehicle may take through pedestrian zones and parks.
+  walk?: WalkGraph; walkNear?: (x: number, y: number, radius: number) => WalkEdge[];
   offscreen: (x: number, y: number) => boolean; onBusted: () => void; kit: FigureKit;
   // Whether a car or a tram (other than `skip`) takes up a circle of radius r at (x, y).
   bodyAt?: (x: number, y: number, r: number, skip: Car | null) => boolean;
@@ -142,10 +157,15 @@ export function along(c: Car, p: Follower, path: Polyline, top = 24, bendy = 14)
   p.s = q.s;
   // Off the route: a new one soon (still no more than a few times a second).
   if (q.d > 12) p.replan = Math.min(p.replan, 0.3);
-  const t = path.at(p.s + 6 + Math.abs(c.forwardSpeed) * 0.6);
+  // Slowly where people walk, from a little before.
+  // And keeping to the middle through the bends: these ways have house corners where a
+  // street has a kerb, and aiming far ahead cuts across them.
+  const foot = !!path.foot?.some(([a, b]) => p.s + 15 > a && p.s < b);
+  if (foot) top = Math.min(top, FOOT_SPEED);
+  const t = path.at(p.s + (foot ? 4 + Math.abs(c.forwardSpeed) * 0.3 : 6 + Math.abs(c.forwardSpeed) * 0.6));
   let bend = 0;
   for (const d of [8, 18, 30]) bend = Math.max(bend, Math.abs(turnOf(c.h, path.at(p.s + d).ang)));
-  return { tx: t.x, ty: t.y, want: clamp(top - bend * bendy, 7, top) };
+  return { tx: t.x, ty: t.y, want: clamp(top - bend * bendy, foot ? 4 : 7, top) };
 }
 
 // Steering and pedals for heading at (tx, ty) at `want` m/s, backing up and trying again
@@ -172,12 +192,14 @@ export class Police {
   height: PoliceOptions['height']; onShot: NonNullable<PoliceOptions['onShot']>;
   spare: Figures[]; helis: Helicopters; heat: number; cars: ChaseCar[]; officers: Officer[];
   seen: boolean; lose: number; cool: Record<string, number>; spawnT: number; checkT: number; limit: number;
-  nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number;
+  nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number; walked = 0;
+  paths: WalkGraph | null; walkNear: NonNullable<PoliceOptions['walkNear']>;
   lastT?: number; stolen: WeakSet<Car>;
 
-  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {} }: PoliceOptions) {
+  constructor({ scene, drive, traffic, grid, height, rng, edgesNear, walk = undefined, walkNear = () => [], offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {} }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
     this.r = rng; this.edgesNear = edgesNear; this.offscreen = offscreen;
+    this.paths = walk ?? null; this.walkNear = walkNear;
     this.onBusted = onBusted; this.kit = kit; this.bodyAt = bodyAt;
     this.height = height; this.onShot = onShot;
     this.spare = []; // figures of officers who've gone, to reuse
@@ -277,19 +299,59 @@ export class Police {
       e.mid = e.mid || new Polyline(e.pts);
       this.nodes.set(e.u, e.pts[0]);
       this.nodes.set(e.v, e.pts[e.pts.length - 1]);
-      for (const [a, b, back] of [[e.u, e.v, false], [e.v, e.u, true]] as [string, string, boolean][]) {
-        if (!this.links.has(a)) this.links.set(a, []);
-        this.links.get(a)!.push({ to: b, e, back });
-      }
+      this.link(e, false);
+    }
+    const paths = this.paths?.edges ?? [];
+    for (; this.walked < paths.length; this.walked++) {
+      const e = paths[this.walked];
+      if (!this.drivable(e)) continue;
+      (e as Way).mid = e.path;
+      this.nodes.set(e.u, e.pts[0]);
+      this.nodes.set(e.v, e.pts[e.pts.length - 1]);
+      this.link(e, true, this.pavement(e) ? PAVEMENT_COST : FOOT_COST);
     }
   }
 
-  nearestStreet(x: number, y: number, radius = 40) {
-    let best: { e: DriveEdge & { mid: Polyline }; s: number; d: number } | null = null;
+  link(e: Way, foot: boolean, cost = 1) {
+    for (const [a, b, back] of [[e.u, e.v, false], [e.v, e.u, true]] as [string, string, boolean][]) {
+      if (!this.links.has(a)) this.links.set(a, []);
+      this.links.get(a)!.push({ to: b, e, back, foot, cost });
+    }
+  }
+
+  // Whether a footpath is the pavement of a street: it runs along one, a few metres off.
+  pavement(e: WalkEdge) {
+    if (e.hw === 'pedestrian') return false;
+    let beside = 0;
+    for (const k of [0.25, 0.5, 0.75]) {
+      const p = e.path.at(e.path.length * k), st = this.nearestStreet(p.x, p.y, 9);
+      if (st && Math.abs(Math.cos(st.e.mid.at(st.s).ang - p.ang)) > 0.8) beside++;
+    }
+    return beside >= 2;
+  }
+
+  // Whether a police car or a fire engine may take this footpath. (The streets people
+  // walk along are in the footpath network too, under other names: those it has already.)
+  drivable(e: WalkEdge) {
+    return FOOT_OK.has(e.hw) && !e.bridge && !e.tunnel && (e.hw === 'pedestrian' || e.width >= FOOT_WIDTH);
+  }
+
+  nearestStreet(x: number, y: number, radius = 40): { e: DriveEdge & { mid: Polyline }; s: number; d: number } | null {
+    return this.nearestWay(x, y, radius, false) as { e: DriveEdge & { mid: Polyline }; s: number; d: number } | null;
+  }
+
+  // The same, with (`foot`) the footpaths an emergency vehicle may take.
+  nearestWay(x: number, y: number, radius: number, foot: boolean) {
+    let best: { e: Way & { mid: Polyline }; s: number; d: number; foot: boolean } | null = null;
     for (const e of this.edgesNear(x, y, radius)) {
       e.mid = e.mid || new Polyline(e.pts);
       const p = project(e.mid, x, y);
-      if (p.d < radius && (!best || p.d < best.d)) best = { e: e as DriveEdge & { mid: Polyline }, s: p.s, d: p.d };
+      if (p.d < radius && (!best || p.d < best.d)) best = { e: e as DriveEdge & { mid: Polyline }, s: p.s, d: p.d, foot: false };
+    }
+    if (foot) for (const e of this.walkNear(x, y, radius)) {
+      if (!this.drivable(e) || this.pavement(e)) continue;
+      const p = project(e.path, x, y), d = p.d + FOOT_FAR;
+      if (p.d < radius && (!best || d < best.d)) best = { e: Object.assign(e, { mid: e.path }), s: p.s, d, foot: true };
     }
     return best;
   }
@@ -298,7 +360,7 @@ export class Police {
   // side of the street you're on. The lanes keep clear of the parked cars, so the car
   // doesn't drive over them (or up on the pavement) to get to you. A street on a
   // bridge or in a tunnel counts only if nothing else is much nearer.
-  roadside(x: number, y: number) {
+  roadside(x: number, y: number, foot = true) {
     let best: { x: number; y: number } | null = null, bestD = 80;
     for (const e of this.edgesNear(x, y, 80)) {
       const q = project(e.path, x, y), d = q.d + (e.bridge || e.tunnel ? 15 : 0);
@@ -307,19 +369,42 @@ export class Police {
       best = { x: p.x, y: p.y };
       bestD = d;
     }
+    // In a pedestrian zone or a park: on the path through it, if that's nearer than any street.
+    if (foot) for (const e of this.walkNear(x, y, 80)) {
+      if (!this.drivable(e)) continue;
+      const q = project(e.path, x, y);
+      if (q.d + FOOT_FAR >= bestD || this.pavement(e)) continue;
+      const p = e.path.at(q.s);
+      best = { x: p.x, y: p.y };
+      bestD = q.d + FOOT_FAR;
+    }
     return best;
   }
 
-  // Shortest way by road from (ax, ay) to (bx, by), as a Polyline, or null.
-  route(ax: number, ay: number, bx: number, by: number): Polyline | null {
+  // Shortest way from (ax, ay) to (bx, by), as a Polyline, or null: by road, and where
+  // there's none, through pedestrian zones and parks (police cars and fire engines
+  // may). If the paths lead nowhere, by road as near as it gets.
+  // (`foot` false: by road only.)
+  route(ax: number, ay: number, bx: number, by: number, foot = true): Polyline | null {
     this.sync();
-    const A = this.nearestStreet(ax, ay), B = this.nearestStreet(bx, by);
+    return (foot && this.way(ax, ay, bx, by, true)) || this.way(ax, ay, bx, by, false);
+  }
+
+  way(ax: number, ay: number, bx: number, by: number, foot: boolean): Polyline | null {
+    const A = this.nearestWay(ax, ay, 40, foot), B = this.nearestWay(bx, by, 40, foot);
     if (!A || !B) return null;
     const lenA = A.e.mid.length, lenB = B.e.mid.length;
     let pts: Point2[];
+    // The stretches on footpaths, as ranges of `pts`.
+    const spans: [number, number][] = [];
+    const add = (more: Point2[], onFoot: boolean) => {
+      if (onFoot && more.length) spans.push([pts.length, pts.length + more.length - 1]);
+      pts.push(...more);
+    };
     if (A.e === B.e || A.e.twin === B.e) {
       const sb = A.e === B.e ? B.s : lenA - B.s;
-      pts = slice(A.e.mid, A.s, sb);
+      pts = [];
+      add(slice(A.e.mid, A.s, sb), A.foot);
     } else {
       const goal = new Map<string, number>([[B.e.u, B.s], [B.e.v, lenB - B.s]]);
       const [gx, gy] = [bx, by];
@@ -329,7 +414,7 @@ export class Police {
         heap.push([cost, n]);
       }
       let end: string | null = null;
-      for (let pops = 0; heap.size && pops < 6000; pops++) {
+      for (let pops = 0, most = foot ? 20000 : 6000; heap.size && pops < most; pops++) { // (the footpaths are a much finer net)
         const item = heap.pop();
         if (!item) break;
         const [f, n] = item;
@@ -340,7 +425,8 @@ export class Police {
         if (f > gn + Math.hypot(gx - nx, gy - ny) + 1e-6) continue; // stale entry
         if (goal.has(n)) { end = n; break; }
         for (const l of this.links.get(n) || []) {
-          const c = gn + (l.e.mid?.length ?? 0);
+          if (l.foot && !foot) continue;
+          const c = gn + (l.e.mid?.length ?? 0) * l.cost;
           if (c >= (g.get(l.to) ?? Infinity)) continue;
           g.set(l.to, c);
           from.set(l.to, l);
@@ -354,11 +440,15 @@ export class Police {
       const chain: Link[] = [];
       let first = end;
       for (let l = from.get(end); l; l = from.get(first)) { chain.unshift(l); first = l.back ? l.e.v : l.e.u; }
-      pts = slice(A.e.mid, A.s, first === A.e.u ? 0 : lenA);
-      for (const l of chain) pts.push(...(l.back ? [...l.e.pts].reverse() : l.e.pts));
-      pts.push(...slice(B.e.mid, end === B.e.u ? 0 : lenB, B.s));
+      pts = [];
+      add(slice(A.e.mid, A.s, first === A.e.u ? 0 : lenA), A.foot);
+      for (const l of chain) add(l.back ? [...l.e.pts].reverse() : l.e.pts, l.foot);
+      add(slice(B.e.mid, end === B.e.u ? 0 : lenB, B.s), B.foot);
     }
-    return new Polyline([[ax, ay], ...pts, [bx, by]]);
+    const path = new Polyline([[ax, ay], ...pts, [bx, by]]);
+    // (One point was put in front of `pts`.)
+    if (spans.length) path.foot = spans.map(([i, j]) => [path.cum[i + 1], path.cum[j + 1]]);
+    return path;
   }
 
   // ---- Cars --------------------------------------------------------------

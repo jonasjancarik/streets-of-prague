@@ -83,9 +83,30 @@ Timed with `t.ignite` / `t.fire` in headless Chrome at six places, and fixed in
   dropped as a duplicate and the crew left after the first. The crew now turns to it.
 - Engines on their way home counted towards the two that may be out, so a new call waited.
 
-Still as they were: a fire with no road near it (Můstek's pedestrian zone, a closed
-courtyard) gets no engine, and the engine's steering can still wedge it in a tight turn
-(it is then replaced, which costs 10–20 s).
+Still as it was: the engine's steering can wedge it in a tight turn (it is then replaced,
+which costs 10–20 s), and a closed courtyard is out of reach.
+
+### Pedestrian zones and parks (2 October 2026)
+
+Emergency vehicles may drive where people walk. `Police.route` (shared by police cars
+and fire engines) now also takes pedestrian streets and squares, and footpaths 4 m wide
+or more, at three times the cost of a street so the street is used where there is one;
+the pavement beside a street costs ten times (only as the few metres into a park).
+Steps, footbridges and subways are left out. `roadside` gives a stopping place on such a
+way when it is 15 m nearer than any street. On those stretches (`Polyline.foot`) the
+vehicle keeps to 36 km/h and takes bends slowly; people jump out of its way as they do
+for any fast car.
+
+For the fire engine, `Brigade.dispatch` weighs two plans by a rough time: through the
+zone right up to the fire, or by the streets as near as they get and the crew on foot.
+At the end of its way, if the fire is still more than 18 m off and no wall is in
+between, the engine drives straight to it (a square, a lawn). An engine held up for 5 s
+on a way through a zone (trees and house corners stop it) goes by the streets instead.
+
+Measured: Můstek, which got no engine before, is put out after about 55–85 s (the fire
+waits); Old Town Square in 27–42 s with the engine beside the car instead of 49 m off;
+Letná in 21–35 s. Not solved: an engine caught in a queue between trams on the way, and
+narrow park paths (Petřín), where it doesn't fit.
 
 ## Current state (what the plan relies on)
 

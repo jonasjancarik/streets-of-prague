@@ -49,6 +49,9 @@ export class Polyline {
   cum: number[];
   angs: number[]; // each segment's heading (made once: at() runs for every walker every step)
   length: number;
+  // On a route worked out for a police car or a fire engine: the stretches (from, to, in
+  // metres along it) that go where people walk, taken slowly.
+  foot?: [number, number][];
 
   constructor(pts: Point2[]) {
     this.pts = pts;
