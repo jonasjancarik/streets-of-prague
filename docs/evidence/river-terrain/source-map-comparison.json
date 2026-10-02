@@ -1,0 +1,20 @@
+{
+  "changed_samples_with_shared_edges": 214,
+  "changed_tiles": [
+    [
+      "1_2.height.bin.gz",
+      96,
+      100.3
+    ],
+    [
+      "4_0.height.bin.gz",
+      118,
+      75.0
+    ]
+  ],
+  "max_edge_disagreement_dm": 3,
+  "bridge_payloads_unchanged": true,
+  "labels_unchanged": true,
+  "before": "2026-10-02T21:01:17Z",
+  "after": "2026-10-02T21:10:50Z"
+}

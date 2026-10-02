@@ -1,0 +1,86 @@
+{
+  "after-cut-final-cameras.json": {
+    "bytes": 3075,
+    "sha256": "f66b4f0f3bbdb1c6f5f8cf197db1394c09aef1c0e8c2f894fcbb8ed5891295f7"
+  },
+  "after-fixed-fixed-cameras.json": {
+    "bytes": 2674,
+    "sha256": "82441309f89e6f8ddf9c120aaf03d26608d1abcb58c88205941e549e6c94ae75"
+  },
+  "after-source-build.log": {
+    "bytes": 1754,
+    "sha256": "49fdf69c6fa8ef4d1faf19c36c1c43cd7847e2de7b81722a1b844b6d8e83000b"
+  },
+  "after-source-cameras.json": {
+    "bytes": 3071,
+    "sha256": "db843b447c872aac15b515ee1af062e3d5e9a677c5f19a3174b35757a349becd"
+  },
+  "before-build.log": {
+    "bytes": 1773,
+    "sha256": "25b8c208b0b485d8ea3804de3ad634f2c30d22863cba5140bf587cdc6731509b"
+  },
+  "before-fixed-fixed-cameras.json": {
+    "bytes": 2650,
+    "sha256": "962cc9b33ae90fdf9f7475a6ce75785af81a942fee316f23fda397825136d858"
+  },
+  "before-valid-cameras.json": {
+    "bytes": 3072,
+    "sha256": "c21636644e18747552d286adbf5abcf4fb2011a709c7e7aae5bcbe3104bb9c91"
+  },
+  "crossing-meshes.json": {
+    "bytes": 8835,
+    "sha256": "cd58e0271fd643c2c0a06a7de7d0d8099f92e0f18f604294e93cabc7e0bde312"
+  },
+  "cut-kampa-quay.jpg": {
+    "bytes": 215452,
+    "sha256": "8ec1f15cd109f1b4029a0a9e1fb23e9cc127e3d3f0106ea4999e41897664f4e5"
+  },
+  "cut-legii-west.jpg": {
+    "bytes": 291913,
+    "sha256": "7d5004c8002e8632efdcc6a213447a7d589a9cbff51d3a3aa5c20401710aa6ac"
+  },
+  "cut-tests.log": {
+    "bytes": 1123,
+    "sha256": "7915477d851ee39082ec74188f04dc9015a1dc05b15d2c8c31a71ac0e308b031"
+  },
+  "final-reader.json": {
+    "bytes": 724,
+    "sha256": "a8a231d283073e28f5245f400dd2551ccfbcd567c00ad3f887465329b1260ef8"
+  },
+  "geometry-cost-final.log": {
+    "bytes": 8139,
+    "sha256": "80c4d46f0aed558be8513178cdb51f52f9a345b970c4216ba0d1fc42fc86f960"
+  },
+  "geometry-cost.json": {
+    "bytes": 15697,
+    "sha256": "69c91d03b3215cfa5211a50cf894cd811f922fa10bba7c6dee1b532dbacd8a57"
+  },
+  "pipeline-tests.log": {
+    "bytes": 12098,
+    "sha256": "cf3a15bc79a9b9b032fadb0a220dda63e33b99587293c120265b65b55e2d90f2"
+  },
+  "rejected-survey.json": {
+    "bytes": 3470,
+    "sha256": "6de13819d526da61f1d2a90112be042a34affc124894c3fdcb08ed41f469648a"
+  },
+  "source-map-comparison.json": {
+    "bytes": 364,
+    "sha256": "5992c32abf1d18eb583adcc00124ee0f76578f2f0c25dbc16c1e183425b21f52"
+  },
+  "source-nosticova-fixed.jpg": {
+    "bytes": 338529,
+    "sha256": "297b5aaa4eafda708004a129e1c26c88fa85070c510597086830ab42b5ff73d4"
+  },
+  "source-south-east-fixed.jpg": {
+    "bytes": 245093,
+    "sha256": "6a2fbb4d0e10c3e3523f8ec141848a36cc8ad8f7e9ee8c92c9f94bbee1ca268e"
+  },
+  "typecheck.log": {
+    "bytes": 28,
+    "sha256": "dac125c794db702133345f3a0d33f3193f975fddc564ca4f1498b0d4132ed500"
+  },
+  "webgl-stable-fixed-cameras.json": {
+    "bytes": 2786,
+    "sha256": "8c7818e7ec052b2444903e0202d4135625b97d6796328241eb072535893becfd"
+  }
+}

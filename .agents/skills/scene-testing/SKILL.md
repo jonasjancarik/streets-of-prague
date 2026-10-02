@@ -53,7 +53,11 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.probe()`: position, speed, car type/damage/burning, money, stars, police cars,
   health, ticket, time, weather, date.
 - `t.camera({ at, height, tilt, heading })` looks from anywhere without moving you
-  (tilt 0 = straight down, up to 75); `t.camera(null)` follows you again.
+  (tilt 0 = straight down, up to 75); `height` is metres above the terrain at the
+  target. Both the eye and the look-at point follow that terrain. When comparing
+  terrain changes, use an unaffected target and record the actual eye position and
+  orientation: identical camera options alone do not establish an identical pose.
+  `t.camera(null)` follows you again.
   `t.view(zoom)` zooms the ordinary camera.
 - `t.shot(name)`: a screenshot (the car-name and district captions hidden).
 - `t.film(name, seconds, controls, { fps, hud })`: footage as numbered screenshots

@@ -81,17 +81,27 @@ capture showed missing ground and was excluded, then replaced by two Čertovka
 bridges. This dataset cannot verify the whole of Charles Bridge, Jiráskův most,
 Letná, or the long southern bridges.
 
-Evidence is in `/tmp/sop-river-terrain/`: `before-build.log`,
-`after-source-build.log`, `rejected-survey.json`, `source-map-comparison.json`,
-`before-valid-cameras.json`, `after-source-cameras.json`, and
-`shots/before-valid-*.png` / `shots/after-source-*.png`. The preserved baseline
-map is `before-map/`, also privately served as `ujezd_before_now` for matched
-checks; its index still identifies the original Újezd map.
+The compact evidence is committed under `docs/evidence/river-terrain/`, with
+[checksums and sizes](evidence/river-terrain/files.json). It includes the
+[source comparison at Nosticova](evidence/river-terrain/source-nosticova-fixed.jpg),
+[south-east source comparison](evidence/river-terrain/source-south-east-fixed.jpg),
+[Legií bridge-head comparison](evidence/river-terrain/cut-legii-west.jpg), and
+[Kampa quay comparison](evidence/river-terrain/cut-kampa-quay.jpg). No raw map,
+survey package, or source cache is committed. The large private baseline and
+original PNG batches remain scratch data in `/tmp/sop-river-terrain/`.
+
+Source checks are preserved in [rejected vertices](evidence/river-terrain/rejected-survey.json),
+[map comparison](evidence/river-terrain/source-map-comparison.json), and the
+[baseline](evidence/river-terrain/before-build.log) /
+[filtered-build](evidence/river-terrain/after-source-build.log) logs. The
+[final reader manifest](evidence/river-terrain/final-reader.json) pins the geometry
+code and file hashes, separately from the recorded map-build markers.
 
 Additional source comparisons use unaffected nearby targets, with the same final
 cutter reading the two maps. Their actual target, eye and quaternion match
 exactly before and after; these poses are recorded in
-`before-fixed-fixed-cameras.json` and `after-fixed-fixed-cameras.json`.
+[baseline fixed-camera manifest](evidence/river-terrain/before-fixed-fixed-cameras.json)
+and [filtered fixed-camera manifest](evidence/river-terrain/after-fixed-fixed-cameras.json).
 
 | Fixed target | Latitude | Longitude | Height above target | Tilt | Heading |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -104,7 +114,7 @@ For example, Nosticova's local target is
 `[-175.354190886, 13.899999619, -100.110454212]`, eye
 `[-175.354190886, 163.899999619, -30.164305489]`, quaternion
 `[-0.537299608, 0, 0, 0.843391446]` in both maps. The source comparison sheets are
-`pairs/nosticova-fixed.jpg` and `pairs/south-east-fixed.jpg`.
+the two source comparisons linked above.
 
 ## Exact cuts at terrain steps
 
@@ -175,17 +185,21 @@ steep slopes and height interpolation within one level can remain inaccurate.
 The cutter improves how existing levels meet, without inventing breaklines for
 natural slopes or growing location exception boxes.
 
-The evidence includes `geometry-cost.json`, `geometry-cost-final.log`,
-`geometry-cost.mjs`, `crossing-meshes.json`, and `crossing-meshes.mjs`. Both
-harnesses and the baseline source copy are in `/tmp/sop-river-terrain/`.
-`after-cut-final-cameras.json` records unchanged underfoot profiles for all eight
-original valid cameras, with screenshots in `shots/after-cut-final-*.png` and
-comparisons against the source-filter-only reader in `cut-pairs/`.
+[Final geometry and timing rows](evidence/river-terrain/geometry-cost.json),
+[the final CPU log](evidence/river-terrain/geometry-cost-final.log), and
+[step-crossing samples](evidence/river-terrain/crossing-meshes.json) are preserved.
+The reproducibility harnesses and baseline source copy remain scratch files in
+`/tmp/sop-river-terrain/`; reconstruct the baseline reader from `3358b32` and the
+candidate from `8e9e105` if repeating the measurement later.
+The [final camera/profile series](evidence/river-terrain/after-cut-final-cameras.json)
+records unchanged underfoot profiles at all eight targets against the
+[source-filter-only series](evidence/river-terrain/after-source-cameras.json).
+The representative bridge and quay pairs are linked above.
 
 The final reader also passed four WebGL captures (`?renderer=webgl&dev`) at the
-fixed targets above. `webgl-stable-fixed-cameras.json` identifies WebGL explicitly
-and records the same targets, eye positions and quaternions as WebGPU; screenshots
-are `shots/webgl-stable-*.png`. No page or shader errors were returned. An earlier
+fixed targets above. The [WebGL camera manifest](evidence/river-terrain/webgl-stable-fixed-cameras.json)
+identifies WebGL explicitly and records the same targets, eye positions and
+quaternions as WebGPU. No page or shader errors were returned. An earlier
 sequential WebGL capture had an unloaded south-east target and was excluded. The
 final harness sets the free camera before teleporting, loads it again afterwards,
 and requires the target tile's terrain sampler before taking a screenshot.
@@ -197,7 +211,7 @@ node --test scripts/test-terrain-cut.mjs
 npm run typecheck
 ```
 
-The twelve geometry regressions cover narrow enclosed terraces, islands and
+The [twelve geometry regressions](../scripts/test-terrain-cut.mjs) cover narrow enclosed terraces, islands and
 holes, three levels, overlapping-outline priority, internal mesh edges,
 independently cut tile meshes with nonlinear edge heights, separately clipped
 shorelines, winding, degenerate input, interpolated alpha, unchanged density,
@@ -241,7 +255,9 @@ underpass corrections, water levels, finite heights, and tile seams. Browser
 captures were serialized with the overnight GPU lock. No GPU timing claim is
 made, and no full-city rebuild was attempted.
 
-`npm run typecheck` passed. The broader Python discovery run passed 43 of 45
+[Typechecking](evidence/river-terrain/typecheck.log) and the
+[geometry regressions](evidence/river-terrain/cut-tests.log) passed. The
+[broader Python discovery run](evidence/river-terrain/pipeline-tests.log) passed 43 of 45
 tests; two existing `test_build_cache.ChunkBuildTests` assembly tests fail because
 their shared `subprocess.run` mock does not accept the `cwd` argument passed by
 `layers.pipeline_commit` (`unexpected keyword argument 'cwd'`). Neither file was
