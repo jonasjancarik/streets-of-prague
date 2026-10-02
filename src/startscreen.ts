@@ -140,7 +140,8 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
       relabel[relabel.length - 1]();
       if (!weatherPicked) choose();
     },
-    ready(): Promise<StartChoice> {
+    // `noteAgain` shows the beta note even if it has been seen (?menu).
+    ready(noteAgain = false): Promise<StartChoice> {
       go.disabled = false;
       ready = true;
       sync();
@@ -149,7 +150,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
       return new Promise((resolve) => go.addEventListener('click', () => {
         go.disabled = true;
         const t = TIMES.find((x) => x.id === time);
-        void betaNote().then(() => resolve({ time: t ? t.sec : null, weather, sound, resume: resuming }));
+        void betaNote(noteAgain).then(() => resolve({ time: t ? t.sec : null, weather, sound, resume: resuming }));
       }, { once: true }));
     },
   };

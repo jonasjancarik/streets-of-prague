@@ -10,17 +10,19 @@ const feedback = !!import.meta.env.VITE_FEEDBACK_URL; // as in feedback.ts: no f
 
 const seen = () => { try { return localStorage.getItem(KEY) === 'seen'; } catch { return false; } };
 
-// Resolves when the note is closed, or at once if it has been shown before.
-export function betaNote(): Promise<void> {
-  if (seen()) return Promise.resolve();
-  try { localStorage.setItem(KEY, 'seen'); } catch { /* storage blocked: it shows again next time */ }
+// Resolves when the note is closed, or at once if it has been shown before (`again`
+// shows it regardless and leaves no mark: for working on the note itself, with ?menu).
+export function betaNote(again = false): Promise<void> {
+  if (!again && seen()) return Promise.resolve();
+  if (!again) try { localStorage.setItem(KEY, 'seen'); } catch { /* storage blocked: it shows again next time */ }
   const { d, title } = sheet();
   d.classList.add('beta');
-  const intro = el('p', '', d), rough = el('p', '', d), tell = el('p', '', d);
+  const intro = el('p', 'beta-lead', d), rough = el('p', '', d), tell = el('p', '', d);
   tell.hidden = !feedback;
   const sign = el('p', 'beta-sign', d);
   // The newsletter signup, right here.
-  const news = el('p', 'beta-news', d);
+  const signup = el('div', 'beta-signup', d);
+  const news = el('p', 'beta-news', signup);
   let asked = false; // an address was given, so the button no longer turns anything down
   const go = document.createElement('button');
   const label = () => {
@@ -33,7 +35,7 @@ export function betaNote(): Promise<void> {
     go.textContent = asked ? t('Start playing') : t('Skip, don\'t bother me now');
   };
   // Signed up: the line about the email to open stays up for a moment, then the game begins.
-  news.hidden = !signupFields(d, { done: () => { asked = true; news.hidden = true; label(); setTimeout(() => d.close(), 5000); } });
+  signup.hidden = !signupFields(signup, { done: () => { asked = true; news.hidden = true; label(); setTimeout(() => d.close(), 5000); } });
   const actions = el('div', 'beta-actions', d);
   go.className = 'news-go';
   go.type = 'button';

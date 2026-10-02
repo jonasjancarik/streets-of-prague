@@ -134,6 +134,12 @@ async function main() {
   const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.kind } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
+  // ?menu stops here, at the start screen with nothing loaded under it, for working on
+  // the screen and on what opens from it. The button shows the beta note every time.
+  if (start && params.has('menu')) {
+    status('');
+    for (;;) await start.ready(true);
+  }
   status('Loading the map…');
   const kitLoad = loadKit();
   const carsLoad = loadCars();

@@ -405,34 +405,57 @@
       .settings-news { display: block; margin-top: 16px; font: inherit; color: var(--ink); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; opacity: 0.8; }
       .settings-news + .settings-news, .settings-news + .settings-credits { margin-top: 8px; }
       /* The signup form itself, in a panel like the settings'. */
-      .news p { margin: 8px 0; }
-      .news form { display: flex; gap: 8px; margin: 14px 0 10px; }
+      .news { width: min(500px, calc(100vw - 24px)); padding: 22px 26px 24px; background: #17100f; font-size: 15px; line-height: 1.55; }
+      .news::backdrop { background: rgba(0, 0, 0, 0.6); }
+      .news .settings-head { align-items: flex-start; gap: 16px; margin-bottom: 14px; }
+      .news h2 { font-size: 34px; }
+      .news .settings-close { flex: none; width: 36px; height: 36px; margin: -7px -10px 0 0; opacity: 0.7; }
+      .news .settings-close:hover { opacity: 1; }
+      .news p { margin: 0 0 10px; color: rgba(236, 228, 214, 0.86); text-wrap: pretty; }
+      .news form { display: flex; gap: 8px; margin: 14px 0 12px; }
       .news form[hidden] { display: none; }
       .news form.news-stack { flex-direction: column; }
       .news-stack .news-go { align-self: flex-end; }
-      .news input[type='email'], .news textarea { flex: 1; min-width: 0; font: 16px/1.2 Inter, system-ui, sans-serif; color: var(--ink); background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(236, 228, 214, 0.35); padding: 8px 10px; user-select: text; -webkit-user-select: text; }
-      .news textarea { flex: none; resize: vertical; min-height: 5em; }
+      .news input[type='email'], .news textarea { flex: 1; min-width: 0; box-sizing: border-box; font: 16px/1.3 Inter, system-ui, sans-serif; color: var(--ink); background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(236, 228, 214, 0.45); border-radius: 0; padding: 10px 12px; user-select: text; -webkit-user-select: text; }
+      .news input[type='email'] { height: 44px; padding: 0 12px; }
+      .news ::placeholder { color: rgba(236, 228, 214, 0.5); opacity: 1; }
+      .news textarea { flex: none; resize: vertical; min-height: 6em; }
       .news-stack input[type='email'] { flex: none; }
       .news input[type='email']:focus-visible, .news textarea:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
-      .news-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+      .news-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; font-size: 13px; }
       .news-row[hidden], .news-check[hidden] { display: none; }
-      .news-row span { margin-right: 4px; opacity: 0.8; }
-      .news-check:not(:empty) { margin: 0 0 10px; }
+      .news-row span { margin-right: 4px; color: rgba(236, 228, 214, 0.75); }
+      .news-check:not(:empty) { margin: 0 0 12px; }
       .news-trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
-      .news-go { font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); background: var(--edge); border: 0; padding: 8px 16px 6px; cursor: pointer; box-shadow: 3px 3px 0 #000; white-space: nowrap; }
+      .news-go { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; font: 20px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); background: var(--edge); border: 0; padding: 2px 18px 0; cursor: pointer; box-shadow: 3px 3px 0 #000; white-space: nowrap; }
+      @supports (text-box: trim-both cap alphabetic) { .news-go { padding-top: 0; } }
       .news-go:hover:not(:disabled) { background: var(--accent); }
       .news-go:disabled { opacity: 0.6; cursor: default; }
-      .beta-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
-      .news p.beta-news { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(236, 228, 214, 0.18); font-weight: 600; }
+      /* The note before the first game (src/betanote.ts): the first line larger, the signup in a box of its own. */
+      .news p.beta-lead { font-size: 17px; line-height: 1.45; color: var(--ink); }
+      .news p.beta-sign { margin: 14px 0 0; font-style: italic; }
+      .beta-signup { margin-top: 20px; padding: 16px 18px 14px; background: rgba(236, 228, 214, 0.06); border: 1px solid rgba(236, 228, 214, 0.14); }
+      .beta-signup[hidden] { display: none; }
+      .news p.beta-news { margin: 0; font-weight: 600; color: var(--ink); }
       .beta-news[hidden] { display: none; }
+      .beta-signup .news-foot { margin-bottom: 0; }
+      .beta-actions { display: flex; justify-content: flex-end; margin-top: 20px; }
       /* In the note the signup is the lesser thing: its button is quiet, Skip is the red one. */
-      .beta form .news-go { background: var(--key); box-shadow: none; }
+      .beta form .news-go { background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); box-shadow: none; }
+      .beta form .news-go:hover:not(:disabled) { background: var(--ink); color: #140d0c; }
       .news-status:empty { display: none; }
-      .news-status { font-weight: 600; }
-      .news-status.bad { color: var(--accent); }
-      .news-small { font-size: 12px; opacity: 0.6; }
-      .news-privacy { font: inherit; font-size: 12px; color: var(--ink); background: none; border: 0; padding: 0; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; opacity: 0.6; }
-      .news-privacy:hover { opacity: 1; }
+      .news p.news-status { font-weight: 600; color: var(--ink); }
+      .news p.news-status.bad { color: var(--accent); }
+      /* The small print, with the link to the privacy note at its end. */
+      .news p.news-foot { margin: 0; font-size: 12.5px; line-height: 1.5; color: rgba(236, 228, 214, 0.62); }
+      .news-privacy { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin-left: 0.4em; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+      .news-privacy:hover { color: var(--ink); }
+      @media (max-width: 480px) {
+        .news { padding: 18px 18px 20px; }
+        .beta-signup { padding: 14px 14px 12px; }
+        .news form:not(.news-stack) { flex-direction: column; }
+        .news form:not(.news-stack) input[type='email'] { flex: none; }
+      }
       .settings-version { margin: 16px 0 0; font-size: 12px; opacity: 0.55; user-select: text; }
       body.touch #credits { display: none; }
       /* Touch controls: left thumb steers, right thumb works the pedals and buttons. */
