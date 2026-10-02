@@ -1,4 +1,5 @@
 import * as telemetry from './telemetry.ts';
+import { aim } from './difficulty.ts';
 import * as THREE from 'three';
 import { Car } from './car.ts';
 import { Polyline, clamp } from './network.ts';
@@ -48,7 +49,8 @@ interface PoliceOptions {
 // Crimes build up heat, and heat is shown as stars. A crime the police see counts
 // three times as much as one somebody phones in: knocking people over, pulling
 // drivers out of their cars, wrecking traffic, ramming or stealing a police car.
-// Speeding past a police car (20 km/h over the limit) gets you one star.
+// Speeding past a police car gets you one star: never up to 10 km/h over the limit, then
+// more and more likely, certain from 30 km/h over.
 //
 // A few police cars patrol with the traffic. Once you're wanted, cars chase you along
 // the street network, more of them the more stars you have, and ram you. When you're
@@ -537,10 +539,10 @@ export class Police {
   pace() { return (this.stars >= 5 ? 0.5 : this.stars >= 4 ? 0.7 : 0.9) + this.r() * 0.5; }
 
   // A shot at you from (x, y). It's likelier to hit close up, with more stars, and when
-  // you're standing still; a miss goes past you, a little to one side.
+  // you're standing still, and with the difficulty; a miss goes past you, a little to one side.
   shoot(x: number, y: number, who: Car | Officer, me: PlayerTarget) {
     const d = Math.hypot(me.x - x, me.y - y) || 1, ux = (me.x - x) / d, uy = (me.y - y) / d;
-    const odds = clamp(0.5 + 0.07 * (this.stars - ARMED) - d / 60 - me.speed * 0.03, 0.08, 0.8);
+    const odds = clamp((0.5 + 0.07 * (this.stars - ARMED) - d / 60 - me.speed * 0.03) * aim(), 0.04, 0.9);
     const hit = this.r() < odds;
     const from: Point3 = [x + ux * 0.6, y + uy * 0.6, this.height(x, y, who) + (who instanceof Car ? who.spec.H + 0.1 : 1.3)];
     const z = me.z + (me.car ? me.car.spec.H * 0.7 : 1.1);
@@ -638,7 +640,10 @@ export class Police {
     if (this.checkT < 0) {
       this.checkT = 0.5;
       if (me.car) this.limit = speedLimit(this.nearestStreet(me.x, me.y)?.e);
-      if (me.car && me.speed * 3.6 > this.limit + 20 && this.sees(me.x, me.y, 60)) this.heat = Math.max(this.heat, STARS[0]);
+      // Up to 10 km/h over the limit is never noticed; from there the chance of being stopped
+      // at each check grows steeply, and from 30 km/h over it's certain.
+      const over = me.speed * 3.6 - this.limit;
+      if (me.car && over > 10 && this.r() < Math.min(1, ((over - 10) / 20) ** 2) && this.sees(me.x, me.y, 60)) this.heat = Math.max(this.heat, STARS[0]);
     }
 
     // Out of sight long enough, you lose a star.
