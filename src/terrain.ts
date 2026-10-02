@@ -22,12 +22,15 @@ export function pointLabels(buffer: ArrayBuffer, n: number) {
   return labels.some((l) => l > 0) ? labels.slice() : null;
 }
 export const WATER = 1;
-// A tile's terrace: its label in the terrain and its outline.
+// A tile's terrace: its label in the terrain and its outline. Under WATER, the tile's
+// water as the terrain has it, where that's not simply the map's (the map's water runs on
+// under streets it doesn't call bridges).
 export interface Terrace { label: number; polys: Polygons }
 
 // Which terrace a point is on (its label), or 0 for none.
-export function terraceAt(terraces: Terrace[] | null | undefined) {
-  if (!terraces?.length) return null;
+export function terraceAt(all: Terrace[] | null | undefined) {
+  const terraces = (all ?? []).filter((t) => t.label !== WATER);
+  if (!terraces.length) return null;
   const on = terraces.map((t) => onPolygons(t.polys));
   return (x: number, y: number) => {
     for (let k = 0; k < on.length; k++) if (on[k](x, y)) return terraces[k].label;

@@ -787,8 +787,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   tile's `terraces`), stored after the heights in `<tile>.height.bin`. Where the labels
   in a grid cell differ, the game reads the height at a point from the corners with that
   point's own label (`heightSampler` in `src/terrain.ts`), cuts the ground's layers
-  along the outlines and puts a wall there (`src/ground.ts`). Map format 2. So far a
-  prototype, built for `ujezd` only: it works on one array for the whole area.
+  along the outlines and puts a wall there (`src/ground.ts`). Map format 2. It works
+  on arrays over the whole area (a few GB and about a quarter of an hour for `praha`).
+  Bridges come off the street above a quay wall, not the quay below it
+  (`abutment` in `pipeline/structures.py`). Where the rules make a place worse than the
+  terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
+  in degrees and why) and it stays as the terrain model has it.
 - **Caches.** Every OSM chunk and every IPR sheet is read only once. What comes out
   is kept (`pipeline/.cache/osm/*.parsed.pkl`, `pipeline/.cache/ipr/parsed/`) and read
   again only when the source changes. Chunks and sheets are worked on side by side

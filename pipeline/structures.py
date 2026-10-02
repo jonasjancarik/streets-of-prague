@@ -331,7 +331,8 @@ def solve(ways, ground, decks):
         for k, (n, g) in enumerate(zip(w["nodes"], w["grade"])):
             if g and k in (0, len(w["nodes"]) - 1):
                 i = net.key[("n", n)]
-                fixed[i] = abutment(ground, *net.xy[i], T[i]) if w["kind"] == "bridge" else portal(ground, *net.xy[i])
+                ahead = np.subtract(w["pts"][0], w["pts"][1]) if k == 0 else np.subtract(w["pts"][-1], w["pts"][-2])
+                fixed[i] = abutment(ground, net.xy[i], ahead, T[i]) if w["kind"] == "bridge" else portal(ground, *net.xy[i])
                 # A bridge drawn from past the edge of its wall starts back on the street (see pieces).
                 if w["kind"] == "bridge" and fixed[i] != T[i]:
                     w.setdefault("raised", set()).add(0 if k == 0 else -1)
@@ -420,19 +421,23 @@ def portal(ground, x, y):
     return float(np.nanmin(ground(xs, ys)))
 
 
-STEP = 1.0  # m: ground this much higher within ABUTMENT of a bridge's end is the street it comes off
+STEP = 1.0  # m: a rise of this much within 2 m, somewhere in ABUTMENT on from a bridge's end, is the wall of the street it comes off
 ABUTMENT = 8.0
 
 
-def abutment(ground, x, y, here):
+def abutment(ground, at, ahead, here):
     """The height of a bridge's end: the ground there, unless the map draws the bridge
     from a little past the edge of the wall it leaves (a quay, a retaining wall, which
-    are steps in the ground since dtm_heights.py): then the ground above the wall."""
-    a = np.linspace(0, 2 * np.pi, 12, endpoint=False)
-    xs = np.concatenate([x + ABUTMENT / 2 * np.cos(a), x + ABUTMENT * np.cos(a)])
-    ys = np.concatenate([y + ABUTMENT / 2 * np.sin(a), y + ABUTMENT * np.sin(a)])
-    top = float(np.nanmax(ground(xs, ys)))
-    return top if top - here > STEP else here
+    are steps in the ground since dtm_heights.py): then the street's, on along the way
+    (`ahead`) within ABUTMENT."""
+    d = np.asarray(ahead, float) / (np.hypot(*ahead) or 1)
+    on = np.asarray(at)[None, :] + d[None, :] * np.linspace(0, ABUTMENT, 5)[:, None]
+    hs = ground(on[:, 0], on[:, 1])
+    hs[0] = here
+    if np.isnan(hs).any():
+        return here
+    # A step, not a slope: the rise comes between two samples next to each other.
+    return float(hs.max()) if np.diff(hs).max() > STEP else here
 
 
 def components(net):

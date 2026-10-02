@@ -318,15 +318,18 @@ grime on the walls 6%, the shadow map's own pass 7%.
   and `ujezd` tiles on disk were rebuilt after the fix (a few hundred `praha` height
   tiles are older, probably unchanged). Still to confirm: that this data has been
   deployed to mbxp. See "Terrain grid" in the README.
-- **Steps in the ground, for the whole city.** IPR's terrain model has points about
-  10 m apart, so embankments, retaining walls, cuttings and steps are smoothed away.
-  A prototype (branch `worktree-quay-heights`, "Steps in the ground" in the README)
-  makes quay walls and retaining walls real steps from the technical map's survey, on
-  `ujezd`. Still to do: run it tile by tile so `praha` fits in memory; railway cuttings
-  and slopes with no surveyed wall (terrain edges, "Terénní hrana", have heights too);
-  walls that block cars and people (they can still go over an edge, and drop); check
-  frame times and the WebGL renderer; look over the walls it finds on steep hillsides
-  (Petřín), where a wall on a slope may pass for a retaining wall.
+- **Steps in the ground: what's left.** Quay walls and retaining walls are steps since
+  the branch `worktree-quay-heights` ("Steps in the ground" in the README), built for
+  `praha` and looked over at every bridge over the Vltava and Nuselský most. Still to
+  do: streets in cuttings and paths down banks, where the survey has the street metres
+  below the ground beside it and draws no wall (the sides come out ragged; two such
+  places are in `pipeline/terrain_keep.json`); railway cuttings; walls that stop cars
+  and people (they can still go over an edge, and drop); frame times and the WebGL
+  renderer; the walls found on steep hillsides (Petřín, Letná), where a wall on a slope
+  may pass for a retaining wall. Bridges that were wrong before and still are:
+  Železniční most ends 1.8 m above the street at Výtoň (the embankment isn't in the
+  terrain), Palackého most dips 1.5 m near its Smíchov end, and the long bridges at
+  Lahovice and Radotín have breaks in their decks.
 - **Hill shading for a moving sun.** The shading is baked per tile to the fixed
   north-west sun (`relief()` in `src/tiles.ts`, `SUN_OFFSET` in `src/main.ts`). If
   the sun ever moves with the clock, store the slope per tile instead and light it in

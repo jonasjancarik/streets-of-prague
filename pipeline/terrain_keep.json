@@ -1,0 +1,22 @@
+[
+ {
+  "name": "Barrandovský most, the bank below its west end",
+  "box": [
+   14.4048,
+   50.0379,
+   14.4066,
+   50.0393
+  ],
+  "why": "a path down a grassed bank between the road and the river: the bank turned into ragged cliffs"
+ },
+ {
+  "name": "Trojský most, beside its north end",
+  "box": [
+   14.4343,
+   50.1129,
+   14.4353,
+   50.1135
+  ],
+  "why": "a pit in the grass beside the bridge"
+ }
+]

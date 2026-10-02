@@ -10,6 +10,8 @@ the terrain's lattice:
 - a lattice point on a surveyed street surface (carriageway, pavement, parking, tram
   track, platform…) takes its height from the surveyed points along that surface's own
   edge, so the street above a wall never mixes with the quay below it;
+  (not where the map has a tunnel or an underpass and the survey is well below the
+  terrain model: that's the street in the underpass, and the ground is the one over it);
 - a lattice point on water takes the water's level: the lowest terrain within WATER_REACH
   on the water, which is the river's surface clear of the banks' ramps, and is marked as
   water (the game reads the height on either side of a bank from that side's points);
@@ -20,23 +22,25 @@ the terrain's lattice:
 - a surveyed wall on land with the ground well higher on one side than on the other
   (STEP_MIN between points PROBE either side, and no more than that further out: a step,
   not a hillside) is a retaining wall. The lattice points within REACH of it take the
-  height the terrain model has REACH away on their own side, carried on at its slope
-  there, and the strip STRIP wide at the wall's foot is marked as a terrace of its own.
+  lowest height the terrain model has out to REACH on their own side below the wall, the
+  highest above it, and the strip STRIP wide at the wall's foot is marked as a terrace.
 
-Everything else keeps the terrain model's height.
+Everything else keeps the terrain model's height, and so do the places listed in
+terrain_keep.json: looked at in the game and found worse with the survey than without
+(a tangle of ramps and walls the rules above get wrong). Add a place there rather than
+bend a rule for it.
 
 The marks are what lets the game make a step of a wall. Each lattice point has a label:
 0 the plain ground, 1 water, 2 and up a terrace of its tile, whose outline the tile lists
 ("terraces"). Where the labels in a lattice cell differ, the game reads the height at a
 point from the corners with that point's own label alone (src/terrain.ts), cuts the
-ground along the outlines and puts a wall there (src/ground.ts). PROTOTYPE: tried on `ujezd` (Masarykovo
-nábřeží); reads the packages for the area's bounding box only and works on one array for
-the whole area, which wouldn't do for `praha` as it is.
+ground along the outlines and puts a wall there (src/ground.ts).
 
 Source: DTM kraje – ZPS, datový podklad © IPR Praha (CC BY 4.0).
 """
 
 import pickle
+import warnings
 import sqlite3
 import struct
 import tempfile
@@ -68,6 +72,8 @@ WALLS = {"010000030202": "wall edge", "010000016802": "wall"}
 VERSION = 3
 SPACING = 1.5  # m between the points taken along a surveyed line
 ON_EDGE = 0.15  # m: a surveyed point this close to a surface's edge belongs to it
+UNDER = 2.0  # m below the terrain model, in a tunnel of the map's: surveyed under the ground
+UNDER_SIDE = 4.0  # m either side of the tunnel that counts as in it
 FEW = 3  # a surface with fewer surveyed points than this keeps the terrain model's heights
 WATER_REACH = 16.0  # m: further than the terrain model's ramp at a bank reaches
 BANK = 10.0  # m from the water: the land the terrain model's ramp spoils
@@ -84,7 +90,6 @@ BESIDE = 1.5  # m: two wall lines this close are one wall's two faces; the lower
 RUN_MIN = 6.0  # m: shorter stretches of retaining wall are left alone
 REACH = 10.0  # m either side of a retaining wall: as far as the terrain model's ramp reaches
 STRIP = 8.0  # m: the width of the terrace marked at a wall's foot (two lattice cells)
-STEEP = 0.15  # the steepest slope carried on towards a wall
 
 
 def _tables(package, codes):
@@ -230,12 +235,17 @@ def _retaining(lines, at, dry):
     return runs
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes):
-    """Correct the tiles' lattices in place (see the top of the file). `tiles`: {(i, j):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=()):
+    """Correct the tiles' lattices in place (see the top of the file). Works on arrays
+    over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
-    `water`: the water's polygons in local metres; `boxes`: each tile's box. Returns what
-    it changed, for the log, with "labels" (each tile's lattice of labels) and "terraces"
-    (each tile's terraces: their label and outline)."""
+    `water`: the water's polygons in local metres; `boxes`: each tile's box; `roads`: the
+    streets and paths on the ground in the tiles with water; `tunnels`: the map's tunnels
+    and underpasses as (line, width); `keep`: places looked at by hand where the terrain
+    model does better left as it is (terrain_keep.json), as polygons. Returns what it changed, for
+    the log, with "labels" (each tile's lattice of labels) and "terraces" (each tile's
+    terraces: their label and outline; and under label 1 its water, where that's not
+    simply the map's: see below)."""
     polys, points, walls = survey(area, bbox)
     if not len(points):
         return {"surfaces": 0, "street_points": 0, "water_points": 0, "labels": {}, "terraces": {}}
@@ -286,6 +296,32 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes):
         surfaces += 1
         street_points += len(gi)
 
+    # A street surveyed in an underpass is under the ground, not on it: where the map has
+    # a tunnel and the survey is well below the terrain model, the terrain stays.
+    under = 0
+    for line, width in tunnels:
+        hole = line.buffer(width / 2 + UNDER_SIDE)
+        bx0, by0, bx1, by1 = hole.bounds
+        ia, ib = max(0, int(np.ceil((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.floor((bx1 - x_of(0)) / step)))
+        ja, jb = max(0, int(np.ceil((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.floor((by1 - y_of(0)) / step)))
+        if ia > ib or ja > jb:
+            continue
+        gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+        with np.errstate(invalid="ignore"):
+            back = shapely.contains_xy(hole, x_of(gi), y_of(gj)) & street[gj, gi] & (bare[gj, gi] - grid[gj, gi] > UNDER)
+        grid[gj[back], gi[back]] = bare[gj[back], gi[back]]
+        street[gj[back], gi[back]] = False
+        under += int(back.sum())
+
+    # The map's water runs on under streets it doesn't call bridges (a causeway, the road
+    # across an island's tip, a quay drawn a little too far out): what's a street on the
+    # ground, surveyed or mapped, isn't water.
+    mapped = water
+    if water is not None and not water.is_empty:
+        shapely.prepare(water)
+        over = [g for g in polys[STRtree(polys).query(water, predicate="intersects")]] + [g for g in roads if water.intersects(g)]
+        if over:
+            water = water.difference(shapely.union_all(shapely.make_valid(np.array(over, dtype=object)), grid_size=0.01))
     # Water: the lowest bare terrain on the water round each point.
     wet = np.zeros(grid.shape, dtype=bool)
     if water is not None and not water.is_empty:
@@ -338,7 +374,12 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes):
         gj = np.clip(np.round((p[:, 1] - y_of(0)) / step).astype(int), 0, grid.shape[0] - 1)
         return from_water[gj, gi] > WATER_CLEAR
     terrace = np.zeros(grid.shape, dtype=np.int32)  # which terrace a lattice point is on, from 1
-    strips, taken, wall_length, wall_points = [], water if water is not None else shapely.Polygon(), 0.0, 0
+    strips, wall_length, wall_points = [], 0.0, 0
+    nearby = {}  # the terraces so far by the 64 m squares they reach into: a terrace doesn't lie over another
+    squares = lambda g: [(i, j) for i in range(int(g.bounds[0] // 64), int(g.bounds[2] // 64) + 1)  # noqa: E731
+                         for j in range(int(g.bounds[1] // 64), int(g.bounds[3] // 64) + 1)]
+    if water is not None:
+        shapely.prepare(water)
     for run, low in _retaining(walls, at, dry):
         line = shapely.LineString(run)
         bx0, by0, bx1, by1 = line.bounds
@@ -357,19 +398,34 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes):
         if len(gi):
             foot = shapely.get_coordinates(shapely.line_interpolate_point(line, u))
             away = (p - foot) / d[:, None]
-            h, further = at(foot + away * REACH), at(foot + away * (REACH + 8))
-            slope = np.clip(np.nan_to_num((h - further) / 8), -STEEP, STEEP)
-            h = h + slope * (REACH - d)
+            # Which side of the wall: the lower ground's or the higher's.
+            ahead = shapely.get_coordinates(shapely.line_interpolate_point(line, np.minimum(u + 0.1, line.length))) \
+                - shapely.get_coordinates(shapely.line_interpolate_point(line, np.maximum(u - 0.1, 0)))
+            below = np.sign(ahead[:, 0] * away[:, 1] - ahead[:, 1] * away[:, 0]) == low
+            # The terrain model's ramp runs from the foot of the wall to its top over REACH
+            # at most: the ground below is the lowest out to there, the ground above the
+            # highest (not simply the height REACH away: an embankment between two walls is
+            # narrower than that, and the ground beyond its far wall is low again).
+            with np.errstate(invalid="ignore"), warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                along = np.array([at(foot + away * r) for r in np.linspace(REACH / 5, REACH, 5)])
+                h = np.where(below, np.nanmin(along, axis=0), np.nanmax(along, axis=0))
             ok = ~np.isnan(h)
             grid[gj[ok], gi[ok]] = h[ok]
             wall_points += int(ok.sum())
-        strip = line.buffer(STRIP * low, single_sided=True).buffer(0).difference(taken)
+        strip = line.buffer(STRIP * low, single_sided=True).buffer(0)
+        if water is not None and water.intersects(strip):
+            strip = strip.difference(water)
+        for k in sorted({k for sq in squares(strip) for k in nearby.get(sq, ())}):
+            if strips[k].intersects(strip):
+                strip = strip.difference(strips[k])
         parts = [g for g in shapely.get_parts(strip) if g.geom_type == "Polygon" and g.area >= 4]
         if not parts:
             continue
         strip = shapely.union_all(parts)
+        for sq in squares(strip):
+            nearby.setdefault(sq, []).append(len(strips))
         strips.append(strip)
-        taken = taken.union(strip)
         wall_length += line.length
         bx0, by0, bx1, by1 = strip.bounds
         ia, ib = max(0, int(np.floor((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 - x_of(0)) / step)))
@@ -377,6 +433,22 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes):
         gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
         inside = shapely.contains_xy(strip, x_of(gi), y_of(gj)) & ~wet[ja:jb + 1, ia:ib + 1]
         terrace[ja:jb + 1, ia:ib + 1][inside] = len(strips)
+
+    # Places where all this makes things worse (terrain_keep.json): as the terrain model has them.
+    kept = 0
+    for place in keep:
+        bx0, by0, bx1, by1 = place.bounds
+        ia, ib = max(0, int(np.ceil((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.floor((bx1 - x_of(0)) / step)))
+        ja, jb = max(0, int(np.ceil((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.floor((by1 - y_of(0)) / step)))
+        if ia > ib or ja > jb:
+            continue
+        gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+        on = shapely.contains_xy(place, x_of(gi), y_of(gj))
+        gi, gj = gi[on], gj[on]
+        grid[gj, gi] = bare[gj, gi]
+        wet[gj, gi] = False
+        terrace[gj, gi] = 0
+        kept += len(gi)
 
     # Per tile: its heights, its labels (0 plain ground, 1 water, 2… its terraces) and the
     # terraces' outlines within it.
@@ -396,10 +468,16 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes):
             listed.append({"label": 2 + len(listed), "polys": [[ring(q.exterior), *(ring(r) for r in q.interiors)] for q in here]})
             label[(terrace[rows, cols] == g) & (label == 0)] = listed[-1]["label"]
         labels[(i, j)] = label
+        # Its water, where streets were taken out of it.
+        if mapped is not None and label.any():
+            was, now = mapped.intersection(boxes[(i, j)]), water.intersection(boxes[(i, j)])
+            if was.area - now.area > 1:
+                here = [q for q in shapely.get_parts(now) if q.geom_type == "Polygon" and q.area > 0.5]
+                listed.insert(0, {"label": 1, "polys": [[ring(q.exterior), *(ring(r) for r in q.interiors)] for q in here]})
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"surfaces": surfaces, "street_points": street_points, "water_points": int(wet.sum()), "bank_points": bank_points,
-            "retaining_walls": len(strips), "retaining_metres": round(wall_length), "wall_points": wall_points,
+    return {"surfaces": surfaces, "street_points": street_points, "under_points": under, "water_points": int(wet.sum()), "bank_points": bank_points,
+            "kept_by_hand": kept, "retaining_walls": len(strips), "retaining_metres": round(wall_length), "wall_points": wall_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}

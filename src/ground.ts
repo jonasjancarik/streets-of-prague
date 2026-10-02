@@ -201,7 +201,7 @@ let groundHeight: HeightAt | null = null;
 // or the plain ground), and the outlines the steps run along. Every layer is cut along
 // them, so the ground on each side lies at its own height right up to the step.
 let sideOf: ((x: number, y: number) => number) | null = null;
-let terraceOutlines: Polygons = [];
+let terraceOutlines: Polygons = []; // (the water's among them)
 // Set while the water itself is built: all of it lies at the water's level.
 let afloat = false;
 const STEP_FINE = 2; // m between a layer's points along a step, so the cut follows its bends
@@ -324,17 +324,19 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
 }): GroundResult {
-  const water = d.areas.water || [];
+  // The water the steps run along: the terrain's own outline of it where it has one.
+  const water = steps?.find((t) => t.label === WATER)?.polys ?? d.areas.water ?? [];
+  const terraces = (steps ?? []).filter((t) => t.label !== WATER);
   let at: typeof sideOf = null;
-  if (steps && height && (water.length || steps.length)) {
-    const wet = onPolygons(water), on = steps.map((t) => onPolygons(t.polys));
+  if (steps && height && (water.length || terraces.length)) {
+    const wet = onPolygons(water), on = terraces.map((t) => onPolygons(t.polys));
     at = (x, y) => {
       if (wet(x, y)) return WATER;
-      for (let k = 0; k < on.length; k++) if (on[k](x, y)) return steps[k].label;
+      for (let k = 0; k < on.length; k++) if (on[k](x, y)) return terraces[k].label;
       return 0;
     };
   }
-  const outlines = at && steps ? steps.flatMap((t) => t.polys) : [];
+  const outlines = at ? [...water, ...terraces.flatMap((t) => t.polys)] : [];
   const stepped = <R>(build: () => R): R => {
     groundHeight = height;
     sideOf = at;
@@ -629,7 +631,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
       shade(skirts(A.water || [], 6, false, cut), 0.35);
     } finally { afloat = false; }
     add(strips(outlines(A.water || []), 0.9), COLORS.quay, 'slabs');
-    add(stepWalls([...outlines(A.water || []), ...outlines(terraceOutlines)]), COLORS.quay, 'slabs');
+    add(stepWalls(outlines(terraceOutlines)), COLORS.quay, 'slabs');
     if (out[out.length - 1].order === order - 1) out[out.length - 1].wall = true;
     add(strips(d.weirs || [], 2.4), '#9a978d', 'concrete');
     add(strips((d.weirs || []).map((w) => offsetLine(w, -1.6)), 2.2), '#dfe6e2');

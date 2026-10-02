@@ -41,7 +41,7 @@ from pathlib import Path
 import numpy as np
 from lxml import etree
 from pyproj import Transformer
-from shapely.geometry import Polygon, box
+from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 
 import layers
@@ -234,6 +234,17 @@ def sampler(tiles, N, T, step, gx0, gy0, labels=None):
     return at
 
 
+def kept_places(local):
+    """The places in terrain_keep.json (boxes in degrees: west, south, east, north) as
+    polygons in the area's metres."""
+    to_local = Transformer.from_crs("EPSG:4326", local, always_xy=True)
+    out = []
+    for place in json.loads((Path(__file__).parent / "terrain_keep.json").read_text()):
+        w, s, e, n = place["box"]
+        out.append(Polygon(zip(*to_local.transform([w, e, e, w], [s, s, n, n]))))
+    return out
+
+
 def main() -> None:
     command_started = time.perf_counter()
     timings = build_cache.Timings()
@@ -265,11 +276,14 @@ def main() -> None:
     # step divides the tile, so tile (i, j) starts at lattice point (i * N, j * N).
     N, step = grid_step(T)
     gx0, gy0 = -ox, -oy
-    tiles, boxes, outlines, roads, ways, water = {}, {}, [], [], [], []
+    tiles, boxes, outlines, roads, ways, water, by_water = {}, {}, [], [], [], [], []
     for i, j, t in layers.tiles(area, meta):
         tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
         boxes[(i, j)] = box(*t["box"])
         water += [Polygon(r[0], r[1:]).buffer(0) for r in t["areas"].get("water", [])]
+        if t["areas"].get("water"):
+            for kind in ("road", "sett", "path", "dirt"):
+                by_water += [Polygon(r[0], r[1:]).buffer(0) for r in t["roads"].get(kind, [])]
         here = t["areas"].get("bridge", [])
         outlines += [Polygon(r[0], r[1:]).buffer(0.05) for r in here]
         if here or t["roads"].get("bridge"):
@@ -315,7 +329,8 @@ def main() -> None:
     # Streets and water from the survey on the ground (dtm_heights.py).
     labels, terraces = {}, {}
     if not args.no_survey:
-        surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes)
+        surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes, by_water,
+                                      [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local))
         labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")
