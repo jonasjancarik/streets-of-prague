@@ -14,6 +14,7 @@
 | [019: Move the crowd into a worker](019-move-the-crowd-into-a-worker.md) | Pedestrians walk in a worker of their own; the main thread keeps the roster, collisions and drawing, and scenarios run the same code inline | SHELVED (built on `worktree-crowd-worker`; no gain on the M5 or the Pixel 5) |
 | [020: iOS and Android apps](020-ios-and-android-apps.md) | The website's build wrapped with Capacitor for iPhone, folding iPhone, iPad and Android: sound that survives the silent switch, the map streamed with an optional download for offline play, the game and map updating without a store release, frame rate above 60 where allowed | PLANNED (three decisions to confirm first) |
 | [021: Countryside generated in the browser](021-countryside-generated-in-the-browser.md) | Past the edge of the built map, tiles the browser makes itself from OpenStreetMap vector tiles: roads, land, buildings, later hills; joined to the built map without a step in the road | PLANNED (prototype decides) |
+| [022: Seasons](022-seasons.md) | A date for the game; trees that leaf out, blossom, turn and shed through the year; seasonal grass, fields, light, weather and birds; a season choice on the start screen | PLANNED (three decisions to confirm first) |
 
 Plans 001–006 were indexed from `c6b5350`. Check the working tree and each plan's
 starting revision before implementation; preserve unrelated changes.
