@@ -67,6 +67,7 @@ def rust():
     out += f'pub const RISE_AT: (f32, f32) = ({end[0]}, {end[1]});\n'
     out += f'/// The closest map picture: file, left edge and top edge (m), width and height (m)\npub const NEAR: (&str, f32, f32, f32, f32) = ("map-street.png", {near["x0"]:.1f}, {near["y1"]:.1f}, {near["w"] * near["mpp"]:.1f}, {near["h"] * near["mpp"]:.1f});\n'
     out += f'pub const DRIVE: usize = {DRIVE};\npub const DARK: usize = {DARK};\npub const RISE: usize = {RISE};\npub const TITLE: usize = {TITLE};\n'
+    out += f'pub const STREET: &str = "{PLAN["street"]}";\n'
     out += '/// name (its clip is <version>-<name>.mp4), time of day, weather\n'
     out += f'pub const TAKES: [(&str, &str, &str); {len(TAKES)}] = [\n' + ''.join(f'    ("{t["name"]}", "{t["time"]}", "{LABELS[t["weather"]]}"),\n' for t in TAKES) + '];\n'
     out += '/// first frame, the frame after its last, the takes shown (one, or five side by side; unused slots repeat the first)\n'

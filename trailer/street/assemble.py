@@ -6,7 +6,7 @@ import glob, json, os, re, subprocess, sys, wave
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = '/tmp/trailer-frames'
+OUT = os.environ.get('OUT', '/tmp/trailer-frames')
 PLAN = json.load(open(os.path.join(HERE, 'plan.json')))
 FPS, SR = PLAN['fps'], 48000
 take = sys.argv[1]
@@ -38,9 +38,11 @@ if info.get('still'):
     print(f'{take}: sound only'); sys.exit()
 
 frames = {}
-for path in glob.glob(f'{OUT}/{version}-{take}_*-*.png'):
-    first, k = (int(v) for v in re.search(r'_(\d+)-(\d+)\.png$', path).groups())
-    frames[first + k - 1] = path
+# (EVERY: the footage has only every so many of the route's frames; the ones between hold the nearest.)
+EVERY = int(os.environ.get('EVERY', '1'))
+for path in glob.glob(f'{OUT}/{version}-{take}_*-*.png') + glob.glob(f'{OUT}/{version}-{take}_*-*.jpg'):
+    first, k = (int(v) for v in re.search(r'_(\d+)-(\d+)\.(?:png|jpg)$', path).groups())
+    frames[first + (k - 1) * EVERY] = path
 have = sorted(frames)
 if not have: sys.exit(f'{take}: no frames of the {version} version (sound only)')
 lines = []
@@ -50,6 +52,6 @@ for i in range(length):
 lines.append(f"file '{frames[j]}'")
 listing = f'{OUT}/{version}-{take}.txt'
 open(listing, 'w').write('\n'.join(lines))
-subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listing, '-vf', f'fps={FPS}', '-c:v', 'libx264', '-crf', '15', '-preset', 'medium',
+subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listing, '-vf', f'fps={FPS}', '-c:v', 'libx264', '-crf', '15' if EVERY == 1 else '20', '-preset', 'medium' if EVERY == 1 else 'veryfast',
                 '-pix_fmt', 'yuv420p', '-g', '1', os.path.join(HERE, f'../clips/{version}-{take}.mp4')], check=True)
 print(f'{take}: {len(have)} frames filmed of {length}')

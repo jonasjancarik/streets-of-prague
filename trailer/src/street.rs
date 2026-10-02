@@ -164,7 +164,7 @@ impl Scene for Whole {
                 <rect x="0" y="0" width="1920" height={BAR} fill="#000000" />
                 <rect x="0" y={1080.0 - BAR} width="1920" height={BAR} fill="#000000" />
                 <g opacity={up}>{labels}</g>
-                <text x="1824" y={BAR + 52.0} text-anchor="end" font-family={MONO} font-size="26" letter-spacing="5" fill={PAPER} opacity={0.55 * up}>"MASARYKOVO NÁBŘEŽÍ"</text>
+                <text x="1824" y={BAR + 52.0} text-anchor="end" font-family={MONO} font-size="26" letter-spacing="5" fill={PAPER} opacity={0.55 * up}>{STREET}</text>
                 {line}
             </g>);
         }

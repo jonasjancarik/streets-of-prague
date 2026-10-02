@@ -11,7 +11,7 @@
 // Common options: [--url http://localhost:5191/] [--out dir for screenshots (default
 // $TMPDIR/scene)] [--place staromak] [--time 14:00] [--weather clear] [--graphics high]
 // [--extra "&area=centrum" (more of the game's URL parameters)] [--size 1920x1080 (the
-// window; t.film saves footage frame by frame at that size)].
+// window; t.film saves footage frame by frame at that size)] [--jpeg (screenshots as JPEG)].
 // With a server running (serve), each command takes a second or two instead of the
 // 30–60 s of loading the map; without one, it opens a browser just for the command.
 // The server follows the dev server's reloads: a command waits for the game to load
@@ -67,8 +67,9 @@ async function openGame({ show = false } = {}) {
   mkdirSync(OUT, { recursive: true });
   const shots = [];
   await page.exposeFunction('__shot', async (name) => {
-    const path = join(OUT, `${String(name).replace(/[^\w.-]+/g, '-')}.png`);
-    await page.screenshot({ path });
+    // (--jpeg: quicker to save and a tenth the size, for footage that is only a preview.)
+    const path = join(OUT, `${String(name).replace(/[^\w.-]+/g, '-')}.${args.jpeg ? 'jpg' : 'png'}`);
+    await page.screenshot(args.jpeg ? { path, type: 'jpeg', quality: 86 } : { path });
     shots.push(path);
   });
   // For footage with sound (t.film's `sound`): a file's bytes (base64) into the screenshots' folder.

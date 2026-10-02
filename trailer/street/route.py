@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The car's path for "the same street", worked out from the map's street network rather
-than driven: from a start on the embankment, straight on at every junction, in the
+than driven: from the plan's start, straight on at every junction, in the
 right-hand lane, smoothed, then stepped along at the plan's speed. Writes path.json:
 x, y (the map's metres) and heading (radians) at every frame, which every take follows."""
 import gzip, json, math, os
@@ -8,8 +8,8 @@ import gzip, json, math, os
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, '../../public/data/praha_now')
 PLAN = json.load(open(os.path.join(HERE, 'plan.json')))
-START, NORTH = (-3668.0, 1700.0), math.pi / 2   # by Jiráskův most, heading north
-BOX = (-4300, 1300, -3000, 3900)
+START, WAY = tuple(PLAN['start']), PLAN['bearing']
+BOX = (START[0] - 1200, START[1] - 1200, START[0] + 1200, START[1] + 1200)
 # How far right of the street's middle line traffic drives (laneOffset in src/network.ts).
 def lane(e):
     n, w = e.get('lanes') or 0, e.get('width') or 7
@@ -41,9 +41,9 @@ for e in edges.values(): out.setdefault(e['u'], []).append(e)
 def bearing(a, b): return math.atan2(b[1] - a[1], b[0] - a[0])
 def turn(a, b): return abs((b - a + math.pi) % (2 * math.pi) - math.pi)
 
-# The edge to start on: the nearest one to START that heads north.
+# The edge to start on: the nearest one to START that heads the plan's way.
 def near(e):
-    return min(math.hypot(p[0] - START[0], p[1] - START[1]) for p in e['pts']) + 40 * turn(bearing(e['pts'][0], e['pts'][-1]), NORTH)
+    return min(math.hypot(p[0] - START[0], p[1] - START[1]) for p in e['pts']) + 40 * turn(bearing(e['pts'][0], e['pts'][-1]), WAY)
 e = min(edges.values(), key=near)
 line, names, length, used = [], [], 0.0, set()
 need = sum(PLAN['speed']) / PLAN['fps'] + 60
