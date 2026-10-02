@@ -243,6 +243,8 @@ async function main() {
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose: Car[] = [];
   const tileCars = new Set<Car>();
+  const standing = new Map<Car, number>(); // loose wrecks and left cars out of sight: seconds so far
+  const TOW_AFTER = 60; // s
   let restingStale = true; // see syncResting
   world.onCars = (cars) => { for (const c of cars) { loose.push(c); tileCars.add(c); } restingStale = true; };
   world.onDrop = (tile) => {
@@ -1583,7 +1585,14 @@ async function main() {
       }
       for (let i = loose.length - 1; i >= 0; i--) {
         const c = loose[i];
-        if (!tileCars.has(c) && Math.hypot(c.x - px(), c.y - py()) > 600) loose.splice(i, 1);
+        const d = Math.hypot(c.x - px(), c.y - py());
+        if (!tileCars.has(c) && d > 600) { loose.splice(i, 1); continue; }
+        // A wreck, or a car somebody left in the street, is towed once it has stood out of
+        // sight for a minute, so it doesn't block the traffic for good.
+        if (c.two || c.share || c === inCar || c.speed > 0.5 || !(c.damage > 0 || !tileCars.has(c)) || d < 40 || !offscreen(c.x, c.y)) { standing.delete(c); continue; }
+        const waited = (standing.get(c) ?? 0) + 0.5;
+        standing.set(c, waited);
+        if (waited > TOW_AFTER) { loose.splice(i, 1); tileCars.delete(c); standing.delete(c); restingStale = true; }
       }
       scatterPeople(true);
       parkTwoWheelers(true);
@@ -2025,6 +2034,7 @@ async function main() {
     mode: () => (inCar ? 'car' : inHeli ? 'helicopter' : ride.on ? 'tram' : taxi.riding ? 'taxi' : boats.me ? 'boat' : funicular.me ? 'funicular' : metro.active ? 'metro' : 'foot'),
     street: () => street, enterOrExit,
     addCar: (c) => { loose.push(c); restingStale = true; },
+    loose,
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300),

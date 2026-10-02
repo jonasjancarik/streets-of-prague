@@ -49,6 +49,7 @@ interface Game {
   street: () => string | null;
   enterOrExit: () => void;
   addCar: (c: Car) => void;
+  loose: Car[];
   simulate: (dt: number, ctl?: Partial<Controls>) => void;
   view: (zoom: number) => void;
   loaded: (x: number, y: number) => Promise<void>;
@@ -146,6 +147,9 @@ export function setupTestkit(g: Game) {
       }
       throw new Error('No clear ground for a car here');
     },
+
+    // Whether a loose car (a wreck, a parked or left car) is still in the world.
+    standing(c: Car) { return g.loose.includes(c); },
 
     // Leaves the nearest person on the pavement lying hurt: an ambulance is called.
     hurt(grave = false) { return g.hurtNearest(grave); },
