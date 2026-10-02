@@ -119,6 +119,9 @@ export function setupTestkit(g: Game) {
     },
     weather(kind: Kind | 'auto') { g.weather.set(kind); },
 
+    // What the arrest does to the chase: the stars go and the police cars stand down.
+    forgive() { g.police.forgive(); },
+
     set({ money, stars, health }: { money?: number; stars?: number; health?: number }) {
       if (money !== undefined) g.wallet.balance = Math.max(0, Math.floor(money));
       if (stars !== undefined) {

@@ -685,6 +685,9 @@ export class Police {
       const d = Math.hypot(c.x - me.x, c.y - me.y);
       const waiting = this.officers.some((o) => o.car === c);
       p.gone = !waiting && this.offscreen(c.x, c.y) && (p.calm || p.wrecked ? d > 120 : d > 450);
+      // Once its officers are back aboard, a car that has given up pulls out into the traffic
+      // instead of standing in the lane.
+      if (!p.gone && p.calm && !p.wrecked && !waiting && c.crew && Math.abs(c.forwardSpeed) < 0.5 && this.rejoin(c)) p.gone = true;
     }
     this.cars = this.cars.filter((p) => !p.gone);
 
@@ -692,6 +695,22 @@ export class Police {
     for (const o of this.officers) this.walk(o, dt, me);
     for (const o of this.officers) if (o.gone) this.dismiss(o);
     this.officers = this.officers.filter((o) => !o.gone);
+  }
+
+  // Hands a stopped police car to the traffic, on the lane that's nearest and runs most the way
+  // it's facing (it stopped wherever the chase ended, often at an angle; if it's facing
+  // against a one-way street it turns round in the lane).
+  rejoin(car: Car) {
+    let best: { e: DriveEdge; s: number; score: number } | null = null;
+    for (const e of this.edgesNear(car.x, car.y, 15)) {
+      const q = project(e.path, car.x, car.y), cos = Math.cos(car.h - e.path.at(q.s).ang);
+      const score = q.d + 8 * (1 - cos);
+      if (q.d > 12 || (best && score >= best.score)) continue;
+      best = { e, s: q.s, score };
+    }
+    if (!best) return false;
+    this.traffic.adopt(car, best.e, best.s, 0);
+    return true;
   }
 
   // After an arrest: the stars go, the officers go back to their cars.
