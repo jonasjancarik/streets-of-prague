@@ -1,0 +1,20 @@
+{
+  "tiles_before": 234,
+  "tiles_after": 234,
+  "changed_fields": {
+    "drive": 0,
+    "walk": 0,
+    "sections": 0,
+    "lots": 0,
+    "passages": 0,
+    "crossings": 0
+  },
+  "changed_tiles": {
+    "drive": [],
+    "walk": [],
+    "sections": [],
+    "lots": [],
+    "passages": [],
+    "crossings": []
+  }
+}

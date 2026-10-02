@@ -1,0 +1,43 @@
+{
+  "href": "http://localhost:5204/?place=staromak&go&day=wed&time=14:00&weather=clear&graphics=high&dpr=1&date=summer&area=centrum",
+  "built": "2026-10-02T22:45:45Z",
+  "area": "centrum",
+  "backend": "webgpu",
+  "tiles": 14,
+  "streaming": {
+    "queuedRequired": 0,
+    "queuedOptional": 0,
+    "runningRequired": 0,
+    "runningOptional": 0,
+    "completedRequired": 70,
+    "completedOptional": 14,
+    "failed": 0,
+    "cancelled": 0,
+    "coalesced": 35,
+    "buildTimes": [
+      746.6999999992549,
+      760.1000000014901,
+      753.5,
+      772.5999999977648,
+      783.1000000014901,
+      786.6999999992549,
+      802.6999999992549,
+      816.6000000014901,
+      848.7000000029802,
+      850.3000000007451,
+      867,
+      875.3000000007451,
+      874.4000000022352,
+      908
+    ]
+  },
+  "where": {
+    "lat": 50.0871,
+    "lon": 14.41935,
+    "heading": 324,
+    "street": "U Radnice",
+    "mode": "foot",
+    "x": -46.7,
+    "y": 623.2
+  }
+}
