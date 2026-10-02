@@ -331,7 +331,10 @@ def solve(ways, ground, decks):
         for k, (n, g) in enumerate(zip(w["nodes"], w["grade"])):
             if g and k in (0, len(w["nodes"]) - 1):
                 i = net.key[("n", n)]
-                fixed[i] = T[i] if w["kind"] == "bridge" else portal(ground, *net.xy[i])
+                fixed[i] = abutment(ground, *net.xy[i], T[i]) if w["kind"] == "bridge" else portal(ground, *net.xy[i])
+                # A bridge drawn from past the edge of its wall starts back on the street (see pieces).
+                if w["kind"] == "bridge" and fixed[i] != T[i]:
+                    w.setdefault("raised", set()).add(0 if k == 0 else -1)
     # A bridge or tunnel that meets the ground nowhere: its loose ends are on it.
     comp = components(net)
     anchored = {comp[i] for i in fixed}
@@ -417,6 +420,21 @@ def portal(ground, x, y):
     return float(np.nanmin(ground(xs, ys)))
 
 
+STEP = 1.0  # m: ground this much higher within ABUTMENT of a bridge's end is the street it comes off
+ABUTMENT = 8.0
+
+
+def abutment(ground, x, y, here):
+    """The height of a bridge's end: the ground there, unless the map draws the bridge
+    from a little past the edge of the wall it leaves (a quay, a retaining wall, which
+    are steps in the ground since dtm_heights.py): then the ground above the wall."""
+    a = np.linspace(0, 2 * np.pi, 12, endpoint=False)
+    xs = np.concatenate([x + ABUTMENT / 2 * np.cos(a), x + ABUTMENT * np.cos(a)])
+    ys = np.concatenate([y + ABUTMENT / 2 * np.sin(a), y + ABUTMENT * np.sin(a)])
+    top = float(np.nanmax(ground(xs, ys)))
+    return top if top - here > STEP else here
+
+
 def components(net):
     comp = [-1] * len(net.adj)
     for s in range(len(net.adj)):
@@ -499,7 +517,7 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
     out = []
     lines = [LineString(w["pts"]) for w in ways]
     for w, line, prof in zip(ways, lines, profiles):
-        drawn = portals(w) if w["kind"] == "tunnel" else line
+        drawn = reach(w, PORTAL, lambda end: w["grade"][end]) if w["kind"] == "tunnel" else reach(w, ABUTMENT, lambda end: end in w.get("raised", ()))
         # A tunnel has a walkway either side of the road; a bridge's pavements are
         # mostly mapped (or its man_made=bridge outline has them).
         shape = drawn.buffer(w["w"] / 2 + (1.5 if w["kind"] == "tunnel" else 0), cap_style="flat", join_style="round")
@@ -562,16 +580,19 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
 PORTAL = 12.0  # m a tunnel reaches out of its portal, at the portal's height
 
 
-def portals(w):
-    """A tunnel way reaching PORTAL metres out of each portal (an end on the ground),
-    along the road into it: the terrain model rises up the face above a portal a few
-    metres before OSM's tunnel starts, so the way in starts a little before it."""
+def reach(w, by, which):
+    """A way reaching `by` metres out of the ends `which(end)` picks (0 its first, -1 its
+    last), along the road into it, at the end's height. A tunnel out of each portal (an
+    end on the ground): the terrain model rises up the face above a portal a few metres
+    before OSM's tunnel starts, so the way in starts a little before it. A bridge back
+    over the street it comes off, where the map draws it from past the edge of the wall
+    (see abutment): the last metres of that street would hang over the quay below."""
     pts = [tuple(p) for p in w["pts"]]
     for end, (a, b) in ((0, (pts[1], pts[0])), (-1, (pts[-2], pts[-1]))):
-        if not w["grade"][end]:
+        if not which(end):
             continue
         d = math.dist(a, b) or 1
-        out = (b[0] + (b[0] - a[0]) / d * PORTAL, b[1] + (b[1] - a[1]) / d * PORTAL)
+        out = (b[0] + (b[0] - a[0]) / d * by, b[1] + (b[1] - a[1]) / d * by)
         if end == 0:
             pts.insert(0, out)
         else:

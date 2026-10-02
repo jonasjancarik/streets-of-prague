@@ -61,13 +61,30 @@ export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [nu
     const a = hm[o], b = hm[o + 1], c = hm[o + n], d = hm[o + n + 1];
     if (labels) {
       const la = labels[o], lb = labels[o + 1], lc = labels[o + n], ld = labels[o + n + 1];
-      if (la !== lb || lb !== lc || lc !== ld) {
+      const mixed = la !== lb || lb !== lc || lc !== ld;
+      // (In a cell all of one kind, only a side asked for by name can be another: the
+      // tip of a quay narrower than a cell, cut out of the water round it.)
+      if (mixed || (side !== false && la !== (side === true ? WATER : side))) {
         const want = side === true ? WATER : side === false ? (terrace ? terrace(x, y) : 0) : side;
         let ka = la === want ? 1 : 0, kb = lb === want ? 1 : 0, kc = lc === want ? 1 : 0, kd = ld === want ? 1 : 0;
-        // No corner of its own (a sliver of a terrace, a spit of land): the dry ones.
-        if (!(ka + kb + kc + kd) && want !== WATER) { ka = la !== WATER ? 1 : 0; kb = lb !== WATER ? 1 : 0; kc = lc !== WATER ? 1 : 0; kd = ld !== WATER ? 1 : 0; }
+        if (!(ka + kb + kc + kd)) {
+          // No corner of its own (a sliver of a terrace, a spit of land): the points of
+          // its side a cell further out, the nearer the more.
+          let sum = 0, total = 0;
+          for (let q = Math.max(0, j - 1); q <= Math.min(n - 1, j + 2); q++) {
+            for (let p = Math.max(0, i - 1); p <= Math.min(n - 1, i + 2); p++) {
+              if (labels[q * n + p] !== want) continue;
+              const w = 1 / ((p - u) * (p - u) + (q - v) * (q - v) + 0.01);
+              sum += hm[q * n + p] * w;
+              total += w;
+            }
+          }
+          if (total) return sum / total;
+          // None there either: the dry corners.
+          if (want !== WATER) { ka = la !== WATER ? 1 : 0; kb = lb !== WATER ? 1 : 0; kc = lc !== WATER ? 1 : 0; kd = ld !== WATER ? 1 : 0; }
+        }
         const count = ka + kb + kc + kd;
-        if (count) {
+        if (count && mixed) {
           const wa = ka * (1 - fu) * (1 - fv), wb = kb * fu * (1 - fv), wc = kc * (1 - fu) * fv, wd = kd * fu * fv, k = wa + wb + wc + wd;
           // Right at a corner of another side: the mean of this side's corners.
           return k > 1e-4 ? (a * wa + b * wb + c * wc + d * wd) / k : (a * ka + b * kb + c * kc + d * kd) / count;

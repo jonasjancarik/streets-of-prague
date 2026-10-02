@@ -77,6 +77,7 @@ INLAND = 24.0  # m: how far the land clear of the ramp may be
 PIECE = 4.0  # m: a wall is judged piece by piece
 PROBE = 7.0  # m either side of a wall: where the ground's heights are compared
 STEP_MIN = 1.2  # m between them: a retaining wall
+STEP_WEAK = 0.7  # m: still one, along a wall that is one elsewhere
 SLOPE = 1.6  # times that much twice as far out, or more: a wall on a hillside, not a step
 WATER_CLEAR = 8.0  # m from the water: nearer, the wall is the bank's, which is a step already
 BESIDE = 1.5  # m: two wall lines this close are one wall's two faces; the lower one is the step
@@ -179,7 +180,12 @@ def _retaining(lines, at, dry):
     """The stretches of the walls that hold the ground up: [(points, low)], low = 1 where
     the lower ground is on the left of the line, -1 on its right. `at(points)`: the
     ground's height; `dry(points)`: whether a point is clear of the water."""
-    found = []  # per wall line: (points, kept pieces, low side of each)
+    # The survey draws one wall as several lines end to end.
+    lines = [shapely.linestrings(c) for c in lines if len(c) > 1]
+    if not lines:
+        return []
+    lines = [shapely.get_coordinates(g) for g in shapely.get_parts(shapely.line_merge(shapely.multilinestrings(lines)))]
+    found = []  # per wall line: (points, pieces that are a step, those that surely are, low side of each)
     mids, lows, owners, where = [], [], [], []
     for k, c in enumerate(lines):
         c = _along(c, PIECE)
@@ -189,12 +195,13 @@ def _retaining(lines, at, dry):
         m = (c[1:] + c[:-1]) / 2
         with np.errstate(invalid="ignore"):
             near, far = at(m + n * PROBE) - at(m - n * PROBE), at(m + n * 2 * PROBE) - at(m - n * 2 * PROBE)
-            keep = (length > 1e-6) & (np.abs(near) >= STEP_MIN) & (np.abs(far) < SLOPE * np.abs(near)) & (near * far > 0) & dry(m)
+            step = (length > 1e-6) & (np.abs(far) < SLOPE * np.abs(near)) & (near * far > 0) & dry(m)
+            weak, sure = step & (np.abs(near) >= STEP_WEAK), step & (np.abs(near) >= STEP_MIN)
         low = -np.sign(np.nan_to_num(near))
-        found.append((c, keep, low))
-        idx = np.flatnonzero(keep)
+        found.append((c, weak, sure, low))
+        idx = np.flatnonzero(weak)
         mids.append(m[idx]); lows.append(n[idx] * low[idx, None]); owners.append(np.full(len(idx), k)); where.append(idx)
-    if not found or not sum(len(m) for m in mids):
+    if not sum(len(m) for m in mids):
         return []
     mids, lows, owners, where = np.concatenate(mids), np.concatenate(lows), np.concatenate(owners), np.concatenate(where)
     # A wall has two faces, each a line of its own: the step is at the lower one.
@@ -206,17 +213,18 @@ def _retaining(lines, at, dry):
         elif (mids[a] - mids[b]) @ lows[b] > 0.15:
             found[owners[b]][1][where[b]] = False
     runs = []
-    for c, keep, low in found:
+    for c, weak, sure, low in found:
         k = 0
-        while k < len(keep):
-            if not keep[k]:
+        while k < len(weak):
+            if not weak[k]:
                 k += 1
                 continue
             e = k
-            while e + 1 < len(keep) and keep[e + 1] and low[e + 1] == low[k]:
+            while e + 1 < len(weak) and weak[e + 1] and low[e + 1] == low[k]:
                 e += 1
             pts = c[k:e + 2]
-            if np.hypot(*(pts[1:] - pts[:-1]).T).sum() >= RUN_MIN:
+            # A stretch counts from where the step is slight, if somewhere along it it's plain.
+            if sure[k:e + 1].any() and np.hypot(*(pts[1:] - pts[:-1]).T).sum() >= RUN_MIN:
                 runs.append((pts, int(low[k])))
             k = e + 1
     return runs

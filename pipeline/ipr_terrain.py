@@ -200,9 +200,13 @@ def read_sheet(job):
     return name, grid
 
 
-def sampler(tiles, N, T, step, gx0, gy0):
+def sampler(tiles, N, T, step, gx0, gy0, labels=None):
     """Bare terrain height (m a.s.l.) at points, bilinear between lattice points, read
-    from each tile's corner as the game reads it; NaN outside the tiles."""
+    from each tile's corner as the game reads it; NaN outside the tiles. With `labels`
+    (dtm_heights.py), in a cell a step crosses it's the plain ground's corners that count,
+    or else the dry ones: a bridge's end by a quay wall is on the quay, not half-way down
+    to the water."""
+    labels = labels or {}
     def at(xs, ys):
         xs, ys = np.asarray(xs, float), np.asarray(ys, float)
         out = np.full(len(xs), np.nan)
@@ -215,6 +219,15 @@ def sampler(tiles, N, T, step, gx0, gy0):
             b = min(N - 0.001, max(0.0, (ys[k] - gy0 - j * T) / step))
             ia, ib = int(a), int(b)
             fa, fb = a - ia, b - ib
+            lab = labels.get((i, j))
+            if lab is not None:
+                corner = lab[ib:ib + 2, ia:ia + 2]
+                if corner.min() != corner.max():
+                    own = corner == 0 if (corner == 0).any() else corner != 1
+                    w = np.array([[(1 - fa) * (1 - fb), fa * (1 - fb)], [(1 - fa) * fb, fa * fb]]) * own
+                    h = arr[ib:ib + 2, ia:ia + 2]
+                    out[k] = (h * w).sum() / w.sum() if w.sum() > 1e-4 else h[own].mean()
+                    continue
             out[k] = ((arr[ib, ia] * (1 - fa) + arr[ib, ia + 1] * fa) * (1 - fb)
                       + (arr[ib + 1, ia] * (1 - fa) + arr[ib + 1, ia + 1] * fa) * fb)
         return out
@@ -308,7 +321,7 @@ def main() -> None:
         timings.lap("survey")
     # Bridges and tunnels, above and below the bare ground (structures.py).
     merged = unary_union(outlines) if outlines else None
-    found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0),
+    found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0, labels),
                              local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources)
     timings.lap("bridges_tunnels")
     # The heights, then each point's label as a byte (dtm_heights.py): 0 the plain ground,
