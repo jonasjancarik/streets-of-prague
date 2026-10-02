@@ -52,7 +52,7 @@ export function updateNotice(parent: HTMLElement, cls: string) {
   button.addEventListener('click', () => location.reload());
   line.append(text, ' ', button);
   parent.appendChild(line);
-  onLang(() => { text.textContent = t('A newer version of the game is available. Reload to get it.'); button.textContent = t('Reload'); });
+  onLang(() => { text.textContent = t('A newer version of the game is available.'); button.textContent = t('Reload'); });
   onNewerVersion(() => { line.hidden = false; });
   return line;
 }
