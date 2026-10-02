@@ -86,6 +86,19 @@
       .things h3 { font-size: clamp(26px, 2.6vw, 34px); line-height: 1; color: var(--red); }
       .things p { margin-top: 10px; font-size: 16px; }
 
+      .more { margin-top: clamp(28px, 4vw, 48px); font: 24px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; }
+      .more a { text-underline-offset: 0.25em; }
+      .more a::after { content: ' ↓'; }
+
+      /* The whole list, by kind: columns that fill top to bottom, a category never split. */
+      .cats { margin-top: clamp(36px, 5vw, 64px); columns: 3; column-gap: clamp(28px, 4vw, 56px); }
+      .cat { break-inside: avoid; margin-bottom: clamp(32px, 4vw, 48px); }
+      .cat h3 { font-size: clamp(26px, 2.6vw, 34px); line-height: 1; color: var(--red-hot); border-top: 6px solid var(--paper); padding-top: 14px; }
+      .cat ul { list-style: none; margin: 12px 0 0; padding: 0; font-size: 15px; line-height: 1.5; }
+      .cat li { padding: 8px 0; border-bottom: 1px solid rgba(236, 228, 214, 0.16); }
+      .cat[data-later] h3 { color: var(--paper); border-top-style: dashed; border-top-width: 2px; opacity: 0.75; }
+      .cat[data-later] li { opacity: 0.75; }
+
       .shots { margin-top: clamp(36px, 5vw, 64px); display: grid; grid-template-columns: repeat(6, 1fr); gap: clamp(14px, 2vw, 26px); }
       .shots figure { margin: 0; grid-column: span 2; }
       .shots figure:nth-child(1), .shots figure:nth-child(2) { grid-column: span 3; }
@@ -111,6 +124,7 @@
         .count ul { grid-template-columns: repeat(3, 1fr); }
         .real, .made { grid-template-columns: 1fr; }
         .things { grid-template-columns: repeat(2, 1fr); }
+        .cats { columns: 2; }
       }
       @media (max-width: 640px) {
         /* On a narrow screen the wedge would cover the picture, so the title sits on a
@@ -121,6 +135,7 @@
         .hero h1 { font-size: 23vw; }
         .count ul, .things { grid-template-columns: repeat(2, 1fr); }
         .things { grid-template-columns: 1fr; }
+        .cats { columns: 1; }
         .shots figure, .shots figure:nth-child(1), .shots figure:nth-child(2) { grid-column: span 6; }
         .frame { box-shadow: 6px 6px 0 var(--red); }
       }
@@ -209,6 +224,7 @@
             <p data-t="do6-p">A burning car brings a fire engine, and someone hurt brings an ambulance. Both can be driven away, and the fire engine&apos;s water cannon works.</p>
           </li>
         </ul>
+        <p class="more"><a href="#everything" data-t="all-link">Everything in the game</a></p>
       </div>
     </section>
 
@@ -242,6 +258,138 @@
       </div>
     </section>
 
+    <section id="everything">
+      <div class="wrap">
+        <h2 data-t="all-h">Everything in the game</h2>
+        <div class="cats">
+          <div class="cat">
+            <h3 data-t="c1">The city</h3>
+            <ul>
+              <li data-t="c1-1">All of Prague and the land around it: 912 km², 5,863 km of streets, 9,466 street names</li>
+              <li data-t="c1-2">247,117 buildings in their real shapes, with their own roofs, towers and domes</li>
+              <li data-t="c1-3">Facades in the style of each part of town, from baroque houses in the Old Town to panel blocks on the estates</li>
+              <li data-t="c1-4">Wall and roof colours taken from aerial photographs of the city</li>
+              <li data-t="c1-5">Landmarks as they were photographed: the Old Town Hall, the Týn Church, St Nicholas, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, Mánes</li>
+              <li data-t="c1-6">Real hills, embankment walls, bridges and tunnels</li>
+              <li data-t="c1-7">188,019 trees where the city has them surveyed, with parks, gardens, courtyards and fields</li>
+              <li data-t="c1-8">Asphalt, granite setts and paving slabs where they really are, with zebra crossings, lane markings, tram rails and overhead wires</li>
+              <li data-t="c1-9">Passages through houses, fences and hedges</li>
+              <li data-t="c1-10">The name of the street you are in, and of each part of town as you enter it</li>
+            </ul>
+          </div>
+          <div class="cat">
+            <h3 data-t="c2">Driving</h3>
+            <ul>
+              <li data-t="c2-1">Any car can be taken, parked or driving past: cars, vans, taxis, buses, police cars, fire engines and ambulances</li>
+              <li data-t="c2-2">Motorbikes and bicycles that lean into the turns and throw you off in a crash</li>
+              <li data-t="c2-3">Lane assist that keeps to your lane and the speed limit while you only choose where to turn</li>
+              <li data-t="c2-4">Handbrake turns, skids and tyre marks on the road</li>
+              <li data-t="c2-5">Less grip in the rain and far less on snow, with spray behind the wheels and tracks in the snow</li>
+              <li data-t="c2-6">Cars that smoke, catch fire and blow up after too many crashes, leaving a burnt-out wreck</li>
+              <li data-t="c2-7">A car radio playing live Czech stations</li>
+            </ul>
+          </div>
+          <div class="cat">
+            <h3 data-t="c3">On foot</h3>
+            <ul>
+              <li data-t="c3-1">Walk, run and jump</li>
+              <li data-t="c3-2">Climb onto a standing car and ride on its roof until it gets too fast</li>
+              <li data-t="c3-3">Health that comes back after a quiet moment; when it runs out, you wake up outside the nearest hospital</li>
+              <li data-t="c3-4">10,000 Kč to start with, spent on tickets, fines, taxis and shared bikes</li>
+            </ul>
+          </div>
+          <div class="cat">
+            <h3 data-t="c4">Public transport</h3>
+            <ul>
+              <li data-t="c4-1">Trams on every real line, as often as the timetable says for the day and the hour, with the night lines after midnight</li>
+              <li data-t="c4-2">The tram types Prague runs: Škoda 15T, 14T and 52T, Tatra T3 in pairs and the KT8</li>
+              <li data-t="c4-3">Departure boards at the stops that count down to the next trams</li>
+              <li data-t="c4-4">Ride a tram as a passenger and choose your stop</li>
+              <li data-t="c4-5">Take over a tram and drive it yourself: open the doors at stops, ring the bell, choose the way at junctions</li>
+              <li data-t="c4-6">The metro with its real entrances, three lines and changes between them, shut after midnight</li>
+              <li data-t="c4-7">The Petřín funicular, and the small hotel one at Mrázovka</li>
+              <li data-t="c4-8">City buses on their real lines, which you can also drive</li>
+              <li data-t="c4-9">A 46 Kč ticket for 90 minutes, or ride without one and risk an inspector, a 1,200 Kč fine and a chase</li>
+              <li data-t="c4-10">Taxis you wave down in the street or order through one of two apps, to ten well-known places</li>
+              <li data-t="c4-11">Shared bikes at their real stations, paid for by the minute</li>
+              <li data-t="c4-12">Pedal boats and swans to take out on the Vltava, among the cruise boats</li>
+            </ul>
+          </div>
+          <div class="cat">
+            <h3 data-t="c5">Police</h3>
+            <ul>
+              <li data-t="c5-1">Up to five stars for speeding, crashes, stolen cars and people knocked over; what the police see counts for more</li>
+              <li data-t="c5-2">Patrol cars that chase and ram you, and officers who get out and run after you</li>
+              <li data-t="c5-3">From three stars a helicopter with a searchlight, and officers who shoot</li>
+              <li data-t="c5-4">Stay out of sight and the stars fade; going down into the metro loses the police at once</li>
+              <li data-t="c5-5">Get caught and you are taken to the police station, without the car</li>
+              <li data-t="c5-6">Police cars can be stolen, blue lights included</li>
+            </ul>
+          </div>
+          <div class="cat">
+            <h3 data-t="c6">Fire brigade and ambulances</h3>
+            <ul>
+              <li data-t="c6-1">A fire engine drives to a burning car and its crew puts the fire out with hoses</li>
+              <li data-t="c6-2">An ambulance comes for people who are hurt; paramedics treat them or carry them away</li>
+              <li data-t="c6-3">Sirens and blue lights that other drivers make way for</li>
+              <li data-t="c6-4">Both can be taken and driven, and the fire engine&apos;s water cannon puts out fires</li>
+              <li data-t="c6-5">Wrecks and abandoned cars are towed away once you are out of sight</li>
+            </ul>
+          </div>
+          <div class="cat">
+            <h3 data-t="c7">Life in the streets</h3>
+            <ul>
+              <li data-t="c7-1">Traffic that keeps to its lane, stops at red lights, gives way and drives round whatever blocks the street</li>
+              <li data-t="c7-2">Traffic lights at some 620 junctions</li>
+              <li data-t="c7-3">Parked cars in the numbers the city counts, by day and by night, in bays painted the way Prague paints them</li>
+              <li data-t="c7-4">Up to 600 people round the Old Town Square and on Charles Bridge, a few dozen on the edge of town</li>
+              <li data-t="c7-5">People who jump out of the way, get knocked over and run from gunshots</li>
+              <li data-t="c7-6">Cyclists and motorcyclists in the traffic, and lorries on the main roads out of town</li>
+            </ul>
+          </div>
+          <div class="cat">
+            <h3 data-t="c8">Time and weather</h3>
+            <ul>
+              <li data-t="c8-1">The game starts at the time and in the weather Prague has right now, or at ones you choose</li>
+              <li data-t="c8-2">A sun that rises and sets, with shadows that turn through the day</li>
+              <li data-t="c8-3">Clear skies, cloud, rain, thunderstorms with lightning, mist and snow, changing with the season</li>
+              <li data-t="c8-4">Wet streets with puddles that mirror the sky and the lamps</li>
+              <li data-t="c8-5">Snow that settles on roofs, cars and trees and is worn off the roads by the day&apos;s traffic</li>
+              <li data-t="c8-6">Bare trees in winter</li>
+              <li data-t="c8-7">131,736 street lamps where they really stand, headlights, lit windows and floodlit monuments at night</li>
+            </ul>
+          </div>
+          <div class="cat">
+            <h3 data-t="c9">Sound</h3>
+            <ul>
+              <li data-t="c9-1">An engine that climbs through the gears, and tyres that hiss on asphalt, rumble over setts and squeal in a slide</li>
+              <li data-t="c9-2">Recordings of Prague&apos;s trams: the rumble, the squeal in tight curves and the bell</li>
+              <li data-t="c9-3">The city in the background: crowds on the busy squares, distant traffic, birds at dawn</li>
+              <li data-t="c9-4">Rain, thunder and wind</li>
+            </ul>
+          </div>
+          <div class="cat">
+            <h3 data-t="c10">Playing</h3>
+            <ul>
+              <li data-t="c10-1">Free, in the browser, with no account and nothing to install</li>
+              <li data-t="c10-2">Keyboard on a computer, on-screen controls on a phone or tablet</li>
+              <li data-t="c10-3">In English and Czech</li>
+              <li data-t="c10-4">Saved games</li>
+              <li data-t="c10-5">Graphics from Lowest to Ultra, chosen for your device unless you set them yourself</li>
+            </ul>
+          </div>
+          <div class="cat" data-later>
+            <h3 data-t="c11">Not in the game yet</h3>
+            <ul>
+              <li data-t="c11-1">Missions and a way to earn money</li>
+              <li data-t="c11-2">Visible damage on cars</li>
+              <li data-t="c11-3">Sounds of other cars, crashes and people</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="drive dots">
       <div class="wrap">
         <h2 data-t="drive-h">Go for a drive</h2>
@@ -270,25 +418,25 @@
         'n-buildings': 'budov',
         'n-trees': 'stromů',
         'n-lamps': 'pouličních lamp',
-        'real-h': 'Tuhle ulici znáte',
-        'real-p': 'Každá ulice, dům, tramvajová trať i kopec stojí tam, kde ve skutečné Praze. Najděte si ulici, kde bydlíte, cestu do práce nebo roh, kde jste vyrůstali, pak si vezměte auto a zkuste, kam až dojedete.',
+        'real-h': 'Tuhle ulici znáš',
+        'real-p': 'Každá ulice, dům, tramvajová trať i kopec stojí tam, kde ve skutečné Praze. Najdi si ulici, kde bydlíš, cestu do práce nebo roh, kde jsi vyrůstal či vyrůstala, pak si vezmi auto a zkus, kam až dojedeš.',
         'do-h': 'Co se dá dělat',
-        'do1-h': 'Vezměte si jakékoli auto',
-        'do1-p': 'Nasedněte do kteréhokoli auta, ať parkuje, nebo zrovna jede kolem, a jeďte, kam ulice vedou. Po prudkém brzdění zůstávají na silnici stopy pneumatik a auto, které dostalo příliš ran, začne hořet.',
-        'do2-h': 'Jezděte tramvají a metrem',
-        'do2-p': 'Tramvaje jezdí po svých skutečných linkách podle skutečného jízdního řádu a vstupy do metra jsou tam, kde je znáte. Jízdenka stojí 46 Kč. Bez ní se může stát, že vás revizor bude honit po ulici.',
-        'do3-h': 'Ujíždějte policii',
-        'do3-p': 'Za rychlou jízdu, bouračky a krádeže aut přibývají hvězdičky. Nejdřív po vás jdou hlídkové vozy, potom policisté pěšky a od tří hvězdiček vrtulník, který na vás vidí přes střechy.',
-        'do4-h': 'Poznejte město v každém světle',
+        'do1-h': 'Vezmi si jakékoli auto',
+        'do1-p': 'Nasedni do kteréhokoli auta, ať parkuje, nebo zrovna jede kolem, a jeď, kam ulice vedou. Po prudkém brzdění zůstávají na silnici stopy pneumatik a auto, které dostalo příliš ran, začne hořet.',
+        'do2-h': 'Jezdi tramvají a metrem',
+        'do2-p': 'Tramvaje jezdí po svých skutečných linkách podle skutečného jízdního řádu a vstupy do metra jsou tam, kde je znáš. Jízdenka stojí 46 Kč. Bez ní se může stát, že tě revizor bude honit po ulici.',
+        'do3-h': 'Ujížděj policii',
+        'do3-p': 'Za rychlou jízdu, bouračky a krádeže aut přibývají hvězdičky. Nejdřív po tobě jdou hlídkové vozy, potom policisté pěšky a od tří hvězdiček vrtulník, který na tebe vidí přes střechy.',
+        'do4-h': 'Poznej město v každém světle',
         'do4-p': 'Hra začíná v hodinu a v počasí, jaké má Praha právě teď. Déšť, bouřky, mlha a sníh přicházejí a odcházejí a po setmění se rozsvítí pouliční lampy, každá tam, kde doopravdy stojí.',
-        'do5-h': 'Dopravte se i jinak',
-        'do5-p': 'Mávněte si na taxi, nebo si objednejte levnější, jehož řidič má víc naspěch. Vyjeďte šlapadlem na Vltavu nebo lanovkou na Petřín.',
-        'do6-h': 'Přivolejte hasiče',
+        'do5-h': 'Doprav se i jinak',
+        'do5-p': 'Mávni si na taxi, nebo si objednej levnější, jehož řidič má víc naspěch. Vyjeď šlapadlem na Vltavu nebo lanovkou na Petřín.',
+        'do6-h': 'Přivolej hasiče',
         'do6-p': 'K hořícímu autu přijedou hasiči a ke zraněnému sanitka. S oběma vozy se dá odjet a vodní dělo na hasičském voze stříká.',
         'shots-h': 'Ze hry',
         shot1: 'Staroměstské náměstí',
         shot2: 'Letní odpoledne',
-        shot3: 'Policie vás našla',
+        shot3: 'Policie tě našla',
         shot4: 'Nízké večerní slunce',
         shot5: 'Sníh',
         'made-h': 'Postaveno z otevřených dat',
@@ -304,7 +452,89 @@
         'src5-h': 'Zvuky tramvají a města',
         'src5-p': 'Nahrávky z',
         'src5-q': '; každou z nich uvádí Poděkování ve hře',
-        'drive-h': 'Pojeďte se projet',
+        'drive-h': 'Pojeď se projet',
+        'all-h': 'Všechno, co ve hře je',
+        'all-link': 'Všechno, co ve hře je',
+        c1: 'Město',
+        'c1-1': 'Celá Praha i s okolím: 912 km², 5 863 km ulic, 9 466 názvů ulic',
+        'c1-2': '247 117 budov ve skutečných tvarech, s vlastními střechami, věžemi a kopulemi',
+        'c1-3': 'Fasády ve stylu každé čtvrti, od barokních domů na Starém Městě po paneláky na sídlištích',
+        'c1-4': 'Barvy zdí a střech převzaté z leteckých snímků města',
+        'c1-5': 'Dominanty tak, jak byly vyfocené: Staroměstská radnice, Týnský chrám, svatý Mikuláš, Národní divadlo, Rudolfinum, Obecní dům s Prašnou bránou, Mánes',
+        'c1-6': 'Skutečné kopce, nábřežní zdi, mosty a tunely',
+        'c1-7': '188 019 stromů tam, kde je má město zaměřené, a k nim parky, zahrady, dvory a pole',
+        'c1-8': 'Asfalt, žulové kostky a dlažba tam, kde opravdu jsou, s přechody, jízdními pruhy, kolejemi a trolejemi',
+        'c1-9': 'Průchody domy, ploty a živé ploty',
+        'c1-10': 'Název ulice, ve které jsi, a každé čtvrti, do které vjedeš',
+        c2: 'Řízení',
+        'c2-1': 'Vzít si můžeš jakékoli auto, zaparkované i projíždějící: osobáky, dodávky, taxíky, autobusy, policejní vozy, hasiče i sanitky',
+        'c2-2': 'Motorky a kola, která se naklánějí do zatáček a při nárazu tě shodí',
+        'c2-3': 'Asistent, který drží pruh a povolenou rychlost, takže jen vybíráš, kam odbočit',
+        'c2-4': 'Zatáčky na ruční brzdu, smyky a stopy pneumatik na silnici',
+        'c2-5': 'Horší přilnavost za deště a mnohem horší na sněhu, s vodní tříští za koly a stopami ve sněhu',
+        'c2-6': 'Auta, která po příliš mnoha nárazech kouří, chytnou a vybuchnou, až z nich zbyde ohořelý vrak',
+        'c2-7': 'Autorádio s živým vysíláním českých stanic',
+        c3: 'Pěšky',
+        'c3-1': 'Chůze, běh a skok',
+        'c3-2': 'Vylez na stojící auto a vez se na střeše, dokud nezrychlí',
+        'c3-3': 'Zdraví, které se po chvíli klidu vrátí; když dojde, probereš se před nejbližší nemocnicí',
+        'c3-4': 'Do začátku 10 000 Kč na jízdenky, pokuty, taxíky a sdílená kola',
+        c4: 'Hromadná doprava',
+        'c4-1': 'Tramvaje na všech skutečných linkách, tak často, jak pro daný den a hodinu říká jízdní řád, po půlnoci noční linky',
+        'c4-2': 'Typy tramvají, které v Praze jezdí: Škoda 15T, 14T a 52T, Tatra T3 ve dvojicích a KT8',
+        'c4-3': 'Odjezdové tabule na zastávkách, které odpočítávají příjezd dalších tramvají',
+        'c4-4': 'Svez se tramvají a vyber si zastávku, kde vystoupíš',
+        'c4-5': 'Převezmi tramvaj a řiď ji: otvírej dveře na zastávkách, zvoň a vybírej směr na křižovatkách',
+        'c4-6': 'Metro se skutečnými vstupy, třemi linkami a přestupy mezi nimi, po půlnoci zavřené',
+        'c4-7': 'Lanovka na Petřín a malá hotelová lanovka na Mrázovce',
+        'c4-8': 'Městské autobusy na skutečných linkách, které se dají i řídit',
+        'c4-9': 'Jízdenka za 46 Kč na 90 minut, nebo jízda načerno s rizikem revizora, pokuty 1 200 Kč a honičky',
+        'c4-10': 'Taxíky, které si stopneš na ulici nebo objednáš přes jednu ze dvou aplikací, na deset známých míst',
+        'c4-11': 'Sdílená kola na skutečných stanovištích, placená podle času',
+        'c4-12': 'Šlapadla a labutě, se kterými vyjedeš na Vltavu mezi výletní lodě',
+        c5: 'Policie',
+        'c5-1': 'Až pět hvězdiček za rychlou jízdu, bouračky, kradená auta a sražené lidi; co policie vidí, se počítá víc',
+        'c5-2': 'Hlídkové vozy, které tě honí a narážejí do tebe, a policisté, kteří vystoupí a běží za tebou',
+        'c5-3': 'Od tří hvězdiček vrtulník se světlometem a policisté, kteří střílejí',
+        'c5-4': 'Mimo dohled hvězdičky mizí; v metru se policie zbavíš hned',
+        'c5-5': 'Když tě chytí, skončíš na policejní stanici a bez auta',
+        'c5-6': 'Policejní auto se dá ukrást, i s modrými majáky',
+        c6: 'Hasiči a záchranka',
+        'c6-1': 'K hořícímu autu přijede hasičský vůz a posádka ho uhasí hadicemi',
+        'c6-2': 'Pro zraněné přijede sanitka; záchranáři je ošetří, nebo odvezou',
+        'c6-3': 'Sirény a majáky, kterým ostatní řidiči uhýbají',
+        'c6-4': 'Oba vozy se dají vzít a řídit a vodní dělo hasičského vozu hasí požáry',
+        'c6-5': 'Vraky a opuštěná auta zmizí na odtahu, jakmile se nedíváš',
+        c7: 'Život v ulicích',
+        'c7-1': 'Provoz, který drží pruh, staví na červenou, dává přednost a objíždí, co stojí v cestě',
+        'c7-2': 'Semafory na zhruba 620 křižovatkách',
+        'c7-3': 'Zaparkovaná auta v počtech, jaké eviduje město, ve dne i v noci, na stáních vyznačených tak, jak je Praha značí',
+        'c7-4': 'Až 600 lidí kolem Staroměstského náměstí a na Karlově mostě, pár desítek na okraji města',
+        'c7-5': 'Lidé, kteří uskakují, padají po nárazu a utíkají před střelbou',
+        'c7-6': 'Cyklisté a motorkáři v provozu a kamiony na hlavních tazích za městem',
+        c8: 'Čas a počasí',
+        'c8-1': 'Hra začíná v čase a počasí, jaké má Praha právě teď, nebo v takovém, jaké si vybereš',
+        'c8-2': 'Slunce, které vychází a zapadá, a stíny, které se během dne otáčejí',
+        'c8-3': 'Jasno, zataženo, déšť, bouřky s blesky, mlha a sníh, podle ročního období',
+        'c8-4': 'Mokré ulice s loužemi, ve kterých se zrcadlí nebe a lampy',
+        'c8-5': 'Sníh, který leží na střechách, autech a stromech a ze silnic ho přes den rozjezdí provoz',
+        'c8-6': 'Holé stromy v zimě',
+        'c8-7': '131 736 pouličních lamp tam, kde opravdu stojí, světla aut, rozsvícená okna a nasvícené památky v noci',
+        c9: 'Zvuk',
+        'c9-1': 'Motor, který řadí a vytáčí se, a pneumatiky, které sviští na asfaltu, duní na kostkách a kvílí ve smyku',
+        'c9-2': 'Nahrávky pražských tramvají: dunění, kvílení v ostrých obloucích a zvonek',
+        'c9-3': 'Město v pozadí: davy na rušných náměstích, vzdálený provoz, ptáci za svítání',
+        'c9-4': 'Déšť, hrom a vítr',
+        c10: 'Hraní',
+        'c10-1': 'Zdarma, v prohlížeči, bez účtu a bez instalace',
+        'c10-2': 'Klávesnice na počítači, ovládání na obrazovce na telefonu a tabletu',
+        'c10-3': 'Česky a anglicky',
+        'c10-4': 'Ukládání hry',
+        'c10-5': 'Grafika od nejnižší po ultra, nastavená podle zařízení, pokud si ji nezvolíš jinak',
+        c11: 'Co ve hře zatím není',
+        'c11-1': 'Mise a možnost vydělat peníze',
+        'c11-2': 'Viditelné poškození aut',
+        'c11-3': 'Zvuky ostatních aut, nárazů a lidí',
         'foot-by': 'Streets of Prague vytváří Jonáš Jančařík.',
       };
       const META = {
