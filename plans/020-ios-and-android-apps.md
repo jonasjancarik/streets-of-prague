@@ -44,7 +44,7 @@ Each has a default the plan assumes. Ask once, at the start.
 
 | Question | Default |
 | --- | --- |
-| App identifier | `com.streetsofprague.app` (can't be changed after the first store upload) |
+| App identifier | `com.streetsofprague.app`, on both platforms (decided by the user, 2 October 2026; can't be changed after the first store upload) |
 | Map on the device | Streamed as in the browser. "Download for offline play" is an option in the settings and on the start screen (decided by the user, 2 October 2026) |
 | Updates | The game and the map update themselves, without a store release (decided by the user, 2 October 2026) |
 | Updating a downloaded map | Automatic on Wi-Fi; on mobile data the app asks first, since a map is about 650 MB |
