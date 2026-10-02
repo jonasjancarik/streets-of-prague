@@ -108,6 +108,28 @@ Tried and dropped: a terrace for every surveyed street well above or below the g
 beside it (cliffs 12 m high under Letná); leaving the terrain model wherever the
 survey is far off it with no step near (breaks in the street where the two meet).
 
+## Check which game you're photographing
+
+`look.sh` and the scene server take the game from port 5191 unless `GAME_URL` says
+otherwise. With several worktrees, 5191 may be another checkout's dev server with another
+map: on 2 October 2026 a whole round of before/after pictures (DMR 5G, the shoulder, the
+first street cut) came out identical to the pixel because they were all of main's map.
+Start this checkout's server on its own port (`PORT=5192 npm run dev`), check that
+`curl $GAME_URL/data/praha_now/index.json` shows this checkout's `built`, and distrust a
+"before" and "after" that don't differ at all.
+
+## Trials, off by default
+
+- `--cut-streets`: a wide surveyed street under or over a steep bank with no surveyed
+  wall becomes a terrace, cut along its outline, the bank a wall on it. Clean edge under
+  Letná, but walls appear at street ends and junctions and where the bank is really a
+  slope. Not good enough to turn on.
+- `--shoulder`: the ground within 5 m of a surveyed street level with it. Not looked at
+  against the right game yet.
+- `--dmr5g`: ČÚZK's DMR 5G on Letná instead of IPR's model. Agrees with IPR to 0.4 m on
+  average; in the game the hillside looks the same and the street's edge by the tunnel
+  about as ragged.
+
 ## When a rule can't get a place right
 
 `pipeline/terrain_keep.json`: a box in degrees (west, south, east, north) and why. The

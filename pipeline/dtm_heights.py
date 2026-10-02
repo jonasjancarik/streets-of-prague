@@ -12,8 +12,9 @@ the terrain's lattice:
   edge, so the street above a wall never mixes with the quay below it;
   (not where the map has a tunnel or an underpass and the survey is well below the
   terrain model: that's the street in the underpass, and the ground is the one over it);
-- the ground within FEATHER of a surveyed street moves with it: by what the survey
-  changed on the street points round about, fading with the distance;
+- the ground within SHOULDER of a surveyed street is level with it, and from there to
+  FEATHER goes over into the slope (moved by what the survey changed on the street
+  points round about, fading with the distance);
 - a lattice point on water takes the water's level: the lowest terrain within WATER_REACH
   on the water, which is the river's surface clear of the banks' ramps, and is marked as
   water (the game reads the height on either side of a bank from that side's points);
@@ -75,6 +76,8 @@ VERSION = 3
 SPACING = 1.5  # m between the points taken along a surveyed line
 ON_EDGE = 0.15  # m: a surveyed point this close to a surface's edge belongs to it
 FEATHER = 14.0  # m from a surveyed street: as far as the ground beside it follows it
+CUT_OUT, CUT_RISE, CUT_VOTES, CUT_SQUARE, CUT_WIDTH = 6.0, 3.0, 8, 16.0, 6.0  # (see --cut-streets)
+SHOULDER = 5.0  # m from a surveyed street: the ground is level with it (more than a lattice cell)
 FEATHER_BLUR = 5.0  # m: over how far the streets' changes are averaged
 OVERHANG = 12.0  # m from a surveyed street: a mapped carriageway this near one is the same street, drawn on past its edge
 UNDER = 2.0  # m below the terrain model, in a tunnel of the map's: surveyed under the ground
@@ -241,7 +244,7 @@ def _retaining(lines, at, dry):
     return runs
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), no_feather=False):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), no_feather=False, no_shoulder=True, cut_streets=False):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -278,6 +281,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     starts = np.flatnonzero(np.r_[True, owner[1:] != owner[:-1]])
     surfaces = street_points = 0
     street = np.zeros(grid.shape, dtype=bool)
+    which = np.zeros(grid.shape, dtype=np.int32)  # the surface each street point is on, from 1
     for a, b in zip(starts, np.r_[starts[1:], len(owner)]):
         if b - a < FEW:
             continue
@@ -299,6 +303,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         wgt = 1.0 / (d * d + 0.25)
         grid[gj, gi] = (wgt * points[own, 2][near]).sum(axis=1) / wgt.sum(axis=1)
         street[gj, gi] = True
+        which[gj, gi] = owner[a] + 1
         surfaces += 1
         street_points += len(gi)
 
@@ -330,11 +335,24 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     if street.any() and not no_feather:
         change = np.where(street, np.nan_to_num(grid - bare), 0).astype(np.float32)
         mean = ndimage.gaussian_filter(change, FEATHER_BLUR / step) / np.maximum(ndimage.gaussian_filter(street.astype(np.float32), FEATHER_BLUR / step), 1e-3)
-        d = ndimage.distance_transform_edt(~street) * step
+        d, (sj, si) = ndimage.distance_transform_edt(~street, return_indices=True)
+        d *= step
         beside = ~street & ~np.isnan(bare) & (d < FEATHER)
-        with np.errstate(invalid="ignore"):
-            beside &= np.abs(mean) > 0.05
-        grid[beside] = bare[beside] + mean[beside] * (1 - d[beside] / FEATHER)
+        slope = bare + mean * (1 - d / FEATHER)
+        if no_shoulder:
+            with np.errstate(invalid="ignore"):
+                beside &= np.abs(mean) > 0.05
+            grid[beside] = slope[beside]
+        else:
+            # And right beside it the ground is level with it: a street has a shoulder.
+            # The lattice is 4 m, so where a street's edge ran across a slope the cells
+            # along it mixed the street's heights with the hillside's and the street's
+            # edge came out in teeth. Out to SHOULDER the ground has the height of the
+            # nearest street point; from there to FEATHER it goes over into the slope.
+            t = np.clip((d - SHOULDER) / (FEATHER - SHOULDER), 0, 1)
+            t = t * t * (3 - 2 * t)
+            level = grid[sj, si]
+            grid[beside] = (level * (1 - t) + slope * t)[beside]
         feathered = int(beside.sum())
 
     # The map draws a street on to where its bridge begins, which is often a little past
@@ -450,6 +468,63 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
                          for j in range(int(g.bounds[1] // 64), int(g.bounds[3] // 64) + 1)]
     if water is not None:
         shapely.prepare(water)
+
+    # Trial (--cut-streets). A street under a steep bank, or over one, with no wall in the
+    # survey (nábřeží Edvarda Beneše under Letná: 11 m up within a lattice cell): the
+    # bank's foot ran across the lattice in teeth, over the street's edge. Such a street is
+    # a terrace itself, so the ground is cut along its outline and the bank stands on it as
+    # a wall. Steep: the terrain model CUT_RISE higher or lower CUT_OUT from the street, at
+    # CUT_VOTES lattice points at least.
+    cuts = 0
+    if cut_streets and street.any():
+        d, (sj, si) = ndimage.distance_transform_edt(~street, return_indices=True)
+        d *= step
+        ring = ~street & ~wet & ~np.isnan(bare) & (d > CUT_OUT - step / 2) & (d <= CUT_OUT + step / 2)
+        with np.errstate(invalid="ignore"):
+            apart = np.abs(bare[ring] - grid[sj[ring], si[ring]]) >= CUT_RISE
+        # Only the stretch of the street by the bank: squares CUT_SQUARE wide round the
+        # steep points, a square further each way.
+        rj, ri = np.nonzero(ring)
+        rj, ri = rj[apart], ri[apart]
+        owners = which[sj[rj, ri], si[rj, ri]]
+        cells = {}
+        for o, x, y in zip(owners, x_of(ri) // CUT_SQUARE, y_of(rj) // CUT_SQUARE):
+            cells.setdefault(int(o), {}).setdefault((int(x), int(y)), 0)
+            cells[int(o)][(int(x), int(y))] += 1
+        for o, squares_ in cells.items():
+            # (Not paths: a surface narrower than a couple of lattice cells has too few points
+            # of its own, and its walls come out ragged.)
+            if sum(squares_.values()) < CUT_VOTES or 2 * polys[o - 1].area / max(polys[o - 1].length, 1) < CUT_WIDTH:
+                continue
+            by = shapely.union_all([shapely.box((x - 1) * CUT_SQUARE, (y - 1) * CUT_SQUARE, (x + 2) * CUT_SQUARE, (y + 2) * CUT_SQUARE) for x, y in squares_])
+            part = shapely.make_valid(polys[o - 1]).intersection(by)
+            if water is not None and not water.is_empty:
+                part = part.difference(water)
+            for k in sorted({k for sq in squares(part) for k in nearby.get(sq, ())}) if not part.is_empty else ():
+                if strips[k].intersects(part):
+                    part = part.difference(strips[k])
+            for g in shapely.get_parts(part):
+                if g.geom_type != "Polygon" or g.area < 4:
+                    continue
+                for sq in squares(g):
+                    nearby.setdefault(sq, []).append(len(strips))
+                strips.append(g)
+                cuts += 1
+                bx0, by0, bx1, by1 = g.bounds
+                ia, ib = max(0, int(np.floor((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 - x_of(0)) / step)))
+                ja, jb = max(0, int(np.floor((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 - y_of(0)) / step)))
+                if ia > ib or ja > jb:
+                    continue
+                gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+                inside = shapely.contains_xy(g, x_of(gi), y_of(gj)) & ~wet[ja:jb + 1, ia:ib + 1]
+                terrace[ja:jb + 1, ia:ib + 1][inside] = len(strips)
+        if cuts:
+            # The bank beside them is the terrain model's, not pulled towards the street.
+            back = ~street & ~wet & ~np.isnan(bare) & (d <= FEATHER)
+            back &= np.isin(which[sj, si], [o for o, q in cells.items() if sum(q.values()) >= CUT_VOTES and 2 * polys[o - 1].area / max(polys[o - 1].length, 1) >= CUT_WIDTH])
+            grid[back] = bare[back]
+            before = grid.copy()
+
     for run, low in _retaining(walls, at, dry):
         line = shapely.LineString(run)
         bx0, by0, bx1, by1 = line.bounds
@@ -501,7 +576,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         ia, ib = max(0, int(np.floor((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 - x_of(0)) / step)))
         ja, jb = max(0, int(np.floor((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 - y_of(0)) / step)))
         gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
-        inside = shapely.contains_xy(strip, x_of(gi), y_of(gj)) & ~wet[ja:jb + 1, ia:ib + 1]
+        inside = shapely.contains_xy(strip, x_of(gi), y_of(gj)) & ~wet[ja:jb + 1, ia:ib + 1] & (terrace[ja:jb + 1, ia:ib + 1] == 0)
         terrace[ja:jb + 1, ia:ib + 1][inside] = len(strips)
 
     # Places where all this makes things worse (terrain_keep.json): as the terrain model has them.
@@ -548,6 +623,6 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
     return {"surfaces": surfaces, "street_points": street_points, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "bank_points": bank_points,
-            "kept_by_hand": kept, "retaining_walls": len(strips), "retaining_metres": round(wall_length), "wall_points": wall_points,
+            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "wall_points": wall_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}
