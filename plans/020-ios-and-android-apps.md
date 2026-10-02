@@ -192,13 +192,18 @@ replaces it with newer ones from the game's own server. Both stores allow this f
 JavaScript run by the web view, as long as the app stays the same kind of app.
 
 1. **Publishing.** `scripts/deploy-cloudflare.sh` (production) also builds the app's
-   bundle, zips `dist-app`, and uploads it with a small `app.json` at a fixed address:
+   bundle, zips `dist-app`, and uploads it with a small file at a fixed address (the `version.json`
+   that step 2 already publishes at the site root, with the app's address, checksum and
+   shell number added to it):
    the newest build's version, its address and checksum, the map version it goes with,
    the oldest map version it can still play with (step 2), and the lowest **shell
    number** it can run on. The shell number is a whole number in
    `src/native.ts` and in both native projects, raised whenever the native side changes
    in a way the game's code relies on (a new `MapStore` method, for instance).
-2. **Recording which builds need a newer map.** Today a commit records one thing about
+2. **Recording which builds need a newer map.** *Done in a5a6764 (with `version.json`,
+   `deploy/data-history`, `deploy/data-oldest` and `scripts/check-data-versions.mjs`;
+   the check that `data-oldest` rose with the format number was left out: the check
+   against R2 catches a map in the wrong format).* Today a commit records one thing about
    the map: `deploy/data-version`, the map it goes with. Add `deploy/data-oldest`, the
    oldest map version this code still plays correctly with, committed the same way so
    every tag carries it. Most game updates leave it alone. Raise it in the same commit
@@ -218,7 +223,7 @@ JavaScript run by the web view, as long as the app stays the same kind of app.
 3. **Fetching and switching.** Use `@capgo/capacitor-updater` in its self-hosted, manual
    mode, so nothing goes through a third party's service (health-check it first; if it
    doesn't hold up, Capacitor's own `setServerBasePath` and `MapStore`'s download and
-   unpack do the same job). On launch with a connection: read `app.json`; if there is a
+   unpack do the same job). On launch with a connection: read `version.json`; if there is a
    newer build that this shell can run, download it in the background and switch to it
    at the next start, never in the middle of a game.
 4. **Falling back.** A new build must tell the app it started properly (the plugin's
