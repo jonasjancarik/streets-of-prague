@@ -11,7 +11,12 @@ the terrain's lattice:
   track, platform…) takes its height from the surveyed points along that surface's own
   edge, so the street above a wall never mixes with the quay below it;
 - a lattice point on water takes the water's level: the lowest terrain within WATER_REACH
-  on the water, which is the river's surface clear of the banks' ramps.
+  on the water, which is the river's surface clear of the banks' ramps, and is marked as
+  water (the game reads the height on either side of a bank from that side's points);
+- a lattice point on the land beside water, within the terrain model's ramp (BANK), takes
+  the height of the nearest surveyed street within STREET_NEAR, or, where a surveyed wall
+  runs along the bank, of the nearest land clear of the ramp. A natural bank, with no
+  wall, stays the slope it is.
 
 Everything else keeps the terrain model's height. PROTOTYPE: tried on `ujezd` (Masarykovo
 nábřeží); reads the packages for the area's bounding box only and works on one array for
@@ -47,11 +52,17 @@ SURFACES = {
 # Lines measured on the surface they bound. Walls, buildings and railings are left out:
 # theirs may be the height of the wall's crown or of something standing on the ground.
 ON_GROUND = {"010000030402": "kerb", "010000032302": "inner"}
-VERSION = 1
+# Walls, for where they are (a bank with one is a step, not a slope), not for their heights.
+WALLS = {"010000030202": "wall edge", "010000016802": "wall"}
+VERSION = 2
 SPACING = 1.5  # m between the points taken along a surveyed line
 ON_EDGE = 0.15  # m: a surveyed point this close to a surface's edge belongs to it
 FEW = 3  # a surface with fewer surveyed points than this keeps the terrain model's heights
 WATER_REACH = 16.0  # m: further than the terrain model's ramp at a bank reaches
+BANK = 10.0  # m from the water: the land the terrain model's ramp spoils
+STREET_NEAR = 8.0  # m: a surveyed street this close gives the bank its height
+WALL_NEAR = 6.0  # m: a surveyed wall this close makes the bank a walled one
+INLAND = 24.0  # m: how far the land clear of the ramp may be
 
 
 def _tables(package, codes):
@@ -86,36 +97,42 @@ def _inside(blob, box):
 
 def survey(area, bbox, margin=60.0):
     """The survey on the ground within a WGS84 box, in S-JTSK: (surface polygons,
-    points along the lines measured on the ground as an (n, 3) array). Kept per area."""
+    points along the lines measured on the ground as an (n, 3) array, points along the
+    walls as an (n, 2) array). Kept per area."""
     to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
     w, s, e, n = bbox
     cx, cy = to_krovak.transform([w, w, e, e], [s, n, s, n])
     box = (min(cx) - margin, min(cy) - margin, max(cx) + margin, max(cy) + margin)
     packages = sorted(PACKAGES.glob("*.zip")) + sorted(LINES.glob("*.zip"))
     cache = CACHE / "heights" / f"{area}.pkl"
-    key = [VERSION, [build_cache.identity(p) for p in packages], list(bbox), SURFACES, ON_GROUND, SPACING,
+    key = [VERSION, [build_cache.identity(p) for p in packages], list(bbox), SURFACES, ON_GROUND, WALLS, SPACING,
            [build_cache.function_key(f) for f in (survey, _tables, _inside, _along)], build_cache.runtime_key()]
     got = build_cache.load_pickle(cache, key)
     if got:
-        return got["polys"], got["points"]
+        return got["polys"], got["points"], got["walls"]
     print(f"dtm heights: reading the survey from {len(packages)} packages", flush=True)
-    polys, points = [], []
+    polys, points, walls = [], [], []
     for p in sorted(PACKAGES.glob("*.zip")):
         for _, level, blob in _tables(p, SURFACES):
             g = _inside(blob, box) if level == 0 else None
             if g is not None:
                 polys.append(shapely.force_2d(g))
     for p in sorted(LINES.glob("*.zip")):
-        for _, level, blob in _tables(p, ON_GROUND):
+        for code, level, blob in _tables(p, {**ON_GROUND, **WALLS}):
             g = _inside(blob, box) if level == 0 else None
-            if g is not None:
-                c = shapely.get_coordinates(g, include_z=True)
-                if len(c) > 1 and not np.isnan(c[:, 2]).any():
-                    points.append(_along(c))
+            if g is None:
+                continue
+            c = shapely.get_coordinates(g, include_z=True)
+            if code in WALLS:
+                if len(c) > 1:
+                    walls.append(_along(np.nan_to_num(c))[:, :2])
+            elif len(c) > 1 and not np.isnan(c[:, 2]).any():
+                points.append(_along(c))
     points = np.concatenate(points) if points else np.zeros((0, 3))
+    walls = np.concatenate(walls) if walls else np.zeros((0, 2))
     cache.parent.mkdir(parents=True, exist_ok=True)
-    build_cache.atomic(cache, pickle.dumps({"key": key, "polys": polys, "points": points}, protocol=5))
-    return polys, points
+    build_cache.atomic(cache, pickle.dumps({"key": key, "polys": polys, "points": points, "walls": walls}, protocol=5))
+    return polys, points, walls
 
 
 def _along(c):
@@ -131,7 +148,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water):
     """Correct the tiles' lattices in place (see the top of the file). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
     `water`: the water's polygons in local metres. Returns what it changed, for the log."""
-    polys, points = survey(area, bbox)
+    polys, points, walls = survey(area, bbox)
     if not len(points):
         return {"surfaces": 0, "street_points": 0, "water_points": 0}
     px, py = to_local.transform(points[:, 0], points[:, 1])
@@ -155,6 +172,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water):
     owner, point = owner[order], point[order]
     starts = np.flatnonzero(np.r_[True, owner[1:] != owner[:-1]])
     surfaces = street_points = 0
+    street = np.zeros(grid.shape, dtype=bool)
     for a, b in zip(starts, np.r_[starts[1:], len(owner)]):
         if b - a < FEW:
             continue
@@ -175,6 +193,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water):
         d, near = d.reshape(len(gi), k), near.reshape(len(gi), k)
         wgt = 1.0 / (d * d + 0.25)
         grid[gj, gi] = (wgt * points[own, 2][near]).sum(axis=1) / wgt.sum(axis=1)
+        street[gj, gi] = True
         surfaces += 1
         street_points += len(gi)
 
@@ -193,9 +212,37 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water):
         level = ndimage.minimum_filter(np.where(wet, bare, np.inf), footprint=xx * xx + yy * yy <= r * r, mode="constant", cval=np.inf)
         grid[wet] = level[wet]
 
+    # The land beside the water, as far as the terrain model's ramp reaches.
+    bank_points = 0
+    if wet.any():
+        street &= ~wet
+        land = ~wet & ~np.isnan(bare)
+        from_water = ndimage.distance_transform_edt(~wet) * step
+        spoilt = land & ~street & (from_water <= BANK)
+        # By a surveyed street: its height.
+        if street.any():
+            d, (sj, si) = ndimage.distance_transform_edt(~street, return_indices=True)
+            take = spoilt & (d * step <= STREET_NEAR)
+            grid[take] = grid[sj[take], si[take]]
+            spoilt &= ~take
+            bank_points += int(take.sum())
+        # By a surveyed wall: the height of the nearest land clear of the ramp.
+        if len(walls) and spoilt.any():
+            wx, wy = to_local.transform(walls[:, 0], walls[:, 1])
+            gj, gi = np.nonzero(spoilt)
+            d, _ = cKDTree(np.column_stack([wx, wy])).query(np.column_stack([x_of(gi), y_of(gj)]), distance_upper_bound=WALL_NEAR)
+            walled = np.zeros(grid.shape, dtype=bool)
+            walled[gj[np.isfinite(d)], gi[np.isfinite(d)]] = True
+            clear = land & (street | (from_water > BANK))
+            if clear.any():
+                d, (sj, si) = ndimage.distance_transform_edt(~clear, return_indices=True)
+                take = walled & (d * step <= INLAND)
+                grid[take] = grid[sj[take], si[take]]
+                bank_points += int(take.sum())
+
     for (i, j), arr in tiles.items():
         arr[:] = grid[j * N - j0:j * N - j0 + N + 1, i * N - i0:i * N - i0 + N + 1]
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"surfaces": surfaces, "street_points": street_points, "water_points": int(wet.sum()),
+    return {"surfaces": surfaces, "street_points": street_points, "water_points": int(wet.sum()), "bank_points": bank_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "wet": {k: wet[k[1] * N - j0:k[1] * N - j0 + N + 1, k[0] * N - i0:k[0] * N - i0 + N + 1] for k in tiles}}

@@ -17,7 +17,8 @@ export interface GroundRoadEdge {
   u: string; v: string; hw: string; pts: Point2[]; width: number;
   lanes?: number | null; oneway?: boolean; bridge?: boolean; tunnel?: boolean; surface?: string;
 }
-type HeightAt = (x: number, y: number) => number;
+// onWater: by a bank, the water's level instead of the land's (terrain.ts, heightSampler).
+type HeightAt = (x: number, y: number, onWater?: boolean) => number;
 // A bridge or tunnel level of the tile, with its height at a point (NaN off it).
 export interface GroundLevel { level: number; kind: 'bridge' | 'tunnel'; polys: Polygons; height: HeightAt }
 type GroundGeometry = GroundLayer['geometry'];
@@ -149,13 +150,14 @@ function skirts(ringsList: Polygons, width: number, outside: boolean, skip: (a: 
 // Split every edge longer than `max` metres (in halves, repeatedly) so a flat mesh can
 // follow the terrain. The decision is per edge, so neighbours split the same edges and
 // no cracks open between them. `extra`: an optional per-vertex value to interpolate.
-function subdivide(pos: number[], idx: number[], extra: number[] | null, max: number) {
+// `also(i, j, d2)`: another reason to split an edge (d2: its length squared).
+function subdivide(pos: number[], idx: number[], extra: number[] | null, max: number, also: ((i: number, j: number, d2: number) => boolean) | null = null) {
   const max2 = max * max;
   for (let pass = 0; pass < 12; pass++) {
     const mids = new Map<number, number>();
     const long = (i: number, j: number) => {
-      const dx = pos[i * 3] - pos[j * 3], dz = pos[i * 3 + 2] - pos[j * 3 + 2];
-      return dx * dx + dz * dz > max2;
+      const dx = pos[i * 3] - pos[j * 3], dz = pos[i * 3 + 2] - pos[j * 3 + 2], d2 = dx * dx + dz * dz;
+      return d2 > max2 || (!!also && also(i, j, d2));
     };
     const mid = (i: number, j: number) => {
       const k = i < j ? i * 4194304 + j : j * 4194304 + i;
@@ -192,6 +194,108 @@ function subdivide(pos: number[], idx: number[], extra: number[] | null, max: nu
 
 // Set while a Surfaces is being built: terrain height (m) at a point, or null for flat.
 let groundHeight: HeightAt | null = null;
+// Set while the ground of a tile with water is built, where the terrain knows its banks:
+// whether a point is on the water. A bank is a step in the ground (a quay wall, mostly),
+// so every layer is cut along it: its part on land lies at the land's height right up to
+// the bank and the rest at the water's.
+let bank: ((x: number, y: number) => boolean) | null = null;
+// Set while the water itself is built: all of it lies at the water's level.
+let afloat = false;
+const BANK_STEP = 2; // m between a layer's points along a bank, so the cut follows its bends
+const BANK_MIN = 0.3; // m: a bank lower than this gets no wall
+
+// Whether a point is on any of the polygons (with holes).
+function onPolygons(polys: Polygons) {
+  const boxes = polys.map((rings) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of rings[0]) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    return [x0, y0, x1, y1];
+  });
+  const inRing = (ring: Point2[], x: number, y: number) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  return (x: number, y: number) => polys.some((rings, k) => {
+    const b = boxes[k];
+    return x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && inRing(rings[0], x, y) && !rings.slice(1).some((hole) => inRing(hole, x, y));
+  });
+}
+
+// A mesh cut along the banks: every triangle that crosses one is split there, with the
+// points on the bank doubled, one for the land and one for the water. Returns the
+// triangles and which points are on water.
+function cutAtBanks(pos: number[], idx: number[], extra: number[] | null, wetAt: (x: number, y: number) => boolean) {
+  const wet: number[] = [];
+  const isWet = (i: number) => (wet[i] ??= wetAt(pos[i * 3], -pos[i * 3 + 2]) ? 1 : 0);
+  idx = subdivide(pos, idx, extra, 8, (i, j, d2) => d2 > BANK_STEP * BANK_STEP && isWet(i) !== isWet(j));
+  // Where the bank crosses an edge, found by halving: [the point on i's side, on j's].
+  const cuts = new Map<number, [number, number]>();
+  const cut = (i: number, j: number): [number, number] => {
+    const lo = Math.min(i, j), hi = Math.max(i, j), key = lo * 4194304 + hi;
+    let c = cuts.get(key);
+    if (!c) {
+      const ax = pos[lo * 3], az = pos[lo * 3 + 2], dx = pos[hi * 3] - ax, dz = pos[hi * 3 + 2] - az, side = isWet(lo);
+      let t0 = 0, t1 = 1;
+      for (let k = 0; k < 14; k++) {
+        const t = (t0 + t1) / 2;
+        if ((wetAt(ax + dx * t, -(az + dz * t)) ? 1 : 0) === side) t0 = t; else t1 = t;
+      }
+      const t = (t0 + t1) / 2, v = pos.length / 3;
+      pos.push(ax + dx * t, 0, az + dz * t, ax + dx * t, 0, az + dz * t);
+      wet[v] = side;
+      wet[v + 1] = 1 - side;
+      if (extra) { const e = extra[lo] + (extra[hi] - extra[lo]) * t; extra.push(e, e); }
+      c = [v, v + 1];
+      cuts.set(key, c);
+    }
+    return i === lo ? c : [c[1], c[0]];
+  };
+  const out: number[] = [];
+  for (let t = 0; t < idx.length; t += 3) {
+    let a = idx[t], b = idx[t + 1], c = idx[t + 2];
+    const wa = isWet(a), wb = isWet(b), wc = isWet(c);
+    if (wa === wb && wb === wc) { out.push(a, b, c); continue; }
+    // Turned so that `a` is the corner alone on its side of the bank.
+    if (wb !== wa && wb !== wc) [a, b, c] = [b, c, a];
+    else if (wc !== wa && wc !== wb) [a, b, c] = [c, a, b];
+    const [pa, pb] = cut(a, b), [qa, qc] = cut(a, c);
+    out.push(a, pa, qa, pb, b, c, pb, c, qc);
+  }
+  for (let i = pos.length / 3 - 1; i >= 0; i--) isWet(i);
+  return { idx: out, wet };
+}
+
+// The banks' walls: along the water's outline, from the land's height down to the
+// water's, wherever the land stands above it (a quay wall; a natural bank is hardly a step).
+function bankWalls(lines: Point2[][]): GroundGeometry {
+  const q = quads(), H = groundHeight, wetAt = bank;
+  if (!H || !wetAt) return polygons([]);
+  for (const pts of lines) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+      if (len < 1e-6) continue;
+      // The water is on the left of a → b (1), on its right (-1), or on neither side.
+      const nx = -dy / len, ny = dx / len, mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      const left = wetAt(mx + nx * 0.2, my + ny * 0.2), right = wetAt(mx - nx * 0.2, my - ny * 0.2);
+      if (left === right) continue;
+      const out = left ? 1 : -1, n = Math.max(1, Math.ceil(len / BANK_STEP));
+      for (let k = 0; k < n; k++) {
+        const p = [a[0] + dx * (k / n), a[1] + dy * (k / n)], r = [a[0] + dx * ((k + 1) / n), a[1] + dy * ((k + 1) / n)];
+        const tp = H(p[0], p[1]), bp = H(p[0], p[1], true), tr = H(r[0], r[1]), br = H(r[0], r[1], true);
+        if (tp - bp < BANK_MIN && tr - br < BANK_MIN) continue;
+        const P0 = [p[0], Math.min(bp, tp), -p[1]], P1 = [p[0], tp, -p[1]], R0 = [r[0], Math.min(br, tr), -r[1]], R1 = [r[0], tr, -r[1]];
+        // Facing the water: the wall is drawn from that side only.
+        const normal = [nx * out, 0, -ny * out];
+        if (out > 0) q.quad(R0, P0, P1, R1, normal); else q.quad(P0, R0, R1, P1, normal);
+      }
+    }
+  }
+  return joined(polygons([]), q);
+}
 
 function finish(pos: number[], idx: number[], extra: number[] | null = null): GroundGeometry {
   // Wind every triangle to face up, so lighting never sees a back face.
@@ -201,8 +305,10 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
     if (up < 0) [idx[t + 1], idx[t + 2]] = [idx[t + 2], idx[t + 1]];
   }
   if (groundHeight) {
-    idx = subdivide(pos, idx, extra, 8);
-    for (let i = 0; i < pos.length; i += 3) pos[i + 1] = groundHeight(pos[i], -pos[i + 2]);
+    let wet: number[] | null = null;
+    if (bank && !afloat) ({ idx, wet } = cutAtBanks(pos, idx, extra, bank));
+    else idx = subdivide(pos, idx, extra, 8);
+    for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat || wet?.[k] === 1);
   }
   const nor = new Float32Array(pos.length);
   for (let i = 1; i < nor.length; i += 3) nor[i] = 1;
@@ -225,18 +331,25 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
 //   the ground, where the game only shows it round you when you're in it.
 // Each such layer has its `level`, and the game draws what's on it only where that
 // level's mask (in `masks`: the level rasterised, rows from the north) says it is.
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null }: {
+//
+// `banks`: the terrain knows which of its points are on water, so the layers are cut
+// along the water's outline and the banks get walls (see `bank`).
+export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, banks = false }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
-  parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null;
+  parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; banks?: boolean;
 }): GroundResult {
+  const water = d.areas.water || [];
+  const wetAt = banks && height && water.length ? onPolygons(water) : null;
   if (!levels) {
     groundHeight = height;
-    try { return { layers: layers(d, { box, edges, buildings, parkingZones }), masks: [] }; } finally { groundHeight = null; }
+    bank = wetAt;
+    try { return { layers: layers(d, { box, edges, buildings, parkingZones }), masks: [] }; } finally { groundHeight = bank = null; }
   }
   const T = height || (() => 0);
   groundHeight = height;
+  bank = wetAt;
   let lower;
-  try { lower = layers(d, { box, edges: edges.filter((e) => !e.bridge && !e.tunnel), buildings, parkingZones, bridges: false }); } finally { groundHeight = null; }
+  try { lower = layers(d, { box, edges: edges.filter((e) => !e.bridge && !e.tunnel), buildings, parkingZones, bridges: false }); } finally { groundHeight = bank = null; }
   const masks = levels.map((l) => levelMask(box, l.polys, l.level));
   const on = (k: number, x: number, y: number) => onMask(masks[k], x, y);
   // Each street on a bridge or in a tunnel is painted on one level: the one most of it
@@ -516,9 +629,14 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.square_setts || []), COLORS.squareSetts, 'setts');
     add(polygons(A.square_asphalt || []), COLORS.asphalt, 'asphalt');
     add(polygons(A.square_loose || []), COLORS.dirt, 'gravel');
-    add(polygons(A.water || []), COLORS.water, 'water');
-    shade(skirts(A.water || [], 6, false, cut), 0.35);
+    afloat = true;
+    try {
+      add(polygons(A.water || []), COLORS.water, 'water');
+      shade(skirts(A.water || [], 6, false, cut), 0.35);
+    } finally { afloat = false; }
     add(strips(outlines(A.water || []), 0.9), COLORS.quay, 'slabs');
+    add(bankWalls(outlines(A.water || [])), COLORS.quay, 'slabs');
+    if (out[out.length - 1].order === order - 1) out[out.length - 1].wall = true;
     add(strips(d.weirs || [], 2.4), '#9a978d', 'concrete');
     add(strips((d.weirs || []).map((w) => offsetLine(w, -1.6)), 2.2), '#dfe6e2');
 

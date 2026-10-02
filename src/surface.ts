@@ -17,6 +17,7 @@ export interface GroundLayer {
   tunnel?: boolean;
   level?: number;
   base?: boolean; // the plain ground under everything (see `photo`)
+  wall?: boolean; // a bank's wall: upright, drawn from the water's side only
 }
 
 interface SurfaceTexture { texture: THREE.DataTexture; box: number[]; sky?: { texture: THREE.Texture; box: number[] } | null }
@@ -111,6 +112,9 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
   }
   const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[l.pattern ?? 'flat'], time, relief, null, true, photo);
   if (l.blend !== null && l.blend !== undefined) { mat.blending = THREE.CustomBlending; mat.opacity = l.blend; }
+  // The ground's layers cover each other in their order, not by depth: a wall seen from
+  // behind would be drawn over the quay above it.
+  if (l.wall) mat.side = THREE.FrontSide;
   return mat;
 }
 

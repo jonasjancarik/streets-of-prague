@@ -77,7 +77,8 @@ export interface TileJSON extends GroundTileData {
   structures?: TileStructure[];
 }
 
-export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number }
+// wet: which points are on water (terrain.ts, wetPoints), where the data says.
+export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; wet?: Uint8Array | null }
 // A level with its heights, for the tile workers.
 export interface LevelInput extends TileStructure { heights: HeightGrid }
 

@@ -15,7 +15,7 @@ import type { Point2 } from './map/geo.ts';
 
 export interface Waters {
   waterAt: (x: number, y: number) => boolean | null;
-  terrainAt: (x: number, y: number) => number;
+  terrainAt: (x: number, y: number, onWater?: boolean) => number;
 }
 
 type Kind = 'cruise' | 'pedal' | 'swan';
@@ -328,7 +328,7 @@ export class Boats {
     const m = b.mesh;
     // The lowest of bow, middle and stern: the ground by the banks can bulge up over the water.
     const c = Math.cos(b.h) * b.s.len * 0.4, s = Math.sin(b.h) * b.s.len * 0.4, T = this.water;
-    const y = Math.min(T.terrainAt(b.x, b.y), T.terrainAt(b.x + c, b.y + s), T.terrainAt(b.x - c, b.y - s));
+    const y = Math.min(T.terrainAt(b.x, b.y, true), T.terrainAt(b.x + c, b.y + s, true), T.terrainAt(b.x - c, b.y - s, true));
     m.position.set(b.x, y + A * Math.sin(t * 1.4), -b.y);
     m.rotation.set(A * 0.6 * Math.sin(t * 1.1 + 1), b.h, A * 0.4 * Math.sin(t * 0.9 + 2), 'YXZ');
     m.updateMatrix();
