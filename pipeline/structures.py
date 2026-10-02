@@ -134,6 +134,8 @@ def structure_ways(data, tf, ground=frozenset()):
     """Every highway on a bridge or in a tunnel in a chunk's OSM data (osmnx's JSON of
     it): {id, kind, layer, hw, w, pts, nodes, grade}, `grade` saying for each node
     whether a way on the ground meets it there (or the way ends there, on its own).
+    `on_ground` records only observed ground contact. A way alone in one chunk
+    may continue in another: merge_ways decides loose ends after combining chunks.
     A metro station's corridors and stairs aren't tunnels (station_ways), and nor are
     the passages through buildings in `ground` (osm_area.extract's ground_ways)."""
     from osm_area import road_width, _float
@@ -162,15 +164,19 @@ def structure_ways(data, tf, ground=frozenset()):
         xs, ys = tf.transform([where[n][0] for n in nodes], [where[n][1] for n in nodes])
         try:
             layer = int(float(tags.get("layer", "")))
+            mapped_layer = layer
         except ValueError:
             layer = 1 if kind == "bridge" else -1
+            mapped_layer = None
         hw = tags["highway"]
         ends = {nodes[0], nodes[-1]}
         out.append({
             "id": el["id"], "kind": kind, "layer": layer, "hw": hw,
+            "mapped_layer": mapped_layer,
             "w": round(road_width(hw, _float(tags.get("width")), _float(tags.get("lanes"))), 1),
             "pts": [[round(x, 2), round(y, 2)] for x, y in zip(xs, ys)], "nodes": nodes,
             "grade": [n in on_ground or (n in ends and uses[n] == 1) for n in nodes],
+            "on_ground": [n in on_ground for n in nodes],
         })
     return out
 
@@ -273,7 +279,7 @@ class Net:
                 self.adj[a].append((b, d))
                 self.adj[b].append((a, d))
             self.paths.append(path)
-        self.xy = np.array(self.xy)
+        self.xy = np.asarray(self.xy, dtype=float).reshape(-1, 2)
         self.h = np.full(len(self.xy), np.nan)
 
     def node(self, key, xy, kind):
@@ -570,10 +576,12 @@ class Piece:
     """One bridge or tunnel as the game gets it: its outline and a height anywhere
     in or near it."""
 
-    def __init__(self, kind, shape, height, members=()):
+    def __init__(self, kind, shape, height, members=(), mapped_layer=None, nodes=()):
         self.kind, self.shape, self.height = kind, shape, height
         self.members = list(members)
         self.level = 0
+        self.mapped_layer = mapped_layer
+        self.nodes = frozenset(nodes)
 
 
 def pieces(ways, profiles, outlines, ground, decks, road_tree):
@@ -588,7 +596,8 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
         # A tunnel has a walkway either side of the road; a bridge's pavements are
         # mostly mapped (or its man_made=bridge outline has them).
         shape = drawn.buffer(w["w"] / 2 + (1.5 if w["kind"] == "tunnel" else 0), cap_style="flat", join_style="round")
-        out.append(Piece(w["kind"], shape, (lambda xs, ys, line=line, prof=prof: height_along(line, prof, xs, ys)), [w["id"]]))
+        out.append(Piece(w["kind"], shape, (lambda xs, ys, line=line, prof=prof: height_along(line, prof, xs, ys)),
+                         [w["id"]], w.get("mapped_layer"), w["nodes"]))
     groups = [[p] for p in out]
     bridges = [k for k, w in enumerate(ways) if w["kind"] == "bridge"]
     tree = STRtree([out[k].shape for k in bridges]) if bridges else None
@@ -635,7 +644,10 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
                     if inside.length < 1:
                         continue
                     m = inside.interpolate(0.5, normalized=True)
-                    if abs(out[k].height(np.array([m.x]), np.array([m.y]))[0] - href) < SAME:
+                    distinct = (ways[k].get("mapped_layer") is not None and ways[ref].get("mapped_layer") is not None
+                                and ways[k]["mapped_layer"] != ways[ref]["mapped_layer"]
+                                and not set(ways[k]["nodes"]) & set(ways[ref]["nodes"]))
+                    if not distinct and abs(out[k].height(np.array([m.x]), np.array([m.y]))[0] - href) < SAME:
                         on.append(k)
         if on:
             ls = [lines[k] for k in on]
@@ -646,7 +658,8 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
                 d = np.array([shapely.distance(line, pts) for line in ls])
                 h = np.array([f(xs, ys) for f in hs])
                 return h[np.argmin(d, axis=0), np.arange(len(xs))]
-            piece = Piece("bridge", poly, height)
+            declared = {ways[k]["mapped_layer"] for k in on if ways[k].get("mapped_layer") is not None}
+            piece = Piece("bridge", poly, height, mapped_layer=next(iter(declared)) if len(declared) == 1 else None)
             out.append(piece)
             # One group: the outline and every way on it.
             g = [piece]
@@ -753,15 +766,23 @@ def assign_levels(groups):
         shape = unary_union([p.shape for p in g])
         c = shape.representative_point()
         h = float(np.nanmean(g[0].height(np.array([c.x]), np.array([c.y]))))
-        info.append((g, shape, h, g[0].kind))
-    tree = STRtree([s for _, s, _, _ in info])
+        declared = {p.mapped_layer for p in g if p.mapped_layer is not None}
+        nodes = frozenset(n for p in g for n in p.nodes)
+        info.append((g, shape, h, g[0].kind, declared, nodes))
+    tree = STRtree([s for _, s, _, _, _, _ in info])
     order = sorted(range(len(info)), key=lambda k: info[k][2] if info[k][3] == "bridge" else -info[k][2])
     level = {}
     for k in order:
-        g, shape, _, kind = info[k]
+        g, shape, _, kind, declared, nodes = info[k]
         taken = set()
         for o in tree.query(shape, predicate="dwithin", distance=BESIDE):
             if o == k or o not in level or info[o][3] != kind:
+                continue
+            # Explicitly separate decks can be fully nested, with no nearby
+            # exterior edge to sample. Their mapped layers remain distinct.
+            mapped_apart = bool(declared and info[o][4] and declared.isdisjoint(info[o][4]) and nodes.isdisjoint(info[o][5]))
+            if mapped_apart:
+                taken.add(level[o])
                 continue
             # Over each other or side by side: a level's heights are on the terrain's lattice
             # and reach PAD past each piece, so steps going down beside a bridge's deck, or
@@ -847,6 +868,62 @@ def outlines_per_tile(all_pieces, tile_boxes):
     return out
 
 
+def merge_ways(ways):
+    """Combine duplicate ways, then identify loose ends on the complete structure graph.
+
+    Legacy caches retain their old flags. Mixing legacy and observed-contact
+    records in one connected component is ambiguous: refresh its streets chunks.
+    Keep the chosen original dict so solve/pieces can leave raised/scrap evidence
+    for the caller's pads(), as before.
+    """
+    records = defaultdict(list)
+    for w in ways:
+        records[w["id"]].append(w)
+    merged, mode = {}, {}
+    for ident, rows in records.items():
+        w = max(rows, key=lambda r: (len(r["nodes"]), tuple(r["nodes"])))
+        versions = {"on_ground" in row for row in rows}
+        if len(versions) != 1:
+            raise ValueError(f"bridge way {ident} combines old and new streets cache formats; rebuild its streets chunks")
+        current = versions.pop()
+        field = "on_ground" if current else "grade"
+        if any(len(row[field]) != len(row["nodes"]) for row in rows):
+            raise ValueError(f"bridge way {ident} has incomplete ground-contact data; rebuild its streets chunks")
+        observed = {n for row in rows for n, yes in zip(row["nodes"], row[field]) if yes}
+        w[field] = [n in observed for n in w["nodes"]]
+        merged[ident], mode[ident] = w, current
+
+    by_node = defaultdict(set)
+    uses = defaultdict(int)
+    for ident, w in merged.items():
+        for n in w["nodes"]:
+            by_node[n].add(ident)
+            uses[n] += 1
+    # Disjoint old/new components can coexist during a selective regional refresh;
+    # connected ones cannot silently combine two meanings of a true grade flag.
+    unseen = set(merged)
+    while unseen:
+        start = unseen.pop()
+        pending = [start]
+        while pending:
+            ident = pending.pop()
+            for n in merged[ident]["nodes"]:
+                for other in by_node[n]:
+                    if mode[other] != mode[start]:
+                        raise ValueError(f"bridge sources at OSM node {n} combine old and new streets cache formats; rebuild its streets chunks")
+                    if other in unseen:
+                        unseen.remove(other)
+                        pending.append(other)
+    on_ground = {n for ident, w in merged.items() if mode[ident]
+                 for n, yes in zip(w["nodes"], w["on_ground"]) if yes}
+    for ident, w in merged.items():
+        if mode[ident]:
+            ends = {w["nodes"][0], w["nodes"][-1]}
+            w["on_ground"] = [n in on_ground for n in w["nodes"]]
+            w["grade"] = [n in on_ground or (n in ends and uses[n] == 1) for n in w["nodes"]]
+    return [merged[k] for k in sorted(merged)]
+
+
 def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, tile_boxes, source_manifest=None):
     """Everything for the game: per tile, a list of (level, kind, heights, polygons).
     `ways`: structure_ways from every chunk; `outlines`: the man_made=bridge polygons;
@@ -854,20 +931,7 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     `source_manifest`: optional dictionary collecting the IPR bridge inputs for
     strict assembly's freshness check.
     """
-    # A way cut out of several chunks comes whole in each; where one chunk didn't
-    # have the street meeting it, another did.
-    merged = {}
-    for w in ways:
-        m = merged.get(w["id"])
-        if m is None or len(w["nodes"]) > len(m["nodes"]):
-            if m is not None:
-                grade = dict(zip(m["nodes"], m["grade"]))
-                w = {**w, "grade": [g or grade.get(n, False) for n, g in zip(w["nodes"], w["grade"])]}
-            merged[w["id"]] = w
-        else:
-            grade = dict(zip(w["nodes"], w["grade"]))
-            m["grade"] = [g or grade.get(n, False) for n, g in zip(m["nodes"], m["grade"])]
-    ways = sorted(merged.values(), key=lambda w: w["id"])
+    ways = merge_ways(ways)
     decks = ipr_decks(local, source_manifest)
     net, profiles = solve(ways, ground, decks)
     ways, profiles = drop_shallow(ways, net, profiles, ground)

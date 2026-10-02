@@ -428,7 +428,15 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Bridges and tunnels** have heights of their own, above and below the bare ground
   (`pipeline/structures.py`). Where one meets a street on the ground it's at the
   ground's height, and in between its height runs evenly from end to end, along the
-  ways and through junctions (Blanka's underground ramps). Bridges follow IPR's 3D
+  ways and through junctions (Blanka's underground ramps).
+  Bridge continuations are resolved across chunks before a loose end is tied to
+  the ground. Explicitly mapped different decks remain separate even where their
+  inferred heights are close, while a shared OSM node keeps a physical join.
+  Rebuild affected `streets` chunks and then terrain for these rules; old street
+  caches remain readable, and mixed old/new records in one connected bridge
+  component require a streets refresh before terrain can be built. See
+  `docs/bridge-contact-results.md` for evidence and remaining height limitations.
+  Bridges follow IPR's 3D
   model of Prague's bridges wherever it has them, so a deck rises and falls as the
   real one does. Tunnels keep a few metres of ground over them, more away from their
   portals, and wherever two cross on different OSM layers, the upper one clears the

@@ -1,0 +1,120 @@
+{
+  "sources": [
+    {
+      "sheet": "TER_Bero_0-7",
+      "source": "TER_Bero_0-7_gml.gml",
+      "grid_sha256": "8ac29d15583e3b8fbe8d69c67d371c85f0a8de152f9fd111c25dd33516619077",
+      "triangles": 27021
+    },
+    {
+      "sheet": "TER_Bero_0-8",
+      "source": "TER_Bero_0-8_gml.gml",
+      "grid_sha256": "585554bcd58a5373de51bfd9cefa0dc1d3e54a0957af2c910108598e4c7b02dd",
+      "triangles": 27474
+    },
+    {
+      "sheet": "TER_Prah_6-0",
+      "source": "TER_Prah_6-0_gml.gml",
+      "grid_sha256": "1373ea18b9ef6df0ed4fbaf8de55d6dc324c3c3c6e93a4b94847b10d9cef0794",
+      "triangles": 45890
+    },
+    {
+      "sheet": "TER_Prah_6-1",
+      "source": "TER_Prah_6-1_gml.gml",
+      "grid_sha256": "f494ec83267d6cfd444902e0da6ca31bb1c7eaf5ca54f38aa4817d4e79b33c0d",
+      "triangles": 42090
+    },
+    {
+      "sheet": "TER_Prah_7-2",
+      "source": "TER_Prah_7-2_gml.gml",
+      "grid_sha256": "4c2b94b3fdb0008dbfb3ed735ce825448dcdc9a6545cac866e1854822c704840",
+      "triangles": 34762
+    },
+    {
+      "sheet": "TER_Prah_8-6",
+      "source": "TER_Prah_8-6_gml.gml",
+      "grid_sha256": "5f9adc4ca46e254429cc8a9c79023b26d90287eb6f70acaea6908ab7a56cb926",
+      "triangles": 24242
+    },
+    {
+      "sheet": "TER_Prah_8-7",
+      "source": "TER_Prah_8-7_gml.gml",
+      "grid_sha256": "b60751ee4dcf0b050b8f194d601d80a6b84acbdb257cf8159824c660e2fc4f87",
+      "triangles": 33299
+    },
+    {
+      "sheet": "TER_Prah_9-6",
+      "source": "TER_Prah_9-6_gml.gml",
+      "grid_sha256": "db3daa3ff1271a8f8f7a7a6ce9849f6a1a051cfbab8dc6d02c2135e69d8f7b47",
+      "triangles": 51193
+    }
+  ],
+  "survey_stats": {
+    "west": {
+      "surfaces": 9,
+      "street_points": 511,
+      "under_points": 0,
+      "feathered": 1393,
+      "overhang_points": 0,
+      "water_points": 2291,
+      "bank_points": 14,
+      "kept_by_hand": 0,
+      "cut_streets": 0,
+      "retaining_walls": 0,
+      "retaining_metres": 0,
+      "wall_points": 0,
+      "changed": 2445,
+      "mean_change": 0.39898890256881714
+    },
+    "south": {
+      "surfaces": 275,
+      "street_points": 29616,
+      "under_points": 0,
+      "feathered": 26321,
+      "overhang_points": 0,
+      "water_points": 13362,
+      "bank_points": 766,
+      "kept_by_hand": 0,
+      "cut_streets": 0,
+      "retaining_walls": 23,
+      "retaining_metres": 791,
+      "wall_points": 470,
+      "changed": 45846,
+      "mean_change": 0.36533626914024353
+    },
+    "rail": {
+      "surfaces": 141,
+      "street_points": 8294,
+      "under_points": 0,
+      "feathered": 6242,
+      "overhang_points": 0,
+      "water_points": 5975,
+      "bank_points": 74,
+      "kept_by_hand": 0,
+      "cut_streets": 0,
+      "retaining_walls": 24,
+      "retaining_metres": 951,
+      "wall_points": 340,
+      "changed": 12983,
+      "mean_change": 0.37048980593681335
+    },
+    "liben": {
+      "surfaces": 74,
+      "street_points": 5252,
+      "under_points": 0,
+      "feathered": 5255,
+      "overhang_points": 0,
+      "water_points": 5952,
+      "bank_points": 44,
+      "kept_by_hand": 0,
+      "cut_streets": 0,
+      "retaining_walls": 4,
+      "retaining_metres": 138,
+      "wall_points": 121,
+      "changed": 10389,
+      "mean_change": 0.2499552071094513
+    }
+  },
+  "tile_count": 56,
+  "method": "private cached raw IPR grids, then existing survey apply before any bridge pads or pulls"
+}
