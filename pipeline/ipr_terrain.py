@@ -257,6 +257,7 @@ def main() -> None:
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
     ap.add_argument("--no-survey", action="store_true", help="the terrain model's heights as they are, without the survey's (dtm_heights.py)")
     ap.add_argument("--no-feather", action="store_true", help="the ground beside surveyed streets as the terrain model has it (to compare)")
+    ap.add_argument("--dmr5g", action="store_true", help="prototype: ČÚZK's DMR 5G as the terrain in dmr5g.BOXES")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble the complete generation separately")
     args = ap.parse_args()
     if args.jobs < 1:
@@ -334,6 +335,20 @@ def main() -> None:
         return
     fill_gaps(tiles, N, T, step)
     timings.lap("fill_gaps")
+    # Prototype: ČÚZK's DMR 5G (laser-scanned, 2 m) instead of IPR's model where it's been fetched.
+    if args.dmr5g:
+        import dmr5g
+        swapped = 0
+        for name in dmr5g.BOXES:
+            at = dmr5g.sampler(name, local)
+            for (i, j), arr in tiles.items():
+                xs, ys = np.meshgrid(gx0 + i * T + np.arange(N + 1) * step, gy0 + j * T + np.arange(N + 1) * step)
+                h = at(xs, ys)
+                ok = ~np.isnan(h)
+                if ok.any():
+                    arr[ok] = h[ok]
+                    swapped += int(ok.sum())
+        print(f"  DMR 5G at {swapped} points")
     # Streets and water from the survey on the ground (dtm_heights.py).
     labels, terraces = {}, {}
     if not args.no_survey:
