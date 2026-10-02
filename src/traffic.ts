@@ -142,7 +142,7 @@ export class Traffic {
       // On a bridge, in a tunnel or on the ground under or over one (TileWorld.track).
       car.hint = edge.bridge ? 'bridge' : edge.tunnel ? 'tunnel' : 'ground';
       if (car.two) car.rider = box ? courierLook(r, box) : randomLook(r);
-      const agent = { car, route: new Route(this.g, edge, s, r, bus, lorry ? (_e, opts) => { const ok = opts.filter(lorryRoad); return ok.length ? ok[Math.floor(r() * ok.length)] : null; } : undefined, ordinary && !lorry), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + r() * 0.3, off: 0 };
+      const agent = { car, route: new Route(this.g, edge, s, r, bus, lorry ? (_e, opts) => { const ok = opts.filter(lorryRoad); return ok.length ? ok[Math.floor(r() * ok.length)] : null; } : undefined, ordinary && !lorry), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.95 + r() * 0.25, off: 0 };
       this.agents.push(agent);
       return agent;
     }
@@ -179,7 +179,7 @@ export class Traffic {
     car.mode = 'traffic';
     car.hint = 'ground';
     const agent: TrafficAgent = {
-      car, route: new Route(this.g, edge, s, this.r), speed: 0, stuck: 0, jam: 0, ignore: 0, cruise: 0.8 + this.r() * 0.3, off: 0,
+      car, route: new Route(this.g, edge, s, this.r), speed: 0, stuck: 0, jam: 0, ignore: 0, cruise: 0.95 + this.r() * 0.25, off: 0,
       // Pulling in over three times the distance it has to move across, so it doesn't swerve.
       kerb: { off, left: run + clamp(Math.abs(off) * 3, 8, MERGE), merge: clamp(Math.abs(off) * 3, 8, MERGE) },
     };
