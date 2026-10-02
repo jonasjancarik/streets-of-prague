@@ -11,7 +11,7 @@ July, October and January each look like themselves.
 
 ## Status and starting point
 
-- Status: PLANNED. Two decisions to confirm first (below); the first is decided.
+- Status: STEP 1 DONE (2 October 2026). The three decisions below are made.
 - Effort: four to five days for phases 1–4. Risk: medium for the trees (two renderers,
   the shadow pass, and the costliest shader in a wood); low for the rest.
 - Planned at: `c2c76265e35c795e07a2b0b33f63ebb3f3db5afa`, 2 October 2026, from reading
@@ -46,18 +46,18 @@ git diff --stat c2c76265e35c795e07a2b0b33f63ebb3f3db5afa..HEAD -- src/weather.ts
 - Birds sing in quiet places unless it rains or snows (`src/audio.ts`), whatever the
   month.
 
-## Decisions to confirm
+## Decisions
 
 1. **Which season the game starts in.** Decided (2 October 2026): the start screen
    has a row of the four seasons (Spring, Summer, Autumn, Winter) with the current
    one picked already; no separate "Now". The current season's button means today's
    date in Prague, the other three a typical date each (decision 3). `?date=MM-DD`
    and `?season=` for links and tests.
-2. **Whether the date moves.** Recommended: no. The date is set when a game starts,
-   kept in the save, and stays. The clock keeps wrapping after a week. A year that
-   passes while you play would need the trees to change under you and a calendar in
-   the HUD, for little gain.
-3. **Four seasons or a date.** Recommended: a day of the year inside, so that early
+2. **Whether the date moves.** Decided: not for now. The date is set when a game
+   starts, kept in the save, and stays. The clock keeps wrapping after a week. (It
+   would pass slowly anyway; nothing in the design stops it moving later.)
+3. **Four seasons or a date.** Decided: a day of the year inside, not shown to the
+   player for now (only the developer panel shows it), so that early
    October (green going yellow) and mid-November (nearly bare) differ, and the four
    start-screen choices stand for a typical date each (20 April, 15 July,
    20 October, 15 January).
@@ -132,7 +132,9 @@ depend on the date.
 1. **The date.** `src/season.ts` with the curves; `?date`, `?season`; the developer
    panel's slider; `window.__test.season()`; the save. Wire up what exists: the sun,
    the weather's chances, `BARE`. The game looks the same as before on today's date.
-   Half a day.
+   Half a day. **Done**: also `--date` in `scripts/scene.mjs`. Trees are now bare
+   by the `leaf` curve (late November to late March) rather than December to
+   February.
 2. **Trees.** The `kind` attribute, autumn colours and per-tree leaf fall, spring
    leaf-out, blossom, hedges; WebGL and WebGPU; the shadow pass. Two to three days.
    Stop and measure after the autumn colours: `scripts/bench.mjs --ab` in a wood
