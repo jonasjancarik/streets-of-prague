@@ -44,6 +44,7 @@ from shapely.ops import unary_union
 
 import layers
 import build_cache
+import dtm_heights
 import structures
 from osm_area import AREAS, OUT
 from ipr_buildings import CACHE, krovak_to_local, search, sheet, sheet_name
@@ -224,6 +225,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="IPR Praha's terrain for an area's tiles")
     ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
+    ap.add_argument("--no-survey", action="store_true", help="the terrain model's heights as they are, without the survey's (dtm_heights.py)")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble the complete generation separately")
     args = ap.parse_args()
     if args.jobs < 1:
@@ -248,10 +250,11 @@ def main() -> None:
     # step divides the tile, so tile (i, j) starts at lattice point (i * N, j * N).
     N, step = grid_step(T)
     gx0, gy0 = -ox, -oy
-    tiles, boxes, outlines, roads, ways = {}, {}, [], [], []
+    tiles, boxes, outlines, roads, ways, water = {}, {}, [], [], [], []
     for i, j, t in layers.tiles(area, meta):
         tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
         boxes[(i, j)] = box(*t["box"])
+        water += [Polygon(r[0], r[1:]).buffer(0) for r in t["areas"].get("water", [])]
         here = t["areas"].get("bridge", [])
         outlines += [Polygon(r[0], r[1:]).buffer(0.05) for r in here]
         if here or t["roads"].get("bridge"):
@@ -294,6 +297,12 @@ def main() -> None:
         return
     fill_gaps(tiles, N, T, step)
     timings.lap("fill_gaps")
+    # Streets and water from the survey on the ground (dtm_heights.py).
+    if not args.no_survey:
+        surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None)
+        surveyed.pop("wet", None)
+        print(f"  survey: {surveyed}")
+        timings.lap("survey")
     # Bridges and tunnels, above and below the bare ground (structures.py).
     merged = unary_union(outlines) if outlines else None
     found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0),
