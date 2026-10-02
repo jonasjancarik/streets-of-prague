@@ -27,9 +27,9 @@ export function betaNote(again = false): Promise<void> {
   const go = document.createElement('button');
   const label = () => {
     title.textContent = t('Welcome to the beta');
-    intro.textContent = t('Thanks for trying Streets of Prague this early. The game isn\'t finished yet.');
-    rough.textContent = t('It can run slowly on some computers and phones, and you\'ll come across bugs and things that are missing. I know about many of them and I\'m working on them.');
-    tell.textContent = t('If something breaks, or you have an idea, I\'d love to hear it: press "Feedback" in the corner of the screen at any time.');
+    intro.textContent = t('Thanks for trying Streets of Prague this early.');
+    rough.textContent = t('The game is nowhere near finished – and probably never will be; I just know that for now it can run slowly, and you\'ll come across bugs and things that are missing. I know about many of them and I\'m working on them, but I\'m sure I\'ve missed some.');
+    tell.textContent = t('If something breaks, or you have an idea, I\'d love to hear it: just use the "Feedback" button in the corner of the screen while you play.');
     sign.textContent = t('Thanks, Jonáš');
     news.textContent = t('Want to hear when there is something new in the game? Leave your email address.');
     go.textContent = asked ? t('Start playing') : t('Skip, don\'t bother me now');
