@@ -17,7 +17,7 @@ export interface GroundLayer {
   tunnel?: boolean;
   level?: number;
   base?: boolean; // the plain ground under everything (see `photo`)
-  wall?: boolean; // a bank's wall: upright, drawn from the water's side only
+  wall?: boolean; // the walls at the ground's steps: upright, drawn from their lower side only
 }
 
 interface SurfaceTexture { texture: THREE.DataTexture; box: number[]; sky?: { texture: THREE.Texture; box: number[] } | null }
@@ -43,6 +43,16 @@ export class Surfaces {
       const mat = surfaceMaterial(l, time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, l.base ? photo : null);
       const m = new THREE.Mesh(g, mat);
       m.renderOrder = l.order;
+      // The ground's layers cover each other in their order, not by depth, and write
+      // none. But looking over a wall from above it, the ground at its foot is behind
+      // it: the walls' backs go into the depth first, and the layers are tested against
+      // that (so is everything else: a boat by the quay is hidden from the street).
+      if (!l.slab && !l.deck && !l.tunnel) mat.depthTest = true;
+      if (l.wall) {
+        const back = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.BackSide }));
+        back.renderOrder = -3000;
+        this.group.add(back);
+      }
       if (!l.slab && !l.deck && !l.tunnel && l.order >= -1000 && l.order < -800) onceAPixel(m, l);
       if (l.shade === undefined && !l.tunnel) m.receiveShadow = true;
       if (l.slab) m.castShadow = true;
@@ -112,8 +122,7 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
   }
   const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[l.pattern ?? 'flat'], time, relief, null, true, photo);
   if (l.blend !== null && l.blend !== undefined) { mat.blending = THREE.CustomBlending; mat.opacity = l.blend; }
-  // The ground's layers cover each other in their order, not by depth: a wall seen from
-  // behind would be drawn over the quay above it.
+  // Seen from behind, a wall would be drawn over the ground above it.
   if (l.wall) mat.side = THREE.FrontSide;
   return mat;
 }

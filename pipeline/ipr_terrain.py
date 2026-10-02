@@ -7,8 +7,9 @@ terrain model (a TIN with ~10 m spacing, CityGML), for hill shading in the game.
 Writes tiles/<i>_<j>.height.bin.gz: a (N+1) x (N+1) grid of heights about every 4 m
 across the tile (N = round(tile / 4), step = tile / N, so the grid's first and last rows
 lie on the tile's edges and neighbouring tiles share them), as little-endian uint16
-decimetres above 100 m a.s.l. (the top bit set on water, see dtm_heights.py), rows from
-the tile's south edge, gzipped; and "terrain"
+decimetres above 100 m a.s.l., rows from the tile's south edge, followed by each point's
+label as a byte (0 the plain ground, 1 water, 2 and up the tile's terraces at the foot of
+retaining walls, see dtm_heights.py), gzipped; and "terrain"
 in index.json with the grid step (kept as the terrain layer, see layers.py). (Before
 2026-09-29 the step was 4 m flat: the grid stopped 2 m short of a 250 m tile's far
 edge and every other tile's grid sat up to 2 m off its own corner, which left a step
@@ -299,10 +300,10 @@ def main() -> None:
     fill_gaps(tiles, N, T, step)
     timings.lap("fill_gaps")
     # Streets and water from the survey on the ground (dtm_heights.py).
-    wet = {}
+    labels, terraces = {}, {}
     if not args.no_survey:
-        surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None)
-        wet = surveyed.pop("wet", {})
+        surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes)
+        labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")
     # Bridges and tunnels, above and below the bare ground (structures.py).
@@ -310,10 +311,11 @@ def main() -> None:
     found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0),
                              local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources)
     timings.lap("bridges_tunnels")
-    # The top bit marks a point on water (dtm_heights.py): a bank is a step in the ground,
-    # and the game reads the height on either side of it from that side's points alone.
-    encode = lambda a, on_water=None: (np.clip(np.round((a - 100) * 10), 0, 32767).astype("<u2")  # noqa: E731
-                                       | (np.uint16(0x8000) * (on_water if on_water is not None else np.zeros(a.shape, bool))).astype("<u2")).tobytes()
+    # The heights, then each point's label as a byte (dtm_heights.py): 0 the plain ground,
+    # 1 water, 2 and up the tile's terraces. A bank or a retaining wall is a step in the
+    # ground: the game reads the height by one from the points with the same label alone.
+    plain = np.zeros((N + 1, N + 1), dtype=np.uint8)
+    encode = lambda a, label: np.clip(np.round((a - 100) * 10), 0, 65535).astype("<u2").tobytes() + label.astype(np.uint8).tobytes()  # noqa: E731
     # The structures' heights to the centimetre (decimetres would step along a deck).
     fine = lambda a: np.clip(np.round((np.nan_to_num(a, nan=100.0) - 100) * 100), 0, 65535).astype("<u2").tobytes()  # noqa: E731
     per_tile = {}
@@ -321,7 +323,7 @@ def main() -> None:
     layers.begin_layer(area, "terrain")
     for (i, j), arr in tiles.items():
         k = f"{i}_{j}"
-        layers.write_bin(out_dir / "tiles", f"{k}.height.bin", encode(arr, wet.get((i, j))), payloads)
+        layers.write_bin(out_dir / "tiles", f"{k}.height.bin", encode(arr, labels.get((i, j), plain)), payloads)
         # Each level's heights one after the other, in the order the tile lists them.
         if (i, j) in found:
             layers.write_bin(out_dir / "tiles", f"{k}.levels.bin", b"".join(fine(h) for _, _, h, _ in found[(i, j)]), payloads)
@@ -335,6 +337,7 @@ def main() -> None:
     if not build_cache.sources_current(sources) or processing != [build_cache.code_key(), build_cache.runtime_key()]:
         raise RuntimeError("terrain sources or processing code changed; keep output staged and rebuild")
     layers.write_layer(area, "terrain", {"gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in tiles], "tiles": per_tile,
+                                         "terraces": {f"{i}_{j}": v for (i, j), v in terraces.items()},
                                          "dependencies": dependencies, "sources": sources, "processing": processing, "payloads": payloads,
                                          "index": {"step": step, "n": N + 1, "min": float(lo), "max": float(hi), "structures": sorted(per_tile)}})
     print(f"terrain {lo:.0f}–{hi:.0f} m for {len(tiles)} tiles")

@@ -778,6 +778,17 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 
   Nothing else needs rebuilding. The first run reads every terrain sheet again at the
   new step, so it takes a few minutes longer than usual.
+- **Steps in the ground.** IPR's terrain model has a point about every 10 m, so on its
+  own a quay wall or a retaining wall is a broad ramp. `pipeline/dtm_heights.py` corrects
+  the grid from the technical map's survey (DTM ZPS: its lines carry heights): streets
+  take the heights of their own kerbs, water its level, and the ground beside a bank or
+  a retaining wall the height it has clear of the ramp. Each grid point also has a label
+  (plain ground, water, or a terrace at a retaining wall's foot, whose outline is in the
+  tile's `terraces`), stored after the heights in `<tile>.height.bin`. Where the labels
+  in a grid cell differ, the game reads the height at a point from the corners with that
+  point's own label (`heightSampler` in `src/terrain.ts`), cuts the ground's layers
+  along the outlines and puts a wall there (`src/ground.ts`). Map format 2. So far a
+  prototype, built for `ujezd` only: it works on one array for the whole area.
 - **Caches.** Every OSM chunk and every IPR sheet is read only once. What comes out
   is kept (`pipeline/.cache/osm/*.parsed.pkl`, `pipeline/.cache/ipr/parsed/`) and read
   again only when the source changes. Chunks and sheets are worked on side by side

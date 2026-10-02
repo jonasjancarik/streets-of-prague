@@ -40,7 +40,7 @@ CACHE = Path(__file__).parent / ".cache" / "layers"
 # The format of the files the game reads. Raise it, together with DATA_FORMAT in
 # src/data.ts, whenever a change here means the game's older code can't read the new
 # files (or its newer code the old ones). The game refuses a map with another number.
-FORMAT = 1
+FORMAT = 2
 CHUNKED = ("buildings", "ground", "streets", "parking")
 # What a tile has when a layer has nothing there, in the order the tile JSON lists it.
 EMPTY = {
@@ -303,6 +303,9 @@ def assemble(area: str, strict=False) -> dict:
         # Its bridges and tunnels (the heights are in its .levels.bin).
         if terrain and terrain.get("tiles", {}).get(k):
             t["structures"] = terrain["tiles"][k]
+        # Its terraces at the foot of retaining walls (dtm_heights.py; their labels are in its .height.bin).
+        if terrain and terrain.get("terraces", {}).get(k):
+            t["terraces"] = terrain["terraces"][k]
         written += write(out_dir / "tiles" / f"{k}.json", dumps(t))
         # Whether it has IPR's buildings, so the game can fetch them with the rest.
         listed.append([i, j, sum(b["own"] for b in t["buildings"]), *([int(bool(got))] if ipr else [])])

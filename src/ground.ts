@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { signedArea } from './map/geo.ts';
+import { onPolygons, signedArea } from './map/geo.ts';
+import { WATER } from './terrain.ts';
+import type { Terrace } from './terrain.ts';
 import { offsetLine } from './network.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
 import type { GroundLayer } from './surface.ts';
@@ -17,8 +19,8 @@ export interface GroundRoadEdge {
   u: string; v: string; hw: string; pts: Point2[]; width: number;
   lanes?: number | null; oneway?: boolean; bridge?: boolean; tunnel?: boolean; surface?: string;
 }
-// onWater: by a bank, the water's level instead of the land's (terrain.ts, heightSampler).
-type HeightAt = (x: number, y: number, onWater?: boolean) => number;
+// side: at a step in the ground, which side's height (terrain.ts, heightSampler).
+type HeightAt = (x: number, y: number, side?: number | boolean) => number;
 // A bridge or tunnel level of the tile, with its height at a point (NaN off it).
 export interface GroundLevel { level: number; kind: 'bridge' | 'tunnel'; polys: Polygons; height: HeightAt }
 type GroundGeometry = GroundLayer['geometry'];
@@ -194,60 +196,40 @@ function subdivide(pos: number[], idx: number[], extra: number[] | null, max: nu
 
 // Set while a Surfaces is being built: terrain height (m) at a point, or null for flat.
 let groundHeight: HeightAt | null = null;
-// Set while the ground of a tile with water is built, where the terrain knows its banks:
-// whether a point is on the water. A bank is a step in the ground (a quay wall, mostly),
-// so every layer is cut along it: its part on land lies at the land's height right up to
-// the bank and the rest at the water's.
-let bank: ((x: number, y: number) => boolean) | null = null;
+// Set while the ground of a tile with steps in it is built (banks, retaining walls: see
+// pointLabels in terrain.ts): the label of the side a point is on (the water, a terrace
+// or the plain ground), and the outlines the steps run along. Every layer is cut along
+// them, so the ground on each side lies at its own height right up to the step.
+let sideOf: ((x: number, y: number) => number) | null = null;
+let terraceOutlines: Polygons = [];
 // Set while the water itself is built: all of it lies at the water's level.
 let afloat = false;
-const BANK_STEP = 2; // m between a layer's points along a bank, so the cut follows its bends
-const BANK_MIN = 0.3; // m: a bank lower than this gets no wall
+const STEP_FINE = 2; // m between a layer's points along a step, so the cut follows its bends
+const WALL_MIN = 0.03; // m: a step lower than this gets no wall
 
-// Whether a point is on any of the polygons (with holes).
-function onPolygons(polys: Polygons) {
-  const boxes = polys.map((rings) => {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const [x, y] of rings[0]) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-    return [x0, y0, x1, y1];
-  });
-  const inRing = (ring: Point2[], x: number, y: number) => {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const [xi, yi] = ring[i], [xj, yj] = ring[j];
-      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-    }
-    return inside;
-  };
-  return (x: number, y: number) => polys.some((rings, k) => {
-    const b = boxes[k];
-    return x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && inRing(rings[0], x, y) && !rings.slice(1).some((hole) => inRing(hole, x, y));
-  });
-}
-
-// A mesh cut along the banks: every triangle that crosses one is split there, with the
-// points on the bank doubled, one for the land and one for the water. Returns the
-// triangles and which points are on water.
-function cutAtBanks(pos: number[], idx: number[], extra: number[] | null, wetAt: (x: number, y: number) => boolean) {
-  const wet: number[] = [];
-  const isWet = (i: number) => (wet[i] ??= wetAt(pos[i * 3], -pos[i * 3 + 2]) ? 1 : 0);
-  idx = subdivide(pos, idx, extra, 8, (i, j, d2) => d2 > BANK_STEP * BANK_STEP && isWet(i) !== isWet(j));
-  // Where the bank crosses an edge, found by halving: [the point on i's side, on j's].
+// A mesh cut along the steps: every triangle that crosses one is split there, with the
+// points on the step doubled, one for each side. Returns the triangles and the side each
+// point is on.
+function cutAtSteps(pos: number[], idx: number[], extra: number[] | null, at: (x: number, y: number) => number) {
+  const side: number[] = [];
+  const sideAt = (i: number) => (side[i] ??= at(pos[i * 3], -pos[i * 3 + 2]));
+  idx = subdivide(pos, idx, extra, 8, (i, j, d2) => d2 > STEP_FINE * STEP_FINE && sideAt(i) !== sideAt(j));
+  // Where the step crosses an edge, found by halving: [the point on i's side, on j's].
   const cuts = new Map<number, [number, number]>();
   const cut = (i: number, j: number): [number, number] => {
     const lo = Math.min(i, j), hi = Math.max(i, j), key = lo * 4194304 + hi;
     let c = cuts.get(key);
     if (!c) {
-      const ax = pos[lo * 3], az = pos[lo * 3 + 2], dx = pos[hi * 3] - ax, dz = pos[hi * 3 + 2] - az, side = isWet(lo);
+      const ax = pos[lo * 3], az = pos[lo * 3 + 2], dx = pos[hi * 3] - ax, dz = pos[hi * 3 + 2] - az, here = sideAt(lo);
       let t0 = 0, t1 = 1;
       for (let k = 0; k < 14; k++) {
         const t = (t0 + t1) / 2;
-        if ((wetAt(ax + dx * t, -(az + dz * t)) ? 1 : 0) === side) t0 = t; else t1 = t;
+        if (at(ax + dx * t, -(az + dz * t)) === here) t0 = t; else t1 = t;
       }
       const t = (t0 + t1) / 2, v = pos.length / 3;
       pos.push(ax + dx * t, 0, az + dz * t, ax + dx * t, 0, az + dz * t);
-      wet[v] = side;
-      wet[v + 1] = 1 - side;
+      side[v] = here;
+      side[v + 1] = sideAt(hi);
       if (extra) { const e = extra[lo] + (extra[hi] - extra[lo]) * t; extra.push(e, e); }
       c = [v, v + 1];
       cuts.set(key, c);
@@ -257,38 +239,42 @@ function cutAtBanks(pos: number[], idx: number[], extra: number[] | null, wetAt:
   const out: number[] = [];
   for (let t = 0; t < idx.length; t += 3) {
     let a = idx[t], b = idx[t + 1], c = idx[t + 2];
-    const wa = isWet(a), wb = isWet(b), wc = isWet(c);
-    if (wa === wb && wb === wc) { out.push(a, b, c); continue; }
-    // Turned so that `a` is the corner alone on its side of the bank.
-    if (wb !== wa && wb !== wc) [a, b, c] = [b, c, a];
-    else if (wc !== wa && wc !== wb) [a, b, c] = [c, a, b];
+    const sa = sideAt(a), sb = sideAt(b), sc = sideAt(c);
+    // (Three sides meeting in one triangle: left whole.)
+    if ((sa === sb && sb === sc) || (sa !== sb && sb !== sc && sa !== sc)) { out.push(a, b, c); continue; }
+    // Turned so that `a` is the corner alone on its side of the step.
+    if (sa === sc) [a, b, c] = [b, c, a];
+    else if (sa === sb) [a, b, c] = [c, a, b];
     const [pa, pb] = cut(a, b), [qa, qc] = cut(a, c);
     out.push(a, pa, qa, pb, b, c, pb, c, qc);
   }
-  for (let i = pos.length / 3 - 1; i >= 0; i--) isWet(i);
-  return { idx: out, wet };
+  for (let i = pos.length / 3 - 1; i >= 0; i--) sideAt(i);
+  return { idx: out, side };
 }
 
-// The banks' walls: along the water's outline, from the land's height down to the
-// water's, wherever the land stands above it (a quay wall; a natural bank is hardly a step).
-function bankWalls(lines: Point2[][]): GroundGeometry {
-  const q = quads(), H = groundHeight, wetAt = bank;
-  if (!H || !wetAt) return polygons([]);
+// The walls at the steps: along the outlines of the water and the terraces, between the
+// heights of the ground on either side (a quay wall, a retaining wall; a natural bank is
+// hardly a step), facing the lower side.
+function stepWalls(lines: Point2[][]): GroundGeometry {
+  const q = quads(), H = groundHeight, at = sideOf;
+  if (!H || !at) return polygons([]);
   for (const pts of lines) {
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
       if (len < 1e-6) continue;
-      // The water is on the left of a → b (1), on its right (-1), or on neither side.
+      // The sides on the left of a → b and on its right.
       const nx = -dy / len, ny = dx / len, mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
-      const left = wetAt(mx + nx * 0.2, my + ny * 0.2), right = wetAt(mx - nx * 0.2, my - ny * 0.2);
+      const left = at(mx + nx * 0.2, my + ny * 0.2), right = at(mx - nx * 0.2, my - ny * 0.2);
       if (left === right) continue;
-      const out = left ? 1 : -1, n = Math.max(1, Math.ceil(len / BANK_STEP));
+      const n = Math.max(1, Math.ceil(len / STEP_FINE));
       for (let k = 0; k < n; k++) {
         const p = [a[0] + dx * (k / n), a[1] + dy * (k / n)], r = [a[0] + dx * ((k + 1) / n), a[1] + dy * ((k + 1) / n)];
-        const tp = H(p[0], p[1]), bp = H(p[0], p[1], true), tr = H(r[0], r[1]), br = H(r[0], r[1], true);
-        if (tp - bp < BANK_MIN && tr - br < BANK_MIN) continue;
-        const P0 = [p[0], Math.min(bp, tp), -p[1]], P1 = [p[0], tp, -p[1]], R0 = [r[0], Math.min(br, tr), -r[1]], R1 = [r[0], tr, -r[1]];
-        // Facing the water: the wall is drawn from that side only.
+        const pl = H(p[0], p[1], left), pr = H(p[0], p[1], right), rl = H(r[0], r[1], left), rr = H(r[0], r[1], right);
+        if (Math.abs(pl - pr) < WALL_MIN && Math.abs(rl - rr) < WALL_MIN) continue;
+        const P0 = [p[0], Math.min(pl, pr), -p[1]], P1 = [p[0], Math.max(pl, pr), -p[1]];
+        const R0 = [r[0], Math.min(rl, rr), -r[1]], R1 = [r[0], Math.max(rl, rr), -r[1]];
+        // Facing the lower side: the wall is drawn from there only.
+        const out = pl + rl < pr + rr ? 1 : -1;
         const normal = [nx * out, 0, -ny * out];
         if (out > 0) q.quad(R0, P0, P1, R1, normal); else q.quad(P0, R0, R1, P1, normal);
       }
@@ -305,10 +291,10 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
     if (up < 0) [idx[t + 1], idx[t + 2]] = [idx[t + 2], idx[t + 1]];
   }
   if (groundHeight) {
-    let wet: number[] | null = null;
-    if (bank && !afloat) ({ idx, wet } = cutAtBanks(pos, idx, extra, bank));
+    let side: number[] | null = null;
+    if (sideOf && !afloat) ({ idx, side } = cutAtSteps(pos, idx, extra, sideOf));
     else idx = subdivide(pos, idx, extra, 8);
-    for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat || wet?.[k] === 1);
+    for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat ? WATER : side ? side[k] : false);
   }
   const nor = new Float32Array(pos.length);
   for (let i = 1; i < nor.length; i += 3) nor[i] = 1;
@@ -332,24 +318,32 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
 // Each such layer has its `level`, and the game draws what's on it only where that
 // level's mask (in `masks`: the level rasterised, rows from the north) says it is.
 //
-// `banks`: the terrain knows which of its points are on water, so the layers are cut
-// along the water's outline and the banks get walls (see `bank`).
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, banks = false }: {
+// `steps`: the terrain knows the steps in it (the tile's terraces; its water is in `d`),
+// so the layers are cut along them and the steps get walls (see `sideOf`).
+export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
-  parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; banks?: boolean;
+  parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
 }): GroundResult {
   const water = d.areas.water || [];
-  const wetAt = banks && height && water.length ? onPolygons(water) : null;
-  if (!levels) {
-    groundHeight = height;
-    bank = wetAt;
-    try { return { layers: layers(d, { box, edges, buildings, parkingZones }), masks: [] }; } finally { groundHeight = bank = null; }
+  let at: typeof sideOf = null;
+  if (steps && height && (water.length || steps.length)) {
+    const wet = onPolygons(water), on = steps.map((t) => onPolygons(t.polys));
+    at = (x, y) => {
+      if (wet(x, y)) return WATER;
+      for (let k = 0; k < on.length; k++) if (on[k](x, y)) return steps[k].label;
+      return 0;
+    };
   }
+  const outlines = at && steps ? steps.flatMap((t) => t.polys) : [];
+  const stepped = <R>(build: () => R): R => {
+    groundHeight = height;
+    sideOf = at;
+    terraceOutlines = outlines;
+    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; }
+  };
+  if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones })), masks: [] };
   const T = height || (() => 0);
-  groundHeight = height;
-  bank = wetAt;
-  let lower;
-  try { lower = layers(d, { box, edges: edges.filter((e) => !e.bridge && !e.tunnel), buildings, parkingZones, bridges: false }); } finally { groundHeight = bank = null; }
+  const lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !e.bridge && !e.tunnel), buildings, parkingZones, bridges: false }));
   const masks = levels.map((l) => levelMask(box, l.polys, l.level));
   const on = (k: number, x: number, y: number) => onMask(masks[k], x, y);
   // Each street on a bridge or in a tunnel is painted on one level: the one most of it
@@ -635,7 +629,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
       shade(skirts(A.water || [], 6, false, cut), 0.35);
     } finally { afloat = false; }
     add(strips(outlines(A.water || []), 0.9), COLORS.quay, 'slabs');
-    add(bankWalls(outlines(A.water || [])), COLORS.quay, 'slabs');
+    add(stepWalls([...outlines(A.water || []), ...outlines(terraceOutlines)]), COLORS.quay, 'slabs');
     if (out[out.length - 1].order === order - 1) out[out.length - 1].wall = true;
     add(strips(d.weirs || [], 2.4), '#9a978d', 'concrete');
     add(strips((d.weirs || []).map((w) => offsetLine(w, -1.6)), 2.2), '#dfe6e2');

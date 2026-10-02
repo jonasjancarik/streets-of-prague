@@ -9,7 +9,8 @@ import { Surfaces } from './surface.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { Zones, parkCars, inRing, inPoly } from './parking.ts';
-import { decodeHeights, decodeLevels, heightSampler, wetPoints, fetchBinary } from './terrain.ts';
+import { decodeHeights, decodeLevels, heightSampler, pointLabels, terraceAt, fetchBinary } from './terrain.ts';
+import type { Terrace } from './terrain.ts';
 import { SKY_STEP } from './map/skyView.ts';
 import type { Shadower } from './map/skyView.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
@@ -34,8 +35,8 @@ interface Tile {
   roads: Polygons; // the carriageways (asphalt, setts, dirt)
   poles: Post[]; // the wires' poles, among the posts a car can hit
   fences: FenceSection[];
-  relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number, onWater?: boolean) => number; hm: Float32Array; wet: Uint8Array | null; edges: () => void } | null;
-  sample?: (x: number, y: number, onWater?: boolean) => number;
+  relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number, side?: number | boolean) => number; hm: Float32Array; labels: Uint8Array | null; edges: () => void } | null;
+  sample?: (x: number, y: number, side?: number | boolean) => number;
   // The tile's water (the river and ponds), each polygon with its bounding box.
   water: { rings: Point2[][]; box: Bounds }[];
   weirs: Point2[][];
@@ -71,18 +72,18 @@ const CLIMB = 1.5;
 // tile's edge points, for the slope at the edge; `edges()` shades the edges again once
 // a neighbour has come.
 function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds, n: number, step: number, ref: number,
-  around: ((di: number, dj: number) => Float32Array | null) | null) {
+  around: ((di: number, dj: number) => Float32Array | null) | null, terraces: Terrace[] | undefined) {
   // Heights in metres above `ref` (the game's y = 0), bilinear and clamped to the tile.
-  const hm = decodeHeights(buffer, n, ref), wet = wetPoints(buffer, n);
+  const hm = decodeHeights(buffer, n, ref), labels = pointLabels(buffer, n);
   // Hill shading uses the bare ground where bridges were raised (see ipr_terrain.py).
-  const hs = new Uint16Array(bareBuffer || buffer);
+  const hs = new Uint16Array(bareBuffer || buffer, 0, n * n);
   const L = [-110, 80, 190], ll = Math.hypot(...L);
   const lx = L[0] / ll, ly = L[1] / ll, lz = L[2] / ll;
   const px = new Uint16Array(n * n);
   // Height (m above 100 m a.s.l.) at a grid point; one past the edge, from the
   // neighbour's second row (its first is this tile's edge); NaN where there's none.
   const at = (i: number, j: number) => {
-    if (i >= 0 && i < n && j >= 0 && j < n) return (hs[j * n + i] & 0x7fff) / 10;
+    if (i >= 0 && i < n && j >= 0 && j < n) return hs[j * n + i] / 10;
     const o = around?.(i < 0 ? -1 : i >= n ? 1 : 0, j < 0 ? -1 : j >= n ? 1 : 0);
     return o ? o[(j < 0 ? n - 2 : j >= n ? 1 : j) * n + (i < 0 ? n - 2 : i >= n ? 1 : i)] + ref - 100 : NaN;
   };
@@ -95,9 +96,9 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
   // side would draw a line along the tile edge).
   const slope = (a: number, c: number, b: number) =>
     Number.isNaN(a) ? (Number.isNaN(b) ? 0 : (b - c) / step) : Number.isNaN(b) ? (c - a) / step : (b - a) / (2 * step);
-  // A bank is a step, not a slope (terrain.ts, wetPoints): the land beside the water is
-  // shaded by the land's slope and the water by its own.
-  const side = (i: number, j: number) => (wet && i >= 0 && i < n && j >= 0 && j < n ? wet[j * n + i] : -1);
+  // A bank or a retaining wall is a step, not a slope (terrain.ts, pointLabels): the
+  // ground on each side of it is shaded by its own slope.
+  const side = (i: number, j: number) => (labels && i >= 0 && i < n && j >= 0 && j < n ? labels[j * n + i] : -1);
   const beside = (i: number, j: number, s: number) => { const o = side(i, j); return o >= 0 && s >= 0 && o !== s ? NaN : at(i, j); };
   const paint = (i: number, j: number) => {
     const c = at(i, j), s = side(i, j);
@@ -115,7 +116,7 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
     for (let k = 0; k < n; k++) { paint(k, 0); paint(k, n - 1); paint(0, k); paint(n - 1, k); }
     tex.needsUpdate = true;
   };
-  return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step, wet), hm, wet, edges };
+  return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step, labels, terraceAt(terraces)), hm, labels, edges };
 }
 
 const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ vertexColors: true }));
@@ -746,9 +747,9 @@ export class TileWorld {
     // Data from 2026-09-29 on shares the grid points along tile edges with the neighbours.
     const shared = !!terrain && Math.abs((terrain.n - 1) * terrain.step - (x1 - x0)) < 0.01;
     const around = shared ? (di: number, dj: number) => this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.hm ?? null : null;
-    const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around) : null;
+    const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces) : null;
     const hAt = shade ? shade.sample : () => 0;
-    const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, wet: shade.wet } : null;
+    const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels, terraces: t.terraces } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     const structures = t.structures || [];
     const heights = levels && terrain ? decodeLevels(levels, terrain.n, structures.length, this.ref) : [];

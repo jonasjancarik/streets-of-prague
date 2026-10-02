@@ -318,11 +318,15 @@ grime on the walls 6%, the shadow map's own pass 7%.
   and `ujezd` tiles on disk were rebuilt after the fix (a few hundred `praha` height
   tiles are older, probably unchanged). Still to confirm: that this data has been
   deployed to mbxp. See "Terrain grid" in the README.
-- **Finer terrain.** IPR's terrain model has points about 10 m apart, so
-  embankments, retaining walls, cuttings and steps are smoothed away (most visible
-  along the river and railways). A finer bare-earth model would fix it; ČÚZK's
-  DMR 5G (2 m grid) may be open (unchecked). IPR's 1 m surface model won't do: it
-  includes buildings and trees.
+- **Steps in the ground, for the whole city.** IPR's terrain model has points about
+  10 m apart, so embankments, retaining walls, cuttings and steps are smoothed away.
+  A prototype (branch `worktree-quay-heights`, "Steps in the ground" in the README)
+  makes quay walls and retaining walls real steps from the technical map's survey, on
+  `ujezd`. Still to do: run it tile by tile so `praha` fits in memory; railway cuttings
+  and slopes with no surveyed wall (terrain edges, "Terénní hrana", have heights too);
+  walls that block cars and people (they can still go over an edge, and drop); check
+  frame times and the WebGL renderer; look over the walls it finds on steep hillsides
+  (Petřín), where a wall on a slope may pass for a retaining wall.
 - **Hill shading for a moving sun.** The shading is baked per tile to the fixed
   north-west sun (`relief()` in `src/tiles.ts`, `SUN_OFFSET` in `src/main.ts`). If
   the sun ever moves with the clock, store the slope per tile instead and light it in

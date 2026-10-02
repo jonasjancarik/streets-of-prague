@@ -1,5 +1,6 @@
 import type { Bounds, GeoData, Point2, Polygons } from './map/geo.ts';
 import type { RawStreetEdge } from './network.ts';
+import type { Terrace } from './terrain.ts';
 import type { GroundResult, GroundRoadEdge, GroundTileData } from './ground.ts';
 import type { TreeSpot, TreeTileData } from './map/vegetation.ts';
 import type { FenceBuffers, FenceTile } from './map/fences.ts';
@@ -75,10 +76,12 @@ export interface TileJSON extends GroundTileData {
   walk?: RawStreetEdge[];
   ipr?: object;
   structures?: TileStructure[];
+  // Its terraces at the foot of retaining walls (pipeline/dtm_heights.py).
+  terraces?: Terrace[];
 }
 
-// wet: which points are on water (terrain.ts, wetPoints), where the data says.
-export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; wet?: Uint8Array | null }
+// labels, terraces: the steps in the ground (terrain.ts, pointLabels), where the tile has any.
+export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[] }
 // A level with its heights, for the tile workers.
 export interface LevelInput extends TileStructure { heights: HeightGrid }
 

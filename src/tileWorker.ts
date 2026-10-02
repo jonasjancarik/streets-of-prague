@@ -13,7 +13,7 @@ import { treeInstances } from './map/vegetation.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords } from './facades.ts';
 import { groundLayers, layerBuffers } from './ground.ts';
-import { heightSampler } from './terrain.ts';
+import { heightSampler, terraceAt } from './terrain.ts';
 import { skyView } from './map/skyView.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
 import type { HeightGrid, BuildingArrays, LandResult, WorkerJobs, WorkerRequest, WorkerResponse } from './contracts.ts';
@@ -31,7 +31,7 @@ const styleAt = (bbox: Bounds): StyleAt => {
   if (!styles) throw new Error('Facade styles are unavailable');
   return styles;
 };
-const groundAt = (g: HeightGrid | null) => (g ? heightSampler(g.hm, g.box, g.n, g.step, g.wet) : () => 0);
+const groundAt = (g: HeightGrid | null) => (g ? heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces)) : () => 0);
 
 async function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roofs']): Promise<BuildingArrays> {
   await (roofsReady ??= initRoofs());
@@ -263,7 +263,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
       case 'ground': {
         const { d, ground, levels, ...opts } = event.data.data;
         const result = groundLayers(d, {
-          ...opts, height: ground ? groundAt(ground) : null, banks: !!ground?.wet,
+          ...opts, height: ground ? groundAt(ground) : null, steps: ground?.labels ? ground.terraces ?? [] : null,
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,
         });
         worker.postMessage({ id, result } satisfies WorkerResponse, layerBuffers(result));

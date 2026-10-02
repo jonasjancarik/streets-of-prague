@@ -1,24 +1,38 @@
-// A tile's terrain heights (pipeline/ipr_terrain.py): n × n heights every `step` metres
-// from the tile's south-west corner, as uint16 decimetres above 100 m a.s.l. Used on
-// the main thread and in the tile workers alike.
+// A tile's terrain (pipeline/ipr_terrain.py): n × n heights every `step` metres from the
+// tile's south-west corner, as uint16 decimetres above 100 m a.s.l., then each point's
+// label as a byte. Used on the main thread and in the tile workers alike.
+import { onPolygons } from './map/geo.ts';
+import type { Polygons } from './map/geo.ts';
 
-// Heights in metres above `ref` (the game's y = 0). The top bit marks a point on water
-// (see wetPoints).
+// Heights in metres above `ref` (the game's y = 0).
 export function decodeHeights(buffer: ArrayBuffer, n: number, ref: number) {
-  const h = new Uint16Array(buffer), hm = new Float32Array(n * n);
-  for (let i = 0; i < hm.length; i++) hm[i] = (h[i] & HEIGHT) / 10 + 100 - ref;
+  const h = new Uint16Array(buffer, 0, n * n), hm = new Float32Array(n * n);
+  for (let i = 0; i < hm.length; i++) hm[i] = h[i] / 10 + 100 - ref;
   return hm;
 }
-const HEIGHT = 0x7fff;
 
-// Which of a tile's points are on water (1) and which on land (0), or null where the
-// data doesn't say (pipeline/dtm_heights.py marks them). A bank is a step in the ground,
-// often a wall: the height on either side of it is read from that side's points alone.
-export function wetPoints(buffer: ArrayBuffer, n: number) {
-  const h = new Uint16Array(buffer), wet = new Uint8Array(n * n);
-  let any = false;
-  for (let i = 0; i < wet.length; i++) if (h[i] > HEIGHT) { wet[i] = 1; any = true; }
-  return any ? wet : null;
+// What a point of the terrain is on (pipeline/dtm_heights.py): the plain ground (0),
+// water (WATER) or one of the tile's terraces at the foot of a retaining wall (2 and up,
+// see Terrace). A bank or a retaining wall is a step in the ground, not a slope: where
+// the labels in a cell differ, the height at a point is read from the corners with that
+// point's own label alone (heightSampler). null where the whole tile is plain ground.
+export function pointLabels(buffer: ArrayBuffer, n: number) {
+  if (buffer.byteLength < n * n * 3) return null;
+  const labels = new Uint8Array(buffer, n * n * 2, n * n);
+  return labels.some((l) => l > 0) ? labels.slice() : null;
+}
+export const WATER = 1;
+// A tile's terrace: its label in the terrain and its outline.
+export interface Terrace { label: number; polys: Polygons }
+
+// Which terrace a point is on (its label), or 0 for none.
+export function terraceAt(terraces: Terrace[] | null | undefined) {
+  if (!terraces?.length) return null;
+  const on = terraces.map((t) => onPolygons(t.polys));
+  return (x: number, y: number) => {
+    for (let k = 0; k < on.length; k++) if (on[k](x, y)) return terraces[k].label;
+    return 0;
+  };
 }
 
 // A tile's bridge and tunnel levels (.levels.bin): `count` lattices one after another,
@@ -34,26 +48,30 @@ export function decodeLevels(buffer: ArrayBuffer, n: number, count: number, ref:
 }
 
 // Height at a point, bilinear and clamped to the tile (NaN next to a missing height).
-// With `wet` (wetPoints), where a bank crosses the cell only the corners on one side of
-// it count: the water's when asked for (`onWater`), otherwise the land's, so what stands
-// by a quay wall stands on the quay.
-export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [number, number, number, number], n: number, step: number, wet: Uint8Array | null = null) {
-  return (x: number, y: number, onWater = false) => {
+// With `labels` (pointLabels), in a cell a step crosses only the corners on the point's
+// own side count. `side`: the label of that side; true for the water's; left out, it's
+// the terrace the point is on (`terrace`, see terraceAt) or else the plain ground, and
+// never the water, so what stands by a quay wall stands on the quay.
+export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [number, number, number, number], n: number, step: number,
+  labels: Uint8Array | null = null, terrace: ((x: number, y: number) => number) | null = null) {
+  return (x: number, y: number, side: number | boolean = false) => {
     const u = Math.min(n - 1.001, Math.max(0, (x - bx) / step)), v = Math.min(n - 1.001, Math.max(0, (y - by) / step));
     const i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j;
     const o = j * n + i;
     const a = hm[o], b = hm[o + 1], c = hm[o + n], d = hm[o + n + 1];
-    if (wet) {
-      const wa = wet[o], wb = wet[o + 1], wc = wet[o + n], wd = wet[o + n + 1], count = wa + wb + wc + wd;
-      if (count > 0 && count < 4) {
-        const side = onWater ? 1 : 0;
-        const ka = wa === side ? (1 - fu) * (1 - fv) : 0, kb = wb === side ? fu * (1 - fv) : 0;
-        const kc = wc === side ? (1 - fu) * fv : 0, kd = wd === side ? fu * fv : 0;
-        const k = ka + kb + kc + kd;
-        if (k > 1e-4) return (a * ka + b * kb + c * kc + d * kd) / k;
-        // Right at a corner of the other side: the mean of this side's corners.
-        const same = onWater ? count : 4 - count;
-        return ((wa === side ? a : 0) + (wb === side ? b : 0) + (wc === side ? c : 0) + (wd === side ? d : 0)) / same;
+    if (labels) {
+      const la = labels[o], lb = labels[o + 1], lc = labels[o + n], ld = labels[o + n + 1];
+      if (la !== lb || lb !== lc || lc !== ld) {
+        const want = side === true ? WATER : side === false ? (terrace ? terrace(x, y) : 0) : side;
+        let ka = la === want ? 1 : 0, kb = lb === want ? 1 : 0, kc = lc === want ? 1 : 0, kd = ld === want ? 1 : 0;
+        // No corner of its own (a sliver of a terrace, a spit of land): the dry ones.
+        if (!(ka + kb + kc + kd) && want !== WATER) { ka = la !== WATER ? 1 : 0; kb = lb !== WATER ? 1 : 0; kc = lc !== WATER ? 1 : 0; kd = ld !== WATER ? 1 : 0; }
+        const count = ka + kb + kc + kd;
+        if (count) {
+          const wa = ka * (1 - fu) * (1 - fv), wb = kb * fu * (1 - fv), wc = kc * (1 - fu) * fv, wd = kd * fu * fv, k = wa + wb + wc + wd;
+          // Right at a corner of another side: the mean of this side's corners.
+          return k > 1e-4 ? (a * wa + b * wb + c * wc + d * wd) / k : (a * ka + b * kb + c * kc + d * kd) / count;
+        }
       }
     }
     return (a * (1 - fu) + b * fu) * (1 - fv) + (c * (1 - fu) + d * fu) * fv;

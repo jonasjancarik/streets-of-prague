@@ -167,3 +167,24 @@ export class Grid {
     return this.cells[j * this.w + i];
   }
 }
+
+// Whether a point is on any of the polygons (with holes).
+export function onPolygons(polys: Polygons) {
+  const boxes = polys.map((rings) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of rings[0]) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    return [x0, y0, x1, y1];
+  });
+  const inRing = (ring: Point2[], x: number, y: number) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  return (x: number, y: number) => polys.some((rings, k) => {
+    const b = boxes[k];
+    return x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && inRing(rings[0], x, y) && !rings.slice(1).some((hole) => inRing(hole, x, y));
+  });
+}
