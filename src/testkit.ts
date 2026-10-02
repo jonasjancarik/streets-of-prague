@@ -145,11 +145,23 @@ export function setupTestkit(g: Game) {
     },
 
     // Leaves the nearest person on the pavement lying hurt: an ambulance is called.
-    hurt() { return g.hurtNearest(); },
+    hurt(grave = false) { return g.hurtNearest(grave); },
     // How a hurt person and the ambulance sent to them stand.
     rescue(p: Pedestrian) {
       const r = g.ambulances.rigs.find((k) => k.patient === p);
-      return { hurt: p.hurt !== undefined, ambulance: r ? r.phase : null, treated: r ? Math.round(r.treated * 10) / 10 : 0, medics: g.ambulances.crew.filter((m) => m.rig.patient === p).length, speed: r ? round(r.car.speed) : 0, away: r ? Math.round(Math.hypot(r.car.x - p.x, r.car.y - p.y)) : 0, path: r ? (r.path ? Math.round(r.path.length - r.s) : null) : null, stuck: r ? round(r.t) : 0 };
+      return { hurt: p.hurt !== undefined, ambulance: r ? r.phase : null, treated: r ? Math.round(r.treated * 10) / 10 : 0, medics: g.ambulances.crew.filter((m) => m.rig.patient === p).length, speed: r ? round(r.car.speed) : 0, carried: !!r?.carried, load: r ? Math.round(r.load) : 0, away: r ? Math.round(Math.hypot(r.car.x - p.x, r.car.y - p.y)) : 0, path: r ? (r.path ? Math.round(r.path.length - r.s) : null) : null, stuck: r ? round(r.t) : 0 };
+    },
+
+    // Steps up to the ambulance sent to this person and takes it: how many of its crew run after you.
+    steal(p: Pedestrian) {
+      const r = g.ambulances.rigs.find((k) => k.patient === p);
+      if (!r) return -1;
+      const m = g.me(), c = r.car;
+      m.x = c.x - Math.sin(c.h) * (c.spec.W / 2 + 0.8);
+      m.y = c.y + Math.cos(c.h) * (c.spec.W / 2 + 0.8);
+      g.enterOrExit();
+      const crew = g.ambulances.crew;
+      return g.car() === c ? crew.filter((k) => k.chase !== undefined).length : -1;
     },
 
     // Sets a car on fire (a parked one burns for a minute or so before it blows up, the one
@@ -158,6 +170,10 @@ export function setupTestkit(g: Game) {
       c.damage = Math.max(c.damage, 95);
       g.fires.check(c);
     },
+    // The traffic car nearest to you with a driver in it, and whether it still has one.
+    trafficCar() { const m = g.me(); return g.traffic.agents.map((k) => k.car).filter((c) => !c.two).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null; },
+    driven(c: Car) { return g.traffic.agents.some((k) => k.car === c); },
+    fleeing(c: Car) { return g.crowd.people.filter((p) => p.state === 'flee' && Math.hypot(p.x - c.x, p.y - c.y) < 16).length; },
     // How a car's fire and the brigade's call to it stand.
     fire(c: Car) {
       const b = g.fires.blazes.get(c), e = g.brigade.engines.find((k) => k.target === c);
@@ -170,10 +186,6 @@ export function setupTestkit(g: Game) {
     // Into a new car of this type (out of whatever you were in first).
     async drive(type = 'hatch') {
       if (g.mode() !== 'foot') g.enterOrExit();
-    // The traffic car nearest to you with a driver in it, and whether it still has one.
-    trafficCar() { const m = g.me(); return g.traffic.agents.map((k) => k.car).filter((c) => !c.two).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null; },
-    driven(c: Car) { return g.traffic.agents.some((k) => k.car === c); },
-    fleeing(c: Car) { return g.crowd.people.filter((p) => p.state === 'flee' && Math.hypot(p.x - c.x, p.y - c.y) < 16).length; },
       const c = kit.car(type, { ahead: 3 });
       const m = g.me();
       m.x = c.x - Math.sin(c.h) * (c.spec.W / 2 + 0.6);

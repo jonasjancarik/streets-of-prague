@@ -572,6 +572,13 @@ async function main() {
     // hits the car.
     onShot: (from, to, hit) => {
       tracers.fire(from, to);
+      // A stray bullet can hit someone on the pavement along its path.
+      for (const p of crowd.people) {
+        if (p.state === 'down') continue;
+        const dx = to[0] - from[0], dy = to[1] - from[1], len2 = dx * dx + dy * dy || 1;
+        const k = clamp(((p.x - from[0]) * dx + (p.y - from[1]) * dy) / len2, 0, 1);
+        if (Math.hypot(from[0] + dx * k - p.x, from[1] + dy * k - p.y) < 0.8) crowd.knock(p, dx * 0.01, dy * 0.01, 2);
+      }
       sound.shot(Math.hypot(from[0] - px(), from[1] - py()), from[0] - px());
       crowd.scare(from[0], from[1], 35);
       if (!hit) return;
@@ -768,7 +775,7 @@ async function main() {
     }
     let best = null, bestD = Infinity;
     for (const c of allCars()) {
-      if (c.burnt || c.type === 'ambulance') continue;
+      if (c.burnt) continue;
       const d = c.gap(walker.x, walker.y);
       if (d < bestD) { bestD = d; best = c; }
     }
@@ -783,7 +790,7 @@ async function main() {
     // A police car: the officer in it gets out and comes after you.
     const cop = best.type === 'police';
     if (cop) police.take(best);
-    const engine = brigade.take(best);
+    const engine = brigade.take(best) || ambulances.take(best);
     if (engine) police.crime('carjack', best.x, best.y);
     if (agent) {
       traffic.release(agent);
@@ -891,7 +898,7 @@ async function main() {
     return false;
   };
   // Developer tools: the nearest person on the pavement is left lying hurt (the ambulance comes).
-  const hurtNearest = () => {
+  const hurtNearest = (grave = true) => {
     let best: Pedestrian | null = null, bestD = 80;
     for (const p of crowd.people) {
       const d = Math.hypot(p.x - px(), p.y - py());
@@ -899,7 +906,7 @@ async function main() {
       best = p;
       bestD = d;
     }
-    if (best) crowd.knock(best, 0.4, 0, true);
+    if (best) crowd.knock(best, 0.4, 0, grave ? 2 : 1);
     return best;
   };
   // Developer tools: the nearest car (not yours) is set on fire.
@@ -1067,20 +1074,13 @@ async function main() {
   // and damages them (close by, enough to set them going too), and kills you if you're
   // still inside. Setting it going yourself is a crime.
   const BLAST = 9;
-  const HURTS = 9; // m/s: a car going faster than this leaves the person it hits lying hurt
+  const HURTS = 9; // m/s: a car going faster than this leaves the person it hits lying hurt, and one faster than half as much again has them taken away
   const fires: Fires = new Fires({
     scene, height: ground, rng: seeded,
     onIgnite: (c) => {
       if (c === inCar) telemetry.did('own car caught fire');
       if (c === inCar) showBanner(t('Your car is on fire!'), true);
       brigade.call(c);
-    },
-    awaited: (c) => brigade.awaited(c),
-    onBlast: (c, blamed) => {
-      if (!blamed) telemetry.did('a car blew up nearby'); // (one you set off is a crime, counted in police.ts)
-      const { x, y } = c, near = (p: { x: number; y: number }) => 1 - Math.hypot(p.x - x, p.y - y) / BLAST;
-      const away = (p: { x: number; y: number }, v: number) => {
-        const d = Math.hypot(p.x - x, p.y - y) || 1;
       // A driver from the traffic gets out of a car that's on fire and runs, leaving it where it stands.
       const agent = traffic.agents.find((k) => k.car === c);
       if (agent && c !== inCar) {
@@ -1091,6 +1091,13 @@ async function main() {
         const p = crowd.spawnAt(c.x + lx * off, c.y + ly * off, c.rider || undefined);
         Object.assign(p, { state: 'flee', t: 3, vx: lx * 5, vy: ly * 5 });
       }
+    },
+    awaited: (c) => brigade.awaited(c),
+    onBlast: (c, blamed) => {
+      if (!blamed) telemetry.did('a car blew up nearby'); // (one you set off is a crime, counted in police.ts)
+      const { x, y } = c, near = (p: { x: number; y: number }) => 1 - Math.hypot(p.x - x, p.y - y) / BLAST;
+      const away = (p: { x: number; y: number }, v: number) => {
+        const d = Math.hypot(p.x - x, p.y - y) || 1;
         return [((p.x - x) / d) * v, ((p.y - y) / d) * v] as const;
       };
       const d = Math.hypot(x - px(), y - py());
@@ -1104,7 +1111,7 @@ async function main() {
         if (walker.down <= 0) walker.knock(...away(walker, 3 + 7 * k));
         hurt(95 * k);
       }
-      for (const p of crowd.people) if (near(p) > 0 && p.state !== 'down') crowd.knock(p, ...away(p, 3 + 7 * near(p)), near(p) > 0.35);
+      for (const p of crowd.people) if (near(p) > 0 && p.state !== 'down') crowd.knock(p, ...away(p, 3 + 7 * near(p)), near(p) > 0.6 ? 2 : near(p) > 0.35 ? 1 : 0);
       for (const m of ambulances.crew) if (near(m) > 0 && m.down <= 0) ambulances.knock(m, ...away(m, 3 + 7 * near(m)));
       crowd.scare(x, y, 45);
       for (const o of police.officers) if (near(o) > 0 && o.down <= 0) police.knock(o, ...away(o, 3 + 7 * near(o)));
@@ -1135,6 +1142,7 @@ async function main() {
     scene, police, grid, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,
     bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),
     people: () => crowd.people, revive: (p) => crowd.revive(p),
+    take: (p) => { if (crowd.people.includes(p)) crowd.retire(p); },
   });
   let waitScale = 1, clockShown = '';
   let ticketWas = false;
@@ -1467,13 +1475,13 @@ async function main() {
       offTrams(p, 0.3, open, (vx, vy, yours) => {
         // Run down by the tram you're driving.
         if (!yours || p.state === 'down') return;
-        crowd.knock(p, vx, vy, true);
+        crowd.knock(p, vx, vy, 2);
         stats.knocked++;
         police.crime('knock', p.x, p.y);
       });
       bump(p, 0.3, (c, nx, ny) => {
         if (c.speed > 3 && p.state !== 'down' && c.mode !== 'traffic') {
-          crowd.knock(p, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2, c.speed > HURTS);
+          crowd.knock(p, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2, c.speed > HURTS * 1.5 ? 2 : c.speed > HURTS ? 1 : 0);
           c.vx *= 0.93;
           c.vy *= 0.93;
           stats.knocked++;

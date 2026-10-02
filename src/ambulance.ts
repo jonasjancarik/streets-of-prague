@@ -24,10 +24,12 @@ const TREAT = 9; // seconds by the patient before they are up again
 const ON_FOOT = 70; // m: an ambulance that can't get on, this near, lets the crew run the rest
 const GIVE_UP = 60; // seconds a call waits for a street to spawn an ambulance on
 const WRECKED = 80; // damage that puts an ambulance out of action
+const CHASE = 25; // seconds the crew runs after someone who took their ambulance
+const RUN_AFTER = 70; // m: and gives up when you're further than this
 const FAR = 900; // m: someone hurt further than this from you is left to get up on their own
 
-interface Medic { x: number; y: number; h: number; vx: number; vy: number; rig: Rig; fig: Figures; anim: Anim; down: number; spot: { x: number; y: number }; back: boolean; gone?: boolean; gz?: number; detour?: number; best: number; stuck: number }
-interface Rig extends Follower { car: Car; patient: Pedestrian; phase: 'go' | 'work' | 'leave'; t: number; wrecked: boolean; crew: boolean; gone?: boolean; goal: { x: number; y: number }; astray?: boolean; mark: { x: number; y: number }; direct?: boolean; roads?: boolean; treated: number; done: number }
+interface Medic { x: number; y: number; h: number; vx: number; vy: number; rig: Rig; fig: Figures; anim: Anim; down: number; spot: { x: number; y: number }; back: boolean; gone?: boolean; gz?: number; detour?: number; best: number; stuck: number; chase?: number }
+interface Rig extends Follower { car: Car; patient: Pedestrian; phase: 'go' | 'work' | 'leave'; t: number; wrecked: boolean; crew: boolean; gone?: boolean; goal: { x: number; y: number }; astray?: boolean; mark: { x: number; y: number }; direct?: boolean; roads?: boolean; treated: number; done: number; load: number; carried: boolean }
 interface Call { patient: Pedestrian; t: number; roads?: boolean }
 interface AmbulanceOptions {
   scene: THREE.Scene; police: Police; grid: CarGrid; kit: FigureKit;
@@ -38,6 +40,7 @@ interface AmbulanceOptions {
   bodyAt: (x: number, y: number, r: number, skip: Car | null) => boolean;
   people: () => Pedestrian[]; // everyone on the pavement, to find those lying hurt
   revive: (p: Pedestrian) => void; // the patient is seen to and gets up
+  take: (p: Pedestrian) => void; // the patient is loaded and driven off
 }
 
 export class Ambulances {
@@ -103,8 +106,25 @@ export class Ambulances {
     if (!best) return false;
     best.car.h = best.path.at(Math.min(6, best.path.length)).ang;
     best.car.mode = 'fire';
-    this.rigs.push({ car: best.car, patient, path: best.path, s: 0, replan: 2, stuck: 0, reverse: 0, phase: 'go', t: 0, wrecked: false, crew: true, goal: { x: patient.x, y: patient.y }, mark: { x: best.car.x, y: best.car.y }, roads, treated: 0, done: 0 });
+    this.rigs.push({ car: best.car, patient, path: best.path, s: 0, replan: 2, stuck: 0, reverse: 0, phase: 'go', t: 0, wrecked: false, crew: true, goal: { x: patient.x, y: patient.y }, mark: { x: best.car.x, y: best.car.y }, roads, treated: 0, done: 0, load: 0, carried: false });
     return true;
+  }
+
+  // You got into an ambulance: it's yours, and whoever of its crew is out runs after you
+  // for a while. Returns whether it was one (taking it is a crime).
+  take(car: Car) {
+    const i = this.rigs.findIndex((r) => r.car === car);
+    if (i < 0) return false;
+    this.rigs.splice(i, 1);
+    car.crew = false;
+    for (const m of this.crew) if (m.rig.car === car) { m.back = true; m.chase = CHASE; }
+    return true;
+  }
+
+  // Where the stretcher goes in: the back of the ambulance.
+  rear(r: Rig) {
+    const c = r.car, d = c.spec.L / 2 + 1;
+    return { x: c.x - Math.cos(c.h) * d, y: c.y - Math.sin(c.h) * d };
   }
 
   knock(m: Medic, vx: number, vy: number) {
@@ -163,9 +183,14 @@ export class Ambulances {
 
   inWay = (x: number, y: number, r: number, skip: Car | null) => !!this.blocked(x, y) || this.o.bodyAt(x, y, r, skip);
 
-  walk(m: Medic, dt: number) {
+  walk(m: Medic, dt: number, me: { x: number; y: number }) {
     const { o } = this, r = m.rig, tp = r.patient;
-    if (m.down > 0) {
+    if (m.chase !== undefined && m.down <= 0) {
+      // Their ambulance is gone: after whoever took it, until they lose them.
+      m.chase -= dt;
+      if (m.chase <= 0 || Math.hypot(me.x - m.x, me.y - m.y) > RUN_AFTER) m.chase = undefined;
+      else steer(m, me.x, me.y, RUN, o.bodyAt, null, o.rng);
+    } else if (m.down > 0) {
       m.down -= dt;
       const k = Math.exp(-4 * dt);
       m.vx *= k;
@@ -173,7 +198,11 @@ export class Ambulances {
     } else {
       const ride = this.rigs.includes(r) && !r.wrecked;
       const attending = r.phase === 'work' && !m.back && tp.hurt !== undefined && r.treated < TREAT;
-      if (attending) {
+      if (r.load && !m.back) {
+        // Carrying the patient to the back of the ambulance, one at each end.
+        const at = this.rear(r);
+        steer(m, at.x, at.y, WALK, this.inWay, r.car, o.rng);
+      } else if (attending) {
         const d = Math.hypot(m.spot.x - m.x, m.spot.y - m.y);
         // How long they've got no nearer: a paramedic hemmed in by parked cars works from where they are.
         if (d < m.best - 0.3) { m.best = d; m.stuck = 0; } else if (d > 0.5) m.stuck += dt;
@@ -238,12 +267,15 @@ export class Ambulances {
       r.t += dt;
       // The patient is seen to once a medic is beside them, for as long as the treatment takes.
       const there = this.crew.filter((m) => m.rig === r && !m.back && m.down <= 0 && (Math.hypot(m.spot.x - m.x, m.spot.y - m.y) < 0.8 || (m.stuck > 2.5 && Math.hypot(tp.x - m.x, tp.y - m.y) < 7))).length;
-      if (tp.hurt !== undefined) {
+      if (tp.hurt !== undefined && !r.carried && !r.load) {
         r.treated += dt * there / CREW;
-        if (r.treated >= TREAT) o.revive(tp);
+        if (r.treated >= TREAT) {
+          if (tp.grave) r.load = 1; else o.revive(tp);
+        }
       }
+      if (r.load && !r.carried) this.carry(r, dt);
       // Seen to, and a paramedic still hasn't got back to the ambulance (hemmed in by parked cars): they're taken as in.
-      if (tp.hurt === undefined && (r.done += dt) > 20) for (const m of this.crew) if (m.rig === r) m.gone = true;
+      if ((tp.hurt === undefined || r.carried) && (r.done += dt) > 20) for (const m of this.crew) if (m.rig === r) m.gone = true;
       const out = this.crew.some((m) => m.rig === r && !m.gone);
       if (!out && !r.crew) { r.crew = true; this.leave(r); }
     } else {
@@ -255,6 +287,29 @@ export class Ambulances {
     if (r.phase === 'go' && o.police.traffic.signals?.against(c.x, c.y, c.h, 22)) want = Math.min(want, 5);
     const { throttle, steer: st } = pedals(c, r, tx, ty, want, dt);
     return { throttle, steer: st, handbrake: want === 0 && Math.abs(c.forwardSpeed) < 3 };
+  }
+
+  // The paramedics carry the patient to the back of the ambulance and put them in.
+  carry(r: Rig, dt: number) {
+    const { o } = this, tp = r.patient, bearers = this.crew.filter((m) => m.rig === r && !m.back && !m.gone);
+    r.load += dt;
+    if (bearers.length) {
+      // The patient lies between them.
+      tp.x = bearers.reduce((a, m) => a + m.x, 0) / bearers.length;
+      tp.y = bearers.reduce((a, m) => a + m.y, 0) / bearers.length;
+      tp.vx = tp.vy = 0;
+      tp.h = bearers[0].h + Math.PI / 2;
+    }
+    const at = this.rear(r);
+    const in_ = bearers.length && bearers.every((m) => Math.hypot(at.x - m.x, at.y - m.y) < 2.2);
+    if (in_ || r.load > 50 || !bearers.length) {
+      // (Or it's taken too long: hemmed in, say.)
+      r.carried = true;
+      r.load = 0;
+      o.take(tp);
+      tp.hurt = tp.grave = undefined;
+      for (const m of bearers) m.back = true;
+    }
   }
 
   // Off again: to a street 250 m or more away.
@@ -308,7 +363,7 @@ export class Ambulances {
       if (!r.wrecked && r.phase === 'go' && r.t > 8 && o.offscreen(c.x, c.y) && r.patient.hurt !== undefined) { r.gone = true; this.calls.push({ patient: r.patient, t: 0, roads: !!r.path?.foot || r.roads }); }
     }
     this.rigs = this.rigs.filter((r) => !r.gone);
-    for (const m of this.crew) this.walk(m, dt);
+    for (const m of this.crew) this.walk(m, dt, me);
     for (const m of this.crew) if (m.gone) this.dismiss(m);
     this.crew = this.crew.filter((m) => !m.gone);
   }

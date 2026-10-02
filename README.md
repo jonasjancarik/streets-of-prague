@@ -216,13 +216,17 @@ that without a new renderer.
   a blue bar under the health bar shows it (`src/cannon.ts`).
 - **Ambulances.** A person hit by a car going faster than about 30 km/h, by a tram you
   drive, or caught near a blast stays on the ground instead of getting up after a few
-  seconds. An ambulance is called from a few hundred metres away, drives to them by the
-  streets (and through pedestrian zones, as the fire engine does) with blue lights and
-  a quick two-tone siren, and its two paramedics get out and see to the patient for
-  about nine seconds, after which the patient gets up and walks on and the crew drives
-  off. Someone nobody comes to gets up on their own after four minutes. You can't take
-  an ambulance yet. The developer panel's "Leave the nearest person hurt" button is the
-  quickest way to see it (`src/ambulance.ts`, `scenarios/ambulance.ts`).
+  seconds; so does anyone a stray police bullet hits on the pavement. An ambulance is
+  called from a few hundred metres away, drives to them by the streets (and through
+  pedestrian zones, as the fire engine does) with blue lights and a quick two-tone
+  siren, and its two paramedics get out and see to the patient for about nine seconds.
+  Someone only hurt gets up and walks on. Someone badly hurt (a car faster than about
+  48 km/h, a tram, a close blast, a bullet) is carried to the back of the ambulance by
+  the two paramedics and driven away. Someone nobody comes to gets up on their own
+  after four minutes. You can take an ambulance like any car (a carjack; the paramedics
+  who are out run after you for a while). The developer panel's "Leave the nearest
+  person hurt" button is the quickest way to see it (`src/ambulance.ts`,
+  `scenarios/ambulance.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, paste coordinates or a Google Maps / Mapy.cz link, or pick

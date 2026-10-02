@@ -29,6 +29,8 @@ export interface Pedestrian extends WalkSpot {
   then?: Point2;
   // Hurt badly and lying there until an ambulance crew has seen to them (or it's been so long nobody's coming): seconds so far.
   hurt?: number;
+  // So badly hurt that the ambulance takes them away rather than getting them up again.
+  grave?: boolean;
 }
 interface WalkSegment extends WalkSpot { a: Point2; b: Point2; s0: number; len: number }
 // Something standing in the way: a circle of a parked car or bike (see pushCar in main.ts).
@@ -133,7 +135,7 @@ export class Crowd {
     if (this.people.length >= this.fig.capacity) {
       // Full: move someone who is out of the way instead.
       const p = this.people[Math.floor(r() * this.people.length)];
-      Object.assign(p, { e: at?.e || p.e, s: at?.s ?? p.s, state: 'walk', vx: 0, vy: 0, hurt: undefined });
+      Object.assign(p, { e: at?.e || p.e, s: at?.s ?? p.s, state: 'walk', vx: 0, vy: 0, hurt: undefined, grave: undefined });
       this.place(p);
       return p;
     }
@@ -398,11 +400,13 @@ export class Crowd {
     }
   }
 
-  // `hurt`: a blow hard enough that they stay down until an ambulance crew gets to them.
-  knock(p: Pedestrian, vx: number, vy: number, hurt = false) {
+  // `hurt`: 1 for a blow hard enough that they stay down until an ambulance crew gets to
+  // them, 2 for one that has them taken away.
+  knock(p: Pedestrian, vx: number, vy: number, hurt = 0) {
     p.state = 'down';
     p.t = 3 + this.r() * 2;
     if (hurt && p.hurt === undefined) p.hurt = 0;
+    if (hurt > 1) p.grave = true;
     p.vx = vx;
     p.vy = vy;
     p.h = Math.atan2(vy, vx) + Math.PI;
@@ -412,6 +416,7 @@ export class Crowd {
   // Seen to: they get up (a little slowly) and walk on.
   revive(p: Pedestrian) {
     p.hurt = undefined;
+    p.grave = undefined;
     if (p.state === 'down') p.t = GETUP;
   }
 
