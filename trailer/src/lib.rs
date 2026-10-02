@@ -14,6 +14,8 @@ use std::sync::LazyLock;
 
 pub mod atmo;
 pub mod day;
+pub mod street;
+mod street_data;
 mod atmo_data;
 
 // The fonts and the sound in `media/` are embedded into the binary (fonts are used by

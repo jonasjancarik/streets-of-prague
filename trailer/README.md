@@ -80,3 +80,38 @@ cd trailer && touch src/lib.rs && cargo run --release --bin day -- render && mv 
 The film's length and its first and last time of day are written three times: in
 `day/shot.js`, `day/soundtrack.py` and `src/day.rs`. The bell is the tram's, played an
 octave and a half lower to stand in for a tower's.
+
+## "The same street"
+
+`street.mp4` (English lines) and `street-cs.mp4` (Czech), 58 seconds, 2.39:1 in a 1080p frame.
+One drive along Rašínovo and Masarykovo nábřeží filmed ten times at other hours and in
+other weather (mist at dawn, morning, noon, rain, golden hour, dusk, night, a storm, snow,
+and a night with the police after you), every take the same shot to the centimetre, cut
+from one to the next ever faster; for two seconds five of them stand side by side as one
+picture. Then the dark, the pull back from where the drive ended to the whole city, the title.
+
+| File | What |
+| --- | --- |
+| `street/plan.py` | the drive (how fast at each frame), which camera films which stretch, the takes → `plan.json` |
+| `street/route.py` | the car's path, worked out from the street network (straight on at each junction, the game's lane offset, smoothed) → `path.json` |
+| `street/cut.py` | the cut (which take shows when), the lines in both languages, what of each take needs filming (`needs.json`), `src/street_data.rs`, the near map for the pull back, and with `sound` the mix `media/street.wav` |
+| `street/lib.js`, `film.sh`, `assemble.py` | film a take: the car put on the path at every frame, the camera worked out from the car, and the game's own sound rendered alongside into `street/sound/<take>.wav` |
+| `street/finish.sh` | the last pass: contrast, darker corners, grain |
+| `src/street.rs`, `src/bin/street.rs` | the picture: bars, the takes and strips, labels, lines, the pull back and title |
+
+```sh
+cd trailer/street
+python3 plan.py && python3 route.py && python3 cut.py
+./film.sh                      # with the scene server running as above (about 40 minutes)
+python3 cut.py sound
+cd .. && touch src/lib.rs
+cargo run --release --bin street -- render && street/finish.sh out.mp4 street.mp4
+cargo run --release --bin street -- render --czech && street/finish.sh out.mp4 street-cs.mp4
+```
+
+The sound is the game's, with the radio off: for each take the game's sound graph is
+built on an `OfflineAudioContext` that is advanced one frame's worth at a time as the
+take is replayed, so engine, tyres, rain, thunder, trams and the city's ambience are
+what the game would play at that frame. `SOUND_ONLY=true ./film.sh` records it again
+without filming. The mix only evens the takes out, cuts with the picture and fades.
+A led car collects damage from whatever it brushes; `lib.js` keeps it at none.

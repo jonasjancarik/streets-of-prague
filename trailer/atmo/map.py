@@ -56,6 +56,10 @@ class Canvas:
         w = max(1, round(max(metres * self.k, 1.1 * SS)))
         self.d.line([self.pt(p) for p in pts], fill=(grey, grey + 2, grey + 8), width=w, joint='curve')
 
+# With a name and a point (map.py map-street -3682 2156): only the closest picture, round that
+# point, under that name (for another trailer's pull back), and its place printed instead of the counts.
+ONLY = sys.argv[1:4] if len(sys.argv) >= 4 else None
+if ONLY: LEVELS = [(ONLY[0], (float(ONLY[1]), float(ONLY[2])), (2800, 1700), 0.5, True)]
 canvases = [Canvas(*l) for l in LEVELS]
 seen, km, named, built, trees = set(), 0.0, set(), set(), 0
 roads = [[] for _ in canvases]
@@ -136,6 +140,10 @@ for c in canvases:
     Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).save(os.path.join(OUT, c.name + '.png'), optimize=True)
     print(c.name, c.w, c.h, int(ok.sum()), 'lamps', file=sys.stderr)
 
+if ONLY:
+    c = canvases[0]
+    print(json.dumps({'name': c.name, 'x0': c.x0, 'y1': c.y1, 'w': c.w, 'h': c.h, 'mpp': c.mpp}))
+    sys.exit()
 names = json.load(open(os.path.join(DATA, 'names.json')))
 stats = {
     'tiles': len(tiles), 'km2': round(len(tiles) * (index['tile'] / 1000) ** 2), 'roadKm': round(km), 'streets': len(names),

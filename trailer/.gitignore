@@ -22,3 +22,7 @@ media/atmo.wav
 media/map-*.png
 /atmo/engine.out
 media/day.wav
+
+# "The same street": the takes' sound and the mix.
+/street/sound/
+media/street.wav

@@ -20,7 +20,7 @@
 
 import { createRequire } from 'node:module';
 import { createServer, request } from 'node:http';
-import { mkdirSync, readdirSync } from 'node:fs';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -70,6 +70,12 @@ async function openGame({ show = false } = {}) {
     const path = join(OUT, `${String(name).replace(/[^\w.-]+/g, '-')}.png`);
     await page.screenshot({ path });
     shots.push(path);
+  });
+  // For footage with sound (t.film's `sound`): a file's bytes (base64) into the screenshots' folder.
+  await page.exposeFunction('__saveFile', async (name, base64) => {
+    const path = join(OUT, String(name).replace(/[^\w.-]+/g, '-'));
+    writeFileSync(path, Buffer.from(base64, 'base64'));
+    return path;
   });
   const place = args.place || 'staromak';
   const q = `?place=${place}&go&day=wed&time=${args.time || '14:00'}&weather=${args.weather || 'clear'}&graphics=${args.graphics || 'high'}&dpr=1${args.extra || ''}`;

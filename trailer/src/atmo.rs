@@ -21,22 +21,22 @@ const TITLE: &str = "Bebas Neue";
 const MONO: &str = "IBM Plex Mono";
 const TEXT: &str = "DM Sans";
 /// The city's middle on the map, where the pull back ends (m).
-const CITY: (f32, f32) = (-42.0, 28.0);
+pub(crate) const CITY: (f32, f32) = (-42.0, 28.0);
 
-fn clamp01(x: f32) -> f32 {
+pub(crate) fn clamp01(x: f32) -> f32 {
     x.clamp(0.0, 1.0)
 }
 /// 0 at `a`, 1 at `b`, eased at both ends.
-fn smooth(a: f32, b: f32, x: f32) -> f32 {
+pub(crate) fn smooth(a: f32, b: f32, x: f32) -> f32 {
     let u = clamp01((x - a) / (b - a));
     u * u * (3.0 - 2.0 * u)
 }
 /// Out fast, settling slowly.
-fn settle(u: f32) -> f32 {
+pub(crate) fn settle(u: f32) -> f32 {
     1.0 - (1.0 - clamp01(u)).powi(3)
 }
 /// 12345.6 as "12 346".
-fn spaced(n: f32) -> String {
+pub(crate) fn spaced(n: f32) -> String {
     let digits = format!("{}", n.round() as i64);
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
@@ -141,7 +141,7 @@ fn dials<'a>(e: usize, bars: f32) -> Svgr<'a> {
 }
 
 /// A number counting up to `value` from second `at` of the pull back, with what it counts.
-fn tally<'a>(seconds: f32, at: f32, row: f32, value: f32, label: &'static str) -> Svgr<'a> {
+pub(crate) fn tally<'a>(seconds: f32, at: f32, row: f32, value: f32, label: &'static str) -> Svgr<'a> {
     let u = settle((seconds - at) / 1.6);
     let show = smooth(at, at + 0.4, seconds);
     let y = 392.0 + row * 132.0;
@@ -154,7 +154,8 @@ fn tally<'a>(seconds: f32, at: f32, row: f32, value: f32, label: &'static str) -
 
 /// The map pictures at the camera's height `h` (m) over the point `c`, each fading into
 /// the next, wider one. `dim`: 0..1, how far they are turned down (under the title).
-fn maps<'a>(ctx: &FFramesContext<'a, '_>, h: f32, c: (f32, f32), fade_in: f32, dim: f32) -> Vec<Svgr<'a>> {
+/// `near`: another closest picture than MAPS' (a pull back that starts elsewhere).
+pub(crate) fn maps<'a>(ctx: &FFramesContext<'a, '_>, h: f32, c: (f32, f32), fade_in: f32, dim: f32, near: Option<(&'static str, f32, f32, f32, f32)>) -> Vec<Svgr<'a>> {
     // The game's camera sees 2 h tan(19°) of ground top to bottom.
     let scale = 1080.0 / (0.6887 * h);
     let shares = [
@@ -162,7 +163,9 @@ fn maps<'a>(ctx: &FFramesContext<'a, '_>, h: f32, c: (f32, f32), fade_in: f32, d
         smooth(1300.0, 2000.0, h) * (1.0 - smooth(9000.0, 15000.0, h)),
         smooth(9000.0, 15000.0, h),
     ];
-    MAPS.iter().zip(shares).filter(|(_, share)| *share > 0.003).filter_map(|(&(file, x0, y1, w, hgt), share)| {
+    let mut levels = MAPS;
+    if let Some(n) = near { levels[0] = n; }
+    levels.into_iter().zip(shares).filter(|(_, share)| *share > 0.003).filter_map(|((file, x0, y1, w, hgt), share)| {
         let image = ctx.get_image(file)?;
         Some(fframes::svgr!(<image href={image.href()} x={960.0 + (x0 - c.0) * scale} y={540.0 - (y1 - c.1) * scale}
             width={w * scale} height={hgt * scale} opacity={share * (1.0 - dim)} preserveAspectRatio="none" />))
@@ -232,7 +235,7 @@ impl Scene for Whole {
                 let numbers = 1.0 - smooth(rise.2 as f32 - 20.0, rise.2 as f32 - 2.0, r as f32);
                 fframes::svgr!(<g>
                     {film}
-                    {maps(ctx, h, c, smooth(380.0, 820.0, h), dim)}
+                    {maps(ctx, h, c, smooth(380.0, 820.0, h), dim, None)}
                     <g opacity={numbers}>
                         <text x="1824" y="146" text-anchor="end" font-family={MONO} font-size="26" letter-spacing="5" fill={PAPER} opacity={0.7 * smooth(0.4, 1.4, seconds)}>{format!("ALTITUDE {} M", spaced(if h < 1000.0 { h } else { (h / 100.0).round() * 100.0 }))}</text>
                         {tally(seconds, 4.3, 0.0, LAMPS, "STREET LAMPS")}
