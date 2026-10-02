@@ -76,6 +76,7 @@ export const CS: Record<string, string> = {
   'The saved game from an earlier version can’t be opened.': 'Uloženou hru z dřívější verze nejde otevřít.',
   'A saved game this version can’t open': 'Uložená hra, kterou tato verze neotevře',
   'Sure?': 'Opravdu?',
+  'Exit to main menu': 'Zpět do hlavní nabídky',
   'Save game': 'Uložit hru',
   Load: 'Načíst',
   Delete: 'Smazat',

@@ -998,8 +998,10 @@ async function main() {
     load: (slot: Slot) => { const s = readSave(slot, AREA); if (!s) return; writeSave('auto', s); telemetry.did('loaded a saved game'); restart(); },
     remove: (slot: Slot) => clearSave(slot),
     newGame: () => { clearSave('auto'); telemetry.did('started a new game from the settings'); restart(); },
+    // Back to the start screen, which offers to continue from this save.
+    exit: () => { autosave(); telemetry.did('went back to the main menu'); restart(); },
   };
-  setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
+  const settingsPanel = setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
 
   // ---- Input -------------------------------------------------------------
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
@@ -1671,7 +1673,7 @@ async function main() {
   const playingAs = (): telemetry.Mode => (ride.on ? 'tram' : taxi.riding ? 'taxi' : inCar ? 'car' : inHeli || boats.me || funicular.me || metro.active ? 'other' : 'foot');
 
   renderer.setAnimationLoop((now) => {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const dt = settingsPanel.open ? 0 : Math.min(0.05, (now - last) / 1000); // the settings pause the game
     graphics.frame(now - last, now, world.inFlight.size > 0);
     telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
     telemetry.most('maxStars', police.stars);

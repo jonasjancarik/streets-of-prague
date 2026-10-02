@@ -59,7 +59,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   weather: { kinds: Kind[]; get: () => Kind | 'auto'; set: (k: Kind | 'auto') => void };
   // Saved games: the list, saving the game as a new one, loading one (which restarts
   // the page, see main.ts), deleting one and starting again from the beginning.
-  saves: { list: () => { slot: Slot; data: SaveData | null }[]; save: () => void; load: (slot: Slot) => void; remove: (slot: Slot) => void; newGame: () => void };
+  saves: { list: () => { slot: Slot; data: SaveData | null }[]; save: () => void; load: (slot: Slot) => void; remove: (slot: Slot) => void; newGame: () => void; exit: () => void };
 }) {
   const corner = el('div', 'corner', document.body);
   // Full screen, where the browser allows it (not on an iPhone). In a phone's
@@ -177,6 +177,9 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   const again = el('button', 'settings-chip', buttons) as HTMLButtonElement;
   again.type = 'button';
   sure(again, () => t('New game'), () => saves.newGame());
+  const leave = el('button', 'settings-chip', buttons) as HTMLButtonElement;
+  leave.type = 'button';
+  sure(leave, () => t('Exit to main menu'), () => saves.exit());
   const list = el('div', 'settings-saves', savesBox);
   refresh.push(() => {
     list.textContent = '';
@@ -252,6 +255,9 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     const r = box.getBoundingClientRect();
     if (e.target === box && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) box.close();
   });
+  // The game stands still while the panel is open.
+  const api = { get open() { return box.open; } };
   // M, G and P change these from the keyboard: look again once the game has.
   window.addEventListener('keydown', (e) => { if (['KeyM', 'KeyG', 'KeyP'].includes(e.code)) setTimeout(update); });
+  return api;
 }
