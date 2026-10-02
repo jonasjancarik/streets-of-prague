@@ -64,13 +64,16 @@ const KONA: EngineVoice = {
   loops: [['engine-idle', 24], ['engine-mid', 74.5], ['engine-high', 97]],
 };
 export const RECORDED: EngineSpec = { idle: 720, redline: 6200, cylinders: 4, gears: [0.25, 0.42, 0.6, 0.8, 1.02], rough: 0, voice: KONA };
-// An electric motor: a thin whine that rises with speed, silent when standing, a single
-// gear (so no shifts) and no clutch or irregular firing.
+// An electric motor: a soft hum that rises with speed and is heard mostly while the car
+// is pulling (coasting at speed it nearly goes away, as outside a real one, where the
+// tyres are what's left), silent when standing, a single gear (so no shifts) and no
+// clutch or irregular firing. Its loudness used to grow with speed instead, up to a
+// piercing 600 Hz whine with overtones at the top.
 const ELECTRIC_VOICE: EngineVoice = {
-  harmonics: [0, 1, 0, 0.25, 0, 0.08], sub: 0, drive: 0.2, tone: [300, 2, 500],
-  roar: [0, 0, 3], level: [0, 0.01, 0.022], shift: [1, 1], clutch: 0, blip: 0,
+  harmonics: [0, 1, 0.08], sub: 0, drive: 0.2, tone: [200, 1.2, 150],
+  roar: [0, 0, 3], level: [0, 0.009, 0.003], shift: [1, 1], clutch: 0, blip: 0,
 };
-const ELECTRIC: EngineSpec = { idle: 600, redline: 9000, cylinders: 8, gears: [1.02], rough: 0, voice: ELECTRIC_VOICE };
+const ELECTRIC: EngineSpec = { idle: 600, redline: 9000, cylinders: 5, gears: [1.02], rough: 0, voice: ELECTRIC_VOICE };
 // A big V8 pickup: low and burbling, taken easy.
 const V8_VOICE: EngineVoice = {
   harmonics: [0, 1, 0.6, 0.35, 0.15, 0.06], sub: 0.35, drive: 1, tone: [140, 1.6, 300],
