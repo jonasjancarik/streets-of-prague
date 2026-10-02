@@ -80,13 +80,12 @@ export function furnitureInstances(geo: Geo<FurnitureData>, trees: TreeInstances
       ctx.fillStyle = `rgb(${n},0,0)`; if (polys) fillPolys(ctx, geo, polys, s);
     };
     fill(d.areas.dtm_yard, YARD); fill(d.areas.yard, YARD);
-    // A named square outline can surround real lawns; explicit green wins over
-    // that general outline. Explicit paved squares still exclude objects below.
-    fill(d.areas.square, 0);
     fill(d.areas.dtm_green, PARK); fill(d.areas.dtm_garden, GARDEN);
     fill(d.areas.garden, GARDEN); fill(d.areas.park, PARK);
     // Higher priority surfaces and sports/rail/service uses never receive furniture.
-    for (const k of ['wood', 'dtm_wood', 'orchard', 'pitch', 'dtm_pitch', 'parking', 'water', 'bridge', 'ballast', 'bare', 'square_setts', 'square_asphalt', 'square_loose']) fill(d.areas[k], 0);
+    // `square` also represents explicit paving slabs. Named outlines must have
+    // their lawns removed by the surface pipeline, not guessed here.
+    for (const k of ['wood', 'dtm_wood', 'orchard', 'pitch', 'dtm_pitch', 'parking', 'water', 'bridge', 'ballast', 'bare', 'square', 'square_setts', 'square_asphalt', 'square_loose']) fill(d.areas[k], 0);
     for (const polys of Object.values(d.roads)) fill(polys, 0);
     fill(d.structures, 0);
     fill(d.buildings.map(b => b.rings), 0);

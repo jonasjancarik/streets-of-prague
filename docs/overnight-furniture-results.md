@@ -9,6 +9,13 @@ The feature adds inferred benches, bins and courtyard planters using existing la
 path, tree, terrain and collision data. No map rebuild, download, push or deployment
 was performed. Behaviour and tradeoffs are documented in `docs/furniture.md`.
 
+The recorded scene batch and counters below belong to initial feature commit
+`6bfee3e`. A focused follow-up restores every square material as a placement
+exclusion because `square` also represents explicit paving slabs. This can reduce
+eligibility on old maps. Integrated captures with corrected surface data remain
+the next verification step; these earlier counts are not measurements of that
+combined revision.
+
 ## Map and scene provenance
 
 The private APFS clone resolves to
@@ -98,9 +105,10 @@ three-second acquisition per world; all tiles receive the same outcome.
 
 `node scripts/check-furniture-browser.mjs http://localhost:5203/` passed actual
 canvas exclusions for roads, water, bridges, structures, buildings, parking, sport,
-woods, squares, railway land, lamps, passages, fences and tree crowns. Explicit green
-wins over a general named-square outline; explicit paved-square polygons still win
-over green. Real land workers transferred matrices and stamped solid collision cells;
+woods, squares, railway land, lamps, passages, fences and tree crowns. The follow-up
+regression rejects explicit `paving_stones` slab polygons overlapping a park and
+retains eligible grass when the named-square geometry has already been trimmed.
+Real land workers transferred matrices and stamped solid collision cells;
 missing terrain or disabled furniture returned no objects. Model budgets, shared
 resources, bounds, active upload ranges and instance-only disposal passed. Check
 outputs are saved in the durable evidence folder.
@@ -112,11 +120,11 @@ including typechecking, with the existing large-bundle warning. Final placement,
 survey and worker/model checks passed after the review corrections.
 
 The earlier Karlovo camera had no park furniture because its general named-square
-outline overrode green in placement. This is no longer a final exclusion: explicit
-green now wins, aligning with the surface thread's correction. This checkout retains
-the original ground renderer/data, so Karlovo's final appearance needs the parent’s
-integrated validation with that surface fix. No ground polygon or terrain geometry
-code was changed here.
+outline covered green in the old data. Grass eligibility now depends on the surface
+pipeline trimming that outline, as implemented in `5efe19e`; the furniture reader
+always excludes the resulting square polygons. This checkout retains the original
+ground data, so Karlovo's final appearance needs the parent's integrated validation
+with that surface fix. No ground polygon or terrain geometry code was changed here.
 
 Broad driving scenarios, WebGL visual parity, phone checks and frame-time benchmarks
 were intentionally skipped for this static scenery feature. No long-route memory or

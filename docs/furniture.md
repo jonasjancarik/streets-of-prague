@@ -30,9 +30,11 @@ for every tile in the world, even if a response arrives late. It cannot hold up 
 loading indefinitely. Older maps without courtyard/park/path evidence receive no
 invented substitutes.
 
-Explicit green takes precedence over a general named-square outline, matching the
-surface pipeline's treatment of parks such as Karlovo náměstí. Explicit paved-square
-polygons, roads and other excluded uses still take precedence over green.
+Every square surface, including `square` for paving slabs, excludes furniture even
+when it overlaps a park. Grass inside a named square depends on corrected surface
+data: the pipeline must trim the general place outline around explicit green and
+water, as in surface commit `5efe19e`. The furniture reader cannot distinguish those
+outlines from explicit slab paving in the shared `square` field.
 
 Candidates stay 12 m inside their tile, avoiding duplicate placements and overlaps
 with tree crowns across seams without consulting neighbouring tiles. This leaves a

@@ -29,10 +29,13 @@ try {
     assert(run({ ...data, structures: poly }).spots.length === 0, 'elevated bridge decks exclude furniture');
     assert(run({ ...data, buildings: poly.map(rings => ({ rings })) }).spots.length === 0, 'buildings exclude furniture');
     const green = { ...data, areas: { park: poly }, walk: [{ id: 'path', u: 'a', v: 'b', hw: 'footway', pts: [[0, 50], [100, 50]], width: 2 }] };
-    const park = run(green), named = run({ ...green, areas: { park: poly, square: poly } });
+    const park = run(green);
     assert(park.spots.length > 0, 'benches/bins beside an actual park path');
-    assert(JSON.stringify(park.spots) === JSON.stringify(named.spots), 'explicit green wins over named square outline');
+    assert(run({ ...green, areas: { park: poly, square: poly } }).spots.length === 0, 'paving_stones slab polygon over a park excludes furniture');
     assert(run({ ...green, areas: { park: poly, square_setts: poly } }).spots.length === 0, 'explicit paved square wins over green');
+    const trimmedSquare = [[[[0, 0], [100, 0], [100, 20], [0, 20]]]];
+    const corrected = run({ ...green, areas: { park: poly, square: trimmedSquare } });
+    assert(JSON.stringify(park.spots) === JSON.stringify(corrected.spots), 'corrected named-square geometry leaves its green eligible');
     const p = yard.spots[0], same = other => other.spots.some(q => q.x === p.x && q.y === p.y);
     assert(!same(run({ ...data, reserved: new Float32Array([p.x, p.y]) })), 'surveyed lamps exclude furniture');
     assert(!same(run({ ...data, passages: [{ pts: [[p.x - 10, p.y], [p.x + 10, p.y]], w: 2 }] })), 'entrances remain clear');
