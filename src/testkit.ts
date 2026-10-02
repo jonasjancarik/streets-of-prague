@@ -8,6 +8,8 @@ import type { Health } from './guns.ts';
 import type { Clock } from './clock.ts';
 import type { Fires } from './fire.ts';
 import type { Brigade } from './brigade.ts';
+import type { Ambulances } from './ambulance.ts';
+import type { Pedestrian } from './people.ts';
 import type { Kind } from './weather.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
@@ -55,7 +57,7 @@ interface Game {
   // Where the camera looks now, and how high it is (for starting the free camera there).
   view0: () => { x: number; y: number; height: number };
   canvas: HTMLElement; fov: number;
-  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade;
+  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; hurtNearest: () => Pedestrian | null;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   rng: () => number;
 }
@@ -142,6 +144,14 @@ export function setupTestkit(g: Game) {
       throw new Error('No clear ground for a car here');
     },
 
+    // Leaves the nearest person on the pavement lying hurt: an ambulance is called.
+    hurt() { return g.hurtNearest(); },
+    // How a hurt person and the ambulance sent to them stand.
+    rescue(p: Pedestrian) {
+      const r = g.ambulances.rigs.find((k) => k.patient === p);
+      return { hurt: p.hurt !== undefined, ambulance: r ? r.phase : null, treated: r ? Math.round(r.treated * 10) / 10 : 0, medics: g.ambulances.crew.filter((m) => m.rig.patient === p).length, speed: r ? round(r.car.speed) : 0, away: r ? Math.round(Math.hypot(r.car.x - p.x, r.car.y - p.y)) : 0, path: r ? (r.path ? Math.round(r.path.length - r.s) : null) : null, stuck: r ? round(r.t) : 0 };
+    },
+
     // Sets a car on fire (a parked one burns for a minute or so before it blows up, the one
     // you're driving for a few seconds).
     ignite(c: Car) {
@@ -153,7 +163,7 @@ export function setupTestkit(g: Game) {
       const b = g.fires.blazes.get(c), e = g.brigade.engines.find((k) => k.target === c);
       return {
         burning: !c.burnt && !!b && b.fuse >= 0, wreck: !!c.burnt, flames: g.fires.onFire(c),
-        engine: e ? e.phase : null, spraying: g.brigade.crew.filter((k) => k.engine.target === c && k.spraying).length,
+        engine: e ? e.phase : null, spraying: g.brigade.crew.filter((k) => k.engine.target === c && k.spraying).length, cannon: !!e && !!e.spraying,
       };
     },
 

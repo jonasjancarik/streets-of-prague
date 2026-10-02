@@ -132,7 +132,7 @@ export interface SoundState {
 }
 
 // One siren sounding: `key` tells it from the others from one frame to the next, and (vx, vy) is its speed.
-export interface Siren { key: object; kind: 'fire' | 'police'; x: number; y: number; vx: number; vy: number }
+export interface Siren { key: object; kind: 'fire' | 'police' | 'ambulance'; x: number; y: number; vx: number; vy: number }
 
 // The sound's groups, each with its own volume in the mixer (settings.ts), 1 being as built.
 export const BUSES = ['engine', 'tyres', 'horns', 'trams', 'city', 'weather', 'radio', 'bangs'] as const;
@@ -617,15 +617,15 @@ class SirenVoice {
   update(q: Siren, d: number, lx: number, ly: number, me: Car | null, aloft = 0) {
     const t = this.ctx.currentTime;
     if (this.key !== q.key) { this.key = q.key; this.last = t; this.phase = Math.random(); }
-    this.phase = (this.phase + (t - this.last) * (q.kind === 'fire' ? 1 : 1.6)) % 1;
+    this.phase = (this.phase + (t - this.last) * (q.kind === 'fire' ? 1 : q.kind === 'ambulance' ? 1.9 : 1.6)) % 1;
     this.last = t;
     // Pitch: high and low for an engine, a sweep up and down for the police.
-    const hz = q.kind === 'fire' ? (this.phase < 0.5 ? 660 : 495) : 650 + 550 * (0.5 - 0.5 * Math.cos(this.phase * Math.PI * 2));
+    const hz = q.kind === 'fire' ? (this.phase < 0.5 ? 660 : 495) : q.kind === 'ambulance' ? (this.phase < 0.5 ? 880 : 660) : 650 + 550 * (0.5 - 0.5 * Math.cos(this.phase * Math.PI * 2));
     // Doppler: the speed of the siren towards you, less your own.
     const dx = lx - q.x, dy = ly - q.y, n = Math.max(d, 1);
     const toward = ((q.vx - (me?.vx ?? 0)) * dx + (q.vy - (me?.vy ?? 0)) * dy) / n;
     const f = hz * SONIC / (SONIC - clamp(toward, -40, 40));
-    const tc = q.kind === 'fire' ? 0.02 : 0.05;
+    const tc = q.kind === 'police' ? 0.05 : 0.02;
     this.osc.frequency.setTargetAtTime(f, t, tc);
     this.top.frequency.setTargetAtTime(f * 2, t, tc);
     this.tone.frequency.setTargetAtTime(clamp(3600 - d * 7, 800, 3600) * (1 - 0.6 * aloft), t, 0.1);

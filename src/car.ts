@@ -62,6 +62,8 @@ export const TYPES: Record<string, CarSpec> = {
   minibus: { L: 7.5, W: 2.2, H: 2.8, mass: 5500, accel: 3.4, vmax: 24, grip: 7.5, turn: 1.7, weight: 0, color: '#c8102e', heavy: true, drive: 'rwd', radius: 6.5, response: 5, brake: 9, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 4.5, weather: 1.15 },
   // A fire engine: src/brigade.ts sends these to burning cars. Never parked or in traffic.
   fire: { L: 8.5, W: 2.5, H: 3.2, mass: 14000, accel: 2.4, vmax: 25, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#c4161c', heavy: true, wheelbase: 5, drive: 'rwd', radius: 8.5, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
+  // An ambulance: src/ambulance.ts sends these to people lying hurt. Never parked or in traffic.
+  ambulance: { L: 6, W: 2.1, H: 2.7, mass: 3200, accel: 5.5, vmax: 30, grip: 8, turn: 1.8, weight: 0, traffic: 0, color: '#f2f3ef', wheelbase: 3.6, drive: 'rwd', radius: 6, response: 6, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
 };
 // A variant of a body type: the same geometry (so the same draw call) with its own
 // handling and engine. `make` and `model` (real names, never translated) are shown when
@@ -257,6 +259,11 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
     cache.set(k, geometry);
     return geometry;
   }
+  if (type === 'ambulance') {
+    const geometry = ambulanceGeometry(S);
+    cache.set(k, geometry);
+    return geometry;
+  }
   if (!bodies) throw new Error('Car bodies are not loaded');
   const node = bodies.getObjectByName(type);
   if (!node) throw new Error(`Missing ${type} in cars.glb`);
@@ -427,6 +434,43 @@ function fireGeometry(S: CarSpec): THREE.BufferGeometry {
   return done();
 }
 
+// An ambulance from boxes: a white van with a lime stripe, a green cross panel on each
+// side, a light bar on the cab, double doors at the back and a ramp of tail lamps.
+function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
+  const { box, wheel, done } = boxBuilder();
+  const L = S.L / 2, W = S.W, white = '#f2f3ef', glass = '#1b242c', lime = '#b6d90f', green = '#12935a';
+  const cx = L - 1.9, floor = 0.45, top = 2.55, roof = 2.7;
+  box('#2a2c2f', -L + 0.05, L - 0.05, 0.3, floor, W - 0.3); // chassis and bumpers
+  box(white, -L, cx, floor, roof, W); // the box where the patient lies
+  box(white, cx, L, floor, top, W); // cab
+  box(white, cx, L - 0.6, top, roof, W); // the roof carries on over the cab
+  box(white, L - 0.6, L, top - 0.15, top, W - 0.1); // the sloping front of the roof
+  box(glass, L - 0.05, L + 0.02, 1.35, top - 0.12, W - 0.25); // windscreen
+  box(glass, cx + 0.35, L - 0.55, 1.4, top - 0.18, W + 0.02); // cab side windows
+  box('#2a2c2f', L - 0.05, L + 0.06, 0.65, 1.0, W - 0.5); // grille
+  box('#2a2c2f', L - 0.1, L + 0.18, 0.3, 0.65, W - 0.05); // front bumper
+  box('#2a2c2f', cx + 0.1, cx + 1.1, roof, roof + 0.1, W - 0.9); // base of the light bar
+  box('#9a9fa3', -L + 0.8, -L + 1.6, roof, roof + 0.12, W - 0.8); // roof vent
+  for (const side of [-1, 1]) {
+    box(lime, -L, L, 0.95, 1.2, 0.03, side * W / 2); // the stripe
+    box(lime, -L, L, 1.55, 1.7, 0.03, side * W / 2);
+    // A green panel with a white cross on the side of the box.
+    box(green, -L + 1.0, cx - 0.9, 1.75, 2.35, 0.03, side * W / 2);
+    box('#ffffff', -L + 1.6, -L + 2.4, 1.98, 2.12, 0.05, side * W / 2);
+    box('#ffffff', -L + 1.93, -L + 2.07, 1.8, 2.3, 0.05, side * W / 2);
+    box('#fff6d8', L - 0.05, L + 0.05, 0.65, 0.9, 0.35, side * (W / 2 - 0.28)); // headlamps
+    box('#b3161b', -L - 0.03, -L + 0.05, 0.8, 1.3, 0.2, side * (W / 2 - 0.18)); // tail lamps
+  }
+  box('#9ea3a7', cx - 0.03, cx + 0.03, floor, top, W + 0.01); // the line between cab and box
+  box('#9ea3a7', -L - 0.03, -L + 0.03, floor + 0.05, roof - 0.1, 0.04); // the join of the rear doors
+  box('#d8dbd6', -L - 0.03, -L + 0.04, 1.35, 1.55, W - 0.3); // the band across the back
+  box(lime, -L - 0.04, -L + 0.04, 0.95, 1.2, W - 0.05);
+  box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
+  wheel(L - 1.1, W);
+  wheel(-L + 1.2, W);
+  return done();
+}
+
 // Lorries are boxes too: a cab in the paint colour and a white box or trailer behind
 // it (with a stripe in the cab's colour), a dark chassis, tail lamps and a bar at the back.
 // The artic is a tractor with a trailer, the box truck one rigid body.
@@ -573,7 +617,7 @@ export class Car {
     this.y = y;
     this.h = h;
     this.vx = this.vy = this.w = 0;
-    this.mode = 'loose'; // 'traffic' (driven by AI), 'loose' (free body), 'player', 'police' (chasing you), 'fire' (an engine on call)
+    this.mode = 'loose'; // 'traffic' (driven by AI), 'loose' (free body), 'player', 'police' (chasing you), 'fire' (an engine or an ambulance on call)
     this.damage = 0;
     this.rider = null; // on a two-wheeler: the look of whoever is riding it
     this.lean = 0;

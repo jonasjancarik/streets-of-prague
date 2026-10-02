@@ -11,6 +11,7 @@ import { Traffic, trafficWanted } from './traffic.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
+import type { Pedestrian } from './people.ts';
 import { loadFootfall } from './footfall.ts';
 import { Trams, loadTrams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
@@ -52,6 +53,7 @@ import { setupTouch } from './touch.ts';
 import './credits.ts';
 import { Police } from './police.ts';
 import { Brigade } from './brigade.ts';
+import { Ambulances } from './ambulance.ts';
 import { Tracers, Health, MAX_HEALTH } from './guns.ts';
 import { Fires } from './fire.ts';
 import { Chopper } from './helicopter.ts';
@@ -595,7 +597,7 @@ async function main() {
       : t('Ticket inspection! Fine for riding without a ticket: {fine}', { fine: kc(paid) }), true),
     banner: (text) => showBanner(text),
   });
-  const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car), ...brigade.engines.map((e) => e.car)];
+  const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car), ...brigade.engines.map((e) => e.car), ...ambulances.rigs.map((r) => r.car)];
   const drawn: Car[] = []; // the cars drawn this frame
   // Off the tram onto the pavement beside it.
   const getOff = () => {
@@ -766,7 +768,7 @@ async function main() {
     }
     let best = null, bestD = Infinity;
     for (const c of allCars()) {
-      if (c.burnt) continue;
+      if (c.burnt || c.type === 'ambulance') continue;
       const d = c.gap(walker.x, walker.y);
       if (d < bestD) { bestD = d; best = c; }
     }
@@ -861,6 +863,7 @@ async function main() {
     for (const a of [...traffic.agents]) traffic.release(a);
     police.reset();
     brigade.reset();
+    ambulances.reset();
     fires.reset();
     scatterPeople(false);
     camPos.set(px(), 0, -py());
@@ -887,12 +890,24 @@ async function main() {
     }
     return false;
   };
+  // Developer tools: the nearest person on the pavement is left lying hurt (the ambulance comes).
+  const hurtNearest = () => {
+    let best: Pedestrian | null = null, bestD = 80;
+    for (const p of crowd.people) {
+      const d = Math.hypot(p.x - px(), p.y - py());
+      if (p.state !== 'walk' || d >= bestD) continue;
+      best = p;
+      bestD = d;
+    }
+    if (best) crowd.knock(best, 0.4, 0, true);
+    return best;
+  };
   // Developer tools: the nearest car (not yours) is set on fire.
   const setFire = () => {
     let best: Car | null = null, bestD = 80;
     for (const c of allCars()) {
       const d = Math.hypot(c.x - px(), c.y - py());
-      if (c === inCar || c.burnt || c.two === 'bike' || c.type === 'fire' || d >= bestD) continue;
+      if (c === inCar || c.burnt || c.two === 'bike' || c.type === 'fire' || c.type === 'ambulance' || d >= bestD) continue;
       best = c;
       bestD = d;
     }
@@ -916,7 +931,7 @@ async function main() {
     }
     return best && bestD < 1 ? surfaceOf(best.surface) : 'pavement';
   };
-  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, setFire, backOnRoad,
+  const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, setFire, setHurt: () => !!hurtNearest(), backOnRoad,
     timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics,
     weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); }, label: () => weather.name } });
   // ---- Saved games (save.ts) ---------------------------------------------
@@ -1052,6 +1067,7 @@ async function main() {
   // and damages them (close by, enough to set them going too), and kills you if you're
   // still inside. Setting it going yourself is a crime.
   const BLAST = 9;
+  const HURTS = 9; // m/s: a car going faster than this leaves the person it hits lying hurt
   const fires: Fires = new Fires({
     scene, height: ground, rng: seeded,
     onIgnite: (c) => {
@@ -1078,7 +1094,8 @@ async function main() {
         if (walker.down <= 0) walker.knock(...away(walker, 3 + 7 * k));
         hurt(95 * k);
       }
-      for (const p of crowd.people) if (near(p) > 0 && p.state !== 'down') crowd.knock(p, ...away(p, 3 + 7 * near(p)));
+      for (const p of crowd.people) if (near(p) > 0 && p.state !== 'down') crowd.knock(p, ...away(p, 3 + 7 * near(p)), near(p) > 0.35);
+      for (const m of ambulances.crew) if (near(m) > 0 && m.down <= 0) ambulances.knock(m, ...away(m, 3 + 7 * near(m)));
       crowd.scare(x, y, 45);
       for (const o of police.officers) if (near(o) > 0 && o.down <= 0) police.knock(o, ...away(o, 3 + 7 * near(o)));
       for (const f of brigade.crew) if (near(f) > 0 && f.down <= 0) brigade.knock(f, ...away(f, 3 + 7 * near(f)));
@@ -1103,6 +1120,11 @@ async function main() {
   const brigade: Brigade = new Brigade({
     scene, police, grid, fires, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,
     bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),
+  });
+  const ambulances: Ambulances = new Ambulances({
+    scene, police, grid, kit, height: ground, rng: seeded, edgesNear, offscreen, viewRadius,
+    bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),
+    people: () => crowd.people, revive: (p) => crowd.revive(p),
   });
   let waitScale = 1, clockShown = '';
   let ticketWas = false;
@@ -1246,6 +1268,7 @@ async function main() {
     police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || taxi.riding, riding: ride.on || taxi.riding });
     inspector.update(dt, { x: me.x, y: me.y, h: inCar ? inCar.h : walker.h, onFoot: !inCar && !inHeli && !ride.on && !taxi.riding && !boats.me && !funicular.me, inVehicle: !!inCar || !!inHeli || taxi.riding || !!boats.me });
     brigade.update(dt, me);
+    ambulances.update(dt, me);
     cannon.update(dt, inCar, cannonHeld, (x, y) => ground(x, y));
     if (cannon.jet && inCar) {
       // The water puts out burning cars and knocks people (and officers) over, gently.
@@ -1264,7 +1287,7 @@ async function main() {
       }
       for (const f of brigade.crew) if (f.down <= 0 && cannon.hit(car, f.x, f.y, 1.8) >= 0) brigade.knock(f, dx * 3, dy * 3);
     }
-    const cops = [...police.cars.map((p) => p.car), ...brigade.engines.map((e) => e.car)];
+    const cops = [...police.cars.map((p) => p.car), ...brigade.engines.map((e) => e.car), ...ambulances.rigs.map((r) => r.car)];
 
     // Everything the traffic, trams and people need to look out for.
     hash.clear();
@@ -1280,13 +1303,14 @@ async function main() {
     for (const p of crowd.people) if (p.state !== 'walk' || p.e.side === 0 || traffic.pavementNear(p.x, p.y, 12)) hash.add({ x: p.x, y: p.y, z: p.gz, r: 0.4, vx: p.vx, vy: p.vy, kind: 'person' });
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     for (const o of brigade.crew) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
+    for (const o of ambulances.crew) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     if (inspector.person) hash.add({ x: inspector.person.x, y: inspector.person.y, z: inspector.person.gz, r: 0.4, vx: inspector.person.vx, vy: inspector.person.vy, kind: 'person' });
     const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const t of tramBodies) for (const [x, y] of t.circles) hash.add({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
     const funiBodies = funicular.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const f of funiBodies) for (const [x, y] of f.circles) hash.add({ x, y, z: f.gz, r: f.line.spec.w / 2, vx: f.vx, vy: f.vy, kind: 'tram' });
 
-    traffic.emergency = [...police.chasing, ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked)].map((e) => e.car);
+    traffic.emergency = [...police.chasing, ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked), ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked)].map((e) => e.car);
     traffic.update(dt, obstacles);
     // In view or not, each car keeps track of whether it's on a bridge or under it.
     for (const a of traffic.agents) world.track(a.car);
@@ -1433,13 +1457,13 @@ async function main() {
       offTrams(p, 0.3, open, (vx, vy, yours) => {
         // Run down by the tram you're driving.
         if (!yours || p.state === 'down') return;
-        crowd.knock(p, vx, vy);
+        crowd.knock(p, vx, vy, true);
         stats.knocked++;
         police.crime('knock', p.x, p.y);
       });
       bump(p, 0.3, (c, nx, ny) => {
         if (c.speed > 3 && p.state !== 'down' && c.mode !== 'traffic') {
-          crowd.knock(p, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
+          crowd.knock(p, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2, c.speed > HURTS);
           c.vx *= 0.93;
           c.vy *= 0.93;
           stats.knocked++;
@@ -1454,6 +1478,12 @@ async function main() {
           police.knock(o, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
           if (c === inCar) police.crime('hitCop', o.x, o.y);
         }
+      });
+    }
+    for (const m of ambulances.crew) {
+      offTrams(m, 0.3, open);
+      bump(m, 0.3, (c, nx, ny) => {
+        if (c.speed > 3 && m.down <= 0) ambulances.knock(m, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
       });
     }
     for (const f of brigade.crew) {
@@ -1698,13 +1728,15 @@ async function main() {
     crowd.render(ground, (x, y) => !offscreen(x, y));
     police.render(ground, time.value);
     {
-      const chasing = police.lit(inCar), engines = brigade.lit;
+      const chasing = police.lit(inCar), engines = brigade.lit, rescue = ambulances.lit;
       flashing.length = 0;
       for (const car of chasing) flashing.push({ car, reach: 19, rate: 1.4 });
       for (const car of engines) flashing.push({ car, reach: 24, rate: 1.2 });
-      beacons.draw([...chasing, ...engines], ground, time.value, sky.dark);
+      for (const car of rescue) flashing.push({ car, reach: 18, rate: 1.6 });
+      beacons.draw([...chasing, ...engines, ...rescue], ground, time.value, sky.dark);
     }
     brigade.render();
+    ambulances.render();
     inspector.render(ground);
     tracers.update(dt);
     // Only the cars in view (and a little round it, for their shadows) are drawn.
@@ -1720,6 +1752,7 @@ async function main() {
       for (const a of traffic.agents) see(a.car);
       for (const p of police.cars) see(p.car);
       for (const e of brigade.engines) see(e.car);
+      for (const r of ambulances.rigs) see(r.car);
     }
     carPool.render(drawn, ground, dt);
     skids.update(dt * scale, drawn, ground);
@@ -1735,6 +1768,7 @@ async function main() {
     sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, hour: (clock.t % 86400) / 3600, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, sirens: [
       ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
       ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
+      ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked).map((r) => ({ key: r, kind: 'ambulance' as const, x: r.car.x, y: r.car.y, vx: r.car.vx, vy: r.car.vy })),
     ] });
 
     // ---- Camera ----------------------------------------------------------
@@ -1975,7 +2009,7 @@ async function main() {
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300),
-    grid, wallet, police, health, clock, fires, brigade, rng: seeded,
+    grid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, rng: seeded,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
     canvas: renderer.domElement, fov: camera.fov,

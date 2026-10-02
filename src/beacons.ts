@@ -4,7 +4,7 @@ import { sendInstances } from './gpu.ts';
 import { strobe } from './lamps.ts';
 
 // Flashing blue lights for emergency vehicles: lamps on the roof and a glow on the
-// ground, for any cars it's given each frame. Police cars and fire engines use it.
+// ground, for any cars it's given each frame. Police cars, fire engines and ambulances use it.
 
 const LAMPS = 64;
 const GLOWS = 24;
@@ -18,6 +18,8 @@ const BARS: Record<string, { lamps: Lamp[]; glow: number; rate: number }> = {
   police: { lamps: [[0, -0.48, 0.18], [0, 0.48, 0.18]], glow: 1, rate: 1.4 },
   // A bar across the cab roof, and one at the back of the body.
   fire: { lamps: [[2.9, -0.7, 0.2], [2.9, -0.25, 0.2], [2.9, 0.25, 0.2], [2.9, 0.7, 0.2], [-3.8, -0.8, 0.15], [-3.8, 0.8, 0.15]], glow: 1.5, rate: 1.2 },
+  // A bar across the cab roof, and two at the back.
+  ambulance: { lamps: [[1.7, -0.7, 0.18], [1.7, -0.25, 0.18], [1.7, 0.25, 0.18], [1.7, 0.7, 0.18], [-2.8, -0.8, 0.1], [-2.8, 0.8, 0.1]], glow: 1.2, rate: 1.6 },
 };
 const OTHER = BARS.police;
 
