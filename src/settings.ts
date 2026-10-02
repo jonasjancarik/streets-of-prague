@@ -62,12 +62,11 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   saves: { list: () => { slot: Slot; data: SaveData | null }[]; save: () => void; load: (slot: Slot) => void; remove: (slot: Slot) => void; newGame: () => void };
 }) {
   const corner = el('div', 'corner', document.body);
-  // Full screen, where the browser allows it (not on an iPhone) and there's a touch
-  // screen to need it: on a computer the browser has its own key. In a phone's
+  // Full screen, where the browser allows it (not on an iPhone). In a phone's
   // landscape it also locks the screen that way, as far as the browser lets it.
   const full = el('button', 'corner-btn', corner) as HTMLButtonElement;
   full.type = 'button';
-  full.hidden = !(document.fullscreenEnabled && matchMedia('(pointer: coarse)').matches);
+  full.hidden = !document.fullscreenEnabled;
   const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
   full.addEventListener('click', async () => {
     full.blur();
