@@ -24,6 +24,8 @@ import { overheadWires } from './wires.ts';
 import { posts, type Post } from './posts.ts';
 import { fences, type FenceSection } from './fences.ts';
 import { fenceMeshes } from './map/fences.ts';
+import { furnitureMeshes, disposeFurniture } from './furniture.ts';
+import { furnitureSurvey } from './furnitureSurvey.ts';
 
 interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer | null; ipr: ArrayBuffer | null; levels: ArrayBuffer | null }
 // A bridge (1, 2, …) or tunnel (-1, -2, …) level in a tile: where it is and how high.
@@ -35,6 +37,7 @@ interface Tile {
   roads: Polygons; // the carriageways (asphalt, setts, dirt)
   poles: Post[]; // the wires' poles, among the posts a car can hit
   fences: FenceSection[];
+  furniture: THREE.InstancedMesh[];
   relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number, side?: number | boolean) => number; hm: Float32Array; labels: Uint8Array | null; edges: () => void } | null;
   sample?: (x: number, y: number, side?: number | boolean) => number;
   // The tile's water (the river and ponds), each polygon with its bounding box.
@@ -290,6 +293,7 @@ export class TileWorld {
   buildTimes: number[];
   skyTotals: { coalesced: number; cancelled: number };
   landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
+  furnitureReserved: Promise<Float32Array | null>;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
     view: (who: Tracked) => { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
@@ -344,6 +348,8 @@ export class TileWorld {
     this.landmarks = osmBuildings ? Promise.resolve([]) : fetch(dataUrl(area, 'landmarks.json'))
       .then((r) => (r.ok ? r.json() as Promise<Landmark[]> : [])).catch(() => []);
     this.landmarkModels = new Map();
+    // A stable survey source, independent of the live post index and load order.
+    this.furnitureReserved = furnitureSurvey(dataUrl(area, 'lamps.bin.gz'));
     // Collision lookups across tiles; anywhere not loaded counts as solid.
     // Game y = 0 is this height above sea level (IPR buildings are stored against it).
     this.ref = index.iprRef ?? 180;
@@ -786,6 +792,11 @@ export class TileWorld {
     }
     const seedArray = new Float64Array(seeds);
     const outlines = t.buildings.filter(grounded).map((b) => ({ rings: b.rings }));
+    const reservedAll = await this.furnitureReserved, reserved: number[] = [];
+    for (let n = 0; reservedAll && n < reservedAll.length; n += 2) {
+      const x = reservedAll[n], y = reservedAll[n + 1];
+      if (x > x0 - 4 && x < x1 + 4 && y > y0 - 4 && y < y1 + 4) reserved.push(x, y);
+    }
     const shapes: Shadower[] = t.buildings.filter(grounded).map((b) => ({ rings: b.rings, h: b.h }));
     const w = this.workers;
     const jobs = Promise.all([
@@ -794,7 +805,8 @@ export class TileWorld {
         box: [geo.minX, geo.minY, geo.maxX, geo.maxY] as Bounds, edges: clipped, buildings: own.filter(grounded).map((b) => ({ rings: b.rings })), parkingZones, ground, levels: tileLevels,
       }),
       w.run('land', {
-        data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, trees: t.trees, passages: t.passages || [], levels: !!tileLevels },
+        data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, trees: t.trees, passages: t.passages || [], levels: !!tileLevels,
+          walk: t.walk ?? [], reserved: new Float32Array(reserved), structures: structures.flatMap(s => s.polys), furnitureBuildings: [...t.buildings.map(b => ({ rings: b.rings })), ...hide.map(rings => ({ rings }))], furnitureEnabled: reservedAll !== null && !location.search.includes('nofurniture') },
         seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       }, [seedArray.buffer]),
       withIpr ? w.run('ipr', { buffer: ipr, box: t.box, absolute: this.index.iprRef != null, ground, bbox, hide }, [ipr]) : null,
@@ -864,6 +876,7 @@ export class TileWorld {
     const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
     const walls = wallMesh(land.walls);
     const fenceRows = fenceMeshes(land.fences);
+    const furniture = furnitureMeshes(land.furniture);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
     // The overhead wires over the tram tracks, at the height of the lowest bridge deck a
     // track is on (as ground.ts lays the tracks) or of the ground.
@@ -878,7 +891,7 @@ export class TileWorld {
     };
     const roads = [...(t.roads.road || []), ...(t.roads.sett || []), ...(t.roads.dirt || [])];
     const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt, (x, y) => roads.some((rings) => inPoly(x, y, rings)));
-    group.add(surfaces.group, ...buildings, walls, fenceRows.fence, fenceRows.hedge, ...landmarks, ...wires);
+    group.add(surfaces.group, ...buildings, walls, fenceRows.fence, fenceRows.hedge, ...landmarks, ...wires, ...furniture);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
     group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
@@ -901,7 +914,7 @@ export class TileWorld {
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), group, surfaces, grid, levels: onLevels, cars, ms,
-      roads, disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, relief: shade, sample: shade?.sample,
+      roads, disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };
@@ -922,6 +935,7 @@ export class TileWorld {
       return tile;
     } catch (error) {
       this.trees.remove(k);
+      disposeFurniture(furniture);
       this.scene.remove(group);
       this.loaded.delete(k);
       this.byIndex.delete(t.i * 65536 + t.j);
@@ -975,6 +989,7 @@ export class TileWorld {
     const t = this.loaded.get(k);
     if (!t) return;
     this.trees.remove(k);
+    disposeFurniture(t.furniture);
     this.scene.remove(t.group);
     t.surfaces.dispose();
     t.relief?.texture.dispose();

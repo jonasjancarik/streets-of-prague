@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { initRoofs, buildBuildings, wallArrays } from './map/buildings.ts';
 import { fenceArrays } from './map/fences.ts';
 import { treeInstances } from './map/vegetation.ts';
+import { furnitureInstances, FURNITURE_SIZE } from './map/furniture.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords } from './facades.ts';
 import { groundLayers, layerBuffers } from './ground.ts';
@@ -224,7 +225,18 @@ function land({ data, seeds, ground, bridges }: WorkerJobs['land']): LandResult 
   const fences = fenceArrays(data, hAt);
   const grid = tileGrid(geo, data, seeds);
   stampTrunks(grid, geo, trees);
-  return { trees, walls, fences, cells: grid.cells };
+  const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: [new Float32Array(0), new Float32Array(0), new Float32Array(0)], spots: [] };
+  // The same solid-cell convention as tree trunks, stamped before parking.
+  for (const p of furniture.spots) {
+    const [hx, hy] = FURNITURE_SIZE[p.kind], c = Math.cos(p.angle), s = Math.sin(p.angle);
+    const [u, v] = geo.px(p.x, p.y, RES), rad = Math.hypot(hx, hy) + 0.35, R = Math.ceil(rad * RES);
+    for (let j = -R; j <= R; j++) for (let i = -R; i <= R; i++) {
+      const col = Math.floor(u) + i, row = Math.floor(v) + j;
+      const x = (col + 0.5) / RES - geo.ox - p.x, y = geo.H - (row + 0.5) / RES - geo.oy - p.y;
+      if (Math.abs(c * x + s * y) <= hx + 0.15 && Math.abs(-s * x + c * y) <= hy + 0.15 && col >= 0 && row >= 0 && col < grid.w && row < grid.h) grid.cells[row * grid.w + col] = 255;
+    }
+  }
+  return { trees, walls, fences, furniture, cells: grid.cells };
 }
 
 function isRequest(value: unknown): value is WorkerRequest {
@@ -277,6 +289,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
       case 'land': {
         const result = land(event.data.data);
         const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.yearly.buffer, result.walls.position.buffer, result.walls.normal.buffer, ...Object.values(result.fences.fence).map((a) => a.buffer), ...Object.values(result.fences.hedge).map((a) => a.buffer), result.fences.sections.buffer, result.cells.buffer];
+        buffers.push(...result.furniture.matrices.map(a => a.buffer));
         if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Land transfer requires ArrayBuffer storage');
         worker.postMessage({ id, result } satisfies WorkerResponse, buffers as ArrayBuffer[]);
         break;

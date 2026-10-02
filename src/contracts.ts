@@ -2,10 +2,11 @@ import type { Bounds, GeoData, Point2, Polygons } from './map/geo.ts';
 import type { RawStreetEdge } from './network.ts';
 import type { Terrace } from './terrain.ts';
 import type { GroundResult, GroundRoadEdge, GroundTileData } from './ground.ts';
-import type { TreeSpot, TreeTileData } from './map/vegetation.ts';
+import type { TreeSpot } from './map/vegetation.ts';
 import type { FenceBuffers, FenceTile } from './map/fences.ts';
 import type { BuildingTile } from './map/buildings.ts';
 import type { SkyJob, SkyResult } from './map/skyView.ts';
+import type { FurnitureData, FurnitureInstances } from './map/furniture.ts';
 
 export interface TerrainMetadata {
   n: number;
@@ -94,6 +95,7 @@ export interface BuildingArrays {
 }
 
 export interface LandResult {
+  furniture: FurnitureInstances;
   trees: { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; count: number; shrubs: number; conifers: number };
   walls: { position: Float32Array; normal: Float32Array };
   fences: FenceBuffers;
@@ -112,7 +114,7 @@ export interface WorkerJobs {
   };
   sky: SkyJob;
   land: {
-    data: TreeTileData & { passages: TilePassage[]; levels: boolean; fences: FenceTile['fences'] };
+    data: FurnitureData & { levels: boolean; fences: FenceTile['fences']; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
     seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
   };
 }
