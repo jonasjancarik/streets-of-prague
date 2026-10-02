@@ -193,39 +193,64 @@ JavaScript run by the web view, as long as the app stays the same kind of app.
 
 1. **Publishing.** `scripts/deploy-cloudflare.sh` (production) also builds the app's
    bundle, zips `dist-app`, and uploads it with a small `app.json` at a fixed address:
-   the newest build's version, its address and checksum, the map version it wants, and
-   the lowest **shell number** it can run on. The shell number is a whole number in
+   the newest build's version, its address and checksum, the map version it goes with,
+   the oldest map version it can still play with (step 2), and the lowest **shell
+   number** it can run on. The shell number is a whole number in
    `src/native.ts` and in both native projects, raised whenever the native side changes
    in a way the game's code relies on (a new `MapStore` method, for instance).
-2. **Fetching and switching.** Use `@capgo/capacitor-updater` in its self-hosted, manual
+2. **Recording which builds need a newer map.** Today a commit records one thing about
+   the map: `deploy/data-version`, the map it goes with. Add `deploy/data-oldest`, the
+   oldest map version this code still plays correctly with, committed the same way so
+   every tag carries it. Most game updates leave it alone. Raise it in the same commit
+   as any code that can't do without newer map files: always when `FORMAT` and
+   `DATA_FORMAT` rise, and also when code starts relying on a file or field that older
+   maps lack and has no fallback for. Then:
+   - `scripts/deploy-cloudflare.sh` and `scripts/release.sh` refuse to go on if
+     `data-oldest` is newer than `data-version`, or if `DATA_FORMAT` changed since the
+     previous tag and `data-oldest` didn't.
+   - `scripts/release.sh` puts one line into the release notes: "Needs map X or newer"
+     when `data-oldest` rose since the previous tag, "Works with maps from X" otherwise.
+     That makes the list of GitHub releases the record of which updates needed a new map.
+   - Comparing two versions needs their names to sort in upload order. Check that the
+     names `scripts/upload-data.sh` gives do (a second upload on one day included), and
+     fix the naming if not.
+   - Describe all of this in `docs/versioning.md` beside the existing three numbers.
+3. **Fetching and switching.** Use `@capgo/capacitor-updater` in its self-hosted, manual
    mode, so nothing goes through a third party's service (health-check it first; if it
    doesn't hold up, Capacitor's own `setServerBasePath` and `MapStore`'s download and
    unpack do the same job). On launch with a connection: read `app.json`; if there is a
    newer build that this shell can run, download it in the background and switch to it
    at the next start, never in the middle of a game.
-3. **Falling back.** A new build must tell the app it started properly (the plugin's
+4. **Falling back.** A new build must tell the app it started properly (the plugin's
    `notifyAppReady`, called once the start screen is up). If it doesn't, the app goes
    back to the build that last worked and doesn't try that version again.
-4. **Too old a shell.** When the newest build needs a higher shell number, the app keeps
+5. **Too old a shell.** When the newest build needs a higher shell number, the app keeps
    its current build and says, once, that a newer version is in the App Store or on
    Google Play.
-5. **The map for players who stream it** needs nothing more: a new build names its map
+6. **The map for players who stream it** needs nothing more: a new build names its map
    version and streams that one.
-6. **The map for players who downloaded it.** When a new build wants a different map
-   version, download the new pack as well (straight away on Wi-Fi, after asking on
-   mobile data), and switch build and map together at the next start once both are
-   complete. Until then the app keeps the old build with the old map, so offline play
-   never breaks. Delete the old map only after the new one has been used successfully.
-7. **Keep old builds reachable.** An app that hasn't been opened for months must still
+7. **The map for players who downloaded it.** Two cases, told apart by step 2's record:
+   - *The downloaded map is still new enough for the new build.* Switch to the build at
+     the next start and keep playing on the map already on the device. The newer map
+     is fetched in the background (straight away on Wi-Fi; on mobile data the settings
+     show "A newer map is available (650 MB)") and takes over at a later start.
+   - *The new build needs a newer map.* Download the pack as well (straight away on
+     Wi-Fi, after asking on mobile data) and switch build and map together at the next
+     start once both are complete. Until then the app keeps the old build with the old
+     map, so offline play never breaks.
+
+   Delete the old map only after the new one has been used successfully.
+8. **Keep old builds reachable.** An app that hasn't been opened for months must still
    find its map: don't delete a map version from R2 while any published store release
    ships a build that names it. Write this into `docs/versioning.md`.
-8. Test the whole path with two real builds: update, restart, see the new version in the
+9. Test the whole path with two real builds: update, restart, see the new version in the
    settings panel; a deliberately broken build falls back; a build needing a higher
-   shell number is refused; the offline case in step 6 with aeroplane mode switched on
-   halfway through the download.
+   shell number is refused; both cases of step 7, the second with aeroplane mode switched
+   on halfway through the download.
 
-A map change means a second 650 MB download for players with the offline map. The map
-changes rarely, so this plan accepts that; packs holding only the changed tiles are a
+A map change means a second 650 MB download for players with the offline map, though
+only a build that needs the newer map makes them wait for it. The map changes rarely,
+so this plan accepts that; packs holding only the changed tiles are a
 possible follow-up.
 
 ## Phase 6: Android (one to two days)
