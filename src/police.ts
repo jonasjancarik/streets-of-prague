@@ -644,7 +644,7 @@ export class Police {
       // (twice a second, and police see you for a few seconds) grows steeply: about 6% of
       // passes at 15 over, 40% at 20, most at 25, nearly all at 30.
       const over = me.speed * 3.6 - this.limit;
-      if (me.car && over > 10 && this.r() < Math.min(1, ((over - 10) / 20) ** 2) && this.sees(me.x, me.y, 60)) this.heat = Math.max(this.heat, STARS[0]);
+      if (me.car && over > 10 && this.r() < 0.5 * ((over - 10) / 20) ** 3 && this.sees(me.x, me.y, 60)) this.heat = Math.max(this.heat, STARS[0]);
     }
 
     // Out of sight long enough, you lose a star.
