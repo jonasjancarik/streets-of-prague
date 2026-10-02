@@ -97,7 +97,8 @@ export interface LandResult {
 }
 
 export interface WorkerJobs {
-  roofs: { buildings: TileBuilding[]; size: Point2; origin: Point2; ground: HeightGrid | null; bbox: Bounds };
+  // water: the tile's water polygons, so what stands on them is built as a boat (map/buildings.ts).
+  roofs: { buildings: TileBuilding[]; size: Point2; origin: Point2; ground: HeightGrid | null; bbox: Bounds; water: Point2[][][] };
   // hide: landmarks' footprints (rings of each), where IPR's buildings give way to them.
   ipr: { buffer: ArrayBuffer; box: Bounds; absolute: boolean; ground: HeightGrid | null; bbox: Bounds; hide: Point2[][][] };
   ground: {

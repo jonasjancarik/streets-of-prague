@@ -12,6 +12,8 @@ const SkeletonBuilder = skeletonModule.SkeletonBuilder ?? skeletonModule.default
 export interface BuildingTile extends GeoData {
   // cover: what the roof is covered with, where OSM or pipeline/roofs.py says.
   buildings: { id: string; name?: string | null; kind: string; h: number; minh: number; church?: boolean; roof?: string | null; cover?: 'tiles' | 'slate' | 'copper'; rings: Point2[][] }[];
+  // The tile's areas by kind (polygons with holes): `water` tells what is afloat.
+  areas?: Record<string, Point2[][][]>;
 }
 interface WallTile { walls: { kind: string; pts: Point2[] }[] }
 interface WallBuffers { position: Float32Array; normal: Float32Array }
@@ -19,6 +21,21 @@ interface WallBuffers { position: Float32Array; normal: Float32Array }
 const ROOF_SLATE = ['#6c6d70', '#5e6064', '#77746f'];
 const ROOF_COPPER = '#6f9483';
 const WALLS = TENEMENT_PLASTER;
+
+// What the map draws as a building on the water is a boat tied up at the quay (a botel, a
+// restaurant boat, a landing stage): white sides over a dark hull, a flat deck, no taller
+// than a deck or two. As a house with a tiled roof it read as a house standing in the river.
+const HULL = '#22344a', BOAT_SIDE = '#ecebe5', BOAT_DECKS = ['#8f9aa0', '#a7a59c', '#7d8a94'];
+const BOAT_MAX = 4.2; // m over the water
+
+function within(ring: Point2[], x: number, y: number) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
 
 const PITCH = 0.8; // rise per metre of inset (~39°)
 const MAX_ROOF = 7.5;
@@ -60,14 +77,24 @@ export function buildBuildings(data: BuildingTile) {
     push(c, n, cols[2]);
   };
 
+  const water = data.areas?.water ?? [];
+  // Afloat: the middle of its outline and most of its corners are over water.
+  const afloat = (ring: Point2[]) => {
+    if (!water.length) return false;
+    const wet = (x: number, y: number) => water.some((poly) => within(poly[0], x, y) && !poly.slice(1).some((hole) => within(hole, x, y)));
+    const cx = ring.reduce((sum, p) => sum + p[0], 0) / ring.length, cy = ring.reduce((sum, p) => sum + p[1], 0) / ring.length;
+    return wet(cx, cy) && ring.filter(([x, y]) => wet(x, y)).length >= ring.length * 0.6;
+  };
+
   for (const b of data.buildings) {
     const hv = hash(b.id + b.rings[0].length);
+    const boat = afloat(b.rings[0]);
     const isWall = /zeď/i.test(b.name || '');
     // Kiosks and canopies are flat; garages, sheds and service buildings half and half,
     // so a row of them isn't all flat.
     const small = ['kiosk', 'roof'].includes(b.kind)
       || (['garage', 'shed', 'service'].includes(b.kind) && hash(b.id + 'roof') < 0.5);
-    const eaves = isWall ? 5 : Math.max(b.h, b.minh + 3);
+    const eaves = isWall ? 5 : boat ? b.minh + Math.min(BOAT_MAX, Math.max(2.4, b.h - b.minh)) : Math.max(b.h, b.minh + 3);
     const base = isWall ? 0 : b.minh;
 
     cWall.set(WALLS[Math.floor(hv * WALLS.length)]);
@@ -79,6 +106,7 @@ export function buildBuildings(data: BuildingTile) {
     else cRoof.set(ROOF_TILES[Math.floor(hv * 997) % ROOF_TILES.length]);
     tmp.copy(cRoof).offsetHSL(0, 0, (hash(b.id) - 0.5) * 0.06);
     cRoof.copy(tmp);
+    if (boat) { cWall.set(BOAT_SIDE); cRoof.set(BOAT_DECKS[Math.floor(hv * 31) % BOAT_DECKS.length]); }
 
     // Normalise orientation: outer CCW, holes CW (x east / y north).
     const rings = b.rings.map((r, i) => {
@@ -89,7 +117,7 @@ export function buildBuildings(data: BuildingTile) {
 
     // Walls, a little darker at the foot. The sky view (map/skyView.ts) does most of the
     // darkening of lower walls in narrow streets, so this is only a hint.
-    const dark = cWall.clone().multiplyScalar(0.82);
+    const dark = boat ? new THREE.Color(HULL) : cWall.clone().multiplyScalar(0.82);
     for (const ring of rings) {
       for (let i = 0; i < ring.length; i++) {
         const [x1, y1] = ring[i];
@@ -101,9 +129,9 @@ export function buildBuildings(data: BuildingTile) {
       }
     }
 
-    let roofShape = b.roof;
+    let roofShape = boat ? null : b.roof;
     if (!roofShape) {
-      if (small || isWall) roofShape = 'flat';
+      if (small || isWall || boat) roofShape = 'flat';
       else if (rings.length === 1 && rings[0].length === 4) roofShape = 'gabled';
       else roofShape = 'hipped';
     }
@@ -112,7 +140,7 @@ export function buildBuildings(data: BuildingTile) {
       const pts = rings[0].map(([x, y]) => new THREE.Vector2(x, y));
       const holes = rings.slice(1).map((r) => r.map(([x, y]) => new THREE.Vector2(x, y)));
       const all = [...rings[0], ...rings.slice(1).flat()];
-      const flatCol = isWall ? cWall : cRoof.clone().lerp(new THREE.Color('#8a8580'), 0.6);
+      const flatCol = isWall ? cWall : boat ? cRoof : cRoof.clone().lerp(new THREE.Color('#8a8580'), 0.6);
       for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(pts, holes)) {
         tri([...all[i], eaves], [...all[j], eaves], [...all[k], eaves], flatCol, [0, 0, 1]);
       }

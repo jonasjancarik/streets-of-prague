@@ -33,14 +33,14 @@ const styleAt = (bbox: Bounds): StyleAt => {
 };
 const groundAt = (g: HeightGrid | null) => (g ? heightSampler(g.hm, g.box, g.n, g.step) : () => 0);
 
-async function roofs({ buildings, size, origin, ground, bbox }: WorkerJobs['roofs']): Promise<BuildingArrays> {
+async function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roofs']): Promise<BuildingArrays> {
   await (roofsReady ??= initRoofs());
   const hAt = groundAt(ground);
   // One building at a time, each lifted onto its own ground height (`base`).
   const keys = ['position', 'normal', 'color', 'drapeUv'] as const;
   const parts: Record<(typeof keys)[number], Float32Array[]> = { position: [], normal: [], color: [], drapeUv: [] };
   for (const b of buildings) {
-    const g = buildBuildings({ size, origin, buildings: [b] }).mesh.geometry;
+    const g = buildBuildings({ size, origin, buildings: [b] , areas: { water } }).mesh.geometry;
     const pos = g.attributes.position.array as Float32Array;
     for (let i = 1; i < pos.length; i += 3) pos[i] += b.base || 0;
     for (const k of keys) parts[k].push(g.attributes[k].array as Float32Array);

@@ -791,7 +791,7 @@ export class TileWorld {
         seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       }, [seedArray.buffer]),
       withIpr ? w.run('ipr', { buffer: ipr, box: t.box, absolute: this.index.iprRef != null, ground, bbox, hide }, [ipr]) : null,
-      !withIpr || extrude.length ? w.run('roofs', { buildings: extrude, size: data.size, origin: data.origin, ground, bbox }) : null,
+      !withIpr || extrude.length ? w.run('roofs', { buildings: extrude, size: data.size, origin: data.origin, ground, bbox, water: t.areas?.water ?? [] }) : null,
     ]);
     lap('send');
     // The landmarks drawn with this tile (each with one tile only, where it mostly is).
