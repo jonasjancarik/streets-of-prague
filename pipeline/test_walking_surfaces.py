@@ -142,6 +142,33 @@ class WalkingSurfaceTests(unittest.TestCase):
         self.assertGreater(got["roads"]["path"].area, 170)
         self.assertEqual(got["areas"]["dtm_green"].area, 40000)
 
+    def test_named_square_keeps_surveyed_green_and_its_crossing_path(self):
+        got = self.extract([{"place": "square", "surface": "sett"}, {"highway": "footway"}],
+                           [box(-40, -40, 40, 40), LineString([(-35, 0), (35, 0)])],
+                           land={"green": box(-20, -20, 20, 20)})
+        green = got["areas"]["dtm_green"]
+        self.assertLess(got["areas"]["square_setts"].intersection(green).area, 1e-5)
+        self.assertGreater(got["roads"]["path"].intersection(green).area, 119)
+
+    def test_named_square_keeps_inferred_lawn_and_its_crossing_path(self):
+        got = self.extract([{"landuse": "residential"}, {"building": "apartments"},
+                            {"place": "square", "surface": "sett"}, {"highway": "footway"}],
+                           [box(-100, -100, 100, 100), box(50, 50, 70, 70),
+                            box(-40, -40, 40, 40), LineString([(-35, 0), (35, 0)])])
+        self.assertNotIn("square_setts", got["areas"])
+        self.assertGreater(got["roads"]["path"].area, 200)
+
+    def test_route_tags_preserve_explicit_different_material_on_square(self):
+        for footway in ("link", "traffic_island"):
+            got = self.extract([{"highway": "pedestrian", "surface": "sett"},
+                                {"highway": "footway", "footway": footway, "surface": "asphalt"}],
+                               [box(-40, -40, 40, 40), LineString([(-35, 0), (35, 0)])])
+            self.assertGreater(got["roads"].get("path", Polygon()).area, 200)
+            matching = self.extract([{"highway": "pedestrian", "surface": "sett"},
+                                     {"highway": "footway", "footway": footway, "surface": "sett"}],
+                                    [box(-40, -40, 40, 40), LineString([(-35, 0), (35, 0)])])
+            self.assertEqual(matching["roads"].get("sett", Polygon()).area, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

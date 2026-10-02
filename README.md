@@ -260,6 +260,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   footways use setts, and island/link routes leave the pavement clear while keeping
   real path sections through lawns. A named
   square's outline keeps its mapped lawns and ponds, with real paths through them.
+  Surveyed and inferred lawns receive the same treatment; a link paved differently
+  from the square remains visible.
   These surface rules leave the walking network and street kerbs alone. The city's
   technical map supplies ground-level courtyards, maintained green, gardens, pitches
   and woods where OSM has no more specific surface. OSM ground and roads draw above

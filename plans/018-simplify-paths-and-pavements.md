@@ -345,3 +345,45 @@ parking hashes match. [Physical coverage](../docs/evidence/plan018/estate-green.
 Review the pictures, then rebuild approved shared ground and terrain layers from
 the chosen commit, with the normal strict assembly checks. No push, merge or
 deployment was performed.
+
+### Independent review follow-up, 3 October 2026
+
+The review of `5efe19e` found two cases its fixtures did not combine. A named
+square was trimmed before DTM green and inferred apartment-block lawns were
+available, so it could still pave those lawns and remove their paths. Also,
+route-only link filtering ran before material matching and could erase an
+explicit asphalt link across a sett square.
+
+The follow-up moves named-outline trimming after all green sources are collected.
+Route-only filtering retains green sections and explicitly different materials
+inside mapped square paving, then removes only the matching-material overlap.
+Explicit pedestrian/area-highway surface polygons keep their paving priority.
+Three new extraction regressions cover surveyed green, inferred lawns and both
+link/traffic-island tags with matching versus contrasting materials. All **32
+focused Python tests pass**. The reviewer's independent overlapping-box probe
+also passes; its surveyed-green/garden fixtures now have **zero square overlap
+and 120 m² of retained path**, and asphalt/wood/gravel link probes retain 60 m²
+inside the sett square.
+
+Furniture follow-up `fdaba9c` is accepted by code and regression review: it treats
+`square` as a final exclusion after green, with an explicit slab-over-park test
+and a trimmed named-square test. No furniture source was changed in this worktree;
+combined furniture/ground scene validation remains with integration.
+
+An offline `centrum` ground rebuild for the follow-up succeeded. Against the
+`5efe19e` preview it removes another **3,403.66 m²** of named-square paving over
+known green, while all 234 tiles retain identical buildings, networks, parking
+inputs, trees, passages, crossings, rails, walls, fences and weirs. Its marker is
+`built=2026-10-02T22:02:01Z`, pipeline `5efe19e9c5-dirty` (the preserved index
+records the actual marker). [Follow-up measurements](../docs/evidence/plan018/review-followup/review-metrics.json).
+The existing six paired images and main metrics above remain evidence for the
+first implementation; they are not labelled as captures of this follow-up.
+Two follow-up pairs use the same renderer/time/date/viewport as the initial
+comparison, with heading 0: [surveyed green](../docs/evidence/plan018/review-followup/surveyed-green-pair.jpg)
+at `[50.0807855,14.4487146]`, height 100, tilt 25; and
+[contrasting asphalt links](../docs/evidence/plan018/review-followup/distinct-link-pair.jpg)
+at `[50.07585,14.41382]`, height 65, tilt 0. The baseline is the saved `5efe19e`
+preview; the candidate is the reviewed rebuild. Both markers were checked and
+the browser closed before releasing the GPU lock. These confirm restored lawn
+patches and retained contrasting route surfaces; no timing or furniture claim
+is inferred.

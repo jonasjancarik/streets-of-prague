@@ -341,20 +341,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 continue
             add_way(row, g, hw, width)
 
-    square_lines = [line for line, _ in square_ways]
-    square_tree = STRtree(square_lines) if square_lines else None
-    # A place=square outline names the whole place, including its park or pond;
-    # it doesn't assert paving over those explicitly mapped surfaces (Karlovo).
-    natural = unary_union([g for k in NATURAL_GROUND
-                           for g in areas.get(k, [])])
-    for poly, surface_tag, outline in squares:
-        if outline and not natural.is_empty:
-            poly = _areas(poly.difference(natural))
-        if poly.is_empty:
-            continue
-        kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
-        areas.setdefault(kind or "square", []).append(poly)
-    timer.lap("passages_squares")
+    timer.lap("passages")
 
     # The streets as surveyed, where the technical map has them (within Prague).
     surface = shapely.intersection(dtm.streets((w, s, e, n), tf.transform), clip, grid_size=GRID)
@@ -410,10 +397,24 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     land = {f"dtm_{kind}": _areas(geom.intersection(clip))
             for kind, geom in dtm.land((w, s, e, n), tf.transform).items()}
     timer.lap("dtm_land")
-    natural = unary_union([natural, gardens, *(g for k, g in land.items()
-                                              if k in ("dtm_green", "dtm_garden", "dtm_wood", "dtm_pitch"))])
+    natural = unary_union([gardens, *(g for k in NATURAL_GROUND for g in areas.get(k, [])),
+                          *(g for k, g in land.items()
+                            if k in ("dtm_green", "dtm_garden", "dtm_wood", "dtm_pitch"))])
+    # A named square can contain mapped, surveyed or inferred lawns. Decide its
+    # paved remainder only after all those sources are in; explicit surface areas
+    # keep their paving even when green also covers them.
+    square_lines = [line for line, _ in square_ways]
+    square_tree = STRtree(square_lines) if square_lines else None
+    for poly, surface_tag, outline in squares:
+        if outline and not natural.is_empty:
+            poly = _areas(poly.difference(natural))
+        if poly.is_empty:
+            continue
+        kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
+        areas.setdefault(kind or "square", []).append(poly)
     for cls, geom in _walking_surfaces(walking_surfaces, areas, natural):
         road_lines.setdefault(cls, []).append(geom)
+    timer.lap("squares_walking_surfaces")
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
     timer.lap("road_land_unions")
@@ -462,19 +463,24 @@ def _walking_surfaces(ways, areas, natural=None):
     """
     if natural is None:
         natural = unary_union([g for k in NATURAL_GROUND for g in areas.get(k, [])])
-    squares = {}
+    squares, paving = {}, {}
     for kind in ("square", "square_setts", "square_asphalt", "square_loose"):
         poly = unary_union(areas.get(kind, []))
+        paving[kind] = poly
         # Enlarge into surrounding paving, never into a lawn or pond. In particular
         # a green hole narrower than 1 m must not disappear under the edge margin.
         squares[kind] = poly.buffer(SQUARE_EDGE).difference(natural.difference(poly))
     all_squares = unary_union(list(squares.values()))
     green = natural.difference(unary_union(areas.get("water", [])))
+    distinct = {kind: unary_union([green, *(p for k, p in paving.items() if k != kind)])
+                for kind in {_square_surface(tag) for _, _, tag, _, route in ways if route and tag is not None}}
     for geom, cls, tag, at_ground, route in ways:
+        kind = _square_surface(tag)
         if route:
-            geom = _areas(geom.intersection(green))
+            # A route tag is not evidence that an explicitly different material
+            # is redundant (e.g. an asphalt link across granite setts).
+            geom = _areas(geom.intersection(green if tag is None else distinct[kind]))
         if at_ground:
-            kind = _square_surface(tag)
             mask = all_squares if tag is None else squares.get(kind)
             if mask is not None and not mask.is_empty:
                 geom = _areas(geom.difference(mask))
