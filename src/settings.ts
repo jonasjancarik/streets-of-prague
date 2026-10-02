@@ -9,6 +9,7 @@ import type { Slot, SaveData } from './save.ts';
 import * as telemetry from './telemetry.ts';
 import { mapData } from './data.ts';
 import { newsletterLink } from './newsletter.ts';
+import { updateNotice } from './update.ts';
 import { hapticsOn, setHaptics } from './haptics.ts';
 import { feedbackLink } from './feedback.ts';
 
@@ -210,6 +211,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   // is known once the map has loaded.
   const versionLine = () => { version.textContent = `${t('Version')} ${__APP_VERSION__} · ${__APP_BUILT__} · ${t('map data')} ${__DATA_VERSION__ || mapData.built.slice(0, 10) || 'local'}`; };
   relabel.push(versionLine);
+  updateNotice(box, 'settings-update');
 
   function update() {
     mute.innerHTML = icon(SPEAKER + (sound.on ? WAVES : CROSS));

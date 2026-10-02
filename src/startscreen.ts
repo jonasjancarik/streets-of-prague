@@ -3,6 +3,7 @@ import type { Kind } from './weather.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import { newsletterLink } from './newsletter.ts';
+import { updateNotice } from './update.ts';
 import { betaNote } from './betanote.ts';
 
 // The start of the game, on the loading screen: the time and weather it will begin
@@ -118,6 +119,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
   fresh.addEventListener('click', () => { resuming = false; sync(); show(); go.focus(); });
   go.disabled = true;
   newsletterLink(panel, 'ls-news', { thanks: true });
+  updateNotice(panel, 'ls-update');
   for (const f of relabel) f();
   show();
 

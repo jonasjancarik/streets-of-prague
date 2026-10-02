@@ -99,6 +99,8 @@ export const CS: Record<string, string> = {
   'Leave full screen': 'Ukončit celou obrazovku',
   'Sound on (M)': 'Zvuk zapnutý (M)',
   'Sound off (M)': 'Zvuk vypnutý (M)',
+  'A newer version of the game is available. Reload to get it.': 'Je k dispozici novější verze hry. Načti ji znovu.',
+  'Reload': 'Načíst znovu',
   'Credits, licences and privacy': 'Poděkování, licence a soukromí',
   // Newsletter signup
   'Get news about the game by email': 'Novinky o hře e-mailem',
