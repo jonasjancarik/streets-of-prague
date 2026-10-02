@@ -62,3 +62,11 @@ Surface fixes for surveyed/inferred green and differently surfaced links pass ne
 Independent terrain-worker review of pinned surface follow-up `67111992849623c5a11fdee59b4639eb6e8184cb` passed 19 surface tests and extra probes: no named-square overlap with surveyed lawns, retained park paths, contrasting links preserved, explicit paving precedence unchanged, and four independent chunk extractions agreeing on shared cores. Parent accepts surface sequence `5efe19e9c5880a106646333d9fb6649fe03b9a40` then `67111992849623c5a11fdee59b4639eb6e8184cb` for isolated integration.
 
 Cutter `8e9e105` is NOT accepted yet. Independent review passed 400 additional geometry cases but found groundLayers pre-cut refinement leaves a 0.27 m curved-height tile-edge gap (baseline 1.2 m). Author is assigned integrated seam regression and correction. Synthetic dense segment arrangements also show steep scaling; actual-map density evidence is needed to contextualize it.
+
+## Acceptance at 23:59 UTC
+
+Combined source/surface/furniture validation is committed as `187f410`, with strict 234-tile centrum generation, unchanged movement/parking fields, collision checks and four inspected views. Integration implementation through `7ad54d6` is verified to that documented extent.
+
+Independent review of bridge contact commit `f0bb72213ea5918b65afebe580cf5e4be83f47c1` found no substantive issues: 44 focused tests and probes for 22 chunk orders, shared contacts, loose ends, legacy/mixed caches and nested mapped layers passed. Parent inspected the change and accepts it for isolated integration. Legacy components retain old anchors until their streets are rebuilt; Radotín height association remains unresolved. Follow-up validation must rebuild current structure records and terrain, not reuse legacy anchors.
+
+The canonical tile-edge correction is still awaiting its committed checkpoint and independent review; do not integrate the cutter yet.
