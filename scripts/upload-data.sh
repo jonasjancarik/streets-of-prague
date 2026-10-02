@@ -23,4 +23,7 @@ rclone copy public/data/ "$TARGET" --checksum --immutable --transfers 32 --check
   --stats 20s --stats-one-line --log-level INFO
 rclone check public/data/ "$TARGET" --checksum --checkers 32
 printf '%s\n' "$VERSION" > deploy/data-version
+# The order maps were uploaded in (oldest first), which deploy/data-oldest is read against.
+# --resume finishes a version that may already be recorded.
+grep -qxF "$VERSION" deploy/data-history || printf '%s\n' "$VERSION" >> deploy/data-history
 printf 'Verified R2 data version: %s\n' "$VERSION"
