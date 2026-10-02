@@ -331,6 +331,9 @@ grime on the walls 6%, the shadow map's own pass 7%.
   embankment isn't in the terrain), Libeňský most's south part has steps of 1.3 m at
   both ends (as on main), Nuselský most's Pankrác end has small ragged corners by the
   abutment, and the long bridges at Lahovice and Radotín have breaks in their decks.
+  Source spikes near Nosticova and the south-east edge of `ujezd` are fixed by rejecting
+  grossly inconsistent survey vertices before interpolation (2 October 2026,
+  `docs/river-terrain-findings.md`); verified on private `ujezd` data only.
 - **Hill shading for a moving sun.** The shading is baked per tile to the fixed
   north-west sun (`relief()` in `src/tiles.ts`, `SUN_OFFSET` in `src/main.ts`). If
   the sun ever moves with the clock, store the slope per tile instead and light it in

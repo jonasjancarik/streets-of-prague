@@ -797,7 +797,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   own a quay wall or a retaining wall is a broad ramp. `pipeline/dtm_heights.py` corrects
   the grid from the technical map's survey (DTM ZPS: its lines carry heights): streets
   take the heights of their own kerbs, water its level, and the ground beside a bank or
-  a retaining wall the height it has clear of the ramp. Each grid point also has a label
+  a retaining wall the height it has clear of the ramp. Original street vertices more
+  than 30 m from the bare terrain are rejected before interpolation; their attached
+  segments are skipped, keeping gross source errors from spreading into the ground.
+  Separate components of a survey line stay separate. The survey log reports rejected
+  vertices. See `docs/river-terrain-findings.md` for the checks and remaining limits.
+  Each grid point also has a label
   (plain ground, water, or a terrace at a retaining wall's foot, whose outline is in the
   tile's `terraces`), stored after the heights in `<tile>.height.bin`. Where the labels
   in a grid cell differ, the game reads the height at a point from the corners with that
