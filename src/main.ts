@@ -1081,6 +1081,16 @@ async function main() {
       const { x, y } = c, near = (p: { x: number; y: number }) => 1 - Math.hypot(p.x - x, p.y - y) / BLAST;
       const away = (p: { x: number; y: number }, v: number) => {
         const d = Math.hypot(p.x - x, p.y - y) || 1;
+      // A driver from the traffic gets out of a car that's on fire and runs, leaving it where it stands.
+      const agent = traffic.agents.find((k) => k.car === c);
+      if (agent && c !== inCar) {
+        traffic.release(agent);
+        c.mode = 'loose';
+        loose.push(c);
+        const lx = -Math.sin(c.h), ly = Math.cos(c.h), off = 1.6;
+        const p = crowd.spawnAt(c.x + lx * off, c.y + ly * off, c.rider || undefined);
+        Object.assign(p, { state: 'flee', t: 3, vx: lx * 5, vy: ly * 5 });
+      }
         return [((p.x - x) / d) * v, ((p.y - y) / d) * v] as const;
       };
       const d = Math.hypot(x - px(), y - py());
@@ -2009,7 +2019,7 @@ async function main() {
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300),
-    grid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, rng: seeded,
+    grid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
     canvas: renderer.domElement, fov: camera.fov,

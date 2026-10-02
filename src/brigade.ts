@@ -10,11 +10,13 @@ import type { Fires } from './fire.ts';
 import type { Police, Follower } from './police.ts';
 import type { FigureKit } from './figures.ts';
 import type { Point3 } from './guns.ts';
+import { HOSE as CANNON_HOSE, REACH } from './cannon.ts';
 
 // The fire brigade. When a car catches fire an engine comes from out of view, along the
-// streets, and stops by it. Its crew gets out, walks up to the fire and puts it out
-// with the hoses, then they get back in and the engine drives off. A car that blew up
-// before they got there still gets its flames put out. (Plans/006-firefighters.md.)
+// streets, and sprays it with its own roof cannon (the one you get when you take it)
+// as soon as it's in reach. Only a wreck that's left smouldering is for the crew: they
+// get out, walk up and finish it off with the hoses, then get back in and the engine
+// drives off. A car that blew up before the engine got there is put out the same way. (Plans/006-firefighters.md.)
 
 const ENGINES = 2; // at most this many out on a call at once
 const WALK = 1.9; // firefighters on foot, m/s
@@ -31,7 +33,7 @@ const RUN = 4.6; // m/s
 const WRECKED = 90; // damage that puts an engine out of action
 
 interface Fighter { x: number; y: number; h: number; vx: number; vy: number; engine: Engine; fig: Figures; anim: Anim; down: number; spot: { x: number; y: number }; back: boolean; spraying: boolean; gone?: boolean; gz?: number; detour?: number; chase?: number; best: number; stuck: number }
-interface Engine extends Follower { car: Car; target: Car; phase: 'go' | 'work' | 'leave'; t: number; wrecked: boolean; crew: boolean; gone?: boolean; goal: { x: number; y: number }; astray?: boolean; mark: { x: number; y: number }; direct?: boolean; roads?: boolean }
+interface Engine extends Follower { spraying?: boolean; car: Car; target: Car; phase: 'go' | 'work' | 'leave'; t: number; wrecked: boolean; crew: boolean; gone?: boolean; goal: { x: number; y: number }; astray?: boolean; mark: { x: number; y: number }; direct?: boolean; roads?: boolean }
 interface Call { target: Car; t: number; roads?: boolean } // `roads`: the last engine got stuck in a pedestrian zone; this one keeps to the streets
 interface BrigadeOptions {
   scene: THREE.Scene; police: Police; grid: CarGrid; fires: Fires; kit: FigureKit;
@@ -228,7 +230,7 @@ export class Brigade {
     } else {
       const ride = this.engines.includes(e) && !e.wrecked;
       const fighting = e.phase === 'work' && !f.back && e.t < 60;
-      if (fighting && o.fires.onFire(tc)) {
+      if (fighting && (o.fires.onFire(tc) || o.fires.smouldering(tc))) {
         const d = Math.hypot(f.spot.x - f.x, f.spot.y - f.y);
         // (At a run, if the engine had to stop a way off.)
         if (d > 0.7) steer(f, f.spot.x, f.spot.y, d > 10 ? RUN : WALK * 1.6, this.inWay, e.car, o.rng);
@@ -266,6 +268,13 @@ export class Brigade {
     const { o } = this, c = e.car, tc = e.target;
     let tx: number, ty: number, want: number;
     e.replan -= dt;
+    // The roof cannon puts out whatever is burning within its reach, wherever the engine is
+    // in its stopping, with the crew still aboard.
+    e.spraying = false;
+    if (e.phase !== 'leave' && o.fires.onFire(tc) && Math.hypot(tc.x - c.x, tc.y - c.y) < REACH - 1 && this.sees(c, tc)) {
+      e.spraying = true;
+      o.fires.douse(tc, dt * CANNON_HOSE);
+    }
     if (e.phase === 'go') {
       const was = e.replan;
       if (!e.path) { tx = tc.x; ty = tc.y; want = 8; } else ({ tx, ty, want } = along(c, e, e.path));
@@ -292,8 +301,8 @@ export class Brigade {
         }
         e.replan = 3;
       }
-      // Nothing left to put out: turn round.
-      if (!o.fires.onFire(tc)) { if (!this.next(e)) this.leave(e); }
+      // Nothing left to put out (a wreck still smouldering is for the crew): turn round.
+      if (!o.fires.onFire(tc) && !this.next(e) && !o.fires.smouldering(tc)) this.leave(e);
       // There: stopped by the fire or at the end of the way to it, or held up (in a jam, or
       // wedged in a turn too tight for it) near enough for the crew to go the rest on foot.
       else if (Math.abs(c.forwardSpeed) < 2.5 && (dist < 14 || (e.path && e.path.length - e.s < 8) || (dist < 22 && e.t > 2.5) || (dist < ON_FOOT && e.t > 6))) {
@@ -374,6 +383,11 @@ export class Brigade {
 
     // Where each spraying hose's water goes: from the hands to the fire.
     this.jets.length = 0;
+    for (const e of this.engines) {
+      if (!e.spraying) continue;
+      const c = e.car, tc = e.target, h = c.h, nx = c.x + Math.cos(h) * c.spec.L * 0.2, ny = c.y + Math.sin(h) * c.spec.L * 0.2;
+      this.jets.push({ from: [nx, ny, o.height(nx, ny, c) + c.spec.H], to: [tc.x, tc.y, o.height(tc.x, tc.y, tc) + tc.spec.H * 0.5] });
+    }
     for (const f of this.crew) {
       if (!f.spraying) continue;
       const tc = f.engine.target, z = o.height(f.x, f.y, f);

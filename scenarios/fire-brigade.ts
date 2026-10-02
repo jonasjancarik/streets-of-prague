@@ -21,22 +21,24 @@ export default {
       t.check('an engine got to the parked car', arrived >= 0, `after ${arrived} s`);
       t.check('the fire was put out before the car blew up', !t.fire(parked).wreck && !t.fire(parked).burning, `after ${s} s`);
 
-      // Your own car blows up in a few seconds: the wreck stays in flames until the crew has put them out.
+      // Your own car blows up in a few seconds: the wreck stays in flames until the engine's cannon has put them out and the crew finishes the smouldering.
       await t.go('ujezd', { heading: 180 });
       await t.wait(2);
       const own = await t.drive('sedan');
       t.ignite(own);
       await t.wait(0.5);
       t.exit();
-      let sprayed = false;
-      for (s = 0; s < 100 && !(t.fire(own).wreck && !t.fire(own).flames); s++) {
+      let sprayed = false, cannon = false;
+      for (s = 0; s < 100; s++) {
         await t.wait(1, { move: s < 5 ? 1 : 0, run: true });
+        cannon ||= t.fire(own).cannon;
         sprayed = t.fire(own).wreck && t.fire(own).spraying > 0;
         if (sprayed) break;
       }
       if (sprayed) await t.shot('fire-brigade');
       t.check('the car blew up', t.fire(own).wreck);
-      t.check('the crew got its hoses on the wreck while it was still in flames', sprayed, `after ${s} s`);
+      t.check('the engine put the flames out with its own cannon', cannon);
+      t.check('the crew finished off the smouldering wreck with their hoses', sprayed, `after ${s} s`);
     } finally {
       t.unhurt = false;
     }

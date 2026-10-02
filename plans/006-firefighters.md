@@ -67,6 +67,9 @@ HASIČI.
 Timed with `t.ignite` / `t.fire` in headless Chrome at six places, and fixed in
 `src/brigade.ts` unless said otherwise; `scenarios/fire-brigade.ts` checks the outcome.
 
+- The engine now puts the fire out itself with its roof cannon (the one the player gets) as
+  soon as the car is within reach, still rolling in. The crew only gets out for a wreck
+  that is left smouldering (`Fires.smouldering`) and finishes it with the hoses.
 - The street it starts from was picked by distance as the crow flies, and the way round
   was often twice that. Now the shortest way of up to four candidates.
 - It could start inside a tram or a queue of cars and stay wedged there. The starting

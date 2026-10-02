@@ -57,7 +57,7 @@ interface Game {
   // Where the camera looks now, and how high it is (for starting the free camera there).
   view0: () => { x: number; y: number; height: number };
   canvas: HTMLElement; fov: number;
-  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; hurtNearest: () => Pedestrian | null;
+  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; traffic: { agents: { car: Car }[] }; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   rng: () => number;
 }
@@ -170,6 +170,10 @@ export function setupTestkit(g: Game) {
     // Into a new car of this type (out of whatever you were in first).
     async drive(type = 'hatch') {
       if (g.mode() !== 'foot') g.enterOrExit();
+    // The traffic car nearest to you with a driver in it, and whether it still has one.
+    trafficCar() { const m = g.me(); return g.traffic.agents.map((k) => k.car).filter((c) => !c.two).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null; },
+    driven(c: Car) { return g.traffic.agents.some((k) => k.car === c); },
+    fleeing(c: Car) { return g.crowd.people.filter((p) => p.state === 'flee' && Math.hypot(p.x - c.x, p.y - c.y) < 16).length; },
       const c = kit.car(type, { ahead: 3 });
       const m = g.me();
       m.x = c.x - Math.sin(c.h) * (c.spec.W / 2 + 0.6);
