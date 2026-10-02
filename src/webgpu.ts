@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { WebGPURenderer, MeshLambertNodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, materialColor, fract, floor, mod, dot,
-  mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select,
+  mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, transformNormalToView,
 } from 'three/tsl';
 import { setPatterned, SKY_REF, GRIT, GRIT_M } from './shading.ts';
 import {
@@ -28,6 +28,7 @@ import './webgpu/weather.ts';
 import './webgpu/underground.ts';
 import { CloudSunNode } from './webgpu/clouds.ts';
 import { mosaicStones } from './webgpu/mosaic.ts';
+import { uWater, ripples, waves, waveNormal, waterShine } from './webgpu/water.ts';
 
 // PATTERNS_GLSL.
 function pAsphalt(c0: N, p: N) {
@@ -102,10 +103,15 @@ function pConcrete(c: N, p: N) {
   return c.mul(fbm(p.mul(0.4)).mul(0.12).add(0.9)).mul(mix(0.8, 1, smoothstep(0.01, 0.04, b.x).mul(dl).add(dl.oneMinus())));
 }
 function pWater(c0: N, p: N, time: N) {
-  const n = fbm(p.mul(vec2(0.05, 0.012)).add(vec2(0, time.mul(0.03))));
-  const c = c0.mul(n.mul(0.2).add(0.88)).toVar(), d = detail(p, 0.5);
-  If(d.greaterThan(0), () => {
-    c.addAssign(smoothstep(0.72, 0.8, fbm(p.mul(vec2(0.5, 0.09)).add(vec2(time.mul(0.02), time.mul(0.12))))).mul(0.1).mul(d));
+  const c = vec3(c0).toVar(), d = detail(p, 0.5);
+  If(uWater.greaterThan(0.5), () => {
+    // Deep and green, lighter over the shallows: what it mirrors comes on top (webgpu/water.ts).
+    c.mulAssign(vec3(0.56, 0.69, 0.63).mul(fbm2(p.mul(vec2(0.05, 0.012)).add(vec2(0, time.mul(0.03)))).mul(0.3).add(0.85)));
+  }).Else(() => {
+    c.mulAssign(fbm(p.mul(vec2(0.05, 0.012)).add(vec2(0, time.mul(0.03)))).mul(0.2).add(0.88));
+    If(d.greaterThan(0), () => {
+      c.addAssign(smoothstep(0.72, 0.8, fbm(p.mul(vec2(0.5, 0.09)).add(vec2(time.mul(0.02), time.mul(0.12))))).mul(0.1).mul(d));
+    });
   });
   return c;
 }
@@ -137,7 +143,7 @@ function pattern(id: number, c: N, p: N, time: N): N {
 
 // WEATHER_GLSL: the colour, and in .a how much of a mirror the ground is there (shine).
 function weathered(id: number, c0: N, p: N, time: N) {
-  if (id === 10) return vec4(c0, 0.35);
+  if (id === 10) return vec4(c0, select(uWater.greaterThan(0.5), 0, 0.35));
   const paved = id <= 4 || id === 9, road = id === 1 || id === 2;
   const c = vec3(c0).toVar(), shine = float(0).toVar();
   // (Derivatives outside the branches.)
@@ -165,13 +171,6 @@ function weathered(id: number, c0: N, p: N, time: N) {
   });
   return vec4(c, shine);
 }
-// Rings spreading from a drop in each cell of the puddles.
-function ripples(p0: N, time: N) {
-  const p = p0.mul(2.5), i = floor(p), f = fract(p);
-  const t = fract(time.mul(1.1).add(hash12(i)));
-  const c = vec2(hash12(i.add(1.7)), hash12(i.add(4.3))).mul(0.6).add(0.2);
-  return t.oneMinus().mul(smoothstep(0, 0.07, abs(length(f.sub(c)).sub(t.mul(0.45)))).oneMinus());
-}
 
 const uSkyRef: N = followColor(SKY_REF);
 // A tile's texture, read from the material drawn: the ground's node graphs are shared by every
@@ -189,7 +188,7 @@ type GroundInputs = {
   deck: { mask: THREE.Texture | null; box?: number[] } | null;
   photo: { texture: THREE.Texture; box: number[] } | null;
 };
-const groundGraphs = new Map<{ value: number }, Map<string, { color: N; ao: N | null; emissive: N }>>();
+const groundGraphs = new Map<{ value: number }, Map<string, { color: N; ao: N | null; emissive: N; normal: N | null }>>();
 
 // patterned() in shading.ts, as a node material.
 function groundMaterial(
@@ -204,7 +203,7 @@ function groundMaterial(
   const shade = (n: N, pattern: number) => {
     const g = groundGraph(pattern, time, inputs, dig, sheltered);
     Object.assign(n, {
-      colorNode: g.color, aoNode: g.ao, emissiveNode: g.emissive,
+      colorNode: g.color, aoNode: g.ao, emissiveNode: g.emissive, normalNode: g.normal,
       reliefMap: relief?.texture, reliefBox: relief && boxOf(relief.box), skyMap: relief?.sky?.texture, skyBox: relief?.sky && boxOf(relief.sky.box),
       maskMap: deck?.mask, maskBox: deck?.mask && boxOf(deck.box!), photoMap: photo?.texture, photoBox: photo && boxOf(photo.box),
     });
@@ -224,15 +223,20 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo 
   let graph = byKey.get(key);
   if (graph) return graph;
   const g = groundColor(id, timeOf(time), !!relief, deck ? !!deck.mask : null, dig, !!photo, sheltered).toVar();
+  // Open water: its waves' slope, shared by the lighting and by what it mirrors.
+  const wp = vec2(positionWorld.x, positionWorld.z.negate());
+  const slope = id === 10 && !photo && !sheltered ? waves(wp, timeOf(time)).toVar() : null;
   graph = {
     color: vec4(g.rgb, 1),
     // Courtyards and lanes see less of the sky: less of the ambient light, none of the sun's or the lamps'.
     ao: relief?.sky ? skyAmbient(tileTexture('sky', vec2(positionWorld.x, positionWorld.z.negate())).r) : null,
     // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
     emissive: Fn(() => {
-      const l = lampLight(positionWorld, normalView);
-      return g.rgb.mul(l).add(uSkyRef.add(l.mul(0.85)).mul(g.a));
+      const l = lampLight(slope ? positionWorld.add(vec3(slope.x, 0, slope.y).mul(6)) : positionWorld, normalView).toVar();
+      const e = g.rgb.mul(l).add(uSkyRef.add(l.mul(0.85)).mul(g.a));
+      return slope ? e.add(waterShine(positionWorld, wp, slope, timeOf(time), uSkyRef, l)) : e;
     })(),
+    normal: slope ? transformNormalToView(waveNormal(slope)) : null,
   };
   byKey.set(key, graph);
   return graph;

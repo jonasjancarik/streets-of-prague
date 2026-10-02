@@ -121,6 +121,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   // Only on a touch screen: a computer can't buzz.
   if (matchMedia('(pointer: coarse)').matches) row('Vibration', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (hapticsOn() ? 'on' : 'off'), (id) => setHaptics(id === 'on'));
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
+  row('Water', [{ id: 'waves', label: () => t('Waves and reflections') }, { id: 'plain', label: () => t('Plain') }], () => (graphics.water ? 'waves' : 'plain'), (id) => graphics.setWater(id === 'waves'));
   row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
 
   // Only where the game sends statistics at all (src/telemetry.ts).

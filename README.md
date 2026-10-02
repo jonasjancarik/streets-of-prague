@@ -75,7 +75,9 @@ Auto, the default, starts High (Medium on touch devices) and moves between tiers
 by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds;
 it never picks Ultra, which only choosing it turns on.
 `?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
-only the pixel ratio. WebGL keeps MSAA on at every tier because it cannot change
+only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
+the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest, off unless chosen;
+`?water=on|off` for one visit). WebGL keeps MSAA on at every tier because it cannot change
 that without a new renderer.
 
 ## Playing

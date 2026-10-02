@@ -93,6 +93,9 @@ export const CS: Record<string, string> = {
   // Settings (the corner buttons)
   Settings: 'Nastavení',
   Graphics: 'Grafika',
+  Water: 'Voda',
+  'Waves and reflections': 'Vlny a odlesky',
+  Plain: 'Jednoduchá',
   Auto: 'Automaticky',
   Changing: 'Proměnlivé',
   'Full screen': 'Celá obrazovka',
