@@ -62,7 +62,7 @@ const DIESEL: EngineVoice = {
 // (measured), played faster or slower to the revs and faded from one to the next.
 // Only on the sound test page so far.
 const KONA: EngineVoice = {
-  harmonics: [], sub: 0, drive: 0, tone: [900, 25, 5000],
+  harmonics: [], sub: 0, drive: 0, tone: [700, 12, 1500],
   roar: [0, 0, 3], level: [0.1, 0.08, 0.1], shift: [0.28, 0.5], clutch: 500, blip: 0.5,
   loops: [['engine-idle', 24], ['engine-mid', 74.5], ['engine-high', 97]],
 };
@@ -586,15 +586,17 @@ export class Engine extends Drivetrain {
 // recorded nearest to them are heard, one fading into the next as the revs go between.
 // A filter opens with the throttle, as the recordings are of an engine without load.
 export class RecordedEngine extends Drivetrain {
-  out: GainNode; tone: BiquadFilterNode;
+  out: GainNode; tone: BiquadFilterNode; tone2: BiquadFilterNode;
   loops: { src: AudioBufferSourceNode; gain: GainNode; hz: number }[] = [];
 
   constructor(ctx: AudioContext, clips: Record<string, AudioBuffer>, dest: AudioNode, car: Car, spec: EngineSpec) {
     super(ctx, car, spec);
     const t = ctx.currentTime;
+    // Two filters in a row: a recording is bright all the way up, and one leaves too much of it.
     this.tone = filter(ctx, 'lowpass', 2000, 0.7);
+    this.tone2 = filter(ctx, 'lowpass', 2000, 0.6);
     this.out = gain(ctx, 0);
-    this.tone.connect(this.out).connect(dest);
+    this.tone.connect(this.tone2).connect(this.out).connect(dest);
     for (const [name, hz] of spec.voice.loops ?? []) {
       if (!clips[name]) continue;
       const src = loop(ctx, clips[name]), g = gain(ctx, 0);
@@ -620,7 +622,9 @@ export class RecordedEngine extends Drivetrain {
       const share = i === at ? Math.cos((mix * Math.PI) / 2) : l === next ? Math.sin((mix * Math.PI) / 2) : 0;
       l.gain.gain.setTargetAtTime(share, t, SMOOTH);
     });
-    this.tone.frequency.setTargetAtTime(Math.min(voice.tone[0] + hz * voice.tone[1] + pull * voice.tone[2], this.ctx.sampleRate * 0.45), t, SMOOTH);
+    const top = Math.min(voice.tone[0] + hz * voice.tone[1] + pull * voice.tone[2], this.ctx.sampleRate * 0.45);
+    this.tone.frequency.setTargetAtTime(top, t, SMOOTH);
+    this.tone2.frequency.setTargetAtTime(top, t, SMOOTH);
     this.out.gain.setTargetAtTime(voice.level[0] + pull * voice.level[1] + (rpm / spec.redline) * voice.level[2], t, 0.1);
   }
 
