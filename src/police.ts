@@ -542,7 +542,7 @@ export class Police {
   // you're standing still, and with the difficulty; a miss goes past you, a little to one side.
   shoot(x: number, y: number, who: Car | Officer, me: PlayerTarget) {
     const d = Math.hypot(me.x - x, me.y - y) || 1, ux = (me.x - x) / d, uy = (me.y - y) / d;
-    const odds = clamp((0.5 + 0.07 * (this.stars - ARMED) - d / 60 - me.speed * 0.03) * aim(), 0.04, 0.9);
+    const k = aim(), odds = clamp((0.5 + 0.07 * (this.stars - ARMED) - d / 60 - me.speed * 0.03) * k, 0.08 * k, 0.9);
     const hit = this.r() < odds;
     const from: Point3 = [x + ux * 0.6, y + uy * 0.6, this.height(x, y, who) + (who instanceof Car ? who.spec.H + 0.1 : 1.3)];
     const z = me.z + (me.car ? me.car.spec.H * 0.7 : 1.1);
