@@ -10,7 +10,7 @@
 
 - State: PLANNED
 - Priority: P2
-- Effort: about 8–11 working days across seven phases, plus store review time
+- Effort: about 10–14 working days across eight phases, plus store review time
 - Risk: medium. The web game stays the only codebase and almost all new code sits in
   one new module and two generated native projects. The uncertain parts are named in
   each phase with a check to run first: whether the app's page origin gets WebGPU and
@@ -28,7 +28,12 @@ from the same `vite build` as the website, to get three things the browser can't
 1. **Sound that works on iOS**: not muted by the silent switch, no tap needed to start
    it, and back on after a call or a trip to the home screen.
 2. **Frame rate above 60** on screens that can show it.
-3. **Playing without a connection**, with the whole map stored on the device.
+3. **Playing without a connection**, for players who choose to download the map. Everyone
+   else gets the map streamed as in the browser.
+
+New versions of the game and of the map reach the app by themselves, the way they reach
+the website, without a store release. A store release is needed only when the native
+part changes.
 
 Out of scope: a rewrite of the mixer in native code, a desktop app, in-app purchases,
 push notifications, accounts, and any change to how the website is built or deployed.
@@ -40,7 +45,9 @@ Each has a default the plan assumes. Ask once, at the start.
 | Question | Default |
 | --- | --- |
 | App identifier | `com.streetsofprague.app` (can't be changed after the first store upload) |
-| What a new player gets before the map has downloaded | The city centre (`centrum`, 38 MB) is inside the app and playable at once; all of Prague (655 MB) downloads on request |
+| Map on the device | Streamed as in the browser. "Download for offline play" is an option in the settings and on the start screen (decided by the user, 2 October 2026) |
+| Updates | The game and the map update themselves, without a store release (decided by the user, 2 October 2026) |
+| Updating a downloaded map | Automatic on Wi-Fi; on mobile data the app asks first, since a map is about 650 MB |
 | Should the game silence the player's own music | Yes (`.playback`, not mixed). The game has its own radio |
 | Radio stations in a store app | Keep them, as on the web; the streams are the stations' public ones. Flag it in the review notes |
 | Newsletter signup in the app | A button that opens the website's form in the system browser (Turnstile is tied to the site's hostname) |
@@ -67,9 +74,13 @@ A separate build keeps the web output untouched:
 - `npm run build:app` runs `vite build --mode app --outDir dist-app`, with `.env.app`
   setting `VITE_SUBSCRIBE_URL` and `VITE_FEEDBACK_URL` to the full
   `https://streetsofprague.com/api/…` addresses.
-- It then copies `public/data/centrum_now` into `dist-app/data/`. (`dist` is 4.5 MB
-  today although `public/data` is 697 MB, so something already keeps map data out of the
-  build; find out what and keep it that way for the web.)
+- `VITE_DATA_URL` is the same versioned R2 address the Cloudflare build uses
+  (`scripts/deploy-cloudflare.sh`), so the app streams the map exactly as the website
+  does and no map data goes into the app. Each build of the game therefore names the map
+  it goes with, as `docs/versioning.md` already describes.
+- R2 must answer requests from the app's two origins (`capacitor://localhost` and
+  `https://localhost`). Add them to the bucket's CORS rules; that is a production
+  change and needs the user's go-ahead.
 - `capacitor.config.ts` points `webDir` at `dist-app`. `npx cap sync` copies it across.
 
 ## Phase 1: the shell on iOS (about a day)
@@ -77,8 +88,9 @@ A separate build keeps the web output untouched:
 1. Add Capacitor, create `capacitor.config.ts`, `src/native.ts`, the `build:app` script
    and the `ios/` project. Add build outputs (`dist-app`, `ios/App/Pods`,
    `ios/App/build`, `android/app/build`, `android/.gradle`) to `.gitignore`.
-2. Start the game with `?area=centrum` behaviour as the app's default when the full map
-   isn't on the device (`AREA` in [src/main.ts:87](../src/main.ts)).
+2. Confirm the map streams from R2 in the app as it does on the website. With no
+   connection and no downloaded map, the start screen says so plainly instead of
+   failing on the first fetch.
 3. Run it in the iPhone and iPad simulators and on a real device, and check these before
    going further. Each one decides something later in the plan:
    - `isSecureContext` is true and `navigator.gpu` exists, so
@@ -138,37 +150,33 @@ What's new is the window changing size while the game runs.
 4. Hide what makes no sense in an app: any "add to home screen" hint and the beta
    signup note, per the decision above.
 
-## Phase 4: the map on the device (two to three days)
+## Phase 4: downloading the map for offline play (two to three days)
 
-`praha_now` is 655 MB in about 37 000 files. Fetching them one by one is too slow and
-too fragile, and Google Play won't take an app that size without a second mechanism, so
-the map is downloaded once as a pack.
+Streaming stays the default. A player who wants to play without a connection chooses
+"Download the map for offline play". `praha_now` is 655 MB in about 37 000 files;
+fetching them one by one is too slow and too fragile, so the download is one pack.
 
 1. **Make the pack when the map is uploaded.** Extend `scripts/upload-data.sh` to also
    write `praha.zip` (stored, not compressed again: the big files are already gzipped)
-   beside each map version in R2, and a small `app-map.json` at a fixed address listing,
-   for each map format number, the newest version's name, the pack's size and its
-   checksum. Update `docs/versioning.md` and the deploy skill in the same commit.
-2. **A small native plugin of our own, `MapStore`,** in both projects: download the pack
+   and its checksum and size beside each map version in R2. Update `docs/versioning.md`
+   and the deploy skill in the same commit.
+2. **A small native plugin of our own, `MapStore`,** in both projects: download a pack
    to a temporary file with progress, able to resume after the app is closed; verify the
    checksum; unpack it into a folder named after the map version in the app's support
    directory; mark that folder as not backed up to iCloud; report free space; delete old
    versions. On Android `java.util.zip` is enough; on iOS use ZIPFoundation (health-check
    it first).
 3. **Point the game at it.** `base` in [src/data.ts](../src/data.ts) is fixed when the
-   bundle is built. Make it settable once before the first fetch, and have `native.ts`
-   set it to the unpacked folder's address (Capacitor's `convertFileSrc`, which stays on
-   the page's own origin) when a complete map is on the device, or leave it at the
-   bundled `data/` otherwise. Make sure the tile workers get the same base.
-4. **The screen for it.** On the start screen: "Download all of Prague (650 MB)", with
-   the size, a progress bar, pause and resume, a warning when on mobile data, and a
-   clear message when there isn't room. Until it finishes, the centre is playable. Write
-   the copy from the player's point of view, in both languages (`src/cs.ts`).
-5. **Updates.** On launch with a connection, read `app-map.json`. Offer a newer map only
-   if its format equals `DATA_FORMAT`; an app that is too old for the newest map keeps
-   its own and says an app update is available. Never delete the working map before the
-   new one is unpacked and checked.
-6. **Without a connection:** live weather ([src/liveweather.ts](../src/liveweather.ts))
+   bundle is built. Make it settable once before the first fetch. `native.ts` sets it to
+   the unpacked folder's address (Capacitor's `convertFileSrc`, which stays on the page's
+   own origin) when the map version this build wants is on the device, and leaves it at
+   the R2 address otherwise. Make sure the tile workers get the same base.
+4. **The screen for it.** In the settings and on the start screen: "Download the map for
+   offline play (650 MB)", with a progress bar, pause and resume, a warning on mobile
+   data, a clear message when there isn't room, and "Remove the downloaded map" once it
+   is there. The game stays playable (streamed) while it downloads. Write the copy from
+   the player's point of view, in both languages (`src/cs.ts`).
+5. **Without a connection:** live weather ([src/liveweather.ts](../src/liveweather.ts))
    falls back to the built-in weather, the radio is off, feedback says it needs a
    connection and keeps the text, and telemetry drops its reports quietly. Test with
    the device in aeroplane mode from a cold start.
@@ -177,7 +185,50 @@ Considered and left out: Apple's On-Demand Resources and Google's Play Asset Del
 (two mechanisms to build and a store release for every map change), and a service
 worker cache (the system may evict it, and it isn't needed inside an app).
 
-## Phase 5: Android (one to two days)
+## Phase 5: updates without a store release (two days)
+
+The app carries the game's build that was current when it went to the store, and
+replaces it with newer ones from the game's own server. Both stores allow this for
+JavaScript run by the web view, as long as the app stays the same kind of app.
+
+1. **Publishing.** `scripts/deploy-cloudflare.sh` (production) also builds the app's
+   bundle, zips `dist-app`, and uploads it with a small `app.json` at a fixed address:
+   the newest build's version, its address and checksum, the map version it wants, and
+   the lowest **shell number** it can run on. The shell number is a whole number in
+   `src/native.ts` and in both native projects, raised whenever the native side changes
+   in a way the game's code relies on (a new `MapStore` method, for instance).
+2. **Fetching and switching.** Use `@capgo/capacitor-updater` in its self-hosted, manual
+   mode, so nothing goes through a third party's service (health-check it first; if it
+   doesn't hold up, Capacitor's own `setServerBasePath` and `MapStore`'s download and
+   unpack do the same job). On launch with a connection: read `app.json`; if there is a
+   newer build that this shell can run, download it in the background and switch to it
+   at the next start, never in the middle of a game.
+3. **Falling back.** A new build must tell the app it started properly (the plugin's
+   `notifyAppReady`, called once the start screen is up). If it doesn't, the app goes
+   back to the build that last worked and doesn't try that version again.
+4. **Too old a shell.** When the newest build needs a higher shell number, the app keeps
+   its current build and says, once, that a newer version is in the App Store or on
+   Google Play.
+5. **The map for players who stream it** needs nothing more: a new build names its map
+   version and streams that one.
+6. **The map for players who downloaded it.** When a new build wants a different map
+   version, download the new pack as well (straight away on Wi-Fi, after asking on
+   mobile data), and switch build and map together at the next start once both are
+   complete. Until then the app keeps the old build with the old map, so offline play
+   never breaks. Delete the old map only after the new one has been used successfully.
+7. **Keep old builds reachable.** An app that hasn't been opened for months must still
+   find its map: don't delete a map version from R2 while any published store release
+   ships a build that names it. Write this into `docs/versioning.md`.
+8. Test the whole path with two real builds: update, restart, see the new version in the
+   settings panel; a deliberately broken build falls back; a build needing a higher
+   shell number is refused; the offline case in step 6 with aeroplane mode switched on
+   halfway through the download.
+
+A map change means a second 650 MB download for players with the offline map. The map
+changes rarely, so this plan accepts that; packs holding only the changed tiles are a
+possible follow-up.
+
+## Phase 6: Android (one to two days)
 
 1. Add the `android/` project. Confirm the web view lets sound start without a tap, and
    that folding, unfolding and rotating don't restart the activity (the manifest's
@@ -187,12 +238,13 @@ worker cache (the system may evict it, and it isn't needed inside an app).
 3. Android's web view is the system's Chrome engine, so WebGPU depends on the device.
    Check the Pixel 5 and at least one cheaper phone; the WebGL fallback in
    [src/renderer.ts](../src/renderer.ts) must take over cleanly where WebGPU is missing.
-4. Implement `MapStore` for Android and repeat phase 4's offline test.
+4. Implement `MapStore` for Android and repeat phase 4's offline test and phase 5's
+   update test.
 5. Test in the resizable and folding emulators at the same sizes as phase 3.
 6. With no phone attached, copy the built APK to the Google Drive `projects` folder for
    the user to install.
 
-## Phase 6: frame rate (half a day to a day)
+## Phase 7: frame rate (half a day to a day)
 
 Measure first. Add the measured `requestAnimationFrame` rate to the settings panel's
 build line (or the existing telemetry) so it can be read on a device.
@@ -210,7 +262,7 @@ build line (or the existing telemetry) so it can be read on a device.
    choice to the settings, since double the frames costs battery and heat. Use the
    performance skill for anything about frame cost.
 
-## Phase 7: store release (one to two days of work, then waiting)
+## Phase 8: store release (one to two days of work, then waiting)
 
 Signing, uploads and store listings are done by the user or with their explicit go-ahead
 each time. Prepare, don't publish.
@@ -218,13 +270,14 @@ each time. Prepare, don't publish.
 1. Icons and launch screens from the existing `public/icon-*.png` artwork; app version
    taken from the git tag as `vite.config.js` already does.
 2. `scripts/release-app.sh`: build, sync, and produce the iOS archive and the Android
-   bundle. Document it in `docs/versioning.md` and the deploy skill, including that an
-   app release is tied to a map format, not a map version.
+   bundle. Document it in `docs/versioning.md` and the deploy skill: a store release is
+   needed only when the shell number rises or the native projects change; everything
+   else goes out with the normal production deploy.
 3. Credits reachable inside the app: IPR Praha (CC BY), OpenStreetMap, the sound
    recordings, and `licenses.txt`.
 4. Store paperwork to draft for the user: privacy answers (telemetry, the email address
    in feedback and newsletter), age rating (cars hitting people, police chases), review
-   notes (the map download, the radio streams), screenshots from phase 3.
+   notes (the map download, the game updating itself, the radio streams), screenshots from phase 3.
 5. First to TestFlight and a Play internal test. A new personal Play account must run a
    closed test with 12 testers for 14 days before it can publish, so start that early.
 6. The Worker's `/api/feedback` must accept requests from `capacitor://localhost` and
@@ -234,9 +287,10 @@ each time. Prepare, don't publish.
 ## Order
 
 Phases 1 and 2 answer the two biggest unknowns in two to three days, on iOS only; show
-the user the result before continuing. Then 3 and 4 in either order, then 5. Phase 6 can
-be done any time after 1 and is independent of the rest. Phase 7 comes last, but open
-the Play closed test as soon as phase 5 produces an installable build.
+the user the result before continuing. Then 3, then 4 before 5 (the updates reuse the
+download and unpack code), then 6. Phase 7 can be done any time after 1 and is
+independent of the rest. Phase 8 comes last, but open the Play closed test as soon as
+phase 6 produces an installable build.
 
 ## Checks that apply to every phase
 
