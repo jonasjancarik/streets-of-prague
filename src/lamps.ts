@@ -180,8 +180,15 @@ const LUMA = [0.3, 0.59, 0.11];
 // Something standing in the light: where, which way it faces (radians), half its length
 // and width, the ground under it and how tall it is.
 export type Block = (x: number, y: number, h: number, halfL: number, halfW: number, ground: number, tall: number) => void;
-// The flashing lights on the roof of an emergency vehicle: `reach` m, turning `rate` times a second.
+// The flashing lights on the roof of an emergency vehicle: their light reaches `reach` m, `rate` cycles a second.
 export interface Flashing { car: LitCar; reach: number; rate: number }
+// How lit each side of a light bar is at `time` (0..1 each), `rate` cycles a second: two
+// short flashes on the left, then two on the right.
+export function strobe(time: number, rate: number): [number, number] {
+  const p = (time * rate) % 1;
+  const flash = (q: number) => (q >= 0 && q < 0.5 && (q % 0.25) < 0.13 ? 1 : 0);
+  return [flash(p), flash(p - 0.5)];
+}
 
 export class Lamps {
   private xy: number[] = [];
@@ -790,17 +797,19 @@ export class Lamps {
         }
       }
     });
-    // Emergency vehicles: two beams turning on the roof, and a flash all round.
+    // Emergency vehicles: the light bar flashes one side, then the other, a double flash
+    // each. Each side's light falls round the car from its own end of the bar, so the
+    // shadows of what stands near jump from side to side with it.
     for (const f of opt.flashing ?? []) {
       const c = f.car, ci = cars.indexOf(c as C);
       if (ci < 0) continue;
-      const z = this.carZ[ci], own = this.carIndex.get(c) ?? -1, t = (opt.time ?? 0) * f.rate + ci * 0.37;
-      const ang = t * Math.PI * 2, bx = Math.cos(ang), by = Math.sin(ang), up = c.spec.H + 0.25;
-      for (const s of [1, -1]) {
-        add(c.x, c.y, z, 1, bx * s, by * s, f.reach, f.reach * 0.3, BEACON, 3.2, up, own);
-        if (fx) fx.beam(c.x, c.y, z + up, bx * s, by * s, f.reach * 0.55, f.reach * 0.1, BEACON, 1.5, 0);
+      const z = this.carZ[ci], own = this.carIndex.get(c) ?? -1, up = c.spec.H + 0.25;
+      const [left, right] = strobe(opt.time ?? 0, f.rate);
+      const sx = -Math.sin(c.h), sy = Math.cos(c.h), half = c.spec.W / 2;
+      for (const [side, lit] of [[1, left], [-1, right]] as [number, number][]) {
+        // (A little always shows between the flashes: the bar's glow.)
+        add(c.x + sx * side * half, c.y + sy * side * half, z, 0, 1, 0, f.reach, f.reach, BEACON, 0.12 + 1.9 * lit, up, own);
       }
-      add(c.x, c.y, z, 0, 1, 0, f.reach * 0.6, f.reach * 0.6, BEACON, 0.5 + 0.9 * (Math.floor(t * 4) % 2), up, own);
     }
     for (const v of trams) {
       if (!v.look || !v.parts.length) continue;

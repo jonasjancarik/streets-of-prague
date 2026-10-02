@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Car } from './car.ts';
 import { sendInstances } from './gpu.ts';
+import { strobe } from './lamps.ts';
 
 // Flashing blue lights for emergency vehicles: lamps on the roof and a glow on the
 // ground, for any cars it's given each frame. Police cars and fire engines use it.
@@ -14,9 +15,9 @@ const DIM = new THREE.Color('#0d1a3a');
 type Lamp = [number, number, number];
 const BARS: Record<string, { lamps: Lamp[]; glow: number; rate: number }> = {
   // Two lamps above the cabin.
-  police: { lamps: [[0, -0.48, 0.18], [0, 0.48, 0.18]], glow: 1, rate: 5 },
+  police: { lamps: [[0, -0.48, 0.18], [0, 0.48, 0.18]], glow: 1, rate: 1.4 },
   // A bar across the cab roof, and one at the back of the body.
-  fire: { lamps: [[2.9, -0.7, 0.2], [2.9, -0.25, 0.2], [2.9, 0.25, 0.2], [2.9, 0.7, 0.2], [-3.8, -0.8, 0.15], [-3.8, 0.8, 0.15]], glow: 1.5, rate: 4 },
+  fire: { lamps: [[2.9, -0.7, 0.2], [2.9, -0.25, 0.2], [2.9, 0.25, 0.2], [2.9, 0.7, 0.2], [-3.8, -0.8, 0.15], [-3.8, 0.8, 0.15]], glow: 1.5, rate: 1.2 },
 };
 const OTHER = BARS.police;
 
@@ -50,7 +51,8 @@ export class Beacons {
       const fx = Math.cos(c.h), fy = Math.sin(c.h);
       const cabin = S.cabin ?? [0, 0], mid = (cabin[0] + cabin[1]) / 2;
       const base = height(c.x, c.y, c);
-      const flip = Math.floor(time * bar.rate) % 2;
+      // (The same flashes as the light they throw on the street: lamps.ts.)
+      const [left, right] = strobe(time, bar.rate);
       bar.lamps.forEach(([ahead, across, up], i) => {
         if (n >= LAMPS) return;
         const f = (c.type === 'police' ? mid : 0) + ahead, off = across * S.W / 2;
@@ -59,7 +61,7 @@ export class Beacons {
         d.scale.setScalar(1);
         d.updateMatrix();
         this.lamps.setMatrixAt(n, d.matrix);
-        this.lamps.setColorAt(n, (i % 2 === 0) === !!flip ? BLUE : DIM);
+        this.lamps.setColorAt(n, (across < 0 ? right : left) > 0.5 ? BLUE : DIM);
         n++;
       });
       if (g < GLOWS && dark < 0.99) {

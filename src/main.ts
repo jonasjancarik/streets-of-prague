@@ -1694,8 +1694,8 @@ async function main() {
     {
       const chasing = police.lit(inCar), engines = brigade.lit;
       flashing.length = 0;
-      for (const car of chasing) flashing.push({ car, reach: 22, rate: 1.3 });
-      for (const car of engines) flashing.push({ car, reach: 28, rate: 1.1 });
+      for (const car of chasing) flashing.push({ car, reach: 19, rate: 1.4 });
+      for (const car of engines) flashing.push({ car, reach: 24, rate: 1.2 });
       beacons.draw([...chasing, ...engines], ground, time.value, sky.dark);
     }
     brigade.render();
