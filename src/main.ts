@@ -1903,7 +1903,6 @@ async function main() {
     const shut = onFoot && !cabin ? funicular.near(walker.x, walker.y, true) : null;
     const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
     const getIn = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
-    const key = (k: string) => (touch.active ? '' : `<b>${k}</b> `);
     const ticketHint = () => pid.state === 'grace'
       ? `${touch.active ? t('Buy a ticket ({price})', { price: kc(TICKET.price) }) : TICKETS.map((k, i) => `<b>${i + 1}</b> ${validity(k.minutes)} ${kc(k.price)}`).join(' · ')} · ${t('{secs} s left', { secs: Math.ceil(pid.left) })}`
       : pid.state === 'dodging' ? t('No ticket') : '';
@@ -1915,7 +1914,7 @@ async function main() {
       else hint = inHeli.landed ? t('<b>Space</b> take off · <b>E</b> get out') : `${up} · ${t('<b>Space</b> climb · <b>Shift</b> down · land to get out')}`;
     } else if (inCar) {
       if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
-      else hint = `${key('Shift')}${t('Lane assist, keeping to {limit} km/h', { limit: String(assist.limit) })}${touch.active ? '' : ` ${t('(let go to drive faster)')}`} · ${assist.intent > 0 ? t('turning left at the next junction') : assist.intent < 0 ? t('turning right at the next junction') : t(touch.active ? 'straight on (point the stick to turn)' : 'straight on (A/D to turn)')}`;
+      // While the assist is on, the panel stays empty so it doesn't grow.
     }
     else if (boats.me) hint = touch.active ? '' : t('<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank');
     else if (funicular.me) hint = [funicular.hint(touch.active, scale), ticketHint()].filter(Boolean).join(' · ');
