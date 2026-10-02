@@ -1,4 +1,4 @@
-# Plan 022: The game on play.streetsofprague.com, the homepage on streetsofprague.com
+# Plan 023: The game on play.streetsofprague.com, the homepage on streetsofprague.com
 
 > An implementation plan for another agent. Planned at `c2c7626` on `main`, 2 October 2026,
 > from reading the code and two live checks (below). Nothing was deployed or changed at
