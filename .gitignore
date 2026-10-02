@@ -14,3 +14,6 @@ dist-cf/
 
 # The statistics dashboard written by scripts/telemetry-dashboard.mjs.
 .telemetry/
+
+# The feedback viewer written by scripts/feedback-viewer.mjs.
+.feedback/

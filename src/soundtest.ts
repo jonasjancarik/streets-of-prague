@@ -55,6 +55,11 @@ const ENGINE_GROUPS: Group[] = [
     { path: 'voice.blip', label: 'Blip of throttle on a downshift', hint: 'none to keen', min: 0, max: 1.5, step: 0.05 },
   ] },
 ];
+const HUM_GROUP: Group = { title: 'Warning hum for people on foot', note: 'Electric cars must hum below 20 km/h. It fades out by 30.', fields: [
+  { path: 'voice.avas', i: 0, label: 'Loudness', min: 0, max: 0.08, step: 0.001 },
+  { path: 'voice.avas', i: 1, label: 'Pitch standing still', hint: 'Hz', min: 80, max: 800, step: 5 },
+  { path: 'voice.avas', i: 2, label: 'Pulse', hint: 'steady to throbbing', min: 0, max: 1, step: 0.05 },
+] };
 // A recorded engine has no overtones or intake to set, and its filter works higher up.
 const RECORDED_GROUPS: Group[] = [
   { title: 'Loudness', fields: [
@@ -93,6 +98,7 @@ let key = 'kona', spec: EngineSpec = structuredClone(CARS[key].spec);
 const clips: Record<string, AudioBuffer> = {};
 let ctx: AudioContext | null = null, engine: Drivetrain | null = null, tyres: Tyres | null = null;
 let noise: AudioBuffer, engineBus: GainNode, tyreBus: GainNode;
+let problem = ''; // what to say when the engine can't be started
 let gas = false, brake = false, dragging = false; // dragging: the speed is being set by hand
 
 function start() {
@@ -111,6 +117,7 @@ function start() {
     tyreBus.connect(master);
     noise = noiseBuffer(ctx);
     tyres = new Tyres(ctx, noise, tyreBus);
+    Object.assign(window, { __sound: { ctx, engineBus, tyreBus, get engine() { return engine; } } }); // for measuring from the console
   }
   ctx.resume();
   if (!engine) rebuild();
@@ -120,6 +127,7 @@ function rebuild() {
   if (!ctx) return;
   engine?.stop();
   engine = null;
+  problem = '';
   const names = (spec.voice.loops ?? []).map(([name]) => name), built = spec;
   if (!names.length) { engine = new Engine(ctx, noise, engineBus, car as unknown as Car, spec); return; }
   // A recorded engine starts once its recordings are in.
@@ -129,7 +137,10 @@ function rebuild() {
     clips[n] = await ctx!.decodeAudioData(await r.arrayBuffer());
   })).then(() => {
     if (spec === built && !engine) engine = new RecordedEngine(ctx!, clips, engineBus, car as unknown as Car, spec);
-  }).catch((e) => { $('dash').textContent = 'The recordings could not be loaded'; console.warn(e); });
+  }).catch((e) => {
+    if (spec === built) problem = 'This car\u2019s recordings could not be loaded. Check that the dev server is running, then pick the car again.';
+    console.warn(e);
+  });
 }
 
 function silence() {
@@ -209,7 +220,7 @@ function choose(k: string) {
   car.spec.vmax = CARS[k].vmax;
   car.forwardSpeed = car.speed = 0;
   for (const b of $('cars').children) b.classList.toggle('on', (b as HTMLElement).dataset.k === k);
-  render($('engine'), spec.voice.loops ? RECORDED_GROUPS : ENGINE_GROUPS, spec, CARS[k].spec, () => engine?.revoice());
+  render($('engine'), spec.voice.loops ? RECORDED_GROUPS : spec.voice.avas ? [HUM_GROUP, ...ENGINE_GROUPS] : ENGINE_GROUPS, spec, CARS[k].spec, () => engine?.revoice());
   showSettings();
   if (engine) rebuild();
 }
@@ -274,7 +285,7 @@ function frame(now: number) {
     [...pips.children].forEach((b, i) => b.classList.toggle('on', i === engine!.gear));
     $('revs').style.width = `${Math.min(100, (engine.rpm / spec.redline) * 100)}%`;
   } else {
-    $('dash').textContent = 'Pick a car to start the sound';
+    $('dash').textContent = problem || (ctx?.state === 'running' && !engine ? 'Loading the recordings…' : 'Pick a car to start the sound');
     $('revs').style.width = '0';
     $('gears').replaceChildren();
   }

@@ -63,7 +63,7 @@ export function ambienceMuffle(busy: number): Record<string, number> {
 // The sirens of emergency vehicles (src/audio.ts): how loud one is at `d` metres, up to
 // SIREN_RANGE, where it's gone. An engine is a little louder than a police car.
 export const SIREN_RANGE = 450;
-export const SIREN_LEVEL: Record<string, number> = { fire: 0.12, police: 0.1 };
+export const SIREN_LEVEL: Record<string, number> = { fire: 0.12, police: 0.1, ambulance: 0.11 };
 export function sirenGain(kind: string, d: number) {
   return (SIREN_LEVEL[kind] ?? 0.05) * (25 / (25 + d)) * clamp(1 - d / SIREN_RANGE, 0, 1);
 }

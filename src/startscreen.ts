@@ -3,6 +3,7 @@ import type { Kind } from './weather.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import { newsletterLink } from './newsletter.ts';
+import { updateNotice } from './update.ts';
 import { betaNote } from './betanote.ts';
 
 // The start of the game, on the loading screen: the time and weather it will begin
@@ -118,6 +119,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
   fresh.addEventListener('click', () => { resuming = false; sync(); show(); go.focus(); });
   go.disabled = true;
   newsletterLink(panel, 'ls-news', { thanks: true });
+  updateNotice(panel, 'ls-update');
   for (const f of relabel) f();
   show();
 
@@ -140,7 +142,8 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
       relabel[relabel.length - 1]();
       if (!weatherPicked) choose();
     },
-    ready(): Promise<StartChoice> {
+    // `noteAgain` shows the beta note even if it has been seen (?menu).
+    ready(noteAgain = false): Promise<StartChoice> {
       go.disabled = false;
       ready = true;
       sync();
@@ -149,7 +152,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
       return new Promise((resolve) => go.addEventListener('click', () => {
         go.disabled = true;
         const t = TIMES.find((x) => x.id === time);
-        void betaNote().then(() => resolve({ time: t ? t.sec : null, weather, sound, resume: resuming }));
+        void betaNote(noteAgain).then(() => resolve({ time: t ? t.sec : null, weather, sound, resume: resuming }));
       }, { once: true }));
     },
   };

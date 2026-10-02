@@ -31,9 +31,26 @@ fi
 DATA=$(tr -d '\n' < deploy/data-version)
 npm run typecheck
 node scripts/check-data-format.mjs "https://data.streetsofprague.com/$DATA/"
+node scripts/check-data-versions.mjs
+
+# One line of notes on the maps this version works with. "Needs" when the oldest map
+# changed since the last release; a release from before deploy/data-oldest existed counts
+# as changed only if the map format changed.
+OLDEST=$(tr -d '\n' < deploy/data-oldest)
+PREV=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+NEEDS=
+if [[ -n $PREV ]]; then
+  if PREV_OLDEST=$(git show "$PREV:deploy/data-oldest" 2>/dev/null); then
+    [[ $(printf %s "$PREV_OLDEST" | tr -d '\n') == "$OLDEST" ]] || NEEDS=1
+  else
+    format() { git show "$1:src/data.ts" 2>/dev/null | sed -n 's/^export const DATA_FORMAT = \([0-9]*\);.*/\1/p'; }
+    [[ $(format "$PREV") == $(format HEAD) ]] || NEEDS=1
+  fi
+fi
+if [[ -n $NEEDS ]]; then MAPS="Needs map $OLDEST or newer"; else MAPS="Works with maps from $OLDEST"; fi
 
 git tag -a "$TAG" -m "$TAG"
 git push origin "$TAG"
-gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag --notes "Map data: $DATA"
+gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag --notes "Map data: $DATA. $MAPS."
 # Built from the tag, so the settings panel shows exactly this version.
 [[ ${2:-} == --no-deploy ]] || scripts/deploy-cloudflare.sh

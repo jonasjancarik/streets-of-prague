@@ -20,7 +20,10 @@ def speed(i):
     return 15.5 + 9.5 * ((s - 20) / (ROUTE_SECONDS - WAIT - 20)) ** 1.5
 
 plan = {
-    'fps': FPS, 'routeFrames': N, 'start': [50.0762, 14.4140], 'heading': 0,
+    'fps': FPS, 'routeFrames': N,
+    # Where the drive starts (the map's metres) and which way (radians, 0 east, counter-clockwise):
+    # from Újezd south through Smíchov, towards Anděl. route.py goes straight on from there.
+    'start': [-4374.0, 2510.0], 'bearing': -1.5708, 'street': 'ÚJEZD — ŠTEFÁNIKOVA',
     'speed': [round(speed(i), 3) for i in range(N)],
 }
 # Which camera films which stretch of the route (from this second on).

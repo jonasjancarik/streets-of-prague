@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SKY_REF, WINDOWS } from './shading.ts';
+import { SKY_REF, SUN_DIR, SUN_LIGHT, WINDOWS } from './shading.ts';
 import { CLEAR } from './weather.ts';
 import { updateClouds } from './clouds.ts';
 import type { Conditions } from './weather.ts';
@@ -172,5 +172,8 @@ export class Sky {
       Math.sin(lightEl) * dist,
       -Math.cos(lightAz) * Math.cos(lightEl) * dist,
     );
+    // The water glitters towards it.
+    SUN_DIR.value.copy(this.offset).normalize();
+    SUN_LIGHT.value.copy(this.sun.color).multiplyScalar(this.sun.intensity);
   }
 }

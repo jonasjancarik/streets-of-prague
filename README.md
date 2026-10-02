@@ -52,7 +52,7 @@ the historic centre and `?area=ujezd` a small test area. The game's clock starts
 now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
 (with night-time parking). The weather changes by itself every half hour or so of the game's clock;
 `?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen (the loading screen's language, time, weather and sound choices and its Start button; the weather is the real weather in Prague now, from Open-Meteo (`src/liveweather.ts`), or else rolled anew on each visit), and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
-developer panel, `?dialog` plays a sample conversation, `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. The Czech is kept gender-neutral towards the player for now (see the note at the top of `src/cs.ts`). Elements in `index.html` marked `data-t` work the same way.
+developer panel, `?dialog` plays a sample conversation, `?menu` shows only the start screen without loading the map (quick to reload while working on the screen, the beta note or the signup form; the note then shows on every press of Start), `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. The Czech is kept gender-neutral towards the player for now (see the note at the top of `src/cs.ts`). Elements in `index.html` marked `data-t` work the same way.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 
 | Setting | Ultra | High | Medium | Low | Lowest |
@@ -75,7 +75,9 @@ Auto, the default, starts High (Medium on touch devices) and moves between tiers
 by how steady the frames are (`src/graphics.ts`), ignoring loading and tile builds;
 it never picks Ultra, which only choosing it turns on.
 `?graphics=auto|ultra|high|medium|low|lowest` overrides it for one visit; `?dpr=1` fixes
-only the pixel ratio. WebGL keeps MSAA on at every tier because it cannot change
+only the pixel ratio. The Water setting turns on waves, sun glitter and lamp reflections on
+the river (`src/webgpu/water.ts`; WebGPU only, not on Lowest, off unless chosen;
+`?water=on|off` for one visit). WebGL keeps MSAA on at every tier because it cannot change
 that without a new renderer.
 
 ## Playing
@@ -212,6 +214,19 @@ that without a new renderer.
   water cannon 17 m ahead: it puts out burning cars and knocks people and officers over
   gently, which counts as a crime. The tank lasts about 30 seconds and refills slowly;
   a blue bar under the health bar shows it (`src/cannon.ts`).
+- **Ambulances.** A person hit by a car going faster than about 30 km/h, by a tram you
+  drive, or caught near a blast stays on the ground instead of getting up after a few
+  seconds; so does anyone a stray police bullet hits on the pavement. An ambulance is
+  called from a few hundred metres away, drives to them by the streets (and through
+  pedestrian zones, as the fire engine does) with blue lights and a quick two-tone
+  siren, and its two paramedics get out and see to the patient for about nine seconds.
+  Someone only hurt gets up and walks on. Someone badly hurt (a car faster than about
+  48 km/h, a tram, a close blast, a bullet) is carried to the back of the ambulance by
+  the two paramedics and driven away. Someone nobody comes to gets up on their own
+  after four minutes. You can take an ambulance like any car (a carjack; the paramedics
+  who are out run after you for a while). The developer panel's "Leave the nearest
+  person hurt" button is the quickest way to see it (`src/ambulance.ts`,
+  `scenarios/ambulance.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, paste coordinates or a Google Maps / Mapy.cz link, or pick

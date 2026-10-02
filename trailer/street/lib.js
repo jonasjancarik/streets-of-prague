@@ -46,6 +46,8 @@ const version = typeof VARIANT === 'string' ? VARIANT : 'street';
 const NAME = `${version}-${TAKE}`;
 // PICTURE_ONLY: without the sound (it is the same drive in both versions). SOUND_ONLY: only the sound.
 const silent = typeof PICTURE_ONLY !== 'undefined' && PICTURE_ONLY;
+// EVERY: film only every so many frames of the route (2 for a quick preview: assemble.py holds each one twice).
+const every = typeof EVERY === 'number' ? EVERY : 1, quick = every > 1;
 const BUSES = ['engine', 'tyres', 'horns', 'trams', 'city', 'weather', 'bangs'];
 const camAt = (i) => {
   const s = i / PLAN.fps, list = PLAN.cameras[version];
@@ -83,15 +85,15 @@ const SR = 48000, Real = window.AudioContext, s = __drive.sound, peaks = [];
 const key = (type) => window.dispatchEvent(new KeyboardEvent(type, { code: 'KeyW' }));
 
 for (const [first, last] of ranges) {
-  const frameOf = (k) => (take.still ? 0 : take.rise ? END : first + k);
+  const frameOf = (k) => (take.still ? 0 : take.rise ? END : first + k * every);
   const camera = (k) => {
-    if (take.rise) return { x: c.x, y: c.y, height: HEIGHTS.height[k], tilt: 0, heading: 0 };
+    if (take.rise) return { x: c.x, y: c.y, height: HEIGHTS.height[Math.min(HEIGHTS.height.length - 1, k * every)], tilt: 0, heading: 0 };
     const [name, u] = camAt(frameOf(k));
     return { ...CAMS[name](c, u) };
   };
   put(frameOf(0)); clear();
   t.cam = take.rise ? { x: c.x, y: c.y, height: 600, tilt: 0, heading: 0 } : camera(0);
-  await t.wait(0.5); await new Promise((r) => setTimeout(r, take.rise ? 9000 : 5000));
+  await t.wait(0.5); await new Promise((r) => setTimeout(r, take.rise ? 9000 : quick ? (first === ranges[0][0] ? 4000 : 1500) : 5000));
   // The police take: wanted, and given time for them to come.
   if (take.stars) { t.set({ stars: take.stars }); for (let k = 0; k < 14; k++) { put(frameOf(0)); await t.wait(1); } }
 
@@ -121,13 +123,13 @@ for (const [first, last] of ranges) {
     merger.connect(off.destination);
     await new Promise((r) => setTimeout(r, 3000));   // (the recordings load)
   }
-  const step = async () => { if (silent) return; at += 1 / PLAN.fps; const p = off.suspend(at); if (!done) { done = off.startRendering(); started = true; } else resume(); await p; };
+  const step = async () => { if (silent) return; at += every / PLAN.fps; const p = off.suspend(at); if (!done) { done = off.startRendering(); started = true; } else resume(); await p; };
   // The pedal is down whenever the car moves (the engine's sound follows the pedal).
   const moving = (i) => !take.rise && PLAN.speed[i] > 0;
   key(moving(frameOf(0)) ? 'keydown' : 'keyup');
   const tick = () => new Promise((r) => requestAnimationFrame(() => r()));
   // Three seconds of the sound before the first frame, thrown away: the game's sound takes a moment to come up.
-  const PRE = 3 * PLAN.fps;
+  const PRE = (3 * PLAN.fps) / every;
   const was = t.paused;
   t.paused = true;
   for (let k = 0; k < (silent ? 0 : PRE); k++) { put(frameOf(0)); await tick(); await step(); }
@@ -140,8 +142,8 @@ for (const [first, last] of ranges) {
     await step();
   };
   if (typeof SOUND_ONLY !== 'undefined' && SOUND_ONLY) {
-    for (let k = 0; k < last - first; k++) { await each(k); __drive.simulate(1 / 60, {}); __drive.simulate(1 / 60, {}); await tick(); }
-  } else await t.film(`${NAME}_${first}`, (last - first) / PLAN.fps, {}, { each });
+    for (let k = 0; k < (last - first) / every; k++) { await each(k); for (let q = 0; q < 2 * every; q++) __drive.simulate(1 / 60, {}); await tick(); }
+  } else await t.film(`${NAME}_${first}`, (last - first) / PLAN.fps, {}, { each, fps: PLAN.fps / every });
   t.paused = was;
   key('keyup');
   t.set({ stars: 0 });

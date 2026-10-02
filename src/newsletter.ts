@@ -141,8 +141,9 @@ export function signupFields(d: HTMLElement, { focus = false, done: onDone = () 
 
   const status = el('p', 'news-status', d);
   status.setAttribute('role', 'status');
-  const small = el('p', 'news-small', d);
-  privacyLink(d);
+  const foot = el('p', 'news-foot', d);
+  const small = el('span', '', foot);
+  privacyLink(foot);
 
   // What the status line says, kept as the English text so it follows the language.
   let message = '', sending = false, done = false;

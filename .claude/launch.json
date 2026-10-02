@@ -35,6 +35,20 @@
         "--strictPort"
       ],
       "port": 4173
+    },
+    {
+      "name": "forms",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "VITE_SUBSCRIBE_URL=/api/subscribe",
+        "VITE_FEEDBACK_URL=/api/feedback",
+        "VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA",
+        "npm",
+        "run",
+        "dev"
+      ],
+      "port": 5211,
+      "autoPort": true
     }
   ]
 }

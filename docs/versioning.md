@@ -27,6 +27,28 @@ number existed and counts as 1.
 The game changes many times a day and the map rarely, which is why they are versioned
 apart: a release that changes only code keeps pointing at the map already uploaded.
 
+## Which maps a commit can use
+
+Two more files, committed with `deploy/data-version`, say which maps a commit works with:
+
+- `deploy/data-history` lists every map version, oldest first, one per line. It is
+  append-only: `scripts/upload-data.sh` adds the new version once the upload is
+  verified. Version names don't sort in a way the scripts rely on (a second upload on
+  one day is `-b2`), so this order is what "older" and "newer" mean.
+- `deploy/data-oldest` is the oldest map version this code still plays correctly with.
+  The commit works with every map from there to `deploy/data-version`.
+
+Most commits leave `data-oldest` alone. Raise it, to the first map that works, in the
+same commit as any code that can't do without newer map files: always when the format
+number rises, and also when code starts relying on a map file or field that older maps
+lack and has no fallback for.
+
+`node scripts/check-data-versions.mjs` fails unless both names are in the history,
+`data-oldest` is not later than `data-version`, and the map at `data-oldest` on R2 is in
+the format the code reads (`--offline` skips that last check). With `--accepted` it
+prints the versions from `data-oldest` to `data-version`, one per line. Both
+`scripts/release.sh` and `scripts/deploy-cloudflare.sh` run it.
+
 ## What index.json records
 
 Besides the map itself, each `<area>_now/index.json` has:
@@ -36,6 +58,30 @@ Besides the map itself, each `<area>_now/index.json` has:
 - `pipeline`: the commit the pipeline was run from, with `-dirty` if files differed
   from it.
 
+## version.json
+
+Both deploy scripts write `version.json` at the site root with
+`scripts/write-version-json.mjs`:
+
+    { "game": "v1.2.3", "built": "2026-10-01", "map": "2026-10-01-b2", "mapFormat": 1,
+      "mapsAccepted": ["2026-10-01-b2"] }
+
+`game` is what `git describe` gave the build (as in the settings panel), `map` the map
+it goes with and `mapsAccepted` the range from the check above. On mbxp the map is the
+fingerprint id, and that is the only one accepted. Cloudflare serves it with
+`Cache-Control: no-store` (the generated `_headers`); busybox httpd on mbxp can't send
+headers, so the game asks for it with `cache: 'no-store'` instead.
+
+An open tab reads it (`src/update.ts`) on load and when it becomes visible again, at
+most every 15 minutes. If `game` differs from the tab's own version, the settings panel
+and the start screen show "A newer version of the game is available" with a Reload
+button. Failures are ignored; the game never reloads itself. The mobile app will read
+the same file.
+
+Caching on the web, checked 2026-10-02: `index.html` is `max-age=0, must-revalidate`,
+files under `/assets/` are `max-age=31536000, immutable` (their names carry a hash), and
+map files are `max-age=31536000, immutable`.
+
 ## When to raise the format
 
 Raise `FORMAT` and `DATA_FORMAT` together, in one commit, whenever code from before the
@@ -44,7 +90,8 @@ changed binary layout, a renamed or removed field the game needs, a different ti
 scheme. Adding a file or field that older code ignores and newer code treats as optional
 does not need it.
 
-After raising it, rebuild the map, upload it under a new version name and commit
+After raising it, raise `deploy/data-oldest` too once the new map is uploaded (it is
+the first map in the new format), then rebuild the map, upload it under a new version name and commit
 `deploy/data-version` before deploying. The deploy scripts refuse to go on until the
 map and the code agree.
 
@@ -75,6 +122,11 @@ others: a corrected map always gets a new name.
 `deploy/data-version` is on R2 in the format the code reads, and only then tags the
 commit, publishes the GitHub release (the notes start with the map data version) and
 runs `scripts/deploy-cloudflare.sh`. `--no-deploy` stops after the release.
+
+The release notes say which maps it works with: "Needs map X or newer" when
+`deploy/data-oldest` differs from the previous release's (a release from before the file
+existed counts as different only if the map format changed), otherwise "Works with maps
+from X". The list of releases is thereby the record of which updates needed a new map.
 
 Production only runs released versions. `scripts/deploy-cloudflare.sh` refuses a commit
 that isn't a release tag, so what is live always has a version number, a GitHub release

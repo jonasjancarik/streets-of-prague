@@ -34,6 +34,9 @@ export interface EngineVoice {
   // the cylinders fire in each, lowest first. `tone` and `level` then shape the recording,
   // and the overtones, sub-octave, distortion and intake aren't used.
   loops?: [name: string, hz: number][];
+  // An electric car's warning hum for people on foot: how loud, its pitch standing (Hz),
+  // and how deeply it pulses (0 steady, 1 down to nothing between pulses).
+  avas?: [level: number, hz: number, pulse: number];
 }
 export interface EngineSpec { idle: number; redline: number; cylinders: number; gears: number[]; rough: number; voice: EngineVoice }
 // An everyday car heard from outside: a quiet, smooth hum under the tyres, a little
@@ -59,18 +62,23 @@ const DIESEL: EngineVoice = {
 // (measured), played faster or slower to the revs and faded from one to the next.
 // Only on the sound test page so far.
 const KONA: EngineVoice = {
-  harmonics: [], sub: 0, drive: 0, tone: [900, 25, 5000],
+  harmonics: [], sub: 0, drive: 0, tone: [700, 12, 1500],
   roar: [0, 0, 3], level: [0.1, 0.08, 0.1], shift: [0.28, 0.5], clutch: 500, blip: 0.5,
   loops: [['engine-idle', 24], ['engine-mid', 74.5], ['engine-high', 97]],
 };
 export const RECORDED: EngineSpec = { idle: 720, redline: 6200, cylinders: 4, gears: [0.25, 0.42, 0.6, 0.8, 1.02], rough: 0, voice: KONA };
-// An electric motor: a thin whine that rises with speed, silent when standing, a single
-// gear (so no shifts) and no clutch or irregular firing.
+// An electric motor: a soft hum that rises with speed and is heard mostly while the car
+// is pulling (coasting at speed it nearly goes away, as outside a real one, where the
+// tyres are what's left), silent when standing, a single gear (so no shifts) and no
+// clutch or irregular firing. Below 20 km/h it hums for people on foot, as the law has
+// asked of new electric cars since 2019 (see AVAS_KMH). Its loudness used to grow with speed instead, up to a
+// piercing 600 Hz whine with overtones at the top.
 const ELECTRIC_VOICE: EngineVoice = {
-  harmonics: [0, 1, 0, 0.25, 0, 0.08], sub: 0, drive: 0.2, tone: [300, 2, 500],
-  roar: [0, 0, 3], level: [0, 0.01, 0.022], shift: [1, 1], clutch: 0, blip: 0,
+  harmonics: [0, 1, 0.08], sub: 0, drive: 0.2, tone: [200, 1.2, 150],
+  roar: [0, 0, 3], level: [0, 0.009, 0.003], shift: [1, 1], clutch: 0, blip: 0,
+  avas: [0.009, 170, 0.45],
 };
-const ELECTRIC: EngineSpec = { idle: 600, redline: 9000, cylinders: 8, gears: [1.02], rough: 0, voice: ELECTRIC_VOICE };
+const ELECTRIC: EngineSpec = { idle: 600, redline: 9000, cylinders: 5, gears: [1.02], rough: 0, voice: ELECTRIC_VOICE };
 // A big V8 pickup: low and burbling, taken easy.
 const V8_VOICE: EngineVoice = {
   harmonics: [0, 1, 0.6, 0.35, 0.15, 0.06], sub: 0.35, drive: 1, tone: [140, 1.6, 300],
@@ -112,6 +120,16 @@ export const surfaceOf = (tag: string | undefined | null): Surface => (SETTS.has
 const TRAM_VOICES = 4, TRAM_RANGE = 170; // the nearest trams you can hear, as far as this (m)
 const SIREN_VOICES = 3; // the nearest sirens you can hear at once
 const JOINT = 24; // m between the rail joints
+// The warning hum (AVAS, UN Regulation 138): sounding from a standstill to 20 km/h, forwards
+// and in reverse, gone by 30, and rising in pitch with speed (the rule asks for at least
+// 0.8 % per km/h) so that it tells whether the car is speeding up or slowing down.
+const AVAS_KMH = [20, 30], AVAS_RISE = 0.01;
+// Its notes: a low, open chord (the base, a fifth above, an octave, a faint one higher),
+// each pair a little out of tune with the other so the sound drifts slowly, as a synth pad
+// does. It swells and fades once or twice a second, quicker as the car speeds up: the
+// pulse of a spaceship standing by, not an alarm.
+const AVAS_NOTES: [ratio: number, level: number][] = [[1, 1], [1.004, 0.7], [1.5, 0.5], [1.497, 0.3], [2.003, 0.3], [3, 0.06]];
+const AVAS_PULSE = [1.2, 0.08]; // pulses a second standing, and more per km/h
 const BLIP = 0.25; // s a downshift's blip of throttle lasts
 const SMOOTH = 0.06; // s: how quickly a sound follows what it's following
 const LOOPS = ['roll', 'motor', 'squeal'], ONCE = ['bell-1', 'bell-2', 'bell-3', 'depart-1', 'depart-2', 'arrive'];
@@ -132,7 +150,7 @@ export interface SoundState {
 }
 
 // One siren sounding: `key` tells it from the others from one frame to the next, and (vx, vy) is its speed.
-export interface Siren { key: object; kind: 'fire' | 'police'; x: number; y: number; vx: number; vy: number }
+export interface Siren { key: object; kind: 'fire' | 'police' | 'ambulance'; x: number; y: number; vx: number; vy: number }
 
 // The sound's groups, each with its own volume in the mixer (settings.ts), 1 being as built.
 export const BUSES = ['engine', 'tyres', 'horns', 'trams', 'city', 'weather', 'radio', 'bangs'] as const;
@@ -470,6 +488,7 @@ export class Engine extends Drivetrain {
   osc: OscillatorNode; sub: OscillatorNode; wobble: AudioBufferSourceNode; intake: AudioBufferSourceNode;
   depth: GainNode; tone: BiquadFilterNode; roar: BiquadFilterNode; roarGain: GainNode;
   subGain: GainNode; shaper: WaveShaperNode;
+  hum: OscillatorNode[] = []; humGain: GainNode | null = null; pulse: OscillatorNode | null = null; pulseDepth: GainNode | null = null; swell: GainNode | null = null;
 
   constructor(ctx: AudioContext, noise: AudioBuffer, dest: AudioNode, car: Car, spec: EngineSpec) {
     super(ctx, car, spec);
@@ -503,6 +522,21 @@ export class Engine extends Drivetrain {
     this.wobble.start(t);
     this.intake.start(t);
     this.out.gain.setTargetAtTime(voice.level[0], t, 0.15);
+    if (voice.avas) {
+      this.humGain = gain(ctx, 0);
+      this.swell = gain(ctx, 1);
+      this.pulse = ctx.createOscillator();
+      this.pulseDepth = gain(ctx, 0);
+      this.pulse.connect(this.pulseDepth).connect(this.swell.gain);
+      this.pulse.start(t);
+      this.humGain.connect(this.swell).connect(filter(ctx, 'lowpass', 900, 0.5)).connect(dest);
+      for (const [, level] of AVAS_NOTES) {
+        const o = ctx.createOscillator();
+        o.connect(gain(ctx, level)).connect(this.humGain);
+        o.start(t);
+        this.hum.push(o);
+      }
+    }
     this.update(0, 0);
   }
 
@@ -527,12 +561,23 @@ export class Engine extends Drivetrain {
     this.roar.frequency.setTargetAtTime(hz * voice.roar[2], t, SMOOTH);
     this.roarGain.gain.setTargetAtTime(voice.roar[0] + pull * voice.roar[1], t, SMOOTH);
     this.out.gain.setTargetAtTime(voice.level[0] + pull * voice.level[1] + (rpm / spec.redline) * voice.level[2], t, 0.1);
+    if (voice.avas && this.humGain) {
+      const kmh = Math.abs(this.car.forwardSpeed) * 3.6, [level, base, depth] = voice.avas;
+      // The swell goes between 1 and 1 - depth.
+      this.swell!.gain.setTargetAtTime(1 - depth / 2, t, SMOOTH);
+      this.pulseDepth!.gain.setTargetAtTime(depth / 2, t, SMOOTH);
+      this.pulse!.frequency.setTargetAtTime(AVAS_PULSE[0] + Math.min(kmh, AVAS_KMH[1]) * AVAS_PULSE[1], t, 0.2);
+      const pitch = base * (1 + Math.min(kmh, AVAS_KMH[1]) * AVAS_RISE);
+      this.hum.forEach((o, i) => o.frequency.setTargetAtTime(pitch * AVAS_NOTES[i][0], t, SMOOTH));
+      this.humGain.gain.setTargetAtTime(level * clamp((AVAS_KMH[1] - kmh) / (AVAS_KMH[1] - AVAS_KMH[0]), 0, 1), t, 0.1);
+    }
   }
 
   stop() {
     const t = this.ctx.currentTime;
     this.out.gain.setTargetAtTime(0, t, 0.08);
-    for (const n of [this.osc, this.sub, this.wobble, this.intake]) n.stop(t + 0.6);
+    this.humGain?.gain.setTargetAtTime(0, t, 0.08);
+    for (const n of [this.osc, this.sub, this.wobble, this.intake, ...this.hum, ...(this.pulse ? [this.pulse] : [])]) n.stop(t + 0.6);
   }
 }
 
@@ -541,15 +586,17 @@ export class Engine extends Drivetrain {
 // recorded nearest to them are heard, one fading into the next as the revs go between.
 // A filter opens with the throttle, as the recordings are of an engine without load.
 export class RecordedEngine extends Drivetrain {
-  out: GainNode; tone: BiquadFilterNode;
+  out: GainNode; tone: BiquadFilterNode; tone2: BiquadFilterNode;
   loops: { src: AudioBufferSourceNode; gain: GainNode; hz: number }[] = [];
 
   constructor(ctx: AudioContext, clips: Record<string, AudioBuffer>, dest: AudioNode, car: Car, spec: EngineSpec) {
     super(ctx, car, spec);
     const t = ctx.currentTime;
+    // Two filters in a row: a recording is bright all the way up, and one leaves too much of it.
     this.tone = filter(ctx, 'lowpass', 2000, 0.7);
+    this.tone2 = filter(ctx, 'lowpass', 2000, 0.6);
     this.out = gain(ctx, 0);
-    this.tone.connect(this.out).connect(dest);
+    this.tone.connect(this.tone2).connect(this.out).connect(dest);
     for (const [name, hz] of spec.voice.loops ?? []) {
       if (!clips[name]) continue;
       const src = loop(ctx, clips[name]), g = gain(ctx, 0);
@@ -575,7 +622,9 @@ export class RecordedEngine extends Drivetrain {
       const share = i === at ? Math.cos((mix * Math.PI) / 2) : l === next ? Math.sin((mix * Math.PI) / 2) : 0;
       l.gain.gain.setTargetAtTime(share, t, SMOOTH);
     });
-    this.tone.frequency.setTargetAtTime(voice.tone[0] + hz * voice.tone[1] + pull * voice.tone[2], t, SMOOTH);
+    const top = Math.min(voice.tone[0] + hz * voice.tone[1] + pull * voice.tone[2], this.ctx.sampleRate * 0.45);
+    this.tone.frequency.setTargetAtTime(top, t, SMOOTH);
+    this.tone2.frequency.setTargetAtTime(top, t, SMOOTH);
     this.out.gain.setTargetAtTime(voice.level[0] + pull * voice.level[1] + (rpm / spec.redline) * voice.level[2], t, 0.1);
   }
 
@@ -617,15 +666,15 @@ class SirenVoice {
   update(q: Siren, d: number, lx: number, ly: number, me: Car | null, aloft = 0) {
     const t = this.ctx.currentTime;
     if (this.key !== q.key) { this.key = q.key; this.last = t; this.phase = Math.random(); }
-    this.phase = (this.phase + (t - this.last) * (q.kind === 'fire' ? 1 : 1.6)) % 1;
+    this.phase = (this.phase + (t - this.last) * (q.kind === 'fire' ? 1 : q.kind === 'ambulance' ? 1.9 : 1.6)) % 1;
     this.last = t;
     // Pitch: high and low for an engine, a sweep up and down for the police.
-    const hz = q.kind === 'fire' ? (this.phase < 0.5 ? 660 : 495) : 650 + 550 * (0.5 - 0.5 * Math.cos(this.phase * Math.PI * 2));
+    const hz = q.kind === 'fire' ? (this.phase < 0.5 ? 660 : 495) : q.kind === 'ambulance' ? (this.phase < 0.5 ? 880 : 660) : 650 + 550 * (0.5 - 0.5 * Math.cos(this.phase * Math.PI * 2));
     // Doppler: the speed of the siren towards you, less your own.
     const dx = lx - q.x, dy = ly - q.y, n = Math.max(d, 1);
     const toward = ((q.vx - (me?.vx ?? 0)) * dx + (q.vy - (me?.vy ?? 0)) * dy) / n;
     const f = hz * SONIC / (SONIC - clamp(toward, -40, 40));
-    const tc = q.kind === 'fire' ? 0.02 : 0.05;
+    const tc = q.kind === 'police' ? 0.05 : 0.02;
     this.osc.frequency.setTargetAtTime(f, t, tc);
     this.top.frequency.setTargetAtTime(f * 2, t, tc);
     this.tone.frequency.setTargetAtTime(clamp(3600 - d * 7, 800, 3600) * (1 - 0.6 * aloft), t, 0.1);

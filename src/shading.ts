@@ -486,6 +486,12 @@ export const RAIN = { value: 0 };
 // leaves falling as it grows; evergreens keep theirs (vegetation.ts).
 export const BARE = { value: 0 };
 export const SKY_REF = { value: new THREE.Color(0, 0, 0) };
+// The river and ponds (webgpu.ts): waves that mirror the sky, the sun and the lamps
+// (graphics.ts: 1 on, 0 the plain water; a setting, and never on Lowest), and for them where the sun or the
+// moon stands and how bright it is (sky.ts).
+export const WATER = { value: 1 };
+export const SUN_DIR = { value: new THREE.Vector3(0, 1, 0) };
+export const SUN_LIGHT = { value: new THREE.Color(0, 0, 0) };
 // Lit windows at night: the share of them (0 by day).
 export const WINDOWS = { value: 0 };
 

@@ -27,6 +27,10 @@ export interface Pedestrian extends WalkSpot {
   gz?: number;
   // Knocked down by someone taking their bike: which way to run once they're up.
   then?: Point2;
+  // Hurt badly and lying there until an ambulance crew has seen to them (or it's been so long nobody's coming): seconds so far.
+  hurt?: number;
+  // So badly hurt that the ambulance takes them away rather than getting them up again.
+  grave?: boolean;
 }
 interface WalkSegment extends WalkSpot { a: Point2; b: Point2; s0: number; len: number }
 // Something standing in the way: a circle of a parked car or bike (see pushCar in main.ts).
@@ -36,6 +40,7 @@ type Obstructions = (x: number, y: number, r: number) => Iterable<Obstruction>;
 // Pedestrians wander the footpath network, jump out of the way of fast cars,
 // and get knocked over (then get up again) when they don't make it.
 
+const HURT_FOR = 240; // seconds a hurt person lies there if no ambulance comes
 const GETUP = 1.25; // seconds of getting up at the end of lying on the ground
 // Walking, people head for a point this far along their path, so they round corners
 // and turn gradually rather than all at once.
@@ -130,7 +135,7 @@ export class Crowd {
     if (this.people.length >= this.fig.capacity) {
       // Full: move someone who is out of the way instead.
       const p = this.people[Math.floor(r() * this.people.length)];
-      Object.assign(p, { e: at?.e || p.e, s: at?.s ?? p.s, state: 'walk', vx: 0, vy: 0 });
+      Object.assign(p, { e: at?.e || p.e, s: at?.s ?? p.s, state: 'walk', vx: 0, vy: 0, hurt: undefined, grave: undefined });
       this.place(p);
       return p;
     }
@@ -282,6 +287,11 @@ export class Crowd {
     this.tick = (this.tick + 1) % 4;
     for (const p of this.people) {
       p.t -= dt;
+      if (p.hurt !== undefined) {
+        // Lying there until seen to, or until it's been too long to wait for anyone.
+        if (p.state !== 'down' || (p.hurt += dt) > HURT_FOR) this.revive(p);
+        else p.t = 5;
+      }
       if (p.state === 'walk') {
         // Look out for fast cars heading this way.
         for (const c of threats) {
@@ -390,13 +400,24 @@ export class Crowd {
     }
   }
 
-  knock(p: Pedestrian, vx: number, vy: number) {
+  // `hurt`: 1 for a blow hard enough that they stay down until an ambulance crew gets to
+  // them, 2 for one that has them taken away.
+  knock(p: Pedestrian, vx: number, vy: number, hurt = 0) {
     p.state = 'down';
     p.t = 3 + this.r() * 2;
+    if (hurt && p.hurt === undefined) p.hurt = 0;
+    if (hurt > 1) p.grave = true;
     p.vx = vx;
     p.vy = vy;
     p.h = Math.atan2(vy, vx) + Math.PI;
     p.anim.play('fall', true, 0.08);
+  }
+
+  // Seen to: they get up (a little slowly) and walk on.
+  revive(p: Pedestrian) {
+    p.hurt = undefined;
+    p.grave = undefined;
+    if (p.state === 'down') p.t = GETUP;
   }
 
   // Only those `seen` (in view, with room for their shadows) are drawn, packed into the

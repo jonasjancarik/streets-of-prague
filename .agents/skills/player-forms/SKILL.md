@@ -152,16 +152,25 @@ Brevo's free plan sends 300 emails a day, so a list beyond that goes out over se
 days or needs a paid plan. Every campaign carries Brevo's unsubscribe link; people who
 use it stay in the contacts as unsubscribed and are skipped from then on.
 
+### Reading the feedback
+
+Besides the email, the Worker keeps each message as `feedback/<date>/<time>-<id>.json`
+in the R2 bucket `streets-of-prague-mail` (binding `FEEDBACK_ARCHIVE`).
+`node scripts/feedback-viewer.mjs` reads them through the `cf` login and opens a local
+searchable page (`--sample` for made-up ones). Not yet run against real messages.
+
 ## Checking a change
 
 **The Worker.** `node scripts/check-worker.mjs`. Add a case there for anything the
 Worker newly accepts or refuses. Nothing leaves the machine.
 
-**The forms in the browser.** Start a dev server with the values set, on its own port
-so the user's running server is left alone:
+**The forms in the browser.** Start the `forms` preview from `.claude/launch.json`
+(`preview_start` with that name). It is the dev server with the forms' addresses and
+Cloudflare's test key set, on its own port (5211, or the next free one) so the user's
+running server is left alone. By hand it is:
 
     VITE_SUBSCRIBE_URL=/api/subscribe VITE_FEEDBACK_URL=/api/feedback \
-      VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA PORT=5197 npm run dev
+      VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA PORT=5211 npm run dev
 
 - `1x00000000000000000000AA` is Cloudflare's test site key: it always passes and works
   on localhost. The real key only works on the widget's hostnames.
@@ -170,13 +179,16 @@ so the user's running server is left alone:
   replace `window.fetch` from the page for the one request and read what the form sent
   (`JSON.parse(init.body)`) and what it then says. Answer `{"ok":true}` with 200 for
   success, or `{"error":"email" | "busy" | "check" | "message"}` with 400, 429 or 403.
-- The signup link is on the start screen at once. The feedback link is in the settings,
-  which exist only once the game has loaded: open `/?go` and wait for
+- The signup link is on the start screen at once, and `/?menu` shows that screen
+  without loading the map: the quick way to work on the signup and on the beta note
+  (src/betanote.ts), which there opens on every press of Start. The feedback link is in
+  the settings, which exist only once the game has loaded: open `/?go` and wait for
   `#loading.done`. Open the dialogs by calling `.click()` on the link from the page;
   clicking by element reference scrolls the start screen out of place.
 - `/?subscribed` shows the start screen as it looks after the confirmation link.
-- Stop the server afterwards. If a temporary entry went into `.claude/launch.json` for
-  it, take it out again: the file is tracked.
+- The preview pane is often hidden, and a hidden page's timers run slowly: wait for
+  the state you expect instead of a fixed short time.
+- Stop the server afterwards.
 
 Show the user screenshots of the form states that changed.
 

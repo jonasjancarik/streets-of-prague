@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DIRT, LEAVES, ROOF_DETAIL } from './shading.ts';
+import { DIRT, LEAVES, ROOF_DETAIL, WATER } from './shading.ts';
 import { LAMP_SHADOWS, LAMP_SIZE, LIGHT_FX } from './lamps.ts';
 import type { Sky } from './sky.ts';
 import { t } from './i18n.ts';
@@ -12,6 +12,9 @@ import { t } from './i18n.ts';
 // posts as well as cars, cones of light in the air and glints on cars and wet ground.
 // Only choosing it turns it on, Auto goes no higher than High.
 // Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd cap.
+// The water's waves and reflections (webgpu/water.ts) are a setting of their own, off
+// unless chosen (their cost isn't measured yet) and never drawn on Lowest; ?water=on|off
+// overrides it for one visit.
 // Car shadows in lamplight go from full to soft to none (2 / 1 / 0).
 //
 // Auto starts high (medium on touch devices) and judges windows of 60 frame times
@@ -115,6 +118,7 @@ export class AutoTier {
 export class Graphics {
   choice: Choice;
   tier: Tier;
+  water = false;
   private auto: AutoTier;
   private renderer: THREE.WebGLRenderer;
   private sky: Sky;
@@ -126,6 +130,8 @@ export class Graphics {
     this.fixedRatio = Number(params.get('dpr')) || null;
     let saved: string | null = null;
     try { saved = localStorage.getItem('graphics'); } catch {}
+    try { this.water = localStorage.getItem('water') === 'on'; } catch {}
+    if (params.has('water')) this.water = params.get('water') !== 'off';
     const asked = params.get('graphics');
     const pick = (c: string | null) => (CHOICES as string[]).includes(c ?? '') ? c as Choice : null;
     this.choice = pick(asked) ?? pick(saved) ?? 'auto';
@@ -154,6 +160,7 @@ export class Graphics {
   private apply() {
     const { look, samples, shadowSize, shadowBlur, roofs, cars, lights } = TIERS[this.tier];
     DIRT.value = LEAVES.value = look ? 1 : 0;
+    WATER.value = look && this.water ? 1 : 0;
     this.sky.curve = look;
     LAMP_SHADOWS.value = cars;
     LIGHT_FX.value = lights ? 1 : 0;
@@ -183,6 +190,12 @@ export class Graphics {
     }
     const r = this.ratio(this.tier);
     if (this.renderer.getPixelRatio() !== r) this.renderer.setPixelRatio(r);
+  }
+
+  setWater(on: boolean) {
+    this.water = on;
+    try { localStorage.setItem('water', on ? 'on' : 'off'); } catch {}
+    this.apply();
   }
 
   set(choice: Choice) {

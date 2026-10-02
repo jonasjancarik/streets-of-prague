@@ -77,14 +77,18 @@ local map with every deploy, so it needs none of this.
    `scripts/upload-data.sh 2026-10-05`. It needs the rclone remote `streets:` (README,
    "After rebuilding map data"). It takes a while: about 0.7 GB in tens of thousands of
    files. Interrupted? Run it again with `--resume`.
-3. Commit `deploy/data-version`, which the script updated, push, and release.
+3. Commit `deploy/data-version` and `deploy/data-history`, which the script updated,
+   push, and release.
+4. If the code now needs this map (the format number rose, or it relies on a file or
+   field older maps lack), set `deploy/data-oldest` to the new version in the same
+   commit. `node scripts/check-data-versions.mjs` checks the three files agree.
 
 Never reuse or try to fix up a version name. The bucket has a lock rule and refuses to
 overwrite or delete anything; a corrected map gets a new name.
 
 If the change altered the files' layout so that older code can't read the new map (or
 the new code the old map), raise `FORMAT` in `pipeline/layers.py` and `DATA_FORMAT` in
-`src/data.ts` together in one commit, rebuild, then do the three steps above. Until the
+`src/data.ts` together in one commit, rebuild, then do the steps above. Until the
 new map is uploaded the production deploy refuses to run, which is the point.
 
 `public/data` is shared by parallel sessions (and worktrees), so before uploading make
@@ -98,6 +102,7 @@ deployment from `cf` on Cloudflare. Then:
 
 - Open the site and wait for the map to load. A format mismatch or a missing map shows
   as "Something went wrong: …" on the loading screen.
+- `curl https://streetsofprague.com/version.json` should show the new game and map.
 - Open the settings panel and read the last line: `Version … · date · map data …`. It
   should name the commit or tag just deployed. On production the map is the version in
   `deploy/data-version`; on the beta it is the day the map was built.

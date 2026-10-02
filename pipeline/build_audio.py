@@ -169,7 +169,25 @@ def engine(x: np.ndarray) -> np.ndarray:
     body = x[:end].copy()
     r = np.linspace(0, 1, fade)
     body[:fade] = x[end:end + fade] * (1 - r) + head * r
+    body = dewhine(body)
     return body / np.sqrt((body ** 2).mean()) * 0.1  # -20 dBFS
+
+
+def dewhine(x: np.ndarray) -> np.ndarray:
+    # Thin, steady tones above 400 Hz (a 2 kHz whistle in the idle recording, the whine
+    # of belts and electrics in the others) stand 14-20 dB over the sound around them, and
+    # turn into a rising whistle once the game plays the loop faster. Each is cut down to
+    # the level of its surroundings (the median within 60 Hz). Done on the finished loop,
+    # which repeats exactly, so its spectrum can be changed without touching the seam.
+    spec = np.fft.rfft(x)
+    mag = np.abs(spec)
+    f = np.fft.rfftfreq(len(x), 1 / SR)
+    half = int(60 * len(x) / SR)
+    step = max(1, half // 8)  # the median every few bins is enough, then interpolated
+    at = np.arange(0, len(mag), step)
+    med = np.interp(np.arange(len(mag)), at, [np.median(mag[max(0, i - half):i + half + 1]) for i in at])
+    limit = np.where(f > 400, med * 1.4, np.inf)
+    return np.fft.irfft(spec * np.minimum(1, limit / (mag + 1e-12)), len(x))
 
 
 def ambience(x: np.ndarray, even=True) -> np.ndarray:

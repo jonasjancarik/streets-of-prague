@@ -41,6 +41,8 @@ if [[ -n ${BREVO_LIST_ID:-} && -n ${BREVO_DOI_TEMPLATE_ID:-} ]]; then export VIT
 if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=https://streetsofprague.com/api/feedback; fi
 if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY; fi
 VITE_DATA_URL=data/$ID/ node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
+# busybox httpd can't send no-store, so the game asks for it with cache: 'no-store'.
+node scripts/write-version-json.mjs dist "$ID" --fixed
 
 # site/data/<id> is the mountpoint for the map (it can't be created inside a read-only mount).
 ssh "$HOST" mkdir -p "$DIR/releases/$SHA/site/data/$ID" "$DIR/data"

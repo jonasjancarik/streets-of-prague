@@ -196,6 +196,11 @@ export class Fires {
     return c.burnt ? b.t < SMOULDER / 2 && b.wet < DOUSE / 2 : b.fuse >= 0;
   }
 
+  // A wreck whose flames are out but that still smoulders: what a crew with hoses finishes off.
+  smouldering(c: Car) {
+    return c.burnt && this.blazes.has(c) && !this.onFire(c);
+  }
+
   // Water on a car, `amount` seconds' worth from one hose. Enough of it brings a burning
   // car back under the point where it catches fire: it only smokes, steaming for a few
   // seconds, and won't explode. A wreck in flames loses them, and stops smouldering.
