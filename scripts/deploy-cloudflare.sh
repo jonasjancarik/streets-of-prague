@@ -23,6 +23,7 @@ VERSION=$(tr -d '\n' < deploy/data-version)
 DATA_URL=https://data.streetsofprague.com/$VERSION/
 # The map must be there and in the format this code reads.
 node scripts/check-data-format.mjs "$DATA_URL"
+node scripts/check-data-versions.mjs
 npm run typecheck
 node scripts/check-worker.mjs
 # The newsletter and feedback (deploy/newsletter, deploy/feedback): the game shows each
@@ -36,10 +37,15 @@ BEACON=
 if [[ -f deploy/web-analytics-token ]]; then BEACON=$(tr -d '\n' < deploy/web-analytics-token); fi
 VITE_TELEMETRY_URL=/api/report VITE_CF_BEACON_TOKEN=$BEACON VITE_DATA_URL=$DATA_URL VITE_DATA_VERSION=$VERSION node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false, build: { outDir: 'dist-cf' } })"
 (cd public && git ls-files -z) | rsync -a --from0 --files-from=- public/ dist-cf/
+# version.json says what is current (src/update.ts reads it in open tabs), so it is
+# never cached.
 cat > dist-cf/_headers <<'HEADERS'
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+/version.json
+  Cache-Control: no-store
 HEADERS
+node scripts/write-version-json.mjs dist-cf "$VERSION"
 
 # cf's Build Output keeps the deployment byte-for-byte equal to this build.
 if [[ -d .cloudflare/output ]]; then trash .cloudflare/output; fi
