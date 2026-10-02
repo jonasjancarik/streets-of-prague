@@ -1856,6 +1856,8 @@ async function main() {
       const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
       lightOpt.box = free ? undefined : [height * tan * camera.aspect + 6, height * tan + 6];
       lightOpt.time = time.value;
+      police.helis.night = sky.dark;
+      lightOpt.spots = police.helis.lit;
       lightOpt.wet = weather.now.wet;
       lightOpt.murk = sky.murk;
       lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list, lightOpt);

@@ -181,6 +181,12 @@ const LUMA = [0.3, 0.59, 0.11];
 // and width, the ground under it and how tall it is.
 export type Block = (x: number, y: number, h: number, halfL: number, halfW: number, ground: number, tall: number) => void;
 // The flashing lights on the roof of an emergency vehicle: their light reaches `reach` m, `rate` cycles a second.
+// A searchlight on something in the air (a police helicopter): where it is (x, y, height)
+// and the spot on the ground it shines on.
+export interface Spot { x: number; y: number; z: number; tx: number; ty: number }
+const SEARCH = new THREE.Color('#fff3d6');
+const SEARCH_R = 9; // m: how wide its pool of light is
+
 export interface Flashing { car: LitCar; reach: number; rate: number }
 // How lit each side of a light bar is at `time` (0..1 each), `rate` cycles a second: two
 // short flashes on the left, then two on the right.
@@ -295,11 +301,13 @@ export class Lamps {
         varying vec2 vP; varying vec3 vLamp; varying vec4 vCa; varying vec4 vCb;
         void main() {
           vec2 dir = iShape.xy, side = vec2(-dir.y, dir.x), q = position.xy, off;
-          float beam = mod(iAt.w, 2.);
-          if (beam > .5) { vL = vec2(q.x * .5 + .5, q.y); off = dir * vL.x * iShape.z + side * q.y * iShape.w; }
+          // (4 added: a spot, a round pool whose light comes from the point dir away from its centre.)
+          float spot = step(3.5, iAt.w), beam = mod(iAt.w - 4. * spot, 2.);
+          if (spot > .5) { vL = q; off = q * iShape.z; }
+          else if (beam > .5) { vL = vec2(q.x * .5 + .5, q.y); off = dir * vL.x * iShape.z + side * q.y * iShape.w; }
           else { vL = q; off = (dir * q.x + side * q.y) * iShape.z; }
-          vC = iColour.rgb; vH = iAt.z; vBeam = beam;
-          vP = iAt.xy + off; vLamp = vec3(iAt.x, iAt.z + iColour.a, iAt.y); vCa = iCarsA; vCb = iCarsB;
+          vC = iColour.rgb; vH = iAt.z; vBeam = beam + 2. * spot;
+          vP = iAt.xy + off; vLamp = vec3(iAt.x + spot * dir.x, iAt.z + iColour.a, iAt.y + spot * dir.y); vCa = iCarsA; vCb = iCarsB;
           gl_Position = vec4((iAt.xy + off - uView.xy) * uView.zw, 0., 1.);
         }`,
       fragmentShader: /* glsl */ `
@@ -331,7 +339,10 @@ export class Lamps {
         }
         void main() {
           float f;
-          if (vBeam > .5) {
+          if (vBeam > 1.5) {
+            f = 1. - smoothstep(.45, 1., length(vL));
+            f *= f;
+          } else if (vBeam > .5) {
             float t = vL.x, a = abs(vL.y) / (.25 + .75 * t);
             f = (1. - t) * (1. - t) * smoothstep(1., .35, a) * smoothstep(0., .1, t);
           } else {
@@ -711,7 +722,7 @@ export class Lamps {
   // camera is (three.js's coordinates), `opt.wet` and `opt.murk` how wet the ground is and
   // how hazy the air (0..1), for the beams and glints.
   update<C extends LitCar>(x: number, y: number, r: number, on: number, cars: C[], carHeight: (x: number, y: number, car: C) => number, now: number, trams: LitTram[] = [], opt: {
-    box?: [number, number]; flashing?: Flashing[]; time?: number; blocks?: (put: Block) => void; eye?: THREE.Vector3; wet?: number; murk?: number;
+    box?: [number, number]; flashing?: Flashing[]; spots?: Spot[]; time?: number; blocks?: (put: Block) => void; eye?: THREE.Vector3; wet?: number; murk?: number;
   } = {}) {
     LAMP_ON.value = on;
     if (this.target.width !== LAMP_SIZE.value) {
@@ -755,7 +766,7 @@ export class Lamps {
       col.set([c.r * i, c.g * i, c.b * i, up], n * 4);
       const ids = this.pickIds;
       if (shading && up > 0) {
-        if (beam) this.pick(lx + dx * len / 2, ly + dy * len / 2, len / 2 + wid, own, most);
+        if (beam === 1) this.pick(lx + dx * len / 2, ly + dy * len / 2, len / 2 + wid, own, most);
         else this.pick(lx, ly, len, own, most);
       } else ids.fill(-1);
       for (let k = 0; k < 4; k++) { ca[n * 4 + k] = ids[k]; cb[n * 4 + k] = ids[4 + k]; cc[n * 4 + k] = ids[8 + k]; }
@@ -830,6 +841,16 @@ export class Lamps {
         d.updateMatrix();
         this.glows.setMatrixAt(g, d.matrix);
         this.glows.setColorAt(g++, this.c.copy(HEAD).multiplyScalar(0.8));
+      }
+    }
+    // Searchlights from the air: a pool on the ground whose shadows fall away from the light itself.
+    for (const sp of opt.spots ?? []) {
+      if (Math.abs(sp.tx - x) > r + SEARCH_R || Math.abs(sp.ty - y) > r + SEARCH_R) continue;
+      const ground = this.height(sp.tx, sp.ty), up = Math.max(sp.z - ground, 1);
+      add(sp.tx, sp.ty, ground, 4, sp.x - sp.tx, sp.y - sp.ty, SEARCH_R, SEARCH_R, SEARCH, 2.4, up, -1, false);
+      if (fx) {
+        const dx = sp.tx - sp.x, dy = sp.ty - sp.y, run = Math.hypot(dx, dy) || 1;
+        fx.beam(sp.x, sp.y, sp.z, dx / run, dy / run, Math.hypot(run, up), SEARCH_R * 0.9, SEARCH, 1.2, Math.atan2(up, run));
       }
     }
     this.fx.commit();
