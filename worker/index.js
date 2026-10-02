@@ -27,10 +27,8 @@
 //   RATE                        rate limiter, per visitor address
 //   TELEMETRY                   the Analytics Engine dataset the statistics go to
 
-import { report } from './stats.js';
+import { report, OTHER_ORIGINS } from './stats.js';
 
-// The beta is served from mbxp, with no Worker of its own, and signs up through this one.
-const OTHER_ORIGINS = ['https://beta.streetsofprague.com', 'https://streets-beta.jonasjancarik.cz'];
 const BREVO = 'https://api.brevo.com/v3/contacts/doubleOptinConfirmation';
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -59,7 +57,7 @@ async function form(request, env, handle) {
   let body;
   try { body = await request.json(); } catch { body = null; }
   if (!body || typeof body !== 'object') return json({ error: 'invalid' }, 400, cors);
-  const [answer, status] = await handle(body, env, origin, ip);
+  const [answer, status] = await handle(body, env, origin, ip, here);
   return json(answer, status, cors);
 }
 
@@ -116,7 +114,7 @@ async function subscribe(body, env, origin, ip) {
   return [{ error: 'failed' }, 502];
 }
 
-async function feedback(body, env) {
+async function feedback(body, env, origin, ip, here) {
   if (!env.EMAIL || !env.FEEDBACK_TO || !env.FEEDBACK_FROM) return [{ error: 'unavailable' }, 503];
   const message = text(body.message, 5000);
   if (!message) return [{ error: 'message' }, 400];
@@ -128,12 +126,14 @@ async function feedback(body, env) {
   // What the game adds by itself: its version, the browser, where the player was.
   const context = text(body.context, 4000);
   const first = message.split('\n')[0];
+  // The beta's messages say so, in the subject and the archive.
+  const site = origin === here || !origin ? '' : new URL(origin).hostname;
   // A copy for the feedback viewer (scripts/feedback-viewer.mjs). Losing it never stops the email.
   if (env.FEEDBACK_ARCHIVE) {
     const now = new Date();
     try {
       await env.FEEDBACK_ARCHIVE.put(`feedback/${now.toISOString().slice(0, 10)}/${now.getTime()}-${crypto.randomUUID()}.json`,
-        JSON.stringify({ time: now.toISOString(), message, email, context, lang: text(body.lang, 8) }), { httpMetadata: { contentType: 'application/json' } });
+        JSON.stringify({ time: now.toISOString(), site, message, email, context, lang: text(body.lang, 8) }), { httpMetadata: { contentType: 'application/json' } });
     } catch (e) {
       console.error(`Archiving feedback failed: ${e?.message ?? e}`);
     }
@@ -144,7 +144,7 @@ async function feedback(body, env) {
       from: { email: env.FEEDBACK_FROM, name: 'Streets of Prague' },
       // Replying to the email answers the player.
       ...(email ? { replyTo: email } : {}),
-      subject: `Feedback: ${first.length > 70 ? `${first.slice(0, 70)}…` : first}`,
+      subject: `${site ? `[${site}] ` : ''}Feedback: ${first.length > 70 ? `${first.slice(0, 70)}…` : first}`,
       text: `${message}\n\n--\nFrom: ${email || 'no address given'}\n${context}`,
     });
   } catch (e) {

@@ -129,7 +129,7 @@ assert.match(mail[0].text, /^The tram at Anděl drove through my car\.\nSecond l
   res = await post({ message: 'Kept.', email: 'player@example.com', context: 'v1', lang: 'cs' }, { path: '/api/feedback', e: { ...fenv, FEEDBACK_ARCHIVE: { put: async (key, value) => { kept.push([key, JSON.parse(value)]); } } } });
   assert.equal(res.status, 200);
   assert.match(kept[0][0], /^feedback\/\d{4}-\d\d-\d\d\/\d+-[0-9a-f-]+\.json$/);
-  assert.deepEqual({ ...kept[0][1], time: 0 }, { time: 0, message: 'Kept.', email: 'player@example.com', context: 'v1', lang: 'cs' });
+  assert.deepEqual({ ...kept[0][1], time: 0 }, { time: 0, site: '', message: 'Kept.', email: 'player@example.com', context: 'v1', lang: 'cs' });
   mail = [];
   res = await post({ message: 'Kept anyway.' }, { path: '/api/feedback', e: { ...fenv, FEEDBACK_ARCHIVE: { put: async () => { throw new Error('r2 down'); } } } });
   assert.equal(res.status, 200);
@@ -156,6 +156,7 @@ assert.equal(res.status, 200);
 assert.equal(mail.length, 0);
 assert.equal((await say({ message: 'Hi' }, { origin: 'https://example.com' })).status, 403);
 assert.equal((await say({ message: 'Hi' }, { origin: BETA })).headers.get('Access-Control-Allow-Origin'), BETA);
+assert.equal(mail.at(-1).subject, '[beta.streetsofprague.com] Feedback: Hi');
 assert.equal((await say({ message: 'Hi' }, { e: { ...fenv, FEEDBACK_TO: '' } })).status, 503);
 assert.equal((await say({ message: 'Hi' }, { e: { ...fenv, EMAIL: { send: async () => { throw new Error('refused'); } } } })).status, 502);
 
@@ -187,7 +188,10 @@ assert.equal((await tell({ e: 'constructor' })).status, 400);
 assert.equal((await tell('{')).status, 400);
 assert.equal((await tell('x'.repeat(9000))).status, 413);
 assert.equal((await tell({ e: 'start' }, { origin: 'https://example.com' })).status, 403);
-assert.equal((await tell({ e: 'start' }, { origin: BETA })).status, 403);
+res = await tell({ e: 'start', v: 'v1' }, { origin: BETA });
+assert.equal(res.status, 204);
+assert.equal(res.headers.get('Access-Control-Allow-Origin'), BETA);
+assert.equal(rows[0].blobs[4], 'beta.streetsofprague.com');
 assert.equal((await tell(null, { method: 'GET' })).status, 405);
 assert.equal((await tell({ e: 'start' }, { e: env })).status, 503);
 assert.equal(rows.length, 0);

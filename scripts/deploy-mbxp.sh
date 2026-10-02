@@ -40,7 +40,8 @@ source deploy/newsletter; source deploy/feedback
 if [[ -n ${BREVO_LIST_ID:-} && -n ${BREVO_DOI_TEMPLATE_ID:-} ]]; then export VITE_SUBSCRIBE_URL=https://streetsofprague.com/api/subscribe; fi
 if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=https://streetsofprague.com/api/feedback; fi
 if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY; fi
-VITE_DATA_URL=data/$ID/ node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
+# Statistics go to production's Worker too; the domain they carry tells the beta apart.
+VITE_TELEMETRY_URL=https://streetsofprague.com/api/report VITE_DATA_URL=data/$ID/ node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
 # busybox httpd can't send no-store, so the game asks for it with cache: 'no-store'.
 node scripts/write-version-json.mjs dist "$ID" --fixed
 

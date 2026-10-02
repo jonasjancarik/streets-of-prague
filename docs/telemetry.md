@@ -5,9 +5,11 @@ read_when: changing what the game reports about itself, worker/stats.js or the W
 # Anonymous statistics
 
 The Cloudflare build of the game reports how well it runs, what goes wrong and what
-gets played. Local development, the mbxp site and test runs (`?go`) report nothing:
-only a build with `VITE_TELEMETRY_URL` set does, and `scripts/deploy-cloudflare.sh`
-sets it to `/api/report`.
+gets played. Local development and test runs (`?go`) report nothing: only a build with
+`VITE_TELEMETRY_URL` set does. `scripts/deploy-cloudflare.sh` sets it to `/api/report`,
+and `scripts/deploy-mbxp.sh` to production's `https://streetsofprague.com/api/report`, so the
+beta reports too; its rows carry the beta's domain (from the request's `Origin`), and the
+dashboard's Domain list separates them.
 
 ## What is sent
 

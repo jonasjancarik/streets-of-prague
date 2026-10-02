@@ -243,6 +243,8 @@ async function main() {
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose: Car[] = [];
   const tileCars = new Set<Car>();
+  const standing = new Map<Car, number>(); // loose wrecks and left cars out of sight: seconds so far
+  const TOW_AFTER = 60; // s
   let restingStale = true; // see syncResting
   world.onCars = (cars) => { for (const c of cars) { loose.push(c); tileCars.add(c); } restingStale = true; };
   world.onDrop = (tile) => {
@@ -998,8 +1000,10 @@ async function main() {
     load: (slot: Slot) => { const s = readSave(slot, AREA); if (!s) return; writeSave('auto', s); telemetry.did('loaded a saved game'); restart(); },
     remove: (slot: Slot) => clearSave(slot),
     newGame: () => { clearSave('auto'); telemetry.did('started a new game from the settings'); restart(); },
+    // Back to the start screen, which offers to continue from this save.
+    exit: () => { autosave(); telemetry.did('went back to the main menu'); restart(); },
   };
-  setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
+  const settingsPanel = setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
 
   // ---- Input -------------------------------------------------------------
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
@@ -1581,7 +1585,14 @@ async function main() {
       }
       for (let i = loose.length - 1; i >= 0; i--) {
         const c = loose[i];
-        if (!tileCars.has(c) && Math.hypot(c.x - px(), c.y - py()) > 600) loose.splice(i, 1);
+        const d = Math.hypot(c.x - px(), c.y - py());
+        if (!tileCars.has(c) && d > 600) { loose.splice(i, 1); continue; }
+        // A wreck, or a car somebody left in the street, is towed once it has stood out of
+        // sight for a minute, so it doesn't block the traffic for good.
+        if (c.two || c.share || c === inCar || c.speed > 0.5 || !(c.damage > 0 || !tileCars.has(c)) || d < 40 || !offscreen(c.x, c.y)) { standing.delete(c); continue; }
+        const waited = (standing.get(c) ?? 0) + 0.5;
+        standing.set(c, waited);
+        if (waited > TOW_AFTER) { loose.splice(i, 1); tileCars.delete(c); standing.delete(c); restingStale = true; }
       }
       scatterPeople(true);
       parkTwoWheelers(true);
@@ -1671,7 +1682,7 @@ async function main() {
   const playingAs = (): telemetry.Mode => (ride.on ? 'tram' : taxi.riding ? 'taxi' : inCar ? 'car' : inHeli || boats.me || funicular.me || metro.active ? 'other' : 'foot');
 
   renderer.setAnimationLoop((now) => {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const dt = settingsPanel.open ? 0 : Math.min(0.05, (now - last) / 1000); // the settings pause the game
     graphics.frame(now - last, now, world.inFlight.size > 0);
     telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
     telemetry.most('maxStars', police.stars);
@@ -1845,6 +1856,8 @@ async function main() {
       const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
       lightOpt.box = free ? undefined : [height * tan * camera.aspect + 6, height * tan + 6];
       lightOpt.time = time.value;
+      police.helis.night = sky.dark;
+      lightOpt.spots = police.helis.lit;
       lightOpt.wet = weather.now.wet;
       lightOpt.murk = sky.murk;
       lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list, lightOpt);
@@ -1903,7 +1916,6 @@ async function main() {
     const shut = onFoot && !cabin ? funicular.near(walker.x, walker.y, true) : null;
     const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
     const getIn = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
-    const key = (k: string) => (touch.active ? '' : `<b>${k}</b> `);
     const ticketHint = () => pid.state === 'grace'
       ? `${touch.active ? t('Buy a ticket ({price})', { price: kc(TICKET.price) }) : TICKETS.map((k, i) => `<b>${i + 1}</b> ${validity(k.minutes)} ${kc(k.price)}`).join(' · ')} · ${t('{secs} s left', { secs: Math.ceil(pid.left) })}`
       : pid.state === 'dodging' ? t('No ticket') : '';
@@ -1915,7 +1927,7 @@ async function main() {
       else hint = inHeli.landed ? t('<b>Space</b> take off · <b>E</b> get out') : `${up} · ${t('<b>Space</b> climb · <b>Shift</b> down · land to get out')}`;
     } else if (inCar) {
       if (!assisted) hint = touch.active ? '' : inCar.type === 'fire' ? t('<b>E</b> get out · <b>F</b> water cannon · <b>Shift</b> lane assist') : t(inCar.two ? '<b>E</b> get off · <b>Shift</b> lane assist' : '<b>E</b> get out · <b>Shift</b> lane assist');
-      else hint = `${key('Shift')}${t('Lane assist, keeping to {limit} km/h', { limit: String(assist.limit) })}${touch.active ? '' : ` ${t('(let go to drive faster)')}`} · ${assist.intent > 0 ? t('turning left at the next junction') : assist.intent < 0 ? t('turning right at the next junction') : t(touch.active ? 'straight on (point the stick to turn)' : 'straight on (A/D to turn)')}`;
+      // While the assist is on, the panel stays empty so it doesn't grow.
     }
     else if (boats.me) hint = touch.active ? '' : t('<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank');
     else if (funicular.me) hint = [funicular.hint(touch.active, scale), ticketHint()].filter(Boolean).join(' · ');
@@ -2024,6 +2036,7 @@ async function main() {
     mode: () => (inCar ? 'car' : inHeli ? 'helicopter' : ride.on ? 'tram' : taxi.riding ? 'taxi' : boats.me ? 'boat' : funicular.me ? 'funicular' : metro.active ? 'metro' : 'foot'),
     street: () => street, enterOrExit,
     addCar: (c) => { loose.push(c); restingStale = true; },
+    loose,
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300),

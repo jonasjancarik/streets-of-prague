@@ -75,6 +75,10 @@ export class Helicopters {
   spot: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
   spots: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>[];
   me: Flyer | null = null;
+  // How dark it is (0..1): at night the searchlight is a real light (lamps.ts), by day a faint disc.
+  night = 0;
+  // Where each searchlight is and what it shines on, for the lamps (x, y, height; target x, y).
+  lit: { x: number; y: number; z: number; tx: number; ty: number }[] = [];
 
   constructor(scene: THREE.Scene, height: (x: number, y: number) => number) {
     this.scene = scene;
@@ -150,6 +154,8 @@ export class Helicopters {
 
   render(time: number, dt = 1 / 60) {
     let n = 0;
+    this.lit.length = 0;
+    this.spot.material.opacity = 0.32 * (1 - this.night);
     for (const h of this.list) {
       h.g.position.set(h.x, h.z, -h.y);
       h.g.rotation.set(h.roll || 0, h.h, h.pitch || 0, 'YZX');
@@ -166,6 +172,7 @@ export class Helicopters {
       const x = this.me.x + Math.sin(time * 1.3 + h.orbit) * 1.5, y = this.me.y + Math.cos(time * 1.7 + h.orbit) * 1.5;
       s.position.set(x, this.height(x, y) + 0.15, -y);
       s.visible = Math.hypot(h.x - this.me.x, h.y - this.me.y) < HELI_SIGHT;
+      if (s.visible) this.lit.push({ x: h.x, y: h.y, z: h.z + 0.75, tx: x, ty: y });
     }
     for (let i = n; i < this.spots.length; i++) this.spots[i].visible = false;
   }

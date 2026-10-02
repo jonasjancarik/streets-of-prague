@@ -50,7 +50,7 @@ interface PoliceOptions {
 // three times as much as one somebody phones in: knocking people over, pulling
 // drivers out of their cars, wrecking traffic, ramming or stealing a police car.
 // Speeding past a police car gets you one star: never up to 10 km/h over the limit, then
-// more and more likely, certain from 30 km/h over.
+// more and more likely, nearly certain at 30 km/h over.
 //
 // A few police cars patrol with the traffic. Once you're wanted, cars chase you along
 // the street network, more of them the more stars you have, and ram you. When you're
@@ -640,10 +640,11 @@ export class Police {
     if (this.checkT < 0) {
       this.checkT = 0.5;
       if (me.car) this.limit = speedLimit(this.nearestStreet(me.x, me.y)?.e);
-      // Up to 10 km/h over the limit is never noticed; from there the chance of being stopped
-      // at each check grows steeply, and from 30 km/h over it's certain.
+      // Up to 10 km/h over the limit is never noticed. From there the chance at each check
+      // (twice a second, and police see you for a few seconds) grows steeply: about 6% of
+      // passes at 15 over, 40% at 20, most at 25, nearly all at 30.
       const over = me.speed * 3.6 - this.limit;
-      if (me.car && over > 10 && this.r() < Math.min(1, ((over - 10) / 20) ** 2) && this.sees(me.x, me.y, 60)) this.heat = Math.max(this.heat, STARS[0]);
+      if (me.car && over > 10 && this.r() < 0.5 * ((over - 10) / 20) ** 3 && this.sees(me.x, me.y, 60)) this.heat = Math.max(this.heat, STARS[0]);
     }
 
     // Out of sight long enough, you lose a star.
@@ -684,6 +685,9 @@ export class Police {
       const d = Math.hypot(c.x - me.x, c.y - me.y);
       const waiting = this.officers.some((o) => o.car === c);
       p.gone = !waiting && this.offscreen(c.x, c.y) && (p.calm || p.wrecked ? d > 120 : d > 450);
+      // Once its officers are back aboard, a car that has given up pulls out into the traffic
+      // instead of standing in the lane.
+      if (!p.gone && p.calm && !p.wrecked && !waiting && c.crew && Math.abs(c.forwardSpeed) < 0.5 && this.rejoin(c)) p.gone = true;
     }
     this.cars = this.cars.filter((p) => !p.gone);
 
@@ -691,6 +695,22 @@ export class Police {
     for (const o of this.officers) this.walk(o, dt, me);
     for (const o of this.officers) if (o.gone) this.dismiss(o);
     this.officers = this.officers.filter((o) => !o.gone);
+  }
+
+  // Hands a stopped police car to the traffic, on the lane that's nearest and runs most the way
+  // it's facing (it stopped wherever the chase ended, often at an angle; if it's facing
+  // against a one-way street it turns round in the lane).
+  rejoin(car: Car) {
+    let best: { e: DriveEdge; s: number; score: number } | null = null;
+    for (const e of this.edgesNear(car.x, car.y, 15)) {
+      const q = project(e.path, car.x, car.y), cos = Math.cos(car.h - e.path.at(q.s).ang);
+      const score = q.d + 8 * (1 - cos);
+      if (q.d > 12 || (best && score >= best.score)) continue;
+      best = { e, s: q.s, score };
+    }
+    if (!best) return false;
+    this.traffic.adopt(car, best.e, best.s, 0);
+    return true;
   }
 
   // After an arrest: the stars go, the officers go back to their cars.

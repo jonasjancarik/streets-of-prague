@@ -4,7 +4,7 @@
 // the map; `session` is a random number that lives until the page is closed.
 //
 // Only builds that set VITE_TELEMETRY_URL send anything (scripts/deploy-cloudflare.sh
-// does); local development, mbxp and test runs (?go) never do. The settings panel has
+// and deploy-mbxp.sh, for the beta) do; local development and test runs (?go) never do. The settings panel has
 // the switch, remembered in the browser.
 
 const URL_ = import.meta.env.VITE_TELEMETRY_URL as string | undefined;

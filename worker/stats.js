@@ -41,12 +41,17 @@ const number = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 // The game sends these with sendBeacon as the page closes, so the answer is never
 // read: a status and nothing else. They are not rate limited like the forms, since a
 // session sends a handful and nothing is emailed.
+// The beta is served from mbxp, with no Worker of its own, and reports to this one.
+export const OTHER_ORIGINS = ['https://beta.streetsofprague.com', 'https://streets-beta.jonasjancarik.cz'];
+
 export async function report(request, env) {
   const url = new URL(request.url);
   if (request.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'POST' } });
   // Only the game itself reports, from the page it was loaded from.
   const origin = request.headers.get('Origin');
-  if (origin && origin !== url.origin) return new Response(null, { status: 403 });
+  if (origin && origin !== url.origin && !OTHER_ORIGINS.includes(origin)) return new Response(null, { status: 403 });
+  // The domain the game was opened on, which for the beta is not this Worker's.
+  const host = origin ? new URL(origin).hostname : url.hostname;
   if (!env.TELEMETRY) return new Response(null, { status: 503 });
   const body = await request.text();
   if (body.length > LONGEST) return new Response(null, { status: 413 });
@@ -60,9 +65,9 @@ export async function report(request, env) {
     const fields = f && typeof f === 'object' ? f : {};
     env.TELEMETRY.writeDataPoint({
       indexes: [sent.e],
-      blobs: [sent.e, text(sent.v, 40), text(sent.s, 32), text(request.cf?.country, 2), url.hostname.slice(0, 80), text(sent.d, 40), ...schema.blobs.map((name) => text(fields[name]))],
+      blobs: [sent.e, text(sent.v, 40), text(sent.s, 32), text(request.cf?.country, 2), host.slice(0, 80), text(sent.d, 40), ...schema.blobs.map((name) => text(fields[name]))],
       doubles: schema.doubles.map((name) => number(fields[name])),
     });
   }
-  return new Response(null, { status: 204 });
+  return new Response(null, { status: 204, headers: origin && origin !== url.origin ? { 'Access-Control-Allow-Origin': origin } : {} });
 }

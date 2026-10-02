@@ -48,18 +48,23 @@ function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture, laye
   const uView = followVec(view);
   const at = attribute('iAt', 'vec4'), shape = attribute('iShape', 'vec4'), colour = attribute('iColour', 'vec4');
   const q = positionGeometry.xy, dir = shape.xy, side = vec2(dir.y.negate(), dir.x);
-  const high = at.w.greaterThan(1.5), beam = at.w.sub(select(high, 2, 0)).greaterThan(0.5);
+  // (4 added: a spot, a round pool whose light comes from the point `dir` away from its centre.)
+  const spot = at.w.greaterThan(3.5), w2 = at.w.sub(select(spot, 4, 0));
+  const high = w2.greaterThan(1.5), beam = w2.sub(select(high, 2, 0)).greaterThan(0.5);
   const l = select(beam, vec2(q.x.mul(0.5).add(0.5), q.y), q);
-  const off = select(beam, dir.mul(l.x).mul(shape.z).add(side.mul(q.y).mul(shape.w)), dir.mul(q.x).add(side.mul(q.y)).mul(shape.z));
+  const off = select(spot, q.mul(shape.z), select(beam, dir.mul(l.x).mul(shape.z).add(side.mul(q.y).mul(shape.w)), dir.mul(q.x).add(side.mul(q.y)).mul(shape.z)));
   // (A light of the other map is put outside the picture.)
   const mine = layer ? high : high.not();
   m.vertexNode = select(mine, vec4(at.xy.add(off).sub(uView.xy).mul(uView.zw), 0, 1), vec4(2, 2, 2, 1));
-  const vP = at.xy.add(off).toVarying('vP'), vLamp = vec3(at.x, at.z.add(colour.a), at.y).toVarying('vLamp');
+  const vP = at.xy.add(off).toVarying('vP'), vLamp = vec3(at.x.add(select(spot, dir.x, 0)), at.z.add(colour.a), at.y.add(select(spot, dir.y, 0))).toVarying('vLamp');
   const vCa: N = carsA.toVarying('vCa'), vCb: N = carsB.toVarying('vCb'), vCc: N = carsC.toVarying('vCc');
-  const vL = l.toVarying('vL'), vC = colour.rgb.toVarying('vC'), vH = at.z.toVarying('vH'), vBeam = select(beam, 1, 0).toVarying('vBeam');
+  const vL = l.toVarying('vL'), vC = colour.rgb.toVarying('vC'), vH = at.z.toVarying('vH'), vBeam = select(spot, 2, select(beam, 1, 0)).toVarying('vBeam');
   m.fragmentNode = Fn(() => {
     const f = float(0).toVar();
-    If(vBeam.greaterThan(0.5), () => {
+    If(vBeam.greaterThan(1.5), () => {
+      const e = smoothstep(0.45, 1, length(vL)).oneMinus();
+      f.assign(e.mul(e));
+    }).ElseIf(vBeam.greaterThan(0.5), () => {
       const t = vL.x, a = abs(vL.y).div(t.mul(0.75).add(0.25));
       f.assign(t.oneMinus().mul(t.oneMinus()).mul(smoothstep(0.35, 1, a).oneMinus()).mul(smoothstep(0, 0.1, t)));
     }).Else(() => {
