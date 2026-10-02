@@ -358,6 +358,15 @@ Left over from putting bridges and tunnels on levels of their own (28 September
 
 Noted on 28 September 2026 while playing, during the TypeScript refactor.
 
+- **Paths and pavements.** Plan 018 phases 0–2 are implemented and checked in an
+  isolated worktree. Matching route ribbons over squares and island/link ribbons
+  are removed; cobbled walking streets use setts. Named square outlines keep their
+  mapped green and water, so Karlovo náměstí is a park with paths again. The local
+  `centrum` test has 88.3% less mosaic overlap with squares and 28.7% fewer path
+  points. Shared data and deployment are unchanged. Review the matched pictures in
+  `plans/018-simplify-paths-and-pavements.md` before rebuilding shared data;
+  gap-closing and surveyed pavement polygons remain deferred.
+
 - **Fill the plain beige areas.** Plan 013 phases 0–3 now give squares their OSM
   surface, make the general pavement asphalt grey, and add surveyed courtyards and
   green from the DTM in the shared local tiles. The centre's plain ground fell from
