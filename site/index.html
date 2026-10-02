@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Streets of Prague</title>
+    <meta name="description" content="The whole of today's Prague as an open-world driving game. Free, in your browser." />
+    <meta property="og:title" content="Streets of Prague" />
+    <meta property="og:description" content="The whole of today's Prague as an open-world driving game. Free, in your browser." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://streetsofprague.com/" />
+    <meta property="og:image" content="https://streetsofprague.com/media/square.webp" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta name="theme-color" content="#140d0c" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      /* The game's start screen as a page: black, signal red and paper, like a
+         constructivist poster (the same colours and slant as #loading in the game). */
+      :root { --red: #c8241d; --red-hot: #e2342b; --black: #140d0c; --paper: #ece4d6; --slant: -4deg; --edge: clamp(20px, 5vw, 72px); }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; overflow-x: clip; }
+      body { margin: 0; background: var(--black); color: var(--paper); font: 17px/1.6 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+      h1, h2, h3 { font-family: 'Bebas Neue', Impact, sans-serif; font-weight: 400; margin: 0; letter-spacing: 0.02em; }
+      h2 { font-size: clamp(44px, 7vw, 92px); line-height: 0.9; text-shadow: 0.06em 0.06em 0 var(--red); }
+      p { margin: 0; }
+      a { color: inherit; }
+      img, video { display: block; max-width: 100%; height: auto; }
+      .wrap { max-width: 1180px; margin: 0 auto; padding: 0 var(--edge); }
+      section { position: relative; padding: clamp(64px, 10vw, 132px) 0; }
+      .lead { font-size: clamp(18px, 2vw, 22px); max-width: 34em; margin-top: 24px; opacity: 0.92; }
+
+      .btn { display: inline-flex; align-items: center; font: clamp(22px, 2.6vw, 30px)/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; text-decoration: none; padding: 0.55em 1.1em 0.45em; cursor: pointer; border: 0; transition: transform 0.12s, box-shadow 0.12s, background 0.12s; }
+      .btn-go { color: var(--paper); background: var(--red); box-shadow: 6px 6px 0 var(--black); }
+      .btn-go::before { content: ''; width: 0.6em; height: 0.7em; margin: -0.1em 0.45em 0 0; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%); }
+      .btn-go:hover, .btn-go:focus-visible { background: var(--red-hot); transform: translate(-2px, -2px); box-shadow: 8px 8px 0 var(--black); }
+      .btn-go:active { transform: translate(3px, 3px); box-shadow: 2px 2px 0 var(--black); }
+      .btn-quiet { color: var(--paper); background: rgba(20, 13, 12, 0.7); box-shadow: inset 0 0 0 2px rgba(236, 228, 214, 0.5); }
+      .btn-quiet:hover, .btn-quiet:focus-visible { background: rgba(236, 228, 214, 0.2); box-shadow: inset 0 0 0 2px var(--paper); }
+      :focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
+
+      /* Language choice, top right on every screen size. */
+      .lang { position: absolute; z-index: 5; top: 18px; right: var(--edge); display: flex; gap: 6px; font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.08em; }
+      .lang button { font: inherit; letter-spacing: inherit; color: var(--paper); background: rgba(20, 13, 12, 0.7); border: 1px solid rgba(236, 228, 214, 0.5); padding: 7px 10px 5px; cursor: pointer; }
+      .lang button[aria-pressed='true'] { background: var(--paper); color: var(--black); border-color: var(--paper); }
+
+      /* The poster: the game filmed behind a dark wedge that carries the title. */
+      .hero { min-height: 100svh; padding: 0; display: flex; align-items: center; overflow: hidden; background: var(--black); }
+      .hero video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .hero-wedge { position: absolute; inset: 0; background: var(--black); opacity: 0.93; clip-path: polygon(0 0, 58% 0, 44% 100%, 0 100%); animation: wedge-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      .hero-stripe { position: absolute; left: 0; right: 0; bottom: 15vh; height: 1.4vh; background: var(--paper); transform-origin: left; transform: rotate(var(--slant)) scaleX(1.2); animation: stripe-in 0.8s 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      .hero-band { position: absolute; left: -5%; right: -5%; bottom: -22vh; height: 36vh; background: var(--red); transform: rotate(var(--slant)); box-shadow: 0 -2vh 0 var(--black); animation: band-in 0.7s 0.1s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      .dots::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle, rgba(20, 13, 12, 0.22) 38%, transparent 42%) 0 0 / 9px 9px; -webkit-mask-image: linear-gradient(transparent 5%, #000 70%); mask-image: linear-gradient(transparent 5%, #000 70%); }
+      .hero-text { position: relative; z-index: 2; width: 100%; padding: 96px var(--edge) 26vh; }
+      .hero h1 { display: flex; flex-direction: column; font-size: clamp(72px, 13.5vw, 210px); line-height: 0.82; letter-spacing: 0.01em; text-shadow: 0.05em 0.05em 0 var(--red); }
+      .hero h1 span + span { color: var(--red); text-shadow: 0.05em 0.05em 0 var(--black); }
+      .hero h1 span { animation: title-in 0.6s 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+      .hero h1 span + span { animation-delay: 0.27s; }
+      .hero .lead { max-width: 21em; font-size: clamp(19px, 2.2vw, 26px); line-height: 1.35; }
+      .hero-actions { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 32px; }
+      .hero-note { margin-top: 20px; font-size: 14px; opacity: 0.75; max-width: 26em; }
+      .hero-text > :not(h1) { animation: fade 0.5s 0.5s both; }
+      @keyframes wedge-in { from { transform: translateX(-40%); } }
+      @keyframes band-in { from { transform: translateY(40vh) rotate(var(--slant)); } }
+      @keyframes stripe-in { from { transform: rotate(var(--slant)) scaleX(0); } }
+      @keyframes title-in { from { transform: translateX(-10vw); opacity: 0; } }
+      @keyframes fade { from { opacity: 0; } }
+
+      /* What the map holds, counted. */
+      .count { background: var(--red); padding: clamp(40px, 6vw, 72px) 0; }
+      .count ul { position: relative; list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 28px 20px; }
+      .count b { display: block; font: clamp(40px, 5.4vw, 74px)/0.9 'Bebas Neue', sans-serif; font-weight: 400; letter-spacing: 0.02em; text-shadow: 0.06em 0.06em 0 var(--black); white-space: nowrap; }
+      .count span { display: block; margin-top: 6px; font-size: 14px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--black); }
+
+      .real { display: grid; grid-template-columns: 5fr 6fr; gap: clamp(28px, 5vw, 72px); align-items: center; }
+      .frame { border: 4px solid var(--paper); box-shadow: 10px 10px 0 var(--red); background: var(--black); }
+      .frame video, .frame img { width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
+
+      .paper { background: var(--paper); color: var(--black); }
+      .paper h2 { text-shadow: 0.06em 0.06em 0 var(--red); }
+      .things { list-style: none; margin: clamp(36px, 5vw, 64px) 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(24px, 3vw, 44px) clamp(24px, 4vw, 56px); }
+      .things li { border-top: 6px solid var(--black); padding-top: 14px; }
+      .things h3 { font-size: clamp(26px, 2.6vw, 34px); line-height: 1; color: var(--red); }
+      .things p { margin-top: 10px; font-size: 16px; }
+
+      .shots { margin-top: clamp(36px, 5vw, 64px); display: grid; grid-template-columns: repeat(6, 1fr); gap: clamp(14px, 2vw, 26px); }
+      .shots figure { margin: 0; grid-column: span 2; }
+      .shots figure:nth-child(1), .shots figure:nth-child(2) { grid-column: span 3; }
+      .shots img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border: 3px solid var(--paper); }
+      .shots figcaption { margin-top: 8px; font: 20px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; opacity: 0.85; }
+
+      .made { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(28px, 5vw, 72px); }
+      .made .lead + .lead { margin-top: 16px; }
+      .sources { list-style: none; margin: 0; padding: 0; font-size: 15px; }
+      .sources li { padding: 12px 0; border-top: 1px solid rgba(20, 13, 12, 0.25); }
+      .sources li:last-child { border-bottom: 1px solid rgba(20, 13, 12, 0.25); }
+      .sources b { display: block; font: 22px/1.1 'Bebas Neue', sans-serif; font-weight: 400; letter-spacing: 0.04em; }
+
+      .drive { background: var(--red); text-align: center; overflow: hidden; }
+      .drive h2 { position: relative; font-size: clamp(64px, 12vw, 170px); text-shadow: 0.05em 0.05em 0 var(--black); transform: rotate(var(--slant)); }
+      .drive .btn { position: relative; margin-top: clamp(28px, 4vw, 48px); background: var(--black); box-shadow: 6px 6px 0 rgba(20, 13, 12, 0.35); }
+      .drive .btn:hover, .drive .btn:focus-visible { background: #2a1a18; }
+
+      footer { padding: 36px 0 48px; font-size: 14px; }
+      footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: space-between; opacity: 0.75; }
+
+      @media (max-width: 900px) {
+        .count ul { grid-template-columns: repeat(3, 1fr); }
+        .real, .made { grid-template-columns: 1fr; }
+        .things { grid-template-columns: repeat(2, 1fr); }
+      }
+      @media (max-width: 640px) {
+        /* On a narrow screen the wedge would cover the picture, so the title sits on a
+           dark top that fades into it. */
+        .hero { align-items: flex-start; }
+        .hero-wedge { clip-path: none; opacity: 1; background: linear-gradient(var(--black) 30%, rgba(20, 13, 12, 0.75) 52%, transparent 80%); animation: none; }
+        .hero-text { padding: 84px var(--edge) 30vh; }
+        .hero h1 { font-size: 23vw; }
+        .count ul, .things { grid-template-columns: repeat(2, 1fr); }
+        .things { grid-template-columns: 1fr; }
+        .shots figure, .shots figure:nth-child(1), .shots figure:nth-child(2) { grid-column: span 6; }
+        .frame { box-shadow: 6px 6px 0 var(--red); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        *, *::before { animation: none !important; transition: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang="cs" aria-pressed="false">CS</button>
+    </div>
+
+    <header class="hero">
+      <video autoplay muted loop playsinline preload="metadata" poster="media/hero.webp" aria-hidden="true">
+        <source src="media/hero.mp4" type="video/mp4" />
+      </video>
+      <div class="hero-wedge"></div>
+      <div class="hero-stripe"></div>
+      <div class="hero-band dots"></div>
+      <div class="hero-text">
+        <h1><span>Streets</span><span>of Prague</span></h1>
+        <p class="lead" data-t="tagline">The whole of today&apos;s Prague as an open-world driving game. Free, in your browser.</p>
+        <div class="hero-actions">
+          <a class="btn btn-go" href="https://play.streetsofprague.com/" data-t="play">Play now</a>
+          <a class="btn btn-quiet" href="#trailer" data-t="watch">Watch the trailer</a>
+        </div>
+        <p class="hero-note" data-t="note">Runs on a computer, tablet or phone, with nothing to install. This is an early version, so expect rough edges.</p>
+      </div>
+    </header>
+
+    <section class="count dots">
+      <div class="wrap">
+        <ul>
+          <li><b>912 km²</b><span data-t="n-area">of the city</span></li>
+          <li><b>5,863 km</b><span data-t="n-streets">of streets</span></li>
+          <li><b data-n>247,117</b><span data-t="n-buildings">buildings</span></li>
+          <li><b data-n>188,019</b><span data-t="n-trees">trees</span></li>
+          <li><b data-n>131,736</b><span data-t="n-lamps">street lamps</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="trailer">
+      <div class="wrap real">
+        <div>
+          <h2 data-t="real-h">You know this street</h2>
+          <p class="lead" data-t="real-p">Every street, house, tram line and hill stands where it does in the real Prague. Look up the street you live on, your way to work or the corner you grew up on, then take a car and see how far you get.</p>
+        </div>
+        <div class="frame">
+          <video controls preload="none" playsinline poster="media/square.webp">
+            <source src="media/trailer.mp4" type="video/mp4" />
+          </video>
+        </div>
+      </div>
+    </section>
+
+    <section class="paper">
+      <div class="wrap">
+        <h2 data-t="do-h">What you can do</h2>
+        <ul class="things">
+          <li>
+            <h3 data-t="do1-h">Take any car</h3>
+            <p data-t="do1-p">Get into any car, parked or driving past, and go wherever the streets lead. Hard braking leaves tyre marks, and a car that has taken too many knocks catches fire.</p>
+          </li>
+          <li>
+            <h3 data-t="do2-h">Ride trams and the metro</h3>
+            <p data-t="do2-p">Trams run their real lines by the real timetable, and the metro entrances are where you know them. A ticket costs 46 Kč. Ride without one and an inspector may end up chasing you down the street.</p>
+          </li>
+          <li>
+            <h3 data-t="do3-h">Run from the police</h3>
+            <p data-t="do3-p">Speeding, crashing and stealing cars earn you stars. Patrol cars come after you first, then officers on foot, and from three stars a helicopter that sees you over the rooftops.</p>
+          </li>
+          <li>
+            <h3 data-t="do4-h">See the city in any light</h3>
+            <p data-t="do4-p">The game opens at the hour and in the weather Prague has right now. Rain, storms, mist and snow come and go, and after dark the street lamps come on, each one where it really stands.</p>
+          </li>
+          <li>
+            <h3 data-t="do5-h">Get around some other way</h3>
+            <p data-t="do5-p">Wave down a taxi or order a cheaper one whose driver is in more of a hurry. Take a pedal boat out on the Vltava, or the funicular up Petřín.</p>
+          </li>
+          <li>
+            <h3 data-t="do6-h">Call out the fire brigade</h3>
+            <p data-t="do6-p">A burning car brings a fire engine, and someone hurt brings an ambulance. Both can be driven away, and the fire engine&apos;s water cannon works.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2 data-t="shots-h">From the game</h2>
+        <div class="shots">
+          <figure><img src="media/square.webp" width="1600" height="900" loading="lazy" alt="" data-alt="shot1" /><figcaption data-t="shot1">Old Town Square</figcaption></figure>
+          <figure><img src="media/park.webp" width="1600" height="900" loading="lazy" alt="" data-alt="shot2" /><figcaption data-t="shot2">A summer afternoon</figcaption></figure>
+          <figure><img src="media/police.webp" width="1600" height="900" loading="lazy" alt="" data-alt="shot3" /><figcaption data-t="shot3">The police have found you</figcaption></figure>
+          <figure><img src="media/dusk.webp" width="1600" height="900" loading="lazy" alt="" data-alt="shot4" /><figcaption data-t="shot4">Low evening sun</figcaption></figure>
+          <figure><img src="media/snow.webp" width="1600" height="900" loading="lazy" alt="" data-alt="shot5" /><figcaption data-t="shot5">Snow</figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="paper">
+      <div class="wrap made">
+        <div>
+          <h2 data-t="made-h">Built from open data</h2>
+          <p class="lead" data-t="made-p1">Almost nothing in the game was modelled by hand. The city is put together from maps and measurements that Prague and its mapmakers publish for anyone to use.</p>
+          <p class="lead" data-t="made-p2">When the data changes, the game&apos;s map can be built again, so a new tram line or a rebuilt square can find its way in.</p>
+        </div>
+        <ul class="sources">
+          <li><b data-t="src1-h">Streets, tram tracks and stops</b><span data-t="src1-p">Map data ©</span> <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>, ODbL</li>
+          <li><b data-t="src2-h">Buildings, bridges, hills and landmarks</b><span data-t="src2-p">3D model of Prague, datový podklad ©</span> <a href="https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model">IPR Praha</a>, CC BY</li>
+          <li><b data-t="src3-h">Carriageways, parking bays and street lamps</b><span data-t="src3-p">Digital technical map, datový podklad ©</span> <a href="https://geoportalpraha.cz/">IPR Praha</a>, CC BY</li>
+          <li><b data-t="src4-h">Tram and metro timetables</b><a href="https://pid.cz/o-systemu/opendata/">PID / ROPID</a>, CC BY 4.0</li>
+          <li><b data-t="src5-h">Sounds of trams and the city</b><span data-t="src5-p">Recordings from</span> <a href="https://freesound.org">Freesound</a><span data-t="src5-q">; the game&apos;s Credits list each one</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="drive dots">
+      <div class="wrap">
+        <h2 data-t="drive-h">Go for a drive</h2>
+        <a class="btn btn-go" href="https://play.streetsofprague.com/" data-t="play">Play now</a>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <span data-t="foot-by">Streets of Prague is made by Jonáš Jančařík.</span>
+        <a href="mailto:jonas@streetsofprague.com">jonas@streetsofprague.com</a>
+      </div>
+    </footer>
+
+    <script>
+      // The page is written in English; Czech is looked up here by each element's data-t.
+      // The first visit follows the browser's language, ?lang=cs|en sets it, and the
+      // choice is remembered in the browser.
+      const CS = {
+        tagline: 'Celá dnešní Praha jako hra s otevřeným světem. Zdarma, přímo v prohlížeči.',
+        play: 'Hrát',
+        watch: 'Pustit trailer',
+        note: 'Běží na počítači, tabletu i telefonu a nic se neinstaluje. Je to raná verze, takže ne všechno je ještě vyladěné.',
+        'n-area': 'města',
+        'n-streets': 'ulic',
+        'n-buildings': 'budov',
+        'n-trees': 'stromů',
+        'n-lamps': 'pouličních lamp',
+        'real-h': 'Tuhle ulici znáte',
+        'real-p': 'Každá ulice, dům, tramvajová trať i kopec stojí tam, kde ve skutečné Praze. Najděte si ulici, kde bydlíte, cestu do práce nebo roh, kde jste vyrůstali, pak si vezměte auto a zkuste, kam až dojedete.',
+        'do-h': 'Co se dá dělat',
+        'do1-h': 'Vezměte si jakékoli auto',
+        'do1-p': 'Nasedněte do kteréhokoli auta, ať parkuje, nebo zrovna jede kolem, a jeďte, kam ulice vedou. Po prudkém brzdění zůstávají na silnici stopy pneumatik a auto, které dostalo příliš ran, začne hořet.',
+        'do2-h': 'Jezděte tramvají a metrem',
+        'do2-p': 'Tramvaje jezdí po svých skutečných linkách podle skutečného jízdního řádu a vstupy do metra jsou tam, kde je znáte. Jízdenka stojí 46 Kč. Bez ní se může stát, že vás revizor bude honit po ulici.',
+        'do3-h': 'Ujíždějte policii',
+        'do3-p': 'Za rychlou jízdu, bouračky a krádeže aut přibývají hvězdičky. Nejdřív po vás jdou hlídkové vozy, potom policisté pěšky a od tří hvězdiček vrtulník, který na vás vidí přes střechy.',
+        'do4-h': 'Poznejte město v každém světle',
+        'do4-p': 'Hra začíná v hodinu a v počasí, jaké má Praha právě teď. Déšť, bouřky, mlha a sníh přicházejí a odcházejí a po setmění se rozsvítí pouliční lampy, každá tam, kde doopravdy stojí.',
+        'do5-h': 'Dopravte se i jinak',
+        'do5-p': 'Mávněte si na taxi, nebo si objednejte levnější, jehož řidič má víc naspěch. Vyjeďte šlapadlem na Vltavu nebo lanovkou na Petřín.',
+        'do6-h': 'Přivolejte hasiče',
+        'do6-p': 'K hořícímu autu přijedou hasiči a ke zraněnému sanitka. S oběma vozy se dá odjet a vodní dělo na hasičském voze stříká.',
+        'shots-h': 'Ze hry',
+        shot1: 'Staroměstské náměstí',
+        shot2: 'Letní odpoledne',
+        shot3: 'Policie vás našla',
+        shot4: 'Nízké večerní slunce',
+        shot5: 'Sníh',
+        'made-h': 'Postaveno z otevřených dat',
+        'made-p1': 'Skoro nic ve hře nevzniklo ručním modelováním. Město je poskládané z map a měření, které Praha a její mapaři zveřejňují k volnému použití.',
+        'made-p2': 'Když se data změní, dá se mapa hry postavit znovu, takže se do ní časem dostane i nová tramvajová trať nebo přestavěné náměstí.',
+        'src1-h': 'Ulice, tramvajové koleje a zastávky',
+        'src1-p': 'Mapová data ©',
+        'src2-h': 'Budovy, mosty, kopce a dominanty',
+        'src2-p': '3D model Prahy, datový podklad ©',
+        'src3-h': 'Vozovky, parkovací stání a pouliční lampy',
+        'src3-p': 'Digitální technická mapa, datový podklad ©',
+        'src4-h': 'Jízdní řády tramvají a metra',
+        'src5-h': 'Zvuky tramvají a města',
+        'src5-p': 'Nahrávky z',
+        'src5-q': '; každou z nich uvádí Poděkování ve hře',
+        'drive-h': 'Pojeďte se projet',
+        'foot-by': 'Streets of Prague vytváří Jonáš Jančařík.',
+      };
+      const META = {
+        en: 'The whole of today\'s Prague as an open-world driving game. Free, in your browser.',
+        cs: CS.tagline,
+      };
+      const texts = [...document.querySelectorAll('[data-t]')].map((el) => [el, el.dataset.t, el.textContent]);
+      const numbers = [...document.querySelectorAll('.count b')].map((el) => [el, el.textContent]);
+      const store = { get: () => { try { return localStorage.getItem('lang'); } catch { return null; } }, set: (v) => { try { localStorage.setItem('lang', v); } catch {} } };
+
+      function setLang(lang) {
+        document.documentElement.lang = lang;
+        for (const [el, key, en] of texts) el.textContent = lang === 'cs' ? CS[key] ?? en : en;
+        // Czech writes 5 863 km and 912 km².
+        for (const [el, en] of numbers) el.textContent = lang === 'cs' ? en.replace(/,/g, ' ') : en;
+        for (const img of document.querySelectorAll('[data-alt]')) img.alt = lang === 'cs' ? CS[img.dataset.alt] : texts.find(([, key]) => key === img.dataset.alt)[2];
+        document.querySelector('meta[name=description]').content = META[lang];
+        for (const b of document.querySelectorAll('.lang button')) b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
+        document.querySelector('.lang').setAttribute('aria-label', lang === 'cs' ? 'Jazyk' : 'Language');
+      }
+
+      const asked = new URLSearchParams(location.search).get('lang');
+      const first = ['cs', 'en'].includes(asked) ? asked : store.get() ?? (/^(cs|sk)/i.test(navigator.language) ? 'cs' : 'en');
+      setLang(first === 'cs' ? 'cs' : 'en');
+      for (const b of document.querySelectorAll('.lang button')) b.addEventListener('click', () => { store.set(b.dataset.lang); setLang(b.dataset.lang); });
+    </script>
+  </body>
+</html>

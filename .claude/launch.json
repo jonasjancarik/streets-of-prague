@@ -49,6 +49,20 @@
       ],
       "port": 5211,
       "autoPort": true
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5195",
+        "--bind",
+        "0.0.0.0",
+        "--directory",
+        "site"
+      ],
+      "port": 5195
     }
   ]
 }
