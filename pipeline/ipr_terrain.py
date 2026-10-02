@@ -207,9 +207,9 @@ def sampler(tiles, N, T, step, gx0, gy0, labels=None):
     from each tile's corner as the game reads it; NaN outside the tiles. With `labels`
     (dtm_heights.py), in a cell a step crosses it's the plain ground's corners that count,
     or else the dry ones: a bridge's end by a quay wall is on the quay, not half-way down
-    to the water."""
+    to the water. `dry`: NaN on the water."""
     labels = labels or {}
-    def at(xs, ys):
+    def at(xs, ys, dry=False):
         xs, ys = np.asarray(xs, float), np.asarray(ys, float)
         out = np.full(len(xs), np.nan)
         for k in range(len(xs)):
@@ -224,6 +224,8 @@ def sampler(tiles, N, T, step, gx0, gy0, labels=None):
             lab = labels.get((i, j))
             if lab is not None:
                 corner = lab[ib:ib + 2, ia:ia + 2]
+                if dry and (corner == 1).all():
+                    continue
                 if corner.min() != corner.max():
                     own = corner == 0 if (corner == 0).any() else corner != 1
                     w = np.array([[(1 - fa) * (1 - fb), fa * (1 - fb)], [(1 - fa) * fb, fa * fb]]) * own

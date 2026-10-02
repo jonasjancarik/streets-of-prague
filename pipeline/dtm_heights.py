@@ -316,11 +316,16 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         under += int(back.sum())
 
     # The map draws a street on to where its bridge begins, which is often a little past
-    # the edge of the quay wall the bridge comes off: its last metres lie over the water or
-    # the quay below, and would hang down to them. They're at the height of the surveyed
+    # the edge of the quay wall the bridge comes off: its last metres lie over the water,
+    # and would hang down to it. They're at the height of the surveyed
     # street they run on from.
     overhang = 0
     carriageways = [g for g in carriageways if not g.is_empty]
+    if water is not None and not water.is_empty:
+        shapely.prepare(water)
+        carriageways = [g for g in carriageways if water.intersects(g)]
+    else:
+        carriageways = []
     if street.any() and len(carriageways):
         d, (sj, si) = ndimage.distance_transform_edt(~street, return_indices=True)
         raised = np.zeros(grid.shape, dtype=bool)
@@ -335,6 +340,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             if not on.any():
                 continue
             on &= shapely.contains_xy(road, x_of(gi), y_of(gj))
+            # (Only over the map's water: a street beside a higher one, on land, is another street.)
+            on[on] = shapely.contains_xy(water, x_of(gi[on]), y_of(gj[on]))
             # (Up to the street, never down: the nearest surveyed street may as well be
             # the one along the quay below.)
             on &= grid[sj[gj, gi], si[gj, gi]] > grid[gj, gi] + 0.3

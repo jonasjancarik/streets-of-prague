@@ -341,6 +341,36 @@ def solve(ways, ground, decks):
                         w.setdefault("raised", {})[0 if k == 0 else -1] = (back + 0.5, fixed[i])
                 else:
                     fixed[i] = portal(ground, *net.xy[i])
+    # The map cuts a bridge's ways into scraps a few metres long at its ends (a turning
+    # lane, the last of a pavement), and where a scrap meets the long way some path down
+    # to the quay often joins too: that node counts as on the ground, 8 m below the
+    # street the scrap's other end is on. A scrap running on from a much longer bridge way
+    # is level, at the higher of its two ends, which lifts the long way's end with it.
+    length = {w["id"]: LineString(w["pts"]).length for w in ways}
+    at_node = defaultdict(list)
+    for w in ways:
+        if w["kind"] == "bridge":
+            at_node[w["nodes"][0]].append(w)
+            at_node[w["nodes"][-1]].append(w)
+    level = set()  # the scraps settled so far: the next ones run on from them
+    for _ in range(3):
+        for w in ways:
+            if w["kind"] != "bridge" or length[w["id"]] >= SCRAP:
+                continue
+            ends = [net.key[("n", w["nodes"][0])], net.key[("n", w["nodes"][-1])]]
+            if not any(o is not w and (o["id"] in level or length[o["id"]] >= 4 * length[w["id"]])
+                       for n in (w["nodes"][0], w["nodes"][-1]) for o in at_node[n]):
+                continue
+            known = [fixed[i] for i in ends if i in fixed]
+            if known:
+                for i in ends:
+                    if i in fixed:
+                        fixed[i] = max(known)
+                level.add(w["id"])
+    # (What's kept for the street's last metres before each end, see pads, at the height it has now.)
+    for w in ways:
+        for end, (far, _) in list(w.get("raised", {}).items()):
+            w["raised"][end] = (far, fixed[net.key[("n", w["nodes"][end])]])
     # A bridge or tunnel that meets the ground nowhere: its loose ends are on it.
     comp = components(net)
     anchored = {comp[i] for i in fixed}
@@ -423,7 +453,10 @@ def portal(ground, x, y):
     a = np.linspace(0, 2 * np.pi, 12, endpoint=False)
     xs = np.concatenate([[x], x + 5 * np.cos(a), x + 10 * np.cos(a)])
     ys = np.concatenate([[y], y + 5 * np.sin(a), y + 10 * np.sin(a)])
-    return float(np.nanmin(ground(xs, ys)))
+    try:
+        return float(np.nanmin(ground(xs, ys, dry=True)))  # (not the water's level, where there's a river beside it)
+    except TypeError:
+        return float(np.nanmin(ground(xs, ys)))
 
 
 STEP = 1.0  # m: a rise of this much within 2 m, somewhere in ABUTMENT on from a bridge's end, is the wall of the street it comes off
@@ -448,7 +481,10 @@ def abutment(ground, at, ahead, here):
     rise = hs[2:] - hs[:-2]
     if rise.max() <= STEP:
         return here, 0.0
-    return float(hs.max()), float(far[int(np.argmax(rise)) + 2])
+    # (The terrain's ramp may run on past the step: the street's height is the highest
+    # out to half as far again.)
+    more = np.asarray(at)[None, :] + d[None, :] * np.linspace(ABUTMENT, 1.5 * ABUTMENT, 5)[:, None]
+    return float(np.nanmax(np.r_[hs, ground(more[:, 0], more[:, 1])])), float(far[int(np.argmax(rise)) + 2])
 
 
 def components(net):
@@ -496,8 +532,10 @@ def clear_crossings(ways, net, profiles, fixed, base):
             hu, hl = (ha, hb) if up == a else (hb, ha)
             if hu - hl >= CLEAR:
                 continue
-            # Move the bridge up, or the tunnel down, whichever isn't on the ground.
-            who, h = (up, hl + CLEAR) if ways[up]["kind"] == "bridge" else (lo, hu - CLEAR)
+            # A tunnel goes down under whatever crosses it (a bridge over an underpass is
+            # the street at the ground's level: lifting it puts a hump in the junction);
+            # between two bridges the upper one goes up.
+            who, h = (lo, hu - CLEAR) if ways[lo]["kind"] == "tunnel" else (up, hl + CLEAR)
             path = net.paths[who]
             i = path[int(np.argmin(np.hypot(*(net.xy[path] - [p.x, p.y]).T)))]
             if i not in base:
@@ -542,6 +580,30 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
     bridges = [k for k, w in enumerate(ways) if w["kind"] == "bridge"]
     tree = STRtree([out[k].shape for k in bridges]) if bridges else None
     group_of = {id(p): g for g in groups for p in g}
+
+    def join(g, old):
+        if old is not g:
+            g.extend(old)
+            for p in old:
+                group_of[id(p)] = g
+            old.clear()
+
+    # The map cuts a bridge's ways into scraps a few metres long at its ends (a turning
+    # lane, the last of a pavement), each tied to the ground under its own ends, which may
+    # be the quay below. A scrap lying on a much longer way of the same layer is part of
+    # that bridge: its height, and its level.
+    for k in sorted(bridges, key=lambda k: -lines[k].length):
+        if lines[k].length >= SCRAP:
+            continue
+        m = lines[k].interpolate(0.5, normalized=True)
+        hosts = [j for j in (bridges[i] for i in tree.query(m, predicate="intersects"))
+                 if j != k and lines[j].length >= 4 * lines[k].length and ways[j]["layer"] == ways[k]["layer"]]
+        if hosts:
+            j = max(hosts, key=lambda j: lines[j].length)
+            out[k].height = out[j].height
+            join(group_of[id(out[j])], group_of[id(out[k])])
+            ways[k]["scrap"] = True
+
     for poly in outlines:
         if poly.area < 30:
             continue
@@ -576,12 +638,7 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
             # One group: the outline and every way on it.
             g = [piece]
             for k in on:
-                old = group_of[id(out[k])]
-                if old is not g:
-                    g.extend(old)
-                    for p in old:
-                        group_of[id(p)] = g
-                    old.clear()
+                join(g, group_of[id(out[k])])
             groups.append(g)
             for p in g:
                 group_of[id(p)] = g
@@ -593,6 +650,7 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
     return out, [g for g in groups if g]
 
 
+SCRAP = 25.0  # m: a bridge way shorter than this, lying on a much longer one, is a scrap of that bridge
 PORTAL = 12.0  # m a tunnel reaches out of its portal, at the portal's height
 
 
@@ -602,6 +660,8 @@ def pads(ways):
     map has the bridge begin (see abutment). They'd hang down to the quay below."""
     out = []
     for w in ways:
+        if w.get("scrap"):  # (its ends' heights aren't the bridge's: see pieces)
+            continue
         for end, (far, height) in w.get("raised", {}).items():
             a, b = (w["pts"][1], w["pts"][0]) if end == 0 else (w["pts"][-2], w["pts"][-1])
             d = math.dist(a, b) or 1
@@ -741,6 +801,12 @@ def rasterise(all_pieces, tiles, N, T, step, gx0, gy0):
                 if mine.any():
                     arr[mine] = p.height(xs[mine], ys[mine])
                     dist[mine] = d[mine]
+                # Where two pieces of a level lie over each other, the higher one is what's
+                # on top: the bridge, not the steps down from it or the road beneath that
+                # got the same level.
+                both = inside & (d == 0) & (dist == 0) & ~mine
+                if both.any():
+                    arr[both] = np.fmax(arr[both], p.height(xs[both], ys[both]))
     return out
 
 

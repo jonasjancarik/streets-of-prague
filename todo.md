@@ -318,18 +318,20 @@ grime on the walls 6%, the shadow map's own pass 7%.
   and `ujezd` tiles on disk were rebuilt after the fix (a few hundred `praha` height
   tiles are older, probably unchanged). Still to confirm: that this data has been
   deployed to mbxp. See "Terrain grid" in the README.
-- **Steps in the ground: what's left.** Quay walls and retaining walls are steps since
-  the branch `worktree-quay-heights` ("Steps in the ground" in the README), built for
+- **Steps in the ground: what's left.** Quay walls, retaining walls and bridge heads
+  are steps since the branch `worktree-quay-heights` ("Steps in the ground" in the
+  README; how to work on it: `.agents/skills/terrain-steps/SKILL.md`), built for
   `praha` and looked over at every bridge over the Vltava and Nuselský most. Still to
-  do: streets in cuttings and paths down banks, where the survey has the street metres
-  below the ground beside it and draws no wall (the sides come out ragged; two such
-  places are in `pipeline/terrain_keep.json`); railway cuttings; walls that stop cars
-  and people (they can still go over an edge, and drop); frame times and the WebGL
-  renderer; the walls found on steep hillsides (Petřín, Letná), where a wall on a slope
-  may pass for a retaining wall. Bridges that were wrong before and still are:
-  Železniční most ends 1.8 m above the street at Výtoň (the embankment isn't in the
-  terrain), Palackého most dips 1.5 m near its Smíchov end, and the long bridges at
-  Lahovice and Radotín have breaks in their decks.
+  do: slopes with no surveyed wall (paths down banks, the hillside under Letná, streets
+  in cuttings), whose sides stay ragged on a 4 m lattice (two such places are in
+  `pipeline/terrain_keep.json`); railway cuttings; walls that stop cars and people
+  (they can still go over an edge, and drop); frame times and the WebGL renderer.
+  Bridges still off: Železniční most ends 1.8 m above the street at Výtoň (the
+  embankment isn't in the terrain), Libeňský most's south part has steps of 1.3 m at
+  both ends (as on main), Hlávkův most's head in Holešovice is crumpled on its
+  upstream side by the quay, Nuselský most's Pankrác end has a 6 m drop 44 m before
+  the bridge (the ramps round the metro), and the long bridges at Lahovice and Radotín
+  have breaks in their decks.
 - **Hill shading for a moving sun.** The shading is baked per tile to the fixed
   north-west sun (`relief()` in `src/tiles.ts`, `SUN_OFFSET` in `src/main.ts`). If
   the sun ever moves with the clock, store the slope per tile instead and light it in
