@@ -525,7 +525,8 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   GPU was busy with other apps, the new build always ran second, and one run fell to
   37 fps). Redo `--vs` with alternating and swapped order, three or more pairs, after
   checking CPU and GPU load. The phone already showed no change in frame time.
-- **A stolen police car has no flashing lights.**
+- **Stolen police-car lights.** Flash while the player drives, including when stopped
+  or reversing; switch off on exit and return on re-entry. Siren policy is unchanged.
 - **Buses.** They follow PID's real lines (`pipeline/build_buses.py`) and stop at the
   stops, but a line is lost where the map has no street for it (148 at U Nemocnice),
   buses often crawl in the Old Town's traffic. Line numbers are on the front, side

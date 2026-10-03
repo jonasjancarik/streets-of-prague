@@ -1,6 +1,6 @@
 # AI car traffic
 
-read_when: changing traffic counts, routes, bus displays;
+read_when: changing traffic counts, routes, bus displays or police lights;
 regenerating the time-of-day table.
 
 ## How it works
@@ -31,6 +31,12 @@ also shows the destination, and the roof number can be read from the game's over
 camera. Board textures are cached per number/destination and reused as cars move or
 leave view. A wandering bus without a line, an empty identifier or a burnt wreck has
 no route label. Taking a bus preserves its assigned line; it does not assign a new one.
+
+**Police lights after theft.** A police car driven by the player keeps its blue
+flashing lamps and street illumination on, including at a stop or in reverse. They
+switch off on exit and return on re-entry; burnt wrecks are excluded. Police cars in
+an active chase retain their existing lights, while those that stand down or return
+to patrol do not flash. Player ownership does not add a siren or make traffic give way.
 
 **Couriers.** In `Traffic.spawn`, half of the ordinary bikes and a third of the mopeds are
 delivery couriers: a box on the rider's back in pink, green or blue (`COURIER_BOXES` in

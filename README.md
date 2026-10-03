@@ -179,7 +179,8 @@ that without a new renderer.
   officer gets out and runs after you, and if they reach you, you're busted (the
   police keep the car). The arrest banner appears before the screen fades to black;
   you are then taken to the station and the picture fades back in. You can outrun them on foot, or take the police car they've
-  left behind (E) and drive off in it, its blue lights flashing as you go. From three stars a helicopter
+  left behind (E) and drive off in it. Its blue lights keep flashing while you're at
+  the wheel, even when stopped, and switch off when you get out. From three stars a helicopter
   joins in and sees you over the rooftops, and the officers carry pistols: once they can
   see you from close enough they stop and shoot instead of running you down, and from
   four stars they shoot out of the cars too. Gunshots send people running. Stay out of
