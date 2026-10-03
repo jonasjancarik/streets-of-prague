@@ -79,6 +79,8 @@ the ordinary turning checks use the actual traffic updater in CPU fixtures.
 Neighbouring tiles `8_5` and `7_5` also produced identical parked-car layouts in
 opposite reload orders (103 and 78 cars), with zero duplicate centres. This is
 targeted behaviour evidence, not a citywide driving or performance comparison.
+The [durable captures, measurements and replay snippets](evidence/parking-clearance-2026-10-03/README.md)
+record the baseline reconstruction and the controls used.
 
 ## The data
 
