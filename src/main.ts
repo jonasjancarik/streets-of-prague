@@ -1249,7 +1249,7 @@ async function main() {
   // "Busted · fine…" gives both: the word big and the rest in the card under it.
   const showBanner = (text: string, alert = false, card = false) => {
     const [head, ...rest] = text.split(' · ');
-    const big = head.length <= 22 && !head.includes(':') ? head : '';
+    const big = !card && head.length <= 22 && !head.includes(':') ? head : '';
     const note = big ? rest.join(' · ') : text;
     const el = $('banner');
     el.replaceChildren();
