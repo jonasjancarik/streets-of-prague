@@ -6,9 +6,10 @@ read_when: Reviewing the 2–3 October overnight changes, choosing what to merge
 
 The accepted changes are combined in this isolated worktree:
 `/Users/janca/.codex/worktrees/overnight-city-integration/streets-of-prague`.
-They are local commits, not merged into main, pushed or deployed. The final tested
-implementation is `ae86cf4`; corrective validation is recorded in `a141097`.
-Subsequent handoff and evidence commits do not change that implementation.
+They are local commits, not merged into main, pushed or deployed. The overnight
+application source is `ae86cf4`, validated in `a141097`. Reviewed lamp/tow test-fixture
+corrections are integrated through `edbf011`; the unchanged map then passed a
+[15/15 scene confirmation](evidence/wrapup-final-confirmation/REPORT.md).
 
 The preview uses a private, strictly assembled 234-tile centrum map built at
 `2026-10-03T05:44:19Z`. It is not a full-city rebuild. Source caches and map data
@@ -52,15 +53,23 @@ CPU probes, native checks, screenshots, and measured limits. No frame-rate gain 
 claimed: the added geometry has a cost, and several timing comparisons were
 inconclusive on a shared host.
 
-The final broad scene suite ran once on the unchanged final snapshot and passed
-**13 of 15 scenarios**. The lamp case entered its vehicle but did not knock down
-the selected post; the nested lamp case later passed, so order/fixture sensitivity
-is plausible, but whether this is pre-existing or introduced remains unresolved.
-The tow case placed its supposedly distant wreck 73.54 m away, within the roughly 80 m
-foot cleanup radius, so its out-of-sight premise was not met. These failures were
-not suppressed or rerun away. [Suite report](evidence/overnight-final-suite/REPORT.md) and
-[raw results](evidence/overnight-final-suite/results.json)
-record source and map hashes unchanged throughout the run.
+The first final broad scene suite passed 13/15. Targeted wrap-up reproduced a
+tram-body interception omitted by the lamp fixture's clearance check and confirmed
+that the tow fixture had placed its supposedly distant wreck inside the cleanup
+view. Independently reviewed fixture corrections preserve production collision and
+towing rules and the original assertions. The exact tram/post identity from the
+first immutable run was not recorded; that historical limitation remains in its report.
+
+After integrating both corrections, typecheck and the lamp/tow/scenario-start CPU
+checks passed. One normal-order combined confirmation then passed **15 of 15
+scenarios**, with no reported page/console errors and unchanged hashes for all 136
+source and 804 map files. This is a successful run on the frozen snapshot, not a
+claim about every possible ordering or device. The map was not rebuilt during wrap-up.
+[Historical 13/15 report](evidence/overnight-final-suite/REPORT.md),
+[tow correction](tow-fixture-wrapup-2026-10-03.md),
+[lamp diagnosis and correction](evidence/lamp-wrap/REPORT.md), and
+[final 15/15 confirmation](evidence/wrapup-final-confirmation/REPORT.md) retain the
+complete evidence without overwriting earlier failures.
 
 ## What remains unresolved
 
@@ -76,8 +85,6 @@ record source and map hashes unchanged throughout the run.
 - Radotín's abrupt height jump is reduced in the regional fixture, but source-face
   rejection and a middle-span height offset remain. Other bridge approaches and
   full-city traversal are not established by the centrum validation.
-- The final scene suite is not fully green: lamp-impact uncertainty and the tow
-  fixture limitation above remain open.
 - Full-city regeneration, physical-phone testing and deployment were not performed.
   Taxi Czech browser visibility remains unverified despite passing CPU translation
   checks. Existing ambulance arrival variability and stretcher collision limitations

@@ -142,3 +142,19 @@ Accept tow fixture5c47580 after independent review and parent diff inspection: p
 ## Resumed wrap-up: lamp fixture accepted
 
 Accept lamp fixture 2cc627f after independent review and parent diff inspection. A predecessor replay identifies immediate tram-body collision omitted by setup clearance; the helper now checks native car/tram circles without changing gameplay collision code or the original post-down/10–45 km/h assertions. CPU negative controls and standalone/ordered scene checks pass. Exact original full-suite tram/post identity remains unrecorded; this is not an identical-world replay claim. Tow fixture is already accepted and integrated. One combined confirmation remains before closeout.
+
+
+## Wrap-up completion
+
+Both independently reviewed fixture corrections are integrated through edbf011.
+The single final normal-order confirmation passes 15/15 scenarios with unchanged
+source/map fingerprints, no reported page/console errors, and passing typecheck
+plus lamp/tow/scenario-start CPU checks. Historical 13/15 evidence is preserved;
+production collision/towing rules and original assertions were not weakened.
+
+All wrap-up workers are idle with completed turns, owned scene browsers/locks are
+closed, and only integration 5204 remains running among the wrap-up ports. The
+handoff is updated; no new features or map rebuild occurred during this closeout.
+Main, deployment and shared data remain untouched by this effort. Known Kampa
+sampler and withheld pilot limits remain separate. Latest weekly quota: 79%
+remaining. The coordinator is paused after this completed wrap-up.
