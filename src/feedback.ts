@@ -37,6 +37,10 @@ if (URL_) {
   window.addEventListener('unhandledrejection', (e) => keep(e.reason instanceof Error ? e.reason.message : e.reason));
 }
 
+// How the form gets a picture of the game: main.ts says how once the game is running.
+let screenshot: () => Promise<string | null> = async () => null;
+export const setScreenshot = (fn: () => Promise<string | null>) => { screenshot = fn; };
+
 // The graphics card, as the browser names it (it may decline to).
 function card() {
   const gl = document.createElement('canvas').getContext('webgl');
@@ -70,11 +74,18 @@ function context(extra: () => string) {
   const tally = document.getElementById('tally')?.textContent;
   if (tally) lines.push(`Tally: ${tally}`);
   lines.push(errors.length ? `Errors (seconds since the page opened):\n${errors.map((e) => `  ${e}`).join('\n')}` : 'No errors seen');
-  try { const s = window.__test?.snapshot(); if (s) lines.push('', s); } catch {}
   return lines.join('\n');
 }
 
-function build(extra: () => string) {
+// What the player was looking at when they opened the form: a picture of the game, and the
+// situation as a scenario that replays it (testkit.ts's snapshot).
+function look() {
+  let scenario = '';
+  try { scenario = window.__test?.snapshot() ?? ''; } catch {}
+  return { picture: screenshot().catch(() => null), scenario };
+}
+
+function build(extra: () => string, seen: () => ReturnType<typeof look>) {
   const { d, title } = sheet();
   const intro = el('p', '', d);
   const form = el('form', 'news-stack', d) as HTMLFormElement;
@@ -109,7 +120,7 @@ function build(extra: () => string) {
     status.textContent = note && t(note);
     status.classList.toggle('bad', !done && !!note);
     form.hidden = intro.hidden = small.hidden = done;
-    small.textContent = t('The game\'s version, your browser and where you are in the game are sent along, to help find the problem.');
+    small.textContent = t('A picture of the game, its version, your browser and where you are in the game are sent along, to help find the problem.');
   };
   onLang(label);
 
@@ -119,7 +130,8 @@ function build(extra: () => string) {
     sending = true; note = '';
     label();
     try {
-      const res = await fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: message.value, email: email.value, website: trap.value, lang: getLang(), context: context(extra) }) });
+      const { picture, scenario } = seen();
+      const res = await fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: message.value, email: email.value, website: trap.value, lang: getLang(), context: context(extra), scenario, screenshot: await picture }) });
       const answer = await res.json().catch(() => ({})) as { error?: string };
       done = res.ok;
       if (done) telemetry.did('sent feedback');
@@ -147,9 +159,11 @@ export function feedbackLink(parent: HTMLElement, cls: string, { before = () => 
   const link = el('button', cls, parent) as HTMLButtonElement;
   link.type = 'button';
   onLang(() => { link.textContent = t('Send feedback'); });
+  let seen: ReturnType<typeof look> | null = null;
   const open = () => {
+    seen = look(); // before the settings close and the form covers the game
     before();
-    box ??= build(extra);
+    box ??= build(extra, () => seen ?? look());
     box.showModal();
   };
   link.addEventListener('click', open);

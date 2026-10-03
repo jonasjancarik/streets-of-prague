@@ -66,6 +66,9 @@ kbd{font:.72rem ui-monospace,monospace;border:1px solid var(--line);border-botto
 .message{margin:.9rem 0 1.2rem;font-size:1.2rem;line-height:1.55;white-space:pre-wrap;word-break:break-word;letter-spacing:-.005em}
 .chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1.3rem}
 .chip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:.12rem .7rem;font-size:.8rem;color:var(--dim)}
+.shotbox{display:block;margin:0 0 1.3rem;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel);box-shadow:var(--shadow)}
+.shot{display:block;width:100%;height:auto;max-height:26rem;object-fit:contain;min-height:6rem}
+.scenario{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:.7rem .8rem;font-size:.8rem;color:var(--ink);overflow-x:auto;white-space:pre}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;margin-bottom:1rem;box-shadow:var(--shadow)}
 .card h2{margin:0 0 .6rem;font-size:.74rem;font-weight:650;text-transform:uppercase;letter-spacing:.07em;color:var(--faint)}
 .seg{display:grid;grid-template-columns:repeat(4,1fr);gap:.4rem}
@@ -194,7 +197,7 @@ function drawList(){
     const e=entry(m.key);
     parts.push(el('button',{type:'button',className:'item'+(e.status==='done'||e.status==='wontdo'?' settled':''),ariaCurrent:String(m.key===selected),onclick:()=>{pick(m.key);drawList();drawDetail(true);document.body.classList.add('reading')}},
       el('div',{className:'row'},el('span',{className:'dot',title:STATUS[e.status],dataset:{s:e.status}}),el('span',{className:'who',textContent:m.email||'Anonymous'}),
-        ...(e.replied?[el('span',{className:'tick',title:'Replied',textContent:'✓ replied'})]:[]),
+        ...(m.screenshot?[el('span',{title:'Has a screenshot',textContent:'📷'})]:[]),...(e.replied?[el('span',{className:'tick',title:'Replied',textContent:'✓ replied'})]:[]),
         el('span',{className:'when',textContent:d?d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):''})),
       el('div',{className:'text',textContent:m.message})));
     parts[parts.length-1].dataset.key=m.key}
@@ -228,12 +231,20 @@ function drawDetail(reset){
       m.email?el('a',{href:mailto(m),textContent:m.email}):el('span',{textContent:'No address given'}),
       ...(m.lang?[el('span',{className:'lang',textContent:m.lang.toUpperCase()})]:[])),
     el('div',{className:'message',textContent:m.message}),
+    ...(m.screenshot?[picture(m)]:[]),
     ...(chips.length?[el('div',{className:'chips'},...chips.map(c=>el('span',{className:'chip',textContent:c})))]:[]),
     el('div',{className:'card'},el('h2',{textContent:'What happened to this'}),seg,
       el('div',{className:'actions'},reply,replied,copy)),
     el('div',{className:'card'},el('h2',{textContent:'Your note'}),note,el('div',{className:'state',id:'state'})),
+    ...(m.scenario?[el('div',{className:'card'},el('h2',{textContent:'Replay this situation'}),el('pre',{className:'scenario',textContent:m.scenario}),
+      el('div',{className:'actions'},el('button',{type:'button',className:'btn',textContent:'Copy scenario',onclick:async()=>{try{await navigator.clipboard.writeText(m.scenario);toast('Copied. Paste it into a conversation to see the same spot.')}catch{toast("Couldn't copy")}}})))]:[]),
     ...(details?[details]:[])));
   if(reset)box.scrollTop=0}
+
+// The screenshot the game took when the form was opened; a click shows it full size.
+function picture(m){const img=el('img',{className:'shot',alt:'What the player saw in the game',src:'/api/screenshot?key='+encodeURIComponent(m.screenshot),loading:'lazy'});
+  const box=el('a',{className:'shotbox',href:img.src,target:'_blank',title:'Open full size'},img);
+  img.onerror=()=>box.replaceChildren(el('span',{className:'state bad',textContent:"The screenshot couldn't be loaded."}));return box}
 
 function setStatus(m,s){if(entry(m.key).status===s)return;
   change(m,{status:s},{say:'Marked as '+STATUS[s].toLowerCase()})}

@@ -44,6 +44,7 @@ import { groundSamples } from './surface.ts';
 import { CUTAWAY, DIG } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { setupSettings } from './settings.ts';
+import { setScreenshot } from './feedback.ts';
 import { readSave, writeSave, clearSave, listSaves, newSlot, unreadable, describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
 import { dressLoading, Dialog } from './portraits.ts';
@@ -1776,6 +1777,20 @@ async function main() {
   let starsWas = 0;
   const playingAs = (): telemetry.Mode => (ride.on ? 'tram' : taxi.riding ? 'taxi' : inCar ? 'car' : inHeli || boats.me || funicular.me || metro.active ? 'other' : 'foot');
 
+  const grab: ((picture: string | null) => void)[] = [];
+  const takePicture = () => {
+    try {
+      const from = renderer.domElement, scale = Math.min(1, 1280 / from.width);
+      const to = document.createElement('canvas');
+      to.width = Math.round(from.width * scale);
+      to.height = Math.round(from.height * scale);
+      const draw = to.getContext('2d')!;
+      draw.globalCompositeOperation = 'copy'; // the canvas has an alpha channel that must not show through
+      draw.drawImage(from, 0, 0, to.width, to.height);
+      return to.toDataURL('image/jpeg', 0.72);
+    } catch { return null; }
+  };
+  setScreenshot(() => new Promise((resolve) => { grab.push(resolve); setTimeout(() => resolve(null), 2000); }));
   renderer.setAnimationLoop((now) => {
     const dt = settingsPanel.open ? 0 : Math.min(0.05, (now - last) / 1000); // the settings pause the game
     graphics.frame(now - last, now, world.inFlight.size > 0);
@@ -2117,6 +2132,9 @@ async function main() {
 
     dev.update();
     renderer.render(scene, camera);
+    // A picture of the frame just drawn, asked for by the feedback form: the canvas can only
+    // be read in the task that drew it.
+    if (grab.length) { const picture = takePicture(); for (const done of grab.splice(0)) done(picture); }
   });
 
   window.__drive = {

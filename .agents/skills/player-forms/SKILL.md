@@ -15,7 +15,7 @@ described in `docs/email.md`.
 | | Signup | Feedback |
 |---|---|---|
 | In the game | `src/newsletter.ts`: link on the start screen and in the settings | `src/feedback.ts`: link in the settings |
-| Posts to | `/api/subscribe` `{ email, lang, token, website }` | `/api/feedback` `{ message, email?, context, lang, website }` |
+| Posts to | `/api/subscribe` `{ email, lang, token, website }` | `/api/feedback` `{ message, email?, context, scenario?, screenshot?, lang, website }` |
 | Worker passes it to | Brevo's double opt-in API (it sends the confirmation email) | Cloudflare email sending, to the one address in `deploy/feedback` |
 | Shown in a build when | `deploy/newsletter` has the list and the template number | `deploy/feedback` has `FEEDBACK_TO` |
 
@@ -152,13 +152,27 @@ Brevo's free plan sends 300 emails a day, so a list beyond that goes out over se
 days or needs a paid plan. Every campaign carries Brevo's unsubscribe link; people who
 use it stay in the contacts as unsubscribed and are skipped from then on.
 
+### What a feedback message carries
+
+When the form opens (not when it is sent, so the settings and the form don't cover the
+game), `src/feedback.ts` asks `main.ts` for a picture of the next frame and takes
+`window.__test.snapshot()`. `main.ts` reads the canvas in the task that drew it (a WebGPU
+canvas can't be read later), scales it to 1280 px wide and encodes a JPEG (about 100 KB).
+Sent along: `screenshot` (a JPEG data URL; the game's canvas only, not the HUD) and
+`scenario`, the snapshot as a scenario that replays the place, time, weather, season,
+money, stars, health, car and camera (paste it into `scripts/scene.mjs eval`). Traffic
+and pedestrians are random and can't be replayed. The Worker keeps the JPEG as
+`feedback-shots/<date>/<time>-<id>.jpg` (outside `feedback/`, so the viewer's listing
+ignores it), puts its key in the message's JSON as `screenshot`, and mentions the
+scenario in the email. Without the archive binding there is no picture kept.
+
 ### Reading the feedback
 
 Besides the email, the Worker keeps each message as `feedback/<date>/<time>-<id>.json`
 in the R2 bucket `streets-of-prague-mail` (binding `FEEDBACK_ARCHIVE`).
 `node scripts/feedback-viewer.mjs` reads them through the `cf` login and serves a local
 page at http://127.0.0.1:5196 (`--port`, `--host`, `--no-open`; `--sample` for made-up
-messages that touch neither R2 nor `cf`). Per message you set a status (New, In progress,
+messages that touch neither R2 nor `cf`). The page shows a message's screenshot (fetched through `cf` and cached) and its scenario with a Copy button. Per message you set a status (New, In progress,
 Done, Won't do), a note and Replied; the page searches and filters by status. Those marks
 are one JSON object, `feedback-state.json` in the same bucket, rewritten after every change
 (it is outside `feedback/`, so the listing ignores it). Downloaded messages are cached in

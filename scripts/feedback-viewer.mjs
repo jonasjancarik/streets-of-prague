@@ -63,6 +63,17 @@ function loadMessages() {
   });
 }
 
+// A screenshot is downloaded when first asked for and kept in .feedback/cache/ like the messages.
+function screenshot(key) {
+  if (SAMPLE_MODE) return SAMPLE_PICTURE;
+  const file = join(CACHE, key.replaceAll('/', '__'));
+  if (existsSync(file)) return readFileSync(file);
+  mkdirSync(CACHE, { recursive: true });
+  const bytes = execFileSync('cf', ['r2', 'objects', 'get', key, '--bucket-name', BUCKET], { env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT }, maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
+  writeFileSync(file, bytes);
+  return bytes;
+}
+
 function loadState() {
   try { return JSON.parse(cf('r2', 'objects', 'get', STATE_KEY, '--bucket-name', BUCKET)) || {}; }
   catch (e) {
@@ -77,8 +88,10 @@ function saveState(state) {
   cf('r2', 'objects', 'put', STATE_KEY, '--bucket-name', BUCKET, '--file', UPLOAD, '--content-type', 'application/json');
 }
 
+// A small gradient standing in for a screenshot (sample mode).
+const SAMPLE_PICTURE = Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64');
 const SAMPLE = [
-  { key: 's1', time: '2026-10-02T09:12:00Z', message: 'The tram at Anděl drove through my car.\nIt happened twice.', email: 'player@example.com', lang: 'en', context: 'Version v0.1.2\nChrome 141 on macOS\nSpeed 62 km/h, near Anděl' },
+  { key: 's1', time: '2026-10-02T09:12:00Z', message: 'The tram at Anděl drove through my car.\nIt happened twice.', email: 'player@example.com', lang: 'en', context: 'Version v0.1.2\nChrome 141 on macOS\nSpeed 62 km/h, near Anděl', screenshot: 'sample-shot', scenario: "// Anděl\nawait t.go([50.0711, 14.4034], { heading: 90 });\nt.time('18:30');\nt.weather('rain');" },
   { key: 's2', time: '2026-10-01T18:40:00Z', message: 'Skvělá hra, ale policie střílí příliš přesně.', email: '', lang: 'cs', context: 'Version v0.1.1\nSafari on iPad' },
   { key: 's3', time: '2026-09-30T20:05:00Z', message: 'Could you add a way to change the radio station with the keyboard?', email: 'radio@example.com', lang: 'en', context: 'Version v0.1.1\nFirefox 142 on Windows' },
 ];
@@ -132,6 +145,12 @@ const server = createServer((req, res) => {
   if (loopbackOnly && !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host ?? '')) return send(res, 403, { error: 'Not allowed' });
   if (req.method === 'GET' && path === '/') return send(res, 200, PAGE, 'text/html');
   if (req.method === 'GET' && path === '/api/messages') return send(res, 200, { messages, state, sample: SAMPLE_MODE });
+  if (req.method === 'GET' && path === '/api/screenshot') {
+    const key = new URL(req.url, 'http://x').searchParams.get('key') ?? '';
+    if (!messages.some((m) => m.screenshot && m.screenshot === key)) return send(res, 404, { error: 'Not found' });
+    try { const bytes = screenshot(key); res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' }); return res.end(bytes); }
+    catch (e) { console.error(`Reading the screenshot failed: ${cfMessage(e)}`); return send(res, 502, { error: 'Couldn\'t read it' }); }
+  }
   if (req.method === 'POST' && path === '/api/state') {
     if (!/^application\/json/.test(req.headers['content-type'] ?? '')) return send(res, 415, { error: 'Not allowed' });
     let raw = '';

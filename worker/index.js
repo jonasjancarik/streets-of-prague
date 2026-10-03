@@ -3,7 +3,7 @@
 // two forms in the game, and the game's anonymous statistics (worker/stats.js):
 //
 //   POST /api/subscribe  { email, lang, token }
-//   POST /api/feedback   { message, email?, context?, lang }
+//   POST /api/feedback   { message, email?, context?, scenario?, screenshot?, lang }
 //   POST /api/report     one statistics report
 //
 // A signup is handed to Brevo, which sends the confirmation email; nobody is on the
@@ -31,6 +31,7 @@ import { report, OTHER_ORIGINS } from './stats.js';
 
 const BREVO = 'https://api.brevo.com/v3/contacts/doubleOptinConfirmation';
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const JPEG = 'data:image/jpeg;base64,';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const FORMS = { '/api/subscribe': subscribe, '/api/feedback': feedback };
@@ -130,11 +131,29 @@ async function feedback(body, env, origin, ip, here) {
   const site = origin === here || !origin ? '' : new URL(origin).hostname;
   // A copy for the feedback viewer (scripts/feedback-viewer.mjs), which also keeps its own
   // feedback-state.json beside these. Losing the copy never stops the email.
+  // The game's situation as a scenario that replays it (scenarios/, scripts/scene.mjs), and a
+  // picture of the game at the moment of sending, kept beside the copy (outside feedback/, so
+  // the viewer's listing doesn't see it). Both are optional.
+  const scenario = text(body.scenario, 4000);
+  let picture = null;
+  if (typeof body.screenshot === 'string' && body.screenshot.length <= 2_500_000 && body.screenshot.startsWith(JPEG)) {
+    try { picture = Uint8Array.from(atob(body.screenshot.slice(JPEG.length)), (c) => c.charCodeAt(0)); } catch { /* not an image */ }
+  }
+  let screenshot = '';
   if (env.FEEDBACK_ARCHIVE) {
     const now = new Date();
+    const name = `${now.toISOString().slice(0, 10)}/${now.getTime()}-${crypto.randomUUID()}`;
     try {
-      await env.FEEDBACK_ARCHIVE.put(`feedback/${now.toISOString().slice(0, 10)}/${now.getTime()}-${crypto.randomUUID()}.json`,
-        JSON.stringify({ time: now.toISOString(), site, message, email, context, lang: text(body.lang, 8) }), { httpMetadata: { contentType: 'application/json' } });
+      if (picture) {
+        await env.FEEDBACK_ARCHIVE.put(`feedback-shots/${name}.jpg`, picture, { httpMetadata: { contentType: 'image/jpeg' } });
+        screenshot = `feedback-shots/${name}.jpg`;
+      }
+    } catch (e) {
+      console.error(`Archiving the screenshot failed: ${e?.message ?? e}`);
+    }
+    try {
+      await env.FEEDBACK_ARCHIVE.put(`feedback/${name}.json`,
+        JSON.stringify({ time: now.toISOString(), site, message, email, context, scenario, screenshot, lang: text(body.lang, 8) }), { httpMetadata: { contentType: 'application/json' } });
     } catch (e) {
       console.error(`Archiving feedback failed: ${e?.message ?? e}`);
     }
@@ -146,7 +165,7 @@ async function feedback(body, env, origin, ip, here) {
       // Replying to the email answers the player.
       ...(email ? { replyTo: email } : {}),
       subject: `${site ? `[${site}] ` : ''}Feedback: ${first.length > 70 ? `${first.slice(0, 70)}…` : first}`,
-      text: `${message}\n\n--\nFrom: ${email || 'no address given'}\n${context}`,
+      text: `${message}\n\n--\nFrom: ${email || 'no address given'}\n${context}${scenario ? `\n\n${scenario}` : ''}${screenshot ? '\n\nA screenshot is in the feedback viewer.' : ''}`,
     });
   } catch (e) {
     console.error(`Sending feedback failed: ${e?.message ?? e}`);

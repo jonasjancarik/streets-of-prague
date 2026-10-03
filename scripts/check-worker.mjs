@@ -129,7 +129,23 @@ assert.match(mail[0].text, /^The tram at Anděl drove through my car\.\nSecond l
   res = await post({ message: 'Kept.', email: 'player@example.com', context: 'v1', lang: 'cs' }, { path: '/api/feedback', e: { ...fenv, FEEDBACK_ARCHIVE: { put: async (key, value) => { kept.push([key, JSON.parse(value)]); } } } });
   assert.equal(res.status, 200);
   assert.match(kept[0][0], /^feedback\/\d{4}-\d\d-\d\d\/\d+-[0-9a-f-]+\.json$/);
-  assert.deepEqual({ ...kept[0][1], time: 0 }, { time: 0, site: '', message: 'Kept.', email: 'player@example.com', context: 'v1', lang: 'cs' });
+  assert.deepEqual({ ...kept[0][1], time: 0 }, { time: 0, site: '', message: 'Kept.', email: 'player@example.com', context: 'v1', scenario: '', screenshot: '', lang: 'cs' });
+  // A screenshot and a scenario are kept too; something that isn't a JPEG is dropped.
+  const files = [];
+  const store = { put: async (key, value) => { files.push([key, value]); } };
+  const picture = 'data:image/jpeg;base64,' + Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString('base64');
+  mail = [];
+  res = await post({ message: 'With a picture.', scenario: "t.time('12:00');", screenshot: picture }, { path: '/api/feedback', e: { ...fenv, FEEDBACK_ARCHIVE: store } });
+  assert.equal(res.status, 200);
+  assert.match(files[0][0], /^feedback-shots\/\d{4}-\d\d-\d\d\/\d+-[0-9a-f-]+\.jpg$/);
+  assert.deepEqual([...files[0][1]], [0xff, 0xd8, 0xff, 0xd9]);
+  assert.equal(JSON.parse(files[1][1]).screenshot, files[0][0]);
+  assert.equal(JSON.parse(files[1][1]).scenario, "t.time('12:00');");
+  assert.match(mail[0].text, /t\.time\('12:00'\);/);
+  files.length = 0;
+  await post({ message: 'Not a picture.', screenshot: 'data:text/html;base64,AAAA' }, { path: '/api/feedback', e: { ...fenv, FEEDBACK_ARCHIVE: store } });
+  assert.equal(files.length, 1, 'only the message was kept');
+  assert.equal(JSON.parse(files[0][1]).screenshot, '');
   mail = [];
   res = await post({ message: 'Kept anyway.' }, { path: '/api/feedback', e: { ...fenv, FEEDBACK_ARCHIVE: { put: async () => { throw new Error('r2 down'); } } } });
   assert.equal(res.status, 200);

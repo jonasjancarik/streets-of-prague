@@ -160,7 +160,7 @@ export const CS: Record<string, string> = {
   'Thank you. Your message is on its way.': 'Děkujeme. Zpráva je na cestě.',
   'Write a few words first.': 'Nejdřív něco napiš.',
   'Sending didn\'t work this time. Please try again later.': 'Odeslání se teď nepovedlo. Zkus to prosím později.',
-  'The game\'s version, your browser and where you are in the game are sent along, to help find the problem.': 'Spolu se zprávou se odešle verze hry, tvůj prohlížeč a místo, kde ve hře právě jsi, aby šla chyba snáz najít.',
+  'A picture of the game, its version, your browser and where you are in the game are sent along, to help find the problem.': 'Spolu se zprávou se odešle snímek hry, její verze, tvůj prohlížeč a místo, kde ve hře právě jsi, aby šla chyba snáz najít.',
   'Your email address is confirmed. You\'ll hear when there is something new in the game.': 'E-mail je potvrzený. Ozveme se, až ve hře přibude něco nového.',
   'Version': 'Verze',
   'Anonymous statistics': 'Anonymní statistiky',
