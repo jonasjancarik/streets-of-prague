@@ -570,7 +570,11 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   button hasn't been looked at on a phone.
 - **A tile-load error at start, seen twice** (`TileWorld.loadNow` → `fetchTile`, under
   heavy load, not reproduced). Startup now retries a failing tile and carries on
-  without it; the cause of the failed download itself wasn't found.
+  without it; the cause of the failed download itself wasn't found. A separate
+  deterministic defect is fixed: HTTP failures for required terrain, bridge or IPR
+  binaries now fail the tile fetch instead of caching absent geometry. CPU checks
+  cover recovery, abort, truncated gzip and obsolete requests
+  (`scripts/check-tile-fetch.mjs`); this does not establish the original heavy-load cause.
 - **Raised buildings from IPR.** Passages and walkways over a street are left out of
   the collision only when OSM has `min_height` (3 m or more); raised parts only in
   IPR's 3D buildings still block.

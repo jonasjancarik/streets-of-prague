@@ -621,6 +621,7 @@ export class TileWorld {
   fetchJSON(k: string): Promise<TileJSON> {
     if (!this.jsons.has(k)) {
       const base = dataUrl(this.area, `tiles/${k}`);
+
       const json: Promise<TileJSON> = fetch(`${base}.json`).then(async (r) => {
         if (!r.ok) throw new Error(`Tile ${k} could not be loaded (${r.status})`);
         const value: unknown = await r.json();
@@ -667,7 +668,14 @@ export class TileWorld {
   fetchTile(k: string): Promise<TileFiles> {
     if (!this.pending.has(k)) {
       const base = dataUrl(this.area, `tiles/${k}`), gz = !!this.index.gzip;
-      const bin = (name: string) => fetchBinary(`${base}.${name}.bin${gz ? '.gz' : ''}`, gz);
+      const bin = async (name: string) => {
+        const url = `${base}.${name}.bin${gz ? '.gz' : ''}`;
+        const buffer = await fetchBinary(url, gz);
+        // Requested files are required by the tile metadata; failure must retry
+        // rather than publish flat terrain or absent bridge/building geometry.
+        if (!buffer) throw new Error(`Tile ${k}: required ${name} data could not be loaded (${url})`);
+        return buffer;
+      };
       const json = this.fetchJSON(k);
       if (this.ortho && !this.photos.has(k)) {
         this.photos.set(k, new THREE.TextureLoader().loadAsync(dataUrl(this.area, `cover/ortho/${k}.jpg`)).then((tex) => {
