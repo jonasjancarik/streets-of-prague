@@ -119,3 +119,9 @@ Accept ambulance fix `9b56630` with native replay evidence `048f942`: independen
 Combined checkpoint `74a9c9e` passes build, relevant JavaScript checks and100 Python tests. No map rebuild was performed; the current map remains blocked by Mrázovka until tunnel-domain correction.
 
 Accept scenario isolation `7488703` with docs correction `7a4397f`: independent CPU review found no implementation blocker, and documentation now correctly states preparation's clock/actor side effects. Author's ordered/standalone runtime checks pass without weakened assertions. Whole-suite results must be rerun before any all-green claim.
+
+## Tunnel correction accepted at 05:30 UTC
+
+Accept `9d84cbdd16f751de8aa142b78695d95ae64fcd5a` after independent source/export review:32 tests and runtime decoder fixture pass on integration dependencies without the withheld pilot. Mixed/tunnel/nonfinite-anchor components preserve legacy propagation; complete finite bridge components retain harmonic gains. Radotín controls remain bit-identical.
+
+User explicitly reaffirmed intentional near-surface tunnel removal. `drop_shallow` and cover policy are unchanged; independent shallow fixture remains dropped below the existing2.5m threshold. Deep Mrázovka fixture restores199.4m at80% and adjoining bridge204.060585m at95%; old60% unknown remains. Map blocker is not closed until strict regeneration and native replay confirm this on final integration.
