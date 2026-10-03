@@ -624,7 +624,7 @@ export class TileWorld {
       const json: Promise<TileJSON> = fetch(`${base}.json`).then(async (r) => {
         if (!r.ok) throw new Error(`Tile ${k} could not be loaded (${r.status})`);
         const value: unknown = await r.json();
-        if (!isTileJSON(value)) throw new Error(`Tile ${k} has invalid map data`);
+        if (!isTileJSON(value, !!this.index.graphs)) throw new Error(`Tile ${k} has invalid map data`);
         if (this.cover) {
           const c = await fetch(dataUrl(this.area, `cover/${this.cover}/${k}.json`)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
           if (c) {

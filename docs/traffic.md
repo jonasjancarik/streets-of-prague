@@ -50,7 +50,10 @@ fetches the JSON for its eight neighbours and builds a separate, deduplicated st
 graph for clearance. It does not fetch their height grids or IPR meshes just for
 parking, add their roads to live traffic early, or replace cars when they arrive.
 Failed neighbour JSON blocks that parking pass and is retried; it never counts as
-an empty road. The JSON cache is pruned when the camera changes tile or view range.
+an empty road. When the index announces tile graphs, both `drive` and `walk` arrays
+must be present; explicit empty arrays are valid. Older maps with a separately
+loaded graph may omit those fields. The JSON cache is pruned when the camera changes
+tile or view range.
 
 `parkingClearance` indexes the ground-level lanes and the junction curves shared
 with `Route`. Ordinary curves reserve a pickup's collision circles, while the wider

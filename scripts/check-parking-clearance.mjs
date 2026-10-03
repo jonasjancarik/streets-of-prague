@@ -180,7 +180,7 @@ reports.push('two-tile invocation/completion order and repeated deterministic pl
 // JSON failure retries instead of poisoning the halo cache; simultaneous users
 // share one fetch, so no extra height/IPR transfer is required by parking.
 const world=Object.create(TileWorld.prototype);
-world.jsons=new Map();world.area='fixture';world.cover=null;
+world.jsons=new Map();world.area='fixture';world.cover=null;world.index={graphs:false};
 const oldFetch=globalThis.fetch;let requests=0;
 const fixture={i:0,j:0,box:[0,0,50,50],areas:{},roads:{},buildings:[],walls:[],trees:[],rails:[],drive:[],walk:[]};
 try {
@@ -189,6 +189,29 @@ try {
  const a=world.fetchJSON('0_0'),b=world.fetchJSON('0_0');assert.equal(a,b);assert.equal(await a,fixture);assert.equal(requests,2);
 } finally {globalThis.fetch=oldFetch;}
 reports.push('failed JSON retry and concurrent fetch deduplication');
+// Graph-enabled JSON cannot silently turn a missing neighbour graph into empty
+// road evidence. Explicit empty arrays are valid; old maps may omit both fields.
+try {
+ const graphWorld=Object.create(TileWorld.prototype);
+ Object.assign(graphWorld,{jsons:new Map(),area:'fixture',cover:null,index:{graphs:true},available:new Set(['0_0','1_0'])});
+ const ownTile={...fixture,drive:own,walk:[]},neighbour={...fixture,i:1,drive:[foreign],walk:[]};
+ for(const missing of [['drive'],['walk'],['drive','walk']]) {
+  const bad={...neighbour};for(const name of missing)delete bad[name];
+  globalThis.fetch=async url=>Response.json(String(url).includes('1_0')?bad:ownTile);
+  await assert.rejects(graphWorld.parkingEdges(ownTile),/Tile 1_0 has invalid map data/);
+  assert.equal(graphWorld.jsons.has('1_0'),false,'invalid neighbour JSON is evicted');
+ }
+ globalThis.fetch=async url=>Response.json(String(url).includes('1_0')?neighbour:ownTile);
+ const recovered=await graphWorld.parkingEdges(ownTile);
+ assert.equal(parkingClearance(recovered)(-.5,0,.9),false,'retry recovers the neighbouring lane');
+ graphWorld.jsons.clear();globalThis.fetch=async()=>Response.json(fixture);
+ assert.deepEqual((await graphWorld.fetchJSON('0_0')).drive,[],'explicit empty graphs are valid');
+ graphWorld.index.graphs=false;graphWorld.jsons.clear();
+ const legacy={...fixture};delete legacy.drive;delete legacy.walk;
+ globalThis.fetch=async()=>Response.json(legacy);
+ assert.equal((await graphWorld.fetchJSON('0_0')).drive,undefined,'legacy graph omissions remain valid');
+} finally {globalThis.fetch=oldFetch;}
+reports.push('required neighbour graph fields, empty arrays, legacy omissions and retry');
 const pruned=Object.create(TileWorld.prototype);
 Object.assign(pruned,{T:50,ox:0,oy:0,jsonRange:null,jsons:new Map([['0_0',Promise.resolve(fixture)],['99_99',Promise.resolve(fixture)]]),
  retry:new Map(),pending:new Map(),loaded:new Map(),inFlight:new Set(),workers:{size:0},building:0,around:()=>[]});

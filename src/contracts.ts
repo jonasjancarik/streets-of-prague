@@ -137,12 +137,13 @@ const numericTuple = (value: unknown, length: number): value is number[] =>
 
 // Check the fields used to construct a tile. Individual OSM features stay owned by
 // the map writer; this migration does not validate every nested geometry.
-export function isTileJSON(value: unknown): value is TileJSON {
+export function isTileJSON(value: unknown, requireGraphs = false): value is TileJSON {
   if (!record(value)) return false;
   return typeof value.i === 'number' && typeof value.j === 'number' && numericTuple(value.box, 4)
     && record(value.areas) && record(value.roads)
     && Array.isArray(value.buildings) && Array.isArray(value.walls) && Array.isArray(value.trees)
     && Array.isArray(value.rails)
+    && (!requireGraphs || (Array.isArray(value.drive) && Array.isArray(value.walk)))
     && (value.drive === undefined || (Array.isArray(value.drive) && Array.isArray(value.walk)))
     && (value.sections === undefined || Array.isArray(value.sections));
 }
