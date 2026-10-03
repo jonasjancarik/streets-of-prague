@@ -1,0 +1,20 @@
+integrated shoreline seam: {"positions":[0,2,3.0999999046325684,4,6,8],"gapAt5":0}
+✔ groundLayers keeps independently clipped shoreline meshes joined over curved terrain (5.864167ms)
+✔ groundLayers edge refinement agrees with reversed rings and different local terrace labels (1.158834ms)
+✔ a one-sided outline touching the edge does not create a curved-terrain gap (0.777458ms)
+✔ world-aligned perimeter stations join meshes with shifted tile endpoints (1.282166ms)
+✔ Float32 uploads at large map coordinates retain a shared edge profile (0.719458ms)
+✔ perimeter refinement preserves winding, sides, alpha, and interior density (0.151375ms)
+✔ edge height profile preserves flat steps and raw interior samples (0.060625ms)
+✔ Float32 rounding near fractional tile ends never samples beyond the tile (0.048917ms)
+✔ horizontal neighbouring tiles use the same curved edge profile (1.246958ms)
+✔ fractional large normal coordinates share stations when their uploads coincide (0.52525ms)
+✔ uploaded-normal classification preserves side and alpha and leaves other buckets alone (0.142041ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15.015375

@@ -1,0 +1,5 @@
+(node:86972) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Bus CPU checks passed: bus/minibus, trimmed ref, actual destination, empty/missing/burnt/non-bus states, direction changes, 400 stable renders and hide/reuse.
+Police CPU checks passed: theft once, stopped/forward/reverse, animated instance colors, exit/re-entry, duplicate guard, burnout, chase separation and despawn cleanup.
+Testkit CPU checks passed: normal enter/re-entry/exit calls, already-entered guard, loaded route metadata, rejected invented/non-bus routes, detached line snapshots.
