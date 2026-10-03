@@ -71,7 +71,7 @@ const ACCEL = 1.1, BRAKE = 1.2, HARD = 4.5; // m/s²: pulling away, braking, sto
 // late and it hits you. Everyone else it sees coming, and stops for in time.
 const REACT = 0.8, EMERGENCY = 2.8; // s, m/s²
 const DWELL = 18, TURN = 40; // seconds at a stop, and at a terminus where the tram reverses
-const PUSH = 60, CREEP = 1.5; // s a car can hold a tram up before the tram pushes it off the track, at this many m/s
+const PUSH = 15, CREEP = 1.5; // s a parked car can hold a tram up before the tram pushes it off the track, at this many m/s
 // Without timetables: trips per hour, day lines from 5 in the morning to midnight,
 // night lines (91-99) through the night.
 const FALLBACK = { day: 7.5, night: 3 };
@@ -495,13 +495,13 @@ export class Trams {
     target = Math.min(target, toHalt < 0.6 ? 0 : Math.max(0.8, Math.sqrt(2 * BRAKE * (toHalt - 0.5))));
 
     // Anything on the track ahead: another tram, a car, a person. A car left on the
-    // track that has held the tram up for a minute gets slowly pushed off it (not one
-    // waiting in traffic).
+    // track gets slowly pushed off it. Traffic gets more time to clear a visible queue.
     const was = v.blocker;
     const gap = this.clearAhead(v, dt, front, look, near, seen);
     if (gap < Infinity) target = Math.min(target, Math.sqrt(2 * BRAKE * Math.max(0, gap - 4)));
     v.held = v.blocker && v.blocker === was && v.speed < 0.1 ? v.held + dt : 0;
-    if (v.held > PUSH && v.blocker && v.blocker.mode !== 'traffic') { v.shove = v.blocker; v.held = 0; }
+    const patience = v.blocker?.mode === 'traffic' ? (seen(v.blocker.x, v.blocker.y) ? 30 : 12) : PUSH;
+    if (v.held > patience && v.blocker && v.blocker.mode !== 'player') { v.shove = v.blocker; v.held = 0; }
     if (v.shove) target = Math.min(target, CREEP);
 
     v.speed = v.speed < target ? Math.min(target, v.speed + ACCEL * dt) : Math.max(target, v.speed - (v.forPlayer ? EMERGENCY : HARD) * dt);

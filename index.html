@@ -55,6 +55,7 @@
       /* At a tram stop: the next trams due, counting down. */
       #board { margin-top: 8px; max-width: 260px; }
       #board[hidden] { display: none; }
+      .board-toggle { display: none; }
       .board-title { font-weight: 600; }
       .board-rows { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
       .board-rows li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
@@ -480,6 +481,18 @@
       body.touch #touch { display: block; }
       body.touch #help { display: none; }
       body.touch #hud { top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); min-width: 0; padding: 8px 12px; }
+      body.touch #hud { max-height: 42dvh; overflow: auto; box-sizing: border-box; }
+      body.touch #tally, body.touch #hint:empty { display: none; }
+      body.touch:has(#touch[data-mode='foot']) #speedo, body.touch:has(#touch[data-mode='stop']) #speedo { display: none; }
+      body.touch #board .board-title { display: none; }
+      body.touch .board-toggle { display: flex; flex-direction: column; gap: 4px; width: 100%; min-height: 44px; padding: 4px 0; font: inherit; text-align: left; color: var(--ink); background: none; border: 0; cursor: pointer; }
+      body.touch .board-toggle span { font-size: 12px; }
+      body.touch .board-toggle small { color: var(--accent); }
+      body.touch #board:not(.expanded) #board-list { display: none; }
+      body.touch #board.expanded #board-list { max-height: 18dvh; overflow: auto; }
+      body.touch .ride-stops { max-height: 18dvh; overflow: auto; }
+      body.touch #metro.riding { top: max(64px, env(safe-area-inset-top)); max-height: 30dvh; }
+      body.touch #metro.riding .metro-ride { display: none; }
       body.touch #speed { font-size: 36px; }
       #touch button, .t-pedal { font: 600 14px/1 Inter, system-ui, sans-serif; color: var(--ink); background: var(--paper); border: 1px solid rgba(236, 228, 214, 0.3); border-radius: 0; backdrop-filter: blur(6px); -webkit-tap-highlight-color: transparent; touch-action: none; }
       #t-steer { position: fixed; left: 0; bottom: 0; width: 50vw; height: 55vh; touch-action: none; }
@@ -493,7 +506,7 @@
       #t-toggle { position: fixed; left: calc(max(16px, env(safe-area-inset-left)) + 12px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 160px); width: 136px; height: 44px; padding: 0 10px; white-space: nowrap; }
       #touch button.down, .t-pedal.down { background: rgba(236, 228, 214, 0.3); }
       #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
-      #t-fast, #t-steal, #t-doors, #t-taxi, #t-ticket, #t-cannon { height: 52px; padding: 0 18px; }
+      #t-fast, #t-steal, #t-doors, #t-taxi, #t-jump, #t-ticket, #t-cannon { height: 52px; padding: 0 18px; }
       #touch #t-cannon[hidden] { display: none; }
       #touch #t-ticket[hidden] { display: none; }
       #t-action.off { visibility: hidden; }
@@ -518,7 +531,7 @@
         body.touch #hud:has(#taxi:not([hidden])) #tally { display: none; }
       }
       @media (max-width: 480px) {
-        body.touch #hud { max-width: calc(100vw - 225px); }
+        body.touch #hud { max-width: calc(100vw - 160px); }
         #t-stick { width: 124px; height: 124px; }
         #t-toggle { width: 124px; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 148px); }
         #t-brake { width: 72px; }
@@ -628,6 +641,7 @@
         <button id="t-fast" class="tram-only">Hold to speed up</button>
         <button id="t-ticket" data-t hidden>Buy a ticket</button>
         <button id="t-taxi" class="foot-only" data-t>Taxi</button>
+        <button id="t-jump" class="foot-only" data-t>Jump</button>
         <button id="t-action" class="off">Get in</button>
         <button id="t-cannon" class="car-only" data-t hidden>Water cannon</button>
         <div class="t-row car-only"><button id="t-horn" data-t>Horn</button><button id="t-hand" data-t>Handbrake</button></div>

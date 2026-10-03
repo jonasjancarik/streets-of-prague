@@ -298,6 +298,8 @@ async function main() {
     standAt: (x, y) => nearestWalkable(grid, x, y, 30),
     onArrive: async (x, y, name) => {
       await teleportTo(x, y);
+      police.forgive();
+      police.seen = false;
       telemetry.did('travelled by metro');
       walker.mesh.visible = true;
       showBanner(name);
@@ -1072,7 +1074,9 @@ async function main() {
     else zoomBy(f);
   }, { passive: true });
   $('t-ticket').addEventListener('click', pressB);
-  const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, doors: () => ride.doors(), force: params.has('touch') });
+  const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, doors: () => ride.doors(), jump: () => {
+    if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !taxi.riding) { input.jump = true; telemetry.did('jumped'); }
+  }, force: params.has('touch') });
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -1424,7 +1428,7 @@ async function main() {
           const d = Math.hypot(a.x - t.x, a.y - t.y) || 1;
           const closing = ((t.vx - a.vx) * (a.x - t.x) + (t.vy - a.vy) * (a.y - t.y)) / d;
           const ag = traffic.agents.find((x) => x.car === a);
-          if (closing < 1 || !ag) continue; // only just touching: the car is braking for the tram
+          if ((closing < 1 && t.v.shove !== a) || !ag) continue; // only just touching: the car is braking for the tram
           traffic.release(ag);
           a.mode = 'loose';
           loose.push(a);
@@ -1729,9 +1733,9 @@ async function main() {
     // At a tram stop, hold Space to wait: the same speed-up, until a tram is close.
     board.update(dt, walker.x, walker.y, !ride.on && !inCar && !inHeli);
     // (The same waiting for a taxi on its way.)
-    const waiting = (!!board.shown && board.next > 40 || taxi.state === 'coming') && (input.brake || touch.fast);
-    waitScale += ((waiting ? FAST : 1) - waitScale) * Math.min(1, dt * (waiting ? 1.5 : 4));
-    if (Math.abs(waitScale - (waiting ? FAST : 1)) < 0.02) waitScale = waiting ? FAST : 1;
+    const waiting = (!!board.shown && board.next > 8 || taxi.state === 'coming') && (input.brake || touch.fast);
+    waitScale += ((waiting ? FAST * 2 : 1) - waitScale) * Math.min(1, dt * (waiting ? 1.5 : 4));
+    if (Math.abs(waitScale - (waiting ? FAST * 2 : 1)) < 0.02) waitScale = waiting ? FAST * 2 : 1;
     taxi.update(dt);
     const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : funicular.me ? funicular.speedUp(dt, ctl.run || touch.fast) : taxi.riding ? taxi.speedUp(dt, ctl.run || touch.fast) : waitScale;
     // (The developer panel can pause the world or slow it down.)

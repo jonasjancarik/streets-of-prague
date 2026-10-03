@@ -26,9 +26,9 @@ const DEAD = 0.12;
 const capture = (el: HTMLElement, e: PointerEvent) => { try { el.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } };
 const dead = (v: number) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD));
 
-export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, doors, force }: {
+export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, doors, jump, force }: {
   action: () => void; backOnRoad: () => void; zoomBy: (factor: number) => void;
-  horn: (on: boolean) => void; steal: () => void; cannon: (on: boolean) => void; doors: () => void; force: boolean;
+  horn: (on: boolean) => void; steal: () => void; cannon: (on: boolean) => void; doors: () => void; jump: () => void; force: boolean;
 }): TouchState {
   const $ = (id: string): HTMLElement => {
     const el = document.getElementById(id);
@@ -147,6 +147,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
   const toggle = $('t-toggle');
   tap(toggle, () => { assistOn = !assistOn; });
   tap($('t-action'), action);
+  tap($('t-jump'), jump);
   tap($('t-road'), backOnRoad);
   tap($('t-steal'), steal);
   tap($('t-doors'), doors);

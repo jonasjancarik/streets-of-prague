@@ -112,7 +112,7 @@ that without a new renderer.
   the line's two tunnels, a platform at each station with the line's colour on its
   walls, the train pulling in and stopping, the station's name as it stands there.
   It slows down while the map ahead loads; E skips to the end. You come up at an entrance of that station, and the police have
-  lost you. After midnight the metro is shut until about five.
+  lost you: completing the ride clears all wanted stars, including when skipped. After midnight the metro is shut until about five.
 - **Funiculars**: the Petřín funicular's two cars run on one cable from Újezd up to
   Petřín, one going up as the other comes down, and pass each other at Nebozízek,
   where both stop; from 7:00 to 22:00 a car leaves each end every four minutes or so.
@@ -129,7 +129,8 @@ that without a new renderer.
   along the boundary doesn't keep showing titles.
 - **Tram stops**: stand at one and the HUD lists the next trams due, counting down
   (`src/board.ts`). Hold Space (on touch, "Hold to wait") to fast-forward until one is
-  about to arrive. Stops have blue-and-white plates with a black tram in side view
+  within about eight game seconds of arrival, at up to 12× speed. On touch screens
+  the board shows the nearest departure; tap “Timetable” to expand the full list. Stops have blue-and-white plates with a black tram in side view
   and the stop name on the pole.
 - **Trams**: press E next to a tram waiting at a stop to get on (`src/ride.ts`). The
   panel lists the stops ahead. Pick one with W/S (or tap it) and the ride runs at 6×,
@@ -179,7 +180,8 @@ that without a new renderer.
   assist is a toggle above the stick, showing the speed limit it keeps to while it's
   on; the right thumb has the gas and brake (roll from one to the other without
   lifting), the handbrake and "Get out"; "Back on road" is top right, under the
-  sound and settings buttons. Pinch the map to zoom (`src/touch.ts`).
+  sound and settings buttons. On foot, “Jump” works even at a tram stop; waiting
+  has its own button. Long HUD lists scroll within a compact panel. Pinch the map to zoom (`src/touch.ts`).
 - **Sound and settings.** Two buttons in the top right corner: sound on or off (also
   M), and the settings, with the start screen's choices during play: language, sound,
   graphics (also G) and weather (also P). On a phone the credits are in there too
@@ -585,7 +587,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   tram held up in traffic shows up late there too. They stop at
   every stop, keep to the track's speed limit, slow down for curves and brake for the
   tram in front and for anything on the track. A car left on the track that holds a
-  tram up for a minute gets pushed aside, slowly. They're the types Prague runs, about
+  tram up for 15 seconds gets pushed aside, slowly. A blocked traffic car gets 30
+  seconds to clear the track, or 12 seconds outside the view, before the same recovery.
+  A player-controlled car is never selected for this recovery. They're the types Prague runs, about
   as often as in its fleet: the Škoda 15T, Tatra T3R.P in coupled pairs, the Škoda 14T,
   the Tatra KT8D5R.N2P and the new Škoda 52T, with the line number on the roof in the
   line's colour. Each section of a tram lies along the track on its own, so it bends

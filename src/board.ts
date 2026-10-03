@@ -24,6 +24,7 @@ export class StopBoard {
   next: number;
   t: number;
   key: string;
+  expanded = false;
 
   constructor(trams: Trams, el: HTMLElement) {
     this.trams = trams;
@@ -33,6 +34,12 @@ export class StopBoard {
     this.next = Infinity; // seconds until the first tram
     this.t = 0;
     this.key = '';
+    el.addEventListener('click', (e) => {
+      if (!(e.target instanceof Element) || !e.target.closest('.board-toggle')) return;
+      this.expanded = !this.expanded;
+      el.classList.toggle('expanded', this.expanded);
+      el.querySelector('.board-toggle')?.setAttribute('aria-expanded', String(this.expanded));
+    });
     // Every stop of every line, by where it is.
     for (const line of trams.lines) {
       line.halts.forEach((h, i) => {
@@ -83,6 +90,7 @@ export class StopBoard {
     // One row per tram (a tram due at both platforms shows for the sooner one).
     due.sort((a, b) => a.eta - b.eta);
     const rows = due.filter((d, i) => due.findIndex((e) => e.v === d.v) === i).slice(0, SHOWN);
+    if (this.shown !== at.name) { this.expanded = false; this.el.classList.remove('expanded'); }
     this.shown = at.name;
     this.next = rows.length ? rows[0].eta : Infinity;
     this.render(at.name, rows);
@@ -96,7 +104,10 @@ export class StopBoard {
       ? `<ol class="board-rows">${rows.map((r) => `<li><span class="ride-ref" style="background:${esc(r.line.colour || '#c4161c')}">${esc(r.line.ref)}</span>`
         + `<span class="board-to">${esc(r.headsign)}</span><span class="board-eta">${when(r)}</span></li>`).join('')}</ol>`
       : `<div class="board-none">${t('No trams due in the next half hour')}</div>`;
-    const html = `<div class="board-title">${esc(t('Trams from {name}', { name }))}</div>${list}`;
+    const title = esc(t('Trams from {name}', { name }));
+    const first = rows[0];
+    const summary = first ? `${esc(first.line.ref)} · ${esc(first.headsign)} · ${when(first)}` : t('No trams due in the next half hour');
+    const html = `<div class="board-title">${title}</div><button class="board-toggle" aria-expanded="${this.expanded}" aria-controls="board-list">${title}<span>${summary}</span><small>${t('Timetable')} ▾</small></button><div id="board-list">${list}</div>`;
     if (html === this.key) return;
     this.key = html;
     this.el.innerHTML = html;

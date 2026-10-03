@@ -321,6 +321,7 @@ export const CS: Record<string, string> = {
   Turn: 'Zatáčení',
   Run: 'Běh',
   Jump: 'Skok',
+  Timetable: 'Jízdní řád',
   'Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop': 'Nastoupit do nejbližšího auta, na kolo nebo motorku, nebo na zastávce do tramvaje',
   'Get a taxi: wave one down or order one through an app': 'Taxi: zastavit na ulici nebo objednat přes aplikaci',
   'Gas and brake, hold S to reverse': 'Plyn a brzda, podržením S couvneš',
