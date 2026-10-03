@@ -125,3 +125,10 @@ Accept scenario isolation `7488703` with docs correction `7a4397f`: independent 
 Accept `9d84cbdd16f751de8aa142b78695d95ae64fcd5a` after independent source/export review:32 tests and runtime decoder fixture pass on integration dependencies without the withheld pilot. Mixed/tunnel/nonfinite-anchor components preserve legacy propagation; complete finite bridge components retain harmonic gains. Radotín controls remain bit-identical.
 
 User explicitly reaffirmed intentional near-surface tunnel removal. `drop_shallow` and cover policy are unchanged; independent shallow fixture remains dropped below the existing2.5m threshold. Deep Mrázovka fixture restores199.4m at80% and adjoining bridge204.060585m at95%; old60% unknown remains. Map blocker is not closed until strict regeneration and native replay confirm this on final integration.
+
+
+## Final handoff at 06:50 UTC
+
+Final corrective validation is recorded in a141097. The independently reviewed tunnel correction passed strict234-tile generation and native source-identified gates; shallow removal remains2.5m. Build,107Python tests and focused checks pass. One final broad scene run on unchanged source/map passed13/15; lamp-impact uncertainty and the tow fixture distance premise are documented without suppressing failures. Consolidated results are in docs/overnight-results-2026-10-03.md.
+
+All seven worker threads are idle with completed turns. No GPU/heavy lock remains; only integration5204 remains listening among the overnight dev/scene ports. Main remains atb3c22d5; unrelated10-line todo.md changes in main were observed and left untouched. No push, merge to main or deployment occurred. The optional plain-support pilot remains unintegrated. Latest weekly quota:82% remaining. No new implementation work will start before the scheduled cutoff; final scheduled closeout will pause this heartbeat.
