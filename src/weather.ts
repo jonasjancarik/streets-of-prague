@@ -406,7 +406,8 @@ export class WeatherFx {
 
   // `x, y`: where the camera looks; `ground` the ground's height there; `height` the
   // camera's above it; `r` how far the view reaches.
-  update(w: Conditions, t: number, x: number, y: number, ground: number, height: number, r: number, dpr: number, mistGround: (x: number, z: number) => number) {
+  update(w: Conditions, t: number, x: number, y: number, ground: number, height: number, r: number, dpr: number,
+    mistGround: (x: number, z: number) => number, mistWater: (x: number, z: number) => number | null) {
     const s = this.shared;
     s.uTime.value = t;
     s.uCentre.value.set(x, ground - 2, -y);
@@ -419,7 +420,7 @@ export class WeatherFx {
     this.rain.visible = w.rain > 0.01;
     this.snow.visible = w.snow > 0.01;
     this.mist.visible = w.mist > 0.01 && (MIST_MODE.value === 'sheets' || !this.localMist.mesh);
-    this.localMist.update(w.mist, t, x, -y, r, mistGround);
+    this.localMist.update(w.mist, t, x, -y, r, mistGround, mistWater);
     this.snowScale.value = innerHeight * dpr * 1.4;
     const m = MIST, sheets = Math.max(2, Math.min(MOST_SHEETS, Math.round(m.sheets)));
     this.mistA.value.set(1 / m.bankSize, 1 / m.wispSize, 1 / m.fineSize, m.thin);

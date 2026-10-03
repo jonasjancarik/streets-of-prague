@@ -59,6 +59,7 @@ export function localMistMaterial(f: LocalMistParts, linear: (colour: N) => N) {
     const centre: N = attribute('mistCentre', 'vec3');
     const half: N = attribute('mistHalfSize', 'vec3');
     const slope: N = attribute('mistSlope', 'vec3');
+    const river: N = attribute('mistWater', 'float');
     const origin = cameraPosition.sub(centre).toVar();
     const ray: N = normalize(positionWorld.sub(cameraPosition)).toVar();
     const viewRay: N = cameraViewMatrix.mul(vec4(ray, 0)).z.negate().toVar();
@@ -90,7 +91,7 @@ export function localMistMaterial(f: LocalMistParts, linear: (colour: N) => N) {
           .mul(smoothstep(-1, -0.7, h)).mul(float(1).sub(smoothstep(-0.2, 1, h)));
         optical.addAssign(smoothstep(0.3, 0.7, n).mul(edge).mul(stride));
       });
-      opacity.assign(exp(optical.mul(shape.x).mul(amount).negate()).oneMinus());
+      opacity.assign(exp(optical.mul(shape.x).mul(amount).mul(river.mul(2).add(1)).negate()).oneMinus());
     });
     return vec4(colour, opacity);
   })();

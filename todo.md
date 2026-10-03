@@ -37,6 +37,13 @@ was substantial, so these are preliminary costs, not a resolved performance
 comparison. The targeted depth/stencil, inside-volume, MSAA and resize checks pass
 (`scripts/check-local-mist.mjs`); phone cost has not been measured.
 
+River mist now follows water polygons, broadens to overlapping banks and uses
+three times the density over the surface, tapering along the shore. The added
+water-surface and shoreline regressions pass. A short 2× High WebGPU A/B near
+Charles Bridge measured 13.3/14.2 ms with river emphasis off/on; this single run
+is an approximate cost check, with phone cost and a clean repeated comparison
+still unmeasured.
+
 Landmark colour warming now has a pipeline conversion and a browser marker check
 (`plans/010-prebake-landmark-colours.md`). The original GLBs remain the live assets;
 the staged `.warm-v1.glb` files passed local visual and cold-load checks. Activate

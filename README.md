@@ -336,12 +336,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   or `?mist=sheets` to force the original mode). These are separate terrain-following
   banks, about 40 × 28 m and 0.15–2.2 m above ground, with drifting 3D noise and soft
   edges (`src/localmist.ts`, `src/webgpu/localmist.ts`). Each ray uses 8–16 samples
-  (12 by default) and stops at opaque scenery using the viewport depth. The boxes
-  share one draw and one depth copy; they render at the game's resolution. Width,
-  spacing, height, density and sampling are adjustable and saved in this browser;
+  (12 by default) and stops at opaque scenery using the viewport depth. All banks
+  share one draw and one depth copy; they render at the game's resolution. Banks
+  over water are wider and three times denser, with a gentler increase along the
+  banks. Their placement follows the loaded water polygons and the water surface,
+  rather than bridge or quay height. **More mist over water** adjusts this effect;
+  zero restores the same scattered banks as on dry streets.
+  Width, spacing, height, density and sampling are adjustable and saved in this browser;
   Reset restores both modes' defaults. The legacy WebGL renderer retains the layered
   banks. `node scripts/check-local-mist.mjs` checks wall occlusion, viewing a bank
-  from inside, MSAA changes, resizing and stable placement in the real WebGPU renderer.
+  from inside, MSAA changes, resizing, stable placement and denser river mist at
+  water-surface height in the real WebGPU renderer.
   The fog of
   rain and snow is measured from the camera so the ground is hazier than the roofs. The
   ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,

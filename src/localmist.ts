@@ -5,6 +5,7 @@ export const MIST_MODE = { value: 'sheets' as MistMode };
 export const LOCAL_MIST = {
   density: 0.28, width: 40, length: 28, spacing: 64,
   low: 0.15, high: 2.2, edge: 0.25, noiseSize: 8, speed: 0.35, steps: 12,
+  river: 1,
 };
 export const LOCAL_MIST_DEFAULT = { ...LOCAL_MIST };
 export type LocalMistSettings = typeof LOCAL_MIST;
@@ -21,6 +22,7 @@ export const supportsLocalMist = () => materialBy !== null;
 // Separate, world-anchored banks, batched into one draw. Reuse all buffers when the
 // view moves; only their placement is refreshed, never the shader or the mesh.
 const RINGS = 6, CAPACITY = (RINGS * 2 + 1) ** 2;
+const NO_WATER = () => null;
 const seed = (x: number, z: number) => {
   let n = Math.imul(x, 374761393) ^ Math.imul(z, 668265263);
   n = Math.imul(n ^ (n >>> 13), 1274126177);
@@ -34,6 +36,7 @@ export class LocalMistVolume {
   private centres = new THREE.Float32BufferAttribute(new Float32Array(CAPACITY * 24 * 3), 3);
   private sizes = new THREE.Float32BufferAttribute(new Float32Array(CAPACITY * 24 * 3), 3);
   private slopes = new THREE.Float32BufferAttribute(new Float32Array(CAPACITY * 24 * 3), 3);
+  private water = new THREE.Float32BufferAttribute(new Float32Array(CAPACITY * 24), 1);
   private corners: THREE.BufferAttribute;
   private shape = { value: new THREE.Vector4() };
   private steps = { value: 12 };
@@ -42,7 +45,7 @@ export class LocalMistVolume {
   private cellZ = NaN;
   private rings = -1;
   private nextGround = 0;
-  private previous = { width: NaN, length: NaN, spacing: NaN, low: NaN, high: NaN };
+  private previous = { width: NaN, length: NaN, spacing: NaN, low: NaN, high: NaN, river: NaN };
 
   constructor(scene: THREE.Scene, time: { value: number }, fog: { value: THREE.Color }) {
     const box = new THREE.BoxGeometry(2, 2, 2);
@@ -54,6 +57,7 @@ export class LocalMistVolume {
     this.geometry.setAttribute('mistCentre', this.centres);
     this.geometry.setAttribute('mistHalfSize', this.sizes);
     this.geometry.setAttribute('mistSlope', this.slopes);
+    this.geometry.setAttribute('mistWater', this.water);
     this.geometry.setDrawRange(0, 0);
     const material = materialBy?.({ geometry: this.geometry, time, amount: this.amount, fog, shape: this.shape, steps: this.steps });
     this.mesh = material ? new THREE.Mesh(this.geometry, material) : null;
@@ -68,7 +72,9 @@ export class LocalMistVolume {
     box.dispose();
   }
 
-  update(amount: number, time: number, x: number, z: number, radius: number, groundAt: (x: number, z: number) => number) {
+  // `waterAt`: water-surface height, or null on land and outside loaded tiles.
+  update(amount: number, time: number, x: number, z: number, radius: number, groundAt: (x: number, z: number) => number,
+    waterAt: (x: number, z: number) => number | null = NO_WATER) {
     if (!this.mesh) return;
     this.mesh.visible = MIST_MODE.value === 'volume' && amount > 0.01;
     if (!this.mesh.visible) return;
@@ -80,7 +86,7 @@ export class LocalMistVolume {
     const rings = Math.min(RINGS, Math.max(1, Math.ceil(radius / spacing) + 1));
     if (cellX === this.cellX && cellZ === this.cellZ && rings === this.rings && time < this.nextGround
       && this.previous.width === m.width && this.previous.length === m.length && this.previous.spacing === m.spacing
-      && this.previous.low === m.low && this.previous.high === m.high) return;
+      && this.previous.low === m.low && this.previous.high === m.high && this.previous.river === m.river) return;
     this.cellX = cellX; this.cellZ = cellZ; this.rings = rings; this.nextGround = time + 2;
     for (const key of Object.keys(this.previous) as (keyof typeof this.previous)[]) this.previous[key] = m[key];
     let count = 0;
@@ -88,13 +94,26 @@ export class LocalMistVolume {
       const gx = cellX + dx, gz = cellZ + dz, s = seed(gx, gz);
       const cx = gx * spacing + (s - 0.5) * spacing * 0.12;
       const cz = gz * spacing + (seed(gz, gx + 13) - 0.5) * spacing * 0.12;
-      // Keep a gap even at the largest width; neighbouring banks never overlap.
-      const hx = Math.min(spacing * 0.4, Math.max(2, m.width * (0.45 + s * 0.1)));
-      const hz = Math.min(spacing * 0.4, Math.max(2, m.length * (0.55 - s * 0.1)));
+      const river = THREE.MathUtils.clamp(m.river, 0, 1);
+      const level = river > 0 ? waterAt(cx, cz) : null;
+      let wet = level !== null ? river : 0;
+      if (river > 0 && level === null) {
+        // Broader, gentler mist on nearby banks too. Query only when placement
+        // refreshes, using real water polygons rather than a guessed river line.
+        const reach = spacing * 0.4;
+        wet = river * 0.15 * (Number(waterAt(cx - reach, cz) !== null) + Number(waterAt(cx + reach, cz) !== null)
+          + Number(waterAt(cx, cz - reach) !== null) + Number(waterAt(cx, cz + reach) !== null));
+      }
+      // Dry streets retain separate banks. Over water their soft edges overlap,
+      // covering most of the river instead of leaving large checkerboard gaps.
+      const hx = THREE.MathUtils.lerp(Math.min(spacing * 0.4, Math.max(2, m.width * (0.45 + s * 0.1))), spacing * 0.56, wet);
+      const hz = THREE.MathUtils.lerp(Math.min(spacing * 0.4, Math.max(2, m.length * (0.55 - s * 0.1))), spacing * 0.56, wet);
       const hy = Math.max(0.1, m.high - m.low) * 0.5;
-      const g = groundAt(cx, cz);
-      const sx = THREE.MathUtils.clamp((groundAt(cx + hx, cz) - groundAt(cx - hx, cz)) / (2 * hx), -0.5, 0.5);
-      const sz = THREE.MathUtils.clamp((groundAt(cx, cz + hz) - groundAt(cx, cz - hz)) / (2 * hz), -0.5, 0.5);
+      // River mist starts at the water surface, even beside a tall quay. Don't
+      // tilt it up the bank or onto a bridge whose deck is several metres higher.
+      const g = level ?? groundAt(cx, cz);
+      const sx = level !== null ? 0 : THREE.MathUtils.clamp((groundAt(cx + hx, cz) - groundAt(cx - hx, cz)) / (2 * hx), -0.5, 0.5);
+      const sz = level !== null ? 0 : THREE.MathUtils.clamp((groundAt(cx, cz + hz) - groundAt(cx, cz - hz)) / (2 * hz), -0.5, 0.5);
       const cy = g + m.low + hy, boxHeight = hy + Math.abs(sx) * hx + Math.abs(sz) * hz;
       for (let v = 0; v < 24; v++) {
         const i = count * 24 + v;
@@ -102,12 +121,13 @@ export class LocalMistVolume {
         this.centres.setXYZ(i, cx, cy, cz);
         this.sizes.setXYZ(i, hx, boxHeight, hz);
         this.slopes.setXYZ(i, sx, sz, hy);
+        this.water.setX(i, wet);
       }
       count++;
     }
-    for (const attribute of [this.positions, this.centres, this.sizes, this.slopes]) {
+    for (const attribute of [this.positions, this.centres, this.sizes, this.slopes, this.water]) {
       attribute.clearUpdateRanges();
-      attribute.addUpdateRange(0, count * 24 * 3);
+      attribute.addUpdateRange(0, count * 24 * attribute.itemSize);
       attribute.needsUpdate = true;
     }
     this.geometry.setDrawRange(0, count * 36);

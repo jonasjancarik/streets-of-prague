@@ -31,9 +31,10 @@ const check = `(async () => {
   wall.position.y = 1;
   scene.add(wall);
   const target = new RenderTarget(64, 64, { depthBuffer: true, stencilBuffer: true, samples: 4 });
+  let groundAt = () => 0, waterAt = () => null, placementTime = 0;
   const pixel = async (z, on = true) => {
     wall.position.z = z;
-    mist.update(on ? 1 : 0, 0, 0, 0, 30, () => 0);
+    mist.update(on ? 1 : 0, placementTime += 2.1, 0, 0, 30, groundAt, waterAt);
     renderer.setRenderTarget(target);
     renderer.render(scene, camera);
     renderer.setRenderTarget(null);
@@ -67,9 +68,30 @@ const check = `(async () => {
     mist.update(1, 0.1, 2, 2, 30, () => 0);
     assert(mist.mesh.geometry === geometry && geometry.attributes.position === positions, 'moving the view replaces mist buffers');
     assert(centres.every((v, i) => v === geometry.attributes.mistCentre.array[i]), 'banks follow the camera instead of staying in the world');
+    Object.assign(LOCAL_MIST, { density: 0.08, width: 20, length: 20, river: 0 });
+    const dry = await pixel(0);
+    const drySize = geometry.attributes.mistHalfSize.getX(0);
+    LOCAL_MIST.river = 1;
+    waterAt = () => 0;
+    const river = await pixel(0);
+    assert(river > dry + 8, 'water mist is not visibly stronger: ' + [dry, river]);
+    assert(geometry.attributes.mistHalfSize.getX(0) > drySize, 'water banks do not cover more space');
+    groundAt = (x, z) => 10 + x * 0.1 + z * 0.1;
+    await pixel(0);
+    const waterCentre = LOCAL_MIST.low + (LOCAL_MIST.high - LOCAL_MIST.low) / 2;
+    assert(Math.abs(geometry.attributes.mistCentre.getY(0) - waterCentre) < 0.001, 'mist follows quay height instead of zero-height water');
+    assert(geometry.attributes.mistSlope.getX(0) === 0 && geometry.attributes.mistSlope.getY(0) === 0, 'water mist tilts up the bank');
+    waterAt = (x) => x < 48 ? 0 : null;
+    await pixel(0);
+    const banks = geometry.drawRange.count / 36;
+    const weights = Array.from({ length: banks }, (_, i) => geometry.attributes.mistWater.getX(i * 24));
+    assert(weights.includes(0) && weights.includes(1) && weights.some(w => w > 0 && w < 1), 'river, shoreline and dry banks are not distinguished');
+    LOCAL_MIST.river = 0;
+    await pixel(0);
+    assert(Array.from({ length: banks }, (_, i) => geometry.attributes.mistWater.getX(i * 24)).every(w => w === 0), 'river control does not restore ordinary mist');
     mist.update(0, 0.2, 2, 2, 30, () => 0);
     assert(!mist.mesh.visible, 'mist remains visible in clear weather');
-    return { message: 'Local mist depth, inside-volume, MSAA, resize and world-placement checks passed', results };
+    return { message: 'Local mist depth, inside-volume, MSAA, resize, world-placement and river checks passed', results, river: { dry, river } };
   } finally {
     renderer.setRenderTarget(null);
     target.dispose(); wall.geometry.dispose(); wall.material.dispose();

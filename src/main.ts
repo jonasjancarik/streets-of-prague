@@ -232,6 +232,7 @@ async function main() {
   // on there: the ground, or a bridge deck (see TileWorld.track).
   const ground = (x: number, y: number, who?: Tracked | null) => (who ? world.groundFor(who, x, y) : world.heightAt(x, y));
   const mistGround = (x: number, z: number) => world.terrainAt(x, -z);
+  const mistWater = (x: number, z: number) => world.waterAt(x, -z) ? world.terrainAt(x, -z, true) : null;
   let crowd: Crowd | null = null;
   // The deck of a bridge at a point, or within a few metres of it (a lamp on the parapet is just off it).
   const deckAt = (x: number, y: number, within: number) => {
@@ -1880,7 +1881,7 @@ async function main() {
     signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
-    weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround);
+    weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround, mistWater);
 
     // ---- HUD -------------------------------------------------------------
     // (On the metro, the street the train is under; on a funicular, its name.)

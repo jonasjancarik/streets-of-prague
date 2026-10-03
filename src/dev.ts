@@ -356,6 +356,7 @@ const MIST_SLIDERS: { key: keyof Mist; label: string; min: number; max: number; 
 const MIST_KEY = 'dev-mist';
 const VOLUME_SLIDERS: { key: keyof LocalMistSettings; label: string; min: number; max: number; step: number; unit?: string; title: string }[] = [
   { key: 'density', label: 'Thickness', min: 0, max: 1.5, step: 0.01, title: 'How strongly the mist hides objects inside a bank' },
+  { key: 'river', label: 'More mist over water', min: 0, max: 1, step: 0.05, title: 'How strongly mist gathers above the river and along its banks' },
   { key: 'width', label: 'Bank width', min: 8, max: 100, step: 1, unit: ' m', title: 'Width of each separate bank, with clear air between banks' },
   { key: 'length', label: 'Bank length', min: 8, max: 100, step: 1, unit: ' m', title: 'Length of each separate bank' },
   { key: 'spacing', label: 'Distance between banks', min: 24, max: 160, step: 1, unit: ' m', title: 'Distance between the centres of neighbouring banks' },
