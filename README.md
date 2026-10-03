@@ -943,7 +943,9 @@ files are hard links to the previous map's, so only what differs is sent and
 stored. `current` and `current-data` on the server name the live commit and map,
 and `releases/<commit>/data-id` the map each release went out with. To put an
 earlier map back, run `DATA_ID=<id> scripts/deploy-mbxp.sh`. Old folders in `data/`
-are not removed automatically.
+are not removed automatically. `scripts/deploy-mbxp.sh --cloudflare-map` sends no map at
+all: the beta then reads the one production serves (`deploy/data-version`, from
+`data.streetsofprague.com`), which allows deploying it from anywhere once a map is uploaded.
 The `urad-ai-poc` tunnel routes the hostname there. `scripts/httpd.conf` gives
 JSON the content type Cloudflare needs for compression.
 

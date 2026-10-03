@@ -21,9 +21,19 @@ cd "$(dirname "$0")/.."
 git diff --quiet HEAD || { echo "Commit your changes first." >&2; exit 1; }
 SHA=$(git rev-parse HEAD)
 
+# --cloudflare-map: the beta reads the map production serves (deploy/data-version, from
+# data.streetsofprague.com) instead of one sent from here: no map goes to mbxp, which is
+# the way to deploy from anywhere after uploading a map. The folder data/<id> on the
+# server then only exists to be mounted, and stays empty.
+CF_MAP=
+[[ ${1:-} == --cloudflare-map ]] && CF_MAP=$(tr -d '\n' < deploy/data-version)
+
 # DATA_ID=<id> deploys with a map already on the server instead of the local one (to go
 # back to an earlier map; each release's id is in releases/<commit>/data-id).
-if [[ -n ${DATA_ID:-} ]]; then
+if [[ -n $CF_MAP ]]; then
+  ID=cloudflare-$CF_MAP
+  node scripts/check-data-format.mjs "https://data.streetsofprague.com/$CF_MAP/"
+elif [[ -n ${DATA_ID:-} ]]; then
   ID=$DATA_ID
   ssh "$HOST" test -d "$DIR/data/$ID" || { echo "There is no map $ID on $HOST." >&2; exit 1; }
 else
@@ -41,9 +51,10 @@ if [[ -n ${BREVO_LIST_ID:-} && -n ${BREVO_DOI_TEMPLATE_ID:-} ]]; then export VIT
 if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=https://streetsofprague.com/api/feedback; fi
 if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY; fi
 # Statistics go to production's Worker too; the domain they carry tells the beta apart.
-VITE_TELEMETRY_URL=https://streetsofprague.com/api/report VITE_DATA_URL=data/$ID/ node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
+if [[ -n $CF_MAP ]]; then export VITE_DATA_URL=https://data.streetsofprague.com/$CF_MAP/ VITE_DATA_VERSION=$CF_MAP; else export VITE_DATA_URL=data/$ID/; fi
+VITE_TELEMETRY_URL=https://streetsofprague.com/api/report node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
 # busybox httpd can't send no-store, so the game asks for it with cache: 'no-store'.
-node scripts/write-version-json.mjs dist "$ID" --fixed
+node scripts/write-version-json.mjs dist "${CF_MAP:-$ID}" --fixed
 
 # site/data/<id> is the mountpoint for the map (it can't be created inside a read-only mount).
 ssh "$HOST" mkdir -p "$DIR/releases/$SHA/site/data/$ID" "$DIR/data"
@@ -55,7 +66,9 @@ rsync -a scripts/httpd.conf "$HOST:$DIR/releases/$SHA/httpd.conf"
 # The map is sent to <id>.partial and renamed once it's whole, so an interrupted sync is
 # never served. Unchanged files are linked from the map in use (or, the first time, from
 # shared/data, where the map used to live).
-if ! ssh "$HOST" test -d "$DIR/data/$ID"; then
+if [[ -n $CF_MAP ]]; then
+  ssh "$HOST" mkdir -p "$DIR/data/$ID"
+elif ! ssh "$HOST" test -d "$DIR/data/$ID"; then
   LINKS=$(ssh "$HOST" "for d in $DIR/data/\$(cat $DIR/current-data 2>/dev/null) $DIR/shared/data; do [ -d \$d/praha_now ] && echo --link-dest=\$d; done; true")
   # shellcheck disable=SC2086
   rsync -a --exclude .DS_Store $LINKS public/data/ "$HOST:$DIR/data/$ID.partial/"
