@@ -41,6 +41,7 @@ import json
 import math
 import os
 import pickle
+import logging
 import time
 from collections import Counter
 from pathlib import Path
@@ -57,6 +58,7 @@ from skimage.feature import peak_local_max
 from skimage.measure import find_contours, regionprops
 from skimage.segmentation import slic
 
+import build_cache
 import layers
 from osm_area import AREAS, OUT
 
@@ -72,6 +74,7 @@ CLASSES = ["grass", "trees", "asphalt", "paving", "concrete", "gravel", "dirt", 
 # How the game draws each (ground.ts, COVER): a colour and one of its patterns.
 # Structures (unmapped roofs, sheds, parked lorries) stay beige.
 
+logging.getLogger("tifffile").setLevel(logging.ERROR)  # (IPR's DSM carries a no-data tag it can't cast)
 S = requests.Session()
 S.headers["User-Agent"] = "streets-of-prague ground_cover prototype"
 
@@ -160,7 +163,7 @@ DSM_SOURCE = os.environ.get("COVER_DSM") or ("ipr" if IPR_DSM.exists() else "cuz
 _dsm = None
 
 
-def ipr_dsm(area, t, res):
+def ipr_dsm(area, t, res, cache=True):
     """IPR Praha's digital surface model (2025, 1 m, CC BY 4.0) on the tile's grid.
     One 35000 x 26000 float GeoTIFF for the whole city (AGO item "Digitální model
     povrchu - 1m", DSM_1m.zip), stored uncompressed in 128 px blocks, so only the
@@ -168,7 +171,7 @@ def ipr_dsm(area, t, res):
     pixel at S-JTSK (-757499.5, -1034000.5)."""
     global _dsm
     out = CACHE / "img" / "dsm_ipr" / f"{t['i']}_{t['j']}.npy"
-    if out.exists():
+    if cache and out.exists():
         return np.load(out)
     import tifffile
     if _dsm is None:
@@ -196,9 +199,11 @@ def ipr_dsm(area, t, res):
     win[~(win > -1000)] = np.nan
     fill = np.nanmedian(win) if np.isfinite(win).any() else 0
     arr = ndimage.map_coordinates(np.nan_to_num(win, nan=fill), [rows - r0, cols - c0], order=1, mode="nearest").reshape(X.shape)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    np.save(out, arr.astype(np.float32))
-    return arr.astype(np.float32)
+    arr = arr.astype(np.float32)
+    if cache:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        np.save(out, arr)
+    return arr
 
 
 def dtmp(area, t):
@@ -266,12 +271,15 @@ def beige_mask(t, res):
 
 # --- Features ------------------------------------------------------------------------------
 
-def features(area, meta, t):
-    """Per-pixel measurements at RES: colour, infrared greenness, texture, height."""
-    rgb = export(RGB, "rgb", area, t, RES, RES)
-    cir = export(CIR, "cir", area, t, RES, RES)
+def features(area, meta, t, rgb=None, cir=None):
+    """Per-pixel measurements at RES: colour, infrared greenness, texture, height.
+    The photographs are given (build) or read from the prototype's cache."""
+    fresh = rgb is not None
+    if not fresh:
+        rgb = export(RGB, "rgb", area, t, RES, RES)
+        cir = export(CIR, "cir", area, t, RES, RES)
     if DSM_SOURCE == "ipr":
-        dsm = ipr_dsm(area, t, RES)
+        dsm = ipr_dsm(area, t, RES, cache=not fresh)
     else:
         dsm = export(DSM, "dsm", area, t, RES, 1.0, fmt="tiff", extra={"pixelType": "F32", "interpolation": "RSP_BilinearInterpolation"})[:, :, 0]
     hm, step = terrain(area, meta, t)
@@ -863,6 +871,180 @@ def score(area, meta, tiles, model, model_nodtmp):
     return rows
 
 
+# --- The whole map (build) -----------------------------------------------------------------
+#
+# What build_tiles.py's layers do for the other things: every tile of an area, decided only
+# from what the map says is unmapped there (the ground and buildings layers), the tile's
+# terrain heights, IPR's photographs and surface model. Each tile's answer is kept in
+# .cache/cover/results/<area>/ under a key of its inputs, so a second run redoes only what
+# changed, and all of them go into the cover layer (layers.py), which layers.assemble() puts
+# into the tiles as the areas the game already draws (cover_grass ... cover_asphalt, canopy
+# as wood and single trees).
+
+PHOTOS = CACHE / "photos"
+MIN_BEIGE = 1000     # m2 of plain ground in a tile below which it isn't looked at
+SEEN = 0.02          # a photo pixel darker than this (in every band) is outside IPR's pictures
+
+
+def _transformers(area):
+    to_ll = Transformer.from_crs(local_proj(area), "EPSG:4326", always_xy=True)
+    return to_ll, Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
+
+
+def photo(url, kind, area, t, res=RES):
+    """IPR's photograph of the tile on its own grid as float32 (h, w, 3), or None outside the
+    pictures. The download (a lossy JPEG: about 0.26 MB a tile at 0.25 m, a tenth of the
+    PNG, and classified the same on the hand-labelled pieces) is kept under photos/."""
+    X, Y = grid(t, res)
+    to_ll, tf = _transformers(area)
+    E, N = tf.transform(*to_ll.transform(X.ravel(), Y.ravel()))
+    bx0, by0, bx1, by1 = E.min() - 3, N.min() - 3, E.max() + 3, N.max() + 3
+    path = PHOTOS / area / kind / f"{t['i']}_{t['j']}.jpg"
+    if not path.exists():
+        w, h = math.ceil((bx1 - bx0) / res), math.ceil((by1 - by0) / res)
+        params = {"bbox": f"{bx0},{by0},{bx1},{by1}", "bboxSR": 5514, "imageSR": 5514, "size": f"{w},{h}",
+                  "format": "jpg", "f": "image"}
+        for attempt in range(5):
+            try:
+                r = S.get(f"{url}/exportImage", params=params, timeout=120)
+                r.raise_for_status()
+                if not r.headers.get("content-type", "").startswith("image/"):
+                    raise requests.RequestException(r.text[:200])
+                Image.open(io.BytesIO(r.content)).load()
+                break
+            except (requests.RequestException, OSError):
+                if attempt == 4:
+                    raise
+                time.sleep(3 * (attempt + 1))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_bytes(r.content)
+        tmp.replace(path)
+    img = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32) / 255
+    cols = (E - bx0) / (bx1 - bx0) * img.shape[1] - 0.5
+    rows = (by1 - N) / (by1 - by0) * img.shape[0] - 0.5
+    bands = [ndimage.map_coordinates(img[:, :, b], [rows, cols], order=1, mode="nearest").reshape(X.shape)
+             for b in range(3)]
+    return np.stack(bands, axis=-1).astype(np.float32)
+
+
+def tile_cover(area, meta, t):
+    """One tile's ground cover, {"areas": {class: polygons}, "trees": [[x, y]]}, from the tile as
+    the ground and buildings layers make it; None where IPR has no photograph."""
+    rgb = photo(RGB, "rgb", area, t)
+    seen = rgb.max(-1) >= SEEN
+    if seen.mean() < 0.1:
+        return None
+    mask = beige_mask(t, RES)
+    mask &= ndimage.binary_erosion(seen, iterations=3)
+    if mask.sum() * RES * RES < MIN_BEIGE * 0.5:
+        return {"areas": {}, "trees": []}
+    cir = photo(CIR, "cir", area, t)
+    F = features(area, meta, t, rgb, cir)
+    labels, _ = pieces(F, mask)
+    summ = summarise(F, labels)
+    cls = {pid: rules(p) for pid, p in summ.items()}
+    canopy = (F["ndsm"] > 3) & (F["ndvi"] > 0.15) & mask
+    peaks = peak_local_max(np.where(canopy, ndimage.gaussian_filter(F["ndsm"], 2), 0), min_distance=int(4 / RES), threshold_abs=3)
+    x0, _, _, y1 = t["box"]
+    f = round(CELL / RES)
+
+    def piece_at(x, y):
+        r, c = int((y1 - y) / CELL), int((x - x0) / CELL)
+        return int(labels[r, c]) if 0 <= r < labels.shape[0] and 0 <= c < labels.shape[1] else 0
+    trees = [[round(x0 + (c + 0.5) * RES, 1), round(y1 - (r + 0.5) * RES, 1)] for r, c in peaks]
+    lone = [p for p in trees if cls.get(piece_at(*p)) != "trees"]
+    return {"areas": vectorise(labels, cls, t), "trees": lone}
+
+
+def result_path(area, i, j):
+    return CACHE / "results" / area / f"{i}_{j}.json"
+
+
+def code_key():
+    """Everything in this file; the other layers' code key leaves it out (build_cache.code_key)."""
+    return build_cache.digest(Path(__file__).read_bytes())
+
+
+def runtime():
+    import importlib.metadata as md
+    return {name: md.version(name) for name in ("numpy", "scipy", "scikit-image", "pillow", "shapely")}
+
+
+def tile_job(job):
+    """(i, j, cover or None, inputs key, whether it was kept) for one tile."""
+    area, meta, t, height = job
+    i, j = t["i"], t["j"]
+    inputs = layers.cover_key(t, height)
+
+    def stamp():
+        # The photographs kept are inputs too: a replaced file is a changed photo.
+        photos = [PHOTOS / area / kind / f"{i}_{j}.jpg" for kind in ("rgb", "cir")]
+        return {"code": code_key(), "runtime": runtime(), "inputs": inputs,
+                "dsm": build_cache.identity(IPR_DSM),
+                "photos": [build_cache.digest(p.read_bytes()) if p.exists() else None for p in photos]}
+    stored = build_cache.read_json(result_path(area, i, j))
+    if stored and stored.get("stamp") == stamp():
+        return i, j, stored["cover"], inputs, True
+    got = tile_cover(area, meta, t)
+    build_cache.write_json(result_path(area, i, j), {"stamp": stamp(), "cover": got})
+    return i, j, got, inputs, False
+
+
+def build(area, meta, jobs, tiles=None, limit=None):
+    """Classify the ground of every tile of the area (or `tiles`) that has enough plain
+    ground, and write the cover layer."""
+    from concurrent.futures import ProcessPoolExecutor
+    terrain_layer = layers.read_layer(area, "terrain")
+    if not terrain_layer:
+        raise SystemExit(f"{area}: the terrain heights are needed first; run ipr_terrain.py {area}")
+    if DSM_SOURCE != "ipr":
+        raise SystemExit(f"{IPR_DSM} is missing: IPR's surface model (see the sources above)")
+    payloads = terrain_layer["payloads"]
+    meta = {**meta, "terrain": terrain_layer["index"]}
+    want = set(tiles) if tiles else None
+
+    def work():
+        n = 0
+        for i, j, t in layers.tiles(area):
+            if want is not None and (i, j) not in want:
+                continue
+            t = {**t, "i": i, "j": j}
+            # Cheap and rough: most tiles have nothing to look at, and need no photograph.
+            if plain_ground(t) < MIN_BEIGE:
+                continue
+            n += 1
+            if limit and n > limit:
+                return
+            yield area, meta, t, payloads.get(f"{i}_{j}.height.bin.gz", [None, None])[1]
+    started, done, redone, covers, keys, nopic = time.time(), 0, 0, {}, {}, 0
+    if want is not None:  # a trial on some tiles adds to what the layer already has
+        before = layers.read_layer(area, "cover") or {}
+        covers, keys = dict(before.get("tiles", {})), dict(before.get("inputs", {}))
+    with ProcessPoolExecutor(jobs) as pool:
+        for i, j, got, inputs, hit in pool.map(tile_job, work(), chunksize=1):
+            done += 1
+            redone += not hit
+            keys[f"{i}_{j}"] = inputs
+            covers.pop(f"{i}_{j}", None)
+            if got is None:
+                nopic += 1
+            elif got["areas"] or got["trees"]:
+                covers[f"{i}_{j}"] = got
+            if done % 100 == 0:
+                print(f"  {done} tiles ({redone} worked out, {nopic} outside the photographs) in {time.time() - started:.0f} s", flush=True)
+    sources = build_cache.sources([IPR_DSM])
+    layers.write_layer(area, "cover", {
+        "tile": meta["tile"], "made_for": sorted(keys), "tiles": covers, "inputs": keys,
+        "processing": layers.cover_processing(), "sources": sources})
+    print(f"cover: {len(keys)} tiles looked at, {redone} worked out, {len(covers)} with cover, {nopic} outside the photographs")
+
+
+def plain_ground(t):
+    """Square metres of the tile no area, street or building covers (1 m raster: only to decide)."""
+    return float(beige_mask(t, 1.0).sum())
+
+
 def tiles_in(i0, i1, j0, j1, skip=None):
     out = [(i, j) for i in range(i0, i1 + 1) for j in range(j0, j1 + 1)]
     if skip:
@@ -873,12 +1055,30 @@ def tiles_in(i0, i1, j0, j1, skip=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["fetch", "ortho", "classify", "train", "sheet", "score"])
+    ap.add_argument("cmd", choices=["build", "fetch", "ortho", "classify", "train", "sheet", "score"])
     ap.add_argument("area", choices=AREAS)
-    ap.add_argument("tiles", nargs=4, type=int, metavar=("I0", "I1", "J0", "J1"))
+    ap.add_argument("tiles", nargs="*", type=int, metavar="I0 I1 J0 J1", help="tile range (all but build need one)")
     ap.add_argument("--method", default="rules", choices=["rules", "model", "jev"])
     ap.add_argument("--skip", nargs=4, type=int)
+    ap.add_argument("--jobs", type=int, default=6, help="build: tiles worked on side by side (IPR's server sees this many requests)")
+    ap.add_argument("--limit", type=int, help="build: only the first N tiles with enough plain ground (a trial)")
+    ap.add_argument("--no-assemble", action="store_true", help="build: leave the game's tiles alone")
     args = ap.parse_args()
+    if args.cmd != "build" and len(args.tiles) != 4:
+        ap.error(f"{args.cmd} needs I0 I1 J0 J1")
+    if args.cmd == "build":
+        if len(args.tiles) not in (0, 4):
+            ap.error("build takes no tile range or I0 I1 J0 J1")
+        meta = layers.read_meta(args.area)
+        if not meta:
+            ap.error(f"{args.area}: no layers yet; run build_tiles.py {args.area} first")
+        wanted = tiles_in(*args.tiles) if args.tiles else None
+        started = time.time()
+        build(args.area, meta, args.jobs, wanted, args.limit)
+        if not args.no_assemble:
+            layers.assemble(args.area)
+        print(f"build: {time.time() - started:.0f} s")
+        return
     meta = json.loads((OUT / f"{args.area}_now" / "index.json").read_text())
     tiles = tiles_in(*args.tiles, skip=args.skip)
     t0 = time.time()

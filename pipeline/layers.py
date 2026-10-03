@@ -10,6 +10,8 @@ rebuilds that layer alone:
     parking    paid-parking sections               build_tiles.py --layers parking
     ipr        IPR's 3D buildings                  ipr_buildings.py
     terrain    IPR's terrain, bridges, tunnels     ipr_terrain.py
+    cover      what the ground nothing maps is    ground_cover.py build
+               made of, from IPR's aerial photos
 
 The first four are kept per chunk in pipeline/.cache/layers/<area>/<layer>/<ci>_<cj>.json
 (tile key → what the layer has there, plus what the chunk adds to the whole area,
@@ -21,8 +23,10 @@ sends what did). Files of tiles no longer in the index are removed.
 
 What depends on what: ipr uses the OSM buildings (colours, and which OSM buildings
 IPR doesn't have); terrain works out the bridges and tunnels from the ground and
-streets layers. build_tiles.py says
-which of the two to run again.
+streets layers; cover looks at the ground the buildings and ground layers leave bare,
+with the terrain heights. build_tiles.py says which of the first two to run again; cover
+is optional (a map without it keeps its plain beige) and checks itself per tile: a
+tile whose ground or heights changed since is left without cover until it is run again.
 """
 
 import gzip
@@ -179,6 +183,37 @@ def tile_box(meta: dict, i: int, j: int):
     return (x0 + i * T, y0 + j * T, min(x1, x0 + (i + 1) * T), min(y1, y0 + (j + 1) * T))
 
 
+def cover_key(t: dict, height) -> str:
+    """What a tile's ground cover (ground_cover.py) depends on in the map: the areas, streets
+    and building outlines that leave the ground bare (before the cover is added to
+    them), and the digest of the tile's terrain heights."""
+    return build_cache.digest(dumps([t["areas"], t["roads"], [b["rings"] for b in t["buildings"]], height]).encode())
+
+
+def cover_processing() -> list:
+    """The code the cover layer is made by (a change to it makes the layer out of date)."""
+    return [build_cache.digest(Path(__file__).with_name("ground_cover.py").read_bytes())]
+
+
+def height_digest(terrain, k):
+    """The digest of a tile's height file as the terrain layer wrote it (None without one)."""
+    return ((terrain or {}).get("payloads", {}).get(f"{k}.height.bin.gz") or [None, None])[1]
+
+
+def merge_cover(t: dict, cover: dict):
+    """Put a tile's classified ground into it as areas the game already draws: cover_<class>
+    for each class, tree canopy as wood (which the game fills with trees), and the single
+    trees found by the photos, but not those next to a surveyed one."""
+    areas = dict(t["areas"])  # (a tile with no ground of its own shares the empty one)
+    for cls, polys in cover["areas"].items():
+        key = "wood" if cls == "trees" else f"cover_{cls}"
+        areas[key] = [*areas.get(key, []), *polys]
+    t["areas"] = areas
+    known = t["trees"]
+    fresh = [p for p in cover["trees"] if not any(abs(q[0] - p[0]) < 2.5 and abs(q[1] - p[1]) < 2.5 for q in known)]
+    t["trees"] = [*known, *fresh]
+
+
 def building_key(b: dict) -> str:
     """Names one building in a tile across builds: its OSM id and first corner."""
     x, y = b["rings"][0][0]
@@ -239,6 +274,14 @@ def assemble(area: str, strict=False) -> dict:
         check_complete(area, meta)
     ipr, terrain = read_layer(area, "ipr"), read_layer(area, "terrain")
     processing = [build_cache.code_key(), build_cache.runtime_key()]
+    cover = read_layer(area, "cover")
+    if cover and not (cover.get("tile") == meta["tile"] and cover.get("processing") == cover_processing()
+                      and build_cache.sources_current(cover.get("sources", {}))):
+        message = f"{area}: the ground cover was made by other code or from other sources; run ground_cover.py build {area}"
+        if strict:
+            raise SystemExit(message)
+        print(message)
+        cover = None
     for name, layer in (("ipr", ipr), ("terrain", terrain)):
         current = (layer and layer.get("dependencies") == dependency_snapshot(area, DEPENDENCIES[name])
                    and layer.get("processing") == processing and build_cache.sources_current(layer.get("sources", {}))
@@ -253,10 +296,18 @@ def assemble(area: str, strict=False) -> dict:
             raise SystemExit(f"{area}: {name} format/grid does not match; rebuild that step")
     if strict:
         # Check coverage and payloads before the first assembled output is changed.
-        keys = {f"{i}_{j}" for i, j, _ in tiles(area, meta)}
+        keys = set()
+        outdated = []
+        for i, j, t in tiles(area, meta):
+            k = f"{i}_{j}"
+            keys.add(k)
+            if cover and k in cover["inputs"] and cover["inputs"][k] != cover_key(t, height_digest(terrain, k)):
+                outdated.append(k)
         for name, layer in (("ipr", ipr), ("terrain", terrain)):
             if keys - set(layer.get("made_for", [])):
                 raise SystemExit(f"{area}: {name} is missing tiles; rebuild that step")
+        if outdated:
+            raise SystemExit(f"{area}: the ground cover of {len(outdated)} tiles is out of date ({', '.join(outdated[:6])} …); run ground_cover.py build {area}")
         tiles_dir = OUT / f"{area}_now" / "tiles"
         for k in keys:
             needed = [("terrain", terrain, f"{k}.height.bin.gz")]
@@ -285,8 +336,15 @@ def assemble(area: str, strict=False) -> dict:
         for name, (length, x, y) in read_chunk(area, "streets", ci, cj)["names"].items():
             if length > names.get(name, (0,))[0]:
                 names[name] = (length, x, y)
+    out_of_date = 0
     for i, j, t in tiles(area, meta):
         k = f"{i}_{j}"
+        # The classified bare ground, if it was made for the ground and heights as they are now.
+        if cover and k in cover["inputs"]:
+            if cover["inputs"][k] != cover_key(t, height_digest(terrain, k)):
+                out_of_date += 1
+            elif k in cover["tiles"]:
+                merge_cover(t, cover["tiles"][k])
         got = ipr and ipr["tiles"].get(k)
         if got:
             missing = set(got["noIpr"])
@@ -336,6 +394,8 @@ def assemble(area: str, strict=False) -> dict:
         index["gzip"] = True
     elif any(gz):
         print("the IPR buildings and the terrain were built by different versions: run both again")
+    if out_of_date:
+        print(f"{out_of_date} tiles changed since their ground cover was made, and have none: run ground_cover.py build {area}")
     write(out_dir / "index.json", dumps(index))
     write(out_dir / "names.json", dumps({k: v[1:] for k, v in sorted(names.items())}))
     print(f"{area}: {len(listed)} tiles, {written} changed → {out_dir.name}/")
