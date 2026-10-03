@@ -78,7 +78,8 @@ for (const b of BRIDGES) {
   for (const [end, at, p] of [['a', b.a, b.pts[0]], ['b', b.b, b.pts[b.pts.length - 1]]]) {
     await t.go(at).catch(() => {});
     await t.camera({ at, height: 200, tilt: 0, heading: 0 });
-    // (The camera's height is above the game's zero, not above the ground.)
+    // height is relative to the terrain at the target, not an absolute eye elevation.
+    // h + 55 below is the stored relative setting; record the actual pose for comparisons.
     const h = w.lowestBridge(p[0], p[1])?.h ?? w.terrainAt(p[0], p[1]);
     await t.camera({ at, height: h + 55, tilt: 55, heading: 0 }); await t.wait(0.5); await t.shot(TAG + '-' + b.slug + '-' + end);
   }

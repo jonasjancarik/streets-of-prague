@@ -1,0 +1,30 @@
+................dtm heights: reading the survey from 2 packages
+.......................FAILED one: disk full
+partial result: 1 of 1 entries unconverted
+.FAILED missing: [Errno 2] No such file or directory: '/var/folders/1j/t72zmxvn6cs1bmnxdqqgvkqw0000gn/T/tmpz49b_sku/source/landmarks/missing.glb'
+partial result: 1 of 2 entries unconverted
+............................................................
+----------------------------------------------------------------------
+Ran 100 tests in 1.412s
+
+OK
+would write /var/folders/1j/t72zmxvn6cs1bmnxdqqgvkqw0000gn/T/tmpz49b_sku/staged/landmarks/one.warm-v1.glb
+1 landmarks validated
+one.glb -> one.warm-v1.glb: [{'image': 0, 'width': 2, 'height': 2, 'mime': 'image/png', 'sourceBytes': 84, 'outputBytes': 83}, {'image': 1, 'width': 1, 'height': 1, 'mime': 'image/png', 'sourceBytes': 70, 'outputBytes': 70}]
+1 landmarks staged
+one.glb -> one.warm-v1.glb: [{'image': 0, 'width': 2, 'height': 2, 'mime': 'image/png', 'sourceBytes': 84, 'outputBytes': 83}, {'image': 1, 'width': 1, 'height': 1, 'mime': 'image/png', 'sourceBytes': 70, 'outputBytes': 70}]
+1 landmarks staged
+one.glb -> one.warm-v1.glb: [{'image': 0, 'width': 2, 'height': 2, 'mime': 'image/png', 'sourceBytes': 84, 'outputBytes': 83}, {'image': 1, 'width': 1, 'height': 1, 'mime': 'image/png', 'sourceBytes': 70, 'outputBytes': 70}]
+  2 bridge and tunnel ways: 2 ends on the ground, 0 points on IPR's decks
+  3 bridge and tunnel pieces on up to 1 levels either way
+  0 bridge and tunnel pieces on up to 0 levels either way
+  2 bridge and tunnel ways: 4 ends on the ground, 0 points on IPR's decks
+  3 bridge and tunnel pieces on up to 2 levels either way
+  2 bridge and tunnel ways: 4 ends on the ground, 78 points on IPR's decks
+  2 bridge and tunnel pieces on up to 2 levels either way
+  2 bridge and tunnel ways: 2 ends on the ground, 39 points on IPR's decks
+  2 bridge and tunnel pieces on up to 1 levels either way
+  2 bridge and tunnel ways: 2 ends on the ground, 39 points on IPR's decks
+  2 bridge and tunnel pieces on up to 1 levels either way
+  2 bridge and tunnel ways: 2 ends on the ground, 39 points on IPR's decks
+  2 bridge and tunnel pieces on up to 1 levels either way

@@ -3,6 +3,7 @@ import { WET, SNOW, STREET_SNOW, RAIN, BARE, SEASON, NOISE, NOISE_GLSL } from '.
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
 import { t } from './i18n.ts';
 import { SEASONS } from './season.ts';
+import { shareGroundSeason } from './groundSeason.ts';
 import type { Season, SeasonName } from './season.ts';
 
 // The weather: clear, cloudy, rain, a thunderstorm, mist or snow. Each is a mix of
@@ -98,8 +99,11 @@ export class Weather {
 
   private span() { return (20 + this.rng() * 40) * 60; }
 
-  private pick(clockT: number): Kind {
-    const shares = this.season.shares();
+  // A start-screen choice, without changing the live weather or shader values.
+  preview(clockT: number, season: Season): Kind { return this.pick(clockT, season); }
+
+  private pick(clockT: number, season = this.season): Kind {
+    const shares = season.shares();
     const chances = { ...CLEAR_CHANCES };
     for (const s of SEASONS) for (const k of KINDS) chances[k] += shares[s] * CHANCES[s][k];
     const hour = (clockT % 86400) / 3600;
@@ -139,6 +143,7 @@ export class Weather {
     // The broadleaf trees are bare while their leaves aren't out, and under snow any time.
     BARE.value = Math.max(1 - this.season.leaf, this.now.cover);
     SEASON.value.set(this.season.turn, this.season.blossom, this.season.fresh, 0);
+    shareGroundSeason(this.season);
   }
 
   set(kind: Kind, instantly = false) {

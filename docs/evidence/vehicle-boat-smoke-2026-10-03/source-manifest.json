@@ -1,0 +1,37 @@
+{
+  "revision": "5f66b6565aa588f0bf87e6de9926607b8a52b6c6",
+  "files": [
+    {
+      "path": "src/boats.ts",
+      "sha256": "223e2eb5b2c49fc833870abaee06c3c5d0fc7197423265033279d40244d1d771"
+    },
+    {
+      "path": "src/car.ts",
+      "sha256": "b201c0102a3e48ae750da255ff701508a3aaab8d513fcb09ddeb767535a775fd"
+    },
+    {
+      "path": "src/police.ts",
+      "sha256": "6f8763db5b9ef3698e38f74c18251ca7807fe9afc44446ea552d924e1ed712d0"
+    },
+    {
+      "path": "src/main.ts",
+      "sha256": "588f2da3f8b5eccbb7deb855697c0b85bd8c7f7444b1707fbc25d73f6c6c8950"
+    },
+    {
+      "path": "src/testkit.ts",
+      "sha256": "33a00d059b6e29004ba1548cb6ec5db980dbe825be4592da1459b72062e11168"
+    },
+    {
+      "path": "scenarios/boat-boarding.ts",
+      "sha256": "2b6e3e4d5a51b0cc711d62ef0cb68cf8ee60ebb2e19dfe7a1cff611a7e76652a"
+    },
+    {
+      "path": "scenarios/bus-displays.ts",
+      "sha256": "a07de82d5831330a0d09bb042b3d89f3501f7d9afb5251ae7263361bf7479d89"
+    },
+    {
+      "path": "scenarios/police-stolen-lights.ts",
+      "sha256": "57818b922b3c082b89c7a535480dda6afc637eb3a2b2c194f0c53ef9b4d6343e"
+    }
+  ]
+}

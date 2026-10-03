@@ -1,0 +1,12 @@
+{
+  "id": "way/1058329131",
+  "tags": {
+    "highway": "footway",
+    "footway": "traffic_island",
+    "surface": "paving_stones"
+  },
+  "length_m": 9.648882126811127,
+  "buffer_m2": 35.03162916706375,
+  "before_path_m2": 34.750824204167884,
+  "after_path_m2": 0.0
+}

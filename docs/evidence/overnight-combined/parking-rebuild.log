@@ -1,0 +1,20 @@
+centrum: 4294 x 3003 m, 6 chunks, layers parking, 2 at a time; 6 chunks to build, 0 layer outputs reused
+chunk 1/6 (0,1) 0.0 s (parking 0.0, write 0.0)
+  extract 0,1: 
+  counts/cache 0,1: {"worker_peak_mb": 116.8}
+chunk 2/6 (0,0) 0.0 s (parking 0.0, write 0.0)
+  extract 0,0: 
+  counts/cache 0,0: {"worker_peak_mb": 116.9}
+chunk 3/6 (1,1) 0.0 s (parking 0.0, write 0.0)
+  extract 1,1: 
+  counts/cache 1,1: {"worker_peak_mb": 116.9}
+chunk 4/6 (1,0) 0.0 s (parking 0.0, write 0.0)
+  extract 1,0: 
+  counts/cache 1,0: {"worker_peak_mb": 116.9}
+chunk 5/6 (2,0) 0.0 s (parking 0.0, write 0.0)
+  extract 2,0: 
+  counts/cache 2,0: {"worker_peak_mb": 117.0}
+chunk 6/6 (2,1) 0.0 s (parking 0.0, write 0.0)
+  extract 2,1: 
+  counts/cache 2,1: {"worker_peak_mb": 116.9}
+centrum build_tiles: prepare 0.02 s, workers 0.33 s, assembly 0.00 s, total 0.34 s

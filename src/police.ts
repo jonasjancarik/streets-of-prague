@@ -720,11 +720,12 @@ export class Police {
     for (const p of this.cars) p.calm = true;
   }
 
-  // The cars with their lights going: those chasing you, and a stolen police car while it moves
+  // The cars with their lights going: those chasing you, and a police car you're driving,
+  // including while stopped. Ownership, not speed, keeps its lights on.
   // (`mine`: the car the player is driving).
   lit(mine: Car | null = null) {
     const lit = this.cars.filter((p) => !p.calm && !p.wrecked).map((p) => p.car);
-    if (mine?.type === 'police' && mine.speed > 0.5) lit.push(mine);
+    if (mine?.type === 'police' && mine.mode === 'player' && !mine.burnt && !lit.includes(mine)) lit.push(mine);
     return lit;
   }
 

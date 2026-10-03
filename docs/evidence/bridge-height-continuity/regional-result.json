@@ -1,0 +1,16 @@
+[
+  {
+    "reader": "before",
+    "seconds": 0.23790304200156243,
+    "tiles": 21,
+    "levels": 32,
+    "finite_height_samples": 10564
+  },
+  {
+    "reader": "after",
+    "seconds": 0.10977533299956121,
+    "tiles": 21,
+    "levels": 31,
+    "finite_height_samples": 10536
+  }
+]

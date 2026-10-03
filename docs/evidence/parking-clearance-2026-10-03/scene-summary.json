@@ -1,0 +1,11 @@
+{
+  "scope": "Loaded scene tiles, not a citywide census",
+  "built": "2026-10-02T20:16:12Z",
+  "baselineCount": 1344,
+  "candidateCount": 1107,
+  "rejectedBaselineCandidates": 256,
+  "ordinaryCarSearch": {
+    "found": false,
+    "candidates": 256
+  }
+}

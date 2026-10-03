@@ -7,6 +7,10 @@ walls, buildings, steps, terrain edges) carry a height at every vertex, and the
 polygons of set 2 say which surface each line bounds. apply() uses them to correct
 the terrain's lattice:
 
+- before interpolation, a surveyed street vertex more than SURVEY_OFFSET from the
+  bare terrain is left out, together with the segments attached to it. This catches
+  gross source errors (kerbs at 294 m beside kerbs at 194 m near Nosticova), before
+  they become plausible-looking intermediate heights and spread into the bank;
 - a lattice point on a surveyed street surface (carriageway, pavement, parking, tram
   track, platform…) takes its height from the surveyed points along that surface's own
   edge, so the street above a wall never mixes with the quay below it;
@@ -72,8 +76,9 @@ SURFACES = {
 ON_GROUND = {"010000030402": "kerb", "010000032302": "inner"}
 # Walls, for where they are (a bank with one is a step, not a slope), not for their heights.
 WALLS = {"010000030202": "wall edge", "010000016802": "wall"}
-VERSION = 3
+VERSION = 4  # keep original 3D lines: validate vertices before densifying them
 SPACING = 1.5  # m between the points taken along a surveyed line
+SURVEY_OFFSET = 30.0  # m from the bare terrain: gross errors, not the few metres of a quay's ramp
 ON_EDGE = 0.15  # m: a surveyed point this close to a surface's edge belongs to it
 FEATHER = 14.0  # m from a surveyed street: as far as the ground beside it follows it
 CUT_OUT, CUT_RISE, CUT_VOTES, CUT_SQUARE, CUT_WIDTH = 6.0, 3.0, 8, 16.0, 6.0  # (see --cut-streets)
@@ -133,8 +138,9 @@ def _inside(blob, box):
 
 def survey(area, bbox, margin=60.0):
     """The survey on the ground within a WGS84 box, in S-JTSK: (surface polygons,
-    points along the lines measured on the ground as an (n, 3) array, the walls' lines
-    as (n, 2) arrays). Kept per area."""
+    original lines measured on the ground as (n, 3) arrays, the walls' lines as
+    (n, 2) arrays). Keep vertices intact until their heights have been checked against
+    the terrain; interpolating first hides source errors. Kept per area."""
     to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
     w, s, e, n = bbox
     cx, cy = to_krovak.transform([w, w, e, e], [s, n, s, n])
@@ -145,9 +151,9 @@ def survey(area, bbox, margin=60.0):
            [build_cache.function_key(f) for f in (survey, _tables, _inside, _along)], build_cache.runtime_key()]
     got = build_cache.load_pickle(cache, key)
     if got:
-        return got["polys"], got["points"], got["walls"]
+        return got["polys"], got["lines"], got["walls"]
     print(f"dtm heights: reading the survey from {len(packages)} packages", flush=True)
-    polys, points, walls = [], [], []
+    polys, lines, walls = [], [], []
     for p in sorted(PACKAGES.glob("*.zip")):
         for _, level, blob in _tables(p, SURFACES):
             g = _inside(blob, box) if level == 0 else None
@@ -158,16 +164,19 @@ def survey(area, bbox, margin=60.0):
             g = _inside(blob, box) if level == 0 else None
             if g is None:
                 continue
-            c = shapely.get_coordinates(g, include_z=True)
-            if code in WALLS:
-                if len(c) > 1:
+            # Separate components: flattening a MultiLineString invents a segment
+            # between unrelated ends, with interpolated heights that were not surveyed.
+            for part in shapely.get_parts(g):
+                c = shapely.get_coordinates(part, include_z=True)
+                if len(c) < 2:
+                    continue
+                if code in WALLS:
                     walls.append(c[:, :2].copy())
-            elif len(c) > 1 and not np.isnan(c[:, 2]).any():
-                points.append(_along(c))
-    points = np.concatenate(points) if points else np.zeros((0, 3))
+                else:
+                    lines.append(c)
     cache.parent.mkdir(parents=True, exist_ok=True)
-    build_cache.atomic(cache, pickle.dumps({"key": key, "polys": polys, "points": points, "walls": walls}, protocol=5))
-    return polys, points, walls
+    build_cache.atomic(cache, pickle.dumps({"key": key, "polys": polys, "lines": lines, "walls": walls}, protocol=5))
+    return polys, lines, walls
 
 
 def _along(c, spacing=SPACING):
@@ -177,6 +186,33 @@ def _along(c, spacing=SPACING):
         k = max(1, int(np.ceil(np.hypot(*(b - a)[:2]) / spacing)))
         out.append(a + (b - a) * (np.arange(1, k + 1) / k)[:, None])
     return np.concatenate(out)
+
+
+def _survey_points(lines, to_local, at):
+    """Validate original vertices against bare terrain, then sample only intact runs.
+
+    Keep isolated valid vertices as anchors, but never connect across a rejected one.
+    Unknown terrain outside the built grid gives no reason to reject a finite vertex.
+    Transform and sample in one batch so this also scales to the city's survey.
+    """
+    if not lines:
+        return np.zeros((0, 3)), 0
+    raw = np.concatenate(lines)
+    x, y = to_local.transform(raw[:, 0], raw[:, 1])
+    local = np.column_stack([x, y, raw[:, 2]])
+    ground = np.full(len(local), np.nan)
+    finite_xy = np.isfinite(local[:, :2]).all(axis=1)
+    ground[finite_xy] = at(local[finite_xy, :2])
+    valid = np.isfinite(local).all(axis=1) & (~np.isfinite(ground) | (np.abs(local[:, 2] - ground) <= SURVEY_OFFSET))
+    points, start = [], 0
+    for line in lines:
+        end = start + len(line)
+        good = valid[start:end]
+        edges = np.flatnonzero(np.diff(np.r_[False, good, False]))
+        for a, b in zip(edges[::2], edges[1::2]):
+            points.append(_along(local[start + a:start + b]))
+        start = end
+    return np.concatenate(points) if points else np.zeros((0, 3)), int((~valid).sum())
 
 
 def _bilinear(grid, u, v):
@@ -255,12 +291,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     the log, with "labels" (each tile's lattice of labels) and "terraces" (each tile's
     terraces: their label and outline; and under label 1 its water, where that's not
     simply the map's: see below)."""
-    polys, points, walls = survey(area, bbox)
-    if not len(points):
-        return {"surfaces": 0, "street_points": 0, "water_points": 0, "labels": {}, "terraces": {}}
+    polys, lines, walls = survey(area, bbox)
     walls = [np.column_stack(to_local.transform(w[:, 0], w[:, 1])) for w in walls]
-    px, py = to_local.transform(points[:, 0], points[:, 1])
-    pts = np.column_stack([px, py])
     polys = shapely.transform(np.array(polys, dtype=object), lambda c: np.column_stack(to_local.transform(c[:, 0], c[:, 1])))
 
     # One array over the area; neighbouring tiles share their edge points.
@@ -272,13 +304,16 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     bare = grid.copy()
     x_of = lambda i: gx0 + (i + i0) * step  # noqa: E731
     y_of = lambda j: gy0 + (j + j0) * step  # noqa: E731
+    at_bare = lambda p: _bilinear(bare, (p[:, 0] - x_of(0)) / step, (p[:, 1] - y_of(0)) / step)  # noqa: E731
+    points, rejected = _survey_points(lines, to_local, at_bare)
+    pts = points[:, :2]
 
     # Streets: each surface from the surveyed points along its own edge.
     edges = STRtree(shapely.boundary(polys))
     owner, point = edges.query(shapely.points(pts), predicate="dwithin", distance=ON_EDGE)[::-1]
     order = np.argsort(owner, kind="stable")
     owner, point = owner[order], point[order]
-    starts = np.flatnonzero(np.r_[True, owner[1:] != owner[:-1]])
+    starts = np.flatnonzero(np.r_[True, owner[1:] != owner[:-1]]) if len(owner) else np.empty(0, dtype=int)
     surfaces = street_points = 0
     street = np.zeros(grid.shape, dtype=bool)
     which = np.zeros(grid.shape, dtype=np.int32)  # the surface each street point is on, from 1
@@ -622,7 +657,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"surfaces": surfaces, "street_points": street_points, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "bank_points": bank_points,
+    return {"survey_rejected_vertices": rejected, "surfaces": surfaces, "street_points": street_points, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "bank_points": bank_points,
             "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "wall_points": wall_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}

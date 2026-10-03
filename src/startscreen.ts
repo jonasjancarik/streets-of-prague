@@ -5,13 +5,15 @@ import type { Lang } from './i18n.ts';
 import { newsletterLink } from './newsletter.ts';
 import { updateNotice } from './update.ts';
 import { betaNote } from './betanote.ts';
+import { SEASONS, pragueToday, seasonOfDay, seasonStartDay } from './season.ts';
+import type { SeasonName } from './season.ts';
 
-// The start of the game, on the loading screen: the time and weather it will begin
+// The start of the game, on the loading screen: the date, time and weather it will begin
 // with (the time in Prague now and a weather picked for the season, if nothing was
 // asked for in the URL), each one changeable, and sound on or off. The button stays
 // grey while the map loads, and pressing it is also what lets the browser play sound.
-// With a saved game, the button continues it (time and weather come from the save) and
-// "New game" brings the time and weather choices back.
+// With a saved game, the button continues it (date, time and weather come from the save)
+// and "New game" brings those choices back.
 
 const TIMES: { id: string; label: string; sec: number }[] = [
   { id: 'morning', label: 'Morning', sec: 8 * 3600 },
@@ -20,12 +22,15 @@ const TIMES: { id: string; label: string; sec: number }[] = [
   { id: 'night', label: 'Night', sec: 1.5 * 3600 },
 ];
 const WEATHER: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
+const SEASON_NAMES: Record<SeasonName, string> = { spring: 'Spring', summer: 'Summer', autumn: 'Autumn', winter: 'Winter' };
 
 export interface StartChoice {
   // Seconds since midnight, or null to keep the clock as it is (the time now).
   time: number | null;
   weather: Kind;
   sound: boolean;
+  // Day of the year, including the saved date when continuing.
+  season: number;
   // Carry on from the saved game (time and weather are then the save's own).
   resume: boolean;
 }
@@ -38,10 +43,27 @@ const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
   return e;
 };
 
-export function startScreen(root: HTMLElement, opts: { now: string; weather: Kind; sound: boolean; saved: (() => string) | null; savedLook?: { clock: number; weather: Kind }; lost: boolean }) {
+interface StartOptions {
+  now: string;
+  season: number;
+  dateLinked: boolean;
+  weather: Kind;
+  weatherFixed: boolean;
+  weatherForSeason: (day: number) => Kind;
+  sound: boolean;
+  saved: (() => string) | null;
+  savedLook?: { clock: number; weather: Kind; season?: number };
+  lost: boolean;
+}
+
+export function startScreen(root: HTMLElement, opts: StartOptions) {
   const panel = el('div', 'ls-start', root);
   let time: string = 'now', weather: Kind = opts.weather, sound = opts.sound;
-  let weatherPicked = false;
+  let weatherPicked = opts.weatherFixed, usingLive = false;
+  let day = opts.season, liveKind: Kind | null = null, liveButton: HTMLButtonElement | null = null;
+  let useToday = !opts.dateLinked;
+  let liveDay: number | null = null;
+  const liveAvailable = () => { const today = pragueToday(); return day === today && liveDay === today; };
   let resuming = !!opts.saved;
 
   // The poster behind shows what is picked: the sky's light for the time of day, and
@@ -53,6 +75,8 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
     const look = resuming ? opts.savedLook : undefined;
     root.dataset.time = look ? part(Math.floor((look.clock % 86400) / 3600)) : time === 'now' ? nowPart : time;
     root.dataset.weather = look ? look.weather : weather;
+    root.dataset.season = seasonOfDay(look?.season ?? day);
+    if (liveButton) liveButton.hidden = !liveAvailable();
   };
 
   // Text that follows the language: each is given again when it changes.
@@ -65,6 +89,8 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
     const name = el('span', 'ls-label', r);
     relabel.push(() => { name.textContent = t(label); });
     const chips = el('div', 'ls-chips', r);
+    chips.setAttribute('role', 'group');
+    relabel.push(() => chips.setAttribute('aria-label', t(label)));
     const buttons = items.map((it) => {
       const b = el('button', 'ls-chip', chips) as HTMLButtonElement;
       relabel.push(() => { b.textContent = it.label(); });
@@ -82,8 +108,23 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
 
   const fixed = (s: string) => () => s;
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang(), setLang);
+  const seasonRow = row('Season', SEASONS.map(id => ({ id, label: () => t(SEASON_NAMES[id]) })), seasonOfDay(day), (id) => {
+    const today = pragueToday();
+    day = seasonStartDay(id, today);
+    useToday = id === seasonOfDay(today);
+    if (!weatherPicked || usingLive) {
+      usingLive = liveAvailable() && liveKind !== null;
+      weather = usingLive ? liveKind! : opts.weatherForSeason(day);
+      weatherPicked = false;
+      syncWeather();
+    }
+  });
   const timeRow = row('Time', [{ id: 'now', label: () => t('Now {time}', { time: opts.now }) }, ...TIMES.map((x) => ({ id: x.id, label: () => t(x.label) }))], 'now', (id) => { time = id; });
-  const weatherRow = row('Weather', KINDS.map((k) => ({ id: k, label: () => t(WEATHER[k]) })), weather, (id) => { weather = id; weatherPicked = true; });
+  const weatherRow = row('Weather', KINDS.map((k) => ({ id: k, label: () => t(WEATHER[k]) })), weather, (id) => { weather = id; weatherPicked = true; usingLive = false; });
+  const syncWeather = () => {
+    weatherRow.buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(!usingLive && KINDS[i] === weather)));
+    liveButton?.setAttribute('aria-pressed', String(usingLive));
+  };
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], sound ? 'on' : 'off', (id) => { sound = id === 'on'; });
 
   // The saved game as a card: where you were, big, and the rest (on foot, the time,
@@ -110,7 +151,7 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
   const sync = () => {
     panel.classList.toggle('resume', resuming);
     found.hidden = fresh.hidden = !resuming;
-    for (const r of [timeRow.row, weatherRow.row]) r.hidden = resuming;
+    for (const r of [seasonRow.row, timeRow.row, weatherRow.row]) r.hidden = resuming;
     go.textContent = !ready ? t('Loading…') : resuming ? t('Continue') : opts.saved ? t('Start new game') : t('Start game');
     fresh.textContent = t('New game');
   };
@@ -128,19 +169,26 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
     // The weather in Prague now has come in: a button for it, first, and picked unless
     // the player has picked something already.
     live(kind: Kind) {
-      const b = el('button', 'ls-chip', weatherRow.chips) as HTMLButtonElement;
+      if (liveButton) return;
+      liveKind = kind;
+      liveDay = pragueToday();
+      const b = liveButton = el('button', 'ls-chip', weatherRow.chips) as HTMLButtonElement;
       weatherRow.chips.prepend(b);
       relabel.push(() => { b.textContent = t('Now: {weather}', { weather: t(WEATHER[kind]) }); });
       b.type = 'button';
       const choose = () => {
+        if (!liveAvailable()) { show(); return false; }
         weather = kind;
-        for (const o of weatherRow.buttons) o.setAttribute('aria-pressed', String(o === b));
+        usingLive = true;
+        syncWeather();
         show();
+        return true;
       };
       weatherRow.buttons.push(b);
-      b.addEventListener('click', () => { choose(); weatherPicked = true; });
+      b.addEventListener('click', () => { if (choose()) weatherPicked = true; });
       relabel[relabel.length - 1]();
-      if (!weatherPicked) choose();
+      if (!weatherPicked && liveAvailable()) choose();
+      show();
     },
     // `noteAgain` shows the beta note even if it has been seen (?menu).
     ready(noteAgain = false): Promise<StartChoice> {
@@ -152,7 +200,12 @@ export function startScreen(root: HTMLElement, opts: { now: string; weather: Kin
       return new Promise((resolve) => go.addEventListener('click', () => {
         go.disabled = true;
         const t = TIMES.find((x) => x.id === time);
-        void betaNote(noteAgain).then(() => resolve({ time: t ? t.sec : null, weather, sound, resume: resuming }));
+        void betaNote(noteAgain).then(() => {
+          const startDay = resuming ? opts.savedLook?.season ?? day : useToday ? pragueToday() : day;
+          // A page or beta note kept open across midnight still starts in today's Prague.
+          const startWeather = !resuming && startDay !== day && (!weatherPicked || usingLive) ? opts.weatherForSeason(startDay) : weather;
+          resolve({ time: t ? t.sec : null, weather: startWeather, sound, season: startDay, resume: resuming });
+        });
       }, { once: true }));
     },
   };

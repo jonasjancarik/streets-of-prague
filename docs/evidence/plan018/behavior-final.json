@@ -1,0 +1,54 @@
+{
+  "before": {
+    "lat": 50.08715,
+    "lon": 14.421,
+    "heading": 90,
+    "street": "Staroměstské náměstí",
+    "mode": "foot",
+    "x": 71.6,
+    "y": 628.5,
+    "speed": 0,
+    "car": null,
+    "money": 10000,
+    "stars": 0,
+    "police": 0,
+    "health": 100,
+    "ticket": false,
+    "time": "14:00",
+    "weather": "clear",
+    "date": "10-02"
+  },
+  "after": {
+    "lat": 50.08715,
+    "lon": 14.421,
+    "heading": 90,
+    "street": "Staroměstské náměstí",
+    "mode": "foot",
+    "x": 71.6,
+    "y": 628.5,
+    "speed": 13,
+    "car": null,
+    "money": 10000,
+    "stars": 0,
+    "police": 0,
+    "health": 100,
+    "ticket": false,
+    "time": "14:00",
+    "weather": "clear",
+    "date": "10-02"
+  },
+  "movingPeople": 1174,
+  "totalPeople": 1200,
+  "walkTileGroups": 43,
+  "checks": [
+    {
+      "name": "Pedestrians still follow the square routes",
+      "pass": true,
+      "detail": "{\"moving\":1174,\"total\":1200}"
+    },
+    {
+      "name": "Walk edges are present",
+      "pass": true
+    }
+  ]
+}

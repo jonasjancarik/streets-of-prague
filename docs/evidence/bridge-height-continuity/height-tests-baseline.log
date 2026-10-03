@@ -1,0 +1,58 @@
+F..F..F..
+======================================================================
+FAIL: test_empty_zero_one_anchor_and_disconnected_components (height_tests.StructureHeightTests.test_empty_zero_one_anchor_and_disconnected_components)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/test_structure_heights.py", line 53, in test_empty_zero_one_anchor_and_disconnected_components
+    net.spread({});self.assertTrue(np.isnan(net.h).all())  # no stale previous estimate
+                   ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: np.False_ is not true
+
+======================================================================
+FAIL: test_multiple_pinned_samples_bracket_a_gap_without_nearest_cluster_switch (height_tests.StructureHeightTests.test_multiple_pinned_samples_bracket_a_gap_without_nearest_cluster_switch)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/test_structure_heights.py", line 42, in test_multiple_pinned_samples_bracket_a_gap_without_nearest_cluster_switch
+    np.testing.assert_allclose(net.h,expected,atol=1e-8)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/.venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/.venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-08
+
+Mismatched elements: 25 / 41 (61%)
+First 5 mismatches are at indices:
+ [2]: 200.06666666666666 (ACTUAL), 201.20555555555555 (DESIRED)
+ [3]: 200.06 (ACTUAL), 202.3111111111111 (DESIRED)
+ [4]: 200.05714285714285 (ACTUAL), 203.41666666666666 (DESIRED)
+ [5]: 200.05555555555554 (ACTUAL), 204.5222222222222 (DESIRED)
+ [6]: 200.05454545454546 (ACTUAL), 205.62777777777777 (DESIRED)
+Max absolute difference among violations: 8.89150327
+Max relative difference among violations: 0.04255439
+ ACTUAL: array([200.      , 200.1     , 200.066667, 200.06    , 200.057143,
+       200.055556, 200.054545, 200.053846, 200.053333, 200.052941,
+       210.05    , 220.047059, 220.046667, 220.046154, 220.045455,...
+ DESIRED: array([200.      , 200.1     , 201.205556, 202.311111, 203.416667,
+       204.522222, 205.627778, 206.733333, 207.838889, 208.944444,
+       210.05    , 211.155556, 212.261111, 213.366667, 214.472222,...
+
+======================================================================
+FAIL: test_same_side_anchor_switch_is_continuous_at_junction_and_along_span (height_tests.StructureHeightTests.test_same_side_anchor_switch_is_continuous_at_junction_and_along_span)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/test_structure_heights.py", line 25, in test_same_side_anchor_switch_is_continuous_at_junction_and_along_span
+    self.assertLess(np.max(np.abs(np.diff(net.h[path]))/length),.1)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: np.float64(4.430330720035721) not less than 0.1
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.019s
+
+FAILED (failures=3)

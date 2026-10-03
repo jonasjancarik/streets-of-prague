@@ -1,0 +1,17 @@
+  TER_Prah_7-1: area cache miss, source cache hit, 0.80 s, worker peak 173.0 MB
+  TER_Prah_7-1: 59109 triangles
+  TER_Prah_7-2: area cache miss, source cache hit, 0.55 s, worker peak 175.0 MB
+  TER_Prah_7-2: 34762 triangles
+/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/structures.py:529: RuntimeWarning: All-NaN slice encountered
+  return float(np.nanmin(ground(xs, ys, dry=True)))  # (not the water's level, where there's a river beside it)
+/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/structures.py:821: RuntimeWarning: Mean of empty slice
+  h = float(np.nanmean(g[0].height(np.array([c.x]), np.array([c.y]))))
+  sheets read in 1 s
+  survey: {'survey_rejected_vertices': 24, 'surfaces': 392, 'street_points': 21377, 'under_points': 12, 'feathered': 30222, 'overhang_points': 0, 'water_points': 19904, 'bank_points': 1341, 'kept_by_hand': 0, 'cut_streets': 0, 'retaining_walls': 99, 'retaining_metres': 3088, 'wall_points': 3123, 'changed': 42829, 'mean_change': 0.4165480434894562}
+  79 bridge and tunnel ways: 95 ends on the ground, 307 points on IPR's decks
+  13 tunnel ways never go 2.5 m under the ground: left on it
+  74 bridge and tunnel pieces on up to 2 levels either way
+  1 flat terraces under the street before bridges drawn from past their wall
+  ground brought to the bridges' ends at 231 points
+terrain 184–338 m for 25 tiles
+ujezd ipr_terrain: prepare_downloads_layers 0.08 s, sheets_raster_merge 1.34 s, fill_gaps 0.01 s, survey 0.78 s, bridges_tunnels 1.34 s, encode_write 0.02 s, assembly 0.00 s, total 3.57 s

@@ -1,0 +1,21 @@
+{
+  "source": "/tmp/radotin-height-diagnosis/candidate-raw-trace.pkl",
+  "way_kinds": [
+    "bridge"
+  ],
+  "ways": 26,
+  "passes": [
+    {
+      "pass": 0,
+      "nodes": 1016,
+      "pins": 18,
+      "all_heights_and_distances_bit_identical": true
+    },
+    {
+      "pass": 1,
+      "nodes": 1016,
+      "pins": 692,
+      "all_heights_and_distances_bit_identical": true
+    }
+  ]
+}

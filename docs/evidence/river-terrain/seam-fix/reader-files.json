@@ -1,0 +1,11 @@
+{
+  "base_commit": "bcf7c6e",
+  "state": "shared-edge repair before commit",
+  "files_sha256": {
+    "src/ground.ts": "60bad5534b8f1dc5ac7ae8eb9da49f3cc6ff98ff5a404f801204bebf384e06d9",
+    "src/terrain-cut.ts": "a0fe5fa270cb1431fbda3fe7dd23e66af4f3b8b3b2508fed9c41d7bb02ffbd94",
+    "src/terrain-edges.ts": "10bd95927c26a99a3269c87f74d62ed13fa69f4a44f18989dd847ae9b82a63eb",
+    "scripts/test-ground-seams.mjs": "16c5d131113493e0e24bd5b0bb19d1aa5bdbab19233ae4e4b3f91f8aadc01142"
+  },
+  "edge_spacing_m": 2
+}

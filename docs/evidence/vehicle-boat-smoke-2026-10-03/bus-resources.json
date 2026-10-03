@@ -1,0 +1,13 @@
+{
+  "value": {
+    "backend": "WebGPU",
+    "renders": 200,
+    "cachedBoards": 3,
+    "line": {
+      "ref": "148",
+      "to": "I. P. Pavlova"
+    }
+  },
+  "errors": [],
+  "shots": []
+}

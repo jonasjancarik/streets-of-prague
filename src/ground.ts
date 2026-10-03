@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { onPolygons, signedArea } from './map/geo.ts';
 import { WATER } from './terrain.ts';
+import { TerrainStepIndex, cutTerrainSteps } from './terrain-cut.ts';
+import { edgeHeightSampler, conformTerrainEdges } from './terrain-edges.ts';
 import type { Terrace } from './terrain.ts';
 import { offsetLine } from './network.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
@@ -202,54 +204,21 @@ let groundHeight: HeightAt | null = null;
 // them, so the ground on each side lies at its own height right up to the step.
 let sideOf: ((x: number, y: number) => number) | null = null;
 let terraceOutlines: Polygons = []; // (the water's among them)
+let stepIndex: TerrainStepIndex | null = null;
+let groundBox: Bounds | null = null;
 // Set while the water itself is built: all of it lies at the water's level.
 let afloat = false;
 const STEP_FINE = 2; // m between a layer's points along a step, so the cut follows its bends
 const WALL_MIN = 0.03; // m: a step lower than this gets no wall
 
-// A mesh cut along the steps: every triangle that crosses one is split there, with the
-// points on the step doubled, one for each side. Returns the triangles and the side each
-// point is on.
+// Keep the ordinary 8 m mesh away from steps, with closer samples along them.
+// The actual cuts follow every outline, including narrow enclosed terraces and
+// three levels meeting; triangle-corner labels alone cannot detect those cases.
 function cutAtSteps(pos: number[], idx: number[], extra: number[] | null, at: (x: number, y: number) => number) {
   const side: number[] = [];
   const sideAt = (i: number) => (side[i] ??= at(pos[i * 3], -pos[i * 3 + 2]));
   idx = subdivide(pos, idx, extra, 8, (i, j, d2) => d2 > STEP_FINE * STEP_FINE && sideAt(i) !== sideAt(j));
-  // Where the step crosses an edge, found by halving: [the point on i's side, on j's].
-  const cuts = new Map<number, [number, number]>();
-  const cut = (i: number, j: number): [number, number] => {
-    const lo = Math.min(i, j), hi = Math.max(i, j), key = lo * 4194304 + hi;
-    let c = cuts.get(key);
-    if (!c) {
-      const ax = pos[lo * 3], az = pos[lo * 3 + 2], dx = pos[hi * 3] - ax, dz = pos[hi * 3 + 2] - az, here = sideAt(lo);
-      let t0 = 0, t1 = 1;
-      for (let k = 0; k < 14; k++) {
-        const t = (t0 + t1) / 2;
-        if (at(ax + dx * t, -(az + dz * t)) === here) t0 = t; else t1 = t;
-      }
-      const t = (t0 + t1) / 2, v = pos.length / 3;
-      pos.push(ax + dx * t, 0, az + dz * t, ax + dx * t, 0, az + dz * t);
-      side[v] = here;
-      side[v + 1] = sideAt(hi);
-      if (extra) { const e = extra[lo] + (extra[hi] - extra[lo]) * t; extra.push(e, e); }
-      c = [v, v + 1];
-      cuts.set(key, c);
-    }
-    return i === lo ? c : [c[1], c[0]];
-  };
-  const out: number[] = [];
-  for (let t = 0; t < idx.length; t += 3) {
-    let a = idx[t], b = idx[t + 1], c = idx[t + 2];
-    const sa = sideAt(a), sb = sideAt(b), sc = sideAt(c);
-    // (Three sides meeting in one triangle: left whole.)
-    if ((sa === sb && sb === sc) || (sa !== sb && sb !== sc && sa !== sc)) { out.push(a, b, c); continue; }
-    // Turned so that `a` is the corner alone on its side of the step.
-    if (sa === sc) [a, b, c] = [b, c, a];
-    else if (sa === sb) [a, b, c] = [c, a, b];
-    const [pa, pb] = cut(a, b), [qa, qc] = cut(a, c);
-    out.push(a, pa, qa, pb, b, c, pb, c, qc);
-  }
-  for (let i = pos.length / 3 - 1; i >= 0; i--) sideAt(i);
-  return { idx: out, side };
+  return cutTerrainSteps(pos, idx, extra, at, stepIndex!);
 }
 
 // The walls at the steps: along the outlines of the water and the terraces, between the
@@ -295,8 +264,9 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
   }
   if (groundHeight) {
     let side: number[] | null = null;
-    if (sideOf && !afloat) ({ idx, side } = cutAtSteps(pos, idx, extra, sideOf));
+    if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf));
     else idx = subdivide(pos, idx, extra, 8);
+    if (groundBox) ({ pos, idx, extra, side } = conformTerrainEdges(pos, idx, extra, side, groundBox, STEP_FINE));
     for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat ? WATER : side ? side[k] : false);
   }
   const nor = new Float32Array(pos.length);
@@ -343,10 +313,12 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   }
   const outlines = at ? [...water, ...terraces.flatMap((t) => t.polys)] : [];
   const stepped = <R>(build: () => R): R => {
-    groundHeight = height;
+    groundHeight = height ? edgeHeightSampler(height, box, STEP_FINE) : null;
+    groundBox = height ? box : null;
     sideOf = at;
     terraceOutlines = outlines;
-    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; }
+    stepIndex = at ? new TerrainStepIndex(outlines) : null;
+    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; stepIndex = null; groundBox = null; }
   };
   if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones })), masks: [] };
   const T = height || (() => 0);

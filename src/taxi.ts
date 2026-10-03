@@ -63,6 +63,8 @@ export class Taxis {
   private wait = 0;
   private metres = 0;
   private shown = '';
+  private touchButton: HTMLElement | null;
+  private touchShown = '';
   private beacon = new THREE.Group();
   private pillar: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   private arrow: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
@@ -97,7 +99,8 @@ export class Taxis {
       e.stopPropagation();
       this.choose(Number(b.dataset.pick));
     });
-    document.getElementById('t-taxi')?.addEventListener('click', () => this.key('KeyT', true));
+    this.touchButton = document.getElementById('t-taxi');
+    this.touchButton?.addEventListener('click', () => this.key('KeyT', true));
   }
 
   get riding() { return this.state === 'riding'; }
@@ -109,7 +112,7 @@ export class Taxis {
   // Keys (on foot or in the taxi). Returns true when the key was taken.
   key(code: string, onFoot: boolean) {
     if (code === 'KeyT' && (onFoot || this.state === 'menu')) {
-      if (this.state === 'off') this.state = 'menu';
+      if (this.state === 'off') { this.note = ''; this.noteT = 0; this.state = 'menu'; }
       else if (this.state === 'menu') this.state = 'off';
       else if (this.state !== 'riding') { this.cancel(); this.say(t('Taxi cancelled')); }
       return true;
@@ -148,6 +151,9 @@ export class Taxis {
     if (!best) { this.state = 'off'; this.say(t('No taxi free nearby. Try again in a moment')); return; }
     this.firm = firm;
     this.agent = best;
+    this.note = '';
+    this.noteT = 0;
+    this.waiting = false;
     best.hired = true;
     best.reckless = firm.app;
     if (firm.app) best.car.refit(Math.random, true);
@@ -176,6 +182,12 @@ export class Taxis {
     this.state = 'off';
     this.dest = null;
     this.scale = 1;
+    this.waiting = false;
+    this.final = false;
+    this.replan = this.wait = this.metres = 0;
+    this.note = '';
+    this.noteT = 0;
+    this.beacon.visible = false;
     this.o.el.hidden = true;
     this.shown = '';
   }
@@ -383,6 +395,14 @@ export class Taxis {
   render(touch: boolean) {
     const { el } = this.o;
     const menu = this.state === 'menu', riding = this.riding;
+    const control = `${getLang()}|${this.state}`;
+    if (this.touchButton && this.touchShown !== control) {
+      this.touchShown = control;
+      const label = menu ? 'Close taxi menu' : this.state === 'coming' || this.state === 'waiting' ? 'Cancel taxi' : 'Taxi';
+      // Keep global language changes tied to the current action, too.
+      this.touchButton.dataset.t = label;
+      this.touchButton.textContent = t(label);
+    }
     el.hidden = !menu && !riding;
     if (el.hidden) { this.shown = ''; return; }
     const key = `${getLang()}|${this.state}|${this.dest}|${touch}`;

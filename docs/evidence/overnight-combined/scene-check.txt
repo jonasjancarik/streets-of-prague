@@ -1,0 +1,66 @@
+t.paused = true;
+t.time('14:00'); t.weather('clear'); t.season('summer');
+const d = __drive, expected = '2026-10-02T22:45:45Z';
+if (d.world.index.built !== expected || d.world.area !== 'centrum') throw Error('Wrong combined map generation');
+const canvas = d.renderer.domElement;
+for (const el of document.body.children) if (el !== canvas && !el.contains(canvas)) el.style.visibility = 'hidden';
+const { onPolygons } = await import('/src/map/geo.ts');
+const views = [
+ {name:'karlovo',at:[50.075,14.4195],height:145,tilt:25,heading:0},
+ {name:'old-town',at:[50.0873,14.4208],height:135,tilt:25,heading:0},
+ {name:'courtyard',at:[50.0838504,14.4083889],height:35,tilt:0,heading:0},
+ {name:'kampa',at:[50.081814815,14.4103086003],height:55,tilt:25,heading:0}
+];
+const metadata = new Map(), checked = new Set(), placements = [], rows = [], violations = [];
+const sizes = [[.95,.42],[.32,.32],[.65,.65]];
+const segDistance = (x,y,a,b) => { const dx=b[0]-a[0],dy=b[1]-a[1],len=dx*dx+dy*dy;const u=len?Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy)/len)):0;return Math.hypot(x-a[0]-dx*u,y-a[1]-dy*u); };
+for (const v of views) {
+ await t.camera(v);
+ await t.go([v.at[0]+.0003,v.at[1]-.0002]);
+ await t.camera(v);
+ const [cx,cy] = t.toLocal(v.at), target = d.world.tileAt(cx,cy);
+ if (!target?.sample || !Number.isFinite(target.sample(cx,cy))) throw Error('Camera target terrain is not loaded: '+v.name);
+ await t.shot(v.name+'-combined');
+ const meshes = [...d.world.loaded.values()].flatMap(tile=>tile.furniture);
+ rows.push({camera:v,loaded:d.world.loaded.size,objects:meshes.reduce((a,m)=>(a[m.name]=(a[m.name]||0)+m.count,a),{}),triangles:meshes.reduce((n,m)=>n+m.count*m.geometry.attributes.position.count/3,0)});
+ for (const tile of d.world.loaded.values()) {
+  if (checked.has(tile.k)) continue;
+  checked.add(tile.k);
+  const json = await fetch('/data/centrum_now/tiles/'+tile.k+'.json').then(r=>r.json());
+  metadata.set(tile.k,json);
+  const paved = onPolygons(['square','square_setts','square_asphalt','square_loose','water','parking'].flatMap(k=>json.areas[k]||[]));
+  const road = onPolygons(Object.values(json.roads).flat());
+  const buildings = onPolygons(json.buildings.map(b=>b.rings));
+  const structures = onPolygons((json.structures||[]).flatMap(s=>s.polys));
+  for (const mesh of tile.furniture) for(let i=0;i<mesh.count;i++) {
+   const a=mesh.instanceMatrix.array,o=i*16,x=a[o+12],y=-a[o+14],z=a[o+13]+.04,angle=Math.atan2(-a[o+2],a[o]),kind=mesh.userData.kind;
+   const [hx,hy]=sizes[kind],c=Math.cos(angle),s=Math.sin(angle);
+   let issues=[];
+   for (const [u,v] of [[0,0],[-hx,-hy],[-hx,hy],[hx,-hy],[hx,hy],[-hx,0],[hx,0],[0,-hy],[0,hy]]) {
+    const px=x+c*u-s*v,py=y+s*u+c*v;
+    if(paved(px,py))issues.push('paving/water/parking');
+    if(road(px,py))issues.push('road polygon');
+    if(buildings(px,py))issues.push('building');
+    if(structures(px,py))issues.push('structure');
+    for(const e of json.walk||[])for(let j=1;j<e.pts.length;j++)if(segDistance(px,py,e.pts[j-1],e.pts[j])<Math.max(.75,e.width/2)-.01)issues.push('real walking route');
+   }
+   if(d.world.cellAt(x,y,0,z)!==255)issues.push('missing furniture collision');
+   const record={tile:tile.k,kind,x,y,z,angle};placements.push(record);
+   if(issues.length)violations.push({...record,issues:[...new Set(issues)]});
+  }
+ }
+}
+// Exercise a real bench approach, rather than checking a grid value alone.
+await t.camera(views[3]);
+const tile = [...d.world.loaded.values()].find(tile=>tile.furniture.some(m=>m.userData.kind===0));
+const mesh = tile?.furniture.find(m=>m.userData.kind===0);
+if(!mesh)throw Error('No loaded Kampa bench for the collision test');
+const m=mesh.instanceMatrix.array,x=m[12],y=-m[14],angle=Math.atan2(-m[2],m[0]),fx=-Math.sin(angle),fy=Math.cos(angle);
+const ll=d.dev.toLonLat(x+fx*3,y+fy*3),heading=((90-Math.atan2(-fy,-fx)*180/Math.PI)%360+360)%360;
+await t.go([ll[1],ll[0]],{heading});
+const start={x:d.walker.x,y:d.walker.y,projection:(d.walker.x-x)*fx+(d.walker.y-y)*fy};
+await t.wait(1,{move:1});
+const end={x:d.walker.x,y:d.walker.y,projection:(d.walker.x-x)*fx+(d.walker.y-y)*fy};
+const collision={tile:tile.k,bench:{x,y},start,end,displacement:Math.hypot(end.x-start.x,end.y-start.y),blockedAtCentre:d.walker.blocked(x,y),pass:end.projection>.3&&end.projection<start.projection-.5};
+const result={built:d.world.index.built,backend:d.renderer.isWebGPURenderer?'webgpu':'webgl',views:rows,checkedTiles:checked.size,placements,violations,collision,streaming:d.world.streamingStats};
+return result;

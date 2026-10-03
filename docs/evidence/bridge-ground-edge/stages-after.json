@@ -1,0 +1,254 @@
+{
+  "processing": [
+    "c80a910222cd34df3868bd64d426d063a97f59c030b18e9df14451acacc693c7",
+    [
+      "3.14.6",
+      {
+        "osmnx": "2.1.1",
+        "shapely": "2.1.2",
+        "numpy": "2.5.3",
+        "pyproj": "3.8.0",
+        "lxml": "6.1.3",
+        "scipy": "1.18.1"
+      }
+    ]
+  ],
+  "stages": [
+    {
+      "stage": "before_survey",
+      "points": [
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 7,
+          "asl": 192.2689208984375,
+          "label": null
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 7,
+          "asl": 192.2689208984375,
+          "label": null
+        },
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 8,
+          "asl": 192.10824584960938,
+          "label": null
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 8,
+          "asl": 192.10824584960938,
+          "label": null
+        }
+      ]
+    },
+    {
+      "stage": "after_survey",
+      "points": [
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 7,
+          "asl": 192.40663146972656,
+          "label": 0
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 7,
+          "asl": 192.40663146972656,
+          "label": 0
+        },
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 8,
+          "asl": 191.99327087402344,
+          "label": 0
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 8,
+          "asl": 191.99327087402344,
+          "label": 0
+        }
+      ]
+    },
+    {
+      "stage": "after_structure_build",
+      "points": [
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 7,
+          "asl": 192.40663146972656,
+          "label": 0
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 7,
+          "asl": 192.40663146972656,
+          "label": 0
+        },
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 8,
+          "asl": 191.99327087402344,
+          "label": 0
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 8,
+          "asl": 191.99327087402344,
+          "label": 0
+        }
+      ]
+    },
+    {
+      "stage": "before_pads",
+      "points": [
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 7,
+          "asl": 192.40663146972656,
+          "label": 0
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 7,
+          "asl": 192.40663146972656,
+          "label": 0
+        },
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 8,
+          "asl": 191.99327087402344,
+          "label": 0
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 8,
+          "asl": 191.99327087402344,
+          "label": 0
+        }
+      ]
+    },
+    {
+      "stage": "after_pads_before_pull",
+      "points": [
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 7,
+          "asl": 192.40663146972656,
+          "label": 0
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 7,
+          "asl": 192.40663146972656,
+          "label": 0
+        },
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 8,
+          "asl": 191.99327087402344,
+          "label": 0
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 8,
+          "asl": 191.99327087402344,
+          "label": 0
+        }
+      ]
+    },
+    {
+      "stage": "final_export_0_0.height.bin",
+      "points": [
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 7,
+          "asl": 192.05674743652344,
+          "label": 0
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 7,
+          "asl": 192.05674743652344,
+          "label": 0
+        },
+        {
+          "tile": "2_0",
+          "xindex": 62,
+          "yindex": 8,
+          "asl": 192.05674743652344,
+          "label": 0
+        },
+        {
+          "tile": "3_0",
+          "xindex": 0,
+          "yindex": 8,
+          "asl": 192.05674743652344,
+          "label": 0
+        }
+      ]
+    }
+  ],
+  "pads": [
+    {
+      "bounds": [
+        73.98894904415897,
+        -30.618006828583432,
+        76.85312178815838,
+        -21.523727498171215
+      ],
+      "asl": 193.40175243529214
+    },
+    {
+      "bounds": [
+        5.873585125316229,
+        625.5187733362251,
+        12.556737098110872,
+        637.6082004546545
+      ],
+      "asl": 192.7980906124488
+    }
+  ],
+  "decks": [
+    {
+      "tile": "3_0",
+      "xindex": 0,
+      "yindex": 7,
+      "level": 1,
+      "kind": "bridge",
+      "asl": 192.05674743652344
+    },
+    {
+      "tile": "3_0",
+      "xindex": 0,
+      "yindex": 8,
+      "level": 1,
+      "kind": "bridge",
+      "asl": 192.05674743652344
+    }
+  ]
+}

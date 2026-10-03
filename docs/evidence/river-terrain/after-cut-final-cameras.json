@@ -1,0 +1,161 @@
+{
+  "meta": {
+    "built": "2026-10-02T21:10:50Z",
+    "pipeline": "b3c22d5adf-dirty",
+    "area": "ujezd",
+    "url": "http://localhost:5201/?place=ujezd&go&day=wed&time=14:00&weather=clear&graphics=high&dpr=1&date=10-02&area=ujezd&dev",
+    "terrain": {
+      "step": 4.032258064516129,
+      "n": 63,
+      "min": 184.37002059647074,
+      "max": 338.2761503845537,
+      "structures": [
+        "0_1",
+        "1_1",
+        "1_2",
+        "2_2",
+        "2_3",
+        "2_4",
+        "3_0",
+        "3_2",
+        "3_4",
+        "4_1",
+        "4_2",
+        "4_4"
+      ]
+    },
+    "backend": true
+  },
+  "cameras": [
+    {
+      "name": "legii-west",
+      "at": [
+        50.08127,
+        14.40807
+      ],
+      "height": 75,
+      "tilt": 55,
+      "heading": 0
+    },
+    {
+      "name": "legii-east",
+      "at": [
+        50.08139,
+        14.41288
+      ],
+      "height": 75,
+      "tilt": 55,
+      "heading": 0
+    },
+    {
+      "name": "certovka-south-bridge",
+      "at": [
+        50.08262,
+        14.40697
+      ],
+      "height": 45,
+      "tilt": 55,
+      "heading": 80
+    },
+    {
+      "name": "certovka-north-bridge",
+      "at": [
+        50.0852,
+        14.40762
+      ],
+      "height": 45,
+      "tilt": 55,
+      "heading": 0
+    },
+    {
+      "name": "charles-east",
+      "at": [
+        50.08619,
+        14.41353
+      ],
+      "height": 75,
+      "tilt": 55,
+      "heading": 0
+    },
+    {
+      "name": "certovka",
+      "at": [
+        50.08451,
+        14.40856
+      ],
+      "height": 60,
+      "tilt": 55,
+      "heading": 110
+    },
+    {
+      "name": "nosticova-spike",
+      "at": [
+        50.08275,
+        14.40453
+      ],
+      "height": 70,
+      "tilt": 50,
+      "heading": 70
+    },
+    {
+      "name": "petrin-bank",
+      "at": [
+        50.0839,
+        14.40061
+      ],
+      "height": 100,
+      "tilt": 60,
+      "heading": 270
+    }
+  ],
+  "results": [
+    {
+      "name": "legii-west",
+      "centre": 13.400000000000006,
+      "min": 4.699999809265137,
+      "max": 13.600000381469727
+    },
+    {
+      "name": "legii-east",
+      "centre": 13.582923384051096,
+      "min": 5.699999809265137,
+      "max": 13.699999809265137
+    },
+    {
+      "name": "certovka-south-bridge",
+      "centre": 5.106783150945934,
+      "min": 5.099999904632568,
+      "max": 9.946554263323621
+    },
+    {
+      "name": "certovka-north-bridge",
+      "centre": 4.800000190734863,
+      "min": 4.800000190734863,
+      "max": 9.29670702691756
+    },
+    {
+      "name": "charles-east",
+      "centre": 13.620448837509018,
+      "min": 4.699999809265137,
+      "max": 14.3910794388742
+    },
+    {
+      "name": "certovka",
+      "centre": 9.08307980093794,
+      "min": 8.429255472744424,
+      "max": 9.803593520146576
+    },
+    {
+      "name": "nosticova-spike",
+      "centre": 14.237875467311751,
+      "min": 13.761386113255845,
+      "max": 15.786752116863223
+    },
+    {
+      "name": "petrin-bank",
+      "centre": 60.03633919111452,
+      "min": 54.763496531177815,
+      "max": 64.61870820238641
+    }
+  ]
+}

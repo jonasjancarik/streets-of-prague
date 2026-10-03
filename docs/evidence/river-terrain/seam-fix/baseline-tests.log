@@ -1,0 +1,147 @@
+✖ groundLayers keeps independently clipped shoreline meshes joined over curved terrain (4.630791ms)
+✖ groundLayers edge refinement agrees with reversed rings and different local terrace labels (1.161709ms)
+✖ a one-sided outline touching the edge does not create a curved-terrain gap (0.475791ms)
+✖ world-aligned perimeter stations join meshes with shifted tile endpoints (1.021583ms)
+✖ Float32 uploads at large map coordinates retain a shared edge profile (0.558167ms)
+✔ perimeter refinement preserves winding, sides, alpha, and interior density (0.516542ms)
+✔ edge height profile preserves flat steps and raw interior samples (0.1575ms)
+✔ Float32 rounding near fractional tile ends never samples beyond the tile (0.065667ms)
+✖ horizontal neighbouring tiles use the same curved edge profile (1.747291ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 3
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 81.875292
+
+✖ failing tests:
+
+test at ../../../../../../private/tmp/terrain-seam-fix/test-old.mjs:40:1
+✖ groundLayers keeps independently clipped shoreline meshes joined over curved terrain (4.630791ms)
+  AssertionError [ERR_ASSERTION]: pre-cut subdivision disagrees across the tile edge
+  + actual - expected
+
+    [
+      0,
+  -   2,
+      3.0999999046325684,
+  -   4,
+      8
+    ]
+
+      at check (file:///private/tmp/terrain-seam-fix/test-old.mjs:33:10)
+      at TestContext.<anonymous> (file:///private/tmp/terrain-seam-fix/test-old.mjs:41:16)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 0, 3.0999999046325684, 8 ],
+    expected: [ 0, 2, 3.0999999046325684, 4, 8 ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at ../../../../../../private/tmp/terrain-seam-fix/test-old.mjs:45:1
+✖ groundLayers edge refinement agrees with reversed rings and different local terrace labels (1.161709ms)
+  AssertionError [ERR_ASSERTION]: pre-cut subdivision disagrees across the tile edge
+  + actual - expected
+
+    [
+      0,
+  -   2,
+      3.0999999046325684,
+  -   4,
+      8
+    ]
+
+      at check (file:///private/tmp/terrain-seam-fix/test-old.mjs:33:10)
+      at TestContext.<anonymous> (file:///private/tmp/terrain-seam-fix/test-old.mjs:47:3)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 0, 3.0999999046325684, 8 ],
+    expected: [ 0, 2, 3.0999999046325684, 4, 8 ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at ../../../../../../private/tmp/terrain-seam-fix/test-old.mjs:49:1
+✖ a one-sided outline touching the edge does not create a curved-terrain gap (0.475791ms)
+  AssertionError [ERR_ASSERTION]: one-sided contact gap at 0.173
+      at TestContext.<anonymous> (file:///private/tmp/terrain-seam-fix/test-old.mjs:52:38)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at ../../../../../../private/tmp/terrain-seam-fix/test-old.mjs:54:1
+✖ world-aligned perimeter stations join meshes with shifted tile endpoints (1.021583ms)
+  AssertionError [ERR_ASSERTION]: shifted seam at 0.673
+      at TestContext.<anonymous> (file:///private/tmp/terrain-seam-fix/test-old.mjs:57:40)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at ../../../../../../private/tmp/terrain-seam-fix/test-old.mjs:59:1
+✖ Float32 uploads at large map coordinates retain a shared edge profile (0.558167ms)
+  AssertionError [ERR_ASSERTION]: uploaded seam at 10000.173
+      at TestContext.<anonymous> (file:///private/tmp/terrain-seam-fix/test-old.mjs:64:51)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at ../../../../../../private/tmp/terrain-seam-fix/test-old.mjs:95:1
+✖ horizontal neighbouring tiles use the same curved edge profile (1.747291ms)
+  AssertionError [ERR_ASSERTION]: horizontal seam at 0.173
+      at TestContext.<anonymous> (file:///private/tmp/terrain-seam-fix/test-old.mjs:100:37)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

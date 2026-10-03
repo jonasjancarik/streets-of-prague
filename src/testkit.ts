@@ -10,7 +10,10 @@ import type { Fires } from './fire.ts';
 import type { Brigade } from './brigade.ts';
 import type { Ambulances } from './ambulance.ts';
 import type { Pedestrian } from './people.ts';
+import type { Traffic } from './traffic.ts';
+import type { TramBody } from './trams.ts';
 import type { Kind } from './weather.ts';
+import type { Boats } from './boats.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
 // as window.__test. Positions are latitude/longitude in and out, headings are compass
@@ -45,6 +48,7 @@ interface Game {
   teleport: (x: number, y: number) => Promise<void>;
   me: () => { x: number; y: number; h: number; vx: number; vy: number };
   car: () => Car | null;
+  heli: () => { readonly landed: boolean } | null;
   mode: () => string;
   street: () => string | null;
   enterOrExit: () => void;
@@ -54,11 +58,15 @@ interface Game {
   view: (zoom: number) => void;
   loaded: (x: number, y: number) => Promise<void>;
   grid: { at: (x: number, y: number) => number };
+  boats: Boats;
   carsNear: (x: number, y: number, r: number) => Car[];
+  tramsNear: (x: number, y: number, r: number) => TramBody[];
   // Where the camera looks now, and how high it is (for starting the free camera there).
   view0: () => { x: number; y: number; height: number };
+  viewRadius: () => number;
+  offscreen: (x: number, y: number) => boolean;
   canvas: HTMLElement; fov: number;
-  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; traffic: { agents: { car: Car }[] }; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
+  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; traffic: Traffic; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
   rng: () => number;
@@ -71,8 +79,7 @@ const deg = (h: number) => ((((90 - (h * 180) / Math.PI) % 360) + 360) % 360);
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 const round = (x: number, n = 1) => Math.round(x * 10 ** n) / 10 ** n;
 
-export function setupTestkit(g: Game) {
-  const scenarios = import.meta.glob<{ default: Scenario }>('../scenarios/*.ts');
+export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Scenario }>('../scenarios/*.ts')) {
   const names = Object.keys(scenarios).map((p) => p.replace(/^.*\/(.*)\.ts$/, '$1')).sort();
 
   const kit = {
@@ -113,6 +120,34 @@ export function setupTestkit(g: Game) {
       await frame();
     },
 
+    // Scenario preparation uses the ordinary descent/exit controls. Teleporting a
+    // flying vehicle alone keeps it flying, so first find open landing ground away
+    // from the next test's cars, land through simulation, then get out normally.
+    async onFoot() {
+      const heli = g.heli();
+      if (heli && !heli.landed) {
+        const { x, y } = g.me();
+        await g.loaded(x, y);
+        let landing: Point2 | null = null;
+        for (let r = 100; r <= 200 && !landing; r += 25) for (let i = 0; i < 24; i++) {
+          const a = i * Math.PI / 12, lx = x + Math.cos(a) * r, ly = y + Math.sin(a) * r;
+          if ([[0, 0], [3, 0], [-3, 0], [0, 3], [0, -3]].every(([dx, dy]) => g.grid.at(lx + dx, ly + dy) === 0)) {
+            landing = [lx, ly];
+            break;
+          }
+        }
+        if (!landing) throw new Error('No clear landing ground near the scenario start');
+        await g.teleport(...landing);
+        for (let seconds = 0; seconds < 45 && !heli.landed; seconds++) await kit.wait(1, { run: true });
+        if (!heli.landed) throw new Error('The helicopter did not land during scenario preparation');
+      }
+      kit.exit();
+      if (g.mode() !== 'foot') throw new Error(`Could not start the scenario on foot from ${g.mode()}`);
+      kit.cam = null;
+      g.view(1);
+      await frame();
+    },
+
     time(hhmm: string) {
       const m = /^(\d{1,2})[:.](\d{2})$/.exec(hhmm);
       if (!m) throw new Error(`Time as 14:30, not ${hhmm}`);
@@ -125,6 +160,14 @@ export function setupTestkit(g: Game) {
 
     // What the arrest does to the chase: the stars go and the police cars stand down.
     forgive() { g.police.forgive(); },
+
+    policeLights(c: Car) { return g.police.lit(g.car()).includes(c); },
+    policeCar() {
+      const m = g.me();
+      return [...g.police.cars.map((p) => p.car), ...g.traffic.agents.map((a) => a.car)]
+        .filter((c) => c.type === 'police' && !c.burnt)
+        .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null;
+    },
 
     set({ money, stars, health }: { money?: number; stars?: number; health?: number }) {
       if (money !== undefined) g.wallet.balance = Math.max(0, Math.floor(money));
@@ -153,6 +196,13 @@ export function setupTestkit(g: Game) {
 
     // Whether a loose car (a wreck, a parked or left car) is still in the world.
     standing(c: Car) { return g.loose.includes(c); },
+    // The current production cleanup view, using the car's actual position.
+    carView(c: Car) {
+      const player = g.me(), camera = g.view0();
+      return { playerDistance: Math.hypot(c.x - player.x, c.y - player.y),
+        cameraDistance: Math.hypot(c.x - camera.x, c.y - camera.y),
+        radius: g.viewRadius(), outOfSight: g.offscreen(c.x, c.y) };
+    },
 
     // Leaves the nearest person on the pavement lying hurt: an ambulance is called.
     hurt(grave = false) { return g.hurtNearest(grave); },
@@ -197,6 +247,14 @@ export function setupTestkit(g: Game) {
     async drive(type = 'hatch') {
       if (g.mode() !== 'foot') g.enterOrExit();
       const c = kit.car(type, { ahead: 3 });
+      await kit.enter(c);
+      return c;
+    },
+
+    // Take an existing car through the ordinary enter/exit path, including theft.
+    async enter(c: Car) {
+      if (g.car() === c) return;
+      if (g.mode() !== 'foot') g.enterOrExit();
       const m = g.me();
       m.x = c.x - Math.sin(c.h) * (c.spec.W / 2 + 0.6);
       m.y = c.y + Math.cos(c.h) * (c.spec.W / 2 + 0.6);
@@ -206,8 +264,30 @@ export function setupTestkit(g: Game) {
       return c;
     },
 
+    // Assign a loaded PID line to a test bus; never invent a route identifier.
+    busLines() { return g.traffic.busLines.map(({ ref, to }) => ({ ref, to })); },
+    busLine(c: Car, ref: string) {
+      if (c.type !== 'bus' && c.type !== 'minibus') throw new Error('Not a bus');
+      const line = g.traffic.busLines.find((l) => l.ref === ref);
+      if (!line) throw new Error(`No loaded bus line ${ref}`);
+      c.line = { ref: line.ref, to: line.to };
+    },
+
     // Out of whatever you're in.
     exit() { if (g.mode() !== 'foot') g.enterOrExit(); },
+    // Loaded boats and their safe bank access, in latitude/longitude like go().
+    boats() {
+      const at = (p: Point2): Point2 => { const [lon, lat] = g.toLonLat(...p); return [lat, lon]; };
+      return g.boats.list.filter(b => b.live).map(b => {
+        const bank = b.kind === 'cruise' ? null : g.boats.landing(b);
+        return { kind: b.kind, moored: b.moored, at: at([b.x, b.y]), bank: bank ? at(bank) : null,
+          waterHeight: g.boats.waterHeight(b), bankHeight: bank ? g.boats.water.terrainAt(...bank) : null };
+      });
+    },
+    boardBoat() {
+      if (g.mode() === 'foot') g.enterOrExit();
+      return g.mode() === 'boat';
+    },
 
     // Your car (or c) going at this speed along the heading.
     push(kmh: number, heading?: number, c = g.car()) {
@@ -235,6 +315,9 @@ export function setupTestkit(g: Game) {
       const c = g.car();
       if (!c) throw new Error('Not in a car');
       const clear = (x: number, y: number) => g.grid.at(x, y) === 0;
+      // Use the same circle bodies/radius as gameplay collisions. A tram can be
+      // standing across this run even when walls and parked cars are clear.
+      const trams = g.tramsNear(p.x, p.y, back + c.spec.L + 30);
       for (let a = 0; a < 24; a++) {
         const h = (a * Math.PI) / 12, sx = p.x - Math.cos(h) * back, sy = p.y - Math.sin(h) * back;
         let ok = true;
@@ -243,6 +326,10 @@ export function setupTestkit(g: Game) {
           const x = sx + Math.cos(h) * s, y = sy + Math.sin(h) * s;
           for (const off of [-c.spec.W / 2, 0, c.spec.W / 2]) ok &&= clear(x - Math.sin(h) * off, y + Math.cos(h) * off);
           ok &&= others.every((o) => o.gap(x, y) > c.spec.L / 2 + 0.5);
+          ok &&= c.offsets.every((off) => {
+            const cx = x + Math.cos(h) * off, cy = y + Math.sin(h) * off;
+            return trams.every((body) => body.circles.every(([tx, ty]) => Math.hypot(cx - tx, cy - ty) >= c.r + 1.25 + 0.2));
+          });
         }
         if (!ok) continue;
         Object.assign(c, { x: sx, y: sy, h, vx: 0, vy: 0, w: 0 });
@@ -375,6 +462,7 @@ export function setupTestkit(g: Game) {
       const t0 = performance.now();
       let error: string | undefined;
       try {
+        await kit.onFoot();
         await s.run(kit);
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);

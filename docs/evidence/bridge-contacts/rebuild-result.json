@@ -1,0 +1,16 @@
+{
+  "legacy": {
+    "log": "  26 bridge and tunnel ways: 19 ends on the ground, 506 points on IPR's decks\n  37 bridge and tunnel pieces on up to 4 levels either way\n",
+    "tiles": 21,
+    "levels": 33
+  },
+  "fixed": {
+    "log": "  26 bridge and tunnel ways: 18 ends on the ground, 595 points on IPR's decks\n  37 bridge and tunnel pieces on up to 4 levels either way\n",
+    "tiles": 21,
+    "levels": 32
+  },
+  "ways": 26,
+  "records": 35,
+  "ground_tiles": 56,
+  "seconds": 0.1958673750013986
+}

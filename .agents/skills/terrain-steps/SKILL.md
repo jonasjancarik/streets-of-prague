@@ -118,6 +118,13 @@ Start this checkout's server on its own port (`PORT=5192 npm run dev`), check th
 `curl $GAME_URL/data/praha_now/index.json` shows this checkout's `built`, and distrust a
 "before" and "after" that don't differ at all.
 
+The free camera's `height` is above the terrain at its target (`main.ts`), so a
+height correction there moves the eye and look-at point even with identical
+options. Use an unaffected nearby target for a fixed-pose comparison, and save
+the actual eye position and orientation alongside the map marker. The bridge
+helper's `h + 55` is a relative camera setting, not an absolute eye elevation.
+See `docs/river-terrain-findings.md` for a verified fixed-pose example.
+
 ## Trials, off by default
 
 - `--cut-streets`: a wide surveyed street under or over a steep bank with no surveyed

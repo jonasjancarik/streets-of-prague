@@ -5,6 +5,7 @@ import { Radio, radioOn, setRadioSaved } from './radio.ts';
 import type { Station } from './radio.ts';
 import type { Car } from './car.ts';
 import type { TramVehicle } from './trams.ts';
+import type { BirdSeason } from './soundmix.ts';
 
 // Sound, with the Web Audio API. The engine of whatever you're driving is made here
 // (its note follows the revs through the gears), and so are its tyres (a hiss on
@@ -145,6 +146,7 @@ export interface SoundState {
   strikes?: number; // lightning so far: each new one thunders a moment later
   busy?: number; // how busy the streets around you are, 0 (the edge of town) to 1 (the Old Town)
   hour?: number; // the time of day, in hours (13.5 is half past one)
+  season?: BirdSeason; // the fixed game's date curves, without constructing another object
   sirens?: Siren[]; // emergency vehicles with their sirens on
   aloft?: number; // 0 on the ground to 1 high up in a helicopter: the city fades, sirens stay faint
 }
@@ -317,7 +319,7 @@ export class Sound {
     this.tyres!.update(car, s.surface, s.wet ?? 0);
     this.weather!.update(s.rain ?? 0, s.snow ?? 0);
     const aloft = clamp(s.aloft ?? 0, 0, 1);
-    this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0), aloft);
+    this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0), aloft, s.season);
     this.buses.trams.gain.setTargetAtTime(this.level('trams') * (1 - 0.9 * aloft), t, 0.5);
     if (s.strikes !== undefined) {
       if (this.strikes >= 0 && s.strikes > this.strikes) this.weather!.thunder(t + 0.6 + Math.random() * 3.5);
@@ -957,8 +959,8 @@ class Ambience {
   }
 
   // `busy` 0–1, `hour` 0–24, `wet` how hard it rains or snows 0–1.
-  update(busy: number, hour: number, wet: number, aloft = 0) {
-    const t = this.ctx.currentTime, gains = ambienceGains(busy, hour, wet), muffle = ambienceMuffle(busy);
+  update(busy: number, hour: number, wet: number, aloft = 0, season?: BirdSeason) {
+    const t = this.ctx.currentTime, gains = ambienceGains(busy, hour, wet, season), muffle = ambienceMuffle(busy);
     // High up the city is a faint murmur: much quieter, and only its lows reach you.
     for (const [name, g] of Object.entries(this.gains)) g.gain.setTargetAtTime((gains[name] ?? 0) * (1 - 0.93 * aloft), t, 2);
     for (const [name, lp] of Object.entries(this.muffles)) lp.frequency.setTargetAtTime(Math.min(muffle[name] ?? 20000, 20000 - 18500 * aloft), t, 2);

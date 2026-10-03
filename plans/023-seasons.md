@@ -11,7 +11,8 @@ July, October and January each look like themselves.
 
 ## Status and starting point
 
-- Status: STEPS 1 AND 2 DONE (2 October 2026). The three decisions below are made.
+- Status: STEPS 1–4 MERGED TO MAIN (3 October 2026). Deployment remains pending;
+  verification limits are recorded below. The three decisions are made.
 - Effort: four to five days for phases 1–4. Risk: medium for the trees (two renderers,
   the shadow pass, and the costliest shader in a wood); low for the rest.
 - Planned at: `c2c76265e35c795e07a2b0b33f63ebb3f3db5afa`, 2 October 2026, from reading
@@ -126,6 +127,11 @@ depend on the date.
 - Lit windows follow the sun as well as the hour, so a January afternoon at five has
   them lit.
 - Birds: most in spring mornings, fewer in late summer, nearly none in winter.
+  **Done (3 October).** The existing recorded loops get a date-dependent gain:
+  up to +2.92 dB on spring mornings, the original levels on 15 July, about −8.93 dB
+  on 20 August and −30.46 dB in midwinter. Time windows and rain/snow/quiet-place
+  suppression stay; existing two-second fades keep changes smooth. See
+  [the bird ambience checks](../docs/evidence/seasonal-birds.md).
 
 ## Steps
 
@@ -148,9 +154,36 @@ depend on the date.
    bench's Chrome got WebGL instead of WebGPU on 2 October) and is still owed.
 3. **Ground.** Grass, the floor of the woods, fields, hedges. One day, with a bench of the
    ground at 2×.
+   **Done in an isolated checkout (3 October).**
+   `src/groundSeason.ts` computes linear colour multipliers only when the game date
+   changes: one vec4 for grass tint and existing dry-patch strength, and colour
+   uniforms for woodland litter, crops and evergreen hedges. This keeps date-curve
+   arithmetic off the ground's pixels; shaders add no noise or texture reads.
+   15 July is exactly the old summer palette. The woodland floor is brown from
+   November through March; fields go green in spring, straw by July, and earth in
+   October. Hedges keep their leaves and geometry all year, with mild spring and
+   winter tints. Both GLSL and TSL paths are updated. Terrain geometry is unchanged.
+   `node scripts/check-ground-season.mjs` checks the whole year's smoothness,
+   summer restoration and evergreen semantics. `seasonal-ground` captures the same
+   park, wood and tree-lined street on eight dates: 48 matched WebGL/WebGPU images,
+   with 30 scenario checks per renderer, plus real fields and hedges. The warmed
+   2× ground comparison ran in both renderers with reversed order and unchanged
+   controls. Draw counts stayed equal within each pair, but frame-time variation
+   leaves the added cost unresolved; no speedup is claimed. See
+   [the source, cameras, images and raw timing evidence](../docs/evidence/seasons-step3/README.md).
 4. **Start screen and words.** The season row and the poster's look for each
    (`index.html`), Czech strings (`src/cs.ts`), README, `site/index.html`, a note in
    `todo.md`. Half a day.
+   **Done.** Four season buttons, with the current one using today's Prague date;
+   existing exact-date and representative-season links retain their date until a
+   button is picked, including across midnight. The default reads today's date
+   when the game begins, after the beta note. The poster follows the chosen or saved season. Live Prague
+   weather is offered only for today's date, and switching seasons cannot inherit
+   an automatically selected live forecast. Manual weather choices remain available.
+   CPU date/state/Czech regressions and in-app browser checks at 1280×720 and
+   390×844 passed, including keyboard selection and the existing beta dialog.
+   The UI check used `?menu`, with no map or game renderer; the ground/tree matrix
+   and phone performance are outside this step's check.
 
 Each step ends with screenshots from `scripts/scene.mjs` of the same three places
 (a park, a wood, a street with trees) on eight dates through the year, in both

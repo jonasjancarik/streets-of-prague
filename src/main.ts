@@ -135,7 +135,9 @@ async function main() {
   try { savedSound = localStorage.getItem('sound') ?? ''; } catch {}
   // The game saved by itself last time, unless it's a test run (?go).
   const saved = params.has('go') ? null : readSave('auto', AREA);
-  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), weather: weather.kind, sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.kind } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
+  const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), season: season.day, dateLinked: parseDay(params.get('date')) !== null || parseDay(params.get('season')) !== null, weather: weather.kind, weatherFixed: weather.fixed,
+    weatherForSeason: (day) => { const preview = new Season(params); preview.set(day); return weather.preview(clock.t, preview); },
+    sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.kind, season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
   // ?menu stops here, at the start screen with nothing loaded under it, for working on
@@ -693,10 +695,11 @@ async function main() {
     }
     // Out of a pedal boat onto the bank, when it's beside one.
     if (boats.me) {
-      const b = boats.me, [x, y] = nearestWalkable(grid, b.x, b.y, 8);
-      if (Math.hypot(x - b.x, y - b.y) > 7 || grid.at(x, y) !== 0) return;
+      const b = boats.me, bank = boats.landing(b);
+      if (!bank) return;
+      const [x, y] = bank;
       boats.me = null;
-      Object.assign(walker, { x, y, h: b.h, vx: 0, vy: 0 });
+      Object.assign(walker, { x, y, h: b.h, vx: 0, vy: 0, level: 0, gz: world.terrainAt(x, y) });
       walker.mesh.visible = true;
       walker.sync();
       return;
@@ -748,7 +751,7 @@ async function main() {
       walker.sync();
       return;
     }
-    const boat = boats.near(walker.x, walker.y);
+    const boat = boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch);
     if (boat) {
       boats.me = boat;
       telemetry.did('took a pedal boat');
@@ -1660,6 +1663,7 @@ async function main() {
       if (choice.time === null && !params.has('time') && !params.has('night')) clock.t = new Clock(params).t;
       else if (choice.time !== null) clock.setTime(choice.time);
       world.night = params.has('night') || clock.night;
+      season.set(choice.season);
       weather.begin(choice.weather, clock.t);
     }
     if (sound.on !== choice.sound) sound.toggle();
@@ -1798,7 +1802,7 @@ async function main() {
     if (busyT < 0) { busyT = 0.5; busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1); }
     if (hornHeld && !inCar && !ride.driving) honk(false);
     if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
-    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, hour: (clock.t % 86400) / 3600, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, sirens: [
+    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, sirens: [
       ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
       ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
       ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked).map((r) => ({ key: r, kind: 'ambulance' as const, x: r.car.x, y: r.car.y, vx: r.car.vx, vy: r.car.vy })),
@@ -1914,7 +1918,7 @@ async function main() {
     const enterable = !inCar && !inHeli && !ride.on
       ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8 && !c.burnt).sort((a, b) => gap(a) - gap(b))[0]
       : undefined;
-    const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y) : null;
+    const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch) : null;
     const onFoot = !inCar && !inHeli && !ride.on && !metro.active && !boats.me && !taxi.riding;
     const cabin = onFoot ? funicular.near(walker.x, walker.y) : null;
     const shut = onFoot && !cabin ? funicular.near(walker.x, walker.y, true) : null;
@@ -2036,7 +2040,7 @@ async function main() {
   };
   testkit = setupTestkit({
     toLocal: dev.toLocal, toLonLat: dev.toLonLat, teleport: teleportTo,
-    me: () => inCar || inHeli || walker, car: () => inCar,
+    me: () => inCar || inHeli || walker, car: () => inCar, heli: () => inHeli,
     mode: () => (inCar ? 'car' : inHeli ? 'helicopter' : ride.on ? 'tram' : taxi.riding ? 'taxi' : boats.me ? 'boat' : funicular.me ? 'funicular' : metro.active ? 'metro' : 'foot'),
     street: () => street, enterOrExit,
     addCar: (c) => { loose.push(c); restingStale = true; },
@@ -2044,9 +2048,11 @@ async function main() {
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300),
-    grid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded,
+    grid, boats, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
+    tramsNear: (x, y, r) => trams.bodies(x, y, r),
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
+    viewRadius, offscreen,
     canvas: renderer.domElement, fov: camera.fov,
     weather: { set: (k) => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, kind: () => weather.kind },
     season: { set: (when) => { const day = parseDay(when); if (!day) throw new Error(`A season's name, MM-DD or a day of the year, not ${when}`); season.set(day); }, date: () => season.date },

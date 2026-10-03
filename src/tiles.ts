@@ -14,16 +14,20 @@ import type { Terrace } from './terrain.ts';
 import { SKY_STEP } from './map/skyView.ts';
 import type { Shadower } from './map/skyView.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
-import type { DriveEdge, DriveGraph, WalkEdge, WalkGraph } from './network.ts';
+import { DriveGraph } from './network.ts';
+import type { DriveEdge, WalkEdge, WalkGraph } from './network.ts';
 import type { Car } from './car.ts';
 import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightGrid, LevelInput } from './contracts.ts';
 import { isTileJSON } from './contracts.ts';
 import { TileWorkers } from './tileWorkers.ts';
 import { SkyRefresh } from './skyRefresh.ts';
+import { validateTileBinary, type TileBinaryKind } from './tileBinary.ts';
 import { overheadWires } from './wires.ts';
 import { posts, type Post } from './posts.ts';
 import { fences, type FenceSection } from './fences.ts';
 import { fenceMeshes } from './map/fences.ts';
+import { furnitureMeshes, disposeFurniture } from './furniture.ts';
+import { furnitureSurvey } from './furnitureSurvey.ts';
 
 interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer | null; ipr: ArrayBuffer | null; levels: ArrayBuffer | null }
 // A bridge (1, 2, …) or tunnel (-1, -2, …) level in a tile: where it is and how high.
@@ -35,6 +39,7 @@ interface Tile {
   roads: Polygons; // the carriageways (asphalt, setts, dirt)
   poles: Post[]; // the wires' poles, among the posts a car can hit
   fences: FenceSection[];
+  furniture: THREE.InstancedMesh[];
   relief: { texture: THREE.DataTexture; box: number[]; sample: (x: number, y: number, side?: number | boolean) => number; hm: Float32Array; labels: Uint8Array | null; edges: () => void } | null;
   sample?: (x: number, y: number, side?: number | boolean) => number;
   // The tile's water (the river and ponds), each polygon with its bounding box.
@@ -278,6 +283,8 @@ export class TileWorld {
   loaded: Map<string, Tile>; byIndex: Map<number, Tile>;
   last: { i: number; j: number; tile: Tile | undefined };
   pending: Map<string, Promise<TileFiles>>;
+  jsons: Map<string, Promise<TileJSON>>;
+  jsonRange: { i: number; j: number; reach: number } | null;
   // Each loaded tile's buildings as shadow casters, and its sky-view texture (see map/skyView.ts).
   sky: Map<number, { shapes: Shadower[]; texture: THREE.DataTexture | null; tileBox: Bounds; ground: { hm: Float32Array; box: Bounds; n: number; step: number } | null; refresh: SkyRefresh<Uint8Array> | null }>;
   drive: DriveGraph; walk: WalkGraph;
@@ -290,6 +297,7 @@ export class TileWorld {
   buildTimes: number[];
   skyTotals: { coalesced: number; cancelled: number };
   landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
+  furnitureReserved: Promise<Float32Array | null>;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
     view: (who: Tracked) => { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
@@ -324,6 +332,8 @@ export class TileWorld {
     this.byIndex = new Map(); // i * 65536 + j → tile, for lookups by position
     this.last = { i: NaN, j: NaN, tile: undefined };
     this.pending = new Map(); // key → Promise of the tile's files
+    this.jsons = new Map(); // JSON only: parking needs neighbours without their meshes/heights
+    this.jsonRange = null;
     this.sky = new Map();
     this.drive = drive;
     this.walk = walk;
@@ -344,6 +354,8 @@ export class TileWorld {
     this.landmarks = osmBuildings ? Promise.resolve([]) : fetch(dataUrl(area, 'landmarks.json'))
       .then((r) => (r.ok ? r.json() as Promise<Landmark[]> : [])).catch(() => []);
     this.landmarkModels = new Map();
+    // A stable survey source, independent of the live post index and load order.
+    this.furnitureReserved = furnitureSurvey(dataUrl(area, 'lamps.bin.gz'));
     // Collision lookups across tiles; anywhere not loaded counts as solid.
     // Game y = 0 is this height above sea level (IPR buildings are stored against it).
     this.ref = index.iprRef ?? 180;
@@ -605,17 +617,16 @@ export class TileWorld {
     return out.sort((a, b) => a[0] - b[0]).map((p) => p[1]);
   }
 
-  // All of a tile's files at once: its JSON, terrain heights, its bridges' and tunnels'
-  // heights (or, from before those, the bare ground where bridges were raised) and
-  // IPR's buildings.
-  fetchTile(k: string): Promise<TileFiles> {
-    if (!this.pending.has(k)) {
-      const base = dataUrl(this.area, `tiles/${k}`), gz = !!this.index.gzip;
-      const bin = (name: string) => fetchBinary(`${base}.${name}.bin${gz ? '.gz' : ''}`, gz);
+  // Shared by rendering and the parking halo. A failed neighbour is retried;
+  // missing road evidence must never silently count as an empty street.
+  fetchJSON(k: string): Promise<TileJSON> {
+    if (!this.jsons.has(k)) {
+      const base = dataUrl(this.area, `tiles/${k}`);
+
       const json: Promise<TileJSON> = fetch(`${base}.json`).then(async (r) => {
         if (!r.ok) throw new Error(`Tile ${k} could not be loaded (${r.status})`);
         const value: unknown = await r.json();
-        if (!isTileJSON(value)) throw new Error(`Tile ${k} has invalid map data`);
+        if (!isTileJSON(value, !!this.index.graphs)) throw new Error(`Tile ${k} has invalid map data`);
         if (this.cover) {
           const c = await fetch(dataUrl(this.area, `cover/${this.cover}/${k}.json`)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
           if (c) {
@@ -631,6 +642,43 @@ export class TileWorld {
         }
         return value;
       });
+      json.catch(() => { if (this.jsons.get(k) === json) this.jsons.delete(k); });
+      this.jsons.set(k, json);
+    }
+    return this.jsons.get(k)!;
+  }
+
+  // Complete before any cars are published: no removal/repopulation when a
+  // neighbour finishes building, and no dependence on the global graph's history.
+  async parkingEdges(t: TileJSON): Promise<DriveEdge[]> {
+    if (!this.index.graphs) return this.drive.edges; // old maps load a complete graph separately
+    const keys: string[] = [];
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      const key = `${t.i + di}_${t.j + dj}`;
+      if (this.available.has(key)) keys.push(key);
+    }
+    const tiles = await Promise.all(keys.map((key) => this.fetchJSON(key)));
+    const graph = new DriveGraph();
+    graph.add(tiles.flatMap((tile) => tile.drive || []).sort((a, b) => a.id.localeCompare(b.id)));
+    return graph.edges;
+  }
+
+  // All of a tile's files at once: its JSON, terrain heights, its bridges' and tunnels'
+  // heights (or, from before those, the bare ground where bridges were raised) and
+  // IPR's buildings.
+  fetchTile(k: string): Promise<TileFiles> {
+    if (!this.pending.has(k)) {
+      const base = dataUrl(this.area, `tiles/${k}`), gz = !!this.index.gzip;
+      const binaryUrl = (name: TileBinaryKind) => `${base}.${name}.bin${gz ? '.gz' : ''}`;
+      const bin = async (name: TileBinaryKind) => {
+        const url = binaryUrl(name);
+        const buffer = await fetchBinary(url, gz);
+        // Requested files are required by the tile metadata; failure must retry
+        // rather than publish flat terrain or absent bridge/building geometry.
+        if (!buffer) throw new Error(`Tile ${k}: required ${name} data could not be loaded (${url})`);
+        return buffer;
+      };
+      const json = this.fetchJSON(k);
       if (this.ortho && !this.photos.has(k)) {
         this.photos.set(k, new THREE.TextureLoader().loadAsync(dataUrl(this.area, `cover/ortho/${k}.jpg`)).then((tex) => {
           tex.colorSpace = THREE.SRGBColorSpace;
@@ -643,7 +691,12 @@ export class TileWorld {
       const levels = this.structures.has(k) ? bin('levels') : null;
       const known = this.iprTiles.get(k);
       const ipr = this.osmBuildings || known === false ? null : known ? bin('ipr') : json.then((t) => (t.ipr ? bin('ipr') : null));
-      const files = Promise.all([json, height, bare, ipr, levels]).then(([t, height, bare, ipr, levels]) => ({ t, height, bare, ipr, levels }));
+      const files = Promise.all([json, height, bare, ipr, levels]).then(([t, height, bare, ipr, levels]) => {
+        for (const [kind, buffer] of [['height', height], ['bare', bare], ['ipr', ipr], ['levels', levels]] as const) {
+          if (buffer !== null) validateTileBinary(kind, buffer, { key: k, url: binaryUrl(kind), n: this.index.terrain?.n, tile: t });
+        }
+        return { t, height, bare, ipr, levels };
+      });
       files.catch(() => { if (this.pending.get(k) === files) this.failed(k); });
       this.pending.set(k, files);
     }
@@ -655,6 +708,7 @@ export class TileWorld {
   failed(k: string) {
     telemetry.count('tileFailures');
     this.pending.delete(k);
+    this.jsons.delete(k);
     this.retry.set(k, performance.now() + 2000);
   }
 
@@ -699,6 +753,17 @@ export class TileWorld {
     for (const k of [...this.loaded.keys()]) if (!keep.has(k)) this.drop(k);
     // Files fetched ahead for tiles that are now far behind aren't needed any more.
     for (const k of [...this.pending.keys()]) if (!keep.has(k) && !this.loaded.has(k) && !this.inFlight.has(k)) this.pending.delete(k);
+    // JSON-only halo, including diagonal neighbours, is slightly larger than the
+    // rendered set. Prune by tile coordinates without constructing a new index.
+    const ci = Math.floor((x + this.ox) / this.T), cj = Math.floor((y + this.oy) / this.T);
+    const reach = Math.ceil(r / this.T) + 3;
+    if (ci !== this.jsonRange?.i || cj !== this.jsonRange?.j || reach !== this.jsonRange?.reach) {
+      this.jsonRange = { i: ci, j: cj, reach };
+      for (const k of this.jsons.keys()) {
+        const [i, j] = k.split('_').map(Number);
+        if (Math.abs(i - ci) > reach || Math.abs(j - cj) > reach) this.jsons.delete(k);
+      }
+    }
   }
 
   // Build a tile (once, however many ask: loadNow and update may both want it, and
@@ -717,6 +782,8 @@ export class TileWorld {
   }
 
   async make(k: string, { t, height, bare, ipr, levels }: TileFiles): Promise<Tile> {
+    // Fetch only the adjacent JSON, before any render resources/leases are created.
+    const clearanceEdges = await this.parkingEdges(t);
     const [x0, y0, x1, y1] = t.box;
     const data = { ...t, size: [x1 - x0, y1 - y0] as Point2, origin: [-x0, -y0] as Point2 };
     const geo = new Geo(data);
@@ -786,6 +853,11 @@ export class TileWorld {
     }
     const seedArray = new Float64Array(seeds);
     const outlines = t.buildings.filter(grounded).map((b) => ({ rings: b.rings }));
+    const reservedAll = await this.furnitureReserved, reserved: number[] = [];
+    for (let n = 0; reservedAll && n < reservedAll.length; n += 2) {
+      const x = reservedAll[n], y = reservedAll[n + 1];
+      if (x > x0 - 4 && x < x1 + 4 && y > y0 - 4 && y < y1 + 4) reserved.push(x, y);
+    }
     const shapes: Shadower[] = t.buildings.filter(grounded).map((b) => ({ rings: b.rings, h: b.h }));
     const w = this.workers;
     const jobs = Promise.all([
@@ -794,7 +866,8 @@ export class TileWorld {
         box: [geo.minX, geo.minY, geo.maxX, geo.maxY] as Bounds, edges: clipped, buildings: own.filter(grounded).map((b) => ({ rings: b.rings })), parkingZones, ground, levels: tileLevels,
       }),
       w.run('land', {
-        data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, trees: t.trees, passages: t.passages || [], levels: !!tileLevels },
+        data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, trees: t.trees, passages: t.passages || [], levels: !!tileLevels,
+          walk: t.walk ?? [], reserved: new Float32Array(reserved), structures: structures.flatMap(s => s.polys), furnitureBuildings: [...t.buildings.map(b => ({ rings: b.rings })), ...hide.map(rings => ({ rings }))], furnitureEnabled: reservedAll !== null && !location.search.includes('nofurniture') },
         seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       }, [seedArray.buffer]),
       withIpr ? w.run('ipr', { buffer: ipr, box: t.box, absolute: this.index.iprRef != null, ground, bbox, hide }, [ipr]) : null,
@@ -864,6 +937,7 @@ export class TileWorld {
     const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
     const walls = wallMesh(land.walls);
     const fenceRows = fenceMeshes(land.fences);
+    const furniture = furnitureMeshes(land.furniture);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
     // The overhead wires over the tram tracks, at the height of the lowest bridge deck a
     // track is on (as ground.ts lays the tracks) or of the ground.
@@ -878,7 +952,7 @@ export class TileWorld {
     };
     const roads = [...(t.roads.road || []), ...(t.roads.sett || []), ...(t.roads.dirt || [])];
     const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt, (x, y) => roads.some((rings) => inPoly(x, y, rings)));
-    group.add(surfaces.group, ...buildings, walls, fenceRows.fence, fenceRows.hedge, ...landmarks, ...wires);
+    group.add(surfaces.group, ...buildings, walls, fenceRows.fence, fenceRows.hedge, ...landmarks, ...wires, ...furniture);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
     group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
@@ -892,7 +966,7 @@ export class TileWorld {
     fences.add(fenceSections);
     const inside = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1;
     const { cars } = parkCars({
-      data, edges, zones, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
+      data, edges, clearanceEdges, zones, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
       shares: new Map((t.sections ?? []).map((s) => [s.code, s.share])), inside,
       // No parking inside passages.
       solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) : false),
@@ -901,7 +975,7 @@ export class TileWorld {
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), group, surfaces, grid, levels: onLevels, cars, ms,
-      roads, disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, relief: shade, sample: shade?.sample,
+      roads, disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };
@@ -922,6 +996,7 @@ export class TileWorld {
       return tile;
     } catch (error) {
       this.trees.remove(k);
+      disposeFurniture(furniture);
       this.scene.remove(group);
       this.loaded.delete(k);
       this.byIndex.delete(t.i * 65536 + t.j);
@@ -975,6 +1050,7 @@ export class TileWorld {
     const t = this.loaded.get(k);
     if (!t) return;
     this.trees.remove(k);
+    disposeFurniture(t.furniture);
     this.scene.remove(t.group);
     t.surfaces.dispose();
     t.relief?.texture.dispose();

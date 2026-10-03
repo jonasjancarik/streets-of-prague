@@ -11,11 +11,12 @@ import * as THREE from 'three';
 import { WebGPURenderer, MeshLambertNodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, materialColor, fract, floor, mod, dot,
-  mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, transformNormalToView,
+  mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, clamp, transformNormalToView,
 } from 'three/tsl';
+import { GROUND_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
 import { setPatterned, SKY_REF, GRIT, GRIT_M } from './shading.ts';
 import {
-  type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports, skyAmbient,
+  type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, followVec, addPort, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports, skyAmbient,
 } from './webgpu/common.ts';
 import { lampLight } from './webgpu/lamps.ts';
 import './webgpu/buildings.ts';
@@ -31,6 +32,10 @@ import { mosaicStones } from './webgpu/mosaic.ts';
 import { uWater, ripples, waves, waveNormal, waterShine } from './webgpu/water.ts';
 
 // PATTERNS_GLSL.
+const uGroundSeason = followVec(GROUND_SEASON), uWoodSeason = followColor(WOOD_SEASON), uFieldSeason = followColor(FIELD_SEASON);
+// Evergreen hedges keep their opaque geometry and shadows. One graph for all tiles.
+const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)), 1);
+addPort(/^hedge-season$/, (node) => { node.colorNode = hedgeColour; });
 function pAsphalt(c0: N, p: N) {
   const c = c0.mul(fbm(p.mul(0.3)).mul(0.18).add(0.9)).toVar();
   c.mulAssign(mix(1, 0.9, smoothstep(0.62, 0.66, fbm(p.mul(0.07).add(3)))));
@@ -62,16 +67,19 @@ function pSlabs(c: N, p: N) {
   });
   return s.mul(fbm(p.mul(0.15)).mul(0.14).add(0.93));
 }
-function pGrass(c0: N, p: N) {
+function pGrass(c0: N, p: N, seasonal: boolean) {
+  if (seasonal) c0 = c0.mul(uGroundSeason.rgb);
   const c = c0.mul(fbm(p.mul(0.18)).mul(0.32).add(0.82)).toVar();
-  c.assign(mix(c, c.mul(vec3(1.12, 1.05, 0.78)), smoothstep(0.55, 0.75, fbm(p.mul(0.04).add(7)))));
+  let dry = smoothstep(0.55, 0.75, fbm(p.mul(0.04).add(7)));
+  if (seasonal) dry = clamp(dry.mul(uGroundSeason.w), 0, 1);
+  c.assign(mix(c, c.mul(vec3(1.12, 1.05, 0.78)), dry));
   c.assign(mix(c, c.mul(vec3(1.05, 0.9, 0.7)), smoothstep(0.6, 0.8, fbm2(p.mul(0.15).add(3))).mul(0.6)));
   const d = detail(p, 0.2);
   If(d.greaterThan(0), () => { c.addAssign(vnoise(p.mul(5)).sub(0.5).mul(0.07).mul(d)); });
   return c;
 }
 const pWood = (c: N, p: N) => c.mul(fbm(p.mul(0.12)).mul(0.45).add(0.75)).add(vnoise(p.mul(3)).sub(0.5).mul(0.05));
-const pPitch = (c: N, p: N) => pGrass(c, p).mul(step(0.5, fract(p.x.div(6))).mul(0.1).add(0.94));
+const pPitch = (c: N, p: N, seasonal: boolean) => pGrass(c, p, seasonal).mul(step(0.5, fract(p.x.div(6))).mul(0.1).add(0.94));
 function pDirt(c0: N, p: N) {
   const d = detail(p, 0.08), c = c0.mul(fbm(p.mul(0.5)).mul(0.25).add(0.85)).toVar();
   If(d.greaterThan(0), () => { c.addAssign(vnoise(p.mul(12)).sub(0.5).mul(0.08).mul(d)); });
@@ -123,20 +131,20 @@ function grit(c0: N, p: N) {
   });
   return c;
 }
-function pattern(id: number, c: N, p: N, time: N): N {
+function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
   switch (id) {
     case 1: return grit(pAsphalt(c, p), p);
     case 2: return grit(pSetts(c, p, 0.17, 0.14), p);
     case 3: return grit(pMosaic(c, p), p);
     case 4: return grit(pSlabs(c, p), p);
-    case 5: return pGrass(c, p);
-    case 6: return pWood(c, p);
-    case 7: return pPitch(c, p);
+    case 5: return pGrass(c, p, seasonal);
+    case 6: return pWood(seasonal ? c.mul(uWoodSeason) : c, p);
+    case 7: return pPitch(c, p, seasonal);
     case 8: return pDirt(c, p);
     case 9: return grit(pConcrete(c, p), p);
     case 10: return pWater(c, p, time);
     case 11: return pGravel(c, p);
-    case 12: return pField(c, p);
+    case 12: return pField(seasonal ? c.mul(uFieldSeason) : c, p);
     default: return c;
   }
 }
@@ -195,34 +203,40 @@ function groundMaterial(
   base: THREE.MeshLambertMaterial, id: number, time: { value: number },
   relief: GroundInputs['relief'] = null, deck: GroundInputs['deck'] = null,
   dig = false, photo: GroundInputs['photo'] = null, sheltered = false,
+  seasonal = true,
 ) {
   const m = new MeshLambertNodeMaterial();
   m.color.copy(base.color);
   Object.assign(m, { side: base.side, depthWrite: base.depthWrite, depthTest: base.depthTest, transparent: base.transparent, opacity: base.opacity });
   const inputs = { relief, deck, photo };
-  const shade = (n: N, pattern: number) => {
-    const g = groundGraph(pattern, time, inputs, dig, sheltered);
+  const shade = (n: N, pattern: number, seasonal = true) => {
+    const g = groundGraph(pattern, time, inputs, dig, sheltered, seasonal);
     Object.assign(n, {
       colorNode: g.color, aoNode: g.ao, emissiveNode: g.emissive, normalNode: g.normal,
       reliefMap: relief?.texture, reliefBox: relief && boxOf(relief.box), skyMap: relief?.sky?.texture, skyBox: relief?.sky && boxOf(relief.sky.box),
       maskMap: deck?.mask, maskBox: deck?.mask && boxOf(deck.box!), photoMap: photo?.texture, photoBox: photo && boxOf(photo.box),
     });
   };
-  shade(m, id);
+  shade(m, id, seasonal);
   m.userData.flatten = () => {
     const f = m.clone();
     shade(f, 0);
     return f;
   };
+  if ([5, 6, 7, 12].includes(id)) m.userData.summerGround = () => {
+    const f = m.clone();
+    shade(f, id, false);
+    return f;
+  };
   return m as unknown as THREE.MeshLambertMaterial;
 }
-function groundGraph(id: number, time: { value: number }, { relief, deck, photo }: GroundInputs, dig: boolean, sheltered: boolean) {
-  const key = `${id} ${!!relief} ${!!relief?.sky} ${!!deck} ${!!deck?.mask} ${!!photo} ${dig} ${sheltered}`;
+function groundGraph(id: number, time: { value: number }, { relief, deck, photo }: GroundInputs, dig: boolean, sheltered: boolean, seasonal: boolean) {
+  const key = `${id} ${!!relief} ${!!relief?.sky} ${!!deck} ${!!deck?.mask} ${!!photo} ${dig} ${sheltered} ${seasonal}`;
   let byKey = groundGraphs.get(time);
   if (!byKey) groundGraphs.set(time, (byKey = new Map()));
   let graph = byKey.get(key);
   if (graph) return graph;
-  const g = groundColor(id, timeOf(time), !!relief, deck ? !!deck.mask : null, dig, !!photo, sheltered).toVar();
+  const g = groundColor(id, timeOf(time), !!relief, deck ? !!deck.mask : null, dig, !!photo, sheltered, seasonal).toVar();
   // Open water: its waves' slope, shared by the lighting and by what it mirrors.
   const wp = vec2(positionWorld.x, positionWorld.z.negate());
   const slope = id === 10 && !photo && !sheltered ? waves(wp, timeOf(time)).toVar() : null;
@@ -242,7 +256,7 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo 
   return graph;
 }
 // deck: null off the bridges and out of the tunnels, else whether its level has a mask.
-function groundColor(id: number, time: N, relief: boolean, deck: boolean | null, dig: boolean, photo: boolean, sheltered: boolean) {
+function groundColor(id: number, time: N, relief: boolean, deck: boolean | null, dig: boolean, photo: boolean, sheltered: boolean, seasonal: boolean) {
   return Fn(() => {
     const w = positionWorld.toVar();
     const wp = vec2(w.x, w.z.negate()).toVar();
@@ -250,7 +264,7 @@ function groundColor(id: number, time: N, relief: boolean, deck: boolean | null,
       If(w.y.greaterThan(uCut.y).and(distance(w.xz, uCut.xz).lessThan(uCut.w)), () => { Discard(); });
       if (deck) If(tileTexture('mask', wp).r.lessThan(0.5), () => { Discard(); });
     }
-    const c = vec3(photo ? tileTexture('photo', wp).rgb : pattern(id, vec3(materialColor), wp, time)).toVar();
+    const c = vec3(photo ? tileTexture('photo', wp).rgb : pattern(id, vec3(materialColor), wp, time, seasonal)).toVar();
     // Hill shading and the broad variation (broad), baked together for a tile.
     if (relief) c.mulAssign(tileTexture('relief', wp).r);
     else c.mulAssign(fbm(wp.mul(0.004)).mul(0.14).add(0.93));

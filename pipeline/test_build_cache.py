@@ -140,7 +140,19 @@ class ChunkBuildTests(unittest.TestCase):
         self.stack.enter_context(patch.object(dtm, "streets", return_value=Polygon()))
         self.stack.enter_context(patch.object(dtm, "land", return_value={}))
 
-        def osmium(cmd, check):
+        # The subprocess module is shared: assembly also asks Git for provenance.
+        def osmium(cmd, check, *, cwd=None, capture_output=False, text=False):
+            self.assertTrue(check)
+            if cmd[0] == "git":
+                self.assertEqual(cmd, ["git", "describe", "--always", "--dirty", "--abbrev=10", "--exclude", "*"])
+                self.assertEqual(cwd, Path(__file__).resolve().parent)
+                self.assertTrue(capture_output)
+                self.assertTrue(text)
+                return build_tiles.subprocess.CompletedProcess(cmd, 0, stdout="test-pipeline\n")
+            self.assertEqual(cmd[:2], ["osmium", "extract"])
+            self.assertIsNone(cwd)
+            self.assertFalse(capture_output)
+            self.assertFalse(text)
             Path(cmd[cmd.index("-o") + 1]).write_bytes(Path(cmd[-1]).read_bytes())
 
         self.stack.enter_context(patch.object(build_tiles.subprocess, "run", side_effect=osmium))
@@ -228,6 +240,7 @@ class ChunkBuildTests(unittest.TestCase):
             data.update({"iprRef": 180} if name == "ipr" else {"index": {"n": 63, "step": 250 / 62}})
             layers.write_layer("ujezd", name, data)
         index = layers.assemble("ujezd", strict=True)
+        self.assertEqual(index["pipeline"], "test-pipeline")
         self.assertEqual(len(index["tiles"]), len(keys))
         before = (tiles_dir.parent / "index.json").read_bytes()
         ground = layers.chunk_path("ujezd", "ground", 0, 0)

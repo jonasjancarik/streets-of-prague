@@ -1,0 +1,33 @@
+integrated shoreline seam: {"positions":[0,2,3.0999999046325684,4,6,8],"gapAt5":0}
+✔ groundLayers keeps independently clipped shoreline meshes joined over curved terrain (6.323875ms)
+✔ groundLayers edge refinement agrees with reversed rings and different local terrace labels (1.888041ms)
+✔ a one-sided outline touching the edge does not create a curved-terrain gap (0.904875ms)
+✔ world-aligned perimeter stations join meshes with shifted tile endpoints (3.710291ms)
+✔ Float32 uploads at large map coordinates retain a shared edge profile (0.716709ms)
+✔ perimeter refinement preserves winding, sides, alpha, and interior density (0.173959ms)
+✔ edge height profile preserves flat steps and raw interior samples (0.054417ms)
+✔ Float32 rounding near fractional tile ends never samples beyond the tile (0.059125ms)
+✔ horizontal neighbouring tiles use the same curved edge profile (1.640125ms)
+✔ fractional large normal coordinates share stations when their uploads coincide (0.852583ms)
+✔ uploaded-normal classification preserves side and alpha and leaves other buckets alone (0.122584ms)
+dense shore: 99 outline vertices, 204 output triangles, 11.2 ms
+✔ narrow enclosed terrace is cut even with every original corner on plain ground (1.688375ms)
+✔ island and hole preserve both their areas and sides (0.999834ms)
+✔ three levels and overlapping outlines retain priority (0.567041ms)
+✔ internal shared edge loses artificial extension vertices (0.539667ms)
+✔ independently cut adjacent tiles agree on a nonlinear edge height field (0.397708ms)
+✔ separate clipped shoreline outlines meet at the same tile-edge position (0.761583ms)
+✔ winding, duplicate endpoints, degenerate input and alpha interpolation (0.368291ms)
+✔ unaffected triangles keep their density (0.060542ms)
+✔ curved dense shore produces only actual outline geometry (24.910125ms)
+✔ tiny cut at large map coordinates keeps a stable area sign (0.213042ms)
+✔ disconnected pieces touching only at a point remain valid (0.72125ms)
+✔ coincident cut vertices from overlapping meshes retain distinct alpha (0.316917ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 94.594791

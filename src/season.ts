@@ -17,11 +17,15 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const dayOf = (month: number, date: number) => BEFORE[month - 1] + date;
 
 // The day of the year in Prague right now (1–365).
-function pragueToday() {
+export function pragueToday() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Prague', month: 'numeric', day: 'numeric' })
     .formatToParts(new Date()).map((p) => [p.type, p.value]));
   return Math.min(365, dayOf(+parts.month, +parts.day));
 }
+
+export const seasonOfDay = (day: number): SeasonName => day < 60 || day >= 335 ? 'winter' : day < 152 ? 'spring' : day < 244 ? 'summer' : 'autumn';
+// The current season's start-screen button means today; the others are typical dates.
+export const seasonStartDay = (name: SeasonName, today = pragueToday()) => name === seasonOfDay(today) ? today : TYPICAL[name];
 
 // A date as the game takes it: a season's name, MM-DD, or a day of the year.
 export function parseDay(text: string | number | null): number | null {
@@ -47,7 +51,7 @@ export class Season {
 
   set(day: number) { this.day = Math.min(365, Math.max(1, Math.round(day))); }
 
-  get name(): SeasonName { return this.day < 60 || this.day >= 335 ? 'winter' : this.day < 152 ? 'spring' : this.day < 244 ? 'summer' : 'autumn'; }
+  get name(): SeasonName { return seasonOfDay(this.day); }
 
   // "10-02", as ?date= takes it.
   get date() {

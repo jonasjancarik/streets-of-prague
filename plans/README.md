@@ -10,11 +10,32 @@
 | [006: Firefighters](006-firefighters.md) | Fire engines called to burning cars, crews putting out wrecks, blue lights and sirens, traffic giving way, the player's water cannon, a firefighter job | PHASES 1–3 DONE (the job waits for plan 004) |
 | [013: Fill the beige ground](013-fill-the-beige-ground.md) | Squares' surfaces from OSM, an asphalt-grey pavement palette, and DTM courtyards and green | PHASES 0–3 DONE (main and shared local tiles; photo classification is plan 014) |
 | [014: Identify courtyard surfaces](014-classify-courtyard-surfaces.md) | Deferred photo classification within DTM courtyard outlines | PLANNED |
-| [018: Simplify paths and pavements](018-simplify-paths-and-pavements.md) | No path ribbons across squares, islands or matching surfaces; tidier path shapes; pavements from the technical map later | PLANNED |
+| [018: Simplify paths and pavements](018-simplify-paths-and-pavements.md) | Remove duplicate walking ribbons while preserving real paths and contrasting surfaces; shape tidying and surveyed pavements later | PHASES 0–2 MERGED TO MAIN (shared tiles/deployment pending; phases 3–4 deferred) |
 | [019: Move the crowd into a worker](019-move-the-crowd-into-a-worker.md) | Pedestrians walk in a worker of their own; the main thread keeps the roster, collisions and drawing, and scenarios run the same code inline | SHELVED (built on `worktree-crowd-worker`; no gain on the M5 or the Pixel 5) |
 | [020: iOS and Android apps](020-ios-and-android-apps.md) | The website's build wrapped with Capacitor for iPhone, folding iPhone, iPad and Android: sound that survives the silent switch, the map streamed with an optional download for offline play, the game and map updating without a store release, frame rate above 60 where allowed | PLANNED (three decisions to confirm first) |
 | [021: Countryside generated in the browser](021-countryside-generated-in-the-browser.md) | Past the edge of the built map, tiles the browser makes itself from OpenStreetMap vector tiles: roads, land, buildings, later hills; joined to the built map without a step in the road | PLANNED (prototype decides) |
 | [023: The game on play.streetsofprague.com](023-game-on-play-subdomain.md) | The game and its `/api` move to `play.streetsofprague.com`, the homepage in `site/` takes the root as a second Worker, saved games and settings follow the player, old links to the game keep working | PLANNED (five decisions to confirm first) |
+| [023: Seasons](023-seasons.md) | A fixed game date; seasonal trees, ground, fields, hedges, light, weather and birds; season choices on the start screen | STEPS 1–4 MERGED TO MAIN (deployment pending; ground cost unresolved) |
+
+### Overnight status, 3 October 2026
+
+Plan 018's surface implementation and review fixes (`5efe19e`, `6711199`) passed
+focused regressions and matched views. The combined private `centrum` validation
+(`187f410`) passed strict assembly for 234 tiles, preserved route and parking inputs,
+and checked player movement and furniture placement. This does not activate shared
+tiles or complete the deferred shape tidying and DTM pavement phases.
+
+Seasons step 3 (`243aa86`) has full-year CPU checks and 48 matched WebGL/WebGPU
+images; its ground-cost comparison remains inconclusive. Step 4 (`6d05bc0`) passed
+Prague-date, midnight, URL, save and English/Czech checks, plus desktop and 390 px
+menu checks. Bird gains (`2ac779d`) passed full-year, offline and muted runtime
+checks. The tree-pool check owed from step 2 and physical-phone validation remain
+open; later seasonal features remain deferred in the plan.
+
+These reports describe accepted local work, including the isolated integration
+checkout. The accepted source is now merged into main; deployment remains pending. Source-map pilots held
+for further review remain outside these completion claims. Both existing plans
+numbered 023 retain their separate titles and filenames.
 
 Plans 001–006 were indexed from `c6b5350`. Check the working tree and each plan's
 starting revision before implementation; preserve unrelated changes.
@@ -117,4 +138,3 @@ operator's separate authorization.
 Merge findings for plans 007–012 are recorded in
 [the summary](../docs/optimisation-findings-007-012.md). Implementation completion
 does not imply that every experiment is recommended for main.
-| [023: Seasons](023-seasons.md) | A date for the game; trees that leaf out, blossom, turn and shed through the year; seasonal grass, fields, light, weather and birds; a season choice on the start screen | STEPS 1–2 OF 4 DONE (the date; trees through the year) |

@@ -1,0 +1,40 @@
+{
+  "base_commit": "ae1a49fc740d9524fca94bd5a8059e21b25890d0",
+  "source": [
+    {
+      "path": "src/startscreen.ts",
+      "sha256": "4ddb3ee660d12dda56a8f6b5abd119aadc6e790e8d5cdec672eb9ce13a3e38fe"
+    },
+    {
+      "path": "src/season.ts",
+      "sha256": "7472565564345490f6181719ab7e78f7eb8c554769d7dc8a7ef559511a6a4b56"
+    },
+    {
+      "path": "src/weather.ts",
+      "sha256": "be28ebdfcd7749230569ae86085cadc09e8f386e5e934a779eadfe2bd6e22547"
+    },
+    {
+      "path": "src/main.ts",
+      "sha256": "716bbebf2bf759d5094ad05f740bc14e45468a3ae68533aa4c100bec03183d1e"
+    },
+    {
+      "path": "src/cs.ts",
+      "sha256": "5001923a450d2191c53036b5566cac3d1e392f13836347f92a7f98b2423aef83"
+    },
+    {
+      "path": "index.html",
+      "sha256": "d561e702894ba95e5a81fc385ef1d8e069cd0651b6ad17850723634e1c5db8c6"
+    }
+  ],
+  "browser": "Codex in-app browser",
+  "mode": "menu-only; no map or game renderer",
+  "ui_state_file": "ui-states.json",
+  "desktop": "1280x720 English winter, clear midday",
+  "touch": "390x844 Czech spring, clear midday",
+  "limits": [
+    "Touch-width layout; no physical-phone gesture/performance test",
+    "No ground or shader modifications",
+    "Midnight and saved-game choice payloads verified by CPU fixtures",
+    "No broad game scenario matrix or deployment"
+  ]
+}

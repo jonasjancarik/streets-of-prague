@@ -331,6 +331,18 @@ grime on the walls 6%, the shadow map's own pass 7%.
   embankment isn't in the terrain), Libeňský most's south part has steps of 1.3 m at
   both ends (as on main), Nuselský most's Pankrác end has small ragged corners by the
   abutment, and the long bridges at Lahovice and Radotín have breaks in their decks.
+  Source spikes near Nosticova and the south-east edge of `ujezd` are fixed by rejecting
+  grossly inconsistent survey vertices before interpolation (2 October 2026,
+  `docs/river-terrain-findings.md`); verified on private `ujezd` data only.
+  Ground cutting now follows the actual outlines, including narrow enclosed terraces
+  and three levels meeting, with independent tile-edge regressions. Six `ujezd` tiles
+  had 1,516 sampled step-crossing triangles before and zero after; total geometry grew
+  by 0.082% in bytes, with a measured CPU loading cost. Full-city and frame-time checks
+  remain open; see the same findings document.
+  Independent review then found a pre-cut refinement seam on curved terrain.
+  A shared 2 m perimeter/profile contract fixes it, with nine complete-path checks;
+  geometry is now 4.12% larger than the first cutter checkpoint. Stored-height
+  disagreements remain separate. The findings retain both checkpoints' evidence.
 - **Hill shading for a moving sun.** The shading is baked per tile to the fixed
   north-west sun (`relief()` in `src/tiles.ts`, `SUN_OFFSET` in `src/main.ts`). If
   the sun ever moves with the clock, store the slope per tile instead and light it in
@@ -354,6 +366,15 @@ Left over from putting bridges and tunnels on levels of their own (28 September
 ## Gameplay and look
 
 Noted on 28 September 2026 while playing, during the TypeScript refactor.
+
+- **Paths and pavements.** Plan 018 phases 0–2 are implemented and checked in an
+  isolated worktree. Matching route ribbons over squares and island/link ribbons
+  are removed; cobbled walking streets use setts. Named square outlines keep their
+  mapped green and water, so Karlovo náměstí is a park with paths again. The local
+  `centrum` test has 88.3% less mosaic overlap with squares and 28.7% fewer path
+  points. Shared data and deployment are unchanged. Review the matched pictures in
+  `plans/018-simplify-paths-and-pavements.md` before rebuilding shared data;
+  gap-closing and surveyed pavement polygons remain deferred.
 
 - **Fill the plain beige areas.** Plan 013 phases 0–3 now give squares their OSM
   surface, make the general pavement asphalt grey, and add surveyed courtyards and
@@ -412,6 +433,31 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   Optional extra: vary station selection by the type of vehicle the player enters.
 
 ## Weather and night
+
+Seasonal ground (plan 023 step 3) is implemented in an isolated checkout: fresh
+spring grass, late-summer dry patches, winter olive grass, November–March woodland
+litter, spring crops and harvested earth. Evergreen hedges keep their foliage.
+The 15 July surface palette stays unchanged. Date regressions, typecheck and 30
+scene checks per renderer pass, with 48 matched seasonal images and real field
+and hedge views. Warmed 2× A/B comparisons in both renderers preserve draw counts;
+their small or contradictory frame-time differences leave the ground cost
+unresolved. See [the evidence](docs/evidence/seasons-step3/README.md). The source is
+merged into main; deployment remains separate.
+
+Bird ambience now follows the fixed date too: strongest on spring mornings, reduced
+in late summer and nearly silent in winter, while July's familiar mix and the
+weather/place suppression remain. Only the existing loops' gains change, through
+their two-second fades. Deterministic date/time/weather checks, offline recording
+levels and a muted runtime smoke pass: date propagation, expected real targets,
+retained gain/filter nodes and weather suppression. See
+[the evidence](docs/evidence/seasonal-birds.md).
+
+Plan 023's start-screen step is complete: four seasons, a poster that follows the
+chosen or saved season, and English/Czech labels. The current season starts on
+today's Prague date; other buttons use representative dates, while date links and
+saved games keep their dates. Live Prague weather is available only for today's
+game date. CPU state/URL/Czech checks and desktop/touch-width menu interactions
+passed (`scripts/check-start-seasons.mjs`). The seasonal ground and hedge work is integrated locally alongside these controls.
 
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow
 (`src/weather.ts`), IPR's street lamps with a light map over the view
@@ -514,31 +560,50 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   GPU was busy with other apps, the new build always ran second, and one run fell to
   37 fps). Redo `--vs` with alternating and swapped order, three or more pairs, after
   checking CPU and GPU load. The phone already showed no change in frame time.
-- **A stolen police car has no flashing lights.**
+- **Stolen police-car lights.** Flash while the player drives, including when stopped
+  or reversing; switch off on exit and return on re-entry. Siren policy is unchanged.
 - **Buses.** They follow PID's real lines (`pipeline/build_buses.py`) and stop at the
   stops, but a line is lost where the map has no street for it (148 at U Nemocnice),
-  buses often crawl in the Old Town's traffic, and they show no line number.
+  buses often crawl in the Old Town's traffic. Line numbers are on the front, side
+  and roof; the front number is enlarged and the side board keeps the destination.
 - **Traffic by time of day.** The number of cars follows a TSK travel-time profile
   and favours main roads, but it is one city-wide figure; queues on the real routes,
   direction of the peak and car mix are next. See `docs/traffic.md`.
-- **Boats.** Cruise boats and pedal boats are on the river (`src/boats.ts`), but not
-  PID's ferries, no lights at night, and they've only been looked at from above
-  (passing under a bridge is unchecked). One of the tied-up pedal boats can't be
-  reached from the bank.
-- **Parked cars at tile edges and corners.** Parking now keeps clear of the traffic
-  lanes, but a couple of cars at tile edges still overlap a lane of the neighbouring
-  tile, and at junctions a car standing on the corner is still driven through after a
-  few seconds (parking isn't checked against the turning paths).
+- **Boats.** Cruise cabins and navigation lights are visible at night; pedal and
+  swan boats now carry a white lamp, using the shared night switch without extra
+  light objects. Moored boats require a short, clear route to low walkable ground;
+  boarding and exiting use the same rule and reject high quays, walls and railings.
+  The three moored boats passed boarding/exiting on the private centrum snapshot
+  built 2 October at 20:16 UTC, and a pedal boat travelled below Legion Bridge's
+  deck at water height. Other bridges, phones and water-height seams remain
+  unchecked; PID's ferries are still absent. See [boat access](docs/boats.md).
+- **Parked cars at tile edges and corners (fixed).** Parking now waits for the
+  neighbouring street JSON and reserves the route's turning curves, including
+  vehicle overhang and a bus's axle/heading sweep. Paid-section targets are unchanged;
+  bays that obstruct those paths stay empty. CPU checks cover neighbouring lane
+  offsets, both tile orders, narrow streets and ordinary/bus turns. A real WebGPU
+  replay at Ostrovní–Opatovická reproduced a 0.38 m bus/parked-hatch overlap in the
+  old placement, then passed with the candidate parking. Tiles `8_5`/`7_5` reloaded
+  in either order with identical parked-car layouts and no duplicate centres.
+  Citywide driving and emergency routes remain unchecked; see `docs/traffic.md`.
 - **Rebuild the streets layer for the metro fix.** Metro station corridors and stairs
   are no longer tunnels (`station_ways` in `pipeline/structures.py`); rebuilt for
   `centrum`, not yet for `praha` and `ujezd` (the command is under Terrain).
 - **Taxis.** Hail one with T or order one from the two made-up apps (`src/taxi.ts`).
   They can creep or stall behind parked cars in narrow Old Town streets, their routes
-  are sometimes long, the apps have no phone screen of their own, and the touch
-  button hasn't been looked at on a phone.
+  are sometimes long, and the apps have no phone screen of their own. The touch
+  button now names its action (close menu/cancel request), and cancellation clears
+  request state before rebooking. A touch-sized browser check is recorded in
+  `docs/taxi-controls.md`; a physical-phone check remains open.
 - **A tile-load error at start, seen twice** (`TileWorld.loadNow` → `fetchTile`, under
   heavy load, not reproduced). Startup now retries a failing tile and carries on
-  without it; the cause of the failed download itself wasn't found.
+  without it; the cause of the failed download itself wasn't found. A separate
+  deterministic defect is fixed: HTTP failures for required terrain, bridge or IPR
+  binaries, and successful downloads with invalid decoded lengths or IPR counts,
+  now fail the tile fetch instead of caching absent geometry. HTTP 204 levels no
+  longer become cached all-NaN grids. CPU checks cover legacy optional layouts,
+  recovery, abort, gzip and obsolete requests
+  (`scripts/check-tile-fetch.mjs`); this does not establish the original heavy-load cause.
 - **Raised buildings from IPR.** Passages and walkways over a street are left out of
   the collision only when OSM has `min_height` (3 m or more); raised parts only in
   IPR's 3D buildings still block.

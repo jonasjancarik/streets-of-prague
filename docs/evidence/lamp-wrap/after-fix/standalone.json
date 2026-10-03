@@ -1,0 +1,27 @@
+{
+  "value": {
+    "name": "lamp-knock",
+    "title": "A car at 50 km/h knocks a lamp post over",
+    "checks": [
+      {
+        "name": "a post nearby",
+        "pass": true
+      },
+      {
+        "name": "the post is down",
+        "pass": true
+      },
+      {
+        "name": "the car lost speed but kept going",
+        "pass": true,
+        "detail": "21.6 km/h"
+      }
+    ],
+    "ms": 801,
+    "pass": true
+  },
+  "errors": [],
+  "shots": [
+    "/Users/janca/.codex/worktrees/lamp-final-wrap/streets-of-prague/docs/evidence/lamp-wrap/after-fix/lamp-knock.png"
+  ]
+}

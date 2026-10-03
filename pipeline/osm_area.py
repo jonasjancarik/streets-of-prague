@@ -55,6 +55,8 @@ PASSAGE_WAYS = {"footway", "path", "pedestrian", "steps", "corridor", "cycleway"
 INSIDE = 0.5
 ARCADE = 3.0
 COBBLES = ("sett", "cobblestone", "unhewn_cobblestone", "paving_stones")
+SQUARE_EDGE = 0.5  # m: avoid a remnant of a route ribbon along a square's edge
+NATURAL_GROUND = ("park", "garden", "wood", "orchard", "water", "pitch")
 # A car road at least this much of whose centre line runs on the technical map's
 # surveyed surface is drawn from the survey (dtm.py); others, from OSM's tags.
 SURVEYED = 0.5
@@ -156,10 +158,12 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         cls = "road" if hw in CAR_ROADS else "path"
         if col(row, "bridge") not in (None, "no"):  # yes, viaduct, cantilever, …
             cls = "bridge"
-        if hw in ("path", "track", "bridleway") and col(row, "surface") not in ("paving_stones", "sett", "asphalt", "cobblestone"):
+        if cls != "bridge" and hw in ("path", "track", "bridleway") and col(row, "surface") not in ("paving_stones", "sett", "asphalt", "cobblestone"):
             cls = "dirt"
         if cls == "road" and col(row, "surface") in COBBLES:
             cls = "sett"  # most streets are asphalt; the rest keep their cobbles
+        if cls == "path" and hw in ("pedestrian", "footway") and _square_surface(col(row, "surface")) == "square_setts":
+            cls = "sett"  # a cobbled walking street has the same stones as its neighbours
         if hw == "footway" and col(row, "footway") == "crossing":
             crossings.extend(_coords(ls) for ls in _lines(g.intersection(clip)))
             return
@@ -171,12 +175,20 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             car_ways.extend((ls, est, cls, hw != "service") for ls in _lines(g))
             return
         if ground:
-            road_lines.setdefault(cls, []).append(g.buffer(width / 2, cap_style="round", join_style="round"))
+            at_ground = (col(row, "bridge") in (None, "no")
+                         and _ground_level(col(row, "layer"))
+                         and _ground_level(col(row, "level")))
+            # On paving these tags describe a route, not another surface. A part
+            # crossing mapped greenery still needs a real path; decide below.
+            route = at_ground and hw == "footway" and col(row, "footway") in ("traffic_island", "link")
+            walking_surfaces.append((g.buffer(width / 2, cap_style="round", join_style="round"),
+                                     cls, col(row, "surface"), at_ground, route))
 
     buildings = []
     parts = []  # building parts whose roof OSM describes (roofs.py), to colour IPR's roofs by
     areas: dict[str, list] = {}
     road_lines: dict[str, list] = {}
+    walking_surfaces = []  # (buffer, class, surface tag, ground level, route only on paving)
     rails, walls, fences, trees, weirs, crossings, passages = [], [], [], [], [], [], []
     lots = []  # each parking area on its own, with how the cars stand in it
     homes = []  # landuse=residential, where gardens may be (see _gardens)
@@ -184,7 +196,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     car_ways = []  # (line, what its tags say, class, a street?), sized after the loop
     sidewalks = []  # footways and paths with their half widths, which may run along a street
     maybe = []  # ways that are passages if they run through buildings (passage_tags)
-    squares = []  # (polygon, own surface); decide after all the ways have been read
+    squares = []  # (polygon, own surface, named outline only); decide after all ways and land
     square_ways = []  # (line, mapped surface) on the ground, including untagged ways
     ground_ways = set()  # the OSM ids of the passages among the ways tagged as tunnels
 
@@ -235,7 +247,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 continue
             if (ground and hw in ("pedestrian", "footway", "living_street", "service")
                     and col(row, "footway") != "crossing" and col(row, "tunnel") in (None, "no")
-                    and (_float(col(row, "layer")) or 0) == 0):
+                    and col(row, "bridge") in (None, "no")
+                    and _ground_level(col(row, "layer"))
+                    and _ground_level(col(row, "level"))):
                 square_ways.extend((ls, _square_surface(col(row, "surface"))) for ls in _lines(g.intersection(clip)))
             width = road_width(hw, _float(col(row, "width")), _float(col(row, "lanes")))
             passage = passage_tags(hw, lambda k: col(row, k))
@@ -249,7 +263,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             add_way(row, g, hw, width)
             continue
         if ground and hw == "pedestrian" and isinstance(g, (Polygon, MultiPolygon)):
-            squares.append((g.buffer(0), col(row, "surface")))
+            squares.append((g.buffer(0), col(row, "surface"), False))
             continue
 
         rw = col(row, "railway")
@@ -295,7 +309,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 homes.append(g.buffer(0))
             kind = _area_kind(row, col)
             if kind == "square":
-                squares.append((g.buffer(0), col(row, "surface")))
+                outline = col(row, "place") == "square" and not col(row, "area:highway")
+                squares.append((g.buffer(0), col(row, "surface"), outline))
             elif kind:
                 areas.setdefault(kind, []).append(g.buffer(0))
             if kind == "parking" and col(row, "parking") not in UNDER_COVER:
@@ -326,12 +341,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 continue
             add_way(row, g, hw, width)
 
-    square_lines = [line for line, _ in square_ways]
-    square_tree = STRtree(square_lines) if square_lines else None
-    for poly, surface_tag in squares:
-        kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
-        areas.setdefault(kind or "square", []).append(poly)
-    timer.lap("passages_squares")
+    timer.lap("passages")
 
     # The streets as surveyed, where the technical map has them (within Prague).
     surface = shapely.intersection(dtm.streets((w, s, e, n), tf.transform), clip, grid_size=GRID)
@@ -380,16 +390,37 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         road_lines.setdefault("sett", []).append(_areas(shapely.intersection(surface, setts, grid_size=GRID)))
         road_lines.setdefault("road", []).append(_areas(shapely.difference(surface, setts, grid_size=GRID)))
     timer.lap("cobble_voronoi")
+    # Route-only links may cross the housing-estate lawns inferred from blocks,
+    # or surveyed green that OSM hasn't mapped. Decide after those surfaces too.
+    gardens = _gardens(homes, buildings, streets, clip)
+    timer.lap("gardens")
+    land = {f"dtm_{kind}": _areas(geom.intersection(clip))
+            for kind, geom in dtm.land((w, s, e, n), tf.transform).items()}
+    timer.lap("dtm_land")
+    natural = unary_union([gardens, *(g for k in NATURAL_GROUND for g in areas.get(k, [])),
+                          *(g for k, g in land.items()
+                            if k in ("dtm_green", "dtm_garden", "dtm_wood", "dtm_pitch"))])
+    # A named square can contain mapped, surveyed or inferred lawns. Decide its
+    # paved remainder only after all those sources are in; explicit surface areas
+    # keep their paving even when green also covers them.
+    square_lines = [line for line, _ in square_ways]
+    square_tree = STRtree(square_lines) if square_lines else None
+    for poly, surface_tag, outline in squares:
+        if outline and not natural.is_empty:
+            poly = _areas(poly.difference(natural))
+        if poly.is_empty:
+            continue
+        kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
+        areas.setdefault(kind or "square", []).append(poly)
+    for cls, geom in _walking_surfaces(walking_surfaces, areas, natural):
+        road_lines.setdefault(cls, []).append(geom)
+    timer.lap("squares_walking_surfaces")
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
     timer.lap("road_land_unions")
-    for kind, geom in dtm.land((w, s, e, n), tf.transform).items():
-        area_polys[f"dtm_{kind}"] = _areas(geom.intersection(clip))
-    timer.lap("dtm_land")
-    gardens = _gardens(homes, buildings, streets, clip)
+    area_polys.update(land)
     if not gardens.is_empty:
         area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])
-    timer.lap("gardens")
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
@@ -411,6 +442,50 @@ SQUARE_SURFACES = {
 def _square_surface(value):
     """The drawn surface of one square or of a line that crosses it."""
     return SQUARE_SURFACES.get(str(value).strip().lower()) if value is not None else None
+
+
+def _ground_level(value):
+    """A missing or single numeric zero level; ambiguous/multiple levels stay drawn."""
+    if value is None:
+        return True
+    try:
+        return float(str(value).strip()) == 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _walking_surfaces(ways, areas, natural=None):
+    """Remove only a ground-level ribbon that repeats a square's material.
+
+    Keep unknown explicit materials, unlike an untagged route, and keep bridges
+    and raised ways. Use full polygons before chunk/tile clipping so an edge or
+    a hole has the same treatment on both sides of a seam.
+    """
+    if natural is None:
+        natural = unary_union([g for k in NATURAL_GROUND for g in areas.get(k, [])])
+    squares, paving = {}, {}
+    for kind in ("square", "square_setts", "square_asphalt", "square_loose"):
+        poly = unary_union(areas.get(kind, []))
+        paving[kind] = poly
+        # Enlarge into surrounding paving, never into a lawn or pond. In particular
+        # a green hole narrower than 1 m must not disappear under the edge margin.
+        squares[kind] = poly.buffer(SQUARE_EDGE).difference(natural.difference(poly))
+    all_squares = unary_union(list(squares.values()))
+    green = natural.difference(unary_union(areas.get("water", [])))
+    distinct = {kind: unary_union([green, *(p for k, p in paving.items() if k != kind)])
+                for kind in {_square_surface(tag) for _, _, tag, _, route in ways if route and tag is not None}}
+    for geom, cls, tag, at_ground, route in ways:
+        kind = _square_surface(tag)
+        if route:
+            # A route tag is not evidence that an explicitly different material
+            # is redundant (e.g. an asphalt link across granite setts).
+            geom = _areas(geom.intersection(green if tag is None else distinct[kind]))
+        if at_ground:
+            mask = all_squares if tag is None else squares.get(kind)
+            if mask is not None and not mask.is_empty:
+                geom = _areas(geom.difference(mask))
+        if not geom.is_empty:
+            yield cls, geom
 
 
 def _square_from_ways(poly, ways, tree):

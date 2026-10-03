@@ -1,0 +1,111 @@
+test_cut_tracks_parent_bbox_and_output (test_build_cache.CacheTests.test_cut_tracks_parent_bbox_and_output) ... ok
+test_failed_cut_keeps_previous_output (test_build_cache.CacheTests.test_failed_cut_keeps_previous_output) ... ok
+test_same_size_preserved_mtime_still_changes_identity (test_build_cache.CacheTests.test_same_size_preserved_mtime_still_changes_identity) ... ok
+test_source_cache_reused_and_invalidated (test_build_cache.CacheTests.test_source_cache_reused_and_invalidated) ... ok
+test_streamed_source_is_not_published_until_complete (test_build_cache.CacheTests.test_streamed_source_is_not_published_until_complete) ... ok
+test_buildings_and_parking_skip_unused_dtm (test_build_cache.ChunkBuildTests.test_buildings_and_parking_skip_unused_dtm) ... ok
+test_complete_staged_sequence_matches_immediate_assembly (test_build_cache.ChunkBuildTests.test_complete_staged_sequence_matches_immediate_assembly) ... ERROR
+test_interrupted_binary_stage_cannot_reuse_old_completion (test_build_cache.ChunkBuildTests.test_interrupted_binary_stage_cannot_reuse_old_completion) ... ok
+test_interrupted_chunk_has_no_success_and_resumes_to_clean_output (test_build_cache.ChunkBuildTests.test_interrupted_chunk_has_no_success_and_resumes_to_clean_output) ... ok
+test_parking_only_does_not_cut_osm_or_invalidate_other_layers (test_build_cache.ChunkBuildTests.test_parking_only_does_not_cut_osm_or_invalidate_other_layers) ... ok
+test_resume_skips_all_unchanged_work_and_rebuilds_only_damaged_layer (test_build_cache.ChunkBuildTests.test_resume_skips_all_unchanged_work_and_rebuilds_only_damaged_layer) ... ok
+test_source_change_and_grid_origin_invalidate_completion (test_build_cache.ChunkBuildTests.test_source_change_and_grid_origin_invalidate_completion) ... ok
+test_strict_assembly_preflight_keeps_index_when_dependencies_are_stale (test_build_cache.ChunkBuildTests.test_strict_assembly_preflight_keeps_index_when_dependencies_are_stale) ... ERROR
+test_water_dependency_and_missing_payload_are_checked_before_writes (test_build_cache.ChunkBuildTests.test_water_dependency_and_missing_payload_are_checked_before_writes) ... ok
+test_all_rejected_and_empty_sources (test_dtm_heights.SurveyVertexTests.test_all_rejected_and_empty_sources) ... ok
+test_connected_valid_runs_keep_surveyed_gradient (test_dtm_heights.SurveyVertexTests.test_connected_valid_runs_keep_surveyed_gradient) ... ok
+test_multiline_components_remain_separate_in_source_cache (test_dtm_heights.SurveyVertexTests.test_multiline_components_remain_separate_in_source_cache) ... dtm heights: reading the survey from 2 packages
+ok
+test_nonfinite_vertices_split_runs (test_dtm_heights.SurveyVertexTests.test_nonfinite_vertices_split_runs) ... ok
+test_quay_ramp_and_underpass_corrections_retained (test_dtm_heights.SurveyVertexTests.test_quay_ramp_and_underpass_corrections_retained) ... ok
+test_reject_before_interpolation_without_bridging_missing_vertex (test_dtm_heights.SurveyVertexTests.test_reject_before_interpolation_without_bridging_missing_vertex) ... ok
+test_steep_coherent_hillside_retained (test_dtm_heights.SurveyVertexTests.test_steep_coherent_hillside_retained) ... ok
+test_unknown_terrain_does_not_reject_finite_survey (test_dtm_heights.SurveyVertexTests.test_unknown_terrain_does_not_reject_finite_survey) ... ok
+test_spike_does_not_spread_to_street_bank_or_water_and_seams_match (test_dtm_heights.TerrainApplyTests.test_spike_does_not_spread_to_street_bank_or_water_and_seams_match) ... ok
+test_water_still_processed_when_all_vertices_rejected (test_dtm_heights.TerrainApplyTests.test_water_still_processed_when_all_vertices_rejected) ... ok
+test_ground_land_excludes_decks_and_streets (test_dtm_land.DtmLandTests.test_ground_land_excludes_decks_and_streets) ... ok
+test_deterministic_random_pixels (test_landmark_colours.ColourFormulaTests.test_deterministic_random_pixels) ... ok
+test_reference_pixels_and_rows (test_landmark_colours.ColourFormulaTests.test_reference_pixels_and_rows) ... ok
+test_external_image_and_unsupported_version_are_rejected (test_landmark_colours.GlbTests.test_external_image_and_unsupported_version_are_rejected) ... ok
+test_failed_output_keeps_manifest_entry_and_source (test_landmark_colours.GlbTests.test_failed_output_keeps_manifest_entry_and_source) ... FAILED one: disk full
+partial result: 1 of 1 entries unconverted
+ok
+test_migration_preserves_source_and_reports_partial_failure (test_landmark_colours.GlbTests.test_migration_preserves_source_and_reports_partial_failure) ... FAILED missing: [Errno 2] No such file or directory: '/var/folders/1j/t72zmxvn6cs1bmnxdqqgvkqw0000gn/T/tmpz2vhee14/source/landmarks/missing.glb'
+partial result: 1 of 2 entries unconverted
+ok
+test_multi_image_geometry_metadata_alignment_and_idempotence (test_landmark_colours.GlbTests.test_multi_image_geometry_metadata_alignment_and_idempotence) ... ok
+test_same_root_rejected (test_landmark_colours.GlbTests.test_same_root_rejected) ... ok
+test_shared_colour_and_normal_is_rejected (test_landmark_colours.GlbTests.test_shared_colour_and_normal_is_rejected) ... ok
+test_buildings_only_matches_full_and_never_reads_dtm (test_pipeline_efficiency.ExtractionTests.test_buildings_only_matches_full_and_never_reads_dtm) ... ok
+test_streets_only_keeps_passages_and_kerbs (test_pipeline_efficiency.ExtractionTests.test_streets_only_keeps_passages_and_kerbs) ... ok
+test_timing_laps_cover_classification_without_entering_output (test_pipeline_efficiency.ExtractionTests.test_timing_laps_cover_classification_without_entering_output) ... ok
+test_bridge_cache_tracks_shapefile_components (test_pipeline_efficiency.IprSourceTests.test_bridge_cache_tracks_shapefile_components) ... ok
+test_building_xml_is_shared_between_area_projections (test_pipeline_efficiency.IprSourceTests.test_building_xml_is_shared_between_area_projections) ... ok
+test_terrain_xml_is_shared_while_lattice_remains_area_specific (test_pipeline_efficiency.IprSourceTests.test_terrain_xml_is_shared_while_lattice_remains_area_specific) ... ok
+test_dtm_both_indexes_unpickle_once (test_pipeline_efficiency.ReuseTests.test_dtm_both_indexes_unpickle_once) ... ok
+test_kerb_samples_reused_only_for_same_ordered_lines (test_pipeline_efficiency.ReuseTests.test_kerb_samples_reused_only_for_same_ordered_lines) ... ok
+test_explicit_surface_groups (test_square_surfaces.SquareSurfaceTests.test_explicit_surface_groups) ... ok
+test_majority_and_minimum_length (test_square_surfaces.SquareSurfaceTests.test_majority_and_minimum_length) ... ok
+test_named_square_relations_are_requested (test_square_surfaces.SquareSurfaceTests.test_named_square_relations_are_requested) ... ok
+test_untagged_way_counts_against_majority (test_square_surfaces.SquareSurfaceTests.test_untagged_way_counts_against_majority) ... ok
+
+======================================================================
+ERROR: test_complete_staged_sequence_matches_immediate_assembly (test_build_cache.ChunkBuildTests.test_complete_staged_sequence_matches_immediate_assembly)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/test_build_cache.py", line 284, in test_complete_staged_sequence_matches_immediate_assembly
+    layers.assemble("ujezd", strict=True)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/layers.py", line 315, in assemble
+    "format": FORMAT, "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "pipeline": pipeline_commit(),
+                                                                                               ~~~~~~~~~~~~~~~^^
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/layers.py", line 225, in pipeline_commit
+    return subprocess.run(["git", "describe", "--always", "--dirty", "--abbrev=10", "--exclude", "*"],
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                          cwd=Path(__file__).parent, capture_output=True, text=True, check=True).stdout.strip()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/janca/.local/share/uv/python/cpython-3.14.6-macos-aarch64-none/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/janca/.local/share/uv/python/cpython-3.14.6-macos-aarch64-none/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/janca/.local/share/uv/python/cpython-3.14.6-macos-aarch64-none/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+TypeError: ChunkBuildTests.setUp.<locals>.osmium() got an unexpected keyword argument 'cwd'. Did you mean 'cmd'?
+
+======================================================================
+ERROR: test_strict_assembly_preflight_keeps_index_when_dependencies_are_stale (test_build_cache.ChunkBuildTests.test_strict_assembly_preflight_keeps_index_when_dependencies_are_stale)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/test_build_cache.py", line 230, in test_strict_assembly_preflight_keeps_index_when_dependencies_are_stale
+    index = layers.assemble("ujezd", strict=True)
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/layers.py", line 315, in assemble
+    "format": FORMAT, "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "pipeline": pipeline_commit(),
+                                                                                               ~~~~~~~~~~~~~~~^^
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/layers.py", line 225, in pipeline_commit
+    return subprocess.run(["git", "describe", "--always", "--dirty", "--abbrev=10", "--exclude", "*"],
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                          cwd=Path(__file__).parent, capture_output=True, text=True, check=True).stdout.strip()
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/janca/.local/share/uv/python/cpython-3.14.6-macos-aarch64-none/lib/python3.14/unittest/mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/janca/.local/share/uv/python/cpython-3.14.6-macos-aarch64-none/lib/python3.14/unittest/mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/janca/.local/share/uv/python/cpython-3.14.6-macos-aarch64-none/lib/python3.14/unittest/mock.py", line 1247, in _execute_mock_call
+    result = effect(*args, **kwargs)
+TypeError: ChunkBuildTests.setUp.<locals>.osmium() got an unexpected keyword argument 'cwd'. Did you mean 'cmd'?
+
+----------------------------------------------------------------------
+Ran 45 tests in 1.021s
+
+FAILED (errors=2)
+would write /var/folders/1j/t72zmxvn6cs1bmnxdqqgvkqw0000gn/T/tmpz2vhee14/staged/landmarks/one.warm-v1.glb
+1 landmarks validated
+one.glb -> one.warm-v1.glb: [{'image': 0, 'width': 2, 'height': 2, 'mime': 'image/png', 'sourceBytes': 84, 'outputBytes': 83}, {'image': 1, 'width': 1, 'height': 1, 'mime': 'image/png', 'sourceBytes': 70, 'outputBytes': 70}]
+1 landmarks staged
+one.glb -> one.warm-v1.glb: [{'image': 0, 'width': 2, 'height': 2, 'mime': 'image/png', 'sourceBytes': 84, 'outputBytes': 83}, {'image': 1, 'width': 1, 'height': 1, 'mime': 'image/png', 'sourceBytes': 70, 'outputBytes': 70}]
+1 landmarks staged
+one.glb -> one.warm-v1.glb: [{'image': 0, 'width': 2, 'height': 2, 'mime': 'image/png', 'sourceBytes': 84, 'outputBytes': 83}, {'image': 1, 'width': 1, 'height': 1, 'mime': 'image/png', 'sourceBytes': 70, 'outputBytes': 70}]

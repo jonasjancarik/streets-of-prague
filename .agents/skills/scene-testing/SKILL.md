@@ -37,14 +37,30 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 
 - `t.go(where, { heading })`: loads the tiles and puts you there on foot (or in your
   vehicle). `t.where()`: lat/lon, heading, street, mode.
+- `t.onFoot()` prepares a scenario on foot through normal landing/exit actions and
+  resets the camera to follow at its normal zoom. `t.run()` does this before every
+  scenario. An airborne helicopter is staged on nearby clear ground and descends
+  through `t.wait` controls; failure to land or disembark fails preparation.
 - `t.time('21:30')`, `t.weather('rain' | … | 'auto')`, `t.season('autumn' | '10-20')` (the game's date), `t.set({ money, stars, health })`.
 - `t.drive(type)`: gets out of whatever you're in and into a new car on clear ground
   ahead (`hatch`, `sedan`, `suv`, `van`, `taxi`, `police`, `pickup`, `truck`, `bus`,
   `moto`, `bike`…, the keys of `SPECS` in `src/car.ts`). `t.car(type, opt)`: just
   parks one. `t.exit()` gets you out.
+  `t.carView(car)` reports actual player/camera distances, the production cleanup
+  view radius and whether the car is out of sight. Use it to assert a placement
+  premise: `t.car` can find a different clear spot than the requested `ahead` distance.
+- `t.boats()`: loaded boats with kind, location, mooring status, safe bank coordinates
+  and water/bank heights. `t.boardBoat()`: ordinary interaction from the current bank
+  position, returning whether you boarded. `t.exit()` uses the same safe bank rule.
+  `boat-boarding` checks all three waiting boats; `scripts/check-boat-access.mjs`
+  checks rejected quays, walls and railings without a browser.
 - `t.ignite(car)` sets a car on fire; `t.fire(car)`: whether it burns, is a wreck, still
   has flames, what the fire engine sent to it is doing (`go`, `work`, `leave`) and how
   many hoses are on it.
+- `t.enter(car)` takes an existing car through the normal entry path, including theft.
+  `t.busLines()` lists loaded PID identifiers/destinations; `t.busLine(car, ref)` assigns
+  one of those lines to a test bus. `t.policeCar()` finds the nearest police vehicle;
+  `t.policeLights(car)` reports whether its flashing lamps are active.
 - `t.push(kmh, heading?)`: sets your car going. `t.post(r)`: the nearest standing
   lamp or pole. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
   on a run clear of walls and other cars. `t.runway(heading)`: metres to the first wall.
@@ -53,8 +69,16 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.probe()`: position, speed, car type/damage/burning, money, stars, police cars,
   health, ticket, time, weather, date.
 - `t.camera({ at, height, tilt, heading })` looks from anywhere without moving you
-  (tilt 0 = straight down, up to 75); `t.camera(null)` follows you again.
+  (tilt 0 = straight down, up to 75); `height` is metres above the terrain at the
+  target. Both the eye and the look-at point follow that terrain. When comparing
+  terrain changes, use an unaffected target and record the actual eye position and
+  orientation: identical camera options alone do not establish an identical pose.
+  `t.camera(null)` follows you again.
   `t.view(zoom)` zooms the ordinary camera.
+- `t.aimAt(post, back)` checks walls, cars and the current tram collision circles
+  for the whole car along its approach. A blocked approach is rejected instead of
+  placing the car inside a tram. Moving traffic can still change after setup; this
+  is fixture clearance, not a paused or disabled-traffic test.
 - `t.shot(name)`: a screenshot (the car-name and district captions hidden).
 - `t.film(name, seconds, controls, { fps, hud })`: footage as numbered screenshots
   (`name-0001.png` …), the world stepped evenly between them, the HUD hidden unless
@@ -96,6 +120,20 @@ export default {
 Set the time and weather yourself: the server's page keeps whatever the last command
 left. Check numbers with ranges and put the measured value in `detail`, so a failure
 says how far off it was. A scenario with no checks counts as failed.
+
+Each run begins on foot with the ordinary camera; each scenario must create or enter
+the vehicle it needs. Helicopter preparation can advance the clock by up to 45
+simulated seconds. Its staging teleport resets traffic, police actors, fires,
+brigade and ambulance state. `police.reset()` retains wanted heat, but the normal
+descent simulation can change it and other world state. Set all required time,
+date, weather, wallet, health, wanted and actor state after preparation, inside the
+scenario. Manual `t.go`,
+`t.drive` and `t.exit` keep their existing gameplay constraints. This does not reset
+the whole world or resolve ambulance/tow behavior. `vehicle-entry-order` runs
+`heli-bridge` followed by `lamp-knock` and retains both complete assertion results.
+Set an explicit heading in `t.go` when car placement depends on it: the car factory
+searches ahead of the player. `wall-crash` uses its original standalone northwest
+heading instead of inheriting the previous driver's orientation.
 
 The same scenarios run in the developer panel (`` ` ``, Testing): "Run and watch" plays
 one in real time, "Run all" lists which pass.

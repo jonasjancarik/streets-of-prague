@@ -1,0 +1,423 @@
+{
+  "base": "46b1f3e14e5f96161351c1da7609dfb75f5bee10",
+  "sourceHash": "65d36f8ee7cc64393dff815aea0f01b4361f4231cfc23ac5fe964e2d71784ffc",
+  "mapHash": "d57d814798fe4cd7c99a79d34c4cc6daac9b6c08f581b9780cf64ece53c4df52",
+  "mapFiles": 804,
+  "started": "2026-10-03T08:20:05.373Z",
+  "cases": [
+    {
+      "context": "standalone-1",
+      "initial": {
+        "backend": "WebGPU",
+        "built": "2026-10-03T05:44:19Z",
+        "pipeline": "ae86cf4823",
+        "url": "http://localhost:5217/?place=staromak&go&day=wed&time=14:00&weather=clear&graphics=high&dpr=1&date=10-03&area=centrum"
+      },
+      "response": {
+        "value": {
+          "name": "wreck-tow",
+          "title": "A wreck left out of sight is towed after a minute, one in view stays",
+          "checks": [
+            {
+              "name": "both there to start with",
+              "pass": true
+            },
+            {
+              "name": "the near wreck starts in view",
+              "pass": true,
+              "detail": "{\"playerDistance\":57.71698190307598,\"cameraDistance\":57.71698190307598,\"radius\":79.9676041404157,\"outOfSight\":false}"
+            },
+            {
+              "name": "the far wreck starts beyond the cleanup view",
+              "pass": true,
+              "detail": "{\"playerDistance\":160,\"cameraDistance\":160,\"radius\":79.9676041404157,\"outOfSight\":true}"
+            },
+            {
+              "name": "both wrecks start stationary",
+              "pass": true
+            },
+            {
+              "name": "the one out of sight is gone",
+              "pass": true,
+              "detail": "{\"playerDistance\":160,\"cameraDistance\":160,\"radius\":79.9676041404157,\"outOfSight\":true}"
+            },
+            {
+              "name": "the one beside you stays",
+              "pass": true,
+              "detail": "{\"playerDistance\":57.71698190307598,\"cameraDistance\":57.71698190307598,\"radius\":79.9676041404157,\"outOfSight\":false}"
+            }
+          ],
+          "ms": 3573,
+          "pass": true
+        },
+        "errors": [],
+        "shots": []
+      },
+      "observations": {
+        "where": {
+          "lat": 50.07597,
+          "lon": 14.41847,
+          "heading": 0,
+          "street": "Resslova",
+          "mode": "foot",
+          "x": -109.4,
+          "y": -615.2
+        },
+        "camera": {
+          "position": [
+            -109.3740019211835,
+            125.12548693762199,
+            615.2312215090936
+          ],
+          "fov": 38,
+          "aspect": 1.6,
+          "free": null
+        },
+        "spawns": [
+          {
+            "opt": {
+              "ahead": 8
+            },
+            "initial": {
+              "x": -104.3740019211835,
+              "y": -557.7312215090936,
+              "h": 1.5707963267948966,
+              "view": {
+                "playerDistance": 57.71698190307598,
+                "cameraDistance": 57.71698190307598,
+                "radius": 79.9676041404157,
+                "outOfSight": false
+              }
+            },
+            "final": {
+              "x": -104.3740019211835,
+              "y": -557.7312215090936,
+              "speed": 0,
+              "standing": true,
+              "view": {
+                "playerDistance": 57.71698190307598,
+                "cameraDistance": 57.71698190307598,
+                "radius": 79.9676041404157,
+                "outOfSight": false
+              }
+            }
+          },
+          {
+            "opt": {
+              "ahead": -160
+            },
+            "initial": {
+              "x": -109.37400192118352,
+              "y": -775.2312215090936,
+              "h": 1.5707963267948966,
+              "view": {
+                "playerDistance": 160,
+                "cameraDistance": 160,
+                "radius": 79.9676041404157,
+                "outOfSight": true
+              }
+            },
+            "final": {
+              "x": -109.37400192118352,
+              "y": -775.2312215090936,
+              "speed": 0,
+              "standing": false,
+              "view": {
+                "playerDistance": 160,
+                "cameraDistance": 160,
+                "radius": 79.9676041404157,
+                "outOfSight": true
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "context": "standalone-2",
+      "initial": {
+        "backend": "WebGPU",
+        "built": "2026-10-03T05:44:19Z",
+        "pipeline": "ae86cf4823",
+        "url": "http://localhost:5217/?place=staromak&go&day=wed&time=14:00&weather=clear&graphics=high&dpr=1&date=10-03&area=centrum"
+      },
+      "response": {
+        "value": {
+          "name": "wreck-tow",
+          "title": "A wreck left out of sight is towed after a minute, one in view stays",
+          "checks": [
+            {
+              "name": "both there to start with",
+              "pass": true
+            },
+            {
+              "name": "the near wreck starts in view",
+              "pass": true,
+              "detail": "{\"playerDistance\":57.71698190307598,\"cameraDistance\":57.71698190307598,\"radius\":79.9676041404157,\"outOfSight\":false}"
+            },
+            {
+              "name": "the far wreck starts beyond the cleanup view",
+              "pass": true,
+              "detail": "{\"playerDistance\":160,\"cameraDistance\":160,\"radius\":79.9676041404157,\"outOfSight\":true}"
+            },
+            {
+              "name": "both wrecks start stationary",
+              "pass": true
+            },
+            {
+              "name": "the one out of sight is gone",
+              "pass": true,
+              "detail": "{\"playerDistance\":160,\"cameraDistance\":160,\"radius\":79.9676041404157,\"outOfSight\":true}"
+            },
+            {
+              "name": "the one beside you stays",
+              "pass": true,
+              "detail": "{\"playerDistance\":57.71698190307598,\"cameraDistance\":57.71698190307598,\"radius\":79.9676041404157,\"outOfSight\":false}"
+            }
+          ],
+          "ms": 3645,
+          "pass": true
+        },
+        "errors": [],
+        "shots": []
+      },
+      "observations": {
+        "where": {
+          "lat": 50.07597,
+          "lon": 14.41847,
+          "heading": 0,
+          "street": "Resslova",
+          "mode": "foot",
+          "x": -109.4,
+          "y": -615.2
+        },
+        "camera": {
+          "position": [
+            -109.3740019211835,
+            125.12548693762199,
+            615.2312215090936
+          ],
+          "fov": 38,
+          "aspect": 1.6,
+          "free": null
+        },
+        "spawns": [
+          {
+            "opt": {
+              "ahead": 8
+            },
+            "initial": {
+              "x": -104.3740019211835,
+              "y": -557.7312215090936,
+              "h": 1.5707963267948966,
+              "view": {
+                "playerDistance": 57.71698190307598,
+                "cameraDistance": 57.71698190307598,
+                "radius": 79.9676041404157,
+                "outOfSight": false
+              }
+            },
+            "final": {
+              "x": -104.3740019211835,
+              "y": -557.7312215090936,
+              "speed": 0,
+              "standing": true,
+              "view": {
+                "playerDistance": 57.71698190307598,
+                "cameraDistance": 57.71698190307598,
+                "radius": 79.9676041404157,
+                "outOfSight": false
+              }
+            }
+          },
+          {
+            "opt": {
+              "ahead": -160
+            },
+            "initial": {
+              "x": -109.37400192118352,
+              "y": -775.2312215090936,
+              "h": 1.5707963267948966,
+              "view": {
+                "playerDistance": 160,
+                "cameraDistance": 160,
+                "radius": 79.9676041404157,
+                "outOfSight": true
+              }
+            },
+            "final": {
+              "x": -109.37400192118352,
+              "y": -775.2312215090936,
+              "speed": 0,
+              "standing": false,
+              "view": {
+                "playerDistance": 160,
+                "cameraDistance": 160,
+                "radius": 79.9676041404157,
+                "outOfSight": true
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "context": "after-wall-crash",
+      "initial": {
+        "backend": "WebGPU",
+        "built": "2026-10-03T05:44:19Z",
+        "pipeline": "ae86cf4823",
+        "url": "http://localhost:5217/?place=staromak&go&day=wed&time=14:00&weather=clear&graphics=high&dpr=1&date=10-03&area=centrum"
+      },
+      "preceding": {
+        "value": {
+          "name": "wall-crash",
+          "title": "Driving into a wall at 60 km/h stops the car and damages it",
+          "checks": [
+            {
+              "name": "a wall within reach",
+              "pass": true
+            },
+            {
+              "name": "the car stopped at the wall",
+              "pass": true,
+              "detail": "0.2 km/h"
+            },
+            {
+              "name": "the car is damaged",
+              "pass": true,
+              "detail": "damage 29.9"
+            }
+          ],
+          "ms": 1103,
+          "pass": true
+        },
+        "errors": [],
+        "shots": [
+          "/tmp/tow-fixture-wrapup-evidence/screenshots/wall-crash.png"
+        ]
+      },
+      "response": {
+        "value": {
+          "name": "wreck-tow",
+          "title": "A wreck left out of sight is towed after a minute, one in view stays",
+          "checks": [
+            {
+              "name": "both there to start with",
+              "pass": true
+            },
+            {
+              "name": "the near wreck starts in view",
+              "pass": true,
+              "detail": "{\"playerDistance\":57.71698190307598,\"cameraDistance\":57.71698190307598,\"radius\":79.9676041404157,\"outOfSight\":false}"
+            },
+            {
+              "name": "the far wreck starts beyond the cleanup view",
+              "pass": true,
+              "detail": "{\"playerDistance\":160,\"cameraDistance\":160,\"radius\":79.9676041404157,\"outOfSight\":true}"
+            },
+            {
+              "name": "both wrecks start stationary",
+              "pass": true
+            },
+            {
+              "name": "the one out of sight is gone",
+              "pass": true,
+              "detail": "{\"playerDistance\":160,\"cameraDistance\":160,\"radius\":79.9676041404157,\"outOfSight\":true}"
+            },
+            {
+              "name": "the one beside you stays",
+              "pass": true,
+              "detail": "{\"playerDistance\":57.71698190307598,\"cameraDistance\":57.71698190307598,\"radius\":79.9676041404157,\"outOfSight\":false}"
+            }
+          ],
+          "ms": 2966,
+          "pass": true
+        },
+        "errors": [],
+        "shots": []
+      },
+      "observations": {
+        "where": {
+          "lat": 50.07597,
+          "lon": 14.41847,
+          "heading": 0,
+          "street": "Resslova",
+          "mode": "foot",
+          "x": -109.4,
+          "y": -615.2
+        },
+        "camera": {
+          "position": [
+            -109.37400192115868,
+            125.12548693762199,
+            615.2312215070767
+          ],
+          "fov": 38,
+          "aspect": 1.6,
+          "free": null
+        },
+        "spawns": [
+          {
+            "opt": {
+              "ahead": 8
+            },
+            "initial": {
+              "x": -104.3740019211835,
+              "y": -557.7312215090936,
+              "h": 1.5707963267948966,
+              "view": {
+                "playerDistance": 57.71698190307598,
+                "cameraDistance": 57.71698190307598,
+                "radius": 79.9676041404157,
+                "outOfSight": false
+              }
+            },
+            "final": {
+              "x": -104.3740019211835,
+              "y": -557.7312215090936,
+              "speed": 0,
+              "standing": true,
+              "view": {
+                "playerDistance": 57.71698190307598,
+                "cameraDistance": 57.71698190307598,
+                "radius": 79.9676041404157,
+                "outOfSight": false
+              }
+            }
+          },
+          {
+            "opt": {
+              "ahead": -160
+            },
+            "initial": {
+              "x": -109.37400192118352,
+              "y": -775.2312215090936,
+              "h": 1.5707963267948966,
+              "view": {
+                "playerDistance": 160,
+                "cameraDistance": 160,
+                "radius": 79.9676041404157,
+                "outOfSight": true
+              }
+            },
+            "final": {
+              "x": -109.37400192118352,
+              "y": -775.2312215090936,
+              "speed": 0,
+              "standing": false,
+              "view": {
+                "playerDistance": 160,
+                "cameraDistance": 160,
+                "radius": 79.9676041404157,
+                "outOfSight": true
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "finished": "2026-10-03T08:20:26.693Z",
+  "immutable": true
+}

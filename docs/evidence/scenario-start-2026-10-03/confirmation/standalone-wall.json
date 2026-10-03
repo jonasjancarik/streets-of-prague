@@ -1,0 +1,28 @@
+{
+  "value": {
+    "name": "wall-crash",
+    "title": "Driving into a wall at 60 km/h stops the car and damages it",
+    "checks": [
+      {
+        "name": "a wall within reach",
+        "pass": true
+      },
+      {
+        "name": "the car stopped at the wall",
+        "pass": true,
+        "detail": "0.4 km/h"
+      },
+      {
+        "name": "the car is damaged",
+        "pass": true,
+        "detail": "damage 27"
+      }
+    ],
+    "ms": 1051,
+    "pass": true
+  },
+  "errors": [],
+  "shots": [
+    "/Users/janca/.codex/worktrees/5cb2/streets-of-prague/docs/evidence/scenario-start-2026-10-03/confirmation/wall-crash.png"
+  ]
+}

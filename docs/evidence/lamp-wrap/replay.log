@@ -1,0 +1,8 @@
+ambulance true 
+boat-boarding true 
+bridge-exit true 
+bus-displays true 
+fire-brigade true 
+fire-driver true 
+heli-bridge true 
+lamp {"name":"lamp-knock","title":"A car at 50 km/h knocks a lamp post over","checks":[{"name":"a post nearby","pass":true},{"name":"the post is down","pass":false},{"name":"the car lost speed but kept going","pass":false,"detail":"1.7 km/h"}],"ms":1156,"pass":false}

@@ -1,0 +1,14 @@
+No scene server running (node scripts/scene.mjs serve); loading the game for this command…
+Game loaded in 4 s
+✓ police-stolen-lights: A stolen police car keeps flashing when stopped and entered again (1.5 s)
+  ✓ a real police car arrived
+  ✓ lights on immediately while stopped
+  ✓ lights on moving forward
+  ✓ lights on reversing
+  ✓ lights off after leaving it
+  ✓ lights return on re-entry
+  ✓ re-entry is not a second theft
+  ✓ stand-down preserves player lights
+  ✓ abandoned stolen car has no lights
+  screenshot: docs/evidence/overnight-final-correction/shots/police-stolen-stopped.png
+All 1 passed

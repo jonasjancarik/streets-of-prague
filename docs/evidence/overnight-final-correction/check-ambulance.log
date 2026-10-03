@@ -1,0 +1,6 @@
+Captured parked-car row: treatment and return passed
+{"clearApproach":"pass","distantWall":"pass","changedObstacle":"pass","stretcher":"pass","rowReturnSeconds":10.133333333333416,"maxLoadSeconds":13.283333333333571}
+Knock invalidation and capped unreachable search passed (368 segment checks)
+Vehicle-end boarding passed (4.29999999999999 seconds)
+(node:10034) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)

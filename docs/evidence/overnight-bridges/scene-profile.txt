@@ -1,0 +1,57 @@
+t.paused=true;t.time('14:00');t.weather('clear');t.season('summer');
+const CAPTURE=window.__bridgeCaptureImages??false;
+const d=__drive,w=d.world,ref=w.index.iprRef??180;
+if(w.index.built!=='2026-10-03T00:26:37Z')throw Error('Wrong bridge generation');
+const canvas=d.renderer.domElement;for(const el of document.body.children)if(el!==canvas&&!el.contains(canvas))el.style.visibility='hidden';
+const {Polyline}=await import('/src/network.ts');
+const {onPolygons}=await import('/src/map/geo.ts');
+const terrain=await import('/src/terrain.ts');
+const trace=await fetch('/docs/evidence/overnight-bridges/source-profiles.json').then(r=>r.json());
+const previous=await fetch('/docs/evidence/overnight-combined/combined-scene.json').then(r=>r.json());
+const oldIndex=await fetch('/data/centrum_before_bridge_now/index.json').then(r=>r.json());
+const oldTiles=new Map(),oldFurniture=new Map(),results=[];
+async function oldTile(k){
+ if(oldTiles.has(k))return oldTiles.get(k);
+ const base='/data/centrum_before_bridge_now/tiles/'+k, json=await fetch(base+'.json').then(r=>r.json()),{n,step}=oldIndex.terrain;
+ const hm=await terrain.fetchBinary(base+'.height.bin.gz',true),levels=json.structures?.length?await terrain.fetchBinary(base+'.levels.bin.gz',true):null;
+ const floor=terrain.heightSampler(terrain.decodeHeights(hm,n,ref),json.box,n,step,terrain.pointLabels(hm,n),terrain.terraceAt(json.terraces),terrain.flatTerraces(json.terraces,ref));
+ const arrays=levels?terrain.decodeLevels(levels,n,json.structures.length,ref):[];
+ const decks=(json.structures||[]).map((s,i)=>({level:s.level,contains:onPolygons(s.polys),height:terrain.heightSampler(arrays[i],json.box,n,step)}));
+ const result={floor,decks};oldTiles.set(k,result);return result;
+}
+function sample(source,s){const line=source.distances,h=source.heights;let i=1;while(i<line.length-1&&line[i]<s)i++;const u=(s-line[i-1])/(line[i]-line[i-1]);return h[i-1]+(h[i]-h[i-1])*u;}
+for(const bridge of trace.after.bridges){
+ const before=trace.before.bridges.find(b=>b.way_id===bridge.way_id);
+ if(!before)throw Error('Source identity changed');
+ const line=new Polyline(bridge.pts),mid=line.at(line.length/2),ll=d.dev.toLonLat(mid.x,mid.y),camera={at:[ll[1],ll[0]],height:125,tilt:35,heading:0};
+ await t.camera(camera);await t.go([ll[1]+.0002,ll[0]-.0002]);await t.camera(camera);
+ if(CAPTURE)await t.shot(bridge.name+'-deck');
+ const prof=[],joins=[];
+ for(let s=.5;s<line.length-.5;s+=2){
+  const p=line.at(s),tile=w.tileAt(p.x,p.y);
+  if(!tile?.sample)throw Error('Missing source profile tile');
+  const old=await oldTile(tile.k),oldDeck=old.decks.find(l=>l.level===before.runtime_level&&l.contains(p.x,p.y));
+  const h=w.levelAt(p.x,p.y,bridge.runtime_level),h0=oldDeck?oldDeck.height(p.x,p.y):NaN;
+  prof.push({s,x:p.x,y:p.y,before:Number.isFinite(h0)?h0+ref:null,after:Number.isFinite(h)?h+ref:null,source:sample(bridge,s)});
+ }
+ for(const [end,index] of [[0,0],[-1,bridge.nodes.length-1]]){
+  if(!bridge.grade[index])continue;
+  const pt=end===0?bridge.pts[0]:bridge.pts.at(-1),near=end===0?bridge.pts[1]:bridge.pts.at(-2),dx=near[0]-pt[0],dy=near[1]-pt[1],norm=Math.hypot(dx,dy),ux=dx/norm,uy=dy/norm;
+  const inside={x:pt[0]+ux*.5,y:pt[1]+uy*.5},outside={x:pt[0]-ux*.5,y:pt[1]-uy*.5},tile=w.tileAt(inside.x,inside.y),old=await oldTile(tile.k),oldDeck=old.decks.find(l=>l.level===before.runtime_level&&l.contains(inside.x,inside.y));
+  const h=w.levelAt(inside.x,inside.y,bridge.runtime_level),g=w.terrainAt(outside.x,outside.y),h0=oldDeck?oldDeck.height(inside.x,inside.y):NaN,g0=(await oldTile(w.tileAt(outside.x,outside.y).k)).floor(outside.x,outside.y);
+  joins.push({end,node:bridge.nodes[index],observedGround:bridge.on_ground?.[index]??null,beforeStep:Number.isFinite(h0)?Math.abs(h0-g0):null,afterStep:Number.isFinite(h)?Math.abs(h-g):null,inside,outside});
+  const spot=d.dev.toLonLat(...pt),heading=((90-Math.atan2(uy,ux)*180/Math.PI)%360+360)%360;
+  await t.camera({at:[spot[1],spot[0]],height:70,tilt:45,heading});if(CAPTURE)await t.shot(bridge.name+'-head-'+end);
+ }
+ for(const tile of w.loaded.values())for(const p of previous.placements){
+  if(p.tile!==tile.k||oldFurniture.has(`${p.tile}/${p.kind}/${p.x}/${p.y}`))continue;
+  const matching=tile.furniture.some(m=>m.userData.kind===p.kind&&Array.from({length:m.count},(_,i)=>i).some(i=>Math.hypot(m.instanceMatrix.array[i*16+12]-p.x,-m.instanceMatrix.array[i*16+14]-p.y)<.0002));
+  const old=await oldTile(tile.k);oldFurniture.set(`${p.tile}/${p.kind}/${p.x}/${p.y}`,{tile:p.tile,kind:p.kind,stillPresent:matching,heightDelta:w.terrainAt(p.x,p.y)-old.floor(p.x,p.y)});
+ }
+ const finite=prof.filter(p=>p.after!==null),both=prof.filter(p=>p.after!==null&&p.before!==null),deltas=both.map(p=>Math.abs(p.after-p.before));
+ results.push({name:bridge.name,wayId:bridge.way_id,mappedLayer:bridge.mapped_layer,beforeLevel:before.runtime_level,afterLevel:bridge.runtime_level,camera,sourceNodes:bridge.nodes,samples:prof,missingCurrent:prof.length-finite.length,maxRuntimeDelta:deltas.length?Math.max(...deltas):null,maxRuntimeStep2m:Math.max(0,...prof.slice(1).flatMap((p,i)=>p.after!==null&&prof[i].after!==null?[Math.abs(p.after-prof[i].after)]:[])),joins});
+}
+const result={built:w.index.built,backend:d.renderer.isWebGPURenderer?'webgpu':'webgl',bridges:results,previousFurniture:[...oldFurniture.values()],streaming:w.streamingStats};
+window.__bridgeValidation=result;
+const bytes=new TextEncoder().encode(JSON.stringify(result,null,2));let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);await window.__saveFile('runtime-profiles.json',btoa(binary));
+return {built:result.built,backend:result.backend,bridges:results.map(b=>({name:b.name,wayId:b.wayId,beforeLevel:b.beforeLevel,afterLevel:b.afterLevel,samples:b.samples.length,missing:b.missingCurrent,maxRuntimeDelta:b.maxRuntimeDelta,maxRuntimeStep2m:b.maxRuntimeStep2m,joins:b.joins})),previousFurniture:result.previousFurniture,failed:result.streaming.failed};

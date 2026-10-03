@@ -1,7 +1,7 @@
 # AI car traffic
 
-read_when: changing how many cars are about, where they start or which way they turn;
-regenerating the time-of-day table.
+read_when: changing traffic counts, routes, bus displays, police lights, parking
+clearance or tile street loading; regenerating the time-of-day table.
 
 ## How it works
 
@@ -25,12 +25,65 @@ secondary 2.5, tertiary 2, residential 1, living street and service 0.3). At a j
 more often but side streets stay reachable. Both apply only to ordinary cars (spawned
 without a type). Buses, taxis, police and pavement drivers are unchanged.
 
+**Bus displays.** Buses working a PID line keep its actual `ref` and destination from
+the loaded `buses.json`. The front board shows a larger line number, the side board
+also shows the destination, and the roof number can be read from the game's overhead
+camera. Board textures are cached per number/destination and reused as cars move or
+leave view. A wandering bus without a line, an empty identifier or a burnt wreck has
+no route label. Taking a bus preserves its assigned line; it does not assign a new one.
+
+**Police lights after theft.** A police car driven by the player keeps its blue
+flashing lamps and street illumination on, including at a stop or in reverse. They
+switch off on exit and return on re-entry; burnt wrecks are excluded. Police cars in
+an active chase retain their existing lights, while those that stand down or return
+to patrol do not flash. Player ownership does not add a siren or make traffic give way.
+
 **Couriers.** In `Traffic.spawn`, half of the ordinary bikes and a third of the mopeds are
 delivery couriers: a box on the rider's back in pink, green or blue (`COURIER_BOXES` in
 `src/car.ts`, baked into the two-wheeler's geometry, so one draw call per colour) and a
 jacket in the same colour (`courierLook`). Bikes are 1.6 of the traffic mix's weights, up
 from 0.5. `BOX_AT` in `src/car.ts` puts the box on the back; it was placed by eye from the
 riding pose in `assets/figures/build.py`, so change it if that pose changes.
+
+**Parking beside traffic.** Before publishing a tile's parked cars, `TileWorld`
+fetches the JSON for its eight neighbours and builds a separate, deduplicated street
+graph for clearance. It does not fetch their height grids or IPR meshes just for
+parking, add their roads to live traffic early, or replace cars when they arrive.
+Failed neighbour JSON blocks that parking pass and is retried; it never counts as
+an empty road. When the index announces tile graphs, both `drive` and `walk` arrays
+must be present; explicit empty arrays are valid. Older maps with a separately
+loaded graph may omit those fields. The JSON cache is pruned when the camera changes
+tile or view range.
+
+`parkingClearance` indexes the ground-level lanes and the junction curves shared
+with `Route`. Ordinary curves reserve a pickup's collision circles, while the wider
+bus curves also allow for its axle placement and heading rotation on approach and
+exit. Parked cars must leave those swept paths clear; pavement parking also checks
+the neighbouring carriageways. Bridges and tunnels are excluded so parking under
+or above them stays possible. Parking candidates, tile ownership, paid-section
+shares and day/night occupancy targets stay the same; fewer cars fit where the
+mapped bays would obstruct traffic. Clearance is built once per parking pass,
+never in the frame loop.
+
+Run `node scripts/check-parking-clearance.mjs` for CPU regressions using the shipped
+car models and the actual traffic updater: neighbouring lane offsets, opposite
+tile/completion orders, retry and cache lifetime, narrow streets, paid-section
+targets, and body clearance through right, left and short curved junctions. These
+checks cover normal route following; collisions can still move cars out of their
+lanes, and emergency routes are separate.
+
+The 3 October 2026 controlled scene replay used a 12 m bus on Ostrovní → Opatovická,
+past the old accepted hatchback at `50.080753948, 14.418088551` (tile `8_5`). Its
+collision circles overlapped by 0.377 m. With candidate parking the same actor
+completed the turn without touching parked cars. This used the private `centrum`
+map built `2026-10-02T20:16:12Z`, WebGPU, Wednesday 14:00 and clear weather; camera
+height 48 m, tilt 0°, heading 0°. Nearby ordinary-car overlap was not reproduced;
+the ordinary turning checks use the actual traffic updater in CPU fixtures.
+Neighbouring tiles `8_5` and `7_5` also produced identical parked-car layouts in
+opposite reload orders (103 and 78 cars), with zero duplicate centres. This is
+targeted behaviour evidence, not a citywide driving or performance comparison.
+The [durable captures, measurements and replay snippets](evidence/parking-clearance-2026-10-03/README.md)
+record the baseline reconstruction and the controls used.
 
 ## The data
 

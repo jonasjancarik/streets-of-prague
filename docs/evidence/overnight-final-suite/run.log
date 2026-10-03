@@ -1,0 +1,16 @@
+PASS ambulance {"failed":[],"pageErrors":[]}
+PASS boat-boarding {"failed":[],"pageErrors":[]}
+PASS bridge-exit {"failed":[],"pageErrors":[]}
+PASS bus-displays {"failed":[],"pageErrors":[]}
+PASS fire-brigade {"failed":[],"pageErrors":[]}
+PASS fire-driver {"failed":[],"pageErrors":[]}
+PASS heli-bridge {"failed":[],"pageErrors":[]}
+FAIL lamp-knock {"failed":[{"name":"the post is down","pass":false},{"name":"the car lost speed but kept going","pass":false,"detail":"0.2 km/h"}],"pageErrors":[]}
+PASS police-chase {"failed":[],"pageErrors":[]}
+PASS police-stand-down {"failed":[],"pageErrors":[]}
+PASS police-stolen-lights {"failed":[],"pageErrors":[]}
+PASS seasonal-ground {"failed":[],"pageErrors":[]}
+PASS vehicle-entry-order {"failed":[],"pageErrors":[]}
+PASS wall-crash {"failed":[],"pageErrors":[]}
+FAIL wreck-tow {"failed":[{"name":"the one out of sight is gone","pass":false}],"pageErrors":[]}
+{"passed":13,"failed":2,"run":15,"expected":15,"immutable":true}

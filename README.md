@@ -50,8 +50,18 @@ The map data is built locally (see [Building the map](#building-the-map)); nothi
 generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
 the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague
 now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
-(with night-time parking). The game's date is today's in Prague and stays for the whole game (`src/season.ts`): the sun's height, how far out the trees' leaves are and which weather is likely follow it; `?date=MM-DD` or `?season=spring|summer|autumn|winter` starts on another. The weather changes by itself every half hour or so of the game's clock;
-`?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen (the loading screen's language, time, weather and sound choices and its Start button; the weather is the real weather in Prague now, from Open-Meteo (`src/liveweather.ts`), or else rolled anew on each visit), and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
+(with night-time parking). The start screen offers spring, summer, autumn and winter,
+with Prague's current season selected. Its button uses today's Prague date; the other
+seasons use 20 April, 15 July, 20 October and 15 January. The date stays fixed and is
+kept in the save (`src/season.ts`): the sun, leaves, blossom and likely weather follow
+it. `?date=MM-DD` keeps an exact date and `?season=spring|summer|autumn|winter` uses a
+season's representative date. These links keep their date until a season button is picked.
+The weather changes by itself every half hour or so of the game's clock;
+`?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen
+(language, season, time, weather and sound). The real weather in Prague, from
+Open-Meteo (`src/liveweather.ts`), is offered only for today's game date; other dates
+start with weather chosen for that season. <kbd>P</kbd> steps through the weather.
+`?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?dialog` plays a sample conversation, `?menu` shows only the start screen without loading the map (quick to reload while working on the screen, the beta note or the signup form; the note then shows on every press of Start), `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. The Czech is kept gender-neutral towards the player for now (see the note at the top of `src/cs.ts`). Elements in `index.html` marked `data-t` work the same way.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 
@@ -156,7 +166,10 @@ that without a new renderer.
   Square, Main Station, Anděl, Prague Castle, Vyšehrad…). It finds its own way there
   along the one-way streets, sped up like a tram ride until the last 200 m, and you
   pay at the end from your money (a street taxi 60 Kč plus 36 Kč a km, the apps less; the meter shows in the hint, and a crash means a free ride). E gets you out
-  early, and T cancels a taxi on its way. As on a tram, the police can't arrest you
+  early, and T cancels a taxi on its way. On touch, the same Taxi button changes to
+  **Close taxi menu** while choosing and **Cancel taxi** while a driver is coming or
+  waiting. Cancelling releases the driver without a charge; opening the menu again
+  clears the old notice so you can book another taxi. As on a tram, the police can't arrest you
   in a taxi, and your stars fade twice as fast.
 - **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
   desktop). The left thumb has a round stick: on foot, push it the way you want to go
@@ -179,7 +192,8 @@ that without a new renderer.
   officer gets out and runs after you, and if they reach you, you're busted (the
   police keep the car). The arrest banner appears before the screen fades to black;
   you are then taken to the station and the picture fades back in. You can outrun them on foot, or take the police car they've
-  left behind (E) and drive off in it, its blue lights flashing as you go. From three stars a helicopter
+  left behind (E) and drive off in it. Its blue lights keep flashing while you're at
+  the wheel, even when stopped, and switch off when you get out. From three stars a helicopter
   joins in and sees you over the rooftops, and the officers carry pistols: once they can
   see you from close enough they stop and shoot instead of running you down, and from
   four stars they shoot out of the cars too. Gunshots send people running. Stay out of
@@ -255,7 +269,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   The general pavement is asphalt grey; slab squares are lighter, and park paths stay
   warm. Squares use their own OSM `surface` tag where one exists. Otherwise, a clear
   majority of mapped pedestrian and service ways crossing the square can supply its
-  surface; Old Town Square takes the setts mapped on the ways through it. The city's
+  surface; Old Town Square takes the setts mapped on the ways through it. Walking
+  routes add no ribbon over a square of the same material; cobbled
+  footways use setts, and island/link routes leave the pavement clear while keeping
+  real path sections through lawns. A named
+  square's outline keeps its mapped lawns and ponds, with real paths through them.
+  Surveyed and inferred lawns receive the same treatment; a link paved differently
+  from the square remains visible.
+  These surface rules leave the walking network and street kerbs alone. The city's
   technical map supplies ground-level courtyards, maintained green, gardens, pitches
   and woods where OSM has no more specific surface. OSM ground and roads draw above
   those surveyed shapes. Rebuild the `ground` layer for these changes; use
@@ -292,6 +313,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   that came out too alike were regenerated one at a time (`assets/portraits/faces/`). The
   loading screen puts three of them in front of a skyline of a real view, drawn from
   the 3D city by `pipeline/skyline.py`, with poster shapes over the panels' cut edges;
+  its skyline follows the selected season, time and weather, including a saved game's
+  date when continuing it;
   a conversation shows the speaker rising out of a frame (`src/portraits.ts`).
 - **Weather** (`src/weather.ts`): clear, cloudy, rain, a thunderstorm, mist or snow,
   each a mix of cloud, rain, storm, snow and mist that the weather moves between over
@@ -421,7 +444,21 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Bridges and tunnels** have heights of their own, above and below the bare ground
   (`pipeline/structures.py`). Where one meets a street on the ground it's at the
   ground's height, and in between its height runs evenly from end to end, along the
-  ways and through junctions (Blanka's underground ramps). Bridges follow IPR's 3D
+  ways and through junctions (Blanka's underground ramps).
+  Components containing only bridges and finite anchors use a distance-weighted
+  harmonic graph solve, linear on chains and continuous at junctions. Components
+  containing a tunnel or an unknown anchor retain the previous two-nearest model,
+  so an out-of-map portal cannot erase a supported tunnel interior. Selection uses
+  every way in a component, preserving bridge/tunnel joins. See
+  `docs/bridge-height-continuity.md` and `docs/tunnel-propagation-compatibility.md`.
+  Bridge continuations are resolved across chunks before a loose end is tied to
+  the ground. Explicitly mapped different decks remain separate even where their
+  inferred heights are close, while a shared OSM node keeps a physical join.
+  Rebuild affected `streets` chunks and then terrain for these rules; old street
+  caches remain readable, and mixed old/new records in one connected bridge
+  component require a streets refresh before terrain can be built. See
+  `docs/bridge-contact-results.md` for evidence and remaining height limitations.
+  Bridges follow IPR's 3D
   model of Prague's bridges wherever it has them, so a deck rises and falls as the
   real one does. Tunnels keep a few metres of ground over them, more away from their
   portals, and wherever two cross on different OSM layers, the upper one clears the
@@ -797,17 +834,34 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   own a quay wall or a retaining wall is a broad ramp. `pipeline/dtm_heights.py` corrects
   the grid from the technical map's survey (DTM ZPS: its lines carry heights): streets
   take the heights of their own kerbs, water its level, and the ground beside a bank or
-  a retaining wall the height it has clear of the ramp. Each grid point also has a label
+  a retaining wall the height it has clear of the ramp. Original street vertices more
+  than 30 m from the bare terrain are rejected before interpolation; their attached
+  segments are skipped, keeping gross source errors from spreading into the ground.
+  Separate components of a survey line stay separate. The survey log reports rejected
+  vertices. See `docs/river-terrain-findings.md` for the checks and remaining limits.
+  Each grid point also has a label
   (plain ground, water, or a terrace at a retaining wall's foot, whose outline is in the
   tile's `terraces`), stored after the heights in `<tile>.height.bin`. Where the labels
   in a grid cell differ, the game reads the height at a point from the corners with that
   point's own label (`heightSampler` in `src/terrain.ts`), cuts the ground's layers
-  along the outlines and puts a wall there (`src/ground.ts`). Map format 2. It works
+  along the actual outlines (`src/terrain-cut.ts`, including enclosed terraces and
+  holes) and puts a wall there (`src/ground.ts`). Cuts on the same level are merged
+  before triangulation so temporary line extensions cannot introduce tile-edge
+  cracks. Map format 2. It works
   on arrays over the whole area (a few GB and about a quarter of an hour for `praha`).
   Bridges come off the street above a quay wall, not the quay below it
-  (`abutment` in `pipeline/structures.py`). Where the rules make a place worse than the
+  (`abutment` in `pipeline/structures.py`). Ground pulled to a nearby bridge also
+  shares the same bridge support at tile-edge lattice points, even when the drawable
+  bridge polygon appears in only one tile. Separate deck levels keep their existing
+  pull order; conflicting support is rejected before export. See
+  `docs/bridge-ground-edge-diagnosis.md` for the source comparison.
+  Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it.
+  Rendered tile edges also share a world-aligned 2 m height profile and perimeter
+  stations (`src/terrain-edges.ts`), including tiles without steps, so differing
+  clipped-outline refinement cannot open a gap on a curved slope. This changes
+  edge geometry, not the stored lattice or gameplay height sampler.
 - **Caches.** Every OSM chunk and every IPR sheet is read only once. What comes out
   is kept (`pipeline/.cache/osm/*.parsed.pkl`, `pipeline/.cache/ipr/parsed/`) and read
   again only when the source changes. Chunks and sheets are worked on side by side

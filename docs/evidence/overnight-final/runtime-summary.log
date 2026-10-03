@@ -1,0 +1,163 @@
+{
+  "code": "c85e999",
+  "built": "2026-10-03T00:26:37Z",
+  "backend": "webgpu",
+  "seams": [
+    {
+      "tiles": [
+        "5_6",
+        "5_7"
+      ],
+      "axis": 1,
+      "normal": 248.81999999999994,
+      "camera": {
+        "at": [
+          50.08373647106395,
+          14.409201794164558
+        ],
+        "height": 110,
+        "tilt": 20,
+        "heading": 0
+      },
+      "float32": true,
+      "gpuBuffers": true,
+      "comparisons": 168,
+      "oppositeSides": 0,
+      "missing": 0,
+      "storedEdgeNodeDelta": 0,
+      "maxMeshGap": 0.7999997138977051,
+      "maxExpectedProfileGap": 0.7999997138977051,
+      "maxResidual": 2.0203879103064537e-7
+    },
+    {
+      "tiles": [
+        "4_8",
+        "5_8"
+      ],
+      "axis": 0,
+      "normal": -897.8400000000001,
+      "camera": {
+        "at": [
+          50.08710766649506,
+          14.407454400449286
+        ],
+        "height": 110,
+        "tilt": 20,
+        "heading": 0
+      },
+      "float32": true,
+      "gpuBuffers": true,
+      "comparisons": 157,
+      "oppositeSides": 0,
+      "missing": 0,
+      "storedEdgeNodeDelta": 0,
+      "maxMeshGap": 0.0012001991271972656,
+      "maxExpectedProfileGap": 0.0012001991271972656,
+      "maxResidual": 2.743327058851719e-7
+    }
+  ],
+  "crossings": [
+    {
+      "tile": "5_5",
+      "triangles": 66778,
+      "samples": 216581,
+      "crossed": 0,
+      "nearSkipped": 3631
+    },
+    {
+      "tile": "5_6",
+      "triangles": 57180,
+      "samples": 208412,
+      "crossed": 0,
+      "nearSkipped": 4228
+    },
+    {
+      "tile": "5_7",
+      "triangles": 31460,
+      "samples": 81448,
+      "crossed": 0,
+      "nearSkipped": 1292
+    },
+    {
+      "tile": "4_8",
+      "triangles": 25799,
+      "samples": 4584,
+      "crossed": 0,
+      "nearSkipped": 0
+    },
+    {
+      "tile": "5_8",
+      "triangles": 38375,
+      "samples": 99010,
+      "crossed": 0,
+      "nearSkipped": 1202
+    }
+  ],
+  "movement": {
+    "start": {
+      "x": -861.0445658272362,
+      "y": -22.176798448192926,
+      "z": 13.272802340779633
+    },
+    "end": {
+      "x": -857.7445605031326,
+      "y": -22.176798448192926,
+      "z": 13.0951127944361
+    },
+    "moved": 3.3000053241036085,
+    "finiteSupport": true
+  },
+  "views": [
+    {
+      "name": "kampa-final",
+      "at": [
+        50.081814815,
+        14.4103086003
+      ],
+      "height": 55,
+      "tilt": 25,
+      "heading": 0,
+      "eye": [
+        -693.6523427883378,
+        63.435713277824036,
+        -9.415145375256856
+      ],
+      "quaternion": [
+        -0.5372996083468239,
+        0,
+        0,
+        0.8433914458128857
+      ]
+    },
+    {
+      "name": "legii-head-final",
+      "at": [
+        50.08126608812015,
+        14.4080712251588
+      ],
+      "height": 70,
+      "tilt": 45,
+      "heading": 87.67963711466541,
+      "eye": [
+        -923.7426048435315,
+        80.71358404242427,
+        28.784083214838937
+      ],
+      "quaternion": [
+        -0.6439170004425501,
+        -0.2665644662832047,
+        0.2743082579236569,
+        0.6626230161193525
+      ]
+    }
+  ],
+  "streaming": {
+    "failed": 0,
+    "queuedRequired": 0,
+    "runningRequired": 0
+  }
+}
+  screenshot: docs/evidence/overnight-final/seam-5_6-5_7.png
+  screenshot: docs/evidence/overnight-final/seam-4_8-5_8.png
+  screenshot: docs/evidence/overnight-final/kampa-final.png
+  screenshot: docs/evidence/overnight-final/legii-head-final.png
