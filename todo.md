@@ -434,6 +434,14 @@ their small or contradictory frame-time differences leave the ground cost
 unresolved. See [the evidence](docs/evidence/seasons-step3/README.md). Integration
 is still separate; the start-screen season choices remain step 4.
 
+Bird ambience now follows the fixed date too: strongest on spring mornings, reduced
+in late summer and nearly silent in winter, while July's familiar mix and the
+weather/place suppression remain. Only the existing loops' gains change, through
+their two-second fades. Deterministic date/time/weather checks, offline recording
+levels and a muted runtime smoke pass: date propagation, expected real targets,
+retained gain/filter nodes and weather suppression. See
+[the evidence](docs/evidence/seasonal-birds.md).
+
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow
 (`src/weather.ts`), IPR's street lamps with a light map over the view
 (`src/lamps.ts`), headlights, lit windows and trams, rain and wind sounds.

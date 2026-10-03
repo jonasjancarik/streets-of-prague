@@ -6,6 +6,7 @@
 // People and their footsteps and voices on busy streets by day, traffic in the
 // distance by day and a quieter hum by night, and birds where it's quiet (a blackbird
 // at dawn and dusk, the small garden birds by day, a whole morning chorus early on),
+// strongest on spring mornings, fewer in late summer, nearly silent in winter;
 // none of them in rain or snow. (Two crowds of different lengths are layered, so
 // together they repeat only every few minutes.)
 
@@ -25,15 +26,28 @@ export function span(h: number, a: number, b: number, c: number, d: number) {
   return e * e * (3 - 2 * e);
 }
 
+// The existing season.ts curves, passed by reference from the game. Optional for
+// older offline callers, which retain the original summer reference mix.
+export interface BirdSeason { fresh: number; dry: number; cold: number }
+
+export function birdActivity(hour: number, season?: BirdSeason) {
+  if (!season) return 1;
+  // The dry curve passes 0.2 just after mid-July: July 15 stays exactly familiar.
+  const lateSummer = clamp((season.dry - 0.2) / 0.8, 0, 1);
+  const springMorning = season.fresh * span(hour, 4, 5, 8, 10);
+  return (1 + 0.4 * springMorning) * (1 - 0.65 * lateSummer) * (1 - 0.97 * season.cold);
+}
+
 // Each loop's gain: `busy` how busy the streets within 150 m are, 0 (the edge of town)
 // to 1 (the Old Town, from the footfall map), `hour` 0–24, `wet` how hard it rains or
 // snows, 0–1.
-export function ambienceGains(busy: number, hour: number, wet: number): Record<string, number> {
+export function ambienceGains(busy: number, hour: number, wet: number, season?: BirdSeason): Record<string, number> {
   // Birds only well away from the centre: none from 0.1 up (the inner city, even
   // Vinohrady's side streets), all of them below 0.006 (the suburbs), on a log scale
   // (half the city is under 0.01). The parks in town, at 0.03–0.06, get a little.
   const far = clamp((-1 - Math.log10(Math.max(busy, 1e-4))) / 1.2, 0, 1);
   const quiet = far * far * (3 - 2 * far), dry = 1 - wet;
+  const birds = quiet * dry * birdActivity(hour, season);
   const awake = 0.15 + 0.85 * span(hour, 5.5, 8, 21, 24); // how many people are about
   const night = 1 - span(hour, 5, 6.5, 22, 23.5);
   const level: Record<string, number> = {
@@ -44,9 +58,9 @@ export function ambienceGains(busy: number, hour: number, wet: number): Record<s
     crowd2: busy ** 1.3 * awake,
     traffic: (0.35 + 0.65 * busy) * (1 - night),
     night: (0.5 + 0.5 * busy) * night,
-    blackbird: quiet * dry * Math.max(span(hour, 3.5, 4.5, 7, 9), 0.8 * span(hour, 18, 19.5, 21, 22), 0.25 * span(hour, 9, 10, 17, 18)),
-    garden: quiet * dry * Math.max(span(hour, 6, 8, 17, 19.5), 0.5 * span(hour, 4.5, 5.5, 6, 8)),
-    morning: quiet * dry * span(hour, 4, 5, 8, 10),
+    blackbird: birds * Math.max(span(hour, 3.5, 4.5, 7, 9), 0.8 * span(hour, 18, 19.5, 21, 22), 0.25 * span(hour, 9, 10, 17, 18)),
+    garden: birds * Math.max(span(hour, 6, 8, 17, 19.5), 0.5 * span(hour, 4.5, 5.5, 6, 8)),
+    morning: birds * span(hour, 4, 5, 8, 10),
   };
   return Object.fromEntries(Object.entries(AMBIENCE).map(([name, full]) => [name, (level[name] ?? 0) * full]));
 }

@@ -126,6 +126,11 @@ depend on the date.
 - Lit windows follow the sun as well as the hour, so a January afternoon at five has
   them lit.
 - Birds: most in spring mornings, fewer in late summer, nearly none in winter.
+  **Done (3 October).** The existing recorded loops get a date-dependent gain:
+  up to +2.92 dB on spring mornings, the original levels on 15 July, about −8.93 dB
+  on 20 August and −30.46 dB in midwinter. Time windows and rain/snow/quiet-place
+  suppression stay; existing two-second fades keep changes smooth. See
+  [the bird ambience checks](../docs/evidence/seasonal-birds.md).
 
 ## Steps
 
