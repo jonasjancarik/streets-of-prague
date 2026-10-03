@@ -3,7 +3,7 @@
 // (silent in the metro or with the sound off) and can be filtered like a small speaker.
 // More stations that were checked are listed in docs/radio-stations.md.
 
-import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts';
+import { stationAllowed, stationDistribution, stationWeight, onRadioPreferencesChange } from './radio-preferences.ts';
 
 export interface Station { id: string; name: string; url: string }
 
@@ -28,11 +28,17 @@ export const setRadioSaved = (on: boolean) => { try { localStorage.setItem(KEY, 
 const LEVEL = 0.14; // how loud a station plays, before the master volume
 const FADE = 0.25; // s
 
-const randomOther = (not: number) => {
+export const selectStation = (not = -1, random = Math.random) => {
   const allowed = STATIONS.map((_, i) => i).filter((i) => stationAllowed(STATIONS[i].id));
   const others = allowed.filter((i) => i !== not);
-  const pool = others.length ? others : allowed;
-  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : -1;
+  // Audience mode draws independently so avoiding repeats doesn't distort the weights.
+  const pool = stationDistribution() === 'random' && others.length ? others : allowed;
+  let ticket = random() * pool.reduce((sum, i) => sum + stationWeight(STATIONS[i].id), 0);
+  for (const i of pool) {
+    ticket -= stationWeight(STATIONS[i].id);
+    if (ticket < 0) return i;
+  }
+  return pool.at(-1) ?? -1;
 };
 
 const allowed = (i: number) => !!STATIONS[i] && stationAllowed(STATIONS[i].id);
@@ -73,11 +79,14 @@ export class Radio {
     this.out.gain.value = 0;
     hp.connect(body).connect(lp).connect(this.out).connect(dest);
     this.input = hp;
-    if (radioOn()) this.tuned = randomOther(-1);
+    if (radioOn()) this.tuned = selectStation();
+    let distribution = stationDistribution();
     onRadioPreferencesChange(() => {
+      const changed = distribution !== stationDistribution();
+      distribution = stationDistribution();
       if (this.linger && !allowed(this.linger.idx)) this.linger = null;
-      if ((this.tuned >= 0 && !allowed(this.tuned)) || (this.tuned < 0 && radioOn())) {
-        this.tuned = randomOther(-1);
+      if ((this.tuned >= 0 && (!allowed(this.tuned) || (changed && !this.owner))) || (this.tuned < 0 && radioOn())) {
+        this.tuned = selectStation();
         if (this.owner) this.owner.radio = this.tuned;
       }
       this.sync();
@@ -104,7 +113,7 @@ export class Radio {
 
   // Turns the radio on at a random station, or off.
   set(on: boolean) {
-    if (on !== (this.tuned >= 0)) this.tune(on ? randomOther(-1) : -1);
+    if (on !== (this.tuned >= 0)) this.tune(on ? selectStation() : -1);
     setRadioSaved(on); // keep the intent even when every station is excluded
   }
 
@@ -134,12 +143,12 @@ export class Radio {
       // Leaving a car: its station goes on downloading for a while and the next car gets another one.
       if (this.owner) {
         if (this.tuned >= 0) this.linger = { car: this.owner, idx: this.tuned, away: 0 };
-        this.tuned = this.tuned >= 0 ? randomOther(this.tuned) : -1;
+        this.tuned = this.tuned >= 0 ? selectStation(this.tuned) : -1;
       }
       // Getting into a car brings back its station; one not yet sat in takes what's tuned now.
       if (owner) {
         if (owner.radio === undefined) owner.radio = this.tuned;
-        else this.tuned = owner.radio === -1 || allowed(owner.radio) ? owner.radio : randomOther(-1);
+        else this.tuned = owner.radio === -1 || allowed(owner.radio) ? owner.radio : selectStation();
         owner.radio = this.tuned;
         if (this.linger?.car === owner) this.linger = null;
       }

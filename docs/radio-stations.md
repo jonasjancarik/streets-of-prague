@@ -24,6 +24,23 @@ the station currently playing switches to another allowed station; returning to
 a car also replaces any excluded station it remembers. Excluding every station
 leaves the radio silent with no downloads.
 
+**Stations in new cars** offers **Equal chance** (the default) and **By listener
+numbers**. Both select randomly from allowed stations. Listener mode weights each
+draw independently by daily audience; consecutive cars can have the same station.
+Equal mode keeps the existing behavior of choosing another station when leaving
+a car, unless only one is allowed. Cars already used retain their station; changing
+the distribution affects future selections, not the station currently playing.
+The distribution is saved alongside exclusions under `radio-preferences`.
+
+The audience snapshot is RADIOPROJEKT for October 2025–March 2026, published
+20 May 2026 by STEM/MARK–MEDIAN ([source PDF](https://www.median.eu/cs/wp-content/uploads/2026/05/RP_Tiskova_zprava_1kv_2026.pdf)).
+Daily listeners in thousands: Beat 277, Kiss 500, Evropa 2 668, Čas Rock 38,
+Vltava 42. Wave, the two Hitrádio decade streams, Oldies and Radio Paradise each
+use a fallback weight of 38, the smallest measured audience in this set. This is
+a selection policy, not a claimed audience estimate; no network request is needed
+to select a station. Oldies is left in the fallback group because this snapshot's
+“Rádio Oldies” cannot safely be matched to our stream from the report alone.
+
 Setting the **Car radio** mixer volume to zero immediately pauses every radio
 media element, removes its stream URL and calls `load()` to abort downloading.
 This includes the next-car buffer and the station lingering after leaving a car.

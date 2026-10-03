@@ -15,7 +15,7 @@ import { feedbackLink } from './feedback.ts';
 import { LEVELS, difficulty, setDifficulty } from './difficulty.ts';
 import type { Level } from './difficulty.ts';
 import { STATIONS } from './radio.ts';
-import { stationAllowed, setStationAllowed } from './radio-preferences.ts';
+import { stationAllowed, setStationAllowed, stationDistribution, setStationDistribution } from './radio-preferences.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
@@ -125,6 +125,27 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   const radioDetails = el('details', 'settings-radio', radioRow);
   const radioSummary = el('summary', '', radioDetails);
   relabel.push(() => { radioSummary.textContent = t('Radio settings'); });
+  const distributionLabel = el('label', 'settings-radio-station', radioDetails);
+  const distributionName = el('span', '', distributionLabel);
+  const distributionSelect = el('select', 'settings-chip', distributionLabel) as HTMLSelectElement;
+  const equal = new Option('', 'random'), audience = new Option('', 'audience');
+  distributionSelect.add(equal);
+  distributionSelect.add(audience);
+  relabel.push(() => {
+    distributionName.textContent = t('Stations in new cars');
+    equal.textContent = t('Equal chance');
+    audience.textContent = t('By listener numbers');
+  });
+  distributionSelect.addEventListener('change', () => { setStationDistribution(distributionSelect.value === 'audience' ? 'audience' : 'random'); update(); });
+  refresh.push(() => { distributionSelect.value = stationDistribution(); });
+  const distributionNote = el('p', 'settings-note', radioDetails);
+  const distributionText = () => {
+    distributionNote.textContent = stationDistribution() === 'random'
+      ? t('Each selected station has an equal chance. Cars you have already used keep their station.')
+      : t('Stations with more daily listeners appear more often, using audience figures published in May 2026. Stations without comparable figures get the same small chance. Cars you have already used keep their station.');
+  };
+  relabel.push(distributionText);
+  refresh.push(distributionText);
   const radioNote = el('p', 'settings-note', radioDetails);
   relabel.push(() => { radioNote.textContent = t('Choose the stations you want to hear. Unchecked stations are skipped in every car.'); });
   for (const station of STATIONS) {

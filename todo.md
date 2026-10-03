@@ -440,11 +440,10 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 
 ## Radio
 
-- **Station distribution in radio settings.** Station blocking is implemented in
-  the expandable Radio settings, and zero radio volume stops all radio downloads.
-  Still to add: choose how stations are assigned to cars, weighted by actual
-  listener numbers or a simple random distribution.
-  Optional extra: vary station selection by the type of vehicle the player enters.
+- **Radio stations by vehicle type (optional).** Station blocking, equal random
+  selection and selection weighted by published listener numbers are implemented
+  in the expandable Radio settings. Zero radio volume stops all radio downloads.
+  Extra to consider: vary station selection by the type of vehicle the player enters.
 
 ## Weather and night
 
