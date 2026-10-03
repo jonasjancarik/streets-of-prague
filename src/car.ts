@@ -40,7 +40,7 @@ export const TYPES: Record<string, CarSpec> = {
   hatch: { L: 3.9, W: 1.75, H: 1.45, mass: 1100, accel: 9, vmax: 36, grip: 9, turn: 2.6, cabin: [-1.15, 0.85], weight: 4, radius: 3.2, response: 11, brake: 17 },
   sedan: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 4, radius: 3.8 },
   estate: { L: 4.7, W: 1.82, H: 1.5, mass: 1500, accel: 9, vmax: 40, grip: 8.5, turn: 2.3, cabin: [-1.95, 0.8], weight: 2, radius: 4, brake: 15 },
-  // A crossover such as a Kodiaq or Enyaq: taller and heavier than an estate.
+  // A crossover such as a Torra or Ionia: taller and heavier than an estate.
   suv: { L: 4.65, W: 1.88, H: 1.65, mass: 1900, accel: 8.5, vmax: 40, grip: 8.3, turn: 2.2, cabin: [-2, 0.85], weight: 3, radius: 4.4, response: 8.5, brake: 15 },
   van: { L: 5.2, W: 2.0, H: 2.3, mass: 2200, accel: 6.5, vmax: 31, grip: 8, turn: 1.9, cabin: [-2.5, 1.6], weight: 1, drive: 'rwd', radius: 6, response: 7, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
   taxi: { L: 4.6, W: 1.82, H: 1.45, mass: 1450, accel: 10, vmax: 42, grip: 8.5, turn: 2.4, cabin: [-1.25, 0.8], weight: 1, color: '#e9c62f', radius: 3.8 },
@@ -66,106 +66,106 @@ export const TYPES: Record<string, CarSpec> = {
   ambulance: { L: 6, W: 2.1, H: 2.7, mass: 3200, accel: 5.5, vmax: 30, grip: 8, turn: 1.8, weight: 0, traffic: 0, color: '#f2f3ef', wheelbase: 3.6, drive: 'rwd', radius: 6, response: 6, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
 };
 // A variant of a body type: the same geometry (so the same draw call) with its own
-// handling and engine. `make` and `model` (real names, never translated) are shown when
+// handling and engine. `make`, `model` and `engine` (made-up names, never translated) are shown when
 // you drive it, `id` picks the engine in audio.ts (a type's own engine when it has none),
 // `freq` is how common it is among the variants of its type. Types without an entry
 // (taxi, police, two-wheelers, bus) have none.
 // `app` is the weight among the cars of the ride-hailing apps' drivers (taxi only), who
 // drive older cars than the street taxis; the ones without it are never app cars.
-export interface Variant { id: string; make: string; model: string; freq: number; app?: number; tune: Partial<CarSpec> }
-export const variantName = (v: Variant) => `${v.make} ${v.model}`;
+export interface Variant { id: string; make: string; model: string; engine: string; freq: number; app?: number; tune: Partial<CarSpec> }
+export const variantName = (v: Variant) => `${v.make} ${v.model} ${v.engine}`;
 export const VARIANTS: Record<string, Variant[]> = {
   hatch: [
-    // The Fabia I 1.2 HTP: three light cylinders, slow but willing, soft brakes.
-    { id: 'fabia', make: 'Škoda', model: 'Fabia 1.2', freq: 0.16, tune: { accel: 6, vmax: 33, brake: 14, weather: 1.2, mass: 1000 } },
-    { id: 'hatch', make: 'Volkswagen', model: 'Golf 1.6', freq: 0.1, tune: {} },
-    { id: 'hatch', make: 'Škoda', model: 'Rapid 1.2 TSI', freq: 0.1, tune: { accel: 9.5, vmax: 37 } },
-    { id: 'hatch', make: 'Škoda', model: 'Scala 1.0 TSI', freq: 0.08, tune: { accel: 9.2, vmax: 36, mass: 1150 } },
-    { id: 'diesel', make: 'Renault', model: 'Clio 1.5 dCi', freq: 0.08, tune: { accel: 8, vmax: 34, mass: 1150 } },
-    { id: 'hatch', make: 'Ford', model: 'Fiesta 1.0 EcoBoost', freq: 0.08, tune: { accel: 9.5, vmax: 36, mass: 1050 } },
-    { id: 'hatch', make: 'Hyundai', model: 'i30 1.4', freq: 0.08, tune: { accel: 8.8, vmax: 36, mass: 1250 } },
-    { id: 'diesel', make: 'Kia', model: 'Ceed 1.6 CRDi', freq: 0.07, tune: { accel: 9, vmax: 37, mass: 1350 } },
-    { id: 'hatch', make: 'Peugeot', model: '208 1.2 PureTech', freq: 0.06, tune: { accel: 9.3, vmax: 36, mass: 1050 } },
-    { id: 'hatch', make: 'Toyota', model: 'Yaris 1.5 Hybrid', freq: 0.05, tune: { accel: 9.5, vmax: 35, mass: 1100, brake: 15 } },
-    { id: 'hatch', make: 'Opel', model: 'Corsa 1.2', freq: 0.05, tune: { accel: 8.5, vmax: 35, mass: 1050 } },
-    { id: 'hatch', make: 'Škoda', model: 'Citigo 1.0', freq: 0.04, tune: { accel: 6.5, vmax: 32, mass: 900, weather: 1.2 } },
-    { id: 'hatch', make: 'Volkswagen', model: 'Polo 1.0 TSI', freq: 0.05, tune: { accel: 9, vmax: 36, mass: 1100 } },
+    // The Vima 1.2: three light cylinders, slow but willing, soft brakes.
+    { id: 'threecyl', make: 'Schade', model: 'Vima', engine: '1.2', freq: 0.16, tune: { accel: 6, vmax: 33, brake: 14, weather: 1.2, mass: 1000 } },
+    { id: 'hatch', make: 'Nordwerk', model: 'Vento', engine: '1.6', freq: 0.1, tune: {} },
+    { id: 'hatch', make: 'Schade', model: 'Tavo', engine: '1.2 T', freq: 0.1, tune: { accel: 9.5, vmax: 37 } },
+    { id: 'hatch', make: 'Schade', model: 'Alva', engine: '1.0 T', freq: 0.08, tune: { accel: 9.2, vmax: 36, mass: 1150 } },
+    { id: 'diesel', make: 'Rivière', model: 'Sora', engine: '1.5 D', freq: 0.08, tune: { accel: 8, vmax: 34, mass: 1150 } },
+    { id: 'hatch', make: 'Prairie', model: 'Dova', engine: '1.0 T', freq: 0.08, tune: { accel: 9.5, vmax: 36, mass: 1050 } },
+    { id: 'hatch', make: 'Hanbit', model: 'Dalia', engine: '1.4', freq: 0.08, tune: { accel: 8.8, vmax: 36, mass: 1250 } },
+    { id: 'diesel', make: 'Dalmaji', model: 'Kuro', engine: '1.6 D', freq: 0.07, tune: { accel: 9, vmax: 37, mass: 1350 } },
+    { id: 'hatch', make: 'Lyonel', model: 'Vell', engine: '1.2 T', freq: 0.06, tune: { accel: 9.3, vmax: 36, mass: 1050 } },
+    { id: 'hatch', make: 'Sakura', model: 'Mika', engine: '1.5 Hybrid', freq: 0.05, tune: { accel: 9.5, vmax: 35, mass: 1100, brake: 15 } },
+    { id: 'hatch', make: 'Blitzen', model: 'Kovi', engine: '1.2', freq: 0.05, tune: { accel: 8.5, vmax: 35, mass: 1050 } },
+    { id: 'hatch', make: 'Schade', model: 'Nuvo', engine: '1.0', freq: 0.04, tune: { accel: 6.5, vmax: 32, mass: 900, weather: 1.2 } },
+    { id: 'hatch', make: 'Nordwerk', model: 'Brisa', engine: '1.0 T', freq: 0.05, tune: { accel: 9, vmax: 36, mass: 1100 } },
   ],
   sedan: [
-    // The Octavia I 1.9 TDI: strong from low revs, a little short at the top.
-    { id: 'diesel', make: 'Škoda', model: 'Octavia 1.9 TDI', freq: 0.14, tune: { accel: 10.5, vmax: 39, tough: 4 } },
-    // The Octavia II 2.0 TDI (103 kW): the same diesel character, a little quicker.
-    { id: 'diesel', make: 'Škoda', model: 'Octavia 2.0 TDI', freq: 0.1, tune: { accel: 11.5, vmax: 41, tough: 4 } },
-    { id: 'sedan', make: 'Škoda', model: 'Octavia 1.4 TSI', freq: 0.1, tune: { accel: 10.5, vmax: 42 } },
-    { id: 'sedan', make: 'Škoda', model: 'Superb 2.0 TSI', freq: 0.08, tune: { accel: 11.5, vmax: 45, mass: 1600 } },
-    { id: 'diesel', make: 'Volkswagen', model: 'Passat 2.0 TDI', freq: 0.08, tune: { accel: 11, vmax: 43, mass: 1550 } },
-    { id: 'diesel', make: 'Audi', model: 'A4 2.0 TDI', freq: 0.07, tune: { accel: 11.5, vmax: 44, mass: 1550 } },
-    { id: 'diesel', make: 'BMW', model: '320d', freq: 0.07, tune: { accel: 12, vmax: 46, mass: 1500, drive: 'rwd' } },
-    { id: 'diesel', make: 'Mercedes-Benz', model: 'C 220 d', freq: 0.05, tune: { accel: 11.8, vmax: 45, mass: 1550, drive: 'rwd' } },
-    { id: 'sedan', make: 'Mazda', model: '6 2.0', freq: 0.05, tune: { accel: 10.5, vmax: 43, mass: 1400 } },
-    { id: 'sedan', make: 'Toyota', model: 'Corolla 1.8 Hybrid', freq: 0.05, tune: { accel: 9.8, vmax: 40, mass: 1400, brake: 15 } },
-    { id: 'diesel', make: 'Volvo', model: 'S60 D4', freq: 0.04, tune: { accel: 11.5, vmax: 44, mass: 1600 } },
-    { id: 'sedan', make: 'Hyundai', model: 'Elantra 1.6', freq: 0.04, tune: { accel: 9.5, vmax: 40, mass: 1300 } },
+    // The Avanta 1.9 D (older): strong from low revs, a little short at the top.
+    { id: 'diesel', make: 'Schade', model: 'Avanta', engine: '1.9 D', freq: 0.14, tune: { accel: 10.5, vmax: 39, tough: 4 } },
+    // The Avanta 2.0 D (103 kW): the same diesel character, a little quicker.
+    { id: 'diesel', make: 'Schade', model: 'Avanta', engine: '2.0 D', freq: 0.1, tune: { accel: 11.5, vmax: 41, tough: 4 } },
+    { id: 'sedan', make: 'Schade', model: 'Avanta', engine: '1.4 T', freq: 0.1, tune: { accel: 10.5, vmax: 42 } },
+    { id: 'sedan', make: 'Schade', model: 'Regia', engine: '2.0 T', freq: 0.08, tune: { accel: 11.5, vmax: 45, mass: 1600 } },
+    { id: 'diesel', make: 'Nordwerk', model: 'Corvan', engine: '2.0 D', freq: 0.08, tune: { accel: 11, vmax: 43, mass: 1550 } },
+    { id: 'diesel', make: 'Lumen', model: 'Kora', engine: '2.0 D', freq: 0.07, tune: { accel: 11.5, vmax: 44, mass: 1550 } },
+    { id: 'diesel', make: 'Kronberg', model: 'Tarn', engine: '2.0 D', freq: 0.07, tune: { accel: 12, vmax: 46, mass: 1500, drive: 'rwd' } },
+    { id: 'diesel', make: 'Aurum', model: 'Solen', engine: '2.2 D', freq: 0.05, tune: { accel: 11.8, vmax: 45, mass: 1550, drive: 'rwd' } },
+    { id: 'sedan', make: 'Kaze', model: 'Aiko', engine: '2.0', freq: 0.05, tune: { accel: 10.5, vmax: 43, mass: 1400 } },
+    { id: 'sedan', make: 'Sakura', model: 'Hana', engine: '1.8 Hybrid', freq: 0.05, tune: { accel: 9.8, vmax: 40, mass: 1400, brake: 15 } },
+    { id: 'diesel', make: 'Norrland', model: 'Skarn', engine: '2.0 D', freq: 0.04, tune: { accel: 11.5, vmax: 44, mass: 1600 } },
+    { id: 'sedan', make: 'Hanbit', model: 'Seon', engine: '1.6', freq: 0.04, tune: { accel: 9.5, vmax: 40, mass: 1300 } },
     // An electric car: quick off the line, regenerative braking when you lift off, all-wheel drive.
-    { id: 'model3', make: 'Tesla', model: 'Model 3', freq: 0.05, tune: { accel: 13, vmax: 45, drag: 1.2, mass: 1850, drive: 'awd' } },
-    { id: 'sedan', make: 'Škoda', model: 'Rapid Spaceback 1.6 TDI', freq: 0.04, tune: { accel: 9.5, vmax: 40, mass: 1300 } },
+    { id: 'electric', make: 'Voltar', model: 'Axion', engine: 'Elektro', freq: 0.05, tune: { accel: 13, vmax: 45, drag: 1.2, mass: 1850, drive: 'awd' } },
+    { id: 'sedan', make: 'Schade', model: 'Tavo Wide', engine: '1.6 D', freq: 0.04, tune: { accel: 9.5, vmax: 40, mass: 1300 } },
   ],
   suv: [
-    { id: 'enyaq', make: 'Škoda', model: 'Enyaq iV 80', freq: 0.1, tune: { accel: 10.5, vmax: 40, drag: 1.1, mass: 2100, drive: 'rwd' } },
-    { id: 'modely', make: 'Tesla', model: 'Model Y', freq: 0.06, tune: { accel: 12.5, vmax: 44, drag: 1.2, mass: 2000, drive: 'awd' } },
-    { id: 'diesel', make: 'Škoda', model: 'Kodiaq 2.0 TDI', freq: 0.12, tune: { accel: 9.5, vmax: 41, mass: 1900, drive: 'awd' } },
-    { id: 'suv', make: 'Škoda', model: 'Karoq 1.5 TSI', freq: 0.12, tune: { accel: 9.5, vmax: 41, mass: 1500 } },
-    { id: 'suv', make: 'Škoda', model: 'Kamiq 1.0 TSI', freq: 0.09, tune: { accel: 8.8, vmax: 38, mass: 1300 } },
-    { id: 'diesel', make: 'Volkswagen', model: 'Tiguan 2.0 TDI', freq: 0.08, tune: { accel: 9.5, vmax: 41, mass: 1700, drive: 'awd' } },
-    { id: 'suv', make: 'Hyundai', model: 'Tucson 1.6 T-GDi', freq: 0.07, tune: { accel: 9.5, vmax: 41, mass: 1600 } },
-    { id: 'diesel', make: 'Kia', model: 'Sportage 1.6 CRDi', freq: 0.06, tune: { accel: 9, vmax: 40, mass: 1650 } },
-    { id: 'suv', make: 'Toyota', model: 'RAV4 2.5 Hybrid', freq: 0.05, tune: { accel: 10, vmax: 41, mass: 1700, drive: 'awd', brake: 15 } },
-    { id: 'diesel', make: 'BMW', model: 'X3 xDrive20d', freq: 0.04, tune: { accel: 10.5, vmax: 44, mass: 1900, drive: 'awd' } },
-    { id: 'diesel', make: 'Dacia', model: 'Duster 1.5 dCi', freq: 0.06, tune: { accel: 7.5, vmax: 37, mass: 1350, drive: 'awd', tough: 4 } },
-    { id: 'diesel', make: 'Ford', model: 'Kuga 2.0 EcoBlue', freq: 0.04, tune: { accel: 9.3, vmax: 41, mass: 1700 } },
-    { id: 'suv', make: 'Audi', model: 'Q5 2.0 TFSI', freq: 0.04, tune: { accel: 10.5, vmax: 44, mass: 1900, drive: 'awd' } },
-    { id: 'suv', make: 'Mazda', model: 'CX-5 2.0', freq: 0.03, tune: { accel: 9, vmax: 40, mass: 1500 } },
-    { id: 'suv', make: 'Peugeot', model: '3008 1.2 PureTech', freq: 0.04, tune: { accel: 9, vmax: 39, mass: 1400 } },
+    { id: 'electric', make: 'Schade', model: 'Ionia', engine: 'Elektro 80 kWh', freq: 0.1, tune: { accel: 10.5, vmax: 40, drag: 1.1, mass: 2100, drive: 'rwd' } },
+    { id: 'electric', make: 'Voltar', model: 'Axion X', engine: 'Elektro', freq: 0.06, tune: { accel: 12.5, vmax: 44, drag: 1.2, mass: 2000, drive: 'awd' } },
+    { id: 'diesel', make: 'Schade', model: 'Torra', engine: '2.0 D', freq: 0.12, tune: { accel: 9.5, vmax: 41, mass: 1900, drive: 'awd' } },
+    { id: 'suv', make: 'Schade', model: 'Vexa', engine: '1.5 T', freq: 0.12, tune: { accel: 9.5, vmax: 41, mass: 1500 } },
+    { id: 'suv', make: 'Schade', model: 'Kiro', engine: '1.0 T', freq: 0.09, tune: { accel: 8.8, vmax: 38, mass: 1300 } },
+    { id: 'diesel', make: 'Nordwerk', model: 'Tavira', engine: '2.0 D', freq: 0.08, tune: { accel: 9.5, vmax: 41, mass: 1700, drive: 'awd' } },
+    { id: 'suv', make: 'Hanbit', model: 'Rovi', engine: '1.6 T', freq: 0.07, tune: { accel: 9.5, vmax: 41, mass: 1600 } },
+    { id: 'diesel', make: 'Dalmaji', model: 'Vala', engine: '1.6 D', freq: 0.06, tune: { accel: 9, vmax: 40, mass: 1650 } },
+    { id: 'suv', make: 'Sakura', model: 'Tano', engine: '2.5 Hybrid', freq: 0.05, tune: { accel: 10, vmax: 41, mass: 1700, drive: 'awd', brake: 15 } },
+    { id: 'diesel', make: 'Kronberg', model: 'Rhena', engine: '2.0 D', freq: 0.04, tune: { accel: 10.5, vmax: 44, mass: 1900, drive: 'awd' } },
+    { id: 'diesel', make: 'Carpatia', model: 'Brava', engine: '1.5 D', freq: 0.06, tune: { accel: 7.5, vmax: 37, mass: 1350, drive: 'awd', tough: 4 } },
+    { id: 'diesel', make: 'Prairie', model: 'Mesa', engine: '2.0 D', freq: 0.04, tune: { accel: 9.3, vmax: 41, mass: 1700 } },
+    { id: 'suv', make: 'Lumen', model: 'Lorix', engine: '2.0 T', freq: 0.04, tune: { accel: 10.5, vmax: 44, mass: 1900, drive: 'awd' } },
+    { id: 'suv', make: 'Kaze', model: 'Hoshi', engine: '2.0', freq: 0.03, tune: { accel: 9, vmax: 40, mass: 1500 } },
+    { id: 'suv', make: 'Lyonel', model: 'Veluz', engine: '1.2 T', freq: 0.04, tune: { accel: 9, vmax: 39, mass: 1400 } },
   ],
   taxi: [
     // Street taxis (freq): the newer cars of the fleets and the big ranks.
-    { id: 'taxi', make: 'Škoda', model: 'Octavia 1.5 TSI', freq: 0.18, app: 0.04, tune: { accel: 10.5, vmax: 43 } },
-    { id: 'taxi', make: 'Škoda', model: 'Superb iV', freq: 0.1, tune: { accel: 11, vmax: 45, mass: 1700, brake: 15 } },
-    { id: 'taxi', make: 'Toyota', model: 'Corolla 1.8 Hybrid', freq: 0.14, app: 0.03, tune: { accel: 9.8, vmax: 40, mass: 1400, brake: 15 } },
-    { id: 'taxi', make: 'Toyota', model: 'Camry 2.5 Hybrid', freq: 0.08, tune: { accel: 10.5, vmax: 42, mass: 1600, brake: 15 } },
-    { id: 'taxi', make: 'Hyundai', model: 'Ioniq 5', freq: 0.05, tune: { accel: 12, vmax: 42, drag: 1.1, mass: 2000, drive: 'rwd' } },
-    { id: 'model3', make: 'Tesla', model: 'Model 3', freq: 0.08, app: 0.02, tune: { accel: 13, vmax: 45, drag: 1.2, mass: 1850, drive: 'awd' } },
-    { id: 'diesel', make: 'Mercedes-Benz', model: 'E 220 d', freq: 0.1, tune: { accel: 11.5, vmax: 46, mass: 1650, drive: 'rwd' } },
-    { id: 'diesel', make: 'Škoda', model: 'Superb 2.0 TDI', freq: 0.13, app: 0.05, tune: { accel: 11, vmax: 44, mass: 1600 } },
-    { id: 'diesel', make: 'Volkswagen', model: 'Passat 2.0 TDI', freq: 0.08, app: 0.1, tune: { accel: 11, vmax: 43, mass: 1550 } },
-    { id: 'diesel', make: 'Škoda', model: 'Octavia 2.0 TDI', freq: 0.06, app: 0.2, tune: { accel: 11.5, vmax: 41, tough: 4 } },
+    { id: 'taxi', make: 'Schade', model: 'Avanta', engine: '1.5 T', freq: 0.18, app: 0.04, tune: { accel: 10.5, vmax: 43 } },
+    { id: 'taxi', make: 'Schade', model: 'Regia', engine: '1.4 Plug-in', freq: 0.1, tune: { accel: 11, vmax: 45, mass: 1700, brake: 15 } },
+    { id: 'taxi', make: 'Sakura', model: 'Hana', engine: '1.8 Hybrid', freq: 0.14, app: 0.03, tune: { accel: 9.8, vmax: 40, mass: 1400, brake: 15 } },
+    { id: 'taxi', make: 'Sakura', model: 'Shiro', engine: '2.5 Hybrid', freq: 0.08, tune: { accel: 10.5, vmax: 42, mass: 1600, brake: 15 } },
+    { id: 'taxi', make: 'Hanbit', model: 'Ione', engine: 'Elektro', freq: 0.05, tune: { accel: 12, vmax: 42, drag: 1.1, mass: 2000, drive: 'rwd' } },
+    { id: 'electric', make: 'Voltar', model: 'Axion', engine: 'Elektro', freq: 0.08, app: 0.02, tune: { accel: 13, vmax: 45, drag: 1.2, mass: 1850, drive: 'awd' } },
+    { id: 'diesel', make: 'Aurum', model: 'Maris', engine: '2.0 D', freq: 0.1, tune: { accel: 11.5, vmax: 46, mass: 1650, drive: 'rwd' } },
+    { id: 'diesel', make: 'Schade', model: 'Regia', engine: '2.0 D', freq: 0.13, app: 0.05, tune: { accel: 11, vmax: 44, mass: 1600 } },
+    { id: 'diesel', make: 'Nordwerk', model: 'Corvan', engine: '2.0 D', freq: 0.08, app: 0.1, tune: { accel: 11, vmax: 43, mass: 1550 } },
+    { id: 'diesel', make: 'Schade', model: 'Avanta', engine: '2.0 D', freq: 0.06, app: 0.2, tune: { accel: 11.5, vmax: 41, tough: 4 } },
     // Ride-hailing cars (app): older and cheaper, diesels and small petrols with plenty of miles.
-    { id: 'diesel', make: 'Škoda', model: 'Octavia 1.9 TDI', freq: 0, app: 0.16, tune: { accel: 10.5, vmax: 39, tough: 4 } },
-    { id: 'diesel', make: 'Škoda', model: 'Octavia 1.6 TDI', freq: 0, app: 0.12, tune: { accel: 10, vmax: 40, tough: 4 } },
-    { id: 'diesel', make: 'Škoda', model: 'Rapid 1.6 TDI', freq: 0, app: 0.1, tune: { accel: 9.5, vmax: 40, mass: 1300 } },
-    { id: 'diesel', make: 'Dacia', model: 'Logan 1.5 dCi', freq: 0, app: 0.07, tune: { accel: 8, vmax: 36, mass: 1150, tough: 4 } },
-    { id: 'diesel', make: 'Ford', model: 'Mondeo 2.0 TDCi', freq: 0, app: 0.07, tune: { accel: 10.5, vmax: 42, mass: 1550 } },
-    { id: 'diesel', make: 'Opel', model: 'Astra 1.7 CDTI', freq: 0, app: 0.06, tune: { accel: 9, vmax: 38, mass: 1350 } },
-    { id: 'fabia', make: 'Škoda', model: 'Fabia 1.2', freq: 0, app: 0.05, tune: { accel: 6, vmax: 33, brake: 14, weather: 1.2, mass: 1000 } },
-    { id: 'taxi', make: 'Toyota', model: 'Auris 1.6', freq: 0, app: 0.03, tune: { accel: 9, vmax: 39, mass: 1300 } },
+    { id: 'diesel', make: 'Schade', model: 'Avanta', engine: '1.9 D', freq: 0, app: 0.16, tune: { accel: 10.5, vmax: 39, tough: 4 } },
+    { id: 'diesel', make: 'Schade', model: 'Avanta', engine: '1.6 D', freq: 0, app: 0.12, tune: { accel: 10, vmax: 40, tough: 4 } },
+    { id: 'diesel', make: 'Schade', model: 'Tavo', engine: '1.6 D', freq: 0, app: 0.1, tune: { accel: 9.5, vmax: 40, mass: 1300 } },
+    { id: 'diesel', make: 'Carpatia', model: 'Lemo', engine: '1.5 D', freq: 0, app: 0.07, tune: { accel: 8, vmax: 36, mass: 1150, tough: 4 } },
+    { id: 'diesel', make: 'Prairie', model: 'Cadro', engine: '2.0 D', freq: 0, app: 0.07, tune: { accel: 10.5, vmax: 42, mass: 1550 } },
+    { id: 'diesel', make: 'Blitzen', model: 'Zenta', engine: '1.7 D', freq: 0, app: 0.06, tune: { accel: 9, vmax: 38, mass: 1350 } },
+    { id: 'threecyl', make: 'Schade', model: 'Vima', engine: '1.2', freq: 0, app: 0.05, tune: { accel: 6, vmax: 33, brake: 14, weather: 1.2, mass: 1000 } },
+    { id: 'taxi', make: 'Sakura', model: 'Nami', engine: '1.6', freq: 0, app: 0.03, tune: { accel: 9, vmax: 39, mass: 1300 } },
   ],
-  pickup: [{ id: 'f150', make: 'Ford', model: 'F-150', freq: 1, tune: {} }],
+  pickup: [{ id: 'v8', make: 'Prairie', model: 'Rancher', engine: '5.0 V8', freq: 1, tune: {} }],
   estate: [
-    { id: 'diesel', make: 'Škoda', model: 'Octavia Combi 1.9 TDI', freq: 0.14, tune: { accel: 10, vmax: 38, tough: 4 } },
-    { id: 'diesel', make: 'Škoda', model: 'Octavia Combi 2.0 TDI', freq: 0.1, tune: { accel: 11, vmax: 40, tough: 4 } },
-    { id: 'estate', make: 'Škoda', model: 'Octavia Combi 1.4 TSI', freq: 0.08, tune: { accel: 10, vmax: 41 } },
-    { id: 'diesel', make: 'Škoda', model: 'Superb Combi 2.0 TDI', freq: 0.08, tune: { accel: 11, vmax: 43, mass: 1650 } },
-    { id: 'diesel', make: 'Volkswagen', model: 'Passat Variant 2.0 TDI', freq: 0.09, tune: { accel: 11, vmax: 42, mass: 1600 } },
-    { id: 'diesel', make: 'Volkswagen', model: 'Golf Variant 1.6 TDI', freq: 0.07, tune: { accel: 9.5, vmax: 38, mass: 1350 } },
-    { id: 'fabia', make: 'Škoda', model: 'Fabia Combi 1.2', freq: 0.07, tune: { accel: 6.5, vmax: 34, mass: 1100, brake: 14, weather: 1.2 } },
-    { id: 'diesel', make: 'Ford', model: 'Focus Turnier 1.5 EcoBlue', freq: 0.06, tune: { accel: 9.5, vmax: 39, mass: 1400 } },
-    { id: 'diesel', make: 'Opel', model: 'Insignia Sports Tourer 2.0 CDTI', freq: 0.05, tune: { accel: 10, vmax: 41, mass: 1650 } },
-    { id: 'diesel', make: 'Volvo', model: 'V60 D4', freq: 0.05, tune: { accel: 11, vmax: 42, mass: 1700 } },
-    { id: 'diesel', make: 'Audi', model: 'A4 Avant 2.0 TDI', freq: 0.05, tune: { accel: 11.5, vmax: 44, mass: 1650 } },
-    { id: 'diesel', make: 'BMW', model: '320d Touring', freq: 0.04, tune: { accel: 12, vmax: 45, mass: 1650, drive: 'rwd' } },
-    { id: 'diesel', make: 'Kia', model: 'Ceed SW 1.6 CRDi', freq: 0.05, tune: { accel: 9, vmax: 38, mass: 1450 } },
-    { id: 'estate', make: 'Hyundai', model: 'i30 Wagon 1.4', freq: 0.04, tune: { accel: 8.8, vmax: 37, mass: 1350 } },
-    { id: 'estate', make: 'Toyota', model: 'Corolla Touring Sports 1.8 Hybrid', freq: 0.03, tune: { accel: 9.5, vmax: 38, mass: 1450, brake: 15 } },
+    { id: 'diesel', make: 'Schade', model: 'Avanta Kombi', engine: '1.9 D', freq: 0.14, tune: { accel: 10, vmax: 38, tough: 4 } },
+    { id: 'diesel', make: 'Schade', model: 'Avanta Kombi', engine: '2.0 D', freq: 0.1, tune: { accel: 11, vmax: 40, tough: 4 } },
+    { id: 'estate', make: 'Schade', model: 'Avanta Kombi', engine: '1.4 T', freq: 0.08, tune: { accel: 10, vmax: 41 } },
+    { id: 'diesel', make: 'Schade', model: 'Regia Kombi', engine: '2.0 D', freq: 0.08, tune: { accel: 11, vmax: 43, mass: 1650 } },
+    { id: 'diesel', make: 'Nordwerk', model: 'Corvan Kombi', engine: '2.0 D', freq: 0.09, tune: { accel: 11, vmax: 42, mass: 1600 } },
+    { id: 'diesel', make: 'Nordwerk', model: 'Vento Kombi', engine: '1.6 D', freq: 0.07, tune: { accel: 9.5, vmax: 38, mass: 1350 } },
+    { id: 'threecyl', make: 'Schade', model: 'Vima Kombi', engine: '1.2', freq: 0.07, tune: { accel: 6.5, vmax: 34, mass: 1100, brake: 14, weather: 1.2 } },
+    { id: 'diesel', make: 'Prairie', model: 'Orla Kombi', engine: '1.5 D', freq: 0.06, tune: { accel: 9.5, vmax: 39, mass: 1400 } },
+    { id: 'diesel', make: 'Blitzen', model: 'Arvo Kombi', engine: '2.0 D', freq: 0.05, tune: { accel: 10, vmax: 41, mass: 1650 } },
+    { id: 'diesel', make: 'Norrland', model: 'Skarn Kombi', engine: '2.0 D', freq: 0.05, tune: { accel: 11, vmax: 42, mass: 1700 } },
+    { id: 'diesel', make: 'Lumen', model: 'Kora Kombi', engine: '2.0 D', freq: 0.05, tune: { accel: 11.5, vmax: 44, mass: 1650 } },
+    { id: 'diesel', make: 'Kronberg', model: 'Tarn Kombi', engine: '2.0 D', freq: 0.04, tune: { accel: 12, vmax: 45, mass: 1650, drive: 'rwd' } },
+    { id: 'diesel', make: 'Dalmaji', model: 'Kuro Kombi', engine: '1.6 D', freq: 0.05, tune: { accel: 9, vmax: 38, mass: 1450 } },
+    { id: 'estate', make: 'Hanbit', model: 'Dalia Kombi', engine: '1.4', freq: 0.04, tune: { accel: 8.8, vmax: 37, mass: 1350 } },
+    { id: 'estate', make: 'Sakura', model: 'Hana Kombi', engine: '1.8 Hybrid', freq: 0.03, tune: { accel: 9.5, vmax: 38, mass: 1450, brake: 15 } },
   ],
 };
 // The body's spec with a variant's changes, made once for each pair.
@@ -633,7 +633,7 @@ export class Car {
     this.sync();
   }
 
-  get modelName() { return this.variant ? `${this.variant.make}|${this.variant.model}` : null; }
+  get modelName() { return this.variant ? `${this.variant.make}|${this.variant.model}|${this.variant.engine}` : null; }
   get speed() { return Math.hypot(this.vx, this.vy); }
   get two() { return this.spec.two; }
   // Someone at the wheel: the player, or the police chasing them.
@@ -651,9 +651,9 @@ export class Car {
     this.mass = this.spec.mass;
   }
 
-  // Be this model of the type (a saved game's), written as `make|model`, if there is one.
+  // Be this model of the type (a saved game's), written as `make|model|engine`, if there is one.
   setVariant(name: string) {
-    const v = VARIANTS[this.type]?.find((o) => `${o.make}|${o.model}` === name);
+    const v = VARIANTS[this.type]?.find((o) => `${o.make}|${o.model}|${o.engine}` === name);
     if (!v) return;
     this.variant = v;
     this.spec = tuned(this.type, v);

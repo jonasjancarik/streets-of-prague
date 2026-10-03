@@ -9,12 +9,12 @@ import type { Car } from './car.ts';
 const CARS: Record<string, { name: string; spec: EngineSpec; vmax: number; accel: number }> = {
   kona: { name: 'Recorded petrol car', spec: RECORDED, vmax: 42, accel: 10 },
   petrol: { name: 'Most cars', spec: PETROL, vmax: 42, accel: 10 },
-  fabia: { name: 'Škoda Fabia', spec: ENGINES.fabia!, vmax: 33, accel: 6 },
+  threecyl: { name: 'Schade Vima', spec: ENGINES.threecyl!, vmax: 33, accel: 6 },
   diesel: { name: 'Diesel', spec: ENGINES.diesel!, vmax: 40, accel: 9 },
   van: { name: 'Van', spec: ENGINES.van!, vmax: 31, accel: 6.5 },
-  f150: { name: 'V8 pickup', spec: ENGINES.f150!, vmax: 38, accel: 8 },
+  v8: { name: 'V8 pickup', spec: ENGINES.v8!, vmax: 38, accel: 8 },
   moto: { name: 'Motorbike', spec: ENGINES.moto!, vmax: 48, accel: 12 },
-  electric: { name: 'Electric', spec: ENGINES.model3!, vmax: 45, accel: 12 },
+  electric: { name: 'Electric', spec: ENGINES.electric!, vmax: 45, accel: 12 },
   sporty: { name: 'Sporty (unused)', spec: { ...PETROL, rough: 0.02, voice: SPORTY }, vmax: 55, accel: 14 },
 };
 

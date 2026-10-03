@@ -88,11 +88,9 @@ const V8_VOICE: EngineVoice = {
 export const PETROL: EngineSpec = { idle: 850, redline: 6200, cylinders: 4, gears: [0.25, 0.42, 0.6, 0.8, 1.02], rough: 0.006, voice: EVERYDAY };
 export const ENGINES: Record<string, EngineSpec | null> = {
   // By variant (see VARIANTS in car.ts), before the type.
-  model3: ELECTRIC,
-  modely: ELECTRIC,
-  enyaq: ELECTRIC,
-  f150: { idle: 650, redline: 5500, cylinders: 8, gears: [0.16, 0.28, 0.42, 0.58, 0.78, 1.02], rough: 0.015, voice: V8_VOICE },
-  fabia: { idle: 900, redline: 5500, cylinders: 3, gears: [0.25, 0.42, 0.6, 0.8, 1.02], rough: 0.02, voice: EVERYDAY },
+  electric: ELECTRIC,
+  v8: { idle: 650, redline: 5500, cylinders: 8, gears: [0.16, 0.28, 0.42, 0.58, 0.78, 1.02], rough: 0.015, voice: V8_VOICE },
+  threecyl: { idle: 900, redline: 5500, cylinders: 3, gears: [0.25, 0.42, 0.6, 0.8, 1.02], rough: 0.02, voice: EVERYDAY },
   diesel: { idle: 800, redline: 4500, cylinders: 4, gears: [0.24, 0.4, 0.58, 0.78, 1.02], rough: 0.012, voice: DIESEL },
   van: { idle: 750, redline: 4200, cylinders: 4, gears: [0.2, 0.38, 0.58, 0.8, 1.02], rough: 0.02, voice: EVERYDAY },
   moto: { idle: 1300, redline: 10500, cylinders: 2, gears: [0.14, 0.26, 0.4, 0.55, 0.75, 1.02], rough: 0.025, voice: EVERYDAY },
