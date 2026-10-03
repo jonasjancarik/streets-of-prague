@@ -135,8 +135,12 @@ and exits only after its normal `landed` check succeeds. No vehicle-mode or alti
 flag is forced to make an assertion pass. Preparation fails if it cannot find a
 landing site, land within 45 simulated seconds, or disembark normally.
 
-The camera returns to follow at zoom 1. Time, date, weather, wallet, health and
-wanted level remain scenario-owned; this is not a fresh-world reset. Each case
+The camera returns to follow at zoom 1. Descent can advance the clock by up to
+45 simulated seconds. The staging teleport resets traffic, police actors, fires,
+brigade and ambulance state. `police.reset()` retains wanted heat, but normal
+simulation during descent can change it and other world state. Scenarios must
+set their required time, date, weather, wallet, health, wanted and actor state
+after preparation; preparation does not preserve a prior world snapshot. Each case
 still chooses its place, vehicle and controls. `t.go()` continues to preserve a
 current vehicle, and manual `t.exit()` cannot exit an airborne helicopter.
 `wall-crash` now explicitly chooses its original standalone heading, 324°, so its

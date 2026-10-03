@@ -115,8 +115,12 @@ left. Check numbers with ranges and put the measured value in `detail`, so a fai
 says how far off it was. A scenario with no checks counts as failed.
 
 Each run begins on foot with the ordinary camera; each scenario must create or enter
-the vehicle it needs. Preparation keeps time, date, weather, wallet, health and
-wanted level as they were, so set those explicitly when they matter. Manual `t.go`,
+the vehicle it needs. Helicopter preparation can advance the clock by up to 45
+simulated seconds. Its staging teleport resets traffic, police actors, fires,
+brigade and ambulance state. `police.reset()` retains wanted heat, but the normal
+descent simulation can change it and other world state. Set all required time,
+date, weather, wallet, health, wanted and actor state after preparation, inside the
+scenario. Manual `t.go`,
 `t.drive` and `t.exit` keep their existing gameplay constraints. This does not reset
 the whole world or resolve ambulance/tow behavior. `vehicle-entry-order` runs
 `heli-bridge` followed by `lamp-knock` and retains both complete assertion results.
