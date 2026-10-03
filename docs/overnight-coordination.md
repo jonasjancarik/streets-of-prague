@@ -4,12 +4,12 @@ read_when: Continuing or reviewing the overnight city geometry and detail work s
 
 # Overnight city improvements
 
-Session deadline: 3 October 2026, 04:56 UTC / 06:56 Prague.
+Session deadline: 3 October 2026, 07:00 UTC / 09:00 Prague.
 All implementation starts at `b3c22d5`. Main, shared map data and unrelated worktrees remain untouched. No push or deployment is authorized.
 
 ## Stop condition
 
-Before substantial work and at least every five minutes of active work, read live Codex usage. Stop this effort if the 10080-minute weekly window has more than 90% used. An unreadable quota pauses new work. `/tmp/streets-overnight-quota-stop` also stops work. Preserve files; only minimal shutdown is allowed after the threshold. Never consume reset credits to continue.
+Before substantial work and at least every five minutes of active work, read live Codex usage. Stop this effort if the 10080-minute weekly window has more than 50% used. An unreadable quota pauses new work. `/tmp/streets-overnight-quota-stop` also stops work. Preserve files; only minimal shutdown is allowed after the threshold. Never consume reset credits to continue.
 
 ## Workers
 
@@ -78,3 +78,8 @@ Bridge validation handoff `c7f2efc` is clean. Strict assembly, 22 integrated tes
 Parent accepts cutter sequence `8e9e1057a42bcf0803ee221bc6f29b9d3cb478d8`, evidence `bcf7c6e`, canonical-edge fix `c752c41c227ee36f2d7982c403111d9d9d60a673`, precision follow-up `64a454ba0190e4520cdec0763b99f548d3769565`. Independent review passed 23 committed tests and eight additional precision variants after both P2 seam findings were corrected. A wider 48-tile private stored-data pass found no invalid geometry or sampled crossings; size increases and contended CPU costs are explicitly documented. This is acceptance for isolated integration, with a final combined runtime check still required.
 
 Radotín Net.spread continuity repair remains separate and unaccepted. The author is comparing the sparse graph interpolation against clean-ground source profiles and negative controls.
+
+
+## User extension at 02:09 UTC
+
+The user extended work until 3 October 2026 09:00 Prague / 07:00 UTC and raised the stop threshold to below 50% weekly quota remaining (weekly usedPercent >50). This supersedes every earlier 10% or 04:56 UTC note. All seven workers and the coordinator were updated. Current remaining weekly quota is 92%. Rolling task selection remains authorized, with single-browser/load limits and no main/shared-data/push/deploy changes.
