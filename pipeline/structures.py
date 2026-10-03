@@ -343,6 +343,7 @@ class Net:
             self.h[i] = h
             anchors[int(comp[i])].append((int(i), float(h)))
         active = np.zeros(n, dtype=bool)
+        limits = np.full((n, 2), np.nan)  # component IDs are their seed node indices
         for component, points in anchors.items():
             heights = np.array([h for _, h in points])
             if not np.isfinite(heights).all():
@@ -352,12 +353,27 @@ class Net:
                 self.h[on] = heights[0]  # includes the one-anchor case, exactly
             else:
                 active[on] = True
+                limits[component] = [heights.min(), heights.max()]
         free = np.flatnonzero(active & ~pinned)
         if len(free):
             pins = np.flatnonzero(pinned & active)
             matrix = self._laplacian[free][:, free]
             rhs = -(self._laplacian[free][:, pins] @ self.h[pins])
-            self.h[free] = spsolve(matrix, rhs)
+            solved = np.asarray(spsolve(matrix, rhs), dtype=float)
+            if solved.shape != free.shape:
+                raise RuntimeError(f"bridge height solve returned shape {solved.shape}, expected {free.shape}")
+            bad = np.flatnonzero(~np.isfinite(solved))
+            if len(bad):
+                i = int(free[bad[0]])
+                raise RuntimeError(f"bridge height solve component {comp[i]} returned a non-finite height at node {i}")
+            lo, hi = limits[comp[free]].T
+            tolerance = 1e-6 + 1e-9 * np.maximum(np.abs(lo), np.abs(hi))
+            bad = np.flatnonzero((solved < lo - tolerance) | (solved > hi + tolerance))
+            if len(bad):
+                j = int(bad[0]); i = int(free[j])
+                raise RuntimeError(f"bridge height solve component {comp[i]} returned {solved[j]:.9g} m at node {i}, "
+                                   f"outside fixed range [{lo[j]:.9g}, {hi[j]:.9g}] m (tolerance {tolerance[j]:.3g} m)")
+            self.h[free] = solved
         return near
 
 

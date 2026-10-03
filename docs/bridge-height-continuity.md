@@ -24,6 +24,18 @@ free heights in that component remain unknown while known pins remain exact; thi
 conservative behavior does not invent missing ground data. Other disconnected
 components solve independently. No steep-height cap or location rule was added.
 
+The sparse result is validated before assigning free heights. Non-finite values
+or an invalid result shape raise a precise error. A finite value outside its own
+component's fixed-anchor range by more than `1e-6 + 1e-9 × max(abs(anchor limits))`
+metres also raises, without clamping or fallback. This allows numerical roundoff
+while rejecting gross maximum-principle violations under extreme conditioning.
+Parallel/repeated graph links each contribute their distance-weighted conductance;
+physical links are not deduplicated by this repair. The remaining fallback/source
+offsets reported below are unchanged.
+Four additional guard checks inject NaN and out-of-range results, distinguish
+component-local bounds, and accept tiny roundoff and valid steep anchors. All
+25 focused structure checks pass. [Guard log](evidence/bridge-height-continuity/solver-guard-tests.log).
+
 ## Focused validation
 
 Nine new propagation checks and the twelve accepted contact/layer checks pass:

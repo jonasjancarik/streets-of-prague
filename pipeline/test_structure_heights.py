@@ -1,6 +1,7 @@
 """Pinned graph heights must stay continuous instead of changing nearest-anchor pairs."""
 import copy
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import structures
@@ -86,6 +87,36 @@ class StructureHeightTests(unittest.TestCase):
         net.spread(self.pins(net,heights))
         for k,path in enumerate(net.paths):
             np.testing.assert_allclose(net.h[path],190+k/10+(net.xy[path,0]-k*100)/20,atol=1e-8)
+
+    def test_nonfinite_sparse_result_is_rejected_without_assignment(self):
+        net=structures.Net([way(1,[1,2],[[0,0],[20,0]])]);pins=self.pins(net,{1:190,2:220})
+        with patch.object(structures,'spsolve',return_value=np.full(3,np.nan)):
+            with self.assertRaisesRegex(RuntimeError,'component 0 returned a non-finite height at node'):
+                net.spread(pins)
+        self.assertTrue(np.isnan(net.h[net.paths[0][1:-1]]).all())
+        for i,h in pins.items():self.assertEqual(net.h[i],h)
+
+    def test_gross_maximum_principle_violation_is_rejected_not_clamped(self):
+        for value in [189,221]:
+            net=structures.Net([way(1,[1,2],[[0,0],[20,0]])])
+            with patch.object(structures,'spsolve',return_value=np.full(3,value)):
+                with self.assertRaisesRegex(RuntimeError,r'outside fixed range \[190, 220\].*tolerance'):
+                    net.spread(self.pins(net,{1:190,2:220}))
+
+    def test_tiny_roundoff_and_valid_steep_anchor_range_are_accepted(self):
+        net=structures.Net([way(1,[1,2],[[0,0],[20,0]])])
+        with patch.object(structures,'spsolve',return_value=np.array([190-1e-7,200,220+1e-7])):
+            net.spread(self.pins(net,{1:190,2:220}))
+        self.assertLess(net.h[net.paths[0][1]],190)  # no clamp within numerical tolerance
+        steep=structures.Net([way(1,[1,2],[[0,0],[10,0]])])
+        steep.spread(self.pins(steep,{1:190,2:390}))
+        np.testing.assert_allclose(steep.h,190+20*steep.xy[:,0])
+
+    def test_validation_uses_each_components_range_not_the_global_range(self):
+        net=structures.Net([way(1,[1,2],[[0,0],[20,0]]),way(2,[3,4],[[100,0],[120,0]])])
+        with patch.object(structures,'spsolve',return_value=np.array([245,205,210,285,290,295])):
+            with self.assertRaisesRegex(RuntimeError,r'component 0 returned 245.*outside fixed range \[190, 220\]'):
+                net.spread(self.pins(net,{1:190,2:220,3:280,4:300}))
 
 
 if __name__=='__main__':unittest.main()
