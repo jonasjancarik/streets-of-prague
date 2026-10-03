@@ -21,7 +21,7 @@ import { Passengers } from './passengers.ts';
 import { Taxis } from './taxi.ts';
 import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
-import { Weather, WeatherFx, KINDS } from './weather.ts';
+import { Weather, WeatherFx, KINDS, automaticWeather } from './weather.ts';
 import { MIST_MODE } from './localmist.ts';
 import type { Kind } from './weather.ts';
 import { Lamps, type Flashing } from './lamps.ts';
@@ -139,7 +139,7 @@ async function main() {
   const saved = params.has('go') ? null : readSave('auto', AREA);
   const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), season: season.day, dateLinked: parseDay(params.get('date')) !== null || parseDay(params.get('season')) !== null, weather: weather.kind, weatherFixed: weather.fixed,
     weatherForSeason: (day) => { const preview = new Season(params); preview.set(day); return weather.preview(clock.t, preview); },
-    sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.kind, season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
+    sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.fixed ? saved.weather.kind : automaticWeather(saved.weather.kind), season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
   // ?menu stops here, at the start screen with nothing loaded under it, for working on
@@ -1026,7 +1026,7 @@ async function main() {
     clock.t = s.clock;
     world.night = clock.night;
     if (s.season) season.set(s.season);
-    weather.begin(s.weather.kind, clock.t);
+    weather.begin(s.weather.fixed ? s.weather.kind : automaticWeather(s.weather.kind), clock.t);
     weather.fixed = s.weather.fixed;
     wallet.balance = Math.max(0, Math.floor(s.money));
     wallet.held = s.ticket;
@@ -1719,6 +1719,8 @@ async function main() {
       world.night = params.has('night') || clock.night;
       season.set(choice.season);
       weather.begin(choice.weather, clock.t);
+      // Beta mist can only reach this choice through an explicit selection.
+      if (choice.weather === 'mist') weather.fixed = true;
     }
     if (sound.on !== choice.sound) sound.toggle();
     playing = true;

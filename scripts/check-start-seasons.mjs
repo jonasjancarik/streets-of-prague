@@ -34,7 +34,7 @@ try {
   const { Season, parseDay, pragueToday, seasonOfDay, seasonStartDay } = await server.ssrLoadModule('/src/season.ts');
   const { startScreen } = await server.ssrLoadModule('/src/startscreen.ts');
   const { setLang } = await server.ssrLoadModule('/src/i18n.ts');
-  const { Weather, KINDS } = await server.ssrLoadModule('/src/weather.ts');
+  const { Weather, KINDS, automaticWeather } = await server.ssrLoadModule('/src/weather.ts');
   const { BARE, SEASON } = await server.ssrLoadModule('/src/shading.ts');
   assert.equal(pragueToday(), 276, 'Prague has reached 3 October while UTC is still 2 October');
   assert.equal(seasonStartDay('autumn'), 276);
@@ -48,6 +48,19 @@ try {
   const before = fields(weather), winter = new Season(new URLSearchParams('season=winter'));
   assert.ok(KINDS.includes(weather.preview(13 * 3600, winter)));
   assert.deepEqual(fields(weather), before, 'weather preview does not change current conditions or shader values');
+  assert.equal(automaticWeather('mist'), 'cloudy');
+  for (const name of ['spring', 'summer', 'autumn', 'winter']) {
+    const season = new Season(new URLSearchParams('season=' + name));
+    for (const hour of [8, 13]) for (let roll = 0; roll < 100; roll++) {
+      weather.rng = () => (roll + 0.5) / 100;
+      assert.notEqual(weather.preview(hour * 3600, season), 'mist', 'automatic seasonal roll selected beta mist');
+    }
+  }
+  weather.set('mist', true);
+  assert.equal(weather.kind, 'mist', 'manual mist remains available');
+  weather.fixed = false;
+  weather.update(0, 13 * 3600, 0);
+  assert.equal(weather.kind, 'cloudy', 'returning to automatic weather replaces mist');
 
   const make = (extra = {}) => {
     const root = new Element();
@@ -60,6 +73,21 @@ try {
     return { root, screen, panel, row, button, go };
   };
   const current = make(); current.screen.live('rain');
+  const beta = make({ weather: 'mist' });
+  assert.equal(beta.root.dataset.weather, 'cloudy', 'automatic initial mist becomes cloudy');
+  assert.equal(beta.button('Weather', 'Mist (beta)').getAttribute('aria-pressed'), 'false');
+  beta.screen.live('mist');
+  assert.equal(beta.root.dataset.weather, 'cloudy', 'live fog becomes cloudy');
+  assert.equal(beta.button('Weather', 'Now: Cloudy').getAttribute('aria-pressed'), 'true');
+  beta.button('Weather', 'Mist (beta)').click();
+  assert.equal(beta.root.dataset.weather, 'mist', 'manual beta mist can be selected');
+  beta.button('Season', 'Summer').click();
+  assert.equal(beta.root.dataset.weather, 'mist', 'manual mist survives a season choice');
+  const betaChoice = beta.screen.ready(); beta.go.click();
+  assert.equal((await betaChoice).weather, 'mist', 'manual beta mist reaches game launch');
+  const previewMist = make({ weatherForSeason: () => 'mist' });
+  previewMist.button('Season', 'Summer').click();
+  assert.equal(previewMist.root.dataset.weather, 'cloudy', 'automatic season preview replaces mist');
   assert.equal(current.root.dataset.season, 'autumn');
   const live = current.button('Weather', 'Now: Rain');
   assert.equal(live.hidden, false); assert.equal(live.getAttribute('aria-pressed'), 'true');
@@ -87,6 +115,7 @@ try {
   fresh.panel.children.find(r => r.className === 'ls-actions').children[1].click();
   assert.equal(fresh.row('Season').hidden, false); assert.equal(fresh.root.dataset.season, 'autumn');
   setLang('cs');
+  assert.ok(fresh.button('Počasí', 'Mlha (beta)'));
   assert.deepEqual(fresh.row('Roční období').children[1].children.map(b => b.textContent), ['Jaro', 'Léto', 'Podzim', 'Zima']);
   assert.equal(fresh.row('Roční období').children[1].getAttribute('aria-label'), 'Roční období');
   fresh.button('Roční období', 'Jaro').click(); assert.equal(fresh.root.dataset.season, 'spring');

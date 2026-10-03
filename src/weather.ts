@@ -15,7 +15,8 @@ import { LocalMistVolume, MIST_MODE } from './localmist.ts';
 // from the morning the traffic and the ploughs clear it, more with every busy hour
 // (by the game's clock); falling snow covers them again, fastest at night. The
 // weather changes by itself every half hour or so of the game's clock, more often to
-// rain in summer and to snow and mist in winter (by the game's date, season.ts),
+// rain in summer and to snow in winter (by the game's date, season.ts),
+// with automatic mist replaced by clouds while it is in beta,
 // unless it's been picked
 // (?weather=clear|cloudy|rain|storm|mist|snow, the P key or the developer panel).
 //
@@ -25,6 +26,8 @@ import { LocalMistVolume, MIST_MODE } from './localmist.ts';
 
 export type Kind = 'clear' | 'cloudy' | 'rain' | 'storm' | 'mist' | 'snow';
 export const KINDS: Kind[] = ['clear', 'cloudy', 'rain', 'storm', 'mist', 'snow'];
+// Mist is beta: explicit choices remain available, automatic ones use clouds.
+export const automaticWeather = (kind: Kind): Kind => kind === 'mist' ? 'cloudy' : kind;
 // `cover`: the snow lying; `cleared`, how much of it is gone from the streets.
 // `flash`: lightning, 0–1 as it flickers; `strikes` counts them (for the thunder).
 export interface Conditions { cloud: number; rain: number; storm: number; snow: number; mist: number; wet: number; cover: number; cleared: number; flash: number; strikes: number }
@@ -111,7 +114,7 @@ export class Weather {
     if (hour > 4 && hour < 10) chances.mist *= 2.5; // mist mostly in the morning
     const total = KINDS.reduce((a, k) => a + chances[k], 0);
     let x = this.rng() * total;
-    for (const k of KINDS) if ((x -= chances[k]) < 0) return k;
+    for (const k of KINDS) if ((x -= chances[k]) < 0) return automaticWeather(k);
     return 'clear';
   }
 
@@ -173,6 +176,7 @@ export class Weather {
       this.kind = this.pick(clockT);
       this.next = clockT + this.span();
     }
+    if (!this.fixed) this.kind = automaticWeather(this.kind);
     const want = LOOK[this.kind], n = this.now;
     const toward = (v: number, t: number, rate: number) => (v < t ? Math.min(t, v + rate * dt) : Math.max(t, v - rate * dt));
     n.cloud = toward(n.cloud, want.cloud, CHANGE);

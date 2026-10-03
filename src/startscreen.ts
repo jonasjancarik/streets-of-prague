@@ -1,4 +1,4 @@
-import { KINDS } from './weather.ts';
+import { KINDS, automaticWeather } from './weather.ts';
 import type { Kind } from './weather.ts';
 import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
@@ -58,7 +58,7 @@ interface StartOptions {
 
 export function startScreen(root: HTMLElement, opts: StartOptions) {
   const panel = el('div', 'ls-start', root);
-  let time: string = 'now', weather: Kind = opts.weather, sound = opts.sound;
+  let time: string = 'now', weather: Kind = opts.weatherFixed ? opts.weather : automaticWeather(opts.weather), sound = opts.sound;
   let weatherPicked = opts.weatherFixed, usingLive = false;
   let day = opts.season, liveKind: Kind | null = null, liveButton: HTMLButtonElement | null = null;
   let useToday = !opts.dateLinked;
@@ -114,13 +114,13 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
     useToday = id === seasonOfDay(today);
     if (!weatherPicked || usingLive) {
       usingLive = liveAvailable() && liveKind !== null;
-      weather = usingLive ? liveKind! : opts.weatherForSeason(day);
+      weather = usingLive ? liveKind! : automaticWeather(opts.weatherForSeason(day));
       weatherPicked = false;
       syncWeather();
     }
   });
   const timeRow = row('Time', [{ id: 'now', label: () => t('Now {time}', { time: opts.now }) }, ...TIMES.map((x) => ({ id: x.id, label: () => t(x.label) }))], 'now', (id) => { time = id; });
-  const weatherRow = row('Weather', KINDS.map((k) => ({ id: k, label: () => t(WEATHER[k]) })), weather, (id) => { weather = id; weatherPicked = true; usingLive = false; });
+  const weatherRow = row('Weather', KINDS.map((k) => ({ id: k, label: () => k === 'mist' ? `${t(WEATHER[k])} (beta)` : t(WEATHER[k]) })), weather, (id) => { weather = id; weatherPicked = true; usingLive = false; });
   const syncWeather = () => {
     weatherRow.buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(!usingLive && KINDS[i] === weather)));
     liveButton?.setAttribute('aria-pressed', String(usingLive));
@@ -170,6 +170,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
     // the player has picked something already.
     live(kind: Kind) {
       if (liveButton) return;
+      kind = automaticWeather(kind);
       liveKind = kind;
       liveDay = pragueToday();
       const b = liveButton = el('button', 'ls-chip', weatherRow.chips) as HTMLButtonElement;
@@ -203,7 +204,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
         void betaNote(noteAgain).then(() => {
           const startDay = resuming ? opts.savedLook?.season ?? day : useToday ? pragueToday() : day;
           // A page or beta note kept open across midnight still starts in today's Prague.
-          const startWeather = !resuming && startDay !== day && (!weatherPicked || usingLive) ? opts.weatherForSeason(startDay) : weather;
+          const startWeather = !resuming && startDay !== day && (!weatherPicked || usingLive) ? automaticWeather(opts.weatherForSeason(startDay)) : weather;
           resolve({ time: t ? t.sec : null, weather: startWeather, sound, season: startDay, resume: resuming });
         });
       }, { once: true }));
