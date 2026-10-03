@@ -114,7 +114,7 @@
       #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.8s ease-in-out; }
       #fade.on { opacity: 1; }
       #banner { position: fixed; top: 14%; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; pointer-events: none; opacity: 0; }
-      #banner .big { text-align: center; font: 88px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; color: var(--ink); text-shadow: 0.05em 0.05em 0 var(--edge), 0 0 24px rgba(0, 0, 0, 0.6); }
+      #banner .big { text-align: center; font: 64px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); text-shadow: 0.05em 0.05em 0 var(--edge), 0 0 24px rgba(0, 0, 0, 0.6); }
       #banner.alert .big { color: var(--accent); font-size: 88px; text-shadow: 0.05em 0.05em 0 #140d0c, 0 0 24px rgba(0, 0, 0, 0.6); }
       /* A sentence: a card like the HUD's, red when it's bad news. */
       #banner .note { max-width: min(520px, calc(100vw - 32px)); box-sizing: border-box; padding: 10px 16px 8px; font: 24px/1.15 'Bebas Neue', sans-serif; letter-spacing: 0.03em; text-align: center; color: var(--ink); background: var(--paper); border-left: 4px solid var(--edge); box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.3); }
@@ -348,7 +348,7 @@
         .dlg-goal { font-size: 13px; }
         .dlg-goal b { font-size: 18px; }
       }
-      @media (max-width: 640px) { #help { display: none; } #banner { top: 30%; } #banner .big { font-size: 52px; } #banner.alert .big { font-size: 56px; } #banner .note { font-size: 20px; } #district { font-size: 52px; padding: 16px 40px 20px; } }
+      @media (max-width: 640px) { #help { display: none; } #banner { top: 30%; } #banner .big { font-size: 40px; } #banner.alert .big { font-size: 56px; } #banner .note { font-size: 20px; } #district { font-size: 52px; padding: 16px 40px 20px; } }
 
       /* Credits: a quiet line in the corner, and the full list when you open it. */
       #credits { position: fixed; left: 12px; bottom: 8px; z-index: 4; font: 11px/1.3 Inter, system-ui, sans-serif; color: var(--ink); opacity: 0.6; background: none; border: 0; padding: 2px 4px; text-align: left; cursor: pointer; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
