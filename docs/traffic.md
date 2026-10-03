@@ -45,6 +45,17 @@ jacket in the same colour (`courierLook`). Bikes are 1.6 of the traffic mix's we
 from 0.5. `BOX_AT` in `src/car.ts` puts the box on the back; it was placed by eye from the
 riding pose in `assets/figures/build.py`, so change it if that pose changes.
 
+**Bags.** A courier whose bike is taken (`enterOrExit` in `src/main.ts`) or hit hard by a
+car or tram (`throwRider`; any rider in traffic goes over the handlebars then, couriers
+too) runs off and leaves the bag on the ground by the bike, and the bike loses its box
+(`Car.setBox`). `src/bags.ts` keeps the bags lying about: pictures only, nothing in traffic
+or on the tram tracks sees them, and they sink out of sight after three minutes or when you
+are 150 m away. E on foot picks up one within reach (unless a vehicle is closer) and puts
+it on your back (`BOX_AT.foot`); with a bag and no vehicle in reach, E puts it down.
+You keep it in vehicles; on a bike or moped it rides in the box position of the bike
+model. It isn't saved and has no other use yet. `scenarios/courier-bag.ts` and
+`scenarios/bike-hit.ts` cover it.
+
 **Parking beside traffic.** Before publishing a tile's parked cars, `TileWorld`
 fetches the JSON for its eight neighbours and builds a separate, deduplicated street
 graph for clearance. It does not fetch their height grids or IPR meshes just for

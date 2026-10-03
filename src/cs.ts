@@ -227,6 +227,8 @@ export const CS: Record<string, string> = {
   'Waiting for a tram · {n}× speed': 'Čekání na tramvaj · {n}× rychleji',
   'Hold <b>Space</b> to wait for a tram': 'Podržením <b>mezerníku</b> počkáš na tramvaj',
   '<b>E</b> get on': '<b>E</b> nasednout',
+  '<b>E</b> pick up the bag': '<b>E</b> zvednout tašku',
+  '<b>E</b> put the bag down': '<b>E</b> odložit tašku',
   '<b>E</b> get in the swan': '<b>E</b> nastoupit do labutě',
   '<b>E</b> get in the pedal boat': '<b>E</b> nastoupit do šlapadla',
   '<b>E</b> get in': '<b>E</b> nastoupit',

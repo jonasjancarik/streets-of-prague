@@ -10,6 +10,7 @@ import { loadKit } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
+import { Bags } from './bags.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
 import type { Pedestrian } from './people.ts';
 import { loadFootfall } from './footfall.ts';
@@ -352,6 +353,9 @@ async function main() {
   // ---- Player ------------------------------------------------------------
   const walker = new Walker(grid, kit);
   scene.add(walker.mesh);
+  // A courier's bag you've picked up rides on your back.
+  const bags = new Bags(scene, (x, y) => ground(x, y));
+  walker.mesh.add(bags.back);
   {
     const side = (startEdge.kerb?.[0] ?? startEdge.width / 2) + 1.2;
     const [x, y] = nearestWalkable(grid, q.x + Math.sin(q.ang) * side, q.y - Math.cos(q.ang) * side);
@@ -746,6 +750,7 @@ async function main() {
       walker.h = c.h;
       c.mode = 'loose';
       c.rider = null;
+      c.setBox(); // (the bag you carry goes back on your back)
       loose.push(c);
       if (c.share) {
         bikeShare.charge(clock.t, (n) => wallet.take(n, 'shared bike'));
@@ -792,7 +797,21 @@ async function main() {
       const d = c.gap(walker.x, walker.y);
       if (d < bestD) { bestD = d; best = c; }
     }
-    if (!best || bestD > 1.8) return;
+    // A bag lying within reach is picked up (unless a vehicle is closer); with one on your
+    // back and nothing to get into, E puts it down.
+    const lying = !bags.carried && bags.near(walker.x, walker.y);
+    if (lying && (!best || bestD > 1.8 || lying.d <= bestD)) {
+      bags.take(lying.bag);
+      telemetry.did("picked up a courier's bag");
+      return;
+    }
+    if (!best || bestD > 1.8) {
+      if (bags.carried) {
+        bags.putDown(walker.x + Math.cos(walker.h) * 0.7, walker.y + Math.sin(walker.h) * 0.7, walker.h);
+        telemetry.did("put down a courier's bag");
+      }
+      return;
+    }
     if (best.share && !bikeShare.rent(best, clock.t, (n) => wallet.has(n))) {
       const sys = bikeShare.systems[best.share.system];
       showBanner(t('Not enough money for a bike ({price})', { price: kc(rentalCost(sys && bikeShare.planOf(sys), 0)) }));
@@ -800,6 +819,7 @@ async function main() {
     }
     if (best.share) bikeShare.charge(clock.t, (n) => wallet.take(n, 'shared bike'));
     const agent = traffic.agents.find((a) => a.car === best);
+    const box = best.courier;
     // A police car: the officer in it gets out and comes after you.
     const cop = best.type === 'police';
     if (cop) police.take(best);
@@ -818,6 +838,8 @@ async function main() {
           if (walker.blocked(best.x + lx * off, best.y + ly * off)) { lx = -lx; ly = -ly; }
         }
         const p = crowd.spawnAt(best.x + lx * off, best.y + ly * off, best.rider || undefined);
+        // A courier leaves the bag behind, on the ground by the bike.
+        if (box) bags.drop(best.x + lx * (best.spec.W / 2 + 0.35) - Math.cos(best.h) * 0.4, best.y + ly * (best.spec.W / 2 + 0.35) - Math.sin(best.h) * 0.4, box, best.h);
         if (best.two && best.speed > 2) {
           crowd.knock(p, best.vx * 0.7 + lx * 2, best.vy * 0.7 + ly * 2);
           p.then = [lx * 5, ly * 5];
@@ -832,7 +854,12 @@ async function main() {
     // (A car taken from its driver also counts as the crime, in police.ts.)
     telemetry.did(`drove: ${VEHICLE_NAMES[best.type]?.toLowerCase() ?? 'car'}`);
     if (best.share) telemetry.did('rented a shared bike');
-    if (best.two) best.rider = walker.look;
+    if (best.two) {
+      best.rider = walker.look;
+      // A box already on it (a parked courier's bike): its bag is yours now. Carrying one, it rides the bike.
+      if (box && !agent && !bags.carried) bags.carry(box);
+      best.setBox(bags.carried ?? undefined);
+    }
     inCar = best;
     if (best.variant) showBanner(variantName(best.variant), false, true); // always the small card, so it sits the same under a district title
     walker.perch = 0;
@@ -850,6 +877,22 @@ async function main() {
     c.vx *= 0.4;
     c.vy *= 0.4;
     shake = 0.8;
+  };
+
+  // Whoever rides a bike or moped that's been hit hard goes over the handlebars, to the side
+  // away from the blow, and runs once up again; a courier leaves the bag on the ground.
+  const throwRider = (c: Car, vx: number, vy: number, hurt = 0) => {
+    if (!c.two || !c.rider) return;
+    const off = c.spec.W / 2 + 0.5;
+    let lx = -Math.sin(c.h), ly = Math.cos(c.h);
+    if (vx * lx + vy * ly < 0) { lx = -lx; ly = -ly; }
+    if (walker.blocked(c.x + lx * off, c.y + ly * off)) { lx = -lx; ly = -ly; }
+    const p = crowd.spawnAt(c.x + lx * off, c.y + ly * off, c.rider);
+    crowd.knock(p, vx * 0.7 + lx * 2, vy * 0.7 + ly * 2, hurt);
+    p.then = [lx * 5, ly * 5];
+    if (c.courier) bags.drop(c.x + lx * (c.spec.W / 2 + 0.35) - Math.cos(c.h) * 0.4, c.y + ly * (c.spec.W / 2 + 0.35) - Math.sin(c.h) * 0.4, c.courier, c.h);
+    c.setBox();
+    c.rider = null;
   };
 
   const backOnRoad = () => {
@@ -1370,6 +1413,7 @@ async function main() {
 
     const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5), ...cops.filter((c) => c.speed > 5)];
     crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y));
+    bags.update(dt, px(), py());
 
     // ---- Collisions ------------------------------------------------------
     const active = [...(inCar ? [inCar] : []), ...movers, ...cops];
@@ -1391,6 +1435,7 @@ async function main() {
             traffic.release(ag);
             b.mode = 'loose';
             loose.push(b);
+            throwRider(b, a.vx, a.vy, closing > HURTS ? 1 : 0);
             if (a.mode !== 'police') stats.wrecked++;
             if (a === inCar) police.crime(b.type === 'police' ? 'hitCop' : 'wreck', b.x, b.y, b);
             const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
@@ -1433,6 +1478,7 @@ async function main() {
           traffic.release(ag);
           a.mode = 'loose';
           loose.push(a);
+          throwRider(a, t.vx, t.vy);
           if (t.v.driven && t.v.rider) { stats.wrecked++; police.crime('wreck', a.x, a.y, a); }
         }
         const hit = collideBodies(t, t.circles, 1.25, 0, a, ca, a.r, 1 / a.mass);
@@ -1980,6 +2026,11 @@ async function main() {
       const wait = waitScale > 1.5 ? t('Waiting for a tram · {n}× speed', { n: Math.round(waitScale) }) : touch.active ? '' : t('Hold <b>Space</b> to wait for a tram');
       hint = [canEnter && !touch.active ? getIn : '', wait].filter(Boolean).join(' · ');
     } else if (canEnter && !touch.active) hint = getIn;
+    if (onFoot && !cabin && !shut && !board.shown && !touch.active) {
+      const lying = !bags.carried && bags.near(walker.x, walker.y);
+      if (lying && (!enterable || lying.d <= gap(enterable))) hint = t('<b>E</b> pick up the bag');
+      else if (bags.carried && !canEnter) hint = t('<b>E</b> put the bag down');
+    }
     hint = (!inCar && !inHeli && !ride.on && !funicular.me && taxi.hint(touch.active)) || hint;
     const bikeRental = (c: Car) => {
       const rental = bikeShare.rental(c);
@@ -2036,7 +2087,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork,
+    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
@@ -2056,7 +2107,7 @@ async function main() {
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300),
-    grid, boats, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded,
+    grid, boats, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     tramsNear: (x, y, r) => trams.bodies(x, y, r),
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),

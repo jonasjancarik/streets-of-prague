@@ -206,8 +206,11 @@ export function ordinaryCarBodies(_bikeColours: readonly string[] = []): CarBody
 const BOX_AT: Record<string, { x: number; y: number; lean: number }> = {
   bike: { x: -0.36, y: 1.38, lean: 0.52 },
   moto: { x: -0.35, y: 1.3, lean: 0.42 },
+  // On a walker's back, and lying on the ground (a courier's bag left behind).
+  foot: { x: -0.3, y: 1.32, lean: 0.12 },
+  ground: { x: 0, y: 0.17, lean: 1.25 },
 };
-function boxGeometry(kind: string, colour: string): THREE.BufferGeometry {
+export function boxGeometry(kind: string, colour: string): THREE.BufferGeometry {
   const at = BOX_AT[kind], c = new THREE.Color(colour);
   const parts: THREE.BufferGeometry[] = [];
   const add = (w: number, h: number, d: number, dy: number, shade: number) => {
@@ -807,6 +810,14 @@ export class Car {
     this.w += (rx * ny - ry * nx) * vn * 0.09;
     this.damage += Math.max(0, -vn - (this.spec.tough ?? 3));
     return -vn;
+  }
+
+  // Takes the courier's box off, or puts one (a colour from COURIER_BOXES) on, a bike or moped.
+  setBox(box?: string) {
+    if (!this.spec.two || this.burnt) return;
+    this.courier = box;
+    this.key = bodyKey(this.type, box);
+    carGeometry(this.type, box);
   }
 
   // Charred: the same body, drawn nearly black (one wreck colour for each type).

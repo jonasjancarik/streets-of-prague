@@ -14,6 +14,7 @@ import type { Traffic } from './traffic.ts';
 import type { TramBody } from './trams.ts';
 import type { Kind } from './weather.ts';
 import type { Boats } from './boats.ts';
+import type { Bags } from './bags.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
 // as window.__test. Positions are latitude/longitude in and out, headings are compass
@@ -70,6 +71,7 @@ interface Game {
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
   rng: () => number;
+  bags: Bags;
 }
 
 type Controls = { move: number; turn: number; run: boolean; brake: boolean; jump: boolean };
@@ -168,6 +170,34 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         .filter((c) => c.type === 'police' && !c.burnt)
         .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null;
     },
+
+    // The nearest delivery courier riding in traffic.
+    courier() {
+      const m = g.me();
+      return g.traffic.agents.map((a) => a.car).filter((c) => c.two && c.courier)
+        .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null;
+    },
+    // Couriers' bags: the one you carry, and those lying about (how far from you, in metres).
+    bags() {
+      const m = g.me();
+      return { carried: g.bags.carried, lying: g.bags.list.map((b) => ({ colour: b.colour, away: round(Math.hypot(b.x - m.x, b.y - m.y)) })) };
+    },
+    // People on foot near a spot, and what each is doing.
+    peopleNear(x: number, y: number, r: number) {
+      return g.crowd.people.filter((p) => Math.hypot(p.x - x, p.y - y) < r).map((p) => ({ state: p.state, away: round(Math.hypot(p.x - x, p.y - y)) }));
+    },
+    // Picks up everything: no bags on the ground, none carried.
+    clearBags() { for (const b of [...g.bags.list]) g.bags.remove(b); g.bags.carry(null); },
+    // Stand next to the nearest bag lying about.
+    toBag() {
+      const m = g.me();
+      const b = g.bags.list.slice().sort((p, q) => Math.hypot(p.x - m.x, p.y - m.y) - Math.hypot(q.x - m.x, q.y - m.y))[0];
+      if (!b) throw new Error('No bag lying about');
+      m.x = b.x - 0.5;
+      m.y = b.y;
+    },
+    // E, on foot: get in, pick up, put down.
+    interact() { g.enterOrExit(); },
 
     set({ money, stars, health }: { money?: number; stars?: number; health?: number }) {
       if (money !== undefined) g.wallet.balance = Math.max(0, Math.floor(money));

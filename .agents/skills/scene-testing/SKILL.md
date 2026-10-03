@@ -61,6 +61,9 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   `t.busLines()` lists loaded PID identifiers/destinations; `t.busLine(car, ref)` assigns
   one of those lines to a test bus. `t.policeCar()` finds the nearest police vehicle;
   `t.policeLights(car)` reports whether its flashing lamps are active.
+- `t.courier()`: the nearest delivery courier in traffic. `t.bags()`: the bag you carry and those
+  lying about; `t.toBag()` stands you by one, `t.interact()` presses E on foot, `t.clearBags()`
+  starts clean, `t.peopleNear(x, y, r)` lists the people round a spot.
 - `t.push(kmh, heading?)`: sets your car going. `t.post(r)`: the nearest standing
   lamp or pole. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
   on a run clear of walls and other cars. `t.runway(heading)`: metres to the first wall.
