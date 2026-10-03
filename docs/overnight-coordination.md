@@ -113,3 +113,9 @@ Combined checkpoint `c42b93e` found a blocking Mrázovka regression in harmonic 
 Accept `35f3f4` seam-only source fix after independent pre-pilot application,11 new tests,46 focused tests,25-tile replay and20 order permutations. It requires no plain-support pilot. Accept seasonal birds `2ac779d`, picker `6d05bc0`, taxi controls `af8aa0f`, and docs index `d9e9ea1` after independent reviews and recorded UI/CPU evidence. Taxi Czech runtime remains unverified, though CPU language handling passes.
 
 Accept ambulance fix `9b56630` with native replay evidence `048f942`: independent CPU review found no introduced blocker and verified no timeout/distant-treatment shortcut; native warmed scene treated and returned crew. Pre-existing stretcher collision/arrival variability remains. Scenario-isolation implementation `7488703` is awaiting a small documentation correction before integration.
+
+## CPU checkpoint at 04:50 UTC
+
+Combined checkpoint `74a9c9e` passes build, relevant JavaScript checks and100 Python tests. No map rebuild was performed; the current map remains blocked by Mrázovka until tunnel-domain correction.
+
+Accept scenario isolation `7488703` with docs correction `7a4397f`: independent CPU review found no implementation blocker, and documentation now correctly states preparation's clock/actor side effects. Author's ordered/standalone runtime checks pass without weakened assertions. Whole-suite results must be rerun before any all-green claim.
