@@ -14,7 +14,7 @@
 | [019: Move the crowd into a worker](019-move-the-crowd-into-a-worker.md) | Pedestrians walk in a worker of their own; the main thread keeps the roster, collisions and drawing, and scenarios run the same code inline | SHELVED (built on `worktree-crowd-worker`; no gain on the M5 or the Pixel 5) |
 | [020: iOS and Android apps](020-ios-and-android-apps.md) | The website's build wrapped with Capacitor for iPhone, folding iPhone, iPad and Android: sound that survives the silent switch, the map streamed with an optional download for offline play, the game and map updating without a store release, frame rate above 60 where allowed | PHASES 1–3 AND ANDROID BUILT on branch `ios-app` (21 commits, unmerged); real-device checks, phases 4, 5, 7 and 8 open |
 | [021: Countryside generated in the browser](021-countryside-generated-in-the-browser.md) | Past the edge of the built map, tiles the browser makes itself from OpenStreetMap vector tiles: roads, land, buildings, later hills; joined to the built map without a step in the road | PLANNED (prototype decides) |
-| [023: The game on play.streetsofprague.com](023-game-on-play-subdomain.md) | The game and its `/api` move to `play.streetsofprague.com`, the homepage in `site/` takes the root as a second Worker, saved games and settings follow the player, old links to the game keep working | PLANNED (five decisions to confirm first) |
+| [024: The game on play.streetsofprague.com](024-game-on-play-subdomain.md) | The game and its `/api` move to `play.streetsofprague.com`, the homepage in `site/` takes the root as a second Worker, saved games and settings follow the player, old links to the game keep working | PLANNED (five decisions to confirm first) |
 | [023: Seasons](023-seasons.md) | A fixed game date; seasonal trees, ground, fields, hedges, light, weather and birds; season choices on the start screen | STEPS 1–4 IN MAIN AND LIVE IN v0.5.2 (ground cost unresolved) |
 
 ### Overnight status, 3 October 2026
@@ -34,8 +34,8 @@ open; later seasonal features remain deferred in the plan.
 
 These reports describe accepted local work, including the isolated integration
 checkout. The accepted source is merged into main and released as v0.5.2 (3 October 2026). Source-map pilots held
-for further review remain outside these completion claims. Both existing plans
-numbered 023 retain their separate titles and filenames.
+for further review remain outside these completion claims. The seasons plan is 023;
+the play. subdomain plan was renumbered 024 to avoid the clash.
 
 Plans 001–006 were indexed from `c6b5350`. Check the working tree and each plan's
 starting revision before implementation; preserve unrelated changes.
