@@ -77,7 +77,7 @@ fi
 
 ssh "$HOST" bash -s -- "$DIR" "$SHA" "$PORT" "$ID" "$CF_MAP" <<'EOF'
 set -euo pipefail
-DIR=$1 SHA=$2 PORT=$3 ID=$4 CF_MAP=$5
+DIR=$1 SHA=$2 PORT=$3 ID=$4 CF_MAP=${5:-} # ssh drops an empty last argument
 docker rm -f streets-of-prague >/dev/null 2>&1 || true
 docker run -d --name streets-of-prague --restart unless-stopped \
   -p 127.0.0.1:$PORT:80 \
