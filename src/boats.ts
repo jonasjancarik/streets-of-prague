@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp } from './network.ts';
 import { lampLit } from './lamps.ts';
+import { fences } from './fences.ts';
 import type { Point2 } from './map/geo.ts';
 
 // Boats on the Vltava: a few white tourist cruise boats going slowly up and down the
@@ -16,6 +17,7 @@ import type { Point2 } from './map/geo.ts';
 export interface Waters {
   waterAt: (x: number, y: number) => boolean | null;
   terrainAt: (x: number, y: number, onWater?: boolean) => number;
+  cellAt: (x: number, y: number, level: number, z: number) => number;
 }
 
 type Kind = 'cruise' | 'pedal' | 'swan';
@@ -30,6 +32,7 @@ const NEAR = 60, SPAWN = 420, FAR = 700; // m from the player: where boats are p
 const MOORED = 3; // pedal boats tied up at the bank
 const ISLANDS = 520; // pedal boats keep within this many metres of Slovanský ostrov
 const PAINTS = ['#e8c534', '#d8402f', '#2f7fc4', '#3aa55a', '#f08a2c'];
+const BOARD_REACH = 4.5, BOARD_STEP = 0.8; // a short step between a low bank and the deck
 
 interface Boat {
   kind: Kind; s: Spec; mesh: THREE.Mesh; live: boolean;
@@ -96,6 +99,10 @@ function body(kind: Kind, paint: string) {
     for (const z of [-0.6, 0.6]) hull(S.len, 0.6, 0.8, -0.15, 0.35, kind === 'swan' ? '#f4f4f0' : paint, z);
     box(S.len * 0.8, 0.12, S.beam - 0.2, -0.1, 0.4, 0, '#e9e6de');
     box(0.7, 0.45, S.beam - 0.5, -0.4, 0.68, 0, '#3c4046');
+    // A small all-round white lamp, merged into the body: no extra light or draw call.
+    const lampX = kind === 'pedal' ? -0.6 : -1.3, lampY = kind === 'pedal' ? 2 : 1.25;
+    box(0.06, 0.35, 0.06, lampX, lampY - 0.23, 0, '#9a9a96');
+    box(0.18, 0.16, 0.18, lampX, lampY, 0, '#ffffff', 2);
     if (kind === 'pedal') {
       for (const z of [-0.7, 0.7]) box(0.06, 1.2, 0.06, -0.6, 1.0, z, '#9a9a96');
       box(1.4, 0.06, S.beam - 0.1, -0.5, 1.6, 0, paint);
@@ -128,6 +135,7 @@ export class Boats {
   list: Boat[];
   rng: () => number;
   me: Boat | null = null; // the pedal boat the player is in
+  private placeNext = 0;
 
   // `islands`: where Slovanský ostrov is in local metres (null if not in the area).
   constructor(scene: THREE.Scene, water: Waters, islands: Point2 | null, rng = seededRandom(7)) {
@@ -137,8 +145,8 @@ export class Boats {
     this.rng = rng;
     this.list = [];
     const material = new THREE.MeshLambertMaterial({ vertexColors: true });
-    // At night the cruise boats' cabin windows are lit and their navigation lights on,
-    // with the street lamps (the same switch); the lamps' light falls on the boats too.
+    // Cabin windows and navigation lamps shine with the street lamps' night switch;
+    // their light falls on the boats too. Small boats carry an all-round white lamp.
     material.onBeforeCompile = (sh) => {
       lampLit(sh);
       sh.vertexShader = sh.vertexShader
@@ -216,7 +224,7 @@ export class Boats {
         const pull = bank - (b.s.beam / 2 + 0.6);
         x += Math.cos(a) * pull; y += Math.sin(a) * pull;
         h = a + Math.PI / 2;
-        if (!this.fits(b, x, y, h) || this.list.some((o) => o !== b && o.live && Math.hypot(o.x - x, o.y - y) < 6)) continue;
+        if (!this.fits(b, x, y, h) || !this.landing(b, x, y, h) || this.list.some((o) => o !== b && o.live && Math.hypot(o.x - x, o.y - y) < 6)) continue;
         Object.assign(b, { x, y, h, v: 0, w: 0, live: true });
         b.mesh.visible = true;
         return;
@@ -234,31 +242,82 @@ export class Boats {
     }
   }
 
-  // A pedal boat close enough to step into from where you stand (by the bank).
-  near(x: number, y: number) {
+  // Water height stays below bridge decks and ignores a quay bulging over the water.
+  waterHeight(b: Boat, x = b.x, y = b.y, h = b.h) {
+    const c = Math.cos(h) * b.s.len * 0.4, s = Math.sin(h) * b.s.len * 0.4, T = this.water;
+    return Math.min(T.terrainAt(x, y, true), T.terrainAt(x + c, y + s, true), T.terrainAt(x - c, y - s, true));
+  }
+
+  // A person fits on dry ground, at deck height, with a clear short path to the boat.
+  // Once the path reaches land it cannot cross another stretch of water or a wall.
+  reachable(b: Boat, x: number, y: number, z = this.water.terrainAt(x, y), bx = b.x, by = b.y, h = b.h) {
+    const T = this.water, d = Math.hypot(x - bx, y - by);
+    if (d > BOARD_REACH || T.waterAt(x, y) !== false) return false;
+    const deck = this.waterHeight(b, bx, by, h) + 0.4;
+    if (Math.abs(z - deck) > BOARD_STEP) return false;
+    for (const [dx, dy] of [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]]) {
+      const px = x + dx, py = y + dy, ground = T.terrainAt(px, py);
+      if (T.waterAt(px, py) !== false || T.cellAt(px, py, 0, ground) !== 0 || Math.abs(ground - deck) > BOARD_STEP) return false;
+    }
+    let land = false;
+    const n = Math.max(1, Math.ceil(d / 0.25));
+    for (let i = 0; i <= n; i++) {
+      const px = bx + (x - bx) * i / n, py = by + (y - by) * i / n, wet = T.waterAt(px, py);
+      if (wet === null || fences.blocks(px, py, 0.3, 0)) return false;
+      if (wet) { if (land) return false; continue; }
+      land = true;
+      const ground = T.terrainAt(px, py);
+      if (T.cellAt(px, py, 0, ground) !== 0 || Math.abs(ground - deck) > BOARD_STEP) return false;
+    }
+    return true;
+  }
+
+  // Use the same reachable bank for spawning a moored boat and for getting out.
+  landing(b: Boat, bx = b.x, by = b.y, h = b.h): Point2 | null {
+    for (let r = b.s.beam / 2 + 0.5; r <= BOARD_REACH; r += 0.5) {
+      for (let i = 0; i < 32; i++) {
+        const a = i * Math.PI / 16, x = bx + Math.cos(a) * r, y = by + Math.sin(a) * r;
+        if (!this.reachable(b, x, y, this.water.terrainAt(x, y), bx, by, h)) continue;
+        // Leave room to stand and turn, matching nearestWalkable's clear footprint.
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => {
+          const px = x + dx, py = y + dy;
+          return this.water.waterAt(px, py) === false && this.water.cellAt(px, py, 0, this.water.terrainAt(px, py)) === 0;
+        })) return [x, y];
+      }
+    }
+    return null;
+  }
+
+  // A pedal boat close enough to step into from the bank, never from a bridge above it.
+  near(x: number, y: number, z = this.water.terrainAt(x, y)) {
     let best: Boat | null = null, bestD = Infinity;
     for (const b of this.list) {
       if (!b.live || b.kind === 'cruise') continue;
       const d = Math.hypot(b.x - x, b.y - y);
-      if (d < 4.5 && d < bestD) { best = b; bestD = d; }
+      if (d < bestD && this.reachable(b, x, y, z)) { best = b; bestD = d; }
     }
     return best;
   }
 
   // `ctl`: how the player pedals the boat they're in ({ move, turn }), if they are.
   update(dt: number, px: number, py: number, ctl: { move: number; turn: number } | null = null) {
-    let placed = false;
     for (const b of this.list) {
       if (b === this.me) {
         if (ctl) this.pedal(b, dt, ctl);
         continue;
       }
       if (b.live && Math.hypot(b.x - px, b.y - py) > FAR) { b.live = false; b.mesh.visible = false; }
-      if (!b.live) {
-        if (!placed) { this.place(b, px, py); placed = true; }
-        continue;
-      }
+      if (!b.live) continue;
       this.steer(b, dt);
+    }
+    // One placement attempt per frame, taking turns: a missing safe bank must not
+    // keep every later boat from spawning.
+    for (let j = 0; j < this.list.length; j++) {
+      const i = (this.placeNext + j) % this.list.length, b = this.list[i];
+      if (b.live || b === this.me) continue;
+      this.placeNext = (i + 1) % this.list.length;
+      this.place(b, px, py);
+      break;
     }
     // Boats keep clear of each other: a gentle push apart where two overlap.
     for (let i = 0; i < this.list.length; i++) {
@@ -271,8 +330,11 @@ export class Boats {
         const r = (a.kind === 'cruise' ? a.s.len * 0.4 : a.s.len * 0.5) + (b.kind === 'cruise' ? b.s.len * 0.4 : b.s.len * 0.5);
         if (d >= r) continue;
         const push = Math.min(r - d, 1) * dt * 2, ma = a.s.len, mb = b.s.len;
-        const ax = a.x - (dx / d) * push * mb / (ma + mb), ay = a.y - (dy / d) * push * mb / (ma + mb);
-        const bx = b.x + (dx / d) * push * ma / (ma + mb), by = b.y + (dy / d) * push * ma / (ma + mb);
+        // A tied-up boat stays at its reachable mooring; the passing boat moves aside.
+        const wa = a.moored ? 0 : b.moored ? 1 : mb / (ma + mb);
+        const wb = b.moored ? 0 : a.moored ? 1 : ma / (ma + mb);
+        const ax = a.x - (dx / d) * push * wa, ay = a.y - (dy / d) * push * wa;
+        const bx = b.x + (dx / d) * push * wb, by = b.y + (dy / d) * push * wb;
         if (this.fits(a, ax, ay, a.h)) { a.x = ax; a.y = ay; }
         if (this.fits(b, bx, by, b.h)) { b.x = bx; b.y = by; }
       }
@@ -327,8 +389,7 @@ export class Boats {
     const t = b.phase, A = b.s.bob;
     const m = b.mesh;
     // The lowest of bow, middle and stern: the ground by the banks can bulge up over the water.
-    const c = Math.cos(b.h) * b.s.len * 0.4, s = Math.sin(b.h) * b.s.len * 0.4, T = this.water;
-    const y = Math.min(T.terrainAt(b.x, b.y, true), T.terrainAt(b.x + c, b.y + s, true), T.terrainAt(b.x - c, b.y - s, true));
+    const y = this.waterHeight(b);
     m.position.set(b.x, y + A * Math.sin(t * 1.4), -b.y);
     m.rotation.set(A * 0.6 * Math.sin(t * 1.1 + 1), b.h, A * 0.4 * Math.sin(t * 0.9 + 2), 'YXZ');
     m.updateMatrix();

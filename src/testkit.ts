@@ -11,6 +11,7 @@ import type { Brigade } from './brigade.ts';
 import type { Ambulances } from './ambulance.ts';
 import type { Pedestrian } from './people.ts';
 import type { Kind } from './weather.ts';
+import type { Boats } from './boats.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
 // as window.__test. Positions are latitude/longitude in and out, headings are compass
@@ -54,6 +55,7 @@ interface Game {
   view: (zoom: number) => void;
   loaded: (x: number, y: number) => Promise<void>;
   grid: { at: (x: number, y: number) => number };
+  boats: Boats;
   carsNear: (x: number, y: number, r: number) => Car[];
   // Where the camera looks now, and how high it is (for starting the free camera there).
   view0: () => { x: number; y: number; height: number };
@@ -208,6 +210,19 @@ export function setupTestkit(g: Game) {
 
     // Out of whatever you're in.
     exit() { if (g.mode() !== 'foot') g.enterOrExit(); },
+    // Loaded boats and their safe bank access, in latitude/longitude like go().
+    boats() {
+      const at = (p: Point2): Point2 => { const [lon, lat] = g.toLonLat(...p); return [lat, lon]; };
+      return g.boats.list.filter(b => b.live).map(b => {
+        const bank = b.kind === 'cruise' ? null : g.boats.landing(b);
+        return { kind: b.kind, moored: b.moored, at: at([b.x, b.y]), bank: bank ? at(bank) : null,
+          waterHeight: g.boats.waterHeight(b), bankHeight: bank ? g.boats.water.terrainAt(...bank) : null };
+      });
+    },
+    boardBoat() {
+      if (g.mode() === 'foot') g.enterOrExit();
+      return g.mode() === 'boat';
+    },
 
     // Your car (or c) going at this speed along the heading.
     push(kmh: number, heading?: number, c = g.car()) {

@@ -42,6 +42,11 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   ahead (`hatch`, `sedan`, `suv`, `van`, `taxi`, `police`, `pickup`, `truck`, `bus`,
   `moto`, `bike`…, the keys of `SPECS` in `src/car.ts`). `t.car(type, opt)`: just
   parks one. `t.exit()` gets you out.
+- `t.boats()`: loaded boats with kind, location, mooring status, safe bank coordinates
+  and water/bank heights. `t.boardBoat()`: ordinary interaction from the current bank
+  position, returning whether you boarded. `t.exit()` uses the same safe bank rule.
+  `boat-boarding` checks all three waiting boats; `scripts/check-boat-access.mjs`
+  checks rejected quays, walls and railings without a browser.
 - `t.ignite(car)` sets a car on fire; `t.fire(car)`: whether it burns, is a wreck, still
   has flames, what the fire engine sent to it is doing (`go`, `work`, `leave`) and how
   many hoses are on it.

@@ -693,10 +693,11 @@ async function main() {
     }
     // Out of a pedal boat onto the bank, when it's beside one.
     if (boats.me) {
-      const b = boats.me, [x, y] = nearestWalkable(grid, b.x, b.y, 8);
-      if (Math.hypot(x - b.x, y - b.y) > 7 || grid.at(x, y) !== 0) return;
+      const b = boats.me, bank = boats.landing(b);
+      if (!bank) return;
+      const [x, y] = bank;
       boats.me = null;
-      Object.assign(walker, { x, y, h: b.h, vx: 0, vy: 0 });
+      Object.assign(walker, { x, y, h: b.h, vx: 0, vy: 0, level: 0, gz: world.terrainAt(x, y) });
       walker.mesh.visible = true;
       walker.sync();
       return;
@@ -748,7 +749,7 @@ async function main() {
       walker.sync();
       return;
     }
-    const boat = boats.near(walker.x, walker.y);
+    const boat = boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch);
     if (boat) {
       boats.me = boat;
       telemetry.did('took a pedal boat');
@@ -1914,7 +1915,7 @@ async function main() {
     const enterable = !inCar && !inHeli && !ride.on
       ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8 && !c.burnt).sort((a, b) => gap(a) - gap(b))[0]
       : undefined;
-    const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y) : null;
+    const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch) : null;
     const onFoot = !inCar && !inHeli && !ride.on && !metro.active && !boats.me && !taxi.riding;
     const cabin = onFoot ? funicular.near(walker.x, walker.y) : null;
     const shut = onFoot && !cabin ? funicular.near(walker.x, walker.y, true) : null;
@@ -2044,7 +2045,7 @@ async function main() {
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300),
-    grid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded,
+    grid, boats, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
     canvas: renderer.domElement, fov: camera.fov,

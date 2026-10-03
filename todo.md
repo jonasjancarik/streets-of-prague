@@ -532,10 +532,14 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
 - **Traffic by time of day.** The number of cars follows a TSK travel-time profile
   and favours main roads, but it is one city-wide figure; queues on the real routes,
   direction of the peak and car mix are next. See `docs/traffic.md`.
-- **Boats.** Cruise boats and pedal boats are on the river (`src/boats.ts`), but not
-  PID's ferries, no lights at night, and they've only been looked at from above
-  (passing under a bridge is unchecked). One of the tied-up pedal boats can't be
-  reached from the bank.
+- **Boats.** Cruise cabins and navigation lights are visible at night; pedal and
+  swan boats now carry a white lamp, using the shared night switch without extra
+  light objects. Moored boats require a short, clear route to low walkable ground;
+  boarding and exiting use the same rule and reject high quays, walls and railings.
+  The three moored boats passed boarding/exiting on the private centrum snapshot
+  built 2 October at 20:16 UTC, and a pedal boat travelled below Legion Bridge's
+  deck at water height. Other bridges, phones and water-height seams remain
+  unchecked; PID's ferries are still absent. See [boat access](docs/boats.md).
 - **Parked cars at tile edges and corners.** Parking now keeps clear of the traffic
   lanes, but a couple of cars at tile edges still overlap a lane of the neighbouring
   tile, and at junctions a car standing on the corner is still driven through after a
