@@ -35,6 +35,8 @@ import zlib
 from collections import defaultdict
 
 import numpy as np
+from scipy.sparse import coo_matrix
+from scipy.sparse.linalg import spsolve
 import shapely
 import shapely.ops
 from shapely import STRtree
@@ -292,35 +294,70 @@ class Net:
         return i
 
     def spread(self, fixed):
-        """Heights everywhere from the fixed ones ({point: height}): each point between
-        its two nearest fixed points (by distance along the ways), in proportion, so a
-        chain of ways between two ends slopes evenly. Returns the distance from each
-        point to its nearest fixed one."""
-        best = [[] for _ in self.adj]  # up to two (distance, source) per point
-        heap = [(0.0, i, i) for i in fixed]
+        """Distance-weighted harmonic heights with exact fixed anchors.
+
+        Linear on a chain and continuous at junctions, rather than switching
+        between two nearest anchors that may both lie on one side. Return shortest
+        graph distances to the nearest provided anchor, independently of heights.
+        Components with no anchor stay unknown; one anchor gives a constant height.
+        A non-finite anchor leaves that component's free heights unknown.
+        """
+        n = len(self.adj)
+        self.h.fill(np.nan)
+        near = np.full(n, np.inf)
+        if not fixed or not n:
+            return near
+        heap = [(0.0, int(i)) for i in fixed]
         heapq.heapify(heap)
         while heap:
-            d, i, src = heapq.heappop(heap)
-            b = best[i]
-            if len(b) >= 2 or any(s == src for _, s in b):
+            d, i = heapq.heappop(heap)
+            if d >= near[i]:
                 continue
-            b.append((d, src))
-            for j, w in self.adj[i]:
-                bj = best[j]
-                if len(bj) < 2 and not any(s == src for _, s in bj):
-                    heapq.heappush(heap, (d + w, j, src))
-        near = np.full(len(self.adj), np.inf)
-        for i, b in enumerate(best):
-            if i in fixed:
-                self.h[i] = fixed[i]
-                near[i] = 0
-            elif len(b) == 2:
-                (da, a), (db, c) = b
-                self.h[i] = (fixed[a] * db + fixed[c] * da) / (da + db)
-                near[i] = da
-            elif b:
-                self.h[i] = fixed[b[0][1]]
-                near[i] = b[0][0]
+            near[i] = d
+            for j, length in self.adj[i]:
+                if d + length < near[j]:
+                    heapq.heappush(heap, (d + length, j))
+
+        # Topology does not change between the ground, deck and crossing passes.
+        # Reuse the Laplacian; only its fixed/free partition changes.
+        if not hasattr(self, "_laplacian"):
+            rows, cols, values = [], [], []
+            for i, neighbours in enumerate(self.adj):
+                degree = 0.0
+                for j, length in neighbours:
+                    weight = 1.0 / length
+                    rows.append(i); cols.append(j); values.append(-weight)
+                    degree += weight
+                rows.append(i); cols.append(i); values.append(degree)
+            self._laplacian = coo_matrix((values, (rows, cols)), shape=(n, n)).tocsr()
+            self._components = np.asarray(components(self), dtype=np.int32)
+            order = np.argsort(self._components, kind="stable")
+            splits = np.flatnonzero(np.r_[True, self._components[order][1:] != self._components[order][:-1]])
+            self._component_nodes = {int(self._components[order[a]]): order[a:b]
+                                     for a, b in zip(splits, np.r_[splits[1:], n])}
+        comp = self._components
+        anchors = defaultdict(list)
+        pinned = np.zeros(n, dtype=bool)
+        for i, h in fixed.items():
+            pinned[i] = True
+            self.h[i] = h
+            anchors[int(comp[i])].append((int(i), float(h)))
+        active = np.zeros(n, dtype=bool)
+        for component, points in anchors.items():
+            heights = np.array([h for _, h in points])
+            if not np.isfinite(heights).all():
+                continue  # preserve known pins, but do not invent missing ground
+            on = self._component_nodes[component]
+            if np.all(heights == heights[0]):
+                self.h[on] = heights[0]  # includes the one-anchor case, exactly
+            else:
+                active[on] = True
+        free = np.flatnonzero(active & ~pinned)
+        if len(free):
+            pins = np.flatnonzero(pinned & active)
+            matrix = self._laplacian[free][:, free]
+            rhs = -(self._laplacian[free][:, pins] @ self.h[pins])
+            self.h[free] = spsolve(matrix, rhs)
         return near
 
 

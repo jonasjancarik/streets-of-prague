@@ -430,6 +430,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   (`pipeline/structures.py`). Where one meets a street on the ground it's at the
   ground's height, and in between its height runs evenly from end to end, along the
   ways and through junctions (Blanka's underground ramps).
+  Height propagation uses a distance-weighted harmonic graph solve with fixed
+  anchors, linear on chains and continuous at junctions. It does not switch between
+  two nearest anchors on one side of a span; see `docs/bridge-height-continuity.md`.
   Bridge continuations are resolved across chunks before a loose end is tied to
   the ground. Explicitly mapped different decks remain separate even where their
   inferred heights are close, while a shared OSM node keeps a physical join.
