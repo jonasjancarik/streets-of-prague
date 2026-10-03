@@ -1,7 +1,8 @@
 """Build the people and two-wheeler kit into public/figures.glb.
 
 A small low-poly person with a skeleton and a handful of clips (standing, walking,
-running, jumping, being knocked over and getting up, riding a bike and a motorbike),
+running, jumping, being knocked over and getting up, riding a bike and a motorbike,
+getting into a car, hauling someone out of one, being arrested and making the arrest),
 plus a bike and a motorbike to ride. Everything is made from code here, so the kit
 can be tweaked and rebuilt; src/figures.js bakes the clips into textures at load.
 

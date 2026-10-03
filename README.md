@@ -186,13 +186,26 @@ that without a new renderer.
   M), and the settings, with the start screen's choices during play: language, sound,
   graphics (also G) and weather (also P). On a phone the credits are in there too
   (`src/settings.ts`).
+- **Getting in and out of cars** (`src/getin.ts`). Press E by a car and you go to the
+  nearer front door, it opens, you duck in and it shuts behind you; E again and you
+  get out the same way (on the other side if the driver's door is against a wall).
+  Taking a car with someone at the wheel: from the driver's side you reach in and
+  haul them out onto the road, from the other side they get out of their own door
+  and run. Press E again on the way to the door to change your mind. A car that is
+  still rolling faster than a walk is left at once, without the door, and vehicles
+  built from boxes (buses, lorries, the fire engine, the ambulance) have no door to
+  swing: you step up to the cab and in.
 - **Police.** Knocking people over, pulling drivers out of their cars, wrecking
   traffic, ramming or stealing a police car and speeding past the police (20 km/h over
   the limit) earn stars, up to five; crimes the police see count three times as much.
   Police cars chase you along the streets and ram you. When you're on foot they stay
   on the road and stop at the kerb nearest you; then (or when you stop the car) an
-  officer gets out and runs after you, and if they reach you, you're busted (the
-  police keep the car). The arrest banner appears before the screen fades to black;
+  officer gets out (their door stays open till they're back) and runs after you, to
+  your door if you're in a car, and if they reach you, you're busted (the
+  police keep the car). The arrest is played out (`src/arrest.ts`): the officer opens
+  your door and has you out of the car, your hands go up, they step behind you and
+  put the handcuffs on, and you're walked to their car and put in the back, while the
+  other officers stand round and nobody shoots. The screen fades to black on the way;
   you are then taken to the station and the picture fades back in. You can outrun them on foot, or take the police car they've
   left behind (E) and drive off in it. Its blue lights keep flashing while you're at
   the wheel, even when stopped, and switch off when you get out. From three stars a helicopter
@@ -558,8 +571,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   They are slow to pick up speed and swing wide in the bends.
 - **People and two-wheelers** are a small kit built in Blender from code
   (`assets/figures/build.py` → `public/figures.glb`): a low-poly person with a skeleton
-  and clips for standing, walking, jogging, running, jumping, falling, getting up and
-  riding, plus a bike and a motorbike. The walk, jog and run place the feet first (on
+  and clips for standing, walking, jogging, running, jumping, falling, getting up,
+  riding, getting into a car, hauling someone out of one, and an arrest (hands up,
+  handcuffed, led away, and the officer's side of it), plus a bike and a motorbike. The walk, jog and run place the feet first (on
   the ground they stay put, rolling from heel to ball) and reach them with the legs;
   in the game the two gaits either side of someone's speed are blended, in step. At
   load, `src/figures.ts` plays every clip through and bakes the posed vertices into
@@ -569,7 +583,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   low-poly body per type (hatchback, saloon, estate, SUV, van, pickup, taxi, police), shaped for
   the view from above, where the bonnet, cabin, windows and roof show, with a little
   of the sides, wheels and lights towards the edges of the screen. `src/car.ts` puts
-  each car's colour on the paint. The bus is built from boxes in `src/car.ts`. Rebuild with
+  each car's colour on the paint. The doors are objects of their own in the file
+  (`<type>_door1` to `4`, each with its origin on its hinge), and inside there is a
+  floor, walls and seats to see through an open one. In the game they are still part
+  of the body's one geometry: each vertex carries its hinge and door number, each car
+  how far its four doors are open, and the vertex shader turns the door (`Car.open`,
+  `webgpu/vehicles.ts`). The bus is built from boxes in `src/car.ts`. Rebuild with
   `blender -b --factory-startup -P assets/cars/build.py`; `-- --preview DIR` renders
   them from above. During loading, `CarPool.prepare` creates one body per type
   and separate courier-box variants without consuming the game's random numbers.

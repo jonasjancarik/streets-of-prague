@@ -54,6 +54,7 @@ interface Game {
   street: () => string | null;
   enterOrExit: () => void;
   interact: () => void;
+  arrest: { readonly now: { phase: string } | null };
   addCar: (c: Car) => void;
   loose: Car[];
   simulate: (dt: number, ctl?: Partial<Controls>) => void;
@@ -202,6 +203,23 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // E as the player presses it: into and out of a car through its door, which takes a
     // moment (t.wait for it).
     press() { g.interact(); },
+    // Stands you beside a car's door (1: the driver's, 2: the other front one), `out` m from its side.
+    toDoor(c: Car, n = 1, out = 1.2) {
+      const door = c.doors.find((d) => d.n === n);
+      if (!door) throw new Error(`No door ${n} on a ${c.type}`);
+      const m = g.me();
+      [m.x, m.y] = c.beside(door, out);
+      return Math.hypot(m.x - c.x, m.y - c.y);
+    },
+    // How far you are from where you'd stand to use a car's door.
+    fromDoor(c: Car, n = 1) {
+      const door = c.doors.find((d) => d.n === n), m = g.me();
+      if (!door) throw new Error(`No door ${n} on a ${c.type}`);
+      const [x, y] = c.beside(door);
+      return round(Math.hypot(m.x - x, m.y - y));
+    },
+    // How far an arrest has got ('door', 'out', 'hands', 'cuff', 'lead', 'seat', 'back'), or null.
+    arrested() { return g.arrest.now?.phase ?? null; },
 
     set({ money, stars, health }: { money?: number; stars?: number; health?: number }) {
       if (money !== undefined) g.wallet.balance = Math.max(0, Math.floor(money));

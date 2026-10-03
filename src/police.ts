@@ -15,7 +15,9 @@ import type { Point2 } from './map/geo.ts';
 import type { Point3 } from './guns.ts';
 
 interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
-interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number; reload?: number }
+// `door`: the one of their car they got out of, left open till they're back. `led`: making
+// an arrest, moved by src/arrest.ts.
+export interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean }
 // A stretch of the way a police car or a fire engine can take: a street, or (`foot`) a
 // way meant for people.
 type Way = (DriveEdge | WalkEdge) & { mid?: Polyline; twin?: DriveEdge | null };
@@ -37,7 +39,7 @@ interface PoliceOptions {
   rng: () => number; edgesNear: (x: number, y: number, radius: number) => DriveEdge[];
   // The footpath network, for the ways an emergency vehicle may take through pedestrian zones and parks.
   walk?: WalkGraph; walkNear?: (x: number, y: number, radius: number) => WalkEdge[];
-  offscreen: (x: number, y: number) => boolean; onBusted: () => void; kit: FigureKit;
+  offscreen: (x: number, y: number) => boolean; onBusted: (by: Officer) => void; kit: FigureKit;
   // Whether a car or a tram (other than `skip`) takes up a circle of radius r at (x, y).
   bodyAt?: (x: number, y: number, r: number, skip: Car | null) => boolean;
   // A shot at the player, from the muzzle to where the bullet went, and whether it hit.
@@ -190,13 +192,15 @@ export function pedals(c: Car, p: Follower, tx: number, ty: number, want: number
 export class Police {
   scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
   r: () => number; edgesNear: PoliceOptions['edgesNear']; offscreen: PoliceOptions['offscreen'];
-  onBusted: () => void; kit: FigureKit; bodyAt: NonNullable<PoliceOptions['bodyAt']>;
+  onBusted: (by: Officer) => void; kit: FigureKit; bodyAt: NonNullable<PoliceOptions['bodyAt']>;
   height: PoliceOptions['height']; onShot: NonNullable<PoliceOptions['onShot']>;
   spare: Figures[]; helis: Helicopters; heat: number; cars: ChaseCar[]; officers: Officer[];
   seen: boolean; lose: number; cool: Record<string, number>; spawnT: number; checkT: number; limit: number;
   nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number; walked = 0;
   paths: WalkGraph | null; walkNear: NonNullable<PoliceOptions['walkNear']>;
   lastT?: number; stolen: WeakSet<Car>;
+  // An arrest is being made (src/arrest.ts): nobody shoots, the other officers stand round.
+  arresting = false;
 
   constructor({ scene, drive, traffic, grid, height, rng, edgesNear, walk = undefined, walkNear = () => [], offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {} }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
@@ -541,6 +545,7 @@ export class Police {
   // A shot at you from (x, y). It's likelier to hit close up, with more stars, and when
   // you're standing still, and with the difficulty; a miss goes past you, a little to one side.
   shoot(x: number, y: number, who: Car | Officer, me: PlayerTarget) {
+    if (this.arresting) return;
     const d = Math.hypot(me.x - x, me.y - y) || 1, ux = (me.x - x) / d, uy = (me.y - y) / d;
     const k = aim(), odds = clamp((0.5 + 0.07 * (this.stars - ARMED) - d / 60 - me.speed * 0.03) * k, 0.08 * k, 0.9);
     const hit = this.r() < odds;
@@ -559,16 +564,18 @@ export class Police {
   getOut(car: Car) {
     car.crew = false;
     const lx = -Math.sin(car.h), ly = Math.cos(car.h);
-    let x = car.x + lx * (car.spec.W / 2 + 0.7), y = car.y + ly * (car.spec.W / 2 + 0.7);
+    let x = car.x + lx * (car.spec.W / 2 + 0.7), y = car.y + ly * (car.spec.W / 2 + 0.7), door = 1;
     // Out of the other door if a wall or another car is on this side.
-    if (this.grid.at(x, y) || this.bodyAt(x, y, 0.4, car)) { x = car.x - lx * (car.spec.W / 2 + 0.7); y = car.y - ly * (car.spec.W / 2 + 0.7); }
+    if (this.grid.at(x, y) || this.bodyAt(x, y, 0.4, car)) { x = car.x - lx * (car.spec.W / 2 + 0.7); y = car.y - ly * (car.spec.W / 2 + 0.7); door = 2; }
+    // (It stays open till they're back.)
+    car.open(door);
     let fig = this.spare.pop();
     if (!fig) {
       fig = new Figures(this.kit, 1);
       fig.look(0, { shirt: '#1f3a68', trousers: '#1a2438', skin: '#e3b99a', hair: '#15233f', sleeves: true });
     }
     this.scene.add(fig.mesh);
-    this.officers.push({ x, y, h: car.h, vx: 0, vy: 0, car, fig, anim: new Anim(this.kit, 'idle'), down: 0, back: false });
+    this.officers.push({ x, y, h: car.h, vx: 0, vy: 0, car, fig, anim: new Anim(this.kit, 'idle'), down: 0, back: false, door });
   }
 
   blocked(x: number, y: number) {
@@ -577,6 +584,7 @@ export class Police {
   }
 
   walk(o: Officer, dt: number, me: PlayerTarget) {
+    if (o.led) return;
     if (o.down > 0) {
       o.down -= dt;
       const k = Math.exp(-4 * dt);
@@ -587,23 +595,35 @@ export class Police {
       // Back to the car when you drive off (or the chase is over); after you otherwise.
       const toMe = Math.hypot(me.x - o.x, me.y - o.y);
       o.back = this.heat <= 0 || !!(ride && me.car && me.speed > 6 && toMe > 12);
+      // You in a car: they make for the nearer of its front doors, not for its middle
+      // (which they can't get near from the front or the back).
+      let gx = me.x, gy = me.y, door = Infinity;
+      for (const d of me.car?.doors ?? []) {
+        if (d.n > 2) continue;
+        const [x, y] = me.car!.beside(d, 0.9), far = Math.hypot(x - o.x, y - o.y);
+        if (far < door && !this.blocked(x, y)) { door = far; gx = x; gy = y; }
+      }
       // Armed, in range and in sight: they stand and shoot. Closer in they still come to
       // arrest you.
       o.reload = (o.reload ?? 0.5 + this.r() * 0.6) - dt;
-      const aiming = !o.back && this.stars >= ARMED && !me.air && toMe > 5 && toMe < RANGE && this.clear(o.x, o.y, me.x, me.y);
-      if (aiming) {
+      const aiming = !o.back && !this.arresting && this.stars >= ARMED && !me.air && toMe > 5 && toMe < RANGE && this.clear(o.x, o.y, me.x, me.y);
+      if (this.arresting && !o.back) {
+        // Someone else has you: come up and stand by.
+        if (toMe > 3.4) steer(o, me.x, me.y, RUN, this.bodyAt, null, this.r);
+        else { o.vx = o.vy = 0; o.h = Math.atan2(me.y - o.y, me.x - o.x); }
+      } else if (aiming) {
         o.vx = o.vy = 0;
         o.h = Math.atan2(me.y - o.y, me.x - o.x);
         if (o.reload <= 0) { o.reload = this.pace(); this.shoot(o.x, o.y, o, me); }
       } else {
         // No car to go back to: they walk off.
-        const tx = !o.back ? me.x : ride ? o.car.x : 2 * o.x - me.x, ty = !o.back ? me.y : ride ? o.car.y : 2 * o.y - me.y;
+        const tx = !o.back ? gx : ride ? o.car.x : 2 * o.x - me.x, ty = !o.back ? gy : ride ? o.car.y : 2 * o.y - me.y;
         const d = Math.hypot(tx - o.x, ty - o.y) || 1;
         steer(o, tx, ty, o.back && !ride ? 1.4 : RUN, this.bodyAt, o.back ? o.car : null, this.r);
-        if (o.back && ride && d < 2.6) { o.gone = true; o.car.crew = true; return; }
+        if (o.back && ride && d < 2.6) { o.gone = true; o.car.crew = true; if (o.door) o.car.open(o.door, false); return; }
         if (!o.back && this.heat > 0 && !me.air) {
           const reach = me.car ? me.car.spec.L / 2 + 1 : 1.1;
-          if (toMe < reach && (!me.car || me.speed < 2)) this.onBusted();
+          if ((toMe < reach || door < 0.8) && (!me.car || me.speed < 2)) this.onBusted(o);
         }
       }
     }

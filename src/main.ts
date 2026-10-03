@@ -15,6 +15,7 @@ import { Bags } from './bags.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
 import type { Pedestrian } from './people.ts';
 import { GetIn } from './getin.ts';
+import { Arrest } from './arrest.ts';
 import { loadFootfall } from './footfall.ts';
 import { Trams, loadTrams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
@@ -59,6 +60,7 @@ import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
 import { Police } from './police.ts';
+import type { Officer } from './police.ts';
 import { Brigade } from './brigade.ts';
 import { Ambulances } from './ambulance.ts';
 import { Tracers, Health, MAX_HEALTH } from './guns.ts';
@@ -530,17 +532,20 @@ async function main() {
   // Busted: out of the car (the police keep it), and a moment before you can move again.
   const stats = { knocked: 0, wrecked: 0, busted: 0, wasted: 0 };
   let frozen = 0;
-  const busted = () => {
+  const busted = (by?: Officer) => {
     if (frozen > 0) return;
+    getIn.cancel();
     if (inHeli) enterOrExit();
+    // Out of a car through its door, an officer's hand on your collar; off a bike at once.
+    let car: Car | null = null;
     if (inCar) {
-      const c = inCar;
-      enterOrExit();
-      loose.splice(loose.indexOf(c), 1);
+      kept = inCar;
+      if (inCar.two) enterOrExit();
+      else {
+        car = inCar;
+        Object.assign(walker, { x: car.x, y: car.y, _tx: car.x, _ty: car.y, level: world.track(car), gz: car.gz });
+      }
     }
-    // Three stars or more: the prison in Pankrác (if the map reaches that far), else the station in Bartolomějská.
-    const inMap = (lon: number, lat: number) => lon > w0 && lon < e0 && lat > s0 && lat < n0;
-    const cell = police.stars >= 3 && inMap(14.43747, 50.05786) ? [14.43747, 50.05786] : [14.41636, 50.08256];
     inspector.reset();
     let text = t('Busted');
     if (inspector.owed) {
@@ -549,31 +554,35 @@ async function main() {
     }
     stats.busted++;
     telemetry.did('arrested');
-    // Not a jump: the banner comes up while the officers stand round you, then the screen
-    // fades out, you're taken to the station, and it fades back in.
-    frozen = 3.2;
-    arrest = { t: 0, cell: inMap(cell[0], cell[1]) ? cell : null, taken: false };
+    // Not a jump: the banner comes up as the handcuffs go on, you're walked to the police
+    // car, the screen fades out, you're taken to the station, and it fades back in.
+    frozen = Infinity;
+    arrest.begin(by ?? null, car);
     showBanner(text, true);
   };
-  let arrest: { t: number; cell: number[] | null; taken: boolean } | null = null;
-  const stepArrest = (dt: number) => {
-    if (!arrest) return;
-    const a = arrest;
-    a.t += dt;
-    if (a.t > 1.3 && !a.taken) {
-      $('fade').classList.add('on');
-      if (a.t > 2.1) {
-        a.taken = true;
-        police.forgive();
-        clock.advance((3 + seeded() * 5) * 3600); // hours in a cell
-        if (a.cell) {
-          const [cx, cy] = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, a.cell);
-          void teleportTo(cx, cy);
-        }
+  // What you were driving when you were caught: gone when you come out.
+  let kept: Car | null = null;
+  const arrest = new Arrest({
+    walker,
+    hold: (on) => { police.arresting = on; },
+    leave: (car, at) => leaveCar(car, at),
+    fade: (on) => $('fade').classList.toggle('on', on),
+    taken: () => {
+      // Three stars or more: the prison in Pankrác (if the map reaches that far), else the station in Bartolomějská.
+      const inMap = (lon: number, lat: number) => lon > w0 && lon < e0 && lat > s0 && lat < n0;
+      const cell = police.stars >= 3 && inMap(14.43747, 50.05786) ? [14.43747, 50.05786] : [14.41636, 50.08256];
+      if (kept && loose.includes(kept)) loose.splice(loose.indexOf(kept), 1);
+      kept = null;
+      police.forgive();
+      clock.advance((3 + seeded() * 5) * 3600); // hours in a cell
+      if (inMap(cell[0], cell[1])) {
+        const [cx, cy] = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, cell);
+        void teleportTo(cx, cy);
       }
-    }
-    if (a.taken && a.t > 2.7) { $('fade').classList.remove('on'); arrest = null; }
-  };
+    },
+    done: () => { frozen = 0.3; },
+  });
+  const stepArrest = (dt: number) => arrest.update(dt);
   // Wasted: you drop where you are, and a few seconds later you come round outside the
   // nearest hospital, patched up and no longer wanted.
   const health = new Health(), tracers = new Tracers(scene);
@@ -1094,7 +1103,7 @@ async function main() {
     };
   };
   const autosave = () => {
-    if (playing && saving && wastedT <= 0 && !arrest && !health.dead && !inHeli) writeSave('auto', capture());
+    if (playing && saving && wastedT <= 0 && !arrest.active && !health.dead && !inHeli) writeSave('auto', capture());
   };
   window.addEventListener('pagehide', autosave);
   document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
@@ -1433,7 +1442,7 @@ async function main() {
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
-    } else if (!scripted && !inHeli && !ride.on && !boats.me && !funicular.me && !taxi.riding) walker.update(dt, ctl);
+    } else if (!scripted && !arrest.active && !inHeli && !ride.on && !boats.me && !funicular.me && !taxi.riding) walker.update(dt, ctl);
     // In the helicopter Space climbs and Shift comes down.
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
     for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null);
@@ -1681,7 +1690,7 @@ async function main() {
         }
       });
     }
-    if (!inCar && !inHeli && !ride.on && !getIn.active) {
+    if (!inCar && !inHeli && !ride.on && !getIn.active && !arrest.active) {
       offTrams(walker, 0.35, (x, y) => !walker.blocked(x, y), (vx, vy) => {
         if (walker.down <= 0) { walker.knock(vx, vy); hurt(Math.hypot(vx, vy) * 2.5); shake = 0.8; }
       });
@@ -2217,7 +2226,7 @@ async function main() {
     toLocal: dev.toLocal, toLonLat: dev.toLonLat, teleport: teleportTo,
     me: () => inCar || inHeli || walker, car: () => inCar, heli: () => inHeli,
     mode: () => (inCar ? 'car' : inHeli ? 'helicopter' : ride.on ? 'tram' : taxi.riding ? 'taxi' : boats.me ? 'boat' : funicular.me ? 'funicular' : metro.active ? 'metro' : 'foot'),
-    street: () => street, enterOrExit, interact,
+    street: () => street, enterOrExit, interact, arrest,
     addCar: (c) => { loose.push(c); restingStale = true; },
     loose,
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),

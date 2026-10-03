@@ -12,7 +12,8 @@ import type { Point2 } from './map/geo.ts';
 
 const JOG = 4.2; // m/s to the door
 const GIVE_UP = 4; // seconds to reach a door before letting it go
-const OPEN = 0.2, PULL = 0.62, SIT = 0.5, OUT_OPEN = 0.16, RISE = 0.42; // seconds
+const OPEN = 0.2, PULL = 0.62, OUT_OPEN = 0.16; // seconds
+export const SIT = 0.5, RISE = 0.42;
 
 interface Hooks {
   walker: Walker;
@@ -30,7 +31,31 @@ type Play =
   | { kind: 'out'; car: Car; door: Door; phase: 'open' | 'rise'; t: number };
 
 const ease = (u: number) => u * u * (3 - 2 * u);
-const turn = (from: number, to: number, u: number) => from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * u;
+export const turn = (from: number, to: number, u: number) => from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * u;
+
+// Ducking into a seat from where you stood (`from`, facing `h0`), `u` of the way there
+// (0 to 1), with the getin clip playing. People are drawn bigger than life, and inside a
+// car they wouldn't fit: they come down to its size on the way in.
+export function ducking(w: Walker, car: Car, door: Door, from: Point2, h0: number, u: number) {
+  const e = ease(u), [sx, sy] = car.seat(door);
+  w.x = from[0] + (sx - from[0]) * e;
+  w.y = from[1] + (sy - from[1]) * e;
+  w.h = turn(h0, car.h, e);
+  const size = SCALE + (1 - SCALE) * ease(Math.max(0, (u - 0.25) / 0.75));
+  w.base.makeScale(size, size, size);
+}
+
+// And out of it again, to beside the door: the getin clip backwards.
+export function rising(w: Walker, car: Car, door: Door, u: number) {
+  const e = ease(u), [sx, sy] = car.seat(door), [bx, by] = car.beside(door);
+  w.x = sx + (bx - sx) * e;
+  w.y = sy + (by - sy) * e;
+  w.h = car.h;
+  w.z = w.speed = w.vx = w.vy = 0;
+  const size = 1 + (SCALE - 1) * ease(Math.min(1, u / 0.75));
+  w.base.makeScale(size, size, size);
+  w.anim.t = w.anim.duration * (1 - u);
+}
 
 export class GetIn {
   o: Hooks;
@@ -149,13 +174,8 @@ export class GetIn {
         a.play('getin', true, 0.1);
       }
     } else {
-      const u = Math.min(1, p.t / SIT), e = ease(u), [sx, sy] = car.seat(door);
-      w.x = p.from[0] + (sx - p.from[0]) * e;
-      w.y = p.from[1] + (sy - p.from[1]) * e;
-      w.h = turn(p.h0, car.h, e);
-      // (People are drawn bigger than life; inside the car they wouldn't fit.)
-      const size = SCALE + (1 - SCALE) * ease(Math.max(0, (u - 0.25) / 0.75));
-      w.base.makeScale(size, size, size);
+      const u = Math.min(1, p.t / SIT);
+      ducking(w, car, door, p.from, p.h0, u);
       a.step(dt, a.duration / SIT);
       if (u >= 1) {
         this.play = null;
@@ -177,15 +197,8 @@ export class GetIn {
       this.o.left(car, car.seat(door));
       a.play('getin', true, 0);
     }
-    const u = Math.min(1, p.t / RISE), e = ease(u), [sx, sy] = car.seat(door), [bx, by] = car.beside(door);
-    w.x = sx + (bx - sx) * e;
-    w.y = sy + (by - sy) * e;
-    w.h = car.h;
-    w.z = w.speed = w.vx = w.vy = 0;
-    const size = 1 + (SCALE - 1) * ease(Math.min(1, u / 0.75));
-    w.base.makeScale(size, size, size);
-    // The getting-in, backwards.
-    a.t = a.duration * (1 - u);
+    const u = Math.min(1, p.t / RISE);
+    rising(w, car, door, u);
     if (u >= 1) {
       this.play = null;
       w.base.makeScale(SCALE, SCALE, SCALE);
