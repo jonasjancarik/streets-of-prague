@@ -14,6 +14,7 @@ import { PavementDrivers } from './pavement.ts';
 import { Bags } from './bags.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
 import type { Pedestrian } from './people.ts';
+import { GetIn } from './getin.ts';
 import { loadFootfall } from './footfall.ts';
 import { Trams, loadTrams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
@@ -703,7 +704,61 @@ async function main() {
     crowd.scare(f.x + Math.cos(h) * reach, f.y + Math.sin(h) * reach, ride.driving ? 10 : 8);
   };
   const pressB = () => { if (inspector.phase === 'decide') inspector.pay(); else buyTicket(); };
-  const enterOrExit = () => {
+  // Out of the car you're driving, to `at` (or beside it, wherever there's room).
+  const leaveCar = (c: Car, at?: Point2) => {
+    const lx = -Math.sin(c.h), ly = Math.cos(c.h);
+    Object.assign(walker, { x: c.x, y: c.y, _tx: c.x, _ty: c.y, level: world.track(c), gz: c.gz });
+    let spot = at ?? null;
+    for (const s of spot ? [] : [1, -1]) {
+      const x = c.x + lx * s * (c.spec.W / 2 + 0.8), y = c.y + ly * s * (c.spec.W / 2 + 0.8);
+      if (!walker.blocked(x, y)) { spot = [x, y]; break; }
+    }
+    [walker.x, walker.y] = spot || (walker.level ? [c.x, c.y] : nearestWalkable(grid, c.x, c.y));
+    walker.h = c.h;
+    c.mode = 'loose';
+    c.rider = null;
+    c.setBox(); // (the bag you carry goes back on your back)
+    loose.push(c);
+    if (c.share) {
+      bikeShare.charge(clock.t, (n) => wallet.take(n, 'shared bike'));
+      const done = bikeShare.leave(c, clock.t);
+      if (done) showBanner(t('{name}: returned after {minutes} min, {price} in all', { name: done.system.name, minutes: String(Math.max(1, Math.round(done.seconds / 60))), price: kc(done.paid) }));
+    }
+    inCar = null;
+    walker.mesh.visible = true;
+    walker.sync();
+  };
+  // Into the seat: the car is yours to drive.
+  const takeSeat = (best: Car) => {
+    if (loose.includes(best)) {
+      loose.splice(loose.indexOf(best), 1);
+      tileCars.delete(best); // it's yours now: it stays when its tile unloads
+    }
+    best.mode = 'player';
+    // (A car taken from its driver also counts as the crime, in police.ts.)
+    telemetry.did(`drove: ${VEHICLE_NAMES[best.type]?.toLowerCase() ?? 'car'}`);
+    if (best.share) telemetry.did('rented a shared bike');
+    inCar = best;
+    if (best.variant) showBanner(variantName(best.variant), false, true); // always the small card, so it sits the same under a district title
+    walker.perch = 0;
+    walker.mesh.visible = false;
+  };
+  // Whoever was driving the car you're taking, waiting for the door to open on them.
+  let evicting: ((pulled: boolean) => void) | null = null;
+  const getIn = new GetIn({
+    walker,
+    evict: (_car, pulled) => { evicting?.(pulled); evicting = null; },
+    seated: (car) => { evicting?.(false); evicting = null; takeSeat(car); },
+    left: (car, at) => leaveCar(car, at),
+  });
+  // `quick`: at once, as the game's own moves and the tests want it. The player's key
+  // (`interact`) goes through the car's door instead, when there is one to use.
+  const enterOrExit = (quick = true) => {
+    if (getIn.active) {
+      if (!quick && getIn.walking) getIn.cancel();
+      if (!quick) return;
+      getIn.cancel();
+    }
     // In a taxi: out here, and into the one waiting for you.
     if (taxi.riding) { taxi.leave(); return; }
     if (!inCar && !inHeli && !ride.on && !boats.me && !funicular.me && taxi.enter()) return;
@@ -766,28 +821,12 @@ async function main() {
       }
     }
     if (inCar) {
-      const c = inCar, lx = -Math.sin(c.h), ly = Math.cos(c.h);
+      const c = inCar;
       // Out onto what the car is on (a bridge's deck, not the ground under it).
       Object.assign(walker, { x: c.x, y: c.y, _tx: c.x, _ty: c.y, level: world.track(c), gz: c.gz });
-      let spot = null;
-      for (const s of [1, -1]) {
-        const x = c.x + lx * s * (c.spec.W / 2 + 0.8), y = c.y + ly * s * (c.spec.W / 2 + 0.8);
-        if (!walker.blocked(x, y)) { spot = [x, y]; break; }
-      }
-      [walker.x, walker.y] = spot || (walker.level ? [c.x, c.y] : nearestWalkable(grid, c.x, c.y));
-      walker.h = c.h;
-      c.mode = 'loose';
-      c.rider = null;
-      c.setBox(); // (the bag you carry goes back on your back)
-      loose.push(c);
-      if (c.share) {
-        bikeShare.charge(clock.t, (n) => wallet.take(n, 'shared bike'));
-        const done = bikeShare.leave(c, clock.t);
-        if (done) showBanner(t('{name}: returned after {minutes} min, {price} in all', { name: done.system.name, minutes: String(Math.max(1, Math.round(done.seconds / 60))), price: kc(done.paid) }));
-      }
-      inCar = null;
-      walker.mesh.visible = true;
-      walker.sync();
+      // Through the door (leaveCar follows, once it's open), or straight out.
+      if (!quick && getIn.exit(c)) return;
+      leaveCar(c);
       return;
     }
     const boat = boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch);
@@ -848,51 +887,62 @@ async function main() {
     if (best.share) bikeShare.charge(clock.t, (n) => wallet.take(n, 'shared bike'));
     const agent = traffic.agents.find((a) => a.car === best);
     const box = best.courier;
+    // A car is got into through a door, when you can get to one.
+    const door = quick || best.two ? null : getIn.door(best);
     // A police car: the officer in it gets out and comes after you.
     const cop = best.type === 'police';
     if (cop) police.take(best);
     const engine = brigade.take(best) || ambulances.take(best);
     if (engine) police.crime('carjack', best.x, best.y);
-    if (agent) {
-      traffic.release(agent);
-      if (!cop) {
-        // The driver gets out and runs off. A rider is pushed off on the side away
-        // from you (the other side if there's a wall there), knocked down if the bike
-        // was going, and runs off once up again.
-        let lx = -Math.sin(best.h), ly = Math.cos(best.h), off = 1.6;
-        if (best.two) {
-          off = best.spec.W / 2 + 0.5;
-          if ((walker.x - best.x) * lx + (walker.y - best.y) * ly > 0) { lx = -lx; ly = -ly; }
-          if (walker.blocked(best.x + lx * off, best.y + ly * off)) { lx = -lx; ly = -ly; }
-        }
-        const p = crowd.spawnAt(best.x + lx * off, best.y + ly * off, best.rider || undefined);
-        // A courier leaves the bag behind, on the ground by the bike.
-        if (box) bags.drop(best.x + lx * (best.spec.W / 2 + 0.35) - Math.cos(best.h) * 0.4, best.y + ly * (best.spec.W / 2 + 0.35) - Math.sin(best.h) * 0.4, box, best.h);
-        if (best.two && best.speed > 2) {
-          crowd.knock(p, best.vx * 0.7 + lx * 2, best.vy * 0.7 + ly * 2);
-          p.then = [lx * 5, ly * 5];
-        } else Object.assign(p, { state: 'flee', t: 2, vx: lx * 5, vy: ly * 5 });
-        police.crime('carjack', best.x, best.y);
+    if (agent) traffic.release(agent);
+    // The driver leaves the car and runs off: pulled out through their door by you (and
+    // left on the ground beside it for a moment), or out by themselves. A rider is pushed
+    // off on the side away from you (the other side if there's a wall there), knocked
+    // down if the bike was going, and runs off once up again.
+    const evict = (pulled: boolean) => {
+      const car = best!, own = car.doors[0];
+      let lx = -Math.sin(car.h), ly = Math.cos(car.h), off = 1.6, back = 0;
+      if (car.two) {
+        off = car.spec.W / 2 + 0.5;
+        if ((walker.x - car.x) * lx + (walker.y - car.y) * ly > 0) { lx = -lx; ly = -ly; }
+        if (walker.blocked(car.x + lx * off, car.y + ly * off)) { lx = -lx; ly = -ly; }
+      } else if (door && own) {
+        // Out of the driver's door: behind you if you pulled them, where you'd stand otherwise.
+        off = car.spec.W / 2 + (pulled ? 1.25 : 0.6);
+        back = (own.front + own.back) / 2 - (pulled ? 1.3 : 0.25);
       }
-    } else if (loose.includes(best)) {
-      loose.splice(loose.indexOf(best), 1);
-      tileCars.delete(best); // it's yours now: it stays when its tile unloads
+      const fx = Math.cos(car.h), fy = Math.sin(car.h);
+      const p = crowd.spawnAt(car.x + lx * off + fx * back, car.y + ly * off + fy * back, car.rider || undefined);
+      // A courier leaves the bag behind, on the ground by the bike.
+      if (box) bags.drop(car.x + lx * (car.spec.W / 2 + 0.35) - fx * 0.4, car.y + ly * (car.spec.W / 2 + 0.35) - fy * 0.4, box, car.h);
+      if (car.two && car.speed > 2) {
+        crowd.knock(p, car.vx * 0.7 + lx * 2, car.vy * 0.7 + ly * 2);
+        p.then = [lx * 5, ly * 5];
+      } else if (pulled) {
+        crowd.knock(p, lx * 2.2 - fx * 1.6, ly * 2.2 - fy * 1.6);
+        p.then = [lx * 4 - fx * 3, ly * 4 - fy * 3];
+      } else Object.assign(p, { state: 'flee', t: 2, vx: lx * 5, vy: ly * 5 });
+      police.crime('carjack', car.x, car.y);
+    };
+    const driver = !!agent && !cop;
+    if (door) {
+      // The car waits where it is (its driver still in it) until you're at the door.
+      if (!loose.includes(best)) loose.push(best);
+      best.mode = 'loose';
+      evicting = driver ? evict : null;
+      getIn.enter(best, door, driver);
+      return;
     }
-    best.mode = 'player';
-    // (A car taken from its driver also counts as the crime, in police.ts.)
-    telemetry.did(`drove: ${VEHICLE_NAMES[best.type]?.toLowerCase() ?? 'car'}`);
-    if (best.share) telemetry.did('rented a shared bike');
+    if (driver) evict(false);
     if (best.two) {
       best.rider = walker.look;
       // A box already on it (a parked courier's bike): its bag is yours now. Carrying one, it rides the bike.
       if (box && !agent && !bags.carried) bags.carry(box);
       best.setBox(bags.carried ?? undefined);
     }
-    inCar = best;
-    if (best.variant) showBanner(variantName(best.variant), false, true); // always the small card, so it sits the same under a district title
-    walker.perch = 0;
-    walker.mesh.visible = false;
+    takeSeat(best);
   };
+  const interact = () => enterOrExit(false);
 
   // A hard knock on a bike or motorbike throws you off it.
   const throwOff = () => {
@@ -1104,7 +1154,7 @@ async function main() {
     if (taxi.key(e.code, !inCar && !inHeli && !ride.on && !boats.me && !funicular.me)) { e.preventDefault(); return; }
     if (keymap[e.code]) { input[keymap[e.code]] = true; e.preventDefault(); }
     if (e.shiftKey) input.run = true;
-    if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) enterOrExit();
+    if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) interact();
     if (e.code === 'KeyB' && !e.repeat) pressB();
     const pick = /^Digit([1-4])$/.exec(e.code);
     if (pick && !e.repeat && inspector.phase !== 'decide') buyTicket(TICKETS[Number(pick[1]) - 1]);
@@ -1146,7 +1196,7 @@ async function main() {
     else zoomBy(f);
   }, { passive: true });
   $('t-ticket').addEventListener('click', pressB);
-  const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, doors: () => ride.doors(), jump: () => {
+  const touch = setupTouch({ action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, doors: () => ride.doors(), jump: () => {
     if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !taxi.riding) { input.jump = true; telemetry.did('jumped'); }
   }, force: params.has('touch') });
   Object.assign(padHooks, { settings: () => settingsPanel.show(), menu: () => metro.active || dialog.active, zoomBy });
@@ -1365,6 +1415,13 @@ async function main() {
     health.update(dt);
     if (wastedT > 0 && (wastedT -= dt) <= 0) comeRound();
     assisted = false;
+    // Getting in or out through a door: the figure is moved for you, the car held still.
+    const scripted = getIn.active;
+    if (scripted) {
+      Object.assign(ctl, { move: 0, turn: 0, aim: null, run: false, brake: true });
+      if (walker.down > 0) getIn.cancel();
+      else getIn.update(dt);
+    }
     if (inCar) {
       let steer = ctl.aim ? steerToward(inCar, ctl.aim.h, ctl.move) : ctl.turn;
       if (ctl.run) {
@@ -1376,7 +1433,7 @@ async function main() {
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
-    } else if (!inHeli && !ride.on && !boats.me && !funicular.me && !taxi.riding) walker.update(dt, ctl);
+    } else if (!scripted && !inHeli && !ride.on && !boats.me && !funicular.me && !taxi.riding) walker.update(dt, ctl);
     // In the helicopter Space climbs and Shift comes down.
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
     for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null);
@@ -1624,7 +1681,7 @@ async function main() {
         }
       });
     }
-    if (!inCar && !inHeli && !ride.on) {
+    if (!inCar && !inHeli && !ride.on && !getIn.active) {
       offTrams(walker, 0.35, (x, y) => !walker.blocked(x, y), (vx, vy) => {
         if (walker.down <= 0) { walker.knock(vx, vy); hurt(Math.hypot(vx, vy) * 2.5); shake = 0.8; }
       });
@@ -2160,7 +2217,7 @@ async function main() {
     toLocal: dev.toLocal, toLonLat: dev.toLonLat, teleport: teleportTo,
     me: () => inCar || inHeli || walker, car: () => inCar, heli: () => inHeli,
     mode: () => (inCar ? 'car' : inHeli ? 'helicopter' : ride.on ? 'tram' : taxi.riding ? 'taxi' : boats.me ? 'boat' : funicular.me ? 'funicular' : metro.active ? 'metro' : 'foot'),
-    street: () => street, enterOrExit,
+    street: () => street, enterOrExit, interact,
     addCar: (c) => { loose.push(c); restingStale = true; },
     loose,
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),

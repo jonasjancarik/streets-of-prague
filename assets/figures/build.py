@@ -489,6 +489,20 @@ def reach(D, t, side, grip, foot_at, knee_pole, elbow_pole, foot_dir):
     aim(D, W, f"forearm.{side}", f"upper_arm.{side}", g - elbow)
 
 
+def hand(D, t, side, at, pole=(-0.3, 1, -0.4)):
+    """An arm from its shoulder to where the wrist should be (`at` relative to the hips
+    as they stand, so the hands go with the body), the elbow bent towards `pole`. Both
+    are given for the left arm, and mirrored for the right."""
+    s = 1 if side == "L" else -1
+    W = fk(D, t)
+    shoulder = W["spine"] @ BONES[f"upper_arm.{side}"][0]
+    g = W["hips"] @ (Vector(at) * Vector((1, s, 1)))
+    elbow = two_bone(shoulder, g, (ELBOW - SHOULDER).length, (WRIST - ELBOW).length, Vector(pole) * Vector((1, s, 1)))
+    aim(D, W, f"upper_arm.{side}", "spine", elbow - shoulder)
+    W = fk(D, t)
+    aim(D, W, f"forearm.{side}", f"upper_arm.{side}", g - elbow)
+
+
 def lerp_pose(a, b, u):
     out = {}
     for k in set(a) | set(b):
@@ -749,6 +763,82 @@ def ride_moto(frames=48):
     return out
 
 
+# ---- Cars and arrests -------------------------------------------------------
+#
+# Getting into a car: a duck under the roof and down onto the seat (the game slides the
+# figure sideways through the door meanwhile, and plays this backwards for getting out).
+
+
+def getin():
+    duck = {"t": (0, 0, -0.2), "pitch": 0.25, "spine": 0.4, "head": 0.3, "thigh": 0.75, "knee": 1.0, "arm": 0.6, "elbow": 0.7, "out": 0.12}
+    sat = {"t": (-0.06, 0, -0.5), "pitch": -0.12, "spine": 0.3, "head": 0.05, "thigh": 1.45, "knee": 1.4, "arm": 0.95, "elbow": 0.5, "out": 0.1}
+    return keyed([(0, STAND), (5, duck), (12, sat), (13, sat)], 14)
+
+
+def pull():
+    """Hauling someone out of a seat: a reach in with both arms, then a heave back and round."""
+    reach_in = {"t": (0.08, 0, -0.08), "pitch": 0.15, "spine": 0.45, "head": -0.1, "arm": 1.25, "elbow": 0.25, "out": 0.12,
+                "thighL": 0.45, "kneeL": 0.5, "thighR": -0.2, "kneeR": 0.1}
+    heave = {"t": (-0.14, 0, -0.05), "pitch": -0.12, "spine": -0.05, "twist": 0.75, "look": -0.3, "arm": 0.7, "elbow": 1.35, "out": 0.2,
+             "thighL": 0.1, "kneeL": 0.2, "thighR": -0.3, "kneeR": 0.35}
+    return keyed([(0, STAND), (4, reach_in), (6, reach_in), (11, heave), (16, STAND), (17, STAND)], 18)
+
+
+# Upper arms out level with the shoulders, forearms straight up.
+HANDS_UP = {"out": 1.4, "arm": 1.45, "elbow": 1.3, "head": -0.06, "spine": -0.03}
+
+
+def hands_up():
+    return keyed([(0, STAND), (7, HANDS_UP), (8, HANDS_UP)], 9)
+
+
+# Wrists together behind the back, head down.
+BEHIND = (-0.17, 0.055, 0.985)
+BEHIND_POLE = (-0.5, 1, 0.3)
+
+
+def cuffed():
+    out = []
+    for _ in range(2):
+        D, t = pose({"spine": 0.12, "head": 0.28, "pitch": 0.03})
+        for side in ("L", "R"):
+            hand(D, t, side, BEHIND, BEHIND_POLE)
+        out.append((D, t))
+    return out
+
+
+def cuffed_walk():
+    """Led away: the walk, a little bowed, with the hands held behind the back."""
+    out = []
+    for D, t in gait(GAITS["walk"]):
+        D["head"] = Ry(0.28) @ D["head"]
+        for side in ("L", "R"):
+            hand(D, t, side, BEHIND, BEHIND_POLE)
+        out.append((D, t))
+    return out
+
+
+def escort():
+    """The officer leading them: the walk, the right hand on the arm of whoever walks ahead."""
+    out = []
+    for D, t in gait(GAITS["walk"]):
+        hand(D, t, "R", (0.4, 0.1, 1.2), (0, 1, -1))
+        out.append((D, t))
+    return out
+
+
+def cuff(frames=16):
+    """The officer putting the handcuffs on: bent to it, both hands working at the wrists in front."""
+    out = []
+    for f in range(frames):
+        a = 2 * math.pi * f / frames
+        D, t = pose({"spine": 0.3, "pitch": 0.08, "head": 0.3, "t": (0, 0, -0.03), "thighL": 0.25, "kneeL": 0.3, "thighR": -0.15, "kneeR": 0.12})
+        hand(D, t, "L", (0.36 + 0.02 * math.sin(a), 0.07, 1.03 + 0.03 * math.cos(a)), (0, 1, -1))
+        hand(D, t, "R", (0.36 - 0.02 * math.sin(a), 0.07, 1.03 - 0.03 * math.cos(a)), (0, 1, -1))
+        out.append((D, t))
+    return out
+
+
 CLIPS = {
     "idle": (idle(), True),
     "walk": (gait(GAITS["walk"]), True),
@@ -759,6 +849,13 @@ CLIPS = {
     "getup": (getup(), False),
     "bike": (ride_bike(), True),
     "moto": (ride_moto(), True),
+    "getin": (getin(), False),
+    "pull": (pull(), False),
+    "handsup": (hands_up(), False),
+    "cuffed": (cuffed(), False),
+    "cuffedwalk": (cuffed_walk(), True),
+    "escort": (escort(), True),
+    "cuff": (cuff(), True),
 }
 
 

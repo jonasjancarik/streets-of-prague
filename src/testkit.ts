@@ -53,6 +53,7 @@ interface Game {
   mode: () => string;
   street: () => string | null;
   enterOrExit: () => void;
+  interact: () => void;
   addCar: (c: Car) => void;
   loose: Car[];
   simulate: (dt: number, ctl?: Partial<Controls>) => void;
@@ -198,6 +199,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // E, on foot: get in, pick up, put down.
     interact() { g.enterOrExit(); },
+    // E as the player presses it: into and out of a car through its door, which takes a
+    // moment (t.wait for it).
+    press() { g.interact(); },
 
     set({ money, stars, health }: { money?: number; stars?: number; health?: number }) {
       if (money !== undefined) g.wallet.balance = Math.max(0, Math.floor(money));

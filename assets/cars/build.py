@@ -338,9 +338,9 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
         xb, xc, xd = xa - 0.78, -n + 0.3, -n + 0.1
     xm = (xa + xd) / 2 + 0.1
     wheels = (n - 0.82, -n + 0.8)
-    # The rear doors end where the wheel arch begins; a window going on behind that
-    # (a hatchback's, an estate's) gets a pillar there.
-    xq = wheels[1] + r + 0.09
+    # The rear doors end over the wheel, their bottom edge following its arch; a window
+    # going on behind that (a hatchback's, an estate's) gets a pillar there.
+    xq = max(wheels[1] + 0.05, xm - 0.95)
     back = max(xd + 0.05, -n + 0.3)
     c.body(stations, wheels, r, stripe=stripe, bonnet_band=(n - 1.0, n - 0.55) if stripe else None,
            doors=[(xa, xm, 1), (xm, xq, 3)], cabin=(xa, back))
