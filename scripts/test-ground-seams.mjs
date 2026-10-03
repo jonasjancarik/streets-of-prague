@@ -99,3 +99,30 @@ test('horizontal neighbouring tiles use the same curved edge profile',()=>{
   const a=edges(make([0,0,8,8],swap(leftPolys)),8,false),b=edges(make([0,8,8,16],swap(rightPolys)),8,false);
   for(let x=.173;x<8;x+=.193)assert.ok(Math.abs(height(a,x)-height(b,x))<1e-6,`horizontal seam at ${x}`);
 });
+test('fractional large normal coordinates share stations when their uploads coincide',()=>{
+  for(const normal of[10008.37,-10008.37])for(const vertical of[true,false]) {
+    const near=normal-.00005;
+    assert.equal(Math.fround(near),Math.fround(normal));
+    const box=vertical?[normal-8,0,normal,8]:[0,normal-8,8,normal];
+    const poly=vertical?[[[[normal-8,0],[near,0],[near,8],[normal-8,8]]]]:[[[[0,normal-8],[8,normal-8],[8,near],[0,near]]]];
+    const raw=(x,y)=>.1*(vertical?y:x)**2;
+    const layers=groundLayers({areas:{dtm_yard:poly},roads:{},rails:[]},{box,height:raw}).layers;
+    const base=layers.find(l=>l.base).geometry,yard=layers.find(l=>l.pattern==='concrete'&&!l.wall).geometry;
+    const a=edges(base,normal,vertical),b=edges(yard,normal,vertical);
+    assert.deepEqual(a.map(e=>[e.y0,e.y1]),b.map(e=>[e.y0,e.y1]));
+    for(let u=.173;u<8;u+=.193)assert.ok(Math.abs(height(a,u)-height(b,u))<1e-6,`normal ${normal}, vertical ${vertical}, u=${u}`);
+  }
+});
+test('uploaded-normal classification preserves side and alpha and leaves other buckets alone',()=>{
+  const normal=10008.37,near=normal-.00005,box=[normal-8,0,normal,8];
+  const pos=[normal-8,0,0,near,0,0,normal-8,0,-8,near,0,-8],side=[2,2,2,2],alpha=[0,0,8,8];
+  const out=conformTerrainEdges(pos,[0,1,2,1,3,2],alpha,side,box,2);
+  assert.ok(out.side.every(s=>s===2));out.extra.forEach((a,i)=>assert.ok(Math.abs(a+out.pos[i*3+2])<1e-7));
+  const raw=(x,y,s)=>.1*y*y+(s?7:0),h=edgeHeightSampler(raw,box,2);
+  for(const s of[0,2,3])assert.equal(h(near,3.1,s),h(normal,3.1,s));
+  const inside=normal-.005;
+  assert.notEqual(Math.fround(inside),Math.fround(normal));
+  assert.equal(h(inside,3.1,2),raw(inside,3.1,2));
+  const plain=conformTerrainEdges([inside-1,0,-2,inside,0,-2,inside,0,-6],[0,1,2],null,null,box,2);
+  assert.equal(plain.pos.length,9);assert.deepEqual(plain.idx,[0,1,2]);
+});

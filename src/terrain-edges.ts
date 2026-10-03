@@ -4,12 +4,15 @@ import type { Bounds } from './map/geo.ts';
 
 type HeightAt = (x: number, y: number, side?: number | boolean) => number;
 const EPS = 1e-7;
+const sameUploadedNormal = (a: number, b: number, normal: number) => Math.fround(a) === Math.fround(normal) && Math.fround(b) === Math.fround(normal);
 
 function edge(ax: number, ay: number, bx: number, by: number, [x0, y0, x1, y1]: Bounds) {
-  if (Math.abs(ax - x0) < EPS && Math.abs(bx - x0) < EPS) return { vertical: true, normal: x0, a: ay, b: by, lo: y0, hi: y1 };
-  if (Math.abs(ax - x1) < EPS && Math.abs(bx - x1) < EPS) return { vertical: true, normal: x1, a: ay, b: by, lo: y0, hi: y1 };
-  if (Math.abs(ay - y0) < EPS && Math.abs(by - y0) < EPS) return { vertical: false, normal: y0, a: ax, b: bx, lo: x0, hi: x1 };
-  if (Math.abs(ay - y1) < EPS && Math.abs(by - y1) < EPS) return { vertical: false, normal: y1, a: ax, b: bx, lo: x0, hi: x1 };
+  // Classify the normal coordinate that is actually uploaded. A slightly inset
+  // double can occupy the same Float32 edge as the exact perimeter coordinate.
+  if (sameUploadedNormal(ax, bx, x0)) return { vertical: true, normal: x0, a: ay, b: by, lo: y0, hi: y1 };
+  if (sameUploadedNormal(ax, bx, x1)) return { vertical: true, normal: x1, a: ay, b: by, lo: y0, hi: y1 };
+  if (sameUploadedNormal(ay, by, y0)) return { vertical: false, normal: y0, a: ax, b: bx, lo: x0, hi: x1 };
+  if (sameUploadedNormal(ay, by, y1)) return { vertical: false, normal: y1, a: ax, b: bx, lo: x0, hi: x1 };
   return null;
 }
 

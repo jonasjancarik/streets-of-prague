@@ -300,6 +300,24 @@ shader errors. Their target/eye/orientation records match exactly:
 updated views. The [reader file hashes](evidence/river-terrain/seam-fix/reader-files.json)
 identify this repair separately from the historical cutter evidence.
 
+### Uploaded normal-coordinate correction
+
+Review of `c752c41` found a remaining classification mismatch. A courtyard edge
+at x = 10008.36995 and the tile perimeter x = 10008.37 upload to the identical
+Float32 coordinate 10008.3701171875. The double-precision EPS test treated the
+courtyard as interior, skipping its stations and canonical profile. At y = 3.1,
+base and courtyard rendered at 1.06 and 2.48 m respectively.
+
+Edge detection now compares uploaded Float32 normal coordinates consistently for
+refinement and height sampling. The [same reproduction](evidence/river-terrain/normal-fix/after.log)
+has both surfaces at 1.06 m; the [before record](evidence/river-terrain/normal-fix/before.log)
+is retained. Other uploaded coordinate buckets remain interior. Two added checks
+cover fractional positive/negative normals, both axes, side and alpha preservation,
+and the unaffected-bucket control. All [23 geometry tests](evidence/river-terrain/normal-fix/tests.log)
+and [typechecking](evidence/river-terrain/normal-fix/typecheck.log) pass. This is a
+narrow correction to edge classification; no additional sampling or arrangement
+rule was introduced. [Source hashes](evidence/river-terrain/normal-fix/reader-files.json).
+
 ## Remaining checks
 
 The source, cutter, evidence preservation and shared-edge repair are separate

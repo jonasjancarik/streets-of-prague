@@ -55,6 +55,26 @@
     "bytes": 15697,
     "sha256": "69c91d03b3215cfa5211a50cf894cd811f922fa10bba7c6dee1b532dbacd8a57"
   },
+  "normal-fix/after.log": {
+    "bytes": 503,
+    "sha256": "751ad9b64b118894f1d11d6376e1eefcb36a6461bd733c1b97789eb56cc57bb9"
+  },
+  "normal-fix/before.log": {
+    "bytes": 336,
+    "sha256": "31f2c04693c3a209ca3afb34547881ead3566c8e6e194aa29a3ff3a9670eb46b"
+  },
+  "normal-fix/reader-files.json": {
+    "bytes": 348,
+    "sha256": "032e3f3f60d6a89b328d72a0e86ec72f469206b56b8c1672c5d13f2f82c453e9"
+  },
+  "normal-fix/tests.log": {
+    "bytes": 2232,
+    "sha256": "5656ab46529fcd25fa55ec68f740ae0bd6199ad12e6c1cf7e914ebcb8bd8d09d"
+  },
+  "normal-fix/typecheck.log": {
+    "bytes": 28,
+    "sha256": "dac125c794db702133345f3a0d33f3193f975fddc564ca4f1498b0d4132ed500"
+  },
   "pipeline-tests.log": {
     "bytes": 12098,
     "sha256": "cf3a15bc79a9b9b032fadb0a220dda63e33b99587293c120265b65b55e2d90f2"
