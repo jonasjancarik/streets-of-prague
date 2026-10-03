@@ -3,7 +3,7 @@ import { Car } from './car.ts';
 import { clamp } from './network.ts';
 import { Figures, Anim, SCALE } from './figures.ts';
 import { locomote, knocked } from './people.ts';
-import { along, pedals, steer } from './police.ts';
+import { along, pedals, steer, Heap } from './police.ts';
 import type { DriveEdge } from './network.ts';
 import type { CarGrid } from './car.ts';
 import type { Pedestrian } from './people.ts';
@@ -28,7 +28,8 @@ const CHASE = 25; // seconds the crew runs after someone who took their ambulanc
 const RUN_AFTER = 70; // m: and gives up when you're further than this
 const FAR = 900; // m: someone hurt further than this from you is left to get up on their own
 
-interface Medic { x: number; y: number; h: number; vx: number; vy: number; rig: Rig; fig: Figures; anim: Anim; down: number; spot: { x: number; y: number }; back: boolean; gone?: boolean; gz?: number; detour?: number; best: number; stuck: number; chase?: number }
+interface FootPoint { x: number; y: number }
+interface Medic { x: number; y: number; h: number; vx: number; vy: number; rig: Rig; fig: Figures; anim: Anim; down: number; spot: FootPoint; back: boolean; gone?: boolean; gz?: number; detour?: number; best: number; stuck: number; chase?: number; footGoal?: FootPoint; footPath?: FootPoint[]; footRetry?: number }
 interface Rig extends Follower { car: Car; patient: Pedestrian; phase: 'go' | 'work' | 'leave'; t: number; wrecked: boolean; crew: boolean; gone?: boolean; goal: { x: number; y: number }; astray?: boolean; mark: { x: number; y: number }; direct?: boolean; roads?: boolean; treated: number; done: number; load: number; carried: boolean }
 interface Call { patient: Pedestrian; t: number; roads?: boolean }
 interface AmbulanceOptions {
@@ -128,6 +129,7 @@ export class Ambulances {
   }
 
   knock(m: Medic, vx: number, vy: number) {
+    m.footPath = undefined;
     Object.assign(m, { down: 3, vx, vy, h: Math.atan2(vy, vx) + Math.PI });
     m.anim.play('fall', true, 0.08);
   }
@@ -183,6 +185,71 @@ export class Ambulances {
 
   inWay = (x: number, y: number, r: number, skip: Car | null) => !!this.blocked(x, y) || this.o.bodyAt(x, y, r, skip);
 
+  // A walking segment, with room for the medic. A car may already be pressing
+  // against them: let them step out of that overlap, but never through a wall.
+  footClear(a: FootPoint, b: FootPoint) {
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.25));
+    for (let i = 1; i <= n; i++) {
+      const x = a.x + (b.x - a.x) * i / n, y = a.y + (b.y - a.y) * i / n;
+      if (this.inWay(x, y, 0.4, null)) return false;
+    }
+    return true;
+  }
+
+  // Only after the usual steering gets stuck: a small local search around parked
+  // cars. Keep its waypoints until reached instead of turning back at every step.
+  footRoute(m: Medic, goal: FootPoint, reach = 0.5) {
+    const margin = 10, limit = 1600;
+    const gx = goal.x - m.x, gy = goal.y - m.y;
+    const minX = Math.floor(Math.min(0, gx)) - margin, maxX = Math.ceil(Math.max(0, gx)) + margin;
+    const minY = Math.floor(Math.min(0, gy)) - margin, maxY = Math.ceil(Math.max(0, gy)) + margin;
+    const heap = new Heap(), costs = new Map<string, number>([['0,0', 0]]), previous = new Map<string, string>();
+    const point = (key: string) => { const [x, y] = key.split(',').map(Number); return { x: m.x + x, y: m.y + y }; };
+    const visited = new Set<string>();
+    heap.push([Math.hypot(gx, gy), '0,0']);
+    for (let count = 0; heap.size && count < limit; count++) {
+      const [, key] = heap.pop();
+      if (visited.has(key)) continue;
+      visited.add(key);
+      const at = point(key), [x, y] = key.split(',').map(Number);
+      const gap = Math.hypot(at.x - goal.x, at.y - goal.y);
+      if (gap < reach || (gap <= 1.5 && this.footClear(at, goal))) {
+        const path = gap < reach ? [] : [goal];
+        for (let k = key; k !== '0,0'; k = previous.get(k)!) path.unshift(point(k));
+        return path;
+      }
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy, next = `${nx},${ny}`;
+        if (nx < minX || nx > maxX || ny < minY || ny > maxY || visited.has(next)) continue;
+        const cost = costs.get(key)! + Math.hypot(dx, dy);
+        if (cost >= (costs.get(next) ?? Infinity) || !this.footClear(at, point(next))) continue;
+        costs.set(next, cost); previous.set(next, key);
+        heap.push([cost + Math.hypot(nx - gx, ny - gy), next]);
+      }
+    }
+    return undefined;
+  }
+
+  walkTo(m: Medic, goal: FootPoint, speed: number, dt: number, reach = 0.5) {
+    if (!m.footGoal || Math.hypot(goal.x - m.footGoal.x, goal.y - m.footGoal.y) > 0.5) {
+      m.footGoal = { ...goal }; m.footPath = undefined; m.footRetry = 0; m.best = Infinity; m.stuck = 0;
+    }
+    const d = Math.hypot(goal.x - m.x, goal.y - m.y);
+    if (d < m.best - 0.3) { m.best = d; m.stuck = 0; } else if (d > 0.5) m.stuck += dt;
+    m.footRetry = Math.max(0, (m.footRetry ?? 0) - dt);
+    while (m.footPath?.length && Math.hypot(m.footPath[0].x - m.x, m.footPath[0].y - m.y) < 0.15) m.footPath.shift();
+    if (m.footPath?.length && !this.footClear(m, m.footPath[0])) m.footPath = undefined;
+    if (!m.footPath?.length && m.stuck > 2.5 && d <= 25 && !m.footRetry) {
+      m.footPath = this.footRoute(m, goal, reach); m.footRetry = 2;
+    }
+    const next = m.footPath?.[0];
+    if (next) {
+      const dx = next.x - m.x, dy = next.y - m.y, gap = Math.hypot(dx, dy), v = Math.min(speed, gap / dt);
+      m.h = Math.atan2(dy, dx); m.vx = Math.cos(m.h) * v; m.vy = Math.sin(m.h) * v;
+    } else steer(m, goal.x, goal.y, speed, this.inWay, m.rig.car, this.o.rng);
+  }
+
   walk(m: Medic, dt: number, me: { x: number; y: number }) {
     const { o } = this, r = m.rig, tp = r.patient;
     if (m.chase !== undefined && m.down <= 0) {
@@ -201,12 +268,10 @@ export class Ambulances {
       if (r.load && !m.back) {
         // Carrying the patient to the back of the ambulance, one at each end.
         const at = this.rear(r);
-        steer(m, at.x, at.y, WALK, this.inWay, r.car, o.rng);
+        this.walkTo(m, at, WALK, dt);
       } else if (attending) {
         const d = Math.hypot(m.spot.x - m.x, m.spot.y - m.y);
-        // How long they've got no nearer: a paramedic hemmed in by parked cars works from where they are.
-        if (d < m.best - 0.3) { m.best = d; m.stuck = 0; } else if (d > 0.5) m.stuck += dt;
-        if (d > 0.5) steer(m, m.spot.x, m.spot.y, d > 10 ? RUN : WALK * 1.6, this.inWay, r.car, o.rng);
+        if (d > 0.5) this.walkTo(m, m.spot, d > 10 ? RUN : WALK * 1.6, dt);
         else {
           m.vx = m.vy = 0;
           m.h = Math.atan2(tp.y - m.y, tp.x - m.x);
@@ -215,7 +280,9 @@ export class Ambulances {
         // Done (or the ambulance is gone): back to it, or away if it can't take them.
         m.back = true;
         const tx = ride ? r.car.x : 2 * m.x - tp.x, ty = ride ? r.car.y : 2 * m.y - tp.y;
-        steer(m, tx, ty, ride ? WALK * 1.6 : WALK, this.inWay, r.car, o.rng);
+        // A clear point within boarding distance is enough; the vehicle centre
+        // itself is occupied by its collision body.
+        this.walkTo(m, { x: tx, y: ty }, ride ? WALK * 1.6 : WALK, dt, ride ? 2.5 : 0.5);
         if (ride && Math.hypot(tx - m.x, ty - m.y) < 2.8) m.gone = true;
       }
     }
