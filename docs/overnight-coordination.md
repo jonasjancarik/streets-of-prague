@@ -83,3 +83,11 @@ Radotín Net.spread continuity repair remains separate and unaccepted. The autho
 ## User extension at 02:09 UTC
 
 The user extended work until 3 October 2026 09:00 Prague / 07:00 UTC and raised the stop threshold to below 50% weekly quota remaining (weekly usedPercent >50). This supersedes every earlier 10% or 04:56 UTC note. All seven workers and the coordinator were updated. Current remaining weekly quota is 92%. Rolling task selection remains authorized, with single-browser/load limits and no main/shared-data/push/deploy changes.
+
+## Acceptance at 02:20 UTC
+
+Boat sequence `e88f704` + `cf1e1a8` is accepted after independent review and correction of intermediate walker-footprint clearance. Reviewer reproduced the narrow corridor rejection and open-bank/height/determinism controls; author verified three real moorings and under-bridge travel, with final guard CPU coverage. Parent inspected night-light evidence.
+
+Vehicle sequence `9a3b20e` + `00222e6`, evidence `5c72c3d`, is accepted after independent retained-resource/lifecycle review and baseline triage of all five original scene-suite failures. No introduced regression was identified; the full suite remains 7/12 and must not be reported green. Parent inspected bus display and production diffs. Combined smoke remains needed for these additions.
+
+Tile-fetch reliability `ae1a49f` is pending independent review. Parking and seasonal work remain unaccepted. The rolling queue has seven workers, all updated to 09:00 Prague and below-50% quota stop. Kampa source-sampler mismatch and Net.spread review remain open.
