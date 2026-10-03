@@ -57,6 +57,65 @@ NEAR_DECK, OFF_DECK = 0.5, 1.5  # m between a bridge and the ground under or bes
 GML = "http://www.opengis.net/gml"
 
 
+def pull_to_bridges(tiles, labels, found, N):
+    """Bring dry ground to nearby decks, with one support set per shared node.
+
+    Drawable bridge polygons are clipped per tile, so a bridge's padded height
+    grid can be exported on only one side of a tile edge. The physical ground
+    correction at that shared lattice point must nevertheless run on both sides.
+    Interior support and the existing ascending-level pull rule stay unchanged.
+    """
+    edge = [(y, x) for y in (0, N) for x in range(N + 1)] + [(y, x) for y in range(1, N) for x in (0, N)]
+    shared = {}
+    for (i, j), levels in sorted(found.items()):
+        for level, kind, h, _ in levels:
+            if kind != 'bridge':
+                continue
+            for y, x in np.argwhere(np.isfinite(h)):
+                if x not in (0, N) and y not in (0, N):
+                    continue
+                node = (i * N + int(x), j * N + int(y))
+                support = shared.setdefault(node, {})
+                value = float(h[y, x])
+                if level in support and support[level] != value:
+                    raise ValueError(f"conflicting bridge support at {node}, level {level}: {support[level]} != {value}")
+                support.setdefault(level, value)
+    # Validate shared plain ground before mutating any tile. Differences between
+    # distinct terrace labels/heights are not evidence for a common ground plane.
+    plain = {}
+    for (i, j), arr in sorted(tiles.items()):
+        lab = labels.get((i, j))
+        for y, x in edge:
+            node = (i * N + x, j * N + y)
+            if node not in shared or (lab is not None and lab[y, x] != 0):
+                continue
+            value = float(arr[y, x])
+            if node in plain and value != plain[node]:
+                raise ValueError(f"conflicting plain ground before bridge pull at {node}: {plain[node]} != {value}")
+            plain[node] = value
+    changed = 0
+    for (i, j), arr in tiles.items():
+        support = {level: h.copy() for level, kind, h, _ in found.get((i, j), []) if kind == 'bridge'}
+        for y, x in edge:
+            for level, value in shared.get((i * N + x, j * N + y), {}).items():
+                if level not in support:
+                    support[level] = np.full(arr.shape, np.nan, dtype=np.float32)
+                h = support[level]
+                h[y, x] = value
+        lab = labels.get((i, j))
+        for level in sorted(support):
+            h = support[level]
+            with np.errstate(invalid='ignore'):
+                apart = h - arr
+                pull = np.clip((OFF_DECK - np.abs(apart)) / (OFF_DECK - NEAR_DECK), 0, 1)
+            near = np.isfinite(apart) & (pull > 0)
+            if lab is not None:
+                near &= lab != 1
+            arr[near] += (apart * pull)[near]
+            changed += int(near.sum())
+    return changed
+
+
 def catalogue():
     path = CACHE / "catalogue_ter.json"
     if path.exists():
@@ -393,17 +452,7 @@ def main() -> None:
                     labels.setdefault((i, j), np.zeros((N + 1, N + 1), dtype=np.uint8))[on] = label
                     lifted += 1
         print(f"  {lifted} flat terraces under the street before bridges drawn from past their wall")
-        for key, levels in found.items():
-            arr, label = tiles[key], labels.get(key, np.zeros((N + 1, N + 1), dtype=np.uint8))
-            for _, kind, h, _ in levels:
-                if kind != "bridge":
-                    continue
-                with np.errstate(invalid="ignore"):
-                    apart = h - arr
-                    pull = np.clip((OFF_DECK - np.abs(apart)) / (OFF_DECK - NEAR_DECK), 0, 1)
-                near = ~np.isnan(apart) & (label != 1) & (pull > 0)
-                arr[near] += (apart * pull)[near]
-                met += int(near.sum())
+        met = pull_to_bridges(tiles, labels, found, N)
         print(f"  ground brought to the bridges' ends at {met} points")
     timings.lap("bridges_tunnels")
     # The heights, then each point's label as a byte (dtm_heights.py): 0 the plain ground,

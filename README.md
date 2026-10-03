@@ -832,7 +832,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   cracks. Map format 2. It works
   on arrays over the whole area (a few GB and about a quarter of an hour for `praha`).
   Bridges come off the street above a quay wall, not the quay below it
-  (`abutment` in `pipeline/structures.py`). Where the rules make a place worse than the
+  (`abutment` in `pipeline/structures.py`). Ground pulled to a nearby bridge also
+  shares the same bridge support at tile-edge lattice points, even when the drawable
+  bridge polygon appears in only one tile. Separate deck levels keep their existing
+  pull order; conflicting support is rejected before export. See
+  `docs/bridge-ground-edge-diagnosis.md` for the source comparison.
+  Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it.
   Rendered tile edges also share a world-aligned 2 m height profile and perimeter
