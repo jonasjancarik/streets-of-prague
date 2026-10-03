@@ -94,10 +94,12 @@ def tile_json(area, i, j):
 
 
 def terrain(area, meta, t):
-    """The tile's terrain heights (m a.s.l.) on the game's 4 m lattice, rows from the south."""
+    """The tile's terrain heights (m a.s.l.) on the game's lattice, rows from the south.
+    A tile's file holds n x n heights followed by one label byte each (ipr_terrain.py;
+    the maps the prototype was first tried on had no labels)."""
     n, step = meta["terrain"]["n"], meta["terrain"]["step"]
     raw = gzip.decompress((OUT / f"{area}_now" / "tiles" / f"{t['i']}_{t['j']}.height.bin.gz").read_bytes())
-    h = np.frombuffer(raw, dtype="<u2").astype(np.float32).reshape(n, n)
+    h = np.frombuffer(raw[: n * n * 2], dtype="<u2").astype(np.float32).reshape(n, n)
     return np.where(h > 0, h / 10 + 100, np.nan), step
 
 
