@@ -219,11 +219,11 @@ export class Route {
       if (!f) { if (!this.plan) this.dead = true; return; }
       // (A bus starts its turns further back, so they're wider and its back doesn't
       // swing over the kerb.)
-      const trim = Math.min(this.main ? 11 : 7, e.path.length / 3, f.path.length / 3);
+      const trim = junctionTrim(e, f, this.main);
       last.s1 = Math.max(last.s0, e.path.length - trim);
       const a = e.path.at(last.s1), b = f.path.at(trim);
       const turn = Math.abs(Math.atan2(Math.sin(b.ang - a.ang), Math.cos(b.ang - a.ang)));
-      const conn = new Polyline(bezier([a.x, a.y], corner(a, b), [b.x, b.y]));
+      const conn = junctionCurve(a, b);
       this.legs.push({ path: conn, s0: 0, s1: conn.length, edge: null, turn, speed: Math.min(e.speed, f.speed) });
       this.legs.push({ path: f.path, s0: trim, s1: f.path.length, edge: f });
     }
@@ -285,6 +285,10 @@ export class Route {
     return { p: last.path.at(last.s1), limit };
   }
 }
+
+// Shared by routes and parking clearance: reserve the curve traffic actually takes.
+export const junctionTrim = (e: DriveEdge, f: DriveEdge, main = false) => Math.min(main ? 11 : 7, e.path.length / 3, f.path.length / 3);
+export const junctionCurve = (a: PathPoint, b: PathPoint) => new Polyline(bezier([a.x, a.y], corner(a, b), [b.x, b.y]));
 
 // Where the incoming and outgoing lanes would cross; the midpoint when they're parallel.
 function corner(a: PathPoint, b: PathPoint): Point2 {

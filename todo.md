@@ -552,10 +552,15 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   built 2 October at 20:16 UTC, and a pedal boat travelled below Legion Bridge's
   deck at water height. Other bridges, phones and water-height seams remain
   unchecked; PID's ferries are still absent. See [boat access](docs/boats.md).
-- **Parked cars at tile edges and corners.** Parking now keeps clear of the traffic
-  lanes, but a couple of cars at tile edges still overlap a lane of the neighbouring
-  tile, and at junctions a car standing on the corner is still driven through after a
-  few seconds (parking isn't checked against the turning paths).
+- **Parked cars at tile edges and corners (fixed).** Parking now waits for the
+  neighbouring street JSON and reserves the route's turning curves, including
+  vehicle overhang and a bus's axle/heading sweep. Paid-section targets are unchanged;
+  bays that obstruct those paths stay empty. CPU checks cover neighbouring lane
+  offsets, both tile orders, narrow streets and ordinary/bus turns. A real WebGPU
+  replay at Ostrovní–Opatovická reproduced a 0.38 m bus/parked-hatch overlap in the
+  old placement, then passed with the candidate parking. Tiles `8_5`/`7_5` reloaded
+  in either order with identical parked-car layouts and no duplicate centres.
+  Citywide driving and emergency routes remain unchecked; see `docs/traffic.md`.
 - **Rebuild the streets layer for the metro fix.** Metro station corridors and stairs
   are no longer tunnels (`station_ways` in `pipeline/structures.py`); rebuilt for
   `centrum`, not yet for `praha` and `ujezd` (the command is under Terrain).

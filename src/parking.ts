@@ -3,6 +3,7 @@ import { posts } from './posts.ts';
 import { Polyline, segDist } from './network.ts';
 import type { DriveEdge, ParkingOrientation } from './network.ts';
 import type { Point2, Polygons, Bounds } from './map/geo.ts';
+import { parkingClearance } from './parkingClearance.ts';
 
 type BayOrientation = Exclude<ParkingOrientation, 'no'>;
 interface ParkingSection {
@@ -11,6 +12,7 @@ interface ParkingSection {
 }
 interface LocatedSection extends ParkingSection { box: Bounds }
 interface ParkingData {
+  box?: Bounds;
   lots?: { o: BayOrientation | null; rings: Point2[][] }[];
   areas: { parking?: Polygons };
   rails: { pts: Point2[] }[];
@@ -266,6 +268,7 @@ function pavementSlots(edges: DriveEdge[], r: () => number) {
 // Whether (x, y) is on the driving part of any street in `edges`.
 function onCarriageway(x: number, y: number, edges: DriveEdge[]) {
   for (const e of edges) {
+    if (e.bridge || e.tunnel) continue;
     const hw = e.width / 2 + 0.4;
     for (let i = 0; i < e.pts.length - 1; i++) {
       const [ax, ay] = e.pts[i], [bx, by] = e.pts[i + 1];
@@ -276,49 +279,18 @@ function onCarriageway(x: number, y: number, edges: DriveEdge[]) {
   return false;
 }
 
-// How far a parked car's outline keeps from the middle of a traffic lane: half the
-// widest car in traffic (a van) and a little room, so the traffic passes it without
-// braking (see Traffic.update, which counts anything nearer as in its way).
-const LANE_CLEAR = 1.25;
-
-// The lanes the traffic drives along (not on bridges or in tunnels, where nobody
-// parks under or over them), by 10 m cell: `clear(x, y, d)` is whether (x, y) is
-// more than d from the middle of all of them.
-function laneCells(edges: DriveEdge[]) {
-  const cells = new Map<number, [Point2, Point2][]>(), pad = 4;
-  for (const e of edges) {
-    if (e.bridge || e.tunnel) continue;
-    const pts = e.path.pts;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i], b = pts[i + 1];
-      const i0 = Math.floor((Math.min(a[0], b[0]) - pad) / 10), i1 = Math.floor((Math.max(a[0], b[0]) + pad) / 10);
-      const j0 = Math.floor((Math.min(a[1], b[1]) - pad) / 10), j1 = Math.floor((Math.max(a[1], b[1]) + pad) / 10);
-      for (let ci = i0; ci <= i1; ci++) for (let cj = j0; cj <= j1; cj++) {
-        const k = ci * 131072 + cj;
-        let list = cells.get(k);
-        if (!list) cells.set(k, (list = []));
-        list.push([a, b]);
-      }
-    }
-  }
-  return (x: number, y: number, d: number) => {
-    const list = cells.get(Math.floor(x / 10) * 131072 + Math.floor(y / 10));
-    if (list) for (const [a, b] of list) if (segDist(x, y, a, b) < d) return false;
-    return true;
-  };
-}
-
 // `shares`: code → share of each paid-parking section inside this piece of map (a
 // tile); without it the whole section counts. `inside(x, y)` limits spots to the tile.
-export function parkCars({ data, edges, zones, solid, r, night = false, shares = null, inside = () => true }: {
+export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r, night = false, shares = null, inside = () => true }: {
   data: ParkingData; edges: DriveEdge[]; zones: Zones; solid: (x: number, y: number) => boolean | number;
+  clearanceEdges?: DriveEdge[];
   r: () => number; night?: boolean; shares?: Map<string, number> | null;
   inside?: (x: number, y: number) => boolean;
 }) {
   const railSegs: [Point2, Point2][] = [];
   for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
   const nearRail = (x: number, y: number, d: number) => railSegs.some(([a, b]) => segDist(x, y, a, b) < d);
-  const laneClear = laneCells(edges);
+  const laneClear = parkingClearance(clearanceEdges, data.box);
   const cars: Car[] = [];
   // Parked cars by 5 m cell (keyed by number, as in SpatialHash: this is asked for
   // every spot tried).
@@ -338,13 +310,13 @@ export function parkCars({ data, edges, zones, solid, r, night = false, shares =
     if (s.bay && (car.type === 'van' || car.type === 'pickup')) return false;
     // Nothing sticking out into a lane, where the traffic would have to squeeze past:
     // where the kerb or a mapped parking lane leaves no room, the street has none.
-    if (car.circles().some(([x, y]) => !laneClear(x, y, car.r + LANE_CLEAR))) return false;
+    if (car.circles().some(([x, y]) => !laneClear(x, y, car.r))) return false;
     const outline = car.worldSamples();
     // No part of the car where a passing tram would hit it: half a tram's width from
     // the track and a little room. Whatever the map says about parking there.
     if (nearRail(s.x, s.y, 4.5) && outline.some(([x, y]) => nearRail(x, y, 1.65))) return false;
     if (outline.some(([x, y]) => solid(x, y)) || car.worldOutline().some(([x, y]) => solid(x, y)) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8) || posts.touches(car)) return false;
-    if (s.fwd && outline.some(([x, y]) => onCarriageway(x, y, edges))) return false;
+    if (s.fwd && outline.some(([x, y]) => onCarriageway(x, y, clearanceEdges))) return false;
     car.mode = 'loose';
     cars.push(car);
     const k = key(s.x, s.y);
