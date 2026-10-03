@@ -9,7 +9,7 @@ import {
   Fn, float, vec2, vec3, vec4, attribute, positionGeometry, positionWorld, cameraProjectionMatrix, cameraViewMatrix, screenSize,
   sRGBTransferEOTF, toneMappingExposure, fract, sin, cos, exp, normalize, step, smoothstep, length, max, min, select,
 } from 'three/tsl';
-import { setFx, MIST, type FxParts } from '../weather.ts';
+import { setFx, type FxParts } from '../weather.ts';
 import { type N, follow, followVec, vnoise } from './common.ts';
 import { lampLight } from './lamps.ts';
 
@@ -89,12 +89,13 @@ function build(f: FxParts) {
 
   // Mist: banks of it in sheets one above the other, thinner the higher.
   const mistMaterial = blend(new NodeMaterial());
+  const A: N = followVec(f.mistA), B: N = followVec(f.mistB), C: N = followVec(f.mistC);
   mistMaterial.fragmentNode = Fn(() => {
-    const p = positionWorld.xz, h = attribute('layer', 'float');
-    const bank = vnoise(p.mul(MIST.bank).add(uTime.mul(vec2(0.006, 0.002))));
-    const wisp = vnoise(p.mul(MIST.wisp).add(h.mul(1.9)).add(uTime.mul(vec2(0.03, 0.012)))).mul(0.65)
-      .add(vnoise(p.mul(MIST.fine).add(7).sub(h.mul(3.1)).sub(uTime.mul(vec2(0.02, 0.035)))).mul(0.35));
-    const a = uOn.mist.mul(smoothstep(MIST.from, MIST.to, bank.mul(MIST.bankShare).add(wisp.mul(MIST.wispShare)).sub(h.mul(MIST.thin))));
+    const p = positionWorld.xz, h = attribute('layer', 'float').mul(C.y), t = uTime.mul(C.x);
+    const bank = vnoise(p.mul(A.x).add(t.mul(vec2(0.006, 0.002))));
+    const wisp = vnoise(p.mul(A.y).add(h.mul(1.9)).add(t.mul(vec2(0.03, 0.012)))).mul(0.65)
+      .add(vnoise(p.mul(A.z).add(7).sub(h.mul(3.1)).sub(t.mul(vec2(0.02, 0.035)))).mul(0.35));
+    const a = uOn.mist.mul(smoothstep(B.z, B.w, bank.mul(B.x).add(wisp.mul(B.y)).sub(h.mul(A.w))));
     const c = uFog.add(exp(lampLight(positionWorld).mul(-0.5)).oneMinus().mul(0.6));
     return vec4(linear(c), a);
   })();

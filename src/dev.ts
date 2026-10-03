@@ -4,7 +4,7 @@ import type * as Leaflet from 'leaflet';
 import type { MapIndex } from './contracts.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Graphics, Choice } from './graphics.ts';
-import type { Kind } from './weather.ts';
+import { MIST, MIST_DEFAULT, MOST_SHEETS, type Kind, type Mist } from './weather.ts';
 import type { Testkit } from './testkit.ts';
 
 interface DevHit { label: string; x: number; y: number }
@@ -114,6 +114,15 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
         <option value="auto">Changing by itself</option>${weather.kinds.map((k) => `<option value="${k}">${k[0].toUpperCase()}${k.slice(1)}</option>`).join('')}
       </select>
     </label>
+    <details id="dev-mist">
+      <summary>Mist</summary>
+      <div id="dev-mist-rows"></div>
+      <div class="dev-row">
+        <button id="dev-mist-copy" title="Copies the values, to paste into a conversation or into src/weather.ts">Copy values</button>
+        <button id="dev-mist-reset" title="Back to the values the game ships with">Reset</button>
+      </div>
+      <div class="dev-note">Your changes stay in this browser until you press Reset.</div>
+    </details>
     <div id="dev-bench"></div>`;
   panel.style.maxHeight = 'calc(100vh - 32px)';
   panel.style.overflowY = 'auto';
@@ -126,6 +135,8 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     #dev input[type=number] { width: 90px; padding: 4px 6px; }
     #dev .dev-check { display: flex; gap: 6px; align-items: center; }
     #dev .dev-check input { margin: 0; }
+    #dev-mist summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+    #dev-mist .dev-time span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }
     #dev .dev-pass { color: #8fd18f; } #dev .dev-fail { color: #ff8f7a; }
     #dev-out { font-size: 12px; white-space: pre-wrap; max-height: 220px; overflow: auto; }`;
   document.head.appendChild(style);
@@ -213,6 +224,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   sky.value = weather.get();
   sky.onchange = () => weather.set(sky.value as Kind | 'auto');
   sky.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+  setupMist($, weather, flash);
   const time = $('dev-time') as HTMLInputElement;
   let dragging = false;
   time.oninput = () => { dragging = true; setTimeOfDay(+time.value * 60); };
@@ -322,6 +334,66 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
 }
 
 // The testing tools, under the others.
+// Sliders for the mist (MIST in weather.ts), which the game reads every frame.
+const MIST_SLIDERS: { key: keyof Mist; label: string; min: number; max: number; step: number; unit?: string; title: string }[] = [
+  { key: 'most', label: 'Thickness', min: 0, max: 0.6, step: 0.01, title: 'How much each sheet hides where the mist is thickest' },
+  { key: 'from', label: 'Clear air between banks', min: 0.2, max: 1, step: 0.01, title: 'Lower: more of the city lies in mist' },
+  { key: 'soft', label: 'Soft edges', min: 0.01, max: 0.6, step: 0.01, title: 'How gradually a bank thickens from its edge' },
+  { key: 'haze', label: 'Haze everywhere', min: 0, max: 0.6, step: 0.01, title: 'The thin fog over the whole view, between the banks too' },
+  { key: 'bankSize', label: 'Bank size', min: 40, max: 800, step: 10, unit: ' m', title: 'How far across a bank of mist is' },
+  { key: 'wispSize', label: 'Wisp size', min: 8, max: 150, step: 1, unit: ' m', title: 'The size of the wisps inside a bank' },
+  { key: 'fineSize', label: 'Fine detail size', min: 3, max: 50, step: 1, unit: ' m', title: 'The size of the ragged detail at the edges' },
+  { key: 'bankShare', label: 'Banks stand out', min: 0, max: 1.2, step: 0.01, title: 'Higher: large separate banks; lower: mist spread evenly' },
+  { key: 'wispShare', label: 'Wisps stand out', min: 0, max: 1.2, step: 0.01, title: 'Higher: ragged, wispy mist; lower: smooth banks' },
+  { key: 'low', label: 'Lowest sheet', min: 0, max: 5, step: 0.1, unit: ' m', title: 'Height of the lowest sheet above the ground' },
+  { key: 'high', label: 'Top of the mist', min: 2, max: 40, step: 0.5, unit: ' m', title: 'Height of the highest sheet above the ground' },
+  { key: 'thin', label: 'Thinner towards the top', min: 0, max: 0.8, step: 0.01, title: 'Higher: banks shaped like low mounds; 0: the same all the way up' },
+  { key: 'sheets', label: 'Sheets', min: 2, max: MOST_SHEETS, step: 1, title: 'More sheets look deeper and cost more to draw' },
+  { key: 'speed', label: 'Drift speed', min: 0, max: 8, step: 0.1, unit: '×', title: 'How fast the mist drifts and changes' },
+];
+const MIST_KEY = 'dev-mist';
+
+function setupMist($: (id: string) => HTMLElement, weather: { get: () => string; set: (kind: Kind | 'auto') => void }, flash: (el: HTMLElement, now: string, then: string) => void) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MIST_KEY) ?? 'null') as Partial<Mist> | null;
+    if (saved) for (const s of MIST_SLIDERS) if (typeof saved[s.key] === 'number') MIST[s.key] = saved[s.key]!;
+  } catch { /* nothing saved, or storage is off */ }
+  const rows = $('dev-mist-rows');
+  const inputs = new Map<keyof Mist, { input: HTMLInputElement; value: HTMLElement }>();
+  const text = (s: (typeof MIST_SLIDERS)[number]) => `${+MIST[s.key].toFixed(2)}${s.unit ?? ''}`;
+  const save = () => { try { localStorage.setItem(MIST_KEY, JSON.stringify(MIST)); } catch { /* storage is off */ } };
+  for (const s of MIST_SLIDERS) {
+    const label = document.createElement('label');
+    label.className = 'dev-time';
+    label.title = s.title;
+    label.append(s.label);
+    const value = document.createElement('span');
+    const input = document.createElement('input');
+    Object.assign(input, { type: 'range', min: String(s.min), max: String(s.max), step: String(s.step) });
+    input.value = String(MIST[s.key]);
+    value.textContent = text(s);
+    input.oninput = () => { MIST[s.key] = Number(input.value); value.textContent = text(s); save(); };
+    input.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+    label.append(value, input);
+    rows.appendChild(label);
+    inputs.set(s.key, { input, value });
+  }
+  // Opening the section shows the mist, whatever the weather was.
+  ($('dev-mist') as HTMLDetailsElement).addEventListener('toggle', (ev) => {
+    if ((ev.target as HTMLDetailsElement).open && weather.get() !== 'mist') weather.set('mist');
+  });
+  $('dev-mist-copy').onclick = async () => {
+    const body = MIST_SLIDERS.map((s) => `${s.key}: ${+MIST[s.key].toFixed(3)}`).join(', ');
+    await navigator.clipboard.writeText(`MIST = { ${body} }`);
+    flash($('dev-mist-copy'), 'Copied', 'Copy values');
+  };
+  $('dev-mist-reset').onclick = () => {
+    Object.assign(MIST, MIST_DEFAULT);
+    try { localStorage.removeItem(MIST_KEY); } catch { /* storage is off */ }
+    for (const s of MIST_SLIDERS) { const r = inputs.get(s.key)!; r.input.value = String(MIST[s.key]); r.value.textContent = text(s); }
+  };
+}
+
 function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
   const box = $('dev-bench');
   box.innerHTML = `

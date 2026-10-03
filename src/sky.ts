@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SKY_REF, SUN_DIR, SUN_LIGHT, WINDOWS } from './shading.ts';
-import { CLEAR } from './weather.ts';
+import { CLEAR, MIST } from './weather.ts';
 import { updateClouds } from './clouds.ts';
 import type { Conditions } from './weather.ts';
 
@@ -149,7 +149,7 @@ export class Sky {
     // further off, less on the roofs.
     // Mist lies in banks (WeatherFx), so the air between them is only a little hazy; the
     // lights' beams show in it as in thick fog.
-    const amount = Math.max(0.08 * w.cloud, 0.2 * w.rain, 0.3 * w.snow, 0.16 * w.mist);
+    const amount = Math.max(0.08 * w.cloud, 0.2 * w.rain, 0.3 * w.snow, MIST.haze * w.mist);
     this.murk = Math.max(amount, 0.55 * w.mist);
     const day = 1 - night;
     this.haze.copy(FOG_NIGHT).lerp(FOG_GLOW, w.cloud).lerp(FOG_DAY, day).convertLinearToSRGB();

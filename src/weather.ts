@@ -224,28 +224,42 @@ export interface FxParts {
   scale: { value: number }; // the snow's size in pixels at a distance of 1 m
   tint: { value: THREE.Color }; fog: { value: THREE.Color };
   rain: THREE.BufferGeometry; snowSeeds: Float32Array; mist: THREE.BufferGeometry;
+  // MIST for the shader: 1/bankSize, 1/wispSize, 1/fineSize, thin; bankShare, wispShare, from,
+  // from + soft; speed, 1/(sheets - 1).
+  mistA: { value: THREE.Vector4 }; mistB: { value: THREE.Vector4 }; mistC: { value: THREE.Vector4 };
 }
 let fxBy: ((parts: FxParts) => { rain: THREE.Object3D; snow: THREE.Object3D; mist: THREE.Object3D }) | null = null;
 export const setFx = (f: typeof fxBy) => { fxBy = f; };
 
-// The mist's shape, shared with webgpu/weather.ts: how many sheets and how high they
-// reach (m), the scale of the banks (about 220 m across), of the wisps in them and of
-// their fine edge (1/m), how much each counts, where the mist starts and is thickest,
-// how much thinner the top sheet is, and how much the thickest sheet hides.
+// The mist's shape. The developer panel changes these while the game runs (dev.ts);
+// WeatherFx and Sky read them every frame.
 export const MIST = {
-  sheets: 7, low: 0.6, high: 11,
-  bank: 0.0045, wisp: 0.028, fine: 0.085, bankShare: 0.6, wispShare: 0.6,
-  from: 0.6, to: 0.76, thin: 0.16, most: 0.24,
+  haze: 0.16,     // the thin fog over the whole view in mist, as Sky's `amount`
+  most: 0.24,     // how much one sheet hides where the mist is thickest
+  sheets: 7,      // how many sheets a bank is made of
+  low: 0.6,       // the lowest and the highest sheet above the ground (m)
+  high: 11,
+  bankSize: 220,  // how far across a bank is, the wisps in it and their fine edge (m)
+  wispSize: 36,
+  fineSize: 12,
+  bankShare: 0.6, // how much the banks and the wisps count
+  wispShare: 0.6,
+  from: 0.6,      // where the mist starts (lower: more of the city in mist)
+  soft: 0.16,     // how gradually it thickens from there
+  thin: 0.16,     // how much thinner the top sheet is than the lowest
+  speed: 1,       // how fast it drifts
 };
+export type Mist = typeof MIST;
+export const MIST_DEFAULT: Mist = { ...MIST };
+export const MOST_SHEETS = 14;
 
-// The sheets as one mesh, a unit square each, the lowest drawn first; `layer` 0 at the
-// bottom to 1 at the top.
+// The sheets as one mesh, a unit square each, the lowest drawn first; `layer` counts
+// them from 0, and the lowest `MIST.sheets` are drawn.
 function mistSheets() {
-  const n = MIST.sheets, at: number[] = [], layer: number[] = [], index: number[] = [];
-  for (let k = 0; k < n; k++) {
-    const h = k / (n - 1);
-    at.push(-0.5, h, -0.5, 0.5, h, -0.5, -0.5, h, 0.5, 0.5, h, 0.5);
-    layer.push(h, h, h, h);
+  const at: number[] = [], layer: number[] = [], index: number[] = [];
+  for (let k = 0; k < MOST_SHEETS; k++) {
+    at.push(-0.5, k, -0.5, 0.5, k, -0.5, -0.5, k, 0.5, 0.5, k, 0.5);
+    layer.push(k, k, k, k);
     index.push(k * 4, k * 4 + 2, k * 4 + 1, k * 4 + 1, k * 4 + 2, k * 4 + 3);
   }
   const g = new THREE.BufferGeometry();
@@ -267,6 +281,10 @@ export class WeatherFx {
   private rainOn = { value: 0 };
   private snowOn = { value: 0 };
   private mistOn = { value: 0 };
+  private mistA = { value: new THREE.Vector4() };
+  private mistB = { value: new THREE.Vector4() };
+  private mistC = { value: new THREE.Vector4() };
+  private mistGeometry: THREE.BufferGeometry;
   private snowScale = { value: 800 };
   // The colours they take from the light (display colours, see Sky).
   readonly tint = { value: new THREE.Color('#9aa3ad') };
@@ -294,10 +312,11 @@ export class WeatherFx {
     const flakes = rand(FLAKES, 1);
     sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(FLAKES * 3), 3));
     sg.setAttribute('seed', new THREE.BufferAttribute(flakes, 4));
-    const mistGeometry = mistSheets();
+    const mistGeometry = this.mistGeometry = mistSheets();
     const by = fxBy?.({
       shared: this.shared, rainOn: this.rainOn, snowOn: this.snowOn, mistOn: this.mistOn, scale: this.snowScale,
       tint: this.tint, fog: this.fog, rain: rg, snowSeeds: flakes, mist: mistGeometry,
+      mistA: this.mistA, mistB: this.mistB, mistC: this.mistC,
     });
     this.rain = by ? by.rain : new THREE.LineSegments(rg, new THREE.ShaderMaterial({
       uniforms: { ...this.shared, uOn: this.rainOn, uTint: this.tint },
@@ -351,21 +370,23 @@ export class WeatherFx {
     // a bank has depth as the view moves past it; roofs stand out of it, and the lamps
     // light it from below.
     this.mist = by ? by.mist : new THREE.Mesh(mistGeometry, new THREE.ShaderMaterial({
-      uniforms: { ...this.shared, uOn: this.mistOn, uFog: this.fog, uNoise: NOISE },
+      uniforms: { ...this.shared, uOn: this.mistOn, uFog: this.fog, uNoise: NOISE, uMistA: this.mistA, uMistB: this.mistB, uMistC: this.mistC },
       vertexShader: /* glsl */ `
-        attribute float layer;
+        attribute float layer; uniform vec4 uMistC;
         varying vec3 vW; varying float vH;
-        void main() { vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; vH = layer; gl_Position = projectionMatrix * viewMatrix * w; }`,
+        void main() { vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; vH = layer * uMistC.y; gl_Position = projectionMatrix * viewMatrix * w; }`,
       fragmentShader: /* glsl */ `
         ${NOISE_GLSL}
         ${LAMP_GLSL}
         uniform float uOn; uniform float uTime; uniform vec3 uFog; varying vec3 vW; varying float vH;
+        uniform vec4 uMistA; uniform vec4 uMistB; uniform vec4 uMistC;
         void main() {
           vec2 p = vW.xz;
-          float bank = vnoise(p * ${MIST.bank} + uTime * vec2(.006, .002));
-          float wisp = vnoise(p * ${MIST.wisp} + vH * 1.9 + uTime * vec2(.03, .012)) * .65
-            + vnoise(p * ${MIST.fine} + 7. - vH * 3.1 - uTime * vec2(.02, .035)) * .35;
-          float a = uOn * smoothstep(${MIST.from}, ${MIST.to}, bank * ${MIST.bankShare} + wisp * ${MIST.wispShare} - vH * ${MIST.thin});
+          float t = uTime * uMistC.x;
+          float bank = vnoise(p * uMistA.x + t * vec2(.006, .002));
+          float wisp = vnoise(p * uMistA.y + vH * 1.9 + t * vec2(.03, .012)) * .65
+            + vnoise(p * uMistA.z + 7. - vH * 3.1 - t * vec2(.02, .035)) * .35;
+          float a = uOn * smoothstep(uMistB.z, uMistB.w, bank * uMistB.x + wisp * uMistB.y - vH * uMistA.w);
           vec3 c = uFog + (1. - exp(-lampLight(vW) * .5)) * .6;
           gl_FragColor = vec4(c, a);
         }`,
@@ -396,7 +417,12 @@ export class WeatherFx {
     this.snow.visible = w.snow > 0.01;
     this.mist.visible = w.mist > 0.01;
     this.snowScale.value = innerHeight * dpr * 1.4;
-    this.mist.position.set(x, ground + MIST.low, -y);
-    this.mist.scale.set(2.6 * r + 60, MIST.high - MIST.low, 2.6 * r + 60);
+    const m = MIST, sheets = Math.max(2, Math.min(MOST_SHEETS, Math.round(m.sheets)));
+    this.mistA.value.set(1 / m.bankSize, 1 / m.wispSize, 1 / m.fineSize, m.thin);
+    this.mistB.value.set(m.bankShare, m.wispShare, m.from, m.from + Math.max(0.01, m.soft));
+    this.mistC.value.set(m.speed, 1 / (sheets - 1), 0, 0);
+    this.mistGeometry.setDrawRange(0, sheets * 6);
+    this.mist.position.set(x, ground + m.low, -y);
+    this.mist.scale.set(2.6 * r + 60, Math.max(0.1, m.high - m.low) / (sheets - 1), 2.6 * r + 60);
   }
 }
