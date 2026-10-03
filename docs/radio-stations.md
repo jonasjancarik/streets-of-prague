@@ -1,6 +1,8 @@
 # Car radio stations
 
-The car radio (`src/radio.ts`, key `R` while driving) plays live internet streams. It is on by default with the first station in `STATIONS`, and the settings panel (Car radio: On/Off) or `R` past the last station turns it off; the choice is kept in `localStorage` under `radio`. A
+Read when changing station selection, radio settings or stream lifetime.
+
+The car radio (`src/radio.ts`, key `R` while driving) plays live internet streams. It is on by default with a randomly selected allowed station, and the settings panel (Car radio: On/Off) or `R` past the last station turns it off; the choice is kept in `localStorage` under `radio`. A
 station is usable only if its stream is served over HTTPS and answers with an
 `Access-Control-Allow-Origin` header; without it the browser plays the stream but won't
 let Web Audio filter it. Every URL below was checked on 2026-09-29 with
@@ -12,6 +14,27 @@ noted). Only the header check was made, not a listen. Stations that change their
 or stop allowing other sites will just report "isn't playing right now" in the game.
 
 To add one, put a line in `STATIONS` in `src/radio.ts` and check it the same way.
+
+## Settings and downloads
+
+Expand **Radio settings** under **Car radio** to choose which stations are allowed.
+Exclusions are saved by station ID under `radio-preferences`. Automatic selection,
+R, previous/next and the in-car station picker skip excluded stations. Blocking
+the station currently playing switches to another allowed station; returning to
+a car also replaces any excluded station it remembers. Excluding every station
+leaves the radio silent with no downloads.
+
+Setting the **Car radio** mixer volume to zero immediately pauses every radio
+media element, removes its stream URL and calls `load()` to abort downloading.
+This includes the next-car buffer and the station lingering after leaving a car.
+The station is remembered and can resume when volume rises again. Sound off, a
+hidden tab, the quiet metro state and radio off also close streams. At nonzero
+volume, nearby-car buffering and the existing 20/60-second grace periods remain.
+Stopping radio streams avoids silent radio playback competing with other device
+audio; other enabled game sounds can still affect that audio.
+
+Regression check: `node scripts/check-radio.mjs` uses instrumented media elements
+without making network requests or playing sound.
 
 ## In the game
 

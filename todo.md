@@ -440,12 +440,10 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 
 ## Radio
 
-- **Stop streaming when radio volume is zero.** Ensure turning the radio down to
-  zero stops the stream completely, saving bandwidth and preventing silent radio
-  playback from interfering with the user's own audio playing on the device.
-- **More radio controls in settings.** Add a deeper radio settings page where
-  users can block stations they don't want and choose how stations are assigned
-  to cars: weighted by actual listener numbers, or a simple random distribution.
+- **Station distribution in radio settings.** Station blocking is implemented in
+  the expandable Radio settings, and zero radio volume stops all radio downloads.
+  Still to add: choose how stations are assigned to cars, weighted by actual
+  listener numbers or a simple random distribution.
   Optional extra: vary station selection by the type of vehicle the player enters.
 
 ## Weather and night

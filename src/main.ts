@@ -1,5 +1,6 @@
 import { DATA_FORMAT, dataUrl, mapData } from './data.ts';
 import { STATIONS } from './radio.ts';
+import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts';
 import * as THREE from 'three';
 import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
@@ -1217,6 +1218,14 @@ async function main() {
   let carShown = '';
   const stationList = $('radio').querySelector('select')!;
   for (const [i, label] of [[-1, t('Radio off')], ...STATIONS.map((s, i) => [i, s.name] as const)] as [number, string][]) stationList.add(new Option(label, String(i)));
+  const refreshStations = () => {
+    for (const option of stationList.options) {
+      const station = STATIONS[Number(option.value)];
+      option.disabled = option.hidden = !!station && !stationAllowed(station.id);
+    }
+  };
+  refreshStations();
+  onRadioPreferencesChange(refreshStations);
   stationList.addEventListener('change', () => { sound.radio?.pick(Number(stationList.value)); stationList.blur(); });
   $('radio').addEventListener('click', (e) => {
     const radio = sound.radio, what = (e.target as HTMLElement).closest('button')?.dataset.radio;

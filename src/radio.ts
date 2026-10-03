@@ -3,6 +3,8 @@
 // (silent in the metro or with the sound off) and can be filtered like a small speaker.
 // More stations that were checked are listed in docs/radio-stations.md.
 
+import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts';
+
 export interface Station { id: string; name: string; url: string }
 
 export const STATIONS: Station[] = [
@@ -27,10 +29,13 @@ const LEVEL = 0.14; // how loud a station plays, before the master volume
 const FADE = 0.25; // s
 
 const randomOther = (not: number) => {
-  let i = Math.floor(Math.random() * STATIONS.length);
-  if (i === not) i = (i + 1) % STATIONS.length;
-  return i;
+  const allowed = STATIONS.map((_, i) => i).filter((i) => stationAllowed(STATIONS[i].id));
+  const others = allowed.filter((i) => i !== not);
+  const pool = others.length ? others : allowed;
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : -1;
 };
+
+const allowed = (i: number) => !!STATIONS[i] && stationAllowed(STATIONS[i].id);
 
 interface Stream { el: HTMLAudioElement; gain: GainNode }
 type Owner = { radio?: number };
@@ -48,6 +53,8 @@ export class Radio {
   private streams = new Map<number, Stream>();
   private tuned = -1; // the index in STATIONS being played, or -1 when it's off
   private want = false; // whether a station should be heard right now
+  private streaming = true; // sound, radio volume and page visibility permit downloading
+  private outputLevel = 0;
   private away = 0;
   private warmOn = false;
   private owner: Owner | null = null; // the car you're in, which remembers its station
@@ -67,6 +74,14 @@ export class Radio {
     hp.connect(body).connect(lp).connect(this.out).connect(dest);
     this.input = hp;
     if (radioOn()) this.tuned = randomOther(-1);
+    onRadioPreferencesChange(() => {
+      if (this.linger && !allowed(this.linger.idx)) this.linger = null;
+      if ((this.tuned >= 0 && !allowed(this.tuned)) || (this.tuned < 0 && radioOn())) {
+        this.tuned = randomOther(-1);
+        if (this.owner) this.owner.radio = this.tuned;
+      }
+      this.sync();
+    });
   }
   get station(): Station | null { return STATIONS[this.tuned] ?? null; }
   // The car whose station is still downloading after you left it.
@@ -74,29 +89,40 @@ export class Radio {
 
   // The next station, and after the last one, off.
   next(): Station | null {
-    return this.tune(this.tuned < 0 ? 0 : this.tuned + 1 >= STATIONS.length ? -1 : this.tuned + 1);
+    for (let i = this.tuned + 1; i < STATIONS.length; i++) if (allowed(i)) return this.tune(i);
+    return this.tune(-1);
   }
 
   // The station before this one, and before the first, off.
   prev(): Station | null {
-    return this.tune(this.tuned < 0 ? STATIONS.length - 1 : this.tuned - 1);
+    for (let i = this.tuned < 0 ? STATIONS.length - 1 : this.tuned - 1; i >= 0; i--) if (allowed(i)) return this.tune(i);
+    return this.tune(-1);
   }
 
   // A chosen station, or -1 for off.
-  pick(i: number) { if (i !== this.tuned) this.tune(i); }
+  pick(i: number) { if ((i === -1 || allowed(i)) && i !== this.tuned) this.tune(i); }
 
   // Turns the radio on at a random station, or off.
   set(on: boolean) {
     if (on !== (this.tuned >= 0)) this.tune(on ? randomOther(-1) : -1);
+    setRadioSaved(on); // keep the intent even when every station is excluded
   }
 
   private tune(i: number) {
     this.tuned = i;
+    if (i < 0) this.linger = null;
     if (this.owner) this.owner.radio = i;
     setRadioSaved(i >= 0);
     this.endStatic();
     this.sync();
     return this.station;
+  }
+
+  // Shut down both audible and prebuffered streams without losing the car's station.
+  setStreaming(enabled: boolean) {
+    if (enabled === this.streaming) return;
+    this.streaming = enabled;
+    this.sync();
   }
 
   // Whether the radio should be heard now: you're in a car, with the sound on.
@@ -113,15 +139,13 @@ export class Radio {
       // Getting into a car brings back its station; one not yet sat in takes what's tuned now.
       if (owner) {
         if (owner.radio === undefined) owner.radio = this.tuned;
-        else this.tuned = owner.radio;
+        else this.tuned = owner.radio === -1 || allowed(owner.radio) ? owner.radio : randomOther(-1);
+        owner.radio = this.tuned;
         if (this.linger?.car === owner) this.linger = null;
       }
       this.owner = owner;
     }
     this.want = want;
-    const t = this.ctx.currentTime;
-    this.out.gain.cancelScheduledValues(t);
-    this.out.gain.setTargetAtTime(want && this.station ? LEVEL : 0, t, FADE / 3);
     this.sync();
   }
 
@@ -140,10 +164,18 @@ export class Radio {
 
   // Opens the stations that should be downloading, closes the others, and lets only the tuned one be heard.
   private sync() {
-    const keep = (i: number) => (i === this.tuned && (this.want || this.warmOn)) || this.linger?.idx === i;
+    const active = this.streaming && this.tuned >= 0;
+    const keep = (i: number) => active && allowed(i) && ((i === this.tuned && (this.want || this.warmOn)) || this.linger?.idx === i);
+    const t = this.ctx.currentTime;
+    const level = active && this.want ? LEVEL : 0;
+    if (level !== this.outputLevel) {
+      this.outputLevel = level;
+      this.out.gain.cancelScheduledValues(t);
+      this.out.gain.setTargetAtTime(level, t, FADE / 3);
+    }
+    if (!active) this.endStatic();
     for (const i of [...this.streams.keys()]) if (!keep(i)) this.close(i);
     if (this.tuned >= 0 && keep(this.tuned) && !this.streams.has(this.tuned)) this.open(this.tuned, this.want);
-    const t = this.ctx.currentTime;
     for (const [i, s] of this.streams) {
       s.gain.gain.cancelScheduledValues(t);
       s.gain.gain.setTargetAtTime(i === this.tuned && this.want ? 1 : 0, t, FADE / 3);

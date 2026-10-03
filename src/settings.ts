@@ -14,6 +14,8 @@ import { hapticsOn, setHaptics } from './haptics.ts';
 import { feedbackLink } from './feedback.ts';
 import { LEVELS, difficulty, setDifficulty } from './difficulty.ts';
 import type { Level } from './difficulty.ts';
+import { STATIONS } from './radio.ts';
+import { stationAllowed, setStationAllowed } from './radio-preferences.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
@@ -119,7 +121,23 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   const fixed = (s: string) => () => s;
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang, setLang);
   row('Sound', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.on ? 'on' : 'off'), (id) => { if ((id === 'on') !== sound.on) sound.toggle(); });
-  row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
+  const radioRow = row('Car radio', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.radioOn ? 'on' : 'off'), (id) => sound.setRadio(id === 'on'));
+  const radioDetails = el('details', 'settings-radio', radioRow);
+  const radioSummary = el('summary', '', radioDetails);
+  relabel.push(() => { radioSummary.textContent = t('Radio settings'); });
+  const radioNote = el('p', 'settings-note', radioDetails);
+  relabel.push(() => { radioNote.textContent = t('Choose the stations you want to hear. Unchecked stations are skipped in every car.'); });
+  for (const station of STATIONS) {
+    const label = el('label', 'settings-radio-station', radioDetails);
+    const checkbox = el('input', '', label) as HTMLInputElement;
+    checkbox.type = 'checkbox';
+    el('span', '', label, station.name);
+    checkbox.addEventListener('change', () => { setStationAllowed(station.id, checkbox.checked); update(); });
+    refresh.push(() => { checkbox.checked = stationAllowed(station.id); });
+  }
+  const radioEmpty = el('p', 'settings-note', radioDetails);
+  relabel.push(() => { radioEmpty.textContent = t('No stations selected. Select a station to hear the radio again.'); });
+  refresh.push(() => { radioEmpty.hidden = STATIONS.some((station) => stationAllowed(station.id)); });
   row('Noise cancelling', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.anc ? 'on' : 'off'), (id) => sound.setAnc(id === 'on'));
   // Only on a touch screen: a computer can't buzz.
   if (matchMedia('(pointer: coarse)').matches) row('Vibration', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (hapticsOn() ? 'on' : 'off'), (id) => setHaptics(id === 'on'));

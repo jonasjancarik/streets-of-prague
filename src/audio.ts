@@ -200,7 +200,7 @@ export class Sound {
     // The game stops in a hidden tab, so the sound does too.
     document.addEventListener('visibilitychange', () => {
       if (!this.ctx) return;
-      if (document.hidden) this.ctx.suspend();
+      if (document.hidden) { this.radio?.setStreaming(false); this.ctx.suspend(); }
       else if (this.on) this.ctx.resume();
     });
   }
@@ -216,6 +216,7 @@ export class Sound {
     this.volumes[bus] = clamp(v, 0, 2);
     try { localStorage.setItem('mix', JSON.stringify(this.volumes)); } catch {}
     if (this.ctx) this.buses[bus].gain.setTargetAtTime(this.level(bus), this.ctx.currentTime, 0.05);
+    if (bus === 'radio') this.radio?.setStreaming(this.on && !document.hidden && this.volumes.radio > 0);
   }
 
   // What a bus is set to, with noise cancelling taken into account.
@@ -234,6 +235,7 @@ export class Sound {
 
   toggle() {
     this.on = !this.on;
+    this.radio?.setStreaming(this.on && !document.hidden && this.volumes.radio > 0);
     try { localStorage.setItem('sound', this.on ? '' : 'off'); } catch {}
     if (!this.ctx) return;
     this.master.gain.setTargetAtTime(this.on ? 0.8 : 0, this.ctx.currentTime, 0.05);
@@ -265,6 +267,7 @@ export class Sound {
     this.tyres = new Tyres(ctx, this.noise, bus.tyres);
     this.weather = new WeatherSound(ctx, this.noise, bus.weather);
     this.radio = new Radio(ctx, this.noise, bus.radio);
+    this.radio.setStreaming(this.on && !document.hidden && this.volumes.radio > 0);
     this.radio.onFail = (station) => this.onRadioFail(station);
     for (let i = 0; i < SIREN_VOICES; i++) this.sirens.push(new SirenVoice(ctx, bus.horns));
     // The trams are heard once their recordings are in.
@@ -302,6 +305,7 @@ export class Sound {
 
   update(dt: number, s: SoundState) {
     const ctx = this.ctx;
+    this.radio?.setStreaming(!!ctx && ctx.state === 'running' && this.on && !document.hidden && !s.quiet && this.volumes.radio > 0);
     if (!ctx || ctx.state !== 'running' || !this.on) { this.radio?.update(false); return; }
     const t = ctx.currentTime;
     this.master.gain.setTargetAtTime(s.quiet ? 0 : 0.8, t, 0.2);
