@@ -97,3 +97,11 @@ Tile-fetch reliability `ae1a49f` is pending independent review. Parking and seas
 Seasonal ground/hedges sequence `0a6525c`, `37fedb0`, evidence `243aa86` is accepted. Independent source/year/paused-date checks found no issues; author completed 30 checks per renderer, 48 matched captures and the required A/B/reverse/control measurements. Timing remains inconclusive and no performance benefit is claimed. July identity and evergreen hedge behavior are verified. Step4 start-screen work is separate in c01c; seasonal bird activity is the next small task in 8ccf.
 
 Vehicle/boat combined smoke is committed as `d08a53a` and passed24 focused checks. Parking graph omission is corrected in `7de0db8` and independently rechecked; complete parking/fetch sequence awaits final binary validation. Integration remains local only.
+
+## Acceptance at 03:30 UTC
+
+Parent accepts bridge continuity `d7dde1b` plus result guard `57475d7` after independent focused review, including rejection of the reviewer's numerical failure case. Diagnostic evidence `cc69274` accompanies the sequence. Remaining Radotín source offset and fallback profile shifts are limitations requiring integrated validation, not full-recovery claims.
+
+Parent accepts parking/fetch sequence `376a71d`, evidence `fac44d3`, design `28cf9bb`, graph guard `7de0db8`, HTTP guard merge `c020b48`, binary validation `6959e41`. Independent rechecks found no remaining issues after graph omission correction;21 layout probes and real binary samples passed. Parent accepts tests-only `cc908cb` after inspecting its strict subprocess assertions; two baseline mock failures are corrected without production changes.
+
+Do not integrate plain-support pilot `fcf611d`: rollout withheld due source conflicts and up to8.15m candidate changes. It is an inspectable experiment with game loading unchanged. All live work retains09:00/<50% limits.
