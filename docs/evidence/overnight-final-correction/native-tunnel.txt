@@ -1,0 +1,31 @@
+const d=window.__drive,w=d.world;
+await t.onFoot();t.paused=true;t.time('14:00');t.weather('clear');t.season('summer');
+const provenance=await fetch('/docs/evidence/overnight-final-correction/provenance-current.json').then(r=>r.json());
+if(w.index.built!==provenance.built||w.index.pipeline!==provenance.pipeline)throw Error('Wrong final generation');
+if(!d.renderer.backend?.isWebGPUBackend)throw Error('Expected WebGPU');
+const points=await fetch('/docs/evidence/overnight-final-correction/target-points.json').then(r=>r.json());
+const trace=await fetch('/docs/evidence/overnight-final-correction/source-profiles-current.json').then(r=>r.json());
+const centre=points.find(p=>p.fraction===.8),ll=d.dev.toLonLat(centre.x,centre.y),camera={at:[ll[1],ll[0]],height:105,tilt:30,heading:0};
+await t.camera(camera);await t.go(camera.at);await t.camera(camera);t.paused=true;
+const loaded=performance.getEntriesByType('resource').filter(e=>new URL(e.name).pathname==='/src/car.ts').at(-1)?.name||'/src/car.ts';
+const {Car}=await import(loaded),{onPolygons}=await import('/src/map/geo.ts');
+const oldUpdate=w.update;w.update=()=>{};const samples=[];
+try {
+  for(const p of points){
+    await w.loadNow(p.x,p.y,40);
+    const tile=w.tileAt(p.x,p.y);if(!tile)throw Error('Missing target tile');
+    const data=await w.fetchJSON(tile.k);
+    const groups=trace.groups.filter(g=>g.kind===p.kind&&g.members.includes(p.wayId)&&g.mapped_layers.includes(p.mappedLayer));
+    const candidates=(data.structures??[]).filter(s=>s.kind===p.kind&&groups.some(g=>g.level===s.level)&&onPolygons(s.polys)(p.x,p.y));
+    if(candidates.length!==1)throw Error('Ambiguous source-identified layer');
+    const layer=candidates[0],height=tile.levels.find(l=>l.level===layer.level).sample(p.x,p.y),apiHeight=w.levelAt(p.x,p.y,layer.level),ground=w.terrainAt(p.x,p.y),edge=w.drive.byId.get('3669205756>493880663>0');
+    if(!edge?.tunnel||!edge.bridge)throw Error('Original combined edge flags were not restored');
+    const car=new Car('sedan',()=>.5,p.x,p.y,0);car.e=edge;car.hint=p.kind;w.track(car);
+    const record={fraction:p.fraction,wayId:p.wayId,mappedLayer:p.mappedLayer,tile:tile.k,x:p.x,y:p.y,flags:{bridge:edge.bridge,tunnel:edge.tunnel},runtimeLevel:layer.level,layerASL:Number.isFinite(height)?height+180:null,levelAPIASL:Number.isFinite(apiHeight)?apiHeight+180:null,groundASL:ground+180,nativeTrackedLevel:car.level,nativeTrackedASL:car.gz+180,collision:w.cellAt(p.x,p.y,car.level,car.gz),depth:Number.isFinite(height)?ground-height:null};
+    if(p.expectedASL===null){if(Number.isFinite(height))throw Error('Unknown 60% baseline was invented');record.baselineUnknown=true;}
+    else {if(!Number.isFinite(height)||Math.abs(height+180-p.expectedASL)>.03||car.level!==layer.level||Math.abs(car.gz-height)>.03||record.collision!==0)throw Error('Required native layer gate failed');if(p.kind==='tunnel'&&record.depth<25)throw Error('Tunnel has no genuine depth');}
+    samples.push(record);
+  }
+  await t.shot('final-mrazovka-source-layers');
+}finally{w.update=oldUpdate;}
+return{built:w.index.built,pipeline:w.index.pipeline,backend:'webgpu',camera,samples,streaming:w.streamingStats};

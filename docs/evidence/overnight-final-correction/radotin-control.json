@@ -1,0 +1,21 @@
+{
+  "sourceSHA256": "c3aa637e3a609d06b589de934952047b92f6a36a2fee82f37ba5713b3814e725",
+  "ways": 26,
+  "wayKinds": [
+    "bridge"
+  ],
+  "passes": [
+    {
+      "pass": 0,
+      "nodes": 1016,
+      "pins": 18,
+      "heightsAndDistancesBitIdentical": true
+    },
+    {
+      "pass": 1,
+      "nodes": 1016,
+      "pins": 692,
+      "heightsAndDistancesBitIdentical": true
+    }
+  ]
+}

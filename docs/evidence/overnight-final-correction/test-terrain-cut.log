@@ -1,0 +1,21 @@
+dense shore: 99 outline vertices, 204 output triangles, 7.7 ms
+✔ narrow enclosed terrace is cut even with every original corner on plain ground (1.943292ms)
+✔ island and hole preserve both their areas and sides (0.701417ms)
+✔ three levels and overlapping outlines retain priority (0.409125ms)
+✔ internal shared edge loses artificial extension vertices (0.938375ms)
+✔ independently cut adjacent tiles agree on a nonlinear edge height field (0.386458ms)
+✔ separate clipped shoreline outlines meet at the same tile-edge position (0.675ms)
+✔ winding, duplicate endpoints, degenerate input and alpha interpolation (0.2625ms)
+✔ unaffected triangles keep their density (0.05175ms)
+✔ curved dense shore produces only actual outline geometry (20.81425ms)
+✔ tiny cut at large map coordinates keeps a stable area sign (0.189125ms)
+✔ disconnected pieces touching only at a point remain valid (0.553875ms)
+✔ coincident cut vertices from overlapping meshes retain distinct alpha (0.244792ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 30.399042

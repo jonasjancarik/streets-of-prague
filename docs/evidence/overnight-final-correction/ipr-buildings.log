@@ -1,0 +1,22 @@
+  colours from the photo mesh for 230056 buildings (centrum.json.gz, walls: lit)
+  BD3_Prah_6-0: area cache miss, source cache hit, 8.78 s, worker peak 826.4 MB
+  BD3_Prah_6-0: 0 buildings in the area
+  BD3_Prah_6-1: area cache miss, source cache hit, 13.75 s, worker peak 842.6 MB
+  BD3_Prah_6-1: 2507 buildings in the area
+  BD3_Prah_6-2: area cache miss, source cache hit, 18.10 s, worker peak 861.8 MB
+  BD3_Prah_6-2: 2730 buildings in the area
+  BD3_Prah_7-0: area cache miss, source cache hit, 10.15 s, worker peak 861.8 MB
+  BD3_Prah_7-0: 165 buildings in the area
+  BD3_Prah_7-1: area cache miss, source cache hit, 16.15 s, worker peak 861.8 MB
+  BD3_Prah_7-1: 3243 buildings in the area
+  BD3_Prah_7-2: area cache miss, source cache hit, 11.73 s, worker peak 861.8 MB
+  BD3_Prah_7-2: 1901 buildings in the area
+  BD3_Prah_8-0: area cache miss, source cache hit, 10.56 s, worker peak 861.8 MB
+  BD3_Prah_8-0: 0 buildings in the area
+  BD3_Prah_8-1: area cache miss, source cache hit, 9.64 s, worker peak 861.8 MB
+  BD3_Prah_8-1: 74 buildings in the area
+  BD3_Prah_8-2: area cache miss, source cache hit, 9.97 s, worker peak 861.8 MB
+  BD3_Prah_8-2: 247 buildings in the area
+  sheets read in 113 s; 5 buildings left out for standing on water
+228 tiles with IPR buildings, 31.4 MB before gzip; 897 OSM buildings IPR doesn't have
+centrum ipr_buildings: prepare_downloads 0.03 s, osm_roofs_water 0.90 s, sheets_colours_details 112.84 s, match_pack_write 1.33 s, assembly 0.00 s, total 115.10 s
