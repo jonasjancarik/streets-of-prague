@@ -283,6 +283,8 @@ export const CS: Record<string, string> = {
   'Charles Square': 'Karlovo náměstí',
   'Prague Castle': 'Pražský hrad',
   'Taxi cancelled': 'Taxi zrušeno',
+  'Cancel taxi': 'Zrušit taxi',
+  'Close taxi menu': 'Zavřít nabídku taxi',
   'No street here for a taxi to stop in': 'Tady nemá taxi kde zastavit',
   'No taxi free nearby. Try again in a moment': 'Poblíž není žádné volné taxi. Zkus to za chvíli',
   '{firm} fare: {fare}': 'Jízdné {firm}: {fare}',

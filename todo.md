@@ -581,8 +581,10 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   `centrum`, not yet for `praha` and `ujezd` (the command is under Terrain).
 - **Taxis.** Hail one with T or order one from the two made-up apps (`src/taxi.ts`).
   They can creep or stall behind parked cars in narrow Old Town streets, their routes
-  are sometimes long, the apps have no phone screen of their own, and the touch
-  button hasn't been looked at on a phone.
+  are sometimes long, and the apps have no phone screen of their own. The touch
+  button now names its action (close menu/cancel request), and cancellation clears
+  request state before rebooking. A touch-sized browser check is recorded in
+  `docs/taxi-controls.md`; a physical-phone check remains open.
 - **A tile-load error at start, seen twice** (`TileWorld.loadNow` → `fetchTile`, under
   heavy load, not reproduced). Startup now retries a failing tile and carries on
   without it; the cause of the failed download itself wasn't found. A separate

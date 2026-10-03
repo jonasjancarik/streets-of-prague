@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+// Passenger state/control regressions. Fake traffic stays on one straight edge;
+// routing/parking are outside this check. No browser, map or dependency added.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {registerHooks} from 'node:module';
+import ts from 'typescript';
+registerHooks({load(url,context,next){if(url.includes('/src/')&&url.endsWith('.ts')){const source='import.meta.env = {};\n'+fs.readFileSync(new URL(url),'utf8');return {format:'module',shortCircuit:true,source:ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText};}return next(url,context);}});
+globalThis.location={search:'?lang=en'};Object.defineProperty(globalThis,'navigator',{value:{language:'en'},configurable:true});
+globalThis.localStorage={getItem:()=>null,setItem(){}};
+const button={dataset:{},textContent:'Taxi',listeners:{},addEventListener(event,fn){this.listeners[event]=fn;}};
+globalThis.document={getElementById:id=>id==='t-taxi'?button:null,querySelectorAll:()=>[],documentElement:{lang:'en'}};
+const {Taxis}=await import('../src/taxi.ts');
+const {Polyline}=await import('../src/network.ts');
+const {setLang}=await import('../src/i18n.ts');
+const THREE=await import('three');
+const edge={pts:[[0,0],[100,0]],path:new Polyline([[0,0],[100,0]]),hw:'residential',u:'a',v:'b',speed:10};
+const follows=[];let left=50,refits=0,spawns=0;
+const agent={car:{type:'taxi',x:25,y:2,h:0,vx:0,vy:0,gz:0,refit(){refits++;}},hired:false,reckless:false,kerb:false,speed:0,jam:0,route:{head:edge,s:0,to:()=>left,follow:plan=>follows.push(plan),lookahead:()=>({p:{x:0,y:0}})}};
+const traffic={agents:[agent],spawn:()=>{spawns++;return null;}};
+const panel={hidden:true,innerHTML:'',addEventListener(){}};
+const walker={x:20,y:2,h:0,vx:0,vy:0,mesh:{visible:true},sync(){}};
+let money=10000,streetAvailable=true;
+const taxi=new Taxis({scene:new THREE.Scene(),traffic,drive:{out:new Map()},world:{keyAt:()=>'',available:new Set(),loaded:new Set()},el:panel,walker,edgesNear:()=>streetAvailable?[edge]:[],offscreen:()=>true,toLocal:()=>[0,0],standAt:(x,y)=>[x,y],banner(){},wallet:{has:fare=>money>=fare,get balance(){return money;},take:fare=>{money-=fare;return fare;}}});
+const click=()=>button.listeners.click();
+taxi.render(true);assert.equal(button.textContent,'Taxi');
+click();taxi.render(true);assert.equal(taxi.state,'menu');assert.equal(button.textContent,'Close taxi menu');
+assert.equal(button.dataset.t,'Close taxi menu');
+taxi.key('Digit2',true);taxi.render(true);assert.equal(taxi.state,'coming');assert.equal(button.textContent,'Cancel taxi');assert(agent.hired&&agent.reckless);assert.equal(refits,1);
+taxi.waiting=true;taxi.scale=4;taxi.dest=1;taxi.note='old message';taxi.noteT=5;taxi.mark(.1);
+click();taxi.render(true);assert.equal(taxi.state,'off');assert.equal(taxi.agent,null);assert.equal(taxi.dest,null);assert.equal(taxi.scale,1);assert.equal(taxi.waiting,false);assert.equal(taxi.beacon.visible,false);assert(!agent.hired&&!agent.reckless&&!agent.stop);assert.equal(follows.at(-1),null);assert.equal(button.textContent,'Taxi');assert.equal(taxi.note,'Taxi cancelled');assert.equal(money,10000);
+click();taxi.render(true);assert.equal(taxi.state,'menu');assert.equal(taxi.note,'');assert.equal(taxi.noteT,0);assert(!taxi.hint(true).includes('cancelled'),'reopening does not keep cancellation notice');
+taxi.key('Digit3',true);taxi.render(true);assert.equal(taxi.state,'coming');assert.equal(taxi.agent,agent);assert.equal(taxi.waiting,false);assert.equal(taxi.note,'');assert.equal(refits,2);
+left=0;taxi.update(.1);taxi.render(true);assert.equal(taxi.state,'waiting');assert.equal(button.textContent,'Cancel taxi');assert(taxi.enter());taxi.render(true);assert.equal(taxi.state,'riding');assert.equal(walker.mesh.visible,false);taxi.leave(false);taxi.render(true);assert.equal(walker.mesh.visible,true);assert.equal(taxi.state,'off');assert(!agent.hired);
+// Language changes keep the current action and preserve original keys/choices.
+setLang('cs');click();taxi.render(true);assert.equal(button.textContent,'Zavřít nabídku taxi');taxi.key('Digit2',true);taxi.render(true);assert.equal(button.textContent,'Zrušit taxi');assert.equal(button.dataset.t,'Cancel taxi');click();assert.equal(taxi.note,'Taxi zrušeno');
+setLang('en');traffic.agents=[];click();taxi.key('Digit1',true);taxi.render(true);assert.equal(taxi.state,'off');assert.equal(taxi.agent,null);assert(taxi.note.includes('No free taxi passing'));assert.equal(spawns,0,'hailing never changes into an app spawn');
+click();assert.equal(taxi.note,'');taxi.key('Digit2',true);taxi.render(true);assert.equal(taxi.state,'off');assert.equal(taxi.agent,null);assert(taxi.note.includes('No taxi free'));assert.equal(spawns,1);
+click();taxi.render(true);assert.equal(button.textContent,'Close taxi menu');click();taxi.render(true);assert.equal(taxi.state,'off');assert.equal(button.textContent,'Taxi');
+money=0;click();taxi.key('Digit2',true);assert.equal(taxi.state,'off');assert(taxi.note.includes('Not enough money'));assert.equal(taxi.agent,null);
+money=10000;streetAvailable=false;click();taxi.key('Digit2',true);assert.equal(taxi.state,'off');assert(taxi.note.includes('No street here'));assert.equal(taxi.agent,null);
+console.log('Taxi controls: English/Czech labels, booking, arrival, cancel/rebook, release, stale-note/loading reset and failure paths passed');

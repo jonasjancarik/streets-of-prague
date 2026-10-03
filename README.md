@@ -166,7 +166,10 @@ that without a new renderer.
   Square, Main Station, Anděl, Prague Castle, Vyšehrad…). It finds its own way there
   along the one-way streets, sped up like a tram ride until the last 200 m, and you
   pay at the end from your money (a street taxi 60 Kč plus 36 Kč a km, the apps less; the meter shows in the hint, and a crash means a free ride). E gets you out
-  early, and T cancels a taxi on its way. As on a tram, the police can't arrest you
+  early, and T cancels a taxi on its way. On touch, the same Taxi button changes to
+  **Close taxi menu** while choosing and **Cancel taxi** while a driver is coming or
+  waiting. Cancelling releases the driver without a charge; opening the menu again
+  clears the old notice so you can book another taxi. As on a tram, the police can't arrest you
   in a taxi, and your stars fade twice as fast.
 - **On a phone or tablet** on-screen controls appear (add `?touch` to get them on a
   desktop). The left thumb has a round stick: on foot, push it the way you want to go
