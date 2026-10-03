@@ -75,9 +75,9 @@ elif ! ssh "$HOST" test -d "$DIR/data/$ID"; then
   ssh "$HOST" mv "$DIR/data/$ID.partial" "$DIR/data/$ID"
 fi
 
-ssh "$HOST" bash -s -- "$DIR" "$SHA" "$PORT" "$ID" <<'EOF'
+ssh "$HOST" bash -s -- "$DIR" "$SHA" "$PORT" "$ID" "$CF_MAP" <<'EOF'
 set -euo pipefail
-DIR=$1 SHA=$2 PORT=$3 ID=$4
+DIR=$1 SHA=$2 PORT=$3 ID=$4 CF_MAP=$5
 docker rm -f streets-of-prague >/dev/null 2>&1 || true
 docker run -d --name streets-of-prague --restart unless-stopped \
   -p 127.0.0.1:$PORT:80 \
@@ -87,7 +87,8 @@ docker run -d --name streets-of-prague --restart unless-stopped \
   busybox:latest httpd -f -p 80 -h /www -c /etc/httpd.conf >/dev/null
 sleep 1
 curl -fsS -o /dev/null -w "index.html: HTTP %{http_code}\n" http://127.0.0.1:$PORT/
-curl -fsS -o /dev/null -w "praha index: HTTP %{http_code} %{content_type}\n" http://127.0.0.1:$PORT/data/$ID/praha_now/index.json
+# With --cloudflare-map there is no map here: the check of its format ran before the build.
+[ -n "$CF_MAP" ] || curl -fsS -o /dev/null -w "praha index: HTTP %{http_code} %{content_type}\n" http://127.0.0.1:$PORT/data/$ID/praha_now/index.json
 # Which code and which map are live, and the map this release went out with.
 echo "$ID" > "$DIR/releases/$SHA/data-id"
 echo "$SHA" > "$DIR/current"
