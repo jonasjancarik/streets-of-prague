@@ -427,9 +427,12 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 Seasonal ground (plan 023 step 3) is implemented in an isolated checkout: fresh
 spring grass, late-summer dry patches, winter olive grass, November–March woodland
 litter, spring crops and harvested earth. Evergreen hedges keep their foliage.
-The 15 July surface palette stays unchanged. Date regressions and typecheck pass;
-matched WebGPU/WebGL screenshots and ground-cost measurements are pending before
-integration. The start-screen season choices remain step 4.
+The 15 July surface palette stays unchanged. Date regressions, typecheck and 30
+scene checks per renderer pass, with 48 matched seasonal images and real field
+and hedge views. Warmed 2× A/B comparisons in both renderers preserve draw counts;
+their small or contradictory frame-time differences leave the ground cost
+unresolved. See [the evidence](docs/evidence/seasons-step3/README.md). Integration
+is still separate; the start-screen season choices remain step 4.
 
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow
 (`src/weather.ts`), IPR's street lamps with a light map over the view

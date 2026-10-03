@@ -7,7 +7,7 @@ const dates = ['01-15', '03-15', '04-20', '05-20', '07-15', '08-20', '10-20', '1
 const places = [
   { name: 'park', at: [50.083, 14.4073] as [number, number], height: 70, tilt: 30, heading: 90 },
   { name: 'woods', at: [50.08456415, 14.39211258] as [number, number], height: 55, tilt: 35, heading: 90 },
-  { name: 'street', at: [50.076, 14.4185] as [number, number], height: 65, tilt: 30, heading: 0 },
+  { name: 'street', at: [50.0757, 14.422] as [number, number], height: 55, tilt: 35, heading: 270 },
 ];
 
 export default {

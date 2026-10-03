@@ -1,0 +1,22 @@
+[woods] Renderer: three.js WebGLRenderer
+{
+ "ratio": 2,
+ "tier": "high",
+ "camera": "// here · https://www.google.com/maps/search/?api=1&query=50.08456,14.39211\nawait t.go([50.08456, 14.39211], { heading: 297 });\nt.time('14:00');\nt.weather('clear');\nt.season('11-15');\nt.set({ money: 10000, stars: 0, health: 100 });\nawait t.camera({ at: [50.08456, 14.39211], height: 55, tilt: 35, heading: 90 });",
+ "backend": "webgl",
+ "marker": "2026-10-02T20:16:12Z"
+}
+woods   off    92.6 fps  10.8 ms/frame  js 10.6 ms  gpu 19.4 ms  [96 93 91 91]
+woods   on     92.7 fps  10.8 ms/frame  js 10.5 ms  gpu 19.4 ms  [95 93 92 91]
+woods   on is 0.1% quicker a frame
+[park] Renderer: three.js WebGLRenderer
+{
+ "ratio": 2,
+ "tier": "high",
+ "camera": "// here · https://www.google.com/maps/search/?api=1&query=50.083,14.4073\nawait t.go([50.083, 14.4073], { heading: 351 });\nt.time('14:00');\nt.weather('clear');\nt.season('11-15');\nt.set({ money: 10000, stars: 0, health: 100 });\nawait t.camera({ at: [50.083, 14.4073], height: 70, tilt: 30, heading: 90 });",
+ "backend": "webgl",
+ "marker": "2026-10-02T20:16:12Z"
+}
+park    off   217.8 fps  4.6 ms/frame  js 4.4 ms  gpu 7.2 ms  [216 219 218 218]
+park    on    218.2 fps  4.6 ms/frame  js 4.4 ms  gpu 7.2 ms  [219 218 218 218]
+park    on is 0.2% quicker a frame

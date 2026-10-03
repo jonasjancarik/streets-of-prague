@@ -11,7 +11,7 @@ July, October and January each look like themselves.
 
 ## Status and starting point
 
-- Status: STEPS 1 AND 2 DONE (2 October 2026). The three decisions below are made.
+- Status: STEPS 1–3 DONE (3 October 2026). The three decisions below are made.
 - Effort: four to five days for phases 1–4. Risk: medium for the trees (two renderers,
   the shadow pass, and the costliest shader in a wood); low for the rest.
 - Planned at: `c2c76265e35c795e07a2b0b33f63ebb3f3db5afa`, 2 October 2026, from reading
@@ -148,7 +148,7 @@ depend on the date.
    bench's Chrome got WebGL instead of WebGPU on 2 October) and is still owed.
 3. **Ground.** Grass, the floor of the woods, fields, hedges. One day, with a bench of the
    ground at 2×.
-   **Implemented in an isolated checkout (3 October), validation in progress.**
+   **Done in an isolated checkout (3 October).**
    `src/groundSeason.ts` computes linear colour multipliers only when the game date
    changes: one vec4 for grass tint and existing dry-patch strength, and colour
    uniforms for woodland litter, crops and evergreen hedges. This keeps date-curve
@@ -159,8 +159,12 @@ depend on the date.
    winter tints. Both GLSL and TSL paths are updated. Terrain geometry is unchanged.
    `node scripts/check-ground-season.mjs` checks the whole year's smoothness,
    summer restoration and evergreen semantics. `seasonal-ground` captures the same
-   park, wood and tree-lined street on eight dates. Visual parity and the 2×
-   cost measurement are still pending; no performance claim is made.
+   park, wood and tree-lined street on eight dates: 48 matched WebGL/WebGPU images,
+   with 30 scenario checks per renderer, plus real fields and hedges. The warmed
+   2× ground comparison ran in both renderers with reversed order and unchanged
+   controls. Draw counts stayed equal within each pair, but frame-time variation
+   leaves the added cost unresolved; no speedup is claimed. See
+   [the source, cameras, images and raw timing evidence](../docs/evidence/seasons-step3/README.md).
 4. **Start screen and words.** The season row and the poster's look for each
    (`index.html`), Czech strings (`src/cs.ts`), README, `site/index.html`, a note in
    `todo.md`. Half a day.
