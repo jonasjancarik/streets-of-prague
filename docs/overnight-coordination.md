@@ -138,3 +138,7 @@ All seven worker threads are idle with completed turns. No GPU/heavy lock remain
 The user authorized targeted wrap-up after the original cutoff. The50% weekly-quota stop remains active; no new features are in scope. Fresh lamp-final-wrap and tow-fixture-wrapup worktrees preserve the completed overnight baseline46b1f3e.
 
 Accept tow fixture5c47580 after independent review and parent diff inspection: production cleanup is unchanged, actual near/far eligibility is asserted, unrelated600m culling is excluded, original90-second removal/retention assertions remain, and three immutable focused replays pass. Historical13/15 evidence remains intact. Lamp failure is now traced to a tram collision omitted by test setup clearance; its correction is pending.
+
+## Resumed wrap-up: lamp fixture accepted
+
+Accept lamp fixture 2cc627f after independent review and parent diff inspection. A predecessor replay identifies immediate tram-body collision omitted by setup clearance; the helper now checks native car/tram circles without changing gameplay collision code or the original post-down/10–45 km/h assertions. CPU negative controls and standalone/ordered scene checks pass. Exact original full-suite tram/post identity remains unrecorded; this is not an identical-world replay claim. Tow fixture is already accepted and integrated. One combined confirmation remains before closeout.
