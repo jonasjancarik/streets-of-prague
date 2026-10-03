@@ -286,12 +286,12 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     sound.toggle();
     update();
   });
-  open.addEventListener('click', () => {
-    open.blur();
+  const show = () => {
     update();
     telemetry.did('opened the settings');
     box.showModal();
-  });
+  };
+  open.addEventListener('click', () => { open.blur(); show(); });
   close.addEventListener('click', () => box.close());
   // While it's open, keys don't reach the game (Escape still closes it).
   box.addEventListener('keydown', (e) => e.stopPropagation());
@@ -300,7 +300,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     if (e.target === box && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) box.close();
   });
   // The game stands still while the panel is open.
-  const api = { get open() { return box.open; } };
+  const api = { get open() { return box.open; }, show };
   // M, G and P change these from the keyboard: look again once the game has.
   window.addEventListener('keydown', (e) => { if (['KeyM', 'KeyG', 'KeyP'].includes(e.code)) setTimeout(update); });
   return api;

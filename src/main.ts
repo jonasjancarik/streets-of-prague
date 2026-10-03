@@ -55,6 +55,7 @@ import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import type { Surface, HornKind } from './audio.ts';
 import { setupTouch } from './touch.ts';
+import { setupGamepad } from './gamepad.ts';
 import './credits.ts';
 import { Police } from './police.ts';
 import { Brigade } from './brigade.ts';
@@ -1145,6 +1146,7 @@ async function main() {
   const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, doors: () => ride.doors(), jump: () => {
     if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !taxi.riding) { input.jump = true; telemetry.did('jumped'); }
   }, force: params.has('touch') });
+  const pad = setupGamepad({ settings: () => settingsPanel.show() });
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -1817,13 +1819,14 @@ async function main() {
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
     // it steers along your lane, and A/D picks the turn at the next junction instead.
+    pad.update(dt, metro.active || dialog.active, zoomBy);
     const ctl = {
-      move: touch.move || (input.up ? 1 : 0) - (input.down ? 1 : 0),
+      move: touch.move || pad.move || (input.up ? 1 : 0) - (input.down ? 1 : 0),
       turn: touch.turn || (input.left ? 1 : 0) - (input.right ? 1 : 0),
       run: input.run || touch.run,
       brake: input.brake || touch.brake,
       jump: input.jump,
-      aim: touch.aim,
+      aim: touch.aim || pad.aim,
     };
     // On a tram, Shift speeds up the ride: the whole world runs faster, in steps short
     // enough for the physics.
