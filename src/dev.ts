@@ -419,9 +419,11 @@ function setupMist($: (id: string) => HTMLElement, weather: { get: () => string;
   mode.onchange = () => { MIST_MODE.value = mode.value as MistMode; refresh(); save(); };
   mode.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   refresh();
-  // Opening the section shows the mist, whatever the weather was.
-  ($('dev-mist') as HTMLDetailsElement).addEventListener('toggle', (ev) => {
-    if ((ev.target as HTMLDetailsElement).open && weather.get() !== 'mist') weather.set('mist');
+  // Preview mist at the opening click. A queued `toggle` could otherwise replace
+  // weather selected immediately afterwards.
+  const mistSection = $('dev-mist') as HTMLDetailsElement;
+  mistSection.querySelector('summary')!.addEventListener('click', () => {
+    if (!mistSection.open && weather.get() !== 'mist') weather.set('mist');
   });
   $('dev-mist-copy').onclick = async () => {
     await navigator.clipboard.writeText(`MIST_MODE.value = '${MIST_MODE.value}';\nMIST = ${JSON.stringify(MIST, null, 2)};\nLOCAL_MIST = ${JSON.stringify(LOCAL_MIST, null, 2)};`);

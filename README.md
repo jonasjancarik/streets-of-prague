@@ -322,6 +322,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   every few seconds and thunders a moment later. It
   picks the next one every 20 to 60 minutes of the game's clock, by the game's date (rain in
   summer, snow and mist in winter, mist mostly in the morning); a picked weather stays.
+  Picking weather in the developer panel applies it immediately, including rain,
+  mist and the ground's wetness or snow cover, even while the simulation is paused.
+  The P key and the ordinary settings retain the gradual transition.
   Clouds hide the sun and fade the shadows, and the sky's light turns grey by day and
   orange from the city at night (`src/sky.ts`). Rain falls as streaks and snow as
   flakes in a box round the view that stays put in the world, so you move through

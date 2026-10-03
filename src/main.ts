@@ -951,7 +951,7 @@ async function main() {
   const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, setFire, setHurt: () => !!hurtNearest(), backOnRoad,
     timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics,
     season: { day: () => season.day, set: (day) => season.set(day), label: () => season.label() },
-    weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); }, label: () => weather.name } });
+    weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, label: () => weather.name } });
   // ---- Saved games (save.ts) ---------------------------------------------
   // The game saves itself into the "auto" slot every few seconds and when the page is
   // left; a refresh then offers to continue from there (see `resume`). Test runs (?go)
