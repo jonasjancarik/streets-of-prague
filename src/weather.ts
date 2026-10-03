@@ -234,11 +234,11 @@ export const setFx = (f: typeof fxBy) => { fxBy = f; };
 // The mist's shape. The developer panel changes these while the game runs (dev.ts);
 // WeatherFx and Sky read them every frame.
 export const MIST = {
-  haze: 0.16,     // the thin fog over the whole view in mist, as Sky's `amount`
-  most: 0.24,     // how much one sheet hides where the mist is thickest
+  haze: 0.06,     // the thin fog over the whole view in mist, as Sky's `amount`
+  most: 0.17,     // how much one sheet hides where the mist is thickest
   sheets: 7,      // how many sheets a bank is made of
-  low: 0.6,       // the lowest and the highest sheet above the ground (m)
-  high: 11,
+  low: 0.2,       // the lowest and the highest sheet above the ground (m)
+  high: 7.5,
   bankSize: 220,  // how far across a bank is, the wisps in it and their fine edge (m)
   wispSize: 36,
   fineSize: 12,
@@ -246,7 +246,7 @@ export const MIST = {
   wispShare: 0.6,
   from: 0.6,      // where the mist starts (lower: more of the city in mist)
   soft: 0.16,     // how gradually it thickens from there
-  thin: 0.16,     // how much thinner the top sheet is than the lowest
+  thin: 0.01,     // how much thinner the top sheet is than the lowest
   speed: 1,       // how fast it drifts
 };
 export type Mist = typeof MIST;
