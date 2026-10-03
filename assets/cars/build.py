@@ -10,8 +10,13 @@ Conventions: metres, Z up, facing +X, left is +Y, wheels on z = 0, centred on th
 origin; the glTF exporter turns this into three.js's Y up, still facing +X. Each object
 is named after its type in src/car.ts (TYPES), with the same length, width and height.
 Materials are named after the part they colour (Paint, Glass, Trim, Tyre, Metal, Lamp,
-Tail, Plate, Sign, Blue, Yellow, Bar); src/car.ts colours them by name and puts the
+Tail, Plate, Sign, Blue, Yellow, Bar, Seat); src/car.ts colours them by name and puts the
 car's own colour on Paint.
+
+Doors are objects of their own, children of the body: <type>_door1 (front left), 2 (front
+right), 3 and 4 (rear), each with its origin on its hinge line, so the game can swing
+them open (src/car.ts). Inside there's a floor, walls and seats, seen only through an
+open door.
 
 usage: blender -b --factory-startup -P assets/cars/build.py
        blender -b --factory-startup -P assets/cars/build.py -- --preview DIR
@@ -34,6 +39,7 @@ COLOURS = {
     "Tyre": (0.01, 0.01, 0.01), "Metal": (0.35, 0.37, 0.4), "Lamp": (0.95, 0.9, 0.7),
     "Tail": (0.5, 0.02, 0.02), "Plate": (0.85, 0.85, 0.82), "Sign": (0.95, 0.9, 0.55),
     "Blue": (0.02, 0.08, 0.4), "Yellow": (0.7, 0.75, 0.05), "Bar": (0.02, 0.02, 0.03),
+    "Seat": (0.07, 0.07, 0.075),
 }
 MATS = list(COLOURS)
 
@@ -63,6 +69,8 @@ class Car:
     def __init__(self):
         self.bm = bmesh.new()
         self.under = []  # faces that close the body for working out normals, then go
+        self.door = self.bm.faces.layers.int.new("door")  # which door a face is part of (0: none)
+        self.inside = []  # the interior, added once the normals are worked out
 
     def face(self, verts, mat):
         f = self.bm.faces.new(verts)
@@ -72,9 +80,12 @@ class Car:
     def v(self, x, y, z):
         return self.bm.verts.new((x, y, z))
 
-    def body(self, stations, wheels=(), r=0.31, stripe=None, bonnet_band=None):
+    def body(self, stations, wheels=(), r=0.31, stripe=None, bonnet_band=None, doors=(), cabin=None):
         """stations: (x, half width, height of the top, height of the sill), front to
-        back. Over each wheel (at x in `wheels`, radius `r`) the sill rises in an arch."""
+        back. Over each wheel (at x in `wheels`, radius `r`) the sill rises in an arch.
+        doors: (x of the front edge, x of the back edge, number of the left door), the
+        right one being the next number. cabin: (front, back), where the top is left open
+        under the cabin, so the seats show through an open door."""
         def at(x):
             for (x0, *a), (x1, *b) in zip(stations, stations[1:]):
                 if x1 <= x <= x0:
@@ -89,7 +100,10 @@ class Car:
                 arch[xw + ra * math.cos(t)] = r + ra * math.sin(t)
             for e in (1, -1):
                 arch[xw + e * (ra + 0.002)] = None
-        xs = sorted({s[0] for s in stations} | set(arch), reverse=True)
+        xs = {s[0] for s in stations} | set(arch)
+        for x0, x1, _ in doors:
+            xs |= {x for x in (x0, x1) if all(abs(x - k) > 1e-4 for k in xs)}
+        xs = sorted(xs, reverse=True)
         rings = []
         for x in xs:
             w, zt, z0 = at(x)
@@ -105,21 +119,31 @@ class Car:
             rings.append((L, R, [m for _, _, m in pts]))
         for s in range(len(rings) - 1):
             (L0, R0, mats), (L1, R1, _) = rings[s], rings[s + 1]
+            mid = (xs[s] + xs[s + 1]) / 2
+            door = next((k for x0, x1, k in doors if x1 < mid < x0), 0)
             for i in range(len(L0) - 1):
-                self.face([L0[i], L1[i], L1[i + 1], L0[i + 1]], mats[i])
-                self.face([R0[i], R0[i + 1], R1[i + 1], R1[i]], mats[i])
-            top = "Blue" if bonnet_band and bonnet_band[0] < (xs[s] + xs[s + 1]) / 2 < bonnet_band[1] else "Paint"
-            self.face([L0[-1], L1[-1], R1[-1], R0[-1]], top)
+                left = self.face([L0[i], L1[i], L1[i + 1], L0[i + 1]], mats[i])
+                right = self.face([R0[i], R0[i + 1], R1[i + 1], R1[i]], mats[i])
+                # (The black sill under a door stays on the body.)
+                if door and i:
+                    left[self.door], right[self.door] = door, door + 1
+            top = "Blue" if bonnet_band and bonnet_band[0] < mid < bonnet_band[1] else "Paint"
+            lid = self.face([L0[-1], L1[-1], R1[-1], R0[-1]], top)
+            if cabin and cabin[1] < mid < cabin[0]:
+                self.under.append(lid)
             self.under.append(self.face([L0[0], R0[0], R1[0], L1[0]], "Trim"))
         for L, R, mats in (rings[0], rings[-1]):
             for i in range(len(L) - 1):
                 # Bumpers across the bottom, paint above.
                 self.face([L[i], L[i + 1], R[i + 1], R[i]], "Trim" if i == 0 else "Paint")
 
-    def cabin(self, belt, xa, xb, xm, xc, xd, wb, wr, top, glass_rear=True, glass_back_side=True, xm_top=None):
+    def cabin(self, belt, xa, xb, xm, xc, xd, wb, wr, top, glass_rear=True, glass_back_side=True, xm_top=None,
+              rear_doors=True, xq=None):
         """Windscreen from (xa, belt) up to (xb, top), roof to xc, rear window down to
         xd; sides from half width wb at the belt to wr at the roof, split at xm by the
-        B pillar. Every window is inset, so the pillars and frames show in paint."""
+        B pillar. Every window is inset, so the pillars and frames show in paint.
+        The front side windows are part of doors 1 and 2, the back ones of 3 and 4 (with
+        rear_doors): as far back as xq, where another pillar ends the door, if xq is given."""
         xm_top = xm if xm_top is None else xm_top
         z0 = belt - 0.02
         A, M, D = ([self.v(x, s * wb, z0) for s in (1, -1)] for x in (xa, xm, xd))
@@ -127,10 +151,26 @@ class Car:
         screen = self.face([A[0], A[1], B[1], B[0]], "Glass")
         rear = self.face([D[1], D[0], C[0], C[1]], "Glass")
         sides_front = [self.face([A[0], B[0], T[0], M[0]], "Glass"), self.face([A[1], M[1], T[1], B[1]], "Glass")]
-        sides_back = [self.face([M[0], T[0], C[0], D[0]], "Glass"), self.face([M[1], D[1], C[1], T[1]], "Glass")]
+        for k, f in enumerate(sides_front):
+            f[self.door] = 1 + k
         self.face([B[0], B[1], T[1], T[0]], "Paint")
-        self.face([T[0], T[1], C[1], C[0]], "Paint")
-        self.face([A[0], M[0], D[0], D[1], M[1], A[1]], "Paint")
+        if xq is None:
+            sides_back = [self.face([M[0], T[0], C[0], D[0]], "Glass"), self.face([M[1], D[1], C[1], T[1]], "Glass")]
+            behind = sides_back
+            self.face([T[0], T[1], C[1], C[0]], "Paint")
+            floor = self.face([A[0], M[0], D[0], D[1], M[1], A[1]], "Paint")
+        else:
+            Q = [self.v(xq, s * wb, z0) for s in (1, -1)]
+            P = [self.v(xq - 0.06, s * wr, top) for s in (1, -1)]
+            behind = [self.face([M[0], T[0], P[0], Q[0]], "Glass"), self.face([M[1], Q[1], P[1], T[1]], "Glass")]
+            sides_back = behind + [self.face([Q[0], P[0], C[0], D[0]], "Glass"), self.face([Q[1], D[1], C[1], P[1]], "Glass")]
+            self.face([T[0], T[1], P[1], C[1], C[0], P[0]], "Paint")
+            floor = self.face([A[0], M[0], Q[0], D[0], D[1], Q[1], M[1], A[1]], "Paint")
+        if rear_doors:
+            for k, f in enumerate(behind):
+                f[self.door] = 3 + k
+        # (The floor under the windows is only there to close the shape.)
+        self.under.append(floor)
         self.inset([screen], 0.055)
         self.inset(sides_front + (sides_back if glass_back_side else []), 0.06)
         if not glass_back_side:
@@ -142,9 +182,38 @@ class Car:
             rear.material_index = MATS.index("Paint")
 
     def inset(self, faces, t):
-        ring = bmesh.ops.inset_individual(self.bm, faces=faces, thickness=t, depth=-0.012)["faces"]
-        for f in ring:
-            f.material_index = MATS.index("Paint")
+        for face in faces:
+            ring = bmesh.ops.inset_individual(self.bm, faces=[face], thickness=t, depth=-0.012)["faces"]
+            for f in ring:
+                f.material_index = MATS.index("Paint")
+                f[self.door] = face[self.door]
+
+    def interior(self, x0, x1, w, floor, belt, top, xb, xc, wr, seats):
+        """What shows through an open door: a floor and walls from x0 back to x1 up to
+        the belt, the lining of the roof (from xb to xc, half width wr) and the seats:
+        (x, y, width) of each."""
+        self.inside.append((x0, x1, w, floor, belt, top, xb, xc, wr))
+        for x, y, width in seats:
+            self.block((x, y, floor + 0.13), (0.5, width, 0.26), "Seat")
+            self.block((x - 0.3, y, floor + 0.45), (0.14, width, 0.62), "Seat")
+
+    def line(self, x0, x1, w, floor, belt, top, xb, xc, wr):
+        """The inside faces of the cabin, each facing the middle of it."""
+        middle = Vector(((x0 + x1) / 2, 0, (floor + top) / 2))
+
+        def quad(*points):
+            f = self.face([self.v(*p) for p in points], "Seat")
+            f.normal_update()
+            if f.normal.dot(middle - f.calc_center_median()) < 0:
+                f.normal_flip()
+
+        lo = [(x0, w), (x0, -w), (x1, -w), (x1, w)]
+        hi = [(xb, wr), (xb, -wr), (xc, -wr), (xc, wr)]
+        quad(*((x, y, floor) for x, y in lo))
+        quad(*((x, y, top) for x, y in hi))
+        for (a, b), (c, d) in zip(zip(lo, lo[1:] + lo[:1]), zip(hi, hi[1:] + hi[:1])):
+            quad((*a, floor), (*b, floor), (*b, belt), (*a, belt))
+            quad((*a, belt), (*b, belt), (*d, top), (*c, top))
 
     def block(self, c, s, mat):
         (cx, cy, cz), (sx, sy, sz) = c, s
@@ -190,6 +259,37 @@ class Car:
         bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
         bmesh.ops.delete(bm, geom=self.under, context="FACES_ONLY")
+        for box in self.inside:
+            self.line(*box)
+        doors = [self.hang(k) for k in sorted({f[self.door] for f in bm.faces} - {0})]
+        obj = self.object(name, bm)
+        for k, (door, hinge) in doors:
+            d = self.object(f"{name}_door{k}", door)
+            d.parent = obj
+            d.location = hinge
+        return obj
+
+    def hang(self, k):
+        """Takes door k's faces off the body: a mesh of its own, lined on the inside,
+        with its hinge (the front edge, on the ground) at the origin."""
+        faces = [f for f in self.bm.faces if f[self.door] == k]
+        side = 1 if faces[0].calc_center_median().y > 0 else -1
+        points = [v.co for f in faces for v in f.verts]
+        front = max(p.x for p in points)
+        hinge = Vector((front, side * max(abs(p.y) for p in points if p.x > front - 0.02), 0))
+        door = bmesh.new()
+        glass = MATS.index("Glass")
+        for f in faces:
+            skin = [door.verts.new(v.co - hinge) for v in f.verts]
+            door.faces.new(skin).material_index = f.material_index
+            lining = [door.verts.new(v.co - hinge - Vector((0, side * 0.035, 0))) for v in reversed(f.verts)]
+            door.faces.new(lining).material_index = glass if f.material_index == glass else MATS.index("Seat")
+        bmesh.ops.delete(self.bm, geom=faces, context="FACES")
+        bmesh.ops.remove_doubles(door, verts=door.verts, dist=1e-5)
+        return k, (door, hinge)
+
+    @staticmethod
+    def object(name, bm):
         mesh = bpy.data.meshes.new(name)
         bm.to_mesh(mesh)
         bm.free()
@@ -238,8 +338,17 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
         xb, xc, xd = xa - 0.78, -n + 0.3, -n + 0.1
     xm = (xa + xd) / 2 + 0.1
     wheels = (n - 0.82, -n + 0.8)
-    c.body(stations, wheels, r, stripe=stripe, bonnet_band=(n - 1.0, n - 0.55) if stripe else None)
-    c.cabin(belt, xa, xb, xm, xc, xd, w - 0.11, w * 0.74, H, xm_top=(xb + xc) / 2 + 0.05)
+    # The rear doors end where the wheel arch begins; a window going on behind that
+    # (a hatchback's, an estate's) gets a pillar there.
+    xq = wheels[1] + r + 0.09
+    back = max(xd + 0.05, -n + 0.3)
+    c.body(stations, wheels, r, stripe=stripe, bonnet_band=(n - 1.0, n - 0.55) if stripe else None,
+           doors=[(xa, xm, 1), (xm, xq, 3)], cabin=(xa, back))
+    c.cabin(belt, xa, xb, xm, xc, xd, w - 0.11, w * 0.74, H, xm_top=(xb + xc) / 2 + 0.05,
+            xq=xq if xq - 0.06 > xc + 0.3 else None)
+    floor = 0.36 + lift
+    c.interior(xa - 0.01, back, w - 0.08, floor, belt - 0.02, H - 0.03, xb - 0.03, xc + 0.03, w * 0.74 - 0.03,
+               [((xa + xm) / 2 - 0.1, s * w * 0.48, 0.5) for s in (1, -1)] + [((xm + xq) / 2 - 0.05, 0, W - 0.4)])
     c.wheels(wheels, w, r)
     c.mirrors(xa - 0.08, w, belt + 0.07)
     c.lamps(n - 0.06, -n + 0.04, w * 0.6, w * 0.68, 0.64 + lift, boot - 0.12)
@@ -266,10 +375,13 @@ def van(name="van", L=5.2, W=2.0, H=2.3):
     ]
     xa = n - 0.62
     wheels = (n - 0.9, -n + 0.95)
-    c.body(stations, wheels, 0.34)
+    xm = xa - 1.05
+    c.body(stations, wheels, 0.34, doors=[(xa, xm, 1)], cabin=(xa, xm - 0.3))
     # A tall box behind the cab: windows only in the cab doors, none in the back.
-    c.cabin(belt, xa, xa - 0.72, xa - 1.05, -n + 0.06, -n + 0.02, w - 0.02, w * 0.93, H,
-            glass_rear=False, glass_back_side=False, xm_top=xa - 1.05)
+    c.cabin(belt, xa, xa - 0.72, xm, -n + 0.06, -n + 0.02, w - 0.02, w * 0.93, H,
+            glass_rear=False, glass_back_side=False, xm_top=xm, rear_doors=False)
+    c.interior(xa - 0.01, xm - 0.3, w - 0.08, 0.5, belt - 0.02, H - 0.03, xa - 0.75, xm - 0.3, w * 0.93 - 0.03,
+               [(xa - 0.6, s * w * 0.5, 0.55) for s in (1, -1)])
     c.wheels(wheels, w, 0.34, 0.23)
     c.mirrors(xa - 0.05, w + 0.03, belt + 0.1)
     c.lamps(n - 0.05, -n + 0.02, w * 0.66, w * 0.86, 0.72, 0.85)
@@ -288,8 +400,11 @@ def pickup(name="pickup", L=5.9, W=2.03, H=1.95):
     xa = n - 1.5
     xd = xa - 2.4
     wheels = (n - 1.05, -n + 1.05)
-    c.body(stations, wheels, r)
-    c.cabin(belt, xa, xa - 0.65, xa - 1.2, xd + 0.1, xd, w - 0.12, w * 0.8, H, xm_top=xa - 1.15)
+    xm = xa - 1.2
+    c.body(stations, wheels, r, doors=[(xa, xm, 1), (xm, xd + 0.08, 3)], cabin=(xa, xd + 0.05))
+    c.cabin(belt, xa, xa - 0.65, xm, xd + 0.1, xd, w - 0.12, w * 0.8, H, xm_top=xa - 1.15)
+    c.interior(xa - 0.01, xd + 0.05, w - 0.08, 0.6, belt - 0.02, H - 0.03, xa - 0.68, xd + 0.13, w * 0.8 - 0.03,
+               [(xa - 0.65, s * w * 0.48, 0.55) for s in (1, -1)] + [(xm - 0.6, 0, W - 0.4)])
     c.wheels(wheels, w, r, 0.28)
     c.mirrors(xa - 0.1, w + 0.02, belt + 0.1)
     c.lamps(n - 0.06, -n + 0.04, w * 0.72, w * 0.8, 0.86, 0.98)
@@ -370,6 +485,18 @@ def preview(out_dir):
         "close": ((7, -9, 7), (0, -1.5, 0.6)),
         "wheel": ((3.5, -6.5, 1.2), (1.5, -3, 0.4)),
     }
+    for v, (loc, at) in views.items():
+        cam.location = loc
+        cam.rotation_euler = (Vector(at) - Vector(loc)).to_track_quat("-Z", "Y").to_euler()
+        bpy.context.view_layer.update()
+        scene.render.filepath = str(out / f"cars_{v}.png")
+        bpy.ops.render.render(write_still=True)
+    # And with every door open (no shadows: the open shells confuse the preview's).
+    scene.display.shading.show_shadows = False
+    for o in scene.objects:
+        if "_door" in o.name:
+            o.rotation_euler = (0, 0, math.radians(-62 if o.location.y > 0 else 62))
+    views = {"doors": ((-1, -7.5, 5), (0, -1.6, 0.5)), "doors_back": ((-7, -5, 4.5), (0, -1.6, 0.5)), "doors_top": ((0, 0, 20), (0, 0, 0))}
     for v, (loc, at) in views.items():
         cam.location = loc
         cam.rotation_euler = (Vector(at) - Vector(loc)).to_track_quat("-Z", "Y").to_euler()

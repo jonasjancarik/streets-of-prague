@@ -272,6 +272,7 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
   if (!node) throw new Error(`Missing ${type} in cars.glb`);
   const c = new THREE.Color();
   const parts: THREE.BufferGeometry[] = [];
+  const doors: Door[] = [], at = new THREE.Vector3();
   node.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     const g = new THREE.BufferGeometry();
@@ -279,6 +280,21 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
     g.setAttribute('position', o.geometry.attributes.position.clone());
     g.setAttribute('normal', o.geometry.attributes.normal.clone());
     g.applyMatrix4(o.matrixWorld);
+    // A door (an object of its own in cars.glb, its origin on the hinge): each vertex
+    // carries the hinge and the door's number, and the shader swings it open.
+    let hung: THREE.Object3D | null = o;
+    while (hung && hung !== node && !/_door\d$/.test(hung.name)) hung = hung.parent;
+    const n = hung && hung !== node ? Number(hung.name.slice(-1)) : 0;
+    const hinge = new Float32Array(g.attributes.position.count * 3);
+    if (n) {
+      hung!.getWorldPosition(at);
+      for (let i = 0; i < hinge.length; i += 3) hinge.set([at.x, at.z, n], i);
+      g.computeBoundingBox();
+      const door = doors.find((d) => d.n === n);
+      if (door) door.back = Math.min(door.back, g.boundingBox!.min.x);
+      else doors.push({ n, side: at.z < 0 ? 1 : -1, front: at.x, back: g.boundingBox!.min.x, real: true });
+    }
+    g.setAttribute('hinge', new THREE.BufferAttribute(hinge, 3));
     const name = (Array.isArray(o.material) ? o.material[0] : o.material).name;
     c.set(name === 'Paint' ? '#ffffff' : PART[name] || '#777777');
     const col = new Float32Array(g.attributes.position.count * 3);
@@ -289,7 +305,26 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
   });
   const g = mergeGeometries(parts);
   cache.set(k, g);
+  DOORS.set(type, doors.sort((a, b) => a.n - b.n));
   return g;
+}
+
+// A car's doors: 1 front left (the driver's), 2 front right, 3 and 4 behind them. `side`
+// is 1 on the left; `front` (the hinge) and `back` are along the car from its middle.
+// Vehicles built here from boxes (buses, lorries, the fire engine, the ambulance) have
+// no door to swing (`real`), only the places to get in at the cab.
+export interface Door { n: number; side: number; front: number; back: number; real: boolean }
+const DOORS = new Map<string, Door[]>();
+export const DOOR_OPEN = 1.1; // radians a door swings out
+const DOOR_SPEED = 5.5; // radians a second
+function doorsOf(type: string) {
+  let doors = DOORS.get(type);
+  if (!doors) {
+    const { L, two } = TYPES[type], front = L / 2 - 0.7;
+    doors = two ? [] : [1, -1].map((side, i) => ({ n: i + 1, side, front, back: front - 1, real: false }));
+    DOORS.set(type, doors);
+  }
+  return doors;
 }
 
 // The bus is built here from boxes rather than in Blender: red below the windows, a
@@ -510,7 +545,7 @@ function truckGeometry(type: string, S: CarSpec): THREE.BufferGeometry {
 // type, each part a material named after it. Paint takes the car's colour; the rest:
 const PART: Record<string, string> = {
   Glass: '#1e2830', Trim: '#1f2022', Tyre: '#161616', Metal: '#70757b', Lamp: '#fff6d8', Tail: '#b3161b',
-  Plate: '#e3e5e0', Sign: '#fff4c2', Blue: '#1d4fa3', Yellow: '#d4e02b', Bar: '#1b1f2a',
+  Plate: '#e3e5e0', Sign: '#fff4c2', Blue: '#1d4fa3', Yellow: '#d4e02b', Bar: '#1b1f2a', Seat: '#3a393b',
 };
 let bodies: THREE.Object3D | null = null;
 export async function loadCars(url = 'cars.glb') {
@@ -527,9 +562,22 @@ material.shadowSide = THREE.DoubleSide;
 // Snow settles on the roofs and bonnets (weather.ts).
 material.onBeforeCompile = (sh) => {
   lampLit(sh);
+  // An open door turns about its hinge (the same in TSL: webgpu/vehicles.ts).
   sh.vertexShader = sh.vertexShader
-    .replace('#include <common>', '#include <common>\nattribute float painted;\nattribute vec3 paint;')
-    .replace('#include <color_vertex>', '#include <color_vertex>\nvColor.rgb *= mix(vec3(1.), paint, painted);');
+    .replace('#include <common>', `#include <common>
+attribute float painted;
+attribute vec3 paint;
+attribute vec3 hinge;
+attribute vec4 doors;
+vec2 swing(vec2 p) {
+  if (hinge.z < .5) return p;
+  float a = hinge.z < 1.5 ? -doors.x : hinge.z < 2.5 ? doors.y : hinge.z < 3.5 ? -doors.z : doors.w;
+  float c = cos(a), s = sin(a);
+  return vec2(p.x * c + p.y * s, p.y * c - p.x * s);
+}`)
+    .replace('#include <color_vertex>', '#include <color_vertex>\nvColor.rgb *= mix(vec3(1.), paint, painted);')
+    .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal.xz = swing(objectNormal.xz);')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
   sh.uniforms.uSnow = SNOW;
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', '#include <common>\nuniform float uSnow;')
@@ -600,6 +648,9 @@ export class Car {
   share?: { system: number; station: string | null };
   // The radio station last tuned in this car (an index in STATIONS, -1 for off), heard again when you get back in.
   radio?: number;
+  // Doors that are open or moving: how far each is open, then how far it's meant to be
+  // (radians; undefined while all are shut).
+  door?: Float32Array;
   // How hard the back and front tyres scrub the road (0–1), for their marks (skids.ts).
   skidBack = 0; skidFront = 0;
   _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number]; stamp?: number;
@@ -639,6 +690,39 @@ export class Car {
   // Someone at the wheel: the player, or the police chasing them.
   get driven() { return this.mode === 'player' || this.mode === 'police' || this.mode === 'fire'; }
   get forwardSpeed() { return this.vx * Math.cos(this.h) + this.vy * Math.sin(this.h); }
+
+  get doors() { return doorsOf(this.type); }
+
+  // Opens or shuts door n.
+  open(n: number, on = true) {
+    if (!on && !this.door) return;
+    this.door ||= new Float32Array(8);
+    this.door[3 + n] = on ? DOOR_OPEN : 0;
+  }
+
+  // How far open door n is, 0 to 1.
+  ajar(n: number) { return this.door ? this.door[n - 1] / DOOR_OPEN : 0; }
+
+  // The doors swing towards where they're meant to be; a car that drives off shuts them.
+  swing(dt: number) {
+    const d = this.door;
+    if (!d) return;
+    let open = 0;
+    for (let i = 0; i < 4; i++) {
+      if (this.speed > 4) d[4 + i] = 0;
+      d[i] += clamp(d[4 + i] - d[i], -DOOR_SPEED * dt, DOOR_SPEED * dt);
+      open += d[i] + d[4 + i];
+    }
+    if (!open) this.door = undefined;
+  }
+
+  // Where on the ground you stand to use a door, and where its seat is.
+  beside(door: Door, out = 0.55): Point2 { return this.local((door.front + door.back) / 2 - 0.25, door.side * (this.spec.W / 2 + out)); }
+  seat(door: Door): Point2 { return this.local((door.front + door.back) / 2 - 0.1, door.side * this.spec.W * 0.24); }
+  local(along: number, left: number): Point2 {
+    const c = Math.cos(this.h), s = Math.sin(this.h);
+    return [this.x + c * along - s * left, this.y + s * along + c * left];
+  }
 
   // Choose (or choose again) which model of its type this is, by the variants' weights.
   refit(r: () => number, app = false) {
@@ -930,6 +1014,7 @@ export class CarPool {
   m: THREE.Matrix4;
   boards: THREE.Mesh[] = [];
   private colours = new Map<string, THREE.Color>();
+  private hingeless = new WeakMap<THREE.BufferGeometry, THREE.BufferAttribute>();
 
   constructor(scene: THREE.Scene) {
     if (!kit) throw new Error('Figures kit is not loaded');
@@ -956,6 +1041,17 @@ export class CarPool {
     if (body.index) (body.index as THREE.BufferAttribute & { shared?: boolean }).shared = true;
     const paint = new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 3).fill(1), 3);
     geometry.setAttribute('paint', paint);
+    // (Bodies without doors still need the attributes the shader reads.)
+    if (!body.getAttribute('hinge')) {
+      let hinge = this.hingeless.get(body);
+      if (!hinge) {
+        hinge = new THREE.BufferAttribute(new Float32Array(body.getAttribute('position').count * 3), 3);
+        (hinge as THREE.BufferAttribute & { shared?: boolean }).shared = true;
+        this.hingeless.set(body, hinge);
+      }
+      geometry.setAttribute('hinge', hinge);
+    }
+    geometry.setAttribute('doors', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
     const mesh = new THREE.InstancedMesh(geometry, material, CarPool.pageCapacity);
     mesh.count = 0;
     mesh.visible = false;
@@ -1008,7 +1104,10 @@ export class CarPool {
   // `height(x, y, car)`: the height of the ground (or the bridge deck) under a car's
   // wheels; cars sit on it, pitched and rolled to the slope.
   render(cars: Car[], height: ((x: number, y: number, car: Car) => number) | null = null, dt = 0) {
-    for (const c of cars) if (c.two) this.lean(c, dt);
+    for (const c of cars) {
+      if (c.two) this.lean(c, dt);
+      else if (c.door) c.swing(dt);
+    }
     for (const list of this.groups.values()) list.length = 0;
     for (const c of cars) {
       if (!this.groups.has(c.key)) this.groups.set(c.key, []);
@@ -1053,6 +1152,19 @@ export class CarPool {
         m.visible = m.count > 0;
         sendInstances(m);
         send(m.geometry.getAttribute('paint') as THREE.InstancedBufferAttribute, m.count);
+        // The doors only while one on this page is open, and once more after the last has shut.
+        const from = i * CarPool.pageCapacity;
+        let open = false;
+        for (let k = 0; k < m.count && !open; k++) open = !!list[from + k].door;
+        if (open || m.userData.open) {
+          const doors = m.geometry.getAttribute('doors') as THREE.InstancedBufferAttribute;
+          for (let k = 0; k < m.count; k++) {
+            const d = list[from + k].door;
+            doors.setXYZW(k, d ? d[0] : 0, d ? d[1] : 0, d ? d[2] : 0, d ? d[3] : 0);
+          }
+          send(doors, m.count);
+        }
+        m.userData.open = open;
       }
     }
     this.riders.commit(riders);

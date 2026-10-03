@@ -4,8 +4,9 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { float, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, diffuseColor, dot, smoothstep, mix, select } from 'three/tsl';
+import { float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, diffuseColor, positionLocal, normalLocal, dot, smoothstep, mix, select, sin, cos } from 'three/tsl';
 import { lampLit, uLampOn } from './lamps.ts';
+import { shareInstances } from './trees.ts';
 import { type N, addPort, uSnow } from './common.ts';
 
 const luma = (c: N) => dot(c, vec3(0.3, 0.59, 0.11));
@@ -16,8 +17,29 @@ const glow = (node: N, light: () => N) => {
   node.emissiveNode = (emissive ? vec3(emissive) : vec3(0)).add(light());
 };
 
+// An open door turns about its hinge: `hinge` is where that is (x, z) and which door
+// (0 for the rest of the car), `doors` how far each of the car's four is open. The left
+// ones (1 and 3) open the other way round.
+const hinge: N = attribute('hinge', 'vec3'), doors: N = attribute('doors', 'vec4');
+const opened = select(hinge.z.lessThan(0.5), float(0),
+  select(hinge.z.lessThan(1.5), doors.x.negate(),
+    select(hinge.z.lessThan(2.5), doors.y,
+      select(hinge.z.lessThan(3.5), doors.z.negate(), doors.w))));
+const swing = (p: N): N => {
+  const c = cos(opened), s = sin(opened);
+  return vec2(p.x.mul(c).add(p.y.mul(s)), p.y.mul(c).sub(p.x.mul(s)));
+};
+
 addPort(/^cars$/, (node) => {
   const proto = Object.getPrototypeOf(node);
+  // (Before the instance's own transform goes on, in setupPosition.)
+  node.setupPosition = function (builder: N) {
+    shareInstances(builder);
+    const p = swing(positionLocal.xz.sub(hinge.xy)).add(hinge.xy), n = swing(normalLocal.xz);
+    positionLocal.assign(vec3(p.x, positionLocal.y, p.y));
+    normalLocal.assign(vec3(n.x, normalLocal.y, n.y));
+    return proto.setupPosition.call(this, builder);
+  };
   node.setupDiffuseColor = function (builder: N) {
     proto.setupDiffuseColor.call(this, builder);
     diffuseColor.rgb.mulAssign(mix(vec3(1), attribute('paint', 'vec3'), attribute('painted', 'float')));
