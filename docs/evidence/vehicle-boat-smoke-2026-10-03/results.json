@@ -1,0 +1,296 @@
+{
+  "revision": "5f66b6565aa588f0bf87e6de9926607b8a52b6c6",
+  "map": {
+    "area": "centrum",
+    "built": "2026-10-03T00:26:37Z",
+    "pipeline": "5182c47670",
+    "format": 2,
+    "tiles": 234
+  },
+  "indexSha256": "c2ec699a13d019ae552860f53a467ad50863843a751bd8557f55e1407f01f0a3",
+  "started": "2026-10-03T02:32:27.730Z",
+  "cases": [
+    {
+      "name": "boat-boarding",
+      "initial": {
+        "url": "http://localhost:5204/?place=staromak&go&day=wed&time=14:00&weather=clear&graphics=high&dpr=1&date=10-03&area=centrum",
+        "backend": "WebGPU",
+        "map": {
+          "area": "centrum",
+          "built": "2026-10-03T00:26:37Z",
+          "pipeline": "5182c47670"
+        },
+        "mode": "foot",
+        "boats": []
+      },
+      "result": {
+        "name": "boat-boarding",
+        "title": "Moored pedal boats can be boarded and left from low, clear banks",
+        "checks": [
+          {
+            "name": "three boats waiting at reachable banks",
+            "pass": true,
+            "detail": "3 moored"
+          },
+          {
+            "name": "boat 1: bank at deck height",
+            "pass": true,
+            "detail": "bank 5.699999809265137, water 5.699999809265137"
+          },
+          {
+            "name": "boat 1: normal interaction boards",
+            "pass": true
+          },
+          {
+            "name": "boat 1: normal interaction exits",
+            "pass": true
+          },
+          {
+            "name": "boat 2: bank at deck height",
+            "pass": true,
+            "detail": "bank 8.256421969672749, water 7.300000190734862"
+          },
+          {
+            "name": "boat 2: normal interaction boards",
+            "pass": true
+          },
+          {
+            "name": "boat 2: normal interaction exits",
+            "pass": true
+          },
+          {
+            "name": "boat 3: bank at deck height",
+            "pass": true,
+            "detail": "bank 5.699999809265137, water 5.699999809265137"
+          },
+          {
+            "name": "boat 3: normal interaction boards",
+            "pass": true
+          },
+          {
+            "name": "boat 3: normal interaction exits",
+            "pass": true
+          }
+        ],
+        "ms": 1964,
+        "pass": true
+      },
+      "screenshots": [],
+      "shots": []
+    },
+    {
+      "name": "bus-displays",
+      "initial": {
+        "url": "http://localhost:5204/?place=staromak&go&day=wed&time=14:00&weather=clear&graphics=high&dpr=1&date=10-03&area=centrum",
+        "backend": "WebGPU",
+        "map": {
+          "area": "centrum",
+          "built": "2026-10-03T00:26:37Z",
+          "pipeline": "5182c47670"
+        },
+        "mode": "foot",
+        "boats": []
+      },
+      "result": {
+        "name": "bus-displays",
+        "title": "Buses keep their loaded PID line when taken and entered again",
+        "checks": [
+          {
+            "name": "PID bus lines loaded",
+            "pass": true
+          },
+          {
+            "name": "bus: actual number and destination",
+            "pass": true
+          },
+          {
+            "name": "bus: number survives re-entry",
+            "pass": true
+          },
+          {
+            "name": "minibus: actual number and destination",
+            "pass": true
+          },
+          {
+            "name": "minibus: number survives re-entry",
+            "pass": true
+          }
+        ],
+        "ms": 897,
+        "pass": true
+      },
+      "screenshots": [
+        "/tmp/streets-combined-smoke-20261003/screenshots/bus-route-overhead.png",
+        "/tmp/streets-combined-smoke-20261003/screenshots/bus-route-front.png",
+        "/tmp/streets-combined-smoke-20261003/screenshots/minibus-route-overhead.png",
+        "/tmp/streets-combined-smoke-20261003/screenshots/minibus-route-front.png"
+      ],
+      "shots": [
+        {
+          "name": "bus-route-overhead",
+          "situation": "// here \u00b7 https://www.google.com/maps/search/?api=1&query=50.0873,14.42064\nawait t.go([50.0873, 14.42064], { heading: 90 });\nt.time('14:00');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });\nawait t.drive('bus');\nt.push(0, 90);\nawait t.camera({ at: [50.0873, 14.42064], height: 22, tilt: 40, heading: 270 });",
+          "where": {
+            "lat": 50.0873,
+            "lon": 14.42064,
+            "heading": 90,
+            "street": null,
+            "mode": "car",
+            "x": 45.9,
+            "y": 645.1
+          },
+          "camera": {
+            "x": 45.80213954445677,
+            "y": 645.138199705858,
+            "height": 22,
+            "tilt": 40,
+            "heading": 270
+          }
+        },
+        {
+          "name": "bus-route-front",
+          "situation": "// here \u00b7 https://www.google.com/maps/search/?api=1&query=50.0873,14.42064\nawait t.go([50.0873, 14.42064], { heading: 90 });\nt.time('14:00');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });\nawait t.drive('bus');\nt.push(0, 90);\nawait t.camera({ at: [50.0873, 14.42064], height: 7, tilt: 60, heading: 270 });",
+          "where": {
+            "lat": 50.0873,
+            "lon": 14.42064,
+            "heading": 90,
+            "street": null,
+            "mode": "car",
+            "x": 45.9,
+            "y": 645.1
+          },
+          "camera": {
+            "x": 45.80213954445677,
+            "y": 645.138199705858,
+            "height": 7,
+            "tilt": 60,
+            "heading": 270
+          }
+        },
+        {
+          "name": "minibus-route-overhead",
+          "situation": "// Starom\u011bstsk\u00e9 n\u00e1m\u011bst\u00ed \u00b7 https://www.google.com/maps/search/?api=1&query=50.08734,14.42068\nawait t.go([50.08734, 14.42068], { heading: 90 });\nt.time('14:00');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });\nawait t.drive('minibus');\nt.push(0, 90);\nawait t.camera({ at: [50.08734, 14.42068], height: 22, tilt: 40, heading: 270 });",
+          "where": {
+            "lat": 50.08734,
+            "lon": 14.42068,
+            "heading": 90,
+            "street": "Starom\u011bstsk\u00e9 n\u00e1m\u011bst\u00ed",
+            "mode": "car",
+            "x": 48.9,
+            "y": 649.7
+          },
+          "camera": {
+            "x": 48.664732763598316,
+            "y": 649.5874548585133,
+            "height": 22,
+            "tilt": 40,
+            "heading": 270
+          }
+        },
+        {
+          "name": "minibus-route-front",
+          "situation": "// Starom\u011bstsk\u00e9 n\u00e1m\u011bst\u00ed \u00b7 https://www.google.com/maps/search/?api=1&query=50.08734,14.42068\nawait t.go([50.08734, 14.42068], { heading: 90 });\nt.time('14:00');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });\nawait t.drive('minibus');\nt.push(0, 90);\nawait t.camera({ at: [50.08734, 14.42068], height: 7, tilt: 60, heading: 270 });",
+          "where": {
+            "lat": 50.08734,
+            "lon": 14.42068,
+            "heading": 90,
+            "street": "Starom\u011bstsk\u00e9 n\u00e1m\u011bst\u00ed",
+            "mode": "car",
+            "x": 48.9,
+            "y": 649.7
+          },
+          "camera": {
+            "x": 48.664732763598316,
+            "y": 649.5874548585133,
+            "height": 7,
+            "tilt": 60,
+            "heading": 270
+          }
+        }
+      ]
+    },
+    {
+      "name": "police-stolen-lights",
+      "initial": {
+        "url": "http://localhost:5204/?place=staromak&go&day=wed&time=14:00&weather=clear&graphics=high&dpr=1&date=10-03&area=centrum",
+        "backend": "WebGPU",
+        "map": {
+          "area": "centrum",
+          "built": "2026-10-03T00:26:37Z",
+          "pipeline": "5182c47670"
+        },
+        "mode": "foot",
+        "boats": []
+      },
+      "result": {
+        "name": "police-stolen-lights",
+        "title": "A stolen police car keeps flashing when stopped and entered again",
+        "checks": [
+          {
+            "name": "a real police car arrived",
+            "pass": true
+          },
+          {
+            "name": "lights on immediately while stopped",
+            "pass": true
+          },
+          {
+            "name": "lights on moving forward",
+            "pass": true
+          },
+          {
+            "name": "lights on reversing",
+            "pass": true
+          },
+          {
+            "name": "lights off after leaving it",
+            "pass": true
+          },
+          {
+            "name": "lights return on re-entry",
+            "pass": true
+          },
+          {
+            "name": "re-entry is not a second theft",
+            "pass": true
+          },
+          {
+            "name": "stand-down preserves player lights",
+            "pass": true
+          },
+          {
+            "name": "abandoned stolen car has no lights",
+            "pass": true
+          }
+        ],
+        "ms": 1212,
+        "pass": true
+      },
+      "screenshots": [
+        "/tmp/streets-combined-smoke-20261003/screenshots/police-stolen-stopped.png"
+      ],
+      "shots": [
+        {
+          "name": "police-stolen-stopped",
+          "situation": "// Na Zderaze \u00b7 https://www.google.com/maps/search/?api=1&query=50.07647,14.41652\nawait t.go([50.07647, 14.41652], { heading: 182 });\nt.time('22:00');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 2, health: 100 });\nawait t.drive('police');\nt.push(0, 182);\nawait t.camera({ at: [50.07647, 14.41652], height: 18, tilt: 20, heading: 0 });",
+          "where": {
+            "lat": 50.07647,
+            "lon": 14.41652,
+            "heading": 182,
+            "street": "Na Zderaze",
+            "mode": "car",
+            "x": -248.8,
+            "y": -559.2
+          },
+          "camera": {
+            "x": -249.1052493361958,
+            "y": -559.4840456718142,
+            "height": 18,
+            "tilt": 20,
+            "heading": 0
+          }
+        }
+      ]
+    }
+  ],
+  "finished": "2026-10-03T02:32:41.782Z"
+}
