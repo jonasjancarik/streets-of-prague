@@ -91,3 +91,9 @@ Boat sequence `e88f704` + `cf1e1a8` is accepted after independent review and cor
 Vehicle sequence `9a3b20e` + `00222e6`, evidence `5c72c3d`, is accepted after independent retained-resource/lifecycle review and baseline triage of all five original scene-suite failures. No introduced regression was identified; the full suite remains 7/12 and must not be reported green. Parent inspected bus display and production diffs. Combined smoke remains needed for these additions.
 
 Tile-fetch reliability `ae1a49f` is pending independent review. Parking and seasonal work remain unaccepted. The rolling queue has seven workers, all updated to 09:00 Prague and below-50% quota stop. Kampa source-sampler mismatch and Net.spread review remain open.
+
+## Acceptance at 03:00 UTC
+
+Seasonal ground/hedges sequence `0a6525c`, `37fedb0`, evidence `243aa86` is accepted. Independent source/year/paused-date checks found no issues; author completed 30 checks per renderer, 48 matched captures and the required A/B/reverse/control measurements. Timing remains inconclusive and no performance benefit is claimed. July identity and evergreen hedge behavior are verified. Step4 start-screen work is separate in c01c; seasonal bird activity is the next small task in 8ccf.
+
+Vehicle/boat combined smoke is committed as `d08a53a` and passed24 focused checks. Parking graph omission is corrected in `7de0db8` and independently rechecked; complete parking/fetch sequence awaits final binary validation. Integration remains local only.
