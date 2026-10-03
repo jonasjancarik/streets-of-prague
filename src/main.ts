@@ -560,6 +560,7 @@ async function main() {
       if (a.t > 2.1) {
         a.taken = true;
         police.forgive();
+        clock.advance((3 + seeded() * 5) * 3600); // hours in a cell
         if (a.cell) {
           const [cx, cy] = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, a.cell);
           void teleportTo(cx, cy);
@@ -598,6 +599,7 @@ async function main() {
     const near = HOSPITALS.filter(([lon, lat]) => lon > w0 && lon < e0 && lat > s0 && lat < n0).map((ll) => proj4('EPSG:4326', tm, ll) as [number, number])
       .sort((a, b) => Math.hypot(a[0] - px(), a[1] - py()) - Math.hypot(b[0] - px(), b[1] - py()))[0];
     health.reset();
+    clock.advance((4 + seeded() * 8) * 3600); // a night or a day in hospital
     walker.down = 0;
     walker.anim.play('idle', true);
     if (near) void teleportTo(near[0], near[1]);
