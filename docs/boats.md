@@ -11,7 +11,10 @@ They make the lamps themselves visible; they do not illuminate the river around 
 A player can board within 4.5 metres of a boat's centre from dry walkable ground
 within 0.8 metres of its deck, 0.4 metres above the sampled water. A path sampled
 every 0.25 metres must reach the bank without crossing a wall, railing, unloaded
-ground or a second stretch of water. The player must fit on the bank, and the
+ground or a second stretch of water. Each dry route sample checks the walker's
+0.3 m footprint and bank height, preventing access through a narrow corridor.
+Only the first 0.3 m of that dry route may overlap water while stepping across
+the shoreline; dry parts still need clearance. The player must fit on the bank, and the
 player's current height is checked to prevent boarding from a bridge above.
 
 Moored boats spawn only beside such a bank with a metre of clear ground on its

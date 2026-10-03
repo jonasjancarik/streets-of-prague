@@ -248,6 +248,18 @@ export class Boats {
     return Math.min(T.terrainAt(x, y, true), T.terrainAt(x + c, y + s, true), T.terrainAt(x - c, y - s, true));
   }
 
+  private bankFits(x: number, y: number, deck: number, shoreStep = false) {
+    for (const [dx, dy] of [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]]) {
+      const px = x + dx, py = y + dy, wet = this.water.waterAt(px, py);
+      // Stepping across the shoreline can overlap water behind the feet. Every dry
+      // part still needs the walker's clearance; later dry route samples cannot do this.
+      if (wet === true && shoreStep) continue;
+      const ground = this.water.terrainAt(px, py);
+      if (wet !== false || this.water.cellAt(px, py, 0, ground) !== 0 || Math.abs(ground - deck) > BOARD_STEP) return false;
+    }
+    return true;
+  }
+
   // A person fits on dry ground, at deck height, with a clear short path to the boat.
   // Once the path reaches land it cannot cross another stretch of water or a wall.
   reachable(b: Boat, x: number, y: number, z = this.water.terrainAt(x, y), bx = b.x, by = b.y, h = b.h) {
@@ -255,19 +267,15 @@ export class Boats {
     if (d > BOARD_REACH || T.waterAt(x, y) !== false) return false;
     const deck = this.waterHeight(b, bx, by, h) + 0.4;
     if (Math.abs(z - deck) > BOARD_STEP) return false;
-    for (const [dx, dy] of [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]]) {
-      const px = x + dx, py = y + dy, ground = T.terrainAt(px, py);
-      if (T.waterAt(px, py) !== false || T.cellAt(px, py, 0, ground) !== 0 || Math.abs(ground - deck) > BOARD_STEP) return false;
-    }
-    let land = false;
+    if (!this.bankFits(x, y, deck)) return false;
+    let land = false, landX = 0, landY = 0;
     const n = Math.max(1, Math.ceil(d / 0.25));
     for (let i = 0; i <= n; i++) {
       const px = bx + (x - bx) * i / n, py = by + (y - by) * i / n, wet = T.waterAt(px, py);
       if (wet === null || fences.blocks(px, py, 0.3, 0)) return false;
       if (wet) { if (land) return false; continue; }
-      land = true;
-      const ground = T.terrainAt(px, py);
-      if (T.cellAt(px, py, 0, ground) !== 0 || Math.abs(ground - deck) > BOARD_STEP) return false;
+      if (!land) { land = true; landX = px; landY = py; }
+      if (!this.bankFits(px, py, deck, Math.hypot(px - landX, py - landY) <= 0.3)) return false;
     }
     return true;
   }

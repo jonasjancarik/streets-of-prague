@@ -44,6 +44,25 @@ try {
   try {
     assert.equal(boats.reachable(b, x, y), false, 'bank railing blocks boarding');
   } finally { fences.remove([fence]); }
+  const corridor = {
+    waterAt: x => x < origin,
+    terrainAt: (x, _y, onWater) => onWater || x < origin ? 0 : 0.4,
+    cellAt: (x, y) => x >= origin && x <= origin + 1.5 && (y < origin || y >= origin + 0.5) ? 255 : 0,
+  };
+  const narrow = new Boats(new THREE.Scene(), corridor, [origin, origin]);
+  const tiedBoat = narrow.list.find(b => b.kind === 'pedal');
+  Object.assign(tiedBoat, { x: origin - 2, y: origin + 0.25, h: Math.PI / 2, live: true, moored: true });
+  const bank = [origin + 2, origin + 0.25];
+  assert.equal(corridor.cellAt(bank[0], bank[1]), 0, 'corridor endpoint itself is clear');
+  assert.equal(narrow.reachable(tiedBoat, ...bank), false, 'narrow intermediate route cannot fit the walker');
+  assert.equal(narrow.near(...bank), null, 'narrow route cannot board');
+  assert.equal(narrow.landing(tiedBoat), null, 'narrow route cannot moor or exit');
+  corridor.cellAt = x => x < origin ? 255 : 0;
+  assert.equal(narrow.reachable(tiedBoat, ...bank), true, 'open bank works with solid water cells at the shoreline');
+  assert.equal(narrow.near(...bank), tiedBoat, 'open bank boards without expanding reach');
+  assert.ok(narrow.landing(tiedBoat), 'open bank still offers a landing');
+  corridor.terrainAt = (x, y, onWater) => onWater || x < origin ? 0 : x <= origin + 1.5 && y > origin + 0.5 ? 4 : 0.4;
+  assert.equal(narrow.reachable(tiedBoat, ...bank), false, 'intermediate footprint also checks bank height');
   for (const kind of ['cruise', 'pedal', 'swan']) {
     const model = boats.list.find(b => b.kind === kind).mesh;
     const values = model.geometry.getAttribute('glow').array;
@@ -62,7 +81,7 @@ try {
   boats.update(0, origin, origin);
   boats.update(0, origin, origin);
   assert.deepEqual(attempts, [b, passing], 'failed mooring attempt does not starve the next boat');
-  console.log('Boat access: low bank, high quay/deck, water, reach, wall, inlet, unloaded ground, railing, stable moorings, fair spawn attempts and all three lamp models passed.');
+  console.log('Boat access: low bank, high quay/deck, water, reach, wall, inlet, unloaded ground, railing, narrow route, route height, open shoreline, stable moorings, fair spawn attempts and all three lamp models passed.');
 } finally {
   await server.close();
 }
