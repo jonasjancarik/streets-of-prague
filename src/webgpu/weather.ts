@@ -1,5 +1,5 @@
 // The falling rain, the snow and the mist (WeatherFx in ../weather.ts) in TSL. The rain is
-// line segments and the mist a plane, as there; the snow is a small quad for each flake,
+// line segments and the mist a stack of sheets, as there; the snow is a small quad for each flake,
 // because points are one pixel wide on WebGPU.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -9,8 +9,8 @@ import {
   Fn, float, vec2, vec3, vec4, attribute, positionGeometry, positionWorld, cameraProjectionMatrix, cameraViewMatrix, screenSize,
   sRGBTransferEOTF, toneMappingExposure, fract, sin, cos, exp, normalize, step, smoothstep, length, max, min, select,
 } from 'three/tsl';
-import { setFx, type FxParts } from '../weather.ts';
-import { type N, follow, followVec, fbm2, vnoise } from './common.ts';
+import { setFx, MIST, type FxParts } from '../weather.ts';
+import { type N, follow, followVec, vnoise } from './common.ts';
 import { lampLight } from './lamps.ts';
 
 const FALL = 9, FLAKE_FALL = 1.1; // m/s, as in ../weather.ts
@@ -87,15 +87,18 @@ function build(f: FxParts) {
     snowMaterial.side = THREE.DoubleSide;
   }
 
-  // Mist: a drifting sheet a few metres above the ground.
+  // Mist: banks of it in sheets one above the other, thinner the higher.
   const mistMaterial = blend(new NodeMaterial());
   mistMaterial.fragmentNode = Fn(() => {
-    const p = positionWorld.xz.mul(0.014).add(uTime.mul(vec2(0.01, 0.004))).toVar();
-    const n = fbm2(p.add(fbm2(p.mul(0.6).add(3)).mul(0.5)).sub(uTime.mul(vec2(0.004, 0.007)))).mul(0.75).add(vnoise(p.mul(4.1).add(5)).mul(0.25));
-    const a = uOn.mist.mul(smoothstep(0.3, 0.75, n).mul(0.5).add(0.18));
+    const p = positionWorld.xz, h = attribute('layer', 'float');
+    const bank = vnoise(p.mul(MIST.bank).add(uTime.mul(vec2(0.006, 0.002))));
+    const wisp = vnoise(p.mul(MIST.wisp).add(h.mul(1.9)).add(uTime.mul(vec2(0.03, 0.012)))).mul(0.65)
+      .add(vnoise(p.mul(MIST.fine).add(7).sub(h.mul(3.1)).sub(uTime.mul(vec2(0.02, 0.035)))).mul(0.35));
+    const a = uOn.mist.mul(smoothstep(MIST.from, MIST.to, bank.mul(MIST.bankShare).add(wisp.mul(MIST.wispShare)).sub(h.mul(MIST.thin))));
     const c = uFog.add(exp(lampLight(positionWorld).mul(-0.5)).oneMinus().mul(0.6));
     return vec4(linear(c), a);
   })();
+  mistMaterial.side = THREE.DoubleSide;
 
   // The flakes' quad, drawn once for each of them.
   const g = new THREE.InstancedBufferGeometry();

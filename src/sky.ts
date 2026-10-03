@@ -147,8 +147,10 @@ export class Sky {
 
     // Fog, measured from the camera: `amount` of it on the ground right below, more
     // further off, less on the roofs.
-    const amount = Math.max(0.08 * w.cloud, 0.2 * w.rain, 0.3 * w.snow, 0.55 * w.mist);
-    this.murk = amount;
+    // Mist lies in banks (WeatherFx), so the air between them is only a little hazy; the
+    // lights' beams show in it as in thick fog.
+    const amount = Math.max(0.08 * w.cloud, 0.2 * w.rain, 0.3 * w.snow, 0.16 * w.mist);
+    this.murk = Math.max(amount, 0.55 * w.mist);
     const day = 1 - night;
     this.haze.copy(FOG_NIGHT).lerp(FOG_GLOW, w.cloud).lerp(FOG_DAY, day).convertLinearToSRGB();
     this.tint.copy(this.haze).multiplyScalar(0.8 + 0.3 * day);

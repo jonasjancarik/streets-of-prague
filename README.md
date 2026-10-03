@@ -325,8 +325,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   Clouds hide the sun and fade the shadows, and the sky's light turns grey by day and
   orange from the city at night (`src/sky.ts`). Rain falls as streaks and snow as
   flakes in a box round the view that stays put in the world, so you move through
-  them; mist is a drifting sheet a few metres up that the taller buildings stand out
-  of, with fog measured from the camera so the ground is hazier than the roofs. The
+  them; mist lies in drifting banks in the streets (a stack of sheets up to 11 m, thinner
+  the higher, so the roofs stand out of it) with clear air between them, and the fog of
+  rain and snow is measured from the camera so the ground is hazier than the roofs. The
   ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,
   rings where the drops hit) and dries over several minutes; snow settles on the
   ground, the roofs, the cars and the tree tops, and melts slower still. Under snow,

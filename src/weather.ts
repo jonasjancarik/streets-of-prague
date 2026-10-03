@@ -228,6 +228,33 @@ export interface FxParts {
 let fxBy: ((parts: FxParts) => { rain: THREE.Object3D; snow: THREE.Object3D; mist: THREE.Object3D }) | null = null;
 export const setFx = (f: typeof fxBy) => { fxBy = f; };
 
+// The mist's shape, shared with webgpu/weather.ts: how many sheets and how high they
+// reach (m), the scale of the banks (about 220 m across), of the wisps in them and of
+// their fine edge (1/m), how much each counts, where the mist starts and is thickest,
+// how much thinner the top sheet is, and how much the thickest sheet hides.
+export const MIST = {
+  sheets: 7, low: 0.6, high: 11,
+  bank: 0.0045, wisp: 0.028, fine: 0.085, bankShare: 0.6, wispShare: 0.6,
+  from: 0.6, to: 0.76, thin: 0.16, most: 0.24,
+};
+
+// The sheets as one mesh, a unit square each, the lowest drawn first; `layer` 0 at the
+// bottom to 1 at the top.
+function mistSheets() {
+  const n = MIST.sheets, at: number[] = [], layer: number[] = [], index: number[] = [];
+  for (let k = 0; k < n; k++) {
+    const h = k / (n - 1);
+    at.push(-0.5, h, -0.5, 0.5, h, -0.5, -0.5, h, 0.5, 0.5, h, 0.5);
+    layer.push(h, h, h, h);
+    index.push(k * 4, k * 4 + 2, k * 4 + 1, k * 4 + 1, k * 4 + 2, k * 4 + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(at, 3));
+  g.setAttribute('layer', new THREE.Float32BufferAttribute(layer, 1));
+  g.setIndex(index);
+  return g;
+}
+
 export class WeatherFx {
   private rain: THREE.Object3D;
   private snow: THREE.Object3D;
@@ -267,7 +294,7 @@ export class WeatherFx {
     const flakes = rand(FLAKES, 1);
     sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(FLAKES * 3), 3));
     sg.setAttribute('seed', new THREE.BufferAttribute(flakes, 4));
-    const mistGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    const mistGeometry = mistSheets();
     const by = fxBy?.({
       shared: this.shared, rainOn: this.rainOn, snowOn: this.snowOn, mistOn: this.mistOn, scale: this.snowScale,
       tint: this.tint, fog: this.fog, rain: rg, snowSeeds: flakes, mist: mistGeometry,
@@ -319,25 +346,30 @@ export class WeatherFx {
         }`,
       transparent: true, depthWrite: false,
     }));
-    // Mist: a drifting sheet a few metres above the ground, taller buildings standing
-    // out of it, lit from below by the lamps.
+    // Mist: banks of it lying in the streets, clear air between them. Level sheets one
+    // above the other, each with its own drifting holes and thinner the higher it is, so
+    // a bank has depth as the view moves past it; roofs stand out of it, and the lamps
+    // light it from below.
     this.mist = by ? by.mist : new THREE.Mesh(mistGeometry, new THREE.ShaderMaterial({
       uniforms: { ...this.shared, uOn: this.mistOn, uFog: this.fog, uNoise: NOISE },
       vertexShader: /* glsl */ `
-        varying vec3 vW;
-        void main() { vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+        attribute float layer;
+        varying vec3 vW; varying float vH;
+        void main() { vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; vH = layer; gl_Position = projectionMatrix * viewMatrix * w; }`,
       fragmentShader: /* glsl */ `
         ${NOISE_GLSL}
         ${LAMP_GLSL}
-        uniform float uOn; uniform float uTime; uniform vec3 uFog; varying vec3 vW;
+        uniform float uOn; uniform float uTime; uniform vec3 uFog; varying vec3 vW; varying float vH;
         void main() {
-          vec2 p = vW.xz * .014 + uTime * vec2(.010, .004);
-          float n = fbm2(p + .5 * fbm2(p * .6 + 3.) - uTime * vec2(.004, .007)) * .75 + vnoise(p * 4.1 + 5.) * .25;
-          float a = uOn * (.18 + .5 * smoothstep(.3, .75, n));
+          vec2 p = vW.xz;
+          float bank = vnoise(p * ${MIST.bank} + uTime * vec2(.006, .002));
+          float wisp = vnoise(p * ${MIST.wisp} + vH * 1.9 + uTime * vec2(.03, .012)) * .65
+            + vnoise(p * ${MIST.fine} + 7. - vH * 3.1 - uTime * vec2(.02, .035)) * .35;
+          float a = uOn * smoothstep(${MIST.from}, ${MIST.to}, bank * ${MIST.bankShare} + wisp * ${MIST.wispShare} - vH * ${MIST.thin});
           vec3 c = uFog + (1. - exp(-lampLight(vW) * .5)) * .6;
           gl_FragColor = vec4(c, a);
         }`,
-      transparent: true, depthWrite: false,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
     }));
     for (const o of [this.rain, this.snow, this.mist]) {
       o.frustumCulled = false;
@@ -359,12 +391,12 @@ export class WeatherFx {
     this.rainOn.value = w.rain;
     s.uWind.value.set(1.5 + 5 * w.storm, 0.6 + 2 * w.storm);
     this.snowOn.value = w.snow;
-    this.mistOn.value = Math.min(1, w.mist) * 0.62;
+    this.mistOn.value = Math.min(1, w.mist) * MIST.most;
     this.rain.visible = w.rain > 0.01;
     this.snow.visible = w.snow > 0.01;
     this.mist.visible = w.mist > 0.01;
     this.snowScale.value = innerHeight * dpr * 1.4;
-    this.mist.position.set(x, ground + 3.5, -y);
-    this.mist.scale.set(2.6 * r + 60, 1, 2.6 * r + 60);
+    this.mist.position.set(x, ground + MIST.low, -y);
+    this.mist.scale.set(2.6 * r + 60, MIST.high - MIST.low, 2.6 * r + 60);
   }
 }
