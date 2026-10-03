@@ -49,6 +49,7 @@
       .ride-stops button:hover { background: var(--key); }
       .ride-stops button.next { font-weight: 600; }
       .ride-stops button.dest { background: var(--ink); color: #140d0c; }
+      .ride-stops button.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
       .ride-turns { display: flex; gap: 6px; margin-top: 8px; }
       .ride-turns button { flex: 1; font: inherit; font-weight: 600; color: var(--ink); background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 6px 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
       .ride-turns button.dest { background: var(--ink); color: #140d0c; }
@@ -126,17 +127,20 @@
       #district.on { animation: district 6s ease-in-out forwards; }
       @keyframes district { 0% { opacity: 0; transform: translateY(10px); } 18% { opacity: 1; transform: none; } 72% { opacity: 1; } 100% { opacity: 0; } }
       /* Controls card: only the keys for what you're doing right now. */
-      #help { bottom: 16px; right: 16px; opacity: 0.85; font-size: 12px; width: 250px; }
-      #help h2 { margin: 0 0 6px; font: 17px/1 'Bebas Neue', sans-serif; letter-spacing: 0.05em; color: var(--accent); }
-      #help dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; align-items: baseline; }
-      #help dt { justify-self: end; white-space: nowrap; }
-      #help dd { margin: 0; }
-      #help kbd { display: inline-block; font: 600 11px/1 Inter, system-ui, sans-serif; background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 3px 5px 2px; min-width: 1em; text-align: center; }
-      #help .foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(236, 228, 214, 0.15); opacity: 0.7; }
-      #help section { display: none; }
-      #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='drive'] .drive-only, #help[data-mode='tram'] .tram-only, #help[data-mode='funicular'] .funicular-only, #help[data-mode='heli'] .heli-only { display: block; }
+      #help, #help-pad { bottom: 16px; right: 16px; opacity: 0.85; font-size: 12px; width: 250px; }
+      #help h2, #help-pad h2 { margin: 0 0 6px; font: 17px/1 'Bebas Neue', sans-serif; letter-spacing: 0.05em; color: var(--accent); }
+      #help dl, #help-pad dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; align-items: baseline; }
+      #help dt, #help-pad dt { justify-self: end; white-space: nowrap; }
+      #help dd, #help-pad dd { margin: 0; }
+      #help kbd, #help-pad kbd { display: inline-block; font: 600 11px/1 Inter, system-ui, sans-serif; background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 3px 5px 2px; min-width: 1em; text-align: center; }
+      #help .foot, #help-pad .foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(236, 228, 214, 0.15); opacity: 0.7; }
+      #help section, #help-pad section { display: none; }
+      #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='drive'] .drive-only, #help[data-mode='tram'] .tram-only, #help[data-mode='funicular'] .funicular-only, #help[data-mode='heli'] .heli-only, #help-pad[data-mode='foot'] .foot-only, #help-pad[data-mode='car'] .car-only, #help-pad[data-mode='drive'] .drive-only, #help-pad[data-mode='tram'] .tram-only, #help-pad[data-mode='funicular'] .funicular-only, #help-pad[data-mode='heli'] .heli-only { display: block; }
       #help.folded { width: auto; padding: 6px 10px; }
       #help.folded > :not(.unfold), #help:not(.folded) .unfold { display: none; }
+      /* The same card for a game controller, in place of the keyboard's while a pad was the last thing used. */
+      body.pad #help { display: none; }
+      body:not(.pad) #help-pad { display: none; }
       #dev { top: 16px; right: 16px; width: 340px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
       #dev[hidden], #dev-mapbox[hidden] { display: none; }
       .dev-title { font-weight: 600; }
@@ -331,7 +335,7 @@
       /* A conversation: the portrait rises out of its frame, the line beside it. */
       .dlg { position: fixed; left: 50%; bottom: 24px; z-index: 12; transform: translateX(-50%); width: min(1040px, calc(100vw - 32px)); display: flex; align-items: flex-end; cursor: pointer; }
       .dlg[hidden] { display: none; }
-      body.talking #help { display: none; }
+      body.talking #help, body.talking #help-pad { display: none; }
       .dlg-frame { position: relative; flex: 0 0 auto; width: 210px; height: 200px; margin-right: -14px; z-index: 1; border: 4px solid var(--poster-paper); background: var(--poster-black); box-shadow: 6px 6px 0 var(--poster-red); }
       .dlg-sky { position: absolute; inset: 0; background: 30% 70% / auto 180% no-repeat; }
       .dlg-frame .portrait { position: absolute; left: 0; bottom: 0; width: 100%; height: auto; }
@@ -352,7 +356,7 @@
         .dlg-goal { font-size: 13px; }
         .dlg-goal b { font-size: 18px; }
       }
-      @media (max-width: 640px) { #help { display: none; } #banner { top: 30%; } #banner .big { font-size: 40px; } #banner.alert .big { font-size: 56px; } #banner .note { font-size: 20px; } #district { font-size: 52px; padding: 16px 40px 20px; } }
+      @media (max-width: 640px) { #help, #help-pad { display: none; } #banner { top: 30%; } #banner .big { font-size: 40px; } #banner.alert .big { font-size: 56px; } #banner .note { font-size: 20px; } #district { font-size: 52px; padding: 16px 40px 20px; } }
 
       /* Credits: a quiet line in the corner, and the full list when you open it. */
       #credits { position: fixed; left: 12px; bottom: 8px; z-index: 4; font: 11px/1.3 Inter, system-ui, sans-serif; color: var(--ink); opacity: 0.6; background: none; border: 0; padding: 2px 4px; text-align: left; cursor: pointer; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
@@ -635,6 +639,68 @@
       <div class="foot">
         <span data-t>Scroll to zoom</span> · <kbd>`</kbd> <span data-t>dev tools</span> · <kbd>M</kbd> <span data-t>sound</span> · <kbd>G</kbd> <span data-t>graphics</span> · <kbd>P</kbd> <span data-t>weather</span> · <kbd>H</kbd> <span data-t>hide</span></div>
       <div class="unfold"><kbd>H</kbd> <span data-t>controls</span></div>
+    </div>
+    <div id="help-pad" class="panel" data-mode="foot">
+      <section class="foot-only">
+        <h2 data-t>On foot</h2>
+        <dl>
+          <dt><kbd>Left stick</kbd></dt><dd data-t>Walk where it points, all the way to run</dd>
+          <dt><kbd>LB</kbd></dt><dd data-t>Run</dd>
+          <dt><kbd>A</kbd></dt><dd data-t>Jump</dd>
+          <dt><kbd>X</kbd></dt><dd data-t>Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop</dd>
+          <dt><kbd>View</kbd></dt><dd data-t>Get a taxi: wave one down or order one through an app</dd>
+        </dl>
+      </section>
+      <section class="car-only">
+        <h2 data-t>Driving</h2>
+        <dl>
+          <dt><kbd>RT</kbd> <kbd>LT</kbd></dt><dd data-t>Gas and brake, hold the brake to reverse</dd>
+          <dt><kbd>Left stick</kbd></dt><dd data-t>Steer toward where it points</dd>
+          <dt><kbd>A</kbd></dt><dd data-t>Handbrake</dd>
+          <dt><kbd>LB</kbd></dt><dd data-t>Hold to keep to the lane and the speed limit, while the stick picks the next turn</dd>
+          <dt><kbd>Y</kbd></dt><dd data-t>Horn (hold it)</dd>
+          <dt><kbd>RB</kbd></dt><dd data-t>Water cannon of a fire engine (hold it)</dd>
+          <dt><kbd>L3</kbd></dt><dd data-t>Radio: next station, and off (or use the buttons under the speed)</dd>
+          <dt><kbd>X</kbd></dt><dd data-t>Get out, or off a bike</dd>
+        </dl>
+      </section>
+      <section class="drive-only">
+        <h2 data-t>Driving the tram</h2>
+        <dl>
+          <dt><kbd>RT</kbd> <kbd>LT</kbd></dt><dd data-t>Pull away and brake</dd>
+          <dt><kbd>A</kbd></dt><dd data-t>Brake hard</dd>
+          <dt><kbd>Left stick</kbd></dt><dd data-t>Pick the way at the next junction with the stick (straight on if you don't)</dd>
+          <dt><kbd>Y</kbd></dt><dd data-t>Ring the bell</dd>
+          <dt><kbd>R3</kbd></dt><dd data-t>Open and close the doors at a stop (people get off and on)</dd>
+          <dt><kbd>X</kbd></dt><dd data-t>Get off once it has stopped</dd>
+        </dl>
+      </section>
+      <section class="tram-only">
+        <h2 data-t>On the tram</h2>
+        <dl>
+          <dt><kbd>D-pad ↑↓</kbd></dt><dd data-t>Pick where to get off</dd>
+          <dt><kbd>LB</kbd></dt><dd data-t>Speed up the ride</dd>
+          <dt><kbd>X</kbd></dt><dd data-t>Get off at the next stop</dd>
+          <dt><kbd>RB</kbd></dt><dd data-t>Take over the tram and drive it yourself</dd>
+        </dl>
+      </section>
+      <section class="funicular-only">
+        <h2 data-t>On the funicular</h2>
+        <dl>
+          <dt><kbd>LB</kbd></dt><dd data-t>Speed up the ride</dd>
+          <dt><kbd>X</kbd></dt><dd data-t>Get off while it stands at a station</dd>
+        </dl>
+      </section>
+      <section class="heli-only">
+        <h2 data-t>Flying</h2>
+        <dl>
+          <dt><kbd>RT</kbd> <kbd>LT</kbd></dt><dd data-t>Fly forwards and back</dd>
+          <dt><kbd>Left stick</kbd></dt><dd data-t>Turn</dd>
+          <dt><kbd>A</kbd> <kbd>LB</kbd></dt><dd data-t>Climb and come down</dd>
+          <dt><kbd>X</kbd></dt><dd data-t>Get out, once landed on open ground</dd>
+        </dl>
+      </section>
+      <div class="foot"><kbd>Right stick</kbd> <span data-t>zoom</span> · <kbd>Menu</kbd> <span data-t>settings</span></div>
     </div>
     <div id="touch" data-mode="foot">
       <div id="t-steer"><div id="t-stick"><div id="t-knob"></div></div></div>

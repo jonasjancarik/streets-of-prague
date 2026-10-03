@@ -55,7 +55,7 @@ import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
 import type { Surface, HornKind } from './audio.ts';
 import { setupTouch } from './touch.ts';
-import { setupGamepad } from './gamepad.ts';
+import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
 import './credits.ts';
 import { Police } from './police.ts';
 import { Brigade } from './brigade.ts';
@@ -145,6 +145,9 @@ const LIFE_RADIUS = 330; // traffic and people are kept within this distance of 
 async function main() {
   dressLoading($('loading'));
   translatePage();
+  // The pad works from the start screen on; what it does in the game is hooked up further down.
+  const padHooks = { settings: () => {}, menu: () => false, zoomBy: (_factor: number) => {} };
+  const pad = setupGamepad({ settings: () => padHooks.settings(), menu: () => padHooks.menu(), zoomBy: (f) => padHooks.zoomBy(f) });
   onLang(() => status(statusText));
   // Rolled now, so the start screen can say what the game will begin with.
   const clock = new Clock(params);
@@ -1146,7 +1149,7 @@ async function main() {
   const touch = setupTouch({ action: enterOrExit, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, doors: () => ride.doors(), jump: () => {
     if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !taxi.riding) { input.jump = true; telemetry.did('jumped'); }
   }, force: params.has('touch') });
-  const pad = setupGamepad({ settings: () => settingsPanel.show() });
+  Object.assign(padHooks, { settings: () => settingsPanel.show(), menu: () => metro.active || dialog.active, zoomBy });
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -1819,10 +1822,9 @@ async function main() {
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
     // it steers along your lane, and A/D picks the turn at the next junction instead.
-    pad.update(dt, metro.active || dialog.active, zoomBy);
     const ctl = {
       move: touch.move || pad.move || (input.up ? 1 : 0) - (input.down ? 1 : 0),
-      turn: touch.turn || (input.left ? 1 : 0) - (input.right ? 1 : 0),
+      turn: touch.turn || pad.turn || (input.left ? 1 : 0) - (input.right ? 1 : 0),
       run: input.run || touch.run,
       brake: input.brake || touch.brake,
       jump: input.jump,
@@ -2032,7 +2034,7 @@ async function main() {
     const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
     const getIn = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
     const ticketHint = () => pid.state === 'grace'
-      ? `${touch.active ? t('Buy a ticket ({price})', { price: kc(TICKET.price) }) : TICKETS.map((k, i) => `<b>${i + 1}</b> ${validity(k.minutes)} ${kc(k.price)}`).join(' · ')} · ${t('{secs} s left', { secs: Math.ceil(pid.left) })}`
+      ? `${touch.active ? t('Buy a ticket ({price})', { price: kc(TICKET.price) }) : usingPad() ? `<b>B</b> ${t('Buy a ticket ({price})', { price: kc(TICKET.price) })}` : TICKETS.map((k, i) => `<b>${i + 1}</b> ${validity(k.minutes)} ${kc(k.price)}`).join(' · ')} · ${t('{secs} s left', { secs: Math.ceil(pid.left) })}`
       : pid.state === 'dodging' ? t('No ticket') : '';
     let hint = '';
     if (metro.active) hint = '';
@@ -2084,7 +2086,7 @@ async function main() {
       if (lying && (!enterable || lying.d <= gap(enterable))) hint = t('<b>E</b> pick up the bag');
       else if (bags.carried && !canEnter) hint = t('<b>E</b> put the bag down');
     }
-    hint = (!inCar && !inHeli && !ride.on && !funicular.me && taxi.hint(touch.active)) || hint;
+    hint = (!inCar && !inHeli && !ride.on && !funicular.me && taxi.hint(touch.active, usingPad())) || hint;
     const bikeRental = (c: Car) => {
       const rental = bikeShare.rental(c);
       return rental && { name: rental.system.name, minutes: String(Math.max(1, Math.round((((clock.t - rental.since) % 604800) + 604800) % 604800 / 60))), price: kc(rental.paid) };
@@ -2099,9 +2101,10 @@ async function main() {
       }
     }
     if (inspector.phase === 'decide') hint = touch.active ? t('Ticket inspection! Pay the fine ({fine}) or get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) }) : t('Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) });
-    taxi.render(touch.active);
-    show('hint', hint, 'html');
+    taxi.render(touch.active, usingPad());
+    show('hint', padLabels(hint), 'html');
     $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.driving ? 'drive' : ride.on ? 'tram' : funicular.me ? 'funicular' : 'foot';
+    $('help-pad').dataset.mode = $('help').dataset.mode;
     ride.render();
     const label = ride.driving ? (ride.canLeave() ? 'Get off' : null) : ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : canBoard || cabin || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : null;

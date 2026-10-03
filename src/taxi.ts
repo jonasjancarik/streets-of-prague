@@ -15,6 +15,7 @@ import type { Traffic, TrafficAgent } from './traffic.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 import { getLang, t } from './i18n.ts';
 import { kc } from './money.ts';
+import { padLabels } from './gamepad.ts';
 import type { Wallet } from './money.ts';
 import * as THREE from 'three';
 
@@ -63,6 +64,8 @@ export class Taxis {
   private wait = 0;
   private metres = 0;
   private shown = '';
+  private sel: number | null = null;
+  private selFor = ''; // the row picked with the arrow keys or a pad's d-pad
   private touchButton: HTMLElement | null;
   private touchShown = '';
   private beacon = new THREE.Group();
@@ -115,6 +118,14 @@ export class Taxis {
       if (this.state === 'off') { this.note = ''; this.noteT = 0; this.state = 'menu'; }
       else if (this.state === 'menu') this.state = 'off';
       else if (this.state !== 'riding') { this.cancel(); this.say(t('Taxi cancelled')); }
+      return true;
+    }
+    // Arrow keys move along the list, Space (a pad's A) takes the one picked.
+    if ((this.state === 'menu' || this.riding) && ['ArrowUp', 'ArrowDown', 'Space'].includes(code)) {
+      const count = this.state === 'menu' ? FIRMS.length : this.places.length, now = this.sel ?? 0;
+      if (code === 'ArrowUp' || code === 'ArrowDown') this.sel = (now + count + (code === 'ArrowUp' ? -1 : 1)) % count;
+      else this.choose(now);
+      this.shown = '';
       return true;
     }
     const n = /^Digit([0-9])$/.exec(code);
@@ -368,8 +379,12 @@ export class Taxis {
   }
 
   // The line in the HUD while a taxi is involved (or a note for a few seconds after).
-  hint(touch: boolean) {
+  hint(touch: boolean, pad = false) {
     const k = (s: string) => (touch ? '' : `<b>${s}</b> `);
+    return padLabels(this.line(touch, pad, k));
+  }
+
+  private line(touch: boolean, pad: boolean, k: (s: string) => string) {
     const name = this.firm.app ? t('Your {name} driver', { name: this.firm.name }) : t('Your taxi');
     if (this.state === 'coming') {
       const a = this.agent!, left = a.stop ? a.route.to(a.stop.edge, a.stop.s) : Infinity;
@@ -384,7 +399,7 @@ export class Taxis {
       else if (this.agent && this.agent.jam > 15) parts.push(t('Stuck in traffic'));
       else if (this.scale > 1.5) parts.push(t('{n}× speed', { n: Math.round(this.scale) }));
       parts.push(t('Meter: {fare}', { fare: kc(this.fare()) }));
-      parts.push(this.dest === null ? `${t('Where to?')} ${t(touch ? 'Pick a place' : 'Press a number')}` : t('To {name}', { name: t(this.places[this.dest].name) }));
+      parts.push(this.dest === null ? `${t('Where to?')} ${t(touch || pad ? 'Pick a place' : 'Press a number')}` : t('To {name}', { name: t(this.places[this.dest].name) }));
       if (!touch) parts.push(`<b>E</b> ${t('get out here')}`);
       return parts.join(' · ');
     }
@@ -392,7 +407,7 @@ export class Taxis {
   }
 
   // The panel: the firms to choose from, or the places to go.
-  render(touch: boolean) {
+  render(touch: boolean, pad = false) {
     const { el } = this.o;
     const menu = this.state === 'menu', riding = this.riding;
     const control = `${getLang()}|${this.state}`;
@@ -404,16 +419,19 @@ export class Taxis {
       this.touchButton.textContent = t(label);
     }
     el.hidden = !menu && !riding;
-    if (el.hidden) { this.shown = ''; return; }
-    const key = `${getLang()}|${this.state}|${this.dest}|${touch}`;
+    if (el.hidden) { this.shown = ''; this.selFor = ''; return; }
+    if (this.selFor !== this.state) { this.selFor = this.state; this.sel = null; }
+    if (pad && this.sel === null) this.sel = 0;
+    const key = `${getLang()}|${this.state}|${this.dest}|${touch}|${pad}|${this.sel}`;
     if (key === this.shown) return;
     this.shown = key;
-    const n = (i: number) => (touch ? '' : `<kbd>${(i + 1) % 10}</kbd> `);
+    const n = (i: number) => (touch || pad ? '' : `<kbd>${(i + 1) % 10}</kbd> `);
+    const row = (i: number, dest = false) => (dest ? 'dest' : '') + (i === this.sel ? ' sel' : '');
     const items = menu
-      ? FIRMS.map((f, i) => `<li><button data-pick="${i}">${n(i)}${f.app ? t('{name} app: {start} Kč + {perKm}/km, drives fast', { name: f.name, start: f.start, perKm: f.perKm }) : t('Wave down a passing taxi: {start} Kč + {perKm}/km', { start: f.start, perKm: f.perKm })}</button></li>`)
-      : this.places.map((p, i) => `<li><button data-pick="${i}" class="${i === this.dest ? 'dest' : ''}">${n(i)}${t(p.name)}</button></li>`);
+      ? FIRMS.map((f, i) => `<li><button data-pick="${i}" class="${row(i)}">${n(i)}${f.app ? t('{name} app: {start} Kč + {perKm}/km, drives fast', { name: f.name, start: f.start, perKm: f.perKm }) : t('Wave down a passing taxi: {start} Kč + {perKm}/km', { start: f.start, perKm: f.perKm })}</button></li>`)
+      : this.places.map((p, i) => `<li><button data-pick="${i}" class="${row(i, i === this.dest)}">${n(i)}${t(p.name)}</button></li>`);
     const title = menu ? `${t('Get a taxi')}${touch ? '' : ` · <b>T</b> ${t('close')}`}` : t('{firm}: where to?', { firm: this.firmName() });
-    el.innerHTML = `<div class="ride-line"><span class="ride-ref" style="background:#e9c62f;color:#221f1b">TAXI</span><span>${title}</span></div>
+    el.innerHTML = `<div class="ride-line"><span class="ride-ref" style="background:#e9c62f;color:#221f1b">TAXI</span><span>${padLabels(title)}</span></div>
       <ol class="ride-stops">${items.join('')}</ol>`;
   }
 }

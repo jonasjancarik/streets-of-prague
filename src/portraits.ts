@@ -1,3 +1,4 @@
+import { padLabels } from './gamepad.ts';
 import { t } from './i18n.ts';
 // The illustrated layer: the loading screen and conversations with characters.
 //
@@ -158,7 +159,7 @@ export class Dialog {
     const more = this.lines.length > 0;
     el('div', 'dlg-next', body).innerHTML = document.body.classList.contains('touch')
       ? t(more ? 'Tap for more' : 'Tap to continue')
-      : `<kbd>E</kbd> ${t(more ? 'Next' : 'Continue')}`;
+      : padLabels(`<kbd>E</kbd> ${t(more ? 'Next' : 'Continue')}`);
     r.hidden = false;
     document.body.classList.add('talking');
   }

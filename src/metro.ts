@@ -1,3 +1,4 @@
+import { padLabels } from './gamepad.ts';
 import * as THREE from 'three';
 import type { Point2 } from './map/geo.ts';
 import type { Clock } from './clock.ts';
@@ -455,7 +456,7 @@ export class Metro {
           ${TICKETS.map((k, i) => { const can = this.fares!.afford(k); return `<li><button data-act="buy:${i}" class="${this.choice === i ? 'sel' : ''}"${can ? '' : ' disabled'}><span>${esc(t('Ticket for {validity}', { validity: validity(k.minutes) }))}</span><small>${esc(can ? kc(k.price) : t('Not enough money ({price})', { price: kc(k.price) }))}</small></button></li>`; }).join('')}
           <li><button data-act="nobuy" class="${this.choice === TICKETS.length ? 'sel' : ''}"><span>${esc(t('Go in without a ticket'))}</span></button></li>
         </ol>
-        <div class="metro-keys">${t('<b>W</b>/<b>S</b> choose · <b>E</b> confirm · <b>1</b>–<b>4</b> buy · <b>Esc</b> back to the street')}</div>`;
+        <div class="metro-keys">${padLabels(t('<b>W</b>/<b>S</b> choose · <b>E</b> confirm · <b>1</b>–<b>4</b> buy · <b>Esc</b> back to the street'))}</div>`;
     } else if (this.phase === 'pick') {
       const line = this.tabLine(), here = line.stations.findIndex((s) => s.name === from.name);
       // A line that doesn't stop here: where to change onto it.
@@ -473,7 +474,7 @@ export class Metro {
         ${change ? `<div class="metro-note">${esc(t('Change at {name}', { name: change }))}</div>` : ''}
         ${this.note ? `<div class="metro-note">${esc(this.note)}</div>` : ''}
         <ol class="metro-stations" style="--line:${esc(line.colour)}">${rows}</ol>
-        <div class="metro-keys">${t('<b>W</b>/<b>S</b> choose · <b>A</b>/<b>D</b> line · <b>E</b> go · <b>Esc</b> back to the street')}</div>`;
+        <div class="metro-keys">${padLabels(t('<b>W</b>/<b>S</b> choose · <b>A</b>/<b>D</b> line · <b>E</b> go · <b>Esc</b> back to the street'))}</div>`;
     } else {
       const s = this.steps[Math.min(this.k, this.steps.length - 1)];
       if (!s || !this.dest) return;
@@ -494,7 +495,7 @@ export class Metro {
         <div class="metro-bar"><div style="width:${((100 * this.t) / this.total).toFixed(1)}%;background:${esc(line.colour)}"></div></div>
         <div class="metro-status">${esc(status)}</div>
         <ol class="metro-ride" style="--line:${esc(line.colour)}">${list.join('')}</ol>
-        ${this.phase === 'ride' ? `<button data-act="skip" class="metro-skip">${esc(t('Skip to {name}', { name: this.dest.name }))}</button><div class="metro-keys">${t('<b>E</b> skip · scroll to zoom')}</div>` : ''}`;
+        ${this.phase === 'ride' ? `<button data-act="skip" class="metro-skip">${esc(t('Skip to {name}', { name: this.dest.name }))}</button><div class="metro-keys">${padLabels(t('<b>E</b> skip · scroll to zoom'))}</div>` : ''}`;
     }
     if (html !== this.shown) {
       this.el.innerHTML = this.shown = html;
