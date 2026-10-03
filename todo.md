@@ -572,8 +572,10 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   heavy load, not reproduced). Startup now retries a failing tile and carries on
   without it; the cause of the failed download itself wasn't found. A separate
   deterministic defect is fixed: HTTP failures for required terrain, bridge or IPR
-  binaries now fail the tile fetch instead of caching absent geometry. CPU checks
-  cover recovery, abort, truncated gzip and obsolete requests
+  binaries, and successful downloads with invalid decoded lengths or IPR counts,
+  now fail the tile fetch instead of caching absent geometry. HTTP 204 levels no
+  longer become cached all-NaN grids. CPU checks cover legacy optional layouts,
+  recovery, abort, gzip and obsolete requests
   (`scripts/check-tile-fetch.mjs`); this does not establish the original heavy-load cause.
 - **Raised buildings from IPR.** Passages and walkways over a street are left out of
   the collision only when OSM has `min_height` (3 m or more); raised parts only in

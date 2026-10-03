@@ -21,6 +21,7 @@ import type { Landmark, TileJSON, MapIndex, TilePassage, BuildingArrays, HeightG
 import { isTileJSON } from './contracts.ts';
 import { TileWorkers } from './tileWorkers.ts';
 import { SkyRefresh } from './skyRefresh.ts';
+import { validateTileBinary, type TileBinaryKind } from './tileBinary.ts';
 import { overheadWires } from './wires.ts';
 import { posts, type Post } from './posts.ts';
 import { fences, type FenceSection } from './fences.ts';
@@ -668,8 +669,9 @@ export class TileWorld {
   fetchTile(k: string): Promise<TileFiles> {
     if (!this.pending.has(k)) {
       const base = dataUrl(this.area, `tiles/${k}`), gz = !!this.index.gzip;
-      const bin = async (name: string) => {
-        const url = `${base}.${name}.bin${gz ? '.gz' : ''}`;
+      const binaryUrl = (name: TileBinaryKind) => `${base}.${name}.bin${gz ? '.gz' : ''}`;
+      const bin = async (name: TileBinaryKind) => {
+        const url = binaryUrl(name);
         const buffer = await fetchBinary(url, gz);
         // Requested files are required by the tile metadata; failure must retry
         // rather than publish flat terrain or absent bridge/building geometry.
@@ -689,7 +691,12 @@ export class TileWorld {
       const levels = this.structures.has(k) ? bin('levels') : null;
       const known = this.iprTiles.get(k);
       const ipr = this.osmBuildings || known === false ? null : known ? bin('ipr') : json.then((t) => (t.ipr ? bin('ipr') : null));
-      const files = Promise.all([json, height, bare, ipr, levels]).then(([t, height, bare, ipr, levels]) => ({ t, height, bare, ipr, levels }));
+      const files = Promise.all([json, height, bare, ipr, levels]).then(([t, height, bare, ipr, levels]) => {
+        for (const [kind, buffer] of [['height', height], ['bare', bare], ['ipr', ipr], ['levels', levels]] as const) {
+          if (buffer !== null) validateTileBinary(kind, buffer, { key: k, url: binaryUrl(kind), n: this.index.terrain?.n, tile: t });
+        }
+        return { t, height, bare, ipr, levels };
+      });
       files.catch(() => { if (this.pending.get(k) === files) this.failed(k); });
       this.pending.set(k, files);
     }

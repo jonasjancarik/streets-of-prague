@@ -1,11 +1,13 @@
-# Required tile binary validation proposal
+# Required tile binary validation
 
 read_when: extending ae1a49f's required-download checks or reviewing successful-but-corrupt tile fetches.
 
-This is a read-only diagnosis and proposed follow-up. No binary loader, decoder or
-regression implementation has been changed. It is based on `376a71d`, the existing
-reader/writer contracts and a read of `ae1a49f`; the latter rejects missing buffers
-but still accepts an empty `ArrayBuffer` because it is truthy.
+The approved follow-up is implemented in `src/tileBinary.ts`, called by
+`TileWorld.fetchTile` before its files promise fulfills. It extends the missing-file
+checks from `ae1a49f` without changing optional `fetchBinary` consumers or decoder
+formats. The original diagnosis below was based on `376a71d` and the reader/writer
+contracts: `ae1a49f` rejected missing buffers but accepted an empty `ArrayBuffer`
+because it is truthy.
 
 ## Reproduction and cache effect
 
@@ -84,12 +86,11 @@ empty 200 and partial/raw HTML successes fail the shape checks when their decode
 length/header is invalid. These checks do not prove integrity of a same-length
 plausible binary; the build-time payload hashes are not currently in the runtime index.
 
-## Small implementation proposal
+## Implementation
 
-In the author/integration checkout, add a pure shape validator used by
-`TileWorld.fetchTile` after the parallel JSON/binary downloads resolve and before
-the `files` promise is returned as fulfilled. It receives kind, buffer and the
-required metadata; it throws a diagnostic containing tile key, kind, expected
+The pure shape validator runs after the parallel JSON/binary downloads resolve and
+before the `files` promise is returned as fulfilled. It receives kind, buffer and
+the required metadata; it throws a diagnostic containing tile key, kind, expected
 decoded length(s), actual length and URL. This leaves download concurrency, optional
 `fetchBinary` consumers, worker ownership, retry counts and streaming policy unchanged.
 
@@ -99,11 +100,10 @@ bytes with defaults or adding a blanket all-NaN rejection. Existing guarded
 missing required download. Keep obsolete-request isolation and the normal startup
 three-attempt limit intact. No map rebuild, GPU test or schema/version bump is needed.
 
-## Focused regression proposal
+## Focused regressions
 
-Extend the existing `scripts/check-tile-fetch.mjs` rather than add another browser
-harness. Its current recovery fixture reuses the same 8-byte buffer for every kind;
-that must be replaced with valid per-kind payloads before adding these checks:
+`scripts/check-tile-fetch.mjs` extends the existing CPU harness with valid per-kind
+payloads instead of reusing the same 8-byte recovery buffer for every kind:
 
 1. Declare one structure at `n=2`. HTTP 204 and empty 200 levels responses must reject
    before the stub `make` runs, clear the active pending entry and schedule retry.
@@ -143,5 +143,7 @@ A read-only scan of the private `centrum` snapshot built `2026-10-02T20:16:12Z`
 (`format=2`, `n=63`, `G=3969`) found 234 height files, all 11907 bytes; 89 levels
 files, all exactly `7938*C` bytes; and 228 IPR files, all matching the material-bearing
 length and both advertised header counts. No file-level all-zero levels payload or
-zero-triangle IPR appeared in that sample. This validates the arithmetic against
-that snapshot, not all legacy data, and is not an implementation test.
+zero-triangle IPR appeared in that sample. The implemented validator also passed
+over those same 234/89/228 decoded files. This covers that snapshot, not all legacy
+data. The focused fetch suite covers 21 corrupt successful response/recovery cases,
+both HTTP failure and HTTP 204 startup retries, and stale corrupt-body isolation.
