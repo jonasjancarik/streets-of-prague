@@ -60,9 +60,9 @@ const DTM_LAND: [string, string, string][] = [
   ['dtm_green', COLORS.park, 'grass'], ['dtm_garden', COLORS.garden, 'grass'],
   ['dtm_wood', COLORS.wood, 'wood'], ['dtm_pitch', COLORS.pitch, 'pitch'],
 ];
-// Prototype (?cover=<method>, ground_cover.py): what the aerial photographs say the
-// unmapped ground is made of, above those and under everything mapped (tree canopy
-// joins the wood, see tiles.ts).
+// What the aerial photographs say the unmapped ground is made of (ground_cover.py,
+// layers.merge_cover), above those and under everything mapped. Tree canopy comes
+// as wood.
 const COVER: [string, string, string][] = [
   ['cover_grass', '#8fa860', 'grass'],
   ['cover_dirt', '#b39d78', 'dirt'], ['cover_gravel', '#a39d92', 'gravel'],
