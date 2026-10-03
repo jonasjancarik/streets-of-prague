@@ -79,6 +79,7 @@ const VEHICLE_NAMES: Record<string, string> = {
   truck: 'Lorry', artic: 'Articulated lorry', bus: 'Bus', minibus: 'Minibus', fire: 'Fire engine',
 };
 import { haptic, hapticCrash, hapticBlast } from './haptics.ts';
+import { tunnelHole } from './tunnelView.ts';
 import { setupTestkit, PLACES } from './testkit.ts';
 import * as telemetry from './telemetry.ts';
 import type { Testkit } from './testkit.ts';
@@ -813,7 +814,7 @@ async function main() {
     }
     let best = null, bestD = Infinity;
     for (const c of allCars()) {
-      if (c.burnt) continue;
+      if (c.burnt || apartOnFoot(c)) continue;
       const d = c.gap(walker.x, walker.y);
       if (d < bestD) { bestD = d; best = c; }
     }
@@ -1319,6 +1320,8 @@ async function main() {
   };
   // On a bridge and under it: two things that don't meet.
   const apart = (a: { gz?: number }, b: { gz?: number }) => a.gz !== undefined && b.gz !== undefined && Math.abs(a.gz - b.gz) > 3;
+  // A car on the road above a tunnel you walk in (or under your bridge) is out of reach.
+  const apartOnFoot = (c: Car) => { world.track(c); world.track(walker); return apart(c, walker); };
   const moving = (c: Car) => c.mode === 'player' || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s
   let restingCount = -1;
   const syncResting = () => {
@@ -1932,7 +1935,7 @@ async function main() {
     const under = !inHeli && (world.passageAt(px(), py()) || (!!body && world.covered(body)));
     // (The deeper the tunnel, the wider: the view is from above the ground.)
     // On the metro, the hole goes with the train, down to its tunnel.
-    const hole = underway ? underway.r : deep && body ? Math.min(45, 14 + 0.35 * Math.max(0, world.terrainAt(px(), py()) - (body.gz ?? 0))) : 9;
+    const hole = underway ? underway.r : deep && body ? tunnelHole(world.terrainAt(px(), py()) - (body.gz ?? 0)) : 9;
     cutR += ((under || underway ? hole : 0) - cutR) * Math.min(1, dt * 6);
     const [hx, hy] = underway ? [underway.x, underway.y] : [px(), py()];
     CUTAWAY.value.set(hx, (underway ? underway.floor : ground(px(), py(), body)) + 2.5, -hy, cutR > 0.3 ? cutR : 0);
@@ -2000,7 +2003,7 @@ async function main() {
     const station = !inCar && !inHeli && !ride.on && !metro.active ? metro.near(walker.x, walker.y) : null;
     const gap = (c: Car) => c.gap(walker.x, walker.y);
     const enterable = !inCar && !inHeli && !ride.on
-      ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8 && !c.burnt).sort((a, b) => gap(a) - gap(b))[0]
+      ? [...carsNear(walker.x, walker.y, 5)].filter((c) => gap(c) < 1.8 && !c.burnt && !apartOnFoot(c)).sort((a, b) => gap(a) - gap(b))[0]
       : undefined;
     const boat = !inCar && !inHeli && !ride.on && !boats.me ? boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch) : null;
     const onFoot = !inCar && !inHeli && !ride.on && !metro.active && !boats.me && !taxi.riding;

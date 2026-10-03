@@ -11,6 +11,8 @@ import { mapData } from './data.ts';
 import { newsletterLink } from './newsletter.ts';
 import { updateNotice } from './update.ts';
 import { hapticsOn, setHaptics } from './haptics.ts';
+import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
+import type { TunnelView } from './tunnelView.ts';
 import { feedbackLink } from './feedback.ts';
 import { LEVELS, difficulty, setDifficulty } from './difficulty.ts';
 import type { Level } from './difficulty.ts';
@@ -31,6 +33,8 @@ const GRAPHICS: { id: Choice; label: string }[] = [
   { id: 'auto', label: 'Auto' }, { id: 'ultra', label: 'Ultra' }, { id: 'high', label: 'High' }, { id: 'medium', label: 'Medium' }, { id: 'low', label: 'Low' }, { id: 'lowest', label: 'Lowest' },
 ];
 const WEATHER: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
+
+const TUNNEL_LABEL: Record<TunnelView, string> = { normal: 'Usual view', wide: 'Wider view', full: 'Whole tunnel' };
 
 const LEVEL: Record<Level, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
 
@@ -163,6 +167,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   // Only on a touch screen: a computer can't buzz.
   if (matchMedia('(pointer: coarse)').matches) row('Vibration', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (hapticsOn() ? 'on' : 'off'), (id) => setHaptics(id === 'on'));
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
+  row<TunnelView>('Tunnels', TUNNEL_VIEWS.map((v) => ({ id: v, label: () => t(TUNNEL_LABEL[v]) })), tunnelView, setTunnelView);
   row('Water', [{ id: 'waves', label: () => t('Waves and reflections') }, { id: 'plain', label: () => t('Plain') }], () => (graphics.water ? 'waves' : 'plain'), (id) => graphics.setWater(id === 'waves'));
   row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
 
