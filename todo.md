@@ -593,8 +593,9 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   in either order with identical parked-car layouts and no duplicate centres.
   Citywide driving and emergency routes remain unchecked; see `docs/traffic.md`.
 - **Rebuild the streets layer for the metro fix.** Metro station corridors and stairs
-  are no longer tunnels (`station_ways` in `pipeline/structures.py`); rebuilt for
-  `centrum`, not yet for `praha` and `ujezd` (the command is under Terrain).
+  are no longer tunnels (`station_ways` in `pipeline/structures.py`, 29 September 2026).
+  The whole map was rebuilt after that (uploaded as 2026-10-02 and 2026-10-03), so this is
+  done in the live map; local `praha` and `ujezd` data was not checked.
 - **Taxis.** Hail one with T or order one from the two made-up apps (`src/taxi.ts`).
   They can creep or stall behind parked cars in narrow Old Town streets, their routes
   are sometimes long, and the apps have no phone screen of their own. The touch
