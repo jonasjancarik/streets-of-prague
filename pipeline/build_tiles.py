@@ -140,6 +140,11 @@ def kerb_parking(d, side):
     return None
 
 
+# Ways that differ in these stay separate edges: a tunnel joined to the bridge before it
+# became one edge that was both, and the game put its cars on a bridge over the park.
+JOIN_ONLY_ALIKE = ("bridge", "tunnel")
+
+
 def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None, ground=frozenset()):
     """Edges of an osmnx network as dicts with OSM node ids and local-metre polylines;
     with `kerbs` (kerbs.Kerbs), car roads get their kerbs as `kerb`: [right, left].
@@ -154,9 +159,9 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None,
         station = structures.station_ways(data["elements"], tf, ground)
         data["elements"] = [el for el in data["elements"] if el["type"] != "way" or (ok(el.get("tags", {})) and el["id"] not in station)]
         G = ox.graph._create_graph([data], network in ox.settings.bidirectional_network_types)
-        G = ox.simplify_graph(G)
+        G = ox.simplify_graph(G, edge_attrs_differ=JOIN_ONLY_ALIKE)
     else:
-        G = ox.graph_from_bbox(bbox, network_type=network, simplify=True, retain_all=True)
+        G = ox.simplify_graph(ox.graph_from_bbox(bbox, network_type=network, simplify=False, retain_all=True), edge_attrs_differ=JOIN_ONLY_ALIKE)
     if directed:
         G = connected(G, tf, core)
     out, seen, sized = [], set(), []
