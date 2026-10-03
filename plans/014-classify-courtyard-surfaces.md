@@ -10,6 +10,12 @@ PLANNED. This is the deferred fourth phase of [plan 013](013-fill-the-beige-grou
 No photo download, classifier change, tile build or shared-data activation is part
 of this plan's creation.
 
+Update, 4 October 2026: the photo classifier now runs for the whole city on the
+unmapped ground (`ground_cover.py build`, [docs/beige-cover-city.md](../docs/beige-cover-city.md)),
+so the photos and the per-tile cache this plan wanted already exist for 5,772 tiles.
+Courtyards are the remaining step: let the same rules also classify `dtm_yard` pixels
+(the mask in `tile_cover` counts them as covered now) and test them on hand-checked yards.
+
 After plan 013's isolated centre tile rebuild, `beige_report.py` measured 72.20 ha
 of plain unmapped ground, down from 182.64 ha before the square and DTM changes.
 The DTM now outlines yards (`dtm_yard`), but its `PrevazujiciPovrch` is usually

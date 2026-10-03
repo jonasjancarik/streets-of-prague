@@ -187,6 +187,10 @@ size (run `beige_report.py` and compare the tiles' gzip size before and after).
 
 ## Phase 4: what the courtyards are made of
 
+(Status, 4 October 2026: the photo classifier now runs for the whole city on the
+unmapped ground, see [docs/beige-cover-city.md](../docs/beige-cover-city.md). The
+courtyards themselves, `dtm_yard`, are still the neutral fallback: plan 014.)
+
 The orthophoto classifier (`pipeline/ground_cover.py`, `?cover=rules`, see `todo.md`
 "Fill the plain beige areas") was built for all the unmapped ground and needs the
 whole city's photos (a 16–65 GB download). With phase 3 the target shrinks: classify
@@ -443,3 +447,13 @@ and library versions. They are ready in this primary checkout; copying these cac
 to another path does not preserve their validity. A future source or pipeline-code
 change will correctly invalidate affected work. The first-pass and repeat logs are
 in the rollback snapshot directory.
+
+### Photo classification of the unmapped ground, 3–4 October 2026
+
+The live city map already held phases 0–3 (plain ground in `praha`: 4,329.6 ha). The
+prototype's `rules` method (62 % exact on the hand labels, against 27 % for the model)
+was run for the city as the `cover` layer, folded into the build and into the tiles
+without a flag or a map format change: plain ground in `praha` fell to 2,459.9 ha, tile
+JSONs grew 12.0 % gzipped, and the frame time could not be told from noise. Numbers,
+before and after pictures and what is left are in
+[docs/beige-cover-city.md](../docs/beige-cover-city.md). Not deployed.

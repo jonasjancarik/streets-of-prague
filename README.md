@@ -784,6 +784,7 @@ uv run build_tiles.py centrum      # today's map + street graphs in tiles → pu
 uv run mesh_colours.py centrum     # real roof and wall colours from IPR's photo mesh (optional)
 uv run ipr_buildings.py centrum    # IPR's 3D buildings into the tiles
 uv run ipr_terrain.py centrum      # IPR's terrain, bridges and tunnels, hill shading
+uv run --group cover ground_cover.py build centrum   # what the unmapped ground is made of, from aerial photos (optional)
 uv run build_lines.py centrum      # tram lines from OSM's route relations → lines.json
 uv run build_metro.py centrum      # the metro from PID's timetables → metro.json
 uv run build_buses.py centrum      # bus lines and stops from PID's timetables → buses.json
@@ -1012,17 +1013,21 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   needed). Add a new recording's source and licence to `public/audio/SOURCES.md`.
 - **Parking.** `build_parking.py` reads the monthly TSK occupancy GeoJSON collected by
   `~/projects/parkovani-praha` (set `PARKING_DATA` to point elsewhere).
-- **Unmapped ground (prototype).** `ground_cover.py` tries two ways to fill the ground
-  nothing is mapped on, from IPR's aerial photographs, on a few tiles at a time; it
-  isn't part of the build, and its extra packages are in a group of their own
-  (`uv run --group cover ground_cover.py …`). `fetch` downloads the photos (colour and
-  infrared) for the tiles; `classify --method rules` sorts the unmapped ground into
-  grass, trees, dirt, gravel, asphalt and what isn't ground, and the game draws it with
-  `?cover=rules`; `ortho` paints the photo itself through a Kuwahara filter, shown with
-  `?ortho` (not convincing yet; stronger filters are still to try). Heights come from
-  IPR's 1 m surface model, unzipped into `pipeline/.cache/cover/dsm_ipr/` (1.5 GB to
-  download). The script's docstring has the rest, including hand-labelling and
-  scoring.
+- **Unmapped ground.** `ground_cover.py build <area>` (extra packages in their own
+  group: `uv sync --group cover`) works out what the ground nothing maps is made of,
+  from IPR's 2024 colour and infrared aerial photographs and IPR's 2025 1 m surface
+  model, and writes the `cover` layer: grass, trees (as wood), dirt, gravel and asphalt,
+  with roofs, sheds and site clutter left as they are. Run it after `ipr_terrain.py`
+  (it needs the heights); `layers.py` then puts the result into the tiles as the
+  `cover_*` areas the game draws, so there is no flag. Photographs are fetched once, as
+  JPEG at 0.25 m, into `pipeline/.cache/cover/photos/` (about 0.5 MB a tile, 3 GB for
+  the city); each tile's answer is kept under a key of its inputs, so a second run
+  only redoes tiles whose ground, heights or photographs changed. The surface model
+  (`DSM_1m.zip` from IPR's open data, 1.5 GB, unzipped to
+  `pipeline/.cache/cover/dsm_ipr/`) must be there. The same file also has the
+  prototype's other commands (`classify --method model|jev`, `train`, `sheet`, `score`
+  against hand labels, and `ortho`, the painted photo shown with `?ortho`, not
+  convincing yet).
 
 Sizes after the 1 October 2026 local rebuild: centrum is 234 tiles and about 38 MB;
 the whole city is 14,595 tiles, 247,013 OSM buildings and IPR buildings in 5,703
@@ -1161,7 +1166,7 @@ libraries to `dist/licenses.txt` (a small plugin in `vite.config.js`).
 - Carriageways and parking bays: Digitální technická mapa kraje, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/28A24EB4-5EE8-436E-B0BB-357025258211), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
 - Street lamps: the surface marks of the archived utility map (DTMP_CUR_TMISZNAK_B), datový podklad © [IPR Praha](https://geoportalpraha.cz/), CC BY.
-- Unmapped-ground prototype (`?cover`, `?ortho`): orthophotos and the digital surface model © [IPR Praha](https://geoportalpraha.cz/), CC BY 4.0; older surface model DMP 1G © [ČÚZK](https://geoportal.cuzk.cz/), CC BY 4.0.
+- Unmapped ground (`ground_cover.py`, `?ortho`): orthophotos and the digital surface model © [IPR Praha](https://geoportalpraha.cz/), CC BY 4.0; older surface model DMP 1G © [ČÚZK](https://geoportal.cuzk.cz/), CC BY 4.0.
 - Tram sounds: [Freesound](https://freesound.org), nearly all CC0; the motor's whine is
   [tramvaj nova prujezd nabrezi MS](https://freesound.org/s/621068/) by ozvuk,
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (see `public/audio/SOURCES.md`).

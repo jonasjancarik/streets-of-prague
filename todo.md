@@ -384,18 +384,24 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   points. Whether the 2026-10-03 map includes these surfaces is unconfirmed. See
   `plans/018-simplify-paths-and-pavements.md` for the matched pictures; gap-closing and surveyed pavement polygons remain deferred.
 
-- **Fill the plain beige areas.** Plan 013 phases 0–3 now give squares their OSM
-  surface, make the general pavement asphalt grey, and add surveyed courtyards and
-  green from the DTM in the shared local tiles. The centre's plain ground fell from
-  182.64 to 72.20 ha. Whether the uploaded 2026-10-03 map includes this is unconfirmed. What's left includes
-  unmapped ground, verges and car parks on bare earth. The prototype
-  (`pipeline/ground_cover.py`, `?cover=rules` in the game) classifies IPR's 2024
-  orthophoto and 2025 surface model into grass, trees, dirt, gravel, asphalt and "not
-  ground"; tried on 49 tiles round Smíchov. Still to do: run it for the whole city (a
-  16–65 GB photo download), and fold it into the build.
-  About a third of the beige pieces in town are roofs or site clutter and some are
-  roadway the streets don't reach: gaps in the map data rather than missing ground.
-  Next step for courtyard materials: `plans/014-classify-courtyard-surfaces.md`.
+- **Fill the plain beige areas.** Plan 013 phases 0–3 gave squares their OSM surface,
+  made the general pavement asphalt grey and added surveyed courtyards and green. On
+  3–4 October 2026 `ground_cover.py build praha` classified the rest from IPR's 2024
+  photographs and 2025 surface model into grass, trees, dirt, gravel and asphalt, and
+  the cover is in the local city map (no flag; not yet deployed). Plain ground in the
+  city: 4,329.6 → 2,459.9 ha; in photographed tiles 2,610.9 → 741.3 ha. Costs and
+  pictures: `docs/beige-cover-city.md`. Still to do:
+  - Deploy: the map is local only, and `public/data/praha_beforecover_now` must go
+    first (the `deploy` skill). Run `layers.py praha --strict` after rebuilding the
+    layers, which the pipeline edits made necessary.
+  - 1,527 ha of plain ground in tiles outside IPR's photographs (ČÚZK's orthophoto?).
+  - Courtyards: `dtm_yard` keeps its neutral paved look (plan 014).
+  - Asphalt, gravel and dirt are confused (40 % right on the hand labels, Smíchov only);
+    more labels from other districts, and seams where a patch changes class at a tile edge.
+  - Frame time was not measurable against the noise; check a phone (draw calls +4–13
+    a scene, triangles up to +18 % where woods and trees were added).
+  - About a third of what stays beige is roofs and site clutter, and some is roadway the
+    streets don't reach: gaps in the map data, not missing ground.
 - **Painted photo, with stronger filters.** `ground_cover.py ortho` (`?ortho` in the
   game) paints the orthophoto through an anisotropic Kuwahara filter; at 0.5 m/px it
   still looked like a blurry photograph. To try: a bigger, more stretched brush;
