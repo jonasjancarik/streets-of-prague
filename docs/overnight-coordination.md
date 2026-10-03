@@ -105,3 +105,11 @@ Parent accepts bridge continuity `d7dde1b` plus result guard `57475d7` after ind
 Parent accepts parking/fetch sequence `376a71d`, evidence `fac44d3`, design `28cf9bb`, graph guard `7de0db8`, HTTP guard merge `c020b48`, binary validation `6959e41`. Independent rechecks found no remaining issues after graph omission correction;21 layout probes and real binary samples passed. Parent accepts tests-only `cc908cb` after inspecting its strict subprocess assertions; two baseline mock failures are corrected without production changes.
 
 Do not integrate plain-support pilot `fcf611d`: rollout withheld due source conflicts and up to8.15m candidate changes. It is an inspectable experiment with game loading unchanged. All live work retains09:00/<50% limits.
+
+## Acceptance and blocker at 04:40 UTC
+
+Combined checkpoint `c42b93e` found a blocking Mrázovka regression in harmonic propagation: a mixed bridge/tunnel component includes a non-finite out-of-region anchor and loses tunnel depth. The author is correcting domain selection; integration map is NOT approved overall until regenerated and checked. Old map/source snapshots are preserved.
+
+Accept `35f3f4` seam-only source fix after independent pre-pilot application,11 new tests,46 focused tests,25-tile replay and20 order permutations. It requires no plain-support pilot. Accept seasonal birds `2ac779d`, picker `6d05bc0`, taxi controls `af8aa0f`, and docs index `d9e9ea1` after independent reviews and recorded UI/CPU evidence. Taxi Czech runtime remains unverified, though CPU language handling passes.
+
+Accept ambulance fix `9b56630` with native replay evidence `048f942`: independent CPU review found no introduced blocker and verified no timeout/distant-treatment shortcut; native warmed scene treated and returned crew. Pre-existing stretcher collision/arrival variability remains. Scenario-isolation implementation `7488703` is awaiting a small documentation correction before integration.
