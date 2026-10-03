@@ -4,8 +4,11 @@ read_when: Changing Net.spread, checking bridge/tunnel graph heights, or reviewi
 
 # Continuous bridge graph heights
 
-This checkpoint replaces `Net.spread`'s two-nearest-anchor interpolation with a
-distance-weighted harmonic graph solve. It is based on accepted contact commit
+For components containing only bridges and finite anchors, this checkpoint replaces
+`Net.spread`'s two-nearest-anchor interpolation with a distance-weighted harmonic graph
+solve. Tunnel/mixed components and components with unknown anchors retain the previous
+propagation; see [the compatibility correction](tunnel-propagation-compatibility.md).
+It is based on accepted contact commit
 `f0bb722`, cherry-picked locally as `6211278`. Contact/grade rules, IPR face
 windows, crossing handling and the 25 smoothing passes are unchanged.
 
@@ -19,10 +22,12 @@ Dijkstra, preserving the distance input to tunnel cover.
 
 An unanchored component remains NaN with infinite nearest distance; an empty graph
 returns empty arrays. One finite anchor gives a constant profile. Multiple equal
-anchors give that exact constant without factorisation. With a non-finite anchor,
-free heights in that component remain unknown while known pins remain exact; this
-conservative behavior does not invent missing ground data. Other disconnected
-components solve independently. No steep-height cap or location rule was added.
+anchors give that exact constant without factorisation. A component with a non-finite
+anchor uses the prior model: nodes whose two nearest anchors are finite can remain
+supported, while heights influenced by the unknown anchor remain unknown. Components
+containing tunnels use that same prior model even with finite anchors, including
+bridges connected to them. Other disconnected components solve independently. No
+steep-height cap or location rule was added.
 
 The sparse result is validated before assigning free heights. Non-finite values
 or an invalid result shape raise a precise error. A finite value outside its own

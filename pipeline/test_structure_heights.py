@@ -118,5 +118,40 @@ class StructureHeightTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,r'component 0 returned 245.*outside fixed range \[190, 220\]'):
                 net.spread(self.pins(net,{1:190,2:220,3:280,4:300}))
 
+    def test_unknown_anchor_does_not_erase_nodes_with_two_nearer_finite_anchors(self):
+        ways=[way(1,[1,10],[[-500,0],[0,0]]),way(2,[2,10],[[0,5],[0,0]]),way(3,[10,30],[[0,0],[400,0]])]
+        net=structures.Net(ways);net.spread(self.pins(net,{1:np.nan,2:190,30:200}))
+        self.assertTrue(np.isnan(net.h[net.key['n',1]]))
+        self.assertTrue(np.isfinite(net.h[net.paths[2]]).all())
+        for i in net.paths[2]:
+            x=net.xy[i,0];self.assertAlmostEqual(net.h[i],(190*(400-x)+200*(x+5))/405)
+
+    def test_tunnel_and_connected_bridge_use_one_legacy_component(self):
+        ways=branch();ways[2]['kind']='tunnel';net=structures.Net(ways)
+        net.spread(self.pins(net,{1:197.088,2:198.638,30:242.912}))
+        # At the joint the two nearest anchors are the two short arms, as before.
+        a,b=306.0065358779,306.7065209623
+        expected=(197.088*b+198.638*a)/(a+b)
+        self.assertAlmostEqual(net.h[net.key['n',10]],expected,7)
+        self.assertLess(net.h[net.key['n',10]],200)
+
+    def test_short_tunnel_between_preexisting_bridge_nodes_still_selects_legacy(self):
+        ways=branch();ways.append(way(5,[10,11],[[0,0],[1,0]]))
+        ways.append({'id':4,'nodes':[10,11],'pts':[[0,0],[1,0]],'kind':'tunnel','layer':-1})
+        net=structures.Net(ways);self.assertNotIn('tunnel',net.kind)
+        net.spread(self.pins(net,{1:197.088,2:198.638,30:242.912}))
+        self.assertIn(int(net._components[net.key['n',10]]),net._legacy_components)
+
+    def test_disconnected_tunnel_does_not_disable_complete_bridge_harmonics(self):
+        bridge=branch();tunnel=way(9,[90,91],[[5000,0],[5100,0]]);tunnel['kind']='tunnel'
+        a=structures.Net(bridge);a.spread(self.pins(a,{1:197.088,2:198.638,30:242.912}))
+        b=structures.Net([tunnel,*bridge]);b.spread(self.pins(b,{90:190,91:200,1:197.088,2:198.638,30:242.912}))
+        for wa,wb in zip(a.paths,b.paths[1:]):np.testing.assert_array_equal(a.h[wa],b.h[wb])
+
+    def test_domain_selection_can_change_with_anchor_validity_without_stale_heights(self):
+        net=structures.Net(branch());pins=self.pins(net,{1:197.088,2:198.638,30:242.912});net.spread(pins);good=net.h.copy()
+        net.spread({**pins,net.key['n',1]:np.nan});self.assertTrue(np.isnan(net.h).any())
+        net.spread(pins);np.testing.assert_array_equal(net.h,good)
+
 
 if __name__=='__main__':unittest.main()

@@ -266,6 +266,7 @@ class Net:
         self.xy, self.key, self.adj = [], {}, []
         self.kind = []
         self.paths = []  # per way: its points, in order
+        self._non_bridge_seeds = []
         for w in ways:
             path = []
             pts, nodes = w["pts"], w["nodes"]
@@ -281,6 +282,8 @@ class Net:
                 self.adj[a].append((b, d))
                 self.adj[b].append((a, d))
             self.paths.append(path)
+            if path and w['kind'] != 'bridge':
+                self._non_bridge_seeds.append(path[0])
         self.xy = np.asarray(self.xy, dtype=float).reshape(-1, 2)
         self.h = np.full(len(self.xy), np.nan)
 
@@ -294,13 +297,15 @@ class Net:
         return i
 
     def spread(self, fixed):
-        """Distance-weighted harmonic heights with exact fixed anchors.
+        """Harmonic heights for complete bridge components; legacy elsewhere.
 
         Linear on a chain and continuous at junctions, rather than switching
         between two nearest anchors that may both lie on one side. Return shortest
         graph distances to the nearest provided anchor, independently of heights.
         Components with no anchor stay unknown; one anchor gives a constant height.
-        A non-finite anchor leaves that component's free heights unknown.
+        Components containing tunnels, or any non-finite anchor, retain the prior
+        two-nearest propagation. In particular an unknown portal outside the map
+        must not erase a tunnel's supported interior and shared bridge transitions.
         """
         n = len(self.adj)
         self.h.fill(np.nan)
@@ -335,6 +340,7 @@ class Net:
             splits = np.flatnonzero(np.r_[True, self._components[order][1:] != self._components[order][:-1]])
             self._component_nodes = {int(self._components[order[a]]): order[a:b]
                                      for a, b in zip(splits, np.r_[splits[1:], n])}
+            self._legacy_components = {int(self._components[i]) for i in self._non_bridge_seeds}
         comp = self._components
         anchors = defaultdict(list)
         pinned = np.zeros(n, dtype=bool)
@@ -344,16 +350,20 @@ class Net:
             anchors[int(comp[i])].append((int(i), float(h)))
         active = np.zeros(n, dtype=bool)
         limits = np.full((n, 2), np.nan)  # component IDs are their seed node indices
+        legacy = {}
         for component, points in anchors.items():
             heights = np.array([h for _, h in points])
-            if not np.isfinite(heights).all():
-                continue  # preserve known pins, but do not invent missing ground
+            if component in self._legacy_components or not np.isfinite(heights).all():
+                legacy.update(points)
+                continue
             on = self._component_nodes[component]
             if np.all(heights == heights[0]):
                 self.h[on] = heights[0]  # includes the one-anchor case, exactly
             else:
                 active[on] = True
                 limits[component] = [heights.min(), heights.max()]
+        if legacy:
+            self._spread_nearest(legacy)
         free = np.flatnonzero(active & ~pinned)
         if len(free):
             pins = np.flatnonzero(pinned & active)
@@ -375,6 +385,34 @@ class Net:
                                    f"outside fixed range [{lo[j]:.9g}, {hi[j]:.9g}] m (tolerance {tolerance[j]:.3g} m)")
             self.h[free] = solved
         return near
+
+    def _spread_nearest(self, fixed):
+        """Original propagation, restricted to selected disconnected components.
+
+        Unknown anchors stay unknown; a node supported by two nearer finite pins
+        can still have a finite height. Component selection keeps one shared model
+        for tunnels and the bridges physically connected to them.
+        """
+        best = [[] for _ in self.adj]
+        heap = [(0.0, i, i) for i in fixed]
+        heapq.heapify(heap)
+        while heap:
+            d, i, src = heapq.heappop(heap)
+            b = best[i]
+            if len(b) >= 2 or any(s == src for _, s in b):
+                continue
+            b.append((d, src))
+            for j, length in self.adj[i]:
+                if len(best[j]) < 2 and not any(s == src for _, s in best[j]):
+                    heapq.heappush(heap, (d + length, j, src))
+        for i, b in enumerate(best):
+            if i in fixed:
+                self.h[i] = fixed[i]
+            elif len(b) == 2:
+                (da, a), (db, c) = b
+                self.h[i] = (fixed[a] * db + fixed[c] * da) / (da + db)
+            elif b:
+                self.h[i] = fixed[b[0][1]]
 
 
 def solve(ways, ground, decks):

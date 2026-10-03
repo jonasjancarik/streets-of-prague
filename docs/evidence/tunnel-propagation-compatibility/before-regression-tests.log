@@ -1,0 +1,38 @@
+test_exported_tunnel_and_bridge_grids_preserve_runtime_support (test_tunnel_regression.TunnelRegressionTests.test_exported_tunnel_and_bridge_grids_preserve_runtime_support) ... /Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/structures.py:567: RuntimeWarning: All-NaN slice encountered
+  return float(np.nanmin(ground(xs, ys, dry=True)))  # (not the water's level, where there's a river beside it)
+/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/structures.py:859: RuntimeWarning: Mean of empty slice
+  h = float(np.nanmean(g[0].height(np.array([c.x]), np.array([c.y]))))
+FAIL
+test_real_mixed_component_retains_tunnel_depth_with_unknown_portal (test_tunnel_regression.TunnelRegressionTests.test_real_mixed_component_retains_tunnel_depth_with_unknown_portal) ... FAIL
+
+======================================================================
+FAIL: test_exported_tunnel_and_bridge_grids_preserve_runtime_support (test_tunnel_regression.TunnelRegressionTests.test_exported_tunnel_and_bridge_grids_preserve_runtime_support)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/test_tunnel_regression.py", line 54, in test_exported_tunnel_and_bridge_grids_preserve_runtime_support
+    self.assertEqual(len(rows),1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_real_mixed_component_retains_tunnel_depth_with_unknown_portal (test_tunnel_regression.TunnelRegressionTests.test_real_mixed_component_retains_tunnel_depth_with_unknown_portal)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/test_tunnel_regression.py", line 38, in test_real_mixed_component_retains_tunnel_depth_with_unknown_portal
+    self.assertEqual({w['id'] for w in kept},{w['id'] for w in ways})
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Items in the second set but not the first:
+362654528
+1133174254
+1133174255
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.027s
+
+FAILED (failures=2)
+  6 bridge and tunnel ways: 3 ends on the ground, 0 points on IPR's decks
+  3 tunnel ways never go 2.5 m under the ground: left on it
+  3 bridge and tunnel pieces on up to 1 levels either way
+  6 bridge and tunnel ways: 3 ends on the ground, 0 points on IPR's decks
+  3 tunnel ways never go 2.5 m under the ground: left on it
+EXPECTED: both real-component regression tests fail before the correction
