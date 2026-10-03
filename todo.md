@@ -401,6 +401,16 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   - Not measured yet: `scripts/bench.mjs --vs` with the jets, the water cannon on a
     phone, and the siren levels in a real browser.
 
+## Radio
+
+- **Stop streaming when radio volume is zero.** Ensure turning the radio down to
+  zero stops the stream completely, saving bandwidth and preventing silent radio
+  playback from interfering with the user's own audio playing on the device.
+- **More radio controls in settings.** Add a deeper radio settings page where
+  users can block stations they don't want and choose how stations are assigned
+  to cars: weighted by actual listener numbers, or a simple random distribution.
+  Optional extra: vary station selection by the type of vehicle the player enters.
+
 ## Weather and night
 
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow
