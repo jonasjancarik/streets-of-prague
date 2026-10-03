@@ -75,6 +75,10 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   orientation: identical camera options alone do not establish an identical pose.
   `t.camera(null)` follows you again.
   `t.view(zoom)` zooms the ordinary camera.
+- `t.aimAt(post, back)` checks walls, cars and the current tram collision circles
+  for the whole car along its approach. A blocked approach is rejected instead of
+  placing the car inside a tram. Moving traffic can still change after setup; this
+  is fixture clearance, not a paused or disabled-traffic test.
 - `t.shot(name)`: a screenshot (the car-name and district captions hidden).
 - `t.film(name, seconds, controls, { fps, hud })`: footage as numbered screenshots
   (`name-0001.png` …), the world stepped evenly between them, the HUD hidden unless

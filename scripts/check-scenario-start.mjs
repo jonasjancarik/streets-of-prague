@@ -29,7 +29,7 @@ function fixture({ clear = true, lands = true } = {}) {
     toLonLat: (x, y) => [x / 10000 + 14, y / 10000 + 50],
     async teleport(x, y) { teleports++; Object.assign(me(), { x, y }); if (heli) air = Math.max(air, 60); },
     async loaded() {}, grid: { at: () => clear ? 0 : 255 },
-    loose, addCar: c => loose.push(c), carsNear: () => loose, rng: () => .5,
+    loose, addCar: c => loose.push(c), carsNear: () => loose, tramsNear: () => [], rng: () => .5,
     enterOrExit() {
       if (heli) {
         if (!heli.landed) return; // The production exit restriction is preserved.

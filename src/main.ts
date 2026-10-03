@@ -2050,6 +2050,7 @@ async function main() {
     loaded: (x, y) => world.loadNow(x, y, 300),
     grid, boats, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
+    tramsNear: (x, y, r) => trams.bodies(x, y, r),
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
     viewRadius, offscreen,
     canvas: renderer.domElement, fov: camera.fov,

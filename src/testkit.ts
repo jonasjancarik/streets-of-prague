@@ -11,6 +11,7 @@ import type { Brigade } from './brigade.ts';
 import type { Ambulances } from './ambulance.ts';
 import type { Pedestrian } from './people.ts';
 import type { Traffic } from './traffic.ts';
+import type { TramBody } from './trams.ts';
 import type { Kind } from './weather.ts';
 import type { Boats } from './boats.ts';
 
@@ -59,6 +60,7 @@ interface Game {
   grid: { at: (x: number, y: number) => number };
   boats: Boats;
   carsNear: (x: number, y: number, r: number) => Car[];
+  tramsNear: (x: number, y: number, r: number) => TramBody[];
   // Where the camera looks now, and how high it is (for starting the free camera there).
   view0: () => { x: number; y: number; height: number };
   viewRadius: () => number;
@@ -313,6 +315,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       const c = g.car();
       if (!c) throw new Error('Not in a car');
       const clear = (x: number, y: number) => g.grid.at(x, y) === 0;
+      // Use the same circle bodies/radius as gameplay collisions. A tram can be
+      // standing across this run even when walls and parked cars are clear.
+      const trams = g.tramsNear(p.x, p.y, back + c.spec.L + 30);
       for (let a = 0; a < 24; a++) {
         const h = (a * Math.PI) / 12, sx = p.x - Math.cos(h) * back, sy = p.y - Math.sin(h) * back;
         let ok = true;
@@ -321,6 +326,10 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
           const x = sx + Math.cos(h) * s, y = sy + Math.sin(h) * s;
           for (const off of [-c.spec.W / 2, 0, c.spec.W / 2]) ok &&= clear(x - Math.sin(h) * off, y + Math.cos(h) * off);
           ok &&= others.every((o) => o.gap(x, y) > c.spec.L / 2 + 0.5);
+          ok &&= c.offsets.every((off) => {
+            const cx = x + Math.cos(h) * off, cy = y + Math.sin(h) * off;
+            return trams.every((body) => body.circles.every(([tx, ty]) => Math.hypot(cx - tx, cy - ty) >= c.r + 1.25 + 0.2));
+          });
         }
         if (!ok) continue;
         Object.assign(c, { x: sx, y: sy, h, vx: 0, vy: 0, w: 0 });
