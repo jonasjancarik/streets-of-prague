@@ -132,3 +132,9 @@ User explicitly reaffirmed intentional near-surface tunnel removal. `drop_shallo
 Final corrective validation is recorded in a141097. The independently reviewed tunnel correction passed strict 234-tile generation and native source-identified gates; shallow removal remains 2.5 m. Build, 107 Python tests and focused checks pass. One final broad scene run on unchanged source/map passed 13/15; lamp-impact uncertainty and the tow fixture distance premise are documented without suppressing failures. Consolidated results are in docs/overnight-results-2026-10-03.md.
 
 All seven worker threads are idle with completed turns. No GPU/heavy lock remains; only integration 5204 remains listening among the overnight dev/scene ports. Main remains at b3c22d5; unrelated 10-line todo.md changes in main were observed and left untouched. No push, merge to main or deployment occurred. The optional plain-support pilot remains unintegrated. Latest weekly quota: 82% remaining. No new implementation work will start before the scheduled cutoff; final scheduled closeout will pause this heartbeat.
+
+## Resumed wrap-up: tow fixture accepted
+
+The user authorized targeted wrap-up after the original cutoff. The50% weekly-quota stop remains active; no new features are in scope. Fresh lamp-final-wrap and tow-fixture-wrapup worktrees preserve the completed overnight baseline46b1f3e.
+
+Accept tow fixture5c47580 after independent review and parent diff inspection: production cleanup is unchanged, actual near/far eligibility is asserted, unrelated600m culling is excluded, original90-second removal/retention assertions remain, and three immutable focused replays pass. Historical13/15 evidence remains intact. Lamp failure is now traced to a tram collision omitted by test setup clearance; its correction is pending.
