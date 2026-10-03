@@ -1,0 +1,49 @@
+{
+  "revision": "00222e6",
+  "started": "2026-10-03T02:06:57.492Z",
+  "cases": [
+    {
+      "name": "wreck-tow",
+      "fixture": "airborne-helicopter",
+      "initial": {
+        "where": {
+          "lat": 50.0759,
+          "lon": 14.41843,
+          "heading": 324,
+          "street": "Resslova",
+          "mode": "helicopter",
+          "x": -112.6,
+          "y": -622.5
+        },
+        "helicopter": {
+          "air": 10,
+          "landed": false
+        },
+        "backend": "WebGPU",
+        "built": "2026-10-02T20:16:12Z"
+      },
+      "result": {
+        "name": "wreck-tow",
+        "title": "A wreck left out of sight is towed after a minute, one in view stays",
+        "checks": [
+          {
+            "name": "both there to start with",
+            "pass": true
+          },
+          {
+            "name": "the one out of sight is gone",
+            "pass": false
+          },
+          {
+            "name": "the one beside you stays",
+            "pass": true
+          }
+        ],
+        "ms": 3244,
+        "pass": false
+      },
+      "shots": []
+    }
+  ],
+  "finished": "2026-10-03T02:07:04.621Z"
+}

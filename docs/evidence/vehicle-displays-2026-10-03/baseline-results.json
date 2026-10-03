@@ -1,0 +1,746 @@
+{
+  "revision": "b3c22d5",
+  "started": "2026-10-03T02:01:04.367Z",
+  "cases": [
+    {
+      "name": "ambulance",
+      "fixture": "fresh",
+      "initial": {
+        "where": {
+          "lat": 50.0871,
+          "lon": 14.41935,
+          "heading": 324,
+          "street": "U Radnice",
+          "mode": "foot",
+          "x": -46.7,
+          "y": 623.2
+        },
+        "helicopter": null,
+        "backend": "WebGPU",
+        "built": "2026-10-02T20:16:12Z"
+      },
+      "result": {
+        "name": "ambulance",
+        "title": "An ambulance comes to someone lying hurt, the paramedics see to them and they get up",
+        "checks": [
+          {
+            "name": "someone was close enough to be left hurt",
+            "pass": true
+          },
+          {
+            "name": "an ambulance got to them",
+            "pass": true,
+            "detail": "after 22 s"
+          },
+          {
+            "name": "the paramedics saw to them and they got up",
+            "pass": true,
+            "detail": "after 35 s: {\"hurt\":false,\"ambulance\":\"work\",\"treated\":9,\"medics\":2,\"speed\":0,\"carried\":false,\"load\":0,\"away\":8,\"path\":7,\"stuck\":12.2}"
+          },
+          {
+            "name": "the ambulance drove off again",
+            "pass": true
+          },
+          {
+            "name": "someone else was close enough to be badly hurt",
+            "pass": true
+          },
+          {
+            "name": "the patient was carried to the ambulance and loaded",
+            "pass": true,
+            "detail": "after 79 s: {\"hurt\":false,\"ambulance\":\"work\",\"treated\":9,\"medics\":2,\"speed\":0,\"carried\":true,\"load\":0,\"away\":3,\"path\":5,\"stuck\":62.7}"
+          },
+          {
+            "name": "and the ambulance drove off with them",
+            "pass": true
+          },
+          {
+            "name": "the ambulance could be taken, with its crew running after you",
+            "pass": true,
+            "detail": "2 after you"
+          }
+        ],
+        "ms": 12800,
+        "pass": true
+      },
+      "shots": [
+        {
+          "name": "ambulance",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:00');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:01');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:02');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:02');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:02');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:02');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:02');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:02');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:02');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:02');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:02');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        },
+        {
+          "name": "ambulance-carry",
+          "situation": "// Plaská · https://www.google.com/maps/search/?api=1&query=50.08064,14.40514\nawait t.go([50.08064, 14.40514], { heading: 180 });\nt.time('14:02');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });",
+          "where": {
+            "lat": 50.08064,
+            "lon": 14.40514,
+            "heading": 180,
+            "street": "Plaská",
+            "mode": "foot",
+            "x": -1063.5,
+            "y": -95.3
+          },
+          "camera": null
+        }
+      ]
+    },
+    {
+      "name": "lamp-knock",
+      "fixture": "fresh",
+      "initial": {
+        "where": {
+          "lat": 50.0871,
+          "lon": 14.41935,
+          "heading": 324,
+          "street": "U Radnice",
+          "mode": "foot",
+          "x": -46.7,
+          "y": 623.2
+        },
+        "helicopter": null,
+        "backend": "WebGPU",
+        "built": "2026-10-02T20:16:12Z"
+      },
+      "result": {
+        "name": "lamp-knock",
+        "title": "A car at 50 km/h knocks a lamp post over",
+        "checks": [
+          {
+            "name": "a post nearby",
+            "pass": true
+          },
+          {
+            "name": "the post is down",
+            "pass": true
+          },
+          {
+            "name": "the car lost speed but kept going",
+            "pass": true,
+            "detail": "23.1 km/h"
+          }
+        ],
+        "ms": 693,
+        "pass": true
+      },
+      "shots": [
+        {
+          "name": "lamp-knock",
+          "situation": "// Vodičkova · https://www.google.com/maps/search/?api=1&query=50.08056,14.42413\nawait t.go([50.08056, 14.42413], { heading: 75 });\nt.time('14:00');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });\nawait t.drive('hatch');\nt.push(23, 75);",
+          "where": {
+            "lat": 50.08056,
+            "lon": 14.42413,
+            "heading": 75,
+            "street": "Vodičkova",
+            "mode": "car",
+            "x": 295.8,
+            "y": -104.9
+          },
+          "camera": null
+        }
+      ]
+    },
+    {
+      "name": "police-stolen-lights",
+      "fixture": "fresh",
+      "initial": {
+        "where": {
+          "lat": 50.0871,
+          "lon": 14.41935,
+          "heading": 324,
+          "street": "U Radnice",
+          "mode": "foot",
+          "x": -46.7,
+          "y": 623.2
+        },
+        "helicopter": null,
+        "backend": "WebGPU",
+        "built": "2026-10-02T20:16:12Z"
+      },
+      "result": {
+        "name": "police-stolen-lights",
+        "checks": [
+          {
+            "name": "a real police car arrived",
+            "pass": true
+          },
+          {
+            "name": "lights on immediately while stopped",
+            "pass": false
+          },
+          {
+            "name": "lights on moving forward",
+            "pass": true
+          },
+          {
+            "name": "lights on reversing",
+            "pass": true
+          },
+          {
+            "name": "lights off after leaving it",
+            "pass": true
+          },
+          {
+            "name": "lights return on re-entry",
+            "pass": false
+          },
+          {
+            "name": "re-entry is not a second theft",
+            "pass": true
+          },
+          {
+            "name": "stand-down preserves player lights",
+            "pass": false
+          },
+          {
+            "name": "abandoned stolen car has no lights",
+            "pass": true
+          }
+        ],
+        "pass": false
+      },
+      "shots": [
+        {
+          "name": "police-stolen-stopped",
+          "situation": "// Karlovo náměstí · https://www.google.com/maps/search/?api=1&query=50.07649,14.42094\nawait t.go([50.07649, 14.42094], { heading: 187 });\nt.time('22:00');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 2, health: 100 });\nawait t.drive('police');\nt.push(0, 187);\nawait t.camera({ at: [50.07649, 14.42094], height: 18, tilt: 20, heading: 0 });",
+          "where": {
+            "lat": 50.07649,
+            "lon": 14.42094,
+            "heading": 187,
+            "street": "Karlovo náměstí",
+            "mode": "car",
+            "x": 67.4,
+            "y": -557.1
+          },
+          "camera": {
+            "x": 67.28702212491143,
+            "y": -557.2648132388233,
+            "height": 18,
+            "tilt": 20,
+            "heading": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "wall-crash",
+      "fixture": "fresh",
+      "initial": {
+        "where": {
+          "lat": 50.0871,
+          "lon": 14.41935,
+          "heading": 324,
+          "street": "U Radnice",
+          "mode": "foot",
+          "x": -46.7,
+          "y": 623.2
+        },
+        "helicopter": null,
+        "backend": "WebGPU",
+        "built": "2026-10-02T20:16:12Z"
+      },
+      "result": {
+        "name": "wall-crash",
+        "title": "Driving into a wall at 60 km/h stops the car and damages it",
+        "checks": [
+          {
+            "name": "a wall within reach",
+            "pass": true
+          },
+          {
+            "name": "the car stopped at the wall",
+            "pass": true,
+            "detail": "0.2 km/h"
+          },
+          {
+            "name": "the car is damaged",
+            "pass": true,
+            "detail": "damage 27.3"
+          }
+        ],
+        "ms": 1006,
+        "pass": true
+      },
+      "shots": [
+        {
+          "name": "wall-crash",
+          "situation": "// Resslova · https://www.google.com/maps/search/?api=1&query=50.07647,14.4183\nawait t.go([50.07647, 14.4183], { heading: 0 });\nt.time('14:00');\nt.weather('clear');\nt.season('10-03');\nt.set({ money: 10000, stars: 0, health: 100 });\nawait t.drive('sedan');\nt.push(0, 0);",
+          "where": {
+            "lat": 50.07647,
+            "lon": 14.4183,
+            "heading": 0,
+            "street": "Resslova",
+            "mode": "car",
+            "x": -121.5,
+            "y": -559
+          },
+          "camera": null
+        }
+      ]
+    },
+    {
+      "name": "wreck-tow",
+      "fixture": "fresh",
+      "initial": {
+        "where": {
+          "lat": 50.0871,
+          "lon": 14.41935,
+          "heading": 324,
+          "street": "U Radnice",
+          "mode": "foot",
+          "x": -46.7,
+          "y": 623.2
+        },
+        "helicopter": null,
+        "backend": "WebGPU",
+        "built": "2026-10-02T20:16:12Z"
+      },
+      "result": {
+        "name": "wreck-tow",
+        "title": "A wreck left out of sight is towed after a minute, one in view stays",
+        "checks": [
+          {
+            "name": "both there to start with",
+            "pass": true
+          },
+          {
+            "name": "the one out of sight is gone",
+            "pass": true
+          },
+          {
+            "name": "the one beside you stays",
+            "pass": true
+          }
+        ],
+        "ms": 3632,
+        "pass": true
+      },
+      "shots": []
+    },
+    {
+      "name": "lamp-knock",
+      "fixture": "airborne-helicopter",
+      "initial": {
+        "where": {
+          "lat": 50.0759,
+          "lon": 14.41843,
+          "heading": 324,
+          "street": "Resslova",
+          "mode": "helicopter",
+          "x": -112.6,
+          "y": -622.5
+        },
+        "helicopter": {
+          "air": 10,
+          "landed": false
+        },
+        "backend": "WebGPU",
+        "built": "2026-10-02T20:16:12Z"
+      },
+      "result": {
+        "name": "lamp-knock",
+        "title": "A car at 50 km/h knocks a lamp post over",
+        "checks": [],
+        "error": "Could not get into the car",
+        "ms": 434,
+        "pass": false
+      },
+      "shots": []
+    },
+    {
+      "name": "police-stolen-lights",
+      "fixture": "airborne-helicopter",
+      "initial": {
+        "where": {
+          "lat": 50.0759,
+          "lon": 14.41843,
+          "heading": 324,
+          "street": "Resslova",
+          "mode": "helicopter",
+          "x": -112.6,
+          "y": -622.5
+        },
+        "helicopter": {
+          "air": 10,
+          "landed": false
+        },
+        "backend": "WebGPU",
+        "built": "2026-10-02T20:16:12Z"
+      },
+      "result": {
+        "name": "police-stolen-lights",
+        "checks": [
+          {
+            "name": "a real police car arrived",
+            "pass": true
+          }
+        ],
+        "error": "Could not get into the car",
+        "pass": false
+      },
+      "shots": []
+    },
+    {
+      "name": "wall-crash",
+      "fixture": "airborne-helicopter",
+      "initial": {
+        "where": {
+          "lat": 50.0759,
+          "lon": 14.41843,
+          "heading": 324,
+          "street": "Resslova",
+          "mode": "helicopter",
+          "x": -112.6,
+          "y": -622.5
+        },
+        "helicopter": {
+          "air": 10,
+          "landed": false
+        },
+        "backend": "WebGPU",
+        "built": "2026-10-02T20:16:12Z"
+      },
+      "result": {
+        "name": "wall-crash",
+        "title": "Driving into a wall at 60 km/h stops the car and damages it",
+        "checks": [],
+        "error": "Could not get into the car",
+        "ms": 12,
+        "pass": false
+      },
+      "shots": []
+    }
+  ],
+  "finished": "2026-10-03T02:01:51.511Z"
+}
