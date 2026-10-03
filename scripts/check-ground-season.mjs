@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Date transitions and the unmodified summer reference; no browser or map required.
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import { Season } from '../src/season.ts';
 import { GROUND_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON, shareGroundSeason } from '../src/groundSeason.ts';
 
@@ -14,17 +15,23 @@ assert.ok(spring[0][1] > summer[0][1] && spring[0][3] < summer[0][3], 'spring gr
 assert.ok(dry[0][0] > summer[0][0] && dry[0][3] > summer[0][3], 'late-summer grass has more yellow patches');
 assert.ok(winter[0][1] < summer[0][1] && winter[0][2] < summer[0][2], 'winter grass is dull olive');
 assert.ok(winter[1][0] > winter[1][1] && at('03-15')[1][0] > 1, 'woodland litter lasts through March');
+const litter = new THREE.Color('#52703c').multiply(new THREE.Color(...winter[1]));
+assert.ok(litter.r > litter.g && litter.g > litter.b, 'litter is brown in linear colour space, not olive');
 assert.ok(at('11-15')[1][0] > 1 && summer[1].every((v) => v === 1), 'woodland summer remains unchanged');
 assert.ok(spring[2][0] < spring[2][1] && autumn[2][0] > autumn[2][1], 'fields move from green to harvested earth');
 assert.deepEqual(autumn[3], summer[3], 'evergreen hedges do not turn brown in autumn');
 assert.ok(winter[3].every((v) => v > 0.8), 'winter hedge dulling keeps green foliage');
 const refs = [GROUND_SEASON.value, WOOD_SEASON.value, FIELD_SEASON.value, HEDGE_SEASON.value];
+const bases = ['#79a24c', '#52703c', '#b9b27a', '#4d7534'].map((hex) => new THREE.Color(hex).toArray());
 let previous = at(365);
 for (let day = 1; day <= 365; day++) {
   const next = at(day);
   for (let row = 0; row < next.length; row++) for (let col = 0; col < next[row].length; col++) {
     assert.ok(Number.isFinite(next[row][col]) && next[row][col] > 0, `valid multiplier on day ${day}`);
-    assert.ok(Math.abs(next[row][col] - previous[row][col]) < 0.07, `smooth transition on day ${day}`);
+    // Check the resulting linear colour, not the multiplier alone: a dark
+    // woodland red channel needs a large factor to reach ordinary brown litter.
+    const delta = Math.abs(next[row][col] - previous[row][col]);
+    assert.ok(col === 3 ? delta < 0.07 : delta * bases[row][col] < 0.025, `smooth transition on day ${day}`);
   }
   previous = next;
 }

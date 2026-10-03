@@ -19,6 +19,8 @@ const SUMMER_DRY = ramp(196, 182, 235);
 const fieldBase = new THREE.Color('#b9b27a');
 const fieldGreen = new THREE.Color('#79a452');
 const fieldEarth = new THREE.Color('#947658');
+const woodBase = new THREE.Color('#52703c');
+const woodLitter = new THREE.Color('#80633f');
 let sharedDay = -1;
 
 export function shareGroundSeason(season: Season) {
@@ -35,7 +37,8 @@ export function shareGroundSeason(season: Season) {
   // Leaf litter on the woodland floor from November through March; this is a
   // broad colour, not a claim that the shader knows where individual trees stand.
   const litter = Math.max(1 - ramp(day, 90, 120), ramp(day, 285, 309));
-  WOOD_SEASON.value.setRGB(1 + 0.38 * litter, 1 - 0.22 * litter, 1 - 0.5 * litter);
+  WOOD_SEASON.value.copy(woodBase).lerp(woodLitter, litter);
+  WOOD_SEASON.value.setRGB(WOOD_SEASON.value.r / woodBase.r, WOOD_SEASON.value.g / woodBase.g, WOOD_SEASON.value.b / woodBase.b);
   // Spring crops, ripe summer straw (the base colour), then harvested earth.
   const green = ramp(day, 80, 110) * (1 - ramp(day, 166, 196));
   const earth = Math.max(1 - ramp(day, 75, 105), ramp(day, 258, 285));

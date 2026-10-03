@@ -5,8 +5,8 @@ import { GROUND_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from '../src/g
 // here so the eight-date sheets remain comparable without reloading the game.
 const dates = ['01-15', '03-15', '04-20', '05-20', '07-15', '08-20', '10-20', '11-15'];
 const places = [
-  { name: 'park', at: [50.093, 14.4275] as [number, number], height: 70, tilt: 30, heading: 90 },
-  { name: 'woods', at: [50.083, 14.3965] as [number, number], height: 55, tilt: 35, heading: 90 },
+  { name: 'park', at: [50.083, 14.4073] as [number, number], height: 70, tilt: 30, heading: 90 },
+  { name: 'woods', at: [50.08456415, 14.39211258] as [number, number], height: 55, tilt: 35, heading: 90 },
   { name: 'street', at: [50.076, 14.4185] as [number, number], height: 65, tilt: 30, heading: 0 },
 ];
 
@@ -14,6 +14,8 @@ export default {
   title: 'Ground and evergreen hedges follow the game date without replacing surfaces',
   async run(t) {
     const paused = t.paused;
+    const panel = document.getElementById('dev'), panelDisplay = panel?.style.display;
+    if (panel) panel.style.display = 'none';
     t.paused = true;
     try {
       for (const place of places) {
@@ -33,6 +35,7 @@ export default {
       }
     } finally {
       t.paused = paused;
+      if (panel) panel.style.display = panelDisplay ?? '';
       await t.camera(null);
     }
   },
