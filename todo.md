@@ -6,17 +6,11 @@ tile files, cheaper ground shading). Rough order: quick wins first.
 
 ## Serving
 
-- **Delete the old uncompressed tile files on mbxp.** The game now fetches
-  `<tile>.<kind>.bin.gz`. The deploy never deletes anything, so the old `.ipr.bin`,
-  `.height.bin` and `.bare.bin` files from before are still in
-  `/home/jonas/deployments/streets-of-prague/shared/data/*/tiles/`. Nothing asks for
-  them (a few hundred MB). Only delete `*.bin` files that have a `*.bin.gz` beside
-  them, and check the site afterwards.
-- **Cache the map data at Cloudflare's edge.** Cloudflare doesn't cache `.json` by
-  default, so every tile JSON goes through the tunnel to mbxp; `.gz` files are
-  cached. Plan 003 (`plans/003-cloudflare-deploy.md`) covers this: the data moves to
-  R2 under hashed, immutable names with a Cache Rule, so no purge is needed. The
-  mbxp data stays uncached at the edge until that plan's hostname swap.
+- **The old uncompressed tile files on mbxp are gone**, except one
+  (`praha_now/tiles/84_68.bare.bin`, no `.gz` beside it, so probably still in use;
+  checked 3 October 2026).
+- **Map data is cached at Cloudflare's edge.** Plan 003 is done: the map is served from
+  `data.streetsofprague.com` (R2, hashed names) and the beta reads it from there too.
 
 ## Game performance
 
@@ -331,11 +325,11 @@ grime on the walls 6%, the shadow map's own pass 7%.
 
 - **Rebuild the terrain for the city.** Done locally: the seams at tile edges are
   fixed in the pipeline and the game (29 September 2026), and the `centrum`, `praha`
-  and `ujezd` tiles on disk were rebuilt after the fix (a few hundred `praha` height
-  tiles are older, probably unchanged). Still to confirm: that this data has been
-  deployed to mbxp. See "Terrain grid" in the README.
+  and `ujezd` tiles on disk were rebuilt after the fix. The map rebuilt with the new
+  terrain was uploaded as 2026-10-02 and 2026-10-03 and is live (v0.5.2). See "Terrain
+  grid" in the README.
 - **Steps in the ground: what's left.** Quay walls, retaining walls and bridge heads
-  are steps since the branch `worktree-quay-heights` ("Steps in the ground" in the
+  are steps (merged into main; "Steps in the ground" in the
   README; how to work on it: `.agents/skills/terrain-steps/SKILL.md`), built for
   `praha` and looked over at every bridge over the Vltava and Nuselský most. Still to
   do: steep slopes with no surveyed wall (streets in cuttings, the hillside under
@@ -383,19 +377,17 @@ Left over from putting bridges and tunnels on levels of their own (28 September
 
 Noted on 28 September 2026 while playing, during the TypeScript refactor.
 
-- **Paths and pavements.** Plan 018 phases 0–2 are implemented and checked in an
-  isolated worktree. Matching route ribbons over squares and island/link ribbons
+- **Paths and pavements.** Plan 018 phases 0–2 are in main and live in v0.5.2. Matching route ribbons over squares and island/link ribbons
   are removed; cobbled walking streets use setts. Named square outlines keep their
   mapped green and water, so Karlovo náměstí is a park with paths again. The local
   `centrum` test has 88.3% less mosaic overlap with squares and 28.7% fewer path
-  points. Shared data and deployment are unchanged. Review the matched pictures in
-  `plans/018-simplify-paths-and-pavements.md` before rebuilding shared data;
-  gap-closing and surveyed pavement polygons remain deferred.
+  points. Whether the 2026-10-03 map includes these surfaces is unconfirmed. See
+  `plans/018-simplify-paths-and-pavements.md` for the matched pictures; gap-closing and surveyed pavement polygons remain deferred.
 
 - **Fill the plain beige areas.** Plan 013 phases 0–3 now give squares their OSM
   surface, make the general pavement asphalt grey, and add surveyed courtyards and
   green from the DTM in the shared local tiles. The centre's plain ground fell from
-  182.64 to 72.20 ha. The server deployment has not been updated. What's left includes
+  182.64 to 72.20 ha. Whether the uploaded 2026-10-03 map includes this is unconfirmed. What's left includes
   unmapped ground, verges and car parks on bare earth. The prototype
   (`pipeline/ground_cover.py`, `?cover=rules` in the game) classifies IPR's 2024
   orthophoto and 2025 surface model into grass, trees, dirt, gravel, asphalt and "not
@@ -410,7 +402,7 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
   fewer colours (the game's own ground palette); 1–2 m/px; evening out the photo's
   own shadows; darker edges; and painting each tile with a margin from its
   neighbours so the tiles don't show seams.
-- **Roof and wall colours from the photo mesh** (plan 005, since 30 September 2026:
+- **Roof and wall colours from the photo mesh** (plan 005, in main; since 30 September 2026:
   `pipeline/mesh_colours.py`, roof materials in the shader, flat roof materials,
   mansard windows, roof windows found on the mesh, chimneys by rule). Measured for
   the whole city on 1 October 2026 (`praha`: 5,703 tiles, 230,056 buildings) and built
@@ -514,11 +506,11 @@ What's in since 29 September 2026: clear, cloudy, rain, mist and snow
 
 ## More map data
 
-Open data found on 28 September 2026 and not used yet. All IPR Praha, CC BY; the
+Open data found on 28 September 2026. Trees are used now (below); the rest is not used yet, except where noted. All IPR Praha, CC BY; the
 feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<name>/FeatureServer/0`
 (paged queries, 2,000 features at a time).
 
-- **Trees from the city's greenery records.** `OPK_CUR_OPK_SMZ_VP_B` has 171,000
+- **Trees from the city's greenery records (done: `pipeline/ipr_trees.py`, in the game).** `OPK_CUR_OPK_SMZ_VP_B` has 171,000
   trees (`kod_vp` 71) and 30,000 shrubs (51), each marked conifer, broadleaf or
   fruit tree (`kod_drevin`); OSM has about 20,000 trees in Prague. Only greenery the
   city and its districts look after, so no private gardens: for those, IPR's 1 m
@@ -527,8 +519,8 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   polygons, for the plain beige ground in parks, housing estates and along streets.
 - **Street furniture from the archived utility map.** `DTMP_CUR_TMISZNAK_B`, 1.39
   million points by `ctmtp_popis`: manhole covers (174,000), storm drains (71,000),
-  traffic lights (5,700), hydrants, phone boxes, substations. The street lamps from it
-  are in the game (`pipeline/build_lamps.py`).
+  traffic lights (5,700), hydrants, phone boxes, substations. Only the street lamps from it
+  are in the game; the rest is unused (`pipeline/build_lamps.py`).
 - **Walls, fences, railings and steps from the technical map.** Set 3 of the DTM
   (lines and points), already downloaded to `pipeline/.cache/dtm/ZPS_KR/` (same
   download list as `dtm.py`, `code=03`). Could add to or replace OSM's walls, and
@@ -573,8 +565,9 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
   GPU was busy with other apps, the new build always ran second, and one run fell to
   37 fps). Redo `--vs` with alternating and swapped order, three or more pairs, after
   checking CPU and GPU load. The phone already showed no change in frame time.
-- **Stolen police-car lights.** Flash while the player drives, including when stopped
-  or reversing; switch off on exit and return on re-entry. Siren policy is unchanged.
+- **Stolen police-car lights (done, `b075b47`).** Flash while the player drives, including
+  when stopped or reversing; switch off on exit and return on re-entry. Siren policy is
+  unchanged.
 - **Buses.** They follow PID's real lines (`pipeline/build_buses.py`) and stop at the
   stops, but a line is lost where the map has no street for it (148 at U Nemocnice),
   buses often crawl in the Old Town's traffic. Line numbers are on the front, side

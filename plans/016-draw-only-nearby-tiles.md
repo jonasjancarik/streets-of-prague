@@ -11,7 +11,7 @@ radius and make a tile's meshes only when it comes near the view.
 
 ## Status and starting point
 
-- Status: PLANNED.
+- Status: DONE on branch `nearby-tiles` (not merged to main; see the Result there).
 - Priority: P1. Effort: three to five days. Risk: medium (tile lifetime, pop-in,
   and code that assumes a loaded tile has meshes).
 - Category: performance (scene size, GPU memory, work on tile arrival).

@@ -6,16 +6,16 @@
 | [002: Money](002-money.md) | 10 000 Kč wallet, paid taxis, PID tickets, an inspector who chases you, shared bikes, HUD | DONE |
 | [003: Cloudflare deploy](003-cloudflare-deploy.md) | App as a Worker with static assets, map data in R2, mbxp kept alongside | DONE (streetsofprague.com main; beta on mbxp) |
 | [004: Missions and factions](004-missions-and-factions.md) | Mission engine and odd jobs, factions with reputation and turf, story missions; several questions still open | PLANNED (open questions) |
-| [005: Roofs and colours from the photo mesh](005-roofs-and-colours-from-the-photo-mesh.md) | Real wall and roof colours and roof materials measured from IPR's photo mesh, mansards with windows, detected roof windows, dormers and chimneys | PLANNED |
+| [005: Roofs and colours from the photo mesh](005-roofs-and-colours-from-the-photo-mesh.md) | Real wall and roof colours and roof materials measured from IPR's photo mesh, mansards with windows, detected roof windows, dormers and chimneys | MOSTLY DONE (in main: `mesh_colours.py`, `roof_details.py`; measured for the whole city on 1 October; wall coverage about 42 %, window and chimney checks open) |
 | [006: Firefighters](006-firefighters.md) | Fire engines called to burning cars, crews putting out wrecks, blue lights and sirens, traffic giving way, the player's water cannon, a firefighter job | PHASES 1–3 DONE (the job waits for plan 004) |
 | [013: Fill the beige ground](013-fill-the-beige-ground.md) | Squares' surfaces from OSM, an asphalt-grey pavement palette, and DTM courtyards and green | PHASES 0–3 DONE (main and shared local tiles; photo classification is plan 014) |
 | [014: Identify courtyard surfaces](014-classify-courtyard-surfaces.md) | Deferred photo classification within DTM courtyard outlines | PLANNED |
-| [018: Simplify paths and pavements](018-simplify-paths-and-pavements.md) | Remove duplicate walking ribbons while preserving real paths and contrasting surfaces; shape tidying and surveyed pavements later | PHASES 0–2 MERGED TO MAIN (shared tiles/deployment pending; phases 3–4 deferred) |
+| [018: Simplify paths and pavements](018-simplify-paths-and-pavements.md) | Remove duplicate walking ribbons while preserving real paths and contrasting surfaces; shape tidying and surveyed pavements later | PHASES 0–2 IN MAIN AND LIVE IN v0.5.2 (whether the 2026-10-03 map includes them is unconfirmed; phases 3–4 deferred) |
 | [019: Move the crowd into a worker](019-move-the-crowd-into-a-worker.md) | Pedestrians walk in a worker of their own; the main thread keeps the roster, collisions and drawing, and scenarios run the same code inline | SHELVED (built on `worktree-crowd-worker`; no gain on the M5 or the Pixel 5) |
-| [020: iOS and Android apps](020-ios-and-android-apps.md) | The website's build wrapped with Capacitor for iPhone, folding iPhone, iPad and Android: sound that survives the silent switch, the map streamed with an optional download for offline play, the game and map updating without a store release, frame rate above 60 where allowed | PLANNED (three decisions to confirm first) |
+| [020: iOS and Android apps](020-ios-and-android-apps.md) | The website's build wrapped with Capacitor for iPhone, folding iPhone, iPad and Android: sound that survives the silent switch, the map streamed with an optional download for offline play, the game and map updating without a store release, frame rate above 60 where allowed | PHASES 1–3 AND ANDROID BUILT on branch `ios-app` (21 commits, unmerged); real-device checks, phases 4, 5, 7 and 8 open |
 | [021: Countryside generated in the browser](021-countryside-generated-in-the-browser.md) | Past the edge of the built map, tiles the browser makes itself from OpenStreetMap vector tiles: roads, land, buildings, later hills; joined to the built map without a step in the road | PLANNED (prototype decides) |
 | [023: The game on play.streetsofprague.com](023-game-on-play-subdomain.md) | The game and its `/api` move to `play.streetsofprague.com`, the homepage in `site/` takes the root as a second Worker, saved games and settings follow the player, old links to the game keep working | PLANNED (five decisions to confirm first) |
-| [023: Seasons](023-seasons.md) | A fixed game date; seasonal trees, ground, fields, hedges, light, weather and birds; season choices on the start screen | STEPS 1–4 MERGED TO MAIN (deployment pending; ground cost unresolved) |
+| [023: Seasons](023-seasons.md) | A fixed game date; seasonal trees, ground, fields, hedges, light, weather and birds; season choices on the start screen | STEPS 1–4 IN MAIN AND LIVE IN v0.5.2 (ground cost unresolved) |
 
 ### Overnight status, 3 October 2026
 
@@ -33,7 +33,7 @@ checks. The tree-pool check owed from step 2 and physical-phone validation remai
 open; later seasonal features remain deferred in the plan.
 
 These reports describe accepted local work, including the isolated integration
-checkout. The accepted source is now merged into main; deployment remains pending. Source-map pilots held
+checkout. The accepted source is merged into main and released as v0.5.2 (3 October 2026). Source-map pilots held
 for further review remain outside these completion claims. Both existing plans
 numbered 023 retain their separate titles and filenames.
 
@@ -51,7 +51,7 @@ condition to establish how much of the frame the proposed change affects.
 | Plan | Scope | Priority | Estimated effort | Status |
 | --- | --- | --- | --- | --- |
 | [015: Paint cars per instance](015-paint-cars-per-instance.md) | One retained mesh per car type, with the paint as a per-instance colour | P1 | One to two days | DONE (local; draw reduction verified, timing benefit provisional) |
-| [016: Draw only nearby tiles](016-draw-only-nearby-tiles.md) | Keep collisions, graphs and parking out to 300 m; make a tile's meshes only near the view | P1 | Three to five days | PLANNED |
+| [016: Draw only nearby tiles](016-draw-only-nearby-tiles.md) | Keep collisions, graphs and parking out to 300 m; make a tile's meshes only near the view | P1 | Three to five days | DONE on branch `nearby-tiles` (not merged or deployed; steady-state gain 1–3 %, the gain is in tile arrival work) |
 | [017: Cheaper trees on phones](017-cheaper-trees-on-phones.md) | Measure whether a Pixel 5 is limited by tree vertices; then a simpler shadow crown, a simpler crown on low tiers, or smaller pages | P3 | Half a day to measure, two to three days after | PLANNED (measurement decides) |
 
 The three are independent. 015 is the smallest and most contained. If 016 goes
