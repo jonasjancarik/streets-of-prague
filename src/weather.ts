@@ -99,8 +99,11 @@ export class Weather {
 
   private span() { return (20 + this.rng() * 40) * 60; }
 
-  private pick(clockT: number): Kind {
-    const shares = this.season.shares();
+  // A start-screen choice, without changing the live weather or shader values.
+  preview(clockT: number, season: Season): Kind { return this.pick(clockT, season); }
+
+  private pick(clockT: number, season = this.season): Kind {
+    const shares = season.shares();
     const chances = { ...CLEAR_CHANCES };
     for (const s of SEASONS) for (const k of KINDS) chances[k] += shares[s] * CHANCES[s][k];
     const hour = (clockT % 86400) / 3600;

@@ -41,6 +41,11 @@ export const CS: Record<string, string> = {
   // Start screen and loading
   Language: 'Jazyk',
   Time: 'Čas',
+  Season: 'Roční období',
+  Spring: 'Jaro',
+  Summer: 'Léto',
+  Autumn: 'Podzim',
+  Winter: 'Zima',
   Weather: 'Počasí',
   Mixer: 'Hlasitost zvuků',
   Engine: 'Motor',

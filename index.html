@@ -253,8 +253,11 @@
       /* The poster shows the time and weather picked (startscreen.ts sets data-time and
          data-weather). The sky's light changes with a filter; the sun is a disc that
          colour-dodges the sky, so it glows on the red and leaves the black roofs black. */
-      #loading { --sky-time: brightness(1); --sky-weather: brightness(1); }
-      .ls-sky { filter: var(--sky-time) var(--sky-weather); transition: filter 0.8s; }
+      #loading { --sky-time: brightness(1); --sky-weather: brightness(1); --sky-season: brightness(1); }
+      .ls-sky { filter: var(--sky-time) var(--sky-weather) var(--sky-season); transition: filter 0.8s; }
+      #loading[data-season='spring'] { --sky-season: hue-rotate(12deg) saturate(0.85) brightness(1.08); }
+      #loading[data-season='autumn'] { --sky-season: sepia(0.3) saturate(0.85); }
+      #loading[data-season='winter'] { --sky-season: grayscale(0.7) brightness(0.85); }
       #loading[data-time='morning'] { --sky-time: hue-rotate(16deg) saturate(0.85) brightness(1.3); }
       #loading[data-time='midday'] { --sky-time: sepia(0.45) saturate(0.7) brightness(1.55); }
       #loading[data-time='night'] { --sky-time: brightness(0.45) hue-rotate(-10deg); }

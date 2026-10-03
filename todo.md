@@ -431,8 +431,8 @@ The 15 July surface palette stays unchanged. Date regressions, typecheck and 30
 scene checks per renderer pass, with 48 matched seasonal images and real field
 and hedge views. Warmed 2× A/B comparisons in both renderers preserve draw counts;
 their small or contradictory frame-time differences leave the ground cost
-unresolved. See [the evidence](docs/evidence/seasons-step3/README.md). Integration
-is still separate; the start-screen season choices remain step 4.
+unresolved. See [the evidence](docs/evidence/seasons-step3/README.md). Main and deployment
+remain separate from this local integration.
 
 Bird ambience now follows the fixed date too: strongest on spring mornings, reduced
 in late summer and nearly silent in winter, while July's familiar mix and the
@@ -441,6 +441,13 @@ their two-second fades. Deterministic date/time/weather checks, offline recordin
 levels and a muted runtime smoke pass: date propagation, expected real targets,
 retained gain/filter nodes and weather suppression. See
 [the evidence](docs/evidence/seasonal-birds.md).
+
+Plan 023's start-screen step is complete: four seasons, a poster that follows the
+chosen or saved season, and English/Czech labels. The current season starts on
+today's Prague date; other buttons use representative dates, while date links and
+saved games keep their dates. Live Prague weather is available only for today's
+game date. CPU state/URL/Czech checks and desktop/touch-width menu interactions
+passed (`scripts/check-start-seasons.mjs`). The seasonal ground and hedge work is integrated locally alongside these controls.
 
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow
 (`src/weather.ts`), IPR's street lamps with a light map over the view

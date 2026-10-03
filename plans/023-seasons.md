@@ -11,7 +11,8 @@ July, October and January each look like themselves.
 
 ## Status and starting point
 
-- Status: STEPS 1–3 DONE (3 October 2026). The three decisions below are made.
+- Status: STEPS 1–4 IMPLEMENTED LOCALLY (3 October 2026). Main and deployment
+  remain pending; verification limits are recorded below. The three decisions are made.
 - Effort: four to five days for phases 1–4. Risk: medium for the trees (two renderers,
   the shadow pass, and the costliest shader in a wood); low for the rest.
 - Planned at: `c2c76265e35c795e07a2b0b33f63ebb3f3db5afa`, 2 October 2026, from reading
@@ -173,6 +174,16 @@ depend on the date.
 4. **Start screen and words.** The season row and the poster's look for each
    (`index.html`), Czech strings (`src/cs.ts`), README, `site/index.html`, a note in
    `todo.md`. Half a day.
+   **Done.** Four season buttons, with the current one using today's Prague date;
+   existing exact-date and representative-season links retain their date until a
+   button is picked, including across midnight. The default reads today's date
+   when the game begins, after the beta note. The poster follows the chosen or saved season. Live Prague
+   weather is offered only for today's date, and switching seasons cannot inherit
+   an automatically selected live forecast. Manual weather choices remain available.
+   CPU date/state/Czech regressions and in-app browser checks at 1280×720 and
+   390×844 passed, including keyboard selection and the existing beta dialog.
+   The UI check used `?menu`, with no map or game renderer; the ground/tree matrix
+   and phone performance are outside this step's check.
 
 Each step ends with screenshots from `scripts/scene.mjs` of the same three places
 (a park, a wood, a street with trees) on eight dates through the year, in both

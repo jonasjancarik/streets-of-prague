@@ -50,8 +50,18 @@ The map data is built locally (see [Building the map](#building-the-map)); nothi
 generated is committed. The whole city (`?area=praha`) is the default, `?area=centrum`
 the historic centre and `?area=ujezd` a small test area. The game's clock starts at the time in Prague
 now, and the sun and the light follow it; `?time=HH:MM` and `?day=mon…sun` start it elsewhere, and `?night` at half past one
-(with night-time parking). The game's date is today's in Prague and stays for the whole game (`src/season.ts`): the sun's height, how far out the trees' leaves are and which weather is likely follow it; `?date=MM-DD` or `?season=spring|summer|autumn|winter` starts on another. The weather changes by itself every half hour or so of the game's clock;
-`?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen (the loading screen's language, time, weather and sound choices and its Start button; the weather is the real weather in Prague now, from Open-Meteo (`src/liveweather.ts`), or else rolled anew on each visit), and <kbd>P</kbd> steps through them. `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
+(with night-time parking). The start screen offers spring, summer, autumn and winter,
+with Prague's current season selected. Its button uses today's Prague date; the other
+seasons use 20 April, 15 July, 20 October and 15 January. The date stays fixed and is
+kept in the save (`src/season.ts`): the sun, leaves, blossom and likely weather follow
+it. `?date=MM-DD` keeps an exact date and `?season=spring|summer|autumn|winter` uses a
+season's representative date. These links keep their date until a season button is picked.
+The weather changes by itself every half hour or so of the game's clock;
+`?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen
+(language, season, time, weather and sound). The real weather in Prague, from
+Open-Meteo (`src/liveweather.ts`), is offered only for today's game date; other dates
+start with weather chosen for that season. <kbd>P</kbd> steps through the weather.
+`?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?dialog` plays a sample conversation, `?menu` shows only the start screen without loading the map (quick to reload while working on the screen, the beta note or the signup form; the note then shows on every press of Start), `?touch` shows the touch controls on a desktop, `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. The Czech is kept gender-neutral towards the player for now (see the note at the top of `src/cs.ts`). Elements in `index.html` marked `data-t` work the same way.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 
@@ -300,6 +310,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   that came out too alike were regenerated one at a time (`assets/portraits/faces/`). The
   loading screen puts three of them in front of a skyline of a real view, drawn from
   the 3D city by `pipeline/skyline.py`, with poster shapes over the panels' cut edges;
+  its skyline follows the selected season, time and weather, including a saved game's
+  date when continuing it;
   a conversation shows the speaker rising out of a frame (`src/portraits.ts`).
 - **Weather** (`src/weather.ts`): clear, cloudy, rain, a thunderstorm, mist or snow,
   each a mix of cloud, rain, storm, snow and mist that the weather moves between over
