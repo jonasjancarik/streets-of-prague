@@ -91,6 +91,19 @@ declare global { interface Window { __drive?: unknown; __test?: Testkit } }
 
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'praha';
+// Where a new game can begin: lon, lat of a spot on a street with room for a car at the kerb.
+const STARTS: [string, number, number][] = [
+  ['Újezd', 14.40455, 50.08105],
+  ['Malostranské náměstí', 14.4030, 50.0883],
+  ['Pařížská', 14.4196, 50.0886],
+  ['Masarykovo nábřeží', 14.4139, 50.0779],
+  ['Václavské náměstí', 14.4283, 50.0803],
+  ['Karlovo náměstí', 14.4185, 50.0760],
+  ['Náměstí Míru', 14.4378, 50.0754],
+  ['Anděl', 14.4036, 50.0712],
+  ['Letenské náměstí', 14.4250, 50.0998],
+  ['Náměstí Jiřího z Poděbrad', 14.4486, 50.0776],
+];
 const wallet = new Wallet(params);
 const pid = new PidRide(wallet);
 const $ = (id: string): HTMLElement => {
@@ -263,23 +276,29 @@ async function main() {
     restingStale = true;
   };
 
-  // Start on Újezd (or ?start=lon,lat) if it's in the area, otherwise in the middle.
+  // A new game begins at one of STARTS, picked at random (or at ?start=lon,lat, or
+  // ?place= one of the test places in testkit.ts); in the middle if none is in the area.
   const [w0, s0, e0, n0] = index.bbox_wgs84, lon0 = (w0 + e0) / 2, lat0 = (s0 + n0) / 2;
-  // ?start=lon,lat, or ?place= one of the test places (testkit.ts).
+  const inside = (lon: number, lat: number) => lon > w0 && lon < e0 && lat > s0 && lat < n0;
   const named = PLACES[params.get('place') ?? ''];
-  const [slon, slat] = named ? [named.at[1], named.at[0]] : (params.get('start') || '14.4052,50.0808').split(',').map(Number);
-  const inArea = slon > w0 && slon < e0 && slat > s0 && slat < n0;
+  const starts = STARTS.filter(([, lon, lat]) => inside(lon, lat));
+  const random = starts.length ? starts[Math.floor(Math.random() * starts.length)] : null;
+  const [slon, slat] = named ? [named.at[1], named.at[0]] : params.get('start')?.split(',').map(Number) ?? (random ? [random[1], random[2]] : [lon0, lat0]);
   // The pipeline's local metres: a transverse Mercator centred on the area.
-  const [sx, sy] = inArea
+  const [sx, sy] = inside(slon, slat)
     ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [slon, slat])
     : [0, 0];
   status('Building the streets…');
   await world.loadNow(sx, sy, 380);
-  const startEdge = drive.edges.reduce((best, e) => {
-    const d = (f: DriveEdge) => Math.hypot(f.pts[0][0] - sx, f.pts[0][1] - sy) + (f.name ? 0 : 60);
-    return d(e) < d(best) ? e : best;
-  }, drive.edges[0]);
-  const q = startEdge.path.at(startEdge.path.length / 2);
+  // You stand at the spot on a street nearest to that point (a named street, if one is close).
+  let startEdge = drive.edges[0], startS = 0, startD = Infinity;
+  for (const e of drive.edges) {
+    for (let d = 0; d <= e.path.length; d += 3) {
+      const p = e.path.at(d), far = Math.hypot(p.x - sx, p.y - sy) + (e.name ? 0 : 60);
+      if (far < startD) { startEdge = e; startS = d; startD = far; }
+    }
+  }
+  const q = startEdge.path.at(startS);
 
   // Up Petřín and down again (E at a station).
   const funicular = new Funicular(index.rails, scene, {

@@ -22,7 +22,7 @@ import type { Bags } from './bags.ts';
 
 export const PLACES: Record<string, { at: Point2; note: string }> = {
   staromak: { at: [50.0873, 14.4206], note: 'Old Town Square' },
-  ujezd: { at: [50.0808, 14.4052], note: 'Újezd, where the game starts' },
+  ujezd: { at: [50.0808, 14.4052], note: 'Újezd: trams and the park' },
   vodickova: { at: [50.0808, 14.4245], note: 'Vodičkova: a tram street' },
   karlova: { at: [50.0862, 14.4170], note: 'Karlova: a narrow old-town lane' },
   karlak: { at: [50.0760, 14.4185], note: 'Karlovo náměstí: main roads and buses' },
