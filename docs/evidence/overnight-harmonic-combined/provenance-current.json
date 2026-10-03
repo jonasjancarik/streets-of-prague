@@ -1,0 +1,14 @@
+{
+  "source": "76118bc1267bcf3cb80e854b7f3924b195f80214",
+  "built": "2026-10-03T03:46:50Z",
+  "pipeline": "76118bc126",
+  "indexSHA256": "4c51359f27fc3b6892d7e73e955dc56022664df67c1a48ded7448347310357b9",
+  "format": 2,
+  "tiles": 234,
+  "runtimePayloadAudit": {
+    "json": 234,
+    "height": 234,
+    "levels": 89,
+    "ipr": 228
+  }
+}

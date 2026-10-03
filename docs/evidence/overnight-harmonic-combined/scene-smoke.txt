@@ -1,0 +1,22 @@
+const d=window.__drive,w=d.world;t.paused=true;t.time('14:00');t.weather('clear');t.season('summer');t.exit();
+if(w.index.built!=='2026-10-03T03:46:50Z'||w.index.pipeline!=='76118bc126')throw Error('Wrong combined generation');
+await t.go([50.08075394817763,14.418088551117165]);t.paused=true;
+const {parkingClearance}=await import('/src/parkingClearance.ts');
+const parked=[],centres=new Set();let intrusions=0,duplicates=0;const furniture=[];
+for(const [key,tile]of w.loaded){
+ const data=await w.fetchJSON(key),edges=await w.parkingEdges(data),clear=parkingClearance(edges,data.box);
+ for(const c of tile.cars){if(c.mode!=='loose')continue;const k=`${c.x}/${c.y}`;if(centres.has(k))duplicates++;centres.add(k);if(c.circles().some(([x,y])=>!clear(x,y,c.r)))intrusions++;parked.push({tile:key,x:c.x,y:c.y});}
+ for(const m of tile.furniture??[])for(let i=0;i<m.count;i++){const x=m.instanceMatrix.array[i*16+12],y=-m.instanceMatrix.array[i*16+14];furniture.push({tile:key,kind:m.userData.kind,x,y});}
+}
+const around=parked.filter(c=>Math.hypot(c.x+136.81308152859725,c.y+82.9820618619707)<55).length;
+await t.camera({at:[50.08075394817763,14.418088551117165],height:48,tilt:0,heading:0});await t.shot('combined-parking-corner');
+const trace=await fetch('/docs/evidence/overnight-harmonic-combined/source-profiles-current.json').then(r=>r.json());const bridge=trace.bridges.find(b=>b.name==='most Legií');
+const {Polyline}=await import('/src/network.ts');const path=new Polyline(bridge.pts),point=path.at(path.length*.4),ll=d.dev.toLonLat(point.x,point.y),heading=90-point.ang*180/Math.PI;
+await t.go([ll[1],ll[0]],{heading});t.paused=true;await t.drive('sedan');t.forgive();
+const before=t.probe(),c=d.car;await t.wait(2,{move:1});const after=t.probe(),distance=Math.hypot(after.x-before.x,after.y-before.y);
+await t.camera({at:[ll[1],ll[0]],height:90,tilt:35,heading});await t.shot('combined-legii-drive');
+const result={built:w.index.built,pipeline:w.index.pipeline,backend:d.renderer.backend?.isWebGPUBackend?'webgpu':'webgl',parking:{count:parked.length,intrusions,duplicates,nearCorner:around,furnitureCount:furniture.length},bridge:{name:bridge.name,wayId:bridge.way_id,expectedLevel:bridge.runtime_level,actualLevel:c.level,before,after,distance,height:c.gz},streaming:w.streamingStats};
+window.__combinedSmoke=result;
+if(intrusions||duplicates)throw Error('Parked clearance/duplicate failure');
+if(!Number.isFinite(c.gz)||c.level!==bridge.runtime_level||distance<2||after.car.damage>before.car.damage)throw Error('Bridge drive failed');
+return result;
