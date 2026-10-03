@@ -70,3 +70,11 @@ Combined source/surface/furniture validation is committed as `187f410`, with str
 Independent review of bridge contact commit `f0bb72213ea5918b65afebe580cf5e4be83f47c1` found no substantive issues: 44 focused tests and probes for 22 chunk orders, shared contacts, loose ends, legacy/mixed caches and nested mapped layers passed. Parent inspected the change and accepts it for isolated integration. Legacy components retain old anchors until their streets are rebuilt; Radotín height association remains unresolved. Follow-up validation must rebuild current structure records and terrain, not reuse legacy anchors.
 
 The canonical tile-edge correction is still awaiting its committed checkpoint and independent review; do not integrate the cutter yet.
+
+## Acceptance at 01:09 UTC
+
+Bridge validation handoff `c7f2efc` is clean. Strict assembly, 22 integrated tests, unchanged protected map fields, 418 finite source-identified runtime deck samples and four 0.02–0.21 m genuine joins passed. The seven views and caveats are documented in docs/overnight-bridge-validation.md.
+
+Parent accepts cutter sequence `8e9e1057a42bcf0803ee221bc6f29b9d3cb478d8`, evidence `bcf7c6e`, canonical-edge fix `c752c41c227ee36f2d7982c403111d9d9d60a673`, precision follow-up `64a454ba0190e4520cdec0763b99f548d3769565`. Independent review passed 23 committed tests and eight additional precision variants after both P2 seam findings were corrected. A wider 48-tile private stored-data pass found no invalid geometry or sampled crossings; size increases and contended CPU costs are explicitly documented. This is acceptance for isolated integration, with a final combined runtime check still required.
+
+Radotín Net.spread continuity repair remains separate and unaccepted. The author is comparing the sparse graph interpolation against clean-ground source profiles and negative controls.
