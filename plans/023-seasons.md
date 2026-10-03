@@ -148,6 +148,19 @@ depend on the date.
    bench's Chrome got WebGL instead of WebGPU on 2 October) and is still owed.
 3. **Ground.** Grass, the floor of the woods, fields, hedges. One day, with a bench of the
    ground at 2×.
+   **Implemented in an isolated checkout (3 October), validation in progress.**
+   `src/groundSeason.ts` computes linear colour multipliers only when the game date
+   changes: one vec4 for grass tint and existing dry-patch strength, and colour
+   uniforms for woodland litter, crops and evergreen hedges. This keeps date-curve
+   arithmetic off the ground's pixels; shaders add no noise or texture reads.
+   15 July is exactly the old summer palette. The woodland floor is brown from
+   November through March; fields go green in spring, straw by July, and earth in
+   October. Hedges keep their leaves and geometry all year, with mild spring and
+   winter tints. Both GLSL and TSL paths are updated. Terrain geometry is unchanged.
+   `node scripts/check-ground-season.mjs` checks the whole year's smoothness,
+   summer restoration and evergreen semantics. `seasonal-ground` captures the same
+   park, wood and tree-lined street on eight dates. Visual parity and the 2×
+   cost measurement are still pending; no performance claim is made.
 4. **Start screen and words.** The season row and the poster's look for each
    (`index.html`), Czech strings (`src/cs.ts`), README, `site/index.html`, a note in
    `todo.md`. Half a day.

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Point2 } from './geo.ts';
+import { HEDGE_SEASON } from '../groundSeason.ts';
 
 // Fences and hedges as a row of short sections (a car breaks one at a time, see fences.ts).
 // Each section is a fixed number of vertices in its mesh, so the game can find it again.
@@ -146,9 +147,17 @@ export function fenceMeshes({ fence, hedge }: FenceBuffers) {
     mesh.receiveShadow = true;
     return mesh;
   };
+  const hedgeMaterial = new THREE.MeshLambertMaterial({ map: leaves() });
+  hedgeMaterial.customProgramCacheKey = () => 'hedge-season';
+  hedgeMaterial.onBeforeCompile = (sh) => {
+    sh.uniforms.uHedgeSeason = HEDGE_SEASON;
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uHedgeSeason;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uHedgeSeason;');
+  };
   return {
     fence: make(fence, new THREE.MeshLambertMaterial({ map: pickets(), alphaTest: 0.5, side: THREE.DoubleSide }), false),
-    hedge: make(hedge, new THREE.MeshLambertMaterial({ map: leaves() }), true),
+    hedge: make(hedge, hedgeMaterial, true),
   };
 }
 

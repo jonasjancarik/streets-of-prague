@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { FACADE_ATLAS, FACADE_ON, FACADE_GLSL } from './facades.ts';
 import { lampLit } from './lamps.ts';
 import { ROOF_TILES } from './map/roofPalette.ts';
+import { GROUND_SEASON, WOOD_SEASON, FIELD_SEASON } from './groundSeason.ts';
 
 // Procedural surface patterns in world space, shared by the ground and the buildings.
 // Everything is computed per pixel from the position in metres, so it stays sharp at
@@ -150,6 +151,9 @@ float luma(vec3 c) { return dot(c, vec3(.299, .587, .114)); }
 export const PATTERNS_GLSL = /* glsl */ `
 uniform float uTime;
 uniform float uDirt;
+uniform vec4 uGroundSeason;
+uniform vec3 uWoodSeason;
+uniform vec3 uFieldSeason;
 vec3 pAsphalt(vec3 c, vec2 p) {
   c *= .9 + .18 * fbm(p * .3);
   c *= mix(1., .9, smoothstep(.62, .66, fbm(p * .07 + 3.)));          // repair patches
@@ -193,14 +197,26 @@ vec3 pSlabs(vec3 c, vec2 p) {
   return s * (.93 + .14 * fbm(p * .15));
 }
 vec3 pGrass(vec3 c, vec2 p) {
+#if GROUND_YEAR
+  c *= uGroundSeason.rgb;
+#endif
   c *= .82 + .32 * fbm(p * .18);
-  c = mix(c, c * vec3(1.12, 1.05, .78), smoothstep(.55, .75, fbm(p * .04 + 7.)));  // dry patches
+  float dry = smoothstep(.55, .75, fbm(p * .04 + 7.));
+#if GROUND_YEAR
+  dry = clamp(dry * uGroundSeason.w, 0., 1.);
+#endif
+  c = mix(c, c * vec3(1.12, 1.05, .78), dry);  // same dry patches, changing through the year
   c = mix(c, c * vec3(1.05, .9, .7), smoothstep(.6, .8, fbm2(p * .15 + 3.)) * .6);  // worn to earth
   float d = detail(p, .2);
   if (d > 0.) c += (vnoise(p * 5.) - .5) * .07 * d;
   return c;
 }
-vec3 pWood(vec3 c, vec2 p) { return c * (.75 + .45 * fbm(p * .12)) + (vnoise(p * 3.) - .5) * .05; }
+vec3 pWood(vec3 c, vec2 p) {
+#if GROUND_YEAR
+  c *= uWoodSeason;
+#endif
+  return c * (.75 + .45 * fbm(p * .12)) + (vnoise(p * 3.) - .5) * .05;
+}
 vec3 pPitch(vec3 c, vec2 p) { return pGrass(c, p) * (.94 + .1 * step(.5, fract(p.x / 6.))); }
 vec3 pDirt(vec3 c, vec2 p) {
   float d = detail(p, .08);
@@ -223,6 +239,9 @@ vec3 pGravel(vec3 c, vec2 p) {
 }
 // Fields: straight crop rows in strips that change direction and tone.
 vec3 pField(vec3 c, vec2 p) {
+#if GROUND_YEAR
+  c *= uFieldSeason;
+#endif
   vec2 cell = floor(p / 90.);
   float a = hash12(cell) * 3.1416, t = hash12(cell + 3.7);
   vec2 d = vec2(cos(a), sin(a));
@@ -677,10 +696,13 @@ export function patterned(
   dig = false,
   photo: { texture: THREE.Texture; box: number[] } | null = null,
   sheltered = false, // in a tunnel: no rain or snow
+  seasonal = true, // false only for the original-summer cost comparison
 ): THREE.MeshLambertMaterial {
-  if (patternedBy) return patternedBy(material, id, time, relief, deck, dig, photo, sheltered);
+  if (patternedBy) return patternedBy(material, id, time, relief, deck, dig, photo, sheltered, seasonal);
   material.userData.flatten = () => patterned(material.clone(), 0, time, relief, deck, dig, photo, sheltered);
+  if ([5, 6, 7, 12].includes(id)) material.userData.summerGround = () => patterned(material.clone(), id, time, relief, deck, dig, photo, sheltered, false);
   material.onBeforeCompile = (sh) => {
+    sh.defines = { ...sh.defines, GROUND_YEAR: seasonal ? 1 : 0 };
     sh.uniforms.uTime = time;
     sh.uniforms.uNoise = NOISE;
     sh.uniforms.uGrit = GRIT;
@@ -690,6 +712,9 @@ export function patterned(
     sh.uniforms.uStreetSnow = STREET_SNOW;
     sh.uniforms.uRain = RAIN;
     sh.uniforms.uSkyRef = SKY_REF;
+    sh.uniforms.uGroundSeason = GROUND_SEASON;
+    sh.uniforms.uWoodSeason = WOOD_SEASON;
+    sh.uniforms.uFieldSeason = FIELD_SEASON;
     if (photo) {
       sh.uniforms.uPhoto = { value: photo.texture };
       sh.uniforms.uPhotoBox = { value: photo.box };
@@ -725,6 +750,6 @@ ${sheltered ? '' : `  diffuseColor.rgb = weathered(${id}, diffuseColor.rgb, wp, 
     // Wet ground mirrors the sky and the lamps.
     sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  reflectedLight.directDiffuse += shine * (uSkyRef + lampLightOn(vWorld, normal) * .85);\n  // Courtyards and lanes see less of the sky: less ambient light, never less sun or lamplight.\n  if (uSkyOn > .5) reflectedLight.indirectDiffuse *= mix(${SKY_LEAST.toFixed(2)}, 1., texture2D(uSky, (wp - uSkyBox.xy) / (uSkyBox.zw - uSkyBox.xy)).r);`);
   };
-  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}${relief?.sky ? 's' : ''}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}-${dig ? 'dig' : ''}${photo ? '-photo' : ''}${sheltered ? '-in' : ''}`;
+  material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}${relief?.sky ? 's' : ''}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}-${dig ? 'dig' : ''}${photo ? '-photo' : ''}${sheltered ? '-in' : ''}${seasonal ? '' : '-summer'}`;
   return material;
 }

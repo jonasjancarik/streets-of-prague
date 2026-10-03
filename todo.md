@@ -424,6 +424,13 @@ Noted on 28 September 2026 while playing, during the TypeScript refactor.
 
 ## Weather and night
 
+Seasonal ground (plan 023 step 3) is implemented in an isolated checkout: fresh
+spring grass, late-summer dry patches, winter olive grass, November–March woodland
+litter, spring crops and harvested earth. Evergreen hedges keep their foliage.
+The 15 July surface palette stays unchanged. Date regressions and typecheck pass;
+matched WebGPU/WebGL screenshots and ground-cost measurements are pending before
+integration. The start-screen season choices remain step 4.
+
 What's in since 29 September 2026: clear, cloudy, rain, mist and snow
 (`src/weather.ts`), IPR's street lamps with a light map over the view
 (`src/lamps.ts`), headlights, lit windows and trams, rain and wind sounds.
