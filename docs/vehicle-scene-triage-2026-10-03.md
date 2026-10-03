@@ -125,3 +125,40 @@ node scripts/triage-vehicle-scenes.mjs --port 5305 --revision <revision> --cases
 The harness does not launch a browser and rejects a different map build or renderer.
 The comparison browser and temporary baseline server are stopped; the owned GPU
 lock is released. The candidate dev server remains on 5205 for review.
+
+## Scenario starting-state follow-up
+
+The scenario runner now calls `t.onFoot()` before each case. Ground vehicles use
+ordinary exit. An airborne helicopter is staged on nearby loaded, clear ground
+100–200 m away, descends through the existing `t.wait(..., { run: true })` controls,
+and exits only after its normal `landed` check succeeds. No vehicle-mode or altitude
+flag is forced to make an assertion pass. Preparation fails if it cannot find a
+landing site, land within 45 simulated seconds, or disembark normally.
+
+The camera returns to follow at zoom 1. Time, date, weather, wallet, health and
+wanted level remain scenario-owned; this is not a fresh-world reset. Each case
+still chooses its place, vehicle and controls. `t.go()` continues to preserve a
+current vehicle, and manual `t.exit()` cannot exit an airborne helicopter.
+`wall-crash` now explicitly chooses its original standalone heading, 324°, so its
+car-placement search no longer depends on the previous police driver's heading.
+
+`scripts/check-scenario-start.mjs` checks the real runner with injected CPU fixtures:
+an airborne case followed by a car case, standalone car entry, camera cleanup,
+normal descent/exit ordering, and failures that retain the active helicopter.
+Typechecking and these CPU checks pass.
+
+The real WebGPU [helicopter→lamp order regression](evidence/scenario-start-2026-10-03/ordered-results.json)
+passes both complete original assertion sets. Lamp and stolen-police scenarios
+also pass after page reload. That sequence initially exposed a separate wall
+placement error with an inherited heading of 22°; [the prior state](evidence/scenario-start-2026-10-03/prior-sequence-wall-state.json)
+is preserved. With its explicit heading, wall-crash passes
+[from a fresh page](evidence/scenario-start-2026-10-03/confirmation/standalone-wall.json)
+(0.4 km/h, damage 27) and [after the police case](evidence/scenario-start-2026-10-03/confirmation/police-then-wall.json)
+(0.8 km/h, damage 27.4). The original assertions are unchanged.
+
+These checks use the same private centrum map built `2026-10-02T20:16:12Z`, WebGPU,
+DPR 1 and High graphics; [confirmation provenance](evidence/scenario-start-2026-10-03/confirmation/provenance.json)
+records the backend and map marker. The full suite was intentionally not repeated,
+and no build, WebGL or timing benchmark was run for this harness-only change.
+Ambulance and tow gameplay findings remain separate. The owned browsers are closed
+and the GPU lock is released.

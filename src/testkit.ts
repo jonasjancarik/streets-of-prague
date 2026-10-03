@@ -47,6 +47,7 @@ interface Game {
   teleport: (x: number, y: number) => Promise<void>;
   me: () => { x: number; y: number; h: number; vx: number; vy: number };
   car: () => Car | null;
+  heli: () => { readonly landed: boolean } | null;
   mode: () => string;
   street: () => string | null;
   enterOrExit: () => void;
@@ -74,8 +75,7 @@ const deg = (h: number) => ((((90 - (h * 180) / Math.PI) % 360) + 360) % 360);
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 const round = (x: number, n = 1) => Math.round(x * 10 ** n) / 10 ** n;
 
-export function setupTestkit(g: Game) {
-  const scenarios = import.meta.glob<{ default: Scenario }>('../scenarios/*.ts');
+export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Scenario }>('../scenarios/*.ts')) {
   const names = Object.keys(scenarios).map((p) => p.replace(/^.*\/(.*)\.ts$/, '$1')).sort();
 
   const kit = {
@@ -113,6 +113,34 @@ export function setupTestkit(g: Game) {
       const [x, y] = kit.toLocal(w);
       await g.teleport(x, y);
       if (opt.heading !== undefined) g.me().h = rad(opt.heading);
+      await frame();
+    },
+
+    // Scenario preparation uses the ordinary descent/exit controls. Teleporting a
+    // flying vehicle alone keeps it flying, so first find open landing ground away
+    // from the next test's cars, land through simulation, then get out normally.
+    async onFoot() {
+      const heli = g.heli();
+      if (heli && !heli.landed) {
+        const { x, y } = g.me();
+        await g.loaded(x, y);
+        let landing: Point2 | null = null;
+        for (let r = 100; r <= 200 && !landing; r += 25) for (let i = 0; i < 24; i++) {
+          const a = i * Math.PI / 12, lx = x + Math.cos(a) * r, ly = y + Math.sin(a) * r;
+          if ([[0, 0], [3, 0], [-3, 0], [0, 3], [0, -3]].every(([dx, dy]) => g.grid.at(lx + dx, ly + dy) === 0)) {
+            landing = [lx, ly];
+            break;
+          }
+        }
+        if (!landing) throw new Error('No clear landing ground near the scenario start');
+        await g.teleport(...landing);
+        for (let seconds = 0; seconds < 45 && !heli.landed; seconds++) await kit.wait(1, { run: true });
+        if (!heli.landed) throw new Error('The helicopter did not land during scenario preparation');
+      }
+      kit.exit();
+      if (g.mode() !== 'foot') throw new Error(`Could not start the scenario on foot from ${g.mode()}`);
+      kit.cam = null;
+      g.view(1);
       await frame();
     },
 
@@ -416,6 +444,7 @@ export function setupTestkit(g: Game) {
       const t0 = performance.now();
       let error: string | undefined;
       try {
+        await kit.onFoot();
         await s.run(kit);
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);

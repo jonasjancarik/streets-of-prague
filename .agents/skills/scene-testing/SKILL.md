@@ -37,6 +37,10 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 
 - `t.go(where, { heading })`: loads the tiles and puts you there on foot (or in your
   vehicle). `t.where()`: lat/lon, heading, street, mode.
+- `t.onFoot()` prepares a scenario on foot through normal landing/exit actions and
+  resets the camera to follow at its normal zoom. `t.run()` does this before every
+  scenario. An airborne helicopter is staged on nearby clear ground and descends
+  through `t.wait` controls; failure to land or disembark fails preparation.
 - `t.time('21:30')`, `t.weather('rain' | … | 'auto')`, `t.season('autumn' | '10-20')` (the game's date), `t.set({ money, stars, health })`.
 - `t.drive(type)`: gets out of whatever you're in and into a new car on clear ground
   ahead (`hatch`, `sedan`, `suv`, `van`, `taxi`, `police`, `pickup`, `truck`, `bus`,
@@ -109,6 +113,16 @@ export default {
 Set the time and weather yourself: the server's page keeps whatever the last command
 left. Check numbers with ranges and put the measured value in `detail`, so a failure
 says how far off it was. A scenario with no checks counts as failed.
+
+Each run begins on foot with the ordinary camera; each scenario must create or enter
+the vehicle it needs. Preparation keeps time, date, weather, wallet, health and
+wanted level as they were, so set those explicitly when they matter. Manual `t.go`,
+`t.drive` and `t.exit` keep their existing gameplay constraints. This does not reset
+the whole world or resolve ambulance/tow behavior. `vehicle-entry-order` runs
+`heli-bridge` followed by `lamp-knock` and retains both complete assertion results.
+Set an explicit heading in `t.go` when car placement depends on it: the car factory
+searches ahead of the player. `wall-crash` uses its original standalone northwest
+heading instead of inheriting the previous driver's orientation.
 
 The same scenarios run in the developer panel (`` ` ``, Testing): "Run and watch" plays
 one in real time, "Run all" lists which pass.

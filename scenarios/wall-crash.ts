@@ -3,7 +3,8 @@ import type { Scenario } from '../src/testkit.ts';
 export default {
   title: 'Driving into a wall at 60 km/h stops the car and damages it',
   async run(t) {
-    await t.go('karlak');
+    // Keep the initial car-placement search independent of the previous driver's heading.
+    await t.go('karlak', { heading: 324 });
     t.time('14:00');
     t.weather('clear');
     await t.drive('sedan');

@@ -2040,7 +2040,7 @@ async function main() {
   };
   testkit = setupTestkit({
     toLocal: dev.toLocal, toLonLat: dev.toLonLat, teleport: teleportTo,
-    me: () => inCar || inHeli || walker, car: () => inCar,
+    me: () => inCar || inHeli || walker, car: () => inCar, heli: () => inHeli,
     mode: () => (inCar ? 'car' : inHeli ? 'helicopter' : ride.on ? 'tram' : taxi.riding ? 'taxi' : boats.me ? 'boat' : funicular.me ? 'funicular' : metro.active ? 'metro' : 'foot'),
     street: () => street, enterOrExit,
     addCar: (c) => { loose.push(c); restingStale = true; },
