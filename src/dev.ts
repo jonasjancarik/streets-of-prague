@@ -5,6 +5,7 @@ import type { MapIndex } from './contracts.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Graphics, Choice } from './graphics.ts';
 import { MIST, MIST_DEFAULT, MOST_SHEETS, type Kind, type Mist } from './weather.ts';
+import { LOCAL_MIST, LOCAL_MIST_DEFAULT, MIST_MODE, supportsLocalMist, type MistMode, type LocalMistSettings } from './localmist.ts';
 import type { Testkit } from './testkit.ts';
 
 interface DevHit { label: string; x: number; y: number }
@@ -137,6 +138,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     #dev .dev-check input { margin: 0; }
     #dev-mist summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #dev-mist .dev-time span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }
+    #dev-mist [hidden] { display: none; }
     #dev .dev-pass { color: #8fd18f; } #dev .dev-fail { color: #ff8f7a; }
     #dev-out { font-size: 12px; white-space: pre-wrap; max-height: 220px; overflow: auto; }`;
   document.head.appendChild(style);
@@ -352,45 +354,85 @@ const MIST_SLIDERS: { key: keyof Mist; label: string; min: number; max: number; 
   { key: 'speed', label: 'Drift speed', min: 0, max: 8, step: 0.1, unit: '×', title: 'How fast the mist drifts and changes' },
 ];
 const MIST_KEY = 'dev-mist';
+const VOLUME_SLIDERS: { key: keyof LocalMistSettings; label: string; min: number; max: number; step: number; unit?: string; title: string }[] = [
+  { key: 'density', label: 'Thickness', min: 0, max: 1.5, step: 0.01, title: 'How strongly the mist hides objects inside a bank' },
+  { key: 'width', label: 'Bank width', min: 8, max: 100, step: 1, unit: ' m', title: 'Width of each separate bank, with clear air between banks' },
+  { key: 'length', label: 'Bank length', min: 8, max: 100, step: 1, unit: ' m', title: 'Length of each separate bank' },
+  { key: 'spacing', label: 'Distance between banks', min: 24, max: 160, step: 1, unit: ' m', title: 'Distance between the centres of neighbouring banks' },
+  { key: 'low', label: 'Bottom above ground', min: 0, max: 3, step: 0.05, unit: ' m', title: 'Height where mist begins above the local terrain' },
+  { key: 'high', label: 'Top above ground', min: 0.5, max: 8, step: 0.1, unit: ' m', title: 'Height where a bank fades into clear air' },
+  { key: 'edge', label: 'Soft edges', min: 0.05, max: 0.8, step: 0.01, title: 'How much of the bank fades gently towards its edges' },
+  { key: 'noiseSize', label: 'Wisp size', min: 2, max: 30, step: 0.5, unit: ' m', title: 'Size of the wisps inside a bank' },
+  { key: 'speed', label: 'Drift speed', min: 0, max: 3, step: 0.05, unit: ' m/s', title: 'How fast the wisps move through the bank' },
+  { key: 'steps', label: 'Detail along the view', min: 8, max: 16, step: 1, title: 'More samples give finer mist and take more time to draw' },
+];
 
 function setupMist($: (id: string) => HTMLElement, weather: { get: () => string; set: (kind: Kind | 'auto') => void }, flash: (el: HTMLElement, now: string, then: string) => void) {
+  const requested = new URLSearchParams(location.search).get('mist');
   try {
-    const saved = JSON.parse(localStorage.getItem(MIST_KEY) ?? 'null') as Partial<Mist> | null;
+    const saved = JSON.parse(localStorage.getItem(MIST_KEY) ?? 'null') as (Partial<Mist> & { mode?: MistMode; volume?: Partial<LocalMistSettings> }) | null;
     if (saved) for (const s of MIST_SLIDERS) if (typeof saved[s.key] === 'number') MIST[s.key] = saved[s.key]!;
+    if (!requested && (saved?.mode === 'sheets' || saved?.mode === 'volume')) MIST_MODE.value = saved.mode;
+    for (const s of VOLUME_SLIDERS) {
+      const value = saved?.volume?.[s.key];
+      if (typeof value === 'number' && Number.isFinite(value)) LOCAL_MIST[s.key] = Math.max(s.min, Math.min(s.max, value));
+    }
   } catch { /* nothing saved, or storage is off */ }
+  if (requested === 'sheets' || requested === 'volume') MIST_MODE.value = requested;
+  if (!supportsLocalMist()) MIST_MODE.value = 'sheets';
   const rows = $('dev-mist-rows');
-  const inputs = new Map<keyof Mist, { input: HTMLInputElement; value: HTMLElement }>();
-  const text = (s: (typeof MIST_SLIDERS)[number]) => `${+MIST[s.key].toFixed(2)}${s.unit ?? ''}`;
-  const save = () => { try { localStorage.setItem(MIST_KEY, JSON.stringify(MIST)); } catch { /* storage is off */ } };
-  for (const s of MIST_SLIDERS) {
-    const label = document.createElement('label');
-    label.className = 'dev-time';
-    label.title = s.title;
-    label.append(s.label);
-    const value = document.createElement('span');
-    const input = document.createElement('input');
-    Object.assign(input, { type: 'range', min: String(s.min), max: String(s.max), step: String(s.step) });
-    input.value = String(MIST[s.key]);
-    value.textContent = text(s);
-    input.oninput = () => { MIST[s.key] = Number(input.value); value.textContent = text(s); save(); };
-    input.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
-    label.append(value, input);
-    rows.appendChild(label);
-    inputs.set(s.key, { input, value });
-  }
+  const save = () => { try { localStorage.setItem(MIST_KEY, JSON.stringify({ ...MIST, mode: MIST_MODE.value, volume: LOCAL_MIST })); } catch { /* storage is off */ } };
+  const modeLabel = document.createElement('label');
+  modeLabel.className = 'dev-time';
+  modeLabel.append('Mist shape');
+  const mode = document.createElement('select');
+  mode.id = 'dev-mist-mode';
+  mode.innerHTML = '<option value="sheets">Layered banks</option><option value="volume">Local volumes</option>';
+  mode.options[1].disabled = !supportsLocalMist();
+  if (!supportsLocalMist()) modeLabel.title = 'Local volumes need WebGPU. This browser is using the simpler graphics renderer.';
+  modeLabel.append(mode);
+  rows.append(modeLabel);
+  const controls: { label: HTMLElement; mode: MistMode | 'both'; refresh: () => void }[] = [];
+  const addRows = (settings: Record<string, number>, sliders: readonly (typeof MIST_SLIDERS)[number][] | readonly (typeof VOLUME_SLIDERS)[number][], which: MistMode) => {
+    for (const s of sliders) {
+      const label = document.createElement('label');
+      label.className = 'dev-time';
+      label.title = s.title;
+      label.append(s.label);
+      const value = document.createElement('span');
+      const input = document.createElement('input');
+      Object.assign(input, { type: 'range', min: String(s.min), max: String(s.max), step: String(s.step) });
+      const refresh = () => { input.value = String(settings[s.key]); value.textContent = `${+settings[s.key].toFixed(2)}${s.unit ?? ''}`; };
+      input.oninput = () => { settings[s.key] = Number(input.value); refresh(); save(); };
+      input.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+      label.append(value, input);
+      rows.appendChild(label);
+      controls.push({ label, mode: s.key === 'haze' ? 'both' : which, refresh });
+    }
+  };
+  addRows(MIST, MIST_SLIDERS, 'sheets');
+  addRows(LOCAL_MIST, VOLUME_SLIDERS, 'volume');
+  const refresh = () => {
+    mode.value = MIST_MODE.value;
+    for (const c of controls) { c.label.hidden = c.mode !== 'both' && c.mode !== MIST_MODE.value; c.refresh(); }
+  };
+  mode.onchange = () => { MIST_MODE.value = mode.value as MistMode; refresh(); save(); };
+  mode.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+  refresh();
   // Opening the section shows the mist, whatever the weather was.
   ($('dev-mist') as HTMLDetailsElement).addEventListener('toggle', (ev) => {
     if ((ev.target as HTMLDetailsElement).open && weather.get() !== 'mist') weather.set('mist');
   });
   $('dev-mist-copy').onclick = async () => {
-    const body = MIST_SLIDERS.map((s) => `${s.key}: ${+MIST[s.key].toFixed(3)}`).join(', ');
-    await navigator.clipboard.writeText(`MIST = { ${body} }`);
+    await navigator.clipboard.writeText(`MIST_MODE.value = '${MIST_MODE.value}';\nMIST = ${JSON.stringify(MIST, null, 2)};\nLOCAL_MIST = ${JSON.stringify(LOCAL_MIST, null, 2)};`);
     flash($('dev-mist-copy'), 'Copied', 'Copy values');
   };
   $('dev-mist-reset').onclick = () => {
     Object.assign(MIST, MIST_DEFAULT);
+    Object.assign(LOCAL_MIST, LOCAL_MIST_DEFAULT);
+    MIST_MODE.value = 'sheets';
     try { localStorage.removeItem(MIST_KEY); } catch { /* storage is off */ }
-    for (const s of MIST_SLIDERS) { const r = inputs.get(s.key)!; r.input.value = String(MIST[s.key]); r.value.textContent = text(s); }
+    refresh();
   };
 }
 

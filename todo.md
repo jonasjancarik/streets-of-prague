@@ -28,6 +28,15 @@ collision index. An isolated retest is pending (see plan 012's follow-up); compe
 game instances have not been established as the cause of that result. No general
 FPS improvement is established for this set.
 
+The Mist developer controls now offer a second, optional WebGPU mode: separate
+low raymarched volumes with 3D noise and opaque-depth clipping. It uses the full
+game resolution and 12 samples by default; half-resolution rendering remains
+unimplemented. A short 3 October A/B at 2×, High, 14:00 compared layered banks
+with volumes: Old Town Square 5.8/5.8 ms, river 6.1/6.8 ms. Window-to-window drift
+was substantial, so these are preliminary costs, not a resolved performance
+comparison. The targeted depth/stencil, inside-volume, MSAA and resize checks pass
+(`scripts/check-local-mist.mjs`); phone cost has not been measured.
+
 Landmark colour warming now has a pipeline conversion and a browser marker check
 (`plans/010-prebake-landmark-colours.md`). The original GLBs remain the live assets;
 the staged `.warm-v1.glb` files passed local visual and cold-load checks. Activate

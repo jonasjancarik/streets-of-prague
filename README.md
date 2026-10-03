@@ -326,7 +326,18 @@ record the measurements, merge decisions and pending landmark asset activation.
   orange from the city at night (`src/sky.ts`). Rain falls as streaks and snow as
   flakes in a box round the view that stays put in the world, so you move through
   them; mist lies in drifting banks in the streets (a stack of sheets up to 7.5 m, so
-  the roofs stand out of it) with clear air between them, and the fog of
+  the roofs stand out of it) with clear air between them. The developer panel's
+  **Mist → Mist shape** also offers **Local volumes** on WebGPU (`?mist=volume`,
+  or `?mist=sheets` to force the original mode). These are separate terrain-following
+  banks, about 40 × 28 m and 0.15–2.2 m above ground, with drifting 3D noise and soft
+  edges (`src/localmist.ts`, `src/webgpu/localmist.ts`). Each ray uses 8–16 samples
+  (12 by default) and stops at opaque scenery using the viewport depth. The boxes
+  share one draw and one depth copy; they render at the game's resolution. Width,
+  spacing, height, density and sampling are adjustable and saved in this browser;
+  Reset restores both modes' defaults. The legacy WebGL renderer retains the layered
+  banks. `node scripts/check-local-mist.mjs` checks wall occlusion, viewing a bank
+  from inside, MSAA changes, resizing and stable placement in the real WebGPU renderer.
+  The fog of
   rain and snow is measured from the camera so the ground is hazier than the roofs. The
   ground gets wet in the rain (darker paving, puddles mirroring the sky and the lamps,
   rings where the drops hit) and dries over several minutes; snow settles on the

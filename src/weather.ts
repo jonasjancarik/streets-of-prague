@@ -5,6 +5,7 @@ import { t } from './i18n.ts';
 import { SEASONS } from './season.ts';
 import { shareGroundSeason } from './groundSeason.ts';
 import type { Season, SeasonName } from './season.ts';
+import { LocalMistVolume, MIST_MODE } from './localmist.ts';
 
 // The weather: clear, cloudy, rain, a thunderstorm, mist or snow. Each is a mix of
 // cloud, rain, storm, snow and mist (0–1), and the weather moves between them
@@ -273,6 +274,7 @@ export class WeatherFx {
   private rain: THREE.Object3D;
   private snow: THREE.Object3D;
   private mist: THREE.Object3D;
+  private localMist: LocalMistVolume;
   private shared = {
     uCentre: { value: new THREE.Vector3() }, uBox: { value: new THREE.Vector2(200, 40) },
     uTime: { value: 0 }, uWind: { value: new THREE.Vector2(1.5, 0.6) },
@@ -291,6 +293,7 @@ export class WeatherFx {
   readonly fog = { value: new THREE.Color('#b0b5bb') };
 
   constructor(scene: THREE.Scene) {
+    this.localMist = new LocalMistVolume(scene, this.shared.uTime, this.fog);
     const rand = (n: number, per: number) => {
       const a = new Float32Array(n * per * 4);
       for (let i = 0; i < n; i++) {
@@ -403,7 +406,7 @@ export class WeatherFx {
 
   // `x, y`: where the camera looks; `ground` the ground's height there; `height` the
   // camera's above it; `r` how far the view reaches.
-  update(w: Conditions, t: number, x: number, y: number, ground: number, height: number, r: number, dpr: number) {
+  update(w: Conditions, t: number, x: number, y: number, ground: number, height: number, r: number, dpr: number, mistGround: (x: number, z: number) => number) {
     const s = this.shared;
     s.uTime.value = t;
     s.uCentre.value.set(x, ground - 2, -y);
@@ -415,7 +418,8 @@ export class WeatherFx {
     this.mistOn.value = Math.min(1, w.mist) * MIST.most;
     this.rain.visible = w.rain > 0.01;
     this.snow.visible = w.snow > 0.01;
-    this.mist.visible = w.mist > 0.01;
+    this.mist.visible = w.mist > 0.01 && (MIST_MODE.value === 'sheets' || !this.localMist.mesh);
+    this.localMist.update(w.mist, t, x, -y, r, mistGround);
     this.snowScale.value = innerHeight * dpr * 1.4;
     const m = MIST, sheets = Math.max(2, Math.min(MOST_SHEETS, Math.round(m.sheets)));
     this.mistA.value.set(1 / m.bankSize, 1 / m.wispSize, 1 / m.fineSize, m.thin);

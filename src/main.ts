@@ -21,6 +21,7 @@ import { Taxis } from './taxi.ts';
 import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
 import { Weather, WeatherFx, KINDS } from './weather.ts';
+import { MIST_MODE } from './localmist.ts';
 import type { Kind } from './weather.ts';
 import { Lamps, type Flashing } from './lamps.ts';
 import { Signals } from './signals.ts';
@@ -223,12 +224,14 @@ async function main() {
   useKit(kit);
   await carsLoad;
   await tramsLoad;
+  if (params.get('mist') === 'volume') MIST_MODE.value = 'volume';
   const weatherFx = new WeatherFx(scene);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), cover: params.get('cover'), ortho: params.has('ortho') });
   const grid = world.grid;
   // Height of the ground at a point; with `who` (a car, a person), of whatever they're
   // on there: the ground, or a bridge deck (see TileWorld.track).
   const ground = (x: number, y: number, who?: Tracked | null) => (who ? world.groundFor(who, x, y) : world.heightAt(x, y));
+  const mistGround = (x: number, z: number) => world.terrainAt(x, -z);
   let crowd: Crowd | null = null;
   // The deck of a bridge at a point, or within a few metres of it (a lamp on the parapet is just off it).
   const deckAt = (x: number, y: number, within: number) => {
@@ -1873,7 +1876,7 @@ async function main() {
     signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
-    weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio());
+    weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround);
 
     // ---- HUD -------------------------------------------------------------
     // (On the metro, the street the train is under; on a funicular, its name.)

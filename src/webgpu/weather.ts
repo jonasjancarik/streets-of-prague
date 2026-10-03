@@ -12,6 +12,8 @@ import {
 import { setFx, type FxParts } from '../weather.ts';
 import { type N, follow, followVec, vnoise } from './common.ts';
 import { lampLight } from './lamps.ts';
+import { setLocalMist } from '../localmist.ts';
+import { localMistMaterial } from './localmist.ts';
 
 const FALL = 9, FLAKE_FALL = 1.1; // m/s, as in ../weather.ts
 
@@ -116,3 +118,4 @@ function build(f: FxParts) {
 }
 
 setFx(build);
+setLocalMist((parts) => localMistMaterial(parts, linear));
