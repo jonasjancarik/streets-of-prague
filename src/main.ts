@@ -834,7 +834,7 @@ async function main() {
     if (best.share) telemetry.did('rented a shared bike');
     if (best.two) best.rider = walker.look;
     inCar = best;
-    if (best.variant) showBanner(variantName(best.variant));
+    if (best.variant) showBanner(variantName(best.variant), false, true); // always the small card, so it sits the same under a district title
     walker.perch = 0;
     walker.mesh.visible = false;
   };
@@ -1195,7 +1195,7 @@ async function main() {
   // A short word (Wasted, a station's name) goes up big; a sentence or a setting (a fee,
   // a fare, "Weather: rain") goes in a card, so it doesn't stretch across the screen.
   // "Busted · fine…" gives both: the word big and the rest in the card under it.
-  const showBanner = (text: string, alert = false) => {
+  const showBanner = (text: string, alert = false, card = false) => {
     const [head, ...rest] = text.split(' · ');
     const big = head.length <= 22 && !head.includes(':') ? head : '';
     const note = big ? rest.join(' · ') : text;
