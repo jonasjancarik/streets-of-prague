@@ -128,7 +128,8 @@ async function feedback(body, env, origin, ip, here) {
   const first = message.split('\n')[0];
   // The beta's messages say so, in the subject and the archive.
   const site = origin === here || !origin ? '' : new URL(origin).hostname;
-  // A copy for the feedback viewer (scripts/feedback-viewer.mjs). Losing it never stops the email.
+  // A copy for the feedback viewer (scripts/feedback-viewer.mjs), which also keeps its own
+  // feedback-state.json beside these. Losing the copy never stops the email.
   if (env.FEEDBACK_ARCHIVE) {
     const now = new Date();
     try {

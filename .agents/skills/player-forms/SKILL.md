@@ -156,8 +156,14 @@ use it stay in the contacts as unsubscribed and are skipped from then on.
 
 Besides the email, the Worker keeps each message as `feedback/<date>/<time>-<id>.json`
 in the R2 bucket `streets-of-prague-mail` (binding `FEEDBACK_ARCHIVE`).
-`node scripts/feedback-viewer.mjs` reads them through the `cf` login and opens a local
-searchable page (`--sample` for made-up ones). Not yet run against real messages.
+`node scripts/feedback-viewer.mjs` reads them through the `cf` login and serves a local
+page at http://127.0.0.1:5196 (`--port`, `--host`, `--no-open`; `--sample` for made-up
+messages that touch neither R2 nor `cf`). Per message you set a status (New, In progress,
+Done, Won't do), a note and Replied; the page searches and filters by status. Those marks
+are one JSON object, `feedback-state.json` in the same bucket, rewritten after every change
+(it is outside `feedback/`, so the listing ignores it). Downloaded messages are cached in
+`.feedback/cache/`, which is git-ignored because it holds players' addresses.
+`node scripts/check-feedback-viewer.mjs` checks the server in sample mode.
 
 ## Checking a change
 
