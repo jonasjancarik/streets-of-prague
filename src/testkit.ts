@@ -61,6 +61,8 @@ interface Game {
   carsNear: (x: number, y: number, r: number) => Car[];
   // Where the camera looks now, and how high it is (for starting the free camera there).
   view0: () => { x: number; y: number; height: number };
+  viewRadius: () => number;
+  offscreen: (x: number, y: number) => boolean;
   canvas: HTMLElement; fov: number;
   wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; traffic: Traffic; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
@@ -192,6 +194,13 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
 
     // Whether a loose car (a wreck, a parked or left car) is still in the world.
     standing(c: Car) { return g.loose.includes(c); },
+    // The current production cleanup view, using the car's actual position.
+    carView(c: Car) {
+      const player = g.me(), camera = g.view0();
+      return { playerDistance: Math.hypot(c.x - player.x, c.y - player.y),
+        cameraDistance: Math.hypot(c.x - camera.x, c.y - camera.y),
+        radius: g.viewRadius(), outOfSight: g.offscreen(c.x, c.y) };
+    },
 
     // Leaves the nearest person on the pavement lying hurt: an ambulance is called.
     hurt(grave = false) { return g.hurtNearest(grave); },

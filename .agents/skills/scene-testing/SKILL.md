@@ -46,6 +46,9 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   ahead (`hatch`, `sedan`, `suv`, `van`, `taxi`, `police`, `pickup`, `truck`, `bus`,
   `moto`, `bike`…, the keys of `SPECS` in `src/car.ts`). `t.car(type, opt)`: just
   parks one. `t.exit()` gets you out.
+  `t.carView(car)` reports actual player/camera distances, the production cleanup
+  view radius and whether the car is out of sight. Use it to assert a placement
+  premise: `t.car` can find a different clear spot than the requested `ahead` distance.
 - `t.boats()`: loaded boats with kind, location, mooring status, safe bank coordinates
   and water/bank heights. `t.boardBoat()`: ordinary interaction from the current bank
   position, returning whether you boarded. `t.exit()` uses the same safe bank rule.

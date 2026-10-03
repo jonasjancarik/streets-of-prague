@@ -2051,6 +2051,7 @@ async function main() {
     grid, boats, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
+    viewRadius, offscreen,
     canvas: renderer.domElement, fov: camera.fov,
     weather: { set: (k) => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, kind: () => weather.kind },
     season: { set: (when) => { const day = parseDay(when); if (!day) throw new Error(`A season's name, MM-DD or a day of the year, not ${when}`); season.set(day); }, date: () => season.date },
