@@ -528,7 +528,8 @@ feature services are at `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<nam
 - **A stolen police car has no flashing lights.**
 - **Buses.** They follow PID's real lines (`pipeline/build_buses.py`) and stop at the
   stops, but a line is lost where the map has no street for it (148 at U Nemocnice),
-  buses often crawl in the Old Town's traffic, and they show no line number.
+  buses often crawl in the Old Town's traffic. Line numbers are on the front, side
+  and roof; the front number is enlarged and the side board keeps the destination.
 - **Traffic by time of day.** The number of cars follows a TSK travel-time profile
   and favours main roads, but it is one city-wide figure; queues on the real routes,
   direction of the peak and car mix are next. See `docs/traffic.md`.

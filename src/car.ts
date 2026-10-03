@@ -847,10 +847,17 @@ function boardMaterial(ref: string, to: string) {
   g.fillRect(0, 0, 512, 64);
   g.fillStyle = '#ffb020';
   g.textBaseline = 'middle';
-  g.font = 'bold 54px sans-serif';
-  g.fillText(ref, 10, 35, 130);
-  g.font = 'bold 40px sans-serif';
-  if (to) g.fillText(to, 150, 35, 352);
+  if (to) {
+    g.font = 'bold 54px sans-serif';
+    g.fillText(ref, 10, 35, 170);
+    g.font = 'bold 40px sans-serif';
+    g.fillText(to, 190, 35, 312);
+  } else {
+    // The front board is for the number alone, readable as the bus approaches.
+    g.textAlign = 'center';
+    g.font = 'bold 58px sans-serif';
+    g.fillText(ref, 256, 35, 480);
+  }
   const t = new THREE.CanvasTexture(cv);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
@@ -886,8 +893,8 @@ const boardPlane = new THREE.PlaneGeometry(1, 1);
 const boardPlacement = (type: 'bus' | 'minibus') => {
   const spec = TYPES[type], L = spec.L / 2, W = spec.W, small = type === 'minibus', m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3();
   const top = small ? 2.3 : 2.55, roof = small ? 2.65 : 2.95;
-  const front = m.clone().compose(new THREE.Vector3(L + 0.04, top + 0.19, 0), q.clone().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), s.clone().set(W - 0.9, 0.2, 1));
-  const side = m.clone().compose(new THREE.Vector3(L - (small ? 2.4 : 3.4), top - 0.17, W / 2 + 0.012), q.clone(), s.clone().set(small ? 1.2 : 1.5, 0.19, 1));
+  const front = m.clone().compose(new THREE.Vector3(L + 0.045, (top + roof) / 2, 0), q.clone().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2), s.clone().set(W - 0.5, roof - top - 0.06, 1));
+  const side = m.clone().compose(new THREE.Vector3(L - (small ? 2.4 : 3.4), top - 0.17, W / 2 + 0.05), q.clone(), s.clone().set(small ? 1.6 : 2, 0.28, 1));
   // On the roof between the hatch and the front, lying flat, reading from the front.
   const flat = new THREE.Matrix4().compose(new THREE.Vector3(L - (small ? 1.2 : 1.95), roof + 0.005, 0),
     new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, -Math.PI / 2, 0, 'YXZ')), new THREE.Vector3(small ? 1.8 : 2.2, small ? 0.9 : 1.1, 1));
@@ -1021,10 +1028,12 @@ export class CarPool {
         if (!paint) { paint = new THREE.Color(c.paint); this.colours.set(c.paint, paint); }
         (m.geometry.getAttribute('paint') as THREE.InstancedBufferAttribute).setXYZ(slot, paint.r, paint.g, paint.b);
         if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
-        if (c.line) {
+        const ref = c.line?.ref.trim();
+        if (ref && !c.burnt && (c.type === 'bus' || c.type === 'minibus')) {
           const at = BOARD_AT[c.type === 'minibus' ? 'minibus' : 'bus'];
-          for (const b of at.boards) this.board(nb++, boardMaterial(c.line.ref, c.line.to), d.matrix, b);
-          this.board(nb++, roofMaterial(c.line.ref), d.matrix, at.roof);
+          this.board(nb++, boardMaterial(ref, ''), d.matrix, at.boards[0]);
+          this.board(nb++, boardMaterial(ref, c.line!.to), d.matrix, at.boards[1]);
+          this.board(nb++, roofMaterial(ref), d.matrix, at.roof);
         }
       });
       for (let i = 0; i < pages.length; i++) {

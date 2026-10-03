@@ -50,6 +50,10 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.ignite(car)` sets a car on fire; `t.fire(car)`: whether it burns, is a wreck, still
   has flames, what the fire engine sent to it is doing (`go`, `work`, `leave`) and how
   many hoses are on it.
+- `t.enter(car)` takes an existing car through the normal entry path, including theft.
+  `t.busLines()` lists loaded PID identifiers/destinations; `t.busLine(car, ref)` assigns
+  one of those lines to a test bus. `t.policeCar()` finds the nearest police vehicle;
+  `t.policeLights(car)` reports whether its flashing lamps are active.
 - `t.push(kmh, heading?)`: sets your car going. `t.post(r)`: the nearest standing
   lamp or pole. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
   on a run clear of walls and other cars. `t.runway(heading)`: metres to the first wall.

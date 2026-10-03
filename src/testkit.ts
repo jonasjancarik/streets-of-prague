@@ -10,6 +10,7 @@ import type { Fires } from './fire.ts';
 import type { Brigade } from './brigade.ts';
 import type { Ambulances } from './ambulance.ts';
 import type { Pedestrian } from './people.ts';
+import type { Traffic } from './traffic.ts';
 import type { Kind } from './weather.ts';
 import type { Boats } from './boats.ts';
 
@@ -60,7 +61,7 @@ interface Game {
   // Where the camera looks now, and how high it is (for starting the free camera there).
   view0: () => { x: number; y: number; height: number };
   canvas: HTMLElement; fov: number;
-  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; traffic: { agents: { car: Car }[] }; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
+  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; traffic: Traffic; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
   rng: () => number;
@@ -127,6 +128,14 @@ export function setupTestkit(g: Game) {
 
     // What the arrest does to the chase: the stars go and the police cars stand down.
     forgive() { g.police.forgive(); },
+
+    policeLights(c: Car) { return g.police.lit(g.car()).includes(c); },
+    policeCar() {
+      const m = g.me();
+      return [...g.police.cars.map((p) => p.car), ...g.traffic.agents.map((a) => a.car)]
+        .filter((c) => c.type === 'police' && !c.burnt)
+        .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null;
+    },
 
     set({ money, stars, health }: { money?: number; stars?: number; health?: number }) {
       if (money !== undefined) g.wallet.balance = Math.max(0, Math.floor(money));
@@ -199,6 +208,14 @@ export function setupTestkit(g: Game) {
     async drive(type = 'hatch') {
       if (g.mode() !== 'foot') g.enterOrExit();
       const c = kit.car(type, { ahead: 3 });
+      await kit.enter(c);
+      return c;
+    },
+
+    // Take an existing car through the ordinary enter/exit path, including theft.
+    async enter(c: Car) {
+      if (g.car() === c) return;
+      if (g.mode() !== 'foot') g.enterOrExit();
       const m = g.me();
       m.x = c.x - Math.sin(c.h) * (c.spec.W / 2 + 0.6);
       m.y = c.y + Math.cos(c.h) * (c.spec.W / 2 + 0.6);
@@ -206,6 +223,15 @@ export function setupTestkit(g: Game) {
       if (g.car() !== c) throw new Error('Could not get into the car');
       await frame();
       return c;
+    },
+
+    // Assign a loaded PID line to a test bus; never invent a route identifier.
+    busLines() { return g.traffic.busLines.map(({ ref, to }) => ({ ref, to })); },
+    busLine(c: Car, ref: string) {
+      if (c.type !== 'bus' && c.type !== 'minibus') throw new Error('Not a bus');
+      const line = g.traffic.busLines.find((l) => l.ref === ref);
+      if (!line) throw new Error(`No loaded bus line ${ref}`);
+      c.line = { ref: line.ref, to: line.to };
     },
 
     // Out of whatever you're in.

@@ -1,6 +1,6 @@
 # AI car traffic
 
-read_when: changing how many cars are about, where they start or which way they turn;
+read_when: changing traffic counts, routes, bus displays;
 regenerating the time-of-day table.
 
 ## How it works
@@ -24,6 +24,13 @@ secondary 2.5, tertiary 2, residential 1, living street and service 0.3). At a j
 `nextEdge(…, lean)` weights each turn by the square root of that, so a main road wins
 more often but side streets stay reachable. Both apply only to ordinary cars (spawned
 without a type). Buses, taxis, police and pavement drivers are unchanged.
+
+**Bus displays.** Buses working a PID line keep its actual `ref` and destination from
+the loaded `buses.json`. The front board shows a larger line number, the side board
+also shows the destination, and the roof number can be read from the game's overhead
+camera. Board textures are cached per number/destination and reused as cars move or
+leave view. A wandering bus without a line, an empty identifier or a burnt wreck has
+no route label. Taking a bus preserves its assigned line; it does not assign a new one.
 
 **Couriers.** In `Traffic.spawn`, half of the ordinary bikes and a third of the mopeds are
 delivery couriers: a box on the rider's back in pink, green or blue (`COURIER_BOXES` in
