@@ -195,10 +195,15 @@ that without a new renderer.
   still rolling faster than a walk is left at once, without the door, and vehicles
   built from boxes (buses, lorries, the fire engine, the ambulance) have no door to
   swing: you step up to the cab and in.
+- **Lamps.** A hard knock (from about 16 km/h) smashes the headlamp or tail lamp it lands
+  on, which then stays dark and lights nothing at night; the headlamps behind a police
+  ram frame never break. The tail lamps light up when a car brakes, by day as well
+  (`knock` in `src/car.ts`, the pools of light in `src/lamps.ts`).
 - **Police.** Knocking people over, pulling drivers out of their cars, wrecking
   traffic, ramming or stealing a police car and speeding past the police (20 km/h over
   the limit) earn stars, up to five; crimes the police see count three times as much.
-  Police cars chase you along the streets and ram you. When you're on foot they stay
+  Police cars chase you along the streets and ram you; some carry a ram frame on the
+  nose, more of them the more stars you have. When you're on foot they stay
   on the road and stop at the kerb nearest you; then (or when you stop the car) an
   officer gets out (their door stays open till they're back) and runs after you, to
   your door if you're in a car, and if they reach you, you're busted (the

@@ -348,6 +348,8 @@ export class Traffic {
 
       // (A bus picks up speed slowly.)
       const acc = target > a.speed ? (c.spec.heavy ? 1.2 : 3) : 9;
+      // The brake lights: slowing down for something, or standing with a foot on the pedal.
+      c.braking = target < a.speed - 0.4 || (a.speed < 0.3 && target < 0.3);
       a.speed += clamp(target - a.speed, -acc * dt, acc * dt);
       const p = a.route.advance(a.speed * dt);
       if (a.route.ended || (c.spec.heavy && c.type !== 'bus' && c.type !== 'minibus' && !lorryRoad(a.route.head))) { a.gone = true; continue; }

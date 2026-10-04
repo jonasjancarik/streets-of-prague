@@ -1,6 +1,7 @@
 """Build the car bodies into public/cars.glb.
 
-One low-poly mesh per car type (hatch, sedan, estate, suv, van, pickup, taxi, police), made from
+One low-poly mesh per car type (hatch, sedan, estate, suv, van, pickup, taxi, police), and the
+ram frame some police cars carry (police_ram, put on the body in src/car.ts), made from
 code so they can be tweaked and rebuilt. The game looks down on them, so what counts is
 the shape from above and a little of the sides: a body rounded off at the corners in
 plan, the bonnet and boot, a cabin narrower than the body with the windscreen and rear
@@ -71,6 +72,7 @@ class Car:
         self.under = []  # faces that close the body for working out normals, then go
         self.door = self.bm.faces.layers.int.new("door")  # which door a face is part of (0: none)
         self.inside = []  # the interior, added once the normals are worked out
+        self.decals = []  # flat quads lying on the body (lettering), added then too
 
     def face(self, verts, mat):
         f = self.bm.faces.new(verts)
@@ -80,12 +82,13 @@ class Car:
     def v(self, x, y, z):
         return self.bm.verts.new((x, y, z))
 
-    def body(self, stations, wheels=(), r=0.31, stripe=None, bonnet_band=None, doors=(), cabin=None):
+    def body(self, stations, wheels=(), r=0.31, stripe=None, bonnet_band=None, doors=(), cabin=None, livery=None):
         """stations: (x, half width, height of the top, height of the sill), front to
         back. Over each wheel (at x in `wheels`, radius `r`) the sill rises in an arch.
         doors: (x of the front edge, x of the back edge, number of the left door), the
         right one being the next number. cabin: (front, back), where the top is left open
-        under the cabin, so the seats show through an open door."""
+        under the cabin, so the seats show through an open door. livery: (x, material)
+        to the material a band of the side has at x, for a stripe that changes along the car."""
         def at(x):
             for (x0, *a), (x1, *b) in zip(stations, stations[1:]):
                 if x1 <= x <= x0:
@@ -122,8 +125,9 @@ class Car:
             mid = (xs[s] + xs[s + 1]) / 2
             door = next((k for x0, x1, k in doors if x1 < mid < x0), 0)
             for i in range(len(L0) - 1):
-                left = self.face([L0[i], L1[i], L1[i + 1], L0[i + 1]], mats[i])
-                right = self.face([R0[i], R0[i + 1], R1[i + 1], R1[i]], mats[i])
+                mat = livery(mid, mats[i]) if livery else mats[i]
+                left = self.face([L0[i], L1[i], L1[i + 1], L0[i + 1]], mat)
+                right = self.face([R0[i], R0[i + 1], R1[i + 1], R1[i]], mat)
                 # (The black sill under a door stays on the body.)
                 if door and i:
                     left[self.door], right[self.door] = door, door + 1
@@ -215,6 +219,27 @@ class Car:
             quad((*a, floor), (*b, floor), (*b, belt), (*a, belt))
             quad((*a, belt), (*b, belt), (*d, top), (*c, top))
 
+    def text(self, word, x, px, top, mat):
+        """A word lying on the bonnet, read from in front of the car: the tops of its
+        letters at x, each pixel px across, `top(x)` the height of the bonnet there."""
+        pitch = 6 * px
+        y0 = -(len(word) * pitch - px) / 2
+        for i, ch in enumerate(word):
+            for r, row in enumerate(GLYPHS[ch]):
+                c = 0
+                while c < 5:
+                    if row[c] != "1":
+                        c += 1
+                        continue
+                    e = c
+                    while e < 5 and row[e] == "1":
+                        e += 1
+                    xa, xb = x + r * px, x + (r + 1) * px
+                    ya, yb = y0 + i * pitch + c * px, y0 + i * pitch + e * px
+                    self.decals.append(([(xa, ya, top(xa) + 0.006), (xb, ya, top(xb) + 0.006),
+                                         (xb, yb, top(xb) + 0.006), (xa, yb, top(xa) + 0.006)], mat))
+                    c = e
+
     def block(self, c, s, mat):
         (cx, cy, cz), (sx, sy, sz) = c, s
         vs = [self.v(cx + dx * sx / 2, cy + dy * sy / 2, cz + dz * sz / 2)
@@ -261,6 +286,11 @@ class Car:
         bmesh.ops.delete(bm, geom=self.under, context="FACES_ONLY")
         for box in self.inside:
             self.line(*box)
+        for points, mat in self.decals:
+            f = self.face([self.v(*p) for p in points], mat)
+            f.normal_update()
+            if f.normal.z < 0:
+                f.normal_flip()
         doors = [self.hang(k) for k in sorted({f[self.door] for f in bm.faces} - {0})]
         obj = self.object(name, bm)
         for k, (door, hinge) in doors:
@@ -314,10 +344,12 @@ class Car:
 # Lengths, widths and heights as in src/car.ts TYPES.
 
 
-def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, r=0.31, lift=0.0):
+def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, r=0.31, lift=0.0, word=None):
     """A car: `rear` is 'hatch', 'sedan' or 'estate'; `bar` is where along the roof the
     light bar goes (the middle of `cabin` in src/car.ts, where src/police.ts flashes it).
-    `r` is the wheel radius and `lift` how much higher the bonnet and sills sit (an SUV)."""
+    `r` is the wheel radius and `lift` how much higher the bonnet and sills sit (an SUV).
+    `word` is written across the bonnet, and the stripe then turns into yellow and blue
+    blocks on the front wings and behind the rear doors (the Czech police's colours)."""
     c = Car()
     w, n = W / 2, L / 2
     belt = 0.93 if H < 1.48 else 0.95 if H < 1.6 else 1.03
@@ -342,8 +374,20 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     # going on behind that (a hatchback's, an estate's) gets a pillar there.
     xq = max(wheels[1] + 0.05, xm - 0.95)
     back = max(xd + 0.05, -n + 0.3)
-    c.body(stations, wheels, r, stripe=stripe, bonnet_band=(n - 1.0, n - 0.55) if stripe else None,
-           doors=[(xa, xm, 1), (xm, xq, 3)], cabin=(xa, back))
+    def livery(x, mat):
+        if mat != "Blue" or xq < x < xa:
+            return mat
+        return "Paint" if x > n - 0.3 or x < -n + 0.25 else "Yellow" if int((x + n) / 0.19) % 2 else "Blue"
+
+    c.body(stations, wheels, r, stripe=stripe, doors=[(xa, xm, 1), (xm, xq, 3)], cabin=(xa, back),
+           livery=livery if word else None)
+    if word:
+        def top(x):
+            for (x0, _, z0, _), (x1, _, z1, _) in zip(stations, stations[1:]):
+                if x1 <= x <= x0:
+                    return z0 + (z1 - z0) * (x0 - x) / (x0 - x1)
+            return stations[0][2]
+        c.text(word, n - 1.17, 0.038, top, "Blue")
     c.cabin(belt, xa, xb, xm, xc, xd, w - 0.11, w * 0.74, H, xm_top=(xb + xc) / 2 + 0.05,
             xq=xq if xq - 0.06 > xc + 0.3 else None)
     floor = 0.36 + lift
@@ -356,9 +400,11 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     if sign:
         c.block((mid, 0, H + 0.1), (0.24, 0.62, 0.2), "Sign")
     if bar is not None:
-        c.block((bar, 0, H + 0.06), (0.3, w * 1.45, 0.12), "Bar")
+        # A long low bar nearly as wide as the roof: blue lenses at the ends, clear between.
+        c.block((bar, 0, H + 0.035), (0.36, W * 0.8, 0.07), "Bar")
+        c.block((bar, 0, H + 0.095), (0.3, W * 0.26, 0.05), "Metal")
         for s in (1, -1):
-            c.block((bar, s * w * 0.5, H + 0.13), (0.26, w * 0.4, 0.03), "Blue")
+            c.block((bar, s * W * 0.265, H + 0.1), (0.32, W * 0.25, 0.06), "Blue")
     if rails:
         for s in (1, -1):
             c.block(((xb + xc) / 2, s * (w * 0.74 - 0.05), H + 0.03), (xb - xc - 0.1, 0.05, 0.05), "Trim")
@@ -418,7 +464,32 @@ def pickup(name="pickup", L=5.9, W=2.03, H=1.95):
     return c.finish(name)
 
 
-POLICE_STRIPE = [(0.5, "Blue"), (0.66, "Yellow"), (0.73, "Paint")]
+POLICE_STRIPE = [(0.55, "Blue"), (0.77, "Paint")]
+
+# The letters on the police car's bonnet, 5 × 7 pixels each.
+GLYPHS = {
+    "P": ["11110", "10001", "10001", "11110", "10000", "10000", "10000"],
+    "O": ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+    "L": ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
+    "I": ["01110", "00100", "00100", "00100", "00100", "00100", "01110"],
+    "C": ["01110", "10001", "10000", "10000", "10000", "10001", "01110"],
+    "E": ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+}
+
+
+def ram(name, L, W):
+    """The black tube frame some police cars carry on the nose, for pushing a car they're
+    chasing off the road: a part of its own, which src/car.ts puts on the body."""
+    c = Car()
+    w, n = W / 2, L / 2
+    c.block((n + 0.14, 0, 0.5), (0.09, W * 0.94, 0.1), "Trim")  # the bar across the bumper
+    c.block((n + 0.13, 0, 0.74), (0.07, W * 0.6, 0.07), "Trim")  # and the one over the grille
+    c.block((n + 0.1, 0, 0.33), (0.16, W * 0.7, 0.07), "Trim")  # the plate under the nose
+    for s in (1, -1):
+        c.block((n + 0.13, s * w * 0.56, 0.55), (0.08, 0.08, 0.46), "Trim")  # the uprights
+        c.block((n - 0.05, s * (w * 0.94), 0.5), (0.36, 0.08, 0.1), "Trim")  # round the corners
+        c.block((n + 0.11, s * w * 0.8, 0.66), (0.06, w * 0.5, 0.06), "Trim")  # hoops before the lamps
+    return c.finish(name)
 
 
 def build():
@@ -431,7 +502,8 @@ def build():
         van(),
         pickup(),
         saloon("taxi", 4.6, 1.82, 1.45, "sedan", sign=True),
-        saloon("police", 4.7, 1.84, 1.5, "estate", stripe=POLICE_STRIPE, bar=-0.25),
+        saloon("police", 4.7, 1.84, 1.5, "estate", stripe=POLICE_STRIPE, bar=-0.25, rails=True, word="POLICIE"),
+        ram("police_ram", 4.7, 1.84),
     ]
 
 
@@ -456,7 +528,7 @@ def preview(out_dir):
     cars = build()
     scene = bpy.context.scene
     for i, o in enumerate(cars):
-        o.location = (0, (i - 3.5) * 3.2, 0)
+        o.location = (0, (min(i, 7) - 3.5) * 3.2, 0)  # (the ram goes on the police car)
     ground = bpy.data.meshes.new("ground")
     bm = bmesh.new()
     bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=30)
@@ -484,6 +556,8 @@ def preview(out_dir):
         "offset": ((-4, 0, 13), (-4, 0, 0)),
         "close": ((7, -9, 7), (0, -1.5, 0.6)),
         "wheel": ((3.5, -6.5, 1.2), (1.5, -3, 0.4)),
+        "police": ((4.5, 7, 6), (0, 11.2, 0.6)),
+        "police_top": ((0, 11.2, 9), (0, 11.2, 0)),
     }
     for v, (loc, at) in views.items():
         cam.location = loc

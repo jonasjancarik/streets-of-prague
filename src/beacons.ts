@@ -14,10 +14,10 @@ const DIM = new THREE.Color('#0d1a3a');
 // Where a type carries its lamps: [metres forward of the middle, fraction of half-width sideways, metres above the roof].
 type Lamp = [number, number, number];
 const BARS: Record<string, { lamps: Lamp[]; glow: number; rate: number }> = {
-  // Two lamps above the cabin.
-  police: { lamps: [[0, -0.48, 0.18], [0, 0.48, 0.18]], glow: 1, rate: 1.4 },
+  // The blue ends of the bar above the cabin.
+  police: { lamps: [[0, -0.6, 0.15], [0, -0.42, 0.15], [0, 0.42, 0.15], [0, 0.6, 0.15]], glow: 1, rate: 1.4 },
   // A bar across the cab roof, and one at the back of the body.
-  fire: { lamps: [[2.9, -0.7, 0.2], [2.9, -0.25, 0.2], [2.9, 0.25, 0.2], [2.9, 0.7, 0.2], [-3.8, -0.8, 0.15], [-3.8, 0.8, 0.15]], glow: 1.5, rate: 1.2 },
+  fire: { lamps: [[3.7, -0.62, 0.2], [3.7, -0.38, 0.2], [3.7, 0.38, 0.2], [3.7, 0.62, 0.2], [-3.8, -0.8, 0.15], [-3.8, 0.8, 0.15]], glow: 1.5, rate: 1.2 },
   // A bar across the cab roof, and two at the back.
   ambulance: { lamps: [[1.7, -0.7, 0.18], [1.7, -0.25, 0.18], [1.7, 0.25, 0.18], [1.7, 0.7, 0.18], [-2.8, -0.8, 0.1], [-2.8, 0.8, 0.1]], glow: 1.2, rate: 1.6 },
 };

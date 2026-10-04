@@ -4,7 +4,8 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, diffuseColor, positionLocal, normalLocal, dot, smoothstep, mix, select, sin, cos } from 'three/tsl';
+import { float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, diffuseColor, positionLocal, normalLocal, dot, smoothstep, mix, select, sin, cos, max, floor, mod, exp2 } from 'three/tsl';
+import { LAMP_GLOW } from '../car.ts';
 import { lampLit, uLampOn } from './lamps.ts';
 import { shareInstances } from './trees.ts';
 import { type N, addPort, uSnow } from './common.ts';
@@ -30,6 +31,16 @@ const swing = (p: N): N => {
   return vec2(p.x.mul(c).add(p.y.mul(s)), p.y.mul(c).sub(p.x.mul(s)));
 };
 
+// A lamp is dark when it's smashed and glows when it's on. Which of the car's four a
+// vertex is part of is packed into `painted`, and the car's lamps into `paint.w` (see
+// LAMP in car.ts): -1 here for a smashed one, 0 off, or how bright.
+const painted: N = attribute('painted', 'float'), paint: N = attribute('paint', 'vec4');
+const lamp: N = floor(painted.mul(0.5).add(0.01));
+const tail: N = mod(floor(paint.w.div(32)), 4);
+const smashed: N = mod(floor(paint.w.div(exp2(lamp.sub(1)))), 2).greaterThan(0.5);
+const shine: N = select(lamp.lessThan(0.5), float(0), select(smashed, float(-1),
+  select(lamp.lessThan(2.5), mod(floor(paint.w.div(16)), 2), select(tail.greaterThan(1.5), float(1.5), tail.mul(0.45))))).toVarying('vLit');
+
 addPort(/^cars$/, (node) => {
   const proto = Object.getPrototypeOf(node);
   // (Before the instance's own transform goes on, in setupPosition.)
@@ -42,11 +53,13 @@ addPort(/^cars$/, (node) => {
   };
   node.setupDiffuseColor = function (builder: N) {
     proto.setupDiffuseColor.call(this, builder);
-    diffuseColor.rgb.mulAssign(mix(vec3(1), attribute('paint', 'vec3'), attribute('painted', 'float')));
+    diffuseColor.rgb.mulAssign(mix(vec3(1), paint.rgb, painted.sub(lamp.mul(2))));
+    diffuseColor.rgb.assign(select(shine.lessThan(-0.5), vec3(0.05, 0.05, 0.055), diffuseColor.rgb));
     const up = dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);
     const cover = smoothstep(0.75, 0.95, up).mul(smoothstep(0.1, 0.6, uSnow)).mul(0.6);
     diffuseColor.assign(vec4(mix(diffuseColor.rgb, vec3(0.8, 0.82, 0.86), cover), diffuseColor.a));
   };
+  glow(node, () => select(lamp.lessThan(0.5), vec3(0), vertexColor().rgb).mul(max(shine, 0)).mul(LAMP_GLOW));
   lampLit(node);
 });
 

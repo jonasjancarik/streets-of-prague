@@ -7,7 +7,7 @@ import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import { posts } from './posts.ts';
 import { fences } from './fences.ts';
-import { lampLit } from './lamps.ts';
+import { lampLit, LAMP_ON } from './lamps.ts';
 import { SNOW, STREET_SNOW, WET } from './shading.ts';
 import { send, sendInstances } from './gpu.ts';
 
@@ -47,7 +47,7 @@ export const TYPES: Record<string, CarSpec> = {
   // A full-size American pickup (an F-150): rare, long, heavy and rear-wheel drive.
   pickup: { L: 5.9, W: 2.03, H: 1.95, mass: 2500, accel: 8, vmax: 38, grip: 7.6, turn: 1.9, cabin: [-1, 0.7], weight: 0.5, drive: 'rwd', radius: 5.8, response: 7.5, brake: 13, tough: 4.5, drag: 0.5, weather: 1.05 },
   // Never parked or in ordinary traffic: src/police.ts puts these on the streets.
-  police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#eef1f4', drive: 'rwd', radius: 3.8, brake: 19, tough: 4 },
+  police: { L: 4.7, W: 1.84, H: 1.5, mass: 1500, accel: 11, vmax: 44, grip: 9, turn: 2.5, cabin: [-1.3, 0.8], weight: 0, color: '#c9ced2', drive: 'rwd', radius: 3.8, brake: 19, tough: 4 },
   // Two-wheelers (drawn from the figures kit, as big as the people riding them). A bike
   // is never parked in a car bay; `traffic` is how often each type turns up on the road.
   bike: { L: 2.3, W: 0.8, H: 1.5, mass: 90, accel: 3.2, vmax: 9, grip: 12, turn: 3.4, weight: 0, traffic: 1.6, two: 'bike', radius: 2, brake: 10, tough: 1.5, weather: 1.3 },
@@ -190,6 +190,21 @@ export interface CarBody { type: string; box?: string; pages?: number }
 // The counting drive peaked at 104 hatchbacks, 83 sedans and 59 SUVs. One
 // 128-instance page per type covers those peaks, well below the matrix UBO limit.
 const bodyKey = (type: string, box?: string) => box ? `${type}|box:${box}` : type;
+// The frame on the nose of some police cars (a body of its own, like a courier's box).
+export const RAM = 'ram';
+
+// A car's lamps, as bits of `Car.broken`: the headlamps left and right, then the tail
+// lamps. The shader darkens a broken one and lights the ones that are on. WebGPU allows a
+// mesh only eight vertex buffers, so the lamps ride in the ones the paint already has: a
+// lamp's vertices have twice its number (1 to 4) in `painted`, and each car's `paint.w` is
+// `broken`, plus 16 with the headlamps on, plus 32 with the tail lamps on or 64 braking.
+export const LAMP = { headLeft: 1, headRight: 2, tailLeft: 4, tailRight: 8 };
+const BREAKS = 4.5; // m/s: a knock this hard breaks a lamp it lands on
+// Every vertex of a lamp's part gets its number: headlamp or tail lamp, left (-z) or right.
+function markLamp(g: THREE.BufferGeometry, head: boolean) {
+  const pos = g.getAttribute('position'), painted = g.getAttribute('painted');
+  for (let i = 0; i < pos.count; i++) painted.setX(i, 2 * ((head ? 1 : 3) + (pos.getZ(i) > 0 ? 1 : 0)));
+}
 
 // Preparation is independent of paint, including colours from the bike feed, and
 // never constructs dummy cars or advances the game's seeded random sequence.
@@ -197,6 +212,7 @@ export function ordinaryCarBodies(_bikeColours: readonly string[] = []): CarBody
   const bodies: CarBody[] = [];
   for (const [type, spec] of Object.entries(TYPES)) {
     bodies.push({ type });
+    if (type === 'police') bodies.push({ type, box: RAM });
     if (spec.two) for (const box of COURIER_BOXES) bodies.push({ type, box });
   }
   return bodies;
@@ -268,12 +284,15 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
     return geometry;
   }
   if (!bodies) throw new Error('Car bodies are not loaded');
-  const node = bodies.getObjectByName(type);
-  if (!node) throw new Error(`Missing ${type} in cars.glb`);
   const c = new THREE.Color();
   const parts: THREE.BufferGeometry[] = [];
   const doors: Door[] = [], at = new THREE.Vector3();
-  node.traverse((o) => {
+  const nodes = [type, ...(box ? [`${type}_${box}`] : [])].map((name) => {
+    const node = bodies!.getObjectByName(name);
+    if (!node) throw new Error(`Missing ${name} in cars.glb`);
+    return node;
+  });
+  for (const node of nodes) node.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     const g = new THREE.BufferGeometry();
     g.setIndex(o.geometry.index);
@@ -301,6 +320,7 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
     for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(name === 'Paint' ? 1 : 0), 1));
+    if (name === 'Lamp' || name === 'Tail') markLamp(g, name === 'Lamp');
     parts.push(g);
   });
   const g = mergeGeometries(parts);
@@ -331,6 +351,7 @@ function doorsOf(type: string) {
 // white roof with the air conditioning on top, a dark band of glass all round with
 // white pillars, three doors on the right, and the line board over the windscreen.
 // (Forward is +x, right +z, the ground y = 0, as for the car bodies.)
+const HEADLAMP = '#fff6d8', TAIL_LAMP = '#b3161b'; // (a box in one of these is a lamp)
 function boxBuilder(paintColour?: string) {
   const parts: THREE.BufferGeometry[] = [];
   const c = new THREE.Color();
@@ -342,6 +363,7 @@ function boxBuilder(paintColour?: string) {
     for (let i = 0; i < col.length; i += 3) col.set([c.r, c.g, c.b], i);
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('painted', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(colour === paintColour ? 1 : 0), 1));
+    if (colour === HEADLAMP || colour === TAIL_LAMP) markLamp(g, colour === HEADLAMP);
     parts.push(g.index ? g.toNonIndexed() : g);
   };
   const box = (colour: string, x0: number, x1: number, y0: number, y1: number, w: number, z = 0) =>
@@ -418,38 +440,65 @@ const GLYPHS: Record<string, string[]> = {
   Č: ['01010', '01110', '10001', '10000', '10000', '10000', '10001', '01110'],
 };
 
-// A fire engine from boxes: a red cab and body, grey roller shutters along the sides
-// under a yellow stripe, a ladder on the roof, HASIČI on the front and chevrons at the back.
+// A fire engine from boxes, after the Prague brigade's water tenders: a red crew cab with
+// a white band round it and a white bumper, aluminium roller shutters along the body, and
+// on the roof what shows from above: a tread-plate deck inside a rail, the ladder, the
+// suction hoses, a locker and the light bars. HASIČI on the front and chevrons at the back.
 function fireGeometry(S: CarSpec): THREE.BufferGeometry {
   const { box, wheel, done } = boxBuilder(S.color || '#c4161c');
-  const L = S.L / 2, W = S.W, red = S.color || '#c4161c', glass = '#1b242c', grey = '#8c9196';
-  const cab = 2.3, cx = L - cab, floor = 0.55, top = 2.7, cabTop = 3.0;
-  box('#2a2c2f', -L + 0.05, L - 0.05, 0.3, floor, W - 0.3); // chassis and bumpers
+  const L = S.L / 2, W = S.W, red = S.color || '#c4161c', glass = '#1b242c', white = '#e9e9e4', alu = '#b4b9bd', dark = '#2a2c2f';
+  const cab = 3.1, cx = L - cab, floor = 0.55, top = 2.95, cabTop = 3.05, axle = -L + 2.55;
+  box(dark, -L + 0.05, L - 0.05, 0.3, floor, W - 0.3); // chassis
   box(red, -L, cx, floor, top, W); // body
   box(red, cx, L, floor, cabTop, W); // cab
-  box(glass, L - 0.05, L + 0.02, 1.65, cabTop - 0.15, W - 0.25); // windscreen
-  box(glass, cx + 0.5, L - 0.45, 1.65, cabTop - 0.2, W + 0.02); // side windows
-  box('#2a2c2f', L - 0.05, L + 0.06, 0.75, 1.15, W - 0.5); // grille
-  box('#d8d8d4', L - 0.05, L + 0.03, 1.2, 1.7, W - 0.3); // the band HASIČI is on
-  box('#2a2c2f', L - 0.1, L + 0.18, 0.3, 0.7, W - 0.05); // front bumper
+  box(dark, cx - 0.03, cx + 0.03, floor + 0.1, top - 0.05, W + 0.01); // the gap between them
+  box(glass, L - 0.05, L + 0.02, 1.75, cabTop - 0.2, W - 0.25); // windscreen
+  box(glass, L - 1.25, L - 0.3, 1.75, cabTop - 0.3, W + 0.02); // the front doors' windows
+  box(glass, cx + 0.3, L - 1.55, 1.75, cabTop - 0.3, W + 0.02); // and the crew's
+  box(dark, L - 0.05, L + 0.06, 0.9, 1.2, W - 0.7); // grille
+  box(white, L - 0.05, L + 0.03, 1.2, 1.7, W - 0.1); // the band HASIČI is on
+  box(white, L - 0.15, L + 0.2, 0.32, 0.88, W); // bumper
   for (const side of [-1, 1]) {
-    box('#e8d21a', -L, L, 1.35, 1.5, 0.03, side * W / 2); // reflective stripe
+    const z = side * W / 2;
+    box(white, cx, L, 1.25, 1.6, 0.03, z); // the band along the cab
+    box('#e8d21a', -L, cx, 0.6, 0.7, 0.03, z); // reflective strip under the lockers
+    // Three roller shutters, the one over the back wheels shorter.
     for (let i = 0; i < 3; i++) {
-      const a = -L + 0.35 + i * 1.5, b = a + 1.35;
-      box(grey, a, Math.min(b, cx - 0.2), 0.75, 1.3, 0.05, side * W / 2); // shutters
-      box(grey, a, Math.min(b, cx - 0.2), 1.55, 2.4, 0.05, side * W / 2);
+      const a = -L + 0.3 + i * 1.65, b = a + 1.55, low = a < axle && axle < b ? 1.3 : 0.78;
+      box(alu, a, b, low, 2.6, 0.05, z);
+      for (let y = low + 0.26; y < 2.5; y += 0.26) box('#8d9296', a, b, y, y + 0.025, 0.06, z); // slats
     }
-    box('#fff6d8', L - 0.05, L + 0.05, 0.75, 1.0, 0.35, side * (W / 2 - 0.3)); // headlamps
-    box('#b3161b', -L - 0.03, -L + 0.05, 0.7, 1.0, 0.22, side * (W / 2 - 0.2)); // tail lamps
+    box(HEADLAMP, L + 0.15, L + 0.21, 0.5, 0.76, 0.4, side * (W / 2 - 0.35));
+    box(TAIL_LAMP, -L - 0.03, -L + 0.05, 0.7, 1.0, 0.22, side * (W / 2 - 0.2));
+    // Mirrors on arms out past the cab's corners.
+    box(dark, L - 0.25, L - 0.1, 2.5, 2.58, 0.3, side * (W / 2 + 0.1));
+    box(dark, L - 0.22, L - 0.08, 1.9, 2.58, 0.12, side * (W / 2 + 0.2));
+    // The roof's rail, and a post at the back for a blue lamp (beacons.ts).
+    box('#c9cdd0', -L + 0.05, cx - 0.05, top, top + 0.22, 0.06, side * (W / 2 - 0.06));
+    box(dark, -3.9, -3.7, top, 3.28, 0.3, side * 1.0);
+    box('#1d4fa3', L - 0.72, L - 0.38, cabTop + 0.1, cabTop + 0.27, 0.75, side * 0.62); // the bar's blue lenses
   }
-  // The ladder lies on the roof, two rails with rungs; tool boxes and a hose reel beside it.
-  for (const z of [-0.45, 0.45]) box('#c4c8cb', -L + 0.3, cx - 0.3, top, top + 0.2, 0.08, z);
-  for (let x = -L + 0.5; x < cx - 0.3; x += 0.4) box('#9a9fa3', x - 0.03, x + 0.03, top + 0.12, top + 0.18, 0.9);
-  for (const z of [-0.95, 0.95]) box('#a8adb1', -L + 0.5, cx - 0.6, top, top + 0.12, 0.3, z);
-  box('#a8adb1', cx + 0.1, L - 0.3, cabTop, cabTop + 0.06, W - 0.6); // the cab's roof rail
-  // Red and white chevrons across the back.
-  for (let i = 0; i < 6; i++) box(i % 2 ? '#d8d8d4' : '#c4161c', -L - 0.04, -L + 0.04, 1.1, 1.5, (W - 0.3) / 6, -W / 2 + 0.15 + (i + 0.5) * ((W - 0.3) / 6));
-  box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
+  // On the roof: the deck, the ladder on the right, two suction hoses on the left, a
+  // locker, a hatch and the folded light mast between them.
+  box('#a3a8ac', -L + 0.1, cx - 0.1, top, top + 0.03, W - 0.2);
+  for (const x of [-L + 0.05, cx - 0.11]) box('#c9cdd0', x, x + 0.06, top, top + 0.22, W - 0.12);
+  for (const z of [0.55, 0.95]) box('#d9dcde', -L + 0.7, cx - 0.4, top + 0.1, top + 0.2, 0.07, z);
+  for (let x = -L + 0.85; x < cx - 0.45; x += 0.33) box('#c2c6c9', x - 0.025, x + 0.025, top + 0.12, top + 0.17, 0.4, 0.75);
+  for (const z of [-0.6, -0.92]) {
+    box('#33363a', -L + 0.5, cx - 0.9, top + 0.03, top + 0.18, 0.15, z);
+    for (const x of [-L + 0.5, cx - 1.02]) box('#c4c8cb', x, x + 0.12, top + 0.03, top + 0.2, 0.17, z); // couplings
+  }
+  box('#8f9499', -L + 0.6, -L + 1.9, top + 0.03, top + 0.3, 0.6, -0.02);
+  box('#d8d8d4', -1.2, -0.5, top + 0.03, top + 0.08, 0.6, -0.02);
+  box('#55595d', 0, 0.85, top + 0.03, top + 0.2, 0.25, -0.02);
+  // The cab's roof: a hatch, and the light bar across the front of it.
+  box('#a8adb1', cx + 0.5, cx + 1.3, cabTop, cabTop + 0.05, 0.8);
+  box('#1b1f2a', L - 0.75, L - 0.35, cabTop, cabTop + 0.1, W - 0.5);
+  box('#dfe3e6', L - 0.7, L - 0.4, cabTop + 0.1, cabTop + 0.24, 0.45);
+  // At the back the pump's shutter, and red and yellow chevrons under it.
+  box(alu, -L - 0.02, -L + 0.03, 1.6, 2.6, W - 0.5);
+  for (let i = 0; i < 6; i++) box(i % 2 ? '#e8d21a' : '#c4161c', -L - 0.04, -L + 0.04, 1.1, 1.5, (W - 0.3) / 6, -W / 2 + 0.15 + (i + 0.5) * ((W - 0.3) / 6));
+  box('#e3e5e0', L + 0.17, L + 0.21, 0.36, 0.48, 0.52); // number plate
   // HASIČI on the band, read from the front: the right-hand side of someone facing the
   // engine is -z, so the letters run from +z to -z.
   const px = 0.05, word = [...'HASIČI'], pitch = 6 * px, z0 = (word.length * pitch - px) / 2;
@@ -467,8 +516,7 @@ function fireGeometry(S: CarSpec): THREE.BufferGeometry {
     });
   });
   wheel(L - 1.45, W);
-  wheel(-L + 1.5, W, true);
-  wheel(-L + 2.8, W, true);
+  wheel(axle, W, true);
   return done();
 }
 
@@ -554,6 +602,8 @@ export async function loadCars(url = 'cars.glb') {
   bodies = gltf.scene;
 }
 
+// How much of its own colour a lamp that's on gives off.
+export const LAMP_GLOW = 1.6;
 const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 // The bodies are open shells, not closed solids. three.js draws only the back faces into the
 // shadow map by default, so the roof and bonnet (front faces from the sun) cast nothing and
@@ -566,21 +616,32 @@ material.onBeforeCompile = (sh) => {
   sh.vertexShader = sh.vertexShader
     .replace('#include <common>', `#include <common>
 attribute float painted;
-attribute vec3 paint;
+attribute vec4 paint;
 attribute vec3 hinge;
 attribute vec4 doors;
+varying float vLit;
 vec2 swing(vec2 p) {
   if (hinge.z < .5) return p;
   float a = hinge.z < 1.5 ? -doors.x : hinge.z < 2.5 ? doors.y : hinge.z < 3.5 ? -doors.z : doors.w;
   float c = cos(a), s = sin(a);
   return vec2(p.x * c + p.y * s, p.y * c - p.x * s);
 }`)
-    .replace('#include <color_vertex>', '#include <color_vertex>\nvColor.rgb *= mix(vec3(1.), paint, painted);')
+    // A lamp: dark when it's broken, glowing when it's on (the same in TSL: webgpu/vehicles.ts).
+    .replace('#include <color_vertex>', `#include <color_vertex>
+float lamp = floor(painted * .5 + .01);
+vColor.rgb *= mix(vec3(1.), paint.rgb, painted - 2. * lamp);
+vLit = 0.;
+if (lamp > .5) {
+  float tail = mod(floor(paint.w / 32.), 4.);
+  vLit = lamp < 2.5 ? mod(floor(paint.w / 16.), 2.) : tail > 1.5 ? 1.5 : tail * .45;
+  if (mod(floor(paint.w / exp2(lamp - 1.)), 2.) > .5) { vLit = -1.; vColor.rgb = vec3(.05, .05, .055); }
+}`)
     .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal.xz = swing(objectNormal.xz);')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
   sh.uniforms.uSnow = SNOW;
   sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', '#include <common>\nuniform float uSnow;')
+    .replace('#include <common>', '#include <common>\nuniform float uSnow;\nvarying float vLit;')
+    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * max(vLit, 0.) * ${LAMP_GLOW.toFixed(2)};`)
     .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
   if (uSnow > .01) {
     float up = dot(normal, (viewMatrix * vec4(0., 1., 0., 0.)).xyz);
@@ -653,6 +714,11 @@ export class Car {
   door?: Float32Array;
   // How hard the back and front tyres scrub the road (0–1), for their marks (skids.ts).
   skidBack = 0; skidFront = 0;
+  // Which lamps are smashed (bits of LAMP), and whether the brake lights are on.
+  broken = 0;
+  braking = false;
+  // A police car with the frame on its nose, which keeps its headlamps from breaking.
+  ram?: boolean;
   _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number]; stamp?: number;
 
   constructor(type: string, r: () => number, x = 0, y = 0, h = 0, colour?: string, box?: string) {
@@ -724,6 +790,29 @@ export class Car {
     return [this.x + c * along - s * left, this.y + s * along + c * left];
   }
 
+  // Fits the ram frame (a police car's).
+  armour() {
+    if (this.ram || this.burnt) return;
+    this.ram = true;
+    this.broken &= ~(LAMP.headLeft | LAMP.headRight);
+    this.key = bodyKey(this.type, RAM);
+    carGeometry(this.type, RAM);
+  }
+
+  // Something hit the car at (x, y) at `force` m/s: a lamp the blow lands on is smashed.
+  // The harder the knock, the further from it a lamp still breaks.
+  knock(x: number, y: number, force: number) {
+    if (this.two || force < BREAKS || this.broken === 15) return;
+    const c = Math.cos(this.h), s = Math.sin(this.h), dx = x - this.x, dy = y - this.y;
+    const L = this.spec.L / 2, W = this.spec.W / 2;
+    const along = clamp(dx * c + dy * s, -L, L), left = clamp(dy * c - dx * s, -W, W);
+    const reach = Math.min(1.3, 0.5 + 0.08 * (force - BREAKS)) * Math.max(1, W / 0.95);
+    for (const [bit, a, l] of [[LAMP.headLeft, L, W - 0.3], [LAMP.headRight, L, 0.3 - W], [LAMP.tailLeft, -L, W - 0.3], [LAMP.tailRight, -L, 0.3 - W]]) {
+      if (this.ram && a > 0) continue;
+      if (Math.hypot(along - a, left - l) < reach) this.broken |= bit;
+    }
+  }
+
   // Choose (or choose again) which model of its type this is, by the variants' weights.
   refit(r: () => number, app = false) {
     const options = VARIANTS[this.type];
@@ -785,6 +874,8 @@ export class Car {
     // (for the cars someone is driving hard; the traffic keeps to its lanes as before).
     const road = this.driven ? 1 - (S.weather ?? 1) * (S.drive === 'awd' ? 0.6 : 1) * Math.max(0.25 * WET.value, 0.45 * SNOW.value * STREET_SNOW.value, 0.25 * SNOW.value) : 1;
     const brake = S.brake ?? 16;
+    this.braking = this.driven && ((throttle < 0 && vf > 0.3) || (throttle > 0 && vf < -0.3) || (ctl.handbrake && Math.abs(vf) > 0.3)
+      || (ctl.cap != null && vf > ctl.cap + 0.5));
 
     if (throttle > 0) {
       if (vf < -0.3) vf = Math.min(0, vf + brake * road * dt);
@@ -893,6 +984,7 @@ export class Car {
     const rx = cx / hits - this.x, ry = cy / hits - this.y;
     this.w += (rx * ny - ry * nx) * vn * 0.09;
     this.damage += Math.max(0, -vn - (this.spec.tough ?? 3));
+    this.knock(cx / hits, cy / hits, -vn);
     return -vn;
   }
 
@@ -906,13 +998,14 @@ export class Car {
 
   // Charred: the same body, drawn nearly black (one wreck colour for each type).
   burn() {
-    const k = `${this.type}|burnt`;
+    const fit = this.courier ?? (this.ram ? RAM : undefined);
+    const k = `${this.type}${this.ram ? '|ram' : ''}|burnt`;
     if (!cache.has(k)) {
-      const g = carGeometry(this.type, this.courier).clone(), col = g.getAttribute('color');
+      const g = carGeometry(this.type, fit).clone(), col = g.getAttribute('color');
       const painted = g.getAttribute('painted'), paint = new THREE.Color(this.paint);
       if (col) for (let i = 0; i < col.count; i++) {
         // Reproduce the old baked colour before charring the first wreck of a type.
-        const tint = painted.getX(i);
+        const tint = painted.getX(i) === 1 ? 1 : 0;
         const v = 0.02 + 0.05 * (col.getX(i) * (1 + (paint.r - 1) * tint)
           + col.getY(i) * (1 + (paint.g - 1) * tint) + col.getZ(i) * (1 + (paint.b - 1) * tint)) / 3;
         col.setXYZ(i, v, v, v * 1.05);
@@ -922,6 +1015,7 @@ export class Car {
     }
     this.key = k;
     this.burnt = true;
+    this.braking = false;
   }
 
   sync() {} // drawn by CarPool each frame
@@ -1039,7 +1133,7 @@ export class CarPool {
       geometry.setAttribute(name, attr);
     }
     if (body.index) (body.index as THREE.BufferAttribute & { shared?: boolean }).shared = true;
-    const paint = new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 3).fill(1), 3);
+    const paint = new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4).fill(1), 4);
     geometry.setAttribute('paint', paint);
     // (Bodies without doors still need the attributes the shader reads.)
     if (!body.getAttribute('hinge')) {
@@ -1115,6 +1209,9 @@ export class CarPool {
     }
     const d = this.dummy;
     let riders = 0, nb = 0;
+    // By night the cars that are driving have their lamps on (as in lamps.ts); the brake
+    // lights show by day as well.
+    const night = LAMP_ON.value > 0.005;
     for (const [k, list] of this.groups) {
       let pages = this.meshes.get(k);
       if (!pages) { this.latePages++; this.page(k); pages = this.meshes.get(k)!; }
@@ -1136,7 +1233,9 @@ export class CarPool {
         m.setMatrixAt(slot, d.matrix);
         let paint = this.colours.get(c.paint);
         if (!paint) { paint = new THREE.Color(c.paint); this.colours.set(c.paint, paint); }
-        (m.geometry.getAttribute('paint') as THREE.InstancedBufferAttribute).setXYZ(slot, paint.r, paint.g, paint.b);
+        const on = night && !c.burnt && !(c.mode === 'loose' && c.speed < 0.5);
+        const lamps = c.broken + (on ? 16 : 0) + (c.braking && c.mode !== 'loose' ? 64 : on ? 32 : 0);
+        (m.geometry.getAttribute('paint') as THREE.InstancedBufferAttribute).setXYZW(slot, paint.r, paint.g, paint.b, lamps);
         if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
         const ref = c.line?.ref.trim();
         if (ref && !c.burnt && (c.type === 'bus' || c.type === 'minibus')) {
@@ -1206,6 +1305,8 @@ export class CarPool {
   }
 }
 
+// Where the last two bodies that collided met.
+export const contact = { x: 0, y: 0 };
 // Circle-based collision between two bodies. `ia`/`ib` are inverse masses (0 = immovable).
 // Returns the closing speed at contact, or 0 if they don't touch.
 export function collideBodies(a: Body, ca: Point2[], ra: number, ia: number, b: Body, cb: Point2[], rb: number, ib: number, restitution = 0.25) {
@@ -1219,6 +1320,8 @@ export function collideBodies(a: Body, ca: Point2[], ra: number, ia: number, b: 
   }
   if (!best || ia + ib === 0) return best ? 0.001 : 0;
   const { pen, nx, ny } = best;
+  contact.x = best.px;
+  contact.y = best.py;
   const sa = ia / (ia + ib), sb = ib / (ia + ib);
   a.x -= nx * pen * sa;
   a.y -= ny * pen * sa;

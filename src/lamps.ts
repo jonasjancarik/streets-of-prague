@@ -164,7 +164,8 @@ function cast(segs: Seg[], px: number, py: number, dx: number, dy: number, max: 
 
 interface Street { hw: string; pts: [number, number][]; tunnel?: boolean; bridge?: boolean }
 interface LitTram { parts: { x: number; y: number; ang: number }[]; look: unknown; levels?: { gz?: number }[] }
-export interface LitCar { x: number; y: number; h: number; spec: { L: number; W: number; H: number }; mode: string; two?: string; speed: number }
+// `broken`: which of its lamps are smashed (LAMP in car.ts: 1 and 2 the headlamps left and right, 4 and 8 the tail lamps).
+export interface LitCar { x: number; y: number; h: number; spec: { L: number; W: number; H: number }; mode: string; two?: string; speed: number; broken?: number; braking?: boolean }
 
 // What gets in the lamps' way, as boxes: the cars, and with LAMP_SHADOWS at 3 the people,
 // the trams' sections and the posts. A texel each, two rows in a float
@@ -787,18 +788,25 @@ export class Lamps {
       if (c.mode === 'loose' && c.speed < 0.5) return; // parked: lights off
       const fx0 = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
       const z = this.carZ[ci], own = this.carIndex.get(c) ?? -1;
-      add(c.x + fx0 * L, c.y + fy * L, z, 1, fx0, fy, c.two ? 16 : 24, c.two ? 3 : 5, HEAD, c.two ? 1.2 : 2.2, 0.75, own);
+      // A smashed lamp is dark: with one headlamp left the beam is narrower and to its side.
+      const broken = c.two ? 0 : c.broken ?? 0, heads = broken & 3, brake = c.braking ? 2.4 : 1;
+      if (!heads) add(c.x + fx0 * L, c.y + fy * L, z, 1, fx0, fy, c.two ? 16 : 24, c.two ? 3 : 5, HEAD, c.two ? 1.2 : 2.2, 0.75, own);
+      else if (heads < 3) {
+        const across = (heads === 1 ? -1 : 1) * (W - 0.3);
+        add(c.x + fx0 * L - fy * across, c.y + fy * L + fx0 * across, z, 1, fx0, fy, 22, 3.2, HEAD, 1.3, 0.75, own);
+      }
       // The rear lights shine backwards onto the road from the bumper, a short beam from
       // each (not a round pool on the car, which would redden its roof and bonnet).
       for (const s of c.two ? [0] : [-1, 1]) {
         const across = s * (W - 0.3);
-        add(c.x - fx0 * L - fy * across, c.y - fy * L + fx0 * across, z, 1, -fx0, -fy, c.two ? 2 : 3.5, c.two ? 0.6 : 1.2, TAIL, c.two ? 0.3 : 0.22, 0.75, own);
-        if (fx) fx.beam(c.x + fx0 * (L - 0.05) - fy * across, c.y + fy * (L - 0.05) + fx0 * across, z + 0.75, fx0, fy, c.two ? 11 : 16, c.two ? 1.3 : 1.9, HEAD, 1);
+        if (!(broken & (s > 0 ? 4 : 8))) add(c.x - fx0 * L - fy * across, c.y - fy * L + fx0 * across, z, 1, -fx0, -fy, c.two ? 2 : 3.5, c.two ? 0.6 : 1.2, TAIL, (c.two ? 0.3 : 0.22) * brake, 0.75, own);
+        if (fx && !(broken & (s > 0 ? 1 : 2))) fx.beam(c.x + fx0 * (L - 0.05) - fy * across, c.y + fy * (L - 0.05) + fx0 * across, z + 0.75, fx0, fy, c.two ? 11 : 16, c.two ? 1.3 : 1.9, HEAD, 1);
       }
       // Two headlights and two rear lights (one each on a bike).
-      for (const [along, colour, size] of [[L - 0.05, HEAD, 0.9], [-L - 0.05, TAIL, 0.5]] as [number, THREE.Color, number][]) {
+      for (const [along, colour, size, left] of [[L - 0.05, HEAD, 0.9, 1], [-L - 0.05, TAIL, c.braking ? 0.8 : 0.5, 4]] as [number, THREE.Color, number, number][]) {
         for (const s of c.two ? [0] : [-1, 1]) {
           if (g >= this.glows.instanceMatrix.count) break;
+          if (broken & (s > 0 ? left : left * 2)) continue;
           const across = s * (W - 0.3);
           d.position.set(c.x + fx0 * along - fy * across, z + 0.75, -(c.y + fy * along + fx0 * across));
           d.scale.set(size, 1, size);

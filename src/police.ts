@@ -66,6 +66,7 @@ const STARS = [1, 4, 9, 16, 25]; // heat for each star
 const CHASERS = [0, 1, 2, 3, 4, 6]; // police cars after you, by stars
 const HELIS = [0, 0, 0, 1, 1, 1];
 const PATROLS = 3;
+const RAMS = [0.15, 0.2, 0.35, 0.5, 0.7, 0.85]; // how many of the cars sent after you carry the ram frame, by stars
 const POINTS = { knock: 1, carjack: 1, wreck: 0.6, hitCop: 2, stealCop: 3, stealTram: 1.5, blowUp: 1.5, blowUpCop: 3, fareDodge: 2 };
 // What each is called in the statistics (src/telemetry.ts).
 const CRIME_NAMES: Record<keyof typeof POINTS, string> = {
@@ -469,6 +470,7 @@ export class Police {
       if (d < 90 || d > 250 || !this.offscreen(q.x, q.y)) continue;
       const car = new Car('police', this.r, q.x, q.y, q.ang);
       if (car.worldSamples().some(([sx, sy]) => this.grid.at(sx, sy))) continue;
+      if (this.r() < RAMS[this.stars]) car.armour();
       this.enlist(car);
       return true;
     }
@@ -649,10 +651,11 @@ export class Police {
     this.spawnT -= dt;
     if (patrols.length < PATROLS && this.spawnT < 0) {
       this.spawnT = 2;
-      this.traffic.spawn((x, y) => {
+      const patrol = this.traffic.spawn((x, y) => {
         const d = Math.hypot(x - me.x, y - me.y);
         return d > 80 && d < 320 && this.offscreen(x, y);
       }, this.edgesNear(me.x, me.y, 320), 'police');
+      if (patrol && this.r() < RAMS[0]) patrol.car.armour();
     }
 
     // Speeding past the police.

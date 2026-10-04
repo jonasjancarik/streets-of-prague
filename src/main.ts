@@ -6,7 +6,7 @@ import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
 import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
-import { Car, TYPES, CarPool, collideBodies, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
+import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { loadKit } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
@@ -1111,7 +1111,7 @@ async function main() {
     const [lon, lat] = dev.toLonLat(who.x, who.y);
     return {
       v: 1, area: AREA, at: Date.now(), lat, lon, heading: ((((90 - (who.h * 180) / Math.PI) % 360) + 360) % 360), street,
-      car: c ? { type: c.type, paint: c.paint, box: c.courier, variant: c.modelName, damage: c.damage, radio: c.radio } : null,
+      car: c ? { type: c.type, paint: c.paint, box: c.courier, variant: c.modelName, damage: c.damage, radio: c.radio, broken: c.broken, ram: c.ram } : null,
       money: wallet.balance, ticket: wallet.held, health: health.value, heat: police.heat,
       clock: clock.t, season: season.day, weather: { kind: weather.kind, fixed: weather.fixed },
     };
@@ -1140,6 +1140,8 @@ async function main() {
     if (s.car.variant) car.setVariant(s.car.variant);
     car.damage = s.car.damage;
     car.radio = s.car.radio;
+    if (s.car.ram) car.armour();
+    car.broken = s.car.broken ?? 0;
     for (let i = loose.length - 1; i >= 0; i--) if (Math.hypot(loose[i].x - car.x, loose[i].y - car.y) < 5) loose.splice(i, 1);
     car.mode = 'loose';
     loose.push(car);
@@ -1538,6 +1540,8 @@ async function main() {
     bags.update(dt, px(), py());
 
     // ---- Collisions ------------------------------------------------------
+    // Two cars that have just met: the lamps the blow landed on break.
+    const smash = (a: Car, b: Car, hit: number) => { a.knock(contact.x, contact.y, hit); b.knock(contact.x, contact.y, hit); };
     const active = [...(inCar ? [inCar] : []), ...movers, ...cops];
     // A car a tram is pushing off its track, even while it still stands.
     for (const c of trams.shoved()) if (!active.includes(c)) active.push(c);
@@ -1561,17 +1565,20 @@ async function main() {
             if (a.mode !== 'police') stats.wrecked++;
             if (a === inCar) police.crime(b.type === 'police' ? 'hitCop' : 'wreck', b.x, b.y, b);
             const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
+            smash(a, b, hit);
             if (a === inCar) jolt = Math.max(jolt, hit);
             if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
             if (a === inCar) fires.blame(b);
           } else {
             const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 0);
+            smash(a, b, hit);
             if (a === inCar) jolt = Math.max(jolt, hit);
             if (a === inCar && b.type === 'police' && (a.vx * (b.x - a.x) + a.vy * (b.y - a.y)) / d > 3) police.crime('hitCop', b.x, b.y, b);
           }
           continue;
         }
         const hit = collideBodies(a, ca, a.r, 1 / a.mass, b, cb, b.r, 1 / b.mass);
+        smash(a, b, hit);
         if (a === inCar || b === inCar) jolt = Math.max(jolt, hit);
         if (hit > 8) { a.damage += hit - 8; b.damage += hit - 8; }
         if (hit > 8 && a === inCar) fires.blame(b);

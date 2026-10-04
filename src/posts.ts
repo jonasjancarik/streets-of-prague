@@ -122,6 +122,7 @@ export function bump(car: Car, p: { x: number; y: number; r: number; tough: numb
     car.vx -= p.give * vn * nx;
     car.vy -= p.give * vn * ny;
     car.damage += p.give * 2;
+    car.knock(p.x, p.y, -vn * p.give);
     return -vn * p.give;
   }
   car.vx -= 1.3 * vn * nx;
@@ -132,6 +133,7 @@ export function bump(car: Car, p: { x: number; y: number; r: number; tough: numb
   const rx = p.x - car.x, ry = p.y - car.y;
   car.w += (rx * ny - ry * nx) * vn * 0.09;
   car.damage += Math.max(0, -vn - (car.spec.tough ?? 3));
+  car.knock(p.x, p.y, -vn);
   return -vn;
 }
 
