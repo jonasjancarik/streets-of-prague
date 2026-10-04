@@ -96,6 +96,14 @@ targeted behaviour evidence, not a citywide driving or performance comparison.
 The [durable captures, measurements and replay snippets](evidence/parking-clearance-2026-10-03/README.md)
 record the baseline reconstruction and the controls used.
 
+Two-way streets narrower than `SINGLE_LANE` (4.6 m, `src/network.ts`) are single lane:
+cars drive a little off the axis (width/2 - 0.95 m, at least 0.5 m) and slowly (5 m/s
+at most), and meet by squeezing past. Streets outside the technical map get their
+width from `pipeline/lanes.py` (by class and setting, cut to the room between the
+buildings), so many village streets are 5.5 m, and some under 4.6 m.
+`node scripts/check-narrow-lanes.mjs` runs two cars head-on through the real updater on
+3.75, 4.0 and 4.5 m streets.
+
 ## The data
 
 `TRAFFIC_LOAD` is made by `pipeline/build_traffic_profile.py`:
