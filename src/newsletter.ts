@@ -6,8 +6,7 @@ import { privacyLink } from './credits.ts';
 // Signing up for news about the game by email: a link on the start screen and in the
 // settings, which opens a small form. The address goes to the site's own
 // /api/subscribe (worker/index.js), which passes it to the newsletter service; that
-// emails a link to confirm, and the link comes back here with ?subscribed (or
-// ?subscribed=failed when the link was bad or had run out).
+// sends an email with a link to confirm, and the link comes back here with ?subscribed.
 // A build with no address for it (local development, or before the newsletter is set
 // up: deploy/newsletter) shows none of this.
 //
@@ -29,7 +28,7 @@ const loadTurnstile = () => (script ??= new Promise<void>((resolve, reject) => {
   s.onerror = () => { script = null; s.remove(); reject(new Error('Turnstile did not load')); };
   document.head.appendChild(s);
 }));
-const subscribed = new URLSearchParams(location.search).get('subscribed');
+const confirmed = new URLSearchParams(location.search).has('subscribed');
 
 export const el = (tag: string, cls: string, parent: HTMLElement) => {
   const e = document.createElement(tag);
@@ -192,11 +191,10 @@ export function signupFields(d: HTMLElement, { focus = false, done: onDone = () 
 // in the email reads that it worked instead.
 export function newsletterLink(parent: HTMLElement, cls: string, { thanks = false, before = () => {} } = {}) {
   if (!URL_) return;
-  if (thanks && subscribed !== null) {
-    const failed = subscribed === 'failed';
+  if (thanks && confirmed) {
     const note = el('div', `${cls} done`, parent);
-    onLang(() => { note.textContent = t(failed ? 'That confirmation link didn\'t work, or it has run out. Please sign up again.' : 'Your email address is confirmed. You\'ll hear when there is something new in the game.'); });
-    if (!failed) return;
+    onLang(() => { note.textContent = t('Your email address is confirmed. You\'ll hear when there is something new in the game.'); });
+    return;
   }
   const link = el('button', cls, parent) as HTMLButtonElement;
   link.type = 'button';

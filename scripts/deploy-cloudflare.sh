@@ -29,7 +29,7 @@ node scripts/check-worker.mjs
 # The newsletter and feedback (deploy/newsletter, deploy/feedback): the game shows each
 # form once it is set up.
 set -a; source deploy/newsletter; source deploy/feedback; set +a
-if [[ -n ${BREVO_LIST_ID:-} && -n ${NEWS_FROM:-} ]]; then export VITE_SUBSCRIBE_URL=/api/subscribe; fi
+if [[ -n ${BREVO_LIST_ID:-} && -n ${BREVO_DOI_TEMPLATE_ID:-} ]]; then export VITE_SUBSCRIBE_URL=/api/subscribe; fi
 if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=/api/feedback; fi
 if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY; fi
 # Cloudflare Web Analytics counts visits when its site token is in this file (optional).
@@ -70,9 +70,8 @@ console.log(JSON.stringify({
     ASSETS: { type: "assets" },
     BREVO_API_KEY: { type: "secret" },
     BREVO_LIST_ID: text(e.BREVO_LIST_ID),
-    NEWS_FROM: text(e.NEWS_FROM),
-    CONFIRM_SECRET: { type: "secret" },
-    NEWS_EMAIL: { type: "send-email" },
+    BREVO_DOI_TEMPLATE_ID: text(e.BREVO_DOI_TEMPLATE_ID),
+    BREVO_DOI_TEMPLATE_ID_CS: text(e.BREVO_DOI_TEMPLATE_ID_CS),
     BREVO_LANGUAGE_ATTRIBUTE: text(e.BREVO_LANGUAGE_ATTRIBUTE),
     TURNSTILE_SITE_KEY: text(e.TURNSTILE_SITE_KEY),
     ...(e.TURNSTILE_SITE_KEY ? { TURNSTILE_SECRET_KEY: { type: "secret" } } : {}),

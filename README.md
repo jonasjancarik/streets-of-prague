@@ -1122,12 +1122,11 @@ can try five times a minute and only the game's own pages are let in, since ever
 sends an email. Each form stays out of the game until it is set up.
 
 **Newsletter.** The start screen and the settings have a link to sign up for news about
-the game by email (`src/newsletter.ts`). `/api/subscribe` emails a confirmation link
-through Cloudflare's email sending. The link carries the address in a signed token and
-works for a week; opening it (`/api/confirm`) adds the address to a
-[Brevo](https://www.brevo.com) list and leads back to the game, which says so. Until then
-the address is stored nowhere. The confirmation email comes in English or Czech, with the
-game's language picked to begin with. Turnstile, Cloudflare's check that a real browser is
+the game by email (`src/newsletter.ts`). `/api/subscribe` passes the address to
+[Brevo](https://www.brevo.com), which sends an email with a link to confirm; only then
+is the address on the list, and the link leads back to the game, which says so. Nothing
+is stored outside Brevo. The form offers the emails in English or Czech, with the game's
+language picked to begin with. Turnstile, Cloudflare's check that a real browser is
 signing up, keeps scripts from having confirmation emails sent to strangers; most
 players see nothing of it.
 

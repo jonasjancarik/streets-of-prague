@@ -7,11 +7,10 @@ import worker from '../worker/index.js';
 
 const SITE = 'https://streetsofprague.com';
 const BETA = 'https://beta.streetsofprague.com';
-// What the Worker emailed to a player to confirm, what it sent to Brevo, and what Brevo
-// answers; the same for Turnstile's check.
-let confirmations = [], sent = [], checked = [];
-const newsMailer = { send: async (m) => { confirmations.push(m); return { messageId: 'x' }; } };
-const env = { BREVO_API_KEY: 'test-key', BREVO_LIST_ID: '7', CONFIRM_SECRET: 'secret-for-links', NEWS_FROM: 'news@streetsofprague.com', NEWS_EMAIL: newsMailer, ASSETS: { fetch: async () => new Response('asset') } };
+const env = { BREVO_API_KEY: 'test-key', BREVO_LIST_ID: '7', BREVO_DOI_TEMPLATE_ID: '3', ASSETS: { fetch: async () => new Response('asset') } };
+
+// What the Worker sent to Brevo, and what Brevo answers; the same for Turnstile's check.
+let sent = [], checked = [];
 let answer = () => new Response('{}', { status: 201 });
 let verdict = () => new Response('{"success":true}');
 globalThis.fetch = async (url, init) => {
@@ -22,74 +21,28 @@ globalThis.fetch = async (url, init) => {
 console.error = () => {};
 
 const post = (body, { origin = SITE, method = 'POST', e = env, path = '/api/subscribe' } = {}) => {
-  confirmations = []; sent = []; checked = [];
+  sent = []; checked = [];
   return worker.fetch(new Request(`${SITE}${path}`, { method, headers: { Origin: origin, 'Content-Type': 'application/json' }, body: method === 'POST' ? JSON.stringify(body) : undefined }), e);
 };
-// Opening the link in the email.
-const linkOf = (mail) => mail.text.match(/https:\/\/\S+/)[0];
-const open = (link, e = env) => { sent = []; return worker.fetch(new Request(link), e); };
 
-// A signup sends the confirmation email and nothing else: nobody is on the list yet.
 let res = await post({ email: ' player@example.com ', lang: 'en' });
 assert.equal(res.status, 200);
 assert.deepEqual(await res.json(), { ok: true });
-assert.equal(sent.length, 0);
-assert.equal(confirmations.length, 1);
-assert.equal(confirmations[0].to, 'player@example.com');
-assert.deepEqual(confirmations[0].from, { email: 'news@streetsofprague.com', name: 'Streets of Prague' });
-assert.equal(confirmations[0].subject, 'Confirm your email for Streets of Prague news');
-assert.match(linkOf(confirmations[0]), new RegExp(`^${SITE}/api/confirm\\?t=[\\w-]+\\.[\\w-]+$`));
-const link = linkOf(confirmations[0]);
-assert.ok(confirmations[0].html.includes(link));
-
-// The link adds the address to the list and sends the player back to the game.
-res = await open(link);
-assert.equal(res.status, 303);
-assert.equal(res.headers.get('Location'), `${SITE}/?subscribed`);
 assert.equal(sent.length, 1);
-assert.equal(sent[0].url, 'https://api.brevo.com/v3/contacts');
 assert.equal(sent[0].headers['api-key'], 'test-key');
-assert.deepEqual(sent[0].body, { email: 'player@example.com', listIds: [7], updateEnabled: true });
+assert.deepEqual(sent[0].body, { email: 'player@example.com', includeListIds: [7], templateId: 3, redirectionUrl: `${SITE}/?subscribed` });
 
-// A link that was altered, cut short or made with another key adds nobody.
-const [body, sig] = link.split('=')[1].split('.');
-const forged = Buffer.from(JSON.stringify({ e: 'victim@example.com', l: 'en', o: SITE, x: Date.now() + 1e9 })).toString('base64url');
-for (const t of [`${forged}.${sig}`, `${body}.${sig.slice(1)}`, body, '', 'a.b']) {
-  res = await open(`${SITE}/api/confirm?t=${t}`);
-  assert.equal(res.headers.get('Location'), `${SITE}/?subscribed=failed`, `"${t}" should not confirm`);
-  assert.equal(sent.length, 0);
-}
-res = await open(link, { ...env, CONFIRM_SECRET: 'another-key' });
-assert.equal(res.headers.get('Location'), `${SITE}/?subscribed=failed`);
-assert.equal(sent.length, 0);
-res = await open(`${SITE}/api/confirm`);
-assert.equal(res.headers.get('Location'), `${SITE}/?subscribed=failed`);
+// Czech players get the Czech confirmation email when there is one.
+await post({ email: 'hrac@example.cz', lang: 'cs' }, { e: { ...env, BREVO_DOI_TEMPLATE_ID_CS: '4' } });
+assert.equal(sent[0].body.templateId, 4);
+await post({ email: 'hrac@example.cz', lang: 'cs' });
+assert.equal(sent[0].body.templateId, 3);
 
-// It stops working after a week.
-{
-  const now = Date.now;
-  Date.now = () => now() + 8 * 864e5;
-  res = await open(link);
-  Date.now = now;
-  assert.equal(res.headers.get('Location'), `${SITE}/?subscribed=failed`);
-  assert.equal(sent.length, 0);
-}
-
-// Brevo refusing at that point is told to the player, not hidden.
-answer = () => new Response(JSON.stringify({ code: 'unauthorized', message: 'Key not found' }), { status: 401 });
-assert.equal((await open(link)).headers.get('Location'), `${SITE}/?subscribed=failed`);
-answer = () => new Response('{}', { status: 201 });
-
-// Czech players get the Czech email, and the language is kept with the contact where an
-// attribute for it is named; anything but Czech counts as English.
-const lenv = { ...env, BREVO_LANGUAGE_ATTRIBUTE: 'LANGUAGE' };
-await post({ email: 'hrac@example.cz', lang: 'cs' }, { e: lenv });
-assert.match(confirmations[0].subject, /^Potvrď svůj e-mail/);
-await open(linkOf(confirmations[0]), lenv);
+// The language is kept with the contact where an attribute for it is named; anything
+// but Czech counts as English.
+await post({ email: 'hrac@example.cz', lang: 'cs' }, { e: { ...env, BREVO_LANGUAGE_ATTRIBUTE: 'LANGUAGE' } });
 assert.deepEqual(sent[0].body.attributes, { LANGUAGE: 'cs' });
-await post({ email: 'player@example.com', lang: 'xx' }, { e: lenv });
-assert.equal(confirmations[0].subject, 'Confirm your email for Streets of Prague news');
-await open(linkOf(confirmations[0]), lenv);
+await post({ email: 'player@example.com', lang: 'xx' }, { e: { ...env, BREVO_LANGUAGE_ATTRIBUTE: 'LANGUAGE' } });
 assert.deepEqual(sent[0].body.attributes, { LANGUAGE: 'en' });
 
 // With Turnstile set up, a signup needs a token that Cloudflare vouches for.
@@ -97,28 +50,27 @@ const tenv = { ...env, TURNSTILE_SITE_KEY: 'site', TURNSTILE_SECRET_KEY: 'secret
 res = await post({ email: 'player@example.com', token: 'good' }, { e: tenv });
 assert.equal(res.status, 200);
 assert.deepEqual(checked, [{ secret: 'secret', response: 'good' }]);
-assert.equal(confirmations.length, 1);
+assert.equal(sent.length, 1);
 res = await post({ email: 'player@example.com' }, { e: tenv });
 assert.equal(res.status, 403);
 assert.deepEqual(await res.json(), { error: 'check' });
 assert.equal(checked.length, 0);
-assert.equal(confirmations.length, 0);
+assert.equal(sent.length, 0);
 verdict = () => new Response('{"success":false,"error-codes":["invalid-input-response"]}');
 assert.equal((await post({ email: 'player@example.com', token: 'forged' }, { e: tenv })).status, 403);
-assert.equal(confirmations.length, 0);
+assert.equal(sent.length, 0);
 verdict = () => { throw new Error('unreachable'); };
 assert.equal((await post({ email: 'player@example.com', token: 'good' }, { e: tenv })).status, 403);
 verdict = () => new Response('{"success":true}');
 // The widget is in the form but the secret is missing: nothing gets through unchecked.
 assert.equal((await post({ email: 'player@example.com', token: 'good' }, { e: { ...tenv, TURNSTILE_SECRET_KEY: undefined } })).status, 503);
-assert.equal(confirmations.length, 0);
+assert.equal(sent.length, 0);
 
 // The beta signs up through production, and is sent back to the beta.
 res = await post({ email: 'player@example.com' }, { origin: BETA });
 assert.equal(res.status, 200);
 assert.equal(res.headers.get('Access-Control-Allow-Origin'), BETA);
-assert.match(linkOf(confirmations[0]), new RegExp(`^${SITE}/api/confirm`));
-assert.equal((await open(linkOf(confirmations[0]))).headers.get('Location'), `${BETA}/?subscribed`);
+assert.equal(sent[0].body.redirectionUrl, `${BETA}/?subscribed`);
 res = await post(null, { origin: BETA, method: 'OPTIONS' });
 assert.equal(res.status, 204);
 assert.equal(res.headers.get('Access-Control-Allow-Origin'), BETA);
@@ -126,33 +78,30 @@ assert.equal(res.headers.get('Access-Control-Allow-Origin'), BETA);
 // Other sites can't.
 res = await post({ email: 'player@example.com' }, { origin: 'https://example.com' });
 assert.equal(res.status, 403);
-assert.equal(confirmations.length, 0);
+assert.equal(sent.length, 0);
 
 for (const email of ['', 'nobody', 'a@b', 'two words@example.com', `${'x'.repeat(250)}@example.com`, 42]) {
   res = await post({ email });
   assert.equal(res.status, 400, `"${email}" should be refused`);
-  assert.equal(confirmations.length, 0);
+  assert.equal(sent.length, 0);
 }
 
 // The hidden field filled in: looks like it worked, nothing is sent.
 res = await post({ email: 'bot@example.com', website: 'https://spam.example' });
 assert.equal(res.status, 200);
-assert.equal(confirmations.length, 0);
+assert.equal(sent.length, 0);
 
 res = await post({ email: 'player@example.com' }, { e: { ...env, RATE: { limit: async () => ({ success: false }) } } });
 assert.equal(res.status, 429);
-assert.equal(confirmations.length, 0);
+assert.equal(sent.length, 0);
 
-// Anything missing from the setup: the form says it is unavailable, and nothing is sent.
-for (const gone of ['BREVO_API_KEY', 'BREVO_LIST_ID', 'CONFIRM_SECRET', 'NEWS_FROM', 'NEWS_EMAIL']) {
-  res = await post({ email: 'player@example.com' }, { e: { ...env, [gone]: undefined } });
-  assert.equal(res.status, 503, gone);
-  assert.equal(confirmations.length, 0);
-}
+res = await post({ email: 'player@example.com' }, { e: { ...env, BREVO_API_KEY: undefined } });
+assert.equal(res.status, 503);
 
-// The email not going out is reported.
-res = await post({ email: 'player@example.com' }, { e: { ...env, NEWS_EMAIL: { send: async () => { throw new Error('not allowed'); } } } });
-assert.equal(res.status, 502);
+answer = () => new Response(JSON.stringify({ code: 'invalid_parameter', message: 'Invalid email address' }), { status: 400 });
+assert.equal((await post({ email: 'player@example.com' })).status, 400);
+answer = () => new Response(JSON.stringify({ code: 'unauthorized', message: 'Key not found' }), { status: 401 });
+assert.equal((await post({ email: 'player@example.com' })).status, 502);
 
 assert.equal((await post(null, { method: 'GET' })).status, 405);
 // Everything else is the game's files.
