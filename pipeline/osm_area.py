@@ -71,6 +71,8 @@ SURVEYED = 0.5
 SETT_REACH = 4.0
 FENCE_TOLERANCE = 0.25  # m: how far a fence's line may be straightened
 GRID = 0.01  # metres, for overlaying the survey's surface
+SPARSE_OTHER = 0.04  # of a block's area: a few shops or sheds in a mostly empty block don't make it commercial
+SETTLED_REACH = 30.0  # m: how far from a family house unmapped land counts as its surroundings
 
 
 def road_width(hw, width=None, lanes=None):
@@ -406,13 +408,18 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     timer.lap("cobble_voronoi")
     # Route-only links may cross the housing-estate lawns inferred from blocks,
     # or surveyed green that OSM hasn't mapped. Decide after those surfaces too.
-    gardens, plot_fences = _gardens(homes, buildings, streets, clip,
-                                    [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls])
-    fences.extend(plot_fences)
-    timer.lap("gardens")
     land = {f"dtm_{kind}": _areas(geom.intersection(clip))
             for kind, geom in dtm.land((w, s, e, n), tf.transform).items()}
     timer.lap("dtm_land")
+    # Where family houses stand on land nobody mapped (no residential area, no survey,
+    # no mapped use), that land is gardens and meadow too, not pavement.
+    spoken_for = [*(g for k, v in areas.items() if k not in NATURAL_GROUND for g in v),
+                  *(g for v in road_lines.values() for g in v), *land.values(), *(p for p, _, _ in squares)]
+    gardens, plot_fences = _gardens(homes, buildings, streets, clip,
+                                    [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls],
+                                    unmapped=unary_union(spoken_for) if spoken_for else Polygon())
+    fences.extend(plot_fences)
+    timer.lap("gardens")
     natural = unary_union([gardens, *(g for k in NATURAL_GROUND for g in areas.get(k, [])),
                           *(g for k, g in land.items()
                             if k in ("dtm_green", "dtm_garden", "dtm_wood", "dtm_pitch"))])
@@ -605,7 +612,7 @@ NOT_HOMES = {"commercial", "retail", "office", "industrial", "warehouse", "schoo
              "public", "civic", "government", "church", "hotel", "dormitory", "kindergarten"}
 
 
-def _gardens(homes, buildings, streets, clip, barriers=()):
+def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None):
     """OSM maps a suburb or a housing estate as one residential area and rarely maps
     the gardens and lawns in it, so the ground between the buildings would all be
     paved. Cut the residential areas along the streets (not service roads) into blocks.
@@ -617,15 +624,28 @@ def _gardens(homes, buildings, streets, clip, barriers=()):
     along its edges; these are returned as fences, apart from where OSM maps a barrier
     (`barriers`). Returns (the gardens, those fences)."""
     region = unary_union(homes).intersection(clip) if homes else Polygon()
-    if region.is_empty:
-        return Polygon(), []
-    blocks = _polys(region.difference(unary_union(streets)) if streets else region)
     shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
     tree = STRtree(shapes)
+    # Land in no residential area but round family houses, in no mapped use either
+    # (`unmapped` is what is spoken for): green too, without plots and fences.
+    implied = Polygon()
+    if unmapped is not None:
+        family = [shapes[k] for k, b in enumerate(buildings) if not b["part"] and shapes[k].area <= 350
+                  and b["kind"] not in NOT_HOMES | OUTBUILDINGS | {"apartments"}]
+        if family:
+            implied = unary_union([h.buffer(SETTLED_REACH) for h in family]).intersection(clip)
+            implied = implied.difference(unmapped).difference(region)
+            implied = implied.buffer(-3).buffer(3)  # not the slivers between things
+    if region.is_empty and implied.is_empty:
+        return Polygon(), []
+    cut = unary_union(streets) if streets else None
+    blocks = [(b, True) for b in _polys(region.difference(cut) if cut is not None else region)] if not region.is_empty else []
+    if not implied.is_empty:
+        blocks += [(b, False) for b in _polys(implied.difference(cut) if cut is not None else implied)]
     out, fences = [], []
     street_edge = unary_union(streets).buffer(1.5) if streets else Polygon()
     mapped = unary_union([b.buffer(1.0) for b in barriers]) if len(barriers) else Polygon()
-    for block in blocks:
+    for block, plots in blocks:
         if block.area < 100:
             continue
         near = tree.query(block, predicate="intersects")
@@ -637,11 +657,11 @@ def _gardens(homes, buildings, streets, clip, barriers=()):
         other = sum(shapes[k].area for k in main if buildings[k]["kind"] in NOT_HOMES)
         houses = sum(shapes[k].area for k in main if shapes[k].area <= 350 and buildings[k]["kind"] not in NOT_HOMES | {"apartments"})
         share = covered / block.area
-        if other > 0.3 * covered or not (share < 0.3 or (houses >= 0.7 * covered and share < 0.45)):
+        if (other > 0.3 * covered and other > SPARSE_OTHER * block.area) or not (share < 0.3 or (houses >= 0.7 * covered and share < 0.45)):
             continue
         green = block.difference(unary_union([shapes[k].buffer(0.8 if shapes[k].area <= 350 else 2) for k in near]))
         out.append(green)
-        if houses >= 0.7 * covered:
+        if plots and houses >= 0.7 * covered:
             fences.extend(_plot_fences(block, green, [(buildings[k]["id"], shapes[k]) for k in main], street_edge, mapped))
     return (unary_union(out) if out else Polygon()), fences
 
