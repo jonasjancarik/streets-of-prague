@@ -168,6 +168,9 @@ one in real time, "Run all" lists which pass.
 - Tiles near where you go are loaded by `t.go` / `t.camera({ at })`; far from you,
   traffic and people aren't spawned, so the free camera shows empty streets away from
   the player.
+- Parked cars are drawn only within the normal camera's view radius of the free camera's
+  target. A top-down `t.camera({ height: 363 })` of a street shows no cars until you
+  `t.view(4)` first (`t.view(1)` afterwards); counting `tile.cars` doesn't need it.
 - Import game modules through `t`, not by URL: after an edit Vite serves a file under a
   versioned URL, and importing it again gives a second, empty copy (that's how
   `posts` once looked empty).

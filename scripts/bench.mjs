@@ -83,6 +83,7 @@ const PLACES = {
   slatiny: { start: '14.4845,50.0610', drive: false }, // Na Slatinách, Strašnice: garden suburb, many shrubs
   park: { start: '14.4275,50.0930', drive: false },   // Letná park
   suburb: { start: '14.4760,50.0520', drive: false }, // Vršovice/Strašnice edge: gardens
+  estate: { start: '14.4210,50.1318', drive: false },  // Kobylisy housing estate by the school: streets lined with flats, many parked cars (see --eval "__test.view(3)")
   river: { start: '14.4125,50.0862', drive: false },  // by Charles Bridge: water, quays, the bridge
   tunnel: { start: '14.3905,50.0780', drive: false }, // over the Strahov tunnel (see --eval for getting into it)
   strana: { start: '14.4030,50.0883', drive: false }, // Malá Strana, by the Malostranské náměstí: courtyards and lanes
