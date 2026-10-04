@@ -15,7 +15,7 @@ interface ParkingSection {
 interface LocatedSection extends ParkingSection { box: Bounds }
 interface ParkingData {
   box?: Bounds;
-  lots?: { o: BayOrientation | null; rings: Point2[][] }[];
+  lots?: { o: BayOrientation | null; rings: Point2[][]; i?: 1 }[];
   areas: { parking?: Polygons };
   rails: { pts: Point2[] }[];
 }
@@ -110,6 +110,26 @@ function rows(v0: number, v1: number, depth: number, gap: number) {
   return out.length ? out : [(v0 + v1) / 2];
 }
 
+// Rows of bays across a stretch of paving that no street runs through (an inferred
+// car park, see pipeline/osm_area.py `_inferred_lots`): a row against each edge,
+// back-to-back pairs between them, and an aisle for the cars to drive along between
+// every two rows. `face` is the side the cars nose towards.
+const AISLE = 6, BAY = 5;
+function aisleRows(v0: number, v1: number) {
+  const out: { v: number; face: 1 | -1 }[] = [];
+  let v = v0;
+  if (v1 - v < BAY) return out;
+  out.push({ v: v + BAY / 2, face: -1 });
+  v += BAY;
+  while (v + AISLE + BAY <= v1 + 1e-6) {
+    v += AISLE;
+    out.push({ v: v + BAY / 2, face: -1 });
+    v += BAY;
+    if (v + BAY <= v1 + 1e-6) { out.push({ v: v + BAY / 2, face: 1 }); v += BAY; }
+  }
+  return out;
+}
+
 // Where the line across the area at `u` goes in and out of it (`uv`: the ring in
 // frame coordinates), in order: pairs of v, one for each stretch inside.
 function crossings(uv: Point2[], u: number) {
@@ -163,8 +183,8 @@ function laneBeside(ring: Point2[], a: number, edges: DriveEdge[]) {
 function slots(data: ParkingData, edges: DriveEdge[]) {
   const out: ParkingSlot[] = [];
   // Tiles built before the lots were kept separately only have the merged areas.
-  const areas = data.lots || (data.areas.parking || []).map((rings) => ({ o: null, rings }));
-  for (const { o, rings } of areas) {
+  const areas = data.lots || (data.areas.parking || []).map((rings) => ({ o: null, rings, i: undefined as 1 | undefined }));
+  for (const { o, rings, i: inferred } of areas) {
     const ring = rings[0];
     let a = 0, best = 0;
     for (let i = 0; i < ring.length; i++) {
@@ -199,6 +219,13 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
       const vs = crossings(uv, u);
       for (let i = 0; i + 1 < vs.length; i += 2) {
         if (vs[i + 1] - vs[i] < 1.2) continue;
+        if (inferred && kind === 'perpendicular' && vs[i + 1] - vs[i] >= 2 * BAY + AISLE) {
+          for (const { v, face } of aisleRows(vs[i], vs[i + 1])) {
+            const x = ox + ux * u + vx * v, y = oy + uy * u + vy * v;
+            if (inPoly(x, y, rings)) out.push({ x, y, h: kerbAt(ring, x, y, a) + face * Math.PI / 2, lot: true, bay: true, angled: false, withTraffic: false, perp: false });
+          }
+          continue;
+        }
         for (const v of rows(vs[i], vs[i + 1], lay.depth, lay.gap)) {
           const x = ox + ux * u + vx * v, y = oy + uy * u + vy * v;
           if (inPoly(x, y, rings)) out.push({ x, y, h: kerbAt(ring, x, y, a) + lay.turn, lot: true, bay: kind !== 'parallel', angled: kind === 'diagonal', withTraffic, perp: kind === 'perpendicular' && !!lane });
