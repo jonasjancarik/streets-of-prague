@@ -11,7 +11,27 @@ bare trodden lines.
 
 ## Status and starting point
 
-- Status: PLANNED.
+- Status: BUILT on branch `plan-027-summer-grass` (not merged), 5 October 2026. Done:
+  area kinds `meadow` and `lawn` split from `park` in the pipeline (`osm_area.py`,
+  estate lawns from `_gardens`); per-kind dryness weights (`GRASS_DRYNESS` in
+  `src/groundSeason.ts`: meadow 1, lawn 0.8, park 0.5, garden 0.25, pitch 0) as one
+  tint uniform per kind in both shader paths, so no per-pixel work was added and
+  15 July is unchanged (`scripts/check-ground-season.mjs` passes); worn paths
+  (`pipeline/worn_paths.py`, area kinds `worn` and `worn_edge`, drawn as two blended
+  dirt layers in `src/ground.ts`, trees kept off them). `?straw=0..1` starts the
+  drying earlier so the July baseline can be compared (default 0 = unchanged).
+  Left open: the July baseline default (the user's call); the plan-023 ground cost
+  comparison was not run (no per-pixel work was added; run it if the shader's
+  per-id branches should be measured); roadside verges are not a kind of their own
+  (the pipeline has no verge data, so they follow the lawn or park they are mapped
+  as); worn paths use door proxies (OSM entrances are not extracted) and not the
+  footfall map; only chunks (2,10), (7,10), (9,6) were rebuilt in the shared
+  clone, then assembled for the whole city, not the full chunk build: 119 paths in
+  the two estate chunks (71 at Kobylisy, 48 at Černý Most, none in the village of
+  Nebušice), 79 merged ribbons in 44 tiles (at most 6 per tile, median 1). A full
+  chunk build is still to do before release. Expect a merge conflict with plan 030
+  in `osm_area.py`, `build_tiles.py` and `layers.py`.
+- Status (was): PLANNED.
 - Priority: P2. Effort: two to four days for the colours, about the same again for
   the paths. Risk: low for colours; medium for paths (they need a per-tile input).
 - Category: feature (map look). Dependencies: plan 023 (seasons), whose ground cost
