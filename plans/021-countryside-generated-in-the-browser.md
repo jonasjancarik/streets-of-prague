@@ -11,7 +11,7 @@ in the road.
 
 ## Status and starting point
 
-- Status: PLANNED (step 1 is a prototype that decides whether the rest goes ahead).
+- Status: IN PROGRESS (step 1, the prototype, is done: see Result).
 - Priority: P3. Effort: about a week for the prototype, three to five weeks in all.
   Risk: medium to high (a second map builder to keep in step with the pipeline, and
   two outside services the game would lean on).
@@ -263,4 +263,31 @@ elevation data's sources if step 4 goes ahead.
 
 ## Result
 
-Not started.
+**Step 1, the prototype, 4 October 2026** (`?countryside`; `src/countryside.ts`,
+`src/countrysideWorker.ts`, `src/countrysideTiles.ts`, `scripts/check-countryside.mjs`).
+
+- Source: a Protomaps extract of central Bohemia at zoom 15, 297 MB, at
+  `public/data/countryside/central-bohemia.pmtiles` (local only; `VITE_COUNTRYSIDE_URL`
+  points elsewhere). All of Czechia is 1.7 GB. Made with
+  `pmtiles extract https://build.protomaps.com/<date>.pmtiles <out> --bbox=13.40,49.50,15.60,50.65 --maxzoom=15`.
+- Protomaps' layers differ from the OpenMapTiles ones this plan lists: roads carry the
+  OSM highway value, one-way, bridge and tunnel flags and names, but no surface;
+  buildings a height but not their kind; single trees come as points of interest.
+- Making a tile takes the worker under 1 ms once its vector tiles are read and 15–45 ms
+  when it reads new ones (headless Chrome on the M5; Node gives the same). Building the
+  tile afterwards took 170–360 ms against 140–220 ms for the built map's outer ring, so
+  the generator is not what limits streaming. Not measured on a phone, and not by
+  driving out at speed in real time.
+- The ground has no step at the edge (0 m over 200 points), and a car drives out of the
+  built map without noticing.
+- **The built map's streets do not stop at the rectangle**, as this plan assumed: each
+  runs on to its next junction, up to 250 m outside. Generated streets are cut at the
+  rectangle, so for that stretch both exist and the two graphs are not connected.
+  Step 2 should match junctions by position (a built street's outer end against the
+  generated junction there) and drop the generated streets a built one already covers,
+  rather than snap road ends on the rectangle's edge.
+- Left out, as planned: hills, bridges and tunnels as levels, lamps, traffic and people
+  densities of their own, place names, the map view, saves outside the rectangle.
+  Also: streets are overlapping rectangles and octagons rather than one outline, so
+  nothing may draw a kerb along them; building parts are skipped; a building wider
+  than 12 m past a vector tile's edge may come out twice or not at all.
