@@ -133,7 +133,7 @@ class WalkingSurfaceTests(unittest.TestCase):
                             {"highway": "footway", "footway": "link"}],
                            [box(-100, -100, 100, 100), box(50, 50, 70, 70),
                             LineString([(-50, 0), (50, 0)])])
-        self.assertGreater(got["areas"]["garden"].area, 39000)
+        self.assertGreater(got["areas"]["lawn"].area, 39000)
         self.assertGreater(got["roads"]["path"].area, 300)
 
     def test_route_link_across_surveyed_green_keeps_real_surface(self):
