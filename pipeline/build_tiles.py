@@ -352,7 +352,8 @@ def build_chunk(job):
             t = {}
             t["areas"] = {k: v for k, g in x["areas"].items() if (v := [_rings(p) for p in _polys(g.intersection(bx))])}
             # Parking areas one by one, with their orientation (the game lays out bays).
-            t["lots"] = [{"o": x["lots"][k]["o"], "rings": _rings(p)} for k in sorted(ltree.query(bx, predicate="intersects"))
+            t["lots"] = [{"o": x["lots"][k]["o"], **({"i": 1} if x["lots"][k].get("i") else {}), "rings": _rings(p)}
+                         for k in sorted(ltree.query(bx, predicate="intersects"))
                          for p in _polys(x["lots"][k]["poly"].intersection(bx)) if p.area > 4]
             # Finer for the streets, whose rounded corners (dtm.py) the coarser tolerance undoes.
             t["roads"] = {k: v for k, g in x["roads"].items() if (v := [_rings(p, ROAD_TOLERANCE) for p in _polys(g.intersection(bx))])}

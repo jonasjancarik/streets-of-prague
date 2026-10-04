@@ -85,7 +85,8 @@ class WalkingSurfaceTests(unittest.TestCase):
                          [LineString([(-30, i*20), (30, i*20)]) for i in range(len(tags))], dtype=object)
         geoms = shapely.transform(geoms, lambda c: np.column_stack(inv.transform(c[:, 0], c[:, 1])))
         rows = [{"element": "way", "id": i+1, **tag} for i, tag in enumerate(tags)]
-        with patch("osm_area.dtm.streets", return_value=Polygon()), patch("osm_area.dtm.land", return_value=land or {}):
+        with patch("osm_area.dtm.streets", return_value=Polygon()), patch("osm_area.dtm.land", return_value=land or {}), \
+                patch("osm_area.dtm.parking", return_value=Polygon()):
             return extract("ujezd", features=(geoms, rows))
 
     def test_cobbled_footways_and_pedestrian_streets_use_setts(self):

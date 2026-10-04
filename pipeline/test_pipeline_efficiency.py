@@ -94,7 +94,7 @@ class ReuseTests(unittest.TestCase):
 
         data = {"road": (np.array([0]), np.array([box(0, 0, 1, 1)], dtype=object)),
                 "yard": (np.array([0, 1]), np.array([box(2, 2, 3, 3), box(4, 4, 5, 5)], dtype=object))}
-        with patch.object(dtm, "_index", None), patch.object(dtm, "_land_index", None), \
+        with patch.object(dtm, "_index", None), patch.object(dtm, "_land_index", None), patch.object(dtm, "_parking_index", None), \
                 patch.object(dtm, "PACKAGES", Packages()), patch.object(dtm, "surfaces", return_value=data) as load:
             dtm.streets((-1, -1, 8, 8), lambda x, y: (x, y))
             land = dtm.land((-1, -1, 8, 8), lambda x, y: (x, y))

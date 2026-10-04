@@ -63,14 +63,15 @@ MARGIN = 0.0005  # degrees (~40 m) past the box, so neighbouring boxes round ali
 
 _index = None  # per process: (STRtree, polygons on the ground in WGS84)
 _land_index = None  # per process: (STRtree, polygons, kind labels)
+_parking_index = None  # per process: (STRtree, parking polygons on the ground in WGS84)
 
 
 def download():
     """Fetch the districts' packages that aren't here yet (a new month's have new names),
     removing the ones they replace."""
-    global _index, _land_index
+    global _index, _land_index, _parking_index
     listing = json.loads(_get(LIST))
-    _index = _land_index = None
+    _index = _land_index = _parking_index = None
     PACKAGES.mkdir(parents=True, exist_ok=True)
     keep = set()
     for district in listing:
@@ -125,8 +126,8 @@ def surfaces():
 
 def _indexes():
     """Both worker indexes from one unpickle; don't retain the unused upper levels."""
-    global _index, _land_index
-    if _index is not None and _land_index is not None:
+    global _index, _land_index, _parking_index
+    if _index is not None and _land_index is not None and _parking_index is not None:
         return
     kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
     street = [kinds[k][1][kinds[k][0] == 0] for k in STREET_KINDS if k in kinds]
@@ -136,6 +137,8 @@ def _indexes():
     geoms = np.concatenate([g for _, g in groups]) if groups else np.array([], dtype=object)
     labels = np.concatenate([np.full(len(g), k, dtype=object) for k, g in groups]) if groups else np.array([], dtype=object)
     _land_index = (STRtree(geoms), geoms, labels)
+    parking = kinds["parking"][1][kinds["parking"][0] == 0] if "parking" in kinds else np.array([], dtype=object)
+    _parking_index = (STRtree(parking), parking)
 
 
 def streets(bbox, transform):
@@ -167,6 +170,19 @@ def land(bbox, transform):
         local = shapely.transform(chosen, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
         out[kind] = shapely.union_all(shapely.make_valid(local), grid_size=0.01)
     return out
+
+
+def parking(bbox, transform):
+    """The surveyed parking bays and car parks on the ground that reach into a WGS84
+    box, in local metres like land(), without the kerb rounding streets() does."""
+    _indexes()
+    tree, geoms = _parking_index
+    w, s, e, n = bbox
+    hits = geoms[tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN), predicate="intersects")]
+    if not len(hits):
+        return Polygon()
+    local = shapely.transform(hits, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
+    return shapely.union_all(shapely.make_valid(local), grid_size=0.01)
 
 
 def _smooth(g):

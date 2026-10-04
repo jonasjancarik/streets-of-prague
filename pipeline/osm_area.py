@@ -195,6 +195,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     streets = []  # car roads other than service roads, which cut residential areas into blocks
     car_ways = []  # (line, what its tags say, class, a street?), sized after the loop
     sidewalks = []  # footways and paths with their half widths, which may run along a street
+    drivable = []  # every car way as the road it covers, to keep inferred parking off it
     maybe = []  # ways that are passages if they run through buildings (passage_tags)
     squares = []  # (polygon, own surface, named outline only); decide after all ways and land
     square_ways = []  # (line, mapped surface) on the ground, including untagged ways
@@ -366,6 +367,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         # (The pieces are merged with all the others below, so not one by one here.)
         pieces = [ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),
                   ls.buffer(min(left, right), cap_style="round", join_style="round")]
+        drivable.extend(pieces)
         if street:
             streets.extend(pieces)
         if cls != "bridge" and share >= SURVEYED:
@@ -417,6 +419,10 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     for cls, geom in _walking_surfaces(walking_surfaces, areas, natural):
         road_lines.setdefault(cls, []).append(geom)
     timer.lap("squares_walking_surfaces")
+    lots.extend(_inferred_lots(dtm.parking((w, s, e, n), tf.transform).intersection(clip),
+                               [land.get("dtm_yard", Polygon()), *areas.get("yard", [])],
+                               lots, buildings, drivable, natural, [w[0] for w in car_ways], clip))
+    timer.lap("inferred_lots")
     road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
     timer.lap("road_land_unions")
@@ -582,6 +588,42 @@ def _area_kind(row, col):
     if lu in ("construction", "brownfield", "landfill", "quarry") or na in ("bare_rock", "sand"):
         return "bare"
     return None
+
+
+INFERRED_WIDTH = 4.4  # least width of a stretch of paving that gets bays (a row of cars plus a bit)
+INFERRED_AREA = 60  # m², the smallest inferred car park
+INFERRED_REACH = 3  # m, how close to a car way it must be for cars to get in
+COURTYARD = 0.65  # share of an outline touching buildings above which a yard is a courtyard, not a car park
+
+
+def _inferred_lots(parking, yards, lots, buildings, drivable, natural, car_lines, clip):
+    """Paved ground that is used for parking but that OSM doesn't map as a car park:
+    what the survey colours as parking, and the open paving in work yards, less the
+    mapped car parks, buildings, car ways and green ground. Kept where the paving is
+    wide enough for a row of cars, big enough, and reached by a car way. The yards
+    and not the surveyed parking are skipped where buildings round them on most sides
+    (a courtyard). Each comes back as a lot marked "i" (inferred), which the game lays
+    out with aisles."""
+    shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
+    walls = unary_union(shapes).buffer(1) if shapes else Polygon()
+    taken = unary_union([*(lot["poly"] for lot in lots), walls, *drivable, natural]) if (lots or drivable) else unary_union([walls, natural])
+    yard = unary_union([y for y in yards if not y.is_empty]) if any(not y.is_empty for y in yards) else Polygon()
+    free = shapely.difference(unary_union([parking, yard]), taken, grid_size=GRID)
+    if free.is_empty:
+        return []
+    free = _areas(free.buffer(-INFERRED_WIDTH / 2, join_style="mitre").buffer(INFERRED_WIDTH / 2, join_style="mitre"))
+    near = STRtree(car_lines) if car_lines else None
+    out = []
+    for poly in _polys(free):
+        if poly.area < INFERRED_AREA or near is None:
+            continue
+        if not len(near.query(poly.buffer(INFERRED_REACH), predicate="intersects")):
+            continue
+        survey = poly.intersection(parking).area / poly.area
+        if survey < 0.5 and not walls.is_empty and poly.boundary.intersection(walls.buffer(0.5)).length > COURTYARD * poly.boundary.length:
+            continue
+        out.append({"o": None, "poly": poly, "i": 1})
+    return out
 
 
 # Buildings that don't decide what a block is: sheds and garages stand in gardens too.
