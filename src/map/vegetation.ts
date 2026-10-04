@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
 import { cutAway, NOISE, NOISE_GLSL, LEAVES, SNOW, WET, BARE, SEASON } from '../shading.ts';
+import { PITCH_KINDS } from './pitches.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
 export interface TreeTileData extends GeoData {
@@ -60,7 +61,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fill(d.areas.square_setts, 0);
     fill(d.areas.square_asphalt, 0);
     fill(d.areas.square_loose, 0);
-    fill(d.areas.pitch, 0);
+    for (const k of PITCH_KINDS) fill(d.areas[k], 0);
     fill(d.areas.parking, 0);
     fill(d.areas.water, 0);
     fill(d.areas.bridge, 0);

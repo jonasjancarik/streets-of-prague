@@ -536,6 +536,6 @@ export class Countryside {
     plant(areas.wood, TREE_STEP, true);
     plant(areas.orchard, ORCHARD_STEP, false);
 
-    return { i, j, box, areas, lots: [], roads, buildings, walls: [], fences: [], rails: [], passages: [], weirs: [], crossings: [], trees, drive, walk, sections: [] };
+    return { i, j, box, areas, lots: [], roads, buildings, walls: [], fences: [], rails: [], passages: [], weirs: [], crossings: [], marks: [], trees, drive, walk, sections: [] };
   }
 }

@@ -7,6 +7,7 @@ import type { Terrace } from './terrain.ts';
 import { offsetLine } from './network.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
 import type { GroundLayer } from './surface.ts';
+import { PITCH_LOOKS } from './map/pitches.ts';
 
 export interface GroundTileData {
   areas: Record<string, Polygons | undefined>;
@@ -14,6 +15,7 @@ export interface GroundTileData {
   rails: { kind: string; pts: Point2[] }[];
   weirs?: Point2[][];
   crossings?: Point2[][];
+  marks?: Point2[][];
 }
 export interface LevelMask { level: number; w: number; h: number; cells: Uint8Array; box: Bounds }
 export interface GroundResult { layers: GroundLayer[]; masks: LevelMask[] }
@@ -596,8 +598,9 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.park || []), COLORS.park, 'grass');
     add(polygons(A.orchard || []), COLORS.orchard, 'grass');
     add(polygons(A.wood || []), COLORS.wood, 'wood');
+    for (const [key, color, pattern] of PITCH_LOOKS) add(polygons(A[key] || []), color, pattern);
     add(polygons(A.pitch || []), COLORS.pitch, 'pitch');
-    add(strips(outlines((A.pitch || []).map((r) => [r[0]])), 0.12), COLORS.paint);
+    add(strips(d.marks || [], 0.12), COLORS.paint);
     add(polygons(A.square || []), COLORS.square, 'slabs');
     add(polygons(A.square_setts || []), COLORS.squareSetts, 'setts');
     add(polygons(A.square_asphalt || []), COLORS.asphalt, 'asphalt');
