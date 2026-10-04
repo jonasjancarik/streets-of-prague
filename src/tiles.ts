@@ -28,6 +28,7 @@ import { fences, type FenceSection } from './fences.ts';
 import { fenceMeshes } from './map/fences.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
+import { CountrysideTiles } from './countrysideTiles.ts';
 
 interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer | null; ipr: ArrayBuffer | null; levels: ArrayBuffer | null }
 // A bridge (1, 2, …) or tunnel (-1, -2, …) level in a tile: where it is and how high.
@@ -278,6 +279,9 @@ export class TileWorld {
   night: boolean;
   T: number; ox: number; oy: number;
   available: Set<string>; iprTiles: Map<string, boolean>;
+  // Tiles past the built map, made in the browser (?countryside), and the heights of
+  // the built map's outermost tiles, which they carry on from.
+  country: CountrysideTiles | null; edgeHeights: Map<string, Promise<Uint16Array>>;
   bare: Set<string>; leveled: boolean; structures: Set<string>;
   loaded: Map<string, Tile>; byIndex: Map<number, Tile>;
   last: { i: number; j: number; tile: Tile | undefined };
@@ -302,9 +306,9 @@ export class TileWorld {
     view: (who: Tracked) => { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
   };
 
-  constructor({ area, index, scene, drive, walk, time, night, osmBuildings = false, ortho = false }: {
+  constructor({ area, index, scene, drive, walk, time, night, osmBuildings = false, ortho = false, countryside = false }: {
     area: string; index: MapIndex; scene: THREE.Scene; drive: DriveGraph; walk: WalkGraph;
-    time: { value: number }; night: boolean; osmBuildings?: boolean; ortho?: boolean;
+    time: { value: number }; night: boolean; osmBuildings?: boolean; ortho?: boolean; countryside?: boolean;
   }) {
     this.osmBuildings = osmBuildings;
     this.ortho = ortho;
@@ -319,6 +323,8 @@ export class TileWorld {
     this.T = index.tile;
     [this.ox, this.oy] = index.origin;
     this.available = new Set(index.tiles.map(([i, j]) => `${i}_${j}`));
+    this.country = countryside ? new CountrysideTiles(index) : null;
+    this.edgeHeights = new Map();
     // Which tiles have IPR buildings, where index.json says (else the tile JSON does).
     this.iprTiles = new Map(index.tiles.filter((t) => t.length > 3).map(([i, j, , ipr]) => [`${i}_${j}`, !!ipr]));
     this.bare = new Set(index.terrain?.bare || []);
@@ -598,6 +604,31 @@ export class TileWorld {
 
   keyAt(x: number, y: number) { return `${Math.floor((x + this.ox) / this.T)}_${Math.floor((y + this.oy) / this.T)}`; }
 
+  // Whether there is a tile (i, j): one of the built map's, or one to make past it.
+  has(i: number, j: number) { return this.available.has(`${i}_${j}`) || !!this.country?.covers(i, j); }
+
+  // The ground of a tile past the built map: flat outwards from the nearest point of
+  // the built map's edge, so it meets the built ground and its own neighbours without
+  // a step (the pipeline's outer ring does the same past IPR's terrain).
+  edgeHeight(i: number, j: number): Promise<ArrayBuffer> {
+    const { cols, rows, terrain } = this.index, n = terrain!.n;
+    const k = `${Math.max(0, Math.min(cols - 1, i))}_${Math.max(0, Math.min(rows - 1, j))}`;
+    if (!this.edgeHeights.has(k)) {
+      const url = dataUrl(this.area, `tiles/${k}.height.bin${this.index.gzip ? '.gz' : ''}`);
+      const heights = fetchBinary(url, !!this.index.gzip).then((buffer) => {
+        if (!buffer || buffer.byteLength < n * n * 2) throw new Error(`Tile ${k}: height data could not be loaded (${url})`);
+        return new Uint16Array(buffer, 0, n * n);
+      });
+      heights.catch(() => { if (this.edgeHeights.get(k) === heights) this.edgeHeights.delete(k); });
+      this.edgeHeights.set(k, heights);
+    }
+    return this.edgeHeights.get(k)!.then((from) => {
+      const out = new Uint16Array(n * n);
+      for (let b = 0; b < n; b++) for (let a = 0; a < n; a++) out[b * n + a] = from[(j < 0 ? 0 : j >= rows ? n - 1 : b) * n + (i < 0 ? 0 : i >= cols ? n - 1 : a)];
+      return out.buffer;
+    });
+  }
+
   // Tile keys within r metres of (x, y), nearest first.
   around(x: number, y: number, r: number): string[] {
     const T = this.T, out: [number, string][] = [];
@@ -606,7 +637,7 @@ export class TileWorld {
     for (let i = i0; i <= i1; i++) {
       for (let j = j0; j <= j1; j++) {
         const k = `${i}_${j}`;
-        if (!this.available.has(k)) continue;
+        if (!this.has(i, j)) continue;
         const cx = (i + 0.5) * T - this.ox, cy = (j + 0.5) * T - this.oy;
         const d = Math.max(0, Math.hypot(cx - x, cy - y) - T * 0.71);
         if (d <= r) out.push([d, k]);
@@ -621,9 +652,11 @@ export class TileWorld {
     if (!this.jsons.has(k)) {
       const base = dataUrl(this.area, `tiles/${k}`);
 
-      const json: Promise<TileJSON> = fetch(`${base}.json`).then(async (r) => {
+      const [i, j] = k.split('_').map(Number);
+      const json: Promise<TileJSON> = (this.available.has(k) ? fetch(`${base}.json`).then(async (r): Promise<unknown> => {
         if (!r.ok) throw new Error(`Tile ${k} could not be loaded (${r.status})`);
-        const value: unknown = await r.json();
+        return r.json();
+      }) : this.country!.tile(i, j)).then((value: unknown) => {
         if (!isTileJSON(value, !!this.index.graphs)) throw new Error(`Tile ${k} has invalid map data`);
         return value;
       });
@@ -640,7 +673,7 @@ export class TileWorld {
     const keys: string[] = [];
     for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
       const key = `${t.i + di}_${t.j + dj}`;
-      if (this.available.has(key)) keys.push(key);
+      if (this.has(t.i + di, t.j + dj)) keys.push(key);
     }
     const tiles = await Promise.all(keys.map((key) => this.fetchJSON(key)));
     const graph = new DriveGraph();
@@ -671,7 +704,8 @@ export class TileWorld {
           return tex;
         }).catch(() => null));
       }
-      const height = this.index.terrain ? bin('height') : null;
+      const [i, j] = k.split('_').map(Number);
+      const height = !this.index.terrain ? null : this.available.has(k) ? bin('height') : this.edgeHeight(i, j);
       const bare = this.index.terrain && this.bare.has(k) ? bin('bare') : null;
       const levels = this.structures.has(k) ? bin('levels') : null;
       const known = this.iprTiles.get(k);

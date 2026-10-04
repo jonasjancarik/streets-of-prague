@@ -7,3 +7,6 @@ export const DATA_FORMAT = 2;
 // When the loaded map was built (index.json's "built"), for the settings panel.
 export const mapData = { built: '' };
 export const dataUrl = (area: string, path: string) => `${base}${area}_now/${path}`;
+// OpenStreetMap vector tiles (Protomaps' basemap) for the countryside past the built
+// map, read by range requests (countryside.ts): one file beside the map, or on R2.
+export const countrysideUrl: string = import.meta.env.VITE_COUNTRYSIDE_URL ?? `${base}countryside/central-bohemia.pmtiles`;
