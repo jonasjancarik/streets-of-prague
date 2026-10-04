@@ -138,3 +138,27 @@ operator's separate authorization.
 Merge findings for plans 007–012 are recorded in
 [the summary](../docs/optimisation-findings-007-012.md). Implementation completion
 does not imply that every experiment is recommended for main.
+
+## Closer to the aerial photos
+
+Planned on 4 October 2026 at `364e7f3cac31a9aedb4a64f8c0b1ac9563258990` from ten random
+250 m squares of the local `praha` map, each looked at from straight above and set
+beside IPR's 2024 aerial photo of the same square (ČÚZK's for the two squares past the
+city limits). Streets, footprints and roof shapes inside the city matched well; what
+differed was what lies between the buildings, and everything past IPR's data. All
+procedural, nothing authored per place. Each plan starts with a counting step;
+nothing was built or measured while planning.
+
+| Plan | Scope | Priority | Estimated effort | Status |
+| --- | --- | --- | --- | --- |
+| [025: Gardens divided into plots](025-gardens-divided-into-plots.md) | Garden blocks split into a plot per house; hedges, fences and gates; trees where the surface model has them; a paved strip, sheds, pools | P1 | One to two weeks | PLANNED |
+| [026: Woods with a closed canopy](026-woods-with-a-closed-canopy.md) | A dark woodland floor, holes in the canopy filled, uneven heights, conifers in stands, a ragged edge | P2 | Three to five days | PLANNED |
+| [027: Summer grass that differs by place, and worn paths](027-summer-dry-grass-and-worn-paths.md) | Meadows and estate lawns dry out in summer while gardens and pitches stay green; trodden lines across estate grass | P2 | Four to eight days | PLANNED |
+| [028: Roofs on buildings without IPR data](028-roofs-on-buildings-without-ipr-data.md) | Flat or pitched by kind and size, a wider roof palette past the city limits; parapets, lift houses, vents and solar panels on flat roofs; the roofed-over school atria | P2 (flat-roof details P3) | About a week | PLANNED |
+| [029: Parking where the map has no car park](029-parking-on-unmapped-ground.md) | Bays on paved yards and unmapped estate car parks, a car on the drive of family houses | P2 | About a week | PLANNED (after the occupancy by building type; driveways after 025) |
+| [030: Sports grounds in their own colours](030-sports-grounds-in-their-own-colours.md) | Tartan, clay, artificial grass and hard courts from OSM's `sport` and `surface`, with each sport's lines | P3 | One to two days | PLANNED |
+| [031: Narrower lanes outside the city](031-narrower-lanes-outside-the-city.md) | Street widths past the technical map from the room between the plots and from the setting, verges; the grey hectare at Nad Vinicemi | P2 | Two to four days | PLANNED |
+
+025 comes first: it changes the most, and 029's driveway cars need its plots. 030 is
+the smallest and stands alone. 028 and 031 share their rules with plan 021's
+countryside tiles.
