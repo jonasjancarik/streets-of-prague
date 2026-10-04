@@ -686,8 +686,17 @@ async function main() {
   // Take the tram you're on: the driver gets out of the way and it's yours.
   const stealTram = () => {
     if (!ride.on || ride.driving || inspector.phase === 'decide') return;
-    const p = ride.v!.parts[1];
+    const p = ride.v!.parts[1], cab = ride.v!.parts[0], speed = ride.v!.speed;
     if (!ride.steal()) return;
+    // The driver is out of the front door (the other side if there's a wall there) and
+    // runs: off their feet first, if the tram was going.
+    let ox = Math.sin(cab.ang), oy = -Math.cos(cab.ang);
+    if (walker.blocked(cab.x + ox * 1.8, cab.y + oy * 1.8)) { ox = -ox; oy = -oy; }
+    const driver = crowd.spawnAt(cab.x + ox * 1.8, cab.y + oy * 1.8, { shirt: '#9fb7cf', trousers: '#1f2a3d', skin: '#e3b99a', hair: '#3a2b20', sleeves: false });
+    if (speed > 2) {
+      crowd.knock(driver, Math.cos(cab.ang) * speed * 0.6 + ox * 2, Math.sin(cab.ang) * speed * 0.6 + oy * 2);
+      driver.then = [ox * 5, oy * 5];
+    } else Object.assign(driver, { state: 'flee', t: 3, vx: ox * 5, vy: oy * 5 });
     pid.leave(); // no fare, no inspector: you're the driver now
     police.crime('stealTram', p.x, p.y);
     showBanner(t('You took over the tram'));
