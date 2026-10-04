@@ -16,8 +16,8 @@ described in `docs/email.md`.
 |---|---|---|
 | In the game | `src/newsletter.ts`: link on the start screen and in the settings | `src/feedback.ts`: link in the settings |
 | Posts to | `/api/subscribe` `{ email, lang, token, website }` | `/api/feedback` `{ message, email?, context, scenario?, screenshot?, lang, website }` |
-| Worker passes it to | Brevo's double opt-in API (it sends the confirmation email) | Cloudflare email sending, to the one address in `deploy/feedback` |
-| Shown in a build when | `deploy/newsletter` has the list and the template number | `deploy/feedback` has `FEEDBACK_TO` |
+| Worker does | Emails a signed confirmation link itself (Cloudflare email sending, to the address typed); `/api/confirm` then adds it to the Brevo list | Cloudflare email sending, to the one address in `deploy/feedback` |
+| Shown in a build when | `deploy/newsletter` has the list and `NEWS_FROM` | `deploy/feedback` has `FEEDBACK_TO` |
 
 ## Where things are
 
@@ -47,7 +47,7 @@ Nothing shows unless the build was given the form's address:
 
 | Build value | Set when | Effect |
 |---|---|---|
-| `VITE_SUBSCRIBE_URL` | `BREVO_LIST_ID` and `BREVO_DOI_TEMPLATE_ID` are both filled in | the signup links appear |
+| `VITE_SUBSCRIBE_URL` | `BREVO_LIST_ID` and `NEWS_FROM` are both filled in | the signup links appear |
 | `VITE_FEEDBACK_URL` | `FEEDBACK_TO` is filled in | "Send feedback" appears in the settings |
 | `VITE_TURNSTILE_SITE_KEY` | `TURNSTILE_SITE_KEY` is filled in | the signup form loads Turnstile |
 
@@ -94,11 +94,16 @@ One domain serves three mail jobs, and their DNS records live side by side in th
    records to add (the Brevo rows in the table above) and shows the domain as
    authenticated once it has seen them. They are in place.
 3. **List.** Create a list for the newsletter; its number goes in `BREVO_LIST_ID`.
-4. **Confirmation email.** Create a double opt-in template; its number goes in
-   `BREVO_DOI_TEMPLATE_ID`. It has to be a template Brevo accepts for double opt-in:
-   Brevo's default double opt-in template is, and one made from scratch needs the
-   confirmation link (`{{ doubleoptin }}`) and, per Brevo's documentation, the tag
-   `optin` (*not yet seen*). A Czech one is optional: `BREVO_DOI_TEMPLATE_ID_CS`.
+4. **Confirmation email, from Cloudflare (not yet seen working).** The Worker sends it
+   itself, so Brevo's double opt-in template is no longer used. It needs: the domain
+   onboarded for Cloudflare email sending in the dashboard (Compute → Email Service),
+   which adds its own sending records, so compare them with the mail records above
+   before accepting (there must still be one SPF and one DMARC record at the root); the
+   Workers paid plan, because a `send-email` binding with no fixed recipient (`NEWS_EMAIL`)
+   mails any address; `NEWS_FROM` in `deploy/newsletter`; and a `CONFIRM_SECRET` on the
+   Worker (any long random string; changing it makes unopened links stop working).
+   Cloudflare gives new accounts a low daily sending limit that rises over time: look at it
+   in the dashboard.
 5. **API key.** Create one in Brevo (SMTP & API → API keys) and have the user store it
    on the Worker as `BREVO_API_KEY` (the command is under "Settings and secrets").
 6. **Language, optional.** Create a text attribute for contacts (say `LANGUAGE`) and
@@ -109,15 +114,16 @@ One domain serves three mail jobs, and their DNS records live side by side in th
    secrets". For a new one, managed mode, the hostnames the game is served from, the
    site key in `TURNSTILE_SITE_KEY`, the secret on the Worker.
 8. Commit `deploy/newsletter`, release, and have the user sign up with their own
-   address. The whole round trip is: the form says "almost done", Brevo's email
-   arrives, its link opens the game with "your email address is confirmed", and the
-   contact shows in the Brevo list.
+   address. The whole round trip is: the form says "almost done", the email from
+   `NEWS_FROM` arrives, its link opens the game with "your email address is confirmed",
+   and the contact shows in the Brevo list. A link that is altered or older than a week
+   opens the game with `?subscribed=failed` and a line asking to sign up again.
 
-All of this is in place since release v0.1.1 (1 October 2026), when the round trip was
-run for real with `jonas@streetsofprague.com`: the real Turnstile widget, Brevo's
-template 1, delivery to Gmail through the incoming route, the confirmation and the
-contact on list 3. The secrets set on the Worker beforehand were still there after the
-release replaced it. Still open: a Czech template and the language attribute.
+Release v0.1.1 (1 October 2026) ran the round trip for real with Brevo sending the
+confirmation (its template 1, now unused). The confirmation sent from the Worker instead
+has been checked only against stand-ins (`scripts/check-worker.mjs`): run the round trip
+with the user's own address after the first release that has it. Still open: the
+language attribute.
 
 ### Feedback (Cloudflare email sending)
 
@@ -205,7 +211,7 @@ running server is left alone. By hand it is:
   the settings, which exist only once the game has loaded: open `/?go` and wait for
   `#loading.done`. Open the dialogs by calling `.click()` on the link from the page;
   clicking by element reference scrolls the start screen out of place.
-- `/?subscribed` shows the start screen as it looks after the confirmation link.
+- `/?subscribed` shows the start screen as it looks after the confirmation link, `/?subscribed=failed` after a bad or expired one.
 - The preview pane is often hidden, and a hidden page's timers run slowly: wait for
   the state you expect instead of a fixed short time.
 - Stop the server afterwards.
@@ -257,22 +263,24 @@ Work down from the game to the service:
    after every failed try because a token is good once.
 4. **`failed` (502).** The service refused. The Worker logs why
    (`Brevo answered …`, `Sending feedback failed: …`): look in the Worker's logs in the
-   Cloudflare dashboard. Common causes: a template that isn't a double opt-in one, a
-   wrong list number, an attribute named in `BREVO_LANGUAGE_ATTRIBUTE` that doesn't
+   Cloudflare dashboard. For a signup, `Sending the confirmation failed` means
+   Cloudflare refused the email (the domain isn't onboarded for sending, the plan isn't
+   paid, or `NEWS_FROM` isn't on that domain), and `Brevo answered …` comes from
+   opening the link. Other common causes: a wrong list number, an attribute named in `BREVO_LANGUAGE_ATTRIBUTE` that doesn't
    exist in Brevo, a feedback address that isn't verified in the Cloudflare account, or
    Email Routing switched off for the domain.
-5. **200 but no email.** Brevo accepted it: look in Brevo's transactional log and the
-   spam folder, and check the sending domain is authenticated there.
+5. **200 but no email.** Cloudflare accepted it: look in the spam folder, and at the
+   Email Service page in the dashboard for the sending log and the daily limit.
 
 ## Settings and secrets
 
 | Name | Where | What |
 |---|---|---|
-| `BREVO_LIST_ID`, `BREVO_DOI_TEMPLATE_ID`, `BREVO_DOI_TEMPLATE_ID_CS` | `deploy/newsletter` | the list, and the confirmation email in English and (optional) Czech |
+| `BREVO_LIST_ID`, `NEWS_FROM` | `deploy/newsletter` | the list, and the address confirmation emails come from |
 | `BREVO_LANGUAGE_ATTRIBUTE` | `deploy/newsletter` | optional: the contact attribute that gets `en` or `cs` |
 | `TURNSTILE_SITE_KEY` | `deploy/newsletter` | optional: the widget's public key |
 | `FEEDBACK_TO`, `FEEDBACK_FROM` | `deploy/feedback` | who gets feedback, and the address it comes from |
-| `BREVO_API_KEY`, `TURNSTILE_SECRET_KEY` | secrets on the Worker | never in the repository |
+| `BREVO_API_KEY`, `CONFIRM_SECRET`, `TURNSTILE_SECRET_KEY` | secrets on the Worker | never in the repository |
 
 Secrets are the user's to set. Give them the command with a placeholder and let them
 paste the key; don't read a key off a dashboard page or ask for it in the conversation:
@@ -323,6 +331,6 @@ short key; the secret is the longer one beside it).
   forms. The check script above counts too.
 - "Own pages only" stops other websites, not a script that sets the `Origin` header
   itself. Turnstile is what stops scripts; the hidden field catches only the crudest.
-- Brevo's free plan sends 300 emails a day, confirmation emails included.
+- Brevo's free plan sends 300 emails a day, for the newsletter editions only: confirmations go out through Cloudflare, which allows 3,000 a month on the paid plan, then $0.35 per 1,000, and a daily limit of its own.
 - Feedback is free to send only to an address verified in the Cloudflare account. The
   binding is restricted to `FEEDBACK_TO`, so the Worker can't email anyone else.

@@ -3,12 +3,14 @@
 // two forms in the game, and the game's anonymous statistics (worker/stats.js):
 //
 //   POST /api/subscribe  { email, lang, token }
+//   GET  /api/confirm    ?t=<the signed token from the confirmation email>
 //   POST /api/feedback   { message, email?, context?, scenario?, screenshot?, lang }
 //   POST /api/report     one statistics report
 //
-// A signup is handed to Brevo, which sends the confirmation email; nobody is on the
-// list until they click the link in it; with Turnstile set up, a signup also has to carry
-// a token showing it came from a real browser. Feedback is sent on as an email to the game's
+// A signup is answered with a confirmation email sent from here (Cloudflare's email
+// sending). The link in it carries the address in a signed token, so nothing is stored; the
+// address is added to the Brevo list only when the link is opened. With Turnstile set up, a
+// signup also has to carry a token showing it came from a real browser. Feedback is sent on as an email to the game's
 // author. Nothing is stored here, and the game only ever talks to these two addresses,
 // so either can move to another service without the game changing.
 //
@@ -16,8 +18,9 @@
 // skill, .agents/skills/player-forms/SKILL.md):
 //   BREVO_API_KEY               secret
 //   BREVO_LIST_ID               the list new contacts join
-//   BREVO_DOI_TEMPLATE_ID       the confirmation email
-//   BREVO_DOI_TEMPLATE_ID_CS    the same in Czech, if there is one
+//   CONFIRM_SECRET              secret: signs the links in the confirmation emails
+//   NEWS_EMAIL                  Cloudflare's email sending, to any address, for confirmations
+//   NEWS_FROM                   the address confirmations come from
 //   BREVO_LANGUAGE_ATTRIBUTE    the contact attribute that gets "en" or "cs", if there is one
 //   TURNSTILE_SITE_KEY          the Turnstile widget in the signup form, if there is one,
 //   TURNSTILE_SECRET_KEY        and its secret
@@ -29,7 +32,9 @@
 
 import { report, OTHER_ORIGINS } from './stats.js';
 
-const BREVO = 'https://api.brevo.com/v3/contacts/doubleOptinConfirmation';
+const BREVO = 'https://api.brevo.com/v3/contacts';
+// How long the link in a confirmation email works.
+const LINK_DAYS = 7;
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const JPEG = 'data:image/jpeg;base64,';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -80,8 +85,8 @@ async function human(token, env, ip) {
   }
 }
 
-async function subscribe(body, env, origin, ip) {
-  if (!env.BREVO_API_KEY || !env.BREVO_LIST_ID || !env.BREVO_DOI_TEMPLATE_ID) return [{ error: 'unavailable' }, 503];
+async function subscribe(body, env, origin, ip, here) {
+  if (!env.BREVO_API_KEY || !env.BREVO_LIST_ID || !env.NEWS_EMAIL || !env.NEWS_FROM || !env.CONFIRM_SECRET) return [{ error: 'unavailable' }, 503];
   // The form shows the widget but there is no secret to check its token with: refuse
   // rather than let everything through.
   if (env.TURNSTILE_SITE_KEY && !env.TURNSTILE_SECRET_KEY) return [{ error: 'unavailable' }, 503];
@@ -94,25 +99,76 @@ async function subscribe(body, env, origin, ip) {
   // The language picked in the form: of the confirmation email, and kept with the
   // contact so later emails can go out in it.
   const lang = body.lang === 'cs' ? 'cs' : 'en';
-  const template = (lang === 'cs' && env.BREVO_DOI_TEMPLATE_ID_CS) || env.BREVO_DOI_TEMPLATE_ID;
+  const token = await sign({ e: email, l: lang, o: origin, x: Date.now() + LINK_DAYS * 864e5 }, env);
+  const mail = confirmation(`${here}/api/confirm?t=${token}`, lang);
+  try {
+    await env.NEWS_EMAIL.send({ to: email, from: { email: env.NEWS_FROM, name: 'Streets of Prague' }, ...mail });
+  } catch (e) {
+    console.error(`Sending the confirmation failed: ${e?.message ?? e}`);
+    return [{ error: 'failed' }, 502];
+  }
+  return [{ ok: true }, 200];
+}
+
+const EN = new TextEncoder();
+const b64 = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64 = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+const hmac = (env) => crypto.subtle.importKey('raw', EN.encode(env.CONFIRM_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+
+// A signup as a token that can't be forged or changed: the data, then its signature.
+async function sign(data, env) {
+  const body = b64(EN.encode(JSON.stringify(data)));
+  return `${body}.${b64(new Uint8Array(await crypto.subtle.sign('HMAC', await hmac(env), EN.encode(body))))}`;
+}
+
+// The data in a token, or null if it was altered, is not ours, or has run out.
+async function unsign(token, env) {
+  try {
+    const [body, sig] = token.split('.');
+    if (!await crypto.subtle.verify('HMAC', await hmac(env), unb64(sig), EN.encode(body))) return null;
+    const data = JSON.parse(new TextDecoder().decode(unb64(body)));
+    return data.x > Date.now() && address(data.e) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function confirmation(link, lang) {
+  const cs = lang === 'cs';
+  const lines = cs
+    ? ['Ahoj,', 'někdo (snad ty) zadal tuto adresu pro novinky ze hry Streets of Prague. Potvrď ji prosím tímto odkazem:', link, 'Když ses nepřihlašoval(a), nic dělat nemusíš. Nic ti pak nepošleme.']
+    : ['Hello,', 'someone (hopefully you) entered this address to get news about the game Streets of Prague. Please confirm it with this link:', link, 'If that wasn\'t you, there is nothing to do. We won\'t send you anything.'];
+  const html = (cs ? 'Ahoj,' : 'Hello,') + `<p>${lines[1]}</p><p><a href="${link}">${cs ? 'Potvrdit adresu' : 'Confirm my address'}</a></p><p>${lines[3]}</p>`;
+  return {
+    subject: cs ? 'Potvrď svůj e-mail pro novinky ze Streets of Prague' : 'Confirm your email for Streets of Prague news',
+    text: lines.join('\n\n'),
+    html,
+  };
+}
+
+// The link in the email: adds the address to the list and sends the player back to the
+// game, which says it worked (or that the link didn't).
+async function confirm(request, env) {
+  const url = new URL(request.url);
+  const data = env.CONFIRM_SECRET && env.BREVO_API_KEY && env.BREVO_LIST_ID ? await unsign(url.searchParams.get('t') ?? '', env) : null;
+  const back = data && (data.o === url.origin || OTHER_ORIGINS.includes(data.o)) ? data.o : url.origin;
+  const go = (state) => new Response(null, { status: 303, headers: { Location: `${back}/?subscribed${state}`, 'Cache-Control': 'no-store' } });
+  if (!data) return go('=failed');
   const res = await fetch(BREVO, {
     method: 'POST',
     headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
-      email,
-      includeListIds: [Number(env.BREVO_LIST_ID)],
-      templateId: Number(template),
-      ...(env.BREVO_LANGUAGE_ATTRIBUTE ? { attributes: { [env.BREVO_LANGUAGE_ATTRIBUTE]: lang } } : {}),
-      // Where the link in the email leads: back to the game, which says thanks.
-      redirectionUrl: `${origin}/?subscribed`,
+      email: data.e,
+      listIds: [Number(env.BREVO_LIST_ID)],
+      // Opening the link twice, or signing up again later, is not a problem.
+      updateEnabled: true,
+      ...(env.BREVO_LANGUAGE_ATTRIBUTE ? { attributes: { [env.BREVO_LANGUAGE_ATTRIBUTE]: data.l } } : {}),
     }),
   });
-  if (res.ok) return [{ ok: true }, 200];
+  if (res.ok) return go('');
   const problem = await res.json().catch(() => ({}));
   console.error(`Brevo answered ${res.status} ${problem.code ?? ''}: ${problem.message ?? ''}`);
-  // Brevo checks addresses more strictly than the pattern above.
-  if (res.status === 400 && /email/i.test(problem.message ?? '')) return [{ error: 'email' }, 400];
-  return [{ error: 'failed' }, 502];
+  return go('=failed');
 }
 
 async function feedback(body, env, origin, ip, here) {
@@ -180,6 +236,7 @@ export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
     if (path === '/api/report') return report(request, env);
+    if (path === '/api/confirm' && request.method === 'GET') return confirm(request, env);
     const handle = FORMS[path];
     if (handle) return form(request, env, handle);
     return env.ASSETS.fetch(request);

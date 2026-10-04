@@ -1,11 +1,11 @@
 # The newsletter list at Brevo that the game's signup form adds people to (see the
 # player-forms skill, .agents/skills/player-forms/SKILL.md). Until BREVO_LIST_ID and
-# BREVO_DOI_TEMPLATE_ID are both filled in, the game shows no signup form.
-# The API key is not here: it is a secret on the Worker.
+# NEWS_FROM are both filled in, the game shows no signup form.
+# The Brevo API key and CONFIRM_SECRET are not here: they are secrets on the Worker.
 BREVO_LIST_ID=3
-# The confirmation email ("double opt-in" template), and its Czech version if there is one.
-BREVO_DOI_TEMPLATE_ID=1
-BREVO_DOI_TEMPLATE_ID_CS=
+# The address the confirmation emails (sent by the Worker, not by Brevo) come from: on a
+# domain onboarded for Cloudflare email sending.
+NEWS_FROM=news@streetsofprague.com
 # The contact attribute in Brevo that records the language picked in the form ("en" or
 # "cs"), e.g. LANGUAGE. Create it in Brevo first; left empty, the language isn't kept.
 BREVO_LANGUAGE_ATTRIBUTE=

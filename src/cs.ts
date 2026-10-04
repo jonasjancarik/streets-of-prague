@@ -162,6 +162,7 @@ export const CS: Record<string, string> = {
   'Sending didn\'t work this time. Please try again later.': 'Odeslání se teď nepovedlo. Zkus to prosím později.',
   'A picture of the game, its version, your browser and where you are in the game are sent along, to help find the problem.': 'Spolu se zprávou se odešle snímek hry, její verze, tvůj prohlížeč a místo, kde ve hře právě jsi, aby šla chyba snáz najít.',
   'Your email address is confirmed. You\'ll hear when there is something new in the game.': 'E-mail je potvrzený. Ozveme se, až ve hře přibude něco nového.',
+  'That confirmation link didn\'t work, or it has run out. Please sign up again.': 'Odkaz pro potvrzení nefunguje, nebo mu vypršela platnost. Přihlas se prosím znovu.',
   'Version': 'Verze',
   'Anonymous statistics': 'Anonymní statistiky',
   'Tells us how well the game runs for you, which errors come up and what gets played. Nothing in it identifies you.': 'Dozvíme se z nich, jak ti hra běží, jaké chyby se objevují a co se ve hře hraje. Nic v nich neprozradí, kdo jsi.',

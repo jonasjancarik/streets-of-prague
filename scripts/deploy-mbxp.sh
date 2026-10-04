@@ -47,7 +47,7 @@ echo "Map data: $ID"
 # (worker/index.js lets the beta's address in). Neither form shows until it is set up
 # (deploy/newsletter, deploy/feedback).
 source deploy/newsletter; source deploy/feedback
-if [[ -n ${BREVO_LIST_ID:-} && -n ${BREVO_DOI_TEMPLATE_ID:-} ]]; then export VITE_SUBSCRIBE_URL=https://streetsofprague.com/api/subscribe; fi
+if [[ -n ${BREVO_LIST_ID:-} && -n ${NEWS_FROM:-} ]]; then export VITE_SUBSCRIBE_URL=https://streetsofprague.com/api/subscribe; fi
 if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=https://streetsofprague.com/api/feedback; fi
 if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY; fi
 # Statistics go to production's Worker too; the domain they carry tells the beta apart.
