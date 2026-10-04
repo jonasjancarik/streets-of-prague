@@ -265,7 +265,9 @@ const windowGlow = Fn(() => {
   If(uWindows.greaterThan(0.005).and(bn.y.lessThan(0.15)).and(f.z.greaterThan(0.1)).and(bays.greaterThan(0.5)), () => {
     const cell = vec2(floor(f.x.div(f.z).mul(bays)), floor(f.y.sub(0.6).div(3.4)));
     const lit = step(fHash(cell.x.add(fract(f.w).mul(97)), cell.y), uWindows.mul(select(f.y.lessThan(4), 1.6, 1)));
-    const glass = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
+    const dark = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
+    // Upper floors: only the bluish glass, not the dark shadowed mouldings and sills round it.
+    const glass = select(f.y.lessThan(4), dark, dark.mul(smoothstep(1.03, 1.12, diffuseColor.b.div(max(diffuseColor.r, 0.01)))));
     g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(cell.y, cell.x)).mul(lit).mul(glass).mul(0.55));
   }).ElseIf(uWindows.greaterThan(0.005).and(abs(f.w.sub(10)).lessThan(0.5)).and(bn.y.greaterThan(0.15)), () => {
     // Roof windows (roofGlass).
