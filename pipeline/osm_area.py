@@ -392,7 +392,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     timer.lap("cobble_voronoi")
     # Route-only links may cross the housing-estate lawns inferred from blocks,
     # or surveyed green that OSM hasn't mapped. Decide after those surfaces too.
-    gardens = _gardens(homes, buildings, streets, clip)
+    gardens, plot_fences = _gardens(homes, buildings, streets, clip,
+                                    [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls])
+    fences.extend(plot_fences)
     timer.lap("gardens")
     land = {f"dtm_{kind}": _areas(geom.intersection(clip))
             for kind, geom in dtm.land((w, s, e, n), tf.transform).items()}
@@ -589,21 +591,26 @@ NOT_HOMES = {"commercial", "retail", "office", "industrial", "warehouse", "schoo
              "public", "civic", "government", "church", "hotel", "dormitory", "kindergarten"}
 
 
-def _gardens(homes, buildings, streets, clip):
+def _gardens(homes, buildings, streets, clip, barriers=()):
     """OSM maps a suburb or a housing estate as one residential area and rarely maps
     the gardens and lawns in it, so the ground between the buildings would all be
     paved. Cut the residential areas along the streets (not service roads) into blocks.
     A block is green where it's mostly homes and either family houses covering less
     than 45 % of it, or blocks of flats with lots of room round them (under 30 %, a
     housing estate; inner-city blocks with paved courtyards are denser). All of it
-    but a strip round each building: 0.8 m round a house, 2 m round anything bigger."""
+    but a strip round each building: 0.8 m round a house, 2 m round anything bigger.
+    Where the block is family houses, each gets a plot (_plots) with hedges and fences
+    along its edges; these are returned as fences, apart from where OSM maps a barrier
+    (`barriers`). Returns (the gardens, those fences)."""
     region = unary_union(homes).intersection(clip) if homes else Polygon()
     if region.is_empty:
-        return Polygon()
+        return Polygon(), []
     blocks = _polys(region.difference(unary_union(streets)) if streets else region)
     shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
     tree = STRtree(shapes)
-    out = []
+    out, fences = [], []
+    street_edge = unary_union(streets).buffer(1.5) if streets else Polygon()
+    mapped = unary_union([b.buffer(1.0) for b in barriers]) if len(barriers) else Polygon()
     for block in blocks:
         if block.area < 100:
             continue
@@ -618,8 +625,111 @@ def _gardens(homes, buildings, streets, clip):
         share = covered / block.area
         if other > 0.3 * covered or not (share < 0.3 or (houses >= 0.7 * covered and share < 0.45)):
             continue
-        out.append(block.difference(unary_union([shapes[k].buffer(0.8 if shapes[k].area <= 350 else 2) for k in near])))
-    return unary_union(out) if out else Polygon()
+        green = block.difference(unary_union([shapes[k].buffer(0.8 if shapes[k].area <= 350 else 2) for k in near]))
+        out.append(green)
+        if houses >= 0.7 * covered:
+            fences.extend(_plot_fences(block, green, [(buildings[k]["id"], shapes[k]) for k in main], street_edge, mapped))
+    return (unary_union(out) if out else Polygon()), fences
+
+
+MIN_PLOT = 60  # m2: a smaller cell goes to the neighbour it shares most edge with
+PLOT_TOLERANCE = 1.0  # m: plot edges are straightened more than mapped fences, so they read as boundaries and not as Voronoi curves
+GATE = 1.6  # m each side of the point on the street edge nearest the house: where the gate is
+
+
+def _plots(block, homes):
+    """Divide a block of family houses into one plot per house: the Voronoi cell round
+    each footprint (sampled every 3 m along its outline, a little way in so terraced
+    houses that share a wall don't coincide), cut to the block. A long house gets a long
+    plot, and terraced houses plots running from the street to the back. Cells under
+    MIN_PLOT merge into a neighbour. Returns [(building id, plot)]; `homes` is [(id, footprint)]."""
+    if len(homes) < 2:
+        return [(homes[0][0], block)] if homes else []
+    pts, owner, seen = [], [], set()
+    for k, (_, shape) in enumerate(homes):
+        inner = shape.buffer(-0.3) if shape.area > 20 else shape
+        if inner.is_empty:
+            inner = shape
+        ring = max(shapely.get_parts(inner), key=lambda g: g.area).exterior
+        n = min(60, max(4, int(ring.length / 3)))
+        for x, y in shapely.get_coordinates(shapely.line_interpolate_point(ring, np.linspace(0, 1, n, endpoint=False), normalized=True)):
+            key = (round(x, 1), round(y, 1))
+            if key not in seen:
+                seen.add(key)
+                pts.append(key)
+                owner.append(k)
+    if len(pts) < 3:
+        return [(homes[0][0], block)]
+    cells = shapely.get_parts(shapely.voronoi_polygons(shapely.multipoints(pts), extend_to=block.envelope, ordered=True))
+    if len(cells) != len(pts):
+        return []
+    joined = {}
+    for cell, k in zip(cells, owner):
+        joined.setdefault(k, []).append(cell)
+    plots = {}
+    for k, cs in joined.items():
+        plot = _areas(shapely.make_valid(shapely.intersection(shapely.union_all(shapely.buffer(cs, 0.01, join_style="mitre")), block)))
+        if not plot.is_empty:
+            plots[k] = plot
+    for k in sorted(plots, key=lambda k: plots[k].area):
+        if plots[k].area >= MIN_PLOT or len(plots) < 2:
+            continue
+        near = [(plots[k].boundary.intersection(plots[o].buffer(0.1)).length, o) for o in plots if o != k]
+        length, o = max(near)
+        if length > 0:
+            plots[o] = _areas(shapely.make_valid(plots[o].union(plots[k].buffer(0.02, join_style="mitre"))))
+            del plots[k]
+    return [(homes[k][0], plot) for k, plot in plots.items()]
+
+
+def _plot_fences(block, green, homes, street_edge, mapped):
+    """Hedges and fences along the edges of the plots in a block, on the grass only:
+    between neighbours a hedge, a fence or nothing (the same for both sides, from the
+    two buildings' ids), and along the street a fence or hedge with a gap for the gate,
+    or a bare frontage. What each is comes from OSM ids, so a plot looks the same in
+    every build."""
+    plots = _plots(block, homes)
+    if len(plots) < 2:
+        return []
+    grass = green.buffer(0.3)
+    out = []
+
+    def emit(line, kind, seed):
+        line = line.intersection(grass).difference(mapped) if not mapped.is_empty else line.intersection(grass)
+        r = random.Random(seed)
+        h = round((r.uniform(1.0, 1.9) if kind == "hedge" else r.uniform(0.9, 1.6)), 1)
+        for ls in _lines(line):
+            if ls.length >= 1.5:
+                out.append({"kind": kind, "h": h, "pts": _coords(ls.simplify(PLOT_TOLERANCE))})
+
+    tree = STRtree([p for _, p in plots])
+    shape_of = dict(homes)
+    for a, (ida, plot) in enumerate(plots):
+        for b in sorted(tree.query(plot.buffer(0.1), predicate="intersects")):
+            idb = plots[b][0]
+            if b <= a:
+                continue
+            seed = zlib.crc32(f"{min(ida, idb)}|{max(ida, idb)}".encode())
+            roll = (seed % 100) / 100
+            kind = "hedge" if roll < 0.5 else "fence" if roll < 0.85 else None
+            if kind:
+                emit(plots[b][1].boundary.intersection(plot.buffer(0.1)), kind, seed)
+        # The rest of the outline faces the street or other land.
+        others = unary_union([q for k, (_, q) in enumerate(plots) if k != a])
+        front = plot.boundary.difference(others.buffer(0.1))
+        seed = zlib.crc32(f"{ida}|front".encode())
+        roll = (seed % 100) / 100
+        kind = "fence" if roll < 0.45 else "hedge" if roll < 0.75 else None
+        if not kind:
+            continue
+        line = front.intersection(street_edge)
+        if line.is_empty:
+            continue
+        gate = line.interpolate(line.project(shape_of[ida].centroid)) if line.geom_type in ("LineString", "MultiLineString") else None
+        if gate is not None:
+            line = line.difference(gate.buffer(GATE))
+        emit(line, kind, seed)
+    return out
 
 
 def _nearest(lines, surface):
