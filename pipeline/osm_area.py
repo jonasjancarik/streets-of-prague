@@ -22,6 +22,7 @@ from shapely.ops import unary_union
 
 import dtm
 import roofs
+import sports
 from build_cache import Timings
 from kerbs import Kerbs, estimate
 
@@ -56,7 +57,7 @@ INSIDE = 0.5
 ARCADE = 3.0
 COBBLES = ("sett", "cobblestone", "unhewn_cobblestone", "paving_stones")
 SQUARE_EDGE = 0.5  # m: avoid a remnant of a route ribbon along a square's edge
-NATURAL_GROUND = ("park", "garden", "wood", "orchard", "water", "pitch")
+NATURAL_GROUND = ("park", "garden", "wood", "orchard", "water", *sports.PITCH_KINDS)
 # A car road at least this much of whose centre line runs on the technical map's
 # surveyed surface is drawn from the survey (dtm.py); others, from OSM's tags.
 SURVEYED = 0.5
@@ -190,6 +191,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     road_lines: dict[str, list] = {}
     walking_surfaces = []  # (buffer, class, surface tag, ground level, route only on paving)
     rails, walls, fences, trees, weirs, crossings, passages = [], [], [], [], [], [], []
+    marks = []  # painted lines on pitches, courts and tracks (sports.py), as polylines
     lots = []  # each parking area on its own, with how the cars stand in it
     homes = []  # landuse=residential, where gardens may be (see _gardens)
     streets = []  # car roads other than service roads, which cut residential areas into blocks
@@ -308,7 +310,12 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             if col(row, "landuse") == "residential":
                 homes.append(g.buffer(0))
             kind = _area_kind(row, col)
-            if kind == "square":
+            if kind == "pitch":
+                for kind, part, painted in sports.classify(col(row, "leisure"), col(row, "sport"), col(row, "surface"),
+                                                           col(row, "area"), g.buffer(0), osm_id):
+                    areas.setdefault(kind, []).append(part)
+                    marks.extend(painted)
+            elif kind == "square":
                 outline = col(row, "place") == "square" and not col(row, "area:highway")
                 squares.append((g.buffer(0), col(row, "surface"), outline))
             elif kind:
@@ -353,7 +360,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
             "buildings": buildings, "parts": parts, "areas": {}, "roads": {}, "rails": rails,
             "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
-            "ground_ways": ground_ways,
+            "ground_ways": ground_ways, "marks": [],
             "lots": lots, "kerbs": kerbs,
         }
     lines = [w[0] for w in car_ways]
@@ -427,7 +434,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
         "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
-            "ground_ways": ground_ways,
+            "ground_ways": ground_ways, "marks": marks,
         "lots": lots, "kerbs": kerbs,
     }
 
