@@ -130,6 +130,18 @@ for(const night of [false,true]) {
   assert.equal(got.wanted,night?5:4); assert.equal(got.zoned,1); assert.equal(got.cars.length,night?5:4);
 }
 reports.push('narrow streets and paid day/night shares');
+// Outside the zones the buildings decide how full the kerb is (src/parkingDemand.ts).
+const road=graph([raw('long','a','b',[[0,0],[600,0]])]).edges;
+const lotsAlong=[rectangle(10,-6.5,590,-4.5)];
+const houseRow=(kind,h)=>Array.from({length:12},(_,i)=>({kind,h,rings:rectangle(20+i*45,-40,20+i*45+12,-28)}));
+const parked=(buildings,night=false)=>{let n=0;for(let seed=0;seed<6;seed++) n+=park(road,road,lotsAlong,seed,{buildings,night}).cars.length;return n/6;};
+const [flats,houses,nobody]=[parked(houseRow('apartments',24)),parked(houseRow('house',6)),parked([])];
+assert.ok(flats>1.8*houses,`flats ${flats} vs houses ${houses}`);
+assert.ok(houses>nobody,`houses ${houses} vs no buildings ${nobody}`);
+assert.ok(nobody<=0.15*flats,`a lot with nothing round it stays nearly empty: ${nobody}`);
+const office=houseRow('office',12);
+assert.ok(parked(office,false)>1.8*parked(office,true),'offices fill by day and empty at night');
+reports.push('parking occupancy follows the buildings round it');
 assert.equal(parkingClearance(graph([{...foreign,bridge:true}]).edges)(-.5,0,1),true);
 assert.equal(parkingClearance(graph([{...foreign,tunnel:true}]).edges)(-.5,0,1),true);
 const kerb=raw('kerb','a','b',[[0,0],[50,0]],{width:4,kerb:[3.5,null]});
