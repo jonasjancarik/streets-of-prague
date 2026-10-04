@@ -681,6 +681,16 @@ export class TileWorld {
     return graph.edges;
   }
 
+  // The buildings in a tile and its neighbours that people park for, from the same tiles
+  // in the same order whenever the tile is built: how full the cars outside the paid zones
+  // are doesn't depend on which neighbour happened to arrive first.
+  async parkingBuildings(t: TileJSON) {
+    const keys: string[] = [];
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) if (this.has(t.i + di, t.j + dj)) keys.push(`${t.i + di}_${t.j + dj}`);
+    const tiles = await Promise.all(keys.map((key) => this.fetchJSON(key)));
+    return tiles.flatMap((tile) => tile.buildings.filter((b) => (b.minh ?? 0) < RAISED).map((b) => ({ id: b.id, rings: b.rings, kind: b.kind, h: b.h })));
+  }
+
   // All of a tile's files at once: its JSON, terrain heights, its bridges' and tunnels'
   // heights (or, from before those, the bare ground where bridges were raised) and
   // IPR's buildings.
@@ -803,6 +813,7 @@ export class TileWorld {
   async make(k: string, { t, height, bare, ipr, levels }: TileFiles): Promise<Tile> {
     // Fetch only the adjacent JSON, before any render resources/leases are created.
     const clearanceEdges = await this.parkingEdges(t);
+    const nearBuildings = await this.parkingBuildings(t);
     const [x0, y0, x1, y1] = t.box;
     const data = { ...t, size: [x1 - x0, y1 - y0] as Point2, origin: [-x0, -y0] as Point2 };
     const geo = new Geo(data);
@@ -985,7 +996,7 @@ export class TileWorld {
     fences.add(fenceSections);
     const inside = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1;
     const { cars } = parkCars({
-      data, edges, clearanceEdges, zones, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
+      data, edges, clearanceEdges, zones, buildings: location.search.includes('oldparking') ? null : nearBuildings, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
       shares: new Map((t.sections ?? []).map((s) => [s.code, s.share])), inside,
       // No parking inside passages.
       solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) : false),

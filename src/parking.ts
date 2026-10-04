@@ -4,6 +4,8 @@ import { Polyline, segDist } from './network.ts';
 import type { DriveEdge, ParkingOrientation } from './network.ts';
 import type { Point2, Polygons, Bounds } from './map/geo.ts';
 import { parkingClearance } from './parkingClearance.ts';
+import { Demand, occupancy } from './parkingDemand.ts';
+import type { DemandBuilding, Floors } from './parkingDemand.ts';
 
 type BayOrientation = Exclude<ParkingOrientation, 'no'>;
 interface ParkingSection {
@@ -27,7 +29,8 @@ export const onPavement = new WeakMap<Car, { edge: DriveEdge; s: number }>();
 // Parked cars. Where TSK's paid-parking sections cover the street, each section
 // gets as many cars as its spaces × measured occupancy (day or night). They go
 // into OSM's mapped parking lanes and lots first, then along the kerb. Outside
-// the zones, lots and kerbs are filled at random. And, this being Prague, a few more
+// the zones, lots and kerbs are filled at random, as full as the buildings round them
+// call for (src/parkingDemand.ts). And, this being Prague, a few more
 // stand up on the pavement: at corners, and where the kerb is otherwise empty.
 
 export function inRing(x: number, y: number, ring: Point2[]) {
@@ -281,9 +284,12 @@ function onCarriageway(x: number, y: number, edges: DriveEdge[]) {
 
 // `shares`: code → share of each paid-parking section inside this piece of map (a
 // tile); without it the whole section counts. `inside(x, y)` limits spots to the tile.
-export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r, night = false, shares = null, inside = () => true }: {
+export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r, night = false, shares = null, inside = () => true, buildings = null }: {
   data: ParkingData; edges: DriveEdge[]; zones: Zones; solid: (x: number, y: number) => boolean | number;
   clearanceEdges?: DriveEdge[];
+  // The buildings in and round the tile (as far as the neighbouring tiles reach): without
+  // them, outside the zones a fifth of the kerb spots and under half of a car park's get a car.
+  buildings?: DemandBuilding[] | null;
   r: () => number; night?: boolean; shares?: Map<string, number> | null;
   inside?: (x: number, y: number) => boolean;
 }) {
@@ -343,7 +349,19 @@ export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r,
     const ordered = [...shuffle(list.filter((s) => s.lot)), ...shuffle(list.filter((s) => !s.lot))];
     for (const s of ordered) if (want > 0 && place(s)) want--;
   }
-  for (const s of shuffle(free)) if (r() < (s.lot ? 0.45 : 0.2)) place(s);
+  // Outside the zones: as many cars as the buildings round each spot would have (the
+  // amount of building is worked out once for each 20 m square).
+  let demand: Demand | null = null;
+  const floors = new Map<number, Floors>();
+  const taken = (s: ParkingSlot) => {
+    if (!buildings) return s.lot ? 0.45 : 0.2;
+    demand ??= new Demand(buildings);
+    const cx = Math.floor(s.x / 20), cy = Math.floor(s.y / 20), k = cx * 131072 + cy;
+    let f = floors.get(k);
+    if (!f) floors.set(k, f = demand.floors(cx * 20 + 10, cy * 20 + 10));
+    return occupancy(f, night, s.lot);
+  };
+  for (const s of shuffle(free)) if (r() < taken(s)) place(s);
   // Up on the pavement, where there's room beside it at the kerb: more often at a
   // corner, and as often as not a delivery van.
   for (const s of pavementSlots(edges, r)) {
