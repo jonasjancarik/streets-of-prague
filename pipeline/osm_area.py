@@ -22,6 +22,7 @@ from shapely.ops import unary_union
 
 import dtm
 import roofs
+import worn_paths
 from build_cache import Timings
 from kerbs import Kerbs, estimate
 
@@ -201,6 +202,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     maybe = []  # ways that are passages if they run through buildings (passage_tags)
     squares = []  # (polygon, own surface, named outline only); decide after all ways and land
     square_ways = []  # (line, mapped surface) on the ground, including untagged ways
+    stops = []  # (x, y) of public transport stops, which people cross the grass to reach (worn_paths.py)
     ground_ways = set()  # the OSM ids of the passages among the ways tagged as tunnels
 
     # Every geometry into local metres in one go.
@@ -243,6 +245,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
 
         if buildings_only:
+            continue
+        if isinstance(g, Point) and (col(row, "highway") == "bus_stop" or col(row, "railway") in ("tram_stop", "halt", "station", "subway_entrance")):
+            stops.append((g.x, g.y))
             continue
         hw = col(row, "highway")
         if hw and isinstance(g, (LineString, MultiLineString)):
@@ -428,6 +433,23 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])
     if not lawns.is_empty:
         area_polys["lawn"] = unary_union([area_polys.get("lawn", lawns), lawns])
+    grass = unary_union([lawns, area_polys.get("meadow", Polygon()), area_polys.get("dtm_green", Polygon())])
+    if not grass.is_empty:
+        flats = {k: Polygon(b["rings"][0], b["rings"][1:]) for k, b in enumerate(buildings)}
+        blocks = [k for k, b in enumerate(buildings)
+                  if b["kind"] in ("apartments", "residential", "dormitory") and not b["part"] and flats[k].area >= 250]
+        obstacles = unary_union([*flats.values(), area_polys.get("water", Polygon()), area_polys.get("parking", Polygon()),
+                                 road_polys.get("road", Polygon()), road_polys.get("bridge", Polygon()),
+                                 *(LineString(f["pts"]).buffer(0.3) for f in [*fences, *walls])])
+        worn = worn_paths.worn_paths(grass, flats, blocks, stops,
+                                     [ls for ls, _, _ in sidewalks], [w[0] for w in car_ways], obstacles)
+        core, rim = worn_paths.ribbons(worn)
+        if core is not None:
+            area_polys["worn"] = _areas(core.intersection(clip))
+            area_polys["worn_edge"] = _areas(rim.intersection(clip))
+        if stats is not None:
+            stats["worn_paths"] = len(worn)
+    timer.lap("worn_paths")
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
