@@ -27,6 +27,22 @@ export interface CountrysideSetup {
   centre: [number, number]; // lon, lat of the built map's projection
   tile: number; origin: Point2; cols: number; rows: number;
 }
+// A street's width: by class, and for the small ones by whether houses stand near it.
+function settingWidth(hw: string, pts: Point2[], buildings: { at: Point2 }[]): number {
+  const table = SETTING_WIDTH[hw];
+  if (!table) return ROAD_WIDTH[hw];
+  let near = 0;
+  for (const { at } of buildings) {
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, ay] = pts[i], dx = pts[i + 1][0] - ax, dy = pts[i + 1][1] - ay;
+      const t = Math.max(0, Math.min(1, ((at[0] - ax) * dx + (at[1] - ay) * dy) / (dx * dx + dy * dy || 1)));
+      if (Math.hypot(ax + dx * t - at[0], ay + dy * t - at[1]) <= SETTING_RADIUS) { near++; break; }
+    }
+    if (near >= SETTING_HOUSES) return table[0];
+  }
+  return table[1];
+}
+
 // A vector tile's bytes (unzipped), or nothing where the file has none.
 export type VectorSource = (z: number, x: number, y: number) => Promise<ArrayBuffer | undefined>;
 
@@ -43,6 +59,13 @@ const ROAD_WIDTH: Record<string, number> = {
   unclassified: 7, living_street: 6, service: 5, pedestrian: 6,
   footway: 3, path: 2, steps: 3, cycleway: 2.5, track: 3, bridleway: 2,
 };
+// What pipeline/lanes.py gives streets with no width tag by their setting: [among houses,
+// in open land]. There are no blocks of flats out here, and the room between fences
+// isn't measured; the bigger widths stay for the map's own streets.
+const SETTING_WIDTH: Record<string, [number, number]> = {
+  residential: [5.5, 7], unclassified: [5.5, 6], living_street: [5, 5], tertiary: [7.5, 8], service: [3.5, 4],
+};
+const SETTING_RADIUS = 35, SETTING_HOUSES = 3; // m, and how many buildings make it houses
 // A motorway's line is one carriageway here (the tiles don't give lanes).
 const ONE_WAY_WIDTH: Record<string, number> = { motorway: 11, trunk: 9, primary: 8 };
 const FOOTWAYS: Record<string, string> = { sidewalk: 'footway', crossing: 'footway' };
@@ -419,7 +442,7 @@ export class Countryside {
           if (length < (pu === pv ? 1 : 0.01)) continue;
           const pair = pu < pv ? `${pu}|${pv}` : `${pv}|${pu}`, n = pairs.get(pair) || 0;
           pairs.set(pair, n + 1);
-          const width = (l.oneway && ONE_WAY_WIDTH[l.hw]) || ROAD_WIDTH[l.hw];
+          const width = (l.oneway && ONE_WAY_WIDTH[l.hw]) || settingWidth(l.hw, piece.pts, raw.buildings);
           edges.push({ u: pu, v: pv, n, width, hw: l.hw, name: l.name, oneway: l.oneway, bridge: l.bridge, tunnel: l.tunnel, pts: piece.pts.map(([x, y]): Point2 => [r2(x), r2(y)]), box: boxOf(piece.pts) });
         }
       }
