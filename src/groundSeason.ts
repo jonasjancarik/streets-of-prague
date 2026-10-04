@@ -27,6 +27,10 @@ const ramp = (day: number, from: number, to: number) => {
 };
 // 15 July preserves the original summer palette and patch strength exactly.
 const SUMMER_DRY = ramp(196, 182, 235);
+// The photos were taken in a dry July and show more straw than the game does on 15 July.
+// ?straw=0..1 starts the summer's drying already in the weeks before and through July
+// (how much of the full August drying is there by 15 July); 0 keeps the original palette.
+const STRAW = typeof location === 'undefined' ? 0 : Math.min(1, Math.max(0, Number(new URLSearchParams(location.search).get('straw')) || 0));
 const fieldBase = new THREE.Color('#b9b27a');
 const fieldGreen = new THREE.Color('#79a452');
 const fieldEarth = new THREE.Color('#947658');
@@ -39,8 +43,10 @@ export function shareGroundSeason(season: Season) {
   sharedDay = season.day;
   const { day, fresh, cold } = season;
   const drying = Math.max(0, (season.dry - SUMMER_DRY) / (1 - SUMMER_DRY));
+  const early = STRAW * ramp(day, 160, 196) * (1 - ramp(day, 245, 275));
+  const total = early + (1 - early) * drying;
   for (const k of Object.keys(GRASS_DRYNESS) as GrassKind[]) {
-    const dry = drying * GRASS_DRYNESS[k];
+    const dry = total * GRASS_DRYNESS[k];
     GRASS_SEASON[k].value.set(
       (1 + 0.15 * fresh) * (1 + 0.08 * dry) * (1 + 0.13 * cold),
       (1 + 0.12 * fresh) * (1 - 0.04 * dry) * (1 - 0.12 * cold),
