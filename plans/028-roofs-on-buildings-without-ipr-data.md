@@ -11,7 +11,9 @@ solar panels.
 
 ## Status and starting point
 
-- Status: PLANNED.
+- Status: PARTLY DONE on branch `plan-028-roofs` (not merged). Built: step 0 (the atria
+  fault), steps 1 and 2 (Part A), step 3 (parapets and surface colours). Not built: step 4,
+  and the city's IPR layer has not been re-run (see "What was built").
 - Priority: P2 for part A (it changes every village in the outer ring and all of plan
   021's countryside), P3 for part B. Effort: A two to three days, B three to five.
   Risk: low for A; medium for B (more triangles on every estate).
@@ -101,3 +103,38 @@ it (step 0).
 
 Roof colours measured from photos outside IPR's area, green roofs, roof terraces
 with furniture.
+
+## What was built
+
+- **Atria fault (step 0).** Not in the tile data or `flatRoof`: `pipeline/ipr_buildings.py`
+  ignored the interior rings of CityGML roof and floor polygons, so a courtyard in IPR's
+  mesh was covered. It now cuts holes of 25 m² or more out of roof and floor surfaces
+  (smaller ones and all wall holes stay separate polygons, as before). Unit-tested in
+  `pipeline/test_ipr_openings.py`. The shared city layer was not re-run (hours, and the
+  data is shared between sessions), so the schools at 50.13206, 14.42100 still look roofed
+  until `ipr_buildings.py` is run again.
+- **Counts (step 0).** Roofs on OSM-only buildings matter mostly from the helicopter or a
+  high camera; from the street only the eaves and the parapet show.
+- **Part A, `src/map/roofRules.ts`**, used by `buildBuildings` and so by plan 021's
+  countryside too. Shape by kind, size, corners and a per-cell share; palette of clay,
+  brown tile, grey and anthracite with the cell's dominant class followed by most
+  buildings; flat surfaces in gravel, bitumen or membrane. Calibrated on IPR's measured
+  roofs in Kolovraty (9 % flat), Klánovice (15 %), Zbraslav (29 %), Satalice (28 %) and
+  Čakovice (49 %); among their pitched roofs about 21 to 37 % red, 27 to 40 % brown or
+  orange, 28 to 41 % grey, 5 to 9 % dark. `scripts/check-roof-rules.mjs` checks the rules.
+- **Part B step 3.** Parapets on flat roofs over 60 m²: walls 0.35 to 0.85 m above the
+  roof, a 0.3 m cap, and an inner face that leans back so `facadeCoords` counts it as a
+  roof and puts no windows on it.
+- Before and after pictures of the five places in the plan are in the session report;
+  inner-city (IPR) roofs are unchanged.
+
+## What is left
+
+- Re-run `pipeline/ipr_buildings.py` for the city and look at the atria schools.
+- Step 4 (lift houses, vents, skylights, solar panels): not started; the gain is for the
+  high camera only, and it adds triangles to every estate, so bench an estate first.
+- Neighbour coherence is by 90 m grid cell, so a street crossing a cell edge can change
+  roof class. "Near a church keeps red" was not implemented (no neighbour access in the
+  worker); farms do keep red.
+- Triangle cost of the parapets (4 triangles per edge of every flat roof over 60 m²) was
+  not benched.
