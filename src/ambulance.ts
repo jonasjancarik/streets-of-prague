@@ -111,11 +111,13 @@ export class Ambulances {
     return true;
   }
 
-  // You got into an ambulance: it's yours, and whoever of its crew is out runs after you
+  // You got into an ambulance: it's yours, and its crew (out already, or getting out now) runs after you
   // for a while. Returns whether it was one (taking it is a crime).
   take(car: Car) {
     const i = this.rigs.findIndex((r) => r.car === car);
     if (i < 0) return false;
+    // A crew still aboard gets out as you get in.
+    if (this.rigs[i].crew) this.getOut(this.rigs[i]);
     this.rigs.splice(i, 1);
     car.crew = false;
     for (const m of this.crew) if (m.rig.car === car) { m.back = true; m.chase = CHASE; }

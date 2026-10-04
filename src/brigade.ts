@@ -145,11 +145,13 @@ export class Brigade {
     return true;
   }
 
-  // You got into an engine: it's yours. Whoever of its crew is out runs after you for a
+  // You got into an engine: it's yours. Its crew (out already, or getting out now) runs after you for a
   // while. Returns whether it was an engine (taking one is a crime).
   take(car: Car) {
     const i = this.engines.findIndex((e) => e.car === car);
     if (i < 0) return false;
+    // A crew still aboard gets out as you get in.
+    if (this.engines[i].crew) this.getOut(this.engines[i]);
     this.engines.splice(i, 1);
     car.crew = false;
     for (const f of this.crew) if (f.engine.car === car) { f.back = true; f.chase = CHASE; }
