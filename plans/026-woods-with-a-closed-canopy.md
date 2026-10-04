@@ -10,7 +10,9 @@ leaves with conifers mixed in and a ragged edge of shrubs and young trees.
 
 ## Status and starting point
 
-- Status: PLANNED.
+- Status: STEPS 0–3 DONE on branch `plan-026-woods` (not merged or deployed). Step 4
+  (young woods) not done; the floor colour is not blended over the edge band (see
+  "What was built").
 - Priority: P2. Effort: three to five days. Risk: medium (woods already hold most of
   the trees in view on the city's edge).
 - Category: feature (map look). Dependencies: none. Overlaps plan 017 (cheaper trees
@@ -84,3 +86,41 @@ git diff --stat 364e7f3cac31a9aedb4a64f8c0b1ac9563258990..HEAD -- src/map/vegeta
 
 Correcting wood outlines against the photos, undergrowth you can walk through, new
 tree meshes.
+
+## What was built (4 October 2026, branch `plan-026-woods` from `af66875`)
+
+- **Step 0, counts** (desktop, summer, 13:00, clear; trees within 100 m of the view
+  centre, broadleaf + conifer): Šárka (50.1047, 14.3157) 596 + 270; Kunratický les
+  (50.0187, 14.4770) 633 + 271; wood at 50.12522, 14.3037 640 + 267. Triangles in
+  the top-down view: 4.1 M, 4.6 M, 3.3 M, of which 0.1–0.2 M are not trees. Lit
+  floor visible through the canopy (pixels that do not change when the trees are
+  hidden, so lit ground only): 14 %, 12 %, 16 %. The woods are already dense; the
+  gaps are mostly a floor problem. Winter is not comparable with this method.
+- **Step 1, floor** (`2c72c0f`): `COLORS.wood` and `woodBase` are `#394a2b` (were
+  `#52703c`). The winter litter colour is unchanged. `scripts/check-ground-season.mjs`
+  passes. Top-down summer pictures show the gaps as shade instead of lit grass.
+- **Steps 2 and 3** (`1d8c7a5`, `src/map/vegetation.ts`): conifer stands from noise
+  with a share near 30 %; height scaled apart from radius by noise plus 4 % emergents;
+  a thinner, smaller and lower band 8 m inside the outline; a gap pass on a 3.4 m
+  lattice that adds a small tree where no crown covers a spot (about 10 % more
+  trees in the wood, as counted per tile); shrubs and a few young trees within 6 m
+  outside the outline over grass, garden, park or field (fields are now painted
+  into the tree raster, value 40). Counts after: 534 + 368, 647 + 204, 508 + 393 near
+  the same centres (total within +5 % to −6 %); top-down triangles 4.4 M, 4.1 M,
+  3.3 M.
+- **Frame time**: `scripts/bench.mjs --scenes woods --vs` (baseline `af66875`, M5
+  desktop, Chrome/WebGPU): median 5.5 ms before, 5.6 ms after over three alternating
+  pairs. Two earlier series were swamped by other sessions' load (one pair read
+  32 fps against 176) and prove nothing. The phone tier was not measured; the tree
+  count and triangles are within a few per cent of before, so no change is expected.
+
+### Left open
+
+- Blending the floor colour over the edge band (design item 5, last sentence): the
+  wood floor is a flat polygon colour with the pattern in the ground shader, so a
+  soft edge needs a shader or a mesh change. From above the ruler-straight change
+  from dark floor to grass remains; the new shrubs and small trees cover part of it.
+- Step 4 (young woods from the surface model): not started.
+- Trees stop at the tile edge for the gap and edge passes (each tile only sees its own
+  trees), so there can be a few extra small trees along a tile border.
+- Check on a phone (Pixel 5) and whether more or bigger crowns are affordable.
