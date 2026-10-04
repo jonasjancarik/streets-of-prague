@@ -15,6 +15,7 @@ import numpy as np
 import osmnx as ox
 import pandas as pd
 import shapely
+import shapely.affinity
 from pyproj import Transformer
 from shapely import STRtree
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon, box
@@ -394,8 +395,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     timer.lap("cobble_voronoi")
     # Route-only links may cross the housing-estate lawns inferred from blocks,
     # or surveyed green that OSM hasn't mapped. Decide after those surfaces too.
-    gardens, plot_fences = _gardens(homes, buildings, streets, clip,
-                                    [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls])
+    gardens, plot_fences, drives = _gardens(homes, buildings, streets, clip,
+                                            [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls])
     fences.extend(plot_fences)
     timer.lap("gardens")
     land = {f"dtm_{kind}": _areas(geom.intersection(clip))
@@ -434,7 +435,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
         "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "ground_ways": ground_ways,
-        "lots": lots, "kerbs": kerbs,
+        "lots": lots, "kerbs": kerbs, "drives": drives,
     }
 
 
@@ -643,14 +644,15 @@ def _gardens(homes, buildings, streets, clip, barriers=()):
     but a strip round each building: 0.8 m round a house, 2 m round anything bigger.
     Where the block is family houses, each gets a plot (_plots) with hedges and fences
     along its edges; these are returned as fences, apart from where OSM maps a barrier
-    (`barriers`). Returns (the gardens, those fences)."""
+    (`barriers`), and each a place for a car on its drive (_drive_spots). Returns (the
+    gardens, those fences, those places)."""
     region = unary_union(homes).intersection(clip) if homes else Polygon()
     if region.is_empty:
-        return Polygon(), []
+        return Polygon(), [], []
     blocks = _polys(region.difference(unary_union(streets)) if streets else region)
     shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
     tree = STRtree(shapes)
-    out, fences = [], []
+    out, fences, drives = [], [], []
     street_edge = unary_union(streets).buffer(1.5) if streets else Polygon()
     mapped = unary_union([b.buffer(1.0) for b in barriers]) if len(barriers) else Polygon()
     for block in blocks:
@@ -670,8 +672,11 @@ def _gardens(homes, buildings, streets, clip, barriers=()):
         green = block.difference(unary_union([shapes[k].buffer(0.8 if shapes[k].area <= 350 else 2) for k in near]))
         out.append(green)
         if houses >= 0.7 * covered:
-            fences.extend(_plot_fences(block, green, [(buildings[k]["id"], shapes[k]) for k in main], street_edge, mapped))
-    return (unary_union(out) if out else Polygon()), fences
+            homes_here = [(buildings[k]["id"], shapes[k]) for k in main]
+            plots = _plots(block, homes_here)
+            fences.extend(_plot_fences(plots, homes_here, green, street_edge, mapped))
+            drives.extend(_drive_spots(plots, homes_here, [shapes[k] for k in near], street_edge))
+    return (unary_union(out) if out else Polygon()), fences, drives
 
 
 MIN_PLOT = 60  # m2: a smaller cell goes to the neighbour it shares most edge with
@@ -724,13 +729,45 @@ def _plots(block, homes):
     return [(homes[k][0], plot) for k, plot in plots.items()]
 
 
-def _plot_fences(block, green, homes, street_edge, mapped):
+DRIVE_IN = 3.3  # m from the gate to the middle of a car on the drive
+DRIVE_ROOM = 6.2  # m of plot between the gate and the house that a car needs
+CAR = (4.6, 2.2)  # m, what has to be free of buildings
+
+
+def _drive_spots(plots, homes, shapes, street_edge):
+    """Where a car would stand on each plot's drive: just inside the gate (the point of
+    the plot's street edge nearest the house, as the fences use), nose towards the house,
+    where there is room between the gate and the house for it. Returns [{"b": the house's
+    id, "x", "y", "h": the way the car faces}]; the game decides which of them have a car."""
+    roofs = unary_union(shapes).buffer(0.6) if shapes else Polygon()
+    shape_of = dict(homes)
+    out = []
+    for ida, plot in plots:
+        house = shape_of[ida]
+        others = unary_union([q for k, q in plots if k != ida])
+        line = plot.boundary.difference(others.buffer(0.1)).intersection(street_edge) if not others.is_empty else plot.boundary.intersection(street_edge)
+        if line.is_empty or line.geom_type not in ("LineString", "MultiLineString"):
+            continue
+        gate = line.interpolate(line.project(house.centroid))
+        dx, dy = house.centroid.x - gate.x, house.centroid.y - gate.y
+        run = math.hypot(dx, dy)
+        if run < 1e-6 or gate.distance(house) < DRIVE_ROOM:
+            continue
+        dx, dy = dx / run, dy / run
+        x, y = gate.x + dx * DRIVE_IN, gate.y + dy * DRIVE_IN
+        spot = shapely.affinity.rotate(box(x - CAR[0] / 2, y - CAR[1] / 2, x + CAR[0] / 2, y + CAR[1] / 2),
+                                       math.atan2(dy, dx), origin=(x, y), use_radians=True)
+        if plot.buffer(0.3).contains(spot) and not spot.intersects(roofs):
+            out.append({"b": ida, "x": round(x, 2), "y": round(y, 2), "h": round(math.atan2(dy, dx), 3)})
+    return out
+
+
+def _plot_fences(plots, homes, green, street_edge, mapped):
     """Hedges and fences along the edges of the plots in a block, on the grass only:
     between neighbours a hedge, a fence or nothing (the same for both sides, from the
     two buildings' ids), and along the street a fence or hedge with a gap for the gate,
     or a bare frontage. What each is comes from OSM ids, so a plot looks the same in
-    every build."""
-    plots = _plots(block, homes)
+    every build. `plots` is what _plots made of the block."""
     if len(plots) < 2:
         return []
     grass = green.buffer(0.3)

@@ -69,6 +69,7 @@ export interface TileJSON extends GroundTileData {
   buildings: TileBuilding[];
   walls: { kind: string; pts: Point2[] }[];
   fences?: { kind: string; h?: number; pts: Point2[] }[]; // fences and hedges (not in older tiles)
+  drives?: { b: number; x: number; y: number; h: number }[]; // where a car could stand on a house's drive: the middle, and the way it faces (not in older tiles)
   trees: TreeSpot[];
   lots?: { o: 'parallel' | 'diagonal' | 'perpendicular' | null; rings: Point2[][] }[];
   sections?: TileSection[];
