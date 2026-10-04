@@ -687,7 +687,24 @@ record the measurements, merge decisions and pending landmark asset activation.
   against someone standing still) and drawn as a streak flying to where the bullet went.
 - **Parking** follows TSK Praha's paid-parking data: each street section gets spaces ×
   measured occupancy cars (day or night), placed in OSM's parking lanes and lots and
-  then along the kerb (`src/parking.ts`); bay lines are painted as Prague paints them,
+  then along the kerb (`src/parking.ts`). Outside the paid zones (most of the east and
+  south of the city and everything past the city limits) each spot's chance of a car
+  comes from the buildings within about 60 m (`src/parkingDemand.ts`): the floor area
+  (footprint × storeys) of flats and tenements, terraced and mid-rise houses, family
+  houses and places of work, taken from the tile and its eight neighbours. Flats fill
+  the street (about 90 % day and night), family houses keep their cars on the plot
+  (about 30 %, so 15–25 % on a sparse villa street), offices, shops, halls and
+  factories fill by day and mostly empty at night (70 % and 30 %), and where little is
+  built the share falls towards nothing; more building round a spot raises it (floor
+  area to the power 0.3, capped at 115 % of the typical street). A mapped car park is
+  a third fuller than the kerb beside it, and one with no building in reach keeps 8 %.
+  The rates are measured against TSK's own counts: `scripts/parking-demand-sample.py`
+  and `scripts/check-parking-demand.mjs` set the rule against the 3,183 sections with
+  both occupancies. TSK's medians run higher than the rule for family houses (about 50 %
+  against 24 %), because paid zones exist where parking is scarce and the cars here
+  would otherwise stand in driveways, which are not modelled; for flats they run a little
+  lower (77–80 % against 83–89 %). Nothing changes inside the paid zones; `?oldparking`
+  brings back the old flat 20 % / 45 % for comparison. Bay lines are painted as Prague paints them,
   along the street side of the bays with short lines across at each end and none along
   the pavement: solid blue in residents' zones, white dashes in the mixed (violet) and
   visitors' (orange) ones. Cars stand parallel, angled or
