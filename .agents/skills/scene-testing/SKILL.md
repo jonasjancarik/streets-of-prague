@@ -74,7 +74,8 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   lamp or pole. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
   on a run clear of walls and other cars. `t.runway(heading)`: metres to the first wall.
 - `t.wait(seconds, controls)`: runs the world in 1/60 s steps with
-  `{ move, turn, run, brake, jump }` held (the live loop pauses meanwhile).
+  `{ move, turn, run, brake, jump, aim }` held (the live loop pauses meanwhile). `aim`
+  is the touch stick: `{ h, mag }`, a heading in the game's radians (0 east, anticlockwise).
 - `t.probe()`: position, speed, car type/damage/burning, money, stars, police cars,
   health, ticket, time, weather, date.
 - `t.camera({ at, height, tilt, heading })` looks from anywhere without moving you

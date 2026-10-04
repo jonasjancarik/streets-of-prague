@@ -76,7 +76,7 @@ interface Game {
   bags: Bags;
 }
 
-type Controls = { move: number; turn: number; run: boolean; brake: boolean; jump: boolean };
+type Controls = { move: number; turn: number; run: boolean; brake: boolean; jump: boolean; aim: { h: number; mag: number } | null };
 
 const rad = (deg: number) => ((90 - deg) * Math.PI) / 180;
 const deg = (h: number) => ((((90 - (h * 180) / Math.PI) % 360) + 360) % 360);

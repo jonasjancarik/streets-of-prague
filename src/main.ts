@@ -30,6 +30,7 @@ import type { Kind } from './weather.ts';
 import { Lamps, type Flashing } from './lamps.ts';
 import { Signals } from './signals.ts';
 import { Skids } from './skids.ts';
+import { SteerGuide, aimSteer, type Held } from './steerGuide.ts';
 import { Spray } from './spray.ts';
 import { Water } from './water.ts';
 import { Beacons } from './beacons.ts';
@@ -97,6 +98,8 @@ declare global { interface Window { __drive?: unknown; __test?: Testkit } }
 
 const params = new URLSearchParams(location.search);
 const AREA = params.get('area') || 'praha';
+// The dashes showing where the stick will take the car (src/steerGuide.ts); ?guide=off hides them.
+const guideOn = params.get('guide') !== 'off';
 // Where a new game can begin: lon, lat of a spot on a street with room for a car at the kerb.
 const STARTS: [string, number, number][] = [
   ['Újezd', 14.40455, 50.08105],
@@ -350,6 +353,8 @@ async function main() {
   const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
   const skids = new Skids(scene);
+  const steerGuide = new SteerGuide(scene);
+  let held: Held | null = null; // the heading the stick asks of your car, for the guide
   const spray = new Spray(scene, weatherFx.tint);
   const water = new Water(scene, weatherFx.tint);
   const beacons = new Beacons(scene);
@@ -1437,6 +1442,7 @@ async function main() {
         const a = assist.steer(inCar, steer);
         if (a !== null) { steer = a; assisted = true; }
       } else assist.reset();
+      held = ctl.aim && !assisted ? { h: ctl.aim.h, throttle: ctl.move, handbrake: ctl.brake } : null;
       // Keeping to the lane, you keep to the speed limit too.
       const cap = assisted ? (assist.limit ?? 50) / 3.6 : null;
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
@@ -1968,6 +1974,7 @@ async function main() {
     }
     carPool.render(drawn, ground, dt);
     skids.update(dt * scale, drawn, ground);
+    steerGuide.update(dt, inCar, inCar && guideOn ? held : null, (x, y) => ground(x, y, inCar), clamp(height / 120, 1, 3));
     spray.update(dt * scale, drawn, ground, renderer.domElement.height);
     water.update(dt * scale, cannon.jet ? [...brigade.jets, cannon.jet] : brigade.jets, renderer.domElement.height);
     for (const c of choppers) c.render(dt);
@@ -2245,19 +2252,9 @@ async function main() {
   dev.attach(testkit);
 }
 
-// The touch stick in a car points where you want to go on screen, as it does on foot:
-// steer towards that heading, harder the further off it is. Reversing (or about to,
-// with the brake held at a standstill), the back of the car is what follows the stick.
-let lastOff = 0;
-function steerToward(car: Car, h: number, throttle: number) {
-  const v = car.forwardSpeed;
-  const back = v < -0.3 || (throttle < 0 && v < 0.5);
-  let off = turnOf(car.h + (back ? Math.PI : 0), h);
-  // Pointing straight behind: keep turning the way you started, not flip-flop.
-  if (Math.abs(off) > 2.6 && lastOff && Math.sign(off) !== Math.sign(lastOff)) off = -off;
-  lastOff = off;
-  return clamp(off * 1.6, -1, 1) * (back ? -1 : 1);
-}
+// The stick in a car steers towards the heading it points at (see aimSteer).
+const stickTurn = { off: 0 };
+const steerToward = (car: Car, h: number, throttle: number) => aimSteer(car.h, car.forwardSpeed, h, throttle, stickTurn);
 
 function touching(ca: Point2[], cb: Point2[], rr: number) {
   for (const p of ca) for (const q of cb) if (Math.hypot(p[0] - q[0], p[1] - q[1]) < rr) return true;
