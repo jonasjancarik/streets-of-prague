@@ -4,6 +4,7 @@ import { signedArea, hash } from './geo.ts';
 import type { GeoData, Point2 } from './geo.ts';
 import { TENEMENT_PLASTER } from '../facades.ts';
 import { ROOF_TILES } from './roofPalette.ts';
+import { cellOf, roofShapeFor, pitchedColour, flatColour, hasParapet, insetRings, parapetHeight, PARAPET_WIDTH } from './roofRules.ts';
 
 // Some package builds expose the builder on a default export at runtime.
 const skeletonModule = SS as typeof SS & { default?: { SkeletonBuilder?: typeof SS.SkeletonBuilder } };
@@ -88,6 +89,7 @@ export function buildBuildings(data: BuildingTile) {
 
   for (const b of data.buildings) {
     const hv = hash(b.id + b.rings[0].length);
+    const cell = cellOf(data.origin, b.rings[0]);
     const boat = afloat(b.rings[0]);
     const isWall = /zeď/i.test(b.name || '');
     // Kiosks and canopies are flat; garages, sheds and service buildings half and half,
@@ -98,12 +100,13 @@ export function buildBuildings(data: BuildingTile) {
     const base = isWall ? 0 : b.minh;
 
     cWall.set(WALLS[Math.floor(hv * WALLS.length)]);
-    // Pitched roofs in Prague are nearly all red tiles; unless OSM says otherwise, only
-    // churches get slate or copper.
+    // Unless OSM or the roof pipeline says otherwise, churches get slate or copper and the
+    // other pitched roofs a colour from the wider palette in roofRules.ts.
     const cover = b.cover ?? (b.church ? (b.roof === 'onion' || b.roof === 'dome' ? 'copper' : 'slate') : 'tiles');
     if (cover === 'copper') cRoof.set(ROOF_COPPER);
     else if (cover === 'slate') cRoof.set(ROOF_SLATE[Math.floor(hv * 10) % ROOF_SLATE.length]);
-    else cRoof.set(ROOF_TILES[Math.floor(hv * 997) % ROOF_TILES.length]);
+    else if (b.cover === 'tiles' || boat || isWall) cRoof.set(ROOF_TILES[Math.floor(hv * 997) % ROOF_TILES.length]);
+    else cRoof.set(pitchedColour(b, cell, hv));
     tmp.copy(cRoof).offsetHSL(0, 0, (hash(b.id) - 0.5) * 0.06);
     cRoof.copy(tmp);
     if (boat) { cWall.set(BOAT_SIDE); cRoof.set(BOAT_DECKS[Math.floor(hv * 31) % BOAT_DECKS.length]); }
@@ -115,6 +118,13 @@ export function buildBuildings(data: BuildingTile) {
       return rr;
     });
 
+    let roofShape = boat ? null : b.roof;
+    if (!roofShape) roofShape = small || isWall || boat ? 'flat' : roofShapeFor({ ...b, rings }, cell);
+
+    // A flat roof has a parapet: the walls rise a little above the roof surface.
+    const inner = roofShape === 'flat' && !isWall && !boat && hasParapet({ ...b, rings }) ? insetRings(rings, PARAPET_WIDTH) : null;
+    const rim = inner ? parapetHeight(b.id) : 0;
+
     // Walls, a little darker at the foot. The sky view (map/skyView.ts) does most of the
     // darkening of lower walls in narrow streets, so this is only a hint.
     const dark = boat ? new THREE.Color(HULL) : cWall.clone().multiplyScalar(0.82);
@@ -123,26 +133,36 @@ export function buildBuildings(data: BuildingTile) {
         const [x1, y1] = ring[i];
         const [x2, y2] = ring[(i + 1) % ring.length];
         const out = [y2 - y1, -(x2 - x1), 0];
-        const a0 = [x1, y1, base], b0 = [x2, y2, base], a1 = [x1, y1, eaves], b1 = [x2, y2, eaves];
+        const a0 = [x1, y1, base], b0 = [x2, y2, base], a1 = [x1, y1, eaves + rim], b1 = [x2, y2, eaves + rim];
         tri(a0, b0, b1, [dark, dark, cWall], out);
         tri(a0, b1, a1, [dark, cWall, cWall], out);
       }
-    }
-
-    let roofShape = boat ? null : b.roof;
-    if (!roofShape) {
-      if (small || isWall || boat) roofShape = 'flat';
-      else if (rings.length === 1 && rings[0].length === 4) roofShape = 'gabled';
-      else roofShape = 'hipped';
     }
 
     const flatRoof = () => {
       const pts = rings[0].map(([x, y]) => new THREE.Vector2(x, y));
       const holes = rings.slice(1).map((r) => r.map(([x, y]) => new THREE.Vector2(x, y)));
       const all = [...rings[0], ...rings.slice(1).flat()];
-      const flatCol = isWall ? cWall : boat ? cRoof : cRoof.clone().lerp(new THREE.Color('#8a8580'), 0.6);
+      const flatCol = isWall ? cWall : boat ? cRoof : tmp.set(flatColour(b, hv)).offsetHSL(0, 0, (hash(b.id) - 0.5) * 0.04).clone();
       for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(pts, holes)) {
         tri([...all[i], eaves], [...all[j], eaves], [...all[k], eaves], flatCol, [0, 0, 1]);
+      }
+      if (inner) {
+        // The top of the rim, and its inner face. That face leans back a little so it counts
+        // as a roof slope, not a wall, and gets no windows.
+        const lean = inner.map((r, ri) => insetRings([r], rim * 0.2)?.[0] ?? rings[ri]);
+        const capCol = cWall.clone().multiplyScalar(0.95), faceCol = cWall.clone().multiplyScalar(0.88);
+        rings.forEach((ring, ri) => {
+          for (let i = 0; i < ring.length; i++) {
+            const i2 = (i + 1) % ring.length, z = eaves + rim;
+            const o1 = ring[i], o2 = ring[i2], t1 = inner[ri][i], t2 = inner[ri][i2], l1 = lean[ri][i], l2 = lean[ri][i2];
+            tri([...o1, z], [...o2, z], [...t2, z], capCol, [0, 0, 1]);
+            tri([...o1, z], [...t2, z], [...t1, z], capCol, [0, 0, 1]);
+            const want = [-(t2[1] - t1[1]), t2[0] - t1[0], 1];
+            tri([...t1, z], [...t2, z], [...l2, eaves], faceCol, want);
+            tri([...t1, z], [...l2, eaves], [...l1, eaves], faceCol, want);
+          }
+        });
       }
       stats.flat++;
     };
