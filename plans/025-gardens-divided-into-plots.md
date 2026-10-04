@@ -11,7 +11,9 @@ and then a pool. Divide the garden blocks into plots and furnish each one.
 
 ## Status and starting point
 
-- Status: PLANNED.
+- Status: IN PROGRESS (4 October 2026): step 0 done; hedges and fences along plot
+  edges, and bigger garden crowns, built; paved strips, small things and plot records
+  not done (see "What was done").
 - Priority: P1 among the plans from the aerial comparison (it was the biggest
   difference at seven of the ten places). Effort: one to two weeks. Risk: medium
   (more trees and hedges in the suburbs, where triangles already doubled once).
@@ -107,6 +109,53 @@ past 150 m.
 5. **Measure** a suburb drive before and after with `scripts/bench.mjs` (performance
    skill) on the laptop and a phone; take the same top-down pictures as step 0 and
    set them beside the photos.
+
+## What was done (4 October 2026)
+
+Step 0, counted on the three suburb tiles (Ořechovka `45_67`, Braník `60_42`, the
+east-edge village `136_76`; garden m², Voronoi plots a tile, main buildings):
+
+| | Ořechovka | Braník | Village |
+|---|---|---|---|
+| garden area | 29,000 m² | 35,000 m² | 42,000 m² |
+| plots / main buildings | 38 / 42 | 74 / 64 | 73 / 88 |
+| crowns over 3 m in the surface model, share of garden | 21 % | 10 % | 6 % |
+| the game's scatter before (replica) | 28 trees/ha, 7 % | 23/ha, 6 % | 33/ha, 8 % |
+
+- **Voronoi plots are believable** drawn over the photo (Ořechovka), in rows and in
+  loose villas. Their edges are curved where two houses face each other at an angle,
+  so the generated edges are straightened by 1 m.
+- **The surface model cannot be used for garden crowns.** It separates crowns from
+  roofs (green and off the footprints), but in private gardens it holds most crowns
+  as faint bumps or not at all, while street trees show up fine. The photo shows
+  about half of Ořechovka's garden under crowns; the model finds a fifth. A colour rule
+  on the photograph (dark and infrared-green) finds a third and mistakes shaded lawn
+  for crowns. So trees are not placed from it. Crown positions from the photographs
+  would need the classifier in `ground_cover.py` run over the suburbs; left as a
+  follow-up.
+- The cadastre was not compared; Voronoi plots were enough to go on.
+
+Built:
+
+- `_plots` and `_plot_fences` in `pipeline/osm_area.py`: plots in blocks of family
+  houses, and between them a hedge (half), a fence (a third) or nothing, chosen from
+  the two buildings' ids; along the street a fence, a hedge or nothing, with a 3 m gap
+  for the gate. Only on grass, and not within a metre of a mapped fence, hedge or wall.
+  They go in as ordinary `fences`, so the format is unchanged.
+- `gardenTrees` in `src/map/vegetation.ts`: four in ten trees are big (radius 3.8–6 m,
+  before 12 % at 3.4–5 m); a crown may lean over a path or a fence, so only the inner
+  60 % of it has to be clear. The replica gives 11–14 % crown cover and 32–36 trees a
+  hectare (before 6–8 % and 23–33), about a sixth more trees. The photos show far more
+  than that in the villa suburbs; the rest needs real crown positions.
+
+Seen on a phone, looking down: fences show as dark thin strips (a single upright
+plane, dark on its shaded side), pieces stop short at plot corners, and a hedge can end
+with nothing joining it. To do: light fences from both sides, close the corner gaps,
+check hedge heights against the terrain.
+
+Not done: the `plots` tile field (nothing reads it yet; plan 029 should add it from
+`_plots`), paved strips from the gate, sheds, vegetable beds and pools, and the
+measurement on a phone (step 5).
 
 ## Out of scope
 
