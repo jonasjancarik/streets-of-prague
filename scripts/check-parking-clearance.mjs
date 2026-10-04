@@ -180,7 +180,7 @@ reports.push('two-tile invocation/completion order and repeated deterministic pl
 // JSON failure retries instead of poisoning the halo cache; simultaneous users
 // share one fetch, so no extra height/IPR transfer is required by parking.
 const world=Object.create(TileWorld.prototype);
-world.jsons=new Map();world.area='fixture';world.cover=null;world.index={graphs:false};
+world.jsons=new Map();world.available=new Set(['0_0']);world.country=null;world.area='fixture';world.cover=null;world.index={graphs:false};
 const oldFetch=globalThis.fetch;let requests=0;
 const fixture={i:0,j:0,box:[0,0,50,50],areas:{},roads:{},buildings:[],walls:[],trees:[],rails:[],drive:[],walk:[]};
 try {
