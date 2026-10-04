@@ -4,8 +4,19 @@
 import * as THREE from 'three';
 import type { Season } from './season.ts';
 
-// Grass tint in xyz, strength of its existing dry patches in w.
-export const GROUND_SEASON = { value: new THREE.Vector4(1, 1, 1, 1) };
+// How much of the summer's drying each kind of grass takes: meadows, grassland and
+// scrub all of it, the mown lawns of housing estates most, parks about half (they are
+// mown and sometimes watered), private gardens a quarter, pitches none. It scales only
+// the dry part of the tint, so every kind keeps the same palette up to 15 July.
+export const GRASS_DRYNESS = { meadow: 1, lawn: 0.8, park: 0.5, garden: 0.25, pitch: 0 };
+export type GrassKind = keyof typeof GRASS_DRYNESS;
+// Grass tint in xyz, strength of its existing dry patches in w, one per kind (the
+// shader of each kind reads its own, so no pixel does extra work).
+export const GRASS_SEASON = Object.fromEntries(
+  (Object.keys(GRASS_DRYNESS) as GrassKind[]).map((k) => [k, { value: new THREE.Vector4(1, 1, 1, 1) }]),
+) as Record<GrassKind, { value: THREE.Vector4 }>;
+// Parks, and the plain 'grass' pattern in general.
+export const GROUND_SEASON = GRASS_SEASON.park;
 export const WOOD_SEASON = { value: new THREE.Color(1, 1, 1) };
 export const FIELD_SEASON = { value: new THREE.Color(1, 1, 1) };
 export const HEDGE_SEASON = { value: new THREE.Color(1, 1, 1) };
@@ -27,13 +38,16 @@ export function shareGroundSeason(season: Season) {
   if (sharedDay === season.day) return;
   sharedDay = season.day;
   const { day, fresh, cold } = season;
-  const dry = Math.max(0, (season.dry - SUMMER_DRY) / (1 - SUMMER_DRY));
-  GROUND_SEASON.value.set(
-    (1 + 0.15 * fresh) * (1 + 0.08 * dry) * (1 + 0.13 * cold),
-    (1 + 0.12 * fresh) * (1 - 0.04 * dry) * (1 - 0.12 * cold),
-    (1 - 0.1 * fresh) * (1 - 0.2 * dry) * (1 - 0.33 * cold),
-    1 - 0.65 * fresh + 0.5 * dry - 0.2 * cold,
-  );
+  const drying = Math.max(0, (season.dry - SUMMER_DRY) / (1 - SUMMER_DRY));
+  for (const k of Object.keys(GRASS_DRYNESS) as GrassKind[]) {
+    const dry = drying * GRASS_DRYNESS[k];
+    GRASS_SEASON[k].value.set(
+      (1 + 0.15 * fresh) * (1 + 0.08 * dry) * (1 + 0.13 * cold),
+      (1 + 0.12 * fresh) * (1 - 0.04 * dry) * (1 - 0.12 * cold),
+      (1 - 0.1 * fresh) * (1 - 0.2 * dry) * (1 - 0.33 * cold),
+      1 - 0.65 * fresh + 0.5 * dry - 0.2 * cold,
+    );
+  }
   // Leaf litter on the woodland floor from November through March; this is a
   // broad colour, not a claim that the shader knows where individual trees stand.
   const litter = Math.max(1 - ramp(day, 90, 120), ramp(day, 285, 309));

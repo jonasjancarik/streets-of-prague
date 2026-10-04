@@ -57,7 +57,7 @@ const LAND_USE: [string, string][] = [
 // remain above these layers wherever their more specific shapes overlap.
 const DTM_LAND: [string, string, string][] = [
   ['dtm_yard', COLORS.dtmYard, 'concrete'],
-  ['dtm_green', COLORS.park, 'grass'], ['dtm_garden', COLORS.garden, 'grass'],
+  ['dtm_green', COLORS.park, 'lawn'], ['dtm_garden', COLORS.garden, 'garden'],
   ['dtm_wood', COLORS.wood, 'wood'], ['dtm_pitch', COLORS.pitch, 'pitch'],
 ];
 // What the aerial photographs say the unmapped ground is made of (ground_cover.py,
@@ -592,8 +592,10 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     for (const [key, pattern] of LAND_USE) add(polygons(A[key] || []), COLORS[key as keyof typeof COLORS], pattern);
     for (const [key, color, pattern] of DTM_LAND) add(polygons(A[key] || []), color, pattern);
     for (const [key, color, pattern] of COVER) add(polygons(A[key] || []), color, pattern);
-    add(polygons(A.garden || []), COLORS.garden, 'grass');
+    add(polygons(A.garden || []), COLORS.garden, 'garden');
+    add(polygons(A.lawn || []), COLORS.garden, 'lawn');
     add(polygons(A.park || []), COLORS.park, 'grass');
+    add(polygons(A.meadow || []), COLORS.park, 'meadow');
     add(polygons(A.orchard || []), COLORS.orchard, 'grass');
     add(polygons(A.wood || []), COLORS.wood, 'wood');
     add(polygons(A.pitch || []), COLORS.pitch, 'pitch');

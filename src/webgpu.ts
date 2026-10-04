@@ -13,7 +13,7 @@ import {
   Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, clamp, transformNormalToView,
 } from 'three/tsl';
-import { GROUND_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
+import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
 import { setPatterned, SKY_REF, GRIT, GRIT_M } from './shading.ts';
 import {
   type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, followVec, addPort, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports, skyAmbient,
@@ -32,7 +32,7 @@ import { mosaicStones } from './webgpu/mosaic.ts';
 import { uWater, ripples, waves, waveNormal, waterShine } from './webgpu/water.ts';
 
 // PATTERNS_GLSL.
-const uGroundSeason = followVec(GROUND_SEASON), uWoodSeason = followColor(WOOD_SEASON), uFieldSeason = followColor(FIELD_SEASON);
+const uGroundSeason = followVec(GRASS_SEASON.park), uMeadowSeason = followVec(GRASS_SEASON.meadow), uLawnSeason = followVec(GRASS_SEASON.lawn), uGardenSeason = followVec(GRASS_SEASON.garden), uPitchSeason = followVec(GRASS_SEASON.pitch), uWoodSeason = followColor(WOOD_SEASON), uFieldSeason = followColor(FIELD_SEASON);
 // Evergreen hedges keep their opaque geometry and shadows. One graph for all tiles.
 const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)), 1);
 addPort(/^hedge-season$/, (node) => { node.colorNode = hedgeColour; });
@@ -67,11 +67,11 @@ function pSlabs(c: N, p: N) {
   });
   return s.mul(fbm(p.mul(0.15)).mul(0.14).add(0.93));
 }
-function pGrass(c0: N, p: N, seasonal: boolean) {
-  if (seasonal) c0 = c0.mul(uGroundSeason.rgb);
+function pGrass(c0: N, p: N, seasonal: boolean, season: typeof uGroundSeason = uGroundSeason) {
+  if (seasonal) c0 = c0.mul(season.rgb);
   const c = c0.mul(fbm(p.mul(0.18)).mul(0.32).add(0.82)).toVar();
   let dry = smoothstep(0.55, 0.75, fbm(p.mul(0.04).add(7)));
-  if (seasonal) dry = clamp(dry.mul(uGroundSeason.w), 0, 1);
+  if (seasonal) dry = clamp(dry.mul(season.w), 0, 1);
   c.assign(mix(c, c.mul(vec3(1.12, 1.05, 0.78)), dry));
   c.assign(mix(c, c.mul(vec3(1.05, 0.9, 0.7)), smoothstep(0.6, 0.8, fbm2(p.mul(0.15).add(3))).mul(0.6)));
   const d = detail(p, 0.2);
@@ -79,7 +79,7 @@ function pGrass(c0: N, p: N, seasonal: boolean) {
   return c;
 }
 const pWood = (c: N, p: N) => c.mul(fbm(p.mul(0.12)).mul(0.45).add(0.75)).add(vnoise(p.mul(3)).sub(0.5).mul(0.05));
-const pPitch = (c: N, p: N, seasonal: boolean) => pGrass(c, p, seasonal).mul(step(0.5, fract(p.x.div(6))).mul(0.1).add(0.94));
+const pPitch = (c: N, p: N, seasonal: boolean) => pGrass(c, p, seasonal, uPitchSeason).mul(step(0.5, fract(p.x.div(6))).mul(0.1).add(0.94));
 function pDirt(c0: N, p: N) {
   const d = detail(p, 0.08), c = c0.mul(fbm(p.mul(0.5)).mul(0.25).add(0.85)).toVar();
   If(d.greaterThan(0), () => { c.addAssign(vnoise(p.mul(12)).sub(0.5).mul(0.08).mul(d)); });
@@ -145,6 +145,9 @@ function pattern(id: number, c: N, p: N, time: N, seasonal: boolean): N {
     case 10: return pWater(c, p, time);
     case 11: return pGravel(c, p);
     case 12: return pField(seasonal ? c.mul(uFieldSeason) : c, p);
+    case 13: return pGrass(c, p, seasonal, uMeadowSeason);
+    case 14: return pGrass(c, p, seasonal, uLawnSeason);
+    case 15: return pGrass(c, p, seasonal, uGardenSeason);
     default: return c;
   }
 }
@@ -223,7 +226,7 @@ function groundMaterial(
     shade(f, 0);
     return f;
   };
-  if ([5, 6, 7, 12].includes(id)) m.userData.summerGround = () => {
+  if ([5, 6, 7, 12, 13, 14, 15].includes(id)) m.userData.summerGround = () => {
     const f = m.clone();
     shade(f, id, false);
     return f;
