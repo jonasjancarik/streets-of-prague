@@ -1174,6 +1174,8 @@ async function main() {
       e.preventDefault();
       return;
     }
+    // Escape pauses the game by opening the settings, which also hold the saves.
+    if (e.code === 'Escape') { if (!e.repeat && !settingsPanel.open) settingsPanel.show(); e.preventDefault(); return; }
     if (taxi.key(e.code, !inCar && !inHeli && !ride.on && !boats.me && !funicular.me)) { e.preventDefault(); return; }
     if (keymap[e.code]) { input[keymap[e.code]] = true; e.preventDefault(); }
     if (e.shiftKey) input.run = true;
