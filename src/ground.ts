@@ -36,7 +36,7 @@ type GroundGeometry = GroundLayer['geometry'];
 // workers (tileWorker.ts); surface.ts makes the meshes.
 
 export const COLORS = {
-  pavement: '#92908c', square: '#d7d3cb', squareSetts: '#9c958a', path: '#d8cbb6', dirt: '#bfa87e',
+  pavement: '#92908c', square: '#d7d3cb', squareSetts: '#9c958a', path: '#d8cbb6', dirt: '#bfa87e', worn: '#a8946a',
   park: '#79a24c', garden: '#80a552', wood: '#52703c', orchard: '#89a858', pitch: '#6c9c55',
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', asphalt: '#6b6a68', sett: '#8a847a', parking: '#72706c',
@@ -596,6 +596,9 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.lawn || []), COLORS.garden, 'lawn');
     add(polygons(A.park || []), COLORS.park, 'grass');
     add(polygons(A.meadow || []), COLORS.park, 'meadow');
+    // Paths people have worn across the grass (worn_paths.py): a faint rim, then the bare earth.
+    add(polygons(A.worn_edge || []), COLORS.worn, 'dirt', 0.35);
+    add(polygons(A.worn || []), COLORS.worn, 'dirt', 0.8);
     add(polygons(A.orchard || []), COLORS.orchard, 'grass');
     add(polygons(A.wood || []), COLORS.wood, 'wood');
     add(polygons(A.pitch || []), COLORS.pitch, 'pitch');

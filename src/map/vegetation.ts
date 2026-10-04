@@ -58,6 +58,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fill(d.areas.orchard, ORCHARD);
     fill(d.areas.wood, WOOD);
     // Keep trees off everything built or paved.
+    fill(d.areas.worn, 0);
     fill(d.areas.square, 0);
     fill(d.areas.square_setts, 0);
     fill(d.areas.square_asphalt, 0);
