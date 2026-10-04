@@ -196,13 +196,14 @@ function gardenTrees(geo: Geo, grid: Grid, trees: [number, number, number, numbe
     }
     return false;
   };
-  // Grass under the middle, and nothing built or paved under the crown (two rings of
-  // eight points; a fence or the next tile is fine).
-  const clear = (x: number, y: number, rad: number) => {
+  // Grass under the middle, and nothing built or paved under the inner part of the crown
+  // (a ring of eight points at `inside` of its radius; the outer part may lean over a
+  // fence, a path or a house's eaves, as big crowns do in a real garden).
+  const clear = (x: number, y: number, rad: number, inside = 0.5) => {
     if (grid.at(x, y) !== GARDEN) return false;
     for (let k = 0; k < 8; k++) {
       const a = (k / 8) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
-      if (grid.at(x + c * rad, y + s * rad) === 0 || grid.at(x + c * rad * 0.5, y + s * rad * 0.5) === 0) return false;
+      if (grid.at(x + c * rad * inside, y + s * rad * inside) === 0) return false;
     }
     return true;
   };
@@ -215,12 +216,13 @@ function gardenTrees(geo: Geo, grid: Grid, trees: [number, number, number, numbe
       }
     }
   };
-  // Trees first: mostly small (fruit trees, birches, a lilac grown tall), now and
-  // then a big old one.
+  // Trees first: small ones (fruit trees, birches, a lilac grown tall) and, in four
+  // of ten, a big old crown. From above, crowns cover a good part of a villa garden,
+  // so there are only a few more trees than before; the big ones make up the rest.
   scatter(8, 0x51f3, (x, y, g) => {
     if (g() > 0.3) return;
-    const rad = g() < 0.12 ? 3.4 + g() * 1.6 : 1.8 + g() * 1.8;
-    if (!clear(x, y, rad * 1.1) || crowded(x, y, rad, 0.85)) return;
+    const rad = g() < 0.4 ? 3.8 + g() * 2.2 : 1.8 + g() * 1.4;
+    if (!clear(x, y, rad, 0.6) || crowded(x, y, rad, 0.7)) return;
     trees.push(conifer(x, y, CONIFERS[1]) ? [x, y, rad * 0.8, CONIFER] : [x, y, rad, g() < 0.15 ? 2 : 1]);
     index(trees.length - 1);
   });
@@ -228,7 +230,7 @@ function gardenTrees(geo: Geo, grid: Grid, trees: [number, number, number, numbe
   scatter(5.5, 0x2c9e, (x, y, g) => {
     if (g() > 0.1) return;
     const rad = 0.8 + g() * 0.9;
-    if (!clear(x, y, rad + 0.3) || crowded(x, y, rad, 0.7)) return;
+    if (!clear(x, y, rad + 0.3, 1) || crowded(x, y, rad, 0.7)) return;
     trees.push([x, y, rad, SHRUB]);
     index(trees.length - 1);
   });
