@@ -21,6 +21,7 @@ from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, P
 from shapely.ops import unary_union
 
 import dtm
+import lanes
 import roofs
 from build_cache import Timings
 from kerbs import Kerbs, estimate
@@ -33,6 +34,12 @@ AREAS = {
     "centrum": (14.390, 50.068, 14.450, 50.095),
     # The whole city (its administrative bounding box), 34 x 26 km.
     "praha": (14.2244, 49.9419, 14.7068, 50.1774),
+    # Three 1 x 1 km pieces of the outer ring, to try street widths where the technical
+    # map is thin or missing (plan 031): Nad Vinicemi in the north, Uhříněves's edge
+    # in the south-east, and Vinoř in the east.
+    "outer_n": (14.3849, 50.1523, 14.3989, 50.1613),
+    "outer_se": (14.5571, 49.9972, 14.5711, 50.0062),
+    "outer_e": (14.6936, 50.1093, 14.7076, 50.1183),
 }
 
 OUT = Path(__file__).resolve().parent.parent / "public" / "data"
@@ -171,7 +178,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             sidewalks.extend((ls, width / 2, col(row, "footway") == "sidewalk") for ls in _lines(g))
         if hw in CAR_ROADS:
             # Sized kerb to kerb once the pavements and tracks are all in (kerbs.py).
-            est = estimate(width, lambda k: col(row, k), not col(row, "width") and not col(row, "lanes"))
+            est = {**estimate(width, lambda k: col(row, k), not col(row, "width") and not col(row, "lanes")), "hw": hw}
             car_ways.extend((ls, est, cls, hw != "service") for ls in _lines(g))
             return
         if ground:
@@ -348,13 +355,20 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     timer.lap("dtm_streets")
     kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways], surface)
     timer.lap("kerb_index")
+    # Streets with no width, lanes or survey: by their setting and the room there is (lanes.py).
+    # (Only the mapped fences and walls: the plots' fences are made later, from the streets.)
+    setting = lanes.Setting(buildings, [*fences, *walls])
+    car_lines = [w[0] for w in car_ways]
+    lanes.apply(setting, kerbs, car_lines, [w[1]["hw"] for w in car_ways], [w[1] for w in car_ways],
+                [not w[1]["guessed"] for w in car_ways])
+    timer.lap("street_widths")
     if not ground:
         return {
             "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
             "buildings": buildings, "parts": parts, "areas": {}, "roads": {}, "rails": rails,
             "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "ground_ways": ground_ways,
-            "lots": lots, "kerbs": kerbs,
+            "lots": lots, "kerbs": kerbs, "setting": setting,
         }
     lines = [w[0] for w in car_ways]
     measured = kerbs(lines, [w[1] for w in car_ways])
@@ -428,7 +442,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
         "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "ground_ways": ground_ways,
-        "lots": lots, "kerbs": kerbs,
+        "lots": lots, "kerbs": kerbs, "setting": setting,
     }
 
 
