@@ -107,6 +107,16 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     strokeLines(ctx, geo, d.walls.map((w) => w.pts), s);
   });
 
+  // Where the surface model says a mapped wood is still low (pipeline/young_woods.py): the
+  // wood there is planted with small trees close together, not full-grown ones.
+  const young = d.areas.young_wood?.length ? new Grid(geo, 1, (ctx, s) => {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.fillStyle = 'rgb(255,0,0)';
+    fillPolys(ctx, geo, d.areas.young_wood!, s);
+  }) : null;
+  const isYoung = (x: number, y: number) => young !== null && young.at(x, y) > 127;
+
   const trees: Tree[] = []; // [x, y, radius, kind, height (1 for the usual)]
   const r = rng(42);
   // The surveyed trees (IPR's and OSM's), with which kind they are when it's known.
@@ -155,7 +165,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     for (let x = geo.minX; x < geo.maxX; x += step) {
       const jx = x + (r() - 0.5) * step, jy = y + (r() - 0.5) * step;
       const v = grid.at(jx, jy);
-      if (v === WOOD) {
+      if (v === WOOD && !isYoung(jx, jy)) {
         const edge = woodDepth(grid, jx, jy, 8) / 8;
         const rad = (3 + r() * 3.2) * (0.55 + 0.45 * edge);
         // Thinner towards the outline, and in patches inside (clearings and denser stands).
@@ -164,6 +174,23 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
       } else if (v === PARK && r() < 0.09) {
         const rad = 2.8 + r() * 2.8;
         if (!surveyed(jx, jy)) trees.push(conifer(jx, jy, CONIFERS[1]) ? [jx, jy, rad * 0.8, CONIFER] : [jx, jy, rad, 1]);
+      }
+    }
+  }
+  // Young woods: small, dense and low, a thicket of saplings and young trees (a plantation, or
+  // a field gone wild), thinner towards the outline.
+  if (young) {
+    const lattice = 3.4;
+    for (let y = geo.minY; y < geo.maxY; y += lattice) {
+      for (let x = geo.minX; x < geo.maxX; x += lattice) {
+        const jx = x + (r() - 0.5) * lattice, jy = y + (r() - 0.5) * lattice;
+        if (grid.at(jx, jy) !== WOOD || !isYoung(jx, jy) || surveyed(jx, jy)) continue;
+        const edge = woodDepth(grid, jx, jy, 8) / 8;
+        if (r() > 0.8 * (0.4 + 0.6 * edge) * (0.8 + 0.4 * valueNoise(jx, jy, 20, 0x77e1))) continue;
+        const t = standOf(jx, jy);
+        t[2] = (1.3 + r() * 1.3) * (t[3] === CONIFER ? 0.8 : 1);
+        t[4] = 0.55 + 0.25 * r();
+        trees.push(t);
       }
     }
   }
@@ -191,7 +218,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   for (let y = geo.minY; y < geo.maxY; y += gap) {
     for (let x = geo.minX; x < geo.maxX; x += gap) {
       const jx = x + (r() - 0.5) * gap, jy = y + (r() - 0.5) * gap;
-      if (grid.at(jx, jy) !== WOOD || surveyed(jx, jy) || covered(jx, jy, 1.25)) continue;
+      if (grid.at(jx, jy) !== WOOD || isYoung(jx, jy) || surveyed(jx, jy) || covered(jx, jy, 1.25)) continue;
       const edge = woodDepth(grid, jx, jy, 8) / 8;
       if (edge < 0.4) continue;
       addWood(jx, jy, (2.4 + r() * 1.6) * (0.7 + 0.3 * edge), edge);
