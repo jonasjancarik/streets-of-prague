@@ -7,7 +7,7 @@ import type { Season } from './season.ts';
 // How much of the summer's drying each kind of grass takes: meadows, grassland and
 // scrub all of it, the mown lawns of housing estates most, parks about half (they are
 // mown and sometimes watered), private gardens a quarter, pitches none. It scales only
-// the dry part of the tint, so every kind keeps the same palette up to 15 July.
+// the dry part of the tint, so a kind with no weight keeps the same palette all summer.
 export const GRASS_DRYNESS = { meadow: 1, lawn: 0.8, park: 0.5, garden: 0.25, pitch: 0 };
 export type GrassKind = keyof typeof GRASS_DRYNESS;
 // Grass tint in xyz, strength of its existing dry patches in w, one per kind (the
@@ -25,12 +25,15 @@ const ramp = (day: number, from: number, to: number) => {
   const t = Math.min(1, Math.max(0, (day - from) / (to - from)));
   return t * t * (3 - 2 * t);
 };
-// 15 July preserves the original summer palette and patch strength exactly.
 const SUMMER_DRY = ramp(196, 182, 235);
-// The photos were taken in a dry July and show more straw than the game does on 15 July.
-// ?straw=0..1 starts the summer's drying already in the weeks before and through July
-// (how much of the full August drying is there by 15 July); 0 keeps the original palette.
-const STRAW = typeof location === 'undefined' ? 0 : Math.min(1, Math.max(0, Number(new URLSearchParams(location.search).get('straw')) || 0));
+// The aerial photos were taken in a dry July, so the summer's drying starts in June and
+// all of August's is there by 15 July. ?straw=0..1 sets how much of it July gets;
+// 0 leaves 15 July with the palette and patch strength the game had before.
+const STRAW = (() => {
+  const given = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('straw');
+  const n = given === null || given === '' ? 1 : Number(given);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 1;
+})();
 const fieldBase = new THREE.Color('#b9b27a');
 const fieldGreen = new THREE.Color('#79a452');
 const fieldEarth = new THREE.Color('#947658');

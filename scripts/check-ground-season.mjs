@@ -1,18 +1,24 @@
 #!/usr/bin/env node
-// Date transitions and the unmodified summer reference; no browser or map required.
+// Date transitions and what a dry July does to each kind of ground; no browser or map required.
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { Season } from '../src/season.ts';
-import { GROUND_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON, shareGroundSeason } from '../src/groundSeason.ts';
+import { GRASS_SEASON, GROUND_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON, shareGroundSeason } from '../src/groundSeason.ts';
 
 const season = new Season(new URLSearchParams('date=07-15'));
 const values = () => [GROUND_SEASON.value.toArray(), WOOD_SEASON.value.toArray(), FIELD_SEASON.value.toArray(), HEDGE_SEASON.value.toArray()];
 const at = (date) => { season.set(typeof date === 'number' ? date : new Season(new URLSearchParams(`date=${date}`)).day); shareGroundSeason(season); return values(); };
 const summer = at('07-15');
-for (const row of summer) assert.ok(row.every((v) => v === 1), '15 July must preserve every original surface factor');
+for (const row of summer.slice(1)) assert.ok(row.every((v) => v === 1), '15 July leaves woods, fields and hedges at their base colours');
+assert.ok(GRASS_SEASON.pitch.value.toArray().every((v) => v === 1), 'a watered pitch stays green in July');
+const patches = (kind) => GRASS_SEASON[kind].value.w;
+assert.ok(patches('meadow') > patches('lawn') && patches('lawn') > patches('park') && patches('park') > patches('garden') && patches('garden') > 1,
+  'by 15 July meadows are driest, then estate lawns, parks and gardens');
 const spring = at('04-20'), dry = at('08-20'), autumn = at('10-20'), winter = at('01-15');
 assert.ok(spring[0][1] > summer[0][1] && spring[0][3] < summer[0][3], 'spring grass is fresher with fewer dry patches');
-assert.ok(dry[0][0] > summer[0][0] && dry[0][3] > summer[0][3], 'late-summer grass has more yellow patches');
+const may = at('05-20');
+assert.ok(dry[0][0] > 1 && dry[0][1] < 1 && dry[0][3] > may[0][3], 'late-summer grass is yellowed, with more dry patches than in May');
+assert.deepEqual(dry[0], summer[0], 'the dry July lasts through August');
 assert.ok(winter[0][1] < summer[0][1] && winter[0][2] < summer[0][2], 'winter grass is dull olive');
 assert.ok(winter[1][0] > winter[1][1] && at('03-15')[1][0] > 1, 'woodland litter lasts through March');
 const litter = new THREE.Color('#52703c').multiply(new THREE.Color(...winter[1]));
@@ -38,4 +44,4 @@ for (let day = 1; day <= 365; day++) {
 assert.deepEqual([GROUND_SEASON.value, WOOD_SEASON.value, FIELD_SEASON.value, HEDGE_SEASON.value], refs);
 for (let i = 0; i < refs.length; i++) assert.equal([GROUND_SEASON.value, WOOD_SEASON.value, FIELD_SEASON.value, HEDGE_SEASON.value][i], refs[i], 'uniform objects survive date changes');
 assert.deepEqual(at('07-15'), summer, 'returning to July restores the baseline');
-console.log('Ground seasons: summer reference, seasonal colours, evergreen hedges, smooth year and stable uniforms passed');
+console.log('Ground seasons: dry July by kind of grass, seasonal colours, evergreen hedges, smooth year and stable uniforms passed');

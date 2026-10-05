@@ -20,7 +20,9 @@ bare trodden lines.
   (`pipeline/worn_paths.py`, area kinds `worn` and `worn_edge`, drawn as two blended
   dirt layers in `src/ground.ts`, trees kept off them). `?straw=0..1` starts the
   drying earlier so the July baseline can be compared (default 0 = unchanged).
-  Left open: the July baseline default (the user's call); the plan-023 ground cost
+  The July baseline was decided on 5 October 2026: the full drying is the default
+  (`?straw=1`), so 15 July is no longer the unchanged reference for grass;
+  `?straw=0` gives the old July. Left open: the plan-023 ground cost
   comparison was not run (no per-pixel work was added; run it if the shader's
   per-id branches should be measured); roadside verges are not a kind of their own
   (the pipeline has no verge data, so they follow the lawn or park they are mapped

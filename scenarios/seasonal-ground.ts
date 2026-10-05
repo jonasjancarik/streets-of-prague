@@ -1,5 +1,5 @@
 import type { Scenario } from '../src/testkit.ts';
-import { GROUND_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from '../src/groundSeason.ts';
+import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from '../src/groundSeason.ts';
 
 // Run once per renderer with scripts/scene.mjs. Exact cameras and dates are kept
 // here so the eight-date sheets remain comparable without reloading the game.
@@ -28,8 +28,11 @@ export default {
           await t.wait(1 / 60); // publish the date through the real weather update
           t.check(`${place.name} ${date}: game date`, t.probe().date === date);
           await t.shot(`season-${place.name}-${date}`);
-          if (date === '07-15') t.check(`${place.name}: original summer palette`,
-            [...GROUND_SEASON.value.toArray(), ...WOOD_SEASON.value.toArray(), ...FIELD_SEASON.value.toArray(), ...HEDGE_SEASON.value.toArray()].every((v) => v === 1));
+          if (date === '07-15') {
+            t.check(`${place.name}: woods, fields, hedges and pitches keep their summer colours`,
+              [...GRASS_SEASON.pitch.value.toArray(), ...WOOD_SEASON.value.toArray(), ...FIELD_SEASON.value.toArray(), ...HEDGE_SEASON.value.toArray()].every((v) => v === 1));
+            t.check(`${place.name}: meadows are drier than gardens`, GRASS_SEASON.meadow.value.w > GRASS_SEASON.garden.value.w);
+          }
           if (date === '10-20') t.check(`${place.name}: evergreen hedge stays green`, HEDGE_SEASON.value.toArray().every((v) => v === 1));
         }
       }
