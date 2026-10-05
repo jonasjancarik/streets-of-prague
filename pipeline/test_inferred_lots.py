@@ -23,6 +23,13 @@ class InferredLotsTests(unittest.TestCase):
         self.assertEqual(got[0]["i"], 1)
         self.assertGreater(got[0]["poly"].area, 350)
 
+    def test_footprints_that_cross_themselves_do_not_stop_the_chunk(self):
+        # Joining these two as they are raises in GEOS (praha, 5 October 2026).
+        bow = {"rings": [[(100, 14), (108, 22), (108, 14), (100, 22), (100, 14)]]}
+        tie = {"rings": [[(104, 10), (112, 18), (112, 10), (104, 18), (104, 10)]]}
+        got = self.lots(parking=box(0, 0, 30, 14), buildings=[bow, tie])
+        self.assertEqual(len(got), 1)
+
     def test_mapped_car_parks_and_their_surroundings_are_not_doubled(self):
         self.assertEqual(self.lots(parking=box(0, 0, 30, 14), mapped=[box(-1, -1, 31, 15)]), [])
 

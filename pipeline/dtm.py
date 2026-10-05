@@ -33,6 +33,7 @@ import build_cache
 CACHE = Path(__file__).parent / ".cache" / "dtm"
 PACKAGES = CACHE / "ZPS_OPL"
 PARSED = CACHE / "surfaces.pkl"
+BOXES = CACHE / "boxes"  # streets(), land() and parking() of a box, kept until the map or this code changes
 LIST = "https://geoportalpraha.cz/api/get-dtm-download-metadata?code=02"
 FILE = "https://isdtmk.dtm-praha-sck.cz/api/istem/vydej/download/path/"
 
@@ -64,6 +65,30 @@ MARGIN = 0.0005  # degrees (~40 m) past the box, so neighbouring boxes round ali
 _index = None  # per process: (STRtree, polygons on the ground in WGS84)
 _land_index = None  # per process: (STRtree, polygons, kind labels)
 _parking_index = None  # per process: (STRtree, parking polygons on the ground in WGS84)
+
+
+def _kept(name, bbox, transform, compute):
+    """compute(), or its result for this box from the last time. Joining and smoothing a
+    chunk's surveyed surfaces takes a quarter of the chunk's time and depends on nothing
+    the rest of the pipeline changes, only on the map's packages, the box, the local
+    frame and this module's own code. Not kept when the packages can't be identified."""
+    packages = [build_cache.identity(p) for p in sorted(PACKAGES.glob("*.zip"))]
+    if not packages or None in packages:
+        return compute()
+    # (The whole file, not the functions used: any change to this module starts afresh.)
+    source = build_cache.key([packages, build_cache.digest(Path(__file__).read_bytes()), build_cache.runtime_key()])
+    w, s, e, n = bbox
+    # The frame, by where it puts the box's corners.
+    frame = [[round(float(v), 3) for v in transform(x, y)] for x, y in ((w, s), (e, n))]
+    key = [source, name, [round(v, 7) for v in bbox], frame]
+    path = BOXES / f"{name}_{build_cache.key(key)[:24]}.pkl"
+    got = build_cache.load_pickle(path, key)
+    if got:
+        return got["value"]
+    value = compute()
+    BOXES.mkdir(parents=True, exist_ok=True)
+    build_cache.atomic(path, pickle.dumps({"key": key, "value": value}, protocol=5))
+    return value
 
 
 def download():
@@ -146,43 +171,49 @@ def streets(bbox, transform):
     into a WGS84 box, joined into one geometry in the local metres that `transform`
     (lon, lat arrays → x, y arrays) gives. Empty where the map has nothing (past the
     city limits, or before the map has been downloaded)."""
-    _indexes()
-    tree, geoms = _index
-    w, s, e, n = bbox
-    hits = geoms[tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN))]
-    if not len(hits):
-        return Polygon()
-    local = shapely.transform(hits, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
-    return _smooth(shapely.union_all(shapely.make_valid(local), grid_size=0.01))
+    def compute():
+        _indexes()
+        tree, geoms = _index
+        w, s, e, n = bbox
+        hits = geoms[tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN))]
+        if not len(hits):
+            return Polygon()
+        local = shapely.transform(hits, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
+        return _smooth(shapely.union_all(shapely.make_valid(local), grid_size=0.01))
+    return _kept("streets", bbox, transform, compute)
 
 
 def land(bbox, transform):
     """Ground-level DTM yards and greenery in local metres, without kerb rounding."""
-    _indexes()
-    tree, geoms, labels = _land_index
-    w, s, e, n = bbox
-    hits = tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN), predicate="intersects")
-    out = {}
-    for kind in LAND_KINDS:
-        chosen = geoms[hits[labels[hits] == kind]]
-        if not len(chosen):
-            continue
-        local = shapely.transform(chosen, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
-        out[kind] = shapely.union_all(shapely.make_valid(local), grid_size=0.01)
-    return out
+    def compute():
+        _indexes()
+        tree, geoms, labels = _land_index
+        w, s, e, n = bbox
+        hits = tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN), predicate="intersects")
+        out = {}
+        for kind in LAND_KINDS:
+            chosen = geoms[hits[labels[hits] == kind]]
+            if not len(chosen):
+                continue
+            local = shapely.transform(chosen, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
+            out[kind] = shapely.union_all(shapely.make_valid(local), grid_size=0.01)
+        return out
+    return _kept("land", bbox, transform, compute)
 
 
 def parking(bbox, transform):
     """The surveyed parking bays and car parks on the ground that reach into a WGS84
     box, in local metres like land(), without the kerb rounding streets() does."""
-    _indexes()
-    tree, geoms = _parking_index
-    w, s, e, n = bbox
-    hits = geoms[tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN), predicate="intersects")]
-    if not len(hits):
-        return Polygon()
-    local = shapely.transform(hits, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
-    return shapely.union_all(shapely.make_valid(local), grid_size=0.01)
+    def compute():
+        _indexes()
+        tree, geoms = _parking_index
+        w, s, e, n = bbox
+        hits = geoms[tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN), predicate="intersects")]
+        if not len(hits):
+            return Polygon()
+        local = shapely.transform(hits, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
+        return shapely.union_all(shapely.make_valid(local), grid_size=0.01)
+    return _kept("parking", bbox, transform, compute)
 
 
 def _smooth(g):

@@ -51,6 +51,30 @@ class DtmLandTests(unittest.TestCase):
         self.assertAlmostEqual(got.area, 12)  # the second one, on a deck, is left out
         self.assertTrue(none.is_empty)
 
+    def test_a_box_is_worked_out_once_and_kept_until_the_map_changes(self):
+        import tempfile
+        from pathlib import Path
+
+        kinds = {"road": (np.array([0], dtype=np.int8), np.array([box(0, 0, 4, 4)], dtype=object))}
+        with tempfile.TemporaryDirectory() as tmp:
+            packages = Path(tmp) / "ZPS"
+            packages.mkdir()
+            (packages / "a.zip").write_bytes(b"one")
+            frame = lambda x, y: (x, y)
+            with patch.object(dtm, "PACKAGES", packages), patch.object(dtm, "BOXES", Path(tmp) / "boxes"), \
+                    patch.object(dtm, "surfaces", return_value=kinds) as read:
+                first = dtm.streets((-1, -1, 8, 8), frame)
+                dtm._index = dtm._land_index = dtm._parking_index = None
+                again = dtm.streets((-1, -1, 8, 8), frame)
+                self.assertEqual(read.call_count, 1)  # the second came from the kept box
+                self.assertTrue(first.equals(again))
+                dtm.streets((-1, -1, 9, 9), frame)  # another box
+                self.assertEqual(read.call_count, 2)
+                (packages / "a.zip").write_bytes(b"another month")
+                dtm._index = dtm._land_index = dtm._parking_index = None
+                dtm.streets((-1, -1, 8, 8), frame)
+                self.assertEqual(read.call_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

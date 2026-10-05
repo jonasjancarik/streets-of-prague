@@ -40,7 +40,8 @@ class ExtractionTests(unittest.TestCase):
                                 features=self.features(), **kwargs)
 
     def test_buildings_only_matches_full_and_never_reads_dtm(self):
-        with patch.object(dtm, "streets", return_value=Polygon()), patch.object(dtm, "land", return_value={}):
+        with patch.object(dtm, "streets", return_value=Polygon()), patch.object(dtm, "land", return_value={}), \
+                patch.object(dtm, "parking", return_value=Polygon()):
             full = self.extract()
         with patch.object(dtm, "streets", side_effect=AssertionError("unused survey")), \
                 patch.object(dtm, "land", side_effect=AssertionError("unused land")):

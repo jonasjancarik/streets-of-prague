@@ -444,7 +444,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                   *(g for v in road_lines.values() for g in v), *land.values(), *(p for p, _, _ in squares)]
     gardens, lawns, plot_fences, drives = _gardens(homes, buildings, streets, clip,
                                     [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls],
-                                    unmapped=unary_union(spoken_for) if spoken_for else Polygon())
+                                    unmapped=[g for g in spoken_for if not g.is_empty])
     fences.extend(plot_fences)
     timer.lap("gardens")
     natural = unary_union([gardens, lawns, *(g for k in NATURAL_GROUND for g in areas.get(k, [])),
@@ -691,7 +691,8 @@ def _inferred_lots(parking, yards, lots, buildings, drivable, natural, car_lines
     (a courtyard). Each comes back as a lot marked "i" (inferred), which the game lays
     out with aisles."""
     shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
-    walls = unary_union(shapes).buffer(1) if shapes else Polygon()
+    # (Grown one by one before joining: a footprint that crosses itself can't be joined.)
+    walls = unary_union([s.buffer(1) for s in shapes]) if shapes else Polygon()
     taken = unary_union([*(lot["poly"] for lot in lots), walls, *drivable, natural]) if (lots or drivable) else unary_union([walls, natural])
     yard = unary_union([y for y in yards if not y.is_empty]) if any(not y.is_empty for y in yards) else Polygon()
     free = shapely.difference(unary_union([parking, yard]), taken, grid_size=GRID)
@@ -745,7 +746,16 @@ def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None):
                   and b["kind"] not in NOT_HOMES | OUTBUILDINGS | {"apartments"}]
         if family:
             implied = unary_union([h.buffer(SETTLED_REACH) for h in family]).intersection(clip)
-            implied = implied.difference(unmapped).difference(region)
+            # The residential areas first: most family houses stand in one, so little is
+            # left, and only the mapped land that touches what is left has to be joined.
+            # (`unmapped` as a list of shapes; joining all of a chunk's mapped land into
+            # one shape here took longer than the rest of the gardens together.)
+            implied = implied.difference(region)
+            if isinstance(unmapped, list):
+                pieces = [g for g in shapely.get_parts(np.asarray(unmapped, dtype=object)) if g.area > 0] if unmapped and not implied.is_empty else []
+                hits = STRtree(pieces).query(implied, predicate="intersects") if pieces else []
+                unmapped = unary_union([pieces[k] for k in sorted(hits)]) if len(hits) else Polygon()
+            implied = implied.difference(unmapped)
             implied = implied.buffer(-3).buffer(3)  # not the slivers between things
     if region.is_empty and implied.is_empty:
         return Polygon(), Polygon(), [], []
