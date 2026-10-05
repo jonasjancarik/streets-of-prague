@@ -10,9 +10,9 @@ leaves with conifers mixed in and a ragged edge of shrubs and young trees.
 
 ## Status and starting point
 
-- Status: STEPS 0–3 DONE (branch `plan-026-woods`, merged into main on 5 October 2026, not deployed). Step 4
-  (young woods) not done; the floor colour is not blended over the edge band (see
-  "What was built").
+- Status: STEPS 0–4 AND THE EDGE BLEND DONE (steps 0–3 merged into main on 5 October 2026; step 4 and the
+  edge blend on branch `plan-026-young-woods`, not merged, not deployed, the city's map not yet rebuilt with the
+  young layer). A phone check is still open (see "Left open").
 - Priority: P2. Effort: three to five days. Risk: medium (woods already hold most of
   the trees in view on the city's edge).
 - Category: feature (map look). Dependencies: none. Overlaps plan 017 (cheaper trees
@@ -114,13 +114,46 @@ tree meshes.
   32 fps against 176) and prove nothing. The phone tier was not measured; the tree
   count and triangles are within a few per cent of before, so no change is expected.
 
+## What was built (5 October 2026, branch `plan-026-young-woods` from `12c65c5`)
+
+- **Step 4, young woods.** `pipeline/young_woods.py` (new layer `young`, polygons per tile,
+  put into the tile as `areas.young_wood` by `layers.assemble`): inside a mapped wood, where
+  IPR's 1 m surface model minus the terrain gives a canopy top (80th percentile over 9 m)
+  between 1.5 and 7 m, in patches of at least 250 m2. `survey` over the city: 986 ha of
+  12,831 ha of wood (7.7 %), in 3,103 tiles of 14,595. A trial block (tiles 30–42 × 60–72
+  around Divoká Šárka) was built into this worktree's own data: 86 tiles with a wood, 65
+  with a young one. In the game, `treeInstances` leaves such an area out of the usual wood
+  scatter and gap pass and plants a thicket instead (3.4 m lattice, crown radius 1.3–2.6 m,
+  height 0.55–0.8 of the usual, thinner towards the outline). Seven unit tests
+  (`pipeline/test_young_woods.py`); the full pipeline suite (153 tests) and `npm run typecheck`
+  pass. `code_key()` leaves `young_woods.py` out, like `ground_cover.py`, so changing it does
+  not invalidate the other layers. Triangles in a top-down view over a young wood
+  (50.0988, 14.3296, 120 m high): 3.29 M with the change, 3.23 M before.
+- **Edge blend** (`woodEdges` in `src/ground.ts`): two soft shade bands (the existing
+  `shade()` skirts, 6 m wide, at most 0.5 dark; no new shader code, so WebGL and WebGPU
+  both get it). One runs along wood outlines where the floor shows and the neighbour is not
+  wood; the other along the outlines of park, meadow, lawn and garden where wood floor
+  shows on the other side (a park is often drawn over a wood's floor, so its outline is the
+  visible edge; the first version, drawn only at the wood outline, was hidden under the park
+  at Šárka). Woods under 1,500 m2 and the tile border are left out; the two bands do not
+  stack on one edge. Pictures: `/tmp/p026b/woods-edge-sarka-*` (not in git).
+- **Frame time** (`scripts/bench.mjs --vs`, M5, Chrome/WebGPU, 10 s a scene, alternating,
+  three or four pairs, baseline `12c65c5`): Petřín woods 4.5 ms baseline, 4.8 ms with the change
+  (one pair read 207 against 233 fps, and the spread between runs is as large); Old Town
+  Square 3.8 against 3.5 ms; Šárka at 160 m high, order reversed, four pairs: 4.2 against 4.2 ms.
+  The scenes are CPU-bound at about 4 ms and the GPU time is not reported, so a software
+  rendering run (`--angle swiftshader --dpr 1`, Šárka, two pairs) was added to see the
+  cost of covered pixels: 525 ms baseline, 493 ms with the change. No measurable cost, so the
+  blend stays. The phone tier was not measured.
+
 ### Left open
 
-- Blending the floor colour over the edge band (design item 5, last sentence): the
-  wood floor is a flat polygon colour with the pattern in the ground shader, so a
-  soft edge needs a shader or a mesh change. From above the ruler-straight change
-  from dark floor to grass remains; the new shrubs and small trees cover part of it.
-- Step 4 (young woods from the surface model): not started.
+- Check on a phone (Pixel 5), and whether more or bigger crowns are affordable.
+- The young layer is built only for the trial block in this worktree. The whole city's map
+  is rebuilt once after the merge (`uv run --group cover young_woods.py build praha`, then
+  assemble); the cover layer is re-assembled with it.
+- Black clearings inside a mapped wood (canopy under 1.5 m) are still planted as full-grown
+  wood. Many "woods" are drawn under park or meadow, so there the young planting shows as
+  small, dense trees on a meadow, not as a thicket on a wood floor.
 - Trees stop at the tile edge for the gap and edge passes (each tile only sees its own
   trees), so there can be a few extra small trees along a tile border.
-- Check on a phone (Pixel 5) and whether more or bigger crowns are affordable.
