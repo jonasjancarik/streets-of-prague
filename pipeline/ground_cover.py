@@ -44,6 +44,7 @@ import os
 import pickle
 import logging
 import time
+import warnings
 from collections import Counter
 from pathlib import Path
 
@@ -75,6 +76,9 @@ CLASSES = ["grass", "trees", "asphalt", "paving", "concrete", "gravel", "dirt", 
 # Structures (unmapped roofs, sheds, parked lorries) stay beige.
 
 logging.getLogger("tifffile").setLevel(logging.ERROR)  # (IPR's DSM carries a no-data tag it can't cast)
+# (slic() places its first centres in the mask with scipy's kmeans2; a centre that ends up
+# with no pixels only means a piece fewer, and the warning came several times a tile)
+warnings.filterwarnings("ignore", message="One of the clusters is empty")
 S = requests.Session()
 S.headers["User-Agent"] = "streets-of-prague ground_cover prototype"
 

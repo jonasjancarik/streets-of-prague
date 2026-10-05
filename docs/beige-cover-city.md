@@ -78,6 +78,10 @@ The cover's code key (`layers.cover_processing`, `build_cache.reach_key`) now co
 commands (`ortho`, `train`, `sheet`, `score`...) no longer redoes every tile. A change to
 the classifier does, from the photographs already on disk.
 
+Measured after these changes: every tile of the city worked out again in 7 min 51 s on ten
+processes (`--jobs 10`, photographs on disk), and a run with nothing to redo takes 70 s,
+25 s of it putting the tiles together.
+
 | | plain ground |
 | --- | --- |
 | `praha` before | 4,329.6 ha |
