@@ -892,7 +892,7 @@ export class TileWorld {
     const w = this.workers;
     const jobs = Promise.all([
       w.run('ground', {
-        d: { areas: t.areas, roads: t.roads, rails: t.rails, weirs: t.weirs, crossings: t.crossings },
+        d: { areas: t.areas, roads: t.roads, rails: t.rails, weirs: t.weirs, crossings: t.crossings, marks: t.marks },
         box: [geo.minX, geo.minY, geo.maxX, geo.maxY] as Bounds, edges: clipped, buildings: own.filter(grounded).map((b) => ({ rings: b.rings })), parkingZones, ground, levels: tileLevels,
       }),
       w.run('land', {

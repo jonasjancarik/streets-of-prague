@@ -305,6 +305,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   (farmland, nurseries), concrete work yards (industrial land, garages, farmyards),
   gravel ballast on railway land, and bare earth on building sites, brownfields and
   quarries (`_area_kind` in `pipeline/osm_area.py`).
+  Pitches, courts, playgrounds and running tracks take their colour from what OSM says
+  they are made of (`leisure`, `sport`, `surface`): grass, artificial turf, clay, sand,
+  a red running track, or a grey, blue, green or red hard court. Where no surface is
+  tagged, size and sport decide, and the colour of a hard court is picked from the
+  feature's id so it never changes. Courts of a standard size get their lines (tennis,
+  basketball, volleyball, handball and futsal halls, football pitches), and a track
+  mapped as a centre line becomes a band of lanes with grass inside (`pipeline/sports.py`;
+  the lines are the tile's `marks`). The looks and colours are in `src/map/pitches.ts`.
   OSM rarely maps the gardens and lawns in a suburb or a housing estate, so a street
   block of family houses, or of flats with plenty of room round them, gets grass
   between the buildings (`_gardens` in `pipeline/osm_area.py`); denser inner-city

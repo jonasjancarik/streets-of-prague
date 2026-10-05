@@ -1,6 +1,7 @@
 // Conservative scenery inferred from mapped land use, made once in a tile worker.
 import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
+import { PITCH_KINDS } from './pitches.ts';
 import type { Geo, Point2, Bounds, Polygons } from './geo.ts';
 import type { TreeTileData, TreeInstances } from './vegetation.ts';
 import type { RawStreetEdge } from '../network.ts';
@@ -85,7 +86,7 @@ export function furnitureInstances(geo: Geo<FurnitureData>, trees: TreeInstances
     // Higher priority surfaces and sports/rail/service uses never receive furniture.
     // `square` also represents explicit paving slabs. Named outlines must have
     // their lawns removed by the surface pipeline, not guessed here.
-    for (const k of ['wood', 'dtm_wood', 'orchard', 'pitch', 'dtm_pitch', 'parking', 'water', 'bridge', 'ballast', 'bare', 'square', 'square_setts', 'square_asphalt', 'square_loose']) fill(d.areas[k], 0);
+    for (const k of ['wood', 'dtm_wood', 'orchard', ...PITCH_KINDS, 'dtm_pitch', 'parking', 'water', 'bridge', 'ballast', 'bare', 'square', 'square_setts', 'square_asphalt', 'square_loose']) fill(d.areas[k], 0);
     for (const polys of Object.values(d.roads)) fill(polys, 0);
     fill(d.structures, 0);
     fill(d.buildings.map(b => b.rings), 0);

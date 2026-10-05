@@ -344,6 +344,7 @@ def build_chunk(job):
         lines["weirs"] = [LineString(wr) for wr in x["weirs"]]
         crossings = [c for c in x["crossings"] if len(c) > 1]
         lines["crossings"] = [LineString(c) for c in crossings]
+        lines["marks"] = [LineString(m) for m in x["marks"] if len(m) > 1]
         trees = {key: STRtree(v) for key, v in lines.items()}
         x["trees"] = ipr_trees.merge(x["trees"], bbox, tf)
         tree_xy = shapely.points([tr[:2] for tr in x["trees"]]) if x["trees"] else None
@@ -361,6 +362,7 @@ def build_chunk(job):
                           for ls in _lines(lines[key][k].intersection(bx))]
             t["weirs"] = [_coords(ls) for k in sorted(trees["weirs"].query(bx)) for ls in _lines(lines["weirs"][k].intersection(bx))]
             t["crossings"] = [_coords(ls) for k in sorted(trees["crossings"].query(bx)) for ls in _lines(lines["crossings"][k].intersection(bx))]
+            t["marks"] = [_coords(ls) for k in sorted(trees["marks"].query(bx)) for ls in _lines(lines["marks"][k].intersection(bx))]
             t["trees"] = [x["trees"][k] for k in shapely.contains(bx, tree_xy).nonzero()[0]] if tree_xy is not None else []
             if any(t.values()):
                 layer[f"{i}_{j}"] = t

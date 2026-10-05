@@ -10,7 +10,22 @@ tracks, orange clay courts, blue or green hard courts, striped football grass.
 
 ## Status and starting point
 
-- Status: PLANNED.
+- Status: DONE on branch `plan-030-sports-grounds` (not merged).
+  - Step 0: the `sport` and `surface` tags cover most pitches; only about 16 % have
+    neither, and those get a size guess (under 1,500 m2 is a hard court, larger is grass).
+  - Built: `pipeline/sports.py` (looks, court line tables for tennis, basketball,
+    volleyball, halls and football, track rings), a new `marks` tile key for painted
+    lines, the `pitch_*` area kinds, `src/map/pitches.ts` and the drawing in
+    `src/ground.ts`. Trees, lamps and benches stay off pitches. 10 unit tests in
+    `pipeline/test_sports.py`, plus a check in `scripts/check-ground-areas.mjs`.
+  - Verified: ground rebuilt in the worktree's own copy of the data, then the photo
+    ground cover rebuilt; before/after screenshots at the school track (red lane
+    band and tartan), the clay courts (clay colour and white outline, seen close up),
+    and a blue court with its centre line, circle and 6 m lines.
+  - Open: the courts at 50.00167, 14.56409 are not pitches in the map data (no
+    `pitch` or `dtm_pitch` within 250 m), so nothing changes there. `ipr_buildings`
+    was not rerun. Painted lines are thin (0.12 m) and fade out from higher camera
+    heights.
 - Priority: P3 (small, cheap, visible from above and at schools). Effort: one to two
   days. Risk: low.
 - Category: feature (map look). Dependencies: none.
