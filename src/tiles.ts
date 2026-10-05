@@ -865,7 +865,7 @@ export class TileWorld {
     const bbox = this.index.bbox_wgs84;
     const edges = this.driveBy.get(k) || [];
     const clipped = edges.flatMap((e) => clipLine(e.pts, t.box).map((pts) => (
-      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel })));
+      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name })));
     // Paid-parking colour of each parking area's bay lines.
     const parkingZones = (t.areas.parking || []).map((rs) => {
       const r = rs[0], cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;

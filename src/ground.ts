@@ -22,6 +22,8 @@ export interface GroundResult { layers: GroundLayer[]; masks: LevelMask[] }
 export interface GroundRoadEdge {
   u: string; v: string; hw: string; pts: Point2[]; width: number;
   lanes?: number | null; oneway?: boolean; bridge?: boolean; tunnel?: boolean; surface?: string;
+  maxspeed?: number | null;
+  named?: boolean; // false: the map gives it no street name (true or unknown otherwise)
 }
 // side: at a step in the ground, which side's height (terrain.ts, heightSampler).
 type HeightAt = (x: number, y: number, side?: number | boolean) => number;
@@ -713,14 +715,23 @@ function bayLines(rings: Point2[][], edges: GroundRoadEdge[], cut: (a: Point2, b
 }
 
 // Road paint from OSM lanes: dashed lane dividers, a centre line (double solid on
-// roads of four lanes or more) and edge lines on the main roads. Cobbled streets
-// and the middle of tram streets stay unpainted.
+// roads of four lanes or more) and edge lines on the main roads, on every slip road
+// and on the one-way carriageways of divided roads that are fast or have no street
+// name (the connecting roads of an interchange are often mapped as plain main roads). An edge line stops where it
+// would run over another road's lanes (where a slip road leaves or joins, across a side
+// street's mouth, through a junction). Cobbled streets and the middle of tram streets
+// stay unpainted.
 const COBBLED = new Set(['sett', 'cobblestone', 'unhewn_cobblestone', 'paving_stones']);
 const MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'motorway_link', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
 const EDGE_LINES = new Set(['motorway', 'trunk', 'primary', 'motorway_link', 'trunk_link']);
+const FAST = 70; // km/h: a one-way main road at least this fast is a carriageway, not a street
+const PAINT_STEP = 2; // m: an edge line is kept or dropped in pieces this long
 function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
   const near = (p: Point2) => trams.some((pts) => pts.some((q, i) => i > 0 && segDistPts(p, pts[i - 1], q) < 3));
   const dashed: Point2[][] = [], solid: Point2[][] = [];
+  const edgeLines = (e: GroundRoadEdge, W: number) => {
+    for (const line of [offsetLine(e.pts, W / 2 - 0.4), offsetLine(e.pts, -W / 2 + 0.4)]) solid.push(...offOtherRoads(line, e, edges));
+  };
   for (const e of edges) {
     const n = e.lanes || 0;
     if (COBBLED.has(e.surface ?? '') || (!MAJOR.has(e.hw) && n < 2)) continue;
@@ -729,7 +740,7 @@ function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
     if (e.oneway) {
       const lanes = Math.max(1, n || 1), lw = W / lanes;
       for (let k = 1; k < lanes; k++) dashed.push(offsetLine(pts, -W / 2 + k * lw));
-      if (EDGE_LINES.has(e.hw) || lanes > 1) solid.push(offsetLine(pts, W / 2 - 0.4), offsetLine(pts, -W / 2 + 0.4));
+      if (EDGE_LINES.has(e.hw) || lanes > 1 || e.hw.endsWith('_link') || (MAJOR.has(e.hw) && ((e.maxspeed ?? 0) >= FAST || e.named === false))) edgeLines(e, W);
       continue;
     }
     const per = Math.max(1, Math.floor(Math.max(2, n || 2) / 2)), lw = W / (2 * per);
@@ -738,9 +749,53 @@ function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
       else dashed.push(pts);
     }
     for (let k = 1; k < per; k++) dashed.push(offsetLine(pts, k * lw), offsetLine(pts, -k * lw));
-    if (EDGE_LINES.has(e.hw)) solid.push(offsetLine(pts, W / 2 - 0.4), offsetLine(pts, -W / 2 + 0.4));
+    if (EDGE_LINES.has(e.hw)) edgeLines(e, W);
   }
   return { dashed, solid };
+}
+
+// The parts of an edge line of road `own` that lie on no other road's lanes: off every
+// other edge at the same level by more than its half width less the line's own inset.
+// (The other direction of a two-way road, and the other pieces of a clipped edge, are
+// the same road.)
+function offOtherRoads(line: Point2[], own: GroundRoadEdge, edges: GroundRoadEdge[]) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of line) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  const others = edges.filter((o) => {
+    if (o === own || (o.u === own.u && o.v === own.v) || (o.u === own.v && o.v === own.u)) return false;
+    if (!!o.bridge !== !!own.bridge || !!o.tunnel !== !!own.tunnel) return false;
+    const r = o.width / 2;
+    return o.pts.some(([x, y]) => x > x0 - r - 30 && x < x1 + r + 30 && y > y0 - r - 30 && y < y1 + r + 30);
+  });
+  if (!others.length) return [line];
+  const covered = (p: Point2) => others.some((o) => {
+    const r = o.width / 2 - 0.6;
+    for (let i = 1; i < o.pts.length; i++) if (segDistPts(p, o.pts[i - 1], o.pts[i]) < r) return true;
+    return false;
+  });
+  const out: Point2[][] = [];
+  let run: Point2[] = [], straight = false;
+  for (let i = 1; i < line.length; i++) {
+    const a = line[i - 1], b = line[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / PAINT_STEP));
+    for (let k = 0; k < n; k++) {
+      const p: Point2 = [a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n];
+      const q: Point2 = [a[0] + (b[0] - a[0]) * (k + 1) / n, a[1] + (b[1] - a[1]) * (k + 1) / n];
+      if (covered([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2])) {
+        if (run.length > 1) out.push(run);
+        run = [];
+      } else if (!run.length) {
+        run.push(p, q);
+        straight = true;
+      } else if (straight && k > 0) {
+        run[run.length - 1] = q; // the same straight piece, a little longer
+      } else {
+        run.push(q);
+        straight = true;
+      }
+    }
+  }
+  if (run.length > 1) out.push(run);
+  return out;
 }
 
 // Zebra crossings: bars along the road, one every metre across it, from kerb to kerb.
