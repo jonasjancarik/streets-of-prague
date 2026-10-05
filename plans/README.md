@@ -156,7 +156,7 @@ nothing was built or measured while planning.
 | [027: Summer grass that differs by place, and worn paths](027-summer-dry-grass-and-worn-paths.md) | Meadows and estate lawns dry out in summer while gardens and pitches stay green; trodden lines across estate grass | P2 | Four to eight days | PLANNED |
 | [028: Roofs on buildings without IPR data](028-roofs-on-buildings-without-ipr-data.md) | Flat or pitched by kind and size, a wider roof palette past the city limits; parapets, lift houses, vents and solar panels on flat roofs; the roofed-over school atria | P2 (flat-roof details P3) | About a week | PLANNED |
 | [029: Parking where the map has no car park](029-parking-on-unmapped-ground.md) | Bays on paved yards and unmapped estate car parks, a car on the drive of family houses | P2 | About a week | PLANNED (after the occupancy by building type; driveways after 025) |
-| [030: Sports grounds in their own colours](030-sports-grounds-in-their-own-colours.md) | Tartan, clay, artificial grass and hard courts from OSM's `sport` and `surface`, with each sport's lines | P3 | One to two days | PLANNED |
+| [030: Sports grounds in their own colours](030-sports-grounds-in-their-own-colours.md) | Tartan, clay, artificial grass and hard courts from OSM's `sport` and `surface`, with each sport's lines | P3 | One to two days | DONE on branch |
 | [031: Narrower lanes outside the city](031-narrower-lanes-outside-the-city.md) | Street widths past the technical map from the room between the plots and from the setting, verges; the grey hectare at Nad Vinicemi | P2 | Two to four days | PLANNED |
 
 025 comes first: it changes the most, and 029's driveway cars need its plots. 030 is
