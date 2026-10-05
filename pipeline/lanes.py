@@ -122,3 +122,27 @@ def apply(setting, kerbs, lines, hws, ests, tagged):
             ests[k]["half"] = w / 2
             out[k] = w
     return out
+
+
+SHOULDER = 0.6  # m of gravel beside the carriageway of a through road
+SHOULDER_ROADS = ("tertiary", "unclassified")
+
+
+def shoulders(setting, kerbs, lines, hws, guessed, sides, bridges, surveyed_share):
+    """A strip of gravel along both sides of the through roads sized here (no width or
+    lanes tag, not surveyed, not on a bridge), outside blocks of flats: out in the
+    country a road has a shoulder and then grass, not a kerb. `sides` is each line's
+    (left, right) half widths. The strips reach under the carriageway, which is drawn
+    over them."""
+    pick = [k for k, hw in enumerate(hws) if hw in SHOULDER_ROADS and guessed[k] and not bridges[k]]
+    if not pick:
+        return []
+    shares = kerbs.surveyed([lines[k] for k in pick])
+    kinds = setting.kind([lines[k] for k in pick])
+    out = []
+    for k, share, kind in zip(pick, shares, kinds):
+        if share >= surveyed_share or kind == "flats":
+            continue
+        left, right = sides[k]
+        out += [lines[k].buffer(left + SHOULDER, single_sided=True), lines[k].buffer(-(right + SHOULDER), single_sided=True)]
+    return out

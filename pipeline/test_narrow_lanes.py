@@ -80,5 +80,24 @@ class HomesOnUnmappedLandTests(unittest.TestCase):
         self.assertTrue("garden" not in got["areas"] or got["areas"]["garden"].area < 1)
 
 
+class ShoulderTests(unittest.TestCase):
+    def strips(self, hw="tertiary", guessed=True, share=0.0, bridge=False, houses=row(20)):
+        return lanes.shoulders(lanes.Setting(houses, []), FakeKerbs(share), [STREET], [hw], [guessed],
+                               [(3.0, 3.0)], [bridge], 0.5)
+
+    def test_through_road_gets_gravel_beyond_each_kerb(self):
+        left, right = self.strips()
+        self.assertAlmostEqual(left.bounds[3], 3.0 + lanes.SHOULDER)
+        self.assertAlmostEqual(right.bounds[1], -3.0 - lanes.SHOULDER)
+
+    def test_other_roads_are_left_alone(self):
+        self.assertEqual(self.strips(hw="residential"), [])
+        self.assertEqual(self.strips(guessed=False), [])
+        self.assertEqual(self.strips(share=0.8), [])
+        self.assertEqual(self.strips(bridge=True), [])
+        self.assertEqual(lanes.shoulders(lanes.Setting(row(20, big=True), []), FakeKerbs(0.0), [LineString([(0, 0), (8 * 34, 0)])],
+                                         ["tertiary"], [True], [(3.0, 3.0)], [False], 0.5), [])
+
+
 if __name__ == "__main__":
     unittest.main()

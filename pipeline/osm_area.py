@@ -457,6 +457,14 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     for cls, geom in _walking_surfaces(walking_surfaces, areas, natural):
         road_lines.setdefault(cls, []).append(geom)
     timer.lap("squares_walking_surfaces")
+    # A gravel shoulder beside the through roads sized from their setting (lanes.py).
+    # After the walking surfaces, which take a square's paving for a path's.
+    strips = lanes.shoulders(setting, kerbs, lines, [w[1]["hw"] for w in car_ways], [w[1]["guessed"] for w in car_ways],
+                             measured, [w[2] == "bridge" for w in car_ways], SURVEYED)
+    if strips:
+        wet = unary_union(areas.get("water", []))
+        areas.setdefault("square_loose", []).append(unary_union(strips).difference(wet))
+    timer.lap("shoulders")
     lots.extend(_inferred_lots(dtm.parking((w, s, e, n), tf.transform).intersection(clip),
                                [land.get("dtm_yard", Polygon()), *areas.get("yard", [])],
                                lots, buildings, drivable, natural, [w[0] for w in car_ways], clip))

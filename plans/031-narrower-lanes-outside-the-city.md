@@ -11,8 +11,8 @@ shows, and blocks of garden turn into slabs of asphalt where several meet.
 ## Status and starting point
 
 - Status: IN PROGRESS (5 October 2026): steps 0, 1, 3 (single lane) and 4 done on the
-  branch `plan-031-narrower-lanes`; the gravel shoulder on through roads and a
-  pavement-or-verge pass are not done (see "What was built"). Merged into main on 5 October 2026, not deployed.
+  branch `plan-031-narrower-lanes`; the gravel shoulder on through roads was added on main afterwards; a
+  pavement-or-verge pass is not done (see "What was built"). Merged into main on 5 October 2026, not deployed.
 - Priority: P2 (it affects the whole outer ring and plan 021). Effort: two to four
   days. Risk: medium: street widths feed the street graph, traffic lanes, parking
   and kerbs, so a change here moves a lot.
@@ -118,9 +118,12 @@ Widths inside the technical map's area, lane markings, speed limits.
 - **Countryside** (`src/countryside.ts`): the same defaults for houses against open land
   (no room measurement and no flats there: the differences from the pipeline).
 - **Verge.** No pavement is made; the grass beside a narrowed street is whatever ground
-  is mapped there, and the gardens now reach the road edge. Not done: the gravel
-  shoulder on through roads (a strip of `square_loose` beside unsurveyed tertiary and
-  unclassified roads would draw it), and checking the unmapped strip between a road and
+  is mapped there, and the gardens now reach the road edge. The gravel shoulder was
+  added on 5 October 2026 (`shoulders` in `pipeline/lanes.py`): a 0.6 m strip of
+  `square_loose` either side of tertiary and unclassified roads that have no width or
+  lanes tag, are not surveyed, are not on a bridge and do not run between blocks of
+  flats. It is unit-tested but has not been looked at in the game: it shows only after
+  the ground layer is rebuilt. Not done: checking the unmapped strip between a road and
   a fence that is not a garden.
 - **Tests:** `pipeline/test_narrow_lanes.py` (setting, room, widths, which streets are
   left alone, gardens on unmapped land), `scripts/check-narrow-lanes.mjs`.
