@@ -65,8 +65,18 @@ About two thirds of that first run was the download. Working a tile out took 0.9
 it projecting its million pixels into S-JTSK three times over (for the colour photograph,
 the infrared one and the surface model). `sjtsk()` now projects a 33 × 33 lattice once per
 tile and places the pixels between its points (within 0.00002 mm of projecting each one):
-0.34 s a tile on 40 tiles spread over the city, with the same cover out. A change to
-`ground_cover.py` still redoes every tile, but from the photographs already on disk.
+0.34 s a tile on 40 tiles spread over the city, with the same cover out.
+
+Two more steps brought that to 0.18 s a tile, again with the same cover on those tiles.
+`burn()` fills polygons row by row instead of testing every pixel of a polygon's box
+against every edge (20 times faster over 1,217 tiles; 75 pixels of 1.3 thousand million
+came out differently, where a pixel's centre lies exactly on an edge), and `summarise()`
+measures only the pixels that belong to a piece.
+
+The cover's code key (`layers.cover_processing`, `build_cache.reach_key`) now covers only
+`tile_cover` and what it leads to in `ground_cover.py`, so a change to the prototype's other
+commands (`ortho`, `train`, `sheet`, `score`...) no longer redoes every tile. A change to
+the classifier does, from the photographs already on disk.
 
 | | plain ground |
 | --- | --- |

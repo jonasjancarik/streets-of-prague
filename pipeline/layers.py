@@ -195,8 +195,9 @@ def cover_key(t: dict, height) -> str:
 
 
 def cover_processing() -> list:
-    """The code the cover layer is made by (a change to it makes the layer out of date)."""
-    return [build_cache.digest(Path(__file__).with_name("ground_cover.py").read_bytes())]
+    """The code the cover layer is made by (a change to it makes the layer out of date):
+    what works a tile's cover out in ground_cover.py, not the prototype's other commands."""
+    return [build_cache.reach_key(Path(__file__).with_name("ground_cover.py"), ["tile_cover"])]
 
 
 def young_key(t: dict, height) -> str:

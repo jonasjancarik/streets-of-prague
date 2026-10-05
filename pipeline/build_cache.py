@@ -3,6 +3,7 @@
 read_when: changing map cache keys, chunk resume, or source-level IPR parsing.
 """
 
+import ast
 import hashlib
 import importlib.metadata
 import inspect
@@ -50,6 +51,36 @@ def code_key():
 
 def function_key(function):
     return digest(inspect.getsource(function).encode())
+
+
+def reach_key(path, roots):
+    """A key of the functions `roots` in the file at `path` and of everything in that file
+    they lead to (the functions they call and the constants they read, and so on down):
+    a change to anything else in the file leaves it as it was. Read from the source, so
+    the file's own imports aren't needed."""
+    source = Path(path).read_text()
+    defined = {}
+    for node in ast.parse(source).body:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            names = [node.name]
+        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            names = [n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)]
+        else:
+            continue
+        for name in names:
+            defined.setdefault(name, []).append(node)
+    reached, todo = {}, list(roots)
+    while todo:
+        name = todo.pop()
+        if name in reached:
+            continue
+        if name not in defined:
+            raise KeyError(f"{path}: no {name}")
+        reached[name] = [ast.get_source_segment(source, node) for node in defined[name]]
+        todo += {n.id for node in defined[name] for n in ast.walk(node)
+                 if isinstance(n, ast.Name) and n.id in defined}
+    return key(dict(sorted(reached.items())))
 
 
 def runtime_key():

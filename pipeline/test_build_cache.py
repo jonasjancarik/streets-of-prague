@@ -320,5 +320,47 @@ class ChunkBuildTests(unittest.TestCase):
         self.assertFalse((self.out / "ujezd_now" / "index.json").exists())
 
 
+class ReachKeyTests(unittest.TestCase):
+    SOURCE = """
+import numpy as np
+LIMIT = 3
+OTHER = 5
+
+def helper(x):
+    return np.minimum(x, LIMIT)
+
+def made(x):
+    return helper(x) + 1
+
+def report(x):
+    return x * OTHER
+"""
+
+    def key(self, source):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "module.py"
+            path.write_text(source)
+            return build_cache.reach_key(path, ["made"])
+
+    def test_only_what_the_function_leads_to_changes_the_key(self):
+        key = self.key(self.SOURCE)
+        self.assertEqual(self.key(self.SOURCE.replace("x * OTHER", "x - OTHER").replace("OTHER = 5", "OTHER = 6")), key)
+        self.assertNotEqual(self.key(self.SOURCE.replace("LIMIT = 3", "LIMIT = 4")), key)
+        self.assertNotEqual(self.key(self.SOURCE.replace("np.minimum", "np.maximum")), key)
+        self.assertNotEqual(self.key(self.SOURCE.replace("+ 1", "+ 2")), key)
+
+    def test_the_cover_key_reaches_the_classifier_but_not_the_prototype(self):
+        source = Path(build_cache.__file__).with_name("ground_cover.py").read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            def of(text):
+                path = Path(tmp) / "ground_cover.py"
+                path.write_text(text)
+                return build_cache.reach_key(path, ["tile_cover"])
+            key = of(source)
+            self.assertEqual(of(source.replace("def kuwahara(img, radius=5", "def kuwahara(img, radius=6")), key)
+            self.assertNotEqual(of(source.replace("TREE = 2.5 ", "TREE = 2.6 ")), key)
+            self.assertNotEqual(of(source.replace("SJTSK_NODES = 33", "SJTSK_NODES = 17")), key)
+
+
 if __name__ == "__main__":
     unittest.main()
