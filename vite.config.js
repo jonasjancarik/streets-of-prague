@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from 'vite';
 import { runningBench } from './scripts/game-lock.mjs';
@@ -31,11 +31,14 @@ function licences(emit) {
       const parts = [...bundled].sort().map((name) => {
         const dir = join('node_modules', name);
         const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
-        const file = readdirSync(dir).find((f) => /^(licen[cs]e|copying)(\.|$)/i.test(f));
-        if (!file) this.error(`No licence file found for ${name}`);
+        // A package that ships no licence file (pmtiles) has its text in licences/<name>.txt.
+        const own = readdirSync(dir).find((f) => /^(licen[cs]e|copying)(\.|$)/i.test(f));
+        const kept = join('licences', `${name.replace('/', '__')}.txt`);
+        const path = own ? join(dir, own) : existsSync(kept) ? kept : null;
+        if (!path) this.error(`No licence file found for ${name}: add its text as ${kept}`);
         const home = (pkg.homepage ?? pkg.repository?.url ?? pkg.repository ?? '')
           .replace(/^(git\+)?(git|https?):\/\//, 'https://').replace(/\.git$/, '');
-        return `${name} ${pkg.version} (${pkg.license})${home ? `\n${home}` : ''}\n\n${readFileSync(join(dir, file), 'utf8').trim()}`;
+        return `${name} ${pkg.version} (${pkg.license})${home ? `\n${home}` : ''}\n\n${readFileSync(path, 'utf8').trim()}`;
       });
       const rule = `\n\n${'-'.repeat(72)}\n\n`;
       this.emitFile({

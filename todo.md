@@ -14,9 +14,6 @@ rebuilt on 5 October with all of it; `centrum` and `ujezd` are from 3 October.
 
 Before deploying:
 
-- **`npm run build` fails**: "No licence file found for pmtiles" (the countryside
-  prototype's dependency ships no licence file, and the build insists on one for
-  `licenses.txt`). Add its BSD-3-Clause text to the repo and let the plugin read it.
 - `layers.py praha --strict` on the rebuilt layers.
 - A frame-time run of plan 028's flat-roof details on a quiet machine (the first
   attempt timed out while loading). If it shows, limit the skylights or keep the
