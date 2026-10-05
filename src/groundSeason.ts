@@ -19,7 +19,7 @@ const SUMMER_DRY = ramp(196, 182, 235);
 const fieldBase = new THREE.Color('#b9b27a');
 const fieldGreen = new THREE.Color('#79a452');
 const fieldEarth = new THREE.Color('#947658');
-const woodBase = new THREE.Color('#52703c');
+const woodBase = new THREE.Color('#394a2b');
 const woodLitter = new THREE.Color('#80633f');
 let sharedDay = -1;
 

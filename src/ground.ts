@@ -37,7 +37,7 @@ type GroundGeometry = GroundLayer['geometry'];
 
 export const COLORS = {
   pavement: '#92908c', square: '#d7d3cb', squareSetts: '#9c958a', path: '#d8cbb6', dirt: '#bfa87e',
-  park: '#79a24c', garden: '#80a552', wood: '#52703c', orchard: '#89a858', pitch: '#6c9c55',
+  park: '#79a24c', garden: '#80a552', wood: '#394a2b', orchard: '#89a858', pitch: '#6c9c55',
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', asphalt: '#6b6a68', sett: '#8a847a', parking: '#72706c',
   bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
