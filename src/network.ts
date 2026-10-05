@@ -115,8 +115,16 @@ export const roadWeight = (hw: string) => ROAD_WEIGHT[hw] ?? 1;
 
 // Where traffic drives, right of the street's centre line: the outer lane on two-way
 // streets, the middle (or right of middle) lane on one-way ones.
+// Under this a two-way street is one lane wide: cars keep to their right as far as a
+// car's width allows and pass each other slowly, instead of the lane offset pushing
+// them out over the verge.
+export const SINGLE_LANE = 4.6;
+const SINGLE_LANE_SPEED = 5;
+const narrow = (e: RawStreetEdge) => !e.oneway && e.width < SINGLE_LANE;
+
 function laneOffset(e: RawStreetEdge) {
   const n = e.lanes || 0;
+  if (narrow(e)) return Math.max(0.5, e.width / 2 - 0.95);
   if (e.oneway) {
     const lanes = Math.max(1, n || 1), lw = e.width / lanes;
     return e.width / 2 - lw * (Math.floor((lanes - 1) / 2) + 0.5);
@@ -147,6 +155,7 @@ export class DriveGraph {
       e.laneOffset = laneOffset(e);
       e.path = new Polyline(offsetLine(e.pts, e.laneOffset));
       e.speed = e.maxspeed ? Math.min(e.maxspeed / 3.6, CLASS_SPEED[e.hw] || 9) : CLASS_SPEED[e.hw] || 9;
+      if (narrow(e)) e.speed = Math.min(e.speed, SINGLE_LANE_SPEED);
       this.byId.set(e.id, e);
       this.edges.push(e);
       if (!this.out.has(e.u)) this.out.set(e.u, []);

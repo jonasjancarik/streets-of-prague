@@ -10,7 +10,9 @@ shows, and blocks of garden turn into slabs of asphalt where several meet.
 
 ## Status and starting point
 
-- Status: PLANNED.
+- Status: IN PROGRESS (5 October 2026): steps 0, 1, 3 (single lane) and 4 done on the
+  branch `plan-031-narrower-lanes`; the gravel shoulder on through roads and a
+  pavement-or-verge pass are not done (see "What was built"). Not merged, not deployed.
 - Priority: P2 (it affects the whole outer ring and plan 021). Effort: two to four
   days. Risk: medium: street widths feed the street graph, traffic lanes, parking
   and kerbs, so a change here moves a lot.
@@ -78,3 +80,47 @@ git diff --stat 364e7f3cac31a9aedb4a64f8c0b1ac9563258990..HEAD -- pipeline/osm_a
 ## Out of scope
 
 Widths inside the technical map's area, lane markings, speed limits.
+
+## What was built (5 October 2026, branch `plan-031-narrower-lanes`)
+
+- **Step 0, the grey area.** The ground base layer (`src/ground.ts`) is paved wherever
+  nothing is mapped, and land that carries family houses but lies in no
+  `landuse=residential` area got no garden (`_gardens` only looked inside residential
+  areas), so it stayed paved. In `outer_n` (which covers the plan's first comparison
+  point) that was a hectare-sized patch among gardens. Fixed in `pipeline/osm_area.py`:
+  `_gardens` also takes the land within 30 m of family houses that no mapped use, survey
+  layer, road or square claims (no plot fences there), and a block with only a few
+  shops or sheds (under 4 % of its area) is no longer ruled out as commercial. What stays
+  grey is mapped as something else (railway ballast, a yard, a commercial block of
+  non-home buildings). `roads.road` was not the cause. Needs a rebuild of `outer_se`
+  and `outer_e` to show there; only `outer_n` was rebuilt and looked at.
+- **Calibration** (surveyed kerb to kerb, untagged, no parking tag, medians with
+  quartiles, from 44,842 edges): residential houses 6.0 (5.0–7.1), flats 8.0
+  (6.6–10.4), open 7.4 (6.3–10.1); living street houses 5.6, flats 6.7, open 6.2;
+  tertiary houses 7.0, flats 8.5, open 7.2; unclassified houses 5.2, flats 7.1, open 6.3.
+  Surveyed widths include parking bays, so the defaults are a little under them.
+- **The plan's 4 m for short or dead-end streets is not used.** The survey shows short
+  streets as wide as long ones, so the setting alone decides.
+- **Widths** (`pipeline/lanes.py`, used by `osm_area.py` and `build_tiles.py`): by class
+  and setting (houses, flats, open land within 35 m), cut to the room between buildings,
+  fences and walls either side less 0.75 m each (the cut rarely bites; houses sit back,
+  mostly in `outer_se`). Tagged and at least half surveyed streets keep their widths.
+  Residential 5.5 / 7.5 / 7.0, unclassified 5.5 / 7.0 / 6.0, living street 5.0 / 5.5 /
+  5.0, tertiary 7.5 / 9.0 / 8.0, service 3.5 / 5.0 / 4.0 (houses / flats / open).
+  Edges changed: `outer_n` 126 of 169, `outer_se` 119 (34 under 4.6 m), `outer_e` 183
+  (none).
+- **Single lane** (`src/network.ts`): two-way streets under `SINGLE_LANE` = 4.6 m
+  (tagged `lanes=1` ones too) put the lane offset at width/2 - 0.95 (at least 0.5 m;
+  it used to be 1.6 m from the axis, outside a 4 m street) and cap speed at 5 m/s.
+  `scripts/check-narrow-lanes.mjs` checks it with the real traffic updater: two cars
+  pass on 3.75, 4.0 and 4.5 m streets, inside the street and without touching. The
+  parking clearance check still passes.
+- **Countryside** (`src/countryside.ts`): the same defaults for houses against open land
+  (no room measurement and no flats there: the differences from the pipeline).
+- **Verge.** No pavement is made; the grass beside a narrowed street is whatever ground
+  is mapped there, and the gardens now reach the road edge. Not done: the gravel
+  shoulder on through roads (a strip of `square_loose` beside unsurveyed tertiary and
+  unclassified roads would draw it), and checking the unmapped strip between a road and
+  a fence that is not a garden.
+- **Tests:** `pipeline/test_narrow_lanes.py` (setting, room, widths, which streets are
+  left alone, gardens on unmapped land), `scripts/check-narrow-lanes.mjs`.

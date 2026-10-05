@@ -48,6 +48,7 @@ import build_cache
 import chunk_cache
 import dtm
 import ipr_trees
+import lanes
 import layers
 import structures
 from osm_area import (AREAS, CAR_ROADS, FEATURE_TAGS, ORIENTATIONS, OUT, _coords, _float, _lines, _polys, _rings, extract,
@@ -145,11 +146,12 @@ def kerb_parking(d, side):
 JOIN_ONLY_ALIKE = ("bridge", "tunnel")
 
 
-def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None, ground=frozenset()):
+def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None, ground=frozenset(), setting=None):
     """Edges of an osmnx network as dicts with OSM node ids and local-metre polylines;
     with `kerbs` (kerbs.Kerbs), car roads get their kerbs as `kerb`: [right, left].
     `source`: the local cut's OSM data as read by read_osm (pickled osmnx JSON);
     `core`: the chunk's own box in local metres (without its margin);
+    `setting`: lanes.Setting, to size untagged streets the survey doesn't reach like the ground does;
     `ground`: ways tagged as tunnels that are passages through buildings (osm_area)."""
     if source:
         # The same network osmnx would ask Overpass for, built from the local cut.
@@ -186,7 +188,7 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None,
             right, left = left, right
         width = road_width(hw, _float(first(d.get("width"))), _float(first(d.get("lanes"))))
         if kerbs and hw in CAR_ROADS:
-            est = estimate(width, lambda key: first(d.get(key)), first(d.get("width")) is None and first(d.get("lanes")) is None)
+            est = {**estimate(width, lambda key: first(d.get(key)), first(d.get("width")) is None and first(d.get("lanes")) is None), "hw": hw}
             if rev:
                 est["left"], est["right"] = est["right"], est["left"]
             sized.append((len(out), LineString(pts), est))
@@ -200,7 +202,11 @@ def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None,
             **({"park": [right, left]} if directed and (right or left) else {}),
         })
     if sized:
-        for (i, _, _), (left, right) in zip(sized, kerbs([s[1] for s in sized], [s[2] for s in sized])):
+        lines, ests = [s[1] for s in sized], [s[2] for s in sized]
+        for (i, _, _), w in zip(sized, lanes.apply(setting, kerbs, lines, [e["hw"] for e in ests], ests, [not e["guessed"] for e in ests])):
+            if w:
+                out[i]["width"] = w
+        for (i, _, _), (left, right) in zip(sized, kerbs(lines, ests)):
             out[i]["kerb"] = [right, left]
     return out
 
@@ -375,7 +381,7 @@ def build_chunk(job):
 
     if "streets" in wanted:
         t0 = time.perf_counter()
-        drive = graph_edges(bbox, tf, "drive", True, source, x["kerbs"], core, x["ground_ways"])
+        drive = graph_edges(bbox, tf, "drive", True, source, x["kerbs"], core, x["ground_ways"], x["setting"])
         walk = graph_edges(bbox, tf, "walk", False, source, ground=x["ground_ways"])
         names = {}  # street name → (length of its longest edge, midpoint), for the dev search
         for ed in drive + walk:
