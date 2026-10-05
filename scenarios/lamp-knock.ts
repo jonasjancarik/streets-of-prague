@@ -3,7 +3,9 @@ import type { Scenario } from '../src/testkit.ts';
 export default {
   title: 'A car at 50 km/h knocks a lamp post over',
   async run(t) {
-    await t.go('vodickova');
+    // Along the street: the heading a new game leaves you with can face a house front,
+    // where there is no room to put the car down.
+    await t.go('vodickova', { heading: 315 });
     t.time('14:00');
     t.weather('clear');
     await t.drive('hatch');
