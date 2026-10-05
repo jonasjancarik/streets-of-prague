@@ -163,4 +163,9 @@ Report scene-size and memory changes separately from frame time.
 
 ## Result
 
-Not started.
+Built on 1 October 2026 on branch `nearby-tiles` (commits `d3c55f9`, `9a15364`), not
+merged into main. The full result is in this file on that branch
+(`git show nearby-tiles:plans/016-draw-only-nearby-tiles.md`). In short: hiding the far
+tiles moved the frame by 1–3 %, within the noise; a far tile is ready in 0.03–0.12 s
+instead of about a second, and its meshes are made when it comes within 100 m of the
+view's edge. Whether to merge is undecided.

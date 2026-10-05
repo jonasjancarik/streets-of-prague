@@ -156,7 +156,8 @@ with furniture.
 
 ## What is left
 
-- Re-run `pipeline/ipr_buildings.py` for the city and look at the atria schools.
+- Re-run `pipeline/ipr_buildings.py` for the city and look at the atria schools (on
+  5 October 2026 some of the local `praha` map's IPR tiles were still from 1 October).
 - Frame time of step 4 was not measured: on 5 October 2026 the machine was out of memory
   (load 120 to 190, other sessions' processes) and both bench orders timed out while
   loading. At the estate view a frame takes about 1 ms either way and the triangle cost is

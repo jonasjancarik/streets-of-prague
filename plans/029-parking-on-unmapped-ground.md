@@ -187,5 +187,5 @@ the kerb, which is its own task.
   "active paint upload range" in the same way on main's dev server, so not from this
   work. `scripts/check-data-format.mjs public/data` passes (format 2).
 - The map was not rebuilt: the pictures were made by patching the tiles of my own copy
-  of the data with the output of `extract`. The shared map needs a rebuild of the
-  `ground` layer for `lots` and `drives` to appear.
+  of the data with the output of `extract`. The shared local `praha` map was rebuilt on
+  5 October 2026 and has `lots` and `drives` in its tiles; it is not deployed.

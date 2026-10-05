@@ -8,7 +8,8 @@
 
 ## Status
 
-- State: PLANNED
+- State: PHASES 1–3 AND 6 (ANDROID) BUILT on branch `ios-app`, not merged into main
+  (see Result); real-device checks and phases 4, 5, 7 and 8 open
 - Priority: P2
 - Effort: about 10–14 working days across eight phases, plus store review time
 - Risk: medium. The web game stays the only codebase and almost all new code sits in
@@ -333,4 +334,8 @@ phase 6 produces an installable build.
 
 ## Result
 
-Not started.
+Phases 1–3 and the Android phase were built on branch `ios-app` between 2 and
+3 October 2026 (21 commits, not merged into main or pushed). The results, with what
+was checked in the simulators and what the iOS app taught for Android, are in this
+file on that branch (`git show ios-app:plans/020-ios-and-android-apps.md`). Still
+unknown: whether the app gets WebGPU on a real iOS 26 device.

@@ -11,8 +11,8 @@ leaves with conifers mixed in and a ragged edge of shrubs and young trees.
 ## Status and starting point
 
 - Status: STEPS 0–4 AND THE EDGE BLEND DONE (steps 0–3 merged into main on 5 October 2026; step 4 and the
-  edge blend from branch `plan-026-young-woods` merged the same day; not deployed, the city's map not yet rebuilt with the
-  young layer). A phone check is still open (see "Left open").
+  edge blend from branch `plan-026-young-woods` merged the same day; not deployed; the local `praha` map was rebuilt with the
+  young layer on 5 October 2026). A phone check is still open (see "Left open").
 - Priority: P2. Effort: three to five days. Risk: medium (woods already hold most of
   the trees in view on the city's edge).
 - Category: feature (map look). Dependencies: none. Overlaps plan 017 (cheaper trees
@@ -149,9 +149,8 @@ tree meshes.
 ### Left open
 
 - Check on a phone (Pixel 5), and whether more or bigger crowns are affordable.
-- The young layer is built only for the trial block in this worktree. The whole city's map
-  is rebuilt once after the merge (`uv run --group cover young_woods.py build praha`, then
-  assemble); the cover layer is re-assembled with it.
+- The young layer was built for the whole city in the local `praha` map on 5 October 2026
+  (`uv run --group cover young_woods.py build praha`, then assemble); it is not deployed.
 - Black clearings inside a mapped wood (canopy under 1.5 m) are still planted as full-grown
   wood. Many "woods" are drawn under park or meadow, so there the young planting shows as
   small, dense trees on a meadow, not as a thicket on a wood floor.

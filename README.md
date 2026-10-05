@@ -818,7 +818,6 @@ from (geometry helpers, straight-skeleton buildings, trees).
 - Something to do: missions (deliveries, taxi, courier), and earning money.
 - Visible damage on cars.
 - Sound for the traffic, crashes, people and the helicopter.
-- Spray behind cars in the rain, and bare trees in winter.
 
 ## Building the map
 

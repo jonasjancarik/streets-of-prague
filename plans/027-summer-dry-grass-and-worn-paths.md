@@ -30,8 +30,9 @@ bare trodden lines.
   footfall map; only chunks (2,10), (7,10), (9,6) were rebuilt in the shared
   clone, then assembled for the whole city, not the full chunk build: 119 paths in
   the two estate chunks (71 at Kobylisy, 48 at Černý Most, none in the village of
-  Nebušice), 79 merged ribbons in 44 tiles (at most 6 per tile, median 1). A full
-  chunk build is still to do before release. Expect a merge conflict with plan 030
+  Nebušice), 79 merged ribbons in 44 tiles (at most 6 per tile, median 1). The local
+  `praha` map was rebuilt in full on 5 October 2026 (worn paths in about 8 % of its
+  tiles); it is not deployed. Expect a merge conflict with plan 030
   in `osm_area.py`, `build_tiles.py` and `layers.py`.
 - Status (was): PLANNED.
 - Priority: P2. Effort: two to four days for the colours, about the same again for

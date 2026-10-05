@@ -122,8 +122,8 @@ Widths inside the technical map's area, lane markings, speed limits.
   added on 5 October 2026 (`shoulders` in `pipeline/lanes.py`): a 0.6 m strip of
   `square_loose` either side of tertiary and unclassified roads that have no width or
   lanes tag, are not surveyed, are not on a bridge and do not run between blocks of
-  flats. It is unit-tested but has not been looked at in the game: it shows only after
-  the ground layer is rebuilt. Not done: checking the unmapped strip between a road and
+  flats. It is unit-tested but has not been looked at in the game; the local `praha` map
+  was rebuilt on 5 October 2026, so it can be now. Not done: checking the unmapped strip between a road and
   a fence that is not a garden.
 - **Tests:** `pipeline/test_narrow_lanes.py` (setting, room, widths, which streets are
   left alone, gardens on unmapped land), `scripts/check-narrow-lanes.mjs`.
