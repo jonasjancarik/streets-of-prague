@@ -423,7 +423,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   conifers and which fruit trees, and so does OSM sometimes (`leaf_type`, `genus`).
   Conifers are their own shape (`pineGeometry` in `src/map/vegetation.ts`, evergreen in
   winter), fruit trees are small. The woods, parks and gardens are filled up with made-up
-  trees, 30% of them conifers in woods, but not next to a surveyed one. Rebuild them with
+  trees, 30% of them conifers in woods, but not next to a surveyed one; young woods (see
+  "Young woods" under Unmapped ground) get small, dense ones. The dark woodland floor fades out
+  over the grass beside it (`woodEdges` in `src/ground.ts`). Rebuild them with
   `uv run build_tiles.py <area> --layers ground`, then `ipr_terrain.py <area>`.
   Rendering keeps fixed-capacity mesh pages per tree shape (`src/trees.ts`). A tile
   leases pages containing only its own trees; unloading the tile clears the pages
@@ -1076,6 +1078,16 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   prototype's other commands (`classify --method model|jev`, `train`, `sheet`, `score`
   against hand labels, and `ortho`, the painted photo shown with `?ortho`, not
   convincing yet).
+- **Young woods.** `young_woods.py build <area>` (same `cover` group; it needs the ground
+  and terrain layers and IPR's surface model, not the ground cover) finds where a mapped
+  wood is still low: inside a wood, where the canopy top (80th percentile over 9 m, surface
+  model minus terrain) is between 1.5 and 7 m, in patches of at least 250 m2. It writes the
+  `young` layer, and `layers.py` puts the polygons into the tiles as `areas.young_wood`;
+  the game plants small, close trees there instead of full-grown ones
+  (`treeInstances` in `src/map/vegetation.ts`). `survey` only reports the share. The
+  surface model only covers the city, so a wood outside it stays as it was. Results are
+  kept per tile under a key of the wood outlines and heights, and changing
+  `young_woods.py` does not invalidate the other layers.
 
 Sizes after the 1 October 2026 local rebuild: centrum is 234 tiles and about 38 MB;
 the whole city is 14,595 tiles, 247,013 OSM buildings and IPR buildings in 5,703

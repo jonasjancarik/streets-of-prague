@@ -57,6 +57,7 @@ const BAY_PAINT: [string | null, string, Point2 | null][] = [
 const LAND_USE: [string, string][] = [
   ['field', 'field'], ['yard', 'concrete'], ['ballast', 'gravel'], ['bare', 'dirt'],
 ];
+const WOOD_EDGE_WIDTH = 6, WOOD_EDGE_SHADE = 0.5, WOOD_EDGE_MIN_AREA = 1500;
 // Surveyed courtyards and greenery fill unmapped ground. OSM and photo cover
 // remain above these layers wherever their more specific shapes overlap.
 const DTM_LAND: [string, string, string][] = [
@@ -569,6 +570,35 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     if (geometry.index.length) out.push({ order: o, geometry, shade: opacity });
   };
 
+  // The dark woodland floor fades out over the grass beside it, as the canopy's shade
+  // would, instead of stopping on a line. The edge that shows is not always the wood's
+  // own outline: a park or meadow is often drawn over a wood's floor, and then its
+  // outline is the edge. So a band is laid along the wood outlines where the floor shows
+  // and the neighbour is not wood, and along the grass outlines where wood floor shows on
+  // the other side. Only real woods (the photo canopy's small blobs are left out).
+  const woodEdges = () => {
+    const wood = [...(A.dtm_wood || []), ...(A.wood || [])];
+    const real = (polys: Polygons) => polys.filter((rings) => Math.abs(signedArea(rings[0])) > WOOD_EDGE_MIN_AREA);
+    const grass = [...(A.park || []), ...(A.meadow || []), ...(A.lawn || []), ...(A.garden || [])];
+    const onWood = onPolygons(wood), onTop = onPolygons(A.wood || []), onGrass = onPolygons(grass);
+    const floorAt = (p: Point2) => onTop(p[0], p[1]) || (onWood(p[0], p[1]) && !onGrass(p[0], p[1]));
+    const skipUnless = (test: (p: Point2, q: Point2) => boolean) => (a: Point2, b: Point2) => {
+      if (cut(a, b)) return true;
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, nx = (-dy / len) * 1.5, ny = (dx / len) * 1.5;
+      const p: Point2 = [mx + nx, my + ny], q: Point2 = [mx - nx, my - ny];
+      return !(test(p, q) || test(q, p));
+    };
+    // Wood outline: the floor on one side, no wood on the other. Where the other side is grass
+    // that has its own outline right here (the grass has a hole where the wood is), the grass
+    // outline lays the band.
+    const outer = skipUnless((i, o) => floorAt(i) && !onWood(o[0], o[1]) && !(onGrass(o[0], o[1]) && !onGrass(i[0], i[1])));
+    // Grass outline: grass that the wood does not cover on one side, the floor showing on the other.
+    const inner = skipUnless((g, f) => onGrass(g[0], g[1]) && !onTop(g[0], g[1]) && floorAt(f) && !onGrass(f[0], f[1]));
+    shade(skirts(real(wood), WOOD_EDGE_WIDTH, true, outer), WOOD_EDGE_SHADE);
+    shade(skirts(real(grass), WOOD_EDGE_WIDTH, false, inner), WOOD_EDGE_SHADE);
+  };
+
   // Base: everything unmapped between streets and houses is paved; gardens round
   // family houses come from the pipeline (osm_area.py, _gardens).
   const [x0, y0, x1, y1] = box;
@@ -605,6 +635,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.worn || []), COLORS.worn, 'dirt', 0.9);
     add(polygons(A.orchard || []), COLORS.orchard, 'grass');
     add(polygons(A.wood || []), COLORS.wood, 'wood');
+    woodEdges();
     for (const [key, color, pattern] of PITCH_LOOKS) add(polygons(A[key] || []), color, pattern);
     add(polygons(A.pitch || []), COLORS.pitch, 'pitch');
     add(strips(d.marks || [], 0.12), COLORS.paint);
