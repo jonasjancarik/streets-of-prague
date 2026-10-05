@@ -130,6 +130,18 @@ for(const night of [false,true]) {
   assert.equal(got.wanted,night?5:4); assert.equal(got.zoned,1); assert.equal(got.cars.length,night?5:4);
 }
 reports.push('narrow streets and paid day/night shares');
+
+// Kerbside cars by road class (no car parks here): none on a motorway or a slip road
+// however wide its shoulder, none in the lanes of a divided main road, some where
+// that road's kerb leaves room, and an explicit tag still decides.
+const kerbside=(extra)=>{const e=graph([raw('k','a','b',[[0,0],[200,0]],extra)]).edges;let n=0;for(let seed=0;seed<6;seed++) n+=park(e,e,[],seed).cars.length;return n;};
+assert.ok(kerbside({kerb:[5.5,5.5]})>0,'an ordinary street has cars at the kerb');
+for(const hw of ['motorway','motorway_link','trunk','trunk_link','primary_link'])
+  assert.equal(kerbside({hw,oneway:true,lanes:2,width:7.5,kerb:[6.6,4.2]}),0,hw+' has no cars at the kerb');
+assert.ok(kerbside({hw:'trunk',oneway:true,lanes:2,width:7.5,kerb:[6.6,4.2],park:['parallel',null]})>0,'a tagged parking lane on an expressway is kept');
+assert.equal(kerbside({hw:'primary',oneway:true,lanes:3,width:10.75,kerb:[5.95,5.88]}),0,'no cars in the lanes of a divided main road');
+assert.ok(kerbside({hw:'primary',oneway:true,lanes:2,width:7.5,kerb:[8.14,3.92]})>0,'cars where its kerb leaves room beside the lanes');
+reports.push('no kerbside cars on motorways, slip roads or in the lanes of divided main roads');
 // Outside the zones the buildings decide how full the kerb is (src/parkingDemand.ts).
 const road=graph([raw('long','a','b',[[0,0],[600,0]])]).edges;
 const lotsAlong=[rectangle(10,-6.5,590,-4.5)];

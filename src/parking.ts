@@ -70,6 +70,11 @@ export class Zones {
 
 // Angled bays: how far the cars turn from the kerb, and their spacing along it.
 const ANGLE = 0.9, ANGLED_STEP = 3.0;
+// Roads nobody leaves a car beside unless the map says they do: motorways, expressways
+// and every slip road. (A hard shoulder is not a parking lane.)
+const NO_KERB_PARKING = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary_link', 'secondary_link', 'tertiary_link']);
+const DIVIDED = new Set(['primary', 'secondary']);
+const LANE = 3.0; // m: the least a driving lane takes of a carriageway
 
 // How the cars stand in a parking area: OSM's `orientation` if it's tagged, else a
 // guess from its width. Under 4.5 m is a parallel lane, up to 5.6 m angled bays (the
@@ -244,9 +249,13 @@ function slots(data: ParkingData, edges: DriveEdge[]) {
     // the kerbs only have that width: parallel cars stand inside its edge, the others
     // just outside it. Where a building is in the way, they don't fit (see place()).
     for (const side of e.oneway ? [1, -1] : [1]) {
-      const o = e.park?.[side > 0 ? 0 : 1] || 'parallel';
+      const tagged = e.park?.[side > 0 ? 0 : 1];
+      const o = tagged || (NO_KERB_PARKING.has(e.hw) ? 'no' : 'parallel');
       if (o === 'no') continue;
       const edge = e.kerb?.[side > 0 ? 0 : 1];
+      // One carriageway of a divided main road: nobody parks in its lanes, only where
+      // the kerb leaves room beside them (a lay-by, a parking lane).
+      if (!tagged && edge != null && e.oneway && (e.lanes ?? 0) >= 2 && DIVIDED.has(e.hw) && edge - (e.lanes! * LANE) / 2 < 1.9) continue;
       const kerb = edge == null
         ? e.width / 2 + { parallel: -1.05, diagonal: 2.55, perpendicular: 2.5 }[o]
         : o === 'parallel' ? edge - 1.05 : Math.max(edge - 2.45, e.width / 2 + 2.55);
