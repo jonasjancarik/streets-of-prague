@@ -11,7 +11,7 @@ parks nobody mapped, and a car on the drive of nearly every family house.
 ## Status and starting point
 
 - Status: PARTLY BUILT (branch `plan-029-parking`, merged into main on 5 October 2026, not deployed): A and C
-  built; B checked on fourteen estates on 6 October 2026 and not built (no reliable signal); see "What was built" at the end.
+  built; B checked on fourteen estates on 5 October 2026 and not built (no reliable signal); see "What was built" at the end.
 - Priority: P2. Effort: about a week. Risk: medium (cars are collision bodies and
   meshes; plan 015 made the meshes cheap, the bodies are not).
 - Category: feature (map look, traffic). Dependencies: the occupancy by building type
@@ -138,7 +138,7 @@ of flats on the far sides were searched for in the OSM ways (`service` including
 handful of hits in the first chunks searched, one of them a depot (50.1376, 14.44586).
 That scan never finished, and the plan's check was not done.
 
-Second attempt (6 October 2026, branch `plan-029-estate-strips`, no code kept): the
+Second attempt (5 October 2026, branch `plan-029-estate-strips`, no code kept): the
 check was done on fourteen estates, each a 500 m square, against the 2024 aerial photo
 (IPR ImageServer, resampled to the game's frame at 0.25 m per pixel). Estates: Lužiny,
 Opatov, Petřiny, Kobylisy, Černý Most, Prosek, Řepy, Modřany, Libuš, Barrandov, Chodov,
