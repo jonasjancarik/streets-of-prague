@@ -54,7 +54,6 @@ from pyproj import Transformer
 from scipy import ndimage
 from shapely.geometry import LineString, Polygon, box as shapely_box, shape
 from shapely.ops import transform as shapely_transform, unary_union
-from skimage.draw import polygon as draw_polygon
 from skimage.feature import peak_local_max
 from skimage.measure import find_contours, regionprops
 from skimage.segmentation import slic
@@ -269,7 +268,9 @@ def dtmp(area, t):
 # --- Rasterising -------------------------------------------------------------------------
 
 def burn(mask, t, res, rings_list, value=True):
-    """Fill polygons (lists of rings, even-odd within each) into a boolean/int raster."""
+    """Fill polygons (lists of rings, even-odd within each) into a boolean/int raster.
+    A pixel is filled when its centre is inside: along each row of pixels, every crossing
+    of a ring's edge turns the filling on or off."""
     x0, _, _, y1 = t["box"]
     h, w = mask.shape
     for rings in rings_list:
@@ -278,13 +279,21 @@ def burn(mask, t, res, rings_list, value=True):
         r0, r1 = max(int((y1 - ext[:, 1].max()) / res) - 1, 0), min(int((y1 - ext[:, 1].min()) / res) + 2, h)
         if c1 <= c0 or r1 <= r0:
             continue
-        sub = np.zeros((r1 - r0, c1 - c0), bool)
+        H, W = r1 - r0, c1 - c0
+        turns = np.zeros(H * (W + 1), np.int64)  # (a column past the end takes the crossings beyond it)
         for ring in rings:
-            ring = np.asarray(ring)
-            rr, cc = draw_polygon((y1 - ring[:, 1]) / res - 0.5 - r0, (ring[:, 0] - x0) / res - 0.5 - c0, sub.shape)
-            flip = np.zeros_like(sub)
-            flip[rr, cc] = True
-            sub ^= flip
+            ring = np.asarray(ring, float)
+            ra, ca = (y1 - ring[:, 1]) / res - 0.5 - r0, (ring[:, 0] - x0) / res - 0.5 - c0
+            rb, cb = np.roll(ra, -1), np.roll(ca, -1)
+            first = np.clip(np.ceil(np.minimum(ra, rb)), 0, H).astype(int)
+            n = np.clip(np.ceil(np.maximum(ra, rb)), 0, H).astype(int) - first
+            e = np.repeat(np.arange(len(ra)), n)  # an edge, once for every row of centres it crosses
+            if not len(e):
+                continue
+            rows = first[e] + np.arange(len(e)) - np.repeat(np.cumsum(n) - n, n)
+            at = ca[e] + (rows - ra[e]) * (cb[e] - ca[e]) / (rb[e] - ra[e])
+            turns += np.bincount(rows * (W + 1) + np.clip(np.ceil(at), 0, W).astype(int), minlength=len(turns))
+        sub = (np.cumsum(turns.reshape(H, W + 1), axis=1)[:, :W] & 1).astype(bool)
         mask[r0:r1, c0:c1][sub] = value
     return mask
 
@@ -376,12 +385,15 @@ def summarise(F, labels):
     H, W = F["lum"].shape
     up = np.pad(up, ((0, H - up.shape[0]), (0, W - up.shape[1])))
     idx = np.arange(1, labels.max() + 1)
+    inside = up > 0  # only the pixels of some piece are measured: often a small part of the tile
+    up = up[inside]
+    F = {k: v[inside] for k, v in F.items()}
     mean = lambda a: ndimage.mean(a, up, idx)
     rgb = F["rgb"]
     lum_m, lum_sq = mean(F["lum"]), mean(F["lum"] ** 2)
     cols = {
         "area": ndimage.sum(np.ones_like(F["lum"]), up, idx) * RES * RES,
-        "r": mean(rgb[:, :, 0]), "g": mean(rgb[:, :, 1]), "b": mean(rgb[:, :, 2]),
+        "r": mean(rgb[:, 0]), "g": mean(rgb[:, 1]), "b": mean(rgb[:, 2]),
         "lum": lum_m, "lum_sd": np.sqrt(np.maximum(lum_sq - lum_m ** 2, 0)),
         "sat": mean(F["sat"]), "tex": mean(F["tex"]), "warm": mean(F["warm"]),
         "ndvi": mean(F["ndvi"]), "green": mean((F["ndvi"] > 0.2).astype(np.float32)),
@@ -990,9 +1002,11 @@ def result_path(area, i, j):
     return CACHE / "results" / area / f"{i}_{j}.json"
 
 
+@functools.lru_cache(maxsize=None)
 def code_key():
-    """Everything in this file; the other layers' code key leaves it out (build_cache.code_key)."""
-    return build_cache.digest(Path(__file__).read_bytes())
+    """What works a tile's cover out in this file (layers.cover_processing); the other
+    layers' code key leaves the file out (build_cache.code_key)."""
+    return layers.cover_processing()[0]
 
 
 def runtime():
