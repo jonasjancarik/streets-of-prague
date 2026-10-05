@@ -11,7 +11,7 @@ parks nobody mapped, and a car on the drive of nearly every family house.
 ## Status and starting point
 
 - Status: PARTLY BUILT (branch `plan-029-parking`, merged into main on 5 October 2026, not deployed): A and C
-  built; B not built; see "What was built" at the end.
+  built; B checked on fourteen estates on 6 October 2026 and not built (no reliable signal); see "What was built" at the end.
 - Priority: P2. Effort: about a week. Risk: medium (cars are collision bodies and
   meshes; plan 015 made the meshes cheap, the bodies are not).
 - Category: feature (map look, traffic). Dependencies: the occupancy by building type
@@ -132,14 +132,50 @@ Branch `plan-029-parking`, three commits on `af66875`; not merged, not pushed.
 
 ### B was not built
 
-Two parallel service roads 10–20 m apart with blocks of flats on the far sides were
-searched for in the OSM ways (`service` including `parking_aisle` and `driveway`, which
-the drive graph leaves out). They are rare: a handful of hits in the first chunks
-searched, one of them a depot with service roads in parallel (50.1376, 14.44586), so
-the pattern also matches a place that is not a car park. The plan's check against a
-dozen estates was not done: the city-wide scan never finished (the machine was at load
-100–200), and what it found so far was too thin to trust. The
-real estate car park found (50.12647, 14.4201) is already a mapped lot.
+First attempt (plan-029-parking): two parallel service roads 10–20 m apart with blocks
+of flats on the far sides were searched for in the OSM ways (`service` including
+`parking_aisle` and `driveway`, which the drive graph leaves out). They are rare: a
+handful of hits in the first chunks searched, one of them a depot (50.1376, 14.44586).
+That scan never finished, and the plan's check was not done.
+
+Second attempt (6 October 2026, branch `plan-029-estate-strips`, no code kept): the
+check was done on fourteen estates, each a 500 m square, against the 2024 aerial photo
+(IPR ImageServer, resampled to the game's frame at 0.25 m per pixel). Estates: Lužiny,
+Opatov, Petřiny, Kobylisy, Černý Most, Prosek, Řepy, Modřany, Libuš, Barrandov, Chodov,
+Hloubětín, Hostivař, Invalidovna. The game's real `parkCars` and `slots()` were run
+headlessly on the shipped tiles and the cars drawn over the photo.
+
+- The estate this plan was written from (50.13206, 14.42100) is already a mapped lot
+  (x −3110..−3095, y 7950..8150 in the game's frame), with dense cars. The premise was
+  stale before this plan began.
+- On all fourteen, the large estate car parks are mapped lots, parking lanes or kerb
+  slots, and the game puts cars on them. `slots()` already lays parallel bays along every
+  drive edge of 30 m or more, service roads included, unless `park` says no. About
+  7,000 cars stand in the fourteen windows.
+- A simple car detector on the photo (bright or coloured blobs of 3.5–12 m², elongated,
+  off buildings) was run to list 25 m cells with at least five blobs and fewer than
+  two thirds as many game cars. It flagged 49 cells. Seen against the photo, about 35 of
+  them were trees, shadows, sand, playgrounds or a bridge, so the detector is not a
+  signal, and the remaining 14 hold a few cars each (3 to 10): a perpendicular row on an
+  estate service road (Petřiny), a yard between blocks (Modřany, Řepy), the end of a
+  mapped lot that the game fills thinly (Lužiny, Chodov), and unpaved building ground
+  with cars (Hostivař). That is on the order of 100 cars against 7,000, around 1 %.
+- The one pattern B proposed, a service road with blocks beside it, does not tell car
+  and no-car apart. Service roads through the green of Lužiny, Opatov and Libuš carry
+  no cars in the photo at all; at Petřiny and Chodov they carry perpendicular rows that
+  parallel bays would not match anyway. The gaps B would fill are too few and a rule
+  based on the service road would put cars on ground that has none, so nothing was built.
+- Pictures: `/tmp/p029b/<estate>-before.png` (photo, then game cars) and
+  `unmatched-cars-sheet*-before.png` (the 49 cells), kept out of the repository.
+
+Found on the way and not part of B: at Lužiny a hall's white roof gets cars drawn over
+it in the game, though the photo shows none. Probably a lot that overlaps a building.
+Worth its own look.
+
+What would change this: a source that says "bays", such as the technical map's parking
+surfaces inside the estate (part A already uses those), or a per-estate hand list.
+Perpendicular rows along service roads would need `slots()` to lay bays at an angle to
+the kerb, which is its own task.
 
 ### Left open
 
