@@ -61,6 +61,13 @@ Build: 73 minutes for the city on six processes (8,149 tiles looked at, 5,738 wi
 including the photo downloads. A second run redoes nothing (keys of the tile's ground,
 heights, photographs, surface model and code).
 
+About two thirds of that first run was the download. Working a tile out took 0.9 s, most of
+it projecting its million pixels into S-JTSK three times over (for the colour photograph,
+the infrared one and the surface model). `sjtsk()` now projects a 33 × 33 lattice once per
+tile and places the pixels between its points (within 0.00002 mm of projecting each one):
+0.34 s a tile on 40 tiles spread over the city, with the same cover out. A change to
+`ground_cover.py` still redoes every tile, but from the photographs already on disk.
+
 | | plain ground |
 | --- | --- |
 | `praha` before | 4,329.6 ha |

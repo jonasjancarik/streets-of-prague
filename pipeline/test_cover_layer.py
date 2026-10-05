@@ -39,5 +39,20 @@ class CoverMergeTests(unittest.TestCase):
         self.assertNotEqual(layers.cover_key(tile(park=[[["p"]]]), "h1"), key)
 
 
+class CoverGridTests(unittest.TestCase):
+    def test_a_tiles_pixels_land_where_projecting_each_one_puts_them(self):
+        try:
+            import ground_cover as G
+        except ImportError:
+            self.skipTest("needs the cover dependency group")
+        import numpy as np
+        t = {"box": [-9250.0, 3000.0, -9000.0, 3250.0]}
+        X, Y = G.grid(t, G.RES)
+        to_ll, tf = G._transformers("praha")
+        E, N = tf.transform(*to_ll.transform(X.ravel(), Y.ravel()))
+        e, n = G.sjtsk("praha", t, G.RES)
+        self.assertLess(max(np.abs(e - E).max(), np.abs(n - N).max()), 1e-4)  # of a 0.25 m pixel
+
+
 if __name__ == "__main__":
     unittest.main()

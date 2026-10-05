@@ -35,6 +35,7 @@ Sources (all downloaded once into pipeline/.cache/cover/):
 """
 
 import argparse
+import functools
 import gzip
 import io
 import json
@@ -115,6 +116,46 @@ def grid(t, res):
     return np.meshgrid(xs, ys)
 
 
+@functools.lru_cache(maxsize=None)
+def _transformers(area):
+    # Through WGS84: the game's projection names only an ellipsoid, and straight to
+    # S-JTSK PROJ falls back to a "ballpark" datum shift that is ~120 m off in Prague.
+    to_ll = Transformer.from_crs(local_proj(area), "EPSG:4326", always_xy=True)
+    return to_ll, Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
+
+
+SJTSK_NODES = 33  # a side of the lattice the tile's S-JTSK coordinates are worked out on
+_sjtsk = (None, None)
+
+
+def sjtsk(area, t, res):
+    """S-JTSK easting and northing of the tile's pixel centres (flat, in grid() order).
+    The projection is worked out on a lattice over the tile and the pixels are placed
+    between its points: over a tile it bends by well under a millimetre, and projecting
+    a million pixels one by one was most of a tile's time. The photographs and the
+    surface model of a tile ask for the same pixels, so the last answer is kept."""
+    global _sjtsk
+    key = (area, tuple(t["box"]), res)
+    if _sjtsk[0] == key:
+        return _sjtsk[1]
+    x0, y0, x1, y1 = t["box"]
+    w, h = round((x1 - x0) / res), round((y1 - y0) / res)
+    n = SJTSK_NODES
+    NX, NY = np.meshgrid(np.linspace(x0, x1, n), np.linspace(y1, y0, n))
+    to_ll, tf = _transformers(area)
+    E, N = (np.reshape(a, (n, n)) for a in tf.transform(*to_ll.transform(NX.ravel(), NY.ravel())))
+
+    def weights(m):  # (m, n): each pixel centre's share of the two lattice points round it
+        at = (np.arange(m) + 0.5) / m * (n - 1)
+        lo = np.minimum(at.astype(int), n - 2)
+        W = np.zeros((m, n))
+        W[np.arange(m), lo], W[np.arange(m), lo + 1] = 1 - (at - lo), at - lo
+        return W
+    Wy, Wx = weights(h), weights(w)
+    _sjtsk = (key, ((Wy @ E @ Wx.T).ravel(), (Wy @ N @ Wx.T).ravel()))
+    return _sjtsk[1]
+
+
 def export(url, name, area, t, res, src_res, fmt="png", extra=None):
     """An ImageServer's picture of the tile, resampled onto the tile's own grid
     (S-JTSK is turned a few degrees against the game's grid), as float32 (h, w, bands)."""
@@ -122,11 +163,7 @@ def export(url, name, area, t, res, src_res, fmt="png", extra=None):
     if out.exists():
         return np.load(out)
     X, Y = grid(t, res)
-    # Through WGS84: the game's projection names only an ellipsoid, and straight to
-    # S-JTSK PROJ falls back to a "ballpark" datum shift that is ~120 m off in Prague.
-    to_ll = Transformer.from_crs(local_proj(area), "EPSG:4326", always_xy=True)
-    tf = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
-    E, N = tf.transform(*to_ll.transform(X.ravel(), Y.ravel()))
+    E, N = sjtsk(area, t, res)
     bx0, by0, bx1, by1 = E.min() - 3, N.min() - 3, E.max() + 3, N.max() + 3
     w, h = math.ceil((bx1 - bx0) / src_res), math.ceil((by1 - by0) / src_res)
     params = {"bbox": f"{bx0},{by0},{bx1},{by1}", "bboxSR": 5514, "imageSR": 5514, "size": f"{w},{h}",
@@ -180,9 +217,7 @@ def ipr_dsm(area, t, res, cache=True):
         _dsm = (open(IPR_DSM, "rb"), page.shape, page.tilelength, page.tilewidth, page.dataoffsets)
     f, (H, W), th, tw, offsets = _dsm
     X, Y = grid(t, res)
-    to_ll = Transformer.from_crs(local_proj(area), "EPSG:4326", always_xy=True)
-    to_sjtsk = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
-    E, N = to_sjtsk.transform(*to_ll.transform(X.ravel(), Y.ravel()))
+    E, N = sjtsk(area, t, res)
     cols, rows = E + 757499.5, -1034000.5 - N
     c0, c1 = max(int(cols.min()) - 2, 0), min(int(cols.max()) + 3, W)
     r0, r1 = max(int(rows.min()) - 2, 0), min(int(rows.max()) + 3, H)
@@ -886,18 +921,12 @@ MIN_BEIGE = 1000     # m2 of plain ground in a tile below which it isn't looked 
 SEEN = 0.02          # a photo pixel darker than this (in every band) is outside IPR's pictures
 
 
-def _transformers(area):
-    to_ll = Transformer.from_crs(local_proj(area), "EPSG:4326", always_xy=True)
-    return to_ll, Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
-
-
 def photo(url, kind, area, t, res=RES):
     """IPR's photograph of the tile on its own grid as float32 (h, w, 3), or None outside the
     pictures. The download (a lossy JPEG: about 0.26 MB a tile at 0.25 m, a tenth of the
     PNG, and classified the same on the hand-labelled pieces) is kept under photos/."""
     X, Y = grid(t, res)
-    to_ll, tf = _transformers(area)
-    E, N = tf.transform(*to_ll.transform(X.ravel(), Y.ravel()))
+    E, N = sjtsk(area, t, res)
     bx0, by0, bx1, by1 = E.min() - 3, N.min() - 3, E.max() + 3, N.max() + 3
     path = PHOTOS / area / kind / f"{t['i']}_{t['j']}.jpg"
     if not path.exists():
