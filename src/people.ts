@@ -108,6 +108,23 @@ export class Crowd {
     }
   }
 
+  // Footpaths that have left the network (their tiles are far behind). Anyone still on
+  // one walks it up and down until they're moved nearer you, as on a path that ends
+  // where the map hasn't loaded.
+  forget(edges: WalkEdge[]) {
+    for (const e of edges) {
+      for (let i = 0; i < e.pts.length - 1; i++) {
+        const a = e.pts[i], b = e.pts[i + 1];
+        const k = `${Math.floor((a[0] + b[0]) / 2 / this.cell)},${Math.floor((a[1] + b[1]) / 2 / this.cell)}`;
+        const list = this.segs.get(k);
+        if (!list) continue;
+        const left = list.filter((s) => s.e !== e);
+        if (left.length) this.segs.set(k, left);
+        else this.segs.delete(k);
+      }
+    }
+  }
+
   // Closest point on the footpath network (used to rejoin after running away).
   nearest(x: number, y: number): WalkSpot | null {
     let best: WalkSpot | null = null, bestD = Infinity;

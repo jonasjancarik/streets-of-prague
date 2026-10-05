@@ -30,12 +30,18 @@ export interface DriveEdge extends RawStreetEdge {
   twin?: DriveEdge | null;
   busy?: number;
   mid?: Polyline;
+  // How many loaded tiles carry the edge (see remove), and its number in the order
+  // the graph learnt its edges.
+  refs: number;
+  n: number;
 }
 
 export interface WalkEdge extends RawStreetEdge {
   path: Polyline;
   side: number;
   busy?: number;
+  refs: number;
+  n: number;
 }
 
 export interface PathPoint { x: number; y: number; ang: number }
@@ -133,12 +139,23 @@ function laneOffset(e: RawStreetEdge) {
   return clamp(lw * (per - 0.5), 1.6, e.width / 2 - 1);
 }
 
-// The car network, filled in as tiles arrive. Edges are keyed by id and joined at
-// shared (OSM) node ids; `out` lists the edges leaving each node.
+// Takes the edges in `gone` out of `edges` where it stands (others hold the array), in order.
+function without<T>(edges: T[], gone: T[]) {
+  if (!gone.length) return;
+  const dead = new Set(gone);
+  let n = 0;
+  for (const e of edges) if (!dead.has(e)) edges[n++] = e;
+  edges.length = n;
+}
+
+// The car network, filled in as tiles arrive and thinned again as they fall far behind.
+// Edges are keyed by id and joined at shared (OSM) node ids; `out` lists the edges
+// leaving each node. `edges` stays in the order they were learnt (rising `n`).
 export class DriveGraph {
   byId: Map<string, DriveEdge>;
   out: Map<string, DriveEdge[]>;
   edges: DriveEdge[];
+  count = 0; // edges learnt so far: the `n` of the newest
 
   constructor() {
     this.byId = new Map();
@@ -150,8 +167,8 @@ export class DriveGraph {
   add(list: RawStreetEdge[]): DriveEdge[] {
     return list.map((raw) => {
       const known = this.byId.get(raw.id);
-      if (known) return known;
-      const e = { ...raw } as DriveEdge;
+      if (known) { known.refs++; return known; }
+      const e = { ...raw, refs: 1, n: ++this.count } as DriveEdge;
       e.laneOffset = laneOffset(e);
       e.path = new Polyline(offsetLine(e.pts, e.laneOffset));
       e.speed = e.maxspeed ? Math.min(e.maxspeed / 3.6, CLASS_SPEED[e.hw] || 9) : CLASS_SPEED[e.hw] || 9;
@@ -164,6 +181,29 @@ export class DriveGraph {
       if (e.twin && !e.twin.twin) e.twin.twin = e;
       return e;
     });
+  }
+
+  // A tile's edges (as add() returned them) when the tile is far behind: those no
+  // other tile carries leave the graph. Returns the ones that left. They keep their
+  // own fields, so a car still on one drives to its end, where the street stops as it
+  // does at the edge of what has loaded.
+  remove(list: DriveEdge[]): DriveEdge[] {
+    const gone: DriveEdge[] = [];
+    for (const e of list) {
+      if (this.byId.get(e.id) !== e || --e.refs > 0) continue;
+      this.byId.delete(e.id);
+      const out = this.out.get(e.u);
+      if (out) {
+        const i = out.indexOf(e);
+        if (i >= 0) out.splice(i, 1);
+        if (!out.length) this.out.delete(e.u);
+      }
+      const t = e.twin;
+      if (t && t.twin === e) t.twin = (this.out.get(t.v) || []).find((f) => f.v === t.u) || null;
+      gone.push(e);
+    }
+    without(this.edges, gone);
+    return gone;
   }
 }
 
@@ -321,6 +361,7 @@ export class WalkGraph {
   adj: Map<string, { e: WalkEdge; fwd: boolean }[]>;
   edges: WalkEdge[];
   fresh: WalkEdge[] = [];
+  count = 0;
 
   constructor() {
     this.byId = new Map();
@@ -332,8 +373,8 @@ export class WalkGraph {
     const fresh: WalkEdge[] = [];
     const res = list.filter((raw) => !NO_STROLLING.has(raw.hw)).map((raw) => {
       const known = this.byId.get(raw.id);
-      if (known) return known;
-      const e: WalkEdge = { ...raw, path: new Polyline(raw.pts), side: 0 };
+      if (known) { known.refs++; return known; }
+      const e: WalkEdge = { ...raw, path: new Polyline(raw.pts), side: 0, refs: 1, n: ++this.count };
       // Streets without a separately mapped pavement: people keep to the edge.
       e.side = ROADLIKE.has(e.hw) ? Math.max(0, e.width / 2 - 0.9) : 0;
       this.byId.set(e.id, e);
@@ -348,12 +389,29 @@ export class WalkGraph {
     this.fresh = fresh;
     return res;
   }
+
+  // As DriveGraph.remove.
+  remove(list: WalkEdge[]): WalkEdge[] {
+    const gone: WalkEdge[] = [];
+    for (const e of list) {
+      if (this.byId.get(e.id) !== e || --e.refs > 0) continue;
+      this.byId.delete(e.id);
+      for (const n of e.u === e.v ? [e.u] : [e.u, e.v]) {
+        const left = (this.adj.get(n) || []).filter((o) => o.e !== e);
+        if (left.length) this.adj.set(n, left);
+        else this.adj.delete(n);
+      }
+      gone.push(e);
+    }
+    without(this.edges, gone);
+    return gone;
+  }
 }
 
 // Spatial hash of named street segments, for the "you are on …" label.
 export class StreetNames {
   cell: number;
-  map: Map<string, { a: Point2; b: Point2; name: string; rank: number }[]>;
+  map: Map<string, { a: Point2; b: Point2; name: string; rank: number; e: RawStreetEdge }[]>;
   seen: Set<RawStreetEdge>;
 
   constructor(...edgeLists: RawStreetEdge[][]) {
@@ -370,16 +428,35 @@ export class StreetNames {
       if (!e.name) continue;
       for (let i = 0; i < e.pts.length - 1; i++) {
         const a = e.pts[i], b = e.pts[i + 1];
-        const seg = { a, b, name: e.name, rank: e.hw === 'footway' || e.hw === 'steps' ? 1 : 0 };
-        const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / this.cell) + 1;
-        const keys = new Set<string>();
-        for (let k = 0; k <= n; k++) keys.add(this.key(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n));
-        for (const key of keys) {
+        const seg = { a, b, name: e.name, rank: e.hw === 'footway' || e.hw === 'steps' ? 1 : 0, e };
+        for (const key of this.cells(a, b)) {
           if (!this.map.has(key)) this.map.set(key, []);
           this.map.get(key)!.push(seg);
         }
       }
     }
+  }
+
+  // Edges that have left the graphs (their tiles are far behind).
+  remove(list: RawStreetEdge[]) {
+    for (const e of list) {
+      if (!this.seen.delete(e) || !e.name) continue;
+      const keys = new Set<string>();
+      for (let i = 0; i < e.pts.length - 1; i++) for (const key of this.cells(e.pts[i], e.pts[i + 1])) keys.add(key);
+      for (const key of keys) {
+        const left = (this.map.get(key) || []).filter((s) => s.e !== e);
+        if (left.length) this.map.set(key, left);
+        else this.map.delete(key);
+      }
+    }
+  }
+
+  // The cells a segment passes through.
+  private cells(a: Point2, b: Point2) {
+    const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / this.cell) + 1;
+    const keys = new Set<string>();
+    for (let k = 0; k <= n; k++) keys.add(this.key(a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n));
+    return keys;
   }
 
   key(x: number, y: number) { return `${Math.floor(x / this.cell)},${Math.floor(y / this.cell)}`; }

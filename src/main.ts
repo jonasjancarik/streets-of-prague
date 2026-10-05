@@ -275,7 +275,7 @@ async function main() {
   };
   const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y), deckAt);
   const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)), (x, y) => world.onRoad(x, y));
-  world.onEdges = (d, w, b) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(d, b); signals.add(d); };
+  world.onEdges = (d, w, b, first) => { names.add(d); names.add(w); crowd?.index(w); if (first) lamps.fill(d, b); signals.add(d); };
 
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose: Car[] = [];
@@ -1317,6 +1317,24 @@ async function main() {
     people: () => crowd.people, revive: (p) => crowd.revive(p),
     take: (p) => { if (crowd.people.includes(p)) crowd.retire(p); },
   });
+  // Streets far behind you leave the graphs, and what is indexed from them, unless one
+  // of these is still out there (see TileWorld.forget).
+  world.anchors = () => {
+    const out: { x: number; y: number }[] = [{ x: px(), y: py() }];
+    for (const c of police.cars) out.push(c.car);
+    for (const e of brigade.engines) out.push(e.car, e.target);
+    for (const r of ambulances.rigs) out.push(r.car, r.patient);
+    if (taxi.agent) out.push(taxi.agent.car);
+    return out;
+  };
+  world.onForget = (d, w) => {
+    names.remove(d);
+    names.remove(w);
+    crowd.forget(w);
+    signals.forget(d);
+    police.forget(d);
+    police.forget(w);
+  };
   let waitScale = 1, clockShown = '';
   let ticketWas = false;
   let rideAt: boolean | null = null, funiAt: number | null | undefined;

@@ -299,23 +299,47 @@ export class Police {
 
   // ---- Street network ----------------------------------------------------
 
+  // Links the streets and paths learnt since the last time. (The graphs keep their
+  // edges in the order they learnt them and number them, so the new ones are at the
+  // end whatever has been taken out since.)
   sync() {
     const edges = this.drive.edges;
-    for (; this.linked < edges.length; this.linked++) {
-      const e = edges[this.linked];
+    let i = edges.length;
+    while (i > 0 && edges[i - 1].n > this.linked) i--;
+    for (; i < edges.length; i++) {
+      const e = edges[i];
       e.mid = e.mid || new Polyline(e.pts);
       this.nodes.set(e.u, e.pts[0]);
       this.nodes.set(e.v, e.pts[e.pts.length - 1]);
       this.link(e, false);
     }
+    this.linked = this.drive.count;
     const paths = this.paths?.edges ?? [];
-    for (; this.walked < paths.length; this.walked++) {
-      const e = paths[this.walked];
+    i = paths.length;
+    while (i > 0 && paths[i - 1].n > this.walked) i--;
+    const walked = this.paths?.count ?? 0;
+    for (; i < paths.length; i++) {
+      const e = paths[i];
       if (!this.drivable(e)) continue;
       (e as Way).mid = e.path;
       this.nodes.set(e.u, e.pts[0]);
       this.nodes.set(e.v, e.pts[e.pts.length - 1]);
       this.link(e, true, this.pavement(e) ? PAVEMENT_COST : FOOT_COST);
+    }
+    this.walked = walked;
+  }
+
+  // Streets and paths that have left the graphs (their tiles are far behind) leave the
+  // chase network too.
+  forget(edges: Way[]) {
+    for (const e of edges) {
+      for (const n of e.u === e.v ? [e.u] : [e.u, e.v]) {
+        const list = this.links.get(n);
+        if (!list) continue;
+        const left = list.filter((l) => l.e !== e);
+        if (left.length) this.links.set(n, left);
+        else { this.links.delete(n); this.nodes.delete(n); }
+      }
     }
   }
 
