@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Real worker/canvas adapter and retained model regressions, without a running game.
 import { createRequire } from 'node:module';
+import { checkIn } from './game-lock.mjs';
 const require = createRequire(import.meta.url);
 const pw = require(process.env.PLAYWRIGHT_PATH || `${process.env.HOME}/projects/micromachines-clone/node_modules/playwright`);
 const base = process.argv[2] || 'http://localhost:5203/';
+await (await checkIn('game')).take(); // not while another session benchmarks
 const browser = await pw.chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage();

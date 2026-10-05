@@ -3,6 +3,7 @@
 // node scripts/check-landmark-colours.mjs --url http://localhost:5240/ \
 //   --fixtures /tmp/sop-landmark-colours-010/centrum_now --area centrum
 import { createRequire } from 'node:module';
+import { checkIn } from './game-lock.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -55,6 +56,7 @@ const require = createRequire(import.meta.url);
 const tryReq = (path) => { try { return require(path); } catch { return null; } };
 const pw = tryReq(process.env.PLAYWRIGHT_PATH || 'playwright') || tryReq(`${process.env.HOME}/projects/micromachines-clone/node_modules/playwright`);
 if (!pw) throw new Error('Playwright not found; set PLAYWRIGHT_PATH');
+await (await checkIn('game')).take(); // not while another session benchmarks
 const browser = await pw.chromium.launch({ headless: true, channel: 'chrome',
   args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu'] });
 const results = [];

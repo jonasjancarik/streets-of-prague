@@ -2,6 +2,7 @@
 // Browser assertions against Vite's real TypeScript modules, with controlled fake
 // workers. The game itself is exercised separately by scene.mjs and bench.mjs.
 import { createRequire } from 'node:module';
+import { checkIn } from './game-lock.mjs';
 const args = Object.fromEntries(process.argv.slice(2).reduce((a, v, i, all) => {
   if (v.startsWith('--')) a.push([v.slice(2), all[i + 1]]);
   return a;
@@ -16,6 +17,7 @@ const pw = (() => {
   }
   throw new Error('Playwright not found; set PLAYWRIGHT_PATH');
 })();
+await (await checkIn('game')).take(); // not while another session benchmarks
 const browser = await pw.chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage();

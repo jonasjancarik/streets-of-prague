@@ -16,7 +16,8 @@
 // With a server running (serve), each command takes a second or two instead of the
 // 30–60 s of loading the map; without one, it opens a browser just for the command.
 // The server follows the dev server's reloads: a command waits for the game to load
-// again. Exits 1 if a scenario fails or the page throws. Needs the dev server
+// again. A command waits while another session benchmarks (game-lock.mjs). Exits 1 if
+// a scenario fails or the page throws. Needs the dev server
 // (npm run dev) and Playwright (PLAYWRIGHT_PATH or the usual places).
 
 import { createRequire } from 'node:module';
@@ -24,6 +25,7 @@ import { createServer, request } from 'node:http';
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { checkIn } from './game-lock.mjs';
 
 const [cmd = 'help', ...rest] = process.argv.slice(2);
 const args = {}, pos = [];
@@ -50,7 +52,13 @@ const alive = () => call({ cmd: 'ping' }).then(() => true, () => false);
 
 // ---- The browser side --------------------------------------------------------
 
+// Not while another session benchmarks (game-lock.mjs). A turn lasts for a command; a
+// server rests between commands, its page standing still under a benchmark.
+let slot = null;
+const takeTurn = async () => { slot ||= await checkIn('game', `scene.mjs ${cmd}`); await slot.take(); };
+
 async function openGame({ show = false } = {}) {
+  await takeTurn();
   const require = createRequire(import.meta.url);
   const tryReq = (p) => { try { return require(p); } catch { return null; } };
   const pw = tryReq(process.env.PLAYWRIGHT_PATH || 'playwright') || tryReq(`${process.env.HOME}/projects/micromachines-clone/node_modules/playwright`);
@@ -93,7 +101,9 @@ async function openGame({ show = false } = {}) {
   // Each command: wait for the game (it reloads when the source changes), run, and
   // hand back what it returned with the page errors and screenshots meanwhile.
   const run = async (fn) => {
+    await takeTurn();
     await ready();
+    await page.evaluate(() => window.__benchPause?.check()); // moving again at once after a benchmark
     errors = [];
     shots.length = 0;
     let value, error;
@@ -155,6 +165,7 @@ const report = (r) => {
 if (cmd === 'serve') {
   if (await alive()) { console.error(`A scene server is already running on port ${PORT}`); process.exit(1); }
   const game = await openGame({ show: !!args.show });
+  slot.rest();
   let queue = Promise.resolve();
   const server = createServer((req, res) => {
     let data = '';
@@ -169,6 +180,7 @@ if (cmd === 'serve') {
           process.exit(0);
         }
         const out = await handle(game, body).catch((e) => ({ error: e.message }));
+        slot.rest();
         res.end(JSON.stringify(out));
       });
     });

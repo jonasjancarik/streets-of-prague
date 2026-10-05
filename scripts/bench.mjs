@@ -22,13 +22,15 @@
 // process). --android runs on a real phone instead: its Chrome is started and driven over
 // adb (the dev server's ports are passed through, so the phone reaches it on its own
 // localhost), the battery temperature is printed after each scene (a phone slows as it
-// warms), and the phone's screen and pixel ratio stand in for the window here. Needs the
+// warms), and the phone's screen and pixel ratio stand in for the window here. It waits
+// for other sessions' scenes and benchmarks to finish first (game-lock.mjs). Needs the
 // dev server (npm run dev) and Playwright; it takes Playwright from PLAYWRIGHT_PATH or
 // the usual places.
 
 import { createRequire } from 'node:module';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { checkIn } from './game-lock.mjs';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) => {
   if (a.startsWith('--')) acc.push([a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]);
@@ -340,6 +342,10 @@ const launchBrowser = () => (ANDROID ? pw.chromium.connectOverCDP(`http://localh
   headless: true, channel: args.browser === 'chromium' ? undefined : 'chrome',
   args: [`--use-angle=${args.angle || 'metal'}`, '--enable-gpu', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--enable-unsafe-webgpu'],
 }));
+// The machine to itself (game-lock.mjs): waits for other sessions' scenes and benchmarks
+// to finish, and games open from a dev server stand still until this ends. A phone's
+// frame rate doesn't depend on what else runs here.
+if (!ANDROID) await (await checkIn('bench', `bench.mjs ${process.argv.slice(2).join(' ')}`.trim())).take();
 // Some Chrome/Metal sessions leave the next context's requestDevice pending.
 // A fresh process per scene keeps the same --vs order without timing fallbacks.
 const browser = args['fresh-browser'] ? null : await launchBrowser();

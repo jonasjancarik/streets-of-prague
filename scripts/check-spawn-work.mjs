@@ -2,6 +2,7 @@
 // Deterministic browser checks for the old spawn selection arithmetic and the
 // pass-local replacements. Vite imports the TypeScript modules under test.
 import { createRequire } from 'node:module';
+import { checkIn } from './game-lock.mjs';
 
 const option = (name, fallback) => {
   const at = process.argv.indexOf(name);
@@ -157,6 +158,7 @@ const require = createRequire(import.meta.url);
 let playwright;
 try { playwright = require(process.env.PLAYWRIGHT_PATH || 'playwright'); }
 catch { playwright = require(`${process.env.HOME}/projects/micromachines-clone/node_modules/playwright`); }
+await (await checkIn('game')).take(); // not while another session benchmarks
 const browser = await playwright.chromium.launch({ channel: 'chrome', headless: true });
 try {
   const page = await browser.newPage();
