@@ -124,8 +124,8 @@ class IprSourceTests(unittest.TestCase):
     def test_building_xml_is_shared_between_area_projections(self):
         path = self.root / "sheet.gml"
         path.write_text('''<root xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
-<bldg:Building gml:id="test"><bldg:GroundSurface><gml:posList>1 1 180 9 1 180 9 9 180 1 9 180 1 1 180</gml:posList></bldg:GroundSurface>
-<bldg:RoofSurface><gml:posList>1 1 185 9 1 185 9 9 185 1 9 185 1 1 185</gml:posList></bldg:RoofSurface></bldg:Building></root>''')
+<bldg:Building gml:id="test"><bldg:GroundSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 180 9 1 180 9 9 180 1 9 180 1 1 180</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:GroundSurface>
+<bldg:RoofSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 185 9 1 185 9 9 185 1 9 185 1 1 185</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:RoofSurface></bldg:Building></root>''')
         # Wrap parsing without changing the function's source-derived cache version.
         with patch.object(ipr_buildings.etree, "iterparse", wraps=ipr_buildings.etree.iterparse) as parse:
             first = ipr_buildings.read_sheet(("BD3_test", str(path), "first-area", 250, [0, 0]))[1]

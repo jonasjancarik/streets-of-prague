@@ -10,10 +10,13 @@ import dtm
 
 
 class DtmLandTests(unittest.TestCase):
-    def tearDown(self):
+    def setUp(self):
+        # Another test's build may have left the indexes filled in this process.
         dtm._index = None
         dtm._land_index = None
         dtm._parking_index = None
+
+    tearDown = setUp
 
     def test_ground_land_excludes_decks_and_streets(self):
         class Packages:

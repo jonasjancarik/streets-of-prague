@@ -265,8 +265,8 @@ class ChunkBuildTests(unittest.TestCase):
         cache.mkdir()
         buildings = cache / "BD3_test.gml"
         buildings.write_text('''<root xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
-<bldg:Building gml:id="test"><bldg:GroundSurface><gml:posList>1 1 180 9 1 180 9 9 180 1 9 180 1 1 180</gml:posList></bldg:GroundSurface>
-<bldg:RoofSurface><gml:posList>1 1 185 9 1 185 9 9 185 1 9 185 1 1 185</gml:posList></bldg:RoofSurface></bldg:Building></root>''')
+<bldg:Building gml:id="test"><bldg:GroundSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 180 9 1 180 9 9 180 1 9 180 1 1 180</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:GroundSurface>
+<bldg:RoofSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 185 9 1 185 9 9 185 1 9 185 1 1 185</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:RoofSurface></bldg:Building></root>''')
         terrain = cache / "TER_test.gml"
         terrain.write_text('''<root xmlns:gml="http://www.opengis.net/gml"><gml:Triangle>
 <gml:posList>-100 -100 180 400 -100 182 -100 400 184 -100 -100 180</gml:posList>
@@ -284,6 +284,8 @@ class ChunkBuildTests(unittest.TestCase):
                                  (ipr_terrain, "download", lambda name, items: terrain),
                                  (structures, "build", lambda *args, **kwargs: {})]:
             self.stack.enter_context(patch.object(obj, attr, value))
+        # The two builds are compared byte for byte, and the index records when it was built.
+        self.stack.enter_context(patch.object(layers.time, "gmtime", return_value=layers.time.gmtime(0)))
 
         def run_ipr(deferred):
             flags = ["--no-assemble"] if deferred else []
