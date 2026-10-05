@@ -61,7 +61,9 @@ Build: 73 minutes for the city on six processes (8,149 tiles looked at, 5,738 wi
 including the photo downloads. A second run redoes nothing (keys of the tile's ground,
 heights, photographs, surface model and code).
 
-About two thirds of that first run was the download. Working a tile out took 0.9 s, most of
+Little of that was the download: with the photographs on disk, working every tile out
+again still took 55 minutes on six processes (5 October 2026), the first 8 of them one
+process deciding which tiles have enough plain ground. Working a tile out took 0.9 s, most of
 it projecting its million pixels into S-JTSK three times over (for the colour photograph,
 the infrared one and the surface model). `sjtsk()` now projects a 33 × 33 lattice once per
 tile and places the pixels between its points (within 0.00002 mm of projecting each one):
