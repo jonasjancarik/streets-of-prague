@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { FACADE_ATLAS, FACADE_ON, FACADE_GLSL } from './facades.ts';
 import { lampLit } from './lamps.ts';
 import { ROOF_TILES } from './map/roofPalette.ts';
-import { GROUND_SEASON, WOOD_SEASON, FIELD_SEASON } from './groundSeason.ts';
+import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON } from './groundSeason.ts';
 
 // Procedural surface patterns in world space, shared by the ground and the buildings.
 // Everything is computed per pixel from the position in metres, so it stays sharp at
@@ -152,6 +152,10 @@ export const PATTERNS_GLSL = /* glsl */ `
 uniform float uTime;
 uniform float uDirt;
 uniform vec4 uGroundSeason;
+uniform vec4 uMeadowSeason;
+uniform vec4 uLawnSeason;
+uniform vec4 uGardenSeason;
+uniform vec4 uPitchSeason;
 uniform vec3 uWoodSeason;
 uniform vec3 uFieldSeason;
 vec3 pAsphalt(vec3 c, vec2 p) {
@@ -196,14 +200,14 @@ vec3 pSlabs(vec3 c, vec2 p) {
   }
   return s * (.93 + .14 * fbm(p * .15));
 }
-vec3 pGrass(vec3 c, vec2 p) {
+vec3 pGrass(vec3 c, vec2 p, vec4 season) {
 #if GROUND_YEAR
-  c *= uGroundSeason.rgb;
+  c *= season.rgb;
 #endif
   c *= .82 + .32 * fbm(p * .18);
   float dry = smoothstep(.55, .75, fbm(p * .04 + 7.));
 #if GROUND_YEAR
-  dry = clamp(dry * uGroundSeason.w, 0., 1.);
+  dry = clamp(dry * season.w, 0., 1.);
 #endif
   c = mix(c, c * vec3(1.12, 1.05, .78), dry);  // same dry patches, changing through the year
   c = mix(c, c * vec3(1.05, .9, .7), smoothstep(.6, .8, fbm2(p * .15 + 3.)) * .6);  // worn to earth
@@ -217,7 +221,7 @@ vec3 pWood(vec3 c, vec2 p) {
 #endif
   return c * (.75 + .45 * fbm(p * .12)) + (vnoise(p * 3.) - .5) * .05;
 }
-vec3 pPitch(vec3 c, vec2 p) { return pGrass(c, p) * (.94 + .1 * step(.5, fract(p.x / 6.))); }
+vec3 pPitch(vec3 c, vec2 p) { return pGrass(c, p, uPitchSeason) * (.94 + .1 * step(.5, fract(p.x / 6.))); }
 vec3 pDirt(vec3 c, vec2 p) {
   float d = detail(p, .08);
   c *= .85 + .25 * fbm(p * .5);
@@ -277,7 +281,7 @@ vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 2) return grit(pSetts(c, p, vec2(.17, .14)), p);
   if (id == 3) return grit(pMosaic(c, p), p);
   if (id == 4) return grit(pSlabs(c, p), p);
-  if (id == 5) return pGrass(c, p);
+  if (id == 5) return pGrass(c, p, uGroundSeason);
   if (id == 6) return pWood(c, p);
   if (id == 7) return pPitch(c, p);
   if (id == 8) return pDirt(c, p);
@@ -285,6 +289,9 @@ vec3 pattern(int id, vec3 c, vec2 p) {
   if (id == 10) return pWater(c, p);
   if (id == 11) return pGravel(c, p);
   if (id == 12) return pField(c, p);
+  if (id == 13) return pGrass(c, p, uMeadowSeason);
+  if (id == 14) return pGrass(c, p, uLawnSeason);
+  if (id == 15) return pGrass(c, p, uGardenSeason);
   return c;
 }
 `;
@@ -335,7 +342,7 @@ vec3 weathered(int id, vec3 c, vec2 p, inout float shine) {
 }
 `;
 
-export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12 };
+export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, mosaic: 3, slabs: 4, grass: 5, wood: 6, pitch: 7, dirt: 8, concrete: 9, water: 10, gravel: 11, field: 12, meadow: 13, lawn: 14, garden: 15 };
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
@@ -702,7 +709,7 @@ export function patterned(
 ): THREE.MeshLambertMaterial {
   if (patternedBy) return patternedBy(material, id, time, relief, deck, dig, photo, sheltered, seasonal);
   material.userData.flatten = () => patterned(material.clone(), 0, time, relief, deck, dig, photo, sheltered);
-  if ([5, 6, 7, 12].includes(id)) material.userData.summerGround = () => patterned(material.clone(), id, time, relief, deck, dig, photo, sheltered, false);
+  if ([5, 6, 7, 12, 13, 14, 15].includes(id)) material.userData.summerGround = () => patterned(material.clone(), id, time, relief, deck, dig, photo, sheltered, false);
   material.onBeforeCompile = (sh) => {
     sh.defines = { ...sh.defines, GROUND_YEAR: seasonal ? 1 : 0 };
     sh.uniforms.uTime = time;
@@ -714,7 +721,11 @@ export function patterned(
     sh.uniforms.uStreetSnow = STREET_SNOW;
     sh.uniforms.uRain = RAIN;
     sh.uniforms.uSkyRef = SKY_REF;
-    sh.uniforms.uGroundSeason = GROUND_SEASON;
+    sh.uniforms.uGroundSeason = GRASS_SEASON.park;
+    sh.uniforms.uMeadowSeason = GRASS_SEASON.meadow;
+    sh.uniforms.uLawnSeason = GRASS_SEASON.lawn;
+    sh.uniforms.uGardenSeason = GRASS_SEASON.garden;
+    sh.uniforms.uPitchSeason = GRASS_SEASON.pitch;
     sh.uniforms.uWoodSeason = WOOD_SEASON;
     sh.uniforms.uFieldSeason = FIELD_SEASON;
     if (photo) {

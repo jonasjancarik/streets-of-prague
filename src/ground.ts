@@ -38,7 +38,7 @@ type GroundGeometry = GroundLayer['geometry'];
 // workers (tileWorker.ts); surface.ts makes the meshes.
 
 export const COLORS = {
-  pavement: '#92908c', square: '#d7d3cb', squareSetts: '#9c958a', path: '#d8cbb6', dirt: '#bfa87e',
+  pavement: '#92908c', square: '#d7d3cb', squareSetts: '#9c958a', path: '#d8cbb6', dirt: '#bfa87e', worn: '#b49f72',
   park: '#79a24c', garden: '#80a552', wood: '#394a2b', orchard: '#89a858', pitch: '#6c9c55',
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', asphalt: '#6b6a68', sett: '#8a847a', parking: '#72706c',
@@ -59,7 +59,7 @@ const LAND_USE: [string, string][] = [
 // remain above these layers wherever their more specific shapes overlap.
 const DTM_LAND: [string, string, string][] = [
   ['dtm_yard', COLORS.dtmYard, 'concrete'],
-  ['dtm_green', COLORS.park, 'grass'], ['dtm_garden', COLORS.garden, 'grass'],
+  ['dtm_green', COLORS.park, 'lawn'], ['dtm_garden', COLORS.garden, 'garden'],
   ['dtm_wood', COLORS.wood, 'wood'], ['dtm_pitch', COLORS.pitch, 'pitch'],
 ];
 // What the aerial photographs say the unmapped ground is made of (ground_cover.py,
@@ -594,8 +594,13 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     for (const [key, pattern] of LAND_USE) add(polygons(A[key] || []), COLORS[key as keyof typeof COLORS], pattern);
     for (const [key, color, pattern] of DTM_LAND) add(polygons(A[key] || []), color, pattern);
     for (const [key, color, pattern] of COVER) add(polygons(A[key] || []), color, pattern);
-    add(polygons(A.garden || []), COLORS.garden, 'grass');
+    add(polygons(A.garden || []), COLORS.garden, 'garden');
+    add(polygons(A.lawn || []), COLORS.garden, 'lawn');
     add(polygons(A.park || []), COLORS.park, 'grass');
+    add(polygons(A.meadow || []), COLORS.park, 'meadow');
+    // Paths people have worn across the grass (worn_paths.py): a faint rim, then the bare earth.
+    add(polygons(A.worn_edge || []), COLORS.worn, 'dirt', 0.35);
+    add(polygons(A.worn || []), COLORS.worn, 'dirt', 0.9);
     add(polygons(A.orchard || []), COLORS.orchard, 'grass');
     add(polygons(A.wood || []), COLORS.wood, 'wood');
     for (const [key, color, pattern] of PITCH_LOOKS) add(polygons(A[key] || []), color, pattern);

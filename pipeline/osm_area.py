@@ -23,6 +23,7 @@ from shapely.ops import unary_union
 import dtm
 import roofs
 import sports
+import worn_paths
 from build_cache import Timings
 from kerbs import Kerbs, estimate
 
@@ -57,7 +58,11 @@ INSIDE = 0.5
 ARCADE = 3.0
 COBBLES = ("sett", "cobblestone", "unhewn_cobblestone", "paving_stones")
 SQUARE_EDGE = 0.5  # m: avoid a remnant of a route ribbon along a square's edge
-NATURAL_GROUND = ("park", "garden", "wood", "orchard", "water", *sports.PITCH_KINDS)
+# `meadow` (meadows, grassland, scrub) and `lawn` (mown grass, and the lawns of housing
+# estates) are kept apart from `park` and `garden` because they dry out differently in
+# summer (src/groundSeason.ts); everything else treats them as the same green.
+NATURAL_GROUND = ("park", "garden", "meadow", "lawn", "wood", "orchard", "water",
+                  *sports.PITCH_KINDS)
 # A car road at least this much of whose centre line runs on the technical map's
 # surveyed surface is drawn from the survey (dtm.py); others, from OSM's tags.
 SURVEYED = 0.5
@@ -200,6 +205,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     maybe = []  # ways that are passages if they run through buildings (passage_tags)
     squares = []  # (polygon, own surface, named outline only); decide after all ways and land
     square_ways = []  # (line, mapped surface) on the ground, including untagged ways
+    stops = []  # (x, y) of public transport stops, which people cross the grass to reach (worn_paths.py)
     ground_ways = set()  # the OSM ids of the passages among the ways tagged as tunnels
 
     # Every geometry into local metres in one go.
@@ -242,6 +248,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
 
         if buildings_only:
+            continue
+        if isinstance(g, Point) and (col(row, "highway") == "bus_stop" or col(row, "railway") in ("tram_stop", "halt", "station", "subway_entrance")):
+            stops.append((g.x, g.y))
             continue
         hw = col(row, "highway")
         if hw and isinstance(g, (LineString, MultiLineString)):
@@ -399,14 +408,14 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     timer.lap("cobble_voronoi")
     # Route-only links may cross the housing-estate lawns inferred from blocks,
     # or surveyed green that OSM hasn't mapped. Decide after those surfaces too.
-    gardens, plot_fences = _gardens(homes, buildings, streets, clip,
+    gardens, lawns, plot_fences = _gardens(homes, buildings, streets, clip,
                                     [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls])
     fences.extend(plot_fences)
     timer.lap("gardens")
     land = {f"dtm_{kind}": _areas(geom.intersection(clip))
             for kind, geom in dtm.land((w, s, e, n), tf.transform).items()}
     timer.lap("dtm_land")
-    natural = unary_union([gardens, *(g for k in NATURAL_GROUND for g in areas.get(k, [])),
+    natural = unary_union([gardens, lawns, *(g for k in NATURAL_GROUND for g in areas.get(k, [])),
                           *(g for k, g in land.items()
                             if k in ("dtm_green", "dtm_garden", "dtm_wood", "dtm_pitch"))])
     # A named square can contain mapped, surveyed or inferred lawns. Decide its
@@ -430,6 +439,25 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     area_polys.update(land)
     if not gardens.is_empty:
         area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])
+    if not lawns.is_empty:
+        area_polys["lawn"] = unary_union([area_polys.get("lawn", lawns), lawns])
+    grass = unary_union([lawns, area_polys.get("meadow", Polygon()), area_polys.get("dtm_green", Polygon())])
+    if not grass.is_empty:
+        flats = {k: Polygon(b["rings"][0], b["rings"][1:]) for k, b in enumerate(buildings)}
+        blocks = [k for k, b in enumerate(buildings)
+                  if b["kind"] in ("apartments", "residential", "dormitory") and not b["part"] and flats[k].area >= 250]
+        obstacles = unary_union([*flats.values(), area_polys.get("water", Polygon()), area_polys.get("parking", Polygon()),
+                                 road_polys.get("road", Polygon()), road_polys.get("bridge", Polygon()),
+                                 *(LineString(f["pts"]).buffer(0.3) for f in [*fences, *walls])])
+        worn = worn_paths.worn_paths(grass, flats, blocks, stops,
+                                     [ls for ls, _, _ in sidewalks], [w[0] for w in car_ways], obstacles)
+        core, rim = worn_paths.ribbons(worn)
+        if core is not None:
+            area_polys["worn"] = _areas(core.intersection(clip))
+            area_polys["worn_edge"] = _areas(rim.intersection(clip))
+        if stats is not None:
+            stats["worn_paths"] = len(worn)
+    timer.lap("worn_paths")
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
@@ -568,7 +596,11 @@ def _area_kind(row, col):
         return "garden"
     if na == "wood" or lu == "forest":
         return "wood"
-    if le in ("park", "garden") or lu in ("grass", "meadow", "village_green", "recreation_ground") or na in ("scrub", "grassland"):
+    if lu == "meadow" or na in ("scrub", "grassland"):
+        return "meadow"
+    if lu == "grass":
+        return "lawn"
+    if le in ("park", "garden") or lu in ("village_green", "recreation_ground"):
         return "park"
     if le in ("pitch", "playground", "sports_centre", "track"):
         return "pitch"
@@ -608,14 +640,16 @@ def _gardens(homes, buildings, streets, clip, barriers=()):
     but a strip round each building: 0.8 m round a house, 2 m round anything bigger.
     Where the block is family houses, each gets a plot (_plots) with hedges and fences
     along its edges; these are returned as fences, apart from where OSM maps a barrier
-    (`barriers`). Returns (the gardens, those fences)."""
+    (`barriers`). Returns (the gardens, the estate lawns, those fences): the family
+    houses' gardens are private and kept watered, a housing estate's lawn is mown public
+    grass that dries out more."""
     region = unary_union(homes).intersection(clip) if homes else Polygon()
     if region.is_empty:
-        return Polygon(), []
+        return Polygon(), Polygon(), []
     blocks = _polys(region.difference(unary_union(streets)) if streets else region)
     shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
     tree = STRtree(shapes)
-    out, fences = [], []
+    out, lawns, fences = [], [], []
     street_edge = unary_union(streets).buffer(1.5) if streets else Polygon()
     mapped = unary_union([b.buffer(1.0) for b in barriers]) if len(barriers) else Polygon()
     for block in blocks:
@@ -633,10 +667,12 @@ def _gardens(homes, buildings, streets, clip, barriers=()):
         if other > 0.3 * covered or not (share < 0.3 or (houses >= 0.7 * covered and share < 0.45)):
             continue
         green = block.difference(unary_union([shapes[k].buffer(0.8 if shapes[k].area <= 350 else 2) for k in near]))
+        if houses < 0.7 * covered:
+            lawns.append(green)
+            continue
         out.append(green)
-        if houses >= 0.7 * covered:
-            fences.extend(_plot_fences(block, green, [(buildings[k]["id"], shapes[k]) for k in main], street_edge, mapped))
-    return (unary_union(out) if out else Polygon()), fences
+        fences.extend(_plot_fences(block, green, [(buildings[k]["id"], shapes[k]) for k in main], street_edge, mapped))
+    return (unary_union(out) if out else Polygon()), (unary_union(lawns) if lawns else Polygon()), fences
 
 
 MIN_PLOT = 60  # m2: a smaller cell goes to the neighbour it shares most edge with

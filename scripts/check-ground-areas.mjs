@@ -14,7 +14,7 @@ const layers = make({ dtm_yard: poly, dtm_green: poly, cover_grass: poly,
   square_loose: poly }, { road: poly });
 const base = layer(layers, COLORS.pavement, 'asphalt');
 const yard = layer(layers, COLORS.dtmYard, 'concrete');
-const dtmGreen = layer(layers, COLORS.park, 'grass');
+const dtmGreen = layer(layers, COLORS.park, 'lawn');
 const cover = layer(layers, '#8fa860', 'grass');
 const setts = layer(layers, COLORS.squareSetts, 'setts');
 const slabs = layer(layers, COLORS.square, 'slabs');

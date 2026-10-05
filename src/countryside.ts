@@ -51,8 +51,8 @@ const DIRT = new Set(['track', 'path', 'bridleway']);
 // Protomaps' landuse kinds as the ground's (ground.ts). Farmland is the tile's base.
 const LAND: Record<string, string> = {
   forest: 'wood', wood: 'wood',
-  grass: 'park', meadow: 'park', park: 'park', village_green: 'park', recreation_ground: 'park', playground: 'park',
-  cemetery: 'park', golf_course: 'park', garden: 'park', allotments: 'park', scrub: 'park', dog_park: 'park',
+  grass: 'lawn', meadow: 'meadow', park: 'park', village_green: 'park', recreation_ground: 'park', playground: 'park',
+  cemetery: 'park', golf_course: 'park', garden: 'park', allotments: 'park', scrub: 'meadow', dog_park: 'park',
   orchard: 'orchard', vineyard: 'orchard', pitch: 'pitch', residential: 'garden',
   industrial: 'yard', commercial: 'yard', retail: 'yard', farmyard: 'yard', pedestrian: 'square',
 };

@@ -82,7 +82,8 @@ export function furnitureInstances(geo: Geo<FurnitureData>, trees: TreeInstances
     };
     fill(d.areas.dtm_yard, YARD); fill(d.areas.yard, YARD);
     fill(d.areas.dtm_green, PARK); fill(d.areas.dtm_garden, GARDEN);
-    fill(d.areas.garden, GARDEN); fill(d.areas.park, PARK);
+    fill(d.areas.garden, GARDEN); fill(d.areas.lawn, GARDEN);
+    fill(d.areas.park, PARK); fill(d.areas.meadow, PARK);
     // Higher priority surfaces and sports/rail/service uses never receive furniture.
     // `square` also represents explicit paving slabs. Named outlines must have
     // their lawns removed by the surface pipeline, not guessed here.

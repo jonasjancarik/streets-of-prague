@@ -445,7 +445,7 @@ def label_rasters(area, t, res):
     lab = np.full(shape_, -1, np.int8)
     L = {c: k for k, c in enumerate(CLASSES)}
     A, R = t["areas"], t["roads"]
-    burn(lab, t, res, A.get("park", []) + A.get("garden", []), L["grass"])
+    burn(lab, t, res, A.get("park", []) + A.get("garden", []) + A.get("meadow", []) + A.get("lawn", []), L["grass"])
     burn(lab, t, res, A.get("wood", []), L["trees"])
     burn(lab, t, res, R.get("road", []) + A.get("parking", []), L["asphalt"])
     burn(lab, t, res, R.get("path", []) + A.get("square", []) + A.get("square_setts", []) +
