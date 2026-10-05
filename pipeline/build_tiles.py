@@ -348,12 +348,14 @@ def build_chunk(job):
         trees = {key: STRtree(v) for key, v in lines.items()}
         x["trees"] = ipr_trees.merge(x["trees"], bbox, tf)
         tree_xy = shapely.points([tr[:2] for tr in x["trees"]]) if x["trees"] else None
+        drive_xy = shapely.points([(d["x"], d["y"]) for d in x["drives"]]) if x["drives"] else None
         layer = {}
         for (i, j), bx in boxes.items():
             t = {}
             t["areas"] = {k: v for k, g in x["areas"].items() if (v := [_rings(p) for p in _polys(g.intersection(bx))])}
             # Parking areas one by one, with their orientation (the game lays out bays).
-            t["lots"] = [{"o": x["lots"][k]["o"], "rings": _rings(p)} for k in sorted(ltree.query(bx, predicate="intersects"))
+            t["lots"] = [{"o": x["lots"][k]["o"], **({"i": 1} if x["lots"][k].get("i") else {}), "rings": _rings(p)}
+                         for k in sorted(ltree.query(bx, predicate="intersects"))
                          for p in _polys(x["lots"][k]["poly"].intersection(bx)) if p.area > 4]
             # Finer for the streets, whose rounded corners (dtm.py) the coarser tolerance undoes.
             t["roads"] = {k: v for k, g in x["roads"].items() if (v := [_rings(p, ROAD_TOLERANCE) for p in _polys(g.intersection(bx))])}
@@ -364,6 +366,8 @@ def build_chunk(job):
             t["crossings"] = [_coords(ls) for k in sorted(trees["crossings"].query(bx)) for ls in _lines(lines["crossings"][k].intersection(bx))]
             t["marks"] = [_coords(ls) for k in sorted(trees["marks"].query(bx)) for ls in _lines(lines["marks"][k].intersection(bx))]
             t["trees"] = [x["trees"][k] for k in shapely.contains(bx, tree_xy).nonzero()[0]] if tree_xy is not None else []
+            # Places for a car on a drive (plan 029), each in the tile that holds its middle.
+            t["drives"] = [x["drives"][k] for k in shapely.contains(bx, drive_xy).nonzero()[0]] if drive_xy is not None else []
             if any(t.values()):
                 layer[f"{i}_{j}"] = t
         out["ground"] = {"tiles": layer, "rails": rails}

@@ -711,11 +711,13 @@ record the measurements, merge decisions and pending landmark asset activation.
   built the share falls towards nothing; more building round a spot raises it (floor
   area to the power 0.3, capped at 115 % of the typical street). A mapped car park is
   a third fuller than the kerb beside it, and one with no building in reach keeps 8 %.
+  Paved ground that OSM maps no car park on (yards round halls and shops, from the
+  technical map) becomes an inferred lot, `lots` with `"i": 1`, laid out in rows with aisles.
   The rates are measured against TSK's own counts: `scripts/parking-demand-sample.py`
   and `scripts/check-parking-demand.mjs` set the rule against the 3,183 sections with
   both occupancies. TSK's medians run higher than the rule for family houses (about 50 %
   against 24 %), because paid zones exist where parking is scarce and the cars here
-  would otherwise stand in driveways, which are not modelled; for flats they run a little
+  would otherwise stand in driveways (family-house plots now get a car on the drive: 30 % by day, 55 % at night, `drives` in the tiles); for flats they run a little
   lower (77–80 % against 83–89 %). Nothing changes inside the paid zones; `?oldparking`
   brings back the old flat 20 % / 45 % for comparison. Bay lines are painted as Prague paints them,
   along the street side of the bays with short lines across at each end and none along

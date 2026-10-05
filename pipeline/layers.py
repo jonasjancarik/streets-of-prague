@@ -49,11 +49,11 @@ CHUNKED = ("buildings", "ground", "streets", "parking")
 # What a tile has when a layer has nothing there, in the order the tile JSON lists it.
 EMPTY = {
     "buildings": {"buildings": []},
-    "ground": {"areas": {}, "lots": [], "roads": {}, "walls": [], "fences": [], "rails": [], "passages": [], "weirs": [], "crossings": [], "marks": [], "trees": []},
+    "ground": {"areas": {}, "lots": [], "roads": {}, "walls": [], "fences": [], "rails": [], "passages": [], "weirs": [], "crossings": [], "marks": [], "trees": [], "drives": []},
     "streets": {"drive": [], "walk": []},
     "parking": {"sections": []},
 }
-ORDER = ["areas", "lots", "roads", "buildings", "walls", "fences", "rails", "passages", "weirs", "crossings", "marks", "trees", "drive", "walk", "sections"]
+ORDER = ["areas", "lots", "roads", "buildings", "walls", "fences", "rails", "passages", "weirs", "crossings", "marks", "trees", "drives", "drive", "walk", "sections"]
 
 
 def gzip_bytes(raw: bytes) -> bytes:
@@ -232,6 +232,7 @@ def tiles(area: str, meta: dict | None = None):
             for layer in CHUNKED:
                 t.update(parts[layer].get(k) or EMPTY[layer])
             t.setdefault("fences", [])  # (chunks built before fences were)
+            t.setdefault("drives", [])  # (...and before the drives)
             if not (t["buildings"] or t["areas"] or t["roads"] or t["walk"]):
                 continue
             yield i, j, {"i": i, "j": j, "box": [round(v, 2) for v in tile_box(meta, i, j)], **{key: t[key] for key in ORDER}}

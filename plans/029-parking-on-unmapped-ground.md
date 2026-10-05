@@ -10,7 +10,8 @@ parks nobody mapped, and a car on the drive of nearly every family house.
 
 ## Status and starting point
 
-- Status: PLANNED.
+- Status: PARTLY BUILT (5 October 2026, branch `plan-029-parking`, not merged): A and C
+  built; B not built; see "What was built" at the end.
 - Priority: P2. Effort: about a week. Risk: medium (cars are collision bodies and
   meshes; plan 015 made the meshes cheap, the bodies are not).
 - Category: feature (map look, traffic). Dependencies: the occupancy by building type
@@ -92,3 +93,63 @@ rule for filling them. Shop and office yards follow the day; estates the night.
 
 Filling underground and multi-storey car parks, parking on grass verges, lorries in
 depots.
+
+## What was built (5 October 2026)
+
+Branch `plan-029-parking`, three commits on `af66875`; not merged, not pushed.
+
+- **A, inferred car parks** (`_inferred_lots` in `pipeline/osm_area.py`, `parking()` in
+  `pipeline/dtm.py`). Ground the technical map calls parking, plus work yards, that
+  OSM maps no car park on, less mapped lots, buildings (1 m round), car ways and
+  natural cover; kept where an opening by 4.4 m leaves at least 60 m² within 3 m of a
+  car way; a yard that buildings close in on (over 65 % of its edge) is dropped
+  unless the survey says parking. They are tile `lots` with `"i": 1`, so they can be
+  drawn without a car park's paint. `slots()` in `src/parking.ts` lays out an inferred
+  lot wide enough as rows of bays with a 6 m aisle between every two rows (edge row,
+  then back-to-back pairs); mapped lots are unchanged. Unit tests:
+  `pipeline/test_inferred_lots.py`, `test_dtm_land.py`.
+- **C, cars on drives** (`_drive_spots` in `pipeline/osm_area.py`). One spot a plot of
+  a family-house block: 3.3 m inside the gate (where the fences put it), nose to the
+  house, kept where the gate is at least 6.2 m from the house and nothing stands on
+  it. The tile field is `drives` (`{b, x, y, h}`), not `plots` as the plan said, since
+  only the drive is needed at run time; older tiles without it are fine, so the data
+  format stays 2. `parkCars` fills a drive with a chance of 0.3 by day and 0.55 at
+  night; the cars stay out of the street graph and never drive off. Unit test:
+  `pipeline/test_drive_spots.py`.
+
+### Measured
+
+- Řepy halls (50.09156, 14.35117): one inferred lot of 1,221 m² beside 299 m² mapped;
+  before, no car stood on the yard, after it has rows of cars (pictures in the report,
+  `repy-before.png` and `repy-after.png`).
+- Ořechovka (50.09383, 14.38260), chunk 5,8: 34 drive spots in the 250 m square, 902
+  in the 2 km chunk; 36 of 47 chosen spots got a car on the tiles loaded.
+- Hostivař halls (50.00167, 14.56409): nothing inferred; the game draws that ground as
+  grass or park, so no paved ground is there to park on. A ground-cover problem, not
+  one of parking.
+- The estate (50.13206, 14.42100) is a case for B: it has trees between service roads,
+  and nothing was inferred there.
+
+### B was not built
+
+Two parallel service roads 10–20 m apart with blocks of flats on the far sides were
+searched for in the OSM ways (`service` including `parking_aisle` and `driveway`, which
+the drive graph leaves out). They are rare: a handful of hits in the first chunks
+searched, one of them a depot with service roads in parallel (50.1376, 14.44586), so
+the pattern also matches a place that is not a car park. The plan's check against a
+dozen estates was not done: the city-wide scan never finished (the machine was at load
+100–200), and what it found so far was too thin to trust. The
+real estate car park found (50.12647, 14.4201) is already a mapped lot.
+
+### Left open
+
+- The paved strip across the plot (plan 025) does not exist, so drive cars stand on
+  grass. A second car in front of a garage needs garages marked on plots.
+- Not measured: collision bodies on an estate drive, a `scripts/bench.mjs` run, a
+  village and an estate sample (the extracts take 10 to 15 minutes each at that load).
+- `scripts/check-parking-clearance.mjs` passes. `scripts/check-car-pool.mjs` fails with
+  "active paint upload range" in the same way on main's dev server, so not from this
+  work. `scripts/check-data-format.mjs public/data` passes (format 2).
+- The map was not rebuilt: the pictures were made by patching the tiles of my own copy
+  of the data with the output of `extract`. The shared map needs a rebuild of the
+  `ground` layer for `lots` and `drives` to appear.
