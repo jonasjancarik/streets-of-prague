@@ -4,6 +4,8 @@ import { signedArea, hash } from './geo.ts';
 import type { GeoData, Point2 } from './geo.ts';
 import { TENEMENT_PLASTER } from '../facades.ts';
 import { ROOF_TILES } from './roofPalette.ts';
+import { ringSite } from './roofDetails.ts';
+import type { RoofSite } from './roofDetails.ts';
 import { cellOf, roofShapeFor, pitchedColour, flatColour, hasParapet, insetRings, parapetHeight, PARAPET_WIDTH } from './roofRules.ts';
 
 // Some package builds expose the builder on a default export at runtime.
@@ -52,6 +54,7 @@ export function buildBuildings(data: BuildingTile) {
   const pos: number[] = [], nor: number[] = [], col: number[] = [], uv: number[] = [];
   const [W, H] = data.size, [ox, oy] = data.origin;
   const stats = { skeleton: 0, gabled: 0, flat: 0, failed: 0 };
+  const sites: RoofSite[] = [];
   const cWall = new THREE.Color(), cRoof = new THREE.Color(), tmp = new THREE.Color();
 
   // local (x, y, z-up) → three (X, Y-up, Z)
@@ -165,6 +168,9 @@ export function buildBuildings(data: BuildingTile) {
         });
       }
       stats.flat++;
+      // The flat roofs that get a parapet are the ones with things standing on them.
+      const site = inner && ringSite(b, rings, eaves, eaves);
+      if (site) sites.push(site);
     };
 
     if (roofShape === 'flat') {
@@ -236,7 +242,7 @@ export function buildBuildings(data: BuildingTile) {
   const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true }));
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  return { mesh, stats };
+  return { mesh, stats, sites };
 }
 
 // Garden walls, city walls, the Hunger Wall: thin extruded strips, standing on the

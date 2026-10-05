@@ -8,6 +8,9 @@
 // Everything stands on the tile's terrain, sampled from the heights sent along.
 import * as THREE from 'three';
 import { initRoofs, buildBuildings, wallArrays } from './map/buildings.ts';
+import { planDetails, partArrays } from './map/roofDetails.ts';
+import type { DetailArrays, RoofSite } from './map/roofDetails.ts';
+import { iprRoofSites } from './map/iprRoofs.ts';
 import { fenceArrays } from './map/fences.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { furnitureInstances, FURNITURE_SIZE } from './map/furniture.ts';
@@ -32,6 +35,34 @@ const styleAt = (bbox: Bounds): StyleAt => {
   if (!styles) throw new Error('Facade styles are unavailable');
   return styles;
 };
+// Things on flat roofs (map/roofDetails.ts): one set of arrays for all the roofs given.
+function detailArrays(sites: RoofSite[], ground: (x: number, y: number) => number): DetailArrays | null {
+  const sets: DetailArrays[] = [];
+  for (const site of sites) {
+    const parts = planDetails(site);
+    if (parts.length) sets.push(partArrays(parts, site.z, ground));
+  }
+  if (!sets.length) return null;
+  const join = (k: keyof DetailArrays) => {
+    const out = new Float32Array(sets.reduce((a, s) => a + s[k].length, 0));
+    let o = 0;
+    for (const s of sets) { out.set(s[k], o); o += s[k].length; }
+    return out;
+  };
+  return { position: join('position'), normal: join('normal'), color: join('color'), facade: join('facade') };
+}
+const appendTo = (a: BuildingArrays, d: DetailArrays | null, uv?: (x: number, y: number) => [number, number]): BuildingArrays => {
+  if (!d) return a;
+  const cat = (x: Float32Array, y: Float32Array) => { const out = new Float32Array(x.length + y.length); out.set(x); out.set(y, x.length); return out; };
+  const res: BuildingArrays = { position: cat(a.position, d.position), normal: cat(a.normal, d.normal), color: cat(a.color, d.color), facade: cat(a.facade, d.facade) };
+  if (a.drapeUv && uv) {
+    const du = new Float32Array((d.position.length / 3) * 2);
+    for (let i = 0; i < d.position.length / 3; i++) [du[i * 2], du[i * 2 + 1]] = uv(d.position[i * 3], -d.position[i * 3 + 2]);
+    res.drapeUv = cat(a.drapeUv, du);
+  }
+  return res;
+};
+
 const groundAt = (g: HeightGrid | null) => (g ? heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, g.ref ?? 0)) : () => 0);
 
 async function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roofs']): Promise<BuildingArrays> {
@@ -40,8 +71,11 @@ async function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJob
   // One building at a time, each lifted onto its own ground height (`base`).
   const keys = ['position', 'normal', 'color', 'drapeUv'] as const;
   const parts: Record<(typeof keys)[number], Float32Array[]> = { position: [], normal: [], color: [], drapeUv: [] };
+  const sites: RoofSite[] = [];
   for (const b of buildings) {
-    const g = buildBuildings({ size, origin, buildings: [b] , areas: { water } }).mesh.geometry;
+    const built = buildBuildings({ size, origin, buildings: [b] , areas: { water } });
+    for (const s of built.sites) sites.push({ ...s, z: s.z + (b.base || 0) });
+    const g = built.mesh.geometry;
     const pos = g.attributes.position.array as Float32Array;
     for (let i = 1; i < pos.length; i += 3) pos[i] += b.base || 0;
     for (const k of keys) parts[k].push(g.attributes[k].array as Float32Array);
@@ -53,7 +87,8 @@ async function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJob
     let o = 0;
     for (const x of parts[k]) { arrays[k].set(x, o); o += x.length; }
   }
-  return { ...arrays, facade: facadeCoords(arrays.position, hAt, styleAt(bbox)) };
+  const [W, H] = size, [ox, oy] = origin;
+  return appendTo({ ...arrays, facade: facadeCoords(arrays.position, hAt, styleAt(bbox)) }, detailArrays(sites, hAt), (x, y) => [(x + ox) / W, (y + oy) / H]);
 }
 
 // Whether (x, y) is inside a polygon (outer ring, then holes).
@@ -136,7 +171,10 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs
     }
     o++;
   }
-  return { position: pos, color: col, normal: g.attributes.normal.array as Float32Array, facade };
+  const result = { position: pos, color: col, normal: g.attributes.normal.array as Float32Array, facade };
+  if (!m8) return result;
+  const hAt = groundAt(ground);
+  return appendTo(result, detailArrays(iprRoofSites(pos, (o) => m8[kept[o]], hAt), hAt));
 }
 
 // Walkable/drivable cells: 0 free, 255 solid, 254 free but walled in (a closed

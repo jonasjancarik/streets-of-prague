@@ -11,9 +11,9 @@ solar panels.
 
 ## Status and starting point
 
-- Status: PARTLY DONE (branch `plan-028-roofs`, merged into main on 5 October 2026, not deployed). Built: step 0 (the atria
-  fault), steps 1 and 2 (Part A), step 3 (parapets and surface colours). Not built: step 4,
-  and the city's IPR layer has not been re-run (see "What was built").
+- Status: BUILT AND MERGED, NOT DEPLOYED. Steps 0 to 3 (branch `plan-028-roofs`) and step 4, the lift
+  houses, skylights, solar panels and vents (branch `plan-028-roof-details`), were merged into main
+  on 5 October 2026. The city's IPR layer has not been re-run (see "What is left").
 - Priority: P2 for part A (it changes every village in the outer ring and all of plan
   021's countryside), P3 for part B. Effort: A two to three days, B three to five.
   Risk: low for A; medium for B (more triangles on every estate).
@@ -127,14 +127,45 @@ with furniture.
   roof and puts no windows on it.
 - Before and after pictures of the five places in the plan are in the session report;
   inner-city (IPR) roofs are unchanged.
+- **Part B step 4, `src/map/roofDetails.ts` and `src/map/iprRoofs.ts`** (branch
+  `plan-028-roof-details`). Every flat roof over 60 m² gets a few parts, chosen by a seeded
+  hash of the roof, so a roof looks the same every time:
+  - lift houses (2.8 to 4.4 m wide, 2.4 to 3 m high) on roofs 13 m or more above the ground
+    and over 150 m², one more over 500 m² and another over 1,300 m², never on halls;
+  - rows of skylight strips (0.3 m high, glass pattern from the roof-window material) on
+    roofs over 500 m² that are not tall, and on halls over 300 m², at most 24;
+  - rows of south-facing tilted solar panels, on about 14 % of ordinary flat roofs and more
+    on schools, hospitals, offices, shops and industry (50 % and 30 %), at most 6 rows;
+  - vents and small boxes, up to 8, bigger ones on halls.
+  Parts keep 0.9 m from the roof edge and 0.8 m from each other and stay out of courtyards
+  (OSM atria). All their walls are plain plaster (`facade` w = 5), so no windows land on
+  them. No shader change.
+  OSM buildings take their roof outline from `buildBuildings` (`ringSite`, returned as
+  `sites`). IPR tiles have no outlines, so `iprRoofSites` finds each flat roof from the
+  triangles with roof material 5 to 7 facing straight up, joined where they share a
+  corner, and rasterises them at 0.5 m so that lift houses IPR already models stay empty.
+  `tileWorker.ts` adds the parts to both the `roofs` and the `ipr` job.
+  `scripts/check-roof-rules.mjs` checks placement, determinism, the solar share and the
+  arrays.
+- **Triangle cost (measured, estate at 50.1318, 14.4210, high tier, whole frame about 1.165 M
+  triangles).** Building meshes with a `facade` attribute, base before this step:
+  `&osm` 6,798 without parapets, 10,670 with (+3,872, +57 % of the building triangles,
+  +0.33 % of the frame). The details add 4,554 on `&osm` (10,670 to 15,224, +43 %) and 3,856
+  with IPR (23,090 to 26,946, +17 %), each about +0.3 to 0.4 % of the frame. About 80
+  triangles per tall block, 340 per large hall (the skylights), 8 per small flat house.
 
 ## What is left
 
 - Re-run `pipeline/ipr_buildings.py` for the city and look at the atria schools.
-- Step 4 (lift houses, vents, skylights, solar panels): not started; the gain is for the
-  high camera only, and it adds triangles to every estate, so bench an estate first.
+- Frame time of step 4 was not measured: on 5 October 2026 the machine was out of memory
+  (load 120 to 190, other sessions' processes) and both bench orders timed out while
+  loading. At the estate view a frame takes about 1 ms either way and the triangle cost is
+  +0.4 % of the frame, so no cut was made. Bench again on a quiet machine before deploying;
+  if it shows, limit the skylights (the bulk of the triangles) or build the details on the
+  high tier only.
+- No pictures yet of the details in the city's IPR layer after the atria re-run.
 - Neighbour coherence is by 90 m grid cell, so a street crossing a cell edge can change
   roof class. "Near a church keeps red" was not implemented (no neighbour access in the
   worker); farms do keep red.
-- Triangle cost of the parapets (4 triangles per edge of every flat roof over 60 m²) was
-  not benched.
+- Parapets cost +3,872 triangles in an estate view (+0.33 % of the frame; see "What was
+  built"); their frame time was not measurable (about 1 ms with or without).
