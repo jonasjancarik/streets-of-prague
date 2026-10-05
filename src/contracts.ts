@@ -1,7 +1,7 @@
 import type { Bounds, GeoData, Point2, Polygons } from './map/geo.ts';
 import type { RawStreetEdge } from './network.ts';
 import type { Terrace } from './terrain.ts';
-import type { GroundResult, GroundRoadEdge, GroundTileData } from './ground.ts';
+import type { GroundResult, GroundRoadEdge, GroundTileData, LevelMask } from './ground.ts';
 import type { TreeSpot } from './map/vegetation.ts';
 import type { FenceBuffers, FenceTile } from './map/fences.ts';
 import type { BuildingTile } from './map/buildings.ts';
@@ -101,6 +101,7 @@ export interface LandResult {
   walls: { position: Float32Array; normal: Float32Array };
   fences: FenceBuffers;
   cells: Uint8Array;
+  masks: LevelMask[];
 }
 
 export interface WorkerJobs {
@@ -117,6 +118,8 @@ export interface WorkerJobs {
   land: {
     data: FurnitureData & { levels: boolean; fences: FenceTile['fences']; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
     seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
+    // The bridges and tunnels to rasterise, each a level to get about on (ground.ts).
+    box: Bounds; structures: TileStructure[];
   };
 }
 

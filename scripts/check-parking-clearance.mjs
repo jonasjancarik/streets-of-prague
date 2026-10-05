@@ -238,7 +238,7 @@ try {
 reports.push('required neighbour graph fields, empty arrays, legacy omissions and retry');
 const pruned=Object.create(TileWorld.prototype);
 Object.assign(pruned,{T:50,ox:0,oy:0,jsonRange:null,jsons:new Map([['0_0',Promise.resolve(fixture)],['99_99',Promise.resolve(fixture)]]),
- retry:new Map(),pending:new Map(),loaded:new Map(),inFlight:new Set(),workers:{size:0},building:0,around:()=>[]});
+ retry:new Map(),pending:new Map(),loaded:new Map(),inFlight:new Set(),dressing:new Set(),workers:{size:0},building:0,around:()=>[]});
 let scans=0;const keys=pruned.jsons.keys.bind(pruned.jsons);pruned.jsons.keys=()=>{scans++;return keys();};
 pruned.update(5,5,100);assert.equal(pruned.jsons.size,1);assert.equal(scans,1);
 pruned.update(6,6,100);assert.equal(scans,1,'stationary frames do not rescan the halo cache');

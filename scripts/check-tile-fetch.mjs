@@ -27,7 +27,7 @@ try {
   const world = () => Object.assign(Object.create(TileWorld.prototype), {
     area: 'fixture', index: { terrain: { n: 2, step: 250 }, gzip: false },
     pending: new Map(), jsons: new Map(), jsonRange: null, photos: new Map(), cover: null, ortho: false,
-    bare: new Set(), structures: new Set(), iprTiles: new Map([['0_0', false]]),
+    available: new Set(['0_0']), bare: new Set(), structures: new Set(), iprTiles: new Map([['0_0', false]]),
     osmBuildings: false, retry: new Map(), loaded: new Map(), builds: new Map(), buildTimes: [],
   });
   let requests = [];
@@ -211,6 +211,7 @@ try {
     for (const mode of ['status', 'empty-level']) for (const permanent of [false, true]) {
       const startup = world(); if (mode === 'empty-level') prepare('levels', startup); startup.around = () => ['0_0'];
       let downloads = 0, builds = 0;
+      startup.dress = async () => {}; // (the meshes are another matter: this is about the downloads)
       startup.make = async (_key, files) => {
         builds++;
         assert.ok(files.height, 'startup never builds missing terrain');

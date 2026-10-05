@@ -68,6 +68,15 @@
     S.tiles.push({ k, s, e: performance.now(), ms: tile.ms });
     return tile;
   };
+  // A tile's meshes, made when it comes near the view (dress): when, and their laps.
+  S.drawn = [];
+  const assemble = w.assemble;
+  if (assemble) w.assemble = async function (tile, jobs) {
+    const s = performance.now();
+    await assemble.call(this, tile, jobs);
+    S.drawn.push({ k: tile.k, s, e: performance.now(), ms: tile.drawMs, kept: !!tile.drawn });
+  };
+  timed(w, 'undress', 'undress');
 
   if (dev) {
     const q = dev.queue, wb = q.writeBuffer.bind(q);
@@ -134,7 +143,7 @@
     const sum = (fs, k) => fs.reduce((a, f) => a + f[k], 0);
     const gaps = S.frames.slice(1).map((f, i) => f.e - S.frames[i].e).sort((a, b) => a - b);
     const at = (p) => f1(gaps[Math.min(gaps.length - 1, Math.floor(p * gaps.length))] ?? NaN);
-    const lines = [`frames ${S.frames.length}: median ${at(0.5)}, 99th percentile ${at(0.99)}, slowest ${at(1)} ms; long tasks ${S.long.length} (${Math.round(S.long.reduce((a, l) => a + l.d, 0))} ms); tiles built ${S.tiles.length}`];
+    const lines = [`frames ${S.frames.length}: median ${at(0.5)}, 99th percentile ${at(0.99)}, slowest ${at(1)} ms; long tasks ${S.long.length} (${Math.round(S.long.reduce((a, l) => a + l.d, 0))} ms); tiles built ${S.tiles.length}, drawn ${S.drawn.filter((t) => t.kept).length}`];
     lines.push(`material builds ${sum(S.frames, 'builds')} (${Math.round(sum(S.frames, 'buildMs'))} ms), pipelines ${sum(S.frames, 'pipes')}, shader modules ${sum(S.frames, 'shaders')}`);
     lines.push(`car-body builds ${sum(S.frames, 'carBuilds')} (${Math.round(sum(S.frames, 'carBuildMs'))} ms)`);
     if (S.treesAtStart) lines.push(`tree pages ${JSON.stringify(S.treesAtStart)} → ${JSON.stringify(w.trees.stats())}`);
@@ -146,18 +155,19 @@
     }
     for (const [kind, [n, ms]] of [...S.kinds].sort((a, b) => b[1][1] - a[1][1])) lines.push(`  build ${n}× ${Math.round(ms)} ms ${kind}`);
     for (const t of S.tiles) lines.push(`tile ${t.k} at ${f1(t.s)}–${f1(t.e)} ms ${JSON.stringify(t.ms)}`);
+    for (const t of S.drawn) lines.push(`tile ${t.k} ${t.kept ? 'drawn' : 'left behind before it was drawn'} at ${f1(t.s)}–${f1(t.e)} ms ${JSON.stringify(t.ms)}`);
     const inLong = (f) => S.long.some((l) => f.e >= l.s && f.t <= l.s + l.d);
     for (const l of S.long) {
       const e = l.s + l.d;
       const fr = S.frames.filter((f) => f.e >= l.s && f.t <= e);
       const calls = S.calls.filter((c) => c.s < e && c.s + c.d > l.s).map((c) => `${c.n} ${f1(c.d)}`);
-      const done = S.tiles.filter((t) => t.e >= l.s - 5 && t.e <= e + 5).map((t) => t.k);
+      const done = [...S.tiles, ...S.drawn].filter((t) => t.e >= l.s - 5 && t.e <= e + 5).map((t) => t.k);
       lines.push(`long ${f1(l.s)} ${f1(l.d)} ms | render ${f1(Math.max(0, ...fr.map((f) => f.render)))} ms builds ${sum(fr, 'builds')} (${f1(sum(fr, 'buildMs'))} ms) pipelines ${sum(fr, 'pipes')} writeBuffer ${mb(sum(fr, 'wb'))} MB/${sum(fr, 'wbN')} attributes ${mb(sum(fr, 'ua'))} MB new buffers ${sum(fr, 'bufs')}${done.length ? ` | tile done ${done.join(',')}` : ''} | ${calls.join(', ') || '-'}`);
     }
     const calm = S.frames.filter((f) => !inLong(f)), avg = (k) => sum(calm, k) / Math.max(1, calm.length);
     lines.push(`frames outside long tasks ${calm.length}: render ${f1(avg('render'))} ms, writeBuffer ${mb(avg('wb'))} MB/${f1(avg('wbN'))}, attributes ${mb(avg('ua'))} MB a frame`);
     const q = w.streamingStats;
-    if (q) lines.push(`streaming: required ${q.queuedRequired} queued/${q.runningRequired} running, optional ${q.queuedOptional} queued/${q.runningOptional} running; completed ${q.completedRequired} required/${q.completedOptional} optional; refreshes ${q.coalesced} coalesced/${q.cancelled} cancelled; tile build ${q.buildTimes.length} samples, p95 ${f1(q.buildTimes.slice().sort((a, b) => a - b)[Math.ceil(q.buildTimes.length * .95) - 1] || 0)} ms`);
+    if (q) lines.push(`streaming: required ${q.queuedRequired} queued/${q.runningRequired} running, optional ${q.queuedOptional} queued/${q.runningOptional} running; completed ${q.completedRequired} required/${q.completedOptional} optional; refreshes ${q.coalesced} coalesced/${q.cancelled} cancelled; tile build ${q.buildTimes.length} samples, p95 ${f1(q.buildTimes.slice().sort((a, b) => a - b)[Math.ceil(q.buildTimes.length * .95) - 1] || 0)} ms${q.drawTimes ? `; meshes ${q.drawTimes.length} samples, p95 ${f1(q.drawTimes.slice().sort((a, b) => a - b)[Math.ceil(q.drawTimes.length * .95) - 1] || 0)} ms; ${q.drawn} of ${w.loaded.size} tiles drawn` : ''}`);
     lines.push(`road gaps: missing player ${S.gaps.player}/${S.gaps.samples}, ahead ${S.gaps.ahead}/${S.gaps.samples} driving frames`);
     if (S.resting.scans) lines.push(`resting: ${S.resting.changed} changed / ${S.resting.total} indexed-car scans, ${S.resting.circles} circles allocated, ${S.resting.touchedBuckets} buckets touched`);
     return lines;

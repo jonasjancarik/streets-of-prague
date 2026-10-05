@@ -49,13 +49,13 @@ try {
     const workers = new TileWorkers(1, () => { const w = new Worker('/src/tileWorker.ts', { type: 'module' }); endpoints.push(w); return w; });
     try {
       const ground = { hm: new Float32Array(121), box: [0, 0, 100, 100], n: 11, step: 10 };
-      const land = await workers.run('land', { data, ground, bridges: [], seeds: new Float64Array([1, 1]) });
+      const land = await workers.run('land', { data, ground, bridges: [], box: [0, 0, 1, 1], structures: [], seeds: new Float64Array([1, 1]) });
       assert(land.furniture.spots.length > 0, 'worker returns furniture');
       const grid = new (await import('/src/map/geo.ts')).Grid(new Geo(data), 2, null, land.cells);
       for (const spot of land.furniture.spots) assert(grid.at(spot.x, spot.y) === 255, 'furniture is solid');
-      const absent = await workers.run('land', { data, ground: null, bridges: [], seeds: new Float64Array([1, 1]) });
+      const absent = await workers.run('land', { data, ground: null, bridges: [], box: [0, 0, 1, 1], structures: [], seeds: new Float64Array([1, 1]) });
       assert(absent.furniture.spots.length === 0, 'no placement without terrain');
-      const disabled = await workers.run('land', { data: { ...data, furnitureEnabled: false }, ground, bridges: [], seeds: new Float64Array([1, 1]) });
+      const disabled = await workers.run('land', { data: { ...data, furnitureEnabled: false }, ground, bridges: [], box: [0, 0, 1, 1], structures: [], seeds: new Float64Array([1, 1]) });
       assert(disabled.furniture.spots.length === 0, 'missing lamp survey or explicit baseline disables furniture');
       const first = furnitureMeshes(land.furniture), second = furnitureMeshes(land.furniture);
       assert(first.length === 1 && second.length === 1, 'one instance draw for populated kind');
