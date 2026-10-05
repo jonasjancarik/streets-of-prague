@@ -12,6 +12,8 @@ rebuilds that layer alone:
     terrain    IPR's terrain, bridges, tunnels     ipr_terrain.py
     cover      what the ground nothing maps is    ground_cover.py build
                made of, from IPR's aerial photos
+    young      where a mapped wood has only a     young_woods.py build
+               low canopy, from IPR's surface model
 
 The first four are kept per chunk in pipeline/.cache/layers/<area>/<layer>/<ci>_<cj>.json
 (tile key → what the layer has there, plus what the chunk adds to the whole area,
@@ -27,6 +29,8 @@ streets layers; cover looks at the ground the buildings and ground layers leave 
 with the terrain heights. build_tiles.py says which of the first two to run again; cover
 is optional (a map without it keeps its plain beige) and checks itself per tile: a
 tile whose ground or heights changed since is left without cover until it is run again.
+young is optional in the same way and looks at the wood outlines of the ground layer
+with the terrain heights.
 """
 
 import gzip
@@ -195,6 +199,17 @@ def cover_processing() -> list:
     return [build_cache.digest(Path(__file__).with_name("ground_cover.py").read_bytes())]
 
 
+def young_key(t: dict, height) -> str:
+    """What a tile's young woods (young_woods.py) depend on: its wood outlines (before the
+    cover adds any) and the digest of its terrain heights."""
+    a = t["areas"]
+    return build_cache.digest(dumps([[*a.get("wood", []), *a.get("dtm_wood", [])], height]).encode())
+
+
+def young_processing() -> list:
+    return [build_cache.digest(Path(__file__).with_name("young_woods.py").read_bytes())]
+
+
 def height_digest(terrain, k):
     """The digest of a tile's height file as the terrain layer wrote it (None without one)."""
     return ((terrain or {}).get("payloads", {}).get(f"{k}.height.bin.gz") or [None, None])[1]
@@ -233,6 +248,7 @@ def tiles(area: str, meta: dict | None = None):
                 t.update(parts[layer].get(k) or EMPTY[layer])
             t.setdefault("fences", [])  # (chunks built before fences were)
             t.setdefault("drives", [])  # (...and before the drives)
+            t.setdefault("marks", [])  # (...and before the road marks)
             if not (t["buildings"] or t["areas"] or t["roads"] or t["walk"]):
                 continue
             yield i, j, {"i": i, "j": j, "box": [round(v, 2) for v in tile_box(meta, i, j)], **{key: t[key] for key in ORDER}}
@@ -283,6 +299,14 @@ def assemble(area: str, strict=False) -> dict:
             raise SystemExit(message)
         print(message)
         cover = None
+    young = read_layer(area, "young")
+    if young and not (young.get("tile") == meta["tile"] and young.get("processing") == young_processing()
+                      and build_cache.sources_current(young.get("sources", {}))):
+        message = f"{area}: the young woods were made by other code or from other sources; run young_woods.py build {area}"
+        if strict:
+            raise SystemExit(message)
+        print(message)
+        young = None
     for name, layer in (("ipr", ipr), ("terrain", terrain)):
         current = (layer and layer.get("dependencies") == dependency_snapshot(area, DEPENDENCIES[name])
                    and layer.get("processing") == processing and build_cache.sources_current(layer.get("sources", {}))
@@ -298,15 +322,19 @@ def assemble(area: str, strict=False) -> dict:
     if strict:
         # Check coverage and payloads before the first assembled output is changed.
         keys = set()
-        outdated = []
+        outdated, young_outdated = [], []
         for i, j, t in tiles(area, meta):
             k = f"{i}_{j}"
             keys.add(k)
             if cover and k in cover["inputs"] and cover["inputs"][k] != cover_key(t, height_digest(terrain, k)):
                 outdated.append(k)
+            if young and k in young["inputs"] and young["inputs"][k] != young_key(t, height_digest(terrain, k)):
+                young_outdated.append(k)
         for name, layer in (("ipr", ipr), ("terrain", terrain)):
             if keys - set(layer.get("made_for", [])):
                 raise SystemExit(f"{area}: {name} is missing tiles; rebuild that step")
+        if young_outdated:
+            raise SystemExit(f"{area}: the young woods of {len(young_outdated)} tiles are out of date ({', '.join(young_outdated[:6])} …); run young_woods.py build {area}")
         if outdated:
             raise SystemExit(f"{area}: the ground cover of {len(outdated)} tiles is out of date ({', '.join(outdated[:6])} …); run ground_cover.py build {area}")
         tiles_dir = OUT / f"{area}_now" / "tiles"
@@ -337,9 +365,15 @@ def assemble(area: str, strict=False) -> dict:
         for name, (length, x, y) in read_chunk(area, "streets", ci, cj)["names"].items():
             if length > names.get(name, (0,))[0]:
                 names[name] = (length, x, y)
-    out_of_date = 0
+    out_of_date = young_out_of_date = 0
     for i, j, t in tiles(area, meta):
         k = f"{i}_{j}"
+        # Where its woods are young, if made for the woods and heights as they are now.
+        if young and k in young["inputs"]:
+            if young["inputs"][k] != young_key(t, height_digest(terrain, k)):
+                young_out_of_date += 1
+            elif young["tiles"].get(k):
+                t["areas"] = {**t["areas"], "young_wood": young["tiles"][k]}
         # The classified bare ground, if it was made for the ground and heights as they are now.
         if cover and k in cover["inputs"]:
             if cover["inputs"][k] != cover_key(t, height_digest(terrain, k)):
@@ -397,6 +431,8 @@ def assemble(area: str, strict=False) -> dict:
         print("the IPR buildings and the terrain were built by different versions: run both again")
     if out_of_date:
         print(f"{out_of_date} tiles changed since their ground cover was made, and have none: run ground_cover.py build {area}")
+    if young_out_of_date:
+        print(f"{young_out_of_date} tiles changed since their young woods were made, and have none: run young_woods.py build {area}")
     write(out_dir / "index.json", dumps(index))
     write(out_dir / "names.json", dumps({k: v[1:] for k, v in sorted(names.items())}))
     print(f"{area}: {len(listed)} tiles, {written} changed → {out_dir.name}/")

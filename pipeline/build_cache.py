@@ -42,9 +42,10 @@ def key(value):
 def code_key():
     """Conservative invalidation for processing changes, without manual version bumps."""
     root = Path(__file__).parent
-    # (ground_cover.py works on finished tiles and keeps its own key, layers.cover_processing.)
+    # (ground_cover.py and young_woods.py work on finished tiles and keep their own keys,
+    # layers.cover_processing and layers.young_processing.)
     return key({p.name: digest(p.read_bytes()) for p in sorted(root.glob("*.py"))
-                if not p.name.startswith("test_") and p.name != "ground_cover.py"})
+                if not p.name.startswith("test_") and p.name not in ("ground_cover.py", "young_woods.py")})
 
 
 def function_key(function):
