@@ -77,14 +77,21 @@ def worn_paths(grass, buildings, doors, stops, foot_lines, car_lines, obstacles)
     stops: points of public transport stops; foot_lines: the mapped footways, paths and
     sidewalks (their ends and branches are places to walk to); car_lines: the streets,
     which people also walk along; obstacles: what a path can't cross (buildings, water,
-    roads, walls). Returns [(centre line points, width, to a stop)] in local metres."""
+    roads, walls), as a list of shapes or one shape. Returns [(centre line points, width, to a stop)] in local metres."""
     if grass.is_empty or not doors:
         return []
-    near = grass.buffer(DOOR_REACH)
-    doors = sorted(k for k in doors if buildings[k].intersects(near))
-    region = grass.buffer(FAR / 2)
-    foot_lines = [l for l in foot_lines if l.intersects(region)]
-    car_lines = [l for l in car_lines if l.intersects(region)]
+    # Distances to the grass, not the grass grown by them: buffering a chunk's lawns and
+    # meadows by 150 m took a third of the whole chunk's time.
+    shapely.prepare(grass)
+    doors = sorted(k for k in doors if shapely.dwithin(buildings[k], grass, DOOR_REACH))
+
+    def close(lines):
+        if not lines:
+            return []
+        keep = shapely.dwithin(np.asarray(lines, dtype=object), grass, FAR / 2)
+        return [l for l, yes in zip(lines, keep) if yes]
+
+    foot_lines, car_lines = close(foot_lines), close(car_lines)
     graph = _network(foot_lines + car_lines)
     if not doors or not graph:
         return []
@@ -108,7 +115,16 @@ def worn_paths(grass, buildings, doors, stops, foot_lines, car_lines, obstacles)
     targets += [(Point(p), "stop", None) for p in stops]
     targets += [(p, "door", k) for k, p in door_at.items()]
     target_tree = STRtree([t[0] for t in targets])
-    grass_wide = grass.buffer(0.5)
+    # The grass in pieces and the obstacles one by one, each found through an index: a
+    # candidate line is tested against what is near it, not against the whole chunk.
+    grass_parts = [g for g in shapely.get_parts(grass.buffer(0.5)) if not g.is_empty]
+    grass_tree = STRtree(grass_parts)
+    blocking = [g for g in (obstacles if isinstance(obstacles, (list, tuple)) else shapely.get_parts(obstacles)) if not g.is_empty]
+    blocking_tree = STRtree(blocking)
+
+    def on_grass(line):
+        return sum(line.intersection(grass_parts[i]).length for i in grass_tree.query(line, predicate="intersects"))
+
     out, taken = [], []
     for k in sorted(door_at):
         d = door_at[k]
@@ -131,7 +147,7 @@ def worn_paths(grass, buildings, doors, stops, foot_lines, car_lines, obstacles)
             if straight > 2 * ENDS + 1:  # the ends may be over paving, the rest over grass
                 a, b = shapely.line_interpolate_point(line, [ENDS, straight - ENDS])
                 line = LineString([a, b])
-            if line.intersection(grass_wide).length < ON_GRASS * line.length or line.intersects(obstacles):
+            if on_grass(line) < ON_GRASS * line.length or len(blocking_tree.query(line, predicate="intersects")):
                 continue
             options.append((mapped - straight, kind, (point.x, point.y), other))
         if not options:

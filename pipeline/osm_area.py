@@ -498,9 +498,10 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         flats = {k: Polygon(b["rings"][0], b["rings"][1:]) for k, b in enumerate(buildings)}
         blocks = [k for k, b in enumerate(buildings)
                   if b["kind"] in ("apartments", "residential", "dormitory") and not b["part"] and flats[k].area >= 250]
-        obstacles = unary_union([*flats.values(), area_polys.get("water", Polygon()), area_polys.get("parking", Polygon()),
-                                 road_polys.get("road", Polygon()), road_polys.get("bridge", Polygon()),
-                                 *(LineString(f["pts"]).buffer(0.3) for f in [*fences, *walls])])
+        # A list, not one joined shape: worn_paths only asks whether a line crosses any.
+        obstacles = [*flats.values(), area_polys.get("water", Polygon()), area_polys.get("parking", Polygon()),
+                     road_polys.get("road", Polygon()), road_polys.get("bridge", Polygon()),
+                     *(LineString(f["pts"]).buffer(0.3) for f in [*fences, *walls])]
         worn = worn_paths.worn_paths(grass, flats, blocks, stops,
                                      [ls for ls, _, _ in sidewalks], [w[0] for w in car_ways], obstacles)
         core, rim = worn_paths.ribbons(worn)
@@ -698,6 +699,7 @@ def _inferred_lots(parking, yards, lots, buildings, drivable, natural, car_lines
         return []
     free = _areas(free.buffer(-INFERRED_WIDTH / 2, join_style="mitre").buffer(INFERRED_WIDTH / 2, join_style="mitre"))
     near = STRtree(car_lines) if car_lines else None
+    beside_walls = walls.buffer(0.5) if not walls.is_empty else None
     out = []
     for poly in _polys(free):
         if poly.area < INFERRED_AREA or near is None:
@@ -705,7 +707,7 @@ def _inferred_lots(parking, yards, lots, buildings, drivable, natural, car_lines
         if not len(near.query(poly.buffer(INFERRED_REACH), predicate="intersects")):
             continue
         survey = poly.intersection(parking).area / poly.area
-        if survey < 0.5 and not walls.is_empty and poly.boundary.intersection(walls.buffer(0.5)).length > COURTYARD * poly.boundary.length:
+        if survey < 0.5 and beside_walls is not None and poly.boundary.intersection(beside_walls).length > COURTYARD * poly.boundary.length:
             continue
         out.append({"o": None, "poly": poly, "i": 1})
     return out
@@ -841,7 +843,9 @@ def _drive_spots(plots, homes, shapes, street_edge):
     the plot's street edge nearest the house, as the fences use), nose towards the house,
     where there is room between the gate and the house for it. Returns [{"b": the house's
     id, "x", "y", "h": the way the car faces}]; the game decides which of them have a car."""
-    roofs = unary_union(shapes).buffer(0.6) if shapes else Polygon()
+    # Each footprint grown before they are joined: OSM has a few that cross themselves,
+    # and joining those as they are fails.
+    roofs = unary_union([s.buffer(0.6) for s in shapes]) if shapes else Polygon()
     shape_of = dict(homes)
     out = []
     for ida, plot in plots:
