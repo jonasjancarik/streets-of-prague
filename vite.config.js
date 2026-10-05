@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from 'vite';
+import { runningBench } from './scripts/game-lock.mjs';
 
 // The dev server listens on every interface (package.json); these are the names it
 // may be reached by besides localhost and IP addresses: the machine's .local name on
@@ -46,6 +47,28 @@ function licences(emit) {
   };
 }
 
+// The dev server tells its pages when a benchmark is running anywhere on this machine,
+// and the game stands still meanwhile (src/benchpause.ts, scripts/game-lock.mjs).
+function benchWatch() {
+  let answer = '{"bench":null}', asked = 0;
+  return {
+    name: 'bench-watch',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/__bench', (_req, res) => {
+        if (Date.now() - asked > 1000) {
+          asked = Date.now();
+          const bench = runningBench();
+          answer = JSON.stringify({ bench: bench ? bench.where : null });
+        }
+        res.setHeader('content-type', 'application/json');
+        res.setHeader('cache-control', 'no-store');
+        res.end(answer);
+      });
+    },
+  };
+}
+
 // What the settings panel shows as the build: the release tag (v1.2.0, or v1.2.0-5-gabc1234
 // when commits came after it) and the date. Outside a git checkout it falls back to "dev".
 const git = (args) => { try { return execSync(`git ${args}`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } };
@@ -59,6 +82,6 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built), __DATA_VERSION__: JSON.stringify(data) },
   server: { allowedHosts },
   preview: { allowedHosts },
-  plugins: [licences(true)],
+  plugins: [licences(true), benchWatch()],
   worker: { plugins: () => [licences(false)] },
 });

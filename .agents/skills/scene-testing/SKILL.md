@@ -27,6 +27,10 @@ keeps it loaded, so a check takes seconds, not a minute of loading per attempt.
 6. `node scripts/scene.mjs stop` when done (it holds a Chrome with a GPU context).
 
 Without `serve`, each command loads the game itself (fine for a one-off).
+A command waits while another session runs a benchmark ("Waiting for the benchmark
+from …" on stderr), and at most three sessions run scenes at once; the rest queue
+(`scripts/game-lock.mjs`). Leave it waiting. Between commands a scene server's page
+stands still under a benchmark.
 Options: `--place`, `--time`, `--weather`, `--date` (`10-20` or a season's name; today otherwise), `--graphics`, `--show` (a visible window),
 `--out`.
 

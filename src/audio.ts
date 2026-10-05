@@ -196,11 +196,14 @@ export class Sound {
     };
     for (const k of ['keydown', 'pointerdown'] as const) addEventListener(k, start);
     // The game stops in a hidden tab, so the sound does too.
-    document.addEventListener('visibilitychange', () => {
-      if (!this.ctx) return;
-      if (document.hidden) { this.radio?.setStreaming(false); this.ctx.suspend(); }
-      else if (this.on) this.ctx.resume();
-    });
+    document.addEventListener('visibilitychange', () => this.hold(document.hidden));
+  }
+
+  // Silence while the game stands still (a hidden tab, a benchmark in another session).
+  hold(still: boolean) {
+    if (!this.ctx) return;
+    if (still) { this.radio?.setStreaming(false); this.ctx.suspend(); }
+    else if (this.on && !document.hidden) this.ctx.resume();
   }
 
   // The car radio, on or off; works before the sound has started (a browser only allows it after a key press).

@@ -41,8 +41,19 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
   benchmark Chrome, browser QA runs, ordinary game tabs and in-app browser views,
   even when they belong to different worktrees. Two headless Chromes loading at
   once have pushed loads past the 120 s limit. Multiple idle Vite servers are not
-  equivalent to multiple running games. Coordinate the test window with other
-  sessions; stop owned browser processes and ask before closing user/shared ones.
+  equivalent to multiple running games.
+  - The scripts keep to this by themselves (`scripts/game-lock.mjs`). `bench.mjs`
+    waits until no other session's scene, check or benchmark is running, saying on
+    stderr whom it waits for, and scenes and checks started meanwhile queue behind
+    it. A long wait is the queue, not a hang: leave it, don't kill the other
+    session's process. Start every browser through these scripts so it is counted.
+  - A game open from a dev server (a tab, the in-app browser, a resting scene
+    server) stands still while a benchmark runs and says so on the page.
+  - Not covered: a game served from a checkout older than this (no pause in its
+    page) and production or preview builds. Close those tabs yourself. Scripts
+    running from an older checkout are found among the processes and waited for;
+    after five minutes a benchmark goes ahead and names them in a warning, and
+    its timings are then suspect.
 - **Reverse run order when judging small differences.** `--vs` currently runs
   baseline then candidate in every pair. Run a second series with `--url` and
   `--vs` exchanged, and label results by revision rather than URL role. Alternation

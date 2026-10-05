@@ -88,6 +88,7 @@ import { haptic, hapticCrash, hapticBlast } from './haptics.ts';
 import { tunnelHole } from './tunnelView.ts';
 import { setupTestkit, PLACES } from './testkit.ts';
 import * as telemetry from './telemetry.ts';
+import { benchPause } from './benchpause.ts';
 import type { Testkit } from './testkit.ts';
 
 interface Obstacle { x: number; y: number; z?: number; r: number; vx: number; vy: number; kind: string; car?: Car }
@@ -151,6 +152,7 @@ const LIFE_RADIUS = 330; // traffic and people are kept within this distance of 
 async function main() {
   dressLoading($('loading'));
   translatePage();
+  await benchPause.clear();
   // The pad works from the start screen on; what it does in the game is hooked up further down.
   const padHooks = { settings: () => {}, menu: () => false, zoomBy: (_factor: number) => {} };
   const pad = setupGamepad({ settings: () => padHooks.settings(), menu: () => padHooks.menu(), zoomBy: (f) => padHooks.zoomBy(f) });
@@ -1083,6 +1085,7 @@ async function main() {
     return true;
   };
   const sound = new Sound();
+  benchPause.onChange((paused) => sound.hold(paused));
   // What the ground under a car is made of, for its tyres: the OSM surface of the street
   // it's on, or the pavement off the streets.
   let surface: Surface = 'asphalt', surfaceT = 0;
@@ -1889,6 +1892,7 @@ async function main() {
   };
   setScreenshot(() => new Promise((resolve) => { grab.push(resolve); setTimeout(() => resolve(null), 2000); }));
   renderer.setAnimationLoop((now) => {
+    if (benchPause.paused) { last = now; return; } // a benchmark elsewhere on this machine (dev only)
     const dt = settingsPanel.open ? 0 : Math.min(0.05, (now - last) / 1000); // the settings pause the game
     graphics.frame(now - last, now, world.inFlight.size > 0);
     telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
