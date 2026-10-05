@@ -655,6 +655,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   about 1.6 m. Unlike the walls, they aren't in the tile's collision grid (the people
   and traffic of the city ignore them). Older tiles have none: rebuild the `ground`
   layer (`uv run build_tiles.py <area> --layers ground`).
+- **Crash barriers** are a third kind of the same sections (`kind: "guard_rail"` in a
+  tile's `fences`): a steel beam 0.75 m high on a post every 2 m. They come from OSM's
+  `barrier=guard_rail` where it is mapped, and elsewhere `pipeline/barriers.py` puts them
+  along both edges of every motorway and expressway carriageway on the ground (the outer
+  edge and the central reservation), open where another road's surface meets it; slip
+  roads, bridges and tunnels get none of their own. A car meets a barrier as a line, not
+  as a row of posts: drifting into it, even at motorway speed, it scrapes along and is
+  turned back, and it breaks through only when it comes at the barrier's face at more
+  than 50 km/h, which costs half of that speed. On foot a barrier stops you unless you
+  jump. `scripts/check-guard-rails.mjs` checks all of that. Needs the `ground` layer
+  rebuilt, like the fences.
 - **Boats** on the Vltava (`src/boats.ts`): a few white cruise boats go slowly up and
   down the river, and pedal boats, every third a swan, paddle about round the islands.
   The river is only a ground layer, so the water of the loaded tiles is where they can

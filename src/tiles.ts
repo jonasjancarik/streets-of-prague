@@ -982,7 +982,7 @@ export class TileWorld {
     };
     const roads = [...(t.roads.road || []), ...(t.roads.sett || []), ...(t.roads.dirt || [])];
     const { meshes: wires, posts: poles } = overheadWires(t.rails.filter((r) => r.kind === 'tram').map((r) => r.pts), outlines.map((b) => b.rings[0]), trackAt, hAt, (x, y) => roads.some((rings) => inPoly(x, y, rings)));
-    group.add(surfaces.group, ...buildings, walls, fenceRows.fence, fenceRows.hedge, ...landmarks, ...wires, ...furniture);
+    group.add(surfaces.group, ...buildings, walls, fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...landmarks, ...wires, ...furniture);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
     group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
@@ -1005,7 +1005,7 @@ export class TileWorld {
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), group, surfaces, grid, levels: onLevels, cars, ms,
-      roads, disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
+      roads, disposables: [...buildings, walls, fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...wires, ...(hidden ? [hidden] : [])], poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };

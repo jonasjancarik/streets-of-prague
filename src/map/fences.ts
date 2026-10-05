@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type { Point2 } from './geo.ts';
 import { HEDGE_SEASON } from '../groundSeason.ts';
 
-// Fences and hedges as a row of short sections (a car breaks one at a time, see fences.ts).
+// Fences, hedges and crash barriers as a row of short sections (a car breaks one at a
+// time, see fences.ts).
 // Each section is a fixed number of vertices in its mesh, so the game can find it again.
 
 export interface FenceTile { fences?: { kind: string; h?: number; pts: Point2[] }[] }
@@ -10,6 +11,8 @@ export interface FenceTile { fences?: { kind: string; h?: number; pts: Point2[] 
 export const FENCE_H = 1.2; // m: a fence no one tagged a height on
 export const HEDGE_H = 1.5;
 export const HEDGE_W = 0.8; // m
+export const RAIL_H = 0.75; // m: a crash barrier's beam is at bumper height
+const RAIL_POSTS = 4; // m of barrier the post-and-beam texture repeats over (a post every 2 m)
 const SECTION = 3; // m: the longest piece a line is cut into
 const PICKET = 1.6; // m of fence the picket texture repeats over
 
@@ -20,7 +23,9 @@ export const SECTION_STRIDE = 8;
 export interface FenceBuffers {
   fence: { position: Float32Array; normal: Float32Array; uv: Float32Array };
   hedge: { position: Float32Array; normal: Float32Array; uv: Float32Array };
-  // Per section: x1, y1, x2, y2, ground, height, hedge (1) or fence (0), first vertex in its mesh.
+  rail: { position: Float32Array; normal: Float32Array; uv: Float32Array };
+  // Per section: x1, y1, x2, y2, ground, height, fence (0), hedge (1) or crash barrier (2),
+  // first vertex in its mesh.
   sections: Float32Array;
 }
 
@@ -29,12 +34,15 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
   const out = {
     fence: { pos: [] as number[], nor: [] as number[], uv: [] as number[] },
     hedge: { pos: [] as number[], nor: [] as number[], uv: [] as number[] },
+    rail: { pos: [] as number[], nor: [] as number[], uv: [] as number[] },
   };
   const sections: number[] = [];
   for (const line of data.fences ?? []) {
     const hedge = line.kind === 'hedge';
-    const h = line.h ?? (hedge ? HEDGE_H : FENCE_H);
-    const m = hedge ? out.hedge : out.fence;
+    const rail = line.kind === 'guard_rail';
+    const h = rail ? RAIL_H : line.h ?? (hedge ? HEDGE_H : FENCE_H);
+    const m = hedge ? out.hedge : rail ? out.rail : out.fence;
+    const repeat = hedge ? 2 : rail ? RAIL_POSTS : PICKET;
     let along = 0;
     for (let i = 0; i < line.pts.length - 1; i++) {
       const [ax, ay] = line.pts[i], [bx, by] = line.pts[i + 1];
@@ -45,8 +53,8 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
         const x1 = ax + (bx - ax) * s / n, y1 = ay + (by - ay) * s / n;
         const x2 = ax + (bx - ax) * (s + 1) / n, y2 = ay + (by - ay) * (s + 1) / n;
         const z1 = height(x1, y1), z2 = height(x2, y2);
-        const u1 = (along + len * s / n) / (hedge ? 2 : PICKET), u2 = (along + len * (s + 1) / n) / (hedge ? 2 : PICKET);
-        sections.push(x1, y1, x2, y2, (z1 + z2) / 2, h, hedge ? 1 : 0, m.pos.length / 3);
+        const u1 = (along + len * s / n) / repeat, u2 = (along + len * (s + 1) / n) / repeat;
+        sections.push(x1, y1, x2, y2, (z1 + z2) / 2, h, hedge ? 1 : rail ? 2 : 0, m.pos.length / 3);
         const nx = (y2 - y1) / (len / n), ny = -(x2 - x1) / (len / n);
         // A quad from the bottom edge (x1,y1,z1)-(x2,y2,z2) up by `up`, pushed out by (ox, oy).
         const quad = (ox1: number, oy1: number, ox2: number, oy2: number, up1: number, up2: number, zb1: number, zb2: number, n3: number[], uv: number[], flip = false) => {
@@ -86,11 +94,31 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
   }
   const pack = (m: { pos: number[]; nor: number[]; uv: number[] }) =>
     ({ position: new Float32Array(m.pos), normal: new Float32Array(m.nor), uv: new Float32Array(m.uv) });
-  return { fence: pack(out.fence), hedge: pack(out.hedge), sections: new Float32Array(sections) };
+  return { fence: pack(out.fence), hedge: pack(out.hedge), rail: pack(out.rail), sections: new Float32Array(sections) };
 }
 
 let picketMap: THREE.CanvasTexture | null = null;
 let leafMap: THREE.CanvasTexture | null = null;
+let railMap: THREE.CanvasTexture | null = null;
+
+// A crash barrier: a galvanised beam along the top on a post every 2 m, clear below it.
+function barrier() {
+  if (railMap) return railMap;
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 32;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#6f7478';
+  for (const x of [28, 92]) g.fillRect(x, 10, 6, 22);
+  // The beam's two ridges, lit above and shaded below.
+  g.fillStyle = '#b4babd'; g.fillRect(0, 1, 128, 13);
+  g.fillStyle = '#d2d7d9'; g.fillRect(0, 2, 128, 3); g.fillRect(0, 9, 128, 2);
+  g.fillStyle = '#8b9296'; g.fillRect(0, 6, 128, 2); g.fillRect(0, 12, 128, 2);
+  railMap = new THREE.CanvasTexture(c);
+  railMap.wrapS = THREE.RepeatWrapping;
+  railMap.colorSpace = THREE.SRGBColorSpace;
+  railMap.anisotropy = 4;
+  return railMap;
+}
 
 // Pickets between two rails, on clear ground: see-through between the pickets.
 function pickets() {
@@ -136,7 +164,7 @@ function leaves() {
   return leafMap;
 }
 
-export function fenceMeshes({ fence, hedge }: FenceBuffers) {
+export function fenceMeshes({ fence, hedge, rail }: FenceBuffers) {
   const make = (a: FenceBuffers['fence'], material: THREE.Material, shadow: boolean) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(a.position, 3));
@@ -158,7 +186,8 @@ export function fenceMeshes({ fence, hedge }: FenceBuffers) {
   return {
     fence: make(fence, new THREE.MeshLambertMaterial({ map: pickets(), alphaTest: 0.5, side: THREE.DoubleSide }), false),
     hedge: make(hedge, hedgeMaterial, true),
+    rail: make(rail, new THREE.MeshLambertMaterial({ map: barrier(), alphaTest: 0.5, side: THREE.DoubleSide }), false),
   };
 }
 
-export const VERTS = { fence: FENCE_VERTS, hedge: HEDGE_VERTS };
+export const VERTS = { fence: FENCE_VERTS, hedge: HEDGE_VERTS, rail: FENCE_VERTS };

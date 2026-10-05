@@ -21,6 +21,7 @@ from shapely import STRtree
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 
+import barriers
 import dtm
 import lanes
 import roofs
@@ -95,7 +96,7 @@ def road_width(hw, width=None, lanes=None):
 FEATURE_TAGS = {
     "building": True, "building:part": True, "highway": True, "landuse": True, "leisure": True,
     "natural": True, "waterway": True, "railway": True, "amenity": True,
-    "barrier": ["wall", "city_wall", "fence", "hedge"], "man_made": ["bridge", "pier"],
+    "barrier": ["wall", "city_wall", "fence", "hedge", "guard_rail"], "man_made": ["bridge", "pier"],
     "place": ["islet", "island", "square"], "historic": ["city_gate", "castle_wall"],
     "bridge": True, "area:highway": True,
 }
@@ -187,7 +188,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             sidewalks.extend((ls, width / 2, col(row, "footway") == "sidewalk") for ls in _lines(g))
         if hw in CAR_ROADS:
             # Sized kerb to kerb once the pavements and tracks are all in (kerbs.py).
-            est = {**estimate(width, lambda k: col(row, k), not col(row, "width") and not col(row, "lanes")), "hw": hw}
+            est = {**estimate(width, lambda k: col(row, k), not col(row, "width") and not col(row, "lanes")), "hw": hw,
+                   "tunnel": col(row, "tunnel") not in (None, "no")}
             car_ways.extend((ls, est, cls, hw != "service") for ls in _lines(g))
             return
         if ground:
@@ -211,6 +213,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     homes = []  # landuse=residential, where gardens may be (see _gardens)
     streets = []  # car roads other than service roads, which cut residential areas into blocks
     car_ways = []  # (line, what its tags say, class, a street?), sized after the loop
+    mapped_rails = []  # crash barriers as OSM maps them
     sidewalks = []  # footways and paths with their half widths, which may run along a street
     drivable = []  # every car way as the road it covers, to keep inferred parking off it
     maybe = []  # ways that are passages if they run through buildings (passage_tags)
@@ -294,6 +297,11 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 continue
             for ls in _lines(g.intersection(clip)):
                 rails.append({"kind": rw, "pts": _coords(ls)})
+            continue
+
+        if col(row, "barrier") == "guard_rail":
+            if isinstance(g, (LineString, MultiLineString)):
+                mapped_rails.extend(_lines(g.intersection(clip)))
             continue
 
         if col(row, "barrier") in ("fence", "hedge"):
@@ -465,6 +473,14 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         wet = unary_union(areas.get("water", []))
         areas.setdefault("square_loose", []).append(unary_union(strips).difference(wet))
     timer.lap("shoulders")
+    # Crash barriers along the motorways and expressways (barriers.py). Kept out of
+    # `fences` until here: they are not something a street is sized against or a
+    # garden's edge.
+    rails_beside = barriers.guard_rails(lines, [w[1]["hw"] for w in car_ways], measured,
+                                        [w[2] == "bridge" or w[1]["tunnel"] for w in car_ways], drivable, mapped_rails)
+    fences.extend({"kind": "guard_rail", "pts": _coords(piece)}
+                  for ln in rails_beside for piece in _lines(ln.intersection(clip)) if piece.length >= 1)
+    timer.lap("guard_rails")
     lots.extend(_inferred_lots(dtm.parking((w, s, e, n), tf.transform).intersection(clip),
                                [land.get("dtm_yard", Polygon()), *areas.get("yard", [])],
                                lots, buildings, drivable, natural, [w[0] for w in car_ways], clip))
