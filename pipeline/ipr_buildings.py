@@ -133,18 +133,27 @@ def download(name, items):
     return path
 
 
+def _ring(pl):
+    v = np.array(pl.text.split(), dtype=float).reshape(-1, 3)
+    return v[:-1] if np.allclose(v[0], v[-1]) else v
+
+
 def buildings(path):
-    """Yield (id, [(kind, ring 3D array)]) for every building in a sheet, streaming."""
+    """Yield (id, [(kind, outer ring 3D array, [inner ring 3D arrays])]) for every
+    building in a sheet, streaming."""
+    gml = f"{{{NS['gml']}}}"
     for _, el in etree.iterparse(str(path), events=("end",), tag=BUILDING, huge_tree=True):
         surfaces = []
         for surf in el.iter():
             tag = etree.QName(surf).localname
             if tag not in SURFACES:
                 continue
-            for pl in surf.iter(f"{{{NS['gml']}}}posList"):
-                v = np.array(pl.text.split(), dtype=float).reshape(-1, 3)
-                if len(v) >= 4:
-                    surfaces.append((SURFACES[tag], v[:-1] if np.allclose(v[0], v[-1]) else v))
+            for poly in surf.iter(f"{gml}Polygon"):
+                outer = [_ring(pl) for ring in poly.iterchildren(f"{gml}exterior") for pl in ring.iter(f"{gml}posList")]
+                if not outer or len(outer[0]) < 3:
+                    continue
+                holes = [_ring(pl) for ring in poly.iterchildren(f"{gml}interior") for pl in ring.iter(f"{gml}posList")]
+                surfaces.append((SURFACES[tag], outer[0], [h for h in holes if len(h) >= 3]))
         gid = el.get(f"{{{NS['gml']}}}id")
         el.clear()
         while el.getprevious() is not None:
@@ -153,8 +162,9 @@ def buildings(path):
             yield gid, surfaces
 
 
-def triangulate(ring):
-    """Triangles (k x 3 x 3) of one planar 3D polygon."""
+def triangulate(ring, holes=()):
+    """Triangles (k x 3 x 3) of one planar 3D polygon, with `holes` (3D rings in its
+    plane) cut out."""
     n = np.zeros(3)
     for a, b in zip(ring, np.roll(ring, -1, axis=0)):
         n += np.array([(a[1] - b[1]) * (a[2] + b[2]), (a[2] - b[2]) * (a[0] + b[0]), (a[0] - b[0]) * (a[1] + b[1])])
@@ -167,9 +177,11 @@ def triangulate(ring):
     w = np.cross(n, u)
     o = ring[0]
     flat = [((p - o) @ u, (p - o) @ w) for p in ring]
-    lookup = {(round(a, 4), round(b, 4)): p for (a, b), p in zip(flat, ring)}
+    flat_holes = [[((p - o) @ u, (p - o) @ w) for p in h] for h in holes]
+    lookup = {(round(a, 4), round(b, 4)): p
+              for r, f in [(ring, flat), *zip(holes, flat_holes)] for (a, b), p in zip(f, r)}
     try:
-        poly = Polygon(flat)
+        poly = Polygon(flat, flat_holes)
         if not poly.is_valid:
             poly = poly.buffer(0)
         tris = constrained_delaunay_triangles(poly)
@@ -187,6 +199,13 @@ def triangulate(ring):
             vs = [vs[0], vs[2], vs[1]]
         out.append(vs)
     return out
+
+
+OPENING = 25  # m2 in plan: a hole in a roof or floor at least this big is a courtyard, not a window
+
+
+def _plan_area(ring):
+    return abs(Polygon(ring[:, :2]).area)
 
 
 def hexrgb(h):
@@ -275,17 +294,26 @@ def read_sheet(job):
     version = [1, build_cache.function_key(buildings), NS, SURFACES, key[3]]
     raw_cache = CACHE / "source" / f"{name}.buildings.pkl"
     for bid, surfaces in build_cache.source_records(path, raw_cache, version, buildings, stats):
-        pts = np.vstack([v for _, v in surfaces])
+        pts = np.vstack([v for _, v, _ in surfaces])
         lx, ly = to_local.transform(pts[:, 0], pts[:, 1])
         cx, cy = float(np.mean(lx)), float(np.mean(ly))
         i, j = math.floor((cx + ox) / T), math.floor((cy + oy) / T)
         tris, codes, ground = [], [], []
-        for kind, ring in surfaces:
+        # A roof or floor with a courtyard or atrium in it is cut open there. Smaller
+        # openings (every window in a wall) are drawn as polygons of their own, as IPR
+        # has them, since nothing is modelled behind a hole.
+        drawn = []
+        for kind, ring, holes in surfaces:
+            cut = [h for h in holes if kind != 0 and _plan_area(h) >= OPENING]
+            drawn.append((kind, ring, cut))
+            drawn += [(kind, h, []) for h in holes if not any(h is c for c in cut)]
+        for kind, ring, holes in drawn:
             rx, ry = to_local.transform(ring[:, 0], ring[:, 1])
             if kind == 2 and len(ring) >= 3:
-                ground.append(Polygon(np.column_stack([rx, ry])).buffer(0))
+                ground.append(Polygon(np.column_stack([rx, ry]), [np.column_stack(to_local.transform(h[:, 0], h[:, 1])) for h in holes]).buffer(0))
             loc = np.column_stack([rx, ry, ring[:, 2] - REF_HEIGHT])
-            for t in triangulate(loc):
+            loc_holes = [np.column_stack([*to_local.transform(h[:, 0], h[:, 1]), h[:, 2] - REF_HEIGHT]) for h in holes]
+            for t in triangulate(loc, loc_holes):
                 nrm = np.cross(t[1] - t[0], t[2] - t[0])
                 if kind == 1 and nrm[2] < 0:
                     t, nrm = [t[0], t[2], t[1]], -nrm  # roofs always face up
