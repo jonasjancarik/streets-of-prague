@@ -38,6 +38,12 @@ class CoverMergeTests(unittest.TestCase):
         self.assertNotEqual(layers.cover_key(tile(), "h2"), key)
         self.assertNotEqual(layers.cover_key(tile(park=[[["p"]]]), "h1"), key)
 
+    def test_key_is_the_same_once_the_tiles_young_woods_are_in_it(self):
+        t = tile(wood=[[["w"]]])
+        key = layers.cover_key(t, "h1")
+        t["areas"] = {**t["areas"], "young_wood": [[["y"]]]}
+        self.assertEqual(layers.cover_key(t, "h1"), key)
+
 
 class CoverGridTests(unittest.TestCase):
     def test_a_tiles_pixels_land_where_projecting_each_one_puts_them(self):

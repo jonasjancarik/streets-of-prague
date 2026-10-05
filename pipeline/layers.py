@@ -190,8 +190,10 @@ def tile_box(meta: dict, i: int, j: int):
 def cover_key(t: dict, height) -> str:
     """What a tile's ground cover (ground_cover.py) depends on in the map: the areas, streets
     and building outlines that leave the ground bare (before the cover is added to
-    them), and the digest of the tile's terrain heights."""
-    return build_cache.digest(dumps([t["areas"], t["roads"], [b["rings"] for b in t["buildings"]], height]).encode())
+    them), and the digest of the tile's terrain heights. Young woods lie inside a wood that
+    is already there, and assemble() puts them into the tile before it compares this key."""
+    areas = {k: v for k, v in t["areas"].items() if k != "young_wood"}
+    return build_cache.digest(dumps([areas, t["roads"], [b["rings"] for b in t["buildings"]], height]).encode())
 
 
 def cover_processing() -> list:
