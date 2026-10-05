@@ -11,7 +11,7 @@ solar panels.
 
 ## Status and starting point
 
-- Status: PARTLY DONE on branch `plan-028-roofs` (not merged). Built: step 0 (the atria
+- Status: PARTLY DONE (branch `plan-028-roofs`, merged into main on 5 October 2026, not deployed). Built: step 0 (the atria
   fault), steps 1 and 2 (Part A), step 3 (parapets and surface colours). Not built: step 4,
   and the city's IPR layer has not been re-run (see "What was built").
 - Priority: P2 for part A (it changes every village in the outer ring and all of plan

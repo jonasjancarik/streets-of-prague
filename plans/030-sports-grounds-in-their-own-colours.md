@@ -10,7 +10,7 @@ tracks, orange clay courts, blue or green hard courts, striped football grass.
 
 ## Status and starting point
 
-- Status: DONE on branch `plan-030-sports-grounds` (not merged).
+- Status: DONE (branch `plan-030-sports-grounds`, merged into main on 5 October 2026, not deployed).
   - Step 0: the `sport` and `surface` tags cover most pitches; only about 16 % have
     neither, and those get a size guess (under 1,500 m2 is a hard court, larger is grass).
   - Built: `pipeline/sports.py` (looks, court line tables for tennis, basketball,

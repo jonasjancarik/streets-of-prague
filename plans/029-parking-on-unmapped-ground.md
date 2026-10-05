@@ -10,7 +10,7 @@ parks nobody mapped, and a car on the drive of nearly every family house.
 
 ## Status and starting point
 
-- Status: PARTLY BUILT (5 October 2026, branch `plan-029-parking`, not merged): A and C
+- Status: PARTLY BUILT (branch `plan-029-parking`, merged into main on 5 October 2026, not deployed): A and C
   built; B not built; see "What was built" at the end.
 - Priority: P2. Effort: about a week. Risk: medium (cars are collision bodies and
   meshes; plan 015 made the meshes cheap, the bodies are not).

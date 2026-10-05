@@ -12,7 +12,7 @@ shows, and blocks of garden turn into slabs of asphalt where several meet.
 
 - Status: IN PROGRESS (5 October 2026): steps 0, 1, 3 (single lane) and 4 done on the
   branch `plan-031-narrower-lanes`; the gravel shoulder on through roads and a
-  pavement-or-verge pass are not done (see "What was built"). Not merged, not deployed.
+  pavement-or-verge pass are not done (see "What was built"). Merged into main on 5 October 2026, not deployed.
 - Priority: P2 (it affects the whole outer ring and plan 021). Effort: two to four
   days. Risk: medium: street widths feed the street graph, traffic lanes, parking
   and kerbs, so a change here moves a lot.

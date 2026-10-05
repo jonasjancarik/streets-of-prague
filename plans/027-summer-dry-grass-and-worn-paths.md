@@ -11,7 +11,7 @@ bare trodden lines.
 
 ## Status and starting point
 
-- Status: BUILT on branch `plan-027-summer-grass` (not merged), 5 October 2026. Done:
+- Status: BUILT (branch `plan-027-summer-grass`, merged into main on 5 October 2026, not deployed). Done:
   area kinds `meadow` and `lawn` split from `park` in the pipeline (`osm_area.py`,
   estate lawns from `_gardens`); per-kind dryness weights (`GRASS_DRYNESS` in
   `src/groundSeason.ts`: meadow 1, lawn 0.8, park 0.5, garden 0.25, pitch 0) as one

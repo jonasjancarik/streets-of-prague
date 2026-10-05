@@ -10,7 +10,7 @@ leaves with conifers mixed in and a ragged edge of shrubs and young trees.
 
 ## Status and starting point
 
-- Status: STEPS 0–3 DONE on branch `plan-026-woods` (not merged or deployed). Step 4
+- Status: STEPS 0–3 DONE (branch `plan-026-woods`, merged into main on 5 October 2026, not deployed). Step 4
   (young woods) not done; the floor colour is not blended over the edge band (see
   "What was built").
 - Priority: P2. Effort: three to five days. Risk: medium (woods already hold most of
