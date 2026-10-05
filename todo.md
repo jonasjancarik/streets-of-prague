@@ -6,13 +6,17 @@ measurements are in [`docs/performance-log.md`](docs/performance-log.md).
 
 ## Release
 
-Main is 94 commits past v0.5.2 and the live map is still 2026-10-03. Waiting to go
+Main is about a hundred commits past v0.5.2 and the live map is still 2026-10-03. Waiting to go
 out: plans 025–031, the photo-classified ground, the game controller, car doors, the
-arrest, crash barriers, parking outside the paid zones. The local `praha` map was
+arrest, crash barriers, parking outside the paid zones, and tiles drawn only near the
+view (plan 016, merged on 5 October without new measurements). The local `praha` map was
 rebuilt on 5 October with all of it; `centrum` and `ujezd` are from 3 October.
 
 Before deploying:
 
+- **`npm run build` fails**: "No licence file found for pmtiles" (the countryside
+  prototype's dependency ships no licence file, and the build insists on one for
+  `licenses.txt`). Add its BSD-3-Clause text to the repo and let the plugin read it.
 - `layers.py praha --strict` on the rebuilt layers.
 - A frame-time run of plan 028's flat-roof details on a quiet machine (the first
   attempt timed out while loading). If it shows, limit the skylights or keep the
@@ -27,8 +31,6 @@ Before deploying:
   how missions are handed out…). The firefighter job (plan 006 phase 4) waits for it.
 - **The game on play.streetsofprague.com (plan 024):** five decisions. The homepage in
   `site/` can't go online before it.
-- **Branch `nearby-tiles` (plan 016):** merge or shelve. Steady-state gain 1–3 %; the
-  gain is in how fast a far tile arrives. 299 commits behind main.
 - **Branch `ios-app` (plan 020):** real-device checks (whether the app gets WebGPU on
   iOS 26 among them), then phases 4, 5, 7 and 8.
 - **Roof clutter** (aerials, more chimneys and dormers) and stronger moss on red clay.
