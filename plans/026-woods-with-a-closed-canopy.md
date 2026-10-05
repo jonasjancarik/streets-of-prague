@@ -11,7 +11,7 @@ leaves with conifers mixed in and a ragged edge of shrubs and young trees.
 ## Status and starting point
 
 - Status: STEPS 0–4 AND THE EDGE BLEND DONE (steps 0–3 merged into main on 5 October 2026; step 4 and the
-  edge blend on branch `plan-026-young-woods`, not merged, not deployed, the city's map not yet rebuilt with the
+  edge blend from branch `plan-026-young-woods` merged the same day; not deployed, the city's map not yet rebuilt with the
   young layer). A phone check is still open (see "Left open").
 - Priority: P2. Effort: three to five days. Risk: medium (woods already hold most of
   the trees in view on the city's edge).
