@@ -201,11 +201,9 @@ All IPR Praha, CC BY, at
   `straight-skeleton` is MIT but wraps CGAL, whose straight-skeleton code may be GPL.
 - **mbxp:** one old uncompressed tile is left (`praha_now/tiles/84_68.bare.bin`, no
   `.gz` beside it, so probably still in use).
-- **Merged branches and their worktrees** can go: `plan-026-*` to `plan-031-*`,
-  `beige-ground`, `roof-colours`, `worktree-telemetry`, `worktree-quay-heights`,
-  `worktree-typescript-migration`, `codex/typescript-*`, `worktree-drive`,
-  `mosaic-scatter`, `newsletter-cloudflare-confirm`. `beige-ground` and `quay-heights`
-  hold untracked pictures and labels. Kept unmerged on purpose: `worktree-crowd-worker`
-  (plan 019), `mosaic-ornaments`, `worktree-rust-wgpu`, `ipad-audio`.
+- **Worktree `beige-ground`** (merged, 18 GB) is kept for the painted-photo
+  experiments: it holds the photos, the hand labels and the surface model. Remove it
+  when those are done. Kept unmerged on purpose: `worktree-crowd-worker` (plan 019),
+  `mosaic-ornaments`, `worktree-rust-wgpu`, `ipad-audio`.
 - **Codex worktrees:** nine of fifteen hold commits that aren't in main in the same
   form (most in `811c`, plan 012 Part B, and `2bc4`); not gone through.
