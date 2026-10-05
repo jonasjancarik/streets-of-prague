@@ -8,8 +8,8 @@ description: How to port and optimize Streets of Prague's shaders with three.js 
 WebGPU is the default renderer (three r186, `src/webgpu.ts`); `?renderer=webgl`
 selects the legacy `THREE.WebGLRenderer`. The default path uses TSL, three's node
 language, which compiles to WGSL and can also target three's WebGL 2 backend.
-Legacy GLSL customizations need explicit TSL ports. Read `todo.md` under "Game
-performance" and `docs/optimisation-findings-007-012.md` for current results, and
+Legacy GLSL customizations need explicit TSL ports. Read `docs/performance-log.md`
+and `docs/optimisation-findings-007-012.md` for current results, and
 the `performance` skill before measuring. The older per-port timings below are
 historical observations, not claims about the current combined renderer.
 
@@ -323,4 +323,4 @@ concurrent work has settled. Noisy or contradictory timings remain inconclusive.
   -U0 file` → keep your hunk → `git apply --cached --unidiff-zero`).
 - One commit per ported piece, with the before/after screenshots checked and the
   `--ab` numbers for both renderers in the body.
-- Update the table above and `todo.md` "Game performance" as pieces are ported.
+- Update the table above and `docs/performance-log.md` as pieces are ported.

@@ -6,7 +6,7 @@ description: How to measure and speed up Streets of Prague (frame rate, GPU shad
 # Performance in Streets of Prague
 
 What was learned measuring and optimising the game (29 September–1 October 2026,
-M5 MacBook Air and Pixel 5). Read `todo.md` under "Game performance" for current
+M5 MacBook Air and Pixel 5). Read `docs/performance-log.md` for current
 work and `docs/optimisation-findings-007-012.md` for the completed experiments and
 integration decisions. Historical timings below describe those runs, not a
 performance baseline for every later revision.
@@ -370,7 +370,7 @@ These checks adapt Quiet Blocks' edit/reuse lessons to a moving city:
 ## WebGPU
 
 WebGPU is the default renderer (`?renderer=webgl` for the old one; see
-`src/webgpu.ts`, the `webgpu-port` skill and `todo.md`).
+`src/webgpu.ts`, the `webgpu-port` skill and `docs/performance-log.md`).
 Measure the ground's patterns in either renderer by swapping each ground material
 for its `userData.flatten()` (the same ground without the pattern):
 
@@ -484,5 +484,6 @@ renderer policies, as evidence for Streets of Prague:
 ## Before you commit
 
 Type check (`npm run typecheck`), check screenshots against the baseline, and put
-the `--vs`/`--ab` numbers and what was checked in the commit body. Update `todo.md`
-"Game performance" when the picture changes.
+the `--vs`/`--ab` numbers and what was checked in the commit body. Update
+`docs/performance-log.md` when the picture changes, and `todo.md` "Performance" with
+what is left open.
