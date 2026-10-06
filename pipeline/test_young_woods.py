@@ -93,6 +93,9 @@ class YoungMaskTests(unittest.TestCase):
         self.assertEqual(len(polys), 1)
         xs = [x for ring in polys[0] for x, _ in ring]
         self.assertGreaterEqual(min(xs), 0)
+        self.assertEqual(min(xs), 0)  # it reaches the tile's edge, where it goes on next door
+        ys = [y for ring in polys[0] for _, y in ring]
+        self.assertEqual((min(ys), max(ys)), (0, 120))
         self.assertTrue(55 < max(xs) < 65)
 
 

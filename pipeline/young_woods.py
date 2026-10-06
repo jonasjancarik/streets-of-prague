@@ -116,11 +116,14 @@ def tidy(mask, in_wood, min_area):
 def vectorise(mask, t, wood, min_area=MIN_AREA):
     """The mask as smooth polygons in local metres, kept inside the wood outlines."""
     x0, _, _, y1 = t["box"]
-    m = ndimage.gaussian_filter(np.pad(mask.astype(float), 1), 0.8)
+    # Carried on past the tile's edge before smoothing (and closed off beyond it), so a patch
+    # that goes on next door reaches the edge squarely instead of leaving a gap along it.
+    PAD = 4
+    m = ndimage.gaussian_filter(np.pad(np.pad(mask.astype(float), PAD - 1, mode="edge"), 1), 0.8)
     g = Polygon()
     for cs in find_contours(m, 0.5):
         if len(cs) > 3:
-            g = g.symmetric_difference(Polygon([(x0 + (c - 1 + 0.5) * RES, y1 - (r - 1 + 0.5) * RES) for r, c in cs]).buffer(0))
+            g = g.symmetric_difference(Polygon([(x0 + (c - PAD + 0.5) * RES, y1 - (r - PAD + 0.5) * RES) for r, c in cs]).buffer(0))
     if g.is_empty:
         return []
     inside = Polygon()
