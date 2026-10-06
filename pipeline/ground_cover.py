@@ -1014,13 +1014,16 @@ def bare_mask(ext, tiles, res):
 
 
 def near_masks(ext, tiles):
-    """What the bare ground may touch, per cell: buildings, streets, railway and green."""
+    """What the bare ground may touch, per cell: buildings, streets and paths (and the
+    carriageways among them), railway and green."""
     shape_ = grid(ext, CELL)[0].shape
-    out = {k: np.zeros(shape_, bool) for k in ("building", "road", "rail", "green")}
+    out = {k: np.zeros(shape_, bool) for k in ("building", "road", "carriageway", "rail", "green")}
     for t in tiles:
         burn(out["building"], ext, CELL, [b["rings"] for b in t["buildings"]])
-        for polys in t["roads"].values():
+        for kind, polys in t["roads"].items():
             burn(out["road"], ext, CELL, polys)
+            if kind in ("road", "sett", "bridge"):
+                burn(out["carriageway"], ext, CELL, polys)
         for kind in GREEN:
             burn(out["green"], ext, CELL, t["areas"].get(kind, []))
         burn(out["rail"], ext, CELL, t["areas"].get("ballast", []))
@@ -1111,10 +1114,11 @@ def tile_cover(area, meta, t, around=None, fetch=None, infrared=True, model="kep
     areas = cover_cells.polygons(smooth, (x0, y1), t["box"])
     # Single trees: the tops of the canopy over bare ground, except where the canopy is a wood
     # now, and only with room to stand: a crown reaching over a wall into a street or filling a
-    # small courtyard gets no tree (the game's trees are full-grown).
+    # small courtyard gets no tree (the game's trees are full-grown). Over half of the tops
+    # found lie within 2.5 m of a building: the edge of a crown, or of a roof, not a trunk.
     canopy = (P["ndsm"] > 3) & (P["ndvi"] > 0.15) & mask
     room = np.ones(smooth.shape, bool)
-    for kind, least in (("building", cover_cells.ROOM), ("road", 1.5)):
+    for kind, least in (("building", cover_cells.ROOM), ("carriageway", 1.0)):
         if near[kind].any():
             room &= ndimage.distance_transform_edt(~near[kind]) * CELL >= least
     peaks = peak_local_max(np.where(canopy, ndimage.gaussian_filter(P["ndsm"], 2), 0), min_distance=int(4 / RES), threshold_abs=3)

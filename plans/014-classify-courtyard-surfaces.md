@@ -72,8 +72,9 @@ any generation.
 
 ## Result so far (branch `night-beige`, 6 October 2026)
 
-Status: IN PROGRESS. Code is in place and tried on `ujezd`; the city has not been
-rebuilt and nothing was checked in the game.
+Status: IN PROGRESS. Code is in place, built for `ujezd`, `centrum` and (timed, on a
+clone) the city, and looked at in the game on `centrum`. The shared map has not been
+rebuilt with it.
 
 - `ground_cover.py build` now classifies the surveyed courtyards with the plain
   ground (`bare_mask`: `dtm_yard` no longer counts as covered). The courtyard keeps its

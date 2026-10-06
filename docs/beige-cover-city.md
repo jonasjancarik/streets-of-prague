@@ -221,11 +221,29 @@ politely, at `--jobs` requests at a time):
     cd pipeline
     uv run --group cover ground_cover.py build praha --jobs 10
 
-The last full run of the old code took 7 min 51 s on ten processes on an idle machine. A
-tile now costs more (a quarter more pixels, and its neighbours' photographs are opened
-for the margin), and more tiles qualify: expect 20 to 30 minutes plus the new
-downloads. Not measured: the machine was overloaded on the night this was written
-(16 `ujezd` tiles took 243 s on four processes at a load average near 300).
+Timed on a clone of the city's layers (6 October 2026, the map as built on 5 October):
+8,173 tiles looked at (24 more than before the courtyards counted, so hardly any new
+download), 5,784 with cover, 2,353 outside the photographs, every tile worked out:
+**40 min on eight processes**, 154 minutes of processor time, while other builds kept the
+machine's load average between 50 and 190. The first 3 minutes are one process finding
+the tiles with bare ground. On an idle machine with ten processes that should be 15 to
+20 minutes (not measured); the old code took 7 min 51 s, and a tile now costs about
+1.6 s of processor time against 0.18 s (a quarter more pixels, the neighbours'
+photographs opened for the margin, some thirty Gaussian filters). Then `layers.py praha`
+(or the build without `--no-assemble`) puts the cover into the tiles.
+
+What that build gave, against the cover of 5 October: 1,814 ha classified (1,792
+before): dirt 541 (517), trees 455 (437), gravel 449 (494), asphalt 229 (222), grass
+140 (121); the layer file 46.6 MB (53.6). It was run before the last change to single
+trees and gave 20,011 of them against 81,938: more than half of the canopy tops found
+lie within 2.5 m of a building (the edge of a crown or of a roof, not a trunk), and
+those planted trees against walls. With the final rule (4 m from buildings, 1 m from a
+carriageway; paths no longer count) about a third stay, some 27,000 by a sample of 30
+tiles.
+
+Across the 355 tile edges of `centrum`, points 0.6 m apart either side of an edge have
+different classes in 1.33 % of 2,639 pairs; the same step inside tiles changes class
+in 1.51 % of 4,242. An edge is no longer a place where the class changes.
 
 ### Ground outside IPR's photographs: ČÚZK's orthophoto
 
