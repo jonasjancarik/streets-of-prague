@@ -774,13 +774,15 @@ export class Car {
   // How far open door n is, 0 to 1.
   ajar(n: number) { return this.door ? this.door[n - 1] / DOOR_OPEN : 0; }
 
-  // The doors swing towards where they're meant to be; a car that drives off shuts them.
+  // The doors swing towards where they're meant to be; a car that pulls away shuts them, at a
+  // walking pace already (a patrol car moving off with its officer left behind used to crawl
+  // along with the doors open until it reached 15 km/h).
   swing(dt: number) {
     const d = this.door;
     if (!d) return;
     let open = 0;
     for (let i = 0; i < 4; i++) {
-      if (this.speed > 4) d[4 + i] = 0;
+      if (this.speed > 1.5) d[4 + i] = 0;
       d[i] += clamp(d[4 + i] - d[i], -DOOR_SPEED * dt, DOOR_SPEED * dt);
       open += d[i] + d[4 + i];
     }
