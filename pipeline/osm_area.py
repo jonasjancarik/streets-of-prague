@@ -780,6 +780,8 @@ def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None, ways=(
         blocks += [(b, False) for b in _polys(implied.difference(cut) if cut is not None else implied)]
     out, lawns, fences, drives = [], [], [], []
     made = {"plots": [], "paving": [], "beds": [], "pools": [], "sheds": []}
+    # (Polygon by polygon: joined surfaces span the chunk, and each block needs only its own.)
+    ways = [g for g in shapely.get_parts(np.asarray(ways, dtype=object)) if g.area > 0] if len(ways) else []
     way_tree = STRtree(ways) if len(ways) else None
     street_edge = unary_union(streets).buffer(1.5) if streets else Polygon()
     mapped = unary_union([b.buffer(1.0) for b in barriers]) if len(barriers) else Polygon()
@@ -804,7 +806,7 @@ def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None, ways=(
         out.append(green)
         if fenced and houses >= 0.7 * covered:
             homes_here = [(buildings[k]["id"], shapes[k]) for k in main]
-            through = unary_union([ways[k] for k in way_tree.query(block, predicate="intersects")]) if way_tree is not None else Polygon()
+            through = unary_union([ways[k].intersection(block) for k in way_tree.query(block, predicate="intersects")]) if way_tree is not None else Polygon()
             got = garden_plots.furnish(_plots(block, homes_here), homes_here, [(buildings[k]["kind"], shapes[k]) for k in near],
                                        green, street_edge, mapped, through)
             fences.extend(got["fences"])

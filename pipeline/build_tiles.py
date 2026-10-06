@@ -357,6 +357,7 @@ def build_chunk(job):
         drive_xy = shapely.points([(d["x"], d["y"]) for d in x["drives"]]) if x["drives"] else None
         # What stands on the plots of family houses (plots.py): each plot and shed in the
         # tile that holds its middle, the patches of ground cut to the tile.
+        # (A plot a way cuts through is in pieces: its largest piece is its outline.)
         plot_xy = shapely.points([p["poly"].representative_point().coords[0] for p in x["plots"]]) if x["plots"] else None
         shed_xy = shapely.points([sh[:2] for sh in x["sheds"]]) if x["sheds"] else None
         layer = {}
@@ -378,7 +379,7 @@ def build_chunk(job):
             t["trees"] = [x["trees"][k] for k in shapely.contains(bx, tree_xy).nonzero()[0]] if tree_xy is not None else []
             # Places for a car on a drive (plan 029), each in the tile that holds its middle.
             t["drives"] = [x["drives"][k] for k in shapely.contains(bx, drive_xy).nonzero()[0]] if drive_xy is not None else []
-            t["plots"] = [{"b": p["b"], "ring": _rings(p["poly"], 0.3)[0], **{key: p[key] for key in ("gate", "strip") if key in p}}
+            t["plots"] = [{"b": p["b"], "ring": _rings(max(_polys(p["poly"]), key=lambda g: g.area), 0.3)[0], **{key: p[key] for key in ("gate", "strip") if key in p}}
                           for p in (x["plots"][k] for k in shapely.contains(bx, plot_xy).nonzero()[0])] if plot_xy is not None else []
             t["patches"] = {k: v for k, g in x["patches"].items() if (v := [_rings(p) for p in _polys(g.intersection(bx)) if p.area > 0.2])}
             t["sheds"] = [x["sheds"][k] for k in shapely.contains(bx, shed_xy).nonzero()[0]] if shed_xy is not None else []
