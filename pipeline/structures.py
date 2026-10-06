@@ -54,6 +54,7 @@ SHALLOW = 2.5  # m: a tunnel that never gets this far under the ground is just a
 CLEAR = 5.5  # m between a bridge or tunnel and one crossing it on another layer
 BESIDE = 10.0  # m: two structures this close share lattice points (PAD, and a cell's diagonal)
 SAME = 3.0  # m: two structures further apart in height than this can't share a level
+STAIRS_SAME = 1.5  # m: stairs that leave a bridge's height by this much aren't part of its deck
 NO_HIGHWAY = {"proposed", "construction", "elevator", "platform", "bus_stop", "abandoned", "razed", "planned"}
 STATION_FOOT = {"footway", "steps", "corridor", "pedestrian", "path"}  # a station's ways inside
 STATION = 30.0  # m from a metro station, platform or stop: its corridors and stairs
@@ -738,8 +739,19 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
                     distinct = (ways[k].get("mapped_layer") is not None and ways[ref].get("mapped_layer") is not None
                                 and ways[k]["mapped_layer"] != ways[ref]["mapped_layer"]
                                 and not set(ways[k]["nodes"]) & set(ways[ref]["nodes"]))
-                    if not distinct and abs(out[k].height(np.array([m.x]), np.array([m.y]))[0] - href) < SAME:
-                        on.append(k)
+                    if distinct or abs(out[k].height(np.array([m.x]), np.array([m.y]))[0] - href) >= SAME:
+                        continue
+                    # Stairs down from the deck, folded back beside it, aren't the deck:
+                    # as part of its group their heights went into the deck's lattice
+                    # points, and the footway's last metres sagged towards the stairs'
+                    # foot (Železniční most at Výtoň, 1.8 m). On the bridge only if they
+                    # stay near its height from end to end.
+                    if ways[k]["hw"] == "steps":
+                        q = [inside.interpolate(f, normalized=True) for f in (0.05, 0.95)]
+                        hq = out[k].height(np.array([p.x for p in q]), np.array([p.y for p in q]))
+                        if np.abs(hq - href).max() >= STAIRS_SAME:
+                            continue
+                    on.append(k)
         if on:
             ls = [lines[k] for k in on]
             hs = [out[k].height for k in on]
