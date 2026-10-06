@@ -70,7 +70,7 @@ const checks = `(async () => {
       const paint = m.geometry.getAttribute('paint'), colour = new THREE.Color(cars[i].paint), slot = i % pool.constructor.pageCapacity;
       assert(Math.abs(paint.getX(slot) - colour.r) < 1e-7 && Math.abs(paint.getY(slot) - colour.g) < 1e-7 && Math.abs(paint.getZ(slot) - colour.b) < 1e-7, 'linear paint ' + i);
       assert(m.instanceColor === null, 'fixed parts must not use instanceColor');
-      assert(paint.updateRanges.length === 1 && paint.updateRanges[0].count === m.count * 3, 'active paint upload range');
+      assert(paint.updateRanges.length === 1 && paint.updateRanges[0].count === m.count * paint.itemSize, 'active paint upload range');
     }
     assert(pool.overflowPages >= beforeOverflow + 2, 'overflow counted');
     assert(pages[0].geometry !== pages[1].geometry && pages[0].geometry.getAttribute('paint') !== pages[1].geometry.getAttribute('paint'), 'pages own independent paint buffers');
