@@ -3,7 +3,7 @@
 // roofs and the colour classes on a made-up village, and the parapet inset on awkward rings;
 // and the things on flat roofs (src/map/roofDetails.ts): where they stand and how many.
 import assert from 'node:assert/strict';
-import { roofShapeFor, pitchedColour, cellOf, insetRings } from '../src/map/roofRules.ts';
+import { roofShapeFor, pitchedColour, cellOf, insetRings, neighbourhoodOf, streetOf } from '../src/map/roofRules.ts';
 import { ringSite, planDetails, partArrays } from '../src/map/roofDetails.ts';
 
 const house = (i, w = 9, d = 11) => {
@@ -21,6 +21,19 @@ for (const b of village) {
 const share = flat / village.length;
 assert(share > 0.05 && share < 0.45, 'flat share of houses ' + share);
 assert(Object.keys(tally).length >= 4, 'pitched colours vary');
+
+// A street's houses take after each other all along it, across the 90 m cells; without a
+// street they go by cell as before.
+const streets = [{ name: 'Dlouhá', pts: [[0, -8], [800, -8]] }, { name: 'Krátká', pts: [[400, 60], [400, 400]] }, { name: null, pts: [[0, 2], [800, 2]] }];
+const row = Array.from({ length: 40 }, (_, i) => house(i));
+assert(row.every((b) => streetOf(b.rings[0], streets) === 'Dlouhá'), 'the nearest named street');
+assert.equal(streetOf([[1000, 1000], [1010, 1000], [1010, 1010]], streets), null, 'none within reach');
+const groups = new Set(row.map((b) => neighbourhoodOf([0, 0], b.rings[0], streetOf(b.rings[0], streets))));
+assert.equal(groups.size, 1, 'one neighbourhood along the street');
+assert(new Set(row.map((b) => neighbourhoodOf([0, 0], b.rings[0], null))).size > 5, 'by cell without a street');
+assert.equal(neighbourhoodOf([0, 0], row[0].rings[0], null), cellOf([0, 0], row[0].rings[0]));
+const colourRuns = (key) => { const c = row.map((b) => pitchedColour(b, key(b), 0.5)); const top = Math.max(...Object.values(c.reduce((m, v) => ({ ...m, [v]: (m[v] || 0) + 1 }), {}))); return top / c.length; };
+assert(colourRuns(() => 'street Dlouhá') >= 0.5, 'most roofs on a street share the class of the street');
 
 const big = { id: 'shop', kind: 'retail', h: 6, minh: 0, rings: [[[0, 0], [60, 0], [60, 30], [0, 30]]] };
 assert.equal(roofShapeFor(big, '0,0'), 'flat');

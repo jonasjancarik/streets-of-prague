@@ -1,6 +1,7 @@
 import { dataUrl } from './data.ts';
 import * as telemetry from './telemetry.ts';
 import * as THREE from 'three';
+import { streetOf } from './map/roofRules.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Geo, Grid, rng, hash } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
@@ -1008,9 +1009,9 @@ export class TileWorld {
     // under its footprint. In a tile with IPR buildings, the OSM ones IPR doesn't have
     // (noIpr, see ipr_buildings.py) are still extruded.
     const withIpr = !!(t.ipr && !this.osmBuildings && ipr);
-    const extrude = own.filter((b) => (!withIpr || b.noIpr) && !givesWay(b.rings))
-      .map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))) }));
     const edges = this.driveBy.get(k) || [];
+    const extrude = own.filter((b) => (!withIpr || b.noIpr) && !givesWay(b.rings))
+      .map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))), street: streetOf(b.rings[0], edges) }));
     const clipped = edges.flatMap((e) => clipLine(e.pts, t.box).map((pts) => (
       { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name, level: e.level })));
     // Paid-parking colour of each parking area's bay lines.
