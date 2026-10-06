@@ -165,8 +165,13 @@ with furniture.
   if it shows, limit the skylights (the bulk of the triangles) or build the details on the
   high tier only.
 - No pictures yet of the details in the city's IPR layer after the atria re-run.
-- Neighbour coherence is by 90 m grid cell, so a street crossing a cell edge can change
-  roof class. "Near a church keeps red" was not implemented (no neighbour access in the
+- Neighbour coherence was by 90 m grid cell, so a street crossing a cell edge could change
+  roof class. Since 6 October 2026 (branch `night-maplook`) a building takes after the named
+  street nearest it within 60 m (`streetOf` and `neighbourhoodOf` in `src/map/roofRules.ts`,
+  the street found in `src/tiles.ts` from the tile's own edges) and falls back to the cell
+  only where there is none, as in the countryside tiles. A long street has one dominant
+  class end to end; a building near a tile border whose nearest street lies wholly in the
+  next tile goes by cell. "Near a church keeps red" was not implemented (no neighbour access in the
   worker); farms do keep red.
 - Parapets cost +3,872 triangles in an estate view (+0.33 % of the frame; see "What was
   built"); their frame time was not measurable (about 1 ms with or without).
