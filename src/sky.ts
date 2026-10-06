@@ -43,10 +43,11 @@ const OVERCAST = new THREE.Color('#b3b8bf'), CITY_GLOW = new THREE.Color('#5a4d4
 const SNOWY_GROUND = new THREE.Color('#b9bec6'), LIGHTNING = new THREE.Color('#dfe6ff');
 // Fog and mist, as seen (display colours): by day, at night, at night under clouds.
 const FOG_DAY = new THREE.Color('#b4b9bf'), FOG_NIGHT = new THREE.Color('#1a1e25'), FOG_GLOW = new THREE.Color('#2c2a2b');
+const FOG_SHARE = 0.76; // WebGPU's share of the fog asked for (see Sky.update)
 // The share of lit windows through the day, by the hour.
 const LIT = [0.12, 0.08, 0.06, 0.05, 0.06, 0.12, 0.25, 0.3, 0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.15, 0.25, 0.4, 0.45, 0.45, 0.4, 0.3, 0.2];
 
-const ca = new THREE.Color(), cb = new THREE.Color(), cc = new THREE.Color();
+const ca = new THREE.Color(), cb = new THREE.Color(), cc = new THREE.Color(), seen = new THREE.Color();
 function mix(a: string, b: string, t: number, out: THREE.Color) {
   return out.copy(ca.set(a).convertSRGBToLinear()).lerp(cb.set(b).convertSRGBToLinear(), t).convertLinearToSRGB();
 }
@@ -77,12 +78,33 @@ function toneCurve(x: number) {
   return d + 0.012 * (1 - d);
 }
 
+// The colour that the curve turns into `seen` (linear, as it should reach the screen): the curve
+// undone step by step, lift, S-curve, saturation and roll-off. For what the WebGPU renderer mixes
+// in before the curve but is meant as a colour on the screen (the fog).
+function beforeCurve(seen: THREE.Color, exposure: number, out: THREE.Color) {
+  if (exposure < 0) return out.copy(seen).multiplyScalar(1 / -exposure); // the curve is off (see Sky.curve)
+  const lift = [0.016, 0.012, 0.006], c = [seen.r, seen.g, seen.b].map((y, i) => {
+    const h = Math.min(1, Math.max(0, (y - lift[i]) / (1 - lift[i])));
+    let lo = 0, hi = 1; // the S-curve rises all the way: halve the interval
+    for (let k = 0; k < 20; k++) { const m = (lo + hi) / 2; if (m * 0.65 + m * m * (3 - 2 * m) * 0.35 < h) lo = m; else hi = m; }
+    return (lo + hi) / 2;
+  });
+  // (Mixing towards the brightness keeps the brightness, so it is known here.)
+  const luma = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  const x = c.map((v) => {
+    const u = Math.min(0.999, Math.max(0, (v - 0.12 * luma) / 0.88)), k = 1 - u;
+    return 18 * (Math.sqrt(k * k + u / 9) - k) / exposure;
+  });
+  return out.setRGB(x[0], x[1], x[2]);
+}
+
 export class Sky {
   readonly hemi = new THREE.HemisphereLight();
   readonly sun = new THREE.DirectionalLight();
   // From the light towards the target, and how far back the light sits.
   readonly offset = new THREE.Vector3();
   private renderer: THREE.WebGLRenderer;
+  private webgpu: boolean;
   // The tone curve (graphics.ts). Without it the light is only scaled so that mid-grey
   // comes out as bright as with it; highlights clip instead of rolling off.
   curve = true;
@@ -99,6 +121,7 @@ export class Sky {
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
     this.renderer = renderer;
+    this.webgpu = !!(renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer;
     renderer.toneMapping = THREE.CustomToneMapping;
     scene.add(this.hemi, this.sun, this.sun.target);
     scene.fog = this.fog;
@@ -152,16 +175,28 @@ export class Sky {
     const amount = Math.max(0.08 * w.cloud, 0.2 * w.rain, 0.3 * w.snow, MIST.haze * w.mist);
     this.murk = Math.max(amount, 0.55 * w.mist);
     const day = 1 - night;
-    this.haze.copy(FOG_NIGHT).lerp(FOG_GLOW, w.cloud).lerp(FOG_DAY, day).convertLinearToSRGB();
+    // (The old renderer mixes the fog in after its curve and its sRGB encoding, so it takes the
+    // colour's sRGB numbers as they are; `seen` is the same colour in linear light.)
+    seen.copy(FOG_NIGHT).lerp(FOG_GLOW, w.cloud).lerp(FOG_DAY, day);
+    this.haze.copy(seen).convertLinearToSRGB();
     this.tint.copy(this.haze).multiplyScalar(0.8 + 0.3 * day);
     if (amount < 0.01) this.fog.near = this.fog.far = 1e5;
     else {
-      const x = 0.5 - Math.sin(Math.asin(1 - 2 * amount) / 3); // the inverse of smoothstep
+      // Mixed in before the curve and the sRGB encoding (WebGPU), the same share of fog lightens
+      // dark ground more than mixed in on the screen's colours: measured on wet paving in rain at
+      // 14:00, as much as 1.3 times the share would there. A smaller share makes up for it, at no
+      // cost in the shader. (Surfaces as light as the fog get a little less of it than before.)
+      const share = this.webgpu ? amount * FOG_SHARE : amount;
+      const x = 0.5 - Math.sin(Math.asin(1 - 2 * share) / 3); // the inverse of smoothstep
       this.fog.near = 0.5 * height;
       this.fog.far = this.fog.near + (height - this.fog.near) / x;
     }
-    this.fog.color.copy(this.haze);
     this.renderer.toneMappingExposure = this.curve ? exposure : -toneCurve(0.18 * exposure) / 0.18;
+    // WebGPU mixes the fog in before the tone curve: there it gets the colour the curve turns into
+    // the one meant. (Given the screen's colour, it came out far too light: by day a grey of 0.71
+    // was drawn as 0.80, at night one of 0.10 as 0.45, which read as much thicker fog.)
+    if (this.webgpu) beforeCurve(seen, this.renderer.toneMappingExposure, this.fog.color);
+    else this.fog.color.copy(this.haze);
 
     // Kept a little above the horizon so shadows don't run off for hundreds of metres
     // at sunset; at night the moon stands high in the south-west.
