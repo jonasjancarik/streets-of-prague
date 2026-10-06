@@ -15,6 +15,7 @@ import { fenceArrays } from './map/fences.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE } from './map/furniture.ts';
 import { standingMarks } from './map/utility.ts';
+import { onPolygons } from './map/geo.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords } from './facades.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
@@ -278,7 +279,9 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: furnitureMatrices([]), spots: [] };
   // The surveyed hydrants and phone boxes stand where the survey has them.
   if (ground && data.furnitureEnabled && data.utility?.length) {
-    for (const p of standingMarks(data.utility, data.walk.map((e) => e.pts))) furniture.spots.push({ ...p, z: hAt(p.x, p.y) });
+    // (Not one the game's carriageway covers: its streets are not always as wide as the real ones.)
+    const onRoad = onPolygons([...(data.roads.road || []), ...(data.roads.sett || []), ...(data.roads.dirt || [])]);
+    for (const p of standingMarks(data.utility, data.walk.map((e) => e.pts))) if (!onRoad(p.x, p.y)) furniture.spots.push({ ...p, z: hAt(p.x, p.y) });
     furniture.matrices = furnitureMatrices(furniture.spots);
   }
   // The same solid-cell convention as tree trunks, stamped before parking.
