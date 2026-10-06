@@ -24,7 +24,7 @@ export interface TreeInstances { matrices: Float32Array; colours: Float32Array; 
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
-const WOOD = 200, PARK = 120, GARDEN = 90, ORCHARD = 60, FIELD = 40, FENCE = 1;
+const WOOD = 200, PARK = 120, CLEARING = 100, GARDEN = 90, ORCHARD = 60, FIELD = 40, FENCE = 1;
 // Surveyed greenery (pipeline/ipr_greenery.py): grass where no tree is made up (the
 // survey has the real ones), and groups of shrubs, which are filled with shrubs.
 // A surveyed group of trees is planted like a park, only closer.
@@ -97,6 +97,9 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fill(d.areas.ipr_grove, GROVE);
     fill(d.areas.orchard, ORCHARD);
     fill(d.areas.wood, WOOD);
+    // A clearing inside a wood (pipeline/young_woods.py): open grass, with only the shrubs
+    // and odd young trees of a wood's edge round its rim.
+    fill(d.areas.wood_clearing, CLEARING);
     // Keep trees off everything built or paved.
     fill(d.areas.worn, 0);
     fill(d.areas.square, 0);
@@ -250,7 +253,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     for (let y = geo.minY; y < geo.maxY; y += 2.6) {
       for (let x = geo.minX; x < geo.maxX; x += 2.6) {
         const jx = x + (r() - 0.5) * 2.6, jy = y + (r() - 0.5) * 2.6, v = grid.at(jx, jy);
-        if (v !== GARDEN && v !== PARK && v !== FIELD) continue;
+        if (v !== GARDEN && v !== PARK && v !== FIELD && v !== CLEARING) continue;
         const d = near(jx, jy), pick = r();
         if (!d || surveyed(jx, jy)) continue;
         const fade = d < 3 ? 1 : 0.55, patchy = 0.4 + 1.2 * valueNoise(jx, jy, 18, 0x4b9d);

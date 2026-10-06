@@ -670,6 +670,8 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.worn || []), COLORS.worn, 'dirt', 0.9);
     add(polygons(A.orchard || []), COLORS.orchard, 'grass');
     add(polygons(A.wood || []), COLORS.wood, 'wood');
+    // Clearings inside a wood (pipeline/young_woods.py): unmown grass instead of the dark floor.
+    add(polygons(A.wood_clearing || []), COLORS.park, 'meadow');
     woodEdges();
     for (const [key, color, pattern] of PITCH_LOOKS) add(polygons(A[key] || []), color, pattern);
     add(polygons(A.pitch || []), COLORS.pitch, 'pitch');
