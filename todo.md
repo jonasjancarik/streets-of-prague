@@ -255,13 +255,27 @@ before that day's frame-count fix may be doubled.
 
 ## Gameplay
 
-- **`scene.mjs run all` is unstable:** on 6 October seven full runs on main failed two
-  to five scenarios each, different ones every time (`car-doors`, `courier-bag`,
-  `boat-boarding`, `police-stand-down`, `fire-brigade`, `bike-hit`, `cruise-lock`,
-  `cruise-weir`, `lamp-break`); each passes when run alone. One scenario seems to
-  leave something behind for the next. Three runs with the street-graph forgetting
-  off failed 5, 1 and 0, so that is not ruled in or out. `lamp-break` failed alone
-  before 5 October too.
+- **`scene.mjs run all` is unstable, and was before the night of 5–6 October** (four
+  full runs on `27bc5ef` failed two of twenty each, different ones every time). Causes
+  found on 6 October:
+  - **The arrest reaches into scenarios.** Wanted stars and police cars carry over from
+    one scenario to the next (`police-chase`, a cyclist hit in `bike-hit`), and any
+    scenario that stands on foot with stars can be arrested: the player is led off,
+    can't get into a car, and ends about 750 m away at the station with the stars
+    gone. Seen directly: after `police-chase`, an arrest began in two of five tries
+    and finished in one. It explains `police-stand-down` ("0 cars"), `car-doors`
+    ("515 m from it"), `bridge-exit` ("Not in a car") and "Could not get into the
+    car". The test kit needs to hold arrests off unless a scenario asks for them, and
+    clear stars, police and a running arrest before each scenario.
+  - **`courier-bag` and `bike-hit` wait for a courier to ride past** within two seconds
+    of arriving at Letná; traffic is random, so sometimes there is none (fails alone,
+    one in three). The kit should make one.
+  - **`lamp-break` is marginal by itself** (fails alone three times in four): only one
+    headlamp is within reach of where the blow lands when the wall isn't square to the
+    car; the heading is searched in 10° steps and the live loop runs between steps.
+  - **`wall-crash`** ended at 16.1 km/h against a limit of 15 twice, only in a
+    sequence; `t.car` places a new car without looking for other cars, and several
+    scenarios use the same spot at Karlovo náměstí.
 - **Tyre sounds are off on main** (`TYRE` in `src/audio.ts`); recordings, new engine
   voices, the heavy diesel and measured jet and siren levels wait on `night-audio`.
 - **Fire engines:** about 40 s to clear a narrow street after a fire; cars give little
