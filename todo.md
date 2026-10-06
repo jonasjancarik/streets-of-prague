@@ -28,15 +28,21 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
   (about 5 dB louder), a heavy diesel for fire engines, lorries and buses, a water-jet
   sound, louder sirens. Levels are measured; nobody has heard any of it. Listen on
   `sound-test.html` (old voices kept there), then merge.
-- **`night-pavements` (plan 018 phases 3–4):** surveyed pavements, islands and tram
-  beds, built for `ujezd` only (its tests pass, screenshots judged in the plan's
-  Result); `centrum` and a suburb not built, the pavement step is slow.
+- **`night-pavements` (plan 018 phases 3–4):** ready by its own checks: surveyed
+  pavements, islands and tram beds built for `ujezd`, `centrum` and Petřiny, the
+  pavement step down to seconds, plots start behind surveyed pavements. To look at
+  before merging: driveway cars fall sharply (57 to 17 in `centrum`, 328 to 86 on
+  Petřiny), cobbled pavements become mosaic, surveyed park paths are wider and
+  asphalt grey. Frame time of up to three more ground layers unmeasured.
 - **`night-walls`, rest:** surveyed walls, fences and railings from the technical map
   (`pipeline/dtm_walls.py`), built for `ujezd` only and not seen in the game; a
   surveyed wall may close a gateway or yard. The step edges themselves are in main.
-- **`night-beige` (plan 014):** courtyards classified with the plain ground, seams
-  between tiles fixed, nine painted-photo variants to judge
-  (scratchpad `overnight/night-beige/painted/`). Tried on `ujezd` only.
+- **`night-beige` (plan 014):** ready by its own checks: courtyards classified with
+  the plain ground and seen in the game on `centrum`, seams between tiles gone. To
+  look at before merging: single trees from the photographs drop to about a third
+  citywide (crowns and roof edges near buildings no longer count). The material model
+  from OSM surface tags did worse than the rules and was dropped. Painted-photo
+  variants are in `docs/evidence/painted-photo/`.
 - **`worktree-rust-wgpu`** (never to be merged): the static daylight scene of `ujezd`
   and `centrum` matches the game to about 5–8 levels of mean difference, with tile
   streaming and the sedan's handling; `rust/PARITY.md` on the branch has the status
@@ -45,13 +51,13 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
   (`src/sky.ts`, the night fog) and `night-walls` (`scenarios/step-edges.ts`,
   `src/testkit.ts`).
 
-The shared map data was not rebuilt. Rebuilds the merged work is waiting for:
-`build_lamps.py ujezd centrum praha` (the new lamp rule; look at suburbs at night
-first), IPR's greenery and street marks (`ipr_greenery.py`, `ipr_utility.py`,
-`build_signals.py`; the downloads are in `night-greenery`'s worktree cache), 
-`ipr_terrain.py` for the bridge levels, and `build_tiles.py <area> --layers ground`
-for the gardens and the landmark files (`landmarks.py <area> --rebake`). How to rebuild and
-check: `docs/rebuilding-the-map.md`, `scripts/check-map-rebuild.mjs`.
+The shared maps (`ujezd`, `centrum`, `praha`) were rebuilt from main (`cc721ab`) on
+6 October at 15:02 with all of the above, strict assembly included, and pass
+`check-map-rebuild.mjs` against the map kept in
+`pipeline/.cache/previous-map-2026-10-06` (tile JSON is 16 % bigger for `praha`). The
+re-baked landmark files are in too. Not rebuilt: the lamp files (`build_lamps.py
+ujezd centrum praha`), waiting for a look at dark suburbs. Merging `night-pavements`
+or `night-beige` needs another rebuild (ground, cover, buildings, terrain).
 
 ## Release
 
@@ -249,11 +255,13 @@ before that day's frame-count fix may be doubled.
 
 ## Gameplay
 
-- **Scenarios that fail now and then:** `lamp-break` ("both headlamps are smashed",
-  also "the brake lights are on while braking") on main since before 5 October;
-  `police-stand-down`, `courier-bag` and `ambulance` each failed once in a full run on
-  6 October and passed when run again.
-
+- **`scene.mjs run all` is unstable:** on 6 October seven full runs on main failed two
+  to five scenarios each, different ones every time (`car-doors`, `courier-bag`,
+  `boat-boarding`, `police-stand-down`, `fire-brigade`, `bike-hit`, `cruise-lock`,
+  `cruise-weir`, `lamp-break`); each passes when run alone. One scenario seems to
+  leave something behind for the next. Three runs with the street-graph forgetting
+  off failed 5, 1 and 0, so that is not ruled in or out. `lamp-break` failed alone
+  before 5 October too.
 - **Tyre sounds are off on main** (`TYRE` in `src/audio.ts`); recordings, new engine
   voices, the heavy diesel and measured jet and siren levels wait on `night-audio`.
 - **Fire engines:** about 40 s to clear a narrow street after a fire; cars give little
