@@ -39,9 +39,9 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
 - **`night-pavements` (plan 018 phases 3–4):** surveyed pavements, islands and tram
   beds, built for `ujezd` only (its tests pass, screenshots judged in the plan's
   Result); `centrum` and a suburb not built, the pavement step is slow.
-- **`night-walls`:** tops of quay and retaining walls stop walkers, but a car at
-  50 km/h still gets over a quay wall (scenario `step-edges`); surveyed walls, fences
-  and railings built for `ujezd`, not seen in the game.
+- **`night-walls`, rest:** surveyed walls, fences and railings from the technical map
+  (`pipeline/dtm_walls.py`), built for `ujezd` only and not seen in the game; a
+  surveyed wall may close a gateway or yard. The step edges themselves are in main.
 - **`night-bridges`:** stairs beside a deck get their own level (Železniční most at
   Výtoň), each bridge edge's level handed to the game for paint and tram tracks, two
   offline checks (`check-bridge-decks.mjs`, `check-terrain-spikes.mjs`). Needs one
@@ -191,7 +191,8 @@ before that day's frame-count fix may be doubled.
 
 - **Steps in the ground: what's left.** Steep slopes with no surveyed wall (streets in
   cuttings, the hillside under Letná), where the 4 m lattice still shows; railway
-  cuttings; walls that stop cars and people (they can still go over an edge, and drop);
+  cuttings (the tops of quay and retaining walls now stop cars and people, scenario
+  `step-edges`; stairs across a step untried);
   frame times and the WebGL renderer; a full-city check of the ground cutting. How to
   work on it: `.agents/skills/terrain-steps/SKILL.md`.
 - **Bridges still off:** Železniční most at Výtoň is fixed in code on `night-bridges`
@@ -200,6 +201,8 @@ before that day's frame-count fix may be doubled.
   has ragged corners by the abutment; the Lahovice and Radotín decks are continuous
   now, with one 9.6 m join left at 49.98353, 14.40065. Four decks are too low for a
   cruise boat (tiles `49_37`, `52_43`, `54_48`, `64_76`).
+- **Car streets crossing drops of 7–10 m on the ground** (`node
+  scripts/check-step-edges.mjs praha`): terrain or map faults to look at.
 - **Spikes in the ground:** 1,124 lone points more than 2 m off their neighbours; 402
   come from terrace strips labelling points on a zigzag wall's high side (Vyšehrad).
 - **The river's height is wrong north of Troja** (tiles `49_81`, `50_94`, `50_95`).
