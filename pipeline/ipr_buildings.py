@@ -385,7 +385,10 @@ def borrow_walls(walls, per_tile):
 
     def neighbour(k, own=-1):
         g, kind = walls[k][2], walls[k][3]
-        for reach, same_kind in ((BORROW_TOUCH, True), (BORROW_TOUCH, False), (BORROW_NEAR, True)):
+        # (Measured on ujezd, 6 October 2026: a neighbour sharing a wall is off by ΔE 6.2,
+        # any other building by 9.0, and one of the same kind in the block by 9.8, no
+        # better than chance. So the block is only tried for the error printed below.)
+        for reach, same_kind in ((BORROW_TOUCH, True), (BORROW_TOUCH, False), *(((BORROW_NEAR, True),) if own >= 0 else ())):
             near = [n for n in tree.query(g, predicate="dwithin", distance=reach)
                     if n != own and (not same_kind or walls[have[n]][3] == kind)]
             if near:
