@@ -353,7 +353,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // Onto the nearest tram and into its cab, as F does once you ride one.
     takeTram() {
       const m = g.me(), ride = g.tram.ride;
-      const v = g.tram.list().filter((k) => k.look).sort((a, b) => Math.hypot(a.parts[1].x - m.x, a.parts[1].y - m.y) - Math.hypot(b.parts[1].x - m.x, b.parts[1].y - m.y))[0];
+      const v = g.tram.list().slice().sort((a, b) => Math.hypot(a.parts[1].x - m.x, a.parts[1].y - m.y) - Math.hypot(b.parts[1].x - m.x, b.parts[1].y - m.y))[0];
       if (!v) throw new Error('No tram running near here');
       if (g.mode() !== 'foot') g.enterOrExit();
       ride.board(v as never);

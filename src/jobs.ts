@@ -17,7 +17,7 @@ const RATES = {
   // Prague's regulated street-taxi fare (the same as a street taxi charges you), and a tip for a quick ride.
   taxi: { base: 60, perKm: 36, tip: 80, speed: 6, slack: 45 },
   ambulance: { base: 250, perKm: 120, bonus: 0.5, speed: 7, slack: 40 },
-  tram: { stops: 5, perStop: 60, perHead: 6, limit: 150 },
+  tram: { stops: 5, perStop: 60, perHead: 6, limit: 240 },
   fire: { base: 400, bonus: 300, speed: 6, slack: 40 },
 };
 
