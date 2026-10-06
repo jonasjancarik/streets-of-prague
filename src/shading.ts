@@ -688,6 +688,34 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   return material;
 }
 
+// Thin paint that stays visible from high up (the lines of pitches and courts): a strip
+// keeps its real width while that covers HOLD_PX pixels, and above that is widened
+// about its centre line to stay HOLD_PX wide. A line 12 cm wide is under a pixel from
+// 200 m up, and then fades into the ground round it. The geometry carries `hold` per
+// vertex: its offset from the centre line (x, z) and the strip's width (ground.ts).
+export const HOLD_PX = 1.6;
+const HOLD_SCREEN = { value: 1080 }; // the drawing buffer's height (px), set as a held layer is drawn
+export function held(material: THREE.MeshLambertMaterial, mesh: THREE.Mesh): THREE.MeshLambertMaterial {
+  if (heldBy) return heldBy(material, mesh);
+  const size = new THREE.Vector2();
+  mesh.onBeforeRender = (renderer) => { HOLD_SCREEN.value = renderer.getDrawingBufferSize(size).y; };
+  const before = material.onBeforeCompile, key = material.customProgramCacheKey;
+  material.onBeforeCompile = (sh, r) => {
+    before.call(material, sh, r);
+    sh.uniforms.uHoldScreen = HOLD_SCREEN;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec3 hold; uniform float uHoldScreen;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+  // Metres a pixel covers at this vertex (a perspective camera's; the lines aren't in any other view).
+  float holdPixel = -(modelViewMatrix * vec4(transformed, 1.0)).z * 2.0 / (projectionMatrix[1][1] * uHoldScreen);
+  transformed.xz += hold.xy * (max(1.0, ${HOLD_PX.toFixed(1)} * holdPixel / hold.z) - 1.0);`);
+  };
+  material.customProgramCacheKey = () => `${key.call(material)}-held`;
+  return material;
+}
+let heldBy: typeof held | null = null;
+export const setHeld = (f: typeof held) => { heldBy = f; };
+
 // The WebGPU trial's own version (webgpu.ts), set before any ground is made.
 let patternedBy: typeof patterned | null = null;
 export const setPatterned = (f: typeof patterned) => { patternedBy = f; };

@@ -12,9 +12,10 @@ import { WebGPURenderer, MeshLambertNodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, clamp, transformNormalToView,
+  attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize,
 } from 'three/tsl';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
-import { setPatterned, SKY_REF, GRIT, GRIT_M } from './shading.ts';
+import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M } from './shading.ts';
 import {
   type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, followVec, addPort, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports, skyAmbient,
 } from './webgpu/common.ts';
@@ -233,6 +234,14 @@ function groundMaterial(
   };
   return m as unknown as THREE.MeshLambertMaterial;
 }
+// held() in shading.ts: thin paint widened about its centre line to stay HOLD_PX pixels wide.
+function heldMaterial(material: THREE.MeshLambertMaterial) {
+  const hold = attribute('hold', 'vec3');
+  const pixel = modelViewMatrix.mul(vec4(positionLocal, 1)).z.negate().mul(2).div((cameraProjectionMatrix as N).element(1).y.mul(screenSize.y));
+  const grow = max(1, pixel.mul(HOLD_PX).div(hold.z)).sub(1);
+  (material as unknown as MeshLambertNodeMaterial).positionNode = positionLocal.add(vec3(hold.x, 0, hold.y).mul(grow));
+  return material;
+}
 function groundGraph(id: number, time: { value: number }, { relief, deck, photo }: GroundInputs, dig: boolean, sheltered: boolean, seasonal: boolean) {
   const key = `${id} ${!!relief} ${!!relief?.sky} ${!!deck} ${!!deck?.mask} ${!!photo} ${dig} ${sheltered} ${seasonal}`;
   let byKey = groundGraphs.get(time);
@@ -318,6 +327,7 @@ export function configureRenderer(renderer: WebGPURenderer) {
   const compileAsync = renderer.compileAsync.bind(renderer);
   renderer.compileAsync = (...a: Parameters<typeof compileAsync>) => Promise.race([compileAsync(...a), new Promise<void>((r) => setTimeout(r, 10000))]);
   setPatterned(groundMaterial);
+  setHeld(heldMaterial);
   console.info(`Renderer: three.js WebGPURenderer on ${(renderer.backend as any).isWebGPUBackend ? 'WebGPU' : 'WebGL 2 (no WebGPU here)'}`);
   return renderer as unknown as THREE.WebGLRenderer;
 }

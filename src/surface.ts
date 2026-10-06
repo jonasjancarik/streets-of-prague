@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PATTERN, patterned, DIG } from './shading.ts';
+import { PATTERN, patterned, held, DIG } from './shading.ts';
 
 // A tile's ground as meshes, from the layers ground.ts worked out (in a tile worker):
 // procedural shaders for the surfaces, soft shading at shores and round buildings,
@@ -7,7 +7,8 @@ import { PATTERN, patterned, DIG } from './shading.ts';
 // per level, where it is).
 export interface GroundLayer {
   order: number;
-  geometry: { position: Float32Array; normal: Float32Array; index: Uint32Array; alpha?: Float32Array };
+  // `hold`: thin paint that keeps a width in pixels from high up (see held in shading.ts).
+  geometry: { position: Float32Array; normal: Float32Array; index: Uint32Array; alpha?: Float32Array; hold?: Float32Array };
   color?: string;
   pattern?: string;
   blend?: number | null;
@@ -42,6 +43,10 @@ export class Surfaces {
       g.setIndex(new THREE.BufferAttribute(l.geometry.index, 1));
       const mat = surfaceMaterial(l, time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, l.base ? photo : null);
       const m = new THREE.Mesh(g, mat);
+      if (l.geometry.hold) {
+        g.setAttribute('hold', new THREE.BufferAttribute(l.geometry.hold, 3));
+        held(mat as THREE.MeshLambertMaterial, m);
+      }
       m.renderOrder = l.order;
       // The ground's layers cover each other in their order, not by depth, and write
       // none. But looking over a wall from above it, the ground at its foot is behind

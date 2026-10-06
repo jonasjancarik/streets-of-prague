@@ -88,7 +88,8 @@ function polygons(polys: Polygons): GroundGeometry {
 }
 
 // Quads along polylines, `w` metres wide. `dash` = [on, off] in metres for dashed lines.
-function strips(lines: Point2[][], w: number, dash: Point2 | null = null): GroundGeometry {
+// `hold`: the strip keeps a width in pixels when seen from high up (held in shading.ts).
+function strips(lines: Point2[][], w: number, dash: Point2 | null = null, hold = false): GroundGeometry {
   const pos: number[] = [], idx: number[] = [];
   const quad = (a: Point2, b: Point2) => {
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
@@ -126,7 +127,26 @@ function strips(lines: Point2[][], w: number, dash: Point2 | null = null): Groun
       }
     }
   }
-  return finish(pos, idx);
+  const g = finish(pos, idx);
+  if (!hold) return g;
+  // Each vertex's offset from the centre line it was drawn along (finish() adds vertices
+  // where the strip crosses the terrain's grid, so they are measured afterwards).
+  const segs: number[] = [];
+  for (const pts of lines) for (let i = 0; i < pts.length - 1; i++) segs.push(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+  const P = g.position, out = new Float32Array(P.length);
+  for (let v = 0; v < P.length; v += 3) {
+    const x = P[v], y = -P[v + 2];
+    let best = Infinity, ox = 0, oy = 0;
+    for (let k = 0; k < segs.length && best > 1e-6; k += 4) {
+      const ax = segs[k], ay = segs[k + 1], dx = segs[k + 2] - ax, dy = segs[k + 3] - ay;
+      if (Math.abs(x - ax) > w + Math.abs(dx) && Math.abs(x - segs[k + 2]) > w + Math.abs(dx)) continue;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
+      const qx = x - ax - dx * t, qy = y - ay - dy * t, d = qx * qx + qy * qy;
+      if (d < best) { best = d; ox = qx; oy = qy; }
+    }
+    out[v] = ox; out[v + 1] = -oy; out[v + 2] = w;
+  }
+  return { ...g, hold: out };
 }
 
 // A soft band just outside each ring, fading from `alpha` at the ring to 0.
@@ -638,7 +658,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     woodEdges();
     for (const [key, color, pattern] of PITCH_LOOKS) add(polygons(A[key] || []), color, pattern);
     add(polygons(A.pitch || []), COLORS.pitch, 'pitch');
-    add(strips(d.marks || [], 0.12), COLORS.paint);
+    add(strips(d.marks || [], 0.12, null, true), COLORS.paint);
     add(polygons(A.square || []), COLORS.square, 'slabs');
     add(polygons(A.square_setts || []), COLORS.squareSetts, 'setts');
     add(polygons(A.square_asphalt || []), COLORS.asphalt, 'asphalt');
