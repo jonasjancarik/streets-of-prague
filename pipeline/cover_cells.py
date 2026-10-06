@@ -48,7 +48,12 @@ def down(a, f):
     """Average `a` over f x f blocks."""
     h, w = a.shape[:2]
     a = a[: h - h % f, : w - w % f]
-    return a.reshape(h // f, f, w // f, f, *a.shape[2:]).mean(axis=(1, 3))
+    out = a[0::f, 0::f].astype(np.float32)   # (block by block: several times faster than a mean over two axes)
+    for dy in range(f):
+        for dx in range(f):
+            if dy or dx:
+                out += a[dy::f, dx::f]
+    return out / (f * f)
 
 
 def measure(rgb, cir, dsm, dtm, infrared=True):
