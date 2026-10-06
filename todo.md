@@ -11,7 +11,7 @@ Twenty sessions worked overnight, each on its own branch and worktree
 about 00:20 to 04:55, so most got two to three working hours on a heavily loaded
 machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landmarks`
 (code only), `night-pipeline`, `night-weather`, `night-graphs`, `night-countryside` (behind
-`?countryside`), `night-greenery`, `night-bridges`, and single commits of
+`?countryside`), `night-greenery`, `night-bridges`, `night-gardens`, and single commits of
 `night-renderer` (windows on ground floors, the fog, the start-up report) and `night-maplook`
 (sports lines). Not merged, each with its state written in the plan or doc it names:
 
@@ -28,10 +28,6 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
   (about 5 dB louder), a heavy diesel for fire engines, lorries and buses, a water-jet
   sound, louder sirens. Levels are measured; nobody has heard any of it. Listen on
   `sound-test.html` (old voices kept there), then merge.
-- **`night-gardens` (plans 025, 029):** paved strips, sheds, beds, pools, the `plots`
-  field, fences lit from both sides, hedges on their own ground, a second car by a
-  garage. Counted offline on one chunk, never seen in the game. Then: plots cut back
-  behind mapped pavements, corner gaps, the time of the garden step.
 - **`night-pavements` (plan 018 phases 3–4):** surveyed pavements, islands and tram
   beds, built for `ujezd` only (its tests pass, screenshots judged in the plan's
   Result); `centrum` and a suburb not built, the pavement step is slow.
@@ -62,8 +58,9 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
 The shared map data was not rebuilt. Rebuilds the merged work is waiting for:
 `build_lamps.py ujezd centrum praha` (the new lamp rule; look at suburbs at night
 first), IPR's greenery and street marks (`ipr_greenery.py`, `ipr_utility.py`,
-`build_signals.py`; the downloads are in `night-greenery`'s worktree cache), and
-`ipr_terrain.py` for the bridge levels and the landmark files (`landmarks.py <area> --rebake`). How to rebuild and
+`build_signals.py`; the downloads are in `night-greenery`'s worktree cache), 
+`ipr_terrain.py` for the bridge levels, and `build_tiles.py <area> --layers ground`
+for the gardens and the landmark files (`landmarks.py <area> --rebake`). How to rebuild and
 check: `docs/rebuilding-the-map.md`, `scripts/check-map-rebuild.mjs`.
 
 ## Release
@@ -167,8 +164,9 @@ before that day's frame-count fix may be doubled.
 
 ## Pipeline
 
-- A ground rebuild is almost all `osm_area.extract` (about 5 s for a dense suburban
-  chunk). The gardens could be a layer of their own.
+- A ground rebuild is almost all `osm_area.extract`: about 50 s for the dense suburban
+  chunk 5,8, of which the gardens are 26–32 s (119 s before 6 October). The gardens
+  could be a layer of their own (how is noted in plan 025).
 - Assembly for the whole city takes about 16 s; it could put together only the chunks
   whose layers changed.
 - `pipeline/.cache` is about 39 GB, nearly all of it read by current steps;
@@ -211,18 +209,20 @@ before that day's frame-count fix may be doubled.
 
 ## Map look
 
-- **Gardens (plan 025):** paved strips from the gate (drive cars from plan 029 stand on
-  grass without them), sheds, beds and pools, the `plots` tile field; fences lit from
-  both sides, corner gaps closed, hedge heights against the terrain; crown positions
-  from the photographs.
+- **Gardens (plan 025):** paved strips, sheds, beds, pools, the `plots` field, fences
+  lit from both sides and hedges on their own ground are in main and show after the
+  ground rebuild (seen on one rebuilt chunk, Ořechovka). Left: corner gaps in the
+  data; the `plots` tile field is unread and adds about 12 % to a dense suburban
+  tile's JSON, so trim it or use it; 25 drive places in that chunk still touch a road
+  or path; fences read quite white from above; crown positions from the photographs.
 - **Woods (plan 026):** clearings inside a mapped wood are planted as full-grown wood;
   a few extra small trees along tile borders.
 - **Grass and worn paths (plan 027):** verges aren't a kind of their own; worn paths
   use door proxies, not OSM entrances or the footfall map.
 - **Roofs (plan 028):** re-run `ipr_buildings.py` for the city and look at the school
   atria; roof class can change where a street crosses a 90 m cell.
-- **Parking (plan 029):** a second car in front of a garage; collision bodies on an
-  estate drive unmeasured.
+- **Parking (plan 029):** collision bodies on an estate drive unmeasured (the second
+  car in front of a garage is in).
 - **Sports grounds (plan 030):** lines now hold a width in pixels from high up; road
   paint is as thin and could use the same hold.
 - **Lanes (plan 031):** the pavement-or-verge pass; the gravel shoulder hasn't been
@@ -247,6 +247,11 @@ before that day's frame-count fix may be doubled.
   leaves on a bridge or tunnel, steps 3–6, a phone measurement.
 
 ## Gameplay
+
+- **Scenarios that fail now and then:** `lamp-break` ("both headlamps are smashed",
+  also "the brake lights are on while braking") on main since before 5 October;
+  `police-stand-down`, `courier-bag` and `ambulance` each failed once in a full run on
+  6 October and passed when run again.
 
 - **Tyre sounds are off on main** (`TYRE` in `src/audio.ts`); recordings, new engine
   voices, the heavy diesel and measured jet and siren levels wait on `night-audio`.
