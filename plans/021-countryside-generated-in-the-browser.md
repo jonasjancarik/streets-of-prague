@@ -327,10 +327,14 @@ elevation data's sources if step 4 goes ahead.
 - Heights: the countryside is still flat outwards from the built map's edge, so the
   seam has no step. One built street leaves the map on a bridge or in a tunnel
   (a level of its own); the countryside has no levels, so that one will step.
-- Owed: a scenario that drives out and back on an arterial road; screenshots at the
-  north, east and south (three of the four taken showed cars on bare ground after a
-  far jump with the free camera, cause not found; the west one, at K Nádraží, shows the
-  road crossing the edge in one piece); the phone. On the Pixel 5 measure the time the
+- Pictures from above at K Nádraží (west), Pražská (east), Zdibsko (north) and Slepá
+  (south) show the roads carrying on. A first set of three came out as cars on bare
+  ground: they were taken a second and a half of game time after a far jump, before
+  the tiles had been drawn; waiting for the tile and a few real seconds gives the
+  ground (`World.loaded` has the tile, its JSON has roads).
+- Owed: a scenario that drives out and back on an arterial road (the test API has no
+  way to follow a road yet, and a scenario run without `?countryside` has nothing to
+  check); the phone. On the Pixel 5 measure the time the
   worker takes for the first tile near the edge (it reads the rim tiles), for a tile
   whose vector tiles are new and for one whose are known, the requests and bytes for a
   ten-minute drive out, and whether the road ahead is there at 130 km/h.
