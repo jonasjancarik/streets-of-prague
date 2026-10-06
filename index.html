@@ -135,7 +135,7 @@
       #help kbd, #help-pad kbd { display: inline-block; font: 600 11px/1 Inter, system-ui, sans-serif; background: var(--key); border: 1px solid rgba(236, 228, 214, 0.35); padding: 3px 5px 2px; min-width: 1em; text-align: center; }
       #help .foot, #help-pad .foot { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(236, 228, 214, 0.15); opacity: 0.7; }
       #help section, #help-pad section { display: none; }
-      #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='drive'] .drive-only, #help[data-mode='tram'] .tram-only, #help[data-mode='funicular'] .funicular-only, #help[data-mode='heli'] .heli-only, #help-pad[data-mode='foot'] .foot-only, #help-pad[data-mode='car'] .car-only, #help-pad[data-mode='drive'] .drive-only, #help-pad[data-mode='tram'] .tram-only, #help-pad[data-mode='funicular'] .funicular-only, #help-pad[data-mode='heli'] .heli-only { display: block; }
+      #help[data-mode='foot'] .foot-only, #help[data-mode='car'] .car-only, #help[data-mode='drive'] .drive-only, #help[data-mode='tram'] .tram-only, #help[data-mode='funicular'] .funicular-only, #help[data-mode='ferry'] .ferry-only, #help[data-mode='heli'] .heli-only, #help-pad[data-mode='foot'] .foot-only, #help-pad[data-mode='car'] .car-only, #help-pad[data-mode='drive'] .drive-only, #help-pad[data-mode='tram'] .tram-only, #help-pad[data-mode='funicular'] .funicular-only, #help-pad[data-mode='ferry'] .ferry-only, #help-pad[data-mode='heli'] .heli-only { display: block; }
       #help.folded { width: auto; padding: 6px 10px; }
       #help.folded > :not(.unfold), #help:not(.folded) .unfold { display: none; }
       /* The same card for a game controller, in place of the keyboard's while a pad was the last thing used. */
@@ -627,6 +627,14 @@
           <dt><kbd>E</kbd></dt><dd data-t>Get off while it stands at a station</dd>
         </dl>
       </section>
+      <section class="ferry-only">
+        <h2 data-t>On the ferry</h2>
+        <dl>
+          <dt><kbd>Shift</kbd></dt><dd data-t>Speed up the crossing</dd>
+          <dt><kbd>E</kbd></dt><dd data-t>Get off onto the bank when it reaches a landing</dd>
+        </dl>
+        <p data-t>The ferry takes a PID ticket, like a tram.</p>
+      </section>
       <section class="heli-only">
         <h2 data-t>Flying</h2>
         <dl>
@@ -690,6 +698,14 @@
           <dt><kbd>LB</kbd></dt><dd data-t>Speed up the ride</dd>
           <dt><kbd>X</kbd></dt><dd data-t>Get off while it stands at a station</dd>
         </dl>
+      </section>
+      <section class="ferry-only">
+        <h2 data-t>On the ferry</h2>
+        <dl>
+          <dt><kbd>LB</kbd></dt><dd data-t>Speed up the crossing</dd>
+          <dt><kbd>X</kbd></dt><dd data-t>Get off onto the bank when it reaches a landing</dd>
+        </dl>
+        <p data-t>The ferry takes a PID ticket, like a tram.</p>
       </section>
       <section class="heli-only">
         <h2 data-t>Flying</h2>

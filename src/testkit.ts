@@ -376,11 +376,22 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       b.mesh.visible = true;
       return true;
     },
+    // The first cruise boat onto the fairway at the point nearest `where`, going up the
+    // line (`dir` 1) or down it (-1).
+    cruiseAt(where: Where, dir: 1 | -1 = 1) {
+      const B = g.boats, b = B.list.find(o => o.kind === 'cruise'), [x, y] = kit.toLocal(where);
+      const near = B.courses.map(c => ({ c, ...c.project(x, y) })).sort((p, q) => p.d - q.d)[0];
+      if (!b || !near) return false;
+      const p = near.c.at(near.s);
+      Object.assign(b, { x: p.x, y: p.y, h: dir > 0 ? p.ang : p.ang + Math.PI, v: b.s.speed, w: 0, course: near.c, along: near.s, dir, about: 0, live: true, z: null });
+      b.mesh.visible = true;
+      return true;
+    },
     cruise() {
       const b = g.boats.list.find(o => o.kind === 'cruise' && o.course);
       if (!b || !b.course) return null;
       const [lon, lat] = g.toLonLat(b.x, b.y);
-      return { live: b.live, at: [lat, lon] as Point2, dir: b.dir, turning: b.about > 0, speed: b.v, toEnd: b.dir > 0 ? b.course.length - b.along : b.along,
+      return { live: b.live, at: [lat, lon] as Point2, dir: b.dir, turning: b.about > 0, speed: b.v, toEnd: b.dir > 0 ? b.course.length - b.along : b.along, along: b.along, toBank: b.course.at(b.along).w,
         onWater: g.boats.water.waterAt(b.x, b.y) === true, height: b.z };
     },
     boardBoat() {

@@ -1,12 +1,12 @@
 import type { Scenario } from '../src/testkit.ts';
 
 export default {
-  title: 'A cruise boat on the fairway stops short of a weir and turns round',
+  title: 'A cruise boat on the fairway stops short of a weir without a lock and turns round',
   async run(t) {
     t.exit();
     t.time('14:00');
     t.weather('clear');
-    await t.go([50.0775, 14.4128]); // Masarykovo nábřeží by Mánes, at the Šítkov weir
+    await t.go([50.0085, 14.4008]); // Modřany, by the weir: the map has no lock a boat fits through there
     await t.wait(2);
     if (!t.check('a cruise boat is put on the fairway before the weir', t.cruiseToEnd(200))) return;
     const start = t.cruise()!;
