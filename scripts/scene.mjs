@@ -36,6 +36,9 @@ for (let i = 0; i < rest.length; i++) {
 const PORT = Number(args.port || 5199);
 const URL_BASE = args.url || 'http://localhost:5191/';
 const OUT = args.out || join(tmpdir(), 'scene');
+// How long the game may take to load: minutes on a machine busy with other sessions
+// (SOP_LOAD_TIMEOUT, in seconds).
+const LOAD_TIMEOUT = Number(process.env.SOP_LOAD_TIMEOUT || 180) * 1000;
 const ROOT = new URL('..', import.meta.url).pathname;
 
 // Talking to a running server.
@@ -90,9 +93,9 @@ async function openGame({ show = false } = {}) {
   const place = args.place || 'staromak';
   const q = `?place=${place}&go&day=wed&time=${args.time || '14:00'}&weather=${args.weather || 'clear'}&graphics=${args.graphics || 'high'}&dpr=1${args.date ? `&date=${args.date}` : ''}${args.extra || ''}`;
   const t0 = Date.now();
-  await page.goto(URL_BASE + q);
+  await page.goto(URL_BASE + q, { timeout: LOAD_TIMEOUT });
   const ready = async () => {
-    await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__test, null, { timeout: 180000, polling: 200 });
+    await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__test, null, { timeout: LOAD_TIMEOUT, polling: 200 });
   };
   await ready();
   await page.keyboard.press('KeyH'); // fold the controls card away

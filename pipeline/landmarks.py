@@ -13,6 +13,7 @@ footprint the game hides IPR's and OSM's buildings in.
 
     uv run landmarks.py centrum                 all landmarks in the area
     uv run landmarks.py centrum manes --raw     the mesh's triangles as they are
+    uv run landmarks.py centrum --rebake        baked again from the kept inputs
 
 Needs the area's tiles with IPR's buildings (build_tiles.py, ipr_buildings.py) and
 Blender (on the PATH, in /Applications, or $BLENDER). Writes
@@ -56,6 +57,13 @@ LANDMARKS = {
     "rudolfinum": ["way/30123527"],  # Rudolfinum
     "mikulas": ["way/27859115"],  # Kostel sv. Mikuláše, Staroměstské náměstí
     "okamura": ["way/998156376"],  # Vila Tomia Okamury (House Okamura), Nad Tejnkou 9a, Břevnov; not in IPR's city model, so the mesh as it is
+}
+# Places on a landmark's roofs (lon, lat, radius in metres) where the photographs show
+# something that isn't the roof, a tree reaching over it: what is much darker than the
+# roof there is painted over with the roof (landmark_fill.py). Hand-picked from the
+# landmark's sheet; nothing tells a tree's shadow on a roof from any other shadow.
+PAINT_OVER = {
+    "manes": [(14.414098, 50.077606, 6.5)],  # the tree at the north-east corner
 }
 PAD = 1.5
 BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or "/Applications/Blender.app/Contents/MacOS/Blender"
@@ -104,19 +112,27 @@ def lod3(area: str, osm, tile: float, origin):
     return (np.concatenate(tris) if tris else np.empty((0, 3, 3))), outlines
 
 
-def bake(area: str, name: str, parts, clean: np.ndarray, out: Path):
+def bake(area: str, name: str, parts, clean: np.ndarray, out: Path, crs: str):
     """The mesh's colours on the clean model, by Blender. Its inputs, and the model
     coloured by where each texel's colour came from, are kept for checking (KEEP)."""
     keep = KEEP / area
     keep.mkdir(parents=True, exist_ok=True)
-    high, low, sources = keep / f"{name}.mesh.glb", keep / f"{name}.lod3.obj", keep / f"{name}.sources.glb"
-    write_glb(high, parts)
+    write_glb(keep / f"{name}.mesh.glb", parts)
     v = clean.reshape(-1, 3)
-    low.write_text("".join(f"v {a:.3f} {b:.3f} {c:.3f}\n" for a, b, c in v)
-                   + "".join(f"f {i} {i + 1} {i + 2}\n" for i in range(1, len(v), 3)))
+    (keep / f"{name}.lod3.obj").write_text("".join(f"v {a:.3f} {b:.3f} {c:.3f}\n" for a, b, c in v)
+                                           + "".join(f"f {i} {i + 1} {i + 2}\n" for i in range(1, len(v), 3)))
+    run_blender(area, name, out, crs)
+
+
+def run_blender(area: str, name: str, out: Path, crs: str):
+    """landmark_bake.py on the landmark's kept inputs."""
+    keep = KEEP / area
+    high, low, sources = keep / f"{name}.mesh.glb", keep / f"{name}.lod3.obj", keep / f"{name}.sources.glb"
+    here = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+    spots = ";".join("{:.2f},{:.2f},{}".format(*here.transform(lon, lat), r) for lon, lat, r in PAINT_OVER.get(name, []))
     r = subprocess.run([BLENDER, "-b", "--factory-startup", "-P", str(Path(__file__).with_name("landmark_bake.py")),
-                        "--", str(low), str(high), str(out), "5", str(sources)], capture_output=True, text=True)
-    said = [l for l in r.stdout.splitlines() if l.startswith("clean model:") or "Error" in l]
+                        "--", str(low), str(high), str(out), "5", str(sources), spots or "-"], capture_output=True, text=True)
+    said = [l for l in r.stdout.splitlines() if l.startswith("clean model:") or "texels of walls" in l or "Error" in l]
     if r.returncode or not out.exists():
         raise SystemExit(f"{name}: Blender failed\n{r.stdout[-2000:]}\n{r.stderr[-2000:]}")
     print(f"{name}: " + "; ".join(said))
@@ -172,7 +188,7 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
     glb = out / f"{name}.glb"
     if len(clean):
         print(f"{name}: {len(outlines)} of IPR's buildings, {len(clean)} triangles")
-        bake(area, name, parts, clean, glb)
+        bake(area, name, parts, clean, glb, crs)
     else:
         if not raw:
             print(f"{name}: no IPR buildings there, so the mesh's triangles as they are")
@@ -184,6 +200,19 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
     polys = list(foot.geoms) if foot.geom_type == "MultiPolygon" else [foot]
     return {"name": name, "file": f"landmarks/{name}.warm-v1.glb", "polygons": [mapping(q)["coordinates"] for q in polys],
             "home": f"{int((cx + ox) // tile)}_{int((cy + oy) // tile)}", "tiles": tiles}
+
+
+def rebake(area: str, name: str, crs: str) -> str:
+    """The landmark baked again from its kept inputs (a change in landmark_bake.py or
+    PAINT_OVER), without the mesh's nodes or IPR's sheets; a landmark that is the mesh
+    as it is only gets its warmed copy again. Returns the file for landmarks.json."""
+    glb = OUT / f"{area}_now" / "landmarks" / f"{name}.glb"
+    if (KEEP / area / f"{name}.lod3.obj").exists():
+        run_blender(area, name, glb, crs)
+    warmed = glb.with_name(f"{name}.warm-v1.glb")
+    convert_file(glb, warmed)
+    print(f"{name}: {glb.stat().st_size / 1e6:.1f} MB original, {warmed.stat().st_size / 1e6:.1f} MB warmed")
+    return f"landmarks/{warmed.name}"
 
 
 def write_glb(path: Path, parts) -> int:
@@ -224,12 +253,20 @@ def main():
     ap.add_argument("names", nargs="*", help="landmarks to cut (default: all)")
     ap.add_argument("--level", type=int, default=None, help="mesh level to take (default: the finest, 16)")
     ap.add_argument("--raw", action="store_true", help="the mesh's triangles as they are, not baked onto IPR's city model")
+    ap.add_argument("--rebake", action="store_true", help="bake again from the inputs kept in pipeline/.cache/landmarks, "
+                    "for a change in the bake; the footprints in landmarks.json stay as they are")
     a = ap.parse_args()
     meta = json.loads((LAYERS / a.area / "meta.json").read_text())
     index = json.loads((OUT / f"{a.area}_now" / "index.json").read_text())
     listing = OUT / f"{a.area}_now" / "landmarks.json"
     done = {l["name"]: l for l in json.loads(listing.read_text())} if listing.exists() else {}
     for name in a.names or LANDMARKS:
+        if a.rebake:
+            if name in done:
+                done[name]["file"] = rebake(a.area, name, meta["crs"])
+            else:
+                print(f"{name}: skipped, not in {listing.name} yet")
+            continue
         try:
             done[name] = cut(a.area, name, LANDMARKS[name], a.level, meta["crs"], index.get("iprRef", 180.0), index["tile"], index["origin"], a.raw)
         except LookupError as e:

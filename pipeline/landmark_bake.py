@@ -2,7 +2,7 @@
 landmark's piece of IPR's photorealistic mesh onto its clean model from IPR's city
 model (LOD3), and writes that as a GLB.
 
-    blender -b --factory-startup -P landmark_bake.py -- low.obj high.glb out.glb [cm_per_px] [sources.glb]
+    blender -b --factory-startup -P landmark_bake.py -- low.obj high.glb out.glb [cm_per_px] [sources.glb] [spots]
 
 Both inputs are in the game's coordinates (y up), as is the result. The clean model is
 welded, its coplanar triangles merged into faces and its undersides dropped; it gets
@@ -15,12 +15,20 @@ wall's come from a ray cast inwards from a little outside it, or where the two m
 are further apart than that, from a second, longer ray. Where that ray meets the
 underside of something (an onion dome bulging out over the simpler drum the clean
 model has, whose shaded underside the camera never sees), the wall takes what's seen
-from above instead. Anything still missing is filled in from around it.
+from above instead. A wall's texels no ray found the mesh for (its lowest metres behind
+neighbouring houses) repeat the same wall from above them, and `spots` ("x,y,radius;…",
+metres, the model's x and its north) are places on roofs where what is much darker
+than the roof (a tree reaching over it) is painted over with the roof's colour round it
+(landmark_fill.py). Anything still missing is filled in from around it.
 
 `sources.glb`, if given, is the same model with each texel coloured by where its colour
 came from, for checking a landmark: red from above on a roof, orange from above on a
-wall (under something), green straight in, blue straight in from further off, white
-filled in (no ray found the mesh).
+wall (under something), green straight in, blue straight in from further off, yellow
+taken from elsewhere on the same face (a gap on a wall, a spot painted over), white
+filled in from around it (no ray found the mesh).
+
+LANDMARK_DEBUG=<file.npz> keeps the images the fills work on, to try landmark_fill.py
+on them without baking again.
 """
 import math
 import os
@@ -31,10 +39,14 @@ import bpy
 import numpy as np
 from mathutils import Vector
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import landmark_fill as fill  # noqa: E402
+
 args = sys.argv[sys.argv.index("--") + 1:]
 low_path, high_path, out_path = map(os.path.abspath, args[:3])
 CM = float(args[3]) if len(args) > 3 else 5.0
-sources_path = os.path.abspath(args[4]) if len(args) > 4 else None
+sources_path = os.path.abspath(args[4]) if len(args) > 4 and args[4] != "-" else None
+spots = [tuple(map(float, t.split(","))) for t in args[5].split(";")] if len(args) > 5 and args[5] not in ("", "-") else []
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scene = bpy.context.scene
@@ -115,36 +127,47 @@ bake.use_pass_indirect = False
 bake.use_pass_color = True
 
 
-# For the bakes of which way the mesh faces where a ray met it: its normal's height,
-# from 0.1 (straight down) to 1 (straight up), so that black still means a miss.
-facing = bpy.data.materials.new("facing")
-facing.use_nodes = True
-fn = facing.node_tree
-for n in list(fn.nodes):
-    fn.nodes.remove(n)
-geo, sep = fn.nodes.new("ShaderNodeNewGeometry"), fn.nodes.new("ShaderNodeSeparateXYZ")
-mp, emit, out = fn.nodes.new("ShaderNodeMapRange"), fn.nodes.new("ShaderNodeEmission"), fn.nodes.new("ShaderNodeOutputMaterial")
-mp.inputs["From Min"].default_value, mp.inputs["To Min"].default_value = -1.0, 0.1
-fn.links.new(geo.outputs["True Normal"], sep.inputs[0])
-fn.links.new(sep.outputs["Z"], mp.inputs["Value"])
-fn.links.new(mp.outputs["Result"], emit.inputs["Color"])
-fn.links.new(emit.outputs["Emission"], out.inputs["Surface"])
+def emitting(name, value):
+    """A material that shows one number of the mesh where a ray met it, for a bake:
+    `value(nodes, links)` builds the nodes and returns the socket to show."""
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    t = m.node_tree
+    for n in list(t.nodes):
+        t.nodes.remove(n)
+    emit, out = t.nodes.new("ShaderNodeEmission"), t.nodes.new("ShaderNodeOutputMaterial")
+    t.links.new(value(t.nodes, t.links), emit.inputs["Color"])
+    t.links.new(emit.outputs["Emission"], out.inputs["Surface"])
+    return m
 
 
-def bake_into(name, extrusion, reach, normals=False):
-    """The mesh's base colour (or with `normals`, which way it faces, see `facing`) by
-    rays from `extrusion` m outside the clean surface inwards, at most `reach` m long;
-    black where none found it."""
-    im = bpy.data.images.new(name, size, size, float_buffer=normals)
+def _facing(nodes, links):
+    geo, sep, mp = nodes.new("ShaderNodeNewGeometry"), nodes.new("ShaderNodeSeparateXYZ"), nodes.new("ShaderNodeMapRange")
+    mp.inputs["From Min"].default_value, mp.inputs["To Min"].default_value = -1.0, 0.1
+    links.new(geo.outputs["True Normal"], sep.inputs[0])
+    links.new(sep.outputs["Z"], mp.inputs["Value"])
+    return mp.outputs["Result"]
+
+
+# Which way the mesh faces where a ray met it: its normal's height, from 0.1 (straight
+# down) to 1 (straight up), so that black still means a miss.
+facing = emitting("facing", _facing)
+
+
+def bake_into(name, extrusion, reach, value=None):
+    """The mesh's base colour (or with `value`, a material from `emitting`, that
+    number) by rays from `extrusion` m outside the clean surface inwards, at most
+    `reach` m long; black where none found it."""
+    im = bpy.data.images.new(name, size, size, float_buffer=value is not None)
     tex.image = im
     bake.cage_extrusion = extrusion
     bake.max_ray_distance = reach
     select(high, low, active=low)
     own = [s.material for s in high.material_slots]
-    if normals:
+    if value:
         for s in high.material_slots:
-            s.material = facing
-    bpy.ops.object.bake(type="EMIT" if normals else "DIFFUSE")
+            s.material = value
+    bpy.ops.object.bake(type="EMIT" if value else "DIFFUSE")
     for s, m in zip(high.material_slots, own):
         s.material = m
     px = np.empty(size * size * 4, np.float32)
@@ -153,28 +176,40 @@ def bake_into(name, extrusion, reach, normals=False):
     return px.reshape(size, size, 4)
 
 
-def roof_mask():
-    """The texels of the roofs' UV islands."""
-    mask = np.zeros((size, size), bool)
-    uv = me.uv_layers.active.data
+def texels():
+    """Which face of the clean model each texel is on (-1: none), and where on it (the
+    model's coordinates, metres)."""
+    face = np.full((size, size), -1, np.int32)
+    pos = np.zeros((size, size, 3), np.float32)
+    uvs = np.empty(len(me.loops) * 2, np.float32)
+    me.uv_layers.active.data.foreach_get("uv", uvs)
+    uvs = uvs.reshape(-1, 2) * size
+    co = np.empty(len(me.vertices) * 3, np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
     ys, xs = np.mgrid[0:size, 0:size]
-    for f in me.polygons:
-        if f.normal.z <= ROOF:
+    me.calc_loop_triangles()
+    for t in me.loop_triangles:
+        a, b, c = (uvs[i] for i in t.loops)
+        area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        if abs(area) < 1e-9:
             continue
-        pts = [np.array(uv[i].uv) * size for i in f.loop_indices]
-        for a, b, c in ((pts[0], pts[k], pts[k + 1]) for k in range(1, len(pts) - 1)):
-            x0, y0 = np.floor(np.minimum(np.minimum(a, b), c)).astype(int).clip(0, size - 1)
-            x1, y1 = np.ceil(np.maximum(np.maximum(a, b), c)).astype(int).clip(0, size - 1)
-            px_, py_ = xs[y0:y1 + 1, x0:x1 + 1] + 0.5, ys[y0:y1 + 1, x0:x1 + 1] + 0.5
-            e = [(q[0] - p[0]) * (py_ - p[1]) - (q[1] - p[1]) * (px_ - p[0]) for p, q in ((a, b), (b, c), (c, a))]
-            inside = ((e[0] >= 0) & (e[1] >= 0) & (e[2] >= 0)) | ((e[0] <= 0) & (e[1] <= 0) & (e[2] <= 0))
-            mask[y0:y1 + 1, x0:x1 + 1] |= inside
-    return mask
+        x0, y0 = np.floor(np.minimum(np.minimum(a, b), c)).astype(int).clip(0, size - 1)
+        x1, y1 = np.ceil(np.maximum(np.maximum(a, b), c)).astype(int).clip(0, size - 1)
+        px_, py_ = xs[y0:y1 + 1, x0:x1 + 1] + 0.5, ys[y0:y1 + 1, x0:x1 + 1] + 0.5
+        # Each corner's weight at the texel's middle: inside where none is negative.
+        w = [((q[0] - p[0]) * (py_ - p[1]) - (q[1] - p[1]) * (px_ - p[0])) / area for p, q in ((b, c), (c, a), (a, b))]
+        inside = (w[0] >= 0) & (w[1] >= 0) & (w[2] >= 0)
+        face[y0:y1 + 1, x0:x1 + 1][inside] = t.polygon_index
+        pa, pb, pc = (co[i] for i in t.vertices)
+        pos[y0:y1 + 1, x0:x1 + 1][inside] = (w[0][..., None] * pa + w[1][..., None] * pb + w[2][..., None] * pc)[inside]
+    return face, pos
 
 
-def bake_from_above(name, rise=30.0):
-    """Colours by rays straight down from `rise` m above, through a cage: the clean
-    model lifted. On a wall, a ray runs down its face, meeting whatever is over it."""
+def bake_from_above(name, value=None, rise=30.0):
+    """Colours (or `value`, as in bake_into) by rays straight down from `rise` m above,
+    through a cage: the clean model lifted. On a wall, a ray runs down its face, meeting
+    whatever is over it."""
     cage = low.copy()
     cage.data = low.data.copy()
     bpy.context.collection.objects.link(cage)
@@ -183,7 +218,7 @@ def bake_from_above(name, rise=30.0):
     bake.use_cage = True
     bake.cage_object = cage
     try:
-        return bake_into(name, 0.0, rise + 20.0)
+        return bake_into(name, 0.0, rise + 20.0, value)
     finally:
         bake.use_cage = False
         bpy.data.objects.remove(cage)
@@ -201,31 +236,38 @@ use_far = missed(near)
 side = np.where(use_far[..., None], far, near)
 # Which way the mesh faces where those rays met it (see `facing`): below 0.4, its
 # normal points down at least a little.
-up = np.where(use_far, bake_into("far_n", 3.0, 8.0, True)[..., 0], bake_into("near_n", 1.5, 3.5, True)[..., 0])
+up = np.where(use_far, bake_into("far_n", 3.0, 8.0, facing)[..., 0], bake_into("near_n", 1.5, 3.5, facing)[..., 0])
 under = ~missed(side) & (up > 0.1) & (up < 0.4)
 above = bake_from_above("above")
-roofs = roof_mask()
+face, where = texels()
+roofs = (face >= 0) & np.array([f.normal.z > ROOF for f in me.polygons])[face]
 from_above = (roofs | under) & ~missed(above)
 px = np.where(from_above[..., None], above, side)
 hole = missed(px)
+del near, far, side, above
+normals = np.array([f.normal[:] for f in me.polygons])
+if os.environ.get("LANDMARK_DEBUG"):
+    np.savez(os.environ["LANDMARK_DEBUG"], px=px, hole=hole, face=face, where=where, roofs=roofs, normals=normals)
+# The walls' gaps repeat the same wall from above them. What is to be painted over on
+# the roofs takes the colour of its own faces round it, smoothly: a roof's seams
+# copied along the slope showed as stripes.
+seen = ~hole & (face >= 0)
+copied = fill.copy_along(px, hole & (face >= 0) & ~roofs, seen, face, where, normals)
+paint = fill.dark_spots(px, face, where, roofs & seen, spots) if spots else np.zeros_like(hole)
+if paint.any():
+    around = seen & ~paint & np.isin(face, np.unique(face[paint]))
+    px[paint, :3] = fill.push_pull(px[..., :3], around)[paint]
+print(f"{int(copied.sum())} texels of walls copied from above them, {int(paint.sum())} of roofs painted over")
+hole &= ~copied
 # Where each texel's colour came from, for sources.glb (see the top), later cases winning.
 sources = np.ones_like(px)
 for mask, colour in ((~hole, (0.2, 0.8, 0.2)), (~hole & use_far, (0.1, 0.3, 0.9)), (from_above & ~roofs, (1, 0.6, 0)),
-                     (from_above & roofs, (0.8, 0.1, 0.1)), (hole, (1, 1, 1))):
+                     (from_above & roofs, (0.8, 0.1, 0.1)), (copied | paint, (1, 0.9, 0.3)), (hole, (1, 1, 1))):
     sources[mask, :3] = colour
 
-# Fill the rest from around it (push-pull: average down, then back up), which also
-# bleeds the islands' edges outwards for the texture's mipmaps.
-levels = [(px[..., :3] * ~hole[..., None], (~hole).astype(np.float32))]
-while levels[-1][1].shape[0] > 1:
-    r, w = levels[-1]
-    n = r.shape[0] // 2
-    levels.append((r.reshape(n, 2, n, 2, 3).sum((1, 3)), w.reshape(n, 2, n, 2).sum((1, 3))))
-fill = levels[-1][0] / np.maximum(levels[-1][1], 1e-6)[..., None]
-for r, w in reversed(levels[:-1]):
-    fill = np.repeat(np.repeat(fill, 2, 0), 2, 1)
-    fill = np.where((w > 0)[..., None], r / np.maximum(w, 1e-6)[..., None], fill)
-px[..., :3] = np.where(hole[..., None], fill, px[..., :3])
+# Fill the rest from around it, which also bleeds the islands' edges outwards for the
+# texture's mipmaps.
+px[..., :3] = np.where(hole[..., None], fill.push_pull(px[..., :3], ~hole), px[..., :3])
 px[..., 3] = 1
 img = bpy.data.images.new("landmark", size, size)
 img.pixels.foreach_set(px.ravel())
