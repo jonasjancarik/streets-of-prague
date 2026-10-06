@@ -232,6 +232,67 @@ def merge_cover(t: dict, cover: dict):
     t["trees"] = [*known, *fresh]
 
 
+def greenery_processing() -> list:
+    return [build_cache.digest(Path(__file__).with_name("ipr_greenery.py").read_bytes())]
+
+
+def utility_processing() -> list:
+    return [build_cache.digest(Path(__file__).with_name("ipr_utility.py").read_bytes())]
+
+
+def surveyed_layer(area, name, processing, meta, command, strict):
+    """An optional layer made from a survey (ipr_greenery.py, ipr_utility.py), or None if it
+    isn't there or was made by other code, from other downloads or for other tiles."""
+    layer = read_layer(area, name)
+    if layer and not (layer.get("tile") == meta["tile"] and layer.get("processing") == processing
+                      and build_cache.sources_current(layer.get("sources", {}))):
+        message = f"{area}: the {name} layer was made by other code or from other sources; run {command} build {area}"
+        if strict:
+            raise SystemExit(message)
+        print(message)
+        return None
+    return layer
+
+
+def merge_greenery(t: dict, green: dict, cover: dict | None):
+    """Put IPR's surveyed greenery (ipr_greenery.py) into a tile: its lawns, meadows, beds and
+    shrub groups as areas of their own, its groups of trees as wood, its hedges among the
+    fences and its single shrubs. Where it has something it stands for what was guessed
+    there: the photos' tree canopy and single trees (`cover`, the tile's ground cover
+    before it is merged; changed in place) give way inside it."""
+    from shapely import STRtree, points, prepare, union_all
+    from shapely.geometry import LineString, Polygon
+    areas = dict(t["areas"])
+    shapes = [Polygon(p[0], p[1:]).buffer(0) for polys in green["areas"].values() for p in polys]
+    if cover and shapes and (cover["areas"].get("trees") or cover["trees"]):
+        known = union_all(shapes)
+        prepare(known)
+        canopy = []
+        for p in cover["areas"].get("trees", []):
+            g = Polygon(p[0], p[1:]).buffer(0)
+            if not known.intersects(g) or known.intersection(g).area < 0.5 * g.area:
+                canopy.append(p)
+        cover["areas"] = {**cover["areas"], "trees": canopy}
+        cover["trees"] = [p for p in cover["trees"] if not known.contains(points(p[0], p[1]))]
+    for key, polys in green["areas"].items():
+        key = "wood" if key == "ipr_grove" else key
+        areas[key] = [*areas.get(key, []), *polys]
+    t["areas"] = areas
+    if green["hedges"]:
+        # A hedge the map already has (OSM's, or one made up along a plot) stays as it is.
+        mapped = [LineString(f["pts"]) for f in t["fences"] if f["kind"] == "hedge" and len(f["pts"]) > 1]
+        tree = STRtree(mapped) if mapped else None
+        fresh = []
+        for h in green["hedges"]:
+            line = LineString(h["pts"])
+            if tree is not None and len(tree.query(line.interpolate(0.5, normalized=True), predicate="dwithin", distance=1.5)):
+                continue
+            fresh.append({"kind": "hedge", "h": h["h"], "pts": h["pts"]})
+        t["fences"] = [*t["fences"], *fresh]
+    if green["shrubs"]:
+        t["shrubs"] = green["shrubs"]
+
+
 def building_key(b: dict) -> str:
     """Names one building in a tile across builds: its OSM id and first corner."""
     x, y = b["rings"][0][0]
@@ -310,6 +371,8 @@ def assemble(area: str, strict=False) -> dict:
             raise SystemExit(message)
         print(message)
         young = None
+    greenery = surveyed_layer(area, "greenery", greenery_processing(), meta, "ipr_greenery.py", strict)
+    utility = surveyed_layer(area, "utility", utility_processing(), meta, "ipr_utility.py", strict)
     for name, layer in (("ipr", ipr), ("terrain", terrain)):
         current = (layer and layer.get("dependencies") == dependency_snapshot(area, DEPENDENCIES[name])
                    and layer.get("processing") == processing and build_cache.sources_current(layer.get("sources", {}))
@@ -371,6 +434,7 @@ def assemble(area: str, strict=False) -> dict:
     out_of_date = young_out_of_date = 0
     for i, j, t in tiles(area, meta):
         k = f"{i}_{j}"
+        merged_green = False
         # Where its woods are young, if made for the woods and heights as they are now.
         if young and k in young["inputs"]:
             if young["inputs"][k] != young_key(t, height_digest(terrain, k)):
@@ -382,7 +446,17 @@ def assemble(area: str, strict=False) -> dict:
             if cover["inputs"][k] != cover_key(t, height_digest(terrain, k)):
                 out_of_date += 1
             elif k in cover["tiles"]:
-                merge_cover(t, cover["tiles"][k])
+                own = dict(cover["tiles"][k])
+                # (IPR's surveyed greenery first: the photos' trees give way inside it.)
+                if greenery and k in greenery["tiles"]:
+                    merge_greenery(t, greenery["tiles"][k], own)
+                    merged_green = True
+                merge_cover(t, own)
+        if greenery and k in greenery["tiles"] and not merged_green:
+            merge_greenery(t, greenery["tiles"][k], None)
+        # What lies in and stands on its streets (ipr_utility.py): [x, y, kind].
+        if utility and utility["tiles"].get(k):
+            t["utility"] = utility["tiles"][k]
         got = ipr and ipr["tiles"].get(k)
         if got:
             missing = set(got["noIpr"])
