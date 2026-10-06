@@ -27,6 +27,21 @@ assert.ok(slabs.order < setts.order && setts.order < loose.order && loose.order 
 assert.equal(COLORS.pavement, '#92908c');
 assert.notEqual(COLORS.dtmYard, COLORS.pavement);
 
+// Surveyed pavements lie over the greenery and the footways' ribbons, under the
+// carriageways; a tram's own bed lies over the carriageway beside it.
+const paved = make({ park: poly }, { path: poly, pavement: poly, pavement_asphalt: poly, sett: poly, road: poly, trambed: poly });
+const ribbon = paved.find((item) => item.color === COLORS.path && item.pattern === 'mosaic');
+const mosaic = paved.findLast((item) => item.color === COLORS.path && item.pattern === 'mosaic');
+const plain = paved.findLast((item) => item.color === COLORS.pavement && item.pattern === 'asphalt');
+const bed = layer(paved, COLORS.ballast, 'gravel');
+const carriageway = paved.findLast((item) => item.color === COLORS.asphalt && item.pattern === 'asphalt');
+for (const item of [ribbon, mosaic, plain, bed, carriageway]) assert.ok(item);
+assert.ok(!plain.base && ribbon.order < plain.order && plain.order < mosaic.order, 'surveyed pavements over the ribbons');
+assert.ok(layer(paved, COLORS.park, 'grass').order < plain.order, 'surveyed pavements over the greenery');
+assert.ok(mosaic.order < layer(paved, COLORS.sett, 'setts').order && mosaic.order < carriageway.order, 'carriageways over the pavements');
+assert.ok(carriageway.order < bed.order, 'a tram bed over the carriageway');
+assert.equal(road.order, carriageway.order, 'the carriageway slot is stable across tiles');
+
 const sparse = make({ square_setts: poly, dtm_pitch: poly }, {});
 assert.equal(layer(sparse, COLORS.squareSetts, 'setts').order, setts.order,
   'square sett slot must be stable across tiles');
