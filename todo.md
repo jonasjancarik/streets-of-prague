@@ -12,7 +12,7 @@ about 00:20 to 04:55, so most got two to three working hours on a heavily loaded
 machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landmarks`
 (code only), `night-pipeline`, `night-weather`, `night-graphs`, `night-countryside` (behind
 `?countryside`), and single commits of
-`night-renderer` (windows on ground floors, start-up report) and `night-maplook`
+`night-renderer` (windows on ground floors, the fog, the start-up report) and `night-maplook`
 (sports lines). Not merged, each with its state written in the plan or doc it names:
 
 - **`night-play-subdomain` (plan 024):** everything prepared, nothing deployed. Confirm
@@ -57,9 +57,6 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
 - **`night-beige` (plan 014):** courtyards classified with the plain ground, seams
   between tiles fixed, nine painted-photo variants to judge
   (scratchpad `overnight/night-beige/painted/`). Tried on `ujezd` only.
-- **`night-renderer`, rest:** fog mixed before the tone curve (day closer to the old
-  look, night now darker than it); the sky-view neighbour filter (a reading of zero
-  sky textures after it is unexplained).
 - **`night-maplook`, rest:** clearings inside mapped woods (changes every wood; needs
   the young layer rebuilt and a comparison with the photos).
 - **`worktree-rust-wgpu`** (never to be merged): the static daylight scene of `ujezd`
@@ -156,15 +153,16 @@ before that day's frame-count fix may be doubled.
   for the adapter, 15 s for the device). The error report now carries the stage, the
   time, frames drawn and whether the tab was hidden. Next: start without our own
   adapter request and without `timestamp-query`, and with a frame loop running.
-- **WebGPU against the old look:** fog in rain and snow is still mixed in before the
-  tone curve (a fix is on `night-renderer`; it makes the night darker than the old
-  look); the mosaic texture's cost isn't measured.
+- **WebGPU against the old look:** the night frame is lighter on WebGPU than on WebGL
+  even without fog (lamp-lit paving 0.29 against 0.20); the mosaic texture's cost
+  isn't measured.
 - **`Route.ahead` in `traffic.update`** (the fix for taxis stalling) adds a little work
   per car: a `bench.mjs --ab` is owed.
 - **The WebGL renderer and the GLSL** are unmaintained at `?renderer=webgl`; delete them
   or say they stay.
 - **Sky view:** a wall at a tile's edge doesn't learn about a neighbour that arrives
-  later; landmarks have none; `fill()` tests every building.
+  later; landmarks have none; neighbours' buildings are now filtered by box before
+  the job (saving unmeasured).
 - **Cloud shadows:** at gameplay zoom a patch reads as a slow brightness drift; trees
   have none on the GLSL path; the wet ground's mirror ignores them.
 - **Tree meshes:** check with `--stalls` whether the third (shrub) mesh adds shader
