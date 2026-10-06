@@ -123,7 +123,16 @@ const STREET_CELL = 50, REACH_ARM = 30;
 // and the utility map has few of those: a street with no lamp within REACH gets one
 // hung over it every SPACING metres, but only where a building stands on each side
 // within WALL of it to take the cables (elsewhere a lamp would hang from nothing).
+// Which streets: those OSM knows to be lit (lit.bin.gz, pipeline/build_lamps.py). A
+// street it knows to be dark gets none, and neither does one it says nothing about:
+// most of those are suburban streets whose surveyed lamps simply stand further apart.
+// (A map built before that file: every street, as it was.)
+// A lit street with no lamp anywhere near is one the survey doesn't reach (the villages
+// past the city's border): it gets lamps on poles along one side.
 const SPACING = 30, REACH = 20, WALL = 18;
+const SPAN = 26; // m: the widest street a lamp is hung over, wall to wall
+const UNSURVEYED = 60; // m: with none of the map's own lamps this near, the survey has a gap here
+const LIT_CELL = 50, LIT_MATCH = 4, LIT_UNIT = 0.25; // m: the lit streets' grid, how near one must run, the file's unit
 const ANCHOR = 7.4, SLACK = 0.3; // m: where a cable meets a wall above the street, how much it sags
 const MAX_HUNG = 800, HALVES = 5; // (cable pieces from a wall to the lamp)
 const UNLIT = new Set(['motorway', 'motorway_link', 'track', 'service']);
@@ -147,6 +156,47 @@ const CELL = 100; // m, the lamps' grid
 const MAX_LIGHTS = 6000;
 const MAX_POLES = 4000;
 
+// lit.bin.gz (pipeline/build_lamps.py) as a grid of its streets' segments.
+export function litStreets(buf: ArrayBuffer) {
+  const grid = new Map<number, number[]>(), view = new DataView(buf);
+  let o = 4;
+  for (let w = view.getUint32(0, true); w > 0; w--) {
+    const lit = view.getUint8(o), n = view.getUint16(o + 1, true);
+    let ax = view.getInt32(o + 3, true), ay = view.getInt32(o + 7, true);
+    o += 11;
+    for (let i = 1; i < n; i++, o += 4) {
+      const bx = ax + view.getInt16(o, true), by = ay + view.getInt16(o + 2, true);
+      const x0 = ax * LIT_UNIT, y0 = ay * LIT_UNIT, x1 = bx * LIT_UNIT, y1 = by * LIT_UNIT;
+      for (let cx = Math.floor((Math.min(x0, x1) - LIT_MATCH) / LIT_CELL); cx <= Math.floor((Math.max(x0, x1) + LIT_MATCH) / LIT_CELL); cx++) {
+        for (let cy = Math.floor((Math.min(y0, y1) - LIT_MATCH) / LIT_CELL); cy <= Math.floor((Math.max(y0, y1) + LIT_MATCH) / LIT_CELL); cy++) {
+          const k = (cx + 4096) * 8192 + cy + 4096, list = grid.get(k);
+          if (list) list.push(x0, y0, x1, y1, lit); else grid.set(k, [x0, y0, x1, y1, lit]);
+        }
+      }
+      ax = bx; ay = by;
+    }
+  }
+  return grid;
+}
+
+// What OSM says of the street through a point: 1 lit, 0 dark, -1 nothing.
+export function litAt(grid: Map<number, number[]>, x: number, y: number) {
+  let best = LIT_MATCH, lit = -1;
+  for (let cx = Math.floor((x - LIT_MATCH) / LIT_CELL); cx <= Math.floor((x + LIT_MATCH) / LIT_CELL); cx++) {
+    for (let cy = Math.floor((y - LIT_MATCH) / LIT_CELL); cy <= Math.floor((y + LIT_MATCH) / LIT_CELL); cy++) {
+      const list = grid.get((cx + 4096) * 8192 + cy + 4096);
+      if (!list) continue;
+      for (let j = 0; j < list.length; j += 5) {
+        const ax = list[j], ay = list[j + 1], ex = list[j + 2] - ax, ey = list[j + 3] - ay;
+        const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey || 1)));
+        const d = Math.hypot(ax + ex * t - x, ay + ey * t - y);
+        if (d < best) { best = d; lit = list[j + 4]; }
+      }
+    }
+  }
+  return lit;
+}
+
 interface Seg { ax: number; ay: number; bx: number; by: number }
 // Where the ray from (px, py) along (dx, dy) first crosses one of the segments, as the
 // distance along it (Infinity if none within max).
@@ -162,7 +212,7 @@ function cast(segs: Seg[], px: number, py: number, dx: number, dy: number, max: 
   return best;
 }
 
-interface Street { hw: string; pts: [number, number][]; tunnel?: boolean; bridge?: boolean }
+interface Street { hw: string; pts: [number, number][]; width?: number; tunnel?: boolean; bridge?: boolean }
 interface LitTram { parts: { x: number; y: number; ang: number }[]; look: unknown; levels?: { gz?: number }[] }
 // `broken`: which of its lamps are smashed (LAMP in car.ts: 1 and 2 the headlamps left and right, 4 and 8 the tail lamps).
 export interface LitCar { x: number; y: number; h: number; spec: { L: number; W: number; H: number }; mode: string; two?: string; speed: number; broken?: number; braking?: boolean }
@@ -201,6 +251,9 @@ export class Lamps {
   private xy: number[] = [];
   private kind: number[] = [];
   private loaded = false;
+  private surveyed = 0; // how many of the lamps came with the map (the first ones)
+  // OSM's lit and dark streets, their segments in a grid (x0, y0, x1, y1, lit); null: the map has none.
+  private lit: Map<number, number[]> | null = null;
   private waiting: [Street[], [number, number][][]][] = [];
   private hung = new Map<number, number[]>(); // a hung lamp → the two wall points its cables run to (x, y, x, y)
   private cables: THREE.LineSegments;
@@ -408,12 +461,15 @@ export class Lamps {
     this.cables.frustumCulled = false;
     scene.add(...this.models, this.glows, this.cables);
 
-    void fetchBinary(dataUrl(area, 'lamps.bin.gz'), true).then((buf) => {
+    const lamps = fetchBinary(dataUrl(area, 'lamps.bin.gz'), true).then((buf) => {
       if (!buf) return;
       const n = new DataView(buf).getUint32(0, true);
       const xy = new Float32Array(buf.slice(4, 4 + n * 8)), kind = new Uint8Array(buf, 4 + n * 8, n);
       for (let i = 0; i < n; i++) this.add(xy[i * 2], xy[i * 2 + 1], kind[i]);
-    }).catch(() => {}).finally(() => {
+      this.surveyed = n;
+    }).catch(() => {});
+    const lit = fetchBinary(dataUrl(area, 'lit.bin.gz'), true).then((buf) => { if (buf) this.lit = litStreets(buf); }).catch(() => {});
+    void Promise.all([lamps, lit]).finally(() => {
       this.loaded = true;
       for (const [edges, walls] of this.waiting) this.fill(edges, walls);
       this.waiting.length = 0;
@@ -448,11 +504,12 @@ export class Lamps {
     this.kind.push(kind);
   }
 
-  private lampWithin(x: number, y: number, r: number) {
+  // `below`: only the lamps before this one (the map's own: `surveyed`).
+  private lampWithin(x: number, y: number, r: number, below = Infinity) {
     for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++) {
       for (let cy = Math.floor((y - r) / CELL); cy <= Math.floor((y + r) / CELL); cy++) {
         const list = this.grid.get((cx + 2048) * 4096 + cy + 2048);
-        if (list) for (const i of list) if (Math.hypot(this.xy[i * 2] - x, this.xy[i * 2 + 1] - y) < r) return true;
+        if (list) for (const i of list) if (i < below && Math.hypot(this.xy[i * 2] - x, this.xy[i * 2 + 1] - y) < r) return true;
       }
     }
     return false;
@@ -511,6 +568,7 @@ export class Lamps {
           // edges, one side then the other.
           // (Put up once the deck there has loaded: see gather.)
           if (e.bridge) {
+            if (this.lit && litAt(this.lit, x, y) === 0) continue;
             this.spots.push(x, y, nx * side, ny * side);
             side = -side;
             continue;
@@ -518,7 +576,20 @@ export class Lamps {
           // Across the street, to the first wall each way.
           const walls = near(x, y);
           const l = cast(walls, x, y, nx, ny, WALL), r = cast(walls, x, y, -nx, -ny, WALL);
-          if (!Number.isFinite(l) || !Number.isFinite(r)) continue;
+          if (!this.lit) {
+            if (!Number.isFinite(l) || !Number.isFinite(r)) continue;
+          } else {
+            if (litAt(this.lit, x, y) < 1) continue;
+            if (!(l + r <= SPAN)) {
+              // Too wide to hang one over, or open on a side: lamps on poles where the survey
+              // has none, on the kerb of the side with more room.
+              if (this.lampWithin(x, y, UNSURVEYED, this.surveyed)) continue;
+              const out = Math.max(e.width ?? 0, 4) / 2 + 1, s = l < out + 1 && r >= out + 1 ? -1 : 1;
+              if (Math.min(s > 0 ? l : r, WALL) < out + 1) continue;
+              this.add(x + nx * out * s, y + ny * out * s, 0);
+              continue;
+            }
+          }
           this.hung.set(this.kind.length, [x + nx * l, y + ny * l, x - nx * r, y - ny * r]);
           this.add(x, y, HUNG);
         }

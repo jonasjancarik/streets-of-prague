@@ -508,6 +508,9 @@ export const SNOW = { value: 0 };
 // at night, less and less through the day).
 export const STREET_SNOW = { value: 1 };
 export const RAIN = { value: 0 };
+// The drifting mist, the mist over the river and the rings of raindrops in the puddles:
+// 0 on the Lowest graphics tier (graphics.ts), which draws none of them.
+export const WEATHER_DETAIL = { value: 1 };
 // How bare the broadleaf trees are (weather.ts): 1 in winter or under snow, their
 // leaves falling as it grows, each tree's in its own time; evergreens keep theirs
 // (vegetation.ts).

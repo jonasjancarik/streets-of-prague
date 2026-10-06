@@ -24,7 +24,7 @@ import { Passengers } from './passengers.ts';
 import { Taxis } from './taxi.ts';
 import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
-import { Weather, WeatherFx, KINDS, automaticWeather } from './weather.ts';
+import { Weather, WeatherFx, KINDS, automaticWeather, LIVE_EVERY } from './weather.ts';
 import { MIST_MODE } from './localmist.ts';
 import type { Kind } from './weather.ts';
 import { Lamps, type Flashing } from './lamps.ts';
@@ -1852,7 +1852,7 @@ async function main() {
       else if (choice.time !== null) clock.setTime(choice.time);
       world.night = params.has('night') || clock.night;
       season.set(choice.season);
-      weather.begin(choice.weather, clock.t);
+      weather.begin(choice.weather, clock.t, choice.live);
       // Beta mist can only reach this choice through an explicit selection.
       if (choice.weather === 'mist') weather.fixed = true;
     }
@@ -1861,6 +1861,11 @@ async function main() {
     last = performance.now();
   }
   $('loading').classList.add('done');
+  // The real weather, when the game began with it: asked for again now and then, and the
+  // game's weather follows it over a few minutes, until the player picks one by hand.
+  setInterval(() => {
+    if (weather.live && !weather.fixed && !document.hidden) void liveWeather().then((k) => { if (k) weather.follow(k); });
+  }, LIVE_EVERY * 1000);
   // ?dialog plays a sample conversation, to see how one looks.
   if (params.has('dialog')) void dialog.play([
     { who: 'marek', name: 'Marek', text: 'Come around the back. Don’t use the main entrance. I’ll be waiting by the tram stop.', objective: 'Meet Marek behind the block' },

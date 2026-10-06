@@ -298,7 +298,7 @@ addPort(/^buildings-procedural$/, (node) => {
   node.emissiveNode = buildingGraph.glow;
   // Lower walls that look onto a narrow street or a courtyard get less of the sky's light, never less sun or lamplight.
   node.aoNode = buildingGraph.ambient;
-  lampLit(node);
+  lampLit(node, positionWorld, true);
 });
 
 // The same hole in the landmarks, trees and the ground's depth pass (cutAway in shading.ts).

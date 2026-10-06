@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WET, SNOW, STREET_SNOW, RAIN, BARE, SEASON, NOISE, NOISE_GLSL } from './shading.ts';
+import { WET, SNOW, STREET_SNOW, RAIN, BARE, SEASON, NOISE, NOISE_GLSL, WEATHER_DETAIL } from './shading.ts';
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
 import { t } from './i18n.ts';
 import { SEASONS } from './season.ts';
@@ -57,6 +57,10 @@ const CHANCES: Record<SeasonName, Record<Kind, number>> = {
 const CLEAR_CHANCES: Record<Kind, number> = { clear: 0, cloudy: 0, rain: 0, storm: 0, mist: 0, snow: 0 };
 
 const CHANGE = 1 / 25;         // of the full change a second (clear to rain in 25 s)
+const LIVE_CHANGE = 1 / 150;   // the same while following the real weather: it comes over in a few minutes
+// How often the real weather is asked for while it is followed (main.ts), and how long
+// the last answer counts: after that the game's own weather takes over again.
+export const LIVE_EVERY = 10 * 60, LIVE_LASTS = 45 * 60; // real seconds
 const WETTING = 1 / 40, DRYING = 1 / 480;
 const SETTLING = 1 / 90, MELTING = 1 / 900;
 // Snow cleared off the streets: by the traffic of the hour, up to MOST of it, with
@@ -74,6 +78,11 @@ export class Weather {
   // Picked by hand: it stays.
   fixed: boolean;
   readonly now: Conditions = { ...CLEAR };
+  // Following the real weather in Prague (the start screen's "Now"): `follow` brings each
+  // new report, and until the last one is too old the weather doesn't change by itself.
+  // Picking a weather by hand ends it.
+  live = false;
+  private liveFor = 0; // real seconds the last report still counts for
   private next = 0; // clock seconds of the week at the next change
   private flashT = Infinity; // s since the last lightning
   private lastT: number; // the clock at the last update (to notice it being set)
@@ -93,8 +102,11 @@ export class Weather {
 
   // The game begins (the start screen): this weather, at this time, changing by itself
   // after a while unless it was asked for in the URL.
-  begin(kind: Kind, clockT: number) {
+  // `live`: it is the real weather now, to be followed from here on.
+  begin(kind: Kind, clockT: number, live = false) {
     if (kind !== this.kind) this.fixed = false;
+    this.live = live;
+    this.liveFor = live ? LIVE_LASTS : 0;
     this.kind = kind;
     this.lastT = clockT;
     this.settle();
@@ -143,7 +155,8 @@ export class Weather {
     WET.value = this.now.wet;
     SNOW.value = this.now.cover;
     STREET_SNOW.value = 1 - this.now.cleared;
-    RAIN.value = this.now.rain;
+    // (Only the puddles' and the water's rings read this: none on the Lowest tier.)
+    RAIN.value = this.now.rain * WEATHER_DETAIL.value;
     // The broadleaf trees are bare while their leaves aren't out, and under snow any time.
     BARE.value = Math.max(1 - this.season.leaf, this.now.cover);
     SEASON.value.set(this.season.turn, this.season.blossom, this.season.fresh, 0);
@@ -153,7 +166,17 @@ export class Weather {
   set(kind: Kind, instantly = false) {
     this.kind = kind;
     this.fixed = true;
+    this.live = false;
     if (instantly) this.settle();
+  }
+
+  // The real weather as just reported: the game's moves to it gradually. Nothing while
+  // the weather is the player's own choice or isn't being followed.
+  follow(kind: Kind) {
+    if (!this.live || this.fixed) return false;
+    this.kind = automaticWeather(kind);
+    this.liveFor = LIVE_LASTS;
+    return true;
   }
 
   // The next weather in turn (the P key); back to changing by itself after the last.
@@ -172,19 +195,22 @@ export class Weather {
     const jumped = Math.abs(clockT - this.lastT - dt) > 120;
     this.lastT = clockT;
     if (jumped && this.now.cover > 0) this.clearSince(clockT);
-    if (!this.fixed && (clockT >= this.next || clockT < this.next - 7200)) {
+    this.liveFor = Math.max(0, this.liveFor - real);
+    const followed = this.live && this.liveFor > 0;
+    if (!this.fixed && !followed && (clockT >= this.next || clockT < this.next - 7200)) {
       this.kind = this.pick(clockT);
       this.next = clockT + this.span();
     }
     if (!this.fixed) this.kind = automaticWeather(this.kind);
     const want = LOOK[this.kind], n = this.now;
     const toward = (v: number, t: number, rate: number) => (v < t ? Math.min(t, v + rate * dt) : Math.max(t, v - rate * dt));
-    n.cloud = toward(n.cloud, want.cloud, CHANGE);
-    n.mist = toward(n.mist, want.mist, CHANGE * 0.6);
+    const change = followed ? LIVE_CHANGE : CHANGE;
+    n.cloud = toward(n.cloud, want.cloud, change);
+    n.mist = toward(n.mist, want.mist, change * 0.6);
     // Clouds come before the rain and go after it.
-    n.rain = toward(n.rain, n.cloud > 0.8 ? want.rain : 0, CHANGE);
-    n.storm = toward(n.storm, n.rain > 0.8 ? want.storm : 0, CHANGE);
-    n.snow = toward(n.snow, n.cloud > 0.8 ? want.snow : 0, CHANGE);
+    n.rain = toward(n.rain, n.cloud > 0.8 ? want.rain : 0, change);
+    n.storm = toward(n.storm, n.rain > 0.8 ? want.storm : 0, change);
+    n.snow = toward(n.snow, n.cloud > 0.8 ? want.snow : 0, change);
     n.wet = n.rain > 0.3 ? toward(n.wet, 1, WETTING * n.rain) : toward(n.wet, 0, DRYING * (1 - n.cloud * 0.6));
     n.cover = n.snow > 0.3 ? toward(n.cover, 1, SETTLING * n.snow) : toward(n.cover, 0, MELTING);
     if (n.cover > 0) this.clear(dt, clockT);
@@ -423,8 +449,10 @@ export class WeatherFx {
     this.mistOn.value = Math.min(1, w.mist) * MIST.most;
     this.rain.visible = w.rain > 0.01;
     this.snow.visible = w.snow > 0.01;
-    this.mist.visible = w.mist > 0.01 && (MIST_MODE.value === 'sheets' || !this.localMist.mesh);
-    this.localMist.update(w.mist, t, x, -y, r, mistGround, mistWater);
+    // The Lowest tier draws no mist banks or volumes: the haze over the whole view (Sky) is its mist.
+    const banks = WEATHER_DETAIL.value > 0 ? w.mist : 0;
+    this.mist.visible = banks > 0.01 && (MIST_MODE.value === 'sheets' || !this.localMist.mesh);
+    this.localMist.update(banks, t, x, -y, r, mistGround, mistWater);
     this.snowScale.value = innerHeight * dpr * 1.4;
     const m = MIST, sheets = Math.max(2, Math.min(MOST_SHEETS, Math.round(m.sheets)));
     this.mistA.value.set(1 / m.bankSize, 1 / m.wispSize, 1 / m.fineSize, m.thin);
