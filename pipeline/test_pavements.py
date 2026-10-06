@@ -63,7 +63,7 @@ class Surveyed(unittest.TestCase):
     def test_paving_comes_from_the_footways_and_spreads_to_the_untagged(self):
         ways = [(LineString([(0, 5), (100, 5)]), "asphalt", False), (LineString([(0, -5), (100, -5)]), None, False)]
         stats = {}
-        paved, walked = pavements.surveyed(self.walks, self.street, ways, Polygon(), Polygon(), self.clip, stats)
+        paved, walked = pavements.surveyed(self.walks, self.street, ways, Polygon(), self.clip, stats)
         # The untagged pavement and the island are paved like the nearest tagged one.
         self.assertEqual(set(paved), {"pavement_asphalt", "trambed"})
         # (With the bit past each end of the street, where both stop on one line.)
@@ -73,16 +73,16 @@ class Surveyed(unittest.TestCase):
         self.assertEqual((stats["surveyed_pavement_m2"], stats["surveyed_island_m2"], stats["surveyed_trambed_m2"]), (800, 20, 600))
 
     def test_mosaic_without_tags_and_setts_only_in_a_walking_street(self):
-        paved, _ = pavements.surveyed(self.walks, self.street, [], Polygon(), Polygon(), self.clip)
+        paved, _ = pavements.surveyed(self.walks, self.street, [], Polygon(), self.clip)
         self.assertEqual(set(paved), {"pavement", "trambed"})
         ways = [(LineString([(0, 5), (100, 5)]), "sett", True), (LineString([(0, -5), (100, -5)]), "sett", False)]
-        paved, _ = pavements.surveyed(self.walks, self.street, ways, Polygon(), Polygon(), self.clip)
+        paved, _ = pavements.surveyed(self.walks, self.street, ways, Polygon(), self.clip)
         self.assertAlmostEqual(paved["sett"].area, 400, delta=1)  # the walking street
         self.assertAlmostEqual(paved["pavement"].area, 420, delta=4)  # a cobbled pavement is mosaic; the island too
 
     def test_an_earth_path_stays_earth_and_does_not_spread(self):
         ways = [(LineString([(0, 5), (100, 5)]), "unpaved", False)]
-        paved, walked = pavements.surveyed(self.walks, self.street, ways, Polygon(), Polygon(), self.clip)
+        paved, walked = pavements.surveyed(self.walks, self.street, ways, Polygon(), self.clip)
         self.assertAlmostEqual(paved["dirt"].area, 400, delta=1)
         self.assertAlmostEqual(paved["pavement"].area, 420, delta=4)  # the other pavement and the island: mosaic
         self.assertTrue(walked.contains(self.north.buffer(-0.1)))
@@ -91,14 +91,15 @@ class Surveyed(unittest.TestCase):
         street = box(0, -3, 100, 2.8)  # misses the northern pavement by 20 cm
         pit = box(20, 4, 21.5, 5.5)
         walks = {"pavement": arr(self.north.difference(pit), self.south)}
-        paved, walked = pavements.surveyed(walks, street, [], box(60, 0, 80, 10), pit, self.clip)
+        paved, walked = pavements.surveyed(walks, street, [], pit, self.clip)
+        paved = pavements.outside(paved, box(60, 0, 80, 10))
         self.assertTrue(walked.contains(box(1, 2.85, 99, 2.95)))
         self.assertFalse(paved["pavement"].intersects(pit.buffer(-0.1)))
         self.assertLess(paved["pavement"].intersection(box(60, 0, 80, 10)).area, 0.01)
         self.assertTrue(walked.intersects(box(61, 4, 79, 6)))  # no ribbon there either: the square's paving shows
 
     def test_nothing_surveyed(self):
-        self.assertEqual(pavements.surveyed({}, Polygon(), [], Polygon(), Polygon(), self.clip), ({}, Polygon()))
+        self.assertEqual(pavements.surveyed({}, Polygon(), [], Polygon(), self.clip), ({}, Polygon()))
 
 
 class Ribbon_replacement(unittest.TestCase):

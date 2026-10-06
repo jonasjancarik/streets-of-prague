@@ -31,9 +31,17 @@ def tiles(folder):
     return out
 
 
+def inter(a, b):
+    """a ∩ b on a centimetre grid; empty where GEOS gives up on a degenerate ring."""
+    try:
+        return shapely.intersection(a, b, grid_size=0.01)
+    except shapely.errors.GEOSException:
+        return Polygon()
+
+
 def polys(v):
-    out = [shapely.make_valid(Polygon(r[0], r[1:])) for r in v or [] if len(r[0]) >= 3]
-    return unary_union(out) if out else Polygon()
+    out = [Polygon(r[0], r[1:]).buffer(0) for r in v or [] if len(r[0]) >= 3]
+    return shapely.union_all(out, grid_size=0.01) if out else Polygon()
 
 
 def main(before, after, out=None):
@@ -61,14 +69,14 @@ def main(before, after, out=None):
         for key, v in Ar.items():
             g = polys(v)
             area[key] += g.area
-            on[f"pavement on areas.{key}"] += paved.intersection(g).area
-            on[f"tram bed on areas.{key}"] += bed.intersection(g).area
+            on[f"pavement on areas.{key}"] += inter(paved, g).area
+            on[f"tram bed on areas.{key}"] += inter(bed, g).area
         for key, v in (a.get("patches") or {}).items():
-            on[f"pavement on patches.{key}"] += paved.intersection(polys(v)).area
-        on["pavement under road/sett"] += paved.intersection(road).area
-        on["tram bed over road/sett"] += bed.intersection(road).area
-        on["pavement on lots"] += paved.intersection(polys([lot["rings"] for lot in a.get("lots", [])])).area
-        on["pavement under buildings"] += paved.intersection(polys([x["rings"] for x in a.get("buildings", [])])).area
+            on[f"pavement on patches.{key}"] += inter(paved, polys(v)).area
+        on["pavement under road/sett"] += inter(paved, road).area
+        on["tram bed over road/sett"] += inter(bed, road).area
+        on["pavement on lots"] += inter(paved, polys([lot["rings"] for lot in a.get("lots", [])])).area
+        on["pavement under buildings"] += inter(paved, polys([x["rings"] for x in a.get("buildings", [])])).area
         pts = lambda xs: shapely.points([p[:2] for p in xs]) if xs else []  # noqa: E731
         for name, xs in (("trees", a.get("trees")), ("utility marks", a.get("utility")), ("shrubs", a.get("shrubs")),
                          ("drive spots", [[d["x"], d["y"]] for d in a.get("drives", [])])):

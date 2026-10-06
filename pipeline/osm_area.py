@@ -453,12 +453,19 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     meet = pavements.joints([g for g, *_ in walking_surfaces])
     walking_surfaces = [(pavements.ribbon(g, half, meet), *rest)
                         for (g, *rest), (half, _) in zip(walking_surfaces, walking_widths)]
+    # The pavements, islands and tram beds the technical map has surveyed (pavements.py).
+    paved, walked = pavements.surveyed(
+        {} if pavements.DERIVED_ONLY else dtm.walks((w, s, e, n), tf.transform), surface, paved_ways,
+        unary_union([g for k, g in land.items() if k != "dtm_yard"]), clip, stats)
+    timer.lap("surveyed_pavements")
     # Where family houses stand on land nobody mapped (no residential area, no survey,
     # no mapped use), that land is gardens and meadow too, not pavement.
     spoken_for = [*(g for k, v in areas.items() if k not in NATURAL_GROUND for g in v),
-                  *(g for v in road_lines.values() for g in v), *land.values(), *(p for p, _, _ in squares)]
+                  *(g for v in road_lines.values() for g in v), *land.values(), *(p for p, _, _ in squares), walked]
+    # (A block of gardens starts behind the surveyed pavement, not at the kerb, so the
+    # plots, their fences and gates stand at the pavement's back edge.)
     gardens, lawns, plot_fences, drives, on_plots = _gardens(
-        homes, buildings, streets, clip,
+        homes, buildings, [*streets, *(p for p in shapely.get_parts(walked) if p.geom_type == "Polygon")], clip,
         [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls],
         unmapped=[g for g in spoken_for if not g.is_empty],
         ways=[g for g in [*service, *road_lines.get("path", []), *road_lines.get("dirt", []), *(ws[0] for ws in walking_surfaces)]
@@ -480,14 +487,11 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
         kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
         areas.setdefault(kind or "square", []).append(poly)
-    # The pavements, islands and tram beds the technical map has surveyed, in place of
-    # the footways' ribbons along them.
-    paved, walked = pavements.surveyed(
-        {} if pavements.DERIVED_ONLY else dtm.walks((w, s, e, n), tf.transform), surface, paved_ways,
-        unary_union([g for k in ("square", "square_setts", "square_asphalt", "square_loose", "parking") for g in areas.get(k, [])]),
-        unary_union([g for k, g in land.items() if k != "dtm_yard"]), clip, stats)
+    # The surveyed pavements take the place of the footways' ribbons along them; mapped
+    # squares and car parks keep their own paving.
     walking_surfaces = pavements.without_survey(walking_surfaces, [beside for _, beside in walking_widths], walked)
-    for key, geom in paved.items():
+    kept = unary_union([g for k in ("square", "square_setts", "square_asphalt", "square_loose", "parking") for g in areas.get(k, [])])
+    for key, geom in pavements.outside(paved, kept).items():
         road_lines.setdefault(key, []).append(geom)
     timer.lap("surveyed_pavements")
     for cls, geom in _walking_surfaces(walking_surfaces, areas, natural):

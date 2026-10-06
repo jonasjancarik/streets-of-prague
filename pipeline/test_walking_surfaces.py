@@ -76,7 +76,7 @@ class WalkingSurfaceTests(unittest.TestCase):
         left, right = box(-20, -20, 10, 20), box(10, -20, 40, 20)
         self.assertTrue(shapely.union(after.intersection(left), after.intersection(right)).equals(after))
 
-    def extract(self, tags, geoms=None, land=None):
+    def extract(self, tags, geoms=None, land=None, walks=None):
         w, s, e, n = AREAS["ujezd"]
         crs = f"+proj=tmerc +lat_0={(s+n)/2} +lon_0={(w+e)/2} +ellps=WGS84 +units=m"
         inv = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
@@ -86,7 +86,7 @@ class WalkingSurfaceTests(unittest.TestCase):
         geoms = shapely.transform(geoms, lambda c: np.column_stack(inv.transform(c[:, 0], c[:, 1])))
         rows = [{"element": "way", "id": i+1, **tag} for i, tag in enumerate(tags)]
         with patch("osm_area.dtm.streets", return_value=Polygon()), patch("osm_area.dtm.land", return_value=land or {}), \
-                patch("osm_area.dtm.parking", return_value=Polygon()), patch("osm_area.dtm.walks", return_value={}):
+                patch("osm_area.dtm.parking", return_value=Polygon()), patch("osm_area.dtm.walks", return_value=walks or {}):
             # (No surveyed pavements either: the real ones at this spot would take the ribbons' place.)
             return extract("ujezd", features=(geoms, rows))
 
@@ -129,6 +129,23 @@ class WalkingSurfaceTests(unittest.TestCase):
         got = self.extract([{"highway": "pedestrian", "surface": "sett"}, {"leisure": "park"}],
                            [box(-10, -10, 10, 10), box(-20, -20, 20, 20)])
         self.assertGreater(got["areas"]["square_setts"].intersection(got["areas"]["park"]).area, 399)
+
+    def test_gardens_start_behind_a_surveyed_pavement(self):
+        # A street along y = 0 with a surveyed pavement 3 m deep on its north side, and
+        # two family houses in a residential area beyond it.
+        tags = [{"landuse": "residential"}, {"building": "house"}, {"building": "house"},
+                {"highway": "residential", "width": "6"}, {"highway": "footway", "footway": "sidewalk"}]
+        geoms = [box(-60, -40, 60, 40), box(-30, 12, -18, 24), box(10, 12, 22, 24),
+                 LineString([(-80, 0), (80, 0)]), LineString([(-80, 4.5), (80, 4.5)])]
+        pavement = box(-80, 3, 80, 6)
+        before = self.extract(tags, geoms)
+        after = self.extract(tags, geoms, walks={"pavement": np.array([pavement], dtype=object)})
+        self.assertGreater(before["areas"]["garden"].intersection(pavement).area, 300)  # the ribbon lay on the garden
+        self.assertLess(after["areas"]["garden"].intersection(pavement).area, 1)
+        self.assertGreater(after["roads"]["pavement"].area, 350)
+        self.assertNotIn("path", after["roads"])  # the pavement's own ribbon is gone
+        for f in after["fences"]:
+            self.assertLess(LineString(f["pts"]).intersection(pavement.buffer(-0.2)).length, 0.5, f)
 
     def test_route_link_across_inferred_estate_lawn_keeps_real_surface(self):
         got = self.extract([{"landuse": "residential"}, {"building": "apartments"},

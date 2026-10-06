@@ -18,12 +18,20 @@ from shapely.ops import unary_union
 WALKED = ("pavement", "pavement_asphalt")
 
 
+def inter(a, b):
+    """a ∩ b on a centimetre grid; empty where GEOS gives up on a degenerate ring."""
+    try:
+        return shapely.intersection(a, b, grid_size=0.01)
+    except shapely.errors.GEOSException:
+        return Polygon()
+
+
 def polys(v):
     out = []
     for r in v or []:
         if len(r[0]) >= 3:
-            out.append(shapely.make_valid(Polygon(r[0], r[1:])))
-    return unary_union(out) if out else Polygon()
+            out.append(Polygon(r[0], r[1:]).buffer(0))
+    return shapely.union_all(out, grid_size=0.01) if out else Polygon()
 
 
 def points(v):
@@ -57,11 +65,11 @@ def summary(folder):
         road = unary_union([polys(R.get("road")), polys(R.get("sett"))])
         per_tile[k] = {"surveyed": round(walked.area), "ribbons": round(path.area), "trambed": round(polys(R.get("trambed")).area)}
         if not path.is_empty:
-            odd["path_on_road"] += path.intersection(road).area
-            odd["path_on_water"] += path.intersection(polys(t.get("areas", {}).get("water"))).area
-            odd["path_on_surveyed"] += path.intersection(walked).area
-            b = unary_union([shapely.make_valid(Polygon(x["rings"][0], x["rings"][1:])) for x in buildings.get(k, {}).get("buildings", [])])
-            odd["path_on_building"] += path.intersection(b).area
+            odd["path_on_road"] += inter(path, road).area
+            odd["path_on_water"] += inter(path, polys(t.get("areas", {}).get("water"))).area
+            odd["path_on_surveyed"] += inter(path, walked).area
+            b = unary_union([Polygon(x["rings"][0], x["rings"][1:]).buffer(0) for x in buildings.get(k, {}).get("buildings", [])])
+            odd["path_on_building"] += inter(path, b).area
         s = streets.get(k, {})
         ribbon_or = unary_union([path, walked])
         near = walked.buffer(1.0) if not walked.is_empty else walked

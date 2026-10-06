@@ -112,13 +112,13 @@ def tidy(geom, keep_off):
     return _areas(shapely.union_all(shapely.make_valid(parts))) if len(parts) else Polygon()
 
 
-def surveyed(walks, streets, ways, squares, green, clip, stats=None):
+def surveyed(walks, streets, ways, green, clip, stats=None):
     """What to draw of the survey's pavements, islands and tram beds.
 
     `walks`: dtm.walks(); `streets`: the surveyed carriageways as drawn (dtm.streets);
     `ways`: [(line, surface tag, a street people walk in?)] of OSM's ways for walking;
-    `squares`: the mapped squares and car parks, which keep their own paving; `green`: the surveyed
-    greenery, which a tree pit or a small bed in the pavement stays. Returns ({key: shape}
+    `green`: the surveyed greenery, which a tree pit or a small bed in the pavement
+    stays. Returns ({key: shape}
     with "pavement" (mosaic), "pavement_asphalt", "sett" (a cobbled walking street), "dirt"
     (an earth path) and "trambed", only those there are; the shape of everything walked on, for
     without_survey())."""
@@ -169,12 +169,17 @@ def surveyed(walks, streets, ways, squares, green, clip, stats=None):
             key = max((k for k in out if k != "trambed"), key=lambda k: (k != "dirt", out[k].area))
             out[key] = _areas(shapely.union(out[key], fill, grid_size=GRID))
             walked = _areas(shapely.union(walked, fill, grid_size=GRID))
-    if squares is not None and not squares.is_empty:
-        # A mapped square keeps the paving plan 013 gave it, and a mapped car park its
-        # asphalt and bays.
-        for key in [k for k in out if k != "trambed"]:
-            out[key] = _areas(shapely.difference(out[key], squares, grid_size=GRID))
     return {k: g for k, g in out.items() if not g.is_empty}, walked
+
+
+def outside(paved, kept):
+    """surveyed()'s shapes without the mapped squares, which keep the paving plan 013
+    gave them, and the mapped car parks, which keep their asphalt and bays (`kept`).
+    A tram bed stays whole."""
+    if kept is None or kept.is_empty:
+        return paved
+    out = {k: g if k == "trambed" else _areas(shapely.difference(g, kept, grid_size=GRID)) for k, g in paved.items()}
+    return {k: g for k, g in out.items() if not g.is_empty}
 
 
 def _gaps(polys, streets, both):

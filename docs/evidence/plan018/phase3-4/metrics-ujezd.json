@@ -185,24 +185,24 @@
     "pieces": 15
    },
    "dirt": {
-    "area": 1756.4,
-    "points": 218,
-    "pieces": 23
+    "area": 13529.3,
+    "points": 1110,
+    "pieces": 38
    },
    "path": {
-    "area": 10953.3,
+    "area": 10953.2,
     "points": 1877,
     "pieces": 223
    },
    "pavement": {
-    "area": 99712.7,
-    "points": 13925,
-    "pieces": 399
+    "area": 87890.7,
+    "points": 12977,
+    "pieces": 394
    },
    "pavement_asphalt": {
-    "area": 33995.5,
-    "points": 4457,
-    "pieces": 51
+    "area": 31686.0,
+    "points": 4153,
+    "pieces": 54
    },
    "road": {
     "area": 80006.3,
@@ -219,7 +219,7 @@
    "path_on_road": 1594.5,
    "path_on_building": 1244.2,
    "path_on_water": 120.6,
-   "path_on_surveyed": 176.4
+   "path_on_surveyed": 62.8
   },
   "walk": {
    "sidewalk_m": 0,
@@ -228,22 +228,22 @@
    "sidewalk_on_either_m": 0,
    "sidewalk_within_1m_m": 0,
    "walk_m": 45960,
-   "walk_on_surveyed_m": 32956
+   "walk_on_surveyed_m": 30540
   },
   "kerb": {
    "sides": 2648,
-   "outside_is_surveyed_walk": 1890,
+   "outside_is_surveyed_walk": 1804,
    "outside_is_road": 403,
-   "inside_is_surveyed_walk": 200
+   "inside_is_surveyed_walk": 166
   },
   "per_tile": {
    "0_0": {
-    "surveyed": 8353,
+    "surveyed": 7776,
     "ribbons": 84,
     "trambed": 0
    },
    "0_1": {
-    "surveyed": 7331,
+    "surveyed": 7185,
     "ribbons": 1006,
     "trambed": 0
    },
@@ -253,22 +253,22 @@
     "trambed": 0
    },
    "0_3": {
-    "surveyed": 3024,
+    "surveyed": 2868,
     "ribbons": 847,
     "trambed": 0
    },
    "0_4": {
-    "surveyed": 1497,
+    "surveyed": 1060,
     "ribbons": 119,
     "trambed": 0
    },
    "1_0": {
-    "surveyed": 8144,
+    "surveyed": 7560,
     "ribbons": 106,
     "trambed": 0
    },
    "1_1": {
-    "surveyed": 6388,
+    "surveyed": 6295,
     "ribbons": 737,
     "trambed": 0
    },
@@ -278,52 +278,52 @@
     "trambed": 0
    },
    "1_3": {
-    "surveyed": 6463,
+    "surveyed": 6454,
     "ribbons": 189,
     "trambed": 0
    },
    "1_4": {
-    "surveyed": 2625,
+    "surveyed": 2158,
     "ribbons": 565,
     "trambed": 0
    },
    "2_0": {
-    "surveyed": 9400,
+    "surveyed": 9117,
     "ribbons": 227,
     "trambed": 0
    },
    "2_1": {
-    "surveyed": 8738,
+    "surveyed": 8469,
     "ribbons": 889,
     "trambed": 0
    },
    "2_2": {
-    "surveyed": 7885,
+    "surveyed": 7860,
     "ribbons": 272,
     "trambed": 0
    },
    "2_3": {
-    "surveyed": 7301,
+    "surveyed": 7251,
     "ribbons": 575,
     "trambed": 0
    },
    "2_4": {
-    "surveyed": 1204,
+    "surveyed": 1174,
     "ribbons": 420,
     "trambed": 0
    },
    "3_0": {
-    "surveyed": 440,
+    "surveyed": 419,
     "ribbons": 491,
     "trambed": 0
    },
    "3_1": {
-    "surveyed": 3330,
+    "surveyed": 2104,
     "ribbons": 444,
     "trambed": 0
    },
    "3_2": {
-    "surveyed": 5299,
+    "surveyed": 0,
     "ribbons": 240,
     "trambed": 0
    },
@@ -338,22 +338,22 @@
     "trambed": 0
    },
    "4_0": {
-    "surveyed": 6784,
+    "surveyed": 4811,
     "ribbons": 1048,
     "trambed": 0
    },
    "4_1": {
-    "surveyed": 6848,
+    "surveyed": 6435,
     "ribbons": 171,
     "trambed": 0
    },
    "4_2": {
-    "surveyed": 8896,
+    "surveyed": 7434,
     "ribbons": 816,
     "trambed": 0
    },
    "4_3": {
-    "surveyed": 6142,
+    "surveyed": 5529,
     "ribbons": 80,
     "trambed": 0
    },
@@ -363,6 +363,6 @@
     "trambed": 0
    }
   },
-  "bytes_ground": 1019904
+  "bytes_ground": 1014195
  }
 }
