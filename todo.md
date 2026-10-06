@@ -11,7 +11,7 @@ Twenty sessions worked overnight, each on its own branch and worktree
 about 00:20 to 04:55, so most got two to three working hours on a heavily loaded
 machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landmarks`
 (code only), `night-pipeline`, `night-weather`, `night-graphs`, `night-countryside` (behind
-`?countryside`), `night-greenery`, `night-bridges`, `night-gardens`, `night-boats`, `night-roofs`, and single commits of
+`?countryside`), `night-greenery`, `night-bridges`, `night-gardens`, `night-boats`, `night-roofs`, `night-maplook`, and single commits of
 `night-renderer` (windows on ground floors, the fog, the start-up report) and `night-maplook`
 (sports lines). Not merged, each with its state written in the plan or doc it names:
 
@@ -37,8 +37,6 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
 - **`night-beige` (plan 014):** courtyards classified with the plain ground, seams
   between tiles fixed, nine painted-photo variants to judge
   (scratchpad `overnight/night-beige/painted/`). Tried on `ujezd` only.
-- **`night-maplook`, rest:** clearings inside mapped woods (changes every wood; needs
-  the young layer rebuilt and a comparison with the photos).
 - **`worktree-rust-wgpu`** (never to be merged): the static daylight scene of `ujezd`
   and `centrum` matches the game to about 5–8 levels of mean difference, with tile
   streaming and the sedan's handling; `rust/PARITY.md` on the branch has the status
@@ -212,12 +210,15 @@ before that day's frame-count fix may be doubled.
   data; the `plots` tile field is unread and adds about 12 % to a dense suburban
   tile's JSON, so trim it or use it; 25 drive places in that chunk still touch a road
   or path; fences read quite white from above; crown positions from the photographs.
-- **Woods (plan 026):** clearings inside a mapped wood are planted as full-grown wood;
-  a few extra small trees along tile borders.
+- **Woods (plan 026):** clearings stay open where the aerial photo shows open ground,
+  and woods are planted the same across tile borders. Left: young woods rest on the
+  surface model alone, which reads some tall forest as low, and need the photo check
+  the clearings got; the edge shrubs are still placed per tile; a clearing's outline
+  can jog a few metres at a tile border.
 - **Grass and worn paths (plan 027):** verges aren't a kind of their own; worn paths
   use door proxies, not OSM entrances or the footfall map.
-- **Roofs (plan 028):** re-run `ipr_buildings.py` for the city and look at the school
-  atria; roof class can change where a street crosses a 90 m cell.
+- **Roofs (plan 028):** look at the school atria after the rebuild (roof class now goes
+  by street; countryside tiles and streets without a name still go by 90 m cell).
 - **Parking (plan 029):** collision bodies on an estate drive unmeasured (the second
   car in front of a garage is in).
 - **Sports grounds (plan 030):** lines now hold a width in pixels from high up; road
