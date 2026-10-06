@@ -256,7 +256,7 @@ def surveyed_layer(area, name, processing, meta, command, strict):
 
 def merge_greenery(t: dict, green: dict, cover: dict | None):
     """Put IPR's surveyed greenery (ipr_greenery.py) into a tile: its lawns, meadows, beds and
-    shrub groups as areas of their own, its groups of trees as wood, its hedges among the
+    shrub groups and groups of trees as areas of their own, its hedges among the
     fences and its single shrubs. Where it has something it stands for what was guessed
     there: the photos' tree canopy and single trees (`cover`, the tile's ground cover
     before it is merged; changed in place) give way inside it."""
@@ -275,7 +275,6 @@ def merge_greenery(t: dict, green: dict, cover: dict | None):
         cover["areas"] = {**cover["areas"], "trees": canopy}
         cover["trees"] = [p for p in cover["trees"] if not known.contains(points(p[0], p[1]))]
     for key, polys in green["areas"].items():
-        key = "wood" if key == "ipr_grove" else key
         areas[key] = [*areas.get(key, []), *polys]
     t["areas"] = areas
     if green["hedges"]:

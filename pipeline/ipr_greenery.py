@@ -15,13 +15,14 @@ technical map's "maintained green" and the photos' grass and tree canopy
     areas.ipr_meadow   meadow lawns and what grows wild (luční, bylinné společenstvo, ruderální)
     areas.ipr_bed      flower beds (annuals, roses, perennials)
     areas.ipr_shrubs   groups of shrubs, and hedges too wide or too crooked to be a row
-    areas.wood         groups of trees and stands of woody plants, added to the woods
+    areas.ipr_grove    groups of trees and stands of woody plants
     fences             hedges, as rows along their middle (kind "hedge", h from their shape:
                        clipped ones low, free-growing ones high), unless the map has one there
     shrubs             single shrubs, [x, y]
 
 src/ground.ts draws the areas, src/map/vegetation.ts fills the shrub groups with shrubs
-and makes up no trees on the surveyed lawns (IPR's own trees stand there, ipr_trees.py).
+makes up no trees on the surveyed lawns (IPR's own trees stand there, ipr_trees.py)
+and plants the groups of trees more closely than a park, on grass.
 """
 
 

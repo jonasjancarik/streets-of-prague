@@ -27,7 +27,8 @@ export interface TreeInstances { matrices: Float32Array; colours: Float32Array; 
 const WOOD = 200, PARK = 120, GARDEN = 90, ORCHARD = 60, FIELD = 40, FENCE = 1;
 // Surveyed greenery (pipeline/ipr_greenery.py): grass where no tree is made up (the
 // survey has the real ones), and groups of shrubs, which are filled with shrubs.
-const SURVEYED = 150, SHRUBBERY = 170;
+// A surveyed group of trees is planted like a park, only closer.
+const SURVEYED = 150, SHRUBBERY = 170, GROVE = 180;
 // Of each kind of tree (below), how many are evergreen and keep their leaves in
 // winter: yews and hedges among the shrubs. (Conifers have a shape of their own.)
 const EVERGREEN = [0, 0, 0, 0.4];
@@ -93,6 +94,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fill(d.areas.ipr_meadow, SURVEYED);
     fill(d.areas.ipr_bed, SURVEYED);
     fill(d.areas.ipr_shrubs, SHRUBBERY);
+    fill(d.areas.ipr_grove, GROVE);
     fill(d.areas.orchard, ORCHARD);
     fill(d.areas.wood, WOOD);
     // Keep trees off everything built or paved.
@@ -179,7 +181,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
         // Thinner towards the outline, and in patches inside (clearings and denser stands).
         const keep = 0.62 * (0.25 + 0.75 * edge) * (0.8 + 0.4 * valueNoise(jx, jy, 30, 0x31c5));
         if (r() < keep && !surveyed(jx, jy)) addWood(jx, jy, rad, edge);
-      } else if (v === PARK && r() < 0.09) {
+      } else if ((v === PARK && r() < 0.09) || (v === GROVE && r() < 0.45)) {
         const rad = 2.8 + r() * 2.8;
         if (!surveyed(jx, jy)) trees.push(conifer(jx, jy, CONIFERS[1]) ? [jx, jy, rad * 0.8, CONIFER] : [jx, jy, rad, 1]);
       }

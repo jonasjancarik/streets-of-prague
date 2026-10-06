@@ -645,7 +645,8 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.meadow || []), COLORS.park, 'meadow');
     // The greenery the city tends, surveyed (pipeline/ipr_greenery.py), over what is only
     // guessed there: lawns, meadows, the earth of flower beds and under groups of shrubs.
-    add(polygons(A.ipr_lawn || []), COLORS.park, 'lawn');
+    // (Under a surveyed group of trees the grass goes on: a park's trees, not a wood.)
+    add(polygons([...(A.ipr_lawn || []), ...(A.ipr_grove || [])]), COLORS.park, 'lawn');
     add(polygons(A.ipr_meadow || []), COLORS.park, 'meadow');
     add(polygons(A.ipr_shrubs || []), COLORS.shrubBed, 'garden');
     add(polygons(A.ipr_bed || []), COLORS.bed, 'dirt');

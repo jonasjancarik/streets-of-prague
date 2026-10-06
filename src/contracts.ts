@@ -120,7 +120,7 @@ export interface WorkerJobs {
   };
   sky: SkyJob;
   land: {
-    data: FurnitureData & { levels: boolean; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
+    data: FurnitureData & { levels: boolean; utility?: UtilityMark[]; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
     seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
     // The bridges and tunnels to rasterise, each a level to get about on (ground.ts).
     box: Bounds; structures: TileStructure[];

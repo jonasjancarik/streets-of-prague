@@ -20,7 +20,7 @@ courtyards are not in it. A tile gets:
 | `areas.ipr_meadow` | meadow lawns, wild growth (122, 31, 32) | grass, `meadow` pattern |
 | `areas.ipr_bed` | flower beds (11–14) | bare earth (there is no flower pattern yet) |
 | `areas.ipr_shrubs` | shrub groups (41, 51), wide or crooked hedges | dark green ground filled with shrubs |
-| added to `areas.wood` | tree groups, woody stands (61, 111) | as any wood |
+| `areas.ipr_grove` | tree groups, woody stands (61, 111) | lawn, planted with trees more closely than a park |
 | added to `fences` | hedges (131), as a row along the middle | the game's hedges; clipped ones 1.1 m, free-growing 1.7 m |
 | `shrubs` | single shrubs | one shrub each |
 

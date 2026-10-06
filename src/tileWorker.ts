@@ -13,7 +13,8 @@ import type { DetailArrays, RoofSite } from './map/roofDetails.ts';
 import { iprRoofSites } from './map/iprRoofs.ts';
 import { fenceArrays } from './map/fences.ts';
 import { treeInstances } from './map/vegetation.ts';
-import { furnitureInstances, FURNITURE_SIZE } from './map/furniture.ts';
+import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE } from './map/furniture.ts';
+import { standingMarks } from './map/utility.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords } from './facades.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
@@ -274,7 +275,12 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   const fences = fenceArrays(data, hAt);
   const grid = tileGrid(geo, data, seeds, edges);
   stampTrunks(grid, geo, trees);
-  const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: [new Float32Array(0), new Float32Array(0), new Float32Array(0)], spots: [] };
+  const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: furnitureMatrices([]), spots: [] };
+  // The surveyed hydrants and phone boxes stand where the survey has them.
+  if (ground && data.furnitureEnabled && data.utility?.length) {
+    for (const p of standingMarks(data.utility, data.walk.map((e) => e.pts))) furniture.spots.push({ ...p, z: hAt(p.x, p.y) });
+    furniture.matrices = furnitureMatrices(furniture.spots);
+  }
   // The same solid-cell convention as tree trunks, stamped before parking.
   for (const p of furniture.spots) {
     const [hx, hy] = FURNITURE_SIZE[p.kind], c = Math.cos(p.angle), s = Math.sin(p.angle);
