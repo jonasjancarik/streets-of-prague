@@ -101,6 +101,7 @@ def tidy(geom, keep_off):
         # and joining a whole chunk's buildings is slow.)
         shapes = shapely.get_parts(np.array([g for g in keep_off if not g.is_empty], dtype=object))
         shapes = shapes[np.isin(shapely.get_type_id(shapes), (3, 6))]
+        shapes = shapely.simplify(shapes, COARSE)  # (the carriageways' many points: see COARSE)
         hits = np.unique(STRtree(shapes).query(shapely.get_parts(added), predicate="intersects")[1]) if len(shapes) else []
         if len(hits):
             added = _areas(shapely.difference(added, shapely.union_all(shapely.make_valid(shapes[hits])), grid_size=GRID))
