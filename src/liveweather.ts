@@ -1,7 +1,12 @@
 import type { Kind } from './weather.ts';
 
-// The weather in Prague right now, from Open-Meteo (no key needed), for the start
-// screen. Null when it can't be had in a few seconds, and the game rolls its own.
+// The weather in Prague right now, for the start screen and, while the player leaves the
+// weather to itself, for the game to follow (main.ts). Null when it can't be had in a
+// few seconds, and the game rolls its own.
+// From the game's own address first when the build names one (VITE_WEATHER_API, e.g.
+// /api/weather: ČHMÚ's open data through worker/weather.js, free for any use), and
+// from Open-Meteo (no key needed, free for non-commercial use) otherwise or when that fails.
+const OWN: string = (import.meta.env?.VITE_WEATHER_API as string | undefined) ?? '';
 const URL = 'https://api.open-meteo.com/v1/forecast?latitude=50.0875&longitude=14.4213&current=weather_code&timezone=Europe%2FPrague';
 
 // WMO weather codes: https://open-meteo.com/en/docs
@@ -17,7 +22,22 @@ export function kindOfCode(code: number): Kind | null {
   return null;
 }
 
+const KINDS: Kind[] = ['clear', 'cloudy', 'rain', 'storm', 'mist', 'snow'];
+
+async function ownWeather(timeoutMs: number): Promise<Kind | null> {
+  try {
+    const r = await fetch(OWN, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!r.ok) return null;
+    const kind: unknown = ((await r.json()) as { kind?: unknown }).kind;
+    return KINDS.includes(kind as Kind) ? kind as Kind : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function liveWeather(timeoutMs = 4000): Promise<Kind | null> {
+  const own = OWN ? await ownWeather(timeoutMs) : null;
+  if (own) return own;
   try {
     const r = await fetch(URL, { signal: AbortSignal.timeout(timeoutMs) });
     if (!r.ok) return null;

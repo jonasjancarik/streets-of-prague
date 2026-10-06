@@ -5,6 +5,7 @@
 //   POST /api/subscribe  { email, lang, token }
 //   POST /api/feedback   { message, email?, context?, scenario?, screenshot?, lang }
 //   POST /api/report     one statistics report
+//   GET  /api/weather    the weather in Prague now, from ČHMÚ (worker/weather.js), if turned on
 //
 // A signup is handed to Brevo, which sends the confirmation email; nobody is on the
 // list until they click the link in it; with Turnstile set up, a signup also has to carry
@@ -26,8 +27,10 @@
 //   FEEDBACK_TO, FEEDBACK_FROM  who gets the feedback, and the address it comes from
 //   RATE                        rate limiter, per visitor address
 //   TELEMETRY                   the Analytics Engine dataset the statistics go to
+//   WEATHER_SOURCE              "chmi" turns /api/weather on (the game's build then needs VITE_WEATHER_API=/api/weather)
 
 import { report, OTHER_ORIGINS } from './stats.js';
+import { weather } from './weather.js';
 
 const BREVO = 'https://api.brevo.com/v3/contacts/doubleOptinConfirmation';
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
@@ -177,9 +180,10 @@ async function feedback(body, env, origin, ip, here) {
 const json = (data, status, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers } });
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const path = new URL(request.url).pathname;
     if (path === '/api/report') return report(request, env);
+    if (path === '/api/weather') return weather(request, env, ctx);
     const handle = FORMS[path];
     if (handle) return form(request, env, handle);
     return env.ASSETS.fetch(request);

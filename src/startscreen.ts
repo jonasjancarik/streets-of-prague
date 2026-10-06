@@ -28,6 +28,8 @@ export interface StartChoice {
   // Seconds since midnight, or null to keep the clock as it is (the time now).
   time: number | null;
   weather: Kind;
+  // The weather is the real one in Prague now ("Now: …"), for the game to keep following.
+  live: boolean;
   sound: boolean;
   // Day of the year, including the saved date when continuing.
   season: number;
@@ -205,7 +207,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
           const startDay = resuming ? opts.savedLook?.season ?? day : useToday ? pragueToday() : day;
           // A page or beta note kept open across midnight still starts in today's Prague.
           const startWeather = !resuming && startDay !== day && (!weatherPicked || usingLive) ? automaticWeather(opts.weatherForSeason(startDay)) : weather;
-          resolve({ time: t ? t.sec : null, weather: startWeather, sound, season: startDay, resume: resuming });
+          resolve({ time: t ? t.sec : null, weather: startWeather, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming });
         });
       }, { once: true }));
     },
