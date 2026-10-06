@@ -43,7 +43,7 @@ const OVERCAST = new THREE.Color('#b3b8bf'), CITY_GLOW = new THREE.Color('#5a4d4
 const SNOWY_GROUND = new THREE.Color('#b9bec6'), LIGHTNING = new THREE.Color('#dfe6ff');
 // Fog and mist, as seen (display colours): by day, at night, at night under clouds.
 const FOG_DAY = new THREE.Color('#b4b9bf'), FOG_NIGHT = new THREE.Color('#1a1e25'), FOG_GLOW = new THREE.Color('#2c2a2b');
-const FOG_SHARE = 0.76; // WebGPU's share of the fog asked for (see Sky.update)
+const FOG_SHARE = 0.88; // WebGPU's share of the fog asked for (see Sky.update)
 // The share of lit windows through the day, by the hour.
 const LIT = [0.12, 0.08, 0.06, 0.05, 0.06, 0.12, 0.25, 0.3, 0.15, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.15, 0.25, 0.4, 0.45, 0.45, 0.4, 0.3, 0.2];
 
@@ -184,8 +184,8 @@ export class Sky {
     else {
       // Mixed in before the curve and the sRGB encoding (WebGPU), the same share of fog lightens
       // dark ground more than mixed in on the screen's colours: measured on wet paving in rain at
-      // 14:00, as much as 1.3 times the share would there. A smaller share makes up for it, at no
-      // cost in the shader. (Surfaces as light as the fog get a little less of it than before.)
+      // 14:00, as much as 1.1 to 1.2 times the share would there (two runs). A smaller share makes
+      // up for it, at no cost in the shader. (Surfaces as light as the fog get a little less of it than before.)
       const share = this.webgpu ? amount * FOG_SHARE : amount;
       const x = 0.5 - Math.sin(Math.asin(1 - 2 * share) / 3); // the inverse of smoothstep
       this.fog.near = 0.5 * height;
