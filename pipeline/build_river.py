@@ -35,7 +35,8 @@ from pyproj import Transformer
 from scipy import ndimage
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import dijkstra
-from shapely.geometry import LineString, Point, box
+from shapely.geometry import LineString, Point, Polygon, box
+from shapely.prepared import prep
 from shapely.ops import linemerge, unary_union
 
 from osm_area import AREAS, OUT
@@ -45,6 +46,9 @@ PBF_DIR = Path(__file__).parent / ".cache" / "osm"
 RES = 2.0  # metres per cell of the water raster
 CORRIDOR = 500  # tiles this near OSM's line of the river are read (m)
 CLEAR = 5.0  # a cruise boat keeps this far from the bank (its half beam and a margin)
+LOCK_CLEAR = 3.6  # in a lock and the cut leading to it: its half beam and a fender
+LOCK_ZONE = 15  # this near OSM's line of a lock counts as in it (m)
+LOCK_REACH = 150  # and as far as this beyond its ends, along the same line: the cut to the open river
 FERRY_CLEAR = 2.5  # and a ferry this far, between its landings
 BERTH = 8.0  # where it lies at a landing: room for its length, bow or stern to the bank
 WEIR = 5.0  # no boat within this of a weir's line (as waterAt in src/tiles.ts)
@@ -74,7 +78,7 @@ class Water:
     """The tiles' water near the river as a raster: where a boat can be, and how far
     from the bank (or a weir) each cell is."""
 
-    def __init__(self, area: str, near):
+    def __init__(self, area: str, near, locks=()):
         tiles = OUT / f"{area}_now" / "tiles"
         index = json.loads((OUT / f"{area}_now" / "index.json").read_text())
         ox, oy = index["origin"]
@@ -115,12 +119,18 @@ class Water:
                 img.paste(1, mask=one.point(lambda v: 255 * v))
             # The banks themselves are dry, however thin what they outline (not the
             # tile's own edge, where the water carries on in the next tile).
-            edge = lambda a, b: any(abs(a[k] - v) < 0.05 and abs(b[k] - v) < 0.05  # noqa: E731
+            edge = lambda a, b: any(abs(a[k] - v) < 0.5 and abs(b[k] - v) < 0.5  # noqa: E731
                                     for k, v in ((0, tx), (0, tx + size), (1, ty - size), (1, ty)))
+            # (Nor a line where two of the tile's water polygons meet in mid-river.)
+            whole = prep(unary_union([Polygon(r[0], r[1:]).buffer(0.05) for r in polys if len(r[0]) > 2]))
             for rings in polys:
                 for ring in rings:
                     for a, b in zip(ring, ring[1:] + ring[:1]):
-                        if not edge(a, b):
+                        length = np.hypot(b[0] - a[0], b[1] - a[1])
+                        if edge(a, b) or length < 1e-6:
+                            continue
+                        mx, my, nx, ny = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, -(b[1] - a[1]) / length, (b[0] - a[0]) / length
+                        if not (whole.contains(Point(mx + nx * 0.6, my + ny * 0.6)) and whole.contains(Point(mx - nx * 0.6, my - ny * 0.6))):
                             draw.line(sub([a, b]), fill=0, width=1)
             cells = np.array(img, dtype=bool).reshape(per, fine, per, fine).all(axis=(1, 3))
             r, c = (j1 - 1 - j) * per, (i - i0) * per
@@ -141,6 +151,15 @@ class Water:
         self.wet = np.array(img, dtype=bool)
         self.dist = ndimage.distance_transform_edt(self.wet) * RES
         self.weirs = [LineString(w) for w in weirs]
+        # How far from the bank a cruise boat must keep: less in a lock and its cut. (The
+        # chambers are 11 or 12 m wide on the map: 4 to 6 m from their walls in the middle.)
+        zone = Image.new("L", (wet.shape[1], wet.shape[0]), 0)
+        for g in locks:
+            (ax, ay), (bx, by) = g.coords[0], g.coords[-1]
+            ux, uy = (bx - ax) / g.length, (by - ay) / g.length
+            long = [(ax - ux * LOCK_REACH, ay - uy * LOCK_REACH), *g.coords, (bx + ux * LOCK_REACH, by + uy * LOCK_REACH)]
+            ImageDraw.Draw(zone).line(px(long), fill=1, width=int(2 * LOCK_ZONE / RES))
+        self.need = np.where(np.array(zone, dtype=bool), LOCK_CLEAR, CLEAR)
         self.tiles = len(picked)
 
     def cell(self, x, y):
@@ -177,7 +196,7 @@ class Water:
         near the bank so a way through it keeps to the middle. `window`: (r0, r1, c0, c1)."""
         r0, r1, c0, c1 = window or (0, self.dist.shape[0], 0, self.dist.shape[1])
         d = self.dist[r0:r1, c0:c1]
-        ok = d >= clear
+        ok = d >= (self.need[r0:r1, c0:c1] if clear is None else clear)
         ids = np.full(d.shape, -1, dtype=np.int64)
         ids[ok] = np.arange(ok.sum())
         cost = 1 + 40 / np.minimum(np.maximum(d, 1), 80)
@@ -239,7 +258,7 @@ def fairway(water: Water, river: LineString):
     """The stretches a cruise boat can sail: in each connected piece of navigable water
     OSM's line of the river runs through, from where the line comes into it to where
     it goes out."""
-    ok = water.dist >= CLEAR
+    ok = water.dist >= water.need
     labels, _ = ndimage.label(ok, structure=np.ones((3, 3)))
     # Which piece the river's line is in, every few metres along it.
     spans = {}
@@ -256,7 +275,7 @@ def fairway(water: Water, river: LineString):
         if k:
             first = spans.setdefault(int(k), [s, (r, c), s, (r, c)])
             first[2:] = [s, (r, c)]
-    graph = water.graph(CLEAR)
+    graph = water.graph(None)
     out = []
     for k, (s0, a, s1, b) in sorted(spans.items(), key=lambda kv: kv[1][0]):
         if s1 - s0 < MIN_REACH:
@@ -264,7 +283,7 @@ def fairway(water: Water, river: LineString):
         pts = water.route(a, b, CLEAR, graph)
         if not pts:
             continue
-        line = smooth(pts, water, CLEAR)
+        line = smooth(pts, water, LOCK_CLEAR)
         out.append({"pts": [[round(x, 1), round(y, 1), round(min(water.clearance(x, y), 99), 1)] for x, y in line]})
         print(f"  fairway: {LineString(line).length:.0f} m, from {s0:.0f} to {s1:.0f} m along the river")
     return out
@@ -353,8 +372,10 @@ def main(area: str = "centrum") -> None:
         river = LineString(river.coords[::-1])
     # The locks and canals count as places to look for water too.
     side = [line(nds) for tags, nds in ways if (tags.get("lock") == "yes" or tags.get("waterway") == "canal") and sum(k in nodes for k in nds) > 1]
+    chambers = [g for g in (line(nds) for tags, nds in ways if tags.get("lock") == "yes" and sum(k in nodes for k in nds) > 1)
+                if g.length > 1 and g.distance(river) < CORRIDOR]
     near = unary_union([river] + [g for g in side if g.distance(river) < CORRIDOR]).intersection(clip)
-    water = Water(area, near)
+    water = Water(area, near, chambers)
     print(f"{area}: {river.length / 1000:.1f} km of the Vltava, {water.tiles} tiles, {len(water.weirs)} weirs in them")
     locks = [[[round(x, 1), round(y, 1)] for x, y in g.coords] for tags, nds in ways if tags.get("lock") == "yes"
              for g in [line(nds)] if g.distance(river) < CORRIDOR and clip.contains(g)]

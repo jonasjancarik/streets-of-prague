@@ -32,7 +32,7 @@ export interface Waters {
 type Kind = 'cruise' | 'pedal' | 'swan' | 'ferry'; // (the ferries are run by ferries.ts)
 interface Spec { len: number; beam: number; speed: number; turn: number; look: number; bob: number; top: number }
 const SPECS: Record<Kind, Spec> = {
-  cruise: { len: 34, beam: 6.4, speed: 2.6, turn: 0.1, look: 45, bob: 0.05, top: 4.8 },
+  cruise: { len: 34, beam: 6.4, speed: 2.6, turn: 0.1, look: 45, bob: 0.05, top: 3.95 },
   pedal: { len: 3.2, beam: 1.8, speed: 0.8, turn: 0.45, look: 7, bob: 0.07, top: 2.1 },
   swan: { len: 3.4, beam: 1.9, speed: 0.7, turn: 0.4, look: 7, bob: 0.07, top: 2.4 },
   ferry: { len: 11, beam: 3.8, speed: 2.4, turn: 0.3, look: 15, bob: 0.05, top: 3.9 },
@@ -100,21 +100,21 @@ export function body(kind: Kind, paint: string) {
     hull(L, B, 7, -0.4, 0.5, '#1f3550');
     hull(L, B, 7, 0.5, 1.5, '#f2f1ec');
     hull(L - 0.7, B - 0.7, 6.6, 1.5, 1.56, '#a9855a'); // wooden deck fore and aft
-    box(L * 0.64, 2.3, B - 1, -2, 2.65, 0, '#f4f3ee'); // the cabin
-    box(L * 0.62, 1.05, B - 0.3, -2, 2.75, 0, '#27343f', 1); // its windows all round (a little proud of the roof, so they show from above)
-    box(L * 0.68, 0.14, B - 0.6, -2, 3.85, 0, '#7f98a8'); // the roof deck
-    box(L * 0.66, 0.5, 0.06, -2, 4.15, (B - 0.7) / 2, '#c9c7bf'); // railings along it
-    box(L * 0.66, 0.5, 0.06, -2, 4.15, -(B - 0.7) / 2, '#c9c7bf');
+    box(L * 0.64, 1.85, B - 1, -2, 2.42, 0, '#f4f3ee'); // the cabin (low, like the boats that fit under Prague's bridges)
+    box(L * 0.62, 0.95, B - 0.3, -2, 2.55, 0, '#27343f', 1); // its windows all round (a little proud of the roof, so they show from above)
+    box(L * 0.68, 0.14, B - 0.6, -2, 3.4, 0, '#7f98a8'); // the roof deck
+    box(L * 0.66, 0.5, 0.06, -2, 3.7, (B - 0.7) / 2, '#c9c7bf'); // railings along it
+    box(L * 0.66, 0.5, 0.06, -2, 3.7, -(B - 0.7) / 2, '#c9c7bf');
     box(4.2, 1.7, 3.4, 9.6, 2.35, 0, '#f4f3ee'); // the wheelhouse forward
     box(0.1, 0.8, 3.0, 11.7, 2.55, 0, '#27343f');
-    // Navigation lights: red to port (left), green to starboard, white on a short mast.
+    // Navigation lights: red to port (left), green to starboard, white on a stub of a mast.
     box(0.5, 0.35, 0.12, 9.9, 2.9, -1.76, '#ff1a10', 2);
     box(0.5, 0.35, 0.12, 9.9, 2.9, 1.76, '#10ff40', 2);
-    box(0.08, 1.3, 0.08, 10.4, 3.85, 0, '#c9c7bf');
-    box(0.45, 0.35, 0.45, 10.4, 4.6, 0, '#ffffff', 2);
+    box(0.08, 0.4, 0.08, 10.4, 3.4, 0, '#c9c7bf');
+    box(0.45, 0.3, 0.45, 10.4, 3.75, 0, '#ffffff', 2);
     box(0.3, 0.3, 0.3, -2 - L * 0.32 + 0.3, 2.0, 0, '#ffffff', 2); // and one at the stern
     box(0.8, 0.2, 5.2, -2 - L * 0.32 + 0.5, 1.55, 0, '#8a2b2b'); // a red stripe at the stern
-    for (let i = 0; i < 6; i++) box(1.2, 0.08, 0.5, -12 + i * 3.6, 4.0, 0, '#3d6f9a'); // benches up top
+    for (let i = 0; i < 6; i++) box(1.2, 0.08, 0.5, -12 + i * 3.6, 3.55, 0, '#3d6f9a'); // benches up top
   } else if (kind === 'ferry') {
     // PID's little ferry: a dark hull with a band in the line's colour, an open deck
     // forward under an awning, the cabin and wheelhouse aft.
