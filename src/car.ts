@@ -719,7 +719,12 @@ export class Car {
   braking = false;
   // A police car with the frame on its nose, which keeps its headlamps from breaking.
   ram?: boolean;
-  _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number]; stamp?: number;
+  // The resting index's last obstacle state (main.ts, restingCars.ts). The pose is
+  // kept as plain numbers; the circle offsets are the constructor's own array, so a
+  // change of shape must replace the array to be noticed.
+  _tx?: number; _ty?: number; resting?: boolean; restAt?: [number, number, number];
+  restFields?: { gz?: number; r: number; vx: number; vy: number; offsetsRef: readonly number[]; n: number };
+  stamp?: number;
 
   constructor(type: string, r: () => number, x = 0, y = 0, h = 0, colour?: string, box?: string) {
     this.type = type;
