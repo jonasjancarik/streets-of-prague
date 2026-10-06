@@ -93,3 +93,10 @@ It waits 75 s at each landing instead of keeping the 15 or 20 minutes between sa
 Each landing gets a pontoon from the bank to the boat. E by the landing while the boat
 is in; a PID ticket as on a tram (the grace period, then "No ticket"); no inspector
 comes aboard. E at a landing puts you on the bank.
+
+Checked in the game on 6 October 2026 (praha, WebGPU, headless Chrome): `ferry-ride`
+boards P5 at a landing without a ticket (the time to buy one starts) and with one,
+crosses twice and steps onto the bank 2 m from the landing; `cruise-weir` sails a cruise
+boat at the Šítkov weir, which turns 87 m before the end of its stretch and sails back;
+`boat-boarding` still passes. `upload-data.sh` and `deploy-mbxp.sh` copy the whole of
+`public/data`, so `river.json` goes with the map once it has been built there.

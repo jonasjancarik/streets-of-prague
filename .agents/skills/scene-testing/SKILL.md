@@ -58,6 +58,14 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   position, returning whether you boarded. `t.exit()` uses the same safe bank rule.
   `boat-boarding` checks all three waiting boats; `scripts/check-boat-access.mjs`
   checks rejected quays, walls and railings without a browser.
+- `t.ferries()`: PID's ferries (line, sailing or not, the landing each lies at, the next
+  one, each landing's spot on the bank). `t.boardFerry()` is E at a landing; `t.ticket()`
+  says how the fare stands, `t.ticket(true)` buys one first. `t.cruiseToEnd(back)` puts a
+  cruise boat on the fairway before the end of the stretch nearest you, `t.cruise()` says
+  where it is, which way it goes and whether it's turning. Scenarios `ferry-ride` and
+  `cruise-weir`; offline, `scripts/check-river.mjs` and `scripts/check-river-boats.mjs`.
+  With a dev server on another port pass `--url http://localhost:<port>/` to every
+  command, `run` included: without it the command loads the game from port 5191.
 - `t.ignite(car)` sets a car on fire; `t.fire(car)`: whether it burns, is a wreck, still
   has flames, what the fire engine sent to it is doing (`go`, `work`, `leave`) and how
   many hoses are on it.
