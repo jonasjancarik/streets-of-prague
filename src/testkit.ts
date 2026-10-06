@@ -68,7 +68,7 @@ interface Game {
   ground: (x: number, y: number) => number;
   boats: Boats;
   ferries: Ferries;
-  pid: { state: string | null };
+  pid: { state: string | null; buy: (now: number) => boolean };
   carsNear: (x: number, y: number, r: number) => Car[];
   tramsNear: (x: number, y: number, r: number) => TramBody[];
   // Where the camera looks now, and how high it is (for starting the free camera there).
@@ -358,7 +358,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       return g.mode() === 'ferry';
     },
     ticket(buy = false) {
-      if (buy) g.wallet.buyTicket(g.clock.t);
+      if (buy && !g.pid.buy(g.clock.t)) g.wallet.buyTicket(g.clock.t); // (aboard, as B does; on foot, straight from the wallet)
       return { held: g.wallet.hasTicket(g.clock.t), fare: g.pid.state };
     },
     // The first cruise boat, put on the fairway `back` metres before the end of the
@@ -372,6 +372,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         if (!best || d < best.d) best = { c, end, d };
       }
       const { c, end } = best!, dir = end ? 1 : -1, along = end ? end - back : back, p = c.at(along);
+      for (const o of B.list) if (o !== b && o.kind === 'cruise' && Math.hypot(o.x - p.x, o.y - p.y) < 300) { o.live = false; o.mesh.visible = false; } // (not on top of another)
       Object.assign(b, { x: p.x, y: p.y, h: dir > 0 ? p.ang : p.ang + Math.PI, v: b.s.speed, w: 0, course: c, along, dir, about: 0, live: true, z: null });
       b.mesh.visible = true;
       return true;
@@ -383,6 +384,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       const near = B.courses.map(c => ({ c, ...c.project(x, y) })).sort((p, q) => p.d - q.d)[0];
       if (!b || !near) return false;
       const p = near.c.at(near.s);
+      for (const o of B.list) if (o !== b && o.kind === 'cruise' && Math.hypot(o.x - p.x, o.y - p.y) < 300) { o.live = false; o.mesh.visible = false; } // (not on top of another)
       Object.assign(b, { x: p.x, y: p.y, h: dir > 0 ? p.ang : p.ang + Math.PI, v: b.s.speed, w: 0, course: near.c, along: near.s, dir, about: 0, live: true, z: null });
       b.mesh.visible = true;
       return true;

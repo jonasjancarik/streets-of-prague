@@ -24,7 +24,7 @@ export default {
       const fare = t.ticket(paid);
       // (The ticket bought aboard counts from the next look at the fare.)
       await t.wait(1);
-      t.check(`ride ${n}: ${paid ? 'a ticket is held' : 'no ticket: time to buy one'}`, paid ? t.ticket().held : fare.fare === 'grace' && !fare.held, JSON.stringify(fare));
+      t.check(`ride ${n}: ${paid ? 'a ticket is held' : 'no ticket: time to buy one'}`, paid ? fare.held && fare.fare === null : fare.fare === 'grace' && !fare.held, JSON.stringify(fare));
       const to = await lands(from);
       t.check(`ride ${n}: it crosses to another landing`, to !== null && to !== from, `from ${from} to ${to}`);
       if (n === 2) await t.shot('ferry-ride');
