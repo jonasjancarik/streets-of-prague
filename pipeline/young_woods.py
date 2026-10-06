@@ -5,8 +5,11 @@ game fills every wood with full-grown trees. IPR Praha's 2025 surface model (1 m
 file ground_cover.py uses) minus the terrain heights says how high the canopy really is.
 Inside a wood, the places where it tops out between 1.5 and 7 m are written to the young
 layer as polygons; assemble() puts them into the tile as `areas.young_wood`, and
-src/map/vegetation.ts plants small, close trees there. The surface model only covers the
-city, so a wood outside it stays as it was.
+src/map/vegetation.ts plants small, close trees there. Where nothing stands higher than
+1.5 m (a clearing, a meadow inside the wood's outline, the strip under a power line) the
+place is written as a clearing, `areas.wood_clearing`: the game draws grass there and plants
+only the shrubs of a wood's edge. The surface model only covers the city, so a wood outside
+it stays as it was.
 
     uv run --group cover young_woods.py build praha            # every tile with a wood
     uv run --group cover young_woods.py build praha 60 70 20 30  # tiles i0 i1 j0 j1
@@ -35,6 +38,7 @@ RES = 1.0          # m per pixel: the surface model's own
 LOW, HIGH = 1.5, 7.0   # canopy tops between these (m above the ground) are a young wood
 WINDOW = 9         # the canopy top is taken as the 80th percentile over this many metres
 MIN_AREA = 250.0   # m2: smaller patches are left out
+CLEAR_MIN = 400.0  # m2: the smallest clearing (a gap between crowns is not one)
 MIN_WOOD = 2000.0  # m2 of wood in a tile below which it isn't looked at
 
 
@@ -45,8 +49,9 @@ def wood_of(ground_tile):
 
 
 def young_mask(area, meta, t, wood):
-    """(mask, wood mask) over the tile at RES, rows from the north: True where the wood's
-    canopy is young. Where the surface model has nothing the answer is False."""
+    """(young mask, clearing mask, wood mask) over the tile at RES, rows from the north: True
+    where the wood's canopy is young, and where there is none. Where the surface model has
+    nothing the answer is False."""
     try:
         dsm = gc.ipr_dsm(area, t, RES, cache=False)
     except ValueError:  # the tile lies wholly outside IPR's file
@@ -59,18 +64,25 @@ def young_mask(area, meta, t, wood):
     ndsm = np.where(known, dsm - dtm, np.nan)
     in_wood = gc.burn(np.zeros(dsm.shape, bool), t, RES, wood)
     top = ndimage.percentile_filter(np.nan_to_num(ndsm, nan=-10), 80, size=WINDOW)
-    young = in_wood & known & (top >= LOW) & (top < HIGH)
-    # (padded with the tile's own edge, so a young wood does not shrink away from the tile border)
-    young = np.pad(young, 4, mode="edge")
-    young = ndimage.binary_closing(ndimage.binary_opening(young, iterations=2), iterations=2)[4:-4, 4:-4] & in_wood
-    labels, n = ndimage.label(young)
+    return (tidy(in_wood & known & (top >= LOW) & (top < HIGH), in_wood, MIN_AREA),
+            tidy(in_wood & known & (top < LOW), in_wood, CLEAR_MIN), in_wood)
+
+
+def tidy(mask, in_wood, min_area):
+    """The mask without specks, pinholes and patches under `min_area`."""
+    # (padded with the tile's own edge, so a patch does not shrink away from the tile border)
+    mask = np.pad(mask, 4, mode="edge")
+    mask = ndimage.binary_closing(ndimage.binary_opening(mask, iterations=2), iterations=2)[4:-4, 4:-4] & in_wood
+    labels, n = ndimage.label(mask)
     if n:
-        sizes = ndimage.sum(young, labels, range(1, n + 1))
-        young &= np.isin(labels, 1 + np.flatnonzero(sizes >= MIN_AREA))
-    return young, in_wood
+        sizes = ndimage.sum(mask, labels, range(1, n + 1))
+        # A patch cut by the tile's border is kept whatever its size: the rest is next door.
+        edge = np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))
+        mask &= np.isin(labels, np.union1d(1 + np.flatnonzero(sizes >= min_area), edge[edge > 0]))
+    return mask
 
 
-def vectorise(mask, t, wood):
+def vectorise(mask, t, wood, min_area=MIN_AREA):
     """The mask as smooth polygons in local metres, kept inside the wood outlines."""
     x0, _, _, y1 = t["box"]
     m = ndimage.gaussian_filter(np.pad(mask.astype(float), 1), 0.8)
@@ -84,7 +96,7 @@ def vectorise(mask, t, wood):
     for rings in wood:
         inside = inside.union(Polygon(rings[0], rings[1:]).buffer(0))
     g = g.simplify(0.5).buffer(0).intersection(inside).intersection(shapely_box(*t["box"]))
-    return [r for r in gc.rings_of(g) if Polygon(r[0], r[1:]).area >= MIN_AREA / 2]
+    return [r for r in gc.rings_of(g) if Polygon(r[0], r[1:]).area >= min(min_area / 2, 25)]
 
 
 def round_rings(polys):
@@ -92,13 +104,15 @@ def round_rings(polys):
 
 
 def tile_job(job):
-    """(key, polygons or None, young share, wood m2) for one tile."""
+    """(key, young polygons, clearing polygons, young share, clear share, wood m2) for one tile."""
     area, meta, i, j, box, wood, height = job
     t = {"i": i, "j": j, "box": box}
-    mask, in_wood = young_mask(area, meta, t, wood)
+    mask, clear, in_wood = young_mask(area, meta, t, wood)
     wood_m2 = float(in_wood.sum()) * RES * RES
-    share = float(mask.sum()) / max(in_wood.sum(), 1)
-    return f"{i}_{j}", round_rings(vectorise(mask, t, wood)) if mask.any() else [], share, wood_m2
+    total = max(in_wood.sum(), 1)
+    return (f"{i}_{j}", round_rings(vectorise(mask, t, wood)) if mask.any() else [],
+            round_rings(vectorise(clear, t, wood, CLEAR_MIN)) if clear.any() else [],
+            float(mask.sum()) / total, float(clear.sum()) / total, wood_m2)
 
 
 def tile_key(wood, height):
@@ -136,32 +150,38 @@ def run(area, tiles, jobs, write=True):
     meta = {**meta, "terrain": terrain["index"]}
     want = set(tiles) if tiles else None
     todo = list(jobs_for(area, meta, terrain, want))
-    found, keys, started, shares = {}, {}, time.time(), []
+    found, cleared, keys, started, shares = {}, {}, {}, time.time(), []
     if want is not None and write:  # a trial on some tiles adds to what the layer already has
         before = layers.read_layer(area, "young") or {}
-        found, keys = dict(before.get("tiles", {})), dict(before.get("inputs", {}))
+        found, cleared, keys = dict(before.get("tiles", {})), dict(before.get("clear", {})), dict(before.get("inputs", {}))
     by_key = {f"{j[2]}_{j[3]}": tile_key(j[5], j[6]) for j in todo}
     with ProcessPoolExecutor(jobs) as pool:
-        for n, (k, polys, share, wood_m2) in enumerate(pool.map(tile_job, todo, chunksize=2), 1):
-            shares.append((k, share, wood_m2))
+        for n, (k, polys, clear, share, clear_share, wood_m2) in enumerate(pool.map(tile_job, todo, chunksize=2), 1):
+            shares.append((k, share, wood_m2, clear_share))
             keys[k] = by_key[k]
             found.pop(k, None)
+            cleared.pop(k, None)
             if polys:
                 found[k] = polys
+            if clear:
+                cleared[k] = clear
             if n % 50 == 0:
                 print(f"  {n}/{len(todo)} tiles in {time.time() - started:.0f} s", flush=True)
-    wood_total = sum(w for _, _, w in shares)
-    young_total = sum(s * w for _, s, w in shares)
+    wood_total = sum(w for _, _, w, _ in shares)
+    young_total = sum(s * w for _, s, w, _ in shares)
+    clear_total = sum(c * w for _, _, w, c in shares)
     print(f"{len(todo)} tiles with a wood: {wood_total / 1e4:.0f} ha of wood, {young_total / 1e4:.0f} ha of it young ({100 * young_total / max(wood_total, 1):.1f} %), "
-          f"{sum(1 for _, s, w in shares if s * w >= MIN_AREA)} tiles with a young wood")
+          f"{clear_total / 1e4:.0f} ha clearings ({100 * clear_total / max(wood_total, 1):.1f} %); "
+          f"{sum(1 for _, s, w, _ in shares if s * w >= MIN_AREA)} tiles with a young wood, "
+          f"{sum(1 for _, _, w, c in shares if c * w >= CLEAR_MIN)} with a clearing")
     if not write:
-        for k, s, w in sorted(shares, key=lambda r: -r[1] * r[2])[:25]:
-            print(f"  {k:>8}  wood {w / 1e4:5.2f} ha  young {100 * s:4.0f} %")
+        for k, s, w, c in sorted(shares, key=lambda r: -(r[1] + r[3]) * r[2])[:25]:
+            print(f"  {k:>8}  wood {w / 1e4:5.2f} ha  young {100 * s:4.0f} %  clear {100 * c:4.0f} %")
         return
     layers.write_layer(area, "young", {
-        "tile": meta["tile"], "tiles": found, "inputs": keys,
+        "tile": meta["tile"], "tiles": found, "clear": cleared, "inputs": keys,
         "processing": processing(), "sources": build_cache.sources([gc.IPR_DSM])})
-    print(f"young: {len(found)} tiles with young woods, {time.time() - started:.0f} s")
+    print(f"young: {len(found)} tiles with young woods, {len(cleared)} with clearings, {time.time() - started:.0f} s")
 
 
 def main():

@@ -29,19 +29,19 @@ def mask_for(dsm, ground=300.0):
 
 class YoungMaskTests(unittest.TestCase):
     def test_a_low_canopy_is_young_and_a_tall_one_is_not(self):
-        young, in_wood = mask_for(surface(True))
+        young, _, in_wood = mask_for(surface(True))
         self.assertTrue(in_wood.all())
         self.assertTrue(young[:, 5:55].all())
         self.assertFalse(young[:, 65:].any())
 
     def test_where_the_surface_model_has_nothing_nothing_is_young(self):
-        young, _ = mask_for(np.zeros((120, 120), np.float32))
+        young, _, _ = mask_for(np.zeros((120, 120), np.float32))
         self.assertFalse(young.any())
 
     def test_low_growth_outside_the_wood_is_left_alone(self):
         with mock.patch.object(young_woods.gc, "ipr_dsm", return_value=surface(True)), \
              mock.patch.object(young_woods.gc, "terrain", return_value=(np.full((31, 31), 300.0, np.float32), 4.0)):
-            young, _ = young_woods.young_mask("x", {}, TILE, [[[[60, 0], [120, 0], [120, 120], [60, 120], [60, 0]]]])
+            young, _, _ = young_woods.young_mask("x", {}, TILE, [[[[60, 0], [120, 0], [120, 120], [60, 120], [60, 0]]]])
         self.assertFalse(young[:, :55].any())
 
     def test_patches_under_the_minimum_are_dropped(self):
@@ -49,8 +49,19 @@ class YoungMaskTests(unittest.TestCase):
         dsm[50:60, 50:60] = 303.0  # 100 m2
         self.assertFalse(mask_for(dsm)[0].any())
 
+    def test_bare_ground_inside_the_wood_is_a_clearing_not_a_young_wood(self):
+        dsm = surface(False)
+        dsm[30:70, 30:70] = 300.3  # 1,600 m2 of grass
+        dsm[90:100, 90:100] = 300.3  # 100 m2: a gap between crowns
+        young, clear, _ = mask_for(dsm)
+        self.assertFalse(young.any())
+        self.assertTrue(clear[36:64, 36:64].all())
+        self.assertFalse(clear[85:105, 85:105].any())
+        polys = young_woods.vectorise(clear, TILE, WOOD, young_woods.CLEAR_MIN)
+        self.assertEqual(len(polys), 1)
+
     def test_polygons_stay_inside_the_wood_and_tile(self):
-        young, _ = mask_for(surface(True))
+        young, _, _ = mask_for(surface(True))
         polys = young_woods.vectorise(young, TILE, WOOD)
         self.assertEqual(len(polys), 1)
         xs = [x for ring in polys[0] for x, _ in ring]
@@ -65,7 +76,7 @@ class YoungLayerTests(unittest.TestCase):
     def test_key_follows_the_wood_outlines_and_heights_but_not_the_young_woods(self):
         t = self.tile(wood=WOOD)
         key = layers.young_key(t, "h1")
-        t["areas"] = {**t["areas"], "young_wood": WOOD}
+        t["areas"] = {**t["areas"], "young_wood": WOOD, "wood_clearing": WOOD}
         self.assertEqual(layers.young_key(t, "h1"), key)
         self.assertNotEqual(layers.young_key(t, "h2"), key)
         self.assertNotEqual(layers.young_key(self.tile(wood=WOOD, dtm_wood=WOOD), "h1"), key)

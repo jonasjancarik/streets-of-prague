@@ -192,7 +192,7 @@ def cover_key(t: dict, height) -> str:
     and building outlines that leave the ground bare (before the cover is added to
     them), and the digest of the tile's terrain heights. Young woods lie inside a wood that
     is already there, and assemble() puts them into the tile before it compares this key."""
-    areas = {k: v for k, v in t["areas"].items() if k != "young_wood"}
+    areas = {k: v for k, v in t["areas"].items() if k not in ("young_wood", "wood_clearing")}
     return build_cache.digest(dumps([areas, t["roads"], [b["rings"] for b in t["buildings"]], height]).encode())
 
 
@@ -444,8 +444,11 @@ def assemble(area: str, strict=False) -> dict:
         if young and k in young["inputs"]:
             if young["inputs"][k] != young_key(t, height_digest(terrain, k)):
                 young_out_of_date += 1
-            elif young["tiles"].get(k):
-                t["areas"] = {**t["areas"], "young_wood": young["tiles"][k]}
+            else:
+                if young["tiles"].get(k):
+                    t["areas"] = {**t["areas"], "young_wood": young["tiles"][k]}
+                if young.get("clear", {}).get(k):
+                    t["areas"] = {**t["areas"], "wood_clearing": young["clear"][k]}
         # The classified bare ground, if it was made for the ground and heights as they are now.
         if cover and k in cover["inputs"]:
             if cover["inputs"][k] != cover_key(t, height_digest(terrain, k)):
