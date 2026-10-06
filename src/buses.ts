@@ -171,16 +171,15 @@ export class BusRun {
 
   // Follow the bus's position along the line (it only moves forward).
   track(x: number, y: number) {
-    const [a, d] = project(this.line.path, x, y, this.along - 5, this.along + 40);
-    if (d < OFF) { this.along = Math.max(this.along, a); this.away = false; return; }
+    let [a, d] = project(this.line.path, x, y, this.along - 5, this.along + 40);
     // Off the line on a way round: back on it where that comes back, a good way further on.
-    if (!this.back) return;
-    this.away = true;
-    const [b, far] = project(this.line.path, x, y, this.back - 80, this.back + 40);
-    if (far >= OFF || b <= this.along) return;
-    this.along = b;
+    if (d >= OFF && this.back) [a, d] = project(this.line.path, x, y, this.back - 80, this.back + 40);
+    if (d >= OFF) { this.away = this.away || !!this.back; return; }
+    if (a <= this.along) return;
+    this.along = a;
+    // (The stops it went round are behind it.)
+    if (this.away) while (this.stop < this.line.stops.length && this.line.stops[this.stop][0] < a + 8) this.stop++;
     this.away = false;
-    while (this.stop < this.line.stops.length && this.line.stops[this.stop][0] < b + 8) this.stop++;
   }
 }
 
