@@ -106,6 +106,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     for (const k of PITCH_KINDS) fill(d.areas[k], 0);
     fill(d.areas.parking, 0);
     fill(d.areas.water, 0);
+    fill(d.areas.pool, 0);
     fill(d.areas.bridge, 0);
     for (const k of Object.keys(d.roads)) fill(d.roads[k], 0);
     ctx.fillStyle = '#000';

@@ -18,7 +18,7 @@ interface ParkingData {
   lots?: { o: BayOrientation | null; rings: Point2[][]; i?: 1 }[];
   areas: { parking?: Polygons };
   rails: { pts: Point2[] }[];
-  drives?: { x: number; y: number; h: number }[];
+  drives?: { x: number; y: number; h: number; g?: 1 }[];
 }
 interface ParkingSlot { x: number; y: number; h: number; lot: boolean; bay: boolean; angled: boolean; fwd?: boolean; withTraffic?: boolean; perp?: boolean }
 
@@ -408,8 +408,9 @@ export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r,
   }
   // On a drive: where the house has a place for one, as often as people are at home.
   // These never drive off, and they stand outside the street graph.
+  // A second car, in front of the garage, half as often as the first.
   for (const d of shuffle([...(data.drives || [])])) {
-    if (!inside(d.x, d.y) || r() > (night ? 0.55 : 0.3)) continue;
+    if (!inside(d.x, d.y) || r() > (night ? 0.55 : 0.3) * (d.g ? 0.5 : 1)) continue;
     place({ x: d.x, y: d.y, h: d.h, lot: false, bay: true, angled: false, perp: true });
   }
   return { cars, wanted, zoned: bySection.size };

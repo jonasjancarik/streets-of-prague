@@ -12,6 +12,7 @@ import { planDetails, partArrays } from './map/roofDetails.ts';
 import type { DetailArrays, RoofSite } from './map/roofDetails.ts';
 import { iprRoofSites } from './map/iprRoofs.ts';
 import { fenceArrays } from './map/fences.ts';
+import { shedArrays, shedCorners } from './map/sheds.ts';
 import { treeInstances } from './map/vegetation.ts';
 import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE } from './map/furniture.ts';
 import { standingMarks } from './map/utility.ts';
@@ -201,6 +202,7 @@ function tileGrid(geo: Geo<LandData>, t: LandData, seeds: Float64Array, edges: S
     }
     ctx.fillStyle = '#fff';
     fillPolys(ctx, geo, t.buildings.map((b) => b.rings), s);
+    fillPolys(ctx, geo, t.sheds.map((shed) => [shedCorners(shed)]), s);
     // Gateways and passages through buildings stay open, a little past both ends
     // (mapped passages often stop just short of the building's edge).
     ctx.strokeStyle = '#000';
@@ -274,6 +276,7 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
   const edges = ground && data.stepEdges ? stepEdges(ground.terraces, data.areas.water ?? [], heightSampler(ground.hm, ground.box, ground.n, ground.step, ground.labels, terraceAt(ground.terraces), flatTerraces(ground.terraces, ground.ref ?? 0)), ground.box, data.crossers) : [];
   const walls = joinWalls(wallArrays(data, hAt), parapetArrays(edges));
   const fences = fenceArrays(data, hAt);
+  const sheds = shedArrays(data.sheds, hAt);
   const grid = tileGrid(geo, data, seeds, edges);
   stampTrunks(grid, geo, trees);
   const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: furnitureMatrices([]), spots: [] };
@@ -294,7 +297,7 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
       if (Math.abs(c * x + s * y) <= hx + 0.15 && Math.abs(-s * x + c * y) <= hy + 0.15 && col >= 0 && row >= 0 && col < grid.w && row < grid.h) grid.cells[row * grid.w + col] = 255;
     }
   }
-  return { trees, walls, fences, furniture, cells: grid.cells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
+  return { trees, walls, fences, sheds, furniture, cells: grid.cells, masks: structures.map((l) => levelMask(box, l.polys, l.level)) };
 }
 
 function isRequest(value: unknown): value is WorkerRequest {
@@ -346,7 +349,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
       }
       case 'land': {
         const result = land(event.data.data);
-        const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.yearly.buffer, result.walls.position.buffer, result.walls.normal.buffer, ...Object.values(result.fences.fence).map((a) => a.buffer), ...Object.values(result.fences.hedge).map((a) => a.buffer), ...Object.values(result.fences.rail).map((a) => a.buffer), result.fences.sections.buffer, result.cells.buffer, ...result.masks.map((m) => m.cells.buffer)];
+        const buffers = [result.trees.matrices.buffer, result.trees.colours.buffer, result.trees.yearly.buffer, result.walls.position.buffer, result.walls.normal.buffer, ...Object.values(result.fences.fence).map((a) => a.buffer), ...Object.values(result.fences.hedge).map((a) => a.buffer), ...Object.values(result.fences.rail).map((a) => a.buffer), result.fences.sections.buffer, ...Object.values(result.sheds).map((a) => a.buffer), result.cells.buffer, ...result.masks.map((m) => m.cells.buffer)];
         buffers.push(...result.furniture.matrices.map(a => a.buffer));
         if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Land transfer requires ArrayBuffer storage');
         worker.postMessage({ id, result } satisfies WorkerResponse, buffers as ArrayBuffer[]);

@@ -24,6 +24,7 @@ from shapely.ops import unary_union
 import barriers
 import dtm
 import lanes
+import plots as garden_plots
 import roofs
 import sports
 import worn_paths
@@ -216,6 +217,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     mapped_rails = []  # crash barriers as OSM maps them
     sidewalks = []  # footways and paths with their half widths, which may run along a street
     drivable = []  # every car way as the road it covers, to keep inferred parking off it
+    service = []  # those of them that aren't streets: they run through blocks of gardens
     maybe = []  # ways that are passages if they run through buildings (passage_tags)
     squares = []  # (polygon, own surface, named outline only); decide after all ways and land
     square_ways = []  # (line, mapped surface) on the ground, including untagged ways
@@ -396,7 +398,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             "buildings": buildings, "parts": parts, "areas": {}, "roads": {}, "rails": rails,
             "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "ground_ways": ground_ways, "marks": [],
-            "lots": lots, "kerbs": kerbs, "drives": [], "setting": setting,
+            "lots": lots, "kerbs": kerbs, "drives": [], "setting": setting, "plots": [], "patches": {}, "sheds": [],
         }
     lines = [w[0] for w in car_ways]
     measured = kerbs(lines, [w[1] for w in car_ways])
@@ -411,6 +413,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         drivable.extend(pieces)
         if street:
             streets.extend(pieces)
+        else:
+            service.extend(pieces)
         if cls != "bridge" and share >= SURVEYED:
             # The survey has this street: it's drawn from there (below); what OSM
             # says is only what it's paved with.
@@ -442,9 +446,12 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     # no mapped use), that land is gardens and meadow too, not pavement.
     spoken_for = [*(g for k, v in areas.items() if k not in NATURAL_GROUND for g in v),
                   *(g for v in road_lines.values() for g in v), *land.values(), *(p for p, _, _ in squares)]
-    gardens, lawns, plot_fences, drives = _gardens(homes, buildings, streets, clip,
-                                    [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls],
-                                    unmapped=[g for g in spoken_for if not g.is_empty])
+    gardens, lawns, plot_fences, drives, on_plots = _gardens(
+        homes, buildings, streets, clip,
+        [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls],
+        unmapped=[g for g in spoken_for if not g.is_empty],
+        ways=[g for g in [*service, *road_lines.get("path", []), *road_lines.get("dirt", []), *(ws[0] for ws in walking_surfaces)]
+              if not g.is_empty and g.geom_type in ("Polygon", "MultiPolygon")])
     fences.extend(plot_fences)
     timer.lap("gardens")
     natural = unary_union([gardens, lawns, *(g for k in NATURAL_GROUND for g in areas.get(k, [])),
@@ -517,6 +524,12 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "ground_ways": ground_ways, "marks": marks,
         "lots": lots, "kerbs": kerbs, "drives": drives, "setting": setting,
+        # What stands on the plots of family houses (plots.py), drawn over the garden.
+        "plots": [{"b": p["b"], "poly": p["poly"], **({"gate": p["gate"]} if p["gate"] else {}), **({"strip": 1} if p["strip"] else {})}
+                  for p in on_plots.get("plots", [])],
+        "patches": {kind: unary_union(on_plots[key]).intersection(clip) for kind, key in (("paving", "paving"), ("bed", "beds"), ("pool", "pools"))
+                    if on_plots.get(key)},
+        "sheds": on_plots.get("sheds", []),
     }
 
 
@@ -721,7 +734,7 @@ NOT_HOMES = {"commercial", "retail", "office", "industrial", "warehouse", "schoo
              "public", "civic", "government", "church", "hotel", "dormitory", "kindergarten"}
 
 
-def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None):
+def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None, ways=()):
     """OSM maps a suburb or a housing estate as one residential area and rarely maps
     the gardens and lawns in it, so the ground between the buildings would all be
     paved. Cut the residential areas along the streets (not service roads) into blocks.
@@ -731,10 +744,12 @@ def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None):
     but a strip round each building: 0.8 m round a house, 2 m round anything bigger.
     Where the block is family houses, each gets a plot (_plots) with hedges and fences
     along its edges; these are returned as fences, apart from where OSM maps a barrier
-    (`barriers`), and each a place for a car on its drive (_drive_spots). Returns (the
-    gardens, the estate lawns, those fences, those places): the family houses' gardens
-    are private and kept watered, a housing estate's lawn is mown public grass that
-    dries out more."""
+    (`barriers`), places for cars on its drive, a paved strip from the gate and now and
+    then a shed, a bed or a pool (plots.py; `ways` are the surfaces of the service roads
+    and paths, which may run through a block and are kept clear). Returns (the gardens,
+    the estate lawns, those fences, those places, the rest of what plots.furnish makes):
+    the family houses' gardens are private and kept watered, a housing estate's lawn is
+    mown public grass that dries out more."""
     region = unary_union(homes).intersection(clip) if homes else Polygon()
     shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
     tree = STRtree(shapes)
@@ -758,12 +773,16 @@ def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None):
             implied = implied.difference(unmapped)
             implied = implied.buffer(-3).buffer(3)  # not the slivers between things
     if region.is_empty and implied.is_empty:
-        return Polygon(), Polygon(), [], []
+        return Polygon(), Polygon(), [], [], {}
     cut = unary_union(streets) if streets else None
     blocks = [(b, True) for b in _polys(region.difference(cut) if cut is not None else region)] if not region.is_empty else []
     if not implied.is_empty:
         blocks += [(b, False) for b in _polys(implied.difference(cut) if cut is not None else implied)]
     out, lawns, fences, drives = [], [], [], []
+    made = {"plots": [], "paving": [], "beds": [], "pools": [], "sheds": []}
+    # (Polygon by polygon: joined surfaces span the chunk, and each block needs only its own.)
+    ways = [g for g in shapely.get_parts(np.asarray(ways, dtype=object)) if g.area > 0] if len(ways) else []
+    way_tree = STRtree(ways) if len(ways) else None
     street_edge = unary_union(streets).buffer(1.5) if streets else Polygon()
     mapped = unary_union([b.buffer(1.0) for b in barriers]) if len(barriers) else Polygon()
     for block, fenced in blocks:
@@ -787,15 +806,17 @@ def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None):
         out.append(green)
         if fenced and houses >= 0.7 * covered:
             homes_here = [(buildings[k]["id"], shapes[k]) for k in main]
-            plots = _plots(block, homes_here)
-            fences.extend(_plot_fences(plots, homes_here, green, street_edge, mapped))
-            drives.extend(_drive_spots(plots, homes_here, [shapes[k] for k in near], street_edge))
-    return (unary_union(out) if out else Polygon()), (unary_union(lawns) if lawns else Polygon()), fences, drives
+            through = unary_union([ways[k].intersection(block) for k in way_tree.query(block, predicate="intersects")]) if way_tree is not None else Polygon()
+            got = garden_plots.furnish(_plots(block, homes_here), homes_here, [(buildings[k]["kind"], shapes[k]) for k in near],
+                                       green, street_edge, mapped, through)
+            fences.extend(got["fences"])
+            drives.extend(got["drives"])
+            for key in made:
+                made[key].extend(got[key])
+    return (unary_union(out) if out else Polygon()), (unary_union(lawns) if lawns else Polygon()), fences, drives, made
 
 
 MIN_PLOT = 60  # m2: a smaller cell goes to the neighbour it shares most edge with
-PLOT_TOLERANCE = 1.0  # m: plot edges are straightened more than mapped fences, so they read as boundaries and not as Voronoi curves
-GATE = 1.6  # m each side of the point on the street edge nearest the house: where the gate is
 
 
 def _plots(block, homes):
@@ -841,90 +862,6 @@ def _plots(block, homes):
             plots[o] = _areas(shapely.make_valid(plots[o].union(plots[k].buffer(0.02, join_style="mitre"))))
             del plots[k]
     return [(homes[k][0], plot) for k, plot in plots.items()]
-
-
-DRIVE_IN = 3.3  # m from the gate to the middle of a car on the drive
-DRIVE_ROOM = 6.2  # m of plot between the gate and the house that a car needs
-CAR = (4.6, 2.2)  # m, what has to be free of buildings
-
-
-def _drive_spots(plots, homes, shapes, street_edge):
-    """Where a car would stand on each plot's drive: just inside the gate (the point of
-    the plot's street edge nearest the house, as the fences use), nose towards the house,
-    where there is room between the gate and the house for it. Returns [{"b": the house's
-    id, "x", "y", "h": the way the car faces}]; the game decides which of them have a car."""
-    # Each footprint grown before they are joined: OSM has a few that cross themselves,
-    # and joining those as they are fails.
-    roofs = unary_union([s.buffer(0.6) for s in shapes]) if shapes else Polygon()
-    shape_of = dict(homes)
-    out = []
-    for ida, plot in plots:
-        house = shape_of[ida]
-        others = unary_union([q for k, q in plots if k != ida])
-        line = plot.boundary.difference(others.buffer(0.1)).intersection(street_edge) if not others.is_empty else plot.boundary.intersection(street_edge)
-        if line.is_empty or line.geom_type not in ("LineString", "MultiLineString"):
-            continue
-        gate = line.interpolate(line.project(house.centroid))
-        dx, dy = house.centroid.x - gate.x, house.centroid.y - gate.y
-        run = math.hypot(dx, dy)
-        if run < 1e-6 or gate.distance(house) < DRIVE_ROOM:
-            continue
-        dx, dy = dx / run, dy / run
-        x, y = gate.x + dx * DRIVE_IN, gate.y + dy * DRIVE_IN
-        spot = shapely.affinity.rotate(box(x - CAR[0] / 2, y - CAR[1] / 2, x + CAR[0] / 2, y + CAR[1] / 2),
-                                       math.atan2(dy, dx), origin=(x, y), use_radians=True)
-        if plot.buffer(0.3).contains(spot) and not spot.intersects(roofs):
-            out.append({"b": ida, "x": round(x, 2), "y": round(y, 2), "h": round(math.atan2(dy, dx), 3)})
-    return out
-
-
-def _plot_fences(plots, homes, green, street_edge, mapped):
-    """Hedges and fences along the edges of the plots in a block, on the grass only:
-    between neighbours a hedge, a fence or nothing (the same for both sides, from the
-    two buildings' ids), and along the street a fence or hedge with a gap for the gate,
-    or a bare frontage. What each is comes from OSM ids, so a plot looks the same in
-    every build. `plots` is what _plots made of the block."""
-    if len(plots) < 2:
-        return []
-    grass = green.buffer(0.3)
-    out = []
-
-    def emit(line, kind, seed):
-        line = line.intersection(grass).difference(mapped) if not mapped.is_empty else line.intersection(grass)
-        r = random.Random(seed)
-        h = round((r.uniform(1.0, 1.9) if kind == "hedge" else r.uniform(0.9, 1.6)), 1)
-        for ls in _lines(line):
-            if ls.length >= 1.5:
-                out.append({"kind": kind, "h": h, "pts": _coords(ls.simplify(PLOT_TOLERANCE))})
-
-    tree = STRtree([p for _, p in plots])
-    shape_of = dict(homes)
-    for a, (ida, plot) in enumerate(plots):
-        for b in sorted(tree.query(plot.buffer(0.1), predicate="intersects")):
-            idb = plots[b][0]
-            if b <= a:
-                continue
-            seed = zlib.crc32(f"{min(ida, idb)}|{max(ida, idb)}".encode())
-            roll = (seed % 100) / 100
-            kind = "hedge" if roll < 0.5 else "fence" if roll < 0.85 else None
-            if kind:
-                emit(plots[b][1].boundary.intersection(plot.buffer(0.1)), kind, seed)
-        # The rest of the outline faces the street or other land.
-        others = unary_union([q for k, (_, q) in enumerate(plots) if k != a])
-        front = plot.boundary.difference(others.buffer(0.1))
-        seed = zlib.crc32(f"{ida}|front".encode())
-        roll = (seed % 100) / 100
-        kind = "fence" if roll < 0.45 else "hedge" if roll < 0.75 else None
-        if not kind:
-            continue
-        line = front.intersection(street_edge)
-        if line.is_empty:
-            continue
-        gate = line.interpolate(line.project(shape_of[ida].centroid)) if line.geom_type in ("LineString", "MultiLineString") else None
-        if gate is not None:
-            line = line.difference(gate.buffer(GATE))
-        emit(line, kind, seed)
-    return out
 
 
 def _nearest(lines, surface):

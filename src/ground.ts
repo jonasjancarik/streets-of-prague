@@ -51,7 +51,7 @@ export const COLORS = {
   pavement: '#92908c', square: '#d7d3cb', squareSetts: '#9c958a', path: '#d8cbb6', dirt: '#bfa87e', worn: '#b49f72',
   park: '#79a24c', garden: '#80a552', wood: '#394a2b', orchard: '#89a858', pitch: '#6c9c55',
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
-  water: '#4d7680', asphalt: '#6b6a68', sett: '#8a847a', parking: '#72706c',
+  water: '#4d7680', pool: '#62aec2', asphalt: '#6b6a68', sett: '#8a847a', parking: '#72706c',
   bed: '#6f5b43', shrubBed: '#5d6b3c', iron: '#3f3d3b',
   bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', tunnel: '#46484c', tunnelWall: '#a59f93',
@@ -678,6 +678,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.square_setts || []), COLORS.squareSetts, 'setts');
     add(polygons(A.square_asphalt || []), COLORS.asphalt, 'asphalt');
     add(polygons(A.square_loose || []), COLORS.dirt, 'gravel');
+    add(polygons(A.pool || []), COLORS.pool); // garden pools (tiles.ts, withPatches)
     afloat = true;
     try {
       add(polygons(A.water || []), COLORS.water, 'water');

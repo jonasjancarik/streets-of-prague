@@ -179,6 +179,15 @@ the kerb, which is its own task.
 
 ### Left open
 
+Update, 6 October 2026 (branch `night-gardens`, see plan 025): the paved strip exists,
+and on chunk 5,8 all 761 drive places stand wholly on it (0 of 829 before; fewer
+places because plots now start behind the pavement, where 301 of the 829 stood on a
+road or path surface and 25 still do). A plot whose mapped garage stands far enough
+back has its drive lead to the garage and a second place in front of it (`"g": 1` in
+`drives`, 40 in that chunk), filled half as often as the first. Seen in the game on
+that chunk. Collision bodies on an
+estate drive are still unmeasured.
+
 - The paved strip across the plot (plan 025) does not exist, so drive cars stand on
   grass. A second car in front of a garage needs garages marked on plots.
 - Not measured: collision bodies on an estate drive, a `scripts/bench.mjs` run, a
