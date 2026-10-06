@@ -208,6 +208,30 @@ IPR's. IPR's surface model is empty there (all zeros), so outside the city there
 height either: roofs and sheds can't be told from ground by standing tall
 (`cover_cells.rules(height=False)`), only ČÚZK's older DMP 1G could help.
 
+## The painted photo (`?ortho`) tried other ways (6 October 2026)
+
+`pipeline/cover_painted.py praha 51 53 53 55 --out <folder>` writes each variant for a
+block of the Smíchov tiles; `ground_cover.py ortho`, what the game shows, is unchanged.
+Pictures in `docs/evidence/painted-photo/`: the same 125 m of ground in all nine
+(`ground-site.jpg`, `ground-yards.jpg`) and six of them with the map's streets and
+buildings drawn over flat (`with-map-….jpg`, in the order of its name).
+
+| variant | m/px | KB a tile | what it looks like |
+| --- | --- | --- | --- |
+| photo | 0.5 | 63 | the photograph, for reference |
+| current | 0.5 | 42 | what `ortho` bakes: a soft photograph |
+| margin | 0.5 | 42 | filtered across tile edges; no visible difference away from them |
+| brush (9 px, 3.5 to 1) | 0.5 | 39 | flatter planes, small clutter gone; the shadows still read as a photo |
+| metre | 1.0 | 12 | about as painterly as the bigger brush at a third of the size |
+| two | 2.0 | 4 | blocky once the camera is low |
+| shadows lifted | 0.5 | 40 | shadows brighter but left with a blue-violet cast |
+| game's palette | 0.5 | 41 | ground nearer the game's colours, but shadows are pulled to wood green |
+| all (1 m, bigger brush, shadows, palette) | 1.0 | 10 | the least photographic; pale, shadows as grey stains |
+
+The photograph's cast shadows are what keeps it a photograph, and neither attempt
+removes them well. Still to try: casting the shadows from the surface model and the
+sun's position, and relighting those pixels before painting.
+
 ## What changed on disk
 
 - Code: `pipeline/ground_cover.py` (`build`), `pipeline/layers.py` (`merge_cover`,
