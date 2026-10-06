@@ -188,7 +188,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             return
         if hw not in CAR_ROADS and cls != "bridge":
             # What the surveyed pavement under it is paved with (pavements.py).
-            paved_ways.extend((ls, col(row, "surface"), hw == "pedestrian") for ls in _lines(g))
+            paved_ways.extend((ls, "unpaved" if cls == "dirt" else col(row, "surface"), hw == "pedestrian") for ls in _lines(g))
         if hw in ("footway", "path") and col(row, "footway") not in ("traffic_island", "link"):
             sidewalks.extend((ls, width / 2, col(row, "footway") == "sidewalk") for ls in _lines(g))
         if hw in CAR_ROADS:
@@ -484,7 +484,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     # the footways' ribbons along them.
     paved, walked = pavements.surveyed(
         {} if pavements.DERIVED_ONLY else dtm.walks((w, s, e, n), tf.transform), surface, paved_ways,
-        unary_union([g for k in ("square", "square_setts", "square_asphalt", "square_loose") for g in areas.get(k, [])]),
+        unary_union([g for k in ("square", "square_setts", "square_asphalt", "square_loose", "parking") for g in areas.get(k, [])]),
         unary_union([g for k, g in land.items() if k != "dtm_yard"]), clip, stats)
     walking_surfaces = pavements.without_survey(walking_surfaces, [beside for _, beside in walking_widths], walked)
     for key, geom in paved.items():

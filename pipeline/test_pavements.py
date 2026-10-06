@@ -80,6 +80,13 @@ class Surveyed(unittest.TestCase):
         self.assertAlmostEqual(paved["sett"].area, 400, delta=1)  # the walking street
         self.assertAlmostEqual(paved["pavement"].area, 420, delta=4)  # a cobbled pavement is mosaic; the island too
 
+    def test_an_earth_path_stays_earth_and_does_not_spread(self):
+        ways = [(LineString([(0, 5), (100, 5)]), "unpaved", False)]
+        paved, walked = pavements.surveyed(self.walks, self.street, ways, Polygon(), Polygon(), self.clip)
+        self.assertAlmostEqual(paved["dirt"].area, 400, delta=1)
+        self.assertAlmostEqual(paved["pavement"].area, 420, delta=4)  # the other pavement and the island: mosaic
+        self.assertTrue(walked.contains(self.north.buffer(-0.1)))
+
     def test_gaps_at_the_kerb_are_pavement_but_a_tree_pit_and_a_square_are_not(self):
         street = box(0, -3, 100, 2.8)  # misses the northern pavement by 20 cm
         pit = box(20, 4, 21.5, 5.5)
@@ -88,7 +95,7 @@ class Surveyed(unittest.TestCase):
         self.assertTrue(walked.contains(box(1, 2.85, 99, 2.95)))
         self.assertFalse(paved["pavement"].intersects(pit.buffer(-0.1)))
         self.assertLess(paved["pavement"].intersection(box(60, 0, 80, 10)).area, 0.01)
-        self.assertTrue(walked.intersects(box(61, 4, 79, 6)))  # the footway's ribbon still goes there
+        self.assertTrue(walked.intersects(box(61, 4, 79, 6)))  # no ribbon there either: the square's paving shows
 
     def test_nothing_surveyed(self):
         self.assertEqual(pavements.surveyed({}, Polygon(), [], Polygon(), Polygon(), self.clip), ({}, Polygon()))

@@ -17,18 +17,18 @@
     "pieces": 207
    },
    "road": {
-    "area": 81031.8,
-    "points": 4277,
+    "area": 80006.3,
+    "points": 4293,
     "pieces": 99
    },
    "sett": {
-    "area": 95204.7,
-    "points": 8576,
-    "pieces": 172
+    "area": 94873.5,
+    "points": 8574,
+    "pieces": 173
    }
   },
   "odd": {
-   "path_on_road": 5201.8,
+   "path_on_road": 5151.2,
    "path_on_building": 2776.2,
    "path_on_water": 147.4,
    "path_on_surveyed": 0.0
@@ -175,7 +175,7 @@
     "trambed": 0
    }
   },
-  "bytes_ground": 847457
+  "bytes_ground": 874739
  },
  "after": {
   "kinds": {
@@ -190,14 +190,14 @@
     "pieces": 23
    },
    "path": {
-    "area": 10964.7,
-    "points": 1880,
+    "area": 10953.3,
+    "points": 1877,
     "pieces": 223
    },
    "pavement": {
-    "area": 99660.5,
-    "points": 14151,
-    "pieces": 695
+    "area": 99712.7,
+    "points": 13925,
+    "pieces": 399
    },
    "pavement_asphalt": {
     "area": 33995.5,
@@ -210,16 +210,16 @@
     "pieces": 99
    },
    "sett": {
-    "area": 53543.3,
-    "points": 5199,
+    "area": 53541.2,
+    "points": 5154,
     "pieces": 101
    }
   },
   "odd": {
-   "path_on_road": 1598.1,
-   "path_on_building": 1244.4,
+   "path_on_road": 1594.5,
+   "path_on_building": 1244.2,
    "path_on_water": 120.6,
-   "path_on_surveyed": 176.8
+   "path_on_surveyed": 176.4
   },
   "walk": {
    "sidewalk_m": 0,
@@ -232,9 +232,9 @@
   },
   "kerb": {
    "sides": 2648,
-   "outside_is_surveyed_walk": 1889,
+   "outside_is_surveyed_walk": 1890,
    "outside_is_road": 403,
-   "inside_is_surveyed_walk": 201
+   "inside_is_surveyed_walk": 200
   },
   "per_tile": {
    "0_0": {
@@ -243,7 +243,7 @@
     "trambed": 0
    },
    "0_1": {
-    "surveyed": 7330,
+    "surveyed": 7331,
     "ribbons": 1006,
     "trambed": 0
    },
@@ -254,7 +254,7 @@
    },
    "0_3": {
     "surveyed": 3024,
-    "ribbons": 849,
+    "ribbons": 847,
     "trambed": 0
    },
    "0_4": {
@@ -263,63 +263,63 @@
     "trambed": 0
    },
    "1_0": {
-    "surveyed": 8145,
+    "surveyed": 8144,
     "ribbons": 106,
     "trambed": 0
    },
    "1_1": {
-    "surveyed": 6387,
+    "surveyed": 6388,
     "ribbons": 737,
     "trambed": 0
    },
    "1_2": {
-    "surveyed": 7938,
-    "ribbons": 746,
+    "surveyed": 7945,
+    "ribbons": 745,
     "trambed": 0
    },
    "1_3": {
-    "surveyed": 6456,
-    "ribbons": 190,
+    "surveyed": 6463,
+    "ribbons": 189,
     "trambed": 0
    },
    "1_4": {
-    "surveyed": 2626,
+    "surveyed": 2625,
     "ribbons": 565,
     "trambed": 0
    },
    "2_0": {
-    "surveyed": 9411,
+    "surveyed": 9400,
     "ribbons": 227,
     "trambed": 0
    },
    "2_1": {
-    "surveyed": 8740,
+    "surveyed": 8738,
     "ribbons": 889,
     "trambed": 0
    },
    "2_2": {
-    "surveyed": 7887,
+    "surveyed": 7885,
     "ribbons": 272,
     "trambed": 0
    },
    "2_3": {
-    "surveyed": 7291,
-    "ribbons": 577,
+    "surveyed": 7301,
+    "ribbons": 575,
     "trambed": 0
    },
    "2_4": {
-    "surveyed": 1192,
-    "ribbons": 424,
+    "surveyed": 1204,
+    "ribbons": 420,
     "trambed": 0
    },
    "3_0": {
-    "surveyed": 444,
-    "ribbons": 492,
+    "surveyed": 440,
+    "ribbons": 491,
     "trambed": 0
    },
    "3_1": {
     "surveyed": 3330,
-    "ribbons": 443,
+    "ribbons": 444,
     "trambed": 0
    },
    "3_2": {
@@ -328,7 +328,7 @@
     "trambed": 0
    },
    "3_3": {
-    "surveyed": 20,
+    "surveyed": 19,
     "ribbons": 0,
     "trambed": 0
    },
@@ -338,31 +338,31 @@
     "trambed": 0
    },
    "4_0": {
-    "surveyed": 6781,
-    "ribbons": 1049,
+    "surveyed": 6784,
+    "ribbons": 1048,
     "trambed": 0
    },
    "4_1": {
-    "surveyed": 6839,
-    "ribbons": 172,
+    "surveyed": 6848,
+    "ribbons": 171,
     "trambed": 0
    },
    "4_2": {
     "surveyed": 8896,
-    "ribbons": 818,
+    "ribbons": 816,
     "trambed": 0
    },
    "4_3": {
-    "surveyed": 6121,
+    "surveyed": 6142,
     "ribbons": 80,
     "trambed": 0
    },
    "4_4": {
     "surveyed": 462,
-    "ribbons": 388,
+    "ribbons": 387,
     "trambed": 0
    }
   },
-  "bytes_ground": 1024245
+  "bytes_ground": 1019904
  }
 }

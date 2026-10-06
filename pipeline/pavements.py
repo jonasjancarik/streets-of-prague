@@ -56,6 +56,7 @@ THIN = 0.6
 ASPHALT = {"asphalt", "concrete", "chipseal"}
 STONES = {"sett", "cobblestone", "unhewn_cobblestone", "paving_stones", "concrete:plates", "paved", "bricks", "brick"}
 SETTS = {"sett", "cobblestone", "unhewn_cobblestone"}
+LOOSE = {"unpaved", "dirt", "ground", "earth", "gravel", "fine_gravel", "compacted", "pebblestone", "sand", "mud", "grass", "woodchips"}
 
 
 def ribbon(line, half, joints):
@@ -115,10 +116,10 @@ def surveyed(walks, streets, ways, squares, green, clip, stats=None):
 
     `walks`: dtm.walks(); `streets`: the surveyed carriageways as drawn (dtm.streets);
     `ways`: [(line, surface tag, a street people walk in?)] of OSM's ways for walking;
-    `squares`: the mapped squares, which keep their own paving; `green`: the surveyed
+    `squares`: the mapped squares and car parks, which keep their own paving; `green`: the surveyed
     greenery, which a tree pit or a small bed in the pavement stays. Returns ({key: shape}
-    with "pavement" (mosaic), "pavement_asphalt", "sett" (a cobbled walking street) and
-    "trambed", only those there are; the shape of everything walked on, for
+    with "pavement" (mosaic), "pavement_asphalt", "sett" (a cobbled walking street), "dirt"
+    (an earth path) and "trambed", only those there are; the shape of everything walked on, for
     without_survey())."""
     kinds = [k for k in ("pavement", "driveway", "island", "median", "platform", "cycleway") if k in walks]
     polys = np.concatenate([walks[k] for k in kinds]) if kinds else np.array([], dtype=object)
@@ -129,7 +130,7 @@ def surveyed(walks, streets, ways, squares, green, clip, stats=None):
     out = {}
     if len(polys):
         paving = _paving(polys, labels, ways)
-        for key in ("pavement", "pavement_asphalt", "sett"):
+        for key in ("pavement", "pavement_asphalt", "sett", "dirt"):
             chosen = polys[paving == key]
             if len(chosen):
                 out[key] = shapely.union_all(chosen, grid_size=GRID)
@@ -164,11 +165,12 @@ def surveyed(walks, streets, ways, squares, green, clip, stats=None):
         if not fill.is_empty and green is not None and not green.is_empty:
             fill = _areas(shapely.difference(fill, green, grid_size=GRID))
         if not fill.is_empty:
-            key = max((k for k in out if k != "trambed"), key=lambda k: out[k].area)
+            key = max((k for k in out if k != "trambed"), key=lambda k: (k != "dirt", out[k].area))
             out[key] = _areas(shapely.union(out[key], fill, grid_size=GRID))
             walked = _areas(shapely.union(walked, fill, grid_size=GRID))
     if squares is not None and not squares.is_empty:
-        # A mapped square keeps the paving plan 013 gave it.
+        # A mapped square keeps the paving plan 013 gave it, and a mapped car park its
+        # asphalt and bays.
         for key in [k for k in out if k != "trambed"]:
             out[key] = _areas(shapely.difference(out[key], squares, grid_size=GRID))
     return {k: g for k, g in out.items() if not g.is_empty}, walked
@@ -190,8 +192,8 @@ def _gaps(polys, streets, both):
 
 
 def _paving(polys, labels, ways):
-    """What each surveyed polygon is paved with: "pavement" (mosaic), "pavement_asphalt"
-    or "sett", from the tagged ways for walking that run on it, else like the nearest
+    """What each surveyed polygon is paved with: "pavement" (mosaic), "pavement_asphalt",
+    "sett" or "dirt", from the tagged ways for walking that run on it, else like the nearest
     one that has any."""
     paving = np.full(len(polys), None, dtype=object)
     paving[labels == "cycleway"] = "pavement_asphalt"
@@ -210,17 +212,20 @@ def _paving(polys, labels, ways):
             look, m = max(sorted(by.items()), key=lambda item: item[1])
             if m >= MIN_TAGGED:
                 paving[p] = look
-    known = np.array([v is not None for v in paving])
+    # (An earth path says nothing about the pavement of the street it ends at.)
+    known = np.array([v is not None and v != "dirt" for v in paving])
     if known.any() and not known.all():
         tree = STRtree(polys[known])
-        rest = (~known).nonzero()[0]
+        rest = np.array([v is None for v in paving]).nonzero()[0]
         # (Each unknown one's nearest known one; the first, where several are as near.)
-        qi, ki = tree.query_nearest(polys[rest], max_distance=ALIKE, all_matches=False)
-        paving[rest[qi]] = paving[known][ki]
+        if len(rest):
+            qi, ki = tree.query_nearest(polys[rest], max_distance=ALIKE, all_matches=False)
+            paving[rest[qi]] = paving[known][ki]
     paving[np.array([v is None for v in paving])] = "pavement"
     # Only a street people walk in is cobbled like a carriageway; an island or a
     # driveway that took "sett" from one beside it is mosaic, like a pavement.
     paving[(paving == "sett") & (labels != "pavement")] = "pavement"
+    paving[(paving == "dirt") & (labels != "pavement")] = "pavement"
     return paving
 
 
@@ -233,6 +238,8 @@ def _look(tag, street):
         return "pavement"
     if tag in ASPHALT:
         return "pavement_asphalt"
+    if tag in LOOSE:
+        return "dirt"  # a park's surveyed path: earth, as its ribbon was
     return None
 
 
