@@ -13,7 +13,7 @@ and then a pool. Divide the garden blocks into plots and furnish each one.
 
 - Status: IN PROGRESS (6 October 2026): hedges, fences and bigger crowns built and
   merged; paved strips, sheds, beds, pools and the `plots` field built on branch
-  `night-gardens`, counted offline but not seen in the game (see the two "What was
+  `night-gardens` and seen in the game on one rebuilt chunk (see the two "What was
   done" sections).
 - Priority: P1 among the plans from the aerial comparison (it was the biggest
   difference at seven of the ten places). Effort: one to two weeks. Risk: medium
@@ -160,9 +160,8 @@ measurement on a phone (step 5).
 
 ## What was done (6 October 2026, branch `night-gardens`)
 
-Built in the pipeline and the game, counted offline, **not yet seen in the game and
-the tiles not rebuilt** (the night's sessions were cut off twice; the machine was too
-loaded to rebuild a chunk and take pictures). Keep the branch for a look before merging.
+Built in the pipeline and the game; counted offline during the night and seen in the
+game the next midday on one rebuilt chunk (see "Seen in the game" below).
 
 - **`pipeline/plots.py`** now holds what stands on a plot; `osm_area._gardens` makes
   the plots (`_plots`) and calls `plots.furnish`. Each plot gets a gate (at least
@@ -190,7 +189,7 @@ loaded to rebuild a chunk and take pictures). Keep the branch for a look before 
   (`src/map/fences.ts`). `scripts/check-garden-plots.mjs` checks these without a browser.
 
 Counted on chunk 5,8 (Ořechovka, 2 km square) by running `_gardens` of `main` and of
-the branch on the same captured inputs:
+the branch on the same captured inputs, before plots were cut back behind pavements:
 
 | | before | after |
 |---|---|---|
@@ -202,25 +201,38 @@ the branch on the same captured inputs:
 | hedges and fences | 79.8 km | 89.3 km |
 | loose ends of hedge and fence pieces | 9,223 | 9,804 |
 
-Known to be wrong or unchecked, in the order to take them:
+### Seen in the game (6 October 2026, midday, quiet machine)
 
-1. **Nothing was looked at.** Rebuild a suburban chunk, then top-down and street-level
-   pictures: strip widths, pool colour, shed sizes and colours, fence brightness.
-   `build_tiles.build_chunk` with the new fields has not run once (the unit tests cover
-   `plots.py` only).
-2. **Pavements inside a block.** A block's edge is the kerb, so where a pavement is
-   mapped the gate, the strip and the car start on the pavement (311 of 909 places
-   touch a road or path surface; 301 of 829 before). And because fences now stop at
-   path surfaces, the street-side fence is dropped there instead of standing behind
-   the pavement. The plots should be cut back to the back of the pavement first.
-3. **Corner gaps are not closed in the data**: the loose ends went up, from the cuts
-   at ways and the new back edges. The hedge mitre closes the wedge at a bend of one
-   line only; pieces of different plots still end separately.
-4. **Time**: `_gardens` took 56 s of processor time on this chunk on a machine at a
-   load of 200, with no figure for `main` on the same terms. Measure on a quiet
-   machine before the full rebuild.
-5. The `plots` field is written and nothing in the game reads it yet.
-6. Crown positions from the photographs: not started.
+Chunk 5,8 was rebuilt into the worktree's own data (`build_tiles.build_chunk` for the
+ground layer, then `layers.assemble`), `scripts/check-data-format.mjs` passes, and
+Ořechovka was looked at from above and at an angle against main's data.
+
+- The first look showed the pavement problem plainly: where a pavement is mapped
+  inside the block, the gate, strip and car started on it and the hedges stood on the
+  kerb. Fixed: a plot is now what lies behind the ways through its block, the back of
+  a pavement within 4.5 m of the street is its street edge, and the gardens are handed
+  the footways' surfaces. After it: strips run from the back of the pavement to the
+  house, drive cars stand on them clear of the pavement, hedges and fences follow the
+  back of the pavement, pools (blue, with a paved rim, or round) and sheds show.
+- Final counts for the chunk, main → branch: drive places 829 → 761 (40 second cars);
+  wholly on paving 0 → 761; touching a road or path surface 301 → 25; plots 1,801, with
+  a gate 1,610, with a strip 1,364; paving 33,100 m²; sheds 419, beds 409, pools 153;
+  hedges and fences 79.8 → 85.3 km, of which over a way's surface 13.0 → 5.3 km.
+- Time of the garden step on that chunk, quiet machine: main 119 s, branch 26–32 s
+  (main joins all other plots for every plot). It is still the longest stage of
+  `extract` there (the rest is about 20 s).
+- Fences read light from both sides from above; hedges meet at bends.
+
+Still open:
+
+1. **Corner gaps in the data**: loose ends 9,223 → 9,434; pieces of different plots
+   still end separately.
+2. **The `plots` field** is written and nothing reads it; it adds about 17 kB (12 %)
+   to a dense suburban tile's JSON before compression. Trim it (coarser ring, one
+   decimal) or leave it out until something uses it.
+3. Shed and pool looks were judged from above only; no walk past them, no phone.
+4. 25 drive places still touch a road or path surface (not looked at one by one).
+5. Crown positions from the photographs: not started. `centrum` and `ujezd` not built.
 
 **Gardens as a layer of their own** would be cheap from here: `plots.furnish` needs
 only the block, the house and outbuilding footprints, the block's garden and the
