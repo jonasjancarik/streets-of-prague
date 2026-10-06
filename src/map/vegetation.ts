@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
 import { cutAway, NOISE, NOISE_GLSL, LEAVES, SNOW, WET, BARE, SEASON } from '../shading.ts';
 import { PITCH_KINDS } from './pitches.ts';
+import { scatterWoods, valueNoise, conifer, WOOD, PARK, GROVE, SHRUB, CONIFER, CONIFERS } from './woodScatter.ts';
+import type { Tree } from './woodScatter.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
 export interface TreeTileData extends GeoData {
@@ -24,45 +26,14 @@ export interface TreeInstances { matrices: Float32Array; colours: Float32Array; 
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
-const WOOD = 200, PARK = 120, CLEARING = 100, GARDEN = 90, ORCHARD = 60, FIELD = 40, FENCE = 1;
+const CLEARING = 100, GARDEN = 90, ORCHARD = 60, FIELD = 40, FENCE = 1;
 // Surveyed greenery (pipeline/ipr_greenery.py): grass where no tree is made up (the
 // survey has the real ones), and groups of shrubs, which are filled with shrubs.
-// A surveyed group of trees is planted like a park, only closer.
-const SURVEYED = 150, SHRUBBERY = 170, GROVE = 180;
+// A surveyed group of trees is planted like a park, only closer (GROVE, in woodScatter.ts).
+const SURVEYED = 150, SHRUBBERY = 170;
 // Of each kind of tree (below), how many are evergreen and keep their leaves in
 // winter: yews and hedges among the shrubs. (Conifers have a shape of their own.)
 const EVERGREEN = [0, 0, 0, 0.4];
-// Of the trees we make up, how many are conifers: pines and spruces in the woods, a
-// few in the streets, parks and gardens. Chosen by where the tree stands.
-const CONIFERS = [0.3, 0.08];
-
-// A smooth random field on a lattice fixed to the map (so every tile agrees at its
-// edges), 0 to 1, features about `cell` metres across.
-function valueNoise(x: number, y: number, cell: number, salt: number) {
-  const gx = x / cell, gy = y / cell, i = Math.floor(gx), j = Math.floor(gy);
-  const fx = gx - i, fy = gy - j, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
-  const h = (a: number, b: number) => {
-    let n = Math.imul(a, 374761393) + Math.imul(b, 668265263) + salt | 0;
-    n = Math.imul(n ^ (n >>> 13), 1274126177);
-    return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
-  };
-  const top = h(i, j) + (h(i + 1, j) - h(i, j)) * sx, bottom = h(i, j + 1) + (h(i + 1, j + 1) - h(i, j + 1)) * sx;
-  return top + (bottom - top) * sy;
-}
-
-// How far inside a wood a spot is, in metres up to `max`: the shortest way out along
-// eight directions. Past the edge of the tile the wood is taken to go on.
-function woodDepth(grid: Grid, x: number, y: number, max: number) {
-  let depth = max;
-  for (let k = 0; k < 8; k++) {
-    const c = Math.cos(k * Math.PI / 4), s = Math.sin(k * Math.PI / 4);
-    for (let d = 2; d < depth; d += 2) {
-      const v = grid.at(x + c * d, y + s * d);
-      if (v !== WOOD && v !== 255) { depth = d; break; }
-    }
-  }
-  return depth;
-}
 
 // Where a tile's trees stand, and how big and what colour they are: their instance
 // matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Under
@@ -155,90 +126,10 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     return false;
   };
 
-  const step = 4.5;
-  // Woods. The trees come from a jittered grid, as in a park, but the wood itself has a
-  // character: stands of conifers and of broadleaves (slow noise, not a coin toss per
-  // tree), stands of taller and of lower trees with the odd one standing out, a
-  // thinner, lower fringe within 8 m of the outline, and then the gaps between the
-  // crowns filled with small trees below.
-  const standOf = (x: number, y: number): Tree => {
-    const stand = valueNoise(x, y, 40, 0x6a1f);
-    const pine = Math.min(0.92, Math.max(0.04, CONIFERS[0] + (stand - 0.5) * 2.4));
-    const own = rng(Math.imul(Math.floor(x * 8), 19349663) ^ Math.imul(Math.floor(y * 8), 83492791))();
-    const tall = 0.86 + 0.5 * valueNoise(x, y, 55, 0x2d7b) + (own > 0.96 ? 0.35 : 0);
-    return [x, y, 0, own < pine ? CONIFER : 0, tall];
-  };
-  const addWood = (x: number, y: number, rad: number, edge: number) => {
-    const t = standOf(x, y);
-    // Near the outline: lower and smaller, the crowns of young trees.
-    t[2] = t[3] === CONIFER ? rad * 0.8 : rad;
-    t[4] = t[4]! * (0.6 + 0.4 * edge);
-    trees.push(t);
-  };
-  for (let y = geo.minY; y < geo.maxY; y += step) {
-    for (let x = geo.minX; x < geo.maxX; x += step) {
-      const jx = x + (r() - 0.5) * step, jy = y + (r() - 0.5) * step;
-      const v = grid.at(jx, jy);
-      if (v === WOOD && !isYoung(jx, jy)) {
-        const edge = woodDepth(grid, jx, jy, 8) / 8;
-        const rad = (3 + r() * 3.2) * (0.55 + 0.45 * edge);
-        // Thinner towards the outline, and in patches inside (clearings and denser stands).
-        const keep = 0.62 * (0.25 + 0.75 * edge) * (0.8 + 0.4 * valueNoise(jx, jy, 30, 0x31c5));
-        if (r() < keep && !surveyed(jx, jy)) addWood(jx, jy, rad, edge);
-      } else if ((v === PARK && r() < 0.09) || (v === GROVE && r() < 0.45)) {
-        const rad = 2.8 + r() * 2.8;
-        if (!surveyed(jx, jy)) trees.push(conifer(jx, jy, CONIFERS[1]) ? [jx, jy, rad * 0.8, CONIFER] : [jx, jy, rad, 1]);
-      }
-    }
-  }
-  // Young woods: small, dense and low, a thicket of saplings and young trees (a plantation, or
-  // a field gone wild), thinner towards the outline.
-  if (young) {
-    const lattice = 3.4;
-    for (let y = geo.minY; y < geo.maxY; y += lattice) {
-      for (let x = geo.minX; x < geo.maxX; x += lattice) {
-        const jx = x + (r() - 0.5) * lattice, jy = y + (r() - 0.5) * lattice;
-        if (grid.at(jx, jy) !== WOOD || !isYoung(jx, jy) || surveyed(jx, jy)) continue;
-        const edge = woodDepth(grid, jx, jy, 8) / 8;
-        if (r() > 0.8 * (0.4 + 0.6 * edge) * (0.8 + 0.4 * valueNoise(jx, jy, 20, 0x77e1))) continue;
-        const t = standOf(jx, jy);
-        t[2] = (1.3 + r() * 1.3) * (t[3] === CONIFER ? 0.8 : 1);
-        t[4] = 0.55 + 0.25 * r();
-        trees.push(t);
-      }
-    }
-  }
-  // Gaps: where no crown covers a spot, a smaller tree (a young one or one that grew
-  // up in the shade), as long as the wood is not at its outline.
-  const CELL = 8, byCell = new Map<number, number[]>();
-  const cellKey = (i: number, j: number) => i * 65536 + j;
-  const index = (t: number) => {
-    const k = cellKey(Math.floor(trees[t][0] / CELL), Math.floor(trees[t][1] / CELL));
-    const list = byCell.get(k);
-    if (list) list.push(t); else byCell.set(k, [t]);
-  };
-  for (let t = 0; t < trees.length; t++) index(t);
-  // Whether a tree's crown (its middle `margin` of it) is over the spot.
-  const covered = (x: number, y: number, margin: number) => {
-    const i0 = Math.floor(x / CELL), j0 = Math.floor(y / CELL);
-    for (let i = i0 - 1; i <= i0 + 1; i++) {
-      for (let j = j0 - 1; j <= j0 + 1; j++) {
-        for (const t of byCell.get(cellKey(i, j)) || []) if (Math.hypot(trees[t][0] - x, trees[t][1] - y) < trees[t][2] * margin) return true;
-      }
-    }
-    return false;
-  };
-  const gap = 3.4;
-  for (let y = geo.minY; y < geo.maxY; y += gap) {
-    for (let x = geo.minX; x < geo.maxX; x += gap) {
-      const jx = x + (r() - 0.5) * gap, jy = y + (r() - 0.5) * gap;
-      if (grid.at(jx, jy) !== WOOD || isYoung(jx, jy) || surveyed(jx, jy) || covered(jx, jy, 1.25)) continue;
-      const edge = woodDepth(grid, jx, jy, 8) / 8;
-      if (edge < 0.4) continue;
-      addWood(jx, jy, (2.4 + r() * 1.6) * (0.7 + 0.3 * edge), edge);
-      index(trees.length - 1);
-    }
-  }
+  // Woods, young woods, the gaps between their crowns, and the loose trees of parks and
+  // surveyed groves (woodScatter.ts). The crowns just past the tile's edge are worked out
+  // too, so that the gaps are filled the same way on both sides; they are dropped below.
+  const { covered, index } = scatterWoods(geo, grid, isYoung, surveyed, trees);
   // The ragged edge: shrubs and a few young trees just outside the outline, where the
   // neighbour is grass, a field or a garden (never paving, a road or water).
   {
@@ -273,6 +164,8 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
       if (grid.at(x, y) === ORCHARD && r() < 0.85) trees.push([x + (r() - 0.5), y + (r() - 0.5), 1.7 + r() * 0.8, 2]);
     }
   }
+  // (The neighbours' crowns have done their work: the gardens and the rest see only the tile's own.)
+  trees.splice(0, trees.length, ...trees.filter((t) => !t[5]));
   gardenTrees(geo, grid, trees);
   // Surveyed groups of shrubs, filled from a lattice fixed to the map, and the single ones.
   // A tile with very large shrubberies gets fewer, larger shrubs: never more than MAX_BUSHES.
@@ -329,14 +222,6 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   return { matrices, colours, yearly, count: trees.length, shrubs, conifers };
 }
 
-const SHRUB = 3, CONIFER = 4;
-type Tree = [number, number, number, number, number?];
-
-// Whether the tree we make up at (x, y) is a conifer (`share` of them are), by where it
-// stands so the same place always has the same tree.
-function conifer(x: number, y: number, share: number) {
-  return rng(Math.imul(Math.floor(x * 8), 19349663) ^ Math.imul(Math.floor(y * 8), 83492791))() < share;
-}
 
 // Gardens round houses and in courtyards: a few trees and shrubs scattered over the
 // grass, clear of the houses, streets and paths (a crown may lean over a fence) and of
