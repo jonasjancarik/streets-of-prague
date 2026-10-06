@@ -21,8 +21,16 @@ def surface(low_left_half, ground=300.0):
     return dsm
 
 
-def mask_for(dsm, ground=300.0):
+def photo_of(colour):
+    return np.full((120, 120, 3), colour, np.float32)
+
+
+GRASS, CANOPY, ROCK = (0.55, 0.6, 0.35), (0.22, 0.3, 0.2), (0.6, 0.6, 0.58)
+
+
+def mask_for(dsm, ground=300.0, photo=GRASS):
     with mock.patch.object(young_woods.gc, "ipr_dsm", return_value=dsm), \
+         mock.patch.object(young_woods.gc, "photo", return_value=photo_of(photo)), \
          mock.patch.object(young_woods.gc, "terrain", return_value=(np.full((31, 31), ground, np.float32), 4.0)):
         return young_woods.young_mask("x", {}, TILE, WOOD)
 
@@ -59,6 +67,25 @@ class YoungMaskTests(unittest.TestCase):
         self.assertFalse(clear[85:105, 85:105].any())
         polys = young_woods.vectorise(clear, TILE, WOOD, young_woods.CLEAR_MIN)
         self.assertEqual(len(polys), 1)
+
+    def test_a_low_surface_under_a_canopy_or_over_rock_is_not_a_clearing(self):
+        dsm = surface(False)
+        dsm[30:70, 30:70] = 300.3
+        self.assertFalse(mask_for(dsm, photo=CANOPY)[1].any())
+        self.assertFalse(mask_for(dsm, photo=ROCK)[1].any())
+        with mock.patch.object(young_woods.gc, "ipr_dsm", return_value=dsm), \
+             mock.patch.object(young_woods.gc, "photo", side_effect=OSError("offline")), \
+             mock.patch.object(young_woods.gc, "terrain", return_value=(np.full((31, 31), 300.0, np.float32), 4.0)):
+            self.assertFalse(young_woods.young_mask("x", {}, TILE, WOOD)[1].any())
+
+    def test_a_steep_slope_is_not_a_clearing(self):
+        rows = np.arange(120, dtype=np.float32)[:, None] * np.ones((1, 120), np.float32)
+        ground = np.arange(31, dtype=np.float32)[:, None] * np.ones((1, 31), np.float32) * 4.0  # 45 degrees
+        with mock.patch.object(young_woods.gc, "ipr_dsm", return_value=300.0 + 119 - rows + 0.3), \
+             mock.patch.object(young_woods.gc, "photo", return_value=photo_of(GRASS)), \
+             mock.patch.object(young_woods.gc, "terrain", return_value=(300.0 + ground, 4.0)):
+            young, clear, _ = young_woods.young_mask("x", {}, TILE, WOOD)
+        self.assertFalse(clear[8:-8].any())  # (the smoothed slope flattens at the tile's very edge)
 
     def test_polygons_stay_inside_the_wood_and_tile(self):
         young, _, _ = mask_for(surface(True))

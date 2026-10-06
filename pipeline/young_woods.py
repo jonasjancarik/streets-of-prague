@@ -6,9 +6,14 @@ file ground_cover.py uses) minus the terrain heights says how high the canopy re
 Inside a wood, the places where it tops out between 1.5 and 7 m are written to the young
 layer as polygons; assemble() puts them into the tile as `areas.young_wood`, and
 src/map/vegetation.ts plants small, close trees there. Where nothing stands higher than
-1.5 m (a clearing, a meadow inside the wood's outline, the strip under a power line) the
-place is written as a clearing, `areas.wood_clearing`: the game draws grass there and plants
-only the shrubs of a wood's edge. The surface model only covers the city, so a wood outside
+1.5 m and IPR's summer aerial photo shows open, sunlit ground (a clearing, a meadow or a
+field inside the wood's outline, the strip under a power line) the place is written as a
+clearing, `areas.wood_clearing`: the game draws grass there and plants only the shrubs of a
+wood's edge. The photo is needed because the surface model alone is not enough: over many
+closed stands in the city's woods it lies at ground level (in Divoká Šárka whole tiles of
+tall forest read as bare), and a rock face, a road or a pond is low too. The photos are
+fetched once, at 1 m, for the tiles with a low patch (.cache/cover/photos/<area>/rgb_1m).
+The surface model only covers the city, so a wood outside
 it stays as it was.
 
     uv run --group cover young_woods.py build praha            # every tile with a wood
@@ -39,6 +44,12 @@ LOW, HIGH = 1.5, 7.0   # canopy tops between these (m above the ground) are a yo
 WINDOW = 9         # the canopy top is taken as the 80th percentile over this many metres
 MIN_AREA = 250.0   # m2: smaller patches are left out
 CLEAR_MIN = 400.0  # m2: the smallest clearing (a gap between crowns is not one)
+# Open ground in the photo, against a canopy: the brightness (the largest of red, green
+# and blue, 0 to 1) averaged over OPEN_WINDOW metres is above OPEN_BRIGHT (a closed canopy in
+# the July photos is 0.29 to 0.33 with its own shadows, mown or dry grass 0.45 to 0.75), and
+# the colour is not grey (rock, asphalt, gravel and roofs are under OPEN_COLOUR in saturation).
+OPEN_WINDOW, OPEN_BRIGHT, OPEN_COLOUR = 9, 0.42, 0.11
+STEEP = 0.7        # rise over run: steeper ground (35 degrees) is a rock face or a cutting, not a clearing
 MIN_WOOD = 2000.0  # m2 of wood in a tile below which it isn't looked at
 
 
@@ -46,6 +57,20 @@ def wood_of(ground_tile):
     """The tile's wood outlines (OSM's and the technical map's) as polygons-with-holes."""
     a = ground_tile.get("areas", {})
     return [*a.get("wood", []), *a.get("dtm_wood", [])]
+
+
+def open_ground(area, t):
+    """Where IPR's summer photo shows open ground rather than a canopy, rock or paving, over
+    the tile at RES (rows from the north). None where there is no photo."""
+    try:
+        rgb = gc.photo(gc.RGB, "rgb_1m", area, t, RES)
+    except Exception as e:  # noqa: BLE001 - no photo, no clearings: the wood stays as it was
+        print(f"  no photo for tile {t['i']}_{t['j']} ({e})", flush=True)
+        return None
+    bright, dull = rgb.max(axis=2), rgb.min(axis=2)
+    colour = (bright - dull) / np.maximum(bright, 1e-3)
+    return ((ndimage.uniform_filter(bright, OPEN_WINDOW) > OPEN_BRIGHT)
+            & (ndimage.uniform_filter(colour, OPEN_WINDOW) > OPEN_COLOUR))
 
 
 def young_mask(area, meta, t, wood):
@@ -64,8 +89,13 @@ def young_mask(area, meta, t, wood):
     ndsm = np.where(known, dsm - dtm, np.nan)
     in_wood = gc.burn(np.zeros(dsm.shape, bool), t, RES, wood)
     top = ndimage.percentile_filter(np.nan_to_num(ndsm, nan=-10), 80, size=WINDOW)
-    return (tidy(in_wood & known & (top >= LOW) & (top < HIGH), in_wood, MIN_AREA),
-            tidy(in_wood & known & (top < LOW), in_wood, CLEAR_MIN), in_wood)
+    young = tidy(in_wood & known & (top >= LOW) & (top < HIGH), in_wood, MIN_AREA)
+    clear = tidy(in_wood & known & (top < LOW), in_wood, CLEAR_MIN)
+    if clear.any():
+        rise_y, rise_x = np.gradient(ndimage.gaussian_filter(dtm, 2), RES)
+        open_ = open_ground(area, t)
+        clear = tidy(clear & open_ & (np.hypot(rise_x, rise_y) < STEEP), in_wood, CLEAR_MIN) if open_ is not None else clear & False
+    return young, clear, in_wood
 
 
 def tidy(mask, in_wood, min_area):
@@ -76,9 +106,10 @@ def tidy(mask, in_wood, min_area):
     labels, n = ndimage.label(mask)
     if n:
         sizes = ndimage.sum(mask, labels, range(1, n + 1))
-        # A patch cut by the tile's border is kept whatever its size: the rest is next door.
+        # A patch cut by the tile's border may be smaller: the rest of it is next door.
         edge = np.unique(np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]]))
-        mask &= np.isin(labels, np.union1d(1 + np.flatnonzero(sizes >= min_area), edge[edge > 0]))
+        edge = edge[(edge > 0) & (sizes[np.maximum(edge, 1) - 1] >= min_area / 4)]
+        mask &= np.isin(labels, np.union1d(1 + np.flatnonzero(sizes >= min_area), edge))
     return mask
 
 
