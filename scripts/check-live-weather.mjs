@@ -94,3 +94,16 @@ assert.ok(!w.follow('rain') && w.kind === 'clear', 'a game not begun with the re
 w = make('weather=storm');
 assert.ok(!w.follow('clear') && w.kind === 'storm', 'so does one with the weather in its address');
 console.log('Live weather: ČHMÚ observations by code and by measurement, station and file fallbacks, the route\'s setting, gradual following, hand-picked weather kept.');
+
+// The Lowest tier's switch: no rings in the puddles (the only readers of RAIN), the rain itself unchanged.
+{
+  const { RAIN, WEATHER_DETAIL } = await import('../src/shading.ts');
+  const w = make('weather=rain');
+  w.update(1, 12 * 3600 + 1, 1);
+  assert.ok(RAIN.value === 1 && w.now.rain === 1, 'rings in the rain on every other tier');
+  WEATHER_DETAIL.value = 0;
+  w.update(1, 12 * 3600 + 2, 1);
+  assert.ok(RAIN.value === 0 && w.now.rain === 1 && w.now.wet === 1, 'on Lowest it still rains and the ground is wet, without rings');
+  WEATHER_DETAIL.value = 1;
+  console.log('Weather detail: the Lowest tier skips the puddles\' rings and keeps the rain.');
+}

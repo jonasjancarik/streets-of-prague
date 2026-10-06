@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DIRT, LEAVES, ROOF_DETAIL, WATER } from './shading.ts';
+import { DIRT, LEAVES, ROOF_DETAIL, WATER, WEATHER_DETAIL } from './shading.ts';
 import { LAMP_SHADOWS, LAMP_SIZE, LIGHT_FX } from './lamps.ts';
 import type { Sky } from './sky.ts';
 import { t } from './i18n.ts';
@@ -11,7 +11,9 @@ import { t } from './i18n.ts';
 // from the lights at night: a light map twice as sharp, shadows from people, trams and
 // posts as well as cars, cones of light in the air and glints on cars and wet ground.
 // Only choosing it turns it on, Auto goes no higher than High.
-// Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd cap.
+// Lowest drops MSAA on WebGPU, roof detail and those looks, and halves the crowd cap;
+// it also leaves out the drifting mist, the mist over the river and the raindrops' rings
+// in the puddles (the thin haze over the view, the rain and the wet ground stay).
 // The water's waves and reflections (webgpu/water.ts) are a setting of their own, off
 // unless chosen (their cost isn't measured yet) and never drawn on Lowest; ?water=on|off
 // overrides it for one visit.
@@ -168,6 +170,7 @@ export class Graphics {
     const lampSize = lights ? 2048 : 1024, resized = LAMP_SIZE.value !== lampSize;
     LAMP_SIZE.value = lampSize;
     ROOF_DETAIL.value = roofs ? 1 : 0;
+    WEATHER_DETAIL.value = look ? 1 : 0;
     setSamples(this.renderer, samples);
     const shadow = this.sky.sun.shadow;
     shadow.radius = shadowBlur;

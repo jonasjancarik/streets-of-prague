@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WET, SNOW, STREET_SNOW, RAIN, BARE, SEASON, NOISE, NOISE_GLSL } from './shading.ts';
+import { WET, SNOW, STREET_SNOW, RAIN, BARE, SEASON, NOISE, NOISE_GLSL, WEATHER_DETAIL } from './shading.ts';
 import { LAMP_GLSL, LAMP_MAP, LAMP_BOX, LAMP_ON } from './lamps.ts';
 import { t } from './i18n.ts';
 import { SEASONS } from './season.ts';
@@ -155,7 +155,8 @@ export class Weather {
     WET.value = this.now.wet;
     SNOW.value = this.now.cover;
     STREET_SNOW.value = 1 - this.now.cleared;
-    RAIN.value = this.now.rain;
+    // (Only the puddles' and the water's rings read this: none on the Lowest tier.)
+    RAIN.value = this.now.rain * WEATHER_DETAIL.value;
     // The broadleaf trees are bare while their leaves aren't out, and under snow any time.
     BARE.value = Math.max(1 - this.season.leaf, this.now.cover);
     SEASON.value.set(this.season.turn, this.season.blossom, this.season.fresh, 0);
@@ -448,8 +449,10 @@ export class WeatherFx {
     this.mistOn.value = Math.min(1, w.mist) * MIST.most;
     this.rain.visible = w.rain > 0.01;
     this.snow.visible = w.snow > 0.01;
-    this.mist.visible = w.mist > 0.01 && (MIST_MODE.value === 'sheets' || !this.localMist.mesh);
-    this.localMist.update(w.mist, t, x, -y, r, mistGround, mistWater);
+    // The Lowest tier draws no mist banks or volumes: the haze over the whole view (Sky) is its mist.
+    const banks = WEATHER_DETAIL.value > 0 ? w.mist : 0;
+    this.mist.visible = banks > 0.01 && (MIST_MODE.value === 'sheets' || !this.localMist.mesh);
+    this.localMist.update(banks, t, x, -y, r, mistGround, mistWater);
     this.snowScale.value = innerHeight * dpr * 1.4;
     const m = MIST, sheets = Math.max(2, Math.min(MOST_SHEETS, Math.round(m.sheets)));
     this.mistA.value.set(1 / m.bankSize, 1 / m.wispSize, 1 / m.fineSize, m.thin);
