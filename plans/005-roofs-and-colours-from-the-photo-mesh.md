@@ -326,52 +326,62 @@ what was measured and any trade-off. Generated data stays out of git.
 - How far phase 3 should go outside the centre: the detection works anywhere, but the
   baroque dormer type only makes sense in the historic districts.
 
-## Leftovers, night of 5-6 October 2026 (branch `night-roofs`)
+## Leftovers, 5-6 October 2026 (branch `night-roofs`)
 
-The machine was swapping all night under ten sessions (a single IPR sheet took 75
-minutes to read, the rebuild of `ujezd` got 7 CPU-seconds in half an hour), so **none
-of the pipeline changes below has been run against map data yet**. The game side
-typechecks and `node scripts/check-roof-clutter.mjs` passes; nothing was looked at in
-the game. Treat the branch as code to review and run, not as a finished result.
+Run for `ujezd` and `centrum` (the citywide colour table reused by building id, its
+roof windows moved into each area's coordinates) and looked at in the game at High
+against main's code and map: Celetná, Pařížská, Mánesova and Újezd, from above, over
+the roofs and from the street.
 
-- **Wall colours.** `ipr_buildings.py` gives a building whose walls weren't measured
-  the colour of a measured neighbour: one sharing a wall (same kind first), else the
-  nearest of the same OSM kind within 30 m (`borrow_walls`, `--no-borrow` to leave it
-  out). It prints the coverage before and after and how far a borrowed colour is from
-  the real one (tried on measured buildings, against "any other building"). To do:
-  run it for `praha` and read those numbers; if the block neighbour is no better than
-  any other building, keep only the shared-wall step.
-- **Shade factor.** `mesh_colours.py` now also measures the ground in sun and in shade
-  per tile and within 8 m of each building (`ground_light`), meant to calibrate how
-  much light a building's shaded walls get. It is only measured: nothing uses it, the
-  fit against buildings seen both ways wasn't done, and it isn't written to the table.
-  The earlier finding stands (a citywide shade factor misses by ΔE 17, worse than
-  another building's colour at 11), so shaded walls still count as unsure.
+- **Wall colours.** A building whose walls weren't measured takes the colour of a
+  measured neighbour it shares a wall with (`borrow_walls` in `ipr_buildings.py`,
+  `--no-borrow` to leave it out). Coverage: `centrum` 42.4 % → 72.1 % of 10,867
+  buildings, `ujezd` 51.6 % → 80.7 % of 933. Tried on measured buildings, such a
+  neighbour's colour is off by ΔE 7.2 (centrum, 729 buildings) and 6.2 (ujezd), where
+  any other building in the area is off by 11.0 and 9.0. A neighbour of the same kind
+  within 30 m was no better than any other building (11.0 and 9.8), so it isn't used;
+  the script still prints its error. In the game the borrowed walls are mostly pale
+  cream where the palette had ochres: truer, and a little less varied along a terrace.
+- **Shade factor: not done.** `mesh_colours.py` measures the ground in sun and in shade
+  per tile and within 8 m of each building (`ground_light`) as a calibration, but
+  nothing uses it and it isn't in the table; the fit against buildings seen both ways
+  is still to do, and needs the citywide measurement run again (5.5 h last time).
+  Walls seen only in shade still count as unsure.
 - **Bays.** Mansard windows take the bay count and origin of the wall below
-  (`mansardCoords` with the walls from `facadeCoords`; no shader change). Chimneys
-  between a ridge's ends move onto the piers between the bays of the wall along the
-  ridge (`roof_details.piers`), which needs the style in the pipeline, see below.
-- **False roof windows.** Only the doubles are dropped (`roof_details.keep_windows`:
-  one window found as a bright and as a dark patch). The false-find rate on 30-50
-  roofs was not measured and the detector's thresholds are unchanged.
-- **Cost of chimneys and windows.** Not measured. Prepared: chimneys have a material of
-  their own (11), and the tile worker puts chimneys and roof windows in one run of
-  triangles at the end of the building mesh (`geometry.userData.parts`: `extras`,
-  `clutter`, `end`, in vertices), so they can be counted and switched off with
-  `geometry.setDrawRange` in a `bench.mjs --ab` hook. They add no draw calls.
+  (`mansardCoords`; checked in `scripts/check-roof-clutter.mjs`). Chimneys between a
+  ridge's ends stand over the piers between the bays of the wall along the ridge
+  (`roof_details.piers`); it ran, but few ridges are long enough to have one, and it
+  wasn't told apart by eye.
+- **False roof windows.** Only the doubles are dropped (`roof_details.keep_windows`).
+  The false-find rate on a sample of roofs is still unmeasured and the detector's
+  thresholds are as they were.
+- **Cost.** Chimneys have a material of their own (11), and the tile worker keeps
+  chimneys and roof windows, then the clutter, as runs of triangles at the end of the
+  building mesh (`geometry.userData.parts`: `extras`, `clutter`, `end`, in vertices),
+  so `bench.mjs --ab` can switch them with `setDrawRange`. None of it adds a draw call.
+  Standing on Staroměstské náměstí (`centrum`, High, 6 building meshes in view, 67
+  draw calls, 724,000 triangles in the frame): buildings 65,700 triangles, chimneys and
+  roof windows 28,000, clutter 54,200. Frame time, alternating, 3 runs of 8 s each, on
+  a machine with a load of 40-100 from a map rebuild: clutter on against off −3.1 %,
+  −1.6 %, +12.9 %; chimneys and windows on against off +2.6 %, +3.5 %, −1.4 %. No
+  cost shows above that noise (a few per cent); a quiet-machine run is owed.
 - **Roof clutter** (`src/map/roofClutter.ts`, `ROOF_CLUTTER` in `src/shading.ts`): aerials
-  and pots on chimneys, a chimney through the slope on some roofs, rows of small
-  dormers over the wall's bays, thicker moss on clay tiles (GLSL and TSL). All of it
-  is triangles in the tile's one building mesh: no draw calls of its own. **On at High
-  and Ultra only, pending the owner's look**; tiles loaded before the setting changes
-  keep what they had until they load again.
+  and pots on chimneys, a chimney through the slope on some roofs, small dormers over
+  the wall's bays, thicker moss on clay tiles (GLSL and TSL). **On at High and Ultra
+  only, pending the owner's look**; `?clutter=on|off` overrides it for a visit. Tiles
+  loaded before the setting changes keep what they had. It nearly doubles the building
+  triangles in the old centre; aerials (56 triangles each) are the first thing to thin
+  if that matters on some device.
 - **Building age** (`pipeline/building_age.py`): IPR's "Stáří zástavby"
-  (`Hosted/URK_CUR_URK_STARIZASTAVBY_P`, 136,675 outlines, 8 MB cached in
-  `pipeline/.cache/age/`), joined to IPR's buildings by their middle. The pipeline
-  picks the facade's style from the era (before 1842 baroque, to 1924 tenement,
-  1925-53 functionalist, 1954-89 panel, later functionalist; under 8.5 m a family
-  house) and writes it into the upper half of each wall triangle's material byte; the
-  game draws the style it's given and keeps its own rule for older data and for
-  OSM-only buildings. A game older than this reading the new data would repaint
-  measured walls from the palette (it compares the whole byte with 15): ship the two
-  together.
+  (`Hosted/URK_CUR_URK_STARIZASTAVBY_P`, 136,675 outlines, 8 MB in
+  `pipeline/.cache/age/`), joined to IPR's buildings by their middle: 8,700 of 10,867
+  buildings in `centrum`, 812 of 933 in `ujezd`. The style comes from the era (before
+  1842 baroque, to 1924 tenement, 1925-53 functionalist, 1954-89 panel, later
+  functionalist; under 8.5 m a family house), else from the old rule, and goes into the
+  upper half of each wall triangle's material byte. OSM-only buildings keep the game's
+  rule.
+- **Old and new together.** This game with older map data works as before (checked:
+  last night's `praha` map loads with no tile failing). An older game with the new data
+  doesn't break, but it repaints measured and borrowed walls from the random palette
+  and chimneys in a wall colour (it compares the whole byte with 15). So deploy the
+  game before, or together with, a map rebuilt by this pipeline.
