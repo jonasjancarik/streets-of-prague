@@ -11,7 +11,7 @@ import { loadFacadeAtlas } from './facades.ts';
 import { Zones, parkCars, inRing, inPoly } from './parking.ts';
 import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary } from './terrain.ts';
 import type { Terrace } from './terrain.ts';
-import { SKY_STEP } from './map/skyView.ts';
+import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
 import type { Shadower } from './map/skyView.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
 import { DriveGraph } from './network.ts';
@@ -159,6 +159,7 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
   return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step, labels, terraceAt(terraces), flatTerraces(terraces, ref)), hm, labels, edges };
 }
 
+const shadowerBox = new WeakMap<Shadower, Bounds>();
 const buildingMaterial = () => shadeBuildings(new THREE.MeshLambertMaterial({ vertexColors: true }));
 
 // A landmark's model (pipeline/landmarks.py), already in the game's coordinates. Its
@@ -1241,9 +1242,24 @@ export class TileWorld {
 
   // The buildings of a tile and the tiles round it that can shade its ground: the outlines
   // reach only so far, so a building across the street in the next tile has to come from there.
+  // Of the neighbours' buildings only those within the sky view's reach of this tile go along:
+  // the rest were copied to the worker and filled into its height field for nothing (eight
+  // tiles' worth for every job). Each building's box is worked out once.
   shadowersFor(i: number, j: number, own: Shadower[]): Shadower[] {
-    const out = own.slice();
-    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) if (di || dj) out.push(...(this.sky.get((i + di) * 65536 + j + dj)?.shapes ?? []));
+    const out = own.slice(), box = this.sky.get(i * 65536 + j)?.tileBox;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+      if (!di && !dj) continue;
+      for (const s of this.sky.get((i + di) * 65536 + j + dj)?.shapes ?? []) {
+        if (!box) { out.push(s); continue; }
+        let b = shadowerBox.get(s);
+        if (!b) {
+          b = [Infinity, Infinity, -Infinity, -Infinity];
+          for (const [x, y] of s.rings[0]) { b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y); }
+          shadowerBox.set(s, b);
+        }
+        if (b[2] > box[0] - SKY_MARGIN && b[0] < box[2] + SKY_MARGIN && b[3] > box[1] - SKY_MARGIN && b[1] < box[3] + SKY_MARGIN) out.push(s);
+      }
+    }
     return out;
   }
 
