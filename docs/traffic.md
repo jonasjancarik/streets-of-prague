@@ -132,7 +132,10 @@ furniture, so a few more cars stand than in the game). On it:
   sent along their lines for 150 s, 84 runs: four stalled before, one after, an AE bus
   near Na Poříčí that hasn't been looked into.)
 - `node scripts/check-bus-lines.mjs [area]`: fixtures, then every line followed through
-  the street network. Centrum: 40 breaks inside the map before, 3 of 10 m after.
+  the street network. Centrum: 40 breaks inside the map before, 3 of 10 m after. The
+  whole city (602 lines, 6,727 km, 90 % of it on the map's streets) still has 581 breaks
+  longer than 30 m, the longest on the motorways out of town; they haven't been gone
+  through, so for `praha` pass `--most` with the number to hold it to.
 - `node scripts/check-parking-city.mjs [area]`: sweeps a pickup and a bus along every
   lane and junction curve and a fire engine down the middle of every street, and lists
   the parked cars they would touch. It reports; `--strict` makes it fail. Centrum on
