@@ -269,14 +269,17 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   }
   gardenTrees(geo, grid, trees);
   // Surveyed groups of shrubs, filled from a lattice fixed to the map, and the single ones.
-  const BUSH = 2.2;
+  // A tile with very large shrubberies gets fewer, larger shrubs: never more than MAX_BUSHES.
+  const BUSH = 2.2, MAX_BUSHES = 500, found: [number, number, number, number][] = [];
   for (let j = Math.ceil(geo.minY / BUSH); j * BUSH < geo.maxY; j++) {
     for (let i = Math.ceil(geo.minX / BUSH); i * BUSH < geo.maxX; i++) {
       const g = rng(Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ 0x3e71);
       const x = (i + 0.2 + g() * 0.6) * BUSH, y = (j + 0.2 + g() * 0.6) * BUSH;
-      if (grid.at(x, y) === SHRUBBERY) trees.push([x, y, 1.1 + g() * 0.6, SHRUB]);
+      if (grid.at(x, y) === SHRUBBERY) found.push([x, y, 1.1 + g() * 0.6, g()]);
     }
   }
+  const keep = Math.min(1, MAX_BUSHES / Math.max(1, found.length)), grow = Math.min(1.8, 1 / Math.sqrt(keep));
+  for (const [x, y, rad, pick] of found) if (pick < keep) trees.push([x, y, rad * grow, SHRUB]);
   for (const [x, y] of d.shrubs ?? []) trees.push([x, y, 0.9 + r() * 0.7, SHRUB]);
 
   // Shrubs, then conifers, last: each has its own mesh.
