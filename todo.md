@@ -10,7 +10,8 @@ Twenty sessions worked overnight, each on its own branch and worktree
 (`.claude/worktrees/night-*`); the account's usage limit stopped all of them from
 about 00:20 to 04:55, so most got two to three working hours on a heavily loaded
 machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landmarks`
-(code only), `night-pipeline`, `night-weather`, `night-graphs`, and single commits of
+(code only), `night-pipeline`, `night-weather`, `night-graphs`, `night-countryside` (behind
+`?countryside`), and single commits of
 `night-renderer` (windows on ground floors, start-up report) and `night-maplook`
 (sports lines). Not merged, each with its state written in the plan or doc it names:
 
@@ -20,7 +21,7 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
   next release and blocks beta deploys until then.
 - **`night-missions` (plans 004 and 006 phase 4):** the job engine, five odd jobs
   (courier, taxi fare, patient run, tram shift, fire call), the factions' books; save
-  format 2. Nine assumed answers to confirm. Left: run `scenarios/job-tram.ts`,
+  format 2. Nine assumed answers to confirm. `job-tram` passes now. Left:
   `scene.mjs run all` and `npm run build`, read the Czech texts in the game, a touch
   and gamepad button for asking for work.
 - **`night-audio`:** tyre recordings are back, engines are made of their firings
@@ -36,8 +37,8 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
   and drains never seen in the game, no draw-call comparison, hydrants and phone boxes
   have no models.
 - **`night-pavements` (plan 018 phases 3–4):** surveyed pavements, islands and tram
-  beds, built for `ujezd` only; four tests in `test_walking_surfaces.py` fail, no
-  screenshots, the pavement step is slow.
+  beds, built for `ujezd` only (its tests pass, screenshots judged in the plan's
+  Result); `centrum` and a suburb not built, the pavement step is slow.
 - **`night-walls`:** tops of quay and retaining walls stop walkers, but a car at
   50 km/h still gets over a quay wall (scenario `step-edges`); surveyed walls, fences
   and railings built for `ujezd`, not seen in the game.
@@ -46,13 +47,13 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
   offline checks (`check-bridge-decks.mjs`, `check-terrain-spikes.mjs`). Needs one
   `praha` terrain rebuild and a look before merging.
 - **`night-boats`:** cruise boats follow a fairway (`river.json`), PID ferries P1, P2,
-  P4, P5, P6 run and take tickets. One game run, no played test.
-- **`night-countryside` (plan 021 step 2):** generated streets joined to the built
-  map's; passes offline all round `praha`, but three of four screenshots showed no
-  ground after far camera jumps (unexplained).
+  P4, P5, P6 run and take tickets; scenarios `ferry-ride` and `cruise-weir` pass.
+  No played test.
 - **`night-roofs` (plan 005):** neighbour-borrowed wall colours, bay-aligned mansards
   and chimneys, building age for facade styles, roof clutter behind `ROOF_CLUTTER`
-  (High and Ultra only). The pipeline half has never been run.
+  (High and Ultra only). `ipr_buildings.py ujezd` ran: wall colours for 80.7 % of
+  buildings (51.6 % measured, the rest from a neighbour sharing a wall), style from
+  the age for 812 of 933. Not looked at in the game.
 - **`night-beige` (plan 014):** courtyards classified with the plain ground, seams
   between tiles fixed, nine painted-photo variants to judge
   (scratchpad `overnight/night-beige/painted/`). Tried on `ujezd` only.
@@ -61,7 +62,13 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
   sky textures after it is unexplained).
 - **`night-maplook`, rest:** clearings inside mapped woods (changes every wood; needs
   the young layer rebuilt and a comparison with the photos).
-- **`worktree-rust-wgpu`:** see `rust/PARITY.md` on the branch.
+- **`worktree-rust-wgpu`** (never to be merged): the static daylight scene of `ujezd`
+  and `centrum` matches the game to about 5–8 levels of mean difference, with tile
+  streaming and the sedan's handling; `rust/PARITY.md` on the branch has the status
+  table and the order to go on in. A sky-view module is uncommitted in its worktree.
+- Uncommitted work was left by the limit in the worktrees of `night-renderer`
+  (`src/sky.ts`, the night fog) and `night-walls` (`scenarios/step-edges.ts`,
+  `src/testkit.ts`).
 
 The shared map data was not rebuilt. Rebuilds the merged work is waiting for:
 `build_lamps.py ujezd centrum praha` (the new lamp rule; look at suburbs at night
@@ -233,8 +240,10 @@ before that day's frame-count fix may be doubled.
   (the rest are in shade in the photographs); mansard windows and chimneys lined up
   with the facade's bays; false finds among the detected roof windows; what the
   chimneys and windows cost.
-- **Countryside (plan 021):** step 2, joining generated streets to the built map's at
-  junctions; a phone measurement.
+- **Countryside (plan 021):** step 2 (the join) is in main; a scenario that drives out
+  and back on an arterial road, the pipeline writing the list of streets that leave
+  the map (the worker reads about fifty rim tiles now), the one built street that
+  leaves on a bridge or tunnel, steps 3–6, a phone measurement.
 
 ## Gameplay
 
