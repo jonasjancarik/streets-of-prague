@@ -340,7 +340,7 @@ function isRequest(value: unknown): value is WorkerRequest {
 }
 
 function transferBuffers(arrays: BuildingArrays): ArrayBuffer[] {
-  const buffers = Object.values(arrays).map((array) => array.buffer);
+  const buffers = Object.values(arrays).filter((array) => array instanceof Float32Array).map((array) => array.buffer);
   if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Building transfer requires ArrayBuffer storage');
   return buffers as ArrayBuffer[];
 }

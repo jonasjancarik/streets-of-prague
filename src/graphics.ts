@@ -17,6 +17,8 @@ import { t } from './i18n.ts';
 // The water's waves and reflections (webgpu/water.ts) are a setting of their own, off
 // unless chosen (their cost isn't measured yet) and never drawn on Lowest; ?water=on|off
 // overrides it for one visit.
+// Roof clutter (shading.ts, ROOF_CLUTTER) is on at High and Ultra; ?clutter=on|off overrides
+// that for one visit, to compare.
 // Car shadows in lamplight go from full to soft to none (2 / 1 / 0).
 //
 // Auto starts high (medium on touch devices) and judges windows of 60 frame times
@@ -121,6 +123,7 @@ export class Graphics {
   choice: Choice;
   tier: Tier;
   water = false;
+  private clutter: boolean | null = null; // ?clutter=on|off
   private auto: AutoTier;
   private renderer: THREE.WebGLRenderer;
   private sky: Sky;
@@ -134,6 +137,7 @@ export class Graphics {
     try { saved = localStorage.getItem('graphics'); } catch {}
     try { this.water = localStorage.getItem('water') === 'on'; } catch {}
     if (params.has('water')) this.water = params.get('water') !== 'off';
+    if (params.has('clutter')) this.clutter = params.get('clutter') !== 'off';
     const asked = params.get('graphics');
     const pick = (c: string | null) => (CHOICES as string[]).includes(c ?? '') ? c as Choice : null;
     this.choice = pick(asked) ?? pick(saved) ?? 'auto';
@@ -171,7 +175,7 @@ export class Graphics {
     LAMP_SIZE.value = lampSize;
     ROOF_DETAIL.value = roofs ? 1 : 0;
     WEATHER_DETAIL.value = look ? 1 : 0;
-    ROOF_CLUTTER.value = clutter ? 1 : 0;
+    ROOF_CLUTTER.value = (this.clutter ?? clutter) ? 1 : 0;
     setSamples(this.renderer, samples);
     const shadow = this.sky.sun.shadow;
     shadow.radius = shadowBlur;
