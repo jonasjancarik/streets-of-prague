@@ -86,7 +86,8 @@ class WalkingSurfaceTests(unittest.TestCase):
         geoms = shapely.transform(geoms, lambda c: np.column_stack(inv.transform(c[:, 0], c[:, 1])))
         rows = [{"element": "way", "id": i+1, **tag} for i, tag in enumerate(tags)]
         with patch("osm_area.dtm.streets", return_value=Polygon()), patch("osm_area.dtm.land", return_value=land or {}), \
-                patch("osm_area.dtm.parking", return_value=Polygon()):
+                patch("osm_area.dtm.parking", return_value=Polygon()), patch("osm_area.dtm.walks", return_value={}):
+            # (No surveyed pavements either: the real ones at this spot would take the ribbons' place.)
             return extract("ujezd", features=(geoms, rows))
 
     def test_cobbled_footways_and_pedestrian_streets_use_setts(self):
@@ -135,7 +136,7 @@ class WalkingSurfaceTests(unittest.TestCase):
                            [box(-100, -100, 100, 100), box(50, 50, 70, 70),
                             LineString([(-50, 0), (50, 0)])])
         self.assertGreater(got["areas"]["lawn"].area, 39000)
-        self.assertGreater(got["roads"]["path"].area, 300)
+        self.assertGreaterEqual(got["roads"]["path"].area, 300)  # 100 m, 3 m wide, with square ends
 
     def test_route_link_across_surveyed_green_keeps_real_surface(self):
         got = self.extract([{"highway": "footway", "footway": "link"}],
