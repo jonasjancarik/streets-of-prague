@@ -11,7 +11,7 @@ Twenty sessions worked overnight, each on its own branch and worktree
 about 00:20 to 04:55, so most got two to three working hours on a heavily loaded
 machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landmarks`
 (code only), `night-pipeline`, `night-weather`, `night-graphs`, `night-countryside` (behind
-`?countryside`), `night-greenery`, `night-bridges`, `night-gardens`, and single commits of
+`?countryside`), `night-greenery`, `night-bridges`, `night-gardens`, `night-boats`, `night-roofs`, and single commits of
 `night-renderer` (windows on ground floors, the fog, the start-up report) and `night-maplook`
 (sports lines). Not merged, each with its state written in the plan or doc it names:
 
@@ -34,14 +34,6 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
 - **`night-walls`, rest:** surveyed walls, fences and railings from the technical map
   (`pipeline/dtm_walls.py`), built for `ujezd` only and not seen in the game; a
   surveyed wall may close a gateway or yard. The step edges themselves are in main.
-- **`night-boats`:** cruise boats follow a fairway (`river.json`), PID ferries P1, P2,
-  P4, P5, P6 run and take tickets; scenarios `ferry-ride` and `cruise-weir` pass.
-  No played test.
-- **`night-roofs` (plan 005):** neighbour-borrowed wall colours, bay-aligned mansards
-  and chimneys, building age for facade styles, roof clutter behind `ROOF_CLUTTER`
-  (High and Ultra only). `ipr_buildings.py ujezd` ran: wall colours for 80.7 % of
-  buildings (51.6 % measured, the rest from a neighbour sharing a wall), style from
-  the age for 812 of 933. Not looked at in the game.
 - **`night-beige` (plan 014):** courtyards classified with the plain ground, seams
   between tiles fixed, nine painted-photo variants to judge
   (scratchpad `overnight/night-beige/painted/`). Tried on `ujezd` only.
@@ -104,7 +96,12 @@ Before deploying:
   Lowest on a drive (22.7 fps at Medium, 36.3 at Low).
 - **Branch `ios-app` (plan 020):** real-device checks (whether the app gets WebGPU on
   iOS 26 among them), then phases 4, 5, 7 and 8.
-- **Roof clutter** (aerials, more chimneys and dormers) and stronger moss on red clay.
+- **Roof clutter** (aerials and pots on chimneys, small dormers, thicker moss on clay)
+  is built and on at High and Ultra (`?clutter=on|off`); it nearly doubles building
+  triangles in the old centre. Look and decide the tiers; aerials are the first thing
+  to thin.
+- **The cruise boat is lower** (3.75 m, low cabin, no mast) so it fits under the
+  footbridge over the Smíchov lock cut. Keep, or raise the boat and route it otherwise.
 - **Garden trees:** thin the scatter with distance, or one cheap crown for the suburbs.
   The cost is per tree and per mesh, not per triangle.
 
@@ -237,10 +234,13 @@ before that day's frame-count fix may be doubled.
 - **Painted photo** (`?ortho`): still a blurry photograph at 0.5 m/px. To try: a
   bigger, more stretched brush, the game's own palette, 1–2 m/px, evening out the
   photo's shadows, a margin from neighbouring tiles.
-- **Roof and wall colours (plan 005):** walls measured for about 42 % of buildings
-  (the rest are in shade in the photographs); mansard windows and chimneys lined up
-  with the facade's bays; false finds among the detected roof windows; what the
-  chimneys and windows cost.
+- **Roof and wall colours (plan 005):** walls are measured for 42 % of buildings and
+  borrowed from a neighbour sharing a wall for about 30 % more; shaded walls are still
+  unmeasured (the ground-light calibration is measured but not fitted); the false-find
+  rate of roof windows; a quiet-machine benchmark of chimneys, windows and clutter;
+  mansard bays seen only in the offline check; building age for OSM-only buildings.
+  A game older than 6 October reading the new map repaints measured walls from the
+  palette: release the game with or before the map.
 - **Countryside (plan 021):** step 2 (the join) is in main; a scenario that drives out
   and back on an arterial road, the pipeline writing the list of streets that leave
   the map (the worker reads about fifty rim tiles now), the one built street that
@@ -265,8 +265,12 @@ before that day's frame-count fix may be doubled.
 - **Parked cars:** `check-parking-city.mjs` finds, in centrum, 288 cars in a bus's
   way, 6 in a pickup's and 21 on the centre line of wide one-way streets; three causes
   in `docs/traffic.md`; nothing fixed, not yet run on `praha`.
-- **Boats:** other bridges than Legion Bridge and water-height seams unchecked; no PID
-  ferries (`docs/boats.md`).
+- **Boats:** cruise boats follow the fairway through the locks (`river.json`); they
+  still turn at Modřany and Klecany (no usable lock in the map's water), and two
+  meeting inside a lock cut pass through each other. Four decks are too low for them
+  (`KNOWN_LOW` in `check-river.mjs`).
+- **Ferries:** P1, P2, P4, P5 and P6 run with tickets; no inspector comes aboard; P3
+  and P7 when PID's feed has them; not tried on touch or WebGL.
 - **Taxis:** routes are sometimes long, and the apps have no phone screen (the stall
   behind cars parked on a bend is fixed).
 - **Raised buildings** only in IPR's data (passages over a street) still block. Likely
@@ -315,7 +319,6 @@ All IPR Praha, CC BY, at
 - Walls, fences, railings and steps: set 3 of the DTM, already in
   `pipeline/.cache/dtm/ZPS_KR/`. Could replace OSM's walls and block the player.
 - The rest of set 2's surfaces: pavements, traffic islands, separate tram tracks.
-- Building age ("Stáří zástavby") to pick facade styles.
 - Noise maps for how loud a street's background is.
 - Smaller things: avenues, memorial trees, noise barriers, fountains, public toilets,
   recycling bins, parking meters, playgrounds (<https://opendata.geoportalpraha.cz/>).
