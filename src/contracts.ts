@@ -4,6 +4,7 @@ import type { Terrace } from './terrain.ts';
 import type { GroundResult, GroundRoadEdge, GroundTileData, LevelMask } from './ground.ts';
 import type { TreeSpot } from './map/vegetation.ts';
 import type { FenceBuffers, FenceTile } from './map/fences.ts';
+import type { Shed, ShedBuffers } from './map/sheds.ts';
 import type { BuildingTile } from './map/buildings.ts';
 import type { SkyJob, SkyResult } from './map/skyView.ts';
 import type { FurnitureData, FurnitureInstances } from './map/furniture.ts';
@@ -71,7 +72,14 @@ export interface TileJSON extends GroundTileData {
   buildings: TileBuilding[];
   walls: { kind: string; h?: number; pts: Point2[] }[];
   fences?: { kind: string; h?: number; pts: Point2[] }[]; // fences and hedges (not in older tiles)
-  drives?: { b: number; x: number; y: number; h: number }[]; // where a car could stand on a house's drive: the middle, and the way it faces (not in older tiles)
+  drives?: { b: number; x: number; y: number; h: number; g?: 1 }[]; // where a car could stand on a house's drive: the middle, and the way it faces; g: a second place, in front of the garage (not in older tiles)
+  // What stands on the plots of family houses (pipeline/plots.py; not in older tiles):
+  // each plot's outline with its house's id, its gate (x, y, the way in) and whether a
+  // paved strip leads from it; the paving, vegetable beds and pools, drawn over the
+  // garden; the sheds.
+  plots?: { b: number; ring: Point2[]; gate?: [number, number, number]; strip?: 1 }[];
+  patches?: { paving?: Polygons; bed?: Polygons; pool?: Polygons };
+  sheds?: Shed[];
   trees: TreeSpot[];
   shrubs?: Point2[]; // surveyed single shrubs (pipeline/ipr_greenery.py)
   utility?: UtilityMark[]; // surveyed covers, drains, hydrants and phone boxes (pipeline/ipr_utility.py)
@@ -104,6 +112,7 @@ export interface LandResult {
   trees: { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; count: number; shrubs: number; conifers: number };
   walls: { position: Float32Array; normal: Float32Array };
   fences: FenceBuffers;
+  sheds: ShedBuffers;
   cells: Uint8Array;
   masks: LevelMask[];
 }
@@ -120,7 +129,7 @@ export interface WorkerJobs {
   };
   sky: SkyJob;
   land: {
-    data: FurnitureData & { levels: boolean; utility?: UtilityMark[]; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
+    data: FurnitureData & { levels: boolean; utility?: UtilityMark[]; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; sheds: Shed[]; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
     seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
     // The bridges and tunnels to rasterise, each a level to get about on (ground.ts).
     box: Bounds; structures: TileStructure[];

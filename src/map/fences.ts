@@ -16,7 +16,8 @@ const RAIL_POSTS = 4; // m of barrier the post-and-beam texture repeats over (a 
 const SECTION = 3; // m: the longest piece a line is cut into
 const PICKET = 1.6; // m of fence the picket texture repeats over
 
-const FENCE_VERTS = 6;
+const FENCE_VERTS = 12; // a face each way
+const LEAN = 0.45; // how far a fence's two faces lean apart from straight up, for its light
 const HEDGE_VERTS = 30;
 export const SECTION_STRIDE = 8;
 
@@ -44,21 +45,40 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
     const m = hedge ? out.hedge : rail ? out.rail : out.fence;
     const repeat = hedge ? 2 : rail ? RAIL_POSTS : PICKET;
     let along = 0;
-    for (let i = 0; i < line.pts.length - 1; i++) {
-      const [ax, ay] = line.pts[i], [bx, by] = line.pts[i + 1];
+    // Where the line bends, a hedge's two sides meet on the bisector of the bend, so no
+    // wedge is left open on the outside of a plot's corner: `mitre(i)` is the offset of
+    // the right-hand side at point i, as a multiple of half the hedge's width.
+    const pts = line.pts;
+    const unit = (i: number): Point2 | null => {
+      const dx = pts[i + 1][0] - pts[i][0], dy = pts[i + 1][1] - pts[i][1], len = Math.hypot(dx, dy);
+      return len < 0.05 ? null : [dx / len, dy / len];
+    };
+    const mitre = (i: number, own: Point2): Point2 => {
+      const before = i > 0 ? unit(i - 1) : null, after = i < pts.length - 1 ? unit(i) : null;
+      const a = before ?? own, b = after ?? own;
+      // Along the bisector of the two right-hand normals, lengthened so both sides stay
+      // parallel to their own stretch; a turn sharper than 120° is left square.
+      const d = 1 + a[0] * b[0] + a[1] * b[1];
+      if (d < 0.5) return [own[1], -own[0]];
+      return [(a[1] + b[1]) / d, (-a[0] - b[0]) / d];
+    };
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
       const len = Math.hypot(bx - ax, by - ay);
       if (len < 0.05) continue;
+      const dir: Point2 = [(bx - ax) / len, (by - ay) / len];
       const n = Math.ceil(len / SECTION);
+      const startOff = mitre(i, dir), endOff = mitre(i + 1, dir);
       for (let s = 0; s < n; s++) {
         const x1 = ax + (bx - ax) * s / n, y1 = ay + (by - ay) * s / n;
         const x2 = ax + (bx - ax) * (s + 1) / n, y2 = ay + (by - ay) * (s + 1) / n;
         const z1 = height(x1, y1), z2 = height(x2, y2);
         const u1 = (along + len * s / n) / repeat, u2 = (along + len * (s + 1) / n) / repeat;
         sections.push(x1, y1, x2, y2, (z1 + z2) / 2, h, hedge ? 1 : rail ? 2 : 0, m.pos.length / 3);
-        const nx = (y2 - y1) / (len / n), ny = -(x2 - x1) / (len / n);
-        // A quad from the bottom edge (x1,y1,z1)-(x2,y2,z2) up by `up`, pushed out by (ox, oy).
-        const quad = (ox1: number, oy1: number, ox2: number, oy2: number, up1: number, up2: number, zb1: number, zb2: number, n3: number[], uv: number[], flip = false) => {
-          const P = [[x1 + ox1, zb1, -(y1 + oy1)], [x2 + ox2, zb2, -(y2 + oy2)], [x2 + ox2, zb2 + up2, -(y2 + oy2)], [x1 + ox1, zb1 + up1, -(y1 + oy1)]];
+        const nx = dir[1], ny = -dir[0];
+        // A quad from the bottom edge (x1,y1,zb1)-(x2,y2,zb2) up to the heights t1 and t2, pushed out by (ox, oy).
+        const quad = (ox1: number, oy1: number, ox2: number, oy2: number, t1: number, t2: number, zb1: number, zb2: number, n3: number[], uv: number[], flip = false) => {
+          const P = [[x1 + ox1, zb1, -(y1 + oy1)], [x2 + ox2, zb2, -(y2 + oy2)], [x2 + ox2, t2, -(y2 + oy2)], [x1 + ox1, t1, -(y1 + oy1)]];
           const U = [[uv[0], 0], [uv[1], 0], [uv[1], 1], [uv[0], 1]];
           for (const k of flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) {
             m.pos.push(...P[k]);
@@ -68,22 +88,33 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
         };
         const sink = -0.05;
         if (!hedge) {
-          quad(0, 0, 0, 0, h - sink, h - sink, z1 + sink, z2 + sink, [nx, ny, 0], [u1, u2]);
+          // A face each way, both leaning towards the sky: a fence is a row of pickets with
+          // light between them, so the side away from the sun is nearly as bright as the
+          // other, where a single upright plane would be black from that side.
+          quad(0, 0, 0, 0, z1 + h, z2 + h, z1 + sink, z2 + sink, [nx * LEAN, ny * LEAN, 1], [u1, u2]);
+          quad(0, 0, 0, 0, z1 + h, z2 + h, z1 + sink, z2 + sink, [-nx * LEAN, -ny * LEAN, 1], [u1, u2], true);
         } else {
-          const w = HEDGE_W / 2, wx = nx * w, wy = ny * w;
-          quad(wx, wy, wx, wy, h - sink, h - sink, z1 + sink, z2 + sink, [nx, ny, 0], [u1, u2]);
-          quad(-wx, -wy, -wx, -wy, h - sink, h - sink, z1 + sink, z2 + sink, [-nx, -ny, 0], [u2, u1], true);
+          const w = HEDGE_W / 2;
+          const o1 = s === 0 ? startOff : [nx, ny], o2 = s === n - 1 ? endOff : [nx, ny];
+          // Each side stands on the ground under it and the top is level across the hedge,
+          // so on a slope the downhill side doesn't hang in the air.
+          const R1 = [x1 + o1[0] * w, y1 + o1[1] * w], R2 = [x2 + o2[0] * w, y2 + o2[1] * w];
+          const L1 = [x1 - o1[0] * w, y1 - o1[1] * w], L2 = [x2 - o2[0] * w, y2 - o2[1] * w];
+          const t1 = z1 + h, t2 = z2 + h;
+          const foot = (p: number[], z: number) => Math.min(height(p[0], p[1]), z) + sink;
+          const zr1 = foot(R1, z1), zr2 = foot(R2, z2), zl1 = foot(L1, z1), zl2 = foot(L2, z2);
+          quad(o1[0] * w, o1[1] * w, o2[0] * w, o2[1] * w, t1, t2, zr1, zr2, [nx, ny, 0], [u1, u2]);
+          quad(-o1[0] * w, -o1[1] * w, -o2[0] * w, -o2[1] * w, t1, t2, zl1, zl2, [-nx, -ny, 0], [u2, u1], true);
           // The top, a strip of the two sides' top edges.
-          const T = [[x1 + wx, z1 + h, -(y1 + wy)], [x2 + wx, z2 + h, -(y2 + wy)], [x2 - wx, z2 + h, -(y2 - wy)], [x1 - wx, z1 + h, -(y1 - wy)]];
+          const T = [[R1[0], t1, -R1[1]], [R2[0], t2, -R2[1]], [L2[0], t2, -L2[1]], [L1[0], t1, -L1[1]]];
           const V = [[u1, 0.2], [u2, 0.2], [u2, 0.8], [u1, 0.8]];
           for (const k of [0, 1, 2, 0, 2, 3]) { m.pos.push(...T[k]); m.nor.push(0, 1, 0); m.uv.push(...V[k]); }
           // The two ends, so a hedge's last section isn't hollow.
-          for (const [ex, ey, ez, sgn] of [[x1, y1, z1, -1], [x2, y2, z2, 1]] as const) {
-            const dx = (x2 - x1) / (len / n) * sgn, dy = (y2 - y1) / (len / n) * sgn;
-            const P = [[ex - wx, ez + sink, -(ey - wy)], [ex + wx, ez + sink, -(ey + wy)], [ex + wx, ez + h, -(ey + wy)], [ex - wx, ez + h, -(ey - wy)]];
+          for (const [A, B, za, zb, top, sgn] of [[L1, R1, zl1, zr1, t1, -1], [L2, R2, zl2, zr2, t2, 1]] as const) {
+            const P = [[A[0], za, -A[1]], [B[0], zb, -B[1]], [B[0], top, -B[1]], [A[0], top, -A[1]]];
             for (const k of sgn > 0 ? [1, 0, 3, 1, 3, 2] : [0, 1, 2, 0, 2, 3]) {
               m.pos.push(...P[k]);
-              m.nor.push(dx, 0, -dy);
+              m.nor.push(dir[0] * sgn, 0, -dir[1] * sgn);
               m.uv.push(k === 1 || k === 2 ? 1 : 0, k > 1 ? 1 : 0);
             }
           }
@@ -184,9 +215,9 @@ export function fenceMeshes({ fence, hedge, rail }: FenceBuffers) {
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uHedgeSeason;');
   };
   return {
-    fence: make(fence, new THREE.MeshLambertMaterial({ map: pickets(), alphaTest: 0.5, side: THREE.DoubleSide }), false),
+    fence: make(fence, new THREE.MeshLambertMaterial({ map: pickets(), alphaTest: 0.5 }), false),
     hedge: make(hedge, hedgeMaterial, true),
-    rail: make(rail, new THREE.MeshLambertMaterial({ map: barrier(), alphaTest: 0.5, side: THREE.DoubleSide }), false),
+    rail: make(rail, new THREE.MeshLambertMaterial({ map: barrier(), alphaTest: 0.5 }), false),
   };
 }
 

@@ -28,6 +28,7 @@ import { posts, type Post } from './posts.ts';
 import { fences, type FenceSection } from './fences.ts';
 import { stepEdges, type Crosser, type StepEdge } from './stepEdges.ts';
 import { fenceMeshes } from './map/fences.ts';
+import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
@@ -307,6 +308,20 @@ export function clipLine(pts: Point2[], [x0, y0, x1, y1]: Bounds): Point2[][] {
 }
 
 // Whether (x, y) is within `pad` metres of a passage through a building.
+// The tile's areas with what stands on the plots of family houses laid over the garden
+// (pipeline/plots.py): the paving joins the paved squares and the vegetable beds the
+// worn earth, which look the same and so cost no draw of their own; pools get a layer.
+function withPatches(t: TileJSON): TileJSON['areas'] {
+  const p = t.patches;
+  if (!p || !(p.paving || p.bed || p.pool)) return t.areas;
+  return {
+    ...t.areas,
+    ...(p.paving ? { square: [...(t.areas.square || []), ...p.paving] } : {}),
+    ...(p.bed ? { worn: [...(t.areas.worn || []), ...p.bed] } : {}),
+    ...(p.pool ? { pool: p.pool } : {}),
+  };
+}
+
 function inPassage(passages: TilePassage[], x: number, y: number, pad = 0) {
   for (const p of passages) {
     const r = p.w / 2 + pad;
@@ -1056,7 +1071,7 @@ export class TileWorld {
     const early = this.shown.has(k) ? this.meshJobs(k, source) : null;
     early?.catch(() => {});
     const landJob = this.workers.run('land', {
-      data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, trees: t.trees, shrubs: t.shrubs, utility: t.utility, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
+      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, utility: t.utility, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
         walk: t.walk ?? [], reserved: new Float32Array(reserved), structures: structures.flatMap(s => s.polys), furnitureBuildings: [...t.buildings.map(b => ({ rings: b.rings })), ...hide.map(rings => ({ rings }))], furnitureEnabled: reservedAll !== null && !location.search.includes('nofurniture') },
       seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       box: bounds, structures: tileLevels ? structures : [],
@@ -1077,6 +1092,7 @@ export class TileWorld {
     });
     const walls = wallMesh(land.walls);
     const fenceRows = fenceMeshes(land.fences);
+    const sheds = shedMesh(land.sheds);
     const furniture = furnitureMeshes(land.furniture);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
     // The overhead wires over the tram tracks, at the height of the bridge deck a track
@@ -1112,7 +1128,7 @@ export class TileWorld {
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, levels: onLevels, cars, ms,
-      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...wires],
+      source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...(sheds ? [sheds] : []), ...wires],
       roads, crossers, poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
@@ -1154,7 +1170,7 @@ export class TileWorld {
     }
     return Promise.all([
       w.run('ground', {
-        d: { areas: t.areas, roads: t.roads, rails: t.rails, deckRails: t.deckRails, weirs: t.weirs, crossings: t.crossings, marks: t.marks, utility: t.utility },
+        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, weirs: t.weirs, crossings: t.crossings, marks: t.marks, utility: t.utility },
         box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide }, [buffer]) : null,
