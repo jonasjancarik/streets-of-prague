@@ -121,7 +121,23 @@ class FurnishTests(unittest.TestCase):
         got = plots.furnish(made, houses, [("house", h) for _, h in houses], green, self.street, Polygon(), lane)
         from shapely.geometry import LineString
         for f in got["fences"]:
-            self.assertLess(LineString(f["pts"]).intersection(lane).length, 0.01)
+            self.assertLess(LineString(f["pts"]).intersection(lane.buffer(-0.2)).length, 0.01)  # (along its edge is fine)
+
+
+    def test_plots_start_behind_a_pavement_inside_the_block(self):
+        made, houses, green = self.block()
+        pavement = box(0, 1.5, 80, 4)
+        got = plots.furnish(made, houses, [("house", h) for _, h in houses], green, self.street, Polygon(), pavement)
+        self.assertEqual(len(got["plots"]), 4)
+        for p in got["plots"]:
+            self.assertAlmostEqual(p["gate"][1], 4, delta=0.05)  # the gate is at the back of the pavement
+            self.assertLess(p["poly"].intersection(pavement).area, 0.01)
+        self.assertEqual(len(got["drives"]), 4)
+        for d in got["drives"]:
+            self.assertFalse(plots._rect(d["x"], d["y"], *plots.CAR, d["h"]).intersects(pavement))
+        from shapely.geometry import LineString
+        fronts = [LineString(f["pts"]) for f in got["fences"] if all(abs(y - 4) < 0.05 for _, y in f["pts"])]
+        self.assertTrue(fronts)  # some plots' street fences stand along the back of the pavement
 
 
 if __name__ == "__main__":

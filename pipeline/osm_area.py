@@ -450,7 +450,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         homes, buildings, streets, clip,
         [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls],
         unmapped=[g for g in spoken_for if not g.is_empty],
-        ways=[g for g in [*service, *road_lines.get("path", []), *road_lines.get("dirt", [])]
+        ways=[g for g in [*service, *road_lines.get("path", []), *road_lines.get("dirt", []), *(ws[0] for ws in walking_surfaces)]
               if not g.is_empty and g.geom_type in ("Polygon", "MultiPolygon")])
     fences.extend(plot_fences)
     timer.lap("gardens")

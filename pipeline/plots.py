@@ -26,6 +26,7 @@ DRIVE_ROOM = 6.2  # m of plot between the gate and the house that a car needs
 CAR = (4.6, 2.2)  # m, what has to be free of buildings
 DRIVE_WIDTH = 3.0  # m of paving where a car can stand
 PATH_WIDTH = 1.3  # m: the path to the door where there is no room for a car
+PAVEMENT = 4.5  # m from a street's edge within which a way through the block is its pavement
 BEFORE_GARAGE = 3.0  # m from a garage's door to the middle of the car in front of it
 GARAGES = {"garage", "garages", "carport"}
 # How often a plot has each of the small things. A shed only where OSM maps no
@@ -171,7 +172,7 @@ def fences(layout_, green, street_edge, mapped, ways=None):
         return []
     grass = green.buffer(0.3)
     if ways is not None and not ways.is_empty:
-        grass = grass.difference(ways.buffer(0.3))
+        grass = grass.difference(ways.buffer(-0.1))  # (not what runs along a way's edge)
     out = []
 
     def emit(line, kind, seed):
@@ -289,6 +290,18 @@ def furnish(plots, homes, buildings, green, street_edge, mapped, ways=None):
     None, "strip": whether it has paving from the gate}], "paving", "beds", "pools":
     polygons, "sheds"}."""
     shapes = [s for _, s in buildings]
+    if ways is not None and not ways.is_empty:
+        # A block's edge is the kerb. Where a pavement or another way is mapped inside
+        # it, a plot is what lies behind that (the piece its house stands on), and the
+        # back of a pavement beside the street counts as the plot's street edge, so
+        # the gate, the fence and the car on the drive stand clear of the pavement.
+        shape_of, behind = dict(homes), []
+        for ida, plot in plots:
+            pieces = [g for g in shapely.get_parts(plot.difference(ways)) if g.geom_type == "Polygon" and g.area > 1]
+            if pieces:
+                behind.append((ida, min(pieces, key=shape_of[ida].centroid.distance)))
+        plots = behind
+        street_edge = unary_union([street_edge, ways.intersection(street_edge.buffer(PAVEMENT)).buffer(0.3)])
     recs = layout(plots, homes, buildings, street_edge)
     out = {"fences": fences(recs, green, street_edge, mapped, ways), "drives": drive_spots(recs, shapes),
            "plots": [], "paving": [], "beds": [], "pools": [], "sheds": []}
