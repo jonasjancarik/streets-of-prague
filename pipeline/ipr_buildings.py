@@ -40,6 +40,7 @@ from pyproj import Transformer
 from shapely import STRtree, constrained_delaunay_triangles
 from shapely.geometry import MultiPoint, Point, Polygon
 
+import building_age
 import layers
 import roof_details
 import roofs
@@ -224,6 +225,9 @@ COVERS = ("tiles", "slate", "copper")
 # 1-4 pitched, 5-9 flat.
 MATERIALS = ("", "tiles", "slate", "metal", "copper", "bitumen", "membrane", "gravel", "green", "paving")
 MEASURED_WALL = 15  # on walls: their colour is measured, so the game keeps it (no palette)
+# On walls the byte's upper half is the facade's style plus one (building_age.Styles).
+BORROW_TOUCH = 0.6  # m; buildings this close share a wall: one terrace
+BORROW_NEAR = 30.0  # m; else a building of the same kind this near: the same block
 
 
 def colours(bid, osm):
@@ -337,7 +341,7 @@ def read_sheet(job):
     return name, out
 
 
-def add_roof_details(bid, pos, codes, col, mat, corner, windows, church=False):
+def add_roof_details(bid, pos, codes, col, mat, corner, windows, church=False, bay=None):
     """A building with chimneys (by rule, not on churches) and roof windows (found on the
     photo mesh) added as triangles of its own (roof_details.py): its packed positions,
     colours and materials with theirs after them."""
@@ -346,12 +350,12 @@ def add_roof_details(bid, pos, codes, col, mat, corner, windows, church=False):
     t = np.column_stack([v[:, 0] + x0, v[:, 2] + y0, v[:, 1]]).reshape(-1, 3, 3)
     extra, extra_col, extra_mat = [], [], []
     if not church:
-        ct, cc, ccol = roof_details.chimneys(bid, t, codes)
+        ct, cc, ccol = roof_details.chimneys(bid, t, codes, bay)
         if len(ct):
             extra.append(ct)
             extra_col.append(ccol)
-            # The chimney's sides keep their colour (paintWalls would give them a facade's).
-            extra_mat.append(np.where(cc == 0, MEASURED_WALL, 0).astype(np.uint8))
+            # A chimney keeps its colours (paintWalls would give its sides a facade's).
+            extra_mat.append(np.full(len(cc), roof_details.CHIMNEY, np.uint8))
     for w in windows:
         extra.append(roof_details.window_quad(w))
         extra_col.append(np.array([roof_details.WINDOW_COLOUR] * 2, np.uint8))
@@ -362,6 +366,66 @@ def add_roof_details(bid, pos, codes, col, mat, corner, windows, church=False):
     packed = np.column_stack([(e[:, 0] - x0) * 100, e[:, 2] * 100, (e[:, 1] - y0) * 100])
     packed = np.clip(np.round(packed), -32768, 32767).astype("<i2").ravel()
     return np.concatenate([pos, packed]), np.concatenate([col, *extra_col]), np.concatenate([mat, *extra_mat])
+
+
+def borrow_walls(walls, per_tile):
+    """Gives buildings whose walls weren't measured on the photo mesh (in shade in the
+    photographs, mostly) the wall colour of a measured neighbour: one they share a wall
+    with (the same terrace) if there is one, else the nearest of the same kind within
+    BORROW_NEAR m (the same block), in place in `per_tile`. Prints how many, and how far
+    such a borrowed colour is from the real one, tried on the measured buildings."""
+    import mesh_colours
+    have = [k for k, w in enumerate(walls) if w[4] is not None]
+    need = [k for k, w in enumerate(walls) if w[4] is None]
+    if not have or not need:
+        return
+    tree = STRtree([walls[k][2] for k in have])
+    centres = shapely.centroid(np.array([walls[k][2] for k in have]))
+    labs = mesh_colours.lab(np.array([walls[k][4] for k in have]))
+
+    def neighbour(k, own=-1):
+        g, kind = walls[k][2], walls[k][3]
+        # (Measured on ujezd, 6 October 2026: a neighbour sharing a wall is off by ΔE 6.2,
+        # any other building by 9.0, and one of the same kind in the block by 9.8, no
+        # better than chance. So the block is only tried for the error printed below.)
+        for reach, same_kind in ((BORROW_TOUCH, True), (BORROW_TOUCH, False), *(((BORROW_NEAR, True),) if own >= 0 else ())):
+            near = [n for n in tree.query(g, predicate="dwithin", distance=reach)
+                    if n != own and (not same_kind or walls[have[n]][3] == kind)]
+            if near:
+                # The one whose middle is nearest: the house next door, not one across the yard.
+                c = shapely.centroid(g)
+                return min(near, key=lambda n: (shapely.distance(c, centres[n]), n)), reach
+        return None, None
+
+    touching = block = 0
+    for k in need:
+        n, reach = neighbour(k)
+        if n is None:
+            continue
+        (ij, index, _, _, _) = walls[k]
+        pos, col, mat, codes = per_tile[ij][index]
+        wall = np.nonzero(codes == 0)[0]
+        col[wall] = walls[have[n]][4]
+        mat[wall] = (mat[wall] & 0xF0) | MEASURED_WALL
+        touching += reach == BORROW_TOUCH
+        block += reach != BORROW_TOUCH
+    # How good a borrowed colour is: each measured building against the neighbour it
+    # would have borrowed from (every 5th, for the time).
+    err = {BORROW_TOUCH: [], BORROW_NEAR: []}
+    rng = np.random.default_rng(0)
+    for own in range(0, len(have), 5):
+        n, reach = neighbour(have[own], own)
+        if n is not None:
+            err[reach].append(float(np.linalg.norm(labs[own] - labs[n])))
+    other = np.linalg.norm(labs - labs[rng.permutation(len(labs))], axis=1)
+    total = len(walls)
+    print(f"  wall colours: measured for {len(have)} of {total} buildings ({100 * len(have) / total:.1f} %), borrowed from a "
+          f"neighbour sharing a wall for {touching} and from the same block for {block}: "
+          f"{100 * (len(have) + touching + block) / total:.1f} % now have a real colour")
+    for reach, name in ((BORROW_TOUCH, "a neighbour sharing a wall"), (BORROW_NEAR, "one of the same kind in the block")):
+        if err[reach]:
+            print(f"    borrowed from {name}: off by ΔE {np.median(err[reach]):.1f} (median of {len(err[reach])} measured buildings); "
+                  f"any other building in the area: {np.median(other):.1f}")
 
 
 def sheet_jobs(area, meta):
@@ -399,6 +463,7 @@ def main() -> None:
                     help="colours measured on the photo mesh (mesh_colours.py), if there are any: walls measured in the sun "
                          "only, also walls guessed from the shade, or none")
     ap.add_argument("--no-roof-details", action="store_true", help="no chimneys or roof windows (roof_details.py)")
+    ap.add_argument("--no-borrow", action="store_true", help="walls not measured keep the palette instead of a measured neighbour's colour")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble after terrain finishes")
     args = ap.parse_args()
     if args.jobs < 1:
@@ -412,7 +477,8 @@ def main() -> None:
     origin = meta["origin"]
     local, sheets = sheet_jobs(area, meta)
     dependencies = layers.dependency_snapshot(area, layers.DEPENDENCIES["ipr"])
-    sources = build_cache.sources([job[1] for job in sheets] + [MESH_COLOURS / f"{area}.json.gz"])
+    building_age.download()
+    sources = build_cache.sources([job[1] for job in sheets] + [MESH_COLOURS / f"{area}.json.gz", building_age.CACHE])
     processing = [build_cache.code_key(), build_cache.runtime_key()]
     timings.lap("prepare_downloads")
 
@@ -484,6 +550,8 @@ def main() -> None:
         measured = json.loads(gzip.decompress(table.read_bytes()))
         print(f"  colours from the photo mesh for {len(measured)} buildings ({table.name}, walls: {args.mesh_colours})")
 
+    styles = building_age.Styles(local, AREAS[area])
+    walls = []  # per building with walls: (tile, index in the tile, footprint, kind, measured colour or None)
     started = time.perf_counter()
     timings.lap("osm_roofs_water")
     per_tile = {}  # (i, j) → list of (int16 positions, uint8 colours), one pair per building
@@ -532,13 +600,25 @@ def main() -> None:
                         k = k[~said[k]]
                         col[k] = c
                         mat[k] = MATERIALS.index(m) if m in MATERIALS else 0
+                key = bid or f"{name}/{count}"
+                heights = pos.reshape(-1, 3)[:, 1]
+                style = styles.at(cx, cy, (int(heights.max()) - int(heights.min())) / 100, key)
+                mat[codes == 0] |= (style + 1) << 4
+                if (codes == 0).any():
+                    walls.append(((i, j), len(per_tile.get((i, j), [])), shapely.union_all(fp), (osm or {}).get("kind"),
+                                  col[codes == 0][0].copy() if mat[codes == 0][0] & 15 == MEASURED_WALL else None))
                 if not args.no_roof_details and (codes == 1).any():
-                    pos, col, mat = add_roof_details(bid or f"{name}/{count}", pos, codes, col, mat, (i * T - origin[0], j * T - origin[1]),
-                                                     seen.get("windows", []) if seen else [], church=bool(osm and osm.get("church")))
-                per_tile.setdefault((i, j), []).append((pos, col.ravel(), mat))
+                    pos, col, mat = add_roof_details(key, pos, codes, col, mat, (i * T - origin[0], j * T - origin[1]),
+                                                     roof_details.keep_windows(seen.get("windows", [])) if seen else [],
+                                                     church=bool(osm and osm.get("church")), bay=building_age.BAY[style])
+                    col = col.copy()
+                per_tile.setdefault((i, j), []).append((pos, col, mat, codes))
             count += 1
         print(f"  {name}: {count} buildings in the area", flush=True)
     print(f"  sheets read in {time.perf_counter() - started:.0f} s; {afloat} buildings left out for standing on water")
+    print(f"  the facade's style by the building's age for {styles.known} of {styles.all} buildings ({building_age.CACHE.name})")
+    if measured and not args.no_borrow:
+        borrow_walls(walls, per_tile)
     timings.lap("sheets_colours_details")
 
     # An OSM building counts as IPR's if IPR buildings stand on at least 40 % of it.
@@ -556,9 +636,9 @@ def main() -> None:
     payloads = {}
     layers.begin_layer(area, "ipr")
     for (i, j), blist in per_tile.items():
-        pos_arr = np.concatenate([p for p, _, _ in blist])
-        col = np.concatenate([c for _, c, _ in blist])
-        mat = np.concatenate([m for _, _, m in blist])
+        pos_arr = np.concatenate([b[0] for b in blist])
+        col = np.concatenate([b[1].ravel() for b in blist])
+        mat = np.concatenate([b[2] for b in blist])
         n_tris = len(col) // 3
         pad = (4 - (8 + pos_arr.nbytes) % 4) % 4
         blob = struct.pack("<II", n_tris, len(blist)) + pos_arr.tobytes() + b"\0" * pad + col.tobytes() + mat.tobytes()

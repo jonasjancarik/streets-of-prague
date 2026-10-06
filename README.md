@@ -487,7 +487,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   are left out, and walls or roof faces seen only in shade count as unsure (their
   colour can't be recovered from the near-black shadows). Unsure roof faces take the
   colour of the rest of their roof, and a building's faces of one material that differ
-  only a little are evened out; unsure walls keep the palette. A roof cover given in
+  only a little are evened out; unsure walls take the colour of a measured neighbour they share a wall
+  with (`borrow_walls`), else the palette. The facade's style comes from the building's
+  age (IPR's Stáří zástavby, `pipeline/building_age.py`) where that is known. At the High
+  graphics setting roofs also get aerials, chimney pots, small dormers and thicker moss
+  (`src/map/roofClutter.ts`, `?clutter=on|off`). A roof cover given in
   `roofs.py` or OSM still wins. Only colours and material classes leave the pipeline;
   the game draws its own tiles, slate, metal pans between standing seams (`sheetRoof`
   in `src/shading.ts` and `src/webgpu/buildings.ts`), sheets, planted roofs and paving

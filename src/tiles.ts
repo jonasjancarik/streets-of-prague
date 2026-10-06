@@ -6,7 +6,7 @@ import { Geo, Grid, rng, hash } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
 import { Surfaces } from './surface.ts';
-import { shadeBuildings, shadeLandmark, cutAway, broad } from './shading.ts';
+import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { Zones, parkCars, inRing, inPoly } from './parking.ts';
 import { openWater } from './river.ts';
@@ -278,6 +278,7 @@ function buildingMesh(arrays: BuildingArrays, sky: Float32Array | null) {
   if (arrays.drapeUv) g.setAttribute('drapeUv', new THREE.BufferAttribute(arrays.drapeUv, 2));
   g.setAttribute('facade', new THREE.BufferAttribute(arrays.facade, 4));
   g.setAttribute('sky', new THREE.BufferAttribute(sky ?? new Float32Array(arrays.position.length / 3).fill(1), 1));
+  if (arrays.parts) g.userData.parts = { ...arrays.parts, end: arrays.position.length / 3 };
   const mesh = new THREE.Mesh(g, buildingMaterial());
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -1154,7 +1155,7 @@ export class TileWorld {
         d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, weirs: t.weirs, crossings: t.crossings, marks: t.marks, utility: t.utility },
         box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
-      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide }, [buffer]) : null,
+      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5 }, [buffer]) : null,
       !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [] }) : null,
     ]);
   }

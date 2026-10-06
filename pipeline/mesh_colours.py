@@ -619,6 +619,7 @@ def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = Fal
     cuts = np.r_[0, np.nonzero(np.diff(pix_face))[0] + 1, len(pix_face)]
     roof_samples = {int(pix_face[a]): pix_lab[a:b] for a, b in zip(cuts[:-1], cuts[1:]) if b > a}
 
+    ground = ground_light(colour, mesh_z, fid, hm, x0, y0, T, blds)
     # Walls: what's outside a party wall is the neighbour, and trees stand in front of some.
     footprints = [g for _, _, _, fp in blds for g in fp]
     party = shapely.union_all([g.buffer(0.3) for g in footprints]) if footprints else None
@@ -628,7 +629,7 @@ def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = Fal
     for b, ((bid, _, codes, _), t) in enumerate(zip(blds, tris)):
         base = t[:, :, 2].min()
         wt = t[codes == 0]
-        rec = {"id": bid, "walls": None, "roofs": []}
+        rec = {"id": bid, "walls": None, "roofs": [], "ground": ground["near"].get(b)}
         if len(wt):
 
             def wanted(p, n, base=base):
@@ -661,7 +662,55 @@ def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = Fal
                                  # and those are tiles or metal as often as not.
                                  "flat": bool((codes[f == face] == 2).all()) and fn[2] / max(np.linalg.norm(fn), 1e-12) > FLAT})
         out.append(rec)
-    return {"buildings": out, "top": colour.reshape(w, w, 3) if debug else None, "fid": fid if debug else None}
+    return {"buildings": out, "ground": ground["tile"], "top": colour.reshape(w, w, 3) if debug else None,
+            "fid": fid if debug else None}
+
+
+# The light in the shade, read off the ground: streets and yards are much the same greys
+# in the sun and out of it, so how dark the shaded ground beside a building is against
+# the tile's sunlit ground says how much light its shaded walls get (a deep courtyard
+# far less than a wide street). Ground: the mesh from above where no IPR roof is,
+# within GROUND_LOW m of the lowest thing GROUND_WINDOW m around (not crowns or cars).
+GROUND_STEP = 3  # every n-th pixel of the top raster (0.6 m)
+GROUND_WINDOW = 12.0
+GROUND_LOW = 0.8
+GROUND_NEAR = 8.0  # m from a building's outline: the ground "beside" it
+
+
+def ground_light(colour, mesh_z, fid, hm, x0, y0, T, blds):
+    """The ground's colour (linear RGB medians) in the sun and in the shade: over the
+    whole tile ("tile": {"lit": (rgb, n), "shade": (rgb, n)}), and within GROUND_NEAR m
+    of each building ("near": the same per building index)."""
+    import shapely
+    from scipy import ndimage
+    w = fid.shape[0]
+    z = mesh_z.reshape(w, w)
+    zs, fs = z[::GROUND_STEP, ::GROUND_STEP], fid[::GROUND_STEP, ::GROUND_STEP]
+    k = int(GROUND_WINDOW / (RES * GROUND_STEP)) | 1
+    low = ndimage.minimum_filter(np.nan_to_num(zs, nan=1e9), size=k, mode="nearest")
+    ok = np.isfinite(zs) & (fs < 0) & (zs - low < GROUND_LOW)
+    rr, cc = np.nonzero(ok)
+    empty = {"lit": (None, 0), "shade": (None, 0)}
+    if not len(rr):
+        return {"tile": empty, "near": {}}
+    pts = np.column_stack((x0 + (cc * GROUND_STEP + 0.5) * RES, y0 + T - (rr * GROUND_STEP + 0.5) * RES, zs[rr, cc] + 0.3))
+    sun = hm.in_sun(pts)
+    c = colour.reshape(w, w, 3)[::GROUND_STEP, ::GROUND_STEP][rr, cc].astype(np.float64) / 255
+    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+    def both(sel):
+        return {"lit": (np.median(lin[sel & sun], axis=0) if (sel & sun).any() else None, int((sel & sun).sum())),
+                "shade": (np.median(lin[sel & ~sun], axis=0) if (sel & ~sun).any() else None, int((sel & ~sun).sum()))}
+
+    near = {}
+    tree = shapely.STRtree(shapely.points(pts[:, :2]))
+    for b, (_, _, _, fp) in enumerate(blds):
+        hit = np.zeros(len(pts), bool)
+        for g in fp:
+            hit[tree.query(g, predicate="dwithin", distance=GROUND_NEAR)] = True
+        if hit.any():
+            near[b] = both(hit)
+    return {"tile": both(np.ones(len(pts), bool)), "near": near}
 
 
 # Roof windows, found in the mesh's colours (its geometry is too coarse for anything as

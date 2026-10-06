@@ -325,3 +325,63 @@ what was measured and any trade-off. Generated data stays out of git.
   (detected like roof windows)?
 - How far phase 3 should go outside the centre: the detection works anywhere, but the
   baroque dormer type only makes sense in the historic districts.
+
+## Leftovers, 5-6 October 2026 (branch `night-roofs`)
+
+Run for `ujezd` and `centrum` (the citywide colour table reused by building id, its
+roof windows moved into each area's coordinates) and looked at in the game at High
+against main's code and map: Celetná, Pařížská, Mánesova and Újezd, from above, over
+the roofs and from the street.
+
+- **Wall colours.** A building whose walls weren't measured takes the colour of a
+  measured neighbour it shares a wall with (`borrow_walls` in `ipr_buildings.py`,
+  `--no-borrow` to leave it out). Coverage: `centrum` 42.4 % → 72.1 % of 10,867
+  buildings, `ujezd` 51.6 % → 80.7 % of 933. Tried on measured buildings, such a
+  neighbour's colour is off by ΔE 7.2 (centrum, 729 buildings) and 6.2 (ujezd), where
+  any other building in the area is off by 11.0 and 9.0. A neighbour of the same kind
+  within 30 m was no better than any other building (11.0 and 9.8), so it isn't used;
+  the script still prints its error. In the game the borrowed walls are mostly pale
+  cream where the palette had ochres: truer, and a little less varied along a terrace.
+- **Shade factor: not done.** `mesh_colours.py` measures the ground in sun and in shade
+  per tile and within 8 m of each building (`ground_light`) as a calibration, but
+  nothing uses it and it isn't in the table; the fit against buildings seen both ways
+  is still to do, and needs the citywide measurement run again (5.5 h last time).
+  Walls seen only in shade still count as unsure.
+- **Bays.** Mansard windows take the bay count and origin of the wall below
+  (`mansardCoords`; checked in `scripts/check-roof-clutter.mjs`). Chimneys between a
+  ridge's ends stand over the piers between the bays of the wall along the ridge
+  (`roof_details.piers`); it ran, but few ridges are long enough to have one, and it
+  wasn't told apart by eye.
+- **False roof windows.** Only the doubles are dropped (`roof_details.keep_windows`).
+  The false-find rate on a sample of roofs is still unmeasured and the detector's
+  thresholds are as they were.
+- **Cost.** Chimneys have a material of their own (11), and the tile worker keeps
+  chimneys and roof windows, then the clutter, as runs of triangles at the end of the
+  building mesh (`geometry.userData.parts`: `extras`, `clutter`, `end`, in vertices),
+  so `bench.mjs --ab` can switch them with `setDrawRange`. None of it adds a draw call.
+  Standing on Staroměstské náměstí (`centrum`, High, 6 building meshes in view, 67
+  draw calls, 724,000 triangles in the frame): buildings 65,700 triangles, chimneys and
+  roof windows 28,000, clutter 54,200. Frame time, alternating, 3 runs of 8 s each, on
+  a machine with a load of 40-100 from a map rebuild: clutter on against off −3.1 %,
+  −1.6 %, +12.9 %; chimneys and windows on against off +2.6 %, +3.5 %, −1.4 %. No
+  cost shows above that noise (a few per cent); a quiet-machine run is owed.
+- **Roof clutter** (`src/map/roofClutter.ts`, `ROOF_CLUTTER` in `src/shading.ts`): aerials
+  and pots on chimneys, a chimney through the slope on some roofs, small dormers over
+  the wall's bays, thicker moss on clay tiles (GLSL and TSL). **On at High and Ultra
+  only, pending the owner's look**; `?clutter=on|off` overrides it for a visit. Tiles
+  loaded before the setting changes keep what they had. It nearly doubles the building
+  triangles in the old centre; aerials (56 triangles each) are the first thing to thin
+  if that matters on some device.
+- **Building age** (`pipeline/building_age.py`): IPR's "Stáří zástavby"
+  (`Hosted/URK_CUR_URK_STARIZASTAVBY_P`, 136,675 outlines, 8 MB in
+  `pipeline/.cache/age/`), joined to IPR's buildings by their middle: 8,700 of 10,867
+  buildings in `centrum`, 812 of 933 in `ujezd`. The style comes from the era (before
+  1842 baroque, to 1924 tenement, 1925-53 functionalist, 1954-89 panel, later
+  functionalist; under 8.5 m a family house), else from the old rule, and goes into the
+  upper half of each wall triangle's material byte. OSM-only buildings keep the game's
+  rule.
+- **Old and new together.** This game with older map data works as before (checked:
+  last night's `praha` map loads with no tile failing). An older game with the new data
+  doesn't break, but it repaints measured and borrowed walls from the random palette
+  and chimneys in a wall colour (it compares the whole byte with 15). So deploy the
+  game before, or together with, a map rebuilt by this pipeline.
