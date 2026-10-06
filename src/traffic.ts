@@ -63,6 +63,12 @@ export const MERGE = 20;
 // The furthest a car pulls out of its lane to get round a car standing in it (m), and
 // how much room it leaves beside that car.
 const SWERVE = 2.4, PASS = 0.35;
+// A car standing beside the lane is in the way when it's nearer than this to the side
+// of the passing one. Less than the room parked cars leave a lane (parkingClearance),
+// or the widest cars would stop for every car parked at the least distance.
+const TOUCH = 0.1;
+// The lane ahead of the car being moved (Route.ahead), reused from car to car.
+const lane: number[] = [];
 
 // Lorries keep to the motorways and, out in the suburbs (the warehouses and depots),
 // the big roads. The centre of the map is the Old Town Square, in local metres.
@@ -156,7 +162,7 @@ export class Traffic {
     for (const a of this.agents) if (a.car.type === 'bus' || a.car.type === 'minibus') n++;
     if (n >= want) return;
     if (this.busLines.length) {
-      const start = busStart(this.busLines, edges, this.r, (x, y) => avoid(x, y) && !this.agents.some((a) => Math.hypot(a.car.x - x, a.car.y - y) < 20), this.agents.flatMap((a) => a.bus ?? []));
+      const start = busStart(this.busLines, edges, this.r, (x, y) => avoid(x, y) && !this.agents.some((a) => Math.hypot(a.car.x - x, a.car.y - y) < 20), this.agents.flatMap((a) => a.bus ?? []), (node) => this.g.out.get(node) || []);
       if (!start) return;
       const { edge, s, run } = start;
       const p = edge.path.at(s);
@@ -225,6 +231,9 @@ export class Traffic {
       // (Only along a street: through a junction, where the lane turns, across it says
       // little, and a car in the way is waited for as before.)
       const along0 = edge ? a.route.leg.s1 - a.route.s + 2 : -Infinity;
+      // The lane ahead, piece by piece where it bends: a car standing beside a bend or
+      // on the far side of a junction is straight ahead of this one, and not in its way.
+      const pieces = a.route.ahead(L / 2 + 3, reach + 4, lane);
       let gap = Infinity, blocker = null;
       // Cars standing still (parked, left, crashed) near the lane: where this one may be
       // across from its lane (lo to hi) to get past them all, the nearest of them in
@@ -239,25 +248,41 @@ export class Traffic {
         const ahead = dx * fx + dy * fy;
         const side = dx * fy - dy * fx; // + = to the right
         const ov = Math.hypot(o.vx, o.vy);
-        const lat = (o.x - here.x) * hy - (o.y - here.y) * hx, along = (o.x - here.x) * hx + (o.y - here.y) * hy;
-        const parked = o.kind === 'car' && o.car?.mode !== 'traffic' && ov < 0.3 && along < along0;
-        if (parked && along > -(L / 2 + o.r + 0.5) && along < reach + o.r) {
-          // Pass it on the side away from where it stands across the lane, with room.
-          const need = W / 2 + o.r + PASS;
-          if (Math.abs(lat) < need + SWERVE) {
-            if (lat >= keepLeft) hi = Math.min(hi, lat - need);
-            else lo = Math.max(lo, lat + need);
+        let lat = (o.x - here.x) * hy - (o.y - here.y) * hx, along = (o.x - here.x) * hx + (o.y - here.y) * hy;
+        if (o.kind === 'car' && o.car?.mode !== 'traffic' && ov < 0.3) {
+          // Standing: how far along the lane it is and how far to its side, round the bends.
+          if (pieces > 1) {
+            let best = Infinity;
+            for (let k = 0, last = (pieces - 1) * 5; k <= last; k += 5) {
+              const ax = lane[k], ay = lane[k + 1], ux = lane[k + 2] - ax, uy = lane[k + 3] - ay, len = Math.hypot(ux, uy);
+              const u = ((o.x - ax) * ux + (o.y - ay) * uy) / len, across = ((o.x - ax) * uy - (o.y - ay) * ux) / len;
+              // (Past either end of the lane looked at, as if it ran straight on.)
+              const over = k > 0 && u < 0 ? -u : k < last && u > len ? u - len : 0, d = Math.hypot(over, across);
+              if (d >= best) continue;
+              best = d;
+              along = lane[k + 4] + clamp(u, k > 0 ? 0 : -Infinity, k < last ? len : Infinity);
+              lat = over ? Math.sign(across || 1) * d : across;
+            }
           }
+          const need = W / 2 + o.r + PASS;
+          if (along < along0) {
+            // Pass it on the side away from where it stands across the lane, with room.
+            if (along > -(L / 2 + o.r + 0.5) && along < reach + o.r && Math.abs(lat) < need + SWERVE) {
+              if (lat >= keepLeft) hi = Math.min(hi, lat - need);
+              else lo = Math.max(lo, lat + need);
+            }
+          }
+          // In the way only if this car, where it is across its lane, would touch it.
+          const d = along - L / 2 - o.r;
+          if (along < 0 || along > reach + o.r || Math.abs(lat - a.off) >= W / 2 + o.r + TOUCH) continue;
+          if (along < along0) { if (d < stillGap) { stillGap = d; still = o; } }
+          // (Standing in a junction or beyond it: waited for a while, then squeezed past.)
+          else if (a.ignore <= 0 && d < gap) { gap = d; blocker = o; }
+          continue;
         }
         if (ahead < 0 || ahead > reach + o.r) continue;
         const inPath = Math.abs(side) < W / 2 + o.r + 0.25;
         if (o.kind === 'car' && ov > 1 && (o.vx * fx + o.vy * fy) / ov < -0.5 && lat < 0.5 && lat > -6) oncoming = true;
-        if (parked) {
-          // (Only if it is in the way where the car is now, not round the corner.)
-          const d = ahead - L / 2 - o.r;
-          if (inPath && d < stillGap) { stillGap = d; still = o; }
-          continue;
-        }
         // Out of its lane, it goes on past a car coming the other way that has stopped
         // for it, so long as they don't touch.
         if (out.has(c) && o.car?.mode === 'traffic' && Math.cos(o.car.h - c.h) < -0.5 && Math.abs(side) > W / 2 + o.r) continue;
@@ -318,7 +343,7 @@ export class Traffic {
           target = 0;
           run.dwell -= dt;
           if (run.dwell <= 0) run.stop++;
-        } else if (stop) {
+        } else if (stop && !run.away) {
           // (The front of the bus pulls up by the stop's sign.)
           const left = stop[0] - run.along - L / 2 + 1;
           if (left < -4) run.stop++;
