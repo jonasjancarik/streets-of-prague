@@ -14,8 +14,8 @@ shapes of the rest.
 
 - Status: PHASES 0–2 MERGED AND LIVE (the 2026-10-03 map has them, see the end of the
   Result). Phases 3–4 with traffic islands and tram beds are written on the branch
-  `night-pavements` and built for `ujezd` only: NOT READY TO MERGE (no screenshots yet,
-  four older tests fail, `centrum` not built). See "Phases 3–4, 6 October 2026".
+  `night-pavements` and built for `ujezd` only (tests pass, screenshots judged);
+  `centrum`, a suburb and the frame time are not checked yet. See "Phases 3–4, 6 October 2026".
 - Priority: P2. Effort: phases 1–2 about a day; phase 3 a day; phase 4 open-ended.
   Risk: low for the look (checked on screenshots); medium for the tile rebuild, which
   touches shared map data (see "Rebuilding tiles").
@@ -464,16 +464,16 @@ pavement step takes 123 s: too slow, not yet looked at) and assembles.
 
 **Not done, in order of importance.**
 
-1. No screenshots: the scene runs timed out twice in the queue. Nobody has looked at
-   the result. The sett area nearly halves because a cobbled footway on a surveyed
-   pavement is now mosaic; whether that is right must be judged by eye (it may be
-   better to keep `sett` for `footway` too in `pavements._look`).
-2. Four tests in `test_walking_surfaces.py` fail on area thresholds
-   (`…inferred_estate_lawn…` 277 ≤ 300, `…surveyed_green…` and
-   `test_untagged_real_path…` 157 ≤ 170, `…different_material_on_square` 187 ≤ 200).
-   Flat ends explain about 7 m² of each, not the rest (about 23 m²): find out what
-   `tidy()` or the flat cap removes there before merging. These tests also do not
-   patch `dtm.walks` yet, so they read the real survey and take minutes.
+1. Done on 6 October, 06:30: matched `ujezd` screenshots (main's data against the
+   branch's; views and notes in the overnight scratchpad's `night-pavements/NOTES.md`).
+   Pavements run kerb to wall in mosaic with rounded corners. A cobbled pavement as
+   mosaic reads better than setts, because it stands apart from the cobbled
+   carriageway; kept. Some surveyed paths in the park at Újezd are now asphalt grey
+   where the ribbon was beige: worth a second look.
+2. Done: the four failing tests in `test_walking_surfaces.py` were the fixture, not the
+   code. It lays its ways in the middle of `ujezd` and did not patch `dtm.walks`, so
+   the real pavements there took about 23 m² off each ribbon. With `walks` patched
+   all 57 focused pipeline tests pass in under a second.
 3. `centrum` and a suburban chunk were not built; parking hashes and tile invariance
    (only `roads` and `areas` may differ) were not compared; the walk-graph and kerb
    figures above are the only consistency evidence.
