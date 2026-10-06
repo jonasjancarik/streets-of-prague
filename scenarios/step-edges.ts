@@ -37,9 +37,11 @@ export default {
       await t.shot('step-edges-wall');
     }
 
-    // A car driven at one too.
-    await t.go(start);
-    const drop = t.stepEdge({ water: false, drop: 2, r: 300 });
+    // A car driven at one too. This wall (a garden terrace north of Čertovka) has no
+    // mapped wall, fence or water along it: without the step's edge the car goes over
+    // and lands 2.3 m lower (try ?nostepedges).
+    await t.go([50.0832, 14.4078]);
+    const drop = t.stepEdge({ water: false, drop: 2, r: 25 });
     if (t.check('a retaining wall with a clear run for a car', !!drop) && drop) {
       await t.go(drop.from, { heading: drop.heading });
       t.enter(t.car('hatch', { at: drop.from, heading: drop.heading, ahead: 0 }));
