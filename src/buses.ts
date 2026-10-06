@@ -2,8 +2,10 @@
 // pipeline/build_buses.py). A line is one direction's path through the area and its
 // stops; a bus on it drives the ordinary street network (see Traffic), taking at each
 // junction the street that keeps it on the line, and pulls up at the stops. Where the
-// line and the streets part ways (a street missing from the map, the end of the line)
-// it carries on as a bus on the main roads.
+// line goes where the map has no street for cars (a street for buses and trams only),
+// the bus goes round by the streets there are and takes the line up again further on.
+// At the end of the line, or where no way round is found, it carries on as a bus on
+// the main roads.
 
 import type { Point2 } from './map/geo.ts';
 import { Polyline } from './network.ts';
@@ -50,6 +52,9 @@ export function project(line: Polyline, x: number, y: number, from = 0, to = lin
   return [at, best];
 }
 
+// A way round is looked for this far by road (m), to where the line is at most this much further on.
+const ROUND = 2500, SKIP = 3500;
+
 // A bus working a line: how far along it is, how far its planned route reaches, and
 // the next stop it hasn't served.
 export class BusRun {
@@ -59,45 +64,129 @@ export class BusRun {
   stop: number; // index of the next stop
   dwell = 0; // seconds left standing at a stop
   lost = false;
+  // The streets out of a junction (the street network): for seeing past a short street
+  // to the one after it, and for finding a way round where the line has no street.
+  out: ((node: string) => DriveEdge[]) | null;
+  // The streets still to take on a way round, and where along the line it comes back.
+  plan: DriveEdge[] = [];
+  back = 0;
+  // On a way round (the bus itself, not its planned route): off the line, so it makes
+  // for no stop till it's back.
+  away = false;
 
-  constructor(line: BusLine, along: number) {
+  constructor(line: BusLine, along: number, out: ((node: string) => DriveEdge[]) | null = null) {
     this.line = line;
     this.along = this.ahead = along;
+    this.out = out;
     this.stop = line.stops.findIndex((s) => s[0] > along + 8);
     if (this.stop < 0) this.stop = line.stops.length;
+  }
+
+  // How far off the line (m) the first `need` metres of `f` are, for a bus whose route has
+  // got to `ahead`: the worst of a few points along it, given up on once past `most`.
+  // A street shorter than `need` is judged along with the best of the streets after it:
+  // a few metres of side street lie as close to the line as the street the line takes.
+  private off(f: DriveEdge, need: number, most: number, depth = 0, before = 0): number {
+    const len = f.path.length, left = this.line.path.length - this.ahead - before - 5;
+    let worst = 0;
+    for (const s of depth ? [Math.min(8, len), Math.min(need, len)] : [Math.min(8, len), Math.min(25, len), Math.min(len, Math.max(8, left))]) {
+      const p = f.path.at(s);
+      worst = Math.max(worst, project(this.line.path, p.x, p.y, this.ahead - 15, this.ahead + before + len + 60)[1]);
+      if (worst >= most) return worst;
+    }
+    if (len >= need || depth >= 3 || !this.out || left < len + 10) return worst;
+    const next = this.out(f.v).filter((o) => o !== f.twin);
+    if (!next.length) return worst;
+    let best = Infinity;
+    for (const o of next) best = Math.min(best, this.off(o, need - len, most, depth + 1, before + len));
+    return Math.max(worst, best);
   }
 
   // Of the streets out of the junction at the end of `e`, the one the line goes on
   // (null: none of them).
   pick(e: DriveEdge, opts: DriveEdge[]): DriveEdge | null {
     if (this.lost || !opts.length) return null;
+    if (this.plan.length) {
+      const f = this.plan.shift()!;
+      if (opts.includes(f)) {
+        if (!this.plan.length) this.ahead = this.back;
+        return f;
+      }
+      this.plan = [];
+    }
     const end = e.path.at(e.path.length);
     this.ahead = Math.max(this.ahead, project(this.line.path, end.x, end.y, this.ahead - 15, this.ahead + e.path.length + 60)[0]);
     let best: DriveEdge | null = null, bestD = OFF;
     for (const f of opts) {
-      const len = f.path.length;
-      let worst = 0;
-      for (const s of [Math.min(8, len), Math.min(25, len), Math.min(len, Math.max(8, this.line.path.length - this.ahead - 5))]) {
-        const p = f.path.at(s);
-        worst = Math.max(worst, project(this.line.path, p.x, p.y, this.ahead - 15, this.ahead + len + 60)[1]);
-        if (worst >= bestD) break;
-      }
-      if (worst < bestD) { bestD = worst; best = f; }
+      const d = this.off(f, 25, bestD);
+      if (d < bestD) { bestD = d; best = f; }
     }
-    if (!best || this.ahead > this.line.path.length - 10) this.lost = true;
+    if (this.ahead > this.line.path.length - 10) this.lost = true;
+    // The line goes where the map has no street for it (a street for buses and trams
+    // only, a hospital's grounds): round by the streets there are, if they lead back to it.
+    else if (!best) best = this.round(e);
+    if (!best) this.lost = true;
     return this.lost ? null : best;
+  }
+
+  // The shortest way by street from the end of `e` to a street the line takes further on.
+  // Sets `plan` to the streets after the first, which it returns (null: no way found).
+  private round(e: DriveEdge): DriveEdge | null {
+    const out = this.out, path = this.line.path;
+    if (!out) return null;
+    const cost = new Map<string, number>([[e.v, 0]]), via = new Map<string, DriveEdge>();
+    // (A few hundred junctions at most: a plain list does as a queue.)
+    const open: [number, string][] = [[0, e.v]];
+    while (open.length) {
+      let k = 0;
+      for (let i = 1; i < open.length; i++) if (open[i][0] < open[k][0]) k = i;
+      const [c, n] = open.splice(k, 1)[0];
+      if (c > (cost.get(n) ?? Infinity)) continue;
+      for (const f of out(n)) {
+        // (Back the way it came only out of a dead end.)
+        if (n === e.v && f === e.twin && out(n).length > 1) continue;
+        // On the line again: both ends by it, further on, and going its way.
+        const len = f.path.length, p = f.path.at(Math.min(8, len)), q = f.path.at(len);
+        const [a0, d0] = project(path, p.x, p.y, this.ahead + 10, this.ahead + SKIP);
+        if (d0 < OFF && len > 12 && Math.cos(path.at(a0).ang - p.ang) > 0.7) {
+          const [a1, d1] = project(path, q.x, q.y, a0, a0 + len + 60);
+          if (d1 < OFF && a1 > a0 + len / 2) {
+            const way = [f];
+            for (let at = n; at !== e.v;) { const g = via.get(at)!; way.unshift(g); at = g.u; }
+            this.back = a1;
+            this.plan = way.slice(1);
+            if (!this.plan.length) this.ahead = a1;
+            return way[0];
+          }
+        }
+        const nc = c + len;
+        if (nc > ROUND || nc >= (cost.get(f.v) ?? Infinity)) continue;
+        cost.set(f.v, nc);
+        via.set(f.v, f);
+        open.push([nc, f.v]);
+      }
+    }
+    return null;
   }
 
   // Follow the bus's position along the line (it only moves forward).
   track(x: number, y: number) {
     const [a, d] = project(this.line.path, x, y, this.along - 5, this.along + 40);
-    if (d < OFF) this.along = Math.max(this.along, a);
+    if (d < OFF) { this.along = Math.max(this.along, a); this.away = false; return; }
+    // Off the line on a way round: back on it where that comes back, a good way further on.
+    if (!this.back) return;
+    this.away = true;
+    const [b, far] = project(this.line.path, x, y, this.back - 80, this.back + 40);
+    if (far >= OFF || b <= this.along) return;
+    this.along = b;
+    this.away = false;
+    while (this.stop < this.line.stops.length && this.line.stops[this.stop][0] < b + 8) this.stop++;
   }
 }
 
 // Where on the street network a bus can join a line: a random spot of a line among
 // `edges` (the streets round the player), on a lane that runs the line's way.
-export function busStart(lines: BusLine[], edges: DriveEdge[], rand: () => number, ok: (x: number, y: number) => boolean, running: BusRun[] = []) {
+export function busStart(lines: BusLine[], edges: DriveEdge[], rand: () => number, ok: (x: number, y: number) => boolean, running: BusRun[] = [], out: ((node: string) => DriveEdge[]) | null = null) {
   // The lanes a bus can start on, each with its box, and the box round them all.
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const lanes: [DriveEdge, number, number, number, number][] = [];
@@ -146,7 +235,7 @@ export function busStart(lines: BusLine[], edges: DriveEdge[], rand: () => numbe
       best = { edge: e, s };
       bestD = d;
     }
-    if (best) return { ...best, run: new BusRun(line, along) };
+    if (best) return { ...best, run: new BusRun(line, along, out) };
   }
   return null;
 }
