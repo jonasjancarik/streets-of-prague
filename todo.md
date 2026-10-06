@@ -1,8 +1,72 @@
 # To do
 
 What is still open, checked against `main`, the branches and the local map on
-5 October 2026. Plans and their status are in [`plans/README.md`](plans/README.md);
+6 October 2026. Plans and their status are in [`plans/README.md`](plans/README.md);
 measurements are in [`docs/performance-log.md`](docs/performance-log.md).
+
+## Branches from the night of 5–6 October, waiting for a look
+
+Twenty sessions worked overnight, each on its own branch and worktree
+(`.claude/worktrees/night-*`); the account's usage limit stopped all of them from
+about 00:20 to 04:55, so most got two to three working hours on a heavily loaded
+machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landmarks`
+(code only), `night-pipeline`, `night-weather`, `night-graphs`, and single commits of
+`night-renderer` (windows on ground floors, start-up report) and `night-maplook`
+(sports lines). Not merged, each with its state written in the plan or doc it names:
+
+- **`night-play-subdomain` (plan 024):** everything prepared, nothing deployed. Confirm
+  the five assumed answers at the top of the plan's Result, then follow
+  `docs/play-subdomain-go-live.md` (on the branch). Merging attaches `play.` at the
+  next release and blocks beta deploys until then.
+- **`night-missions` (plans 004 and 006 phase 4):** the job engine, five odd jobs
+  (courier, taxi fare, patient run, tram shift, fire call), the factions' books; save
+  format 2. Nine assumed answers to confirm. Left: run `scenarios/job-tram.ts`,
+  `scene.mjs run all` and `npm run build`, read the Czech texts in the game, a touch
+  and gamepad button for asking for work.
+- **`night-audio`:** tyre recordings are back, engines are made of their firings
+  (about 5 dB louder), a heavy diesel for fire engines, lorries and buses, a water-jet
+  sound, louder sirens. Levels are measured; nobody has heard any of it. Listen on
+  `sound-test.html` (old voices kept there), then merge.
+- **`night-gardens` (plans 025, 029):** paved strips, sheds, beds, pools, the `plots`
+  field, fences lit from both sides, hedges on their own ground, a second car by a
+  garage. Counted offline on one chunk, never seen in the game. Then: plots cut back
+  behind mapped pavements, corner gaps, the time of the garden step.
+- **`night-greenery`:** IPR's lawns, shrubs, hedges and beds, and manhole covers, drains
+  and signal poles, in the pipeline for the whole city and wired into the game; covers
+  and drains never seen in the game, no draw-call comparison, hydrants and phone boxes
+  have no models.
+- **`night-pavements` (plan 018 phases 3–4):** surveyed pavements, islands and tram
+  beds, built for `ujezd` only; four tests in `test_walking_surfaces.py` fail, no
+  screenshots, the pavement step is slow.
+- **`night-walls`:** tops of quay and retaining walls stop walkers, but a car at
+  50 km/h still gets over a quay wall (scenario `step-edges`); surveyed walls, fences
+  and railings built for `ujezd`, not seen in the game.
+- **`night-bridges`:** stairs beside a deck get their own level (Železniční most at
+  Výtoň), each bridge edge's level handed to the game for paint and tram tracks, two
+  offline checks (`check-bridge-decks.mjs`, `check-terrain-spikes.mjs`). Needs one
+  `praha` terrain rebuild and a look before merging.
+- **`night-boats`:** cruise boats follow a fairway (`river.json`), PID ferries P1, P2,
+  P4, P5, P6 run and take tickets. One game run, no played test.
+- **`night-countryside` (plan 021 step 2):** generated streets joined to the built
+  map's; passes offline all round `praha`, but three of four screenshots showed no
+  ground after far camera jumps (unexplained).
+- **`night-roofs` (plan 005):** neighbour-borrowed wall colours, bay-aligned mansards
+  and chimneys, building age for facade styles, roof clutter behind `ROOF_CLUTTER`
+  (High and Ultra only). The pipeline half has never been run.
+- **`night-beige` (plan 014):** courtyards classified with the plain ground, seams
+  between tiles fixed, nine painted-photo variants to judge
+  (scratchpad `overnight/night-beige/painted/`). Tried on `ujezd` only.
+- **`night-renderer`, rest:** fog mixed before the tone curve (day closer to the old
+  look, night now darker than it); the sky-view neighbour filter (a reading of zero
+  sky textures after it is unexplained).
+- **`night-maplook`, rest:** clearings inside mapped woods (changes every wood; needs
+  the young layer rebuilt and a comparison with the photos).
+- **`worktree-rust-wgpu`:** see `rust/PARITY.md` on the branch.
+
+The shared map data was not rebuilt. Rebuilds the merged work is waiting for:
+`build_lamps.py ujezd centrum praha` (the new lamp rule; look at suburbs at night
+first) and the landmark files (`landmarks.py <area> --rebake`). How to rebuild and
+check: `docs/rebuilding-the-map.md`, `scripts/check-map-rebuild.mjs`.
 
 ## Release
 
@@ -14,20 +78,35 @@ rebuilt on 5 October with all of it; `centrum` and `ujezd` are from 3 October.
 
 Before deploying:
 
-- `layers.py praha --strict` on the rebuilt layers.
+- `layers.py praha --strict` fails on the current cache, and only because of the cache:
+  the layers were built in a worktree that is gone (recorded source paths), and
+  `code_key` hashes every `pipeline/*.py`, assembly code included. With those relaxed
+  all 1,008 chunk records match and the assembled map is byte-identical. Either
+  rebuild the layers from main (hours), or decide that `code_key` leaves out
+  `layers.py`, `build_cache.py` and `chunk_cache.py` and identities stop using
+  absolute paths.
+- The other checks for plans 016 and 025–031 passed on 6 October (streaming, guard
+  rails, narrow lanes, ground areas, roof rules, countryside, parking clearance, car
+  pool, tree pool).
 - A frame-time run of plan 028's flat-roof details on a quiet machine (the first
   attempt timed out while loading). If it shows, limit the skylights or keep the
   details to the High tier.
 - A look on a phone (see "Phone checks").
-- `scripts/check-car-pool.mjs` was reported failing on main's dev server with
-  "active paint upload range" (plan 029); find out whether it is the check or the pool.
+- **Licence of `straight-skeleton`:** MIT, but its bundle carries CGAL compiled to
+  WebAssembly, and CGAL's straight-skeleton package is GPL; the game ships it to
+  browsers. Options in `docs/licences-review.md`.
 
 ## Decisions needed
 
-- **Missions and factions (plan 004):** nine open questions (tone, saving, factions,
-  how missions are handed out…). The firefighter job (plan 006 phase 4) waits for it.
-- **The game on play.streetsofprague.com (plan 024):** five decisions. The homepage in
-  `site/` can't go online before it.
+- **Missions and factions (plan 004):** nine answers were assumed on branch
+  `night-missions`; confirm or change them (top of the plan's Result on the branch).
+- **The game on play.streetsofprague.com (plan 024):** five answers were assumed on
+  branch `night-play-subdomain`; confirm, then the go-live checklist.
+- **Lamps on untagged streets:** with the new rule (merged, data not rebuilt) a suburb
+  such as 50.05348, 14.36206 is nearly dark. Decide whether untagged streets near a
+  surveyed lamp should get lamps.
+- **Touch devices starting at Low:** on the Pixel 5 Auto steps from Medium to Low and
+  Lowest on a drive (22.7 fps at Medium, 36.3 at Low).
 - **Branch `ios-app` (plan 020):** real-device checks (whether the app gets WebGPU on
   iOS 26 among them), then phases 4, 5, 7 and 8.
 - **Roof clutter** (aerials, more chimneys and dormers) and stronger moss on red clay.
@@ -38,31 +117,43 @@ Before deploying:
 
 Nearly everything since 1 October was measured on the M5 only.
 
-- Whether Auto on touch devices holds 40 fps at Medium (1.5×) now that the wall
-  shader is fixed, or still steps down to 1×.
-- Sun shadows are the largest single piece of shading on the Pixel 5 (about 11 ms at 1×).
+Pixel 5 readings of 6 October are in `docs/performance-log.md`. Bench figures taken
+before that day's frame-count fix may be doubled.
+
+- Auto does not hold Medium on the Pixel 5 (see "Decisions needed").
+- Sun shadows cost about 4 ms at 1× on the Pixel 5 (High, standing), not 11 ms.
+- On a drive, `traffic.update` (up to 11.7 ms) was the largest simulation piece in long
+  tasks, then `trams.update` (7.5 ms) and `crowd.update` (5 ms).
 - The same wall-shader check on another phone GPU (Mali, Apple).
 - Not yet seen on a phone: seasons (plan 023), garden hedges and bigger crowns (025),
   woods (026), flat-roof details (028), the photo-classified ground, the mist volumes
   and river mist, the fire engine's water cannon, the taxi buttons.
-- 20–24 ms spikes in `crowd.update` and 12 ms in `trams.update` on a warm Pixel 5.
-- If phones struggle in bad weather, mist and ripples could go on the Lowest tier.
-- Plan 017 (cheaper trees on phones) starts with a measurement that hasn't been made.
+- 20–24 ms spikes in `crowd.update` on a warm Pixel 5 did not appear at 32 °C.
+- The Lowest tier now skips mist banks, river mist and puddle rings; the phone check
+  in bad weather is owed.
+- Plan 017: step 1 says go ahead (tree shadows are 7.8 ms of 28.9 in the woods, hiding
+  trees saves 16 ms); the low-detail crown toggle and option A are next.
 
 ## Performance
 
-- **Plan 012 Part B** (incremental resting-car index): the retest in isolation was
-  never run. It stays off main until then.
-- **Plan 010:** the `.warm-v1.glb` landmarks are staged, not active; the client that
-  understands them is live since v0.5.2, so they can be switched on.
-- **The street graphs only grow.** Drive and walk graphs, street names and the crowd's
-  index keep every tile ever loaded. The police's route search runs over dropped tiles
-  too, so shrinking needs care.
-- **`requestDevice()` sometimes never returns** at "Preparing graphics…". The game falls
-  back to WebGL after 5 s; the browser or driver reason is unknown.
-- **WebGPU against the old look:** some low buildings show no windows by day (the tile
-  north-east of the woods start); fog looks stronger in rain and snow (probably mixed in
-  before the tone curve); the mosaic texture's cost isn't measured.
+- **Plan 012 Part B** (incremental resting-car index) is on main behind
+  `?resting=incremental`, off. One retest on a busy machine was inconclusive (control
+  7.9 %, comparison 9.5 %); a quiet-machine retest and `check-resting-cars.mjs` are owed.
+- **Plan 010:** the warmed landmarks are switched on in `night-landmarks`'s cloned data
+  and matched the old look; replace the shared landmark files (copy them from that
+  worktree or `landmarks.py <area> --rebake`) and upload them with the map.
+- **Street graphs** now forget tiles far behind the player (checked offline over 8 km
+  and with one pursuit in the game). Left: a scenario with a taxi ride across forgotten
+  streets; the lamps' street and hung-lamp tables still keep every tile ever joined.
+- **`requestDevice()` sometimes never returns** at "Preparing graphics…" (limits: 5 s
+  for the adapter, 15 s for the device). The error report now carries the stage, the
+  time, frames drawn and whether the tab was hidden. Next: start without our own
+  adapter request and without `timestamp-query`, and with a frame loop running.
+- **WebGPU against the old look:** fog in rain and snow is still mixed in before the
+  tone curve (a fix is on `night-renderer`; it makes the night darker than the old
+  look); the mosaic texture's cost isn't measured.
+- **`Route.ahead` in `traffic.update`** (the fix for taxis stalling) adds a little work
+  per car: a `bench.mjs --ab` is owed.
 - **The WebGL renderer and the GLSL** are unmaintained at `?renderer=webgl`; delete them
   or say they stay.
 - **Sky view:** a wall at a tile's edge doesn't learn about a neighbour that arrives
@@ -81,7 +172,13 @@ Nearly everything since 1 October was measured on the M5 only.
   chunk). The gardens could be a layer of their own.
 - Assembly for the whole city takes about 16 s; it could put together only the chunks
   whose layers changed.
-- `pipeline/.cache` takes about 2.5 GB and stale entries are never removed.
+- `pipeline/.cache` is about 39 GB, nearly all of it read by current steps;
+  `pipeline/cache_stale.py` lists the roughly 2 GB that isn't (dry run by default).
+- An override for the pipeline's output folder (`OUT` in `pipeline/osm_area.py`), so a
+  rebuild writes into a clone and is swapped in by rename; quiet-machine timings for
+  `docs/rebuilding-the-map.md`.
+- `meta.json`'s `build_source` for `praha` points at a removed worktree.
+- A drive street stops at the chunk edge between `centrum` tiles 5_7 and 5_8.
 
 ## Terrain
 
@@ -90,10 +187,15 @@ Nearly everything since 1 October was measured on the M5 only.
   cuttings; walls that stop cars and people (they can still go over an edge, and drop);
   frame times and the WebGL renderer; a full-city check of the ground cutting. How to
   work on it: `.agents/skills/terrain-steps/SKILL.md`.
-- **Bridges still off:** Železniční most ends 1.8 m above the street at Výtoň;
-  Libeňský most's south part has steps of 1.3 m at both ends; Nuselský most's Pankrác
-  end has ragged corners by the abutment; the long bridges at Lahovice and Radotín
-  have breaks in their decks.
+- **Bridges still off:** Železniční most at Výtoň is fixed in code on `night-bridges`
+  (confirm after a rebuild); Libeňský most's south part (path way 376889215) lies at
+  the water's level, 3.5 m under the streets at its ends; Nuselský most's Pankrác end
+  has ragged corners by the abutment; the Lahovice and Radotín decks are continuous
+  now, with one 9.6 m join left at 49.98353, 14.40065. Four decks are too low for a
+  cruise boat (tiles `49_37`, `52_43`, `54_48`, `64_76`).
+- **Spikes in the ground:** 1,124 lone points more than 2 m off their neighbours; 402
+  come from terrace strips labelling points on a zigzag wall's high side (Vyšehrad).
+- **The river's height is wrong north of Troja** (tiles `49_81`, `50_94`, `50_95`).
 - **Paint and tram tracks where two bridges cross** can land on the wrong level. The
   pipeline knows each way's level and could hand it to the game with the street edges.
 - **Hill shading for a moving sun** (it is baked to the north-west sun) and **hills
@@ -113,7 +215,8 @@ Nearly everything since 1 October was measured on the M5 only.
   atria; roof class can change where a street crosses a 90 m cell.
 - **Parking (plan 029):** a second car in front of a garage; collision bodies on an
   estate drive unmeasured.
-- **Sports grounds (plan 030):** painted lines are thin and fade from higher up.
+- **Sports grounds (plan 030):** lines now hold a width in pixels from high up; road
+  paint is as thin and could use the same hold.
 - **Lanes (plan 031):** the pavement-or-verge pass; the gravel shoulder hasn't been
   looked at in the game.
 - **Paths and pavements (plan 018):** phases 3–4 (shape tidying, surveyed pavement
@@ -135,48 +238,53 @@ Nearly everything since 1 October was measured on the M5 only.
 
 ## Gameplay
 
-- **Tyre sounds are off** (`TYRE` in `src/audio.ts`). Bring them back as recordings.
-  Found on Freesound, not downloaded: asphalt 477825 (klankbeeld, CC BY 4.0) and
-  425398 (Soundholder, CC BY 3.0); setts 591078 (orlandorizo, CC0) and 528562
-  (Garuda1982, CC0). The engine voices aren't liked yet either (`sound-test.html`).
-- **Fire engines:** a heavy diesel voice when driven; about 40 s to clear a narrow
-  street after a fire; cars give little room in the Old Town; jets and siren levels
-  unmeasured.
-- **Buses:** a line is lost where the map has no street for it (148 at U Nemocnice);
-  they crawl in the Old Town.
+- **Tyre sounds are off on main** (`TYRE` in `src/audio.ts`); recordings, new engine
+  voices, the heavy diesel and measured jet and siren levels wait on `night-audio`.
+- **Fire engines:** about 40 s to clear a narrow street after a fire; cars give little
+  room in the Old Town.
+- **Buses** now find a way round where a line has no street (centrum: 40 breaks to 3).
+  Left: an AE bus still stalls near Na Poříčí; 581 line breaks over 30 m citywide not
+  gone through (`check-bus-lines.mjs praha`); buses cut across sharp bends in a street.
 - **Traffic by time of day** is one city-wide figure; queues on real routes, the
   direction of the peak and the car mix are next (`docs/traffic.md`).
-- **Parked cars:** the turning-curve clearance is unchecked citywide and on emergency
-  routes.
+- **Parked cars:** `check-parking-city.mjs` finds, in centrum, 288 cars in a bus's
+  way, 6 in a pickup's and 21 on the centre line of wide one-way streets; three causes
+  in `docs/traffic.md`; nothing fixed, not yet run on `praha`.
 - **Boats:** other bridges than Legion Bridge and water-height seams unchecked; no PID
   ferries (`docs/boats.md`).
-- **Taxis** creep or stall behind parked cars in narrow streets, routes are sometimes
-  long, and the apps have no phone screen.
-- **Raised buildings** only in IPR's data (passages over a street) still block.
+- **Taxis:** routes are sometimes long, and the apps have no phone screen (the stall
+  behind cars parked on a bend is fixed).
+- **Raised buildings** only in IPR's data (passages over a street) still block. Likely
+  fix: the pipeline emits `passages` where a street crosses a footprint that IPR's
+  mesh shows open underneath.
 - **A tile-load error at start**, seen twice under heavy load: the game retries and
   carries on; the cause wasn't found.
 - **Radio stations by vehicle type** (optional).
 
 ## Weather, night and seasons
 
-- **Seasons (plan 023):** `scripts/check-tree-pool.mjs` is still owed from step 2; the
-  ground's cost is unresolved. Later, if wanted: fallen leaves, hoarfrost, the city's
+- **Seasons (plan 023):** the ground's cost is unresolved (the `--ab` command is in the
+  plan). Later, if wanted: fallen leaves, hoarfrost, the city's
   calendar, seasons for baked landmarks.
-- **Hung lamps where there are none:** could use OSM's `highway=street_lamp` and
-  `lit=yes` for streets that should be dark.
-- **Lamps light the roofs of low sheds** next to them.
-- **Live weather** only at the start; Open-Meteo is free for non-commercial use only
-  (ČHMÚ's open data would need a small proxy).
+- **Lamps:** the game's own lamps now go only on streets OSM tags as lit, and OSM's
+  street lamps join the surveyed ones; it shows once `build_lamps.py` has rebuilt the
+  lamp files (see "Decisions needed"). Roofs no longer take lamplight; a
+  `bench.mjs --ab` and a matched before/after pair are owed.
+- **Live weather** follows the real weather during a game. A ČHMÚ route is written
+  (`worker/weather.js`, `docs/live-weather.md`), not deployed: set `WEATHER_SOURCE=chmi`
+  and `VITE_WEATHER_API`, try it in the Workers runtime, add ČHMÚ to the credits.
 - **Puddles** are placed by noise; the terrain's low points and the kerbs would be
   better.
 
 ## Landmarks
 
-- **A tree baked into Mánes's roof** at the north-east corner. Paint the roof's colour
-  over green texels near the roof's edges when baking, or see whether a game tree
-  there hides it.
-- **Týn Church: bare and blocky walls at street level** on the west and south. Fill
-  from the nearest sharp wall texture, or leave the ground floor to the game's facade.
+The bake's new fills are in main; the shared landmark files are not re-baked yet.
+
+- **Mánes:** the roof corner is painted over as a flat grey patch without its eave
+  line; the tree is still baked into the east wall's north end.
+- **Týn Church:** on the south side one bay of the filled ground floor repeats a
+  neighbour's roof; hidden behind houses in the game.
+- `check-landmark-colours.mjs` fails with `--name` of a landmark near its start place.
 
 ## More map data
 
@@ -196,13 +304,19 @@ All IPR Praha, CC BY, at
 
 ## Housekeeping
 
-- **Licences to check:** the credits state no licence for TSK Praha's data;
-  `straight-skeleton` is MIT but wraps CGAL, whose straight-skeleton code may be GPL.
-- **mbxp:** one old uncompressed tile is left (`praha_now/tiles/84_68.bare.bin`, no
-  `.gz` beside it, so probably still in use).
+- **Licences:** `docs/licences-review.md`. TSK Praha's terms could not be read (someone
+  has to look at the dataset entries or ask); `straight-skeleton` is under "Release".
+  The repository has no LICENSE file.
+- **mbxp:** `shared/data/praha_now/tiles/84_68.bare.bin` and the 1,301 `.bare.bin.gz`
+  beside it are in no manifest and can be deleted.
 - **Worktree `beige-ground`** (merged, 18 GB) is kept for the painted-photo
   experiments: it holds the photos, the hand labels and the surface model. Remove it
   when those are done. Kept unmerged on purpose: `worktree-crowd-worker` (plan 019),
   `mosaic-ornaments`, `worktree-rust-wgpu`, `ipad-audio`.
-- **Codex worktrees:** nine of fifteen hold commits that aren't in main in the same
-  form (most in `811c`, plan 012 Part B, and `2bc4`); not gone through.
+- **Codex worktrees:** gone through in `docs/codex-worktrees-review.md`. Eleven of
+  fifteen hold nothing unique and can be removed; keep `2bc4` (plan 012 Part B, same
+  as `811c`), `ae03` (a dry-ground pilot) and `fd60` (a furniture timing script) until
+  decided. All are detached: branch what is kept.
+- **Night worktrees** (`.claude/worktrees/night-*`, plus `night-renderer-snap`): keep
+  those whose branch is unmerged; the merged ones can go (move their `node_modules`
+  and `public/data` symlinks to the Trash first).
