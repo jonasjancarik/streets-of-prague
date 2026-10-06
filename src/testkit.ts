@@ -14,6 +14,7 @@ import type { Traffic } from './traffic.ts';
 import type { TramBody } from './trams.ts';
 import type { Kind } from './weather.ts';
 import type { Boats } from './boats.ts';
+import type { Ferries } from './ferries.ts';
 import type { Bags } from './bags.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
@@ -66,6 +67,8 @@ interface Game {
   steps: (x: number, y: number, r: number) => { edges: StepEdge[]; crossings: { x: number; y: number; dx: number; dy: number; drop: number; hw: string }[] };
   ground: (x: number, y: number) => number;
   boats: Boats;
+  ferries: Ferries;
+  pid: { state: string | null; buy: (now: number) => boolean };
   carsNear: (x: number, y: number, r: number) => Car[];
   tramsNear: (x: number, y: number, r: number) => TramBody[];
   // Where the camera looks now, and how high it is (for starting the free camera there).
@@ -339,6 +342,59 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         return { kind: b.kind, moored: b.moored, at: at([b.x, b.y]), bank: bank ? at(bank) : null,
           waterHeight: g.boats.waterHeight(b), bankHeight: bank ? g.boats.water.terrainAt(...bank) : null };
       });
+    },
+    // PID's ferries: where each is, whether it sails now, the landing it lies at (or
+    // null under way), the one it goes to next, and each landing's spot on the bank.
+    ferries() {
+      const at = (p: Point2): Point2 => { const [lon, lat] = g.toLonLat(...p); return [lat, lon]; };
+      return g.ferries.list.map(f => ({ ref: f.line.ref, open: f.open, loaded: f.z !== null, stop: f.stop, to: f.to, at: at([f.x, f.y]),
+        landings: f.line.stops.map(s => ({ name: s.name, gate: at(s.gate), berth: at(s.berth) })) }));
+    },
+    // E by a ferry's landing; whether you're aboard. `t.ticket()`: how the fare stands
+    // ('grace' or 'dodging' without a ticket, null with one or off PID's vehicles);
+    // `t.ticket(true)` buys the 90-minute one first.
+    boardFerry() {
+      if (g.mode() === 'foot') g.enterOrExit();
+      return g.mode() === 'ferry';
+    },
+    ticket(buy = false) {
+      if (buy && !g.pid.buy(g.clock.t)) g.wallet.buyTicket(g.clock.t); // (aboard, as B does; on foot, straight from the wallet)
+      return { held: g.wallet.hasTicket(g.clock.t), fare: g.pid.state };
+    },
+    // The first cruise boat, put on the fairway `back` metres before the end of the
+    // stretch nearest you and heading for it; then where it is and which way it goes.
+    cruiseToEnd(back = 200) {
+      const B = g.boats, b = B.list.find(o => o.kind === 'cruise'), me = g.me();
+      if (!b || !B.courses.length) return false;
+      let best: { c: typeof B.courses[number]; end: number; d: number } | null = null;
+      for (const c of B.courses) for (const end of [0, c.length]) {
+        const p = c.at(end), d = Math.hypot(p.x - me.x, p.y - me.y);
+        if (!best || d < best.d) best = { c, end, d };
+      }
+      const { c, end } = best!, dir = end ? 1 : -1, along = end ? end - back : back, p = c.at(along);
+      for (const o of B.list) if (o !== b && o.kind === 'cruise' && Math.hypot(o.x - p.x, o.y - p.y) < 300) { o.live = false; o.mesh.visible = false; } // (not on top of another)
+      Object.assign(b, { x: p.x, y: p.y, h: dir > 0 ? p.ang : p.ang + Math.PI, v: b.s.speed, w: 0, course: c, along, dir, about: 0, live: true, z: null });
+      b.mesh.visible = true;
+      return true;
+    },
+    // The first cruise boat onto the fairway at the point nearest `where`, going up the
+    // line (`dir` 1) or down it (-1).
+    cruiseAt(where: Where, dir: 1 | -1 = 1) {
+      const B = g.boats, b = B.list.find(o => o.kind === 'cruise'), [x, y] = kit.toLocal(where);
+      const near = B.courses.map(c => ({ c, ...c.project(x, y) })).sort((p, q) => p.d - q.d)[0];
+      if (!b || !near) return false;
+      const p = near.c.at(near.s);
+      for (const o of B.list) if (o !== b && o.kind === 'cruise' && Math.hypot(o.x - p.x, o.y - p.y) < 300) { o.live = false; o.mesh.visible = false; } // (not on top of another)
+      Object.assign(b, { x: p.x, y: p.y, h: dir > 0 ? p.ang : p.ang + Math.PI, v: b.s.speed, w: 0, course: near.c, along: near.s, dir, about: 0, live: true, z: null });
+      b.mesh.visible = true;
+      return true;
+    },
+    cruise() {
+      const b = g.boats.list.find(o => o.kind === 'cruise' && o.course);
+      if (!b || !b.course) return null;
+      const [lon, lat] = g.toLonLat(b.x, b.y);
+      return { live: b.live, at: [lat, lon] as Point2, dir: b.dir, turning: b.about > 0, speed: b.v, toEnd: b.dir > 0 ? b.course.length - b.along : b.along, along: b.along, toBank: b.course.at(b.along).w,
+        onWater: g.boats.water.waterAt(b.x, b.y) === true, height: b.z };
     },
     boardBoat() {
       if (g.mode() === 'foot') g.enterOrExit();

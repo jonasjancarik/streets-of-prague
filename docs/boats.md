@@ -1,6 +1,7 @@
-# Boat lights and bank access
+# Boats: lights, bank access, the fairway and the ferries
 
-Read when changing boat models, mooring, boarding, or river travel.
+Read when changing boat models, mooring, boarding, river travel, `pipeline/build_river.py`,
+`src/river.ts` or `src/ferries.ts`.
 
 Cruise boats have warm cabin windows and red, green and white navigation lamps.
 Pedal and swan boats carry a small white lamp. Their geometry is merged into each
@@ -37,3 +38,67 @@ water height 5.53–5.80 m, boat roof 7.64–7.94 m and bridge deck 15.58–15.6
 above the world's reference height. This verifies that route, not every bridge.
 Water-height variation in the existing map remains a terrain limitation. No
 phone, frame-time benchmark, citywide rebuild or ferry implementation was included.
+
+## The fairway, weirs and bridges (6 October 2026)
+
+`pipeline/build_river.py <area>` writes `public/data/<area>_now/river.json` (run it
+after `build_tiles.py`; it reads the tiles' water and weirs, OSM's line of the Vltava
+from `pipeline/.cache/osm/<area>.osm.pbf` and PID's timetables; about a minute for
+centrum and several for praha on a busy machine). Without the file the game runs as
+before: cruise boats wander on open water and there are no ferries.
+
+The fairway is the cheapest way through the navigable water (2 m cells, at least 5 m
+from a bank, dearer near the banks) from where the river enters the area to where it
+leaves, never within 5 m of a weir. A gap under 40 m between the loose ends of two
+weir lines (a sluice for rafts) is closed. Cruise boats follow it, keeping up to 14 m
+right of its middle, slow down behind each other, and turn round at the end of a
+stretch. A boat's height follows the water at 0.3 m/s at most, so it doesn't jump where
+the water's height does.
+
+How boats pass a weir: through the lock beside it. In a lock and for 150 m beyond its
+ends along the same line (the cut to the open river, from OSM's `lock=yes` ways, kept
+in the file as `locks`) a boat may keep 3.6 m from the walls instead of 5 m; the
+chambers are 11 to 12 m wide on the map. One boat at a time sails water narrower than
+14 m to the bank: the other waits in wide water (two that are both already in a cut
+when they meet sail through each other; rare, and not handled). In praha the fairway
+is three stretches: one of 26 km from Modřany through the Smíchov lock and its cut,
+the Štvanice lock and the Podbaba canal to Klecany, and one beyond each end. At the
+Modřany and Klecany weirs the map's water has no lock a boat fits through, so boats
+turn round there. The cruise boat stands 3.75 m over the water (a low cabin, no mast),
+which fits under the footbridge over the Smíchov cut with 4 cm to spare.
+
+`node scripts/check-river.mjs [area]` sails every stretch and every ferry crossing
+without a browser (`--all` lists every step in the water, `--strict` fails on them).
+On the praha map of 5 October it passes and reports:
+
+- every point on open water;
+- four decks the map has too low, listed in the script as `KNOWN_LOW` and reported, not
+  failed, until the bridge heights are right: tile `49_37` (the deck at the water's own
+  height), `52_43` and `54_48` (4.3 m over the water), `64_76`, Libeňský most (4.6 m).
+  A deck that has been raised is reported so it can be taken off the list; any other
+  low deck fails the check;
+- steps in the water's height: 7 at locks (a boat rises or sinks there at 0.3 m/s),
+  and 376 elsewhere, nearly all north of Troja: from tile `49_81` and above all tiles
+  `50_94` and `50_95`, where the water climbs over 40 m, and the last stretch. They are
+  in the terrain's water heights, not at tile edges. Not fixed: it needs
+  `dtm_heights.py` and a terrain rebuild there.
+
+## PID ferries
+
+P1, P2, P4, P5 and P6 from the feed (P3 and P7 aren't in it). One boat a line shuttles
+between its landings by the game's clock, between the timetable's first and last
+sailing; P1 and P2 all year, the others from 1 April to 31 October by the game's date.
+It waits 75 s at each landing instead of keeping the 15 or 20 minutes between sailings.
+Each landing gets a pontoon from the bank to the boat. E by the landing while the boat
+is in; a PID ticket as on a tram (the grace period, then "No ticket"); no inspector
+comes aboard. E at a landing puts you on the bank.
+
+Checked in the game on 6 October 2026 (praha, WebGPU, headless Chrome): `ferry-ride`
+boards P5 at a landing without a ticket (the time to buy one starts) and with one,
+crosses twice and steps onto the bank 2 m from the landing; `cruise-lock` sails a cruise
+boat 420 m past the Šítkov weir through the Smíchov lock, 4.3 m from its walls, without
+turning; `cruise-weir` turns one round 73 m before the Modřany weir; `boat-boarding`
+still passes. `upload-data.sh` and `deploy-mbxp.sh` copy the whole of `public/data`, so
+`river.json` goes with the map once it has been built there. After any rebuild of an
+area's tiles, run `uv run build_river.py <area>` again: the fairway and the landings
+are worked out from the tiles' water.

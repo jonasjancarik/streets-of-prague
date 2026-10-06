@@ -9,6 +9,7 @@ import { Surfaces } from './surface.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { Zones, parkCars, inRing, inPoly } from './parking.ts';
+import { openWater } from './river.ts';
 import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary } from './terrain.ts';
 import type { Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
@@ -489,27 +490,7 @@ export class TileWorld {
   waterAt(x: number, y: number): boolean | null {
     const t = this.tileAt(x, y);
     if (!t) return null;
-    for (const { rings, box } of t.water) {
-      if (x < box[0] || x > box[2] || y < box[1] || y > box[3]) continue;
-      let inside = false;
-      for (const r of rings) {
-        for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
-          const [ax, ay] = r[i], [bx, by] = r[j];
-          if ((ay > y) !== (by > y) && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
-        }
-      }
-      if (!inside) continue;
-      // A weir across the river isn't open water either: boats stop short of it.
-      for (const w of t.weirs) {
-        for (let i = 0; i < w.length - 1; i++) {
-          const [ax, ay] = w[i], [bx, by] = w[i + 1], dx = bx - ax, dy = by - ay;
-          const k = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
-          if (Math.hypot(x - ax - dx * k, y - ay - dy * k) < 5) return false;
-        }
-      }
-      return true;
-    }
-    return false;
+    return openWater(t, x, y);
   }
 
   // Ground height (m above this.ref) at a point, 0 where nothing is loaded.

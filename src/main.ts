@@ -4,6 +4,8 @@ import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts
 import * as THREE from 'three';
 import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
+import { Ferries } from './ferries.ts';
+import { parseRiver } from './river.ts';
 import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
@@ -206,6 +208,11 @@ async function main() {
   const metroData: Promise<{ lines: MetroLine[] }> = fetch(dataUrl(AREA, 'metro.json'))
     .then(async (r) => r.ok ? parseMetroLines(await r.json()) : { lines: [] })
     .catch(() => ({ lines: [] }));
+  // The river's fairway and PID's ferries (pipeline/build_river.py); without them the
+  // cruise boats wander and there are no ferries.
+  const riverData = fetch(dataUrl(AREA, 'river.json'))
+    .then(async (r) => parseRiver(r.ok ? await r.json() : null))
+    .catch(() => parseRiver(null));
   const seeded = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
 
   // (Its pixel ratio comes from the graphics setting, see Graphics. The stencil is for
@@ -322,6 +329,13 @@ async function main() {
     terrain: (x, y) => (world.loaded.has(world.keyAt(x, y)) ? world.terrainAt(x, y) : null),
     toLocal: (lon, lat) => (lon > w0 && lon < e0 && lat > s0 && lat < n0 ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [lon, lat]) as [number, number] : null),
   });
+  // Across the river by ferry (E at a landing while the boat is in).
+  const river = await riverData;
+  const ferries = new Ferries(river.ferries, scene, {
+    clock, day: () => season.day,
+    water: (x, y) => (world.loaded.has(world.keyAt(x, y)) ? world.terrainAt(x, y, true) : null),
+    ground: (x, y) => (world.loaded.has(world.keyAt(x, y)) ? world.terrainAt(x, y) : null),
+  });
   const tramLines = (await lines).lines;
   const trams = new Trams(tramLines, scene, { clock, rng: seeded });
   const ride = new TramRide(trams, world, $('ride'), new TrackNet(tramLines));
@@ -386,7 +400,7 @@ async function main() {
   const islands = ilon > w0 && ilon < e0 && ilat > s0 && ilat < n0
     ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [ilon, ilat]) as [number, number]
     : null;
-  const boats = new Boats(scene, world, islands);
+  const boats = new Boats(scene, world, islands, undefined, river.fairway);
 
   // ---- Player ------------------------------------------------------------
   const walker = new Walker(grid, kit);
@@ -603,6 +617,7 @@ async function main() {
   let wastedT = 0;
   const wasted = () => {
     if (funicular.me) { funicular.leave(); pid.leave(); }
+    if (ferries.me) { ferries.leave(); pid.leave(); }
     boats.me = null;
     if (inHeli) enterOrExit();
     if (inCar) enterOrExit();
@@ -789,7 +804,7 @@ async function main() {
     }
     // In a taxi: out here, and into the one waiting for you.
     if (taxi.riding) { taxi.leave(); return; }
-    if (!inCar && !inHeli && !ride.on && !boats.me && !funicular.me && taxi.enter()) return;
+    if (!inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && taxi.enter()) return;
     // On the funicular: off beside it, when it stands at a station.
     if (funicular.me) {
       const c = funicular.me;
@@ -805,6 +820,18 @@ async function main() {
       walker.mesh.visible = true;
       walker.sync();
       if (inspector.phase === 'decide') inspector.run(x, y, c.h);
+      return;
+    }
+    // On a ferry: off onto the bank, when it lies at a landing.
+    if (ferries.me) {
+      const f = ferries.me, landing = ferries.landing(f);
+      if (!landing) return;
+      const [x, y] = ferries.ashore(landing, (ax, ay) => nearestWalkable(grid, ax, ay, 30));
+      ferries.leave();
+      pid.leave();
+      Object.assign(walker, { x, y, h: f.h, vx: 0, vy: 0, level: 0, gz: world.terrainAt(x, y) });
+      walker.mesh.visible = true;
+      walker.sync();
       return;
     }
     // On a tram: off at this stop (or here, if it's stuck), or at the next one.
@@ -869,6 +896,14 @@ async function main() {
       funicular.board(cabin);
       telemetry.did('rode the funicular');
       if (cabin.line.spec.ticket) pid.board(clock.t);
+      walker.mesh.visible = false;
+      return;
+    }
+    const ferry = ferries.near(walker.x, walker.y);
+    if (ferry) {
+      ferries.board(ferry);
+      telemetry.did('took a ferry');
+      pid.board(clock.t);
       walker.mesh.visible = false;
       return;
     }
@@ -1184,7 +1219,7 @@ async function main() {
     }
     // Escape pauses the game by opening the settings, which also hold the saves.
     if (e.code === 'Escape') { if (!e.repeat && !settingsPanel.open) settingsPanel.show(); e.preventDefault(); return; }
-    if (taxi.key(e.code, !inCar && !inHeli && !ride.on && !boats.me && !funicular.me)) { e.preventDefault(); return; }
+    if (taxi.key(e.code, !inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me)) { e.preventDefault(); return; }
     if (keymap[e.code]) { input[keymap[e.code]] = true; e.preventDefault(); }
     if (e.shiftKey) input.run = true;
     if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) interact();
@@ -1230,7 +1265,7 @@ async function main() {
   }, { passive: true });
   $('t-ticket').addEventListener('click', pressB);
   const touch = setupTouch({ action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, doors: () => ride.doors(), jump: () => {
-    if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !taxi.riding) { input.jump = true; telemetry.did('jumped'); }
+    if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !ferries.me && !taxi.riding) { input.jump = true; telemetry.did('jumped'); }
   }, force: params.has('touch') });
   Object.assign(padHooks, { settings: () => settingsPanel.show(), menu: () => metro.active || dialog.active, zoomBy });
   window.addEventListener('resize', () => {
@@ -1280,7 +1315,7 @@ async function main() {
       shake = Math.min(1.6, shake + (1.4 * 30) / (30 + d));
       if (c === inCar) hurt(MAX_HEALTH);
       else if (inCar) hurt(25 * Math.max(0, near(inCar)));
-      else if (!inHeli && !ride.on && !taxi.riding && !boats.me && !funicular.me && near(walker) > 0) {
+      else if (!inHeli && !ride.on && !taxi.riding && !boats.me && !funicular.me && !ferries.me && near(walker) > 0) {
         const k = near(walker);
         if (walker.down <= 0) walker.knock(...away(walker, 3 + 7 * k));
         hurt(95 * k);
@@ -1499,7 +1534,7 @@ async function main() {
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
-    } else if (!scripted && !arrest.active && !inHeli && !ride.on && !boats.me && !funicular.me && !taxi.riding) walker.update(dt, ctl);
+    } else if (!scripted && !arrest.active && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !taxi.riding) walker.update(dt, ctl);
     // In the helicopter Space climbs and Shift comes down.
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
     for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null);
@@ -1508,7 +1543,7 @@ async function main() {
     for (const c of movers) c.update(dt, null, grid);
     const me = inCar || inHeli || walker;
     police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || taxi.riding, riding: ride.on || taxi.riding });
-    inspector.update(dt, { x: me.x, y: me.y, h: inCar ? inCar.h : walker.h, onFoot: !inCar && !inHeli && !ride.on && !taxi.riding && !boats.me && !funicular.me, inVehicle: !!inCar || !!inHeli || taxi.riding || !!boats.me });
+    inspector.update(dt, { x: me.x, y: me.y, h: inCar ? inCar.h : walker.h, onFoot: !inCar && !inHeli && !ride.on && !taxi.riding && !boats.me && !funicular.me && !ferries.me, inVehicle: !!inCar || !!inHeli || taxi.riding || !!boats.me });
     brigade.update(dt, me);
     ambulances.update(dt, me);
     cannon.update(dt, inCar, cannonHeld, (x, y) => ground(x, y));
@@ -1570,6 +1605,8 @@ async function main() {
     taxi.seat();
     funicular.update();
     if (funicular.me) funicular.seat(walker);
+    ferries.update(dt);
+    if (ferries.me) ferries.seat(walker);
     boats.update(dt, px(), py(), ctl);
     if (boats.me) { walker.x = boats.me.x; walker.y = boats.me.y; walker.h = boats.me.h; walker.vx = walker.vy = 0; }
 
@@ -1946,7 +1983,7 @@ async function main() {
     telemetry.doing('rode in a taxi', taxi.riding);
     telemetry.doing('called a taxi', taxi.state === 'coming');
     telemetry.doing('rode without a ticket', pid.state === 'dodging' || metro.dodging);
-    telemetry.doing('sped up a ride or a wait', waitScale > 1.5 || ((ride.on || !!funicular.me || taxi.riding) && (input.run || touch.fast)));
+    telemetry.doing('sped up a ride or a wait', waitScale > 1.5 || ((ride.on || (!!funicular.me || !!ferries.me) || taxi.riding) && (input.run || touch.fast)));
     last = now;
     time.value += dt;
     wallet.update(dt);
@@ -1976,7 +2013,7 @@ async function main() {
     waitScale += ((waiting ? FAST * 2 : 1) - waitScale) * Math.min(1, dt * (waiting ? 1.5 : 4));
     if (Math.abs(waitScale - (waiting ? FAST * 2 : 1)) < 0.02) waitScale = waiting ? FAST * 2 : 1;
     taxi.update(dt);
-    const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : funicular.me ? funicular.speedUp(dt, ctl.run || touch.fast) : taxi.riding ? taxi.speedUp(dt, ctl.run || touch.fast) : waitScale;
+    const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : funicular.me ? funicular.speedUp(dt, ctl.run || touch.fast) : ferries.me ? ferries.speedUp(dt, ctl.run || touch.fast) : taxi.riding ? taxi.speedUp(dt, ctl.run || touch.fast) : waitScale;
     // (The developer panel can pause the world or slow it down.)
     const run = testkit?.paused ? 0 : scale * (testkit?.speed ?? 1);
     const steps = metro.active ? 0 : Math.ceil(run - 1e-6); // underground, the street waits
@@ -1985,7 +2022,7 @@ async function main() {
     input.jump = false;
     // A ticket that runs out while you ride gives you a moment to buy another.
     const ticketNow = wallet.hasTicket(clock.t);
-    if (ticketWas && !ticketNow && ((ride.on && !ride.driving) || funicular.me)) pid.board(clock.t);
+    if (ticketWas && !ticketNow && ((ride.on && !ride.driving) || funicular.me || ferries.me)) pid.board(clock.t);
     ticketWas = ticketNow;
     if (ride.on) ride.watch(dt);
     // Ticket inspections: at a stop you've ridden to (not the one you got on at), and at
@@ -2170,6 +2207,7 @@ async function main() {
     const onFoot = !inCar && !inHeli && !ride.on && !metro.active && !boats.me && !taxi.riding;
     const cabin = onFoot ? funicular.near(walker.x, walker.y) : null;
     const shut = onFoot && !cabin ? funicular.near(walker.x, walker.y, true) : null;
+    const ferryHere = onFoot && !ferries.me ? ferries.near(walker.x, walker.y, true) : null;
     const canEnter = !inCar && !inHeli && !ride.on && !metro.active && (!!enterable || !!boat || choppers.some((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4));
     const getIn = t(enterable?.two ? '<b>E</b> get on' : !enterable && boat ? (boat.kind === 'swan' ? '<b>E</b> get in the swan' : '<b>E</b> get in the pedal boat') : '<b>E</b> get in');
     const ticketHint = () => pid.state === 'grace'
@@ -2187,6 +2225,7 @@ async function main() {
     }
     else if (boats.me) hint = touch.active ? '' : t('<b>W</b>/<b>S</b> pedal · <b>A</b>/<b>D</b> turn · <b>E</b> get out by the bank');
     else if (funicular.me) hint = [funicular.hint(touch.active, scale), ticketHint()].filter(Boolean).join(' · ');
+    else if (ferries.me) hint = [ferries.hint(touch.active, scale), ticketHint()].filter(Boolean).join(' · ');
     else if (ride.driving) {
       const d = ride.drive!, parts: string[] = [];
       if (touch.active) { if (d.junction < 400 && d.options.length > 1) parts.push(t('Junction in {m} m', { m: Math.max(0, Math.round(d.junction / 10) * 10) })); }
@@ -2216,6 +2255,7 @@ async function main() {
     } else if (canBoard && !touch.active) hint = t('<b>E</b> get on the {line} to {name}', { line: canBoard.line.ref, name: ride.headsign(canBoard) });
     else if (station && !touch.active) hint = t('<b>E</b> take the metro from {name}', { name: station.name });
     else if ((cabin && !touch.active) || shut) hint = funicular.offer((cabin || shut)!);
+    else if (ferryHere && (!ferryHere.open || !touch.active)) hint = ferries.offer(ferryHere);
     else if (board.shown) {
       const wait = waitScale > 1.5 ? t('Waiting for a tram · {n}× speed', { n: Math.round(waitScale) }) : touch.active ? '' : t('Hold <b>Space</b> to wait for a tram');
       hint = [canEnter && !touch.active ? getIn : '', wait].filter(Boolean).join(' · ');
@@ -2225,7 +2265,7 @@ async function main() {
       if (lying && (!enterable || lying.d <= gap(enterable))) hint = t('<b>E</b> pick up the bag');
       else if (bags.carried && !canEnter) hint = t('<b>E</b> put the bag down');
     }
-    hint = (!inCar && !inHeli && !ride.on && !funicular.me && taxi.hint(touch.active, usingPad())) || hint;
+    hint = (!inCar && !inHeli && !ride.on && !funicular.me && !ferries.me && taxi.hint(touch.active, usingPad())) || hint;
     const bikeRental = (c: Car) => {
       const rental = bikeShare.rental(c);
       return rental && { name: rental.system.name, minutes: String(Math.max(1, Math.round((((clock.t - rental.since) % 604800) + 604800) % 604800 / 60))), price: kc(rental.paid) };
@@ -2233,7 +2273,7 @@ async function main() {
     if (inCar && !inHeli) {
       const b = bikeRental(inCar);
       if (b && !assisted) hint = [t('{name} bike: {minutes} min, {price} so far', b), hint].filter(Boolean).join(' · ');
-    } else if (!inHeli && !ride.on && !funicular.me && !taxi.riding) {
+    } else if (!inHeli && !ride.on && !funicular.me && !ferries.me && !taxi.riding) {
       for (const c of loose) {
         const b = c.share && bikeRental(c);
         if (b) { hint = [t('Your {name} bike is still rented: {minutes} min, {price} so far', b), hint].filter(Boolean).join(' · '); break; }
@@ -2242,10 +2282,10 @@ async function main() {
     if (inspector.phase === 'decide') hint = touch.active ? t('Ticket inspection! Pay the fine ({fine}) or get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) }) : t('Ticket inspection! <b>B</b> pay the fine ({fine}) · <b>E</b> get off and run · {secs} s', { fine: kc(FINE), secs: Math.ceil(inspector.left) });
     taxi.render(touch.active, usingPad());
     show('hint', padLabels(hint), 'html');
-    $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.driving ? 'drive' : ride.on ? 'tram' : funicular.me ? 'funicular' : 'foot';
+    $('help').dataset.mode = inHeli ? 'heli' : inCar ? 'car' : ride.driving ? 'drive' : ride.on ? 'tram' : funicular.me ? 'funicular' : ferries.me ? 'ferry' : 'foot';
     $('help-pad').dataset.mode = $('help').dataset.mode;
     ride.render();
-    const label = ride.driving ? (ride.canLeave() ? 'Get off' : null) : ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : canBoard || cabin || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
+    const label = ride.driving ? (ride.canLeave() ? 'Get off' : null) : ride.on ? (ride.atStop() ? 'Get off' : ride.stuck ? 'Get off here' : ride.dest === ride.upcoming()[0] ? 'Stop requested' : 'Request stop') : funicular.me ? (funicular.me.stop !== null ? 'Get off' : null) : ferries.me ? (ferries.me.stop !== null ? 'Get off' : null) : canBoard || cabin || ferryHere?.open || enterable?.two ? 'Get on' : inCar?.two ? 'Get off' : null;
     const cab = taxi.riding ? 'Get out' : taxi.near() ? 'Get in' : null;
     const ticketBtn = inspector.phase === 'decide' ? 2 : pid.state === 'grace' ? 1 : 0;
     if (shown.ticketBtn !== ticketBtn) {
@@ -2253,7 +2293,7 @@ async function main() {
       $('t-ticket').hidden = !ticketBtn;
       $('t-ticket').textContent = t(ticketBtn === 2 ? 'Pay the fine' : 'Buy a ticket');
     }
-    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', driving: ride.driving, tram: (ride.on && !ride.driving) || taxi.riding || !!funicular.me, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || funicular.me?.stop != null, limit: assisted ? assist.limit : null });
+    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', driving: ride.driving, tram: (ride.on && !ride.driving) || taxi.riding || (!!funicular.me || !!ferries.me), wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
     show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')} · ${tn(stats.knocked, '{n} person knocked over|{n} people knocked over')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}${stats.wasted ? ` · ${t('wasted {n}×', { n: stats.wasted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
@@ -2285,7 +2325,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
@@ -2298,7 +2338,7 @@ async function main() {
   testkit = setupTestkit({
     toLocal: dev.toLocal, toLonLat: dev.toLonLat, teleport: teleportTo,
     me: () => inCar || inHeli || walker, car: () => inCar, heli: () => inHeli,
-    mode: () => (inCar ? 'car' : inHeli ? 'helicopter' : ride.on ? 'tram' : taxi.riding ? 'taxi' : boats.me ? 'boat' : funicular.me ? 'funicular' : metro.active ? 'metro' : 'foot'),
+    mode: () => (inCar ? 'car' : inHeli ? 'helicopter' : ride.on ? 'tram' : taxi.riding ? 'taxi' : boats.me ? 'boat' : ferries.me ? 'ferry' : funicular.me ? 'funicular' : metro.active ? 'metro' : 'foot'),
     street: () => street, enterOrExit, interact, arrest,
     addCar: (c) => { loose.push(c); restingStale = true; },
     loose,
@@ -2306,7 +2346,7 @@ async function main() {
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300, testkit?.cam ? Infinity : viewRadius() + world.drawBeyond),
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y),
-    grid, boats, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
+    grid, boats, ferries, pid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     tramsNear: (x, y, r) => trams.bodies(x, y, r),
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
