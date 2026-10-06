@@ -10,6 +10,7 @@ export interface TreeTileData extends GeoData {
   buildings: { rings: Point2[][] }[];
   walls: { kind: string; pts: Point2[] }[];
   trees: TreeSpot[];
+  shrubs?: Point2[];
 }
 
 // A tree's place in metres, and what kind it is when the map knows: 1 a conifer, 2 a fruit tree.
@@ -24,6 +25,9 @@ export interface TreeInstances { matrices: Float32Array; colours: Float32Array; 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
 const WOOD = 200, PARK = 120, GARDEN = 90, ORCHARD = 60, FIELD = 40, FENCE = 1;
+// Surveyed greenery (pipeline/ipr_greenery.py): grass where no tree is made up (the
+// survey has the real ones), and groups of shrubs, which are filled with shrubs.
+const SURVEYED = 150, SHRUBBERY = 170;
 // Of each kind of tree (below), how many are evergreen and keep their leaves in
 // winter: yews and hedges among the shrubs. (Conifers have a shape of their own.)
 const EVERGREEN = [0, 0, 0, 0.4];
@@ -85,6 +89,10 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fill(d.areas.lawn, GARDEN);
     fill(d.areas.park, PARK);
     fill(d.areas.meadow, PARK);
+    fill(d.areas.ipr_lawn, SURVEYED);
+    fill(d.areas.ipr_meadow, SURVEYED);
+    fill(d.areas.ipr_bed, SURVEYED);
+    fill(d.areas.ipr_shrubs, SHRUBBERY);
     fill(d.areas.orchard, ORCHARD);
     fill(d.areas.wood, WOOD);
     // Keep trees off everything built or paved.
@@ -260,6 +268,16 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     }
   }
   gardenTrees(geo, grid, trees);
+  // Surveyed groups of shrubs, filled from a lattice fixed to the map, and the single ones.
+  const BUSH = 2.2;
+  for (let j = Math.ceil(geo.minY / BUSH); j * BUSH < geo.maxY; j++) {
+    for (let i = Math.ceil(geo.minX / BUSH); i * BUSH < geo.maxX; i++) {
+      const g = rng(Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ 0x3e71);
+      const x = (i + 0.2 + g() * 0.6) * BUSH, y = (j + 0.2 + g() * 0.6) * BUSH;
+      if (grid.at(x, y) === SHRUBBERY) trees.push([x, y, 1.1 + g() * 0.6, SHRUB]);
+    }
+  }
+  for (const [x, y] of d.shrubs ?? []) trees.push([x, y, 0.9 + r() * 0.7, SHRUB]);
 
   // Shrubs, then conifers, last: each has its own mesh.
   const bushes = trees.filter((t) => t[3] === SHRUB), pines = trees.filter((t) => t[3] === CONIFER);

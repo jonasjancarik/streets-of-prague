@@ -9,6 +9,8 @@ import { offsetLine } from './network.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
 import type { GroundLayer } from './surface.ts';
 import { PITCH_LOOKS } from './map/pitches.ts';
+import { coverGeometry } from './map/utility.ts';
+import type { UtilityMark } from './map/utility.ts';
 
 export interface GroundTileData {
   areas: Record<string, Polygons | undefined>;
@@ -17,6 +19,7 @@ export interface GroundTileData {
   weirs?: Point2[][];
   crossings?: Point2[][];
   marks?: Point2[][];
+  utility?: UtilityMark[]; // surveyed covers and drains (pipeline/ipr_utility.py)
 }
 export interface LevelMask { level: number; w: number; h: number; cells: Uint8Array; box: Bounds }
 export interface GroundResult { layers: GroundLayer[]; masks: LevelMask[] }
@@ -45,6 +48,7 @@ export const COLORS = {
   park: '#79a24c', garden: '#80a552', wood: '#394a2b', orchard: '#89a858', pitch: '#6c9c55',
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', asphalt: '#6b6a68', sett: '#8a847a', parking: '#72706c',
+  bed: '#6f5b43', shrubBed: '#5d6b3c', iron: '#3f3d3b',
   bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', tunnel: '#46484c', tunnelWall: '#a59f93',
 };
@@ -639,6 +643,12 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.lawn || []), COLORS.garden, 'lawn');
     add(polygons(A.park || []), COLORS.park, 'grass');
     add(polygons(A.meadow || []), COLORS.park, 'meadow');
+    // The greenery the city tends, surveyed (pipeline/ipr_greenery.py), over what is only
+    // guessed there: lawns, meadows, the earth of flower beds and under groups of shrubs.
+    add(polygons(A.ipr_lawn || []), COLORS.park, 'lawn');
+    add(polygons(A.ipr_meadow || []), COLORS.park, 'meadow');
+    add(polygons(A.ipr_shrubs || []), COLORS.shrubBed, 'garden');
+    add(polygons(A.ipr_bed || []), COLORS.bed, 'dirt');
     // Paths people have worn across the grass (worn_paths.py): a faint rim, then the bare earth.
     add(polygons(A.worn_edge || []), COLORS.worn, 'dirt', 0.35);
     add(polygons(A.worn || []), COLORS.worn, 'dirt', 0.9);
@@ -693,6 +703,8 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(strips(dashed, 0.13, [3, 6]), COLORS.paint);
     add(strips(solid, 0.13), COLORS.paint);
     add(strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5), COLORS.paint);
+    // Manhole covers and storm drains: all of the tile's in one mesh.
+    add(coverGeometry(d.utility || [], edges.map((e) => e.pts), groundHeight ?? (() => 0)), COLORS.iron);
 
     // Soft contact shadow where each wall meets the ground. The wider, fainter one that
     // used to darken courtyards and lanes is the sky view now (map/skyView.ts), which

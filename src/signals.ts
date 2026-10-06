@@ -26,9 +26,9 @@ const COLOURS = [new THREE.Color('#22ff88'), new THREE.Color('#ffae00'), new THR
 const OFF = [new THREE.Color('#0c1a12'), new THREE.Color('#1c150a'), new THREE.Color('#1e0c0a')];
 
 interface Junction { g0: number; g1: number; offset: number }
-export interface Signal { stop: number; j: Junction; phase: number }
+export interface Signal { stop: number; j: Junction; phase: number; pole?: [number, number] } // pole: where it stands, surveyed
 interface Head { e: DriveEdge; sig: Signal; x: number; y: number; ang: number }
-interface SignalsJSON { junctions: [number, number, number][]; edges: Record<string, [number, number, number]> }
+interface SignalsJSON { junctions: [number, number, number][]; edges: Record<string, [number, number, number, number?, number?]> }
 
 // What a light shows at time t (s).
 export function light(sig: Signal, t: number) {
@@ -123,7 +123,7 @@ export class Signals {
     void fetch(dataUrl(area, 'signals.json')).then((r) => (r.ok ? r.json() as Promise<SignalsJSON> : null)).then((data) => {
       if (!data) return;
       const junctions = data.junctions.map(([g0, g1, offset]) => ({ g0, g1, offset }));
-      for (const [id, [stop, j, phase]] of Object.entries(data.edges)) this.byId.set(id, { stop, j: junctions[j], phase });
+      for (const [id, [stop, j, phase, px, py]] of Object.entries(data.edges)) this.byId.set(id, { stop, j: junctions[j], phase, ...(px !== undefined && py !== undefined ? { pole: [px, py] as [number, number] } : {}) });
     }).catch(() => {}).finally(() => {
       this.loaded = true;
       for (const edges of this.pending) this.add(edges);
@@ -141,6 +141,8 @@ export class Signals {
       // At the kerb, right of the street's centre line.
       const line = new Polyline(offsetLine(e.pts, e.width / 2 + 0.6));
       const p = line.at(line.length - sig.stop);
+      // On its surveyed pole where the map has one (pipeline/build_signals.py).
+      if (sig.pole) { this.heads.push({ e, sig, x: sig.pole[0], y: sig.pole[1], ang: p.ang }); continue; }
       // Where the junction flares the carriageway is wider than the street: out to its kerb.
       const nx = Math.sin(p.ang), ny = -Math.cos(p.ang);
       let out = 0;

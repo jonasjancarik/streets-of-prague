@@ -853,6 +853,8 @@ uv run build_metro.py centrum      # the metro from PID's timetables → metro.j
 uv run build_buses.py centrum      # bus lines and stops from PID's timetables → buses.json
 uv run build_footfall.py centrum   # how busy the streets are → footfall.png
 uv run build_lamps.py centrum      # street lamps from IPR's utility map → lamps.bin.gz
+uv run ipr_greenery.py build centrum  # IPR's surveyed lawns, shrubs, hedges and flower beds into the tiles (optional)
+uv run ipr_utility.py build centrum   # manhole covers, storm drains, traffic-light poles into the tiles (optional; before build_signals.py)
 uv run build_signals.py centrum    # traffic lights at junctions from OSM → signals.json
 uv run build_bikes.py centrum      # shared bikes' stations from GBFS feeds → bikes.json
 uv run build_districts.py centrum  # parts of town from OSM's cadastral areas → districts.json
@@ -1242,7 +1244,8 @@ libraries to `dist/licenses.txt` (a small plugin in `vite.config.js`).
 - Landmarks, and the roof and wall colours: photorealistic 3D model of Prague, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh), CC BY.
 - Carriageways and parking bays: Digitální technická mapa kraje, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/28A24EB4-5EE8-436E-B0BB-357025258211), CC BY.
 - Paid-parking sections and occupancy: [TSK Praha](https://zps.tsk-praha.cz/).
-- Street lamps: the surface marks of the archived utility map (DTMP_CUR_TMISZNAK_B), datový podklad © [IPR Praha](https://geoportalpraha.cz/), CC BY.
+- Street lamps, manhole covers, storm drains and traffic-light poles: the surface marks of the archived utility map (DTMP_CUR_TMISZNAK_B), datový podklad © [IPR Praha](https://geoportalpraha.cz/), CC BY.
+- Lawns, meadows, flower beds, shrubs and hedges on city-managed land: vegetation elements (OPK_CUR_OPK_SMZ_VP_P and _B), datový podklad © [IPR Praha](https://geoportalpraha.cz/), CC BY.
 - Unmapped ground (`ground_cover.py`, `?ortho`): orthophotos and the digital surface model © [IPR Praha](https://geoportalpraha.cz/), CC BY 4.0; older surface model DMP 1G © [ČÚZK](https://geoportal.cuzk.cz/), CC BY 4.0.
 - Tram sounds: [Freesound](https://freesound.org), nearly all CC0; the motor's whine is
   [tramvaj nova prujezd nabrezi MS](https://freesound.org/s/621068/) by ozvuk,
