@@ -12,10 +12,10 @@ export default {
     let j = t.pressJ();
     if (!t.check('J on foot brings a courier offer', j.state === 'offer' && j.id === 'courier', j)) return;
     j = t.pressJ();
-    t.check('J again takes it', j.state === 'on' && j.step === 0 && !!j.at && j.left! > 30, j);
+    t.check('J again takes it, and the first time the dispatcher explains', j.state === 'on' && j.step === 0 && j.steps === 3 && document.body.classList.contains('talking'), j);
     t.pressJ();
     j = t.pressJ();
-    t.check('J twice gives it up, at no cost', j.state === 'idle' && t.probe().money === 1000 && j.failed === 0, j);
+    t.check('J twice gives it up, at no cost, and the conversation goes', j.state === 'idle' && t.probe().money === 1000 && j.failed === 0 && !document.body.classList.contains('talking'), j);
 
     // Done: to the parcel, then to where it goes.
     t.startJob('courier');

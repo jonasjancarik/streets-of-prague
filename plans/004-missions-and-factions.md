@@ -95,7 +95,19 @@ undo. Where an answer shapes content, the content is data.
   jobs that depend on reputation. Phases 3 and 4.
 - The first-time conversation (`brief`) is written and wired but was never seen running.
 
-CHECKED_PLACEHOLDER
+### Checked
+
+Run in headless Chrome with `node scripts/scene.mjs run <name>`, all passing:
+`job-books` (the save's version step), `job-courier` (offer, take, first-time talk,
+give up, done and paid, reputation, out of time), `job-taxi` (offer on getting in,
+pick-up, drop-off, paid, fails after 20 s out of the car), `job-ambulance` (done, out of
+time), `job-fire` (a car burns at the place, no other engine is sent, the cannon puts it
+out, paid; left alone it blows up and the job fails).
+
+Not run: `scenarios/job-tram.ts` (written, never run, so the tram shift is unproven
+beyond typechecking), `scene.mjs run all` for the older scenarios, `npm run build`, the
+game in Czech on screen, a touch screen, the marker's edge arrow from every side, frame
+times with a mission on, failing by being wasted or busted.
 
 ## Goal and scope
 

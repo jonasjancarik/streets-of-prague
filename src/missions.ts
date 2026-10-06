@@ -151,6 +151,8 @@ export function talk(lines: Line[], goal: Text): Step {
     goal,
     begin: (_run, w) => { void w.dialog.play(lines).then(() => { over = true; }); },
     tick: () => over,
+    // Called off in the middle of it: the conversation goes too.
+    end: (_run, w) => { if (!over && w.dialog.active) { w.dialog.lines = []; w.dialog.next(); } },
   };
 }
 
