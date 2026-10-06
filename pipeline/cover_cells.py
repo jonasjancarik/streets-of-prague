@@ -11,8 +11,9 @@ so both tiles of an edge come to the same answer on both sides of it.
   cells()     the same per 0.5 m cell
   local()     each cell's surroundings: means over the bare cells within a few metres
   rules()     the fixed thresholds of the first version, on those means
-  material()  what hard ground is made of, from a model trained on OSM's surface= tags
-              (cover_labels.py), in place of the rules' asphalt, gravel or dirt
+  material()  what hard ground is made of, from a model kept in cover_model.json, in place
+              of the rules' asphalt, gravel or dirt (no model is trained yet: without the
+              file the rules decide; see cover_labels.py)
   polygons()  class map -> smooth outlines, cut to the tile
 """
 

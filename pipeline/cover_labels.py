@@ -1,27 +1,21 @@
-"""Labels for the ground cover classifier, and how well it does against them.
+"""How well the ground cover classifier does against the labels made by hand.
 
-Two kinds of label:
+108 pieces of bare ground round Smíchov were labelled by eye (truth.json and sample.json in
+.cache/cover/, with the pieces and photographs `ground_cover.py fetch` and `sheet` left
+there). They are only ever scored against, never trained on or tuned to after 28 September.
 
-  hand   108 pieces of bare ground round Smíchov, labelled by eye (truth.json and sample.json
-         in .cache/cover/, with the pieces and photographs `ground_cover.py fetch` and `sheet`
-         left there). Only ever scored against, never trained on.
-  weak   what OSM says a surface is: surface= on areas and ways over the whole city (osmium
-         export of the extract into .cache/cover/surface.geojsonseq), and railway ballast
-         from the tiles. Noisy (parked cars, tree crowns, old tags), but they come by the
-         thousand and from every district.
+    uv run --group cover cover_labels.py score praha    # the first version's pieces, and the cells
 
-    uv run --group cover cover_labels.py index praha            # the weak labels, sorted by tile
-    uv run --group cover cover_labels.py rows praha --tiles 400 # training rows from the photographs kept
-    uv run --group cover cover_labels.py train praha            # fit, cross-validate, write cover_model.json
-    uv run --group cover cover_labels.py score praha            # the hand labels: rules, and rules + model
+Still to write (plan 014, "What is left"): weak labels from OSM's surface= tags over the
+whole city (.cache/cover/surface.geojsonseq is the osmium export they would come from) and
+railway ballast, a material model trained on them and kept as plain numbers in
+cover_model.json (cover_cells.material reads it when it is there), and its score here.
 """
 
 import argparse
 import json
-import pickle
 import time
-from collections import Counter, defaultdict
-from pathlib import Path
+from collections import defaultdict
 
 import numpy as np
 
@@ -29,9 +23,6 @@ import cover_cells
 import ground_cover as G
 
 CACHE = G.CACHE
-WEAK = CACHE / "weak"
-HELD_OUT = (49, 55, 51, 57)   # the block of tiles round the hand labels: no training rows from here
-LABELLED = (51, 53, 53, 55)
 
 
 def kept_fetch(url, kind, area, t, res=G.RES, window=None):
@@ -132,10 +123,8 @@ def score(area, meta, model_path=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["index", "rows", "train", "score"])
+    ap.add_argument("cmd", choices=["score"])
     ap.add_argument("area")
-    ap.add_argument("--tiles", type=int, default=400)
-    ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--model", help="score: a model file other than cover_model.json")
     args = ap.parse_args()
     meta = json.loads((G.OUT / f"{args.area}_now" / "index.json").read_text())

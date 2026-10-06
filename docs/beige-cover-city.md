@@ -163,6 +163,48 @@ not kept.
   `ground_cover.py build` is run again (an error under `layers.py --strict`).
 - Fully empty tiles are never listed, so they could not get cover (none in `praha`).
 
+## Cells, margins and courtyards (branch `night-beige`, 6 October 2026)
+
+The build no longer cuts each tile's ground into pieces of its own. `cover_cells.py`
+classifies every 0.5 m cell from the bare ground within a few metres of it (the same
+thresholds, on Gaussian means), and a tile is worked out with a 16 m margin of its
+neighbours' photographs, outlines and heights. Nothing looks further than the margin, so
+the two tiles of an edge give the cells along it the same class (0 of 10,240 cells
+differed on three Smíchov edges), and outlines now run exactly to the tile's edge
+instead of rounding off before it. The surveyed courtyards (`dtm_yard`) are classified
+too (plan 014). Scores against the hand labels are in plan 014's Result: about the same
+as before, the material of hard ground included (38 %).
+
+Not done: the city was not rebuilt with this, and the model for asphalt, gravel and
+dirt from OSM `surface=*` tags was not written. To rebuild the city's cover from the
+photographs on disk (courtyard tiles that were never looked at are downloaded from IPR,
+politely, at `--jobs` requests at a time):
+
+    cd pipeline
+    uv run --group cover ground_cover.py build praha --jobs 10
+
+The last full run of the old code took 7 min 51 s on ten processes on an idle machine. A
+tile now costs more (a quarter more pixels, and its neighbours' photographs are opened
+for the margin), and more tiles qualify: expect 20 to 30 minutes plus the new
+downloads. Not measured: the machine was overloaded on the night this was written
+(16 `ujezd` tiles took 243 s on four processes at a load average near 300).
+
+### Ground outside IPR's photographs: ČÚZK's orthophoto
+
+Checked 6 October 2026, not used yet. Ortofoto ČR has been open data since 1 July
+2023 under CC BY 4.0 (the Land Survey Office's "Zásady užívání dat a služeb" of
+23 March 2026, section 1.2, and the product's page on geoportal.cuzk.gov.cz), 12.5 cm a
+pixel, half the country renewed each year. The ArcGIS service
+`https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO/MapServer` exports up to
+4096 × 4096 pixels in S-JTSK (its cache has a 0.25 m level), and the terms name export
+of cut-outs as a way to get the open data; WMS and WMTS exist too. The infrared
+orthophoto (WMS `geoportal.cuzk.gov.cz/WMS_ORTOFOTO_CIR`, a layer a year, 2010–2025) is
+free of charge but its page gives only the decree, not CC BY: until that is cleared,
+greenness outside Prague has to come from the colour photograph. `cover_cells.measure`
+has that path (`infrared=False`) and `tile_cover` takes another `fetch`, but no
+downloader for ČÚZK is written, the green index is untested, and IPR's surface model
+has to be checked for those tiles first.
+
 ## What changed on disk
 
 - Code: `pipeline/ground_cover.py` (`build`), `pipeline/layers.py` (`merge_cover`,

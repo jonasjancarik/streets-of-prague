@@ -18,6 +18,10 @@ Two ways, for comparing on a few tiles; the game shows them with ?cover=<method>
                       TYPESAFE_API_KEY; without it the requests are only written out)
             Trees come from the surface model: the tops of the canopy.
 
+`build` (the whole map, below) no longer cuts pieces: it classifies every 0.5 m cell with
+the same thresholds as `rules`, each tile together with a margin of its neighbours
+(cover_cells.py), and includes the technical map's courtyards (dtm_yard).
+
     uv run --group cover ground_cover.py fetch praha 49 55 51 57     # tiles i0 i1 j0 j1
     uv run --group cover ground_cover.py ortho praha 51 53 53 55
     uv run --group cover ground_cover.py classify praha 51 53 53 55 --method rules
@@ -1088,8 +1092,7 @@ def tile_classes(area, meta, t, around=None, fetch=None, infrared=True, model="k
     if mask[M:-M, M:-M].sum() * RES * RES < MIN_BEIGE * 0.5:
         return ()
     cir = joined(CIR, "cir", area, t, around, fetch)[0] if infrared else None
-    dsm = (fetch or photo)(None, "dsm", area, ext) if fetch and getattr(fetch, "dsm", False) else ipr_dsm(area, ext, RES, cache=False)
-    P = cover_cells.measure(rgb, cir, dsm, terrain_wide(area, meta, t, ext, RES), infrared)
+    P = cover_cells.measure(rgb, cir, ipr_dsm(area, ext, RES, cache=False), terrain_wide(area, meta, t, ext, RES), infrared)
     cls = cover_cells.classify(P, mask, near_masks(ext, tiles), cover_cells.load_model() if model == "kept" else model)
     return P, mask, cls, cover_cells.voted(cls), ext
 

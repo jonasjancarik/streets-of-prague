@@ -6,7 +6,7 @@ read_when: Planning a later orthophoto-based material pass for DTM courtyards, a
 
 ## Status and starting point
 
-PLANNED. This is the deferred fourth phase of [plan 013](013-fill-the-beige-ground.md).
+IN PROGRESS (see "Result so far"). This is the deferred fourth phase of [plan 013](013-fill-the-beige-ground.md).
 No photo download, classifier change, tile build or shared-data activation is part
 of this plan's creation.
 
@@ -67,5 +67,39 @@ execution decision after the small-area result.
   visually credible, or the extra tile and draw costs exceed the benefit. Keep
   the neutral yard fallback in that case.
 
-No implementation has begun. Shared `public/data` and downloaded photo caches
-must be copied or isolated before any future generation.
+Shared `public/data` and downloaded photo caches must be copied or isolated before
+any generation.
+
+## Result so far (branch `night-beige`, 6 October 2026)
+
+Status: IN PROGRESS. Code is in place and tried on `ujezd`; the city has not been
+rebuilt and nothing was checked in the game.
+
+- `ground_cover.py build` now classifies the surveyed courtyards with the plain
+  ground (`bare_mask`: `dtm_yard` no longer counts as covered). The courtyard keeps its
+  outline and its neutral paving wherever the classifier says "not ground" (shadow,
+  roofs, clutter) or sees no photograph; cover polygons are drawn above it.
+- The classifier works cell by cell with a 16 m margin from the neighbouring tiles
+  (`pipeline/cover_cells.py`), so a patch keeps its class across a tile edge. On the
+  kept Smíchov photographs three shared edges had 0 differing cells of 10,240;
+  `test_cover_layer.py` holds the same check on a synthetic field.
+- On the 108 hand labels the cells do about as well as the first version's pieces
+  (exact 58 % against 62 %, green or not 92 % against 93 %, material on hard ground
+  38 % against 40 %, not ground caught 88 % against 92 %; `cover_labels.py score`).
+  The differences are within what 108 pieces can show. More dirt is now left
+  plain as "not ground" (1,154 m2 against 684 m2 of the labelled dirt).
+- `ujezd` (16 tiles): trees 0.30 → 1.52 ha (courtyard canopy), dirt 0.04 → 0.31 ha,
+  asphalt 0.11 → 0.27 ha, gravel 0.98 → 1.04 ha; the cover layer grew from 96 to
+  128 KB of JSON. One block was compared with the photograph by eye (rows of trees in
+  two courtyards match); no courtyard was hand-labelled.
+
+## What is left
+
+1. Rebuild the city's cover and look at it in the game (commands in
+   `docs/beige-cover-city.md`). More tiles qualify now that courtyards count, so IPR's
+   photographs of those tiles are downloaded on the first run.
+2. Hand-check courtyards (steps 4 and 5 above): none were labelled. Most courtyard
+   ground in the centre is in shadow in the photographs and stays neutral.
+3. The material of hard ground is still the rules' weak call. The plan was a model
+   trained on OSM `surface=*` tags as weak labels; `cover_cells.material` and the
+   feature list are ready for it, the labels and the training are not written.
