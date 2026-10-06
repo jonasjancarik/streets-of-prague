@@ -1,7 +1,8 @@
 import { getLang } from './i18n.ts';
 
-// The player's money: it starts at 10 000 Kč and only goes on taxis, PID tickets and
-// shared bikes. It never goes below zero (save.ts keeps it between visits).
+// The player's money: it starts at 10 000 Kč, goes on taxis, PID tickets and shared
+// bikes, and comes in from jobs (missions.ts). It never goes below zero (save.ts keeps
+// it between visits).
 
 export const START_MONEY = 10000;
 // PID's time tickets for an adult in Prague from 1 January 2026, at the app's price
@@ -33,9 +34,12 @@ export class Wallet {
   balance: number;
   paid = 0; // the last payment, shown for a moment
   paidT = 0; // seconds left of showing it
+  got = 0; // the last money that came in, shown the same way
+  gotT = 0;
   private ticket: { from: number; minutes: number } | null = null;
   // Told what money went on, each time some does (main.ts counts it for the statistics).
   onSpend: ((what: string, amount: number) => void) | null = null;
+  onEarn: ((what: string, amount: number) => void) | null = null;
 
   constructor(params: URLSearchParams) {
     const n = Number(params.get('money'));
@@ -49,6 +53,14 @@ export class Wallet {
     const got = Math.max(0, Math.min(this.balance, Math.round(n)));
     this.balance -= got;
     if (got > 0) { this.paid = got; this.paidT = 3; this.onSpend?.(what, got); }
+    return got;
+  }
+
+  // Money coming in. `what` names what it was for.
+  give(n: number, what: string) {
+    const got = Math.max(0, Math.round(n));
+    this.balance += got;
+    if (got > 0) { this.got = got; this.gotT = 4; this.onEarn?.(what, got); }
     return got;
   }
 
@@ -72,7 +84,10 @@ export class Wallet {
     return true;
   }
 
-  update(dt: number) { if (this.paidT > 0) this.paidT = Math.max(0, this.paidT - dt); }
+  update(dt: number) {
+    if (this.paidT > 0) this.paidT = Math.max(0, this.paidT - dt);
+    if (this.gotT > 0) this.gotT = Math.max(0, this.gotT - dt);
+  }
 }
 
 export type PidState = 'ticket' | 'grace' | 'dodging' | 'checked' | null;

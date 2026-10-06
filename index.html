@@ -103,6 +103,21 @@
       #wanted.blink .on { animation: blink 0.8s steps(2, jump-none) infinite; }
       #money { margin-top: 6px; font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; opacity: 0.85; }
       #money .paid { color: var(--accent); margin-left: 6px; }
+      #money .got { color: #7fd98a; margin-left: 6px; }
+      /* Work: the offer on your phone, or the job under way (missions.ts). */
+      #job { margin-top: 8px; max-width: 280px; padding-top: 7px; border-top: 2px solid var(--key); cursor: pointer; }
+      #job .job-from { font: 16px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; opacity: 0.7; }
+      #job .job-text { margin-top: 4px; line-height: 1.25; }
+      #job .job-meta { margin-top: 4px; font: 18px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
+      #job .job-meta .late { color: var(--accent); }
+      #job .job-note { margin-top: 4px; color: var(--accent); }
+      #job .job-note.good { color: #7fd98a; }
+      #job .job-note:first-child { margin-top: 0; }
+      #job .job-keys { margin-top: 5px; font-size: 12px; opacity: 0.75; }
+      #job .job-keys b { display: inline-block; background: var(--ink); color: #140d0c; padding: 0 6px; margin-right: 4px; }
+      #mark { position: fixed; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: none; font: 16px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; color: #5ee6a8; text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 1px 1px 0 #140d0c; }
+      #mark[hidden] { display: none; }
+      #mark i { font-style: normal; font-size: 26px; line-height: 1; }
       #money .valid { font-size: 14px; opacity: 0.7; margin-left: 10px; }
       #health { height: 5px; margin-top: 8px; background: var(--key); border-radius: 3px; overflow: hidden; }
       #health:empty { display: none; }
@@ -569,11 +584,13 @@
       <div id="tally"></div>
       <div id="ride" hidden></div>
       <div id="taxi" hidden></div>
+      <div id="job" hidden></div>
       <div id="board" hidden></div>
     </div>
     <div id="hurt"></div>
     <div id="fade"></div>
     <div id="banner"></div>
+    <div id="mark" hidden></div>
     <div id="district" aria-live="polite"></div>
     <div id="help" class="panel" data-mode="foot">
       <section class="foot-only">
@@ -585,6 +602,7 @@
           <dt><kbd>Space</kbd></dt><dd data-t>Jump</dd>
           <dt><kbd>E</kbd></dt><dd data-t>Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop</dd>
           <dt><kbd>T</kbd></dt><dd data-t>Get a taxi: wave one down or order one through an app</dd>
+          <dt><kbd>J</kbd></dt><dd data-t>Jobs: ask for work, take the job on offer, or give one up</dd>
         </dl>
       </section>
       <section class="car-only">

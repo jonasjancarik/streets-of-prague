@@ -15,6 +15,9 @@ import type { TramBody } from './trams.ts';
 import type { Kind } from './weather.ts';
 import type { Boats } from './boats.ts';
 import type { Bags } from './bags.ts';
+import type { Missions } from './missions.ts';
+import type { Standing } from './factions.ts';
+import { upgrade } from './save.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
 // as window.__test. Positions are latitude/longitude in and out, headings are compass
@@ -74,6 +77,13 @@ interface Game {
   season: { set: (when: string | number) => void; date: () => string };
   rng: () => number;
   bags: Bags;
+  missions: Missions;
+  standing: Standing;
+  // Trams: the ride you're on (ride.ts) and every tram running.
+  tram: {
+    ride: { on: boolean; driving: boolean; v: { speed: number } | null; atName: string | null; next: { stop: { name: string }; dist: number } | null; passengers: { doors: boolean; on: number; off: number } | null; board: (v: never) => void; steal: () => boolean; doors: () => void };
+    list: () => { parts: { x: number; y: number }[]; look?: unknown }[];
+  };
 }
 
 type Controls = { move: number; turn: number; run: boolean; brake: boolean; jump: boolean; aim: { h: number; mag: number } | null };
@@ -294,6 +304,59 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         engine: e ? e.phase : null, spraying: g.brigade.crew.filter((k) => k.engine.target === c && k.spraying).length, cannon: !!e && !!e.spraying,
       };
     },
+
+    // ---- Work (missions.ts) ----
+    // What's on: 'idle', 'offer' or 'on', the job's id, its step and objective, the seconds
+    // left, the pay, where it wants you (lat, lon), the last outcome, and the books.
+    job() {
+      const p = g.missions.probe();
+      const at = p.at ? g.toLonLat(p.at.x, p.at.y) : null;
+      return { ...p, at: at ? [round(at[1], 5), round(at[0], 5)] as Point2 : null, away: p.at ? Math.round(Math.hypot(p.at.x - g.me().x, p.at.y - g.me().y)) : null, rep: { ...g.standing.rep } };
+    },
+    // The jobs there are, and what each needs you to be driving.
+    jobs() { return g.missions.defs.map((d) => ({ id: d.id, needs: d.needs ?? null })); },
+    // Starts a job straight away, without the first-time talk. Throws when it can't be done from here.
+    startJob(id: string) {
+      const def = g.missions.defs.find((d) => d.id === id);
+      if (!def) throw new Error(`No job called ${id}; there are ${g.missions.defs.map((d) => d.id).join(', ')}`);
+      if (!g.missions.start(def, undefined, false)) throw new Error(`The ${id} job can't be done from here`);
+      return kit.job();
+    },
+    // The phone: J (ask for work, take the offer, give up: twice), or an offer of one job.
+    pressJ() { g.missions.key('KeyJ'); return kit.job(); },
+    offerJob(id: string) { const def = g.missions.defs.find((d) => d.id === id); return !!def && g.missions.propose(def); },
+    // Offers nobody asked for (off in test runs unless turned on).
+    autoJobs(on: boolean) { g.missions.auto = on; },
+    // The seconds left for the step under way (to test running out of time).
+    jobTime(seconds: number) { if (g.missions.run) g.missions.run.left = seconds; },
+    // Starts the books again: nothing done, nobody knows you.
+    clearJobs() { g.missions.stop(); g.missions.note = null; g.missions.progress = { done: {}, failed: 0, earned: 0 }; g.standing.rep = {}; },
+    // Puts you (and what you drive) where the job wants you, `back` m short of it.
+    async toJob(back = 0) {
+      const at = g.missions.target();
+      if (!at) throw new Error('The job has no place to go to right now');
+      const m = g.me(), d = Math.hypot(at.x - m.x, at.y - m.y) || 1;
+      await g.teleport(at.x - ((at.x - m.x) / d) * back, at.y - ((at.y - m.y) / d) * back);
+      await frame();
+      return kit.job();
+    },
+    // What a saved game of an older format becomes (null: can't be opened).
+    upgradeSave(old: unknown) { return upgrade(old); },
+    // Onto the nearest tram and into its cab, as F does once you ride one.
+    takeTram() {
+      const m = g.me(), ride = g.tram.ride;
+      const v = g.tram.list().filter((k) => k.look).sort((a, b) => Math.hypot(a.parts[1].x - m.x, a.parts[1].y - m.y) - Math.hypot(b.parts[1].x - m.x, b.parts[1].y - m.y))[0];
+      if (!v) throw new Error('No tram running near here');
+      if (g.mode() !== 'foot') g.enterOrExit();
+      ride.board(v as never);
+      if (!ride.steal()) throw new Error('Could not take the tram over');
+    },
+    // The tram you drive: its speed (km/h), the stop its front is at, the next one ahead and whether the doors are open.
+    tram() {
+      const r = g.tram.ride;
+      return r.driving && r.v ? { speed: round(r.v.speed * 3.6), at: r.atName, next: r.next ? { name: r.next.stop.name, dist: Math.round(r.next.dist) } : null, doors: !!r.passengers?.doors, on: r.passengers?.on ?? 0, off: r.passengers?.off ?? 0 } : null;
+    },
+    tramDoors() { g.tram.ride.doors(); },
 
     // Into a new car of this type (out of whatever you were in first).
     async drive(type = 'hatch') {
