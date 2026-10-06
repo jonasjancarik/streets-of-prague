@@ -7,7 +7,7 @@
 // stretch of line with no street for cars.
 // node scripts/check-bus-lines.mjs [area] [--list n] [--most n]
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { City, network } from './offline-city.mjs';
 const buses = await import('../src/buses.ts');
 
@@ -60,7 +60,9 @@ function follow(g, line, edge, along) {
   console.log('Bus line fixtures passed: a short side street beside the line, a way round a missing street, stops skipped on the way round');
 }
 
-const city = new City(area), g = city.graph();
+const city = new City(area);
+if (!existsSync(new URL('buses.json', city.dir))) { console.log(`${area} has no bus lines`); process.exit(0); }
+const g = city.graph();
 const lines = buses.parseBusLines(JSON.parse(readFileSync(new URL('buses.json', city.dir), 'utf8')));
 const cell = 60, index = new Map();
 for (const e of g.edges) {
