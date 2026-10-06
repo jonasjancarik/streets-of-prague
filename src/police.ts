@@ -258,7 +258,18 @@ export class Police {
   // `car`: the police car that was hit, if any; its crew gets out and comes after you,
   // wrecked or not.
   crime(kind: keyof typeof POINTS, x: number, y: number, car?: Car) {
-    if (kind === 'hitCop' && car?.crew) this.getOut(car);
+    if (kind === 'hitCop' && car?.crew) {
+      this.getOut(car);
+      // A patrol riding along with the traffic has no one to drive it once its officer is
+      // out (the traffic would carry on with an empty car, the door open): it joins the
+      // chase cars, which wait for their officers.
+      const ride = this.traffic.agents.find((a) => a.car === car);
+      if (ride) {
+        this.traffic.release(ride);
+        car.mode = 'police';
+        this.cars.push({ car, path: null, s: 0, replan: 0, stuck: 0, reverse: 0, calm: false, wrecked: false });
+      }
+    }
     if (this.cool[kind] > 0) return;
     telemetry.did(`crime: ${CRIME_NAMES[kind]}`);
     this.cool[kind] = COOLDOWN[kind] || 0;
