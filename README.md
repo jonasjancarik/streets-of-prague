@@ -60,7 +60,9 @@ The weather changes by itself every half hour or so of the game's clock;
 `?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen
 (language, season, time, weather and sound). The real weather in Prague, from
 Open-Meteo (`src/liveweather.ts`), is offered only for today's game date; other dates
-start with weather chosen for that season. <kbd>P</kbd> steps through the weather.
+start with weather chosen for that season. A game begun with it follows the real
+weather as it changes, until you pick one yourself ([docs/live-weather.md](docs/live-weather.md),
+which also covers ČHMÚ's open data as a source through the Worker). <kbd>P</kbd> steps through the weather.
 `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?dialog` plays a sample conversation, `?menu` shows only the start screen without loading the map (quick to reload while working on the screen, the beta note or the signup form; the note then shows on every press of Start), `?touch` shows the touch controls on a desktop, a new game starts at one of ten places around the city picked at random (`STARTS` in `src/main.ts`) and `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. The Czech is kept gender-neutral towards the player for now (see the note at the top of `src/cs.ts`). Elements in `index.html` marked `data-t` work the same way.
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
@@ -395,9 +397,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   snows, all made in Web Audio (`src/audio.ts`).
 - **Night** (`src/lamps.ts`): the street lamps are IPR's, about 130,000 of them: on
   poles, on walls, the Old Town's gas lamps, floodlit monuments, tunnels and
-  underpasses (`pipeline/build_lamps.py`). Side streets whose lamps hang on cables
-  between the houses aren't in that map, so a street with no lamp within 20 m gets
-  one hung over it every 30 m. Round the view the lamps get a pole and a glowing head,
+  underpasses (`pipeline/build_lamps.py`), with the street lamps only OSM has added.
+  Side streets whose lamps hang on cables between the houses aren't in that map, so
+  a street OSM tags as lit (`lit.bin.gz`) with no lamp within 20 m gets one hung over
+  it every 30 m, between the houses; a lit street the survey doesn't reach at all gets
+  lamps on poles. Streets tagged as dark, and those with no tag, get none. Round the view the lamps get a pole and a glowing head,
   and every lamp and every driving car's headlights and rear lights add a pool of
   light to a light map: a texture over the view, drawn from above each frame. The
   ground, walls, trees, cars and people read their light from it by position, so the

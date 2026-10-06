@@ -171,6 +171,14 @@ depend on the date.
    controls. Draw counts stayed equal within each pair, but frame-time variation
    leaves the added cost unresolved; no speedup is claimed. See
    [the source, cameras, images and raw timing evidence](../docs/evidence/seasons-step3/README.md).
+   **Still unresolved (6 October).** A night session was to measure the seasonal
+   ground against the plain one with `bench.mjs --ab` (each seasonal ground material
+   swapped for its `userData.summerGround()`), and didn't get to it: about ten
+   sessions shared the machine (load averages of 100–300) and the session was cut
+   off for four hours. Nothing was measured, so nothing was changed. The comparison
+   to run on a quiet machine, in a park or a wood at 2×, with an unchanged-build
+   control first:
+   `node scripts/bench.mjs --scenes woods --dpr 2 --time 14:00 --weather clear --extra "&date=10-20" --require-webgpu --ab 'window.__ab = (on) => { window.__drive.scene.traverse((o) => { const m = o.material; if (!m || Array.isArray(m)) return; const u = o.userData; if (!u.seasonal && m.userData && m.userData.summerGround) { u.seasonal = m; u.summer = m.userData.summerGround(); } if (u.seasonal) o.material = on ? u.seasonal : u.summer; }); }; window.__ab(false); window.__ab(true);'`
 4. **Start screen and words.** The season row and the poster's look for each
    (`index.html`), Czech strings (`src/cs.ts`), README, `site/index.html`, a note in
    `todo.md`. Half a day.
