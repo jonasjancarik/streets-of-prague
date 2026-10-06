@@ -38,6 +38,9 @@ MITRE = 2.0  # a ribbon's corner is cut off once it would reach this many half w
 # gaps and holes this small between the two are pavement.
 GAP = 0.3
 HOLE = 25.0  # m²
+# The carriageway's rounded corners (dtm.py) are hundreds of thousands of points a
+# chunk, which growing it trips over; within this they make no difference here.
+COARSE = 0.03
 # A surveyed surface with no tagged footway on it is paved like the nearest one that
 # has, within this distance; further, with the mosaic.
 ALIKE = 60.0
@@ -146,14 +149,18 @@ def surveyed(walks, streets, ways, squares, green, clip, stats=None):
     if not walked.is_empty and not streets.is_empty:
         # The little gaps and holes between pavement and carriageway go to the
         # pavement beside them (the larger of the kinds there, which is drawn last).
-        both = shapely.union(walked, streets, grid_size=GRID)
-        closed = both.buffer(GAP, join_style="mitre", mitre_limit=MITRE).buffer(-GAP, join_style="mitre", mitre_limit=MITRE)
-        holes = np.array([Polygon(r) for p in shapely.get_parts(closed) if p.geom_type == "Polygon" for r in p.interiors], dtype=object)
+        streets = _areas(shapely.make_valid(shapely.simplify(streets, COARSE)))
+        both = _areas(shapely.union(walked, streets, grid_size=GRID))
+        fill = _gaps(polys, streets, both)
+        if not fill.is_empty:
+            both = _areas(shapely.union(both, fill, grid_size=GRID))
+        holes = np.array([Polygon(r) for p in shapely.get_parts(both) if p.geom_type == "Polygon" for r in p.interiors], dtype=object)
         if len(holes):
             holes = holes[shapely.area(holes) <= HOLE]
-            shapely.prepare(walked)
-            holes = holes[shapely.intersects(walked, shapely.buffer(holes, 0.05))]
-        fill = _areas(shapely.union_all([closed.difference(both), *holes]))
+            near = STRtree(polys).query(holes, predicate="dwithin", distance=0.05)[0] if len(holes) else []
+            holes = holes[np.unique(near)]
+        if len(holes):
+            fill = _areas(shapely.union_all([fill, *holes]))
         if not fill.is_empty and green is not None and not green.is_empty:
             fill = _areas(shapely.difference(fill, green, grid_size=GRID))
         if not fill.is_empty:
@@ -165,6 +172,21 @@ def surveyed(walks, streets, ways, squares, green, clip, stats=None):
         for key in [k for k in out if k != "trambed"]:
             out[key] = _areas(shapely.difference(out[key], squares, grid_size=GRID))
     return {k: g for k, g in out.items() if not g.is_empty}, walked
+
+
+def _gaps(polys, streets, both):
+    """The ground within 2 GAP of both a surveyed polygon and the carriageway that is
+    neither of them."""
+    reach = 2 * GAP
+    band = streets.buffer(reach, join_style="mitre", mitre_limit=MITRE)
+    grown = shapely.buffer(polys, reach, join_style="mitre", mitre_limit=MITRE)
+    shapely.prepare(band)
+    grown = grown[shapely.intersects(band, grown)]
+    if not len(grown):
+        return Polygon()
+    near = _areas(shapely.intersection(_areas(shapely.union_all(grown, grid_size=GRID)), band, grid_size=GRID))
+    # (Snapping to the grid can squash a sliver into a line, which an overlay refuses.)
+    return _areas(shapely.difference(near, both, grid_size=GRID))
 
 
 def _paving(polys, labels, ways):

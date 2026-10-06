@@ -449,6 +449,10 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     land = {f"dtm_{kind}": _areas(geom.intersection(clip))
             for kind, geom in dtm.land((w, s, e, n), tf.transform).items()}
     timer.lap("dtm_land")
+    # The footpaths as ribbons with square ends (pavements.py).
+    meet = pavements.joints([g for g, *_ in walking_surfaces])
+    walking_surfaces = [(pavements.ribbon(g, half, meet), *rest)
+                        for (g, *rest), (half, _) in zip(walking_surfaces, walking_widths)]
     # Where family houses stand on land nobody mapped (no residential area, no survey,
     # no mapped use), that land is gardens and meadow too, not pavement.
     spoken_for = [*(g for k, v in areas.items() if k not in NATURAL_GROUND for g in v),
@@ -476,11 +480,8 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
         kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
         areas.setdefault(kind or "square", []).append(poly)
-    # The footpaths as ribbons with square ends, and the pavements, islands and tram
-    # beds the technical map has surveyed in place of the ribbons along them.
-    meet = pavements.joints([g for g, *_ in walking_surfaces])
-    walking_surfaces = [(pavements.ribbon(g, half, meet), *rest)
-                        for (g, *rest), (half, _) in zip(walking_surfaces, walking_widths)]
+    # The pavements, islands and tram beds the technical map has surveyed, in place of
+    # the footways' ribbons along them.
     paved, walked = pavements.surveyed(
         {} if pavements.DERIVED_ONLY else dtm.walks((w, s, e, n), tf.transform), surface, paved_ways,
         unary_union([g for k in ("square", "square_setts", "square_asphalt", "square_loose") for g in areas.get(k, [])]),

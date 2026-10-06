@@ -66,7 +66,8 @@ class Surveyed(unittest.TestCase):
         paved, walked = pavements.surveyed(self.walks, self.street, ways, Polygon(), Polygon(), self.clip, stats)
         # The untagged pavement and the island are paved like the nearest tagged one.
         self.assertEqual(set(paved), {"pavement_asphalt", "trambed"})
-        self.assertAlmostEqual(paved["pavement_asphalt"].area, 820, delta=1)
+        # (With the bit past each end of the street, where both stop on one line.)
+        self.assertAlmostEqual(paved["pavement_asphalt"].area, 820, delta=4)
         self.assertAlmostEqual(paved["trambed"].area, 600, delta=1)
         self.assertFalse(walked.intersects(self.bed))
         self.assertEqual((stats["surveyed_pavement_m2"], stats["surveyed_island_m2"], stats["surveyed_trambed_m2"]), (800, 20, 600))
@@ -77,7 +78,7 @@ class Surveyed(unittest.TestCase):
         ways = [(LineString([(0, 5), (100, 5)]), "sett", True), (LineString([(0, -5), (100, -5)]), "sett", False)]
         paved, _ = pavements.surveyed(self.walks, self.street, ways, Polygon(), Polygon(), self.clip)
         self.assertAlmostEqual(paved["sett"].area, 400, delta=1)  # the walking street
-        self.assertAlmostEqual(paved["pavement"].area, 420, delta=1)  # a cobbled pavement is mosaic; the island too
+        self.assertAlmostEqual(paved["pavement"].area, 420, delta=4)  # a cobbled pavement is mosaic; the island too
 
     def test_gaps_at_the_kerb_are_pavement_but_a_tree_pit_and_a_square_are_not(self):
         street = box(0, -3, 100, 2.8)  # misses the northern pavement by 20 cm
