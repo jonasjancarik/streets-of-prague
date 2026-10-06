@@ -11,7 +11,7 @@ Twenty sessions worked overnight, each on its own branch and worktree
 about 00:20 to 04:55, so most got two to three working hours on a heavily loaded
 machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landmarks`
 (code only), `night-pipeline`, `night-weather`, `night-graphs`, `night-countryside` (behind
-`?countryside`), `night-greenery`, and single commits of
+`?countryside`), `night-greenery`, `night-bridges`, and single commits of
 `night-renderer` (windows on ground floors, the fog, the start-up report) and `night-maplook`
 (sports lines). Not merged, each with its state written in the plan or doc it names:
 
@@ -38,10 +38,6 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
 - **`night-walls`, rest:** surveyed walls, fences and railings from the technical map
   (`pipeline/dtm_walls.py`), built for `ujezd` only and not seen in the game; a
   surveyed wall may close a gateway or yard. The step edges themselves are in main.
-- **`night-bridges`:** stairs beside a deck get their own level (Železniční most at
-  Výtoň), each bridge edge's level handed to the game for paint and tram tracks, two
-  offline checks (`check-bridge-decks.mjs`, `check-terrain-spikes.mjs`). Needs one
-  `praha` terrain rebuild and a look before merging.
 - **`night-boats`:** cruise boats follow a fairway (`river.json`), PID ferries P1, P2,
   P4, P5, P6 run and take tickets; scenarios `ferry-ride` and `cruise-weir` pass.
   No played test.
@@ -66,7 +62,8 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
 The shared map data was not rebuilt. Rebuilds the merged work is waiting for:
 `build_lamps.py ujezd centrum praha` (the new lamp rule; look at suburbs at night
 first), IPR's greenery and street marks (`ipr_greenery.py`, `ipr_utility.py`,
-`build_signals.py`; the downloads are in `night-greenery`'s worktree cache) and the landmark files (`landmarks.py <area> --rebake`). How to rebuild and
+`build_signals.py`; the downloads are in `night-greenery`'s worktree cache), and
+`ipr_terrain.py` for the bridge levels and the landmark files (`landmarks.py <area> --rebake`). How to rebuild and
 check: `docs/rebuilding-the-map.md`, `scripts/check-map-rebuild.mjs`.
 
 ## Release
@@ -190,19 +187,25 @@ before that day's frame-count fix may be doubled.
   `step-edges`; stairs across a step untried);
   frame times and the WebGL renderer; a full-city check of the ground cutting. How to
   work on it: `.agents/skills/terrain-steps/SKILL.md`.
-- **Bridges still off:** Železniční most at Výtoň is fixed in code on `night-bridges`
-  (confirm after a rebuild); Libeňský most's south part (path way 376889215) lies at
-  the water's level, 3.5 m under the streets at its ends; Nuselský most's Pankrác end
-  has ragged corners by the abutment; the Lahovice and Radotín decks are continuous
-  now, with one 9.6 m join left at 49.98353, 14.40065. Four decks are too low for a
-  cruise boat (tiles `49_37`, `52_43`, `54_48`, `64_76`).
+- **Bridges still off:** at Železniční most (Výtoň) the deck's last points take the
+  stairs' heights (1.6–2.5 m); stairs need their own profile in the tile, and giving
+  them a separate level was tried and made it worse (`docs/bridge-deck-check.md`).
+  Libeňský most's south part (path way 376889215) lies at the water's level, about
+  3.5 m under its ends. Nuselský most's Pankrác end has ragged corners by the
+  abutment. The Lahovice and Radotín decks are continuous, with a 9.6 m fault at
+  49.98353, 14.40065. Four decks are too low for a cruise boat (tiles `49_37`,
+  `52_43`, `54_48`, `64_76`). `check-bridge-decks.mjs praha` lists them all (nine
+  named bridges over 1 m).
 - **Car streets crossing drops of 7–10 m on the ground** (`node
   scripts/check-step-edges.mjs praha`): terrain or map faults to look at.
-- **Spikes in the ground:** 1,124 lone points more than 2 m off their neighbours; 402
-  come from terrace strips labelling points on a zigzag wall's high side (Vyšehrad).
+- **Spikes in the ground:** `check-terrain-spikes.mjs` finds 1,124 lone points more
+  than 2 m off their neighbours; 402 are terrace strips carrying wall-top heights
+  (Vyšehrad's bastions), cause not yet found in `dtm_heights.apply`. Ragged cuts are
+  not scanned.
 - **The river's height is wrong north of Troja** (tiles `49_81`, `50_94`, `50_95`).
-- **Paint and tram tracks where two bridges cross** can land on the wrong level. The
-  pipeline knows each way's level and could hand it to the game with the street edges.
+- **Paint and tram tracks where two bridges cross:** the pipeline now hands each
+  way's level to the game; it shows after `ipr_terrain.py` has rebuilt the shared
+  maps (heights stay the same). Look at one crossing afterwards.
 - **Hill shading for a moving sun** (it is baked to the north-west sun) and **hills
   casting shadows**: only worth it with a low evening sun.
 
