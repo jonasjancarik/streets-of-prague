@@ -1,4 +1,5 @@
-import { Car } from './car.ts';
+import { Car, COURIER_BOXES } from './car.ts';
+import { courierLook } from './figures.ts';
 import { posts } from './posts.ts';
 import type { Post } from './posts.ts';
 import type { Point2 } from './map/geo.ts';
@@ -60,6 +61,8 @@ interface Game {
   arrest: { readonly now: { phase: string } | null };
   // Wasted and not yet come round; and the move to the hospital or the cell, once under way.
   recovering: () => boolean;
+  // E beside this car, meaning this car: not a nearer one, a taxi, a tram or a bag.
+  enterCar: (c: Car) => void;
   settled: () => Promise<void>;
   addCar: (c: Car) => void;
   loose: Car[];
@@ -105,6 +108,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     speed: 1,
     // Nothing hurts you (for looking round a chase).
     unhurt: false,
+    // No traffic: nothing new drives in (t.empty() also sends away what is there).
+    quiet: false,
     // The police can't arrest you. On while a scenario runs, unless it turns it off: an
     // arrest leads you away, keeps you out of cars and leaves you at the station.
     unarrested: false,
@@ -137,6 +142,13 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       await g.teleport(x, y);
       if (opt.heading !== undefined) g.me().h = rad(opt.heading);
       await frame();
+    },
+
+    // Exactly here, on foot (go() first: it loads the place, and then stands you on the
+    // nearest walkable ground, which can be a step or two away).
+    stand(w: Where) {
+      const m = g.me();
+      [m.x, m.y] = kit.toLocal(w);
     },
 
     // Scenario preparation uses the ordinary descent/exit controls. Teleporting a
@@ -188,11 +200,19 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null;
     },
 
-    // The nearest delivery courier riding in traffic.
-    courier() {
+    // The nearest delivery courier riding in traffic. `make`: with none about, the
+    // nearest rider of a bike or moped is given a courier's box (traffic makes about
+    // half its riders couriers, so now and then a street has none for a while).
+    courier(make = false) {
       const m = g.me();
-      return g.traffic.agents.map((a) => a.car).filter((c) => c.two && c.courier)
-        .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null;
+      const riders = g.traffic.agents.map((a) => a.car).filter((c) => c.two && c.rider)
+        .sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
+      const c = riders.find((k) => k.courier) ?? (make ? riders[0] : null) ?? null;
+      if (c && !c.courier) {
+        c.setBox(COURIER_BOXES[0]);
+        c.rider = courierLook(g.rng, COURIER_BOXES[0]);
+      }
+      return c;
     },
     // Couriers' bags: the one you carry, and those lying about (how far from you, in metres).
     bags() {
@@ -210,11 +230,29 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       const m = g.me();
       const b = g.bags.list.slice().sort((p, q) => Math.hypot(p.x - m.x, p.y - m.y) - Math.hypot(q.x - m.x, q.y - m.y))[0];
       if (!b) throw new Error('No bag lying about');
-      m.x = b.x - 0.5;
-      m.y = b.y;
+      // Beside it, on the side with the most room to the vehicles round it (the bike it
+      // came off, a car parked at the kerb): E means the nearer of bag and vehicle.
+      const cars = g.carsNear(b.x, b.y, 8);
+      let best = -Infinity;
+      for (let i = 0; i < 12; i++) {
+        const x = b.x + Math.cos(i * Math.PI / 6) * 0.4, y = b.y + Math.sin(i * Math.PI / 6) * 0.4;
+        const room = Math.min(99, ...cars.map((c) => (c.two ? Math.hypot(c.x - x, c.y - y) : c.gap(x, y))));
+        if (room > best) { best = room; m.x = x; m.y = y; }
+      }
     },
     // E, on foot: get in, pick up, put down.
     interact() { g.enterOrExit(); },
+    // The streets without traffic, for a drive nothing should get in the way of (until
+    // the scenario ends, or t.empty(false)).
+    empty(on = true) {
+      kit.quiet = on;
+      if (on) for (const a of [...g.traffic.agents]) g.traffic.release(a);
+    },
+    // How far the nearest vehicle's side is, in metres (E gets you into one within 1.8 m).
+    vehicleGap() {
+      const m = g.me();
+      return Math.min(99, ...g.carsNear(m.x, m.y, 12).filter((c) => c !== g.car() && !c.burnt).map((c) => c.gap(m.x, m.y)));
+    },
     // E as the player presses it: into and out of a car through its door, which takes a
     // moment (t.wait for it).
     press() { g.interact(); },
@@ -287,7 +325,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       const m = g.me(), c = r.car;
       m.x = c.x - Math.sin(c.h) * (c.spec.W / 2 + 0.8);
       m.y = c.y + Math.cos(c.h) * (c.spec.W / 2 + 0.8);
-      g.enterOrExit();
+      g.enterCar(c);
       const crew = g.ambulances.crew;
       return g.car() === c ? crew.filter((k) => k.chase !== undefined).length : -1;
     },
@@ -299,7 +337,18 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       g.fires.check(c);
     },
     // The traffic car nearest to you with a driver in it, and whether it still has one.
-    trafficCar() { const m = g.me(); return g.traffic.agents.map((k) => k.car).filter((c) => !c.two).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null; },
+    // The nearest car in traffic. `roomy`: one with open ground at its driver's door and
+    // no other car within reach of it, so E there means that door.
+    trafficCar(roomy = false) {
+      const m = g.me();
+      const room = (c: Car) => {
+        const door = c.doors.find((d) => d.n === 1);
+        if (!door) return false;
+        const [x, y] = c.beside(door, 1);
+        return g.grid.at(x, y) === 0 && g.carsNear(x, y, 8).every((o) => o === c || o.gap(x, y) > 2);
+      };
+      return g.traffic.agents.map((k) => k.car).filter((c) => !c.two && (!roomy || room(c))).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null;
+    },
     driven(c: Car) { return g.traffic.agents.some((k) => k.car === c); },
     fleeing(c: Car) { return g.crowd.people.filter((p) => p.state === 'flee' && Math.hypot(p.x - c.x, p.y - c.y) < 16).length; },
     // How a car's fire and the brigade's call to it stand.
@@ -326,7 +375,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       const m = g.me();
       m.x = c.x - Math.sin(c.h) * (c.spec.W / 2 + 0.6);
       m.y = c.y + Math.cos(c.h) * (c.spec.W / 2 + 0.6);
-      g.enterOrExit();
+      g.enterCar(c);
       if (g.car() !== c) throw new Error('Could not get into the car');
       await frame();
       return c;
@@ -668,6 +717,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       } finally {
         calm();
         kit.unarrested = false;
+        kit.quiet = false;
       }
       const checks = kit.checks;
       return { name, title: s.title, checks, error, ms: Math.round(performance.now() - t0), pass: !error && checks.length > 0 && checks.every((c) => c.pass) };

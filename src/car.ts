@@ -813,7 +813,9 @@ export class Car {
     const c = Math.cos(this.h), s = Math.sin(this.h), dx = x - this.x, dy = y - this.y;
     const L = this.spec.L / 2, W = this.spec.W / 2;
     const along = clamp(dx * c + dy * s, -L, L), left = clamp(dy * c - dx * s, -W, W);
-    const reach = Math.min(1.3, 0.5 + 0.08 * (force - BREAKS)) * Math.max(1, W / 0.95);
+    // (A wall met nose first is first touched with one corner: at 60 km/h the blow still
+    // reaches the lamp at the other one, at 50 it doesn't.)
+    const reach = Math.min(1.7, 0.5 + 0.1 * (force - BREAKS)) * Math.max(1, W / 0.95);
     for (const [bit, a, l] of [[LAMP.headLeft, L, W - 0.3], [LAMP.headRight, L, 0.3 - W], [LAMP.tailLeft, -L, W - 0.3], [LAMP.tailRight, -L, 0.3 - W]]) {
       if (this.ram && a > 0) continue;
       if (Math.hypot(along - a, left - l) < reach) this.broken |= bit;

@@ -8,6 +8,9 @@ export default {
     t.time('14:00');
     t.weather('clear');
     t.unhurt = true;
+    // Gone, or well on its way: it is taken out of the world only once out of sight and
+    // 250 m from you, which a queue down the street can put off for minutes.
+    const off = (r: { ambulance: string | null; away: number }) => r.ambulance === null || (r.ambulance === 'leave' && r.away > 80);
     try {
       await t.wait(2);
       const p = t.hurt();
@@ -22,8 +25,8 @@ export default {
       }
       t.check('an ambulance got to them', arrived >= 0, `after ${arrived} s`);
       t.check('the paramedics saw to them and they got up', !t.rescue(p).hurt && s < 150, `after ${s} s: ${JSON.stringify(t.rescue(p))}`);
-      for (let i = 0; i < 60 && t.rescue(p).ambulance; i++) await t.wait(1);
-      t.check('the ambulance drove off again', t.rescue(p).ambulance === null);
+      for (let i = 0; i < 150 && !off(t.rescue(p)); i++) await t.wait(1); // (through whatever traffic there is)
+      t.check('the ambulance drove off again', off(t.rescue(p)), JSON.stringify(t.rescue(p)));
 
       // Someone badly hurt is carried to the ambulance and taken away.
       await t.go('ujezd', { heading: 180 });
@@ -38,14 +41,14 @@ export default {
         if (!loaded && t.rescue(q).treated >= 9 && s % 2 === 0) await t.shot('ambulance-carry');
       }
       t.check('the patient was carried to the ambulance and loaded', loaded, `after ${s} s: ${JSON.stringify(t.rescue(q))}`);
-      for (let i = 0; i < 80 && t.rescue(q).ambulance; i++) await t.wait(1);
-      t.check('and the ambulance drove off with them', t.rescue(q).ambulance === null);
+      for (let i = 0; i < 150 && !off(t.rescue(q)); i++) await t.wait(1);
+      t.check('and the ambulance drove off with them', off(t.rescue(q)), JSON.stringify(t.rescue(q)));
 
       // Taking an ambulance (a carjack, as with a fire engine): the paramedics who are out run after you.
       await t.go('ujezd', { heading: 180 });
       await t.wait(2);
       const v = t.hurt()!;
-      for (s = 0; s < 100 && t.rescue(v).ambulance !== 'work'; s++) await t.wait(1);
+      for (s = 0; s < 150 && t.rescue(v).ambulance !== 'work'; s++) await t.wait(1);
       await t.wait(1);
       const chasing = t.steal(v);
       t.check('the ambulance could be taken, with its crew running after you', chasing === 2, `${chasing} after you`);

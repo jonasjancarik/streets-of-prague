@@ -335,7 +335,14 @@ export class Ambulances {
       tx = c.x + Math.cos(c.h); ty = c.y + Math.sin(c.h); want = 0;
       r.t += dt;
       // The patient is seen to once a medic is beside them, for as long as the treatment takes.
-      const there = this.crew.filter((m) => m.rig === r && !m.back && m.down <= 0 && (Math.hypot(m.spot.x - m.x, m.spot.y - m.y) < 0.8 || (m.stuck > 2.5 && Math.hypot(tp.x - m.x, tp.y - m.y) < 7))).length;
+      // (A medic who can't get any nearer counts too: at once from close by, and after a
+      // while from further off, with a wall or a railing in between. Nobody is left lying
+      // because the way round was too long to find.)
+      const there = this.crew.filter((m) => {
+        if (m.rig !== r || m.back || m.down > 0) return false;
+        const d = Math.hypot(tp.x - m.x, tp.y - m.y);
+        return Math.hypot(m.spot.x - m.x, m.spot.y - m.y) < 0.8 || (m.stuck > 2.5 && d < 7) || (m.stuck > 12 && d < 30);
+      }).length;
       if (tp.hurt !== undefined && !r.carried && !r.load) {
         r.treated += dt * there / CREW;
         if (r.treated >= TREAT) {

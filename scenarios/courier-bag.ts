@@ -9,7 +9,7 @@ export default {
     t.weather('clear');
     // (Until a courier rides by: traffic comes at random.)
     let c = t.courier();
-    for (let i = 0; !c && i < 30; i++) { await t.wait(1); c = t.courier(); }
+    for (let i = 0; !c && i < 30; i++) { await t.wait(1); c = t.courier(i >= 10); }
     if (!t.check('a courier in traffic', !!c)) return;
     const colour = c!.courier!;
     await t.enter(c!);
@@ -19,16 +19,19 @@ export default {
     t.exit();
     await t.wait(1.5);
     const people = t.peopleNear(c!.x, c!.y, 12);
-    t.check('the courier ran or is running off', people.some((p) => p.state === 'flee' || p.away > 3), JSON.stringify(people));
+    // (Pushed off a moving bike, the courier is on the ground first and runs once up.)
+    t.check('the courier ran, is running off or was knocked down', people.some((p) => p.state === 'flee' || p.state === 'down' || p.away > 3), JSON.stringify(people));
+    t.empty(); // nothing else to get into by the bag, or later where it is put down
     t.toBag();
     t.interact();
-    t.check('E picks the bag up', t.bags().carried === colour && t.bags().lying.length === 0, JSON.stringify(t.bags()));
+    t.check('E picks the bag up', t.bags().carried === colour && t.bags().lying.length === 0, JSON.stringify({ ...t.bags(), mode: t.where().mode, in: t.probe().car?.type }));
     await t.shot('courier-bag-carried');
     await t.drive('bike');
     t.exit();
     t.check('still carrying it after getting off', t.bags().carried === colour);
     // Away from any vehicle, E puts it down.
     await t.wait(2, { move: 1, run: true });
+    for (let i = 0; i < 20 && t.vehicleGap() < 4; i++) await t.wait(1, { move: 1, run: true });
     t.interact();
     t.check('E puts it down when no vehicle is near', t.bags().carried === null && t.bags().lying.length === 1, JSON.stringify(t.bags()));
   },

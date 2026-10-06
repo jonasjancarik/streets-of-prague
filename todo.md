@@ -255,30 +255,25 @@ before that day's frame-count fix may be doubled.
 
 ## Gameplay
 
-- **`scene.mjs run all` is still unstable** (it was before the night of 5–6 October:
-  four full runs on `27bc5ef` failed two of twenty each, different ones every time).
-  Fixed in the test kit on 6 October: a scenario can't be arrested unless it asks
-  (`t.unarrested`), starts unwanted with no police about, waits for an arrest or a trip
-  to the hospital left by the one before, and the cars the kit put down are taken away
-  first. That ended `police-stand-down` finding no police, `wall-crash` at 16 km/h and
-  `car-doors` 515 m from its door (wasted in `bridge-exit`, brought round at Na
-  Františku during the next scenario). Thirteen full runs since then still failed one
-  to four of 24 each. What is left, each a problem of its own:
-  - `courier-bag` (most runs): "E picks the bag up" does something else when the bike
-    the courier left is within reach, which depends on how the bike was moving; and
-    sometimes no courier rides by Letná in 30 s. Making a courier out of the nearest
-    rider was tried and made it worse.
-  - `lamp-break` (about half the runs, alone too): only one headlamp breaks. A lamp
-    breaks within 1.3 m of where the blow lands (`Car.knock`), so a wall first touched
-    with a corner doesn't reach the other lamp. Aiming square at the wall did not
-    help. Decide whether a head-on crash should break both, or the check should ask
-    for one.
-  - `bridge-exit`: the car now and then blows up or doesn't reach the deck on its
-    scripted drive from the National Theatre (traffic and trams in its way).
-  - `ambulance`, `boat-boarding`, `bike-hit`, `fire-brigade`, `car-doors`: one or two
-    failures each, not looked into.
-  - A car put down by `t.car` can still land inside another car or a tram: a rule
-    against it kept `fire-brigade` from finding room at Újezd and was taken out.
+- **`scene.mjs run all` mostly passes now.** It was unstable before the night of 5–6
+  October (two of twenty failing in every run on `27bc5ef`). After the fixes of 6–7
+  October, eight full runs gave six clean and two with `boat-boarding` alone failing;
+  the other 23 scenarios passed all eight. What was wrong is in the two commits' notes
+  (arrests and trips to the hospital reaching into the next scenario, cars left behind,
+  E meaning something nearer than the test wanted, checks timed too tightly). Left:
+  - `boat-boarding` fails about once in twelve runs alone: "boat 2: normal interaction
+    boards", 4.4 m from where the boat lay, with one boat still tied up where two
+    should be. Three guesses were fixed (boats put out at random taking over 30 s,
+    standing a step off the landing spot, looking the boat up only among those still
+    tied up) and this one is not explained.
+  - `bridge-exit` once in ten did not reach the deck (the check now says where the car
+    stood); `bike-hit` and `fire-brigade` failed once each on 6 October and not in the
+    twelve runs since; none of the three was found.
+  - A car put down by `t.car` can still land inside another car or a tram.
+  - Changed in the game along the way, worth a look: at 60 km/h a wall met nose first
+    breaks both headlamps (the blow reaches 1.7 m, not 1.3); a bag lying beside a bike
+    or moped can be picked up (E used to get you on the bike); a paramedic who can't
+    get nearer for 12 s sees to the patient from up to 30 m away.
 - **Tyre sounds are off on main** (`TYRE` in `src/audio.ts`); recordings, new engine
   voices, the heavy diesel and measured jet and siren levels wait on `night-audio`.
 - **Fire engines:** about 40 s to clear a narrow street after a fire; cars give little

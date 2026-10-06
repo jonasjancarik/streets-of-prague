@@ -798,6 +798,8 @@ async function main() {
   });
   // `quick`: at once, as the game's own moves and the tests want it. The player's key
   // (`interact`) goes through the car's door instead, when there is one to use.
+  // (`only`, for the test kit: into this car and nothing else that E could mean here.)
+  let only: Car | null = null;
   const enterOrExit = (quick = true) => {
     if (getIn.active) {
       if (!quick && getIn.walking) getIn.cancel();
@@ -806,7 +808,7 @@ async function main() {
     }
     // In a taxi: out here, and into the one waiting for you.
     if (taxi.riding) { taxi.leave(); return; }
-    if (!inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && taxi.enter()) return;
+    if (!only && !inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && taxi.enter()) return;
     // On the funicular: off beside it, when it stands at a station.
     if (funicular.me) {
       const c = funicular.me;
@@ -869,7 +871,7 @@ async function main() {
       return;
     }
     if (!inCar) {
-      const heli = choppers.find((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4);
+      const heli = only ? undefined : choppers.find((c) => c.landed && Math.hypot(c.x - walker.x, c.y - walker.y) < 4);
       if (heli) {
         inHeli = heli;
         telemetry.did('flew a helicopter');
@@ -886,14 +888,14 @@ async function main() {
       leaveCar(c);
       return;
     }
-    const boat = boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch);
+    const boat = only ? null : boats.near(walker.x, walker.y, world.groundFor(walker, walker.x, walker.y) + walker.z + walker.perch);
     if (boat) {
       boats.me = boat;
       telemetry.did('took a pedal boat');
       walker.mesh.visible = false;
       return;
     }
-    const cabin = funicular.near(walker.x, walker.y);
+    const cabin = only ? null : funicular.near(walker.x, walker.y);
     if (cabin) {
       funicular.board(cabin);
       telemetry.did('rode the funicular');
@@ -901,7 +903,7 @@ async function main() {
       walker.mesh.visible = false;
       return;
     }
-    const ferry = ferries.near(walker.x, walker.y);
+    const ferry = only ? null : ferries.near(walker.x, walker.y);
     if (ferry) {
       ferries.board(ferry);
       telemetry.did('took a ferry');
@@ -909,7 +911,7 @@ async function main() {
       walker.mesh.visible = false;
       return;
     }
-    const tram = ride.boardable(walker.x, walker.y);
+    const tram = only ? null : ride.boardable(walker.x, walker.y);
     if (tram) {
       ride.board(tram);
       telemetry.did('rode a tram');
@@ -917,7 +919,7 @@ async function main() {
       walker.mesh.visible = false;
       return;
     }
-    const station = metro.near(walker.x, walker.y);
+    const station = only ? null : metro.near(walker.x, walker.y);
     if (station) {
       metro.open(station);
       telemetry.did('went down into the metro');
@@ -925,14 +927,16 @@ async function main() {
     }
     let best = null, bestD = Infinity;
     for (const c of allCars()) {
-      if (c.burnt || apartOnFoot(c)) continue;
+      if (c.burnt || apartOnFoot(c) || (only && c !== only)) continue;
       const d = c.gap(walker.x, walker.y);
       if (d < bestD) { bestD = d; best = c; }
     }
     // A bag lying within reach is picked up (unless a vehicle is closer); with one on your
-    // back and nothing to get into, E puts it down.
-    const lying = !bags.carried && bags.near(walker.x, walker.y);
-    if (lying && (!best || bestD > 1.8 || lying.d <= bestD)) {
+    // back and nothing to get into, E puts it down. A bike or moped is measured to its
+    // middle here: the bag its rider left lies right beside it, nearer than its side.
+    const lying = !only && !bags.carried && bags.near(walker.x, walker.y);
+    const toBest = best?.two ? Math.hypot(best.x - walker.x, best.y - walker.y) : bestD;
+    if (lying && (!best || bestD > 1.8 || lying.d <= toBest)) {
       bags.take(lying.bag);
       telemetry.did("picked up a courier's bag");
       return;
@@ -1872,7 +1876,7 @@ async function main() {
     // New traffic out of sight, a few times a second rather than every step (finding
     // the streets around you and a spot on them takes a while).
     spawnT -= dt;
-    const wanted = trafficWanted(clock.t);
+    const wanted = testkit?.quiet ? 0 : trafficWanted(clock.t);
     if (spawnT < 0 && traffic.agents.length < wanted) {
       spawnT = 0.25;
       const edges = edgesNear(px(), py(), LIFE_RADIUS), ok = lifeSpots(px(), py(), 40);
@@ -2351,6 +2355,7 @@ async function main() {
     grid, boats, ferries, pid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     recovering: () => wastedT > 0,
+    enterCar: (c) => { only = c; try { enterOrExit(); } finally { only = null; } },
     settled: () => moved,
     tramsNear: (x, y, r) => trams.bodies(x, y, r),
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
