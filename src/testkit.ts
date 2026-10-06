@@ -413,6 +413,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
             ok &&= g.grid.at(px, py) === 0 && Math.abs(g.ground(px, py) - top) < 1;
           }
         }
+        // Above land, open ground at the wall's foot too: nothing but the edge stops you.
+        for (let s = 1.5; s <= 5 && ok && !e.wet; s += 0.5) ok &&= g.grid.at(x - e.nx * s, y - e.ny * s) === 0;
         if (ok) { best = e; bestD = d; }
       }
       if (!best) return null;

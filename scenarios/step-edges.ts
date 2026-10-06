@@ -37,6 +37,22 @@ export default {
       await t.shot('step-edges-wall');
     }
 
+    // A car driven at one too.
+    await t.go(start);
+    const drop = t.stepEdge({ water: false, drop: 2, r: 300 });
+    if (t.check('a retaining wall with a clear run for a car', !!drop) && drop) {
+      await t.go(drop.from, { heading: drop.heading });
+      t.enter(t.car('hatch', { at: drop.from, heading: drop.heading, ahead: 0 }));
+      const top = t.groundHere();
+      if (!t.check('the car starts on the higher ground', t.pastEdge(drop) < -5, `${t.pastEdge(drop)} m past the edge`)) return;
+      t.push(50, drop.heading);
+      await t.wait(3, { move: 1 });
+      t.check('the car stopped before the wall', t.pastEdge(drop) < 0.5, `${t.pastEdge(drop)} m past the edge`);
+      t.check('the car is still on the higher ground', Math.abs(t.groundHere() - top) < 1, `ground ${t.groundHere()} m, was ${top} m`);
+      await t.shot('step-edges-car-wall');
+      t.exit();
+    }
+
     // Stairs across a step: you walk down them.
     await t.go(start);
     const stairs = t.stepCrossing({ hw: 'steps', r: 300, back: 5 });
