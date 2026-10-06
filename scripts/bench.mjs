@@ -4,7 +4,7 @@
 // from it with lane assist, standing in the Petřín woods).
 //
 //   node scripts/bench.mjs [--url http://localhost:5191/] [--scenes stand,drive,woods]
-//     [--seconds 10] [--dpr 2] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
+//     [--seconds 10] [--dpr 2 | tier (the graphics tier's own pixel ratio, as a player gets)] [--cpu 4] [--profile] [--weather clear] [--time 14:00]
 //     [--profile-load] [--load-progress] [--require-webgpu] [--init "js before loading"] [--runs 1] [--graphics high] [--extra "&osm"] [--eval "js after loading"] [--eval-after "js after timing"] [--json out.json] [--stack (page errors with their stack)]
 //     [--browser chrome|chromium] [--angle metal|swiftshader (software, drawing like
 //     a desktop GPU that shades every covered pixel: for overdraw)]
@@ -39,7 +39,7 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, all) =>
 const URL_BASE = args.url || 'http://localhost:5191/';
 const SCENES = String(args.scenes || 'stand,drive,woods').split(',');
 const SECONDS = Number(args.seconds || 10);
-const DPR = Number(args.dpr || 2);
+const DPR = args.dpr === 'tier' ? 2 : Number(args.dpr || 2);
 const CPU = Number(args.cpu || 1);
 const RUNS = Number(args.runs || 1);
 
@@ -134,7 +134,10 @@ const INIT = (loadingFrames = false) => {
     b.rendering = 0;
     cb(t);
     // (render: all of renderer.render in the frame, e.g. the lamps' light map and the scene.)
-    if (b.on) { b.frames.push(t); b.js.push(performance.now() - t0); b.render.push(b.rendering); }
+    // Only the game's own callback is a frame: the page has other loops on
+    // requestAnimationFrame (the gamepad's polling, the feedback form's frame counter),
+    // and counting theirs doubled the frame rate and halved the JavaScript time.
+    if (b.on && b.rendering > 0) { b.frames.push(t); b.js.push(performance.now() - t0); b.render.push(b.rendering); }
   });
 };
 
@@ -165,7 +168,7 @@ async function runScene(browser, name, base = URL_BASE) {
   if (args.init) await page.addInitScript(args.init);
   page.on('pageerror', (e) => { if (closing) return; errors.push(e.message); console.error(`[${name}] page error:`, args.stack ? e.stack : e.message); });
   page.on('console', (m) => { if (closing) return; if (m.type() === 'info' && m.text().startsWith('Renderer:')) console.log(`[${name}] ${m.text()}`); if (m.type() === 'error' && !errors.includes(m.text())) { errors.push(m.text()); console.error(`[${name}] console:`, m.text().slice(0, 3000)); } });
-  const q = `?start=${place.start}&dpr=${DPR}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&go&day=wed&weather=${args.weather || 'clear'}${args.extra || ''}`;
+  const q = `?start=${place.start}${args.dpr === 'tier' ? '' : `&dpr=${DPR}`}&graphics=${args.graphics || 'high'}&time=${args.time || '14:00'}&go&day=wed&weather=${args.weather || 'clear'}${args.extra || ''}`;
   // --profile-load: the CPU profile of loading, up to the game starting.
   const loadCdp = args['profile-load'] ? await ctx.newCDPSession(page) : null;
   if (loadCdp) { await loadCdp.send('Profiler.enable'); await loadCdp.send('Profiler.setSamplingInterval', { interval: 200 }); await loadCdp.send('Profiler.start'); }
