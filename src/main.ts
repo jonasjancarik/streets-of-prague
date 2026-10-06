@@ -2369,7 +2369,7 @@ async function main() {
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300, testkit?.cam ? Infinity : viewRadius() + world.drawBeyond),
     grid, boats, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
-    missions, standing: repute, tram: { ride, list: () => trams.list },
+    missions, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list },
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     tramsNear: (x, y, r) => trams.bodies(x, y, r),
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),

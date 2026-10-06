@@ -78,6 +78,8 @@ interface Game {
   rng: () => number;
   bags: Bags;
   missions: Missions;
+  // Holds the fire engine's water cannon on (F).
+  cannon: (on: boolean) => void;
   standing: Standing;
   // Trams: the ride you're on (ride.ts) and every tram running.
   tram: {
@@ -311,7 +313,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     job() {
       const p = g.missions.probe();
       const at = p.at ? g.toLonLat(p.at.x, p.at.y) : null;
-      return { ...p, at: at ? [round(at[1], 5), round(at[0], 5)] as Point2 : null, away: p.at ? Math.round(Math.hypot(p.at.x - g.me().x, p.at.y - g.me().y)) : null, rep: { ...g.standing.rep } };
+      return { ...p, out: p.away, at: at ? [round(at[1], 5), round(at[0], 5)] as Point2 : null, away: p.at ? Math.round(Math.hypot(p.at.x - g.me().x, p.at.y - g.me().y)) : null, rep: { ...g.standing.rep } };
     },
     // The jobs there are, and what each needs you to be driving.
     jobs() { return g.missions.defs.map((d) => ({ id: d.id, needs: d.needs ?? null })); },
@@ -340,6 +342,12 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       await frame();
       return kit.job();
     },
+    // The car a fire call has set burning (once you're near enough for it to be lit).
+    jobCar() { return [...(g.missions.run?.owned ?? [])][0] ?? null; },
+    // Your fire engine `back` m from a car, facing it on a clear run, as aimAt does for a post.
+    aimAtCar(c: Car, back = 14) { kit.aimAt({ x: c.x, y: c.y, r: 4 } as Post, back); },
+    // The water cannon of the fire engine you drive, held on or let go.
+    cannon(on: boolean) { g.cannon(on); },
     // What a saved game of an older format becomes (null: can't be opened).
     upgradeSave(old: unknown) { return upgrade(old); },
     // Onto the nearest tram and into its cab, as F does once you ride one.
