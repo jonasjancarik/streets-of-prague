@@ -202,8 +202,11 @@ orthophoto (WMS `geoportal.cuzk.gov.cz/WMS_ORTOFOTO_CIR`, a layer a year, 2010�
 free of charge but its page gives only the decree, not CC BY: until that is cleared,
 greenness outside Prague has to come from the colour photograph. `cover_cells.measure`
 has that path (`infrared=False`) and `tile_cover` takes another `fetch`, but no
-downloader for ČÚZK is written, the green index is untested, and IPR's surface model
-has to be checked for those tiles first.
+downloader for ČÚZK is written and the green index is untested. One test request for
+tile `1_31` (S-JTSK box, 0.25 m, JPEG) came back as a 0.27 MB picture, the size of
+IPR's. IPR's surface model is empty there (all zeros), so outside the city there is no
+height either: roofs and sheds can't be told from ground by standing tall
+(`cover_cells.rules(height=False)`), only ČÚZK's older DMP 1G could help.
 
 ## What changed on disk
 
