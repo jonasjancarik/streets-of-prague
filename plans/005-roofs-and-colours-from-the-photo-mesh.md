@@ -325,3 +325,53 @@ what was measured and any trade-off. Generated data stays out of git.
   (detected like roof windows)?
 - How far phase 3 should go outside the centre: the detection works anywhere, but the
   baroque dormer type only makes sense in the historic districts.
+
+## Leftovers, night of 5-6 October 2026 (branch `night-roofs`)
+
+The machine was swapping all night under ten sessions (a single IPR sheet took 75
+minutes to read, the rebuild of `ujezd` got 7 CPU-seconds in half an hour), so **none
+of the pipeline changes below has been run against map data yet**. The game side
+typechecks and `node scripts/check-roof-clutter.mjs` passes; nothing was looked at in
+the game. Treat the branch as code to review and run, not as a finished result.
+
+- **Wall colours.** `ipr_buildings.py` gives a building whose walls weren't measured
+  the colour of a measured neighbour: one sharing a wall (same kind first), else the
+  nearest of the same OSM kind within 30 m (`borrow_walls`, `--no-borrow` to leave it
+  out). It prints the coverage before and after and how far a borrowed colour is from
+  the real one (tried on measured buildings, against "any other building"). To do:
+  run it for `praha` and read those numbers; if the block neighbour is no better than
+  any other building, keep only the shared-wall step.
+- **Shade factor.** `mesh_colours.py` now also measures the ground in sun and in shade
+  per tile and within 8 m of each building (`ground_light`), meant to calibrate how
+  much light a building's shaded walls get. It is only measured: nothing uses it, the
+  fit against buildings seen both ways wasn't done, and it isn't written to the table.
+  The earlier finding stands (a citywide shade factor misses by ΔE 17, worse than
+  another building's colour at 11), so shaded walls still count as unsure.
+- **Bays.** Mansard windows take the bay count and origin of the wall below
+  (`mansardCoords` with the walls from `facadeCoords`; no shader change). Chimneys
+  between a ridge's ends move onto the piers between the bays of the wall along the
+  ridge (`roof_details.piers`), which needs the style in the pipeline, see below.
+- **False roof windows.** Only the doubles are dropped (`roof_details.keep_windows`:
+  one window found as a bright and as a dark patch). The false-find rate on 30-50
+  roofs was not measured and the detector's thresholds are unchanged.
+- **Cost of chimneys and windows.** Not measured. Prepared: chimneys have a material of
+  their own (11), and the tile worker puts chimneys and roof windows in one run of
+  triangles at the end of the building mesh (`geometry.userData.parts`: `extras`,
+  `clutter`, `end`, in vertices), so they can be counted and switched off with
+  `geometry.setDrawRange` in a `bench.mjs --ab` hook. They add no draw calls.
+- **Roof clutter** (`src/map/roofClutter.ts`, `ROOF_CLUTTER` in `src/shading.ts`): aerials
+  and pots on chimneys, a chimney through the slope on some roofs, rows of small
+  dormers over the wall's bays, thicker moss on clay tiles (GLSL and TSL). All of it
+  is triangles in the tile's one building mesh: no draw calls of its own. **On at High
+  and Ultra only, pending the owner's look**; tiles loaded before the setting changes
+  keep what they had until they load again.
+- **Building age** (`pipeline/building_age.py`): IPR's "Stáří zástavby"
+  (`Hosted/URK_CUR_URK_STARIZASTAVBY_P`, 136,675 outlines, 8 MB cached in
+  `pipeline/.cache/age/`), joined to IPR's buildings by their middle. The pipeline
+  picks the facade's style from the era (before 1842 baroque, to 1924 tenement,
+  1925-53 functionalist, 1954-89 panel, later functionalist; under 8.5 m a family
+  house) and writes it into the upper half of each wall triangle's material byte; the
+  game draws the style it's given and keeps its own rule for older data and for
+  OSM-only buildings. A game older than this reading the new data would repaint
+  measured walls from the palette (it compares the whole byte with 15): ship the two
+  together.
