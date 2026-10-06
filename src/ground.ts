@@ -16,6 +16,9 @@ export interface GroundTileData {
   areas: Record<string, Polygons | undefined>;
   roads: Record<string, Polygons | undefined>;
   rails: { kind: string; pts: Point2[] }[];
+  // The stretches of tram track on a bridge, each with its level (pipeline/structures.py,
+  // OnLevels), in a tile with bridges; not in older maps.
+  deckRails?: { level: number; pts: Point2[] }[];
   weirs?: Point2[][];
   crossings?: Point2[][];
   marks?: Point2[][];
@@ -28,6 +31,7 @@ export interface GroundRoadEdge {
   lanes?: number | null; oneway?: boolean; bridge?: boolean; tunnel?: boolean; surface?: string;
   maxspeed?: number | null;
   named?: boolean; // false: the map gives it no street name (true or unknown otherwise)
+  level?: number; // on a bridge or in a tunnel: its level, where the map says (see groundLayers)
 }
 // side: at a step in the ground, which side's height (terrain.ts, heightSampler).
 type HeightAt = (x: number, y: number, side?: number | boolean) => number;
@@ -343,21 +347,32 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   const lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !e.bridge && !e.tunnel), buildings, parkingZones, bridges: false }));
   const masks = levels.map((l) => levelMask(box, l.polys, l.level));
   const on = (k: number, x: number, y: number) => onMask(masks[k], x, y);
-  // Each street on a bridge or in a tunnel is painted on one level: the one most of it
-  // lies on (not a flyover it passes under); each stretch of tram track on the lowest
-  // bridge it's on.
+  // Each street on a bridge or in a tunnel is painted on one level, and each stretch of
+  // tram track on a bridge lies on one: the level the map gives it (`level`,
+  // `deckRails`: where two bridges cross, the outlines alone can't say which deck). A
+  // map from before it did: the level most of the street lies on (not a flyover it
+  // passes under), and for the tracks the lowest bridge they're on.
+  const indexOf = new Map(levels.map((l, i) => [l.level, i]));
   const paintOn = new Map<number, GroundRoadEdge[]>();
   for (const e of edges) {
     if (!e.bridge && !e.tunnel) continue;
-    const k = mostlyOn(e.pts, (x, y) => levels.map((l, i) => (l.kind === (e.bridge ? 'bridge' : 'tunnel') && on(i, x, y) ? i : -1)).filter((i) => i >= 0));
+    const k = e.level !== undefined && indexOf.has(e.level) ? indexOf.get(e.level)! : mostlyOn(e.pts, (x, y) => levels.map((l, i) => (l.kind === (e.bridge ? 'bridge' : 'tunnel') && on(i, x, y) ? i : -1)).filter((i) => i >= 0));
     if (k >= 0) paintOn.set(k, [...(paintOn.get(k) || []), e]);
   }
   const trams = d.rails.filter((r) => r.kind === 'tram').map((r) => r.pts);
-  const tramsOn = splitByLevel(trams, (x, y) => {
-    let best = -1;
-    levels.forEach((l, i) => { if (l.kind === 'bridge' && on(i, x, y) && (best < 0 || l.level < levels[best].level)) best = i; });
-    return best;
-  });
+  let tramsOn = new Map<number, Point2[][]>();
+  if (d.deckRails) {
+    for (const r of d.deckRails) {
+      const k = indexOf.get(r.level);
+      if (k !== undefined) tramsOn.set(k, [...(tramsOn.get(k) || []), r.pts]);
+    }
+  } else {
+    tramsOn = splitByLevel(trams, (x, y) => {
+      let best = -1;
+      levels.forEach((l, i) => { if (l.kind === 'bridge' && on(i, x, y) && (best < 0 || l.level < levels[best].level)) best = i; });
+      return best;
+    });
+  }
   const upper: GroundLayer[] = [];
   try {
     levels.forEach((l, k) => {

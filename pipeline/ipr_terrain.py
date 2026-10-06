@@ -420,8 +420,9 @@ def main() -> None:
         timings.lap("survey")
     # Bridges and tunnels, above and below the bare ground (structures.py).
     merged = unary_union(outlines) if outlines else None
+    way_levels = []
     found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0, labels),
-                             local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources)
+                             local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources, way_levels=way_levels)
     # Where a bridge is close over the ground (at its ends) the ground comes up, or down,
     # to it: wholly within NEAR_DECK of it, less and less out to OFF_DECK. The map's bridge
     # and the street it runs on from rarely meet where the terrain says the abutment is,
@@ -482,8 +483,10 @@ def main() -> None:
         raise RuntimeError("terrain sources or processing code changed; keep output staged and rebuild")
     layers.write_layer(area, "terrain", {"gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in tiles], "tiles": per_tile,
                                          "terraces": {f"{i}_{j}": v for (i, j), v in terraces.items()},
+                                         # Each bridge or tunnel way's level, for the streets and tram tracks on them (structures.OnLevels).
+                                         "ways": way_levels,
                                          "dependencies": dependencies, "sources": sources, "processing": processing, "payloads": payloads,
-                                         "index": {"step": step, "n": N + 1, "min": float(lo), "max": float(hi), "structures": sorted(per_tile)}})
+                                         "index": {"step": step, "n": N + 1, "min": float(lo), "max": float(hi), "structures": sorted(per_tile), "wayLevels": True}})
     print(f"terrain {lo:.0f}–{hi:.0f} m for {len(tiles)} tiles")
     timings.lap("encode_write")
     if not args.no_assemble:

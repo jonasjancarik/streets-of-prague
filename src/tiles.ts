@@ -81,7 +81,7 @@ export interface Tracked {
   // Kept on the ground, whatever is under it or over it (a car in traffic on a street
   // at ground level, see Traffic.update).
   grounded?: boolean;
-  e?: { bridge?: boolean; tunnel?: boolean }; _view?: { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
+  e?: { bridge?: boolean; tunnel?: boolean; level?: number }; _view?: { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
 }
 
 // Streams the map in square tiles (pipeline/build_tiles.py) around the camera. Each
@@ -113,6 +113,23 @@ const DRAWN_KEEP = 40;
 // `around(di, dj)`: the neighbouring tile's heights (hm) if it is loaded and shares this
 // tile's edge points, for the slope at the edge; `edges()` shades the edges again once
 // a neighbour has come.
+// Which bridge level the tram track at a point is on (0: none), from the stretches the
+// map lists (TileJSON.deckRails): that of the stretch within 2 m, the nearest.
+function deckRailLevel(stretches: { level: number; pts: Point2[] }[]) {
+  return (x: number, y: number) => {
+    let level = 0, best = 2;
+    for (const { level: l, pts } of stretches) {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[i + 1], dx = bx - ax, dy = by - ay;
+        const k = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1)));
+        const d = Math.hypot(x - ax - dx * k, y - ay - dy * k);
+        if (d < best) { best = d; level = l; }
+      }
+    }
+    return level;
+  };
+}
+
 function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds, n: number, step: number, ref: number,
   around: ((di: number, dj: number) => Float32Array | null) | null, terraces: Terrace[] | undefined) {
   // Heights in metres above `ref` (the game's y = 0), bilinear and clamped to the tile.
@@ -582,6 +599,9 @@ export class TileWorld {
       const hint = who.hint ?? (who.e ? (who.e.tunnel ? 'tunnel' : who.e.bridge ? 'bridge' : 'ground') : undefined);
       who.hint = undefined;
       let level = hint === 'ground' ? 0 : hint === undefined ? this.guess(x, y).level : NaN;
+      // Its street's own level where the map gives one (and the level is here).
+      const named = who.e?.level;
+      if (Number.isNaN(level) && named !== undefined && t.levels.some((l) => l.level === named && l.grid.at(x, y))) level = named;
       if (Number.isNaN(level)) {
         // The level of that kind nearest the ground here.
         level = 0;
@@ -995,7 +1015,7 @@ export class TileWorld {
       .map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))) }));
     const edges = this.driveBy.get(k) || [];
     const clipped = edges.flatMap((e) => clipLine(e.pts, t.box).map((pts) => (
-      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name })));
+      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name, level: e.level })));
     // Paid-parking colour of each parking area's bay lines.
     const parkingZones = (t.areas.parking || []).map((rs) => {
       const r = rs[0], cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;
@@ -1059,12 +1079,15 @@ export class TileWorld {
     const fenceRows = fenceMeshes(land.fences);
     const furniture = furnitureMeshes(land.furniture);
     const fenceSections = fences.sections(k, land.fences.sections, fenceRows);
-    // The overhead wires over the tram tracks, at the height of the lowest bridge deck a
-    // track is on (as ground.ts lays the tracks) or of the ground.
+    // The overhead wires over the tram tracks, at the height of the bridge deck a track
+    // is on (as ground.ts lays the tracks) or of the ground: the deck the map names for
+    // that stretch (deckRails), or with an older map the lowest one there.
     const decks = onLevels.filter((l) => l.level > 0).sort((a, b) => a.level - b.level);
+    const railLevel = t.deckRails ? deckRailLevel(t.deckRails) : null;
     const trackAt = (x: number, y: number) => {
+      const named = railLevel?.(x, y);
       for (const l of decks) {
-        if (!l.grid.at(x, y)) continue;
+        if ((railLevel && l.level !== named) || !l.grid.at(x, y)) continue;
         const h = l.sample(x, y);
         if (!Number.isNaN(h)) return h;
       }
@@ -1131,7 +1154,7 @@ export class TileWorld {
     }
     return Promise.all([
       w.run('ground', {
-        d: { areas: t.areas, roads: t.roads, rails: t.rails, weirs: t.weirs, crossings: t.crossings, marks: t.marks, utility: t.utility },
+        d: { areas: t.areas, roads: t.roads, rails: t.rails, deckRails: t.deckRails, weirs: t.weirs, crossings: t.crossings, marks: t.marks, utility: t.utility },
         box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide }, [buffer]) : null,

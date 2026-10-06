@@ -46,6 +46,17 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
    deck and street with its step in metres. A join over 0.5 m is a step a car hits.
    A grade of 40 % and more on a deck means two pieces of one level lie over each
    other with different heights. `--full "most Legií"` prints the profile.
+   Without the game (no browser, no waiting for the shared game lock), on the built
+   tiles with the game's own samplers:
+
+       node scripts/check-bridge-decks.mjs praha --save now.json --against before.json
+       node scripts/check-bridge-decks.mjs praha --near 50.0672,14.4130,400 --profile 355002644
+
+   It walks every street and path on a bridge a metre at a time on its own level (the
+   map gives each edge its `level` since October 2026) and each named bridge's own way:
+   the worst break along a deck, the worst join at an end, and a list of the worst
+   places in the city. It fails when a named bridge is over `--max-break` or
+   `--max-join` (1 m each): several still are, see `todo.md`.
 4. **Look.** `bridges.mjs shots after`, then `pairs.py before after out/` and read the
    pictures. Numbers miss what's beside the bridge.
 5. **Compare like with like.** "Before" is the same code with the terrain model alone:
@@ -101,12 +112,34 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
   put a hump in the junction over the underpass at Hlávkův most.
 - "Raise a mapped street to the surveyed one next to it" only over the map's water:
   on land the next street may be another street, a level up.
+- Stairs mapped as bridge ways, folded back beside the deck they come down from
+  (Železniční most at Výtoň): inside the bridge's outline they join its group and its
+  level, and the deck's last lattice points take the stairs' heights, 1.8 m down. Giving
+  such stairs a level of their own (tried 6 October 2026, `STAIRS_SAME`, taken out again)
+  makes the deck right and the stairs worse: alone on a 4 m lattice their top reads 2.5
+  to 3.7 m under the deck (Výtoň, and the stairs to Kampa off Karlův most, which were
+  fine). Stairs need heights the lattice can't hold: their own profile, as the flat
+  terraces have `h`.
+- A level's lattice can't hold two things 4 m apart at different heights. When a deck
+  sags or jumps near its end, compare the solved profile with the lattice before
+  blaming the solver: at Výtoň the profile was right.
 - Low, short retaining walls (under 1.5 m, under 12 m) make more ragged ends than
   steps.
 
 Tried and dropped: a terrace for every surveyed street well above or below the ground
 beside it (cliffs 12 m high under Letná); leaving the terrain model wherever the
 survey is far off it with no step near (breaks in the street where the two meet).
+
+## Which deck a street or a tram is on
+
+Where two bridges cross, the outlines alone don't say which deck a street's paint or a
+tram's tracks belong to. `structures.build` hands each way's level to the terrain layer
+(`ways`), and `layers.assemble` writes it out (`structures.OnLevels`): `level` on every
+drive and walk edge on a bridge or in a tunnel, and `deckRails` in a tile with
+structures, the stretches of tram track on a bridge with their level (over two decks at
+once, the one whose way the track runs along). The game paints and lays tracks by them
+(`groundLayers`), hangs the wires over the same deck and starts whatever is put on a
+street on that street's level. A map without the fields gets the old guesses.
 
 ## Check which game you're photographing
 
@@ -156,4 +189,5 @@ rule here will fix that.
   their ends. `list_bridges.py` writes it from praha's layers.
 - `bridges.mjs`: `measure` and `shots`, through the scene server.
 - `terrain_at.py`: the lattice round a place.
+- `scripts/check-bridge-decks.mjs` (in the repo's scripts): the decks checked offline.
 - `pairs.py`: two runs' screenshots side by side.
