@@ -425,6 +425,10 @@ def assemble(area: str, strict=False) -> dict:
     terrain = terrain if terrain and terrain.get("tile") == meta["tile"] else None
     listed, rails, names, written = [], [], {}, 0
     tunnels = tunnel_shapes(terrain)
+    on_levels = None
+    if terrain and terrain.get("index", {}).get("wayLevels"):
+        import structures
+        on_levels = structures.OnLevels(terrain.get("ways", []), terrain.get("tiles", {}))
     for ci, cj in chunks(meta):
         rails += read_chunk(area, "ground", ci, cj)["rails"]
         for name, (length, x, y) in read_chunk(area, "streets", ci, cj)["names"].items():
@@ -472,6 +476,16 @@ def assemble(area: str, strict=False) -> dict:
         # Its bridges and tunnels (the heights are in its .levels.bin).
         if terrain and terrain.get("tiles", {}).get(k):
             t["structures"] = terrain["tiles"][k]
+        # Which level each street on a bridge or in a tunnel is on, and each stretch of
+        # tram track on a bridge: where two bridges cross, the outlines alone don't say.
+        if on_levels:
+            for edges in (t["drive"], t["walk"]):
+                for e in edges:
+                    level = on_levels.edge(e)
+                    if level is not None:
+                        e["level"] = level
+            if t.get("structures"):  # (listed even when empty: the game then doesn't guess)
+                t["deckRails"] = on_levels.rails(k, t["rails"])
         # Its terraces at the foot of retaining walls (dtm_heights.py; their labels are in its .height.bin).
         if terrain and terrain.get("terraces", {}).get(k):
             t["terraces"] = terrain["terraces"][k]

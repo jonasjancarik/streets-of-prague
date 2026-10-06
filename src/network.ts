@@ -16,6 +16,8 @@ export interface RawStreetEdge {
   maxspeed?: number | null;
   bridge?: boolean;
   tunnel?: boolean;
+  // On a bridge or in a tunnel: the level it's on (pipeline/structures.py, OnLevels; not in older maps).
+  level?: number;
   surface?: string;
   park?: [ParkingOrientation | null, ParkingOrientation | null];
   kerb?: [number | null, number | null];

@@ -6,7 +6,7 @@
 //
 //   node scripts/check-bridge-decks.mjs [area, praha] [--data public/data] [--worst 25]
 //        [--save now.json] [--against before.json] [--profile <edge id or part of a name>]
-//        [--max-break 1.0] [--max-join 1.0] [--named-only]
+//        [--max-break 1.0] [--max-join 1.0] [--named-only] [--near lat,lon[,metres]]
 //
 // A "break" is the largest change of height between two samples a metre apart along a
 // deck (0.12 is a 12 % ramp; steps are left out); a "join" the difference at an end
@@ -14,6 +14,7 @@
 // or the ground where the deck's outline stops short of the end. The bridges in
 // .agents/skills/terrain-steps/bridges.json are listed by name, and the script fails when
 // one of those has a break over --max-break or a join over --max-join.
+// --near: only the tiles round a place (600 m either way unless given), which takes seconds.
 // Maps built before the pipeline wrote each street's level have no `level` on their
 // edges: there the deck walked is the bridge level nearest in height to the last sample.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -77,9 +78,17 @@ function levelAt(x, y, level) {
 }
 const bridgesAt = (x, y) => (at(x, y)?.levels ?? []).filter((l) => l.level > 0 && l.on(x, y)).map((l) => l.level);
 
+// (The area's transverse Mercator, well enough for naming a place to look at.)
+const [bw, bs, be, bn] = index.bbox_wgs84, lat0 = (bs + bn) / 2, lon0 = (bw + be) / 2, rad = Math.PI / 180;
+const mLat = 111132.92 - 559.82 * Math.cos(2 * lat0 * rad), mLon = (lat) => 111412.84 * Math.cos(lat * rad) - 93.5 * Math.cos(3 * lat * rad);
+const toWgs = (x, y) => { const lat = lat0 + y / mLat; return [lat.toFixed(5), (lon0 + x / mLon(lat)).toFixed(5)]; };
+const near = args.near ? String(args.near).split(',').map(Number) : null;
+const centre = near ? [(near[1] - lon0) * mLon(near[0]), (near[0] - lat0) * mLat, near[2] || 600] : null;
+
 // Every edge once, and which edges meet at each node.
 const edges = new Map();
 for (const [i, j] of index.tiles) {
+  if (centre && (Math.abs((i + 0.5) * T - ox - centre[0]) > centre[2] + T || Math.abs((j + 0.5) * T - oy - centre[1]) > centre[2] + T)) continue;
   const path = join(dir, 'tiles', `${i}_${j}.json`);
   if (!existsSync(path)) continue;
   const t = JSON.parse(readFileSync(path, 'utf8'));
@@ -122,19 +131,19 @@ function walk(e) {
   }
   return prof;
 }
-// What an edge is at one of its ends: its profile's height there.
-const endHeight = (e, node, profs) => {
-  const p = profs.get(e) ?? (e.bridge ? null : [[...e.pts[0], groundAt(...e.pts[0])], [...e.pts[e.pts.length - 1], groundAt(...e.pts[e.pts.length - 1])]]);
-  if (!p) return NaN;
-  return (e.u === node ? p[0] : p[p.length - 1])[2];
+// What an edge is at one of its ends: its height a metre in from there. (Right at the
+// node a point lies on the very edge of the deck's outline, or of the flat terrace under
+// the street's last metres, and reads as whatever is beside it.)
+const inFrom = (pts, d) => {
+  const [a, b] = pts, len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, k = Math.min(0.5, d / len);
+  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
 };
-
-const toWgs = (() => {
-  // The area's transverse Mercator, inverted well enough for a place to look at.
-  const [w, s, e, n] = index.bbox_wgs84, lat0 = (s + n) / 2, lon0 = (w + e) / 2;
-  const mLat = 111132.92 - 559.82 * Math.cos(2 * lat0 * Math.PI / 180), mLon = 111412.84 * Math.cos(lat0 * Math.PI / 180) - 93.5 * Math.cos(3 * lat0 * Math.PI / 180);
-  return (x, y) => { const lat = lat0 + y / mLat; return [lat.toFixed(5), (lon0 + x / (mLon * Math.cos(lat * Math.PI / 180) / Math.cos(lat0 * Math.PI / 180))).toFixed(5)]; };
-})();
+const endHeight = (e, node, profs) => {
+  const p = profs.get(e), first = e.u === node;
+  if (p) return p[first ? Math.min(1, p.length - 1) : Math.max(0, p.length - 2)][2];
+  if (e.bridge) return NaN;
+  return groundAt(...inFrom(first ? e.pts : e.pts.slice(-2).reverse(), 1));
+};
 
 const profs = new Map();
 for (const e of edges.values()) if (e.bridge) profs.set(e, walk(e));
@@ -148,7 +157,7 @@ for (const [e, prof] of profs) {
     if (prof[i][3]) onDeck++;
     const d = prof[i][2] - prof[i - 1][2];
     if (prof[i][3] && prof[i - 1][3]) { if (Math.abs(d) > worst) { worst = Math.abs(d); where = i; } }
-    else if (prof[i][3] !== prof[i - 1][3] && Math.abs(d) > Math.abs(hand)) { hand = d; handAt = i; }
+    else if (prof[i][3] !== prof[i - 1][3] && i > 1 && i < prof.length - 1 && Math.abs(d) > Math.abs(hand)) { hand = d; handAt = i; }
   }
   if (!onDeck) continue; // (a way the pipeline left on the ground)
   const length = prof.length - 1;
@@ -194,6 +203,26 @@ for (const b of area === 'praha' ? NAMED : []) {
     joinAt: worstJoin.ends[Math.abs(worstJoin.joins[0]) >= Math.abs(worstJoin.joins[1]) ? 0 : 1] });
 }
 
+// Each named bridge's own way too (as bridges.mjs walks it in the game), from 24 m before
+// to 24 m past it straight on: catches a way the street network doesn't call a bridge.
+const out = (a, c, d) => { const l = Math.hypot(c[0] - a[0], c[1] - a[1]) || 1; return [c[0] + (c[0] - a[0]) / l * d, c[1] + (c[1] - a[1]) / l * d]; };
+for (const b of area === 'praha' ? NAMED : []) {
+  if (centre && Math.hypot(b.pts[0][0] - centre[0], b.pts[0][1] - centre[1]) > centre[2]) continue;
+  const pts = [out(b.pts[1], b.pts[0], 24), ...b.pts, out(b.pts[b.pts.length - 2], b.pts[b.pts.length - 1], 24)];
+  const prof = walk({ pts });
+  let worst = 0, where = 0;
+  const hands = [];
+  for (let i = 1; i < prof.length; i++) {
+    const d = prof[i][2] - prof[i - 1][2];
+    if (prof[i][3] && prof[i - 1][3]) { if (Math.abs(d) > worst) { worst = Math.abs(d); where = i; } }
+    else if (prof[i][3] !== prof[i - 1][3]) hands.push([i - 24, +d.toFixed(2)]);
+  }
+  let s = summary.find((r) => r.name === b.name);
+  if (!s) summary.push(s = { name: b.name, edges: 0, break: 0, join: 0 });
+  s.way = { break: +worst.toFixed(2), breakAt: where - 24, hands };
+  if (args.profile && b.name.includes(args.profile)) s.wayProfile = prof.map((p) => (p[2] + REF).toFixed(1) + (p[3] ? '' : 'g')).join(' ');
+}
+
 const before = args.against ? JSON.parse(readFileSync(args.against, 'utf8')) : null;
 const was = (list, key, name, field) => { const o = list?.find((r) => r[key] === name); return o ? `${o[field]} → ` : ''; };
 console.log(`${area}: built ${index.built}, ${rows.length} streets and paths on bridges${leveled ? '' : ' (no levels on the edges: decks guessed by height)'}`);
@@ -201,7 +230,9 @@ if (summary.length) {
   console.log('\nNamed bridges (worst break along a deck, worst join at an end, in metres):');
   for (const s of summary) {
     console.log(`  ${s.name.padEnd(27)} break ${was(before?.summary, 'name', s.name, 'break')}${s.break}${s.break > BREAK ? ` at ${s.breakAt}` : ''}`
-      + `   join ${was(before?.summary, 'name', s.name, 'join')}${s.join}${s.join > JOIN ? ` at ${s.joinAt}` : ''}`);
+      + `   join ${was(before?.summary, 'name', s.name, 'join')}${s.join}${s.join > JOIN ? ` at ${s.joinAt}` : ''}`
+      + (s.way ? `   its way: break ${s.way.break}${s.way.break > 0.5 ? ` (at ${s.way.breakAt} m)` : ''}, deck/ground ${JSON.stringify(s.way.hands)}` : ''));
+    if (s.wayProfile) console.log(`     ${s.wayProfile}`);
   }
 }
 if (!args['named-only']) {
@@ -224,7 +255,7 @@ if (!args['named-only']) {
 }
 if (args.profile) {
   for (const [e, prof] of profs) {
-    if (`${e.net}:${e.id}` !== args.profile && !(e.name || '').includes(args.profile)) continue;
+    if (!`${e.net}:${e.id} ${e.name || ''}`.includes(args.profile)) continue;
     console.log(`\n${e.net}:${e.id} ${e.hw} ${e.name || ''} (every ${STEP} m; g = on the ground)`);
     console.log('  ' + prof.map((p) => (p[2] + REF).toFixed(1) + (p[3] ? '' : 'g')).join(' '));
   }
