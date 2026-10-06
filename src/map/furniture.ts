@@ -6,7 +6,7 @@ import type { Geo, Point2, Bounds, Polygons } from './geo.ts';
 import type { TreeTileData, TreeInstances } from './vegetation.ts';
 import type { RawStreetEdge } from '../network.ts';
 
-export type FurnitureKind = 0 | 1 | 2; // bench, bin, courtyard planter
+export type FurnitureKind = 0 | 1 | 2 | 3 | 4; // bench, bin, courtyard planter; surveyed: hydrant, phone box (map/utility.ts)
 export interface FurnitureSpot { kind: FurnitureKind; x: number; y: number; z: number; angle: number }
 export interface FurnitureInstances { matrices: Float32Array[]; spots: FurnitureSpot[] }
 export interface FurnitureData extends TreeTileData {
@@ -16,7 +16,8 @@ export interface FurnitureData extends TreeTileData {
   reserved: Float32Array; // surveyed lamps, independent of tile arrival order
   structures: Polygons;
 }
-export const FURNITURE_SIZE = [[0.95, 0.42], [0.32, 0.32], [0.65, 0.65]] as const;
+export const FURNITURE_SIZE = [[0.95, 0.42], [0.32, 0.32], [0.65, 0.65], [0.16, 0.16], [0.47, 0.47]] as const;
+export const FURNITURE_KINDS = FURNITURE_SIZE.length;
 const STEP = 14;
 const INSET = 12; // neighbouring generated tree crowns can reach across a tile edge
 export const PARK = 40, GARDEN = 80, YARD = 120;
@@ -126,11 +127,15 @@ export function furnitureInstances(geo: Geo<FurnitureData>, trees: TreeInstances
     return best;
   };
   const spots = furnitureSpots([geo.minX, geo.minY, geo.maxX, geo.maxY], { zone: (x, y) => zones.at(x, y), clear: () => true, height, path });
-  const matrices = [0, 1, 2].map(kind => {
+  return { spots, matrices: furnitureMatrices(spots) };
+}
+
+// One matrix array per kind, in the kinds' order.
+export function furnitureMatrices(spots: FurnitureSpot[]) {
+  return Array.from({ length: FURNITURE_KINDS }, (_, kind) => {
     const own = spots.filter(p => p.kind === kind), out = new Float32Array(own.length * 16);
     const m = new THREE.Matrix4();
     own.forEach((p, i) => { m.makeRotationY(p.angle); m.setPosition(p.x, p.z - 0.04, -p.y); m.toArray(out, i * 16); });
     return out;
   });
-  return { spots, matrices };
 }

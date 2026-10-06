@@ -10,6 +10,7 @@ export interface TreeTileData extends GeoData {
   buildings: { rings: Point2[][] }[];
   walls: { kind: string; pts: Point2[] }[];
   trees: TreeSpot[];
+  shrubs?: Point2[];
 }
 
 // A tree's place in metres, and what kind it is when the map knows: 1 a conifer, 2 a fruit tree.
@@ -24,6 +25,10 @@ export interface TreeInstances { matrices: Float32Array; colours: Float32Array; 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
 const WOOD = 200, PARK = 120, GARDEN = 90, ORCHARD = 60, FIELD = 40, FENCE = 1;
+// Surveyed greenery (pipeline/ipr_greenery.py): grass where no tree is made up (the
+// survey has the real ones), and groups of shrubs, which are filled with shrubs.
+// A surveyed group of trees is planted like a park, only closer.
+const SURVEYED = 150, SHRUBBERY = 170, GROVE = 180;
 // Of each kind of tree (below), how many are evergreen and keep their leaves in
 // winter: yews and hedges among the shrubs. (Conifers have a shape of their own.)
 const EVERGREEN = [0, 0, 0, 0.4];
@@ -85,6 +90,11 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fill(d.areas.lawn, GARDEN);
     fill(d.areas.park, PARK);
     fill(d.areas.meadow, PARK);
+    fill(d.areas.ipr_lawn, SURVEYED);
+    fill(d.areas.ipr_meadow, SURVEYED);
+    fill(d.areas.ipr_bed, SURVEYED);
+    fill(d.areas.ipr_shrubs, SHRUBBERY);
+    fill(d.areas.ipr_grove, GROVE);
     fill(d.areas.orchard, ORCHARD);
     fill(d.areas.wood, WOOD);
     // Keep trees off everything built or paved.
@@ -171,7 +181,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
         // Thinner towards the outline, and in patches inside (clearings and denser stands).
         const keep = 0.62 * (0.25 + 0.75 * edge) * (0.8 + 0.4 * valueNoise(jx, jy, 30, 0x31c5));
         if (r() < keep && !surveyed(jx, jy)) addWood(jx, jy, rad, edge);
-      } else if (v === PARK && r() < 0.09) {
+      } else if ((v === PARK && r() < 0.09) || (v === GROVE && r() < 0.45)) {
         const rad = 2.8 + r() * 2.8;
         if (!surveyed(jx, jy)) trees.push(conifer(jx, jy, CONIFERS[1]) ? [jx, jy, rad * 0.8, CONIFER] : [jx, jy, rad, 1]);
       }
@@ -260,6 +270,19 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     }
   }
   gardenTrees(geo, grid, trees);
+  // Surveyed groups of shrubs, filled from a lattice fixed to the map, and the single ones.
+  // A tile with very large shrubberies gets fewer, larger shrubs: never more than MAX_BUSHES.
+  const BUSH = 2.2, MAX_BUSHES = 500, found: [number, number, number, number][] = [];
+  for (let j = Math.ceil(geo.minY / BUSH); j * BUSH < geo.maxY; j++) {
+    for (let i = Math.ceil(geo.minX / BUSH); i * BUSH < geo.maxX; i++) {
+      const g = rng(Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ 0x3e71);
+      const x = (i + 0.2 + g() * 0.6) * BUSH, y = (j + 0.2 + g() * 0.6) * BUSH;
+      if (grid.at(x, y) === SHRUBBERY) found.push([x, y, 1.1 + g() * 0.6, g()]);
+    }
+  }
+  const keep = Math.min(1, MAX_BUSHES / Math.max(1, found.length)), grow = Math.min(1.8, 1 / Math.sqrt(keep));
+  for (const [x, y, rad, pick] of found) if (pick < keep) trees.push([x, y, rad * grow, SHRUB]);
+  for (const [x, y] of d.shrubs ?? []) trees.push([x, y, 0.9 + r() * 0.7, SHRUB]);
 
   // Shrubs, then conifers, last: each has its own mesh.
   const bushes = trees.filter((t) => t[3] === SHRUB), pines = trees.filter((t) => t[3] === CONIFER);

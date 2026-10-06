@@ -407,7 +407,7 @@ export const CS: Record<string, string> = {
   Credits: 'Poděkování',
   'This Prague is built from open data. Thanks to:': 'Tahle Praha je postavená z otevřených dat. Děkujeme:',
   'credits.osm': 'Ulice, budovy, parky a místa: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">přispěvatelé OpenStreetMap</a>, licence Open Database Licence (ODbL).',
-  'credits.ipr': 'Tvary budov, mosty, kopce a svahy, vozovky, parkovací místa a pouliční lampy: © <a href="https://geoportalpraha.cz/" target="_blank" rel="noopener">IPR Praha</a> (Institut plánování a rozvoje hlavního města Prahy), CC BY 4.0.',
+  'credits.ipr': 'Tvary budov, mosty, kopce a svahy, vozovky, parkovací místa, pouliční lampy, poklopy a kanálové vpusti, trávníky, keře, živé ploty a záhony: © <a href="https://geoportalpraha.cz/" target="_blank" rel="noopener">IPR Praha</a> (Institut plánování a rozvoje hlavního města Prahy), CC BY 4.0.',
   'credits.pid': 'Jízdní řády tramvají a metra: <a href="https://pid.cz/o-systemu/opendata/" target="_blank" rel="noopener">PID / ROPID</a>, CC BY 4.0.',
   'credits.tsk': 'Zóny placeného stání a jejich obsazenost: <a href="https://zps.tsk-praha.cz/" target="_blank" rel="noopener">TSK Praha</a>.',
   'credits.traffic': 'Vytížení silnic během dne: doby jízdy měřené <a href="https://www.tsk-praha.cz/" target="_blank" rel="noopener">TSK Praha</a>, zveřejněné <a href="https://data.praha.eu/dashboardy/dopravni-ukazatele" target="_blank" rel="noopener">Data Praha</a>.',

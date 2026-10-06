@@ -16,10 +16,14 @@ is four nodes) are one junction with one cycle. Its streets get the green in two
 phases by the way they run: along the most important street, and across it. Where
 all of them run the same way, the second phase is the pedestrians'.
 
+Where the technical map has surveyed the lights' poles (ipr_utility.py, run first), a
+street's light stands on the pole nearest to where the game would put one by rule (at
+the kerb, right of the stop line), if one is within POLE_REACH of there.
+
 signals.json: {"junctions": [[green0, green1, offset], ...] (seconds; a cycle runs
 green0, amber, all red, green1, amber, all red from its offset), "edges": {edge id:
-[metres before the edge's end where cars stop, junction, phase]}}. src/signals.ts
-reads it.
+[metres before the edge's end where cars stop, junction, phase, then the x and y of its
+surveyed pole if it has one]}}. src/signals.ts reads it.
 """
 
 import json
@@ -40,6 +44,7 @@ from osm_area import OUT
 PBF_DIR = Path(__file__).parent / ".cache" / "osm"
 MAX_BEFORE = 60.0  # the furthest a light stands before its junction (m)
 NEAR = 2.5  # how far off a street's centre line a light may be mapped (m)
+POLE_REACH = 9.0  # how far from where a light would stand by rule its surveyed pole may be (m)
 CLUSTER = 40.0  # junction nodes with lights this close work together (m)
 # Lights that aren't a junction's: a crossing's for pedestrians, a railway crossing's.
 NOT_JUNCTION = {"pedestrian_crossing", "pedestrian", "crossing", "level_crossing", "emergency", "blinker", "ramp_meter"}
@@ -178,6 +183,29 @@ def build(area: str):
     for k in stop:
         groups.setdefault(root(edges[k]["v"]), []).append(k)
 
+    # The surveyed poles, each for one light: the nearest pairs first.
+    poles = [Point(*p) for p in (layers.read_layer(area, "utility") or {}).get("signals", [])]
+    pole_of = {}
+    if poles:
+        ptree, pairs = STRtree(poles), []
+        for k in stop:
+            line, e = lines[k], edges[k]
+            at = line.length - stop[k]
+            p, h = line.interpolate(at), heading(line, at)
+            # (Where src/signals.ts stands it: at the kerb, right of the street's centre line.)
+            rule = Point(p.x + math.sin(h) * (e["width"] / 2 + 0.6), p.y - math.cos(h) * (e["width"] / 2 + 0.6))
+            for m in ptree.query(rule.buffer(POLE_REACH)):
+                d = rule.distance(poles[m])
+                # Not one across the street: on the right of the centre line, or all but on it.
+                side = (poles[m].x - p.x) * math.sin(h) - (poles[m].y - p.y) * math.cos(h)
+                if d <= POLE_REACH and side > -1.0:
+                    pairs.append((d, edges[k]["id"], k, int(m)))
+        taken = set()
+        for d, _, k, m in sorted(pairs):
+            if k not in pole_of and m not in taken:
+                pole_of[k] = m
+                taken.add(m)
+
     rank = lambda k: RANK.index(edges[k]["hw"]) if edges[k]["hw"] in RANK else len(RANK)
     junctions, out = [], {}
     for key in sorted(groups):
@@ -195,9 +223,12 @@ def build(area: str):
         junctions.append([g0, g1, round(rnd.uniform(0, g0 + g1 + 10), 1)])
         for k in ks:
             out[edges[k]["id"]] = [round(stop[k], 1), len(junctions) - 1, phase[k]]
+            if k in pole_of:
+                out[edges[k]["id"]] += [round(poles[pole_of[k]].x, 1), round(poles[pole_of[k]].y, 1)]
     dest = OUT / f"{area}_now" / "signals.json"
     layers.write(dest, layers.dumps({"junctions": junctions, "edges": out}))
-    print(f"{area}: {len(found)} lights, {len(out)} streets into {len(junctions)} junctions → {dest}")
+    print(f"{area}: {len(found)} lights, {len(out)} streets into {len(junctions)} junctions, "
+          f"{len(pole_of)} on a surveyed pole (of {len(poles)}) → {dest}")
 
 
 if __name__ == "__main__":
