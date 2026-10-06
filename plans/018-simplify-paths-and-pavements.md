@@ -12,8 +12,10 @@ shapes of the rest.
 
 ## Status and starting point
 
-- Status: PHASES 0–2 MERGED TO MAIN AND VERIFIED LOCALLY. Shared tiles and deployment
-  are unchanged; the look awaits review. Phases 3–4 are deferred.
+- Status: PHASES 0–2 MERGED AND LIVE (the 2026-10-03 map has them, see the end of the
+  Result). Phases 3–4 with traffic islands and tram beds are written on the branch
+  `night-pavements` and built for `ujezd` only: NOT READY TO MERGE (no screenshots yet,
+  four older tests fail, `centrum` not built). See "Phases 3–4, 6 October 2026".
 - Priority: P2. Effort: phases 1–2 about a day; phase 3 a day; phase 4 open-ended.
   Risk: low for the look (checked on screenshots); medium for the tile rebuild, which
   touches shared map data (see "Rebuilding tiles").
@@ -387,3 +389,102 @@ preview; the candidate is the reviewed rebuild. Both markers were checked and
 the browser closed before releasing the GPU lock. These confirm restored lawn
 patches and retained contrasting route surfaces; no timing or furniture claim
 is inferred.
+
+### Phases 3–4, 6 October 2026 (branch `night-pavements`, unfinished)
+
+The night was cut short by an outage of several hours, so this is a first working
+version with numbers for `ujezd`, not a finished change.
+
+**Is the 2026-10-03 map built with phases 0–2?** Yes. The live index
+(`https://data.streetsofprague.com/2026-10-03/praha_now/index.json`) says
+`built=2026-10-03T10:24:31Z`, `pipeline=f760251180`, and both phase commits (`2885a75`,
+`7ad54d6`) are ancestors of `f760251`. In the live tile and in the shared local one the
+mosaic ribbon over the Karlovo náměstí island route is gone (0 m² within 3 m of
+`[50.075799, 14.4195498]`) and Old Town Square's tile has 26 m² of path on squares.
+The shared `praha` (5 October, `f147539c43`), `centrum` (`87223e7525`) and `ujezd`
+(`9b7840e899`) maps have them too.
+
+**What the branch does.**
+
+- `pipeline/dtm.py` also reads the survey's pavements (Chodník), driveways across them
+  (Nájezd), cycle paths, traffic islands (Dopravní ostrůvek), medians (Dělící pás),
+  platforms (Nástupiště) and tram beds (Tramvajová dráha); `dtm.walks()` hands them
+  over one by one. `VERSION` is 4, so `surfaces.pkl` is read again from the 57
+  packages once (about five minutes on a quiet machine).
+- `pipeline/pavements.py` (new): `surveyed()` chooses each surveyed polygon's paving
+  from the OSM ways for walking on it (the survey's own "prevailing surface" is "not
+  stated" for 96 % of the pavement area): mosaic (`roads.pavement`), asphalt
+  (`roads.pavement_asphalt`), or setts for a walking street (joined to `roads.sett`).
+  One without a tagged way is paved like the nearest tagged one within 60 m, else
+  mosaic. Gaps under 0.6 m and holes under 25 m² between pavement and carriageway are
+  filled, except surveyed greenery (tree pits); mapped squares keep their own paving.
+  Islands, medians, platforms and driveways are paved like pavements.
+  `without_survey()` takes the footways' ribbons off the surveyed shape; a
+  `footway=sidewalk` line at least half on it loses its ribbon altogether. Outside the
+  survey nothing changes, so the derived ribbons remain the fallback.
+- Phase 3: `ribbon()` gives the widened lines flat ends and mitred corners (round only
+  where ways meet), `tidy()` closes gaps under 1 m (never onto carriageways, buildings
+  or water), drops pieces under 4 m² and simplifies to 0.15 m, for `path` and `dirt`.
+- `src/ground.ts` draws `pavement_asphalt` and `pavement` over the ribbons and under
+  the carriageways, and `trambed` (the ballast colour and gravel pattern) over the
+  carriageway and under the rails' concrete strip. No new colour or pattern. Up to three more ground
+  layers per tile; the frame time was not measured.
+- `kerbs.py`, the walk and drive networks, parking and furniture code are untouched.
+  `DERIVED_PAVEMENTS=1` in the environment builds the ground the old way, for A/B.
+
+**Numbers, `ujezd`** (25 tiles, ground layer only;
+[metrics](../docs/evidence/plan018/phase3-4/metrics-ujezd.json), made by
+`docs/evidence/plan018/phase3-4/metrics.py <before layers> <after layers>`; the
+"before" is the shared layer of 3 October):
+
+| | Before | After |
+| --- | ---: | ---: |
+| Mosaic ribbons (`path`) | 67,678 m², 7,772 points | 10,965 m², 1,880 points |
+| `dirt` | 2,514 m², 566 points | 1,756 m², 218 points |
+| Surveyed pavement, mosaic | – | 99,661 m², 14,151 points |
+| Surveyed pavement, asphalt | – | 33,996 m², 4,457 points |
+| `sett` | 95,205 m² | 53,543 m² |
+| Ribbon over carriageway / buildings | 5,202 / 2,776 m² | 1,598 / 1,244 m² |
+| Walk network on surveyed pavement | – | 32,956 of 45,960 m (72 %) |
+| Just outside the kerb is surveyed pavement | – | 1,889 of 2,648 samples (71 %) |
+| Just outside the kerb is carriageway | 1,215 | 403 |
+| Ground chunk size | 847 kB | 1,024 kB |
+
+Surveyed by kind (m²): pavement 235,158, cycle path 1,428, platform 232, island 127,
+driveway 52; no median or tram bed lies in `ujezd`. Per tile the surveyed pavement is
+0.4–9.4 thousand m² and the ribbons fall to 0–1,049 m² (the table is printed by the
+metrics script).
+
+**Checked.** `pipeline/test_pavements.py` (10 tests: square ends, joins, gap closing
+that stays off roads, paving choice, kerb gaps, tree pits, squares, ribbon removal);
+`node scripts/check-ground-areas.mjs` (extended with the new layers' order),
+`scripts/test-ground-seams.mjs`, `check-parking-clearance.mjs`, `check-furniture.mjs`
+and `npm run typecheck` pass. The `ujezd` ground chunk builds (173 s, of which the
+pavement step takes 123 s: too slow, not yet looked at) and assembles.
+
+**Not done, in order of importance.**
+
+1. No screenshots: the scene runs timed out twice in the queue. Nobody has looked at
+   the result. The sett area nearly halves because a cobbled footway on a surveyed
+   pavement is now mosaic; whether that is right must be judged by eye (it may be
+   better to keep `sett` for `footway` too in `pavements._look`).
+2. Four tests in `test_walking_surfaces.py` fail on area thresholds
+   (`…inferred_estate_lawn…` 277 ≤ 300, `…surveyed_green…` and
+   `test_untagged_real_path…` 157 ≤ 170, `…different_material_on_square` 187 ≤ 200).
+   Flat ends explain about 7 m² of each, not the rest (about 23 m²): find out what
+   `tidy()` or the flat cap removes there before merging. These tests also do not
+   patch `dtm.walks` yet, so they read the real survey and take minutes.
+3. `centrum` and a suburban chunk were not built; parking hashes and tile invariance
+   (only `roads` and `areas` may differ) were not compared; the walk-graph and kerb
+   figures above are the only consistency evidence.
+4. The 28 % of the walk network off surveyed pavement (crossings, park paths, lines
+   mapped a little off) and the 15 % of kerb samples with carriageway outside them
+   were not examined.
+5. Ground cover: every tile's ground changes, so `ground_cover.py build <area>` must
+   run again after the ground layer, then the IPR and terrain steps as usual.
+6. Medians are paved like pavements; the grassed ones are probably surveyed as
+   greenery already, unchecked. Tram beds were not seen in any built tile.
+7. README, credits and docs are not updated.
+
+The built `ujezd` tiles are only in the branch's worktree; shared data and the
+deployment are unchanged.

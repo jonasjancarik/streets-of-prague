@@ -1,0 +1,368 @@
+{
+ "before": {
+  "kinds": {
+   "bridge": {
+    "area": 7960.9,
+    "points": 368,
+    "pieces": 13
+   },
+   "dirt": {
+    "area": 2513.6,
+    "points": 566,
+    "pieces": 26
+   },
+   "path": {
+    "area": 67677.6,
+    "points": 7772,
+    "pieces": 207
+   },
+   "road": {
+    "area": 81031.8,
+    "points": 4277,
+    "pieces": 99
+   },
+   "sett": {
+    "area": 95204.7,
+    "points": 8576,
+    "pieces": 172
+   }
+  },
+  "odd": {
+   "path_on_road": 5201.8,
+   "path_on_building": 2776.2,
+   "path_on_water": 147.4,
+   "path_on_surveyed": 0.0
+  },
+  "walk": {
+   "sidewalk_m": 0,
+   "sidewalk_on_surveyed_m": 0,
+   "sidewalk_on_ribbon_m": 0,
+   "sidewalk_on_either_m": 0,
+   "sidewalk_within_1m_m": 0,
+   "walk_m": 45960,
+   "walk_on_surveyed_m": 0
+  },
+  "kerb": {
+   "sides": 2648,
+   "outside_is_surveyed_walk": 0,
+   "outside_is_road": 1215,
+   "inside_is_surveyed_walk": 0
+  },
+  "per_tile": {
+   "0_0": {
+    "surveyed": 0,
+    "ribbons": 4908,
+    "trambed": 0
+   },
+   "0_1": {
+    "surveyed": 0,
+    "ribbons": 6577,
+    "trambed": 0
+   },
+   "0_2": {
+    "surveyed": 0,
+    "ribbons": 7230,
+    "trambed": 0
+   },
+   "0_3": {
+    "surveyed": 0,
+    "ribbons": 3635,
+    "trambed": 0
+   },
+   "0_4": {
+    "surveyed": 0,
+    "ribbons": 333,
+    "trambed": 0
+   },
+   "1_0": {
+    "surveyed": 0,
+    "ribbons": 2884,
+    "trambed": 0
+   },
+   "1_1": {
+    "surveyed": 0,
+    "ribbons": 3158,
+    "trambed": 0
+   },
+   "1_2": {
+    "surveyed": 0,
+    "ribbons": 4458,
+    "trambed": 0
+   },
+   "1_3": {
+    "surveyed": 0,
+    "ribbons": 1020,
+    "trambed": 0
+   },
+   "1_4": {
+    "surveyed": 0,
+    "ribbons": 1546,
+    "trambed": 0
+   },
+   "2_0": {
+    "surveyed": 0,
+    "ribbons": 1209,
+    "trambed": 0
+   },
+   "2_1": {
+    "surveyed": 0,
+    "ribbons": 3654,
+    "trambed": 0
+   },
+   "2_2": {
+    "surveyed": 0,
+    "ribbons": 3549,
+    "trambed": 0
+   },
+   "2_3": {
+    "surveyed": 0,
+    "ribbons": 5337,
+    "trambed": 0
+   },
+   "2_4": {
+    "surveyed": 0,
+    "ribbons": 828,
+    "trambed": 0
+   },
+   "3_0": {
+    "surveyed": 0,
+    "ribbons": 510,
+    "trambed": 0
+   },
+   "3_1": {
+    "surveyed": 0,
+    "ribbons": 1277,
+    "trambed": 0
+   },
+   "3_2": {
+    "surveyed": 0,
+    "ribbons": 2836,
+    "trambed": 0
+   },
+   "3_3": {
+    "surveyed": 0,
+    "ribbons": 1,
+    "trambed": 0
+   },
+   "3_4": {
+    "surveyed": 0,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "4_0": {
+    "surveyed": 0,
+    "ribbons": 2478,
+    "trambed": 0
+   },
+   "4_1": {
+    "surveyed": 0,
+    "ribbons": 2653,
+    "trambed": 0
+   },
+   "4_2": {
+    "surveyed": 0,
+    "ribbons": 4449,
+    "trambed": 0
+   },
+   "4_3": {
+    "surveyed": 0,
+    "ribbons": 2538,
+    "trambed": 0
+   },
+   "4_4": {
+    "surveyed": 0,
+    "ribbons": 611,
+    "trambed": 0
+   }
+  },
+  "bytes_ground": 847457
+ },
+ "after": {
+  "kinds": {
+   "bridge": {
+    "area": 7949.9,
+    "points": 348,
+    "pieces": 15
+   },
+   "dirt": {
+    "area": 1756.4,
+    "points": 218,
+    "pieces": 23
+   },
+   "path": {
+    "area": 10964.7,
+    "points": 1880,
+    "pieces": 223
+   },
+   "pavement": {
+    "area": 99660.5,
+    "points": 14151,
+    "pieces": 695
+   },
+   "pavement_asphalt": {
+    "area": 33995.5,
+    "points": 4457,
+    "pieces": 51
+   },
+   "road": {
+    "area": 80006.3,
+    "points": 4293,
+    "pieces": 99
+   },
+   "sett": {
+    "area": 53543.3,
+    "points": 5199,
+    "pieces": 101
+   }
+  },
+  "odd": {
+   "path_on_road": 1598.1,
+   "path_on_building": 1244.4,
+   "path_on_water": 120.6,
+   "path_on_surveyed": 176.8
+  },
+  "walk": {
+   "sidewalk_m": 0,
+   "sidewalk_on_surveyed_m": 0,
+   "sidewalk_on_ribbon_m": 0,
+   "sidewalk_on_either_m": 0,
+   "sidewalk_within_1m_m": 0,
+   "walk_m": 45960,
+   "walk_on_surveyed_m": 32956
+  },
+  "kerb": {
+   "sides": 2648,
+   "outside_is_surveyed_walk": 1889,
+   "outside_is_road": 403,
+   "inside_is_surveyed_walk": 201
+  },
+  "per_tile": {
+   "0_0": {
+    "surveyed": 8353,
+    "ribbons": 84,
+    "trambed": 0
+   },
+   "0_1": {
+    "surveyed": 7330,
+    "ribbons": 1006,
+    "trambed": 0
+   },
+   "0_2": {
+    "surveyed": 9189,
+    "ribbons": 492,
+    "trambed": 0
+   },
+   "0_3": {
+    "surveyed": 3024,
+    "ribbons": 849,
+    "trambed": 0
+   },
+   "0_4": {
+    "surveyed": 1497,
+    "ribbons": 119,
+    "trambed": 0
+   },
+   "1_0": {
+    "surveyed": 8145,
+    "ribbons": 106,
+    "trambed": 0
+   },
+   "1_1": {
+    "surveyed": 6387,
+    "ribbons": 737,
+    "trambed": 0
+   },
+   "1_2": {
+    "surveyed": 7938,
+    "ribbons": 746,
+    "trambed": 0
+   },
+   "1_3": {
+    "surveyed": 6456,
+    "ribbons": 190,
+    "trambed": 0
+   },
+   "1_4": {
+    "surveyed": 2626,
+    "ribbons": 565,
+    "trambed": 0
+   },
+   "2_0": {
+    "surveyed": 9411,
+    "ribbons": 227,
+    "trambed": 0
+   },
+   "2_1": {
+    "surveyed": 8740,
+    "ribbons": 889,
+    "trambed": 0
+   },
+   "2_2": {
+    "surveyed": 7887,
+    "ribbons": 272,
+    "trambed": 0
+   },
+   "2_3": {
+    "surveyed": 7291,
+    "ribbons": 577,
+    "trambed": 0
+   },
+   "2_4": {
+    "surveyed": 1192,
+    "ribbons": 424,
+    "trambed": 0
+   },
+   "3_0": {
+    "surveyed": 444,
+    "ribbons": 492,
+    "trambed": 0
+   },
+   "3_1": {
+    "surveyed": 3330,
+    "ribbons": 443,
+    "trambed": 0
+   },
+   "3_2": {
+    "surveyed": 5299,
+    "ribbons": 240,
+    "trambed": 0
+   },
+   "3_3": {
+    "surveyed": 20,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "3_4": {
+    "surveyed": 0,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "4_0": {
+    "surveyed": 6781,
+    "ribbons": 1049,
+    "trambed": 0
+   },
+   "4_1": {
+    "surveyed": 6839,
+    "ribbons": 172,
+    "trambed": 0
+   },
+   "4_2": {
+    "surveyed": 8896,
+    "ribbons": 818,
+    "trambed": 0
+   },
+   "4_3": {
+    "surveyed": 6121,
+    "ribbons": 80,
+    "trambed": 0
+   },
+   "4_4": {
+    "surveyed": 462,
+    "ribbons": 388,
+    "trambed": 0
+   }
+  },
+  "bytes_ground": 1024245
+ }
+}
