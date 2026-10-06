@@ -182,8 +182,11 @@ function grime(c0: N, f: N, fWidth: N) {
 // colour; the module in the middle of the bay, its plaster edge drawn on across the piers.
 function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N) {
   const style = floor(f.w).toInt(), seed = fract(f.w).mul(97);
-  const q = vec2(f.x.div(f.z).mul(bays), select(f.y.lessThan(4), clamp(f.y.div(4), 0, 0.999), f.y.sub(4).div(3.4)));
-  const cell = floor(q), uv = fract(q);
+  // (toVar: declared here, before the branches below. Left to TSL, `q` was worked out inside the
+  // upper floors' branch only, and a ground floor read it unset: every pixel of it took the module's
+  // top left corner, plain plaster, so ground floors and whole low buildings had no doors or windows.)
+  const q = vec2(f.x.div(f.z).mul(bays), select(f.y.lessThan(4), clamp(f.y.div(4), 0, 0.999), f.y.sub(4).div(3.4))).toVar();
+  const cell = floor(q).toVar(), uv = fract(q);
   const bay: N = f.z.div(bays), mw: N = min(F_MOD.element(style), bay);
   const u: N = clamp(uv.x.sub(0.5).mul(bay).div(mw).add(0.5), 0.016, 0.984);
   const layer = int(0).toVar();
