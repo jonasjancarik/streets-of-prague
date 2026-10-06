@@ -45,6 +45,10 @@ class OnLevelsTests(unittest.TestCase):
         self.assertEqual(self.on.rails("0_0", [{"kind": "rail", "pts": [[-48, 1], [48, 1]]}]), [])
         self.assertEqual(self.on.rails("1_0", [{"kind": "tram", "pts": [[-48, 1], [48, 1]]}]), [])
 
+    def test_track_passing_under_a_bridge_stays_on_the_ground(self):
+        # Across the high bridge alone, well away from the low one.
+        self.assertEqual(self.on.rails("0_0", [{"kind": "tram", "pts": [[-20, 30], [20, 30]]}]), [])
+
     def test_track_running_onto_a_bridge_is_cut_where_the_deck_begins(self):
         got = self.on.rails("0_0", [{"kind": "tram", "pts": [[-80, 0], [-20, 0]]}])
         self.assertEqual(len(got), 1)

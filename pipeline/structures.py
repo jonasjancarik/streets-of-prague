@@ -1030,6 +1030,7 @@ def merge_ways(ways):
 # ---- Which level a street or a tram track is on ------------------------------------------
 
 ON_WAY = 1.5  # m: a street's edge this close to a structure way is that way
+ALONG = 0.5  # a track at more than 60° to a bridge's ways isn't on that bridge: it crosses under or over it
 BY_WAY = 12.0  # m: a tram track this close to a bridge's way runs along it, or crosses it
 
 
@@ -1096,7 +1097,7 @@ class OnLevels:
     def rails(self, key, rails):
         """The stretches of a tile's tram tracks that are on a bridge: [{level, pts}].
         A stretch over two decks at once (one bridge crossing another) is on the one it
-        runs along."""
+        runs along, and one that only crosses a bridge's outline is under it, on the ground."""
         shapes = self.shapes(key)
         out = []
         if not shapes:
@@ -1116,11 +1117,15 @@ class OnLevels:
                 m = shapely.Point((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
                 on = [lv for lv, shape in shapes if shape.contains(m)]
                 level = 0
-                if len(on) == 1:
-                    level = on[0]
-                elif on:
+                if on:
+                    # On the deck it runs along; not on one it only passes under (the
+                    # trams on the embankment under Železniční most were laid on the
+                    # railway bridge's footways, 4 m up).
                     d = ((b[0] - a[0]) / length, (b[1] - a[1]) / length)
-                    level = max(on, key=lambda lv: (round(self.along(lv, m, d), 2), -lv))
+                    score = {lv: round(self.along(lv, m, d), 2) for lv in on}
+                    best = max(on, key=lambda lv: (score[lv], -lv))
+                    if score[best] >= ALONG:
+                        level = best
                 if level != cur_level:
                     if cur and cur_level:
                         out.append({"level": cur_level, "pts": cur})

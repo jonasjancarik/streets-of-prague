@@ -116,7 +116,9 @@ function walk(e) {
   for (const [x, y] of pts) {
     let h = NaN;
     if (e.level !== undefined) h = levelAt(x, y, e.level);
-    else {
+    // (An edge can run on from its deck onto another level: stairs down from a bridge,
+    // mapped as bridge ways, are one edge with the footway they leave.)
+    if (Number.isNaN(h)) {
       // The level nearest in height to the last sample (to the ground, at the start).
       const ref = Number.isNaN(was) ? groundAt(x, y) : was;
       for (const l of bridgesAt(x, y)) {
@@ -168,7 +170,7 @@ for (const [e, prof] of profs) {
     const node = end ? e.v : e.u, mine = endHeight(e, node, profs), among = bridgeEnds(node, e.net) > 1;
     let far = 0;
     for (const o of atNode.get(node) || []) {
-      if (o === e || o.net !== e.net || o.hw === 'steps' || (among && !profs.has(o))) continue;
+      if (o === e || o.net !== e.net || o.hw === 'steps' || o.tunnel || (among && !profs.has(o))) continue;
       const d = endHeight(o, node, profs) - mine;
       if (Math.abs(d) > Math.abs(far)) far = d;
     }
