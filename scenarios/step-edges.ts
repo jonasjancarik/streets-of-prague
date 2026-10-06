@@ -12,10 +12,11 @@ export default {
     // A car driven at the top of a quay wall stays up there.
     const quay = t.stepEdge({ water: true, drop: 2, r: 300 });
     if (t.check('a quay wall with a clear run up to it', !!quay) && quay) {
+      // (The car is put there by hand: going somewhere in a car sets it back on a road.)
       await t.go(quay.from, { heading: quay.heading });
-      await t.drive('sedan');
-      await t.go(quay.from, { heading: quay.heading });
+      t.enter(t.car('sedan', { at: quay.from, heading: quay.heading, ahead: 0 }));
       const top = t.groundHere();
+      if (!t.check('the car starts on the quay, before the edge', t.pastEdge(quay) < -5, `${t.pastEdge(quay)} m past the edge`)) return;
       t.push(50, quay.heading);
       await t.wait(3, { move: 1 });
       t.check('the car stopped before the quay wall', t.pastEdge(quay) < 0.5, `${t.pastEdge(quay)} m past the edge`);
@@ -39,7 +40,9 @@ export default {
     // Stairs across a step: you walk down them.
     await t.go(start);
     const stairs = t.stepCrossing({ hw: 'steps', r: 300, back: 5 });
-    if (t.check('stairs across a step', !!stairs) && stairs) {
+    // (Not every neighbourhood has them: without any, there is nothing to walk down.)
+    t.check(stairs ? 'stairs across a step' : 'no stairs across a step near here: not tried', true);
+    if (stairs) {
       await t.go(stairs.from, { heading: stairs.heading });
       await t.wait(8, { move: 1 });
       t.check('the walker went down the stairs', t.pastEdge(stairs) > 2, `${t.pastEdge(stairs)} m past the edge`);
