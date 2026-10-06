@@ -1031,6 +1031,7 @@ def merge_ways(ways):
 
 ON_WAY = 1.5  # m: a street's edge this close to a structure way is that way
 ALONG = 0.5  # a track at more than 60° to a bridge's ways isn't on that bridge: it crosses under or over it
+OUTLINE = 60.0  # m: as far as a bridge's outline reaches from its ways
 BY_WAY = 12.0  # m: a tram track this close to a bridge's way runs along it, or crosses it
 
 
@@ -1080,28 +1081,40 @@ class OnLevels:
 
     def along(self, level, p, d):
         """How nearly a track at `p` heading `d` (a unit vector) runs along a bridge way
-        of `level` close by: 1 along it, 0 across it; 0.6 with no way near (a bridge of the
-        tram's own, drawn as an outline alone)."""
-        best = None
-        for o in self.tree.query(p, predicate="dwithin", distance=BY_WAY) if self.tree is not None else []:
-            w = self.ways[o]
-            if w["kind"] != "bridge" or w["level"] != level:
-                continue
+        of `level`: 1 along it, 0 across it. Of the ways within BY_WAY the one it follows
+        best; with none that close, the longest within OUTLINE (a wide bridge's outline
+        reaches well past its ways); 0.6 with none at all (a bridge of the tram's own,
+        drawn as an outline alone)."""
+        def score(o):
             s = self.lines[o].project(p)
-            a, b = self.lines[o].interpolate(max(0, s - 1)), self.lines[o].interpolate(s + 1)
+            a, b = self.lines[o].interpolate(max(0, s - 10)), self.lines[o].interpolate(s + 10)
             length = math.hypot(b.x - a.x, b.y - a.y)
-            if length > 1e-6:
-                best = max(best or 0, abs((b.x - a.x) * d[0] + (b.y - a.y) * d[1]) / length)
-        return 0.6 if best is None else best
+            return abs((b.x - a.x) * d[0] + (b.y - a.y) * d[1]) / length if length > 1e-6 else 0.0
+        if self.tree is None:
+            return 0.6
+        mine = lambda reach: [o for o in self.tree.query(p, predicate="dwithin", distance=reach)  # noqa: E731
+                              if self.ways[o]["kind"] == "bridge" and self.ways[o]["level"] == level]
+        close = mine(BY_WAY)
+        if close:
+            return max(score(o) for o in close)
+        far = mine(OUTLINE)
+        return score(max(far, key=lambda o: self.lines[o].length)) if far else 0.6
 
-    def rails(self, key, rails):
+    def rails(self, key, rails, roads=None):
         """The stretches of a tile's tram tracks that are on a bridge: [{level, pts}].
         A stretch over two decks at once (one bridge crossing another) is on the one it
-        runs along, and one that only crosses a bridge's outline is under it, on the ground."""
+        runs along, and one that only crosses a bridge's outline, or lies in a street on
+        the ground, is under it."""
         shapes = self.shapes(key)
         out = []
         if not shapes:
             return out
+        # A track in a street on the ground is on the ground, whatever is over it (it may
+        # run along under a viaduct). `roads`: the tile's street polygons by kind.
+        on_street = on_bridge = None
+        if roads:
+            polys = lambda kinds: unary_union([Polygon(r[0], r[1:]).buffer(0) for k in kinds for r in roads.get(k, [])])  # noqa: E731
+            on_street, on_bridge = polys([k for k in roads if k != "bridge"]), polys(["bridge"])
         for r in rails:
             if r["kind"] != "tram" or len(r["pts"]) < 2:
                 continue
@@ -1117,6 +1130,8 @@ class OnLevels:
                 m = shapely.Point((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
                 on = [lv for lv, shape in shapes if shape.contains(m)]
                 level = 0
+                if on and on_street is not None and on_street.contains(m) and not on_bridge.contains(m):
+                    on = []
                 if on:
                     # On the deck it runs along; not on one it only passes under (the
                     # trams on the embankment under Železniční most were laid on the

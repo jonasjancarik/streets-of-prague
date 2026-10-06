@@ -49,6 +49,15 @@ class OnLevelsTests(unittest.TestCase):
         # Across the high bridge alone, well away from the low one.
         self.assertEqual(self.on.rails("0_0", [{"kind": "tram", "pts": [[-20, 30], [20, 30]]}]), [])
 
+    def test_track_in_a_street_on_the_ground_under_a_viaduct_stays_on_the_ground(self):
+        # Along the low bridge's outline, but in a street on the ground beneath it.
+        rails = [{"kind": "tram", "pts": [[-48, 1], [48, 1]]}]
+        street = {"road": [[[[-60, -4], [60, -4], [60, 4], [-60, 4]]]]}
+        self.assertEqual(self.on.rails("0_0", rails, street), [])
+        # (the bridge's own carriageway is a street too, of the kind "bridge")
+        deck = {"bridge": [[[[-60, -4], [60, -4], [60, 4], [-60, 4]]]], "road": []}
+        self.assertEqual([r["level"] for r in self.on.rails("0_0", rails, deck)], [1])
+
     def test_track_running_onto_a_bridge_is_cut_where_the_deck_begins(self):
         got = self.on.rails("0_0", [{"kind": "tram", "pts": [[-80, 0], [-20, 0]]}])
         self.assertEqual(len(got), 1)
