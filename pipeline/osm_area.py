@@ -83,6 +83,7 @@ FENCE_TOLERANCE = 0.25  # m: how far a fence's line may be straightened
 GRID = 0.01  # metres, for overlaying the survey's surface
 SPARSE_OTHER = 0.04  # of a block's area: a few shops or sheds in a mostly empty block don't make it commercial
 SETTLED_REACH = 30.0  # m: how far from a family house unmapped land counts as its surroundings
+STREET_NEAR = 12.0  # m: the streets and pavements this near a block are the ones its plots face
 
 
 def road_width(hw, width=None, lanes=None):
@@ -465,7 +466,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     # (A block of gardens starts behind the surveyed pavement, not at the kerb, so the
     # plots, their fences and gates stand at the pavement's back edge.)
     gardens, lawns, plot_fences, drives, on_plots = _gardens(
-        homes, buildings, [*streets, *(p for p in shapely.get_parts(walked) if p.geom_type == "Polygon")], clip,
+        homes, buildings, [*streets, *(p for p in shapely.get_parts(shapely.simplify(walked, 0.1)) if p.geom_type == "Polygon")], clip,
         [LineString(f["pts"]) for f in fences] + [LineString(wl["pts"]) for wl in walls],
         unmapped=[g for g in spoken_for if not g.is_empty],
         ways=[g for g in [*service, *road_lines.get("path", []), *road_lines.get("dirt", []), *(ws[0] for ws in walking_surfaces)]
@@ -815,7 +816,10 @@ def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None, ways=(
     # (Polygon by polygon: joined surfaces span the chunk, and each block needs only its own.)
     ways = [g for g in shapely.get_parts(np.asarray(ways, dtype=object)) if g.area > 0] if len(ways) else []
     way_tree = STRtree(ways) if len(ways) else None
-    street_edge = unary_union(streets).buffer(1.5) if streets else Polygon()
+    # (The streets round each block only: the whole chunk's, grown, is a shape every
+    # block's plots would be laid against again.)
+    street_parts = [g for g in streets if not g.is_empty]
+    street_tree = STRtree(street_parts) if street_parts else None
     mapped = unary_union([b.buffer(1.0) for b in barriers]) if len(barriers) else Polygon()
     for block, fenced in blocks:
         if block.area < 100:
@@ -839,6 +843,8 @@ def _gardens(homes, buildings, streets, clip, barriers=(), unmapped=None, ways=(
         if fenced and houses >= 0.7 * covered:
             homes_here = [(buildings[k]["id"], shapes[k]) for k in main]
             through = unary_union([ways[k].intersection(block) for k in way_tree.query(block, predicate="intersects")]) if way_tree is not None else Polygon()
+            beside = sorted(street_tree.query(block.buffer(STREET_NEAR), predicate="intersects")) if street_tree is not None else []
+            street_edge = unary_union([street_parts[k] for k in beside]).buffer(1.5) if len(beside) else Polygon()
             got = garden_plots.furnish(_plots(block, homes_here), homes_here, [(buildings[k]["kind"], shapes[k]) for k in near],
                                        green, street_edge, mapped, through)
             fences.extend(got["fences"])
