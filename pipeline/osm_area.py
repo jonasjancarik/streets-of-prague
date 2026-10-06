@@ -24,6 +24,7 @@ from shapely.ops import unary_union
 import barriers
 import dtm
 import lanes
+import pavements
 import plots as garden_plots
 import roofs
 import sports
@@ -185,6 +186,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         if hw == "footway" and col(row, "footway") == "crossing":
             crossings.extend(_coords(ls) for ls in _lines(g.intersection(clip)))
             return
+        if hw not in CAR_ROADS and cls != "bridge":
+            # What the surveyed pavement under it is paved with (pavements.py).
+            paved_ways.extend((ls, col(row, "surface"), hw == "pedestrian") for ls in _lines(g))
         if hw in ("footway", "path") and col(row, "footway") not in ("traffic_island", "link"):
             sidewalks.extend((ls, width / 2, col(row, "footway") == "sidewalk") for ls in _lines(g))
         if hw in CAR_ROADS:
@@ -200,14 +204,17 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             # On paving these tags describe a route, not another surface. A part
             # crossing mapped greenery still needs a real path; decide below.
             route = at_ground and hw == "footway" and col(row, "footway") in ("traffic_island", "link")
-            walking_surfaces.append((g.buffer(width / 2, cap_style="round", join_style="round"),
-                                     cls, col(row, "surface"), at_ground, route))
+            # (Widened into a ribbon once every way is in: pavements.ribbon.)
+            walking_surfaces.append((g, cls, col(row, "surface"), at_ground, route))
+            walking_widths.append((width / 2, hw == "footway" and col(row, "footway") == "sidewalk"))
 
     buildings = []
     parts = []  # building parts whose roof OSM describes (roofs.py), to colour IPR's roofs by
     areas: dict[str, list] = {}
     road_lines: dict[str, list] = {}
-    walking_surfaces = []  # (buffer, class, surface tag, ground level, route only on paving)
+    walking_surfaces = []  # (line, class, surface tag, ground level, route only on paving)
+    walking_widths = []  # for each of those: (half width, tagged as a street's pavement)
+    paved_ways = []  # (line, surface tag, a walking street?) of the ways for walking
     rails, walls, fences, trees, weirs, crossings, passages = [], [], [], [], [], [], []
     marks = []  # painted lines on pitches, courts and tracks (sports.py), as polylines
     lots = []  # each parking area on its own, with how the cars stand in it
@@ -469,6 +476,19 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
         kind = _square_surface(surface_tag) if surface_tag is not None else _square_from_ways(poly, square_ways, square_tree)
         areas.setdefault(kind or "square", []).append(poly)
+    # The footpaths as ribbons with square ends, and the pavements, islands and tram
+    # beds the technical map has surveyed in place of the ribbons along them.
+    meet = pavements.joints([g for g, *_ in walking_surfaces])
+    walking_surfaces = [(pavements.ribbon(g, half, meet), *rest)
+                        for (g, *rest), (half, _) in zip(walking_surfaces, walking_widths)]
+    paved, walked = pavements.surveyed(
+        {} if pavements.DERIVED_ONLY else dtm.walks((w, s, e, n), tf.transform), surface, paved_ways,
+        unary_union([g for k in ("square", "square_setts", "square_asphalt", "square_loose") for g in areas.get(k, [])]),
+        unary_union([g for k, g in land.items() if k != "dtm_yard"]), clip, stats)
+    walking_surfaces = pavements.without_survey(walking_surfaces, [beside for _, beside in walking_widths], walked)
+    for key, geom in paved.items():
+        road_lines.setdefault(key, []).append(geom)
+    timer.lap("surveyed_pavements")
     for cls, geom in _walking_surfaces(walking_surfaces, areas, natural):
         road_lines.setdefault(cls, []).append(geom)
     timer.lap("squares_walking_surfaces")
@@ -492,8 +512,15 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                                [land.get("dtm_yard", Polygon()), *areas.get("yard", [])],
                                lots, buildings, drivable, natural, [w[0] for w in car_ways], clip))
     timer.lap("inferred_lots")
-    road_polys = {k: unary_union(v).intersection(clip) for k, v in road_lines.items()}
+    road_polys = {k: unary_union(v) for k, v in road_lines.items()}
     area_polys = {k: unary_union(v).intersection(clip) for k, v in areas.items()}
+    # The paths' ribbons tidied (plan 018), before they are cut to the chunk.
+    keep_off = [*(road_polys[k] for k in ("road", "sett") if k in road_polys), area_polys.get("water", Polygon()),
+                *(Polygon(b["rings"][0], b["rings"][1:]) for b in buildings)]
+    for k in ("path", "dirt"):
+        if k in road_polys and not pavements.DERIVED_ONLY:
+            road_polys[k] = pavements.tidy(road_polys[k], keep_off)
+    road_polys = {k: g.intersection(clip) for k, g in road_polys.items()}
     timer.lap("road_land_unions")
     area_polys.update(land)
     if not gardens.is_empty:

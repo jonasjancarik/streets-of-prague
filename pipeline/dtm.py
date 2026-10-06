@@ -5,11 +5,13 @@
 
 IPR publishes the map every month as one GeoPackage per city district (57 of them,
 about 130 MB zipped), downloaded into pipeline/.cache/dtm/ZPS_OPL/. Each is read
-once: carriageways, lay-bys, parking, courtyards and selected greenery, with the level each is on (0 the ground,
+once: carriageways, lay-bys, parking, courtyards, selected greenery, pavements, traffic
+islands and the trams' own beds, with the level each is on (0 the ground,
 1, 2, … bridges and decks, -1, … under the ground), go into dtm/surfaces.pkl in
 WGS84, the same for every area. The map covers the city only; past its limits
 streets() finds nothing and the pipeline sizes streets from OSM as before. land()
-returns the surveyed ground polygons without rounding their corners.
+returns the surveyed ground polygons without rounding their corners, and walks() the
+pavements, islands and tram beds one by one.
 
 Source: DTM kraje – ZPS, datový podklad © IPR Praha (CC BY 4.0).
 """
@@ -49,10 +51,21 @@ KINDS = {
     "010000020903": "garden",     # zahrada
     "010000015203": "pitch",      # hřiště
     "010000021103": "wood",       # les
+    "010000000703": "pavement",   # chodník
+    "010000001703": "driveway",   # nájezd: where cars cross the pavement to a gate
+    "010000000903": "cycleway",   # cyklostezka
+    "010000001303": "island",     # dopravní ostrůvek: a refuge or a junction's island
+    "010000001503": "median",     # dělící pás, between two carriageways
+    "010000005303": "platform",   # nástupiště: a tram stop's island, a station's platform
+    "010000002403": "trambed",    # tramvajová dráha: tracks on a bed of their own
 }
-VERSION = 3  # bump when what surfaces() keeps changes
+VERSION = 4  # bump when what surfaces() keeps changes
 STREET_KINDS = ("road", "roadside", "parking")
 LAND_KINDS = ("yard", "green", "garden", "pitch", "wood")
+# What people walk on beside and between the carriageways, and the trams' own beds.
+# (The survey's "prevailing surface" of a pavement is nearly always "not stated", so
+# what each is paved with comes from OSM: pavements.py.)
+WALK_KINDS = ("pavement", "driveway", "cycleway", "island", "median", "platform", "trambed")
 # The survey draws a street corner's curve as a few straight pieces, and where two
 # surfaces meet their edges often miss by a hand's width. Gaps and spikes narrower
 # than twice SLIVER go, then each corner is cut ROUNDS times, at most CUT metres
@@ -65,6 +78,7 @@ MARGIN = 0.0005  # degrees (~40 m) past the box, so neighbouring boxes round ali
 _index = None  # per process: (STRtree, polygons on the ground in WGS84)
 _land_index = None  # per process: (STRtree, polygons, kind labels)
 _parking_index = None  # per process: (STRtree, parking polygons on the ground in WGS84)
+_walk_index = None  # per process: (STRtree, polygons, kind labels) of WALK_KINDS
 
 
 def _kept(name, bbox, transform, compute):
@@ -94,9 +108,9 @@ def _kept(name, bbox, transform, compute):
 def download():
     """Fetch the districts' packages that aren't here yet (a new month's have new names),
     removing the ones they replace."""
-    global _index, _land_index, _parking_index
+    global _index, _land_index, _parking_index, _walk_index
     listing = json.loads(_get(LIST))
-    _index = _land_index = _parking_index = None
+    _index = _land_index = _parking_index = _walk_index = None
     PACKAGES.mkdir(parents=True, exist_ok=True)
     keep = set()
     for district in listing:
@@ -151,8 +165,8 @@ def surfaces():
 
 def _indexes():
     """Both worker indexes from one unpickle; don't retain the unused upper levels."""
-    global _index, _land_index, _parking_index
-    if _index is not None and _land_index is not None and _parking_index is not None:
+    global _index, _land_index, _parking_index, _walk_index
+    if _index is not None and _land_index is not None and _parking_index is not None and _walk_index is not None:
         return
     kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
     street = [kinds[k][1][kinds[k][0] == 0] for k in STREET_KINDS if k in kinds]
@@ -164,6 +178,10 @@ def _indexes():
     _land_index = (STRtree(geoms), geoms, labels)
     parking = kinds["parking"][1][kinds["parking"][0] == 0] if "parking" in kinds else np.array([], dtype=object)
     _parking_index = (STRtree(parking), parking)
+    groups = [(k, kinds[k][1][kinds[k][0] == 0]) for k in WALK_KINDS if k in kinds]
+    geoms = np.concatenate([g for _, g in groups]) if groups else np.array([], dtype=object)
+    labels = np.concatenate([np.full(len(g), k, dtype=object) for k, g in groups]) if groups else np.array([], dtype=object)
+    _walk_index = (STRtree(geoms), geoms, labels)
 
 
 def streets(bbox, transform):
@@ -214,6 +232,28 @@ def parking(bbox, transform):
         local = shapely.transform(hits, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
         return shapely.union_all(shapely.make_valid(local), grid_size=0.01)
     return _kept("parking", bbox, transform, compute)
+
+
+def walks(bbox, transform):
+    """The surveyed pavements, driveways across them, cycle paths, traffic islands,
+    medians, platforms and tram beds on the ground that reach into a WGS84 box:
+    {kind: array of polygons in local metres}, each as surveyed (not joined, not
+    rounded), so each can be given its own paving. Kinds with nothing are left out."""
+    def compute():
+        _indexes()
+        tree, geoms, labels = _walk_index
+        w, s, e, n = bbox
+        hits = np.sort(tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN), predicate="intersects"))
+        out = {}
+        for kind in WALK_KINDS:
+            chosen = geoms[hits[labels[hits] == kind]]
+            if not len(chosen):
+                continue
+            local = shapely.make_valid(shapely.transform(chosen, lambda c: np.column_stack(transform(c[:, 0], c[:, 1]))))
+            parts = shapely.get_parts(local)
+            out[kind] = parts[np.isin(shapely.get_type_id(parts), (3, 6)) & (shapely.area(parts) > 0)]
+        return out
+    return _kept("walks", bbox, transform, compute)
 
 
 def _smooth(g):
