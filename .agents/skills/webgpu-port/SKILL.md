@@ -238,7 +238,19 @@ arithmetic well: `webgpu.ts` uses `type N = any` for nodes.
   it's called (see `detail()` in `webgpu.ts`). Inside branches use
   `.level(float(0))` for texture reads.
 - **A node first used inside an `If` is emitted inside it.** `.toVar()` the values
-  a branch changes (and anything used again after it) before the `If`.
+  a branch changes (and anything used again after it) before the `If`. This holds for
+  values two branches share as well: `facadeModules` in `webgpu/buildings.ts` worked out
+  a wall pixel's bay and storey in the upper floors' branch only, the ground floor read
+  them unset, and ground floors and low buildings had no doors or windows (found
+  6 October 2026 by reading the WGSL from `getShaderAsync`: a variable assigned in an
+  `else` and read after it).
+- **The scene's fog is mixed in before the tone curve.** Its colour is meant for the
+  screen, so `Sky` hands WebGPU the colour the curve turns into it (`beforeCurve` in
+  `sky.ts`, on the CPU) and a smaller share (`FOG_SHARE`). Compare fog between the
+  renderers only on fresh loads at the same time and weather, with and without the fog
+  (`fog.near = fog.far = 1e5`): the night frame is lighter on WebGPU without any fog
+  (lamp-lit paving 0.29 against 0.20), and WebGL's fog also lightens what lies under the
+  lamps' additive glows, so the fogged pictures differ less than the bases do.
 - **One texture node per texture.** Make it once (`const noise =
   texture(NOISE.value)`) and read with `noise.sample(uv)`; a fresh `texture()` per
   call can run into WebGPU's limit of 16 textures per shader.

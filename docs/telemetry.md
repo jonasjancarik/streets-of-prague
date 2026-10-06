@@ -23,7 +23,7 @@ every field of each and is the only place the format is defined.
 | `play` | with `frames` | seconds on foot, driving, on a tram, in a taxi and on anything else; metres travelled; cars wrecked, people knocked over, arrests, deaths; money; the most stars reached; tickets bought; games saved by hand |
 | `activity` | with `frames`, one for each thing done or paid for | `did`: the name of something the player did, how many times, and how many seconds into the session the first time. `spent`: what money went on, how many payments, the first one's time and the amount in Kč |
 | `setting` | a setting is changed in the panel, or with G or P | which one and the new value |
-| `error` | an uncaught error, a failed start, WebGPU falling back to WebGL, the graphics device being lost | the message and the first lines of the stack; five a session at most, each distinct error once |
+| `error` | an uncaught error, a failed start, WebGPU falling back to WebGL, the graphics device being lost | the message and the first lines of the stack; five a session at most, each distinct error once. When WebGPU does not start: which request was pending (adapter or device), after how long, the animation frames drawn meanwhile, whether the tab was hidden or out of focus, and the graphics card's name; a device that arrives after the fallback is reported with how late it came |
 
 `frames`, `play` and `activity` hold totals since the start of the session and may be
 sent several times (each time the tab is hidden); `seq` counts them and the last one is
