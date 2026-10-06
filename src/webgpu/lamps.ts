@@ -95,13 +95,21 @@ setPools(poolsMaterial);
 export const uLampOn = follow(LAMP_ON);
 const uLampBox = followVec(LAMP_BOX), uLampRef = followVec(LAMP_REF);
 let map: N = null, mapHigh: N = null;
+// A building's roofs: how far a face must look up to count as one (the cosine of its
+// slope: from 70° to 55°, so steep roofs too but no wall), and from what height over the
+// lit ground it gets no lamplight (m; a doorstep or a low plinth below that still does).
+const ROOF = { facing: [0.34, 0.57], over: [1.2, 2.2] };
 
 // The lamps' light at a point in the world (0 by day and off the map); with a normal,
 // what faces up and is well above the lamp gets none (lampLightOn).
 // Each map's light reaches the walls a few metres up from the ground it falls on. The
 // ground's own lights also reach down (a floodlit square, a cutting); a bridge's don't,
 // so the street under a deck isn't lit from it.
-export function lampLight(w: N, n?: N) {
+// `roofs`: the surface is a building's, whose faces that look up are roofs: they get none
+// from a little over the ground up, however low the roof (a shed's beside a lamp was lit
+// as if the lamp shone from above it; the map knows the ground a light falls on, not how
+// high its head is). The same arithmetic with other numbers, so it costs a pixel nothing.
+export function lampLight(w: N, n?: N, roofs = false) {
   map ??= texture(LAMP_MAP.value ?? new THREE.Texture());
   mapHigh ??= texture(LAMP_MAP_HIGH.value ?? new THREE.Texture());
   const out = vec3(0).toVar();
@@ -111,12 +119,13 @@ export function lampLight(w: N, n?: N) {
   const inside = uv.x.greaterThanEqual(0).and(uv.y.greaterThanEqual(0)).and(uv.x.lessThanEqual(1)).and(uv.y.lessThanEqual(1));
   If(uLampOn.greaterThan(0.005).and(inside), () => {
     const at = vec2(uv.x, uv.y.oneMinus()).toVar();
-    const up = nv ? smoothstep(0.5, 0.8, dot(nv, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz)).toVar() : null;
+    const facing = roofs ? ROOF.facing : [0.5, 0.8], over = roofs ? ROOF.over : [3.5, 5.5];
+    const up = nv ? smoothstep(facing[0], facing[1], dot(nv, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz)).toVar() : null;
     const from = (tex: N, low: [number, number]) => {
       const l = tex.sample(at).level(float(0)).toVar();
       const dy = w.y.sub(l.a.div(max(dot(l.rgb, LUMA), 1e-4)).add(uLampRef.x)).toVar();
       const k = smoothstep(3, 11, dy).oneMinus().mul(smoothstep(low[0], low[1], dy)).toVar();
-      if (up) k.mulAssign(up.mul(smoothstep(3.5, 5.5, dy)).oneMinus());
+      if (up) k.mulAssign(up.mul(smoothstep(over[0], over[1], dy)).oneMinus());
       return l.rgb.mul(k);
     };
     out.assign(from(map, [-22, -16]));
@@ -128,21 +137,23 @@ export function lampLight(w: N, n?: N) {
 
 // Cache by both graph inputs. In particular, a converted material's own emissive
 // graph may differ even when its port key is the same.
-const litGraphs = new WeakMap<N, WeakMap<N, N>>();
-const unlitGraphs = new WeakMap<N, N>();
+const caches = () => ({ lit: new WeakMap<N, WeakMap<N, N>>(), unlit: new WeakMap<N, N>() });
+const plainGraphs = caches(), roofGraphs = caches();
 const applied = new WeakMap<N, { graph: N }>();
 
 // Adds the lamps' light to what a material already gives out, over its own diffuse colour.
-export function lampLit(node: N, world: N = positionWorld) {
+// `roofs`: a building, whose roofs the lamps leave dark (lampLight).
+export function lampLit(node: N, world: N = positionWorld, roofs = false) {
   const previous = applied.get(node);
   if (previous && node.emissiveNode === previous.graph) return;
   const emissive = node.emissiveNode ?? null;
+  const { lit: litGraphs, unlit: unlitGraphs } = roofs ? roofGraphs : plainGraphs;
   let byWorld = emissive === null ? unlitGraphs : litGraphs.get(emissive);
   if (!byWorld) litGraphs.set(emissive, (byWorld = new WeakMap()));
   let graph = byWorld.get(world);
   if (!graph) graph = Fn(() => {
     const e = vec3(emissive ?? 0).toVar();
-    e.addAssign(diffuseColor.rgb.mul(lampLight(world, normalView)));
+    e.addAssign(diffuseColor.rgb.mul(lampLight(world, normalView, roofs)));
     return e;
   })();
   byWorld.set(world, graph);
