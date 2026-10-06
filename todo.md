@@ -255,27 +255,30 @@ before that day's frame-count fix may be doubled.
 
 ## Gameplay
 
-- **`scene.mjs run all` is unstable, and was before the night of 5–6 October** (four
-  full runs on `27bc5ef` failed two of twenty each, different ones every time). Causes
-  found on 6 October:
-  - **The arrest reaches into scenarios.** Wanted stars and police cars carry over from
-    one scenario to the next (`police-chase`, a cyclist hit in `bike-hit`), and any
-    scenario that stands on foot with stars can be arrested: the player is led off,
-    can't get into a car, and ends about 750 m away at the station with the stars
-    gone. Seen directly: after `police-chase`, an arrest began in two of five tries
-    and finished in one. It explains `police-stand-down` ("0 cars"), `car-doors`
-    ("515 m from it"), `bridge-exit` ("Not in a car") and "Could not get into the
-    car". The test kit needs to hold arrests off unless a scenario asks for them, and
-    clear stars, police and a running arrest before each scenario.
-  - **`courier-bag` and `bike-hit` wait for a courier to ride past** within two seconds
-    of arriving at Letná; traffic is random, so sometimes there is none (fails alone,
-    one in three). The kit should make one.
-  - **`lamp-break` is marginal by itself** (fails alone three times in four): only one
-    headlamp is within reach of where the blow lands when the wall isn't square to the
-    car; the heading is searched in 10° steps and the live loop runs between steps.
-  - **`wall-crash`** ended at 16.1 km/h against a limit of 15 twice, only in a
-    sequence; `t.car` places a new car without looking for other cars, and several
-    scenarios use the same spot at Karlovo náměstí.
+- **`scene.mjs run all` is still unstable** (it was before the night of 5–6 October:
+  four full runs on `27bc5ef` failed two of twenty each, different ones every time).
+  Fixed in the test kit on 6 October: a scenario can't be arrested unless it asks
+  (`t.unarrested`), starts unwanted with no police about, waits for an arrest or a trip
+  to the hospital left by the one before, and the cars the kit put down are taken away
+  first. That ended `police-stand-down` finding no police, `wall-crash` at 16 km/h and
+  `car-doors` 515 m from its door (wasted in `bridge-exit`, brought round at Na
+  Františku during the next scenario). Thirteen full runs since then still failed one
+  to four of 24 each. What is left, each a problem of its own:
+  - `courier-bag` (most runs): "E picks the bag up" does something else when the bike
+    the courier left is within reach, which depends on how the bike was moving; and
+    sometimes no courier rides by Letná in 30 s. Making a courier out of the nearest
+    rider was tried and made it worse.
+  - `lamp-break` (about half the runs, alone too): only one headlamp breaks. A lamp
+    breaks within 1.3 m of where the blow lands (`Car.knock`), so a wall first touched
+    with a corner doesn't reach the other lamp. Aiming square at the wall did not
+    help. Decide whether a head-on crash should break both, or the check should ask
+    for one.
+  - `bridge-exit`: the car now and then blows up or doesn't reach the deck on its
+    scripted drive from the National Theatre (traffic and trams in its way).
+  - `ambulance`, `boat-boarding`, `bike-hit`, `fire-brigade`, `car-doors`: one or two
+    failures each, not looked into.
+  - A car put down by `t.car` can still land inside another car or a tram: a rule
+    against it kept `fire-brigade` from finding room at Újezd and was taken out.
 - **Tyre sounds are off on main** (`TYRE` in `src/audio.ts`); recordings, new engine
   voices, the heavy diesel and measured jet and siren levels wait on `night-audio`.
 - **Fire engines:** about 40 s to clear a narrow street after a fire; cars give little

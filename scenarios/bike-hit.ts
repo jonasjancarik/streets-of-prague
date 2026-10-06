@@ -8,8 +8,9 @@ export default {
     t.time('14:00');
     t.weather('clear');
     t.unhurt = true;
-    await t.wait(2);
-    const c = t.courier();
+    // (Until a courier rides by: traffic comes at random.)
+    let c = t.courier();
+    for (let i = 0; !c && i < 30; i++) { await t.wait(1); c = t.courier(); }
     if (!t.check('a courier in traffic', !!c)) return;
     const car = await t.drive('hatch');
     car.x = c!.x - Math.cos(c!.h) * 10;

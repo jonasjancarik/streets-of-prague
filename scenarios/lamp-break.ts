@@ -9,14 +9,7 @@ export default {
     await t.go('karlak', { heading: 324 });
     t.time('21:30');
     t.weather('clear');
-    // The heading with a wall 15–40 m away and nothing in between.
-    const wall = () => {
-      for (let a = 0; a < 360; a += 10) {
-        const d = t.runway(a);
-        if (d > 15 && d < 40) return a;
-      }
-      return -1;
-    };
+    const wall = () => t.wallAhead();
     await t.drive('sedan');
     let heading = wall();
     if (!t.check('a wall within reach', heading >= 0)) return;

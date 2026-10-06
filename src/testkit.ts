@@ -58,6 +58,9 @@ interface Game {
   enterOrExit: () => void;
   interact: () => void;
   arrest: { readonly now: { phase: string } | null };
+  // Wasted and not yet come round; and the move to the hospital or the cell, once under way.
+  recovering: () => boolean;
+  settled: () => Promise<void>;
   addCar: (c: Car) => void;
   loose: Car[];
   simulate: (dt: number, ctl?: Partial<Controls>) => void;
@@ -93,6 +96,8 @@ const round = (x: number, n = 1) => Math.round(x * 10 ** n) / 10 ** n;
 export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Scenario }>('../scenarios/*.ts')) {
   const names = Object.keys(scenarios).map((p) => p.replace(/^.*\/(.*)\.ts$/, '$1')).sort();
 
+  // The cars the kit has put down, taken away again before the next scenario.
+  const made: Car[] = [];
   const kit = {
     PLACES,
     // The live game's clock: paused, or running at this speed (0.25 = slow motion).
@@ -100,6 +105,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     speed: 1,
     // Nothing hurts you (for looking round a chase).
     unhurt: false,
+    // The police can't arrest you. On while a scenario runs, unless it turns it off: an
+    // arrest leads you away, keeps you out of cars and leaves you at the station.
+    unarrested: false,
     // true while the developer panel runs a scenario: waits play out in real time so
     // you can watch; headless, they run as fast as they can.
     watch: false,
@@ -247,6 +255,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         if (c.worldSamples().every(([sx, sy]) => g.grid.at(sx, sy) === 0) && !posts.touches(c)) {
           c.mode = 'loose';
           g.addCar(c);
+          made.push(c);
           return c;
         }
       }
@@ -506,10 +515,21 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     groundHere() { const m = g.me(); return round(g.ground(m.x, m.y), 2); },
 
     // How far you could go this way (compass degrees) before hitting a wall, up to max m.
-    runway(heading: number, max = 80) {
-      const m = g.me(), h = rad(heading);
-      for (let d = 0; d < max; d += 0.5) if (g.grid.at(m.x + Math.cos(h) * d, m.y + Math.sin(h) * d) !== 0) return d;
+    // `side`: measured along a line this far to the left of you instead.
+    runway(heading: number, max = 80, side = 0) {
+      const m = g.me(), h = rad(heading), x0 = m.x - Math.sin(h) * side, y0 = m.y + Math.cos(h) * side;
+      for (let d = 0; d < max; d += 0.5) if (g.grid.at(x0 + Math.cos(h) * d, y0 + Math.sin(h) * d) !== 0) return d;
       return max;
+    },
+    // The heading with a wall 15–40 m ahead, nothing in between, and the wall square to
+    // it (as far away one metre to either side), so a car driven at it hits nose first.
+    // -1 if there is none.
+    wallAhead() {
+      for (let a = 0; a < 360; a += 5) {
+        const d = kit.runway(a);
+        if (d > 15 && d < 40 && [1, -1].every((s) => Math.abs(kit.runway(a, 80, s) - d) < 0.6)) return a;
+      }
+      return -1;
     },
 
     // Run the world for this long with these controls (the live loop waits meanwhile).
@@ -628,11 +648,26 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       kit.checks = [];
       const t0 = performance.now();
       let error: string | undefined;
+      // Each scenario starts unwanted, with no police about and no arrest under way, and
+      // can't be arrested unless it asks to be: what the one before left must not reach in.
+      const calm = () => { g.police.heat = 0; g.police.reset(); };
       try {
+        // (Wasted in the scenario before: you come round at the hospital a few seconds
+        // later, which would carry you off in the middle of this one.)
+        for (let i = 0; (g.arrest.now || g.recovering()) && i < 60; i++) await kit.wait(1);
+        await g.settled();
+        calm();
+        kit.unarrested = true;
         await kit.onFoot();
+        // The cars earlier scenarios put down are taken away: several use the same
+        // places, and a car left there is in the next one's way.
+        for (const c of made.splice(0)) if (c !== g.car() && g.loose.includes(c)) g.loose.splice(g.loose.indexOf(c), 1);
         await s.run(kit);
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);
+      } finally {
+        calm();
+        kit.unarrested = false;
       }
       const checks = kit.checks;
       return { name, title: s.title, checks, error, ms: Math.round(performance.now() - t0), pass: !error && checks.length > 0 && checks.every((c) => c.pass) };

@@ -557,7 +557,7 @@ async function main() {
   const stats = { knocked: 0, wrecked: 0, busted: 0, wasted: 0 };
   let frozen = 0;
   const busted = (by?: Officer) => {
-    if (frozen > 0) return;
+    if (frozen > 0 || testkit?.unarrested) return;
     getIn.cancel();
     if (inHeli) enterOrExit();
     // Out of a car through its door, an officer's hand on your collar; off a bike at once.
@@ -601,7 +601,7 @@ async function main() {
       clock.advance((3 + seeded() * 5) * 3600); // hours in a cell
       if (inMap(cell[0], cell[1])) {
         const [cx, cy] = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, cell);
-        void teleportTo(cx, cy);
+        moved = teleportTo(cx, cy);
       }
     },
     done: () => { frozen = 0.3; },
@@ -615,6 +615,8 @@ async function main() {
     [14.463, 50.1163], [14.4604, 50.0306], [14.368, 50.072], [14.366, 50.093], // Bulovka, Thomayer, Homolka, ÚVN
   ];
   let wastedT = 0;
+  // The last move to a hospital or a cell (the test kit waits for it to finish).
+  let moved: Promise<void> = Promise.resolve();
   const wasted = () => {
     if (funicular.me) { funicular.leave(); pid.leave(); }
     if (ferries.me) { ferries.leave(); pid.leave(); }
@@ -641,7 +643,7 @@ async function main() {
     clock.advance((4 + seeded() * 8) * 3600); // a night or a day in hospital
     walker.down = 0;
     walker.anim.play('idle', true);
-    if (near) void teleportTo(near[0], near[1]);
+    if (near) moved = teleportTo(near[0], near[1]);
   };
   let testkit: Testkit | null = null;
   const hurt = (points: number) => { if (!testkit?.unhurt && wastedT <= 0 && health.hurt(points)) wasted(); };
@@ -2348,6 +2350,8 @@ async function main() {
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y),
     grid, boats, ferries, pid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
+    recovering: () => wastedT > 0,
+    settled: () => moved,
     tramsNear: (x, y, r) => trams.bodies(x, y, r),
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
     viewRadius, offscreen,
