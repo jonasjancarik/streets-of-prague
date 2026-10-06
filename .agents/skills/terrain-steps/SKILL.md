@@ -113,9 +113,13 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
 - "Raise a mapped street to the surveyed one next to it" only over the map's water:
   on land the next street may be another street, a level up.
 - Stairs mapped as bridge ways, folded back beside the deck they come down from
-  (Železniční most at Výtoň): inside the bridge's outline they joined its group and its
-  level, and the deck's last lattice points took the stairs' heights, 1.8 m down. Stairs
-  that leave the deck's height by 1.5 m get a level of their own (`STAIRS_SAME`).
+  (Železniční most at Výtoň): inside the bridge's outline they join its group and its
+  level, and the deck's last lattice points take the stairs' heights, 1.8 m down. Giving
+  such stairs a level of their own (tried 6 October 2026, `STAIRS_SAME`, taken out again)
+  makes the deck right and the stairs worse: alone on a 4 m lattice their top reads 2.5
+  to 3.7 m under the deck (Výtoň, and the stairs to Kampa off Karlův most, which were
+  fine). Stairs need heights the lattice can't hold: their own profile, as the flat
+  terraces have `h`.
 - A level's lattice can't hold two things 4 m apart at different heights. When a deck
   sags or jumps near its end, compare the solved profile with the lattice before
   blaming the solver: at Výtoň the profile was right.

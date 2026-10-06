@@ -1,8 +1,7 @@
-"""Which deck a street or a tram track is on where bridges cross, and stairs beside a deck."""
+"""Which deck a street or a tram track is on where bridges cross."""
 
 import unittest
 
-import numpy as np
 from shapely.geometry import LineString, box
 
 import structures
@@ -63,29 +62,6 @@ class OnLevelsTests(unittest.TestCase):
         self.assertEqual(len(got), 1)
         xs = [p[0] for p in got[0]["pts"]]
         self.assertTrue(-54.1 <= min(xs) <= -46 and max(xs) == -20)
-
-
-class StairsBesideDeckTests(unittest.TestCase):
-    def levels(self, foot):
-        # A footway on a bridge outline at 200 m, and stairs inside the outline folded back
-        # beside it, down to `foot` metres.
-        ways = [{"id": 1, "kind": "bridge", "hw": "footway", "w": 2.0, "layer": 1, "mapped_layer": None, "nodes": [1, 2],
-                 "pts": [[0, 0], [60, 0]], "grade": [True, False]},
-                {"id": 2, "kind": "bridge", "hw": "steps", "w": 2.0, "layer": 1, "mapped_layer": None, "nodes": [2, 3],
-                 "pts": [[60, 3], [46, 3]], "grade": [False, True]}]
-        profiles = [(np.array([0.0, 60.0]), np.array([200.0, 200.0])), (np.array([0.0, 14.0]), np.array([200.0, foot]))]
-        pieces, groups = structures.pieces(ways, profiles, [box(-1, -3, 61, 6)], lambda xs, ys: np.full(len(xs), 190.0), {}, None)
-        structures.assign_levels(groups)
-        return [p.level for p in pieces]
-
-    def test_stairs_going_down_get_their_own_level(self):
-        deck, stairs, outline = self.levels(196.0)
-        self.assertEqual(deck, outline)
-        self.assertNotEqual(stairs, deck)
-
-    def test_a_few_steps_at_the_decks_height_stay_on_it(self):
-        deck, stairs, outline = self.levels(199.5)
-        self.assertEqual({deck, stairs, outline}, {deck})
 
 
 if __name__ == "__main__":
