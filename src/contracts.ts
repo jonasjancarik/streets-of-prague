@@ -7,6 +7,7 @@ import type { FenceBuffers, FenceTile } from './map/fences.ts';
 import type { BuildingTile } from './map/buildings.ts';
 import type { SkyJob, SkyResult } from './map/skyView.ts';
 import type { FurnitureData, FurnitureInstances } from './map/furniture.ts';
+import type { Crosser } from './stepEdges.ts';
 
 export interface TerrainMetadata {
   n: number;
@@ -67,7 +68,7 @@ export interface TileJSON extends GroundTileData {
   j: number;
   box: Bounds;
   buildings: TileBuilding[];
-  walls: { kind: string; pts: Point2[] }[];
+  walls: { kind: string; h?: number; pts: Point2[] }[];
   fences?: { kind: string; h?: number; pts: Point2[] }[]; // fences and hedges (not in older tiles)
   drives?: { b: number; x: number; y: number; h: number }[]; // where a car could stand on a house's drive: the middle, and the way it faces (not in older tiles)
   trees: TreeSpot[];
@@ -116,7 +117,7 @@ export interface WorkerJobs {
   };
   sky: SkyJob;
   land: {
-    data: FurnitureData & { levels: boolean; fences: FenceTile['fences']; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
+    data: FurnitureData & { levels: boolean; crossers: Crosser[]; stepEdges: boolean; fences: FenceTile['fences']; furnitureBuildings: { rings: Point2[][] }[]; furnitureEnabled: boolean };
     seeds: Float64Array; ground: HeightGrid | null; bridges: HeightGrid[];
     // The bridges and tunnels to rasterise, each a level to get about on (ground.ts).
     box: Bounds; structures: TileStructure[];

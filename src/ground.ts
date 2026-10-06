@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { onPolygons, signedArea } from './map/geo.ts';
 import { WATER } from './terrain.ts';
+import { stepSides } from './stepEdges.ts';
 import { TerrainStepIndex, cutTerrainSteps } from './terrain-cut.ts';
 import { edgeHeightSampler, conformTerrainEdges } from './terrain-edges.ts';
 import type { Terrace } from './terrain.ts';
@@ -322,21 +323,9 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
 }): GroundResult {
-  // The water the steps run along: the terrain's own outline of it where it has one.
-  const water = steps?.find((t) => t.label === WATER)?.polys ?? d.areas.water ?? [];
-  const terraces = (steps ?? []).filter((t) => t.label !== WATER);
-  let at: typeof sideOf = null;
-  if (steps && height && (water.length || terraces.length)) {
-    // (The flat terraces, the last of a street before its bridge, lie over the water too.)
-    const wet = onPolygons(water), on = terraces.map((t) => onPolygons(t.polys));
-    at = (x, y) => {
-      for (let k = 0; k < on.length; k++) if (terraces[k].h !== undefined && on[k](x, y)) return terraces[k].label;
-      if (wet(x, y)) return WATER;
-      for (let k = 0; k < on.length; k++) if (terraces[k].h === undefined && on[k](x, y)) return terraces[k].label;
-      return 0;
-    };
-  }
-  const outlines = at ? [...water, ...terraces.flatMap((t) => t.polys)] : [];
+  // The steps in the terrain: which side a point is on, and their outlines (stepEdges.ts).
+  const sides = height ? stepSides(steps, d.areas.water ?? []) : null;
+  const at: typeof sideOf = sides?.at ?? null, outlines = sides?.outlines ?? [];
   const stepped = <R>(build: () => R): R => {
     groundHeight = height ? edgeHeightSampler(height, box, STEP_FINE) : null;
     groundBox = height ? box : null;

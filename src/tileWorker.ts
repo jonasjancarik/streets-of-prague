@@ -19,6 +19,8 @@ import { styleFor, facadeCoords, paintWalls, mansardCoords } from './facades.ts'
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
 import { flatTerraces, heightSampler, terraceAt } from './terrain.ts';
 import { skyView } from './map/skyView.ts';
+import { stepEdges, stampEdges, parapetArrays } from './stepEdges.ts';
+import type { StepEdge } from './stepEdges.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
 import type { HeightGrid, BuildingArrays, LandResult, WorkerJobs, WorkerRequest, WorkerResponse } from './contracts.ts';
 
@@ -180,7 +182,7 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide }: WorkerJobs
 // Walkable/drivable cells: 0 free, 255 solid, 254 free but walled in (a closed
 // courtyard). Only cells reachable from the street network (`seeds`: x, y pairs
 // along every street and path in the tile) count as free.
-function tileGrid(geo: Geo<LandData>, t: LandData, seeds: Float64Array) {
+function tileGrid(geo: Geo<LandData>, t: LandData, seeds: Float64Array, edges: StepEdge[]) {
   const grid = new Grid(geo, RES, (ctx, s) => {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -208,6 +210,8 @@ function tileGrid(geo: Geo<LandData>, t: LandData, seeds: Float64Array) {
   });
   const { w, h, cells } = grid;
   for (let i = 0; i < cells.length; i++) cells[i] = cells[i] > 100 ? 255 : 0;
+  // The tops of quay walls and retaining walls stop you like a wall (stepEdges.ts).
+  stampEdges(edges, cells, w, h, (x, y) => geo.px(x, y, RES));
   const seen = new Uint8Array(cells.length), stack: number[] = [];
   for (let s = 0; s < seeds.length; s += 2) {
     const [u, v] = geo.px(seeds[s], seeds[s + 1], RES);
@@ -246,6 +250,12 @@ function stampTrunks(grid: Grid, geo: Geo<LandData>, { matrices, count }: LandRe
   }
 }
 
+function joinWalls(a: LandResult['walls'], b: LandResult['walls']): LandResult['walls'] {
+  if (!b.position.length) return a;
+  const cat = (x: Float32Array, y: Float32Array) => { const out = new Float32Array(x.length + y.length); out.set(x); out.set(y, x.length); return out; };
+  return { position: cat(a.position, b.position), normal: cat(a.normal, b.normal) };
+}
+
 function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['land']): LandResult {
   const geo = new Geo(data), hAt = groundAt(ground);
   // How much room a tree has under the bridges (Infinity where there's none over it).
@@ -259,9 +269,10 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
     return r;
   };
   const trees = treeInstances(geo, hAt, room);
-  const walls = wallArrays(data, hAt);
+  const edges = ground && data.stepEdges ? stepEdges(ground.terraces, data.areas.water ?? [], heightSampler(ground.hm, ground.box, ground.n, ground.step, ground.labels, terraceAt(ground.terraces), flatTerraces(ground.terraces, ground.ref ?? 0)), ground.box, data.crossers) : [];
+  const walls = joinWalls(wallArrays(data, hAt), parapetArrays(edges));
   const fences = fenceArrays(data, hAt);
-  const grid = tileGrid(geo, data, seeds);
+  const grid = tileGrid(geo, data, seeds, edges);
   stampTrunks(grid, geo, trees);
   const furniture = ground && data.furnitureEnabled ? furnitureInstances(new Geo({ ...data, buildings: data.furnitureBuildings }), trees, hAt) : { matrices: [new Float32Array(0), new Float32Array(0), new Float32Array(0)], spots: [] };
   // The same solid-cell convention as tree trunks, stamped before parking.

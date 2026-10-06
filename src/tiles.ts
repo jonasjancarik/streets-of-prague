@@ -26,6 +26,7 @@ import { validateTileBinary, type TileBinaryKind } from './tileBinary.ts';
 import { overheadWires } from './wires.ts';
 import { posts, type Post } from './posts.ts';
 import { fences, type FenceSection } from './fences.ts';
+import { stepEdges, type Crosser, type StepEdge } from './stepEdges.ts';
 import { fenceMeshes } from './map/fences.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
@@ -63,6 +64,7 @@ interface Tile {
   // down wherever they are) and put in the scene with the rest.
   fixtures: THREE.Mesh[];
   roads: Polygons; // the carriageways (asphalt, setts, dirt)
+  crossers: Crosser[]; // what may cross a step in the ground (stepEdges.ts)
   poles: Post[]; // the wires' poles, among the posts a car can hit
   fences: FenceSection[];
   furniture: THREE.InstancedMesh[];
@@ -482,6 +484,22 @@ export class TileWorld {
   terrainAt(x: number, y: number, onWater = false) {
     const t = this.tileAt(x, y);
     return t?.sample ? t.sample(x, y, onWater) : 0;
+  }
+
+  // The edges at the tops of the steps in the ground within r of a point, as the
+  // collision grid has them, and where ways cross a step (stepEdges.ts; worked out
+  // again here, for the checks).
+  stepEdgesNear(x: number, y: number, r: number) {
+    const edges: StepEdge[] = [], crossings: { x: number; y: number; dx: number; dy: number; drop: number; hw: string }[] = [];
+    for (const t of this.loaded.values()) {
+      const [x0, y0, x1, y1] = t.box;
+      if (x < x0 - r || x > x1 + r || y < y0 - r || y > y1 + r || !t.sample) continue;
+      for (const e of stepEdges(t.source.t.terraces, t.source.t.areas.water ?? [], t.sample, t.box, t.crossers,
+        (w, cx, cy, drop, dx, dy) => { if (Math.hypot(cx - x, cy - y) <= r) crossings.push({ x: cx, y: cy, dx, dy, drop, hw: w.hw ?? '' }); })) {
+        if (Math.hypot((e.a[0] + e.b[0]) / 2 - x, (e.a[1] + e.b[1]) / 2 - y) <= r) edges.push(e);
+      }
+    }
+    return { edges, crossings };
   }
 
   // Height of a level at a point: of the ground at level 0, of a bridge or tunnel
@@ -993,6 +1011,12 @@ export class TileWorld {
       }
     }
     const seedArray = new Float64Array(seeds);
+    // The streets, paths and stairs on the ground: where one crosses a step in the
+    // terrain, the step's edge is open (stepEdges.ts).
+    const crossers = [
+      ...clipped.filter((e) => !e.bridge && !e.tunnel).map((e) => ({ pts: e.pts, half: e.width / 2 + 2.5, hw: 'drive' })),
+      ...(this.walkBy.get(k) || []).filter((e) => !e.bridge && !e.tunnel).flatMap((e) => clipLine(e.pts, t.box).map((pts) => ({ pts, half: Math.max(1.5, e.width / 2 + 0.5), hw: e.hw }))),
+    ];
     const outlines = t.buildings.filter(grounded).map((b) => ({ rings: b.rings }));
     const reservedAll = await this.furnitureReserved, reserved: number[] = [];
     for (let n = 0; reservedAll && n < reservedAll.length; n += 2) {
@@ -1011,7 +1035,7 @@ export class TileWorld {
     const early = this.shown.has(k) ? this.meshJobs(k, source) : null;
     early?.catch(() => {});
     const landJob = this.workers.run('land', {
-      data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, trees: t.trees, passages: t.passages || [], levels: !!tileLevels,
+      data: { size: data.size, origin: data.origin, areas: t.areas, roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, trees: t.trees, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
         walk: t.walk ?? [], reserved: new Float32Array(reserved), structures: structures.flatMap(s => s.polys), furnitureBuildings: [...t.buildings.map(b => ({ rings: b.rings })), ...hide.map(rings => ({ rings }))], furnitureEnabled: reservedAll !== null && !location.search.includes('nofurniture') },
       seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       box: bounds, structures: tileLevels ? structures : [],
@@ -1065,7 +1089,7 @@ export class TileWorld {
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, levels: onLevels, cars, ms,
       source, shown: false, dressing: null, drawn: null, drawMs: {}, drawAfter: 0, fixtures: [walls, fenceRows.fence, fenceRows.hedge, fenceRows.rail, ...wires],
-      roads, poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
+      roads, crossers, poles, fences: fenceSections, furniture, relief: shade, sample: shade?.sample,
       water: (t.areas.water || []).map((rings) => {
         const xs = rings[0].map((p) => p[0]), ys = rings[0].map((p) => p[1]);
         return { rings, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] as Bounds };

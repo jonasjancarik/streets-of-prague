@@ -33,6 +33,8 @@ export const PLACES: Record<string, { at: Point2; note: string }> = {
   malostranske: { at: [50.0883, 14.4030], note: 'Malostranské náměstí: courtyards and lanes' },
 };
 
+import type { StepEdge } from './stepEdges.ts';
+
 export type Where = string | Point2 | { lat: number; lon: number };
 
 // The free camera: looking at (x, y) from `height` m up, tilted `tilt`° from straight
@@ -61,6 +63,8 @@ interface Game {
   view: (zoom: number) => void;
   loaded: (x: number, y: number) => Promise<void>;
   grid: { at: (x: number, y: number) => number };
+  steps: (x: number, y: number, r: number) => { edges: StepEdge[]; crossings: { x: number; y: number; dx: number; dy: number; drop: number; hw: string }[] };
+  ground: (x: number, y: number) => number;
   boats: Boats;
   carsNear: (x: number, y: number, r: number) => Car[];
   tramsNear: (x: number, y: number, r: number) => TramBody[];
@@ -389,6 +393,59 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       }
       throw new Error('No clear run up to that post');
     },
+
+    // The nearest top edge of a step in the ground (a quay wall, a retaining wall) within
+    // r m that drops `drop` m or more, with a clear, level run of `back` m up to it:
+    // where it is, how far the ground drops, the compass heading over the edge, and
+    // `from`: the place `back` m before it. `water`: only above water, or only above land.
+    stepEdge(opt: { r?: number; drop?: number; back?: number; water?: boolean } = {}) {
+      const m = g.me(), back = opt.back ?? 14;
+      let best: StepEdge | null = null, bestD = Infinity;
+      for (const e of g.steps(m.x, m.y, opt.r ?? 150).edges) {
+        if (e.drop < (opt.drop ?? 2) || (opt.water !== undefined && opt.water !== e.wet)) continue;
+        const x = (e.a[0] + e.b[0]) / 2, y = (e.a[1] + e.b[1]) / 2, d = Math.hypot(x - m.x, y - m.y);
+        if (d >= bestD) continue;
+        const top = g.ground(x + e.nx * 1.5, y + e.ny * 1.5);
+        let ok = true;
+        for (let s = 1.5; s <= back + 3 && ok; s += 0.5) {
+          for (const off of [-1.2, 0, 1.2]) {
+            const px = x + e.nx * s - e.ny * off, py = y + e.ny * s + e.nx * off;
+            ok &&= g.grid.at(px, py) === 0 && Math.abs(g.ground(px, py) - top) < 1;
+          }
+        }
+        if (ok) { best = e; bestD = d; }
+      }
+      if (!best) return null;
+      const x = (best.a[0] + best.b[0]) / 2, y = (best.a[1] + best.b[1]) / 2;
+      const ll = (px: number, py: number): Point2 => { const [lon, lat] = g.toLonLat(px, py); return [lat, lon]; };
+      return { at: ll(x, y), from: ll(x + best.nx * back, y + best.ny * back), drop: round(best.drop), heading: Math.round(deg(Math.atan2(-best.ny, -best.nx))), x, y, nx: best.nx, ny: best.ny };
+    },
+    // The nearest place within r m where a way of this kind (`hw`: 'drive' for the car
+    // streets, or a path's kind: 'steps', 'footway'…) crosses a step in the ground that
+    // drops `drop` m or more, so the step's edge is open there: `from` and `to` are
+    // `back` m before and after it along the way, going down.
+    stepCrossing(opt: { hw?: string; r?: number; drop?: number; back?: number } = {}) {
+      const m = g.me(), back = opt.back ?? 8;
+      let best = null, bestD = Infinity;
+      for (const c of g.steps(m.x, m.y, opt.r ?? 150).crossings) {
+        const d = Math.hypot(c.x - m.x, c.y - m.y);
+        if (c.drop >= (opt.drop ?? 1) && (!opt.hw || c.hw === opt.hw) && d < bestD) { best = c; bestD = d; }
+      }
+      if (!best) return null;
+      const ll = (px: number, py: number): Point2 => { const [lon, lat] = g.toLonLat(px, py); return [lat, lon]; };
+      // Downhill: towards the lower end.
+      const s = g.ground(best.x + best.dx * 3, best.y + best.dy * 3) <= g.ground(best.x - best.dx * 3, best.y - best.dy * 3) ? 1 : -1;
+      const dx = best.dx * s, dy = best.dy * s;
+      return { at: ll(best.x, best.y), from: ll(best.x - dx * back, best.y - dy * back), to: ll(best.x + dx * back, best.y + dy * back),
+        heading: Math.round(deg(Math.atan2(dy, dx))), drop: round(best.drop), hw: best.hw, x: best.x, y: best.y, nx: -dx, ny: -dy };
+    },
+    // How far past a step's edge (stepEdge) you are: negative on the higher ground.
+    pastEdge(e: { x: number; y: number; nx: number; ny: number }) {
+      const m = g.me();
+      return round(-((m.x - e.x) * e.nx + (m.y - e.y) * e.ny), 2);
+    },
+    // The ground's height under you.
+    groundHere() { const m = g.me(); return round(g.ground(m.x, m.y), 2); },
 
     // How far you could go this way (compass degrees) before hitting a wall, up to max m.
     runway(heading: number, max = 80) {
