@@ -13,7 +13,7 @@ import { updateNotice } from './update.ts';
 import { hapticsOn, setHaptics } from './haptics.ts';
 import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
 import type { TunnelView } from './tunnelView.ts';
-import { feedbackLink } from './feedback.ts';
+import { feedbackLink, feedbackOpen } from './feedback.ts';
 import { LEVELS, difficulty, setDifficulty } from './difficulty.ts';
 import type { Level } from './difficulty.ts';
 import { STATIONS } from './radio.ts';
@@ -300,7 +300,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     if (e.target === box && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) box.close();
   });
   // The game stands still while the panel is open.
-  const api = { get open() { return box.open; }, show };
+  const api = { get open() { return box.open || feedbackOpen(); }, show };
   // M, G and P change these from the keyboard: look again once the game has.
   window.addEventListener('keydown', (e) => { if (['KeyM', 'KeyG', 'KeyP'].includes(e.code)) setTimeout(update); });
   return api;
