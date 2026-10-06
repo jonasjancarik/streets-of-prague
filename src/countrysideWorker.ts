@@ -8,7 +8,7 @@ import type { Bounds } from './map/geo.ts';
 import type { TileJSON } from './contracts.ts';
 
 export type CountrysideRequest =
-  | { id: number; type: 'open'; url: string; setup: CountrysideSetup }
+  | { id: number; type: 'open'; url: string; tiles: string; setup: CountrysideSetup } // tiles: where the built map's tiles are
   | { id: number; type: 'tile'; i: number; j: number };
 // open: the part of the map the file covers, in the game's metres. tile: the tile, and
 // how long it took (ms).
@@ -23,7 +23,13 @@ worker.onmessage = async (event) => {
   try {
     if (m.type === 'open') {
       const archive = new PMTiles(m.url), h = await archive.getHeader();
-      land = new Countryside(async (z, x, y) => (await archive.getZxy(z, x, y))?.data, m.setup, h.maxZoom);
+      const built = async (i: number, j: number) => {
+        const r = await fetch(`${m.tiles}${i}_${j}.json`);
+        if (r.status === 404) return undefined;
+        if (!r.ok) throw new Error(`Tile ${i}_${j} could not be loaded (${r.status})`);
+        return r.json();
+      };
+      land = new Countryside(async (z, x, y) => (await archive.getZxy(z, x, y))?.data, built, m.setup, h.maxZoom);
       const sw = land.metres(h.minLon, h.minLat), se = land.metres(h.maxLon, h.minLat);
       const nw = land.metres(h.minLon, h.maxLat), ne = land.metres(h.maxLon, h.maxLat);
       worker.postMessage({ id, box: [Math.max(sw[0], nw[0]), Math.max(sw[1], se[1]), Math.min(se[0], ne[0]), Math.min(nw[1], ne[1])] });

@@ -30,6 +30,7 @@ import { fenceMeshes } from './map/fences.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
+import { edgeGrid } from './countrysideJoin.ts';
 
 interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer | null; ipr: ArrayBuffer | null; levels: ArrayBuffer | null }
 // A bridge (1, 2, …) or tunnel (-1, -2, …) level in a tile: where it is and how high.
@@ -372,7 +373,7 @@ export class TileWorld {
     this.T = index.tile;
     [this.ox, this.oy] = index.origin;
     this.available = new Set(index.tiles.map(([i, j]) => `${i}_${j}`));
-    this.country = countryside ? new CountrysideTiles(index) : null;
+    this.country = countryside ? new CountrysideTiles(index, area) : null;
     this.edgeHeights = new Map();
     // Which tiles have IPR buildings, where index.json says (else the tile JSON does).
     this.iprTiles = new Map(index.tiles.filter((t) => t.length > 3).map(([i, j, , ipr]) => [`${i}_${j}`, !!ipr]));
@@ -674,11 +675,7 @@ export class TileWorld {
       heights.catch(() => { if (this.edgeHeights.get(k) === heights) this.edgeHeights.delete(k); });
       this.edgeHeights.set(k, heights);
     }
-    return this.edgeHeights.get(k)!.then((from) => {
-      const out = new Uint16Array(n * n);
-      for (let b = 0; b < n; b++) for (let a = 0; a < n; a++) out[b * n + a] = from[(j < 0 ? 0 : j >= rows ? n - 1 : b) * n + (i < 0 ? 0 : i >= cols ? n - 1 : a)];
-      return out.buffer;
-    });
+    return this.edgeHeights.get(k)!.then((from) => edgeGrid(from, n, i, j, cols, rows).buffer as ArrayBuffer);
   }
 
   // Tile keys within r metres of (x, y), nearest first.

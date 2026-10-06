@@ -2,12 +2,19 @@
 // Makes countryside tiles (src/countryside.ts) from the local PMTiles file, without a
 // browser, and checks that they hold together: the same tile comes out the same twice,
 // a street crossing from one tile into the next is one street in the graph, and
-// nothing reaches into the built map. Prints how long a tile takes.
-//   node scripts/check-countryside.mjs [lon lat] [--dump out.json]
+// nothing reaches into the built map. Then the join with the built map (plan 021, step
+// 2), all the way round `praha`: every built street that runs on outside is met by the
+// generated streets at its outer end, none is doubled by a generated one, no junction
+// stands twice, routes cross the map's edge both ways on each side, and the ground's
+// height is the same on both sides. Prints how long a tile takes and the counts.
+//   node scripts/check-countryside.mjs [lon lat] [--dump out.json] [--places]
+// --places lists where main roads leave the map (lat, lon), for screenshots.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import { PMTiles } from 'pmtiles';
 import { Countryside } from '../src/countryside.ts';
+import { REACH, edgeGrid } from '../src/countrysideJoin.ts';
 
 const file = process.env.COUNTRYSIDE_FILE || 'public/data/countryside/central-bohemia.pmtiles';
 const index = JSON.parse(fs.readFileSync('public/data/praha_now/index.json', 'utf8'));
@@ -22,7 +29,8 @@ const archive = new PMTiles({
 });
 const [w, s, e, n] = index.bbox_wgs84;
 const setup = { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows };
-const make = () => new Countryside(async (z, x, y) => (await archive.getZxy(z, x, y))?.data, setup);
+const builtTile = (i, j) => { const f = `public/data/praha_now/tiles/${i}_${j}.json`; return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : undefined; };
+const make = () => new Countryside(async (z, x, y) => (await archive.getZxy(z, x, y))?.data, async (i, j) => builtTile(i, j), setup);
 const land = make();
 
 // The projection is the pipeline's: the map's south-west corner lands on its origin.
@@ -79,7 +87,212 @@ assert.equal(split, 0, 'a junction has two ids');
 // Nothing generated lies inside the built map.
 const rect = [-index.origin[0], -index.origin[1], index.cols * T - index.origin[0], index.rows * T - index.origin[1]];
 const edge = await make().tile(-1, 50);
-for (const d of edge.drive) for (const [px, py] of d.pts) assert.ok(px <= rect[0] + 0.01, `edge ${d.id} runs into the built map`);
+const ownEdges = new Set((builtTile(0, 50).drive || []).map((d) => d.id)); // the built streets it passes on do
+for (const d of edge.drive) if (!ownEdges.has(d.id)) for (const [px, py] of d.pts) assert.ok(px <= rect[0] + 0.01, `edge ${d.id} runs into the built map`);
+
+// ---- The join with the built map ----
+const { cols, rows } = index, [ox, oy] = index.origin;
+const outside = ([px, py]) => px < rect[0] || px > rect[2] || py < rect[1] || py > rect[3];
+const beyond = ([px, py]) => Math.max(rect[0] - px, px - rect[2], rect[1] - py, py - rect[3]);
+const dist = (p, pts) => {
+  let best = Infinity;
+  for (let k = 0; k < pts.length - 1; k++) {
+    const [ax, ay] = pts[k], dx = pts[k + 1][0] - ax, dy = pts[k + 1][1] - ay;
+    const t = Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy) / (dx * dx + dy * dy || 1)));
+    best = Math.min(best, Math.hypot(ax + dx * t - p[0], ay + dy * t - p[1]));
+  }
+  return best;
+};
+const walked = (pts, step) => {
+  const o = [pts[0]];
+  for (let k = 0; k < pts.length - 1; k++) {
+    const a = pts[k], b = pts[k + 1], m = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let q = 1; q <= m; q++) o.push([a[0] + ((b[0] - a[0]) * q) / m, a[1] + ((b[1] - a[1]) * q) / m]);
+  }
+  return o;
+};
+
+// The built map's rim: its streets, and those that run on outside (read here on their
+// own, not through the generator).
+const built = { drive: new Map(), walk: new Map() }, stubs = { drive: [], walk: [] };
+const rim = [];
+for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) if (i === 0 || j === 0 || i === cols - 1 || j === rows - 1) rim.push([i, j]);
+let structuresAtEdge = 0;
+for (const [i, j] of rim) {
+  const t = builtTile(i, j);
+  if (!t) continue;
+  for (const g of ['drive', 'walk']) for (const e of t[g] || []) {
+    if (built[g].has(e.id)) continue;
+    built[g].set(e.id, e);
+    if (e.pts.some(outside)) stubs[g].push(e);
+  }
+  for (const s of t.structures || []) if (s.polys.flat(2).some(([px, py]) => Math.min(px - rect[0], rect[2] - px, py - rect[1], rect[3] - py) < 0.5)) structuresAtEdge++;
+}
+const reach = Math.max(...[...stubs.drive, ...stubs.walk].map((e) => Math.max(...e.pts.map(beyond))));
+console.log(`\nthe join: ${stubs.drive.length} built street edges and ${stubs.walk.length} walking edges run on outside the map, the longest ${reach.toFixed(0)} m`);
+assert.ok(reach < REACH - 500, `a built street runs ${reach.toFixed(0)} m outside: raise REACH in src/countrysideJoin.ts`);
+
+// Every countryside tile those streets pass through, and the ones round them.
+const wanted = new Set();
+for (const e of [...stubs.drive, ...stubs.walk]) for (const [px, py] of walked(e.pts, 100)) {
+  const i = Math.floor((px + ox) / T), j = Math.floor((py + oy) / T);
+  for (let a = i - 1; a <= i + 1; a++) for (let b = j - 1; b <= j + 1; b++) if (a < 0 || b < 0 || a >= cols || b >= rows) wanted.add(`${a}_${b}`);
+}
+const seamLand = make(), made = new Map();
+let t0 = performance.now();
+for (const k of wanted) { const [i, j] = k.split('_').map(Number); made.set(k, await seamLand.tile(i, j)); }
+console.log(`${made.size} countryside tiles along them in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+
+const all = { drive: new Map(), walk: new Map() }; // generated edges (not the built ones the tiles pass on)
+for (const t of made.values()) for (const g of ['drive', 'walk']) for (const e of t[g]) {
+  if (built[g].has(e.id)) { assert.deepEqual(e, built[g].get(e.id), `built edge ${e.id} was changed`); continue; }
+  all[g].set(e.id, e);
+}
+// A built street's outer part is in the tiles it passes through, with its surface.
+for (const e of stubs.drive) {
+  const out = walked(e.pts, 20).filter((p) => beyond(p) > 1);
+  for (const p of out) {
+    const t = made.get(`${Math.floor((p[0] + ox) / T)}_${Math.floor((p[1] + oy) / T)}`);
+    assert.ok(t.drive.some((d) => d.id === e.id), `built edge ${e.id} is missing from tile ${t.i}_${t.j}`);
+    // (A little to either side as well: the point may lie right where two pieces of the surface meet.)
+    const on = [[0, 0], [0.3, 0.2], [-0.2, 0.3]].some(([sx, sy]) => (t.roads.road || []).some(([ring]) => {
+      let inside = false;
+      for (let a = 0, b = ring.length - 1; a < ring.length; b = a++) {
+        const [xi, yi] = ring[a], [xj, yj] = ring[b];
+        if (yi > p[1] + sy !== yj > p[1] + sy && p[0] + sx < ((xj - xi) * (p[1] + sy - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    }));
+    assert.ok(on, `no road surface under built edge ${e.id} at ${p}`);
+  }
+}
+
+// 1. Each built street's outer end leads on into the generated streets.
+for (const g of ['drive', 'walk']) {
+  const from = new Map(), to = new Map();
+  for (const e of all[g].values()) { from.set(e.u, (from.get(e.u) || 0) + 1); to.set(e.v, (to.get(e.v) || 0) + 1); }
+  const ends = new Map(); // outer junction → the classes of the built streets ending there
+  for (const e of stubs[g]) for (const [node, p, leaving] of [[e.u, e.pts[0], false], [e.v, e.pts.at(-1), true]]) {
+    if (!outside(p)) continue;
+    const joined = g === 'walk' ? from.has(node) || to.has(node) : leaving || e.oneway === false ? from.has(node) || (g === 'drive' && !leaving && to.has(node)) : to.has(node);
+    const known = ends.get(node) || { p, hw: e.hw, joined: false };
+    known.joined ||= joined;
+    ends.set(node, known);
+  }
+  const loose = [...ends.entries()].filter(([, v]) => !v.joined);
+  const by = {};
+  for (const [, v] of loose) by[v.hw] = (by[v.hw] || 0) + 1;
+  console.log(`${g}: ${ends.size} outer ends of built streets, ${ends.size - loose.length} lead on into generated streets, ${loose.length} don't ${JSON.stringify(by)}`);
+  if (process.env.DEBUG) for (const [node, v] of loose) console.log('  loose', g, node, v.hw, seamLand.lonLat(...v.p).reverse().map((c) => c.toFixed(5)).join(','));
+  stubs[g].ends = ends;
+  stubs[g].loose = loose;
+}
+
+// 2. No generated street lies along a built one, and none starts at the map's edge
+// where a built street carries on.
+for (const g of ['drive', 'walk']) {
+  let doubled = 0, cutAtEdge = 0;
+  for (const e of all[g].values()) {
+    if (e.u[0] === 'r' || e.v[0] === 'r') cutAtEdge++;
+    const near = stubs[g].filter((s) => s.pts.some(([px, py]) => Math.abs(px - e.pts[0][0]) < REACH && Math.abs(py - e.pts[0][1]) < REACH));
+    const pts = walked(e.pts, 3), on = pts.filter((p) => near.some((s) => dist(p, s.pts) < 2)).length;
+    if (pts.length > 3 && on / pts.length > 0.6) { doubled++; if (process.env.DEBUG) console.log('  doubled', g, e.id, e.hw, seamLand.lonLat(...e.pts[0]).reverse().join(',')); }
+  }
+  console.log(`${g}: ${all[g].size} generated edges, ${doubled} along a built street, ${cutAtEdge} start at the map's edge with no built street to carry on from`);
+  stubs[g].doubled = doubled;
+}
+
+// 3. No junction twice: a built outer end with a generated junction still beside it.
+let twice = 0;
+for (const g of ['drive', 'walk']) {
+  const spots = new Map();
+  for (const e of all[g].values()) for (const [node, p] of [[e.u, e.pts[0]], [e.v, e.pts.at(-1)]]) {
+    const known = spots.get(node);
+    if (known) assert.ok(Math.hypot(known[0] - p[0], known[1] - p[1]) < 0.02, `junction ${node} is in two places`);
+    else spots.set(node, p);
+  }
+  for (const [node, v] of stubs[g].ends) for (const [other, p] of spots) {
+    if (other !== node && other[0] !== 'r' && Math.hypot(p[0] - v.p[0], p[1] - v.p[1]) < 1.5) { twice++; if (process.env.DEBUG) console.log('  twice', g, node, other, seamLand.lonLat(...p).reverse().join(',')); }
+  }
+}
+console.log(`junctions standing twice (a generated one within 1.5 m of a built street's outer end): ${twice}`);
+
+// 4. Routes cross the map's edge: from inside the map along a main road out to 700 m
+// past it and back in, on each side; the same on foot.
+const sides = { west: (p) => rect[0] - p[0], east: (p) => p[0] - rect[2], south: (p) => rect[1] - p[1], north: (p) => p[1] - rect[3] };
+const RANK = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'residential', 'unclassified'];
+const places = [];
+for (const [side, past] of Object.entries(sides)) {
+  for (const g of ['drive', 'walk']) {
+    // The biggest roads that leave on this side and end within 400 m of it.
+    const picks = stubs[g].filter((e) => !outside(e.pts[0]) && past(e.pts.at(-1)) > 5 && past(e.pts.at(-1)) < 400 && RANK.includes(e.hw))
+      .sort((a, b) => RANK.indexOf(a.hw) - RANK.indexOf(b.hw) || (a.id < b.id ? -1 : 1)).slice(0, g === 'drive' ? 4 : 2);
+    assert.ok(picks.length, `no built street leaves the map to the ${side}`);
+    for (const e of picks) {
+      const end = e.pts.at(-1), ci = Math.floor((end[0] + ox) / T), cj = Math.floor((end[1] + oy) / T);
+      const edges = new Map(built[g]);
+      for (let a = ci - 5; a <= ci + 5; a++) for (let b = cj - 5; b <= cj + 5; b++) {
+        if (a >= 0 && b >= 0 && a < cols && b < rows) continue;
+        for (const d of (await seamLand.tile(a, b))[g]) edges.set(d.id, d);
+      }
+      const far = (way) => {
+        const next = new Map();
+        for (const d of edges.values()) for (const [a, b] of way === 'out' ? [[d.u, d.v]] : [[d.v, d.u]]) { if (!next.has(a)) next.set(a, []); next.get(a).push([b, d]); }
+        if (g === 'walk') for (const d of edges.values()) { if (!next.has(d.v)) next.set(d.v, []); next.get(d.v).push([d.u, d]); if (!next.has(d.u)) next.set(d.u, []); next.get(d.u).push([d.v, d]); }
+        const seen = new Set([e.u]), queue = [e.u];
+        let best = -Infinity;
+        while (queue.length) for (const [b, d] of next.get(queue.pop()) || []) {
+          if (seen.has(b)) continue;
+          seen.add(b);
+          queue.push(b);
+          best = Math.max(best, past(d.u === b ? d.pts[0] : d.pts.at(-1)));
+        }
+        return best;
+      };
+      const out = far('out'), back = e.oneway ? Infinity : far('back');
+      const [lon, lat] = seamLand.lonLat(...end);
+      if (g === 'drive') places.push({ side, hw: e.hw, name: e.name, lat: +lat.toFixed(5), lon: +lon.toFixed(5), out: Math.round(out) });
+      assert.ok(out > 700, `${g}: no way out to the ${side} along ${e.hw} ${e.name || e.id} (${lat.toFixed(5)}, ${lon.toFixed(5)}): reaches ${out.toFixed(0)} m past the edge`);
+      assert.ok(back > 700, `${g}: no way back in from the ${side} along ${e.hw} ${e.name || e.id} (${lat.toFixed(5)}, ${lon.toFixed(5)})`);
+    }
+  }
+}
+console.log(`routes cross the map's edge both ways at ${places.length} main roads (and on foot), 700 m and more past it`);
+if (args.includes('--places')) console.table(places);
+
+// 5. The ground: a countryside tile's grid has the built tile's own numbers along the
+// edge they share, so the step there is nothing. (Bridges and tunnels are levels of
+// their own; none may reach the edge, since the countryside has no levels yet.)
+const N = index.terrain.n, scale = (index.terrain.max - index.terrain.min) / 65535;
+let step = 0, compared = 0;
+for (const [i, j] of rim) {
+  const f = `public/data/praha_now/tiles/${i}_${j}.height.bin.gz`;
+  if (!fs.existsSync(f)) continue;
+  const raw = zlib.gunzipSync(fs.readFileSync(f)), from = new Uint16Array(raw.buffer, raw.byteOffset, N * N);
+  for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, 1], [-1, 1], [1, -1]]) {
+    const a = i + di, b = j + dj;
+    if (a >= 0 && b >= 0 && a < cols && b < rows) continue;
+    if (Math.max(0, Math.min(cols - 1, a)) !== i || Math.max(0, Math.min(rows - 1, b)) !== j) continue;
+    const grid = edgeGrid(from, N, a, b, cols, rows);
+    for (let q = 0; q < N; q++) {
+      // The shared points: the countryside tile's side facing the built one.
+      const pairs = [];
+      if (di && !dj) pairs.push([q * N + (di < 0 ? N - 1 : 0), q * N + (di < 0 ? 0 : N - 1)]);
+      if (dj && !di) pairs.push([(dj < 0 ? N - 1 : 0) * N + q, (dj < 0 ? 0 : N - 1) * N + q]);
+      if (di && dj && !q) pairs.push([(dj < 0 ? N - 1 : 0) * N + (di < 0 ? N - 1 : 0), (dj < 0 ? 0 : N - 1) * N + (di < 0 ? 0 : N - 1)]);
+      for (const [mine, theirs] of pairs) { step = Math.max(step, Math.abs(grid[mine] - from[theirs]) * scale); compared++; }
+    }
+  }
+}
+const bridges = [...stubs.drive, ...stubs.walk].filter((e) => e.bridge || e.tunnel).length;
+console.log(`ground: the biggest step at the map's edge is ${step.toFixed(3)} m over ${compared} shared points; ${structuresAtEdge} bridges or tunnels touch the edge, ${bridges} built streets leave on one`);
+assert.ok(step < 0.01, 'the ground steps at the edge of the built map');
+
+const share = (g) => 1 - stubs[g].loose.length / stubs[g].ends.size;
+assert.ok(stubs.drive.loose.every(([, v]) => !['motorway', 'trunk', 'primary', 'secondary'].includes(v.hw)), 'a main road leaves the map and ends');
+assert.ok(share('drive') > 0.9 && share('walk') > 0.85, 'too many built streets end outside the map with nothing to carry on');
+assert.equal(stubs.drive.doubled + stubs.walk.doubled, 0, 'a generated street lies along a built one');
+assert.equal(twice, 0, 'a junction stands twice');
 
 if (dump >= 0) fs.writeFileSync(args[dump + 1], JSON.stringify(tiles.get(`${ci}_${cj}`)));
 console.log('ok');

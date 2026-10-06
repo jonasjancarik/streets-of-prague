@@ -1,7 +1,7 @@
 // The main thread's side of the countryside past the built map (countryside.ts, plan
 // 021; a prototype behind ?countryside): says which tiles can be made, and asks the
 // worker for them.
-import { countrysideUrl } from './data.ts';
+import { countrysideUrl, dataUrl } from './data.ts';
 import type { Bounds } from './map/geo.ts';
 import type { MapIndex, TileJSON } from './contracts.ts';
 import type { CountrysideRequest, CountrysideResponse } from './countrysideWorker.ts';
@@ -18,7 +18,7 @@ export class CountrysideTiles {
   private next = 0;
   private readonly index: MapIndex;
 
-  constructor(index: MapIndex) {
+  constructor(index: MapIndex, area: string) {
     this.index = index;
     this.worker = new Worker(new URL('./countrysideWorker.ts', import.meta.url), { type: 'module' });
     this.worker.onmessage = (event: MessageEvent<CountrysideResponse>) => {
@@ -28,7 +28,7 @@ export class CountrysideTiles {
       else job?.resolve(event.data);
     };
     const [w, s, e, n] = index.bbox_wgs84;
-    this.ask({ type: 'open', url: new URL(countrysideUrl, location.href).href,
+    this.ask({ type: 'open', url: new URL(countrysideUrl, location.href).href, tiles: new URL(dataUrl(area, 'tiles/'), location.href).href,
       setup: { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows } })
       .then((r) => { if ('box' in r) this.box = r.box; })
       .catch((err) => console.warn('The countryside past the map is not available', err));
