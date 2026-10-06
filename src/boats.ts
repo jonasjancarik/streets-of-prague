@@ -4,6 +4,8 @@ import { clamp } from './network.ts';
 import { lampLit } from './lamps.ts';
 import { fences } from './fences.ts';
 import type { Point2 } from './map/geo.ts';
+import { Course } from './river.ts';
+import type { Reach } from './river.ts';
 
 // Boats on the Vltava: a few white tourist cruise boats going slowly up and down the
 // river, and pedal boats (some of them swans) paddling about round the islands. The
@@ -13,6 +15,13 @@ import type { Point2 } from './map/geo.ts';
 // count as water), and one that falls far behind the player is taken away and put
 // back on the water nearer you. They keep to the water's height, so they pass under
 // bridges (which are levels of their own).
+//
+// Where the area has a fairway (river.json, see river.ts), the cruise boats follow it
+// instead: up and down the navigable channel, keeping to the right of its middle
+// where there's room, round the islands on the side with water enough and past each
+// weir through its lock. Two don't meet in a lock or its canal: the one still in wide
+// water waits there. At the end of a stretch they turn round. The water's height
+// changes at a lock, and a boat rises or sinks there at a lock's pace, not in a jump.
 
 export interface Waters {
   waterAt: (x: number, y: number) => boolean | null;
@@ -20,18 +29,28 @@ export interface Waters {
   cellAt: (x: number, y: number, level: number, z: number) => number;
 }
 
-type Kind = 'cruise' | 'pedal' | 'swan';
-interface Spec { len: number; beam: number; speed: number; turn: number; look: number; bob: number }
+type Kind = 'cruise' | 'pedal' | 'swan' | 'ferry'; // (the ferries are run by ferries.ts)
+interface Spec { len: number; beam: number; speed: number; turn: number; look: number; bob: number; top: number }
 const SPECS: Record<Kind, Spec> = {
-  cruise: { len: 34, beam: 6.4, speed: 2.6, turn: 0.1, look: 45, bob: 0.05 },
-  pedal: { len: 3.2, beam: 1.8, speed: 0.8, turn: 0.45, look: 7, bob: 0.07 },
-  swan: { len: 3.4, beam: 1.9, speed: 0.7, turn: 0.4, look: 7, bob: 0.07 },
+  cruise: { len: 34, beam: 6.4, speed: 2.6, turn: 0.1, look: 45, bob: 0.05, top: 4.8 },
+  pedal: { len: 3.2, beam: 1.8, speed: 0.8, turn: 0.45, look: 7, bob: 0.07, top: 2.1 },
+  swan: { len: 3.4, beam: 1.9, speed: 0.7, turn: 0.4, look: 7, bob: 0.07, top: 2.4 },
+  ferry: { len: 11, beam: 3.8, speed: 2.4, turn: 0.3, look: 15, bob: 0.05, top: 3.9 },
 };
 const CRUISE = 4, PEDALS = 9;
 const NEAR = 60, SPAWN = 420, FAR = 700; // m from the player: where boats are put, and taken away
 const MOORED = 3; // pedal boats tied up at the bank
 const ISLANDS = 520; // pedal boats keep within this many metres of Slovanský ostrov
 const PAINTS = ['#e8c534', '#d8402f', '#2f7fc4', '#3aa55a', '#f08a2c'];
+// How high each kind stands over the water (the top of its mast, lamp or head), for
+// the bridges it must pass under (scripts/check-river.mjs).
+export const BOAT_TOP: Record<Kind, number> = { cruise: SPECS.cruise.top, pedal: SPECS.pedal.top, swan: SPECS.swan.top, ferry: SPECS.ferry.top };
+export const FERRY = SPECS.ferry;
+const KEEP_RIGHT = 14; // m to the right of the fairway's middle, where the water is wide enough
+const BANK = 4; // m a cruise boat's side keeps from the bank
+const NARROW = 14; // m to the bank: under this the fairway is a canal or a lock, for one boat at a time
+const TURNING = 22; // m to the bank a cruise boat needs to turn round on the spot
+const RISE = 0.3; // m/s: how fast a boat rises or sinks where the water's height changes
 const BOARD_REACH = 4.5, BOARD_STEP = 0.8; // a short step between a low bank and the deck
 
 interface Boat {
@@ -39,12 +58,15 @@ interface Boat {
   x: number; y: number; h: number; v: number; w: number; phase: number; wander: number; side: number;
   next: number; turn: number; ahead: number; // when to look round again, and what it found
   moored: boolean; // tied up at the bank, waiting to be taken
+  course: Course | null; s: number; dir: number; // on the fairway: which stretch, how far along it, and which way (1 or -1)
+  about: number; // radians still to turn, turning round at the end of a stretch
+  z: number | null; // the height it floats at (null: not yet on the water)
 }
 
 // Boxes and extrusions with a colour per vertex, merged into one body. Forward is +x,
 // right +z, the waterline y = 0, as for the cars. `glow` marks what shines at night:
 // 1 the cabin windows (lit from inside), 2 the navigation lights (their own colour).
-function body(kind: Kind, paint: string) {
+export function body(kind: Kind, paint: string) {
   const parts: THREE.BufferGeometry[] = [];
   const colour = (g: THREE.BufferGeometry, color: string, glow = 0) => {
     const c = new THREE.Color(color), n = g.attributes.position.count, col = new Float32Array(n * 3);
@@ -93,6 +115,28 @@ function body(kind: Kind, paint: string) {
     box(0.3, 0.3, 0.3, -2 - L * 0.32 + 0.3, 2.0, 0, '#ffffff', 2); // and one at the stern
     box(0.8, 0.2, 5.2, -2 - L * 0.32 + 0.5, 1.55, 0, '#8a2b2b'); // a red stripe at the stern
     for (let i = 0; i < 6; i++) box(1.2, 0.08, 0.5, -12 + i * 3.6, 4.0, 0, '#3d6f9a'); // benches up top
+  } else if (kind === 'ferry') {
+    // PID's little ferry: a dark hull with a band in the line's colour, an open deck
+    // forward under an awning, the cabin and wheelhouse aft.
+    const L = SPECS.ferry.len, B = SPECS.ferry.beam;
+    hull(L, B, 2.6, -0.35, 0.45, '#1f3550');
+    hull(L, B, 2.6, 0.45, 0.8, paint);
+    hull(L, B, 2.6, 0.8, 1.05, '#f2f1ec');
+    hull(L - 0.5, B - 0.5, 2.4, 1.05, 1.1, '#8d9296'); // the deck
+    box(3.6, 1.9, B - 0.7, -2.6, 2.05, 0, '#f4f3ee'); // the cabin
+    box(3.4, 0.8, B - 0.5, -2.6, 2.3, 0, '#27343f', 1); // its windows
+    box(3.9, 0.12, B - 0.4, -2.6, 3.06, 0, '#e9e6de');
+    for (const z of [-(B / 2 - 0.35), B / 2 - 0.35]) {
+      for (const x of [-0.4, 1.6, 3.2]) box(0.07, 1.9, 0.07, x, 2.05, z, '#c9c7bf'); // the awning's posts
+      box(4.0, 0.06, 0.06, 1.4, 2.0, z, '#c9c7bf'); // and a rail along each side
+    }
+    box(4.2, 0.08, B - 0.5, 1.4, 3.02, 0, paint); // the awning
+    box(1.6, 0.3, 0.5, 1.2, 1.4, -0.9, '#6f5a43'); // benches
+    box(1.6, 0.3, 0.5, 1.2, 1.4, 0.9, '#6f5a43');
+    box(0.4, 0.3, 0.1, -1.0, 2.8, -(B / 2 - 0.3), '#ff1a10', 2);
+    box(0.4, 0.3, 0.1, -1.0, 2.8, B / 2 - 0.3, '#10ff40', 2);
+    box(0.07, 0.7, 0.07, -2.6, 3.45, 0, '#c9c7bf');
+    box(0.3, 0.25, 0.3, -2.6, 3.8, 0, '#ffffff', 2);
   } else {
     const S = SPECS[kind];
     // Two floats and a deck between them, a seat and a sunshade.
@@ -122,6 +166,28 @@ function body(kind: Kind, paint: string) {
   return g;
 }
 
+// One material for every boat (the ferries too).
+let shared: THREE.MeshLambertMaterial | null = null;
+export function boatMaterial() {
+  if (shared) return shared;
+  shared = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const material = shared;
+  // Cabin windows and navigation lamps shine with the street lamps' night switch;
+  // their light falls on the boats too. Small boats carry an all-round white lamp.
+  material.onBeforeCompile = (sh) => {
+    lampLit(sh);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', 'attribute float glow;\nvarying float vGlow;\n#include <common>')
+      .replace('#include <color_vertex>', '#include <color_vertex>\nvGlow = glow;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', 'varying float vGlow;\n#include <common>')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  if (vGlow > .5 && uLampOn > .005) totalEmissiveRadiance += (vGlow > 1.5 ? vColor.rgb * 1.6 : vec3(1., .86, .62) * .6) * uLampOn;`);
+  };
+  material.customProgramCacheKey = () => 'boats';
+  return material;
+}
+
 // Their own random numbers, so the rest of the world's don't change with the boats.
 function seededRandom(seed: number) {
   let s = seed;
@@ -135,29 +201,19 @@ export class Boats {
   list: Boat[];
   rng: () => number;
   me: Boat | null = null; // the pedal boat the player is in
+  courses: Course[];
   private placeNext = 0;
 
   // `islands`: where Slovanský ostrov is in local metres (null if not in the area).
-  constructor(scene: THREE.Scene, water: Waters, islands: Point2 | null, rng = seededRandom(7)) {
+  // `fairway`: the stretches the cruise boats sail (none: they wander on open water).
+  constructor(scene: THREE.Scene, water: Waters, islands: Point2 | null, rng = seededRandom(7), fairway: Reach[] = []) {
+    this.courses = fairway.map((r) => new Course(r.pts));
     this.scene = scene;
     this.water = water;
     this.islands = islands;
     this.rng = rng;
     this.list = [];
-    const material = new THREE.MeshLambertMaterial({ vertexColors: true });
-    // Cabin windows and navigation lamps shine with the street lamps' night switch;
-    // their light falls on the boats too. Small boats carry an all-round white lamp.
-    material.onBeforeCompile = (sh) => {
-      lampLit(sh);
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', 'attribute float glow;\nvarying float vGlow;\n#include <common>')
-        .replace('#include <color_vertex>', '#include <color_vertex>\nvGlow = glow;');
-      sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', 'varying float vGlow;\n#include <common>')
-        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-  if (vGlow > .5 && uLampOn > .005) totalEmissiveRadiance += (vGlow > 1.5 ? vColor.rgb * 1.6 : vec3(1., .86, .62) * .6) * uLampOn;`);
-    };
-    material.customProgramCacheKey = () => 'boats';
+    const material = boatMaterial();
     const geometries = new Map<string, THREE.BufferGeometry>();
     const add = (kind: Kind, paint: string) => {
       const k = `${kind}|${paint}`;
@@ -167,7 +223,7 @@ export class Boats {
       mesh.visible = false;
       mesh.matrixAutoUpdate = false;
       scene.add(mesh);
-      this.list.push({ kind, s: SPECS[kind], mesh, live: false, x: 0, y: 0, h: 0, v: 0, w: 0, phase: rng() * 10, wander: 0, side: 1, next: 0, turn: 0, ahead: 1, moored: false });
+      this.list.push({ kind, s: SPECS[kind], mesh, live: false, x: 0, y: 0, h: 0, v: 0, w: 0, phase: rng() * 10, wander: 0, side: 1, next: 0, turn: 0, ahead: 1, moored: false, course: null, s: 0, dir: 1, about: 0, z: null });
     };
     for (let i = 0; i < CRUISE; i++) add('cruise', '');
     if (islands) for (let i = 0; i < PEDALS; i++) i % 3 === 2 ? add('swan', '') : add('pedal', PAINTS[i % PAINTS.length]);
@@ -201,6 +257,7 @@ export class Boats {
   // Try to put a boat on the water somewhere near the player: a few random spots a
   // frame, pointing the way the water is longest.
   place(b: Boat, px: number, py: number) {
+    if (b.kind === 'cruise' && this.courses.length) { this.launch(b, px, py); return; }
     for (let k = 0; k < 4; k++) {
       let x: number, y: number;
       if (b.kind === 'cruise') {
@@ -225,7 +282,7 @@ export class Boats {
         x += Math.cos(a) * pull; y += Math.sin(a) * pull;
         h = a + Math.PI / 2;
         if (!this.fits(b, x, y, h) || !this.landing(b, x, y, h) || this.list.some((o) => o !== b && o.live && Math.hypot(o.x - x, o.y - y) < 6)) continue;
-        Object.assign(b, { x, y, h, v: 0, w: 0, live: true });
+        Object.assign(b, { x, y, h, v: 0, w: 0, live: true, z: null });
         b.mesh.visible = true;
         return;
       }
@@ -236,10 +293,77 @@ export class Boats {
       // Cruise boats keep to the main river, not the narrow arms round the islands.
       if (b.kind === 'cruise' && this.run(b, x, y, h + Math.PI / 2, 60) + this.run(b, x, y, h - Math.PI / 2, 60) < 70) continue;
       if (!this.fits(b, x, y, h) || this.list.some((o) => o !== b && o.live && Math.hypot(o.x - x, o.y - y) < (o.s.len + b.s.len) / 2 + 8)) continue;
-      Object.assign(b, { x, y, h, v: 0, w: 0, next: 0, live: true, wander: this.rng() * 2 - 1, side: this.rng() < 0.5 ? -1 : 1 });
+      Object.assign(b, { x, y, h, v: 0, w: 0, next: 0, live: true, z: null, wander: this.rng() * 2 - 1, side: this.rng() < 0.5 ? -1 : 1 });
       b.mesh.visible = true;
       return;
     }
+  }
+
+  // A cruise boat onto the fairway, somewhere near the player but not in a lock.
+  launch(b: Boat, px: number, py: number) {
+    for (const c of this.courses) {
+      const near = c.project(px, py);
+      if (near.d > SPAWN) continue;
+      for (let k = 0; k < 4; k++) {
+        const s = near.s + (this.rng() * 2 - 1) * SPAWN, p = c.at(s), d = Math.hypot(p.x - px, p.y - py);
+        if (s < 0 || s > c.length || d < NEAR || d > SPAWN || p.w < NARROW || this.water.waterAt(p.x, p.y) !== true) continue;
+        if (this.list.some((o) => o !== b && o.live && Math.hypot(o.x - p.x, o.y - p.y) < 80)) continue;
+        const dir = this.rng() < 0.5 ? -1 : 1, off = this.keepRight(b, p.w) * dir;
+        Object.assign(b, { x: p.x + Math.sin(p.ang) * off, y: p.y - Math.cos(p.ang) * off, h: dir > 0 ? p.ang : p.ang + Math.PI, v: b.s.speed * 0.5, w: 0, course: c, s, dir, about: 0, live: true, z: null });
+        b.mesh.visible = true;
+        return;
+      }
+    }
+  }
+
+  // How far right of the fairway's middle a boat sails where the bank is `w` away.
+  keepRight(b: Boat, w: number) { return clamp(w - b.s.beam / 2 - BANK, 0, KEEP_RIGHT); }
+
+  // Along the fairway: head for a point ahead on it, a little to the right; slow down
+  // behind another boat; wait in wide water while one comes the other way through a
+  // canal or lock ahead; turn round at the end of the stretch. Taken away where the
+  // map ahead isn't loaded (and put back on nearer the player).
+  follow(b: Boat, dt: number) {
+    const c = b.course!, S = b.s;
+    b.s = c.project(b.x, b.y, b.s).s;
+    const here = c.at(b.s);
+    if (b.about > 0) {
+      // Turning round on the spot, as these boats do with their bow thruster.
+      const step = Math.min(b.about, 0.12 * dt);
+      b.about -= step;
+      b.h += step;
+      b.v = 0;
+      return;
+    }
+    const look = clamp(here.w * 1.5, 12, 40), ahead = c.at(b.s + b.dir * look);
+    const loaded = this.water.waterAt(ahead.x, ahead.y);
+    if (loaded === null) { b.live = false; b.mesh.visible = false; return; }
+    // Where to turn round: the last water wide enough before the stretch ends.
+    const left = b.dir > 0 ? c.length - b.s : b.s;
+    let want = S.speed;
+    if (left < 5 || (left < 150 && here.w >= TURNING && (left < 30 || c.narrowest(b.s, b.s + b.dir * Math.min(left, 60)) < TURNING))) {
+      if (b.v > 0.25) want = 0;
+      else { b.dir = -b.dir; b.about = Math.PI; return; }
+    }
+    const a = b.dir > 0 ? ahead.ang : ahead.ang + Math.PI, off = this.keepRight(b, Math.min(here.w, ahead.w));
+    const tx = ahead.x + Math.sin(a) * off, ty = ahead.y - Math.cos(a) * off;
+    let dh = Math.atan2(ty - b.y, tx - b.x) - b.h;
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    if (here.w < NARROW) want *= 0.7;
+    if (Math.abs(dh) > 0.5) want *= 0.4;
+    for (const o of this.list) {
+      if (o === b || !o.live || o.course !== c) continue;
+      const gap = (o.s - b.s) * b.dir;
+      if (gap <= 0) continue;
+      if (o.dir === b.dir || o.about > 0) { if (gap < 90) want = Math.min(want, S.speed * clamp((gap - 50) / 40, 0, 1)); }
+      // (Of two both waiting at the ends of one canal, the one going up the line goes first.)
+      else if (gap < 1500 && here.w >= NARROW && (b.dir < 0 || c.at(o.s).w < NARROW) && c.narrowest(b.s + b.dir * 30, b.s + b.dir * Math.min(gap, 120)) < NARROW && c.narrowest(b.s, o.s) < NARROW) want = 0;
+    }
+    b.w = clamp(dh * 0.8, -S.turn * 2, S.turn * 2);
+    b.v += clamp(want - b.v, -0.5 * dt, 0.3 * dt);
+    b.h += b.w * dt;
+    b.x += Math.cos(b.h) * b.v * dt;
+    b.y += Math.sin(b.h) * b.v * dt;
   }
 
   // Water height stays below bridge decks and ignores a quay bulging over the water.
@@ -316,7 +440,7 @@ export class Boats {
       }
       if (b.live && Math.hypot(b.x - px, b.y - py) > FAR) { b.live = false; b.mesh.visible = false; }
       if (!b.live) continue;
-      this.steer(b, dt);
+      if (b.course) this.follow(b, dt); else this.steer(b, dt);
     }
     // One placement attempt per frame, taking turns: a missing safe bank must not
     // keep every later boat from spawning.
@@ -333,7 +457,7 @@ export class Boats {
       if (!a.live) continue;
       for (let j = i + 1; j < this.list.length; j++) {
         const b = this.list[j];
-        if (!b.live) continue;
+        if (!b.live || (a.course && b.course)) continue; // (boats on the fairway keep their own distance)
         const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
         const r = (a.kind === 'cruise' ? a.s.len * 0.4 : a.s.len * 0.5) + (b.kind === 'cruise' ? b.s.len * 0.4 : b.s.len * 0.5);
         if (d >= r) continue;
@@ -343,8 +467,8 @@ export class Boats {
         const wb = b.moored ? 0 : a.moored ? 1 : ma / (ma + mb);
         const ax = a.x - (dx / d) * push * wa, ay = a.y - (dy / d) * push * wa;
         const bx = b.x + (dx / d) * push * wb, by = b.y + (dy / d) * push * wb;
-        if (this.fits(a, ax, ay, a.h)) { a.x = ax; a.y = ay; }
-        if (this.fits(b, bx, by, b.h)) { b.x = bx; b.y = by; }
+        if (!a.course && this.fits(a, ax, ay, a.h)) { a.x = ax; a.y = ay; }
+        if (!b.course && this.fits(b, bx, by, b.h)) { b.x = bx; b.y = by; }
       }
     }
     for (const b of this.list) if (b.live) this.pose(b, dt);
@@ -397,7 +521,10 @@ export class Boats {
     const t = b.phase, A = b.s.bob;
     const m = b.mesh;
     // The lowest of bow, middle and stern: the ground by the banks can bulge up over the water.
-    const y = this.waterHeight(b);
+    // Where the water's height changes (a lock, a sluice), the boat follows at a lock's pace.
+    const level = this.waterHeight(b);
+    b.z = b.z === null || !(dt > 0) ? level : b.z + clamp(level - b.z, -RISE * dt, RISE * dt);
+    const y = b.z;
     m.position.set(b.x, y + A * Math.sin(t * 1.4), -b.y);
     m.rotation.set(A * 0.6 * Math.sin(t * 1.1 + 1), b.h, A * 0.4 * Math.sin(t * 0.9 + 2), 'YXZ');
     m.updateMatrix();
