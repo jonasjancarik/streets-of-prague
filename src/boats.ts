@@ -58,7 +58,7 @@ interface Boat {
   x: number; y: number; h: number; v: number; w: number; phase: number; wander: number; side: number;
   next: number; turn: number; ahead: number; // when to look round again, and what it found
   moored: boolean; // tied up at the bank, waiting to be taken
-  course: Course | null; s: number; dir: number; // on the fairway: which stretch, how far along it, and which way (1 or -1)
+  course: Course | null; along: number; dir: number; // on the fairway: which stretch, how far along it, and which way (1 or -1)
   about: number; // radians still to turn, turning round at the end of a stretch
   z: number | null; // the height it floats at (null: not yet on the water)
 }
@@ -223,7 +223,7 @@ export class Boats {
       mesh.visible = false;
       mesh.matrixAutoUpdate = false;
       scene.add(mesh);
-      this.list.push({ kind, s: SPECS[kind], mesh, live: false, x: 0, y: 0, h: 0, v: 0, w: 0, phase: rng() * 10, wander: 0, side: 1, next: 0, turn: 0, ahead: 1, moored: false, course: null, s: 0, dir: 1, about: 0, z: null });
+      this.list.push({ kind, s: SPECS[kind], mesh, live: false, x: 0, y: 0, h: 0, v: 0, w: 0, phase: rng() * 10, wander: 0, side: 1, next: 0, turn: 0, ahead: 1, moored: false, course: null, along: 0, dir: 1, about: 0, z: null });
     };
     for (let i = 0; i < CRUISE; i++) add('cruise', '');
     if (islands) for (let i = 0; i < PEDALS; i++) i % 3 === 2 ? add('swan', '') : add('pedal', PAINTS[i % PAINTS.length]);
@@ -309,7 +309,7 @@ export class Boats {
         if (s < 0 || s > c.length || d < NEAR || d > SPAWN || p.w < NARROW || this.water.waterAt(p.x, p.y) !== true) continue;
         if (this.list.some((o) => o !== b && o.live && Math.hypot(o.x - p.x, o.y - p.y) < 80)) continue;
         const dir = this.rng() < 0.5 ? -1 : 1, off = this.keepRight(b, p.w) * dir;
-        Object.assign(b, { x: p.x + Math.sin(p.ang) * off, y: p.y - Math.cos(p.ang) * off, h: dir > 0 ? p.ang : p.ang + Math.PI, v: b.s.speed * 0.5, w: 0, course: c, s, dir, about: 0, live: true, z: null });
+        Object.assign(b, { x: p.x + Math.sin(p.ang) * off, y: p.y - Math.cos(p.ang) * off, h: dir > 0 ? p.ang : p.ang + Math.PI, v: b.s.speed * 0.5, w: 0, course: c, along: s, dir, about: 0, live: true, z: null });
         b.mesh.visible = true;
         return;
       }
@@ -325,8 +325,8 @@ export class Boats {
   // map ahead isn't loaded (and put back on nearer the player).
   follow(b: Boat, dt: number) {
     const c = b.course!, S = b.s;
-    b.s = c.project(b.x, b.y, b.s).s;
-    const here = c.at(b.s);
+    b.along = c.project(b.x, b.y, b.along).s;
+    const here = c.at(b.along);
     if (b.about > 0) {
       // Turning round on the spot, as these boats do with their bow thruster.
       const step = Math.min(b.about, 0.12 * dt);
@@ -335,13 +335,13 @@ export class Boats {
       b.v = 0;
       return;
     }
-    const look = clamp(here.w * 1.5, 12, 40), ahead = c.at(b.s + b.dir * look);
+    const look = clamp(here.w * 1.5, 12, 40), ahead = c.at(b.along + b.dir * look);
     const loaded = this.water.waterAt(ahead.x, ahead.y);
     if (loaded === null) { b.live = false; b.mesh.visible = false; return; }
     // Where to turn round: the last water wide enough before the stretch ends.
-    const left = b.dir > 0 ? c.length - b.s : b.s;
+    const left = b.dir > 0 ? c.length - b.along : b.along;
     let want = S.speed;
-    if (left < 5 || (left < 150 && here.w >= TURNING && (left < 30 || c.narrowest(b.s, b.s + b.dir * Math.min(left, 60)) < TURNING))) {
+    if (left < 5 || (left < 150 && here.w >= TURNING && (left < 30 || c.narrowest(b.along, b.along + b.dir * Math.min(left, 60)) < TURNING))) {
       if (b.v > 0.25) want = 0;
       else { b.dir = -b.dir; b.about = Math.PI; return; }
     }
@@ -353,11 +353,11 @@ export class Boats {
     if (Math.abs(dh) > 0.5) want *= 0.4;
     for (const o of this.list) {
       if (o === b || !o.live || o.course !== c) continue;
-      const gap = (o.s - b.s) * b.dir;
+      const gap = (o.along - b.along) * b.dir;
       if (gap <= 0) continue;
       if (o.dir === b.dir || o.about > 0) { if (gap < 90) want = Math.min(want, S.speed * clamp((gap - 50) / 40, 0, 1)); }
       // (Of two both waiting at the ends of one canal, the one going up the line goes first.)
-      else if (gap < 1500 && here.w >= NARROW && (b.dir < 0 || c.at(o.s).w < NARROW) && c.narrowest(b.s + b.dir * 30, b.s + b.dir * Math.min(gap, 120)) < NARROW && c.narrowest(b.s, o.s) < NARROW) want = 0;
+      else if (gap < 1500 && here.w >= NARROW && (b.dir < 0 || c.at(o.along).w < NARROW) && c.narrowest(b.along + b.dir * 30, b.along + b.dir * Math.min(gap, 120)) < NARROW && c.narrowest(b.along, o.along) < NARROW) want = 0;
     }
     b.w = clamp(dh * 0.8, -S.turn * 2, S.turn * 2);
     b.v += clamp(want - b.v, -0.5 * dt, 0.3 * dt);
