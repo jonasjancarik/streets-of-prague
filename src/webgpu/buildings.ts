@@ -9,12 +9,12 @@ import {
   Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
   materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt,
 } from 'three/tsl';
-import { FACADE_ATLAS, FACADE_ON, BLANK } from '../facades.ts';
-import { WINDOWS, ROOF_DETAIL, LANDMARK_ROOF as R } from '../shading.ts';
+import { FACADE_ATLAS, FACADE_ON, BLANK, F_BAY as BAY_WIDTH } from '../facades.ts';
+import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
 
-const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL);
+const uFacadeOn = follow(FACADE_ON), uWindows = follow(WINDOWS), uRoofDetail = follow(ROOF_DETAIL), uRoofClutter = follow(ROOF_CLUTTER);
 
 // The atlas loads after the first frames: a one-layer stand-in keeps the binding's type.
 const standIn = new THREE.DataArrayTexture(new Uint8Array(4), 1, 1, 1);
@@ -32,7 +32,7 @@ const F_UP = ints([48, 49, 50, 51, 52, 53, 12, 13, 15, 12, 13, 15, 24, 25, 24, 2
 const F_DOOR = ints([56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45]);
 const F_WALL = ints([54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43]);
 const floats = (v: number[]): N => uniformArray(v, 'float');
-const F_BAY = floats([2.9, 3.1, 2.6, 2.4, 2.8]);
+const F_BAY = floats(BAY_WIDTH);
 const F_MOD = floats([1.9, 1.9, 2, 2.4, 1.9]);
 // Window bays across a wall: none on a party wall or one too short for a window.
 const fBays = (f: N) => {
@@ -141,7 +141,8 @@ function pavingRoof(c: N, wp: N, wpWidth: N) {
 // Age on top of any roof colour (roofWeather in shading.ts): moss in clumps, more on the
 // shaded north slopes, dark streaks running down from the ridge, and stains. A building's
 // number comes from its colour. Flat roofs get only a little.
-function roofWeather(c: N, c0: N, wp: N, n: N, wpWidth: N) {
+// more: 0-1, thicker moss (ROOF_CLUTTER, on clay tiles).
+function roofWeather(c: N, c0: N, wp: N, n: N, wpWidth: N, more: N = float(0)) {
   const seed = fract(sin(dot(c0, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
   const age = smoothstep(0.2, 0.9, fract(seed.mul(7.3).add(vnoise(wp.mul(0.02)).mul(0.35)))).mul(0.75).add(0.25);
   const flat = smoothstep(0.85, 0.97, n.y);
@@ -150,8 +151,8 @@ function roofWeather(c: N, c0: N, wp: N, n: N, wpWidth: N) {
   const north = down.y.mul(0.5).add(0.5);
   const d = fade(wpWidth, 0.3);
   const clump = fbm2(wp.mul(0.35).add(seed.mul(40)));
-  const moss = smoothstep(0.5, 0.72, clump.add(north.sub(0.5).mul(0.18))).mul(age).mul(mix(0.9, 0.2, flat)).mul(d);
-  const m = mix(c, c.mul(vec3(0.62, 0.82, 0.42)).add(vec3(0.01, 0.03, 0)), moss.mul(0.75));
+  const moss = smoothstep(float(0.5).sub(more.mul(0.13)), 0.72, clump.add(north.sub(0.5).mul(more.mul(0.12).add(0.18)))).mul(mix(age, 1, more.mul(0.4))).mul(mix(0.9, 0.2, flat)).mul(d);
+  const m = mix(c, c.mul(vec3(0.62, 0.82, 0.42)).add(vec3(0.01, 0.03, 0)), moss.mul(more.mul(0.13).add(0.75)));
   const streak = smoothstep(0.5, 0.85, vnoise(vec2(s.x.mul(2.2).add(seed.mul(50)), s.y.mul(0.1))));
   const dark = float(1).sub(streak.mul(0.22).mul(age).mul(float(1).sub(flat)).mul(d));
   const stain = float(1).sub(flat.mul(0.1).mul(age).mul(smoothstep(0.5, 0.8, fbm2(wp.mul(0.12).add(seed.mul(9))))));
@@ -231,7 +232,7 @@ const buildingColor = Fn(() => {
       // The roof's material (tileWorker.ts: the facade attribute's w on roofs).
       const m = f.w;
       If(m.greaterThan(2.5).and(m.lessThan(4.5)), () => { c.assign(roofWeather(sheetRoof(base, bwp, bn, wpWidth, step(3.5, m)), base, bwp, bn, wpWidth)); })
-        .ElseIf(m.greaterThan(0.5).and(m.lessThan(1.5)), () => { c.assign(roofWeather(beaverTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth)); })
+        .ElseIf(m.greaterThan(0.5).and(m.lessThan(1.5)), () => { c.assign(roofWeather(beaverTiles(base, bwp, bn, wpWidth), base, bwp, bn, wpWidth, uRoofClutter)); })
         .ElseIf(m.greaterThan(1.5).and(m.lessThan(2.5)), () => { c.assign(roofWeather(roofTiles(base, bwp, bn, wpWidth, float(1)), base, bwp, bn, wpWidth)); })
         .Else(() => {
           // Not known: slate where grey, else clay tiles.

@@ -452,7 +452,8 @@ vec3 pavingRoof(vec3 c, vec2 wp) {
 // Age on top of any roof colour: moss in clumps (more on the shaded north slopes), dark
 // streaks running down from the ridge, and stains. Each building ages differently, by a
 // number taken from its colour. Flat roofs get only a little. c0: the colour before shading.
-vec3 roofWeather(vec3 c, vec3 c0, vec2 wp, vec3 n) {
+// more: 0-1, thicker moss (ROOF_CLUTTER, on clay tiles).
+vec3 roofWeatherMore(vec3 c, vec3 c0, vec2 wp, vec3 n, float more) {
   float seed = fract(sin(dot(c0, vec3(127.1, 311.7, 74.7))) * 43758.5453);
   float age = .25 + .75 * smoothstep(.2, .9, fract(seed * 7.3 + vnoise(wp * .02) * .35));
   float flat_ = smoothstep(.85, .97, n.y);
@@ -461,12 +462,13 @@ vec3 roofWeather(vec3 c, vec3 c0, vec2 wp, vec3 n) {
   float north = .5 + .5 * down.y;
   float d = detail(wp, .3);
   float clump = fbm2(wp * .35 + seed * 40.);
-  float moss = smoothstep(.5, .72, clump + (north - .5) * .18) * age * mix(.9, .2, flat_) * d;
-  c = mix(c, c * vec3(.62, .82, .42) + vec3(.01, .03, 0.), moss * .75);
+  float moss = smoothstep(.5 - .13 * more, .72, clump + (north - .5) * (.18 + .12 * more)) * mix(age, 1., .4 * more) * mix(.9, .2, flat_) * d;
+  c = mix(c, c * vec3(.62, .82, .42) + vec3(.01, .03, 0.), moss * (.75 + .13 * more));
   float streak = smoothstep(.5, .85, vnoise(vec2(s.x * 2.2 + seed * 50., s.y * .1)));
   c *= 1. - streak * .22 * age * (1. - flat_) * d;
   return c * (1. - .1 * flat_ * age * smoothstep(.5, .8, fbm2(wp * .12 + seed * 9.)));
 }
+vec3 roofWeather(vec3 c, vec3 c0, vec2 wp, vec3 n) { return roofWeatherMore(c, c0, wp, n, 0.); }
 // Weathering on every wall: soot in broad patches, rain streaks running down, and the
 // splashed dirt along the bottom. f: along the wall, height, length, style.seed.
 vec3 grime(vec3 c, vec4 f) {
@@ -499,6 +501,10 @@ export const DIRT = { value: 1 };
 export const LEAVES = { value: 1 };
 // Roof tiles, gravel and weathering; kept separate from wall and ground dirt.
 export const ROOF_DETAIL = { value: 1 };
+// Roof clutter: aerials, chimney pots, more chimneys and small dormers (map/roofClutter.ts,
+// added to tiles as they load) and thicker moss on clay tiles. On at the High graphics
+// setting and above, pending a look at it.
+export const ROOF_CLUTTER = { value: 0 };
 
 // The weather (weather.ts): how wet the ground is, how much snow lies, how hard it's
 // raining (0–1 each), and the colour of the sky mirrored in the puddles.
@@ -608,6 +614,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uNoise = NOISE;
     sh.uniforms.uDirt = DIRT;
     sh.uniforms.uRoofDetail = ROOF_DETAIL;
+    sh.uniforms.uRoofClutter = ROOF_CLUTTER;
     sh.uniforms.uFacades = FACADE_ATLAS;
     sh.uniforms.uFacadeOn = FACADE_ON;
     sh.uniforms.uWet = WET;
@@ -618,7 +625,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
       .replace('#include <common>', '#include <common>\nattribute vec4 facade;\nattribute float sky;\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n  vWN = normalize(mat3(modelMatrix) * objectNormal);\n  vFacade = facade;\n  vSky = sky;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uRoofDetail;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying float vSky;\nvarying vec3 vWorld;\nvarying vec3 vWN;\nvarying vec4 vFacade;\nuniform vec4 uCut;\nuniform float uDirt;\nuniform float uRoofDetail;\nuniform float uRoofClutter;\nuniform float uWet;\nuniform float uSnow;\nuniform float uWindows;\n${NOISE_GLSL}\n${BUILDING_GLSL}\n${FACADE_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
   vec3 bn = normalize(vWN);
@@ -646,7 +653,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
     else if (m > .5 && m < 1.5) r = beaverTiles(roofBase, bwp, bn);
     else if (m > 1.5 && m < 2.5) r = roofTilesAs(roofBase, bwp, bn, 1.);
     else r = roofTiles(roofBase, bwp, bn);
-    r = roofWeather(r, roofBase, bwp, bn);
+    r = roofWeatherMore(r, roofBase, bwp, bn, uRoofClutter * step(.5, m) * step(m, 1.5));
     if (bn.y < .5 && vFacade.z > .1) r = mansardWindows(r, vFacade);
     diffuseColor.rgb = r;
   }

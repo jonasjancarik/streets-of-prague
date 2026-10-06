@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DIRT, LEAVES, ROOF_DETAIL, WATER, WEATHER_DETAIL } from './shading.ts';
+import { DIRT, LEAVES, ROOF_DETAIL, ROOF_CLUTTER, WATER, WEATHER_DETAIL } from './shading.ts';
 import { LAMP_SHADOWS, LAMP_SIZE, LIGHT_FX } from './lamps.ts';
 import type { Sky } from './sky.ts';
 import { t } from './i18n.ts';
@@ -34,12 +34,12 @@ const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'lowest'];
 // posts cast shadows from every lamp and headlight, 2 only the cars do, 1 a soft darkening
 // round each car, 0 nothing. `lights`: the cones and glints, and the sharper light map.
 // `shadowBlur`: how far the sun shadow's edge is softened, in shadow-map texels.
-const TIERS: Record<Tier, { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; roofs: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean }> = {
-  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, roofs: true, crowd: 1, cars: 3, lights: true },
-  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, crowd: 1, cars: 2, lights: false },
-  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, crowd: 1, cars: 1, lights: false },
-  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, roofs: true, crowd: 1, cars: 1, lights: false },
-  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, roofs: false, crowd: 0.5, cars: 0, lights: false },
+const TIERS: Record<Tier, { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; roofs: boolean; clutter: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean }> = {
+  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, roofs: true, clutter: true, crowd: 1, cars: 3, lights: true },
+  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: true, crowd: 1, cars: 2, lights: false },
+  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false },
+  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false },
+  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, roofs: false, clutter: false, crowd: 0.5, cars: 0, lights: false },
 };
 
 // three r186 has no public sample setter. Its tone-mapping pass caches a target
@@ -151,7 +151,7 @@ export class Graphics {
   private same(a: Tier, b: Tier) {
     const x = TIERS[a], y = TIERS[b];
     return x.look === y.look && x.cars === y.cars && x.lights === y.lights && x.shadowSize === y.shadowSize && x.shadowBlur === y.shadowBlur
-      && x.roofs === y.roofs && x.crowd === y.crowd
+      && x.roofs === y.roofs && x.clutter === y.clutter && x.crowd === y.crowd
       && (!(this.renderer as GPURenderer).backend?.isWebGPUBackend || x.samples === y.samples)
       && this.ratio(a) === this.ratio(b);
   }
@@ -160,7 +160,7 @@ export class Graphics {
   get crowd() { return TIERS[this.tier].crowd; }
 
   private apply() {
-    const { look, samples, shadowSize, shadowBlur, roofs, cars, lights } = TIERS[this.tier];
+    const { look, samples, shadowSize, shadowBlur, roofs, clutter, cars, lights } = TIERS[this.tier];
     DIRT.value = LEAVES.value = look ? 1 : 0;
     WATER.value = look && this.water ? 1 : 0;
     this.sky.curve = look;
@@ -171,6 +171,7 @@ export class Graphics {
     LAMP_SIZE.value = lampSize;
     ROOF_DETAIL.value = roofs ? 1 : 0;
     WEATHER_DETAIL.value = look ? 1 : 0;
+    ROOF_CLUTTER.value = clutter ? 1 : 0;
     setSamples(this.renderer, samples);
     const shadow = this.sky.sun.shadow;
     shadow.radius = shadowBlur;

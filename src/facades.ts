@@ -80,6 +80,16 @@ export function styleFor(index: { bbox_wgs84: [number, number, number, number] }
   };
 }
 
+// How wide a window bay is in each style, m between window axes, and how many bays a
+// wall of a style and length gets (fBays in the shaders).
+export const F_BAY = [2.9, 3.1, 2.6, 2.4, 2.8];
+export const baysOf = (style: number, length: number) => (style >= BLANK ? 0 : Math.floor(length / F_BAY[style] + 0.5));
+
+// A wall as facadeCoords measured it, for what has to line up with its windows (the
+// mansard above it): a point on it and its outward normal, the direction its windows
+// are counted along, where it starts and how long it is along that, and its top.
+export interface WallLine { nx: number; nz: number; ax: number; az: number; tx: number; tz: number; from: number; length: number; top: number; tris: number[] }
+
 export function cellHash(i: number, j: number) {
   const s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453;
   return s - Math.floor(s);
@@ -92,7 +102,7 @@ export function cellHash(i: number, j: number) {
 // ends, so the windows run on across the triangles. `p`: the triangles' positions
 // (three.js world); returns 4 floats a vertex. (Measured from the world's origin
 // with each triangle's own normal, they jumped by metres at every seam.)
-export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) => number, styleAt: (x: number, y: number, height: number) => number) {
+export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) => number, styleAt: (x: number, y: number, height: number) => number, lines?: WallLine[]) {
   const n = p.length / 9, out = new Float32Array(n * 12);
   const nrm = new Float32Array(n * 2), wall = new Int32Array(n).fill(-1);
   const up = (i: number): number => (wall[i] === i ? i : (wall[i] = up(wall[i])));
@@ -126,7 +136,7 @@ export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) =
     }
     const len = Math.hypot(p[b] - p[a], p[b + 2] - p[a + 2]) || 1;
     const tx = (p[b] - p[a]) / len, tz = (p[b + 2] - p[a + 2]) / len;
-    let from = Infinity, to = -Infinity, top = 0;
+    let from = Infinity, to = -Infinity, top = 0, topY = -Infinity;
     for (const t of tris) {
       let ground = Infinity;
       for (let v = t * 9; v < t * 9 + 9; v += 3) ground = Math.min(ground, groundAt(p[v], -p[v + 2]));
@@ -134,7 +144,7 @@ export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) =
         const o = (v / 3) * 4, s = (p[v] - p[a]) * tx + (p[v + 2] - p[a + 2]) * tz;
         out[o] = s;
         out[o + 1] = p[v + 1] - ground;
-        from = Math.min(from, s); to = Math.max(to, s); top = Math.max(top, out[o + 1]);
+        from = Math.min(from, s); to = Math.max(to, s); top = Math.max(top, out[o + 1]); topY = Math.max(topY, p[v + 1]);
       }
     }
     const style = styleAt((p[a] + p[b]) / 2, -(p[a + 2] + p[b + 2]) / 2, top) + 0.999 * cellHash(p[a], p[a + 2]);
@@ -144,6 +154,7 @@ export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) =
       out[o + 3] = style;
     }
     ends.push({ tris, nx: nrm[w * 2], nz: nrm[w * 2 + 1], ax: p[a], az: p[a + 2], bx: p[b], bz: p[b + 2], len });
+    lines?.push({ nx: nrm[w * 2], nz: nrm[w * 2 + 1], ax: p[a], az: p[a + 2], tx, tz, from, length: Math.max(to - from, 0.5), top: topY, tris });
   }
   for (const e of partyWalls(ends)) for (const t of e.tris) for (let o = t * 12 + 3; o < t * 12 + 12; o += 4) out[o] += BLANK;
   return out;
@@ -155,8 +166,12 @@ export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) =
 // (x, y, z; w keeps the roof's material). Faces shorter than 4 m or lower than 2 m (the
 // gables of hips, a dormer's cheeks) get none. Faces are told apart by their normal and
 // plane.
+// With `lines` (the walls, as facadeCoords gives them, their styles in `out` already),
+// a mansard's windows stand over the windows of the wall below it: its coordinates are
+// then the wall's, scaled so that the shader's 3.2 m bays come out as the wall's bays.
 export const MANSARD_UP = 0.5; // the steepest a roof face may be: its normal's up component
-export function mansardCoords(p: Float32Array, out: Float32Array) {
+const MANSARD_BAY = 3.2; // m, mansardGlass in the shaders
+export function mansardCoords(p: Float32Array, out: Float32Array, lines?: WallLine[]) {
   const n = p.length / 9, faces = new Map<string, number[]>();
   const nrm = new Float32Array(n * 3);
   for (let t = 0; t < n; t++) {
@@ -184,11 +199,31 @@ export function mansardCoords(p: Float32Array, out: Float32Array) {
       lo = Math.min(lo, s); hi = Math.max(hi, s); bottom = Math.min(bottom, u); top = Math.max(top, u);
     }
     if (hi - lo < 4 || top - bottom < 2) continue;
+    // The wall below: facing the same way, in line with the mansard's foot, ending near
+    // it, and under most of it.
+    let wall: WallLine | null = null, bays = 0, under = 0.5 * (hi - lo);
+    if (lines) {
+      let fx = 0, fy = Infinity, fz = 0, k = 0;
+      for (const t of tris) for (let v = t * 9; v < t * 9 + 9; v += 3) if (p[v] * ux + p[v + 1] * uy + p[v + 2] * uz < bottom + 0.3) { fx += p[v]; fz += p[v + 2]; fy = Math.min(fy, p[v + 1]); k++; }
+      fx /= k; fz /= k;
+      for (const l of lines) {
+        if ((l.nx * nx + l.nz * nz) / h < 0.97 || Math.abs(l.nx * (fx - l.ax) + l.nz * (fz - l.az)) > 1.5 || l.top < fy - 3 || l.top > fy + 1.5) continue;
+        const s0 = l.ax * ex + l.az * ez + (l.tx * ex + l.tz * ez) * l.from, s1 = s0 + (l.tx * ex + l.tz * ez) * l.length;
+        const shared = Math.min(hi, Math.max(s0, s1)) - Math.max(lo, Math.min(s0, s1));
+        const style = Math.floor(out[l.tris[0] * 12 + 3]);
+        if (shared > under && baysOf(style, l.length) >= 1) { wall = l; bays = baysOf(style, l.length); under = shared; }
+      }
+    }
     for (const t of tris) for (let v = 0; v < 3; v++) {
       const q = t * 9 + v * 3, o = (t * 3 + v) * 4;
-      out[o] = p[q] * ex + p[q + 2] * ez - lo;
       out[o + 1] = p[q] * ux + p[q + 1] * uy + p[q + 2] * uz - bottom;
-      out[o + 2] = hi - lo;
+      if (wall) {
+        out[o] = ((p[q] - wall.ax) * wall.tx + (p[q + 2] - wall.az) * wall.tz - wall.from) / wall.length * bays * MANSARD_BAY;
+        out[o + 2] = bays * MANSARD_BAY;
+      } else {
+        out[o] = p[q] * ex + p[q + 2] * ez - lo;
+        out[o + 2] = hi - lo;
+      }
     }
   }
 }
@@ -307,7 +342,7 @@ uniform float uFacadeOn;
 const int F_UP[30] = int[30](48, 49, 50, 51, 52, 53,   12, 13, 15, 12, 13, 15,   24, 25, 24, 25, 26, 24,   27, 28, 27, 27, 28, 27,   36, 37, 38, 39, 40, 36);
 const int F_DOOR[15] = int[15](56, 57, 8,   18, 19, 20,   31, 31, 34,   32, 32, 34,   42, 44, 45);
 const int F_WALL[20] = int[20](54, 55, 58, 6,   21, 22, 23, 20,   30, 30, 30, 35,   33, 35, 33, 35,   43, 46, 47, 43);
-const float F_BAY[5] = float[5](2.9, 3.1, 2.6, 2.4, 2.8);
+const float F_BAY[5] = float[5](${F_BAY.join(', ')});
 const float F_MOD[5] = float[5](1.9, 1.9, 2., 2.4, 1.9);
 float fHash(float a, float b) { return fract(sin(a * 127.1 + b * 311.7) * 43758.5453); }
 // How many window bays across a wall: none on a party wall or one too short for a window.

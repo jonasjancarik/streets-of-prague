@@ -105,6 +105,9 @@ export interface BuildingArrays {
   color: Float32Array;
   facade: Float32Array;
   drapeUv?: Float32Array;
+  // IPR's buildings: the vertex where the chimneys and roof windows start, and where the
+  // roof clutter after them does (to the end), for counting and for leaving them out.
+  parts?: { extras: number; clutter: number };
 }
 
 export interface LandResult {
@@ -121,7 +124,7 @@ export interface WorkerJobs {
   // water: the tile's water polygons, so what stands on them is built as a boat (map/buildings.ts).
   roofs: { buildings: TileBuilding[]; size: Point2; origin: Point2; ground: HeightGrid | null; bbox: Bounds; water: Point2[][][] };
   // hide: landmarks' footprints (rings of each), where IPR's buildings give way to them.
-  ipr: { buffer: ArrayBuffer; box: Bounds; absolute: boolean; ground: HeightGrid | null; bbox: Bounds; hide: Point2[][][] };
+  ipr: { buffer: ArrayBuffer; box: Bounds; absolute: boolean; ground: HeightGrid | null; bbox: Bounds; hide: Point2[][][]; clutter: boolean };
   ground: {
     d: GroundTileData; box: Bounds; edges: GroundRoadEdge[];
     buildings: { rings: Point2[][] }[]; parkingZones: (string | null)[];
