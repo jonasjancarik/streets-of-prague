@@ -281,6 +281,38 @@ export class Route {
     return this.leg.path.at(this.s);
   }
 
+  // The lane from `back` metres behind to `fwd` metres ahead as straight pieces, five
+  // numbers each in `out`: both ends (x, y) and how far ahead the first one is. Returns
+  // how many pieces. (For telling what stands in the lane round a bend from what stands
+  // beside it.)
+  ahead(back: number, fwd: number, out: number[]): number {
+    let n = 0, d = -Math.min(back, this.s);
+    for (let li = 0; li < this.legs.length && d < fwd; li++) {
+      const leg = this.legs[li], { pts, cum } = leg.path;
+      const from = li === 0 ? this.s + d : leg.s0, to = Math.min(leg.s1, from + fwd - d);
+      let lo = 1, hi = cum.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (cum[mid] <= from) lo = mid + 1;
+        else hi = mid;
+      }
+      for (let i = lo; i < cum.length && cum[i - 1] < to; i++) {
+        const a = pts[i - 1], b = pts[i], len = cum[i] - cum[i - 1];
+        if (len < 1e-6) continue;
+        const t0 = Math.max(0, (from - cum[i - 1]) / len), t1 = Math.min(1, (to - cum[i - 1]) / len);
+        if (t1 <= t0) continue;
+        const k = n++ * 5;
+        out[k] = a[0] + (b[0] - a[0]) * t0;
+        out[k + 1] = a[1] + (b[1] - a[1]) * t0;
+        out[k + 2] = a[0] + (b[0] - a[0]) * t1;
+        out[k + 3] = a[1] + (b[1] - a[1]) * t1;
+        out[k + 4] = d + cum[i - 1] + t0 * len - from;
+      }
+      d += Math.max(0, to - from);
+    }
+    return n;
+  }
+
   // Point `d` metres ahead along the route, and the lowest speed limit on the way there.
   lookahead(d: number) {
     let s = this.s, limit = Infinity;

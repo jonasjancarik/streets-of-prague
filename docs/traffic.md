@@ -80,8 +80,8 @@ Run `node scripts/check-parking-clearance.mjs` for CPU regressions using the shi
 car models and the actual traffic updater: neighbouring lane offsets, opposite
 tile/completion orders, retry and cache lifetime, narrow streets, paid-section
 targets, and body clearance through right, left and short curved junctions. These
-checks cover normal route following; collisions can still move cars out of their
-lanes, and emergency routes are separate.
+checks cover normal route following on fixtures; `check-parking-city.mjs` (below) looks
+at a whole map and at the middle of the streets emergency vehicles use.
 
 The 3 October 2026 controlled scene replay used a 12 m bus on Ostrovní → Opatovická,
 past the old accepted hatchback at `50.080753948, 14.418088551` (tile `8_5`). Its
@@ -103,6 +103,58 @@ width from `pipeline/lanes.py` (by class and setting, cut to the room between th
 buildings), so many village streets are 5.5 m, and some under 4.6 m.
 `node scripts/check-narrow-lanes.mjs` runs two cars head-on through the real updater on
 3.75, 4.0 and 4.5 m streets.
+
+**Standing cars and bends.** A car measures what stands in its way along the lane
+ahead (`Route.ahead`: the lane as straight pieces, round bends and through the junction
+curve), not along a straight line from where it is. A standing car is in the way only
+when the passing car's side would come within `TOUCH` (0.1 m) of it, which is less than
+the 1.25 m `parkingClearance` leaves beside a lane; on a street the driver pulls out
+round it where there's room (`SWERVE`, `PASS`), and in a junction or past it waits and
+then squeezes by. Before 6 October 2026 a car parked outside a bend looked as if it
+stood in the lane, and a taxi, bus or pickup stopped behind it for good.
+
+**Buses off their line.** `BusRun` (`src/buses.ts`) judges a street shorter than 25 m
+together with the best street after it, and where no street out of a junction lies
+along the line it looks for the shortest way by street (2.5 km at most) to a street
+the line takes further on. On that way round the bus makes for no stop; back on the
+line, the stops it passed are skipped.
+
+## Offline checks
+
+`scripts/offline-city.mjs` loads a built map in Node: tiles, the street graph, each
+tile's parked cars placed as `TileWorld.make` places them (same seed, neighbours'
+streets and buildings; the collision grid is rasterised without trees or street
+furniture, so a few more cars stand than in the game). On it:
+
+- `node scripts/check-street-flow.mjs [area] [--type taxi]`: a fixture (a bent narrow
+  street between parked cars), then a car down every street of the area. Centrum, 2,131
+  streets: 15 stalls for a taxi before the fix, none after for a taxi or a pickup. (Buses
+  sent along their lines for 150 s, 84 runs: four stalled before, one after, an AE bus
+  near Na Poříčí that hasn't been looked into.)
+- `node scripts/check-bus-lines.mjs [area]`: fixtures, then every line followed through
+  the street network. Centrum: 40 breaks inside the map before, 3 of 10 m after. The
+  whole city (602 lines, 6,727 km, 90 % of it on the map's streets) still has 581 breaks
+  longer than 30 m, the longest on the motorways out of town; they haven't been gone
+  through, so for `praha` pass `--most` with the number to hold it to.
+- `node scripts/check-parking-city.mjs [area]`: sweeps a pickup and a bus along every
+  lane and junction curve and a fire engine down the middle of every street, and lists
+  the parked cars they would touch. It reports; `--strict` makes it fail. Centrum on
+  6 October: 6 of 20,349 cars in a pickup's way, 288 in a bus's, 21 in the middle of a
+  street. Under heavy machine load these runs take minutes, not seconds.
+
+Open findings from the last one, not fixed yet:
+
+- **Sharp bends inside a street.** `parkingClearance` sweeps a vehicle's body only
+  through junction curves. At a kink in the middle of a street a car's nose swings out
+  and a bus (rear axle on the lane, body along the chord) cuts 1–2 m across the inside,
+  into parked cars (Dřevná, Legerova and Seifertova, Melounová). The body sweep should
+  run along the whole lane wherever it bends, for buses on the streets buses use.
+- **Buses beside cars parked at the least distance.** A bus is 2.55 m wide, more than
+  the 1.25 m kept each side of a lane's middle. Raising the figure to 1.45 m everywhere
+  costs 3 % of centrum's parked cars (20,349 to 19,752); better only on bus streets.
+- **The middle of the street.** On a few wide one-way streets whose lane runs right of
+  the middle (Resslova, Husitská), mapped parking bays lie on the centre line that
+  emergency vehicles drive along (`Police.route` uses `mid`).
 
 ## The data
 
