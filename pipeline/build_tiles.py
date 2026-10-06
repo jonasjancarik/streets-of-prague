@@ -47,6 +47,7 @@ from kerbs import NO_PARKING, estimate
 import build_cache
 import chunk_cache
 import dtm
+import dtm_walls
 import ipr_trees
 import lanes
 import layers
@@ -360,6 +361,11 @@ def build_chunk(job):
         # (A plot a way cuts through is in pieces: its largest piece is its outline.)
         plot_xy = shapely.points([p["poly"].representative_point().coords[0] for p in x["plots"]]) if x["plots"] else None
         shed_xy = shapely.points([sh[:2] for sh in x["sheds"]]) if x["sheds"] else None
+        # The survey's walls, fences and railings (dtm_walls.py), in place of OSM's where it has been.
+        surveyed = dtm_walls.survey(bbox, tf.transform)
+        survey_tree = STRtree([ln for _, _, ln in surveyed]) if surveyed else None
+        open_ground = shapely.union_all([g for g in x["roads"].values() if not g.is_empty]) if x["roads"] else None
+        survey_m = [0.0, 0.0, 0.0]
         layer = {}
         for (i, j), bx in boxes.items():
             t = {}
@@ -373,6 +379,9 @@ def build_chunk(job):
             for key in ("walls", "fences", "rails", "passages"):
                 t[key] = [{**x[key][k], "pts": _coords(ls)} for k in sorted(trees[key].query(bx))
                           for ls in _lines(lines[key][k].intersection(bx))]
+            if surveyed:
+                for n, m in enumerate(dtm_walls.replace(t, bx, surveyed, survey_tree, open_ground.intersection(bx) if open_ground is not None else None)):
+                    survey_m[n] += m
             t["weirs"] = [_coords(ls) for k in sorted(trees["weirs"].query(bx)) for ls in _lines(lines["weirs"][k].intersection(bx))]
             t["crossings"] = [_coords(ls) for k in sorted(trees["crossings"].query(bx)) for ls in _lines(lines["crossings"][k].intersection(bx))]
             t["marks"] = [_coords(ls) for k in sorted(trees["marks"].query(bx)) for ls in _lines(lines["marks"][k].intersection(bx))]
@@ -386,6 +395,7 @@ def build_chunk(job):
             if any(t.values()):
                 layer[f"{i}_{j}"] = t
         out["ground"] = {"tiles": layer, "rails": rails}
+        stats["survey_walls_m"], stats["survey_fences_m"], stats["osm_walls_fences_replaced_m"] = (round(m) for m in survey_m)
         lap["ground"] = time.perf_counter() - t0
 
     if "streets" in wanted:
@@ -499,6 +509,8 @@ def main() -> None:
             print(f"dtm: couldn't look for a newer map ({e}); using the one here")
         dtm.surfaces()
     if "ground" in wanted:
+        if any(dtm_walls.LINES.glob("*.zip")):
+            dtm_walls.lines()
         ipr_trees.download()
 
     todo = layers.chunks(meta)
