@@ -128,7 +128,9 @@ furniture, so a few more cars stand than in the game). On it:
 
 - `node scripts/check-street-flow.mjs [area] [--type taxi]`: a fixture (a bent narrow
   street between parked cars), then a car down every street of the area. Centrum, 2,131
-  streets: 15 stalls for a taxi before the fix, none after for taxi, pickup and bus.
+  streets: 15 stalls for a taxi before the fix, none after for a taxi or a pickup. (Buses
+  sent along their lines for 150 s, 84 runs: four stalled before, one after, an AE bus
+  near Na Poříčí that hasn't been looked into.)
 - `node scripts/check-bus-lines.mjs [area]`: fixtures, then every line followed through
   the street network. Centrum: 40 breaks inside the map before, 3 of 10 m after.
 - `node scripts/check-parking-city.mjs [area]`: sweeps a pickup and a bus along every
