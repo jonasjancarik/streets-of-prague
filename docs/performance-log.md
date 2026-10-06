@@ -7,6 +7,43 @@ here from `todo.md` on 5 October 2026 and kept as written. What is still open is
 listed in [`todo.md`](../todo.md) under "Performance"; how to measure is in the
 performance skill (`.agents/skills/performance/SKILL.md`).
 
+On 6 October 2026 the Pixel 5 (Android 14, WebGPU, battery 25.6–32.6 °C) was measured
+again on main (`27bc5ef`), one run each unless said, so these are first readings:
+
+- **The bench had been counting too many frames.** The page has other
+  `requestAnimationFrame` loops now (the gamepad's polling, the feedback form's frame
+  counter), and `bench.mjs` took each callback for a frame: twice the frame rate, a
+  median frame of 0.0 ms and half the JavaScript time. It now counts a callback only
+  if `renderer.render` ran in it. Phone and desktop figures taken between the day
+  those loops arrived and this fix are suspect. `--dpr tier` leaves `?dpr` out, so a
+  tier's own pixel ratio applies (with `?dpr` Auto can't scale the ratio).
+- **Auto on a touch device doesn't hold Medium.** Driving east from the Old Town
+  Square, Auto began at Medium (1.5×), went to Low after 3 s and to Lowest after 8 s
+  (30 °C). Standing on the square it had settled on Low (1×) before timing began and
+  stayed there for 60 s at 63 fps. Fixed tiers, 30 s each: Medium 39.8 fps standing
+  (median frame 22.3 ms, 95th 44.6) and 22.7 fps driving (33.4 / 111.4 ms); Low
+  61.6 fps standing (11.2 / 33.4 ms) and 36.3 fps driving (22.3 / 55.7 ms). JavaScript
+  was 14–16 ms a frame standing and 19–20 ms driving on both, so at 1× the drive is
+  limited by the main thread and at 1.5× by pixels as well. Starting touch devices at
+  Low would spare the two step-downs; that is a decision about the look.
+- **Sun shadows cost about 4 ms a frame at 1×**, High, standing on the square
+  (`--ab` on the sun's `castShadow`: about 62 fps without, 50 with, 28.7 °C), not the
+  11 ms estimated on 1 October. Three of twenty windows drew 0–2 frames (the switch
+  rebuilds shaders), so the bench's own mean is useless for this run; the figure is
+  from the windows that ran.
+- **Trees (plan 017's opening measurement):** in the Petřín woods at 1×, High, hiding
+  the tree pages took a frame from 28.9 to 12.6 ms, and stopping them casting shadows
+  from 28.6 to 20.8 ms; an unchanged-build control differed by 1.1%. At the garden
+  suburb: 17.6 to 13.8 ms hidden, 17.8 to 16.2 ms without their shadows. JavaScript
+  moved by 1–3 ms, the rest is the GPU. So trees are over half the frame in a wood
+  and their shadow pass alone over a quarter; in a suburb about a fifth and a tenth.
+  The low-detail crown swap wasn't measured.
+- **Long tasks on the drive** (40 s, High, 1×, 31.9–32.6 °C): 28 over 50 ms. In them
+  `traffic.update` took up to 11.7 ms (three times over 10), `trams.update` up to
+  7.5 ms and `crowd.update` up to 5 ms; six held a shader build of 29–56 ms. The
+  20–24 ms `crowd.update` spikes seen on a warmer phone didn't appear at this
+  temperature. 35.1 fps, median frame 22.3 ms, JavaScript 20.4 ms.
+
 Plans 007–011 and plan 012 Part A are selected for main; see
 [the findings and merge summary](optimisation-findings-007-012.md). Part B
 (the incremental resting-car index) stays experimental: it was consistently 3.5%
