@@ -6,8 +6,9 @@ import { ROOF_TILES } from './roofPalette.ts';
 // tiles and for the few buildings inside IPR's area it doesn't model. Shape and colour are
 // guesses by kind, size and footprint, and the neighbours: a street was built in one go, so
 // its roofs look alike. A building has no access to its neighbours here (each is built on
-// its own in a tile worker), so "neighbours" means the others in the same 90 m grid cell of
-// the map, which all draw on the same cell hash.
+// its own in a tile worker), so "neighbours" means the others on the same named street, or,
+// where the tile knows of none within reach, the others in the same 90 m grid cell of the
+// map: they all draw on the same hash (neighbourhoodOf).
 //
 // The shares come from IPR's measured roofs in the outermost districts (Kolovraty, Klánovice,
 // Zbraslav, Čakovice, Satalice): flat roofs on 9 % to 49 % of buildings by district, and
@@ -39,6 +40,33 @@ export function cellOf(origin: Point2, ring: Point2[]) {
   let cx = 0, cy = 0;
   for (const [x, y] of ring) { cx += x; cy += y; }
   return `${Math.floor((origin[0] + cx / ring.length) / CELL)},${Math.floor((origin[1] + cy / ring.length) / CELL)}`;
+}
+
+// Whose roofs a building's take after: the others on its street, when the tile knows which
+// named street it stands on (tiles.ts), since a street was built in one go; else the others
+// in its 90 m cell. A cell alone changed the roofs' class wherever a street crossed its edge.
+export function neighbourhoodOf(origin: Point2, ring: Point2[], street?: string | null) {
+  return street ? `street ${street}` : cellOf(origin, ring);
+}
+
+// The named street nearest a footprint's middle, within REACH metres of it (null if none).
+const STREET_REACH = 60;
+export function streetOf(ring: Point2[], streets: { name?: string | null; pts: Point2[] }[]): string | null {
+  let cx = 0, cy = 0;
+  for (const [x, y] of ring) { cx += x; cy += y; }
+  cx /= ring.length; cy /= ring.length;
+  let best = STREET_REACH * STREET_REACH, name: string | null = null;
+  for (const s of streets) {
+    if (!s.name) continue;
+    for (let i = 0; i < s.pts.length - 1; i++) {
+      const [ax, ay] = s.pts[i], dx = s.pts[i + 1][0] - ax, dy = s.pts[i + 1][1] - ay;
+      const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cy - ay) * dy) / (dx * dx + dy * dy || 1)));
+      const d = (cx - ax - dx * t) ** 2 + (cy - ay - dy * t) ** 2;
+      // (Ties go to the first name in the alphabet, so two tiles with the same streets agree.)
+      if (d < best - 1e-6 || (Math.abs(d - best) <= 1e-6 && name !== null && s.name < name)) { best = d; name = s.name; }
+    }
+  }
+  return name;
 }
 
 function squareCornered(ring: Point2[]) {

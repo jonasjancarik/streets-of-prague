@@ -146,13 +146,53 @@ tree meshes.
   cost of covered pixels: 525 ms baseline, 493 ms with the change. No measurable cost, so the
   blend stays. The phone tier was not measured.
 
+## What was built (6 October 2026, branch `night-maplook`)
+
+- **Clearings.** `pipeline/young_woods.py` also writes clearings: patches of 400 m2 or more
+  inside a mapped wood where the surface model has nothing above 1.5 m **and** IPR's summer
+  photo shows open ground (brightness over 0.42 averaged over 9 m, saturation over 0.11, so
+  not a canopy with its shadows and not grey rock, asphalt or gravel), on ground under
+  35 degrees steep. They are the young layer's `clear` tiles; `layers.assemble` puts them
+  into the tile as `areas.wood_clearing`. The game draws unmown grass there over the wood
+  floor (`src/ground.ts`) and leaves it out of the wood scatter; only the shrubs and odd
+  young trees of a wood's edge stand round its rim (`src/map/vegetation.ts`).
+- **Why the photo.** The first rule used the surface model alone and was wrong for most of
+  what it found: over many closed stands (Divoká Šárka above all) IPR's surface model lies
+  at ground level, so whole tiles of tall forest read as bare (55 of 72 tiles had a
+  "clearing", 5 ha in one tile). The same fault must make some of the *young* woods false
+  (tall forest read as 1.5 to 7 m); that rule was not changed here, see "Left open".
+- **Checked against the photo** on three blocks in the worktree's own data (Šárka, tiles
+  28–36 × 66–73; Kunratický les, 68–75 × 31–37; the wood at 50.125, 14.304, 19–26 × 78–84):
+  134 tiles with a wood, 43 with a clearing, 14 ha of 528 ha of wood. The 22 clearings
+  looked at over the photo are all open ground: fields and meadows that lie inside a wood's
+  outline (the largest, 3.9 ha at 50.0983, 14.3267, is a mown field), an orchard, real
+  clearings in Kunratický les, a strip between a wood and a field, one patch of bare earth
+  by a building site (drawn as grass). No closed forest, rock face, road or pond.
+- **Tile borders of the patches.** A young wood or clearing that goes on in the next tile
+  now reaches the border (it stopped a metre short: a dark line across a clearing).
+  The two tiles still work their patches out separately, so an outline can jog by a few
+  metres at a border.
+- **The extra small trees along tile borders are gone** (`src/map/woodScatter.ts`): the
+  wood, young-wood and gap passes run on a lattice fixed to the map with a seed per cell,
+  and each tile also works out the crowns 8 m past its edge (the wood taken to go on there),
+  uses them when it fills the gaps and drops them before drawing. Every wood's trees moved;
+  the density is unchanged (1,985 trees in a 250 m tile of wood). `scripts/check-wood-seams.mjs`
+  checks that a tile expects exactly the trees its neighbour plants beside the border, that
+  none is planted twice and that a strip along the border is as dense as the wood elsewhere.
+- **To show in the shared map:** `uv run --group cover young_woods.py build praha` (it
+  assembles at the end). 5,287 tiles have a wood; the trial ran at 0.4 to 0.8 s a tile with
+  six jobs including fetching the photos, so allow about an hour, plus three to four minutes
+  for the assemble. Until it is run, assemble ignores the layer made by the old code, and
+  the young woods are missing too.
+
 ### Left open
 
 - Check on a phone (Pixel 5), and whether more or bigger crowns are affordable.
 - The young layer was built for the whole city in the local `praha` map on 5 October 2026
   (`uv run --group cover young_woods.py build praha`, then assemble); it is not deployed.
-- Black clearings inside a mapped wood (canopy under 1.5 m) are still planted as full-grown
-  wood. Many "woods" are drawn under park or meadow, so there the young planting shows as
+- Young woods still rest on the surface model alone, which reads some tall closed forest as
+  low (see above): compare a sample with the photo as was done for the clearings, and
+  require a photo signal there too. Many "woods" are drawn under park or meadow, so there the young planting shows as
   small, dense trees on a meadow, not as a thicket on a wood floor.
-- Trees stop at the tile edge for the gap and edge passes (each tile only sees its own
-  trees), so there can be a few extra small trees along a tile border.
+- The shrubs of the ragged edge are still placed per tile (fewer of them right at a tile
+  border, where the tile cannot see the neighbour's wood).

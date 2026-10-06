@@ -24,8 +24,14 @@ tracks, orange clay courts, blue or green hard courts, striped football grass.
     and a blue court with its centre line, circle and 6 m lines.
   - Open: the courts at 50.00167, 14.56409 are not pitches in the map data (no
     `pitch` or `dtm_pitch` within 250 m), so nothing changes there. `ipr_buildings`
-    was not rerun. Painted lines are thin (0.12 m) and fade out from higher camera
-    heights.
+    was not rerun.
+  - 6 October 2026 (branch `night-maplook`): the painted lines hold from high up. They
+    stay 0.12 m wide while that covers 1.6 pixels and are widened about their centre line
+    above that (`held` in `src/shading.ts`, `heldMaterial` in `src/webgpu.ts`, the `hold`
+    attribute made by `strips` in `src/ground.ts`). Checked in WebGPU from 120, 250 and
+    450 m at the school courts (50.13206, 14.42100) and the tennis club (50.04888,
+    14.55023); the WebGL path is written but was not looked at, and no frame time was
+    measured (one vertex-shader line on one small layer per tile).
 - Priority: P3 (small, cheap, visible from above and at schools). Effort: one to two
   days. Risk: low.
 - Category: feature (map look). Dependencies: none.

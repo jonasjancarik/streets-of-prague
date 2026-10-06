@@ -6,7 +6,7 @@ import { TENEMENT_PLASTER } from '../facades.ts';
 import { ROOF_TILES } from './roofPalette.ts';
 import { ringSite } from './roofDetails.ts';
 import type { RoofSite } from './roofDetails.ts';
-import { cellOf, roofShapeFor, pitchedColour, flatColour, hasParapet, insetRings, parapetHeight, PARAPET_WIDTH } from './roofRules.ts';
+import { neighbourhoodOf, roofShapeFor, pitchedColour, flatColour, hasParapet, insetRings, parapetHeight, PARAPET_WIDTH } from './roofRules.ts';
 
 // Some package builds expose the builder on a default export at runtime.
 const skeletonModule = SS as typeof SS & { default?: { SkeletonBuilder?: typeof SS.SkeletonBuilder } };
@@ -14,7 +14,8 @@ const SkeletonBuilder = skeletonModule.SkeletonBuilder ?? skeletonModule.default
 
 export interface BuildingTile extends GeoData {
   // cover: what the roof is covered with, where OSM or pipeline/roofs.py says.
-  buildings: { id: string; name?: string | null; kind: string; h: number; minh: number; church?: boolean; roof?: string | null; cover?: 'tiles' | 'slate' | 'copper'; rings: Point2[][] }[];
+  // `street`: the named street the building stands on, when the tile knows it (roofRules.ts).
+  buildings: { id: string; name?: string | null; street?: string | null; kind: string; h: number; minh: number; church?: boolean; roof?: string | null; cover?: 'tiles' | 'slate' | 'copper'; rings: Point2[][] }[];
   // The tile's areas by kind (polygons with holes): `water` tells what is afloat.
   areas?: Record<string, Point2[][][]>;
 }
@@ -92,7 +93,7 @@ export function buildBuildings(data: BuildingTile) {
 
   for (const b of data.buildings) {
     const hv = hash(b.id + b.rings[0].length);
-    const cell = cellOf(data.origin, b.rings[0]);
+    const cell = neighbourhoodOf(data.origin, b.rings[0], b.street);
     const boat = afloat(b.rings[0]);
     const isWall = /zeď/i.test(b.name || '');
     // Kiosks and canopies are flat; garages, sheds and service buildings half and half,
