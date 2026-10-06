@@ -685,6 +685,16 @@ record the measurements, merge decisions and pending landmark asset activation.
   about 1.6 m. Unlike the walls, they aren't in the tile's collision grid (the people
   and traffic of the city ignore them). Older tiles have none: rebuild the `ground`
   layer (`uv run build_tiles.py <area> --layers ground`).
+- **Surveyed walls, fences and railings** (`pipeline/dtm_walls.py`): where the technical
+  map's survey covers a tile (30 m of its lines or more), its walls ("Zeď"), fences
+  ("Plot") and railings ("Zábradlí", set 3, in `pipeline/.cache/dtm/ZPS_KR/`) stand in
+  place of OSM's walls and fences and of the fences made up round family houses; they
+  carry `"s": 1` and a height in the tile. An enclosing wall is 2 m, another 1 m, a fence
+  1.5 m, a railing 1 m (the map has no heights for them). A surveyed line is cut where a
+  street or a path runs, so a wall drawn across a gateway doesn't close it. OSM's town
+  walls, the crash barriers and the hedges stay (a hedge along a surveyed line goes).
+  Outside the survey everything is OSM's. `uv run dtm_walls.py <area> --tiles --before
+  <old tiles folder>` counts the metres per tile. Rebuild the `ground` layer to get them.
 - **Crash barriers** are a third kind of the same sections (`kind: "guard_rail"` in a
   tile's `fences`): a steel beam 0.75 m high on a post every 2 m. They come from OSM's
   `barrier=guard_rail` where it is mapped, and elsewhere `pipeline/barriers.py` puts them
@@ -981,6 +991,13 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   bridge polygon appears in only one tile. Separate deck levels keep their existing
   pull order; conflicting support is rejected before export. See
   `docs/bridge-ground-edge-diagnosis.md` for the source comparison.
+  The top of a step that drops 0.8 m or more stops cars and people (`src/stepEdges.ts`:
+  solid in the tile's collision grid, with a low parapet; a quay less than 2.5 m above
+  the water has none, the water stops you there). The edge is open over the width of
+  each street, path or stairs on the ground that crosses it. `node
+  scripts/check-step-edges.mjs <area>` counts the edges and lists the car streets that
+  cross the highest drops (places where the terrain or the map is wrong);
+  `?nostepedges` turns the edges off.
   Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it.
