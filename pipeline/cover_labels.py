@@ -1,15 +1,23 @@
-"""How well the ground cover classifier does against the labels made by hand.
+"""Labels for the ground cover classifier, and how well it does against them.
 
-108 pieces of bare ground round Smíchov were labelled by eye (truth.json and sample.json in
-.cache/cover/, with the pieces and photographs `ground_cover.py fetch` and `sheet` left
-there). They are only ever scored against, never trained on or tuned to after 28 September.
+Two kinds of label:
 
-    uv run --group cover cover_labels.py score praha    # the first version's pieces, and the cells
+  hand   108 pieces of bare ground round Smíchov, labelled by eye (truth.json and sample.json
+         in .cache/cover/, with the pieces and photographs `ground_cover.py fetch` and `sheet`
+         left there). Only ever scored against, never trained on.
+  weak   what OSM says a surface is: surface= on areas and ways over the whole city (osmium
+         export of the extract into .cache/cover/surface.geojsonseq), and railway ballast
+         from the tiles. Noisy (parked cars, tree crowns, old tags), but they come by the
+         ten thousand and from every district.
 
-Still to write (plan 014, "What is left"): weak labels from OSM's surface= tags over the
-whole city (.cache/cover/surface.geojsonseq is the osmium export they would come from) and
-railway ballast, a material model trained on them and kept as plain numbers in
-cover_model.json (cover_cells.material reads it when it is there), and its score here.
+    uv run --group cover cover_labels.py index praha            # the weak labels, sorted by tile (1 min)
+    uv run --group cover cover_labels.py rows praha --tiles 600 # training rows from the photographs kept
+    uv run --group cover cover_labels.py train praha            # fit, cross-validate, write a trial model
+    uv run --group cover cover_labels.py score praha --model .cache/cover/weak/trial_model.json
+
+Tried on 6 October 2026 and not kept (no cover_model.json): the model learnt OSM's surfaces
+(76 % right on tiles held out, with asphalt, gravel and dirt) but did worse than the rules
+on the hand labels (19 % of hard ground against 38 %). See docs/beige-cover-city.md.
 """
 
 import argparse

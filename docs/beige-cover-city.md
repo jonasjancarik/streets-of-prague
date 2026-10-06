@@ -175,8 +175,46 @@ instead of rounding off before it. The surveyed courtyards (`dtm_yard`) are clas
 too (plan 014). Scores against the hand labels are in plan 014's Result: about the same
 as before, the material of hard ground included (38 %).
 
-Not done: the city was not rebuilt with this, and the model for asphalt, gravel and
-dirt from OSM `surface=*` tags was not written. To rebuild the city's cover from the
+Seen in the game on `centrum` (main's map against this branch, `?area=centrum_main`
+and `?area=centrum` on the same server, 14:00, clear, `t.camera` straight down from
+200 m and at tilt 62 from 60 m): with courtyards classified, canopy over a small
+courtyard became a wood and the game planted full-grown trees through the roofs, and a
+crown reaching over a garden wall put a tree into Nerudova. Canopy within 4 m of a
+building is now garden green, and a single tree needs 4 m to the nearest building and
+1.5 m to a street. `docs/evidence/beige-cover/courtyards-nerudova.jpg` and
+`courtyards-petrska.jpg` show main, the first try and the fix (top row from above).
+Glass roofs and passages: nothing wrong was seen in the four blocks looked at (Nerudova,
+Vodičkova, Petrská, Újezd); what stands above 2.5 m and isn't green stays "not ground",
+so a courtyard under a roof keeps its neutral paving. Most courtyard ground in the centre
+is in shadow in the photographs and stays neutral too.
+
+### The material of hard ground from OSM's `surface=*` tags: tried, not kept
+
+`cover_labels.py` builds weak labels from every OSM area and way with a `surface` tag
+(128,588 of them in the city: 79,419 asphalt, 33,237 paving, 7,146 dirt, 4,906 gravel,
+3,880 concrete; bridges, tunnels and roofed ones left out, ways widened to a strip) and
+railway ballast, takes up to 150 cells of each class from 461 tiles (none from the 49
+round the hand labels), and fits a logistic regression on 30 numbers per cell (colour,
+infrared, texture at two sizes, the surface model's roughness, how near buildings,
+streets, rails and green are).
+
+| | weak labels, whole tiles held out | hand labels: material on hard ground (59 pieces) |
+| --- | --- | --- |
+| rules, pieces (first version) | – | 40 % |
+| rules, cells | – | 38 % |
+| model, five classes | 55 % (asphalt 70, dirt 74, paving 41, concrete 39, gravel 37) | about 11 % |
+| model, asphalt, gravel and dirt only | 76 % (asphalt 85, dirt 78, gravel 55) | 19 % |
+| every hard piece called dirt | – | 59 % |
+
+The model does learn OSM's surfaces, but they are not the unmapped ground's: OSM's
+"dirt" is brown tracks through woods and fields, while the labelled dirt at Smíchov is
+the pale compacted ground of a building site, which the model calls gravel (1,414 of
+2,650 m2) and asphalt it calls gravel too. So no model is kept (`cover_model.json` does
+not exist and the rules decide). None of this beats calling all hard ground dirt on these
+labels, which says as much about the labels (one building site) as about the methods:
+labels from other districts are still what is missing.
+
+To rebuild the city's cover from the
 photographs on disk (courtyard tiles that were never looked at are downloaded from IPR,
 politely, at `--jobs` requests at a time):
 

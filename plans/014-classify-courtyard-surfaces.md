@@ -93,13 +93,17 @@ rebuilt and nothing was checked in the game.
   128 KB of JSON. One block was compared with the photograph by eye (rows of trees in
   two courtyards match); no courtyard was hand-labelled.
 
+- Looked at in the game on `centrum` (200 tiles classified, 6 October): canopy by houses
+  planted trees through roofs and into a street; fixed (canopy within 4 m of a
+  building is garden, a single tree needs room). Pictures in
+  `docs/evidence/beige-cover/courtyards-*.jpg`.
+- The model for asphalt, gravel and dirt from OSM `surface=*` was written and
+  trained, and did worse than the rules on the hand labels (19 % against 38 %): not
+  kept. Numbers in `docs/beige-cover-city.md`.
+
 ## What is left
 
-1. Rebuild the city's cover and look at it in the game (commands in
-   `docs/beige-cover-city.md`). More tiles qualify now that courtyards count, so IPR's
-   photographs of those tiles are downloaded on the first run.
-2. Hand-check courtyards (steps 4 and 5 above): none were labelled. Most courtyard
-   ground in the centre is in shadow in the photographs and stays neutral.
-3. The material of hard ground is still the rules' weak call. The plan was a model
-   trained on OSM `surface=*` tags as weak labels; `cover_cells.material` and the
-   feature list are ready for it, the labels and the training are not written.
+1. Rebuild the city's cover (command and duration in `docs/beige-cover-city.md`).
+2. Hand-labelled courtyards and hand labels from other districts: there are none, so
+   courtyard classes were only judged by eye in four blocks, and the material of hard
+   ground stays the rules' weak call.

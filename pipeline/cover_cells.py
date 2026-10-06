@@ -12,8 +12,9 @@ so both tiles of an edge come to the same answer on both sides of it.
   local()     each cell's surroundings: means over the bare cells within a few metres
   rules()     the fixed thresholds of the first version, on those means
   material()  what hard ground is made of, from a model kept in cover_model.json, in place
-              of the rules' asphalt, gravel or dirt (no model is trained yet: without the
-              file the rules decide; see cover_labels.py)
+              of the rules' asphalt, gravel or dirt (none is kept: the one trained on OSM's
+              surface= tags did worse than the rules, see cover_labels.py; without the file
+              the rules decide)
   polygons()  class map -> smooth outlines, cut to the tile
 """
 
