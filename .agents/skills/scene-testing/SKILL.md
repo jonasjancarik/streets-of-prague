@@ -74,6 +74,17 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.courier()`: the nearest delivery courier in traffic. `t.bags()`: the bag you carry and those
   lying about; `t.toBag()` stands you by one, `t.interact()` presses E on foot, `t.clearBags()`
   starts clean, `t.peopleNear(x, y, r)` lists the people round a spot.
+- Jobs (`src/missions.ts`): `t.job()` says what is on (`idle`, `offer`, `on`), the job, its
+  step and objective, seconds left, pay, where it wants you, seconds out of the vehicle
+  (`out`), the last outcome and the books (`done`, `failed`, `earned`, `rep`).
+  `t.startJob(id)` starts one at once, `t.pressJ()` is the phone key, `t.offerJob(id)`
+  puts an offer up, `t.autoJobs(on)` turns on the offers nobody asked for (off in test
+  runs), `t.jobTime(s)` sets the seconds left, `t.toJob(back)` puts you and your vehicle
+  at the job's place, `t.clearJobs()` starts the books again. `t.jobCar()` is the car a
+  fire call set burning, `t.aimAtCar(car, back)` points your engine at it, `t.cannon(on)`
+  holds the water cannon. `t.takeTram()` puts you in the cab of the nearest tram,
+  `t.tram()` reports it, `t.tramDoors()` is X. `t.upgradeSave(old)` runs a saved game
+  through the format's version steps.
 - `t.push(kmh, heading?)`: sets your car going. `t.post(r)`: the nearest standing
   lamp or pole. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
   on a run clear of walls and other cars. `t.runway(heading)`: metres to the first wall.

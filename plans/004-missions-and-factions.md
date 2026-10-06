@@ -13,6 +13,7 @@
 
 ## Status
 
+- State: phase 1 and the start of phase 2 are on branch `night-missions` for review (6 October 2026), see Result. Not merged.
 - Priority: P1 (the README's "Not yet in the game" lists "something to do" first)
 - Effort: L–XL overall; phase 1 alone is M (about 2 days)
 - Risk: medium. The mission engine is new code with a narrow interface, but missions
@@ -20,6 +21,81 @@
   shared with parallel work.
 - Depends on: money (`src/money.ts`), which is in the game
 - Category: gameplay feature
+
+## Result
+
+Branch `night-missions`, 6 October 2026, built overnight without the owner. **A
+proposal to review, not merged.** The session lost about four and a half hours to a
+usage limit, so less was built and checked than intended; what was and wasn't run is
+listed under "Checked".
+
+### Assumed answers (to confirm)
+
+The nine open questions were answered as below so that work could start. Each answer
+is the plan's own suggestion where it had one, otherwise the choice that is easiest to
+undo. Where an answer shapes content, the content is data.
+
+1. **Tone: satire, with made-up names.** The plan's suggestion. Only the jobs' few
+   lines of text depend on it (`src/jobs.ts`, `src/cs.ts`): the courier firm is "Fofr",
+   and the dispatchers talk to someone who is plainly driving a stolen vehicle.
+2. **Saving: yes.** The plan's suggestion, and money was already being saved by the
+   time this was built. The saved game is now version 2, with the jobs done and the
+   standing with each faction; version 1 saves are upgraded (`upgrade` in
+   `src/save.ts`). A job under way is not saved: like a ride, it is gone after a reload.
+3. **Weapons for the player: none.** The plan's suggestion. Nothing built touches it.
+4. **Factions: three**, the first three candidates: taxi drivers ("The Rank"), couriers
+   ("Fofr") and the Žižkov pub scene ("The Regulars"). The plan's suggestion for the
+   number; which three is a guess. They are a list in `src/factions.ts` (name, colour,
+   boss, contacts, home parts of town, rivals); another set is another list. The fire
+   brigade, ambulance and tram jobs belong to no faction.
+5. **Handing out: the phone**, the plan's suggestion for jobs. J asks for work or takes
+   the offer in the HUD card. Getting into a taxi, an ambulance, a fire engine or a
+   tram's cab brings that vehicle's job by itself, and a courier offer comes by itself
+   now and then (`unprompted` in the job's data, 7 minutes; the first after about 2).
+   Fixed meeting places wait for story missions.
+6. **Taxi job: only in a taxi.** The plan has no suggestion. It is one field
+   (`needs: 'taxi'` in `src/jobs.ts`); remove it and any car will do.
+7. **Territory: a few home turfs**, the plan's suggestion (`home` in the faction data).
+   Nothing shows them yet.
+8. **Turf changes: fixed.** The plan's suggestion. Nothing built.
+9. **Failure costs: nothing for jobs.** The plan's suggestion. Failing or giving up
+   only counts in the books (`failed`).
+
+### Built
+
+- **Engine** (`src/missions.ts`): one mission at a time, as offer, steps and outcome.
+  A mission is data: who gives it, the offer text, what vehicle it needs, its faction
+  and what it's worth with them, and `plan()`, which picks places and returns the steps,
+  the pay and a bonus for speed. Steps: `talk`, `goTo`, `pickUp`, `dropOff`, `putOut`,
+  `serve`. A step can fail the mission; so do running out of time, 20 s out of the
+  vehicle the job needs, the car with your passenger being wrecked, being wasted or
+  busted. `main.ts` hands in a small world object and calls `update`, `key`, `card`,
+  `target`, `onWasted`, `onBusted`, `owns`.
+- **Places** are the tram stops and the taxi's named places, known for the whole map.
+  People and burning cars are put there only when you are near and the tile is loaded.
+- **Marker** (`src/marker.ts`): a green pillar and an arrow at the edge of the screen
+  with the distance. The taxi's own beacon was left in `src/taxi.ts`, because other
+  sessions were changing that file the same night; moving it onto `Marker` is still to do.
+- **Money**: `Wallet.give`, with a green "+N Kč" by the balance.
+- **Jobs** (`src/jobs.ts`, rates at the top): courier, taxi fare, patient run, tram
+  shift, fire call (plan 006 phase 4).
+- **Factions** (`src/factions.ts`): the data and `Standing` (reputation −100 to 100,
+  rivals lose half of what a faction gains, saved). Courier and taxi jobs change it.
+  `minRep` on a job keeps it from being offered below a standing; no job uses it yet.
+- `?mission=<id>`, the test API (`t.job()` and the rest, see the scene-testing skill),
+  the README, Czech text.
+
+### Not built
+
+- "Bring a car" and "catch a tram" jobs. Towing: the game has no tow truck to drive.
+- The parcel is only a bag on your back; it can't be lost or stolen.
+- A touch button and a gamepad button for asking for work (touch: tapping the card
+  takes an offer or gives up, and offers come by themselves; there is no way to ask).
+- Phase 2 beyond the books: whose turf you're in on the HUD, faction looks and cars,
+  jobs that depend on reputation. Phases 3 and 4.
+- The first-time conversation (`brief`) is written and wired but was never seen running.
+
+CHECKED_PLACEHOLDER
 
 ## Goal and scope
 
