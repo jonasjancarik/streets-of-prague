@@ -133,3 +133,19 @@ An earlier version of the runner switched from day to night within an already-lo
 Matched screenshots of Old Town Hall's terracotta and shaded roofs, grey tower and walls, Mánes's grey/blue roof, and raw Okamura were inspected at day and night. Staged and legacy landmark surfaces looked consistent in both renderers; people and transient place labels differ between runs. In selected landmark image regions, the screenshot comparison had mean absolute RGB differences below one byte per channel. The first timing samples were taken after direct GLB assertions loaded the same photographs, so they were excluded from cold-load attribution. The corrected runner instruments `teleportTo` before any direct model assertion on each fresh page. In an alternating staged/legacy/legacy/staged Mánes sequence, WebGPU transitions were 427/488 ms staged against 623/651 ms legacy; WebGL was 577/429 ms staged against 565/443 ms legacy. A raw Okamura pair was 423/425 ms staged against 540/662 ms legacy (WebGPU/WebGL). The browser loaded nearby tiles and other landmarks during these transitions, and the WebGL Mánes pairs changed direction, so a general whole-transition timing benefit is not established. The verified reduction is zero colour pixel passes for marked assets, against two passes for the Mánes legacy transition (including a nearby landmark) and four for raw Okamura. Corrected JSON evidence is in `/tmp/sop010-cold-*.json`.
 
 Shared `public/data` still points to the original manifests and GLBs. Activate the versioned assets only after a client containing the marker check is live; an older client would warm them a second time. No push, merge, shared-data replacement, or deployment was done.
+
+### Switched on in a clone, 6 October 2026 (branch `night-landmarks`)
+
+"Switching on" is the `file` of each entry in `public/data/<area>_now/landmarks.json`:
+the client loads whatever it names. `landmarks.py` writes the `.warm-v1.glb` name there
+(also with the new `--rebake`), so no separate step is needed. In clones of `praha_now`
+and `centrum_now` all landmarks were baked again with `--rebake` (the bake's new wall
+fill, and Mánes's roof spot) and their manifests name the warmed files.
+`scripts/check-landmark-colours.mjs --fixtures public/data/praha_now --area praha --name
+okamura` passed on that data in WebGPU and WebGL (no pixel pass for the marked file,
+legacy and shared files still adjusted once, version 999 rejected). The same check for
+`centrum` with `--name tyn` stopped at its own precondition (the Týn Church is already
+loaded at the script's starting place; use the default, Mánes); it was not run again
+that night. Screenshots of all eight landmarks, old files with the browser's pass
+against the new warmed files, look alike in colour. The shared `public/data` is still
+on the old files: replacing them and uploading is the coordinator's step.
