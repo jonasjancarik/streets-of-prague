@@ -18,13 +18,13 @@ model has, whose shaded underside the camera never sees), the wall takes what's 
 from above instead. A wall's texels no ray found the mesh for (its lowest metres behind
 neighbouring houses) repeat the same wall from above them, and `spots` ("x,y,radius;…",
 metres, the model's x and its north) are places on roofs where what is much darker
-than the roof (a tree reaching over it) is painted over with the roof from further up
+than the roof (a tree reaching over it) is painted over with the roof's colour round it
 (landmark_fill.py). Anything still missing is filled in from around it.
 
 `sources.glb`, if given, is the same model with each texel coloured by where its colour
 came from, for checking a landmark: red from above on a roof, orange from above on a
 wall (under something), green straight in, blue straight in from further off, yellow
-copied from elsewhere on the same face (a gap on a wall, a spot painted over), white
+taken from elsewhere on the same face (a gap on a wall, a spot painted over), white
 filled in from around it (no ray found the mesh).
 
 LANDMARK_DEBUG=<file.npz> keeps the images the fills work on, to try landmark_fill.py
@@ -248,17 +248,21 @@ del near, far, side, above
 normals = np.array([f.normal[:] for f in me.polygons])
 if os.environ.get("LANDMARK_DEBUG"):
     np.savez(os.environ["LANDMARK_DEBUG"], px=px, hole=hole, face=face, where=where, roofs=roofs, normals=normals)
-# What to copy from elsewhere on the same face: the walls' gaps, and on the roofs
-# what is to be painted over.
+# The walls' gaps repeat the same wall from above them. What is to be painted over on
+# the roofs takes the colour of its own faces round it, smoothly: a roof's seams
+# copied along the slope showed as stripes.
 seen = ~hole & (face >= 0)
+copied = fill.copy_along(px, hole & (face >= 0) & ~roofs, seen, face, where, normals)
 paint = fill.dark_spots(px, face, where, roofs & seen, spots) if spots else np.zeros_like(hole)
-copied = fill.copy_along(px, (hole & (face >= 0) & ~roofs) | paint, seen, face, where, normals)
-print(f"copied along their faces: {int((copied & ~paint).sum())} texels of walls, {int((copied & paint).sum())} painted over")
-hole = (hole | paint) & ~copied
+if paint.any():
+    around = seen & ~paint & np.isin(face, np.unique(face[paint]))
+    px[paint, :3] = fill.push_pull(px[..., :3], around)[paint]
+print(f"{int(copied.sum())} texels of walls copied from above them, {int(paint.sum())} of roofs painted over")
+hole &= ~copied
 # Where each texel's colour came from, for sources.glb (see the top), later cases winning.
 sources = np.ones_like(px)
 for mask, colour in ((~hole, (0.2, 0.8, 0.2)), (~hole & use_far, (0.1, 0.3, 0.9)), (from_above & ~roofs, (1, 0.6, 0)),
-                     (from_above & roofs, (0.8, 0.1, 0.1)), (copied, (1, 0.9, 0.3)), (hole, (1, 1, 1))):
+                     (from_above & roofs, (0.8, 0.1, 0.1)), (copied | paint, (1, 0.9, 0.3)), (hole, (1, 1, 1))):
     sources[mask, :3] = colour
 
 # Fill the rest from around it, which also bleeds the islands' edges outwards for the

@@ -64,8 +64,8 @@ def _from_above(valid: np.ndarray, gap: np.ndarray, band: int, reach: int) -> np
 def copy_along(px, gap, known, face, where, normals, min_texels=30) -> np.ndarray:
     """Gaps in a face take the same face's colours from further up it (up a wall, up a
     roof's slope), or failing that from further down, or from the column beside them:
-    sharp, and in step with whatever runs up the face (masonry, a roof's seams). For a
-    wall's lowest metres hidden behind neighbouring houses, and for spots painted over.
+    sharp, and in step with whatever runs up the face (masonry, buttresses). For a
+    wall's lowest metres hidden behind neighbouring houses.
     `known` are the texels with a colour to copy. Changes `px` in place; returns the
     texels it gave a colour."""
     size = face.shape[0]

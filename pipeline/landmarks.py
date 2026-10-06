@@ -132,7 +132,7 @@ def run_blender(area: str, name: str, out: Path, crs: str):
     spots = ";".join("{:.2f},{:.2f},{}".format(*here.transform(lon, lat), r) for lon, lat, r in PAINT_OVER.get(name, []))
     r = subprocess.run([BLENDER, "-b", "--factory-startup", "-P", str(Path(__file__).with_name("landmark_bake.py")),
                         "--", str(low), str(high), str(out), "5", str(sources), spots or "-"], capture_output=True, text=True)
-    said = [l for l in r.stdout.splitlines() if l.startswith(("clean model:", "copied along")) or "Error" in l]
+    said = [l for l in r.stdout.splitlines() if l.startswith("clean model:") or "texels of walls" in l or "Error" in l]
     if r.returncode or not out.exists():
         raise SystemExit(f"{name}: Blender failed\n{r.stdout[-2000:]}\n{r.stderr[-2000:]}")
     print(f"{name}: " + "; ".join(said))

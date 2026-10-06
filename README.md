@@ -1016,6 +1016,10 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   kept in `pipeline/.cache/mesh/`; the finest level (16) is the default. How to add
   one, check it and fix what goes wrong: `.agents/skills/landmarks/SKILL.md`. The
   generated final manifest names `.warm-v1.glb` files; originals remain beside them.
+  `--rebake` bakes again from the inputs kept in `pipeline/.cache/landmarks/` after a
+  change to the bake. A wall's lowest metres that no photograph shows repeat the wall
+  above them, and `PAINT_OVER` marks roof spots where a tree is painted over
+  (`pipeline/landmark_fill.py`).
   Repository skills live in `.agents/skills`; `.claude/skills` is a compatibility symlink.
 - **Mesh colours.** `mesh_colours.py <area>` needs the area's IPR sheets parsed
   (`ipr_buildings.py` once) and writes `pipeline/.cache/mesh_colours/<area>.json.gz`,

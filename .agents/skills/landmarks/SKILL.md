@@ -53,6 +53,18 @@ IPR building, towers included; 334 faces, 1.2 MB).
 4. **Check it** (next section), fix what's wrong, commit `LANDMARKS`. The GLBs are
    generated data and stay out of git.
 
+**After a change to the bake** (`landmark_bake.py`, `landmark_fill.py`, `PAINT_OVER`),
+`uv run landmarks.py <area> [name…] --rebake` bakes again from the inputs kept in
+`pipeline/.cache/landmarks/<area>/`: no mesh nodes, no IPR sheets, and the footprints in
+`landmarks.json` stay as they are. It needs only `pipeline/.cache/layers/<area>/meta.json`
+besides. In a worktree, clone `public/data/<area>_now` and `pipeline/.cache/landmarks`
+(`cp -cpR`) and copy that `meta.json`; never bake into the shared data.
+
+**Time.** A bake is single-threaded and takes 1–3 minutes on a quiet machine with a
+4096² texture (five Cycles bakes and the fills); with many sessions at work it took 15
+minutes and more. Run it in the background with a long limit. Keep NumPy work on the
+4096² images lean: a saved set of them is ~800 MB.
+
 ## Showing a change
 
 For anything visual, show before and after from the same camera, side by side, day
@@ -84,9 +96,11 @@ column:
 | green | a wall, straight in from 1.5 m in front of it |
 | blue | a wall, straight in from 3 m out, further (the models are further apart there) |
 | orange | a wall whose ray met the underside of something, so from above |
+| yellow | elsewhere on the same face: a wall's gap repeating the wall above it, a roof spot painted over |
 | white | nothing: filled in from around it, often a flat, darker colour |
 
-White on a wall you can see is the thing to look into. White on faces inside other
+Yellow on a wall is made up: look at what it repeats. White on a wall you can see is
+the thing to look into. White on faces inside other
 faces (two of IPR's buildings touching) doesn't matter.
 
 **Then the game.** The dev server is usually already running on 5191 (check with
@@ -125,9 +139,18 @@ the game to render (see the memory on benchmarking).
   applies it before looking at normals. A GLB with a node rotation still works in the
   game (`landmarkModel` works out "up" in each mesh's axes), but anything that tests
   normals in Blender must do so after `transform_apply`.
-- **A tree baked into a roof or wall.** The mesh has trees; one that reaches over the
-  building is baked in (Mánes's north-east corner, see `todo.md`). Nothing handles it
-  yet.
+- **A tree baked into a roof.** The mesh has trees; one that reaches over the
+  building is baked in (Mánes's north-east corner). Nothing in the bake's data tells it
+  from the roof: seen from above, the mesh there is the roof's height (the crown is
+  flattened onto it, within 0.1 m), and the colour is the roof's, only much darker, not
+  green. So a general rule by colour or height does not exist, and green copper roofs
+  are not at risk from one. Instead, mark the place: `PAINT_OVER` in `landmarks.py`
+  takes `(lon, lat, radius)`; within it, roof texels darker than 0.6 of their face's
+  usual brightness are given the colour of their own face round them (`dark_spots` in
+  `landmark_fill.py`, then a push-pull over that face only). Smooth on purpose: copying
+  the roof along its slope made stripes of the seams. Keep the radius tight, a real
+  shadow inside it goes too. The tree is still baked into the *walls* next to it
+  (Mánes's east wall, north end); see the memory on the facade experiment for that.
 - **No clean model: a jagged dark shard.** Where IPR's city model has no building (the
   Powder Tower on its own: its OSM footprint has none, `no IPR buildings there`), the
   landmark is the mesh's raw triangles, with spikes of ground round its foot; in the game
@@ -138,17 +161,31 @@ the game to render (see the memory on benchmarking).
   city model) has clean concrete cylinders in the mesh, so it ships as raw triangles.
   `ground_off` in `landmarks.py` drops the flat triangles within 1 m of the lowest point,
   which removes the ground spikes. Look at the sheet before deciding; don't assume.
-- **White or blocky ground floor.** Where houses, arcades or crowds hide the lowest
-  metres of a wall from every photograph (the Týn Church's west and south fronts), the
-  rays find nothing and the texels are filled in from around them. Not fixed; see
-  `todo.md`, "Landmarks".
+- **Blocky, wrongly coloured ground floor.** Where houses, arcades or crowds hide the
+  lowest metres of a wall from every photograph (the Týn Church's west and south
+  fronts), the rays find nothing. The old fill took colours from whatever was near in
+  the texture, other islands included: orange roof and white plaster in blocks on a
+  dark stone wall. Now a wall's gaps repeat the same wall from above them
+  (`copy_along` in `landmark_fill.py`): the 3 m above the gap, there and back so it joins
+  up, with the gap's edge evened out over 1 m so columns stay in step. It is as good as
+  the wall just above the gap: where that band has a neighbour's roof or a dark hollow
+  in it (the Týn Church's south side, one bay), those repeat too. In the game the Týn
+  Church's foot is behind its neighbours' houses from every side, so the game's own
+  facade was not needed there.
+- **"Black roof parts" on Mánes** (a note from 29 September) were the shader's flat
+  roofs, next item; the baked texture has no black or unlit texels on the roofs. Checked
+  from above on 6 October: nothing black.
 - **Landmark roofs look like another material.** The photographs' roofs are paler and
   yellower than the city's tiled roofs. `pipeline/landmark_colours.py` shifts warm
   colours in each final `.warm-v1.glb` (JPEG quality 88), retaining the unconverted
   file and leaving Blender's source and diagnostic models alone. Its active scene
   carries `landmarkColourVersion: 1`. Older unmarked GLBs still get the same `warmUp`
-  pass in `src/tiles.ts`; do not activate a warmed manifest before the new browser
-  code is live, or an old client will adjust it twice. `shadeLandmark` (`src/shading.ts`, and its
+  pass in `src/tiles.ts`. Which one the game loads is the `file` of each entry in
+  `public/data/<area>_now/landmarks.json`: `landmarks.py` (with or without `--rebake`)
+  writes the warmed name there, so a run switches them on. The client that reads the
+  marker is live since v0.5.2; an older one would adjust a warmed file twice.
+  `scripts/check-landmark-colours.mjs --fixtures public/data/<area>_now --area <area>
+  --name <landmark>` checks an area whose manifest is switched on. `shadeLandmark` (`src/shading.ts`, and its
   TSL port in `src/webgpu/buildings.ts`, key `landmark-roof`) draws the city's tile
   pattern wherever a texel is a red roof on an up-facing face, at the photograph's
   brightness. The face's normal comes from derivatives, because the model's normals are
@@ -185,7 +222,12 @@ drawn two-sided. Fine as a stopgap, not as a result.
 - `pipeline/landmarks.py` — `LANDMARKS`, the mesh download (nodes cached in
   `pipeline/.cache/mesh/`), picking IPR's buildings, the footprint, running Blender.
 - `pipeline/landmark_bake.py` — the clean-up and the bakes (runs inside Blender).
+- `pipeline/landmark_fill.py` — the fills (NumPy only), tested without Blender:
+  `uv run --project pipeline python -m unittest discover -s pipeline -p test_landmark_fill.py`.
+  `LANDMARK_DEBUG=<file.npz>` on a bake keeps the images they work on.
 - `pipeline/.cache/landmarks/<area>/<name>.{mesh.glb,lod3.obj,sources.glb}` — what the
   sheet reads; the bake's inputs, so `landmark_bake.py` can be run on them directly
   while trying things.
-- `.claude/skills/landmarks/find.py`, `views.py` — the helpers above.
+- `.agents/skills/landmarks/find.py`, `views.py` — the helpers above. For one large view
+  instead of the sheet (an elevation, a corner from above), copy `views.py`'s `render`
+  with an orthographic camera; the sheet's 480 px cells hide a tree on a roof.
