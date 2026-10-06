@@ -146,6 +146,29 @@ tree meshes.
   cost of covered pixels: 525 ms baseline, 493 ms with the change. No measurable cost, so the
   blend stays. The phone tier was not measured.
 
+## What was built (6 October 2026, branch `night-maplook`)
+
+- **Clearings.** `pipeline/young_woods.py` also writes where a mapped wood has nothing above
+  1.5 m (the same canopy top as for young woods), in patches of 400 m2 or more, as the young
+  layer's `clear` tiles; `layers.assemble` puts them into the tile as `areas.wood_clearing`.
+  The game draws unmown grass there over the wood floor (`src/ground.ts`) and leaves it out
+  of the wood scatter; only the shrubs and odd young trees of a wood's edge stand round its
+  rim (`src/map/vegetation.ts`). A patch cut by a tile's border is kept whatever its size.
+  Trial on tiles 28–36 × 66–73 round Divoká Šárka in the worktree's own data: 55 of the
+  72 tiles have a clearing. Before and after from 300 m at 50.10053, 14.33018 (session
+  notes, not in git). Not compared with the aerial photo: whether every such patch is
+  really open (a rock face, a road cutting and a pond's bank also read as "nothing above
+  1.5 m") needs the owner's eye. The city's young layer must be rebuilt for it to show:
+  `uv run --group cover young_woods.py build praha` (the layer made by the old code is
+  ignored by assemble until then, so young woods disappear too if only the code is merged).
+- **Not done: the extra small trees along tile borders.** The cause is known. The wood
+  scatter draws from one random sequence per tile on a lattice that starts at the tile's
+  corner, so the first column and row are half as dense; and the gap pass only knows its
+  own tile's crowns, so it plants a small tree beside a neighbour's big one. The fix is
+  to put the wood, young and gap passes on a lattice fixed to the map with a seed per
+  cell (as `gardenTrees` does), compute the trees of an 8 m margin beyond the tile (the
+  wood taken to go on, as `woodDepth` already assumes) and keep only those inside.
+
 ### Left open
 
 - Check on a phone (Pixel 5), and whether more or bigger crowns are affordable.
