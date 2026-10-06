@@ -11,7 +11,7 @@ Twenty sessions worked overnight, each on its own branch and worktree
 about 00:20 to 04:55, so most got two to three working hours on a heavily loaded
 machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landmarks`
 (code only), `night-pipeline`, `night-weather`, `night-graphs`, `night-countryside` (behind
-`?countryside`), and single commits of
+`?countryside`), `night-greenery`, and single commits of
 `night-renderer` (windows on ground floors, the fog, the start-up report) and `night-maplook`
 (sports lines). Not merged, each with its state written in the plan or doc it names:
 
@@ -32,10 +32,6 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
   field, fences lit from both sides, hedges on their own ground, a second car by a
   garage. Counted offline on one chunk, never seen in the game. Then: plots cut back
   behind mapped pavements, corner gaps, the time of the garden step.
-- **`night-greenery`:** IPR's lawns, shrubs, hedges and beds, and manhole covers, drains
-  and signal poles, in the pipeline for the whole city and wired into the game; covers
-  and drains never seen in the game, no draw-call comparison, hydrants and phone boxes
-  have no models.
 - **`night-pavements` (plan 018 phases 3–4):** surveyed pavements, islands and tram
   beds, built for `ujezd` only (its tests pass, screenshots judged in the plan's
   Result); `centrum` and a suburb not built, the pavement step is slow.
@@ -69,7 +65,8 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
 
 The shared map data was not rebuilt. Rebuilds the merged work is waiting for:
 `build_lamps.py ujezd centrum praha` (the new lamp rule; look at suburbs at night
-first) and the landmark files (`landmarks.py <area> --rebake`). How to rebuild and
+first), IPR's greenery and street marks (`ipr_greenery.py`, `ipr_utility.py`,
+`build_signals.py`; the downloads are in `night-greenery`'s worktree cache) and the landmark files (`landmarks.py <area> --rebake`). How to rebuild and
 check: `docs/rebuilding-the-map.md`, `scripts/check-map-rebuild.mjs`.
 
 ## Release
@@ -301,9 +298,12 @@ The bake's new fills are in main; the shared landmark files are not re-baked yet
 All IPR Praha, CC BY, at
 `https://mp.iprpraha.cz/arcgis/rest/services/Hosted/<name>/FeatureServer/0`. Not used yet:
 
-- Lawns, shrubs, hedges and flower beds: `OPK_CUR_OPK_SMZ_VP_P`, 127,000 polygons.
-- Street furniture: `DTMP_CUR_TMISZNAK_B` (manhole covers, storm drains, traffic
-  lights, hydrants, phone boxes); only the lamps are used.
+- Lawns, shrubs, hedges and flower beds (`OPK_CUR_OPK_SMZ_VP_P`) are in the pipeline
+  and drawn once the data is rebuilt. Left: a flower pattern for the beds (bare earth
+  now), benches on surveyed lawns, a look at a panel housing estate.
+- Street furniture (`DTMP_CUR_TMISZNAK_B`): manhole covers, storm drains, hydrants,
+  phone boxes and signal poles are in. Left: check a few surveyed signal poles against
+  reality (1,807 of 3,107 lights get one); frame times unmeasured.
 - Walls, fences, railings and steps: set 3 of the DTM, already in
   `pipeline/.cache/dtm/ZPS_KR/`. Could replace OSM's walls and block the player.
 - The rest of set 2's surfaces: pavements, traffic islands, separate tram tracks.
