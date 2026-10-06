@@ -142,7 +142,8 @@ export class Signals {
       const line = new Polyline(offsetLine(e.pts, e.width / 2 + 0.6));
       const p = line.at(line.length - sig.stop);
       // On its surveyed pole where the map has one (pipeline/build_signals.py).
-      if (sig.pole) { this.heads.push({ e, sig, x: sig.pole[0], y: sig.pole[1], ang: p.ang }); continue; }
+      // (Not one the game's carriageway covers: a pole on an island the map doesn't have.)
+      if (sig.pole && !this.onRoad(sig.pole[0], sig.pole[1])) { this.heads.push({ e, sig, x: sig.pole[0], y: sig.pole[1], ang: p.ang }); continue; }
       // Where the junction flares the carriageway is wider than the street: out to its kerb.
       const nx = Math.sin(p.ang), ny = -Math.cos(p.ang);
       let out = 0;
