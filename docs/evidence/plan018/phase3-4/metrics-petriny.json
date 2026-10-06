@@ -28,8 +28,8 @@
    }
   },
   "odd": {
-   "path_on_road": 22128.6,
-   "path_on_building": 2340.3,
+   "path_on_road": 22128.2,
+   "path_on_building": 2340.2,
    "path_on_water": 0.0,
    "path_on_surveyed": 0.0
   },
@@ -390,14 +390,14 @@
     "pieces": 790
    },
    "pavement": {
-    "area": 103314.4,
-    "points": 16257,
+    "area": 103273.8,
+    "points": 16249,
     "pieces": 483
    },
    "pavement_asphalt": {
-    "area": 145409.5,
-    "points": 23973,
-    "pieces": 1328
+    "area": 145298.4,
+    "points": 23953,
+    "pieces": 1329
    },
    "road": {
     "area": 484283.5,
@@ -416,8 +416,8 @@
    }
   },
   "odd": {
-   "path_on_road": 13112.2,
-   "path_on_building": 1346.6,
+   "path_on_road": 13112.4,
+   "path_on_building": 1346.8,
    "path_on_water": 0.0,
    "path_on_surveyed": 73.8
   },
@@ -428,17 +428,17 @@
    "sidewalk_on_either_m": 0,
    "sidewalk_within_1m_m": 0,
    "walk_m": 125171,
-   "walk_on_surveyed_m": 46510
+   "walk_on_surveyed_m": 46356
   },
   "kerb": {
    "sides": 11432,
-   "outside_is_surveyed_walk": 4906,
+   "outside_is_surveyed_walk": 4897,
    "outside_is_road": 1907,
    "inside_is_surveyed_walk": 745
   },
   "per_tile": {
    "32_64": {
-    "surveyed": 2739,
+    "surveyed": 2699,
     "ribbons": 614,
     "trambed": 0
    },
@@ -478,7 +478,7 @@
     "trambed": 0
    },
    "33_64": {
-    "surveyed": 6233,
+    "surveyed": 6122,
     "ribbons": 929,
     "trambed": 2555
    },
@@ -758,6 +758,6 @@
     "trambed": 0
    }
   },
-  "bytes_ground": 3949758
+  "bytes_ground": 3939780
  }
 }

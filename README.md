@@ -302,7 +302,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   These surface rules leave the walking network and street kerbs alone. The city's
   technical map supplies ground-level courtyards, maintained green, gardens, pitches
   and woods where OSM has no more specific surface. OSM ground and roads draw above
-  those surveyed shapes. Rebuild the `ground` layer for these changes; use
+  those surveyed shapes. Inside Prague the pavements come from the same map
+  (`pipeline/pavements.py`): each one from the kerb to the wall as surveyed, with the
+  traffic islands, medians and tram-stop platforms, paved with what OSM's footways on
+  it say (Prague's pale mosaic, asphalt, earth for a park's path, setts for a cobbled
+  walking street; one that says nothing is paved like its nearest neighbour). The
+  footways' own 3 m ribbons are left out where they run on a surveyed pavement, so
+  only paths the survey doesn't have keep one, with square ends: through parks,
+  across estates and past the city limits. Mapped squares and car parks keep their
+  own paving, and a block's gardens start behind the pavement. Where the trams have a
+  bed of their own beside the street it is ballast. `DERIVED_PAVEMENTS=1` builds the
+  ground without any of this, to compare. Rebuild the `ground` layer for these changes; use
   `pipeline/beige_report.py` to measure the remaining unmapped ground in an area's tiles.
   Land that OSM gives a use but no surface still gets one: fields with crop rows
   (farmland, nurseries), concrete work yards (industrial land, garages, farmyards),
