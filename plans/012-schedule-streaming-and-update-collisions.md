@@ -250,7 +250,7 @@ See [the findings and merge summary](../docs/optimisation-findings-007-012.md).
 
 ## Follow-up: retest Part B in isolation
 
-Requested on 1 October 2026; not yet run. The recorded desktop change from 10.10
+Requested on 1 October 2026. A first attempt on 6 October was inconclusive (see the end of this file). The recorded desktop change from 10.10
 to 10.46 ms was consistent across three pairs, but the difference is small enough
 to warrant confirmation under controlled load. Overlapping game/browser instances
 and other machine activity could affect timings; their contribution to this
@@ -279,3 +279,27 @@ above and keep Part B off main pending the retest.
   implementation. If the result becomes neutral or inconclusive, do not call it a
   speedup; reconsider integration only with a demonstrated net benefit and the
   existing collision-correctness checks still passing.
+
+## Retest of Part B, 6 October 2026: inconclusive, left off
+
+Part B was ported onto main (`src/restingCars.ts`, `scripts/check-resting-cars.mjs`)
+behind a switch that is off by default: `?resting=incremental`, or
+`__drive.restingIndex(true | false)` in the page, which lets `bench.mjs --ab` compare
+the two indexes in one page (each starts again from nothing at a switch, so every
+window opens with one full indexing on either side).
+
+The machine was not quiet: about ten sessions were working and the load average was
+over 100. One pair of runs was made before time ran out, the drive, High, 14:00,
+clear, DPR 1, CPU throttle 4, 48 s in alternating 4-second windows:
+
+| Run | Off | On | Windows off (fps) | Windows on (fps) |
+| --- | ---: | ---: | --- | --- |
+| existing index against incremental | 34.9 ms | 38.2 ms (9.5% slower) | 32 32 30 30 25 25 | 31 27 29 24 26 22 |
+| existing against existing (control) | 32.2 ms | 34.7 ms (7.9% slower) | 28 33 26 34 33 34 | 30 28 32 29 33 23 |
+
+The unchanged control differed by nearly as much as the comparison, so this says
+nothing either way; it certainly does not show the incremental index to be quicker.
+It stays off. The checklist above is still owed on a quiet machine: the control
+first, three pairs, then the order reversed. `check-resting-cars.mjs` was not rerun
+against the port (the browser queue was too long); run it before turning the
+switch on anywhere.

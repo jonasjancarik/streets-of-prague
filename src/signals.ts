@@ -151,6 +151,15 @@ export class Signals {
     this.nearAt.x = Infinity;
   }
 
+  // Streets that have left the graph (their tiles are far behind): their lights go too.
+  forget(edges: DriveEdge[]) {
+    let any = false;
+    for (const e of edges) any = this.known.delete(e) || any;
+    if (!any) return;
+    this.heads = this.heads.filter((h) => this.known.has(h.e));
+    this.nearAt.x = Infinity;
+  }
+
   // How far ahead a car on `route` (its front `front` metres ahead of it, going at
   // `speed`) has to stop for a light, Infinity if it needn't; `waiting` whether a light
   // ahead is against it at all (it's queueing, not stuck). The reckless don't stop at amber.

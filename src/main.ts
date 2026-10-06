@@ -7,6 +7,7 @@ import { Funicular } from './funicular.ts';
 import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
+import { RestingCars } from './restingCars.ts';
 import { loadKit } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
@@ -275,7 +276,7 @@ async function main() {
   };
   const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y), deckAt);
   const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)), (x, y) => world.onRoad(x, y));
-  world.onEdges = (d, w, b) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(d, b); signals.add(d); };
+  world.onEdges = (d, w, b, first) => { names.add(d); names.add(w); crowd?.index(w); if (first) lamps.fill(d, b); signals.add(d); };
 
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose: Car[] = [];
@@ -1317,6 +1318,24 @@ async function main() {
     people: () => crowd.people, revive: (p) => crowd.revive(p),
     take: (p) => { if (crowd.people.includes(p)) crowd.retire(p); },
   });
+  // Streets far behind you leave the graphs, and what is indexed from them, unless one
+  // of these is still out there (see TileWorld.forget).
+  world.anchors = () => {
+    const out: { x: number; y: number }[] = [{ x: px(), y: py() }];
+    for (const c of police.cars) out.push(c.car);
+    for (const e of brigade.engines) out.push(e.car, e.target);
+    for (const r of ambulances.rigs) out.push(r.car, r.patient);
+    if (taxi.agent) out.push(taxi.agent.car);
+    return out;
+  };
+  world.onForget = (d, w) => {
+    names.remove(d);
+    names.remove(w);
+    crowd.forget(w);
+    signals.forget(d);
+    police.forget(d);
+    police.forget(w);
+  };
   let waitScale = 1, clockShown = '';
   let ticketWas = false;
   let rideAt: boolean | null = null, funiAt: number | null | undefined;
@@ -1371,7 +1390,20 @@ async function main() {
   // Everything that moves or blocks, made again every step; parked and abandoned cars
   // that stand still (thousands of them across the loaded tiles) have a hash of their
   // own, made again only when one of them moves, comes or goes.
-  const hash = new SpatialHash<Obstacle>(10), resting = new SpatialHash<Obstacle>(10);
+  const hash = new SpatialHash<Obstacle>(10), restingWhole = new SpatialHash<Obstacle>(10);
+  // Plan 012 Part B: the same index kept up to date car by car instead of made again
+  // whenever one changes. Off unless ?resting=incremental: it measured no quicker.
+  const restingByCar = new RestingCars(10);
+  let incremental = params.get('resting') === 'incremental';
+  let resting: { near: (x: number, y: number, r: number, out?: Obstacle[]) => Obstacle[] } = incremental ? restingByCar : restingWhole;
+  // (For comparing the two in one page: each starts again from nothing.)
+  const restingIndex = (byCar: boolean) => {
+    incremental = byCar;
+    resting = byCar ? restingByCar : restingWhole;
+    restingByCar.reset();
+    for (const c of loose) c.resting = false;
+    restingStale = true;
+  };
   // The moving cars alone, again: carsNear, run for every person near you, needn't wade through the crowd in `hash`.
   const carHash = new SpatialHash<Obstacle>(10);
   // (The list is reused: it holds until the next call, and no caller looks up more
@@ -1415,6 +1447,7 @@ async function main() {
   const moving = (c: Car) => c.mode === 'player' || c.vx * c.vx + c.vy * c.vy > 0.0025 || Math.abs(c.w) > 0.01; // over 5 cm/s
   let restingCount = -1;
   const syncResting = () => {
+    if (incremental) { restingByCar.sync(loose, moving); return; }
     let n = 0, stale = restingStale;
     for (const c of loose) {
       if (moving(c)) { stale ||= !!c.resting; continue; }
@@ -1422,11 +1455,11 @@ async function main() {
       stale ||= !c.resting || !c.restAt || c.restAt[0] !== c.x || c.restAt[1] !== c.y || c.restAt[2] !== c.h;
     }
     if (!stale && n === restingCount) return;
-    resting.clear();
+    restingWhole.clear();
     for (const c of loose) {
       c.resting = !moving(c);
       if (!c.resting) continue;
-      pushCar(resting, c);
+      pushCar(restingWhole, c);
       c.restAt = [c.x, c.y, c.h];
     }
     restingCount = n;
@@ -2252,7 +2285,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,

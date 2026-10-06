@@ -99,6 +99,9 @@ const RAISED = 3; // a building whose underside is this high (m) or more doesn't
 const CLIMB = 1.5;
 // A drawn tile keeps its meshes until it's this much (m) further from the view than
 // where it would be drawn, so one at the edge isn't made and taken away over and over.
+// The streets within this far (m) of a police car, a fire engine or the like stay in
+// the graphs however far from you it is: as far as such a car looks for its way.
+const ANCHOR_REACH = 400;
 const DRAWN_KEEP = 40;
 
 // Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
@@ -322,7 +325,17 @@ export class TileWorld {
   sky: Map<number, { shapes: Shadower[]; texture: THREE.DataTexture | null; tileBox: Bounds; ground: { hm: Float32Array; box: Bounds; n: number; step: number } | null; refresh: SkyRefresh<Uint8Array> | null }>;
   drive: DriveGraph; walk: WalkGraph;
   driveBy: Map<string, DriveEdge[]>; walkBy: Map<string, WalkEdge[]>;
-  onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][]) => void;
+  // `first`: the tile's streets are joined for the first time (false when a tile whose
+  // streets were forgotten far behind comes back).
+  onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][], first: boolean) => void;
+  // The street graphs keep the tiles within this far (m) beyond the loading radius, and
+  // those round each of `anchors` (whatever still drives a route out there: a police
+  // car, a fire engine, a taxi on a job). Further off a tile's streets are forgotten
+  // (onForget: the edges that left) and joined again when the tile next loads.
+  graphBeyond = 500;
+  anchors: () => { x: number; y: number }[] = () => [];
+  onForget: (drive: DriveEdge[], walk: WalkEdge[]) => void = () => {};
+  private joined = new Set<string>(); private trimmed = 0;
   onCars: (cars: Car[], tile: Tile) => void;
   onDrop: (tile: Tile) => void;
   building: number; inFlight: Set<string>; builds: Map<string, Promise<Tile>>;
@@ -855,6 +868,7 @@ export class TileWorld {
     }
     const keep = new Set(this.around(x, y, r + this.T * 0.5));
     for (const k of [...this.loaded.keys()]) if (!keep.has(k)) this.drop(k);
+    if (now - this.trimmed > 1000) { this.trimmed = now; this.forget(x, y, r); }
     if (drawn < r) {
       const keepDrawn = new Set(this.near(x, y, drawn + DRAWN_KEEP));
       for (const tile of this.loaded.values()) if (tile.shown && !keepDrawn.has(tile.k)) this.undress(tile);
@@ -872,6 +886,24 @@ export class TileWorld {
         if (Math.abs(i - ci) > reach || Math.abs(j - cj) > reach) this.jsons.delete(k);
       }
     }
+  }
+
+  // Forgets the streets of tiles far from (x, y) and from every anchor: without this
+  // the graphs, and everything indexed from them, held every tile ever visited.
+  forget(x: number, y: number, r: number) {
+    if (this.driveBy.size <= this.loaded.size) return;
+    const keep = new Set(this.around(x, y, r + this.graphBeyond));
+    for (const a of this.anchors()) for (const k of this.around(a.x, a.y, ANCHOR_REACH)) keep.add(k);
+    const drive: DriveEdge[] = [], walk: WalkEdge[] = [];
+    for (const k of [...this.driveBy.keys()]) {
+      if (keep.has(k) || this.loaded.has(k) || this.builds.has(k)) continue;
+      for (const e of this.driveBy.get(k)!) drive.push(e);
+      for (const e of this.walkBy.get(k) || []) walk.push(e);
+      this.driveBy.delete(k);
+      this.walkBy.delete(k);
+    }
+    if (!drive.length && !walk.length) return;
+    this.onForget(this.drive.remove(drive), this.walk.remove(walk));
   }
 
   // Whether tiles or their meshes are being made.
@@ -915,7 +947,8 @@ export class TileWorld {
     if (t.drive && !this.driveBy.has(k)) {
       this.driveBy.set(k, this.drive.add(t.drive));
       this.walkBy.set(k, this.walk.add(t.walk ?? []));
-      this.onEdges(this.driveBy.get(k)!, this.walk.fresh, t.buildings.filter(grounded).map((b) => b.rings[0]));
+      this.onEdges(this.driveBy.get(k)!, this.walk.fresh, t.buildings.filter(grounded).map((b) => b.rings[0]), !this.joined.has(k));
+      this.joined.add(k);
     }
     const ms: Record<string, number> = {};
     let t0 = performance.now();

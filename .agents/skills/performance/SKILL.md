@@ -446,6 +446,16 @@ than one device is attached. The phone's screen size and pixel ratio apply, not
 core count: `--init "Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 3 })"`
 (3 cores → 1 worker).
 
+- A phone that has dozed fails in two ways: `connectOverCDP: socket hang up`, or a run
+  with no frames at all. Wake it and lift the lock screen first
+  (`adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard`), and close
+  a test tab a failed run left open (`curl http://localhost:9333/json`, then
+  `/json/close/<id>`). A first load right after the dev server starts can fall back to
+  WebGL (Vite's "Outdated Optimize Dep"); `--require-webgpu` refuses it, run again.
+- `--dpr tier` gives the tier its own pixel ratio, which is what a player gets and what
+  Auto needs to scale; `--dpr 2` pins it.
+- An `--ab` switch that rebuilds shaders (the sun's `castShadow`) leaves windows with
+  no frames: read the per-window frame rates, not the mean.
 - Tracing slows the phone several times over: use a trace to see what runs, not how long.
 - The phone warms over repeated runs (battery 33 → 35 °C in eight drives) and gets slower:
   alternate A and B, reverse starting order, record temperature and let it cool if

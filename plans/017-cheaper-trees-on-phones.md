@@ -11,7 +11,8 @@ then makes the trees cheaper there.
 
 ## Status and starting point
 
-- Status: PLANNED. Step 1 decides whether the rest goes ahead.
+- Status: step 1 partly measured on 6 October 2026 (see Result): tree shadows are worth
+  making cheaper on the phone. The low-detail crown toggle and step 2 are open.
 - Priority: P3. Effort: half a day to measure; two to three days if it goes ahead.
   Risk: low for the measurement; medium for the changes (the trees' look and their
   shadows are easy to spoil).
@@ -134,3 +135,28 @@ driving.
 ## Result
 
 Not started.
+
+## Result
+
+Step 1, 6 October 2026, Pixel 5 (Android 14, WebGPU), main at `27bc5ef`, High at 1×,
+`bench.mjs --android --ab`, 4-second windows alternating, one run of 32 s per toggle,
+battery 30.0–31.9 °C:
+
+| Scene | Toggle | Off | On | JavaScript off / on |
+| --- | --- | ---: | ---: | ---: |
+| woods | tree pages drawn | 12.6 ms | 28.9 ms | 10.8 / 14.3 ms |
+| woods | trees cast shadows | 20.8 ms | 28.6 ms | 13.1 / 14.2 ms |
+| woods | nothing (control) | 28.6 ms | 28.9 ms | 15.3 / 15.0 ms |
+| suburb | tree pages drawn | 13.8 ms | 17.6 ms | 11.9 / 13.7 ms |
+| suburb | trees cast shadows | 16.2 ms | 17.8 ms | 13.6 / 14.2 ms |
+
+Every window agreed with its neighbours to within 2 fps. In a wood the trees are over
+half the frame and their shadow pass over a quarter (7.8 ms); in the garden suburb
+3.8 ms and 1.6 ms. The JavaScript hardly moves, so this is GPU work. The stop
+condition isn't met: the plan goes ahead, and the shadow toggle carrying half of the
+trees' cost in the woods points at option A (a simpler crown in the shadow pass).
+
+Not done: the per-kind triangle and draw-call counts, the `drive` scene, the
+low-detail crown toggle (which would say whether the main pass is limited by vertices
+or by the pixels the crowns cover), reversed order and a second run. Hiding the pages
+also removes the pixels they shade, so "trees drawn" is not a vertex figure by itself.
