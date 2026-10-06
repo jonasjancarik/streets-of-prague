@@ -11,7 +11,8 @@ in the road.
 
 ## Status and starting point
 
-- Status: IN PROGRESS (step 1, the prototype, is done: see Result).
+- Status: IN PROGRESS (step 1, the prototype, and step 2, the join for roads, are done
+  apart from what the Result lists as owed).
 - Priority: P3. Effort: about a week for the prototype, three to five weeks in all.
   Risk: medium to high (a second map builder to keep in step with the pipeline, and
   two outside services the game would lean on).
@@ -291,3 +292,50 @@ elevation data's sources if step 4 goes ahead.
   Also: streets are overlapping rectangles and octagons rather than one outline, so
   nothing may draw a kerb along them; building parts are skipped; a building wider
   than 12 m past a vector tile's edge may come out twice or not at all.
+
+**Step 2, the join for roads, 6 October 2026** (`src/countrysideJoin.ts`, and changes in
+`src/countryside.ts`, the worker and `scripts/check-countryside.mjs`; still behind
+`?countryside`).
+
+- The built map's streets run on past the edge to their next junction: 267 drive edges
+  and 344 walking edges in `praha`, half of them under 110 m, the longest 5.2 km (a
+  motorway). Out there the built street stands alone. A generated street lying on one
+  (every 3 m of it within 3 m) leaves that graph, and is dropped when it is in neither;
+  the generated junction within 10 m of the built street's outer end takes the built
+  junction's id and place, its streets bending to it over 30 m and starting as wide as
+  the built street of the same class. Where the vector tiles have no junction there,
+  the generated street passing within 4 m is split. The countryside tile lists the
+  built edge itself (same id, so the graphs take it once, through the same
+  `drive.add` and `walk.add` as any tile) and lays its surface from the edge on, kerb
+  to kerb as inside.
+- Which streets leave comes from the built map's rim tiles, read by the worker when a
+  vector tile within 6 km of the edge is first made (about fifty small JSON files for
+  the first, a few for each one after). No new map file and no rebuild. Before this
+  leaves the flag the pipeline should write that list into one file.
+- Two faults of step 1 found on the way: a road's point lying on another road that has
+  no point there made no junction (now it does), and generated edge ids could equal a
+  built edge's between the same two junctions (they now start with `c`).
+- `node scripts/check-countryside.mjs` (about two minutes; `--places` lists where main
+  roads leave) makes the 1,290 countryside tiles those streets pass through and asserts:
+  118 of 123 outer ends of built streets lead on into generated streets, and 263 of 286
+  on foot (the rest are dead ends, or streets OpenStreetMap has changed since); no
+  generated street doubles a built one for cars, three paths do on foot; no junction
+  stands twice; routes cross the edge both ways at 16 main roads, four on each side,
+  and on foot; the ground's step at the edge is 0 m over 30,748 shared grid points.
+  242 generated drive edges and 171 walking ones start at the edge with no built street
+  to carry on from: mostly streets the built map cuts off there itself.
+- Heights: the countryside is still flat outwards from the built map's edge, so the
+  seam has no step. One built street leaves the map on a bridge or in a tunnel
+  (a level of its own); the countryside has no levels, so that one will step.
+- Pictures from above at K Nádraží (west), Pražská (east), Zdibsko (north) and Slepá
+  (south) show the roads carrying on. A first set of three came out as cars on bare
+  ground: they were taken a second and a half of game time after a far jump, before
+  the tiles had been drawn; waiting for the tile and a few real seconds gives the
+  ground (`World.loaded` has the tile, its JSON has roads).
+- Owed: a scenario that drives out and back on an arterial road (the test API has no
+  way to follow a road yet, and a scenario run without `?countryside` has nothing to
+  check); the phone. On the Pixel 5 measure the time the
+  worker takes for the first tile near the edge (it reads the rim tiles), for a tile
+  whose vector tiles are new and for one whose are known, the requests and bytes for a
+  ten-minute drive out, and whether the road ahead is there at 130 km/h.
+- Steps 3 to 6 are not started.

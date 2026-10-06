@@ -5,6 +5,9 @@
 // takes it as any other tile. No three.js and no DOM: it runs in countrysideWorker.ts
 // and under Node (scripts/check-countryside.mjs).
 //
+// Near the built map its streets are joined to the built ones (countrysideJoin.ts): the
+// built map's rim tiles say which of its streets run on outside.
+//
 // The work is in three steps, the first two kept per vector tile:
 //   raw    decoded and cut to the vector tile: road lines in its own units, land,
 //          water and buildings in the game's metres
@@ -19,6 +22,8 @@ import proj4 from 'proj4';
 import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
 import { union } from 'polyclip-ts';
+import { REACH, boxOf, joinEdges, meet, paved } from './countrysideJoin.ts';
+import type { JoinEdge, Stub } from './countrysideJoin.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
 import type { TileBuilding, TileJSON } from './contracts.ts';
 import type { RawStreetEdge } from './network.ts';
@@ -45,11 +50,14 @@ function settingWidth(hw: string, pts: Point2[], buildings: { at: Point2 }[]): n
 
 // A vector tile's bytes (unzipped), or nothing where the file has none.
 export type VectorSource = (z: number, x: number, y: number) => Promise<ArrayBuffer | undefined>;
+// The street graphs of one of the built map's tiles (its JSON), or nothing where it has none.
+export type BuiltSource = (i: number, j: number) => Promise<{ drive?: RawStreetEdge[]; walk?: RawStreetEdge[] } | undefined>;
 
 const E = 4096; // a vector tile's width in its own units
 const WATER_LAP = 4; // units water reaches past its vector tile, so the pieces join without a gap
 const MATCH = 8; // units between the two sides' idea of where a road crosses a vector tile's edge
 const SNAP = 3; // units from a road's loose end to the road it joins
+const ON = 1.5; // units from a road's point to another road it lies on
 
 const CAR_ROADS = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link', 'secondary',
   'secondary_link', 'tertiary', 'tertiary_link', 'residential', 'unclassified', 'living_street', 'service']);
@@ -89,16 +97,10 @@ interface Raw {
   lines: Line[]; east: Crossing[]; south: Crossing[];
   land: Shape[]; water: Shape[]; buildings: (TileBuilding & { box: Bounds; at: Point2 })[]; trees: Point2[];
 }
-interface Edge extends Omit<Line, 'pts'> { u: string; v: string; n: number; width: number; pts: Point2[]; box: Bounds }
+interface Edge extends Omit<Line, 'pts'>, JoinEdge { n: number }
 interface Chunk extends Raw { edges: Edge[] }
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
-const boxOf = (pts: Point2[]): Bounds => {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [x, y] of pts) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-  return [x0, y0, x1, y1];
-};
-const meet = (a: Bounds, b: Bounds, pad = 0) => a[0] <= b[2] + pad && a[2] >= b[0] - pad && a[1] <= b[3] + pad && a[3] >= b[1] - pad;
 const within = (x: number, y: number, [x0, y0, x1, y1]: Bounds) => x >= x0 && x < x1 && y >= y0 && y < y1;
 const area = (ring: Point2[]) => {
   let a = 0;
@@ -208,15 +210,19 @@ function guessHeight(m2: number, seed: number) {
 export class Countryside {
   private readonly proj: proj4.Converter;
   private readonly raws = new Map<string, Promise<Raw | null>>();
+  private readonly loose = new Map<string, Promise<Chunk | null>>();
   private readonly graphs = new Map<string, Promise<Chunk | null>>();
+  private readonly rims = new Map<string, Promise<Stub[]>>();
   private readonly rect: Bounds;
   readonly stats = { fetched: 0, bytes: 0 };
   private readonly source: VectorSource;
+  private readonly built: BuiltSource;
   private readonly setup: CountrysideSetup;
   private readonly zoom: number;
 
-  constructor(source: VectorSource, setup: CountrysideSetup, zoom = 15) {
+  constructor(source: VectorSource, built: BuiltSource, setup: CountrysideSetup, zoom = 15) {
     this.source = source;
+    this.built = built;
     this.setup = setup;
     this.zoom = zoom;
     const [lon0, lat0] = setup.centre;
@@ -227,6 +233,7 @@ export class Countryside {
 
   // WGS84 → the game's metres.
   metres(lon: number, lat: number): Point2 { return this.proj.forward([lon, lat]) as Point2; }
+  lonLat(x: number, y: number): Point2 { return this.proj.inverse([x, y]) as Point2; }
 
   // The vector tile (fractional) at a point in the game's metres.
   private vectorAt(x: number, y: number): Point2 {
@@ -247,7 +254,51 @@ export class Countryside {
   }
 
   private raw(X: number, Y: number) { return this.kept(this.raws, `${X}_${Y}`, () => this.readRaw(X, Y)); }
-  private graph(X: number, Y: number) { return this.kept(this.graphs, `${X}_${Y}`, () => this.makeGraph(X, Y)); }
+  private unjoined(X: number, Y: number) { return this.kept(this.loose, `${X}_${Y}`, () => this.makeGraph(X, Y)); }
+  private graph(X: number, Y: number) { return this.kept(this.graphs, `${X}_${Y}`, () => this.joinGraph(X, Y)); }
+
+  // The streets of one of the built map's rim tiles that run on outside it.
+  private rim(i: number, j: number): Promise<Stub[]> {
+    const k = `${i}_${j}`;
+    let hit = this.rims.get(k);
+    if (!hit) {
+      hit = this.built(i, j).then((t) => {
+        const stubs: Stub[] = [];
+        for (const graph of ['drive', 'walk'] as const) {
+          for (const edge of t?.[graph] ?? []) {
+            const outside = cutLine(edge.pts, this.rect, false).map((piece) => piece.pts);
+            if (!outside.length) continue;
+            const out = ([x, y]: Point2) => x < this.rect[0] || x > this.rect[2] || y < this.rect[1] || y > this.rect[3];
+            const ends = ([[edge.u, edge.pts[0]], [edge.v, edge.pts[edge.pts.length - 1]]] as [string, Point2][])
+              .filter(([, at]) => out(at)).map(([id, at]) => ({ id, at }));
+            stubs.push({ graph, edge, outside, box: boxOf(outside.flat()), ends });
+          }
+        }
+        return stubs;
+      });
+      hit.catch(() => { if (this.rims.get(k) === hit) this.rims.delete(k); });
+      this.rims.set(k, hit);
+    }
+    return hit;
+  }
+
+  // The built streets that pass through a box outside the built map (within `pad`),
+  // each once, in an order that doesn't depend on who asks.
+  private async stubsNear(box: Bounds, pad: number): Promise<Stub[]> {
+    if (!meet(box, this.rect, REACH)) return [];
+    const { tile: T, origin: [ox, oy], cols, rows } = this.setup;
+    const span = (lo: number, hi: number, o: number, n: number) => [Math.max(0, Math.floor((lo - REACH + o) / T)), Math.min(n - 1, Math.floor((hi + REACH + o) / T))];
+    const [i0, i1] = span(box[0], box[2], ox, cols), [j0, j1] = span(box[1], box[3], oy, rows);
+    const wanted: Promise<Stub[]>[] = [];
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) if (i === 0 || j === 0 || i === cols - 1 || j === rows - 1) wanted.push(this.rim(i, j));
+    const seen = new Set<string>();
+    return (await Promise.all(wanted)).flat().filter((s) => {
+      const k = `${s.graph} ${s.edge.id}`;
+      if (seen.has(k) || !meet(s.box, box, pad)) return false;
+      seen.add(k);
+      return true;
+    });
+  }
 
   private async readRaw(X: number, Y: number): Promise<Raw | null> {
     const bytes = await this.source(this.zoom, X, Y);
@@ -391,33 +442,54 @@ export class Countryside {
         }
       }
     }
-    // A loose end lying on another road (the tiles drop a straight road's point at a
-    // side street): give that road a point there.
+    // A road's point lying on another road that has no point there (the tiles drop a
+    // straight road's point at a side street or a crossing path): give that road the
+    // point. A loose end may lie a little off (SNAP) and is moved onto it; any other
+    // point has to lie right on it (ON), and stays where it is.
     const count = () => {
       const uses = new Map<string, number>();
       for (const l of lines) for (const p of l.pts) uses.set(key(p), (uses.get(key(p)) || 0) + 1);
       return uses;
     };
     let uses = count();
+    const CELL = 128, cells = new Map<number, Line[]>(); // the lines passing through each square of the tile
+    const cell = (x: number, y: number) => Math.floor(x / CELL) * 64 + Math.floor(y / CELL);
     for (const l of lines) {
-      for (const end of [0, l.pts.length - 1]) {
-        const p = l.pts[end];
-        if (uses.get(key(p)) !== 1 || named.has(key(p))) continue;
+      for (let i = 0; i < l.pts.length - 1; i++) {
+        const [ax, ay] = l.pts[i], [bx, by] = l.pts[i + 1];
+        for (let x = Math.floor((Math.min(ax, bx) - SNAP) / CELL); x <= Math.floor((Math.max(ax, bx) + SNAP) / CELL); x++) {
+          for (let y = Math.floor((Math.min(ay, by) - SNAP) / CELL); y <= Math.floor((Math.max(ay, by) + SNAP) / CELL); y++) {
+            const list = cells.get(x * 64 + y) ?? [];
+            if (!list.includes(l)) list.push(l);
+            cells.set(x * 64 + y, list);
+          }
+        }
+      }
+    }
+    for (const l of lines) {
+      for (let at = 0; at < l.pts.length; at++) {
+        const p = l.pts[at], end = at === 0 || at === l.pts.length - 1, loose = end && uses.get(key(p)) === 1, reach = loose ? SNAP : ON;
+        if (named.has(key(p)) || (!end && uses.get(key(p)) !== 1)) continue;
         let best: { line: Line; i: number; t: number; d: number } | null = null;
-        for (const o of lines) {
+        for (const o of cells.get(cell(p[0], p[1])) ?? []) {
           if (o === l || o.bridge !== l.bridge || o.tunnel !== l.tunnel) continue;
+          if (!loose && o.pts.some((q) => q[0] === p[0] && q[1] === p[1])) continue; // joined already
           for (let i = 0; i < o.pts.length - 1; i++) {
             const [ax, ay] = o.pts[i], [bx, by] = o.pts[i + 1], dx = bx - ax, dy = by - ay;
             const t = Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy) / (dx * dx + dy * dy || 1)));
             const d = Math.hypot(ax + dx * t - p[0], ay + dy * t - p[1]);
-            if (d <= SNAP && (!best || d < best.d)) best = { line: o, i, t, d };
+            if (d <= reach && (!best || d < best.d)) best = { line: o, i, t, d };
           }
         }
         if (!best) continue;
         const o = best.line, a = o.pts[best.i], b = o.pts[best.i + 1];
+        if (!loose) {
+          if (best.t > 0.02 && best.t < 0.98) o.pts.splice(best.i + 1, 0, [p[0], p[1]]);
+          continue;
+        }
         const on = best.t < 0.02 ? a : best.t > 0.98 ? b : along(a, b, best.t);
         if (on !== a && on !== b) o.pts.splice(best.i + 1, 0, on);
-        l.pts[end] = [on[0], on[1]];
+        l.pts[at] = [on[0], on[1]];
       }
     }
     uses = count();
@@ -443,11 +515,31 @@ export class Countryside {
           const pair = pu < pv ? `${pu}|${pv}` : `${pv}|${pu}`, n = pairs.get(pair) || 0;
           pairs.set(pair, n + 1);
           const width = (l.oneway && ONE_WAY_WIDTH[l.hw]) || settingWidth(l.hw, piece.pts, raw.buildings);
-          edges.push({ u: pu, v: pv, n, width, hw: l.hw, name: l.name, oneway: l.oneway, bridge: l.bridge, tunnel: l.tunnel, pts: piece.pts.map(([x, y]): Point2 => [r2(x), r2(y)]), box: boxOf(piece.pts) });
+          edges.push({ u: pu, v: pv, n, width, hw: l.hw, name: l.name, oneway: l.oneway, bridge: l.bridge, tunnel: l.tunnel, pts: piece.pts.map(([x, y]): Point2 => [r2(x), r2(y)]), box: boxOf(piece.pts),
+            drive: CAR_ROADS.has(l.hw), walk: !NO_WALKING.has(l.hw) });
         }
       }
     }
     return { ...raw, edges };
+  }
+
+  // The vector tile's streets joined to the built map's where those run on out here.
+  // A built street's end near the vector tile's edge may belong to a junction in the
+  // next one, so those junctions are looked at too: both sides then decide alike.
+  private async joinGraph(X: number, Y: number): Promise<Chunk | null> {
+    const chunk = await this.unjoined(X, Y);
+    if (!chunk) return null;
+    const stubs = await this.stubsNear(chunk.box, 40);
+    if (!stubs.length) return chunk;
+    const [x0, y0, x1, y1] = chunk.box, rim = 40;
+    const nearEdge = stubs.some((s) => s.ends.some(({ at: [x, y] }) => meet([x, y, x, y], chunk.box, rim) && !(x > x0 + rim && x < x1 - rim && y > y0 + rim && y < y1 - rim)));
+    const others: Edge[] = [];
+    if (nearEdge) {
+      const around: Promise<Chunk | null>[] = [];
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) around.push(this.unjoined(X + dx, Y + dy));
+      for (const c of await Promise.all(around)) for (const e of c?.edges ?? []) if (meet(e.box, chunk.box, rim)) others.push(e);
+    }
+    return { ...chunk, edges: joinEdges(chunk.edges, stubs, chunk.box, others) };
   }
 
   // A game tile, as pipeline/build_tiles.py would write it.
@@ -471,33 +563,59 @@ export class Countryside {
       const cut = clipRing(ring, box);
       if (cut.length) (roads[kind] ||= []).push([cut.map(([x, y]): Point2 => [r2(x), r2(y)])]);
     };
+    // A street's surface along a line: a four-sided piece per stretch, an octagon at each
+    // end and bend; `half` gives the width to the left and to the right at each point.
+    const pave = (kind: string, pts: Point2[], half: (k: number) => [number, number]) => {
+      const knob = ([x, y]: Point2, [left, right]: [number, number], nx: number, ny: number) => {
+        const r = (left + right) / 2, cx = x + nx * (left - right) / 2, cy = y + ny * (left - right) / 2;
+        street(kind, Array.from({ length: 8 }, (_, k): Point2 => [cx + Math.cos((k + 0.5) * Math.PI / 4) * r * 1.082, cy + Math.sin((k + 0.5) * Math.PI / 4) * r * 1.082]));
+      };
+      for (let k = 0; k < pts.length - 1; k++) {
+        const a = pts[k], b = pts[k + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        const [la, ra] = half(k), [lb, rb] = half(k + 1), reach = Math.max(la, ra, lb, rb);
+        if (!meet(boxOf([a, b]), box, reach + 1)) continue;
+        const nx = -(b[1] - a[1]) / l, ny = (b[0] - a[0]) / l;
+        lanes.push({ a, b, r: reach + 1.5 });
+        street(kind, [[a[0] + nx * la, a[1] + ny * la], [b[0] + nx * lb, b[1] + ny * lb], [b[0] - nx * rb, b[1] - ny * rb], [a[0] - nx * ra, a[1] - ny * ra]]);
+        const c2 = pts[k + 2];
+        if (k === 0) knob(a, [la, ra], nx, ny);
+        if (!c2 || Math.abs((b[0] - a[0]) * (c2[1] - b[1]) - (b[1] - a[1]) * (c2[0] - b[0])) > 0.07 * l * Math.hypot(c2[0] - b[0], c2[1] - b[1])) knob(b, [lb, rb], nx, ny);
+      }
+    };
+    const surface = (hw: string) => (CAR_ROADS.has(hw) ? 'road' : DIRT.has(hw) ? 'dirt' : 'path');
     for (const c of chunks) {
       for (const e of c.edges) {
         if (!meet(e.box, box, e.width / 2 + 2)) continue;
-        const kind = CAR_ROADS.has(e.hw) ? 'road' : DIRT.has(e.hw) ? 'dirt' : 'path', r = e.width / 2;
-        const knob = ([x, y]: Point2) => street(kind, Array.from({ length: 8 }, (_, k): Point2 =>
-          [x + Math.cos((k + 0.5) * Math.PI / 4) * r * 1.082, y + Math.sin((k + 0.5) * Math.PI / 4) * r * 1.082]));
-        for (let k = 0; k < e.pts.length - 1; k++) {
-          const a = e.pts[k], b = e.pts[k + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-          const nx = (-(b[1] - a[1]) / l) * r, ny = ((b[0] - a[0]) / l) * r;
-          if (!meet(boxOf([a, b]), box, r + 1)) continue;
-          lanes.push({ a, b, r: r + 1.5 });
-          street(kind, [[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]]);
-          const c2 = e.pts[k + 2];
-          if (k === 0) knob(a);
-          if (!c2 || Math.abs((b[0] - a[0]) * (c2[1] - b[1]) - (b[1] - a[1]) * (c2[0] - b[0])) > 0.07 * l * Math.hypot(c2[0] - b[0], c2[1] - b[1])) knob(b);
-        }
-        // (A loop's way back needs an id of its own: both ways run between the same junction.)
+        const kind = surface(e.hw);
+        pave(kind, e.pts, (k) => { const r = (e.widths?.[k] ?? e.width) / 2; return [r, r]; });
+        // ("c" keeps the id apart from a built street's between the same two junctions. A
+        // loop's way back needs an id of its own: both ways run between the same junction.)
         const raw = (u: string, v: string, pts: Point2[], back = false): RawStreetEdge => ({
-          id: `${u}>${v}>${e.n}${back && u === v ? 'b' : ''}`, u, v, hw: e.hw, name: e.name, oneway: e.oneway, lanes: null, maxspeed: null,
+          id: `c${u}>${v}>${e.n}${back && u === v ? 'b' : ''}`, u, v, hw: e.hw, name: e.name, oneway: e.oneway, lanes: null, maxspeed: null,
           width: e.width, bridge: e.bridge, ...(e.tunnel ? { tunnel: true } : {}), ...(kind === 'road' ? { surface: 'asphalt' } : {}), pts,
         });
-        if (CAR_ROADS.has(e.hw)) {
+        if (e.drive) {
           drive.push(raw(e.u, e.v, e.pts));
           if (!e.oneway) drive.push(raw(e.v, e.u, [...e.pts].reverse(), true));
         }
-        if (!NO_WALKING.has(e.hw)) walk.push(raw(e.u, e.v, e.pts));
+        if (e.walk) walk.push(raw(e.u, e.v, e.pts));
       }
+    }
+    // The built map's streets that run on out here: the same edges its own tiles list
+    // (one id, so the graphs take them once), and their surface from the map's edge on,
+    // as wide as it is inside. A car road's walking edge lies on a surface already.
+    const laid = new Set<string>();
+    for (const s of await this.stubsNear(box, pad)) {
+      const e = s.edge, [left, right] = paved(e);
+      const here = s.outside.filter((pts) => cutLine(pts, [x0 - pad, y0 - pad, x1 + pad, y1 + pad], true).length);
+      if (!here.length) continue;
+      (s.graph === 'drive' ? drive : walk).push(e);
+      // Once for the two directions of a street (but two streets may join the same two junctions).
+      const first = e.pts[0], last = e.pts[e.pts.length - 1], back = e.u > e.v || (e.u === e.v && first[0] > last[0]);
+      const pair = `${back ? e.v : e.u}|${back ? e.u : e.v}|${e.pts.length}|${e.pts[back ? e.pts.length - 2 : 1]}`;
+      if (laid.has(pair) || (s.graph === 'walk' && CAR_ROADS.has(e.hw))) continue;
+      laid.add(pair);
+      for (const pts of here) pave(surface(e.hw), pts, () => [left, right]);
     }
 
     // Unmapped ground is farmland; what OSM maps goes over it.
