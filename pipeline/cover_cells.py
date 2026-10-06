@@ -32,6 +32,7 @@ MARGIN = 16.0   # m of the neighbouring tiles worked out with a tile
 SIGMA = 2.5     # m: a cell's surroundings (about the 60 m2 of the first version's pieces)
 WIDE = 4.0      # m: the wider surroundings the model also sees
 NEAR = 8.0      # m: distances to buildings, streets, rails and green are only told apart up to here
+ROOM = 4.0      # m from a building within which canopy is garden, and no single tree is planted
 VOTE = 21       # cells: the most common class within this window wins (about 10 m)
 # The reach of everything above must stay inside the margin, or the tiles of an edge could
 # disagree: surroundings (2.4 sigma), then the vote, then the smoothing of the outline.
@@ -181,6 +182,9 @@ def classify(P, mask, near=None, model=None, height=True):
     C, m = cells(P, mask)
     L = local(C, m, near)
     cls = material(rules(L, height), L, model)
+    # A crown close to a house is not a wood: the game would plant full-grown trees into a
+    # courtyard a few metres wide, through its roofs. Green there is drawn as garden.
+    cls[(cls == CLASSES.index("trees")) & (L["d_building"] < ROOM)] = CLASSES.index("grass")
     cls[~m] = -1
     return cls
 

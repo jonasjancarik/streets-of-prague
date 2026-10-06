@@ -51,7 +51,7 @@ def hand_maps(area, meta, model):
     for (i, j) in hand_tiles():
         t = G.tile_json(area, i, j)
         around = {(di, dj): G.tile_json(area, i + di, j + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1) if di or dj}
-        P, mask, cls, smooth, ext = G.tile_classes(area, meta, t, around, fetch=kept_fetch, model=model)
+        P, mask, cls, smooth, ext, _ = G.tile_classes(area, meta, t, around, fetch=kept_fetch, model=model)
         M = round(cover_cells.MARGIN / cover_cells.CELL)
         out[(i, j)] = (cls[M:-M, M:-M], smooth[M:-M, M:-M])
     return out

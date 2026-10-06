@@ -1093,8 +1093,9 @@ def tile_classes(area, meta, t, around=None, fetch=None, infrared=True, model="k
         return ()
     cir = joined(CIR, "cir", area, t, around, fetch)[0] if infrared else None
     P = cover_cells.measure(rgb, cir, ipr_dsm(area, ext, RES, cache=False), terrain_wide(area, meta, t, ext, RES), infrared)
-    cls = cover_cells.classify(P, mask, near_masks(ext, tiles), cover_cells.load_model() if model == "kept" else model)
-    return P, mask, cls, cover_cells.voted(cls), ext
+    near = near_masks(ext, tiles)
+    cls = cover_cells.classify(P, mask, near, cover_cells.load_model() if model == "kept" else model)
+    return P, mask, cls, cover_cells.voted(cls), ext, near
 
 
 def tile_cover(area, meta, t, around=None, fetch=None, infrared=True, model="kept"):
@@ -1105,18 +1106,25 @@ def tile_cover(area, meta, t, around=None, fetch=None, infrared=True, model="kep
     got = tile_classes(area, meta, t, around, fetch, infrared, model)
     if not got:
         return None if got is None else {"areas": {}, "trees": []}
-    P, mask, cls, smooth, ext = got
+    P, mask, cls, smooth, ext, near = got
     x0, _, _, y1 = ext["box"]
     areas = cover_cells.polygons(smooth, (x0, y1), t["box"])
-    # Single trees: the tops of the canopy over bare ground, except where the canopy is a wood now.
+    # Single trees: the tops of the canopy over bare ground, except where the canopy is a wood
+    # now, and only with room to stand: a crown reaching over a wall into a street or filling a
+    # small courtyard gets no tree (the game's trees are full-grown).
     canopy = (P["ndsm"] > 3) & (P["ndvi"] > 0.15) & mask
+    room = np.ones(smooth.shape, bool)
+    for kind, least in (("building", cover_cells.ROOM), ("road", 1.5)):
+        if near[kind].any():
+            room &= ndimage.distance_transform_edt(~near[kind]) * CELL >= least
     peaks = peak_local_max(np.where(canopy, ndimage.gaussian_filter(P["ndsm"], 2), 0), min_distance=int(4 / RES), threshold_abs=3)
     f, wood = round(CELL / RES), cover_cells.CLASSES.index("trees")
     bx0, by0, bx1, by1 = t["box"]
     lone = []
     for r, c in peaks:
         x, y = x0 + (c + 0.5) * RES, y1 - (r + 0.5) * RES
-        if bx0 <= x < bx1 and by0 <= y < by1 and smooth[min(r // f, smooth.shape[0] - 1), min(c // f, smooth.shape[1] - 1)] != wood:
+        cell = min(r // f, smooth.shape[0] - 1), min(c // f, smooth.shape[1] - 1)
+        if bx0 <= x < bx1 and by0 <= y < by1 and smooth[cell] != wood and room[cell]:
             lone.append([round(x, 1), round(y, 1)])
     return {"areas": areas, "trees": lone}
 
