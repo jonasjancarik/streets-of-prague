@@ -34,7 +34,8 @@ const hash = (a: number, b: number, k: number) => {
 
 class Out {
   pos: number[] = []; nor: number[] = []; col: number[] = []; fac: number[] = [];
-  constructor(private ground: (x: number, y: number) => number) {}
+  private ground: (x: number, y: number) => number;
+  constructor(ground: (x: number, y: number) => number) { this.ground = ground; }
   // A triangle facing `want`'s side. `w`: the facade attribute's fourth number (BLANK for
   // bare plaster on upright faces, a roof material on the others).
   tri(a: V3, b: V3, c: V3, want: V3, rgb: Rgb, w: number) {
