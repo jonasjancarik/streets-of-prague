@@ -2379,7 +2379,7 @@ async function main() {
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300, testkit?.cam ? Infinity : viewRadius() + world.drawBeyond),
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y),
-    streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null,
+    streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     grid, boats, ferries, pid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     recovering: () => wastedT > 0,

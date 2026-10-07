@@ -92,7 +92,12 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   line and reports `{ arrived, seconds, jump, strayed }` (`jump`: the biggest change in
   the ground's height from one sixth of a second to the next). `t.countryside()`:
   whether the game was opened with `?countryside` (`--extra "&countryside"`); the
-  scenario `countryside-edge` needs it and skips itself without.
+  scenarios `countryside-edge`, `-traffic`, `-taxi` and `-police` need it and skip
+  themselves without.
+- `t.orderTaxi()` orders an app taxi on foot, `t.taxi()` says how it stands (`state`,
+  `near`, `to`), `t.boardTaxi()` gets in, `t.taxiTo(n)` picks the n-th place of its list.
+  `t.probe()` also gives `traffic` and `people` (how many are about) and `place` (the
+  last title shown for the part of town or the village).
 - `t.wait(seconds, controls)`: runs the world in 1/60 s steps with
   `{ move, turn, run, brake, jump, aim }` held (the live loop pauses meanwhile). `aim`
   is the touch stick: `{ h, mag }`, a heading in the game's radians (0 east, anticlockwise).
