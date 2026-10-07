@@ -392,6 +392,9 @@ the roofs and from the street.
   rules and pictures: `docs/evidence/roof-windows/`. What is left is mostly chimney
   tops the mesh's geometry doesn't show. `mesh_colours.py <area> --windows-only` finds
   the windows again without measuring colours.
+  Run for the city on 7 October (33 minutes, 5 jobs, on a busy machine): 201,955 roof
+  windows before, 104,700 after. The map shows them once `ipr_buildings.py praha` has
+  been run with that table.
 - **Shaded walls: tried, not worth it.** On 604 buildings seen both in the sun and in
   the shade (40 tiles), a wall's colour guessed from its shaded side misses by ΔE 14.0
   with the ground's sun/shade ratio as a calibration and 14.2 without; another
