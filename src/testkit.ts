@@ -3,6 +3,8 @@ import { courierLook } from './figures.ts';
 import { posts } from './posts.ts';
 import type { Post } from './posts.ts';
 import type { Point2 } from './map/geo.ts';
+import { segDist } from './network.ts';
+import type { DriveEdge, DriveGraph } from './network.ts';
 import type { Wallet } from './money.ts';
 import type { Police } from './police.ts';
 import type { Health } from './guns.ts';
@@ -72,6 +74,9 @@ interface Game {
   grid: { at: (x: number, y: number) => number };
   steps: (x: number, y: number, r: number) => { edges: StepEdge[]; crossings: { x: number; y: number; dx: number; dy: number; drop: number; hw: string }[] };
   ground: (x: number, y: number) => number;
+  streets: DriveGraph;
+  // Whether the countryside past the map's edge is being made (?countryside).
+  countryside: () => boolean;
   boats: Boats;
   ferries: Ferries;
   pid: { state: string | null; buy: (now: number) => boolean };
@@ -457,6 +462,86 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     boardBoat() {
       if (g.mode() === 'foot') g.enterOrExit();
       return g.mode() === 'boat';
+    },
+
+    // Whether the game makes countryside past the map's edge (it was opened with ?countryside).
+    countryside() { return g.countryside(); },
+
+    // The shortest way by car from the street nearest one place to the street nearest
+    // another, through the streets loaded now (those within some 700 m of you): its
+    // length in metres and its line as [lat, lon] points, or null where the streets
+    // don't join up.
+    route(from: Where, to: Where): { length: number; line: Point2[] } | null {
+      const nearest = (w: Where) => {
+        const [x, y] = kit.toLocal(w);
+        let best: DriveEdge | null = null, at = Infinity;
+        for (const e of g.streets.edges) {
+          for (let i = 0; i < e.pts.length - 1; i++) {
+            const d = segDist(x, y, e.pts[i], e.pts[i + 1]);
+            if (d < at) { at = d; best = e; }
+          }
+        }
+        return best;
+      };
+      const first = nearest(from), last = nearest(to);
+      if (!first || !last) return null;
+      // Dijkstra over the edges, from the first street (either way along it) to the last.
+      const starts = [first, ...(first.twin ? [first.twin] : [])], goals = new Set([last, ...(last.twin ? [last.twin] : [])]);
+      const cost = new Map<DriveEdge, number>(starts.map((e) => [e, 0])), came = new Map<DriveEdge, DriveEdge>(), open = [...starts], done = new Set<DriveEdge>();
+      let b: DriveEdge | null = null;
+      while (open.length) {
+        open.sort((p, q) => cost.get(q)! - cost.get(p)!);
+        const e = open.pop()!;
+        if (goals.has(e)) { b = e; break; }
+        if (done.has(e)) continue;
+        done.add(e);
+        for (const f of g.streets.out.get(e.v) || []) {
+          const c = cost.get(e)! + f.path.length;
+          if (c < (cost.get(f) ?? Infinity)) { cost.set(f, c); came.set(f, e); open.push(f); }
+        }
+      }
+      if (!b) return null;
+      const edges = [b];
+      while (came.has(edges[0])) edges.unshift(came.get(edges[0])!);
+      const line: Point2[] = [];
+      for (const e of edges) for (const [x, y] of e.pts) { const [lon, lat] = g.toLonLat(x, y); line.push([lat, lon]); }
+      return { length: round(edges.reduce((sum, e) => sum + e.path.length, 0)), line };
+    },
+
+    // Drives your car along a line of [lat, lon] points at about this speed, steering as
+    // the touch stick does. Says whether it got to the end, how long it took, the biggest
+    // change in the ground's height under the car from one sixth of a second to the next
+    // (`jump`, metres) and how far it strayed from the line (`strayed`, metres).
+    async follow(line: Point2[], kmh = 40) {
+      const c = g.car();
+      if (!c) throw new Error('Not in a car');
+      const pts = line.map((p) => kit.toLocal(p));
+      let length = 0;
+      for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      const was = kit.paused;
+      kit.paused = true;
+      let next = 1, jump = 0, strayed = 0, seconds = 0, last = g.ground(c.x, c.y);
+      try {
+        for (const limit = (length / (kmh / 3.6)) * 3 + 20; next < pts.length && seconds < limit; seconds += 1 / 6) {
+          // The point to steer for: the first one still more than a few car lengths ahead.
+          while (next < pts.length - 1 && Math.hypot(pts[next][0] - c.x, pts[next][1] - c.y) < 9) next++;
+          if (next === pts.length - 1 && Math.hypot(pts[next][0] - c.x, pts[next][1] - c.y) < 6) { next++; break; }
+          const h = Math.atan2(pts[next][1] - c.y, pts[next][0] - c.x), fast = Math.hypot(c.vx, c.vy) > kmh / 3.6;
+          for (let i = 0; i < 10; i++) g.simulate(1 / 60, { move: fast ? 0 : 1, aim: { h, mag: 1 } });
+          const now = g.ground(c.x, c.y);
+          jump = Math.max(jump, Math.abs(now - last));
+          last = now;
+          let off = Infinity;
+          for (let i = Math.max(0, next - 3); i < Math.min(pts.length - 1, next + 1); i++) off = Math.min(off, segDist(c.x, c.y, pts[i], pts[i + 1]));
+          strayed = Math.max(strayed, off);
+          // The tiles ahead: headless, the drive runs faster than they would stream in.
+          if (Math.round(seconds * 6) % 12 === 0) await g.loaded(c.x, c.y);
+          if (kit.watch || Math.round(seconds * 6) % 3 === 0) await frame();
+        }
+      } finally {
+        kit.paused = was;
+      }
+      return { arrived: next >= pts.length, seconds: round(seconds), jump: round(jump, 2), strayed: round(strayed) };
     },
 
     // Your car (or c) going at this speed along the heading.

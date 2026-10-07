@@ -86,6 +86,13 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.push(kmh, heading?)`: sets your car going. `t.post(r)`: the nearest standing
   lamp or pole. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
   on a run clear of walls and other cars. `t.runway(heading)`: metres to the first wall.
+- `t.route(from, to)`: the shortest way by car through the streets loaded now (those
+  within some 700 m of you): `{ length, line }`, the line as `[lat, lon]` points, or null
+  where the streets don't join up. `t.follow(line, kmh)` drives your car along such a
+  line and reports `{ arrived, seconds, jump, strayed }` (`jump`: the biggest change in
+  the ground's height from one sixth of a second to the next). `t.countryside()`:
+  whether the game was opened with `?countryside` (`--extra "&countryside"`); the
+  scenario `countryside-edge` needs it and skips itself without.
 - `t.wait(seconds, controls)`: runs the world in 1/60 s steps with
   `{ move, turn, run, brake, jump, aim }` held (the live loop pauses meanwhile). `aim`
   is the touch stick: `{ h, mag }`, a heading in the game's radians (0 east, anticlockwise).
