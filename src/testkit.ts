@@ -352,15 +352,17 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       g.fires.check(c);
     },
     // The traffic car nearest to you with a driver in it, and whether it still has one.
-    // The nearest car in traffic. `roomy`: one with open ground at its driver's door and
-    // no other car within reach of it, so E there means that door.
+    // The nearest car in traffic. `roomy`: one with open ground at its driver's door, no
+    // other car within reach of it and no tram near enough to board, so E there means
+    // that door; and not a police car, whose officer gets out and comes after you
+    // instead of being pulled out.
     trafficCar(roomy = false) {
       const m = g.me();
       const room = (c: Car) => {
         const door = c.doors.find((d) => d.n === 1);
         if (!door) return false;
         const [x, y] = c.beside(door, 1);
-        return g.grid.at(x, y) === 0 && g.carsNear(x, y, 8).every((o) => o === c || o.gap(x, y) > 2);
+        return c.type !== 'police' && g.grid.at(x, y) === 0 && g.carsNear(x, y, 8).every((o) => o === c || o.gap(x, y) > 2) && !g.tramsNear(x, y, 25).length;
       };
       return g.traffic.agents.map((k) => k.car).filter((c) => !c.two && (!roomy || room(c))).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null;
     },
