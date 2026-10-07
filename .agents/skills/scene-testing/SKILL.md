@@ -106,11 +106,13 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   is the touch stick: `{ h, mag }`, a heading in the game's radians (0 east, anticlockwise).
 - `t.probe()`: position, speed, car type/damage/burning/broken lamps/braking/ram, money, stars, police cars,
   health, ticket, time, weather, date.
-- `t.camera({ at, height, tilt, heading })` looks from anywhere without moving you
+- `t.camera({ at, height, tilt, heading, level })` looks from anywhere without moving you
   (tilt 0 = straight down, up to 75); `height` is metres above the terrain at the
   target. Both the eye and the look-at point follow that terrain. When comparing
   terrain changes, use an unaffected target and record the actual eye position and
   orientation: identical camera options alone do not establish an identical pose.
+  The picture's top is north whatever the heading, so a tilted view facing east or west
+  comes out on its side: pass `level: true` to keep the horizon level.
   `t.camera(null)` follows you again.
   `t.view(zoom)` zooms the ordinary camera.
 - `t.aimAt(post, back)` checks walls, cars and the current tram collision circles
