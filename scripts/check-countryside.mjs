@@ -138,9 +138,26 @@ for (const e of [...stubs.drive, ...stubs.walk]) for (const [px, py] of walked(e
   const i = Math.floor((px + ox) / T), j = Math.floor((py + oy) / T);
   for (let a = i - 1; a <= i + 1; a++) for (let b = j - 1; b <= j + 1; b++) if (a < 0 || b < 0 || a >= cols || b >= rows) wanted.add(`${a}_${b}`);
 }
+// The map's own list of those streets (leaving.json, pipeline/layers.py), where it has
+// one: the same streets as its rim tiles give, and the same countryside tiles from it.
+const leavingFile = 'public/data/praha_now/leaving.json';
+const listed = index.leaving ? JSON.parse(fs.readFileSync(leavingFile, 'utf8')) : null;
+if (listed) {
+  for (const g of ['drive', 'walk']) {
+    assert.deepEqual(new Set(listed[g].map((e) => e.id)), new Set(stubs[g].map((e) => e.id)), `leaving.json's ${g} streets are not the rim tiles'`);
+    for (const e of listed[g]) assert.deepEqual(e, built[g].get(e.id), `leaving.json's edge ${e.id} is not the tile's`);
+  }
+  console.log(`leaving.json lists the same ${listed.drive.length + listed.walk.length} edges (${(fs.statSync(leavingFile).size / 1024).toFixed(0)} kB)`);
+} else console.log('this map has no leaving.json (built before pipeline/layers.py wrote it): the rim tiles are read instead');
+const fromList = listed && new Countryside(async (z, x, y) => (await archive.getZxy(z, x, y))?.data, async () => { throw new Error('a rim tile was read although the map has leaving.json'); }, setup, 15, async () => listed);
 const seamLand = make(), made = new Map();
 let t0 = performance.now();
 for (const k of wanted) { const [i, j] = k.split('_').map(Number); made.set(k, await seamLand.tile(i, j)); }
+if (fromList) {
+  let same = 0;
+  for (const k of [...wanted].filter((_, q) => q % 6 === 0)) { const [i, j] = k.split('_').map(Number); assert.deepEqual(await fromList.tile(i, j), made.get(k), `tile ${k} differs when made from leaving.json`); same++; }
+  console.log(`${same} of those tiles made from leaving.json are the same tiles`);
+}
 console.log(`${made.size} countryside tiles along them in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
 
 const all = { drive: new Map(), walk: new Map() }; // generated edges (not the built ones the tiles pass on)

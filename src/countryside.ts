@@ -6,7 +6,8 @@
 // and under Node (scripts/check-countryside.mjs).
 //
 // Near the built map its streets are joined to the built ones (countrysideJoin.ts): the
-// built map's rim tiles say which of its streets run on outside.
+// map says which of its streets run on outside (leaving.json; on a map built before
+// that file, its rim tiles).
 //
 // The work is in three steps, the first two kept per vector tile:
 //   raw    decoded and cut to the vector tile: road lines in its own units, land,
@@ -52,6 +53,8 @@ function settingWidth(hw: string, pts: Point2[], buildings: { at: Point2 }[]): n
 export type VectorSource = (z: number, x: number, y: number) => Promise<ArrayBuffer | undefined>;
 // The street graphs of one of the built map's tiles (its JSON), or nothing where it has none.
 export type BuiltSource = (i: number, j: number) => Promise<{ drive?: RawStreetEdge[]; walk?: RawStreetEdge[] } | undefined>;
+// The built map's streets that run on outside it (its leaving.json).
+export type LeavingSource = () => Promise<{ drive?: RawStreetEdge[]; walk?: RawStreetEdge[] }>;
 
 const E = 4096; // a vector tile's width in its own units
 const WATER_LAP = 4; // units water reaches past its vector tile, so the pieces join without a gap
@@ -207,12 +210,17 @@ function guessHeight(m2: number, seed: number) {
   return Math.min(14, 6 + Math.sqrt(m2) / 15 + uniform(0, 2));
 }
 
+// Built streets in one order whichever way they were read: by graph, then id.
+const inOrder = (a: Stub, b: Stub) => (a.graph !== b.graph ? (a.graph < b.graph ? -1 : 1) : a.edge.id < b.edge.id ? -1 : a.edge.id > b.edge.id ? 1 : 0);
+
 export class Countryside {
   private readonly proj: proj4.Converter;
   private readonly raws = new Map<string, Promise<Raw | null>>();
   private readonly loose = new Map<string, Promise<Chunk | null>>();
   private readonly graphs = new Map<string, Promise<Chunk | null>>();
   private readonly rims = new Map<string, Promise<Stub[]>>();
+  private listed: Promise<Stub[]> | null = null;
+  private readonly leaving?: LeavingSource;
   private readonly rect: Bounds;
   readonly stats = { fetched: 0, bytes: 0 };
   private readonly source: VectorSource;
@@ -220,9 +228,10 @@ export class Countryside {
   private readonly setup: CountrysideSetup;
   private readonly zoom: number;
 
-  constructor(source: VectorSource, built: BuiltSource, setup: CountrysideSetup, zoom = 15) {
+  constructor(source: VectorSource, built: BuiltSource, setup: CountrysideSetup, zoom = 15, leaving?: LeavingSource) {
     this.source = source;
     this.built = built;
+    this.leaving = leaving;
     this.setup = setup;
     this.zoom = zoom;
     const [lon0, lat0] = setup.centre;
@@ -257,25 +266,28 @@ export class Countryside {
   private unjoined(X: number, Y: number) { return this.kept(this.loose, `${X}_${Y}`, () => this.makeGraph(X, Y)); }
   private graph(X: number, Y: number) { return this.kept(this.graphs, `${X}_${Y}`, () => this.joinGraph(X, Y)); }
 
+  // Those of a list of the built map's streets that run on outside it.
+  private stubsOf(t: { drive?: RawStreetEdge[]; walk?: RawStreetEdge[] } | undefined): Stub[] {
+    const stubs: Stub[] = [];
+    for (const graph of ['drive', 'walk'] as const) {
+      for (const edge of t?.[graph] ?? []) {
+        const outside = cutLine(edge.pts, this.rect, false).map((piece) => piece.pts);
+        if (!outside.length) continue;
+        const out = ([x, y]: Point2) => x < this.rect[0] || x > this.rect[2] || y < this.rect[1] || y > this.rect[3];
+        const ends = ([[edge.u, edge.pts[0]], [edge.v, edge.pts[edge.pts.length - 1]]] as [string, Point2][])
+          .filter(([, at]) => out(at)).map(([id, at]) => ({ id, at }));
+        stubs.push({ graph, edge, outside, box: boxOf(outside.flat()), ends });
+      }
+    }
+    return stubs;
+  }
+
   // The streets of one of the built map's rim tiles that run on outside it.
   private rim(i: number, j: number): Promise<Stub[]> {
     const k = `${i}_${j}`;
     let hit = this.rims.get(k);
     if (!hit) {
-      hit = this.built(i, j).then((t) => {
-        const stubs: Stub[] = [];
-        for (const graph of ['drive', 'walk'] as const) {
-          for (const edge of t?.[graph] ?? []) {
-            const outside = cutLine(edge.pts, this.rect, false).map((piece) => piece.pts);
-            if (!outside.length) continue;
-            const out = ([x, y]: Point2) => x < this.rect[0] || x > this.rect[2] || y < this.rect[1] || y > this.rect[3];
-            const ends = ([[edge.u, edge.pts[0]], [edge.v, edge.pts[edge.pts.length - 1]]] as [string, Point2][])
-              .filter(([, at]) => out(at)).map(([id, at]) => ({ id, at }));
-            stubs.push({ graph, edge, outside, box: boxOf(outside.flat()), ends });
-          }
-        }
-        return stubs;
-      });
+      hit = this.built(i, j).then((t) => this.stubsOf(t));
       hit.catch(() => { if (this.rims.get(k) === hit) this.rims.delete(k); });
       this.rims.set(k, hit);
     }
@@ -285,6 +297,15 @@ export class Countryside {
   // The built streets that pass through a box outside the built map (within `pad`),
   // each once, in an order that doesn't depend on who asks.
   private async stubsNear(box: Bounds, pad: number): Promise<Stub[]> {
+    if (this.leaving) {
+      // The map's own list, read once.
+      if (!this.listed) {
+        const listed = this.listed = this.leaving().then((t) => this.stubsOf(t).sort(inOrder));
+        listed.catch(() => { if (this.listed === listed) this.listed = null; });
+      }
+      return (await this.listed).filter((s) => meet(s.box, box, pad));
+    }
+    // A map without the list: its rim tiles within REACH of the box.
     if (!meet(box, this.rect, REACH)) return [];
     const { tile: T, origin: [ox, oy], cols, rows } = this.setup;
     const span = (lo: number, hi: number, o: number, n: number) => [Math.max(0, Math.floor((lo - REACH + o) / T)), Math.min(n - 1, Math.floor((hi + REACH + o) / T))];
@@ -297,7 +318,7 @@ export class Countryside {
       if (seen.has(k) || !meet(s.box, box, pad)) return false;
       seen.add(k);
       return true;
-    });
+    }).sort(inOrder);
   }
 
   private async readRaw(X: number, Y: number): Promise<Raw | null> {

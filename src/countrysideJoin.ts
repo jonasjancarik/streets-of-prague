@@ -7,8 +7,9 @@
 import type { Bounds, Point2 } from './map/geo.ts';
 import type { RawStreetEdge } from './network.ts';
 
-// How far from a vector tile the built map's rim is searched for streets that reach
-// it. The longest in `praha` runs 5.2 km out (scripts/check-countryside.mjs checks it).
+// On a map without leaving.json: how far from a vector tile the built map's rim is
+// searched for streets that reach it. The longest in `praha` runs 5.2 km out
+// (scripts/check-countryside.mjs checks it).
 export const REACH = 6000;
 const JOIN = 10; // metres from a built street's outer end to the generated junction that is the same one
 const SPLIT = 4; // … or to a generated street passing it with no junction there

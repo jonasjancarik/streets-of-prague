@@ -19,7 +19,7 @@ The first four are kept per chunk in pipeline/.cache/layers/<area>/<layer>/<ci>_
 (tile key → what the layer has there, plus what the chunk adds to the whole area,
 such as tram rails and street names); ipr and terrain write their .bin files straight
 into the tiles and keep the rest in <layer>.json. Every step ends with assemble(),
-which writes tiles/<i>_<j>.json, index.json and names.json in public/data/<area>_now/
+which writes tiles/<i>_<j>.json, index.json, names.json and leaving.json in public/data/<area>_now/
 from the layers, and leaves files whose content hasn't changed alone (so a deploy only
 sends what did). Files of tiles no longer in the index are removed.
 
@@ -431,6 +431,7 @@ def assemble(area: str, strict=False) -> dict:
     ipr = ipr if ipr and ipr.get("tile") == meta["tile"] else None
     terrain = terrain if terrain and terrain.get("tile") == meta["tile"] else None
     listed, rails, names, written = [], [], {}, 0
+    outward = {"drive": {}, "walk": {}}
     tunnels = tunnel_shapes(terrain)
     on_levels = None
     if terrain and terrain.get("index", {}).get("wayLevels"):
@@ -500,6 +501,7 @@ def assemble(area: str, strict=False) -> dict:
         if terrain and terrain.get("terraces", {}).get(k):
             t["terraces"] = terrain["terraces"][k]
         written += write(out_dir / "tiles" / f"{k}.json", dumps(t))
+        leaving(t, meta, outward)
         # Whether it has IPR's buildings, so the game can fetch them with the rest.
         listed.append([i, j, sum(b["own"] for b in t["buildings"]), *([int(bool(got))] if ipr else [])])
     index = {
@@ -510,6 +512,8 @@ def assemble(area: str, strict=False) -> dict:
         "size": meta["size"], "origin": meta["origin"],
         "tile": meta["tile"], "cols": meta["cols"], "rows": meta["rows"], "tiles": listed, "rails": rails, "graphs": True,
         "parkingInTiles": meta["parking"],
+        # leaving.json lists the streets that run on past the map's edge.
+        "leaving": True,
     }
     if ipr:
         index["ipr"] = True
@@ -535,6 +539,7 @@ def assemble(area: str, strict=False) -> dict:
         print(f"{young_out_of_date} tiles changed since their young woods were made, and have none: run young_woods.py build {area}")
     write(out_dir / "index.json", dumps(index))
     write(out_dir / "names.json", dumps({k: v[1:] for k, v in sorted(names.items())}))
+    write(out_dir / "leaving.json", dumps({graph: list(edges.values()) for graph, edges in outward.items()}))
     print(f"{area}: {len(listed)} tiles, {written} changed → {out_dir.name}/")
     remove_stale(out_dir / "tiles", keys)
     build_cache.report_times(f"{area} assemble", {"total": time.perf_counter() - started})
@@ -542,6 +547,21 @@ def assemble(area: str, strict=False) -> dict:
 
 
 TILE_FILE = re.compile(r"^(-?\d+_-?\d+)\.[a-z0-9.]+$")
+
+
+def leaving(t: dict, meta: dict, into: dict):
+    """Add to `into` the streets of a tile on the map's rim that run on outside the map:
+    each goes on to its next junction, and the countryside the game makes out there
+    (src/countrysideJoin.ts) joins its own streets to them. The edges are the tile's
+    own, so the game takes them as the same ones."""
+    if not (t["i"] in (0, meta["cols"] - 1) or t["j"] in (0, meta["rows"] - 1)):
+        return
+    ox, oy = meta["origin"]
+    x1, y1 = meta["cols"] * meta["tile"] - ox, meta["rows"] * meta["tile"] - oy
+    for graph in ("drive", "walk"):
+        for e in t.get(graph) or []:
+            if any(x < -ox or x > x1 or y < -oy or y > y1 for x, y in e["pts"]):
+                into[graph].setdefault(e["id"], e)
 
 
 def remove_stale(tiles_dir: Path, keys: set):

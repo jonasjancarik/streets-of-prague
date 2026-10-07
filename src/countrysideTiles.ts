@@ -29,6 +29,7 @@ export class CountrysideTiles {
     };
     const [w, s, e, n] = index.bbox_wgs84;
     this.ask({ type: 'open', url: new URL(countrysideUrl, location.href).href, tiles: new URL(dataUrl(area, 'tiles/'), location.href).href,
+      leaving: index.leaving ? new URL(dataUrl(area, 'leaving.json'), location.href).href : null,
       setup: { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows } })
       .then((r) => { if ('box' in r) this.box = r.box; })
       .catch((err) => console.warn('The countryside past the map is not available', err));
