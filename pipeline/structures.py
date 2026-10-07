@@ -52,6 +52,9 @@ COVER = 8.0  # m of ground over a tunnel, away from its portals
 COVER_SLOPE = 0.25  # how quickly a tunnel goes under that cover from a portal
 SHALLOW = 2.5  # m: a tunnel that never gets this far under the ground is just a passage on it
 CLEAR = 5.5  # m between a bridge or tunnel and one crossing it on another layer
+WATER_CLEAR = 5.5  # m between open water and a bridge over it, away from the banks
+WATER_SLOPE = 0.08  # how quickly a bridge rises to that from where it leaves the ground
+STAIRS_SLOPE = 0.5  # and how quickly stairs do
 BESIDE = 10.0  # m: two structures this close share lattice points (PAD, and a cell's diagonal)
 SAME = 3.0  # m: two structures further apart in height than this can't share a level
 STAIRS_SAME = 1.0  # m: the same for stairs (which have their own profile) and what's beside them
@@ -265,6 +268,7 @@ class Net:
 
     def __init__(self, ways):
         self.xy, self.key, self.adj = [], {}, []
+        self.climb = []  # per point: (neighbour, how far a way can rise between the two)
         self.kind = []
         self.paths = []  # per way: its points, in order
         self._non_bridge_seeds = []
@@ -278,10 +282,13 @@ class Net:
                     n = max(1, math.ceil(math.hypot(bx - ax, by - ay) / DENSE))
                     for k in range(1, n):
                         path.append(self.node(("d", w["id"], i, k), (ax + (bx - ax) * k / n, ay + (by - ay) * k / n), w["kind"]))
+            rate = STAIRS_SLOPE if w.get("hw") == "steps" else WATER_SLOPE
             for a, b in zip(path, path[1:]):
                 d = math.dist(self.xy[a], self.xy[b]) or 0.01
                 self.adj[a].append((b, d))
                 self.adj[b].append((a, d))
+                self.climb[a].append((b, d * rate))
+                self.climb[b].append((a, d * rate))
             self.paths.append(path)
             if path and w['kind'] != 'bridge':
                 self._non_bridge_seeds.append(path[0])
@@ -294,8 +301,25 @@ class Net:
             i = self.key[key] = len(self.adj)
             self.xy.append(tuple(xy))
             self.adj.append([])
+            self.climb.append([])
             self.kind.append(kind)
         return i
+
+    def rise(self, fixed):
+        """How far above its ends on the ground a way can have got at each point: a
+        street's grade along streets, a flight of stairs' along stairs."""
+        best = np.full(len(self.adj), np.inf)
+        heap = [(0.0, int(i)) for i in fixed]
+        heapq.heapify(heap)
+        while heap:
+            d, i = heapq.heappop(heap)
+            if d >= best[i]:
+                continue
+            best[i] = d
+            for j, more in self.climb[i]:
+                if d + more < best[j]:
+                    heapq.heappush(heap, (d + more, j))
+        return best
 
     def spread(self, fixed):
         """Harmonic heights for complete bridge components; legacy elsewhere.
@@ -424,6 +448,10 @@ def solve(ways, ground, decks):
     if not len(net.xy):
         return net, []
     T = ground(net.xy[:, 0], net.xy[:, 1])
+    try:  # (on open water: every lattice point round it is the river's)
+        wet = np.isnan(ground(net.xy[:, 0], net.xy[:, 1], dry=True)) & ~np.isnan(T)
+    except TypeError:
+        wet = np.zeros(len(T), dtype=bool)
     fixed = {}
     for w in ways:
         # Only its ends: a way on the ground meeting a bridge halfway along (stairs up
@@ -431,6 +459,10 @@ def solve(ways, ground, decks):
         for k, (n, g) in enumerate(zip(w["nodes"], w["grade"])):
             if g and k in (0, len(w["nodes"]) - 1):
                 i = net.key[("n", n)]
+                # Nothing meets the ground out on the river (stairs inside Branický most's
+                # pier end on it in the map, and held the footway down at the water).
+                if wet[i]:
+                    continue
                 ahead = np.subtract(w["pts"][0], w["pts"][1]) if k == 0 else np.subtract(w["pts"][-1], w["pts"][-2])
                 if w["kind"] == "bridge":
                     # A bridge drawn from past the edge of its wall: the street's last metres,
@@ -490,19 +522,38 @@ def solve(ways, ground, decks):
             fixed[i] = T[i]
     base = dict(fixed)
     near = net.spread(fixed)
+    room = np.minimum(WATER_CLEAR, net.rise(base))  # over open water: what a boat is left
 
-    # Bridges: IPR's deck where it has one.
+    # Bridges: IPR's deck where it has one. (Over open water away from the banks, not a
+    # face that leaves a boat no room: that's a pier's footing or its cap.)
     kind = np.array(net.kind)
     snapped = 0
     for i in np.nonzero(kind == "bridge")[0]:
         if i in fixed or np.isnan(net.h[i]):
             continue
         z = deck_at(decks, *net.xy[i], net.h[i] + 2.0, below=6.0, above=4.0)
-        if not np.isnan(z):
+        if not np.isnan(z) and not (wet[i] and z < T[i] + room[i] - 0.5):
             fixed[i] = z
             snapped += 1
     if snapped:
         near = net.spread(fixed)
+
+    # Bridges over open water clear it, as tunnels go under their cover: IPR has no deck
+    # for a bridge built since its model, or for a footbridge slung under a road bridge,
+    # and one that runs evenly between two low banks skims the river (Dvorecký most 3 m
+    # over the Vltava, the footway under Barrandovský most: no boat got under them).
+    # Not where IPR measured the deck, and not near the banks: a short bridge stays low.
+    over_water = wet & (kind == "bridge")
+    lifted = set()
+    for _ in range(3 if over_water.any() else 0):
+        low = over_water & (net.h < T + room - 0.05) & (near > 0)
+        low[[i for i in fixed if i not in lifted]] = False
+        if not low.any():
+            break
+        for i in np.nonzero(low)[0]:
+            fixed[int(i)] = T[i] + room[i]
+            lifted.add(int(i))
+        net.spread(fixed)
 
     # Tunnels: under the ground, deeper away from their portals.
     tunnel = kind == "tunnel"
@@ -528,7 +579,7 @@ def solve(ways, ground, decks):
     # Smooth out the kinks where one rule hands over to another (a tunnel levelling
     # out under its cover, a bridge joining IPR's deck), over a few tens of metres;
     # the ends on the ground and the crossings stay where they are.
-    keep = set(base) | crossed
+    keep = set(base) | crossed | lifted
     for _ in range(25):
         h = net.h.copy()
         for i, nb in enumerate(net.adj):
@@ -914,6 +965,18 @@ def own_profile(poly, ground, decks, road_tree):
             ends_h = np.array([np.median(h[lo]), np.median(h[hi])])
         else:
             ends_h = np.array([np.median(h)])
+
+    # Where IPR has the bridge itself (a face over most of the outline), its height is
+    # IPR's top, whatever the ends say: a railway bridge's ends are embankments, not
+    # streets, and the streets found near them are the ones passing under it (the bridge
+    # at Holešovice came out 9 m low, on the water).
+    x0, y0, x1, y1 = poly.bounds
+    gx, gy = np.meshgrid(np.arange(math.ceil(x0), x1, 2.0), np.arange(math.ceil(y0), y1, 2.0))
+    inside = shapely.contains_xy(poly, gx, gy)
+    tops = [decks.get((int(round(x)), int(round(y)))) for x, y in zip(gx[inside], gy[inside])]
+    have = [float(t.max()) for t in tops if t is not None]
+    if len(have) >= 10 and len(have) > 0.5 * len(tops):
+        ends_t, ends_h = np.array([0.0]), np.array([float(np.median(have))])
 
     def height(xs, ys):
         if len(ends_t) == 1:
