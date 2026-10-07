@@ -33,7 +33,7 @@ interface Me { x: number; y: number; h: number; onFoot: boolean; inVehicle: bool
 
 export class Inspector {
   phase: 'off' | 'decide' | 'chase' | 'leaving' = 'off';
-  where: 'tram' | 'funicular' | 'street' = 'street';
+  where: 'tram' | 'funicular' | 'ferry' | 'street' = 'street';
   left = 0; // s to decide
   called = false; // the police have been called
   owed = 0; // Kč owed for running off, collected if the police catch you
@@ -53,7 +53,7 @@ export class Inspector {
     banner: (text: string) => void;
   }) {}
 
-  start(where: 'tram' | 'funicular' | 'street', x = 0, y = 0) {
+  start(where: 'tram' | 'funicular' | 'ferry' | 'street', x = 0, y = 0) {
     this.reset();
     telemetry.did('ticket inspection');
     this.phase = 'decide';

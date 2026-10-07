@@ -1,7 +1,7 @@
 import type { Scenario } from '../src/testkit.ts';
 
 export default {
-  title: 'A PID ferry is boarded at its landing, with and without a ticket, and left on the far bank',
+  title: 'A PID ferry is boarded at its landing, with and without a ticket, left on the far bank, and inspected',
   async run(t) {
     t.exit();
     t.time('10:00');
@@ -33,5 +33,25 @@ export default {
       const far = Math.hypot((me.lat - gate[0]) * 111200, (me.lon - gate[1]) * 71500);
       t.check(`ride ${n}: E puts you on the bank by that landing`, me.mode === 'foot' && far < 40, `${me.mode}, ${far.toFixed(0)} m from the gate`);
     }
+    // A third crossing without a ticket, with the inspector sure to come aboard.
+    t.roll = 0;
+    try {
+      // (Three hours on, so the 90-minute ticket of the second ride has run out.)
+      t.time('13:00');
+      await t.wait(1);
+      const money = t.probe().money;
+      const start = await lands(null);
+      await t.go(p5()!.landings[start!].gate);
+      if (!t.check('ride 3: boards without a ticket', t.boardFerry() && !t.ticket().held, JSON.stringify(t.ticket()))) return;
+      for (let k = 0; k < 80 && p5()!.stop !== null; k++) { await t.wait(2); await t.frames(); }
+      for (let k = 0; k < 80 && p5()!.stop === null; k++) { await t.wait(2); await t.frames(); }
+      await t.frames();
+      const check = t.inspection();
+      t.check('ride 3: an inspector checks tickets at the landing', check.phase === 'decide' && check.where === 'ferry', JSON.stringify(check));
+      t.payFine();
+      await t.frames();
+      t.check('ride 3: the fine is paid', t.probe().money < money && t.inspection().phase === 'off', `${money} → ${t.probe().money} Kč`);
+      t.exit();
+    } finally { t.roll = null; }
   },
 } satisfies Scenario;

@@ -59,8 +59,8 @@ How boats pass a weir: through the lock beside it. In a lock and for 150 m beyon
 ends along the same line (the cut to the open river, from OSM's `lock=yes` ways, kept
 in the file as `locks`) a boat may keep 3.6 m from the walls instead of 5 m; the
 chambers are 11 to 12 m wide on the map. One boat at a time sails water narrower than
-14 m to the bank: the other waits in wide water (two that are both already in a cut
-when they meet sail through each other; rare, and not handled). In praha the fairway
+14 m to the bank: the other waits in wide water (each fairway's cuts are worked out once, a boat waits 70 m before one while another
+comes through, and one going down the line gives way to a boat about to enter at the far end). In praha the fairway
 is three stretches: one of 26 km from Modřany through the Smíchov lock and its cut,
 the Štvanice lock and the Podbaba canal to Klecany, and one beyond each end. At the
 Modřany and Klecany weirs the map's water has no lock a boat fits through, so boats
@@ -91,8 +91,10 @@ between its landings by the game's clock, between the timetable's first and last
 sailing; P1 and P2 all year, the others from 1 April to 31 October by the game's date.
 It waits 75 s at each landing instead of keeping the 15 or 20 minutes between sailings.
 Each landing gets a pontoon from the bank to the boat. E by the landing while the boat
-is in; a PID ticket as on a tram (the grace period, then "No ticket"); no inspector
-comes aboard. E at a landing puts you on the bank.
+is in; a PID ticket as on a tram (the grace period, then "No ticket"). Without one, an
+inspector may check you as the boat comes in to a landing, with the chance a tram stop
+has: pay the fine, or get off and run; if the boat sails on while you make up your mind,
+the fine is taken. E at a landing puts you on the bank.
 
 Checked in the game on 6 October 2026 (praha, WebGPU, headless Chrome): `ferry-ride`
 boards P5 at a landing without a ticket (the time to buy one starts) and with one,
