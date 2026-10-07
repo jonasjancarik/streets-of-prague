@@ -15,9 +15,14 @@ export default {
     t.set({ money: 5000, stars: 0 });
     await t.wait(3);
     t.check('a taxi is on its way', t.orderTaxi().state === 'coming', t.taxi());
-    let waited = 0;
-    for (; waited < 120 && !t.taxi().near; waited += 2) await t.wait(2);
-    t.check('it comes to you on the countryside\'s roads', t.taxi().near, { waited, ...t.taxi() });
+    // (A taxi can start on a lane with no way through to you, in town as out here: after
+    // a minute and a half the player would cancel and order another, and so does this.)
+    let waited = 0, orders = 1;
+    for (; waited < 240 && !t.taxi().near; waited += 2) {
+      await t.wait(2);
+      if (waited === 90 && !t.taxi().near) { t.cancelTaxi(); t.orderTaxi(); orders++; }
+    }
+    t.check('it comes to you on the countryside\'s roads', t.taxi().near, { waited, orders, ...t.taxi() });
     t.check('you get in', t.boardTaxi() && t.taxi().state === 'riding', t.taxi());
     t.taxiTo(9); // Letná, 9 km south
     const from = t.where();

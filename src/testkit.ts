@@ -79,7 +79,7 @@ interface Game {
   countryside: () => boolean;
   // The last title shown for the part of town, town or village you came into.
   place: () => string | null;
-  taxi: { state: string; dest: number | null; key(code: string, onFoot: boolean): boolean; near(): boolean; enter(): boolean };
+  taxi: { state: string; dest: number | null; key(code: string, onFoot: boolean): boolean; near(): boolean; enter(): boolean; cancel(): void };
   boats: Boats;
   ferries: Ferries;
   pid: { state: string | null; buy: (now: number) => boolean };
@@ -469,7 +469,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
 
     // Orders a taxi through the first app (T, then 2), on foot. `t.taxi()`: how it stands:
     // 'off', 'coming', 'waiting' (at the kerb for you) or 'riding', whether it is close
-    // enough to get into, and the place it is going to. `t.boardTaxi()` gets in;
+    // enough to get into, and the place it is going to. `t.boardTaxi()` gets in, `t.cancelTaxi()` sends it away;
     // `t.taxiTo(n)` picks the n-th place of its list (1: Old Town Square … 9: Letná).
     orderTaxi() {
       if (g.taxi.state === 'off') g.taxi.key('KeyT', true);
@@ -478,6 +478,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     taxi() { return { state: g.taxi.state, near: g.taxi.near(), to: g.taxi.dest }; },
     boardTaxi() { return g.taxi.enter(); },
+    cancelTaxi() { g.taxi.cancel(); },
     taxiTo(n: number) { g.taxi.key(`Digit${n % 10}`, false); return kit.taxi(); },
 
     // Whether the game makes countryside past the map's edge (it was opened with ?countryside).
