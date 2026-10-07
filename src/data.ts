@@ -9,4 +9,7 @@ export const mapData = { built: '' };
 export const dataUrl = (area: string, path: string) => `${base}${area}_now/${path}`;
 // OpenStreetMap vector tiles (Protomaps' basemap) for the countryside past the built
 // map, read by range requests (countryside.ts): one file beside the map, or on R2.
+// Ground heights for that countryside: Mapzen's terrain tiles in the Terrarium layout,
+// kept as open data at AWS ({z}/{x}/{y}.png is added). Empty: the countryside stays flat.
+export const elevationUrl: string = import.meta.env.VITE_ELEVATION_URL ?? 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/';
 export const countrysideUrl: string = import.meta.env.VITE_COUNTRYSIDE_URL ?? `${base}countryside/central-bohemia.pmtiles`;

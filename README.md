@@ -1276,6 +1276,7 @@ list, with the licences), and the build writes the full licence texts of the bun
 libraries to `dist/licenses.txt` (a small plugin in `vite.config.js`).
 
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
+- The countryside past the map's edge (`?countryside`, plan 021): OpenStreetMap data as vector tiles in [Protomaps](https://protomaps.com/)' basemap layout (one PMTiles file, ODbL), and ground heights from Mapzen's [terrain tiles](https://registry.opendata.aws/terrain-tiles/) kept as open data at AWS ([their sources](https://github.com/tilezen/joerd/blob/master/docs/attribution.md): SRTM, EU-DEM produced using Copernicus data and information funded by the European Union, and others).
 - Tram and metro timetables: [PID / ROPID](https://pid.cz/o-systemu/opendata/), CC BY 4.0, reduced to trips per hour.
 - 3D buildings, bridges and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
 - Landmarks, and the roof and wall colours: photorealistic 3D model of Prague, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh), CC BY.

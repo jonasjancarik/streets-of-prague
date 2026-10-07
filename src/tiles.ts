@@ -34,7 +34,7 @@ import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
-import { edgeGrid } from './countrysideJoin.ts';
+import { blendHeights, edgeGrid } from './countrysideJoin.ts';
 
 interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer | null; ipr: ArrayBuffer | null; levels: ArrayBuffer | null }
 // A bridge (1, 2, …) or tunnel (-1, -2, …) level in a tile: where it is and how high.
@@ -715,7 +715,11 @@ export class TileWorld {
       heights.catch(() => { if (this.edgeHeights.get(k) === heights) this.edgeHeights.delete(k); });
       this.edgeHeights.set(k, heights);
     }
-    return this.edgeHeights.get(k)!.then((from) => edgeGrid(from, n, i, j, cols, rows).buffer as ArrayBuffer);
+    // …and from there out to the hills, where the countryside has them.
+    return Promise.all([this.edgeHeights.get(k)!, this.country?.heights(i, j) ?? null]).then(([from, hills]) => {
+      const flat = edgeGrid(from, n, i, j, cols, rows);
+      return (hills ? blendHeights(flat, hills, n, this.T, i, j, cols, rows) : flat).buffer as ArrayBuffer;
+    });
   }
 
   // Tile keys within r metres of (x, y), nearest first.

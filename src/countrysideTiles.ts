@@ -1,7 +1,7 @@
 // The main thread's side of the countryside past the built map (countryside.ts, plan
 // 021; a prototype behind ?countryside): says which tiles can be made, and asks the
 // worker for them.
-import { countrysideUrl, dataUrl } from './data.ts';
+import { countrysideUrl, dataUrl, elevationUrl } from './data.ts';
 import type { Bounds } from './map/geo.ts';
 import type { MapIndex, TileJSON } from './contracts.ts';
 import type { CountrysideRequest, CountrysideResponse } from './countrysideWorker.ts';
@@ -33,6 +33,7 @@ export class CountrysideTiles {
   private next = 0;
   private places: { x: number; y: number; list: Place[] } | null = null;
   private asking = false;
+  private broken: Error | null = null;
   private readonly index: MapIndex;
 
   constructor(index: MapIndex, area: string) {
@@ -44,16 +45,26 @@ export class CountrysideTiles {
       if ('error' in event.data) job?.reject(new Error(event.data.error));
       else job?.resolve(event.data);
     };
+    // A worker that can't start (its script didn't load) answers nothing: everyone
+    // waiting is told so, and the map ends where it always did.
+    this.worker.onerror = (event) => {
+      this.broken = new Error(`The countryside's worker failed: ${event.message || 'its script did not load'}`);
+      for (const job of this.waiting.values()) job.reject(this.broken);
+      this.waiting.clear();
+    };
     const [w, s, e, n] = index.bbox_wgs84;
     this.opened = this.ask({ type: 'open', url: new URL(countrysideUrl, location.href).href, tiles: new URL(dataUrl(area, 'tiles/'), location.href).href,
+      elevation: elevationUrl && index.terrain ? elevationUrl : null,
       leaving: index.leaving ? new URL(dataUrl(area, 'leaving.json'), location.href).href : null,
-      setup: { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows, size: index.size } })
+      setup: { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows, size: index.size,
+        grid: index.terrain && { n: index.terrain.n, step: index.terrain.step } } })
       .then((r) => { if ('box' in r) this.box = limited(r.box, index); })
       .catch((err) => console.warn('The countryside past the map is not available', err));
   }
 
   private ask(message: Ask) {
     const id = this.next++;
+    if (this.broken) return Promise.reject(this.broken);
     return new Promise<CountrysideResponse>((resolve, reject) => {
       this.waiting.set(id, { resolve, reject });
       this.worker.postMessage({ ...message, id });
@@ -111,6 +122,18 @@ export class CountrysideTiles {
       if (d < at && d <= (p.kind === 'village' ? VILLAGE_REACH : TOWN_REACH)) { at = d; best = p.name; }
     }
     return best;
+  }
+
+  // The hills under tile (i, j), as a tile's height grid; null where there are none to
+  // be had (no elevation tiles, or they can't be read just now): the ground stays flat.
+  async heights(i: number, j: number): Promise<Uint16Array | null> {
+    try {
+      const r = await this.ask({ type: 'heights', i, j });
+      return 'heights' in r ? r.heights : null;
+    } catch (err) {
+      console.warn(`The hills of tile ${i}_${j} were not read`, err);
+      return null;
+    }
   }
 
   async tile(i: number, j: number): Promise<TileJSON> {

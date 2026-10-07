@@ -7,14 +7,16 @@
 // generated streets at its outer end, none is doubled by a generated one, no junction
 // stands twice, routes cross the map's edge both ways on each side, and the ground's
 // height is the same on both sides. Prints how long a tile takes and the counts.
-//   node scripts/check-countryside.mjs [lon lat] [--dump out.json] [--places]
+//   node scripts/check-countryside.mjs [lon lat] [--dump out.json] [--places] [--flat]
+// The hills come from Mapzen's elevation tiles at AWS: the few it needs are fetched once
+// and kept in pipeline/.cache/terrarium. --flat leaves the hills out (no network).
 // --places lists where main roads leave the map (lat, lon), for screenshots.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { PMTiles } from 'pmtiles';
 import { Countryside } from '../src/countryside.ts';
-import { REACH, edgeGrid } from '../src/countrysideJoin.ts';
+import { HILLS_FROM, REACH, blendHeights, edgeGrid } from '../src/countrysideJoin.ts';
 import { DriveGraph, WalkGraph } from '../src/network.ts';
 
 const file = process.env.COUNTRYSIDE_FILE || 'public/data/countryside/central-bohemia.pmtiles';
@@ -29,16 +31,53 @@ const archive = new PMTiles({
   },
 });
 const [w, s, e, n] = index.bbox_wgs84;
-const setup = { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows, size: index.size };
+const setup = { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows, size: index.size, grid: { n: index.terrain.n, step: index.terrain.step } };
 const builtTile = (i, j) => { const f = `public/data/praha_now/tiles/${i}_${j}.json`; return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : undefined; };
-const make = () => new Countryside(async (z, x, y) => (await archive.getZxy(z, x, y))?.data, async (i, j) => builtTile(i, j), setup);
+const args = process.argv.slice(2);
+// An elevation tile as metres above the sea: an 8-bit RGB PNG, read here by hand.
+function terrarium(png) {
+  const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
+  assert.ok(png[24] === 8 && png[25] === 2 && png[28] === 0, 'an elevation tile is not a plain 8-bit RGB PNG');
+  const parts = [];
+  for (let at = 8; at < png.length;) {
+    const size = png.readUInt32BE(at);
+    if (png.toString('latin1', at + 4, at + 8) === 'IDAT') parts.push(png.subarray(at + 8, at + 8 + size));
+    at += size + 12;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(parts)), line = w * 3, out = new Float32Array(w * h), row = new Uint8Array(line), up = new Uint8Array(line);
+  for (let y = 0; y < h; y++) {
+    const filter = raw[y * (line + 1)];
+    for (let k = 0; k < line; k++) {
+      const v = raw[y * (line + 1) + 1 + k], a = k >= 3 ? row[k - 3] : 0, b = up[k], c = k >= 3 ? up[k - 3] : 0;
+      const p = a + b - c, paeth = Math.abs(p - a) <= Math.abs(p - b) && Math.abs(p - a) <= Math.abs(p - c) ? a : Math.abs(p - b) <= Math.abs(p - c) ? b : c;
+      row[k] = (v + [0, a, b, (a + b) >> 1, paeth][filter]) & 255;
+    }
+    for (let x = 0; x < w; x++) out[y * w + x] = row[x * 3] * 256 + row[x * 3 + 1] + row[x * 3 + 2] / 256 - 32768;
+    up.set(row);
+  }
+  return out;
+}
+const hilly = !args.includes('--flat'), demDir = 'pipeline/.cache/terrarium';
+let demFetched = 0;
+const elevation = hilly ? async (z, x, y) => {
+  const f = `${demDir}/${z}_${x}_${y}.png`;
+  if (!fs.existsSync(f)) {
+    const r = await fetch(`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`);
+    if (!r.ok) return undefined;
+    fs.mkdirSync(demDir, { recursive: true });
+    fs.writeFileSync(f, Buffer.from(await r.arrayBuffer()));
+    demFetched++;
+  }
+  return terrarium(fs.readFileSync(f));
+} : undefined;
+const make = () => new Countryside(async (z, x, y) => (await archive.getZxy(z, x, y))?.data, async (i, j) => builtTile(i, j), setup, 15, undefined, elevation);
 const land = make();
 
 // The projection is the pipeline's: the map's south-west corner lands on its origin.
 const [cx, cy] = land.metres(w, s);
 assert.ok(Math.hypot(cx + index.origin[0], cy + index.origin[1]) < 0.05, `projection is off: ${cx}, ${cy}`);
 
-const args = process.argv.slice(2), dump = args.indexOf('--dump');
+const dump = args.indexOf('--dump');
 const at = args.filter((a) => /^-?[\d.]+$/.test(a)).map(Number);
 // Default: Beroun's old town, 12 km west of the map's edge (streets, a river, a motorway nearby).
 const [x, y] = land.metres(at[0] ?? 14.072, at[1] ?? 49.964);
@@ -332,6 +371,56 @@ for (const [i, j] of rim) {
     }
   }
 }
+// The hills (plan 021, step 4). Round the place asked for: neighbouring tiles give the
+// points they share the same height, the ground is level across each road, and the
+// numbers are a real place's. At the map's edge: the blend is the flat at the edge
+// and the hills HILLS_FROM metres out.
+if (hilly) {
+  const grids = new Map();
+  const took = [];
+  for (let i = ci - 2; i <= ci + 2; i++) for (let j = cj - 2; j <= cj + 2; j++) { const t1 = performance.now(); grids.set(`${i}_${j}`, await land.heights(i, j)); took.push(performance.now() - t1); }
+  const perTile = took.sort((a, b) => a - b)[took.length >> 1];
+  assert.ok([...grids.values()].every(Boolean), 'no heights where the elevation tiles should have them');
+  let apart = 0, low = Infinity, high = -Infinity;
+  for (const [k, g] of grids) {
+    const [i, j] = k.split('_').map(Number), east = grids.get(`${i + 1}_${j}`), north = grids.get(`${i}_${j + 1}`);
+    for (let q = 0; q < N; q++) {
+      if (east) apart = Math.max(apart, Math.abs(g[q * N + N - 1] - east[q * N]));
+      if (north) apart = Math.max(apart, Math.abs(g[(N - 1) * N + q] - north[q]));
+    }
+    for (const v of g) { low = Math.min(low, v / 10 + 100); high = Math.max(high, v / 10 + 100); }
+  }
+  assert.equal(apart, 0, 'two tiles give a point they share different heights');
+  assert.ok(low > 100 && high < 1700 && high - low > 5, `heights from ${low} to ${high} m are not a place in Bohemia`);
+  // Across each road of the middle tile: the height at its middle and a metre inside either edge.
+  const step = index.terrain.step, mid = tiles.get(`${ci}_${cj}`), g = grids.get(`${ci}_${cj}`), bx = ci * T - ox, by = cj * T - oy;
+  const at = (px, py) => {
+    const fx = Math.max(0, Math.min(N - 1.001, (px - bx) / step)), fy = Math.max(0, Math.min(N - 1.001, (py - by) / step)), a = Math.floor(fx), b = Math.floor(fy);
+    return ((g[b * N + a] * (1 - fx + a) + g[b * N + a + 1] * (fx - a)) * (1 - fy + b) + (g[(b + 1) * N + a] * (1 - fx + a) + g[(b + 1) * N + a + 1] * (fx - a)) * (fy - b)) / 10;
+  };
+  let tilt = 0, crossed = 0;
+  for (const d of mid.drive) for (let k = 0; k < d.pts.length - 1; k++) {
+    const [ax, ay] = d.pts[k], [qx, qy] = d.pts[k + 1], len = Math.hypot(qx - ax, qy - ay), side = Math.max(0.5, d.width / 2 - 1);
+    for (let s2 = 2; s2 < len - 2; s2 += 5) {
+      const px = ax + ((qx - ax) * s2) / len, py = ay + ((qy - ay) * s2) / len, nx = (-(qy - ay) / len) * side, ny = ((qx - ax) / len) * side;
+      if (![[px + nx, py + ny], [px - nx, py - ny]].every(([sx, sy]) => sx > bx + 5 && sy > by + 5 && sx < bx + T - 5 && sy < by + T - 5)) continue;
+      tilt = Math.max(tilt, Math.abs(at(px + nx, py + ny) - at(px - nx, py - ny)));
+      crossed++;
+    }
+  }
+  console.log(`\nhills: ${grids.size} tiles' heights in ${perTile.toFixed(1)} ms each at the median, ${took.at(-1).toFixed(0)} ms at worst (${demFetched} elevation tiles fetched just now), from ${low.toFixed(0)} to ${high.toFixed(0)} m; shared points agree; across ${crossed} places on the middle tile's roads the two sides differ by ${tilt.toFixed(2)} m at most`);
+  assert.ok(tilt < 0.6, 'the ground tilts across a road');
+  // The blend at the map's west edge, row 50: the flat at the edge, the hills HILLS_FROM out.
+  const raw = zlib.gunzipSync(fs.readFileSync('public/data/praha_now/tiles/0_50.height.bin.gz')), from = new Uint16Array(raw.buffer, raw.byteOffset, N * N);
+  const far = -Math.ceil(HILLS_FROM / T) - 1;
+  for (const i of [-1, far]) {
+    const flat = edgeGrid(from, N, i, 50, cols, rows), hills = await seamLand.heights(i, 50), both = blendHeights(flat, hills, N, T, i, 50, cols, rows);
+    if (i === -1) for (let q = 0; q < N; q++) assert.equal(both[q * N + N - 1], from[q * N], 'the blended ground steps at the edge of the built map');
+    else assert.deepEqual(both, hills, `the ground ${HILLS_FROM} m past the map is not the hills'`);
+    if (i === -1) console.log(`at the west edge the built map is at ${(from[31 * N] / 10 + 100).toFixed(1)} m and the hills 250 m out at ${(hills[31 * N] / 10 + 100).toFixed(1)} m`);
+  }
+}
+
 const bridges = [...stubs.drive, ...stubs.walk].filter((e) => e.bridge || e.tunnel).length;
 console.log(`ground: the biggest step at the map's edge is ${step.toFixed(3)} m over ${compared} shared points; ${structuresAtEdge} bridges or tunnels touch the edge, ${bridges} built streets leave on one`);
 assert.ok(step < 0.01, 'the ground steps at the edge of the built map');

@@ -208,3 +208,23 @@ export function edgeGrid(from: Uint16Array, n: number, i: number, j: number, col
   for (let b = 0; b < n; b++) for (let a = 0; a < n; a++) out[b * n + a] = from[(j < 0 ? 0 : j >= rows ? n - 1 : b) * n + (i < 0 ? 0 : i >= cols ? n - 1 : a)];
   return out;
 }
+
+// Over how many metres past the built map's tiles the ground goes from the flat carried
+// on from the map's edge to the hills.
+export const HILLS_FROM = 500;
+// The two put together for a tile (i, j) past the built map: at the map's edge the flat
+// (the built tile's own numbers, so no step), HILLS_FROM metres out the hills, and an
+// even swing between. A point's share depends only on where it is, so tiles agree on
+// the points they share.
+export function blendHeights(flat: Uint16Array, hills: Uint16Array, n: number, T: number, i: number, j: number, cols: number, rows: number): Uint16Array {
+  const out = new Uint16Array(n * n);
+  for (let b = 0; b < n; b++) {
+    for (let a = 0; a < n; a++) {
+      const x = (i + a / (n - 1)) * T, y = (j + b / (n - 1)) * T; // from the grid's south-west corner
+      const d = Math.hypot(Math.max(0, -x, x - cols * T), Math.max(0, -y, y - rows * T));
+      const k = Math.min(1, d / HILLS_FROM), w = k * k * (3 - 2 * k);
+      out[b * n + a] = Math.round(flat[b * n + a] * (1 - w) + hills[b * n + a] * w);
+    }
+  }
+  return out;
+}
