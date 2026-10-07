@@ -5,6 +5,9 @@ import { dataUrl } from './data.ts';
 
 const QUIET = 0.036; // about 240 people everywhere
 const CROWDING = 1.5; // see pull()
+// Past the map's edge: busyness where a tile is all buildings. In the map's own outer
+// ring, where a tenth to a fifth of the ground is built on, the map averages 0.0016.
+export const BUILT_UP_BUSY = 0.01;
 
 interface FootfallMeta {
   size: [number, number];
@@ -51,6 +54,9 @@ export class Footfall {
   x0: number;
   y1: number;
   cell: number;
+  // Busyness past the map's edge (main.ts: by how built-up the countryside is there).
+  // Without it the map's outermost cells carry on outwards.
+  beyond: ((x: number, y: number) => number) | null = null;
 
   constructor(share: Float32Array | null, w = 0, h = 0, box?: [number, number, number, number], cell = 1) {
     this.share = share;
@@ -65,6 +71,7 @@ export class Footfall {
   // Busyness at a point, between the cells' centres.
   at(x: number, y: number) {
     if (!this.share) return QUIET;
+    if (this.beyond && (x < this.x0 || y > this.y1 || x > this.x0 + this.w * this.cell || y < this.y1 - this.h * this.cell)) return this.beyond(x, y);
     const fx = (x - this.x0) / this.cell - 0.5, fy = (this.y1 - y) / this.cell - 0.5;
     const i = Math.floor(fx), j = Math.floor(fy), tx = fx - i, ty = fy - j;
     const c = (a: number, b: number) => this.share![Math.min(this.h - 1, Math.max(0, b)) * this.w + Math.min(this.w - 1, Math.max(0, a))];

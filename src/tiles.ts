@@ -364,6 +364,8 @@ export class TileWorld {
   sky: Map<number, { shapes: Shadower[]; texture: THREE.DataTexture | null; tileBox: Bounds; ground: { hm: Float32Array; box: Bounds; n: number; step: number } | null; refresh: SkyRefresh<Uint8Array> | null }>;
   drive: DriveGraph; walk: WalkGraph;
   driveBy: Map<string, DriveEdge[]>; walkBy: Map<string, WalkEdge[]>;
+  // The share of each countryside tile's ground that buildings stand on (for how busy it is).
+  builtUp = new Map<string, number>();
   // `first`: the tile's streets are joined for the first time (false when a tile whose
   // streets were forgotten far behind comes back).
   onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][], first: boolean) => void;
@@ -980,6 +982,10 @@ export class TileWorld {
     const grounded = (b: { minh?: number }) => !((b.minh ?? 0) >= RAISED);
     // The tile's paid-parking sections (clipped to it, with their share of spaces).
     const zones = new Zones({ sections: (t.sections || []).map((z) => ({ ...z, inside: z.share })) });
+    if (!this.available.has(k) || this.country?.partial(t.i, t.j)) {
+      const ring = (r: Point2[]) => Math.abs(r.reduce((sum, p, n) => sum + p[0] * r[(n + 1) % r.length][1] - r[(n + 1) % r.length][0] * p[1], 0)) / 2;
+      this.builtUp.set(k, t.buildings.reduce((sum, b) => sum + (b.own ? ring(b.rings[0]) : 0), 0) / (this.T * this.T));
+    }
     if (t.drive && !this.driveBy.has(k)) {
       this.driveBy.set(k, this.drive.add(t.drive));
       this.walkBy.set(k, this.walk.add(t.walk ?? []));

@@ -7,7 +7,7 @@ import { Funicular } from './funicular.ts';
 import { Ferries } from './ferries.ts';
 import { parseRiver } from './river.ts';
 import { parseBusLines } from './buses.ts';
-import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp } from './network.ts';
+import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { RestingCars } from './restingCars.ts';
 import { loadKit } from './figures.ts';
@@ -19,7 +19,7 @@ import { Crowd, Walker, nearestWalkable } from './people.ts';
 import type { Pedestrian } from './people.ts';
 import { GetIn } from './getin.ts';
 import { Arrest } from './arrest.ts';
-import { loadFootfall } from './footfall.ts';
+import { BUILT_UP_BUSY, loadFootfall } from './footfall.ts';
 import { Trams, loadTrams, pushOutOfTram } from './trams.ts';
 import { TramRide, FAST } from './ride.ts';
 import { TrackNet } from './tracks.ts';
@@ -147,6 +147,7 @@ window.addEventListener('vite:preloadError', () => {
 const BUSES = 3; // of the traffic, on the main roads
 const PEOPLE = 1200; // at most, round the Old Town Square; fewer where it's quieter (src/footfall.ts)
 const FEW_PEOPLE = 40; // on the quietest edge of town
+const VILLAGE_BUILT = 0.08; // the share of a village's ground that buildings stand on
 const CROWD = 1; // people a metre of footpath that draws people fully (Footfall.pull)
 const PARKED_TWO = 10; // bikes and motorbikes parked around you
 const SHOVE = 1.2; // m/s a tram pushes a car aside, off its track
@@ -364,6 +365,8 @@ async function main() {
   const footfall = await footfallLoad;
   crowd = new Crowd(walk, grid, scene, seeded, PEOPLE, kit);
   crowd.footfall = footfall;
+  // Past the map's edge nobody counted the people: a little busier where houses stand.
+  footfall.beyond = (x, y) => (world.builtUp.get(world.keyAt(x, y)) ?? 0) * BUILT_UP_BUSY;
   ride.passengers = new Passengers(trams, () => crowd, seeded);
   const traffic = new Traffic(drive, scene, seeded, trafficWanted(clock.t));
   traffic.signals = signals;
@@ -471,6 +474,11 @@ async function main() {
   };
   const px = () => (inCar || inHeli || walker).x, py = () => (inCar || inHeli || walker).y;
   const offscreen = (x: number, y: number) => Math.hypot(x - camPos.x, y + camPos.z) > viewRadius();
+  // Past the built map the roads are few and so are the cars: the city's count for the
+  // hour, by how much street there is round you (streetShare; worked out twice a second).
+  const pastMap = (x: number, y: number) => x < -index.origin[0] || y < -index.origin[1] || x > index.size[0] - index.origin[0] || y > index.size[1] - index.origin[1];
+  let country = 1;
+  const carsWanted = () => Math.round(trafficWanted(clock.t) * country);
   const edgesNear = (x: number, y: number, rMax: number) => world.around(x, y, rMax).flatMap((k) => world.driveBy.get(k) || []);
   const walkNear = (x: number, y: number, rMax: number) => world.around(x, y, rMax).flatMap((k) => world.walkBy.get(k) || []);
 
@@ -491,7 +499,14 @@ async function main() {
       const [x, y] = e.pts[e.pts.length >> 1];
       if (Math.hypot(x - px(), y - py()) < LIFE_RADIUS) draw += e.path.length * footfall.pull(e);
     }
-    return Math.min(Math.round(PEOPLE * graphics.crowd), Math.round(FEW_PEOPLE + CROWD * draw));
+    // Past the map the few who are about anyway are a village's: all of them where a
+    // twelfth of the ground is built on, a tenth of them among fields and woods.
+    let few = FEW_PEOPLE;
+    if (pastMap(px(), py())) {
+      const tiles = world.around(px(), py(), LIFE_RADIUS);
+      few *= clamp(tiles.reduce((sum, k) => sum + (world.builtUp.get(k) ?? 0), 0) / (tiles.length || 1) / VILLAGE_BUILT, 0.1, 1);
+    }
+    return Math.min(Math.round(PEOPLE * graphics.crowd), Math.round(few + CROWD * draw));
   };
   const spawnWork = { peoplePasses: 0, peopleWeights: 0, peoplePicks: 0, peoplePrepareMs: 0 };
   // People who wander too far are moved to just outside the view, so they walk into it.
@@ -1847,7 +1862,8 @@ async function main() {
       for (const a of [...traffic.agents]) if (!a.hired && (a.jam > 30 || a.bus?.lost || Math.hypot(a.car.x - px(), a.car.y - py()) > LIFE_RADIUS * 1.3) && offscreen(a.car.x, a.car.y)) traffic.release(a);
       // When the roads empty (evening, time moved on), a few of the surplus cars leave
       // each round, out of sight, so the traffic thins out rather than vanishing.
-      let surplus = Math.min(3, traffic.agents.length - trafficWanted(clock.t));
+      country = pastMap(px(), py()) ? streetShare(new Set(edgesNear(px(), py(), LIFE_RADIUS)), px(), py(), LIFE_RADIUS) : 1; // (a set: a street is listed by every tile it crosses)
+      let surplus = Math.min(3, traffic.agents.length - carsWanted());
       for (const a of [...traffic.agents]) {
         if (surplus <= 0) break;
         if (a.hired || a.car.type === 'bus' || a.car.type === 'minibus' || a.car.type === 'police' || !offscreen(a.car.x, a.car.y)) continue;
@@ -1876,7 +1892,7 @@ async function main() {
     // New traffic out of sight, a few times a second rather than every step (finding
     // the streets around you and a spot on them takes a while).
     spawnT -= dt;
-    const wanted = testkit?.quiet ? 0 : trafficWanted(clock.t);
+    const wanted = testkit?.quiet ? 0 : carsWanted();
     if (spawnT < 0 && traffic.agents.length < wanted) {
       spawnT = 0.25;
       const edges = edgesNear(px(), py(), LIFE_RADIUS), ok = lifeSpots(px(), py(), 40);
