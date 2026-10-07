@@ -5,7 +5,10 @@ how many spaces each street section has and how full it is by day and by night.
 
 Reads the monthly occupancy GeoJSON downloaded by ~/projects/parkovani-praha
 (set PARKING_DATA to point elsewhere) and keeps the latest month for every
-district that overlaps the area.
+district that overlaps the area. TSK counts at night only in some districts and
+some sections; the rest (all of Praha 4, most of Praha 5 and 8) get their night
+figure from the weekday count outside paid hours where there is one, and otherwise
+have none.
 """
 
 import json
@@ -21,11 +24,12 @@ from shapely.ops import transform
 from osm_area import AREAS, OUT, _polys, _rings
 
 SRC = Path(os.environ.get("PARKING_DATA", Path.home() / "projects/parkovani-praha/data/downloaded/parked_cars"))
-NAME = re.compile(r"^(P\d+)-OB_(\d{6})([DN])_NA\.json$")
+NAME = re.compile(r"^(P\d+)-OB_(\d{6})([DNP])_NA\.json$")  # D day, N night, P weekdays outside paid hours
 
 
 def latest(files):
-    """{district: (month, {'D': path, 'N': path})} for the newest month with both."""
+    """{district: (month, {'D': path, 'N': [paths]})} for the newest month with a day count;
+    N lists the night counts to read, a later one overriding an earlier one per section."""
     by = {}
     for f in files:
         m = NAME.match(f.name)
@@ -33,9 +37,10 @@ def latest(files):
             by.setdefault(m[1], {}).setdefault(m[2], {})[m[3]] = f
     out = {}
     for dist, months in by.items():
-        full = [k for k, v in months.items() if "D" in v and "N" in v]
-        if full:
-            out[dist] = (max(full), months[max(full)])
+        days = [k for k, v in months.items() if "D" in v]
+        if days:
+            v = months[max(days)]
+            out[dist] = (max(days), {"D": v["D"], "N": [v[k] for k in "PN" if k in v]})
     return out
 
 
@@ -54,7 +59,7 @@ def main(area: str = "ujezd") -> None:
     sections, months = [], set()
     for dist, (month, f) in sorted(latest(SRC.glob("P*-OB_*_NA.json")).items()):
         day = json.loads(f["D"].read_text())["features"]
-        night = {ft["properties"]["CODE"]: ft["properties"] for ft in json.loads(f["N"].read_text())["features"]}
+        night = {ft["properties"]["CODE"]: ft["properties"] for n in f["N"] for ft in json.loads(n.read_text())["features"]}
         for ft in day:
             g = shape(ft["geometry"])
             if not g.intersects(bbox):

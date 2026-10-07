@@ -379,7 +379,7 @@ export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r,
   }
   let wanted = 0;
   for (const [z, list] of bySection) {
-    const occ = Math.min(130, (night ? z.occNight : z.occDay) ?? 80);
+    const occ = Math.min(130, (night ? z.occNight ?? z.occDay : z.occDay) ?? 80);
     const share = shares ? shares.get(z.code) || 0 : z.inside;
     let want = Math.round((z.spaces * share * occ) / 100);
     wanted += want;
