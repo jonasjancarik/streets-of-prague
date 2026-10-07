@@ -543,3 +543,20 @@ were the fixture: it lays its ways in the middle of `ujezd` and did not patch
 5. 39 % of centrum's walk network is off surveyed pavement (crossings, park paths,
    squares, lines mapped a little off) and 16 % of kerb samples have carriageway
    outside them; neither was looked at case by case.
+
+### Recheck on main of 7 October 2026
+
+Rebased without conflicts onto main with the boats, roofs by age and street, and wood
+clearings. On fresh clones of main's `ujezd` data and layers the whole chain ran and
+assembled strictly: `build_tiles.py ujezd` (all four layers, 43 s with the technical
+map read again), `ipr_buildings.py` 49 s, `ipr_terrain.py` 22 s, `ipr_greenery.py
+build`, `ipr_utility.py build`, `ground_cover.py build`, `layers.py ujezd --strict`.
+`centrum`'s ground rebuilt on fresh clones too (158 s, three chunks at a time).
+203 pipeline tests, typecheck, `check-ground-areas`, `test-ground-seams`,
+`check-parking-clearance`, `check-furniture` and `check-garden-plots` pass.
+Looked at in the game against main's maps: a street
+([Malátova](../docs/evidence/plan018/phase3-4/malatova-pair.jpg), `[50.0775, 14.4060]`,
+80 m, straight down) and a garden block
+([pair](../docs/evidence/plan018/phase3-4/garden-block-pair.jpg), `[50.0748, 14.3908]`,
+70 m): the pavement runs round the block in mosaic and the hedges and fences stand
+at its back edge.
