@@ -19,7 +19,7 @@ export interface BuildingTile extends GeoData {
   // The tile's areas by kind (polygons with holes): `water` tells what is afloat.
   areas?: Record<string, Point2[][][]>;
 }
-interface WallTile { walls: { kind: string; pts: Point2[] }[] }
+interface WallTile { walls: { kind: string; h?: number; pts: Point2[] }[] }
 interface WallBuffers { position: Float32Array; normal: Float32Array }
 
 const ROOF_SLATE = ['#6c6d70', '#5e6064', '#77746f'];
@@ -258,7 +258,9 @@ export function wallArrays(data: WallTile, height: (x: number, y: number) => num
   };
   for (const w of data.walls) {
     const big = w.kind === 'city_wall' || w.kind === 'castle_wall';
-    const hw = big ? 1.4 : 0.35, h = big ? 5 : 2.6;
+    // (A surveyed wall, pipeline/dtm_walls.py, has its height; it's drawn thinner: the
+    // survey has every garden wall, not only the big ones OSM bothers with.)
+    const hw = big ? 1.4 : w.h ? 0.22 : 0.35, h = w.h ?? (big ? 5 : 2.6);
     for (let i = 0; i < w.pts.length - 1; i++) {
       const [x1, y1] = w.pts[i], [x2, y2] = w.pts[i + 1];
       const len = Math.hypot(x2 - x1, y2 - y1) || 1;
