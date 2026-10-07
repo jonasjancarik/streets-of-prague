@@ -151,3 +151,50 @@ export function scatterWoods(geo: Geo, grid: Grid, isYoung: (x: number, y: numbe
   });
   return { covered, index };
 }
+
+// The ragged edge of a wood: shrubs and a few young trees just outside its outline, on the
+// ground classes `beside` (grass, a field, a garden, a clearing). The spots are on the map's
+// lattice with their own seeds, like the wood's, so the fringe has no seam of its own at a
+// tile border. (A tile still cannot see a wood that lies wholly in the next tile: the strip
+// within 5 m of such a wood, on this side of the border, gets no shrubs.)
+export function edgeShrubs(geo: Geo, grid: Grid, beside: number[], surveyed: (x: number, y: number) => boolean,
+  trees: Tree[], covered: (x: number, y: number, margin: number) => boolean, index: (t: number) => void) {
+  const near = (x: number, y: number) => {
+    for (let k = 0; k < 8; k++) {
+      const c = Math.cos(k * Math.PI / 4), s = Math.sin(k * Math.PI / 4);
+      for (const d of [2.5, 5]) if (grid.at(x + c * d, y + s * d) === WOOD) return d;
+    }
+    return 0;
+  };
+  // The shrubs placed so far, in cells, to keep them from standing in each other.
+  const CELL = 4, placed = new Map<number, number[]>();
+  const key = (x: number, y: number) => Math.floor(x / CELL) * 65536 + Math.floor(y / CELL);
+  const crowded = (x: number, y: number, rad: number) => {
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        for (const b of placed.get(key(x + i * CELL, y + j * CELL)) || []) if (Math.hypot(trees[b][0] - x, trees[b][1] - y) < (trees[b][2] + rad) * 0.7) return true;
+      }
+    }
+    return false;
+  };
+  const STEP = 2.6;
+  for (let j = Math.floor(geo.minY / STEP); j * STEP < geo.maxY; j++) {
+    for (let i = Math.floor(geo.minX / STEP); i * STEP < geo.maxX; i++) {
+      const g = rng(Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ 0x4b9d);
+      const x = (i + g()) * STEP, y = (j + g()) * STEP, pick = g(), size = g();
+      if (x < geo.minX || x >= geo.maxX || y < geo.minY || y >= geo.maxY || !beside.includes(grid.at(x, y))) continue;
+      const d = near(x, y);
+      if (!d || surveyed(x, y)) continue;
+      const fade = d < 3 ? 1 : 0.55, patchy = 0.4 + 1.2 * valueNoise(x, y, 18, 0x4b9d);
+      if (pick < 0.3 * fade * patchy) {
+        const rad = 0.9 + size * 0.8;
+        if (crowded(x, y, rad)) continue;
+        const k = key(x, y), list = placed.get(k);
+        if (list) list.push(trees.length); else placed.set(k, [trees.length]);
+        trees.push([x, y, rad, SHRUB]);
+      } else if (pick > 1 - 0.05 * fade * patchy) {
+        if (!covered(x, y, 1)) { trees.push([x, y, 1.7 + size * 1.1, conifer(x, y, CONIFERS[0]) ? CONIFER : 1, 0.8]); index(trees.length - 1); }
+      }
+    }
+  }
+}

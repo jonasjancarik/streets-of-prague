@@ -25,6 +25,9 @@ def inputs(area, meta, wanted, source, settings):
         if name == "ground":
             extra["dtm_lines"] = [build_cache.identity(p) for p in sorted(dtm_walls.LINES.glob("*.zip"))]
             extra["trees"] = build_cache.identity(ipr_trees.CACHE)
+            # The worn paths follow the footfall map where the area has one (worn_paths.py).
+            footfall = OUT / f"{area}_now" / "footfall.png"
+            extra["footfall"] = build_cache.identity(footfall) if footfall.exists() else None
         if name == "parking":
             extra["parking"] = build_cache.identity(OUT / f"{area}_parking.json")
         # Overpass data can change without a local input identity. Never resume it.

@@ -185,14 +185,45 @@ tree meshes.
   for the assemble. Until it is run, assemble ignores the layer made by the old code, and
   the young woods are missing too.
 
+## What was built (7 October 2026, branch `night-maplook`, second round)
+
+- **Young woods told from closed ones.** A place that IPR's surface model reads as 1.5 to 7 m
+  is young only if ČÚZK's older surface model (DMP 1G, fetched at 1 m for the tiles with a
+  low patch, kept in `.cache/cover/img/dsm_1m_wide`) was under 4 m there too (scrub, a hedge,
+  an overgrown field), or if IPR's summer photo is bright there (over 0.37 on the clearings'
+  measure: tall then, low and sunlit now, so felled and growing back). Tall in the older
+  model and dark in the photo is a closed wood that IPR's model gets wrong (it reads many
+  broadleaf stands as a few metres high), and is left alone.
+- **Against the photo**, 18 tiles on the same three woods (sheets in the session notes: red
+  the old rule, cyan the new): what was dropped is closed canopy in every tile looked at;
+  what stays is scrub with scattered trees, a rocky scree, hedges along field edges, the
+  fringe of an orchard, and stands that were low in the older model too. Two doubts, both on
+  the careful side: a light green, fine-grained stand in Kunratický les (74_36) that may be a
+  pole-stage wood is dropped, and a patch of regrowth at 50.1275, 14.3126 that is darker
+  than 0.37 is dropped.
+- **Numbers.** The three blocks: Šárka 22 → 4 ha of young wood, Kunratický les 8 → 1 ha, the
+  north wood 8 → 2 ha. The city (the worktree's own copy of main's data): **1,071 → 298 ha
+  of young wood (8.3 % → 2.3 % of 12,830 ha of wood)**, in 1,675 tiles; clearings 260 →
+  254 ha in 1,215 tiles.
+- **A margin instead of a jog.** Each tile is worked out with 16 m of its neighbours (both
+  surface models, the photo, the terrain from the neighbours' lattices, their wood outlines)
+  and vectorised before it is clipped, so a young wood or a clearing has the same outline on
+  both sides of a tile border. A test builds two neighbouring tiles of one made-up place and
+  compares the strip they share. (A tile's key still follows only its own wood and heights.)
+- **The fringe of shrubs** is on the map's lattice with a seed per spot too (`edgeShrubs` in
+  `src/map/woodScatter.ts`), the last of the wood's passes that began at the tile's corner.
+- **To show in the shared map:** `uv run --group cover young_woods.py build praha`: 17 minutes
+  here with six jobs on a busy machine, fetching the wide photos and the older model for the
+  first time (about 3,700 tiles each); then the assemble, 3 to 4 minutes.
+
 ### Left open
 
 - Check on a phone (Pixel 5), and whether more or bigger crowns are affordable.
 - The young layer was built for the whole city in the local `praha` map on 5 October 2026
   (`uv run --group cover young_woods.py build praha`, then assemble); it is not deployed.
-- Young woods still rest on the surface model alone, which reads some tall closed forest as
-  low (see above): compare a sample with the photo as was done for the clearings, and
-  require a photo signal there too. Many "woods" are drawn under park or meadow, so there the young planting shows as
+- The young-wood rule errs towards leaving a wood alone (see the two doubts above); a
+  finer photo (0.25 m) could tell a pole-stage stand by its texture. Many "woods" are drawn under park or meadow, so there the young planting shows as
   small, dense trees on a meadow, not as a thicket on a wood floor.
-- The shrubs of the ragged edge are still placed per tile (fewer of them right at a tile
-  border, where the tile cannot see the neighbour's wood).
+- A tile cannot see a wood that lies wholly in the next tile, so the strip within 5 m of
+  such a wood on this side of the border gets no fringe of shrubs (the tile data has only
+  its own ground).

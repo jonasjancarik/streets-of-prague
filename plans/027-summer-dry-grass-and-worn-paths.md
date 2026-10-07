@@ -24,10 +24,9 @@ bare trodden lines.
   (`?straw=1`), so 15 July is no longer the unchanged reference for grass;
   `?straw=0` gives the old July. Left open: the plan-023 ground cost
   comparison was not run (no per-pixel work was added; run it if the shader's
-  per-id branches should be measured); roadside verges are not a kind of their own
-  (the pipeline has no verge data, so they follow the lawn or park they are mapped
-  as); worn paths use door proxies (OSM entrances are not extracted) and not the
-  footfall map; only chunks (2,10), (7,10), (9,6) were rebuilt in the shared
+  per-id branches should be measured); roadside verges were not a kind of their own
+  and worn paths used door proxies, both done on 7 October 2026 (see "Verges, entrances
+  and the footfall map" at the end); only chunks (2,10), (7,10), (9,6) were rebuilt in the shared
   clone, then assembled for the whole city, not the full chunk build: 119 paths in
   the two estate chunks (71 at Kobylisy, 48 at Černý Most, none in the village of
   Nebušice), 79 merged ribbons in 44 tiles (at most 6 per tile, median 1). The local
@@ -113,3 +112,23 @@ in the pipeline so it is the same every load. People do not need to walk on them
 ## Out of scope
 
 Classifying grass dryness from the photo itself, snow tracks, mud after rain.
+
+## Verges, entrances and the footfall map (7 October 2026, branch `night-maplook`)
+
+- **Verges** are `areas.verge` (`pipeline/verges.py`): the strips of mapped or surveyed
+  grass narrower than 6 m along a carriageway, and past the city limits the unmapped land
+  (plan 031). The game draws them as meadow grass, so they take the whole of the summer's
+  drying (weight 1 in the table above) with no new shader work; no made-up trees stand on
+  them. The cover layer's key leaves verges out. Two city chunks have 6 and 8 ha of them.
+  On 15 July a verge looks like the lawn beside it; the difference shows as the summer dries.
+- **Worn paths** start at OSM's entrances where a block has any on its outline
+  (`entrance=main|yes|staircase|home|…`, each its own door), else at the old guess. With the
+  area's footfall map (`footfall.png`, the crowd's own) a door's path goes to the place that
+  saves the most walking weighted by how busy the place is, and is 0.6 to 1.2 m wide by how
+  busy it is; without the map nothing changes. Trial chunks (7,10) and (3,5): 65 and 154
+  entrances, 48 → 57 and 138 → 163 paths. People still do not walk on them.
+- **Rebuild:** `"entrance"` in `FEATURE_TAGS` makes every chunk parse its OSM cut again
+  (about 10 s a chunk here), so it is a full `uv run build_tiles.py praha --layers ground`,
+  then `ipr_terrain.py praha`, then the cover for the tiles whose ground changed
+  (`uv run --group cover ground_cover.py build praha`). Run `build_footfall.py praha`
+  first if the footfall map is missing: it does not need the tiles.

@@ -5,7 +5,7 @@
 // away from it (it used to get a line of extra small trees).
 import assert from 'node:assert/strict';
 import { Geo, Grid } from '../src/map/geo.ts';
-import { scatterWoods, WOOD, MARGIN } from '../src/map/woodScatter.ts';
+import { scatterWoods, edgeShrubs, WOOD, PARK, SHRUB, MARGIN } from '../src/map/woodScatter.ts';
 
 const T = 250;
 const tile = (i, j) => {
@@ -43,4 +43,26 @@ for (const t of [a, b, c]) assert(t.own.every(([x, y]) => x >= t.geo.minX && x <
 const seen = new Set(a.own.map(key));
 assert(![...b.own, ...c.own].some((t) => seen.has(key(t))), 'no tree in two tiles');
 assert.deepEqual(tile(40, -7).own.map(key), a.own.map(key), 'the same every time');
+// The fringe of shrubs beside a wood whose edge runs across two tiles (grass south of y = 100 m
+// into the tile): as many shrubs a metre of edge by the tile border as away from it, the same
+// every time, none outside its tile.
+const fringe = (i) => {
+  const geo = new Geo({ size: [T, T], origin: [-i * T, 7 * T] });
+  const cells = new Uint8Array(T * T).fill(WOOD);
+  for (let row = T - 100; row < T; row++) cells.fill(PARK, row * T, (row + 1) * T); // rows run from the north
+  const grid = new Grid(geo, 1, null, cells), trees = [];
+  const { covered, index } = scatterWoods(geo, grid, () => false, () => false, trees);
+  const before = trees.length;
+  edgeShrubs(geo, grid, [PARK], () => false, trees, covered, index);
+  const shrubs = trees.slice(before).filter((t) => t[3] === SHRUB);
+  assert(shrubs.every(([x, y]) => x >= geo.minX && x < geo.maxX && y > geo.minY + 94 && y < geo.minY + 100.5), 'shrubs within 5 m of the wood, in their tile');
+  return { geo, shrubs };
+};
+const west = fringe(40), east = fringe(41);
+const along = [...west.shrubs, ...east.shrubs], border = west.geo.maxX;
+const per = (from, to) => along.filter(([x]) => x >= from && x < to).length / (to - from);
+assert(along.length > 40, `shrubs along 500 m of edge (${along.length})`);
+assert(Math.abs(per(border - 60, border + 60) / per(border - 200, border + 200) - 1) < 0.4, `shrubs a metre by the border ${per(border - 60, border + 60).toFixed(2)}, overall ${per(border - 200, border + 200).toFixed(2)}`);
+assert.deepEqual(fringe(40).shrubs, west.shrubs, 'the same every time');
+console.log(`fringe: ${along.length} shrubs along 500 m, ${per(border - 60, border + 60).toFixed(2)} a metre by the border, ${per(border - 200, border + 200).toFixed(2)} overall`);
 console.log(`Wood seams passed (${a.own.length} trees in a tile of wood)`);

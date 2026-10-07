@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
 import { cutAway, NOISE, NOISE_GLSL, LEAVES, SNOW, WET, BARE, SEASON } from '../shading.ts';
 import { PITCH_KINDS } from './pitches.ts';
-import { scatterWoods, valueNoise, conifer, WOOD, PARK, GROVE, SHRUB, CONIFER, CONIFERS } from './woodScatter.ts';
+import { scatterWoods, edgeShrubs, conifer, WOOD, PARK, GROVE, SHRUB, CONIFER, CONIFERS } from './woodScatter.ts';
 import type { Tree } from './woodScatter.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
@@ -30,7 +30,7 @@ const CLEARING = 100, GARDEN = 90, ORCHARD = 60, FIELD = 40, FENCE = 1;
 // Surveyed greenery (pipeline/ipr_greenery.py): grass where no tree is made up (the
 // survey has the real ones), and groups of shrubs, which are filled with shrubs.
 // A surveyed group of trees is planted like a park, only closer (GROVE, in woodScatter.ts).
-const SURVEYED = 150, SHRUBBERY = 170;
+const SURVEYED = 150, SHRUBBERY = 170, VERGE = 140;
 // Of each kind of tree (below), how many are evergreen and keep their leaves in
 // winter: yews and hedges among the shrubs. (Conifers have a shape of their own.)
 const EVERGREEN = [0, 0, 0, 0.4];
@@ -61,6 +61,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fill(d.areas.lawn, GARDEN);
     fill(d.areas.park, PARK);
     fill(d.areas.meadow, PARK);
+    fill(d.areas.verge, VERGE); // grass with no trees made up on it: a verge is mown flat or left to weeds
     fill(d.areas.ipr_lawn, SURVEYED);
     fill(d.areas.ipr_meadow, SURVEYED);
     fill(d.areas.ipr_bed, SURVEYED);
@@ -132,32 +133,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   const { covered, index } = scatterWoods(geo, grid, isYoung, surveyed, trees);
   // The ragged edge: shrubs and a few young trees just outside the outline, where the
   // neighbour is grass, a field or a garden (never paving, a road or water).
-  {
-    const near = (x: number, y: number) => {
-      for (let k = 0; k < 8; k++) {
-        const c = Math.cos(k * Math.PI / 4), s = Math.sin(k * Math.PI / 4);
-        for (const d of [2.5, 5]) if (grid.at(x + c * d, y + s * d) === WOOD) return d;
-      }
-      return 0;
-    };
-    const bushes: number[] = [];
-    for (let y = geo.minY; y < geo.maxY; y += 2.6) {
-      for (let x = geo.minX; x < geo.maxX; x += 2.6) {
-        const jx = x + (r() - 0.5) * 2.6, jy = y + (r() - 0.5) * 2.6, v = grid.at(jx, jy);
-        if (v !== GARDEN && v !== PARK && v !== FIELD && v !== CLEARING) continue;
-        const d = near(jx, jy), pick = r();
-        if (!d || surveyed(jx, jy)) continue;
-        const fade = d < 3 ? 1 : 0.55, patchy = 0.4 + 1.2 * valueNoise(jx, jy, 18, 0x4b9d);
-        if (pick < 0.3 * fade * patchy) {
-          const rad = 0.9 + r() * 0.8;
-          if (!bushes.some((b) => Math.hypot(trees[b][0] - jx, trees[b][1] - jy) < (trees[b][2] + rad) * 0.7)) { bushes.push(trees.length); trees.push([jx, jy, rad, SHRUB]); }
-        } else if (pick > 1 - 0.05 * fade * patchy) {
-          const rad = 1.7 + r() * 1.1;
-          if (!covered(jx, jy, 1)) { trees.push([jx, jy, rad, conifer(jx, jy, CONIFERS[0]) ? CONIFER : 1, 0.8]); index(trees.length - 1); }
-        }
-      }
-    }
-  }
+  edgeShrubs(geo, grid, [GARDEN, PARK, FIELD, CLEARING, VERGE], surveyed, trees, covered, index);
   // Orchards: loose rows, like the Petřín fruit gardens in the 1945 photo.
   for (let y = geo.minY; y < geo.maxY; y += 6) {
     for (let x = geo.minX; x < geo.maxX; x += 6) {

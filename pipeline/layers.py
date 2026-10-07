@@ -192,7 +192,10 @@ def cover_key(t: dict, height) -> str:
     and building outlines that leave the ground bare (before the cover is added to
     them), and the digest of the tile's terrain heights. Young woods lie inside a wood that
     is already there, and assemble() puts them into the tile before it compares this key."""
-    areas = {k: v for k, v in t["areas"].items() if k not in ("young_wood", "wood_clearing")}
+    # (Verges are left out as well: most are strips of grass that was grass already, and a
+    # city's worth of cover would go stale for them. Where a verge is unmapped land outside
+    # the survey, the cover under it is simply drawn over.)
+    areas = {k: v for k, v in t["areas"].items() if k not in ("young_wood", "wood_clearing", "verge")}
     return build_cache.digest(dumps([areas, t["roads"], [b["rings"] for b in t["buildings"]], height]).encode())
 
 

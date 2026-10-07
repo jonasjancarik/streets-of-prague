@@ -123,7 +123,16 @@ Widths inside the technical map's area, lane markings, speed limits.
   `square_loose` either side of tertiary and unclassified roads that have no width or
   lanes tag, are not surveyed, are not on a bridge and do not run between blocks of
   flats. It is unit-tested but has not been looked at in the game; the local `praha` map
-  was rebuilt on 5 October 2026, so it can be now. Not done: checking the unmapped strip between a road and
-  a fence that is not a garden.
+  was rebuilt on 5 October 2026, so it can be now.
+- **The pavement-or-verge pass and a look at the shoulder (7 October 2026, branch
+  `night-maplook`).** Seen in the game at 50.0195, 14.2537 and two villages: the gravel
+  shoulder itself is right (a thin tan line either side of the carriageway), but beside it
+  lay grey paving to the edge of the fields, because the game paves whatever is unmapped.
+  `pipeline/verges.py` now turns the unmapped land past the technical map's reach
+  (`dtm.covered`) into `areas.verge`, grass: all of it, except within 12 m of a building
+  that is not a home (a yard), 3 m either side of a railway, and 1.8 m beside the streets
+  OSM tags `sidewalk=*` on that side, which stay paved. So a pavement only where one is
+  mapped. Three outer trial chunks have 24, 28 and 42 ha of verge. Not looked at: village
+  squares that nobody mapped as such (they turn to grass with the rest).
 - **Tests:** `pipeline/test_narrow_lanes.py` (setting, room, widths, which streets are
   left alone, gardens on unmapped land), `scripts/check-narrow-lanes.mjs`.
