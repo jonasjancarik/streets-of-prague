@@ -18,7 +18,9 @@ const { litStreets, litAt } = await import('../src/lamps.ts');
 
 // Two streets in the file's quarter metres: a lit one east along y = 10 m with a bend north
 // at x = 120 m, and a dark one parallel to it 30 m south, across the grid's cells and x = 0.
-const ways = [[1, [[-200, 10], [120, 10], [120, 90]]], [0, [[-200, -20], [300, -20]]]];
+const ways = [[1, [[-200, 10], [120, 10], [120, 90]]], [0, [[-200, -20], [300, -20]]],
+  // (and three streets lit by the pipeline's rules: a lamp nearby, buildings, the way to the next lit street)
+  [2, [[-200, 200], [0, 200]]], [3, [[0, 200], [200, 200]]], [4, [[200, 200], [200, 400]]]];
 const bytes = [];
 const put = (size, write) => { const b = new DataView(new ArrayBuffer(size)); write(b); bytes.push(...new Uint8Array(b.buffer)); };
 put(4, (b) => b.setUint32(0, ways.length, true));
@@ -36,5 +38,7 @@ assert.equal(litAt(grid, 250, -21), 0, 'further along the dark street');
 assert.equal(litAt(grid, 0, -5), -1, 'between the two, a street the file says nothing of');
 assert.equal(litAt(grid, 200, 10), -1, 'past the lit street\'s bend');
 assert.equal(litAt(grid, 0, 13), 1, 'the nearer of two streets wins');
+assert.deepEqual([litAt(grid, -100, 201), litAt(grid, 100, 199), litAt(grid, 201, 300)], [2, 3, 4], 'streets lit by the rules keep their reason');
+assert.ok([2, 3, 4].every((f) => f >= 1), 'and count as lit for a game that only knows lit from dark');
 assert.equal(litStreets(new Uint32Array([0]).buffer).size, 0, 'an empty file');
 console.log('Lit streets: the file reads back, points on and beside a street match it, the nearer street wins, others are unknown.');
