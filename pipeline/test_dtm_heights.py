@@ -159,6 +159,25 @@ class WaterLevelTests(unittest.TestCase):
         out, lowered = dh.level_water(level, wet, 4.0)
         assert lowered == 0 and np.allclose(out[wet], level[wet])
 
+    def test_a_lock_beside_a_weir_does_not_drain_the_upper_pool(self):
+        wet = _river()
+        wet[18:20, 80:120] = True  # a lock two points wide, round the weir
+        wet[16:18, 80:82] = wet[16:18, 118:120] = True
+        level = np.where(wet, 5.0, np.inf).astype(np.float32)
+        level[:, :100] = np.where(wet[:, :100], 7.5, np.inf)
+        weir = np.zeros(wet.shape, dtype=bool)
+        weir[4:16, 98:102] = True
+        out, _ = dh.level_water(level, wet, 4.0, weir)
+        assert np.allclose(out[10, :95], 7.5) and np.allclose(out[10, 105:], 5.0)
+        assert out[18, 81] > 7.0 and out[18, 119] < 5.1  # the lock's ends at their pools' levels
+
+    def test_a_ramp_along_the_bank_comes_down_to_the_pool(self):
+        wet = _river()
+        level = np.where(wet, 5.0, np.inf).astype(np.float32)
+        level[4:6, 40:60] = 9.0  # the terrain model's bank, in the water's first two rows
+        out, lowered = dh.level_water(level, wet, 4.0)
+        assert lowered == 40 and out[4:6, 40:60].max() < 5.5
+
 
 if __name__ == '__main__':
     unittest.main()
