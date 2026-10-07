@@ -241,6 +241,14 @@ those planted trees against walls. With the final rule (4 m from buildings, 1 m 
 carriageway; paths no longer count) about a third stay, some 27,000 by a sample of 30
 tiles.
 
+On a panel estate the drop is small, because most of its trees are surveyed ones since
+IPR's greenery joined the map: in the 25 tiles round Jižní Město (50.02418 N
+14.51878 E, built on main's map of 6 October) the photographs' single trees go from 165
+to 79 and all single trees from 624 to 542. `docs/evidence/beige-cover/estate-single-trees.jpg`
+shows main on the left and this branch on the right (from 230 m at tilt 12, and from
+70 m at tilt 60); `courtyards-ujezd.jpg` the same way for a courtyard block by Mělnická
+(50.0800 N 14.4060 E, straight down from 200 m).
+
 Across the 355 tile edges of `centrum`, points 0.6 m apart either side of an edge have
 different classes in 1.33 % of 2,639 pairs; the same step inside tiles changes class
 in 1.51 % of 4,242. An edge is no longer a place where the class changes.
