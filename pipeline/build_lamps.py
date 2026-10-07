@@ -10,7 +10,9 @@ city's border above all).
 The download is cached in .cache/lamps/lamps.json (the whole city, WGS84); every
 area takes the lamps in its box from there. The file is gzipped binary, little
 endian: n (uint32), then n × (x, y) as float32 in the area's local metres (+x east,
-+y north), then n kinds as uint8 (KINDS below, in that order).
++y north), then n kinds as uint8 (KINDS below, in that order; and 7 for a lamp that
+hangs over a street on cables: one the layers give as standing on a post in the roadway).
+Build the area's tiles first: the roadways are read from them.
 
 lit.bin.gz says which streets are lit and which dark, for the game to decide where the
 survey's gaps get a lamp of the game's own (src/lamps.ts, fill): by OSM's `lit` tag
@@ -37,6 +39,7 @@ from pathlib import Path
 import requests
 from pyproj import Transformer
 from shapely.geometry import LineString, Polygon
+from shapely.ops import unary_union
 
 import street_lighting
 from osm_area import AREAS, OUT
@@ -75,6 +78,8 @@ LIT_WAYS = {"motorway", "motorway_link", "trunk", "trunk_link", "primary", "prim
             "tertiary", "tertiary_link", "residential", "unclassified", "living_street", "service", "pedestrian", "busway",
             *street_lighting.PATHS}
 NEAR = 8.0  # m: an OSM lamp this close to one of the survey's is the same lamp
+ROADWAYS = ("road", "sett")  # the tiles' kinds of road surface that cars drive on
+MIN_ROADWAY = 3.0  # m: the narrowest a driven street is taken to be
 NEAR_BUILT = 12.0  # m: the same for the works' lamps (a lamp put up again a few steps away in a rebuilt street)
 STEP, STRAIGHTEN, EDGE = 0.25, 1.0, 300.0  # m: lit.bin.gz's unit, how far a way may be straightened, how far past the area's box ways are kept
 
@@ -144,6 +149,27 @@ def osm_lighting(area):
     return lamps, ways, buildings
 
 
+def carriageways(area):
+    """The roadways cars drive on, from the area's tiles, as polygons in local metres:
+    the asphalt and setts within each driven street's width of its centre line (a
+    cobbled square is no roadway beyond the street across it, and a bridge's deck has
+    its lamps on it). Empty before the tiles are built."""
+    out = []
+    for path in sorted((OUT / f"{area}_now" / "tiles").glob("*_*.json")):
+        if path.name.count(".") > 1:
+            continue
+        tile = json.loads(path.read_text())
+        driven = [LineString(e["pts"]).buffer(max(e.get("width") or 0, MIN_ROADWAY) / 2, cap_style="flat")
+                  for e in tile.get("drive", ()) if not e.get("tunnel") and not e.get("bridge") and len(e["pts"]) > 1]
+        surface = [shape for kind in ROADWAYS for rings in tile.get("roads", {}).get(kind, ()) if len(rings[0]) >= 3
+                   for shape in [Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3])] if shape.is_valid]
+        if not driven or not surface:
+            continue
+        both = unary_union(driven).intersection(unary_union(surface))
+        out += [g for g in getattr(both, "geoms", [both]) if g.geom_type == "Polygon" and g.area > 1]
+    return out
+
+
 def build(area):
     w, s, e, n = AREAS[area]
     tf = Transformer.from_crs("EPSG:4326", f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 "
@@ -177,16 +203,29 @@ def build(area):
     added = 0
     if osm:
         added = add(osm[0])
+    # No lamp on a post in a roadway (street_lighting.off_the_road): it hangs over the
+    # street or stands on the kerb. Before the streets are judged, which go by the lamps.
+    roads = carriageways(area)
+    local = lambda pts: tf.transform([p[0] for p in pts], [p[1] for p in pts])
+    houses = [b for b in (Polygon(list(zip(*local(pts)))) for pts in (osm[2] if osm else []) if len(pts) >= 4) if b.is_valid]
+    if roads:
+        placed, kinds, (kerbed, hung, far) = street_lighting.off_the_road(list(zip(xs, ys)), kinds, roads, houses)
+        xs, ys = [p[0] for p in placed], [p[1] for p in placed]
+        left = len(street_lighting.posts_in_road(placed, kinds, roads))
+        print(f"{area}: of the lamps on posts in a roadway, {hung} hang over the street, {kerbed} are put on the kerb beside them "
+              f"and {far} on the nearest kerb from further in; {left} left")
+    else:
+        print(f"{area}: no tiles in {OUT / f'{area}_now' / 'tiles'}: lamps on posts in a roadway are not looked for (build the tiles first)")
+    if osm:
         # Its streets, lit and dark: those reaching into the area, judged by their tags,
         # the lamps and the buildings (street_lighting.py), then straightened a little
         # (the game matches them to its streets within a few metres) and packed small.
         x0, y0 = tf.transform(w, s)
         x1, y1 = tf.transform(e, n)
         inside = lambda px, py: not (max(px) < x0 - EDGE or min(px) > x1 + EDGE or max(py) < y0 - EDGE or min(py) > y1 + EDGE)
-        local = lambda pts: tf.transform([p[0] for p in pts], [p[1] for p in pts])
         streets = [(lit, hw, list(zip(px, py))) for lit, hw, (px, py) in ((lit, hw, local(pts)) for lit, hw, pts in osm[1]) if inside(px, py)]
-        outlines = [Polygon(list(zip(px, py))) for px, py in (local(pts) for pts in osm[2]) if len(px) >= 4 and inside(px, py)]
-        runs, metres = street_lighting.lighting(streets, [b for b in outlines if b.is_valid], list(zip(xs, ys)))
+        outlines = [b for b in houses if inside(*b.exterior.xy)]
+        runs, metres = street_lighting.lighting(streets, outlines, list(zip(xs, ys)))
         ways = []
         for lit, pts in runs:
             line = [(round(x / STEP), round(y / STEP)) for x, y in LineString(pts).simplify(STRAIGHTEN).coords]

@@ -133,6 +133,7 @@ const STREET_CELL = 50, REACH_ARM = 30;
 // Over a street lit only by those rules a lamp is hung where the houses stand close
 // (SPAN_INFERRED); between houses set back in their gardens it would look invented.
 const SPACING = 30, REACH = 20, WALL = 18;
+const HANG_REACH = 8; // m: how far from a street's centre line one of the map's hung lamps may be
 const SPAN = 26, SPAN_INFERRED = 18; // m: the widest street a lamp is hung over, wall to wall
 const UNSURVEYED = 40; // m: with none of the map's own lamps this near, the survey has a gap here
 const LIT_CELL = 50, LIT_MATCH = 4, LIT_UNIT = 0.25; // m: the lit streets' grid, how near one must run, the file's unit
@@ -257,6 +258,9 @@ export class Lamps {
   private xy: number[] = [];
   private kind: number[] = [];
   private loaded = false;
+  // The map's own lamps that hang over a street (pipeline/street_lighting.py, off_the_road),
+  // until the street and the houses to run their cables to have loaded.
+  private unhung = new Set<number>();
   private surveyed = 0; // how many of the lamps came with the map (the first ones)
   // OSM's lit and dark streets, their segments in a grid (x0, y0, x1, y1, lit); null: the map has none.
   private lit: Map<number, number[]> | null = null;
@@ -473,6 +477,7 @@ export class Lamps {
       const xy = new Float32Array(buf.slice(4, 4 + n * 8)), kind = new Uint8Array(buf, 4 + n * 8, n);
       for (let i = 0; i < n; i++) this.add(xy[i * 2], xy[i * 2 + 1], kind[i]);
       this.surveyed = n;
+      for (let i = 0; i < n; i++) if (kind[i] === HUNG) this.unhung.add(i);
     }).catch(() => {});
     const lit = fetchBinary(dataUrl(area, 'lit.bin.gz'), true).then((buf) => { if (buf) this.lit = litStreets(buf); }).catch(() => {});
     void Promise.all([lamps, lit]).finally(() => {
@@ -559,6 +564,21 @@ export class Lamps {
             const list = this.streets.get(k);
             if (list) list.push(ax, ay, bx, by); else this.streets.set(k, [ax, ay, bx, by]);
           }
+        }
+      }
+    }
+    // The map's hung lamps by these streets: cables across the street to the first wall each way.
+    if (this.unhung.size) for (const e of edges) {
+      for (let i = 1; i < e.pts.length; i++) {
+        const [ax, ay] = e.pts[i - 1], [bx, by] = e.pts[i], ex = bx - ax, ey = by - ay, len = Math.hypot(ex, ey) || 1;
+        for (const j of this.unhung) {
+          const x = this.xy[j * 2], y = this.xy[j * 2 + 1], t = ((x - ax) * ex + (y - ay) * ey) / (len * len);
+          if (t < 0 || t > 1 || Math.abs((x - ax) * ey - (y - ay) * ex) / len > HANG_REACH) continue;
+          const nx = -ey / len, ny = ex / len, walls = near(x, y);
+          const l = cast(walls, x, y, nx, ny, WALL), r = cast(walls, x, y, -nx, -ny, WALL);
+          if (!Number.isFinite(l) || !Number.isFinite(r)) continue;
+          this.hung.set(j, [x + nx * l, y + ny * l, x - nx * r, y - ny * r]);
+          this.unhung.delete(j);
         }
       }
     }
