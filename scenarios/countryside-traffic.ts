@@ -25,6 +25,7 @@ export default {
     t.check('there is some traffic in the village', out.traffic >= 1, out.traffic);
     t.check('and far less than in town', out.traffic <= 10, { town: town.traffic, village: out.traffic });
     t.check('few people are about', out.people <= 45, out.people);
+    t.check('the village\'s name came up as the title', !!out.place && out.place !== town.place, { town: town.place, village: out.place });
 
     // A lane between fields, 2 km north-west of the map: next to nobody.
     await t.go(FIELDS);

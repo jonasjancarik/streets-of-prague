@@ -51,6 +51,10 @@ export class Districts {
   private time = 0;
 
   private el: HTMLElement;
+  // The name of the place at (x, y) where no part of town is: past the city, the town or
+  // village from the countryside's map (main.ts). Without it there are no titles there.
+  elsewhere: ((x: number, y: number) => string | null) | null = null;
+  private place: string | null = null;
 
   constructor(area: string, el: HTMLElement) {
     this.el = el;
@@ -70,13 +74,22 @@ export class Districts {
   update(dt: number, x: number, y: number, busy: boolean) {
     this.time += dt;
     this.wait -= dt;
-    if (this.wait > 0 || !this.list.length) return;
+    if (this.wait > 0 || (!this.list.length && !this.elsewhere)) return;
     this.wait = EVERY;
     const d = this.at(x, y);
     if (d && d !== this.current && (!this.current || deep(d, x, y, DEPTH))) {
       this.current = d;
+      this.place = null;
       const last = this.shownAt.get(d.name);
       this.pending = last !== undefined && this.time - last < AGAIN ? null : d.name;
+    }
+    // Outside every part of town: the town or village, as a title when it changes.
+    const name = d || !this.elsewhere ? null : this.elsewhere(x, y);
+    if (name && name !== this.place) {
+      this.place = name;
+      this.current = null;
+      const last = this.shownAt.get(name);
+      this.pending = last !== undefined && this.time - last < AGAIN ? null : name;
     }
     if (this.pending && !busy) {
       this.shownAt.set(this.pending, this.time);

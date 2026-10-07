@@ -51,6 +51,10 @@ function settingWidth(hw: string, pts: Point2[], buildings: { at: Point2 }[]): n
 }
 
 // A vector tile's bytes (unzipped), or nothing where the file has none.
+// A town or village: its name and where its middle is, in the game's metres.
+export interface Place { name: string; kind: string; at: Point2 }
+const PLACE_KINDS = new Set(['city', 'town', 'village']);
+
 export type VectorSource = (z: number, x: number, y: number) => Promise<ArrayBuffer | undefined>;
 // The street graphs of one of the built map's tiles (its JSON), or nothing where it has none.
 export type BuiltSource = (i: number, j: number) => Promise<{ drive?: RawStreetEdge[]; walk?: RawStreetEdge[] } | undefined>;
@@ -220,6 +224,7 @@ export class Countryside {
   private readonly loose = new Map<string, Promise<Chunk | null>>();
   private readonly graphs = new Map<string, Promise<Chunk | null>>();
   private readonly rims = new Map<string, Promise<Stub[]>>();
+  private readonly named = new Map<string, Promise<Place[]>>();
   private listed: Promise<Stub[]> | null = null;
   private readonly leaving?: LeavingSource;
   private readonly rect: Bounds;
@@ -562,6 +567,36 @@ export class Countryside {
       for (const c of await Promise.all(around)) for (const e of c?.edges ?? []) if (meet(e.box, chunk.box, rim)) others.push(e);
     }
     return { ...chunk, edges: joinEdges(chunk.edges, stubs, chunk.box, others) };
+  }
+
+  // The towns and villages within r metres of a point (their middles, as OpenStreetMap
+  // marks them), from the vector tiles three zooms out: those carry every village,
+  // and one of them covers six kilometres.
+  async places(x: number, y: number, r: number): Promise<Place[]> {
+    const z = Math.max(0, this.zoom - 3), n = 2 ** z, k = 2 ** (this.zoom - z);
+    const corners = [[x - r, y - r], [x + r, y - r], [x - r, y + r], [x + r, y + r]].map(([px, py]) => this.vectorAt(px, py).map((v) => Math.floor(v / k)));
+    const wanted: Promise<Place[]>[] = [];
+    for (let X = Math.min(...corners.map((c) => c[0])); X <= Math.max(...corners.map((c) => c[0])); X++) {
+      for (let Y = Math.min(...corners.map((c) => c[1])); Y <= Math.max(...corners.map((c) => c[1])); Y++) {
+        wanted.push(this.kept(this.named, `${X}_${Y}`, async () => {
+          const bytes = await this.source(z, X, Y);
+          if (!bytes) return [];
+          this.stats.fetched++;
+          this.stats.bytes += bytes.byteLength;
+          const layer = new VectorTile(new PbfReader(new Uint8Array(bytes))).layers.places, out: Place[] = [];
+          for (let i = 0; layer && i < layer.length; i++) {
+            const f = layer.feature(i), p = f.properties, kind = String(p.kind_detail ?? '');
+            if (f.type !== 1 || p.kind !== 'locality' || typeof p.name !== 'string' || !PLACE_KINDS.has(kind)) continue;
+            const [[q]] = f.loadGeometry();
+            if (q.x < 0 || q.y < 0 || q.x >= f.extent || q.y >= f.extent) continue; // the next tile's
+            const lon = ((X + q.x / f.extent) / n) * 360 - 180, lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (Y + q.y / f.extent)) / n))) * 180) / Math.PI;
+            out.push({ name: p.name, kind, at: this.metres(lon, lat).map(r2) as Point2 });
+          }
+          return out;
+        }));
+      }
+    }
+    return (await Promise.all(wanted)).flat().filter((p) => Math.hypot(p.at[0] - x, p.at[1] - y) <= r);
   }
 
   // A game tile, as pipeline/build_tiles.py would write it.

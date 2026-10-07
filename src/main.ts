@@ -265,6 +265,8 @@ async function main() {
   if (params.get('mist') === 'volume') MIST_MODE.value = 'volume';
   const weatherFx = new WeatherFx(scene);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: params.has('countryside') });
+  // Past the city's parts, the town or village from the countryside's map.
+  if (world.country) districts.elsewhere = (x, y) => world.country!.placeAt(x, y);
   const grid = world.grid;
   // Height of the ground at a point; with `who` (a car, a person), of whatever they're
   // on there: the ground, or a bridge deck (see TileWorld.track).
@@ -2377,7 +2379,7 @@ async function main() {
     view: (z) => { zoom = z; height = (inCar ? 120 : 100) * z; },
     loaded: (x, y) => world.loadNow(x, y, 300, testkit?.cam ? Infinity : viewRadius() + world.drawBeyond),
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y),
-    streets: drive, countryside: () => !!world.country?.box,
+    streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null,
     grid, boats, ferries, pid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     recovering: () => wastedT > 0,

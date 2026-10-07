@@ -55,6 +55,12 @@ console.log(`${tiles.size} tiles round ${ci}_${cj}: median ${sorted[sorted.lengt
 console.log(`vector tiles read: ${land.stats.fetched}, ${(land.stats.bytes / 1024).toFixed(0)} kB unzipped`);
 console.log(`street edges ${total((t) => t.drive.length)}, paths ${total((t) => t.walk.length)}, buildings ${total((t) => t.buildings.filter((b) => b.own).length)}, trees ${total((t) => t.trees.length)}, JSON ${(total((t) => JSON.stringify(t).length) / tiles.size / 1024).toFixed(0)} kB a tile`);
 
+// The towns and villages round it, for the title on the screen.
+const named = await land.places(x, y, 3000);
+console.log(`places within 3 km: ${named.map((p) => `${p.name} (${p.kind}, ${Math.hypot(p.at[0] - x, p.at[1] - y).toFixed(0)} m)`).join(', ')}`);
+if (at.length < 2) assert.ok(named.some((p) => p.name === 'Beroun' && p.kind === 'town' && Math.hypot(p.at[0] - x, p.at[1] - y) < 1000), 'Beroun is not among the places at Beroun');
+assert.equal(new Set(named.map((p) => `${p.name} ${p.at}`)).size, named.length, 'a place is listed twice');
+
 // The same tile from a fresh generator, asked for alone, is the same tile.
 const again = await make().tile(ci, cj);
 assert.deepEqual(again, tiles.get(`${ci}_${cj}`), 'a tile differs when it is made alone');

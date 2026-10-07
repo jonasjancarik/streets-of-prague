@@ -5,8 +5,12 @@ import { countrysideUrl, dataUrl } from './data.ts';
 import type { Bounds } from './map/geo.ts';
 import type { MapIndex, TileJSON } from './contracts.ts';
 import type { CountrysideRequest, CountrysideResponse } from './countrysideWorker.ts';
+import type { Place } from './countryside.ts';
 
 type Ask = CountrysideRequest extends infer R ? (R extends { id: number } ? Omit<R, 'id'> : never) : never;
+
+// How far from its middle a village's name holds, and a town's (metres).
+const VILLAGE_REACH = 900, TOWN_REACH = 2200, PLACES_WITHIN = 3000;
 
 // As far out as the countryside goes: 150 km from the middle of the built map. The
 // GPU's 32-bit coordinates are good to a few centimetres that far; further would need
@@ -27,6 +31,8 @@ export class CountrysideTiles {
   private readonly worker: Worker;
   private readonly waiting = new Map<number, { resolve: (r: CountrysideResponse) => void; reject: (e: Error) => void }>();
   private next = 0;
+  private places: { x: number; y: number; list: Place[] } | null = null;
+  private asking = false;
   private readonly index: MapIndex;
 
   constructor(index: MapIndex, area: string) {
@@ -86,6 +92,25 @@ export class CountrysideTiles {
       buildings: once(built.buildings, rest.buildings), trees: [...built.trees, ...rest.trees],
       drive: once(built.drive, rest.drive), walk: once(built.walk, rest.walk),
     };
+  }
+
+  // The name of the town or village you are in or beside, or null out in the open and
+  // until the names round here have been read. Asked for again every half kilometre.
+  placeAt(x: number, y: number): string | null {
+    if (!this.box) return null;
+    if (!this.asking && (!this.places || Math.hypot(x - this.places.x, y - this.places.y) > 500)) {
+      this.asking = true;
+      this.ask({ type: 'places', x, y, r: PLACES_WITHIN })
+        .then((r) => { if ('places' in r) this.places = { x, y, list: r.places }; })
+        .catch((err) => console.warn('The place names round here were not read', err))
+        .finally(() => { this.asking = false; });
+    }
+    let best: string | null = null, at = Infinity;
+    for (const p of this.places?.list ?? []) {
+      const d = Math.hypot(p.at[0] - x, p.at[1] - y);
+      if (d < at && d <= (p.kind === 'village' ? VILLAGE_REACH : TOWN_REACH)) { at = d; best = p.name; }
+    }
+    return best;
   }
 
   async tile(i: number, j: number): Promise<TileJSON> {

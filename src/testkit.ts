@@ -77,6 +77,8 @@ interface Game {
   streets: DriveGraph;
   // Whether the countryside past the map's edge is being made (?countryside).
   countryside: () => boolean;
+  // The last title shown for the part of town, town or village you came into.
+  place: () => string | null;
   boats: Boats;
   ferries: Ferries;
   pid: { state: string | null; buy: (now: number) => boolean };
@@ -745,7 +747,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         speed: c ? round(c.speed * 3.6) : round(Math.hypot(g.me().vx, g.me().vy) * 3.6),
         car: c ? { type: c.type, damage: round(c.damage), burning: !!c.burnt, broken: c.broken, braking: c.braking, ram: !!c.ram } : null,
         money: g.wallet.balance, stars: g.police.stars, police: g.police.cars.length, health: Math.round(g.health.value),
-        traffic: g.traffic.agents.length, people: g.crowd.people.length,
+        traffic: g.traffic.agents.length, people: g.crowd.people.length, place: g.place(),
         ticket: g.wallet.hasTicket(g.clock.t),
         time: `${String(Math.floor((g.clock.t % 86400) / 3600)).padStart(2, '0')}:${String(Math.floor((g.clock.t % 3600) / 60)).padStart(2, '0')}`,
         weather: g.weather.kind(), date: g.season.date(),
