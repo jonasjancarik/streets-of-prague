@@ -80,6 +80,14 @@ class Surveyed(unittest.TestCase):
         self.assertAlmostEqual(paved["sett"].area, 400, delta=1)  # the walking street
         self.assertAlmostEqual(paved["pavement"].area, 420, delta=4)  # a cobbled pavement is mosaic; the island too
 
+    def test_a_big_hole_between_pavement_and_street_is_left_alone(self):
+        # A pavement all round a yard far larger than a gap: no hole is small enough to
+        # fill, which used to stop the build (an empty index list is not an integer array).
+        ring = box(0, 10, 100, 60).difference(box(10, 20, 90, 50))
+        paved, walked = pavements.surveyed({"pavement": arr(ring)}, self.street, [], Polygon(), box(-10, -50, 110, 70))
+        self.assertFalse(walked.intersects(box(20, 25, 80, 45)))
+        self.assertAlmostEqual(paved["pavement"].area, ring.area, delta=ring.area * 0.05)
+
     def test_an_earth_path_stays_earth_and_does_not_spread(self):
         ways = [(LineString([(0, 5), (100, 5)]), "unpaved", False)]
         paved, walked = pavements.surveyed(self.walks, self.street, ways, Polygon(), self.clip)

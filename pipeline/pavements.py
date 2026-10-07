@@ -159,8 +159,8 @@ def surveyed(walks, streets, ways, green, clip, stats=None):
         holes = np.array([Polygon(r) for p in shapely.get_parts(both) if p.geom_type == "Polygon" for r in p.interiors], dtype=object)
         if len(holes):
             holes = holes[shapely.area(holes) <= HOLE]
-            near = STRtree(polys).query(holes, predicate="dwithin", distance=0.05)[0] if len(holes) else []
-            holes = holes[np.unique(near)]
+        if len(holes):  # (none small enough left: an empty list of indices is not an integer array)
+            holes = holes[np.unique(STRtree(polys).query(holes, predicate="dwithin", distance=0.05)[0])]
         if len(holes):
             fill = _areas(shapely.union_all([fill, *holes]))
         if not fill.is_empty and green is not None and not green.is_empty:
