@@ -698,6 +698,7 @@ export class TileWorld {
 
   // Whether there is a tile (i, j): one of the built map's, or one to make past it.
   has(i: number, j: number) { return this.available.has(`${i}_${j}`) || !!this.country?.covers(i, j); }
+  hasAt(x: number, y: number) { return this.has(Math.floor((x + this.ox) / this.T), Math.floor((y + this.oy) / this.T)); }
 
   // The ground of a tile past the built map: flat outwards from the nearest point of
   // the built map's edge, so it meets the built ground and its own neighbours without

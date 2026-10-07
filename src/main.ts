@@ -308,9 +308,10 @@ async function main() {
   const random = starts.length ? starts[Math.floor(Math.random() * starts.length)] : null;
   const [slon, slat] = named ? [named.at[1], named.at[0]] : params.get('start')?.split(',').map(Number) ?? (random ? [random[1], random[2]] : [lon0, lat0]);
   // The pipeline's local metres: a transverse Mercator centred on the area.
-  const [sx, sy] = inside(slon, slat)
-    ? proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [slon, slat])
-    : [0, 0];
+  // (Past the map's edge too, where the countryside is made: once its file is open.)
+  await world.country?.opened;
+  const there = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [slon, slat]);
+  const [sx, sy] = inside(slon, slat) || world.hasAt(there[0], there[1]) ? there : [0, 0];
   status('Building the streets…');
   // (The view at the start is about 85 m across; what's beyond is loaded but not yet drawn.)
   await world.loadNow(sx, sy, 380, 85 + world.drawBeyond);
@@ -1194,7 +1195,15 @@ async function main() {
     wallet.balance = Math.max(0, Math.floor(s.money));
     wallet.held = s.ticket;
     health.value = Math.max(1, Math.min(100, s.health));
-    const [x, y] = dev.toLocal(s.lon, s.lat), h = ((90 - s.heading) * Math.PI) / 180;
+    let [x, y] = dev.toLocal(s.lon, s.lat);
+    const h = ((90 - s.heading) * Math.PI) / 180;
+    // A game saved out in the countryside, opened where there is none (without
+    // ?countryside, or its file can't be read): back at the nearest edge of the map.
+    await world.country?.opened;
+    if (!world.hasAt(x, y)) {
+      x = clamp(x, -index.origin[0] + 40, index.size[0] - index.origin[0] - 40);
+      y = clamp(y, -index.origin[1] + 40, index.size[1] - index.origin[1] - 40);
+    }
     await teleportTo(x, y);
     police.heat = Math.max(0, Math.min(40, s.heat));
     if (!s.car || !TYPES[s.car.type]) return;

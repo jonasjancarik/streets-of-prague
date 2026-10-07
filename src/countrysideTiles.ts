@@ -8,11 +8,22 @@ import type { CountrysideRequest, CountrysideResponse } from './countrysideWorke
 
 type Ask = CountrysideRequest extends infer R ? (R extends { id: number } ? Omit<R, 'id'> : never) : never;
 
+// As far out as the countryside goes: 150 km from the middle of the built map. The
+// GPU's 32-bit coordinates are good to a few centimetres that far; further would need
+// the world's origin to move with the player.
+const LIMIT = 150000;
+function limited(box: Bounds, index: MapIndex): Bounds {
+  const cx = index.size[0] / 2 - index.origin[0], cy = index.size[1] / 2 - index.origin[1];
+  return [Math.max(box[0], cx - LIMIT), Math.max(box[1], cy - LIMIT), Math.min(box[2], cx + LIMIT), Math.min(box[3], cy + LIMIT)];
+}
+
 export class CountrysideTiles {
   // What the file covers, in the game's metres: null until it has been opened, and for
   // good if it can't be (the map then ends where it always did).
   box: Bounds | null = null;
   times: number[] = []; // ms the worker took over each of the last tiles
+  // Done once the file has been opened or has failed to: `box` is then as it will stay.
+  readonly opened: Promise<void>;
   private readonly worker: Worker;
   private readonly waiting = new Map<number, { resolve: (r: CountrysideResponse) => void; reject: (e: Error) => void }>();
   private next = 0;
@@ -28,10 +39,10 @@ export class CountrysideTiles {
       else job?.resolve(event.data);
     };
     const [w, s, e, n] = index.bbox_wgs84;
-    this.ask({ type: 'open', url: new URL(countrysideUrl, location.href).href, tiles: new URL(dataUrl(area, 'tiles/'), location.href).href,
+    this.opened = this.ask({ type: 'open', url: new URL(countrysideUrl, location.href).href, tiles: new URL(dataUrl(area, 'tiles/'), location.href).href,
       leaving: index.leaving ? new URL(dataUrl(area, 'leaving.json'), location.href).href : null,
       setup: { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows, size: index.size } })
-      .then((r) => { if ('box' in r) this.box = r.box; })
+      .then((r) => { if ('box' in r) this.box = limited(r.box, index); })
       .catch((err) => console.warn('The countryside past the map is not available', err));
   }
 
