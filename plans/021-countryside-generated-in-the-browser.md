@@ -11,8 +11,8 @@ in the road.
 
 ## Status and starting point
 
-- Status: IN PROGRESS (step 1, the prototype, and step 2, the join for roads, are done
-  apart from what the Result lists as owed).
+- Status: IN PROGRESS (steps 1 to 3 are done apart from what the Result lists as owed;
+  hills, bridges and tunnels are not started).
 - Priority: P3. Effort: about a week for the prototype, three to five weeks in all.
   Risk: medium to high (a second map builder to keep in step with the pipeline, and
   two outside services the game would lean on).
@@ -339,3 +339,69 @@ elevation data's sources if step 4 goes ahead.
   whose vector tiles are new and for one whose are known, the requests and bytes for a
   ten-minute drive out, and whether the road ahead is there at 130 km/h.
 - Steps 3 to 6 are not started.
+
+**After step 2, 7 October 2026: what it had left, and a fault the scenario found.**
+
+- **The map does not fill its tile grid.** `praha` is 34,543 × 26,195 m, and its last
+  column and row of tiles are built only that far: 207 m short of the grid's edge to
+  the east, 55 m to the north. Steps 1 and 2 took the grid's edge for the map's, so
+  those strips were nothing (no ground; a car driving out north or east stopped
+  there), and the check, which used the same wrong edge, passed. Now the generator
+  takes `index.size`, makes the rest of each of those last tiles, and the game puts
+  the built part and the countryside part together as one tile
+  (`CountrysideTiles.whole`). With the right edge 949 edges leave the map (406 drive,
+  543 walk); 173 of 181 outer ends lead on by car and 402 of 438 on foot; streets
+  starting at the edge with nothing to carry on from fell from 242 to 141 (drive)
+  and 171 to 28 (walk).
+- **`leaving.json`**: `pipeline/layers.py` writes the streets that run on past the
+  map's edge into one file (praha: 385 kB before compression) and sets `leaving` in
+  `index.json`; the worker reads that once. A map without it keeps reading its rim
+  tiles (up to 7 km along the rim from a vector tile). The check makes 262 tiles both
+  ways and they are the same tiles. **The shared map has no `leaving.json` yet**: run
+  `pipeline/.venv/bin/python pipeline/layers.py praha` (assembly only) to write it;
+  until then the fallback is used.
+- **Scenario `countryside-edge`** (`node scripts/scene.mjs run countryside-edge --extra
+  "&countryside"`): finds a route out along Zdibsko and one back (781 m and 784 m),
+  drives a car out and back in along them; the ground under it never changes by more
+  than 0.1 m in a sixth of a second and it strays 0.3 m (out) and 3.4 m (back) from
+  the line. The test kit got `t.route`, `t.follow` and `t.countryside`. Scenarios that
+  need the countryside skip themselves when the game was opened without it.
+- A second generated junction within 1.5 m of a built street's end (a road cut at a
+  vector tile's edge a pace from its junction) is now the same junction.
+- The street graphs take and forget countryside tiles through the same calls as built
+  ones (checked: a built street carried by both stays while either is loaded).
+
+**Step 3, behaviour outside, 7 October 2026.**
+
+- **Traffic**: past the map the hour's count of cars is multiplied by how much street
+  there is within 330 m against a city district's (`streetShare`, `src/network.ts`;
+  10 km of lanes, main roads counting more: Beroun's centre 1.0, a village 0.10, a
+  lane between fields 0.02). Scenario `countryside-traffic`: 45 cars at Karlovo
+  náměstí at 16:00, 4 in a village, 3 among fields.
+- **People**: busyness past the footfall map's edge goes by the share of the tile's
+  ground that is built on (0.01 at full: the map's own outer ring averages 0.0016
+  where a tenth to a fifth is built on), instead of the map's outermost cell carried
+  on outwards; and the 40 people who are about anywhere fall to a tenth among fields
+  and woods. 19 people in the village, 11 among fields.
+- **Taxis and police** work on the generated roads (`countryside-taxi`: an app taxi
+  ordered 600 m past the edge comes, and drives you back into the map on the way to
+  Letná; `countryside-police`: two stars bring two police cars). The taxi told
+  "streets still loading" from "the map ends" by the built map's list of tiles; it now
+  asks whether a tile is there at all. Fares' destinations are the fixed list of
+  places inside the map. The game has no missions and no map view to adapt.
+- **The title**: outside the city's parts, the town or village you come into, from the
+  vector tiles three zooms out (a village's name within 900 m of its middle, a town's
+  within 2.2 km). It names the villages of the built map's outer ring too.
+- **Starts and saves**: the first load waits for the countryside's file, so `?start=`
+  or a save past the map finds its tiles (checked with `?start`). A save from out
+  there opened without the countryside goes back to the nearest edge of the map (not
+  run in a browser: the scene runner never resumes a save).
+- **No connection**: with the file missing the game loads and the map ends where it
+  always did (checked with a wrong `VITE_COUNTRYSIDE_URL`). If the connection goes
+  mid-game, a countryside tile is tried again every two seconds and the road ahead
+  stays unloaded, as at the edge of what has loaded. One of the map's partly built
+  last tiles read at that moment keeps only its built part until it is read again.
+- **The limit**: no tiles further than 150 km from the middle of the map (the file of
+  central Bohemia ends well inside that).
+- Not done from step 3: credits in the game for Protomaps (wanted once this leaves the
+  flag; the README names it), and the phone measurement (the list under step 2).

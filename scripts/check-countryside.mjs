@@ -311,7 +311,7 @@ if (args.includes('--places')) console.table(places);
 // 5. The ground: a countryside tile's grid has the built tile's own numbers along the
 // edge they share, so the step there is nothing. (Bridges and tunnels are levels of
 // their own; none may reach the edge, since the countryside has no levels yet.)
-const N = index.terrain.n, scale = (index.terrain.max - index.terrain.min) / 65535;
+const N = index.terrain.n, scale = 0.1; // (heights are whole decimetres: src/terrain.ts)
 let step = 0, compared = 0;
 for (const [i, j] of rim) {
   const f = `public/data/praha_now/tiles/${i}_${j}.height.bin.gz`;
