@@ -22,10 +22,16 @@ export default {
     const done: [number, number][] = [];
     for (let i = 0; i < 3; i++) {
       const here = (): [number, number] => [t.where().lat, t.where().lon];
-      const waiting = () => t.boats().filter((k) => k.moored && k.bank && done.every((d) => metres(d, k.at) > 3)).sort((p, q) => metres(p.at, here()) - metres(q.at, here()));
+      const waiting = () => t.boats().filter((k) => k.moored && done.every((d) => metres(d, k.at) > 3)).sort((p, q) => metres(p.at, here()) - metres(q.at, here()));
       for (let k = 0; k < 24 && !waiting().length; k++) await t.wait(5);
-      const b = waiting()[0];
-      if (!t.check(`boat ${i + 1}: waiting at a reachable bank`, !!b, `${t.boats().filter((k) => k.moored).length} moored, ${done.length} boarded`)) return;
+      let b = waiting()[0];
+      // Up to it first: from 600 m off the map under it isn't loaded, and without the
+      // water and the ground there is no saying where its bank is.
+      if (b) {
+        await t.go(b.at);
+        b = waiting()[0];
+      }
+      if (!t.check(`boat ${i + 1}: waiting at a reachable bank`, !!b?.bank, `${t.boats().filter((k) => k.moored).map((k) => `${Math.round(metres(k.at, here()))} m${k.bank ? '' : ' (no bank)'}`).join(', ') || 'none'} tied up, ${done.length} boarded`)) return;
       t.check(`boat ${i + 1}: bank at deck height`, Math.abs(b.bankHeight! - b.waterHeight - 0.4) <= 0.8,
         `bank ${b.bankHeight}, water ${b.waterHeight}`);
       await t.go(b.bank!);
