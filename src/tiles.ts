@@ -1040,7 +1040,7 @@ export class TileWorld {
     lap('terrain');
 
     // Real 3D buildings from IPR where the area has them (unless ?osm), else OSM
-    // footprints extruded with straight-skeleton roofs, each set on the lowest ground
+    // footprints extruded with roofs on their straight skeletons, each set on the lowest ground
     // under its footprint. In a tile with IPR buildings, the OSM ones IPR doesn't have
     // (noIpr, see ipr_buildings.py) are still extruded.
     const withIpr = !!(t.ipr && !this.osmBuildings && ipr);

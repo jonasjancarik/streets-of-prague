@@ -1,13 +1,13 @@
 // Builds a tile off the main thread, which then only turns the arrays into meshes:
-//   roofs   OSM buildings extruded with straight-skeleton roofs (by far the slowest
-//           part of a tile, up to a second or so), with their facade coordinates
+//   roofs   OSM buildings extruded, with roofs on their straight skeletons
+//           (map/skeleton.ts) and their facade coordinates
 //   ipr     IPR's 3D buildings unpacked from the tile's .ipr.bin, with normals and
 //           facade coordinates
 //   ground  the ground's layers (ground.ts), the bridges above it and the tunnels below
 //   land    trees, walls, the collision grid, and where the bridges and tunnels are
 // Everything stands on the tile's terrain, sampled from the heights sent along.
 import * as THREE from 'three';
-import { initRoofs, buildBuildings, wallArrays } from './map/buildings.ts';
+import { buildBuildings, wallArrays } from './map/buildings.ts';
 import { planDetails, partArrays } from './map/roofDetails.ts';
 import type { DetailArrays, RoofSite } from './map/roofDetails.ts';
 import { iprRoofSites } from './map/iprRoofs.ts';
@@ -34,7 +34,6 @@ type StyleAt = (x: number, y: number, height: number) => number;
 
 const RES = 2; // collision grid cells per metre
 
-let roofsReady: Promise<void> | null = null;
 let styles: StyleAt | null = null, stylesOf = '';
 // A facade's style by where it is and how tall (facades.ts), for this area.
 const styleAt = (bbox: Bounds): StyleAt => {
@@ -72,8 +71,7 @@ const appendTo = (a: BuildingArrays, d: DetailArrays | null, uv?: (x: number, y:
 
 const groundAt = (g: HeightGrid | null) => (g ? withRamps(heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, g.ref ?? 0)), g.ramps, g.ref ?? 0) : () => 0);
 
-async function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roofs']): Promise<BuildingArrays> {
-  await (roofsReady ??= initRoofs());
+function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roofs']): BuildingArrays {
   const hAt = groundAt(ground);
   // One building at a time, each lifted onto its own ground height (`base`).
   const keys = ['position', 'normal', 'color', 'drapeUv'] as const;
@@ -356,7 +354,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
   try {
     switch (event.data.type) {
       case 'roofs': {
-        const result = await roofs(event.data.data);
+        const result = roofs(event.data.data);
         worker.postMessage({ id, result } satisfies WorkerResponse, transferBuffers(result));
         break;
       }

@@ -26,12 +26,8 @@
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { performance } from 'node:perf_hooks';
+import { buildBuildings } from '../src/map/buildings.ts';
 import { signedArea } from '../src/map/geo.ts';
-
-// straight-skeleton 3 is built for browsers and workers only: it wants these two to exist.
-globalThis.self ??= globalThis;
-globalThis.importScripts ??= () => {};
-const { initRoofs, buildBuildings } = await import('../src/map/buildings.ts');
 
 const read = (f) => { let b = fs.readFileSync(f); if (b[0] === 0x1f && b[1] === 0x8b) b = zlib.gunzipSync(b); return JSON.parse(b); };
 const [mode, ...rest] = process.argv.slice(2);
@@ -114,8 +110,7 @@ export function measure(b, built) {
   return { verts, top: r(top), area: r(area, 2), plan: r(plan / (foot || 1), 4), ridge: r(ridge, 2), h, ...(bad ? { bad } : {}), ...(built.stats.failed ? { flat: true } : {}) };
 }
 
-async function record(out) {
-  await initRoofs();
+function record(out) {
   const roofs = {}, tiles = {};
   let crashed = 0;
   for (const { file, key } of sample()) {
@@ -194,6 +189,6 @@ function diff(fa, fb) {
   console.log(`Time per tile: ${(sum(A) / n).toFixed(2)} ms before, ${(sum(B) / Object.keys(B.tiles).length).toFixed(2)} ms after; slowest tile ${worst(A)} ms before, ${worst(B)} ms after`);
 }
 
-if (mode === 'record' && rest[0]) await record(rest[0]);
+if (mode === 'record' && rest[0]) record(rest[0]);
 else if (mode === 'diff' && rest[1]) diff(rest[0], rest[1]);
 else if (mode) { console.error('usage: roof-compare.mjs record out.json | diff a.json b.json [--list n]'); process.exit(1); }
