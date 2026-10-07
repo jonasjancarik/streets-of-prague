@@ -688,13 +688,19 @@ record the measurements, merge decisions and pending landmark asset activation.
 - **Surveyed walls, fences and railings** (`pipeline/dtm_walls.py`): where the technical
   map's survey covers a tile (30 m of its lines or more), its walls ("Zeď"), fences
   ("Plot") and railings ("Zábradlí", set 3, in `pipeline/.cache/dtm/ZPS_KR/`) stand in
-  place of OSM's walls and fences and of the fences made up round family houses; they
-  carry `"s": 1` and a height in the tile. An enclosing wall is 2 m, another 1 m, a fence
-  1.5 m, a railing 1 m (the map has no heights for them). A surveyed line is cut where a
-  street or a path runs, so a wall drawn across a gateway doesn't close it. OSM's town
-  walls, the crash barriers and the hedges stay (a hedge along a surveyed line goes).
-  Outside the survey everything is OSM's. `uv run dtm_walls.py <area> --tiles --before
-  <old tiles folder>` counts the metres per tile. Rebuild the `ground` layer to get them.
+  place of OSM's fences, of the fences made up round family houses, and of OSM's walls
+  where the survey has a wall within 2 m (a thick garden wall is two outlines in the
+  survey, which aren't used, so OSM's stays). They carry `"s": 1` and a height in the
+  tile: an enclosing wall is 2 m, another 1 m, a fence 1.5 m, a railing 1 m (the map has
+  no heights for them). Every wall and fence in such a tile is cut where something goes
+  through: on the streets' and paths' surfaces, across each mapped street and path, in
+  passages through buildings, at the gates of family houses' plots and within 0.8 m of
+  a building. OSM's town walls, the crash barriers and the hedges stay (a hedge along a
+  surveyed line goes). Outside the survey everything is OSM's.
+  `uv run dtm_walls.py <area> --tiles --before <old tiles folder>` counts the metres per
+  tile, and with `--crossings` the graph's edges and the gates that a wall or a fence
+  closes. Rebuild the `ground` layer to get them, then `ipr_buildings.py` and
+  `ipr_terrain.py`, which depend on it.
 - **Crash barriers** are a third kind of the same sections (`kind: "guard_rail"` in a
   tile's `fences`): a steel beam 0.75 m high on a post every 2 m. They come from OSM's
   `barrier=guard_rail` where it is mapped, and elsewhere `pipeline/barriers.py` puts them
