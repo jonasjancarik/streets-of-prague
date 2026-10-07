@@ -11,7 +11,8 @@ Twenty sessions worked overnight, each on its own branch and worktree
 about 00:20 to 04:55, so most got two to three working hours on a heavily loaded
 machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landmarks`
 (code only), `night-pipeline`, `night-weather`, `night-graphs`, `night-countryside` (behind
-`?countryside`), `night-greenery`, `night-bridges`, `night-gardens`, `night-boats`, `night-roofs`, `night-maplook`, and single commits of
+`?countryside`), `night-greenery`, `night-bridges`, `night-gardens`, `night-boats`, `night-roofs`, `night-maplook`, `night-beige`, `night-pavements`,
+`night-walls`, and single commits of
 `night-renderer` (windows on ground floors, the fog, the start-up report) and `night-maplook`
 (sports lines). Not merged, each with its state written in the plan or doc it names:
 
@@ -28,21 +29,6 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
   (about 5 dB louder), a heavy diesel for fire engines, lorries and buses, a water-jet
   sound, louder sirens. Levels are measured; nobody has heard any of it. Listen on
   `sound-test.html` (old voices kept there), then merge.
-- **`night-pavements` (plan 018 phases 3–4):** ready by its own checks: surveyed
-  pavements, islands and tram beds built for `ujezd`, `centrum` and Petřiny, the
-  pavement step down to seconds, plots start behind surveyed pavements. To look at
-  before merging: driveway cars fall sharply (57 to 17 in `centrum`, 328 to 86 on
-  Petřiny), cobbled pavements become mosaic, surveyed park paths are wider and
-  asphalt grey. Frame time of up to three more ground layers unmeasured.
-- **`night-walls`, rest:** surveyed walls, fences and railings from the technical map
-  (`pipeline/dtm_walls.py`), built for `ujezd` only and not seen in the game; a
-  surveyed wall may close a gateway or yard. The step edges themselves are in main.
-- **`night-beige` (plan 014):** ready by its own checks: courtyards classified with
-  the plain ground and seen in the game on `centrum`, seams between tiles gone. To
-  look at before merging: single trees from the photographs drop to about a third
-  citywide (crowns and roof edges near buildings no longer count). The material model
-  from OSM surface tags did worse than the rules and was dropped. Painted-photo
-  variants are in `docs/evidence/painted-photo/`.
 - **`worktree-rust-wgpu`** (never to be merged): the static daylight scene of `ujezd`
   and `centrum` matches the game to about 5–8 levels of mean difference, with tile
   streaming and the sedan's handling; `rust/PARITY.md` on the branch has the status
@@ -231,16 +217,22 @@ before that day's frame-count fix may be doubled.
   paint is as thin and could use the same hold.
 - **Lanes (plan 031):** the pavement-or-verge pass; the gravel shoulder hasn't been
   looked at in the game.
-- **Paths and pavements (plan 018):** phases 3–4 (shape tidying, surveyed pavement
-  polygons) are deferred.
-- **The plain beige ground:** 1,527 ha in tiles outside IPR's photographs (ČÚZK's
-  orthophoto?); courtyards keep a neutral paved look (plan 014: run the classifier on
-  `dtm_yard`); asphalt, gravel and dirt are confused (40 % right on the Smíchov labels),
-  so more labels from other districts; seams where a patch changes class at a tile
-  edge. See `docs/beige-cover-city.md`.
-- **Painted photo** (`?ortho`): still a blurry photograph at 0.5 m/px. To try: a
-  bigger, more stretched brush, the game's own palette, 1–2 m/px, evening out the
-  photo's shadows, a margin from neighbouring tiles.
+- **Paths and pavements (plan 018):** surveyed pavements, islands, medians, platforms
+  and tram beds are in. To look at: far fewer driveway cars where a pavement is
+  surveyed (`DRIVE_ROOM` would bring some back), mosaic instead of setts on cobbled
+  pavements, wider grey park paths; medians and tram beds were hardly seen. Frame time
+  of up to three more ground layers a tile unmeasured.
+- **The plain beige ground:** courtyards are classified with it and seams between tiles
+  are gone (plan 014); most courtyard ground in the centre is in shadow in the
+  photographs and stays neutral. Asphalt, gravel and dirt are still told apart only
+  38–40 % of the time on the Smíchov labels (a model from OSM surface tags did worse):
+  hand labels from other districts are what is missing. Tiles outside IPR's
+  photographs: ČÚZK's colour orthophoto is CC BY 4.0, its infrared unclear, there is
+  no surface model out there, and no downloader is written. See
+  `docs/beige-cover-city.md`.
+- **Painted photo** (`?ortho`): nine variants are in `docs/evidence/painted-photo/` to
+  judge; the photograph's shadows are what keeps it reading as a photograph. To try:
+  shadows cast from the surface model and the sun, then relit.
 - **Roof and wall colours (plan 005):** walls are measured for 42 % of buildings and
   borrowed from a neighbour sharing a wall for about 30 % more; shaded walls are still
   unmeasured (the ground-light calibration is measured but not fitted); the false-find
@@ -337,9 +329,10 @@ All IPR Praha, CC BY, at
 - Street furniture (`DTMP_CUR_TMISZNAK_B`): manhole covers, storm drains, hydrants,
   phone boxes and signal poles are in. Left: check a few surveyed signal poles against
   reality (1,807 of 3,107 lights get one); frame times unmeasured.
-- Walls, fences, railings and steps: set 3 of the DTM, already in
-  `pipeline/.cache/dtm/ZPS_KR/`. Could replace OSM's walls and block the player.
-- The rest of set 2's surfaces: pavements, traffic islands, separate tram tracks.
+- Walls, fences and railings from set 3 of the technical map are in
+  (`pipeline/dtm_walls.py`). Left: railings are drawn as picket fences; surveyed steps
+  and terrain edges (Terénní hrana) unused; a few railings across footways and kept
+  OSM walls across paths (`dtm_walls.py <area> --crossings`).
 - Noise maps for how loud a street's background is.
 - Smaller things: avenues, memorial trees, noise barriers, fountains, public toilets,
   recycling bins, parking meters, playgrounds (<https://opendata.geoportalpraha.cz/>).

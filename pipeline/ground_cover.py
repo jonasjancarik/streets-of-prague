@@ -18,6 +18,10 @@ Two ways, for comparing on a few tiles; the game shows them with ?cover=<method>
                       TYPESAFE_API_KEY; without it the requests are only written out)
             Trees come from the surface model: the tops of the canopy.
 
+`build` (the whole map, below) no longer cuts pieces: it classifies every 0.5 m cell with
+the same thresholds as `rules`, each tile together with a margin of its neighbours
+(cover_cells.py), and includes the technical map's courtyards (dtm_yard).
+
     uv run --group cover ground_cover.py fetch praha 49 55 51 57     # tiles i0 i1 j0 j1
     uv run --group cover ground_cover.py ortho praha 51 53 53 55
     uv run --group cover ground_cover.py classify praha 51 53 53 55 --method rules
@@ -60,6 +64,7 @@ from skimage.measure import find_contours, regionprops
 from skimage.segmentation import slic
 
 import build_cache
+import cover_cells
 import layers
 from osm_area import AREAS, OUT
 
@@ -937,10 +942,12 @@ MIN_BEIGE = 1000     # m2 of plain ground in a tile below which it isn't looked 
 SEEN = 0.02          # a photo pixel darker than this (in every band) is outside IPR's pictures
 
 
-def photo(url, kind, area, t, res=RES):
-    """IPR's photograph of the tile on its own grid as float32 (h, w, 3), or None outside the
+def photo(url, kind, area, t, res=RES, window=None):
+    """IPR's photograph of the tile on its own grid as float32 (h, w, 3), black outside the
     pictures. The download (a lossy JPEG: about 0.26 MB a tile at 0.25 m, a tenth of the
-    PNG, and classified the same on the hand-labelled pieces) is kept under photos/."""
+    PNG, and classified the same on the hand-labelled pieces) is kept under photos/.
+    `window` (r0, r1, c0, c1) gives only those rows and columns of the grid (a neighbour's
+    margin), with the same values the whole picture has there."""
     X, Y = grid(t, res)
     E, N = sjtsk(area, t, res)
     bx0, by0, bx1, by1 = E.min() - 3, N.min() - 3, E.max() + 3, N.max() + 3
@@ -966,40 +973,172 @@ def photo(url, kind, area, t, res=RES):
         tmp.write_bytes(r.content)
         tmp.replace(path)
     img = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32) / 255
+    shape_ = X.shape
+    if window:
+        r0, r1, c0, c1 = window
+        E, N = (a.reshape(shape_)[r0:r1, c0:c1].ravel() for a in (E, N))
+        shape_ = (r1 - r0, c1 - c0)
     cols = (E - bx0) / (bx1 - bx0) * img.shape[1] - 0.5
     rows = (by1 - N) / (by1 - by0) * img.shape[0] - 0.5
-    bands = [ndimage.map_coordinates(img[:, :, b], [rows, cols], order=1, mode="nearest").reshape(X.shape)
+    bands = [ndimage.map_coordinates(img[:, :, b], [rows, cols], order=1, mode="nearest").reshape(shape_)
              for b in range(3)]
     return np.stack(bands, axis=-1).astype(np.float32)
 
 
-def tile_cover(area, meta, t):
-    """One tile's ground cover, {"areas": {class: polygons}, "trees": [[x, y]]}, from the tile as
-    the ground and buildings layers make it; None where IPR has no photograph."""
-    rgb = photo(RGB, "rgb", area, t)
-    seen = rgb.max(-1) >= SEEN
-    if seen.mean() < 0.1:
-        return None
-    mask = beige_mask(t, RES)
-    mask &= ndimage.binary_erosion(seen, iterations=3)
-    if mask.sum() * RES * RES < MIN_BEIGE * 0.5:
-        return {"areas": {}, "trees": []}
-    cir = photo(CIR, "cir", area, t)
-    F = features(area, meta, t, rgb, cir)
-    labels, _ = pieces(F, mask)
-    summ = summarise(F, labels)
-    cls = {pid: rules(p) for pid, p in summ.items()}
-    canopy = (F["ndsm"] > 3) & (F["ndvi"] > 0.15) & mask
-    peaks = peak_local_max(np.where(canopy, ndimage.gaussian_filter(F["ndsm"], 2), 0), min_distance=int(4 / RES), threshold_abs=3)
-    x0, _, _, y1 = t["box"]
-    f = round(CELL / RES)
+# What the build classifies: the plain ground, and the technical map's courtyards (plan 014),
+# which the map only outlines (drawn as one neutral paving until something says more).
+CLASSIFIED = ("dtm_yard",)
+GREEN = ("park", "garden", "wood", "lawn", "meadow", "field", "orchard", "dtm_green", "dtm_garden", "dtm_wood")
 
-    def piece_at(x, y):
-        r, c = int((y1 - y) / CELL), int((x - x0) / CELL)
-        return int(labels[r, c]) if 0 <= r < labels.shape[0] and 0 <= c < labels.shape[1] else 0
-    trees = [[round(x0 + (c + 0.5) * RES, 1), round(y1 - (r + 0.5) * RES, 1)] for r, c in peaks]
-    lone = [p for p in trees if cls.get(piece_at(*p)) != "trees"]
-    return {"areas": vectorise(labels, cls, t), "trees": lone}
+
+def wide(t, margin=cover_cells.MARGIN):
+    """The tile's box with a margin round it, as a tile for grid(), sjtsk(), burn() and ipr_dsm()."""
+    x0, y0, x1, y1 = t["box"]
+    return {"i": t["i"], "j": t["j"], "box": [x0 - margin, y0 - margin, x1 + margin, y1 + margin]}
+
+
+def bare_mask(ext, tiles, res):
+    """True where, in the box of `ext`, the game shows the plain base or a surveyed courtyard
+    with nothing mapped on top: what `tiles` (a tile and those of its neighbours that are
+    classified too) leave bare. Ground of tiles not given is left out."""
+    shape_ = grid(ext, res)[0].shape
+    covered, inside = np.zeros(shape_, bool), np.zeros(shape_, bool)
+    for t in tiles:
+        x0, y0, x1, y1 = t["box"]
+        burn(inside, ext, res, [[[(x0, y0), (x1, y0), (x1, y1), (x0, y1)]]])
+        for kind, polys in [*t["areas"].items(), *t["roads"].items()]:
+            if kind not in CLASSIFIED and not kind.startswith("cover_"):
+                burn(covered, ext, res, polys)
+        burn(covered, ext, res, [b["rings"] for b in t["buildings"]])
+    return inside & ~covered
+
+
+def near_masks(ext, tiles):
+    """What the bare ground may touch, per cell: buildings, streets and paths (and the
+    carriageways among them), railway and green."""
+    shape_ = grid(ext, CELL)[0].shape
+    out = {k: np.zeros(shape_, bool) for k in ("building", "road", "carriageway", "rail", "green")}
+    for t in tiles:
+        burn(out["building"], ext, CELL, [b["rings"] for b in t["buildings"]])
+        for kind, polys in t["roads"].items():
+            burn(out["road"], ext, CELL, polys)
+            if kind in ("road", "sett", "bridge"):
+                burn(out["carriageway"], ext, CELL, polys)
+        for kind in GREEN:
+            burn(out["green"], ext, CELL, t["areas"].get(kind, []))
+        burn(out["rail"], ext, CELL, t["areas"].get("ballast", []))
+        rails = [LineString(r["pts"]).buffer(1.5, cap_style="flat") for r in t.get("rails", []) if r["kind"] == "rail" and len(r["pts"]) > 1]
+        if rails:
+            burn(out["rail"], ext, CELL, rings_of(unary_union(rails)))
+    return out
+
+
+def terrain_wide(area, meta, t, ext, res):
+    """The terrain heights on the grid of `ext`: the tile's own and its neighbours' lattices
+    joined (they share their edge points)."""
+    n, step = meta["terrain"]["n"], meta["terrain"]["step"]
+    big = np.full((3 * (n - 1) + 1, 3 * (n - 1) + 1), np.nan, np.float32)
+    for dj in (-1, 0, 1):
+        for di in (-1, 0, 1):
+            try:
+                hm, _ = terrain(area, meta, {"i": t["i"] + di, "j": t["j"] + dj})
+            except FileNotFoundError:
+                continue
+            r0, c0 = (dj + 1) * (n - 1), (di + 1) * (n - 1)
+            part = big[r0:r0 + n, c0:c0 + n]
+            big[r0:r0 + n, c0:c0 + n] = np.where(np.isnan(hm), part, hm)
+    own = big[n - 1:2 * n - 1, n - 1:2 * n - 1]
+    big = np.nan_to_num(big, nan=float(np.nanmean(own)) if np.isfinite(own).any() else 0.0)
+    X, Y = grid(ext, res)
+    x0, y0 = t["box"][0] - (n - 1) * step, t["box"][1] - (n - 1) * step
+    return ndimage.map_coordinates(big, [(Y - y0) / step, (X - x0) / step], order=1, mode="nearest")
+
+
+def joined(url, kind, area, t, around, fetch=None):
+    """The tile's photograph with the margin of its neighbours' photographs round it, and
+    which pixels are really photographed ground of a tile given (the rest repeats the edge).
+    `around` is {(di, dj): tile}; None when the tile itself is outside the pictures."""
+    fetch = fetch or photo
+    M = round(cover_cells.MARGIN / RES)
+    own = fetch(url, kind, area, t)
+    if kind == "rgb" and (own.max(-1) >= SEEN).mean() < 0.1:
+        return None, None
+    h, w = own.shape[:2]
+    out = np.pad(own, ((M, M), (M, M), (0, 0)), mode="edge")
+    known = np.zeros(out.shape[:2], bool)
+    known[M:M + h, M:M + w] = True
+    for (di, dj), nb in around.items():
+        nh, nw = grid(nb, RES)[0].shape
+        rows = {1: ((nh - M, nh), (0, M)), 0: ((0, nh), (M, M + h)), -1: ((0, M), (M + h, 2 * M + h))}[dj]
+        cols = {-1: ((nw - M, nw), (0, M)), 0: ((0, nw), (M, M + w)), 1: ((0, M), (M + w, 2 * M + w))}[di]
+        if (dj == 0 and nh != h) or (di == 0 and nw != w) or min(nh, nw) < M:
+            continue
+        part = fetch(url, kind, area, nb, window=(*rows[0], *cols[0]))
+        out[rows[1][0]:rows[1][1], cols[1][0]:cols[1][1]] = part
+        known[rows[1][0]:rows[1][1], cols[1][0]:cols[1][1]] = True
+    return out, known
+
+
+def tile_classes(area, meta, t, around=None, fetch=None, infrared=True, model="kept"):
+    """The class of every 0.5 m cell of the tile and its margin: (per-pixel numbers, bare mask,
+    classes, voted classes, the box worked on as a tile); None where there is no photograph,
+    () where there is too little bare ground. `model`: the material model, "kept" for
+    cover_model.json, None for the rules alone."""
+    around = around or {}
+    rgb, known = joined(RGB, "rgb", area, t, around, fetch)
+    if rgb is None:
+        return None
+    M = round(cover_cells.MARGIN / RES)
+    ext, tiles = wide(t), [t, *around.values()]
+    seen = rgb.max(-1) >= SEEN
+    mask = bare_mask(ext, tiles, RES) & ndimage.binary_erosion(seen, iterations=3, border_value=1) & known
+    if mask[M:-M, M:-M].sum() * RES * RES < MIN_BEIGE * 0.5:
+        return ()
+    cir = joined(CIR, "cir", area, t, around, fetch)[0] if infrared else None
+    P = cover_cells.measure(rgb, cir, ipr_dsm(area, ext, RES, cache=False), terrain_wide(area, meta, t, ext, RES), infrared)
+    near = near_masks(ext, tiles)
+    cls = cover_cells.classify(P, mask, near, cover_cells.load_model() if model == "kept" else model)
+    return P, mask, cls, cover_cells.voted(cls), ext, near
+
+
+def tile_cover(area, meta, t, around=None, fetch=None, infrared=True, model="kept"):
+    """One tile's ground cover, {"areas": {class: polygons}, "trees": [[x, y]]}, from the tile as
+    the ground and buildings layers make it; None where there is no photograph. `around`,
+    {(di, dj): tile}, are its neighbours that are classified too: their margin is worked out
+    with the tile (cover_cells.py), so a patch keeps its class across the edge."""
+    got = tile_classes(area, meta, t, around, fetch, infrared, model)
+    if not got:
+        return None if got is None else {"areas": {}, "trees": []}
+    P, mask, cls, smooth, ext, near = got
+    x0, _, _, y1 = ext["box"]
+    areas = cover_cells.polygons(smooth, (x0, y1), t["box"])
+    # Single trees: the tops of the canopy over bare ground, except where the canopy is a wood
+    # now, and only with room to stand: a crown reaching over a wall into a street or filling a
+    # small courtyard gets no tree (the game's trees are full-grown). Over half of the tops
+    # found lie within 2.5 m of a building: the edge of a crown, or of a roof, not a trunk.
+    canopy = (P["ndsm"] > 3) & (P["ndvi"] > 0.15) & mask
+    room = np.ones(smooth.shape, bool)
+    for kind, least in (("building", cover_cells.ROOM), ("carriageway", 1.0)):
+        if near[kind].any():
+            room &= ndimage.distance_transform_edt(~cover_cells.fitted(near[kind], smooth.shape)) * CELL >= least
+    peaks = peak_local_max(np.where(canopy, ndimage.gaussian_filter(P["ndsm"], 2), 0), min_distance=int(4 / RES), threshold_abs=3)
+    f, wood = round(CELL / RES), cover_cells.CLASSES.index("trees")
+    bx0, by0, bx1, by1 = t["box"]
+    lone = []
+    for r, c in peaks:
+        x, y = x0 + (c + 0.5) * RES, y1 - (r + 0.5) * RES
+        cell = min(r // f, smooth.shape[0] - 1), min(c // f, smooth.shape[1] - 1)
+        if bx0 <= x < bx1 and by0 <= y < by1 and smooth[cell] != wood and room[cell]:
+            lone.append([round(x, 1), round(y, 1)])
+    return {"areas": areas, "trees": lone}
+
+
+def slim(t):
+    """What the cover needs of a tile, as text (every classified tile is kept at hand for its
+    neighbours): the outlines that leave the ground bare, and the railway lines."""
+    return layers.dumps({"i": t["i"], "j": t["j"], "box": t["box"], "areas": t["areas"], "roads": t["roads"],
+                         "buildings": [{"rings": b["rings"]} for b in t["buildings"]],
+                         "rails": [r for r in t.get("rails", []) if r["kind"] == "rail"]})
 
 
 def result_path(area, i, j):
@@ -1010,7 +1149,7 @@ def result_path(area, i, j):
 def code_key():
     """What works a tile's cover out in this file (layers.cover_processing); the other
     layers' code key leaves the file out (build_cache.code_key)."""
-    return layers.cover_processing()[0]
+    return build_cache.digest(layers.dumps(layers.cover_processing()).encode())
 
 
 def runtime():
@@ -1020,26 +1159,35 @@ def runtime():
 
 def tile_job(job):
     """(i, j, cover or None, inputs key, whether it was kept) for one tile."""
-    area, meta, t, height = job
+    area, meta, raw, around_raw, heights = job
+    t = json.loads(raw)
     i, j = t["i"], t["j"]
-    inputs = layers.cover_key(t, height)
+    inputs = layers.cover_key(t, heights.get("0,0"))
 
     def stamp():
-        # The photographs kept are inputs too: a replaced file is a changed photo.
-        photos = [PHOTOS / area / kind / f"{i}_{j}.jpg" for kind in ("rgb", "cir")]
-        return {"code": code_key(), "runtime": runtime(), "inputs": inputs,
-                "dsm": build_cache.identity(IPR_DSM),
-                "photos": [build_cache.digest(p.read_bytes()) if p.exists() else None for p in photos]}
+        # The photographs kept are inputs too: a replaced file is a changed photo. So are the
+        # neighbours whose margin is worked out with the tile: their outlines, heights and photos.
+        def photos(a, b, kinds=("rgb", "cir")):
+            return [PHOTOS / area / kind / f"{a}_{b}.jpg" for kind in kinds]
+        near = {}
+        for k in sorted(around_raw):
+            di, dj = map(int, k.split(","))
+            near[k] = [build_cache.digest(around_raw[k].encode()), heights.get(k),
+                       [p.stat().st_size if p.exists() else None for p in photos(i + di, j + dj)]]
+        return {"code": code_key(), "runtime": runtime(), "inputs": inputs, "own": build_cache.digest(raw.encode()),
+                "dsm": build_cache.identity(IPR_DSM), "around": near,
+                "photos": [build_cache.digest(p.read_bytes()) if p.exists() else None for p in photos(i, j)]}
     stored = build_cache.read_json(result_path(area, i, j))
     if stored and stored.get("stamp") == stamp():
         return i, j, stored["cover"], inputs, True
-    got = tile_cover(area, meta, t)
+    around = {tuple(map(int, k.split(","))): json.loads(v) for k, v in around_raw.items()}
+    got = tile_cover(area, meta, t, around)
     build_cache.write_json(result_path(area, i, j), {"stamp": stamp(), "cover": got})
     return i, j, got, inputs, False
 
 
 def build(area, meta, jobs, tiles=None, limit=None):
-    """Classify the ground of every tile of the area (or `tiles`) that has enough plain
+    """Classify the ground of every tile of the area (or `tiles`) that has enough bare
     ground, and write the cover layer."""
     from concurrent.futures import ProcessPoolExecutor
     terrain_layer = layers.read_layer(area, "terrain")
@@ -1050,21 +1198,29 @@ def build(area, meta, jobs, tiles=None, limit=None):
     payloads = terrain_layer["payloads"]
     meta = {**meta, "terrain": terrain_layer["index"]}
     want = set(tiles) if tiles else None
+    started = time.time()
+    # Every tile with enough bare ground, kept as text: a tile is worked out with the margin
+    # of its neighbours. Cheap and rough: most tiles have nothing to look at, and need no photograph.
+    stock = {}
+    for i, j, t in layers.tiles(area):
+        t = {**t, "i": i, "j": j}
+        if plain_ground(t) >= MIN_BEIGE:
+            stock[(i, j)] = slim(t)
+    print(f"  {len(stock)} tiles with bare ground to look at, found in {time.time() - started:.0f} s", flush=True)
+    height = lambda i, j: payloads.get(f"{i}_{j}.height.bin.gz", [None, None])[1]
 
     def work():
         n = 0
-        for i, j, t in layers.tiles(area):
+        for (i, j), raw in stock.items():
             if want is not None and (i, j) not in want:
-                continue
-            t = {**t, "i": i, "j": j}
-            # Cheap and rough: most tiles have nothing to look at, and need no photograph.
-            if plain_ground(t) < MIN_BEIGE:
                 continue
             n += 1
             if limit and n > limit:
                 return
-            yield area, meta, t, payloads.get(f"{i}_{j}.height.bin.gz", [None, None])[1]
-    started, done, redone, covers, keys, nopic = time.time(), 0, 0, {}, {}, 0
+            near = [(di, dj) for di in (-1, 0, 1) for dj in (-1, 0, 1) if (di or dj) and (i + di, j + dj) in stock]
+            yield (area, meta, raw, {f"{di},{dj}": stock[(i + di, j + dj)] for di, dj in near},
+                   {f"{di},{dj}": height(i + di, j + dj) for di, dj in [(0, 0), *near]})
+    done, redone, covers, keys, nopic = 0, 0, {}, {}, 0
     if want is not None:  # a trial on some tiles adds to what the layer already has
         before = layers.read_layer(area, "cover") or {}
         covers, keys = dict(before.get("tiles", {})), dict(before.get("inputs", {}))
@@ -1088,8 +1244,9 @@ def build(area, meta, jobs, tiles=None, limit=None):
 
 
 def plain_ground(t):
-    """Square metres of the tile no area, street or building covers (1 m raster: only to decide)."""
-    return float(beige_mask(t, 1.0).sum())
+    """Square metres of the tile to classify: what no area, street or building covers, and
+    the surveyed courtyards (1 m raster: only to decide)."""
+    return float(bare_mask(t, [t], 1.0).sum())
 
 
 def tiles_in(i0, i1, j0, j1, skip=None):

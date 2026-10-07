@@ -1,0 +1,763 @@
+{
+ "before": {
+  "kinds": {
+   "bridge": {
+    "area": 1069.2,
+    "points": 344,
+    "pieces": 17
+   },
+   "dirt": {
+    "area": 59396.9,
+    "points": 5625,
+    "pieces": 177
+   },
+   "path": {
+    "area": 189917.4,
+    "points": 17507,
+    "pieces": 413
+   },
+   "road": {
+    "area": 484283.5,
+    "points": 26810,
+    "pieces": 287
+   },
+   "sett": {
+    "area": 21437.5,
+    "points": 1983,
+    "pieces": 59
+   }
+  },
+  "odd": {
+   "path_on_road": 22128.2,
+   "path_on_building": 2340.2,
+   "path_on_water": 0.0,
+   "path_on_surveyed": 0.0
+  },
+  "walk": {
+   "sidewalk_m": 0,
+   "sidewalk_on_surveyed_m": 0,
+   "sidewalk_on_ribbon_m": 0,
+   "sidewalk_on_either_m": 0,
+   "sidewalk_within_1m_m": 0,
+   "walk_m": 125171,
+   "walk_on_surveyed_m": 0
+  },
+  "kerb": {
+   "sides": 11432,
+   "outside_is_surveyed_walk": 0,
+   "outside_is_road": 1937,
+   "inside_is_surveyed_walk": 0
+  },
+  "per_tile": {
+   "32_64": {
+    "surveyed": 0,
+    "ribbons": 2349,
+    "trambed": 0
+   },
+   "32_65": {
+    "surveyed": 0,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "32_66": {
+    "surveyed": 0,
+    "ribbons": 1260,
+    "trambed": 0
+   },
+   "32_67": {
+    "surveyed": 0,
+    "ribbons": 3551,
+    "trambed": 0
+   },
+   "32_68": {
+    "surveyed": 0,
+    "ribbons": 1897,
+    "trambed": 0
+   },
+   "32_69": {
+    "surveyed": 0,
+    "ribbons": 1434,
+    "trambed": 0
+   },
+   "32_70": {
+    "surveyed": 0,
+    "ribbons": 1997,
+    "trambed": 0
+   },
+   "32_71": {
+    "surveyed": 0,
+    "ribbons": 16,
+    "trambed": 0
+   },
+   "33_64": {
+    "surveyed": 0,
+    "ribbons": 5846,
+    "trambed": 0
+   },
+   "33_65": {
+    "surveyed": 0,
+    "ribbons": 2714,
+    "trambed": 0
+   },
+   "33_66": {
+    "surveyed": 0,
+    "ribbons": 1084,
+    "trambed": 0
+   },
+   "33_67": {
+    "surveyed": 0,
+    "ribbons": 2230,
+    "trambed": 0
+   },
+   "33_68": {
+    "surveyed": 0,
+    "ribbons": 2044,
+    "trambed": 0
+   },
+   "33_69": {
+    "surveyed": 0,
+    "ribbons": 2708,
+    "trambed": 0
+   },
+   "33_70": {
+    "surveyed": 0,
+    "ribbons": 699,
+    "trambed": 0
+   },
+   "33_71": {
+    "surveyed": 0,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "34_64": {
+    "surveyed": 0,
+    "ribbons": 8011,
+    "trambed": 0
+   },
+   "34_65": {
+    "surveyed": 0,
+    "ribbons": 10794,
+    "trambed": 0
+   },
+   "34_66": {
+    "surveyed": 0,
+    "ribbons": 1771,
+    "trambed": 0
+   },
+   "34_67": {
+    "surveyed": 0,
+    "ribbons": 1236,
+    "trambed": 0
+   },
+   "34_68": {
+    "surveyed": 0,
+    "ribbons": 3492,
+    "trambed": 0
+   },
+   "34_69": {
+    "surveyed": 0,
+    "ribbons": 126,
+    "trambed": 0
+   },
+   "34_70": {
+    "surveyed": 0,
+    "ribbons": 390,
+    "trambed": 0
+   },
+   "34_71": {
+    "surveyed": 0,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "35_64": {
+    "surveyed": 0,
+    "ribbons": 7115,
+    "trambed": 0
+   },
+   "35_65": {
+    "surveyed": 0,
+    "ribbons": 9158,
+    "trambed": 0
+   },
+   "35_66": {
+    "surveyed": 0,
+    "ribbons": 4910,
+    "trambed": 0
+   },
+   "35_67": {
+    "surveyed": 0,
+    "ribbons": 1630,
+    "trambed": 0
+   },
+   "35_68": {
+    "surveyed": 0,
+    "ribbons": 6563,
+    "trambed": 0
+   },
+   "35_69": {
+    "surveyed": 0,
+    "ribbons": 2185,
+    "trambed": 0
+   },
+   "35_70": {
+    "surveyed": 0,
+    "ribbons": 313,
+    "trambed": 0
+   },
+   "35_71": {
+    "surveyed": 0,
+    "ribbons": 410,
+    "trambed": 0
+   },
+   "36_64": {
+    "surveyed": 0,
+    "ribbons": 1751,
+    "trambed": 0
+   },
+   "36_65": {
+    "surveyed": 0,
+    "ribbons": 7806,
+    "trambed": 0
+   },
+   "36_66": {
+    "surveyed": 0,
+    "ribbons": 2437,
+    "trambed": 0
+   },
+   "36_67": {
+    "surveyed": 0,
+    "ribbons": 907,
+    "trambed": 0
+   },
+   "36_68": {
+    "surveyed": 0,
+    "ribbons": 6673,
+    "trambed": 0
+   },
+   "36_69": {
+    "surveyed": 0,
+    "ribbons": 904,
+    "trambed": 0
+   },
+   "36_70": {
+    "surveyed": 0,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "36_71": {
+    "surveyed": 0,
+    "ribbons": 318,
+    "trambed": 0
+   },
+   "37_64": {
+    "surveyed": 0,
+    "ribbons": 720,
+    "trambed": 0
+   },
+   "37_65": {
+    "surveyed": 0,
+    "ribbons": 6520,
+    "trambed": 0
+   },
+   "37_66": {
+    "surveyed": 0,
+    "ribbons": 1959,
+    "trambed": 0
+   },
+   "37_67": {
+    "surveyed": 0,
+    "ribbons": 1286,
+    "trambed": 0
+   },
+   "37_68": {
+    "surveyed": 0,
+    "ribbons": 7568,
+    "trambed": 0
+   },
+   "37_69": {
+    "surveyed": 0,
+    "ribbons": 6595,
+    "trambed": 0
+   },
+   "37_70": {
+    "surveyed": 0,
+    "ribbons": 316,
+    "trambed": 0
+   },
+   "37_71": {
+    "surveyed": 0,
+    "ribbons": 362,
+    "trambed": 0
+   },
+   "38_64": {
+    "surveyed": 0,
+    "ribbons": 1897,
+    "trambed": 0
+   },
+   "38_65": {
+    "surveyed": 0,
+    "ribbons": 3643,
+    "trambed": 0
+   },
+   "38_66": {
+    "surveyed": 0,
+    "ribbons": 2528,
+    "trambed": 0
+   },
+   "38_67": {
+    "surveyed": 0,
+    "ribbons": 647,
+    "trambed": 0
+   },
+   "38_68": {
+    "surveyed": 0,
+    "ribbons": 8687,
+    "trambed": 0
+   },
+   "38_69": {
+    "surveyed": 0,
+    "ribbons": 8799,
+    "trambed": 0
+   },
+   "38_70": {
+    "surveyed": 0,
+    "ribbons": 564,
+    "trambed": 0
+   },
+   "38_71": {
+    "surveyed": 0,
+    "ribbons": 693,
+    "trambed": 0
+   },
+   "39_64": {
+    "surveyed": 0,
+    "ribbons": 4089,
+    "trambed": 0
+   },
+   "39_65": {
+    "surveyed": 0,
+    "ribbons": 1616,
+    "trambed": 0
+   },
+   "39_66": {
+    "surveyed": 0,
+    "ribbons": 1943,
+    "trambed": 0
+   },
+   "39_67": {
+    "surveyed": 0,
+    "ribbons": 617,
+    "trambed": 0
+   },
+   "39_68": {
+    "surveyed": 0,
+    "ribbons": 6900,
+    "trambed": 0
+   },
+   "39_69": {
+    "surveyed": 0,
+    "ribbons": 10000,
+    "trambed": 0
+   },
+   "39_70": {
+    "surveyed": 0,
+    "ribbons": 3142,
+    "trambed": 0
+   },
+   "39_71": {
+    "surveyed": 0,
+    "ribbons": 97,
+    "trambed": 0
+   }
+  },
+  "bytes_ground": 3413165
+ },
+ "after": {
+  "kinds": {
+   "bridge": {
+    "area": 1050.2,
+    "points": 301,
+    "pieces": 17
+   },
+   "dirt": {
+    "area": 66773.5,
+    "points": 4356,
+    "pieces": 204
+   },
+   "path": {
+    "area": 45311.0,
+    "points": 6035,
+    "pieces": 790
+   },
+   "pavement": {
+    "area": 103273.8,
+    "points": 16249,
+    "pieces": 483
+   },
+   "pavement_asphalt": {
+    "area": 145298.4,
+    "points": 23953,
+    "pieces": 1329
+   },
+   "road": {
+    "area": 484283.5,
+    "points": 26810,
+    "pieces": 287
+   },
+   "sett": {
+    "area": 19619.7,
+    "points": 1793,
+    "pieces": 53
+   },
+   "trambed": {
+    "area": 28091.6,
+    "points": 700,
+    "pieces": 32
+   }
+  },
+  "odd": {
+   "path_on_road": 13112.4,
+   "path_on_building": 1346.8,
+   "path_on_water": 0.0,
+   "path_on_surveyed": 73.8
+  },
+  "walk": {
+   "sidewalk_m": 0,
+   "sidewalk_on_surveyed_m": 0,
+   "sidewalk_on_ribbon_m": 0,
+   "sidewalk_on_either_m": 0,
+   "sidewalk_within_1m_m": 0,
+   "walk_m": 125171,
+   "walk_on_surveyed_m": 46356
+  },
+  "kerb": {
+   "sides": 11432,
+   "outside_is_surveyed_walk": 4897,
+   "outside_is_road": 1907,
+   "inside_is_surveyed_walk": 745
+  },
+  "per_tile": {
+   "32_64": {
+    "surveyed": 2699,
+    "ribbons": 614,
+    "trambed": 0
+   },
+   "32_65": {
+    "surveyed": 392,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "32_66": {
+    "surveyed": 1055,
+    "ribbons": 414,
+    "trambed": 0
+   },
+   "32_67": {
+    "surveyed": 7004,
+    "ribbons": 217,
+    "trambed": 1629
+   },
+   "32_68": {
+    "surveyed": 1937,
+    "ribbons": 212,
+    "trambed": 0
+   },
+   "32_69": {
+    "surveyed": 467,
+    "ribbons": 933,
+    "trambed": 0
+   },
+   "32_70": {
+    "surveyed": 0,
+    "ribbons": 1950,
+    "trambed": 0
+   },
+   "32_71": {
+    "surveyed": 0,
+    "ribbons": 16,
+    "trambed": 0
+   },
+   "33_64": {
+    "surveyed": 6122,
+    "ribbons": 929,
+    "trambed": 2555
+   },
+   "33_65": {
+    "surveyed": 2926,
+    "ribbons": 973,
+    "trambed": 0
+   },
+   "33_66": {
+    "surveyed": 913,
+    "ribbons": 929,
+    "trambed": 0
+   },
+   "33_67": {
+    "surveyed": 6565,
+    "ribbons": 76,
+    "trambed": 1599
+   },
+   "33_68": {
+    "surveyed": 6159,
+    "ribbons": 280,
+    "trambed": 243
+   },
+   "33_69": {
+    "surveyed": 567,
+    "ribbons": 2678,
+    "trambed": 0
+   },
+   "33_70": {
+    "surveyed": 37,
+    "ribbons": 601,
+    "trambed": 0
+   },
+   "33_71": {
+    "surveyed": 0,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "34_64": {
+    "surveyed": 9790,
+    "ribbons": 2173,
+    "trambed": 841
+   },
+   "34_65": {
+    "surveyed": 10574,
+    "ribbons": 2240,
+    "trambed": 0
+   },
+   "34_66": {
+    "surveyed": 3887,
+    "ribbons": 398,
+    "trambed": 0
+   },
+   "34_67": {
+    "surveyed": 2912,
+    "ribbons": 104,
+    "trambed": 0
+   },
+   "34_68": {
+    "surveyed": 6429,
+    "ribbons": 280,
+    "trambed": 1896
+   },
+   "34_69": {
+    "surveyed": 6123,
+    "ribbons": 51,
+    "trambed": 0
+   },
+   "34_70": {
+    "surveyed": 3048,
+    "ribbons": 385,
+    "trambed": 0
+   },
+   "34_71": {
+    "surveyed": 0,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "35_64": {
+    "surveyed": 8404,
+    "ribbons": 1343,
+    "trambed": 0
+   },
+   "35_65": {
+    "surveyed": 10539,
+    "ribbons": 928,
+    "trambed": 1246
+   },
+   "35_66": {
+    "surveyed": 5214,
+    "ribbons": 1021,
+    "trambed": 0
+   },
+   "35_67": {
+    "surveyed": 3209,
+    "ribbons": 313,
+    "trambed": 0
+   },
+   "35_68": {
+    "surveyed": 8799,
+    "ribbons": 926,
+    "trambed": 2072
+   },
+   "35_69": {
+    "surveyed": 4582,
+    "ribbons": 1022,
+    "trambed": 0
+   },
+   "35_70": {
+    "surveyed": 4572,
+    "ribbons": 168,
+    "trambed": 0
+   },
+   "35_71": {
+    "surveyed": 566,
+    "ribbons": 180,
+    "trambed": 0
+   },
+   "36_64": {
+    "surveyed": 1704,
+    "ribbons": 1016,
+    "trambed": 0
+   },
+   "36_65": {
+    "surveyed": 10747,
+    "ribbons": 383,
+    "trambed": 1679
+   },
+   "36_66": {
+    "surveyed": 3585,
+    "ribbons": 710,
+    "trambed": 0
+   },
+   "36_67": {
+    "surveyed": 5307,
+    "ribbons": 45,
+    "trambed": 0
+   },
+   "36_68": {
+    "surveyed": 8005,
+    "ribbons": 701,
+    "trambed": 2161
+   },
+   "36_69": {
+    "surveyed": 398,
+    "ribbons": 620,
+    "trambed": 0
+   },
+   "36_70": {
+    "surveyed": 407,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "36_71": {
+    "surveyed": 531,
+    "ribbons": 7,
+    "trambed": 0
+   },
+   "37_64": {
+    "surveyed": 424,
+    "ribbons": 167,
+    "trambed": 0
+   },
+   "37_65": {
+    "surveyed": 7245,
+    "ribbons": 85,
+    "trambed": 464
+   },
+   "37_66": {
+    "surveyed": 3474,
+    "ribbons": 722,
+    "trambed": 1310
+   },
+   "37_67": {
+    "surveyed": 3357,
+    "ribbons": 0,
+    "trambed": 0
+   },
+   "37_68": {
+    "surveyed": 9215,
+    "ribbons": 928,
+    "trambed": 1100
+   },
+   "37_69": {
+    "surveyed": 6455,
+    "ribbons": 1824,
+    "trambed": 1296
+   },
+   "37_70": {
+    "surveyed": 276,
+    "ribbons": 158,
+    "trambed": 0
+   },
+   "37_71": {
+    "surveyed": 416,
+    "ribbons": 69,
+    "trambed": 0
+   },
+   "38_64": {
+    "surveyed": 1812,
+    "ribbons": 144,
+    "trambed": 0
+   },
+   "38_65": {
+    "surveyed": 4770,
+    "ribbons": 309,
+    "trambed": 0
+   },
+   "38_66": {
+    "surveyed": 4612,
+    "ribbons": 644,
+    "trambed": 1818
+   },
+   "38_67": {
+    "surveyed": 1873,
+    "ribbons": 159,
+    "trambed": 0
+   },
+   "38_68": {
+    "surveyed": 9658,
+    "ribbons": 1338,
+    "trambed": 0
+   },
+   "38_69": {
+    "surveyed": 7298,
+    "ribbons": 3324,
+    "trambed": 2327
+   },
+   "38_70": {
+    "surveyed": 839,
+    "ribbons": 357,
+    "trambed": 0
+   },
+   "38_71": {
+    "surveyed": 60,
+    "ribbons": 537,
+    "trambed": 0
+   },
+   "39_64": {
+    "surveyed": 5620,
+    "ribbons": 865,
+    "trambed": 0
+   },
+   "39_65": {
+    "surveyed": 4249,
+    "ribbons": 988,
+    "trambed": 0
+   },
+   "39_66": {
+    "surveyed": 2829,
+    "ribbons": 860,
+    "trambed": 1615
+   },
+   "39_67": {
+    "surveyed": 202,
+    "ribbons": 609,
+    "trambed": 0
+   },
+   "39_68": {
+    "surveyed": 4309,
+    "ribbons": 2322,
+    "trambed": 0
+   },
+   "39_69": {
+    "surveyed": 9055,
+    "ribbons": 1922,
+    "trambed": 2241
+   },
+   "39_70": {
+    "surveyed": 3391,
+    "ribbons": 1046,
+    "trambed": 0
+   },
+   "39_71": {
+    "surveyed": 948,
+    "ribbons": 96,
+    "trambed": 0
+   }
+  },
+  "bytes_ground": 3939780
+ }
+}

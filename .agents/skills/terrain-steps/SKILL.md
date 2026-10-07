@@ -195,6 +195,18 @@ place stays as the terrain model has it. Use it for a place that's worse with th
 survey than without, after looking at both; don't bend a rule for one place. A box
 that takes in a bridge's end changes where that bridge lands: measure it again.
 
+## Edges that stop you
+
+`src/stepEdges.ts` makes the tops of the steps solid (0.8 m and more) and puts a
+parapet on them, from the same outlines, sides and heights as the drawn walls. It is
+open where a way on the ground crosses. Without a browser:
+
+    node scripts/check-step-edges.mjs praha
+
+Its list of car streets over the highest drops is a list of places to look at: a street
+doesn't cross a drop of 7 m on the ground. The scenario `step-edges` drives at a quay
+wall, walks at a retaining wall, and uses stairs and a street across a step.
+
 ## What's still wrong
 
 `todo.md`, "Steps in the ground: what's left". The lattice is 4 m: a slope with no

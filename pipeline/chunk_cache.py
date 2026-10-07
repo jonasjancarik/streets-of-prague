@@ -2,6 +2,7 @@
 
 import build_cache
 import dtm
+import dtm_walls
 import ipr_trees
 import layers
 from osm_area import OUT
@@ -22,6 +23,7 @@ def inputs(area, meta, wanted, source, settings):
         if name in ("ground", "streets"):
             extra["dtm"] = survey
         if name == "ground":
+            extra["dtm_lines"] = [build_cache.identity(p) for p in sorted(dtm_walls.LINES.glob("*.zip"))]
             extra["trees"] = build_cache.identity(ipr_trees.CACHE)
         if name == "parking":
             extra["parking"] = build_cache.identity(OUT / f"{area}_parking.json")

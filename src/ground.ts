@@ -695,8 +695,14 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.parking || []), COLORS.parking, 'asphalt');
     add(polygons(R.dirt || []), COLORS.dirt, 'dirt');
     add(polygons(R.path || []), COLORS.path, 'mosaic');
+    // Pavements and traffic islands as the technical map surveyed them, kerb to wall
+    // (pipeline/pavements.py): asphalt like the unmapped ground, or Prague's mosaic.
+    add(polygons(R.pavement_asphalt || []), COLORS.pavement, 'asphalt');
+    add(polygons(R.pavement || []), COLORS.path, 'mosaic');
     add(polygons(R.sett || []), COLORS.sett, 'setts');
     add(polygons(R.road || []), COLORS.asphalt, 'asphalt');
+    // Where the trams have a bed of their own beside the street: ballast under the tracks.
+    add(polygons(R.trambed || []), COLORS.ballast, 'gravel');
     // Bay lines as Prague paints them: a solid blue line in residents' zones, white
     // dashes in the mixed (violet) and visitors' (orange) ones, plain white elsewhere.
     for (const [cat, color, dash] of BAY_PAINT) {

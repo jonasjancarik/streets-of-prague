@@ -302,7 +302,17 @@ record the measurements, merge decisions and pending landmark asset activation.
   These surface rules leave the walking network and street kerbs alone. The city's
   technical map supplies ground-level courtyards, maintained green, gardens, pitches
   and woods where OSM has no more specific surface. OSM ground and roads draw above
-  those surveyed shapes. Rebuild the `ground` layer for these changes; use
+  those surveyed shapes. Inside Prague the pavements come from the same map
+  (`pipeline/pavements.py`): each one from the kerb to the wall as surveyed, with the
+  traffic islands, medians and tram-stop platforms, paved with what OSM's footways on
+  it say (Prague's pale mosaic, asphalt, earth for a park's path, setts for a cobbled
+  walking street; one that says nothing is paved like its nearest neighbour). The
+  footways' own 3 m ribbons are left out where they run on a surveyed pavement, so
+  only paths the survey doesn't have keep one, with square ends: through parks,
+  across estates and past the city limits. Mapped squares and car parks keep their
+  own paving, and a block's gardens start behind the pavement. Where the trams have a
+  bed of their own beside the street it is ballast. `DERIVED_PAVEMENTS=1` builds the
+  ground without any of this, to compare. Rebuild the `ground` layer for these changes; use
   `pipeline/beige_report.py` to measure the remaining unmapped ground in an area's tiles.
   Land that OSM gives a use but no surface still gets one: fields with crop rows
   (farmland, nurseries), concrete work yards (industrial land, garages, farmyards),
@@ -675,6 +685,22 @@ record the measurements, merge decisions and pending landmark asset activation.
   about 1.6 m. Unlike the walls, they aren't in the tile's collision grid (the people
   and traffic of the city ignore them). Older tiles have none: rebuild the `ground`
   layer (`uv run build_tiles.py <area> --layers ground`).
+- **Surveyed walls, fences and railings** (`pipeline/dtm_walls.py`): where the technical
+  map's survey covers a tile (30 m of its lines or more), its walls ("Zeď"), fences
+  ("Plot") and railings ("Zábradlí", set 3, in `pipeline/.cache/dtm/ZPS_KR/`) stand in
+  place of OSM's fences, of the fences made up round family houses, and of OSM's walls
+  where the survey has a wall within 2 m (a thick garden wall is two outlines in the
+  survey, which aren't used, so OSM's stays). They carry `"s": 1` and a height in the
+  tile: an enclosing wall is 2 m, another 1 m, a fence 1.5 m, a railing 1 m (the map has
+  no heights for them). Every wall and fence in such a tile is cut where something goes
+  through: on the streets' and paths' surfaces, across each mapped street and path, in
+  passages through buildings, at the gates of family houses' plots and within 0.8 m of
+  a building. OSM's town walls, the crash barriers and the hedges stay (a hedge along a
+  surveyed line goes). Outside the survey everything is OSM's.
+  `uv run dtm_walls.py <area> --tiles --before <old tiles folder>` counts the metres per
+  tile, and with `--crossings` the graph's edges and the gates that a wall or a fence
+  closes. Rebuild the `ground` layer to get them, then `ipr_buildings.py` and
+  `ipr_terrain.py`, which depend on it.
 - **Crash barriers** are a third kind of the same sections (`kind: "guard_rail"` in a
   tile's `fences`): a steel beam 0.75 m high on a post every 2 m. They come from OSM's
   `barrier=guard_rail` where it is mapped, and elsewhere `pipeline/barriers.py` puts them
@@ -971,6 +997,13 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   bridge polygon appears in only one tile. Separate deck levels keep their existing
   pull order; conflicting support is rejected before export. See
   `docs/bridge-ground-edge-diagnosis.md` for the source comparison.
+  The top of a step that drops 0.8 m or more stops cars and people (`src/stepEdges.ts`:
+  solid in the tile's collision grid, with a low parapet; a quay less than 2.5 m above
+  the water has none, the water stops you there). The edge is open over the width of
+  each street, path or stairs on the ground that crosses it. `node
+  scripts/check-step-edges.mjs <area>` counts the edges and lists the car streets that
+  cross the highest drops (places where the terrain or the map is wrong);
+  `?nostepedges` turns the edges off.
   Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it.
