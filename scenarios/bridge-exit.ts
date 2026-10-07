@@ -10,15 +10,24 @@ export default {
     t.weather('clear');
     t.empty(); // nothing to run into on the way
     const c = await t.drive('sedan');
-    // Scrapes along the parapet and a tram in the way are not held against the car: it
-    // has to get there in one piece (pushed into a tram for long, it would blow up).
+    // Steered for the deck: first a spot in the lane south of the tram tracks just past the
+    // bridge head, then one over the island. (A fixed heading of 264 from here aims 2 m
+    // south of where the deck begins, at the quay wall beside it: the car got onto the
+    // bridge only when knocks on the way had shifted it north.)
+    const head: [number, number] = [50.08131, 14.41265], island: [number, number] = [50.08129, 14.41048];
+    const towards = (to: [number, number]) => {
+      const { lat, lon } = t.where();
+      return (450 - Math.atan2((to[0] - lat) * 111320, (to[1] - lon) * 71500) * 180 / Math.PI) % 360;
+    };
+    // Scrapes and a tram in the way are not held against the car: it has to get there in
+    // one piece (pushed into a tram for long, it would blow up).
     for (let i = 0; i < 120 && t.where().lon > 14.4106; i++) {
       c.damage = 0;
-      t.push(50, 264);
+      t.push(50, towards(t.where().lon > head[1] + 0.00015 ? head : island));
       await t.wait(1);
     }
     c.damage = 0;
-    t.push(0, 264);
+    t.push(0);
     await t.wait(0.5);
     if (!t.check('the car is on the bridge', (c.level ?? 0) > 0, `level ${c.level} at ${t.where().lat}, ${t.where().lon}, heading ${t.where().heading}, ${t.vehicleGap()} m to the nearest vehicle`)) return;
     const deck = c.gz ?? 0;

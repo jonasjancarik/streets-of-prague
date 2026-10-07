@@ -152,6 +152,10 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
 
     async go(w: Where, opt: { heading?: number } = {}) {
       const [x, y] = kit.toLocal(w);
+      // Put somewhere else, however near: what you stood on says nothing about what you
+      // stand on now. (The game keeps you on a bridge's deck over a move of a few metres,
+      // as walking does: from the deck over a quay, t.go to the quay left you on the deck.)
+      if (g.mode() === 'foot') (g.me() as { level?: number }).level = undefined;
       await g.teleport(x, y);
       if (opt.heading !== undefined) g.me().h = rad(opt.heading);
       await frame();
@@ -350,15 +354,17 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       g.fires.check(c);
     },
     // The traffic car nearest to you with a driver in it, and whether it still has one.
-    // The nearest car in traffic. `roomy`: one with open ground at its driver's door and
-    // no other car within reach of it, so E there means that door.
+    // The nearest car in traffic. `roomy`: one with open ground at its driver's door, no
+    // other car within reach of it and no tram near enough to board, so E there means
+    // that door; and not a police car, whose officer gets out and comes after you
+    // instead of being pulled out.
     trafficCar(roomy = false) {
       const m = g.me();
       const room = (c: Car) => {
         const door = c.doors.find((d) => d.n === 1);
         if (!door) return false;
         const [x, y] = c.beside(door, 1);
-        return g.grid.at(x, y) === 0 && g.carsNear(x, y, 8).every((o) => o === c || o.gap(x, y) > 2);
+        return c.type !== 'police' && g.grid.at(x, y) === 0 && g.carsNear(x, y, 8).every((o) => o === c || o.gap(x, y) > 2) && !g.tramsNear(x, y, 25).length;
       };
       return g.traffic.agents.map((k) => k.car).filter((c) => !c.two && (!roomy || room(c))).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null;
     },
@@ -370,6 +376,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       return {
         burning: !c.burnt && !!b && b.fuse >= 0, wreck: !!c.burnt, flames: g.fires.onFire(c),
         engine: e ? e.phase : null, spraying: g.brigade.crew.filter((k) => k.engine.target === c && k.spraying).length, cannon: !!e && !!e.spraying,
+        away: e ? round(Math.hypot(e.car.x - c.x, e.car.y - c.y)) : null,
       };
     },
 

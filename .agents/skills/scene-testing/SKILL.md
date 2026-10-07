@@ -72,7 +72,7 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   command, `run` included: without it the command loads the game from port 5191.
 - `t.ignite(car)` sets a car on fire; `t.fire(car)`: whether it burns, is a wreck, still
   has flames, what the fire engine sent to it is doing (`go`, `work`, `leave`) and how
-  many hoses are on it.
+  many hoses are on it, whether its roof cannon sprays and how far away it is.
 - `t.enter(car)` takes an existing car through the normal entry path, including theft.
   It, `t.drive` and `t.exit` are instant. `t.press()` is E as the player presses it:
   to the door, in (or out) through it, which takes a second or so of `t.wait`; with a
@@ -201,6 +201,9 @@ one in real time, "Run all" lists which pass.
 - Parked cars are drawn only within the normal camera's view radius of the free camera's
   target. A top-down `t.camera({ height: 363 })` of a street shows no cars until you
   `t.view(4)` first (`t.view(1)` afterwards); counting `tile.cars` doesn't need it.
+- Where a bridge crosses a quay or a street, a spot is both on the deck and under it. `t.go` to
+  walkable ground puts you on the ground; to water or anything else not walkable, on the deck
+  (`boat-boarding` goes to a boat's place on the water first, then to its bank below).
 - Import game modules through `t`, not by URL: after an edit Vite serves a file under a
   versioned URL, and importing it again gives a second, empty copy (that's how
   `posts` once looked empty).
