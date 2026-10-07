@@ -55,6 +55,9 @@ CLEAR = 5.5  # m between a bridge or tunnel and one crossing it on another layer
 WATER_CLEAR = 5.5  # m between open water and a bridge over it, away from the banks
 WATER_SLOPE = 0.08  # how quickly a bridge rises to that from where it leaves the ground
 STAIRS_SLOPE = 0.5  # and how quickly stairs do
+STAIRS_MAX = 0.8  # steeper than this isn't even stairs
+ON_FOOT = {"footway", "path", "pedestrian", "steps"}
+SOFT = 0.05  # how much less a link along stairs holds two heights together than one along a deck
 BESIDE = 10.0  # m: two structures this close share lattice points (PAD, and a cell's diagonal)
 SAME = 3.0  # m: two structures further apart in height than this can't share a level
 STAIRS_SAME = 1.0  # m: the same for stairs (which have their own profile) and what's beside them
@@ -266,8 +269,9 @@ class Net:
     """The structures' ways as a graph: their OSM nodes (shared where ways meet) and
     points in between every DENSE metres, each with a height to work out."""
 
-    def __init__(self, ways):
+    def __init__(self, ways, soft=frozenset()):
         self.xy, self.key, self.adj = [], {}, []
+        self.soft = set()  # the links along stairs: where a height changes, it changes there
         self.climb = []  # per point: (neighbour, how far a way can rise between the two)
         self.kind = []
         self.paths = []  # per way: its points, in order
@@ -289,6 +293,9 @@ class Net:
                 self.adj[b].append((a, d))
                 self.climb[a].append((b, d * rate))
                 self.climb[b].append((a, d * rate))
+                if w["id"] in soft:
+                    self.soft.add((a, b))
+                    self.soft.add((b, a))
             self.paths.append(path)
             if path and w['kind'] != 'bridge':
                 self._non_bridge_seeds.append(path[0])
@@ -355,7 +362,7 @@ class Net:
             for i, neighbours in enumerate(self.adj):
                 degree = 0.0
                 for j, length in neighbours:
-                    weight = 1.0 / length
+                    weight = (SOFT if (i, j) in self.soft else 1.0) / length
                     rows.append(i); cols.append(j); values.append(-weight)
                     degree += weight
                 rows.append(i); cols.append(i); values.append(degree)
@@ -440,11 +447,13 @@ class Net:
                 self.h[i] = fixed[b[0][1]]
 
 
-def solve(ways, ground, decks):
+def solve(ways, ground, decks, soft=frozenset()):
     """Heights along every structure way (metres above sea level), as a profile per
     way: (cumulative distance along it, heights) at its points. `ground(xs, ys)`: bare
-    terrain; `decks`: IPR's bridges (ipr_decks)."""
-    net = Net(ways)
+    terrain; `decks`: IPR's bridges (ipr_decks); `soft`: the ids of the ways that are
+    stairs (see stairs): between a deck and the ground it's they that take up the
+    difference in height, not the deck's last metres."""
+    net = Net(ways, soft)
     if not len(net.xy):
         return net, []
     T = ground(net.xy[:, 0], net.xy[:, 1])
@@ -507,6 +516,9 @@ def solve(ways, ground, decks):
         if w["kind"] != "bridge" or w["hw"] == "steps" or length[w["id"]] >= STEEP_LENGTH:
             continue
         ends = [net.key[("n", w["nodes"][0])], net.key[("n", w["nodes"][-1])]]
+        # (A way for people on foot can be that steep: stairs the map calls a footway.)
+        if all(i in fixed for i in ends) and w["hw"] in ON_FOOT and abs(fixed[ends[0]] - fixed[ends[1]]) <= STAIRS_MAX * max(length[w["id"]], 1):
+            continue
         if all(i in fixed for i in ends) and abs(fixed[ends[0]] - fixed[ends[1]]) > STEEP * max(length[w["id"]], 1):
             fixed[ends[0]] = fixed[ends[1]] = max(fixed[ends[0]], fixed[ends[1]])
             w.pop("raised", None)
@@ -528,8 +540,11 @@ def solve(ways, ground, decks):
     # face that leaves a boat no room: that's a pier's footing or its cap.)
     kind = np.array(net.kind)
     snapped = 0
+    # (Not along stairs: IPR's flat faces there are the deck they leave or a landing,
+    # and a flight pinned to one of them drags everything it joins.)
+    on_stairs = {i for i, nb in enumerate(net.adj) if nb and all((i, j) in net.soft for j, _ in nb)}
     for i in np.nonzero(kind == "bridge")[0]:
-        if i in fixed or np.isnan(net.h[i]):
+        if i in fixed or np.isnan(net.h[i]) or i in on_stairs:
             continue
         z = deck_at(decks, *net.xy[i], net.h[i] + 2.0, below=6.0, above=4.0)
         if not np.isnan(z) and not (wet[i] and z < T[i] + room[i] - 0.5):
@@ -744,7 +759,6 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
         shape = drawn.buffer(w["w"] / 2 + (1.5 if w["kind"] == "tunnel" else 0), cap_style="flat", join_style="round")
         out.append(Piece(w["kind"], shape, (lambda xs, ys, line=line, prof=prof: height_along(line, prof, xs, ys)),
                          [w["id"]], w.get("mapped_layer"), w["nodes"]))
-    ramps(ways, lines, profiles, out)
     groups = [[p] for p in out]
     bridges = [k for k, w in enumerate(ways) if w["kind"] == "bridge"]
     tree = STRtree([out[k].shape for k in bridges]) if bridges else None
@@ -770,9 +784,9 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
         if hosts:
             j = max(hosts, key=lambda j: lines[j].length)
             out[k].height = out[j].height
-            out[k].ramp = None  # (part of the deck, whatever its own ends say)
             join(group_of[id(out[j])], group_of[id(out[k])])
             ways[k]["scrap"] = True
+    ramps(ways, lines, profiles, out)
 
     for poly in outlines:
         if poly.area < 30:
@@ -836,6 +850,29 @@ RAMP = 0.2  # a bridge way this steep from end to end is stairs, whatever the ma
 LANDING = 8.0  # m: a bridge way shorter than this that runs on from stairs is their landing
 
 
+def stairs(ways, profiles):
+    """Which bridge ways are stairs (their indices): those the map tags so, those as steep
+    from end to end whatever it calls them, and the landings between flights (a short way
+    running on from stairs)."""
+    at_node = defaultdict(list)
+    for k, w in enumerate(ways):
+        if w["kind"] == "bridge":
+            at_node[w["nodes"][0]].append(k)
+            at_node[w["nodes"][-1]].append(k)
+    steep = []
+    for k, (w, (s, h)) in enumerate(zip(ways, profiles)):
+        if w["kind"] != "bridge" or len(s) < 2 or np.isnan(h).any():
+            continue
+        if w["hw"] == "steps" or abs(h[-1] - h[0]) > RAMP * max(s[-1], 1.0):
+            steep.append(k)
+    is_steep = set(steep)
+    for k, (w, (s, h)) in enumerate(zip(ways, profiles)):
+        if (w["kind"] == "bridge" and k not in is_steep and len(s) >= 2 and s[-1] < LANDING and not np.isnan(h).any()
+                and any(j in is_steep for end in (0, -1) for j in at_node[w["nodes"][end]])):
+            steep.append(k)
+    return steep
+
+
 def ramps(ways, lines, profiles, out):
     """Stairs on a bridge (and ways as steep, and their landings) get their own profile (Piece.ramp)
     and stay out of their level's lattice. The lattice has a point every 4 m and one
@@ -849,18 +886,8 @@ def ramps(ways, lines, profiles, out):
         if w["kind"] == "bridge":
             at_node[w["nodes"][0]].append(k)
             at_node[w["nodes"][-1]].append(k)
-    steep = []
-    for k, (w, (s, h)) in enumerate(zip(ways, profiles)):
-        if w["kind"] != "bridge" or len(s) < 2 or np.isnan(h).any():
-            continue
-        if w["hw"] == "steps" or abs(h[-1] - h[0]) > RAMP * max(s[-1], 1.0):
-            steep.append(k)
-    # (And the landings between flights: a short way running on from stairs.)
+    steep = [k for k in stairs(ways, profiles) if not ways[k].get("scrap")]  # (a scrap is part of its deck)
     is_steep = set(steep)
-    for k, (w, (s, h)) in enumerate(zip(ways, profiles)):
-        if (w["kind"] == "bridge" and k not in is_steep and len(s) >= 2 and s[-1] < LANDING and not np.isnan(h).any()
-                and any(j in is_steep for end in (0, -1) for j in at_node[w["nodes"][end]])):
-            steep.append(k)
     for k in steep:
         w, line, (s, h) = ways[k], lines[k], profiles[k]
         s, h = np.array(s, float), np.array(h, float)
@@ -869,7 +896,7 @@ def ramps(ways, lines, profiles, out):
             if not hosts:
                 continue
             # How far the way runs on the deck it leaves, from this end.
-            far, host = 0.0, None
+            far, host = -1.0, None
             for j in hosts:
                 d = 0.0
                 while d + 0.25 <= min(line.length, 12.0):
@@ -881,6 +908,7 @@ def ramps(ways, lines, profiles, out):
                     far, host = d, j
             if host is None or far >= line.length - 0.5:
                 continue
+            far = max(far, 0.0)  # (leaving the deck at once: still from its height)
             at = far if end == 0 else line.length - far
             q = line.interpolate(at)
             top = float(out[host].height(np.array([q.x]), np.array([q.y]))[0])
@@ -1340,6 +1368,10 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     ways = merge_ways(ways)
     decks = ipr_decks(local, source_manifest)
     net, profiles = solve(ways, ground, decks)
+    # Again with the stairs known (the first run's profiles say which ways are stairs).
+    soft = frozenset(ways[k]["id"] for k in stairs(ways, profiles))
+    if soft:
+        net, profiles = solve(ways, ground, decks, soft)
     ways, profiles = drop_shallow(ways, net, profiles, ground)
     road_tree = STRtree(roads) if roads else None
     all_pieces, groups = pieces(ways, profiles, outlines, ground, decks, road_tree)

@@ -266,6 +266,9 @@ if (args.profile) {
     if (!`${e.net}:${e.id} ${e.name || ''}`.includes(args.profile)) continue;
     console.log(`\n${e.net}:${e.id} ${e.hw} ${e.name || ''} (every ${STEP} m; g = on the ground)`);
     console.log('  ' + prof.map((p) => (p[2] + REF).toFixed(1) + (p[3] ? '' : 'g')).join(' '));
+    for (const node of [e.u, e.v]) {
+      console.log(`  at node ${node}: ${(atNode.get(node) || []).filter((o) => o.net === e.net).map((o) => `${o.id} ${o.hw}${o.bridge ? ' bridge' : ''}${o.tunnel ? ' tunnel' : ''}${o.level !== undefined ? ` L${o.level}` : ''} ${(endHeight(o, node, profs) + REF).toFixed(1)}`).join('; ')}`);
+    }
   }
 }
 if (args.save) writeFileSync(args.save, JSON.stringify({ built: index.built, summary, rows }));
