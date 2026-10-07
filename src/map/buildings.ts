@@ -1,16 +1,12 @@
 import * as THREE from 'three';
-import * as SS from 'straight-skeleton';
 import { signedArea, hash } from './geo.ts';
 import type { GeoData, Point2 } from './geo.ts';
 import { TENEMENT_PLASTER } from '../facades.ts';
 import { ROOF_TILES } from './roofPalette.ts';
 import { ringSite } from './roofDetails.ts';
 import type { RoofSite } from './roofDetails.ts';
+import { straightSkeleton } from './skeleton.ts';
 import { neighbourhoodOf, roofShapeFor, pitchedColour, flatColour, hasParapet, insetRings, parapetHeight, PARAPET_WIDTH } from './roofRules.ts';
-
-// Some package builds expose the builder on a default export at runtime.
-const skeletonModule = SS as typeof SS & { default?: { SkeletonBuilder?: typeof SS.SkeletonBuilder } };
-const SkeletonBuilder = skeletonModule.SkeletonBuilder ?? skeletonModule.default?.SkeletonBuilder;
 
 export interface BuildingTile extends GeoData {
   // cover: what the roof is covered with, where OSM or pipeline/roofs.py says.
@@ -44,14 +40,9 @@ function within(ring: Point2[], x: number, y: number) {
 const PITCH = 0.8; // rise per metre of inset (~39°)
 const MAX_ROOF = 7.5;
 
-export async function initRoofs() {
-  if (!SkeletonBuilder) throw new Error('Straight skeleton builder is unavailable');
-  await SkeletonBuilder.init();
-}
-
-// Builds one merged mesh for all buildings: walls + straight-skeleton roofs.
+// Builds one merged mesh for all buildings: walls, and roofs on their footprints' straight
+// skeletons (skeleton.ts).
 export function buildBuildings(data: BuildingTile) {
-  if (!SkeletonBuilder) throw new Error('Straight skeleton builder is unavailable');
   const pos: number[] = [], nor: number[] = [], col: number[] = [], uv: number[] = [];
   const [W, H] = data.size, [ox, oy] = data.origin;
   const stats = { skeleton: 0, gabled: 0, flat: 0, failed: 0 };
@@ -181,7 +172,7 @@ export function buildBuildings(data: BuildingTile) {
 
     let sk = null;
     try {
-      sk = SkeletonBuilder.buildFromPolygon(rings.map((r) => [...r, r[0]]));
+      sk = straightSkeleton(rings);
     } catch {
       sk = null;
     }

@@ -427,7 +427,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   the street graphs (joined across tiles by OSM node ids), so start-up doesn't depend
   on the area's size. A tile's files are fetched all at once, and the heavy part of
   building it runs in web workers (`src/tileWorker.ts`): the ground's geometry
-  (`src/ground.ts`), IPR's buildings, straight-skeleton roofs for OSM buildings, the
+  (`src/ground.ts`), IPR's buildings, the roofs of OSM buildings (on their straight
+  skeletons, `src/map/skeleton.ts`), the
   windows' positions on every wall, trees, walls and the collision grid. The main
   thread joins up the street graphs, makes the meshes and parks the cars.
   A tile is loaded in two stages. The city's traffic and people live up to 300 m from
@@ -821,7 +822,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   `src/shading.ts`).
 
 `src/map/` holds the map-building modules shared with the 1945 project it came
-from (geometry helpers, straight-skeleton buildings, trees).
+from (geometry helpers, buildings with roofs on their straight skeletons, trees).
+The skeleton is the game's own code (`src/map/skeleton.ts`); `scripts/check-skeleton.mjs`
+tests it, and `scripts/roof-compare.mjs` measures every such roof in a sample of tiles so
+that two versions of the roof builder can be compared.
 
 ## Known issues
 
@@ -1321,7 +1325,6 @@ libraries to `dist/licenses.txt` (a small plugin in `vite.config.js`).
   [Hyundai Kona](https://freesound.org/s/845607/) by KVV_Audio,
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (see `public/audio/SOURCES.md`).
 - Drawing: [three.js](https://threejs.org/) (MIT); map projections: [proj4js](https://proj4js.github.io/proj4js/) (MIT).
-- Roofs: [straight-skeleton](https://github.com/StrandedKitty/straight-skeleton) (MIT, wraps CGAL).
 - Maps in the developer panel: [Leaflet](https://leafletjs.com/) (BSD-2-Clause) with OpenStreetMap tiles; address search by [Nominatim](https://nominatim.org/).
 
 ### Licences for added assets
