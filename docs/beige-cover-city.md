@@ -163,6 +163,139 @@ not kept.
   `ground_cover.py build` is run again (an error under `layers.py --strict`).
 - Fully empty tiles are never listed, so they could not get cover (none in `praha`).
 
+## Cells, margins and courtyards (branch `night-beige`, 6 October 2026)
+
+The build no longer cuts each tile's ground into pieces of its own. `cover_cells.py`
+classifies every 0.5 m cell from the bare ground within a few metres of it (the same
+thresholds, on Gaussian means), and a tile is worked out with a 16 m margin of its
+neighbours' photographs, outlines and heights. Nothing looks further than the margin, so
+the two tiles of an edge give the cells along it the same class (0 of 10,240 cells
+differed on three Smíchov edges), and outlines now run exactly to the tile's edge
+instead of rounding off before it. The surveyed courtyards (`dtm_yard`) are classified
+too (plan 014). Scores against the hand labels are in plan 014's Result: about the same
+as before, the material of hard ground included (38 %).
+
+Seen in the game on `centrum` (main's map against this branch, `?area=centrum_main`
+and `?area=centrum` on the same server, 14:00, clear, `t.camera` straight down from
+200 m and at tilt 62 from 60 m): with courtyards classified, canopy over a small
+courtyard became a wood and the game planted full-grown trees through the roofs, and a
+crown reaching over a garden wall put a tree into Nerudova. Canopy within 4 m of a
+building is now garden green, and a single tree needs 4 m to the nearest building and
+1.5 m to a street. `docs/evidence/beige-cover/courtyards-nerudova.jpg` and
+`courtyards-petrska.jpg` show main, the first try and the fix (top row from above).
+Glass roofs and passages: nothing wrong was seen in the four blocks looked at (Nerudova,
+Vodičkova, Petrská, Újezd); what stands above 2.5 m and isn't green stays "not ground",
+so a courtyard under a roof keeps its neutral paving. Most courtyard ground in the centre
+is in shadow in the photographs and stays neutral too.
+
+### The material of hard ground from OSM's `surface=*` tags: tried, not kept
+
+`cover_labels.py` builds weak labels from every OSM area and way with a `surface` tag
+(128,588 of them in the city: 79,419 asphalt, 33,237 paving, 7,146 dirt, 4,906 gravel,
+3,880 concrete; bridges, tunnels and roofed ones left out, ways widened to a strip) and
+railway ballast, takes up to 150 cells of each class from 461 tiles (none from the 49
+round the hand labels), and fits a logistic regression on 30 numbers per cell (colour,
+infrared, texture at two sizes, the surface model's roughness, how near buildings,
+streets, rails and green are).
+
+| | weak labels, whole tiles held out | hand labels: material on hard ground (59 pieces) |
+| --- | --- | --- |
+| rules, pieces (first version) | – | 40 % |
+| rules, cells | – | 38 % |
+| model, five classes | 55 % (asphalt 70, dirt 74, paving 41, concrete 39, gravel 37) | about 11 % |
+| model, asphalt, gravel and dirt only | 76 % (asphalt 85, dirt 78, gravel 55) | 19 % |
+| every hard piece called dirt | – | 59 % |
+
+The model does learn OSM's surfaces, but they are not the unmapped ground's: OSM's
+"dirt" is brown tracks through woods and fields, while the labelled dirt at Smíchov is
+the pale compacted ground of a building site, which the model calls gravel (1,414 of
+2,650 m2) and asphalt it calls gravel too. So no model is kept (`cover_model.json` does
+not exist and the rules decide). None of this beats calling all hard ground dirt on these
+labels, which says as much about the labels (one building site) as about the methods:
+labels from other districts are still what is missing.
+
+To rebuild the city's cover from the
+photographs on disk (courtyard tiles that were never looked at are downloaded from IPR,
+politely, at `--jobs` requests at a time):
+
+    cd pipeline
+    uv run --group cover ground_cover.py build praha --jobs 10
+
+Timed on a clone of the city's layers (6 October 2026, the map as built on 5 October):
+8,173 tiles looked at (24 more than before the courtyards counted, so hardly any new
+download), 5,784 with cover, 2,353 outside the photographs, every tile worked out:
+**40 min on eight processes**, 154 minutes of processor time, while other builds kept the
+machine's load average between 50 and 190. The first 3 minutes are one process finding
+the tiles with bare ground. On an idle machine with ten processes that should be 15 to
+20 minutes (not measured); the old code took 7 min 51 s, and a tile now costs about
+1.6 s of processor time against 0.18 s (a quarter more pixels, the neighbours'
+photographs opened for the margin, some thirty Gaussian filters). Then `layers.py praha`
+(or the build without `--no-assemble`) puts the cover into the tiles.
+
+What that build gave, against the cover of 5 October: 1,814 ha classified (1,792
+before): dirt 541 (517), trees 455 (437), gravel 449 (494), asphalt 229 (222), grass
+140 (121); the layer file 46.6 MB (53.6). It was run before the last change to single
+trees and gave 20,011 of them against 81,938: more than half of the canopy tops found
+lie within 2.5 m of a building (the edge of a crown or of a roof, not a trunk), and
+those planted trees against walls. With the final rule (4 m from buildings, 1 m from a
+carriageway; paths no longer count) about a third stay, some 27,000 by a sample of 30
+tiles.
+
+On a panel estate the drop is small, because most of its trees are surveyed ones since
+IPR's greenery joined the map: in the 25 tiles round Jižní Město (50.02418 N
+14.51878 E, built on main's map of 6 October) the photographs' single trees go from 165
+to 79 and all single trees from 624 to 542. `docs/evidence/beige-cover/estate-single-trees.jpg`
+shows main on the left and this branch on the right (from 230 m at tilt 12, and from
+70 m at tilt 60); `courtyards-ujezd.jpg` the same way for a courtyard block by Mělnická
+(50.0800 N 14.4060 E, straight down from 200 m).
+
+Across the 355 tile edges of `centrum`, points 0.6 m apart either side of an edge have
+different classes in 1.33 % of 2,639 pairs; the same step inside tiles changes class
+in 1.51 % of 4,242. An edge is no longer a place where the class changes.
+
+### Ground outside IPR's photographs: ČÚZK's orthophoto
+
+Checked 6 October 2026, not used yet. Ortofoto ČR has been open data since 1 July
+2023 under CC BY 4.0 (the Land Survey Office's "Zásady užívání dat a služeb" of
+23 March 2026, section 1.2, and the product's page on geoportal.cuzk.gov.cz), 12.5 cm a
+pixel, half the country renewed each year. The ArcGIS service
+`https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO/MapServer` exports up to
+4096 × 4096 pixels in S-JTSK (its cache has a 0.25 m level), and the terms name export
+of cut-outs as a way to get the open data; WMS and WMTS exist too. The infrared
+orthophoto (WMS `geoportal.cuzk.gov.cz/WMS_ORTOFOTO_CIR`, a layer a year, 2010–2025) is
+free of charge but its page gives only the decree, not CC BY: until that is cleared,
+greenness outside Prague has to come from the colour photograph. `cover_cells.measure`
+has that path (`infrared=False`) and `tile_cover` takes another `fetch`, but no
+downloader for ČÚZK is written and the green index is untested. One test request for
+tile `1_31` (S-JTSK box, 0.25 m, JPEG) came back as a 0.27 MB picture, the size of
+IPR's. IPR's surface model is empty there (all zeros), so outside the city there is no
+height either: roofs and sheds can't be told from ground by standing tall
+(`cover_cells.rules(height=False)`), only ČÚZK's older DMP 1G could help.
+
+## The painted photo (`?ortho`) tried other ways (6 October 2026)
+
+`pipeline/cover_painted.py praha 51 53 53 55 --out <folder>` writes each variant for a
+block of the Smíchov tiles; `ground_cover.py ortho`, what the game shows, is unchanged.
+Pictures in `docs/evidence/painted-photo/`: the same 125 m of ground in all nine
+(`ground-site.jpg`, `ground-yards.jpg`) and six of them with the map's streets and
+buildings drawn over flat (`with-map-….jpg`, in the order of its name).
+
+| variant | m/px | KB a tile | what it looks like |
+| --- | --- | --- | --- |
+| photo | 0.5 | 63 | the photograph, for reference |
+| current | 0.5 | 42 | what `ortho` bakes: a soft photograph |
+| margin | 0.5 | 42 | filtered across tile edges; no visible difference away from them |
+| brush (9 px, 3.5 to 1) | 0.5 | 39 | flatter planes, small clutter gone; the shadows still read as a photo |
+| metre | 1.0 | 12 | about as painterly as the bigger brush at a third of the size |
+| two | 2.0 | 4 | blocky once the camera is low |
+| shadows lifted | 0.5 | 40 | shadows brighter but left with a blue-violet cast |
+| game's palette | 0.5 | 41 | ground nearer the game's colours, but shadows are pulled to wood green |
+| all (1 m, bigger brush, shadows, palette) | 1.0 | 10 | the least photographic; pale, shadows as grey stains |
+
+The photograph's cast shadows are what keeps it a photograph, and neither attempt
+removes them well. Still to try: casting the shadows from the surface model and the
+sun's position, and relighting those pixels before painting.
+
 ## What changed on disk
 
 - Code: `pipeline/ground_cover.py` (`build`), `pipeline/layers.py` (`merge_cover`,

@@ -43,11 +43,11 @@ def key(value):
 def code_key():
     """Conservative invalidation for processing changes, without manual version bumps."""
     root = Path(__file__).parent
-    # (ground_cover.py and young_woods.py work on finished tiles and keep their own keys,
-    # layers.cover_processing and layers.young_processing; so do IPR's surveyed greenery
-    # and street marks, which no other step reads.)
+    # (ground_cover.py with its cover_*.py helpers and young_woods.py work on finished tiles
+    # and keep their own keys, layers.cover_processing and layers.young_processing; so do
+    # IPR's surveyed greenery and street marks, which no other step reads.)
     return key({p.name: digest(p.read_bytes()) for p in sorted(root.glob("*.py"))
-                if not p.name.startswith("test_") and p.name not in (
+                if not p.name.startswith(("test_", "cover_")) and p.name not in (
                     "ground_cover.py", "young_woods.py", "ipr_open.py", "ipr_greenery.py", "ipr_utility.py")})
 
 

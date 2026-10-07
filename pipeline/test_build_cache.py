@@ -358,7 +358,7 @@ def report(x):
                 return build_cache.reach_key(path, ["tile_cover"])
             key = of(source)
             self.assertEqual(of(source.replace("def kuwahara(img, radius=5", "def kuwahara(img, radius=6")), key)
-            self.assertNotEqual(of(source.replace("TREE = 2.5 ", "TREE = 2.6 ")), key)
+            self.assertNotEqual(of(source.replace("MIN_BEIGE = 1000 ", "MIN_BEIGE = 1001 ")), key)  # (the thresholds are in cover_cells.py, keyed whole)
             self.assertNotEqual(of(source.replace("SJTSK_NODES = 33", "SJTSK_NODES = 17")), key)
 
 
