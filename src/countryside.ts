@@ -32,6 +32,7 @@ import type { RawStreetEdge } from './network.ts';
 export interface CountrysideSetup {
   centre: [number, number]; // lon, lat of the built map's projection
   tile: number; origin: Point2; cols: number; rows: number;
+  size: Point2; // the built map's own width and height: its last column and row of tiles are filled only so far
 }
 // A street's width: by class, and for the small ones by whether houses stand near it.
 function settingWidth(hw: string, pts: Point2[], buildings: { at: Point2 }[]): number {
@@ -236,8 +237,8 @@ export class Countryside {
     this.zoom = zoom;
     const [lon0, lat0] = setup.centre;
     this.proj = proj4(`+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`);
-    const { tile: T, origin: [ox, oy], cols, rows } = setup;
-    this.rect = [-ox, -oy, cols * T - ox, rows * T - oy];
+    const { origin: [ox, oy], size: [W, H] } = setup;
+    this.rect = [-ox, -oy, r2(W - ox), r2(H - oy)];
   }
 
   // WGS84 → the game's metres.
@@ -564,9 +565,30 @@ export class Countryside {
   }
 
   // A game tile, as pipeline/build_tiles.py would write it.
+  // The built map's last column and row of tiles are built only as far as the map goes;
+  // for those this is the rest of the tile (countrysideTiles.ts puts the two together).
   async tile(i: number, j: number): Promise<TileJSON> {
-    const { tile: T, origin: [ox, oy] } = this.setup;
-    const box: Bounds = [r2(i * T - ox), r2(j * T - oy), r2((i + 1) * T - ox), r2((j + 1) * T - oy)];
+    const { tile: T, origin: [ox, oy] } = this.setup, [, , X1, Y1] = this.rect;
+    const full: Bounds = [r2(i * T - ox), r2(j * T - oy), r2((i + 1) * T - ox), r2((j + 1) * T - oy)];
+    const [x0, y0, x1, y1] = full;
+    if (x0 >= X1 || y0 >= Y1 || x1 <= this.rect[0] || y1 <= this.rect[1]) return this.make(i, j, full);
+    // The strip east of the built part, and the one north of it.
+    const parts: Bounds[] = [];
+    if (x1 > X1) parts.push([X1, y0, x1, y1]);
+    if (y1 > Y1) parts.push([x0, Y1, Math.min(x1, X1), y1]);
+    const made = await Promise.all(parts.map((box) => this.make(i, j, box)));
+    const out: TileJSON = { ...(made[0] ?? await this.make(i, j, [x0, y0, x0, y0])), box: full };
+    for (const t of made.slice(1)) {
+      for (const key of ['areas', 'roads'] as const) for (const [kind, polys] of Object.entries(t[key])) out[key][kind] = [...(out[key][kind] ?? []), ...(polys ?? [])];
+      for (const b of t.buildings) { const k = out.buildings.findIndex((o) => o.id === b.id); if (k < 0) out.buildings.push(b); else if (b.own) out.buildings[k] = b; }
+      out.trees.push(...t.trees);
+      for (const graph of ['drive', 'walk'] as const) for (const e of t[graph]!) if (!out[graph]!.some((o) => o.id === e.id)) out[graph]!.push(e);
+    }
+    return out;
+  }
+
+  // What lies in a box of tile (i, j) (the whole tile, past the built map).
+  private async make(i: number, j: number, box: Bounds): Promise<TileJSON> {
     const [x0, y0, x1, y1] = box, pad = 16; // metres: half the widest road past the tile
     const corners = [[x0 - pad, y0 - pad], [x1 + pad, y0 - pad], [x0 - pad, y1 + pad], [x1 + pad, y1 + pad]].map(([x, y]) => this.vectorAt(x, y));
     const X0 = Math.floor(Math.min(...corners.map((c) => c[0]))), X1 = Math.floor(Math.max(...corners.map((c) => c[0])));

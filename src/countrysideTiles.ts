@@ -30,7 +30,7 @@ export class CountrysideTiles {
     const [w, s, e, n] = index.bbox_wgs84;
     this.ask({ type: 'open', url: new URL(countrysideUrl, location.href).href, tiles: new URL(dataUrl(area, 'tiles/'), location.href).href,
       leaving: index.leaving ? new URL(dataUrl(area, 'leaving.json'), location.href).href : null,
-      setup: { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows } })
+      setup: { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows, size: index.size } })
       .then((r) => { if ('box' in r) this.box = r.box; })
       .catch((err) => console.warn('The countryside past the map is not available', err));
   }
@@ -48,6 +48,33 @@ export class CountrysideTiles {
     const { tile: T, origin: [ox, oy], cols, rows } = this.index, box = this.box;
     if (!box || (i >= 0 && j >= 0 && i < cols && j < rows)) return false;
     return i * T - ox >= box[0] && j * T - oy >= box[1] && (i + 1) * T - ox <= box[2] && (j + 1) * T - oy <= box[3];
+  }
+
+  // Whether the built map's tile (i, j) is one of its last column or row and built only
+  // part of the way across: the rest of it is countryside to make.
+  partial(i: number, j: number) {
+    const { tile: T, cols, rows, size: [W, H] } = this.index;
+    return !!this.box && i >= 0 && j >= 0 && i < cols && j < rows && ((i === cols - 1 && W < cols * T - 0.5) || (j === rows - 1 && H < rows * T - 0.5));
+  }
+
+  // Such a tile whole: the built part as the map has it, and the countryside beside it.
+  // Without the countryside (the file can't be read just now) the built part alone.
+  async whole(built: TileJSON): Promise<TileJSON> {
+    const { tile: T, origin: [ox, oy] } = this.index, { i, j } = built;
+    let rest: TileJSON;
+    try { rest = await this.tile(i, j); } catch (err) { console.warn(`The countryside in tile ${i}_${j} was not made`, err); return built; }
+    const both = <V>(a: Record<string, V[] | undefined>, b: Record<string, V[] | undefined>) => {
+      const out: Record<string, V[] | undefined> = { ...a };
+      for (const [kind, list] of Object.entries(b)) out[kind] = [...(out[kind] ?? []), ...(list ?? [])];
+      return out;
+    };
+    const once = <E extends { id: string }>(a: E[] = [], b: E[] = []) => [...a, ...b.filter((e) => !a.some((o) => o.id === e.id))];
+    return {
+      ...built, box: [i * T - ox, j * T - oy, (i + 1) * T - ox, (j + 1) * T - oy].map((v) => Math.round(v * 100) / 100) as Bounds,
+      areas: both(built.areas, rest.areas), roads: both(built.roads, rest.roads),
+      buildings: once(built.buildings, rest.buildings), trees: [...built.trees, ...rest.trees],
+      drive: once(built.drive, rest.drive), walk: once(built.walk, rest.walk),
+    };
   }
 
   async tile(i: number, j: number): Promise<TileJSON> {

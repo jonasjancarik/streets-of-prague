@@ -8,11 +8,12 @@ import type { Bounds, Point2 } from './map/geo.ts';
 import type { RawStreetEdge } from './network.ts';
 
 // On a map without leaving.json: how far from a vector tile the built map's rim is
-// searched for streets that reach it. The longest in `praha` runs 5.2 km out
+// searched for streets that reach it. The longest in `praha` runs 5.4 km out
 // (scripts/check-countryside.mjs checks it).
-export const REACH = 6000;
+export const REACH = 7000;
 const JOIN = 10; // metres from a built street's outer end to the generated junction that is the same one
 const SPLIT = 4; // … or to a generated street passing it with no junction there
+const SAME = 1.5; // metres within which any generated junction is the built one
 const COVER = 3; // metres between a built street and the generated line of the same street
 export const TAPER = 30; // metres over which a moved junction's streets bend and change width
 
@@ -127,6 +128,15 @@ export function joinEdges<E extends JoinEdge>(edges: E[], stubs: Stub[], box: Bo
     moved.set(j, { ...anchors.get(a)!, d });
   }
   for (const a of anchors.values()) if (!done.has(a.id)) split(a, Infinity);
+  // A second generated junction right at a built end (the vector tiles cut a road at
+  // their edge, a pace from its real junction) is the same junction too.
+  for (const [j, p] of junctions) {
+    if (moved.has(j)) continue;
+    for (const a of anchors.values()) {
+      const d = Math.hypot(p[0] - a.at[0], p[1] - a.at[1]);
+      if (d <= SAME && done.has(a.id)) { moved.set(j, { ...a, d }); break; }
+    }
+  }
 
   // Covered: every few metres of the generated street lie on a built one of that graph
   // (or, at an end that is a built junction, within the distance the two were apart).

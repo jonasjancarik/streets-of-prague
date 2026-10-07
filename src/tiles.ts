@@ -744,6 +744,8 @@ export class TileWorld {
         return r.json();
       }) : this.country!.tile(i, j)).then((value: unknown) => {
         if (!isTileJSON(value, !!this.index.graphs)) throw new Error(`Tile ${k} has invalid map data`);
+        // (The built map's last tiles end where the map does: the countryside fills the rest.)
+        if (this.available.has(k) && this.country?.partial(i, j)) return this.country.whole(value);
         return value;
       });
       json.catch(() => { if (this.jsons.get(k) === json) this.jsons.delete(k); });

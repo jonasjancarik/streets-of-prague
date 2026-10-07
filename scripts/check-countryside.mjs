@@ -28,7 +28,7 @@ const archive = new PMTiles({
   },
 });
 const [w, s, e, n] = index.bbox_wgs84;
-const setup = { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows };
+const setup = { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows, size: index.size };
 const builtTile = (i, j) => { const f = `public/data/praha_now/tiles/${i}_${j}.json`; return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : undefined; };
 const make = () => new Countryside(async (z, x, y) => (await archive.getZxy(z, x, y))?.data, async (i, j) => builtTile(i, j), setup);
 const land = make();
@@ -85,13 +85,17 @@ console.log(`${out.size} directed edges, ${ends.size} junctions, ${split} juncti
 assert.equal(split, 0, 'a junction has two ids');
 
 // Nothing generated lies inside the built map.
-const rect = [-index.origin[0], -index.origin[1], index.cols * T - index.origin[0], index.rows * T - index.origin[1]];
+// The built map: it ends part of the way across its last column and row of tiles.
+const rect = [-index.origin[0], -index.origin[1], index.size[0] - index.origin[0], index.size[1] - index.origin[1]];
 const edge = await make().tile(-1, 50);
 const ownEdges = new Set((builtTile(0, 50).drive || []).map((d) => d.id)); // the built streets it passes on do
 for (const d of edge.drive) if (!ownEdges.has(d.id)) for (const [px, py] of d.pts) assert.ok(px <= rect[0] + 0.01, `edge ${d.id} runs into the built map`);
 
 // ---- The join with the built map ----
 const { cols, rows } = index, [ox, oy] = index.origin;
+// The tiles the countryside makes, whole or in part: those past the grid, and the built
+// map's last column and row where the map ends part of the way across them.
+const generated = (a, b) => a < 0 || b < 0 || a >= cols || b >= rows || (a === cols - 1 && index.size[0] < cols * T - 0.5) || (b === rows - 1 && index.size[1] < rows * T - 0.5);
 const outside = ([px, py]) => px < rect[0] || px > rect[2] || py < rect[1] || py > rect[3];
 const beyond = ([px, py]) => Math.max(rect[0] - px, px - rect[2], rect[1] - py, py - rect[3]);
 const dist = (p, pts) => {
@@ -136,7 +140,7 @@ assert.ok(reach < REACH - 500, `a built street runs ${reach.toFixed(0)} m outsid
 const wanted = new Set();
 for (const e of [...stubs.drive, ...stubs.walk]) for (const [px, py] of walked(e.pts, 100)) {
   const i = Math.floor((px + ox) / T), j = Math.floor((py + oy) / T);
-  for (let a = i - 1; a <= i + 1; a++) for (let b = j - 1; b <= j + 1; b++) if (a < 0 || b < 0 || a >= cols || b >= rows) wanted.add(`${a}_${b}`);
+  for (let a = i - 1; a <= i + 1; a++) for (let b = j - 1; b <= j + 1; b++) if (generated(a, b)) wanted.add(`${a}_${b}`);
 }
 // The map's own list of those streets (leaving.json, pipeline/layers.py), where it has
 // one: the same streets as its rim tiles give, and the same countryside tiles from it.
@@ -182,6 +186,23 @@ for (const e of stubs.drive) {
     }));
     assert.ok(on, `no road surface under built edge ${e.id} at ${p}`);
   }
+}
+
+// The built map ends part of the way across its last column and row of tiles: the
+// countryside fills the rest of each, to the last square metre.
+{
+  const ringArea = (r) => Math.abs(r.reduce((sum, p, k) => sum + p[0] * r[(k + 1) % r.length][1] - r[(k + 1) % r.length][0] * p[1], 0)) / 2;
+  let partial = 0;
+  for (const [i, j] of [[cols - 1, 50], [62, rows - 1], [cols - 1, rows - 1]]) {
+    if (!generated(i, j)) continue;
+    const t = await seamLand.tile(i, j), x0 = i * T - ox, y0 = j * T - oy;
+    const builtPart = Math.max(0, Math.min(x0 + T, rect[2]) - x0) * Math.max(0, Math.min(y0 + T, rect[3]) - y0);
+    const field = (t.areas.field || []).reduce((sum, [ring]) => sum + ringArea(ring), 0);
+    assert.ok(Math.abs(field - (T * T - builtPart)) < 1, `tile ${i}_${j}: the countryside covers ${field.toFixed(0)} m² of the ${(T * T - builtPart).toFixed(0)} m² the built map leaves`);
+    for (const d of [...t.drive, ...t.walk]) if (!built.drive.has(d.id) && !built.walk.has(d.id)) for (const p of d.pts) assert.ok(beyond(p) > -0.02, `generated edge ${d.id} runs into the built map in tile ${i}_${j}`);
+    partial++;
+  }
+  console.log(`the map ends ${(cols * T - index.size[0]).toFixed(0)} m short of its last column's edge and ${(rows * T - index.size[1]).toFixed(0)} m short of its last row's: the countryside fills the rest of those tiles (${partial} checked)`);
 }
 
 // 1. Each built street's outer end leads on into the generated streets.
@@ -252,7 +273,7 @@ for (const [side, past] of Object.entries(sides)) {
       const end = e.pts.at(-1), ci = Math.floor((end[0] + ox) / T), cj = Math.floor((end[1] + oy) / T);
       const edges = new Map(built[g]);
       for (let a = ci - 5; a <= ci + 5; a++) for (let b = cj - 5; b <= cj + 5; b++) {
-        if (a >= 0 && b >= 0 && a < cols && b < rows) continue;
+        if (!generated(a, b)) continue;
         for (const d of (await seamLand.tile(a, b))[g]) edges.set(d.id, d);
       }
       const far = (way) => {

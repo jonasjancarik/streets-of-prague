@@ -557,7 +557,7 @@ def leaving(t: dict, meta: dict, into: dict):
     if not (t["i"] in (0, meta["cols"] - 1) or t["j"] in (0, meta["rows"] - 1)):
         return
     ox, oy = meta["origin"]
-    x1, y1 = meta["cols"] * meta["tile"] - ox, meta["rows"] * meta["tile"] - oy
+    x1, y1 = meta["size"][0] - ox, meta["size"][1] - oy  # (the map ends there, part of the way across its last tiles)
     for graph in ("drive", "walk"):
         for e in t.get(graph) or []:
             if any(x < -ox or x > x1 or y < -oy or y > y1 for x, y in e["pts"]):
