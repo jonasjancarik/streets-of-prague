@@ -18,6 +18,9 @@ export interface RawStreetEdge {
   tunnel?: boolean;
   // On a bridge or in a tunnel: the level it's on (pipeline/structures.py, OnLevels; not in older maps).
   level?: number;
+  // Where it changes level along itself (several ways joined into one edge): [metres
+  // from its start, the level from there on], the first from 0. Mostly absent.
+  levels?: [number, number][];
   surface?: string;
   park?: [ParkingOrientation | null, ParkingOrientation | null];
   kerb?: [number | null, number | null];

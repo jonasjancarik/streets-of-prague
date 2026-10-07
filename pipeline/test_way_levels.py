@@ -32,6 +32,14 @@ class OnLevelsTests(unittest.TestCase):
         # (a bridge is not a tunnel: the tunnel way under it doesn't count)
         self.assertIsNone(self.on.edge({"bridge": True, "pts": [[-40, 20], [40, 20]]}))
 
+    def test_edge_of_two_ways_on_different_levels_is_cut_where_it_changes(self):
+        ways = [way(1, "bridge", 1, [[0, 0], [60, 0]]), way(2, "bridge", 2, [[60, 0], [150, 0]])]
+        on = structures.OnLevels(ways, {})
+        e = {"bridge": True, "pts": [[0, 0], [150, 0]]}
+        self.assertEqual(on.edge(e), 2)
+        self.assertEqual(on.stretches(e), [[0.0, 1], [60.0, 2]])
+        self.assertIsNone(on.stretches({"bridge": True, "pts": [[0, 0], [50, 0]]}))
+
     def test_track_is_on_the_deck_it_runs_along_through_the_crossing(self):
         low = self.on.rails("0_0", [{"kind": "tram", "pts": [[-48, 1], [48, 1]]}])
         self.assertEqual([r["level"] for r in low], [1])

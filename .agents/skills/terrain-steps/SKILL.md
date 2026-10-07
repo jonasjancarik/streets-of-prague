@@ -112,14 +112,32 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
   put a hump in the junction over the underpass at Hlávkův most.
 - "Raise a mapped street to the surveyed one next to it" only over the map's water:
   on land the next street may be another street, a level up.
-- Stairs mapped as bridge ways, folded back beside the deck they come down from
-  (Železniční most at Výtoň): inside the bridge's outline they join its group and its
-  level, and the deck's last lattice points take the stairs' heights, 1.8 m down. Giving
-  such stairs a level of their own (tried 6 October 2026, `STAIRS_SAME`, taken out again)
-  makes the deck right and the stairs worse: alone on a 4 m lattice their top reads 2.5
-  to 3.7 m under the deck (Výtoň, and the stairs to Kampa off Karlův most, which were
-  fine). Stairs need heights the lattice can't hold: their own profile, as the flat
-  terraces have `h`.
+- Stairs on a bridge (Železniční most at Výtoň, folded back beside the deck they come
+  down from) are steeper and narrower than the lattice can hold: in the deck's level
+  they pulled its last points 1.8 m down, and on a level of their own (tried 6 October
+  2026) two flights 4 m apart mixed with each other. Since 7 October they carry their
+  own profile: `structures.stairs` picks them (tagged `steps`, as steep from end to end
+  whatever the map calls them, and the landings between flights), `ramps` gives each a
+  line with heights (`ramps` on the tile's level), and they stay out of the lattice. The
+  game reads a level through `withRamps` (`src/terrain.ts`). They share a level only
+  with what is within 1 m of their height (`STAIRS_SAME`).
+- Between a deck and the ground it's the stairs that take up the height. The solve runs
+  a second time with the stairs known: their links count for a twentieth (`SOFT`), in
+  the harmonic solve and in the smoothing, which used to average a deck's last node
+  with the flight below it. IPR's faces aren't looked up along stairs.
+- A bridge over open water with no deck in IPR's model (Dvorecký most, the footway
+  under Barrandovský most) ran evenly between two low banks, 3 m over the river. It now
+  clears the water by `WATER_CLEAR` away from its ends (rising at 8 % along streets,
+  50 % along stairs), an IPR face lower than that over open water is a pier and not a
+  deck, and a way's end out on the water is not an end on the ground.
+- A bridge outline with no street on it (a railway bridge) took its height from the
+  streets near its ends, which pass under it. Where IPR has a face over most of the
+  outline, it's IPR's top.
+- A rampart has a wall on each face, and a battered wall is surveyed along its crown
+  and along its foot: the ground at the foot of one line is on the high side of the
+  other. What one wall has put at its foot no other wall lifts (`lowered` in
+  `dtm_heights.apply`); before, 400 terrace points stood at the height of the wall's
+  top, most of them round Vyšehrad.
 - A level's lattice can't hold two things 4 m apart at different heights. When a deck
   sags or jumps near its end, compare the solved profile with the lattice before
   blaming the solver: at Výtoň the profile was right.

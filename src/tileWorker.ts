@@ -22,7 +22,7 @@ import { styleFor, facadeCoords, paintWalls, mansardCoords, BLANK } from './faca
 import type { WallLine } from './facades.ts';
 import { roofClutter } from './map/roofClutter.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
-import { flatTerraces, heightSampler, terraceAt } from './terrain.ts';
+import { flatTerraces, heightSampler, terraceAt, withRamps } from './terrain.ts';
 import { skyView } from './map/skyView.ts';
 import { stepEdges, stampEdges, parapetArrays } from './stepEdges.ts';
 import type { StepEdge } from './stepEdges.ts';
@@ -70,7 +70,7 @@ const appendTo = (a: BuildingArrays, d: DetailArrays | null, uv?: (x: number, y:
   return res;
 };
 
-const groundAt = (g: HeightGrid | null) => (g ? heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, g.ref ?? 0)) : () => 0);
+const groundAt = (g: HeightGrid | null) => (g ? withRamps(heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, g.ref ?? 0)), g.ramps, g.ref ?? 0) : () => 0);
 
 async function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roofs']): Promise<BuildingArrays> {
   await (roofsReady ??= initRoofs());

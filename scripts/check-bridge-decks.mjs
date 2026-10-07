@@ -8,10 +8,11 @@
 //        [--save now.json] [--against before.json] [--profile <edge id or part of a name>]
 //        [--max-break 1.0] [--max-join 1.0] [--named-only] [--near lat,lon[,metres]]
 //
-// A "break" is the largest change of height between two samples a metre apart along a
-// deck (0.12 is a 12 % ramp; steps are left out); a "join" the difference at an end
-// between the deck and what it runs on into: the next bridge, the street on the ground,
-// or the ground where the deck's outline stops short of the end. The bridges in
+// A "break" is the largest jump between two samples a metre apart along a deck (the
+// change that the slope either side doesn't account for; ways tagged as steps are left
+// out); a "join" the difference at an end between the deck and what it runs on into:
+// the next bridge, the street on the ground, or the ground where the deck's outline
+// stops short of the end. The bridges in
 // .agents/skills/terrain-steps/bridges.json are listed by name, and the script fails when
 // one of those has a break over --max-break or a join over --max-join.
 // --near: only the tiles round a place (600 m either way unless given), which takes seconds.
@@ -20,7 +21,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
-import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces } from '../src/terrain.ts';
+import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps } from '../src/terrain.ts';
 import { onPolygons } from '../src/map/geo.ts';
 
 const args = {}, pos = [];
@@ -57,7 +58,7 @@ function tileOf(i, j) {
     out = {
       t, ground: height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step, pointLabels(height, terrain.n),
         terraceAt(t.terraces), flatTerraces(t.terraces, REF)) : () => NaN,
-      levels: structures.map((s, n) => ({ level: s.level, kind: s.kind, on: onPolygons(s.polys), sample: heightSampler(heights[n], t.box, terrain.n, terrain.step) })),
+      levels: structures.map((s, n) => ({ level: s.level, kind: s.kind, on: onPolygons(s.polys), sample: withRamps(heightSampler(heights[n], t.box, terrain.n, terrain.step), s.ramps, REF) })),
     };
   }
   tiles.set(k, out);
@@ -68,15 +69,20 @@ const at = (x, y) => tileOf(Math.floor((x + ox) / T), Math.floor((y + oy) / T));
 const groundAt = (x, y) => at(x, y)?.ground(x, y) ?? NaN;
 // The height of a level at a point (as World.levelAt), NaN off it.
 function levelAt(x, y, level) {
-  const t = at(x, y);
-  for (const l of t?.levels ?? []) {
-    if (l.level !== level || !l.on(x, y)) continue;
-    const h = l.sample(x, y);
-    return Number.isNaN(h) ? t.ground(x, y) : h;
+  for (const [dx, dy] of NEAR) {
+    const t = at(x + dx, y + dy);
+    for (const l of t?.levels ?? []) {
+      if (l.level !== level || !l.on(x + dx, y + dy)) continue;
+      const h = l.sample(x + dx, y + dy);
+      return Number.isNaN(h) ? t.ground(x, y) : h;
+    }
   }
   return NaN;
 }
-const bridgesAt = (x, y) => (at(x, y)?.levels ?? []).filter((l) => l.level > 0 && l.on(x, y)).map((l) => l.level);
+// (Where two ways meet at an angle their outlines touch at the node alone, and the game's
+// level masks have cells of half a metre: a point counts as on a level within 0.4 m of it.)
+const NEAR = [[0, 0], [0.4, 0], [-0.4, 0], [0, 0.4], [0, -0.4]];
+const bridgesAt = (x, y) => [...new Set(NEAR.flatMap(([dx, dy]) => (at(x + dx, y + dy)?.levels ?? []).filter((l) => l.level > 0 && l.on(x + dx, y + dy)).map((l) => l.level)))];
 
 // (The area's transverse Mercator, well enough for naming a place to look at.)
 const [bw, bs, be, bn] = index.bbox_wgs84, lat0 = (bs + bn) / 2, lon0 = (bw + be) / 2, rad = Math.PI / 180;
@@ -111,11 +117,15 @@ function walk(e) {
     for (let k = 0; k < n; k++) pts.push([ax + (bx - ax) * k / n, ay + (by - ay) * k / n]);
   }
   pts.push(e.pts[e.pts.length - 1]);
-  let level = e.level, was = NaN;
+  let level = e.level, was = NaN, s = 0, last = null;
   const prof = [];
   for (const [x, y] of pts) {
     let h = NaN;
-    if (e.level !== undefined) h = levelAt(x, y, e.level);
+    if (last) s += Math.hypot(x - last[0], y - last[1]);
+    last = [x, y];
+    // (Its level here: an edge of several ways can change level along itself.)
+    const own = e.levels ? e.levels.reduce((lv, [from, l]) => (from <= s ? l : lv), e.levels[0][1]) : e.level;
+    if (own !== undefined) h = levelAt(x, y, own);
     // (An edge can run on from its deck onto another level: stairs down from a bridge,
     // mapped as bridge ways, are one edge with the footway they leave.)
     if (Number.isNaN(h)) {
@@ -158,8 +168,14 @@ for (const [e, prof] of profs) {
   for (let i = 1; i < prof.length; i++) {
     if (prof[i][3]) onDeck++;
     const d = prof[i][2] - prof[i - 1][2];
-    if (prof[i][3] && prof[i - 1][3]) { if (Math.abs(d) > worst) { worst = Math.abs(d); where = i; } }
-    else if (prof[i][3] !== prof[i - 1][3] && i > 1 && i < prof.length - 1 && Math.abs(d) > Math.abs(hand)) { hand = d; handAt = i; }
+    // (Not the samples right at the nodes: they lie on the very edge of the level's outline.)
+    if (prof[i][3] && prof[i - 1][3]) {
+      // A jump, not a slope: what the change either side of it doesn't account for
+      // (stairs fall half a metre a metre, evenly).
+      const beside = Math.max(i > 1 ? Math.abs(prof[i - 1][2] - prof[i - 2][2]) : 0, i < prof.length - 1 ? Math.abs(prof[i + 1][2] - prof[i][2]) : 0);
+      const jump = Math.abs(d) - Math.min(Math.abs(d), beside);
+      if (i > 1 && i < prof.length - 1 && jump > worst) { worst = jump; where = i; }
+    } else if (prof[i][3] !== prof[i - 1][3] && i > 1 && i < prof.length - 1 && Math.abs(d) > Math.abs(hand)) { hand = d; handAt = i; }
   }
   if (!onDeck) continue; // (a way the pipeline left on the ground)
   const length = prof.length - 1;
@@ -260,6 +276,9 @@ if (args.profile) {
     if (!`${e.net}:${e.id} ${e.name || ''}`.includes(args.profile)) continue;
     console.log(`\n${e.net}:${e.id} ${e.hw} ${e.name || ''} (every ${STEP} m; g = on the ground)`);
     console.log('  ' + prof.map((p) => (p[2] + REF).toFixed(1) + (p[3] ? '' : 'g')).join(' '));
+    for (const node of [e.u, e.v]) {
+      console.log(`  at node ${node}: ${(atNode.get(node) || []).filter((o) => o.net === e.net).map((o) => `${o.id} ${o.hw}${o.bridge ? ' bridge' : ''}${o.tunnel ? ' tunnel' : ''}${o.level !== undefined ? ` L${o.level}` : ''} ${(endHeight(o, node, profs) + REF).toFixed(1)}`).join('; ')}`);
+    }
   }
 }
 if (args.save) writeFileSync(args.save, JSON.stringify({ built: index.built, summary, rows }));

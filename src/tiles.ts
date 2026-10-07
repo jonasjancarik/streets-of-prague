@@ -11,7 +11,7 @@ import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER } from './s
 import { loadFacadeAtlas } from './facades.ts';
 import { Zones, parkCars, inRing, inPoly } from './parking.ts';
 import { openWater } from './river.ts';
-import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary } from './terrain.ts';
+import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary, withRamps } from './terrain.ts';
 import type { Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
 import type { Shadower } from './map/skyView.ts';
@@ -116,6 +116,28 @@ const DRAWN_KEEP = 40;
 // `around(di, dj)`: the neighbouring tile's heights (hm) if it is loaded and shares this
 // tile's edge points, for the slope at the edge; `edges()` shades the edges again once
 // a neighbour has come.
+// An edge cut where it changes level along itself (RawStreetEdge.levels): its stretches,
+// each with its level; whole, with its one level, when it doesn't.
+function byLevel(e: { pts: Point2[]; level?: number; levels?: [number, number][] }): { pts: Point2[]; level?: number }[] {
+  if (!e.levels || e.levels.length < 2) return [{ pts: e.pts, level: e.level }];
+  const out: { pts: Point2[]; level?: number }[] = [];
+  let k = 0, s = 0, cur: Point2[] = [e.pts[0]];
+  for (let i = 0; i < e.pts.length - 1; i++) {
+    const a = e.pts[i], b = e.pts[i + 1], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    while (k + 1 < e.levels.length && e.levels[k + 1][0] <= s + d) {
+      const f = d ? (e.levels[k + 1][0] - s) / d : 0, at: Point2 = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+      cur.push(at);
+      out.push({ pts: cur, level: e.levels[k][1] });
+      cur = [at];
+      k++;
+    }
+    cur.push(b);
+    s += d;
+  }
+  out.push({ pts: cur, level: e.levels[k][1] });
+  return out.filter((part) => part.pts.length > 1);
+}
+
 // Which bridge level the tram track at a point is on (0: none), from the stretches the
 // map lists (TileJSON.deckRails): that of the stretch within 2 m, the nearest.
 function deckRailLevel(stretches: { level: number; pts: Point2[] }[]) {
@@ -1000,7 +1022,7 @@ export class TileWorld {
     const structures = t.structures || [];
     const heights = levels && terrain ? decodeLevels(levels, terrain.n, structures.length, this.ref) : [];
     const tileLevels: LevelInput[] | null = this.leveled && terrain ? structures.map((s, i) => ({
-      ...s, heights: { hm: heights[i] ?? new Float32Array(terrain.n * terrain.n).fill(NaN), box: t.box, n: terrain.n, step: terrain.step },
+      ...s, heights: { hm: heights[i] ?? new Float32Array(terrain.n * terrain.n).fill(NaN), box: t.box, n: terrain.n, step: terrain.step, ramps: s.ramps, ref: this.ref },
     })) : null;
     lap('terrain');
 
@@ -1012,8 +1034,9 @@ export class TileWorld {
     const edges = this.driveBy.get(k) || [];
     const extrude = own.filter((b) => (!withIpr || b.noIpr) && !givesWay(b.rings))
       .map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))), street: streetOf(b.rings[0], edges) }));
-    const clipped = edges.flatMap((e) => clipLine(e.pts, t.box).map((pts) => (
-      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name, level: e.level })));
+    // (An edge that changes level along itself is painted stretch by stretch.)
+    const clipped = edges.flatMap((e) => byLevel(e).flatMap((part) => clipLine(part.pts, t.box).map((pts) => (
+      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name, level: part.level }))));
     // Paid-parking colour of each parking area's bay lines.
     const parkingZones = (t.areas.parking || []).map((rs) => {
       const r = rs[0], cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;
@@ -1070,7 +1093,7 @@ export class TileWorld {
       const input = tileLevels?.find((l) => l.level === mask.level);
       return {
         level: mask.level, grid: new Grid(geo, RES, null, mask.cells),
-        sample: input ? heightSampler(input.heights.hm, t.box, input.heights.n, input.heights.step) : () => NaN,
+        sample: input ? withRamps(heightSampler(input.heights.hm, t.box, input.heights.n, input.heights.step), input.ramps, this.ref) : () => NaN,
       };
     });
     const walls = wallMesh(land.walls);

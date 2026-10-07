@@ -494,6 +494,9 @@ def assemble(area: str, strict=False) -> dict:
                     level = on_levels.edge(e)
                     if level is not None:
                         e["level"] = level
+                        along = on_levels.stretches(e)
+                        if along:  # (an edge of several ways, not all on one level)
+                            e["levels"] = along
             if t.get("structures"):  # (listed even when empty: the game then doesn't guess)
                 t["deckRails"] = on_levels.rails(k, t["rails"], t["roads"])
         # Its terraces at the foot of retaining walls (dtm_heights.py; their labels are in its .height.bin).

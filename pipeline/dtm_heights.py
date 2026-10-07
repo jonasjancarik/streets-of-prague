@@ -103,6 +103,7 @@ WATER_CLEAR = 8.0  # m from the water: nearer, the wall is the bank's, which is 
 BESIDE = 1.5  # m: two wall lines this close are one wall's two faces; the lower one is the step
 RUN_MIN = 12.0  # m: shorter stretches of retaining wall are left alone (their ends make more mess than they make steps)
 REACH = 10.0  # m either side of a retaining wall: as far as the terrain model's ramp reaches
+LONE = 2.0  # m: a surveyed point this far above or below every point round it is a spike or a pit
 STRIP = 8.0  # m: the width of the terrace marked at a wall's foot (two lattice cells)
 
 
@@ -560,6 +561,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             grid[back] = bare[back]
             before = grid.copy()
 
+    lowered = np.zeros(grid.shape, dtype=bool)  # the points a wall has put at its foot
     for run, low in _retaining(walls, at, dry):
         line = shapely.LineString(run)
         bx0, by0, bx1, by1 = line.bounds
@@ -590,8 +592,14 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
                 warnings.simplefilter("ignore", RuntimeWarning)
                 along = np.array([at(foot + away * r) for r in np.linspace(REACH / 5, REACH, 5)])
                 h = np.where(below, np.nanmin(along, axis=0), np.nanmax(along, axis=0))
-            ok = ~np.isnan(h)
+            # What one wall has at its foot, no other wall lifts: a rampart has a wall on
+            # each face, and a battered wall is surveyed along its crown and along its
+            # foot, so the ground below one line is "above" the other. Left to whichever
+            # came last, points at the foot stood at the height of the top (400 spikes,
+            # most of them round Vyšehrad).
+            ok = ~np.isnan(h) & (below | ~lowered[gj, gi])
             grid[gj[ok], gi[ok]] = h[ok]
+            lowered[gj[ok & below], gi[ok & below]] = True
             wall_points += int(ok.sum())
         strip = line.buffer(STRIP * low, single_sided=True).buffer(0)
         if water is not None and water.intersects(strip):
@@ -630,6 +638,35 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         terrace[gj, gi] = 0
         kept += len(gi)
 
+    # A surveyed height the lattice can only show as a spike or a pit is left out: a
+    # surface smaller than a cell (a terrace on a roof, a ramp down to a garage) gives one
+    # lattice point its height, LONE or more above or below every point round it, where
+    # the terrain model had it among them. And the other way round: a point the survey
+    # left where it was when it moved every point round it goes with them.
+    plain = ~wet & (terrace == 0) & ~np.isnan(grid)
+    hi, lo, count = np.full(grid.shape, -np.inf, dtype=np.float32), np.full(grid.shape, np.inf, dtype=np.float32), np.zeros(grid.shape, dtype=np.int8)
+    total = np.zeros(grid.shape, dtype=np.float32)
+    for dj in (-1, 0, 1):
+        for di in (-1, 0, 1):
+            if not dj and not di:
+                continue
+            src = (slice(max(0, dj), grid.shape[0] + min(0, dj)), slice(max(0, di), grid.shape[1] + min(0, di)))
+            dst = (slice(max(0, -dj), grid.shape[0] + min(0, -dj)), slice(max(0, -di), grid.shape[1] + min(0, -di)))
+            ok = plain[src]
+            v = grid[src]
+            hi[dst] = np.where(ok, np.maximum(hi[dst], v), hi[dst])
+            lo[dst] = np.where(ok, np.minimum(lo[dst], v), lo[dst])
+            count[dst] += ok
+            total[dst] += np.where(ok, v, 0)
+    with np.errstate(invalid="ignore"):
+        off = plain & (count >= 4) & ((grid > hi + LONE) | (grid < lo - LONE))
+        lone = off & (bare <= hi + LONE) & (bare >= lo - LONE)
+        behind = off & ~lone & (np.abs(grid - bare) < LONE / 2)
+    grid[lone] = bare[lone]
+    grid[behind] = (total[behind] / count[behind]).astype(np.float32)
+    lone_points = int(lone.sum()) + int(behind.sum())
+    del hi, lo, count, total, plain
+
     # Per tile: its heights, its labels (0 plain ground, 1 water, 2… its terraces) and the
     # terraces' outlines within it.
     labels, outlines = {}, {}
@@ -658,6 +695,6 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
     return {"survey_rejected_vertices": rejected, "surfaces": surfaces, "street_points": street_points, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "bank_points": bank_points,
-            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "wall_points": wall_points,
+            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}

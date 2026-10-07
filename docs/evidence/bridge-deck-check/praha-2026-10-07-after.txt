@@ -1,0 +1,66 @@
+praha: built 2026-10-07T08:23:51Z, 3829 streets and paths on bridges
+
+Named bridges (worst break along a deck, worst join at an end, in metres):
+  Radotín (Berounka)          break 0 → 0   join 0.06 → 0.06   its way: break 0.06, deck/ground [[0,-0.04],[90,-0.02]]
+  most Závodu míru            break 0.05 → 0.05   join 3.71 → 3.71 at 49.97206,14.39998   its way: break 0.04, deck/ground [[-14,0],[0,-0.01],[205,-0.03]]
+  Radotín lávka (Berounka)    break 0 → 0   join 0.07 → 0.07   its way: break 0.05, deck/ground [[0,0.06],[131,0]]
+  Lahovice (Berounka)         break 0.01 → 0.01   join 0.35 → 0.35   its way: break 0, deck/ground []
+  Radotínský most             break 0 → 0.03   join 0.36 → 0.07   its way: break 0.04, deck/ground [[1306,-0.08]]
+  Lahovický most (Berounka)   break 0 → 0   join 0.11 → 0.11   its way: break 0.08, deck/ground [[0,-0.27],[241,-0.01]]
+  Branický most               break 0 → 0   join 0.03 → 0.03   its way: break 0.41, deck/ground []
+  Barrandovský most           break 1.44 → 0.34   join 0.55 → 0.55   its way: break 0.5, deck/ground [[0,-0.01],[399,0.03]]
+  Dvorecký most               break 0 → 0   join 0.1 → 0.13   its way: break 0.05, deck/ground [[0,-0.02],[342,-0.04]]
+  Podolí (přístav)            break 0 → 0   join 0.01 → 0.01   its way: break 0.05, deck/ground [[0,-0.01],[72,0.03]]
+  Nuselský most               break 0 → 0.02   join 0.46 → 0.31   its way: break 0.06, deck/ground [[0,-0.23],[587,0.02]]
+  Železniční most             break 1.4 → 0.37   join 1.64 → 0.41   its way: break 4.22 (at 222 m), deck/ground [[0,0.03],[227,-1.86]]
+  Palackého most              break 0.02 → 0.02   join 0.57 → 0.57   its way: break 0.18, deck/ground [[-7,0.02],[254,0.49]]
+  Jiráskův most               break 0.03 → 0.03   join 0.44 → 0.44   its way: break 0.16, deck/ground [[0,0.2],[318,-9.24]]
+  most Legií                  break 0.01 → 0.01   join 0.2 → 0.2   its way: break 0.2, deck/ground [[0,0.06],[346,-0.02]]
+  Karlův most                 break 0 → 0.09   join 3.73 → 0.39   its way: break 0.2, deck/ground []
+  Mánesův most                break 0.05 → 0.01   join 3.82 → 4.1 at 50.09001,14.41170   its way: break 0.06, deck/ground [[0,0.02],[197,-0.01]]
+  Čechův most                 break 0.09 → 0.01   join 4.89 → 4.89 at 50.09384,14.41657   its way: break 0.05, deck/ground [[-10,0.05],[183,-0.06]]
+  Štefánikův most             break 1.3 → 0.03   join 5.32 → 5.33 at 50.09536,14.42692   its way: break 0.09, deck/ground [[0,0.05],[264,-0.09]]
+  Hlávkův most (jih)          break 0.01 → 0.01   join 0.29 → 0.29   its way: break 0.08, deck/ground [[0,0],[114,-0.01]]
+  Hlávkův most (sever)        break 0.02 → 0.02   join 4.63 → 4.63 at 50.09786,14.43685   its way: break 0.11, deck/ground [[0,0.06],[223,-0.05]]
+  Negrelliho viadukt          break 0 → 0   join 0.19 → 0.19   its way: break 0.03, deck/ground []
+  Libeňský most               break 3.42 → 0.24   join 6.49 → 0.8   its way: break 0.02, deck/ground [[0,0.05],[328,-0.02]]
+  Trojský most                break 0.01 → 0.01   join 0.2 → 0.2   its way: break 0.12, deck/ground [[0,-0.15],[258,0.24]]
+  most Barikádníků            break 0.02 → 0.02   join 0.14 → 0.14   its way: break 0.27, deck/ground [[0,0.03],[310,-0.51]]
+  Trojská lávka               break 0 → 0   join 0.04 → 0.04   its way: break 0.01, deck/ground [[0,-0.04],[256,0.03]]
+  Libeňský most (jih)         break 0 → 0   join 0 → 0   its way: break 0.08, deck/ground [[0,-0.44],[214,0.04]]
+
+All bridges: 6 with a break over 0.5 m, 3 over 1 m; 221 with a join over 0.5 m, 127 over 1 m (before: 11, 8; 265, 198)
+
+Worst breaks along a deck:
+    1.68 m  50.09738, 14.47532  footway  (walk:417051485>1420414572>0, 111 m, at 7 m, level 2)
+    1.66 m  50.02538, 14.51835  footway  (walk:360430881>1634306029>0, 20 m, at 7 m, level 1)
+    1.15 m  50.10686, 14.55444  tertiary Cíglerova (walk:25638977>1299095000>0, 63 m, at 57 m, level 2)
+    0.71 m  50.02551, 14.51564  footway  (walk:11744863207>11744863212>0, 16 m, at 7 m, level 4)
+    0.58 m  50.03050, 14.52900  footway  (walk:305307841>1139123713>0, 42 m, at 30 m, level 1)
+    0.58 m  50.10861, 14.57775  footway  (walk:25314928>7795307056>0, 31 m, at 11 m, level 1)
+    0.49 m  50.06459, 14.50203  service  (walk:7490635281>7490635702>0, 72 m, at 21 m, level 2)
+    0.47 m  50.03715, 14.48975  footway  (walk:279018270>775764726>0, 4 m, at 3 m, level 1)
+    0.44 m  50.11776, 14.45679  footway  (walk:669213426>4541135200>0, 18 m, at 11 m, level 2)
+    0.42 m  50.11741, 14.45647  footway  (walk:660023221>4541135199>0, 18 m, at 13 m, level 2)
+    0.38 m  50.05575, 14.37246  footway  (walk:4807599246>4807599249>0, 86 m, at 49 m, level 2)
+    0.38 m  50.10836, 14.57275  footway  (walk:25314840>4888058223>0, 51 m, at 49 m, level 4)
+    0.37 m  50.06728, 14.41494  footway  (walk:355002644>1030989593>0, 234 m, at 220 m, level 2)
+    0.35 m  50.03946, 14.50530  footway  (walk:775764720>3342361886>0, 161 m, at 160 m, level 1)
+
+Worst joins at an end:
+  -15.05 m  50.06252, 14.42019  footway  (walk:3073440772>3073440781>0, 59 m)
+  -13.64 m  50.07145, 14.39772  trunk_link  (drive:653434556>8041773715>0, 39 m)
+  -11.26 m  50.09100, 14.39506  footway  (walk:288462469>1750757011>0, 6 m)
+  -11.14 m  50.10752, 14.35484  footway  (walk:288979970>288979971>0, 6 m)
+   -10.3 m  50.07119, 14.39801  trunk_link  (walk:653434556>8041773715>0, 39 m)
+  -10.03 m  49.94496, 14.52139  residential Javorová (walk:7173150320>7173150321>0, 9 m)
+   -9.57 m  50.12468, 14.26942  motorway  (drive:294196533>25814410>0, 43 m)
+      -9 m  49.94401, 14.40292  track  (walk:1680368615>1680368635>0, 11 m)
+   -8.48 m  50.09272, 14.40695  footway  (walk:1644140220>1644140223>0, 4 m)
+   -8.32 m  49.94253, 14.40899  path  (walk:391533380>391533381>0, 17 m)
+   -8.24 m  50.03892, 14.36387  path  (walk:1991283583>1991283585>0, 9 m)
+   -8.01 m  50.10143, 14.32404  footway  (walk:1137841037>1137841054>0, 9 m)
+   -7.57 m  50.09796, 14.43717  service  (walk:12416156901>12416156903>0, 39 m)
+   -7.54 m  50.09797, 14.43719  footway Hlávkův most (walk:4680423763>5936912562>0, 7 m)
+
+5 named bridge(s) over the limits (break 1 m, join 1 m): most Závodu míru, Mánesův most, Čechův most, Štefánikův most, Hlávkův most (sever)

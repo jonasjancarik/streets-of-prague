@@ -14,13 +14,13 @@ const FASCIA = 1.2; // the deck's edge below its surface (src/ground.ts)
 // Decks the map has too low for a cruise boat, by tile: bridge heights to be put right in
 // the pipeline (pipeline/structures.py), reported here and not a failure until then. A
 // deck that has since been raised is reported too, so the list gets shorter.
-const KNOWN_LOW = { praha: ['49_37', '52_43', '54_48', '64_76'] };
+const KNOWN_LOW = { praha: [] }; // (four until 7 October 2026: bridges over open water now clear it, pipeline/structures.py)
 const STEP = 0.3; // m: a jump in the water's height over 2 m of fairway that counts as a seam
 globalThis.location = { search: '' };
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false } });
 try {
   const { parseRiver, openWater, Course } = await server.ssrLoadModule('/src/river.ts');
-  const { decodeHeights, decodeLevels, pointLabels, heightSampler } = await server.ssrLoadModule('/src/terrain.ts');
+  const { decodeHeights, decodeLevels, pointLabels, heightSampler, withRamps } = await server.ssrLoadModule('/src/terrain.ts');
   const { onPolygons } = await server.ssrLoadModule('/src/map/geo.ts');
   const { BOAT_TOP } = await server.ssrLoadModule('/src/boats.ts');
   const index = JSON.parse(readFileSync(`${dir}/index.json`, 'utf8'));
@@ -43,7 +43,7 @@ try {
         tile = {
           k, water, weirs: t.weirs || [],
           level: hm ? heightSampler(hm, t.box, n, step, pointLabels(h, n)) : null,
-          decks: (t.structures || []).map((s, i) => ({ s, on: onPolygons(s.polys), sample: levels[i] ? heightSampler(levels[i], t.box, n, step) : null })).filter((d) => d.s.kind === 'bridge' && d.sample),
+          decks: (t.structures || []).map((s, i) => ({ s, on: onPolygons(s.polys), sample: levels[i] ? withRamps(heightSampler(levels[i], t.box, n, step), s.ramps, ref) : null })).filter((d) => d.s.kind === 'bridge' && d.sample),
         };
       }
       tiles.set(k, tile);

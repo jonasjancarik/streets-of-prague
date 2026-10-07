@@ -69,14 +69,15 @@ which fits under the footbridge over the Smíchov cut with 4 cm to spare.
 
 `node scripts/check-river.mjs [area]` sails every stretch and every ferry crossing
 without a browser (`--all` lists every step in the water, `--strict` fails on them).
-On the praha map of 5 October it passes and reports:
+On the praha map it passes and reports:
 
 - every point on open water;
-- four decks the map has too low, listed in the script as `KNOWN_LOW` and reported, not
-  failed, until the bridge heights are right: tile `49_37` (the deck at the water's own
-  height), `52_43` and `54_48` (4.3 m over the water), `64_76`, Libeňský most (4.6 m).
-  A deck that has been raised is reported so it can be taken off the list; any other
-  low deck fails the check;
+- every deck over the fairway with room for the boat. Four were too low until the
+  pipeline's rules of 7 October 2026 (bridges over open water clear it; an outline with
+  no street takes IPR's top): Branický most's footway, the cycleway under Barrandovský
+  most, Dvorecký most and the railway bridge at Holešovice. A map built before that
+  fails here. `KNOWN_LOW` in the script is where a deck the map has too low can be
+  listed, reported and not failed, until its height is put right;
 - steps in the water's height: 7 at locks (a boat rises or sinks there at 0.3 m/s),
   and 376 elsewhere, nearly all north of Troja: from tile `49_81` and above all tiles
   `50_94` and `50_95`, where the water climbs over 40 m, and the last stretch. They are

@@ -1,6 +1,6 @@
 import type { Bounds, GeoData, Point2, Polygons } from './map/geo.ts';
 import type { RawStreetEdge } from './network.ts';
-import type { Terrace } from './terrain.ts';
+import type { Ramp, Terrace } from './terrain.ts';
 import type { GroundResult, GroundRoadEdge, GroundTileData, LevelMask } from './ground.ts';
 import type { TreeSpot } from './map/vegetation.ts';
 import type { FenceBuffers, FenceTile } from './map/fences.ts';
@@ -63,7 +63,8 @@ export interface TilePassage { pts: Point2[]; w: number }
 
 // A level of bridges (1, 2, …) or tunnels (-1, -2, …) in a tile: its outline here;
 // its heights come in the tile's .levels.bin.
-export interface TileStructure { level: number; kind: 'bridge' | 'tunnel'; polys: Polygons }
+// `ramps`: the level's stairs, each with its own profile (terrain.ts, withRamps).
+export interface TileStructure { level: number; kind: 'bridge' | 'tunnel'; polys: Polygons; ramps?: Ramp[] }
 
 export interface TileJSON extends GroundTileData {
   i: number;
@@ -95,7 +96,8 @@ export interface TileJSON extends GroundTileData {
 }
 
 // labels, terraces: the steps in the ground (terrain.ts, pointLabels), where the tile has any.
-export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; ref?: number }
+// ramps: on a bridge level's grid, its stairs (terrain.ts, withRamps).
+export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; ref?: number; ramps?: Ramp[] }
 // A level with its heights, for the tile workers.
 export interface LevelInput extends TileStructure { heights: HeightGrid }
 

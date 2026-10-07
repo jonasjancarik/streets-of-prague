@@ -420,9 +420,9 @@ def main() -> None:
         timings.lap("survey")
     # Bridges and tunnels, above and below the bare ground (structures.py).
     merged = unary_union(outlines) if outlines else None
-    way_levels = []
+    way_levels, steep = [], {}
     found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0, labels),
-                             local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources, way_levels=way_levels)
+                             local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources, way_levels=way_levels, ramps_out=steep)
     # Where a bridge is close over the ground (at its ends) the ground comes up, or down,
     # to it: wholly within NEAR_DECK of it, less and less out to OFF_DECK. The map's bridge
     # and the street it runs on from rarely meet where the terrain says the abutment is,
@@ -472,7 +472,9 @@ def main() -> None:
         # Each level's heights one after the other, in the order the tile lists them.
         if (i, j) in found:
             layers.write_bin(out_dir / "tiles", f"{k}.levels.bin", b"".join(fine(h) for _, _, h, _ in found[(i, j)]), payloads)
-            per_tile[k] = [{"level": lv, "kind": kind, "polys": polys} for lv, kind, _, polys in found[(i, j)]]
+            # (`ramps`: the level's stairs and other ways too steep for the lattice, each with its own profile.)
+            per_tile[k] = [{"level": lv, "kind": kind, "polys": polys, **({"ramps": steep[(i, j)][lv]} if steep.get((i, j), {}).get(lv) else {})}
+                           for lv, kind, _, polys in found[(i, j)]]
         else:
             layers.remove_bin(out_dir / "tiles", f"{k}.levels.bin")
         # From before: one deck level, and before that the bare ground kept where
