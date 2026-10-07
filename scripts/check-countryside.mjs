@@ -15,6 +15,7 @@ import zlib from 'node:zlib';
 import { PMTiles } from 'pmtiles';
 import { Countryside } from '../src/countryside.ts';
 import { REACH, edgeGrid } from '../src/countrysideJoin.ts';
+import { DriveGraph, WalkGraph } from '../src/network.ts';
 
 const file = process.env.COUNTRYSIDE_FILE || 'public/data/countryside/central-bohemia.pmtiles';
 const index = JSON.parse(fs.readFileSync('public/data/praha_now/index.json', 'utf8'));
@@ -328,6 +329,25 @@ for (const [i, j] of rim) {
 const bridges = [...stubs.drive, ...stubs.walk].filter((e) => e.bridge || e.tunnel).length;
 console.log(`ground: the biggest step at the map's edge is ${step.toFixed(3)} m over ${compared} shared points; ${structuresAtEdge} bridges or tunnels touch the edge, ${bridges} built streets leave on one`);
 assert.ok(step < 0.01, 'the ground steps at the edge of the built map');
+
+// 6. The street graphs take and forget countryside tiles as they do built ones: a built
+// street carried by a built tile and a countryside tile stays while either is loaded.
+{
+  const e = stubs.drive.find((d) => !outside(d.pts[0]) && beyond(d.pts.at(-1)) > 100), end = e.pts.at(-1);
+  const inner = rim.map(([i, j]) => builtTile(i, j)).find((t) => t?.drive?.some((d) => d.id === e.id));
+  const outer = await seamLand.tile(Math.floor((end[0] + ox) / T), Math.floor((end[1] + oy) / T));
+  const drive = new DriveGraph(), walk = new WalkGraph();
+  const a = drive.add(inner.drive), b = drive.add(outer.drive), wa = walk.add(inner.walk), wb = walk.add(outer.walk);
+  assert.ok(inner.drive.some((d) => d.id === e.id) && outer.drive.some((d) => d.id === e.id), 'the built street is not in both tiles');
+  assert.ok((drive.out.get(e.v) || []).some((d) => d.id[0] === 'c'), 'no generated street leaves the built street\'s outer end in the graph');
+  drive.remove(a);
+  assert.ok(drive.byId.has(e.id), 'the built street left the graph while a countryside tile still carries it');
+  drive.remove(b);
+  walk.remove(wa);
+  walk.remove(wb);
+  assert.equal(drive.byId.size + walk.byId.size, 0, 'streets stay in the graphs after their tiles are forgotten');
+  console.log('the street graphs take and forget a countryside tile as they do a built one');
+}
 
 const share = (g) => 1 - stubs[g].loose.length / stubs[g].ends.size;
 assert.ok(stubs.drive.loose.every(([, v]) => !['motorway', 'trunk', 'primary', 'secondary'].includes(v.hw)), 'a main road leaves the map and ends');
