@@ -70,18 +70,18 @@ Before deploying:
   attempt timed out while loading). If it shows, limit the skylights or keep the
   details to the High tier.
 - A look on a phone (see "Phone checks").
-- **Licence of `straight-skeleton`:** MIT, but its bundle carries CGAL compiled to
-  WebAssembly, and CGAL's straight-skeleton package is GPL; the game ships it to
-  browsers. Options in `docs/licences-review.md`.
 
 ## Decided on 7 October
 
 - **Touch devices keep starting at Medium** (the Pixel 5 steps down by itself).
 - **The WebGL renderer stays** as what the game falls back to when WebGPU doesn't
   start; it only has to work, not to match the look.
-- **`straight-skeleton` is to be replaced** (its bundle carries GPL code): the pure
-  TypeScript version 1 of the package if its licence allows, or hipped roofs worked out
-  in the pipeline. Compare roofs before and after. Not started.
+- **`straight-skeleton` was replaced** the same day: roofs are built on the game's own
+  skeleton (`src/map/skeleton.ts`, tested by `scripts/check-skeleton.mjs`); the build
+  holds no CGAL or WebAssembly and is 2 MB smaller; the roofs match the old ones
+  within 2 cm on all 10,275 of a sample (`scripts/roof-compare.mjs`,
+  `docs/licences-review.md`). `npm prune` is owed, once no older branch is served from
+  the shared `node_modules` (the `night-audio` worktree still imports the package).
 - **The cruise boat stays lower.**
 - **The taxi job is only for someone in a taxi.** The other answers for missions (tone,
   which three factions, and the rest) are still open.
@@ -354,8 +354,7 @@ All IPR Praha, CC BY, at
 ## Housekeeping
 
 - **Licences:** `docs/licences-review.md`. TSK Praha's terms could not be read (someone
-  has to look at the dataset entries or ask); `straight-skeleton` is under "Release".
-  The repository has no LICENSE file.
+  has to look at the dataset entries or ask);   The repository has no LICENSE file.
 - **mbxp:** `shared/data/praha_now/tiles/84_68.bare.bin` and the 1,301 `.bare.bin.gz`
   beside it are in no manifest and can be deleted.
 - **Worktree `beige-ground`** (merged, 18 GB) is kept for the painted-photo
