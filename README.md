@@ -1084,7 +1084,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `--no-windows` skips it), and measures tiles side by side (`--jobs`); `centrum` takes
   about 15 minutes. It saves every 100 tiles, and `--resume` goes on after a stop (for
   the whole city, a night's run). `ipr_buildings.py --no-roof-details` leaves out the chimneys and
-  roof windows. `--debug` writes, per tile, the mesh from above next to the measured
+  roof windows. `--windows-only` keeps the table's colours and only finds the roof
+  windows again (how many of them are false, and what the detector checks:
+  `docs/evidence/roof-windows/`). `--debug` writes, per tile, the mesh from above next to the measured
   colours and a table; `--calibrate [--every 6]` estimates the light and the white
   balance again and prints the constants to put in the script.
 - **Roof corrections.** `pipeline/roofs.py` lists landmarks by OSM id, and outlines

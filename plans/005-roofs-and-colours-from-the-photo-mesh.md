@@ -342,19 +342,14 @@ the roofs and from the street.
   within 30 m was no better than any other building (11.0 and 9.8), so it isn't used;
   the script still prints its error. In the game the borrowed walls are mostly pale
   cream where the palette had ochres: truer, and a little less varied along a terrace.
-- **Shade factor: not done.** `mesh_colours.py` measures the ground in sun and in shade
-  per tile and within 8 m of each building (`ground_light`) as a calibration, but
-  nothing uses it and it isn't in the table; the fit against buildings seen both ways
-  is still to do, and needs the citywide measurement run again (5.5 h last time).
-  Walls seen only in shade still count as unsure.
+- **Shade factor:** tried on 7 October and dropped, see below.
 - **Bays.** Mansard windows take the bay count and origin of the wall below
   (`mansardCoords`; checked in `scripts/check-roof-clutter.mjs`). Chimneys between a
   ridge's ends stand over the piers between the bays of the wall along the ridge
   (`roof_details.piers`); it ran, but few ridges are long enough to have one, and it
   wasn't told apart by eye.
-- **False roof windows.** Only the doubles are dropped (`roof_details.keep_windows`).
-  The false-find rate on a sample of roofs is still unmeasured and the detector's
-  thresholds are as they were.
+- **False roof windows.** The doubles are dropped (`roof_details.keep_windows`); the
+  rate was measured and the detector tightened on 7 October, see below.
 - **Cost.** Chimneys have a material of their own (11), and the tile worker keeps
   chimneys and roof windows, then the clutter, as runs of triangles at the end of the
   building mesh (`geometry.userData.parts`: `extras`, `clutter`, `end`, in vertices),
@@ -385,3 +380,40 @@ the roofs and from the street.
   doesn't break, but it repaints measured and borrowed walls from the random palette
   and chimneys in a wall colour (it compares the whole byte with 15). So deploy the
   game before, or together with, a map rebuilt by this pipeline.
+
+## The open points, 7 October 2026
+
+- **False roof windows: measured and cut.** On 29 roofs in six districts, find by find
+  against the photo mesh's finest level, 82 of 143 finds were false (57 %): shadows of
+  chimneys, chimney tops, the lit sides of dormers. `detect_windows` now reads the
+  mesh's height over IPR's roof plane round each patch (in the plane; nothing standing
+  sunward of a dark patch or beside a bright one; a dark patch on clay tiles greyer
+  than the tiles): 25 of 78 false (32 %), 53 of the 61 windows kept. The table, the
+  rules and pictures: `docs/evidence/roof-windows/`. What is left is mostly chimney
+  tops the mesh's geometry doesn't show. `mesh_colours.py <area> --windows-only` finds
+  the windows again without measuring colours.
+- **Shaded walls: tried, not worth it.** On 604 buildings seen both in the sun and in
+  the shade (40 tiles), a wall's colour guessed from its shaded side misses by ΔE 14.0
+  with the ground's sun/shade ratio as a calibration and 14.2 without; another
+  building's colour misses by 14.1, the median wall by 8.5, a neighbour sharing a wall
+  by 8.2. The ground's ratio and the wall's correlate at 0.12. `ground_light` is out of
+  `mesh_colours.py` again; `docs/evidence/shaded-walls/` has the sample, the fit and why.
+- **Mansards over their bays: seen.** `docs/evidence/roof-windows/mansard-over-bays.jpg`
+  (Italská, from across the junction at eaves height): ten mansard windows, each over
+  a column of the facade's windows. A view from the pavement doesn't show a mansard in
+  a closed street.
+- **Chimneys on piers: counted, not seen.** On three tiles 11 of 266 rule-placed
+  chimneys are the ones between a ridge's ends that the pier rule moves, by 1.1 m (the
+  median; 1.45 m at most). Too few and too little to tell by eye from the street or
+  from above; it holds by construction (`roof_details.piers`).
+- **Cost, again** (`bench.mjs --ab`, High, `praha`, Old Town Square standing and driving
+  east, 5 alternating runs of 10 s; the machine at a load of 23-28 from other sessions,
+  run-to-run spread about ±3 %). Roof clutter on against off: standing −1.2 % (+1.7,
+  −3.6, +0.6, −0.3, −4.4), driving −1.4 % (+2.0, −2.0, −2.9, −0.9, −3.2). Chimneys and
+  roof windows on against off: standing +2.9 %, driving −3.1 % (one run at −8.8; the
+  median −2.1). So the clutter costs about 1 % of a 7-9 ms frame, at the edge of what
+  this run can tell; chimneys and windows nothing that shows.
+- The free camera has `level: true` (the horizon level whatever the heading), for
+  views of facades.
+- Seen in passing, not from this work: where a facade's wall is in two pieces a little
+  out of plane, the window pictures tear along the seam (Italská 50.07621, 14.43758).
