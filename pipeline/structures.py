@@ -468,10 +468,6 @@ def solve(ways, ground, decks, soft=frozenset()):
         for k, (n, g) in enumerate(zip(w["nodes"], w["grade"])):
             if g and k in (0, len(w["nodes"]) - 1):
                 i = net.key[("n", n)]
-                # Nothing meets the ground out on the river (stairs inside Branický most's
-                # pier end on it in the map, and held the footway down at the water).
-                if wet[i]:
-                    continue
                 ahead = np.subtract(w["pts"][0], w["pts"][1]) if k == 0 else np.subtract(w["pts"][-1], w["pts"][-2])
                 if w["kind"] == "bridge":
                     # A bridge drawn from past the edge of its wall: the street's last metres,
@@ -849,6 +845,7 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
 
 
 RAMP = 0.2  # a bridge way this steep from end to end is stairs, whatever the map calls it
+FLIGHT = 1.5  # m: and climbs at least this much
 LANDING = 8.0  # m: a bridge way shorter than this that runs on from stairs is their landing
 
 
@@ -865,7 +862,9 @@ def stairs(ways, profiles):
     for k, (w, (s, h)) in enumerate(zip(ways, profiles)):
         if w["kind"] != "bridge" or len(s) < 2 or np.isnan(h).any():
             continue
-        if w["hw"] == "steps" or abs(h[-1] - h[0]) > RAMP * max(s[-1], 1.0):
+        # (A real flight: a scrap a metre long at a bridge's end, half a metre off the
+        # ground it's tied to, is steep too, and is nothing.)
+        if w["hw"] == "steps" or (abs(h[-1] - h[0]) > RAMP * max(s[-1], 1.0) and abs(h[-1] - h[0]) >= FLIGHT):
             steep.append(k)
     is_steep = set(steep)
     for k, (w, (s, h)) in enumerate(zip(ways, profiles)):

@@ -93,11 +93,6 @@ class OverWaterTests(unittest.TestCase):
         _, ((s, h),) = structures.solve(ways, ground, {})
         self.assertLess(h.max(), 188.6)
 
-    def test_an_end_out_on_the_water_is_not_an_end_on_the_ground(self):
-        ways = [way(1, "footway", [1, 2], [[0, 0], [150, 0]], [True, True])]
-        _, ((s, h),) = structures.solve(ways, self.ground, {})
-        self.assertGreater(h[-1], 189.9)  # not held down at the water's 187 m
-
 
 class OutlineOnIprTests(unittest.TestCase):
     def test_an_outline_with_no_street_takes_iprs_top_whatever_its_ends_say(self):
