@@ -311,10 +311,6 @@ before that day's frame-count fix may be doubled.
 - **Seasons (plan 023):** the ground's cost is unresolved (the `--ab` command is in the
   plan). Later, if wanted: fallen leaves, hoarfrost, the city's
   calendar, seasons for baked landmarks.
-- **Lamp posts in the roadway (on the beta since 7 October):** lamps taken from IPR's
-  finished-works layer as "on a pole" stand in the lane of streets whose lamps really
-  hang on cables (Petřínská, Mělnická, Šeříková: about 20 within 300 m of Újezd). Being
-  fixed in `build_lamps.py`.
 - **Lamps:** an untagged street or footpath is lit where a lamp stands within 45 m or
   buildings stand along it, and the lights carry on to the next lit street up to
   300 m (the owner's middle way, 7 October); 32,267 lamps from IPR's finished-works
@@ -322,7 +318,10 @@ before that day's frame-count fix may be doubled.
   (`DTMP_CUR_TMISZNAK_ADS_B`) and name it in the credits; path lamps on estates may be
   too dense (71 in a 250 m circle at Jižní Město; 30 m spacing is the knob); lamps
   doubled where the two layers disagree by more than 12 m; no picture shows the
-  connection rule; no benchmark. The lighting cables (`DTMP_CUR_TMISPRUBEH_L`, code
+  connection rule; no benchmark; a hung lamp with no wall within 18 m on both sides is
+  drawn without cables; posts in cobbled squares and on bridge decks are not checked
+  for standing in the way. Rebuild the lamp files after any rebuild of the tiles (the
+  roadways come from them): `build_lamps.py`, then `test_lamps_off_the_road.py --built`. The lighting cables (`DTMP_CUR_TMISPRUBEH_L`, code
   616602) could say which streets are lit instead of inferring it. The numbers on the
   lamps' plates are in none of IPR's open layers. Roofs no longer take lamplight; a
   `bench.mjs --ab` is owed.
