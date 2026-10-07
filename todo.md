@@ -98,21 +98,6 @@ Before deploying:
 
 - **Missions and factions (plan 004):** nine answers were assumed on branch
   `night-missions`; confirm or change them (top of the plan's Result on the branch).
-- **Lamps on untagged streets:** with the new rule (merged, data not rebuilt) a suburb
-  such as 50.05348, 14.36206 is nearly dark. Decide whether untagged streets near a
-  surveyed lamp should get lamps.
-- **Touch devices starting at Low:** on the Pixel 5 Auto steps from Medium to Low and
-  Lowest on a drive (22.7 fps at Medium, 36.3 at Low).
-- **Branch `ios-app` (plan 020):** real-device checks (whether the app gets WebGPU on
-  iOS 26 among them), then phases 4, 5, 7 and 8.
-- **Roof clutter** (aerials and pots on chimneys, small dormers, thicker moss on clay)
-  is built and on at High and Ultra (`?clutter=on|off`); it nearly doubles building
-  triangles in the old centre. Look and decide the tiers; aerials are the first thing
-  to thin.
-- **The cruise boat is lower** (3.75 m, low cabin, no mast) so it fits under the
-  footbridge over the Smíchov lock cut. Keep, or raise the boat and route it otherwise.
-- **Garden trees:** thin the scatter with distance, or one cheap crown for the suburbs.
-  The cost is per tree and per mesh, not per triangle.
 
 ## Phone checks
 
@@ -320,10 +305,17 @@ before that day's frame-count fix may be doubled.
 - **Seasons (plan 023):** the ground's cost is unresolved (the `--ab` command is in the
   plan). Later, if wanted: fallen leaves, hoarfrost, the city's
   calendar, seasons for baked landmarks.
-- **Lamps:** the game's own lamps now go only on streets OSM tags as lit, and OSM's
-  street lamps join the surveyed ones; it shows once `build_lamps.py` has rebuilt the
-  lamp files (see "Decisions needed"). Roofs no longer take lamplight; a
-  `bench.mjs --ab` and a matched before/after pair are owed.
+- **Lamps:** an untagged street or footpath is lit where a lamp stands within 45 m or
+  buildings stand along it, and the lights carry on to the next lit street up to
+  300 m (the owner's middle way, 7 October); 32,267 lamps from IPR's finished-works
+  layer were added to the survey's. Left: confirm that layer's licence
+  (`DTMP_CUR_TMISZNAK_ADS_B`) and name it in the credits; path lamps on estates may be
+  too dense (71 in a 250 m circle at Jižní Město; 30 m spacing is the knob); lamps
+  doubled where the two layers disagree by more than 12 m; no picture shows the
+  connection rule; no benchmark. The lighting cables (`DTMP_CUR_TMISPRUBEH_L`, code
+  616602) could say which streets are lit instead of inferring it. The numbers on the
+  lamps' plates are in none of IPR's open layers. Roofs no longer take lamplight; a
+  `bench.mjs --ab` is owed.
 - **Live weather** follows the real weather during a game. A ČHMÚ route is written
   (`worker/weather.js`, `docs/live-weather.md`), not deployed: set `WEATHER_SOURCE=chmi`
   and `VITE_WEATHER_API`, try it in the Workers runtime, add ČHMÚ to the credits.
