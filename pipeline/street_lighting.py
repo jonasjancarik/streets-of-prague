@@ -22,6 +22,7 @@ from collections import Counter
 
 import numpy as np
 import shapely
+import shapely.ops
 from shapely import STRtree
 from shapely.geometry import LineString
 
@@ -156,3 +157,77 @@ def lighting(ways, buildings, lamps):
         else:
             runs.append(((w, f), list(pts)))
     return [(f, pts) for (_, f), pts in runs], dict(metres)
+
+
+# ---- Lamps that the map puts in the roadway ---------------------------------------
+#
+# Both of IPR's layers mark some lamps "on a pole" that stand, by their coordinates,
+# in a carriageway: the lamps hung on cables over the narrow streets of the old
+# districts (Mělnická, Petřínská: one every 25–30 m down the middle), lamps on a kerb
+# that the map's roadway is drawn a little too wide for, and lamps on islands the
+# roadway doesn't have. A post there stops cars. So no lamp on a post stays in one:
+
+POLES = (0, 2, 3)   # the kinds that stand on a post (build_lamps.KINDS: pole, gas, festive)
+HUNG = 7            # hung over the street on cables (the game's own kind; it draws the cables)
+IN_ROAD = 0.3       # m: further than this inside a carriageway's edge is in it
+KERB = 1.5          # m: one no deeper than this is a kerb's lamp, moved out to the pavement
+ONTO = 0.5          # m: how far past the edge it is put
+HOUSES = 20.0       # m: with a building this near, a lamp deep in the roadway hangs between the houses
+
+
+def off_the_road(xy, kinds, roads, buildings):
+    """`xy`: [(x, y)] and `kinds` of the lamps; `roads`: the carriageways as polygons;
+    `buildings`: polygons. Returns the lamps' new (xy, kinds) and how many were
+    (moved to the kerb, hung, moved from deep in the roadway)."""
+    xy, kinds = [tuple(p) for p in xy], list(kinds)
+    posts = [i for i, k in enumerate(kinds) if k in POLES]
+    if not posts or not len(roads):
+        return xy, kinds, (0, 0, 0)
+    roads = np.asarray(roads, dtype=object)
+    tree, edges = STRtree(roads), shapely.boundary(roads)
+    houses = STRtree(buildings) if len(buildings) else None
+
+    def deepest(points):
+        """How far inside a carriageway each point is (0: not in one), and in which."""
+        depth, which = np.zeros(len(points)), np.full(len(points), -1)
+        i, j = tree.query(points, predicate="within")
+        d = shapely.distance(edges[j], points[i])
+        for a, b, c in zip(i, j, d):
+            if c > depth[a]:
+                depth[a], which[a] = c, b
+        return depth, which
+    points = shapely.points(np.asarray([xy[i] for i in posts], dtype=float))
+    depth, which = deepest(points)
+    moved = hung = far = 0
+    for n, i in enumerate(posts):
+        if depth[n] <= IN_ROAD:
+            continue
+        among = houses is not None and len(houses.query(points[n], predicate="dwithin", distance=HOUSES))
+        if depth[n] > KERB and among:
+            kinds[i] = HUNG
+            hung += 1
+            continue
+        # Out past the nearest edge, if that isn't in another roadway; hung all the same if it is.
+        edge = shapely.ops.nearest_points(edges[which[n]], points[n])[0]
+        dx, dy = edge.x - points[n].x, edge.y - points[n].y
+        size = float(np.hypot(dx, dy)) or 1.0
+        out = (edge.x + dx / size * ONTO, edge.y + dy / size * ONTO)
+        if deepest(shapely.points([out]))[0][0] > IN_ROAD:
+            kinds[i] = HUNG
+            hung += 1
+        else:
+            xy[i] = out
+            moved += depth[n] <= KERB
+            far += depth[n] > KERB
+    return xy, kinds, (moved, hung, far)
+
+
+def posts_in_road(xy, kinds, roads):
+    """The indices of the lamps on posts that stand in a carriageway (none, after off_the_road)."""
+    posts = [i for i, k in enumerate(kinds) if k in POLES]
+    if not posts or not len(roads):
+        return []
+    roads = np.asarray(roads, dtype=object)
+    points = shapely.points(np.asarray([xy[i] for i in posts], dtype=float))
+    i, j = STRtree(roads).query(points, predicate="within")
+    return sorted({posts[a] for a, d in zip(i, shapely.distance(shapely.boundary(roads[j]), points[i])) if d > IN_ROAD})
