@@ -79,10 +79,20 @@ On the praha map it passes and reports:
   fails here. `KNOWN_LOW` in the script is where a deck the map has too low can be
   listed, reported and not failed, until its height is put right;
 - steps in the water's height: 7 at locks (a boat rises or sinks there at 0.3 m/s),
-  and 376 elsewhere, nearly all north of Troja: from tile `49_81` and above all tiles
-  `50_94` and `50_95`, where the water climbs over 40 m, and the last stretch. They are
-  in the terrain's water heights, not at tile edges. Not fixed: it needs
-  `dtm_heights.py` and a terrain rebuild there.
+  and 376 elsewhere on the map of 5 and 6 October, nearly all north of Troja.
+
+That was the terrain: the water's height was the lowest terrain within 16 m on the
+water, and north of Sedlec the Vltava leaves IPR's terrain model, where the ground
+carries on at the height of the nearest known ground: the plateau above the river.
+Since 7 October `dtm_heights.level_water` makes water lie as water does (see the top of
+`pipeline/dtm_heights.py`): each pool of wide water is level between weirs, narrow water
+comes down to the pool it runs into, and past the model's edge the land rises from the
+water as a valley's side. Rebuilt in a clone (`uv run ipr_terrain.py praha`, 15 minutes,
+97 tiles changed), the check counts 10 steps besides 3 at locks, all of them the water
+running off at a weir or a lock's mouth (Modřany, the Smíchov cut, Štvanice); the
+pools' levels in the city are the same to a decimetre (189.6, 187.3, 184.6, 180.3,
+175.2 m), and beyond the model the river carries on from 175.2 m, rising a metre a
+kilometre, where it stood at up to 295 m.
 
 ## PID ferries
 
