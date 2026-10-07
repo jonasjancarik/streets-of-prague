@@ -838,8 +838,9 @@ from (geometry helpers, straight-skeleton buildings, trees).
 - **Street widths past the technical map** are guessed from the class and the setting
   (family houses, blocks of flats, open land), cut to the room between the buildings,
   and not from the class alone: a village street is about 5.5 m and under 4.6 m cars
-  take turns slowly (`pipeline/lanes.py`, plan 031). No gravel shoulder along through
-  roads yet, and pavements only where OSM maps them.
+  take turns slowly (`pipeline/lanes.py`, plan 031). Through roads there have a gravel
+  shoulder, and the land nobody mapped beside them is rough grass, a verge
+  (`pipeline/verges.py`), with a pavement only where OSM tags one (`sidewalk=*`).
 - **Tram termini without a loop.** Where the map has no way to turn round at the
   end of a line (5 and 6 at Nádraží Holešovice, 13 at Zvonařka, 17 at Libuš, 19 at
   Pankrác), the tram reverses where the track allows it, or waits until it's off
