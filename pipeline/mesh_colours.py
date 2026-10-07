@@ -443,7 +443,9 @@ FACES = 4096  # roof faces per building, for packing (building, face) in one num
 # out of other buildings' shadows (R² 0.59). Shadows are nearly black: guessing a
 # wall's colour in the sun from its shaded side missed by ΔE 17 on 463 buildings seen
 # both ways, worse than taking another building's (11), so walls seen only in shade
-# count as unsure. Walls facing the sun more
+# count as unsure (tried again on 7 October 2026 with the ground's light beside each
+# building as a calibration, on 604 buildings: no better, docs/evidence/shaded-walls).
+# Walls facing the sun more
 # than LIT (cosine, level) are lit, facing away more than that shaded.
 SUN_AZIMUTH = 100.0  # degrees from north
 SUN_ELEVATION = 35.0
@@ -619,7 +621,6 @@ def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = Fal
     cuts = np.r_[0, np.nonzero(np.diff(pix_face))[0] + 1, len(pix_face)]
     roof_samples = {int(pix_face[a]): pix_lab[a:b] for a, b in zip(cuts[:-1], cuts[1:]) if b > a}
 
-    ground = ground_light(colour, mesh_z, fid, hm, x0, y0, T, blds)
     # Walls: what's outside a party wall is the neighbour, and trees stand in front of some.
     footprints = [g for _, _, _, fp in blds for g in fp]
     party = shapely.union_all([g.buffer(0.3) for g in footprints]) if footprints else None
@@ -629,7 +630,7 @@ def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = Fal
     for b, ((bid, _, codes, _), t) in enumerate(zip(blds, tris)):
         base = t[:, :, 2].min()
         wt = t[codes == 0]
-        rec = {"id": bid, "walls": None, "roofs": [], "ground": ground["near"].get(b)}
+        rec = {"id": bid, "walls": None, "roofs": []}
         if len(wt):
 
             def wanted(p, n, base=base):
@@ -662,55 +663,8 @@ def sample_tile(meta, ij, blds, mesh: Mesh, trees: np.ndarray, debug: bool = Fal
                                  # and those are tiles or metal as often as not.
                                  "flat": bool((codes[f == face] == 2).all()) and fn[2] / max(np.linalg.norm(fn), 1e-12) > FLAT})
         out.append(rec)
-    return {"buildings": out, "ground": ground["tile"], "top": colour.reshape(w, w, 3) if debug else None,
-            "fid": fid if debug else None}
+    return {"buildings": out, "top": colour.reshape(w, w, 3) if debug else None, "fid": fid if debug else None}
 
-
-# The light in the shade, read off the ground: streets and yards are much the same greys
-# in the sun and out of it, so how dark the shaded ground beside a building is against
-# the tile's sunlit ground says how much light its shaded walls get (a deep courtyard
-# far less than a wide street). Ground: the mesh from above where no IPR roof is,
-# within GROUND_LOW m of the lowest thing GROUND_WINDOW m around (not crowns or cars).
-GROUND_STEP = 3  # every n-th pixel of the top raster (0.6 m)
-GROUND_WINDOW = 12.0
-GROUND_LOW = 0.8
-GROUND_NEAR = 8.0  # m from a building's outline: the ground "beside" it
-
-
-def ground_light(colour, mesh_z, fid, hm, x0, y0, T, blds):
-    """The ground's colour (linear RGB medians) in the sun and in the shade: over the
-    whole tile ("tile": {"lit": (rgb, n), "shade": (rgb, n)}), and within GROUND_NEAR m
-    of each building ("near": the same per building index)."""
-    import shapely
-    from scipy import ndimage
-    w = fid.shape[0]
-    z = mesh_z.reshape(w, w)
-    zs, fs = z[::GROUND_STEP, ::GROUND_STEP], fid[::GROUND_STEP, ::GROUND_STEP]
-    k = int(GROUND_WINDOW / (RES * GROUND_STEP)) | 1
-    low = ndimage.minimum_filter(np.nan_to_num(zs, nan=1e9), size=k, mode="nearest")
-    ok = np.isfinite(zs) & (fs < 0) & (zs - low < GROUND_LOW)
-    rr, cc = np.nonzero(ok)
-    empty = {"lit": (None, 0), "shade": (None, 0)}
-    if not len(rr):
-        return {"tile": empty, "near": {}}
-    pts = np.column_stack((x0 + (cc * GROUND_STEP + 0.5) * RES, y0 + T - (rr * GROUND_STEP + 0.5) * RES, zs[rr, cc] + 0.3))
-    sun = hm.in_sun(pts)
-    c = colour.reshape(w, w, 3)[::GROUND_STEP, ::GROUND_STEP][rr, cc].astype(np.float64) / 255
-    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
-
-    def both(sel):
-        return {"lit": (np.median(lin[sel & sun], axis=0) if (sel & sun).any() else None, int((sel & sun).sum())),
-                "shade": (np.median(lin[sel & ~sun], axis=0) if (sel & ~sun).any() else None, int((sel & ~sun).sum()))}
-
-    near = {}
-    tree = shapely.STRtree(shapely.points(pts[:, :2]))
-    for b, (_, _, _, fp) in enumerate(blds):
-        hit = np.zeros(len(pts), bool)
-        for g in fp:
-            hit[tree.query(g, predicate="dwithin", distance=GROUND_NEAR)] = True
-        if hit.any():
-            near[b] = both(hit)
-    return {"tile": both(np.ones(len(pts), bool)), "near": near}
 
 
 # Roof windows, found in the mesh's colours (its geometry is too coarse for anything as
@@ -724,8 +678,18 @@ WINDOW_DARK = 18.0  # or this much below it: dark glass
 WINDOW_BLUE = 10.0  # or b* this much below it (a blue sky) and a little darker
 WINDOW_W = (0.55, 1.7)  # m across the slope
 WINDOW_H = (0.7, 1.9)  # m down the slope
-WINDOW_FILL = 0.5  # the share of its rectangle the patch fills
+WINDOW_FILL = 0.55  # the share of its rectangle the patch fills
+WINDOW_PLANE = 1.2  # m; the mesh there is no further than this from IPR's roof plane
+WINDOW_NEAR = 1.5  # m round a patch, and
+WINDOW_SUNWARD = 2.5  # m towards the sun from it, where nothing may stand up
+WINDOW_SHADOW = 0.55  # m above the patch, for a dark one: it would be that thing's shadow
+WINDOW_BESIDE = 0.9  # and for a bright one: a chimney's top or side
+WINDOW_COLOURED = 15.0  # roofs with more chroma than this (clay tiles): a dark window in one
+WINDOW_GREYER = 0.62  # has no more than this share of the roof's chroma
 CHIMNEY_SIZE = 0.75  # m; a dark patch no bigger than this either way is a chimney and its shadow
+
+
+FEATURES = None  # a list, to collect what's known of each window found (for tuning)
 
 
 def detect_windows(meta, ij, blds, debug: bool = False):
@@ -763,7 +727,8 @@ def detect_windows(meta, ij, blds, debug: bool = False):
     r0 = np.clip(((y0 + T - mt[:, :, 1].max(1)) // 1).astype(int), 0, m - 1)
     r1 = np.clip(((y0 + T - mt[:, :, 1].min(1)) // 1).astype(int), 0, m - 1)
     near = (sat[r1 + 1, c1 + 1] - sat[r0, c1 + 1] - sat[r1 + 1, c0] + sat[r0, c0]) > 0
-    which, weights, _ = rasterize(mt[near], x0, y0, T, WINDOW_RES)
+    which, weights, mz = rasterize(mt[near], x0, y0, T, WINDOW_RES)
+    above = (mz - rz).reshape(w, w)  # the mesh over IPR's roof plane, m
     if near.any():
         which = np.where(which >= 0, np.nonzero(near)[0][np.maximum(which, 0)], -1)
     fid = np.where(rw >= 0, owner[np.maximum(rw, 0)] if len(owner) else -1, -1).reshape(w, w)
@@ -796,6 +761,9 @@ def detect_windows(meta, ij, blds, debug: bool = False):
     bright[idx] = (d[:, 0] > WINDOW_BRIGHT) & (np.hypot(labs[idx, 1], labs[idx, 2]) < WINDOW_BRIGHT_CHROMA)
     dark[idx] = (d[:, 0] < -WINDOW_DARK) | ((d[:, 2] < -WINDOW_BLUE) & (d[:, 0] < -5))
 
+    sv = sun_vector()
+    sun_col, sun_row = sv[0] / np.hypot(sv[0], sv[1]), sv[1] / np.hypot(sv[0], sv[1])
+
     def window(pix, is_dark):
         f = int(np.bincount(fid[pix] - fid[pix].min()).argmax() + fid[pix].min())
         n = normals.get(f)
@@ -812,6 +780,31 @@ def detect_windows(meta, ij, blds, debug: bool = False):
         if not (WINDOW_W[0] <= width <= WINDOW_W[1] and WINDOW_H[0] <= height <= WINDOW_H[1] and fill >= WINDOW_FILL):
             return None
         if is_dark and max(width, height) <= CHIMNEY_SIZE:
+            return None
+        # What tells a window from the rest (measured on 42 roofs, docs/evidence/roof-windows):
+        # it lies in the roof's plane, nothing stands just beside it or between it and the
+        # sun (those are chimneys, their sides and their shadows), and a dark one on a
+        # coloured roof is greyer than the roof (a shadow keeps the tiles' colour).
+        r0, r1, c0, c1 = rr.min(), rr.max(), cc.min(), cc.max()
+        k = int(WINDOW_NEAR / WINDOW_RES)
+        ring = above[max(r0 - k, 0):r1 + k + 1, max(c0 - k, 0):c1 + k + 1]
+        steps = np.arange(0.3, WINDOW_SUNWARD, WINDOW_RES) / WINDOW_RES
+        sr = np.clip((rr[:, None] - sun_row * steps).astype(int), 0, w - 1)
+        sc = np.clip((cc[:, None] + sun_col * steps).astype(int), 0, w - 1)
+        with np.errstate(all="ignore"):
+            dz = float(np.nanmedian(above[rr, cc]))
+            beside = float(np.nanpercentile(ring, 95)) - dz if np.isfinite(ring).any() else 0.0
+            sunward = float(np.nanmax(above[sr, sc])) - dz if np.isfinite(above[sr, sc]).any() else 0.0
+        chroma = float(np.hypot(*np.nanmedian(labs[pix, 1:], axis=0)))
+        own = float(np.hypot(*np.median(ref[np.searchsorted(idx, pix), 1:], axis=0)))
+        if FEATURES is not None:
+            FEATURES.append({"face": f, "dark": is_dark, "w": float(width), "h": float(height), "fill": float(fill), "dz": dz,
+                             "beside": beside, "sunward": sunward, "chroma": chroma, "own": own})
+        if abs(dz) > WINDOW_PLANE:
+            return None
+        if is_dark and (sunward > WINDOW_SHADOW or (own > WINDOW_COLOURED and chroma > WINDOW_GREYER * own)):
+            return None
+        if not is_dark and max(sunward, beside) > WINDOW_BESIDE:
             return None
         centre = e * (a.min() + a.max()) / 2 + d * (dn.min() + dn.max()) / 2
         centre += n * float((p.mean(0) - centre) @ n)  # back onto the roof plane
@@ -986,6 +979,8 @@ def main():
     ap.add_argument("--every", type=int, default=1, help="with --calibrate: only every n-th tile")
     ap.add_argument("--resume", action="store_true", help="go on from where a run stopped (it saves every 100 tiles)")
     ap.add_argument("--no-windows", action="store_true", help="don't look for roof windows (saves the level-14 mesh)")
+    ap.add_argument("--windows-only", action="store_true",
+                    help="keep the table's colours and only look for the roof windows again (after detect_windows changed)")
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="tiles measured side by side")
     a = ap.parse_args()
     meta = layers.read_meta(a.area)
@@ -993,6 +988,8 @@ def main():
         raise SystemExit(f"{a.area}: run build_tiles.py {a.area} first")
     wanted = {tuple(map(int, t.split("_"))) for t in a.tiles} if a.tiles else {(i, j) for i, j, _ in layers.tiles(a.area, meta)}
     by_tile = tile_buildings(a.area, meta, wanted)
+    if a.windows_only:
+        return windows_only(a, meta, by_tile)
     trees = area_trees(meta)
     tiles = sorted(by_tile)[::a.every] if a.calibrate else sorted(by_tile)
     started = time.perf_counter()
@@ -1044,6 +1041,57 @@ def main():
         colours = {**json.loads(gzip.decompress(path.read_bytes())), **colours}
     save()
     print(f"{path}: {len(colours)} buildings")
+
+
+def windows_job(job):
+    meta, ij, blds = job
+    started = time.perf_counter()
+    found = detect_windows(meta, ij, blds)
+    return ij, {blds[b][0]: w for b, w in found.items() if blds[b][0]}, [bl[0] for bl in blds if bl[0]], time.perf_counter() - started
+
+
+def windows_only(a, meta, by_tile):
+    """Looks for the roof windows again and puts them in the area's table in place of the
+    ones there, leaving the colours as they are. Saved every 100 tiles; --resume goes on."""
+    path = OUT_DIR / f"{a.area}.json.gz"
+    done_path = OUT_DIR / f"{a.area}.windows.json"
+    if not path.exists():
+        raise SystemExit(f"{path}: no table yet; run without --windows-only first")
+    colours = json.loads(gzip.decompress(path.read_bytes()))
+    done = json.loads(done_path.read_text()) if a.resume and done_path.exists() else []
+    tiles = [ij for ij in sorted(by_tile) if f"{ij[0]}_{ij[1]}" not in set(done)]
+    before = sum(len(c.get("windows", [])) for c in colours.values())
+
+    def save():
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(gzip.compress(json.dumps(colours, separators=(",", ":")).encode()))
+        tmp.replace(path)
+        done_path.write_text(json.dumps(done))
+
+    started = time.perf_counter()
+    work = [(meta, ij, by_tile[ij]) for ij in tiles]
+    pool = ProcessPoolExecutor(a.jobs) if a.jobs > 1 and len(work) > 1 else None
+    was = now = 0
+    for ij, found, ids, took in (pool.map(windows_job, work) if pool else map(windows_job, work)):
+        for bid in ids:
+            rec = colours.get(bid)
+            if rec is None and bid not in found:
+                continue
+            rec = colours.setdefault(bid, {})
+            was += len(rec.pop("windows", []))
+            if bid in found:
+                rec["windows"] = found[bid]
+                now += len(found[bid])
+        print(f"{ij[0]}_{ij[1]}: {sum(len(w) for w in found.values())} roof windows ({took:.0f} s)", flush=True)
+        done.append(f"{ij[0]}_{ij[1]}")
+        if len(done) % 100 == 0:
+            save()
+    if pool:
+        pool.shutdown()
+    save()
+    total = sum(len(c.get("windows", [])) for c in colours.values())
+    print(f"{len(tiles)} tiles in {time.perf_counter() - started:.0f} s: {was} roof windows there before, {now} now; "
+          f"the table had {before} and has {total}")
 
 
 def entry(r, windows=None) -> dict:

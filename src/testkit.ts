@@ -43,7 +43,9 @@ export type Where = string | Point2 | { lat: number; lon: number };
 
 // The free camera: looking at (x, y) from `height` m up, tilted `tilt`° from straight
 // down, facing `heading` (compass degrees).
-export interface FreeCam { x: number; y: number; height: number; tilt: number; heading: number }
+// `level`: the picture's top is the way the camera faces (the horizon stays level whatever
+// the heading); without it the top is north, as on the map.
+export interface FreeCam { x: number; y: number; height: number; tilt: number; heading: number; level?: boolean }
 
 export interface Check { name: string; pass: boolean; detail?: string }
 export interface Result { name: string; title: string; pass: boolean; checks: Check[]; ms: number; error?: string }
@@ -714,12 +716,12 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
 
     // Look from somewhere without moving: t.camera({ at: 'staromak', height: 60, tilt: 40,
     // heading: 90 }); any field left out stays as it is. t.camera(null): back to you.
-    async camera(opt: { at?: Where; height?: number; tilt?: number; heading?: number } | null) {
+    async camera(opt: { at?: Where; height?: number; tilt?: number; heading?: number; level?: boolean } | null) {
       if (!opt) { kit.cam = null; return; }
       const v = g.view0();
       const cam = kit.cam ?? { x: v.x, y: v.y, height: v.height, tilt: 0, heading: 0 };
       if (opt.at) [cam.x, cam.y] = kit.toLocal(opt.at);
-      Object.assign(cam, { height: opt.height ?? cam.height, tilt: Math.max(0, Math.min(75, opt.tilt ?? cam.tilt)), heading: opt.heading ?? cam.heading });
+      Object.assign(cam, { height: opt.height ?? cam.height, tilt: Math.max(0, Math.min(75, opt.tilt ?? cam.tilt)), heading: opt.heading ?? cam.heading, level: opt.level ?? cam.level });
       kit.cam = cam;
       if (opt.at) await g.loaded(cam.x, cam.y);
       await frame();
