@@ -607,7 +607,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
   const woodEdges = () => {
     const wood = [...(A.dtm_wood || []), ...(A.wood || [])];
     const real = (polys: Polygons) => polys.filter((rings) => Math.abs(signedArea(rings[0])) > WOOD_EDGE_MIN_AREA);
-    const grass = [...(A.park || []), ...(A.meadow || []), ...(A.lawn || []), ...(A.garden || [])];
+    const grass = [...(A.park || []), ...(A.meadow || []), ...(A.lawn || []), ...(A.garden || []), ...(A.verge || [])];
     const onWood = onPolygons(wood), onTop = onPolygons(A.wood || []), onGrass = onPolygons(grass);
     const floorAt = (p: Point2) => onTop(p[0], p[1]) || (onWood(p[0], p[1]) && !onGrass(p[0], p[1]));
     const skipUnless = (test: (p: Point2, q: Point2) => boolean) => (a: Point2, b: Point2) => {
@@ -658,6 +658,8 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.lawn || []), COLORS.garden, 'lawn');
     add(polygons(A.park || []), COLORS.park, 'grass');
     add(polygons(A.meadow || []), COLORS.park, 'meadow');
+    // Roadside verges (pipeline/verges.py): rough grass that nobody waters, drying like a meadow.
+    add(polygons(A.verge || []), COLORS.park, 'meadow');
     // The greenery the city tends, surveyed (pipeline/ipr_greenery.py), over what is only
     // guessed there: lawns, meadows, the earth of flower beds and under groups of shrubs.
     // (Under a surveyed group of trees the grass goes on: a park's trees, not a wood.)

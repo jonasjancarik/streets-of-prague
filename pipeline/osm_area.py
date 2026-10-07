@@ -28,6 +28,7 @@ import pavements
 import plots as garden_plots
 import roofs
 import sports
+import verges
 import worn_paths
 from build_cache import Timings
 from kerbs import Kerbs, estimate
@@ -84,6 +85,12 @@ GRID = 0.01  # metres, for overlaying the survey's surface
 SPARSE_OTHER = 0.04  # of a block's area: a few shops or sheds in a mostly empty block don't make it commercial
 SETTLED_REACH = 30.0  # m: how far from a family house unmapped land counts as its surroundings
 STREET_NEAR = 12.0  # m: the streets and pavements this near a block are the ones its plots face
+
+
+def _pavement_sides(tag):
+    """(left, right): whether OSM says the street has a pavement on that side (sidewalk=*)."""
+    both = tag("sidewalk") or tag("sidewalk:both")
+    return tuple(both in ("both", "yes", side) or tag(f"sidewalk:{side}") == "yes" for side in ("left", "right"))
 
 
 def road_width(hw, width=None, lanes=None):
@@ -195,7 +202,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         if hw in CAR_ROADS:
             # Sized kerb to kerb once the pavements and tracks are all in (kerbs.py).
             est = {**estimate(width, lambda k: col(row, k), not col(row, "width") and not col(row, "lanes")), "hw": hw,
-                   "tunnel": col(row, "tunnel") not in (None, "no")}
+                   "tunnel": col(row, "tunnel") not in (None, "no"), "pavement": _pavement_sides(lambda k: col(row, k))}
             car_ways.extend((ls, est, cls, hw != "service") for ls in _lines(g))
             return
         if ground:
@@ -533,9 +540,28 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         area_polys["garden"] = unary_union([area_polys.get("garden", gardens), gardens])
     if not lawns.is_empty:
         area_polys["lawn"] = unary_union([area_polys.get("lawn", lawns), lawns])
-    grass = unary_union([lawns, area_polys.get("meadow", Polygon()), area_polys.get("dtm_green", Polygon())])
+    # Roadside verges (verges.py): the narrow grass along a carriageway, and outside the
+    # survey the land nobody mapped, which would otherwise be paved to the fields' edge.
+    footprints = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
+    carriageway = unary_union([road_polys.get(k, Polygon()) for k in ("road", "sett")])
+    grassy = unary_union([area_polys.get(k, Polygon()) for k in ("lawn", "park", "meadow", "dtm_green")])
+    verge = unary_union([
+        verges.strips(grassy, carriageway),
+        verges.unmapped(clip, [*area_polys.values(), *road_polys.values(), *footprints, *(lot["poly"] for lot in lots),
+                               *(LineString(r["pts"]).buffer(3.0) for r in rails)],
+                        lambda xs, ys: dtm.covered(*tf.transform(xs, ys, direction="INVERSE")),
+                        [footprints[k] for k, b in enumerate(buildings) if b["kind"] in NOT_HOMES and not b["part"]],
+                        [(ls, half, side) for (ls, est, cls, _), (left, right) in zip(car_ways, measured)
+                         if cls != "bridge" and not est["tunnel"]
+                         for half, side, on in ((left, 1, est["pavement"][0]), (right, -1, est["pavement"][1])) if on])])
+    if not verge.is_empty:
+        area_polys["verge"] = _areas(verge.intersection(clip))
+    if stats is not None:
+        stats["verge_m2"] = round(verge.area)
+    timer.lap("verges")
+    grass = unary_union([lawns, area_polys.get("meadow", Polygon()), area_polys.get("dtm_green", Polygon()), area_polys.get("verge", Polygon())])
     if not grass.is_empty:
-        flats = {k: Polygon(b["rings"][0], b["rings"][1:]) for k, b in enumerate(buildings)}
+        flats = dict(enumerate(footprints))
         blocks = [k for k, b in enumerate(buildings)
                   if b["kind"] in ("apartments", "residential", "dormitory") and not b["part"] and flats[k].area >= 250]
         # A list, not one joined shape: worn_paths only asks whether a line crosses any.

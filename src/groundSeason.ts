@@ -4,8 +4,8 @@
 import * as THREE from 'three';
 import type { Season } from './season.ts';
 
-// How much of the summer's drying each kind of grass takes: meadows, grassland and
-// scrub all of it, the mown lawns of housing estates most, parks about half (they are
+// How much of the summer's drying each kind of grass takes: meadows, grassland, scrub
+// and roadside verges (drawn as meadow) all of it, the mown lawns of housing estates most, parks about half (they are
 // mown and sometimes watered), private gardens a quarter, pitches none. It scales only
 // the dry part of the tint, so a kind with no weight keeps the same palette all summer.
 export const GRASS_DRYNESS = { meadow: 1, lawn: 0.8, park: 0.5, garden: 0.25, pitch: 0 };

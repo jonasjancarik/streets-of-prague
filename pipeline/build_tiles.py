@@ -469,6 +469,7 @@ def main() -> None:
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="chunks built side by side")
     ap.add_argument("--resume", action="store_true", help="reuse completed chunk layers only when inputs and output hashes match")
     ap.add_argument("--no-assemble", action="store_true", help="leave layers staged; assemble after IPR buildings and terrain finish")
+    ap.add_argument("--chunks", default="", help="only these chunks, as ci,cj separated by spaces (a trial; the rest keep what they have)")
     args = ap.parse_args()
     area, T = args.area, args.tile
     wanted = set(args.layers.split(","))
@@ -508,6 +509,7 @@ def main() -> None:
         except OSError as e:
             print(f"dtm: couldn't look for a newer map ({e}); using the one here")
         dtm.surfaces()
+        dtm.covered([14.42], [50.08])  # (and where the survey reaches at all, kept for the workers)
     if "ground" in wanted:
         if any(dtm_walls.LINES.glob("*.zip")):
             dtm_walls.lines()
@@ -521,7 +523,10 @@ def main() -> None:
     keys = chunk_cache.inputs(area, meta, wanted, area_pbf, settings)
     jobs = []
     reused = 0
+    only = {tuple(int(v) for v in c.split(",")) for c in args.chunks.split()}
     for ci, cj in todo:
+        if only and (ci, cj) not in only:
+            continue
         needed = chunk_cache.remaining(area, meta, ci, cj, wanted, keys) if args.resume else wanted
         reused += len(wanted) - len(needed)
         if needed:

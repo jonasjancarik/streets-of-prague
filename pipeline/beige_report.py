@@ -29,7 +29,7 @@ from shapely.ops import unary_union
 import dtm
 from osm_area import OUT
 
-GREEN = {"park", "garden", "meadow", "lawn", "wood", "orchard"}
+GREEN = {"park", "garden", "meadow", "lawn", "verge", "wood", "orchard"}
 DTM_CLASSES = {
     "010000018903": "yard", "010000000703": "sidewalk",
     "010000021503": "green", "010000020903": "garden",

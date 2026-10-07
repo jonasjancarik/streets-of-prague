@@ -30,7 +30,7 @@ const CLEARING = 100, GARDEN = 90, ORCHARD = 60, FIELD = 40, FENCE = 1;
 // Surveyed greenery (pipeline/ipr_greenery.py): grass where no tree is made up (the
 // survey has the real ones), and groups of shrubs, which are filled with shrubs.
 // A surveyed group of trees is planted like a park, only closer (GROVE, in woodScatter.ts).
-const SURVEYED = 150, SHRUBBERY = 170;
+const SURVEYED = 150, SHRUBBERY = 170, VERGE = 140;
 // Of each kind of tree (below), how many are evergreen and keep their leaves in
 // winter: yews and hedges among the shrubs. (Conifers have a shape of their own.)
 const EVERGREEN = [0, 0, 0, 0.4];
@@ -61,6 +61,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fill(d.areas.lawn, GARDEN);
     fill(d.areas.park, PARK);
     fill(d.areas.meadow, PARK);
+    fill(d.areas.verge, VERGE); // grass with no trees made up on it: a verge is mown flat or left to weeds
     fill(d.areas.ipr_lawn, SURVEYED);
     fill(d.areas.ipr_meadow, SURVEYED);
     fill(d.areas.ipr_bed, SURVEYED);
@@ -132,7 +133,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   const { covered, index } = scatterWoods(geo, grid, isYoung, surveyed, trees);
   // The ragged edge: shrubs and a few young trees just outside the outline, where the
   // neighbour is grass, a field or a garden (never paving, a road or water).
-  edgeShrubs(geo, grid, [GARDEN, PARK, FIELD, CLEARING], surveyed, trees, covered, index);
+  edgeShrubs(geo, grid, [GARDEN, PARK, FIELD, CLEARING, VERGE], surveyed, trees, covered, index);
   // Orchards: loose rows, like the Petřín fruit gardens in the 1945 photo.
   for (let y = geo.minY; y < geo.maxY; y += 6) {
     for (let x = geo.minX; x < geo.maxX; x += 6) {

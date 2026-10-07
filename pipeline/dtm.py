@@ -184,6 +184,46 @@ def _indexes():
     _walk_index = (STRtree(geoms), geoms, labels)
 
 
+REACH_CELL = (0.001, 0.00065)  # degrees of longitude and latitude: about 70 m
+_reach = None
+
+
+def covered(lon, lat):
+    """Whether the technical map reaches each place (arrays of WGS84 degrees): a coarse
+    picture of where it has surveyed anything at all, its gaps of a few hundred metres
+    closed. False everywhere before the map has been downloaded."""
+    global _reach
+    kept = CACHE / "reach.pkl"  # (small; a worker need not read every surface to know it)
+    key = [VERSION, REACH_CELL, build_cache.identity(PARSED) if PARSED.exists() else None, build_cache.function_key(covered)]
+    if _reach is None:
+        got = build_cache.load_pickle(kept, key)
+        if got:
+            _reach = got["reach"]
+    if _reach is None:
+        from scipy import ndimage
+        kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
+        xy = [shapely.get_coordinates(geoms) for _, geoms in kinds.values() if len(geoms)]
+        if not xy:
+            _reach = (0.0, 0.0, np.zeros((1, 1), bool))
+        else:
+            xy = np.concatenate(xy)
+            x0, y0 = xy.min(axis=0)
+            cx, cy = ((xy[:, 0] - x0) / REACH_CELL[0]).astype(int), ((xy[:, 1] - y0) / REACH_CELL[1]).astype(int)
+            grid = np.zeros((cy.max() + 1, cx.max() + 1), bool)
+            grid[cy, cx] = True
+            grid = ndimage.binary_fill_holes(ndimage.binary_closing(np.pad(grid, 4), iterations=3))[4:-4, 4:-4]
+            _reach = (x0, y0, grid)
+        CACHE.mkdir(parents=True, exist_ok=True)
+        build_cache.atomic(kept, pickle.dumps({"key": key, "reach": _reach}, protocol=5))
+    x0, y0, grid = _reach
+    lon, lat = np.asarray(lon, float), np.asarray(lat, float)
+    cx, cy = np.floor((lon - x0) / REACH_CELL[0]).astype(int), np.floor((lat - y0) / REACH_CELL[1]).astype(int)
+    ok = (cx >= 0) & (cx < grid.shape[1]) & (cy >= 0) & (cy < grid.shape[0])
+    out = np.zeros(lon.shape, bool)
+    out[ok] = grid[cy[ok], cx[ok]]
+    return out
+
+
 def streets(bbox, transform):
     """The street surfaces on the ground (carriageways, lay-bys and parking) that reach
     into a WGS84 box, joined into one geometry in the local metres that `transform`

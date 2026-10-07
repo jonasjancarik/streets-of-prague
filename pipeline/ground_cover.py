@@ -988,7 +988,7 @@ def photo(url, kind, area, t, res=RES, window=None):
 # What the build classifies: the plain ground, and the technical map's courtyards (plan 014),
 # which the map only outlines (drawn as one neutral paving until something says more).
 CLASSIFIED = ("dtm_yard",)
-GREEN = ("park", "garden", "wood", "lawn", "meadow", "field", "orchard", "dtm_green", "dtm_garden", "dtm_wood")
+GREEN = ("park", "garden", "wood", "lawn", "meadow", "verge", "field", "orchard", "dtm_green", "dtm_garden", "dtm_wood")
 
 
 def wide(t, margin=cover_cells.MARGIN):
