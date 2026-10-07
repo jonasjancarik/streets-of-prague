@@ -139,6 +139,8 @@ const LIT_CELL = 50, LIT_MATCH = 4, LIT_UNIT = 0.25; // m: the lit streets' grid
 const ANCHOR = 7.4, SLACK = 0.3; // m: where a cable meets a wall above the street, how much it sags
 const MAX_HUNG = 800, HALVES = 5; // (cable pieces from a wall to the lamp)
 const UNLIT = new Set(['motorway', 'motorway_link', 'track', 'service']);
+// The footpaths that get lamps of the game's own, and their kind (a globe on a short post).
+const PATHS = new Set(['footway', 'path', 'pedestrian', 'steps', 'cycleway']), PATH_LAMP = 3;
 // Warm LED, old sodium, neutral LED; gas; floodlights.
 const WARM = new THREE.Color('#ffcf8f'), SODIUM = new THREE.Color('#ffa850'), NEUTRAL = new THREE.Color('#f1ece0');
 const GAS = new THREE.Color('#ffbb6e'), FLOOD = new THREE.Color('#ffe0b0');
@@ -258,7 +260,7 @@ export class Lamps {
   private surveyed = 0; // how many of the lamps came with the map (the first ones)
   // OSM's lit and dark streets, their segments in a grid (x0, y0, x1, y1, lit); null: the map has none.
   private lit: Map<number, number[]> | null = null;
-  private waiting: [Street[], [number, number][][]][] = [];
+  private waiting: [Street[], [number, number][][], Street[]][] = [];
   private hung = new Map<number, number[]>(); // a hung lamp → the two wall points its cables run to (x, y, x, y)
   private cables: THREE.LineSegments;
   private grid = new Map<number, number[]>();
@@ -475,7 +477,7 @@ export class Lamps {
     const lit = fetchBinary(dataUrl(area, 'lit.bin.gz'), true).then((buf) => { if (buf) this.lit = litStreets(buf); }).catch(() => {});
     void Promise.all([lamps, lit]).finally(() => {
       this.loaded = true;
-      for (const [edges, walls] of this.waiting) this.fill(edges, walls);
+      for (const [edges, walls, paths] of this.waiting) this.fill(edges, walls, paths);
       this.waiting.length = 0;
       this.nearAt.x = Infinity;
     });
@@ -521,8 +523,9 @@ export class Lamps {
 
   // Streets as their tiles load: lamps hung over the unlit stretches, on cables to the
   // buildings either side (`buildings`: their outlines; a stretch with none is left dark).
-  fill(edges: Street[], buildings: [number, number][][]) {
-    if (!this.loaded) { this.waiting.push([edges, buildings]); return; }
+  // `paths`: the footpaths that came with them.
+  fill(edges: Street[], buildings: [number, number][][], paths: Street[] = []) {
+    if (!this.loaded) { this.waiting.push([edges, buildings, paths]); return; }
     const cells = new Map<number, Seg[]>();
     for (const ring of buildings) {
       for (let i = 0; i < ring.length; i++) {
@@ -597,6 +600,24 @@ export class Lamps {
           }
           this.hung.set(this.kind.length, [x + nx * l, y + ny * l, x - nx * r, y - ny * r]);
           this.add(x, y, HUNG);
+        }
+        s += len;
+      }
+    }
+    // Paths (an estate's, a park's): lit ones the survey has no lamps on get small lamps
+    // on posts beside them.
+    if (this.lit) for (const e of paths) {
+      if (e.tunnel || e.bridge || !PATHS.has(e.hw)) continue;
+      let next = SPACING / 2;
+      for (let i = 1, s = 0; i < e.pts.length; i++) {
+        const [ax, ay] = e.pts[i - 1], [bx, by] = e.pts[i], len = Math.hypot(bx - ax, by - ay);
+        for (; next <= s + len; next += SPACING) {
+          const t = (next - s) / len, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+          if (this.lampWithin(x, y, REACH) || this.lampWithin(x, y, UNSURVEYED, this.surveyed) || litAt(this.lit, x, y) < 1) continue;
+          const nx = -(by - ay) / len, ny = (bx - ax) / len, out = Math.max(e.width ?? 0, 2) / 2 + 0.6;
+          const walls = near(x, y);
+          const side = cast(walls, x, y, nx, ny, WALL) >= out + 1 ? 1 : cast(walls, x, y, -nx, -ny, WALL) >= out + 1 ? -1 : 0;
+          if (side) this.add(x + nx * out * side, y + ny * out * side, PATH_LAMP);
         }
         s += len;
       }

@@ -65,13 +65,15 @@ KINDS = {
 }
 # OSM: where the area's cut is (build_tiles.py makes it), how its lamps' mounts map to
 # the kinds above, which values of `lit` mean lit (1) and dark (0), and the ways the game
-# may put lamps of its own on (the streets cars drive, which is what src/lamps.ts fills).
+# may put lamps of its own on (the streets cars drive and the footpaths, which is what
+# src/lamps.ts fills).
 OSM = Path(__file__).parent / ".cache" / "osm"
 MOUNTS = {"wall": 1, "ceiling": 5, "ground": 6}
 HUNG_MOUNTS = ("suspended", "cable", "wire", "catenary")
 LIT = {"yes": 1, "24/7": 1, "automatic": 1, "limited": 1, "sunset-sunrise": 1, "interval": 1, "no": 0, "disused": 0}
 LIT_WAYS = {"motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link",
-            "tertiary", "tertiary_link", "residential", "unclassified", "living_street", "service", "pedestrian", "busway"}
+            "tertiary", "tertiary_link", "residential", "unclassified", "living_street", "service", "pedestrian", "busway",
+            *street_lighting.PATHS}
 NEAR = 8.0  # m: an OSM lamp this close to one of the survey's is the same lamp
 NEAR_BUILT = 12.0  # m: the same for the works' lamps (a lamp put up again a few steps away in a rebuilt street)
 STEP, STRAIGHTEN, EDGE = 0.25, 1.0, 300.0  # m: lit.bin.gz's unit, how far a way may be straightened, how far past the area's box ways are kept
@@ -197,7 +199,7 @@ def build(area):
             body += b"".join(struct.pack("<hh", b[0] - a[0], b[1] - a[1]) for a, b in zip(line, line[1:]))
         lit_dest = dest.with_name("lit.bin.gz")
         lit_dest.write_bytes(gzip.compress(body, 9))
-        km = lambda f: f"{metres.get(f, 0) / 1000:.0f} km"
+        km = lambda f: f"{(metres.get(f, 0) - metres.get((f, 'paths'), 0)) / 1000:.0f} km (and {metres.get((f, 'paths'), 0) / 1000:.0f} km of paths)"
         print(f"{area}: streets lit by tag {km(street_lighting.TAGGED)}, by a lamp nearby {km(street_lighting.BY_LAMP)}, by buildings "
               f"{km(street_lighting.BY_BUILDINGS)}, by the way to the next lit street {km(street_lighting.BY_LINK)}; tagged dark "
               f"{km(street_lighting.DARK)}, left dark {km(None)} → {lit_dest} ({lit_dest.stat().st_size // 1024} kB)")

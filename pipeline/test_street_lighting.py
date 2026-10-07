@@ -72,6 +72,20 @@ class StreetLightingTest(unittest.TestCase):
         self.assertEqual(lit_at(runs, 0, 75), DARK)
         self.assertNotIn(BY_LINK, metres)
 
+    def test_estate_path_among_blocks_is_lit_and_a_path_across_a_field_is_not(self):
+        blocks = [box(20, 10, 80, 22), box(20, -22, 80, -10)]
+        runs, _ = lighting([(None, "footway", [(0, 0), (100, 0)]), (None, "path", [(100, 0), (100, 900)])], blocks, [])
+        self.assertEqual(lit_at(runs, 50, 0), BY_BUILDINGS)
+        self.assertIsNone(lit_at(runs, 100, 500))
+
+    def test_paths_with_their_own_lamps_are_left_out(self):
+        ways = [(1, "footway", [(0, 0), (200, 0)]), (0, "path", [(0, 50), (200, 50)]), (1, "residential", [(0, 100), (200, 100)])]
+        runs, metres = lighting(ways, [], [(x, 3) for x in range(0, 201, 25)] + [(x, 103) for x in range(0, 201, 25)])
+        self.assertIsNone(lit_at(runs, 100, 0), "a lit path with lamps along it")
+        self.assertIsNone(lit_at(runs, 100, 50), "a path tagged dark")
+        self.assertEqual(lit_at(runs, 100, 100), TAGGED, "a street stays in, lamps or not")
+        self.assertAlmostEqual(metres[TAGGED], 400, delta=1)
+
     def test_trunk_roads_are_left_to_their_tags(self):
         runs, _ = lighting([(None, "trunk", [(0, 0), (300, 0)])], [box(100, 8, 120, 20)], [(50, 10)])
         self.assertEqual(runs, [])

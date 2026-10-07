@@ -33,10 +33,13 @@ BUILT = 25.0       # m, from the street's centre line
 MIN_BUILDING = 40.0  # m²: not a garden shed or a garage
 LINK = 300.0       # m
 PIECE = 25.0       # m
-# The streets the rules for untagged ones apply to: those the game puts lamps on, without
+LAMPED = 15.0      # m: a path with a lamp this near needs none of the game's (src/lamps.ts adds one only 40 m from the next)
+# The streets and paths the rules for untagged ones apply to: those the game puts lamps on, without
 # the trunk roads (lit, where they are, by lamps the survey has).
+# The footpaths (PATHS) are judged like the streets: an estate's paths run among its blocks.
+PATHS = {"footway", "path", "steps", "cycleway"}
 INFERRED = {"primary", "primary_link", "secondary", "secondary_link", "tertiary", "tertiary_link", "residential",
-            "unclassified", "living_street", "pedestrian", "busway"}
+            "unclassified", "living_street", "pedestrian", "busway", *PATHS}
 
 
 def _key(p):
@@ -68,18 +71,23 @@ def pieces(ways):
 def lighting(ways, buildings, lamps):
     """`ways`: [(1 lit / 0 dark / None untagged, highway class, [(x, y), …])] in metres
     (a way in a tunnel: leave it out); `buildings`: shapely polygons; `lamps`: [(x, y)].
-    Returns the lit and the tagged-dark stretches as [(flag, [(x, y), …])], and the
-    metres of street by flag, with None for what is left dark untagged."""
+    Returns the lit and the tagged-dark stretches as [(flag, [(x, y), …])] (without the
+    paths that have their lamps or are tagged dark: the game has no use for those), and the
+    metres of street by flag, with None for what is left dark untagged (and under
+    (flag, "paths") how much of that is footpaths)."""
     cut = pieces(ways)
     lines = [LineString(pts) for _, pts in cut]
     length = np.array([l.length for l in lines])
     flag = [ways[w][0] for w, _ in cut]
+    lamped = set()
     open_ = np.array([f is None and ways[w][1] in INFERRED for f, (w, _) in zip(flag, cut)], dtype=bool)
     if lines:
         tree = STRtree(lines)
         big = [b for b in buildings if b.area >= MIN_BUILDING]
         by_building = set(tree.query(big, predicate="dwithin", distance=BUILT)[1].tolist()) if big else set()
-        by_lamp = set(tree.query(shapely.points(np.asarray(lamps, dtype=float).reshape(-1, 2)), predicate="dwithin", distance=LAMP_NEAR)[1].tolist()) if len(lamps) else set()
+        points = shapely.points(np.asarray(lamps, dtype=float).reshape(-1, 2))
+        by_lamp = set(tree.query(points, predicate="dwithin", distance=LAMP_NEAR)[1].tolist()) if len(lamps) else set()
+        lamped = set(tree.query(points, predicate="dwithin", distance=LAMPED)[1].tolist()) if len(lamps) else set()
         for i in np.flatnonzero(open_):
             if i in by_lamp:
                 flag[i] = BY_LAMP
@@ -134,10 +142,14 @@ def lighting(ways, buildings, lamps):
     for i, f in enumerate(flag):
         if f is not None or open_[i]:
             metres[f] += float(length[i])
+            if ways[cut[i][0]][1] in PATHS:
+                metres[(f, "paths")] += float(length[i])
     # Neighbouring pieces of a way with the same flag, as one line again.
+    # Not the paths the game has nothing to ask about: one tagged dark (dark is what a
+    # path not in the file is anyway), or with a lamp standing right by it.
     runs = []
-    for (w, pts), f in zip(cut, flag):
-        if f is None:
+    for i, ((w, pts), f) in enumerate(zip(cut, flag)):
+        if f is None or (ways[w][1] in PATHS and (f == DARK or i in lamped)):
             continue
         if runs and runs[-1][0] == (w, f) and runs[-1][1][-1] == pts[0]:
             runs[-1][1].extend(pts[1:])
