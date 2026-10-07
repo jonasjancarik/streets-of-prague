@@ -828,6 +828,16 @@ from (geometry helpers, straight-skeleton buildings, trees).
   height nor a number of storeys, the height is a guess from the kind of building and
   the size of its footprint (sheds, cottages, one- or two-storey houses, halls). The
   terrain there carries on flat at the height of the nearest ground IPR has.
+- **The countryside past the map's edge** (`?countryside`, a trial: plan 021) is made in
+  the browser from OpenStreetMap vector tiles as you drive out: streets, land, water,
+  woods and extruded buildings, plainer than the map. Its streets carry on from the
+  map's own at the junction each of those ends at, its ground swings from the map's
+  edge to real hills over 500 m and is level across roads, traffic and people are as
+  thin as the place, and the title names the town or village. Bridges and tunnels
+  follow the ground (a motorway bridge runs along the valley floor), water lies on
+  whatever slope the elevation data has, there are no lamps, trams, buses or parking
+  out there, and it needs a 300 MB file of central Bohemia beside the map
+  (`VITE_COUNTRYSIDE_URL`) and Mapzen's elevation tiles at AWS. Not measured on a phone.
 - **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
   narrow streets (without standing in the traffic lane) and are left out.
 - **Angled and perpendicular parking along the kerb** past the city limits stands just
@@ -1276,6 +1286,7 @@ list, with the licences), and the build writes the full licence texts of the bun
 libraries to `dist/licenses.txt` (a small plugin in `vite.config.js`).
 
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL.
+- The countryside past the map's edge (`?countryside`, plan 021): OpenStreetMap data as vector tiles in [Protomaps](https://protomaps.com/)' basemap layout (one PMTiles file, ODbL), and ground heights from Mapzen's [terrain tiles](https://registry.opendata.aws/terrain-tiles/) kept as open data at AWS ([their sources](https://github.com/tilezen/joerd/blob/master/docs/attribution.md): SRTM, EU-DEM produced using Copernicus data and information funded by the European Union, and others).
 - Tram and metro timetables: [PID / ROPID](https://pid.cz/o-systemu/opendata/), CC BY 4.0, reduced to trips per hour.
 - 3D buildings, bridges and terrain: datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model), CC BY.
 - Landmarks, and the roof and wall colours: photorealistic 3D model of Prague, datový podklad © [IPR Praha](https://geoportalpraha.cz/data-a-sluzby/clanky-a-projekty/3D-model/3D-mesh), CC BY.

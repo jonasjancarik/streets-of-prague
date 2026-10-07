@@ -49,7 +49,7 @@ they don't have).
 | `ipr_terrain.py` | ground and streets layers, `.cache/ipr/` (terrain sheets, bridges), `.cache/dtm/` (survey heights), `terrain_keep.json` | `tiles/*.height.bin.gz`, `*.levels.bin.gz`, `.cache/layers/<area>/terrain.json` |
 | `ground_cover.py build` | the layers, the terrain layer, `.cache/cover/` (photos, surface model, model, results); asks IPR's server for photos of tiles it has none of | `.cache/layers/<area>/cover.json` |
 | `young_woods.py build` | ground layer, terrain layer, `.cache/cover/dsm_ipr` | `.cache/layers/<area>/young.json` |
-| `layers.py --strict` | every layer, and checks the binary files against the layers' records | `tiles/*.json`, `index.json`, `names.json`; removes files of tiles that are gone |
+| `layers.py --strict` | every layer, and checks the binary files against the layers' records | `tiles/*.json`, `index.json`, `names.json`, `leaving.json` (the streets that run on past the map's edge, for the countryside made in the browser); removes files of tiles that are gone |
 | `build_signals.py` | streets layer, `.cache/osm/` | `signals.json` |
 
 `--strict` stops before writing anything if a chunk is incomplete, a layer was made

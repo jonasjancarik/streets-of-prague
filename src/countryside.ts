@@ -6,7 +6,8 @@
 // and under Node (scripts/check-countryside.mjs).
 //
 // Near the built map its streets are joined to the built ones (countrysideJoin.ts): the
-// built map's rim tiles say which of its streets run on outside.
+// map says which of its streets run on outside (leaving.json; on a map built before
+// that file, its rim tiles).
 //
 // The work is in three steps, the first two kept per vector tile:
 //   raw    decoded and cut to the vector tile: road lines in its own units, land,
@@ -31,6 +32,8 @@ import type { RawStreetEdge } from './network.ts';
 export interface CountrysideSetup {
   centre: [number, number]; // lon, lat of the built map's projection
   tile: number; origin: Point2; cols: number; rows: number;
+  size: Point2; // the built map's own width and height: its last column and row of tiles are filled only so far
+  grid?: { n: number; step: number }; // the terrain's points in a tile (index.json's terrain), for the hills
 }
 // A street's width: by class, and for the small ones by whether houses stand near it.
 function settingWidth(hw: string, pts: Point2[], buildings: { at: Point2 }[]): number {
@@ -49,9 +52,22 @@ function settingWidth(hw: string, pts: Point2[], buildings: { at: Point2 }[]): n
 }
 
 // A vector tile's bytes (unzipped), or nothing where the file has none.
+// One tile of ground heights: 256 × 256 metres above the sea, rows from the north (the
+// Terrarium tiles of Mapzen's terrain set, kept as open data at AWS), or nothing where
+// there is none.
+export type ElevationSource = (z: number, x: number, y: number) => Promise<Float32Array | undefined>;
+const DEM_ZOOM = 12, DEM = 256; // a point every 24 m at Prague's latitude; the surveys behind it are no finer
+const LEVEL_EDGE = 1, LEVEL_FADE = 8; // metres past a road's edge its level holds, and over which the ground comes back to its own
+
+// A town or village: its name and where its middle is, in the game's metres.
+export interface Place { name: string; kind: string; at: Point2 }
+const PLACE_KINDS = new Set(['city', 'town', 'village']);
+
 export type VectorSource = (z: number, x: number, y: number) => Promise<ArrayBuffer | undefined>;
 // The street graphs of one of the built map's tiles (its JSON), or nothing where it has none.
 export type BuiltSource = (i: number, j: number) => Promise<{ drive?: RawStreetEdge[]; walk?: RawStreetEdge[] } | undefined>;
+// The built map's streets that run on outside it (its leaving.json).
+export type LeavingSource = () => Promise<{ drive?: RawStreetEdge[]; walk?: RawStreetEdge[] }>;
 
 const E = 4096; // a vector tile's width in its own units
 const WATER_LAP = 4; // units water reaches past its vector tile, so the pieces join without a gap
@@ -207,12 +223,20 @@ function guessHeight(m2: number, seed: number) {
   return Math.min(14, 6 + Math.sqrt(m2) / 15 + uniform(0, 2));
 }
 
+// Built streets in one order whichever way they were read: by graph, then id.
+const inOrder = (a: Stub, b: Stub) => (a.graph !== b.graph ? (a.graph < b.graph ? -1 : 1) : a.edge.id < b.edge.id ? -1 : a.edge.id > b.edge.id ? 1 : 0);
+
 export class Countryside {
   private readonly proj: proj4.Converter;
   private readonly raws = new Map<string, Promise<Raw | null>>();
   private readonly loose = new Map<string, Promise<Chunk | null>>();
   private readonly graphs = new Map<string, Promise<Chunk | null>>();
   private readonly rims = new Map<string, Promise<Stub[]>>();
+  private readonly named = new Map<string, Promise<Place[]>>();
+  private readonly dems = new Map<string, Promise<Float32Array | null>>();
+  private readonly elevation?: ElevationSource;
+  private listed: Promise<Stub[]> | null = null;
+  private readonly leaving?: LeavingSource;
   private readonly rect: Bounds;
   readonly stats = { fetched: 0, bytes: 0 };
   private readonly source: VectorSource;
@@ -220,15 +244,17 @@ export class Countryside {
   private readonly setup: CountrysideSetup;
   private readonly zoom: number;
 
-  constructor(source: VectorSource, built: BuiltSource, setup: CountrysideSetup, zoom = 15) {
+  constructor(source: VectorSource, built: BuiltSource, setup: CountrysideSetup, zoom = 15, leaving?: LeavingSource, elevation?: ElevationSource) {
     this.source = source;
     this.built = built;
+    this.leaving = leaving;
+    this.elevation = elevation;
     this.setup = setup;
     this.zoom = zoom;
     const [lon0, lat0] = setup.centre;
     this.proj = proj4(`+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`);
-    const { tile: T, origin: [ox, oy], cols, rows } = setup;
-    this.rect = [-ox, -oy, cols * T - ox, rows * T - oy];
+    const { origin: [ox, oy], size: [W, H] } = setup;
+    this.rect = [-ox, -oy, r2(W - ox), r2(H - oy)];
   }
 
   // WGS84 → the game's metres.
@@ -257,25 +283,28 @@ export class Countryside {
   private unjoined(X: number, Y: number) { return this.kept(this.loose, `${X}_${Y}`, () => this.makeGraph(X, Y)); }
   private graph(X: number, Y: number) { return this.kept(this.graphs, `${X}_${Y}`, () => this.joinGraph(X, Y)); }
 
+  // Those of a list of the built map's streets that run on outside it.
+  private stubsOf(t: { drive?: RawStreetEdge[]; walk?: RawStreetEdge[] } | undefined): Stub[] {
+    const stubs: Stub[] = [];
+    for (const graph of ['drive', 'walk'] as const) {
+      for (const edge of t?.[graph] ?? []) {
+        const outside = cutLine(edge.pts, this.rect, false).map((piece) => piece.pts);
+        if (!outside.length) continue;
+        const out = ([x, y]: Point2) => x < this.rect[0] || x > this.rect[2] || y < this.rect[1] || y > this.rect[3];
+        const ends = ([[edge.u, edge.pts[0]], [edge.v, edge.pts[edge.pts.length - 1]]] as [string, Point2][])
+          .filter(([, at]) => out(at)).map(([id, at]) => ({ id, at }));
+        stubs.push({ graph, edge, outside, box: boxOf(outside.flat()), ends });
+      }
+    }
+    return stubs;
+  }
+
   // The streets of one of the built map's rim tiles that run on outside it.
   private rim(i: number, j: number): Promise<Stub[]> {
     const k = `${i}_${j}`;
     let hit = this.rims.get(k);
     if (!hit) {
-      hit = this.built(i, j).then((t) => {
-        const stubs: Stub[] = [];
-        for (const graph of ['drive', 'walk'] as const) {
-          for (const edge of t?.[graph] ?? []) {
-            const outside = cutLine(edge.pts, this.rect, false).map((piece) => piece.pts);
-            if (!outside.length) continue;
-            const out = ([x, y]: Point2) => x < this.rect[0] || x > this.rect[2] || y < this.rect[1] || y > this.rect[3];
-            const ends = ([[edge.u, edge.pts[0]], [edge.v, edge.pts[edge.pts.length - 1]]] as [string, Point2][])
-              .filter(([, at]) => out(at)).map(([id, at]) => ({ id, at }));
-            stubs.push({ graph, edge, outside, box: boxOf(outside.flat()), ends });
-          }
-        }
-        return stubs;
-      });
+      hit = this.built(i, j).then((t) => this.stubsOf(t));
       hit.catch(() => { if (this.rims.get(k) === hit) this.rims.delete(k); });
       this.rims.set(k, hit);
     }
@@ -285,6 +314,15 @@ export class Countryside {
   // The built streets that pass through a box outside the built map (within `pad`),
   // each once, in an order that doesn't depend on who asks.
   private async stubsNear(box: Bounds, pad: number): Promise<Stub[]> {
+    if (this.leaving) {
+      // The map's own list, read once.
+      if (!this.listed) {
+        const listed = this.listed = this.leaving().then((t) => this.stubsOf(t).sort(inOrder));
+        listed.catch(() => { if (this.listed === listed) this.listed = null; });
+      }
+      return (await this.listed).filter((s) => meet(s.box, box, pad));
+    }
+    // A map without the list: its rim tiles within REACH of the box.
     if (!meet(box, this.rect, REACH)) return [];
     const { tile: T, origin: [ox, oy], cols, rows } = this.setup;
     const span = (lo: number, hi: number, o: number, n: number) => [Math.max(0, Math.floor((lo - REACH + o) / T)), Math.min(n - 1, Math.floor((hi + REACH + o) / T))];
@@ -297,7 +335,7 @@ export class Countryside {
       if (seen.has(k) || !meet(s.box, box, pad)) return false;
       seen.add(k);
       return true;
-    });
+    }).sort(inOrder);
   }
 
   private async readRaw(X: number, Y: number): Promise<Raw | null> {
@@ -542,17 +580,150 @@ export class Countryside {
     return { ...chunk, edges: joinEdges(chunk.edges, stubs, chunk.box, others) };
   }
 
+  // The ground's heights for tile (i, j), as the built map's tiles have them: n × n whole
+  // decimetres above 100 m, from the south-west corner. The hills are the elevation
+  // tiles'; under a road the ground is level across it, at the height the hill has
+  // along the road's middle, and comes back to its own over a few metres either side
+  // (the city gets this from IPR's surveyed terrain). Null without elevation tiles.
+  // Two tiles give the points they share the same numbers: both work them out from the
+  // same place and the same roads.
+  async heights(i: number, j: number): Promise<Uint16Array | null> {
+    const grid = this.setup.grid;
+    if (!this.elevation || !grid) return null;
+    const { tile: T, origin: [ox, oy] } = this.setup, { n, step } = grid;
+    const [x0, y0, x1, y1]: Bounds = [r2(i * T - ox), r2(j * T - oy), r2((i + 1) * T - ox), r2((j + 1) * T - oy)];
+    const reach = 40; // metres round the tile whose roads may level its ground
+    // A place in the elevation tiles' own points (of the whole world at DEM_ZOOM).
+    const scale = 2 ** DEM_ZOOM * DEM;
+    const pixel = (x: number, y: number): Point2 => {
+      const [lon, lat] = this.proj.inverse([x, y]);
+      return [((lon + 180) / 360) * scale - 0.5, ((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * scale - 0.5];
+    };
+    const corners = [[x0 - reach, y0 - reach], [x1 + reach, y0 - reach], [x0 - reach, y1 + reach], [x1 + reach, y1 + reach]].map(([x, y]) => pixel(x, y));
+    const tiles = new Map<string, Float32Array>();
+    const wanted: Promise<void>[] = [];
+    let missing = false;
+    for (let X = Math.floor((Math.min(...corners.map((c) => c[0])) - 1) / DEM); X <= Math.floor((Math.max(...corners.map((c) => c[0])) + 2) / DEM); X++) {
+      for (let Y = Math.floor((Math.min(...corners.map((c) => c[1])) - 1) / DEM); Y <= Math.floor((Math.max(...corners.map((c) => c[1])) + 2) / DEM); Y++) {
+        wanted.push(this.kept(this.dems, `${X}_${Y}`, async () => (await this.elevation!(DEM_ZOOM, X, Y)) ?? null).then((t) => { if (t) tiles.set(`${X}_${Y}`, t); else missing = true; }));
+      }
+    }
+    await Promise.all(wanted);
+    if (missing) return null;
+    const value = (px: number, py: number) => tiles.get(`${Math.floor(px / DEM)}_${Math.floor(py / DEM)}`)![(py - Math.floor(py / DEM) * DEM) * DEM + px - Math.floor(px / DEM) * DEM];
+    const hill = (x: number, y: number) => {
+      const [px, py] = pixel(x, y), ix = Math.floor(px), iy = Math.floor(py), fx = px - ix, fy = py - iy;
+      return (value(ix, iy) * (1 - fx) + value(ix + 1, iy) * fx) * (1 - fy) + (value(ix, iy + 1) * (1 - fx) + value(ix + 1, iy + 1) * fx) * fy;
+    };
+
+    // The roads round the tile: the generated ones, and the built map's that run on out here.
+    const padded: Bounds = [x0 - reach, y0 - reach, x1 + reach, y1 + reach];
+    // (Kept by the 25 m square each stretch can reach, so a point looks only at those near it.)
+    const CELL = 25, across = Math.ceil((x1 - x0 + 2 * reach) / CELL), near = new Map<number, { a: Point2; b: Point2; r: number }[]>();
+    const lay = (pts: Point2[], r: number) => {
+      for (let k = 0; k < pts.length - 1; k++) {
+        const [sx0, sy0, sx1, sy1] = boxOf([pts[k], pts[k + 1]]), far = r + LEVEL_EDGE + LEVEL_FADE;
+        if (!meet([sx0, sy0, sx1, sy1], padded)) continue;
+        const road = { a: pts[k], b: pts[k + 1], r };
+        for (let cx = Math.max(0, Math.floor((sx0 - far - padded[0]) / CELL)); cx <= Math.min(across - 1, Math.floor((sx1 + far - padded[0]) / CELL)); cx++) {
+          for (let cy = Math.max(0, Math.floor((sy0 - far - padded[1]) / CELL)); cy <= Math.min(across - 1, Math.floor((sy1 + far - padded[1]) / CELL)); cy++) {
+            const list = near.get(cy * across + cx);
+            if (list) list.push(road); else near.set(cy * across + cx, [road]);
+          }
+        }
+      }
+    };
+    for (const c of await this.chunksOver(padded)) for (const e of c.edges) if (meet(e.box, padded)) lay(e.pts, e.width / 2);
+    for (const s of await this.stubsNear(padded, 0)) for (const pts of s.outside) lay(pts, Math.max(...paved(s.edge)));
+
+    const out = new Uint16Array(n * n);
+    for (let b = 0; b < n; b++) {
+      for (let a = 0; a < n; a++) {
+        const x = a === n - 1 ? x1 : x0 + a * step, y = b === n - 1 ? y1 : y0 + b * step;
+        let h = hill(x, y), past = LEVEL_EDGE + LEVEL_FADE, on: Point2 | null = null;
+        for (const { a: p, b: q, r } of near.get(Math.floor((y - padded[1]) / CELL) * across + Math.floor((x - padded[0]) / CELL)) ?? []) {
+          const dx = q[0] - p[0], dy = q[1] - p[1];
+          const t = Math.max(0, Math.min(1, ((x - p[0]) * dx + (y - p[1]) * dy) / (dx * dx + dy * dy || 1)));
+          const d = Math.hypot(p[0] + dx * t - x, p[1] + dy * t - y) - r;
+          if (d < past) { past = d; on = [p[0] + dx * t, p[1] + dy * t]; }
+        }
+        if (on) {
+          const k = Math.max(0, Math.min(1, (past - LEVEL_EDGE) / LEVEL_FADE)), own = k * k * (3 - 2 * k);
+          h = hill(on[0], on[1]) * (1 - own) + h * own;
+        }
+        out[b * n + a] = Math.max(0, Math.min(65535, Math.round((h - 100) * 10)));
+      }
+    }
+    return out;
+  }
+
+  // The towns and villages within r metres of a point (their middles, as OpenStreetMap
+  // marks them), from the vector tiles three zooms out: those carry every village,
+  // and one of them covers six kilometres.
+  async places(x: number, y: number, r: number): Promise<Place[]> {
+    const z = Math.max(0, this.zoom - 3), n = 2 ** z, k = 2 ** (this.zoom - z);
+    const corners = [[x - r, y - r], [x + r, y - r], [x - r, y + r], [x + r, y + r]].map(([px, py]) => this.vectorAt(px, py).map((v) => Math.floor(v / k)));
+    const wanted: Promise<Place[]>[] = [];
+    for (let X = Math.min(...corners.map((c) => c[0])); X <= Math.max(...corners.map((c) => c[0])); X++) {
+      for (let Y = Math.min(...corners.map((c) => c[1])); Y <= Math.max(...corners.map((c) => c[1])); Y++) {
+        wanted.push(this.kept(this.named, `${X}_${Y}`, async () => {
+          const bytes = await this.source(z, X, Y);
+          if (!bytes) return [];
+          this.stats.fetched++;
+          this.stats.bytes += bytes.byteLength;
+          const layer = new VectorTile(new PbfReader(new Uint8Array(bytes))).layers.places, out: Place[] = [];
+          for (let i = 0; layer && i < layer.length; i++) {
+            const f = layer.feature(i), p = f.properties, kind = String(p.kind_detail ?? '');
+            if (f.type !== 1 || p.kind !== 'locality' || typeof p.name !== 'string' || !PLACE_KINDS.has(kind)) continue;
+            const [[q]] = f.loadGeometry();
+            if (q.x < 0 || q.y < 0 || q.x >= f.extent || q.y >= f.extent) continue; // the next tile's
+            const lon = ((X + q.x / f.extent) / n) * 360 - 180, lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (Y + q.y / f.extent)) / n))) * 180) / Math.PI;
+            out.push({ name: p.name, kind, at: this.metres(lon, lat).map(r2) as Point2 });
+          }
+          return out;
+        }));
+      }
+    }
+    return (await Promise.all(wanted)).flat().filter((p) => Math.hypot(p.at[0] - x, p.at[1] - y) <= r);
+  }
+
   // A game tile, as pipeline/build_tiles.py would write it.
+  // The built map's last column and row of tiles are built only as far as the map goes;
+  // for those this is the rest of the tile (countrysideTiles.ts puts the two together).
   async tile(i: number, j: number): Promise<TileJSON> {
-    const { tile: T, origin: [ox, oy] } = this.setup;
-    const box: Bounds = [r2(i * T - ox), r2(j * T - oy), r2((i + 1) * T - ox), r2((j + 1) * T - oy)];
-    const [x0, y0, x1, y1] = box, pad = 16; // metres: half the widest road past the tile
-    const corners = [[x0 - pad, y0 - pad], [x1 + pad, y0 - pad], [x0 - pad, y1 + pad], [x1 + pad, y1 + pad]].map(([x, y]) => this.vectorAt(x, y));
+    const { tile: T, origin: [ox, oy] } = this.setup, [, , X1, Y1] = this.rect;
+    const full: Bounds = [r2(i * T - ox), r2(j * T - oy), r2((i + 1) * T - ox), r2((j + 1) * T - oy)];
+    const [x0, y0, x1, y1] = full;
+    if (x0 >= X1 || y0 >= Y1 || x1 <= this.rect[0] || y1 <= this.rect[1]) return this.make(i, j, full);
+    // The strip east of the built part, and the one north of it.
+    const parts: Bounds[] = [];
+    if (x1 > X1) parts.push([X1, y0, x1, y1]);
+    if (y1 > Y1) parts.push([x0, Y1, Math.min(x1, X1), y1]);
+    const made = await Promise.all(parts.map((box) => this.make(i, j, box)));
+    const out: TileJSON = { ...(made[0] ?? await this.make(i, j, [x0, y0, x0, y0])), box: full };
+    for (const t of made.slice(1)) {
+      for (const key of ['areas', 'roads'] as const) for (const [kind, polys] of Object.entries(t[key])) out[key][kind] = [...(out[key][kind] ?? []), ...(polys ?? [])];
+      for (const b of t.buildings) { const k = out.buildings.findIndex((o) => o.id === b.id); if (k < 0) out.buildings.push(b); else if (b.own) out.buildings[k] = b; }
+      out.trees.push(...t.trees);
+      for (const graph of ['drive', 'walk'] as const) for (const e of t[graph]!) if (!out[graph]!.some((o) => o.id === e.id)) out[graph]!.push(e);
+    }
+    return out;
+  }
+
+  // The vector tiles under a box, with their streets joined up.
+  private async chunksOver([x0, y0, x1, y1]: Bounds): Promise<Chunk[]> {
+    const corners = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y]) => this.vectorAt(x, y));
     const X0 = Math.floor(Math.min(...corners.map((c) => c[0]))), X1 = Math.floor(Math.max(...corners.map((c) => c[0])));
     const Y0 = Math.floor(Math.min(...corners.map((c) => c[1]))), Y1 = Math.floor(Math.max(...corners.map((c) => c[1])));
     const wanted: Promise<Chunk | null>[] = [];
     for (let X = X0; X <= X1; X++) for (let Y = Y0; Y <= Y1; Y++) wanted.push(this.graph(X, Y));
-    const chunks = (await Promise.all(wanted)).filter((c): c is Chunk => !!c);
+    return (await Promise.all(wanted)).filter((c): c is Chunk => !!c);
+  }
+
+  // What lies in a box of tile (i, j) (the whole tile, past the built map).
+  private async make(i: number, j: number, box: Bounds): Promise<TileJSON> {
+    const [x0, y0, x1, y1] = box, pad = 16; // metres: half the widest road past the tile
+    const chunks = await this.chunksOver([x0 - pad, y0 - pad, x1 + pad, y1 + pad]);
 
     // Streets: each stretch a rectangle, with an octagon at every junction, end and
     // bend. They overlap, which the ground draws as one surface.

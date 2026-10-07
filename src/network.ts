@@ -124,6 +124,23 @@ export const ROAD_WEIGHT: Record<string, number> = {
 };
 export const roadWeight = (hw: string) => ROAD_WEIGHT[hw] ?? 1;
 
+// How much street for cars lies within r metres of a point, against what a district
+// of the city has within 330 m (about 10 km of lanes, a main road counting for more:
+// ROAD_WEIGHT): 1 in town, a third on a main road between fields, a tenth on a lane.
+// Past the built map the traffic is thinned by this (main.ts), or a village lane would
+// carry the cars of a city district.
+const CITY_STREETS = 10000;
+export function streetShare(edges: Iterable<{ hw: string; pts: Point2[] }>, x: number, y: number, r: number): number {
+  let sum = 0;
+  for (const e of edges) {
+    for (let i = 0; i < e.pts.length - 1; i++) {
+      const [ax, ay] = e.pts[i], [bx, by] = e.pts[i + 1];
+      if (Math.hypot((ax + bx) / 2 - x, (ay + by) / 2 - y) <= r) sum += Math.hypot(bx - ax, by - ay) * roadWeight(e.hw);
+    }
+  }
+  return Math.min(1, sum / CITY_STREETS);
+}
+
 // Where traffic drives, right of the street's centre line: the outer lane on two-way
 // streets, the middle (or right of middle) lane on one-way ones.
 // Under this a two-way street is one lane wide: cars keep to their right as far as a

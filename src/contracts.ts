@@ -37,6 +37,7 @@ export interface MapIndex extends GeoData {
   rails: { kind: string; pts: Point2[] }[];
   graphs?: boolean;
   parkingInTiles?: boolean;
+  leaving?: boolean; // leaving.json lists the streets that run on past the map's edge
   ipr?: boolean;
   iprRef?: number;
   terrain?: TerrainMetadata;

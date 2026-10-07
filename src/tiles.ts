@@ -34,7 +34,7 @@ import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
-import { edgeGrid } from './countrysideJoin.ts';
+import { blendHeights, edgeGrid } from './countrysideJoin.ts';
 
 interface TileFiles { t: TileJSON; height: ArrayBuffer | null; bare: ArrayBuffer | null; ipr: ArrayBuffer | null; levels: ArrayBuffer | null }
 // A bridge (1, 2, …) or tunnel (-1, -2, …) level in a tile: where it is and how high.
@@ -386,6 +386,8 @@ export class TileWorld {
   sky: Map<number, { shapes: Shadower[]; texture: THREE.DataTexture | null; tileBox: Bounds; ground: { hm: Float32Array; box: Bounds; n: number; step: number } | null; refresh: SkyRefresh<Uint8Array> | null }>;
   drive: DriveGraph; walk: WalkGraph;
   driveBy: Map<string, DriveEdge[]>; walkBy: Map<string, WalkEdge[]>;
+  // The share of each countryside tile's ground that buildings stand on (for how busy it is).
+  builtUp = new Map<string, number>();
   // `first`: the tile's streets are joined for the first time (false when a tile whose
   // streets were forgotten far behind comes back).
   onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][], first: boolean) => void;
@@ -718,6 +720,7 @@ export class TileWorld {
 
   // Whether there is a tile (i, j): one of the built map's, or one to make past it.
   has(i: number, j: number) { return this.available.has(`${i}_${j}`) || !!this.country?.covers(i, j); }
+  hasAt(x: number, y: number) { return this.has(Math.floor((x + this.ox) / this.T), Math.floor((y + this.oy) / this.T)); }
 
   // The ground of a tile past the built map: flat outwards from the nearest point of
   // the built map's edge, so it meets the built ground and its own neighbours without
@@ -734,7 +737,11 @@ export class TileWorld {
       heights.catch(() => { if (this.edgeHeights.get(k) === heights) this.edgeHeights.delete(k); });
       this.edgeHeights.set(k, heights);
     }
-    return this.edgeHeights.get(k)!.then((from) => edgeGrid(from, n, i, j, cols, rows).buffer as ArrayBuffer);
+    // …and from there out to the hills, where the countryside has them.
+    return Promise.all([this.edgeHeights.get(k)!, this.country?.heights(i, j) ?? null]).then(([from, hills]) => {
+      const flat = edgeGrid(from, n, i, j, cols, rows);
+      return (hills ? blendHeights(flat, hills, n, this.T, i, j, cols, rows) : flat).buffer as ArrayBuffer;
+    });
   }
 
   // Tile keys within r metres of (x, y), nearest first.
@@ -766,6 +773,8 @@ export class TileWorld {
         return r.json();
       }) : this.country!.tile(i, j)).then((value: unknown) => {
         if (!isTileJSON(value, !!this.index.graphs)) throw new Error(`Tile ${k} has invalid map data`);
+        // (The built map's last tiles end where the map does: the countryside fills the rest.)
+        if (this.available.has(k) && this.country?.partial(i, j)) return this.country.whole(value);
         return value;
       });
       json.catch(() => { if (this.jsons.get(k) === json) this.jsons.delete(k); });
@@ -1000,6 +1009,10 @@ export class TileWorld {
     const grounded = (b: { minh?: number }) => !((b.minh ?? 0) >= RAISED);
     // The tile's paid-parking sections (clipped to it, with their share of spaces).
     const zones = new Zones({ sections: (t.sections || []).map((z) => ({ ...z, inside: z.share })) });
+    if (!this.available.has(k) || this.country?.partial(t.i, t.j)) {
+      const ring = (r: Point2[]) => Math.abs(r.reduce((sum, p, n) => sum + p[0] * r[(n + 1) % r.length][1] - r[(n + 1) % r.length][0] * p[1], 0)) / 2;
+      this.builtUp.set(k, t.buildings.reduce((sum, b) => sum + (b.own ? ring(b.rings[0]) : 0), 0) / (this.T * this.T));
+    }
     if (t.drive && !this.driveBy.has(k)) {
       this.driveBy.set(k, this.drive.add(t.drive));
       this.walkBy.set(k, this.walk.add(t.walk ?? []));

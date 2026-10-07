@@ -47,7 +47,7 @@ const PATIENCE = 90; // s a taxi waits for you at the kerb
 const SLOW_BEFORE = 200; // m before the end of the ride where it goes back to normal speed
 
 interface Walker { gz?: number; x: number; y: number; h: number; vx: number; vy: number; mesh: { visible: boolean }; sync(): void }
-interface TaxiWorld { keyAt(x: number, y: number): string; available: { has(key: string): boolean }; loaded: { has(key: string): boolean } }
+interface TaxiWorld { keyAt(x: number, y: number): string; hasAt(x: number, y: number): boolean; loaded: { has(key: string): boolean } }
 
 export class Taxis {
   state: 'off' | 'menu' | 'coming' | 'waiting' | 'riding' = 'off';
@@ -365,7 +365,7 @@ export class Taxis {
     if (!a) return true;
     for (let d = 0; d <= Math.max(150, a.speed * FAST * 4); d += 60) {
       const p = a.route.lookahead(d).p, k = world.keyAt(p.x, p.y);
-      if (world.available.has(k) && !world.loaded.has(k)) return false;
+      if (world.hasAt(p.x, p.y) && !world.loaded.has(k)) return false; // (a tile there is, built or countryside, not here yet)
     }
     return true;
   }
