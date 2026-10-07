@@ -3,7 +3,8 @@
 Set 3 of the technical map (the lines; already downloaded for dtm_heights.py into
 .cache/dtm/ZPS_KR/) has every wall, fence and railing the surveyors met, where OSM has
 a wall or a fence here and there. In a tile the survey covers they stand in place of
-OSM's and of the fences made up round the plots of family houses:
+OSM's fences, of OSM's walls where the survey has a wall along them, and of the fences
+made up round the plots of family houses:
 
 - walls ("Zeď", a line along the wall): an enclosing wall is as high as a garden wall,
   a retaining wall or one of an unknown kind is a low one (its height isn't in the
@@ -12,7 +13,8 @@ OSM's and of the fences made up round the plots of family houses:
 
 The outlines of thick walls ("Hranice zdi") are left out: they are the two faces of
 quay walls and retaining walls, which the terrain makes steps of (dtm_heights.py) and
-the game puts a parapet on (src/stepEdges.ts).
+the game puts a parapet on (src/stepEdges.ts), and of the big garden walls, which stay
+as OSM has them (cut at the same openings as the survey's).
 
 A surveyed line is cut wherever something goes through (openings(): a wall drawn across
 a gateway would close it, and walls are solid in the game): on the streets' and paths'
@@ -62,6 +64,7 @@ WAY_MIN = 1.0  # m: the least half width left open across a path
 GATE = 1.6  # m each side of a plot's gate (as plots.py leaves in its own fences)
 BY_HOUSE = 0.8  # m from a building: no wall there (a door opens onto it; the house is the wall)
 ALONG = 1.2  # m: a hedge or fence this close to a surveyed line is the same one
+SAME_WALL = 2.0  # m: OSM's wall this close to a surveyed wall is that wall
 TOWN_WALLS = ("city_wall", "castle_wall", "city_gate")
 NEAR_TOWN_WALL = 3.0  # m: the survey's lines of a town wall OSM draws
 
@@ -180,11 +183,20 @@ def replace(tile, box, surveyed, tree, open_ground):
     mine = shapely.union_all([ln for _, ln in walls + fences]).buffer(ALONG) if walls or fences else None
     taken = 0.0
     kept_walls, kept_fences = [], []
+    # OSM's wall goes where the survey has a wall along it. Elsewhere it stays: a thick
+    # wall (round a palace garden, say) is two outlines in the survey, not a wall's line.
+    beside_walls = shapely.union_all([ln for _, ln in walls]).buffer(SAME_WALL) if walls else None
     for wl in tile["walls"]:
         if wl.get("kind") in TOWN_WALLS:
             kept_walls.append(wl)
         elif len(wl["pts"]) > 1:
-            taken += LineString(wl["pts"]).length
+            ln = LineString(wl["pts"])
+            rest = ln.difference(beside_walls) if beside_walls is not None else ln
+            if clear is not None:
+                rest = rest.difference(clear)
+            pieces = [p for p in _parts(rest) if p.length >= SHORTEST]
+            kept_walls.extend({**wl, "pts": [[round(x, 2), round(y, 2)] for x, y in p.coords]} for p in pieces)
+            taken += ln.length - sum(p.length for p in pieces)
     for f in tile["fences"]:
         if f.get("kind") == "guard_rail":
             kept_fences.append(f)
