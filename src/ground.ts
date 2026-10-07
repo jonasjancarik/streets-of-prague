@@ -653,13 +653,15 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     out[out.length - 1].base = true;
     for (const [key, pattern] of LAND_USE) add(polygons(A[key] || []), COLORS[key as keyof typeof COLORS], pattern);
     for (const [key, color, pattern] of DTM_LAND) add(polygons(A[key] || []), color, pattern);
+    // Roadside verges (pipeline/verges.py): rough grass that nobody waters, drying like a
+    // meadow. Under the photographs' ground: past the survey a verge is all the unmapped
+    // land, and what the photographs show there goes on top of it.
+    add(polygons(A.verge || []), COLORS.park, 'meadow');
     for (const [key, color, pattern] of COVER) add(polygons(A[key] || []), color, pattern);
     add(polygons(A.garden || []), COLORS.garden, 'garden');
     add(polygons(A.lawn || []), COLORS.garden, 'lawn');
     add(polygons(A.park || []), COLORS.park, 'grass');
     add(polygons(A.meadow || []), COLORS.park, 'meadow');
-    // Roadside verges (pipeline/verges.py): rough grass that nobody waters, drying like a meadow.
-    add(polygons(A.verge || []), COLORS.park, 'meadow');
     // The greenery the city tends, surveyed (pipeline/ipr_greenery.py), over what is only
     // guessed there: lawns, meadows, the earth of flower beds and under groups of shrubs.
     // (Under a surveyed group of trees the grass goes on: a park's trees, not a wood.)

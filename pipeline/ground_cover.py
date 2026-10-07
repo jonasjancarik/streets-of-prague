@@ -988,7 +988,7 @@ def photo(url, kind, area, t, res=RES, window=None):
 # What the build classifies: the plain ground, and the technical map's courtyards (plan 014),
 # which the map only outlines (drawn as one neutral paving until something says more).
 CLASSIFIED = ("dtm_yard",)
-GREEN = ("park", "garden", "wood", "lawn", "meadow", "verge", "field", "orchard", "dtm_green", "dtm_garden", "dtm_wood")
+GREEN = ("park", "garden", "wood", "lawn", "meadow", "field", "orchard", "dtm_green", "dtm_garden", "dtm_wood")
 
 
 def wide(t, margin=cover_cells.MARGIN):
@@ -1007,7 +1007,10 @@ def bare_mask(ext, tiles, res):
         x0, y0, x1, y1 = t["box"]
         burn(inside, ext, res, [[[(x0, y0), (x1, y0), (x1, y1), (x0, y1)]]])
         for kind, polys in [*t["areas"].items(), *t["roads"].items()]:
-            if kind not in CLASSIFIED and not kind.startswith("cover_"):
+            # (A verge doesn't cover: where it is unmapped land past the survey, the
+            # photographs still say what lies there, trees and all, and the game draws
+            # that over the verge's grass. A strip of mapped grass is covered by its grass.)
+            if kind not in CLASSIFIED and kind != "verge" and not kind.startswith("cover_"):
                 burn(covered, ext, res, polys)
         burn(covered, ext, res, [b["rings"] for b in t["buildings"]])
     return inside & ~covered
