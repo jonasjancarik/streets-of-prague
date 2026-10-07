@@ -600,7 +600,9 @@ def solve(ways, ground, decks, soft=frozenset()):
         for i, nb in enumerate(net.adj):
             if i in keep or not nb:
                 continue
-            h[i] = 0.5 * net.h[i] + 0.5 * np.mean([net.h[j] for j, _ in nb])
+            # (Across a link along stairs only a little: the kink at their top is real.)
+            wt = [SOFT if (i, j) in net.soft else 1.0 for j, _ in nb]
+            h[i] = 0.5 * net.h[i] + 0.5 * np.average([net.h[j] for j, _ in nb], weights=wt)
         net.h = h
     profiles = paths_profiles(net)
     print(f"  {len(ways)} bridge and tunnel ways: {len(base)} ends on the ground, {snapped} points on IPR's decks")
