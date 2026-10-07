@@ -60,6 +60,40 @@ export function decodeLevels(buffer: ArrayBuffer, n: number, count: number, ref:
   return out;
 }
 
+// Stairs on a bridge level (pipeline/structures.py, ramps): steeper and narrower than the
+// lattice can hold, so they come with their own profile, a line with a height (m a.s.l.)
+// at each point, `w` wide.
+export interface Ramp { w: number; pts: [number, number, number][] }
+
+// A level's height at a point: on its stairs their own profile, elsewhere `base` (the
+// level's lattice). `ref`: the game's zero in metres a.s.l.
+export function withRamps(base: (x: number, y: number) => number, ramps: Ramp[] | null | undefined, ref: number) {
+  if (!ramps?.length) return base;
+  const boxes = ramps.map(({ w, pts }) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const r = w / 2 + 0.05;
+    return [x0 - r, y0 - r, x1 + r, y1 + r, r];
+  });
+  return (x: number, y: number) => {
+    let best = Infinity, h = NaN;
+    for (let k = 0; k < ramps.length; k++) {
+      const b = boxes[k];
+      if (x < b[0] || y < b[1] || x > b[2] || y > b[3]) continue;
+      const pts = ramps[k].pts, last = pts.length - 2;
+      for (let i = 0; i <= last; i++) {
+        const [ax, ay, ah] = pts[i], [bx, by, bh] = pts[i + 1], dx = bx - ax, dy = by - ay;
+        const t = ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1);
+        // (Square ends: nothing past the stairs' first or last point.)
+        if ((t < 0 && i === 0) || (t > 1 && i === last)) continue;
+        const k2 = Math.max(0, Math.min(1, t)), d = Math.hypot(x - ax - dx * k2, y - ay - dy * k2);
+        if (d <= b[4] && d < best) { best = d; h = ah + (bh - ah) * k2 - ref; }
+      }
+    }
+    return best < Infinity ? h : base(x, y);
+  };
+}
+
 // Height at a point, bilinear and clamped to the tile (NaN next to a missing height).
 // With `labels` (pointLabels), in a cell a step crosses only the corners on the point's
 // own side count. `side`: the label of that side; true for the water's; left out, it's

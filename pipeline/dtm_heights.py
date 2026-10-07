@@ -560,6 +560,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             grid[back] = bare[back]
             before = grid.copy()
 
+    lowered = np.zeros(grid.shape, dtype=bool)  # the points a wall has put at its foot
     for run, low in _retaining(walls, at, dry):
         line = shapely.LineString(run)
         bx0, by0, bx1, by1 = line.bounds
@@ -590,8 +591,14 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
                 warnings.simplefilter("ignore", RuntimeWarning)
                 along = np.array([at(foot + away * r) for r in np.linspace(REACH / 5, REACH, 5)])
                 h = np.where(below, np.nanmin(along, axis=0), np.nanmax(along, axis=0))
-            ok = ~np.isnan(h)
+            # What one wall has at its foot, no other wall lifts: a rampart has a wall on
+            # each face, and a battered wall is surveyed along its crown and along its
+            # foot, so the ground below one line is "above" the other. Left to whichever
+            # came last, points at the foot stood at the height of the top (400 spikes,
+            # most of them round Vyšehrad).
+            ok = ~np.isnan(h) & (below | ~lowered[gj, gi])
             grid[gj[ok], gi[ok]] = h[ok]
+            lowered[gj[ok & below], gi[ok & below]] = True
             wall_points += int(ok.sum())
         strip = line.buffer(STRIP * low, single_sided=True).buffer(0)
         if water is not None and water.intersects(strip):

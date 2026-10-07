@@ -20,7 +20,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
-import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces } from '../src/terrain.ts';
+import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps } from '../src/terrain.ts';
 import { onPolygons } from '../src/map/geo.ts';
 
 const args = {}, pos = [];
@@ -57,7 +57,7 @@ function tileOf(i, j) {
     out = {
       t, ground: height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step, pointLabels(height, terrain.n),
         terraceAt(t.terraces), flatTerraces(t.terraces, REF)) : () => NaN,
-      levels: structures.map((s, n) => ({ level: s.level, kind: s.kind, on: onPolygons(s.polys), sample: heightSampler(heights[n], t.box, terrain.n, terrain.step) })),
+      levels: structures.map((s, n) => ({ level: s.level, kind: s.kind, on: onPolygons(s.polys), sample: withRamps(heightSampler(heights[n], t.box, terrain.n, terrain.step), s.ramps, REF) })),
     };
   }
   tiles.set(k, out);
@@ -68,15 +68,20 @@ const at = (x, y) => tileOf(Math.floor((x + ox) / T), Math.floor((y + oy) / T));
 const groundAt = (x, y) => at(x, y)?.ground(x, y) ?? NaN;
 // The height of a level at a point (as World.levelAt), NaN off it.
 function levelAt(x, y, level) {
-  const t = at(x, y);
-  for (const l of t?.levels ?? []) {
-    if (l.level !== level || !l.on(x, y)) continue;
-    const h = l.sample(x, y);
-    return Number.isNaN(h) ? t.ground(x, y) : h;
+  for (const [dx, dy] of NEAR) {
+    const t = at(x + dx, y + dy);
+    for (const l of t?.levels ?? []) {
+      if (l.level !== level || !l.on(x + dx, y + dy)) continue;
+      const h = l.sample(x + dx, y + dy);
+      return Number.isNaN(h) ? t.ground(x, y) : h;
+    }
   }
   return NaN;
 }
-const bridgesAt = (x, y) => (at(x, y)?.levels ?? []).filter((l) => l.level > 0 && l.on(x, y)).map((l) => l.level);
+// (Where two ways meet at an angle their outlines touch at the node alone, and the game's
+// level masks have cells of half a metre: a point counts as on a level within 0.4 m of it.)
+const NEAR = [[0, 0], [0.4, 0], [-0.4, 0], [0, 0.4], [0, -0.4]];
+const bridgesAt = (x, y) => [...new Set(NEAR.flatMap(([dx, dy]) => (at(x + dx, y + dy)?.levels ?? []).filter((l) => l.level > 0 && l.on(x + dx, y + dy)).map((l) => l.level)))];
 
 // (The area's transverse Mercator, well enough for naming a place to look at.)
 const [bw, bs, be, bn] = index.bbox_wgs84, lat0 = (bs + bn) / 2, lon0 = (bw + be) / 2, rad = Math.PI / 180;
@@ -158,7 +163,8 @@ for (const [e, prof] of profs) {
   for (let i = 1; i < prof.length; i++) {
     if (prof[i][3]) onDeck++;
     const d = prof[i][2] - prof[i - 1][2];
-    if (prof[i][3] && prof[i - 1][3]) { if (Math.abs(d) > worst) { worst = Math.abs(d); where = i; } }
+    // (Not the samples right at the nodes: they lie on the very edge of the level's outline.)
+    if (prof[i][3] && prof[i - 1][3]) { if (i > 1 && i < prof.length - 1 && Math.abs(d) > worst) { worst = Math.abs(d); where = i; } }
     else if (prof[i][3] !== prof[i - 1][3] && i > 1 && i < prof.length - 1 && Math.abs(d) > Math.abs(hand)) { hand = d; handAt = i; }
   }
   if (!onDeck) continue; // (a way the pipeline left on the ground)

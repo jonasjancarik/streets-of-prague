@@ -54,6 +54,7 @@ SHALLOW = 2.5  # m: a tunnel that never gets this far under the ground is just a
 CLEAR = 5.5  # m between a bridge or tunnel and one crossing it on another layer
 BESIDE = 10.0  # m: two structures this close share lattice points (PAD, and a cell's diagonal)
 SAME = 3.0  # m: two structures further apart in height than this can't share a level
+STAIRS_SAME = 1.0  # m: the same for stairs (which have their own profile) and what's beside them
 NO_HIGHWAY = {"proposed", "construction", "elevator", "platform", "bus_stop", "abandoned", "razed", "planned"}
 STATION_FOOT = {"footway", "steps", "corridor", "pedestrian", "path"}  # a station's ways inside
 STATION = 30.0  # m from a metro station, platform or stop: its corridors and stairs
@@ -673,6 +674,9 @@ class Piece:
         self.level = 0
         self.mapped_layer = mapped_layer
         self.nodes = frozenset(nodes)
+        # A way too steep for the lattice (stairs): its own profile, {w, pts: [[x, y, h]]}
+        # (see ramps), kept out of the level's lattice.
+        self.ramp = None
 
 
 def pieces(ways, profiles, outlines, ground, decks, road_tree):
@@ -689,6 +693,7 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
         shape = drawn.buffer(w["w"] / 2 + (1.5 if w["kind"] == "tunnel" else 0), cap_style="flat", join_style="round")
         out.append(Piece(w["kind"], shape, (lambda xs, ys, line=line, prof=prof: height_along(line, prof, xs, ys)),
                          [w["id"]], w.get("mapped_layer"), w["nodes"]))
+    ramps(ways, lines, profiles, out)
     groups = [[p] for p in out]
     bridges = [k for k, w in enumerate(ways) if w["kind"] == "bridge"]
     tree = STRtree([out[k].shape for k in bridges]) if bridges else None
@@ -714,6 +719,7 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
         if hosts:
             j = max(hosts, key=lambda j: lines[j].length)
             out[k].height = out[j].height
+            out[k].ramp = None  # (part of the deck, whatever its own ends say)
             join(group_of[id(out[j])], group_of[id(out[k])])
             ways[k]["scrap"] = True
 
@@ -738,11 +744,19 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
                     distinct = (ways[k].get("mapped_layer") is not None and ways[ref].get("mapped_layer") is not None
                                 and ways[k]["mapped_layer"] != ways[ref]["mapped_layer"]
                                 and not set(ways[k]["nodes"]) & set(ways[ref]["nodes"]))
-                    if not distinct and abs(out[k].height(np.array([m.x]), np.array([m.y]))[0] - href) < SAME:
-                        on.append(k)
+                    if distinct or abs(out[k].height(np.array([m.x]), np.array([m.y]))[0] - href) >= SAME:
+                        continue
+                    # (Stairs are on the bridge only if they stay at its height from end to end.)
+                    if out[k].ramp:
+                        q = [inside.interpolate(f, normalized=True) for f in (0.05, 0.95)]
+                        if np.abs(out[k].height(np.array([p.x for p in q]), np.array([p.y for p in q])) - href).max() >= STAIRS_SAME:
+                            continue
+                    on.append(k)
         if on:
-            ls = [lines[k] for k in on]
-            hs = [out[k].height for k in on]
+            # (Its height from the ways that are its deck, not from stairs down off it.)
+            deck = [k for k in on if not out[k].ramp] or on
+            ls = [lines[k] for k in deck]
+            hs = [out[k].height for k in deck]
 
             def height(xs, ys, ls=ls, hs=hs):
                 pts = shapely.points(xs, ys)
@@ -765,6 +779,71 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
             groups.append([piece])
             group_of[id(piece)] = groups[-1]
     return out, [g for g in groups if g]
+
+
+RAMP = 0.2  # a bridge way this steep from end to end is stairs, whatever the map calls it
+LANDING = 8.0  # m: a bridge way shorter than this that runs on from stairs is their landing
+
+
+def ramps(ways, lines, profiles, out):
+    """Stairs on a bridge (and ways as steep, and their landings) get their own profile (Piece.ramp)
+    and stay out of their level's lattice. The lattice has a point every 4 m and one
+    height per point: stairs folded back beside the deck they come down from put their
+    heights into the deck's last points (Železniční most at Výtoň: 1.8 m down), and on a
+    level of their own two flights 4 m apart mix with each other. Where the stairs' first
+    metres lie on the deck they leave (the map draws them from the middle of the
+    footway), they are at the deck's height: the descent begins at its edge."""
+    at_node = defaultdict(list)
+    for k, w in enumerate(ways):
+        if w["kind"] == "bridge":
+            at_node[w["nodes"][0]].append(k)
+            at_node[w["nodes"][-1]].append(k)
+    steep = []
+    for k, (w, (s, h)) in enumerate(zip(ways, profiles)):
+        if w["kind"] != "bridge" or len(s) < 2 or np.isnan(h).any():
+            continue
+        if w["hw"] == "steps" or abs(h[-1] - h[0]) > RAMP * max(s[-1], 1.0):
+            steep.append(k)
+    # (And the landings between flights: a short way running on from stairs.)
+    is_steep = set(steep)
+    for k, (w, (s, h)) in enumerate(zip(ways, profiles)):
+        if (w["kind"] == "bridge" and k not in is_steep and len(s) >= 2 and s[-1] < LANDING and not np.isnan(h).any()
+                and any(j in is_steep for end in (0, -1) for j in at_node[w["nodes"][end]])):
+            steep.append(k)
+    for k in steep:
+        w, line, (s, h) = ways[k], lines[k], profiles[k]
+        s, h = np.array(s, float), np.array(h, float)
+        for end in (0, -1):
+            hosts = [j for j in at_node[w["nodes"][end]] if j != k and j not in is_steep]
+            if not hosts:
+                continue
+            # How far the way runs on the deck it leaves, from this end.
+            far, host = 0.0, None
+            for j in hosts:
+                d = 0.0
+                while d + 0.25 <= min(line.length, 12.0):
+                    q = line.interpolate(d + 0.25 if end == 0 else line.length - d - 0.25)
+                    if not out[j].shape.contains(q):
+                        break
+                    d += 0.25
+                if d > far:
+                    far, host = d, j
+            if host is None or far >= line.length - 0.5:
+                continue
+            at = far if end == 0 else line.length - far
+            q = line.interpolate(at)
+            top = float(out[host].height(np.array([q.x]), np.array([q.y]))[0])
+            if np.isnan(top):
+                continue
+            on = s <= at if end == 0 else s >= at
+            pts = [line.interpolate(v) for v in s[on]]
+            h[on] = out[host].height(np.array([p.x for p in pts]), np.array([p.y for p in pts]))
+            if not np.any(np.abs(s - at) < 0.05):
+                i = int(np.searchsorted(s, at))
+                s, h = np.insert(s, i, at), np.insert(h, i, top)
+        xy = [line.interpolate(v) for v in s]
+        out[k].ramp = {"w": w["w"], "pts": [[round(p.x, 2), round(p.y, 2), round(float(z), 2)] for p, z in zip(xy, h)]}
+        out[k].height = (lambda xs, ys, line=line, prof=(s, h): height_along(line, prof, xs, ys))
 
 
 STEEP, STEEP_LENGTH = 0.15, 80.0  # a bridge way shorter than this many metres, steeper than this: not a ramp, a mistake in the map
@@ -859,12 +938,12 @@ def assign_levels(groups):
         h = float(np.nanmean(g[0].height(np.array([c.x]), np.array([c.y]))))
         declared = {p.mapped_layer for p in g if p.mapped_layer is not None}
         nodes = frozenset(n for p in g for n in p.nodes)
-        info.append((g, shape, h, g[0].kind, declared, nodes))
-    tree = STRtree([s for _, s, _, _, _, _ in info])
+        info.append((g, shape, h, g[0].kind, declared, nodes, any(p.ramp for p in g)))
+    tree = STRtree([q[1] for q in info])
     order = sorted(range(len(info)), key=lambda k: info[k][2] if info[k][3] == "bridge" else -info[k][2])
     level = {}
     for k in order:
-        g, shape, _, kind, declared, nodes = info[k]
+        g, shape, _, kind, declared, nodes, stairs = info[k]
         taken = set()
         for o in tree.query(shape, predicate="dwithin", distance=BESIDE):
             if o == k or o not in level or info[o][3] != kind:
@@ -887,7 +966,9 @@ def assign_levels(groups):
             xs, ys = np.array([q.x for q in ps]), np.array([q.y for q in ps])
             with np.errstate(invalid="ignore"):
                 apart = np.abs(piece_height(g, xs, ys) - piece_height(info[o][0], xs, ys))
-            if np.nanmax(apart, initial=0) > SAME:
+            # (Stairs lie over or under the deck they leave in plan, a metre or two off its
+            # height: they share its level only where they're at its height.)
+            if np.nanmax(apart, initial=0) > (STAIRS_SAME if stairs or info[o][6] else SAME):
                 taken.add(level[o])
         step = 1 if kind == "bridge" else -1
         lv = step
@@ -925,6 +1006,8 @@ def rasterise(all_pieces, tiles, N, T, step, gx0, gy0):
                 if not inside.any():
                     continue
                 arr = out.setdefault((i, j), {}).setdefault(p.level, np.full((N + 1, N + 1), np.nan, dtype=np.float32))
+                if p.ramp:  # (its heights are its own profile: the level is here, the lattice has nothing of it)
+                    continue
                 dist = near.setdefault((i, j, p.level), np.full((N + 1, N + 1), np.inf, dtype=np.float32))
                 d = np.full(xs.shape, np.inf, dtype=np.float32)
                 d[inside] = shapely.distance(p.shape, shapely.points(xs[inside], ys[inside]))
@@ -1045,14 +1128,18 @@ class OnLevels:
         line = LineString(e["pts"])
         n = max(3, int(line.length / 3))
         pts = shapely.points([line.interpolate((k + 0.5) / n, normalized=True).coords[0] for k in range(n)])
-        votes = defaultdict(int)
+        # Each point votes for the way of its kind nearest to it (a ramp down beside a
+        # bridge runs within a metre of the bridge's own way in plan).
+        best = {}
         hit, near = self.tree.query(pts, predicate="dwithin", distance=ON_WAY)
-        seen = set()
         for k, o in zip(hit, near):
-            w = self.ways[o]
-            if w["kind"] == kind and (k, w["level"]) not in seen:
-                seen.add((k, w["level"]))
-                votes[w["level"]] += 1
+            if self.ways[o]["kind"] == kind:
+                d = self.lines[o].distance(pts[k])
+                if k not in best or d < best[k][0]:
+                    best[k] = (d, self.ways[o]["level"])
+        votes = defaultdict(int)
+        for _, lv in best.values():
+            votes[lv] += 1
         return max(votes, key=lambda lv: (votes[lv], -abs(lv))) if votes else None
 
     def shapes(self, key):
@@ -1140,13 +1227,52 @@ class OnLevels:
         return out
 
 
-def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, tile_boxes, source_manifest=None, way_levels=None):
+def cut_ramps(all_pieces):
+    """Each stairs' profile without the stretches that lie on a deck way of its own level
+    (once the levels are known): there the deck's lattice is what counts, for the stairs
+    and for whatever else crosses them. [(piece, {w, pts})], a piece once per stretch left."""
+    with_ramp = [p for p in all_pieces if p.ramp]
+    decks = [p for p in all_pieces if not p.ramp and p.kind == "bridge" and p.members]
+    tree = STRtree([p.shape for p in decks]) if decks else None
+    out = []
+    for p in with_ramp:
+        pts = np.array(p.ramp["pts"])
+        line = LineString(pts[:, :2])
+        s = np.concatenate([[0], np.cumsum(np.hypot(*np.diff(pts[:, :2], axis=0).T))])
+        over = [decks[k].shape for k in (tree.query(line, predicate="intersects") if tree is not None else []) if decks[k].level == p.level]
+        left = line.difference(unary_union(over)) if over else line
+        for part in shapely.get_parts(left):
+            if part.geom_type != "LineString" or part.length < 0.5:
+                continue
+            a, b = sorted((line.project(shapely.Point(part.coords[0])), line.project(shapely.Point(part.coords[-1]))))
+            at = np.unique(np.concatenate([[a], s[(s > a) & (s < b)], [b]]))
+            xy = [line.interpolate(v) for v in at]
+            out.append((p, {"w": p.ramp["w"], "pts": [[round(q.x, 2), round(q.y, 2), round(float(z), 2)] for q, z in zip(xy, np.interp(at, s, pts[:, 2]))]}))
+    return out
+
+
+def ramps_per_tile(all_pieces, tile_boxes):
+    """Per tile: {level: the profiles of that level's stairs that reach into the tile}."""
+    out = defaultdict(lambda: defaultdict(list))
+    cut = cut_ramps(all_pieces)
+    if cut:
+        keys = list(tile_boxes)
+        tree = STRtree(list(tile_boxes.values()))
+        for p, ramp in cut:
+            reach = LineString([q[:2] for q in ramp["pts"]]).buffer(ramp["w"] / 2 + 0.1)
+            for k in tree.query(reach, predicate="intersects"):
+                out[keys[k]][p.level].append(ramp)
+    return out
+
+
+def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, tile_boxes, source_manifest=None, way_levels=None, ramps_out=None):
     """Everything for the game: per tile, a list of (level, kind, heights, polygons).
     `ways`: structure_ways from every chunk; `outlines`: the man_made=bridge polygons;
     `roads`: the street polygons (for the ends of bridges with no street on them).
     `source_manifest`: optional dictionary collecting the IPR bridge inputs for
     strict assembly's freshness check. `way_levels`: an optional list that gets each
-    way's level, {kind, level, pts} (for OnLevels).
+    way's level, {kind, level, pts} (for OnLevels). `ramps_out`: an optional dictionary
+    that gets, per tile and level, the profiles of the ways too steep for the lattice.
     """
     ways = merge_ways(ways)
     decks = ipr_decks(local, source_manifest)
@@ -1160,6 +1286,8 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     print(f"  {len(all_pieces)} bridge and tunnel pieces on up to {deepest} levels either way")
     heights = rasterise(all_pieces, tiles, N, T, step, gx0, gy0)
     polys = outlines_per_tile(all_pieces, tile_boxes)
+    if ramps_out is not None:
+        ramps_out.update({k: dict(v) for k, v in ramps_per_tile(all_pieces, tile_boxes).items()})
     out = {}
     for k in tiles:
         levels = sorted(set(heights.get(k, {})) & set(polys.get(k, {})))

@@ -11,7 +11,7 @@ import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER } from './s
 import { loadFacadeAtlas } from './facades.ts';
 import { Zones, parkCars, inRing, inPoly } from './parking.ts';
 import { openWater } from './river.ts';
-import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary } from './terrain.ts';
+import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary, withRamps } from './terrain.ts';
 import type { Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
 import type { Shadower } from './map/skyView.ts';
@@ -1000,7 +1000,7 @@ export class TileWorld {
     const structures = t.structures || [];
     const heights = levels && terrain ? decodeLevels(levels, terrain.n, structures.length, this.ref) : [];
     const tileLevels: LevelInput[] | null = this.leveled && terrain ? structures.map((s, i) => ({
-      ...s, heights: { hm: heights[i] ?? new Float32Array(terrain.n * terrain.n).fill(NaN), box: t.box, n: terrain.n, step: terrain.step },
+      ...s, heights: { hm: heights[i] ?? new Float32Array(terrain.n * terrain.n).fill(NaN), box: t.box, n: terrain.n, step: terrain.step, ramps: s.ramps, ref: this.ref },
     })) : null;
     lap('terrain');
 
@@ -1070,7 +1070,7 @@ export class TileWorld {
       const input = tileLevels?.find((l) => l.level === mask.level);
       return {
         level: mask.level, grid: new Grid(geo, RES, null, mask.cells),
-        sample: input ? heightSampler(input.heights.hm, t.box, input.heights.n, input.heights.step) : () => NaN,
+        sample: input ? withRamps(heightSampler(input.heights.hm, t.box, input.heights.n, input.heights.step), input.ramps, this.ref) : () => NaN,
       };
     });
     const walls = wallMesh(land.walls);

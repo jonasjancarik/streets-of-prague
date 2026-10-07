@@ -20,7 +20,7 @@ globalThis.location = { search: '' };
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false } });
 try {
   const { parseRiver, openWater, Course } = await server.ssrLoadModule('/src/river.ts');
-  const { decodeHeights, decodeLevels, pointLabels, heightSampler } = await server.ssrLoadModule('/src/terrain.ts');
+  const { decodeHeights, decodeLevels, pointLabels, heightSampler, withRamps } = await server.ssrLoadModule('/src/terrain.ts');
   const { onPolygons } = await server.ssrLoadModule('/src/map/geo.ts');
   const { BOAT_TOP } = await server.ssrLoadModule('/src/boats.ts');
   const index = JSON.parse(readFileSync(`${dir}/index.json`, 'utf8'));
@@ -43,7 +43,7 @@ try {
         tile = {
           k, water, weirs: t.weirs || [],
           level: hm ? heightSampler(hm, t.box, n, step, pointLabels(h, n)) : null,
-          decks: (t.structures || []).map((s, i) => ({ s, on: onPolygons(s.polys), sample: levels[i] ? heightSampler(levels[i], t.box, n, step) : null })).filter((d) => d.s.kind === 'bridge' && d.sample),
+          decks: (t.structures || []).map((s, i) => ({ s, on: onPolygons(s.polys), sample: levels[i] ? withRamps(heightSampler(levels[i], t.box, n, step), s.ramps, ref) : null })).filter((d) => d.s.kind === 'bridge' && d.sample),
         };
       }
       tiles.set(k, tile);
