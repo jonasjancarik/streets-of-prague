@@ -344,10 +344,12 @@ def main() -> None:
     N, step = grid_step(T)
     gx0, gy0 = -ox, -oy
     tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
+    weirs = []
     for i, j, t in layers.tiles(area, meta):
         tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
         boxes[(i, j)] = box(*t["box"])
         water += [Polygon(r[0], r[1:]).buffer(0) for r in t["areas"].get("water", [])]
+        weirs += t.get("weirs") or []
         if t["areas"].get("water"):
             for kind in ("road", "sett", "path", "dirt"):
                 here = [Polygon(r[0], r[1:]).buffer(0) for r in t["roads"].get(kind, [])]
@@ -394,6 +396,9 @@ def main() -> None:
     if lo == math.inf:
         print("no terrain")
         return
+    # (What the model has nothing for, before it's filled in: dtm_heights.py shapes the
+    # land by the water there.)
+    unknown = {k: np.isnan(arr) for k, arr in tiles.items() if np.isnan(arr).any()}
     fill_gaps(tiles, N, T, step)
     timings.lap("fill_gaps")
     # Prototype: ČÚZK's DMR 5G (laser-scanned, 2 m) instead of IPR's model where it's been fetched.
@@ -414,7 +419,7 @@ def main() -> None:
     labels, terraces = {}, {}
     if not args.no_survey:
         surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes, by_water,
-                                      [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, args.no_feather, not args.shoulder, args.cut_streets)
+                                      [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown)
         labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")
