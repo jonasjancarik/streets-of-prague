@@ -426,13 +426,13 @@ elevation data's sources if step 4 goes ahead.
   along the road's middle, and returns to its own over 8 m. The two sides of a road
   differ by 0.20 m at most in Beroun's middle tile. (The grid's points are 4 m apart,
   so a narrow path is levelled only roughly.)
-- 9 ms a tile for the heights in Node on the M5 (the generator's tile itself is under
+- 9 ms a tile for the heights in Node on the M5 when the machine was quiet, 30 ms under load (the generator's tile itself is under
   2 ms once its vector tiles are read). In the game Beroun's square is at 228 m and
   Svatý Jan pod Skalou at 247 m, which is where they are.
 - **Not done**: water lies on whatever slope the data has (a pond can tilt; rivers are
   near enough level); buildings stand on the lowest ground under them, as in the city;
-  bridges and tunnels follow the ground (step 5), so the one built street that leaves
-  the map on a bridge still steps; the built map's own outer ring stays flat, so the
+  bridges and tunnels follow the ground (step 5), so the built streets that leave
+  the map on a bridge or in a tunnel (two edges, with the map's real extent) still step; the built map's own outer ring stays flat, so the
   hills begin at its edge.
 - A countryside worker whose script failed to load left the game waiting for ever at
   the start (seen when another session's dev server replaced the dependency cache in
