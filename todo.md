@@ -230,13 +230,16 @@ before that day's frame-count fix may be doubled.
 - **Painted photo** (`?ortho`): nine variants are in `docs/evidence/painted-photo/` to
   judge; the photograph's shadows are what keeps it reading as a photograph. To try:
   shadows cast from the surface model and the sun, then relit.
-- **Roof and wall colours (plan 005):** walls are measured for 42 % of buildings and
-  borrowed from a neighbour sharing a wall for about 30 % more; shaded walls are still
-  unmeasured (the ground-light calibration is measured but not fitted); the false-find
-  rate of roof windows; a quiet-machine benchmark of chimneys, windows and clutter;
-  mansard bays seen only in the offline check; building age for OSM-only buildings.
-  A game older than 6 October reading the new map repaints measured walls from the
-  palette: release the game with or before the map.
+- **Roof and wall colours (plan 005):** about a third of the detected roof windows are
+  still false finds, mostly chimney tops (57 % before; judged on 29 roofs the
+  thresholds were also picked on, so re-measure on a fresh sample); buildings with no
+  measured wall and no measured neighbour (28 % in centrum) still take the palette
+  (correcting shaded walls by the ground's light was measured and is worse than
+  borrowing); building age for OSM-only buildings. Roof clutter costs about 1 % of a
+  frame at High; chimneys and roof windows show nothing above noise. Facade window
+  pictures tear where a wall is in two pieces out of plane (Italská, 50.07621,
+  14.43758). A game older than 6 October reading the new map repaints measured walls
+  from the palette: release the game with or before the map.
 - **Countryside (plan 021):** steps 1–4 are in main behind `?countryside` (the join,
   behaviour past the edge, hills). Left: step 5, bridges and tunnels (two built
   streets leave the map on one and step at the edge; water tilts with the hills);
@@ -247,21 +250,22 @@ before that day's frame-count fix may be doubled.
 
 ## Gameplay
 
-- **`scene.mjs run all` mostly passes now.** It was unstable before the night of 5–6
-  October (two of twenty failing in every run on `27bc5ef`). After the fixes of 6–7
-  October, eight full runs gave six clean and two with `boat-boarding` alone failing;
-  the other 23 scenarios passed all eight. What was wrong is in the two commits' notes
-  (arrests and trips to the hospital reaching into the next scenario, cars left behind,
-  E meaning something nearer than the test wanted, checks timed too tightly). Left:
-  - `boat-boarding` fails about once in twelve runs alone: "boat 2: normal interaction
-    boards", 4.4 m from where the boat lay, with one boat still tied up where two
-    should be. Three guesses were fixed (boats put out at random taking over 30 s,
-    standing a step off the landing spot, looking the boat up only among those still
-    tied up) and this one is not explained.
-  - `bridge-exit` once in ten did not reach the deck (the check now says where the car
-    stood); `bike-hit` and `fire-brigade` failed once each on 6 October and not in the
-    twelve runs since; none of the three was found.
+- **`scene.mjs run all` mostly passes.** It was unstable before the night of 5–6
+  October (two of twenty failing in every run on `27bc5ef`); what was wrong is in the
+  commits of 6–7 October (arrests and trips to the hospital reaching into the next
+  scenario, cars left behind, E meaning something nearer than the test wanted, checks
+  timed too tightly, a boat taken off the water 700 m away, a drive aimed past the
+  bridge). Five of the last six full runs were clean. Left:
+  - `wall-crash` fails about once in six full runs ("the car stopped at the wall
+    (16.1 km/h)"), never alone: it depends on what earlier scenarios leave, and the
+    check reads the speed at exactly 3 s with the accelerator held. Not caught.
+  - `bike-hit` once: the car put 10 m behind the courier hit something else first
+    (34 m from the bike at 14 km/h); the check now says the car's damage and place.
+  - `courier-bag` once: E took the player into a taxi standing nearer than the bag.
+  - Run the full set a few times on the map rebuilt on 7 October.
   - A car put down by `t.car` can still land inside another car or a tram.
+  - A tied-up pedal boat between 600 and 700 m from the player is live on water that
+    isn't loaded (harmless as far as seen).
   - Changed in the game along the way, worth a look: at 60 km/h a wall met nose first
     breaks both headlamps (the blow reaches 1.7 m, not 1.3); a bag lying beside a bike
     or moped can be picked up (E used to get you on the bike); a paramedic who can't
