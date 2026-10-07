@@ -14,8 +14,11 @@ The outlines of thick walls ("Hranice zdi") are left out: they are the two faces
 quay walls and retaining walls, which the terrain makes steps of (dtm_heights.py) and
 the game puts a parapet on (src/stepEdges.ts).
 
-A surveyed line is cut where a street or a path runs (a wall drawn across a gateway
-would close it: walls are solid in the game). OSM's town walls and gates stay, with
+A surveyed line is cut wherever something goes through (openings(): a wall drawn across
+a gateway would close it, and walls are solid in the game): on the streets' and paths'
+surfaces, across every street and path of the map over its width, in the passages
+through buildings, at the gates of family houses' plots (plots.py) and right by a
+building, where the door may be. OSM's town walls and gates stay, with
 their names and heights; so do hedges, which the survey doesn't know, unless a
 surveyed fence or wall runs along them. Outside the survey (past the city's edge, or
 with the packages missing) everything is OSM's, as before.
@@ -55,6 +58,9 @@ SHORTEST = 2.0  # m: shorter pieces are left out
 TOLERANCE = 0.15  # m: how far a line may be straightened
 MARGIN = 0.0005  # degrees past a box
 OPEN = 0.3  # m kept clear either side of a street's or a path's surface
+WAY_MIN = 1.0  # m: the least half width left open across a path
+GATE = 1.6  # m each side of a plot's gate (as plots.py leaves in its own fences)
+BY_HOUSE = 0.8  # m from a building: no wall there (a door opens onto it; the house is the wall)
 ALONG = 1.2  # m: a hedge or fence this close to a surveyed line is the same one
 TOWN_WALLS = ("city_wall", "castle_wall", "city_gate")
 NEAR_TOWN_WALL = 3.0  # m: the survey's lines of a town wall OSM draws
@@ -125,11 +131,28 @@ def survey(bbox, transform):
     return [(kinds[k], float(heights[k]), ln) for k, g in zip(hits, local) for ln in _parts(g)]
 
 
+def openings(x):
+    """Where a chunk's surveyed lines are cut: `x`, the chunk's extract (osm_area.py)."""
+    parts = [g for g in x["roads"].values() if not g.is_empty]
+    parts = [shapely.union_all(parts).buffer(OPEN)] if parts else []
+    ways = x.get("ways") or []
+    if ways:
+        parts.append(shapely.union_all(shapely.buffer(np.array([ls for ls, _ in ways], dtype=object),
+                                                      np.array([max(WAY_MIN, half + OPEN) for _, half in ways]), cap_style="flat")))
+    passages = [LineString(p["pts"]).buffer(p["w"] / 2 + 0.5) for p in x.get("passages", []) if len(p["pts"]) > 1]
+    gates = [shapely.Point(p["gate"][:2]).buffer(GATE) for p in x.get("plots", []) if p.get("gate")]
+    houses = [shapely.Polygon(b["rings"][0], b["rings"][1:]) for b in x.get("buildings", [])]
+    if houses:
+        parts.append(shapely.union_all(shapely.buffer(shapely.make_valid(np.array(houses, dtype=object)), BY_HOUSE)))
+    parts += passages + gates
+    return shapely.union_all(parts) if parts else None
+
+
 def replace(tile, box, surveyed, tree, open_ground):
     """Put the survey's walls and fences in a tile's ground layer (`tile`: its "walls"
     and "fences", already cut to `box`) in place of OSM's, if the survey covers it.
-    `surveyed`: survey()'s lines with their STRtree `tree`; `open_ground`: the tile's
-    streets and paths, which no surveyed line may cross. Returns the metres of
+    `surveyed`: survey()'s lines with their STRtree `tree`; `open_ground`: openings(),
+    which no surveyed line may cross. Returns the metres of
     (surveyed walls, surveyed fences, OSM's walls and fences taken out)."""
     hits = sorted(tree.query(box)) if surveyed else []
     got = []
@@ -140,7 +163,7 @@ def replace(tile, box, surveyed, tree, open_ground):
     if sum(ln.length for _, _, ln in got) < COVERED:
         return 0.0, 0.0, 0.0
     town = [LineString(wl["pts"]) for wl in tile["walls"] if wl.get("kind") in TOWN_WALLS and len(wl["pts"]) > 1]
-    clear = [open_ground.buffer(OPEN)] if open_ground is not None and not open_ground.is_empty else []
+    clear = [open_ground.intersection(box.buffer(1.0))] if open_ground is not None and not open_ground.is_empty else []
     if town:
         clear.append(shapely.union_all(town).buffer(NEAR_TOWN_WALL))
     clear = shapely.union_all(clear) if clear else None
@@ -186,6 +209,8 @@ def main():
     ap.add_argument("area", nargs="?", default="ujezd")
     ap.add_argument("--before", help="the tiles folder of the map before the survey's walls, to count what OSM had")
     ap.add_argument("--tiles", action="store_true", help="a line for every tile")
+    ap.add_argument("--crossings", action="store_true", help="count the streets, paths and gates a wall or fence closes, instead")
+    ap.add_argument("--list", type=int, default=8, help="how many new ones to list of each kind")
     args = ap.parse_args()
     folder = Path(__file__).parent.parent / "public" / "data" / f"{args.area}_now" / "tiles"
 
@@ -202,9 +227,56 @@ def main():
                 out.setdefault(kind, [0.0, 0.0])[1 if item.get("s") else 0] += float(np.hypot(*(pts[1:] - pts[:-1]).T).sum())
         return out
 
+    def blocked(path):
+        """What a tile's walls close: the graph's edges that cross a wall's solid strip
+        (0.9 m wide in the collision grid), the plots' gates in one, and the same for
+        fences (which stop only the player) → {kind: [(what, x, y)]}."""
+        try:
+            t = json.loads(path.read_text())
+        except OSError:
+            return {}
+        bx = shapely.box(*t["box"])
+        out = {}
+        for key, reach in (("walls", 0.45), ("fences", 0.15)):
+            items = [LineString(i["pts"]) for i in t.get(key, []) if len(i["pts"]) > 1 and i.get("kind") not in ("guard_rail", "hedge")]
+            if not items:
+                continue
+            solid = shapely.union_all(items).buffer(reach)
+            shapely.prepare(solid)
+            for graph in ("drive", "walk"):
+                for e in t.get(graph, []):
+                    if e.get("bridge") or e.get("tunnel") or len(e["pts"]) < 2:
+                        continue
+                    hit = LineString(e["pts"]).intersection(bx).intersection(solid)
+                    if not hit.is_empty and hit.length > 0.05:
+                        c = hit.representative_point()
+                        out.setdefault(f"{graph} edges across {key}", []).append((e.get("hw"), round(c.x), round(c.y)))
+            for p in t.get("plots", []):
+                if p.get("gate") and solid.contains(shapely.Point(p["gate"][:2])):
+                    out.setdefault(f"plot gates in {key}", []).append(("gate", round(p["gate"][0]), round(p["gate"][1])))
+        return out
+
+    if args.crossings:
+        now, was = {}, {}
+        for path in sorted(folder.glob("*_*.json")):
+            if not path.stem.replace("_", "").isdigit():
+                continue
+            for k, v in blocked(path).items():
+                now.setdefault(k, []).extend((path.stem, *i) for i in v)
+            if args.before:
+                for k, v in blocked(Path(args.before) / path.name).items():
+                    was.setdefault(k, []).extend((path.stem, *i) for i in v)
+        print(f"{args.area}: what walls and fences close (now{', before' if args.before else ''})")
+        for k in sorted(set(now) | set(was)):
+            print(f"  {k:<28} {len(now.get(k, [])):5d}" + (f" {len(was.get(k, [])):5d}" if args.before else ""))
+            fresh = sorted(set(now.get(k, [])) - set(was.get(k, [])))
+            for item in fresh[:args.list]:
+                print(f"      new: tile {item[0]}  {item[1]}  at {item[2]}, {item[3]}")
+        return
+
     total = {"survey walls": 0.0, "survey fences": 0.0, "osm walls": 0.0, "osm fences": 0.0, "osm walls before": 0.0, "osm fences before": 0.0}
     covered = count = 0
-    for path in sorted(folder.glob("*.json"), key=lambda p: [int(v) for v in p.stem.split("_")]):
+    for path in sorted((p for p in folder.glob("*_*.json") if p.stem.replace("_", "").isdigit()), key=lambda p: [int(v) for v in p.stem.split("_")]):
         now = metres(path)
         was = metres(Path(args.before) / path.name) if args.before else None
         count += 1

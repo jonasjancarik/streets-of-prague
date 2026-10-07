@@ -364,7 +364,7 @@ def build_chunk(job):
         # The survey's walls, fences and railings (dtm_walls.py), in place of OSM's where it has been.
         surveyed = dtm_walls.survey(bbox, tf.transform)
         survey_tree = STRtree([ln for _, _, ln in surveyed]) if surveyed else None
-        open_ground = shapely.union_all([g for g in x["roads"].values() if not g.is_empty]) if x["roads"] else None
+        open_ground = dtm_walls.openings(x) if surveyed else None
         survey_m = [0.0, 0.0, 0.0]
         layer = {}
         for (i, j), bx in boxes.items():
@@ -380,7 +380,7 @@ def build_chunk(job):
                 t[key] = [{**x[key][k], "pts": _coords(ls)} for k in sorted(trees[key].query(bx))
                           for ls in _lines(lines[key][k].intersection(bx))]
             if surveyed:
-                for n, m in enumerate(dtm_walls.replace(t, bx, surveyed, survey_tree, open_ground.intersection(bx) if open_ground is not None else None)):
+                for n, m in enumerate(dtm_walls.replace(t, bx, surveyed, survey_tree, open_ground)):
                     survey_m[n] += m
             t["weirs"] = [_coords(ls) for k in sorted(trees["weirs"].query(bx)) for ls in _lines(lines["weirs"][k].intersection(bx))]
             t["crossings"] = [_coords(ls) for k in sorted(trees["crossings"].query(bx)) for ls in _lines(lines["crossings"][k].intersection(bx))]

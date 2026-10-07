@@ -405,7 +405,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
             "buildings": buildings, "parts": parts, "areas": {}, "roads": {}, "rails": rails,
             "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
-            "ground_ways": ground_ways, "marks": [],
+            "ground_ways": ground_ways, "marks": [], "ways": [],
             "lots": lots, "kerbs": kerbs, "drives": [], "setting": setting, "plots": [], "patches": {}, "sheds": [],
         }
     lines = [w[0] for w in car_ways]
@@ -556,6 +556,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         "buildings": buildings, "parts": parts, "areas": area_polys, "roads": road_polys, "rails": rails,
         "walls": walls, "fences": fences, "trees": trees, "weirs": weirs, "crossings": crossings, "passages": passages,
             "ground_ways": ground_ways, "marks": marks,
+        # Every street and path on the ground with half its width: what a surveyed wall
+        # or fence mustn't close (dtm_walls.py).
+        "ways": [(ls, half) for ls, half, _ in sidewalks] + [(ls, 3.0) for ls in lines],
         "lots": lots, "kerbs": kerbs, "drives": drives, "setting": setting,
         # What stands on the plots of family houses (plots.py), drawn over the garden.
         "plots": [{"b": p["b"], "poly": p["poly"], **({"gate": p["gate"]} if p["gate"] else {}), **({"strip": 1} if p["strip"] else {})}
