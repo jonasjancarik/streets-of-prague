@@ -59,8 +59,8 @@ How boats pass a weir: through the lock beside it. In a lock and for 150 m beyon
 ends along the same line (the cut to the open river, from OSM's `lock=yes` ways, kept
 in the file as `locks`) a boat may keep 3.6 m from the walls instead of 5 m; the
 chambers are 11 to 12 m wide on the map. One boat at a time sails water narrower than
-14 m to the bank: the other waits in wide water (two that are both already in a cut
-when they meet sail through each other; rare, and not handled). In praha the fairway
+14 m to the bank: the other waits in wide water (each fairway's cuts are worked out once, a boat waits 70 m before one while another
+comes through, and one going down the line gives way to a boat about to enter at the far end). In praha the fairway
 is three stretches: one of 26 km from Modřany through the Smíchov lock and its cut,
 the Štvanice lock and the Podbaba canal to Klecany, and one beyond each end. At the
 Modřany and Klecany weirs the map's water has no lock a boat fits through, so boats
@@ -79,10 +79,20 @@ On the praha map it passes and reports:
   fails here. `KNOWN_LOW` in the script is where a deck the map has too low can be
   listed, reported and not failed, until its height is put right;
 - steps in the water's height: 7 at locks (a boat rises or sinks there at 0.3 m/s),
-  and 376 elsewhere, nearly all north of Troja: from tile `49_81` and above all tiles
-  `50_94` and `50_95`, where the water climbs over 40 m, and the last stretch. They are
-  in the terrain's water heights, not at tile edges. Not fixed: it needs
-  `dtm_heights.py` and a terrain rebuild there.
+  and 376 elsewhere on the map of 5 and 6 October, nearly all north of Troja.
+
+That was the terrain: the water's height was the lowest terrain within 16 m on the
+water, and north of Sedlec the Vltava leaves IPR's terrain model, where the ground
+carries on at the height of the nearest known ground: the plateau above the river.
+Since 7 October `dtm_heights.level_water` makes water lie as water does (see the top of
+`pipeline/dtm_heights.py`): each pool of wide water is level between weirs, narrow water
+comes down to the pool it runs into, and past the model's edge the land rises from the
+water as a valley's side. Rebuilt in a clone (`uv run ipr_terrain.py praha`, 15 minutes,
+97 tiles changed), the check counts 10 steps besides 3 at locks, all of them the water
+running off at a weir or a lock's mouth (Modřany, the Smíchov cut, Štvanice); the
+pools' levels in the city are the same to a decimetre (189.6, 187.3, 184.6, 180.3,
+175.2 m), and beyond the model the river carries on from 175.2 m, rising a metre a
+kilometre, where it stood at up to 295 m.
 
 ## PID ferries
 
@@ -91,8 +101,10 @@ between its landings by the game's clock, between the timetable's first and last
 sailing; P1 and P2 all year, the others from 1 April to 31 October by the game's date.
 It waits 75 s at each landing instead of keeping the 15 or 20 minutes between sailings.
 Each landing gets a pontoon from the bank to the boat. E by the landing while the boat
-is in; a PID ticket as on a tram (the grace period, then "No ticket"); no inspector
-comes aboard. E at a landing puts you on the bank.
+is in; a PID ticket as on a tram (the grace period, then "No ticket"). Without one, an
+inspector may check you as the boat comes in to a landing, with the chance a tram stop
+has: pay the fine, or get off and run; if the boat sails on while you make up your mind,
+the fine is taken. E at a landing puts you on the bank.
 
 Checked in the game on 6 October 2026 (praha, WebGPU, headless Chrome): `ferry-ride`
 boards P5 at a landing without a ticket (the time to buy one starts) and with one,

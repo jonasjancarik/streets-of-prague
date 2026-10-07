@@ -60,7 +60,10 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   checks rejected quays, walls and railings without a browser.
 - `t.ferries()`: PID's ferries (line, sailing or not, the landing each lies at, the next
   one, each landing's spot on the bank). `t.boardFerry()` is E at a landing; `t.ticket()`
-  says how the fare stands, `t.ticket(true)` buys one first. `t.cruiseToEnd(back)` puts a
+  says how the fare stands, `t.ticket(true)` buys one first. `t.roll = 0` makes the inspector sure to check
+  you at the next ferry landing (1: never; null again afterwards), `t.inspection()` says how
+  that stands, `t.payFine()` pays, and `t.frames()` lets the live game look once between
+  waits (inspections and the HUD are looked at once a frame, not in `t.wait`). `t.cruiseToEnd(back)` puts a
   cruise boat on the fairway before the end of the stretch nearest you, `t.cruiseAt(where, dir)`
   at the point of the fairway nearest a place, `t.cruise()` says
   where it is, which way it goes and whether it's turning. Scenarios `ferry-ride`,

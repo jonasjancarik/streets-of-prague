@@ -22,6 +22,16 @@ the terrain's lattice:
 - a lattice point on water takes the water's level: the lowest terrain within WATER_REACH
   on the water, which is the river's surface clear of the banks' ramps, and is marked as
   water (the game reads the height on either side of a bank from that side's points);
+  then the water is made to lie as water does (level_water): a river's or a pond's surface
+  falls only at a weir, so no point of its wide water is higher than the wide water it
+  is joined to, give or take POOL_FALL a metre, and narrow water (a bank's edge, a brook,
+  a mill race, a lock) no higher than the pool it runs into, give or take STREAM_FALL. The
+  terrain model has the banks' ramps and bridges' piers in narrow water, and past its
+  edge (outside the city) no river at all: the ground there carries on at the height of
+  the nearest known ground, which for the Vltava north of Sedlec is the plateau above it;
+- where the terrain model has nothing (`unknown`), the land within sight of the water
+  rises from it no steeper than VALLEY, so a river that leaves the model runs in a
+  valley, not in a slot cut into the plateau;
 - a lattice point on the land beside water, within the terrain model's ramp (BANK), takes
   the height of the nearest surveyed street within STREET_NEAR, or, where a surveyed wall
   runs along the bank, of the nearest land clear of the ramp. A natural bank, with no
@@ -89,6 +99,13 @@ UNDER = 2.0  # m below the terrain model, in a tunnel of the map's: surveyed und
 UNDER_SIDE = 4.0  # m either side of the tunnel that counts as in it
 FEW = 3  # a surface with fewer surveyed points than this keeps the terrain model's heights
 WATER_REACH = 16.0  # m: further than the terrain model's ramp at a bank reaches
+POOL_WIDE = 10.0  # m from the bank: water this wide is a river's or a pond's, level between weirs
+POOL_FALL = 0.001  # the most its surface falls a metre along (a metre a kilometre: the Berounka's is 0.6)
+STREAM_FALL = 0.05  # and narrower water's: a brook, a mill race, a lock
+WEIR_BAND = 22.0  # m either side of a weir's line: there the water does fall (and the lowest terrain within WATER_REACH is the other pool's)
+POOL_LOWEST = 0.1  # of a pool's points: its lowest tenth is the water running off, not its level
+SLUICE = 40.0  # m: a gap this narrow between the ends of two weirs is a sluice in the same weir
+VALLEY = 0.35  # the steepest the land rises from the water where the terrain model has nothing
 AWASH = 0.15  # m above the water: the least the land at its edge is
 BANK = 10.0  # m from the water: the land the terrain model's ramp spoils
 STREET_NEAR = 8.0  # m: a surveyed street this close gives the bank its height
@@ -281,7 +298,106 @@ def _retaining(lines, at, dry):
     return runs
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), no_feather=False, no_shoulder=True, cut_streets=False):
+def level_water(level, wet, step, weir=None):
+    """The water's heights (`level` at the lattice points `wet`) lying as water does.
+    Wide water (POOL_WIDE or more from the bank) is a pool: joined through other wide
+    water, no point of it is higher than the lowest, give or take POOL_FALL for every
+    metre between them. `weir`: the points at a weir, which part the pools (and keep
+    the heights they have). So do narrows: a lock, a sluice, the gap past a weir's end.
+    Narrow water then is no higher than the pool it runs into, give or take STREAM_FALL
+    a metre (a brook, a mill race and the water in a lock keep their fall; the ramp the
+    terrain model has along a bank goes). Returns the new heights and how many points
+    came down by more than a decimetre."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import dijkstra
+
+    free = wet & ~weir if weir is not None else wet
+    if not free.any():
+        return level, 0
+    wide = free & (ndimage.distance_transform_edt(wet) * step >= POOL_WIDE)
+    h, w = wet.shape
+
+    def lowest(nodes, into, fall, heights, sources=None):
+        """Each of `nodes` at the lowest height reaching it from any of them (of
+        `sources`, if given) along steps that end on `into`, gaining `fall` a metre."""
+        count = int(nodes.sum())
+        ids = np.full(wet.shape, -1, dtype=np.int64)
+        ids[nodes] = np.arange(count)
+        rows, cols, costs = [], [], []
+        for dj, di in ((0, 1), (1, 0), (1, 1), (1, -1)):
+            a = (slice(0, h - dj), slice(max(0, -di), w - max(0, di)))
+            b = (slice(dj, h), slice(max(0, di), w + min(0, di)))
+            cost = fall * step * float(np.hypot(dj, di))
+            for src, dst in ((a, b), (b, a)):
+                ok = (ids[src] >= 0) & (ids[dst] >= 0) & into[dst]
+                rows.append(ids[src][ok])
+                cols.append(ids[dst][ok])
+                costs.append(np.full(int(ok.sum()), cost))
+        # One more point, joined to every other by that point's own height: the shortest
+        # way from it to a point is the lowest height that reaches the point.
+        base = float(heights[nodes].min())
+        start = ids[sources] if sources is not None else np.arange(count)
+        rows.append(np.full(len(start), count))
+        cols.append(start)
+        costs.append(heights[nodes].astype(np.float64)[start] - base + 1e-6)
+        graph = coo_matrix((np.concatenate(costs), (np.concatenate(rows), np.concatenate(cols))), shape=(count + 1, count + 1)).tocsr()
+        out = heights.copy()
+        out[nodes] = np.minimum(heights[nodes], dijkstra(graph, directed=True, indices=count)[:count] + base)
+        return out
+
+    out = level
+    if wide.any():
+        # A pool's level is what most of it has. Its lowest points are the water running
+        # off at a weir's end, into a lock or a sluice: they stay as they are, and the
+        # rest of the pool doesn't come down to them.
+        pools, count = ndimage.label(wide, structure=np.ones((3, 3)))
+        which, heights = pools[wide], level[wide]
+        order = np.lexsort((heights, which))
+        first = np.searchsorted(which[order], np.arange(1, count + 1))
+        size = np.bincount(which, minlength=count + 1)[1:]
+        usual = heights[order][first + (size * POOL_LOWEST).astype(np.int64)]
+        typical = np.zeros(wet.shape, dtype=bool)
+        typical[wide] = heights >= usual[which - 1] - 0.05
+        out = lowest(wide, wide, POOL_FALL, out, typical)
+    out = lowest(free, free & ~wide, STREAM_FALL, out)
+    return out, int((level[free] - out[free] > 0.1).sum())
+
+
+def weir_points(weirs, shape, x_of, y_of, step):
+    """The lattice points within WEIR_BAND of a weir. `weirs`: their lines as the tiles
+    have them, cut at the tiles' edges. OSM often stops a weir's line either side of a
+    sluice for rafts and canoes, which is no way round the weir for the water's level:
+    the loose ends of two pieces within SLUICE of each other are joined."""
+    out = np.zeros(shape, dtype=bool)
+    weirs = [np.asarray(w, dtype=float) for w in weirs if len(w) > 1]
+    if not weirs:
+        return out
+    ends = np.array([w[k] for w in weirs for k in (0, -1)])
+    piece = np.repeat(np.arange(len(weirs)), 2)
+    tree = cKDTree(ends)
+    loose = [k for k in range(len(ends)) if all(piece[m] == piece[k] for m in tree.query_ball_point(ends[k], 1.0))]
+    for k in loose:
+        others = [m for m in loose if piece[m] != piece[k]]
+        if others:
+            d = np.hypot(*(ends[others] - ends[k]).T)
+            if d.min() < SLUICE:
+                weirs.append(np.array([ends[k], ends[others[int(d.argmin())]]]))
+    r = int(np.ceil(WEIR_BAND / step)) + 1
+    for w in weirs:
+        along = _along(w)
+        tree = cKDTree(along)
+        ia, ib = int((along[:, 0].min() - x_of(0)) / step) - r, int((along[:, 0].max() - x_of(0)) / step) + r + 1
+        ja, jb = int((along[:, 1].min() - y_of(0)) / step) - r, int((along[:, 1].max() - y_of(0)) / step) + r + 1
+        ia, ib, ja, jb = max(0, ia), min(shape[1] - 1, ib), max(0, ja), min(shape[0] - 1, jb)
+        if ia > ib or ja > jb:
+            continue
+        gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+        d, _ = tree.query(np.column_stack([x_of(gi.ravel()), y_of(gj.ravel())]))
+        out[ja:jb + 1, ia:ib + 1] |= (d <= WEIR_BAND).reshape(gi.shape)
+    return out
+
+
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -291,7 +407,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     model does better left as it is (terrain_keep.json), as polygons. Returns what it changed, for
     the log, with "labels" (each tile's lattice of labels) and "terraces" (each tile's
     terraces: their label and outline; and under label 1 its water, where that's not
-    simply the map's: see below)."""
+    simply the map's: see below). `weirs`: the map's weirs as lines; `unknown`: {(i, j):
+    which of the tile's points the terrain model had nothing for}."""
     polys, lines, walls = survey(area, bbox)
     walls = [np.column_stack(to_local.transform(w[:, 0], w[:, 1])) for w in walls]
     polys = shapely.transform(np.array(polys, dtype=object), lambda c: np.column_stack(to_local.transform(c[:, 0], c[:, 1])))
@@ -439,6 +556,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             water = water.difference(shapely.union_all(shapely.make_valid(np.array(over, dtype=object)), grid_size=0.01))
     # Water: the lowest bare terrain on the water round each point.
     wet = np.zeros(grid.shape, dtype=bool)
+    levelled = valley = 0
     if water is not None and not water.is_empty:
         bx0, by0, bx1, by1 = water.bounds
         ia, ib = max(0, int(np.floor((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 - x_of(0)) / step)))
@@ -450,7 +568,24 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         r = int(np.ceil(WATER_REACH / step))
         yy, xx = np.mgrid[-r:r + 1, -r:r + 1]
         level = ndimage.minimum_filter(np.where(wet, bare, np.inf), footprint=xx * xx + yy * yy <= r * r, mode="constant", cval=np.inf)
+        # And nothing stands higher than the water it is joined to, but across a weir.
+        # (A weir where the terrain model has nothing parts nothing: neither pool's level
+        # is known there, and the water takes the last one that is.)
+        guessed = np.zeros(grid.shape, dtype=bool)
+        for (i, j), miss in (unknown or {}).items():
+            guessed[j * N - j0:j * N - j0 + N + 1, i * N - i0:i * N - i0 + N + 1] |= miss
+        level, levelled = level_water(np.where(wet, level, np.inf).astype(np.float32), wet, step, weir_points(weirs, grid.shape, x_of, y_of, step) & ~guessed)
         grid[wet] = level[wet]
+        # Where the terrain model has nothing, the land rises from the water as a valley's side.
+        if unknown:
+            guessed &= ~wet & ~np.isnan(grid)
+            if guessed.any() and wet.any():
+                d, (sj, si) = ndimage.distance_transform_edt(~wet, return_indices=True)
+                side = grid[sj, si] + AWASH + VALLEY * d * step
+                lower = guessed & (side < grid)
+                grid[lower] = side[lower]
+                bare[lower] = side[lower]
+                valley = int(lower.sum())
 
     # The land beside the water, as far as the terrain model's ramp reaches.
     bank_points = 0
@@ -694,7 +829,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"survey_rejected_vertices": rejected, "surfaces": surfaces, "street_points": street_points, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "bank_points": bank_points,
+    return {"survey_rejected_vertices": rejected, "surfaces": surfaces, "street_points": street_points, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
             "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}

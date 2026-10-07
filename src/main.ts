@@ -854,6 +854,7 @@ async function main() {
       Object.assign(walker, { x, y, h: f.h, vx: 0, vy: 0, level: 0, gz: world.terrainAt(x, y) });
       walker.mesh.visible = true;
       walker.sync();
+      if (inspector.phase === 'decide') inspector.run(x, y, f.h);
       return;
     }
     // On a tram: off at this stop (or here, if it's stuck), or at the next one.
@@ -1405,7 +1406,7 @@ async function main() {
   };
   let waitScale = 1, clockShown = '';
   let ticketWas = false;
-  let rideAt: boolean | null = null, funiAt: number | null | undefined;
+  let rideAt: boolean | null = null, funiAt: number | null | undefined, ferryAt: number | null | undefined;
   let street: string | null = null, bannerT = 0, lifeT = 0;
   // The HUD is only written when what it says changes: every write makes the browser
   // lay the page out again.
@@ -2072,6 +2073,13 @@ async function main() {
       funiAt = stop;
       if (inspector.phase === 'decide' && inspector.where === 'funicular' && stop === null) inspector.pay();
     } else funiAt = undefined;
+    // (And at a ferry's landing you've crossed to; it sails on without waiting, too.)
+    if (ferries.me) {
+      const stop = ferries.me.stop;
+      if (ferryAt !== undefined && ferryAt === null && stop !== null && pid.check(CHECK_STOP, testkit?.roll ?? Math.random())) inspector.start('ferry');
+      ferryAt = stop;
+      if (inspector.phase === 'decide' && inspector.where === 'ferry' && stop === null) inspector.pay();
+    } else ferryAt = undefined;
     if (ride.on && ride.arrived() && inspector.phase !== 'decide') getOff();
     if (police.stars === 0 && inspector.owed) inspector.owed = 0;
     trams.sync(camPos.x, -camPos.z, viewRadius() + 150, ground);
@@ -2380,7 +2388,7 @@ async function main() {
     loaded: (x, y) => world.loadNow(x, y, 300, testkit?.cam ? Infinity : viewRadius() + world.drawBeyond),
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y),
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
-    grid, boats, ferries, pid, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
+    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     recovering: () => wastedT > 0,
     enterCar: (c) => { only = c; try { enterOrExit(); } finally { only = null; } },

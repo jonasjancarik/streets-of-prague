@@ -83,6 +83,7 @@ interface Game {
   boats: Boats;
   ferries: Ferries;
   pid: { state: string | null; buy: (now: number) => boolean };
+  inspector: { phase: string; where: string; owed: number; pay: () => void };
   carsNear: (x: number, y: number, r: number) => Car[];
   tramsNear: (x: number, y: number, r: number) => TramBody[];
   // Where the camera looks now, and how high it is (for starting the free camera there).
@@ -116,6 +117,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     speed: 1,
     // Nothing hurts you (for looking round a chase).
     unhurt: false,
+    // The dice for a ticket inspection on a ferry: 0 always checks you, 1 never (null: chance).
+    roll: null as number | null,
     // No traffic: nothing new drives in (t.empty() also sends away what is there).
     quiet: false,
     // The police can't arrest you. On while a scenario runs, unless it turns it off: an
@@ -423,6 +426,12 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       if (g.mode() === 'foot') g.enterOrExit();
       return g.mode() === 'ferry';
     },
+    // How a ticket inspection stands: 'off', 'decide' (pay or run), 'chase', 'leaving'.
+    inspection() { return { phase: g.inspector.phase, where: g.inspector.where, owed: g.inspector.owed }; },
+    payFine() { g.inspector.pay(); },
+    // A moment of the live game between waits: what the game looks at once a frame
+    // (inspections, the HUD) sees the state as it is now.
+    async frames(n = 2) { for (let k = 0; k < n; k++) await new Promise(requestAnimationFrame); },
     ticket(buy = false) {
       if (buy && !g.pid.buy(g.clock.t)) g.wallet.buyTicket(g.clock.t); // (aboard, as B does; on foot, straight from the wallet)
       return { held: g.wallet.hasTicket(g.clock.t), fare: g.pid.state };

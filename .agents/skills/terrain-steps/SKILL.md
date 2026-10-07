@@ -89,6 +89,14 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
   under label 1.
 - A street surveyed in an underpass is under the ground (Hlávkův most on Štvanice).
 - An embankment between two walls is narrower than the 10 m the rules look out to.
+- Water lies level: a pool of wide water between weirs has one level (what all but its
+  lowest tenth has; the lowest is the water running off at a weir's end or into a
+  lock), narrow water comes down to the pool it runs into, and nothing passes a weir's
+  line (`level_water`, `weir_points`). Letting any lower water pull a pool down drained
+  every pool of the Vltava into the next. Past the edge of IPR's model the river has
+  no terrain of its own: it carries on from the last known pool and the land rises from
+  it as a valley's side. `node scripts/check-river.mjs praha --all` counts the steps in
+  the water along the fairway (376 before, 10 at weirs after).
 - A bank lower than the water must get no wall: the wall faces the land and shows
   from the river as a black hole (the walls' backs are in the depth buffer).
 - A tunnel's portal takes the lowest ground round it, which mustn't be the water.

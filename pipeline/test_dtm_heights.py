@@ -117,5 +117,67 @@ class TerrainApplyTests(unittest.TestCase):
             np.testing.assert_array_equal(grid[out['labels'][k] == 1], 184.0)
 
 
+def _river(length=200, width=12):
+    """A straight river on a 4 m lattice: `width` points across (48 m), land either side."""
+    wet = np.zeros((width + 8, length), dtype=bool)
+    wet[4:4 + width] = True
+    return wet
+
+
+class WaterLevelTests(unittest.TestCase):
+    def test_water_stands_no_higher_than_the_water_it_is_joined_to(self):
+        wet = _river()
+        level = np.where(wet, 5.0, np.inf).astype(np.float32)
+        level[:, 120:] = np.where(wet[:, 120:], 45.0, np.inf)  # past the terrain model's edge: the plateau's height
+        level[4:7, 40:60] = 9.0  # a bank's ramp the lowest terrain nearby didn't clear
+        out, lowered = dh.level_water(level, wet, 4.0)
+        assert lowered > 900
+        assert out[wet].max() < 5.0 + 800 * dh.POOL_FALL + 0.3
+        assert np.all(np.abs(np.diff(out[10])) < 0.05)
+
+    def test_a_weir_keeps_the_pools_apart(self):
+        wet = _river()
+        level = np.where(wet, 5.0, np.inf).astype(np.float32)
+        level[:, :100] = np.where(wet[:, :100], 7.5, np.inf)  # the pool above the weir
+        weir = dh.weir_points([[[398.0, 0.0], [398.0, 120.0]]], wet.shape, lambda i: i * 4.0, lambda j: j * 4.0, 4.0)
+        assert weir[:, 99].all() and not weir[:, 90].any()
+        out, _ = dh.level_water(level, wet, 4.0, weir)
+        assert np.allclose(out[wet & ~weir][:1], 7.5) and np.allclose(out[10, :95], 7.5) and np.allclose(out[10, 105:], 5.0)
+        # Without the weir the upper pool would drain into the lower one.
+        drained, _ = dh.level_water(level, wet, 4.0)
+        assert drained[10, 50] < 5.5
+
+    def test_a_sluice_between_two_pieces_of_a_weir_is_part_of_it(self):
+        pieces = [[[400.0, 0.0], [400.0, 40.0]], [[400.0, 60.0], [400.0, 120.0]]]
+        weir = dh.weir_points(pieces, (30, 200), lambda i: i * 4.0, lambda j: j * 4.0, 4.0)
+        assert weir[12, 100] and weir[13, 100]
+
+    def test_a_brook_keeps_its_fall(self):
+        wet = np.zeros((9, 200), dtype=bool)
+        wet[4] = True  # one point wide: narrow water
+        level = np.where(wet, 5.0 + np.arange(200) * 4.0 * 0.03, np.inf).astype(np.float32)  # 3 % uphill
+        out, lowered = dh.level_water(level, wet, 4.0)
+        assert lowered == 0 and np.allclose(out[wet], level[wet])
+
+    def test_a_lock_beside_a_weir_does_not_drain_the_upper_pool(self):
+        wet = _river()
+        wet[18:20, 80:120] = True  # a lock two points wide, round the weir
+        wet[16:18, 80:82] = wet[16:18, 118:120] = True
+        level = np.where(wet, 5.0, np.inf).astype(np.float32)
+        level[:, :100] = np.where(wet[:, :100], 7.5, np.inf)
+        weir = np.zeros(wet.shape, dtype=bool)
+        weir[4:16, 98:102] = True
+        out, _ = dh.level_water(level, wet, 4.0, weir)
+        assert np.allclose(out[10, :95], 7.5) and np.allclose(out[10, 105:], 5.0)
+        assert out[18, 81] > 7.0 and out[18, 119] < 5.1  # the lock's ends at their pools' levels
+
+    def test_a_ramp_along_the_bank_comes_down_to_the_pool(self):
+        wet = _river()
+        level = np.where(wet, 5.0, np.inf).astype(np.float32)
+        level[4:6, 40:60] = 9.0  # the terrain model's bank, in the water's first two rows
+        out, lowered = dh.level_water(level, wet, 4.0)
+        assert lowered == 40 and out[4:6, 40:60].max() < 5.5
+
+
 if __name__ == '__main__':
     unittest.main()
