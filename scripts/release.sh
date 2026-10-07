@@ -27,9 +27,11 @@ fi
 [[ -z $(git tag -l 'v[0-9]*' --points-at HEAD) ]] || { echo "This commit is already released as $(git tag -l 'v[0-9]*' --points-at HEAD | head -n 1)." >&2; exit 1; }
 [[ $(git rev-parse HEAD) == $(git rev-parse origin/main) ]] || { echo 'Push main first (or pull).' >&2; exit 1; }
 # Everything that could stop the deploy is checked before the tag exists: the code
-# typechecks and the map this commit names is on R2 in the format the code reads.
+# typechecks, the Worker behaves, and the map this commit names is on R2 in the format
+# the code reads.
 DATA=$(tr -d '\n' < deploy/data-version)
 npm run typecheck
+node scripts/check-worker.mjs
 node scripts/check-data-format.mjs "https://data.streetsofprague.com/$DATA/"
 node scripts/check-data-versions.mjs
 

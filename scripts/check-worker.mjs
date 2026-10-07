@@ -5,7 +5,9 @@
 import assert from 'node:assert/strict';
 import worker from '../worker/index.js';
 
-const SITE = 'https://streetsofprague.com';
+const SITE = 'https://play.streetsofprague.com';
+// Where the game was before; the Worker still answers there.
+const OLD = 'https://streetsofprague.com';
 const BETA = 'https://beta.streetsofprague.com';
 const env = { BREVO_API_KEY: 'test-key', BREVO_LIST_ID: '7', BREVO_DOI_TEMPLATE_ID: '3', ASSETS: { fetch: async () => new Response('asset') } };
 
@@ -189,7 +191,7 @@ const tell = (body, { origin = SITE, method = 'POST', e = senv } = {}) => {
 res = await tell({ e: 'frames', v: 'v1.2.3', d: '2026-10-01-b2', s: 'abc', f: { renderer: 'WebGPU', tier: 'high', seq: 2, medianMs: 16, unknown: 'dropped', p95Ms: 'not a number' } });
 assert.equal(res.status, 204);
 // Fields land in the order worker/stats.js lists them; what it doesn't list is dropped.
-assert.deepEqual(rows, [{ indexes: ['frames'], blobs: ['frames', 'v1.2.3', 'abc', 'CZ', 'streetsofprague.com', '2026-10-01-b2', 'WebGPU', '', 'high'], doubles: [2, 0, 0, 16, 0, 0, 0, 0, 0] }]);
+assert.deepEqual(rows, [{ indexes: ['frames'], blobs: ['frames', 'v1.2.3', 'abc', 'CZ', 'play.streetsofprague.com', '2026-10-01-b2', 'WebGPU', '', 'high'], doubles: [2, 0, 0, 16, 0, 0, 0, 0, 0] }]);
 await tell({ e: 'error', f: { message: 'x'.repeat(5000).slice(0, 3000) } });
 assert.equal(rows[0].blobs[7].length, 600);
 
@@ -213,5 +215,44 @@ assert.equal((await tell({ e: 'start' }, { e: env })).status, 503);
 assert.equal(rows.length, 0);
 // Reports are not held back by the forms' rate limit.
 assert.equal((await tell({ e: 'start' }, { e: { ...senv, RATE: { limit: async () => ({ success: false }) } } })).status, 204);
+
+// ---- The game's old address ----
+// Until the move is switched on (deploy/address), both addresses are the game.
+const at = (address, e = env, init = {}) => worker.fetch(new Request(address, init), e);
+for (const address of [`${OLD}/`, `${OLD}/?start=14.42,50.08`, `${SITE}/`]) assert.equal(await (await at(address)).text(), 'asset');
+// After it, a page asked for at an old address is sent on with its path and options.
+// (A #fragment never reaches a server: the browser carries it over to the new address
+// itself, as long as the answer names none.)
+const menv = { ...env, GAME_MOVED: 'yes' };
+for (const [asked, sent] of [
+  [`${OLD}/`, `${SITE}/`],
+  [`${OLD}/?start=14.42,50.08`, `${SITE}/?start=14.42,50.08`],
+  [`${OLD}/?subscribed`, `${SITE}/?subscribed`],
+  [`${OLD}/?place=ujezd&time=22:30&lang=cs`, `${SITE}/?place=ujezd&time=22:30&lang=cs`],
+  [`${OLD}/?q=V%20Jirch%C3%A1%C5%99%C3%ADch&x=a+b`, `${SITE}/?q=V%20Jirch%C3%A1%C5%99%C3%ADch&x=a+b`],
+  [`${OLD}/sound-test.html?a=1`, `${SITE}/sound-test.html?a=1`],
+  ['https://streets.jonasjancarik.cz/?start=14.42,50.08', `${SITE}/?start=14.42,50.08`],
+]) {
+  res = await at(asked, menv);
+  assert.equal(res.status, 301, asked);
+  assert.equal(res.headers.get('Location'), sent);
+  assert.ok(!res.headers.get('Location').includes('#'));
+  // Not for good: a browser asks again after an hour, so the move can be undone.
+  assert.equal(res.headers.get('Cache-Control'), 'public, max-age=3600');
+}
+// The game's own address serves the game, and so does any other the Worker has.
+for (const address of [`${SITE}/`, `${SITE}/?start=14.42,50.08`, 'https://streets-of-prague.example.workers.dev/']) assert.equal(await (await at(address, menv)).text(), 'asset');
+// /api still answers at the old address: a game left open in a tab since before the
+// move posts there, to its own address.
+answer = () => new Response('{}', { status: 201 }); sent = [];
+res = await worker.fetch(new Request(`${OLD}/api/subscribe`, { method: 'POST', headers: { Origin: OLD, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'player@example.com' }) }), menv);
+assert.equal(res.status, 200);
+assert.equal(sent.at(-1).body.redirectionUrl, `${OLD}/?subscribed`);
+res = await worker.fetch(Object.assign(new Request(`${OLD}/api/report`, { method: 'POST', headers: { Origin: OLD }, body: JSON.stringify({ e: 'start', v: 'v1' }) }), { cf: {} }), { ...senv, GAME_MOVED: 'yes' });
+assert.equal(res.status, 204);
+assert.equal((await at(`${OLD}/api/nothing`, menv)).status, 200, 'an unknown /api path is not sent on');
+// The page of one address can't use the other's /api.
+res = await worker.fetch(new Request(`${SITE}/api/subscribe`, { method: 'POST', headers: { Origin: OLD, 'Content-Type': 'application/json' }, body: '{}' }), menv);
+assert.equal(res.status, 403);
 
 console.log('The newsletter signup, the feedback form and the statistics behave as expected.');

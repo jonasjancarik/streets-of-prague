@@ -17,3 +17,6 @@ dist-cf/
 
 # The feedback viewer written by scripts/feedback-viewer.mjs.
 .feedback/
+
+# The game as built by scripts/local-two-hosts.sh.
+.local-hosts/

@@ -1,6 +1,7 @@
-// The Worker in front of the site on Cloudflare. The game's files are served as static
-// assets without it (scripts/deploy-cloudflare.sh sends only /api/* here); it takes the
-// two forms in the game, and the game's anonymous statistics (worker/stats.js):
+// The Worker in front of the game on Cloudflare. The game's files are served as static
+// assets without it (scripts/deploy-cloudflare.sh sends only /api/* and the page itself
+// here); it takes the two forms in the game, and the game's anonymous statistics
+// (worker/stats.js):
 //
 //   POST /api/subscribe  { email, lang, token }
 //   POST /api/feedback   { message, email?, context?, scenario?, screenshot?, lang }
@@ -27,6 +28,7 @@
 //   FEEDBACK_TO, FEEDBACK_FROM  who gets the feedback, and the address it comes from
 //   RATE                        rate limiter, per visitor address
 //   TELEMETRY                   the Analytics Engine dataset the statistics go to
+//   GAME_MOVED                  "yes" once the game lives at play.streetsofprague.com (deploy/address)
 //   WEATHER_SOURCE              "chmi" turns /api/weather on (the game's build then needs VITE_WEATHER_API=/api/weather)
 
 import { report, OTHER_ORIGINS } from './stats.js';
@@ -36,6 +38,15 @@ const BREVO = 'https://api.brevo.com/v3/contacts/doubleOptinConfirmation';
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const JPEG = 'data:image/jpeg;base64,';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// The game's address, and the ones it had before. Once GAME_MOVED is set, a page asked
+// for at an old address is sent on to the same path and options at the new one (the
+// browser keeps the #fragment by itself). /api keeps answering at the old address too,
+// for a game left open in a tab since before the move. Browsers remember a 301 for
+// good unless told otherwise, so this one is good for an hour: the move can be undone.
+const GAME = 'https://play.streetsofprague.com';
+const OLD_HOSTS = ['streetsofprague.com', 'streets.jonasjancarik.cz'];
+const moved = (url) => new Response(null, { status: 301, headers: { Location: `${GAME}${url.pathname}${url.search}`, 'Cache-Control': 'public, max-age=3600' } });
 
 const FORMS = { '/api/subscribe': subscribe, '/api/feedback': feedback };
 
@@ -181,11 +192,12 @@ const json = (data, status, headers = {}) => new Response(JSON.stringify(data), 
 
 export default {
   async fetch(request, env, ctx) {
-    const path = new URL(request.url).pathname;
+    const url = new URL(request.url), path = url.pathname;
     if (path === '/api/report') return report(request, env);
     if (path === '/api/weather') return weather(request, env, ctx);
     const handle = FORMS[path];
     if (handle) return form(request, env, handle);
+    if (env.GAME_MOVED === 'yes' && OLD_HOSTS.includes(url.hostname) && !path.startsWith('/api/')) return moved(url);
     return env.ASSETS.fetch(request);
   },
 };

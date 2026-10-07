@@ -16,10 +16,6 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
 `night-renderer` (windows on ground floors, the fog, the start-up report) and `night-maplook`
 (sports lines). Not merged, each with its state written in the plan or doc it names:
 
-- **`night-play-subdomain` (plan 024):** everything prepared, nothing deployed. Confirm
-  the five assumed answers at the top of the plan's Result, then follow
-  `docs/play-subdomain-go-live.md` (on the branch). Merging attaches `play.` at the
-  next release and blocks beta deploys until then.
 - **`night-missions` (plans 004 and 006 phase 4):** the job engine, five odd jobs
   (courier, taxi fare, patient run, tram shift, fire call), the factions' books; save
   format 2. Nine assumed answers to confirm. `job-tram` passes now. Left:
@@ -89,19 +85,19 @@ Before deploying:
 - **The cruise boat stays lower.**
 - **The taxi job is only for someone in a taxi.** The other answers for missions (tone,
   which three factions, and the rest) are still open.
-- **`play.streetsofprague.com`:** the game goes there; the homepage is not put at the
-  root yet, the root sends people on to `play.`. Saved games live in the root's
-  browser storage, so a plain redirect would lose them: the root needs the small
-  handover page of branch `night-play-subdomain` instead of the full homepage.
-  `streets-cf.jonasjancarik.cz` (the Cloudflare address from before the domain, kept
-  only so old links work) can go. To be confirmed and built.
+- **`play.streetsofprague.com`:** the game goes there; the root sends people on to it;
+  the homepage stays offline for now; saved games are not carried over;
+  `streets-cf.jonasjancarik.cz` goes. Prepared in main (7 October), nothing deployed:
+  one Worker answers at both addresses, and `GAME_MOVED` in `deploy/address` (empty
+  now) turns the redirect on. The next release, whatever it is for, adds `play.` as a
+  second address and drops `streets-cf`; nobody is redirected until `GAME_MOVED=yes`
+  is committed and released. The steps, with the two by hand in Cloudflare's dashboard
+  (the Turnstile hostname first), are in `docs/play-subdomain-go-live.md`.
 
 ## Decisions needed
 
 - **Missions and factions (plan 004):** nine answers were assumed on branch
   `night-missions`; confirm or change them (top of the plan's Result on the branch).
-- **The game on play.streetsofprague.com (plan 024):** five answers were assumed on
-  branch `night-play-subdomain`; confirm, then the go-live checklist.
 - **Lamps on untagged streets:** with the new rule (merged, data not rebuilt) a suburb
   such as 50.05348, 14.36206 is nearly dark. Decide whether untagged streets near a
   surveyed lamp should get lamps.

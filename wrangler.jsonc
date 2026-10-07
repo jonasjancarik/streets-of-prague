@@ -5,14 +5,14 @@
   "workers_dev": true,
   "routes": [
     { "pattern": "streetsofprague.com", "custom_domain": true },
-    { "pattern": "streets.jonasjancarik.cz", "custom_domain": true },
-    { "pattern": "streets-cf.jonasjancarik.cz", "custom_domain": true }
+    { "pattern": "play.streetsofprague.com", "custom_domain": true },
+    { "pattern": "streets.jonasjancarik.cz", "custom_domain": true }
   ],
   "main": "worker/index.js",
   "assets": {
     "directory": "./dist-cf",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/"]
   },
   "send_email": [{ "name": "EMAIL" }],
   "r2_buckets": [{ "binding": "FEEDBACK_ARCHIVE", "bucket_name": "streets-of-prague-mail" }],

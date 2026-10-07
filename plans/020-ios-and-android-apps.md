@@ -74,7 +74,7 @@ A separate build keeps the web output untouched:
 
 - `npm run build:app` runs `vite build --mode app --outDir dist-app`, with `.env.app`
   setting `VITE_SUBSCRIBE_URL` and `VITE_FEEDBACK_URL` to the full
-  `https://streetsofprague.com/api/…` addresses.
+  `https://play.streetsofprague.com/api/…` addresses (the game's address, plan 024).
 - `VITE_DATA_URL` is the same versioned R2 address the Cloudflare build uses
   (`scripts/deploy-cloudflare.sh`), so the app streams the map exactly as the website
   does and no map data goes into the app. Each build of the game therefore names the map

@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: How to put Streets of Prague online, on the mbxp beta (beta.streetsofprague.com) and on production at Cloudflare (streetsofprague.com), which script to run in which situation, in what order, and what to check afterwards. Use when the user asks to deploy, ship, publish, release, cut a version, update the beta or production, upload new map data, or roll back a bad deploy or a bad map.
+description: How to put Streets of Prague online, on the mbxp beta (beta.streetsofprague.com) and on production at Cloudflare (play.streetsofprague.com), which script to run in which situation, in what order, and what to check afterwards. Use when the user asks to deploy, ship, publish, release, cut a version, update the beta or production, upload new map data, or roll back a bad deploy or a bad map.
 ---
 
 # Deploying Streets of Prague
@@ -13,13 +13,20 @@ changing a script or when something below doesn't fit the situation.
 | Site | Address | Script | Map it serves |
 |---|---|---|---|
 | Beta | <https://beta.streetsofprague.com> (mbxp) | `scripts/deploy-mbxp.sh` | the local `public/data` |
-| Production | <https://streetsofprague.com> (Cloudflare) | `scripts/release.sh` (which runs `scripts/deploy-cloudflare.sh`) | the R2 version named in `deploy/data-version` |
+| Production | <https://play.streetsofprague.com> (Cloudflare) | `scripts/release.sh` (which runs `scripts/deploy-cloudflare.sh`) | the R2 version named in `deploy/data-version` |
 
-The earlier `streets-beta.jonasjancarik.cz` and `streets-cf.jonasjancarik.cz`
-addresses remain working aliases. `streets.jonasjancarik.cz` permanently redirects
-to `https://streetsofprague.com` through a Cloudflare Redirect Rule on
-`jonasjancarik.cz`, preserving paths and query strings. Use the new domain in links
-and deployment reports.
+Production's Worker answers at `play.streetsofprague.com` and at `streetsofprague.com`,
+where the game used to be. `GAME_MOVED` in `deploy/address` says which is the game:
+with `yes`, pages at `streetsofprague.com` are redirected to `play.` (`/api` and the
+game's files still answer at both, for tabs left open) and the beta posts its forms to
+`play.`; empty, the game is at `streetsofprague.com`. It is empty until the move has
+been made, which changes production in ways the user confirms step by step:
+`docs/play-subdomain-go-live.md` is the checklist. Don't change the switch otherwise.
+
+The earlier `streets-beta.jonasjancarik.cz` address remains a working alias of the beta.
+`streets.jonasjancarik.cz` permanently redirects to the game through a Cloudflare
+Redirect Rule on `jonasjancarik.cz`, preserving paths and query strings. Use
+`play.streetsofprague.com` in links and deployment reports once the game is there.
 
 Deploy only what the user asked for. "Deploy to beta" doesn't include production.
 "Deploy to prod" always means a release, since production takes nothing else: if the
@@ -102,7 +109,7 @@ deployment from `cf` on Cloudflare. Then:
 
 - Open the site and wait for the map to load. A format mismatch or a missing map shows
   as "Something went wrong: …" on the loading screen.
-- `curl https://streetsofprague.com/version.json` should show the new game and map.
+- `curl https://play.streetsofprague.com/version.json` should show the new game and map.
 - Open the settings panel and read the last line: `Version … · date · map data …`. It
   should name the commit or tag just deployed. On production the map is the version in
   `deploy/data-version`; on the beta it is the day the map was built.
@@ -132,7 +139,7 @@ for the beta too. Its settings are in `deploy/newsletter`, `deploy/feedback` and
 two secrets; the player-forms skill has the setup steps and what to do when a form
 doesn't work. After a release that
 changed any of it, check that
-`curl -s -X POST https://streetsofprague.com/api/subscribe -H 'Origin: https://streetsofprague.com' -H 'Content-Type: application/json' -d '{"email":"nobody"}'`
+`curl -s -X POST https://play.streetsofprague.com/api/subscribe -H 'Origin: https://play.streetsofprague.com' -H 'Content-Type: application/json' -d '{"email":"nobody"}'`
 answers `{"error":"email"}` (the Worker is there and set up) and not `unavailable` (the
 secret or the numbers are missing); the same with `/api/feedback` and `'{"message":""}'`
 answers `{"error":"message"}`. A real signup or message sends an email, so do that only
@@ -141,10 +148,10 @@ with the user's own address.
 ## The anonymous statistics
 
 Production's Worker also takes the game's anonymous statistics at `/api/report`
-(`worker/stats.js`; what is sent and how to read it is in `docs/telemetry.md`). The beta
-sends none. After a release that changed `src/telemetry.ts` or `worker/stats.js`, check
+(`worker/stats.js`; what is sent and how to read it is in `docs/telemetry.md`). The beta's
+come here too. After a release that changed `src/telemetry.ts` or `worker/stats.js`, check
 that
-`curl -s -o /dev/null -w '%{http_code}' -X POST https://streetsofprague.com/api/report -H 'Origin: https://streetsofprague.com' -d '{"e":"nope"}'`
+`curl -s -o /dev/null -w '%{http_code}' -X POST https://play.streetsofprague.com/api/report -H 'Origin: https://play.streetsofprague.com' -d '{"e":"nope"}'`
 answers `400` (the Worker is there and has its dataset; `503` means the `TELEMETRY`
 binding is missing, `404` or the game's page that the Worker isn't taking the address).
 That request stores nothing. Then open the site, start a game, and after a few minutes
@@ -152,6 +159,9 @@ That request stores nothing. Then open the site, start a game, and after a few m
 
 `scripts/deploy-cloudflare.sh --dry-run` builds and validates any commit and deploys
 nothing: use it to check a change to the Worker's settings before releasing.
+`scripts/local-two-hosts.sh` runs the Worker locally as both of its addresses, and
+`node scripts/check-two-hosts.mjs` checks what each answers; use them after changing
+which requests the Worker takes or what the old address does.
 
 ## Things that go wrong
 

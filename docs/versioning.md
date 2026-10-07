@@ -138,7 +138,8 @@ the current commit anyway; the settings panel then shows something like
 
 ## The two sites
 
-**Cloudflare** (<https://streetsofprague.com>) is built by
+**Cloudflare** (<https://play.streetsofprague.com>, or <https://streetsofprague.com>
+while `GAME_MOVED` in `deploy/address` is empty; the same Worker answers at both) is built by
 `scripts/deploy-cloudflare.sh` with the address of the map version baked into the code.
 An open tab, a cached page and an earlier deployment each keep loading the map they were
 built for.

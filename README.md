@@ -1183,11 +1183,19 @@ all: the beta then reads the one production serves (`deploy/data-version`, from
 The `urad-ai-poc` tunnel routes the hostname there. `scripts/httpd.conf` gives
 JSON the content type Cloudflare needs for compression.
 
-The main site at <https://streetsofprague.com> serves the app as Worker static
-assets, with a small Worker for the newsletter signup and the feedback form (below).
-<https://streets.jonasjancarik.cz> permanently redirects to the main site through a
+The main site serves the app as Worker static assets, with a small Worker for the
+newsletter signup, the feedback form and the statistics (below). That Worker answers at
+<https://play.streetsofprague.com> and at <https://streetsofprague.com>, and
+`GAME_MOVED` in `deploy/address` says which of the two is the game. With `GAME_MOVED=yes`
+it is `play.`: a page asked for at `streetsofprague.com` is then redirected (301) to the
+same path and options there, while `/api` and the game's files keep answering at both,
+so a game left open in a tab keeps working. Empty, the game is at `streetsofprague.com`
+and `play.` is a second address for it. Only `/api/*` and the page itself (`/`) run the
+Worker; everything else comes straight from the assets. `scripts/local-two-hosts.sh`
+runs the Worker locally as both addresses and `node scripts/check-two-hosts.mjs` checks
+what they answer.
+<https://streets.jonasjancarik.cz> permanently redirects to the game through a
 Cloudflare Redirect Rule on `jonasjancarik.cz`, preserving paths and query strings.
-<https://streets-cf.jonasjancarik.cz> remains an alternate Cloudflare address.
 Its map data comes from the R2 bucket at
 <https://data.streetsofprague.com>, under the immutable prefix named in
 `deploy/data-version`. The bucket also answers at

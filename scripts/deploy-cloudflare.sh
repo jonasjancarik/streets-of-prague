@@ -28,7 +28,7 @@ npm run typecheck
 node scripts/check-worker.mjs
 # The newsletter and feedback (deploy/newsletter, deploy/feedback): the game shows each
 # form once it is set up.
-set -a; source deploy/newsletter; source deploy/feedback; set +a
+set -a; source deploy/newsletter; source deploy/feedback; source deploy/address; set +a
 if [[ -n ${BREVO_LIST_ID:-} && -n ${BREVO_DOI_TEMPLATE_ID:-} ]]; then export VITE_SUBSCRIBE_URL=/api/subscribe; fi
 if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=/api/feedback; fi
 if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY; fi
@@ -56,15 +56,17 @@ cat > "$OUTPUT/config.json" <<'CONFIG'
 CONFIG
 mkdir -p "$OUTPUT/workers/default/bundle"
 cp worker/index.js worker/stats.js "$OUTPUT/workers/default/bundle/"
-# Only /api/* runs the Worker; every other request is answered from the assets directly.
+# Only /api/* and the page itself (/) run the Worker, the page so that the game's old
+# address can send people on to the new one (deploy/address); every other request is
+# answered from the assets directly, at every address, and doesn't count as a Worker request.
 # BREVO_API_KEY and TURNSTILE_SECRET_KEY are secrets set on the Worker once (the
 # player-forms skill), not here. Feedback can only be emailed to the one address named in deploy/feedback.
 node -e '
 const e = process.env, text = (value) => ({ type: "text", value: value ?? "" });
 console.log(JSON.stringify({
   name: "streets-of-prague", compatibilityDate: "2026-10-01", workersDev: true,
-  domains: ["streetsofprague.com", "streets.jonasjancarik.cz", "streets-cf.jonasjancarik.cz"],
-  assets: { runWorkerFirst: ["/api/*"] },
+  domains: ["streetsofprague.com", "play.streetsofprague.com", "streets.jonasjancarik.cz"],
+  assets: { runWorkerFirst: ["/api/*", "/"] },
   manifest: { type: "partial", mainModule: "index.js", modules: {} },
   env: {
     ASSETS: { type: "assets" },
@@ -75,6 +77,7 @@ console.log(JSON.stringify({
     BREVO_LANGUAGE_ATTRIBUTE: text(e.BREVO_LANGUAGE_ATTRIBUTE),
     TURNSTILE_SITE_KEY: text(e.TURNSTILE_SITE_KEY),
     ...(e.TURNSTILE_SITE_KEY ? { TURNSTILE_SECRET_KEY: { type: "secret" } } : {}),
+    GAME_MOVED: text(e.GAME_MOVED),
     FEEDBACK_TO: text(e.FEEDBACK_TO),
     FEEDBACK_FROM: text(e.FEEDBACK_FROM),
     ...(e.FEEDBACK_TO ? { EMAIL: { type: "send-email", destinationAddress: e.FEEDBACK_TO } } : {}),

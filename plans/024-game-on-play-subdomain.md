@@ -5,9 +5,15 @@
 > Cloudflare while writing it. Check `git status` before you start and commit only your
 > own changes.
 
+> Decided differently on 7 October 2026: the root only redirects to `play.`, saved games
+> are not carried over, and the homepage stays offline. The phases below are the
+> original plan and were not built as written; see Result at the end.
+
 ## Status
 
-- State: PLANNED
+- State: PREPARED on the branch `night-play-subdomain`, in the simpler shape decided on
+  7 October 2026 (Result, below). Nothing is deployed; going live is the checklist in
+  `docs/play-subdomain-go-live.md`
 - Priority: P1 (the homepage in `site/` can't go online before this)
 - Effort: about 2 working days, in four phases that can each be released on their own
 - Risk: medium. The code changes are small. The risky part is the moment the root
@@ -216,3 +222,79 @@ never moves. Checking out a tag changes the branch state: ask the user first.
 - **Search engines and shared links** to the root now show the homepage instead of the
   game. That is the point of the move, but the homepage's Play button has to stay the
   first thing on it.
+
+## Result
+
+Prepared on the branch `night-play-subdomain`. Nothing was deployed, and nothing at
+Cloudflare was read or changed. The owner decided the plan's questions on 7 October 2026,
+differently from its defaults, so what was built is simpler than the phases above.
+`docs/play-subdomain-go-live.md` is the checklist for going live.
+
+### As decided
+
+| Question | Decided |
+| --- | --- |
+| Where the game goes | `play.streetsofprague.com` |
+| The root, `streetsofprague.com` | Sends people on to `play.` with an ordinary redirect, keeping path, query string and hash. The homepage in `site/` is not put there for now |
+| Saved games and settings | Not carried over: nobody has anything important saved yet |
+| `streets-cf.jonasjancarik.cz` | Dropped; it was only there for old links |
+| When to switch | The owner's choice, by the checklist |
+
+### What was built
+
+- **One Worker at both addresses.** `play.streetsofprague.com` joins the Worker's
+  addresses and `streets-cf.jonasjancarik.cz` leaves them (`scripts/deploy-cloudflare.sh`,
+  `wrangler.jsonc`).
+- **The redirect is the Worker's own**, not a rule set by hand in the dashboard, so it is
+  in git, checked by `scripts/check-worker.mjs`, tried locally, deployed by the release
+  script and undone the same way. A page asked for at `streetsofprague.com` (or
+  `streets.jonasjancarik.cz`) gets a 301 to the same path and query at `play.`. The
+  answer names no fragment, which is what makes browsers keep the link's own. It may be
+  remembered for an hour, not for good, so that the move can be taken back.
+- **`/api` answers at both addresses.** A game left open in a tab since before the move
+  keeps posting to the address it was loaded from, and that keeps working. So do its
+  files and its check for a newer version: only `/api/*` and `/` run the Worker
+  (`runWorkerFirst`), and everything else is served from the assets at either address.
+  That also keeps Worker requests to one per visit.
+- **A switch, `GAME_MOVED` in `deploy/address`**, empty as committed. Empty, the game is
+  at the root and `play.` is a second address; `yes` turns the redirect on and points the
+  beta's forms and statistics at `play.`. Merging and releasing therefore move nothing:
+  the move is its own one-line commit, made once `play.` is seen to answer. This is what
+  removes the ordering hazard of the first version of this branch, where the beta could
+  not be deployed between the merge and the release.
+- **Checks:** `scripts/check-worker.mjs` (the redirect, `/api` at the old address, one
+  address's page refused at the other's `/api`), now also run by `scripts/release.sh`
+  before the tag exists; `scripts/local-two-hosts.sh` with `scripts/check-two-hosts.mjs`
+  (the Worker under `wrangler dev` as both addresses).
+- **Docs:** the README's Deploying section, `docs/versioning.md`, `docs/telemetry.md`,
+  the deploy and player-forms skills, plan 020's `/api` address. The homepage's copy in
+  `site/index.html` was read as a visitor and four lines were reworded, in English and
+  Czech.
+
+### What was taken out again
+
+The first version of this branch (5 to 6 October, for the plan's defaults) carried saved
+games over and gave the homepage its own Worker. With the decisions above that went:
+`src/handover.ts` and its import, the handover script in `site/index.html`,
+`scripts/check-handover.mjs`, `scripts/deploy-site.sh`, `site/_headers`,
+`site/_redirects`, the two domain lists with `scripts/check-domains.mjs`, and the
+two-site local trial. The homepage's deploy script was removed too, not kept for later:
+it was never dry-run against Cloudflare, and it has no address to deploy to until the
+homepage's place is decided. All of it is in the branch's history (the commits before
+"Plan 024 as decided").
+
+### Verified, and not
+
+Verified locally: `scripts/check-worker.mjs`; the Worker under `wrangler dev` as both
+addresses, with the switch on (301 with the query kept, files and `/api` at both, the
+game at `play.`) and off (the game at both); the deploy script's Worker configuration
+against the schema in the installed `cf`'s own packages, offline.
+
+Not verified, because it needs Cloudflare: `cf deploy --prebuilt --dry-run` with the new
+address and the second `runWorkerFirst` pattern; that a new custom domain gets its DNS
+record and certificate by itself; whether leaving `streets-cf.jonasjancarik.cz` out of
+the list detaches it (the checklist says where to look); the Turnstile widget's
+hostnames; the Redirect Rule on `jonasjancarik.cz`. That a browser keeps the `#fragment`
+across the redirect is standard behaviour (RFC 9110, section 10.2.2) and is one of the
+checks after the move; it could not be tried locally, because the redirect names the
+real `https://play.streetsofprague.com`.

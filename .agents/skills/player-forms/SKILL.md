@@ -54,7 +54,10 @@ Nothing shows unless the build was given the form's address:
 Local development has none of them, so `npm run dev` shows no forms. That is on
 purpose: a half-set-up form must never reach players.
 
-The beta (mbxp) has no Worker. Its forms post to `https://streetsofprague.com/api/…`,
+The Worker answers `/api` at both of its addresses, `play.streetsofprague.com` and
+`streetsofprague.com`, each for its own pages: the second is the game's old address,
+where a game left open in a tab still posts. The beta (mbxp) has no Worker. Its forms
+post to `/api/…` at the game's address (`deploy/address`: `play.` once `GAME_MOVED=yes`),
 and the Worker lets the beta's addresses in (`OTHER_ORIGINS`). A new address the game
 is served from has to be added there and to the Turnstile widget's hostnames.
 
@@ -226,8 +229,8 @@ domain.
 
 These two requests send no email and tell "set up" from "something is missing":
 
-    curl -s -X POST https://streetsofprague.com/api/subscribe -H 'Origin: https://streetsofprague.com' -H 'Content-Type: application/json' -d '{"email":"nobody"}'
-    curl -s -X POST https://streetsofprague.com/api/feedback -H 'Origin: https://streetsofprague.com' -H 'Content-Type: application/json' -d '{"message":""}'
+    curl -s -X POST https://play.streetsofprague.com/api/subscribe -H 'Origin: https://play.streetsofprague.com' -H 'Content-Type: application/json' -d '{"email":"nobody"}'
+    curl -s -X POST https://play.streetsofprague.com/api/feedback -H 'Origin: https://play.streetsofprague.com' -H 'Content-Type: application/json' -d '{"message":""}'
 
 | Answer | Meaning |
 |---|---|
@@ -252,7 +255,7 @@ Work down from the game to the service:
    (the Worker then refuses everything rather than pass signups unchecked). For
    feedback: `FEEDBACK_TO` or the `EMAIL` binding is missing.
 3. **`check` (403).** Turnstile refused the token: the page's hostname isn't on the
-   widget, the secret belongs to another widget, or the visitor's blocker stopped the
+   widget (it needs `play.streetsofprague.com`, `streetsofprague.com` and the beta's two), the secret belongs to another widget, or the visitor's blocker stopped the
    script. The form says so in words; the player can try again, and the widget is reset
    after every failed try because a token is good once.
 4. **`failed` (502).** The service refused. The Worker logs why

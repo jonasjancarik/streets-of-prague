@@ -46,13 +46,15 @@ echo "Map data: $ID"
 # The beta has no Worker of its own: its signup and feedback forms post to production's
 # (worker/index.js lets the beta's address in). Neither form shows until it is set up
 # (deploy/newsletter, deploy/feedback).
-source deploy/newsletter; source deploy/feedback
-if [[ -n ${BREVO_LIST_ID:-} && -n ${BREVO_DOI_TEMPLATE_ID:-} ]]; then export VITE_SUBSCRIBE_URL=https://streetsofprague.com/api/subscribe; fi
-if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=https://streetsofprague.com/api/feedback; fi
+source deploy/newsletter; source deploy/feedback; source deploy/address
+# Production's Worker answers /api at both of its addresses; the beta uses the game's own.
+API=https://${GAME_MOVED:+play.}streetsofprague.com/api
+if [[ -n ${BREVO_LIST_ID:-} && -n ${BREVO_DOI_TEMPLATE_ID:-} ]]; then export VITE_SUBSCRIBE_URL=$API/subscribe; fi
+if [[ -n ${FEEDBACK_TO:-} ]]; then export VITE_FEEDBACK_URL=$API/feedback; fi
 if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY; fi
 # Statistics go to production's Worker too; the domain they carry tells the beta apart.
 if [[ -n $CF_MAP ]]; then export VITE_DATA_URL=https://data.streetsofprague.com/$CF_MAP/ VITE_DATA_VERSION=$CF_MAP; else export VITE_DATA_URL=data/$ID/; fi
-VITE_TELEMETRY_URL=https://streetsofprague.com/api/report node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
+VITE_TELEMETRY_URL=$API/report node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
 # busybox httpd can't send no-store, so the game asks for it with cache: 'no-store'.
 node scripts/write-version-json.mjs dist "${CF_MAP:-$ID}" --fixed
 
