@@ -37,13 +37,18 @@ machine. Merged into main: `night-release-checks`, `night-traffic`, `night-landm
   (`src/sky.ts`, the night fog) and `night-walls` (`scenarios/step-edges.ts`,
   `src/testkit.ts`).
 
-The shared maps (`ujezd`, `centrum`, `praha`) were rebuilt from main (`cc721ab`) on
-6 October at 15:02 with all of the above, strict assembly included, and pass
-`check-map-rebuild.mjs` against the map kept in
-`pipeline/.cache/previous-map-2026-10-06` (tile JSON is 16 % bigger for `praha`). The
-re-baked landmark files are in too. Not rebuilt: the lamp files (`build_lamps.py
-ujezd centrum praha`), waiting for a look at dark suburbs. Merging `night-pavements`
-or `night-beige` needs another rebuild (ground, cover, buildings, terrain).
+The shared maps (`ujezd`, `centrum`, `praha`) were rebuilt from main on 7 October with
+everything merged up to then, strict assembly included (`67dafe5`; the map before is
+in `pipeline/.cache/previous-map-2026-10-07`). On it: 10 steps in the water along the
+fairway (376 before), no deck too low for boats, 231 lone ground points over 2 m
+(1,124), and `check-map-rebuild.mjs` passes. Two faults only the full praha build
+showed were fixed on the way (a crash in the surveyed pavements, an invalid shape in
+the verges), and one the comparison with the kept map showed: verges past the survey
+had taken the unmapped land away from the photo classification, woods and single
+trees with it. Not rebuilt: the lamp files (`build_lamps.py ujezd centrum praha`),
+waiting for a look at dark suburbs. Four full scenario runs on the new map: two clean,
+`wall-crash` once, `fire-brigade` once (the engine stopped 58 m from the burning car
+at Újezd: look whether a surveyed wall, fence or pavement is in its way now).
 
 ## Release
 
