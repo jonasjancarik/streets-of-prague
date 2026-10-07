@@ -409,7 +409,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   poles, on walls, the Old Town's gas lamps, floodlit monuments, tunnels and
   underpasses (`pipeline/build_lamps.py`), with the lamps of IPR's second layer (the
   documentation of finished works, which fills whole neighbourhoods the survey misses)
-  and those only OSM has. Where there are still none, the game adds its own on lit
+  and those only OSM has. A lamp the layers put on a post in a roadway hangs over
+  the street on cables instead, or stands on the kerb beside it. Where there are still none, the game adds its own on lit
   streets and paths: hung on cables between houses that stand close, on poles
   elsewhere, small globes along footpaths. Lit means tagged lit in OSM, or untagged
   with a lamp near, with buildings along it, or on the way (300 m at most) from such a

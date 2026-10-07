@@ -29,7 +29,7 @@ class OffTheRoadTest(unittest.TestCase):
         self.assertAlmostEqual(xy[0][1], -4.5, places=3)
 
     def test_post_between_two_roadways_is_hung_rather_than_moved_into_the_other(self):
-        roads = [box(0, -4, 300, 4), box(0, 4.2, 300, 12)]
+        roads = [box(0, -4, 300, 4), box(0, 4.05, 300, 12)]
         xy, kinds, _ = off_the_road([(200, 3.4)], [0], roads, [])
         self.assertEqual(kinds, [HUNG])
         self.assertEqual(posts_in_road(xy, kinds, roads), [])
