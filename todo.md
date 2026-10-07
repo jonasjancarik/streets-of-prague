@@ -172,21 +172,18 @@ before that day's frame-count fix may be doubled.
   `step-edges`; stairs across a step untried);
   frame times and the WebGL renderer; a full-city check of the ground cutting. How to
   work on it: `.agents/skills/terrain-steps/SKILL.md`.
-- **Bridges still off:** at Železniční most (Výtoň) the deck's last points take the
-  stairs' heights (1.6–2.5 m); stairs need their own profile in the tile, and giving
-  them a separate level was tried and made it worse (`docs/bridge-deck-check.md`).
-  Libeňský most's south part (path way 376889215) lies at the water's level, about
-  3.5 m under its ends. Nuselský most's Pankrác end has ragged corners by the
-  abutment. The Lahovice and Radotín decks are continuous, with a 9.6 m fault at
-  49.98353, 14.40065. Four decks are too low for a cruise boat (tiles `49_37`,
-  `52_43`, `54_48`, `64_76`). `check-bridge-decks.mjs praha` lists them all (nine
-  named bridges over 1 m).
+- **Bridges still off:** joins of 3.7–5.3 m at stairs and short footways down to the
+  quays (most Závodu míru, Mánesův, Čechův, Štefánikův, Hlávkův most sever); Libeňský
+  most (jih) sits on the bank's slope at its ends, 3.5 m under the streets; Branický
+  most's footway, Dvorecký most and the cycleway under Barrandovský most are at boat
+  clearance (5.5 m over the water), not their real heights; Nuselský most's corners at
+  Pankrác were not looked at. `check-bridge-decks.mjs praha` lists them
+  (`docs/bridge-deck-check.md`). A game older than 7 October draws bridge stairs at
+  ground height on the new tiles: release the game with or before the map.
 - **Car streets crossing drops of 7–10 m on the ground** (`node
   scripts/check-step-edges.mjs praha`): terrain or map faults to look at.
-- **Spikes in the ground:** `check-terrain-spikes.mjs` finds 1,124 lone points more
-  than 2 m off their neighbours; 402 are terrace strips carrying wall-top heights
-  (Vyšehrad's bastions), cause not yet found in `dtm_heights.apply`. Ragged cuts are
-  not scanned.
+- **Spikes in the ground:** 233 lone points more than 2 m off their neighbours remain
+  (24 over 5 m), see `check-terrain-spikes.mjs`; ragged cuts are not scanned.
 - **The river's height is wrong north of Troja** (tiles `49_81`, `50_94`, `50_95`).
 - **Paint and tram tracks where two bridges cross:** the pipeline now hands each
   way's level to the game; it shows after `ipr_terrain.py` has rebuilt the shared
@@ -240,10 +237,13 @@ before that day's frame-count fix may be doubled.
   mansard bays seen only in the offline check; building age for OSM-only buildings.
   A game older than 6 October reading the new map repaints measured walls from the
   palette: release the game with or before the map.
-- **Countryside (plan 021):** step 2 (the join) is in main; a scenario that drives out
-  and back on an arterial road, the pipeline writing the list of streets that leave
-  the map (the worker reads about fifty rim tiles now), the one built street that
-  leaves on a bridge or tunnel, steps 3–6, a phone measurement.
+- **Countryside (plan 021):** steps 1–4 are in main behind `?countryside` (the join,
+  behaviour past the edge, hills). Left: step 5, bridges and tunnels (two built
+  streets leave the map on one and step at the edge; water tilts with the hills);
+  credits for Protomaps and the elevation data in the game; whether to host a copy of
+  the elevation tiles (the game fetches them from AWS at run time now); a save made
+  past the map resumed in a real browser; a phone measurement (worker time for a
+  tile and its heights, bytes on a drive out).
 
 ## Gameplay
 
@@ -280,8 +280,7 @@ before that day's frame-count fix may be doubled.
   in `docs/traffic.md`; nothing fixed, not yet run on `praha`.
 - **Boats:** cruise boats follow the fairway through the locks (`river.json`); they
   still turn at Modřany and Klecany (no usable lock in the map's water), and two
-  meeting inside a lock cut pass through each other. Four decks are too low for them
-  (`KNOWN_LOW` in `check-river.mjs`).
+  meeting inside a lock cut pass through each other.
 - **Ferries:** P1, P2, P4, P5 and P6 run with tickets; no inspector comes aboard; P3
   and P7 when PID's feed has them; not tried on touch or WebGL.
 - **Taxis:** routes are sometimes long, and the apps have no phone screen (the stall
@@ -352,6 +351,8 @@ All IPR Praha, CC BY, at
   fifteen hold nothing unique and can be removed; keep `2bc4` (plan 012 Part B, same
   as `811c`), `ae03` (a dry-ground pilot) and `fd60` (a furniture timing script) until
   decided. All are detached: branch what is kept.
+- **Worktrees share `node_modules/.vite`** (the symlinked `node_modules`): one session's
+  `vite --force` can break another's dev server until it is restarted.
 - **Night worktrees** (`.claude/worktrees/night-*`, plus `night-renderer-snap`): keep
   those whose branch is unmerged; the merged ones can go (move their `node_modules`
   and `public/data` symlinks to the Trash first).
