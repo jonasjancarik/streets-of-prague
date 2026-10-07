@@ -72,9 +72,10 @@ export function measure(b, built) {
   }
   let ridge = 0;
   for (const e of edges.values()) {
-    const [a, c] = e.normals;
-    // An edge inside one slope has the same normal on both sides; a ridge, hip or valley hasn't.
-    if (!c || a[0] * c[0] + a[1] * c[1] + a[2] * c[2] < 0.9999) ridge += e.len;
+    // An edge inside one slope has the same normal on both sides; a ridge, hip or valley
+    // hasn't. (An edge with one side only lies beside a triangle without area.)
+    const [a] = e.normals;
+    if (e.normals.some((c) => a[0] * c[0] + a[1] * c[1] + a[2] * c[2] < 0.9999)) ridge += e.len;
   }
   const foot = Math.abs(b.rings.reduce((s, r, i) => s + (i ? -1 : 1) * Math.abs(signedArea(r)), 0));
   const r = (v, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
