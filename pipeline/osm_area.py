@@ -87,6 +87,17 @@ SETTLED_REACH = 30.0  # m: how far from a family house unmapped land counts as i
 STREET_NEAR = 12.0  # m: the streets and pavements this near a block are the ones its plots face
 
 
+_footfalls = {}
+
+
+def _footfall(area):
+    """The area's footfall map (worn_paths.Footfall), read once per worker; None if it has
+    not been made (build_footfall.py)."""
+    if area not in _footfalls:
+        _footfalls[area] = worn_paths.Footfall.load(OUT / f"{area}_now")
+    return _footfalls[area]
+
+
 def _pavement_sides(tag):
     """(left, right): whether OSM says the street has a pavement on that side (sidewalk=*)."""
     both = tag("sidewalk") or tag("sidewalk:both")
@@ -105,7 +116,7 @@ def road_width(hw, width=None, lanes=None):
 # What extract() asks OSM for.
 FEATURE_TAGS = {
     "building": True, "building:part": True, "highway": True, "landuse": True, "leisure": True,
-    "natural": True, "waterway": True, "railway": True, "amenity": True,
+    "natural": True, "waterway": True, "railway": True, "amenity": True, "entrance": True,
     "barrier": ["wall", "city_wall", "fence", "hedge", "guard_rail"], "man_made": ["bridge", "pier"],
     "place": ["islet", "island", "square"], "historic": ["city_gate", "castle_wall"],
     "bridge": True, "area:highway": True,
@@ -237,6 +248,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     squares = []  # (polygon, own surface, named outline only); decide after all ways and land
     square_ways = []  # (line, mapped surface) on the ground, including untagged ways
     stops = []  # (x, y) of public transport stops, which people cross the grass to reach (worn_paths.py)
+    entrances = []  # (x, y) of the doors OSM maps on buildings, where those paths start
     ground_ways = set()  # the OSM ids of the passages among the ways tagged as tunnels
 
     # Every geometry into local metres in one go.
@@ -279,6 +291,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             continue
 
         if buildings_only:
+            continue
+        if isinstance(g, Point) and col(row, "entrance") in worn_paths.DOORS:
+            entrances.append((g.x, g.y))
             continue
         if isinstance(g, Point) and (col(row, "highway") == "bus_stop" or col(row, "railway") in ("tram_stop", "halt", "station", "subway_entrance")):
             stops.append((g.x, g.y))
@@ -569,13 +584,14 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                      road_polys.get("road", Polygon()), road_polys.get("bridge", Polygon()),
                      *(LineString(f["pts"]).buffer(0.3) for f in [*fences, *walls])]
         worn = worn_paths.worn_paths(grass, flats, blocks, stops,
-                                     [ls for ls, _, _ in sidewalks], [w[0] for w in car_ways], obstacles)
+                                     [ls for ls, _, _ in sidewalks], [w[0] for w in car_ways], obstacles,
+                                     entrances, _footfall(area))
         core, rim = worn_paths.ribbons(worn)
         if core is not None:
             area_polys["worn"] = _areas(core.intersection(clip))
             area_polys["worn_edge"] = _areas(rim.intersection(clip))
         if stats is not None:
-            stats["worn_paths"] = len(worn)
+            stats.update(worn_paths=len(worn), entrances=len(entrances))
     timer.lap("worn_paths")
     return {
         "area": area, "bbox": (w, s, e, n), "box": (x0, y0, x1, y1), "clip": clip,
