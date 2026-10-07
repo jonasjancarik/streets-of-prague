@@ -724,8 +724,18 @@ WINDOW_DARK = 18.0  # or this much below it: dark glass
 WINDOW_BLUE = 10.0  # or b* this much below it (a blue sky) and a little darker
 WINDOW_W = (0.55, 1.7)  # m across the slope
 WINDOW_H = (0.7, 1.9)  # m down the slope
-WINDOW_FILL = 0.5  # the share of its rectangle the patch fills
+WINDOW_FILL = 0.55  # the share of its rectangle the patch fills
+WINDOW_PLANE = 1.2  # m; the mesh there is no further than this from IPR's roof plane
+WINDOW_NEAR = 1.5  # m round a patch, and
+WINDOW_SUNWARD = 2.5  # m towards the sun from it, where nothing may stand up
+WINDOW_SHADOW = 0.55  # m above the patch, for a dark one: it would be that thing's shadow
+WINDOW_BESIDE = 0.9  # and for a bright one: a chimney's top or side
+WINDOW_COLOURED = 15.0  # roofs with more chroma than this (clay tiles): a dark window in one
+WINDOW_GREYER = 0.62  # has no more than this share of the roof's chroma
 CHIMNEY_SIZE = 0.75  # m; a dark patch no bigger than this either way is a chimney and its shadow
+
+
+FEATURES = None  # a list, to collect what's known of each window found (for tuning)
 
 
 def detect_windows(meta, ij, blds, debug: bool = False):
@@ -763,7 +773,8 @@ def detect_windows(meta, ij, blds, debug: bool = False):
     r0 = np.clip(((y0 + T - mt[:, :, 1].max(1)) // 1).astype(int), 0, m - 1)
     r1 = np.clip(((y0 + T - mt[:, :, 1].min(1)) // 1).astype(int), 0, m - 1)
     near = (sat[r1 + 1, c1 + 1] - sat[r0, c1 + 1] - sat[r1 + 1, c0] + sat[r0, c0]) > 0
-    which, weights, _ = rasterize(mt[near], x0, y0, T, WINDOW_RES)
+    which, weights, mz = rasterize(mt[near], x0, y0, T, WINDOW_RES)
+    above = (mz - rz).reshape(w, w)  # the mesh over IPR's roof plane, m
     if near.any():
         which = np.where(which >= 0, np.nonzero(near)[0][np.maximum(which, 0)], -1)
     fid = np.where(rw >= 0, owner[np.maximum(rw, 0)] if len(owner) else -1, -1).reshape(w, w)
@@ -796,6 +807,9 @@ def detect_windows(meta, ij, blds, debug: bool = False):
     bright[idx] = (d[:, 0] > WINDOW_BRIGHT) & (np.hypot(labs[idx, 1], labs[idx, 2]) < WINDOW_BRIGHT_CHROMA)
     dark[idx] = (d[:, 0] < -WINDOW_DARK) | ((d[:, 2] < -WINDOW_BLUE) & (d[:, 0] < -5))
 
+    sv = sun_vector()
+    sun_col, sun_row = sv[0] / np.hypot(sv[0], sv[1]), sv[1] / np.hypot(sv[0], sv[1])
+
     def window(pix, is_dark):
         f = int(np.bincount(fid[pix] - fid[pix].min()).argmax() + fid[pix].min())
         n = normals.get(f)
@@ -812,6 +826,31 @@ def detect_windows(meta, ij, blds, debug: bool = False):
         if not (WINDOW_W[0] <= width <= WINDOW_W[1] and WINDOW_H[0] <= height <= WINDOW_H[1] and fill >= WINDOW_FILL):
             return None
         if is_dark and max(width, height) <= CHIMNEY_SIZE:
+            return None
+        # What tells a window from the rest (measured on 42 roofs, docs/evidence/roof-windows):
+        # it lies in the roof's plane, nothing stands just beside it or between it and the
+        # sun (those are chimneys, their sides and their shadows), and a dark one on a
+        # coloured roof is greyer than the roof (a shadow keeps the tiles' colour).
+        r0, r1, c0, c1 = rr.min(), rr.max(), cc.min(), cc.max()
+        k = int(WINDOW_NEAR / WINDOW_RES)
+        ring = above[max(r0 - k, 0):r1 + k + 1, max(c0 - k, 0):c1 + k + 1]
+        steps = np.arange(0.3, WINDOW_SUNWARD, WINDOW_RES) / WINDOW_RES
+        sr = np.clip((rr[:, None] - sun_row * steps).astype(int), 0, w - 1)
+        sc = np.clip((cc[:, None] + sun_col * steps).astype(int), 0, w - 1)
+        with np.errstate(all="ignore"):
+            dz = float(np.nanmedian(above[rr, cc]))
+            beside = float(np.nanpercentile(ring, 95)) - dz if np.isfinite(ring).any() else 0.0
+            sunward = float(np.nanmax(above[sr, sc])) - dz if np.isfinite(above[sr, sc]).any() else 0.0
+        chroma = float(np.hypot(*np.nanmedian(labs[pix, 1:], axis=0)))
+        own = float(np.hypot(*np.median(ref[np.searchsorted(idx, pix), 1:], axis=0)))
+        if FEATURES is not None:
+            FEATURES.append({"face": f, "dark": is_dark, "w": float(width), "h": float(height), "fill": float(fill), "dz": dz,
+                             "beside": beside, "sunward": sunward, "chroma": chroma, "own": own})
+        if abs(dz) > WINDOW_PLANE:
+            return None
+        if is_dark and (sunward > WINDOW_SHADOW or (own > WINDOW_COLOURED and chroma > WINDOW_GREYER * own)):
+            return None
+        if not is_dark and max(sunward, beside) > WINDOW_BESIDE:
             return None
         centre = e * (a.min() + a.max()) / 2 + d * (dn.min() + dn.max()) / 2
         centre += n * float((p.mean(0) - centre) @ n)  # back onto the roof plane
