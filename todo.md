@@ -78,6 +78,24 @@ Before deploying:
   WebAssembly, and CGAL's straight-skeleton package is GPL; the game ships it to
   browsers. Options in `docs/licences-review.md`.
 
+## Decided on 7 October
+
+- **Touch devices keep starting at Medium** (the Pixel 5 steps down by itself).
+- **The WebGL renderer stays** as what the game falls back to when WebGPU doesn't
+  start; it only has to work, not to match the look.
+- **`straight-skeleton` is to be replaced** (its bundle carries GPL code): the pure
+  TypeScript version 1 of the package if its licence allows, or hipped roofs worked out
+  in the pipeline. Compare roofs before and after. Not started.
+- **The cruise boat stays lower.**
+- **The taxi job is only for someone in a taxi.** The other answers for missions (tone,
+  which three factions, and the rest) are still open.
+- **`play.streetsofprague.com`:** the game goes there; the homepage is not put at the
+  root yet, the root sends people on to `play.`. Saved games live in the root's
+  browser storage, so a plain redirect would lose them: the root needs the small
+  handover page of branch `night-play-subdomain` instead of the full homepage.
+  `streets-cf.jonasjancarik.cz` (the Cloudflare address from before the domain, kept
+  only so old links work) can go. To be confirmed and built.
+
 ## Decisions needed
 
 - **Missions and factions (plan 004):** nine answers were assumed on branch
