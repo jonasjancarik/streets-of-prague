@@ -43,8 +43,7 @@ the verges), and one the comparison with the kept map showed: verges past the su
 had taken the unmapped land away from the photo classification, woods and single
 trees with it. Not rebuilt: the lamp files (`build_lamps.py ujezd centrum praha`),
 waiting for a look at dark suburbs. Four full scenario runs on the new map: two clean,
-`wall-crash` once, `fire-brigade` once (the engine stopped 58 m from the burning car
-at Újezd: look whether a surveyed wall, fence or pavement is in its way now).
+`wall-crash` once, `fire-brigade` once (old behaviour of the engines, see "Gameplay").
 
 ## Release
 
@@ -276,8 +275,15 @@ before that day's frame-count fix may be doubled.
     get nearer for 12 s sees to the patient from up to 30 m away.
 - **Tyre sounds are off on main** (`TYRE` in `src/audio.ts`); recordings, new engine
   voices, the heavy diesel and measured jet and siren levels wait on `night-audio`.
-- **Fire engines:** about 40 s to clear a narrow street after a fire; cars give little
-  room in the Old Town.
+- **Fire engines** don't slow for a tram, bus or car in their way: they hit it at up to
+  65 km/h and need 6–18 s of backing to and fro; held up for 8 s out of view an engine
+  is replaced by another from 150 m or more away (20–30 s lost), and held up for 6 s
+  within 70 m its crew gets out there, beyond the cannon's 16 m (`dist < ON_FOOT` in
+  `Brigade.drive`). That is why `fire-brigade` fails about once in 50 calls from a
+  fresh load, on the map of 6 October as on today's. Braking for what is ahead was
+  tried three ways and made it worse (they queue behind trams that stand): engines
+  need to pass a stopped tram or vehicle on the free side. Also: about 40 s to clear a
+  narrow street after a fire; cars give little room in the Old Town.
 - **Buses** now find a way round where a line has no street (centrum: 40 breaks to 3).
   Left: an AE bus still stalls near Na Poříčí; 581 line breaks over 30 m citywide not
   gone through (`check-bus-lines.mjs praha`); buses cut across sharp bends in a street.
@@ -305,6 +311,10 @@ before that day's frame-count fix may be doubled.
 - **Seasons (plan 023):** the ground's cost is unresolved (the `--ab` command is in the
   plan). Later, if wanted: fallen leaves, hoarfrost, the city's
   calendar, seasons for baked landmarks.
+- **Lamp posts in the roadway (on the beta since 7 October):** lamps taken from IPR's
+  finished-works layer as "on a pole" stand in the lane of streets whose lamps really
+  hang on cables (Petřínská, Mělnická, Šeříková: about 20 within 300 m of Újezd). Being
+  fixed in `build_lamps.py`.
 - **Lamps:** an untagged street or footpath is lit where a lamp stands within 45 m or
   buildings stand along it, and the lights carry on to the next lit street up to
   300 m (the owner's middle way, 7 October); 32,267 lamps from IPR's finished-works
