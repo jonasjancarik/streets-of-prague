@@ -9,9 +9,10 @@ export default {
     t.time('14:00');
     t.weather('clear');
     await t.drive('hatch');
-    const post = t.post(80);
-    if (!t.check('a post nearby', !!post)) return;
-    t.aimAt(post!, 18);
+    // (One with a clear run up to it and on past it: the nearest may stand between parked
+    // cars, or before a wall the car would be stopped by a moment later.)
+    const post = t.post(80, 18, 14);
+    if (!t.check('a post nearby with a clear run up to it', !!post)) return;
     t.view(0.5);
     t.push(50);
     await t.wait(2);

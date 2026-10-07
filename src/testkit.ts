@@ -589,19 +589,20 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
 
     // The nearest standing post (lamp, pole) within r m, and how to reach it.
-    post(r = 60): Post | null {
+    // `runUp`: the nearest one your car has a clear run of that many metres up to (see
+    // aimAt, which this leaves the car set for, `beyond` too): a lamp between parked cars has none.
+    post(r = 60, runUp = 0, beyond = 0): Post | null {
       const m = g.me();
-      let best: Post | null = null, bestD = Infinity;
-      for (const p of posts.near(m.x, m.y, r)) {
-        const d = Math.hypot(p.x - m.x, p.y - m.y);
-        if (d < bestD) { bestD = d; best = p; }
-      }
-      return best;
+      const near = posts.near(m.x, m.y, r).filter((p) => !p.down).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y));
+      if (!runUp) return near[0] ?? null;
+      for (const p of near) { try { return kit.aimAt(p, runUp, beyond); } catch { /* the next one */ } }
+      return null;
     },
 
     // Put your car `back` m from a post on a clear run up to it, facing it. Tries the
-    // directions round it until one is clear. Returns the post.
-    aimAt(p: Post, back = 15) {
+    // directions round it until one is clear (and clear for `beyond` m past the post, for
+    // a car that is to knock it over and drive on). Returns the post.
+    aimAt(p: Post, back = 15, beyond = 0) {
       const c = g.car();
       if (!c) throw new Error('Not in a car');
       const clear = (x: number, y: number) => g.grid.at(x, y) === 0;
@@ -612,7 +613,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         const h = (a * Math.PI) / 12, sx = p.x - Math.cos(h) * back, sy = p.y - Math.sin(h) * back;
         let ok = true;
         const others = g.carsNear(p.x, p.y, back + 10).filter((o) => o !== c);
-        for (let s = 0; s <= back - p.r - c.spec.L / 2 && ok; s += 0.5) {
+        for (let s = 0; s <= (beyond ? back + beyond : back - p.r - c.spec.L / 2) && ok; s += 0.5) {
           const x = sx + Math.cos(h) * s, y = sy + Math.sin(h) * s;
           for (const off of [-c.spec.W / 2, 0, c.spec.W / 2]) ok &&= clear(x - Math.sin(h) * off, y + Math.cos(h) * off);
           ok &&= others.every((o) => o.gap(x, y) > c.spec.L / 2 + 0.5);
