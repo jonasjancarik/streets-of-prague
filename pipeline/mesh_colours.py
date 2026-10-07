@@ -979,6 +979,8 @@ def main():
     ap.add_argument("--every", type=int, default=1, help="with --calibrate: only every n-th tile")
     ap.add_argument("--resume", action="store_true", help="go on from where a run stopped (it saves every 100 tiles)")
     ap.add_argument("--no-windows", action="store_true", help="don't look for roof windows (saves the level-14 mesh)")
+    ap.add_argument("--windows-only", action="store_true",
+                    help="keep the table's colours and only look for the roof windows again (after detect_windows changed)")
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="tiles measured side by side")
     a = ap.parse_args()
     meta = layers.read_meta(a.area)
@@ -986,6 +988,8 @@ def main():
         raise SystemExit(f"{a.area}: run build_tiles.py {a.area} first")
     wanted = {tuple(map(int, t.split("_"))) for t in a.tiles} if a.tiles else {(i, j) for i, j, _ in layers.tiles(a.area, meta)}
     by_tile = tile_buildings(a.area, meta, wanted)
+    if a.windows_only:
+        return windows_only(a, meta, by_tile)
     trees = area_trees(meta)
     tiles = sorted(by_tile)[::a.every] if a.calibrate else sorted(by_tile)
     started = time.perf_counter()
@@ -1037,6 +1041,57 @@ def main():
         colours = {**json.loads(gzip.decompress(path.read_bytes())), **colours}
     save()
     print(f"{path}: {len(colours)} buildings")
+
+
+def windows_job(job):
+    meta, ij, blds = job
+    started = time.perf_counter()
+    found = detect_windows(meta, ij, blds)
+    return ij, {blds[b][0]: w for b, w in found.items() if blds[b][0]}, [bl[0] for bl in blds if bl[0]], time.perf_counter() - started
+
+
+def windows_only(a, meta, by_tile):
+    """Looks for the roof windows again and puts them in the area's table in place of the
+    ones there, leaving the colours as they are. Saved every 100 tiles; --resume goes on."""
+    path = OUT_DIR / f"{a.area}.json.gz"
+    done_path = OUT_DIR / f"{a.area}.windows.json"
+    if not path.exists():
+        raise SystemExit(f"{path}: no table yet; run without --windows-only first")
+    colours = json.loads(gzip.decompress(path.read_bytes()))
+    done = json.loads(done_path.read_text()) if a.resume and done_path.exists() else []
+    tiles = [ij for ij in sorted(by_tile) if f"{ij[0]}_{ij[1]}" not in set(done)]
+    before = sum(len(c.get("windows", [])) for c in colours.values())
+
+    def save():
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(gzip.compress(json.dumps(colours, separators=(",", ":")).encode()))
+        tmp.replace(path)
+        done_path.write_text(json.dumps(done))
+
+    started = time.perf_counter()
+    work = [(meta, ij, by_tile[ij]) for ij in tiles]
+    pool = ProcessPoolExecutor(a.jobs) if a.jobs > 1 and len(work) > 1 else None
+    was = now = 0
+    for ij, found, ids, took in (pool.map(windows_job, work) if pool else map(windows_job, work)):
+        for bid in ids:
+            rec = colours.get(bid)
+            if rec is None and bid not in found:
+                continue
+            rec = colours.setdefault(bid, {})
+            was += len(rec.pop("windows", []))
+            if bid in found:
+                rec["windows"] = found[bid]
+                now += len(found[bid])
+        print(f"{ij[0]}_{ij[1]}: {sum(len(w) for w in found.values())} roof windows ({took:.0f} s)", flush=True)
+        done.append(f"{ij[0]}_{ij[1]}")
+        if len(done) % 100 == 0:
+            save()
+    if pool:
+        pool.shutdown()
+    save()
+    total = sum(len(c.get("windows", [])) for c in colours.values())
+    print(f"{len(tiles)} tiles in {time.perf_counter() - started:.0f} s: {was} roof windows there before, {now} now; "
+          f"the table had {before} and has {total}")
 
 
 def entry(r, windows=None) -> dict:
