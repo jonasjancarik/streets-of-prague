@@ -38,6 +38,16 @@ def _areal(g):
     return g if g.geom_type in ("Polygon", "MultiPolygon") else unary_union(_polygons(g))
 
 
+def _union(shapes):
+    """The union of many polygonal shapes; made valid and on a fixed grid only if the exact
+    one trips (mapped shapes in a whole city include a few that cross themselves)."""
+    shapes = list(shapes)
+    try:
+        return _areal(shapely.union_all(shapes))
+    except shapely.errors.GEOSException:
+        return _areal(shapely.union_all([shapely.make_valid(g) for g in shapes], grid_size=0.01))
+
+
 def _overlay(op, a, b):
     """An overlay of two polygonal shapes; on a fixed grid only if the exact one trips."""
     try:
@@ -69,7 +79,7 @@ def strips(grass, carriageway):
     close = roads.buffer(BESIDE, quad_segs=1)
     shapely.prepare(close)
     keep[keep] = shapely.intersects(close, narrow[keep])
-    return _areal(unary_union(list(narrow[keep]))) if keep.any() else Polygon()
+    return _union(narrow[keep]) if keep.any() else Polygon()
 
 
 CELL = 25.0  # m: the grid on which the survey's reach is asked
@@ -107,7 +117,7 @@ def unmapped(clip, taken, surveyed, yards, pavements):
         parts = np.asarray([p for g in keep_out for p in _polygons(g)], dtype=object)
         hits = STRtree(parts).query(region, predicate="intersects")
         if len(hits):
-            region = _overlay(shapely.difference, region, shapely.union_all(parts[np.sort(hits)]))
+            region = _overlay(shapely.difference, region, _union(parts[np.sort(hits)]))
     free = region.buffer(-THIN, quad_segs=2).buffer(THIN, quad_segs=2)
     pieces = [p for p in _polygons(free) if p.area >= MIN_PATCH]
-    return unary_union(pieces) if pieces else Polygon()
+    return _union(pieces) if pieces else Polygon()

@@ -2,7 +2,7 @@
 
 import unittest
 
-from shapely.geometry import LineString, box
+from shapely.geometry import LineString, Polygon, box
 
 import verges
 
@@ -54,3 +54,12 @@ class UnmappedTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrokenShapeTests(unittest.TestCase):
+    def test_shapes_that_cross_themselves_are_joined_all_the_same(self):
+        # (A full praha build stopped on such a mapped shape: "side location conflict".)
+        bow = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
+        got = verges._union([bow, box(5, 0, 20, 10), box(30, 0, 40, 10)])
+        self.assertGreater(got.area, 200)
+        self.assertTrue(got.is_valid)
