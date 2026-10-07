@@ -87,7 +87,7 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   lying about; `t.toBag()` stands you by one, `t.interact()` presses E on foot, `t.clearBags()`
   starts clean, `t.peopleNear(x, y, r)` lists the people round a spot.
 - `t.push(kmh, heading?)`: sets your car going. `t.post(r)`: the nearest standing
-  lamp or pole. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
+  lamp or pole; `t.post(r, 18)`: the nearest your car has a clear 18 m run up to, with the car put there. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
   on a run clear of walls and other cars. `t.runway(heading)`: metres to the first wall.
 - `t.route(from, to)`: the shortest way by car through the streets loaded now (those
   within some 700 m of you): `{ length, line }`, the line as `[lat, lon]` points, or null
