@@ -199,6 +199,9 @@ one in real time, "Run all" lists which pass.
 - Parked cars are drawn only within the normal camera's view radius of the free camera's
   target. A top-down `t.camera({ height: 363 })` of a street shows no cars until you
   `t.view(4)` first (`t.view(1)` afterwards); counting `tile.cars` doesn't need it.
+- Where a bridge crosses a quay or a street, a spot is both on the deck and under it. `t.go` to
+  walkable ground puts you on the ground; to water or anything else not walkable, on the deck
+  (`boat-boarding` goes to a boat's place on the water first, then to its bank below).
 - Import game modules through `t`, not by URL: after an edit Vite serves a file under a
   versioned URL, and importing it again gives a second, empty copy (that's how
   `posts` once looked empty).

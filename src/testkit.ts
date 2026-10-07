@@ -150,6 +150,10 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
 
     async go(w: Where, opt: { heading?: number } = {}) {
       const [x, y] = kit.toLocal(w);
+      // Put somewhere else, however near: what you stood on says nothing about what you
+      // stand on now. (The game keeps you on a bridge's deck over a move of a few metres,
+      // as walking does: from the deck over a quay, t.go to the quay left you on the deck.)
+      if (g.mode() === 'foot') (g.me() as { level?: number }).level = undefined;
       await g.teleport(x, y);
       if (opt.heading !== undefined) g.me().h = rad(opt.heading);
       await frame();
