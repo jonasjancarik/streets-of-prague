@@ -63,3 +63,53 @@ strip's lattice points are labelled whether or not the height rule in
 point (the wall doubling back, a point past the reach, a street on the strip) wasn't
 established, and removing the label alone would leave the strip's outline over the
 point and turn the spike into a pit.
+
+## 7 October: stairs with their own profile, bridges over water, walls on both faces
+
+A praha terrain build with the rules below against main's map of 6 October
+([before](evidence/bridge-deck-check/praha-2026-10-07-before.txt),
+[after](evidence/bridge-deck-check/praha-2026-10-07-after.txt),
+[spikes after](evidence/bridge-deck-check/spikes-2026-10-07-after.txt)). The deck check's
+"break" is now the jump the slope either side doesn't explain, so both columns are
+measured the same way and stairs don't count as breaks.
+
+| | Before | After |
+| --- | ---: | ---: |
+| Bridge edges with a break over 1 m | 8 | 3 |
+| Bridge edges with a join over 1 m | 198 | 127 |
+| Železniční most at Výtoň, break / join | 1.4 / 1.64 m | 0.37 / 0.41 m |
+| Karlův most (stairs to Kampa), join | 3.73 m | 0.39 m |
+| Libeňský most (east footways), break / join | 3.42 / 6.49 m | 0.24 / 0.8 m |
+| Štefánikův most, break | 1.3 m | 0.03 m |
+| Barrandovský most, break | 1.44 m | 0.34 m |
+| Lone ground points over 2 m / 5 m / 10 m | 1,124 / 224 / 28 | 233 / 24 / 7 |
+| of them on terraces | 417 | 48 |
+| Decks too low for a cruise boat | 4 | 0 |
+
+- **Stairs.** `structures.stairs` picks the bridge ways that are stairs (tagged `steps`;
+  as steep as 20 % from end to end and climbing 1.5 m, whatever the map calls them; the
+  landings between flights). Each carries its own profile (`ramps` on the tile's level,
+  read by the game through `withRamps`) and stays out of the level's lattice. The solve
+  runs a second time with them known: a link along stairs holds two heights together a
+  twentieth as much as one along a deck, in the harmonic solve and in the smoothing.
+  They share a level only with what is within 1 m of their height.
+- **Edges of several ways.** 139 edges change level along themselves (a slip road
+  parting from a deck, a footway running on into stairs): `levels` on the edge says
+  where, and the paint follows. Half of the apparent faults at Karlův and Libeňský most
+  were the check reading such an edge on one level.
+- **Bridges over open water** clear it by 5.5 m away from their ends unless IPR measured
+  the deck; an outline with no street on it is at IPR's top where IPR has it. Dvorecký
+  most, the cycleway under Barrandovský most and Branický most's footway come out
+  5.5 m over the Vltava, the railway bridge at Holešovice at IPR's 192 to 196 m. None of
+  these is the bridge's surveyed height: Branický most's footway is really 12 m higher
+  (IPR has two faces there, 4 m apart, and the stairs up to it are 22 m long).
+- **Walls on both faces.** A point one retaining wall has put at its foot is not lifted
+  by another wall's high side. Terrace spikes: 402 to 39.
+- **Lone surveyed points.** A surveyed surface smaller than a lattice cell no longer
+  makes a spike or a pit (595 points on the plain ground).
+
+Still open: joins of 3.7 to 5.3 m at most Závodu míru, Mánesův, Čechův, Štefánikův and
+Hlávkův most (sever), each at the foot or the top of stairs to a quay, where the
+ground path beside the wall reads the other side of it; Libeňský most (jih), now 5.5 m
+over the water in mid-span but still on the bank's slope at its ends, 3.5 m under the
+streets; Nuselský most's corners at Pankrác, not looked at closely.

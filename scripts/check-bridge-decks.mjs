@@ -9,9 +9,10 @@
 //        [--max-break 1.0] [--max-join 1.0] [--named-only] [--near lat,lon[,metres]]
 //
 // A "break" is the largest jump between two samples a metre apart along a deck (the
-// change that the slope either side doesn't account for; steps are left out); a "join" the difference at an end
-// between the deck and what it runs on into: the next bridge, the street on the ground,
-// or the ground where the deck's outline stops short of the end. The bridges in
+// change that the slope either side doesn't account for; ways tagged as steps are left
+// out); a "join" the difference at an end between the deck and what it runs on into:
+// the next bridge, the street on the ground, or the ground where the deck's outline
+// stops short of the end. The bridges in
 // .agents/skills/terrain-steps/bridges.json are listed by name, and the script fails when
 // one of those has a break over --max-break or a join over --max-join.
 // --near: only the tiles round a place (600 m either way unless given), which takes seconds.
