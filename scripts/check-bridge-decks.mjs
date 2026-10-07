@@ -8,8 +8,8 @@
 //        [--save now.json] [--against before.json] [--profile <edge id or part of a name>]
 //        [--max-break 1.0] [--max-join 1.0] [--named-only] [--near lat,lon[,metres]]
 //
-// A "break" is the largest change of height between two samples a metre apart along a
-// deck (0.12 is a 12 % ramp; steps are left out); a "join" the difference at an end
+// A "break" is the largest jump between two samples a metre apart along a deck (the
+// change that the slope either side doesn't account for; steps are left out); a "join" the difference at an end
 // between the deck and what it runs on into: the next bridge, the street on the ground,
 // or the ground where the deck's outline stops short of the end. The bridges in
 // .agents/skills/terrain-steps/bridges.json are listed by name, and the script fails when
@@ -116,11 +116,15 @@ function walk(e) {
     for (let k = 0; k < n; k++) pts.push([ax + (bx - ax) * k / n, ay + (by - ay) * k / n]);
   }
   pts.push(e.pts[e.pts.length - 1]);
-  let level = e.level, was = NaN;
+  let level = e.level, was = NaN, s = 0, last = null;
   const prof = [];
   for (const [x, y] of pts) {
     let h = NaN;
-    if (e.level !== undefined) h = levelAt(x, y, e.level);
+    if (last) s += Math.hypot(x - last[0], y - last[1]);
+    last = [x, y];
+    // (Its level here: an edge of several ways can change level along itself.)
+    const own = e.levels ? e.levels.reduce((lv, [from, l]) => (from <= s ? l : lv), e.levels[0][1]) : e.level;
+    if (own !== undefined) h = levelAt(x, y, own);
     // (An edge can run on from its deck onto another level: stairs down from a bridge,
     // mapped as bridge ways, are one edge with the footway they leave.)
     if (Number.isNaN(h)) {
@@ -164,8 +168,13 @@ for (const [e, prof] of profs) {
     if (prof[i][3]) onDeck++;
     const d = prof[i][2] - prof[i - 1][2];
     // (Not the samples right at the nodes: they lie on the very edge of the level's outline.)
-    if (prof[i][3] && prof[i - 1][3]) { if (i > 1 && i < prof.length - 1 && Math.abs(d) > worst) { worst = Math.abs(d); where = i; } }
-    else if (prof[i][3] !== prof[i - 1][3] && i > 1 && i < prof.length - 1 && Math.abs(d) > Math.abs(hand)) { hand = d; handAt = i; }
+    if (prof[i][3] && prof[i - 1][3]) {
+      // A jump, not a slope: what the change either side of it doesn't account for
+      // (stairs fall half a metre a metre, evenly).
+      const beside = Math.max(i > 1 ? Math.abs(prof[i - 1][2] - prof[i - 2][2]) : 0, i < prof.length - 1 ? Math.abs(prof[i + 1][2] - prof[i][2]) : 0);
+      const jump = Math.abs(d) - Math.min(Math.abs(d), beside);
+      if (i > 1 && i < prof.length - 1 && jump > worst) { worst = jump; where = i; }
+    } else if (prof[i][3] !== prof[i - 1][3] && i > 1 && i < prof.length - 1 && Math.abs(d) > Math.abs(hand)) { hand = d; handAt = i; }
   }
   if (!onDeck) continue; // (a way the pipeline left on the ground)
   const length = prof.length - 1;

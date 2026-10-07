@@ -1192,7 +1192,7 @@ def merge_ways(ways):
 
 # ---- Which level a street or a tram track is on ------------------------------------------
 
-ON_WAY = 1.5  # m: a street's edge this close to a structure way is that way
+ON_WAY = 0.3  # m: a street's edge this close to a structure way is that way (they're the same line in the map; another way may run a metre beside it, under it or over it)
 ALONG = 0.5  # a track at more than 60° to a bridge's ways isn't on that bridge: it crosses under or over it
 OUTLINE = 60.0  # m: as far as a bridge's outline reaches from its ways
 BY_WAY = 12.0  # m: a tram track this close to a bridge's way runs along it, or crosses it
@@ -1233,6 +1233,30 @@ class OnLevels:
         for _, lv in best.values():
             votes[lv] += 1
         return max(votes, key=lambda lv: (votes[lv], -abs(lv))) if votes else None
+
+    def stretches(self, e):
+        """Where an edge made of several ways changes level along itself: [[metres from
+        its start, level], …] from 0 on, or None when it's on one level throughout (see
+        edge). A slip road off a bridge is one edge of two ways, the second on a level of
+        its own once it has parted from the deck."""
+        kind = "bridge" if e.get("bridge") else "tunnel" if e.get("tunnel") else None
+        if not kind or self.tree is None or len(e["pts"]) < 2:
+            return None
+        line = LineString(e["pts"])
+        n = max(3, int(line.length / 3))
+        pts = shapely.points([line.interpolate((k + 0.5) / n, normalized=True).coords[0] for k in range(n)])
+        best = {}
+        hit, near = self.tree.query(pts, predicate="dwithin", distance=ON_WAY)
+        for k, o in zip(hit, near):
+            if self.ways[o]["kind"] == kind:
+                d = self.lines[o].distance(pts[k])
+                if k not in best or d < best[k][0]:
+                    best[k] = (d, self.ways[o]["level"])
+        out = []
+        for k in range(n):
+            if k in best and (not out or out[-1][1] != best[k][1]):
+                out.append([round(k / n * line.length, 1) if out else 0.0, best[k][1]])
+        return out if len(out) > 1 else None
 
     def shapes(self, key):
         """A tile's bridge levels as (level, prepared shape)."""
