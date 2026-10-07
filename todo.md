@@ -184,12 +184,12 @@ before that day's frame-count fix may be doubled.
   scripts/check-step-edges.mjs praha`): terrain or map faults to look at.
 - **Spikes in the ground:** 233 lone points more than 2 m off their neighbours remain
   (24 over 5 m), see `check-terrain-spikes.mjs`; ragged cuts are not scanned.
-- **The river's height is wrong north of Troja** (tiles `49_81`, `50_94`, `50_95`).
-- **Paint and tram tracks where two bridges cross:** the pipeline now hands each
-  way's level to the game; it shows after `ipr_terrain.py` has rebuilt the shared
-  maps (heights stay the same). Look at one crossing afterwards.
-- **Hill shading for a moving sun** (it is baked to the north-west sun) and **hills
-  casting shadows**: only worth it with a low evening sun.
+- **River:** the water lies level between weirs now. Beyond IPR's terrain model (north
+  of Sedlec) the river's level and valley are guessed (it rises 1 m per km; really it
+  is level to the Klecany weir and then drops about 3 m); real terrain there would
+  need ČÚZK's DMR 5G (`pipeline/dmr5g.py` is a prototype). A piece of water still sits
+  high on the slope beside the river north of Sedlec. Of 57 tiles where water fell by
+  more than 10 m, the 14 largest were looked at (all the Vltava beyond the model).
 
 ## Map look
 
@@ -199,21 +199,21 @@ before that day's frame-count fix may be doubled.
   data; the `plots` tile field is unread and adds about 12 % to a dense suburban
   tile's JSON, so trim it or use it; 25 drive places in that chunk still touch a road
   or path; fences read quite white from above; crown positions from the photographs.
-- **Woods (plan 026):** clearings stay open where the aerial photo shows open ground,
-  and woods are planted the same across tile borders. Left: young woods rest on the
-  surface model alone, which reads some tall forest as low, and need the photo check
-  the clearings got; the edge shrubs are still placed per tile; a clearing's outline
-  can jog a few metres at a tile border.
-- **Grass and worn paths (plan 027):** verges aren't a kind of their own; worn paths
-  use door proxies, not OSM entrances or the footfall map.
+- **Woods (plan 026):** the young-wood rule errs towards leaving a wood alone (praha:
+  298 ha young, 254 ha clearings); a 0.25 m photo could tell pole-stage stands. A tile
+  can't see a wood lying wholly in the next tile, so its shrub fringe is missing along
+  such a border.
+- **Grass and worn paths (plan 027):** verges are a kind of their own and worn paths
+  start at OSM entrances and follow the footfall map; seen on five trial chunks only.
+  People don't walk the worn paths yet; no dry-season picture of the verge strips.
 - **Roofs (plan 028):** look at the school atria after the rebuild (roof class now goes
   by street; countryside tiles and streets without a name still go by 90 m cell).
 - **Parking (plan 029):** collision bodies on an estate drive unmeasured (the second
   car in front of a garage is in).
 - **Sports grounds (plan 030):** lines now hold a width in pixels from high up; road
   paint is as thin and could use the same hold.
-- **Lanes (plan 031):** the pavement-or-verge pass; the gravel shoulder hasn't been
-  looked at in the game.
+- **Lanes (plan 031):** past the city limits unmapped land is grass, not paving;
+  unmapped village squares turn to grass with the rest: look for bad cases.
 - **Paths and pavements (plan 018):** surveyed pavements, islands, medians, platforms
   and tram beds are in. To look at: far fewer driveway cars where a pavement is
   surveyed (`DRIVE_ROOM` would bring some back), mosaic instead of setts on cobbled
@@ -279,10 +279,10 @@ before that day's frame-count fix may be doubled.
   way, 6 in a pickup's and 21 on the centre line of wide one-way streets; three causes
   in `docs/traffic.md`; nothing fixed, not yet run on `praha`.
 - **Boats:** cruise boats follow the fairway through the locks (`river.json`); they
-  still turn at Modřany and Klecany (no usable lock in the map's water), and two
-  meeting inside a lock cut pass through each other.
-- **Ferries:** P1, P2, P4, P5 and P6 run with tickets; no inspector comes aboard; P3
-  and P7 when PID's feed has them; not tried on touch or WebGL.
+  still turn at Modřany and Klecany (no usable lock in the map's water). One boat at
+  a time goes through a lock cut (checked offline, not with two boats in the game).
+- **Ferries:** P1, P2, P4, P5 and P6 run with tickets; an inspector may check you as the ferry comes in (running
+  off from a ferry was not played); P3 and P7 when PID's feed has them; not tried on touch or WebGL.
 - **Taxis:** routes are sometimes long, and the apps have no phone screen (the stall
   behind cars parked on a bend is fixed).
 - **Raised buildings** only in IPR's data (passages over a street) still block. Likely
