@@ -19,8 +19,8 @@ import type { Reach } from './river.ts';
 // Where the area has a fairway (river.json, see river.ts), the cruise boats follow it
 // instead: up and down the navigable channel, keeping to the right of its middle
 // where there's room, round the islands on the side with water enough and past each
-// weir through its lock. Two don't meet in a lock or its canal: the one still in wide
-// water waits there. At the end of a stretch they turn round. The water's height
+// weir through its lock. Two don't meet in a lock or the cut leading to it: one waits
+// in the wide water before it until the other is through. At the end of a stretch they turn round. The water's height
 // changes at a lock, and a boat rises or sinks there at a lock's pace, not in a jump.
 
 export interface Waters {
@@ -49,6 +49,9 @@ export const FERRY = SPECS.ferry;
 const KEEP_RIGHT = 14; // m to the right of the fairway's middle, where the water is wide enough
 const BANK = 4; // m a cruise boat's side keeps from the bank
 const NARROW = 14; // m to the bank: under this the fairway is a canal or a lock, for one boat at a time
+const PASSING = 120; // m: a wider place shorter than this within a cut is still the cut (no room to wait in)
+const HOLD = 70; // m before a cut: where a boat waits for one coming through it
+const CLAIM = 200; // m before a cut: a boat this near has it, against one coming the other way down the line
 const TURNING = 22; // m to the bank a cruise boat needs to turn round on the spot
 const RISE = 0.3; // m/s: how fast a boat rises or sinks where the water's height changes
 const BOARD_REACH = 4.5, BOARD_STEP = 0.8; // a short step between a low bank and the deck
@@ -202,12 +205,23 @@ export class Boats {
   rng: () => number;
   me: Boat | null = null; // the pedal boat the player is in
   courses: Course[];
+  // Each fairway's cuts: the stretches (from, to, in metres along it) too narrow for two boats.
+  cuts = new Map<Course, [number, number][]>();
   private placeNext = 0;
 
   // `islands`: where Slovanský ostrov is in local metres (null if not in the area).
   // `fairway`: the stretches the cruise boats sail (none: they wander on open water).
   constructor(scene: THREE.Scene, water: Waters, islands: Point2 | null, rng = seededRandom(7), fairway: Reach[] = []) {
     this.courses = fairway.map((r) => new Course(r.pts));
+    for (const c of this.courses) {
+      const cuts: [number, number][] = [];
+      c.pts.forEach((p, i) => {
+        if (p[2] >= NARROW) return;
+        const last = cuts[cuts.length - 1];
+        if (last && c.cum[i] - last[1] < PASSING) last[1] = c.cum[i]; else cuts.push([c.cum[i], c.cum[i]]);
+      });
+      this.cuts.set(c, cuts);
+    }
     this.scene = scene;
     this.water = water;
     this.islands = islands;
@@ -307,6 +321,7 @@ export class Boats {
       for (let k = 0; k < 4; k++) {
         const s = near.s + (this.rng() * 2 - 1) * SPAWN, p = c.at(s), d = Math.hypot(p.x - px, p.y - py);
         if (s < 0 || s > c.length || d < NEAR || d > SPAWN || p.w < NARROW || this.water.waterAt(p.x, p.y) !== true) continue;
+        if (this.cuts.get(c)!.some(([from, to]) => s > from - HOLD - 20 && s < to + HOLD + 20)) continue;
         if (this.list.some((o) => o !== b && o.live && Math.hypot(o.x - p.x, o.y - p.y) < 80)) continue;
         const dir = this.rng() < 0.5 ? -1 : 1, off = this.keepRight(b, p.w) * dir;
         Object.assign(b, { x: p.x + Math.sin(p.ang) * off, y: p.y - Math.cos(p.ang) * off, h: dir > 0 ? p.ang : p.ang + Math.PI, v: b.s.speed * 0.5, w: 0, course: c, along: s, dir, about: 0, live: true, z: null });
@@ -355,9 +370,19 @@ export class Boats {
       if (o === b || !o.live || o.course !== c) continue;
       const gap = (o.along - b.along) * b.dir;
       if (gap <= 0) continue;
-      if (o.dir === b.dir || o.about > 0) { if (gap < 90) want = Math.min(want, S.speed * clamp((gap - 50) / 40, 0, 1)); }
-      // (Of two both waiting at the ends of one canal, the one going up the line goes first.)
-      else if (gap < 1500 && here.w >= NARROW && (b.dir < 0 || c.at(o.along).w < NARROW) && c.narrowest(b.along + b.dir * 30, b.along + b.dir * Math.min(gap, 120)) < NARROW && c.narrowest(b.along, o.along) < NARROW) want = 0;
+      if ((o.dir === b.dir || o.about > 0) && gap < 90) want = Math.min(want, S.speed * clamp((gap - 50) / 40, 0, 1));
+    }
+    // A cut takes one boat at a time, or several going the same way. Coming up to one,
+    // the boat waits in the wide water before it while another is coming through, and a
+    // boat going down the line also gives way to one about to enter at the far end.
+    const cut = this.cuts.get(c)!.find(([from, to]) => (b.dir > 0 ? b.along <= from && from - b.along < HOLD : b.along >= to && b.along - to < HOLD));
+    if (cut) {
+      for (const o of this.list) {
+        if (o === b || !o.live || o.course !== c || o.dir === b.dir) continue;
+        const inside = o.along > cut[0] && o.along < cut[1];
+        const claims = b.dir < 0 && o.along <= cut[0] && cut[0] - o.along < CLAIM;
+        if (inside || claims) want = 0;
+      }
     }
     b.w = clamp(dh * 0.8, -S.turn * 2, S.turn * 2);
     b.v += clamp(want - b.v, -0.5 * dt, 0.3 * dt);
