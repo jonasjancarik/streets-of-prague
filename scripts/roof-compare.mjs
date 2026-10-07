@@ -18,6 +18,9 @@
 //   plan    the roof's area seen from above over the footprint's (1 = covers it exactly)
 //   ridge   length of the ridges and of the hips and valleys between them: the edges where
 //           two slopes meet with both ends above the eaves, m
+//   h       the roof's height over the eaves at up to a hundred points of a grid laid over
+//           the footprint, cm: what `diff` goes by, since two roofs are the same when they
+//           are as high everywhere
 //   flat    true when the skeleton failed and the roof fell back to flat
 // and per tile the time buildBuildings took for all its buildings.
 import fs from 'node:fs';
@@ -41,6 +44,17 @@ function sample() {
     files.forEach((f, i) => { if (i % every === 0) out.push({ area, file: dir + f, key: `${area}/${f.replace('.json', '')}` }); });
   }
   return out;
+}
+
+function inside(rings, x, y) {
+  let within = false;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) within = !within;
+    }
+  }
+  return within;
 }
 
 export function measure(b, built) {
@@ -77,9 +91,27 @@ export function measure(b, built) {
     const [a] = e.normals;
     if (e.normals.some((c) => a[0] * c[0] + a[1] * c[1] + a[2] * c[2] < 0.9999)) ridge += e.len;
   }
+  // Heights on a 10 × 10 grid over the footprint's box, where it falls inside the footprint.
+  const xs = b.rings[0].map((q) => q[0]), ys = b.rings[0].map((q) => q[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(...xs) - x0, d = Math.max(...ys) - y0;
+  const h = [];
+  for (let i = 0; i < 100; i++) {
+    const x = x0 + ((i % 10) + 0.5) * w / 10, y = y0 + (Math.floor(i / 10) + 0.5) * d / 10;
+    if (!inside(b.rings, x, y)) continue;
+    let best = null;
+    for (let t = 0; t < p.length && best === null; t += 9) {
+      if (!(n[t + 1] > 1e-6)) continue;
+      const ax = p[t], az = p[t + 2], bx = p[t + 3] - ax, bz = p[t + 5] - az, cx = p[t + 6] - ax, cz = p[t + 8] - az;
+      const det = bx * cz - bz * cx;
+      if (Math.abs(det) < 1e-9) continue;
+      const u = ((x - ax) * cz - (-y - az) * cx) / det, v = (bx * (-y - az) - bz * (x - ax)) / det;
+      if (u >= -1e-4 && v >= -1e-4 && u + v <= 1 + 1e-4) best = p[t + 1] + u * (p[t + 4] - p[t + 1]) + v * (p[t + 7] - p[t + 1]) - eaves;
+    }
+    h.push(best === null ? null : Math.round(best * 100));
+  }
   const foot = Math.abs(b.rings.reduce((s, r, i) => s + (i ? -1 : 1) * Math.abs(signedArea(r)), 0));
   const r = (v, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
-  return { verts, top: r(top), area: r(area, 2), plan: r(plan / (foot || 1), 4), ridge: r(ridge, 2), ...(bad ? { bad } : {}), ...(built.stats.failed ? { flat: true } : {}) };
+  return { verts, top: r(top), area: r(area, 2), plan: r(plan / (foot || 1), 4), ridge: r(ridge, 2), h, ...(bad ? { bad } : {}), ...(built.stats.failed ? { flat: true } : {}) };
 }
 
 async function record(out) {
@@ -118,16 +150,18 @@ async function record(out) {
   console.log(`time: ${ms.toFixed(0)} ms in all, ${(ms / Object.keys(tiles).length).toFixed(2)} ms a tile, ${(ms / all.length).toFixed(3)} ms a roof; slowest tile ${worst[0]} ${worst[1].ms} ms (${worst[1].n} roofs)`);
 }
 
-// How two roofs of the same building differ.
+// How two roofs of the same building differ: by the largest difference in height at the
+// sampled points. A centimetre or two is rounding; under 20 cm can't be told from the street
+// or the air.
 export function verdict(a, b) {
   if (b.crash) return 'crash';
   if (a.flat && b.flat) return 'both flat';
   if (b.flat) return 'newly flat';
   if (a.flat) return 'newly a roof';
-  const dTop = Math.abs(a.top - b.top), dArea = Math.abs(a.area - b.area) / (a.area || 1), dRidge = Math.abs(a.ridge - b.ridge);
-  if (dTop <= 0.01 && dArea <= 0.001 && dRidge <= 0.02 + 0.001 * a.ridge) return a.verts === b.verts ? 'identical' : 'same shape, other triangles';
-  if (dTop <= 0.1 && dArea <= 0.01 && dRidge <= Math.max(0.5, 0.05 * a.ridge)) return 'slightly different';
-  return 'visibly different';
+  let worst = Math.abs(a.top - b.top) * 100;
+  for (let i = 0; i < a.h.length; i++) worst = Math.max(worst, a.h[i] === null || b.h[i] === null ? (a.h[i] === b.h[i] ? 0 : 1000) : Math.abs(a.h[i] - b.h[i]));
+  if (worst <= 2) return Math.abs(a.ridge - b.ridge) <= 0.05 + 0.005 * a.ridge ? 'identical' : 'same heights, ridges measured differently';
+  return worst <= 20 ? 'slightly different' : 'visibly different';
 }
 
 function diff(fa, fb) {
@@ -142,17 +176,19 @@ function diff(fa, fb) {
       if (!b) { only++; continue; }
       const v = verdict(a, b);
       tally[v] = (tally[v] || 0) + 1;
-      if (!['identical', 'same shape, other triangles', 'both flat'].includes(v)) shown.push([k, v, a, b]);
+      if (!['identical', 'both flat'].includes(v)) shown.push([k, v, a, b]);
     }
     const total = Object.values(tally).reduce((s, v) => s + v, 0);
     console.log(`\n${title}: ${total}` + (only ? ` (${only} missing from the second file)` : ''));
     for (const [v, c] of Object.entries(tally).sort((x, y) => y[1] - x[1])) console.log(`  ${v.padEnd(28)} ${String(c).padStart(6)}  ${(100 * c / total).toFixed(2)} %`);
     if (list && title === 'All roofs') {
-      for (const [k, v, a, b] of shown.slice(0, list)) console.log(`  ${v}: ${k}\n    ${JSON.stringify(a)}\n    ${JSON.stringify(b)}`);
+      for (const [k, v, a, b] of shown.slice(0, list)) console.log(`  ${v}: ${k}\n    ${JSON.stringify({ ...a, h: undefined })}\n    ${JSON.stringify({ ...b, h: undefined })}`);
     }
   }
   const off = (R) => Object.values(R.roofs).filter((r) => !r.flat && !r.crash && Math.abs(r.plan - 1) > 0.01).length;
-  console.log(`\nRoofs not covering their footprint exactly: ${off(A)} before, ${off(B)} after`);
+  const ridges = (R) => Object.values(R.roofs).reduce((s, r) => s + (r.ridge || 0), 0), points = Object.values(A.roofs).reduce((s, r) => s + (r.h?.length || 0), 0);
+  console.log(`\nHeights compared at ${points} points. Ridges, hips and valleys in all: ${(ridges(A) / 1000).toFixed(2)} km before, ${(ridges(B) / 1000).toFixed(2)} km after`);
+  console.log(`Roofs not covering their footprint exactly: ${off(A)} before, ${off(B)} after`);
   const sum = (R) => Object.values(R.tiles).reduce((s, t) => s + t.ms, 0), n = Object.keys(A.tiles).length;
   const worst = (R) => Math.max(...Object.values(R.tiles).map((t) => t.ms));
   console.log(`Time per tile: ${(sum(A) / n).toFixed(2)} ms before, ${(sum(B) / Object.keys(B.tiles).length).toFixed(2)} ms after; slowest tile ${worst(A)} ms before, ${worst(B)} ms after`);
