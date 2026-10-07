@@ -28,16 +28,18 @@ export default {
       t.ignite(own);
       await t.wait(0.5);
       t.exit();
-      let sprayed = false, cannon = false;
+      let sprayed = false, cannon = false, nearest = Infinity;
       for (s = 0; s < 100; s++) {
         await t.wait(1, { move: s < 5 ? 1 : 0, run: true });
         cannon ||= t.fire(own).cannon;
+        nearest = Math.min(nearest, t.fire(own).away ?? Infinity);
         sprayed = t.fire(own).wreck && t.fire(own).spraying > 0;
         if (sprayed) break;
       }
       if (sprayed) await t.shot('fire-brigade');
       t.check('the car blew up', t.fire(own).wreck);
-      t.check('the engine put the flames out with its own cannon', cannon);
+      // (The cannon reaches 16 m, with no wall in between.)
+      t.check('the engine put the flames out with its own cannon', cannon, `the engine came within ${nearest} m, now ${t.fire(own).engine}, flames ${t.fire(own).flames}`);
       t.check('the crew finished off the smouldering wreck with their hoses', sprayed, `after ${s} s`);
     } finally {
       t.unhurt = false;

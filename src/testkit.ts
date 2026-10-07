@@ -368,6 +368,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       return {
         burning: !c.burnt && !!b && b.fuse >= 0, wreck: !!c.burnt, flames: g.fires.onFire(c),
         engine: e ? e.phase : null, spraying: g.brigade.crew.filter((k) => k.engine.target === c && k.spraying).length, cannon: !!e && !!e.spraying,
+        away: e ? round(Math.hypot(e.car.x - c.x, e.car.y - c.y)) : null,
       };
     },
 

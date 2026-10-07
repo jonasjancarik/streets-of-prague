@@ -72,7 +72,7 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   command, `run` included: without it the command loads the game from port 5191.
 - `t.ignite(car)` sets a car on fire; `t.fire(car)`: whether it burns, is a wreck, still
   has flames, what the fire engine sent to it is doing (`go`, `work`, `leave`) and how
-  many hoses are on it.
+  many hoses are on it, whether its roof cannon sprays and how far away it is.
 - `t.enter(car)` takes an existing car through the normal entry path, including theft.
   It, `t.drive` and `t.exit` are instant. `t.press()` is E as the player presses it:
   to the door, in (or out) through it, which takes a second or so of `t.wait`; with a
