@@ -5,16 +5,23 @@ game fills every wood with full-grown trees. IPR Praha's 2025 surface model (1 m
 file ground_cover.py uses) minus the terrain heights says how high the canopy really is.
 Inside a wood, the places where it tops out between 1.5 and 7 m are written to the young
 layer as polygons; assemble() puts them into the tile as `areas.young_wood`, and
-src/map/vegetation.ts plants small, close trees there. Where nothing stands higher than
+src/map/vegetation.ts plants small, close trees there. IPR's model alone is not to be
+trusted for that either (it reads many closed broadleaf stands as a few metres high, or as
+bare ground), so a low place counts as young only if ČÚZK's older surface model (DMP 1G)
+was low there too (under 4 m: scrub, a hedge, an overgrown field), or if IPR's summer photo
+shows it bright (a canopy that was tall then and is low and sunlit now was felled and is
+growing back; one that is dark with its own shadows is still a closed wood). Where nothing stands higher than
 1.5 m and IPR's summer aerial photo shows open, sunlit ground (a clearing, a meadow or a
 field inside the wood's outline, the strip under a power line) the place is written as a
 clearing, `areas.wood_clearing`: the game draws grass there and plants only the shrubs of a
 wood's edge. The photo is needed because the surface model alone is not enough: over many
 closed stands in the city's woods it lies at ground level (in Divoká Šárka whole tiles of
-tall forest read as bare), and a rock face, a road or a pond is low too. The photos are
-fetched once, at 1 m, for the tiles with a low patch (.cache/cover/photos/<area>/rgb_1m).
-The surface model only covers the city, so a wood outside
-it stays as it was.
+tall forest read as bare), and a rock face, a road or a pond is low too. The photos and the
+older model are fetched once, at 1 m, for the tiles with a low patch
+(.cache/cover/photos/<area>/rgb_1m_wide, .cache/cover/img/dsm_1m_wide). Every tile is worked
+out together with a MARGIN of its neighbours' ground, so a patch has the same outline on
+both sides of a tile border. The surface model only covers the city, so a wood outside it
+stays as it was.
 
     uv run --group cover young_woods.py build praha            # every tile with a wood
     uv run --group cover young_woods.py build praha 60 70 20 30  # tiles i0 i1 j0 j1
@@ -50,6 +57,11 @@ CLEAR_MIN = 400.0  # m2: the smallest clearing (a gap between crowns is not one)
 # the colour is not grey (rock, asphalt, gravel and roofs are under OPEN_COLOUR in saturation).
 OPEN_WINDOW, OPEN_BRIGHT, OPEN_COLOUR = 9, 0.42, 0.11
 STEEP = 0.7        # rise over run: steeper ground (35 degrees) is a rock face or a cutting, not a clearing
+# A young wood, apart from a closed one that IPR's surface model reads as low: under
+# EARLIER_LOW m in ČÚZK's older surface model as well, or brighter than REGROWTH_BRIGHT in the
+# photo (the same measure as OPEN_BRIGHT; closed canopy is 0.29 to 0.33).
+EARLIER_LOW, REGROWTH_BRIGHT = 4.0, 0.37
+MARGIN = 16        # m of the neighbouring tiles worked out with each tile
 MIN_WOOD = 2000.0  # m2 of wood in a tile below which it isn't looked at
 
 
@@ -59,43 +71,99 @@ def wood_of(ground_tile):
     return [*a.get("wood", []), *a.get("dtm_wood", [])]
 
 
-def open_ground(area, t):
-    """Where IPR's summer photo shows open ground rather than a canopy, rock or paving, over
-    the tile at RES (rows from the north). None where there is no photo."""
+def wide(t, meta):
+    """The tile with MARGIN metres of its neighbours on every side."""
+    x0, y0, x1, y1 = t["box"]
+    return {**t, "box": [x0 - MARGIN, y0 - MARGIN, x1 + MARGIN, y1 + MARGIN], "tile": t["box"], "size": meta.get("tile", x1 - x0)}
+
+
+def wide_terrain(area, meta, tw):
+    """Terrain heights over the widened tile at RES (rows from the north), from the tile's own
+    lattice and its neighbours' (their outer rows are shared). Past the map's edge, or where
+    a neighbour has no heights, the nearest known height."""
+    i, j, T = tw["i"], tw["j"], tw["size"]
+    n = meta["terrain"]["n"]
+    mosaic = np.full((3 * (n - 1) + 1, 3 * (n - 1) + 1), np.nan, np.float32)
+    step = None
+    for dj in (-1, 0, 1):
+        for di in (-1, 0, 1):
+            try:
+                hm, step_ = gc.terrain(area, meta, {"i": i + di, "j": j + dj})
+            except OSError:
+                continue
+            step = step or step_
+            r, c = (dj + 1) * (n - 1), (di + 1) * (n - 1)
+            mosaic[r:r + n, c:c + n] = np.where(np.isnan(hm), mosaic[r:r + n, c:c + n], hm)
+    if step is None or np.isnan(mosaic).all():
+        raise OSError(f"no terrain heights for tile {i}_{j}")
+    if np.isnan(mosaic).any():
+        near = ndimage.distance_transform_edt(np.isnan(mosaic), return_distances=False, return_indices=True)
+        mosaic = mosaic[tuple(near)]
+    X, Y = gc.grid(tw, RES)
+    x0, y0 = tw["tile"][0] - T, tw["tile"][1] - T
+    return ndimage.map_coordinates(mosaic, [(Y - y0) / step, (X - x0) / step], order=1, mode="nearest")
+
+
+def brightness(area, tw):
+    """(brightness, saturation) of IPR's summer photo over the widened tile at RES (rows from
+    the north), each averaged over OPEN_WINDOW metres. None where there is no photo."""
     try:
-        rgb = gc.photo(gc.RGB, "rgb_1m", area, t, RES)
-    except Exception as e:  # noqa: BLE001 - no photo, no clearings: the wood stays as it was
-        print(f"  no photo for tile {t['i']}_{t['j']} ({e})", flush=True)
+        rgb = gc.photo(gc.RGB, "rgb_1m_wide", area, tw, RES)
+    except Exception as e:  # noqa: BLE001 - no photo: nothing is told apart by it
+        print(f"  no photo for tile {tw['i']}_{tw['j']} ({e})", flush=True)
         return None
     bright, dull = rgb.max(axis=2), rgb.min(axis=2)
     colour = (bright - dull) / np.maximum(bright, 1e-3)
-    return ((ndimage.uniform_filter(bright, OPEN_WINDOW) > OPEN_BRIGHT)
-            & (ndimage.uniform_filter(colour, OPEN_WINDOW) > OPEN_COLOUR))
+    return ndimage.uniform_filter(bright, OPEN_WINDOW), ndimage.uniform_filter(colour, OPEN_WINDOW)
 
 
-def young_mask(area, meta, t, wood):
-    """(young mask, clearing mask, wood mask) over the tile at RES, rows from the north: True
-    where the wood's canopy is young, and where there is none. Where the surface model has
-    nothing the answer is False."""
+def earlier_top(area, tw, dtm):
+    """The canopy top in ČÚZK's older surface model (DMP 1G), as `top` is taken from IPR's.
+    None if it can't be had."""
     try:
-        dsm = gc.ipr_dsm(area, t, RES, cache=False)
+        dsm = gc.export(gc.DSM, "dsm_1m_wide", area, tw, RES, 1.0, fmt="tiff",
+                        extra={"pixelType": "F32", "interpolation": "RSP_BilinearInterpolation"})[:, :, 0]
+    except Exception as e:  # noqa: BLE001
+        print(f"  no earlier surface model for tile {tw['i']}_{tw['j']} ({e})", flush=True)
+        return None
+    return ndimage.percentile_filter(np.where(dsm > 100, dsm - dtm, 99.0), 80, size=WINDOW)
+
+
+def wide_masks(area, meta, t, wood, around=()):
+    """(young mask, clearing mask, wood mask, the widened tile) over the tile and MARGIN metres
+    round it at RES, rows from the north. `around`: the neighbouring tiles' wood outlines."""
+    tw = wide(t, meta)
+    try:
+        dsm = gc.ipr_dsm(area, tw, RES, cache=False)
     except ValueError:  # the tile lies wholly outside IPR's file
-        dsm = np.zeros(gc.grid(t, RES)[0].shape, np.float32)
-    hm, step = gc.terrain(area, meta, t)
-    X, Y = gc.grid(t, RES)
-    x0, y0 = t["box"][0], t["box"][1]
-    dtm = ndimage.map_coordinates(np.nan_to_num(hm, nan=np.nanmean(hm)), [(Y - y0) / step, (X - x0) / step], order=1, mode="nearest")
+        dsm = np.zeros(gc.grid(tw, RES)[0].shape, np.float32)
+    dtm = wide_terrain(area, meta, tw)
     known = dsm > 100  # (IPR's file is zero, or filled in with the tile's median, outside the city)
     ndsm = np.where(known, dsm - dtm, np.nan)
-    in_wood = gc.burn(np.zeros(dsm.shape, bool), t, RES, wood)
+    in_wood = gc.burn(np.zeros(dsm.shape, bool), tw, RES, [*wood, *around])
     top = ndimage.percentile_filter(np.nan_to_num(ndsm, nan=-10), 80, size=WINDOW)
     young = tidy(in_wood & known & (top >= LOW) & (top < HIGH), in_wood, MIN_AREA)
     clear = tidy(in_wood & known & (top < LOW), in_wood, CLEAR_MIN)
+    photo = brightness(area, tw) if young.any() or clear.any() else None
+    if young.any():
+        earlier = earlier_top(area, tw, dtm)
+        was_low = earlier < EARLIER_LOW if earlier is not None else False
+        regrowth = (photo[0] > REGROWTH_BRIGHT) & (photo[1] > OPEN_COLOUR) if photo is not None else False
+        young = tidy(young & (was_low | regrowth), in_wood, MIN_AREA)
     if clear.any():
         rise_y, rise_x = np.gradient(ndimage.gaussian_filter(dtm, 2), RES)
-        open_ = open_ground(area, t)
-        clear = tidy(clear & open_ & (np.hypot(rise_x, rise_y) < STEEP), in_wood, CLEAR_MIN) if open_ is not None else clear & False
-    return young, clear, in_wood
+        open_ = (photo[0] > OPEN_BRIGHT) & (photo[1] > OPEN_COLOUR) if photo is not None else False
+        clear = tidy(clear & open_ & (np.hypot(rise_x, rise_y) < STEEP), in_wood, CLEAR_MIN)
+    return young, clear, in_wood, tw
+
+
+def young_mask(area, meta, t, wood, around=()):
+    """(young mask, clearing mask, wood mask) over the tile at RES, rows from the north: True
+    where the wood's canopy is young, and where there is none. Where the surface model has
+    nothing the answer is False."""
+    young, clear, in_wood, _ = wide_masks(area, meta, t, wood, around)
+    own = (slice(MARGIN, young.shape[0] - MARGIN), slice(MARGIN, young.shape[1] - MARGIN)) if MARGIN else (slice(None), slice(None))
+    return young[own], clear[own], in_wood[own]
 
 
 def tidy(mask, in_wood, min_area):
@@ -113,8 +181,9 @@ def tidy(mask, in_wood, min_area):
     return mask
 
 
-def vectorise(mask, t, wood, min_area=MIN_AREA):
-    """The mask as smooth polygons in local metres, kept inside the wood outlines."""
+def vectorise(mask, t, wood, min_area=MIN_AREA, clip=None):
+    """The mask (over `t`, which may be a widened tile) as smooth polygons in local metres, kept
+    inside the wood outlines and the box `clip` (the tile itself)."""
     x0, _, _, y1 = t["box"]
     # Carried on past the tile's edge before smoothing (and closed off beyond it), so a patch
     # that goes on next door reaches the edge squarely instead of leaving a gap along it.
@@ -129,7 +198,7 @@ def vectorise(mask, t, wood, min_area=MIN_AREA):
     inside = Polygon()
     for rings in wood:
         inside = inside.union(Polygon(rings[0], rings[1:]).buffer(0))
-    g = g.simplify(0.5).buffer(0).intersection(inside).intersection(shapely_box(*t["box"]))
+    g = g.simplify(0.5).buffer(0).intersection(inside).intersection(shapely_box(*(clip or t["box"])))
     return [r for r in gc.rings_of(g) if Polygon(r[0], r[1:]).area >= min(min_area / 2, 25)]
 
 
@@ -139,14 +208,15 @@ def round_rings(polys):
 
 def tile_job(job):
     """(key, young polygons, clearing polygons, young share, clear share, wood m2) for one tile."""
-    area, meta, i, j, box, wood, height = job
+    area, meta, i, j, box, wood, height, around = job
     t = {"i": i, "j": j, "box": box}
-    mask, clear, in_wood = young_mask(area, meta, t, wood)
-    wood_m2 = float(in_wood.sum()) * RES * RES
-    total = max(in_wood.sum(), 1)
-    return (f"{i}_{j}", round_rings(vectorise(mask, t, wood)) if mask.any() else [],
-            round_rings(vectorise(clear, t, wood, CLEAR_MIN)) if clear.any() else [],
-            float(mask.sum()) / total, float(clear.sum()) / total, wood_m2)
+    mask, clear, in_wood, tw = wide_masks(area, meta, t, wood, around)
+    own = (slice(MARGIN, mask.shape[0] - MARGIN), slice(MARGIN, mask.shape[1] - MARGIN)) if MARGIN else (slice(None), slice(None))
+    wood_m2 = float(in_wood[own].sum()) * RES * RES
+    total = max(in_wood[own].sum(), 1)
+    return (f"{i}_{j}", round_rings(vectorise(mask, tw, wood, clip=box)) if mask[own].any() else [],
+            round_rings(vectorise(clear, tw, wood, CLEAR_MIN, clip=box)) if clear[own].any() else [],
+            float(mask[own].sum()) / total, float(clear[own].sum()) / total, wood_m2)
 
 
 def tile_key(wood, height):
@@ -158,19 +228,21 @@ def processing():
 
 
 def jobs_for(area, meta, terrain, want):
+    woods = {}  # every tile's wood outlines: a tile is worked out with its neighbours'
     for ci, cj in layers.chunks(meta):
         ground = layers.read_chunk(area, "ground", ci, cj)["tiles"]
         for i, j in layers.chunk_tiles(meta, ci, cj):
-            k = f"{i}_{j}"
-            if want is not None and (i, j) not in want:
-                continue
-            wood = wood_of(ground.get(k) or {})
-            if not wood:
-                continue
-            if sum(Polygon(r[0], r[1:]).buffer(0).area for r in wood) < MIN_WOOD:
-                continue
-            box = [round(v, 2) for v in layers.tile_box(meta, i, j)]
-            yield area, meta, i, j, box, wood, layers.height_digest(terrain, k)
+            wood = wood_of(ground.get(f"{i}_{j}") or {})
+            if wood:
+                woods[i, j] = wood
+    for (i, j), wood in woods.items():
+        if want is not None and (i, j) not in want:
+            continue
+        if sum(Polygon(r[0], r[1:]).buffer(0).area for r in wood) < MIN_WOOD:
+            continue
+        box = [round(v, 2) for v in layers.tile_box(meta, i, j)]
+        around = [r for dj in (-1, 0, 1) for di in (-1, 0, 1) if (di or dj) for r in woods.get((i + di, j + dj), [])]
+        yield area, meta, i, j, box, wood, layers.height_digest(terrain, f"{i}_{j}"), around
 
 
 def run(area, tiles, jobs, write=True):
