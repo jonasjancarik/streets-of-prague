@@ -407,11 +407,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   snows, all made in Web Audio (`src/audio.ts`).
 - **Night** (`src/lamps.ts`): the street lamps are IPR's, about 130,000 of them: on
   poles, on walls, the Old Town's gas lamps, floodlit monuments, tunnels and
-  underpasses (`pipeline/build_lamps.py`), with the street lamps only OSM has added.
-  Side streets whose lamps hang on cables between the houses aren't in that map, so
-  a street OSM tags as lit (`lit.bin.gz`) with no lamp within 20 m gets one hung over
-  it every 30 m, between the houses; a lit street the survey doesn't reach at all gets
-  lamps on poles. Streets tagged as dark, and those with no tag, get none. Round the view the lamps get a pole and a glowing head,
+  underpasses (`pipeline/build_lamps.py`), with the lamps of IPR's second layer (the
+  documentation of finished works, which fills whole neighbourhoods the survey misses)
+  and those only OSM has. Where there are still none, the game adds its own on lit
+  streets and paths: hung on cables between houses that stand close, on poles
+  elsewhere, small globes along footpaths. Lit means tagged lit in OSM, or untagged
+  with a lamp near, with buildings along it, or on the way (300 m at most) from such a
+  stretch to the next lit street (`pipeline/street_lighting.py`, `lit.bin.gz`). Streets
+  tagged dark and roads between fields stay dark. Round the view the lamps get a pole and a glowing head,
   and every lamp and every driving car's headlights and rear lights add a pool of
   light to a light map: a texture over the view, drawn from above each frame. The
   ground, walls, trees, cars and people read their light from it by position, so the
