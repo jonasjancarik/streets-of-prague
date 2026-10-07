@@ -41,6 +41,63 @@ To do, by a person with a login or an email:
 
 ## `straight-skeleton` and CGAL
 
+**Done on 7 October 2026: the library is gone** (option 3 below). The game's pitched roofs
+are now built on its own straight skeleton, `src/map/skeleton.ts`, written for the game
+from the definition of a straight skeleton and holding no code from CGAL or from any
+other library. `straight-skeleton` is out of `package.json` and the lockfile, the build
+no longer holds WebAssembly or CGAL (searched: no `.wasm` file, and no "CGAL",
+"create_straight_skeleton", "wasm" or "WebAssembly" in any built file), `licenses.txt`
+no longer lists it and the credits no longer name it. Nothing was added to `licences/`:
+that folder is for bundled packages that ship no licence text, and none was added.
+
+What was looked at before writing our own:
+
+| Candidate | Licence, and what it carries | Health | Verdict |
+| --- | --- | --- | --- |
+| `straight-skeleton` 1.1.0, the pure TypeScript version of the same package | MIT (vHawk). A port of StraightSkeletonNet (`reinterpretcat/csharp-libs`, Apache-2.0), itself a port of `kendzi/kendzi-math` (BSD-3-Clause): clean, no CGAL | Last 1.x release March 2023; the package's 11,000 weekly downloads are for all versions | Not good enough: on 10,275 roofs of the sample its skeleton failed on 896 (8.7 %), which would have gone flat, and 98 more did not cover their footprint |
+| `straight-skeleton-geojson` 0.1.1 | MIT, adapted from the above | 36 downloads a week; its README lists footprints with holes as not done | The same algorithm, without courtyards |
+| `@proc-geo/core` 0.2.1 | MIT, own code | 21 downloads a week, a personal project | Simple polygons only, no courtyards |
+| `@matthewjacobson/str8` 0.5.0 | MIT wrapper | | CGAL in WebAssembly again: the same problem |
+| JavaScript ports of `polyskel` | `polyskel` is LGPL-3.0 | | Not permissive |
+| Roofs made in the pipeline | CGAL used only at build time would be fine | | Heavier tiles, a map rebuild, and no roofs for the countryside tiles made in the browser; not needed |
+
+How the replacement compares with the library (`scripts/roof-compare.mjs`, which builds
+every building of `ujezd`, `centrum` and every 40th tile of `praha` through the roof
+builder; and one-off runs of both skeletons side by side while the library was still
+installed):
+
+- All 10,275 pitched roofs of the sample are as high as before at every sampled point, to
+  within 2 cm (667,150 points). None newly flat, none newly roofed. The triangles and the
+  per-slope shades are the same too, because the new code gives its polygons in the
+  library's order.
+- On every building of the three areas (257,457 footprints, flat-roofed ones included,
+  44 million points) the two skeletons' surfaces agree to within a millimetre on 257,449
+  and within 2.3 mm on three more, when each footprint is first moved to the origin. Of
+  the other five, the library gives nothing for four that now get a roof, and neither
+  gives one for the fifth (`way/50148306`, the only footprint in Prague without a
+  skeleton, before and after).
+- With the coordinates the game really passes, the library's roofs were up to 17 cm off
+  on three footprints and 1 to 10 cm off on 495: it read coordinates as 32-bit numbers,
+  a millimetre coarse 15 km from the map's middle, which moved its corners. The new code
+  works in 64 bits and is the more exact of the two there.
+- Random footprints (9,000: houses of grid squares, stars, courtyards, turned,
+  stretched, some rounded to the centimetre): the same surface, to a quarter of a
+  millimetre, wherever the library gave one. The library ran out of its 2 GB of memory
+  on some and gave nothing for 104 that the new code roofs; the reverse never happened.
+- Time: 1.3 ms a tile where the library took 35 to 56 ms (the slowest tile 73 ms for
+  0.9 to 1.2 s), and no WebAssembly to start in each tile worker.
+- The built JavaScript is 2.06 MB smaller (5.03 → 2.97 MB; gzip 1.57 → 0.91 MB): the
+  WebAssembly was in both the main bundle and the tile worker.
+
+What is not as good: the new code works in ordinary floating point with a tolerance of a
+thousandth of a millimetre, where CGAL computed exactly. No footprint in Prague shows a
+difference, but a footprint could exist on which it goes wrong; it then checks that its
+slopes cover the footprint exactly, and gives the building a flat roof if they don't. A
+footprint with more than 1,200 corners gets a flat roof without trying (the most in
+Prague is 346).
+
+The rest of this section is the review as written on 5 to 6 October, before the change.
+
 `straight-skeleton` 3.0.0 (npm, author StrandedKitty) declares MIT, and its own code is MIT. Its
 README says it "wraps the basic functionality of CGAL's straight skeleton implementation using
 Wasm". The built `dist/index.js` (1 MB) contains the compiled WebAssembly (`_create_straight_skeleton`,
