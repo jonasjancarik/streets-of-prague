@@ -183,9 +183,18 @@ def material(cls, L, model):
     return cls
 
 
+def fitted(a, shape):
+    """`a` cut or padded (with False) to `shape`: a raster drawn at CELL for a box that isn't a
+    whole number of cells (a tile at the edge of the area) can be a row or column off the
+    one averaged down from the pixels."""
+    a = a[:shape[0], :shape[1]]
+    return np.pad(a, ((0, shape[0] - a.shape[0]), (0, shape[1] - a.shape[1])))
+
+
 def classify(P, mask, near=None, model=None, height=True):
     """Class index per cell (-1: not bare ground) from the per-pixel numbers and the bare mask."""
     C, m = cells(P, mask)
+    near = {k: fitted(v, m.shape) for k, v in (near or {}).items()}
     L = local(C, m, near)
     cls = material(rules(L, height), L, model)
     # A crown close to a house is not a wood: the game would plant full-grown trees into a

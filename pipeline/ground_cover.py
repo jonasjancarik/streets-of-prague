@@ -1120,7 +1120,7 @@ def tile_cover(area, meta, t, around=None, fetch=None, infrared=True, model="kep
     room = np.ones(smooth.shape, bool)
     for kind, least in (("building", cover_cells.ROOM), ("carriageway", 1.0)):
         if near[kind].any():
-            room &= ndimage.distance_transform_edt(~near[kind]) * CELL >= least
+            room &= ndimage.distance_transform_edt(~cover_cells.fitted(near[kind], smooth.shape)) * CELL >= least
     peaks = peak_local_max(np.where(canopy, ndimage.gaussian_filter(P["ndsm"], 2), 0), min_distance=int(4 / RES), threshold_abs=3)
     f, wood = round(CELL / RES), cover_cells.CLASSES.index("trees")
     bx0, by0, bx1, by1 = t["box"]

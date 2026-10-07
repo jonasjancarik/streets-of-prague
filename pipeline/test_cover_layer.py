@@ -87,6 +87,21 @@ class CoverSeamTests(unittest.TestCase):
         self.assertGreater(len(np.unique(a[a >= 0])), 2)  # (several classes do meet the edge)
         self.assertTrue((a == b).all())
 
+    def test_a_tile_that_is_not_a_whole_number_of_cells_is_classified(self):
+        try:
+            import cover_cells as C
+        except ImportError:
+            self.skipTest("needs the cover dependency group")
+        import numpy as np
+        rng = np.random.default_rng(2)
+        h, w = 577, 400                                # pixels: 288.5 cells high (an edge tile of ujezd)
+        rgb, cir = rng.random((h, w, 3), np.float32), rng.random((h, w, 3), np.float32)
+        dtm = np.full((h, w), 200, np.float32)
+        near = {"building": np.zeros((289, 200), bool)}  # drawn at the cell size: a row more
+        near["building"][100:120, 50:80] = True
+        cls = C.classify(C.measure(rgb, cir, dtm + 1, dtm), np.ones((h, w), bool), near)
+        self.assertEqual(cls.shape, (288, 200))
+
     def test_outlines_reach_the_tile_edge_and_stop_there(self):
         try:
             import cover_cells as C
