@@ -11,8 +11,8 @@ in the road.
 
 ## Status and starting point
 
-- Status: IN PROGRESS (steps 1 to 3 are done apart from what the Result lists as owed;
-  hills, bridges and tunnels are not started).
+- Status: IN PROGRESS (steps 1 to 4 are done apart from what the Result lists as owed;
+  bridges and tunnels, step 5, are not started).
 - Priority: P3. Effort: about a week for the prototype, three to five weeks in all.
   Risk: medium to high (a second map builder to keep in step with the pipeline, and
   two outside services the game would lean on).
@@ -405,3 +405,41 @@ elevation data's sources if step 4 goes ahead.
   central Bohemia ends well inside that).
 - Not done from step 3: credits in the game for Protomaps (wanted once this leaves the
   flag; the README names it), and the phone measurement (the list under step 2).
+
+**Step 4, hills, 7 October 2026.**
+
+- **Source**: Mapzen's terrain tiles in the Terrarium layout, kept as open data at AWS
+  (`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`,
+  `VITE_ELEVATION_URL`; empty leaves the countryside flat). They answer a browser on
+  any origin (`Access-Control-Allow-Origin: *`) and range requests. Zoom 12: a point
+  every 24 m, one tile (about 110 kB) for 6 km. Attribution is in the README's
+  credits; it belongs in the game's credits once this leaves the flag. The game then
+  leans on that bucket being there: a copy of the few hundred tiles of central
+  Bohemia beside the PMTiles file would remove that, and is the owner's call.
+- **Heights** are whole decimetres above 100 m as in the built tiles (`src/terrain.ts`),
+  so any hill fits. The worker samples the elevation tiles onto the tile's 63 × 63
+  grid (`Countryside.heights`); `World.edgeHeight` blends that with the flat carried
+  on from the map's edge over the first 500 m past the built tiles (`blendHeights`).
+  The first row's shared points are the built tile's own numbers; neighbouring
+  countryside tiles give shared points the same numbers.
+- **Roads**: within a metre of a road's edge the ground has the height the hill has
+  along the road's middle, and returns to its own over 8 m. The two sides of a road
+  differ by 0.20 m at most in Beroun's middle tile. (The grid's points are 4 m apart,
+  so a narrow path is levelled only roughly.)
+- 9 ms a tile for the heights in Node on the M5 (the generator's tile itself is under
+  2 ms once its vector tiles are read). In the game Beroun's square is at 228 m and
+  Svatý Jan pod Skalou at 247 m, which is where they are.
+- **Not done**: water lies on whatever slope the data has (a pond can tilt; rivers are
+  near enough level); buildings stand on the lowest ground under them, as in the city;
+  bridges and tunnels follow the ground (step 5), so the one built street that leaves
+  the map on a bridge still steps; the built map's own outer ring stays flat, so the
+  hills begin at its edge.
+- A countryside worker whose script failed to load left the game waiting for ever at
+  the start (seen when another session's dev server replaced the dependency cache in
+  the shared `node_modules/.vite`). It now gives up, and the map ends where it did.
+- `scene.mjs run all --extra "&countryside"`: 28 scenarios, all pass on their own;
+  in one run `fire-brigade` failed (it is one of the unstable ones in `todo.md`) and
+  `countryside-taxi`'s first taxi did not come after `countryside-police`, so that
+  scenario now orders a second one as a player would.
+- Owed: the phone (the list under step 2, and the time for a tile's heights and the
+  elevation tiles' bytes on a drive out); a save resumed past the map in a browser.
