@@ -63,6 +63,19 @@
         "site"
       ],
       "port": 5195
+    },
+    {
+      "name": "night-audio",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=5196",
+        "npm",
+        "--prefix",
+        ".claude/worktrees/night-audio",
+        "run",
+        "dev"
+      ],
+      "port": 5196
     }
   ]
 }
