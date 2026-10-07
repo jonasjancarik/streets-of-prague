@@ -23,6 +23,7 @@ pipeline/.cache/landmarks/<area>/ (see KEEP, and .claude/skills/landmarks).
 """
 
 import argparse
+import io
 import json
 import os
 import shutil
@@ -31,6 +32,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 from pyproj import Transformer
 from shapely import contains_xy
 from shapely.geometry import Polygon, mapping
@@ -57,6 +59,7 @@ LANDMARKS = {
     "rudolfinum": ["way/30123527"],  # Rudolfinum
     "mikulas": ["way/27859115"],  # Kostel sv. Mikuláše, Staroměstské náměstí
     "okamura": ["way/998156376"],  # Vila Tomia Okamury (House Okamura), Nad Tejnkou 9a, Břevnov; not in IPR's city model, so the mesh as it is
+    "tancici": ["relation/6751056"],  # Tančící dům (Ginger & Fred), Jiráskovo náměstí
 }
 # Places on a landmark's roofs (lon, lat, radius in metres) where the photographs show
 # something that isn't the roof, a tree reaching over it: what is much darker than the
@@ -65,6 +68,17 @@ LANDMARKS = {
 PAINT_OVER = {
     "manes": [(14.414098, 50.077606, 6.5)],  # the tree at the north-east corner
 }
+# Landmarks that are the mesh's own triangles although IPR's city model has the building:
+# the Dancing House is a plain prism there, without the glass tower's waist and legs or
+# the walk under the corner tower, and the mesh has them all.
+RAW = {"tancici"}
+# Landmarks photographed with their street fronts in shade, which the white plaster
+# shows as blue: how much of that cast is taken out, and how much lighter it gets.
+SHADED = {"tancici": (0.85, 1.45)}
+# Landmarks without a tiled roof. The game draws tiles where a landmark's photograph
+# shows a red or a near-black roof (shadeLandmark in src/shading.ts); these are drawn as
+# photographed throughout (the Dancing House's dark glass slopes like a roof).
+PLAIN = {"tancici"}
 PAD = 1.5
 BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or "/Applications/Blender.app/Contents/MacOS/Blender"
 
@@ -138,10 +152,26 @@ def run_blender(area: str, name: str, out: Path, crs: str):
     print(f"{name}: " + "; ".join(said))
 
 
+def unshaded(jpeg: bytes, cast: float, gain: float) -> bytes:
+    """A texture of the mesh with the blue of open shade taken out of it (SHADED): what
+    is bluer than it is red goes towards a slightly warm grey of its own brightness by
+    `cast` (the dark part less), and lighter by `gain`. Sunlit roofs, neutral or warm, stay as they are."""
+    rgb = np.asarray(Image.open(io.BytesIO(jpeg)).convert("RGB"), np.float32) / 255
+    w = np.clip((rgb[..., 2] - rgb[..., 0]) / np.maximum(rgb.max(-1), 1e-3) / 0.2, 0, 1)[..., None]
+    luma = (rgb @ np.array([0.299, 0.587, 0.114], np.float32))[..., None]
+    # Glass and windows, the dark part, are blue in themselves: they keep most of it.
+    plaster = 0.35 + 0.65 * np.clip((luma - 0.2) / 0.3, 0, 1)
+    out = (rgb + (luma * np.array([1.03, 1.0, 0.95], np.float32) - rgb) * w * cast * plaster) * (1 + (gain - 1) * w)
+    data = io.BytesIO()
+    Image.fromarray((np.clip(out, 0, 1) * 255).round().astype(np.uint8)).save(data, "JPEG", quality=88)
+    return data.getvalue()
+
+
 def ground_off(parts, height: float = 1.0):
     """Without a clean model the mesh's ground round the building's foot (flat triangles
-    within `height` of its lowest point) is dropped: it shows as dark spikes."""
-    zmin = min(p[:, 2].min() for p, _, _ in parts)
+    within `height` of its lowest point) is dropped: it shows as dark spikes. The lowest
+    point is the lowest but for a stray spike downwards (2% of the corners)."""
+    zmin = np.percentile(np.concatenate([p[:, 2] for p, _, _ in parts]), 2)
     out = []
     for pos, uv, tex in parts:
         t = pos.reshape(-1, 3, 3)
@@ -155,7 +185,10 @@ def ground_off(parts, height: float = 1.0):
 
 def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: float, tile: float, origin, raw: bool):
     osm = unary_union(footprints(area, ids))
-    clean, outlines = (np.empty((0, 3, 3)), []) if raw else lod3(area, osm, tile, origin)
+    # IPR's buildings there give way to the landmark even when it isn't made from them.
+    clean, outlines = lod3(area, osm, tile, origin)
+    if raw or name in RAW:
+        clean = np.empty((0, 3, 3))
     # What the landmark takes over: OSM's footprint and IPR's buildings in it, a little
     # wider (the game hides IPR's triangles by where their middles are, which for a wall
     # is on the outline).
@@ -178,6 +211,8 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
         raise SystemExit(f"{name}: the mesh has nothing there")
     if not len(clean):
         parts = ground_off(parts)
+        if name in SHADED:
+            parts = [(p, uv, unshaded(tex, *SHADED[name])) for p, uv, tex in parts]
     ox, oy = origin
     tiles = sorted({f"{i}_{j}" for i in range(int((x0 + ox) // tile), int((x1 + ox) // tile) + 1)
                     for j in range(int((y0 + oy) // tile), int((y1 + oy) // tile) + 1)})
@@ -190,7 +225,7 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
         print(f"{name}: {len(outlines)} of IPR's buildings, {len(clean)} triangles")
         bake(area, name, parts, clean, glb, crs)
     else:
-        if not raw:
+        if not raw and name not in RAW:
             print(f"{name}: no IPR buildings there, so the mesh's triangles as they are")
         write_glb(glb, parts)
     warmed = out / f"{name}.warm-v1.glb"
@@ -199,7 +234,7 @@ def cut(area: str, name: str, ids: list[str], level: int | None, crs: str, ref: 
     cx, cy = foot.centroid.x, foot.centroid.y
     polys = list(foot.geoms) if foot.geom_type == "MultiPolygon" else [foot]
     return {"name": name, "file": f"landmarks/{name}.warm-v1.glb", "polygons": [mapping(q)["coordinates"] for q in polys],
-            "home": f"{int((cx + ox) // tile)}_{int((cy + oy) // tile)}", "tiles": tiles}
+            "home": f"{int((cx + ox) // tile)}_{int((cy + oy) // tile)}", "tiles": tiles, **({"plain": True} if name in PLAIN else {})}
 
 
 def rebake(area: str, name: str, crs: str) -> str:

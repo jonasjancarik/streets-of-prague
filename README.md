@@ -461,7 +461,7 @@ record the measurements, merge decisions and pending landmark asset activation.
   for reuse without changing the surveyed or generated tree data. Pages hold 1,200
   broadleaf or 128 shrub/conifer instances. Startup prepares 30 broadleaf, 20 shrub
   and 24 conifer pages; a denser view can add pages without dropping trees.
-- **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, and House Okamura in Břevnov) are cut out of IPR's
+- **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.
   `pipeline/landmarks.py` takes the mesh's pieces over the landmark's OSM footprints

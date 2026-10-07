@@ -217,6 +217,25 @@ If IPR has no building there (newer ones), or with `--raw`, the landmark is the 
 own triangles: ~20,000 triangles and 2 MB for Mánes, ragged edges, trees included,
 drawn two-sided. Fine as a stopgap, not as a result.
 
+Unless the clean model is the worse of the two. IPR's Dancing House is a prism standing
+on the ground: no waist or legs on the glass tower, no column and open ground floor
+under the corner tower, all of which the mesh has. Compare them in plan before choosing
+(cut both at a few heights and draw the outlines over OSM's and the tile's `passages`).
+Three sets in `landmarks.py` cover such a landmark (8 October 2026):
+
+- `RAW`: always the mesh's triangles. IPR's buildings there still widen the footprint,
+  or their walls stay standing in front of the landmark (a beige curved wall before the
+  corner tower).
+- `SHADED`: street fronts photographed in shade come out blue, white plaster most of
+  all. `unshaded` takes the cast out of what is bluer than red and lightens it; the
+  dark part (glass, windows) keeps most of its blue.
+- `PLAIN` (`plain` in `landmarks.json`): no tiled roofs, so the game draws it with the
+  cutaway only. Otherwise near-black texels on a sloping face count as a roof in shadow
+  and are drawn as clay tiles: red-brown patches on the glass tower's skirt.
+
+Walking under it needs nothing from the landmark: OSM's `passages` open the collision
+grid, and the cutaway opens the model above the player.
+
 ## Files
 
 - `pipeline/landmarks.py` — `LANDMARKS`, the mesh download (nodes cached in

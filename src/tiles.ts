@@ -239,7 +239,7 @@ function warmUp(map: THREE.Texture) {
   map.needsUpdate = true;
 }
 
-export async function landmarkModel(url: string) {
+export async function landmarkModel(url: string, plain = false) {
   const gltf = await new GLTFLoader().loadAsync(url);
   const model = gltf.scene;
   const colourVersion = model.userData.landmarkColourVersion;
@@ -258,7 +258,9 @@ export async function landmarkModel(url: string) {
         legacyMaps.add(map);
       }
     }
-    o.material = shadeLandmark(new THREE.MeshLambertMaterial({ map, side }));
+    // Without tiled roofs (`plain`), nothing is redrawn as tiles: dark glass on a slope would be.
+    const material = new THREE.MeshLambertMaterial({ map, side });
+    o.material = plain ? cutAway(material, 'landmark-plain') : shadeLandmark(material);
     // Up in the world, in the mesh's own axes (in case the file turns it).
     const up = new THREE.Vector3(0, 1, 0).applyMatrix3(new THREE.Matrix3().getNormalMatrix(o.matrixWorld).invert()).normalize();
     const n = o.geometry.attributes.position.count;
@@ -1227,7 +1229,7 @@ export class TileWorld {
     // The landmarks drawn with this tile (each with one tile only, where it mostly is).
     const models = Promise.all(s.marks.filter((l) => l.home === k).map((l) => {
       if (!this.landmarkModels.has(l.name)) {
-        this.landmarkModels.set(l.name, landmarkModel(dataUrl(this.area, `${l.file}`)).catch((e) => {
+        this.landmarkModels.set(l.name, landmarkModel(dataUrl(this.area, `${l.file}`), l.plain).catch((e) => {
           console.warn(`Landmark ${l.name} could not be loaded`, e);
           return null;
         }));
