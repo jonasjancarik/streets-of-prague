@@ -4,6 +4,6 @@
 # GAME_MOVED=yes makes play.streetsofprague.com the game's address: streetsofprague.com
 # then sends its visitors on to it, and the beta posts its forms and statistics there.
 # Empty, the game is at streetsofprague.com and play. is a second address for it.
-# Set it only once the release that added play.streetsofprague.com is live and answers
-# there (docs/play-subdomain-go-live.md is the checklist); it takes effect with the next release.
+# Set to yes since 8 October 2026; it takes effect with the next release, and setting it
+# empty again takes the move back.
 GAME_MOVED=yes

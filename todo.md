@@ -85,14 +85,11 @@ Before deploying:
 - **Missions are not being launched for now** (8 October). Branch `night-missions` stays
   as it is; the taxi job is only for someone in a taxi, the other answers (tone, which
   three factions) are open until it is taken up again.
-- **`play.streetsofprague.com`:** the game goes there; the root sends people on to it;
-  the homepage stays offline for now; saved games are not carried over;
-  `streets-cf.jonasjancarik.cz` goes. Prepared in main (7 October), nothing deployed:
-  one Worker answers at both addresses, and `GAME_MOVED` in `deploy/address` (empty
-  now) turns the redirect on. The next release, whatever it is for, adds `play.` as a
-  second address and drops `streets-cf`; nobody is redirected until `GAME_MOVED=yes`
-  is committed and released. The steps, with the two by hand in Cloudflare's dashboard
-  (the Turnstile hostname first), are in `docs/play-subdomain-go-live.md`.
+- **`play.streetsofprague.com`:** live since 8 October (v0.5.5); the root redirects to it,
+  the homepage stays offline, saved games are not carried over. Still by hand in
+  Cloudflare's dashboard: point the redirect rule for `streets.jonasjancarik.cz` at
+  `play.`, and remove `streets-cf.jonasjancarik.cz` (Workers domain, DNS record, Turnstile
+  hostname).
 
 ## Decisions needed
 

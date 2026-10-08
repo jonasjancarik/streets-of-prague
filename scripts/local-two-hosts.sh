@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The game's Worker on this machine twice over, once as streetsofprague.com and once as
 # play.streetsofprague.com, to try the move between the two before anything is deployed
-# (docs/play-subdomain-go-live.md; scripts/check-two-hosts.mjs runs the checks).
+# (scripts/check-two-hosts.mjs runs the checks).
 # Builds the game as scripts/deploy-cloudflare.sh does and serves it with `wrangler dev`,
 # which tells each copy that it is being asked for at that address. Nothing here logs in
 # to Cloudflare or deploys. The map comes from data.streetsofprague.com, as in production.

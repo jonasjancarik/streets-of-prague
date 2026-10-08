@@ -11,9 +11,9 @@
 
 ## Status
 
-- State: PREPARED on the branch `night-play-subdomain`, in the simpler shape decided on
-  7 October 2026 (Result, below). Nothing is deployed; going live is the checklist in
-  `docs/play-subdomain-go-live.md`
+- State: DONE on 8 October 2026, in the simpler shape decided on 7 October 2026 (Result,
+  below): the game is at `play.streetsofprague.com` (release v0.5.5) and the root redirects
+  to it. The go-live checklist was deleted once it was done
 - Priority: P1 (the homepage in `site/` can't go online before this)
 - Effort: about 2 working days, in four phases that can each be released on their own
 - Risk: medium. The code changes are small. The risky part is the moment the root
@@ -225,10 +225,9 @@ never moves. Checking out a tag changes the branch state: ask the user first.
 
 ## Result
 
-Prepared on the branch `night-play-subdomain`. Nothing was deployed, and nothing at
-Cloudflare was read or changed. The owner decided the plan's questions on 7 October 2026,
+Built on the branch `night-play-subdomain` and gone live on 8 October 2026 with release
+v0.5.5 (`GAME_MOVED=yes`); the Turnstile widget got `play.streetsofprague.com`. The owner decided the plan's questions on 7 October 2026,
 differently from its defaults, so what was built is simpler than the phases above.
-`docs/play-subdomain-go-live.md` is the checklist for going live.
 
 ### As decided
 

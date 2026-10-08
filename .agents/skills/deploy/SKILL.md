@@ -16,12 +16,12 @@ changing a script or when something below doesn't fit the situation.
 | Production | <https://play.streetsofprague.com> (Cloudflare) | `scripts/release.sh` (which runs `scripts/deploy-cloudflare.sh`) | the R2 version named in `deploy/data-version` |
 
 Production's Worker answers at `play.streetsofprague.com` and at `streetsofprague.com`,
-where the game used to be. `GAME_MOVED` in `deploy/address` says which is the game:
-with `yes`, pages at `streetsofprague.com` are redirected to `play.` (`/api` and the
+where the game used to be. `GAME_MOVED` in `deploy/address` says which is the game
+(`yes` since 8 October 2026): with `yes`, pages at `streetsofprague.com` are redirected to `play.` (`/api` and the
 game's files still answer at both, for tabs left open) and the beta posts its forms to
-`play.`; empty, the game is at `streetsofprague.com`. It is empty until the move has
-been made, which changes production in ways the user confirms step by step:
-`docs/play-subdomain-go-live.md` is the checklist. Don't change the switch otherwise.
+`play.`; empty, the game is at `streetsofprague.com`. Changing it moves the game
+for every player: only when the user asks, and `GAME_MOVED=` plus a patch release takes
+it back.
 
 The earlier `streets-beta.jonasjancarik.cz` address remains a working alias of the beta.
 `streets.jonasjancarik.cz` permanently redirects to the game through a Cloudflare
