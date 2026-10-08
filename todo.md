@@ -82,8 +82,9 @@ Before deploying:
   `docs/licences-review.md`). `npm prune` is owed, once no older branch is served from
   the shared `node_modules` (the `night-audio` worktree still imports the package).
 - **The cruise boat stays lower.**
-- **The taxi job is only for someone in a taxi.** The other answers for missions (tone,
-  which three factions, and the rest) are still open.
+- **Missions are not being launched for now** (8 October). Branch `night-missions` stays
+  as it is; the taxi job is only for someone in a taxi, the other answers (tone, which
+  three factions) are open until it is taken up again.
 - **`play.streetsofprague.com`:** the game goes there; the root sends people on to it;
   the homepage stays offline for now; saved games are not carried over;
   `streets-cf.jonasjancarik.cz` goes. Prepared in main (7 October), nothing deployed:
