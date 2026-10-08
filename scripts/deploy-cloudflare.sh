@@ -55,7 +55,7 @@ cat > "$OUTPUT/config.json" <<'CONFIG'
 {"accountId":"7756b12931ecfb3900a31049e157d706","buildContext":{"isPreview":false}}
 CONFIG
 mkdir -p "$OUTPUT/workers/default/bundle"
-cp worker/index.js worker/stats.js "$OUTPUT/workers/default/bundle/"
+cp worker/index.js worker/stats.js worker/weather.js "$OUTPUT/workers/default/bundle/"
 # Only /api/* and the page itself (/) run the Worker, the page so that the game's old
 # address can send people on to the new one (deploy/address); every other request is
 # answered from the assets directly, at every address, and doesn't count as a Worker request.
