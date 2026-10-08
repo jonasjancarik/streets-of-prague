@@ -20,7 +20,7 @@ import { onPolygons } from './map/geo.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
 import { styleFor, facadeCoords, paintWalls, mansardCoords, BLANK } from './facades.ts';
 import type { WallLine } from './facades.ts';
-import { roofClutter } from './map/roofClutter.ts';
+import { roofClutter, smokingChimneys } from './map/roofClutter.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
 import { flatTerraces, heightSampler, terraceAt, withRamps } from './terrain.ts';
 import { skyView } from './map/skyView.ts';
@@ -209,7 +209,7 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter }: W
   const more = clutter ? roofClutter(pos, col, facade, own, low, lines, hAt) : null;
   const built = flat ? insertAt(result, flat, own * 3) : result;
   const extrasAt = own * 3 + (flat ? flat.position.length / 3 : 0);
-  return { ...appendTo(built, more), parts: { extras: extrasAt, clutter: extrasAt + (n - own) * 3 } };
+  return { ...appendTo(built, more), parts: { extras: extrasAt, clutter: extrasAt + (n - own) * 3 }, chimneys: smokingChimneys(pos, own, low) };
 }
 
 // Walkable/drivable cells: 0 free, 255 solid, 254 free but walled in (a closed

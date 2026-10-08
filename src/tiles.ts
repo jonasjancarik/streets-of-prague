@@ -32,6 +32,7 @@ import { stepEdges, type Crosser, type StepEdge } from './stepEdges.ts';
 import { fenceMeshes } from './map/fences.ts';
 import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
+import { chimneySmoke, dropChimneySmoke } from './chimneySmoke.ts';
 import { furnitureSurvey } from './furnitureSurvey.ts';
 import { CountrysideTiles } from './countrysideTiles.ts';
 import { blendHeights, edgeGrid } from './countrysideJoin.ts';
@@ -54,7 +55,7 @@ interface TileSource {
 type MeshJobs = Promise<[WorkerResults['ground'], BuildingArrays | null, BuildingArrays | null]>;
 // A tile's meshes while it's near the view: the ground, the buildings and what was
 // made with them (own), all in one group in the scene.
-interface TileMeshes { group: THREE.Group; surfaces: Surfaces; own: THREE.Mesh[] }
+interface TileMeshes { group: THREE.Group; surfaces: Surfaces; own: THREE.Mesh[]; smoke: THREE.Object3D | null }
 interface Tile {
   k: string; i: number; j: number; box: Bounds; passages: TilePassage[]; raised: Point2[][][];
   grid: Grid; levels: TileLevel[];
@@ -1281,7 +1282,9 @@ export class TileWorld {
     const hidden = shade && terrain && tile.levels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step) : null;
     if (hidden) group.add(hidden);
     const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
+    const smoke = iprArrays?.chimneys ? chimneySmoke(iprArrays.chimneys, this.scene) : null;
     group.add(surfaces.group, ...buildings, ...tile.fixtures, ...landmarks, ...tile.furniture);
+    if (smoke) group.add(smoke);
     // Nothing in a tile ever moves: its matrices are worked out once, not every frame,
     // and the renderer's walk through the scene each frame skips the tile's objects.
     group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
@@ -1290,7 +1293,7 @@ export class TileWorld {
     // The tree pages are leased last: if they can't be, nothing is left half done.
     this.trees.add(k, s.trees);
     this.scene.add(group);
-    tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])] };
+    tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])], smoke };
     lap('meshes');
   }
 
@@ -1305,6 +1308,7 @@ export class TileWorld {
     // (The landmarks and what stays with the tile go into a new group next time.)
     drawn.group.clear();
     drawn.surfaces.dispose();
+    if (drawn.smoke) dropChimneySmoke(drawn.smoke);
     const sky = this.sky.get(tile.i * 65536 + tile.j);
     if (sky) {
       sky.refresh?.drop();

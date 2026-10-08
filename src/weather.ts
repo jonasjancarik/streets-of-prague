@@ -329,6 +329,8 @@ export class WeatherFx {
   // The colours they take from the light (display colours, see Sky).
   readonly tint = { value: new THREE.Color('#9aa3ad') };
   readonly fog = { value: new THREE.Color('#b0b5bb') };
+  // The wind that carries what falls (m/s, x and z), for the chimneys' smoke too.
+  get wind() { return this.shared.uWind.value; }
 
   constructor(scene: THREE.Scene) {
     this.localMist = new LocalMistVolume(scene, this.shared.uTime, this.fog);

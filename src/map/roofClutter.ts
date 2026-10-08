@@ -127,6 +127,25 @@ function faces(p: Float32Array, count: number, material: (o: number) => number) 
   return [...found.values()];
 }
 
+const SMOKING_SHARE = 0.2; // of chimneys, in the cold (chimneySmoke.ts)
+
+// The tops of the chimneys that smoke (x, height, z each), among the triangles from `from`
+// on: IPR's chimneys, a body and a cap of ten triangles each (pipeline/roof_details.py).
+export function smokingChimneys(p: Float32Array, from: number, material: (o: number) => number): Float32Array {
+  const n = p.length / 9, out: number[] = [];
+  for (let o = from; o + 20 <= n; o++) {
+    if (material(o) !== CHIMNEY) continue;
+    let run = 0;
+    while (o + run < n && material(o + run) === CHIMNEY) run++;
+    if (run % 20 === 0) for (let k = o; k < o + run; k += 20) {
+      const a = (k + 18) * 9, cx = (p[a] + p[a + 6]) / 2, cz = (p[a + 2] + p[a + 8]) / 2;
+      if (hash(cx, cz, 9) < SMOKING_SHARE) out.push(cx, p[a + 1] + 0.4, cz);
+    }
+    o += run - 1;
+  }
+  return new Float32Array(out);
+}
+
 // `p`: the tile's building triangles (x, height, -y), of which the first `count` are IPR's
 // own (the roofs to build on) and the rest things already added; `col`: their colours
 // (linear, a vertex); `material(o)`: triangle o's roof material; `lines`: the walls

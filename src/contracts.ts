@@ -112,6 +112,8 @@ export interface BuildingArrays {
   // IPR's buildings: the vertex where the chimneys and roof windows start, and where the
   // roof clutter after them does (to the end), for counting and for leaving them out.
   parts?: { extras: number; clutter: number };
+  // IPR's buildings: the tops of the chimneys that smoke in the cold (x, height, z each).
+  chimneys?: Float32Array;
 }
 
 export interface LandResult {

@@ -9,16 +9,17 @@ import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, uv, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, positionViewDirection, normalView, cameraViewMatrix,
-  cameraProjectionMatrix, smoothstep, mix, min, max, clamp, dot, sqrt, length, select, sRGBTransferEOTF, toneMappingExposure,
+  cameraProjectionMatrix, smoothstep, mix, min, max, clamp, dot, sqrt, pow, fract, sin, cos, length, select, sRGBTransferEOTF, toneMappingExposure,
 } from 'three/tsl';
 import { setGlows } from '../lamps.ts';
 import { setSignalGlow } from '../signals.ts';
 import { setBeamShade, setGlintShade, BEAM_ON } from '../lightfx.ts';
 import { setSprayDrawing } from '../spray.ts';
+import { setSmokeDrawing } from '../chimneySmoke.ts';
 import { setPuffShade } from '../fire.ts';
 import { setSkidShade } from '../skids.ts';
 import { lampLit, uLampOn } from './lamps.ts';
-import { type N, addPort, follow, followColor } from './common.ts';
+import { type N, addPort, follow, followVec, followColor } from './common.ts';
 
 addPort(/^signal-(pole|head)$/, (node) => { lampLit(node); });
 
@@ -164,6 +165,37 @@ setSprayDrawing(({ from, born, vel, tint, scene, life, size, uNow, uScale }) => 
   })();
   Object.assign(m, { transparent: true, depthWrite: false, fog: false, toneMapped: false });
   return new THREE.Mesh(g, m);
+});
+
+// ---- The chimneys' smoke (chimneySmoke.ts) ----
+// A quad for each puff, as the spray's drops; where it is and how it fades as in the GLSL.
+
+setSmokeDrawing(({ scene, life, rise, uTime, uOn, uScale, uWind, tint }) => {
+  const m = new NodeMaterial();
+  const now = follow(uTime), on = follow(uOn), scale = follow(uScale), wind: N = followVec(uWind as any), tinted = followColor(tint);
+  const screen = uniform(new THREE.Vector2(1, 1)).setGroup(renderGroup);
+  screen.onRenderUpdate(({ renderer }: N) => { renderer.getDrawingBufferSize(screen.value); return screen.value; });
+  const puff: N = attribute('puff', 'vec2');
+  const lasts = puff.x.mul(0.4).add(0.8).mul(life);
+  const k: N = fract(now.div(lasts).add(puff.y)), t: N = k.mul(lasts);
+  const gust: N = vec2(sin(now.mul(0.5).add(puff.x.mul(40)).add(k.mul(5))), cos(now.mul(0.4).add(puff.x.mul(23)).add(k.mul(4)))).mul(0.6).mul(k);
+  const along: N = wind.xy.mul(t).mul(k.mul(0.65).add(0.35)).add(gust);
+  const p = attribute('start', 'vec3').add(vec3(along.x, t.mul(rise).mul(k.mul(-0.45).add(1)), along.y));
+  const wisp: N = fract(puff.y.mul(7.31));
+  const a = on.mul(puff.x.mul(0.5).add(0.5)).mul(wisp.mul(0.75).add(0.25)).mul(smoothstep(0, 0.12, k)).mul(pow(k.oneMinus(), 1.5));
+  const view: N = cameraViewMatrix.mul(vec4(p, 1)), clip: N = cameraProjectionMatrix.mul(view);
+  const across: N = scale.mul(mix(0.6, 3.2, sqrt(k))).mul(wisp.mul(0.6).add(0.7)).div(view.z.negate());
+  const q: N = positionGeometry.xy;
+  m.vertexNode = vec4(clip.xy.add(q.mul(across).div(screen).mul(clip.w)), clip.z, clip.w);
+  const vA = a.toVarying('vA'), vQ = q.toVarying('vQ'), vDepth = view.z.negate().toVarying('vDepth');
+  m.fragmentNode = Fn(() => {
+    const alpha = vA.mul(smoothDown(1, 0, length(vQ))).mul(0.15);
+    If(alpha.lessThan(0.004), () => { Discard(); });
+    const colour: N = min(max(tinted.mul(1.25), vec3(0.3, 0.32, 0.36)), vec3(0.96));
+    return vec4(unmap(mix(colour, fogOf(scene).color, fogAt(scene, vDepth))), alpha);
+  })();
+  Object.assign(m, { transparent: true, depthWrite: false, fog: false, toneMapped: false });
+  return m;
 });
 
 // ---- Flames and smoke (fire.ts) ----

@@ -28,6 +28,7 @@ import { Taxis } from './taxi.ts';
 import { Clock } from './clock.ts';
 import { Sky } from './sky.ts';
 import { Weather, WeatherFx, KINDS, automaticWeather, LIVE_EVERY } from './weather.ts';
+import { updateChimneySmoke } from './chimneySmoke.ts';
 import { MIST_MODE } from './localmist.ts';
 import type { Kind } from './weather.ts';
 import { Lamps, type Flashing } from './lamps.ts';
@@ -47,7 +48,7 @@ import { Districts } from './districts.ts';
 import { TileWorld } from './tiles.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { groundSamples } from './surface.ts';
-import { CUTAWAY, DIG } from './shading.ts';
+import { CUTAWAY, DIG, WEATHER_DETAIL } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { setupSettings } from './settings.ts';
 import { setScreenshot } from './feedback.ts';
@@ -2205,6 +2206,7 @@ async function main() {
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
     weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround, mistWater);
+    updateChimneySmoke(WEATHER_DETAIL.value > 0 ? Math.max(season.cold, weather.now.cover) : 0, time.value, weatherFx.wind, weatherFx.tint.value, renderer.domElement.height);
 
     // ---- HUD -------------------------------------------------------------
     // (On the metro, the street the train is under; on a funicular, its name.)
