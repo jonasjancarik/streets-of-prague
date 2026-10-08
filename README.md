@@ -506,7 +506,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   with (`borrow_walls`), else the palette. The facade's style comes from the building's
   age (IPR's Stáří zástavby, `pipeline/building_age.py`) where that is known. At the High
   graphics setting roofs also get aerials, chimney pots, small dormers and thicker moss
-  (`src/map/roofClutter.ts`, `?clutter=on|off`). A roof cover given in
+  (`src/map/roofClutter.ts`, `?clutter=on|off`). In the cold months and under snow one chimney
+  in five lets out a wisp of smoke (`src/chimneySmoke.ts`). A roof cover given in
   `roofs.py` or OSM still wins. Only colours and material classes leave the pipeline;
   the game draws its own tiles, slate, metal pans between standing seams (`sheetRoof`
   in `src/shading.ts` and `src/webgpu/buildings.ts`), sheets, planted roofs and paving
