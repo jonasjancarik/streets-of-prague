@@ -86,10 +86,9 @@ Before deploying:
   as it is; the taxi job is only for someone in a taxi, the other answers (tone, which
   three factions) are open until it is taken up again.
 - **`play.streetsofprague.com`:** live since 8 October (v0.5.5); the root redirects to it,
-  the homepage stays offline, saved games are not carried over. Still by hand in
-  Cloudflare's dashboard: point the redirect rule for `streets.jonasjancarik.cz` at
-  `play.`, and remove `streets-cf.jonasjancarik.cz` (Workers domain, DNS record, Turnstile
-  hostname).
+  the homepage stays offline, saved games are not carried over, `streets-cf` is gone.
+  `streets.jonasjancarik.cz` still redirects to the root (so two hops to the game); left
+  as it is on purpose until the root gets content of its own.
 
 ## Decisions needed
 
