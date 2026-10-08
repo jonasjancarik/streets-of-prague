@@ -230,19 +230,27 @@ export class Weather {
 
 // ---- What falls and drifts --------------------------------------------------------
 
-const RAIN_DROPS = 9000, FLAKES = 7000;
+const RAIN_DROPS = 13000, FLAKES = 10000;
 const FALL = 9, FLAKE_FALL = 1.1; // m/s
+// The widest a drop's square is, as a multiple of the view's.
+export const DROP_SPREAD = 1.5;
 
-// Drops in a box over the view that stays put in the world while the camera moves
-// (they wrap round its sides), so walking or driving through the rain looks right.
+// Drops that stay put in the world while the camera moves, so walking or driving through
+// the rain looks right. Each wraps round the sides of a square of its own over the view,
+// between the view's size and DROP_SPREAD times it, and of a size that doesn't change
+// with the view: as the camera rises or comes down (with the car's speed) a drop stays
+// where it is until its square is too small or too large, and then takes the next size,
+// one drop at a time. (One square for all of them, the size of the view, moved every
+// drop whenever the view changed.) Up and down they wrap in the world too.
 const WRAP_GLSL = /* glsl */ `
 uniform vec3 uCentre; uniform vec2 uBox; uniform float uTime; uniform vec2 uWind;
 vec3 dropAt(vec4 seed, float fall, float sway) {
-  float size = uBox.x;
+  float own = fract((seed.x + seed.y + seed.z) * 97.);
+  float size = pow(${DROP_SPREAD.toFixed(1)}, ceil(log(uBox.x) / log(${DROP_SPREAD.toFixed(1)}) - own) + own);
   vec2 drift = uWind * uTime + sway * vec2(sin(uTime * .9 + seed.w * 6.28), cos(uTime * .7 + seed.w * 4.1));
   vec2 lo = uCentre.xz - size * .5;
   vec2 xz = lo + fract(seed.xz + (drift - lo) / size) * size;
-  float y = uCentre.y + fract(seed.y - uTime * fall / uBox.y) * uBox.y;
+  float y = uCentre.y + fract(seed.y - (uTime * fall + uCentre.y) / uBox.y) * uBox.y;
   return vec3(xz.x, y, xz.y);
 }
 `;

@@ -7,9 +7,9 @@ import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
   Fn, float, vec2, vec3, vec4, attribute, positionGeometry, positionWorld, cameraProjectionMatrix, cameraViewMatrix, screenSize,
-  sRGBTransferEOTF, toneMappingExposure, fract, sin, cos, exp, normalize, step, smoothstep, length, max, min, select,
+  sRGBTransferEOTF, toneMappingExposure, fract, ceil, log, pow, sin, cos, exp, normalize, step, smoothstep, length, max, min, select,
 } from 'three/tsl';
-import { setFx, type FxParts } from '../weather.ts';
+import { setFx, DROP_SPREAD, type FxParts } from '../weather.ts';
 import { type N, follow, followVec, vnoise } from './common.ts';
 import { lampLight } from './lamps.ts';
 import { setLocalMist } from '../localmist.ts';
@@ -43,14 +43,15 @@ function build(f: FxParts) {
   const uScale = follow(f.scale);
   const uOn = { rain: follow(f.rainOn), snow: follow(f.snowOn), mist: follow(f.mistOn) };
 
-  // Where a drop is: in a box over the view that stays put in the world (WRAP_GLSL).
+  // Where a drop is: in a square of its own size over the view, staying put in the world (WRAP_GLSL).
   const dropAt = (seed: N, fall: N, sway: number) => {
-    const size = uBox.x;
+    const own = fract(seed.x.add(seed.y).add(seed.z).mul(97));
+    const size = pow(float(DROP_SPREAD), ceil(log(uBox.x).div(Math.log(DROP_SPREAD)).sub(own)).add(own));
     let drift: N = uWind.mul(uTime);
     if (sway) drift = drift.add(vec2(sin(uTime.mul(0.9).add(seed.w.mul(6.28))), cos(uTime.mul(0.7).add(seed.w.mul(4.1)))).mul(sway));
     const lo = uCentre.xz.sub(size.mul(0.5));
     const xz = lo.add(fract(seed.xz.add(drift.sub(lo).div(size))).mul(size));
-    const y = uCentre.y.add(fract(seed.y.sub(uTime.mul(fall).div(uBox.y))).mul(uBox.y));
+    const y = uCentre.y.add(fract(seed.y.sub(uTime.mul(fall).add(uCentre.y).div(uBox.y))).mul(uBox.y));
     return vec3(xz.x, y, xz.y);
   };
   const seed = attribute('seed', 'vec4');
