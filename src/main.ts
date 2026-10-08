@@ -2006,9 +2006,11 @@ async function main() {
     } catch { return null; }
   };
   setScreenshot(() => new Promise((resolve) => { grab.push(resolve); setTimeout(() => resolve(null), 2000); }));
+  let soundHeld = false;
   renderer.setAnimationLoop((now) => {
     if (benchPause.paused) { last = now; return; } // a benchmark elsewhere on this machine (dev only)
     const dt = settingsPanel.open ? 0 : Math.min(0.05, (now - last) / 1000); // the settings pause the game
+    if (settingsPanel.open !== soundHeld) sound.hold((soundHeld = settingsPanel.open)); // and the sound with it
     graphics.frame(now - last, now, world.busy);
     telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
     telemetry.most('maxStars', police.stars);
