@@ -11,6 +11,8 @@ import { send, sendInstances } from './gpu.ts';
 // those across it: green, amber, all red, then the other phase, with red and amber
 // together just before a green, as in Czech lights. The traffic stops at red and at
 // amber when it still can; each light stands on a pole at the kerb by the stop line.
+// The crossings at a junction have the pedestrians' lights, red and green only, at
+// their ends facing across: green while the street they cross has red.
 
 // The WebGPU trial's own version of the glow (webgpu/glows.ts), set before the signals are made.
 let glowBy: (() => THREE.Material) | null = null;
@@ -26,9 +28,10 @@ const COLOURS = [new THREE.Color('#22ff88'), new THREE.Color('#ffae00'), new THR
 const OFF = [new THREE.Color('#0c1a12'), new THREE.Color('#1c150a'), new THREE.Color('#1e0c0a')];
 
 interface Junction { g0: number; g1: number; offset: number }
-export interface Signal { stop: number; j: Junction; phase: number; pole?: [number, number] } // pole: where it stands, surveyed
-interface Head { e: DriveEdge; sig: Signal; x: number; y: number; ang: number }
-interface SignalsJSON { junctions: [number, number, number][]; edges: Record<string, [number, number, number, number?, number?]> }
+const GAP_M = 4; // the widest gap in the carriageway (tram tracks) a light is carried across to the kerb
+export interface Signal { stop: number; j: Junction; phase: number; poles: [number, number][] } // poles: where its lights stand, surveyed
+interface Head { e: DriveEdge; sig: Signal; x: number; y: number; ang: number; walk?: boolean } // walk: a crossing's
+interface SignalsJSON { junctions: [number, number, number][]; edges: Record<string, number[]>; walk?: Record<string, number[]> }
 
 // What a light shows at time t (s).
 export function light(sig: Signal, t: number) {
@@ -42,6 +45,7 @@ export function light(sig: Signal, t: number) {
 
 export class Signals {
   private byId = new Map<string, Signal>();
+  private walkById = new Map<string, { sig: Signal; x: number; y: number; ang: number }[]>(); // the crossings' lights by the street they cross
   private heads: Head[] = [];
   private known = new Set<DriveEdge>();
   private pending: DriveEdge[][] = [];
@@ -49,13 +53,16 @@ export class Signals {
   private time: () => number;
   private onRoad: (x: number, y: number) => boolean;
   private height: (x: number, y: number, bridge: boolean) => number;
-  private near: Head[] = [];
+  private near: Head[] = []; // the cars' lights, then the crossings'
+  private cars = 0; // how many of near are the cars' lights
   private nearAt = { x: Infinity, y: Infinity, r: 0, asked: 0, t: 0 }; // r: the radius gathered, asked: the one asked for
   private poles: THREE.InstancedMesh;
   private boxes: THREE.InstancedMesh;
   private lamps: THREE.InstancedMesh;
   private glows: THREE.InstancedMesh;
   private beams: THREE.InstancedMesh;
+  private walkBoxes: THREE.InstancedMesh;
+  private walkLamps: THREE.InstancedMesh;
   private dummy = new THREE.Object3D();
   private c = new THREE.Color();
   private m = new THREE.Matrix4();
@@ -98,6 +105,15 @@ export class Signals {
     this.beams.renderOrder = 4;
     this.lamps = new THREE.InstancedMesh(lamp, new THREE.MeshBasicMaterial(), MAX_HEADS * 3);
     this.lamps.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3 * 3), 3);
+    // A crossing's light: a smaller head lower down, two square lamps (the red man over the
+    // green), no hoods and no beam on the road.
+    const walkBox = mergeGeometries([
+      new THREE.BoxGeometry(0.3, 0.62, 0.2).translate(0, 2.3, 0.1),
+      new THREE.BoxGeometry(0.4, 0.74, 0.04).translate(0, 2.3, -0.02),
+    ])!;
+    this.walkBoxes = new THREE.InstancedMesh(walkBox, this.boxes.material, MAX_HEADS);
+    this.walkLamps = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.22, 0.03).translate(0, 0, 0.21), new THREE.MeshBasicMaterial(), MAX_HEADS * 2);
+    this.walkLamps.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 2 * 3), 3);
     // The lit lamp's glow, flat and larger than life, so it shows from above; brighter at night.
     this.glows = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), glowBy ? glowBy() : new THREE.ShaderMaterial({
       uniforms: { uOn: LAMP_ON },
@@ -114,16 +130,28 @@ export class Signals {
     }), MAX_HEADS);
     this.glows.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3), 3);
     this.glows.renderOrder = 5;
-    for (const m of [this.poles, this.boxes, this.lamps, this.glows, this.beams]) {
+    for (const m of [this.poles, this.boxes, this.lamps, this.glows, this.beams, this.walkBoxes, this.walkLamps]) {
       m.count = 0;
       m.frustumCulled = false;
     }
-    scene.add(this.poles, this.boxes, this.lamps, this.glows, this.beams);
+    scene.add(this.poles, this.boxes, this.lamps, this.glows, this.beams, this.walkBoxes, this.walkLamps);
 
     void fetch(dataUrl(area, 'signals.json')).then((r) => (r.ok ? r.json() as Promise<SignalsJSON> : null)).then((data) => {
       if (!data) return;
       const junctions = data.junctions.map(([g0, g1, offset]) => ({ g0, g1, offset }));
-      for (const [id, [stop, j, phase, px, py]] of Object.entries(data.edges)) this.byId.set(id, { stop, j: junctions[j], phase, ...(px !== undefined && py !== undefined ? { pole: [px, py] as [number, number] } : {}) });
+      for (const [id, [stop, j, phase, ...xy]] of Object.entries(data.edges)) {
+        const poles: [number, number][] = [];
+        for (let i = 0; i + 1 < xy.length; i += 2) poles.push([xy[i], xy[i + 1]]);
+        this.byId.set(id, { stop, j: junctions[j], phase, poles });
+      }
+      // [junction, phase, x, y, the way it faces (degrees anticlockwise from east)] each.
+      for (const [id, v] of Object.entries(data.walk ?? {})) {
+        const list = [];
+        for (let i = 0; i + 4 < v.length; i += 5) {
+          list.push({ sig: { stop: 0, j: junctions[v[i]], phase: v[i + 1], poles: [] }, x: v[i + 2], y: v[i + 3], ang: (v[i + 4] * Math.PI) / 180 + Math.PI });
+        }
+        this.walkById.set(id, list);
+      }
     }).catch(() => {}).finally(() => {
       this.loaded = true;
       for (const edges of this.pending) this.add(edges);
@@ -135,20 +163,26 @@ export class Signals {
   add(edges: DriveEdge[]) {
     if (!this.loaded) { this.pending.push(edges); return; }
     for (const e of edges) {
-      const sig = this.byId.get(e.id);
-      if (!sig || e.tunnel || this.known.has(e)) continue;
+      const sig = this.byId.get(e.id), walk = this.walkById.get(e.id);
+      if ((!sig && !walk) || e.tunnel || this.known.has(e)) continue;
       this.known.add(e);
+      // (ang: the way the traffic it faces goes, as for the cars' lights.)
+      for (const w of walk ?? []) this.heads.push({ e, sig: w.sig, x: w.x, y: w.y, ang: w.ang, walk: true });
+      if (!sig) continue;
       // At the kerb, right of the street's centre line.
       const line = new Polyline(offsetLine(e.pts, e.width / 2 + 0.6));
       const p = line.at(line.length - sig.stop);
       // On its surveyed pole where the map has one (pipeline/build_signals.py).
-      // (Not one the game's carriageway covers: a pole on an island the map doesn't have.)
-      if (sig.pole && !this.onRoad(sig.pole[0], sig.pole[1])) { this.heads.push({ e, sig, x: sig.pole[0], y: sig.pole[1], ang: p.ang }); continue; }
+      if (sig.poles.length) { for (const [x, y] of sig.poles) this.heads.push({ e, sig, x, y, ang: p.ang }); continue; }
       // Where the junction flares the carriageway is wider than the street: out to its kerb.
       const nx = Math.sin(p.ang), ny = -Math.cos(p.ang);
+      // (The tram tracks beside it aren't carriageway: gaps up to GAP_M are crossed.)
       let out = 0;
-      if (!e.bridge) while (out < 12 && this.onRoad(p.x + nx * out, p.y + ny * out)) out += 0.5;
-      if (out) out += 0.5;
+      if (!e.bridge) {
+        let last = -1;
+        for (let s = 0; s < 16 && s - last <= GAP_M; s += 0.5) if (this.onRoad(p.x + nx * s, p.y + ny * s)) last = s;
+        if (last >= 0) out = last + 1;
+      }
       this.heads.push({ e, sig, x: p.x + nx * out, y: p.y + ny * out, ang: p.ang });
     }
     this.nearAt.x = Infinity;
@@ -194,7 +228,8 @@ export class Signals {
   // heading `h` (only those gathered round the view).
   against(x: number, y: number, h: number, d: number) {
     const t = this.time(), fx = Math.cos(h), fy = Math.sin(h);
-    return this.near.some((q) => {
+    return this.near.some((q, i) => {
+      if (i >= this.cars) return false;
       const dx = q.x - x, dy = q.y - y, ahead = dx * fx + dy * fy;
       return ahead > -2 && ahead < d && Math.abs(dx * fy - dy * fx) < 8 && Math.cos(q.ang - h) > 0.7 && light(q.sig, t) !== GREEN;
     });
@@ -205,14 +240,27 @@ export class Signals {
     if (Math.hypot(x - a.x, y - a.y) < 25 && r + 25 <= a.r && r > a.asked * 0.6 && now - a.t < 3000) return;
     const R = r * 1.25 + 40;
     Object.assign(a, { x, y, r: R, asked: r, t: now });
-    this.near = this.heads.filter((h) => Math.abs(h.x - x) < R && Math.abs(h.y - y) < R).slice(0, MAX_HEADS);
+    const round = this.heads.filter((h) => Math.abs(h.x - x) < R && Math.abs(h.y - y) < R);
+    const cars = round.filter((h) => !h.walk), walks = round.filter((h) => h.walk);
+    this.near = [...cars, ...walks].slice(0, MAX_HEADS);
+    this.cars = Math.min(cars.length, MAX_HEADS);
     const d = this.dummy;
     this.near.forEach((h, i) => {
-      // Facing the traffic coming towards it.
+      // Facing the traffic coming towards it (or the people across the crossing).
       d.position.set(h.x, this.height(h.x, h.y, !!h.e.bridge), -h.y);
       d.rotation.set(0, Math.atan2(-Math.cos(h.ang), Math.sin(h.ang)), 0);
       d.updateMatrix();
       this.poles.setMatrixAt(i, d.matrix);
+      if (h.walk) {
+        const w = i - this.cars;
+        this.walkBoxes.setMatrixAt(w, d.matrix);
+        for (let k = 0; k < 2; k++) {
+          d.position.y += k ? -0.28 : 2.44;
+          d.updateMatrix();
+          this.walkLamps.setMatrixAt(w * 2 + k, d.matrix);
+        }
+        return;
+      }
       this.boxes.setMatrixAt(i, d.matrix);
       d.position.y += 0.15;
       d.updateMatrix();
@@ -224,9 +272,12 @@ export class Signals {
         this.lamps.setMatrixAt(i * 3 + k, d.matrix);
       }
     });
-    this.poles.count = this.boxes.count = this.beams.count = this.near.length;
-    this.lamps.count = this.near.length * 3;
-    for (const m of [this.poles, this.boxes, this.lamps, this.beams]) send(m.instanceMatrix, m.count);
+    this.poles.count = this.near.length;
+    this.boxes.count = this.beams.count = this.cars;
+    this.lamps.count = this.cars * 3;
+    this.walkBoxes.count = this.near.length - this.cars;
+    this.walkLamps.count = this.walkBoxes.count * 2;
+    for (const m of [this.poles, this.boxes, this.lamps, this.beams, this.walkBoxes, this.walkLamps]) send(m.instanceMatrix, m.count);
   }
 
   // Once a frame: the lights round the view (x, y), within r.
@@ -234,6 +285,22 @@ export class Signals {
     this.gather(x, y, r, now);
     const t = this.time(), d = this.dummy, m = this.m;
     this.near.forEach((h, i) => {
+      if (h.walk) {
+        // Green while the street has its red, the red man otherwise (no amber).
+        const w = i - this.cars, go = light(h.sig, t) === GREEN;
+        this.walkLamps.setColorAt(w * 2, go ? OFF[2] : COLOURS[2]);
+        this.walkLamps.setColorAt(w * 2 + 1, go ? COLOURS[0] : OFF[0]);
+        this.walkLamps.getMatrixAt(w * 2 + (go ? 1 : 0), m);
+        d.position.setFromMatrixPosition(m);
+        d.position.y += 0.2;
+        d.rotation.set(0, 0, 0);
+        d.scale.setScalar(1.6);
+        d.updateMatrix();
+        d.scale.setScalar(1);
+        this.glows.setMatrixAt(i, d.matrix);
+        this.glows.setColorAt(i, this.c.copy(COLOURS[go ? 0 : 2]));
+        return;
+      }
       const show = light(h.sig, t);
       // Top to bottom: red, amber, green.
       const on = [show === RED || show === READY, show === AMBER || show === READY, show === GREEN];
@@ -251,9 +318,11 @@ export class Signals {
       this.glows.setColorAt(i, this.c.copy(COLOURS[2 - k]));
       this.beams.setColorAt(i, this.c.copy(COLOURS[2 - k]).multiplyScalar(0.22 + 0.3 * LAMP_ON.value));
     });
-    this.glows.count = this.beams.count = this.near.length;
+    this.glows.count = this.near.length;
+    this.beams.count = this.cars;
     sendInstances(this.glows);
     if (this.beams.instanceColor) send(this.beams.instanceColor, this.beams.count);
     if (this.lamps.instanceColor) send(this.lamps.instanceColor, this.lamps.count);
+    if (this.walkLamps.instanceColor) send(this.walkLamps.instanceColor, this.walkLamps.count);
   }
 }
