@@ -141,6 +141,10 @@ furniture, so a few more cars stand than in the game). On it:
   the parked cars they would touch. It reports; `--strict` makes it fail. Centrum on
   6 October: 6 of 20,349 cars in a pickup's way, 288 in a bus's, 21 in the middle of a
   street. Under heavy machine load these runs take minutes, not seconds.
+- `node scripts/check-parking-overlap.mjs [area]`: counts the parked cars whose bodies touch
+  each other, in a tile or across a tile's edge. It reports; `--strict` makes it fail.
+  Centrum on 8 October: none of 21,731 cars (138 pairs before cars were checked against
+  each other's bodies and kept inside their tile).
 
 Open findings from the last one, not fixed yet:
 

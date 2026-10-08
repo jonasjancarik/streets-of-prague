@@ -347,10 +347,30 @@ export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r,
     }
     return false;
   };
+  // Whether the car's body would touch one already parked: their collision circles, with
+  // a hand's width between them. (The distance between their middles, `crowded`, is enough
+  // only for cars standing in line or side by side: in a car park whose edge bends, the
+  // cars of a row turn with it while the row's spacing stays, and they'd overlap.)
+  const touching = (car: Car) => {
+    const mine = car.circles(), cx = Math.floor(car.x / 5), cy = Math.floor(car.y / 5);
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+      const list = cell.get((cx + i) * 131072 + cy + j);
+      if (list) for (const c of list) {
+        const reach = car.r + c.r + 0.1;
+        for (const [ax, ay] of c.circles()) for (const [bx, by] of mine) if (Math.hypot(ax - bx, ay - by) < reach) return true;
+      }
+    }
+    return false;
+  };
+  // Whether all of the car is in this piece of the map. Each tile parks its own cars
+  // without knowing its neighbours', so one standing across the edge could be in a car
+  // the next tile parked there.
+  const within = (car: Car) => car.circles().every(([x, y]) => inside(x - car.r, y) && inside(x + car.r, y) && inside(x, y - car.r) && inside(x, y + car.r));
   const place = (s: ParkingSlot, type = randomType(r)) => {
     // Most people drive into angled bays forwards; elsewhere it's either way round.
     const car = new Car(type, r, s.x, s.y, s.h + (!s.fwd && !s.withTraffic && r() < (s.angled ? 0.08 : s.perp ? 0.05 : 0.5) ? Math.PI : 0));
     if (s.bay && (car.type === 'van' || car.type === 'pickup')) return false;
+    if (!within(car) || touching(car)) return false;
     // Nothing sticking out into a lane, where the traffic would have to squeeze past:
     // where the kerb or a mapped parking lane leaves no room, the street has none.
     if (car.circles().some(([x, y]) => !laneClear(x, y, car.r))) return false;
