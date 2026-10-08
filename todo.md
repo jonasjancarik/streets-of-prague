@@ -265,10 +265,6 @@ before that day's frame-count fix may be doubled.
   - `bike-hit` once: the car put 10 m behind the courier hit something else first
     (34 m from the bike at 14 km/h); the check now says the car's damage and place.
   - `courier-bag` once: E took the player into a taxi standing nearer than the bag.
-  - `vehicle-entry-order` fails every run since the lamp files of 7 October: its
-    `lamp-knock` step, run right after `heli-bridge`, finds no post with a clear run up
-    to it at Vodičkova, while `lamp-knock` alone passes. Waiting ten seconds for the
-    lamps to be put up did not help; not found.
   - Run the full set a few times on the map rebuilt on 7 October.
   - A car put down by `t.car` can still land inside another car or a tram.
   - A tied-up pedal boat between 600 and 700 m from the player is live on water that
@@ -279,18 +275,15 @@ before that day's frame-count fix may be doubled.
     get nearer for 12 s sees to the patient from up to 30 m away.
 - **Tyre sounds are off on main** (`TYRE` in `src/audio.ts`); recordings, new engine
   voices, the heavy diesel and measured jet and siren levels wait on `night-audio`.
-- **Fire engines** don't slow for a tram, bus or car in their way: they hit it at up to
-  65 km/h and need 6–18 s of backing to and fro; held up for 8 s out of view an engine
-  is replaced by another from 150 m or more away, and held up for 6 s within 70 m its
-  crew gets out there, beyond the cannon's 16 m. So `fire-brigade` fails about once in
-  60 fresh loads. A driver that looks ahead and goes round on the free side was built
-  on branch `night-scenarios` (`src/emergency.ts`, 7 October) and is not merged: it
-  touches less but arrives later everywhere measured (Újezd: bad arrivals 4 to 11 of
-  50, median 20.6 to 29.2 s; from fresh loads 1 to 7 of 60), and traffic at Karlovo
-  náměstí jams more. What has to come first, by its author: a route along lanes
-  rather than street middles (`Police.route` uses centre lines, so every oncoming car
-  is nearly head-on), traffic that really clears a junction, and a way past a tram.
-  The figures are in plan 006 on that branch. Also: about 40 s to clear a narrow
+- **Fire engines don't always get there, and that is accepted** (decided 8 October).
+  They don't slow for a tram, bus or car in their way, and a crew held up within 70 m
+  gets out beyond the cannon's 16 m. From a fresh game they arrived in time in all of
+  60 calls on the map of 8 October; in a long session things pile up and more go
+  wrong. Two days of work on branch `night-scenarios` (a route along lanes, traffic
+  making room, trams moving on, a driver that goes round things; each behind a switch
+  in `src/emergency.ts`) gave fewer rammings at equal arrival times and no fewer bad
+  arrivals, so it is not merged; `docs/emergency-driving-handover.md` and plan 006 on
+  that branch hold the figures and how to measure. Also: about 40 s to clear a narrow
   street after a fire; cars give little room in the Old Town.
 - **Buses** now find a way round where a line has no street (centrum: 40 breaks to 3).
   Left: an AE bus still stalls near Na Poříčí; 581 line breaks over 30 m citywide not
