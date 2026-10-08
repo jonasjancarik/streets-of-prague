@@ -639,6 +639,8 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   else if (uRoofDetail > .5 && bn.y > .97 && (vFacade.w < .5 || vFacade.w > 4.5)) {
     float m = vFacade.w;
     vec3 r;
+    // Membrane and gravel measured off the photos come out nearly white; real ones reflect less.
+    if (m > 5.5 && m < 7.5) roofBase *= min(1., .17 / max(luma(roofBase), .01));
     if (m > 8.5) r = pavingRoof(roofBase, bwp);
     else if (m > 7.5) r = plantedRoof(roofBase, bwp);
     else if (m > 4.5 && m < 6.5) r = sheetsRoof(roofBase, bwp, m > 5.5 ? 2. : 1.);

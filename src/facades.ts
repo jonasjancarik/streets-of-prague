@@ -136,7 +136,7 @@ export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) =
     }
     const len = Math.hypot(p[b] - p[a], p[b + 2] - p[a + 2]) || 1;
     const tx = (p[b] - p[a]) / len, tz = (p[b + 2] - p[a + 2]) / len;
-    let from = Infinity, to = -Infinity, top = 0, topY = -Infinity;
+    let from = Infinity, to = -Infinity, top = 0, topY = -Infinity, bottom = Infinity;
     for (const t of tris) {
       let ground = Infinity;
       for (let v = t * 9; v < t * 9 + 9; v += 3) ground = Math.min(ground, groundAt(p[v], -p[v + 2]));
@@ -145,12 +145,15 @@ export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) =
         out[o] = s;
         out[o + 1] = p[v + 1] - ground;
         from = Math.min(from, s); to = Math.max(to, s); top = Math.max(top, out[o + 1]); topY = Math.max(topY, p[v + 1]);
+        bottom = Math.min(bottom, out[o + 1]);
       }
     }
     const style = styleAt((p[a] + p[b]) / 2, -(p[a + 2] + p[b + 2]) / 2, top) + 0.999 * cellHash(p[a], p[a + 2]);
+    // A small box standing on a roof (a chimney, or what IPR's model makes of a dormer): no windows.
+    const rooftopBox = bottom > 6 && top - bottom < 5 && to - from <= 3.5;
     for (const t of tris) for (let o = t * 12; o < t * 12 + 12; o += 4) {
       out[o] -= from;
-      out[o + 2] = Math.max(to - from, 0.5);
+      out[o + 2] = rooftopBox ? 0 : Math.max(to - from, 0.5);
       out[o + 3] = style;
     }
     ends.push({ tris, nx: nrm[w * 2], nz: nrm[w * 2 + 1], ax: p[a], az: p[a + 2], bx: p[b], bz: p[b + 2], len });

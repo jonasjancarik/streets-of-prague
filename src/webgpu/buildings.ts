@@ -221,6 +221,8 @@ const buildingColor = Fn(() => {
     If(uRoofDetail.greaterThan(0.5), () => {
       const m = f.w;
       const r = vec3(0).toVar();
+      // Membrane and gravel measured off the photos come out nearly white; real ones reflect less.
+      If(m.greaterThan(5.5).and(m.lessThan(7.5)), () => { base.mulAssign(min(float(1), float(0.17).div(max(luma(base), 0.01)))); });
       If(m.greaterThan(8.5), () => { r.assign(pavingRoof(base, bwp, wpWidth)); })
         .ElseIf(m.greaterThan(7.5), () => { r.assign(plantedRoof(base, bwp, wpWidth)); })
         .ElseIf(m.greaterThan(4.5).and(m.lessThan(6.5)), () => { r.assign(sheetsRoof(base, bwp, wpWidth, select(m.greaterThan(5.5), float(2), float(1)))); })
