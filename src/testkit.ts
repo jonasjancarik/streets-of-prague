@@ -112,6 +112,10 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
 
   // The cars the kit has put down, taken away again before the next scenario.
   const made: Car[] = [];
+  // And the posts it aimed a car at, stood up again before the next one: knocked over, a
+  // post stays down for the rest of the game, and a later scenario at the same place found
+  // none left with a clear run up to it.
+  const aimed: Post[] = [];
   const kit = {
     PLACES,
     // The live game's clock: paused, or running at this speed (0.25 = slow motion).
@@ -624,6 +628,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         }
         if (!ok) continue;
         Object.assign(c, { x: sx, y: sy, h, vx: 0, vy: 0, w: 0 });
+        aimed.push(p);
         return p;
       }
       throw new Error('No clear run up to that post');
@@ -833,6 +838,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         // The cars earlier scenarios put down are taken away: several use the same
         // places, and a car left there is in the next one's way.
         for (const c of made.splice(0)) if (c !== g.car() && g.loose.includes(c)) g.loose.splice(g.loose.indexOf(c), 1);
+        for (const p of aimed.splice(0)) p.down = null;
         await s.run(kit);
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);
