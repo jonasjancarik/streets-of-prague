@@ -30,6 +30,10 @@ export interface TrafficAgent {
   stop?: { edge: DriveEdge; s: number };
   hired?: boolean;
   reckless?: boolean;
+  // Held up by you for this long (s), and when it'll sound its horn next.
+  wait?: number;
+  beep?: number;
+  honks?: number;
 }
 
 // How busy the main roads are at each hour (0 = free-flowing, 1 = the slowest hour of
@@ -105,6 +109,8 @@ export class Traffic {
   // Emergency vehicles with their sirens on (main.ts sets them each frame): cars in front
   // of one move over to let it by.
   emergency: { x: number; y: number; h: number }[] = [];
+  // A driver sounding the horn at you; `long` after a few short ones.
+  onHonk?: (car: Car, long: boolean) => void;
   private kerbAgents: TrafficAgent[] = [];
 
   constructor(graph: DriveGraph, scene: THREE.Scene, rng: () => number, count: number) {
@@ -370,6 +376,16 @@ export class Traffic {
       // one waiting for the lights to change.
       a.jam = target < 0.3 && blocker && !held ? a.jam + dt : 0;
       a.ignore = Math.max(0, a.ignore - dt);
+      // Held up by you standing in the road: a toot after a few seconds, then again and
+      // again, longer and longer, until you move.
+      if (target < 0.3 && a.speed < 0.3 && blocker?.kind === 'player' && !held) {
+        a.wait = (a.wait ?? 0) + dt;
+        if (a.wait >= (a.beep ?? 3.5)) {
+          const n = a.honks = (a.honks ?? 0) + 1;
+          this.onHonk?.(c, n % 3 === 0);
+          a.beep = a.wait + (n % 3 === 0 ? 2.5 : 0.8) + this.r() * 1.2;
+        }
+      } else if (a.wait) a.wait = a.beep = a.honks = undefined;
 
       // (A bus picks up speed slowly.)
       const acc = target > a.speed ? (c.spec.heavy ? 1.2 : 3) : 9;

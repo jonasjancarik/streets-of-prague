@@ -744,6 +744,8 @@ async function main() {
   // The horn (and a tram's bell), for as long as the key is down: people ahead step aside.
   let hornHeld = false, hornT = 0;
   const hornKind = (c: Car): HornKind => (c.two === 'bike' ? 'bike' : c.two === 'moto' ? 'moto' : c.spec.heavy ? 'heavy' : 'car');
+  // Drivers held up by you toot at you.
+  traffic.onHonk = (c, long) => sound.toot(Math.hypot(c.x - px(), c.y - py()), c.x - px(), hornKind(c), long);
   const honk = (on: boolean) => {
     if (ride.driving) {
       if (on) { ride.drive!.ring(); hornT = 0; hornHeld = true; } else hornHeld = false;

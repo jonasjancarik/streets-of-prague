@@ -298,6 +298,25 @@ export class Sound {
     this.horns.set(on, kind);
   }
 
+  // Another driver's horn, d m away and dx of it to the east: a short toot, or a long one.
+  toot(d: number, dx: number, kind: HornKind = 'car', long = false) {
+    const ctx = this.ctx, freqs = HORNS[kind];
+    if (!ctx || ctx.state !== 'running' || !this.on || !freqs.length || d > 120) return;
+    const t = ctx.currentTime, len = long ? 0.9 : 0.32, pan = ctx.createStereoPanner(), g = gain(ctx, 0), lp = filter(ctx, 'lowpass', 2600);
+    pan.pan.value = clamp(dx / 45, -0.85, 0.85);
+    g.gain.setTargetAtTime(0.16 * (25 / (25 + d)), t, 0.012);
+    g.gain.setTargetAtTime(0, t + len, 0.04);
+    lp.connect(g).connect(pan).connect(this.buses.horns);
+    for (const f of freqs) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = f * (0.97 + Math.random() * 0.06);
+      o.connect(lp);
+      o.start(t);
+      o.stop(t + len + 0.4);
+    }
+  }
+
   // One of the clips whose names start with `name`, at random.
   pick(name: string) {
     const all = ONCE.filter((n) => n.startsWith(name));

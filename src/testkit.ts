@@ -172,6 +172,20 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       [m.x, m.y] = kit.toLocal(w);
     },
 
+    // On foot, `m` metres ahead of a car (in its way).
+    standAhead(c: Car, m: number) {
+      const me = g.me();
+      me.x = c.x + Math.cos(c.h) * m;
+      me.y = c.y + Math.sin(c.h) * m;
+    },
+
+    // The horns drivers sound at you from now on (true for a long one), as the game plays them.
+    watchHonks() {
+      const log: boolean[] = [], prev = g.traffic.onHonk;
+      g.traffic.onHonk = (c, long) => { log.push(long); prev?.(c, long); };
+      return log;
+    },
+
     // Scenario preparation uses the ordinary descent/exit controls. Teleporting a
     // flying vehicle alone keeps it flying, so first find open landing ground away
     // from the next test's cars, land through simulation, then get out normally.
