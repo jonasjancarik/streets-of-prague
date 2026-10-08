@@ -21,6 +21,8 @@ from shapely.ops import nearest_points, unary_union
 PLOT_TOLERANCE = 1.0  # m: plot edges are straightened more than mapped fences, so they read as boundaries and not as Voronoi curves
 GATE = 1.6  # m each side of the gate that the street's fence leaves open
 SHORTEST = 0.4  # m: a piece of fence or hedge shorter than this is left out
+NEIGHBOURS = 15.0  # m: houses further apart than this have no hedge or fence between their gardens
+GARDEN = 18.0  # m: no hedge or fence stands further from the house it belongs to (a plot is the Voronoi cell, so in a sparse block its edges run across open lawn)
 DRIVE_IN = 3.3  # m from the gate to the middle of a car on the drive
 DRIVE_ROOM = 6.2  # m of plot between the gate and the house that a car needs
 CAR = (4.6, 2.2)  # m, what has to be free of buildings
@@ -167,7 +169,10 @@ def fences(layout_, green, street_edge, mapped, ways=None):
     a bare frontage; along the block's other edges (a field, a wood, the next block) a
     fence or hedge more often than not, so the side hedges don't end in nothing.
     Never within a metre of a mapped barrier (`mapped`), nor across a service road or
-    a path through the block (`ways`)."""
+    a path through the block (`ways`). Plot edges are Voronoi bisectors, which in a
+    block of scattered houses run far from both of them across open lawn: there is no
+    hedge between houses NEIGHBOURS apart or more, and none further than GARDEN from
+    its house, so the hedges stay with the gardens and don't wander over the block."""
     if len(layout_) < 2:
         return []
     grass = green.buffer(0.3)
@@ -193,8 +198,9 @@ def fences(layout_, green, street_edge, mapped, ways=None):
             seed = _seed(min(ida, idb), max(ida, idb))
             roll = (seed % 100) / 100
             kind = "hedge" if roll < 0.5 else "fence" if roll < 0.85 else None
-            if kind:
-                emit(layout_[b]["plot"].boundary.intersection(plot.buffer(0.1)), kind, seed)
+            if kind and rec["house"].distance(layout_[b]["house"]) <= NEIGHBOURS:
+                shared = layout_[b]["plot"].boundary.intersection(plot.buffer(0.1))
+                emit(shared.intersection(rec["house"].buffer(GARDEN)).intersection(layout_[b]["house"].buffer(GARDEN)), kind, seed)
         # The rest of the outline faces the street or other land.
         seed = _seed(ida, "front")
         roll = (seed % 100) / 100
@@ -209,7 +215,7 @@ def fences(layout_, green, street_edge, mapped, ways=None):
         roll = (seed % 100) / 100
         kind = "fence" if roll < 0.5 else "hedge" if roll < 0.8 else None
         if kind and not back.is_empty:
-            emit(back, kind, seed)
+            emit(back.intersection(rec["house"].buffer(GARDEN)), kind, seed)
     return out
 
 
