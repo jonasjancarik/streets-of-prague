@@ -240,6 +240,10 @@ def merge_cover(t: dict, cover: dict):
     t["trees"] = [*known, *fresh]
 
 
+def treesize_processing() -> list:
+    return [build_cache.digest(Path(__file__).with_name("tree_sizes.py").read_bytes())]
+
+
 def greenery_processing() -> list:
     return [build_cache.digest(Path(__file__).with_name("ipr_greenery.py").read_bytes())]
 
@@ -382,6 +386,7 @@ def assemble(area: str, strict=False) -> dict:
         young = None
     greenery = surveyed_layer(area, "greenery", greenery_processing(), meta, "ipr_greenery.py", strict)
     utility = surveyed_layer(area, "utility", utility_processing(), meta, "ipr_utility.py", strict)
+    treesize = surveyed_layer(area, "treesize", treesize_processing(), meta, "tree_sizes.py", strict)
     for name, layer in (("ipr", ipr), ("terrain", terrain)):
         current = (layer and layer.get("dependencies") == dependency_snapshot(area, DEPENDENCIES[name])
                    and layer.get("processing") == processing and build_cache.sources_current(layer.get("sources", {}))
@@ -471,6 +476,12 @@ def assemble(area: str, strict=False) -> dict:
                 merge_cover(t, own)
         if greenery and k in greenery["tiles"] and not merged_green:
             merge_greenery(t, greenery["tiles"][k], None)
+        # How tall its trees are and how wide their crowns (tree_sizes.py), by where they stand:
+        # [x, y, kind, top, radius].
+        if treesize and treesize["tiles"].get(k):
+            sizes = {(s[0], s[1]): s[2:] for s in treesize["tiles"][k]}
+            t["trees"] = [[p[0], p[1], p[2] if len(p) > 2 else 0, *sizes[p[0], p[1]]] if (p[0], p[1]) in sizes else p
+                          for p in t["trees"]]
         # What lies in and stands on its streets (ipr_utility.py): [x, y, kind].
         if utility and utility["tiles"].get(k):
             t["utility"] = utility["tiles"][k]

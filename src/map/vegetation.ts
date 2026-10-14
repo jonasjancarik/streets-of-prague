@@ -15,8 +15,10 @@ export interface TreeTileData extends GeoData {
   shrubs?: Point2[];
 }
 
-// A tree's place in metres, and what kind it is when the map knows: 1 a conifer, 2 a fruit tree.
-export type TreeSpot = [number, number, number?];
+// A tree's place in metres, and what kind it is when the map knows: 1 a conifer, 2 a fruit
+// tree (0 not known). Then, when the surface models show it, its top and its crown's
+// radius in metres (pipeline/tree_sizes.py).
+export type TreeSpot = [number, number, number?, number?, number?];
 
 // The instances run broadleaf, then `shrubs`, then `conifers`: one page kind each.
 // `yearly`: how each goes through the year: 1 an evergreen, which doesn't change; below
@@ -107,8 +109,11 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   const r = rng(42);
   // The surveyed trees (IPR's and OSM's), with which kind they are when it's known.
   const real = new Map<number, number[]>();
-  for (const [x, y, k] of d.trees) {
-    if (k === 1) trees.push([x, y, 2.6 + r() * 1.8, CONIFER]);
+  for (const [x, y, k, top, radius] of d.trees) {
+    if (top !== undefined && radius !== undefined) {
+      const kind = k === 1 ? CONIFER : k === 2 ? 2 : 1;
+      trees.push([x, y, Math.min(Math.max(radius, 1.5), kind === 1 ? 9 : 5), kind, 1, false, top]);
+    } else if (k === 1) trees.push([x, y, 2.6 + r() * 1.8, CONIFER]);
     else if (k === 2) trees.push([x, y, 1.7 + r() * 0.9, 2]);
     else trees.push([x, y, 3 + r() * 2.5, 1]);
     const cell = Math.floor(x / 4) * 65536 + Math.floor(y / 4);
@@ -172,11 +177,19 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     [new THREE.Color('#3f5e3a'), new THREE.Color('#34523a'), new THREE.Color('#4a6842')], // conifers
   ];
   const c = new THREE.Color();
-  trees.forEach(([x, y, rad, kind, tall = 1], i) => {
+  trees.forEach(([x, y, rad, kind, tall = 1, , measured], i) => {
     // A shrub's crown sits on the ground, a little flattened.
     let h = kind === SHRUB ? rad * (0.42 + r() * 0.12) : rad * (1.6 + r() * 0.6) * tall;
-    // The crown's top is 0.75 of its radius above its centre (a conifer's, 1.4).
-    const top = h + rad * (kind === CONIFER ? 1.4 : 0.75), fit = Math.min(1, (room(x, y) - 0.5) / top);
+    let deep = kind === SHRUB ? 0.65 + r() * 0.2 : (0.85 + r() * 0.3) * tall; // the crown's height to its width
+    // The crown's top is 0.75 of its height above its centre (a conifer's, 1.4).
+    const above = kind === CONIFER ? 1.4 : 0.75;
+    if (measured !== undefined) {
+      // A measured tree: its top where the surface models have it, and a tall tree's crown
+      // deeper than wide, about half its height (a conifer's, more).
+      deep = Math.min(1.8, Math.max(deep, measured * (kind === CONIFER ? 0.35 : 0.27) / (above * rad)));
+      h = Math.max(measured - above * deep * rad, 0.5 * rad);
+    }
+    const top = h + rad * deep * above, fit = Math.min(1, (room(x, y) - 0.5) / top);
     if (fit < 1) {
       rad *= fit < 0.35 ? 0 : fit;
       h *= fit < 0.35 ? 0 : fit;
@@ -184,7 +197,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     p.set(x, h, -y);
     q.setFromEuler(new THREE.Euler(0, r() * Math.PI, 0));
     const w = rad * (0.9 + r() * 0.2);
-    sc.set(w, rad * (kind === SHRUB ? 0.65 + r() * 0.2 : (0.85 + r() * 0.3) * tall), rad * (0.9 + r() * 0.2));
+    sc.set(w, rad * deep, rad * (0.9 + r() * 0.2));
     m.compose(p, q, sc);
     m.elements[13] += height(x, y);
     m.toArray(matrices, i * 16);

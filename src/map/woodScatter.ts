@@ -11,8 +11,9 @@ import type { Geo, Grid } from './geo.ts';
 // Classes of the tile's land-use raster (vegetation.ts paints it) that this file reads.
 export const WOOD = 200, PARK = 120, GROVE = 180;
 export const SHRUB = 3, CONIFER = 4;
-// [x, y, radius, kind, height (1 for the usual), a neighbouring tile's (not drawn here)]
-export type Tree = [number, number, number, number, number?, boolean?];
+// [x, y, radius, kind, height (1 for the usual), a neighbouring tile's (not drawn here),
+// its top in metres when measured (pipeline/tree_sizes.py)]
+export type Tree = [number, number, number, number, number?, boolean?, number?];
 // Of the trees we make up, how many are conifers: pines and spruces in the woods, a
 // few in the streets, parks and gardens. Chosen by where the tree stands.
 export const CONIFERS = [0.3, 0.08];
