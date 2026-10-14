@@ -395,12 +395,16 @@ function canopyTrees(geo: Geo, grid: Grid, trees: Tree[], standing: Standing) {
     }
     return false;
   };
+  // The trunk's ground and a little round it: the land raster's edges are blended, so a
+  // spot just inside a road's or a building's outline can still read as something else.
+  const open = (x: number, y: number) => grid.at(x, y) !== 0 && [0, 1, 2, 3, 4, 5, 6, 7].every((k) =>
+    grid.at(x + Math.cos(k * Math.PI / 4) * 1.2, y + Math.sin(k * Math.PI / 4) * 1.2) > FENCE);
   const STEP = 3.5, SIZE = [0, 1.6, 2.8, 3.6], MORE = [0, 1, 1.4, 1.6]; // (each band's smallest crown, and how much larger one can be)
   for (let j = Math.ceil(geo.minY / STEP); j * STEP < geo.maxY; j++) {
     for (let i = Math.ceil(geo.minX / STEP); i * STEP < geo.maxX; i++) {
       const g = rng(Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ 0x6c3a);
       const x = (i + 0.15 + g() * 0.7) * STEP, y = (j + 0.15 + g() * 0.7) * STEP, band = standing(x, y);
-      if (band < 1 || grid.at(x, y) === 0 || covered(x, y)) continue;
+      if (band < 1 || !open(x, y) || covered(x, y)) continue;
       const rad = (SIZE[band] + g() * MORE[band]) / (band === 1 ? 0.65 : band === 3 ? 1.2 : 1); // (toBand scales it back)
       trees.push(toBand(conifer(x, y, CONIFERS[1]) ? [x, y, rad * 0.8, CONIFER] : [x, y, rad, 1], band, g()));
       index(trees.length - 1);
