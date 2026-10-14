@@ -13,6 +13,8 @@ import type { Fires } from './fire.ts';
 import type { Brigade } from './brigade.ts';
 import type { Ambulances } from './ambulance.ts';
 import type { Pedestrian } from './people.ts';
+import { setPedestrians } from './difficulty.ts';
+import type { Walkers } from './difficulty.ts';
 import type { Traffic } from './traffic.ts';
 import type { TramBody } from './trams.ts';
 import type { Kind } from './weather.ts';
@@ -258,6 +260,16 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     peopleNear(x: number, y: number, r: number) {
       return g.crowd.people.filter((p) => Math.hypot(p.x - x, p.y - y) < r).map((p) => ({ state: p.state, away: round(Math.hypot(p.x - x, p.y - y)) }));
     },
+    // Stands the nearest pedestrian `m` metres in front of the car and returns them.
+    pedestrianAhead(m: number, c = g.car()!) {
+      const p = g.crowd.people.filter((q) => q.state === 'walk').sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
+      if (!p) return null;
+      p.x = c.x + Math.cos(c.h) * m;
+      p.y = c.y + Math.sin(c.h) * m;
+      return p;
+    },
+    walkers(w: Walkers) { setPedestrians(w); },
+    downNear(x: number, y: number, r: number) { return g.crowd.people.filter((p) => p.state === 'down' && Math.hypot(p.x - x, p.y - y) < r).length; },
     // Picks up everything: no bags on the ground, none carried.
     clearBags() { for (const b of [...g.bags.list]) g.bags.remove(b); g.bags.carry(null); },
     // Stand next to the nearest bag lying about.
