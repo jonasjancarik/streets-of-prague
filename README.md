@@ -334,20 +334,28 @@ record the measurements, merge decisions and pending landmark asset activation.
   paths and the trees already there (`gardenTrees` in `src/map/vegetation.ts`).
   Buildings get roof tiles laid down
   each face's slope, slate and gravel on flat roofs. It all stays sharp at any zoom.
-- **Facades** are put together bay by bay and storey by storey from 60 parts: windows,
-  doors, gateways and shopfronts of tenements, baroque houses, functionalist blocks,
-  panel housing and family houses (`src/facades.ts`). A wall's style comes from where
-  it stands and how tall it is: baroque in Old Town, Malá Strana and Hradčany, panel
-  housing for tall blocks far out, family houses under about 8 m, tenements with some
-  functionalism elsewhere. Window axes are about 3 m apart, as in a Prague tenement,
-  with plain plaster between the windows. Party walls (a building's side wall standing
+- **Facades** are put together bay by bay and storey by storey from 132 parts: windows,
+  doors, gateways and shopfronts in eleven looks (`src/facades.ts`): three for
+  19th-century tenements (neo-Renaissance, Art Nouveau and the plain houses of Žižkov
+  and Karlín), houses of 1912-1925, baroque houses and plainer burgher houses, functionalist
+  blocks, infill since the 1990s, panel housing as built and as insulated since, and
+  family houses. A building's style and looks come from its age where IPR's data has it
+  (`pipeline/building_age.py`: Art Nouveau mostly for tenements of 1890-1914, for
+  instance), else from where it stands and how tall it is: baroque in Old Town, Malá
+  Strana and Hradčany, panel housing for tall blocks far out, family houses under about
+  8 m, tenements with some functionalism elsewhere. All walls of a building take the same
+  look. Window axes are about 3 m apart, as in a Prague tenement, with plain plaster
+  between the windows, and floors are as tall as the style's (a tenement's 3.7 m over a
+  4.4 m ground floor, a panel block's 2.85 m), stretched a little so that whole floors
+  fill each wall up to its cornice. Party walls (a building's side wall standing
   back to back with its neighbour's, and showing where the neighbour is lower) are
   plastered without windows. Each building gets its own plaster colour: mostly ochres,
   yellows, creams and stone-like sands and greys, with a few pale greens, pinks and
   blues, mixed differently for each style. The parts were
-  drawn by an image model as five sheets, each asked for with the first sheet as a
-  style reference (the fifth, the tenements' windows and portals, after a
-  neo-Renaissance house in Mělnická), and are cut and packed by `assets/facades/build_atlas.py`.
+  drawn by an image model as eleven sheets, each asked for with an earlier sheet as a
+  style reference (the briefs are next to them in `assets/facades/`; the fifth, the
+  tenements' windows and portals, after a neo-Renaissance house in Mělnická), and are
+  cut and packed by `assets/facades/build_atlas.py`. Phones and tablets load them at half size.
 - **Portraits and the loading screen.** Characters are half-length portraits drawn by
   an image model, ten to a sheet, and cut apart by `assets/portraits/cut.py` into
   `public/portraits/` (the sheets never line up, so the seams are found per row); faces

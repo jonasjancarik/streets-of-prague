@@ -125,7 +125,7 @@ export const WALL_CODES: [number, Mix][] = [
   [STYLE.house, [[LOOK.house, 1]]],
   [STYLE.tenement, [[LOOK.plain, 0.6], [LOOK.neoRenaissance, 0.4]]], // 1843-1875
   [STYLE.tenement, [[LOOK.neoRenaissance, 0.55], [LOOK.plain, 0.45]]], // 1876-1889
-  [STYLE.tenement, [[LOOK.artNouveau, 0.5], [LOOK.neoRenaissance, 0.25], [LOOK.plain, 0.25]]], // 1890-1914
+  [STYLE.tenement, [[LOOK.artNouveau, 0.4], [LOOK.neoRenaissance, 0.35], [LOOK.plain, 0.25]]], // 1890-1914
   [STYLE.tenement, [[LOOK.early20th, 0.8], [LOOK.artNouveau, 0.2]]], // 1915-1924
   [STYLE.functionalist, [[LOOK.modern, 1]]], // since 1990
 ];

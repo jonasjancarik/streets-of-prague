@@ -48,6 +48,12 @@ TENEMENT, BAROQUE, FUNCTIONALIST, PANEL, HOUSE = range(5)
 ERA_STYLE = (None, BAROQUE, TENEMENT, TENEMENT, TENEMENT, TENEMENT, FUNCTIONALIST, FUNCTIONALIST, PANEL, PANEL,
              FUNCTIONALIST, FUNCTIONALIST, FUNCTIONALIST)
 BAY = (2.9, 3.1, 2.6, 2.4, 2.8)
+# What ipr_buildings.py writes in the upper half of a wall's material byte (WALL_CODES in
+# src/facades.ts): the style plus one, or for buildings of these eras a code that also
+# tells the game the period's looks: tenements of 1843-1875 (mostly plain), 1876-1889
+# (neo-Renaissance), 1890-1914 (Art Nouveau) and 1915-1924 (rondocubism and the
+# geometric late Art Nouveau), and infill since 1990.
+ERA_CODE = {2: 6, 3: 7, 4: 8, 5: 9, 10: 10, 11: 10, 12: 10}
 LOW = 8.5  # m; lower buildings are family houses whatever their age
 CORE = ((14.4213, 50.0875, 750.0), (14.4034, 50.0880, 550.0), (14.3975, 50.0890, 450.0))  # Staré Město, Malá Strana, Hradčany
 
@@ -65,14 +71,23 @@ class Styles:
         self.known = self.all = 0
 
     def at(self, x: float, y: float, height: float, key: str) -> int:
-        import zlib
+        return self.code(x, y, height, key)[0]
+
+    def code(self, x: float, y: float, height: float, key: str) -> tuple[int, int]:
+        """The style, and the code for the wall byte (ERA_CODE)."""
         era = self.ages.at(x, y)
         self.all += 1
         self.known += era > 0
         if height < LOW:
-            return HOUSE
+            return HOUSE, HOUSE + 1
         if era:
-            return ERA_STYLE[era]
+            style = ERA_STYLE[era]
+            return style, ERA_CODE.get(era, style + 1)
+        style = self.guess(x, y, height)
+        return style, style + 1
+
+    def guess(self, x: float, y: float, height: float) -> int:
+        import zlib
         # By 60 m squares, so a block keeps to one style.
         pick = (zlib.crc32(f"{int(x // 60)},{int(y // 60)}".encode()) & 0xFFFF) / 0xFFFF
         if any(np.hypot(x - cx, y - cy) < r for cx, cy, r in self.core):

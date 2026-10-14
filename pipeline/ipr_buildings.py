@@ -225,7 +225,8 @@ COVERS = ("tiles", "slate", "copper")
 # 1-4 pitched, 5-9 flat.
 MATERIALS = ("", "tiles", "slate", "metal", "copper", "bitumen", "membrane", "gravel", "green", "paving")
 MEASURED_WALL = 15  # on walls: their colour is measured, so the game keeps it (no palette)
-# On walls the byte's upper half is the facade's style plus one (building_age.Styles).
+# On walls the byte's upper half is the facade's style plus one, or a code for the
+# looks of the building's period (building_age.ERA_CODE).
 BORROW_TOUCH = 0.6  # m; buildings this close share a wall: one terrace
 BORROW_NEAR = 30.0  # m; else a building of the same kind this near: the same block
 
@@ -602,8 +603,8 @@ def main() -> None:
                         mat[k] = MATERIALS.index(m) if m in MATERIALS else 0
                 key = bid or f"{name}/{count}"
                 heights = pos.reshape(-1, 3)[:, 1]
-                style = styles.at(cx, cy, (int(heights.max()) - int(heights.min())) / 100, key)
-                mat[codes == 0] |= (style + 1) << 4
+                style, code = styles.code(cx, cy, (int(heights.max()) - int(heights.min())) / 100, key)
+                mat[codes == 0] |= code << 4
                 if (codes == 0).any():
                     walls.append(((i, j), len(per_tile.get((i, j), [])), shapely.union_all(fp), (osm or {}).get("kind"),
                                   col[codes == 0][0].copy() if mat[codes == 0][0] & 15 == MEASURED_WALL else None))
