@@ -82,6 +82,7 @@ const PLACES = {
   stand: { start: '14.4206,50.0873', drive: false },  // Old Town Square
   drive: { start: '14.4052,50.0808', drive: true },   // from Újezd (the game's start, with a car at the kerb), with lane assist
   woods: { start: '14.3965,50.0830', drive: false },  // Petřín: trees and slopes
+  forest: { start: '14.3200,50.0950', drive: false }, // Divoká Šárka: a wood with its canopy measured, over 2000 trees a tile
   slatiny: { start: '14.4845,50.0610', drive: false }, // Na Slatinách, Strašnice: garden suburb, many shrubs
   park: { start: '14.4275,50.0930', drive: false },   // Letná park
   suburb: { start: '14.4760,50.0520', drive: false }, // Vršovice/Strašnice edge: gardens
