@@ -9,7 +9,7 @@ import {
   Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
   materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt,
 } from 'three/tsl';
-import { FACADE_ATLAS, FACADE_ON, BLANK, F_BAY as BAY_WIDTH } from '../facades.ts';
+import { FACADE_ATLAS, FACADE_ON, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R } from '../shading.ts';
 import { lampLit } from './lamps.ts';
 import { type N, follow, addPort, uCut, uDirt, uWet, uSnow, vnoise, fbm, fbm2, blocks, hash12, skyAmbient } from './common.ts';
@@ -28,12 +28,13 @@ const atlas = texture(standIn).onRenderUpdate(() => { atlas.value = FACADE_ATLAS
 // variables they were filled in again for every pixel of a wall, which on a phone's GPU
 // (a Pixel 5's Adreno) cost more than everything else drawn put together.)
 const ints = (v: number[]): N => { const a: N = uniformArray(v, 'float'); return { element: (i: N) => int(a.element(i)) }; };
-const F_UP = ints([48, 49, 50, 51, 52, 53, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 27, 28, 27, 36, 37, 38, 39, 40, 36]);
-const F_DOOR = ints([56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45]);
-const F_WALL = ints([54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43]);
+const F_UP = ints(UP);
+const F_DOOR = ints(DOOR);
+const F_WALL = ints(WALL);
 const floats = (v: number[]): N => uniformArray(v, 'float');
 const F_BAY = floats(BAY_WIDTH);
-const F_MOD = floats([1.9, 1.9, 2, 2.4, 1.9]);
+const F_MOD = floats(MOD);
+const F_GROUND = floats(GROUND), F_STOREY = floats(STOREY);
 // Window bays across a wall: none on a party wall or one too short for a window.
 const fBays = (f: N) => {
   const style = floor(f.w);
@@ -41,6 +42,11 @@ const fBays = (f: N) => {
 };
 
 const fHash = (a: N, b: N) => fract(sin(a.mul(127.1).add(b.mul(311.7))).mul(43758.5453));
+// The wall's ground floor and its other floors, m (fitStoreys in facades.ts).
+const fStorey = (f: N) => {
+  const style = min(floor(f.w), 4).toInt(), fit = floor(fract(fract(f.w).mul(64)).mul(64));
+  return vec2(F_GROUND.element(style), F_STOREY.element(style).mul(fit.mul(STOREY_FIT[1] / 63).add(STOREY_FIT[0])));
+};
 const LANDMARK_TILE = vec3(...R.rgb);
 const luma = (c: N) => dot(c, vec3(0.299, 0.587, 0.114));
 // detail() with the pixel's footprint worked out once, outside any branch (derivatives).
@@ -160,11 +166,11 @@ function roofWeather(c: N, c0: N, wp: N, n: N, wpWidth: N, more: N = float(0)) {
 }
 
 function facadeWalls(c: N, f: N, bayWidth: N, fWidth: N) {
-  const along = f.x, h = f.y;
-  const bay = fract(along.div(bayWidth)), storey = fract(h.sub(0.6).div(3.4));
-  const upper = step(4, h);
+  const along = f.x, h = f.y, st = fStorey(f);
+  const bay = fract(along.div(bayWidth)), storey = fract(h.sub(st.x).div(st.y));
+  const upper = step(st.x, h);
   const win = step(0.3, bay).mul(step(bay, 0.7)).mul(step(0.3, storey)).mul(step(storey, 0.78)).mul(upper);
-  const shop = step(0.12, bay).mul(step(bay, 0.88)).mul(step(0.6, h)).mul(step(h, 3.3)).mul(float(1).sub(upper));
+  const shop = step(0.12, bay).mul(step(bay, 0.88)).mul(step(0.6, h)).mul(step(h, st.x.sub(0.7))).mul(float(1).sub(upper));
   const glass = vec3(0.16, 0.19, 0.23).add(vnoise(vec2(along, h).mul(0.7)).mul(0.06));
   const m = max(win, shop.mul(0.85)), d = fade(fWidth, 0.9);
   const w = mix(c, glass, m.mul(d));
@@ -182,21 +188,24 @@ function grime(c0: N, f: N, fWidth: N) {
 // The picture for a bay and storey, from the atlas's layer, with the wall's plaster
 // colour; the module in the middle of the bay, its plaster edge drawn on across the piers.
 function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N) {
-  const style = floor(f.w).toInt(), seed = fract(f.w).mul(97);
+  const style = floor(f.w).toInt(), seed = fract(f.w).mul(97), st = fStorey(f);
+  // Tenements take one of three looks (FACADE_GLSL).
+  const pick = fHash(seed, float(3));
+  const look = select(style.equal(0), select(pick.lessThan(0.34), int(0), select(pick.lessThan(0.67), int(5), int(6))), style).toVar();
   // (toVar: declared here, before the branches below. Left to TSL, `q` was worked out inside the
   // upper floors' branch only, and a ground floor read it unset: every pixel of it took the module's
   // top left corner, plain plaster, so ground floors and whole low buildings had no doors or windows.)
-  const q = vec2(f.x.div(f.z).mul(bays), select(f.y.lessThan(4), clamp(f.y.div(4), 0, 0.999), f.y.sub(4).div(3.4))).toVar();
+  const q = vec2(f.x.div(f.z).mul(bays), select(f.y.lessThan(st.x), clamp(f.y.div(st.x), 0, 0.999), f.y.sub(st.x).div(st.y))).toVar();
   const cell = floor(q).toVar(), uv = fract(q);
-  const bay: N = f.z.div(bays), mw: N = min(F_MOD.element(style), bay);
+  const bay: N = f.z.div(bays), mw: N = min(F_MOD.element(look), bay);
   const u: N = clamp(uv.x.sub(0.5).mul(bay).div(mw).add(0.5), 0.016, 0.984);
   const layer = int(0).toVar();
-  If(f.y.lessThan(4), () => {
+  If(f.y.lessThan(st.x), () => {
     const r = fHash(seed, cell.x);
-    If(r.lessThan(0.18), () => { layer.assign(F_DOOR.element(style.mul(3).add(r.div(0.18).mul(3).toInt()))); })
-      .Else(() => { layer.assign(F_WALL.element(style.mul(4).add(fHash(cell.x, seed).mul(4).toInt()))); });
-  }).Else(() => { layer.assign(F_UP.element(style.mul(6).add(fHash(seed, cell.y.add(7)).mul(6).toInt()))); });
-  const k = vec2(float(1).div(mw), 1 / 3.6);
+    If(r.lessThan(0.18), () => { layer.assign(F_DOOR.element(look.mul(3).add(r.div(0.18).mul(3).toInt()))); })
+      .Else(() => { layer.assign(F_WALL.element(look.mul(4).add(fHash(cell.x, seed).mul(4).toInt()))); });
+  }).Else(() => { layer.assign(F_UP.element(look.mul(6).add(fHash(seed, cell.y.add(7)).mul(6).toInt()))); });
+  const k = vec2(float(1).div(mw), float(1).div(st.y));
   const t = atlas.sample(vec2(u, float(1).sub(uv.y))).depth(layer).grad(fdx.xy.mul(k), fdy.xy.mul(k)).rgb;
   const hi = max(t.r, max(t.g, t.b)), sat = hi.sub(min(t.r, min(t.g, t.b))).div(max(hi, 1e-3));
   return mix(t, t.mul(wall).div(0.55), float(1).sub(smoothstep(0.08, 0.2, sat)));
@@ -269,11 +278,12 @@ const windowGlow = Fn(() => {
   const bn = normalWorld.normalize(), f = attribute('facade', 'vec4');
   const bays = fBays(f);
   If(uWindows.greaterThan(0.005).and(bn.y.lessThan(0.15)).and(f.z.greaterThan(0.1)).and(bays.greaterThan(0.5)), () => {
-    const cell = vec2(floor(f.x.div(f.z).mul(bays)), floor(f.y.sub(0.6).div(3.4)));
-    const lit = step(fHash(cell.x.add(fract(f.w).mul(97)), cell.y), uWindows.mul(select(f.y.lessThan(4), 1.6, 1)));
+    const st = fStorey(f);
+    const cell = vec2(floor(f.x.div(f.z).mul(bays)), floor(f.y.sub(st.x).div(st.y)));
+    const lit = step(fHash(cell.x.add(fract(f.w).mul(97)), cell.y), uWindows.mul(select(f.y.lessThan(st.x), 1.6, 1)));
     const dark = float(1).sub(smoothstep(0.13, 0.22, luma(diffuseColor.rgb).div(max(luma(vertexColor().rgb), 0.02))));
     // Upper floors: only the bluish glass, not the dark shadowed mouldings and sills round it.
-    const glass = select(f.y.lessThan(4), dark, dark.mul(smoothstep(1.03, 1.12, diffuseColor.b.div(max(diffuseColor.r, 0.01)))));
+    const glass = select(f.y.lessThan(st.x), dark, dark.mul(smoothstep(1.03, 1.12, diffuseColor.b.div(max(diffuseColor.r, 0.01)))));
     g.assign(mix(vec3(1, 0.62, 0.3), vec3(1, 0.8, 0.55), fHash(cell.y, cell.x)).mul(lit).mul(glass).mul(0.55));
   }).ElseIf(uWindows.greaterThan(0.005).and(abs(f.w.sub(10)).lessThan(0.5)).and(bn.y.greaterThan(0.15)), () => {
     // Roof windows (roofGlass).

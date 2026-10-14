@@ -6,7 +6,7 @@ import proj4 from 'proj4';
 // into public/facades.webp, one sheet under another. The shader (shading.ts) picks a
 // module for every bay and storey of a wall, by the wall's style.
 export const CELL = [256, 512];
-export const SHEETS = 5;
+export const SHEETS = 7;
 
 // Styles: 0 tenement, 1 baroque, 2 functionalist, 3 panel housing, 4 family house.
 // A party wall (štítová zeď, see facadeCoords) has its style plus BLANK: plaster, no windows.
@@ -83,12 +83,38 @@ export function styleFor(index: { bbox_wgs84: [number, number, number, number] }
 // How wide a window bay is in each style, m between window axes, and how many bays a
 // wall of a style and length gets (fBays in the shaders).
 export const F_BAY = [2.9, 3.1, 2.6, 2.4, 2.8];
+// How tall the ground floor and the floors above it are in each style, m from floor to
+// floor, and how much wall a cornice or parapet takes above the top floor. A
+// 19th-century tenement's floors are about 3.7 m (rooms 3.2-3.5 m high under wooden
+// ceilings) over a 4-4.5 m ground floor; a panel block's are 2.8 m.
+export const F_GROUND = [4.4, 4.0, 3.6, 2.9, 3.0];
+export const F_STOREY = [3.7, 3.4, 3.1, 2.85, 2.9];
+const F_CORNICE = [1.0, 0.6, 0.5, 0.9, 0.3];
+// A wall's own floor height is its style's, scaled by 0.8 to 1.25 so that a whole
+// number of floors fits under its cornice; the scale goes in the fraction of the facade
+// attribute's w, under the six bits of the wall's random pick (fStorey in the shaders).
+export const STOREY_FIT = [0.8, 0.45];
 export const baysOf = (style: number, length: number) => (style >= BLANK ? 0 : Math.floor(length / F_BAY[style] + 0.5));
 
 // A wall as facadeCoords measured it, for what has to line up with its windows (the
 // mansard above it): a point on it and its outward normal, the direction its windows
 // are counted along, where it starts and how long it is along that, and its top.
 export interface WallLine { nx: number; nz: number; ax: number; az: number; tx: number; tz: number; from: number; length: number; top: number; tris: number[] }
+
+// Fit every wall's floors to its height (see F_STOREY), once its style is settled.
+// `lines`: the walls, as facadeCoords gives them.
+export function fitStoreys(facade: Float32Array, lines: WallLine[]) {
+  for (const l of lines) {
+    let top = 0;
+    for (const t of l.tris) for (let o = t * 12 + 1; o < t * 12 + 12; o += 4) top = Math.max(top, facade[o]);
+    const w = facade[l.tris[0] * 12 + 3], whole = Math.floor(w), style = whole % BLANK;
+    const room = top - F_GROUND[style] - F_CORNICE[style], n = Math.round(room / F_STOREY[style]);
+    const scale = n >= 1 ? room / n / F_STOREY[style] : 1;
+    const code = Math.min(63, Math.max(0, Math.round((scale - STOREY_FIT[0]) / STOREY_FIT[1] * 63)));
+    const fraction = (Math.floor((w - whole) * 64) + (code + 0.5) / 64) / 64;
+    for (const t of l.tris) for (let o = t * 12 + 3; o < t * 12 + 12; o += 4) facade[o] = Math.floor(facade[o]) + fraction;
+  }
+}
 
 export function cellHash(i: number, j: number) {
   const s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453;
@@ -329,29 +355,46 @@ export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Ar
   }
 }
 
-// For every bay and storey, which module of the wall's style: upper floors, then the
-// ground floor's doors and the rest of the ground floor, as layers of the atlas
-// (sheet × 12 + row × 6 + column). A few bays of each ground floor get a door.
-// Tenements take their windows, portals and barred ground-floor windows from the fifth
-// sheet (neo-Renaissance, after a house in Mělnická), with the first sheet's shops.
+// For every bay and storey, which module: upper floors, then the ground floor's doors
+// and the rest of the ground floor, as layers of the atlas (sheet × 12 + row × 6 +
+// column). A few bays of each ground floor get a door. The modules come in looks: one
+// for each style, and two more for tenements, which take one of three by the wall's
+// random pick: neo-Renaissance (the fifth sheet, after a house in Mělnická, with the
+// first sheet's shops), Art Nouveau (the sixth) and the plain houses of Žižkov and
+// Karlín (the seventh).
 // Window bays are as wide as in Prague's houses (F_BAY, about 3 m between window
 // axes in a tenement): the module takes F_MOD of that in the middle, and its plaster
 // edge (with the cornices and bands) is drawn on across the piers between. Panel
 // housing is stretched instead, its modules being whole panels. (The baroque sheet's
 // shutters reach the module's edge, so they're left out.)
+export const F_UP = [48, 49, 50, 51, 52, 53, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 27, 28, 27, 36, 37, 38, 39, 40, 36,
+  60, 61, 62, 63, 64, 65, 72, 73, 74, 75, 76, 72];
+export const F_DOOR = [56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45, 67, 69, 67, 79, 82, 79];
+export const F_WALL = [54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43, 66, 68, 70, 71, 78, 80, 81, 83];
+export const F_MOD = [1.9, 1.9, 2, 2.4, 1.9, 1.9, 1.9];
+const LOOKS = F_MOD.length;
+const glslArray = (type: string, v: number[]) => `${type}[${v.length}](${v.map((x) => (type === 'float' ? x.toFixed(2) : x)).join(', ')})`;
 export const FACADE_GLSL = /* glsl */ `
 uniform mediump sampler2DArray uFacades;
 uniform float uFacadeOn;
-const int F_UP[30] = int[30](48, 49, 50, 51, 52, 53,   12, 13, 15, 12, 13, 15,   24, 25, 24, 25, 26, 24,   27, 28, 27, 27, 28, 27,   36, 37, 38, 39, 40, 36);
-const int F_DOOR[15] = int[15](56, 57, 8,   18, 19, 20,   31, 31, 34,   32, 32, 34,   42, 44, 45);
-const int F_WALL[20] = int[20](54, 55, 58, 6,   21, 22, 23, 20,   30, 30, 30, 35,   33, 35, 33, 35,   43, 46, 47, 43);
-const float F_BAY[5] = float[5](${F_BAY.join(', ')});
-const float F_MOD[5] = float[5](1.9, 1.9, 2., 2.4, 1.9);
+const int F_UP[${LOOKS * 6}] = ${glslArray('int', F_UP)};
+const int F_DOOR[${LOOKS * 3}] = ${glslArray('int', F_DOOR)};
+const int F_WALL[${LOOKS * 4}] = ${glslArray('int', F_WALL)};
+const float F_BAY[5] = ${glslArray('float', F_BAY)};
+const float F_MOD[${LOOKS}] = ${glslArray('float', F_MOD)};
+const float F_GROUND[5] = ${glslArray('float', F_GROUND)};
+const float F_STOREY[5] = ${glslArray('float', F_STOREY)};
 float fHash(float a, float b) { return fract(sin(a * 127.1 + b * 311.7) * 43758.5453); }
 // How many window bays across a wall: none on a party wall or one too short for a window.
 float fBays(vec4 f) {
   int style = int(floor(f.w));
   return style >= ${BLANK} ? 0. : floor(f.z / F_BAY[style] + .5);
+}
+// The wall's ground floor and its other floors, m (fitStoreys).
+vec2 fStorey(vec4 f) {
+  int style = min(int(floor(f.w)), 4);
+  float fit = floor(fract(fract(f.w) * 64.) * 64.);
+  return vec2(F_GROUND[style], F_STOREY[style] * (${STOREY_FIT[0].toFixed(2)} + fit * ${(STOREY_FIT[1] / 63).toFixed(6)}));
 }
 vec3 facadeModules(vec3 wall, vec4 f, vec4 fdx, vec4 fdy) {
   float bays = fBays(f);
@@ -359,16 +402,18 @@ vec3 facadeModules(vec3 wall, vec4 f, vec4 fdx, vec4 fdy) {
   if (bays < .5) return wall * (.77 + .06 * vnoise(f.xy * vec2(.9, .6)));
   int style = int(floor(f.w));
   float seed = fract(f.w) * 97.;
-  vec2 q = vec2(f.x / f.z * bays, f.y < 4. ? clamp(f.y / 4., 0., .999) : (f.y - 4.) / 3.4);
+  int look = style == 0 ? (fHash(seed, 3.) < .34 ? 0 : fHash(seed, 3.) < .67 ? 5 : 6) : style;
+  vec2 st = fStorey(f);
+  vec2 q = vec2(f.x / f.z * bays, f.y < st.x ? clamp(f.y / st.x, 0., .999) : (f.y - st.x) / st.y);
   vec2 cell = floor(q), uv = fract(q);
-  float bay = f.z / bays, mw = min(F_MOD[style], bay);
+  float bay = f.z / bays, mw = min(F_MOD[look], bay);
   float u = clamp((uv.x - .5) * bay / mw + .5, .016, .984);
   int layer;
-  if (f.y < 4.) {
+  if (f.y < st.x) {
     float r = fHash(seed, cell.x);
-    layer = r < .18 ? F_DOOR[style * 3 + int(r / .18 * 3.)] : F_WALL[style * 4 + int(fHash(cell.x, seed) * 4.)];
-  } else layer = F_UP[style * 6 + int(fHash(seed, cell.y + 7.) * 6.)];
-  vec2 k = vec2(1. / mw, 1. / 3.6);
+    layer = r < .18 ? F_DOOR[look * 3 + int(r / .18 * 3.)] : F_WALL[look * 4 + int(fHash(cell.x, seed) * 4.)];
+  } else layer = F_UP[look * 6 + int(fHash(seed, cell.y + 7.) * 6.)];
+  vec2 k = vec2(1. / mw, 1. / st.y);
   vec3 t = textureGrad(uFacades, vec3(u, 1. - uv.y, float(layer)), fdx.xy * k, fdy.xy * k).rgb;
   // Plaster is drawn neutral grey: give it the wall's colour. Frames, doors and
   // metal keep their own.

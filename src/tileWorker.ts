@@ -18,7 +18,7 @@ import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE } from './map/fur
 import { standingMarks } from './map/utility.ts';
 import { onPolygons } from './map/geo.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
-import { styleFor, facadeCoords, paintWalls, mansardCoords, BLANK } from './facades.ts';
+import { styleFor, facadeCoords, paintWalls, mansardCoords, fitStoreys, BLANK } from './facades.ts';
 import type { WallLine } from './facades.ts';
 import { roofClutter, smokingChimneys } from './map/roofClutter.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
@@ -93,7 +93,9 @@ function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roo
     for (const x of parts[k]) { arrays[k].set(x, o); o += x.length; }
   }
   const [W, H] = size, [ox, oy] = origin;
-  return appendTo({ ...arrays, facade: facadeCoords(arrays.position, hAt, styleAt(bbox)) }, detailArrays(sites, hAt), (x, y) => [(x + ox) / W, (y + oy) / H]);
+  const lines: WallLine[] = [], facade = facadeCoords(arrays.position, hAt, styleAt(bbox), lines);
+  fitStoreys(facade, lines);
+  return appendTo({ ...arrays, facade }, detailArrays(sites, hAt), (x, y) => [(x + ox) / W, (y + oy) / H]);
 }
 
 // Whether (x, y) is inside a polygon (outer ring, then holes).
@@ -176,6 +178,7 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter }: W
       facade[f] = style + (whole >= BLANK ? BLANK : 0) + (was - whole);
     }
   }
+  fitStoreys(facade, lines);
   paintWalls(pos, col, facade, (o) => { const t = kept[o] * 3; return [c8[t], c8[t + 1], c8[t + 2]]; },
     m8 ? (o) => low(o) === MEASURED_WALL || low(o) === CHIMNEY : undefined);
   if (m8) for (let o = 0; o < n; o++) {

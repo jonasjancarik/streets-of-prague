@@ -346,7 +346,7 @@ export const PATTERN: Record<string, number> = { flat: 0, asphalt: 1, setts: 2, 
 
 // Buildings: tiles laid in rows down the slope of every roof face (the slope comes
 // from the face normal), slate in smaller rows, gravel on flat roofs, and a grid of
-// windows on the walls, one row per 3.4 m storey with shopfronts at street level.
+// windows on the walls, one row per storey (fStorey) with shopfronts at street level.
 const BUILDING_GLSL = /* glsl */ `
 vec3 roofTilesAs(vec3 c, vec2 wp, vec3 n, float slate) {
   vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));   // the nudge keeps a flat face from being 0/0
@@ -478,12 +478,12 @@ vec3 grime(vec3 c, vec4 f) {
   c *= 1. - .28 * smoothstep(.5, .8, streak) * detail(f.xy, .4);
   return c * mix(.66, 1., smoothstep(0., 1.4, f.y));
 }
-vec3 facade(vec3 c, vec2 f, float bayWidth) {
+vec3 facade(vec3 c, vec2 f, float bayWidth, vec2 st) {
   float along = f.x, h = f.y;
-  float bay = fract(along / bayWidth), storey = fract((h - .6) / 3.4);
-  float upper = step(4., h);
+  float bay = fract(along / bayWidth), storey = fract((h - st.x) / st.y);
+  float upper = step(st.x, h);
   float win = step(.3, bay) * step(bay, .7) * step(.3, storey) * step(storey, .78) * upper;
-  float shop = step(.12, bay) * step(bay, .88) * step(.6, h) * step(h, 3.3) * (1. - upper);
+  float shop = step(.12, bay) * step(bay, .88) * step(.6, h) * step(h, st.x - .7) * (1. - upper);
   vec3 glass = vec3(.16, .19, .23) + .06 * vnoise(vec2(along, h) * .7);
   float m = max(win, shop * .85);
   float d = detail(f, .9);
@@ -661,7 +661,7 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   }
   else if (bn.y <= .15) {
     if (uFacadeOn > .5 && vFacade.z > .1) diffuseColor.rgb = facadeModules(diffuseColor.rgb, vFacade, fdx, fdy);
-    else if (fBays(vFacade) > .5) diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy, vFacade.z / fBays(vFacade));
+    else if (fBays(vFacade) > .5) diffuseColor.rgb = facade(diffuseColor.rgb, vFacade.xy, vFacade.z / fBays(vFacade), fStorey(vFacade));
     if (uDirt > .5) diffuseColor.rgb = grime(diffuseColor.rgb, vFacade);
   }
   // Lit windows at night: dark glass above the ground floor, in a share of the
@@ -669,11 +669,12 @@ export function shadeBuildings(material: THREE.MeshLambertMaterial) {
   vec3 windowGlow = vec3(0.);
   float bays = fBays(vFacade);
   if (uWindows > .005 && bn.y < .15 && vFacade.z > .1 && bays > .5) {
-    vec2 cell = vec2(floor(vFacade.x / vFacade.z * bays), floor((vFacade.y - .6) / 3.4));
-    float lit = step(fHash(cell.x + fract(vFacade.w) * 97., cell.y), uWindows * (vFacade.y < 4. ? 1.6 : 1.));
+    vec2 st = fStorey(vFacade);
+    vec2 cell = vec2(floor(vFacade.x / vFacade.z * bays), floor((vFacade.y - st.x) / st.y));
+    float lit = step(fHash(cell.x + fract(vFacade.w) * 97., cell.y), uWindows * (vFacade.y < st.x ? 1.6 : 1.));
     float glass = 1. - smoothstep(.13, .22, luma(diffuseColor.rgb) / max(luma(vColor.rgb), .02));
     // Upper floors: only the bluish glass, not the dark shadowed mouldings and sills round it.
-    if (vFacade.y >= 4.) glass *= smoothstep(1.03, 1.12, diffuseColor.b / max(diffuseColor.r, .01));
+    if (vFacade.y >= st.x) glass *= smoothstep(1.03, 1.12, diffuseColor.b / max(diffuseColor.r, .01));
     windowGlow = mix(vec3(1., .62, .3), vec3(1., .8, .55), fHash(cell.y, cell.x)) * lit * glass * .55;
   } else if (uWindows > .005 && roofWin) {
     float lit = step(fHash(floor(vWorld.x * .7), floor(vWorld.z * .7)), uWindows * .6);
