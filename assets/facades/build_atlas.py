@@ -58,7 +58,7 @@ def cells(path):
 
 
 def main():
-    sheets = sorted(HERE.glob("sheet*.webp"))
+    sheets = sorted(HERE.glob("sheet*.webp"), key=lambda p: int(p.stem[5:]))  # sheet10 after sheet9
     atlas = Image.new("RGB", (CELL[0] * COLS, CELL[1] * ROWS * len(sheets)))
     for s, path in enumerate(sheets):
         for i, cell in enumerate(cells(path)):

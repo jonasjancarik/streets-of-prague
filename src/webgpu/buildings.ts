@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import {
   Fn, If, Discard, uniformArray, float, int, vec2, vec3, vec4, texture, attribute, vertexColor, positionWorld, normalWorld, diffuseColor,
-  materialColor, fract, floor, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt,
+  materialColor, fract, floor, mod, dot, sin, mix, smoothstep, step, length, abs, max, min, clamp, normalize, dFdx, dFdy, distance, select, cross, sqrt,
 } from 'three/tsl';
 import { FACADE_ATLAS, FACADE_ON, BLANK, F_BAY as BAY_WIDTH, F_UP as UP, F_DOOR as DOOR, F_WALL as WALL, F_MOD as MOD, F_GROUND as GROUND, F_STOREY as STOREY, STOREY_FIT } from '../facades.ts';
 import { WINDOWS, ROOF_DETAIL, ROOF_CLUTTER, LANDMARK_ROOF as R } from '../shading.ts';
@@ -42,11 +42,12 @@ const fBays = (f: N) => {
 };
 
 const fHash = (a: N, b: N) => fract(sin(a.mul(127.1).add(b.mul(311.7))).mul(43758.5453));
-// The wall's ground floor and its other floors, m (fitStoreys in facades.ts).
+// The wall's ground floor and its other floors, m, and its building's look (finishWalls in facades.ts).
 const fStorey = (f: N) => {
-  const style = min(floor(f.w), 4).toInt(), fit = floor(fract(fract(f.w).mul(64)).mul(64));
-  return vec2(F_GROUND.element(style), F_STOREY.element(style).mul(fit.mul(STOREY_FIT[1] / 63).add(STOREY_FIT[0])));
+  const style = min(floor(f.w), 4).toInt(), fit = mod(floor(fract(f.w).mul(1024)), 32);
+  return vec2(F_GROUND.element(style), F_STOREY.element(style).mul(fit.mul(STOREY_FIT[1] / 31).add(STOREY_FIT[0])));
 };
+const fLook = (f: N) => min(mod(floor(fract(f.w).mul(16384)), 16), MOD.length - 1).toInt();
 const LANDMARK_TILE = vec3(...R.rgb);
 const luma = (c: N) => dot(c, vec3(0.299, 0.587, 0.114));
 // detail() with the pixel's footprint worked out once, outside any branch (derivatives).
@@ -189,9 +190,7 @@ function grime(c0: N, f: N, fWidth: N) {
 // colour; the module in the middle of the bay, its plaster edge drawn on across the piers.
 function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N) {
   const style = floor(f.w).toInt(), seed = fract(f.w).mul(97), st = fStorey(f);
-  // Tenements take one of three looks (FACADE_GLSL).
-  const pick = fHash(seed, float(3));
-  const look = select(style.equal(0), select(pick.lessThan(0.34), int(0), select(pick.lessThan(0.67), int(5), int(6))), style).toVar();
+  const look = fLook(f).toVar();
   // (toVar: declared here, before the branches below. Left to TSL, `q` was worked out inside the
   // upper floors' branch only, and a ground floor read it unset: every pixel of it took the module's
   // top left corner, plain plaster, so ground floors and whole low buildings had no doors or windows.)

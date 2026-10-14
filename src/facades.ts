@@ -6,7 +6,7 @@ import proj4 from 'proj4';
 // into public/facades.webp, one sheet under another. The shader (shading.ts) picks a
 // module for every bay and storey of a wall, by the wall's style.
 export const CELL = [256, 512];
-export const SHEETS = 7;
+export const SHEETS = 11;
 
 // Styles: 0 tenement, 1 baroque, 2 functionalist, 3 panel housing, 4 family house.
 // A party wall (štítová zeď, see facadeCoords) has its style plus BLANK: plaster, no windows.
@@ -22,21 +22,26 @@ export function loadFacadeAtlas() {
     const img = new Image();
     img.src = 'facades.webp';
     await img.decode();
-    const [w, h] = CELL, cols = 6, rows = SHEETS * 2;
+    // Phones and tablets get the modules at half size: a quarter of the memory (all of
+    // them sharp is some 90 MB on the GPU), and from the usual height above the
+    // street a module is a few dozen pixels across anyway.
+    const k = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 2 : 1;
+    const [w, h] = CELL.map((x) => x / k), cols = 6, rows = SHEETS * 2;
+    const W = img.width / k, H = img.height / k;
     const canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height;
+    canvas.width = W;
+    canvas.height = H;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) throw new Error('Cannot create facade atlas canvas');
-    ctx.drawImage(img, 0, 0);
-    const px = ctx.getImageData(0, 0, img.width, img.height).data;
+    ctx.drawImage(img, 0, 0, W, H);
+    const px = ctx.getImageData(0, 0, W, H).data;
     // Cut the atlas into layers of a texture array, so modules never bleed into
     // their neighbours in the mipmaps.
     const data = new Uint8Array(w * h * 4 * cols * rows);
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const layer = r * cols + c;
       for (let y = 0; y < h; y++) {
-        const src = ((r * h + y) * img.width + c * w) * 4;
+        const src = ((r * h + y) * W + c * w) * 4;
         data.set(px.subarray(src, src + w * 4), (layer * h + y) * w * 4);
       }
     }
@@ -91,8 +96,7 @@ export const F_GROUND = [4.4, 4.0, 3.6, 2.9, 3.0];
 export const F_STOREY = [3.7, 3.4, 3.1, 2.85, 2.9];
 const F_CORNICE = [1.0, 0.6, 0.5, 0.9, 0.3];
 // A wall's own floor height is its style's, scaled by 0.8 to 1.25 so that a whole
-// number of floors fits under its cornice; the scale goes in the fraction of the facade
-// attribute's w, under the six bits of the wall's random pick (fStorey in the shaders).
+// number of floors fits under its cornice (fStorey in the shaders).
 export const STOREY_FIT = [0.8, 0.45];
 export const baysOf = (style: number, length: number) => (style >= BLANK ? 0 : Math.floor(length / F_BAY[style] + 0.5));
 
@@ -101,19 +105,84 @@ export const baysOf = (style: number, length: number) => (style >= BLANK ? 0 : M
 // are counted along, where it starts and how long it is along that, and its top.
 export interface WallLine { nx: number; nz: number; ax: number; az: number; tx: number; tz: number; from: number; length: number; top: number; tris: number[] }
 
-// Fit every wall's floors to its height (see F_STOREY), once its style is settled.
-// `lines`: the walls, as facadeCoords gives them.
-export function fitStoreys(facade: Float32Array, lines: WallLine[]) {
+// Looks: the sets of modules a facade is drawn with (rows of F_UP, F_DOOR, F_WALL).
+// The first five are the styles' own; the rest are more for some styles.
+export const LOOK = { neoRenaissance: 0, baroque: 1, functionalist: 2, panel: 3, house: 4, artNouveau: 5, plain: 6, early20th: 7, modern: 8, burgher: 9, renovatedPanel: 10 };
+type Mix = [number, number][]; // looks and their weights
+const TENEMENTS: Mix = [[LOOK.neoRenaissance, 0.35], [LOOK.plain, 0.35], [LOOK.artNouveau, 0.3]];
+// What the map says of a wall (the upper half of its material byte, tileWorker.ts; see
+// pipeline/building_age.py, which writes it): 0 nothing (the game picks the style,
+// styleFor), 1-5 the style plus one, 6 and up a style with the looks of the period the
+// building is from, where IPR's data knows it. Each code: its style and the looks its
+// buildings take.
+export const WALL_CODES: [number, Mix][] = [
+  [STYLE.tenement, TENEMENTS], // not used
+  [STYLE.tenement, TENEMENTS],
+  [STYLE.baroque, [[LOOK.baroque, 0.5], [LOOK.burgher, 0.5]]],
+  [STYLE.functionalist, [[LOOK.functionalist, 1]]],
+  // Most panel blocks have been insulated and repainted since 2000.
+  [STYLE.panel, [[LOOK.panel, 0.35], [LOOK.renovatedPanel, 0.65]]],
+  [STYLE.house, [[LOOK.house, 1]]],
+  [STYLE.tenement, [[LOOK.plain, 0.6], [LOOK.neoRenaissance, 0.4]]], // 1843-1875
+  [STYLE.tenement, [[LOOK.neoRenaissance, 0.55], [LOOK.plain, 0.45]]], // 1876-1889
+  [STYLE.tenement, [[LOOK.artNouveau, 0.5], [LOOK.neoRenaissance, 0.25], [LOOK.plain, 0.25]]], // 1890-1914
+  [STYLE.tenement, [[LOOK.early20th, 0.8], [LOOK.artNouveau, 0.2]]], // 1915-1924
+  [STYLE.functionalist, [[LOOK.modern, 1]]], // since 1990
+];
+
+// The last touches to a tile's walls, once their styles are settled: every building
+// takes one look, and every wall's floors are fitted to its height (F_STOREY). Both go
+// in the fraction of the facade attribute's w, with the wall's random pick:
+// (pick × 512 + fit × 16 + look + 0.5) / 16384, five, five and four bits (fLook and
+// fStorey in the shaders). `lines`: the walls, as facadeCoords gives them; `base(t)`:
+// the colour a triangle came with (see paintWalls); `code(t)`: what the map says
+// (WALL_CODES), if it says.
+export function finishWalls(p: Float32Array, facade: Float32Array, lines: WallLine[], base: (t: number) => [number, number, number], code?: (t: number) => number) {
+  const owner = buildings(p, facade, base), pick = new Map<number, number>();
   for (const l of lines) {
     let top = 0;
     for (const t of l.tris) for (let o = t * 12 + 1; o < t * 12 + 12; o += 4) top = Math.max(top, facade[o]);
-    const w = facade[l.tris[0] * 12 + 3], whole = Math.floor(w), style = whole % BLANK;
+    const t0 = l.tris[0], w = facade[t0 * 12 + 3], whole = Math.floor(w), style = whole % BLANK;
     const room = top - F_GROUND[style] - F_CORNICE[style], n = Math.round(room / F_STOREY[style]);
     const scale = n >= 1 ? room / n / F_STOREY[style] : 1;
-    const code = Math.min(63, Math.max(0, Math.round((scale - STOREY_FIT[0]) / STOREY_FIT[1] * 63)));
-    const fraction = (Math.floor((w - whole) * 64) + (code + 0.5) / 64) / 64;
+    const fit = Math.min(31, Math.max(0, Math.round((scale - STOREY_FIT[0]) / STOREY_FIT[1] * 31)));
+    // The building's look, by a random pick of its own (a party wall has the style too).
+    let c = code?.(t0) ?? 0;
+    if (!(c > 0 && c < WALL_CODES.length && WALL_CODES[c][0] === style)) c = style + 1;
+    const b = owner[t0] >= 0 ? owner[t0] : t0;
+    if (!pick.has(b)) pick.set(b, cellHash(p[b * 9 + 2] * 0.71, p[b * 9] * 1.37));
+    const r = pick.get(b)!, mix = WALL_CODES[c][1];
+    let look = mix[mix.length - 1][0];
+    for (let i = 0, sum = 0, all = mix.reduce((a, [, k]) => a + k, 0); i < mix.length; i++) {
+      sum += mix[i][1] / all;
+      if (r < sum) { look = mix[i][0]; break; }
+    }
+    const fraction = (Math.floor((w - whole) * 32) * 512 + fit * 16 + look + 0.5) / 16384;
     for (const t of l.tris) for (let o = t * 12 + 3; o < t * 12 + 12; o += 4) facade[o] = Math.floor(facade[o]) + fraction;
   }
+}
+
+// Which building each wall triangle belongs to (a triangle of it, the same for all of
+// its walls; -1 for roofs and for walls `skip` leaves out): walls that touch and came in
+// the same colour are one building.
+function buildings(p: Float32Array, facade: Float32Array, base: (t: number) => [number, number, number], skip?: (t: number) => boolean) {
+  const n = p.length / 9, owner = new Int32Array(n).fill(-1);
+  const up = (i: number): number => (owner[i] === i ? i : (owner[i] = up(owner[i])));
+  const seen = new Map<string, number>();
+  for (let t = 0; t < n; t++) {
+    if (!(facade[t * 12 + 2] > 0)) continue; // a roof
+    if (skip?.(t)) continue;
+    owner[t] = t;
+    const [r, g, b] = base(t);
+    for (let v = t * 9; v < t * 9 + 9; v += 3) {
+      const k = `${Math.round(p[v] * 100)},${Math.round(p[v + 1] * 100)},${Math.round(p[v + 2] * 100)},${r},${g},${b}`;
+      const o = seen.get(k);
+      if (o === undefined) seen.set(k, t);
+      else owner[up(t)] = up(o);
+    }
+  }
+  for (let t = 0; t < n; t++) if (owner[t] >= 0) owner[t] = up(t);
+  return owner;
 }
 
 export function cellHash(i: number, j: number) {
@@ -318,21 +387,7 @@ const PLASTER = [
 // one building). The pick goes by where the building stands, so it's the same every
 // time the tile loads. Whatever shading `col` has on top of the colour is kept.
 export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Array, base: (t: number) => [number, number, number], keep?: (t: number) => boolean) {
-  const n = p.length / 9, owner = new Int32Array(n).fill(-1);
-  const up = (i: number): number => (owner[i] === i ? i : (owner[i] = up(owner[i])));
-  const seen = new Map<string, number>();
-  for (let t = 0; t < n; t++) {
-    if (!(facade[t * 12 + 2] > 0)) continue; // a roof
-    if (keep?.(t)) continue; // a colour measured on the photo mesh
-    owner[t] = t;
-    const [r, g, b] = base(t);
-    for (let v = t * 9; v < t * 9 + 9; v += 3) {
-      const k = `${Math.round(p[v] * 100)},${Math.round(p[v + 1] * 100)},${Math.round(p[v + 2] * 100)},${r},${g},${b}`;
-      const o = seen.get(k);
-      if (o === undefined) seen.set(k, t);
-      else owner[up(t)] = up(o);
-    }
-  }
+  const n = p.length / 9, owner = buildings(p, facade, base, keep), up = (t: number) => owner[t];
   const paint = new Map<number, THREE.Color>(), at = new Map<number, number[]>();
   for (let t = 0; t < n; t++) {
     if (owner[t] < 0) continue;
@@ -357,21 +412,27 @@ export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Ar
 
 // For every bay and storey, which module: upper floors, then the ground floor's doors
 // and the rest of the ground floor, as layers of the atlas (sheet × 12 + row × 6 +
-// column). A few bays of each ground floor get a door. The modules come in looks: one
-// for each style, and two more for tenements, which take one of three by the wall's
-// random pick: neo-Renaissance (the fifth sheet, after a house in Mělnická, with the
-// first sheet's shops), Art Nouveau (the sixth) and the plain houses of Žižkov and
-// Karlín (the seventh).
+// column), a row of each table for every look (LOOK). A few bays of each ground floor
+// get a door. The sheets: 1 and 5 neo-Renaissance tenements (5 after a house in
+// Mělnická; 1 gives its shops), 2 baroque, 3 functionalist and panel housing, 4 family
+// houses, 6 Art Nouveau, 7 the plain tenements of Žižkov and Karlín, 8 houses of
+// 1912-1925 (late Art Nouveau, rondocubism), 9 infill since the 1990s, 10 plainer
+// burgher houses of the Old Town and Malá Strana, 11 insulated panel blocks.
 // Window bays are as wide as in Prague's houses (F_BAY, about 3 m between window
 // axes in a tenement): the module takes F_MOD of that in the middle, and its plaster
 // edge (with the cornices and bands) is drawn on across the piers between. Panel
 // housing is stretched instead, its modules being whole panels. (The baroque sheet's
-// shutters reach the module's edge, so they're left out.)
-export const F_UP = [48, 49, 50, 51, 52, 53, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 27, 28, 27, 36, 37, 38, 39, 40, 36,
-  60, 61, 62, 63, 64, 65, 72, 73, 74, 75, 76, 72];
-export const F_DOOR = [56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45, 67, 69, 67, 79, 82, 79];
-export const F_WALL = [54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43, 66, 68, 70, 71, 78, 80, 81, 83];
-export const F_MOD = [1.9, 1.9, 2, 2.4, 1.9, 1.9, 1.9];
+// shutters reach the module's edge, so they're left out; so are rows that would look
+// odd repeated along a whole floor: a staircase's windows, niches.)
+export const F_UP = [
+  48, 49, 50, 51, 52, 53, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 27, 28, 27, 36, 37, 38, 39, 40, 36,
+  60, 61, 62, 63, 64, 65, 72, 73, 74, 75, 76, 72, 84, 85, 86, 87, 88, 89, 96, 97, 98, 99, 100, 101,
+  108, 109, 110, 112, 108, 109, 120, 121, 122, 123, 121, 120];
+export const F_DOOR = [56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45, 67, 69, 67, 79, 82, 79, 90, 93, 90, 103, 104, 105, 114, 115, 117, 126, 130, 126];
+export const F_WALL = [
+  54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43, 66, 68, 70, 71, 78, 80, 81, 83,
+  91, 92, 94, 95, 102, 106, 107, 102, 116, 118, 119, 116, 127, 128, 129, 131];
+export const F_MOD = [1.9, 1.9, 2, 2.4, 1.9, 1.9, 1.9, 1.9, 2, 1.9, 2.4];
 const LOOKS = F_MOD.length;
 const glslArray = (type: string, v: number[]) => `${type}[${v.length}](${v.map((x) => (type === 'float' ? x.toFixed(2) : x)).join(', ')})`;
 export const FACADE_GLSL = /* glsl */ `
@@ -390,19 +451,20 @@ float fBays(vec4 f) {
   int style = int(floor(f.w));
   return style >= ${BLANK} ? 0. : floor(f.z / F_BAY[style] + .5);
 }
-// The wall's ground floor and its other floors, m (fitStoreys).
+// The wall's ground floor and its other floors, m, and its building's look (finishWalls).
 vec2 fStorey(vec4 f) {
   int style = min(int(floor(f.w)), 4);
-  float fit = floor(fract(fract(f.w) * 64.) * 64.);
-  return vec2(F_GROUND[style], F_STOREY[style] * (${STOREY_FIT[0].toFixed(2)} + fit * ${(STOREY_FIT[1] / 63).toFixed(6)}));
+  float fit = mod(floor(fract(f.w) * 1024.), 32.);
+  return vec2(F_GROUND[style], F_STOREY[style] * (${STOREY_FIT[0].toFixed(2)} + fit * ${(STOREY_FIT[1] / 31).toFixed(6)}));
 }
+int fLook(vec4 f) { return int(mod(floor(fract(f.w) * 16384.), 16.)); }
 vec3 facadeModules(vec3 wall, vec4 f, vec4 fdx, vec4 fdy) {
   float bays = fBays(f);
   // Bare plaster, as bright as the modules' plaster (drawn about .45 grey: × .8).
   if (bays < .5) return wall * (.77 + .06 * vnoise(f.xy * vec2(.9, .6)));
   int style = int(floor(f.w));
   float seed = fract(f.w) * 97.;
-  int look = style == 0 ? (fHash(seed, 3.) < .34 ? 0 : fHash(seed, 3.) < .67 ? 5 : 6) : style;
+  int look = min(fLook(f), ${LOOKS - 1});
   vec2 st = fStorey(f);
   vec2 q = vec2(f.x / f.z * bays, f.y < st.x ? clamp(f.y / st.x, 0., .999) : (f.y - st.x) / st.y);
   vec2 cell = floor(q), uv = fract(q);

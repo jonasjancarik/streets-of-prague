@@ -18,7 +18,7 @@ import { furnitureInstances, furnitureMatrices, FURNITURE_SIZE } from './map/fur
 import { standingMarks } from './map/utility.ts';
 import { onPolygons } from './map/geo.ts';
 import { Geo, Grid, fillPolys, strokeLines } from './map/geo.ts';
-import { styleFor, facadeCoords, paintWalls, mansardCoords, fitStoreys, BLANK } from './facades.ts';
+import { styleFor, facadeCoords, paintWalls, mansardCoords, finishWalls, WALL_CODES, BLANK } from './facades.ts';
 import type { WallLine } from './facades.ts';
 import { roofClutter, smokingChimneys } from './map/roofClutter.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
@@ -94,7 +94,8 @@ function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roo
   }
   const [W, H] = size, [ox, oy] = origin;
   const lines: WallLine[] = [], facade = facadeCoords(arrays.position, hAt, styleAt(bbox), lines);
-  fitStoreys(facade, lines);
+  const c = arrays.color;
+  finishWalls(arrays.position, facade, lines, (t) => [Math.round(c[t * 9] * 255), Math.round(c[t * 9 + 1] * 255), Math.round(c[t * 9 + 2] * 255)]);
   return appendTo({ ...arrays, facade }, detailArrays(sites, hAt), (x, y) => [(x + ox) / W, (y + oy) / H]);
 }
 
@@ -170,16 +171,18 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter }: W
   g.computeVertexNormals();
   const lines: WallLine[] = [];
   const facade = facadeCoords(pos, groundAt(ground), styleAt(bbox), lines);
+  const code = (o: number) => (m8 ? m8[kept[o]] >> 4 : 0);
   if (m8) for (let o = 0; o < n; o++) {
-    const style = (m8[kept[o]] >> 4) - 1;
-    if (style < 0 || !(facade[o * 12 + 2] > 0)) continue; // not given, or a roof
+    const style = WALL_CODES[code(o)]?.[0];
+    if (!code(o) || style === undefined || !(facade[o * 12 + 2] > 0)) continue; // not given, or a roof
     for (let f = o * 12 + 3; f < o * 12 + 12; f += 4) {
       const was = facade[f], whole = Math.floor(was);
       facade[f] = style + (whole >= BLANK ? BLANK : 0) + (was - whole);
     }
   }
-  fitStoreys(facade, lines);
-  paintWalls(pos, col, facade, (o) => { const t = kept[o] * 3; return [c8[t], c8[t + 1], c8[t + 2]]; },
+  const base = (o: number): [number, number, number] => { const t = kept[o] * 3; return [c8[t], c8[t + 1], c8[t + 2]]; };
+  finishWalls(pos, facade, lines, base, code);
+  paintWalls(pos, col, facade, base,
     m8 ? (o) => low(o) === MEASURED_WALL || low(o) === CHIMNEY : undefined);
   if (m8) for (let o = 0; o < n; o++) {
     const m = low(o);
