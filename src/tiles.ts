@@ -1086,7 +1086,7 @@ export class TileWorld {
     const source: TileSource = {
       t, size: data.size, origin: data.origin, bounds, ground, levels: tileLevels, masks: [], marks, hide,
       withIpr, ipr: withIpr ? ipr : null, extrude, clipped, parkingZones, standing: own.filter(grounded).map((b) => ({ rings: b.rings })),
-      shapes, trees: { matrices: new Float32Array(0), colours: new Float32Array(0), yearly: new Float32Array(0), outlines: new Float32Array(0), count: 0, shrubs: 0, conifers: 0 },
+      shapes, trees: { matrices: new Float32Array(0), colours: new Float32Array(0), yearly: new Float32Array(0), outlines: new Float32Array(0), count: 0, big: 0, shrubs: 0, conifers: 0 },
     };
     // A tile that's in view as soon as it's loaded: its meshes' jobs go to the workers
     // along with this one.

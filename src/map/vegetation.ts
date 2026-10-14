@@ -31,13 +31,17 @@ const CANOPY_CELL = 2;
 export type TreeSpot = [number, number, number?, number?, number?, ...number[]];
 export const OUTLINE = 8;
 
-// The instances run broadleaf, then `shrubs`, then `conifers`: one page kind each.
+// The instances run broadleaf, then `big` broadleaf (BIG_CROWN), then `shrubs`, then
+// `conifers`: one page kind each.
 // `yearly`: how each goes through the year: 1 an evergreen, which doesn't change; below
 // 1 a tree that turns and sheds, and 2 and more a fruit tree, which also flowers. The
 // fraction is the tree's own timing (early or late) and picks its autumn colour.
 // `outlines`: OUTLINE numbers each, how far the crown reaches (1 its radius) in each
 // direction of its own frame (turned with the instance), for the shader (outlineAt).
-export interface TreeInstances { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; outlines: Float32Array; count: number; shrubs: number; conifers: number }
+export interface TreeInstances { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; outlines: Float32Array; count: number; big: number; shrubs: number; conifers: number }
+// A broadleaf crown this wide (radius, m) and more is drawn with more, smaller tufts
+// (bigCrownGeometry): a big old tree's crown is many clumps, not a small one's few blown up.
+export const BIG_CROWN = 5;
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
@@ -228,10 +232,11 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   for (const [x, y, rad, pick] of found) if (pick < keep) trees.push([x, y, rad * grow, SHRUB]);
   for (const [x, y] of d.shrubs ?? []) trees.push([x, y, 0.9 + r() * 0.7, SHRUB]);
 
-  // Shrubs, then conifers, last: each has its own mesh.
-  const bushes = trees.filter((t) => t[3] === SHRUB), pines = trees.filter((t) => t[3] === CONIFER);
-  trees.splice(0, trees.length, ...trees.filter((t) => t[3] !== SHRUB && t[3] !== CONIFER), ...bushes, ...pines);
-  const shrubs = bushes.length, conifers = pines.length;
+  // The big crowns, the shrubs, then the conifers, last: each has its own mesh.
+  const isBig = (t: Tree) => t[3] === 1 && t[2] >= BIG_CROWN;
+  const bushes = trees.filter((t) => t[3] === SHRUB), pines = trees.filter((t) => t[3] === CONIFER), bigs = trees.filter(isBig);
+  trees.splice(0, trees.length, ...trees.filter((t) => t[3] !== SHRUB && t[3] !== CONIFER && !isBig(t)), ...bigs, ...bushes, ...pines);
+  const big = bigs.length, shrubs = bushes.length, conifers = pines.length;
   const matrices = new Float32Array(trees.length * 16), colours = new Float32Array(trees.length * 3);
   const yearly = new Float32Array(trees.length), outlines = new Float32Array(trees.length * OUTLINE);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
@@ -286,7 +291,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     const own = rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663));
     yearly[i] = kind === CONIFER || own() < EVERGREEN[kind] ? 1 : (kind === 2 ? 2 : 0) + own() * 0.98;
   });
-  return { matrices, colours, yearly, outlines, count: trees.length, shrubs, conifers };
+  return { matrices, colours, yearly, outlines, count: trees.length, big, shrubs, conifers };
 }
 
 
@@ -420,7 +425,12 @@ const CROWN_TIERS: Tier[] = [[7, 0.64, -0.08, 62, 0.48], [5, 0.4, 0.2, 40, 0.46]
 // round a lighter core (about 90 triangles). The first version, seven small tufts
 // round a dark core, showed gaps and a spiky outline from above; these overlap.
 const SHRUB_TIERS: Tier[] = [[5, 0.6, -0.05, 56, 0.6], [3, 0.3, 0.24, 30, 0.6], [1, 0, 0.44, 0, 0.55]];
+// A big crown: the same frame with five tiers of 34 smaller tufts (about 720 triangles).
+// (Its tufts overlap more and its core is lighter: through the gaps between small tufts,
+// a dark core made the whole crown darker than a small one.)
+const BIG_TIERS: Tier[] = [[12, 0.68, -0.1, 64, 0.38], [10, 0.5, 0.12, 48, 0.37], [7, 0.3, 0.3, 32, 0.35], [4, 0.14, 0.44, 16, 0.33], [1, 0, 0.52, 0, 0.3]];
 const crownGeometry = () => crownShape(7, 20, CROWN_TIERS);
+const bigCrownGeometry = () => crownShape(11, 16, BIG_TIERS, 0.6, 0.45);
 const shrubGeometry = () => crownShape(13, 8, SHRUB_TIERS, 0.55, 0.45);
 function crownShape(seed0: number, RIM: number, tiers: Tier[], coreSize = 0.56, coreShade = 0.32) {
   const r = rng(seed0);
@@ -505,7 +515,7 @@ function crownBuffers({ pos, nor, col, tuft, across, along, idx }: CrownArrays) 
   for (const a of [geom.index, ...Object.values(geom.attributes)]) if (a) (a as { shared?: boolean }).shared = true;
   return geom;
 }
-let crown: THREE.BufferGeometry | null = null, shrub: THREE.BufferGeometry | null = null;
+let crown: THREE.BufferGeometry | null = null, shrub: THREE.BufferGeometry | null = null, bigCrown: THREE.BufferGeometry | null = null;
 let treeFactories = 0;
 
 // A conifer: tiers of spiky skirts, one on top of the next and narrowing to a tip,
@@ -725,7 +735,8 @@ export function treePageFactory() {
   crown ??= crownGeometry();
   shrub ??= shrubGeometry();
   pine ??= pineGeometry();
-  const shapes = [crown, shrub, pine];
+  bigCrown ??= bigCrownGeometry();
+  const shapes = [crown, shrub, pine, bigCrown]; // (by TreeKind)
   treeFactories++;
   // Opened round you, like the buildings, when you're in a tunnel under a park.
   const material = leafy(cutAway(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), 'trees'));
@@ -757,7 +768,7 @@ export function treePageFactory() {
         for (const a of [shape.index, ...Object.values(shape.attributes)]) if (a) (a as { shared?: boolean }).shared = false;
         shape.dispose();
       }
-      crown = shrub = pine = null;
+      crown = shrub = pine = bigCrown = null;
     }
   } };
 }

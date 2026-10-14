@@ -2,8 +2,10 @@ import * as THREE from 'three';
 import { send } from './gpu.ts';
 import { treePageFactory, OUTLINE, type TreeInstances } from './map/vegetation.ts';
 
-export const TREE_PAGE_CAPACITY = [1200, 128, 128] as const;
-export type TreeKind = 0 | 1 | 2; // broadleaf, shrub, conifer
+export const TREE_PAGE_CAPACITY = [1200, 128, 128, 256] as const;
+export type TreeKind = 0 | 1 | 2 | 3; // broadleaf, shrub, conifer, big broadleaf (vegetation.ts, BIG_CROWN)
+type PerKind = readonly [number, number, number, number];
+const KINDS = [0, 1, 2, 3] as const;
 const OUTLINE_ATTRIBUTES = ['outlineA', 'outlineB'] as const; // (OUTLINE = 8: four in each)
 type Page = { mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null };
 
@@ -13,14 +15,14 @@ export class TreePool {
   readonly group = new THREE.Group();
   readonly pages: Page[] = [];
   readonly leases = new Map<string, Page[]>();
-  readonly growth = [0, 0, 0];
+  readonly growth = [0, 0, 0, 0];
   private readonly factory = treePageFactory();
-  private readonly capacity: readonly [number, number, number];
+  private readonly capacity: PerKind;
   private disposed = false;
   private prepared = false;
 
-  constructor(scene: THREE.Scene, capacity: number | readonly [number, number, number] = TREE_PAGE_CAPACITY) {
-    const sizes = typeof capacity === 'number' ? [capacity, capacity, capacity] as const : capacity;
+  constructor(scene: THREE.Scene, capacity: number | PerKind = TREE_PAGE_CAPACITY) {
+    const sizes = typeof capacity === 'number' ? [capacity, capacity, capacity, capacity] as const : capacity;
     if (sizes.some((n) => !Number.isInteger(n) || n < 1)) throw new Error('Invalid tree page capacity');
     this.capacity = sizes;
     this.group.name = 'Retained tree pages';
@@ -46,10 +48,10 @@ export class TreePool {
 
   // Allocate a finite total page envelope at startup. During compileAsync a single harmless
   // instance makes each page's actual shader variant visible; restore it afterward.
-  prepare(reserve: readonly [number, number, number]) {
+  prepare(reserve: PerKind) {
     if (this.disposed) throw new Error('Tree pool disposed');
     const prepared: Page[] = [];
-    for (const kind of [0, 1, 2] as const) {
+    for (const kind of KINDS) {
       const free = this.pages.filter((p) => p.kind === kind && p.owner === null);
       const total = this.pages.filter((p) => p.kind === kind).length;
       for (let i = total; i < reserve[kind]; i++) free.push(this.create(kind, false));
@@ -86,14 +88,14 @@ export class TreePool {
   add(tileKey: string, instances: TreeInstances) {
     if (this.disposed) throw new Error('Tree pool disposed');
     if (this.leases.has(tileKey)) return this.leases.get(tileKey)!;
-    const { matrices, colours, yearly, outlines, count, shrubs, conifers } = instances;
-    if (count < 0 || shrubs < 0 || conifers < 0 || shrubs + conifers > count ||
+    const { matrices, colours, yearly, outlines, count, big, shrubs, conifers } = instances;
+    if (count < 0 || big < 0 || shrubs < 0 || conifers < 0 || big + shrubs + conifers > count ||
         matrices.length !== count * 16 || colours.length !== count * 3 || yearly.length !== count || outlines.length !== count * OUTLINE) {
       throw new Error(`Invalid tree instances for ${tileKey}`);
     }
-    const broadleaf = count - shrubs - conifers;
+    const broadleaf = count - big - shrubs - conifers, small = broadleaf + big;
     const parts: [TreeKind, number, number][] = [
-      [0, 0, broadleaf], [1, broadleaf, broadleaf + shrubs], [2, broadleaf + shrubs, count],
+      [0, 0, broadleaf], [3, broadleaf, small], [1, small, small + shrubs], [2, small + shrubs, count],
     ];
     const acquired: Page[] = [];
     try {
@@ -145,7 +147,7 @@ export class TreePool {
   }
 
   stats() {
-    const active = [0, 0, 0], free = [0, 0, 0], trees = [0, 0, 0];
+    const active = [0, 0, 0, 0], free = [0, 0, 0, 0], trees = [0, 0, 0, 0];
     for (const page of this.pages) {
       if (page.owner === null) free[page.kind]++;
       else { active[page.kind]++; trees[page.kind] += page.mesh.count; }

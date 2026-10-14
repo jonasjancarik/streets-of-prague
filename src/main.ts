@@ -1923,7 +1923,7 @@ async function main() {
     status('Preparing the view…');
     await loadFacadeAtlas();
     // Keep tree variants prepared while warming the car meshes and scene.
-    const releaseTreeReserve = world.trees.prepare([30, 20, 24]);
+    const releaseTreeReserve = world.trees.prepare([30, 20, 24, 12]);
     try {
       // Give the already-started optional bike feed a short chance to supply its
       // operator colours; a slow or missing feed must never hold the loading screen.

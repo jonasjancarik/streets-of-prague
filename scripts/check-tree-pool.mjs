@@ -26,7 +26,7 @@ const check = `(async () => {
       colours.set([i/1000, (i+1)/1000, (i+2)/1000], i*3);
       yearly[i] = i % 2;
     }
-    return { matrices, colours, yearly, outlines: new Float32Array(count * 8).fill(1), count, shrubs: s, conifers: c };
+    return { matrices, colours, yearly, outlines: new Float32Array(count * 8).fill(1), count, big: 0, shrubs: s, conifers: c };
   };
   const hash = (array) => {
     let h = 2166136261;
