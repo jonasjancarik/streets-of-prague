@@ -17,15 +17,19 @@ export interface TreeTileData extends GeoData {
 
 // A tree's place in metres, and what kind it is when the map knows: 1 a conifer, 2 a fruit
 // tree (0 not known). Then, when the surface models show it, its top and its crown's
-// radius in metres (pipeline/tree_sizes.py), and when the summer photo shows it, its
-// crown's colour there (red, green, blue, 0 to 255).
-export type TreeSpot = [number, number, number?, number?, number?, number?, number?, number?];
+// radius in metres (pipeline/tree_sizes.py) and its outline (how far it reaches in OUTLINE
+// directions, from the east anticlockwise, in hundredths of the radius); and when the summer
+// photo shows it, its crown's colour there (red, green, blue, 0 to 255).
+export type TreeSpot = [number, number, number?, number?, number?, ...number[]];
+export const OUTLINE = 8;
 
 // The instances run broadleaf, then `shrubs`, then `conifers`: one page kind each.
 // `yearly`: how each goes through the year: 1 an evergreen, which doesn't change; below
 // 1 a tree that turns and sheds, and 2 and more a fruit tree, which also flowers. The
 // fraction is the tree's own timing (early or late) and picks its autumn colour.
-export interface TreeInstances { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; count: number; shrubs: number; conifers: number }
+// `outlines`: OUTLINE numbers each, how far the crown reaches (1 its radius) in each
+// direction of its own frame (turned with the instance), for the shader (outlineAt).
+export interface TreeInstances { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; outlines: Float32Array; count: number; shrubs: number; conifers: number }
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
@@ -135,10 +139,11 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   const r = rng(42);
   // The surveyed trees (IPR's and OSM's), with which kind they are when it's known.
   const real = new Map<number, number[]>();
-  for (const [x, y, k, top, radius, ...seen] of d.trees) {
+  for (const [x, y, k, top, radius, ...rest] of d.trees) {
     if (top !== undefined && radius !== undefined) {
       const kind = k === 1 ? CONIFER : k === 2 ? 2 : 1;
-      trees.push([x, y, Math.min(Math.max(radius, 1.5), kind === 1 ? 9 : 5), kind, 1, false, top, seen.length === 3 ? seen as number[] : undefined]);
+      trees.push([x, y, Math.min(Math.max(radius, 1.5), kind === 1 ? 9 : 5), kind, 1, false, top,
+        rest.length === OUTLINE + 3 ? rest.slice(OUTLINE) : undefined, rest.length >= OUTLINE ? rest.slice(0, OUTLINE) : undefined]);
     } else if (k === 1) trees.push([x, y, 2.6 + r() * 1.8, CONIFER]);
     else if (k === 2) trees.push([x, y, 1.7 + r() * 0.9, 2]);
     else trees.push([x, y, 3 + r() * 2.5, 1]);
@@ -193,7 +198,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   trees.splice(0, trees.length, ...trees.filter((t) => t[3] !== SHRUB && t[3] !== CONIFER), ...bushes, ...pines);
   const shrubs = bushes.length, conifers = pines.length;
   const matrices = new Float32Array(trees.length * 16), colours = new Float32Array(trees.length * 3);
-  const yearly = new Float32Array(trees.length);
+  const yearly = new Float32Array(trees.length), outlines = new Float32Array(trees.length * OUTLINE);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
   const colors = [
     [new THREE.Color('#5a7c38'), new THREE.Color('#4a6a30'), new THREE.Color('#6a8c40')],
@@ -203,7 +208,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     [new THREE.Color('#3f5e3a'), new THREE.Color('#34523a'), new THREE.Color('#4a6842')], // conifers
   ];
   const c = new THREE.Color();
-  trees.forEach(([x, y, rad, kind, tall = 1, , measured, seen], i) => {
+  trees.forEach(([x, y, rad, kind, tall = 1, , measured, seen, outline], i) => {
     // A shrub's crown sits on the ground, a little flattened.
     let h = kind === SHRUB ? rad * (0.42 + r() * 0.12) : rad * (1.6 + r() * 0.6) * tall;
     let deep = kind === SHRUB ? 0.65 + r() * 0.2 : (0.85 + r() * 0.3) * tall; // the crown's height to its width
@@ -221,7 +226,16 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
       h *= fit < 0.35 ? 0 : fit;
     }
     p.set(x, h, -y);
-    q.setFromEuler(new THREE.Euler(0, r() * Math.PI, 0));
+    const turn = r() * Math.PI;
+    q.setFromEuler(new THREE.Euler(0, turn, 0));
+    // The outline in the crown's own frame: what lies at `a` in it lies at a + turn on the map.
+    // A crown that wasn't measured is a little uneven all the same.
+    const wobble = outline ? null : Array.from({ length: OUTLINE }, () => 0.9 + r() * 0.2);
+    for (let j = 0; j < OUTLINE; j++) {
+      if (!outline) { outlines[i * OUTLINE + j] = wobble![j]; continue; }
+      const t = ((j + turn / (2 * Math.PI) * OUTLINE) % OUTLINE + OUTLINE) % OUTLINE, k = Math.floor(t), f = t - k;
+      outlines[i * OUTLINE + j] = (outline[k] * (1 - f) + outline[(k + 1) % OUTLINE] * f) / 100;
+    }
     const w = rad * (0.9 + r() * 0.2);
     sc.set(w, rad * deep, rad * (0.9 + r() * 0.2));
     m.compose(p, q, sc);
@@ -237,7 +251,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     const own = rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663));
     yearly[i] = kind === CONIFER || own() < EVERGREEN[kind] ? 1 : (kind === 2 ? 2 : 0) + own() * 0.98;
   });
-  return { matrices, colours, yearly, count: trees.length, shrubs, conifers };
+  return { matrices, colours, yearly, outlines, count: trees.length, shrubs, conifers };
 }
 
 
@@ -505,11 +519,25 @@ float bareTwig(vec3 t, float bare) {
   return twig * bare;
 }
 `;
-const TUFT_VERTEX = ['#include <common>', '#include <common>\nattribute vec3 tuft;\nattribute float yearly;\nuniform float uBare;\nvarying vec3 vTuft;\nvarying float vBare;'] as const;
+// How far the crown reaches (1 its radius) towards `p`, in its own frame: between the
+// OUTLINE directions of its outline (TreeInstances.outlines), from the east anticlockwise
+// (the map's y is the scene's -z).
+const OUTLINE_GLSL = `attribute vec4 outlineA;
+attribute vec4 outlineB;
+float outlineAt(vec3 p) {
+  float t = atan(-p.z, p.x) / .7853982, s = 0.;
+  for (int k = 0; k < 4; k++) {
+    s += max(0., 1. - abs(mod(t - float(k) + 4., 8.) - 4.)) * outlineA[k];
+    s += max(0., 1. - abs(mod(t - float(k + 4) + 4., 8.) - 4.)) * outlineB[k];
+  }
+  return s;
+}`;
+const TUFT_VERTEX = ['#include <common>', `#include <common>\nattribute vec3 tuft;\nattribute float yearly;\nuniform float uBare;\nvarying vec3 vTuft;\nvarying float vBare;\n${OUTLINE_GLSL}`] as const;
 const TUFT_BEGIN = ['#include <begin_vertex>', `#include <begin_vertex>
   vTuft = tuft;
   vBare = clamp(uBare * 1.6 - fract(yearly) * .6, 0., 1.) * (1. - step(.995, yearly) * step(yearly, 1.5));
-  if (tuft.z < 0.) transformed *= 1. - .5 * vBare;`] as const;
+  if (tuft.z < 0.) transformed *= 1. - .5 * vBare;
+  transformed.xz *= outlineAt(transformed);`] as const;
 
 // The leaves' colour through the year (SEASON), worked out for each corner of a tuft:
 // new leaves a light yellow-green; in autumn each tree turns in its own time, tuft by
@@ -621,6 +649,9 @@ export function treePageFactory() {
     geom.setIndex(shape.index);
     for (const [name, attr] of Object.entries(shape.attributes)) geom.setAttribute(name, attr);
     geom.setAttribute('yearly', new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
+    // The outline (TreeInstances.outlines), four directions in each.
+    geom.setAttribute('outlineA', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4).fill(1), 4));
+    geom.setAttribute('outlineB', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4).fill(1), 4));
     const mesh = new THREE.InstancedMesh(geom, material, capacity);
     mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     mesh.count = 0;

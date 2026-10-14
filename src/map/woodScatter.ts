@@ -13,8 +13,9 @@ export const WOOD = 200, PARK = 120, GROVE = 180;
 export const SHRUB = 3, CONIFER = 4;
 // [x, y, radius, kind, height (1 for the usual), a neighbouring tile's (not drawn here),
 // its top in metres when measured (pipeline/tree_sizes.py), its crown's colour in the photo
-// (red, green, blue, 0 to 255)]
-export type Tree = [number, number, number, number, number?, boolean?, number?, number[]?];
+// (red, green, blue, 0 to 255), its outline (reach in OUTLINE directions from the east,
+// anticlockwise, in hundredths of its radius)]
+export type Tree = [number, number, number, number, number?, boolean?, number?, number[]?, number[]?];
 // Of the trees we make up, how many are conifers: pines and spruces in the woods, a
 // few in the streets, parks and gardens. Chosen by where the tree stands.
 export const CONIFERS = [0.3, 0.08];

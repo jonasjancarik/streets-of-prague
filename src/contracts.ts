@@ -118,7 +118,7 @@ export interface BuildingArrays {
 
 export interface LandResult {
   furniture: FurnitureInstances;
-  trees: { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; count: number; shrubs: number; conifers: number };
+  trees: { matrices: Float32Array; colours: Float32Array; yearly: Float32Array; outlines: Float32Array; count: number; shrubs: number; conifers: number };
   walls: { position: Float32Array; normal: Float32Array };
   fences: FenceBuffers;
   sheds: ShedBuffers;

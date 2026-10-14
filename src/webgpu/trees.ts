@@ -17,6 +17,19 @@ import { type N, follow, followVec, addPort, uCut, uWet, uSnow, hash12, detail }
 
 const uBare = follow(BARE), uLeaves = follow(LEAVES), uSeason = followVec(SEASON);
 const tuft: N = attribute('tuft', 'vec3'), yearly: N = attribute('yearly', 'float');
+const outlineA: N = attribute('outlineA', 'vec4'), outlineB: N = attribute('outlineB', 'vec4');
+// How far the crown reaches towards `p` in its own frame (vegetation.ts, outlineAt): the
+// horizontal scale of a point of the crown.
+const outlineAt = (p: N): N => {
+  const t = atan(p.z.negate(), p.x).div(Math.PI / 4);
+  const near = (k: number) => {
+    const d = t.sub(k).add(4);
+    return max(0, float(1).sub(abs(d.sub(floor(d.div(8)).mul(8)).sub(4))));
+  };
+  let s: N = float(0);
+  (['x', 'y', 'z', 'w'] as const).forEach((c, k) => { s = s.add(near(k).mul(outlineA[c])).add(near(k + 4).mul(outlineB[c])); });
+  return s;
+};
 const TAU = 6.2832;
 
 // smallLeaves in vegetation.ts: x = gap to the next leaf, y = random, zw = from the leaf's middle.
@@ -141,12 +154,14 @@ addPort(/^tufts-cut$/, (node) => {
 
   // Twigs alone are left of a bare tree's core, which shrinks to its thicker branches.
   const shrink = () => select(tuft.z.lessThan(0), float(1).sub(vBare().mul(0.5)), float(1));
+  const outlined = (p: N) => { const o = outlineAt(p); return vec3(o, 1, o); };
   node.setupPosition = function (builder: N) {
     shareInstances(builder);
     positionLocal.mulAssign(shrink());
+    positionLocal.mulAssign(outlined(positionGeometry));
     return proto.setupPosition.call(this, builder);
   };
-  node.castShadowPositionNode = instanceMatrix().mul(vec4(positionGeometry.mul(shrink()), 1)).xyz;
+  node.castShadowPositionNode = instanceMatrix().mul(vec4(positionGeometry.mul(shrink()).mul(outlined(positionGeometry)), 1)).xyz;
 
   node.maskNode = positionWorld.y.greaterThan(uCut.y).and(distance(positionWorld.xz, uCut.xz).lessThan(uCut.w)).not();
   node.maskShadowNode = bareTwig(tuft, vBare()).greaterThanEqual(0);

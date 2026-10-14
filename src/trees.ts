@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { send } from './gpu.ts';
-import { treePageFactory, type TreeInstances } from './map/vegetation.ts';
+import { treePageFactory, OUTLINE, type TreeInstances } from './map/vegetation.ts';
 
 export const TREE_PAGE_CAPACITY = [1200, 128, 128] as const;
 export type TreeKind = 0 | 1 | 2; // broadleaf, shrub, conifer
+const OUTLINE_ATTRIBUTES = ['outlineA', 'outlineB'] as const; // (OUTLINE = 8: four in each)
 type Page = { mesh: THREE.InstancedMesh; kind: TreeKind; owner: string | null };
 
 // Every page belongs to at most one tile. It keeps its mesh, attributes and shader
@@ -64,11 +65,13 @@ export class TreePool {
       mesh.setMatrixAt(0, identity);
       mesh.instanceColor!.setXYZ(0, 1, 1, 1);
       (mesh.geometry.getAttribute('yearly') as THREE.InstancedBufferAttribute).setX(0, 0);
+      for (const name of OUTLINE_ATTRIBUTES) (mesh.geometry.getAttribute(name) as THREE.InstancedBufferAttribute).setXYZW(0, 1, 1, 1, 1);
       mesh.count = 1;
       mesh.visible = true;
       send(mesh.instanceMatrix, 1);
       send(mesh.instanceColor!, 1);
       send(mesh.geometry.getAttribute('yearly') as THREE.InstancedBufferAttribute, 1);
+      for (const name of OUTLINE_ATTRIBUTES) send(mesh.geometry.getAttribute(name) as THREE.InstancedBufferAttribute, 1);
     }
     this.prepared = true;
     return () => {
@@ -83,9 +86,9 @@ export class TreePool {
   add(tileKey: string, instances: TreeInstances) {
     if (this.disposed) throw new Error('Tree pool disposed');
     if (this.leases.has(tileKey)) return this.leases.get(tileKey)!;
-    const { matrices, colours, yearly, count, shrubs, conifers } = instances;
+    const { matrices, colours, yearly, outlines, count, shrubs, conifers } = instances;
     if (count < 0 || shrubs < 0 || conifers < 0 || shrubs + conifers > count ||
-        matrices.length !== count * 16 || colours.length !== count * 3 || yearly.length !== count) {
+        matrices.length !== count * 16 || colours.length !== count * 3 || yearly.length !== count || outlines.length !== count * OUTLINE) {
       throw new Error(`Invalid tree instances for ${tileKey}`);
     }
     const broadleaf = count - shrubs - conifers;
@@ -103,12 +106,19 @@ export class TreePool {
         (mesh.instanceMatrix.array as Float32Array).set(matrices.subarray(from * 16, (from + n) * 16));
         (mesh.instanceColor!.array as Float32Array).set(colours.subarray(from * 3, (from + n) * 3));
         (mesh.geometry.getAttribute('yearly').array as Float32Array).set(yearly.subarray(from, from + n));
+        const [a, b] = OUTLINE_ATTRIBUTES.map((name) => mesh.geometry.getAttribute(name).array as Float32Array);
+        for (let k = 0; k < n; k++) {
+          const o = (from + k) * OUTLINE;
+          a.set(outlines.subarray(o, o + 4), k * 4);
+          b.set(outlines.subarray(o + 4, o + 8), k * 4);
+        }
         mesh.count = n;
         mesh.computeBoundingBox();
         mesh.computeBoundingSphere();
         send(mesh.instanceMatrix, n);
         send(mesh.instanceColor!, n);
         send(mesh.geometry.getAttribute('yearly') as THREE.InstancedBufferAttribute, n);
+        for (const name of OUTLINE_ATTRIBUTES) send(mesh.geometry.getAttribute(name) as THREE.InstancedBufferAttribute, n);
         mesh.visible = true;
       }
       this.leases.set(tileKey, acquired);
@@ -141,7 +151,7 @@ export class TreePool {
       else { active[page.kind]++; trees[page.kind] += page.mesh.count; }
     }
     return { capacity: [...this.capacity], active, free, trees, growth: [...this.growth],
-      matrixColourEvergreenBytes: this.pages.reduce((n, p) => n + this.capacity[p.kind] * (16 + 3 + 1) * 4, 0) };
+      matrixColourEvergreenBytes: this.pages.reduce((n, p) => n + this.capacity[p.kind] * (16 + 3 + 1 + OUTLINE) * 4, 0) };
   }
 
   dispose() {

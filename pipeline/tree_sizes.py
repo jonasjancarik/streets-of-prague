@@ -10,6 +10,9 @@ terrain heights says how high the canopy stands round each tree:
   stays above CROWN_SHARE of the top. A ray stops at a building, and where it gets nearer
   another tree than its own: in a row of trees each gets its own share. In a closed stand
   the crown still reaches CLOSE of the way to the nearest tree, so the canopy stays closed.
+- its outline is how far the rays reach, seen from the trunk, in OUTLINE directions: a
+  crown leans off a wall, spreads into a gap or is squeezed in a row, as it does there;
+- its colour is the median of its leaves in IPR's summer photo (crown_colour).
 
 Two surface models, and the higher of the two at each metre. IPR Praha's (2025, 1 m) is
 the newer, but it reads many broadleaf crowns as a few scattered points, or as the ground
@@ -22,9 +25,10 @@ the models miss it, and the game keeps making its size up.
     uv run --group cover tree_sizes.py survey praha 50 52 59 61 # the sizes found, no files written
 
 It measures the trees of the game's tiles as they were last assembled (public/data), and
-writes the layer `treesize`: per tile, [x, y, top, radius] in metres. layers.assemble puts
-each into the tile's tree at that place, as [x, y, kind, top, radius] (kind 0 when the map
-doesn't know it). A tree that moved since keeps a made-up size until this runs again. The
+writes the layer `treesize`: per tile, [x, y, top, radius, *outline, r, g, b] (metres; the
+outline in hundredths of the radius; the colour only when the photo shows the crown).
+layers.assemble puts each into the tile's tree at that place, as [x, y, kind, top, radius,
+*outline, r, g, b] (kind 0 when the map doesn't know it). A tree that moved since keeps a made-up size until this runs again. The
 ČÚZK model is fetched once per tile into .cache/cover/img/dsm_1m_wide (shared with
 young_woods.py).
 """
@@ -49,6 +53,7 @@ MIN_TOP = 3.0      # m: lower than this the tree isn't measured
 CROWN_SHARE = 0.4  # the crown reaches as far as the canopy stays above this share of the top
 RAYS, REACH, STEP = 16, 12.0, 0.5  # directions; how far (m) and in what steps they are followed
 VORONOI = 0.5      # m: a ray stops where another tree is this much nearer than its own
+OUTLINE, OUTLINE_RANGE = 8, (0.5, 1.7)  # the crown's outline: its reach in this many directions, kept within this share of its radius
 CLOSE = 0.7        # ...but the crown reaches this share of the way to the nearest tree, where the canopy does
 COLOUR_SHARE, COLOUR_REACH = 0.5, 3.5  # the crown's colour is taken within this share of its radius from the top, and these metres
 MIN_PIXELS = 3     # ...from at least this many metres of it
@@ -114,8 +119,8 @@ def canopy(area, meta, t):
 
 
 def measure(nd, built, box, own, others, rgb=None):
-    """[x, y, top, radius] for each of `own` trees ([x, y, ...]) that stands high enough,
-    followed by its crown's colour in the photo `rgb` ([r, g, b], 0 to 255) when there is one.
+    """[x, y, top, radius, *outline] for each of `own` trees ([x, y, ...]) that stands high
+    enough, followed by its crown's colour in the photo `rgb` ([r, g, b], 0 to 255) when there is one.
     `others`: every tree near, own included, as an (n, 2) array."""
     X0, Y1 = box[0], box[3]
     H, W = nd.shape
@@ -142,20 +147,36 @@ def measure(nd, built, box, own, others, rgb=None):
         inside = (cols >= 0) & (cols < W) & (rows >= 0) & (rows < H)
         cols, rows = np.clip(cols, 0, W - 1), np.clip(rows, 0, H - 1)
         crown = inside & ok[rows, cols] & (np.nan_to_num(nd[rows, cols], nan=-1) >= max(1.5, CROWN_SHARE * top))
-        def reach(along):
-            return float(np.where(along.all(axis=1), REACH, np.argmin(along, axis=1) * STEP).mean()) + RES / 2
-        free, shared = reach(crown), None
+        def reach(along):  # how far each ray stays in the crown
+            return np.where(along.all(axis=1), REACH, np.argmin(along, axis=1) * STEP) + RES / 2
+        rays = free = reach(crown)
         near = others[np.abs(others[:, 0] - x) + np.abs(others[:, 1] - y) < 2 * REACH + 2]
         gap = np.hypot(near[:, 0] - x, near[:, 1] - y)
         gap = gap[gap > 0.3]
         if len(gap):
             d = np.hypot(near[:, 0, None, None] - px, near[:, 1, None, None] - py).min(axis=0)
-            shared = reach(crown & (d >= np.hypot(px - x, py - y) - VORONOI))
             # In a closed stand the shares are small; the crowns still close over the gaps.
-            shared = max(shared, min(free, CLOSE * float(gap.min())))
-        radius = free if shared is None else shared
-        out.append([round(x, 1), round(y, 1), round(top, 1), round(radius, 1), *crown_colour(nd, built, box, rgb, tx, ty, top, radius)])
+            rays = np.maximum(reach(crown & (d >= np.hypot(px - x, py - y) - VORONOI)),
+                              np.minimum(free, CLOSE * float(gap.min())))
+        radius = float(rays.mean())
+        out.append([round(x, 1), round(y, 1), round(top, 1), round(radius, 1), *outline(x, y, tx, ty, angles, rays, radius),
+                    *crown_colour(nd, built, box, rgb, tx, ty, top, radius)])
     return out
+
+
+def outline(x, y, tx, ty, angles, rays, radius):
+    """How far the crown reaches from the trunk (x, y) towards the east, north-east, north
+    and so on (OUTLINE directions), in hundredths of its radius. The rays start at the top
+    (tx, ty), which seldom stands straight over the trunk: their ends are seen from the
+    trunk and the reach in each direction read between them, then smoothed a little."""
+    ex, ey = tx + np.cos(angles) * rays - x, ty + np.sin(angles) * rays - y
+    seen, dist = np.arctan2(ey, ex) % (2 * np.pi), np.hypot(ex, ey)
+    order = np.argsort(seen)
+    seen, dist = seen[order], dist[order]
+    want = np.linspace(0, 2 * np.pi, OUTLINE, endpoint=False)
+    reach = np.interp(want, np.concatenate([seen - 2 * np.pi, seen, seen + 2 * np.pi]), np.tile(dist, 3))
+    reach = 0.5 * reach + 0.25 * (np.roll(reach, 1) + np.roll(reach, -1))
+    return [int(round(v)) for v in np.clip(reach / radius, *OUTLINE_RANGE) * 100]
 
 
 def crown_colour(nd, built, box, rgb, tx, ty, top, radius):
