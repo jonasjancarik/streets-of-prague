@@ -21,6 +21,22 @@ export type Tree = [number, number, number, number, number?, boolean?, number?, 
 export const CONIFERS = [0.3, 0.08];
 export const MARGIN = 8;
 
+// Where the trees really stand (the canopy layer of pipeline/tree_sizes.py): -1 not known
+// (the tile has no canopy layer, and trees are made up as they always were), 0 no trees,
+// else the canopy's band there: 1 low (2.5 to 8 m), 2 middle (8 to 16 m), 3 tall.
+export type Standing = (x: number, y: number) => number;
+// A tree made up in a band: its crown against the usual size, and its top (m, `u` 0 to 1).
+const BAND_SCALE = [1, 0.65, 1, 1.2];
+export const bandTop = (band: number, u: number) => [0, 4.5 + u * 3, 9 + u * 5, 16 + u * 6][band];
+// The made-up tree `t` sized for the band `b` it stands in (as it is where that isn't known).
+export function toBand(t: Tree, b: number, u: number) {
+  if (b > 0) {
+    t[2] *= BAND_SCALE[b];
+    t[6] = bandTop(b, u);
+  }
+  return t;
+}
+
 // A smooth random field on a lattice fixed to the map (so every tile agrees at its
 // edges), 0 to 1, features about `cell` metres across.
 export function valueNoise(x: number, y: number, cell: number, salt: number) {
@@ -57,15 +73,17 @@ export function conifer(x: number, y: number, share: number) {
 
 // Adds the trees to `trees` (which holds the surveyed ones already) and returns the index
 // of crowns it kept, for the passes that follow. `isYoung`: a young wood (young_woods.py);
-// `surveyed`: a surveyed tree stands within reach.
+// `surveyed`: a surveyed tree stands within reach; `standing`: where trees really stand
+// (the woods, parks and groves get none where there is no canopy, a young wood all the same).
 export function scatterWoods(geo: Geo, grid: Grid, isYoung: (x: number, y: number) => boolean,
-  surveyed: (x: number, y: number) => boolean, trees: Tree[]) {
+  surveyed: (x: number, y: number) => boolean, trees: Tree[], standing: Standing = () => -1) {
   const own = (x: number, y: number) => x >= geo.minX && x < geo.maxX && y >= geo.minY && y < geo.maxY;
   // Past the edge: what the tile has at its nearest point.
   const nearX = (x: number) => Math.min(geo.maxX - 0.5, Math.max(geo.minX + 0.5, x));
   const nearY = (y: number) => Math.min(geo.maxY - 0.5, Math.max(geo.minY + 0.5, y));
   const at = (x: number, y: number) => grid.at(nearX(x), nearY(y));
   const young = (x: number, y: number) => isYoung(nearX(x), nearY(y));
+  const stand = (x: number, y: number) => standing(nearX(x), nearY(y));
   // One spot in every cell of a lattice of `step` metres, over the tile and its margin, each
   // with its own random numbers `g`.
   const spots = (step: number, salt: number, place: (x: number, y: number, g: () => number, mine: boolean) => void) => {
@@ -90,25 +108,30 @@ export function scatterWoods(geo: Geo, grid: Grid, isYoung: (x: number, y: numbe
     const tall = 0.86 + 0.5 * valueNoise(x, y, 55, 0x2d7b) + (one > 0.96 ? 0.35 : 0);
     return [x, y, 0, one < pine ? CONIFER : 0, tall];
   };
-  const addWood = (x: number, y: number, rad: number, edge: number, mine: boolean) => {
+  const addWood = (x: number, y: number, rad: number, edge: number, mine: boolean, band: number, u: number) => {
     const t = standOf(x, y);
     // Near the outline: lower and smaller, the crowns of young trees.
     t[2] = t[3] === CONIFER ? rad * 0.8 : rad;
     t[4] = t[4]! * (0.6 + 0.4 * edge);
     if (!mine) t[5] = true;
-    trees.push(t);
+    trees.push(toBand(t, band, u));
   };
   spots(4.5, 0x5d2a, (x, y, g, mine) => {
-    const size = g(), pick = g(), v = at(x, y);
+    const size = g(), pick = g(), v = at(x, y), band = stand(x, y);
+    // (Where the photo shows no leaves a park still gets its few trees, but young ones: in
+    // a dry summer the grass shows none, and the young trees in it are too small to.)
+    if (band === 0 && v !== PARK && v !== GROVE) return;
     if (v === WOOD && !young(x, y)) {
       const edge = woodDepth(grid, x, y, 8) / 8;
       const rad = (3 + size * 3.2) * (0.55 + 0.45 * edge);
       // Thinner towards the outline, and in patches inside (clearings and denser stands).
       const keep = 0.62 * (0.25 + 0.75 * edge) * (0.8 + 0.4 * valueNoise(x, y, 30, 0x31c5));
-      if (pick < keep && !surveyed(x, y)) addWood(x, y, rad, edge, mine);
+      if (pick < keep && !surveyed(x, y)) addWood(x, y, rad, edge, mine, band, g());
     } else if (mine && ((v === PARK && pick < 0.09) || (v === GROVE && pick < 0.45))) {
-      const rad = 2.8 + size * 2.8;
-      if (!surveyed(x, y)) trees.push(conifer(x, y, CONIFERS[1]) ? [x, y, rad * 0.8, CONIFER] : [x, y, rad, 1]);
+      const rad = band === 0 ? 1.2 + size * 0.6 : 2.8 + size * 2.8, kind = conifer(x, y, CONIFERS[1]) ? CONIFER : 1;
+      const t: Tree = [x, y, kind === CONIFER ? rad * 0.8 : rad, kind];
+      if (band === 0) t.push(1, false, 4 + g() * 1.5);
+      if (!surveyed(x, y)) trees.push(toBand(t, band, g()));
     }
   });
   // Young woods: small, dense and low, a thicket of saplings and young trees (a plantation, or
@@ -146,10 +169,11 @@ export function scatterWoods(geo: Geo, grid: Grid, isYoung: (x: number, y: numbe
   };
   spots(3.4, 0x1b83, (x, y, g, mine) => {
     const size = g();
-    if (at(x, y) !== WOOD || young(x, y) || surveyed(x, y) || covered(x, y, 1.25)) return;
+    const band = stand(x, y);
+    if (at(x, y) !== WOOD || young(x, y) || band === 0 || surveyed(x, y) || covered(x, y, 1.25)) return;
     const edge = woodDepth(grid, x, y, 8) / 8;
     if (edge < 0.4) return;
-    addWood(x, y, (2.4 + size * 1.6) * (0.7 + 0.3 * edge), edge, mine);
+    addWood(x, y, (2.4 + size * 1.6) * (0.7 + 0.3 * edge), edge, mine, band, g());
     index(trees.length - 1);
   });
   return { covered, index };
@@ -161,7 +185,7 @@ export function scatterWoods(geo: Geo, grid: Grid, isYoung: (x: number, y: numbe
 // tile border. (A tile still cannot see a wood that lies wholly in the next tile: the strip
 // within 5 m of such a wood, on this side of the border, gets no shrubs.)
 export function edgeShrubs(geo: Geo, grid: Grid, beside: number[], surveyed: (x: number, y: number) => boolean,
-  trees: Tree[], covered: (x: number, y: number, margin: number) => boolean, index: (t: number) => void) {
+  trees: Tree[], covered: (x: number, y: number, margin: number) => boolean, index: (t: number) => void, standing: Standing = () => -1) {
   const near = (x: number, y: number) => {
     for (let k = 0; k < 8; k++) {
       const c = Math.cos(k * Math.PI / 4), s = Math.sin(k * Math.PI / 4);
@@ -196,7 +220,11 @@ export function edgeShrubs(geo: Geo, grid: Grid, beside: number[], surveyed: (x:
         if (list) list.push(trees.length); else placed.set(k, [trees.length]);
         trees.push([x, y, rad, SHRUB]);
       } else if (pick > 1 - 0.05 * fade * patchy) {
-        if (!covered(x, y, 1)) { trees.push([x, y, 1.7 + size * 1.1, conifer(x, y, CONIFERS[0]) ? CONIFER : 1, 0.8]); index(trees.length - 1); }
+        const band = standing(x, y);
+        if (band !== 0 && !covered(x, y, 1)) {
+          trees.push(toBand([x, y, 1.7 + size * 1.1, conifer(x, y, CONIFERS[0]) ? CONIFER : 1, 0.8], band, g()));
+          index(trees.length - 1);
+        }
       }
     }
   }

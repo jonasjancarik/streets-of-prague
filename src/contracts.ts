@@ -2,7 +2,7 @@ import type { Bounds, GeoData, Point2, Polygons } from './map/geo.ts';
 import type { RawStreetEdge } from './network.ts';
 import type { Ramp, Terrace } from './terrain.ts';
 import type { GroundResult, GroundRoadEdge, GroundTileData, LevelMask } from './ground.ts';
-import type { TreeSpot } from './map/vegetation.ts';
+import type { TreeSpot, CanopyCells } from './map/vegetation.ts';
 import type { FenceBuffers, FenceTile } from './map/fences.ts';
 import type { Shed, ShedBuffers } from './map/sheds.ts';
 import type { BuildingTile } from './map/buildings.ts';
@@ -85,6 +85,7 @@ export interface TileJSON extends GroundTileData {
   sheds?: Shed[];
   trees: TreeSpot[];
   shrubs?: Point2[]; // surveyed single shrubs (pipeline/ipr_greenery.py)
+  canopy?: CanopyCells; // what grows where (pipeline/tree_sizes.py), for the trees made up
   utility?: UtilityMark[]; // surveyed covers, drains, hydrants and phone boxes (pipeline/ipr_utility.py)
   lots?: { o: 'parallel' | 'diagonal' | 'perpendicular' | null; rings: Point2[][] }[];
   sections?: TileSection[];

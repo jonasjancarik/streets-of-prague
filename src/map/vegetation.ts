@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
 import { cutAway, NOISE, NOISE_GLSL, LEAVES, SNOW, WET, BARE, SEASON } from '../shading.ts';
 import { PITCH_KINDS } from './pitches.ts';
-import { scatterWoods, edgeShrubs, conifer, WOOD, PARK, GROVE, SHRUB, CONIFER, CONIFERS } from './woodScatter.ts';
-import type { Tree } from './woodScatter.ts';
+import { scatterWoods, edgeShrubs, conifer, toBand, WOOD, PARK, GROVE, SHRUB, CONIFER, CONIFERS } from './woodScatter.ts';
+import type { Tree, Standing } from './woodScatter.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
 export interface TreeTileData extends GeoData {
@@ -13,7 +13,15 @@ export interface TreeTileData extends GeoData {
   walls: { kind: string; pts: Point2[] }[];
   trees: TreeSpot[];
   shrubs?: Point2[];
+  canopy?: CanopyCells;
 }
+
+// What grows in the tile (pipeline/tree_sizes.py, canopy_cells): a grid of CANOPY_CELL metres
+// from the tile's south-west corner, row by row from the south, as runs of three characters
+// (the value, then the run's length in base 36): 0 nothing with leaves, 1 leaves no higher than
+// 2.5 m, 2 to 4 canopy in the low, middle and tall bands.
+export interface CanopyCells { w: number; h: number; runs: string }
+const CANOPY_CELL = 2;
 
 // A tree's place in metres, and what kind it is when the map knows: 1 a conifer, 2 a fruit
 // tree (0 not known). Then, when the surface models show it, its top and its crown's
@@ -33,7 +41,9 @@ export interface TreeInstances { matrices: Float32Array; colours: Float32Array; 
 
 // Land-use classes rasterised at 1 px/m, used to scatter trees. Walls are marked
 // apart from buildings and paving: a garden tree may lean over a fence, not a roof.
-const CLEARING = 100, GARDEN = 90, ORCHARD = 60, FIELD = 40, FENCE = 1;
+// A courtyard, and ground nothing is mapped on (OPEN; often a courtyard too), get no trees
+// made up but those the canopy shows (canopyTrees). 0 is built, paved or water.
+const CLEARING = 100, GARDEN = 90, ORCHARD = 60, FIELD = 40, YARD = 5, OPEN = 2, FENCE = 1;
 // Surveyed greenery (pipeline/ipr_greenery.py): grass where no tree is made up (the
 // survey has the real ones), and groups of shrubs, which are filled with shrubs.
 // A surveyed group of trees is planted like a park, only closer (GROVE, in woodScatter.ts).
@@ -75,7 +85,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   room: (x: number, y: number) => number = () => Infinity): TreeInstances {
   const d = geo.data;
   const grid = new Grid(geo, 1, (ctx, s) => {
-    ctx.fillStyle = '#000';
+    ctx.fillStyle = `rgb(${OPEN},0,0)`;
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     const fill = (polys: Polygons | undefined, v: number) => {
       if (!polys) return;
@@ -83,7 +93,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
       fillPolys(ctx, geo, polys, s);
     };
     fill(d.areas.field, FIELD);
-    fill(d.areas.dtm_yard, 0);
+    fill(d.areas.dtm_yard, YARD);
     fill(d.areas.dtm_green, PARK);
     fill(d.areas.dtm_garden, GARDEN);
     fill(d.areas.dtm_wood, WOOD);
@@ -134,30 +144,54 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     fillPolys(ctx, geo, d.areas.young_wood!, s);
   }) : null;
   const isYoung = (x: number, y: number) => young !== null && young.at(x, y) > 127;
+  // What grows where, and how high (pipeline/tree_sizes.py: the surface models and the summer
+  // photo): no trees are made up where the photo shows no leaves; where it shows a canopy the
+  // models measured, they're as high as its band; where it shows leaves the models don't
+  // see high, they're made up as they always were, as in a tile made without it (Standing).
+  const canopy = typeof d.canopy?.runs === 'string' ? canopyCells(d.canopy) : null;
+  const standing: Standing = (x, y) => {
+    if (!canopy) return -1;
+    const i = Math.min(d.canopy!.w - 1, Math.max(0, Math.floor((x - geo.minX) / CANOPY_CELL)));
+    const j = Math.min(d.canopy!.h - 1, Math.max(0, Math.floor((y - geo.minY) / CANOPY_CELL)));
+    const v = canopy[j * d.canopy!.w + i];
+    return v === 1 ? -1 : v === 0 ? 0 : v - 1;
+  };
 
   const trees: Tree[] = []; // [x, y, radius, kind, height (1 for the usual)]
   const r = rng(42);
   // The surveyed trees (IPR's and OSM's), with which kind they are when it's known.
-  const real = new Map<number, number[]>();
+  const real = new Map<number, number[]>(); // (indices into `trees`, by REAL_CELL)
+  const REAL_CELL = 16;
   for (const [x, y, k, top, radius, ...rest] of d.trees) {
-    if (top !== undefined && radius !== undefined) {
-      const kind = k === 1 ? CONIFER : k === 2 ? 2 : 1;
+    const kind = k === 1 ? CONIFER : k === 2 ? 2 : 1;
+    if (top !== undefined && radius !== undefined && radius > 0) {
       trees.push([x, y, Math.min(Math.max(radius, 1.5), kind === 1 ? 9 : 5), kind, 1, false, top,
         rest.length === OUTLINE + 3 ? rest.slice(OUTLINE) : undefined, rest.length >= OUTLINE ? rest.slice(0, OUTLINE) : undefined]);
+    } else if (top !== undefined && radius === 0) {
+      // Lower than the surface models see a crown (tree_sizes.py gives it no radius): a
+      // young tree, planted a few years ago, with a small crown on a thin stem.
+      trees.push([x, y, (kind === CONIFER ? 1 : 1.2) + r() * 0.6, kind, 1, false, 4 + r() * 1.5]);
     } else if (k === 1) trees.push([x, y, 2.6 + r() * 1.8, CONIFER]);
     else if (k === 2) trees.push([x, y, 1.7 + r() * 0.9, 2]);
     else trees.push([x, y, 3 + r() * 2.5, 1]);
-    const cell = Math.floor(x / 4) * 65536 + Math.floor(y / 4);
+    const cell = Math.floor(x / REAL_CELL) * 65536 + Math.floor(y / REAL_CELL);
     const list = real.get(cell);
-    if (list) list.push(x, y); else real.set(cell, [x, y]);
+    if (list) list.push(trees.length - 1); else real.set(cell, [trees.length - 1]);
   }
-  // Whether a surveyed tree is within 3.5 m: the trees we make up leave room for them.
+  // Whether a surveyed tree stands within 3.5 m, or its crown covers the spot (the inner 85 %
+  // of it where it was measured, by its outline): the trees we make up leave room for them.
   const surveyed = (x: number, y: number) => {
-    const i0 = Math.floor(x / 4), j0 = Math.floor(y / 4);
+    const i0 = Math.floor(x / REAL_CELL), j0 = Math.floor(y / REAL_CELL);
     for (let i = i0 - 1; i <= i0 + 1; i++) {
       for (let j = j0 - 1; j <= j0 + 1; j++) {
-        const list = real.get(i * 65536 + j);
-        if (list) for (let n = 0; n < list.length; n += 2) if (Math.hypot(list[n] - x, list[n + 1] - y) < 3.5) return true;
+        for (const n of real.get(i * 65536 + j) ?? []) {
+          const [tx, ty, rad, , , , top, , outline] = trees[n], d = Math.hypot(tx - x, ty - y);
+          if (d < 3.5) return true;
+          if (top === undefined) continue;
+          const t = ((Math.atan2(y - ty, x - tx) / (2 * Math.PI) * OUTLINE) % OUTLINE + OUTLINE) % OUTLINE, k = Math.floor(t);
+          const reach = outline ? (outline[k] * (k + 1 - t) + outline[(k + 1) % OUTLINE] * (t - k)) / 100 : 1;
+          if (d < 0.85 * rad * reach) return true;
+        }
       }
     }
     return false;
@@ -166,19 +200,20 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   // Woods, young woods, the gaps between their crowns, and the loose trees of parks and
   // surveyed groves (woodScatter.ts). The crowns just past the tile's edge are worked out
   // too, so that the gaps are filled the same way on both sides; they are dropped below.
-  const { covered, index } = scatterWoods(geo, grid, isYoung, surveyed, trees);
+  const { covered, index } = scatterWoods(geo, grid, isYoung, surveyed, trees, standing);
   // The ragged edge: shrubs and a few young trees just outside the outline, where the
   // neighbour is grass, a field or a garden (never paving, a road or water).
-  edgeShrubs(geo, grid, [GARDEN, PARK, FIELD, CLEARING, VERGE], surveyed, trees, covered, index);
+  edgeShrubs(geo, grid, [GARDEN, PARK, FIELD, CLEARING, VERGE], surveyed, trees, covered, index, standing);
   // Orchards: loose rows, like the Petřín fruit gardens in the 1945 photo.
   for (let y = geo.minY; y < geo.maxY; y += 6) {
     for (let x = geo.minX; x < geo.maxX; x += 6) {
-      if (grid.at(x, y) === ORCHARD && r() < 0.85) trees.push([x + (r() - 0.5), y + (r() - 0.5), 1.7 + r() * 0.8, 2]);
+      if (grid.at(x, y) === ORCHARD && r() < 0.85 && standing(x, y) !== 0) trees.push([x + (r() - 0.5), y + (r() - 0.5), 1.7 + r() * 0.8, 2]);
     }
   }
   // (The neighbours' crowns have done their work: the gardens and the rest see only the tile's own.)
   trees.splice(0, trees.length, ...trees.filter((t) => !t[5]));
-  gardenTrees(geo, grid, trees);
+  gardenTrees(geo, grid, trees, standing);
+  if (canopy) canopyTrees(geo, grid, trees, standing);
   // Surveyed groups of shrubs, filled from a lattice fixed to the map, and the single ones.
   // A tile with very large shrubberies gets fewer, larger shrubs: never more than MAX_BUSHES.
   const BUSH = 2.2, MAX_BUSHES = 500, found: [number, number, number, number][] = [];
@@ -260,7 +295,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
 // the trees already there, fewer than in a park. Each spot's own random numbers come
 // from where it is, so a garden looks the same every time it loads, whatever else
 // the tile has.
-function gardenTrees(geo: Geo, grid: Grid, trees: Tree[]) {
+function gardenTrees(geo: Geo, grid: Grid, trees: Tree[], standing: Standing) {
   // The trees already placed, in 8 m cells, to keep new ones apart from them.
   const CELL = 8, near = new Map<number, number[]>();
   const key = (i: number, j: number) => i * 65536 + j;
@@ -307,9 +342,9 @@ function gardenTrees(geo: Geo, grid: Grid, trees: Tree[]) {
   // so there are only a few more trees than before; the big ones make up the rest.
   scatter(8, 0x51f3, (x, y, g) => {
     if (g() > 0.3) return;
-    const rad = g() < 0.4 ? 3.8 + g() * 2.2 : 1.8 + g() * 1.4;
-    if (!clear(x, y, rad, 0.6) || crowded(x, y, rad, 0.7)) return;
-    trees.push(conifer(x, y, CONIFERS[1]) ? [x, y, rad * 0.8, CONIFER] : [x, y, rad, g() < 0.15 ? 2 : 1]);
+    const rad = g() < 0.4 ? 3.8 + g() * 2.2 : 1.8 + g() * 1.4, band = standing(x, y);
+    if (band === 0 || !clear(x, y, rad, 0.6) || crowded(x, y, rad, 0.7)) return;
+    trees.push(toBand(conifer(x, y, CONIFERS[1]) ? [x, y, rad * 0.8, CONIFER] : [x, y, rad, g() < 0.15 ? 2 : 1], band, g()));
     index(trees.length - 1);
   });
   // Then shrubs, along the edges as much as in the open.
@@ -320,6 +355,52 @@ function gardenTrees(geo: Geo, grid: Grid, trees: Tree[]) {
     trees.push([x, y, rad, SHRUB]);
     index(trees.length - 1);
   });
+}
+
+// The cells of a tile's canopy layer (CanopyCells), row by row from the south.
+function canopyCells({ w, h, runs }: CanopyCells) {
+  const cells = new Uint8Array(w * h);
+  for (let k = 0, at = 0; k + 2 < runs.length && at < cells.length; k += 3) {
+    const n = parseInt(runs.slice(k + 1, k + 3), 36);
+    cells.fill(+runs[k], at, Math.min(cells.length, at + n));
+    at += n;
+  }
+  return cells;
+}
+
+// The canopy that no crown covers yet (in courtyards and private gardens, where no tree is
+// mapped, or where a wood's are fewer than its canopy): trees on a lattice fixed to the map,
+// sized for the band they stand in, never on a road, a building or paving (the land class 0).
+function canopyTrees(geo: Geo, grid: Grid, trees: Tree[], standing: Standing) {
+  const CELL = 8, near = new Map<number, number[]>();
+  const key = (i: number, j: number) => i * 65536 + j;
+  const index = (t: number) => {
+    if (trees[t][3] === SHRUB) return;
+    const k = key(Math.floor(trees[t][0] / CELL), Math.floor(trees[t][1] / CELL));
+    const list = near.get(k);
+    if (list) list.push(t); else near.set(k, [t]);
+  };
+  for (let t = 0; t < trees.length; t++) index(t);
+  const covered = (x: number, y: number) => {
+    const i0 = Math.floor(x / CELL), j0 = Math.floor(y / CELL);
+    for (let i = i0 - 2; i <= i0 + 2; i++) {
+      for (let j = j0 - 2; j <= j0 + 2; j++) {
+        for (const t of near.get(key(i, j)) || []) if (Math.hypot(trees[t][0] - x, trees[t][1] - y) < trees[t][2] * 0.9) return true;
+      }
+    }
+    return false;
+  };
+  const STEP = 3.5, SIZE = [0, 1.6, 2.8, 3.6], MORE = [0, 1, 1.4, 1.6]; // (each band's smallest crown, and how much larger one can be)
+  for (let j = Math.ceil(geo.minY / STEP); j * STEP < geo.maxY; j++) {
+    for (let i = Math.ceil(geo.minX / STEP); i * STEP < geo.maxX; i++) {
+      const g = rng(Math.imul(i, 73856093) ^ Math.imul(j, 19349663) ^ 0x6c3a);
+      const x = (i + 0.15 + g() * 0.7) * STEP, y = (j + 0.15 + g() * 0.7) * STEP, band = standing(x, y);
+      if (band < 1 || grid.at(x, y) === 0 || covered(x, y)) continue;
+      const rad = (SIZE[band] + g() * MORE[band]) / (band === 1 ? 0.65 : band === 3 ? 1.2 : 1); // (toBand scales it back)
+      trees.push(toBand(conifer(x, y, CONIFERS[1]) ? [x, y, rad * 0.8, CONIFER] : [x, y, rad, 1], band, g()));
+      index(trees.length - 1);
+    }
+  }
 }
 
 // A crown: tufts of leaves in tiers, like shingles, round a dark core that fills the

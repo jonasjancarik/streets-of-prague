@@ -1093,7 +1093,7 @@ export class TileWorld {
     const early = this.shown.has(k) ? this.meshJobs(k, source) : null;
     early?.catch(() => {});
     const landJob = this.workers.run('land', {
-      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, utility: t.utility, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
+      data: { size: data.size, origin: data.origin, areas: withPatches(t), roads: t.roads, buildings: outlines, walls: t.walls, fences: t.fences, sheds: t.sheds ?? [], trees: t.trees, shrubs: t.shrubs, canopy: t.canopy, utility: t.utility, passages: t.passages || [], levels: !!tileLevels, crossers, stepEdges: !location.search.includes('nostepedges'),
         walk: t.walk ?? [], reserved: new Float32Array(reserved), structures: structures.flatMap(s => s.polys), furnitureBuildings: [...t.buildings.map(b => ({ rings: b.rings })), ...hide.map(rings => ({ rings }))], furnitureEnabled: reservedAll !== null && !location.search.includes('nofurniture') },
       seeds: seedArray, ground, bridges: (tileLevels || []).filter((l) => l.kind === 'bridge').map((l) => l.heights),
       box: bounds, structures: tileLevels ? structures : [],

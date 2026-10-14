@@ -478,6 +478,10 @@ def assemble(area: str, strict=False) -> dict:
             merge_greenery(t, greenery["tiles"][k], None)
         # How tall its trees are and how wide their crowns (tree_sizes.py), by where they stand:
         # [x, y, kind, top, radius].
+        # What grows where, and how high (tree_sizes.py, canopy_cells): the game makes trees
+        # up only where there are leaves, and fills the canopy no mapped crown covers.
+        if treesize and k in treesize.get("canopy", {}):
+            t["canopy"] = treesize["canopy"][k]
         if treesize and treesize["tiles"].get(k):
             sizes = {(s[0], s[1]): s[2:] for s in treesize["tiles"][k]}
             t["trees"] = [[p[0], p[1], p[2] if len(p) > 2 else 0, *sizes[p[0], p[1]]] if (p[0], p[1]) in sizes else p

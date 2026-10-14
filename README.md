@@ -332,6 +332,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   blocks, shops, offices and schools stay paved. Gardens get a few trees and shrubs,
   scattered by where they are so they're the same every visit, clear of the houses,
   paths and the trees already there (`gardenTrees` in `src/map/vegetation.ts`).
+  The mapped trees (IPR's survey and OSM's) are as tall and as wide as the surface
+  models show them, with their crown's outline and its colour in IPR's summer photo
+  (`pipeline/tree_sizes.py`). The trees made up in woods, parks and gardens stand only
+  where the photo shows leaves, as high as the canopy there; where it shows a crown no
+  mapped tree covers (a courtyard, a private garden) one is made up for it.
   Buildings get roof tiles laid down
   each face's slope, slate and gravel on flat roofs. It all stays sharp at any zoom.
 - **Facades** are put together bay by bay and storey by storey from 132 parts: windows,

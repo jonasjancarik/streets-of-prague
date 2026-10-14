@@ -17,8 +17,9 @@ terrain heights says how high the canopy stands round each tree:
 Two surface models, and the higher of the two at each metre. IPR Praha's (2025, 1 m) is
 the newer, but it reads many broadleaf crowns as a few scattered points, or as the ground
 under them (see young_woods.py); ČÚZK's older DMP 1G, made from summer photographs, has
-every crown whole. A tree that both read as lower than MIN_TOP is left out: it is young, or
-the models miss it, and the game keeps making its size up.
+every crown whole. A tree that both read as lower than MIN_TOP gets a radius of 0: it was
+planted a few years ago (the game gives it a small crown); or -1 where the photo shows
+leaves all round it, a crown neither model sees (the game makes its size up, as before).
 
     uv run --group cover tree_sizes.py build praha              # every tile with a tree
     uv run --group cover tree_sizes.py build praha 50 52 59 61  # tiles i0 i1 j0 j1
@@ -28,9 +29,11 @@ It measures the trees of the game's tiles as they were last assembled (public/da
 writes the layer `treesize`: per tile, [x, y, top, radius, *outline, r, g, b] (metres; the
 outline in hundredths of the radius; the colour only when the photo shows the crown).
 layers.assemble puts each into the tile's tree at that place, as [x, y, kind, top, radius,
-*outline, r, g, b] (kind 0 when the map doesn't know it). A tree that moved since keeps a made-up size until this runs again. The
-ČÚZK model is fetched once per tile into .cache/cover/img/dsm_1m_wide (shared with
-young_woods.py).
+*outline, r, g, b] (kind 0 when the map doesn't know it). A tree that moved since keeps a
+made-up size until this runs again. The layer's `canopy` (canopy_cells) is what grows in
+each tile, for the trees the game makes up; it goes into the tile as `canopy`. Every tile
+with trees or green ground is looked at. The ČÚZK model and the photos are fetched once
+per tile into .cache/cover/ (dsm_1m_wide is shared with young_woods.py).
 """
 
 import argparse
@@ -58,6 +61,14 @@ CLOSE = 0.7        # ...but the crown reaches this share of the way to the neare
 COLOUR_SHARE, COLOUR_REACH = 0.5, 3.5  # the crown's colour is taken within this share of its radius from the top, and these metres
 MIN_PIXELS = 3     # ...from at least this many metres of it
 HAZE = 0.1         # %: the darkest pixels of the photo, which show only its haze
+# The ground the game makes trees up on (vegetation.ts), where the canopy layer is wanted.
+GREEN = ("wood", "park", "garden", "lawn", "meadow", "orchard", "grass", "verge", "cover_grass", "dtm_green",
+         "dtm_garden", "dtm_wood", "dtm_yard", "ipr_lawn", "ipr_meadow", "ipr_bed", "ipr_grove", "wood_clearing", "young_wood")
+BANDS = (2.5, 8.0, 16.0)  # m: where the canopy layer's low, middle and tall bands begin
+CELL = 2           # m: the canopy layer's grid
+TEXTURE, GRAINY = 2.25, 0.04  # m over which the photo's grain is taken, and the grain of a crown (a lawn's is about 0.03)
+LONE_PATCH = 30    # m2: a patch of leaves this small, on its own, is a young tree or a shrub
+SEEN_CROWN = 0.6   # a tree too low to measure, with leaves on more than this share round it, has a crown the models miss
 LEAVES = 0.2       # the vegetation index above which the photo shows leaves (as ground_cover.py takes it)
 
 
@@ -120,11 +131,14 @@ def canopy(area, meta, t):
 
 def measure(nd, built, box, own, others, rgb=None):
     """[x, y, top, radius, *outline] for each of `own` trees ([x, y, ...]) that stands high
-    enough, followed by its crown's colour in the photo `rgb` ([r, g, b], 0 to 255) when there is one.
+    enough, followed by its crown's colour in the photo `rgb` ([r, g, b], 0 to 255) when there
+    is one; [x, y, top, 0] for a young one, lower than MIN_TOP ([x, y, top, -1] when the
+    photo shows a crown there all the same).
     `others`: every tree near, own included, as an (n, 2) array."""
     X0, Y1 = box[0], box[3]
     H, W = nd.shape
     ok = np.isfinite(nd) & ~built
+    leaves = leafy(rgb, built) if rgb is not None else None
     angles = np.linspace(0, 2 * np.pi, RAYS, endpoint=False)
     steps = np.arange(STEP, REACH + 1e-6, STEP)
     out = []
@@ -137,7 +151,13 @@ def measure(nd, built, box, own, others, rgb=None):
         win = np.where(ok[r0:r1, c0:c1], nd[r0:r1, c0:c1], -np.inf)
         r, c = np.unravel_index(np.argmax(win), win.shape)
         top = float(win[r, c])
+        if not np.isfinite(top):  # (nothing open round it to measure)
+            continue
         if top < MIN_TOP:
+            # Young (radius 0), unless the photo shows leaves all round it: then a crown the
+            # models miss (radius -1: the game makes its size up).
+            seen = leaves[max(r0, 0):r1, max(c0, 0):c1].mean() if leaves is not None else 0.0
+            out.append([round(x, 1), round(y, 1), round(max(top, 0.0), 1), -1 if seen > SEEN_CROWN else 0])
             continue
         tx, ty = X0 + c0 + c + 0.5, Y1 - (r0 + r + 0.5)
         # The rays from the top, sampled at once: (RAYS, steps).
@@ -201,19 +221,95 @@ def crown_colour(nd, built, box, rgb, tx, ty, top, radius):
     return [int(round(v * 255)) for v in np.median(px, axis=0)]
 
 
+def leafy(rgb, built):
+    """Where the photo shows leaves (rgb is NaN elsewhere: crown_colour), buildings left out."""
+    return np.isfinite(rgb).all(axis=2) & ~built
+
+
+def leaf_texture(area, t):
+    """How grainy IPR's summer photo is at 0.25 m round each metre of the tile (rows from the
+    north): the spread of its brightness over TEXTURE metres. A crown is grainy, leaf and
+    shadow; a lawn, dry or green, is smooth. None without the photo."""
+    try:
+        hi = gc.photo(gc.RGB, "rgb", area, t)  # (the tile alone, as ground_cover.py keeps it)
+    except Exception:  # noqa: BLE001
+        return None
+    lum = hi @ np.array([0.3, 0.59, 0.11], np.float32)
+    k = round(TEXTURE / 0.25)
+    mean = ndimage.uniform_filter(lum, k)
+    spread = np.sqrt(np.maximum(ndimage.uniform_filter(lum * lum, k) - mean * mean, 0))
+    h, w = spread.shape[0] // 4, spread.shape[1] // 4
+    return spread[:h * 4, :w * 4].reshape(h, 4, w, 4).mean(axis=(1, 3))
+
+
+def canopy_cells(nd, built, box, rgb, clip, texture=None):
+    """What grows in the tile, on a grid of CELL metres (rows from the south): 0 nothing with
+    leaves (paving, water, dry grass), 1 leaves that the surface models see no higher than
+    BANDS[0] (a lawn, a shrub, or trees too young for ČÚZK's older model that IPR's misses),
+    and 2, 3, 4 canopy in the low, middle and tall BANDS. A cell takes the most of its metres.
+    Leaves that the models see low but the photo shows grainy (`texture`, leaf_texture) are
+    taken for low canopy: trees the models miss (IPR's reads many broadleaf crowns as the
+    ground, and ČÚZK's is older than many trees), not a lawn; so is a small patch of leaves
+    on its own (LONE_PATCH), a young tree in dry grass.
+    The game makes trees up only where there are leaves, and in a band as high as it says
+    (vegetation.ts), and fills the canopy that the mapped trees' crowns leave uncovered.
+    {"w", "h", "runs"}: `runs` the cells row by row as runs of three characters each, the
+    value and its length in base 36. None without a photo."""
+    if rgb is None:
+        return None
+    seen = leafy(rgb, built)
+    leaves = ndimage.binary_opening(seen)
+    high = ndimage.median_filter(np.nan_to_num(nd, nan=0.0), size=3)
+    cls = leaves.astype(np.uint8)
+    for k, low in enumerate(BANDS):
+        band = ndimage.binary_opening(leaves & (high >= low))
+        cls[band] = k + 2
+    # A small patch of leaves on its own, in dry grass or on paving: a young tree or a shrub
+    # (too small for the models), not a lawn, which is one wide patch.
+    patches, n = ndimage.label(seen)
+    if n:
+        size = np.bincount(patches.ravel())
+        alone = (size <= LONE_PATCH) & (size >= 2)
+        alone[0] = False
+        cls[alone[patches] & (cls < 2)] = 2
+    # The tile's own metres (MARGIN round it in `box`), in CELL-metre cells.
+    x0, y0, x1, y1 = clip
+    r0, c0 = round(box[3] - y1), round(x0 - box[0])
+    own = cls[r0:r0 + round(y1 - y0), c0:c0 + round(x1 - x0)]
+    if texture is not None:
+        h, w = min(own.shape[0], texture.shape[0]), min(own.shape[1], texture.shape[1])
+        grainy = (own[:h, :w] == 1) & (ndimage.uniform_filter(texture[:h, :w], 3) > GRAINY)
+        own = own.copy()
+        own[:h, :w][ndimage.binary_opening(grainy, iterations=2)] = 2
+    h, w = -(-own.shape[0] // CELL), -(-own.shape[1] // CELL)
+    padded = np.zeros((h * CELL, w * CELL), np.uint8)
+    padded[:own.shape[0], :own.shape[1]] = own
+    cells = padded.reshape(h, CELL, w, CELL).max(axis=(1, 3))[::-1]
+    flat, runs, k = cells.ravel(), [], 0
+    while k < len(flat):
+        n = 1
+        while k + n < len(flat) and flat[k + n] == flat[k] and n < 36 * 36 - 1:
+            n += 1
+        runs.append(f"{flat[k]}{np.base_repr(n, 36).lower():0>2}")
+        k += n
+    return {"w": w, "h": h, "runs": "".join(runs)}
+
+
 def tile_job(job):
+    """(key, sizes, canopy cells or None, how many trees) for one tile."""
     area, meta, i, j = job
     t = {"i": i, "j": j, "box": [round(v, 2) for v in layers.tile_box(meta, i, j)]}
     own = placed_tile(area, i, j).get("trees", [])
-    if not own:
-        return f"{i}_{j}", [], 0
     got = canopy(area, meta, t)
     if got is None:
-        return f"{i}_{j}", [], len(own)
+        return f"{i}_{j}", [], None, len(own)
     nd, built, box, rgb = got
+    bands = canopy_cells(nd, built, box, rgb, t["box"], leaf_texture(area, t) if rgb is not None else None)
+    if not own:
+        return f"{i}_{j}", [], bands, 0
     others = [p[:2] for di in (-1, 0, 1) for dj in (-1, 0, 1) for p in
               (own if (di, dj) == (0, 0) else placed_tile(area, i + di, j + dj).get("trees", []))]
-    return f"{i}_{j}", measure(nd, built, box, own, np.asarray(others, float), rgb), len(own)
+    return f"{i}_{j}", measure(nd, built, box, own, np.asarray(others, float), rgb), bands, len(own)
 
 
 def run(area, tiles, jobs, write=True):
@@ -223,31 +319,39 @@ def run(area, tiles, jobs, write=True):
     if not meta or not terrain:
         raise SystemExit(f"{area}: the layers and the terrain heights are needed first (build_tiles.py, ipr_terrain.py)")
     meta = {**meta, "terrain": terrain["index"]}
+    def wanted(t):  # a tile with trees, or with ground where the game makes some up
+        return t.get("trees") or any(t.get("areas", {}).get(k) for k in GREEN)
     todo = [(area, meta, i, j) for ci, cj in layers.chunks(meta) for i, j in layers.chunk_tiles(meta, ci, cj)
-            if (tiles is None or (i, j) in tiles) and placed_tile(area, i, j).get("trees")]
-    found = {}
+            if (tiles is None or (i, j) in tiles) and wanted(placed_tile(area, i, j))]
+    found, bands = {}, {}
     if tiles is not None and write:  # a trial on some tiles adds to what the layer already has
-        found = dict((layers.read_layer(area, "treesize") or {}).get("tiles", {}))
-    started, total, sized, tops, radii = time.time(), 0, 0, [], []
+        before = layers.read_layer(area, "treesize") or {}
+        found, bands = dict(before.get("tiles", {})), dict(before.get("canopy", {}))
+    started, total, sized, young, tops, radii = time.time(), 0, 0, 0, [], []
     with ProcessPoolExecutor(jobs) as pool:
-        for n, (k, sizes, count) in enumerate(pool.map(tile_job, todo, chunksize=2), 1):
+        for n, (k, sizes, canopy_, count) in enumerate(pool.map(tile_job, todo, chunksize=2), 1):
             found.pop(k, None)
+            bands.pop(k, None)
             if sizes:
                 found[k] = sizes
+            if canopy_ is not None:
+                bands[k] = canopy_
             total += count
-            sized += len(sizes)
-            tops += [s[2] for s in sizes]
-            radii += [s[3] for s in sizes]
+            grown = [s for s in sizes if s[3] > 0]
+            sized += len(grown)
+            young += len(sizes) - len(grown)
+            tops += [s[2] for s in grown]
+            radii += [s[3] for s in grown]
             if n % 100 == 0:
                 print(f"  {n}/{len(todo)} tiles in {time.time() - started:.0f} s", flush=True)
     if tops:
-        print(f"{sized} of {total} trees measured; top 10/50/90 %: {np.percentile(tops, [10, 50, 90]).round(1).tolist()} m, "
+        print(f"{sized} of {total} trees measured, {young} young; top 10/50/90 %: {np.percentile(tops, [10, 50, 90]).round(1).tolist()} m, "
               f"crown radius 10/50/90 %: {np.percentile(radii, [10, 50, 90]).round(1).tolist()} m")
     if not write:
         return
-    layers.write_layer(area, "treesize", {"tile": meta["tile"], "tiles": found, "processing": processing(),
+    layers.write_layer(area, "treesize", {"tile": meta["tile"], "tiles": found, "canopy": bands, "processing": processing(),
                                           "sources": build_cache.sources([gc.IPR_DSM] if gc.DSM_SOURCE == "ipr" else [])})
-    print(f"treesize: {len(found)} tiles, {time.time() - started:.0f} s")
+    print(f"treesize: {len(found)} tiles with trees, {len(bands)} with the canopy, {time.time() - started:.0f} s")
 
 
 def main():

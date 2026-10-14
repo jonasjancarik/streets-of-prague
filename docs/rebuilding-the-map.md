@@ -37,10 +37,12 @@ not tried. The README's "Building the map" has the background.
     uv run --group cover ground_cover.py build praha --no-assemble   # praha and ujezd have this layer
     uv run --group cover young_woods.py build praha --no-assemble    # praha only
     uv run layers.py praha --strict
+    uv run --group cover tree_sizes.py build praha                   # praha only; assembles again
     uv run build_signals.py praha
 
-Then `centrum` and `ujezd` the same way (without the cover and young woods steps
-they don't have).
+Then `centrum` and `ujezd` the same way (without the cover, young woods and tree size
+steps they don't have). `tree_sizes.py` measures the trees of the tiles as assembled, so
+it runs after `layers.py`; a later assemble keeps its layer (by each tree's place).
 
 | Step | Reads | Writes |
 |---|---|---|
@@ -49,6 +51,7 @@ they don't have).
 | `ipr_terrain.py` | ground and streets layers, `.cache/ipr/` (terrain sheets, bridges), `.cache/dtm/` (survey heights), `terrain_keep.json` | `tiles/*.height.bin.gz`, `*.levels.bin.gz`, `.cache/layers/<area>/terrain.json` |
 | `ground_cover.py build` | the layers, the terrain layer, `.cache/cover/` (photos, surface model, model, results); asks IPR's server for photos of tiles it has none of | `.cache/layers/<area>/cover.json` |
 | `young_woods.py build` | ground layer, terrain layer, `.cache/cover/dsm_ipr` | `.cache/layers/<area>/young.json` |
+| `tree_sizes.py build` | the assembled `tiles/*.json`, the terrain layer, `.cache/cover/` (IPR's surface model, ČÚZK's DMP 1G, the summer photo at 1 m and 0.25 m and the colour-infrared one at 1 m: fetched for tiles that have none) | `.cache/layers/<area>/treesize.json` (each tree's height, crown, outline and colour; what grows where, on a 2 m grid), then the tiles |
 | `layers.py --strict` | every layer, and checks the binary files against the layers' records | `tiles/*.json`, `index.json`, `names.json`, `leaving.json` (the streets that run on past the map's edge, for the countryside made in the browser); removes files of tiles that are gone |
 | `build_signals.py` | streets layer, `.cache/osm/` | `signals.json` |
 
