@@ -50,6 +50,10 @@ CROWN_SHARE = 0.4  # the crown reaches as far as the canopy stays above this sha
 RAYS, REACH, STEP = 16, 12.0, 0.5  # directions; how far (m) and in what steps they are followed
 VORONOI = 0.5      # m: a ray stops where another tree is this much nearer than its own
 CLOSE = 0.7        # ...but the crown reaches this share of the way to the nearest tree, where the canopy does
+COLOUR_SHARE, COLOUR_REACH = 0.5, 3.5  # the crown's colour is taken within this share of its radius from the top, and these metres
+MIN_PIXELS = 3     # ...from at least this many metres of it
+HAZE = 0.1         # %: the darkest pixels of the photo, which show only its haze
+LEAVES = 0.2       # the vegetation index above which the photo shows leaves (as ground_cover.py takes it)
 
 
 def processing():
@@ -88,11 +92,30 @@ def canopy(area, meta, t):
     for dj in (-1, 0, 1):
         for di in (-1, 0, 1):
             gc.burn(built, ext, RES, [b["rings"] for b in placed_tile(area, t["i"] + di, t["j"] + dj).get("buildings", [])])
-    return nd, ndimage.binary_dilation(built), ext["box"]
+    try:
+        rgb = gc.photo(gc.RGB, "rgb_1m_wide", area, ext, RES)
+        # The photo's haze (bluish, and the same over a tile's picture) is added to every
+        # colour: what the darkest shadows show is taken off, so a crown's own hue shows.
+        seen = (rgb > gc.SEEN).any(axis=2)
+        if seen.sum() > 1000:
+            sums = rgb[seen].sum(axis=1)
+            rgb = np.clip(rgb - rgb[seen][sums <= np.percentile(sums, HAZE)].mean(axis=0), 0, 1)
+        # Only what grows: leaves are bright in the near infrared (the colour-infrared
+        # photo's first band, then red), a purple beech's as much as a lime's. Where the
+        # models still have a crown that was felled, or the photo shows it leaning off
+        # its place, the paving or the roof under it is left out.
+        cir = gc.photo(gc.CIR, "cir_1m_wide", area, ext, RES)
+        ndvi = (cir[:, :, 0] - cir[:, :, 1]) / (cir[:, :, 0] + cir[:, :, 1] + 1e-3)
+        rgb = np.where((seen & (ndvi > LEAVES))[:, :, None], rgb, np.nan)
+    except Exception as e:  # noqa: BLE001 - no photo: the crowns keep the game's colours
+        print(f"  no photo for tile {t['i']}_{t['j']} ({e})", flush=True)
+        rgb = None
+    return nd, ndimage.binary_dilation(built), ext["box"], rgb
 
 
-def measure(nd, built, box, own, others):
-    """[x, y, top, radius] for each of `own` trees ([x, y, ...]) that stands high enough.
+def measure(nd, built, box, own, others, rgb=None):
+    """[x, y, top, radius] for each of `own` trees ([x, y, ...]) that stands high enough,
+    followed by its crown's colour in the photo `rgb` ([r, g, b], 0 to 255) when there is one.
     `others`: every tree near, own included, as an (n, 2) array."""
     X0, Y1 = box[0], box[3]
     H, W = nd.shape
@@ -130,8 +153,31 @@ def measure(nd, built, box, own, others):
             shared = reach(crown & (d >= np.hypot(px - x, py - y) - VORONOI))
             # In a closed stand the shares are small; the crowns still close over the gaps.
             shared = max(shared, min(free, CLOSE * float(gap.min())))
-        out.append([round(x, 1), round(y, 1), round(top, 1), round(free if shared is None else shared, 1)])
+        radius = free if shared is None else shared
+        out.append([round(x, 1), round(y, 1), round(top, 1), round(radius, 1), *crown_colour(nd, built, box, rgb, tx, ty, top, radius)])
     return out
+
+
+def crown_colour(nd, built, box, rgb, tx, ty, top, radius):
+    """The colour of the crown round its top (tx, ty) in the photo, its haze taken off: the median of its leaves
+    within COLOUR_SHARE of its radius (and COLOUR_REACH metres), where its neighbours' crowns
+    seldom reach. [] if too little is seen."""
+    if rgb is None:
+        return []
+    X0, Y1 = box[0], box[3]
+    reach = min(max(1.0, COLOUR_SHARE * radius), COLOUR_REACH)
+    c0, c1 = max(int(tx - X0 - reach), 0), int(tx - X0 + reach) + 1
+    r0, r1 = max(int(Y1 - ty - reach), 0), int(Y1 - ty + reach) + 1
+    cols, rows = np.meshgrid(np.arange(c0, c1), np.arange(r0, r1))
+    cols, rows = cols[(rows < nd.shape[0]) & (cols < nd.shape[1])], rows[(rows < nd.shape[0]) & (cols < nd.shape[1])]
+    inside = np.hypot(X0 + cols + 0.5 - tx, Y1 - rows - 0.5 - ty) <= reach
+    rows, cols = rows[inside], cols[inside]
+    leaves = ~built[rows, cols] & (np.nan_to_num(nd[rows, cols], nan=-1) >= max(1.5, CROWN_SHARE * top))
+    px = rgb[rows[leaves], cols[leaves]]
+    px = px[np.isfinite(px).all(axis=1)]
+    if len(px) < MIN_PIXELS:
+        return []
+    return [int(round(v * 255)) for v in np.median(px, axis=0)]
 
 
 def tile_job(job):
@@ -143,10 +189,10 @@ def tile_job(job):
     got = canopy(area, meta, t)
     if got is None:
         return f"{i}_{j}", [], len(own)
-    nd, built, box = got
+    nd, built, box, rgb = got
     others = [p[:2] for di in (-1, 0, 1) for dj in (-1, 0, 1) for p in
               (own if (di, dj) == (0, 0) else placed_tile(area, i + di, j + dj).get("trees", []))]
-    return f"{i}_{j}", measure(nd, built, box, own, np.asarray(others, float)), len(own)
+    return f"{i}_{j}", measure(nd, built, box, own, np.asarray(others, float), rgb), len(own)
 
 
 def run(area, tiles, jobs, write=True):

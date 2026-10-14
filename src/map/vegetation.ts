@@ -17,8 +17,9 @@ export interface TreeTileData extends GeoData {
 
 // A tree's place in metres, and what kind it is when the map knows: 1 a conifer, 2 a fruit
 // tree (0 not known). Then, when the surface models show it, its top and its crown's
-// radius in metres (pipeline/tree_sizes.py).
-export type TreeSpot = [number, number, number?, number?, number?];
+// radius in metres (pipeline/tree_sizes.py), and when the summer photo shows it, its
+// crown's colour there (red, green, blue, 0 to 255).
+export type TreeSpot = [number, number, number?, number?, number?, number?, number?, number?];
 
 // The instances run broadleaf, then `shrubs`, then `conifers`: one page kind each.
 // `yearly`: how each goes through the year: 1 an evergreen, which doesn't change; below
@@ -36,6 +37,18 @@ const SURVEYED = 150, SHRUBBERY = 170, VERGE = 140;
 // Of each kind of tree (below), how many are evergreen and keep their leaves in
 // winter: yews and hedges among the shrubs. (Conifers have a shape of their own.)
 const EVERGREEN = [0, 0, 0, 0.4];
+// The usual crown's colour in IPR's summer photo, its haze taken off (red, green, blue: the
+// median over the measured trees, pipeline/tree_sizes.py). A crown lighter or darker than
+// that is a little lighter or darker in the game (by the share LIGHT; much of it is shade
+// in the photo); one of another hue, more so (CHROMA: the photo's hues are pale).
+const PHOTO_CROWN = [46, 47, 34], LIGHT = 0.5, CHROMA = 2;
+const PHOTO_SUM = PHOTO_CROWN[0] + PHOTO_CROWN[1] + PHOTO_CROWN[2];
+
+// How a crown seen in the photo as `seen` changes the game's colour, each of red, green, blue.
+function photoTint(seen: number[]) {
+  const sum = Math.max(1, seen[0] + seen[1] + seen[2]), light = (sum / PHOTO_SUM) ** LIGHT;
+  return seen.map((v, k) => Math.min(1.7, Math.max(0.4, light * ((v / sum) / (PHOTO_CROWN[k] / PHOTO_SUM)) ** CHROMA)));
+}
 
 // Where a tile's trees stand, and how big and what colour they are: their instance
 // matrices (standing on the terrain, `height(x, y)`) and colours, for treeMesh. Under
@@ -109,10 +122,10 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
   const r = rng(42);
   // The surveyed trees (IPR's and OSM's), with which kind they are when it's known.
   const real = new Map<number, number[]>();
-  for (const [x, y, k, top, radius] of d.trees) {
+  for (const [x, y, k, top, radius, ...seen] of d.trees) {
     if (top !== undefined && radius !== undefined) {
       const kind = k === 1 ? CONIFER : k === 2 ? 2 : 1;
-      trees.push([x, y, Math.min(Math.max(radius, 1.5), kind === 1 ? 9 : 5), kind, 1, false, top]);
+      trees.push([x, y, Math.min(Math.max(radius, 1.5), kind === 1 ? 9 : 5), kind, 1, false, top, seen.length === 3 ? seen as number[] : undefined]);
     } else if (k === 1) trees.push([x, y, 2.6 + r() * 1.8, CONIFER]);
     else if (k === 2) trees.push([x, y, 1.7 + r() * 0.9, 2]);
     else trees.push([x, y, 3 + r() * 2.5, 1]);
@@ -177,7 +190,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     [new THREE.Color('#3f5e3a'), new THREE.Color('#34523a'), new THREE.Color('#4a6842')], // conifers
   ];
   const c = new THREE.Color();
-  trees.forEach(([x, y, rad, kind, tall = 1, , measured], i) => {
+  trees.forEach(([x, y, rad, kind, tall = 1, , measured, seen], i) => {
     // A shrub's crown sits on the ground, a little flattened.
     let h = kind === SHRUB ? rad * (0.42 + r() * 0.12) : rad * (1.6 + r() * 0.6) * tall;
     let deep = kind === SHRUB ? 0.65 + r() * 0.2 : (0.85 + r() * 0.3) * tall; // the crown's height to its width
@@ -203,6 +216,12 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     m.toArray(matrices, i * 16);
     const pal = colors[kind];
     c.copy(pal[Math.floor(r() * pal.length)]).offsetHSL(0, 0, (r() - 0.5) * 0.05);
+    // A crown seen in the photo differs from the usual one as it does there: the photo's own
+    // cast (a bluish haze) is the same on both and drops out.
+    if (seen) {
+      const [tr, tg, tb] = photoTint(seen);
+      c.setRGB(c.r * tr, c.g * tg, c.b * tb);
+    }
     c.toArray(colours, i * 3);
     // (By where it stands, so the other trees' looks don't change.)
     const own = rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663));
