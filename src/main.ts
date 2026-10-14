@@ -16,7 +16,6 @@ import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
 import { Bags } from './bags.ts';
 import { Crowd, Walker, nearestWalkable } from './people.ts';
-import { safeRoads } from './difficulty.ts';
 import type { Pedestrian } from './people.ts';
 import { GetIn } from './getin.ts';
 import { Arrest } from './arrest.ts';
@@ -1780,21 +1779,14 @@ async function main() {
     for (const p of crowd.people) {
       if (!near(p, { x: px(), y: py() }, 120)) continue;
       offTrams(p, 0.3, open, (vx, vy, yours) => {
-        // Run down by the tram you're driving.
+        // The tram you are driving: they leap clear.
         if (!yours || p.state === 'down') return;
-        if (safeRoads()) { const m = Math.hypot(vx, vy) || 1; crowd.leap(p, -vy / m, vx / m); return; }
-        crowd.knock(p, vx, vy, 2);
-        stats.knocked++;
-        police.crime('knock', p.x, p.y);
+        const m = Math.hypot(vx, vy) || 1;
+        crowd.leap(p, -vy / m, vx / m);
       });
       bump(p, 0.3, (c, nx, ny) => {
         if (c.speed > 3 && p.state !== 'down' && c.mode !== 'traffic') {
-          if (safeRoads()) { crowd.leap(p, nx, ny); return; }
-          crowd.knock(p, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2, c.speed > HURTS * 1.5 ? 2 : c.speed > HURTS ? 1 : 0);
-          c.vx *= 0.93;
-          c.vy *= 0.93;
-          stats.knocked++;
-          if (c === inCar) police.crime('knock', p.x, p.y);
+          crowd.leap(p, nx, ny);
         }
       });
     }

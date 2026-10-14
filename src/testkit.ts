@@ -13,8 +13,6 @@ import type { Fires } from './fire.ts';
 import type { Brigade } from './brigade.ts';
 import type { Ambulances } from './ambulance.ts';
 import type { Pedestrian } from './people.ts';
-import { setPedestrians } from './difficulty.ts';
-import type { Walkers } from './difficulty.ts';
 import type { Traffic } from './traffic.ts';
 import type { TramBody } from './trams.ts';
 import type { Kind } from './weather.ts';
@@ -268,7 +266,6 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       p.y = c.y + Math.sin(c.h) * m;
       return p;
     },
-    walkers(w: Walkers) { setPedestrians(w); },
     downNear(x: number, y: number, r: number) { return g.crowd.people.filter((p) => p.state === 'down' && Math.hypot(p.x - x, p.y - y) < r).length; },
     // Picks up everything: no bags on the ground, none carried.
     clearBags() { for (const b of [...g.bags.list]) g.bags.remove(b); g.bags.carry(null); },

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { clamp, segDist } from './network.ts';
-import { safeRoads } from './difficulty.ts';
 import { Figures, Anim, SCALE, randomLook, jumpHeight } from './figures.ts';
 import type { FigureKit, Look } from './figures.ts';
 import type { WalkEdge, WalkGraph } from './network.ts';
@@ -303,7 +302,6 @@ export class Crowd {
     const r = this.r;
     // Each walker looks ahead for things in the way a few times a second, not all at once.
     this.tick = (this.tick + 1) % 4;
-    const safe = safeRoads();
     for (const p of this.people) {
       p.t -= dt;
       if (p.hurt !== undefined) {
@@ -315,13 +313,13 @@ export class Crowd {
         // Look out for fast cars heading this way.
         for (const c of threats) {
           const sp = Math.hypot(c.vx, c.vy);
-          if (sp < (safe ? 1.5 : 5)) continue;
+          if (sp < 1.5) continue;
           const dx = p.x - c.x, dy = p.y - c.y;
           const dist = Math.hypot(dx, dy);
-          if (dist > (safe ? 9 + sp * 1.1 : 6 + sp * 0.7)) continue;
+          if (dist > 9 + sp * 1.1) continue;
           const ux = c.vx / sp, uy = c.vy / sp;
           const ahead = dx * ux + dy * uy, side = dx * uy - dy * ux;
-          if (ahead > -1 && Math.abs(side) < (safe ? 4 : 3.2)) {
+          if (ahead > -1 && Math.abs(side) < 4) {
             const s = side >= 0 ? 1 : -1;
             p.state = 'flee';
             p.t = 1 + r() * 0.8;
@@ -381,8 +379,8 @@ export class Crowd {
     }
   }
 
-  // A car about to touch them, with "pedestrians always escape" on: they leap clear
-  // to the side the car isn't heading for (nx, ny: out of the car, towards them).
+  // A car about to touch them: they leap clear, away from it (nx, ny: out of the car,
+  // towards them). Nobody is ever run over.
   leap(p: Pedestrian, nx: number, ny: number) {
     p.state = 'flee';
     p.t = 1 + this.r() * 0.8;

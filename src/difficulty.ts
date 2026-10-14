@@ -18,21 +18,3 @@ export function setDifficulty(l: Level) {
   level = l;
   try { localStorage.setItem('difficulty', l); } catch { /* not remembered */ }
 }
-
-// Whether a car can hit anyone on foot. With "safe" on, pedestrians always get out of the
-// way (they run off, or leap aside at the last moment), so driving never hurts anybody.
-// Remembered between visits.
-export type Walkers = 'hit' | 'safe';
-export const WALKERS: Walkers[] = ['hit', 'safe'];
-
-let walkers: Walkers = 'hit';
-try {
-  if (localStorage.getItem('walkers') === 'safe') walkers = 'safe';
-} catch { /* no storage: pedestrians can be hit */ }
-
-export const pedestrians = () => walkers;
-export const safeRoads = () => walkers === 'safe';
-export function setPedestrians(w: Walkers) {
-  walkers = w;
-  try { localStorage.setItem('walkers', w); } catch { /* not remembered */ }
-}

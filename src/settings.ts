@@ -14,8 +14,8 @@ import { hapticsOn, setHaptics } from './haptics.ts';
 import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
 import type { TunnelView } from './tunnelView.ts';
 import { feedbackLink, feedbackOpen } from './feedback.ts';
-import { LEVELS, WALKERS, difficulty, setDifficulty, pedestrians, setPedestrians } from './difficulty.ts';
-import type { Level, Walkers } from './difficulty.ts';
+import { LEVELS, difficulty, setDifficulty } from './difficulty.ts';
+import type { Level } from './difficulty.ts';
 import { STATIONS } from './radio.ts';
 import { stationAllowed, setStationAllowed, stationDistribution, setStationDistribution } from './radio-preferences.ts';
 
@@ -35,8 +35,6 @@ const GRAPHICS: { id: Choice; label: string }[] = [
 const WEATHER: Record<Kind, string> = { clear: 'Clear', cloudy: 'Cloudy', rain: 'Rain', storm: 'Thunderstorm', mist: 'Mist', snow: 'Snow' };
 
 const TUNNEL_LABEL: Record<TunnelView, string> = { normal: 'Usual view', wide: 'Wider view', full: 'Whole tunnel' };
-
-const WALKER: Record<Walkers, string> = { hit: 'Can be hit', safe: 'Always get away' };
 
 const LEVEL: Record<Level, string> = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
 
@@ -173,7 +171,6 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   row('Water', [{ id: 'waves', label: () => t('Waves and reflections') }, { id: 'plain', label: () => t('Plain') }], () => (graphics.water ? 'waves' : 'plain'), (id) => graphics.setWater(id === 'waves'));
   row<Kind | 'auto'>('Weather', [{ id: 'auto', label: () => t('Changing') }, ...weather.kinds.map((k) => ({ id: k, label: () => t(WEATHER[k]) }))], weather.get, weather.set);
 
-  row<Walkers>('Pedestrians', WALKERS.map((w) => ({ id: w, label: () => t(WALKER[w]) })), pedestrians, setPedestrians);
   row<Level>('Difficulty', LEVELS.map((l) => ({ id: l, label: () => t(LEVEL[l]) })), difficulty, setDifficulty);
 
   // Only where the game sends statistics at all (src/telemetry.ts).
