@@ -147,13 +147,13 @@ export class Sky {
     // Clouds: the sun hidden (and its shadows faint), the sky's light grey and a
     // little stronger, as the whole sky shines, or orange from the city at night.
     const night = THREE.MathUtils.clamp((2 - deg) / 8, 0, 1);
-    this.sun.intensity *= 1 - 0.8 * w.cloud;
+    this.sun.intensity *= 1 - 0.65 * w.cloud;
     // Drifting shadows of single clouds in fair weather only: under a clouded sky the sun is
     // hidden already, and at night there's no sun to hide.
     const patchy = 0.6 * (1 - THREE.MathUtils.smoothstep(w.cloud, 0.15, 0.6)) * (1 - w.mist) * THREE.MathUtils.smoothstep(deg, 4, 16);
     updateClouds(performance.now() / 1000, patchy);
-    this.hemi.color.lerp(cc.copy(OVERCAST).lerp(CITY_GLOW, night), w.cloud * 0.5);
-    this.hemi.intensity *= 1 + 0.2 * w.cloud * (1 - night);
+    this.hemi.color.lerp(cc.copy(OVERCAST).lerp(CITY_GLOW, night), w.cloud * 0.35);
+    this.hemi.intensity *= 1 + 0.15 * w.cloud * (1 - night);
     this.hemi.groundColor.lerp(SNOWY_GROUND, w.cover * 0.5 * (1 - night * 0.6));
     exposure *= 1 + 0.12 * w.cloud;
     // Lightning lights up everything for a moment, blue-white.
