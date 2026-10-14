@@ -17,6 +17,7 @@ import { type N, follow, followVec, addPort, uCut, uWet, uSnow, hash12, detail }
 
 const uBare = follow(BARE), uLeaves = follow(LEAVES), uSeason = followVec(SEASON);
 const tuft: N = attribute('tuft', 'vec3'), yearly: N = attribute('yearly', 'float');
+const TUFT_RIM = 0.5; // how dark a tuft's rim is (the same in vegetation.ts)
 const outlineA: N = attribute('outlineA', 'vec4'), outlineB: N = attribute('outlineB', 'vec4');
 // How far the crown reaches towards `p` in its own frame (vegetation.ts, outlineAt): the
 // horizontal scale of a point of the crown.
@@ -143,6 +144,10 @@ const leafState = Fn(() => {
       normal.assign(normalize(normal.add(T.mul(sl.z.mul(1.3).add(jit.x.mul(0.7))).add(B.mul(sl.w.mul(1.3).add(jit.y.mul(0.7)))).mul(sd))));
       crease.mulAssign(mix(1, float(0.78).add(sl.y.mul(0.38)).mul(mix(0.7, 1, smoothstep(0, 0.12, sl.x))), sd));
     });
+  });
+  // Each tuft darker towards its rim (vegetation.ts).
+  If(tuft.z.greaterThanEqual(0), () => {
+    crease.mulAssign(mix(TUFT_RIM, 1.1, float(1).sub(smoothstep(0.35, 0.85, length(tuft.xy)))));
   });
   return vec4(normal, crease);
 });

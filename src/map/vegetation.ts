@@ -562,7 +562,8 @@ function pineGeometry() {
 }
 let pine: THREE.BufferGeometry | null = null;
 
-const TUFT_GLSL = 'varying vec3 vTuft;';
+// TUFT_RIM: how dark a tuft's rim is (the same in webgpu/trees.ts).
+const TUFT_GLSL = 'varying vec3 vTuft;\nconst float TUFT_RIM = .5;';
 // Cells for the small leaves: x = gap to the next leaf, y = random, zw = from the
 // leaf's middle. Only the four nearest cells are searched (their points kept near the
 // middle of each cell so that's enough).
@@ -697,7 +698,11 @@ function leafy(material: THREE.MeshLambertMaterial) {
       normal = normalize(normal + (T * (sl.z * 1.3 + jit.x * .7) + B * (sl.w * 1.3 + jit.y * .7)) * sd);
       leafCrease *= mix(1., (.78 + .38 * sl.y) * mix(.7, 1., smoothstep(0., .12, sl.x)), sd);
     }
-  }`)
+  }
+  // Each tuft darker towards its rim, where the next one overlaps it and shades it: from
+  // above, the crown shows its clumps with shadow in the gaps between them. (Its middle is
+  // a little lighter, so the crown as a whole is about as light as it was.)
+  if (vTuft.z >= 0.) leafCrease *= mix(TUFT_RIM, 1.1, 1. - smoothstep(.35, .85, length(vTuft.xy)));`)
       .replace('#include <lights_lambert_fragment>', `diffuseColor.rgb *= leafCrease * (1. - .18 * uWet);
   // Twigs and branches: grey-brown bark.
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.3, .27, .24), twigAmt);
