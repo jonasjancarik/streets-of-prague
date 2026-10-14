@@ -40,14 +40,27 @@ const EVERGREEN = [0, 0, 0, 0.4];
 // The usual crown's colour in IPR's summer photo, its haze taken off (red, green, blue: the
 // median over the measured trees, pipeline/tree_sizes.py). A crown lighter or darker than
 // that is a little lighter or darker in the game (by the share LIGHT; much of it is shade
-// in the photo); one of another hue, more so (CHROMA: the photo's hues are pale).
-const PHOTO_CROWN = [46, 47, 34], LIGHT = 0.5, CHROMA = 2;
+// in the photo). Its hue moves the game's by how far its share of red, green and blue
+// differs from the usual crown's, CHROMA times over (the photo's hues are pale). The
+// palette has little blue, so this is added, not multiplied: a purple beech comes out
+// purple. More blue counts only together with more red, fully from 2 points more (purple):
+// blue with less red is mostly haze left over or shade, and would make the crown teal.
+const PHOTO_CROWN = [46, 47, 34], LIGHT = 0.5, CHROMA = 2.5;
 const PHOTO_SUM = PHOTO_CROWN[0] + PHOTO_CROWN[1] + PHOTO_CROWN[2];
 
-// How a crown seen in the photo as `seen` changes the game's colour, each of red, green, blue.
-function photoTint(seen: number[]) {
+// The game's crown colour `c` changed as the crown `seen` in the photo differs from the usual one.
+function photoTint(c: THREE.Color, seen: number[]) {
   const sum = Math.max(1, seen[0] + seen[1] + seen[2]), light = (sum / PHOTO_SUM) ** LIGHT;
-  return seen.map((v, k) => Math.min(1.7, Math.max(0.4, light * ((v / sum) / (PHOTO_CROWN[k] / PHOTO_SUM)) ** CHROMA)));
+  const d = seen.map((v, k) => v / sum - PHOTO_CROWN[k] / PHOTO_SUM);
+  if (d[2] > 0) d[2] *= Math.min(1, Math.max(0, d[0] / 0.02));
+  d[0] = Math.max(d[0], -0.03); // (much less red is mostly shade too)
+  d[1] -= d[0] + d[1] + d[2]; // (what the blue doesn't take goes to green)
+  const most = Math.max(...d.map(Math.abs)); // (a few pixels can be far off: no more than 8 points)
+  if (most > 0.08) d.forEach((v, k) => { d[k] = v * 0.08 / most; });
+  const own = c.r + c.g + c.b;
+  const share = [c.r, c.g, c.b].map((v, k) => Math.max(0.04, v / own + CHROMA * d[k]));
+  const total = share[0] + share[1] + share[2];
+  c.setRGB(...share.map((v) => v / total * own * Math.min(1.5, Math.max(0.55, light))) as [number, number, number]);
 }
 
 // Where a tile's trees stand, and how big and what colour they are: their instance
@@ -218,10 +231,7 @@ export function treeInstances(geo: Geo<TreeTileData>, height: (x: number, y: num
     c.copy(pal[Math.floor(r() * pal.length)]).offsetHSL(0, 0, (r() - 0.5) * 0.05);
     // A crown seen in the photo differs from the usual one as it does there: the photo's own
     // cast (a bluish haze) is the same on both and drops out.
-    if (seen) {
-      const [tr, tg, tb] = photoTint(seen);
-      c.setRGB(c.r * tr, c.g * tg, c.b * tb);
-    }
+    if (seen) photoTint(c, seen);
     c.toArray(colours, i * 3);
     // (By where it stands, so the other trees' looks don't change.)
     const own = rng(Math.imul(Math.floor(x * 8), 73856093) ^ Math.imul(Math.floor(y * 8), 19349663));
