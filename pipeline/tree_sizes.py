@@ -70,8 +70,11 @@ def canopy(area, meta, t):
     dtm = gc.terrain_wide(area, meta, t, ext, RES)
     heights = []
     if gc.DSM_SOURCE == "ipr":
-        dsm = gc.ipr_dsm(area, ext, RES, cache=False)
-        heights.append(np.where(dsm > 100, dsm - dtm, np.nan))
+        try:
+            dsm = gc.ipr_dsm(area, ext, RES, cache=False)
+            heights.append(np.where(dsm > 100, dsm - dtm, np.nan))
+        except ValueError:  # (past the edge of IPR's model, which covers only the city)
+            pass
     try:
         dsm = gc.export(gc.DSM, "dsm_1m_wide", area, ext, RES, 1.0, fmt="tiff",
                         extra={"pixelType": "F32", "interpolation": "RSP_BilinearInterpolation"})[:, :, 0]
