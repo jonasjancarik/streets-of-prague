@@ -68,8 +68,15 @@ BANDS = (2.5, 8.0, 16.0)  # m: where the canopy layer's low, middle and tall ban
 CELL = 2           # m: the canopy layer's grid
 TEXTURE, GRAINY = 2.25, 0.04  # m over which the photo's grain is taken, and the grain of a crown (a lawn's is about 0.03)
 LONE_PATCH = 30    # m2: a patch of leaves this small, on its own, is a young tree or a shrub
+TOP_OFF_WALL = 2   # m from a building in which the top is taken only from leaves
+# A crown the models miss, measured in the photo: looked for within PHOTO_SEARCH m of the
+# trunk, at least PHOTO_MIN_LEAVES m2 of leaves and PHOTO_MIN_RADIUS m across; its top is
+# worked out from its radius r as PHOTO_TOP[0] + PHOTO_TOP[1] r, at most PHOTO_TOP[2] m.
+PHOTO_SEARCH, PHOTO_MIN_LEAVES, PHOTO_MIN_RADIUS, PHOTO_TOP = 4.0, 8, 1.5, (3.0, 2.2, 20.0)
+PHOTO_MAX_LEAVES = 250  # m2: more leaves in one patch are a lawn or a wood, not one crown
+PHOTO_WIDER = 1.3  # the photo's crown is taken when it's this much wider than the models' one
 SEEN_CROWN = 0.6   # a tree too low to measure, with leaves on more than this share round it, has a crown the models miss
-LEAVES = 0.2       # the vegetation index above which the photo shows leaves (as ground_cover.py takes it)
+LEAVES = 0.1       # the vegetation index above which the photo shows leaves (paving is about -0.2, dry grass 0, a shaded street tree 0.12)
 
 
 def processing():
@@ -133,40 +140,33 @@ def measure(nd, built, box, own, others, rgb=None):
     """[x, y, top, radius, *outline] for each of `own` trees ([x, y, ...]) that stands high
     enough, followed by its crown's colour in the photo `rgb` ([r, g, b], 0 to 255) when there
     is one; [x, y, top, 0] for a young one, lower than MIN_TOP ([x, y, top, -1] when the
-    photo shows a crown there all the same).
+    photo shows leaves all round it but no crown can be told). A crown the models miss but
+    the photo shows (photo_crown) is measured in the photo, its top worked out from its width;
+    one the photo shows clearly wider than the models (PHOTO_WIDER) takes the photo's width.
     `others`: every tree near, own included, as an (n, 2) array."""
     X0, Y1 = box[0], box[3]
     H, W = nd.shape
     ok = np.isfinite(nd) & ~built
-    leaves = leafy(rgb, built) if rgb is not None else None
+    leaves = None
+    if rgb is not None:
+        leaves = leafy(rgb, built)
+        # The top is not looked for by a wall unless there are leaves: the models' walls
+        # lean out past the outlines, and a tree beside a house took the eaves for its top.
+        ok_top = ok & (~ndimage.binary_dilation(built, iterations=TOP_OFF_WALL) | leaves)
+    else:
+        ok_top = ok
     angles = np.linspace(0, 2 * np.pi, RAYS, endpoint=False)
     steps = np.arange(STEP, REACH + 1e-6, STEP)
-    out = []
-    for x, y, *_ in own:
-        # The top: the highest open metre round the tree.
-        c0, r0 = int(x - X0 - TOP_SEARCH), int(Y1 - y - TOP_SEARCH)
-        c1, r1 = int(x - X0 + TOP_SEARCH) + 1, int(Y1 - y + TOP_SEARCH) + 1
-        if c0 < 0 or r0 < 0 or c1 > W or r1 > H:
-            continue
-        win = np.where(ok[r0:r1, c0:c1], nd[r0:r1, c0:c1], -np.inf)
-        r, c = np.unravel_index(np.argmax(win), win.shape)
-        top = float(win[r, c])
-        if not np.isfinite(top):  # (nothing open round it to measure)
-            continue
-        if top < MIN_TOP:
-            # Young (radius 0), unless the photo shows leaves all round it: then a crown the
-            # models miss (radius -1: the game makes its size up).
-            seen = leaves[max(r0, 0):r1, max(c0, 0):c1].mean() if leaves is not None else 0.0
-            out.append([round(x, 1), round(y, 1), round(max(top, 0.0), 1), -1 if seen > SEEN_CROWN else 0])
-            continue
-        tx, ty = X0 + c0 + c + 0.5, Y1 - (r0 + r + 0.5)
-        # The rays from the top, sampled at once: (RAYS, steps).
+
+    def rays_from(tx, ty, x, y, inner):
+        """How far each ray from (tx, ty) stays in the crown (`inner` says, for the sampled
+        rows and columns, what counts), shared with the trees near as in the docstring."""
         px = tx + np.cos(angles)[:, None] * steps
         py = ty + np.sin(angles)[:, None] * steps
         cols, rows = (px - X0).astype(int), (Y1 - py).astype(int)
         inside = (cols >= 0) & (cols < W) & (rows >= 0) & (rows < H)
         cols, rows = np.clip(cols, 0, W - 1), np.clip(rows, 0, H - 1)
-        crown = inside & ok[rows, cols] & (np.nan_to_num(nd[rows, cols], nan=-1) >= max(1.5, CROWN_SHARE * top))
+        crown = inside & ok[rows, cols] & inner(rows, cols)
         def reach(along):  # how far each ray stays in the crown
             return np.where(along.all(axis=1), REACH, np.argmin(along, axis=1) * STEP) + RES / 2
         rays = free = reach(crown)
@@ -178,10 +178,86 @@ def measure(nd, built, box, own, others, rgb=None):
             # In a closed stand the shares are small; the crowns still close over the gaps.
             rays = np.maximum(reach(crown & (d >= np.hypot(px - x, py - y) - VORONOI)),
                               np.minimum(free, CLOSE * float(gap.min())))
+        return rays
+
+    def photo_rays(seen):
+        """The rays over the photo's crown (photo_crown) from its middle."""
+        tx, ty, mask, (pr0, pc0) = seen
+        def inner(rows, cols):
+            r_, c_ = rows - pr0, cols - pc0
+            ok_ = (r_ >= 0) & (r_ < mask.shape[0]) & (c_ >= 0) & (c_ < mask.shape[1])
+            return ok_ & mask[np.clip(r_, 0, mask.shape[0] - 1), np.clip(c_, 0, mask.shape[1] - 1)]
+        return tx, ty, rays_from(tx, ty, x_now[0], x_now[1], inner)
+
+    x_now = [0.0, 0.0]
+    out = []
+    for x, y, *_ in own:
+        x_now[:] = [x, y]
+        # The top: the highest open metre round the tree.
+        c0, r0 = int(x - X0 - TOP_SEARCH), int(Y1 - y - TOP_SEARCH)
+        c1, r1 = int(x - X0 + TOP_SEARCH) + 1, int(Y1 - y + TOP_SEARCH) + 1
+        if c0 < 0 or r0 < 0 or c1 > W or r1 > H:
+            continue
+        win = np.where(ok_top[r0:r1, c0:c1], nd[r0:r1, c0:c1], -np.inf)
+        r, c = np.unravel_index(np.argmax(win), win.shape)
+        top = float(win[r, c])
+        if not np.isfinite(top):
+            top = 0.0  # (nothing open round it that the models see: perhaps the photo does)
+        if top < MIN_TOP:
+            seen = photo_crown(leaves, X0, Y1, x, y) if leaves is not None else None
+            if seen is not None:
+                tx, ty, rays = photo_rays(seen)
+                radius = float(rays.mean())
+                if radius >= PHOTO_MIN_RADIUS:
+                    top = min(PHOTO_TOP[0] + PHOTO_TOP[1] * radius, PHOTO_TOP[2])
+                    out.append([round(x, 1), round(y, 1), round(top, 1), round(radius, 1), *outline(x, y, tx, ty, angles, rays, radius),
+                                *crown_colour(nd, built, box, rgb, tx, ty, 0.0, radius)])
+                    continue
+            # Young (radius 0), unless the photo shows leaves all round it: then a crown the
+            # models miss (radius -1: the game makes its size up).
+            share = leaves[r0:r1, c0:c1].mean() if leaves is not None else 0.0
+            out.append([round(x, 1), round(y, 1), round(max(top, 0.0), 1), -1 if share > SEEN_CROWN else 0])
+            continue
+        tx, ty = X0 + c0 + c + 0.5, Y1 - (r0 + r + 0.5)
+        rays = rays_from(tx, ty, x, y, lambda rows, cols: np.nan_to_num(nd[rows, cols], nan=-1) >= max(1.5, CROWN_SHARE * top))
         radius = float(rays.mean())
+        # The photo's crown when it's clearly wider: the models' is cut short where a crown
+        # hangs over a roof (the buildings are left out of it) or where they see it thin.
+        seen = photo_crown(leaves, X0, Y1, x, y) if leaves is not None else None
+        if seen is not None:
+            ptx, pty, prays = photo_rays(seen)
+            if prays.mean() > PHOTO_WIDER * radius:
+                tx, ty, rays, radius = ptx, pty, prays, float(prays.mean())
+                # (Where the models saw it thin they saw it low too.)
+                top = max(top, min(PHOTO_TOP[0] + PHOTO_TOP[1] * radius, PHOTO_TOP[2]))
         out.append([round(x, 1), round(y, 1), round(top, 1), round(radius, 1), *outline(x, y, tx, ty, angles, rays, radius),
                     *crown_colour(nd, built, box, rgb, tx, ty, top, radius)])
     return out
+
+
+def photo_crown(leaves, X0, Y1, x, y):
+    """The tree at (x, y)'s crown in the photo: of the patches of leaves (within REACH) that come
+    within PHOTO_SEARCH metres of its trunk, the biggest. (its middle x, y, the patch, the row
+    and column of its corner), or None when it's too small or too big to be one crown."""
+    H, W = leaves.shape
+    c0, r0 = max(int(x - X0 - REACH), 0), max(int(Y1 - y - REACH), 0)
+    c1, r1 = min(int(x - X0 + REACH) + 1, W), min(int(Y1 - y + REACH) + 1, H)
+    patch, n = ndimage.label(ndimage.binary_closing(leaves[r0:r1, c0:c1]))
+    if not n:
+        return None
+    # The patches that come within PHOTO_SEARCH of the trunk; the biggest of them.
+    tr, tc = Y1 - y - r0, x - X0 - c0
+    rr, cc = np.ogrid[:patch.shape[0], :patch.shape[1]]
+    close = np.unique(patch[(np.hypot(rr - tr, cc - tc) <= PHOTO_SEARCH) & (patch > 0)])
+    if not len(close):
+        return None
+    size = np.bincount(patch.ravel())
+    best = close[np.argmax(size[close])]
+    # (Too few leaves are no crown; too many, a lawn or a wood, aren't one tree's.)
+    if not PHOTO_MIN_LEAVES <= size[best] <= PHOTO_MAX_LEAVES:
+        return None
+    rows, cols = np.nonzero(patch == best)
+    return X0 + c0 + cols.mean() + 0.5, Y1 - (r0 + rows.mean() + 0.5), patch == best, (r0, c0)
 
 
 def outline(x, y, tx, ty, angles, rays, radius):
