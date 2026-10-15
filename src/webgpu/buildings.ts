@@ -47,7 +47,8 @@ const fStorey = (f: N) => {
   const style = min(floor(f.w), 4).toInt(), fit = mod(floor(fract(f.w).mul(1024)), 32);
   return vec2(F_GROUND.element(style), F_STOREY.element(style).mul(fit.mul(STOREY_FIT[1] / 31).add(STOREY_FIT[0])));
 };
-const fLook = (f: N) => min(mod(floor(fract(f.w).mul(16384)), 16), MOD.length - 1).toInt();
+const fLook = (f: N) => min(mod(floor(fract(f.w).mul(32768)), 16), MOD.length - 1).toInt();
+const fTwoTone = (f: N) => mod(floor(fract(f.w).mul(2048)), 2);
 const LANDMARK_TILE = vec3(...R.rgb);
 const luma = (c: N) => dot(c, vec3(0.299, 0.587, 0.114));
 // detail() with the pixel's footprint worked out once, outside any branch (derivatives).
@@ -203,11 +204,17 @@ function facadeModules(wall: N, f: N, bays: N, fdx: N, fdy: N) {
     const r = fHash(seed, cell.x);
     If(r.lessThan(0.18), () => { layer.assign(F_DOOR.element(look.mul(3).add(r.div(0.18).mul(3).toInt()))); })
       .Else(() => { layer.assign(F_WALL.element(look.mul(4).add(fHash(cell.x, seed).mul(4).toInt()))); });
-  }).Else(() => { layer.assign(F_UP.element(look.mul(6).add(fHash(seed, cell.y.add(7)).mul(6).toInt()))); });
+  }).Else(() => {
+    // Panel blocks by the column, the rest by the floor (FACADE_GLSL).
+    const byColumn = look.equal(3).or(look.equal(10));
+    layer.assign(F_UP.element(look.mul(6).add(fHash(seed, select(byColumn, cell.x.add(50), cell.y.add(7))).mul(6).toInt())));
+  });
   const k = vec2(float(1).div(mw), float(1).div(st.y));
-  const t = atlas.sample(vec2(u, float(1).sub(uv.y))).depth(layer).grad(fdx.xy.mul(k), fdy.xy.mul(k)).rgb;
+  const tm = atlas.sample(vec2(u, float(1).sub(uv.y))).depth(layer).grad(fdx.xy.mul(k), fdy.xy.mul(k));
+  const t = tm.rgb;
+  const plaster = mix(wall, mix(wall, vec3(0.85, 0.79, 0.67), 0.6), tm.a.mul(fTwoTone(f)));
   const hi = max(t.r, max(t.g, t.b)), sat = hi.sub(min(t.r, min(t.g, t.b))).div(max(hi, 1e-3));
-  return mix(t, t.mul(wall).div(0.55), float(1).sub(smoothstep(0.08, 0.2, sat)));
+  return mix(t, t.mul(plaster).div(0.55), float(1).sub(smoothstep(0.08, 0.2, sat)));
 }
 
 const buildingColor = Fn(() => {

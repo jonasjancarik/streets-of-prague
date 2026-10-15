@@ -6,7 +6,7 @@ import proj4 from 'proj4';
 // into public/facades.webp, one sheet under another. The shader (shading.ts) picks a
 // module for every bay and storey of a wall, by the wall's style.
 export const CELL = [256, 512];
-export const SHEETS = 11;
+export const SHEETS = 12;
 
 // Styles: 0 tenement, 1 baroque, 2 functionalist, 3 panel housing, 4 family house.
 // A party wall (štítová zeď, see facadeCoords) has its style plus BLANK: plaster, no windows.
@@ -19,9 +19,13 @@ export const FACADE_ON = { value: 0 };
 let loading = null;
 export function loadFacadeAtlas() {
   loading ??= (async () => {
-    const img = new Image();
+    const img = new Image(), mask = new Image();
     img.src = 'facades.webp';
+    mask.src = 'facades-mask.webp';
     await img.decode();
+    // Where the modules' stucco is (build_atlas.py), into the alpha channel; without it,
+    // every wall is one colour.
+    const masked = await mask.decode().then(() => true, () => false);
     // Phones and tablets get the modules at half size: a quarter of the memory (all of
     // them sharp is some 90 MB on the GPU), and from the usual height above the
     // street a module is a few dozen pixels across anyway.
@@ -35,6 +39,9 @@ export function loadFacadeAtlas() {
     if (!ctx) throw new Error('Cannot create facade atlas canvas');
     ctx.drawImage(img, 0, 0, W, H);
     const px = ctx.getImageData(0, 0, W, H).data;
+    if (masked) ctx.drawImage(mask, 0, 0, W, H);
+    const ma = masked ? ctx.getImageData(0, 0, W, H).data : null;
+    for (let i = 3; i < px.length; i += 4) px[i] = ma ? ma[i - 3] : 0;
     // Cut the atlas into layers of a texture array, so modules never bleed into
     // their neighbours in the mipmaps.
     const data = new Uint8Array(w * h * 4 * cols * rows);
@@ -107,7 +114,9 @@ export interface WallLine { nx: number; nz: number; ax: number; az: number; tx: 
 
 // Looks: the sets of modules a facade is drawn with (rows of F_UP, F_DOOR, F_WALL).
 // The first five are the styles' own; the rest are more for some styles.
-export const LOOK = { neoRenaissance: 0, baroque: 1, functionalist: 2, panel: 3, house: 4, artNouveau: 5, plain: 6, early20th: 7, modern: 8, burgher: 9, renovatedPanel: 10 };
+export const LOOK = { neoRenaissance: 0, baroque: 1, functionalist: 2, panel: 3, house: 4, artNouveau: 5, plain: 6, early20th: 7, modern: 8, burgher: 9, renovatedPanel: 10, sorela: 11, postwar: 12 };
+// Looks whose stucco may be a lighter shade than the wall (two-tone, see finishWalls).
+const STUCCO = new Set([LOOK.neoRenaissance, LOOK.baroque, LOOK.artNouveau, LOOK.plain, LOOK.early20th, LOOK.burgher, LOOK.sorela]);
 type Mix = [number, number][]; // looks and their weights
 const TENEMENTS: Mix = [[LOOK.neoRenaissance, 0.35], [LOOK.plain, 0.35], [LOOK.artNouveau, 0.3]];
 // What the map says of a wall (the upper half of its material byte, tileWorker.ts; see
@@ -128,13 +137,19 @@ export const WALL_CODES: [number, Mix][] = [
   [STYLE.tenement, [[LOOK.artNouveau, 0.4], [LOOK.neoRenaissance, 0.35], [LOOK.plain, 0.25]]], // 1890-1914
   [STYLE.tenement, [[LOOK.early20th, 0.8], [LOOK.artNouveau, 0.2]]], // 1915-1924
   [STYLE.functionalist, [[LOOK.modern, 1]]], // since 1990
+  // 1939-1953: little was built in the war, mostly late functionalism; after it modernism
+  // went on for a while, then came the plain houses of the two-year plan and, from about
+  // 1950, Socialist Realism (sorela).
+  [STYLE.functionalist, [[LOOK.functionalist, 0.35], [LOOK.postwar, 0.35], [LOOK.sorela, 0.3]]],
 ];
 
 // The last touches to a tile's walls, once their styles are settled: every building
-// takes one look, and every wall's floors are fitted to its height (F_STOREY). Both go
-// in the fraction of the facade attribute's w, with the wall's random pick:
-// (pick × 512 + fit × 16 + look + 0.5) / 16384, five, five and four bits (fLook and
-// fStorey in the shaders). `lines`: the walls, as facadeCoords gives them; `base(t)`:
+// takes one look, and every wall's floors are fitted to its height (F_STOREY). Of the
+// older looks, nearly half the buildings have their stucco a lighter shade than the
+// wall (two-tone), as many of Prague's houses do. All of it goes in the fraction of the
+// facade attribute's w, with the wall's random pick:
+// (pick × 1024 + fit × 32 + two-tone × 16 + look + 0.5) / 32768, five, five, one and
+// four bits (fLook, fStorey and fTwoTone in the shaders). `lines`: the walls, as facadeCoords gives them; `base(t)`:
 // the colour a triangle came with (see paintWalls); `code(t)`: what the map says
 // (WALL_CODES), if it says.
 export function finishWalls(p: Float32Array, facade: Float32Array, lines: WallLine[], base: (t: number) => [number, number, number], code?: (t: number) => number) {
@@ -152,12 +167,13 @@ export function finishWalls(p: Float32Array, facade: Float32Array, lines: WallLi
     const b = owner[t0] >= 0 ? owner[t0] : t0;
     if (!pick.has(b)) pick.set(b, cellHash(p[b * 9 + 2] * 0.71, p[b * 9] * 1.37));
     const r = pick.get(b)!, mix = WALL_CODES[c][1];
+    const two = cellHash(r * 91.7, 3.1) < 0.45 ? 1 : 0;
     let look = mix[mix.length - 1][0];
     for (let i = 0, sum = 0, all = mix.reduce((a, [, k]) => a + k, 0); i < mix.length; i++) {
       sum += mix[i][1] / all;
       if (r < sum) { look = mix[i][0]; break; }
     }
-    const fraction = (Math.floor((w - whole) * 32) * 512 + fit * 16 + look + 0.5) / 16384;
+    const fraction = (Math.floor((w - whole) * 32) * 1024 + fit * 32 + (STUCCO.has(look) ? two * 16 : 0) + look + 0.5) / 32768;
     for (const t of l.tris) for (let o = t * 12 + 3; o < t * 12 + 12; o += 4) facade[o] = Math.floor(facade[o]) + fraction;
   }
 }
@@ -417,7 +433,11 @@ export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Ar
 // Mělnická; 1 gives its shops), 2 baroque, 3 functionalist and panel housing, 4 family
 // houses, 6 Art Nouveau, 7 the plain tenements of Žižkov and Karlín, 8 houses of
 // 1912-1925 (late Art Nouveau, rondocubism), 9 infill since the 1990s, 10 plainer
-// burgher houses of the Old Town and Malá Strana, 11 insulated panel blocks.
+// burgher houses of the Old Town and Malá Strana, 11 insulated panel blocks, 12 Socialist
+// Realism of the early 1950s. The plain post-war look borrows from sheets 3 and 4.
+// Panel blocks pick their upper modules by the column, the rest by the floor: on an
+// estate the loggias and the staircase's windows run up the block, while an older
+// house keeps one kind of window along each floor.
 // Window bays are as wide as in Prague's houses (F_BAY, about 3 m between window
 // axes in a tenement): the module takes F_MOD of that in the middle, and its plaster
 // edge (with the cornices and bands) is drawn on across the piers between. Panel
@@ -425,14 +445,14 @@ export function paintWalls(p: Float32Array, col: Float32Array, facade: Float32Ar
 // shutters reach the module's edge, so they're left out; so are rows that would look
 // odd repeated along a whole floor: a staircase's windows, niches.)
 export const F_UP = [
-  48, 49, 50, 51, 52, 53, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 27, 28, 27, 36, 37, 38, 39, 40, 36,
+  48, 49, 50, 51, 52, 53, 12, 13, 15, 12, 13, 15, 24, 25, 24, 25, 26, 24, 27, 28, 27, 29, 28, 27, 36, 37, 38, 39, 40, 36,
   60, 61, 62, 63, 64, 65, 72, 73, 74, 75, 76, 72, 84, 85, 86, 87, 88, 89, 96, 97, 98, 99, 100, 101,
-  108, 109, 110, 112, 108, 109, 120, 121, 122, 123, 121, 120];
-export const F_DOOR = [56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45, 67, 69, 67, 79, 82, 79, 90, 93, 90, 103, 104, 105, 114, 115, 117, 126, 130, 126];
+  108, 109, 110, 112, 108, 109, 120, 121, 122, 124, 123, 120, 132, 133, 134, 135, 136, 137, 24, 39, 24, 36, 39, 24];
+export const F_DOOR = [56, 57, 8, 18, 19, 20, 31, 31, 34, 32, 32, 34, 42, 44, 45, 67, 69, 67, 79, 82, 79, 90, 93, 90, 103, 104, 105, 114, 115, 117, 126, 130, 126, 138, 141, 143, 31, 42, 31];
 export const F_WALL = [
   54, 55, 58, 6, 21, 22, 23, 20, 30, 30, 30, 35, 33, 35, 33, 35, 43, 46, 47, 43, 66, 68, 70, 71, 78, 80, 81, 83,
-  91, 92, 94, 95, 102, 106, 107, 102, 116, 118, 119, 116, 127, 128, 129, 131];
-export const F_MOD = [1.9, 1.9, 2, 2.4, 1.9, 1.9, 1.9, 1.9, 2, 1.9, 2.4];
+  91, 92, 94, 95, 102, 106, 107, 102, 116, 118, 119, 116, 127, 128, 129, 131, 139, 140, 142, 140, 43, 30, 47, 43];
+export const F_MOD = [1.9, 1.9, 2, 2.4, 1.9, 1.9, 1.9, 1.9, 2, 1.9, 2.4, 1.9, 2];
 const LOOKS = F_MOD.length;
 const glslArray = (type: string, v: number[]) => `${type}[${v.length}](${v.map((x) => (type === 'float' ? x.toFixed(2) : x)).join(', ')})`;
 export const FACADE_GLSL = /* glsl */ `
@@ -457,7 +477,8 @@ vec2 fStorey(vec4 f) {
   float fit = mod(floor(fract(f.w) * 1024.), 32.);
   return vec2(F_GROUND[style], F_STOREY[style] * (${STOREY_FIT[0].toFixed(2)} + fit * ${(STOREY_FIT[1] / 31).toFixed(6)}));
 }
-int fLook(vec4 f) { return int(mod(floor(fract(f.w) * 16384.), 16.)); }
+int fLook(vec4 f) { return int(mod(floor(fract(f.w) * 32768.), 16.)); }
+float fTwoTone(vec4 f) { return mod(floor(fract(f.w) * 2048.), 2.); }
 vec3 facadeModules(vec3 wall, vec4 f, vec4 fdx, vec4 fdy) {
   float bays = fBays(f);
   // Bare plaster, as bright as the modules' plaster (drawn about .45 grey: × .8).
@@ -474,12 +495,14 @@ vec3 facadeModules(vec3 wall, vec4 f, vec4 fdx, vec4 fdy) {
   if (f.y < st.x) {
     float r = fHash(seed, cell.x);
     layer = r < .18 ? F_DOOR[look * 3 + int(r / .18 * 3.)] : F_WALL[look * 4 + int(fHash(cell.x, seed) * 4.)];
-  } else layer = F_UP[look * 6 + int(fHash(seed, cell.y + 7.) * 6.)];
+  } else layer = F_UP[look * 6 + int(fHash(seed, look == 3 || look == 10 ? cell.x + 50. : cell.y + 7.) * 6.)];
   vec2 k = vec2(1. / mw, 1. / st.y);
-  vec3 t = textureGrad(uFacades, vec3(u, 1. - uv.y, float(layer)), fdx.xy * k, fdy.xy * k).rgb;
-  // Plaster is drawn neutral grey: give it the wall's colour. Frames, doors and
-  // metal keep their own.
+  vec4 tm = textureGrad(uFacades, vec3(u, 1. - uv.y, float(layer)), fdx.xy * k, fdy.xy * k);
+  vec3 t = tm.rgb;
+  // Plaster is drawn neutral grey: give it the wall's colour, or on a two-tone house its
+  // stucco a pale cream. Frames, doors and metal keep their own.
+  vec3 plaster = mix(wall, mix(wall, vec3(.85, .79, .67), .6), tm.a * fTwoTone(f));
   float hi = max(t.r, max(t.g, t.b)), sat = (hi - min(t.r, min(t.g, t.b))) / max(hi, 1e-3);
-  return mix(t, t * wall / .55, 1. - smoothstep(.08, .2, sat));
+  return mix(t, t * plaster / .55, 1. - smoothstep(.08, .2, sat));
 }
 `;

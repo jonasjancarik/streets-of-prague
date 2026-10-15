@@ -52,8 +52,9 @@ BAY = (2.9, 3.1, 2.6, 2.4, 2.8)
 # src/facades.ts): the style plus one, or for buildings of these eras a code that also
 # tells the game the period's looks: tenements of 1843-1875 (mostly plain), 1876-1889
 # (neo-Renaissance), 1890-1914 (Art Nouveau) and 1915-1924 (rondocubism and the
-# geometric late Art Nouveau), and infill since 1990.
-ERA_CODE = {2: 6, 3: 7, 4: 8, 5: 9, 10: 10, 11: 10, 12: 10}
+# geometric late Art Nouveau), buildings of 1939-1953 (late functionalism, the plain
+# post-war houses and Socialist Realism) and infill since 1990.
+ERA_CODE = {2: 6, 3: 7, 4: 8, 5: 9, 7: 11, 10: 10, 11: 10, 12: 10}
 LOW = 8.5  # m; lower buildings are family houses whatever their age
 CORE = ((14.4213, 50.0875, 750.0), (14.4034, 50.0880, 550.0), (14.3975, 50.0890, 450.0))  # Staré Město, Malá Strana, Hradčany
 
