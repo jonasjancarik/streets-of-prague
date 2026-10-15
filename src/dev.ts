@@ -84,21 +84,24 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
       <button id="dev-map">Pick a spot on the map</button>
       <button id="dev-link" title="Copies a link that starts the game here">Copy link to this spot</button>
     </div>
-    <div class="dev-row dev-here">
+    <div class="dev-sub">Where you are</div>
+    <div class="dev-row">
       <span id="dev-pos"></span>
       <button id="dev-copy" title="Copies your latitude and longitude, e.g. to paste into a conversation">Copy coordinates</button>
     </div>
-    <div class="dev-row">
+    <div class="dev-row dev-links">
       <a id="dev-google" target="_blank" rel="noopener">Google Maps</a>
       <a id="dev-street" target="_blank" rel="noopener" title="Google Street View here, looking the way you face">Street View</a>
       <a id="dev-mapy" target="_blank" rel="noopener">Mapy.cz</a>
     </div>
-    <div class="dev-row">
+    <div class="dev-sub">Make something happen</div>
+    <div class="dev-row dev-grid">
       <button id="dev-heli" title="Walk up to it and press E to fly it">Helicopter next to me</button>
       <button id="dev-road" title="Puts the car you are driving back on the nearest road">Back on the road</button>
       <button id="dev-fire" title="The fire brigade comes from out of view">Set the nearest car on fire</button>
       <button id="dev-hurt" title="An ambulance comes from out of view">Leave the nearest person hurt</button>
     </div>
+    <div class="dev-sub">World</div>
     <label class="dev-time">Time of day <span id="dev-time-label"></span>
       <input id="dev-time" type="range" min="0" max="1439" step="5" title="The trams follow the timetable for the new time" />
     </label>
@@ -129,10 +132,9 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   panel.style.overflowY = 'auto';
   const style = document.createElement('style');
   style.textContent = `
-    #dev a { color: var(--ink); opacity: 0.85; font-size: 13px; }
     #dev .dev-here { align-items: center; }
     #dev .dev-here span { flex: 1; font-variant-numeric: tabular-nums; }
-    #dev .dev-sub { font-weight: 600; margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.15); }
+    #dev .dev-sub { margin-top: 6px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.12); font: 11px/1 'IBM Plex Mono', monospace; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
     #dev input[type=number] { width: 90px; padding: 4px 6px; }
     #dev .dev-check { display: flex; gap: 6px; align-items: center; }
     #dev .dev-check input { margin: 0; }

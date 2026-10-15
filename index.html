@@ -141,18 +141,31 @@
       /* The same card for a game controller, in place of the keyboard's while a pad was the last thing used. */
       body.pad #help { display: none; }
       body:not(.pad) #help-pad { display: none; }
-      #dev { top: 16px; right: 16px; width: 340px; display: flex; flex-direction: column; gap: 8px; z-index: 5; }
+      #dev { top: 16px; right: 16px; width: 360px; background: rgba(20, 13, 12, 0.92); display: flex; flex-direction: column; gap: 8px; z-index: 5; scrollbar-width: thin; scrollbar-color: rgba(236, 228, 214, 0.3) transparent; }
       #dev[hidden], #dev-mapbox[hidden] { display: none; }
-      .dev-title { font-weight: 600; }
-      #dev input { font: inherit; padding: 7px 9px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.35); color: var(--ink); }
-      #dev button { font: inherit; padding: 6px 9px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.08); color: var(--ink); cursor: pointer; text-align: left; }
-      #dev button:hover { background: rgba(255, 255, 255, 0.18); }
+      .dev-title { display: flex; justify-content: space-between; align-items: center; font: 22px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
+      .dev-title kbd { font: 11px/1 'IBM Plex Mono', monospace; padding: 3px 6px; background: var(--key); }
+      #dev input, #dev select { font: inherit; padding: 6px 9px; border: 1px solid rgba(236, 228, 214, 0.2); background: rgba(0, 0, 0, 0.35); color: var(--ink); border-radius: 0; }
+      #dev input:focus-visible, #dev select:focus-visible, #dev button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+      #dev button { font: inherit; padding: 6px 9px; border: 1px solid rgba(236, 228, 214, 0.18); background: var(--key); color: var(--ink); cursor: pointer; text-align: center; transition: background 0.12s; }
+      #dev button:hover { background: rgba(236, 228, 214, 0.26); }
+      #dev button:active { background: var(--ink); color: #140d0c; }
       #dev-results { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
+      #dev-results:empty { display: none; }
+      #dev button.dev-hit { text-align: left; }
       .dev-row { display: flex; gap: 6px; flex-wrap: wrap; }
+      .dev-row > button { flex: 1 1 auto; }
+      .dev-row > select, .dev-row > label { flex: 1 1 auto; }
+      .dev-row.dev-here > button { flex: 0 0 auto; }
+      .dev-grid > button { flex: 1 1 calc(50% - 3px); }
+      .dev-links a { flex: 1 1 auto; padding: 6px 9px; border: 1px solid rgba(236, 228, 214, 0.18); background: var(--key); color: var(--ink); text-align: center; text-decoration: none; transition: background 0.12s; }
+      .dev-links a:hover { background: rgba(236, 228, 214, 0.26); }
+      .dev-links a:active { background: var(--ink); color: #140d0c; }
+      #dev-pos { display: none; }
       .dev-note, #dev-pos { opacity: 0.7; font-size: 12px; }
       .dev-time { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
-      #dev select { font: inherit; padding: 4px 6px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.35); color: var(--ink); }
-      #dev .dev-time input { flex: 1 0 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: none; accent-color: #e8a15c; }
+      #dev .dev-time input { flex: 1 0 100%; min-width: 0; margin: 0; padding: 0; border: 0; background: none; accent-color: var(--accent); }
+      #dev .dev-time select { flex: 1 0 100%; }
       #dev-mapbox { position: fixed; inset: 5%; z-index: 10; overflow: hidden; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); }
       #dev-leaflet { position: absolute; inset: 0; }
       .dev-maphint { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1000; background: var(--paper); padding: 6px 12px; pointer-events: none; }
