@@ -81,6 +81,14 @@ load of 150–200 from fifteen other sessions: `build_tiles.py ujezd --jobs 2
 That says how badly a busy machine and cold caches hurt, not what the rebuild costs.
 `scripts/check-map-rebuild.mjs` on `praha` took 1 min 50 s under the same load.
 
+Measured on 15 October 2026 in the main checkout, machine at a load of about 8, warm
+caches, every chunk worked out again after code changes: `build_tiles.py praha` 49 min
+(2,930 s in the workers), then `ipr_buildings.py` 84 s, `ipr_terrain.py` 151 s,
+`ground_cover.py build` 60 s (278 of 7,330 tiles worked out), `young_woods.py build`
+93 s, `layers.py --strict` 52 s, `tree_sizes.py build` 471 s, `layers.py --strict` again
+51 s, `build_signals.py` 7 s: about 1 h 10 min for `praha`. `centrum` took 2.5 min
+(`build_tiles.py` 107 s of it), `ujezd` 35 s; `check-map-rebuild.mjs` 10 s for all three.
+
 ## Checking the result
 
     node scripts/check-data-format.mjs public/data
