@@ -298,7 +298,8 @@ before that day's frame-count fix may be doubled.
   remain open in `docs/traffic.md`. Not yet run on `praha`.
 - **Boats:** cruise boats follow the fairway through the locks (`river.json`); they
   still turn at Modřany and Klecany (no usable lock in the map's water). One boat at
-  a time goes through a lock cut (checked offline, not with two boats in the game).
+  a time goes through a lock cut. One opposing pair passed a live lock check on
+  18 October; broader natural queues and other locks remain unchecked (`docs/boats.md`).
   The offline checks now cover hull overlap, opposing queues and release after a
   boat disappears, unloads or turns away (`scripts/check-river-boats.mjs`).
 - **Ferries:** P1, P2, P4, P5 and P6 run with tickets; an inspector may check you as the ferry comes in (running

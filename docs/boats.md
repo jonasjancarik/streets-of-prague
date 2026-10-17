@@ -72,7 +72,19 @@ three boats passing one coming the other way, and release of a waiting boat afte
 the other disappears, encounters unloaded water or turns away in wide water. The
 coordination is recalculated from live boats; there is no retained lock owner.
 These are offline synthetic-fairway checks. The live `cruise-lock` scenario covers
-one boat through the Smíchov lock; a two-boat live check remains open.
+one boat through the Smíchov lock.
+
+On 18 October 2026, a controlled WebGPU check at `22deab5` staged two opposing
+34 × 6.4 m cruise hulls at a mapped lock near 50.09499 N, 14.43903 E. Both cleared
+the lock within 474 simulated seconds. Across 28,440 simulation steps, their
+centres were never inside the narrow stretch at the same time and their hulls
+never overlapped. The opposing boat waited outside. The
+minimum separating-axis gap was 8.58 m. The ordinary update/follow and surveyed
+water remained in use; unrelated spawns were suppressed temporarily to isolate the
+pair. This covers one pair at one lock, not natural spawn queues or every lock.
+[The recorded setup and trajectories](evidence/local-pass-2026-10-17/two-boats.json),
+[source hashes](evidence/local-pass-2026-10-17/two-boats-source.json) and
+[waiting view](evidence/local-pass-2026-10-17/two-boats-wait.png) preserve the check.
 
 `node scripts/check-river.mjs [area]` sails every stretch and every ferry crossing
 without a browser (`--all` lists every step in the water, `--strict` fails on them).
