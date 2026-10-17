@@ -34,7 +34,6 @@ depend on the ground cover, and ground_cover.py's results stay valid.
 import argparse
 import json
 import time
-from pathlib import Path
 
 import numpy as np
 from scipy import ndimage
@@ -224,7 +223,7 @@ def tile_key(wood, height):
 
 
 def processing():
-    return [build_cache.digest(Path(__file__).read_bytes())]
+    return layers.young_processing()
 
 
 def jobs_for(area, meta, terrain, want):

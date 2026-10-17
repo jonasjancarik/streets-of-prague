@@ -17,6 +17,12 @@ been written; an interrupted write is downloaded again on the next run.
 IPR feature downloads retry service errors, malformed responses and empty pages
 that still promise more results. If retries fail, they stop without caching an empty
 or partial layer. The tree and lamp caches are also published only after a full write.
+Sampled image and surface-model arrays are kept per area and carry records of their
+source, tile box, resolution and sampling code. Photographs keep their existing
+filenames with checks for their source and request. Older entries without these
+records are misses on their next use.
+Young-wood and tree-size layers also track the shared image and sampling helpers they
+use, so changing those helpers makes strict assembly ask for those layers again.
 
 ## Before starting
 

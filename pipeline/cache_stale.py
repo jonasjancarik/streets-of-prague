@@ -18,7 +18,7 @@ from pathlib import Path
 
 CACHE = Path(sys.argv[sys.argv.index("--cache") + 1] if "--cache" in sys.argv else Path(__file__).parent / ".cache").resolve()
 # Image folders under cover/img that ground_cover.export() fills (rgb, cir, dsm) and the IPR surface model.
-COVER_IMG = {"rgb", "cir", "dsm", "dsm_ipr"}
+COVER_IMG = {"rgb", "cir", "dsm", "dsm_ipr", "dsm_1m_wide"}
 OSM_NAME = __import__("re").compile(r"^(?P<area>[a-z]+)_(?P<ci>\d+)_(?P<cj>\d+)\.(osm|parsed\.pkl|osm\.source\.json)$")
 
 

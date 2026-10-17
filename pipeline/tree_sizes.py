@@ -39,7 +39,6 @@ per tile into .cache/cover/ (dsm_1m_wide is shared with young_woods.py).
 import argparse
 import json
 import time
-from pathlib import Path
 
 import numpy as np
 from scipy import ndimage
@@ -80,7 +79,7 @@ LEAVES = 0.1       # the vegetation index above which the photo shows leaves (pa
 
 
 def processing():
-    return [build_cache.digest(Path(__file__).read_bytes())]
+    return layers.treesize_processing()
 
 
 def placed_tile(area, i, j):

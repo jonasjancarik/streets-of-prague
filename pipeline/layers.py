@@ -218,7 +218,9 @@ def young_key(t: dict, height) -> str:
 
 
 def young_processing() -> list:
-    return [build_cache.digest(Path(__file__).with_name("young_woods.py").read_bytes())]
+    here = Path(__file__).parent
+    return [build_cache.digest((here / "young_woods.py").read_bytes()),
+            build_cache.reach_key(here / "ground_cover.py", ["burn", "export", "ipr_dsm", "photo", "rings_of", "terrain", "RGB", "DSM", "DSM_SOURCE"])]
 
 
 def height_digest(terrain, k):
@@ -241,7 +243,9 @@ def merge_cover(t: dict, cover: dict):
 
 
 def treesize_processing() -> list:
-    return [build_cache.digest(Path(__file__).with_name("tree_sizes.py").read_bytes())]
+    here = Path(__file__).parent
+    return [build_cache.digest((here / "tree_sizes.py").read_bytes()),
+            build_cache.reach_key(here / "ground_cover.py", ["burn", "export", "ipr_dsm", "photo", "terrain_wide", "RGB", "CIR", "DSM", "DSM_SOURCE", "SEEN"])]
 
 
 def greenery_processing() -> list:

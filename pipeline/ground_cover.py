@@ -164,11 +164,41 @@ def sjtsk(area, t, res):
     return _sjtsk[1]
 
 
+def _image_current(path, inputs):
+    record = build_cache.read_json(f"{path}.source.json")
+    return (path.is_file() and record.get("input") == inputs
+            and record.get("output") == build_cache.identity(path))
+
+
+def _keep_image(path, raw, inputs):
+    # Publish the data first: an interrupted metadata write must not approve old bytes.
+    build_cache.atomic(path, raw)
+    build_cache.write_json(f"{path}.source.json", {"input": inputs, "output": build_cache.identity(path)})
+
+
+def _keep_array(path, array, inputs):
+    with io.BytesIO() as raw:
+        np.save(raw, array)
+        _keep_image(path, raw.getvalue(), inputs)
+
+
+def _raster_grid(area, t, res):
+    return {"area": area, "projection": local_proj(area), "box": list(t["box"]), "resolution": res}
+
+
+@functools.lru_cache(maxsize=2)
+def raster_processing(kind):
+    """The sampled array's producer and helpers, read once per producer per process."""
+    return build_cache.reach_key(__file__, [kind])
+
+
 def export(url, name, area, t, res, src_res, fmt="png", extra=None):
     """An ImageServer's picture of the tile, resampled onto the tile's own grid
     (S-JTSK is turned a few degrees against the game's grid), as float32 (h, w, bands)."""
-    out = CACHE / "img" / name / f"{t['i']}_{t['j']}.npy"
-    if out.exists():
+    out = CACHE / "img" / name / area / f"{t['i']}_{t['j']}.npy"
+    inputs = {"grid": _raster_grid(area, t, res), "url": url, "source_resolution": src_res,
+              "format": fmt, "extra": extra or {}, "processing": raster_processing("export")}
+    if _image_current(out, inputs):
         return np.load(out)
     X, Y = grid(t, res)
     E, N = sjtsk(area, t, res)
@@ -197,8 +227,7 @@ def export(url, name, area, t, res, src_res, fmt="png", extra=None):
     bands = [ndimage.map_coordinates(img[:, :, b], [rows, cols], order=1, mode="nearest").reshape(X.shape)
              for b in range(img.shape[2])]
     arr = np.stack(bands, axis=-1).astype(np.float32)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    np.save(out, arr)
+    _keep_array(out, arr, inputs)
     return arr
 
 
@@ -206,6 +235,7 @@ IPR_DSM = CACHE / "dsm_ipr" / "DSM_1m.tif"  # unpacked from IPR's DSM_1m.zip (se
 # Which height model the pieces' numbers come from: IPR's 2025 one once it's there.
 DSM_SOURCE = os.environ.get("COVER_DSM") or ("ipr" if IPR_DSM.exists() else "cuzk")
 _dsm = None
+_dsm_identity = None
 
 
 def ipr_dsm(area, t, res, cache=True):
@@ -214,15 +244,20 @@ def ipr_dsm(area, t, res, cache=True):
     povrchu - 1m", DSM_1m.zip), stored uncompressed in 128 px blocks, so only the
     blocks under the tile are read. Its world file puts the centre of the top-left
     pixel at S-JTSK (-757499.5, -1034000.5)."""
-    global _dsm
-    out = CACHE / "img" / "dsm_ipr" / f"{t['i']}_{t['j']}.npy"
-    if cache and out.exists():
+    global _dsm, _dsm_identity
+    source = build_cache.identity(IPR_DSM)
+    out = CACHE / "img" / "dsm_ipr" / area / f"{t['i']}_{t['j']}.npy"
+    inputs = {"grid": _raster_grid(area, t, res), "source": source, "processing": raster_processing("ipr_dsm")}
+    if cache and _image_current(out, inputs):
         return np.load(out)
     import tifffile
-    if _dsm is None:
-        tf_ = tifffile.TiffFile(IPR_DSM)
-        page = tf_.pages[0]
-        _dsm = (open(IPR_DSM, "rb"), page.shape, page.tilelength, page.tilewidth, page.dataoffsets)
+    if _dsm is None or _dsm_identity != source:
+        if _dsm is not None:
+            _dsm[0].close()
+        with tifffile.TiffFile(IPR_DSM) as tf_:
+            page = tf_.pages[0]
+            _dsm = (open(IPR_DSM, "rb"), page.shape, page.tilelength, page.tilewidth, page.dataoffsets)
+        _dsm_identity = source
     f, (H, W), th, tw, offsets = _dsm
     X, Y = grid(t, res)
     E, N = sjtsk(area, t, res)
@@ -243,9 +278,10 @@ def ipr_dsm(area, t, res, cache=True):
     fill = np.nanmedian(win) if np.isfinite(win).any() else 0
     arr = ndimage.map_coordinates(np.nan_to_num(win, nan=fill), [rows - r0, cols - c0], order=1, mode="nearest").reshape(X.shape)
     arr = arr.astype(np.float32)
+    if build_cache.identity(IPR_DSM) != source:
+        raise RuntimeError(f"surface model changed while sampling: {IPR_DSM}")
     if cache:
-        out.parent.mkdir(parents=True, exist_ok=True)
-        np.save(out, arr)
+        _keep_array(out, arr, inputs)
     return arr
 
 
@@ -952,10 +988,11 @@ def photo(url, kind, area, t, res=RES, window=None):
     E, N = sjtsk(area, t, res)
     bx0, by0, bx1, by1 = E.min() - 3, N.min() - 3, E.max() + 3, N.max() + 3
     path = PHOTOS / area / kind / f"{t['i']}_{t['j']}.jpg"
-    if not path.exists():
-        w, h = math.ceil((bx1 - bx0) / res), math.ceil((by1 - by0) / res)
-        params = {"bbox": f"{bx0},{by0},{bx1},{by1}", "bboxSR": 5514, "imageSR": 5514, "size": f"{w},{h}",
-                  "format": "jpg", "f": "image"}
+    w, h = math.ceil((bx1 - bx0) / res), math.ceil((by1 - by0) / res)
+    params = {"bbox": f"{bx0},{by0},{bx1},{by1}", "bboxSR": 5514, "imageSR": 5514, "size": f"{w},{h}",
+              "format": "jpg", "f": "image"}
+    inputs = {"grid": _raster_grid(area, t, res), "url": url, "request": params}
+    if not _image_current(path, inputs):
         for attempt in range(5):
             try:
                 r = S.get(f"{url}/exportImage", params=params, timeout=120)
@@ -968,10 +1005,7 @@ def photo(url, kind, area, t, res=RES, window=None):
                 if attempt == 4:
                     raise
                 time.sleep(3 * (attempt + 1))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-        tmp.write_bytes(r.content)
-        tmp.replace(path)
+        _keep_image(path, r.content, inputs)
     img = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32) / 255
     shape_ = X.shape
     if window:
