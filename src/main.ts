@@ -1187,7 +1187,7 @@ async function main() {
     };
   };
   const autosave = () => {
-    if (playing && saving && wastedT <= 0 && !arrest.active && !health.dead && !inHeli) writeSave('auto', capture());
+    if (playing && saving && wastedT <= 0 && !arrest.active && !health.dead && !inHeli) return writeSave('auto', capture());
   };
   window.addEventListener('pagehide', autosave);
   document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
@@ -1232,13 +1232,30 @@ async function main() {
   const restart = () => { saving = false; location.reload(); };
   const saves = {
     list: () => listSaves(AREA),
-    save: () => { writeSave(newSlot(), capture()); telemetry.count('saves'); telemetry.did('saved the game by hand'); },
+    save: () => {
+      if (!writeSave(newSlot(), capture())) return false;
+      telemetry.count('saves'); telemetry.did('saved the game by hand');
+      return true;
+    },
     // Loading restarts the page into that game (it becomes the auto save, and the start screen offers it).
-    load: (slot: Slot) => { const s = readSave(slot, AREA); if (!s) return; writeSave('auto', s); telemetry.did('loaded a saved game'); restart(); },
+    load: (slot: Slot) => {
+      const s = readSave(slot, AREA);
+      if (!s || !writeSave('auto', s)) return false;
+      telemetry.did('loaded a saved game'); restart();
+      return true;
+    },
     remove: (slot: Slot) => clearSave(slot),
-    newGame: () => { clearSave('auto'); telemetry.did('started a new game from the settings'); restart(); },
+    newGame: () => {
+      if (!clearSave('auto')) return false;
+      telemetry.did('started a new game from the settings'); restart();
+      return true;
+    },
     // Back to the start screen, which offers to continue from this save.
-    exit: () => { autosave(); telemetry.did('went back to the main menu'); restart(); },
+    exit: () => {
+      if (autosave() === false) return false;
+      telemetry.did('went back to the main menu'); restart();
+      return true;
+    },
   };
   const settingsPanel = setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
 

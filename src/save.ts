@@ -92,7 +92,8 @@ export function unreadable(slot: Slot, area: string) {
 }
 
 export function writeSave(slot: Slot, data: SaveData) {
-  try { localStorage.setItem(key(slot), JSON.stringify(data)); } catch { /* full or blocked: the game goes on unsaved */ }
+  try { localStorage.setItem(key(slot), JSON.stringify(data)); return true; }
+  catch { return false; } // full or blocked: callers keep the current game open
 }
 
 // The hand-made saves of this area, newest first; `data` is null for one that this
@@ -114,7 +115,8 @@ export function listSaves(area: string): { slot: Slot; data: SaveData | null }[]
 export const newSlot = (): Slot => `hand:${Date.now()}`;
 
 export function clearSave(slot: Slot) {
-  try { localStorage.removeItem(key(slot)); } catch { /* nothing to remove */ }
+  try { localStorage.removeItem(key(slot)); return true; }
+  catch { return false; }
 }
 
 // "5 min ago".

@@ -212,6 +212,10 @@ that without a new renderer.
   deleted. Older saves without a date, radio station or broken-lamp state still
   open. A car type no longer available resumes on foot with the rest of the save
   intact. `node scripts/check-save.mjs` checks this without loading the map.
+  Failed manual save changes show a message inside settings and keep the current
+  game open. Loading, starting again or returning to the menu only restarts after
+  the required storage change succeeds. Automatic saves stay quiet; failure and
+  retry checks are in `scripts/check-save-failures.mjs`.
 - **Getting in and out of cars** (`src/getin.ts`). Press E by a car and you go to the
   nearer front door, it opens, you duck in and it shuts behind you; E again and you
   get out the same way (on the other side if the driver's door is against a wall).

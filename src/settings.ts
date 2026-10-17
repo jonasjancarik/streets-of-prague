@@ -65,7 +65,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   weather: { kinds: Kind[]; get: () => Kind | 'auto'; set: (k: Kind | 'auto') => void };
   // Saved games: the list, saving the game as a new one, loading one (which restarts
   // the page, see main.ts), deleting one and starting again from the beginning.
-  saves: { list: () => { slot: Slot; data: SaveData | null }[]; save: () => void; load: (slot: Slot) => void; remove: (slot: Slot) => void; newGame: () => void; exit: () => void };
+  saves: { list: () => { slot: Slot; data: SaveData | null }[]; save: () => boolean; load: (slot: Slot) => boolean; remove: (slot: Slot) => boolean; newGame: () => boolean; exit: () => boolean };
 }) {
   const corner = el('div', 'corner', document.body);
   // Full screen, where the browser allows it (not on an iPhone). In a phone's
@@ -202,6 +202,10 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   const savesBox = el('div', 'settings-row', rows);
   const savesName = el('span', 'settings-label', savesBox);
   relabel.push(() => { savesName.textContent = t('Saved games'); });
+  let saveError = '';
+  const saveStatus = el('p', 'settings-note', savesBox);
+  saveStatus.setAttribute('role', 'status');
+  refresh.push(() => { saveStatus.textContent = saveError ? t(saveError) : ''; saveStatus.hidden = !saveError; });
   const sure = (b: HTMLButtonElement, label: () => string, act: () => void) => {
     let timer = 0;
     const reset = () => { clearTimeout(timer); timer = 0; b.textContent = label(); };
@@ -217,13 +221,20 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   const add = el('button', 'settings-chip', buttons) as HTMLButtonElement;
   add.type = 'button';
   relabel.push(() => { add.textContent = t('Save game'); });
-  add.addEventListener('click', () => { saves.save(); update(); });
+  add.addEventListener('click', () => {
+    saveError = saves.save() ? '' : 'The browser couldn’t save your game. Keep this page open and try again.';
+    update();
+  });
   const again = el('button', 'settings-chip', buttons) as HTMLButtonElement;
   again.type = 'button';
-  sure(again, () => t('New game'), () => saves.newGame());
+  sure(again, () => t('New game'), () => {
+    saveError = saves.newGame() ? '' : 'The browser couldn’t change your saved games. Your current game is still open. Try again.';
+  });
   const leave = el('button', 'settings-chip', buttons) as HTMLButtonElement;
   leave.type = 'button';
-  sure(leave, () => t('Exit to main menu'), () => saves.exit());
+  sure(leave, () => t('Exit to main menu'), () => {
+    saveError = saves.exit() ? '' : 'The browser couldn’t save your game. Keep this page open and try again.';
+  });
   const list = el('div', 'settings-saves', savesBox);
   refresh.push(() => {
     list.textContent = '';
@@ -234,8 +245,12 @@ export function setupSettings({ sound, graphics, weather, saves }: {
       const del = el('button', 'settings-chip', line) as HTMLButtonElement;
       load.type = del.type = 'button';
       load.hidden = !data;
-      sure(load, () => t('Load'), () => saves.load(slot));
-      sure(del, () => t('Delete'), () => saves.remove(slot));
+      sure(load, () => t('Load'), () => {
+        saveError = saves.load(slot) ? '' : 'The saved game couldn’t be loaded. Your current game is still open. Try again.';
+      });
+      sure(del, () => t('Delete'), () => {
+        saveError = saves.remove(slot) ? '' : 'The browser couldn’t change your saved games. Your current game is still open. Try again.';
+      });
     }
   });
 
