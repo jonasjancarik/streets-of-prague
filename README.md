@@ -1300,6 +1300,8 @@ is the only thing they talk to, so either can move to another service without th
 changing. The beta has no Worker of its own and uses production's. One visitor address
 can try five times a minute and only the game's own pages are let in, since every use
 sends an email. Each form stays out of the game until it is set up.
+The form endpoints accept `POST` and preflight `OPTIONS`; other methods return
+`405` with `Allow: POST, OPTIONS` and do not contact the email services.
 
 **Newsletter.** The start screen and the settings have a link to sign up for news about
 the game by email (`src/newsletter.ts`). `/api/subscribe` passes the address to

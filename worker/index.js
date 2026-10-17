@@ -60,7 +60,7 @@ async function form(request, env, handle) {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' } });
   }
-  if (request.method !== 'POST') return json({ error: 'method' }, 405, cors);
+  if (request.method !== 'POST') return json({ error: 'method' }, 405, { ...cors, Allow: 'POST, OPTIONS' });
 
   // Every use sends an email, a signup to whatever address was typed, so one visitor
   // gets few tries.

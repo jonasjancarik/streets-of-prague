@@ -106,8 +106,40 @@ answer = () => new Response(JSON.stringify({ code: 'unauthorized', message: 'Key
 assert.equal((await post({ email: 'player@example.com' })).status, 502);
 
 assert.equal((await post(null, { method: 'GET' })).status, 405);
+for (const path of ['/api/subscribe', '/api/feedback']) {
+  for (const origin of [SITE, BETA]) {
+    for (const method of ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE']) {
+      const response = await post(null, { path, origin, method, e: { ...env, EMAIL: { send() { assert.fail('a rejected method cannot send email'); } } } });
+      assert.equal(response.status, 405);
+      assert.equal(response.headers.get('Allow'), 'POST, OPTIONS');
+      assert.equal(response.headers.get('Cache-Control'), 'no-store');
+      assert.equal(response.headers.get('Access-Control-Allow-Origin'), origin === SITE ? null : BETA);
+      assert.equal(sent.length, 0, 'a rejected method never reaches Brevo');
+      assert.equal(checked.length, 0, 'a rejected method never consumes a Turnstile token');
+    }
+  }
+}
 // Everything else is the game's files.
 assert.equal(await (await worker.fetch(new Request(`${SITE}/index.html`), env)).text(), 'asset');
+// The Worker must leave asset range, validator and HEAD semantics to ASSETS.
+for (const [method, headers, status, body, extra] of [
+  ['GET', { Range: 'bytes=0-1' }, 206, 'ab', { 'Content-Range': 'bytes 0-1/4', 'Content-Length': '2' }],
+  ['GET', { Range: 'not-a-range' }, 416, 'range error', { 'Content-Range': 'bytes */4' }],
+  ['GET', { 'If-None-Match': '"asset"' }, 304, null, {}],
+  ['HEAD', {}, 200, null, { 'Content-Length': '4' }],
+]) {
+  const assetHeaders = { ETag: '"asset"', 'Cache-Control': 'public, max-age=3600', ...extra };
+  const request = new Request(`${SITE}/assets/fixture.bin`, { method, headers });
+  res = await worker.fetch(request, { ...env, ASSETS: { fetch: async (received) => {
+    assert.equal(received.method, method);
+    assert.equal(received.url, request.url);
+    assert.deepEqual([...received.headers], [...request.headers]);
+    return new Response(body, { status, headers: assetHeaders });
+  } } });
+  assert.equal(res.status, status);
+  for (const [name, value] of Object.entries(assetHeaders)) assert.equal(res.headers.get(name), value);
+  assert.equal(await res.text(), body ?? '');
+}
 
 // ---- Feedback ----
 let mail = [];
