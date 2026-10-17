@@ -30,11 +30,22 @@ export function onLang(f: () => void) {
   f();
 }
 
-const fill = (s: string, vars?: Record<string, string | number>) => (vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m)) : s);
+const HTML_CHARS: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const fill = (s: string, vars?: Record<string, string | number>, html = false) => (vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => {
+  if (!(k in vars)) return m;
+  const value = String(vars[k]);
+  return html ? value.replace(/[&<>"']/g, (c) => HTML_CHARS[c]) : value;
+}) : s);
 
 export function t(en: string, vars?: Record<string, string | number>) {
   const cs = lang === 'cs' ? CS[en] : undefined;
   return fill(typeof cs === 'string' ? cs : en, vars);
+}
+
+// Keep the template's key markup, and escape names inserted from map/transit data.
+export function tHtml(en: string, vars?: Record<string, string | number>) {
+  const cs = lang === 'cs' ? CS[en] : undefined;
+  return fill(typeof cs === 'string' ? cs : en, vars, true);
 }
 
 // A line that depends on a count: 'one|other' in English, and 'one|few|many' in the

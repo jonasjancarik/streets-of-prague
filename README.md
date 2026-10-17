@@ -65,6 +65,10 @@ weather as it changes, until you pick one yourself ([docs/live-weather.md](docs/
 which also covers ČHMÚ's open data as a source through the Worker). <kbd>P</kbd> steps through the weather.
 `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the
 developer panel, `?dialog` plays a sample conversation, `?menu` shows only the start screen without loading the map (quick to reload while working on the screen, the beta note or the signup form; the note then shows on every press of Start), `?touch` shows the touch controls on a desktop, a new game starts at one of ten places around the city picked at random (`STARTS` in `src/main.ts`) and `?start=lon,lat` starts somewhere else, and `?money=N` sets how much money you start with (10,000 Kč otherwise). The game is in English and Czech: the start screen has the choice (remembered for next time; the browser's language decides the first time), and `?lang=cs|en` sets it. All text is written in English in the code and looked up by that text in `src/cs.ts`, through `t()` in `src/i18n.ts`; a line with no Czech entry shows in English. The Czech is kept gender-neutral towards the player for now (see the note at the top of `src/cs.ts`). Elements in `index.html` marked `data-t` work the same way.
+HTML hints use `tHtml()` to keep key formatting while escaping names inserted from
+map and transit data; text content uses `t()`. `node scripts/check-display-text.mjs`
+checks transit hints, developer search results and scenario reports in both languages.
+
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 
 | Setting | Ultra | High | Medium | Low | Lowest |

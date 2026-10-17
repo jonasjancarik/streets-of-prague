@@ -83,7 +83,7 @@ import { Inspector } from './inspector.ts';
 import type { DriveEdge, WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Tracked } from './tiles.ts';
-import { getLang, onLang, t, tn, translatePage } from './i18n.ts';
+import { getLang, onLang, t, tHtml, tn, translatePage } from './i18n.ts';
 const VEHICLE_NAMES: Record<string, string> = {
   van: 'Van', taxi: 'Taxi', police: 'Police car', bike: 'Bicycle', moto: 'Motorbike',
   truck: 'Lorry', artic: 'Articulated lorry', bus: 'Bus', minibus: 'Minibus', fire: 'Fire engine',
@@ -2288,7 +2288,7 @@ async function main() {
       const parts = [];
       if (ride.waiting) parts.push(t('The streets ahead are still loading'));
       else if (scale > 1.5) parts.push(t('{n}× speed', { n: Math.round(scale) }));
-      if (dest) parts.push(t(next ? 'Getting off at {name}' : 'Riding to {name}', { name: dest }));
+      if (dest) parts.push(tHtml(next ? 'Getting off at {name}' : 'Riding to {name}', { name: dest }));
       if (!touch.active) {
         if (ride.atStop()) parts.push(t('<b>E</b> get off'));
         else if (ride.stuck) parts.push(t('<b>E</b> get off here'));
@@ -2298,8 +2298,8 @@ async function main() {
       }
       parts.push(ticketHint());
       hint = parts.filter(Boolean).join(' · ');
-    } else if (canBoard && !touch.active) hint = t('<b>E</b> get on the {line} to {name}', { line: canBoard.line.ref, name: ride.headsign(canBoard) });
-    else if (station && !touch.active) hint = t('<b>E</b> take the metro from {name}', { name: station.name });
+    } else if (canBoard && !touch.active) hint = tHtml('<b>E</b> get on the {line} to {name}', { line: canBoard.line.ref, name: ride.headsign(canBoard) });
+    else if (station && !touch.active) hint = tHtml('<b>E</b> take the metro from {name}', { name: station.name });
     else if ((cabin && !touch.active) || shut) hint = funicular.offer((cabin || shut)!);
     else if (ferryHere && (!ferryHere.open || !touch.active)) hint = ferries.offer(ferryHere);
     else if (board.shown) {

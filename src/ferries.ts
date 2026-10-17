@@ -4,7 +4,7 @@ import { body, boatMaterial, FERRY } from './boats.ts';
 import { Course } from './river.ts';
 import type { FerryLine, Landing } from './river.ts';
 import type { Point2 } from './map/geo.ts';
-import { t } from './i18n.ts';
+import { t, tHtml } from './i18n.ts';
 
 // PID's ferries across the Vltava (P1, P2, …, from river.json): one boat a line, going
 // to and fro between its landings on the real crossing. Where it is follows from the
@@ -205,18 +205,18 @@ export class Ferries {
     const { line } = f;
     if (!f.open) {
       const day = this.o.day();
-      if (!line.allYear && (day < SEASON[0] || day > SEASON[1])) return t('Ferry {line} sails from April to October', { line: line.ref });
-      return t('Ferry {line} sails {hours}', { line: line.ref, hours: `${clockTime(line.hours[0])}–${clockTime(line.hours[1])}` });
+      if (!line.allYear && (day < SEASON[0] || day > SEASON[1])) return tHtml('Ferry {line} sails from April to October', { line: line.ref });
+      return tHtml('Ferry {line} sails {hours}', { line: line.ref, hours: `${clockTime(line.hours[0])}–${clockTime(line.hours[1])}` });
     }
-    return t('<b>E</b> take ferry {line} to {name}', { line: line.ref, name: line.stops[f.to].name });
+    return tHtml('<b>E</b> take ferry {line} to {name}', { line: line.ref, name: line.stops[f.to].name });
   }
 
   // And riding one (without the keys on a touch screen).
   hint(touch: boolean, scale: number) {
     const f = this.me!, parts = [];
     if (scale > 1.5) parts.push(t('{n}× speed', { n: Math.round(scale) }));
-    if (f.stop !== null) parts.push(t('At {name}', { name: f.line.stops[f.stop].name }));
-    else parts.push(t('Ferry {line} to {name}', { line: f.line.ref, name: f.line.stops[f.to].name }));
+    if (f.stop !== null) parts.push(tHtml('At {name}', { name: f.line.stops[f.stop].name }));
+    else parts.push(tHtml('Ferry {line} to {name}', { line: f.line.ref, name: f.line.stops[f.to].name }));
     if (!touch) parts.push(t(f.stop !== null ? '<b>E</b> get off' : 'hold <b>Shift</b> to speed up'));
     return parts.join(' · ');
   }

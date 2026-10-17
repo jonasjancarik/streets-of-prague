@@ -159,13 +159,17 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     el.textContent = now;
     setTimeout(() => { el.textContent = then; }, 1500);
   };
+  const showNote = (text: string) => {
+    results.replaceChildren();
+    if (text) results.appendChild(Object.assign(document.createElement('div'), { className: 'dev-note', textContent: text }));
+  };
   const go = async (x: number, y: number, label: string) => {
-    results.innerHTML = `<div class="dev-note">Going to ${label}…</div>`;
+    showNote(`Going to ${label}…`);
     if (bench?.free()) { const [lon, lat] = toLonLat(x, y); await bench.look(lat, lon); } else await teleport(x, y);
-    results.innerHTML = '';
+    results.replaceChildren();
   };
   const show = (items: DevHit[], note = '') => {
-    results.innerHTML = note ? `<div class="dev-note">${note}</div>` : '';
+    showNote(note);
     for (const it of items) {
       const b = document.createElement('button');
       b.className = 'dev-hit';
@@ -517,9 +521,9 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
   };
   for (const el of [speed, stars, kind, place, $('dev-scenario')]) keep(el);
   const line = (r: Awaited<ReturnType<Testkit['run']>>) =>
-    `<div class="${r.pass ? 'dev-pass' : 'dev-fail'}">${r.pass ? '✓' : '✗'} ${r.title}</div>` +
-    r.checks.map((c) => `<div class="${c.pass ? 'dev-pass' : 'dev-fail'}">  ${c.pass ? '✓' : '✗'} ${c.name}${c.detail ? ` <span class="dev-note">${c.detail}</span>` : ''}</div>`).join('') +
-    (r.error ? `<div class="dev-fail">  ${r.error}</div>` : '');
+    `<div class="${r.pass ? 'dev-pass' : 'dev-fail'}">${r.pass ? '✓' : '✗'} ${esc(r.title)}</div>` +
+    r.checks.map((c) => `<div class="${c.pass ? 'dev-pass' : 'dev-fail'}">  ${c.pass ? '✓' : '✗'} ${esc(c.name)}${c.detail ? ` <span class="dev-note">${esc(c.detail)}</span>` : ''}</div>`).join('') +
+    (r.error ? `<div class="dev-fail">  ${esc(r.error)}</div>` : '');
   const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
   const run = async (names: string[], watch: boolean) => {
     out.innerHTML = '<div class="dev-note">Running…</div>';
