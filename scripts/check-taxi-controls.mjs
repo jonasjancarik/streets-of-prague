@@ -16,7 +16,7 @@ const {setLang}=await import('../src/i18n.ts');
 const THREE=await import('three');
 const edge={pts:[[0,0],[100,0]],path:new Polyline([[0,0],[100,0]]),hw:'residential',u:'a',v:'b',speed:10};
 const follows=[];let left=50,refits=0,spawns=0;
-const agent={car:{type:'taxi',x:25,y:2,h:0,vx:0,vy:0,gz:0,refit(){refits++;}},hired:false,reckless:false,kerb:false,speed:0,jam:0,route:{head:edge,s:0,to:()=>left,follow:plan=>follows.push(plan),lookahead:()=>({p:{x:0,y:0}})}};
+const agent={car:{type:'taxi',x:25,y:2,h:0,vx:0,vy:0,gz:0,refit(){refits++;}},hired:false,reckless:false,kerb:false,speed:0,jam:0,route:{head:edge,s:0,legs:[{edge,s0:0,s1:100}],get leg(){return this.legs[0];},to:()=>left,follow:plan=>follows.push(plan),lookahead:()=>({p:{x:0,y:0}})}};
 const traffic={agents:[agent],spawn:()=>{spawns++;return null;}};
 const panel={hidden:true,innerHTML:'',addEventListener(){}};
 const walker={x:20,y:2,h:0,vx:0,vy:0,mesh:{visible:true},sync(){}};

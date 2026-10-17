@@ -1,5 +1,5 @@
 ---
-read_when: Changing taxi passenger controls, request state, or cancellation/rebooking feedback.
+read_when: Changing taxi passenger controls, pickup routing, request state, or cancellation/rebooking feedback.
 ---
 
 # Taxi passenger controls
@@ -16,7 +16,7 @@ Previously the button stayed labelled Taxi while an order was active, even thoug
 its next tap cancelled that order. The keyboard T shortcut still opens/closes the
 menu or cancels a request, E still boards/exits, and numeric/menu choices retain
 existing behaviour. The contextual Get in control remains the boarding action.
-No routing, traffic, parking, service pricing or fare calculation was changed.
+That button update did not change routing, traffic, parking, service pricing or fare calculation.
 
 Cancellation releases the driver and its stop/route, hides the marker, and clears
 transient loading, speed, target, timers, distance and notice state. An explicit
@@ -57,3 +57,19 @@ probe is preserved and is not counted as a Czech browser pass.
 A full build/gameplay suite and routing benchmark were intentionally skipped for
 this control-copy/request-reset change. Physical-phone and traffic-stall/pathfinding
 investigations remain open. No testkit or main/touch control API was changed.
+
+## Pickup routing
+
+Bookings check directed street connections before selecting a taxi or creating one.
+A nearer taxi on a disconnected lane cannot hide a farther taxi with a route to the
+pickup. A stopped taxi already within the existing 7 m boarding distance of the
+player and pickup can wait on its current lane, provided it is on a street at the
+same ground level. A moving taxi that has passed the pickup still needs a legal
+route back. Taxi trips keep their existing plans toward destinations beyond the
+loaded streets; fares, service areas and ordinary traffic rules are unchanged.
+
+`node scripts/check-taxi-routing.mjs` exercises real street graphs, routes and
+traffic: disconnected candidates, stopped and moving pickups, one-way loops,
+junction progress, and rejected spawn points before car allocation. It also checks
+that unavailable service does not charge a fare. These checks establish graph
+reachability; they do not establish that physical traffic jams cannot delay a taxi.

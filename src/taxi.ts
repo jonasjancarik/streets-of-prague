@@ -45,9 +45,11 @@ const REACH = 500; // m round you a free taxi is sent from, when ordered through
 const HAIL = 80; // m: a street taxi has to be passing this close to be waved down
 const PATIENCE = 90; // s a taxi waits for you at the kerb
 const SLOW_BEFORE = 200; // m before the end of the ride where it goes back to normal speed
+const PICKUP_NEAR = 7; // m: close enough to board, including a taxi already standing there
 
 interface Walker { gz?: number; x: number; y: number; h: number; vx: number; vy: number; mesh: { visible: boolean }; sync(): void }
 interface TaxiWorld { keyAt(x: number, y: number): string; hasAt(x: number, y: number): boolean; loaded: { has(key: string): boolean } }
+interface Stop { edge: DriveEdge; s: number }
 
 export class Taxis {
   state: 'off' | 'menu' | 'coming' | 'waiting' | 'riding' = 'off';
@@ -150,15 +152,21 @@ export class Taxis {
     if (!this.o.wallet.has(firm.start)) { this.state = 'off'; this.say(t('Not enough money for a taxi (from {fare})', { fare: kc(firm.start) })); return; }
     const stop = this.stopNear(w.x, w.y, 30);
     if (!stop) { this.state = 'off'; this.say(t('No street here for a taxi to stop in')); return; }
+    const reaches = this.pickupNodes(stop.edge);
     let best: TrafficAgent | null = null, bestD = firm.app ? REACH : HAIL;
+    let pickup = stop;
     for (const a of traffic.agents) {
       if (a.car.type !== 'taxi' || a.hired || a.kerb) continue;
       const d = Math.hypot(a.car.x - w.x, a.car.y - w.y);
-      if (d < bestD) { bestD = d; best = a; }
+      if (d >= bestD) continue;
+      const standing = this.stoppedPickup(a, stop);
+      if (!standing && !this.directStop(a, stop) && !reaches.has(a.route.head.v)) continue;
+      bestD = d; best = a; pickup = standing ?? stop;
     }
     // A street taxi isn't called: it has to be one that happens to be passing.
     if (!best && !firm.app) { this.state = 'off'; this.say(t('No free taxi passing by. Wait for one, or order one through an app')); return; }
-    best ??= traffic.spawn((x, y) => this.o.offscreen(x, y) && Math.hypot(x - w.x, y - w.y) > 120, this.o.edgesNear(w.x, w.y, 350), 'taxi');
+    best ??= traffic.spawn((x, y, edge, s) => this.o.offscreen(x, y) && Math.hypot(x - w.x, y - w.y) > 120
+      && (reaches.has(edge.v) || (edge === stop.edge && this.canStopAhead(stop.s - s, edge.speed * 0.6))), this.o.edgesNear(w.x, w.y, 350), 'taxi');
     if (!best) { this.state = 'off'; this.say(t('No taxi free nearby. Try again in a moment')); return; }
     this.firm = firm;
     this.agent = best;
@@ -169,7 +177,48 @@ export class Taxis {
     best.reckless = firm.app;
     if (firm.app) best.car.refit(Math.random, true);
     this.state = 'coming';
-    this.head(stop, true);
+    this.head(pickup, true);
+  }
+
+  // All street ends with a directed way to the pickup. Do this once per booking,
+  // before choosing a free taxi or allocating a new one, rather than promising a
+  // pickup from a disconnected lane and repeatedly planning to its nearest end.
+  private pickupNodes(target: DriveEdge) {
+    const incoming = new Map<string, string[]>();
+    for (const list of this.o.drive.out.values()) for (const edge of list) {
+      const from = incoming.get(edge.v);
+      if (from) from.push(edge.u); else incoming.set(edge.v, [edge.u]);
+    }
+    const reached = new Set([target.u]), queue = [target.u];
+    for (let i = 0; i < queue.length; i++) for (const from of incoming.get(queue[i]) ?? []) {
+      if (reached.has(from)) continue;
+      reached.add(from); queue.push(from);
+    }
+    return reached;
+  }
+
+  private canStopAhead(distance: number, speed: number) {
+    return Number.isFinite(distance) && distance >= -0.5 && (distance > 5 || speed < 0.5);
+  }
+
+  private directStop(a: TrafficAgent, stop: Stop) {
+    const route = a.route, head = route.legs.find((leg) => leg.edge);
+    if (head?.edge !== stop.edge) return false;
+    const s = route.leg === head ? route.s : head.s0;
+    if (stop.s < s - 0.5) return false; // a later loop in the preview isn't a direct stop
+    const before = route.leg === head ? 0 : route.leg.s1 - route.s;
+    return this.canStopAhead(before + stop.s - s, a.speed);
+  }
+
+  // A stopped taxi already at the pickup need not drive a one-way loop merely
+  // because its directed lane differs. Keep the existing boarding distance and
+  // exclude a junction turn, bridge, tunnel or a different ground level.
+  private stoppedPickup(a: TrafficAgent, stop: Stop): Stop | null {
+    const c = a.car, w = this.o.walker, edge = a.route.leg.edge, at = stop.edge.path.at(stop.s);
+    if (!edge || edge.bridge || edge.tunnel || a.speed >= 0.5 || Math.hypot(c.vx, c.vy) >= 0.5
+      || Math.hypot(c.x - w.x, c.y - w.y) >= PICKUP_NEAR || Math.hypot(c.x - at.x, c.y - at.y) >= PICKUP_NEAR
+      || (c.gz !== undefined && w.gz !== undefined && Math.abs(c.gz - w.gz) > 3)) return null;
+    return { edge, s: a.route.s };
   }
 
   // A pillar of light and a bobbing arrow over the taxi that is yours.
@@ -216,11 +265,11 @@ export class Taxis {
   }
 
   // Plan the way to `stop` (or as close to it as the loaded streets go) and set off.
-  private head(stop: { edge: DriveEdge; s: number } | null, final: boolean, to?: { x: number; y: number }) {
+  private head(stop: Stop | null, final: boolean, to?: { x: number; y: number }) {
     const a = this.agent;
     if (!a) return;
     const route = a.route, from = route.head;
-    if (stop && from === stop.edge && route.s < stop.s - 5) {
+    if (stop && this.directStop(a, stop)) {
       route.follow([]);
       a.stop = stop;
       this.final = final;
@@ -273,7 +322,7 @@ export class Taxis {
   // The taxi waiting for you is right there.
   near() {
     const a = this.agent, w = this.o.walker;
-    return this.state === 'waiting' && !!a && Math.hypot(a.car.x - w.x, a.car.y - w.y) < 7;
+    return this.state === 'waiting' && !!a && Math.hypot(a.car.x - w.x, a.car.y - w.y) < PICKUP_NEAR;
   }
 
   enter() {

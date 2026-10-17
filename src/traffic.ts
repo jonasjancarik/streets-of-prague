@@ -121,13 +121,14 @@ export class Traffic {
     this.agents = [];
   }
 
-  // A new car on a random street among `edges` (default: anywhere), where `avoid` allows.
+  // A new car on a random street among `edges` (default: anywhere), where `avoid`
+  // allows the position and directed edge/progress, before the car is allocated.
   prepareSpawn(edges: DriveEdge[], type: string | null = null) {
     const ordinary = type === null;
     return prepareTraffic(edges, (e) => e.path.length * (ordinary ? roadWeight(e.hw) : 1), ordinary);
   }
 
-  spawn(avoid: ((x: number, y: number) => boolean) | null, edges: DriveEdge[] = this.g.edges, type: string | null = null, prepared?: ReturnType<Traffic['prepareSpawn']>): TrafficAgent | null {
+  spawn(avoid: ((x: number, y: number, edge: DriveEdge, s: number) => boolean) | null, edges: DriveEdge[] = this.g.edges, type: string | null = null, prepared?: ReturnType<Traffic['prepareSpawn']>): TrafficAgent | null {
     const r = this.r;
     if (!edges.length) return null;
     // Ordinary cars start more often on the bigger roads (and lean towards them at
@@ -145,7 +146,7 @@ export class Traffic {
       const lorry = kind === 'truck' || kind === 'artic';
       const s = 4 + r() * (edge.path.length - 8);
       const p = edge.path.at(s);
-      if (avoid && !avoid(p.x, p.y)) continue;
+      if (avoid && !avoid(p.x, p.y, edge, s)) continue;
       if (this.agents.some((a) => Math.hypot(a.car.x - p.x, a.car.y - p.y) < (bus ? 20 : lorry ? 24 : 12))) continue;
       // Some of the ordinary bikes and mopeds are delivery couriers, with a box on their back.
       const box = ordinary && !lorry && (kind === 'bike' ? r() < 0.5 : kind === 'moto' && r() < 0.35) ? COURIER_BOXES[Math.floor(r() * COURIER_BOXES.length)] : undefined;
