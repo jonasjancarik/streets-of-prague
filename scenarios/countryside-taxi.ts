@@ -22,15 +22,16 @@ export default {
       await t.wait(2);
       if (waited === 90 && !t.taxi().near) { t.cancelTaxi(); t.orderTaxi(); orders++; }
     }
-    t.check('it comes to you on the countryside\'s roads', t.taxi().near, { waited, orders, ...t.taxi() });
-    t.check('you get in', t.boardTaxi() && t.taxi().state === 'riding', t.taxi());
-    t.taxiTo(9); // Letná, 9 km south
+    if (!t.check('it comes to you on the countryside\'s roads', t.taxi().near, { waited, orders, ...t.taxi() })) return;
+    if (!t.check('you get in', t.boardTaxi() && t.taxi().state === 'riding', t.taxi())) return;
     const from = t.where();
+    if (!t.check('the ride starts outside the built map', !t.builtMap(), from)) return;
+    t.taxiTo(9); // Letná, 9 km south
     let rode = 0;
-    for (; rode < 240 && t.where().lat > 50.1765; rode += 5) await t.wait(5);
+    for (; rode < 240 && !t.builtMap(); rode += 5) await t.wait(5);
     const now = t.where();
     t.check('the taxi sets off for town', t.taxi().state === 'riding' && t.taxi().to === 8, t.taxi());
-    t.check('and drives back into the map', now.lat < 50.1765, { from: from.lat, now: now.lat, rode });
+    t.check('and drives back into the map', t.builtMap(), { from, now, rode });
     await t.shot('countryside-taxi');
   },
 } satisfies Scenario;

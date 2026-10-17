@@ -80,6 +80,8 @@ interface Game {
   streets: DriveGraph;
   // Whether the countryside past the map's edge is being made (?countryside).
   countryside: () => boolean;
+  // Coverage by the prebuilt tiles and their exact extent, excluding countryside.
+  builtMap: (x: number, y: number) => boolean;
   // The last title shown for the part of town, town or village you came into.
   place: () => string | null;
   taxi: { state: string; dest: number | null; key(code: string, onFoot: boolean): boolean; near(): boolean; enter(): boolean; cancel(): void };
@@ -529,6 +531,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
 
     // Whether the game makes countryside past the map's edge (it was opened with ?countryside).
     countryside() { return g.countryside(); },
+    builtMap() { const m = g.me(); return g.builtMap(m.x, m.y); },
 
     // The shortest way by car from the street nearest one place to the street nearest
     // another, through the streets loaded now (those within some 700 m of you): its
