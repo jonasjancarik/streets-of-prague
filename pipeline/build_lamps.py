@@ -41,6 +41,8 @@ from pyproj import Transformer
 from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
 
+import build_cache
+import ipr_open
 import street_lighting
 from osm_area import AREAS, OUT
 
@@ -98,12 +100,12 @@ def download(url=URL, cache=CACHE):
                 r = requests.get(url, params=params, timeout=60)
                 r.raise_for_status()
                 page = r.json()
+                feats = ipr_open.page_features(page, url, offset)
                 break
             except (requests.RequestException, ValueError):
                 if attempt == 4:
                     raise
                 time.sleep(2 ** attempt)
-        feats = page.get("features", [])
         out += [[round(f["geometry"]["x"], 7), round(f["geometry"]["y"], 7), f["attributes"]["ctmtp_kod"]]
                 for f in feats if f.get("geometry")]
         offset += len(feats)
@@ -111,7 +113,7 @@ def download(url=URL, cache=CACHE):
         if not feats or not page.get("exceededTransferLimit"):
             break
     print()
-    cache.write_text(json.dumps(out))
+    build_cache.atomic(cache, json.dumps(out).encode())
     return out
 
 

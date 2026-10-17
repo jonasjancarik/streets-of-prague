@@ -5,8 +5,8 @@ other, each tried again a few times, with a short pause between them. What comes
 is kept in a JSON file under .cache/, so nothing is fetched twice; delete the file to
 fetch it again.
 
-ipr_greenery.py and ipr_utility.py use it. (ipr_trees.py and build_lamps.py have the
-same loop of their own, from before this was written.)
+ipr_greenery.py and ipr_utility.py use it. ipr_trees.py and build_lamps.py retain
+their own download loops and share the response checks here.
 """
 
 import json
@@ -21,6 +21,21 @@ PAGE = 2000
 PAUSE = 0.25  # seconds between pages
 
 
+def page_features(page, source, offset):
+    """Validate a query response before treating it as part of a complete layer."""
+    context = f"{source} at offset {offset}"
+    if not isinstance(page, dict):
+        raise ValueError(f"{context}: expected a feature response, got {page!r}")
+    if "error" in page:
+        raise ValueError(f"{context}: {page['error']}")
+    features = page.get("features")
+    if not isinstance(features, list):
+        raise ValueError(f"{context}: response has no features list: {page!r}")
+    if not features and page.get("exceededTransferLimit"):
+        raise ValueError(f"{context}: empty page still has exceededTransferLimit")
+    return features
+
+
 def pages(name, where="1=1", fields="objectid", what="features"):
     """Every feature of the layer `name` that `where` picks, page by page: their
     attributes (`fields`, comma separated) and geometry in WGS84."""
@@ -33,14 +48,12 @@ def pages(name, where="1=1", fields="objectid", what="features"):
                 r = requests.get(BASE.format(name), params=params, timeout=120)
                 r.raise_for_status()
                 page = r.json()
-                if "error" in page:
-                    raise ValueError(page["error"])
+                feats = page_features(page, BASE.format(name), offset)
                 break
             except (requests.RequestException, ValueError):
                 if attempt == 4:
                     raise
                 time.sleep(2 ** attempt)
-        feats = page.get("features", [])
         yield from feats
         offset += len(feats)
         print(f"\r{offset} {what}", end="", flush=True)

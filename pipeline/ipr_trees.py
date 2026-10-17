@@ -19,6 +19,9 @@ import numpy as np
 import requests
 import shapely
 
+import build_cache
+import ipr_open
+
 URL = "https://mp.iprpraha.cz/arcgis/rest/services/Hosted/OPK_CUR_OPK_SMZ_VP_B/FeatureServer/0/query"
 CACHE = Path(__file__).parent / ".cache" / "trees" / "trees.json"
 DUPLICATE = 2.5
@@ -40,12 +43,12 @@ def download():
                 r = requests.get(URL, params=params, timeout=60)
                 r.raise_for_status()
                 page = r.json()
+                feats = ipr_open.page_features(page, URL, offset)
                 break
             except (requests.RequestException, ValueError):
                 if attempt == 4:
                     raise
                 time.sleep(2 ** attempt)
-        feats = page.get("features", [])
         out += [[round(x, 7), round(y, 7), KINDS.get(f["attributes"].get("kod_drevin"), 0)]
                 for f in feats if f.get("geometry") for x, y in f["geometry"]["points"]]
         offset += len(feats)
@@ -53,7 +56,7 @@ def download():
         if not feats or not page.get("exceededTransferLimit"):
             break
     print()
-    CACHE.write_text(json.dumps(out, separators=(",", ":")))
+    build_cache.atomic(CACHE, json.dumps(out, separators=(",", ":")).encode())
     return out
 
 

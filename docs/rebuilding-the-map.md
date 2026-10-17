@@ -14,6 +14,9 @@ The shared IPR building parser cache follows its parser helpers and constants to
 so changing how source rings are read reparses the sheets on the next build.
 Downloaded terrain sheets become cached sources only after their full GML file has
 been written; an interrupted write is downloaded again on the next run.
+IPR feature downloads retry service errors, malformed responses and empty pages
+that still promise more results. If retries fail, they stop without caching an empty
+or partial layer. The tree and lamp caches are also published only after a full write.
 
 ## Before starting
 
