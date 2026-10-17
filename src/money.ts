@@ -56,7 +56,10 @@ export class Wallet {
   ticketLeft(now: number) {
     if (!this.ticket) return 0;
     const used = (((now - this.ticket.from) % WEEK) + WEEK) % WEEK;
-    return Math.max(0, this.ticket.minutes * 60 - used);
+    const left = this.ticket.minutes * 60 - used;
+    // The clock repeats every week; an expired ticket must never become valid again.
+    if (left <= 0) { this.ticket = null; return 0; }
+    return left;
   }
 
   hasTicket(now: number) { return this.ticketLeft(now) > 0; }

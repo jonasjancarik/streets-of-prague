@@ -162,6 +162,9 @@ that without a new renderer.
   metro ride): pay the 1,200 Kč fine (B) within 5 seconds or get off and run, and the inspector
   chases you on foot (`src/inspector.ts`). After 10 seconds, or at once if you get into a
   vehicle, they phone the police: one star, and if you're then arrested the fine is 1,500 Kč.
+  Tickets stay valid across Sunday night; once expired, they cannot become valid
+  again when the weekly clock repeats. At interchanges, the ticket choices remain
+  available while any metro line is running.
   Taxis need money for the fare, and let you out when it reaches your balance. Shared bikes are
   paid as you ride (below).
 - **Taxis**: on foot near a street, press T (on touch, "Taxi") and pick how to get one

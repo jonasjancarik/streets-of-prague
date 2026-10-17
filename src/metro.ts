@@ -170,7 +170,7 @@ export class Metro {
       const [act, arg] = (b.dataset.act ?? '').split(':');
       if (act === 'close') this.close();
       if (act === 'tab') { this.tab = +arg; this.sel = 0; this.render(); }
-      if (act?.startsWith('buy:')) this.ticket(Number(act.slice(4)));
+      if (act === 'buy') this.ticket(Number(arg));
       if (act === 'nobuy') this.ticket(null);
       if (act === 'go') this.go(this.tabLine().stations[+arg].name);
       if (act === 'skip') this.skip();
@@ -228,7 +228,7 @@ export class Metro {
     this.from = station;
     this.active = true;
     this.dodging = false;
-    const shut = station.lines.find(({ line }) => this.perHour(line) === 0);
+    const shut = station.lines.every(({ line }) => this.perHour(line) === 0) ? station.lines[0] : undefined;
     this.phase = this.fares && !this.fares.valid() && !shut ? 'ticket' : 'pick';
     this.choice = 1;
     this.note = shut ? this.shutNote(shut.line) : '';
