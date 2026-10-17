@@ -26,9 +26,10 @@ export class CountrysideTiles {
   // good if it can't be (the map then ends where it always did).
   box: Bounds | null = null;
   times: number[] = []; // ms the worker took over each of the last tiles
-  // Done once the file has been opened or has failed to: `box` is then as it will stay.
+  // Done once the file has been opened or has failed to. A later terminal worker
+  // failure can withdraw the coverage again.
   readonly opened: Promise<void>;
-  private readonly worker: Worker;
+  private readonly worker: Worker | null;
   private readonly waiting = new Map<number, { resolve: (r: CountrysideResponse) => void; reject: (e: Error) => void }>();
   private next = 0;
   private places: { x: number; y: number; list: Place[] } | null = null;
@@ -38,7 +39,14 @@ export class CountrysideTiles {
 
   constructor(index: MapIndex, area: string) {
     this.index = index;
-    this.worker = new Worker(new URL('./countrysideWorker.ts', import.meta.url), { type: 'module' });
+    try {
+      this.worker = new Worker(new URL('./countrysideWorker.ts', import.meta.url), { type: 'module' });
+    } catch (error) {
+      this.worker = null;
+      this.fail(error instanceof Error ? error : new Error(String(error)));
+      this.opened = Promise.resolve();
+      return;
+    }
     this.worker.onmessage = (event: MessageEvent<CountrysideResponse>) => {
       const job = this.waiting.get(event.data.id);
       this.waiting.delete(event.data.id);
@@ -48,18 +56,34 @@ export class CountrysideTiles {
     // A worker that can't start (its script didn't load) answers nothing: everyone
     // waiting is told so, and the map ends where it always did.
     this.worker.onerror = (event) => {
-      this.broken = new Error(`The countryside's worker failed: ${event.message || 'its script did not load'}`);
-      for (const job of this.waiting.values()) job.reject(this.broken);
-      this.waiting.clear();
+      event.preventDefault?.();
+      this.fail(new Error(`The countryside's worker failed: ${event.message || 'its script did not load'}`));
     };
+    this.worker.onmessageerror = () => this.fail(new Error('The countryside worker response could not be read'));
     const [w, s, e, n] = index.bbox_wgs84;
     this.opened = this.ask({ type: 'open', url: new URL(countrysideUrl, location.href).href, tiles: new URL(dataUrl(area, 'tiles/'), location.href).href,
       elevation: elevationUrl && index.terrain ? elevationUrl : null,
       leaving: index.leaving ? new URL(dataUrl(area, 'leaving.json'), location.href).href : null,
       setup: { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows, size: index.size,
         grid: index.terrain && { n: index.terrain.n, step: index.terrain.step } } })
-      .then((r) => { if ('box' in r) this.box = limited(r.box, index); })
-      .catch((err) => console.warn('The countryside past the map is not available', err));
+      .then((r) => { if (!this.broken && 'box' in r) this.box = limited(r.box, index); })
+      .catch((err) => this.fail(err));
+  }
+
+  // Terminal worker failures end countryside availability. Ordinary tile errors
+  // stay local to their request, so a later fetch can still retry them.
+  private fail(error: Error) {
+    if (this.broken) return;
+    this.broken = error;
+    console.warn('The countryside past the map is not available', error);
+    this.box = null;
+    this.places = null;
+    if (this.worker) {
+      this.worker.onmessage = this.worker.onerror = this.worker.onmessageerror = null;
+      this.worker.terminate();
+    }
+    for (const job of this.waiting.values()) job.reject(error);
+    this.waiting.clear();
   }
 
   private ask(message: Ask) {
@@ -67,7 +91,11 @@ export class CountrysideTiles {
     if (this.broken) return Promise.reject(this.broken);
     return new Promise<CountrysideResponse>((resolve, reject) => {
       this.waiting.set(id, { resolve, reject });
-      this.worker.postMessage({ ...message, id });
+      try { this.worker!.postMessage({ ...message, id }); }
+      catch (error) {
+        this.waiting.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
 
@@ -112,7 +140,7 @@ export class CountrysideTiles {
     if (!this.asking && (!this.places || Math.hypot(x - this.places.x, y - this.places.y) > 500)) {
       this.asking = true;
       this.ask({ type: 'places', x, y, r: PLACES_WITHIN })
-        .then((r) => { if ('places' in r) this.places = { x, y, list: r.places }; })
+        .then((r) => { if (!this.broken && 'places' in r) this.places = { x, y, list: r.places }; })
         .catch((err) => console.warn('The place names round here were not read', err))
         .finally(() => { this.asking = false; });
     }

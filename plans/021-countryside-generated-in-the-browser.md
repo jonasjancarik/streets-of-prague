@@ -264,6 +264,17 @@ elevation data's sources if step 4 goes ahead.
 
 ## Result
 
+**Worker failure handling, 17 October 2026:** if the optional countryside worker
+cannot start, crashes, or sends a response the browser cannot deserialize, the
+client logs the terminal reason once, clears its advertised coverage and place
+names, settles pending requests and terminates the worker. A reply resolved just before the failure cannot publish
+coverage or names afterwards. This also prevents place-name requests from retrying
+every frame against a dead worker. An ordinary tile-fetch error still rejects only
+that request and can be retried on the same worker; a synchronous dispatch error
+removes its waiter. `node scripts/check-countryside-worker.mjs` checks these cases
+offline with controlled worker events. This is lifecycle coverage, not a new live
+countryside driving or network-timeout check.
+
 **Step 1, the prototype, 4 October 2026** (`?countryside`; `src/countryside.ts`,
 `src/countrysideWorker.ts`, `src/countrysideTiles.ts`, `scripts/check-countryside.mjs`).
 
