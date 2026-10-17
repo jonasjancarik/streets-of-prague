@@ -296,7 +296,7 @@ def read_sheet(job):
     ox, oy = origin
     out = []
     stats = {}
-    version = [1, build_cache.function_key(buildings), NS, SURFACES, key[3]]
+    version = [2, build_cache.reach_key(__file__, ["buildings"]), key[3]]
     raw_cache = CACHE / "source" / f"{name}.buildings.pkl"
     for bid, surfaces in build_cache.source_records(path, raw_cache, version, buildings, stats):
         pts = np.vstack([v for _, v, _ in surfaces])

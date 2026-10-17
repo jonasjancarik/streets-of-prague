@@ -13,6 +13,7 @@ import build_cache
 import build_tiles
 import chunk_cache
 import dtm
+import dtm_walls
 import ipr_trees
 import ipr_buildings
 import ipr_terrain
@@ -131,6 +132,7 @@ class ChunkBuildTests(unittest.TestCase):
                                  (build_tiles, "OUT", self.out), (chunk_cache, "OUT", self.out),
                                  (build_tiles, "PBF", self.pbf), (ipr_trees, "CACHE", self.trees),
                                  (ipr_trees, "_table", None), (dtm, "PACKAGES", self.root / "dtm"),
+                                 (dtm_walls, "LINES", self.root / "dtm_lines"),
                                  (build_tiles, "_sections", None),
                                  (build_tiles, "AREAS", {"ujezd": (14.4, 50.08, 14.4005, 50.0805)})]:
             self.stack.enter_context(patch.object(obj, attr, value))
@@ -139,6 +141,9 @@ class ChunkBuildTests(unittest.TestCase):
         self.stack.enter_context(patch.object(dtm, "surfaces", return_value={}))
         self.stack.enter_context(patch.object(dtm, "streets", return_value=Polygon()))
         self.stack.enter_context(patch.object(dtm, "land", return_value={}))
+        self.stack.enter_context(patch.object(dtm, "parking", return_value=Polygon()))
+        self.stack.enter_context(patch.object(dtm, "covered", side_effect=lambda lon, lat: dtm.np.zeros_like(lon, dtype=bool)))
+        self.stack.enter_context(patch.object(dtm_walls, "survey", return_value=[]))
 
         # The subprocess module is shared: assembly also asks Git for provenance.
         def osmium(cmd, check, *, cwd=None, capture_output=False, text=False):
@@ -224,6 +229,39 @@ class ChunkBuildTests(unittest.TestCase):
         with patch.object(dtm, "streets", side_effect=AssertionError("unused DTM")):
             self.run_build("--layers", "buildings,parking")
         self.assertEqual(self.outputs(), expected)
+
+    def test_chunk_trial_requires_an_existing_matching_grid_before_work(self):
+        with patch.object(build_tiles, "setup", side_effect=AssertionError("started work")), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                self.run_build("--chunks", "0,0")
+        self.run_build()
+        before = (layers.folder("ujezd") / "meta.json").read_bytes()
+        expected = self.outputs()
+        with patch.object(build_tiles, "setup", side_effect=AssertionError("started work")), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                self.run_build("125", "--chunks", "0,0")
+        self.assertEqual((layers.folder("ujezd") / "meta.json").read_bytes(), before)
+        self.assertEqual(self.outputs(), expected)
+
+    def test_invalid_chunk_selection_is_rejected_before_work(self):
+        self.run_build()
+        before = (layers.folder("ujezd") / "meta.json").read_bytes()
+        with patch.object(build_tiles, "setup", side_effect=AssertionError("started work")), contextlib.redirect_stderr(io.StringIO()):
+            for selection in ("1,0", "-1,0", "0,1", "0", "0,0,0", "x,0"):
+                with self.subTest(selection=selection), self.assertRaises(SystemExit):
+                    self.run_build(f"--chunks={selection}")
+        self.assertEqual((layers.folder("ujezd") / "meta.json").read_bytes(), before)
+
+    def test_matching_grid_trial_only_rebuilds_the_selected_chunk(self):
+        with patch.object(build_tiles, "AREAS", {"ujezd": (14.4, 50.08, 14.404, 50.0805)}):
+            self.run_build("250", "250")
+            paths = [layers.chunk_path("ujezd", name, 1, 0) for name in layers.CHUNKED]
+            before = {p: p.read_bytes() for p in paths}
+            with patch.object(build_tiles, "build_chunk", wraps=build_tiles.build_chunk) as build:
+                self.run_build("250", "250", "--chunks", "0,0")
+            self.assertEqual(build.call_count, 1)
+            self.assertEqual(build.call_args.args[0][2:4], (0, 0))
+            self.assertEqual({p: p.read_bytes() for p in before}, before)
 
     def test_strict_assembly_preflight_keeps_index_when_dependencies_are_stale(self):
         self.run_build()

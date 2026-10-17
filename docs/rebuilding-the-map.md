@@ -6,6 +6,15 @@ Written in the night of 5–6 October 2026, short of time: the order and the inp
 below were read from the code; the swap and the timings are marked where they were
 not tried. The README's "Building the map" has the background.
 
+A `build_tiles.py --chunks "ci,cj ..."` trial keeps the chunks it does not name. It
+requires an existing build with the same area, projection, tile size and chunk grid;
+build every layer without `--chunks` first when changing that grid. Malformed or
+out-of-grid chunk coordinates stop before downloads, cache writes or metadata changes.
+The shared IPR building parser cache follows its parser helpers and constants too,
+so changing how source rings are read reparses the sheets on the next build.
+Downloaded terrain sheets become cached sources only after their full GML file has
+been written; an interrupted write is downloaded again on the next run.
+
 ## Before starting
 
 - Run from the main checkout, after the branches are merged, with no other pipeline

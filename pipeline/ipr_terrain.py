@@ -136,7 +136,7 @@ def download(name, items):
     data = urllib.request.urlopen(f"https://www.arcgis.com/sharing/rest/content/items/{items[name]}/data").read()
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         member = next(m for m in z.namelist() if m.lower().endswith(".gml"))
-        path.write_bytes(z.read(member))
+        build_cache.atomic(path, z.read(member))
     return path
 
 

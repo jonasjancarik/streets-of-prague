@@ -490,9 +490,19 @@ def main() -> None:
         "size": [round(x1 - x0, 2), round(y1 - y0, 2)], "origin": [round(-x0, 2), round(-y0, 2)],
         "tile": T, "chunk_tiles": C, "cols": cols, "rows": rows,
     }
+    todo = layers.chunks(meta)
+    try:
+        only = {tuple(int(v) for v in c.split(",")) for c in args.chunks.split()}
+    except ValueError:
+        ap.error("chunks must be pairs of integers, ci,cj separated by spaces")
+    if any(len(c) != 2 for c in only):
+        ap.error("chunks must be pairs of integers, ci,cj separated by spaces")
+    outside = only - set(todo)
+    if outside:
+        ap.error("chunks outside this area's grid: " + ", ".join(f"{ci},{cj}" for ci, cj in sorted(outside)))
     old = layers.read_meta(area)
-    if wanted != set(layers.CHUNKED) and (not old or layers.grid_key(old) != layers.grid_key(meta)):
-        ap.error("the tiles or chunks aren't the ones the other layers were built with: build all layers")
+    if (wanted != set(layers.CHUNKED) or only) and (not old or layers.grid_key(old) != layers.grid_key(meta)):
+        ap.error("the tiles or chunks aren't the ones already built: build all layers without --chunks first")
     meta["parking"] = bool(load_sections(area)) if "parking" in wanted else old["parking"]
 
     setup()
@@ -515,7 +525,6 @@ def main() -> None:
             dtm_walls.lines()
         ipr_trees.download()
 
-    todo = layers.chunks(meta)
     settings = {"margin": MARGIN, "road_tolerance": ROAD_TOLERANCE, "parsed_version": PARSED_VERSION}
     # Preserve the OSM input for parking-only updates, which don't need to cut it.
     meta["build_source"] = area_pbf if wanted & {"buildings", "ground", "streets"} else (old or {}).get("build_source")
@@ -523,7 +532,6 @@ def main() -> None:
     keys = chunk_cache.inputs(area, meta, wanted, area_pbf, settings)
     jobs = []
     reused = 0
-    only = {tuple(int(v) for v in c.split(",")) for c in args.chunks.split()}
     for ci, cj in todo:
         if only and (ci, cj) not in only:
             continue

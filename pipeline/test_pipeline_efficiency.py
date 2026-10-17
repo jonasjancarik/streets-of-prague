@@ -4,6 +4,7 @@ import contextlib
 import io
 import tempfile
 import unittest
+import zipfile
 from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
@@ -20,6 +21,12 @@ import structures
 
 
 class ExtractionTests(unittest.TestCase):
+    def setUp(self):
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(patch.object(dtm, "parking", return_value=Polygon()))
+        stack.enter_context(patch.object(dtm, "covered", side_effect=lambda lon, lat: np.zeros_like(lon, dtype=bool)))
+
     def features(self):
         geoms = [box(14.4001, 50.0801, 14.4003, 50.0803),
                  box(14.4001, 50.0801, 14.4002, 50.0802),
@@ -122,6 +129,25 @@ class IprSourceTests(unittest.TestCase):
         self.stack.enter_context(patch.object(ipr_buildings, "krovak_to_local", IdentityTransform))
         self.stack.enter_context(patch.object(ipr_terrain, "krovak_to_local", IdentityTransform))
 
+    def test_failed_terrain_download_does_not_cache_a_partial_source(self):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w") as zipped:
+            zipped.writestr("sheet.gml", "complete terrain source")
+        write_bytes = Path.write_bytes
+
+        def interrupted(path, raw):
+            write_bytes(path, raw[:3])
+            raise OSError("simulated interrupted write")
+
+        with patch.object(ipr_terrain.urllib.request, "urlopen", side_effect=lambda _: io.BytesIO(archive.getvalue())) as fetch:
+            with patch.object(Path, "write_bytes", interrupted), self.assertRaisesRegex(OSError, "interrupted"):
+                ipr_terrain.download("TER_test", {"TER_test": "fixture"})
+            self.assertFalse((self.root / "TER_test_gml.gml").exists())
+            path = ipr_terrain.download("TER_test", {"TER_test": "fixture"})
+            self.assertEqual(path.read_text(), "complete terrain source")
+            self.assertEqual(ipr_terrain.download("TER_test", {}), path)
+            self.assertEqual(fetch.call_count, 2)
+
     def test_building_xml_is_shared_between_area_projections(self):
         path = self.root / "sheet.gml"
         path.write_text('''<root xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
@@ -151,6 +177,20 @@ class IprSourceTests(unittest.TestCase):
             self.assertEqual(parse.call_count, 1)
         np.testing.assert_array_equal(first[2], second[2])
         self.assertFalse(np.array_equal(first[2], shifted[2], equal_nan=True))
+
+    def test_building_source_cache_tracks_parser_helpers(self):
+        path = self.root / "sheet.gml"
+        path.write_text('''<root xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
+<bldg:Building gml:id="test"><bldg:RoofSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 185 9 1 185 1 9 185 1 1 185</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:RoofSurface></bldg:Building></root>''')
+        source = self.root / "ipr_buildings.py"
+        original = Path(ipr_buildings.__file__).read_text()
+        source.write_text(original)
+        with patch.object(ipr_buildings, "__file__", str(source)), \
+                patch.object(ipr_buildings.etree, "iterparse", wraps=ipr_buildings.etree.iterparse) as parse:
+            ipr_buildings.read_sheet(("BD3_test", str(path), "first-area", 250, [0, 0]))
+            source.write_text(original.replace("np.allclose(v[0], v[-1])", "np.array_equal(v[0], v[-1])"))
+            ipr_buildings.read_sheet(("BD3_test", str(path), "second-area", 250, [0, 0]))
+        self.assertEqual(parse.call_count, 2)
 
     def test_bridge_cache_tracks_shapefile_components(self):
         bridge_dir = self.root / "mosty"
