@@ -112,6 +112,12 @@ export class Traffic {
   // A driver sounding the horn at you; `long` after a few short ones.
   onHonk?: (car: Car, long: boolean) => void;
   private kerbAgents: TrafficAgent[] = [];
+  private mergeAgents = new Map<Car, TrafficAgent>();
+  private mergeOrder = new Map<Car, number>();
+  private mergeMemo = new Map<Car, number>();
+  // a/b: current and immediately next road; d: signed distance to road start, e: to its trimmed entry.
+  private mergeHere: { a?: string; b?: string; da: number; db: number; ea: number; eb: number } = { da: 0, db: 0, ea: 0, eb: 0 };
+  private mergeThere: { a?: string; b?: string; da: number; db: number; ea: number; eb: number } = { da: 0, db: 0, ea: 0, eb: 0 };
 
   constructor(graph: DriveGraph, scene: THREE.Scene, rng: () => number, count: number) {
     this.g = graph;
@@ -215,13 +221,64 @@ export class Traffic {
     this.agents.splice(this.agents.indexOf(agent), 1);
   }
 
+  // Signed road distance stays continuous as a connector hands over to its road.
+  private mergeProgress(route: Route, state: { a?: string; b?: string; da: number; db: number; ea: number; eb: number }) {
+    state.a = state.b = undefined;
+    let d = -route.s, roads = 0;
+    for (let i = 0; i < route.legs.length; i++) {
+      const leg = route.legs[i];
+      if (i) d -= leg.s0;
+      if (leg.edge) {
+        if (roads++ >= (route.leg.edge ? 2 : 1)) break;
+        if (roads === 1) { state.a = leg.edge.id; state.da = d; state.ea = d + leg.s0; }
+        else { state.b = leg.edge.id; state.db = d; state.eb = d + leg.s0; }
+      }
+      d += leg.s1;
+    }
+  }
+
+  // Positive means this car follows the other into a nearby shared lane.
+  private mergeDistance(a: TrafficAgent, car?: Car) {
+    if (car?.mode !== 'traffic') return 0;
+    const cached = this.mergeMemo.get(car);
+    if (cached !== undefined) return cached;
+    const other = this.mergeAgents.get(car);
+    if (!other) { this.mergeMemo.set(car, 0); return 0; }
+    if (a.route.leg.edge && a.route.leg.edge.id === other.route.leg.edge?.id) {
+      this.mergeMemo.set(car, 0);
+      return 0;
+    }
+    const here = this.mergeHere, there = this.mergeThere;
+    this.mergeProgress(a.route, here); this.mergeProgress(other.route, there);
+    let common = 0, delta = 0, entry = 0, sharedId = '';
+    if (here.a && here.a === there.a) { common++; sharedId = here.a; delta = here.da - there.da; entry = here.ea; }
+    if (here.a && here.a === there.b) { common++; sharedId = here.a; delta = here.da - there.db; entry = here.ea; }
+    if (here.b && here.b === there.a) { common++; sharedId = here.b; delta = here.db - there.da; entry = here.eb; }
+    if (here.b && here.b === there.b) { common++; sharedId = here.b; delta = here.db - there.db; entry = here.eb; }
+    // The same forward route horizon used below by Route.ahead, not straight-line nearness.
+    const horizon = a.car.spec.L / 2 + 9 + a.speed * 1.6;
+    // A stopped car still on a different approach does not reserve the future junction.
+    const waitingBeforeMerge = other.speed < 0.3 && other.route.leg.edge && other.route.leg.edge.id !== sharedId;
+    const value = common !== 1 || entry > horizon || waitingBeforeMerge ? 0
+      : Math.abs(delta) > 1e-6 ? delta
+      : this.mergeOrder.get(car)! < this.mergeOrder.get(a.car)! ? 1e-6 : -1e-6;
+    this.mergeMemo.set(car, value);
+    return value;
+  }
+
   // near(x, y, r): the obstacles ({ x, y, z, r, vx, vy, kind }) around a point.
   update(dt: number, near: (x: number, y: number, radius: number) => Iterable<Obstacle>) {
     // The cars out of their lanes, going round something: oncoming traffic stops for them.
     const out = this.swerving;
     out.clear();
-    for (const a of this.agents) if (Math.abs(a.off) > 0.3) out.add(a.car);
+    this.mergeAgents.clear(); this.mergeOrder.clear();
+    for (let i = 0; i < this.agents.length; i++) {
+      const a = this.agents[i];
+      if (Math.abs(a.off) > 0.3) out.add(a.car);
+      this.mergeAgents.set(a.car, a); this.mergeOrder.set(a.car, i);
+    }
     for (const a of this.agents) {
+      this.mergeMemo.clear();
       const c = a.car, L = c.spec.L, W = c.spec.W;
       const look = a.route.lookahead(6 + a.speed * 1.2);
       // Cyclists keep to their own pace, whatever the limit.
@@ -252,9 +309,14 @@ export class Traffic {
         if (o.z !== undefined && c.gz !== undefined && Math.abs(o.z - c.gz) > 3) continue;
         const dx = o.x - c.x, dy = o.y - c.y;
         if (Math.abs(dx) > reach + 8 || Math.abs(dy) > reach + 8) continue;
+        const ov = Math.hypot(o.vx, o.vy);
+        const merge = this.mergeDistance(a, o.car);
+        if (merge > 0 && o.car && ov >= 0.3) {
+          const d = merge - L / 2 - o.car.spec.L / 2;
+          if (d < gap) { gap = d; blocker = o; }
+        }
         const ahead = dx * fx + dy * fy;
         const side = dx * fy - dy * fx; // + = to the right
-        const ov = Math.hypot(o.vx, o.vy);
         let lat = (o.x - here.x) * hy - (o.y - here.y) * hx, along = (o.x - here.x) * hx + (o.y - here.y) * hy;
         if (o.kind === 'car' && o.car?.mode !== 'traffic' && ov < 0.3) {
           // Standing: how far along the lane it is and how far to its side, round the bends.
@@ -306,7 +368,7 @@ export class Traffic {
             const on = driver?.route.leg.edge, current = a.route.leg.edge;
             const next = a.route.legs.find((l) => l.edge && l.edge.id !== current?.id)?.edge;
             // A streamed-out lane can still be in a route when a new copy loads.
-            if (!on || (on.id !== current?.id && on.id !== next?.id)) continue;
+            if ((!on || (on.id !== current?.id && on.id !== next?.id)) && !(merge > 0)) continue;
           }
         }
         // Near the lookahead point too, so cars see what's round the corner.
@@ -316,9 +378,9 @@ export class Traffic {
           const cos = (o.vx * fx + o.vy * fy) / ov;
           // Oncoming traffic in its own lane is not in the way, unless it has pulled out
           // to get round something.
-          if (cos < -0.5 && Math.abs(side) > 0.8 && !(o.car && out.has(o.car) && inPath)) continue;
+          if (cos < -0.5 && Math.abs(side) > 0.8 && !(o.car && out.has(o.car) && inPath) && !(merge > 0)) continue;
           // Crossing traffic: give way to cars coming from the right only.
-          if (Math.abs(cos) < 0.6 && side < -0.5 && ahead > L) continue;
+          if (Math.abs(cos) < 0.6 && side < -0.5 && ahead > L && !(merge > 0)) continue;
         }
         const d = ahead - L / 2 - o.r;
         if (d < gap) { gap = d; blocker = o; }

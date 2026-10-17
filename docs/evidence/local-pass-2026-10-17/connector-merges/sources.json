@@ -1,0 +1,29 @@
+{
+  "baseline": {
+    "file": "baseline-traffic.ts.txt",
+    "source_commit": "22deab55a10fb8019c5a42b98e95399af921ee79",
+    "sha256": "f3843d7d1d66dc23541db590d534ff6f02bae076bbbceefc1e8a6f1bd6299510"
+  },
+  "dependencies": {
+    "src/car.ts": "d67a4ef048e0bca8d3b4bf9ddaf2ab3f2fef18cae0af745cdc76f5f885276264",
+    "src/network.ts": "69571265c01602cd5a7cb362db889a24cb7b45966589fd1d31c4c8c154f74a95",
+    "public/cars.glb": "3ceb799170fdee3a6eccab25c541275415b8870e8a14c5779f559970fc8b3545"
+  },
+  "environment": {
+    "node": "v26.5.0",
+    "three": "0.186.1",
+    "typescript": "5.9.3"
+  },
+  "method": {
+    "dt_seconds": 0.016666666666666666,
+    "duration_seconds": 60,
+    "body_metric": "minimum Euclidean distance between actual Car.circles, minus both Car.r values; only live car pairs",
+    "gpu": false,
+    "external_network": false
+  },
+  "candidate_v5": {
+    "file": "candidate-v5.ts.txt",
+    "sha256": "31fe647ba28b3cbc06b506b076c2fc277aa1a37c58fc95def7a73d9bc345f8b7",
+    "status": "Candidate v5 retained as inert evidence. Earlier release-collision claim withdrawn after correcting inactive-actor measurement."
+  }
+}

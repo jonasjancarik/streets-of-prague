@@ -126,6 +126,27 @@ later in the route preview does not turn crossing traffic into a queue.
 The comparison uses directed edge IDs, so routes retained while a tile leaves and
 reloads still recognise cars on the same lane.
 
+**Merging traffic.** Cars on separate approaches also compare distance along their
+routes to a shared current or immediately next road. A moving car already ahead
+can make the other brake before their junction curves meet. The distance stays
+continuous when a car enters the road. This applies only within the existing
+forward route horizon; a stopped car on a different approach does not reserve a
+future junction. Stationary connector cars still use the ordinary path checks,
+and cars already on the same road keep the existing following and lateral rules.
+The lookup uses live agents and memoizes each encountered car during the current
+car's step, without taking a new route-position snapshot.
+
+`node scripts/check-traffic-merges.mjs` checks actual car bodies across 360 merge
+cases plus yielding, pavement adoption, distant/winding approaches and held-car
+release controls. Two pre-existing bus-turn overlaps remain on a 2 m outgoing
+road with a right-angle exit; the check reports them and prevents their recorded
+envelope from worsening. It does not claim every case is collision-free.
+The [frozen evidence and portable replay](evidence/local-pass-2026-10-17/connector-merges/README.md)
+also correct an earlier false collision measurement that included a removed car.
+In a 46-car Node CPU comparison, the paired median update cost increased by
+0.01166 ms at the captured merge and 0.17182 ms in a packed synthetic stress case.
+These are update-cost measurements, not FPS or live frame-pacing claims.
+
 **Buses off their line.** `BusRun` (`src/buses.ts`) judges a street shorter than 25 m
 together with the best street after it, and where no street out of a junction lies
 along the line it looks for the shortest way by street (2.5 km at most) to a street
