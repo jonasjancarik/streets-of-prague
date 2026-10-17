@@ -407,7 +407,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   zero restores the same scattered banks as on dry streets.
   Width, spacing, height, density and sampling are adjustable and saved in this browser;
   Reset restores both modes' defaults. The legacy WebGL renderer retains the layered
-  banks. `node scripts/check-local-mist.mjs` checks wall occlusion, viewing a bank
+  banks. Saved tuning values are limited to each control's range; invalid numbers
+  keep the defaults (`node scripts/check-mist-settings.mjs`).
+  `node scripts/check-local-mist.mjs` checks wall occlusion, viewing a bank
   from inside, MSAA changes, resizing, stable placement and denser river mist at
   water-surface height in the real WebGPU renderer.
   The fog of

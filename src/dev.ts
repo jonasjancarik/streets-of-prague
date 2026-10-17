@@ -374,7 +374,10 @@ function setupMist($: (id: string) => HTMLElement, weather: { get: () => string;
   const requested = new URLSearchParams(location.search).get('mist');
   try {
     const saved = JSON.parse(localStorage.getItem(MIST_KEY) ?? 'null') as (Partial<Mist> & { mode?: MistMode; volume?: Partial<LocalMistSettings> }) | null;
-    if (saved) for (const s of MIST_SLIDERS) if (typeof saved[s.key] === 'number') MIST[s.key] = saved[s.key]!;
+    for (const s of MIST_SLIDERS) {
+      const value = saved?.[s.key];
+      if (typeof value === 'number' && Number.isFinite(value)) MIST[s.key] = Math.max(s.min, Math.min(s.max, value));
+    }
     if (!requested && (saved?.mode === 'sheets' || saved?.mode === 'volume')) MIST_MODE.value = saved.mode;
     for (const s of VOLUME_SLIDERS) {
       const value = saved?.volume?.[s.key];
