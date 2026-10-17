@@ -192,6 +192,7 @@ that without a new renderer.
   lifting), the handbrake and "Get out"; "Back on road" is top right, under the
   sound and settings buttons. On foot, “Jump” works even at a tram stop; waiting
   has its own button. Long HUD lists scroll within a compact panel. Pinch the map to zoom (`src/touch.ts`).
+  Scroll over the map to zoom; scrolling a menu leaves the camera unchanged.
   Switching windows or apps releases held controls, including the horn and water
   cannon. Touch controls also release when the browser loses their pointer capture.
   Releasing a movement key in a developer field still stops movement; scenario

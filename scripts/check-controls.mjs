@@ -185,3 +185,37 @@ button(15, false); tick(); button(14, true); tick();
 assert.equal(select.selectedIndex, 0);
 assert.equal(changes, 2);
 console.log('Controls: lost capture, interrupted holds/pinches, background gamepad polling, disconnect, dialog focus and select navigation passed');
+
+// Use the production wheel registration with a minimal DOM propagation model:
+// overlay events bubble to window, while the canvas is their sibling.
+const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+const wheelSource = main.match(/(?:window|renderer\.domElement)\.addEventListener\('wheel',[\s\S]*?\}, \{ passive: true \}\);/)?.[0];
+assert.ok(wheelSource, 'locate the game wheel handler');
+const wheelWindow = new EventTarget(), canvas = new EventTarget(), kit = { cam: null };
+let viewZoom = 1;
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+new Function('window', 'renderer', 'testkit', 'clamp', 'zoomBy', wheelSource)(
+  wheelWindow, { domElement: canvas }, kit, clamp, factor => { viewZoom = clamp(viewZoom * factor, 0.5, 4); },
+);
+const wheel = (target, deltaY = 120) => {
+  target.dispatchEvent(Object.assign(new Event('wheel'), { deltaY }));
+  if (target !== wheelWindow) wheelWindow.dispatchEvent(Object.assign(new Event('wheel'), { deltaY }));
+};
+for (const name of ['settings dialog', 'developer panel', 'metro list']) {
+  wheel(new EventTarget());
+  assert.equal(viewZoom, 1, `${name}: scrolling an overlay leaves game zoom unchanged`);
+}
+wheel(canvas);
+assert.equal(viewZoom, Math.exp(120 * 0.0012), 'canvas scroll retains ordinary game zoom');
+const ordinaryZoom = viewZoom;
+kit.cam = { height: 100 };
+for (const name of ['settings dialog', 'developer panel', 'metro list']) {
+  wheel(new EventTarget());
+  assert.equal(kit.cam.height, 100, `${name}: scrolling an overlay leaves free-camera height unchanged`);
+}
+wheel(canvas);
+assert.equal(kit.cam.height, 100 * Math.exp(120 * 0.0012), 'canvas scroll retains free-camera zoom');
+assert.equal(viewZoom, ordinaryZoom, 'free-camera scrolling does not also zoom the player view');
+wheel(canvas, 1e6); assert.equal(kit.cam.height, 1500);
+wheel(canvas, -1e6); assert.equal(kit.cam.height, 5);
+console.log('Wheel scope: panel scrolling leaves both cameras unchanged; canvas scrolling preserves zoom and free-camera limits.');

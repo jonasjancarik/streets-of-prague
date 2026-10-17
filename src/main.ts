@@ -1321,7 +1321,8 @@ async function main() {
   document.addEventListener('visibilitychange', () => { if (document.hidden) releaseInput(); });
   let zoom = 1;
   const zoomBy = (f: number) => { zoom = clamp(zoom * f, 0.5, 4); };
-  window.addEventListener('wheel', (e) => {
+  // Scroll over the map to zoom; menus and other overlays keep their own scrolling.
+  renderer.domElement.addEventListener('wheel', (e) => {
     const f = Math.exp(e.deltaY * 0.0012);
     if (testkit?.cam) testkit.cam.height = clamp(testkit.cam.height * f, 5, 1500);
     else zoomBy(f);
