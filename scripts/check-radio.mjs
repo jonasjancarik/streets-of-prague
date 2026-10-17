@@ -4,20 +4,23 @@ import assert from 'node:assert/strict';
 const saved = new Map();
 globalThis.localStorage = { getItem: (key) => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) };
 const media = [];
+const staticSources = [];
 globalThis.Audio = class {
   paused = true;
   src = '';
   loads = 0;
+  listeners = new Map();
   constructor() { media.push(this); }
-  addEventListener() {}
+  addEventListener(type, listener) { this.listeners.set(type, listener); }
+  emit(type) { this.listeners.get(type)?.(); }
   play() { this.paused = false; return Promise.resolve(); }
   pause() { this.paused = true; }
   removeAttribute(name) { if (name === 'src') this.src = ''; }
   load() { this.loads++; }
 };
 const param = () => ({ value: 0, cancelScheduledValues() {}, setTargetAtTime(v) { this.value = v; }, setValueAtTime(v) { this.value = v; }, linearRampToValueAtTime(v) { this.value = v; } });
-const node = () => ({ gain: param(), frequency: param(), Q: param(), connect(other) { return other; }, disconnect() {}, start() {}, stop() {} });
-const ctx = { currentTime: 0, createGain: node, createBiquadFilter: node, createMediaElementSource: node, createBufferSource: node };
+const node = () => ({ gain: param(), frequency: param(), Q: param(), stops: 0, connect(other) { return other; }, disconnect() {}, start() {}, stop() { this.stops++; } });
+const ctx = { currentTime: 0, createGain: node, createBiquadFilter: node, createMediaElementSource: node, createBufferSource() { const source = node(); staticSources.push(source); return source; } };
 const { Radio, STATIONS, selectStation } = await import('../src/radio.ts');
 const { stationAllowed, setStationAllowed, stationDistribution, setStationDistribution } = await import('../src/radio-preferences.ts');
 const radio = new Radio(ctx, {}, node());
@@ -41,6 +44,21 @@ assert.equal(radio.station, STATIONS[0], 'car keeps its remembered station');
 radio.setStreaming(true);
 assert.equal(active().length, 1, 'restoring volume resumes selected car');
 assert.equal(radio.station, STATIONS[0]);
+radio.warm(false, 61); // no next-car buffer when leaving this time
+const leavingStatic = staticSources.at(-1);
+radio.update(false);
+radio.warm(false, 61);
+assert.equal(active().length, 0, 'walking away expires both buffers');
+assert.equal(leavingStatic.stops, 1, 'loading static stops after leaving the car, even without a playing event');
+radio.update(true, firstCar);
+const oldWave = active()[0];
+radio.pick(1);
+radio.pick(0);
+const currentWave = active()[0], currentStatic = staticSources.at(-1);
+oldWave.emit('playing');
+assert.equal(currentStatic.stops, 0, 'late playing from a closed stream cannot stop its replacement static');
+currentWave.emit('playing');
+assert.equal(currentStatic.stops, 1, 'the current stream playing event stops its own loading static');
 setStationAllowed('wave', false);
 assert.notEqual(radio.station?.id, 'wave', 'blocking current station retunes immediately');
 assert.ok(!active().some((el) => el.src === STATIONS[0].url), 'blocked stream closes');

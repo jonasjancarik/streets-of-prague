@@ -182,7 +182,7 @@ export class Radio {
       this.out.gain.cancelScheduledValues(t);
       this.out.gain.setTargetAtTime(level, t, FADE / 3);
     }
-    if (!active) this.endStatic();
+    if (!active || !this.want) this.endStatic();
     for (const i of [...this.streams.keys()]) if (!keep(i)) this.close(i);
     if (this.tuned >= 0 && keep(this.tuned) && !this.streams.has(this.tuned)) this.open(this.tuned, this.want);
     for (const [i, s] of this.streams) {
@@ -200,7 +200,7 @@ export class Radio {
     const gain = this.ctx.createGain();
     gain.gain.value = 0;
     el.addEventListener('error', () => { if (this.streams.get(i)?.el === el && i === this.tuned) { this.endStatic(); if (this.want) this.onFail(station); } });
-    el.addEventListener('playing', () => { if (i === this.tuned) this.endStatic(); });
+    el.addEventListener('playing', () => { if (this.streams.get(i)?.el === el && i === this.tuned) this.endStatic(); });
     this.ctx.createMediaElementSource(el).connect(gain).connect(this.input);
     this.streams.set(i, { el, gain });
     if (withStatic) this.startStatic();

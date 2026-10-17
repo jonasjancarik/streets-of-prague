@@ -47,6 +47,8 @@ This includes the next-car buffer and the station lingering after leaving a car.
 The station is remembered and can resume when volume rises again. Sound off, a
 hidden tab, the quiet metro state and radio off also close streams. At nonzero
 volume, nearby-car buffering and the existing 20/60-second grace periods remain.
+Loading static stops when you leave the car, even if the station never starts.
+Events from closed streams cannot stop a replacement stream's loading static.
 Stopping radio streams avoids silent radio playback competing with other device
 audio; other enabled game sounds can still affect that audio.
 
