@@ -28,8 +28,9 @@ described in `docs/email.md`.
   as it is; the deploy copies both files, and a new module has to be added to that copy.
 - `scripts/check-worker.mjs`: runs that handler in Node with Brevo, Turnstile and the
   email sending replaced by stand-ins. The Cloudflare deploy runs it first.
-- `src/newsletter.ts`: the signup form, and the two things the feedback form shares:
-  `sheet()` (the dialog frame) and `trapField()` (the hidden field).
+- `src/newsletter.ts`: the signup form and the helpers shared with feedback:
+  `sheet()` (the dialog frame), `trapField()` (the hidden field) and `postForm()`
+  (the JSON request with a 30-second deadline for headers or an error body).
 - `src/feedback.ts`: the feedback form, the frame counter and the error listeners, and
   `context()`, which gathers what is sent along.
 - `deploy/newsletter`, `deploy/feedback`: the settings that aren't secret. Both deploy
@@ -186,6 +187,13 @@ are one JSON object, `feedback-state.json` in the same bucket, rewritten after e
 
 **The Worker.** `node scripts/check-worker.mjs`. Add a case there for anything the
 Worker newly accepts or refuses. Nothing leaves the machine.
+
+**Request deadlines.** `node scripts/check-form-deadlines.mjs` exercises the real
+submit handlers with mocked requests and controlled time. Successful headers finish
+without reading the body; a timeout before headers preserves uncertainty about
+acceptance, while a stalled error body keeps the generic failure. Typed fields remain
+available, late completion cannot replace the status, and retry requires another
+submit. No email or CAPTCHA is sent or loaded.
 
 **The forms in the browser.** Start the `forms` preview from `.claude/launch.json`
 (`preview_start` with that name). It is the dev server with the forms' addresses and

@@ -1320,6 +1320,10 @@ can try five times a minute and only the game's own pages are let in, since ever
 sends an email. Each form stays out of the game until it is set up.
 The form endpoints accept `POST` and preflight `OPTIONS`; other methods return
 `405` with `Allow: POST, OPTIONS` and do not contact the email services.
+The forms wait at most 30 seconds for response headers or an error response's body.
+Successful headers finish immediately. If no headers arrive, acceptance is unknown;
+the form keeps the typed fields and enables a manual retry without sending again
+automatically. A stalled error body shows the existing generic failure message.
 
 **Newsletter.** The start screen and the settings have a link to sign up for news about
 the game by email (`src/newsletter.ts`). `/api/subscribe` passes the address to
@@ -1343,6 +1347,8 @@ settings in `deploy/newsletter` and `deploy/feedback`, checking a change without
 real email, and what to look at when something doesn't arrive are all in
 `.agents/skills/player-forms/SKILL.md`. `node scripts/check-worker.mjs` checks the
 Worker with the services behind it replaced by stand-ins.
+`node scripts/check-form-deadlines.mjs` checks the real submit handlers with mocked
+requests and controlled time, without sending email or loading CAPTCHA.
 
 Incoming mail to `news@streetsofprague.com` and `jonas@streetsofprague.com` is
 archived privately in R2 and forwarded to Gmail by a separate mail Worker.

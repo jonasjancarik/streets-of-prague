@@ -18,6 +18,38 @@ import { privacyLink } from './credits.ts';
 const URL_ = import.meta.env.VITE_SUBSCRIBE_URL as string | undefined;
 const SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
+// The deadline covers response headers and an error body. Successful headers are
+// enough to confirm acceptance; waiting for their body must not hold the form open.
+export async function postForm(url: string, data: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+  const controller = new AbortController();
+  let rejected = false;
+  let timer = 0;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(() => {
+      const error = new DOMException('Form request timed out', 'TimeoutError');
+      reject(error);
+      controller.abort(error);
+    }, 30000);
+  });
+  try {
+    return await Promise.race([(async () => {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data), signal: controller.signal });
+      if (res.ok) {
+        void res.body?.cancel().catch(() => {});
+        return { ok: true };
+      }
+      rejected = true;
+      const answer = await res.json().catch(() => ({})) as { error?: string } | null;
+      return { ok: false, error: answer?.error };
+    })(), deadline]);
+  } catch (error) {
+    // Once an unsuccessful status arrived, a stalled body cannot make acceptance
+    // uncertain. Its generic failure still allows the player to retry.
+    if (rejected) return { ok: false };
+    throw error;
+  } finally { clearTimeout(timer); }
+}
+
 interface Turnstile { render(where: HTMLElement, options: Record<string, unknown>): string; reset(id: string): void }
 declare global { interface Window { turnstile?: Turnstile } }
 let script: Promise<void> | null = null;
@@ -170,14 +202,15 @@ export function signupFields(d: HTMLElement, { focus = false, done: onDone = () 
       const tk = SITE_KEY ? await checked() : '';
       if (SITE_KEY && !tk) message = PROBLEMS.check;
       else {
-        const res = await fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.value, website: trap.value, lang: lang(), token: tk }) });
-        const answer = await res.json().catch(() => ({})) as { error?: string };
-        done = res.ok;
+        const answer = await postForm(URL_, { email: email.value, website: trap.value, lang: lang(), token: tk });
+        done = answer.ok;
         if (done) telemetry.did('signed up for news');
         message = done ? 'Almost done. Open the email that is on its way to you and press the button in it to confirm your address.' : PROBLEMS[answer.error ?? ''] ?? 'Signing up didn\'t work this time. Please try again later.';
       }
-    } catch {
-      message = 'Signing up didn\'t work this time. Please try again later.';
+    } catch (error) {
+      message = error instanceof DOMException && error.name === 'TimeoutError'
+        ? 'We couldn\'t confirm your signup. Check your inbox before trying again.'
+        : 'Signing up didn\'t work this time. Please try again later.';
     }
     if (!done) again();
     else onDone();

@@ -153,6 +153,7 @@ export const CS: Record<string, string> = {
   'That doesn\'t look like an email address.': 'Tohle nevypadá jako e-mailová adresa.',
   'Too many tries from here. Please wait a minute and try again.': 'Příliš mnoho pokusů. Počkej chvíli a zkus to znovu.',
   'Signing up didn\'t work this time. Please try again later.': 'Přihlášení se teď nepovedlo. Zkus to prosím později.',
+  'We couldn\'t confirm your signup. Check your inbox before trying again.': 'Nepodařilo se potvrdit přihlášení. Než to zkusíš znovu, zkontroluj e-mailovou schránku.',
   'Your address is used only for these emails and is kept by Brevo, the service that sends them. Every email has a link to unsubscribe.': 'Adresu použijeme jen pro tyto e-maily a uchovává ji služba Brevo, která je rozesílá. V každém e-mailu je odkaz pro odhlášení.',
   // Feedback form
   'Send feedback': 'Poslat připomínku',
@@ -163,6 +164,7 @@ export const CS: Record<string, string> = {
   'Thank you. Your message is on its way.': 'Děkujeme. Zpráva je na cestě.',
   'Write a few words first.': 'Nejdřív něco napiš.',
   'Sending didn\'t work this time. Please try again later.': 'Odeslání se teď nepovedlo. Zkus to prosím později.',
+  'We couldn\'t confirm whether your message arrived. Your message is still here if you want to try again.': 'Nepodařilo se ověřit, jestli zpráva dorazila. Zpráva tu zůstává, pokud ji chceš zkusit odeslat znovu.',
   'A picture of the game, its version, your browser and where you are in the game are sent along, to help find the problem.': 'Spolu se zprávou se odešle snímek hry, její verze, tvůj prohlížeč a místo, kde ve hře právě jsi, aby šla chyba snáz najít.',
   'Your email address is confirmed. You\'ll hear when there is something new in the game.': 'E-mail je potvrzený. Ozveme se, až ve hře přibude něco nového.',
   'Version': 'Verze',

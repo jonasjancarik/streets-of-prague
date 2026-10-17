@@ -1,7 +1,7 @@
 import * as telemetry from './telemetry.ts';
 import { getLang, onLang, t } from './i18n.ts';
 import { privacyLink } from './credits.ts';
-import { el, sheet, trapField } from './newsletter.ts';
+import { el, sheet, trapField, postForm } from './newsletter.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
@@ -131,13 +131,14 @@ function build(extra: () => string, seen: () => ReturnType<typeof look>) {
     label();
     try {
       const { picture, scenario } = seen();
-      const res = await fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: message.value, email: email.value, website: trap.value, lang: getLang(), context: context(extra), scenario, screenshot: await picture }) });
-      const answer = await res.json().catch(() => ({})) as { error?: string };
-      done = res.ok;
+      const answer = await postForm(URL_, { message: message.value, email: email.value, website: trap.value, lang: getLang(), context: context(extra), scenario, screenshot: await picture });
+      done = answer.ok;
       if (done) telemetry.did('sent feedback');
       note = done ? 'Thank you. Your message is on its way.' : PROBLEMS[answer.error ?? ''] ?? FAILED;
-    } catch {
-      note = FAILED;
+    } catch (error) {
+      note = error instanceof DOMException && error.name === 'TimeoutError'
+        ? 'We couldn\'t confirm whether your message arrived. Your message is still here if you want to try again.'
+        : FAILED;
     }
     sending = false;
     label();
