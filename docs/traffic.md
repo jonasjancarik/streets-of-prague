@@ -67,7 +67,9 @@ loaded graph may omit those fields. The JSON cache is pruned when the camera cha
 tile or view range.
 
 `parkingClearance` indexes the ground-level lanes and the junction curves shared
-with `Route`. Ordinary curves reserve a pickup's collision circles, while the wider
+with `Route`. Sharp bends inside a street also reserve a pickup's collision circles
+while its heading catches up; duplicate points do not invent or hide a bend.
+Ordinary junction curves reserve a pickup's collision circles, while the wider
 bus curves also allow for its axle placement and heading rotation on approach and
 exit. Parked cars must leave those swept paths clear; pavement parking also checks
 the neighbouring carriageways. The mapped street's middle also reserves a fire
@@ -81,7 +83,9 @@ never in the frame loop.
 Run `node scripts/check-parking-clearance.mjs` for CPU regressions using the shipped
 car models and the actual traffic updater: neighbouring lane offsets, opposite
 tile/completion orders, retry and cache lifetime, narrow streets, paid-section
-targets, and body clearance through right, left and short curved junctions. These
+targets, body clearance through right, left and short curved junctions, and the
+captured Pobřežní interior bend at different speeds and time steps. Duplicate-point
+and cropped-index controls cover that bend too. These
 checks cover normal route following on fixtures; `check-parking-city.mjs` (below) looks
 at a whole map and at the middle of the streets emergency vehicles use.
 
@@ -188,11 +192,27 @@ that every emergency route drives without obstruction. Nine warmed tile-clearanc
 builds, alternated against the previous implementation twenty times each, changed
 their medians by -0.32 to +1.49 ms on a busy machine; frame cost was not measured.
 
+The remaining pickup finding was confirmed with the shipped models: actual
+`Traffic.update` put a pickup's front collision circle 0.70–0.81 m into a parked
+sedan at local `[1406.48, 1240.72]` on Pobřežní, at a sharp bend inside one road edge.
+The interior-bend sweep now refuses parking at that position. The approximate city
+sweep then has 21,591 parked cars versus 21,689 before (98 fewer, 0.45%), no pickup
+or emergency-centreline findings, and 222 remaining bus findings. The reduction is
+conservative; it does not prove that all 98 removed cars caused collisions. Index
+segments/references grow about 10% versus the previous lane/junction index, only
+during a parking pass. Thirty retained alternating build samples after ten warmups
+on each of three real tile halos (`14_10`, `13_10`, `4_4`) measured median changes of
+5.18→5.30 ms, 10.92→12.23 ms and 8.15→8.64 ms respectively. Tails were noisy,
+including a 26.38 ms candidate
+sample; this is a measured construction cost, not an FPS claim. Independent actual
+pickup-body checks passed additional bend angles, tight S bends, time steps, crop,
+duplicate points and separate levels. Broad bus clearance remains unchanged.
+
 Open findings from the lane/turn sweeps:
 
-- **Sharp bends inside a street.** `parkingClearance` sweeps a vehicle's body only
-  through junction curves. At a kink in the middle of a street a car's nose swings out
-  and a bus (rear axle on the lane, body along the chord) cuts 1–2 m across the inside,
+- **Bus bodies at sharp bends inside a street.** The pickup envelope does not cover
+  a bus's rear-axle placement at every internal kink. A bus (rear axle on the lane,
+  body along the chord) cuts 1–2 m across the inside,
   into parked cars (Dřevná, Legerova and Seifertova, Melounová). The body sweep should
   run along the whole lane wherever it bends, for buses on the streets buses use.
 - **Buses beside cars parked at the least distance.** A bus is 2.55 m wide, more than

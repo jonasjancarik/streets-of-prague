@@ -35,6 +35,40 @@ export function parkingClearance(edges: DriveEdge[], box?: Bounds) {
     if (!list) out.set(e.u, list = []);
     list.push(e);
     for (let i = 1; i < e.path.pts.length; i++) add(e.path.pts[i - 1], e.path.pts[i]);
+    // A sharp bend inside a street has the same body overhang as a junction.
+    // Cover the pickup's collision circles while its heading catches up.
+    const radius = TYPES.pickup.W / 2 + 0.02, end = TYPES.pickup.L / 2 - radius;
+    const offsets = [-end, 0, end];
+    // Three heading-response time constants at ordinary traffic's fastest pace.
+    const lagDistance = Math.max(1, Math.min(TYPES.pickup.vmax * 0.75, e.speed * 1.2) * 0.3);
+    for (let k = 1; k < e.path.pts.length - 1; k++) {
+      const p = e.path.pts[k];
+      const same = (a: Point2) => Math.hypot(a[0] - p[0], a[1] - p[1]) < 1e-6;
+      if (k > 1 && same(e.path.pts[k - 1])) continue;
+      let beforeIndex = k - 1, afterIndex = k + 1;
+      while (beforeIndex >= 0 && same(e.path.pts[beforeIndex])) beforeIndex--;
+      while (afterIndex < e.path.pts.length && same(e.path.pts[afterIndex])) afterIndex++;
+      if (beforeIndex < 0 || afterIndex === e.path.pts.length) continue;
+      const a = e.path.pts[beforeIndex], b = e.path.pts[afterIndex];
+      if (box && (p[0] < box[0] - 22 || p[0] > box[2] + 22 || p[1] < box[1] - 22 || p[1] > box[3] + 22)) continue;
+      const before = Math.atan2(p[1] - a[1], p[0] - a[0]), after = Math.atan2(b[1] - p[1], b[0] - p[0]);
+      const turn = Math.abs(Math.atan2(Math.sin(after - before), Math.cos(after - before)));
+      if (end * Math.sin(Math.min(turn, Math.PI / 2)) <= 1.25 - radius) continue;
+      const steps = Math.ceil((8 + lagDistance) / 0.75);
+      let previous: Point2[] | null = null;
+      for (let i = 0; i <= steps; i++) {
+        const s = e.path.cum[k] - 4 + (8 + lagDistance) * i / steps, at = e.path.at(s);
+        const lag = e.path.at(s - lagDistance).ang, delta = Math.atan2(Math.sin(at.ang - lag), Math.cos(at.ang - lag));
+        const circleAt = (o: number, h: number): Point2 => [at.x + Math.cos(h) * o, at.y + Math.sin(h) * o];
+        const circles = [lag, at.ang].flatMap((h) => offsets.map((o) => circleAt(o, h)));
+        const rotations = Math.max(1, Math.ceil(Math.abs(delta) / 0.3));
+        for (const o of offsets) for (let j = 1; j <= rotations; j++)
+          add(circleAt(o, lag + delta * (j - 1) / rotations), circleAt(o, lag + delta * j / rotations), radius + 0.4);
+        if (previous) for (let j = 0; j < circles.length; j++) add(previous[j], circles[j], radius + 0.4);
+        previous = circles;
+      }
+    }
+
     // Police, ambulances and fire engines route along the mapped street's middle.
     // On a wide one-way road that can lie outside the ordinary lane corridor.
     for (let i = 1; i < e.pts.length; i++) add(e.pts[i - 1], e.pts[i], TYPES.fire.W / 2 + 0.02);

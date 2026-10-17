@@ -292,10 +292,11 @@ before that day's frame-count fix may be doubled.
   gone through (`check-bus-lines.mjs praha`); buses cut across sharp bends in a street.
 - **Traffic by time of day** is one city-wide figure; queues on real routes, the
   direction of the peak and the car mix are next (`docs/traffic.md`).
-- **Parked cars:** the 17 October centre-map check found 290 cars in a bus's way
-  and one in a pickup's after centreline clearance was added. The 20 emergency
-  centreline overlaps are gone in the offline sweep; bend and bus-width clearance
-  remain open in `docs/traffic.md`. Not yet run on `praha`.
+- **Parked cars:** the 18 October centre-map sweep found 222 cars in a bus's way,
+  with no pickup or emergency-centreline findings after those clearances were added.
+  The reproduced pickup collision at the Pobřežní bend is covered by an actual-body
+  regression. Bus clearance remains open in `docs/traffic.md`; the sweep is approximate
+  and has not yet run on `praha`.
 - **Boats:** cruise boats follow the fairway through the locks (`river.json`); they
   still turn at Modřany and Klecany (no usable lock in the map's water). One boat at
   a time goes through a lock cut. One opposing pair passed a live lock check on

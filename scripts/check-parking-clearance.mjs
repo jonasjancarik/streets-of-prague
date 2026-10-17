@@ -98,6 +98,42 @@ for(const [x,y] of oldHatch.circles()) for(const e of real.edges) for(let i=1;i<
 assert.ok(oldHatch.circles().some(([x,y])=>!parkingClearance(real.edges)(x,y,oldHatch.r)),'real corner car is rejected by the swept turn');
 reports.push('real Ostrovni-Opatovicka corner snapshot');
 
+// Pobrezni, centrum build 2026-10-15T10:41:33Z: this sedan was accepted
+// beside a sharp bend INSIDE one edge. Actual Traffic.update drove a pickup's
+// front circle 0.70-0.81 m into it, including with the sedan in the obstacle index.
+const interior = graph([
+ raw('260122825>370457941>0','260122825','370457941',[[1409.1,1207.92],[1405.84,1234.77],[1367.77,1229.31],[1359.89,1228.36]],{width:7,lanes:2,surface:'asphalt'}),
+ raw('370457941>1825997270>0','370457941','1825997270',[[1359.89,1228.36],[1344.27,1234.69],[1338.31,1237.5],[1335.42,1240.09],[1333.9,1241.67],[1332.06,1244.72],[1324.78,1265.95]],{hw:'secondary_link',width:3.75,lanes:1,oneway:true}),
+]);
+const unsafeSedan = new Car('sedan',rng(1),1406.48,1240.72,1.4590192852605206), interiorClear = parkingClearance(interior.edges);
+assert.ok(unsafeSedan.circles().some(([x,y])=>!interiorClear(x,y,unsafeSedan.r)),'the captured sedan is rejected');
+const acceptedInterior=[];
+for(let x=1398;x<=1416;x+=.25)for(let y=1229;y<=1249;y+=.25)if(interiorClear(x,y,unsafeSedan.r))acceptedInterior.push([x,y]);
+assert.ok(acceptedInterior.length>3000,'setback parking remains available');
+const interiorCrop=parkingClearance(interior.edges,[1400,1230,1410,1245]);
+for(let x=1400;x<1410;x+=.5)for(let y=1230;y<1245;y+=.5)
+ assert.equal(interiorCrop(x,y,unsafeSedan.r),interiorClear(x,y,unsafeSedan.r),'interior sweep survives an index crop');
+for(const dt of[1/60,.05])for(const speed of[0,8,13]) {
+ const[e,f]=interior.edges,route=new Route(interior,e,0,()=>0,false,from=>from===e?f:null),p=route.leg.path.at(route.s);
+ const car=new Car('pickup',rng(1),p.x,p.y,p.ang);car.mode='traffic';
+ const traffic=new Traffic(interior,new Scene(),rng(1),0),a={car,route,speed,stuck:0,jam:0,ignore:0,cruise:1,off:0};traffic.agents.push(a);
+ let done=false;
+ for(let n=0;n<Math.ceil(60/dt);n++) {
+  traffic.update(dt,()=>[]);
+  for(const[cx,cy]of car.circles())for(const[x,y]of acceptedInterior)
+   assert.ok(Math.hypot(x-cx,y-cy)>=unsafeSedan.r+car.r,'accepted disks clear the actual smoothed pickup body');
+  if(route.leg.edge===f&&route.s>Math.min(f.path.length-.5,route.leg.s0+14)){done=true;break;}
+ }
+ assert.ok(done,'the pickup completes the captured bend');
+}
+// Duplicate vertices must neither invent a turn on a straight street nor hide
+// a genuine turn. Derive tangents without changing the route's own geometry.
+for(const pts of[[[0,-30],[0,0],[0,30]],[[0,-30],[0,0],[-30,0]]]) {
+ const repeated=[pts[0],pts[1],pts[1],pts[2]],a=parkingClearance(graph([raw('a','a','b',pts,{oneway:true})]).edges),b=parkingClearance(graph([raw('a','a','b',repeated,{oneway:true})]).edges);
+ for(let x=-8;x<=8;x+=.2)for(let y=-8;y<=8;y+=.2)assert.equal(a(x,y,.93),b(x,y,.93),'duplicate point preserves clearance');
+}
+reports.push('captured interior bend: actual pickup bodies, dt/speed variants, setback/crop and duplicate-point controls');
+
 
 
 // A street centreline outside the tile can offset its traffic lane into it.
@@ -123,9 +159,10 @@ for (const kind of ['bridge','tunnel']) {
 }
 reports.push('emergency centreline on wide one-way roads and separate levels');
 
-// Curved road polylines and negative cell coordinates, including a query near a
-// cell edge: the spatial lookup must agree with an exhaustive segment scan.
-const bend = graph([raw('bend','a','b',[[-35,-20],[-20,-20],[-10,-10],[10,-10]],{oneway:true})]).edges;
+// A gentle polyline stays within the ordinary lane corridor (sharp bends have
+// their body envelope checked above). Across negative cells, the spatial lookup
+// must agree with an exhaustive segment scan, including near a cell edge.
+const bend = graph([raw('bend','a','b',[[-35,-20],[-20,-20],[-10,-19.5],[10,-19.5]],{oneway:true})]).edges;
 const bendClear=parkingClearance(bend);
 const fireRadius=new Car('fire',rng(1)).r;
 for(let x=-45;x<20;x+=.7) for(let y=-30;y<0;y+=.7) {
