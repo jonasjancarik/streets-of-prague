@@ -377,3 +377,40 @@ three pairs) 24.7 → 25.0 ms a frame with 15 ms of JavaScript, so that phone is
 CPU-limited; on the M5 the pairs were too noisy to read (the machine was busy, the
 new build always ran second, and one run fell to 37 fps). The cost is per tree and
 per mesh, not per triangle.
+
+## Road markings
+
+17 October 2026: lane, edge, parking and zebra paint now uses sports lines' existing
+minimum of 1.6 drawing-buffer pixels. Physical widths and dash lengths stay unchanged
+nearby; rails stay physical. Legacy WebGL intentionally gains the same minimum by
+reusing its existing `held()` implementation, with no GLSL changes. At the National
+Museum, matched top-down 50/120/260 m views on both renderers showed unchanged close
+widths and clearer distant lines; a roughly 15% road slope showed no lost paint edge.
+Different-width strips, camera/viewport changes and disposing one material while
+another remained all passed. `check-ground-areas.mjs` checks ground, parking, zebra,
+bridge/tunnel paint, terrain vertices and transferable buffers; eleven terrain-seam
+checks and typecheck passed too. Raised bridge/tunnel paint has CPU coverage here,
+not a new live visual check.
+
+The original physical-paint baseline shared one builder state in the measured view.
+The first candidate, enabling hold without sharing, created ten states (50–59 ms
+total on transitions): each
+material had its own identical position graph. Sharing that complete graph in
+`webgpu.ts` keeps the final candidate at one state, preventing that added compilation
+work rather than improving on the original baseline. Nine real tile inputs retained
+identical positions, normals and indices; their added attributes totalled 158,196 B
+(4,656–26,304 B/tile). Twenty warmed, alternating CPU builds per state measured
+0.05–0.28 ms more at each tile's median (summed medians 126.46 → 128.05 ms).
+
+Eight warmed 1.8 s WebGPU windows compared the original materials with their held
+position graph disabled/enabled, excluding transitions. Paired values below are in
+that physical/held order. Both states drew 117 calls
+and 779,306 triangles/frame; attribute updates averaged 4.52/4.53 calls and
+34.1/38.1 KB/frame, queue writes 45.02/45.04 calls and 235.1/235.3 KB/frame. These
+whole-scene uploads include changing simulation buffers. Frame intervals were
+8.29–8.31 ms, while render CPU means varied 1.23–1.85 ms. GPU utilisation was already
+49% before our browser and 69% after closing it: timing cannot establish an overall
+cost or FPS change. Source HEAD/diff, raw samples, worker inputs and valid captures
+are in `/tmp/sop-paint`; initial black-paint material-clone captures are invalid and
+excluded. No phone benchmark or full scenario rerun was needed for this rendering
+change.

@@ -554,8 +554,8 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
   add(strips(trams, 2.5), COLORS.trackbed, 'concrete');
   add(strips(trams.flatMap((pts) => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.1), COLORS.steel);
   const { dashed, solid } = roadPaint(edges, trams);
-  add(strips(dashed, 0.13, [3, 6]), COLORS.paint);
-  add(strips(solid, 0.13), COLORS.paint);
+  add(strips(dashed, 0.13, [3, 6], true), COLORS.paint);
+  add(strips(solid, 0.13, null, true), COLORS.paint);
   return out;
 }
 
@@ -575,8 +575,8 @@ function tunnelLayers(polys: Polygons, box: Bounds, mask: LevelMask, H: HeightAt
   groundHeight = (x: number, y: number) => (inner ? inner(x, y) : 0) + 0.05;
   try {
     const { dashed, solid } = roadPaint(edges, []);
-    add(-698, strips(dashed, 0.13, [3, 6]), COLORS.paint);
-    add(-697, strips(solid, 0.13), COLORS.paint);
+    add(-698, strips(dashed, 0.13, [3, 6], true), COLORS.paint);
+    add(-697, strips(solid, 0.13, null, true), COLORS.paint);
   } finally { groundHeight = inner; }
   return out;
 }
@@ -711,7 +711,7 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     // dashes in the mixed (violet) and visitors' (orange) ones, plain white elsewhere.
     for (const [cat, color, dash] of BAY_PAINT) {
       const rings = (A.parking || []).filter((rs, k) => (parkingZones[k] || null) === cat);
-      add(strips(bayLines(rings.map((rs) => rs[0]), edges, cut), 0.15, dash), color);
+      add(strips(bayLines(rings.map((rs) => rs[0]), edges, cut), 0.15, dash, true), color);
     }
 
     // Bridges: a soft shadow on the water, then the deck (unless the decks are drawn
@@ -729,9 +729,9 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(strips(d.rails.filter((r) => r.kind === 'funicular').map((r) => r.pts), 3), COLORS.funicular, 'concrete');
 
     const { dashed, solid } = roadPaint(edges, trams);
-    add(strips(dashed, 0.13, [3, 6]), COLORS.paint);
-    add(strips(solid, 0.13), COLORS.paint);
-    add(strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5), COLORS.paint);
+    add(strips(dashed, 0.13, [3, 6], true), COLORS.paint);
+    add(strips(solid, 0.13, null, true), COLORS.paint);
+    add(strips(zebras(d.crossings || [], edges, [...(R.road || []), ...(R.sett || [])], box), 0.5, null, true), COLORS.paint);
     // Manhole covers and storm drains: all of the tile's in one mesh.
     add(coverGeometry(d.utility || [], edges.map((e) => e.pts), groundHeight ?? (() => 0)), COLORS.iron);
 

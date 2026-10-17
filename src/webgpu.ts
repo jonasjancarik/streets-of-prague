@@ -235,11 +235,17 @@ function groundMaterial(
   return m as unknown as THREE.MeshLambertMaterial;
 }
 // held() in shading.ts: thin paint widened about its centre line to stay HOLD_PX pixels wide.
+// Only geometry, camera and screen inputs: share the complete graph so equivalent
+// paint materials can reuse a builder state as tiles arrive.
+let heldPosition: N | null = null;
 function heldMaterial(material: THREE.MeshLambertMaterial) {
-  const hold = attribute('hold', 'vec3');
-  const pixel = modelViewMatrix.mul(vec4(positionLocal, 1)).z.negate().mul(2).div((cameraProjectionMatrix as N).element(1).y.mul(screenSize.y));
-  const grow = max(1, pixel.mul(HOLD_PX).div(hold.z)).sub(1);
-  (material as unknown as MeshLambertNodeMaterial).positionNode = positionLocal.add(vec3(hold.x, 0, hold.y).mul(grow));
+  if (!heldPosition) {
+    const hold = attribute('hold', 'vec3');
+    const pixel = modelViewMatrix.mul(vec4(positionLocal, 1)).z.negate().mul(2).div((cameraProjectionMatrix as N).element(1).y.mul(screenSize.y));
+    const grow = max(1, pixel.mul(HOLD_PX).div(hold.z)).sub(1);
+    heldPosition = positionLocal.add(vec3(hold.x, 0, hold.y).mul(grow));
+  }
+  (material as unknown as MeshLambertNodeMaterial).positionNode = heldPosition;
   return material;
 }
 function groundGraph(id: number, time: { value: number }, { relief, deck, photo }: GroundInputs, dig: boolean, sheltered: boolean, seasonal: boolean) {
