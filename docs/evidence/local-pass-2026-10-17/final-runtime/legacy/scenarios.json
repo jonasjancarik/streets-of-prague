@@ -1,0 +1,102 @@
+[
+  {
+    "value": {
+      "name": "driver-honks",
+      "title": "A driver held up by you standing in the road sounds the horn",
+      "checks": [
+        {
+          "name": "a car in traffic nearby",
+          "pass": true
+        },
+        {
+          "name": "not a toot at once",
+          "pass": true,
+          "detail": "0"
+        },
+        {
+          "name": "it sounds the horn at you after a while",
+          "pass": true,
+          "detail": "3 honks"
+        },
+        {
+          "name": "and the long one comes later",
+          "pass": true,
+          "detail": "[false,false,true]"
+        }
+      ],
+      "ms": 1058,
+      "pass": true
+    },
+    "errors": [],
+    "shots": []
+  },
+  {
+    "value": {
+      "name": "lamp-knock",
+      "title": "A car at 50 km/h knocks a lamp post over",
+      "checks": [
+        {
+          "name": "a post nearby with a clear run up to it",
+          "pass": true
+        },
+        {
+          "name": "the post is down",
+          "pass": true
+        },
+        {
+          "name": "the car lost speed but kept going",
+          "pass": true,
+          "detail": "36.8 km/h"
+        }
+      ],
+      "ms": 334,
+      "pass": true
+    },
+    "errors": [],
+    "shots": [
+      "/tmp/sop-final-runtime-verification/legacy/lamp-knock.png"
+    ]
+  },
+  {
+    "value": {
+      "name": "tunnel-layers",
+      "title": "Underground and on the road above stay apart on foot and in cars",
+      "checks": [
+        {
+          "name": "a tunnel street is near",
+          "pass": true,
+          "detail": "14"
+        },
+        {
+          "name": "you walk in the tunnel",
+          "pass": true,
+          "detail": "level -2, you 84.1 m, ground 93.9 m"
+        },
+        {
+          "name": "the car on the road above is out of reach",
+          "pass": true,
+          "detail": "foot"
+        },
+        {
+          "name": "you got into the car in the tunnel",
+          "pass": true,
+          "detail": "car"
+        },
+        {
+          "name": "you are out, on foot",
+          "pass": true,
+          "detail": "foot"
+        },
+        {
+          "name": "you stand in the tunnel, not on the road above",
+          "pass": true,
+          "detail": "level -2, you 84.1 m, road 93.9 m"
+        }
+      ],
+      "ms": 832,
+      "pass": true
+    },
+    "errors": [],
+    "shots": []
+  }
+]

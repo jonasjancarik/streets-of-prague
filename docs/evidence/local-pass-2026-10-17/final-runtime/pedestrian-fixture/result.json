@@ -1,0 +1,34 @@
+{
+  "value": {
+    "name": "pedestrians-escape",
+    "title": "A pedestrian standing in the road, 3 m in front of a car at 50 km/h, leaps clear and is not knocked over",
+    "checks": [
+      {
+        "name": "a clear run of road",
+        "pass": true
+      },
+      {
+        "name": "a pedestrian to stand in the way",
+        "pass": true
+      },
+      {
+        "name": "nobody is knocked over",
+        "pass": true,
+        "detail": "0"
+      },
+      {
+        "name": "the pedestrian got away",
+        "pass": true
+      },
+      {
+        "name": "the car kept going",
+        "pass": true,
+        "detail": "{\"start\":{\"x\":-2991.2752853426077,\"y\":2321.3375076261423,\"h\":0.7853981633974483},\"post\":{\"x\":-2978.54736328125,\"y\":2334.0654296875,\"r\":0.15,\"tough\":5,\"give\":0.2,\"down\":true},\"end\":{\"lat\":50.08073,\"lon\":14.42415,\"heading\":45,\"street\":\"Vodičkova\",\"mode\":\"car\",\"x\":-2966.9,\"y\":2345.7,\"speed\":35.1,\"car\":{\"type\":\"hatch\",\"damage\":0.4,\"burning\":false,\"broken\":0,\"braking\":false,\"ram\":false},\"money\":10000,\"stars\":0,\"police\":0,\"health\":100,\"traffic\":40,\"people\":1200,\"place\":\"Nové Město\",\"ticket\":false,\"time\":\"14:00\",\"weather\":\"clear\",\"date\":\"07-15\"}}"
+      }
+    ],
+    "ms": 1186,
+    "pass": true
+  },
+  "errors": [],
+  "shots": []
+}

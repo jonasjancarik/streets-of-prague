@@ -1,0 +1,120 @@
+[
+  {
+    "name": "flat-empty",
+    "setupClear": true,
+    "beyond": 14,
+    "start": {
+      "x": 0,
+      "y": 0,
+      "h": 0
+    },
+    "steps": 180,
+    "speed": 43.52000000000014,
+    "distance": 38.95166666666673,
+    "postDown": false,
+    "impacts": []
+  },
+  {
+    "name": "lamp",
+    "setupClear": true,
+    "beyond": 14,
+    "start": {
+      "x": 0,
+      "y": 0,
+      "h": 0
+    },
+    "steps": 180,
+    "speed": 34.031200000000126,
+    "distance": 34.0541518518519,
+    "postDown": true,
+    "impacts": [
+      {
+        "step": 70,
+        "speed": 37.95520000000005,
+        "impact": 2.635777777777781
+      }
+    ]
+  },
+  {
+    "name": "tram-wire-pole",
+    "setupClear": true,
+    "beyond": 14,
+    "start": {
+      "x": 0,
+      "y": 0,
+      "h": 0
+    },
+    "steps": 180,
+    "speed": 19.798000000000112,
+    "distance": 26.841657407407443,
+    "postDown": true,
+    "impacts": [
+      {
+        "step": 70,
+        "speed": 23.72200000000003,
+        "impact": 6.589444444444452
+      }
+    ]
+  },
+  {
+    "name": "lamp-then-wall-at-35m",
+    "setupClear": true,
+    "beyond": 14,
+    "start": {
+      "x": 0,
+      "y": 0,
+      "h": 0
+    },
+    "steps": 180,
+    "speed": 9.236227200000043,
+    "distance": 32.78727887407412,
+    "postDown": true,
+    "impacts": [
+      {
+        "step": 70,
+        "speed": 37.95520000000005,
+        "impact": 2.635777777777781
+      },
+      {
+        "step": 173,
+        "speed": 9.452227200000038,
+        "impact": 9.513111111111145
+      }
+    ]
+  },
+  {
+    "name": "corrected-corridor-wall-at-35m",
+    "setupClear": true,
+    "beyond": 30,
+    "start": {
+      "x": 8.999999999999998,
+      "y": -15.588457268119894,
+      "h": 1.0471975511965976
+    },
+    "steps": 180,
+    "speed": 34.03119999999974,
+    "distance": 26.027075925925917,
+    "postDown": true,
+    "impacts": [
+      {
+        "step": 70,
+        "speed": 37.95520000000019,
+        "impact": 2.635777777777791
+      }
+    ]
+  },
+  {
+    "name": "controlled-live-frame-unpaused",
+    "steps": 210,
+    "seconds": 4.49999999999999,
+    "speed": 40.28000000000021,
+    "distance": 56.38750000000001
+  },
+  {
+    "name": "controlled-live-frame-paused",
+    "steps": 180,
+    "seconds": 2.9999999999999942,
+    "speed": 43.52000000000014,
+    "distance": 38.95166666666673
+  }
+]

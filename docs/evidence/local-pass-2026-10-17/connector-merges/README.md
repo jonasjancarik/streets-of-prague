@@ -57,3 +57,37 @@ handoff, both update orders, heavy vehicles and short outgoing roads; and preser
 clear through traffic, roadside yielding, pavement adoption, distant-parallel and
 winding-approach controls. Measure CPU cost separately. Do not extend the taxi
 scenario timeout or relax collision checks to make it pass.
+
+
+## Live check at ece0889
+
+The [WebGPU session](live-backend.json) used commit
+`ece08897ab305fc1f592d80fea93bd489accccc7` and the same traffic-source hash as v5.
+The [captured connector replay](live-captured-connector.json) observed 3,612
+updates, no overlap, minimum clearance +6.644931 m and both cars finishing.
+The isolated cars used ordinary routes and movement, with lifetime retention
+while background traffic spawning was quiet; route completion required `gone`,
+so background recycling could not count as success.
+
+[All four countryside scenarios](live-countryside.json) passed. Taxi pickup took
+146 simulated seconds with two bookings, within the unchanged 240-second limit;
+the ride returned to the built map after 80 seconds. [Three planned pickup
+trials](live-pickups.json) then passed in 56, 12 and 12 seconds, one booking each.
+All recorded page-error arrays were empty. These are one live session and three
+pickup samples, not a claim that every pickup or traffic jam is resolved. Earlier
+failed runs remain failures in the parent evidence folder.
+
+![The two controlled cars approaching the shared lane](live-captured-connector.png)
+
+
+## Full default suite at ece0889
+
+The [complete default run](default-suite/scenarios.json) at the same commit
+passed all 27 executed scenarios, with four explicit countryside skips and zero
+page errors. It ran once, without repeats. The [verified backend and initial
+settings](default-suite/backend.json) match the earlier `22deab5` checkpoint:
+WebGPU, clear weather, summer (`07-15`), High graphics/tier, 14:00 and `&dev`.
+[Source metadata](default-suite/source.json), [the complete log](default-suite/scenarios.log)
+and [the summary](default-suite/summary.json) record the unchanged final HEAD.
+The owned browser was stopped afterward. This is a local integration check,
+not pushed CI or deployment verification.

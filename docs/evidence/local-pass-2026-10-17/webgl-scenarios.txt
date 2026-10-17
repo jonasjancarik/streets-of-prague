@@ -1,0 +1,18 @@
+✓ driver-honks: A driver held up by you standing in the road sounds the horn (1.2 s)
+  ✓ a car in traffic nearby
+  ✓ not a toot at once  (0)
+  ✓ it sounds the horn at you after a while  (3 honks)
+  ✓ and the long one comes later  ([false,false,true])
+✓ lamp-knock: A car at 50 km/h knocks a lamp post over (0.3 s)
+  ✓ a post nearby with a clear run up to it
+  ✓ the post is down
+  ✓ the car lost speed but kept going  (36.8 km/h)
+  screenshot: /tmp/sop-validation-22deab5/legacy/lamp-knock.png
+✓ tunnel-layers: Underground and on the road above stay apart on foot and in cars (1.2 s)
+  ✓ a tunnel street is near  (14)
+  ✓ you walk in the tunnel  (level -2, you 84.1 m, ground 93.9 m)
+  ✓ the car on the road above is out of reach  (foot)
+  ✓ you got into the car in the tunnel  (car)
+  ✓ you are out, on foot  (foot)
+  ✓ you stand in the tunnel, not on the road above  (level -2, you 84.1 m, road 93.9 m)
+All 3 passed

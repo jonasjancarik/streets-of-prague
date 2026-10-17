@@ -1,0 +1,44 @@
+Local implementation and verification history before the final evidence-pack commit:
+
+fd4b927 Protect partial map builds and source cache publication
+9bcc1f7 Validate saved games before restoring player state
+d2a74e8 Reject failed IPR pages before caching map layers
+2e18792 Preserve timetable caches when refreshes fail
+2631574 Retire lamp indexes with distant street tiles
+df4b04e Stop sky refresh retry loops when workers are unavailable
+381fd24 Validate saved mist controls before applying them
+1344981 Render external map and transit names as text
+daef6a3 Keep tile loading state accurate through retries and replacement
+a5434f0 Key sampled map imagery by source, grid and processing code
+e607f7d Release held controls when focus or pointer capture is lost
+c65c748 Fix metro ticket selection and expired fare state
+d7b3ebf Make the wall-crash scenario test a clear 60 km/h impact
+562ee04 Attribute the additional IPR street-lamp records
+5b4ae5f Keep the current game open when manual save changes fail
+dc7cd2b Keep shared-bike rental accounting consistent through cleanup
+bd5b471 Advertise allowed methods on rejected form requests
+daa3efd Check countryside taxi entry against actual built-map coverage
+a10ec90 Expire live weather reports by wall-clock time
+d8fc8d3 Choose taxis that can reach the pickup
+afbc212 Keep panel scrolling from changing the game camera
+ca1fbbc Finish renderer startup safely when async stages fail
+7a7a36d Keep benchmark pause polling responsive and ordered
+4e2aa2a Cover boat lock lifecycle and queue safety
+61bf787 Preserve shared OSM way endpoints across map chunks
+799c346 Keep the game paused through credits and newsletter dialogs
+9e41c3f Stop radio loading noise when leaving a car
+e95bc45 Keep controller actions on the front dialog
+6e6539e Keep road markings legible from high above
+932d1b1 Record completed checks and map rebuild dependencies
+f25eaed Validate compressed mesh responses before caching
+c790610 Let players recover from stalled form requests
+8798b61 Keep parked cars clear of emergency street routes
+c9cb1e0 Retire failed countryside workers without retry storms
+478905e Keep jam escape from driving into the queue after a bend
+22deab5 Recognize queued traffic across street graph reloads
+951b1d0 Record live opposing-boat lock verification
+ece0889 Brake earlier for traffic merging into a shared lane
+02837de Place the unreachable ambulance fixture beyond treatment fallback
+7771739 Use live Vite module identities in browser regressions
+9732bbd Reserve pickup clearance through sharp bends inside streets
+bef04e0 Give the pedestrian escape fixture a clear timed coast

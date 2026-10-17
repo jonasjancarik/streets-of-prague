@@ -1,0 +1,137 @@
+{
+  "head": "f25eaedcdfc9a859a462ac73706601d52f061716",
+  "results": [
+    {
+      "file": "scripts/check-bench-pause.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.161
+    },
+    {
+      "file": "scripts/check-bikeshare.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.759
+    },
+    {
+      "file": "scripts/check-controls.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.18
+    },
+    {
+      "file": "scripts/check-display-text.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.698
+    },
+    {
+      "file": "scripts/check-ground-areas.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.107
+    },
+    {
+      "file": "scripts/check-lamp-forget.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.552
+    },
+    {
+      "file": "scripts/check-lamp-runway.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.453
+    },
+    {
+      "file": "scripts/check-live-weather-requests.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.637
+    },
+    {
+      "file": "scripts/check-live-weather.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.379
+    },
+    {
+      "file": "scripts/check-mist-settings.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.664
+    },
+    {
+      "file": "scripts/check-modal-pause.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.594
+    },
+    {
+      "file": "scripts/check-money.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.654
+    },
+    {
+      "file": "scripts/check-radio.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.065
+    },
+    {
+      "file": "scripts/check-renderer-startup.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.148
+    },
+    {
+      "file": "scripts/check-river-boats.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 1.32
+    },
+    {
+      "file": "scripts/check-save-failures.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.6
+    },
+    {
+      "file": "scripts/check-save.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.654
+    },
+    {
+      "file": "scripts/check-sky-refresh.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.196
+    },
+    {
+      "file": "scripts/check-taxi-controls.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.471
+    },
+    {
+      "file": "scripts/check-taxi-routing.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.509
+    },
+    {
+      "file": "scripts/check-tile-lifecycle.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.509
+    },
+    {
+      "file": "scripts/check-worker.mjs",
+      "code": 0,
+      "signal": null,
+      "seconds": 0.045
+    }
+  ]
+}

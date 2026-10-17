@@ -1,0 +1,5 @@
+centrum: 234 tiles, 2724 lanes, 4382 turns, 21591 parked cars, 6 s
+In a lane or a turning curve: 222 of 21591 parked cars (bus 222)
+In the middle of a street (emergency vehicles): 0 of 21591 parked cars (none)
+(node:95261) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)

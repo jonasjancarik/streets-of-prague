@@ -1,0 +1,196 @@
+{
+  "total": 31,
+  "executed": 27,
+  "passed": 27,
+  "skipped": 4,
+  "failed": 0,
+  "errors": [],
+  "scenarios": [
+    {
+      "name": "ambulance",
+      "passed": true,
+      "skipped": false,
+      "title": "An ambulance comes to someone lying hurt, the paramedics see to them and they get up (8.6 s)"
+    },
+    {
+      "name": "bike-hit",
+      "passed": true,
+      "skipped": false,
+      "title": "A cyclist hit hard by a car comes off the bike, and a courier leaves the bag behind (0.9 s)"
+    },
+    {
+      "name": "boat-boarding",
+      "passed": true,
+      "skipped": false,
+      "title": "Moored pedal boats can be boarded and left from low, clear banks (2.1 s)"
+    },
+    {
+      "name": "bridge-exit",
+      "passed": true,
+      "skipped": false,
+      "title": "Getting out of a car on a bridge leaves you on its deck (1.8 s)"
+    },
+    {
+      "name": "bus-displays",
+      "passed": true,
+      "skipped": false,
+      "title": "Buses keep their loaded PID line when taken and entered again (1.5 s)"
+    },
+    {
+      "name": "car-doors",
+      "passed": true,
+      "skipped": false,
+      "title": "E takes you into a car through its door and out again, and hauls a driver out (1.1 s)"
+    },
+    {
+      "name": "countryside-edge",
+      "passed": true,
+      "skipped": true,
+      "title": "A car drives out of the map along a main road and back in (0.0 s)"
+    },
+    {
+      "name": "countryside-police",
+      "passed": true,
+      "skipped": true,
+      "title": "Two stars bring police cars after you out in the countryside too (0.0 s)"
+    },
+    {
+      "name": "countryside-taxi",
+      "passed": true,
+      "skipped": true,
+      "title": "A taxi ordered out in the countryside drives you back into the map (0.0 s)"
+    },
+    {
+      "name": "countryside-traffic",
+      "passed": true,
+      "skipped": true,
+      "title": "Past the map the traffic is as thin as the roads (0.0 s)"
+    },
+    {
+      "name": "courier-bag",
+      "passed": true,
+      "skipped": false,
+      "title": "A courier whose bike is taken leaves the bag on the ground, and you can carry it (1.0 s)"
+    },
+    {
+      "name": "cruise-lock",
+      "passed": true,
+      "skipped": false,
+      "title": "A cruise boat passes a weir through the lock beside it (9.5 s)"
+    },
+    {
+      "name": "cruise-weir",
+      "passed": true,
+      "skipped": false,
+      "title": "A cruise boat on the fairway stops short of a weir without a lock and turns round (2.8 s)"
+    },
+    {
+      "name": "driver-honks",
+      "passed": true,
+      "skipped": false,
+      "title": "A driver held up by you standing in the road sounds the horn (1.2 s)"
+    },
+    {
+      "name": "ferry-ride",
+      "passed": true,
+      "skipped": false,
+      "title": "A PID ferry is boarded at its landing, with and without a ticket, left on the far bank, and inspected (19.5 s)"
+    },
+    {
+      "name": "fire-brigade",
+      "passed": true,
+      "skipped": false,
+      "title": "The fire brigade gets to a burning car in time, and to the wreck of your own (3.7 s)"
+    },
+    {
+      "name": "fire-driver",
+      "passed": true,
+      "skipped": false,
+      "title": "The driver of a car from the traffic gets out when it catches fire (0.3 s)"
+    },
+    {
+      "name": "heli-bridge",
+      "passed": true,
+      "skipped": false,
+      "title": "A helicopter lands on a bridge, lets you out on its deck and stays under it from below (1.8 s)"
+    },
+    {
+      "name": "input-release",
+      "passed": true,
+      "skipped": false,
+      "title": "Releasing a key in a developer field or leaving the window stops walking (4.5 s)"
+    },
+    {
+      "name": "lamp-break",
+      "passed": true,
+      "skipped": false,
+      "title": "A crash smashes the headlamps, but not behind a police ram; braking lights the tail lamps (0.9 s)"
+    },
+    {
+      "name": "lamp-knock",
+      "passed": true,
+      "skipped": false,
+      "title": "A car at 50 km/h knocks a lamp post over (0.8 s)"
+    },
+    {
+      "name": "pedestrians-escape",
+      "passed": true,
+      "skipped": false,
+      "title": "A pedestrian standing in the road, 3 m in front of a car at 50 km/h, leaps clear and is not knocked over (0.5 s)"
+    },
+    {
+      "name": "police-chase",
+      "passed": true,
+      "skipped": false,
+      "title": "Two stars bring police cars after you (1.8 s)"
+    },
+    {
+      "name": "police-stand-down",
+      "passed": true,
+      "skipped": false,
+      "title": "After an arrest the police cars drive off instead of standing in the street (3.9 s)"
+    },
+    {
+      "name": "police-stolen-lights",
+      "passed": true,
+      "skipped": false,
+      "title": "A stolen police car keeps flashing when stopped and entered again (0.6 s)"
+    },
+    {
+      "name": "seasonal-ground",
+      "passed": true,
+      "skipped": false,
+      "title": "Ground and evergreen hedges follow the game date without replacing surfaces (7.9 s)"
+    },
+    {
+      "name": "step-edges",
+      "passed": true,
+      "skipped": false,
+      "title": "Quay walls and retaining walls stop cars and people; streets and stairs across them stay open (2.2 s)"
+    },
+    {
+      "name": "tunnel-layers",
+      "passed": true,
+      "skipped": false,
+      "title": "Underground and on the road above stay apart on foot and in cars (0.9 s)"
+    },
+    {
+      "name": "vehicle-entry-order",
+      "passed": true,
+      "skipped": false,
+      "title": "A helicopter scenario cannot prevent the next scenario from entering a car (3.0 s)"
+    },
+    {
+      "name": "wall-crash",
+      "passed": true,
+      "skipped": false,
+      "title": "A wall impact near 60 km/h sharply slows the car and damages it (3.8 s)"
+    },
+    {
+      "name": "wreck-tow",
+      "passed": true,
+      "skipped": false,
+      "title": "A wreck left out of sight is towed after a minute, one in view stays (5.0 s)"
+    }
+  ]
+}

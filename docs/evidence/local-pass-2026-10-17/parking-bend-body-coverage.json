@@ -1,0 +1,455 @@
+{
+  "sourceHash": "e8981e52c9c9df59e0a8b38b08b76a183acfab6b742e58c4c9a5071651bcbeab",
+  "target": {
+    "baseline": [
+      true,
+      true,
+      true
+    ],
+    "candidate": [
+      false,
+      true,
+      true
+    ]
+  },
+  "parity": [
+    {
+      "name": "straight",
+      "changed": 0
+    },
+    {
+      "name": "collinear",
+      "changed": 0
+    },
+    {
+      "name": "junction-right",
+      "changed": 0
+    },
+    {
+      "name": "junction-left",
+      "changed": 0
+    }
+  ],
+  "coverage": [
+    {
+      "name": "kink30",
+      "dt": 0.016666666666666666,
+      "speed": 0,
+      "accepted": 1903,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2850098765215331,
+      "hit": null
+    },
+    {
+      "name": "kink30",
+      "dt": 0.016666666666666666,
+      "speed": 8,
+      "accepted": 1903,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2850098765215331,
+      "hit": null
+    },
+    {
+      "name": "kink30",
+      "dt": 0.016666666666666666,
+      "speed": 13,
+      "accepted": 1903,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.28500061728386583,
+      "hit": null
+    },
+    {
+      "name": "kink30",
+      "dt": 0.05,
+      "speed": 0,
+      "accepted": 1903,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.285012499965278,
+      "hit": null
+    },
+    {
+      "name": "kink30",
+      "dt": 0.05,
+      "speed": 8,
+      "accepted": 1903,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.285012499965278,
+      "hit": null
+    },
+    {
+      "name": "kink30",
+      "dt": 0.05,
+      "speed": 13,
+      "accepted": 1903,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.287936972043381,
+      "hit": null
+    },
+    {
+      "name": "kink60",
+      "dt": 0.016666666666666666,
+      "speed": 0,
+      "accepted": 1724,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2850098765215331,
+      "hit": null
+    },
+    {
+      "name": "kink60",
+      "dt": 0.016666666666666666,
+      "speed": 8,
+      "accepted": 1724,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2850098765215331,
+      "hit": null
+    },
+    {
+      "name": "kink60",
+      "dt": 0.016666666666666666,
+      "speed": 13,
+      "accepted": 1724,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.28500061728386583,
+      "hit": null
+    },
+    {
+      "name": "kink60",
+      "dt": 0.05,
+      "speed": 0,
+      "accepted": 1724,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.08664537224031699,
+      "hit": null
+    },
+    {
+      "name": "kink60",
+      "dt": 0.05,
+      "speed": 8,
+      "accepted": 1724,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.285012499965278,
+      "hit": null
+    },
+    {
+      "name": "kink60",
+      "dt": 0.05,
+      "speed": 13,
+      "accepted": 1724,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.287936972043381,
+      "hit": null
+    },
+    {
+      "name": "kink90",
+      "dt": 0.016666666666666666,
+      "speed": 0,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2850098765215331,
+      "hit": null
+    },
+    {
+      "name": "kink90",
+      "dt": 0.016666666666666666,
+      "speed": 8,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2850098765215331,
+      "hit": null
+    },
+    {
+      "name": "kink90",
+      "dt": 0.016666666666666666,
+      "speed": 13,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.28500061728386583,
+      "hit": null
+    },
+    {
+      "name": "kink90",
+      "dt": 0.05,
+      "speed": 0,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.04665734209777239,
+      "hit": null
+    },
+    {
+      "name": "kink90",
+      "dt": 0.05,
+      "speed": 8,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.285012499965278,
+      "hit": null
+    },
+    {
+      "name": "kink90",
+      "dt": 0.05,
+      "speed": 13,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.287936972043381,
+      "hit": null
+    },
+    {
+      "name": "kink135",
+      "dt": 0.016666666666666666,
+      "speed": 0,
+      "accepted": 1676,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2642364611709439,
+      "hit": null
+    },
+    {
+      "name": "kink135",
+      "dt": 0.016666666666666666,
+      "speed": 8,
+      "accepted": 1676,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2425350758507262,
+      "hit": null
+    },
+    {
+      "name": "kink135",
+      "dt": 0.016666666666666666,
+      "speed": 13,
+      "accepted": 1676,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2342555558644025,
+      "hit": null
+    },
+    {
+      "name": "kink135",
+      "dt": 0.05,
+      "speed": 0,
+      "accepted": 1676,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2639787752961159,
+      "hit": null
+    },
+    {
+      "name": "kink135",
+      "dt": 0.05,
+      "speed": 8,
+      "accepted": 1676,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.285012499965278,
+      "hit": null
+    },
+    {
+      "name": "kink135",
+      "dt": 0.05,
+      "speed": 13,
+      "accepted": 1676,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.23425555586432834,
+      "hit": null
+    },
+    {
+      "name": "kink165",
+      "dt": 0.016666666666666666,
+      "speed": 0,
+      "accepted": 1897,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.039946257351396564,
+      "hit": null
+    },
+    {
+      "name": "kink165",
+      "dt": 0.016666666666666666,
+      "speed": 8,
+      "accepted": 1897,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.1169847151581459,
+      "hit": null
+    },
+    {
+      "name": "kink165",
+      "dt": 0.016666666666666666,
+      "speed": 13,
+      "accepted": 1897,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.12349244756517741,
+      "hit": null
+    },
+    {
+      "name": "kink165",
+      "dt": 0.05,
+      "speed": 0,
+      "accepted": 1897,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.285012499965278,
+      "hit": null
+    },
+    {
+      "name": "kink165",
+      "dt": 0.05,
+      "speed": 8,
+      "accepted": 1897,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.285012499965278,
+      "hit": null
+    },
+    {
+      "name": "kink165",
+      "dt": 0.05,
+      "speed": 13,
+      "accepted": 1897,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.23425555586432834,
+      "hit": null
+    },
+    {
+      "name": "kink-90",
+      "dt": 0.016666666666666666,
+      "speed": 0,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2850098765215331,
+      "hit": null
+    },
+    {
+      "name": "kink-90",
+      "dt": 0.016666666666666666,
+      "speed": 8,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2850098765215331,
+      "hit": null
+    },
+    {
+      "name": "kink-90",
+      "dt": 0.016666666666666666,
+      "speed": 13,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.28500061728386583,
+      "hit": null
+    },
+    {
+      "name": "kink-90",
+      "dt": 0.05,
+      "speed": 0,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.04665734209777239,
+      "hit": null
+    },
+    {
+      "name": "kink-90",
+      "dt": 0.05,
+      "speed": 8,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.285012499965278,
+      "hit": null
+    },
+    {
+      "name": "kink-90",
+      "dt": 0.05,
+      "speed": 13,
+      "accepted": 1722,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.287936972043381,
+      "hit": null
+    },
+    {
+      "name": "captured",
+      "dt": 0.016666666666666666,
+      "speed": 0,
+      "accepted": 1712,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2199510400768515,
+      "hit": null
+    },
+    {
+      "name": "captured",
+      "dt": 0.016666666666666666,
+      "speed": 8,
+      "accepted": 1712,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.21769788846565497,
+      "hit": null
+    },
+    {
+      "name": "captured",
+      "dt": 0.016666666666666666,
+      "speed": 13,
+      "accepted": 1712,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.21993863055991614,
+      "hit": null
+    },
+    {
+      "name": "captured",
+      "dt": 0.05,
+      "speed": 0,
+      "accepted": 1712,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.13083419401737106,
+      "hit": null
+    },
+    {
+      "name": "captured",
+      "dt": 0.05,
+      "speed": 8,
+      "accepted": 1712,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.1955518967883031,
+      "hit": null
+    },
+    {
+      "name": "captured",
+      "dt": 0.05,
+      "speed": 13,
+      "accepted": 1712,
+      "cropChanges": 0,
+      "duplicateChanges": 0,
+      "minimumClearance": 0.2205912729309628,
+      "hit": null
+    }
+  ]
+}

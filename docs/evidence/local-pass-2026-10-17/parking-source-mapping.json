@@ -1,0 +1,19 @@
+{
+  "recordedUtc": "2026-10-17T23:35:48.959945+00:00",
+  "frozenSource": "/tmp/sop-parking-interior-candidate-v2.ts",
+  "frozenSha256": "e8981e52c9c9df59e0a8b38b08b76a183acfab6b742e58c4c9a5071651bcbeab",
+  "appliedCommit": "9732bbd",
+  "committedSource": "src/parkingClearance.ts",
+  "committedSha256": "cc8e1c1c02eff4bbaa2997ec4e6290f4f6704534343833b759122b400b612a90",
+  "normalizedFrozenSha256": "cc8e1c1c02eff4bbaa2997ec4e6290f4f6704534343833b759122b400b612a90",
+  "equalAfterOnlyImportPathReplacements": true,
+  "importPathReplacements": {
+    "'/Users/janca/projects/streets-of-prague/src/network.ts'": "'./network.ts'",
+    "'/Users/janca/projects/streets-of-prague/src/map/geo.ts'": "'./map/geo.ts'",
+    "'/Users/janca/projects/streets-of-prague/src/car.ts'": "'./car.ts'"
+  },
+  "focusedTestStdout": "/tmp/sop-parking-applied-check.log",
+  "focusedTestStdoutSha256": "f182226b0c7ec26982b845d500744ba2c6b125fb7a0a09657572cd4bf0e9e895",
+  "savedAppliedHashFile": "/tmp/sop-parking-applied-sha256.txt",
+  "runtimeOrTestsRerun": false
+}

@@ -1,0 +1,31 @@
+PASS ambulance 6.9s
+PASS bike-hit 0.9s
+PASS boat-boarding 1.7s
+PASS bridge-exit 1.4s
+PASS bus-displays 1.4s
+PASS car-doors 1.2s
+PASS countryside-edge (skipped) 0.0s
+PASS countryside-police (skipped) 0.0s
+PASS countryside-taxi (skipped) 0.0s
+PASS countryside-traffic (skipped) 0.0s
+PASS courier-bag 1.0s
+PASS cruise-lock 9.1s
+PASS cruise-weir 2.9s
+PASS driver-honks 1.2s
+PASS ferry-ride 19.5s
+PASS fire-brigade 4.3s
+PASS fire-driver 0.2s
+PASS heli-bridge 1.5s
+PASS input-release 4.4s
+PASS lamp-break 0.9s
+PASS lamp-knock 0.8s
+PASS pedestrians-escape 0.6s
+PASS police-chase 1.8s
+PASS police-stand-down 3.6s
+PASS police-stolen-lights 0.8s
+PASS seasonal-ground 7.7s
+PASS step-edges 2.3s
+PASS tunnel-layers 0.9s
+PASS vehicle-entry-order 3.1s
+PASS wall-crash 3.7s
+PASS wreck-tow 4.9s

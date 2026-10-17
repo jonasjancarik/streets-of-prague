@@ -1,0 +1,3 @@
+21689 parked cars, 0 pairs touching (0 across a tile's edge)
+(node:15119) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
