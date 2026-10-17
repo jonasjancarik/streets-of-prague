@@ -58,7 +58,7 @@ the water's height does.
 How boats pass a weir: through the lock beside it. In a lock and for 150 m beyond its
 ends along the same line (the cut to the open river, from OSM's `lock=yes` ways, kept
 in the file as `locks`) a boat may keep 3.6 m from the walls instead of 5 m; the
-chambers are 11 to 12 m wide on the map. One boat at a time sails water narrower than
+chambers are 11 to 12 m wide on the map. Opposing boats take turns in water narrower than
 14 m to the bank: the other waits in wide water (each fairway's cuts are worked out once, a boat waits 70 m before one while another
 comes through, and one going down the line gives way to a boat about to enter at the far end). In praha the fairway
 is three stretches: one of 26 km from Modřany through the Smíchov lock and its cut,
@@ -66,6 +66,13 @@ the Štvanice lock and the Podbaba canal to Klecany, and one beyond each end. At
 Modřany and Klecany weirs the map's water has no lock a boat fits through, so boats
 turn round there. The cruise boat stands 3.75 m over the water (a low cabin, no mast),
 which fits under the footbridge over the Smíchov cut with 4 cm to spare.
+
+`node scripts/check-river-boats.mjs` also checks opposing hull clearance, a queue of
+three boats passing one coming the other way, and release of a waiting boat after
+the other disappears, encounters unloaded water or turns away in wide water. The
+coordination is recalculated from live boats; there is no retained lock owner.
+These are offline synthetic-fairway checks. The live `cruise-lock` scenario covers
+one boat through the Smíchov lock; a two-boat live check remains open.
 
 `node scripts/check-river.mjs [area]` sails every stretch and every ferry crossing
 without a browser (`--all` lists every step in the water, `--strict` fails on them).

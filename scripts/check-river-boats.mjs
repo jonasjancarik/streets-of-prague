@@ -73,6 +73,65 @@ try {
       assert.ok(upThrough && downThrough, `both get through in the end (from ${upAt} and ${downAt})`);
       assert.ok(nearest > 8, `and pass in wide water, not through each other (${nearest.toFixed(1)} m apart at the nearest)`);
     }
+
+    // Lifecycle states use the right-hand placement and approach clearance of
+    // launch(), rather than putting a stopped hull in the mouth of the cut.
+    const pair = () => {
+      const water = { ...wide }, two = new Boats(new THREE.Scene(), water, null, undefined, [{ pts: cutPts }]);
+      for (const b of two.list) { b.live = false; b.mesh.visible = false; }
+      two.place = () => {};
+      const course = two.courses[0], [from, to] = two.cuts.get(course)[0];
+      const place = (b, along, dir) => {
+        const p = course.at(along), off = two.keepRight(b, p.w) * dir;
+        Object.assign(b, { x: p.x, y: p.y - off, h: dir > 0 ? 0 : Math.PI, along, dir, v: 2.6, w: 0, about: 0, live: true, course, z: null });
+      };
+      const [up, down] = two.list; place(up, 450, 1); place(down, 1050, -1);
+      return { two, up, down, water, course, from, to, place };
+    };
+    const overlaps = (a, b) => {
+      const ax = Math.cos(a.h), ay = Math.sin(a.h), bx = Math.cos(b.h), by = Math.sin(b.h);
+      return [[ax, ay], [-ay, ax], [bx, by], [-by, bx]].every(([nx, ny]) => {
+        const radius = (b, dx, dy) => b.s.len / 2 * Math.abs(dx * nx + dy * ny) + b.s.beam / 2 * Math.abs(-dy * nx + dx * ny);
+        return Math.abs((b.x - a.x) * nx + (b.y - a.y) * ny) < radius(a, ax, ay) + radius(b, bx, by) - 0.01;
+      });
+    };
+    const sail = (f, done) => {
+      for (let n = 0; n < 6000 && !done(); n++) {
+        f.two.update(0.1, O + 750, O + 300);
+        const live = f.two.list.filter(b => b.live);
+        for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+          assert.ok(!overlaps(live[i], live[j]), 'the oriented hulls never overlap');
+          assert.ok(live[i].dir === live[j].dir || ![live[i], live[j]].every(b => b.along > f.from && b.along < f.to), 'opposing boats never occupy the cut together');
+        }
+      }
+      assert.ok(done(), 'the boats make progress within 600 simulated seconds');
+    };
+    for (const change of ['despawn', 'unloaded', 'turn-away']) {
+      const f = pair();
+      sail(f, () => change === 'turn-away' ? f.down.v < 0.01 : f.up.along > f.from + 100);
+      assert.ok(f.down.v < 0.01, 'the other boat is waiting before the cut');
+      if (change === 'despawn') { f.up.live = false; f.up.mesh.visible = false; }
+      if (change === 'unloaded') {
+        const p = f.course.at(f.up.along + 12);
+        f.water.waterAt = (x, y) => Math.hypot(x - p.x, y - p.y) < 2 ? null : true;
+        f.two.update(0.1, O + 750, O + 300);
+        f.water.waterAt = () => true;
+        assert.ok(!f.up.live, 'unloaded water ahead removes the boat');
+      }
+      if (change === 'turn-away') {
+        assert.ok(f.up.along < f.from && f.course.at(f.up.along).w >= 22, 'turning is staged in wide water before the cut');
+        f.up.dir = -1; f.up.about = Math.PI;
+      }
+      sail(f, () => f.down.dir < 0 && f.down.along < f.from - 40);
+    }
+    {
+      const f = pair(), passed = new Set();
+      for (let i = 2; i < f.two.list.length; i++) f.place(f.two.list[i], 530 - i * 80, 1);
+      sail(f, () => {
+        for (const b of f.two.list) if (b.dir > 0 ? b.along > f.to + 40 : b.along < f.from - 40) passed.add(b);
+        return passed.size === 4;
+      });
+    }
   }
 
   // Ferries: one all-year line and one seasonal, 200 m across.
@@ -111,7 +170,7 @@ try {
   assert.deepEqual([walker.x, walker.y], [p1.x, p1.y], 'the rider goes with the boat');
   const [ax] = ferries.ashore(p1.line.stops[1], (x, y) => [x, y]);
   assert.ok(ax > O + 208, 'and steps off onto the bank beyond the gate');
-  console.log('River boats: fairway following, keeping off the banks, turning at the end, gradual height change, one boat at a time through a cut, ferry hours, season, crossing and landing passed.');
+  console.log('River boats: fairway following, banks/end turns, gradual height change, opposing cut safety, despawn/unload/turn-away release, queued hull clearance, ferry hours/season/crossing/landing passed.');
 } finally {
   await server.close();
 }
