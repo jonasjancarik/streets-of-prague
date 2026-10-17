@@ -649,6 +649,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   interval is charged when it begins, and the hint shows the price so far. A rented bike left
   more than 300 m from you, burnt out or gone costs a fee of 500 Kč (1,000 Kč when the nearest
   station of its system is over 3 km away).
+  Rental time and fares continue across the weekly clock rollover; a lost bike pays
+  its final interval before cleanup ends the rental. Stations with unknown operators
+  or invalid pricing plans do not offer bikes. `node scripts/check-bikeshare.mjs`
+  checks rental accounting and cleanup offline.
 - **Buses.** A few red and white city buses drive Prague's real bus lines around you
   (`src/buses.ts`, from PID's timetables): each follows its line from junction to
   junction, shows its number and where it's going on the boards at the front and by the

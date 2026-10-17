@@ -1921,8 +1921,8 @@ async function main() {
       }
       scatterPeople(true);
       parkTwoWheelers(true);
-      bikeShare.update(px(), py(), clock.t, bikeWorld);
       bikeShare.charge(clock.t, (n) => wallet.take(n, 'shared bike'));
+      bikeShare.update(px(), py(), clock.t, bikeWorld);
       for (const { rental, fee } of bikeShare.abandon(px(), py(), clock.t)) {
         showBanner(t('You left the {name} bike outside a station: fee {price}', { name: rental.system.name, price: kc(wallet.take(fee, 'shared bike left outside a station')) }), true);
       }
@@ -2340,7 +2340,7 @@ async function main() {
     hint = (!inCar && !inHeli && !ride.on && !funicular.me && !ferries.me && taxi.hint(touch.active, usingPad())) || hint;
     const bikeRental = (c: Car) => {
       const rental = bikeShare.rental(c);
-      return rental && { name: rental.system.name, minutes: String(Math.max(1, Math.round((((clock.t - rental.since) % 604800) + 604800) % 604800 / 60))), price: kc(rental.paid) };
+      return rental && { name: rental.system.name, minutes: String(Math.max(1, Math.round(rental.seconds / 60))), price: kc(rental.paid) };
     };
     if (inCar && !inHeli) {
       const b = bikeRental(inCar);

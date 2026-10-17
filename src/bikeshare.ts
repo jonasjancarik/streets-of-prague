@@ -52,13 +52,18 @@ export class BikeShare {
   private grid = new Map<string, Station[]>();
   private bikes = new Map<Station, Car[]>();
   private rentals = new Map<Car, Rental>();
+  private times = new WeakMap<Rental, number>();
   private gone: { rental: Rental; fee: number }[] = [];
 
   constructor(area: string) {
     this.ready = fetch(dataUrl(area, 'bikes.json')).then((r) => (r.ok ? r.json() as Promise<Data> : null)).then((d) => {
-      if (!d) return;
+      if (!d || !Array.isArray(d.systems) || !Array.isArray(d.stations)) return;
       this.systems = d.systems;
-      for (const [x, y, system, capacity, id, name] of d.stations) {
+      for (const row of d.stations) {
+        if (!Array.isArray(row)) continue;
+        const [x, y, system, capacity, id, name] = row;
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isInteger(system) || system < 0
+            || !this.rentable(this.systems[system]) || !Number.isFinite(capacity) || capacity < 0 || typeof id !== 'string' || !id) continue;
         // How many bikes stand there: a third to four fifths of its places, one at least.
         const h = hash(id);
         const st = { x, y, system, capacity, id, name, left: Math.max(1, Math.round((capacity || 4) * (0.33 + 0.47 * h))), stocked: false };
@@ -71,7 +76,11 @@ export class BikeShare {
 
   // Read whatever operator colours have arrived by graphics preparation time.
   // The feed remains optional and does not add a loading wait.
-  colours() { return this.systems.map((system) => system.colour).filter(Boolean); }
+  colours() { return this.systems.map((system) => system?.colour).filter((colour): colour is string => typeof colour === 'string' && !!colour); }
+
+  private rentable(system: BikeSystem | undefined) {
+    return !!system && Array.isArray(system.plans) && system.plans.every((plan) => Number.isFinite(rentalCost(plan, 0)));
+  }
 
   private near(x: number, y: number, r: number) {
     const out: Station[] = [];
@@ -100,6 +109,8 @@ export class BikeShare {
 
   // A row of bikes along the nearest footpath, side by side, their fronts to the path.
   private stock(st: Station, w: BikeWorld) {
+    const sys = this.systems[st.system];
+    if (!this.rentable(sys)) return;
     st.stocked = true;
     let [ax, ay] = w.free(st.x, st.y) ? [st.x, st.y] : w.standAt(st.x, st.y);
     let ang = 0, best = Infinity;
@@ -118,7 +129,7 @@ export class BikeShare {
       const ok = tries.find(([px, py]) => clear(px, py) && w.free(px, py));
       if (ok) [ax, ay] = ok;
     }
-    const sys = this.systems[st.system], cars: Car[] = [];
+    const cars: Car[] = [];
     for (let i = 0; i < n; i++) {
       const o = (i - (n - 1) / 2) * GAP, x = ax + ux * o, y = ay + uy * o;
       if (w.loose.some((c) => Math.abs(c.x - x) < 0.6 && Math.abs(c.y - y) < 0.6)) continue;
@@ -131,8 +142,15 @@ export class BikeShare {
     if (cars.length) this.bikes.set(st, cars);
   }
 
+  private elapsed(rental: Rental, now: number) {
+    const since = this.times.get(rental) ?? rental.since;
+    rental.seconds += (((now - since) % WEEK) + WEEK) % WEEK;
+    this.times.set(rental, now);
+    return rental.seconds;
+  }
+
   private end(rental: Rental, c: Car, now: number, abandoned: boolean) {
-    rental.seconds = (((now - rental.since) % WEEK) + WEEK) % WEEK;
+    this.elapsed(rental, now);
     this.done.push(rental);
     if (!abandoned) return;
     const d = this.stations.reduce((m, s) => (s.system === c.share?.system ? Math.min(m, Math.hypot(s.x - c.x, s.y - c.y)) : m), Infinity);
@@ -140,7 +158,8 @@ export class BikeShare {
   }
 
   planOf(system: BikeSystem): PricingPlan | undefined {
-    return system.plans.find((p) => p.per_min_pricing?.length) || system.plans[0];
+    if (!Array.isArray(system.plans)) return undefined;
+    return system.plans.find((p) => p?.per_min_pricing?.length) || system.plans[0];
   }
 
   rental(c: Car) { return this.rentals.get(c); }
@@ -150,8 +169,9 @@ export class BikeShare {
   rent(c: Car, now: number, afford: (price: number) => boolean) {
     if (!c.share || this.rentals.has(c)) return true;
     const sys = this.systems[c.share.system];
+    if (!this.rentable(sys)) return false;
     if (!afford(rentalCost(sys && this.planOf(sys), 0))) return false;
-    const st = this.stations.find((s) => s.id === c.share!.station);
+    const st = this.stations.find((s) => s.system === c.share!.system && s.id === c.share!.station);
     if (st) st.left = Math.max(0, st.left - 1);
     this.rentals.set(c, { system: this.systems[c.share.system], from: c.share.station ?? '', to: null, since: now, seconds: 0, paid: 0 });
     c.share.station = null;
@@ -178,7 +198,7 @@ export class BikeShare {
   // returns what it could take.
   charge(now: number, take: (n: number) => number) {
     for (const rental of this.rentals.values()) {
-      const minutes = (((now - rental.since) % WEEK) + WEEK) % WEEK / 60;
+      const minutes = this.elapsed(rental, now) / 60;
       const due = rentalCost(this.planOf(rental.system), minutes) - rental.paid;
       if (due > 0) rental.paid += take(due);
     }
