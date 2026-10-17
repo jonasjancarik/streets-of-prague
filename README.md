@@ -189,6 +189,16 @@ that without a new renderer.
   lifting), the handbrake and "Get out"; "Back on road" is top right, under the
   sound and settings buttons. On foot, “Jump” works even at a tram stop; waiting
   has its own button. Long HUD lists scroll within a compact panel. Pinch the map to zoom (`src/touch.ts`).
+  Switching windows or apps releases held controls, including the horn and water
+  cannon. Touch controls also release when the browser loses their pointer capture.
+  Releasing a movement key in a developer field still stops movement; scenario
+  `input-release` checks this and window focus in the running game.
+- **Game controllers** (`src/gamepad.ts`): the left stick points where to go, the
+  triggers are gas and brake, X gets in or out, A jumps or brakes, and Menu opens
+  settings. In a panel, the stick or d-pad moves focus and A activates the selected
+  control; left/right adjusts sliders and selection lists. Returning from another
+  window requires releasing held buttons before pressing them again.
+  `node scripts/check-controls.mjs` checks focus, pointer and controller handling.
 - **Sound and settings.** Two buttons in the top right corner: sound on or off (also
   M), and the settings, with the start screen's choices during play: language, sound,
   graphics (also G) and weather (also P). On a phone the credits are in there too

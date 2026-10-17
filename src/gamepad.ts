@@ -59,7 +59,7 @@ export interface PadState {
 
 const dead = (v: number) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD));
 
-const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], textarea:not([disabled])';
+const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], textarea:not([disabled]), summary';
 const shown = (e: HTMLElement) => e.getClientRects().length > 0 && !e.closest('[hidden]');
 
 export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void; menu: () => boolean; zoomBy: (factor: number) => void }): PadState {
@@ -92,6 +92,19 @@ export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void;
     dir = '';
     Object.assign(state, { move: 0, turn: 0, aim: null });
   };
+  let focused = document.hasFocus?.() ?? true;
+  const suspend = () => {
+    // The page can keep receiving animation frames in the background. Stop both
+    // analogue controls and synthetic keys until it has focus again.
+    releaseAll();
+    const buttons = pad()?.buttons ?? [];
+    latched = new Set(buttons.flatMap((button, i) => button.pressed ? [i] : []));
+    held = new Set(latched);
+    state.active = false;
+  };
+  window.addEventListener('blur', () => { focused = false; suspend(); });
+  window.addEventListener('focus', () => { suspend(); focused = true; });
+  document.addEventListener('visibilitychange', suspend);
   // A stick pushed in one direction, as one press and then again and again while it's held.
   const direction = (sx: number, sy: number, dt: number): string => {
     const next = Math.abs(sx) > 0.6 ? (sx > 0 ? 'right' : 'left') : Math.abs(sy) > 0.6 ? (sy > 0 ? 'down' : 'up') : '';
@@ -117,6 +130,17 @@ export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void;
       now.dispatchEvent(new Event('change', { bubbles: true }));
       return;
     }
+    if (now instanceof HTMLSelectElement && (way === 'left' || way === 'right')) {
+      const step = way === 'right' ? 1 : -1;
+      for (let i = now.selectedIndex + step; i >= 0 && i < now.options.length; i += step) {
+        if (now.options[i].disabled || now.options[i].parentElement?.matches('optgroup[disabled]')) continue;
+        now.selectedIndex = i;
+        now.dispatchEvent(new Event('input', { bubbles: true }));
+        now.dispatchEvent(new Event('change', { bubbles: true }));
+        break;
+      }
+      return;
+    }
     // The nearest one in that direction, trading a little distance for staying in line.
     const from = now.getBoundingClientRect(), fx = from.left + from.width / 2, fy = from.top + from.height / 2;
     let best: HTMLElement | null = null, bestScore = Infinity;
@@ -137,6 +161,7 @@ export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void;
     requestAnimationFrame(poll);
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
+    if (!focused || document.hidden) return;
     const p = pad();
     if (!p) {
       if (state.active) { releaseAll(); state.active = false; }
@@ -160,7 +185,15 @@ export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void;
       latched = new Set(pressed);
       const way = direction(sx, sy, dt) || (hit(12) ? 'up' : hit(13) ? 'down' : hit(14) ? 'left' : hit(15) ? 'right' : '');
       if (way) steer(root, way);
-      if (hit(0)) (document.activeElement as HTMLElement | null)?.click?.();
+      if (hit(0)) {
+        const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(shown);
+        const active = document.activeElement as HTMLElement | null;
+        // A newly opened panel may still have focus on its opener. Confirm only
+        // an enabled control belonging to the visible panel.
+        const target = active && items.includes(active) ? active : items[0];
+        target?.focus();
+        target?.click();
+      }
       if (hit(1) && root instanceof HTMLDialogElement) root.close();
       held = pressed;
       return;

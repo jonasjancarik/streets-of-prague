@@ -1292,7 +1292,16 @@ async function main() {
     if (!e.shiftKey) input.run = false;
     if (e.code === 'KeyQ') honk(false);
     if (e.code === 'KeyF') cannonHeld = false;
-  });
+  }, { capture: true }); // release even when a focused developer field stops bubbling
+  // A key released in another window never sends us keyup. Clear held actions
+  // immediately so returning to the game cannot leave the throttle or horn on.
+  const releaseInput = () => {
+    for (const key of Object.keys(input) as InputKey[]) input[key] = false;
+    honk(false);
+    cannonHeld = false;
+  };
+  window.addEventListener('blur', releaseInput);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseInput(); });
   let zoom = 1;
   const zoomBy = (f: number) => { zoom = clamp(zoom * f, 0.5, 4); };
   window.addEventListener('wheel', (e) => {

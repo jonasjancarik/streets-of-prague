@@ -86,6 +86,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
   pad.addEventListener('pointermove', (e) => { if (e.pointerId === stickId) stickMove(e); });
   pad.addEventListener('pointerup', stickEnd);
   pad.addEventListener('pointercancel', stickEnd);
+  pad.addEventListener('lostpointercapture', stickEnd);
 
 // ---- Pedals ------------------------------------------------------------
   const pedals = $('t-pedals'), gas = $('t-gas'), brake = $('t-brake');
@@ -131,6 +132,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
   });
   hand.addEventListener('pointerup', handUp);
   hand.addEventListener('pointercancel', handUp);
+  hand.addEventListener('lostpointercapture', handUp);
 
   // On a tram, or at a stop waiting for one: hold to speed things up.
   const fast = $('t-fast');
@@ -143,6 +145,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
   });
   fast.addEventListener('pointerup', fastUp);
   fast.addEventListener('pointercancel', fastUp);
+  fast.addEventListener('lostpointercapture', fastUp);
 
   const toggle = $('t-toggle');
   tap(toggle, () => { assistOn = !assistOn; });
@@ -162,6 +165,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
   });
   cannonButton.addEventListener('pointerup', cannonUp);
   cannonButton.addEventListener('pointercancel', cannonUp);
+  cannonButton.addEventListener('lostpointercapture', cannonUp);
   // The horn (a tram's bell) sounds for as long as it's held.
   const hornButton = $('t-horn');
   const hornUp = () => { horn(false); hornButton.classList.remove('down'); };
@@ -173,6 +177,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
   });
   hornButton.addEventListener('pointerup', hornUp);
   hornButton.addEventListener('pointercancel', hornUp);
+  hornButton.addEventListener('lostpointercapture', hornUp);
 
   // ---- Pinch to zoom -----------------------------------------------------
   const app = $('app'), fingers = new Map<number, { x: number; y: number }>();
@@ -194,6 +199,25 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
   const lift = (e: PointerEvent) => { fingers.delete(e.pointerId); spread = fingers.size === 2 ? span() : 0; };
   app.addEventListener('pointerup', lift);
   app.addEventListener('pointercancel', lift);
+
+  // Switching apps can swallow the pointer-up event. Nothing should stay held
+  // when the player returns, including a pinch begun before the switch.
+  const releaseAll = () => {
+    stickId = null;
+    push.x = push.y = 0;
+    state.aim = null;
+    stick.classList.remove('held');
+    stick.style.transform = knob.style.transform = '';
+    releasePedals();
+    handUp();
+    fastUp();
+    hornUp();
+    cannonUp();
+    fingers.clear();
+    spread = 0;
+  };
+  window.addEventListener('blur', releaseAll);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
 
   // ---- Per frame -----------------------------------------------------------
   const shown: Record<string, string | boolean> = {};
