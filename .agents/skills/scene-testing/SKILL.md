@@ -101,6 +101,10 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   whether the game was opened with `?countryside` (`--extra "&countryside"`); the
   scenarios `countryside-edge`, `-traffic`, `-taxi` and `-police` need it and skip
   themselves without.
+- `t.builtMap()`: whether your current position is inside an available prebuilt tile
+  and the exact map extent from `index.json`. Unlike `t.countryside()`, this checks
+  your location and excludes generated countryside, including the outer part of a
+  partial edge tile.
 - `t.orderTaxi()` orders an app taxi on foot, `t.taxi()` says how it stands (`state`,
   `near`, `to`), `t.boardTaxi()` gets in, `t.taxiTo(n)` picks the n-th place of its list.
   `t.probe()` also gives `traffic` and `people` (how many are about) and `place` (the

@@ -1,5 +1,7 @@
 # Licences to check before a wider release
 
+<!-- read_when: changing data sources, attribution or dependencies; preparing a wider release -->
+
 Written on the night of 5 to 6 October 2026 from public pages and the installed package. This is
 research for the owner, not legal advice. Two things were open in `todo.md`: what licence TSK
 Praha's data carries, and whether `straight-skeleton` brings GPL code into the game.

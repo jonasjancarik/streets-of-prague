@@ -126,7 +126,8 @@ before that day's frame-count fix may be doubled.
   worktree or `landmarks.py <area> --rebake`) and upload them with the map.
 - **Street graphs** now forget tiles far behind the player (checked offline over 8 km
   and with one pursuit in the game). Left: a scenario with a taxi ride across forgotten
-  streets; the lamps' street and hung-lamp tables still keep every tile ever joined.
+  streets. Lamp indexes now retire with their graph tiles; the lifecycle checks are
+  in `scripts/check-lamp-forget.mjs`.
 - **`requestDevice()` sometimes never returns** at "Preparing graphics…" (limits: 5 s
   for the adapter, 15 s for the device). The error report now carries the stage, the
   time, frames drawn and whether the tab was hidden. Next: start without our own
@@ -210,8 +211,11 @@ before that day's frame-count fix may be doubled.
   by street; countryside tiles and streets without a name still go by 90 m cell).
 - **Parking (plan 029):** collision bodies on an estate drive unmeasured (the second
   car in front of a garage is in).
-- **Sports grounds (plan 030):** lines now hold a width in pixels from high up; road
-  paint is as thin and could use the same hold.
+- **Sports grounds and road paint (plan 030):** lane, edge, parking and crossing
+  lines now share sports lines' minimum pixel width on both renderers. Close,
+  normal and high top-down views and one sloped street were checked on 17 October;
+  `docs/performance-log.md` records added attributes, tile-build cost and inconclusive
+  frame timing.
 - **Lanes (plan 031):** past the city limits unmapped land is grass, not paving;
   unmapped village squares turn to grass with the rest: look for bad cases.
 - **Paths and pavements (plan 018):** surveyed pavements, islands, medians, platforms
@@ -256,9 +260,10 @@ before that day's frame-count fix may be doubled.
   scenario, cars left behind, E meaning something nearer than the test wanted, checks
   timed too tightly, a boat taken off the water 700 m away, a drive aimed past the
   bridge). Five of the last six full runs were clean. Left:
-  - `wall-crash` fails about once in six full runs ("the car stopped at the wall
-    (16.1 km/h)"), never alone: it depends on what earlier scenarios leave, and the
-    check reads the speed at exactly 3 s with the accelerator held. Not caught.
+  - `wall-crash` was corrected on 17 October: the old setup could hit other cars
+    first and accelerate past 100 km/h. It now checks a clear approach, coasts from
+    60 km/h and records the actual wall impact. Ten repeats and the full-run case
+    passed with the original final speed limit below 15 km/h.
   - `bike-hit` once: the car put 10 m behind the courier hit something else first
     (34 m from the bike at 14 km/h); the check now says the car's damage and place.
   - `courier-bag` once: E took the player into a taxi standing nearer than the bag.
@@ -293,6 +298,8 @@ before that day's frame-count fix may be doubled.
 - **Boats:** cruise boats follow the fairway through the locks (`river.json`); they
   still turn at Modřany and Klecany (no usable lock in the map's water). One boat at
   a time goes through a lock cut (checked offline, not with two boats in the game).
+  The offline checks now cover hull overlap, opposing queues and release after a
+  boat disappears, unloads or turns away (`scripts/check-river-boats.mjs`).
 - **Ferries:** P1, P2, P4, P5 and P6 run with tickets; an inspector may check you as the ferry comes in (running
   off from a ferry was not played); P3 and P7 when PID's feed has them; not tried on touch or WebGL.
 - **Taxis:** routes are sometimes long, and the apps have no phone screen (the stall
@@ -311,9 +318,10 @@ before that day's frame-count fix may be doubled.
   calendar, seasons for baked landmarks.
 - **Lamps:** an untagged street or footpath is lit where a lamp stands within 45 m or
   buildings stand along it, and the lights carry on to the next lit street up to
-  300 m (the owner's middle way, 7 October); 32,267 lamps from IPR's finished-works
-  layer were added to the survey's. Left: confirm that layer's licence
-  (`DTMP_CUR_TMISZNAK_ADS_B`) and name it in the credits; path lamps on estates may be
+  300 m (the owner's middle way, 7 October); 32,267 lamps from IPR's operator-record
+  layer were added to the survey's. Its licence and attribution
+  (`DTMP_CUR_TMISZNAK_ADS_B`) were checked on 17 October and added to the credits
+  (see `docs/licences-review.md`). Left: path lamps on estates may be
   too dense (71 in a 250 m circle at Jižní Město; 30 m spacing is the knob); lamps
   doubled where the two layers disagree by more than 12 m; no picture shows the
   connection rule; no benchmark; a hung lamp with no wall within 18 m on both sides is

@@ -32,7 +32,8 @@ disconnected streets still need the checks below.
 In the two cached cuts checked in memory, drive edges increased from 488 to 609 and
 401 to 496; walk edges from 1,101 to 1,270 and 924 to 1,058. These are local graph
 counts, not runtime measurements. A regenerated map still needs route, loading and
-frame-time checks before release.
+frame-time checks before release. Rebuild outputs keyed by street IDs, including
+`signals.json`, with the new streets as part of the full sequence below.
 
 ## Before starting
 
