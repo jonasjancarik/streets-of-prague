@@ -1140,8 +1140,11 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   them, after `build_tiles.py` and `ipr_buildings.py` (it takes the footprints and the
   clean models from the tiles). It needs Blender (on the PATH, in /Applications or
   `$BLENDER`); `--raw` keeps the mesh's own triangles instead. The mesh's pieces are
-  kept in `pipeline/.cache/mesh/`; the finest level (16) is the default. How to add
-  one, check it and fix what goes wrong: `.agents/skills/landmarks/SKILL.md`. The
+  kept in `pipeline/.cache/mesh/`; compressed responses are checked before caching.
+  A cached gzip that fails to decode is fetched again and replaced only after a decodable
+  response; failed retries leave the previous file intact and stop the build.
+  The finest level (16) is the default. How to add one, check it and fix what goes
+  wrong: `.agents/skills/landmarks/SKILL.md`. The
   generated final manifest names `.warm-v1.glb` files; originals remain beside them.
   `--rebake` bakes again from the inputs kept in `pipeline/.cache/landmarks/` after a
   change to the bake. A wall's lowest metres that no photograph shows repeat the wall

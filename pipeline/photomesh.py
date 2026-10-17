@@ -17,6 +17,7 @@ import struct
 import time
 import urllib.request
 import uuid
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -28,26 +29,36 @@ NODES = Path(__file__).parent / ".cache" / "mesh"
 WORKERS = 12
 
 
+def _decoded(data: bytes) -> bytes:
+    return gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data
+
+
 def fetch(path: str) -> bytes:
     """A file of the layer (e.g. "nodes/<id>"), from the cache or downloaded into it."""
     f = NODES / path.replace("/", "_")
-    if not f.exists():
-        NODES.mkdir(parents=True, exist_ok=True)
-        for attempt in range(5):
-            try:
-                data = urllib.request.urlopen(f"{MESH}/{path}", timeout=60).read()
-                break
-            except OSError:
-                if attempt == 4:
-                    raise
-                time.sleep(2 ** attempt)
-        # Written under another name and renamed, so a half-written file is never read,
-        # here or by another checkout sharing the cache.
-        tmp = f.with_name(f"{f.name}.{uuid.uuid4().hex}.part")
-        tmp.write_bytes(data)
-        tmp.replace(f)
-    b = f.read_bytes()
-    return gzip.decompress(b) if b[:2] == b"\x1f\x8b" else b
+    if f.exists():
+        data = f.read_bytes()
+        try:
+            return _decoded(data)
+        except (OSError, EOFError, zlib.error):
+            pass  # A broken gzip is a miss; keep it until a valid replacement is ready.
+    NODES.mkdir(parents=True, exist_ok=True)
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(f"{MESH}/{path}", timeout=60) as response:
+                data = response.read()
+            decoded = _decoded(data)  # Check gzip completeness and CRC before publishing.
+            break
+        except (OSError, EOFError, zlib.error):
+            if attempt == 4:
+                raise
+            time.sleep(2 ** attempt)
+    # Written under another name and renamed, so a half-written file is never read,
+    # here or by another checkout sharing the cache.
+    tmp = f.with_name(f"{f.name}.{uuid.uuid4().hex}.part")
+    tmp.write_bytes(data)
+    tmp.replace(f)
+    return decoded
 
 
 def fetch_all(paths, workers: int = WORKERS):
