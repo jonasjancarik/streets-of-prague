@@ -214,6 +214,7 @@ that without a new renderer.
   settings. In a panel, the stick or d-pad moves focus and A activates the selected
   control; left/right adjusts sliders and selection lists. Returning from another
   window requires releasing held buttons before pressing them again.
+  When a dialog opens over another one, controls follow the front dialog.
   `node scripts/check-controls.mjs` checks focus, pointer and controller handling.
 - **Sound and settings.** Two buttons in the top right corner: sound on or off (also
   M), and the settings, with the start screen's choices during play: language, sound,

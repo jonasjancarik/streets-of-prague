@@ -30,7 +30,7 @@ class Element extends EventTarget {
   rect = { left: 0, top: 0, width: 96, height: 96, right: 96, bottom: 96 };
   getBoundingClientRect() { return this.rect; }
   getClientRects() { return this.hidden ? [] : [this.rect]; }
-  closest() { return null; }
+  closest(selector) { return selector === 'dialog[open]' && dialogs.includes(this.dialog) ? this.dialog : null; }
   querySelectorAll() { return this.items; }
   querySelector() { return null; }
   setPointerCapture() {}
@@ -39,7 +39,7 @@ class Element extends EventTarget {
 }
 globalThis.HTMLInputElement = class extends Element {};
 globalThis.HTMLSelectElement = class extends Element {};
-globalThis.HTMLDialogElement = class extends Element { close() { dialogs = []; } };
+globalThis.HTMLDialogElement = class extends Element { close() { dialogs = dialogs.filter(dialog => dialog !== this); } };
 globalThis.KeyboardEvent = class extends Event {
   constructor(type, init) { super(type, init); Object.assign(this, { code: init.code, shiftKey: init.shiftKey }); }
 };
@@ -165,12 +165,14 @@ pads = [pad];
 pad.axes[0] = 0;
 for (let i = 0; i < pad.buttons.length; i++) button(i, false);
 const dialog = new HTMLDialogElement(), first = new Element(), outside = new Element();
+first.dialog = dialog;
 dialog.items = [first]; dialogs = [dialog]; outside.focus();
 button(0, true); tick();
 assert.equal(outside.clicked, 0, 'confirm cannot click outside the current dialog');
 assert.equal(first.clicked, 1);
 button(0, false); tick();
 const select = new HTMLSelectElement();
+select.dialog = dialog;
 select.selectedIndex = 0;
 select.options = [{ disabled: false }, { disabled: true }, { disabled: false }];
 dialog.items = [first, select]; select.focus();
@@ -184,6 +186,21 @@ assert.equal(changes, 1, 'end of list does not emit a false change');
 button(15, false); tick(); button(14, true); tick();
 assert.equal(select.selectedIndex, 0);
 assert.equal(changes, 2);
+// Credits exists earlier in the DOM than a lazily created newsletter, but opening
+// Privacy from that form puts Credits above it and moves native focus there.
+button(14, false); tick();
+const credits = new HTMLDialogElement(), newsletter = new HTMLDialogElement();
+const creditsButton = new Element(), newsletterButton = new Element();
+creditsButton.dialog = credits; newsletterButton.dialog = newsletter;
+credits.items = [creditsButton]; newsletter.items = [newsletterButton];
+dialogs = [credits, newsletter]; creditsButton.focus();
+button(0, true); tick();
+assert.equal(creditsButton.clicked, 1, 'confirm follows the focused top dialog, not DOM creation order');
+assert.equal(newsletterButton.clicked, 0, 'the covered dialog cannot receive confirm');
+button(0, false); tick(); button(1, true); tick();
+assert.deepEqual(dialogs, [newsletter], 'back closes only the focused top dialog');
+button(1, false); button(0, true); tick();
+assert.equal(newsletterButton.clicked, 1, 'the remaining dialog accepts input after the top one closes');
 console.log('Controls: lost capture, interrupted holds/pinches, background gamepad polling, disconnect, dialog focus and select navigation passed');
 
 // Use the production wheel registration with a minimal DOM propagation model:

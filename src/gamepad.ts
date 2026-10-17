@@ -115,6 +115,10 @@ export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void;
 
   // Panels with buttons: the start screen and anything shown as a dialog.
   const panel = (): HTMLElement | null => {
+    // A pre-existing dialog (Credits) can open above a later one (newsletter).
+    // Native modal focus follows that stack; DOM order does not.
+    const focused = document.activeElement?.closest<HTMLElement>('dialog[open]');
+    if (focused) return focused;
     const dialogs = document.querySelectorAll<HTMLElement>('dialog[open]');
     if (dialogs.length) return dialogs[dialogs.length - 1];
     const start = document.querySelector<HTMLElement>('#loading');
