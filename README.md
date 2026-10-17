@@ -39,9 +39,16 @@ WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer.
 WebGPU reuses the same building, landmark, cutaway and lamp-light shader graphs
 across equivalent meshes. Each mesh keeps its own material, textures and sky-view
 attribute, so unloading one tile does not change another tile's appearance.
-If the browser's GPU adapter request takes more than 5 seconds, or device
-initialization more than 15 seconds, startup continues with WebGL. A GPU device
-that arrives after that timeout is released. Benchmark runs can require WebGPU
+If the browser's GPU adapter request takes more than 5 seconds, or loading the
+`three/webgpu` base library or device initialization takes more than 15 seconds each,
+startup continues with WebGL. A GPU device that arrives after that timeout is released;
+cleanup failures are reported without stopping the fallback renderer. The game's
+material ports (`src/webgpu.ts`) load only after the device is ready. If that import
+fails or takes more than 15 seconds, or configuration fails, startup stops with an
+error and starts renderer cleanup; reload the page to try again. That later stage
+cannot safely switch to WebGL because it installs shared material factories.
+`node scripts/check-renderer.mjs --offline` checks startup and late cleanup without a GPU.
+Benchmark runs can require WebGPU
 with `--require-webgpu`, and `--load-progress` reports the loading stage every 5 seconds.
 For Chrome/Metal loading hangs, `--fresh-browser --loading-frames` keeps runs separate
 and the frame scheduler active during loading; the heartbeat stops before timing.

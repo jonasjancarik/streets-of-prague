@@ -2,6 +2,10 @@
 // Reproduce a pending requestDevice and check startup recovery, including disposal
 // of a device that arrives after the timeout. Uses Chrome on a WebGPU-capable host.
 import { spawnSync } from 'node:child_process';
+if (process.argv.includes('--offline')) {
+  await import('./check-renderer-startup.mjs');
+  process.exit(0);
+}
 const arg = process.argv.indexOf('--url');
 const url = (arg >= 0 ? process.argv[arg + 1] : null) || 'http://localhost:5201/';
 for (const late of [false, true]) {
