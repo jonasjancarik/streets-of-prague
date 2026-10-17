@@ -4,6 +4,37 @@ Written on the night of 5 to 6 October 2026 from public pages and the installed 
 research for the owner, not legal advice. Two things were open in `todo.md`: what licence TSK
 Praha's data carries, and whether `straight-skeleton` brings GPL code into the game.
 
+## IPR lamp records
+
+Checked on 17 October 2026 against the current pipeline and public IPR metadata.
+`pipeline/build_lamps.py` combines `DTMP_CUR_TMISZNAK_B` with additional lamps from
+`DTMP_CUR_TMISZNAK_ADS_B`, then adds lamps found only in OpenStreetMap. It selects lamp
+types, removes nearby duplicates and adjusts positions that would stand in roadways.
+
+The additional layer's [public IPR portal item](https://mp.iprpraha.cz/portal/sharing/rest/content/items/ee5dd5c1a4c74a66954c9fb2cb04a4c9?f=pjson)
+has `licenseInfo: CC BY` and the attribution identifier
+`CZ-70883858-DTMP_CUR.TMISZNAK_ADS_B`. Its description identifies authorised records
+supplied by infrastructure operators, with data at 30 June 2024 and no later updates.
+The pipeline calls this source "finished works"; the portal metadata supports the
+broader description "records supplied by infrastructure operators".
+
+The item does not specify a CC BY version. IPR's [rules approved on 22 January 2024](https://geoportalpraha.cz/backend/getdokument/1),
+section I.8 on page 2, specify CC BY 4.0 for map viewing/download services and open
+data. They require author credit, a licence link, an indication of changes and the
+phrase "datový podklad © IPR Praha". The [current open-data guidance](https://geoportalpraha.cz/data-a-sluzby/otevrena-data)
+repeats that phrase and links to [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+These are the published licence and attribution terms used for this change.
+
+The existing generic IPR credit already names street lamps, IPR Praha and CC BY 4.0.
+The additional lamp credit links to the operator-supplied records, retains IPR's
+requested wording, links to the licence and says that the records were selected
+and adjusted for the game. It does not imply IPR endorsement.
+
+The cable dataset `DTMP_CUR_TMISPRUBEH_L` is only a proposed source in `todo.md`;
+the current pipeline and runtime do not use it. Its licence was not checked, and no
+cable-data attribution was added. This check did not rebuild lamp files or establish
+which data generation is deployed.
+
 ## TSK Praha's data
 
 The credits (`src/cs.ts`, keys `credits.tsk` and `credits.traffic`, and the English copy beside
