@@ -304,8 +304,9 @@ export class Traffic {
             // past it would put both cars in the same place when their lanes meet.
             const driver = o.car?.mode === 'traffic' ? this.agents.find((b) => b.car === o.car) : undefined;
             const on = driver?.route.leg.edge, current = a.route.leg.edge;
-            const next = a.route.legs.find((l) => l.edge && l.edge !== current)?.edge;
-            if (!on || (on !== current && on !== next)) continue;
+            const next = a.route.legs.find((l) => l.edge && l.edge.id !== current?.id)?.edge;
+            // A streamed-out lane can still be in a route when a new copy loads.
+            if (!on || (on.id !== current?.id && on.id !== next?.id)) continue;
           }
         }
         // Near the lookahead point too, so cars see what's round the corner.

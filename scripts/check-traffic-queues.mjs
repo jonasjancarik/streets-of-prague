@@ -62,27 +62,41 @@ function fixture(roads) {
       }
     }
   }
-  return { edges, traffic, add, step, escapes, get minClearance() { return minClearance; } };
+  return { graph, edges, traffic, add, step, escapes, get minClearance() { return minClearance; } };
 }
 
 // The actual map bend and a right-angle control start collision-free, with no
 // manually seeded ignore state. A normal stopped queue triggers the escape timer.
 const evidence = [];
 for (const roads of [ZDIBSKO, [raw('in', 'a', 'b', [[0, 0], [30, 0]]), raw('out', 'b', 'c', [[30, 0], [30, 30]])]]) {
-  const f = fixture(roads), [incoming, outgoing] = f.edges;
-  const leader = f.add(outgoing, roads === ZDIBSKO ? 7.45 : 3.5);
-  leader.stop = { edge: outgoing, s: leader.route.s };
-  const follower = f.add(incoming, 0, 5, { type: 'taxi' }); follower.route.follow([outgoing]);
-  f.step(20);
-  assert.ok(f.escapes.has(follower), 'the ordinary stopped queue actually entered jam escape');
-  assert.ok(f.escapes.get(follower).speed < .05, 'escape began from a stop');
-  assert.equal(leader.jam, 0, 'the following taxi never blocks its leader');
-  assert.equal(follower.speed < .05, true, 'the taxi still waits for the stopped leader');
-  const clearance = f.minClearance;
-  leader.stop = undefined;
-  f.step(20);
-  assert.ok(leader.gone && follower.gone, 'both cars finish their route when the leader sets off');
-  evidence.push({ bend: roads === ZDIBSKO ? 'captured Zdibsko' : 'right angle', minClearance: clearance });
+  for (const identity of roads === ZDIBSKO ? ['current', 'old leader', 'old follower'] : ['current']) {
+    const f = fixture(roads); let [incoming, outgoing] = f.edges, leader, follower;
+    if (identity === 'old follower') {
+      follower = f.add(incoming, 0, 5, { type: 'taxi' }); follower.route.follow([outgoing]);
+      f.graph.remove([incoming, outgoing]); [incoming, outgoing] = f.graph.add(roads);
+      leader = f.add(outgoing, 7.45);
+    } else {
+      leader = f.add(outgoing, roads === ZDIBSKO ? 7.45 : 3.5);
+      if (identity === 'old leader') { f.graph.remove([incoming, outgoing]); [incoming, outgoing] = f.graph.add(roads); }
+      follower = f.add(incoming, 0, 5, { type: 'taxi' }); follower.route.follow([outgoing]);
+    }
+    leader.stop = { edge: leader.route.leg.edge, s: leader.route.s };
+    if (identity !== 'current') {
+      const follows = follower.route.legs.find(l => l.edge && l.edge !== follower.route.leg.edge).edge;
+      assert.notEqual(leader.route.leg.edge, follows, 'tile reload produced a new edge object');
+      assert.equal(leader.route.leg.edge.id, follows.id, 'the directed lane identity stayed the same');
+    }
+    f.step(20);
+    assert.ok(f.escapes.has(follower), 'the ordinary stopped queue actually entered jam escape');
+    assert.ok(f.escapes.get(follower).speed < .05, 'escape began from a stop');
+    assert.equal(leader.jam, 0, 'the following taxi never blocks its leader');
+    assert.equal(follower.speed < .05, true, 'the taxi still waits for the stopped leader');
+    const clearance = f.minClearance;
+    leader.stop = undefined;
+    f.step(20);
+    assert.ok(leader.gone && follower.gone, 'both cars finish their route when the leader sets off');
+    evidence.push({ bend: roads === ZDIBSKO ? 'captured Zdibsko' : 'right angle', identity, minClearance: clearance });
+  }
 }
 
 // Ordinary three-car following, including a taxi behind a van, still moves off

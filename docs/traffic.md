@@ -123,6 +123,8 @@ their existing escape behaviour. `node scripts/check-traffic-queues.mjs` checks
 the captured Zdibsko turn, normal queues and move-off with every collision circle,
 plus crossing, opposing and pedestrian controls, without a browser. An edge only
 later in the route preview does not turn crossing traffic into a queue.
+The comparison uses directed edge IDs, so routes retained while a tile leaves and
+reloads still recognise cars on the same lane.
 
 **Buses off their line.** `BusRun` (`src/buses.ts`) judges a street shorter than 25 m
 together with the best street after it, and where no street out of a junction lies
