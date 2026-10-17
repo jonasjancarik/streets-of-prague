@@ -343,7 +343,11 @@ grime on the walls 6%, the shadow map's own pass 7%.
     and the lack of an unchanged-build control leave the timing benefit provisional. See
     [plan 015](../plans/015-paint-cars-per-instance.md) for evidence and limits.
   - **Worker scheduling:** plan 012 Part A prioritizes required jobs, allows one
-    job per worker and coalesces optional sky refreshes. Desktop and Pixel 5
+    job per worker and coalesces optional sky refreshes. A refresh rejected before
+    dispatch (for example, when no worker could start) waits for a new neighbour
+    change before retrying; it cannot spin through rejected promises. The offline
+    `node scripts/check-sky-refresh.mjs` covers unavailable workers and a queued
+    refresh losing its last worker. Desktop and Pixel 5
     comparisons had no missing player/ahead-tile frames. Frame-time differences
     were inconclusive; keep the existing worker count.
   - On a warm Pixel 5 there are also 20–24 ms spikes in `crowd.update` and 12 ms in

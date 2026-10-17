@@ -93,6 +93,19 @@ try {
       await held.promise; await held2.promise;
     }
     if (which === 'sky' || which === 'all') {
+      const absent = new TileWorkers(1, () => { throw new Error('no worker'); });
+      let attempts = 0;
+      const failedBeforeDispatch = new SkyRefresh((started) => {
+        // Cap a regression so a broken implementation fails instead of starving
+        // the browser's event loop with an endless chain of rejected promises.
+        if (++attempts > 4) return { promise: new Promise(() => {}), cancel() {} };
+        return absent.submit('sky', () => { started(); return {}; }, [], 'optional');
+      }, () => { throw new Error('failed refresh applied'); }, 0);
+      failedBeforeDispatch.request(); await tick();
+      assert(attempts === 1 && !failedBeforeDispatch.running, 'pre-dispatch failure does not spin');
+      failedBeforeDispatch.request(); await tick();
+      assert(attempts === 2 && failedBeforeDispatch.applied === 0, 'explicit request retries pre-dispatch failure once');
+      failedBeforeDispatch.drop();
       const endpoints = [];
       const q = new TileWorkers(1, () => { const w = new Fake(); endpoints.push(w); return w; });
       const applied = [];

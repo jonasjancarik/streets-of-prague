@@ -29,6 +29,9 @@ export class SkyRefresh<T> {
     if (this.disposed || this.handle) return;
     // The callback runs at worker dispatch, so queued refreshes use the latest
     // neighbour shapes and the revision that goes with them.
+    // Also record this attempt before dispatch: a failed queue with no workers
+    // rejects without calling started, and must wait for a new request to retry.
+    this.revision = this.requested;
     const handle = this.submit(() => { this.running = true; this.revision = this.requested; });
     this.handle = handle;
     handle.promise.then((result) => {
