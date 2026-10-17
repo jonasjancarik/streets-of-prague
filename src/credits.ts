@@ -7,6 +7,7 @@ import { onLang, t } from './i18n.ts';
 
 const button = document.getElementById('credits');
 const box = document.getElementById('credits-box');
+export const creditsOpen = () => box instanceof HTMLDialogElement && box.open;
 if (button && box instanceof HTMLDialogElement) {
   button.addEventListener('click', () => {
     button.blur(); // or Space, the handbrake, would press it again

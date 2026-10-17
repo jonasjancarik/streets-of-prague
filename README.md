@@ -219,6 +219,7 @@ that without a new renderer.
   M), and the settings, with the start screen's choices during play: language, sound,
   graphics (also G) and weather (also P). On a phone the credits are in there too
   (`src/settings.ts`).
+  Settings, credits, privacy, newsletter signup and feedback pause the game while open.
 - **Saved games** (`src/save.ts`): the browser keeps an automatic save and games
   saved by hand from the settings, including money and tickets. Saves are checked
   before continuing; damaged or unsupported saves stay listed so they can be

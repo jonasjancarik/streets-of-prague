@@ -74,6 +74,7 @@ export function trapField(form: HTMLFormElement) {
 }
 
 let box: HTMLDialogElement | null = null;
+export const newsletterOpen = () => !!box?.open;
 
 function build() {
   const { d, title } = sheet();

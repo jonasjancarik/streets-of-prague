@@ -8,7 +8,8 @@ import { describe } from './save.ts';
 import type { Slot, SaveData } from './save.ts';
 import * as telemetry from './telemetry.ts';
 import { mapData } from './data.ts';
-import { newsletterLink } from './newsletter.ts';
+import { newsletterLink, newsletterOpen } from './newsletter.ts';
+import { creditsOpen } from './credits.ts';
 import { updateNotice } from './update.ts';
 import { hapticsOn, setHaptics } from './haptics.ts';
 import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
@@ -314,8 +315,8 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     const r = box.getBoundingClientRect();
     if (e.target === box && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) box.close();
   });
-  // The game stands still while the panel is open.
-  const api = { get open() { return box.open || feedbackOpen(); }, show };
+  // The game stays paused when settings hand over to another modal panel.
+  const api = { get open() { return box.open || feedbackOpen() || newsletterOpen() || creditsOpen(); }, show };
   // M, G and P change these from the keyboard: look again once the game has.
   window.addEventListener('keydown', (e) => { if (['KeyM', 'KeyG', 'KeyP'].includes(e.code)) setTimeout(update); });
   return api;
