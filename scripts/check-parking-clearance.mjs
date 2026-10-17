@@ -110,12 +110,26 @@ const outside=graph([raw('outside','u','v',[[4.1,-40],[4.1,40]],{oneway:true})])
 assert.equal(parkingClearance(outside,[-20,-20,0,20])(1.9,0,1.05),false,'owned car overhang outside the index crop');
 reports.push('neighbouring lane outside the tile centreline');
 
+// Emergency routes use the mapped street's middle, even when ordinary traffic is
+// offset into the right lane of a wide one-way road. Bays on that middle are unsafe.
+const oneWay = graph([raw('centre','a','b',[[0,0],[80,0]],{oneway:true,lanes:2,width:12})]).edges;
+const centreClear = parkingClearance(oneWay);
+assert.ok(Math.abs(oneWay[0].laneOffset) > 2.25, 'fixture separates the traffic lane from the emergency route');
+assert.equal(centreClear(30,0,.9), false, 'parking cannot occupy the emergency route between ordinary lanes');
+assert.equal(centreClear(30,3.5,.9), true, 'setback parking outside both routes remains available');
+for (const kind of ['bridge','tunnel']) {
+  const raised = graph([raw(kind,'a','b',[[0,0],[80,0]],{oneway:true,lanes:2,width:12,[kind]:true})]).edges;
+  assert.equal(parkingClearance(raised)(30,0,.9), true, 'a different level does not reserve a ground-level corridor');
+}
+reports.push('emergency centreline on wide one-way roads and separate levels');
+
 // Curved road polylines and negative cell coordinates, including a query near a
 // cell edge: the spatial lookup must agree with an exhaustive segment scan.
 const bend = graph([raw('bend','a','b',[[-35,-20],[-20,-20],[-10,-10],[10,-10]],{oneway:true})]).edges;
 const bendClear=parkingClearance(bend);
+const fireRadius=new Car('fire',rng(1)).r;
 for(let x=-45;x<20;x+=.7) for(let y=-30;y<0;y+=.7) {
-  const expected=!bend[0].path.pts.slice(1).some((b,i)=>segDist(x,y,bend[0].path.pts[i],b)<2.25);
+  const expected=![[bend[0].path.pts,1.25],[bend[0].pts,fireRadius]].some(([pts,r])=>pts.slice(1).some((b,i)=>segDist(x,y,pts[i],b)<1+r));
   assert.equal(bendClear(x,y,1),expected);
 }
 reports.push('curved road and spatial cell seams');
@@ -238,7 +252,7 @@ try {
 reports.push('required neighbour graph fields, empty arrays, legacy omissions and retry');
 const pruned=Object.create(TileWorld.prototype);
 Object.assign(pruned,{T:50,ox:0,oy:0,jsonRange:null,jsons:new Map([['0_0',Promise.resolve(fixture)],['99_99',Promise.resolve(fixture)]]),
- retry:new Map(),pending:new Map(),loaded:new Map(),inFlight:new Set(),dressing:new Set(),workers:{size:0},building:0,around:()=>[]});
+ retry:new Map(),pending:new Map(),loaded:new Map(),photos:new Map(),inFlight:new Set(),dressing:new Set(),workers:{size:0},building:0,around:()=>[]});
 let scans=0;const keys=pruned.jsons.keys.bind(pruned.jsons);pruned.jsons.keys=()=>{scans++;return keys();};
 pruned.update(5,5,100);assert.equal(pruned.jsons.size,1);assert.equal(scans,1);
 pruned.update(6,6,100);assert.equal(scans,1,'stationary frames do not rescan the halo cache');

@@ -35,6 +35,9 @@ export function parkingClearance(edges: DriveEdge[], box?: Bounds) {
     if (!list) out.set(e.u, list = []);
     list.push(e);
     for (let i = 1; i < e.path.pts.length; i++) add(e.path.pts[i - 1], e.path.pts[i]);
+    // Police, ambulances and fire engines route along the mapped street's middle.
+    // On a wide one-way road that can lie outside the ordinary lane corridor.
+    for (let i = 1; i < e.pts.length; i++) add(e.pts[i - 1], e.pts[i], TYPES.fire.W / 2 + 0.02);
   }
   for (const e of ground) {
     const all = out.get(e.v) || [], forward = all.filter((f) => f !== e.twin);

@@ -292,9 +292,10 @@ before that day's frame-count fix may be doubled.
   gone through (`check-bus-lines.mjs praha`); buses cut across sharp bends in a street.
 - **Traffic by time of day** is one city-wide figure; queues on real routes, the
   direction of the peak and the car mix are next (`docs/traffic.md`).
-- **Parked cars:** `check-parking-city.mjs` finds, in centrum, 288 cars in a bus's
-  way, 6 in a pickup's and 21 on the centre line of wide one-way streets; three causes
-  in `docs/traffic.md`; nothing fixed, not yet run on `praha`.
+- **Parked cars:** the 17 October centre-map check found 290 cars in a bus's way
+  and one in a pickup's after centreline clearance was added. The 20 emergency
+  centreline overlaps are gone in the offline sweep; bend and bus-width clearance
+  remain open in `docs/traffic.md`. Not yet run on `praha`.
 - **Boats:** cruise boats follow the fairway through the locks (`river.json`); they
   still turn at Modřany and Klecany (no usable lock in the map's water). One boat at
   a time goes through a lock cut (checked offline, not with two boats in the game).

@@ -70,7 +70,9 @@ tile or view range.
 with `Route`. Ordinary curves reserve a pickup's collision circles, while the wider
 bus curves also allow for its axle placement and heading rotation on approach and
 exit. Parked cars must leave those swept paths clear; pavement parking also checks
-the neighbouring carriageways. Bridges and tunnels are excluded so parking under
+the neighbouring carriageways. The mapped street's middle also reserves a fire
+engine's width, because emergency routes use it even on a wide one-way street whose
+ordinary lane lies to one side. Bridges and tunnels are excluded so parking under
 or above them stays possible. Parking candidates, tile ownership, paid-section
 shares and day/night occupancy targets stay the same; fewer cars fit where the
 mapped bays would obstruct traffic. Clearance is built once per parking pass,
@@ -113,6 +115,14 @@ round it where there's room (`SWERVE`, `PASS`), and in a junction or past it wai
 then squeezes by. Before 6 October 2026 a car parked outside a bend looked as if it
 stood in the lane, and a taxi, bus or pickup stopped behind it for good.
 
+Traffic already queuing on a car's current or upcoming directed lane remains an
+obstacle during jam escape, even when a sharp turn makes it face across the
+following car. Otherwise the following car can drive into the queue and leave
+both cars blocking each other. Unrelated crossing and opposing traffic retain
+their existing escape behaviour. `node scripts/check-traffic-queues.mjs` checks
+the captured Zdibsko turn, normal queues and move-off with every collision circle,
+plus crossing, opposing and pedestrian controls, without a browser.
+
 **Buses off their line.** `BusRun` (`src/buses.ts`) judges a street shorter than 25 m
 together with the best street after it, and where no street out of a junction lies
 along the line it looks for the shortest way by street (2.5 km at most) to a street
@@ -146,7 +156,15 @@ furniture, so a few more cars stand than in the game). On it:
   Centrum on 8 October: none of 21,731 cars (138 pairs before cars were checked against
   each other's bodies and kept inside their tile).
 
-Open findings from the last one, not fixed yet:
+On 17 October, the current centre map had 21,731 parked cars: 311 in a lane or
+turning sweep (310 bus, one pickup) and 20 on an emergency centreline. Reserving the
+centreline reduced the total to 21,689, with no centreline overlaps; 291 lane/turn
+overlaps remain (290 bus, one pickup). These are offline body sweeps, not a claim
+that every emergency route drives without obstruction. Nine warmed tile-clearance
+builds, alternated against the previous implementation twenty times each, changed
+their medians by -0.32 to +1.49 ms on a busy machine; frame cost was not measured.
+
+Open findings from the lane/turn sweeps:
 
 - **Sharp bends inside a street.** `parkingClearance` sweeps a vehicle's body only
   through junction curves. At a kink in the middle of a street a car's nose swings out
@@ -156,9 +174,6 @@ Open findings from the last one, not fixed yet:
 - **Buses beside cars parked at the least distance.** A bus is 2.55 m wide, more than
   the 1.25 m kept each side of a lane's middle. Raising the figure to 1.45 m everywhere
   costs 3 % of centrum's parked cars (20,349 to 19,752); better only on bus streets.
-- **The middle of the street.** On a few wide one-way streets whose lane runs right of
-  the middle (Resslova, Husitská), mapped parking bays lie on the centre line that
-  emergency vehicles drive along (`Police.route` uses `mid`).
 
 ## The data
 
