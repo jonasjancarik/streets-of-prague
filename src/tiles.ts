@@ -405,8 +405,9 @@ export class TileWorld {
   onCars: (cars: Car[], tile: Tile) => void;
   onDrop: (tile: Tile) => void;
   building: number; inFlight: Set<string>; builds: Map<string, Promise<Tile>>;
-  // The tiles near enough to the view to be drawn, and those whose meshes are being made.
-  shown: Set<string>; dressing: Set<string>; drawTimes: number[];
+  // Mesh work belongs to a tile object: an older dropped tile and its replacement
+  // can still be waiting for different workers under the same key.
+  shown: Set<string>; dressing: Set<Tile>; drawTimes: number[];
   // How far beyond the edge of the view (m) tiles are drawn: far enough for a tile's
   // meshes to be ready before it comes on screen, and for the shadows a low sun casts
   // across the edge.
@@ -943,6 +944,11 @@ export class TileWorld {
     }
     // Files fetched ahead for tiles that are now far behind aren't needed any more.
     for (const k of [...this.pending.keys()]) if (!keep.has(k) && !this.loaded.has(k) && !this.inFlight.has(k)) this.pending.delete(k);
+    // Photos start with prefetching too: a failed or never-built tile has no drop()
+    // call to retire its image. Keep any photo still needed by a live build.
+    for (const k of this.photos.keys()) {
+      if (!keep.has(k) && !this.loaded.has(k) && !this.inFlight.has(k) && !this.builds.has(k)) this.dropPhoto(k);
+    }
     // JSON-only halo, including diagonal neighbours, is slightly larger than the
     // rendered set. Prune by tile coordinates without constructing a new index.
     const ci = Math.floor((x + this.ox) / this.T), cj = Math.floor((y + this.oy) / this.T);
@@ -984,7 +990,7 @@ export class TileWorld {
     if (!this.builds.has(k)) {
       const started = performance.now();
       const made = this.make(k, files)
-        .then((tile) => { this.buildTimes.push(performance.now() - started); if (this.buildTimes.length > 256) this.buildTimes.shift(); return tile; })
+        .then((tile) => { this.retry.delete(k); this.buildTimes.push(performance.now() - started); if (this.buildTimes.length > 256) this.buildTimes.shift(); return tile; })
         .catch((e) => { this.failed(k); throw e; })
         .finally(() => this.builds.delete(k));
       this.builds.set(k, made);
@@ -1207,7 +1213,7 @@ export class TileWorld {
     if (tile.drawn) return Promise.resolve();
     if (!tile.dressing) {
       const started = performance.now(), k = tile.k;
-      this.dressing.add(k);
+      this.dressing.add(tile);
       tile.dressing = this.assemble(tile, jobs ?? this.meshJobs(k, tile.source))
         .then(() => { this.drawTimes.push(performance.now() - started); if (this.drawTimes.length > 256) this.drawTimes.shift(); })
         .catch((e) => {
@@ -1216,7 +1222,7 @@ export class TileWorld {
           telemetry.count('tileFailures');
           tile.drawAfter = performance.now() + 2000;
         })
-        .finally(() => { this.dressing.delete(k); tile.dressing = null; });
+        .finally(() => { this.dressing.delete(tile); tile.dressing = null; });
     }
     return tile.dressing;
   }
@@ -1385,14 +1391,18 @@ export class TileWorld {
     return { ...this.workers.counts, coalesced, cancelled, buildTimes: this.buildTimes, drawTimes: this.drawTimes, drawn: [...this.loaded.values()].filter((t) => t.drawn).length };
   }
 
+  private dropPhoto(k: string) {
+    this.photos.get(k)?.then((tex) => tex?.dispose());
+    this.photos.delete(k);
+  }
+
   drop(k: string) {
     const t = this.loaded.get(k);
     if (!t) return;
     this.undress(t);
     disposeFurniture(t.furniture);
     this.sky.delete(t.i * 65536 + t.j);
-    this.photos.get(k)?.then((tex) => tex?.dispose());
-    this.photos.delete(k);
+    this.dropPhoto(k);
     for (const m of t.fixtures) {
       m.geometry.dispose();
       if (Array.isArray(m.material)) m.material.forEach((material) => material.dispose());

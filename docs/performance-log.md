@@ -52,6 +52,13 @@ collision index. An isolated retest is pending (see plan 012's follow-up); compe
 game instances have not been established as the cause of that result. No general
 FPS improvement is established for this set.
 
+Tile loading also handles return visits while earlier mesh work is still pending:
+each tile object owns its scheduling entry, so an old completion cannot erase the
+replacement's work or mark streaming idle. A successful rebuild removes its old
+failure cooldown. With `?ortho`, prefetched photos outside the retained tiles and
+live builds are discarded, including images that finish downloading later.
+`node scripts/check-tile-lifecycle.mjs` covers these cases without a renderer.
+
 The Mist developer controls now offer a second, optional WebGPU mode: separate
 low raymarched volumes with 3D noise and opaque-depth clipping. It uses the full
 game resolution and 12 samples by default; half-resolution rendering remains
