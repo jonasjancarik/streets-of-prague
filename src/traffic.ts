@@ -298,7 +298,15 @@ export class Traffic {
         // same lane, or into a tram.
         if (a.ignore > 0 && o.kind !== 'person' && o.kind !== 'player') {
           const queue = o.kind === 'tram' || (o.car?.mode === 'traffic' && Math.cos(o.car.h - c.h) > 0.5);
-          if (!queue || !inPath || ahead - L / 2 - o.r > 2) continue;
+          if (!queue || !inPath || ahead - L / 2 - o.r > 2) {
+            // A leader round a sharp bend can face across this car while already on
+            // the lane it is turning into. Keep ordinary braking for it; escaping
+            // past it would put both cars in the same place when their lanes meet.
+            const driver = o.car?.mode === 'traffic' ? this.agents.find((b) => b.car === o.car) : undefined;
+            const on = driver?.route.leg.edge, current = a.route.leg.edge;
+            const next = a.route.legs.find((l) => l.edge && l.edge !== current)?.edge;
+            if (!on || (on !== current && on !== next)) continue;
+          }
         }
         // Near the lookahead point too, so cars see what's round the corner.
         const lp = Math.hypot(o.x - look.p.x, o.y - look.p.y) < W / 2 + o.r + 0.4;

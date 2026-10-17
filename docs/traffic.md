@@ -115,13 +115,14 @@ round it where there's room (`SWERVE`, `PASS`), and in a junction or past it wai
 then squeezes by. Before 6 October 2026 a car parked outside a bend looked as if it
 stood in the lane, and a taxi, bus or pickup stopped behind it for good.
 
-Traffic already queuing on a car's current or upcoming directed lane remains an
-obstacle during jam escape, even when a sharp turn makes it face across the
+Traffic already queuing on a car's current or immediately upcoming directed lane
+remains an obstacle during jam escape, even when a sharp turn makes it face across the
 following car. Otherwise the following car can drive into the queue and leave
 both cars blocking each other. Unrelated crossing and opposing traffic retain
 their existing escape behaviour. `node scripts/check-traffic-queues.mjs` checks
 the captured Zdibsko turn, normal queues and move-off with every collision circle,
-plus crossing, opposing and pedestrian controls, without a browser.
+plus crossing, opposing and pedestrian controls, without a browser. An edge only
+later in the route preview does not turn crossing traffic into a queue.
 
 **Buses off their line.** `BusRun` (`src/buses.ts`) judges a street shorter than 25 m
 together with the best street after it, and where no street out of a junction lies
