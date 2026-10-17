@@ -241,10 +241,21 @@ grime on the walls 6%, the shadow map's own pass 7%.
   ground under buildings is still shaded where a GPU doesn't skip it: drawing the
   ground after the buildings would need the tunnels' contents to be drawn after it
   too.
-- **The street graphs only grow.** The drive and walk graphs, street names and the
-  crowd's index keep the edges of every tile ever loaded, so memory grows over a
-  long session across the city. The police's route search runs over the graph,
-  including tiles that have been dropped, so shrinking it needs care.
+- **Street and lamp indexes forget distant tiles.** The drive/walk graphs, street
+  names, crowd and police indexes keep the loading radius plus 500 m, with extra
+  tiles around vehicles still following routes. Lamps follow the same tile keys:
+  street directions, cable anchors, generated lamps and posts, queued fills and
+  bridge candidates retire with their last owning tile. Shared tiles retain their
+  lamps and valid survey cable anchors. Generated lamp slots are reused, so their
+  arrays retain peak simultaneous capacity rather than every place ever visited.
+  The map's survey lamps remain resident and retain their damage; generated posts
+  reset after all their tiles have been forgotten. Generated lamp colour is based
+  on position, so reusing slots does not change it on return. Newly loaded streets
+  also invalidate cached arm directions, allowing a nearer street to orient a lamp.
+  `node scripts/check-lamp-forget.mjs` covers 500 synthetic tile visits, shared
+  ownership, return visits, delayed downloads and bridge posts without a browser;
+  `node scripts/check-graph-forget.mjs --km 8` compares real map graphs and police
+  routes. These are lifecycle checks, not frame-rate measurements.
 - **three.js's WebGPU renderer** (the default since 29 September 2026, `src/webgpu.ts`; the old WebGL renderer
   and the GLSL stay unmaintained at `?renderer=webgl` until they're deleted). The ground, the tone curve, the buildings,
   the trees and the lamps' light (on the ground with the wet ground's mirror, the buildings,

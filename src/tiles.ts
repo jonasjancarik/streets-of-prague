@@ -391,17 +391,17 @@ export class TileWorld {
   driveBy: Map<string, DriveEdge[]>; walkBy: Map<string, WalkEdge[]>;
   // The share of each countryside tile's ground that buildings stand on (for how busy it is).
   builtUp = new Map<string, number>();
-  // `first`: the tile's streets are joined for the first time (false when a tile whose
-  // streets were forgotten far behind comes back).
-  onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][], first: boolean) => void;
+  // Fresh walk edges are for the crowd's index; lamps also need the complete tile's
+  // paths when a previously forgotten tile rejoins the graphs.
+  onEdges: (drive: DriveEdge[], walk: WalkEdge[], buildings: Point2[][], key: string, paths: WalkEdge[]) => void;
   // The street graphs keep the tiles within this far (m) beyond the loading radius, and
   // those round each of `anchors` (whatever still drives a route out there: a police
   // car, a fire engine, a taxi on a job). Further off a tile's streets are forgotten
-  // (onForget: the edges that left) and joined again when the tile next loads.
+  // (onForget: the edges and tile keys that left) and joined again when the tile next loads.
   graphBeyond = 500;
   anchors: () => { x: number; y: number }[] = () => [];
-  onForget: (drive: DriveEdge[], walk: WalkEdge[]) => void = () => {};
-  private joined = new Set<string>(); private trimmed = 0;
+  onForget: (drive: DriveEdge[], walk: WalkEdge[], keys: string[]) => void = () => {};
+  private trimmed = 0;
   onCars: (cars: Car[], tile: Tile) => void;
   onDrop: (tile: Tile) => void;
   building: number; inFlight: Set<string>; builds: Map<string, Promise<Tile>>;
@@ -962,16 +962,17 @@ export class TileWorld {
     if (this.driveBy.size <= this.loaded.size) return;
     const keep = new Set(this.around(x, y, r + this.graphBeyond));
     for (const a of this.anchors()) for (const k of this.around(a.x, a.y, ANCHOR_REACH)) keep.add(k);
-    const drive: DriveEdge[] = [], walk: WalkEdge[] = [];
+    const drive: DriveEdge[] = [], walk: WalkEdge[] = [], keys: string[] = [];
     for (const k of [...this.driveBy.keys()]) {
       if (keep.has(k) || this.loaded.has(k) || this.builds.has(k)) continue;
       for (const e of this.driveBy.get(k)!) drive.push(e);
       for (const e of this.walkBy.get(k) || []) walk.push(e);
       this.driveBy.delete(k);
       this.walkBy.delete(k);
+      keys.push(k);
     }
-    if (!drive.length && !walk.length) return;
-    this.onForget(this.drive.remove(drive), this.walk.remove(walk));
+    if (!keys.length) return;
+    this.onForget(this.drive.remove(drive), this.walk.remove(walk), keys);
   }
 
   // Whether tiles or their meshes are being made.
@@ -1019,8 +1020,7 @@ export class TileWorld {
     if (t.drive && !this.driveBy.has(k)) {
       this.driveBy.set(k, this.drive.add(t.drive));
       this.walkBy.set(k, this.walk.add(t.walk ?? []));
-      this.onEdges(this.driveBy.get(k)!, this.walk.fresh, t.buildings.filter(grounded).map((b) => b.rings[0]), !this.joined.has(k));
-      this.joined.add(k);
+      this.onEdges(this.driveBy.get(k)!, this.walk.fresh, t.buildings.filter(grounded).map((b) => b.rings[0]), k, this.walkBy.get(k)!);
     }
     const ms: Record<string, number> = {};
     let t0 = performance.now();

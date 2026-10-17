@@ -220,6 +220,8 @@ function cast(segs: Seg[], px: number, py: number, dx: number, dy: number, max: 
 }
 
 interface Street { hw: string; pts: [number, number][]; width?: number; tunnel?: boolean; bridge?: boolean }
+interface LampTile { cells: Set<number>; lamps: Set<number>; hung: Set<number> }
+interface BridgeSpot { x: number; y: number; nx: number; ny: number; tile: LampTile }
 interface LitTram { parts: { x: number; y: number; ang: number }[]; look: unknown; levels?: { gz?: number }[] }
 // `broken`: which of its lamps are smashed (LAMP in car.ts: 1 and 2 the headlamps left and right, 4 and 8 the tail lamps).
 export interface LitCar { x: number; y: number; h: number; spec: { L: number; W: number; H: number }; mode: string; two?: string; speed: number; broken?: number; braking?: boolean }
@@ -258,14 +260,18 @@ export class Lamps {
   private xy: number[] = [];
   private kind: number[] = [];
   private loaded = false;
-  // The map's own lamps that hang over a street (pipeline/street_lighting.py, off_the_road),
-  // until the street and the houses to run their cables to have loaded.
-  private unhung = new Set<number>();
   private surveyed = 0; // how many of the lamps came with the map (the first ones)
   // OSM's lit and dark streets, their segments in a grid (x0, y0, x1, y1, lit); null: the map has none.
   private lit: Map<number, number[]> | null = null;
-  private waiting: [Street[], [number, number][][], Street[]][] = [];
+  private waiting = new Map<string, [Street[], [number, number][][], Street[]]>();
+  private tiles = new Map<string, LampTile>();
+  private free: number[] = []; // generated lamps reuse retired slots; survey indices stay fixed
+  private generatedOwners = new Map<number, Set<LampTile>>();
+  private seeds: number[] = [];
   private hung = new Map<number, number[]>(); // a hung lamp → the two wall points its cables run to (x, y, x, y)
+  // A survey lamp can have valid walls in several overlapping tiles. Keep their
+  // anchors separately so forgetting one tile preserves the others' cables.
+  private surveyCables = new Map<number, Map<LampTile, number[]>>();
   private cables: THREE.LineSegments;
   private grid = new Map<number, number[]>();
   private renderer: THREE.WebGLRenderer;
@@ -276,7 +282,7 @@ export class Lamps {
   private highScene = new THREE.Scene();
   // Each lamp near the camera: how far over the ground its light falls (on a bridge's deck,
   // or a floodlight's up the walls), and whether it's on a bridge.
-  private spots: number[] = []; // where a bridge is to get a lamp: x, y, and the way to its edge
+  private spots: BridgeSpot[] = [];
   private rise: number[] = [];
   private high: boolean[] = [];
   readonly fx: LightFx;
@@ -302,7 +308,7 @@ export class Lamps {
   private colour: THREE.InstancedBufferAttribute; // (and the height of the light over the ground)
   private view = { value: new THREE.Vector4() };
   private models: THREE.InstancedMesh[] = [];
-  private streets = new Map<number, number[]>();
+  private streets = new Map<number, Map<string, number[]>>();
   private facing = new Map<number, number>(); // a lamp → the way (radians) its arm points
   private glows: THREE.InstancedMesh;
   private near: number[] = []; // the lamps round the camera
@@ -477,13 +483,12 @@ export class Lamps {
       const xy = new Float32Array(buf.slice(4, 4 + n * 8)), kind = new Uint8Array(buf, 4 + n * 8, n);
       for (let i = 0; i < n; i++) this.add(xy[i * 2], xy[i * 2 + 1], kind[i]);
       this.surveyed = n;
-      for (let i = 0; i < n; i++) if (kind[i] === HUNG) this.unhung.add(i);
     }).catch(() => {});
     const lit = fetchBinary(dataUrl(area, 'lit.bin.gz'), true).then((buf) => { if (buf) this.lit = litStreets(buf); }).catch(() => {});
     void Promise.all([lamps, lit]).finally(() => {
       this.loaded = true;
-      for (const [edges, walls, paths] of this.waiting) this.fill(edges, walls, paths);
-      this.waiting.length = 0;
+      for (const [key, [edges, walls, paths]] of this.waiting) this.fill(key, edges, walls, paths);
+      this.waiting.clear();
       this.nearAt.x = Infinity;
     });
   }
@@ -501,26 +506,85 @@ export class Lamps {
   }
 
   // `z`: the height it stands at, where that's known and matters (on a bridge).
-  private add(x: number, y: number, kind: number, z = NaN) {
+  private add(x: number, y: number, kind: number, z = NaN, tile?: LampTile) {
+    const i = this.free.pop() ?? this.kind.length;
     const k = this.key(x, y);
     let list = this.grid.get(k);
     if (!list) this.grid.set(k, list = []);
     if (KINDS[kind].pole) {
       const post: Post = { x, y, z, r: 0.15, tough: 5, give: 0.2, down: null, knocked: () => { this.falling = performance.now() + 1300; this.nearAt.x = Infinity; } };
-      this.posts[this.kind.length] = post;
+      this.posts[i] = post;
       posts.add(post);
     }
-    list.push(this.kind.length);
-    this.xy.push(x, y);
-    this.kind.push(kind);
+    list.push(i);
+    this.xy[i * 2] = x; this.xy[i * 2 + 1] = y;
+    this.kind[i] = kind;
+    // Generated lamps have the same model/colour after a return, even if another
+    // tile used their old slots. The survey retains its original index-based look.
+    this.seeds[i] = tile ? x * 0.754877666 + y * 0.569840296 : i;
+    tile?.lamps.add(i);
+    if (tile) this.generatedOwners.set(i, new Set([tile]));
+    return i;
+  }
+
+  // Retire the same tiles as the street graphs, including work waiting on lamp data.
+  forget(keys: string[]) {
+    const gone = new Set<LampTile>();
+    for (const key of keys) {
+      this.waiting.delete(key);
+      const tile = this.tiles.get(key);
+      if (!tile) continue;
+      gone.add(tile);
+      this.tiles.delete(key);
+      for (const cell of tile.cells) {
+        const list = this.streets.get(cell)!;
+        list.delete(key);
+        if (!list.size) this.streets.delete(cell);
+      }
+      for (const i of tile.hung) {
+        const owners = this.surveyCables.get(i)!;
+        owners.delete(tile);
+        if (owners.size) this.hung.set(i, owners.values().next().value!);
+        else { this.surveyCables.delete(i); this.hung.delete(i); }
+      }
+      for (const i of tile.lamps) {
+        const owners = this.generatedOwners.get(i)!;
+        owners.delete(tile);
+        if (owners.size) continue;
+        this.generatedOwners.delete(i);
+        const key = this.key(this.xy[i * 2], this.xy[i * 2 + 1]);
+        const list = this.grid.get(key)!;
+        list.splice(list.indexOf(i), 1);
+        if (!list.length) this.grid.delete(key);
+        const post = this.posts[i];
+        if (post) posts.remove(post);
+        this.posts[i] = undefined;
+        this.hung.delete(i);
+        this.kind[i] = -1;
+        this.xy[i * 2] = this.xy[i * 2 + 1] = NaN;
+        this.rise[i] = 0; this.high[i] = false;
+        this.free.push(i);
+      }
+    }
+    this.spots = this.spots.filter((spot) => !gone.has(spot.tile));
+    this.facing.clear();
+    this.nearAt.x = Infinity;
   }
 
   // `below`: only the lamps before this one (the map's own: `surveyed`).
-  private lampWithin(x: number, y: number, r: number, below = Infinity) {
+  private lampWithin(x: number, y: number, r: number, below = Infinity, tile?: LampTile) {
     for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++) {
       for (let cy = Math.floor((y - r) / CELL); cy <= Math.floor((y + r) / CELL); cy++) {
         const list = this.grid.get((cx + 2048) * 4096 + cy + 2048);
-        if (list) for (const i of list) if (i < below && Math.hypot(this.xy[i * 2] - x, this.xy[i * 2 + 1] - y) < r) return true;
+        if (list) for (const i of list) if (i < below && Math.hypot(this.xy[i * 2] - x, this.xy[i * 2 + 1] - y) < r) {
+          // Overlapping street tiles may both rely on one generated lamp. Retain
+          // it until the last such tile leaves, including its post and cables.
+          if (tile && i >= this.surveyed) {
+            this.generatedOwners.get(i)!.add(tile);
+            tile.lamps.add(i);
+          }
+          return true;
+        }
       }
     }
     return false;
@@ -529,8 +593,11 @@ export class Lamps {
   // Streets as their tiles load: lamps hung over the unlit stretches, on cables to the
   // buildings either side (`buildings`: their outlines; a stretch with none is left dark).
   // `paths`: the footpaths that came with them.
-  fill(edges: Street[], buildings: [number, number][][], paths: Street[] = []) {
-    if (!this.loaded) { this.waiting.push([edges, buildings, paths]); return; }
+  fill(key: string, edges: Street[], buildings: [number, number][][], paths: Street[] = []) {
+    if (!this.loaded) { this.waiting.set(key, [edges, buildings, paths]); return; }
+    if (this.tiles.has(key)) return;
+    const tile: LampTile = { cells: new Set(), lamps: new Set(), hung: new Set() };
+    this.tiles.set(key, tile);
     const cells = new Map<number, Seg[]>();
     for (const ring of buildings) {
       for (let i = 0; i < ring.length; i++) {
@@ -561,24 +628,36 @@ export class Lamps {
         for (let cx = Math.floor((Math.min(ax, bx) - REACH_ARM) / STREET_CELL); cx <= Math.floor((Math.max(ax, bx) + REACH_ARM) / STREET_CELL); cx++) {
           for (let cy = Math.floor((Math.min(ay, by) - REACH_ARM) / STREET_CELL); cy <= Math.floor((Math.max(ay, by) + REACH_ARM) / STREET_CELL); cy++) {
             const k = (cx + 4096) * 8192 + cy + 4096;
-            const list = this.streets.get(k);
-            if (list) list.push(ax, ay, bx, by); else this.streets.set(k, [ax, ay, bx, by]);
+            let owners = this.streets.get(k);
+            if (!owners) this.streets.set(k, owners = new Map());
+            const list = owners.get(key);
+            if (list) list.push(ax, ay, bx, by); else owners.set(key, [ax, ay, bx, by]);
+            tile.cells.add(k);
           }
         }
       }
     }
     // The map's hung lamps by these streets: cables across the street to the first wall each way.
-    if (this.unhung.size) for (const e of edges) {
+    for (const e of edges) {
       for (let i = 1; i < e.pts.length; i++) {
         const [ax, ay] = e.pts[i - 1], [bx, by] = e.pts[i], ex = bx - ax, ey = by - ay, len = Math.hypot(ex, ey) || 1;
-        for (const j of this.unhung) {
-          const x = this.xy[j * 2], y = this.xy[j * 2 + 1], t = ((x - ax) * ex + (y - ay) * ey) / (len * len);
-          if (t < 0 || t > 1 || Math.abs((x - ax) * ey - (y - ay) * ex) / len > HANG_REACH) continue;
-          const nx = -ey / len, ny = ex / len, walls = near(x, y);
-          const l = cast(walls, x, y, nx, ny, WALL), r = cast(walls, x, y, -nx, -ny, WALL);
-          if (!Number.isFinite(l) || !Number.isFinite(r)) continue;
-          this.hung.set(j, [x + nx * l, y + ny * l, x - nx * r, y - ny * r]);
-          this.unhung.delete(j);
+        for (let cx = Math.floor((Math.min(ax, bx) - HANG_REACH) / CELL); cx <= Math.floor((Math.max(ax, bx) + HANG_REACH) / CELL); cx++) {
+          for (let cy = Math.floor((Math.min(ay, by) - HANG_REACH) / CELL); cy <= Math.floor((Math.max(ay, by) + HANG_REACH) / CELL); cy++) {
+            for (const j of this.grid.get((cx + 2048) * 4096 + cy + 2048) ?? []) {
+              if (j >= this.surveyed || this.kind[j] !== HUNG || tile.hung.has(j)) continue;
+              const x = this.xy[j * 2], y = this.xy[j * 2 + 1], t = ((x - ax) * ex + (y - ay) * ey) / (len * len);
+              if (t < 0 || t > 1 || Math.abs((x - ax) * ey - (y - ay) * ex) / len > HANG_REACH) continue;
+              const nx = -ey / len, ny = ex / len, walls = near(x, y);
+              const l = cast(walls, x, y, nx, ny, WALL), r = cast(walls, x, y, -nx, -ny, WALL);
+              if (!Number.isFinite(l) || !Number.isFinite(r)) continue;
+              const anchors = [x + nx * l, y + ny * l, x - nx * r, y - ny * r];
+              let owners = this.surveyCables.get(j);
+              if (!owners) this.surveyCables.set(j, owners = new Map());
+              owners.set(tile, anchors);
+              if (!this.hung.has(j)) this.hung.set(j, anchors);
+              tile.hung.add(j);
+            }
+          }
         }
       }
     }
@@ -589,14 +668,14 @@ export class Lamps {
         const [ax, ay] = e.pts[i - 1], [bx, by] = e.pts[i], len = Math.hypot(bx - ax, by - ay);
         for (; next <= s + len; next += SPACING) {
           const t = (next - s) / len, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
-          if (this.lampWithin(x, y, REACH)) continue;
+          if (this.lampWithin(x, y, REACH, Infinity, tile)) continue;
           const nx = -(by - ay) / len, ny = (bx - ax) / len;
           // On a bridge the utility map often has none either: lamps on posts along its
           // edges, one side then the other.
           // (Put up once the deck there has loaded: see gather.)
           if (e.bridge) {
             if (this.lit && litAt(this.lit, x, y) === 0) continue;
-            this.spots.push(x, y, nx * side, ny * side);
+            this.spots.push({ x, y, nx: nx * side, ny: ny * side, tile });
             side = -side;
             continue;
           }
@@ -614,12 +693,12 @@ export class Lamps {
               if (this.lampWithin(x, y, UNSURVEYED, this.surveyed)) continue;
               const out = Math.max(e.width ?? 0, 4) / 2 + 1, s = l < out + 1 && r >= out + 1 ? -1 : 1;
               if (Math.min(s > 0 ? l : r, WALL) < out + 1) continue;
-              this.add(x + nx * out * s, y + ny * out * s, 0);
+              this.add(x + nx * out * s, y + ny * out * s, 0, NaN, tile);
               continue;
             }
           }
-          this.hung.set(this.kind.length, [x + nx * l, y + ny * l, x - nx * r, y - ny * r]);
-          this.add(x, y, HUNG);
+          const j = this.add(x, y, HUNG, NaN, tile);
+          this.hung.set(j, [x + nx * l, y + ny * l, x - nx * r, y - ny * r]);
         }
         s += len;
       }
@@ -633,15 +712,16 @@ export class Lamps {
         const [ax, ay] = e.pts[i - 1], [bx, by] = e.pts[i], len = Math.hypot(bx - ax, by - ay);
         for (; next <= s + len; next += SPACING) {
           const t = (next - s) / len, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
-          if (this.lampWithin(x, y, REACH) || this.lampWithin(x, y, UNSURVEYED, this.surveyed) || litAt(this.lit, x, y) < 1) continue;
+          if (this.lampWithin(x, y, REACH, Infinity, tile) || this.lampWithin(x, y, UNSURVEYED, this.surveyed) || litAt(this.lit, x, y) < 1) continue;
           const nx = -(by - ay) / len, ny = (bx - ax) / len, out = Math.max(e.width ?? 0, 2) / 2 + 0.6;
           const walls = near(x, y);
           const side = cast(walls, x, y, nx, ny, WALL) >= out + 1 ? 1 : cast(walls, x, y, -nx, -ny, WALL) >= out + 1 ? -1 : 0;
-          if (side) this.add(x + nx * out * side, y + ny * out * side, PATH_LAMP);
+          if (side) this.add(x + nx * out * side, y + ny * out * side, PATH_LAMP, NaN, tile);
         }
         s += len;
       }
     }
+    this.facing.clear();
     this.nearAt.x = Infinity;
   }
 
@@ -652,15 +732,15 @@ export class Lamps {
     if (known !== undefined) return known;
     const list = this.streets.get((Math.floor(x / STREET_CELL) + 4096) * 8192 + Math.floor(y / STREET_CELL) + 4096);
     let best = REACH_ARM, ang: number | undefined;
-    if (list) {
-      for (let j = 0; j < list.length; j += 4) {
-        const ax = list[j], ay = list[j + 1], ex = list[j + 2] - ax, ey = list[j + 3] - ay;
+    if (list) for (const segments of list.values()) {
+      for (let j = 0; j < segments.length; j += 4) {
+        const ax = segments[j], ay = segments[j + 1], ex = segments[j + 2] - ax, ey = segments[j + 3] - ay;
         const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey || 1)));
         const dx = ax + ex * t - x, dy = ay + ey * t - y, d = Math.hypot(dx, dy);
         if (d < best) { best = d; ang = Math.atan2(dy, dx); }
       }
     }
-    if (ang === undefined) return hash(i) * Math.PI * 2;
+    if (ang === undefined) return hash(this.seeds[i]) * Math.PI * 2;
     this.facing.set(i, ang);
     return ang;
   }
@@ -676,17 +756,17 @@ export class Lamps {
     Object.assign(a, { x, y, r: R, asked: r, t: now });
     // The bridges' lamps whose deck is there now: at its edge, on the side chosen.
     const spots = this.spots;
-    for (let j = spots.length - 4; j >= 0; j -= 4) {
-      const sx = spots[j], sy = spots[j + 1], nx = spots[j + 2], ny = spots[j + 3];
+    for (let j = spots.length - 1; j >= 0; j--) {
+      const { x: sx, y: sy, nx, ny, tile } = spots[j];
       if (Math.abs(sx - x) > R || Math.abs(sy - y) > R) continue;
       const h = this.deck(sx, sy, 0);
       if (h === null) continue;
-      spots.splice(j, 4);
-      if (this.lampWithin(sx, sy, REACH)) continue;
+      spots.splice(j, 1);
+      if (this.lampWithin(sx, sy, REACH, Infinity, tile)) continue;
       let out = 0;
       while (out < 16 && this.deck(sx + nx * (out + 0.5), sy + ny * (out + 0.5), 0) !== null) out += 0.5;
       out = Math.max(0, out - 0.6);
-      this.add(sx + nx * out, sy + ny * out, ON_BRIDGE, h);
+      this.add(sx + nx * out, sy + ny * out, ON_BRIDGE, h, tile);
     }
     this.near.length = 0;
     for (let cx = Math.floor((x - R) / CELL); cx <= Math.floor((x + R) / CELL); cx++) {
@@ -724,7 +804,7 @@ export class Lamps {
           }
         }
       }
-      const m = modelOf(this.kind[i], i);
+      const m = modelOf(this.kind[i], this.seeds[i]);
       if (m >= 0 && used[m] < MAX_POLES) {
         const ang = this.face(i, lx, ly), co = Math.cos(ang), si = Math.sin(ang);
         d.position.set(lx, z, -ly);
@@ -747,14 +827,14 @@ export class Lamps {
           d.scale.set(1.6, 1, 1.6);
           d.updateMatrix();
           this.glows.setMatrixAt(g, d.matrix);
-          this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], i)).multiplyScalar(k.glow * 2));
+          this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], this.seeds[i])).multiplyScalar(k.glow * 2));
         }
       } else if (k.glow && g < this.glows.instanceMatrix.count) {
         d.position.set(lx, z + k.head, -ly);
         d.scale.set(1.6, 1, 1.6);
         d.updateMatrix();
         this.glows.setMatrixAt(g, d.matrix);
-        this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], i)).multiplyScalar(k.glow * 2));
+        this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], this.seeds[i])).multiplyScalar(k.glow * 2));
       }
     }
     this.models.forEach((mesh, m) => { mesh.count = used[m]; sendInstances(mesh); });
@@ -893,7 +973,7 @@ export class Lamps {
     for (const i of this.near) {
       const k = KINDS[this.kind[i]], lx = this.xy[i * 2], ly = this.xy[i * 2 + 1];
       if (Math.abs(lx - x) > r + k.r || Math.abs(ly - y) > r + k.r || this.posts[i]?.down) continue;
-      const colour = colourOf(this.kind[i], i);
+      const colour = colourOf(this.kind[i], this.seeds[i]);
       // (Only the lamps up on poles and walls: not the floodlights or those in tunnels.)
       const post = this.posts[i];
       const z = this.height(lx, ly) + (this.rise[i] ?? 0);

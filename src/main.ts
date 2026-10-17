@@ -288,7 +288,7 @@ async function main() {
   const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y), deckAt);
   const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)), (x, y) => world.onRoad(x, y));
   if (params.has('ipr')) void import('./iprdebug.ts').then((m) => m.iprOverlay(scene, AREA, (x, y) => world.terrainAt(x, y)));
-  world.onEdges = (d, w, b, first) => { names.add(d); names.add(w); crowd?.index(w); if (first) lamps.fill(d, b, w); signals.add(d); };
+  world.onEdges = (d, w, b, key, paths) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(key, d, b, paths); signals.add(d); };
 
   // Parked cars come and go with their tiles; wrecks and abandoned cars are loose too.
   const loose: Car[] = [];
@@ -1400,7 +1400,8 @@ async function main() {
     if (taxi.agent) out.push(taxi.agent.car);
     return out;
   };
-  world.onForget = (d, w) => {
+  world.onForget = (d, w, keys) => {
+    lamps.forget(keys);
     names.remove(d);
     names.remove(w);
     crowd.forget(w);
