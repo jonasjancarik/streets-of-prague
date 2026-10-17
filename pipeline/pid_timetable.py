@@ -23,6 +23,8 @@ from pathlib import Path
 
 import requests
 
+import build_cache
+
 URL = "https://data.pid.cz/PID_GTFS.zip"
 CACHE = Path(__file__).parent / ".cache" / "pid"
 FEED = CACHE / "PID_GTFS.zip"
@@ -30,6 +32,7 @@ SUMMARY = CACHE / "summary.json"
 VERSION = 2  # of the summary's contents: rebuilt when this changes
 DAYS = ("weekday", "saturday", "sunday")
 KINDS = {"0": "tram", "1": "metro"}
+REQUIRED_FILES = {"feed_info.txt", "calendar.txt", "calendar_dates.txt", "routes.txt", "trips.txt", "stops.txt", "stop_times.txt"}
 
 
 def feed():
@@ -38,7 +41,12 @@ def feed():
         print("downloading PID's timetables…")
         r = requests.get(URL, timeout=300)
         r.raise_for_status()
-        FEED.write_bytes(r.content)
+        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+            if damaged := z.testzip():
+                raise ValueError(f"PID timetable download has a damaged file: {damaged}")
+            if missing := REQUIRED_FILES - set(z.namelist()):
+                raise ValueError(f"PID timetable download is missing required files: {', '.join(sorted(missing))}")
+        build_cache.atomic(FEED, r.content)
     return FEED
 
 
@@ -124,7 +132,7 @@ def summary():
         if r["location_type"] == "2" and r["parent_station"] in stations:
             stations[r["parent_station"]]["entrances"].append({"name": r["stop_name"], "lat": float(r["stop_lat"]), "lon": float(r["stop_lon"])})
     data = {"version": VERSION, "dates": {k: str(v) for k, v in dates.items()}, "trips": out, "stations": stations}
-    SUMMARY.write_text(json.dumps(data, ensure_ascii=False))
+    build_cache.atomic(SUMMARY, json.dumps(data, ensure_ascii=False).encode())
     return data
 
 

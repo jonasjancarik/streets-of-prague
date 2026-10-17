@@ -1129,6 +1129,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   adds how often each line runs, hour by hour, from PID's timetables:
   `pid_timetable.py` downloads the GTFS feed (about 50 MB, again when it's a week old)
   into `pipeline/.cache/pid/` and reduces it to a summary of every tram and metro trip.
+  A refresh checks the ZIP for damage and the required CSV files before replacing the
+  cached feed. Failed refreshes stop and keep the previous files; the feed and summary
+  are each replaced only after a complete write.
   Without it, every line runs every 8 minutes.
 - **Traffic lights.** `build_signals.py` needs the streets layer and the local OSM
   extract. It puts each `highway=traffic_signals` node on the car network's streets that
