@@ -6,7 +6,7 @@ import { createServer } from 'vite';
 
 globalThis.location = { search: '?go' };
 globalThis.self = globalThis;
-const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false } });
+const server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, hmr: false, ws: false } });
 const originalFetch = globalThis.fetch;
 try {
   const { TileWorld } = await server.ssrLoadModule('/src/tiles.ts');

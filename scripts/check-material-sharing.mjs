@@ -17,9 +17,22 @@ if (!['graphs', 'bindings', 'all'].includes(selected) || !['ipr', 'osm'].include
 
 const check = `(async () => {
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
-  const THREE = await import('/node_modules/.vite/deps/three.js');
-  const TSL = await import('/node_modules/.vite/deps/three_tsl.js');
-  const { lampLit } = await import('/src/webgpu/lamps.ts');
+  // Use the application's transformed imports, including Vite's current version.
+  // An unversioned optimizer-cache URL can be absent even while the game works.
+  const response = await fetch('/src/webgpu.ts');
+  assert(response.ok, 'could not read the WebGPU module imports');
+  const source = await response.text();
+  const dependency = (pattern, module = source) => {
+    const url = module.match(pattern)?.[1];
+    assert(url, 'could not locate a WebGPU dependency import: ' + pattern);
+    return url;
+  };
+  const THREE = await import(dependency(/import \\* as THREE from ["']([^"']+)["']/));
+  const TSL = await import(dependency(/import \\{[^}]*\\bFn\\b[^}]*\\} from ["']([^"']+)["']/));
+  // Preserve HMR timestamps too: duplicate module instances have separate caches
+  // and uniforms, which would make these checks inspect a different system.
+  const lampModule = dependency(/from ["']([^"']*\\/webgpu\\/lamps\\.ts[^"']*)["']/);
+  const { lampLit } = await import(lampModule);
   const renderer = window.__drive.renderer;
   assert(renderer.backend?.isWebGPUBackend, 'WebGPU is required');
   const converted = (key, options = {}, Material = THREE.MeshLambertMaterial) => {
@@ -83,8 +96,9 @@ const check = `(async () => {
       assert(a.customProgramCacheKey() === b.customProgramCacheKey(),
         'real building meshes with the same layout have different cache keys');
     }
-    const { WET, SNOW, WINDOWS, CUTAWAY } = await import('/src/shading.ts');
-    const { LAMP_ON } = await import('/src/lamps.ts');
+    const { WET, SNOW, WINDOWS, CUTAWAY } = await import(dependency(/from ["']([^"']*\\/shading\\.ts[^"']*)["']/));
+    const lampSource = await (await fetch(lampModule)).text();
+    const { LAMP_ON } = await import(dependency(/from ["']([^"']*\\/src\\/lamps\\.ts[^"']*)["']/, lampSource));
     const prior = { wet: WET.value, snow: SNOW.value, windows: WINDOWS.value,
       cut: CUTAWAY.value.clone(), lamp: LAMP_ON.value };
     const gameLoop = renderer.getAnimationLoop();
