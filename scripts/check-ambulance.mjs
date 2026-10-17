@@ -77,6 +77,9 @@ assert.equal(grave.results().taken, 1, 'stretcher reached the ambulance');
 assert.ok(maxLoad < 50, 'stretcher returned without the loading timeout');
 assert.equal(grave.rig.phase, 'leave');
 const wall = fixture([], (x, y) => y > -102.8 && y < -102.2);
+// Stuck medics treat through barriers within 30 m; this patient is beyond that fallback.
+wall.patient.y = -50;
+for (let i = 0; i < wall.a.crew.length; i++) wall.a.crew[i].spot = wall.a.spot(wall.rig, i);
 wall.step(30);
 assert.equal(wall.results().revived, 0, 'unreachable patient remains untreated');
 assert.equal(wall.rig.treated, 0);
