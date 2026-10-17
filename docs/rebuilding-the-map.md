@@ -23,6 +23,16 @@ filenames with checks for their source and request. Older entries without these
 records are misses on their next use.
 Young-wood and tree-size layers also track the shared image and sampling helpers they
 use, so changing those helpers makes strict assembly ask for those layers again.
+Street simplification keeps OSM way endpoints, so adjacent cuts that contain different
+neighboring ways retain the same shared edge ids and each way's own lane count and
+width. Intermediate nodes within one way still simplify. This fixes the reproduced
+cross-way joining defect at Slatiny between Praha tiles `101_55` and `101_56`; the
+current map, built on 15 October, retains that gap until regenerated. Other causes of
+disconnected streets still need the checks below.
+In the two cached cuts checked in memory, drive edges increased from 488 to 609 and
+401 to 496; walk edges from 1,101 to 1,270 and 924 to 1,058. These are local graph
+counts, not runtime measurements. A regenerated map still needs route, loading and
+frame-time checks before release.
 
 ## Before starting
 

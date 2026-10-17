@@ -144,7 +144,9 @@ def kerb_parking(d, side):
 
 # Ways that differ in these stay separate edges: a tunnel joined to the bridge before it
 # became one edge that was both, and the game put its cars on a bridge over the park.
-JOIN_ONLY_ALIKE = ("bridge", "tunnel")
+# Keep OSM way endpoints too: neighboring cuts can include different adjacent ways.
+# Joining across them would give their shared road different endpoint ids and widths.
+JOIN_ONLY_ALIKE = ("bridge", "tunnel", "osmid")
 
 
 def graph_edges(bbox, tf, network, directed, source=None, kerbs=None, core=None, ground=frozenset(), setting=None):
