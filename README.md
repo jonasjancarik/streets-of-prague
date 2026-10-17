@@ -35,6 +35,11 @@ Screenshots go to `$TMPDIR/scene`. The same scenarios run in the developer panel
 ("Run and watch" plays one in real time), and "Copy this situation" there copies where
 you are, the time, weather, money, stars, car and camera as the start of a new scenario.
 
+Development pages pause while another session benchmarks. Status requests time out
+after four seconds; older replies cannot restore a pause after a newer reply cleared
+it. If the local status endpoint is unavailable, the page carries on.
+`node scripts/check-bench-pause.mjs` checks polling and startup recovery offline.
+
 WebGPU is the default renderer; `?renderer=webgl` selects the legacy renderer.
 WebGPU reuses the same building, landmark, cutaway and lamp-light shader graphs
 across equivalent meshes. Each mesh keeps its own material, textures and sky-view
