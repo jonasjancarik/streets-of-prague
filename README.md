@@ -150,7 +150,7 @@ that without a new renderer.
   (`src/boats.ts`). W/S pedal, A/D turn;
   E gets you out again where the bank is close.
 - **Money** (`src/money.ts`): you start with 10,000 Kč, shown top right, and can only spend
-  it (not saved between visits, never below 0). **PID ticket**: 46 Kč for 90 game minutes on
+  it (kept in the saved game, never below 0). **PID ticket**: 46 Kč for 90 game minutes on
   trams, the metro and the Petřín funicular (the NH hotel's funicular is free). Nothing is
   bought for you: on a tram or the funicular you have 10 seconds to buy one (B, or "Buy a
   ticket" on touch) and then ride without; the metro asks "Going in without a ticket?" at the
@@ -189,6 +189,12 @@ that without a new renderer.
   M), and the settings, with the start screen's choices during play: language, sound,
   graphics (also G) and weather (also P). On a phone the credits are in there too
   (`src/settings.ts`).
+- **Saved games** (`src/save.ts`): the browser keeps an automatic save and games
+  saved by hand from the settings, including money and tickets. Saves are checked
+  before continuing; damaged or unsupported saves stay listed so they can be
+  deleted. Older saves without a date, radio station or broken-lamp state still
+  open. A car type no longer available resumes on foot with the rest of the save
+  intact. `node scripts/check-save.mjs` checks this without loading the map.
 - **Getting in and out of cars** (`src/getin.ts`). Press E by a car and you go to the
   nearer front door, it opens, you duck in and it shuts behind you; E again and you
   get out the same way (on the other side if the driver's door is against a wall).

@@ -34,6 +34,36 @@ export interface SaveData {
 
 const key = (slot: Slot) => `save:${slot}`;
 const num = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const textOrNull = (value: unknown) => value === null || typeof value === 'string';
+const optionalNumber = (value: unknown) => value === undefined || num(value);
+const between = (value: unknown, min: number, max: number) => num(value) && value >= min && value < max;
+const WEATHER_KINDS: readonly Kind[] = ['clear', 'cloudy', 'rain', 'storm', 'mist', 'snow'];
+
+function carData(value: unknown) {
+  return value === null || (object(value) && typeof value.type === 'string' && typeof value.paint === 'string'
+    && textOrNull(value.variant) && num(value.damage)
+    && (value.box === undefined || typeof value.box === 'string')
+    && optionalNumber(value.radio) && optionalNumber(value.broken)
+    && (value.ram === undefined || typeof value.ram === 'boolean'));
+}
+
+function ticketData(value: unknown) {
+  return value === null || (object(value) && num(value.from) && num(value.minutes) && value.minutes > 0);
+}
+
+// JSON can be syntactically valid yet crash restoration (for example, an unknown
+// weather kind). Check nested state as well, keeping older optional fields optional.
+function saveData(s: unknown): s is SaveData {
+  return object(s) && s.v === 1 && typeof s.area === 'string'
+    && [s.money, s.health, s.heat, s.at].every(num)
+    && num(s.lat) && Math.abs(s.lat) < 90 && num(s.lon) && Math.abs(s.lon) <= 180
+    && between(s.heading, 0, 360) && between(s.clock, 0, 7 * 86400)
+    && textOrNull(s.street) && optionalNumber(s.season)
+    && carData(s.car) && ticketData(s.ticket)
+    && object(s.weather) && typeof s.weather.kind === 'string' && WEATHER_KINDS.includes(s.weather.kind as Kind)
+    && typeof s.weather.fixed === 'boolean';
+}
 
 type Check = 'ok' | 'other area' | 'unreadable';
 
@@ -42,8 +72,8 @@ type Check = 'ok' | 'other area' | 'unreadable';
 // player's progress would vanish. What can't be opened is kept and shown as such.
 function check(raw: string, area: string): { how: Check; data?: SaveData } {
   try {
-    const s = JSON.parse(raw) as SaveData;
-    if (s.v !== 1 || ![s.lat, s.lon, s.heading, s.money, s.health, s.heat, s.clock, s.at].every(num) || !s.weather) return { how: 'unreadable' };
+    const s: unknown = JSON.parse(raw);
+    if (!saveData(s)) return { how: 'unreadable' };
     return s.area === area ? { how: 'ok', data: s } : { how: 'other area' };
   } catch { return { how: 'unreadable' }; }
 }
@@ -58,7 +88,7 @@ export function readSave(slot: Slot, area: string): SaveData | null {
 // There is a save in this slot that this version can't open.
 export function unreadable(slot: Slot, area: string) {
   const raw = get(slot);
-  return !!raw && check(raw, area).how === 'unreadable';
+  return raw !== null && check(raw, area).how === 'unreadable';
 }
 
 export function writeSave(slot: Slot, data: SaveData) {

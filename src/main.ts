@@ -1213,7 +1213,7 @@ async function main() {
     }
     await teleportTo(x, y);
     police.heat = Math.max(0, Math.min(40, s.heat));
-    if (!s.car || !TYPES[s.car.type]) return;
+    if (!s.car || !Object.hasOwn(TYPES, s.car.type)) return;
     const car = new Car(s.car.type, seeded, x, y, h, s.car.paint, s.car.box);
     if (s.car.variant) car.setVariant(s.car.variant);
     car.damage = s.car.damage;
