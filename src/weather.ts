@@ -82,7 +82,7 @@ export class Weather {
   // new report, and until the last one is too old the weather doesn't change by itself.
   // Picking a weather by hand ends it.
   live = false;
-  private liveFor = 0; // real seconds the last report still counts for
+  private liveUntil = 0; // wall-clock expiry, including time asleep or paused in settings
   private next = 0; // clock seconds of the week at the next change
   private flashT = Infinity; // s since the last lightning
   private lastT: number; // the clock at the last update (to notice it being set)
@@ -106,7 +106,7 @@ export class Weather {
   begin(kind: Kind, clockT: number, live = false) {
     if (kind !== this.kind) this.fixed = false;
     this.live = live;
-    this.liveFor = live ? LIVE_LASTS : 0;
+    this.liveUntil = live ? Date.now() + LIVE_LASTS * 1000 : 0;
     this.kind = kind;
     this.lastT = clockT;
     this.settle();
@@ -175,7 +175,7 @@ export class Weather {
   follow(kind: Kind) {
     if (!this.live || this.fixed) return false;
     this.kind = automaticWeather(kind);
-    this.liveFor = LIVE_LASTS;
+    this.liveUntil = Date.now() + LIVE_LASTS * 1000;
     return true;
   }
 
@@ -195,8 +195,7 @@ export class Weather {
     const jumped = Math.abs(clockT - this.lastT - dt) > 120;
     this.lastT = clockT;
     if (jumped && this.now.cover > 0) this.clearSince(clockT);
-    this.liveFor = Math.max(0, this.liveFor - real);
-    const followed = this.live && this.liveFor > 0;
+    const followed = this.live && Date.now() < this.liveUntil;
     if (!this.fixed && !followed && (clockT >= this.next || clockT < this.next - 7200)) {
       this.kind = this.pick(clockT);
       this.next = clockT + this.span();

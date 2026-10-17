@@ -11,6 +11,7 @@ const URL = 'https://api.open-meteo.com/v1/forecast?latitude=50.0875&longitude=1
 
 // WMO weather codes: https://open-meteo.com/en/docs
 export function kindOfCode(code: number): Kind | null {
+  if (!Number.isInteger(code) || code < 0) return null;
   if (code <= 1) return 'clear';
   if (code <= 3) return 'cloudy';
   if (code === 45 || code === 48) return 'mist';

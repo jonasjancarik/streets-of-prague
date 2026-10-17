@@ -64,10 +64,13 @@ assert.equal((await route(new Request('https://example.test/api/weather'), {}, {
 assert.equal((await route(new Request('https://example.test/api/weather', { method: 'POST' }), { WEATHER_SOURCE: 'chmi' }, {})).status, 405, 'GET only');
 
 // The game: a report is followed gradually, the game's own changes wait, and a weather picked by hand stays.
+const originalNow = Date.now;
+let wallTime = originalNow();
+Date.now = () => wallTime;
 const { Weather, LIVE_LASTS } = await import('../src/weather.ts');
 const { Season } = await import('../src/season.ts');
 const make = (query = '') => new Weather(new URLSearchParams(query), 12 * 3600, new Season(new URLSearchParams('date=07-15')));
-const run = (w, seconds, from = 12 * 3600) => { for (let s = 1; s <= seconds; s++) w.update(1, from + s, 1); return from + seconds; };
+const run = (w, seconds, from = 12 * 3600) => { for (let s = 1; s <= seconds; s++) { wallTime += 1000; w.update(1, from + s, 1); } return from + seconds; };
 let w = make();
 w.begin('clear', 12 * 3600, true);
 assert.ok(w.live && !w.fixed, 'begun with the real weather');
@@ -93,6 +96,34 @@ w.begin('clear', 12 * 3600);
 assert.ok(!w.follow('rain') && w.kind === 'clear', 'a game not begun with the real weather ignores reports');
 w = make('weather=storm');
 assert.ok(!w.follow('clear') && w.kind === 'storm', 'so does one with the weather in its address');
+for (const stalled of ['settings pause', 'sleeping tab']) {
+  const stale = make();
+  stale.begin('clear', 12 * 3600, true);
+  stale.next = 12 * 3600;
+  let rolls = 0;
+  stale.pick = () => { rolls++; return 'rain'; };
+  wallTime += (LIVE_LASTS + 1) * 1000;
+  stale.update(0, 12 * 3600, 0);
+  assert.equal(rolls, 1, `${stalled}: a stale report cannot suppress an automatic change`);
+  assert.equal(stale.kind, 'rain');
+  assert.equal(stale.live, true, 'expired reports still allow following to resume');
+}
+const refreshed = make();
+refreshed.begin('clear', 12 * 3600, true);
+wallTime += (LIVE_LASTS - 1) * 1000;
+assert.ok(refreshed.follow('rain'));
+refreshed.next = 12 * 3600;
+refreshed.pick = () => { throw new Error('a refreshed live report is still current'); };
+wallTime += 2000;
+refreshed.update(0, 12 * 3600, 0);
+assert.equal(refreshed.kind, 'rain', 'a new report resets the wall-clock expiry');
+refreshed.set('snow');
+const expiry = refreshed.liveUntil;
+wallTime += 1000;
+assert.equal(refreshed.follow('storm'), false, 'manual choices reject a late report');
+assert.equal(refreshed.liveUntil, expiry, 'rejected reports do not renew freshness');
+assert.equal(refreshed.kind, 'snow');
+Date.now = originalNow;
 console.log('Live weather: ČHMÚ observations by code and by measurement, station and file fallbacks, the route\'s setting, gradual following, hand-picked weather kept.');
 
 // The Lowest tier's switch: no rings in the puddles (the only readers of RAIN), the rain itself unchanged.

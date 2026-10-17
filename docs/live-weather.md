@@ -15,7 +15,13 @@ again until the next report. Picking a weather by hand (the settings, <kbd>P</kb
 the developer panel, `?weather=`) ends the following for that game. A continued save
 does not follow: its weather is the save's own.
 
+Reports expire by wall-clock time, including time paused in the settings or with the
+tab asleep. A manual choice made while a request is pending stays selected when the
+response arrives. Unrecognised or malformed weather codes count as unavailable.
+
 `node scripts/check-live-weather.mjs` checks all of it without a browser or network.
+`node scripts/check-live-weather-requests.mjs` also checks source failures, fallbacks,
+retries and delayed responses with request fixtures.
 
 ## Sources
 
