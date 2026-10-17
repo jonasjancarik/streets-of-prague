@@ -89,6 +89,10 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.push(kmh, heading?)`: sets your car going. `t.post(r)`: the nearest standing
   lamp or pole; `t.post(r, 18)`: the nearest your car has a clear 18 m run up to, with the car put there. `t.aimAt(post, back)`: puts your car `back` m before it, facing it,
   on a run clear of walls and other cars. `t.runway(heading)`: metres to the first wall.
+- `t.wallRun(back = 12)`: puts your car on a clear approach to a broad wall and returns
+  its heading and wall plane, or null. It checks the full car, nearby vehicles, tram
+  circles, posts and fences. `wall-crash` coasts from 60 km/h, records actual wall
+  impacts and keeps the final speed check below 15 km/h.
 - `t.route(from, to)`: the shortest way by car through the streets loaded now (those
   within some 700 m of you): `{ length, line }`, the line as `[lat, lon]` points, or null
   where the streets don't join up. `t.follow(line, kmh)` drives your car along such a
@@ -172,8 +176,8 @@ scenario. Manual `t.go`,
 the whole world or resolve ambulance/tow behavior. `vehicle-entry-order` runs
 `heli-bridge` followed by `lamp-knock` and retains both complete assertion results.
 Set an explicit heading in `t.go` when car placement depends on it: the car factory
-searches ahead of the player. `wall-crash` uses its original standalone northwest
-heading instead of inheriting the previous driver's orientation.
+searches ahead of the player. `wall-crash` starts from its original northwest heading, then `wallRun` finds a
+clear approach instead of inheriting traffic or obstacles from earlier scenarios.
 
 The same scenarios run in the developer panel (`` ` ``, Testing): "Run and watch" plays
 one in real time, "Run all" lists which pass.

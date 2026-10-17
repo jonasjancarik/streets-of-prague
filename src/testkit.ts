@@ -1,6 +1,7 @@
 import { Car, COURIER_BOXES } from './car.ts';
 import { courierLook } from './figures.ts';
 import { posts } from './posts.ts';
+import { fences } from './fences.ts';
 import type { Post } from './posts.ts';
 import type { Point2 } from './map/geo.ts';
 import { segDist } from './network.ts';
@@ -728,6 +729,55 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         if (d > 15 && d < 40 && [1, -1].every((s) => Math.abs(kit.runway(a, 80, s) - d) < 0.6)) return a;
       }
       return -1;
+    },
+
+    // Put the car on a clear approach to a broad wall. Unlike wallAhead(), this
+    // checks the whole moving body and other street objects, then starts it only
+    // `back` metres from the wall so a coast reaches it near the requested speed.
+    wallRun(back = 12, max = 60) {
+      const c = g.car();
+      if (!c) throw new Error('Not in a car');
+      const before = { x: c.x, y: c.y, h: c.h, vx: c.vx, vy: c.vy, w: c.w };
+      let placed = false;
+      try {
+        for (let heading = 0; heading < 360; heading += 5) {
+          const h = rad(heading), dx = Math.cos(h), dy = Math.sin(h);
+          let distance = 0;
+          for (; distance < max; distance += 0.5) {
+            if (g.grid.at(before.x + dx * distance, before.y + dy * distance) !== 0) break;
+          }
+          if (distance < back + c.spec.L / 2 || distance >= max) continue;
+          const x = before.x + dx * distance, y = before.y + dy * distance;
+          // Open just before a solid face across more than the car's full width;
+          // a corner, narrow post or a visibly slanted approach is unsuitable.
+          const across = c.spec.W / 2 + 1;
+          if (![-across, -across / 2, 0, across / 2, across].every((side) =>
+            g.grid.at(x - dy * side - dx * 0.7, y + dx * side - dy * 0.7) === 0
+            && g.grid.at(x - dy * side + dx * 0.7, y + dx * side + dy * 0.7) !== 0)) continue;
+          const sx = x - dx * back, sy = y - dy * back;
+          const others = g.carsNear(x, y, back + c.spec.L + 5).filter((o) => o !== c);
+          const trams = g.tramsNear(x, y, back + c.spec.L + 30);
+          let clear = true;
+          for (let s = 0; s <= back - c.spec.L / 2 - 0.8 && clear; s += 0.25) {
+            Object.assign(c, { x: sx + dx * s, y: sy + dy * s, h });
+            clear = c.worldOutline().every(([px, py]) => g.grid.at(px, py) === 0)
+              && !posts.touches(c)
+              && others.every((o) => o.gap(c.x, c.y) > c.spec.L / 2 + 0.5)
+              && c.offsets.every((off) => {
+                const px = c.x + dx * off, py = c.y + dy * off;
+                return !fences.blocks(px, py, c.r + 0.2, -1)
+                  && trams.every((body) => body.circles.every(([tx, ty]) => Math.hypot(px - tx, py - ty) >= c.r + 1.25 + 0.2));
+              });
+          }
+          if (!clear) continue;
+          Object.assign(c, { x: sx, y: sy, h, vx: 0, vy: 0, w: 0 });
+          placed = true;
+          return { heading, x, y, dx, dy, back };
+        }
+        return null;
+      } finally {
+        if (!placed) Object.assign(c, before);
+      }
     },
 
     // Run the world for this long with these controls (the live loop waits meanwhile).
