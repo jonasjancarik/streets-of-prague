@@ -419,7 +419,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                  [ls for ls, est, cls, _ in car_ways if cls != "bridge" and not est["tunnel"]])
     if not deck.is_empty:
         deck = _areas(shapely.intersection(deck, clip, grid_size=GRID))
-        surface = _areas(shapely.union(surface, deck, grid_size=GRID))
+        surface = _areas(shapely.union(_areas(surface), deck, grid_size=GRID))
     timer.lap("dtm_streets")
     kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways], surface)
     timer.lap("kerb_index")
