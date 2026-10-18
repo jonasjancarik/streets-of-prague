@@ -63,15 +63,20 @@ frame-time checks before release. Rebuild outputs keyed by street IDs, including
     uv run build_tiles.py praha --resume --no-assemble
     uv run ipr_buildings.py praha --no-assemble
     uv run ipr_terrain.py praha --no-assemble
-    uv run --group cover ground_cover.py build praha --no-assemble   # praha and ujezd have this layer
+    uv run --group cover ground_cover.py build praha --no-assemble   # every area has this layer
     uv run --group cover young_woods.py build praha --no-assemble    # praha only
-    uv run layers.py praha --strict
+    uv run layers.py praha                                           # praha: not --strict yet (below)
     uv run --group cover tree_sizes.py build praha                   # praha only; assembles again
+    uv run layers.py praha --strict
     uv run build_signals.py praha
 
-Then `centrum` and `ujezd` the same way (without the cover, young woods and tree size
-steps they don't have). `tree_sizes.py` measures the trees of the tiles as assembled, so
-it runs after `layers.py`; a later assemble keeps its layer (by each tree's place).
+Then `centrum` and `ujezd` the same way (without the young woods and tree size steps
+they don't have, and with `layers.py --strict` straight away). `tree_sizes.py` measures
+the trees of the tiles as assembled, so it runs after an assemble; a later assemble
+keeps its layer (by each tree's place). That first assemble can't be `--strict` when
+anything the tree sizes depend on has changed since they were made (`ground_cover.py`'s
+sampling, say): the check refuses the old layer, and only a later step makes the new
+one. Seen on 18 October; the strict assemble after the tree sizes is the check.
 
 | Step | Reads | Writes |
 |---|---|---|
@@ -117,6 +122,12 @@ caches, every chunk worked out again after code changes: `build_tiles.py praha` 
 93 s, `layers.py --strict` 52 s, `tree_sizes.py build` 471 s, `layers.py --strict` again
 51 s, `build_signals.py` 7 s: about 1 h 10 min for `praha`. `centrum` took 2.5 min
 (`build_tiles.py` 107 s of it), `ujezd` 35 s; `check-map-rebuild.mjs` 10 s for all three.
+
+Measured on 18–19 October 2026, main checkout, the machine at a load of 10–50 from
+other work, every chunk worked out again: `build_tiles.py praha` 60 min,
+`ipr_buildings.py` 8 min, `ipr_terrain.py` 6 min, `ground_cover.py build` 62 min (the
+sampling's cache keys had changed), `young_woods.py build` 8 min, `layers.py` 1 min,
+`tree_sizes.py build` 41 min, `layers.py --strict` 1 min: about 3 h 10 min for `praha`.
 
 ## Checking the result
 
