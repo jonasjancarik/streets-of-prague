@@ -18,20 +18,22 @@ export default {
       // The driver's own side is walled in (a building, a fence), so the passenger's door is the way in.
       const unwall = t.wallBeside(car, 1);
       t.toDoor(car, 2, 0.55);
-      const before = t.peopleNear(car.x, car.y, 6).length;
+      // Where someone stands, across the car from its driver's door: inside the wall there.
+      const c = Math.cos(car.h), s = Math.sin(car.h), W = car.spec.W;
+      const inWall = (people: { x: number; y: number }[]) => people.filter((p) => {
+        const left = (p.y - car.y) * c - (p.x - car.x) * s, along = (p.x - car.x) * c + (p.y - car.y) * s;
+        return left > W / 2 + 0.2 && left < W / 2 + 3.2 && Math.abs(along) < 2.5;
+      });
+      const around = t.peopleNear(car.x, car.y, 6), before = around.length, walled = inWall(around).length;
       t.press();
       await t.wait(0.6);
       const people = t.peopleNear(car.x, car.y, 6);
       if (t.driven(car)) { unwall(); continue; } // (E found no door to go to: try another car)
       done = true;
       t.check('the driver is out', people.length > before, `${before} -> ${people.length} people about it`);
-      // Where they stand, across the car from its driver's door: not inside the wall there.
-      const c = Math.cos(car.h), s = Math.sin(car.h), W = car.spec.W;
-      const inWall = people.filter((p) => {
-        const left = (p.y - car.y) * c - (p.x - car.x) * s, along = (p.x - car.x) * c + (p.y - car.y) * s;
-        return left > W / 2 + 0.2 && left < W / 2 + 3.2 && Math.abs(along) < 2.5;
-      });
-      t.check('nobody is stuck in the wall beside the driver\'s door', inWall.length === 0, JSON.stringify(inWall));
+      // (Passers-by already there before the theft don't count: only whoever came out of the car.)
+      const stuck = inWall(people);
+      t.check('nobody is stuck in the wall beside the driver\'s door', stuck.length <= walled, `${walled} -> ${JSON.stringify(stuck)}`);
       await t.wait(3);
       unwall();
       t.check('the car is yours', t.probe().car?.type === car.type, t.where().mode);
