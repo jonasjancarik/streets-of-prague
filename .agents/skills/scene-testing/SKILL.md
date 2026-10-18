@@ -77,7 +77,8 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   It, `t.drive` and `t.exit` are instant. `t.press()` is E as the player presses it:
   to the door, in (or out) through it, which takes a second or so of `t.wait`; with a
   driver at the wheel it plays the theft. `t.toDoor(car, n)` stands you by door n (1 the
-  driver's, 2 the other front one), `t.fromDoor(car, n)` is how far you are from where you'd
+  driver's, 2 the other front one), `t.wallBeside(car, n)` turns the ground beside door n into a
+  wall (it returns the function that removes it), `t.fromDoor(car, n)` is how far you are from where you'd
   stand to use it. `t.arrested()` is how far an arrest has got
   (`door`, `out`, `hands`, `cuff`, `lead`, `seat`, `back`) or null.
   `t.busLines()` lists loaded PID identifiers/destinations; `t.busLine(car, ref)` assigns

@@ -1004,6 +1004,14 @@ async function main() {
         back = (own.front + own.back) / 2 - (pulled ? 1.3 : 0.25);
       }
       const fx = Math.cos(car.h), fy = Math.sin(car.h);
+      // The driver's side can be walled in or hemmed in by other things (you came in by the
+      // passenger's door because of it, perhaps): then out on the other side, a little
+      // behind where you stand, rather than inside a wall.
+      if (!car.two && walker.blocked(car.x + lx * off + fx * back, car.y + ly * off + fy * back)) {
+        lx = -lx;
+        ly = -ly;
+        if (door) back -= 1.1;
+      }
       const p = crowd.spawnAt(car.x + lx * off + fx * back, car.y + ly * off + fy * back, car.rider || undefined);
       // A courier leaves the bag behind, on the ground by the bike.
       if (box) bags.drop(car.x + lx * (car.spec.W / 2 + 0.35) - fx * 0.4, car.y + ly * (car.spec.W / 2 + 0.35) - fy * 0.4, box, car.h);

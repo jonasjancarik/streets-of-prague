@@ -74,7 +74,7 @@ interface Game {
   simulate: (dt: number, ctl?: Partial<Controls>) => void;
   view: (zoom: number) => void;
   loaded: (x: number, y: number) => Promise<void>;
-  grid: { at: (x: number, y: number) => number };
+  grid: { at: (x: number, y: number) => number; view?: (who: Car) => { at: (x: number, y: number) => number } };
   steps: (x: number, y: number, r: number) => { edges: StepEdge[]; crossings: { x: number; y: number; dx: number; dy: number; drop: number; hw: string }[] };
   ground: (x: number, y: number) => number;
   streets: DriveGraph;
@@ -259,7 +259,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // People on foot near a spot, and what each is doing.
     peopleNear(x: number, y: number, r: number) {
-      return g.crowd.people.filter((p) => Math.hypot(p.x - x, p.y - y) < r).map((p) => ({ state: p.state, away: round(Math.hypot(p.x - x, p.y - y)) }));
+      return g.crowd.people.filter((p) => Math.hypot(p.x - x, p.y - y) < r).map((p) => ({ state: p.state, away: round(Math.hypot(p.x - x, p.y - y)), x: round(p.x), y: round(p.y) }));
     },
     // Stands the nearest pedestrian `m` metres in front of the car and returns them.
     pedestrianAhead(m: number, c = g.car()!) {
@@ -310,6 +310,21 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       const m = g.me();
       [m.x, m.y] = c.beside(door, out);
       return Math.hypot(m.x - c.x, m.y - c.y);
+    },
+    // Makes the ground a wall (as a building's would be) for `len` m along the car and `depth` m out,
+    // beside door n, from `gap` m out of the car's side. Returns a function that takes it away again.
+    wallBeside(c: Car, n = 1, { gap = 0.2, depth = 3, len = 5 } = {}) {
+      const door = c.doors.find((d) => d.n === n);
+      if (!door) throw new Error(`No door ${n} on a ${c.type}`);
+      const grid = g.grid, at = grid.at, view = grid.view, along = (door.front + door.back) / 2;
+      const walled = (x: number, y: number) => {
+        const dx = x - c.x, dy = y - c.y, f = dx * Math.cos(c.h) + dy * Math.sin(c.h), l = (dy * Math.cos(c.h) - dx * Math.sin(c.h)) * door.side;
+        return Math.abs(f - along) < len / 2 && l > c.spec.W / 2 + gap && l < c.spec.W / 2 + gap + depth;
+      };
+      grid.at = (x: number, y: number) => (walled(x, y) ? 1 : at.call(grid, x, y));
+      // (What walks and drives on a bridge deck or under it is given its own view of the ground.)
+      if (view) grid.view = (who: Car) => { const v = view.call(grid, who); return { ...v, at: (x: number, y: number) => (walled(x, y) ? 1 : v.at(x, y)) }; };
+      return () => { grid.at = at; grid.view = view; };
     },
     // How far you are from where you'd stand to use a car's door.
     fromDoor(c: Car, n = 1) {
