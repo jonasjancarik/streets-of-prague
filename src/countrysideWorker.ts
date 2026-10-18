@@ -50,8 +50,13 @@ worker.onmessage = async (event) => {
         return out;
       };
       land = new Countryside(async (z, x, y) => (await archive.getZxy(z, x, y))?.data, built, m.setup, h.maxZoom, leaving, elevation);
-      const sw = land.metres(h.minLon, h.minLat), se = land.metres(h.maxLon, h.minLat);
-      const nw = land.metres(h.minLon, h.maxLat), ne = land.metres(h.maxLon, h.maxLat);
+      // A file of the whole planet (?countryside=live) is cut to a few degrees around the
+      // map first: the map's projection can't take the far side of the world. That is
+      // still past the 150 km the countryside goes to (countrysideTiles.ts).
+      const [clon, clat] = m.setup.centre;
+      const west = Math.max(h.minLon, clon - 3), east = Math.min(h.maxLon, clon + 3), south = Math.max(h.minLat, clat - 2), north = Math.min(h.maxLat, clat + 2);
+      const sw = land.metres(west, south), se = land.metres(east, south);
+      const nw = land.metres(west, north), ne = land.metres(east, north);
       worker.postMessage({ id, box: [Math.max(sw[0], nw[0]), Math.max(sw[1], se[1]), Math.min(se[0], ne[0]), Math.min(nw[1], ne[1])] });
     } else if (m.type === 'heights') {
       if (!land) throw new Error('The countryside file is not open');

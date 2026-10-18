@@ -13,3 +13,13 @@ export const dataUrl = (area: string, path: string) => `${base}${area}_now/${pat
 // kept as open data at AWS ({z}/{x}/{y}.png is added). Empty: the countryside stays flat.
 export const elevationUrl: string = import.meta.env.VITE_ELEVATION_URL ?? 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/';
 export const countrysideUrl: string = import.meta.env.VITE_COUNTRYSIDE_URL ?? `${base}countryside/central-bohemia.pmtiles`;
+// The same vector tiles for the whole planet, read live from Protomaps' daily build
+// (?countryside=live, from the developer tools), through the dev server (vite.config):
+// their builds are kept for a few weeks and aren't meant for a game's players, so this
+// is for trying places out only.
+export async function liveCountrysideUrl(): Promise<string> {
+  const builds: unknown = await (await fetch('/protomaps-meta/builds.json')).json();
+  const keys = Array.isArray(builds) ? builds.map((b) => b?.key).filter((k): k is string => typeof k === 'string' && /^\d{8}\.pmtiles$/.test(k)).sort() : [];
+  if (!keys.length) throw new Error('Protomaps lists no daily builds');
+  return `/protomaps-build/${keys[keys.length - 1]}`;
+}

@@ -918,6 +918,11 @@ that two versions of the roof builder can be compared.
   whatever slope the elevation data has, there are no lamps, trams, buses or parking
   out there, and it needs a 300 MB file of central Bohemia beside the map
   (`VITE_COUNTRYSIDE_URL`) and Mapzen's elevation tiles at AWS. Not measured on a phone.
+  For trying places further out, `?countryside=live` (or "Past the map's edge" in the
+  developer tools) reads the whole planet from Protomaps' daily build instead, through
+  the dev server only (their server lets few sites read it, and the builds aren't for
+  players), as far as 150 km from the middle of the map; the developer tools' address
+  search and map then reach that far too.
 - **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
   narrow streets (without standing in the traffic lane) and are left out.
 - **Angled and perpendicular parking along the kerb** past the city limits stands just

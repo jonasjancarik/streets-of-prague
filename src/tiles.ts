@@ -422,9 +422,9 @@ export class TileWorld {
     view: (who: Tracked) => { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
   };
 
-  constructor({ area, index, scene, drive, walk, time, night, osmBuildings = false, ortho = false, countryside = false }: {
+  constructor({ area, index, scene, drive, walk, time, night, osmBuildings = false, ortho = false, countryside = false as boolean | 'live' }: {
     area: string; index: MapIndex; scene: THREE.Scene; drive: DriveGraph; walk: WalkGraph;
-    time: { value: number }; night: boolean; osmBuildings?: boolean; ortho?: boolean; countryside?: boolean;
+    time: { value: number }; night: boolean; osmBuildings?: boolean; ortho?: boolean; countryside?: boolean | 'live';
   }) {
     this.osmBuildings = osmBuildings;
     this.ortho = ortho;
@@ -439,7 +439,7 @@ export class TileWorld {
     this.T = index.tile;
     [this.ox, this.oy] = index.origin;
     this.available = new Set(index.tiles.map(([i, j]) => `${i}_${j}`));
-    this.country = countryside ? new CountrysideTiles(index, area) : null;
+    this.country = countryside ? new CountrysideTiles(index, area, countryside === 'live') : null;
     this.edgeHeights = new Map();
     // Which tiles have IPR buildings, where index.json says (else the tile JSON does).
     this.iprTiles = new Map(index.tiles.filter((t) => t.length > 3).map(([i, j, , ipr]) => [`${i}_${j}`, !!ipr]));

@@ -83,7 +83,15 @@ const built = new Date().toISOString().slice(0, 10);
 
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version), __APP_BUILT__: JSON.stringify(built), __DATA_VERSION__: JSON.stringify(data) },
-  server: { allowedHosts },
+  server: {
+    allowedHosts,
+    // Protomaps' daily planet build for ?countryside=live (src/data.ts): their server
+    // lets only a few origins read it, so the dev server fetches it for the game.
+    proxy: {
+      '/protomaps-build': { target: 'https://build.protomaps.com', changeOrigin: true, rewrite: (p) => p.replace(/^\/protomaps-build/, '') },
+      '/protomaps-meta': { target: 'https://build-metadata.protomaps.dev', changeOrigin: true, rewrite: (p) => p.replace(/^\/protomaps-meta/, '') },
+    },
+  },
   preview: { allowedHosts },
   plugins: [licences(true), benchWatch()],
   worker: { plugins: () => [licences(false)] },

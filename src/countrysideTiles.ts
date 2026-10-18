@@ -1,7 +1,7 @@
 // The main thread's side of the countryside past the built map (countryside.ts, plan
 // 021; a prototype behind ?countryside): says which tiles can be made, and asks the
 // worker for them.
-import { countrysideUrl, dataUrl, elevationUrl } from './data.ts';
+import { countrysideUrl, dataUrl, elevationUrl, liveCountrysideUrl } from './data.ts';
 import type { Bounds } from './map/geo.ts';
 import type { MapIndex, TileJSON } from './contracts.ts';
 import type { CountrysideRequest, CountrysideResponse } from './countrysideWorker.ts';
@@ -37,7 +37,8 @@ export class CountrysideTiles {
   private broken: Error | null = null;
   private readonly index: MapIndex;
 
-  constructor(index: MapIndex, area: string) {
+  // live: read OpenStreetMap's tiles from Protomaps' daily planet build, not the file.
+  constructor(index: MapIndex, area: string, live = false) {
     this.index = index;
     try {
       this.worker = new Worker(new URL('./countrysideWorker.ts', import.meta.url), { type: 'module' });
@@ -61,11 +62,11 @@ export class CountrysideTiles {
     };
     this.worker.onmessageerror = () => this.fail(new Error('The countryside worker response could not be read'));
     const [w, s, e, n] = index.bbox_wgs84;
-    this.opened = this.ask({ type: 'open', url: new URL(countrysideUrl, location.href).href, tiles: new URL(dataUrl(area, 'tiles/'), location.href).href,
+    this.opened = (live ? liveCountrysideUrl() : Promise.resolve(countrysideUrl)).then((url) => this.ask({ type: 'open', url: new URL(url, location.href).href, tiles: new URL(dataUrl(area, 'tiles/'), location.href).href,
       elevation: elevationUrl && index.terrain ? elevationUrl : null,
       leaving: index.leaving ? new URL(dataUrl(area, 'leaving.json'), location.href).href : null,
       setup: { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows, size: index.size,
-        grid: index.terrain && { n: index.terrain.n, step: index.terrain.step } } })
+        grid: index.terrain && { n: index.terrain.n, step: index.terrain.step } } }))
       .then((r) => { if (!this.broken && 'box' in r) this.box = limited(r.box, index); })
       .catch((err) => this.fail(err));
   }

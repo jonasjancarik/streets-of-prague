@@ -265,7 +265,7 @@ async function main() {
   await tramsLoad;
   if (params.get('mist') === 'volume') MIST_MODE.value = 'volume';
   const weatherFx = new WeatherFx(scene);
-  const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: params.has('countryside') });
+  const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: params.get('countryside') === 'live' ? 'live' : params.has('countryside') });
   // Past the city's parts, the town or village from the countryside's map.
   if (world.country) districts.elsewhere = (x, y) => world.country!.placeAt(x, y);
   const grid = world.grid;
@@ -1176,7 +1176,8 @@ async function main() {
   const dev = setupDev({ area: AREA, index, teleport: teleportTo, position: () => [px(), py()], helicopter: addChopper, setFire, setHurt: () => !!hurtNearest(), backOnRoad,
     timeOfDay: () => clock.t % 86400, setTimeOfDay: (sec) => clock.advance(sec - clock.t % 86400), graphics,
     season: { day: () => season.day, set: (day) => season.set(day), label: () => season.label() },
-    weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, label: () => weather.name } });
+    weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k, true); }, label: () => weather.name },
+    reach: () => world.country?.box ?? null });
   // ---- Saved games (save.ts) ---------------------------------------------
   // The game saves itself into the "auto" slot every few seconds and when the page is
   // left; a refresh then offers to continue from there (see `resume`). Test runs (?go)

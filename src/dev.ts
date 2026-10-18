@@ -2,7 +2,7 @@ import { dataUrl } from './data.ts';
 import proj4 from 'proj4';
 import type * as Leaflet from 'leaflet';
 import type { MapIndex } from './contracts.ts';
-import type { Point2 } from './map/geo.ts';
+import type { Bounds, Point2 } from './map/geo.ts';
 import type { Graphics, Choice } from './graphics.ts';
 import { MIST, MIST_DEFAULT, MOST_SHEETS, type Kind, type Mist } from './weather.ts';
 import { LOCAL_MIST, LOCAL_MIST_DEFAULT, MIST_MODE, supportsLocalMist, type MistMode, type LocalMistSettings } from './localmist.ts';
@@ -42,7 +42,7 @@ export const googleMaps = (lat: number, lon: number) => `https://www.google.com/
 export const streetView = (lat: number, lon: number, heading: number) => `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}&heading=${Math.round(heading)}`;
 export const mapyCz = (lat: number, lon: number) => `https://mapy.com/zakladni?x=${lon.toFixed(6)}&y=${lat.toFixed(6)}&z=19&source=coor&id=${lon.toFixed(6)}%2C${lat.toFixed(6)}`;
 
-export function setupDev({ area, index, teleport, position, helicopter, setFire, setHurt, backOnRoad, timeOfDay, setTimeOfDay, graphics, season, weather }: {
+export function setupDev({ area, index, teleport, position, helicopter, setFire, setHurt, backOnRoad, timeOfDay, setTimeOfDay, graphics, season, weather, reach }: {
   area: string; index: MapIndex; teleport: (x: number, y: number) => Promise<void>;
   position: () => Point2; helicopter: () => boolean; setFire: () => boolean; setHurt: () => boolean; backOnRoad: () => void;
   // Seconds since midnight on the game's clock.
@@ -52,11 +52,22 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   season: { day: () => number; set: (day: number) => void; label: () => string };
   // The weather picked, or 'auto' while it changes by itself.
   weather: { kinds: string[]; get: () => string; set: (kind: Kind | 'auto') => void; label: () => string };
+  // How far you can go, in the game's metres, when the countryside reaches past the
+  // built map (?countryside); null while it doesn't.
+  reach?: () => Bounds | null;
 }) {
   const [w, s, e, n] = index.bbox_wgs84;
   const local = `+proj=tmerc +lat_0=${(s + n) / 2} +lon_0=${(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
   const toLocal = (lon: number, lat: number): Point2 => proj4('EPSG:4326', local, [lon, lat]) as Point2;
   const toLonLat = (x: number, y: number): Point2 => proj4(local, 'EPSG:4326', [x, y]) as Point2;
+  // Where the search and the map may take you, as [west, south, east, north]: the
+  // built map, or the countryside around it.
+  const extent = (): Bounds => {
+    const box = reach?.();
+    if (!box) return [w, s, e, n];
+    const corners = [toLonLat(box[0], box[1]), toLonLat(box[2], box[1]), toLonLat(box[0], box[3]), toLonLat(box[2], box[3])];
+    return [Math.min(...corners.map((c) => c[0])), Math.min(...corners.map((c) => c[1])), Math.max(...corners.map((c) => c[0])), Math.max(...corners.map((c) => c[1]))];
+  };
   let names: StreetName[] | null = null;
   let bench: ReturnType<typeof setupBench> | null = null;
   // Where the free camera looks while it's on; otherwise where you are.
@@ -116,6 +127,11 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     <label class="dev-time">Weather <span id="dev-weather-label"></span>
       <select id="dev-weather">
         <option value="auto">Changing by itself</option>${weather.kinds.map((k) => `<option value="${k}">${k[0].toUpperCase()}${k.slice(1)}</option>`).join('')}
+      </select>
+    </label>
+    <label class="dev-time">Past the map's edge
+      <select id="dev-country" title="Reloads the game">
+        <option value="">Nothing, the map ends</option><option value="file">Countryside from the downloaded file</option><option value="live">Countryside anywhere, live from OpenStreetMap</option>
       </select>
     </label>
     <details id="dev-mist">
@@ -199,7 +215,8 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     if (spot) { void go(...toLocal(spot[1], spot[0]), fixed(...spot)); return; }
     results.innerHTML = '<div class="dev-note">Looking the address up on OpenStreetMap…</div>';
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&bounded=1&viewbox=${w},${n},${e},${s}&q=${encodeURIComponent(q)}`;
+      const [ew, es, ee, en] = extent();
+      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&bounded=1&viewbox=${ew},${en},${ee},${es}&q=${encodeURIComponent(q)}`;
       const found: unknown = await (await fetch(url, { headers: { 'Accept-Language': 'cs' } })).json();
       if (!Array.isArray(found)) throw new Error('Invalid address results');
       const items: DevHit[] = found.filter((f): f is { lon: string; lat: string; display_name: string } =>
@@ -208,7 +225,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
         const [x, y] = toLocal(+f.lon, +f.lat);
         return { label: f.display_name.split(',').slice(0, 3).join(','), x, y };
       });
-      show(items, items.length ? 'Addresses from OpenStreetMap:' : 'Nothing found in this part of Prague.');
+      show(items, items.length ? 'Addresses from OpenStreetMap:' : reach?.() ? 'Nothing found within reach of the map.' : 'Nothing found in this part of Prague.');
     } catch {
       show([], 'The address search isn’t reachable right now; street names still work.');
     }
@@ -232,6 +249,20 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   sky.value = weather.get();
   sky.onchange = () => weather.set(sky.value as Kind | 'auto');
   sky.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+  // Past the map's edge: the game is opened again with or without ?countryside.
+  const country = $('dev-country') as HTMLSelectElement;
+  const opened = new URLSearchParams(location.search);
+  country.value = !opened.has('countryside') ? '' : opened.get('countryside') === 'live' ? 'live' : 'file';
+  country.onchange = () => {
+    const u = new URL(location.href);
+    if (country.value === 'live') u.searchParams.set('countryside', 'live');
+    else if (country.value === 'file') u.searchParams.set('countryside', '');
+    else u.searchParams.delete('countryside');
+    const [lon, lat] = toLonLat(...position());
+    u.searchParams.set('start', `${lon.toFixed(5)},${lat.toFixed(5)}`);
+    location.href = u.toString();
+  };
+  country.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
   setupMist($, weather, flash);
   const time = $('dev-time') as HTMLInputElement;
   let dragging = false;
@@ -278,8 +309,11 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     const L = (await import('leaflet')).default;
     await import('leaflet/dist/leaflet.css');
     const [lon, lat] = toLonLat(...position());
+    // The countryside's file may open after the map was first shown.
+    const [ew, es, ee, en] = extent();
+    const bounds: Leaflet.LatLngBoundsExpression = [[es - 0.02, ew - 0.02], [en + 0.02, ee + 0.02]];
     if (!map) {
-      map = L.map('dev-leaflet', { maxBounds: [[s - 0.02, w - 0.02], [n + 0.02, e + 0.02]] }).setView([lat, lon], 16);
+      map = L.map('dev-leaflet', { maxBounds: bounds }).setView([lat, lon], 16);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(map);
@@ -296,6 +330,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
         go(x, y, 'the spot you picked');
       });
     } else {
+      map.setMaxBounds(bounds);
       map.setView([lat, lon], map.getZoom());
       marker?.setLatLng([lat, lon]);
     }
