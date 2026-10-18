@@ -8,7 +8,7 @@ import {
   Fn, If, Discard, float, int, ivec2, vec2, vec3, vec4, texture, attribute, positionGeometry, positionWorld, normalView, cameraViewMatrix, diffuseColor,
   dot, smoothstep, abs, select, min, max, step, length,
 } from 'three/tsl';
-import { LAMP_MAP, LAMP_MAP_HIGH, LAMP_BOX, LAMP_REF, LAMP_ON, LAMP_SHADOWS, setPools } from '../lamps.ts';
+import { LAMP_MAP, LAMP_MAP_HIGH, LAMP_MAP_OPEN, OPEN_ABOVE, LAMP_BOX, LAMP_REF, LAMP_ON, LAMP_SHADOWS, setPools } from '../lamps.ts';
 
 const LUMA = vec3(0.3, 0.59, 0.11);
 import { type N, follow, followVec } from './common.ts';
@@ -94,7 +94,7 @@ setPools(poolsMaterial);
 
 export const uLampOn = follow(LAMP_ON);
 const uLampBox = followVec(LAMP_BOX), uLampRef = followVec(LAMP_REF);
-let map: N = null, mapHigh: N = null;
+let map: N = null, mapHigh: N = null, mapOpen: N = null;
 // A building's roofs: how far a face must look up to count as one (the cosine of its
 // slope: from 70° to 55°, so steep roofs too but no wall), and from what height over the
 // lit ground it gets no lamplight (m; a doorstep or a low plinth below that still does).
@@ -112,6 +112,7 @@ const ROOF = { facing: [0.34, 0.57], over: [1.2, 2.2] };
 export function lampLight(w: N, n?: N, roofs = false) {
   map ??= texture(LAMP_MAP.value ?? new THREE.Texture());
   mapHigh ??= texture(LAMP_MAP_HIGH.value ?? new THREE.Texture());
+  mapOpen ??= texture(LAMP_MAP_OPEN.value ?? new THREE.Texture());
   const out = vec3(0).toVar();
   // Worked out here, not first inside the branch below: the lighting after it needs the normal too.
   const nv = n ? n.toVar() : null;
@@ -121,14 +122,23 @@ export function lampLight(w: N, n?: N, roofs = false) {
     const at = vec2(uv.x, uv.y.oneMinus()).toVar();
     const facing = roofs ? ROOF.facing : [0.5, 0.8], over = roofs ? ROOF.over : [3.5, 5.5];
     const up = nv ? smoothstep(facing[0], facing[1], dot(nv, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz)).toVar() : null;
-    const from = (tex: N, low: [number, number]) => {
+    const from = (tex: N, low: [number, number], open = false) => {
       const l = tex.sample(at).level(float(0)).toVar();
       const dy = w.y.sub(l.a.div(max(dot(l.rgb, LUMA), 1e-4)).add(uLampRef.x)).toVar();
+      if (open) {
+        // Above the cars, the light nothing stands in (LAMP_MAP_OPEN in ../lamps.ts),
+        // which also knows the ground under a car's shadow.
+        If(uLampRef.w.greaterThan(0.5), () => {
+          const o = mapOpen.sample(at).level(float(0)).toVar();
+          dy.assign(w.y.sub(o.a.div(max(dot(o.rgb, LUMA), 1e-4)).add(uLampRef.x)));
+          l.assign(vec4(l.rgb.mix(o.rgb, smoothstep(OPEN_ABOVE[0], OPEN_ABOVE[1], dy)), l.a));
+        });
+      }
       const k = smoothstep(3, 11, dy).oneMinus().mul(smoothstep(low[0], low[1], dy)).toVar();
       if (up) k.mulAssign(up.mul(smoothstep(over[0], over[1], dy)).oneMinus());
       return l.rgb.mul(k);
     };
-    out.assign(from(map, [-22, -16]));
+    out.assign(from(map, [-22, -16], true));
     If(uLampRef.y.greaterThan(0.5), () => { out.addAssign(from(mapHigh, [-5, -2.5])); });
     out.mulAssign(uLampOn);
   });

@@ -22,10 +22,15 @@ import { LightFx } from './lightfx.ts';
 
 export const LAMP_MAP: { value: THREE.Texture | null } = { value: null };
 export const LAMP_MAP_HIGH: { value: THREE.Texture | null } = { value: null };
+// The first map's light again with nothing in its way, at a quarter of its size: the map
+// is flat, so the shadow a car casts on the street would also darken whatever is above
+// it (a tree's crown over a parked car). What stands well above the ground a light falls
+// on takes its light from here instead. Drawn only when the cars cast shadows (LAMP_REF.w).
+export const LAMP_MAP_OPEN: { value: THREE.Texture | null } = { value: null };
 // (x, z of the map's centre, 1 / its half width, 1 / its half depth)
 export const LAMP_BOX = { value: new THREE.Vector4(0, 0, 1, 1) };
 // (the height the map's heights are measured from, 1 when the second map has lights in it,
-// the softest a shadow's edge may be (m): a texel and a half, 0)
+// the softest a shadow's edge may be (m): a texel and a half, 1 when LAMP_MAP_OPEN is drawn)
 export const LAMP_REF = { value: new THREE.Vector4(0, 0, 0.3, 0) };
 // How much the lamps are on: 0 by day, 1 at night.
 export const LAMP_ON = { value: 0 };
@@ -38,8 +43,12 @@ export const LAMP_SIZE = { value: 1024 };
 // The lights' beams in the air and their glints on cars and wet ground (lightfx.ts): 0 or 1.
 export const LIGHT_FX = { value: 0 };
 
+// Over the ground a light falls on, from where the open map's light takes over (m): above
+// a car's roof, below a tree's crown.
+export const OPEN_ABOVE = [2.2, 3.4];
 export const LAMP_GLSL = /* glsl */ `
-uniform sampler2D uLampMap; uniform vec4 uLampBox; uniform vec4 uLampRef; uniform float uLampOn;
+#define OPEN_ABOVE vec2(${OPEN_ABOVE[0].toFixed(1)}, ${OPEN_ABOVE[1].toFixed(1)})
+uniform sampler2D uLampMap; uniform sampler2D uLampOpen; uniform vec4 uLampBox; uniform vec4 uLampRef; uniform float uLampOn;
 // The lamps' light at a point in the world (0 by day and off the map). With a surface
 // (n): what faces up and is well above the lamp (a bridge deck over the street, whose
 // cars' lights would otherwise show through it) gets none.
@@ -49,6 +58,14 @@ vec3 lampLightOn(vec3 w, vec3 n) {
   if (uv.x < 0. || uv.y < 0. || uv.x > 1. || uv.y > 1.) return vec3(0.);
   vec4 l = texture2D(uLampMap, uv);
   float dy = w.y - (l.a / max(dot(l.rgb, vec3(.3, .59, .11)), 1e-4) + uLampRef.x);
+  if (uLampRef.w > .5) {
+    // Above the cars, the light nothing stands in (LAMP_MAP_OPEN), which also knows the
+    // ground under a car's shadow.
+    vec4 o = texture2D(uLampOpen, uv);
+    float oy = w.y - (o.a / max(dot(o.rgb, vec3(.3, .59, .11)), 1e-4) + uLampRef.x);
+    l.rgb = mix(l.rgb, o.rgb, smoothstep(OPEN_ABOVE.x, OPEN_ABOVE.y, oy));
+    dy = oy;
+  }
   float up = smoothstep(.5, .8, dot(n, viewMatrix[1].xyz));
   // Not far below the lamp either: the street under a bridge isn't lit from the deck.
   return l.rgb * uLampOn * (1. - smoothstep(3., 11., dy)) * smoothstep(-5., -2.5, dy) * (1. - up * smoothstep(3.5, 5.5, dy));
@@ -71,6 +88,7 @@ const CLOUDS = !location.search.includes('nocloud');
 
 export function lampLit(sh: Shader, world?: string) {
   sh.uniforms.uLampMap = LAMP_MAP;
+  sh.uniforms.uLampOpen = LAMP_MAP_OPEN;
   sh.uniforms.uLampBox = LAMP_BOX;
   sh.uniforms.uLampRef = LAMP_REF;
   sh.uniforms.uLampOn = LAMP_ON;
@@ -279,6 +297,7 @@ export class Lamps {
   private deck: (x: number, y: number, within: number) => number | null;
   private target: THREE.WebGLRenderTarget;
   private targetHigh: THREE.WebGLRenderTarget;
+  private targetOpen: THREE.WebGLRenderTarget;
   private highScene = new THREE.Scene();
   // Each lamp near the camera: how far over the ground its light falls (on a bridge's deck,
   // or a floodlight's up the walls), and whether it's on a bridge.
@@ -329,11 +348,13 @@ export class Lamps {
     this.deck = deck;
     this.fx = new LightFx(scene);
     const size = LAMP_SIZE.value;
-    const target = () => new THREE.WebGLRenderTarget(size, size, { type: THREE.HalfFloatType, depthBuffer: false, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter });
+    const target = (n = size) => new THREE.WebGLRenderTarget(n, n, { type: THREE.HalfFloatType, depthBuffer: false, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter });
     this.target = target();
     this.targetHigh = target();
+    this.targetOpen = target(size / 4);
     LAMP_MAP.value = this.target.texture;
     LAMP_MAP_HIGH.value = this.targetHigh.texture;
+    LAMP_MAP_OPEN.value = this.targetOpen.texture;
     // By day nothing draws into the maps, so the materials would bind them as plain textures.
     // When the lamps first come on, WebGPU sets the target up and replaces that texture,
     // the materials keep pointing at the destroyed one, and every frame after fails.
@@ -493,11 +514,11 @@ export class Lamps {
     });
   }
 
-  // Both maps cleared (and made on the GPU, at their size).
+  // The maps cleared (and made on the GPU, at their size).
   private wipe() {
     const renderer = this.renderer, before = renderer.getRenderTarget(), clear = renderer.getClearColor(this.c).getHex(), alpha = renderer.getClearAlpha();
     renderer.setClearColor(0x000000, 0);
-    for (const t of [this.target, this.targetHigh]) {
+    for (const t of [this.target, this.targetHigh, this.targetOpen]) {
       renderer.setRenderTarget(t);
       renderer.clear(true, false, false);
     }
@@ -926,6 +947,7 @@ export class Lamps {
     if (this.target.width !== LAMP_SIZE.value) {
       this.target.setSize(LAMP_SIZE.value, LAMP_SIZE.value);
       this.targetHigh.setSize(LAMP_SIZE.value, LAMP_SIZE.value);
+      this.targetOpen.setSize(LAMP_SIZE.value / 4, LAMP_SIZE.value / 4);
       this.wipe();
     }
     this.gather(x, y, r, now);
@@ -1076,6 +1098,16 @@ export class Lamps {
       renderer.setRenderTarget(l ? this.targetHigh : this.target);
       renderer.clear(true, false, false);
       renderer.render(l ? this.highScene : this.lightScene, this.lightCam);
+    }
+    // The ground's lights once more with nothing in their way (LAMP_MAP_OPEN).
+    const blocking = LAMP_SHADOWS.value;
+    LAMP_REF.value.w = blocking > 0 ? 1 : 0;
+    if (blocking > 0) {
+      LAMP_SHADOWS.value = 0;
+      renderer.setRenderTarget(this.targetOpen);
+      renderer.clear(true, false, false);
+      renderer.render(this.lightScene, this.lightCam);
+      LAMP_SHADOWS.value = blocking;
     }
     renderer.setRenderTarget(before);
     renderer.setClearColor(clear, alpha);
