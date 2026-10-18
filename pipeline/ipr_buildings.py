@@ -229,6 +229,7 @@ MEASURED_WALL = 15  # on walls: their colour is measured, so the game keeps it (
 # looks of the building's period (building_age.ERA_CODE).
 BORROW_TOUCH = 0.6  # m; buildings this close share a wall: one terrace
 BORROW_NEAR = 30.0  # m; else a building of the same kind this near: the same block
+REGION_SHARE = 0.5  # of a roof triangle's area (from above) inside a region for it to take the region's cover
 
 
 def colours(bid, osm):
@@ -255,25 +256,37 @@ def colours(bid, osm):
 class RoofRegions:
     """The OSM buildings and building parts of a tile whose roof cover is known, and
     the hand-drawn regions of roofs.py. A roof triangle takes the cover of a region
-    it lies in: a hand-drawn one first, else the smallest (a tower's part inside the
-    whole church, say)."""
+    holding most of it (REGION_SHARE of its area): a hand-drawn one first, else the
+    smallest (a tower's part inside the whole church, say). By area, not by the
+    triangle's centre: IPR's roof triangles can be far bigger than a small part, and a
+    whole slope once turned copper because its centre fell in a bay's copper roof
+    (Rohanský palác, Karmelitská)."""
 
     def __init__(self, shapes):
         self.covers = np.array([COVERS.index(c) for _, c, _ in shapes], dtype=np.int8)
         self.rank = np.array([(0 if hand else 1e9) + g.area for g, _, hand in shapes])
-        self.tree = STRtree([g for g, _, _ in shapes]) if shapes else None
+        self.shapes = np.array([g for g, _, _ in shapes], dtype=object)
+        self.tree = STRtree(self.shapes) if shapes else None
 
-    def __call__(self, xy):
-        """Cover index for each point, -1 where no region says."""
-        out = np.full(len(xy), -1, dtype=np.int8)
-        if self.tree is None or not len(xy):
+    def __call__(self, tris):
+        """Cover index for each triangle ((n, 3, 2) corners), -1 where no region says."""
+        out = np.full(len(tris), -1, dtype=np.int8)
+        if self.tree is None or not len(tris):
             return out
-        pt, reg = self.tree.query(shapely.points(xy), predicate="within")
-        if len(pt):
-            order = np.lexsort((self.rank[reg], pt))
-            pt, reg = pt[order], reg[order]
-            first = np.r_[True, pt[1:] != pt[:-1]]
-            out[pt[first]] = self.covers[reg[first]]
+        polys = shapely.polygons(np.asarray(tris, dtype=np.float64))
+        t, reg = self.tree.query(polys, predicate="intersects")
+        if len(t):
+            area = shapely.area(polys[t])
+            inside = shapely.area(shapely.intersection(polys[t], self.shapes[reg]))
+            # A triangle standing on edge has no area from above: its centre decides.
+            edge = area < 0.01
+            mostly = np.where(edge, shapely.contains(self.shapes[reg], shapely.centroid(polys[t])), inside >= REGION_SHARE * area)
+            t, reg = t[mostly], reg[mostly]
+        if len(t):
+            order = np.lexsort((self.rank[reg], t))
+            t, reg = t[order], reg[order]
+            first = np.r_[True, t[1:] != t[:-1]]
+            out[t[first]] = self.covers[reg[first]]
         return out
 
 
@@ -576,8 +589,8 @@ def main() -> None:
                 said = np.zeros(len(codes), dtype=bool)  # roofs whose cover OSM or roofs.py gives
                 if top.any():
                     v = pos.reshape(-1, 3, 3)[top].astype(np.float64) / 100
-                    xy = np.column_stack([v[:, :, 0].mean(1) + i * T - origin[0], v[:, :, 2].mean(1) + j * T - origin[1]])
-                    cover = regions(i, j)(xy)
+                    corners = np.stack([v[:, :, 0] + i * T - origin[0], v[:, :, 2] + j * T - origin[1]], axis=-1)
+                    cover = regions(i, j)(corners)
                     said[top] = cover >= 0
                     cover[cover < 0] = COVERS.index(default)
                     which[top] = 1 + cover + np.where(codes[top] == 2, 3, 0)

@@ -553,7 +553,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   and copper domes), and `pipeline/roofs.py` corrects landmarks OSM gets wrong or leaves
   out, including wings of the Castle that both OSM and IPR draw as one building.
   Churches OSM says nothing about get slate. IPR's roofs take their colour triangle by
-  triangle, from the OSM building or part they lie in.
+  triangle, from the OSM building or part holding at least half of the triangle (seen
+  from above): IPR's triangles can be much bigger than a small part, such as a bay's
+  copper roof.
 - **Colours from the photo mesh.** Where `pipeline/mesh_colours.py` has run, IPR's
   buildings take their real colours from IPR's photorealistic mesh instead of the
   palette: each roof face its colour and material (tiles, slate, sheet metal, copper;
