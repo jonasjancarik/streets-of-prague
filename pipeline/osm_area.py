@@ -83,6 +83,7 @@ SETT_REACH = 4.0
 FENCE_TOLERANCE = 0.25  # m: how far a fence's line may be straightened
 GRID = 0.01  # metres, for overlaying the survey's surface
 SPARSE_OTHER = 0.04  # of a block's area: a few shops or sheds in a mostly empty block don't make it commercial
+DECK_ALONG = 8.0  # m of a street on the ground inside a raised carriageway for it to count as the street's (_deck)
 SETTLED_REACH = 30.0  # m: how far from a family house unmapped land counts as its surroundings
 STREET_NEAR = 12.0  # m: the streets and pavements this near a block are the ones its plots face
 
@@ -412,6 +413,13 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
 
     # The streets as surveyed, where the technical map has them (within Prague).
     surface = shapely.intersection(dtm.streets((w, s, e, n), tf.transform), clip, grid_size=GRID)
+    # Where OSM has a street on the ground but the survey has it above (on a deck), the
+    # survey's carriageway is the street's surface, and its ground under it isn't seen.
+    deck = _deck(dtm.raised((w, s, e, n), tf.transform),
+                 [ls for ls, est, cls, _ in car_ways if cls != "bridge" and not est["tunnel"]])
+    if not deck.is_empty:
+        deck = _areas(shapely.intersection(deck, clip, grid_size=GRID))
+        surface = _areas(shapely.union(surface, deck, grid_size=GRID))
     timer.lap("dtm_streets")
     kerbs = Kerbs(sidewalks, [LineString(r["pts"]) for r in rails if r["kind"] == "tram"], [w[0] for w in car_ways], surface)
     timer.lap("kerb_index")
@@ -469,7 +477,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     timer.lap("cobble_voronoi")
     # Route-only links may cross the housing-estate lawns inferred from blocks,
     # or surveyed green that OSM hasn't mapped. Decide after those surfaces too.
-    land = {f"dtm_{kind}": _areas(geom.intersection(clip))
+    land = {f"dtm_{kind}": _areas(geom.intersection(clip).difference(deck))
             for kind, geom in dtm.land((w, s, e, n), tf.transform).items()}
     timer.lap("dtm_land")
     # The footpaths as ribbons with square ends (pavements.py).
@@ -633,6 +641,17 @@ def _ground_level(value):
         return float(str(value).strip()) == 0
     except (TypeError, ValueError):
         return False
+
+
+def _deck(raised, lines):
+    """The surveyed carriageways above the ground (dtm.raised) that a street on the ground
+    runs along for DECK_ALONG m or more, as one shape."""
+    if not len(raised) or not lines:
+        return Polygon()
+    tree = STRtree(lines)
+    keep = [g for g in raised
+            if sum(g.intersection(lines[k]).length for k in tree.query(g, predicate="intersects")) >= DECK_ALONG]
+    return unary_union(keep) if keep else Polygon()
 
 
 def _walking_surfaces(ways, areas, natural=None):

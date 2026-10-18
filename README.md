@@ -871,7 +871,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   rounded street corners and traffic islands included. The survey draws a corner's
   curve as a few straight pieces, so the corners are rounded off (up to 1.5 m along
   each side) and hairline gaps between neighbouring surfaces closed; a parking bay's
-  short sides stay nearly square. OSM only says what a street is
+  short sides stay nearly square. The survey's carriageways are those on the ground,
+  plus any it has on a deck where OSM has an ordinary street running along it for 8 m
+  or more (5. května over the roof of Pražského povstání station); the survey's green
+  under such a deck is left out. OSM only says what a street is
   paved with: each part of the surveyed surface takes the paving of the nearest street,
   and cobbles reach at most 4 m past a cobbled street's kerb (a car park beside it is
   asphalt). Each side's kerb, for the parked cars, is measured straight across from

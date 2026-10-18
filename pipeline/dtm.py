@@ -78,6 +78,7 @@ MARGIN = 0.0005  # degrees (~40 m) past the box, so neighbouring boxes round ali
 _index = None  # per process: (STRtree, polygons on the ground in WGS84)
 _land_index = None  # per process: (STRtree, polygons, kind labels)
 _parking_index = None  # per process: (STRtree, parking polygons on the ground in WGS84)
+_raised_index = None  # per process: (STRtree, carriageways above the ground in WGS84)
 _walk_index = None  # per process: (STRtree, polygons, kind labels) of WALK_KINDS
 
 
@@ -108,9 +109,9 @@ def _kept(name, bbox, transform, compute):
 def download():
     """Fetch the districts' packages that aren't here yet (a new month's have new names),
     removing the ones they replace."""
-    global _index, _land_index, _parking_index, _walk_index
+    global _index, _land_index, _parking_index, _walk_index, _raised_index
     listing = json.loads(_get(LIST))
-    _index = _land_index = _parking_index = _walk_index = None
+    _index = _land_index = _parking_index = _walk_index = _raised_index = None
     PACKAGES.mkdir(parents=True, exist_ok=True)
     keep = set()
     for district in listing:
@@ -164,14 +165,17 @@ def surfaces():
 
 
 def _indexes():
-    """Both worker indexes from one unpickle; don't retain the unused upper levels."""
-    global _index, _land_index, _parking_index, _walk_index
-    if _index is not None and _land_index is not None and _parking_index is not None and _walk_index is not None:
+    """The worker indexes from one unpickle; of the upper levels only the carriageways."""
+    global _index, _land_index, _parking_index, _walk_index, _raised_index
+    if _index is not None and _land_index is not None and _parking_index is not None and _walk_index is not None \
+            and _raised_index is not None:
         return
     kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
     street = [kinds[k][1][kinds[k][0] == 0] for k in STREET_KINDS if k in kinds]
     geoms = np.concatenate(street) if street else np.array([], dtype=object)
     _index = (STRtree(geoms), geoms)
+    raised = kinds["road"][1][kinds["road"][0] > 0] if "road" in kinds else np.array([], dtype=object)
+    _raised_index = (STRtree(raised), raised)
     groups = [(k, kinds[k][1][kinds[k][0] == 0]) for k in LAND_KINDS if k in kinds]
     geoms = np.concatenate([g for _, g in groups]) if groups else np.array([], dtype=object)
     labels = np.concatenate([np.full(len(g), k, dtype=object) for k, g in groups]) if groups else np.array([], dtype=object)
@@ -239,6 +243,24 @@ def streets(bbox, transform):
         local = shapely.transform(hits, lambda c: np.column_stack(transform(c[:, 0], c[:, 1])))
         return _smooth(shapely.union_all(shapely.make_valid(local), grid_size=0.01))
     return _kept("streets", bbox, transform, compute)
+
+
+def raised(bbox, transform):
+    """The carriageways the survey puts above the ground (on a bridge, a deck or a
+    structure's roof) that reach into a WGS84 box, as separate polygons in local metres.
+    Some carry a street OSM has on the ground: 5. května runs over the roof of
+    Pražského povstání station, the survey's ground there is the green under the deck."""
+    def compute():
+        _indexes()
+        tree, geoms = _raised_index
+        w, s, e, n = bbox
+        hits = geoms[np.sort(tree.query(box(w - MARGIN, s - MARGIN, e + MARGIN, n + MARGIN), predicate="intersects"))]
+        if not len(hits):
+            return np.array([], dtype=object)
+        local = shapely.make_valid(shapely.transform(hits, lambda c: np.column_stack(transform(c[:, 0], c[:, 1]))))
+        parts = shapely.get_parts(local)
+        return parts[np.isin(shapely.get_type_id(parts), (3, 6)) & (shapely.area(parts) > 0)]
+    return _kept("raised", bbox, transform, compute)
 
 
 def land(bbox, transform):
