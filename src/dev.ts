@@ -8,7 +8,11 @@ import { MIST, MIST_DEFAULT, MOST_SHEETS, type Kind, type Mist } from './weather
 import { LOCAL_MIST, LOCAL_MIST_DEFAULT, MIST_MODE, supportsLocalMist, type MistMode, type LocalMistSettings } from './localmist.ts';
 import type { Testkit } from './testkit.ts';
 
-interface DevHit { label: string; x: number; y: number }
+// far: a place out of the game's reach, [lat, lon]; going there reloads the game.
+interface DevHit { label: string; x: number; y: number; far?: [number, number] }
+// The middle of Prague's map, and how far from it the countryside reaches (a little
+// under countrysideTiles.ts's LIMIT, so the place isn't at the very edge).
+const PRAGUE: Point2 = [14.4656, 50.05965], REACH = 140000;
 interface StreetName { name: string; key: string; x: number; y: number }
 
 // Developer panel (` key or ?dev): jump to a street, an address, coordinates or a
@@ -62,6 +66,20 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   const toLonLat = (x: number, y: number): Point2 => proj4(local, 'EPSG:4326', [x, y]) as Point2;
   // Where the search and the map may take you, as [west, south, east, north]: the
   // built map, or the countryside around it.
+  // Past that, on the dev server, the game is opened again with the countryside read
+  // live: around Prague's map if the place is within reach of it, else centred there
+  // (?at=, countrysideTiles.ts).
+  const anywhere = import.meta.env.DEV;
+  const within = (lon: number, lat: number) => { const [ew, es, ee, en] = extent(); return lon > ew && lon < ee && lat > es && lat < en; };
+  const reopen = (lat: number, lon: number) => {
+    const u = new URL(location.href);
+    for (const k of ['at', 'start', 'place']) u.searchParams.delete(k);
+    u.searchParams.set('countryside', 'live');
+    const fromPrague = Math.hypot((lon - PRAGUE[0]) * Math.cos((lat * Math.PI) / 180), lat - PRAGUE[1]) * 111320;
+    if (fromPrague < REACH) u.searchParams.set('start', `${lon.toFixed(5)},${lat.toFixed(5)}`);
+    else u.searchParams.set('at', `${lat.toFixed(5)},${lon.toFixed(5)}`);
+    location.href = u.toString();
+  };
   const extent = (): Bounds => {
     const box = reach?.();
     if (!box) return [w, s, e, n];
@@ -184,13 +202,18 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     if (bench?.free()) { const [lon, lat] = toLonLat(x, y); await bench.look(lat, lon); } else await teleport(x, y);
     results.replaceChildren();
   };
+  // A place found by its latitude and longitude: here, or (far away) the game reopened there.
+  const hit = (lon: number, lat: number, label: string): DevHit => {
+    const [x, y] = toLocal(lon, lat);
+    return within(lon, lat) || !anywhere ? { label, x, y } : { label: `${label} (the game reloads there)`, x, y, far: [lat, lon] };
+  };
   const show = (items: DevHit[], note = '') => {
     showNote(note);
     for (const it of items) {
       const b = document.createElement('button');
       b.className = 'dev-hit';
       b.textContent = it.label;
-      b.onclick = () => go(it.x, it.y, it.label);
+      b.onclick = () => (it.far ? reopen(...it.far) : go(it.x, it.y, it.label));
       results.appendChild(b);
     }
   };
@@ -198,7 +221,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   // Streets as you type; the whole address on Enter.
   query.addEventListener('input', async () => {
     const spot = parseSpot(query.value.trim());
-    if (spot) { show([{ label: `Go to ${fixed(...spot)}`, x: toLocal(spot[1], spot[0])[0], y: toLocal(spot[1], spot[0])[1] }]); return; }
+    if (spot) { show([hit(spot[1], spot[0], `Go to ${fixed(...spot)}`)]); return; }
     const q = fold(query.value.trim());
     if (q.length < 2) { results.innerHTML = ''; return; }
     const list = await loadNames();
@@ -212,19 +235,21 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     const q = query.value.trim();
     if (!q) return;
     const spot = parseSpot(q);
-    if (spot) { void go(...toLocal(spot[1], spot[0]), fixed(...spot)); return; }
+    if (spot) {
+      const h = hit(spot[1], spot[0], fixed(...spot));
+      if (h.far) reopen(...h.far); else void go(h.x, h.y, h.label);
+      return;
+    }
     results.innerHTML = '<div class="dev-note">Looking the address up on OpenStreetMap…</div>';
     try {
       const [ew, es, ee, en] = extent();
-      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&bounded=1&viewbox=${ew},${en},${ee},${es}&q=${encodeURIComponent(q)}`;
+      // (On the dev server anywhere in the world, nearby places first.)
+      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&bounded=${anywhere ? 0 : 1}&viewbox=${ew},${en},${ee},${es}&q=${encodeURIComponent(q)}`;
       const found: unknown = await (await fetch(url, { headers: { 'Accept-Language': 'cs' } })).json();
       if (!Array.isArray(found)) throw new Error('Invalid address results');
       const items: DevHit[] = found.filter((f): f is { lon: string; lat: string; display_name: string } =>
         typeof f === 'object' && f !== null && typeof f.lon === 'string' && typeof f.lat === 'string' && typeof f.display_name === 'string')
-        .map((f) => {
-        const [x, y] = toLocal(+f.lon, +f.lat);
-        return { label: f.display_name.split(',').slice(0, 3).join(','), x, y };
-      });
+        .map((f) => hit(+f.lon, +f.lat, f.display_name.split(',').slice(0, 3).join(',')));
       show(items, items.length ? 'Addresses from OpenStreetMap:' : reach?.() ? 'Nothing found within reach of the map.' : 'Nothing found in this part of Prague.');
     } catch {
       show([], 'The address search isn’t reachable right now; street names still work.');
@@ -252,14 +277,15 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   // Past the map's edge: the game is opened again with or without ?countryside.
   const country = $('dev-country') as HTMLSelectElement;
   const opened = new URLSearchParams(location.search);
-  country.value = !opened.has('countryside') ? '' : opened.get('countryside') === 'live' ? 'live' : 'file';
+  country.value = opened.has('at') || opened.get('countryside') === 'live' ? 'live' : opened.has('countryside') ? 'file' : '';
   country.onchange = () => {
     const u = new URL(location.href);
     if (country.value === 'live') u.searchParams.set('countryside', 'live');
     else if (country.value === 'file') u.searchParams.set('countryside', '');
     else u.searchParams.delete('countryside');
-    const [lon, lat] = toLonLat(...position());
-    u.searchParams.set('start', `${lon.toFixed(5)},${lat.toFixed(5)}`);
+    // Here again; or, away from Prague (?at=), back to Prague's map.
+    if (opened.has('at')) { u.searchParams.delete('at'); u.searchParams.delete('start'); }
+    else { const [lon, lat] = toLonLat(...position()); u.searchParams.set('start', `${lon.toFixed(5)},${lat.toFixed(5)}`); }
     location.href = u.toString();
   };
   country.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
@@ -298,11 +324,11 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
   };
 
   // The map: OpenStreetMap tiles, your position, click anywhere to go there.
-  let map: Leaflet.Map | null = null, marker: Leaflet.CircleMarker | null = null;
+  let map: Leaflet.Map | null = null, marker: Leaflet.CircleMarker | null = null, reachLine: Leaflet.Rectangle | null = null;
   const overlay = document.createElement('div');
   overlay.id = 'dev-mapbox';
   overlay.hidden = true;
-  overlay.innerHTML = '<div id="dev-leaflet"></div><div class="dev-maphint">Click where you want to be · right-click copies the coordinates · <kbd>Esc</kbd> closes the map</div>';
+  overlay.innerHTML = `<div id="dev-leaflet"></div><div class="dev-maphint">Click where you want to be${import.meta.env.DEV ? ' (past the dashed line, the game reloads there)' : ''} · right-click copies the coordinates · <kbd>Esc</kbd> closes the map</div>`;
   document.body.appendChild(overlay);
   $('dev-map').onclick = async () => {
     overlay.hidden = false;
@@ -311,7 +337,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     const [lon, lat] = toLonLat(...position());
     // The countryside's file may open after the map was first shown.
     const [ew, es, ee, en] = extent();
-    const bounds: Leaflet.LatLngBoundsExpression = [[es - 0.02, ew - 0.02], [en + 0.02, ee + 0.02]];
+    const bounds: Leaflet.LatLngBoundsExpression = anywhere ? [[-85, -400], [85, 400]] : [[es - 0.02, ew - 0.02], [en + 0.02, ee + 0.02]];
     if (!map) {
       map = L.map('dev-leaflet', { maxBounds: bounds }).setView([lat, lon], 16);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -326,10 +352,12 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
       });
       map.on('click', (ev) => {
         overlay.hidden = true;
-        const [x, y] = toLocal(ev.latlng.lng, ev.latlng.lat);
-        go(x, y, 'the spot you picked');
+        const h = hit(ev.latlng.wrap().lng, ev.latlng.lat, 'the spot you picked');
+        if (h.far) reopen(...h.far); else void go(h.x, h.y, h.label);
       });
+      if (anywhere) reachLine = L.rectangle([[es, ew], [en, ee]], { color: '#ffd23f', weight: 1, dashArray: '6 6', fill: false }).addTo(map);
     } else {
+      reachLine?.setBounds([[es, ew], [en, ee]]);
       map.setMaxBounds(bounds);
       map.setView([lat, lon], map.getZoom());
       marker?.setLatLng([lat, lon]);

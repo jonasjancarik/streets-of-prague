@@ -34,6 +34,9 @@ export interface CountrysideSetup {
   tile: number; origin: Point2; cols: number; rows: number;
   size: Point2; // the built map's own width and height: its last column and row of tiles are filled only so far
   grid?: { n: number; step: number }; // the terrain's points in a tile (index.json's terrain), for the hills
+  // Metres added to the hills before they are stored (heights are kept from 100 m above
+  // the sea up): a world centred elsewhere (?at=) may lie lower than that.
+  lift?: number;
 }
 // A street's width: by class, and for the small ones by whether houses stand near it.
 function settingWidth(hw: string, pts: Point2[], buildings: { at: Point2 }[]): number {
@@ -651,7 +654,7 @@ export class Countryside {
           const k = Math.max(0, Math.min(1, (past - LEVEL_EDGE) / LEVEL_FADE)), own = k * k * (3 - 2 * k);
           h = hill(on[0], on[1]) * (1 - own) + h * own;
         }
-        out[b * n + a] = Math.max(0, Math.min(65535, Math.round((h - 100) * 10)));
+        out[b * n + a] = Math.max(0, Math.min(65535, Math.round((h + (this.setup.lift ?? 0) - 100) * 10)));
       }
     }
     return out;

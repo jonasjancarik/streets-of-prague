@@ -1,4 +1,5 @@
 import { DATA_FORMAT, dataUrl, mapData } from './data.ts';
+import { ANYWHERE, anywhereIndex } from './countrysideTiles.ts';
 import { STATIONS } from './radio.ts';
 import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts';
 import * as THREE from 'three';
@@ -102,7 +103,11 @@ interface Controls { move: number; turn: number; run: boolean; brake: boolean; j
 declare global { interface Window { __drive?: unknown; __test?: Testkit } }
 
 const params = new URLSearchParams(location.search);
-const AREA = params.get('area') || 'praha';
+// ?at=lat,lon (the developer tools' jump to a place far from Prague): a world centred
+// there, all of it countryside read live, with no built map.
+const AT = params.get('at')?.split(',').map(Number).filter(Number.isFinite) ?? [];
+const anywhere = AT.length === 2 ? (AT as [number, number]) : null;
+const AREA = anywhere ? ANYWHERE : params.get('area') || 'praha';
 // The dashes showing where the stick will take the car (src/steerGuide.ts); ?guide=off hides them.
 const guideOn = params.get('guide') !== 'off';
 // Where a new game can begin: lon, lat of a spot on a street with room for a car at the kerb.
@@ -169,7 +174,7 @@ async function main() {
   let savedSound = '';
   try { savedSound = localStorage.getItem('sound') ?? ''; } catch {}
   // The game saved by itself last time, unless it's a test run (?go).
-  const saved = params.has('go') ? null : readSave('auto', AREA);
+  const saved = params.has('go') || anywhere ? null : readSave('auto', AREA);
   const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), season: season.day, dateLinked: parseDay(params.get('date')) !== null || parseDay(params.get('season')) !== null, weather: weather.kind, weatherFixed: weather.fixed,
     weatherForSeason: (day) => { const preview = new Season(params); preview.set(day); return weather.preview(clock.t, preview); },
     sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.fixed ? saved.weather.kind : automaticWeather(saved.weather.kind), season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
@@ -186,7 +191,7 @@ async function main() {
   const carsLoad = loadCars();
   const tramsLoad = loadTrams();
   const footfallLoad = loadFootfall(AREA);
-  const indexValue: unknown = await fetch(dataUrl(AREA, 'index.json')).then((r) => {
+  const indexValue: unknown = anywhere ? anywhereIndex(...anywhere) : await fetch(dataUrl(AREA, 'index.json')).then((r) => {
     if (!r.ok) throw new Error(`Map index could not be loaded (${r.status})`);
     return r.json();
   });
@@ -265,7 +270,7 @@ async function main() {
   await tramsLoad;
   if (params.get('mist') === 'volume') MIST_MODE.value = 'volume';
   const weatherFx = new WeatherFx(scene);
-  const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: params.get('countryside') === 'live' ? 'live' : params.has('countryside') });
+  const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: anywhere || params.get('countryside') === 'live' ? 'live' : params.has('countryside') });
   // Past the city's parts, the town or village from the countryside's map.
   if (world.country) districts.elsewhere = (x, y) => world.country!.placeAt(x, y);
   const grid = world.grid;
@@ -1183,7 +1188,7 @@ async function main() {
   // left; a refresh then offers to continue from there (see `resume`). Test runs (?go)
   // never save, so they can't overwrite a real game.
   let playing = false; // set once the start screen is done
-  let saving = true; // off while the page restarts into another game
+  let saving = !anywhere; // off while the page restarts into another game, and away from Prague (?at=)
   let saveT = 0;
   const capture = (): SaveData => {
     const c = inCar && !inCar.burnt ? inCar : null, who = c || walker;
@@ -1242,7 +1247,7 @@ async function main() {
   const saves = {
     list: () => listSaves(AREA),
     save: () => {
-      if (!writeSave(newSlot(), capture())) return false;
+      if (anywhere || !writeSave(newSlot(), capture())) return false;
       telemetry.count('saves'); telemetry.did('saved the game by hand');
       return true;
     },

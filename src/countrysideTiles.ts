@@ -1,7 +1,7 @@
 // The main thread's side of the countryside past the built map (countryside.ts, plan
 // 021; a prototype behind ?countryside): says which tiles can be made, and asks the
 // worker for them.
-import { countrysideUrl, dataUrl, elevationUrl, liveCountrysideUrl } from './data.ts';
+import { DATA_FORMAT, countrysideUrl, dataUrl, elevationUrl, liveCountrysideUrl } from './data.ts';
 import type { Bounds } from './map/geo.ts';
 import type { MapIndex, TileJSON } from './contracts.ts';
 import type { CountrysideRequest, CountrysideResponse } from './countrysideWorker.ts';
@@ -19,6 +19,22 @@ const LIMIT = 150000;
 function limited(box: Bounds, index: MapIndex): Bounds {
   const cx = index.size[0] / 2 - index.origin[0], cy = index.size[1] / 2 - index.origin[1];
   return [Math.max(box[0], cx - LIMIT), Math.max(box[1], cy - LIMIT), Math.min(box[2], cx + LIMIT), Math.min(box[3], cy + LIMIT)];
+}
+
+// A world centred anywhere (?at=lat,lon, from the developer tools): no built map at
+// all, only countryside read live around that point, as far as LIMIT. Its data files
+// (trams, lamps, districts…) don't exist, so the game goes without them.
+export const ANYWHERE = 'anywhere';
+// Its hills are raised this much (so the sea and the Dutch polders can be stored), and
+// the game's y = 0 is 180 m above that (iprRef): Brussels' streets come out near 0.
+const ANYWHERE_LIFT = 150;
+export function anywhereIndex(lat: number, lon: number): MapIndex {
+  const d = 0.0005;
+  return {
+    format: DATA_FORMAT, area: ANYWHERE, bbox_wgs84: [lon - d, lat - d, lon + d, lat + d], size: [0, 0], origin: [0, 0],
+    tile: 250, cols: 0, rows: 0, tiles: [], rails: [], graphs: true, parkingInTiles: true, iprRef: 180,
+    terrain: { n: 63, step: 250 / 62, bare: [], structures: [] },
+  };
 }
 
 export class CountrysideTiles {
@@ -66,7 +82,7 @@ export class CountrysideTiles {
       elevation: elevationUrl && index.terrain ? elevationUrl : null,
       leaving: index.leaving ? new URL(dataUrl(area, 'leaving.json'), location.href).href : null,
       setup: { centre: [(w + e) / 2, (s + n) / 2], tile: index.tile, origin: index.origin, cols: index.cols, rows: index.rows, size: index.size,
-        grid: index.terrain && { n: index.terrain.n, step: index.terrain.step } } }))
+        grid: index.terrain && { n: index.terrain.n, step: index.terrain.step }, lift: index.area === ANYWHERE ? ANYWHERE_LIFT : 0 } }))
       .then((r) => { if (!this.broken && 'box' in r) this.box = limited(r.box, index); })
       .catch((err) => this.fail(err));
   }

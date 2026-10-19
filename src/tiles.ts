@@ -731,6 +731,11 @@ export class TileWorld {
   // a step (the pipeline's outer ring does the same past IPR's terrain).
   edgeHeight(i: number, j: number): Promise<ArrayBuffer> {
     const { cols, rows, terrain } = this.index, n = terrain!.n;
+    // No built map (?at=): the hills alone, or flat at the game's level without them.
+    if (!cols || !rows) {
+      return (this.country?.heights(i, j) ?? Promise.resolve(null))
+        .then((hills) => (hills ?? new Uint16Array(n * n).fill(Math.round((this.ref - 100) * 10))).buffer as ArrayBuffer);
+    }
     const k = `${Math.max(0, Math.min(cols - 1, i))}_${Math.max(0, Math.min(rows - 1, j))}`;
     if (!this.edgeHeights.has(k)) {
       const url = dataUrl(this.area, `tiles/${k}.height.bin${this.index.gzip ? '.gz' : ''}`);

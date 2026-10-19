@@ -58,6 +58,9 @@ function benchWatch() {
     name: 'bench-watch',
     apply: 'serve',
     configureServer(server) {
+      // A world centred far from Prague (?at=, src/countrysideTiles.ts) has no data
+      // files of its own: say so, rather than answer with the game's page.
+      server.middlewares.use('/data/anywhere_now/', (_req, res) => { res.statusCode = 404; res.end(); });
       server.middlewares.use('/__bench', (_req, res) => {
         if (Date.now() - asked > 1000) {
           asked = Date.now();

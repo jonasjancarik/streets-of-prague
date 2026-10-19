@@ -921,8 +921,10 @@ that two versions of the roof builder can be compared.
   For trying places further out, `?countryside=live` (or "Past the map's edge" in the
   developer tools) reads the whole planet from Protomaps' daily build instead, through
   the dev server only (their server lets few sites read it, and the builds aren't for
-  players), as far as 150 km from the middle of the map; the developer tools' address
-  search and map then reach that far too.
+  players), as far as 150 km from the middle of the map. Further away (Brussels, say),
+  the developer tools' address search and map open the game again centred on the place
+  you picked (`?at=lat,lon`): all of it countryside read live, with no Prague map,
+  trams, lamps or saved games.
 - **Parking doesn't fit.** About 30 % of the cars TSK counts don't fit into the
   narrow streets (without standing in the traffic lane) and are left out.
 - **Angled and perpendicular parking along the kerb** past the city limits stands just
