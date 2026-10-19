@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Discard, float, int, ivec2, vec2, vec3, vec4, texture, attribute, positionGeometry, positionWorld, normalView, cameraViewMatrix, diffuseColor,
-  dot, smoothstep, abs, select, min, max, step, length,
+  dot, smoothstep, abs, select, min, max, step, length, mix,
 } from 'three/tsl';
 import { LAMP_MAP, LAMP_MAP_HIGH, LAMP_MAP_OPEN, OPEN_ABOVE, LAMP_BOX, LAMP_REF, LAMP_ON, LAMP_SHADOWS, setPools } from '../lamps.ts';
 
@@ -131,7 +131,7 @@ export function lampLight(w: N, n?: N, roofs = false) {
         If(uLampRef.w.greaterThan(0.5), () => {
           const o = mapOpen.sample(at).level(float(0)).toVar();
           dy.assign(w.y.sub(o.a.div(max(dot(o.rgb, LUMA), 1e-4)).add(uLampRef.x)));
-          l.assign(vec4(l.rgb.mix(o.rgb, smoothstep(OPEN_ABOVE[0], OPEN_ABOVE[1], dy)), l.a));
+          l.assign(vec4(mix(l.rgb, o.rgb, smoothstep(OPEN_ABOVE[0], OPEN_ABOVE[1], dy)), l.a));
         });
       }
       const k = smoothstep(3, 11, dy).oneMinus().mul(smoothstep(low[0], low[1], dy)).toVar();
