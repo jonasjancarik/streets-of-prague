@@ -98,6 +98,9 @@ export interface Tracked {
 // tile's files, joins up the street graphs and makes the meshes and parked cars.
 
 const RES = 2; // collision grid cells per metre
+// How the streets are painted: a game built on this city may turn off the lane lines and
+// zebra crossings (Praha 1945's streets have none). On by default.
+export const TILE_LOOK = { roadPaint: true };
 const RAISED = 3; // a building whose underside is this high (m) or more doesn't block the way under it
 // Metres a car or a walker can go up or down between the ground and a bridge or a
 // tunnel, or between two levels: where a bridge is that close to the ground (at its
@@ -1203,8 +1206,8 @@ export class TileWorld {
     }
     return Promise.all([
       w.run('ground', {
-        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, weirs: t.weirs, crossings: t.crossings, marks: t.marks, utility: t.utility },
-        box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
+        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility },
+        paint: TILE_LOOK.roadPaint, box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5 }, [buffer]) : null,
       !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [] }) : null,

@@ -327,10 +327,13 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
 //
 // `steps`: the terrain knows the steps in it (the tile's terraces; its water is in `d`),
 // so the layers are cut along them and the steps get walls (see `sideOf`).
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null }: {
+export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, paint = true }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
+  // false: no lane lines (see TILE_LOOK in tiles.ts)
+  paint?: boolean;
 }): GroundResult {
+  paintRoads = paint;
   // The steps in the terrain: which side a point is on, and their outlines (stepEdges.ts).
   const sides = height ? stepSides(steps, d.areas.water ?? []) : null;
   const at: typeof sideOf = sides?.at ?? null, outlines = sides?.outlines ?? [];
@@ -807,7 +810,9 @@ const MAJOR = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 
 const EDGE_LINES = new Set(['motorway', 'trunk', 'primary', 'motorway_link', 'trunk_link']);
 const FAST = 70; // km/h: a one-way main road at least this fast is a carriageway, not a street
 const PAINT_STEP = 2; // m: an edge line is kept or dropped in pieces this long
+let paintRoads = true;
 function roadPaint(edges: GroundRoadEdge[], trams: Point2[][]) {
+  if (!paintRoads) return { dashed: [] as Point2[][], solid: [] as Point2[][] };
   const near = (p: Point2) => trams.some((pts) => pts.some((q, i) => i > 0 && segDistPts(p, pts[i - 1], q) < 3));
   const dashed: Point2[][] = [], solid: Point2[][] = [];
   const edgeLines = (e: GroundRoadEdge, W: number) => {
