@@ -10,7 +10,9 @@ the terrain's lattice:
 - before interpolation, a surveyed street vertex more than SURVEY_OFFSET from the
   bare terrain is left out, together with the segments attached to it. This catches
   gross source errors (kerbs at 294 m beside kerbs at 194 m near Nosticova), before
-  they become plausible-looking intermediate heights and spread into the bank;
+  they become plausible-looking intermediate heights and spread into the bank. So is
+  one more than SUNK below all the bare terrain within SUNK_REACH (kerbs 21 m down
+  under náměstí Míru, too little for SURVEY_OFFSET);
 - a lattice point on a surveyed street surface (carriageway, pavement, parking, tram
   track, platform…) takes its height from the surveyed points along that surface's own
   edge, so the street above a wall never mixes with the quay below it;
@@ -89,6 +91,14 @@ WALLS = {"010000030202": "wall edge", "010000016802": "wall"}
 VERSION = 4  # keep original 3D lines: validate vertices before densifying them
 SPACING = 1.5  # m between the points taken along a surveyed line
 SURVEY_OFFSET = 30.0  # m from the bare terrain: gross errors, not the few metres of a quay's ramp
+# A vertex this far below the lowest bare terrain within SUNK_REACH is not on the ground
+# either: far deeper than a street's underpass, with no slope or quay nearby to reach it.
+# Under náměstí Míru the survey has kerbs whose every few vertices are 20 m down (inside
+# SURVEY_OFFSET), and they sank the square into a pit; so near Spořilov and by the main
+# station, 25 m down. What else is that deep is in the map's tunnels, which go back to the
+# terrain further on anyway. (At 8 m it also took kerbs at the foot of Radotín's quarry,
+# 8–12 m under the terrain model's smoothed edge, and lifted the street there.)
+SUNK, SUNK_REACH = 15.0, 16.0
 ON_EDGE = 0.15  # m: a surveyed point this close to a surface's edge belongs to it
 FEATHER = 14.0  # m from a surveyed street: as far as the ground beside it follows it
 CUT_OUT, CUT_RISE, CUT_VOTES, CUT_SQUARE, CUT_WIDTH = 6.0, 3.0, 8, 16.0, 6.0  # (see --cut-streets)
@@ -206,11 +216,13 @@ def _along(c, spacing=SPACING):
     return np.concatenate(out)
 
 
-def _survey_points(lines, to_local, at):
+def _survey_points(lines, to_local, at, lowest=None):
     """Validate original vertices against bare terrain, then sample only intact runs.
 
     Keep isolated valid vertices as anchors, but never connect across a rejected one.
     Unknown terrain outside the built grid gives no reason to reject a finite vertex.
+    `lowest`, if given, is the lowest bare terrain within SUNK_REACH of a point: a vertex
+    more than SUNK below it is rejected too (see SUNK).
     Transform and sample in one batch so this also scales to the city's survey.
     """
     if not lines:
@@ -222,6 +234,11 @@ def _survey_points(lines, to_local, at):
     finite_xy = np.isfinite(local[:, :2]).all(axis=1)
     ground[finite_xy] = at(local[finite_xy, :2])
     valid = np.isfinite(local).all(axis=1) & (~np.isfinite(ground) | (np.abs(local[:, 2] - ground) <= SURVEY_OFFSET))
+    if lowest is not None:
+        floor = np.full(len(local), np.nan)
+        floor[finite_xy] = lowest(local[finite_xy, :2])
+        with np.errstate(invalid="ignore"):
+            valid &= ~(np.isfinite(floor) & (local[:, 2] < floor - SUNK))
     points, start = [], 0
     for line in lines:
         end = start + len(line)
@@ -423,7 +440,16 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     x_of = lambda i: gx0 + (i + i0) * step  # noqa: E731
     y_of = lambda j: gy0 + (j + j0) * step  # noqa: E731
     at_bare = lambda p: _bilinear(bare, (p[:, 0] - x_of(0)) / step, (p[:, 1] - y_of(0)) / step)  # noqa: E731
-    points, rejected = _survey_points(lines, to_local, at_bare)
+    reach = int(round(SUNK_REACH / step))
+    lowest = ndimage.minimum_filter(np.where(np.isnan(bare), np.inf, bare), size=2 * reach + 1)
+
+    def at_lowest(p):
+        gi, gj = np.round((p[:, 0] - x_of(0)) / step), np.round((p[:, 1] - y_of(0)) / step)
+        inside = (gi >= 0) & (gi < lowest.shape[1]) & (gj >= 0) & (gj < lowest.shape[0])
+        out = np.full(len(p), np.nan)
+        out[inside] = lowest[gj[inside].astype(int), gi[inside].astype(int)]
+        return out
+    points, rejected = _survey_points(lines, to_local, at_bare, at_lowest)
     pts = points[:, :2]
 
     # Streets: each surface from the surveyed points along its own edge.

@@ -149,6 +149,13 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
 - A level's lattice can't hold two things 4 m apart at different heights. When a deck
   sags or jumps near its end, compare the solved profile with the lattice before
   blaming the solver: at Výtoň the profile was right.
+- The survey has kerbs whose vertices jump between two levels a metre apart (náměstí
+  Míru: every few vertices 21 m under the square, maybe the metro's vestibule). That's
+  inside `SURVEY_OFFSET`, and it sank the square into a pit players drove into. A vertex
+  more than `SUNK` (15 m) below all the terrain within 16 m is now rejected too. At 8 m
+  it also dropped real kerbs at the foot of Radotín's quarry and lifted the street.
+  The same mixing upwards (kerbs on an elevated road surveyed as ground, Vysočany) is
+  still let through.
 - Low, short retaining walls (under 1.5 m, under 12 m) make more ragged ends than
   steps.
 

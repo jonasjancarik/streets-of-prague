@@ -43,6 +43,26 @@ class SurveyVertexTests(unittest.TestCase):
         self.assertEqual(rejected, 0)
         np.testing.assert_allclose(points[:, 2], 194 + points[:, 0] * 3)
 
+    def test_sunk_below_flat_ground_rejected(self):
+        # náměstí Míru: a kerb whose every other vertex is 21 m below the square.
+        flat = lambda p: np.full(len(p), 243.0)  # noqa: E731
+        points, rejected = dh._survey_points([np.array([(0, 0, 243.6), (1, 0, 222.5), (3, 0, 243.8), (4, 0, 222.7)], dtype=float)],
+                                             Identity(), flat, flat)
+        self.assertEqual(rejected, 2)
+        np.testing.assert_array_equal(points[:, 2], [243.6, 243.8])
+
+    def test_sunk_near_lower_ground_retained(self):
+        # A quay 21 m below the street 10 m away is low ground nearby, not an error.
+        points, rejected = dh._survey_points([np.array([(0, 0, 222.0), (8, 0, 222.0)], dtype=float)], Identity(),
+                                             lambda p: np.full(len(p), 243.0), lambda p: np.full(len(p), 221.0))
+        self.assertEqual(rejected, 0)
+        self.assertGreater(len(points), 2)
+
+    def test_unknown_lowest_does_not_reject(self):
+        points, rejected = dh._survey_points([np.array([(0, 0, 222.0), (8, 0, 222.0)], dtype=float)], Identity(),
+                                             lambda p: np.full(len(p), 243.0), lambda p: np.full(len(p), np.nan))
+        self.assertEqual(rejected, 0)
+
     def test_unknown_terrain_does_not_reject_finite_survey(self):
         points, rejected = self.samples([[(0, 0, 294), (8, 0, 295)]], lambda p: np.full(len(p), np.nan))
         self.assertEqual(rejected, 0)
