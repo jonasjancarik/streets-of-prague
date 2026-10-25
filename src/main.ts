@@ -2158,7 +2158,7 @@ async function main() {
       for (const e of brigade.engines) see(e.car);
       for (const r of ambulances.rigs) see(r.car);
     }
-    carPool.render(drawn, ground, dt);
+    carPool.render(drawn, ground, dt, world.terrainRevision);
     skids.update(dt * scale, drawn, ground);
     steerGuide.update(dt, inCar, inCar && guideOn ? held : null, (x, y) => ground(x, y, inCar), clamp(height / 120, 1, 3));
     spray.update(dt * scale, drawn, ground, renderer.domElement.height);

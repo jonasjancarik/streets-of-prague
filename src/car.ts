@@ -1102,6 +1102,34 @@ const BOARD_AT = { bus: boardPlacement('bus'), minibus: boardPlacement('minibus'
 
 // Every car is an instance: one draw per type/page, with paint per instance.
 // Riders are drawn here too, sitting on their bikes.
+// What a parked car's matrix was worked out from: the ground (the height function and
+// the terrain's revision), where the car is and how it's turned, and how the tiles
+// track it (TileWorld.track). The same again means the same matrix.
+interface Placing {
+  m: number[]; height: unknown; terrain: number;
+  x: number; y: number; h: number; lean: number; L: number; W: number;
+  level?: number; gz?: number; hint?: string; grounded?: boolean; tx?: number; ty?: number; e?: unknown;
+}
+
+function placed(p: Placing, c: Car, height: unknown, terrain: number) {
+  const t = c as Car & { _tx?: number; _ty?: number; e?: unknown };
+  return p.height === height && p.terrain === terrain && p.x === c.x && p.y === c.y && p.h === c.h && p.lean === c.lean &&
+    p.L === c.spec.L && p.W === c.spec.W && p.level === c.level && p.gz === c.gz && p.hint === c.hint &&
+    p.grounded === c.grounded && p.tx === t._tx && p.ty === t._ty && p.e === t.e;
+}
+
+// Notes a matrix for reuse (in `p`, if there is one already), unless something in it
+// isn't a number.
+function place(p: Placing | undefined, c: Car, height: unknown, terrain: number, m: THREE.Matrix4): Placing | undefined {
+  if (!m.elements.every(Number.isFinite)) return undefined;
+  const t = c as Car & { _tx?: number; _ty?: number; e?: unknown };
+  p ??= { m: new Array(16), height, terrain, x: 0, y: 0, h: 0, lean: 0, L: 0, W: 0 };
+  m.toArray(p.m);
+  p.height = height; p.terrain = terrain; p.x = c.x; p.y = c.y; p.h = c.h; p.lean = c.lean; p.L = c.spec.L; p.W = c.spec.W;
+  p.level = c.level; p.gz = c.gz; p.hint = c.hint; p.grounded = c.grounded; p.tx = t._tx; p.ty = t._ty; p.e = t.e;
+  return p;
+}
+
 export class CarPool {
   scene: THREE.Scene;
   // 128 cars (8 KiB of matrices); overflow retains the original page.
@@ -1118,6 +1146,8 @@ export class CarPool {
   boards: THREE.Mesh[] = [];
   private colours = new Map<string, THREE.Color>();
   private hingeless = new WeakMap<THREE.BufferGeometry, THREE.BufferAttribute>();
+  // Each parked four-wheeler's matrix and what it was worked out from (see placed).
+  private placings = new WeakMap<Car, Placing>();
 
   constructor(scene: THREE.Scene) {
     if (!kit) throw new Error('Figures kit is not loaded');
@@ -1205,8 +1235,10 @@ export class CarPool {
   }
 
   // `height(x, y, car)`: the height of the ground (or the bridge deck) under a car's
-  // wheels; cars sit on it, pitched and rolled to the slope.
-  render(cars: Car[], height: ((x: number, y: number, car: Car) => number) | null = null, dt = 0) {
+  // wheels; cars sit on it, pitched and rolled to the slope. `terrain` goes up whenever
+  // what `height` reads changes (TileWorld.terrainRevision); with it, a parked car that
+  // hasn't moved keeps its matrix instead of sampling the ground again every frame.
+  render(cars: Car[], height: ((x: number, y: number, car: Car) => number) | null = null, dt = 0, terrain?: number) {
     for (const c of cars) {
       if (c.two) this.lean(c, dt);
       else if (c.door) c.swing(dt);
@@ -1228,17 +1260,27 @@ export class CarPool {
       list.forEach((c, i) => {
         const m = pages[Math.floor(i / CarPool.pageCapacity)];
         const slot = i % CarPool.pageCapacity;
-        if (height) {
-          const fx = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
-          const hf = height(c.x + fx * L, c.y + fy * L, c), hb = height(c.x - fx * L, c.y - fy * L, c);
-          const hl = height(c.x - fy * W, c.y + fx * W, c), hr = height(c.x + fy * W, c.y - fx * W, c);
-          d.position.set(c.x, (hf + hb + hl + hr) / 4, -c.y);
-          d.rotation.set(Math.atan2(hl - hr, 2 * W) - c.lean, c.h, Math.atan2(hf - hb, 2 * L), 'YZX');
-        } else {
-          d.position.set(c.x, 0, -c.y);
-          d.rotation.set(-c.lean, c.h, 0, 'YZX');
+        const keep = height && terrain !== undefined && !c.two && c.mode === 'loose';
+        const was = keep ? this.placings.get(c) : undefined;
+        if (was && placed(was, c, height!, terrain!)) d.matrix.fromArray(was.m);
+        else {
+          if (height) {
+            const fx = Math.cos(c.h), fy = Math.sin(c.h), L = c.spec.L / 2, W = c.spec.W / 2;
+            const hf = height(c.x + fx * L, c.y + fy * L, c), hb = height(c.x - fx * L, c.y - fy * L, c);
+            const hl = height(c.x - fy * W, c.y + fx * W, c), hr = height(c.x + fy * W, c.y - fx * W, c);
+            d.position.set(c.x, (hf + hb + hl + hr) / 4, -c.y);
+            d.rotation.set(Math.atan2(hl - hr, 2 * W) - c.lean, c.h, Math.atan2(hf - hb, 2 * L), 'YZX');
+          } else {
+            d.position.set(c.x, 0, -c.y);
+            d.rotation.set(-c.lean, c.h, 0, 'YZX');
+          }
+          d.updateMatrix();
+          // Noted after the ground was sampled, which tracks the car (level, gz, …).
+          if (keep) {
+            const p = place(was, c, height!, terrain!, d.matrix);
+            if (p) this.placings.set(c, p); else this.placings.delete(c);
+          }
         }
-        d.updateMatrix();
         m.setMatrixAt(slot, d.matrix);
         let paint = this.colours.get(c.paint);
         if (!paint) { paint = new THREE.Color(c.paint); this.colours.set(c.paint, paint); }

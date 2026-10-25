@@ -384,6 +384,9 @@ export class TileWorld {
   country: CountrysideTiles | null; edgeHeights: Map<string, Promise<Uint16Array>>;
   bare: Set<string>; leveled: boolean; structures: Set<string>;
   loaded: Map<string, Tile>; byIndex: Map<number, Tile>;
+  // Goes up whenever a tile's heights or levels come or go (see insert and drop), so a
+  // height worked out from the loaded tiles can be kept until then (CarPool.render).
+  terrainRevision = 0;
   last: { i: number; j: number; tile: Tile | undefined };
   pending: Map<string, Promise<TileFiles>>;
   jsons: Map<string, Promise<TileJSON>>;
@@ -1183,11 +1186,14 @@ export class TileWorld {
       // The neighbours' hill shading along the shared edges, now that this side is known.
       if (shared) for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.edges();
       this.last.i = NaN;
+      this.terrainRevision++;
       this.onCars(cars, tile);
     } catch (error) {
       disposeFurniture(furniture);
       this.loaded.delete(k);
       this.byIndex.delete(key);
+      this.last.i = NaN;
+      this.terrainRevision++;
       this.sky.delete(key);
       throw error;
     }
@@ -1421,6 +1427,7 @@ export class TileWorld {
     this.loaded.delete(k);
     this.byIndex.delete(t.i * 65536 + t.j);
     this.last.i = NaN;
+    this.terrainRevision++;
     this.pending.delete(k);
     this.onDrop(t);
   }
