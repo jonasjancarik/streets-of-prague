@@ -40,6 +40,48 @@ the play. subdomain plan was renumbered 024 to avoid the clash.
 Plans 001–006 were indexed from `c6b5350`. Check the working tree and each plan's
 starting revision before implementation; preserve unrelated changes.
 
+## Further performance work, 25 October 2026
+
+Plans 032–036 cover the five source-review findings at
+`546620e027330e2d2f08ebcbaf1f0e3c6c68e8be`. They are implementation instructions,
+not completed changes. The only new executed diagnostic so far was the offline
+signal-buffer probe: five unchanged arrays were each marked dirty 60 times in
+60 fixed-state frames. No new GPU transfer or frame-time benefit was measured.
+
+| Order | Plan | Priority | Effort including checks | Status |
+| --- | --- | --- | --- | --- |
+| 1 | [032: Reuse parked-car ground samples and transforms](032-cache-parked-car-transforms.md) | P1 | One to two days | TODO |
+| 2 | [033: Update traffic-light buffers when their display changes](033-update-signals-on-change.md) | P2 | Several hours to one day | TODO |
+| 3 | [034: Prepare traffic lane geometry on demand](034-prepare-traffic-lanes-on-demand.md) | P2 | One day | TODO |
+| 4 | [035: Reuse tile selections without delaying streaming](035-reuse-tile-selection.md) | P2 | One to two days | TODO |
+| 5 | [036: Skip physics steps while game time is paused](036-skip-paused-physics.md) | P2 | Several hours to one day | TODO |
+
+There are no technical dependencies between these plans. The order tests parked-car
+CPU savings and the smaller demonstrated signal-buffer waste first. Implement and
+measure each against its immediately preceding baseline; do not add independent
+speedups together. Plans 032/035 share `tiles.ts`, and 032/036 share `main.ts`, so
+reconcile those edits. The plans do not authorize subagents, branch changes, pushes,
+deployment, map rebuilding or visual-quality reductions.
+
+Each plan specifies current-code excerpts, scope, steps, existing and proposed
+checks, done criteria and stop conditions. An inconclusive timing comparison must
+be reported as such even when operation counts improve. Plan 036 targets paused
+CPU work, not normal-play FPS. Run focused checks for each implementation; a full
+scenario suite or build is not claimed by this planning pass.
+
+Considered but excluded from this new set:
+
+- Signal/graph retirement already exists (`Signals.forget` is called from
+  `world.onForget`); there is no confirmed signal-retention leak to fix here.
+- Plan 017 already covers simpler tree shadows/crowns on phones; retain that plan
+  rather than duplicating it. Plan 032 develops the previously deferred parked-car
+  transform idea and does not replace completed per-instance paint work (015).
+- The crowd-worker experiment (019) showed no gain; incremental resting-car
+  collisions (012 B) still need convincing timing evidence. Neither is enabled or
+  relaunched by these plans.
+- Persistent car slots, broad pooling, movement-quantized tile caching, on-demand
+  rendering and offline map-generation/server performance remain outside scope.
+
 ## Fewer objects and draw calls
 
 Planned on 1 October 2026 at `1b5756cdf775c7fbde3e5522fb57de5658664bcf` from reading
