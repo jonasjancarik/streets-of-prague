@@ -174,4 +174,29 @@ visual quality or weakening tests.
 
 ## Result
 
-TODO — planning only. No implementation or performance gain established.
+Draft, 25 October 2026: offline steps 1–4 implemented; the browser checks and the
+benchmark (steps 4–5: `check-streaming.mjs`, zoom-out and countryside in the browser,
+`bench.mjs`) are still pending, so this stays TODO and no frame-time gain is claimed.
+
+- `d8ba1ef` adds `scripts/check-tile-selection.mjs`: every fixture runs through
+  test-only copies of the original `around`/`near`/`reach`/`update` and through the
+  real methods side by side, comparing every event and the scheduling state after
+  each frame. `aec6a5e` adds drive moves that change `drawn`, `r` or `y` alone.
+- `8acd715` (step 2): `around`/`near` take `sorted = true`; the four membership-only
+  queries (kept loaded, kept drawn, forget's camera and anchors) pass `false`.
+- `aec6a5e` (step 3): `TileWorld.picks` keeps the latest selection keyed by exact
+  `x`, `y`, `r`, `drawn`, `T`, origin, `available` identity plus `availableRevision`,
+  and the countryside's identity plus the contents of its box. Retry filtering,
+  prefetch, dispatch, `drawAfter`, retirement and forgetting still run every frame.
+- Availability: `available` is never changed after the constructor in `src/`
+  (anything that does must bump `availableRevision`); countryside coverage changes
+  only when `CountrysideTiles.box` is set on opening or cleared on failure.
+- Offline counts (old → new): 60 identical views 240 → 0 spatial queries; the
+  fixture's random drive 3232 sorted → 1142 sorted + 1142 unsorted; return visits
+  160 → 80. Typecheck, the selection, lifecycle and fetch checks and the whitespace
+  check pass.
+- Expected hit rate: none while moving, since the smoothed camera's x/y change every
+  frame. Standing still, the script's model of `main.ts`'s smoothing first repeats
+  the exact view about 6 s after a walk stops and about 33 s after stopping a car at
+  12 m/s (the height eases slowly); the settings pause (dt = 0) repeats at once.
+  Whether that is worth keeping must come from the pending benchmark.
