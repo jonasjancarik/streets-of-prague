@@ -6,7 +6,7 @@ read_when: Optimizing traffic-light updates, instance uploads or signal display 
 
 ## Status and intent
 
-- Status: TODO. Category: performance. Priority: P2.
+- Status: DONE (53a50d8, 26 October 2026). Category: performance. Priority: P2.
 - Effort: several hours to one day, including focused verification. Risk: low: phase, visibility and brightness changes need explicit handling.
 - Depends on: none. Reconcile shared-file edits with plans 032–036.
 - Planned at: `546620e027330e2d2f08ebcbaf1f0e3c6c68e8be`, 25 October 2026.
@@ -158,8 +158,8 @@ visual quality or weakening tests.
 
 ## Result
 
-Draft, 25 October 2026: implemented, offline checks pass; browser checks and the
-benchmark are pending, so the plan stays open and no frame-time gain is claimed.
+Implemented in `53a50d8` (on main after plan 032, `36b50fc`), 25–26 October 2026.
+Offline checks:
 
 - `scripts/check-signal-updates.mjs --baseline` against the unmodified code
   (`7da5a84`): passes; the two-head fixture marks each of the five buffers 60 times
@@ -177,5 +177,23 @@ benchmark are pending, so the plan stays open and no frame-time gain is claimed.
 - `npm run typecheck` and `git diff --check` pass.
 - On WebGPU the glow matrices (800 at most) fit a uniform buffer, which goes up every
   frame it's drawn whatever the version, so the saving there is in the colours.
-- Pending: `node scripts/check-signal-updates.mjs --url http://localhost:5191/`
-  (written, not run), the day and 22:00 benchmarks, and the docs.
+- `node scripts/check-signal-updates.mjs --url …` on the candidate: passes on WebGPU
+  and WebGL (`?renderer=webgl`), the same 8 road heads, 19 crossing heads and 27 glows
+  at three fixed phase/brightness states, no console errors.
+
+Timing on the M5 MacBook Air, headless Chrome, WebGPU, 1×, High, `--cpu 4`, clear,
+40 s, 3 runs each, `36b50fc` against `53a50d8`, with `Signals.update` and
+`backend.updateAttribute` wrapped to count time, uploads and bytes:
+
+| Scene, time, order | `Signals.update` a frame | Attribute uploads a frame | Whole frame |
+| --- | --- | --- | --- |
+| drive 14:00, base first | 0.024 → 0.012 ms | 20.3 → 16.3 | 12.8 → 12.5 ms |
+| drive 14:00, candidate first | 0.027 → 0.013 ms | 19.6 → 16.1 | 13.4 → 13.0 ms |
+| drive 22:00, base first | 0.021 → 0.007 ms | 25.8 → 22.3 | 13.3 → 13.0 ms |
+| stand (Old Town Square) | 0.005–0.008 ms either way | ≈13 either way | within ±4 % |
+
+Bytes uploaded a frame didn't change measurably (8 KB by day, 27 KB at night on the
+drive): the colour ranges are small. The whole-frame differences are inside this
+machine's run-to-run noise (they changed sign with the order), so no frame-rate gain
+is claimed: what's shown is a halved `Signals.update` and three or four fewer buffer
+uploads a frame where lights are in view.

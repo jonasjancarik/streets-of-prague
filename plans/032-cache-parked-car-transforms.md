@@ -6,7 +6,7 @@ read_when: Optimizing CarPool.render or changing terrain invalidation for parked
 
 ## Status and intent
 
-- Status: TODO. Category: performance. Priority: P1.
+- Status: DONE (36b50fc, 26 October 2026). Category: performance. Priority: P1.
 - Effort: one to two days, including focused verification. Risk: medium: terrain and instance-slot changes must remain correct.
 - Depends on: none. Reconcile shared-file edits with plans 032–036.
 - Planned at: `546620e027330e2d2f08ebcbaf1f0e3c6c68e8be`, 25 October 2026.
@@ -172,4 +172,44 @@ visual quality or weakening tests.
 
 ## Result
 
-TODO — planning only. No implementation or performance gain established.
+Implemented in `36b50fc` (25–26 October 2026), measured on the M5 MacBook Air in
+headless Chrome, WebGPU, 1×, High, 14:00, clear, `--cpu 4`, against `e8c95bb`. The
+machine was not quiet: the GPU showed 56 % use from other apps before the runs.
+
+What changed: parked four-wheelers (`mode === 'loose'`, not two-wheeled) keep their
+matrix in a `WeakMap` with what it was worked out from (height function, terrain
+revision, position, heading, lean, length and width, `level`, `gz`, `hint`, `grounded`,
+`_tx`/`_ty`, `e`). `TileWorld.terrainRevision` goes up on a tile's insertion, its
+rollback after a failed insertion, and its removal. Without a revision `render` works
+as before. The rollback now also clears the `tileAt` cache.
+
+Checks, all passing:
+
+- `node scripts/check-car-transforms.mjs --url … --baseline` on `e8c95bb`: 16 height
+  calls a frame for the four-car fixture, matrices equal the original calculation.
+- The same without `--baseline` on `36b50fc`, WebGPU and WebGL: 8 a frame (the moving
+  traffic car and the bike only); each of 13 changes (position, heading, lean, level,
+  `gz`, hint, grounded, `_tx`, street, size), a new height function and a new revision
+  re-sample only the changed car; page/slot reorder, an empty frame and re-entry keep
+  the matrices; lamps, burnt paint and doors are still written; on the real ground a
+  car is sampled once and kept, and dropping a tile, a failed insertion and its rebuild
+  each advance the revision. Largest matrix difference 1.5e-5 (float32 storage of
+  coordinates in the thousands), the same on both revisions.
+- `check-car-pool.mjs --case all`, `check-tile-lifecycle.mjs`, `npm run typecheck`,
+  `scene.mjs run car-doors bridge-exit tunnel-layers`: pass.
+- Matched top-down screenshots (Old Town Square, Petřín woods, `--zoom 0.4`): the
+  same cars and shadows; 0.5 % of pixels differ, all from people who moved.
+
+Timing:
+
+- In one page, switching the revision on and off every 2 s (10 windows each, 40 s),
+  `CarPool.render` took a frame: standing 0.113 → 0.087 ms (58 cars drawn), suburb
+  0.145 → 0.107 ms, drive 0.818 → 0.470 ms (286 cars drawn). That is about 0.3 ms of
+  a 13–15 ms frame on the drive.
+- Whole-frame `--vs`, 3 runs, both orders (stand, drive, suburb, 40 s): inconclusive.
+  The same scene ranged from 71 to 124 fps between runs and the two orders disagreed
+  (suburb 9.8 % slower in one order, 13.4 % slower for the other build in the other),
+  so the saving is far below this machine's noise. No frame-rate gain is claimed.
+
+The cache holds one small record per parked car drawn, owned weakly by the car.
+Persistent slots and dirty matrix/paint uploads remain deferred.
