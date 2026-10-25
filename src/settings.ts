@@ -12,6 +12,8 @@ import { newsletterLink, newsletterOpen } from './newsletter.ts';
 import { creditsOpen } from './credits.ts';
 import { updateNotice } from './update.ts';
 import { hapticsOn, setHaptics } from './haptics.ts';
+import { touchDrive, setTouchDrive } from './touch.ts';
+import type { TouchDrive } from './touch.ts';
 import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
 import type { TunnelView } from './tunnelView.ts';
 import { feedbackLink, feedbackOpen } from './feedback.ts';
@@ -167,6 +169,12 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   row('Noise cancelling', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (sound.anc ? 'on' : 'off'), (id) => sound.setAnc(id === 'on'));
   // Only on a touch screen: a computer can't buzz.
   if (matchMedia('(pointer: coarse)').matches) row('Vibration', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (hapticsOn() ? 'on' : 'off'), (id) => setHaptics(id === 'on'));
+  // How the on-screen controls drive a car (src/touch.ts): with the pedals, or one-handed.
+  if (matchMedia('(pointer: coarse)').matches || new URLSearchParams(location.search).has('touch')) {
+    const r = row<TouchDrive>('Driving', [{ id: 'pedals', label: () => t('Stick and pedals') }, { id: 'stick', label: () => t('Stick only') }], touchDrive, setTouchDrive);
+    const note = el('p', 'settings-note', r);
+    relabel.push(() => { note.textContent = t('With the stick only, you drive with one thumb: push further to go faster, pull back to brake and reverse, let go to coast.'); });
+  }
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
   row<TunnelView>('Tunnels', TUNNEL_VIEWS.map((v) => ({ id: v, label: () => t(TUNNEL_LABEL[v]) })), tunnelView, setTunnelView);
   row('Water', [{ id: 'waves', label: () => t('Waves and reflections') }, { id: 'plain', label: () => t('Plain') }], () => (graphics.water ? 'waves' : 'plain'), (id) => graphics.setWater(id === 'waves'));

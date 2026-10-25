@@ -542,6 +542,7 @@
       #touch[data-mode='drive'] #t-toggle, #touch[data-mode='drive'] #t-road { display: none; }
       #touch:not([data-mode='tram']) #t-steal, #touch:not([data-mode='drive']) #t-doors { display: none; }
       #touch[data-mode='tram'] #t-steer { display: none; }
+      #touch[data-mode='car'][data-drive='stick'] #t-pedals { display: none; }
       #t-road { position: fixed; top: calc(max(12px, env(safe-area-inset-top)) + 52px); right: max(12px, env(safe-area-inset-right)); height: 40px; padding: 0 14px; }
       @media (max-height: 460px) { #t-gas { height: 104px; } #t-brake { height: 72px; } #t-action { height: 44px; } }
       /* A phone on its side: the neighbourhood title sits below the middle, between the

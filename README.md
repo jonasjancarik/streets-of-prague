@@ -201,7 +201,9 @@ that without a new renderer.
   your thumb down away from the stick and the stick moves under it. In the car, lane
   assist is a toggle above the stick, showing the speed limit it keeps to while it's
   on; the right thumb has the gas and brake (roll from one to the other without
-  lifting), the handbrake and "Get out"; "Back on road" is top right, under the
+  lifting), the handbrake and "Get out". To drive with one hand, choose "Stick only"
+  under Driving in the settings: how far you push is the gas, pulling back brakes and
+  then reverses, letting go coasts, and the pedals go away. "Back on road" is top right, under the
   sound and settings buttons. On foot, “Jump” works even at a tram stop; waiting
   has its own button. Long HUD lists scroll within a compact panel. Pinch the map to zoom (`src/touch.ts`).
   Scroll over the map to zoom; scrolling a menu leaves the camera unchanged.

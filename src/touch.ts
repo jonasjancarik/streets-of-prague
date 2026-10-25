@@ -1,5 +1,6 @@
 import { clamp } from './network.ts';
 import { onLang, t } from './i18n.ts';
+import { turnOf } from './assist.ts';
 import type { Car } from './car.ts';
 import type { Chopper } from './helicopter.ts';
 
@@ -18,9 +19,28 @@ export interface TouchState {
 // Put a thumb down away from the stick and the stick moves under it. Lane assist
 // sits above the stick, since with it on the stick picks the next turn instead. The
 // pedals are one surface, so a thumb can roll from gas to brake without lifting.
+//
+// Or, chosen in the settings, the stick alone drives a car, for one hand: how far you
+// push is the gas, and pointing back against the way the car goes brakes and then
+// reverses (the back of the car follows the stick then, see aimSteer). Letting go
+// coasts. The pedals are hidden; the handbrake and the other buttons stay.
 
 const RANGE = 48; // px of thumb travel for a full push
 const DEAD = 0.12;
+// Stick-only driving: pointing further than this from the way the car goes is "back".
+// Going forward it takes a clear pull back (120°); reversing, anything ahead of 60° is
+// forward again, so the car doesn't flick between the two along the edge.
+const BACK_GOING = 2.1, BACK_REVERSING = 1.05;
+
+export type TouchDrive = 'pedals' | 'stick';
+let drive: TouchDrive = 'pedals';
+try { if (localStorage.getItem('touchDrive') === 'stick') drive = 'stick'; } catch { /* not saved */ }
+export const touchDrive = () => drive;
+export function setTouchDrive(d: TouchDrive) {
+  drive = d;
+  try { localStorage.setItem('touchDrive', d); } catch { /* not saved */ }
+  document.getElementById('touch')?.setAttribute('data-drive', d);
+}
 
 // Keep getting a finger's moves after it slides off the control it started on.
 const capture = (el: HTMLElement, e: PointerEvent) => { try { el.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } };
@@ -38,6 +58,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
   // `aim` (on foot): { h, mag }, the way the stick points in world terms and how far.
   const state: TouchState = { active: false, move: 0, turn: 0, aim: null, brake: false, run: false, fast: false, update: () => {} };
   let inCar: Car | Chopper | null = null, assistOn = false;
+  $('touch').dataset.drive = drive;
 
   const activate = () => {
     if (state.active) return;
@@ -236,6 +257,19 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
     const mag = Math.min(1, Math.hypot(push.x, push.y));
     state.aim = mag > DEAD ? { h: Math.atan2(push.y, push.x), mag: dead(mag) } : null;
     state.run = !!inCar && assistOn;
+    if (inCar && drive === 'stick') {
+      const aim = state.aim;
+      if (!aim) state.move = 0;
+      else if (!('forwardSpeed' in inCar)) state.move = aim.mag; // the helicopter flies the way it's pointed
+      else {
+        const reversing = inCar.forwardSpeed < -0.3;
+        const back = Math.abs(turnOf(inCar.h, aim.h)) > (reversing ? BACK_REVERSING : BACK_GOING);
+        state.move = back ? -aim.mag : aim.mag;
+        // Braking while still going forward, steer as the reversing car will: the stick
+        // straight back brakes straight, rather than swinging the car round to face it.
+        if (back && !reversing && inCar.forwardSpeed > 0.5) state.aim = { h: aim.h + Math.PI, mag: aim.mag };
+      }
+    }
     const mode = inCar ? 'car' : driving ? 'drive' : tram ? 'tram' : wait ? 'stop' : 'foot';
     set('mode', mode, (m) => {
       $('touch').dataset.mode = m;
