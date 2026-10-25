@@ -71,8 +71,9 @@ const SWERVE = 2.4, PASS = 0.35;
 // of the passing one. Less than the room parked cars leave a lane (parkingClearance),
 // or the widest cars would stop for every car parked at the least distance.
 const TOUCH = 0.1;
-// The lane ahead of the car being moved (Route.ahead), reused from car to car.
-const lane: number[] = [];
+// The lane ahead of the car being moved (Route.ahead), reused from car to car, and
+// each of its pieces as six numbers: start, direction and length, distance along.
+const lane: number[] = [], pieceAt: number[] = [];
 
 // Lorries keep to the motorways and, out in the suburbs (the warehouses and depots),
 // the big roads. The centre of the map is the Old Town Square, in local metres.
@@ -321,17 +322,26 @@ export class Traffic {
         let lat = (o.x - here.x) * hy - (o.y - here.y) * hx, along = (o.x - here.x) * hx + (o.y - here.y) * hy;
         if (o.kind === 'car' && o.car?.mode !== 'traffic' && ov < 0.3) {
           // Standing: how far along the lane it is and how far to its side, round the bends.
-          if (pieces < 0) pieces = a.route.ahead(L / 2 + 3, reach + 4, lane);
+          if (pieces < 0) {
+            pieces = a.route.ahead(L / 2 + 3, reach + 4, lane);
+            if (pieces > 1) {
+              for (let i = 0, k = 0; i < pieces * 5; i += 5, k += 6) {
+                const ax = lane[i], ay = lane[i + 1], ux = lane[i + 2] - ax, uy = lane[i + 3] - ay;
+                pieceAt[k] = ax; pieceAt[k + 1] = ay; pieceAt[k + 2] = ux; pieceAt[k + 3] = uy;
+                pieceAt[k + 4] = Math.hypot(ux, uy); pieceAt[k + 5] = lane[i + 4];
+              }
+            }
+          }
           if (pieces > 1) {
             let best = Infinity;
-            for (let k = 0, last = (pieces - 1) * 5; k <= last; k += 5) {
-              const ax = lane[k], ay = lane[k + 1], ux = lane[k + 2] - ax, uy = lane[k + 3] - ay, len = Math.hypot(ux, uy);
+            for (let k = 0, last = (pieces - 1) * 6; k <= last; k += 6) {
+              const ax = pieceAt[k], ay = pieceAt[k + 1], ux = pieceAt[k + 2], uy = pieceAt[k + 3], len = pieceAt[k + 4];
               const u = ((o.x - ax) * ux + (o.y - ay) * uy) / len, across = ((o.x - ax) * uy - (o.y - ay) * ux) / len;
               // (Past either end of the lane looked at, as if it ran straight on.)
               const over = k > 0 && u < 0 ? -u : k < last && u > len ? u - len : 0, d = Math.hypot(over, across);
               if (d >= best) continue;
               best = d;
-              along = lane[k + 4] + clamp(u, k > 0 ? 0 : -Infinity, k < last ? len : Infinity);
+              along = pieceAt[k + 5] + clamp(u, k > 0 ? 0 : -Infinity, k < last ? len : Infinity);
               lat = over ? Math.sign(across || 1) * d : across;
             }
           }
