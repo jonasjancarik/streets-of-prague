@@ -2093,7 +2093,7 @@ async function main() {
     const scale = ride.on ? ride.speedUp(dt, ctl.run || touch.fast) : funicular.me ? funicular.speedUp(dt, ctl.run || touch.fast) : ferries.me ? ferries.speedUp(dt, ctl.run || touch.fast) : taxi.riding ? taxi.speedUp(dt, ctl.run || touch.fast) : waitScale;
     // (The developer panel can pause the world or slow it down.)
     const run = testkit?.paused ? 0 : scale * (testkit?.speed ?? 1);
-    const steps = metro.active ? 0 : Math.ceil(run - 1e-6); // underground, the street waits
+    const steps = metro.active || !(dt * run > 0) ? 0 : Math.ceil(run - 1e-6); // underground, the street waits (and paused, nothing steps)
     for (let i = 0; i < steps; i++) simulate((dt * run) / steps, ctl);
     weather.update(dt * run, clock.t, dt);
     input.jump = false;

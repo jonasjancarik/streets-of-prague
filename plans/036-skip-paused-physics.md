@@ -175,4 +175,23 @@ visual quality or weakening tests.
 
 ## Result
 
-TODO — planning only. No implementation or performance gain established.
+Draft, 25 October 2026 — implemented; browser checks and measurements pending, so not DONE.
+
+- `src/main.ts`: `steps` is zero when `dt * run` is not positive
+  (`metro.active || !(dt * run > 0) ? 0 : Math.ceil(run - 1e-6)`). Positive time
+  keeps the old step count, per-step dt and total. Nothing else in the loop changed.
+- `simulate(0)` housekeeping: none essential found. A zero-time step only reset
+  `jolt` (read inside `simulate`), recomputed `assisted` and `held` from the current
+  controls, rebuilt the hashes and could retry traffic spawns while `spawnT` was
+  negative. While paused, `assisted` and `held` now keep their last values, so the
+  lane-assist hint and the steering guide behind the modal show the moment before
+  the pause; the first step after resuming recomputes them.
+- `node scripts/check-paused-physics.mjs --baseline` (unmodified code): exit 0, 52
+  cases, 30 positive-time cases matching dt × run, 46 zero-time `simulate(0)` calls
+  across 10 dt-0 cases (1 at ×1, 6 at ×6, 12 at ×12). After the change the default
+  mode passes with 0 zero-time calls.
+- `npm run typecheck`, `node scripts/check-modal-pause.mjs`,
+  `node scripts/check-controls.mjs` and `git diff --check`: exit 0.
+- Pending: `node scripts/check-paused-physics.mjs --url …` (written, not yet run),
+  `scene.mjs run input-release`, and step 4's paired paused/unpaused timings on the
+  baseline and candidate. No CPU or frame-time gain is claimed yet.
