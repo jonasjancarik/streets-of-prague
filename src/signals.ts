@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { lampLit, LAMP_ON } from './lamps.ts';
 import { Polyline, offsetLine } from './network.ts';
 import type { DriveEdge, Route } from './network.ts';
-import { send, sendInstances } from './gpu.ts';
+import { send } from './gpu.ts';
 
 // Traffic lights at junctions (pipeline/build_signals.py, data/<area>_now/signals.json).
 // Each junction runs a cycle of two phases, the streets along its main street and
@@ -26,6 +26,21 @@ const LOOK = 70, EASY = 3.5, HARD = 7;
 const MAX_HEADS = 800;
 const COLOURS = [new THREE.Color('#22ff88'), new THREE.Color('#ffae00'), new THREE.Color('#ff2414')];
 const OFF = [new THREE.Color('#0c1a12'), new THREE.Color('#1c150a'), new THREE.Color('#1e0c0a')];
+// The colour of the glow and the beam in each phase, that of the lowest lamp lit.
+const LIT = [0, 1, 2, 1];
+const WALK = 4, STOP = 5; // a crossing's light, as kept in Signals.shown
+
+// Mark items [from, to) of `attr` to be sent, in one span with any range still waiting
+// for the renderer (it clears them once sent), so that no write is lost when two
+// updates come before a render.
+function mark(attr: THREE.BufferAttribute, from: number, to: number) {
+  if (to <= from) return;
+  let start = from * attr.itemSize, end = to * attr.itemSize;
+  for (const u of attr.updateRanges) { start = Math.min(start, u.start); end = Math.max(end, u.start + u.count); }
+  attr.clearUpdateRanges();
+  attr.addUpdateRange(start, end - start);
+  attr.needsUpdate = true;
+}
 
 interface Junction { g0: number; g1: number; offset: number }
 const GAP_M = 4; // the widest gap in the carriageway (tram tracks) a light is carried across to the kerb
@@ -56,6 +71,10 @@ export class Signals {
   private near: Head[] = []; // the cars' lights, then the crossings'
   private cars = 0; // how many of near are the cars' lights
   private nearAt = { x: Infinity, y: Infinity, r: 0, asked: 0, t: 0 }; // r: the radius gathered, asked: the one asked for
+  // What each slot of near shows as drawn (a phase, WALK or STOP), -1 to draw it afresh;
+  // and the night's brightness the beams were drawn at.
+  private shown = new Int8Array(MAX_HEADS).fill(-1);
+  private beamOn = NaN;
   private poles: THREE.InstancedMesh;
   private boxes: THREE.InstancedMesh;
   private lamps: THREE.InstancedMesh;
@@ -244,6 +263,7 @@ export class Signals {
     const cars = round.filter((h) => !h.walk), walks = round.filter((h) => h.walk);
     this.near = [...cars, ...walks].slice(0, MAX_HEADS);
     this.cars = Math.min(cars.length, MAX_HEADS);
+    this.shown.fill(-1);
     const d = this.dummy;
     this.near.forEach((h, i) => {
       // Facing the traffic coming towards it (or the people across the crossing).
@@ -280,14 +300,20 @@ export class Signals {
     for (const m of [this.poles, this.boxes, this.lamps, this.beams, this.walkBoxes, this.walkLamps]) send(m.instanceMatrix, m.count);
   }
 
-  // Once a frame: the lights round the view (x, y), within r.
+  // Once a frame: the lights round the view (x, y), within r. Only the lights whose
+  // phase has changed are drawn again, and the beams too when the night's brightness has.
   update(x: number, y: number, r: number, now: number) {
     this.gather(x, y, r, now);
-    const t = this.time(), d = this.dummy, m = this.m;
+    const t = this.time(), d = this.dummy, m = this.m, shown = this.shown;
+    // The slots drawn again: from lo to hi, the cars' lights' up to carsTo, the crossings' (counted among them) walks to walksTo.
+    let lo = MAX_HEADS, hi = 0, carsTo = 0, walks = MAX_HEADS, walksTo = 0;
     this.near.forEach((h, i) => {
       if (h.walk) {
         // Green while the street has its red, the red man otherwise (no amber).
         const w = i - this.cars, go = light(h.sig, t) === GREEN;
+        if (shown[i] === (go ? WALK : STOP)) return;
+        shown[i] = go ? WALK : STOP;
+        lo = Math.min(lo, i); hi = i + 1; walks = Math.min(walks, w); walksTo = w + 1;
         this.walkLamps.setColorAt(w * 2, go ? OFF[2] : COLOURS[2]);
         this.walkLamps.setColorAt(w * 2 + 1, go ? COLOURS[0] : OFF[0]);
         this.walkLamps.getMatrixAt(w * 2 + (go ? 1 : 0), m);
@@ -302,6 +328,9 @@ export class Signals {
         return;
       }
       const show = light(h.sig, t);
+      if (shown[i] === show) return;
+      shown[i] = show;
+      lo = Math.min(lo, i); hi = carsTo = i + 1;
       // Top to bottom: red, amber, green.
       const on = [show === RED || show === READY, show === AMBER || show === READY, show === GREEN];
       for (let k = 0; k < 3; k++) this.lamps.setColorAt(i * 3 + k, on[k] ? COLOURS[2 - k] : OFF[2 - k]);
@@ -316,13 +345,17 @@ export class Signals {
       d.scale.setScalar(1);
       this.glows.setMatrixAt(i, d.matrix);
       this.glows.setColorAt(i, this.c.copy(COLOURS[2 - k]));
-      this.beams.setColorAt(i, this.c.copy(COLOURS[2 - k]).multiplyScalar(0.22 + 0.3 * LAMP_ON.value));
     });
+    // The beams of the lights drawn again, or all of them at a new brightness.
+    const same = this.beamOn === LAMP_ON.value, from = same ? lo : 0, to = same ? carsTo : this.cars;
+    this.beamOn = LAMP_ON.value;
+    for (let i = from; i < to; i++) this.beams.setColorAt(i, this.c.copy(COLOURS[LIT[shown[i]]]).multiplyScalar(0.22 + 0.3 * LAMP_ON.value));
     this.glows.count = this.near.length;
     this.beams.count = this.cars;
-    sendInstances(this.glows);
-    if (this.beams.instanceColor) send(this.beams.instanceColor, this.beams.count);
-    if (this.lamps.instanceColor) send(this.lamps.instanceColor, this.lamps.count);
-    if (this.walkLamps.instanceColor) send(this.walkLamps.instanceColor, this.walkLamps.count);
+    mark(this.glows.instanceMatrix, lo, hi);
+    if (this.glows.instanceColor) mark(this.glows.instanceColor, lo, hi);
+    if (this.beams.instanceColor) mark(this.beams.instanceColor, from, to);
+    if (this.lamps.instanceColor) mark(this.lamps.instanceColor, lo * 3, carsTo * 3);
+    if (this.walkLamps.instanceColor) mark(this.walkLamps.instanceColor, walks * 2, walksTo * 2);
   }
 }
