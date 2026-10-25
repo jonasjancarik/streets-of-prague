@@ -297,7 +297,8 @@ export class Traffic {
       const along0 = edge ? a.route.leg.s1 - a.route.s + 2 : -Infinity;
       // The lane ahead, piece by piece where it bends: a car standing beside a bend or
       // on the far side of a junction is straight ahead of this one, and not in its way.
-      const pieces = a.route.ahead(L / 2 + 3, reach + 4, lane);
+      // Built at the first standing car that needs it (-1 until then).
+      let pieces = -1;
       let gap = Infinity, blocker = null;
       // Cars standing still (parked, left, crashed) near the lane: where this one may be
       // across from its lane (lo to hi) to get past them all, the nearest of them in
@@ -320,6 +321,7 @@ export class Traffic {
         let lat = (o.x - here.x) * hy - (o.y - here.y) * hx, along = (o.x - here.x) * hx + (o.y - here.y) * hy;
         if (o.kind === 'car' && o.car?.mode !== 'traffic' && ov < 0.3) {
           // Standing: how far along the lane it is and how far to its side, round the bends.
+          if (pieces < 0) pieces = a.route.ahead(L / 2 + 3, reach + 4, lane);
           if (pieces > 1) {
             let best = Infinity;
             for (let k = 0, last = (pieces - 1) * 5; k <= last; k += 5) {
