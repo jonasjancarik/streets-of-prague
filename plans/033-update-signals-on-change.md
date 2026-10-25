@@ -158,4 +158,24 @@ visual quality or weakening tests.
 
 ## Result
 
-TODO — planning only. No implementation or performance gain established.
+Draft, 25 October 2026: implemented, offline checks pass; browser checks and the
+benchmark are pending, so the plan stays open and no frame-time gain is claimed.
+
+- `scripts/check-signal-updates.mjs --baseline` against the unmodified code
+  (`7da5a84`): passes; the two-head fixture marks each of the five buffers 60 times
+  in 60 unchanged frames. Over the whole check, 8341 marks and 4,044,277 floats sent.
+- `node scripts/check-signal-updates.mjs` after `d949ddf`: passes; 0 marks in the
+  same 60 frames, every frame equal to the original writer's arrays, and the GPU
+  stand-in current through deferred renders. Over the whole check, 3895 marks and
+  2,032,434 floats sent. (The whole check is mostly transitions and regathers by
+  design; it is not an estimate of the saving in the city.)
+- Covered offline: all four phases and the crossings, exact phase edges, clock jumps
+  both ways, a fast clock, brightness changes, empty rosters, add/forget, the same
+  lights in other slots, camera moves and zoom, the three-second regather, the
+  MAX_HEADS cap, and two lights changing in two updates before one render. Removing
+  the range merge or the regather invalidation makes the check fail.
+- `npm run typecheck` and `git diff --check` pass.
+- On WebGPU the glow matrices (800 at most) fit a uniform buffer, which goes up every
+  frame it's drawn whatever the version, so the saving there is in the colours.
+- Pending: `node scripts/check-signal-updates.mjs --url http://localhost:5191/`
+  (written, not run), the day and 22:00 benchmarks, and the docs.
