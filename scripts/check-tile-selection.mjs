@@ -279,7 +279,10 @@ await check('random drive', async () => {
     else if (move < 0.5) { x += (rand() - 0.5) * 1e-6; } // within the same tile, by a hair
     else if (move < 0.6) { x = Math.round((x + OX) / T) * T - OX; y = Math.round((y + OY) / T) * T - OY; } // a tile corner
     else if (move < 0.65) { x = rand() * 9000 - 2500; y = rand() * 7000 - 2000; } // teleport, maybe into the countryside
-    else if (move < 0.75) { r = 300 + rand() * 900; drawn = rand() < 0.3 ? Infinity : r * (0.3 + rand() * 0.9); } // zoom
+    else if (move < 0.72) { r = 300 + rand() * 900; drawn = rand() < 0.3 ? Infinity : r * (0.3 + rand() * 0.9); } // zoom
+    else if (move < 0.76) drawn = rand() < 0.2 ? Infinity : r * (0.3 + rand() * 0.9); // the view about to widen, alone
+    else if (move < 0.78) r += 1e-9; // the loading radius alone, by a hair
+    else if (move < 0.8) y -= 1e-9;
     // (otherwise exactly the same view again)
     if (rand() < 0.03) { const k = [...p.ref.pending.keys(), ...p.ref.available][Math.floor(rand() * 20)]; if (k) p.both((w) => w.failing.add(k)); }
     if (rand() < 0.03) p.both((w) => w.failing.clear());

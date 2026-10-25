@@ -53,6 +53,12 @@ interface TileSource {
   shapes: Shadower[]; trees: LandResult['trees'];
 }
 type MeshJobs = Promise<[WorkerResults['ground'], BuildingArrays | null, BuildingArrays | null]>;
+// TileWorld.picks: one view's tiles, and everything they were worked out from.
+interface Picks {
+  x: number; y: number; r: number; drawn: number; T: number; ox: number; oy: number;
+  available: Set<string>; revision: number; country: CountrysideTiles | null; box: Bounds | null;
+  around: string[]; show: string[]; shown: Set<string>; keep: Set<string>; keepDrawn: Set<string> | null;
+}
 // A tile's meshes while it's near the view: the ground, the buildings and what was
 // made with them (own), all in one group in the scene.
 interface TileMeshes { group: THREE.Group; surfaces: Surfaces; own: THREE.Mesh[]; smoke: THREE.Object3D | null }
@@ -379,6 +385,10 @@ export class TileWorld {
   night: boolean;
   T: number; ox: number; oy: number;
   available: Set<string>; iprTiles: Map<string, boolean>;
+  // Goes up whenever `available` changes, so update() looks again at which tiles are
+  // round the camera. (Nothing changes it once the world is made, but whatever does
+  // must bump this.)
+  availableRevision = 0;
   // Tiles past the built map, made in the browser (?countryside), and the heights of
   // the built map's outermost tiles, which they carry on from.
   country: CountrysideTiles | null; edgeHeights: Map<string, Promise<Uint16Array>>;
@@ -414,6 +424,9 @@ export class TileWorld {
   // Mesh work belongs to a tile object: an older dropped tile and its replacement
   // can still be waiting for different workers under the same key.
   shown: Set<string>; dressing: Set<Tile>; drawTimes: number[];
+  // The last update's tiles round the camera (see picks), for as long as the very same
+  // view comes again: only the latest, not every view ever seen.
+  private picked: Picks | null = null;
   // How far beyond the edge of the view (m) tiles are drawn: far enough for a tile's
   // meshes to be ready before it comes on screen, and for the shadows a low sun casts
   // across the edge.
@@ -922,14 +935,34 @@ export class TileWorld {
     }));
   }
 
+  // Which tiles update() works from: those within r, nearest first; those to draw, in
+  // the order they are drawn; and those to keep loaded and drawn. They depend only on
+  // the view and on which tiles there are, so exactly the same view as last time (as
+  // when standing still) gets the same lists back. What has failed, finished or is due
+  // is up to update(), every frame.
+  private picks(x: number, y: number, r: number, drawn: number): Picks {
+    const p = this.picked, box = this.country?.box ?? null;
+    if (p && p.x === x && p.y === y && p.r === r && p.drawn === drawn && p.T === this.T && p.ox === this.ox && p.oy === this.oy
+      && p.available === this.available && p.revision === this.availableRevision && p.country === this.country
+      && (p.box === null ? box === null : !!box && p.box.every((v, n) => v === box[n]))) return p;
+    const around = this.around(x, y, r), show = drawn < r ? this.near(x, y, drawn) : around;
+    // (The countryside's box is copied: it is its contents that decide what it covers.)
+    return this.picked = {
+      x, y, r, drawn, T: this.T, ox: this.ox, oy: this.oy, available: this.available, revision: this.availableRevision,
+      country: this.country, box: box && [box[0], box[1], box[2], box[3]], around, show, shown: new Set(show),
+      keep: new Set(this.around(x, y, r + this.T * 0.5, false)),
+      keepDrawn: drawn < r ? new Set(this.near(x, y, drawn + DRAWN_KEEP, false)) : null,
+    };
+  }
+
   // Called every frame: starts building the nearest missing tiles within r and drops
   // far ones; of those loaded, the ones within `drawn` of the point get their meshes.
   update(x: number, y: number, r: number, drawn = r) {
     const now = performance.now();
-    const want = this.around(x, y, r).filter((k) => !((this.retry.get(k) ?? 0) > now));
+    const { around, show, shown, keep, keepDrawn } = this.picks(x, y, r, drawn);
+    const want = around.filter((k) => !((this.retry.get(k) ?? 0) > now));
     for (const k of want.slice(0, 12)) this.fetchTile(k);
-    const show = this.reach(x, y, r, drawn);
-    this.shown = new Set(show);
+    this.shown = shown;
     // One build per worker at a time: first the meshes of tiles coming into view, then
     // the tiles further out.
     for (const k of show) {
@@ -947,13 +980,9 @@ export class TileWorld {
         this.inFlight.delete(next);
       });
     }
-    const keep = new Set(this.around(x, y, r + this.T * 0.5, false));
     for (const k of [...this.loaded.keys()]) if (!keep.has(k)) this.drop(k);
     if (now - this.trimmed > 1000) { this.trimmed = now; this.forget(x, y, r); }
-    if (drawn < r) {
-      const keepDrawn = new Set(this.near(x, y, drawn + DRAWN_KEEP, false));
-      for (const tile of this.loaded.values()) if (tile.shown && !keepDrawn.has(tile.k)) this.undress(tile);
-    }
+    if (keepDrawn) for (const tile of this.loaded.values()) if (tile.shown && !keepDrawn.has(tile.k)) this.undress(tile);
     // Files fetched ahead for tiles that are now far behind aren't needed any more.
     for (const k of [...this.pending.keys()]) if (!keep.has(k) && !this.loaded.has(k) && !this.inFlight.has(k)) this.pending.delete(k);
     // Photos start with prefetching too: a failed or never-built tile has no drop()
