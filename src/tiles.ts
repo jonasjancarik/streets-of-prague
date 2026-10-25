@@ -759,9 +759,10 @@ export class TileWorld {
     });
   }
 
-  // Tile keys within r metres of (x, y), nearest first.
-  around(x: number, y: number, r: number): string[] {
-    const T = this.T, out: [number, string][] = [];
+  // Tile keys within r metres of (x, y), nearest first (or in no particular order, for
+  // a set to look things up in).
+  around(x: number, y: number, r: number, sorted = true): string[] {
+    const T = this.T, out: [number, string][] = [], keys: string[] = [];
     const i0 = Math.floor((x - r + this.ox) / T), i1 = Math.floor((x + r + this.ox) / T);
     const j0 = Math.floor((y - r + this.oy) / T), j1 = Math.floor((y + r + this.oy) / T);
     for (let i = i0; i <= i1; i++) {
@@ -770,10 +771,10 @@ export class TileWorld {
         if (!this.has(i, j)) continue;
         const cx = (i + 0.5) * T - this.ox, cy = (j + 0.5) * T - this.oy;
         const d = Math.max(0, Math.hypot(cx - x, cy - y) - T * 0.71);
-        if (d <= r) out.push([d, k]);
+        if (d <= r) { if (sorted) out.push([d, k]); else keys.push(k); }
       }
     }
-    return out.sort((a, b) => a[0] - b[0]).map((p) => p[1]);
+    return sorted ? out.sort((a, b) => a[0] - b[0]).map((p) => p[1]) : keys;
   }
 
   // Shared by rendering and the parking halo. A failed neighbour is retried;
@@ -823,9 +824,9 @@ export class TileWorld {
     return tiles.flatMap((tile) => tile.buildings.filter((b) => (b.minh ?? 0) < RAISED).map((b) => ({ id: b.id, rings: b.rings, kind: b.kind, h: b.h })));
   }
 
-  // Keys of the tiles that reach within r metres of (x, y), nearest first.
-  near(x: number, y: number, r: number): string[] {
-    const T = this.T, out: [number, string][] = [];
+  // Keys of the tiles that reach within r metres of (x, y), nearest first (or unsorted).
+  near(x: number, y: number, r: number, sorted = true): string[] {
+    const T = this.T, out: [number, string][] = [], keys: string[] = [];
     const i0 = Math.floor((x - r + this.ox) / T), i1 = Math.floor((x + r + this.ox) / T);
     const j0 = Math.floor((y - r + this.oy) / T), j1 = Math.floor((y + r + this.oy) / T);
     for (let i = i0; i <= i1; i++) {
@@ -834,10 +835,10 @@ export class TileWorld {
         if (!this.has(i, j)) continue;
         const ax = i * T - this.ox, ay = j * T - this.oy;
         const d = Math.hypot(Math.max(ax - x, 0, x - ax - T), Math.max(ay - y, 0, y - ay - T));
-        if (d <= r) out.push([d, k]);
+        if (d <= r) { if (sorted) out.push([d, k]); else keys.push(k); }
       }
     }
-    return out.sort((a, b) => a[0] - b[0]).map((p) => p[1]);
+    return sorted ? out.sort((a, b) => a[0] - b[0]).map((p) => p[1]) : keys;
   }
 
   binaryUrl(k: string, name: TileBinaryKind) { return `${dataUrl(this.area, `tiles/${k}`)}.${name}.bin${this.index.gzip ? '.gz' : ''}`; }
@@ -946,11 +947,11 @@ export class TileWorld {
         this.inFlight.delete(next);
       });
     }
-    const keep = new Set(this.around(x, y, r + this.T * 0.5));
+    const keep = new Set(this.around(x, y, r + this.T * 0.5, false));
     for (const k of [...this.loaded.keys()]) if (!keep.has(k)) this.drop(k);
     if (now - this.trimmed > 1000) { this.trimmed = now; this.forget(x, y, r); }
     if (drawn < r) {
-      const keepDrawn = new Set(this.near(x, y, drawn + DRAWN_KEEP));
+      const keepDrawn = new Set(this.near(x, y, drawn + DRAWN_KEEP, false));
       for (const tile of this.loaded.values()) if (tile.shown && !keepDrawn.has(tile.k)) this.undress(tile);
     }
     // Files fetched ahead for tiles that are now far behind aren't needed any more.
@@ -977,8 +978,8 @@ export class TileWorld {
   // the graphs, and everything indexed from them, held every tile ever visited.
   forget(x: number, y: number, r: number) {
     if (this.driveBy.size <= this.loaded.size) return;
-    const keep = new Set(this.around(x, y, r + this.graphBeyond));
-    for (const a of this.anchors()) for (const k of this.around(a.x, a.y, ANCHOR_REACH)) keep.add(k);
+    const keep = new Set(this.around(x, y, r + this.graphBeyond, false));
+    for (const a of this.anchors()) for (const k of this.around(a.x, a.y, ANCHOR_REACH, false)) keep.add(k);
     const drive: DriveEdge[] = [], walk: WalkEdge[] = [], keys: string[] = [];
     for (const k of [...this.driveBy.keys()]) {
       if (keep.has(k) || this.loaded.has(k) || this.builds.has(k)) continue;
