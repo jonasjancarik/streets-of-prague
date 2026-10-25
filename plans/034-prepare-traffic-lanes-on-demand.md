@@ -6,7 +6,7 @@ read_when: Optimizing Traffic.update lane lookahead or stationary-obstacle proje
 
 ## Status and intent
 
-- Status: TODO. Category: performance. Priority: P2.
+- Status: IMPLEMENTED, browser checks pending. Category: performance. Priority: P2.
 - Effort: one day, including focused verification. Risk: medium: floating-point and obstacle ordering affect traffic decisions.
 - Depends on: none. Reconcile shared-file edits with plans 032–036.
 - Planned at: `546620e027330e2d2f08ebcbaf1f0e3c6c68e8be`, 25 October 2026.
@@ -172,4 +172,33 @@ visual quality or weakening tests.
 
 ## Result
 
-TODO — planning only. No implementation or performance gain established.
+Draft, 25 October 2026: implemented and checked offline only. The browser scene
+(`countryside-traffic countryside-taxi`) and the step 5 bench have not been run yet,
+so no frame-time gain is established and the plan is not DONE.
+
+- `f107ea6` adds `scripts/check-traffic-lanes.mjs` (12 real-Car/DriveGraph fixtures:
+  empty lane, moving traffic, people and a tram, parked cars on straight and bent
+  two-way streets, a junction connector, a street's end, a bridge over parked cars,
+  a car leaving the pavement, tiny and repeated line points, a car parked in the
+  lane, and a 4×3 grid of 14 spawned cars turning at random). The baseline was
+  recorded from unmodified `e8c95bb`.
+- `b8018e4` builds the lane at the first eligible standing car (`-1` sentinel);
+  `f11bc9b` stores each piece's start, direction, length and distance along in a
+  reused `pieceAt` array, read back for every circle.
+- `--compare` matches the baseline traces exactly (pose, velocity, speed, route
+  legs, offsets, timers, kerb state, braking and every random draw, each step) after
+  both steps. A 1e-7 m change to `PASS` is caught at step 659 of "parked straight".
+- `Route.ahead` calls: 6900 → 0 in the three fixtures with nothing parked in reach;
+  0–54% fewer elsewhere (bridge 882 → 408, junction 4800 → 4717, endpoint
+  2165 → 2074, same lane 4800 → 4756; never more than one per car step). Where a
+  parked car is in reach on every step (grid, parked bends) the count is unchanged.
+- Piece lengths: before, one `Math.hypot` per piece per eligible circle; after, one
+  per built piece. `Math.hypot` calls inside `Traffic.update` fall 39–43% in the
+  bent-lane fixtures (grid 13.95M → 7.94M, parked bends 2.95M → 1.73M, junction
+  745k → 439k), so at least 6.0M of the grid's roughly 6.0–6.3M length evaluations
+  go; one-piece lanes are unchanged.
+- `npm run typecheck`, `check-traffic-queues.mjs`, `check-traffic-merges.mjs`
+  (358 collision-free cases, the 2 known bus-turn overlaps; output byte-identical to
+  `e8c95bb`) and `git diff --check` pass.
+- Pending: the scene run and paired bench from steps 4–5, then `docs/performance-log.md`,
+  `docs/traffic.md`, `todo.md` and the `plans/README.md` row.
