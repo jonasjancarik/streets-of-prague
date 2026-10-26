@@ -118,6 +118,11 @@ the 1.25 m `parkingClearance` leaves beside a lane; on a street the driver pulls
 round it where there's room (`SWERVE`, `PASS`), and in a junction or past it waits and
 then squeezes by. Before 6 October 2026 a car parked outside a bend looked as if it
 stood in the lane, and a taxi, bus or pickup stopped behind it for good.
+The lane ahead is built only when the first standing car near it needs measuring, at
+most once a car a step, and each piece's direction and length are worked out once
+then rather than for every circle of every standing car (plan 034;
+`node scripts/check-traffic-lanes.mjs --compare FILE` replays seeded traffic against a
+trace recorded from the code before, step by step).
 
 Traffic already queuing on a car's current or immediately upcoming directed lane
 remains an obstacle during jam escape, even when a sharp turn makes it face across the

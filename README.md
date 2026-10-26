@@ -723,6 +723,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   server to compare every palette/box combination vertex by vertex, burnt colours,
   and an order-independent hash of 1,000 seeded cars. See
   [plan 015](plans/015-paint-cars-per-instance.md) for measured draw counts.
+  A parked four-wheeler keeps its matrix (sat on the ground, pitched and rolled to the
+  slope) until it moves, turns, is tracked onto another level or a tile comes or goes
+  (`TileWorld.terrainRevision`), instead of sampling the ground under its wheels every
+  frame; `node scripts/check-car-transforms.mjs --url …` checks the kept matrices
+  against the original calculation ([plan 032](plans/032-cache-parked-car-transforms.md)).
 - **Trams** run Prague's real lines (`src/trams.ts`), taken from OSM's route
   relations: each line goes round its whole route there and back. How many trams a line
   has out follows PID's timetable for the game clock's day and hour (`src/clock.ts`):

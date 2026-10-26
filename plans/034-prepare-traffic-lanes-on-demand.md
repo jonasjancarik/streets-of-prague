@@ -6,7 +6,7 @@ read_when: Optimizing Traffic.update lane lookahead or stationary-obstacle proje
 
 ## Status and intent
 
-- Status: IMPLEMENTED, browser checks pending. Category: performance. Priority: P2.
+- Status: DONE (9fee5cf, 26 October 2026). Category: performance. Priority: P2.
 - Effort: one day, including focused verification. Risk: medium: floating-point and obstacle ordering affect traffic decisions.
 - Depends on: none. Reconcile shared-file edits with plans 032–036.
 - Planned at: `546620e027330e2d2f08ebcbaf1f0e3c6c68e8be`, 25 October 2026.
@@ -172,9 +172,8 @@ visual quality or weakening tests.
 
 ## Result
 
-Draft, 25 October 2026: implemented and checked offline only. The browser scene
-(`countryside-traffic countryside-taxi`) and the step 5 bench have not been run yet,
-so no frame-time gain is established and the plan is not DONE.
+Implemented 25 October 2026 (`a2bb0bd`, `9fee5cf` on main, after plan 033); the
+hashes below are the subagent branch's.
 
 - `f107ea6` adds `scripts/check-traffic-lanes.mjs` (12 real-Car/DriveGraph fixtures:
   empty lane, moving traffic, people and a tram, parked cars on straight and bent
@@ -200,5 +199,11 @@ so no frame-time gain is established and the plan is not DONE.
 - `npm run typecheck`, `check-traffic-queues.mjs`, `check-traffic-merges.mjs`
   (358 collision-free cases, the 2 known bus-turn overlaps; output byte-identical to
   `e8c95bb`) and `git diff --check` pass.
-- Pending: the scene run and paired bench from steps 4–5, then `docs/performance-log.md`,
-  `docs/traffic.md`, `todo.md` and the `plans/README.md` row.
+- `node scripts/scene.mjs run countryside-traffic countryside-taxi --extra '&countryside'`
+  passes on the candidate (without `&countryside` both scenarios skip themselves).
+- Timing on the M5 MacBook Air, headless Chrome, WebGPU, 1×, High, 14:00, clear,
+  `--cpu 4`, 40 s, 3 runs in each order (6 pairs), `64963c0` against `9f870d0`, with
+  `Traffic.update` wrapped: on the drive 1.32 → 1.14 ms a frame on average (lower in
+  5 of 6 pairs), in the garden suburb 0.60 → 0.57 ms. Whole frames: −10 % in one
+  order (one slow run) and −0.1 % in the other on the drive, +0.6 % and +2.1 % in the
+  suburb: inside the noise, so no frame-rate gain is claimed.
