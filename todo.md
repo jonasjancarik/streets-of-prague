@@ -118,6 +118,12 @@ before that day's frame-count fix may be doubled.
 
 ## Performance
 
+- **Plans 032–036** are done; each removed its repeated work, and together they looked
+  quicker standing (6 of 6 pairs) but not clearly on the drive. Left: a same-build
+  noise control on a quiet machine to confirm the standing gain; persistent car slots
+  and dirty matrix/paint uploads for parked cars (deferred by plan 032); the feedback
+  and newsletter modals in `check-paused-physics.mjs --url`, which skips them on a dev
+  server without the form URLs.
 - **Plan 012 Part B** (incremental resting-car index) is on main behind
   `?resting=incremental`, off. One retest on a busy machine was inconclusive (control
   7.9 %, comparison 9.5 %); a quiet-machine retest and `check-resting-cars.mjs` are owed.

@@ -414,3 +414,31 @@ cost or FPS change. Source HEAD/diff, raw samples, worker inputs and valid captu
 are in `/tmp/sop-paint`; initial black-paint material-clone captures are invalid and
 excluded. No phone benchmark or full scenario rerun was needed for this rendering
 change.
+
+## Plans 032–036 (25–26 October 2026)
+
+Five reductions of repeated per-frame work, implemented on main in plan order and each
+measured against the commit before it on the M5 MacBook Air (headless Chrome,
+WebGPU, 1×, High, 14:00 unless said, clear, `--cpu 4`, 40 s windows). The machine
+was not quiet: other apps held the GPU at 56–78 % throughout. Each change was timed
+at the function it touches, by wrapping it in `--eval`, because whole-frame pairs
+swung by up to ±13 % between runs of the same build:
+
+| Plan | What no longer happens every frame | Function, a frame, old → new |
+| --- | --- | --- |
+| 032 | Parked four-wheelers sampling the ground under four wheels and rebuilding their matrix | `CarPool.render` 0.82 → 0.47 ms on the drive (in-page A/B), 0.11 → 0.09 ms standing |
+| 033 | Traffic lights rewriting and re-sending unchanged glows and lamp colours | `Signals.update` 0.024 → 0.012 ms on the drive (0.021 → 0.007 at 22:00); 3–4 fewer attribute uploads |
+| 034 | Every traffic car building its lane ahead, and every piece's length per parked-car circle | `Traffic.update` 1.32 → 1.14 ms on the drive, 0.60 → 0.57 ms in the suburb; identical traces |
+| 035 | Sorting tile queries used only as sets; re-selecting tiles for the very same view | `TileWorld.update` 0.070 → 0.022 ms standing, 0.100 → 0.088 ms on the drive |
+| 036 | Stepping the city with zero time behind a modal | traffic and crowd updates ≈0.95 ms → 0 while settings are open |
+
+None of the five on its own gave a whole-frame difference that held when the run order
+was reversed. All five together (`c1000f3` against `e8c95bb`, stand/drive/suburb,
+3 pairs in each order, `--stalls`): standing on the Old Town Square the new build was
+quicker in all 6 pairs (by 1.4–7 %), on the drive in 4 of 6, in the garden suburb in
+about half. The 99th percentiles, long tasks (0–4 a run on the drive, on both) and tile
+arrivals (6 built, 6 drawn on the drive) didn't change. A same-build control wasn't
+run, so the standing result is suggestive rather than established. Plan 035's
+selection cache can only hit when the camera is exactly still; while moving, only its
+unsorted retention queries help. The details, checks and commands are in each plan's
+Result.
