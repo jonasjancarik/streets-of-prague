@@ -64,10 +64,10 @@
       .board-eta { font-variant-numeric: tabular-nums; color: var(--accent); }
       .board-none { margin-top: 4px; opacity: 0.75; }
       /* The metro: picking a station, then the ride on the line's map. */
-      #metro { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; z-index: 6; background: rgba(20, 13, 12, 0.94); }
+      #metro { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(360px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; z-index: 6; background: rgba(20, 13, 12, 0.94); }
       #metro[hidden] { display: none; }
       /* During the ride it moves to the corner, out of the way of the view. */
-      #metro.riding { top: 16px; left: auto; right: 16px; transform: none; width: min(280px, calc(100vw - 32px)); max-height: min(60vh, calc(100vh - 32px)); }
+      #metro.riding { top: 16px; left: auto; right: 16px; transform: none; width: min(280px, calc(100vw - 32px)); max-height: min(60dvh, calc(100dvh - 32px)); }
       .metro-skip { font: inherit; color: var(--ink); background: var(--key); border: 1px solid rgba(236, 228, 214, 0.4); padding: 7px 10px; cursor: pointer; }
       .metro-skip:hover { background: rgba(236, 228, 214, 0.24); border-color: var(--ink); }
       .metro-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -383,7 +383,7 @@
       body.touch:has(#touch[data-mode='car']) #credits { top: calc(max(12px, env(safe-area-inset-top)) + 48px); }
       body.touch #credits .long { display: none; }
       body.touch #credits .short { display: inline; }
-      #credits-box { width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; overflow: auto; padding: 16px 20px; color: var(--ink); background: rgba(20, 13, 12, 0.96); border: 0; border-left: 5px solid var(--edge); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4); font: 13px/1.45 Inter, system-ui, sans-serif; }
+      #credits-box { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; overflow: auto; padding: 16px 20px; color: var(--ink); background: rgba(20, 13, 12, 0.96); border: 0; border-left: 5px solid var(--edge); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4); font: 13px/1.45 Inter, system-ui, sans-serif; }
       #credits-box::backdrop { background: rgba(0, 0, 0, 0.35); }
       #credits-box #privacy { margin-top: 18px; }
       #credits-box h2 { margin: 0 0 8px; font: 26px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
@@ -407,11 +407,11 @@
       .corner-btn:hover { opacity: 1; border-color: var(--ink); }
       .corner-btn[aria-pressed='true'] { color: var(--accent); }
       body.touch .corner-btn { width: 42px; height: 42px; }
-      .settings { width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-sizing: border-box; overflow: auto; padding: 16px 20px 18px; color: var(--ink); background: rgba(20, 13, 12, 0.96); border: 0; border-left: 5px solid var(--edge); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4); font: 13px/1.4 Inter, system-ui, sans-serif; }
+      .settings { width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); box-sizing: border-box; overflow: auto; padding: 16px 20px 18px; color: var(--ink); background: rgba(20, 13, 12, 0.96); border: 0; border-left: 5px solid var(--edge); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4); font: 13px/1.4 Inter, system-ui, sans-serif; }
       /* Every scrollbar in the game (the panels, the metro lists, the developer tools) is thin and in the game's colours, instead of the browser's white one. */
       * { scrollbar-width: thin; scrollbar-color: rgba(236, 228, 214, 0.35) transparent; }
       .settings::backdrop { background: rgba(0, 0, 0, 0.35); }
-      .settings-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+      .settings-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; position: sticky; top: -16px; z-index: 1; padding: 16px 0 4px; margin-top: -16px; background: rgba(20, 13, 12, 0.96); }
       .settings h2 { margin: 0; font: 30px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
       .settings-close { font: 26px/1 Inter, system-ui, sans-serif; color: var(--ink); background: none; border: 0; padding: 0 4px; cursor: pointer; }
       .settings-rows { display: flex; flex-direction: column; gap: 12px; }
