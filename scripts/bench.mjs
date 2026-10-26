@@ -11,6 +11,11 @@
 //     [--vs http://localhost:5192/ (compare with another server, taking turns)] [--fresh-browser] [--loading-frames]
 //     [--ab "window.__ab = (on) => { … }" [--window 2] [--warmup 2]] [--shot /tmp/look-%v-%s.png (%v = baseline/candidate, %s = scene) [--zoom 0.5]]
 //     [--stalls (what each long task was: shader builds, pipelines, uploads, tile builds)]
+//     [--hitches (every frame's work recorded from the end of loading, before the player
+//       gets into the car, with no settling: cold first visits; see bench-hitches.js)
+//       [--again-at 60 (seconds into the drive: back to where it began, to drive the same
+//         streets again: return visits to tiles that were left behind)]
+//       [--raw /tmp/hitches-%v-%s-%r.json (%r = run) (the recorded frames, for hitch-report.mjs)]]
 //     [--android [serial] (Chrome on a phone over adb instead of headless Chrome here)]
 //
 // Per scene it reports the frame rate, frame times (median, 95th, 99th percentile),
@@ -133,6 +138,7 @@ const INIT = (loadingFrames = false) => {
     const t0 = performance.now();
     const b = window.__bench;
     b.rendering = 0;
+    b.cb = { t, t0 };
     cb(t);
     // (render: all of renderer.render in the frame, e.g. the lamps' light map and the scene.)
     // Only the game's own callback is a frame: the page has other loops on
@@ -146,6 +152,7 @@ const pct = (xs, p) => { if (!xs.length) return NaN; const s = [...xs].sort((a, 
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 const f1 = (x) => (Number.isFinite(x) ? x.toFixed(1) : '–');
 
+let runCount = 0;
 async function runScene(browser, name, base = URL_BASE) {
   const place = PLACES[name];
   // (On a phone: its Chrome's own context, and a new tab in it.)
@@ -207,18 +214,31 @@ async function runScene(browser, name, base = URL_BASE) {
     writeFileSync(`/tmp/bench-${name}-load.cpuprofile`, JSON.stringify(profile));
     console.log(`${name}: loading\n${topSelf(profile).join('\n')}`);
   }
+  // --hitches: recording starts now, before the player gets in and drives off.
+  if (args.hitches) await page.evaluate(readFileSync(new URL('./bench-hitches.js', import.meta.url), 'utf8'));
   await page.keyboard.press('KeyH'); // fold the help card away
+  let seated = null;
   if (place.drive) {
+    // E walks to the car's door and gets in, which takes a second or so: wait for
+    // the seat, not a fixed pause.
+    const e0 = Date.now();
     await page.keyboard.press('KeyE');
-    await page.waitForTimeout(300);
-    const inCar = await page.evaluate(() => !!window.__drive.car);
-    if (!inCar) console.warn(`[${name}] could not get into the car`);
+    seated = await page.waitForFunction(() => !!window.__drive.car, null, { timeout: 10000, polling: 50 }).then(() => (Date.now() - e0) / 1000).catch(() => null);
+    if (seated === null) {
+      const state = await page.evaluate(() => ({ url: location.href, game: !!window.__drive, loading: document.getElementById('loading')?.classList.contains('done') === false, recorder: !!window.__hitches })).catch((e) => e.message);
+      if (args.hitches) throw new Error(`[${name}] could not get into the car: ${JSON.stringify(state)}`);
+      console.warn(`[${name}] could not get into the car`);
+    }
+    if (args.hitches) await page.evaluate(() => { const c = window.__drive.car; window.__hitches.start = { x: c.x, y: c.y, h: c.h }; window.__hitches.mark('seated'); });
     await page.keyboard.down('ShiftLeft');
     await page.keyboard.down('KeyW');
   }
-  // Settle: the streets round the view load, the shaders compile.
-  await page.waitForTimeout(place.drive ? 3000 : 6000);
-  await page.waitForFunction(() => !window.__drive.world.busy, null, { timeout: 60000, polling: 200 }).catch(() => {});
+  // Settle: the streets round the view load, the shaders compile. (Not with
+  // --hitches: that cold work is what it records.)
+  if (!args.hitches) {
+    await page.waitForTimeout(place.drive ? 3000 : 6000);
+    await page.waitForFunction(() => !window.__drive.world.busy, null, { timeout: 60000, polling: 200 }).catch(() => {});
+  }
   if (args.eval) { const out = await page.evaluate(args.eval); if (out !== undefined) console.log(typeof out === "string" ? out : JSON.stringify(out, null, 1)); await page.waitForTimeout(1000); }
   if (args.shot) {
     // A still for comparing looks: the clock and the crowd held, so two runs match.
@@ -268,7 +288,23 @@ async function runScene(browser, name, base = URL_BASE) {
     return result;
   }
   const t0 = Date.now();
-  await page.waitForTimeout(SECONDS * 1000);
+  const againAt = args['again-at'] ? Number(args['again-at']) : null;
+  if (againAt !== null && place.drive && args.hitches) {
+    await page.waitForTimeout(againAt * 1000);
+    // Back to the start, standing, facing the same way; the assist (let go of and
+    // taken again) picks up the lane there and follows the same streets.
+    await page.keyboard.up('ShiftLeft');
+    await page.evaluate(() => {
+      const c = window.__drive.car, s = window.__hitches.start;
+      window.__drive.teleport(s.x, s.y);
+      c.h = s.h; c.vx = c.vy = c.w = 0;
+      window.__hitches.mark('again');
+    });
+    await page.waitForTimeout(200);
+    await page.keyboard.down('ShiftLeft');
+    await page.waitForTimeout(Math.max(0, SECONDS - againAt) * 1000 - 200);
+  } else await page.waitForTimeout(SECONDS * 1000);
+  const raw = args.hitches ? await page.evaluate(() => window.__hitches.dump()) : null;
   const res = await page.evaluate(() => {
     const b = window.__bench, d = window.__drive;
     b.on = false;
@@ -289,6 +325,14 @@ async function runScene(browser, name, base = URL_BASE) {
   }
   await close();
 
+  if (raw) {
+    raw.meta = { name, base, seated, loadTime, backend, temperature: ANDROID ? ANDROID.temperature() : null, args, at: new Date().toISOString(), againAt };
+    if (args.raw) {
+      const file = String(args.raw).replace('%v', base === args.vs ? 'baseline' : 'candidate').replace('%s', name).replace('%r', String(runCount++));
+      writeFileSync(file, JSON.stringify(raw));
+      console.log(`[${name}] frames written to ${file}`);
+    }
+  }
   const dts = res.frames.slice(1).map((t, i) => t - res.frames[i]);
   return {
     name, fps: res.frames.length / wall, frameMed: pct(dts, 0.5), frame95: pct(dts, 0.95), frame99: pct(dts, 0.99),

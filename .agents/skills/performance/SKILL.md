@@ -21,9 +21,18 @@ headless **Google Chrome** on the GPU at fixed places (`stand`, `drive`, `woods`
   14 fps with no code change), so a single before/after pair proves nothing.
   - Code changes: run a second dev server from a detached worktree of the baseline
     commit, then `--vs http://127.0.0.1:5192/ --runs 3`, which takes turns between
-    the two. In the worktree, symlink `node_modules` and `public/data` from the main
-    checkout (the map data is not in git). When cleaning up, move the symlinks to
-    the Trash before `git worktree remove`, so the removal can't touch the targets.
+    the two. In the worktree, link `public/data` from the main checkout (the map data
+    is not in git) and give it a `node_modules` directory of its own whose entries
+    are symlinks to the main checkout's (`mkdir node_modules; ln -s
+    <main>/node_modules/* <main>/node_modules/.bin node_modules/`). Don't symlink
+    `node_modules` itself: every Vite server would then share
+    `node_modules/.vite`, and starting one re-optimises the dependencies under the
+    others, whose pages reload mid-load ("Outdated Optimize Dep"). On 26 October
+    that made a phone A/B fail to get into the car in every candidate run and
+    stretched a load to 115 s; the main checkout's own server shares that cache
+    too. Load each server once before timing, so its own optimisation is done.
+    When cleaning up, move the symlinks to the Trash before `git worktree remove`,
+    so the removal can't touch the targets.
   - A change you can switch in the page: `--ab "window.__ab = (on) => { … }"`
     toggles it every 2 s in one page. It's the most reliable way to find what a
     piece costs. To patch a shader piece out: clone the material, wrap its
@@ -421,6 +430,11 @@ but their results do not establish a general frame-rate gain; see the findings d
   entry in `renderer._nodes.nodeBuilderCache`, sorted by kind of object), pipelines,
   uploads, new buffers, tiles finished (with their laps) and the world's slow updates,
   then the same counters for the frames outside long tasks. Start there.
+- **`--hitches`** (`scripts/bench-hitches.js`) records every frame from the end of
+  loading, cold, with what ran in it and between frames (long animation frames), tile
+  laps and arrival; `--again-at 60` drives the same streets again for return visits;
+  `--raw` saves it for `scripts/hitch-report.mjs` (`--table` to compare runs). See
+  "Driving hitches" in `docs/performance-log.md` for what it found on the phone.
 - **`renderer.render` is called more than once a frame:** three.js renders the shadow maps
   from inside the main render (`ShadowNode.renderShadow`), and the lamps' light map is a
   render of its own. Count frames at the outermost render of `__drive.scene`, and add
