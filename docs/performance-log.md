@@ -474,3 +474,102 @@ shadows by default at every tier, including Ultra. That policy is now active;
 `?treeShadows=full` opts into the original detail, and `?treeShadows=simple` still
 explicitly selects the simpler mode. This adoption does not resolve the timing
 limitations recorded above.
+
+## Driving hitches on new and revisited streets, 26 October 2026
+
+What makes the long frames when the drive reaches new streets, measured on the
+Pixel 5 (Android 14, Chrome 155.0.8059.84, WebGPU), High, DPR 1, 14:00, fixed clear
+weather, the date's own season, with the default simpler tree shadows. Map
+`praha_now` format 2, built 2026-10-24T17:43:55Z (pipeline `89d590d47d-dirty`).
+Code at `2fbfc15`, served from detached worktrees, one game on the phone. The route
+is the bench's drive (lane assist east from Újezd, then south): 120 s with
+`--again-at 60`, which puts the car back at the start to drive the same streets
+again, so the second minute revisits tiles that were undressed or dropped.
+
+The new tooling: `bench.mjs --hitches` records every frame from the end of loading,
+before the player gets in, with no settling (cold first visits);
+`scripts/bench-hitches.js` keeps node builds (flagging keys three.js had evicted),
+pipelines and programs made or released, time in `createRenderPipeline`, submits and
+`writeBuffer`, buffers and textures made and destroyed, the simulation updates, each
+tile's laps, undress and drop, tile arrival (first wanted drawn → drawn) and long
+animation frames with their scripts. `scripts/hitch-report.mjs` charges each hitch to
+the frame before, the tasks between and the frame itself, keeping those kinds apart
+(`--table` compares runs). The bench now waits for the seat after E instead of
+checking 300 ms later, when the entry animation is still playing. `scripts/time-parking.mjs`
+times parking per tile without a browser and prints a hash of the parked cars.
+
+First readings, two cool runs (30–31 °C): about 30 fps, frame intervals median 22.4,
+p95 66.8, p99 89 ms, 27–29 intervals over 100 ms in 120 s (9–15 once the warm-up
+below has finished). Most 50–70 ms intervals are the phone's ordinary pace on this
+drive, not hitches. What the longer ones were:
+
+- **A tile finishing `make()`: 110–220 ms.** The worker's reply runs the rest of
+  `make()` in one task (a long animation frame of ~190 ms, script
+  `tileWorkers.ts`): the `meshes` lap (up to 24 ms) and the `parking` lap
+  (92–177 ms). About one per new tile, 3–5 over 100 ms in two minutes of this
+  route. A phone CPU profile put `parkCars` at 754 of 1,041 ms of `make()` in a 60 s
+  drive: `parkingClearance` (building the lane-clearance index, with the bus and
+  pickup sweeps added 3–18 October) 296 ms, and its queries in `place` 162 ms.
+  Offline on the M5 it is 12–21 ms a route tile, the index 5–12 ms; the 30 September
+  finding that parking is cheap predates the clearance work.
+- **Returning to streets left behind: one 0.65–1 s shader build.** When a tile is
+  undressed, three.js drops a node builder state once no render object uses it
+  (`NodeManager.delete`, `usedTimes` 0), and builds it again on the next draw. In
+  each of three baseline runs, 26 states were evicted and 5 rebuilt on the second
+  pass, always the same: a building material (`MeshLambertMaterial`,
+  `[position,normal,color,drapeUv,facade,sky]`) 652, 981 and 804 ms, three ground
+  layers 27–184 ms and one `MeshBasicMaterial` 13–15 ms. It is the longest single
+  frame of each drive. (Here it follows the jump back; a drive back would draw the
+  same tiles again in the same way.) Return-visit tile arrival was quicker than first
+  visits (median 1.08–1.16 s against 1.5–1.9 s).
+- **The loading screen's warm-up runs on into the drive.** `compileAsync` is raced
+  against 10 s (`webgpu.ts`); on the phone it went on building one material and
+  pipeline at a time until 16–19 s after the player sat down, as 15–50 ms promise
+  continuations in `three.core`. The bench skips the start screen (`&go`), so a
+  player who lingers there would see less of it.
+- **Long intervals while the main thread is idle: unknown.** 19–22 over 100 ms in
+  two minutes (up to 300 ms) had a short callback before and almost no script
+  between; Chrome started the next frame late. 4–8 of them came within three frames
+  of a new pipeline, against 5–6 % of all frames, so GPU pipeline compiling is a lead
+  for some, not an explanation. GPU work is not observable from the page here. Next
+  diagnostic: a Chrome trace on the phone with the `gpu` and `viz` categories round
+  these frames (it slows the phone, so use it to see what runs, not for timings).
+
+Traffic, crowd and trams rarely led a hitch (3–10 of the over-100 ms intervals per
+run were mostly simulation, usually the catch-up after another long frame). Buffer
+uploads and disposal were small in hitch frames (`writeBuffer` under 5 ms a frame;
+undress 1–2 ms a tile).
+
+**Tried and reverted: a cheaper clearance index built earlier.** The index kept its
+segments as plain numbers and its sweeps stopped allocating points (identical parked
+cars: hashes over 400 sampled `praha` tiles and all 234 `centrum` tiles, and per tile
+in the game; `parkCars` 30–44 % quicker offline on the M5), and it was built while the
+land worker ran instead of in the reply task. On the phone, three cooled pairs in
+both orders (each run started at ≤ 31.0 °C; baseline / candidate):
+
+| | Baseline (runs 3, 6, 8) | Candidate (runs 4, 5, 7) |
+|---|---|---|
+| p99 frame interval | 144.9 / 155.9 / 144.9 ms | 123.0 / 133.7 / 156.5 ms |
+| Intervals over 100 ms, ms in them | 73, 80, 72; 12.5 / 12.1 / 11.7 s | 70, 78, 88; 11.9 / 13.0 / 14.8 s |
+| Reply task per tile, worst | 276 / 222 / 180 ms | 104 / 104 / 157 ms |
+| Index task per tile (send + lanes), worst | 86 / 70 / 39 ms | 213 / 147 / 251 ms |
+| Both tile tasks, sum over 15 tiles | 2.05 / 1.89 / 1.55 s | 1.85 / 1.76 / 2.48 s |
+| Tile arrival median / max | 1.44 / 5.6, 1.08 / 5.1, 1.38 / 5.8 s | 1.51 / 5.1, 1.09 / 7.3, 1.62 / 6.2 s |
+
+The long task moved rather than shrank: on the phone the index took 100–250 ms in its
+new place, and hitch counts did not change. A direct timing of both indexes on the
+phone was dominated by heat (the old one slowed 2–3× between two rounds as the phone
+went from 32 to 34.5 °C). Not kept. The patch is not in git; the measurements are
+summarised here.
+
+Limitations and exclusions: in the A/B, run 1 (baseline) never got the player seated
+within 10 s although the game had loaded, and run 2 (candidate) loaded in 66 s and
+held one 7.2 s frame; both excluded. An earlier A/B was discarded entirely: the
+worktrees' symlinked `node_modules` shared one Vite cache, so starting the second
+server made pages reload mid-load (every candidate run failed to get in, and the
+phone rose from 31 to 38 °C). The performance skill now says how to set up worktrees.
+The phone was slower in the A/B session than in the first readings at the same
+temperature (median interval 33.4 against 22.4 ms) for a reason not found, so
+compare within a session only. The route has 15 new tiles; three pairs cannot resolve
+small changes in hitch counts. No desktop timing was taken (the M5 was busy with other
+apps throughout).
