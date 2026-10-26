@@ -589,6 +589,12 @@ function pineGeometry() {
 }
 let pine: THREE.BufferGeometry | null = null;
 
+// From above, a crown should read as one tree among its neighbours, not as a mat of
+// tufts: its leaves are lit partly as the crown's own round shape is (`round`: how much of
+// their normal that is), so it has a sunny side and a shaded side, and its lower outer
+// edge, where it meets the next crown and the light under it, is darker (`rim`, how dark).
+// (The same in webgpu/trees.ts.)
+export const CROWN = { round: 0.5, rim: 0.5 };
 // TUFT_RIM: how dark a tuft's rim is (the same in webgpu/trees.ts).
 const TUFT_GLSL = 'varying vec3 vTuft;\nconst float TUFT_RIM = .5;';
 // Cells for the small leaves: x = gap to the next leaf, y = random, zw = from the
@@ -682,12 +688,14 @@ function leafy(material: THREE.MeshLambertMaterial) {
     sh.uniforms.uSeason = SEASON;
     sh.vertexShader = sh.vertexShader.replace(...TUFT_VERTEX).replace(...TUFT_BEGIN).replace(...YEAR_VERTEX)
       .replace('#include <common>', '#include <common>\nuniform vec4 uSeason;')
-      .replace('#include <common>', '#include <common>\nattribute vec3 across;\nattribute vec3 along;\nvarying vec3 vAcross;\nvarying vec3 vAlong;')
+      .replace('#include <common>', '#include <common>\nattribute vec3 across;\nattribute vec3 along;\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nvarying vec3 vCrownN;\nvarying vec3 vCrownP;')
       .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
+  vCrownP = position;
+  vCrownN = normalMatrix * mat3(instanceMatrix) * vec3(position.x, position.y - .1, position.z);
   vAcross = normalMatrix * mat3(instanceMatrix) * across;
   vAlong = normalMatrix * mat3(instanceMatrix) * along;`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\n${BARE_GLSL}\nvarying float vBare;\nfloat twigAmt = 0.;\nuniform float uLeaves;\nuniform float uSnow;\nuniform float uWet;\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nfloat leafCrease = 1.;`)
+      .replace('#include <common>', `#include <common>\n${TUFT_GLSL}\n${NOISE_GLSL}\n${SMALL_LEAVES_GLSL}\n${BARE_GLSL}\nvarying float vBare;\nfloat twigAmt = 0.;\nuniform float uLeaves;\nuniform float uSnow;\nuniform float uWet;\nvarying vec3 vAcross;\nvarying vec3 vAlong;\nvarying vec3 vCrownN;\nvarying vec3 vCrownP;\nfloat leafCrease = 1.;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
   // (Derivatives first, outside the branches. A tuft only a few pixels across gets
   // no leaves at all.)
@@ -729,7 +737,13 @@ function leafy(material: THREE.MeshLambertMaterial) {
   // Each tuft darker towards its rim, where the next one overlaps it and shades it: from
   // above, the crown shows its clumps with shadow in the gaps between them. (Its middle is
   // a little lighter, so the crown as a whole is about as light as it was.)
-  if (vTuft.z >= 0.) leafCrease *= mix(TUFT_RIM, 1.1, 1. - smoothstep(.35, .85, length(vTuft.xy)));`)
+  if (vTuft.z >= 0.) leafCrease *= mix(TUFT_RIM, 1.1, 1. - smoothstep(.35, .85, length(vTuft.xy)));
+  // The crown's own sunny and shaded sides, and its darker lower edge (CROWN).
+  if (vTuft.z >= 0.) {
+    normal = normalize(mix(normal, normalize(vCrownN), ${CROWN.round.toFixed(2)}));
+    float edge = smoothstep(.7, 1.05, length(vCrownP.xz)) * (1. - smoothstep(.1, .45, vCrownP.y));
+    leafCrease *= mix(1., ${CROWN.rim.toFixed(2)}, edge);
+  }`)
       .replace('#include <lights_lambert_fragment>', `diffuseColor.rgb *= leafCrease * (1. - .18 * uWet);
   // Twigs and branches: grey-brown bark.
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.3, .27, .24), twigAmt);
