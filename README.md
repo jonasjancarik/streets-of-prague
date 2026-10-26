@@ -532,6 +532,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   for reuse without changing the surveyed or generated tree data. Pages hold 1,200
   broadleaf or 128 shrub/conifer instances. Startup prepares 30 broadleaf, 20 shrub
   and 24 conifer pages; a denser view can add pages without dropping trees.
+  `?treeShadows=simple` tries an eight-point rim for broadleaf shadows while the
+  visible crowns keep their full geometry. The existing twig mask, tree outlines,
+  instance buffers and draw count are retained; shrubs and conifers are unchanged.
+  This experiment is off by default. `node scripts/check-tree-shadows.mjs` checks
+  topology and draw-range restoration; add `--url http://localhost:5191/` for real
+  renderer checks and seasonal screenshots. Run `node scripts/check-tree-pool.mjs
+  --url http://localhost:5191/ --simple-shadows` for the existing reuse and
+  shader-preparation checks with this mode enabled.
 - **Landmarks** (so far Mánes with Šítkovská vodárenská věž, the Týn Church, the Old Town Hall with its tower, St Nicholas at Old Town Square, the National Theatre, the Rudolfinum, the Municipal House with the Powder Tower, House Okamura in Břevnov, and the Dancing House, which is the mesh as it is, since the city model has it as a plain prism without the legs you walk between) are cut out of IPR's
   photorealistic 3D model instead: a textured mesh of the whole city from oblique aerial
   photographs (summer 2023, about 5 cm/px), published as an I3S scene layer.

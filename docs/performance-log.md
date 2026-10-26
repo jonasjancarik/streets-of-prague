@@ -442,3 +442,28 @@ run, so the standing result is suggestive rather than established. Plan 035's
 selection cache can only hit when the camera is exactly still; while moving, only its
 unsorted retention queries help. The details, checks and commands are in each plan's
 Result.
+
+## Tree shadow experiment, 26 October 2026
+
+`?treeShadows=simple` keeps the full visible crown but draws an eight-point tuft rim
+in the shadow pass, reusing the same vertices, shaders and instance buffers. Normal
+broadleaf shadow triangles fall from 340 to 148; big crowns from 564 to 292, with no
+extra draw calls. Shrubs and conifers are unchanged. The additional shared indices
+occupy 2,640 bytes. Full shadows remain the default.
+
+On the Pixel 5, WebGPU, High, DPR 1, clear 14:00 in summer, alternating warmed
+four-second windows gave about 26.4–26.5 → 29.8–30.0 fps in woods and
+32.4–32.7 → 35.9–36.2 fps in the suburb, with the gains repeating in reversed order.
+That is roughly 9–12% less frame time, against a 2.2% unchanged-build control.
+One winter woods comparison gave 19.9 → 23.2 fps; its reverse is unmeasured.
+Verified driving comparisons disagreed, so no driving improvement is established.
+Desktop comparisons favoured the mode by 1.7–2%, but background GPU load was high
+and the order was not reversed; no firm desktop gain is claimed.
+
+Build/typecheck, topology/range recovery, all-season and snow renderer checks on
+WebGPU/WebGL, retained-page checks in both modes, and the tunnel-layer scenario
+passed. The visual checks found close top-down results with coarser shadow edges;
+visible crown geometry and the seasonal twig mask remain intact. Keep the experiment
+opt-in pending stronger route/desktop evidence. Raw windows, limitations, screenshots
+and exact reproduction instructions are in
+[the evidence record](evidence/tree-shadows-2026-10-26/README.md).

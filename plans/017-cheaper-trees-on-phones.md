@@ -11,8 +11,9 @@ then makes the trees cheaper there.
 
 ## Status and starting point
 
-- Status: step 1 partly measured on 6 October 2026 (see Result): tree shadows are worth
-  making cheaper on the phone. The low-detail crown toggle and step 2 are open.
+- Status: shadow-only prototype implemented on 26 October 2026, behind
+  `?treeShadows=simple`. Phone and renderer results are recorded below; the default
+  remains the full shadow geometry pending the final adoption decision.
 - Priority: P3. Effort: half a day to measure; two to three days if it goes ahead.
   Risk: low for the measurement; medium for the changes (the trees' look and their
   shadows are easy to spoil).
@@ -132,11 +133,7 @@ Stop and report if step 1 shows no vertex limit, if the simpler shadow is visibl
 wrong at High, or if option C's extra pages bring back first-use shader builds while
 driving.
 
-## Result
-
-Not started.
-
-## Result
+## Historical result, 6 October 2026
 
 Step 1, 6 October 2026, Pixel 5 (Android 14, WebGPU), main at `27bc5ef`, High at 1×,
 `bench.mjs --android --ab`, 4-second windows alternating, one run of 32 s per toggle,
@@ -160,3 +157,37 @@ Not done: the per-kind triangle and draw-call counts, the `drive` scene, the
 low-detail crown toggle (which would say whether the main pass is limited by vertices
 or by the pixels the crowns cover), reversed order and a second run. Hiding the pages
 also removes the pixels they shade, so "trees drawn" is not a vertex figure by itself.
+
+## Shadow-only prototype, 26 October 2026
+
+Option A is implemented as `?treeShadows=simple`, still off by default. Rather than
+additional proxy meshes, each broadleaf shape's existing index buffer holds a second,
+eight-point-rim triangle list. `onBeforeShadow` selects its draw range and
+`onAfterShadow` restores the full range. The main-render hook also restores it after
+an interrupted shadow render. Main geometry, instance buffers, materials, seasonal
+twig masks, tree outlines and draw counts are retained. The actual renderer checks
+confirm that both WebGPU and WebGL use the selected range.
+
+Normal broadleaf shadows use 148 instead of 340 triangles, big crowns 292 instead
+of 564; shrubs/conifers are unchanged. The extra shared indices total 2,640 bytes.
+This is a subset of the original vertices, so no new silhouette shader or per-frame
+buffer update is needed. A shadow's outer edge can be coarser/smaller; matched
+summer/winter top-down views remain close.
+
+Pixel 5 summer woods/suburb frame-time savings of approximately 9–12% repeat in
+both run orders, versus a 2.2% unchanged-build control. Winter woods improved 14.3%
+in one alternating run. Verified drive comparisons disagree, and desktop results
+are provisional under background GPU load. Full details and raw windows are in
+[the evidence record](../docs/evidence/tree-shadows-2026-10-26/README.md).
+
+Passed: `npm run build`, `node scripts/check-tree-shadows.mjs`, the latter with
+`--url http://localhost:5191/` on WebGPU and WebGL in four seasons plus snow,
+`node scripts/check-tree-pool.mjs --url http://localhost:5191/ --case all` both with
+and without `--simple-shadows`, and `node scripts/scene.mjs run tunnel-layers` with
+the mode enabled. The full unrelated scenario suite was intentionally skipped.
+
+The prototype is complete, but this plan's broad adoption criteria are not all met:
+a matched-route phone comparison, a quiet reversed desktop comparison, and a
+reversed winter run remain open. Preserve both valid but conflicting drive results.
+Do not enable the mode everywhere or claim a city-wide FPS gain from the stationary
+views alone. Options B/C and shader-compilation investigation remain separate work.

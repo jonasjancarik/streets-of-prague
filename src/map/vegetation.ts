@@ -6,6 +6,10 @@ import { scatterWoods, edgeShrubs, conifer, toBand, WOOD, PARK, GROVE, SHRUB, CO
 import type { Tree, Standing } from './woodScatter.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
+// Experiment: the same crowns, with fewer rim vertices used only for their shadows.
+// Opt-in: fixed-view phone gains repeat, but general driving gains are unresolved.
+export const SIMPLE_TREE_SHADOWS = { value: new URLSearchParams(globalThis.location?.search ?? '').get('treeShadows') === 'simple' };
+
 export interface TreeTileData extends GeoData {
   areas: Record<string, Polygons | undefined>;
   roads: Record<string, Polygons | undefined>;
@@ -439,6 +443,7 @@ const shrubGeometry = () => crownShape(13, 8, SHRUB_TIERS, 0.55, 0.45);
 function crownShape(seed0: number, RIM: number, tiers: Tier[], coreSize = 0.56, coreShade = 0.32) {
   const r = rng(seed0);
   const pos: number[] = [], nor: number[] = [], col: number[] = [], tuft: number[] = [], idx: number[] = [];
+  const shadowIdx: number[] = [];
   const across: number[] = [], along: number[] = []; // each tuft's card, for its leaves
   const up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3(1, 0, 0);
   const t = new THREE.Vector3(), b = new THREE.Vector3(), p = new THREE.Vector3(), n = new THREE.Vector3();
@@ -470,6 +475,10 @@ function crownShape(seed0: number, RIM: number, tiers: Tier[], coreSize = 0.56, 
       along.push(bx.x, bx.y, bx.z);
     }
     for (let j = 0; j < RIM; j++) idx.push(base, base + 1 + j, base + 1 + ((j + 1) % RIM));
+    // Keep the tuft's centre, seed and coordinate frame (including winter's twig
+    // mask). Only its rim is coarser; the visible crown still uses every vertex.
+    const rim = Math.min(8, RIM);
+    for (let j = 0; j < rim; j++) shadowIdx.push(base, base + 1 + Math.floor(j * RIM / rim), base + 1 + Math.floor(((j + 1) % rim) * RIM / rim));
   };
   const c = new THREE.Vector3(), normal = new THREE.Vector3();
   tiers.map((t, tier) => [t, tier] as const).reverse().forEach(([[count, dist, y, tilt, size], tier]) => {
@@ -489,6 +498,7 @@ function crownShape(seed0: number, RIM: number, tiers: Tier[], coreSize = 0.56, 
     p.set(cp[i], cp[i + 1] * 0.7, cp[i + 2]);
     n.set(cp[i], cp[i + 1], cp[i + 2]).normalize();
     idx.push(pos.length / 3);
+    shadowIdx.push(pos.length / 3);
     pos.push(p.x, p.y, p.z);
     nor.push(n.x, n.y, n.z);
     col.push(coreShade, coreShade, coreShade);
@@ -497,7 +507,10 @@ function crownShape(seed0: number, RIM: number, tiers: Tier[], coreSize = 0.56, 
     along.push(0, 0, 1);
   }
   core.dispose();
-  return crownBuffers({ pos, nor, col, tuft, across, along, idx });
+  const geom = crownBuffers({ pos, nor, col, tuft, across, along, idx: RIM > 8 ? [...idx, ...shadowIdx] : idx });
+  geom.setDrawRange(0, idx.length);
+  if (RIM > 8) geom.userData.simpleShadowRange = { start: idx.length, count: shadowIdx.length };
+  return geom;
 }
 
 interface CrownArrays { pos: number[]; nor: number[]; col: number[]; tuft: number[]; across: number[]; along: number[]; idx: number[] }
@@ -748,6 +761,7 @@ export function treePageFactory() {
     const geom = new THREE.BufferGeometry();
     const shape = shapes[kind];
     geom.setIndex(shape.index);
+    geom.setDrawRange(shape.drawRange.start, shape.drawRange.count);
     for (const [name, attr] of Object.entries(shape.attributes)) geom.setAttribute(name, attr);
     geom.setAttribute('yearly', new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1));
     // The outline (TreeInstances.outlines), four directions in each.
@@ -761,6 +775,21 @@ export function treePageFactory() {
     mesh.receiveShadow = true;
     // WebGL's depth pass needs its own variant when switching between trees and buildings.
     mesh.customDepthMaterial = treeDepth;
+    const simple = shape.userData.simpleShadowRange as { start: number; count: number } | undefined;
+    if (simple) {
+      const full = { ...shape.drawRange };
+      let shadowCamera: THREE.Camera | null = null;
+      const restore = () => geom.setDrawRange(full.start, full.count);
+      mesh.onBeforeShadow = (_renderer, _object, _camera, camera) => {
+        shadowCamera = camera;
+        const range = SIMPLE_TREE_SHADOWS.value ? simple : full;
+        geom.setDrawRange(range.start, range.count);
+      };
+      mesh.onAfterShadow = () => { restore(); shadowCamera = null; };
+      // Also recover the visible range if a shadow render threw before its after hook.
+      mesh.onBeforeRender = (_renderer, _scene, camera) => { if (camera !== shadowCamera) restore(); };
+      geom.userData.simpleShadowRange = simple;
+    }
     return mesh;
   };
   return { create, dispose: () => {

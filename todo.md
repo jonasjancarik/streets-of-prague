@@ -113,8 +113,9 @@ before that day's frame-count fix may be doubled.
 - 20–24 ms spikes in `crowd.update` on a warm Pixel 5 did not appear at 32 °C.
 - The Lowest tier now skips mist banks, river mist and puddle rings; the phone check
   in bad weather is owed.
-- Plan 017: step 1 says go ahead (tree shadows are 7.8 ms of 28.9 in the woods, hiding
-  trees saves 16 ms); the low-detail crown toggle and option A are next.
+- Plan 017: shadow-only eight-point rims are implemented behind `?treeShadows=simple`.
+  Pixel 5 woods/suburb gains repeat in both orders; see the plan for exact results
+  and adoption limits. The visible-crown and smaller-page options remain untried.
 
 ## Performance
 

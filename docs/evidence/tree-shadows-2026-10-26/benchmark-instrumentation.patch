@@ -1,0 +1,30 @@
+--- a/scripts/bench.mjs
++++ b/scripts/bench.mjs
+@@ -308,6 +308,7 @@
+   for (const on of [false, true]) {
+     await page.evaluate((on) => { window.__ab(on); window.__bench.on = false; }, on);
+     await page.waitForTimeout(Number(args.warmup || 2) * 1000);
++    if (args['ab-shot']) await page.screenshot({path: String(args['ab-shot']).replace('%s', name).replace('%v', on ? 'simple' : 'full')});
+   }
+   const win = Number(args.window || 2) * 1000, sums = { off: [], on: [] };
+   for (let t = 0, k = 0; t < SECONDS * 1000; t += win, k++) {
+@@ -317,13 +318,15 @@
+     await page.evaluate(() => { const b = window.__bench; for (const k of ['frames', 'js', 'render', 'gpu', 'calls', 'tris']) b[k] = []; b.on = true; });
+     const t0 = Date.now();
+     await page.waitForTimeout(win);
+-    const res = await page.evaluate(() => { const b = window.__bench; b.on = false; return { n: b.frames.length, js: b.js, gpu: b.gpu }; });
+-    sums[on ? 'on' : 'off'].push({ fps: res.n / ((Date.now() - t0) / 1000), js: mean(res.js), gpu: res.gpu.length ? mean(res.gpu) : NaN });
+-  }
++    const res = await page.evaluate(() => { const b = window.__bench; b.on = false; return { n: b.frames.length, frames: b.frames, js: b.js, gpu: b.gpu }; });
++    sums[on ? 'on' : 'off'].push({ frames: res.frames, jsSamples: res.js, fps: res.n / ((Date.now() - t0) / 1000), js: mean(res.js), gpu: res.gpu.length ? mean(res.gpu) : NaN });
++  }
++  const fixture = await page.evaluate(() => { const c = window.__drive?.car, start = window.__driveStart; return { car: !!c, speed: c?.speed, distance: c && start ? Math.hypot(c.x-start[0],c.y-start[1]) : null }; });
++  console.log('fixture ' + JSON.stringify(fixture));
+   await close();
+   const agg = (xs) => ({ fps: mean(xs.map((x) => x.fps)), ms: mean(xs.map((x) => 1000 / x.fps)), js: mean(xs.map((x) => x.js)), gpu: mean(xs.map((x) => x.gpu)), each: xs.map((x) => Math.round(x.fps)).join(' ') });
+   const off = agg(sums.off), on = agg(sums.on);
+-  return { name, ab: true, off, on };
++  return { name, ab: true, off, on, fixture, windows: sums };
+ }
+
+ function topSelf(profile, n = 25) {
