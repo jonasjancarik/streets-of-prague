@@ -6,7 +6,7 @@ read_when: Optimizing modal pause CPU use or changing animation-loop physics dis
 
 ## Status and intent
 
-- Status: TODO. Category: performance. Priority: P2.
+- Status: DONE (aa6e2be, 26 October 2026). Category: performance. Priority: P2.
 - Effort: several hours to one day, including focused verification. Risk: medium: pause/resume and input handling must keep working.
 - Depends on: none. Reconcile shared-file edits with plans 032–036.
 - Planned at: `546620e027330e2d2f08ebcbaf1f0e3c6c68e8be`, 25 October 2026.
@@ -175,7 +175,7 @@ visual quality or weakening tests.
 
 ## Result
 
-Draft, 25 October 2026 — implemented; browser checks and measurements pending, so not DONE.
+Implemented 25 October 2026 (`aa6e2be` on main, after plan 035).
 
 - `src/main.ts`: `steps` is zero when `dt * run` is not positive
   (`metro.active || !(dt * run > 0) ? 0 : Math.ceil(run - 1e-6)`). Positive time
@@ -192,6 +192,19 @@ Draft, 25 October 2026 — implemented; browser checks and measurements pending,
   mode passes with 0 zero-time calls.
 - `npm run typecheck`, `node scripts/check-modal-pause.mjs`,
   `node scripts/check-controls.mjs` and `git diff --check`: exit 0.
-- Pending: `node scripts/check-paused-physics.mjs --url …` (written, not yet run),
-  `scene.mjs run input-release`, and step 4's paired paused/unpaused timings on the
-  baseline and candidate. No CPU or frame-time gain is claimed yet.
+- `node scripts/check-paused-physics.mjs --url …` on the candidate (after two fixes
+  to the untried browser mode: a one-frame window had no percentile, and 20 frames
+  of W at ~300 fps walked only 0.07 m, now 200): passes. Settings, credits,
+  settings → credits, a graphics/weather choice and a ×6 developer speed each held
+  60–90 rendered frames (two renders a frame) with 0 traffic, crowd and tram updates
+  and the clock and street unchanged; resuming advanced 0.0014 s on its first frame
+  (no replay), ×6 came back at six steps a frame, W released inside settings stayed
+  released, and `__drive.simulate` still steps. Feedback and newsletter were skipped:
+  the dev server has no `VITE_FEEDBACK_URL`/`VITE_SUBSCRIBE_URL`.
+- `scene.mjs run input-release`: passes.
+- Paused work (`scene.mjs eval`, settings open, 3 s, 181 frames at the scene
+  server's 60 fps): `5d7ad7a` called `traffic.update` every frame, 0.30 ms a frame,
+  plus 0.66 ms in `crowd.update`; `aa6e2be` called neither. In the check's own
+  windows, physics took 0.93 ms a frame playing and 0 paused. Rendering continues
+  while paused, so this is less main-thread work behind a modal, not an on-demand
+  rendering or battery claim.

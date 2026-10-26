@@ -222,7 +222,9 @@ that without a new renderer.
   M), and the settings, with the start screen's choices during play: language, sound,
   graphics (also G) and weather (also P). On a phone the credits are in there too
   (`src/settings.ts`).
-  Settings, credits, privacy, newsletter signup and feedback pause the game while open.
+  Settings, credits, privacy, newsletter signup and feedback pause the game while open:
+  the city stops stepping (no traffic, people or trams are updated) while the picture
+  keeps being drawn (`node scripts/check-paused-physics.mjs`, plan 036).
 - **Saved games** (`src/save.ts`): the browser keeps an automatic save and games
   saved by hand from the settings, including money and tickets. Saves are checked
   before continuing; damaged or unsupported saves stay listed so they can be
@@ -508,6 +510,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   `src/tileWorkers.ts` dispatches one job per worker and gives required tile jobs
   priority over optional neighbour lighting. `src/skyRefresh.ts` coalesces lighting
   refreshes and ignores stale results; the worker-count default is unchanged.
+  Which tiles are round the camera is worked out again only when the view changes
+  (`TileWorld.picks`, the exact same view as the frame before, as when standing still,
+  reuses it), while retries, builds and retirement still run every frame;
+  `node scripts/check-tile-selection.mjs` compares it with the original selection
+  ([plan 035](plans/035-reuse-tile-selection.md)).
 - **Buildings** come from IPR Praha's open 3D model (CityGML LOD3: real roofs, towers
   and domes), which covers the whole city. OSM buildings that the model doesn't have
   (newer ones, sheds, anything past the city limits) are extruded from their footprints.

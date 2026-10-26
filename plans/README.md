@@ -43,18 +43,18 @@ starting revision before implementation; preserve unrelated changes.
 ## Further performance work, 25 October 2026
 
 Plans 032–036 cover the five source-review findings at
-`546620e027330e2d2f08ebcbaf1f0e3c6c68e8be`. They are implementation instructions,
-not completed changes. The only new executed diagnostic so far was the offline
-signal-buffer probe: five unchanged arrays were each marked dirty 60 times in
-60 fixed-state frames. No new GPU transfer or frame-time benefit was measured.
+`546620e027330e2d2f08ebcbaf1f0e3c6c68e8be`. All five were implemented on main on
+25–26 October 2026, in this order, each measured against the commit before it (see
+each plan's Result and `docs/performance-log.md`). Each removes the work it targeted;
+none produced a whole-frame difference this machine could tell from noise.
 
 | Order | Plan | Priority | Effort including checks | Status |
 | --- | --- | --- | --- | --- |
-| 1 | [032: Reuse parked-car ground samples and transforms](032-cache-parked-car-transforms.md) | P1 | One to two days | TODO |
-| 2 | [033: Update traffic-light buffers when their display changes](033-update-signals-on-change.md) | P2 | Several hours to one day | TODO |
-| 3 | [034: Prepare traffic lane geometry on demand](034-prepare-traffic-lanes-on-demand.md) | P2 | One day | TODO |
-| 4 | [035: Reuse tile selections without delaying streaming](035-reuse-tile-selection.md) | P2 | One to two days | TODO |
-| 5 | [036: Skip physics steps while game time is paused](036-skip-paused-physics.md) | P2 | Several hours to one day | TODO |
+| 1 | [032: Reuse parked-car ground samples and transforms](032-cache-parked-car-transforms.md) | P1 | One to two days | DONE (36b50fc): CarPool.render 0.82 → 0.47 ms a frame on the drive; whole frames inconclusive |
+| 2 | [033: Update traffic-light buffers when their display changes](033-update-signals-on-change.md) | P2 | Several hours to one day | DONE (53a50d8): Signals.update halved, 3–4 fewer uploads a frame with lights in view; whole frames in the noise |
+| 3 | [034: Prepare traffic lane geometry on demand](034-prepare-traffic-lanes-on-demand.md) | P2 | One day | DONE (9fee5cf): Traffic.update 1.32 → 1.14 ms a frame on the drive; traces identical; whole frames in the noise |
+| 4 | [035: Reuse tile selections without delaying streaming](035-reuse-tile-selection.md) | P2 | One to two days | DONE (819c3d6): TileWorld.update 0.070 → 0.022 ms standing, 0.100 → 0.088 ms driving; whole frames in the noise |
+| 5 | [036: Skip physics steps while game time is paused](036-skip-paused-physics.md) | P2 | Several hours to one day | DONE (aa6e2be): no simulation behind a modal (≈1 ms a frame saved while paused) |
 
 There are no technical dependencies between these plans. The order tests parked-car
 CPU savings and the smaller demonstrated signal-buffer waste first. Implement and

@@ -127,7 +127,7 @@ const checks = `(async () => {
     let prev = start;
     for (let i = 0; i < n; i++) { const now = await frame(); gaps.push(now - prev); prev = now; }
     const delta = Object.fromEntries(Object.keys(counts).map((k) => [k, counts[k] - before[k]]));
-    const sorted = gaps.slice(1).sort((a, b) => a - b), q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+    const sorted = gaps.slice(1).sort((a, b) => a - b), q = (p) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : NaN;
     const mean = sorted.reduce((a, b) => a + b, 0) / sorted.length;
     const out = { label, frames: n, seconds: (performance.now() - start) / 1000, ...delta, meanMs: mean, p95: q(0.95), p99: q(0.99), longTasks: longTasks.length - firstLong, physicsPerFrame: delta.physicsMs / n, renderPerFrame: delta.renderMs / n };
     report.push(label + ': ' + n + ' frames, renders ' + delta.renders + ', traffic/crowd/trams ' + delta.traffic + '/' + delta.crowd + '/' + delta.trams + ', physics ' + out.physicsPerFrame.toFixed(3) + ' ms/frame, render ' + out.renderPerFrame.toFixed(3) + ' ms/frame, frame mean ' + mean.toFixed(2) + ' p95 ' + out.p95.toFixed(2) + ' p99 ' + out.p99.toFixed(2) + ' ms, long tasks ' + out.longTasks);
@@ -250,7 +250,7 @@ const checks = `(async () => {
     if (!d.car && !d.heli) {
       const w = d.walker, x0 = w.x, y0 = w.y;
       key('keydown', 'KeyW');
-      await run(20, 'walking with W held');
+      await run(200, 'walking with W held');
       const walked = Math.hypot(w.x - x0, w.y - y0);
       const s6 = openSettings();
       key('keyup', 'KeyW', s6);
