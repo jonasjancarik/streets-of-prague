@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { WebGPURenderer as GPU } from 'three/webgpu';
 import * as telemetry from './telemetry.ts';
+import { isSoftware, reportTrouble } from './graphicswarning.ts';
 
 // A browser/driver can leave requestAdapter or requestDevice pending indefinitely.
 // Finish startup with the legacy renderer instead of leaving the map loading forever.
@@ -37,24 +38,29 @@ function startupWatch() {
 }
 
 export async function createGameRenderer(params: URLSearchParams): Promise<THREE.WebGLRenderer> {
+  const asked = params.get('renderer') === 'webgl';
   const legacy = () => {
     console.info('Renderer: three.js WebGLRenderer');
     const r = new THREE.WebGLRenderer({ antialias: true, stencil: true });
     const gl = r.getContext(), names = gl.getExtension('WEBGL_debug_renderer_info');
-    if (names) telemetry.setGpu(String(gl.getParameter(names.UNMASKED_RENDERER_WEBGL)));
+    const name = names ? String(gl.getParameter(names.UNMASKED_RENDERER_WEBGL)) : '';
+    if (names) telemetry.setGpu(name);
+    if (isSoftware(name)) reportTrouble('software');
+    else if (!asked) reportTrouble('webgl');
     return r;
   };
-  if (params.get('renderer') === 'webgl') return legacy();
+  if (asked) return legacy();
   let renderer: GPU | undefined;
   const watch = startupWatch();
   try {
-    const gpu = (navigator as { gpu?: { requestAdapter(): Promise<{ info?: { vendor?: string; architecture?: string; description?: string } } | null> } }).gpu;
+    const gpu = (navigator as { gpu?: { requestAdapter(): Promise<{ isFallbackAdapter?: boolean; info?: { vendor?: string; architecture?: string; description?: string; isFallbackAdapter?: boolean } } | null> } }).gpu;
     const adapter = gpu && await within(gpu.requestAdapter(), 5000, 'WebGPU adapter request timed out');
     if (adapter) {
       const info = adapter.info;
       const name = info ? info.description || [info.vendor, info.architecture].filter(Boolean).join(' ') : '';
       if (info) telemetry.setGpu(name);
       watch.gpu(name);
+      if (adapter.isFallbackAdapter || info?.isFallbackAdapter || isSoftware(name)) reportTrouble('software');
       // This library import creates no renderer or game material factories if it arrives late.
       watch.stage('module');
       const { WebGPURenderer } = await within(import('three/webgpu'), 15000, 'WebGPU renderer module loading timed out');

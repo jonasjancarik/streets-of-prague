@@ -132,6 +132,8 @@ export const CS: Record<string, string> = {
   'Sound off (M)': 'Zvuk vypnutý (M)',
   'A newer version of the game is available.': 'Je k dispozici novější verze hry.',
   'Reload': 'Načíst znovu',
+  'This browser isn\'t using the graphics card, so the game will run very slowly. Turn on hardware acceleration in the browser\'s settings and restart the browser. If that doesn\'t help, update the graphics card driver.': 'Prohlížeč nevyužívá grafickou kartu, takže se hra bude hodně sekat. Zapni v nastavení prohlížeče hardwarovou akceleraci a prohlížeč restartuj. Pokud to nepomůže, aktualizuj ovladač grafické karty.',
+  'This browser didn\'t start the game\'s usual graphics (WebGPU), so the game is using an older mode it isn\'t made for: it may run slowly or look wrong. The latest Chrome or Edge works best.': 'Prohlížeč nespustil obvyklou grafiku hry (WebGPU), takže hra jede ve starším režimu, pro který není dělaná: může se sekat nebo vypadat špatně. Nejlépe funguje aktuální Chrome nebo Edge.',
   'Credits, licences and privacy': 'Poděkování, licence a soukromí',
   // Newsletter signup
   'Get news about the game by email': 'Novinky o hře e-mailem',

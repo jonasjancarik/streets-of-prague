@@ -4,6 +4,7 @@ import { LANGS, getLang, onLang, setLang, t } from './i18n.ts';
 import type { Lang } from './i18n.ts';
 import { newsletterLink } from './newsletter.ts';
 import { updateNotice } from './update.ts';
+import { graphicsWarning } from './graphicswarning.ts';
 import { betaNote } from './betanote.ts';
 import { SEASONS, pragueToday, seasonOfDay, seasonStartDay } from './season.ts';
 import type { SeasonName } from './season.ts';
@@ -163,6 +164,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   go.disabled = true;
   newsletterLink(panel, 'ls-news', { thanks: true });
   updateNotice(panel, 'ls-update');
+  graphicsWarning(panel, 'ls-warn');
   for (const f of relabel) f();
   show();
 
