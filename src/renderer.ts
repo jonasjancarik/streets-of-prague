@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { WebGPURenderer as GPU } from 'three/webgpu';
 import * as telemetry from './telemetry.ts';
-import { isSoftware, reportTrouble } from './graphicswarning.ts';
+import { isSoftware, reportTrouble, whyWebGL } from './graphicswarning.ts';
 
 // A browser/driver can leave requestAdapter or requestDevice pending indefinitely.
 // Finish startup with the legacy renderer instead of leaving the map loading forever.
@@ -39,8 +39,9 @@ function startupWatch() {
 
 export async function createGameRenderer(params: URLSearchParams): Promise<THREE.WebGLRenderer> {
   const asked = params.get('renderer') === 'webgl';
-  const legacy = () => {
+  const legacy = (why: string) => {
     console.info('Renderer: three.js WebGLRenderer');
+    whyWebGL(why);
     const r = new THREE.WebGLRenderer({ antialias: true, stencil: true });
     const gl = r.getContext(), names = gl.getExtension('WEBGL_debug_renderer_info');
     const name = names ? String(gl.getParameter(names.UNMASKED_RENDERER_WEBGL)) : '';
@@ -49,12 +50,15 @@ export async function createGameRenderer(params: URLSearchParams): Promise<THREE
     else if (!asked) reportTrouble('webgl');
     return r;
   };
-  if (asked) return legacy();
+  if (asked) return legacy('it was asked for in the URL (?renderer=webgl)');
+  let why = '';
   let renderer: GPU | undefined;
   const watch = startupWatch();
   try {
     const gpu = (navigator as { gpu?: { requestAdapter(): Promise<{ isFallbackAdapter?: boolean; info?: { vendor?: string; architecture?: string; description?: string; isFallbackAdapter?: boolean } } | null> } }).gpu;
     const adapter = gpu && await within(gpu.requestAdapter(), 5000, 'WebGPU adapter request timed out');
+    if (!gpu) why = 'the browser has no WebGPU';
+    else if (!adapter) why = 'the browser offered no WebGPU adapter';
     if (adapter) {
       const info = adapter.info;
       const name = info ? info.description || [info.vendor, info.architecture].filter(Boolean).join(' ') : '';
@@ -89,8 +93,9 @@ export async function createGameRenderer(params: URLSearchParams): Promise<THREE
   } catch (e) {
     console.warn('WebGPU could not start; using WebGL', e, watch.report());
     telemetry.error('WebGPU could not start', e, watch.report());
+    why = `WebGPU failed: ${e instanceof Error ? e.message : String(e)} (${watch.report()})`;
   }
-  if (!renderer) { watch.stop(); return legacy(); }
+  if (!renderer) { watch.stop(); return legacy(why); }
   // The ports install material factories. Import them only after initialization
   // succeeds. Failure here must stop startup: this module may finish evaluating
   // later and install factories, so it cannot safely select the legacy renderer.

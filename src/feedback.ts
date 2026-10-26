@@ -2,6 +2,7 @@ import * as telemetry from './telemetry.ts';
 import { getLang, onLang, t } from './i18n.ts';
 import { privacyLink } from './credits.ts';
 import { el, sheet, trapField, postForm } from './newsletter.ts';
+import { graphicsReport } from './graphicswarning.ts';
 
 declare const __APP_VERSION__: string; // set by vite.config.js
 declare const __APP_BUILT__: string;
@@ -70,6 +71,8 @@ function context(extra: () => string) {
   // must never stop a message.
   try { lines.push(`Graphics card: ${card()}`); } catch {}
   try { lines.push(extra()); } catch {}
+  const drawing = graphicsReport();
+  if (drawing) lines.push(drawing);
   lines.push(`Running at ${fps} frames a second · page open for ${duration(performance.now() / 1000)}`);
   const tally = document.getElementById('tally')?.textContent;
   if (tally) lines.push(`Tally: ${tally}`);

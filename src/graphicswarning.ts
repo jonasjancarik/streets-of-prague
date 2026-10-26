@@ -27,6 +27,17 @@ export function reportTrouble(kind: Trouble) {
   for (const f of listeners) f();
 }
 
+// For the feedback form: why the game is on WebGL, and whether it's drawn without the
+// graphics card.
+let webglReason = '';
+export const whyWebGL = (why: string) => { webglReason = why; };
+export function graphicsReport() {
+  return [
+    webglReason && `WebGL because ${webglReason}`,
+    trouble === 'software' && 'Software rendering: the browser isn\'t using the graphics card',
+  ].filter(Boolean).join('\n');
+}
+
 // A line hidden until there's something to warn about.
 export function graphicsWarning(parent: HTMLElement, cls: string) {
   const line = document.createElement('p');
