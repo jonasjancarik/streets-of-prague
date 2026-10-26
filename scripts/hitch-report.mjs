@@ -38,7 +38,7 @@ function table(file) {
   const warmEnd = fs.findLast((f) => f.asyncBuildsDone || f.asyncPipesDone)?.end ?? -Infinity;
   const late = ivs.filter((x) => fs[x.n].end > warmEnd + 1000);
   const made = fs.slice(i0).flatMap((f) => f.made || []);
-  const task = made.map((x) => (x.ms.meshes || 0) + (x.ms.parking || 0)), lanes = made.map((x) => x.ms.lanes || 0);
+  const task = made.map((x) => (x.ms.meshes || 0) + (x.ms.parkingWait == null ? x.ms.parking || 0 : 0)), lanes = made.map((x) => x.ms.lanes || 0);
   const arrivals = [];
   for (const t of Object.values(raw.tiles)) for (const x of t.drawn) if (x.e >= from && x.wanted != null && !(x.e > again && x.e < again + 10000)) arrivals.push(x.e - x.wanted);
   const big = dts.filter((d) => d > 100);
@@ -123,7 +123,8 @@ for (const file of files) {
     const parts = {
       builds: (a.buildMs || 0) + (b.buildMs || 0),
       gpuCalls: (a.pipeCallMs || 0) + (a.shaderCallMs || 0) + (a.submitMs || 0) + (a.wbMs || 0) + (b.pipeCallMs || 0) + (b.shaderCallMs || 0) + (b.submitMs || 0) + (b.wbMs || 0),
-      tile: (a.made || []).concat(b.made || []).reduce((s, x) => s + (x.ms?.meshes || 0) + (x.ms?.parking || 0), 0) + (a.drawn || []).concat(b.drawn || []).reduce((s, x) => s + (x.ms?.meshes || 0), 0) + (a.undress || 0) + (a.drop || 0) + tileBetween.reduce((s, x) => s + x.d, 0),
+      // (Parking spread over frames, `parkingWait`, isn't in the frame the tile is made.)
+      tile: (a.made || []).concat(b.made || []).reduce((s, x) => s + (x.ms?.meshes || 0) + (x.ms?.parkingWait == null ? x.ms?.parking || 0 : 0), 0) + (a.drawn || []).concat(b.drawn || []).reduce((s, x) => s + (x.ms?.meshes || 0), 0) + (a.undress || 0) + (a.drop || 0) + tileBetween.reduce((s, x) => s + x.d, 0),
       sim: (a.traffic || 0) + (a.crowd || 0) + (a.trams || 0) + (a.lamps || 0),
       between: scripts.filter((s) => !tileBetween.includes(s)).reduce((s, x) => s + x.d, 0),
     };

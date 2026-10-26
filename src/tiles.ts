@@ -9,7 +9,8 @@ import { TreePool } from './trees.ts';
 import { Surfaces } from './surface.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
-import { Zones, parkCars, inRing, inPoly } from './parking.ts';
+import { Zones, parkCarsSteps, inRing, inPoly } from './parking.ts';
+import { finish } from './parkingClearance.ts';
 import { openWater } from './river.ts';
 import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary, withRamps } from './terrain.ts';
 import type { Terrace } from './terrain.ts';
@@ -432,6 +433,13 @@ export class TileWorld {
   // across the edge.
   drawBeyond = 100;
   retry: Map<string, number>; workers: TileWorkers; ref: number;
+  // Main-thread work too long for one frame (a tile's parked cars: up to 180 ms on a
+  // Pixel 5), run from update() for at most `sliceMs` a frame, oldest first. While
+  // loadNow runs (the start, a jump, the tests), which the game waits for, it is done
+  // at once instead, so it never waits for frames that may not come.
+  private jobs: { steps: Generator<void, unknown>; busy: number; done: (r: { value: unknown; busy: number }) => void; fail: (e: unknown) => void }[] = [];
+  private urgent = 0;
+  sliceMs = 8;
   buildTimes: number[];
   skyTotals: { coalesced: number; cancelled: number };
   landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
@@ -915,6 +923,12 @@ export class TileWorld {
   // download on a busy machine) is tried again a couple of times, then left for update()
   // to load later, so one bad file never stops the start.
   async loadNow(x: number, y: number, r: number, drawn = r) {
+    this.urgent++;
+    try { await this.loadAround(x, y, r, drawn); } finally { this.urgent--; }
+  }
+
+  private async loadAround(x: number, y: number, r: number, drawn: number) {
+    this.runJobs(Infinity);
     this.shown = new Set(this.reach(x, y, r, drawn));
     await Promise.all(this.around(x, y, r).map(async (k) => {
       for (let tries = 1; !this.loaded.has(k); tries++) {
@@ -975,7 +989,7 @@ export class TileWorld {
       if (!next) break;
       this.building++;
       this.inFlight.add(next);
-      this.fetchTile(next).then((files) => this.build(next, files)).catch((e) => console.error(e)).finally(() => {
+      this.fetchTile(next).then((files) => this.build(next, files, true)).catch((e) => console.error(e)).finally(() => {
         this.building--;
         this.inFlight.delete(next);
       });
@@ -999,6 +1013,32 @@ export class TileWorld {
       for (const k of this.jsons.keys()) {
         const [i, j] = k.split('_').map(Number);
         if (Math.abs(i - ci) > reach || Math.abs(j - cj) > reach) this.jsons.delete(k);
+      }
+    }
+    this.runJobs(this.sliceMs);
+  }
+
+  private sliced<T>(steps: Generator<void, T>): Promise<{ value: T; busy: number }> {
+    return new Promise((done, fail) => {
+      this.jobs.push({ steps, busy: 0, done: done as (r: { value: unknown; busy: number }) => void, fail });
+      if (this.urgent) this.runJobs(Infinity);
+    });
+  }
+
+  private runJobs(budget: number) {
+    const t0 = performance.now();
+    while (this.jobs.length && performance.now() - t0 < budget) {
+      const job = this.jobs[0], s0 = performance.now();
+      try {
+        let s;
+        do s = job.steps.next(); while (!s.done && performance.now() - t0 < budget);
+        job.busy += performance.now() - s0;
+        if (!s.done) return;
+        this.jobs.shift();
+        job.done({ value: s.value, busy: job.busy });
+      } catch (e) {
+        this.jobs.shift();
+        job.fail(e);
       }
     }
   }
@@ -1026,11 +1066,12 @@ export class TileWorld {
   get busy() { return this.inFlight.size > 0 || this.dressing.size > 0; }
 
   // Build a tile (once, however many ask: loadNow and update may both want it).
-  build(k: string, files: TileFiles): Promise<Tile> {
+  // (`sliced`: its parked cars a few milliseconds a frame, see `jobs`.)
+  build(k: string, files: TileFiles, sliced = false): Promise<Tile> {
     if (this.loaded.has(k)) return Promise.resolve(this.loaded.get(k)!);
     if (!this.builds.has(k)) {
       const started = performance.now();
-      const made = this.make(k, files)
+      const made = this.make(k, files, sliced)
         .then((tile) => { this.retry.delete(k); this.buildTimes.push(performance.now() - started); if (this.buildTimes.length > 256) this.buildTimes.shift(); return tile; })
         .catch((e) => { this.failed(k); throw e; })
         .finally(() => this.builds.delete(k));
@@ -1040,7 +1081,7 @@ export class TileWorld {
   }
 
   // A tile without its meshes: what the traffic, the people and the parked cars need.
-  async make(k: string, { t, height, bare, ipr, levels }: TileFiles): Promise<Tile> {
+  async make(k: string, { t, height, bare, ipr, levels }: TileFiles, sliced = false): Promise<Tile> {
     // Fetch only the adjacent JSON, before any render resources/leases are created.
     const clearanceEdges = await this.parkingEdges(t);
     const nearBuildings = await this.parkingBuildings(t);
@@ -1187,13 +1228,18 @@ export class TileWorld {
     for (const p of poles) posts.add(p);
     fences.add(fenceSections);
     const inside = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1;
-    const { cars } = parkCars({
+    const parking = parkCarsSteps({
       data, edges, clearanceEdges, zones, buildings: location.search.includes('oldparking') ? null : nearBuildings, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
       shares: new Map((t.sections ?? []).map((s) => [s.code, s.share])), inside,
       // No parking inside passages.
       solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) : false),
     });
+    // A tile that update() asked for parks its cars a few milliseconds a frame (`jobs`);
+    // the same cars as at once, only later. (`parking`: the time it took on the main
+    // thread, `parkingWait`: the time between.)
+    const { value: { cars }, busy } = sliced ? await this.sliced(parking) : { value: finish(parking), busy: 0 };
     lap('parking');
+    if (sliced) { ms.parkingWait = ms.parking - Math.round(busy); ms.parking = Math.round(busy); }
     for (const c of cars) c.level = 0; // (nobody parks on a bridge or in a tunnel)
     const tile: Tile = {
       k, i: t.i, j: t.j, box: t.box, passages: t.passages || [], raised: t.buildings.filter((b) => !grounded(b)).map((b) => b.rings), grid, levels: onLevels, cars, ms,

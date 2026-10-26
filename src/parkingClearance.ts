@@ -6,6 +6,20 @@ import { TYPES } from './car.ts';
 // Built once per parking pass, including the neighbouring tiles' roads. No live
 // graph lookups or rebuilding while cars move. Bridges/tunnels occupy another level.
 export function parkingClearance(edges: DriveEdge[], box?: Bounds) {
+  return finish(clearanceSteps(edges, box));
+}
+
+// Runs a step-wise job (below, and parkCarsSteps) to its end at once.
+export function finish<T>(steps: Generator<void, T>): T {
+  for (;;) {
+    const s = steps.next();
+    if (s.done) return s.value;
+  }
+}
+
+// The same, a street at a time: it pauses (yields) after each, so the game can spread
+// the work over frames (TileWorld's jobs). It takes tens of milliseconds a tile on a phone.
+export function* clearanceSteps(edges: DriveEdge[], box?: Bounds): Generator<void, (x: number, y: number, radius: number) => boolean> {
   type Segment = { a: Point2; b: Point2; clearance: number };
   const cells = new Map<number, Segment[]>();
   const key = (x: number, y: number) => Math.floor(x / 10) * 131072 + Math.floor(y / 10);
@@ -72,6 +86,7 @@ export function parkingClearance(edges: DriveEdge[], box?: Bounds) {
     // Police, ambulances and fire engines route along the mapped street's middle.
     // On a wide one-way road that can lie outside the ordinary lane corridor.
     for (let i = 1; i < e.pts.length; i++) add(e.pts[i - 1], e.pts[i], TYPES.fire.W / 2 + 0.02);
+    yield;
   }
   for (const e of ground) {
     const all = out.get(e.v) || [], forward = all.filter((f) => f !== e.twin);
@@ -114,6 +129,7 @@ export function parkingClearance(edges: DriveEdge[], box?: Bounds) {
         if (previous) for (let j = 0; j < circles.length; j++) add(previous[j], circles[j], radius + 0.4);
         previous = circles;
       }
+      yield;
     }
   }
   // Each segment carries its lane or swept-body clearance; add the parked

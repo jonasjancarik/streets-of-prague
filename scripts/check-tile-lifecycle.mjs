@@ -23,6 +23,7 @@ function fixture() {
     loaded: new Map(), byIndex: new Map(), sky: new Map(), photos: new Map(), pending: new Map(),
     builds: new Map(), retry: new Map(), jsons: new Map(), buildTimes: [],
     dressing: new Set(), inFlight: new Set(), drawTimes: [], last: { i: NaN },
+    jobs: [], urgent: 0,
     onDrop() {}, assemble: () => new Promise((resolve, reject) => jobs.push({ resolve, reject })),
   });
   const tile = () => ({ k: '0_0', i: 0, j: 0, shown: false, drawn: null, dressing: null,
@@ -98,4 +99,34 @@ for (const failed of [false, true]) {
   jobs[1].resolve(); await newDraw;
   assert.equal(world.dressing.size, 0); assert.equal(world.busy, false);
 }
-console.log('Tile lifecycle: recovery clears old retry state; abandoned photos dispose on completion; overlapping same-key mesh work retains correct busy/scheduler counts.');
+// Main-thread jobs (a tile's parked cars) run a slice a frame, oldest first, and give
+// the same result as run at once; one that fails rejects only its own promise; while
+// loadNow runs, a job runs to its end as soon as it is queued.
+{
+  const { world } = fixture();
+  let clock = 0;
+  const now = performance.now;
+  performance.now = () => clock;
+  try {
+    function* count(n, out) { for (let i = 0; i < n; i++) { out.push(i); clock += 1; yield; } return out.length; }
+    const a = [], b = [];
+    const first = world.sliced(count(5, a)), second = world.sliced(count(3, b));
+    world.runJobs(2);
+    assert.deepEqual([a.length, b.length], [2, 0], 'a slice stops at its budget, oldest job first');
+    world.runJobs(10);
+    assert.deepEqual([a, b], [[0, 1, 2, 3, 4], [0, 1, 2]], 'every step runs once, in order');
+    assert.deepEqual([(await first).value, (await second).value], [5, 3]);
+    assert.ok((await first).busy >= 5, 'busy time is the steps\' own');
+    function* broken() { yield; throw new Error('parking failed'); }
+    const failing = world.sliced(broken()), after = world.sliced(count(1, []));
+    world.runJobs(10);
+    await assert.rejects(failing, /parking failed/);
+    assert.equal((await after).value, 1, 'a failed job does not hold up the next');
+    world.urgent = 1;
+    const urgent = [];
+    const done = world.sliced(count(4, urgent));
+    assert.equal(urgent.length, 4, 'during loadNow a job finishes as soon as it is queued');
+    assert.equal((await done).value, 4);
+  } finally { performance.now = now; }
+}
+console.log('Tile lifecycle: recovery clears old retry state; abandoned photos dispose on completion; overlapping same-key mesh work retains correct busy/scheduler counts; main-thread jobs run in slices, in order, and at once during loadNow.');

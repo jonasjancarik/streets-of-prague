@@ -3,7 +3,7 @@ import { posts } from './posts.ts';
 import { Polyline, segDist } from './network.ts';
 import type { DriveEdge, ParkingOrientation } from './network.ts';
 import type { Point2, Polygons, Bounds } from './map/geo.ts';
-import { parkingClearance } from './parkingClearance.ts';
+import { clearanceSteps, finish } from './parkingClearance.ts';
 import { Demand, occupancy } from './parkingDemand.ts';
 import type { DemandBuilding, Floors } from './parkingDemand.ts';
 
@@ -321,7 +321,16 @@ function onCarriageway(x: number, y: number, edges: DriveEdge[]) {
 
 // `shares`: code → share of each paid-parking section inside this piece of map (a
 // tile); without it the whole section counts. `inside(x, y)` limits spots to the tile.
-export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r, night = false, shares = null, inside = () => true, buildings = null }: {
+export function parkCars(o: ParkCarsOptions) {
+  return finish(parkCarsSteps(o));
+}
+
+type ParkCarsOptions = Parameters<typeof parkCarsSteps>[0];
+
+// The same a little at a time: it pauses (yields) after each spot it tries, with the
+// same spots, the same random numbers and the same cars in the end. A phone took up to
+// 180 ms a tile in one go; TileWorld spreads it over frames.
+export function* parkCarsSteps({ data, edges, clearanceEdges = edges, zones, solid, r, night = false, shares = null, inside = () => true, buildings = null }: {
   data: ParkingData; edges: DriveEdge[]; zones: Zones; solid: (x: number, y: number) => boolean | number;
   clearanceEdges?: DriveEdge[];
   // The buildings in and round the tile (as far as the neighbouring tiles reach): without
@@ -333,7 +342,7 @@ export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r,
   const railSegs: [Point2, Point2][] = [];
   for (const rl of data.rails) for (let i = 0; i < rl.pts.length - 1; i++) railSegs.push([rl.pts[i], rl.pts[i + 1]]);
   const nearRail = (x: number, y: number, d: number) => railSegs.some(([a, b]) => segDist(x, y, a, b) < d);
-  const laneClear = parkingClearance(clearanceEdges, data.box);
+  const laneClear = yield* clearanceSteps(clearanceEdges, data.box);
   const cars: Car[] = [];
   // Parked cars by 5 m cell (keyed by number, as in SpatialHash: this is asked for
   // every spot tried).
@@ -404,7 +413,7 @@ export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r,
     let want = Math.round((z.spaces * share * occ) / 100);
     wanted += want;
     const ordered = [...shuffle(list.filter((s) => s.lot)), ...shuffle(list.filter((s) => !s.lot))];
-    for (const s of ordered) if (want > 0 && place(s)) want--;
+    for (const s of ordered) { if (want > 0 && place(s)) want--; yield; }
   }
   // Outside the zones: as many cars as the buildings round each spot would have (the
   // amount of building is worked out once for each 20 m square).
@@ -418,13 +427,14 @@ export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r,
     if (!f) floors.set(k, f = demand.floors(cx * 20 + 10, cy * 20 + 10));
     return occupancy(f, night, s.lot);
   };
-  for (const s of shuffle(free)) if (r() < taken(s)) place(s);
+  for (const s of shuffle(free)) { if (r() < taken(s)) place(s); yield; }
   // Up on the pavement, where there's room beside it at the kerb: more often at a
   // corner, and as often as not a delivery van.
   for (const s of pavementSlots(edges, r)) {
     if (!inside(s.x, s.y) || r() > (s.corner ? 0.2 : 0.07) || crowded(s.x, s.y, 5.5)) continue;
     const n = cars.length;
     if (place(s, r() < 0.45 ? 'van' : randomType(r))) onPavement.set(cars[n], { edge: s.edge, s: s.s });
+    yield;
   }
   // On a drive: where the house has a place for one, as often as people are at home.
   // These never drive off, and they stand outside the street graph.
@@ -432,6 +442,7 @@ export function parkCars({ data, edges, clearanceEdges = edges, zones, solid, r,
   for (const d of shuffle([...(data.drives || [])])) {
     if (!inside(d.x, d.y) || r() > (night ? 0.55 : 0.3) * (d.g ? 0.5 : 1)) continue;
     place({ x: d.x, y: d.y, h: d.h, lot: false, bay: true, angled: false, perp: true });
+    yield;
   }
   return { cars, wanted, zoned: bySection.size };
 }
