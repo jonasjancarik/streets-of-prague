@@ -573,3 +573,43 @@ temperature (median interval 33.4 against 22.4 ms) for a reason not found, so
 compare within a session only. The route has 15 new tiles; three pairs cannot resolve
 small changes in hitch counts. No desktop timing was taken (the M5 was busy with other
 apps throughout).
+
+### Held builder states for the tiles' shared graphs
+
+Fixed the return-visit rebuild above: `configureRenderer` (`src/webgpu.ts`) gives
+the builder states of the ground (`groundGraph`) and of the building and cutaway
+ports (`buildings-procedural`, `cut-*`) one extra use, so three.js keeps them when
+the last tile drawn with a variant is undressed. Their graphs are shared across
+tiles, so the states hold a few dozen variants at most: the builder cache ended a
+drive at 367 states against 364, with the same number of pipelines. Pipelines
+are still released and made again on return (each call under 1 ms on the main
+thread here). Screens after a drive away and back, and standing on the Old Town
+Square, matched apart from moving traffic and people (0.2 % and 0.8 % of pixels).
+
+Pixel 5, the same route and settings as above, `d6eecfa` against it with the
+change, four pairs in alternating order (B C B C C B C B), every run started at
+31.5–32.0 °C, none excluded or retried. "Return" is the 10 s after the jump back
+to the start:
+
+| | Baseline (runs 1, 3, 6, 8) | Held states (runs 2, 4, 5, 7) |
+|---|---|---|
+| Rebuilds of evicted keys a drive | 5, 5, 5, 5 | 0, 0, 0, 0 |
+| Node build time a drive | 0.90 / 0.95 / 0.99 / 1.04 s | 0.52 / 0.45 / 0.36 / 0.46 s |
+| Return: worst frame interval | 713 / 769 / 758 / 758 ms | 357 / 245 / 178 / 299 ms |
+| Return: node build time | 671 / 678 / 643 / 627 ms | 40 / 77 / 26 / 24 ms |
+| Rest of the drive: over 100 ms | 25 / 21 / 29 / 28 | 16 / 22 / 19 / 29 |
+| Rest: median / p99 interval | 22.3–33.4 / 89.1–89.2 ms | 22.3–22.4 / 89.1–89.2 ms |
+| Tile arrival median | 0.77 / 0.77 / 0.75 / 0.88 s | 0.76 / 0.78 / 0.72 / 0.78 s |
+
+The return hitch fell to a third in every pair; the candidates' worst return
+frames had no build in them (another kind of hitch, still unexplained). Over the
+rest of the drive the hitch counts overlap, as expected: only return visits
+change. On the M5 (CPU slowed 4×, load average 4–8, the same order): rebuilds
+11 → 0 a drive, worst frame in the 5 s after the jump 690–866 → 111–147 ms.
+
+Two earlier phone attempts at this A/B were discarded: one overlapped the Mac
+comparison (its wait for it never matched the process), and in the other the
+phone's Chrome stopped answering (`connectOverCDP: socket hang up`) after a long
+cool-down with the screen off; the script now retries. In that second attempt, a
+clean baseline run held one 6.2 s interval with an idle main thread near its end,
+not seen again and not explained.

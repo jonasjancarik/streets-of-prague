@@ -412,6 +412,12 @@ but their results do not establish a general frame-rate gain; see the findings d
   `map` and `color` (a texture at your own coordinates: `.context({ getUV: () => uv })`).
   That's what `groundGraph` in `webgpu.ts` does: the ground's builds went from ~70 to ~4
   a drive.
+- **three.js drops a builder state once no object uses it** (`NodeManager.delete`), so
+  undressing the last tile with a variant threw away a building shader that a return
+  visit then built again (0.65–1 s on a Pixel 5). `configureRenderer` holds the states
+  of the tiles' shared graphs (ground, `buildings-procedural`, `cut-*`); give a new
+  shared tile graph the same treatment. Never hold states of graphs made afresh per
+  material: each would be kept for good.
 - **Every `InstancedMesh` gets a build of its own:** three.js puts `object.uuid` into the
   render cache key (its instancing nodes bind that mesh's buffers), whatever the
   material. Before pooling, each tile's new tree meshes paid for the tuft shader

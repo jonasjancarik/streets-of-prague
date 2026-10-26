@@ -22,7 +22,7 @@ const f1 = (x) => (x == null || !Number.isFinite(x) ? '–' : (Math.round(x * 10
 const sum = (xs, k) => xs.reduce((a, x) => a + (x[k] || 0), 0);
 
 if (TABLE) {
-  console.log('file  °C  frames  median/p95/p99/max ms  >50/min  >100  ms over 100 | after warm-up: >100, max | tiles made, tile tasks: max, sum ms (lanes max) | arrival median/max ms | player tile undrawn');
+  console.log('file  °C  frames  median/p95/p99/max ms  >50/min  >100  ms over 100 | after warm-up: >100, max | tiles made, tile tasks: max, sum ms (lanes max) | arrival median/max ms | player tile undrawn | 10 s after the jump back: worst ms, over 100, node builds ms (rebuilds)');
   for (const file of files) table(file);
   process.exit(0);
 }
@@ -32,21 +32,31 @@ function table(file) {
   const fs = raw.frames.filter((f) => f.t != null), i0 = Math.max(1, fs.findIndex((f) => f.end >= from));
   const ivs = [];
   // (The jump back to the start for the second pass redraws it at once: its first
-  // 5 s are left out.)
-  for (let n = i0; n < fs.length; n++) if (!(fs[n].end > again && fs[n].end < again + 5000)) ivs.push({ n, dt: fs[n].t - fs[n - 1].t });
+  // 10 s are left out.)
+  for (let n = i0; n < fs.length; n++) if (!(fs[n].end > again && fs[n].end < again + 10000)) ivs.push({ n, dt: fs[n].t - fs[n - 1].t });
   const dts = ivs.map((x) => x.dt), secs = dts.reduce((a, b) => a + b, 0) / 1000;
   const warmEnd = fs.findLast((f) => f.asyncBuildsDone || f.asyncPipesDone)?.end ?? -Infinity;
   const late = ivs.filter((x) => fs[x.n].end > warmEnd + 1000);
   const made = fs.slice(i0).flatMap((f) => f.made || []);
   const task = made.map((x) => (x.ms.meshes || 0) + (x.ms.parking || 0)), lanes = made.map((x) => x.ms.lanes || 0);
   const arrivals = [];
-  for (const t of Object.values(raw.tiles)) for (const x of t.drawn) if (x.e >= from && x.wanted != null && !(x.e > again && x.e < again + 5000)) arrivals.push(x.e - x.wanted);
+  for (const t of Object.values(raw.tiles)) for (const x of t.drawn) if (x.e >= from && x.wanted != null && !(x.e > again && x.e < again + 10000)) arrivals.push(x.e - x.wanted);
   const big = dts.filter((d) => d > 100);
+  // The 10 s after the jump back, kept out of the rest: everything round the start is
+  // drawn again at once, the heaviest return visit.
+  let jWorst = 0, jOver = 0, jBuild = 0, jRe = 0;
+  for (let n = i0; n < fs.length; n++) {
+    if (!(fs[n].end > again && fs[n].end < again + 10000)) continue;
+    const dt = fs[n].t - fs[n - 1].t;
+    jWorst = Math.max(jWorst, dt); if (dt > 100) jOver++;
+    jBuild += fs[n].buildMs || 0; jRe += fs[n].rebuilds || 0;
+  }
   console.log([file.split('/').pop(), m.temperature, dts.length, [0.5, 0.95, 0.99].map((p) => f1(pct(dts, p))).concat(f1(Math.max(...dts))).join('/'),
     f1(dts.filter((d) => d > Math.max(OVER, 2 * pct(dts, 0.5))).length / (secs / 60)), big.length, Math.round(big.reduce((a, b) => a + b, 0)),
     '|', late.filter((x) => x.dt > 100).length, f1(Math.max(...late.map((x) => x.dt))),
     '|', made.length, f1(Math.max(...task)), Math.round(task.reduce((a, b) => a + b, 0)), `(${f1(Math.max(0, ...lanes))})`,
-    '|', `${f1(pct(arrivals, 0.5))}/${f1(Math.max(...arrivals))}`, '|', fs.slice(i0).filter((f) => f.drawnHere === false && !(f.end > again && f.end < again + 5000)).length].join('  '));
+    '|', `${f1(pct(arrivals, 0.5))}/${f1(Math.max(...arrivals))}`, '|', fs.slice(i0).filter((f) => f.drawnHere === false && !(f.end > again && f.end < again + 10000)).length,
+    '|', Number.isFinite(again) ? `${Math.round(jWorst)}  ${jOver}  ${Math.round(jBuild)} (${jRe})` : '–'].join('  '));
 }
 
 for (const file of files) {
@@ -75,8 +85,8 @@ for (const file of files) {
   if (warmEnd > from) describe(ivs.filter((x) => fs[x.n].end > warmEnd + 1000), 'after warm-up');
   if (Number.isFinite(again)) {
     describe(ivs.filter((x) => !x.ret), 'first');
-    // (The jump back redraws the start at once: its first 5 s are left out here.)
-    describe(ivs.filter((x) => x.ret && fs[x.n].end > again + 5000), 'again');
+    // (The jump back redraws the start at once: its first 10 s are left out here.)
+    describe(ivs.filter((x) => x.ret && fs[x.n].end > again + 10000), 'again');
   }
 
   const win = fs.slice(Math.max(0, i0));
