@@ -76,6 +76,32 @@
         "dev"
       ],
       "port": 5196
+    },
+    {
+      "name": "perak",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=5231",
+        "npm",
+        "--prefix",
+        ".claude/worktrees/perak",
+        "run",
+        "dev"
+      ],
+      "port": 5231
+    },
+    {
+      "name": "rts-1945",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=5197",
+        "npm",
+        "--prefix",
+        ".claude/worktrees/rts-1945",
+        "run",
+        "dev"
+      ],
+      "port": 5197
     }
   ]
 }
