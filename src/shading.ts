@@ -509,6 +509,11 @@ export const ROOF_CLUTTER = { value: 0 };
 // The weather (weather.ts): how wet the ground is, how much snow lies, how hard it's
 // raining (0–1 each), and the colour of the sky mirrored in the puddles.
 export const WET = { value: 0 };
+// From above, a puddle mirrors a lamp only close to the spot under its head: where the
+// lamp's light on the ground (its brightness) is between these, it starts to show, and
+// it is whole where it is brightest. (Mirroring all of a pool's light lit the puddles up
+// as pale blotches over the whole street.)
+export const LAMP_MIRROR = [0.8, 1.5];
 export const SNOW = { value: 0 };
 // How much of that snow is still on the streets and pavements (weather.ts: all of it
 // at night, less and less through the day).
@@ -802,7 +807,7 @@ ${sheltered ? '' : `  diffuseColor.rgb = weathered(${id}, diffuseColor.rgb, wp, 
 ` : ''}`);
     lampLit(sh, 'vWorld');
     // Wet ground mirrors the sky and the lamps.
-    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  reflectedLight.directDiffuse += shine * (uSkyRef + lampLightOn(vWorld, normal) * .85);\n  // Courtyards and lanes see less of the sky: less ambient light, never less sun or lamplight.\n  if (uSkyOn > .5) reflectedLight.indirectDiffuse *= mix(${SKY_LEAST.toFixed(2)}, 1., texture2D(uSky, (wp - uSkyBox.xy) / (uSkyBox.zw - uSkyBox.xy)).r);`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  vec3 lampOn = lampLightOn(vWorld, normal);\n  reflectedLight.directDiffuse += shine * (uSkyRef + lampOn * .85 * smoothstep(${LAMP_MIRROR[0].toFixed(2)}, ${LAMP_MIRROR[1].toFixed(2)}, dot(lampOn, vec3(.3, .59, .11))));\n  // Courtyards and lanes see less of the sky: less ambient light, never less sun or lamplight.\n  if (uSkyOn > .5) reflectedLight.indirectDiffuse *= mix(${SKY_LEAST.toFixed(2)}, 1., texture2D(uSky, (wp - uSkyBox.xy) / (uSkyBox.zw - uSkyBox.xy)).r);`);
   };
   material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}${relief?.sky ? 's' : ''}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}-${dig ? 'dig' : ''}${photo ? '-photo' : ''}${sheltered ? '-in' : ''}${seasonal ? '' : '-summer'}`;
   return material;

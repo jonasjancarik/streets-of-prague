@@ -172,7 +172,8 @@ export class Sky {
     // further off, less on the roofs.
     // Mist lies in banks (WeatherFx), so the air between them is only a little hazy; the
     // lights' beams show in it as in thick fog.
-    const amount = Math.max(0.08 * w.cloud, 0.2 * w.rain, 0.3 * w.snow, MIST.haze * w.mist);
+    // (Rain is thinner than it looks from the street: from above, a fifth of fog greyed the whole city.)
+    const amount = Math.max(0.08 * w.cloud, 0.11 * w.rain, 0.3 * w.snow, MIST.haze * w.mist);
     this.murk = Math.max(amount, 0.55 * w.mist);
     const day = 1 - night;
     // (The old renderer mixes the fog in after its curve and its sRGB encoding, so it takes the
