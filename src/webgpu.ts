@@ -313,6 +313,27 @@ export function configureRenderer(renderer: WebGPURenderer) {
     }
     return node;
   };
+  // The tiles' ground and buildings share their node graphs (groundGraph, the building and
+  // cutaway ports), so a builder state made for one tile serves every later tile with that
+  // variant. three.js drops a state as soon as no object uses it, which happens when the
+  // last tile with that variant is undressed, and builds it afresh when one comes back: a
+  // building's took 0.65–1 s on a Pixel 5. Those are held instead: one extra use each, a
+  // few dozen variants in all.
+  const nodes = (renderer as any)._nodes;
+  const decided = new WeakSet<object>();
+  const sharedGraph = (m: THREE.Material) => !!m.userData?.flatten || /^(buildings-procedural|cut-)/.test(m.customProgramCacheKey?.() ?? '');
+  const hold = (ro: { material: THREE.Material }, state: { usedTimes: number } | undefined) => {
+    if (!state || decided.has(state)) return;
+    decided.add(state);
+    if (sharedGraph(ro.material)) state.usedTimes++;
+  };
+  const getForRender = nodes.getForRender.bind(nodes);
+  nodes.getForRender = (ro: { material: THREE.Material }, useAsync?: boolean) => {
+    const out = getForRender(ro, useAsync);
+    if (typeof out?.then === 'function') out.then((state: { usedTimes: number }) => hold(ro, state), () => {});
+    else hold(ro, out);
+    return out;
+  };
   // Buffers that geometries share (the tree crown's, in every tile) are marked `shared`. Left to
   // three.js, disposing one tile's geometry destroys the buffer for all of them, and objects that
   // haven't changed are never checked again, so they would draw without it.
