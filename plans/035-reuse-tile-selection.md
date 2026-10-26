@@ -6,7 +6,7 @@ read_when: Optimizing TileWorld.update selections, retention or streaming schedu
 
 ## Status and intent
 
-- Status: TODO. Category: performance. Priority: P2.
+- Status: DONE (819c3d6, 26 October 2026). Category: performance. Priority: P2.
 - Effort: one to two days, including focused verification. Risk: medium: stale selections must not stall arrivals or retirement.
 - Depends on: none. Reconcile shared-file edits with plans 032–036.
 - Planned at: `546620e027330e2d2f08ebcbaf1f0e3c6c68e8be`, 25 October 2026.
@@ -174,9 +174,8 @@ visual quality or weakening tests.
 
 ## Result
 
-Draft, 25 October 2026: offline steps 1–4 implemented; the browser checks and the
-benchmark (steps 4–5: `check-streaming.mjs`, zoom-out and countryside in the browser,
-`bench.mjs`) are still pending, so this stays TODO and no frame-time gain is claimed.
+Implemented 25 October 2026 (on main as `727163f`, `b7e0480`, `819c3d6`, after plan
+034; the hashes below are the subagent branch's).
 
 - `d8ba1ef` adds `scripts/check-tile-selection.mjs`: every fixture runs through
   test-only copies of the original `around`/`near`/`reach`/`update` and through the
@@ -199,4 +198,17 @@ benchmark (steps 4–5: `check-streaming.mjs`, zoom-out and countryside in the b
   frame. Standing still, the script's model of `main.ts`'s smoothing first repeats
   the exact view about 6 s after a walk stops and about 33 s after stopping a car at
   12 m/s (the height eases slowly); the settings pause (dt = 0) repeats at once.
-  Whether that is worth keeping must come from the pending benchmark.
+  The browser timings below show it is worth keeping.
+- Browser, on the candidate: `check-streaming.mjs --case all` passes;
+  `countryside-traffic` and `countryside-taxi` (with `&countryside`) pass; zooming out
+  to 3× drew all 10 tiles in view after 8 s, with nothing missing, and zooming back
+  left 6 in view and 8 drawn (within `DRAWN_KEEP`).
+- Timing on the M5 MacBook Air, headless Chrome, WebGPU, 1×, High, 14:00, clear,
+  `--cpu 4`, `--stalls`, 40 s, 3 runs in each order, `9f870d0` against `5d7ad7a`, with
+  `TileWorld.update` wrapped. A frame, old → new (6 pairs each):
+  standing on the Old Town Square 0.070 → 0.022 ms, in the garden suburb
+  0.052 → 0.020 ms, on the drive 0.100 → 0.088 ms (the cache can't hit while moving;
+  that's the unsorted retention queries). On the drive, 6 tiles were built and 6 drawn
+  in every run of both builds but one baseline run (4 built), and long tasks ranged
+  1–6 a run on both. Whole frames: within ±3.4 % with the sign following the order,
+  so no frame-rate gain is claimed.
