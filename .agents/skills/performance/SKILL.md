@@ -425,6 +425,11 @@ but their results do not establish a general frame-rate gain; see the findings d
   on growth. Keep and reuse instanced meshes rather than making new ones. Check
   stable UUIDs/buffers, bounds after reuse, overflow, and shared-resource disposal.
   Don't patch the key: a shared build would bind the first mesh's buffers.
+- **Long main-thread work for a tile goes through `TileWorld`'s jobs** (a generator
+  run from `update()` for at most `sliceMs` a frame; `loadNow` runs it at once).
+  Parked cars do since 26 October: the clearance sweeps had made them 110–220 ms in
+  one task on a Pixel 5. Keep the steps identical to the at-once version and check
+  the parked-car hashes (`scripts/time-parking.mjs`).
 - **Tile loading itself is cheap on the main thread** (each lap of `make` 1–30 ms; the
   graph merge under 1 ms). The workers and the sky view take 100–500 ms, off it.
 - **Chrome's CPU throttling slows only the page's main thread**, not the tile workers or

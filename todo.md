@@ -120,12 +120,10 @@ before that day's frame-count fix may be doubled.
 
 ## Performance
 
-- **Driving hitches** (performance log, 26 October): on the Pixel 5 each new tile
-  parks its cars in one 110–220 ms task (mostly `parkingClearance`).
-  The shader rebuild is fixed (held builder states). Next: spread or precompute the
-  parking clearance (a cheaper index built earlier moved the task without shortening it). Also
-  open: idle-thread long frames (trace the GPU process) and the loading warm-up
-  running 16–19 s into the drive.
+- **Driving hitches** (performance log, 26 October): the return-visit shader rebuild
+  and the new-tile parking task are fixed. Open: idle-thread long frames (trace the
+  GPU process on the phone) and the loading warm-up running 16–19 s into the drive.
+  Parking still costs 135–165 ms of main-thread time a tile on the phone, only spread.
 - **Plans 032–036** are done; each removed its repeated work, and together they looked
   quicker standing (6 of 6 pairs) but not clearly on the drive. Left: a same-build
   noise control on a quiet machine to confirm the standing gain; persistent car slots

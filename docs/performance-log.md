@@ -613,3 +613,38 @@ phone's Chrome stopped answering (`connectOverCDP: socket hang up`) after a long
 cool-down with the screen off; the script now retries. In that second attempt, a
 clean baseline run held one 6.2 s interval with an idle main thread near its end,
 not seen again and not explained.
+
+### Parking a few milliseconds a frame
+
+Fixed the new-tile hitch above: `parkCarsSteps` and `clearanceSteps` are the same
+work as `parkCars` and `parkingClearance` with pauses after each street and each
+spot tried, and `TileWorld` advances a tile's parking from `update()` for at most
+`sliceMs` (8 ms) a frame, oldest tile first. `loadNow` (the start, a jump, the
+tests) still parks at once, so nothing waits for frames that may not come. Offline
+the cars are identical (hashes over 120 sampled `praha` and all 234 `centrum`
+tiles); in the game, all ten tiles parked over frames on the M5 drive matched the
+baseline. One tile differed between runs of either build: parked cars keep clear of
+the posts of the tiles already loaded, so they depend on arrival order.
+`check-tile-lifecycle.mjs` covers the slices, their order, a failing job and
+`loadNow`.
+
+Pixel 5, the same route and settings, `ebe3b8b` against it with the change, four
+pairs in alternating order (B C B C C B C B), runs started at 25.7–30.8 °C (the
+cooling gate is ≤ 31 °C; the first three began cooler), none excluded or retried:
+
+| | Baseline (runs 1, 3, 6, 8) | Sliced parking (runs 2, 4, 5, 7) |
+|---|---|---|
+| Longest tile task (reply) | 137 / 179 / 248 / 215 ms | 11 / 12 / 27 / 14 ms |
+| `tileWorkers.ts` scripts over 50 ms | 7 / 9 / 9 / 9 | 0 / 0 / 0 / 0 |
+| Intervals over 100 ms (ms in them) | 20 / 23 / 26 / 22 (2.5 / 3.0 / 3.5 / 2.8 s) | 12 / 12 / 7 / 17 (1.6 / 1.5 / 0.9 / 2.1 s) |
+| The same after the warm-up | 17 / 14 / 12 / 14 | 6 / 10 / 4 / 9 |
+| Median / p99 interval | 22.3–22.4 / 89.0–89.2 ms | 22.3–22.4 / 89.0–89.1 ms |
+| Tile arrival median / max | 0.78 / 1.10, 0.78 / 1.11, 0.78 / 1.19, 0.82 / 1.56 s | 0.73 / 1.12, 0.76 / 1.42, 0.80 / 1.14, 0.73 / 1.08 s |
+| Parking finished later by (median / max) | – | 0.15–0.22 / 0.50–0.82 s |
+
+The player's tile was drawn in every frame of every run. Parking takes as long on
+the main thread as before (busiest tile 135–164 ms), only spread out, and a tile
+is ready that much later; its drawing waits for the workers and the sky view
+anyway, so arrival didn't change. The intervals over 100 ms that are left are
+mostly the idle-thread kind. On the M5 (CPU slowed 4×): longest tile task 53 →
+5 ms, arrival median 113 → 112 ms.
