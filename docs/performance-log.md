@@ -449,7 +449,7 @@ Result.
 in the shadow pass, reusing the same vertices, shaders and instance buffers. Normal
 broadleaf shadow triangles fall from 340 to 148; big crowns from 564 to 292, with no
 extra draw calls. Shrubs and conifers are unchanged. The additional shared indices
-occupy 2,640 bytes. Full shadows remain the default.
+occupy 2,640 bytes. Full shadows were the default during this experiment.
 
 On the Pixel 5, WebGPU, High, DPR 1, clear 14:00 in summer, alternating warmed
 four-second windows gave about 26.4–26.5 → 29.8–30.0 fps in woods and
@@ -463,7 +463,14 @@ and the order was not reversed; no firm desktop gain is claimed.
 Build/typecheck, topology/range recovery, all-season and snow renderer checks on
 WebGPU/WebGL, retained-page checks in both modes, and the tunnel-layer scenario
 passed. The visual checks found close top-down results with coarser shadow edges;
-visible crown geometry and the seasonal twig mask remain intact. Keep the experiment
-opt-in pending stronger route/desktop evidence. Raw windows, limitations, screenshots
+visible crown geometry and the seasonal twig mask remain intact. The initial
+recommendation was to keep the experiment opt-in pending stronger route/desktop
+evidence. Raw windows, limitations, screenshots
 and exact reproduction instructions are in
 [the evidence record](evidence/tree-shadows-2026-10-26/README.md).
+
+Later on 26 October, the user approved the comparison images and requested simpler
+shadows by default at every tier, including Ultra. That policy is now active;
+`?treeShadows=full` opts into the original detail, and `?treeShadows=simple` still
+explicitly selects the simpler mode. This adoption does not resolve the timing
+limitations recorded above.

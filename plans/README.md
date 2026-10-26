@@ -94,7 +94,7 @@ condition to establish how much of the frame the proposed change affects.
 | --- | --- | --- | --- | --- |
 | [015: Paint cars per instance](015-paint-cars-per-instance.md) | One retained mesh per car type, with the paint as a per-instance colour | P1 | One to two days | DONE (local; draw reduction verified, timing benefit provisional) |
 | [016: Draw only nearby tiles](016-draw-only-nearby-tiles.md) | Keep collisions, graphs and parking out to 300 m; make a tile's meshes only near the view | P1 | Three to five days | DONE, merged into main on 5 October 2026 (not deployed; steady-state gain 1–3 %, the gain is in tile arrival work; re-fitted to main's furniture, guard rails, countryside tiles and parking, not measured again) |
-| [017: Cheaper trees on phones](017-cheaper-trees-on-phones.md) | Measure whether a Pixel 5 is limited by tree vertices; then a simpler shadow crown, a simpler crown on low tiers, or smaller pages | P3 | Half a day to measure, two to three days after | SHADOW PROTOTYPE IMPLEMENTED, opt-in: 26 October Pixel 5 woods/suburb comparisons show a repeatable gain; see plan 017 for checks and remaining adoption limits |
+| [017: Cheaper trees on phones](017-cheaper-trees-on-phones.md) | Measure whether a Pixel 5 is limited by tree vertices; then a simpler shadow crown, a simpler crown on low tiers, or smaller pages | P3 | Half a day to measure, two to three days after | SHADOW OPTION A ADOPTED: simpler shadows default at every tier, including Ultra, after user visual approval; `?treeShadows=full` overrides. Route/desktop timing follow-ups remain open. |
 
 The three are independent. 015 is the smallest and most contained. If 016 goes
 ahead, repeat 017's measurement after it.

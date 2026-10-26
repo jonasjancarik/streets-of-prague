@@ -1,5 +1,10 @@
 # Tree shadow experiment, 26 October 2026
 
+**Subsequent adoption:** after reviewing these images, the user requested simpler
+shadows as the default at every tier, including Ultra. `?treeShadows=full` now
+selects the original detail. The results and initial recommendation below describe
+the earlier opt-in experiment; the performance limitations remain unchanged.
+
 The opt-in `?treeShadows=simple` mode uses eight existing rim vertices per broadleaf
 tuft during the shadow pass. The main pass retains all vertices. Ordinary crowns
 use 148 shadow triangles instead of 340; big crowns use 292 instead of 564. Shrubs
@@ -108,7 +113,8 @@ node scripts/bench.mjs --url http://localhost:5193/ --android 09081FDD4001DA --s
 ```
 
 For reversed order use `value=!on`; in reverse JSON, `off` is simple and `on` is
-full. For the control use `window.__ab=()=>{}` in a fresh page with the full default.
+full. For the control use `window.__ab=()=>{}` in a fresh page with
+`&treeShadows=full` explicitly added to `--extra` (full was the default when measured).
 Winter changes the date to `01-15`. Desktop omits `--android` and used 24-second
 comparisons with three-second windows/warmup. The verified drive additionally used:
 

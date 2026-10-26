@@ -6,9 +6,9 @@ import { scatterWoods, edgeShrubs, conifer, toBand, WOOD, PARK, GROVE, SHRUB, CO
 import type { Tree, Standing } from './woodScatter.ts';
 import type { Geo, GeoData, Point2, Polygons } from './geo.ts';
 
-// Experiment: the same crowns, with fewer rim vertices used only for their shadows.
-// Opt-in: fixed-view phone gains repeat, but general driving gains are unresolved.
-export const SIMPLE_TREE_SHADOWS = { value: new URLSearchParams(globalThis.location?.search ?? '').get('treeShadows') === 'simple' };
+// The same crowns, with fewer rim vertices used only for their shadows, at every
+// graphics tier. ?treeShadows=full restores the original shadow geometry.
+export const SIMPLE_TREE_SHADOWS = { value: new URLSearchParams(globalThis.location?.search ?? '').get('treeShadows') !== 'full' };
 
 export interface TreeTileData extends GeoData {
   areas: Record<string, Polygons | undefined>;

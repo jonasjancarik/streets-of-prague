@@ -11,9 +11,10 @@ then makes the trees cheaper there.
 
 ## Status and starting point
 
-- Status: shadow-only prototype implemented on 26 October 2026, behind
-  `?treeShadows=simple`. Phone and renderer results are recorded below; the default
-  remains the full shadow geometry pending the final adoption decision.
+- Status: shadow-only implementation adopted as the default at every graphics
+  tier, including Ultra, on 26 October 2026 after the user approved the comparison
+  images. `?treeShadows=full` opts into the original detailed shadows. Performance
+  measurement limitations below remain unchanged.
 - Priority: P3. Effort: half a day to measure; two to three days if it goes ahead.
   Risk: low for the measurement; medium for the changes (the trees' look and their
   shadows are easy to spoil).
@@ -160,7 +161,7 @@ also removes the pixels they shade, so "trees drawn" is not a vertex figure by i
 
 ## Shadow-only prototype, 26 October 2026
 
-Option A is implemented as `?treeShadows=simple`, still off by default. Rather than
+Option A was initially implemented as opt-in `?treeShadows=simple`. Rather than
 additional proxy meshes, each broadleaf shape's existing index buffer holds a second,
 eight-point-rim triangle list. `onBeforeShadow` selects its draw range and
 `onAfterShadow` restores the full range. The main-render hook also restores it after
@@ -189,5 +190,11 @@ the mode enabled. The full unrelated scenario suite was intentionally skipped.
 The prototype is complete, but this plan's broad adoption criteria are not all met:
 a matched-route phone comparison, a quiet reversed desktop comparison, and a
 reversed winter run remain open. Preserve both valid but conflicting drive results.
-Do not enable the mode everywhere or claim a city-wide FPS gain from the stationary
-views alone. Options B/C and shader-compilation investigation remain separate work.
+These measurements do not establish a city-wide FPS gain. Options B/C and
+shader-compilation investigation remain separate work.
+
+The user subsequently approved the simpler shadows visually and requested them
+as the default even on Ultra. That adoption is now implemented independently of
+graphics tier, with `?treeShadows=full` as the explicit override. It is a quality
+choice based on the accepted appearance, not a claim that the unresolved timing
+checks passed.

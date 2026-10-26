@@ -10,6 +10,8 @@ const get = (name, fallback) => {
 const url = get('--url', 'http://localhost:5239/');
 const mode = get('--case', 'all');
 const simpleShadows = process.argv.includes('--simple-shadows');
+const fullShadows = process.argv.includes('--full-shadows');
+if (simpleShadows && fullShadows) throw new Error('Choose either --simple-shadows or --full-shadows');
 if (!['lifecycle', 'render', 'all'].includes(mode)) {
   console.error('--case must be lifecycle, render or all');
   process.exit(2);
@@ -144,7 +146,7 @@ const check = `(async () => {
 
 const run = spawnSync(process.execPath, ['scripts/bench.mjs', '--url', url,
   '--scenes', 'woods', '--seconds', '1', '--dpr', '1', '--eval', check,
-  ...(simpleShadows ? ['--extra', '&treeShadows=simple'] : []),
+  ...(fullShadows ? ['--extra', '&treeShadows=full'] : simpleShadows ? ['--extra', '&treeShadows=simple'] : []),
   '--stack', '--require-webgpu'], { encoding: 'utf8' });
 process.stdout.write(run.stdout || '');
 process.stderr.write(run.stderr || '');

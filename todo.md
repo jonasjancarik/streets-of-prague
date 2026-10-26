@@ -113,9 +113,10 @@ before that day's frame-count fix may be doubled.
 - 20–24 ms spikes in `crowd.update` on a warm Pixel 5 did not appear at 32 °C.
 - The Lowest tier now skips mist banks, river mist and puddle rings; the phone check
   in bad weather is owed.
-- Plan 017: shadow-only eight-point rims are implemented behind `?treeShadows=simple`.
-  Pixel 5 woods/suburb gains repeat in both orders; see the plan for exact results
-  and adoption limits. The visible-crown and smaller-page options remain untried.
+- Plan 017: simpler shadows are the default at every tier, including Ultra;
+  `?treeShadows=full` restores the original detail. Pixel 5 woods/suburb gains repeat
+  in both orders; route/desktop timing follow-ups remain open. The visible-crown
+  and smaller-page options remain untried.
 
 ## Performance
 

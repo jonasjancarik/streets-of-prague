@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Offline topology/lifecycle checks; --url adds real WebGPU/WebGL pass checks and seasonal shots.
+// URL policy: --search "?graphics=ultra&treeShadows=full" --expect-full.
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
@@ -13,9 +14,12 @@ registerHooks({ load(url, context, next) {
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } },
   ).outputText };
 } });
-globalThis.location = { search: '' }; globalThis.self = globalThis;
+const searchAt = process.argv.indexOf('--search');
+const search = searchAt >= 0 ? process.argv[searchAt + 1] : '';
+globalThis.location = { search }; globalThis.self = globalThis;
 const { treePageFactory, SIMPLE_TREE_SHADOWS } = await import('../src/map/vegetation.ts');
-assert.equal(SIMPLE_TREE_SHADOWS.value, false, 'experiment is off by default');
+const initialMode = SIMPLE_TREE_SHADOWS.value;
+assert.equal(initialMode, !process.argv.includes('--expect-full'), 'simple by default, full only by explicit override');
 const factory = treePageFactory(), camera = new THREE.Camera(), shadowCamera = new THREE.Camera();
 const counts = [];
 try {
@@ -64,7 +68,7 @@ try {
     }
     g.dispose(); mesh.dispose(); sibling.geometry.dispose(); sibling.dispose();
   }
-} finally { SIMPLE_TREE_SHADOWS.value = false; factory.dispose(); }
+} finally { SIMPLE_TREE_SHADOWS.value = initialMode; factory.dispose(); }
 console.log('Tree shadow topology and range lifecycle passed:', JSON.stringify(counts));
 
 async function browserCheck() {
