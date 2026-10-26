@@ -62,9 +62,9 @@
   }
   // Tile builds: noted when each finishes, with its laps (tile.ms).
   const make = w.make;
-  w.make = async function (k, files) {
+  w.make = async function (k, ...rest) {
     const s = performance.now();
-    const tile = await make.call(this, k, files);
+    const tile = await make.call(this, k, ...rest);
     S.tiles.push({ k, s, e: performance.now(), ms: tile.ms });
     return tile;
   };

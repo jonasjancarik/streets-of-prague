@@ -63,18 +63,18 @@
     }
   };
   const make = w.make;
-  w.make = async function (k, files) {
+  w.make = async function (k, ...rest) {
     const s = now();
-    const out = await make.call(this, k, files);
+    const out = await make.call(this, k, ...rest);
     const e = now();
     tile(k).made = { s, e, ms: out.ms };
     (H.acc.made ||= []).push({ k, ms: out.ms });
     return out;
   };
   const assemble = w.assemble;
-  w.assemble = async function (t, jobs) {
+  w.assemble = async function (t, ...rest) {
     const s = now();
-    await assemble.call(this, t, jobs);
+    await assemble.call(this, t, ...rest);
     const e = now();
     if (t.drawn) {
       tile(t.k).drawn.push({ s, e, wanted: tile(t.k).wanted, ms: t.drawMs });
