@@ -108,7 +108,7 @@ const params = new URLSearchParams(location.search);
 const AT = params.get('at')?.split(',').map(Number).filter(Number.isFinite) ?? [];
 const anywhere = AT.length === 2 ? (AT as [number, number]) : null;
 const AREA = anywhere ? ANYWHERE : params.get('area') || 'praha';
-// The dashes showing where the stick will take the car (src/steerGuide.ts); ?guide=off hides them.
+// The dashes showing where the stick will take the car (src/steerGuide.ts); hidden while a gamepad is in use, and ?guide=off hides them everywhere.
 const guideOn = params.get('guide') !== 'off';
 // Where a new game can begin: lon, lat of a spot on a street with room for a car at the kerb.
 const STARTS: [string, number, number][] = [
@@ -2160,7 +2160,7 @@ async function main() {
     }
     carPool.render(drawn, ground, dt, world.terrainRevision);
     skids.update(dt * scale, drawn, ground);
-    steerGuide.update(dt, inCar, inCar && guideOn ? held : null, (x, y) => ground(x, y, inCar), clamp(height / 120, 1, 3));
+    steerGuide.update(dt, inCar, inCar && guideOn && !usingPad() ? held : null, (x, y) => ground(x, y, inCar), clamp(height / 120, 1, 3));
     spray.update(dt * scale, drawn, ground, renderer.domElement.height);
     water.update(dt * scale, cannon.jet ? [...brigade.jets, cannon.jet] : brigade.jets, renderer.domElement.height);
     for (const c of choppers) c.render(dt);
