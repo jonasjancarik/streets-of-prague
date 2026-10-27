@@ -126,6 +126,15 @@ Elsewhere a few cars stand on the pavement at random, as before. A pavement car 
 southern suburbs (praha tiles 50,36 to 60,46) this took parked cars from 6476 to 11815;
 cars in a bus's turning sweep (`check-parking-city.mjs`) went from 9 to 25, at most 0.44 m.
 
+**Driving off along the pavement** (`pavement.ts`). Now and then a car parked up on the
+pavement sets off along it before it comes down into the lane. It goes only when the
+whole way is clear, along the street's line as `Traffic.adopt` will drive it (beside the
+lane, then easing in): no wall, other car, lamp or wire post, fence or hedge within half
+its width and 0.2 m. Before, only walls and cars were checked, along a straight line, and
+on Pod křížkem four of six such cars in four minutes drove through a lamp post; after,
+one set off in four minutes and touched none (most of that narrow pavement has a lamp
+post or a garden fence in the way).
+
 **Standing cars and bends.** A car measures what stands in its way along the lane
 ahead (`Route.ahead`: the lane as straight pieces, round bends and through the junction
 curve), not along a straight line from where it is. A standing car is in the way only

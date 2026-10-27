@@ -1,5 +1,8 @@
 import type { Car } from './car.ts';
+import { fences } from './fences.ts';
+import { clamp } from './network.ts';
 import { onPavement } from './parking.ts';
+import { posts } from './posts.ts';
 import { MERGE } from './traffic.ts';
 import type { Traffic } from './traffic.ts';
 
@@ -36,13 +39,22 @@ export class PavementDrivers {
       const { edge, s } = onPavement.get(c)!;
       // Back in the lane before the end of the street, where the lane swings into the next one.
       const run = Math.min(RUN[0] + this.r() * (RUN[1] - RUN[0]), edge.path.length - s - MERGE - 8);
-      if (run < 6 || Math.cos(c.h - edge.path.at(s).ang) < 0.9) continue;
-      const fx = Math.cos(c.h), fy = Math.sin(c.h), half = c.spec.W / 2;
+      const p0 = edge.path.at(s);
+      if (run < 6 || Math.cos(c.h - p0.ang) < 0.9) continue;
+      // Along the way it will go (see Traffic.adopt): beside the lane as far as it stands
+      // off it now, then easing back in. Nothing on the pavement may be in the way: a lamp
+      // post or a fence it would drive straight through, a wall, another car.
+      const off = (c.x - p0.x) * Math.sin(p0.ang) - (c.y - p0.y) * Math.cos(p0.ang);
+      const merge = clamp(Math.abs(off) * 3, 8, MERGE), half = c.spec.W / 2;
       const others = loose.filter((o) => o !== c && Math.abs(o.x - c.x) < run + 10 && Math.abs(o.y - c.y) < run + 10);
       let clear = true;
-      for (let d = c.spec.L / 2 + 0.5; clear && d < c.spec.L / 2 + run; d += 1) {
-        const px = c.x + fx * d, py = c.y + fy * d;
-        clear = !solid(px + fy * half, py - fx * half) && !solid(px - fy * half, py + fx * half);
+      for (let d = 1; clear && d < run + merge + c.spec.L / 2; d += 1) {
+        const p = edge.path.at(s + d), u = clamp((run + merge - d) / merge, 0, 1);
+        const side = off * u * u * (3 - 2 * u), nx = Math.sin(p.ang), ny = -Math.cos(p.ang);
+        const px = p.x + nx * side, py = p.y + ny * side;
+        clear = !solid(px + nx * half, py + ny * half) && !solid(px - nx * half, py - ny * half)
+          && !posts.near(px, py, half + 0.2).length && !fences.blocks(px, py, half + 0.2, 0);
+        if (d > c.spec.L / 2 + run) continue;
         for (const o of others) {
           if (clear && Math.abs(o.x - px) < 4 && Math.abs(o.y - py) < 4) clear = Math.hypot(o.x - px, o.y - py) > half + o.spec.W / 2 + 0.3;
         }
