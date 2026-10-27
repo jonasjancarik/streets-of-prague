@@ -12,7 +12,7 @@ import { lampLit, LAMP_ON } from './lamps.ts';
 import { SNOW, STREET_SNOW, WET, SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from './shading.ts';
 import { send, sendInstances } from './gpu.ts';
 import { KINDS, STRIPS, STRIPS_ON } from './reflections.ts';
-import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_NEAR } from './probe.ts';
+import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV } from './probe.ts';
 
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
@@ -668,7 +668,8 @@ const COAT_GLSL = /* glsl */ `
 uniform float uWet, uMirror, uStripsOn;
 uniform vec3 uSkyRef, uStreetRef, uSunDir, uSunLight;
 uniform sampler2D uStrips;
-uniform samplerCube uProbe;
+uniform samplerCube uProbe, uProbePrev;
+uniform float uProbeMix;
 uniform vec4 uProbeAt;
 uniform vec2 uProbeNear;
 uniform float uProbeK;
@@ -694,7 +695,7 @@ vec3 carStreet(vec3 r, float area, vec3 p) {
   // On Ultra, near the middle of the view: the real street (probe.ts).
   if (uProbeAt.w > .5) {
     float w = 1. - smoothstep(uProbeNear.y, uProbeNear.x, distance(p.xz, uProbeAt.xz));
-    vec4 m = textureCube(uProbe, r);
+    vec4 m = mix(textureCube(uProbePrev, r), textureCube(uProbe, r), uProbeMix);
     c = mix(c, m.rgb * uProbeK, m.a * w);
   }
   return c + uSunLight * pow(max(dot(r, uSunDir), 0.), ${R.sharp.toFixed(1)}) * ${R.glint.toFixed(3)};
@@ -740,7 +741,7 @@ vLit += 4. * floor(paint.w / ${AREA_STEP}.);`)
     .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal.xz = swing(objectNormal.xz);')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
   sh.uniforms.uSnow = SNOW;
-  Object.assign(sh.uniforms, { uWet: WET, uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uMirror: CAR_MIRROR, uStrips: STRIPS, uStripsOn: STRIPS_ON, uProbe: PROBE_MAP, uProbeAt: PROBE_AT, uProbeNear: PROBE_NEAR, uProbeK: PROBE_K });
+  Object.assign(sh.uniforms, { uWet: WET, uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uMirror: CAR_MIRROR, uStrips: STRIPS, uStripsOn: STRIPS_ON, uProbe: PROBE_MAP, uProbePrev: PROBE_PREV, uProbeMix: PROBE_MIX, uProbeAt: PROBE_AT, uProbeNear: PROBE_NEAR, uProbeK: PROBE_K });
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\n${COAT_GLSL}`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>

@@ -7,7 +7,7 @@
 import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, dot, smoothstep, mix, select, sin, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
 import { LAMP_GLOW, CAR_GLOSS, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP } from '../car.ts';
 import { STRIPS, STRIPS_ON, onStrips } from '../reflections.ts';
-import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_NEAR } from '../probe.ts';
+import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV, onProbe } from '../probe.ts';
 import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit, lampLight, uLampOn } from './lamps.ts';
 import { shareInstances } from './trees.ts';
@@ -60,7 +60,9 @@ const uSunDir: N = (() => {
 })();
 const carTop = (): N => smoothstep(0.35, 0.9, dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz));
 const uStripsOn: N = follow(STRIPS_ON);
-const uProbeK: N = follow(PROBE_K);
+const uProbeK: N = follow(PROBE_K), uProbeMix: N = follow(PROBE_MIX);
+const probeNodes: [N, N][] = [];
+onProbe(() => { for (const [now, prev] of probeNodes) { now.value = PROBE_MAP.value; prev.value = PROBE_PREV.value; } });
 const uProbeAt: N = (() => { const u = uniform(PROBE_AT.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(PROBE_AT.value); return u.value; }); return u; })();
 const uProbeNear: N = (() => { const u = uniform(PROBE_NEAR.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(PROBE_NEAR.value); return u.value; }); return u; })();
 const stripNodes: N[] = [];
@@ -80,7 +82,10 @@ const carStreet = (r: N): N => {
   const strip = select(v.greaterThan(1), ground, mix(mix(ground, sky, above), street, sample.a.mul(step(0, v))));
   const c0 = select(uStripsOn.greaterThan(0.5), strip, made);
   // On Ultra, near the middle of the view: the real street (probe.ts).
-  const m: N = cubeTexture(PROBE_MAP.value as never, r);
+  // (The last two finished cubes, faded from the older to the newer: probe.ts.)
+  const now: N = cubeTexture(PROBE_MAP.value as never, r), prev: N = cubeTexture(PROBE_PREV.value as never, r);
+  probeNodes.push([now, prev]);
+  const m: N = mix(prev, now, uProbeMix);
   const w = smoothstep(uProbeNear.y, uProbeNear.x, distance(positionWorld.xz, uProbeAt.xz)).oneMinus().mul(step(0.5, uProbeAt.w));
   const c = mix(c0, m.rgb.mul(uProbeK), m.a.mul(w));
   return c.add(uSunLight.mul(pow(max(dot(r, uSunDir), 0), R.sharp)).mul(R.glint));

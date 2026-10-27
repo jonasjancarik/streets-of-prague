@@ -1,16 +1,21 @@
 // What the cars near the middle of the view mirror on Ultra (plan 037 phase 3): the real
 // street round them, drawn into a small cube map from a point 2 m above the street at the
-// middle of the view, one face a frame. Only what stands up out of the street is drawn
+// middle of the view, one face at a time. Only what stands up out of the street is drawn
 // (MIRROR_LAYER, as for the wet streets' mirror: buildings, walls, trees, lamps and trams,
-// but not the cars, which read the cube while it's drawn: `hide`); where nothing is, the cube stays clear and the car keeps its made-up sky and
-// street (car.ts). Cars further than PROBE_NEAR from the point fade to the strips.
+// but not the cars, which read the cube while it's drawn: `hide`); where nothing is, the
+// cube stays clear and the car keeps its strip and made-up sky (car.ts). Cars further than
+// PROBE_NEAR from the point fade to the strips.
+//
+// Three cubes take turns: the cars see the last two finished ones, fading from the older
+// to the newer while the next is drawn, so what they mirror moves on smoothly instead of a
+// face at a time (which showed as a jerky reflection on parked cars).
 
 import * as THREE from 'three';
 import { MIRROR_LAYER } from './mirror.ts';
 
 export const PROBE_SIZE = 128;
-// The tier allows it (graphics.ts: Ultra), and once all six faces are drawn: where the
-// point is (xyz, three's world) and whether to use it (w).
+// The tier allows it (graphics.ts: Ultra), and once two cubes are finished: where the
+// newer one was drawn from (xyz, three's world) and whether to use it (w).
 export const PROBE_ON = { value: 0 };
 export const PROBE_AT = { value: new THREE.Vector4(0, 0, 0, 0) };
 // How much of what's drawn a car mirrors (the cube holds the scene's light before the
@@ -26,34 +31,47 @@ export const PROBE_EVERY = { value: 3 };
 export const LIGHT_LAYER = 4;
 
 type CubeTarget = THREE.RenderTarget & { texture: THREE.CubeTexture };
-// WebGPU brings its own kind of cube target (webgpu.ts); WebGL takes three's.
-let target: CubeTarget | null = null;
-export function setProbeTarget(t: CubeTarget) { target = t; PROBE_MAP.value = t.texture; }
-// (For checks: scripts read the faces back.)
-export const probeTarget = () => target;
 const options = { type: THREE.HalfFloatType, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
 export const PROBE_OPTIONS = options;
+// WebGPU brings its own kind of cube target (webgpu.ts); WebGL takes three's.
+let make: () => CubeTarget = () => new THREE.WebGLCubeRenderTarget(PROBE_SIZE, options) as unknown as CubeTarget;
+export function setProbeTargets(f: () => CubeTarget) { make = f; }
+// The newer finished cube, the older one, and how far the cars have faded to the newer (0..1).
 export const PROBE_MAP: { value: THREE.Texture } = { value: new THREE.CubeTexture() };
+export const PROBE_PREV: { value: THREE.Texture } = { value: new THREE.CubeTexture() };
+export const PROBE_MIX = { value: 1 };
+// A shader that holds the textures itself (TSL) hears of each swap here.
+const listeners: (() => void)[] = [];
+export function onProbe(f: () => void) { listeners.push(f); }
 
+// [0] the newer finished cube, [1] the older, [2] the one being drawn.
+let targets: CubeTarget[] = [];
+// (For checks: scripts read the faces back.)
+export const probeTarget = () => targets[0] ?? null;
 let camera: THREE.CubeCamera | null = null;
-let face = 0, drawn = 0, tick = 0;
-const clearColour = new THREE.Color(), hidden: THREE.Object3D[] = [];
+let face = 0, done = 0, tick = 0;
+const at = new THREE.Vector3(), clearColour = new THREE.Color(), hidden: THREE.Object3D[] = [];
 
-// Before the frame's own render: one face of the cube from 2 m above the street at (x,
-// ground, z) in three's world. Returns whether it drew.
+// Before the frame's own render: one face of the cube being drawn, from 2 m above the
+// street at (x, ground, z) in three's world. Returns whether it drew.
 export function renderProbe(renderer: THREE.WebGLRenderer, scene: THREE.Scene, x: number, ground: number, z: number, hide: Iterable<THREE.Object3D>) {
-  if (!PROBE_ON.value) { PROBE_AT.value.w = 0; drawn = 0; return false; }
-  if (++tick % PROBE_EVERY.value) return false;
-  if (!target) setProbeTarget(new THREE.WebGLCubeRenderTarget(PROBE_SIZE, options) as unknown as CubeTarget);
+  if (!PROBE_ON.value) { PROBE_AT.value.w = 0; done = 0; face = 0; return false; }
+  const every = PROBE_EVERY.value;
+  // The fade to the newer cube runs while the next one is drawn (6 faces, `every` frames each),
+  // and is complete on the frame before the swap.
+  PROBE_MIX.value = Math.min(1, PROBE_MIX.value + 1 / (6 * every - 1));
+  if (++tick % every) return false;
+  if (!targets.length) targets = [make(), make(), make()];
   if (!camera) {
-    camera = new THREE.CubeCamera(0.5, FAR, target! as unknown as THREE.WebGLCubeRenderTarget);
+    camera = new THREE.CubeCamera(0.5, FAR, targets[2] as unknown as THREE.WebGLCubeRenderTarget);
     for (const c of camera.children) { c.layers.set(MIRROR_LAYER); c.layers.enable(LIGHT_LAYER); }
     scene.traverse((o) => { if ((o as THREE.Light).isLight) o.layers.enable(LIGHT_LAYER); });
   }
   const system = (renderer as unknown as { coordinateSystem: THREE.CoordinateSystem }).coordinateSystem;
   if (camera.coordinateSystem !== system) { camera.coordinateSystem = system; camera.updateCoordinateSystem(); }
-  // (Faces drawn while driving lag by a few frames, a metre or so: not worth starting over.)
-  camera.position.set(x, ground + HEIGHT, z);
+  // A cube is drawn from where the view was when it began.
+  if (face === 0) at.set(x, ground + HEIGHT, z);
+  camera.position.copy(at);
   camera.updateMatrixWorld();
 
   const before = renderer.getRenderTarget(), clear = renderer.getClearColor(clearColour).getHex(), alpha = renderer.getClearAlpha();
@@ -61,7 +79,7 @@ export function renderProbe(renderer: THREE.WebGLRenderer, scene: THREE.Scene, x
   renderer.shadowMap.autoUpdate = false;
   scene.background = null;
   renderer.setClearColor(0x000000, 0);
-  renderer.setRenderTarget(target as unknown as THREE.WebGLRenderTarget, face);
+  renderer.setRenderTarget(targets[2] as unknown as THREE.WebGLRenderTarget, face);
   renderer.clear(true, true, false);
   hidden.length = 0;
   for (const o of hide) if (o.visible) { o.visible = false; hidden.push(o); }
@@ -71,9 +89,17 @@ export function renderProbe(renderer: THREE.WebGLRenderer, scene: THREE.Scene, x
   renderer.setClearColor(clear, alpha);
   scene.background = background;
   renderer.shadowMap.autoUpdate = shadows;
-  face = (face + 1) % 6;
-  drawn = Math.min(6, drawn + 1);
-  // (Used once every face has been drawn since it was switched on.)
-  PROBE_AT.value.set(x, ground + HEIGHT, z, drawn === 6 ? 1 : 0);
+
+  if (++face === 6) {
+    // Finished: it becomes the newer, the newer the older, and the older is drawn over next.
+    face = 0;
+    targets = [targets[2], targets[0], targets[1]];
+    done++;
+    PROBE_MAP.value = targets[0].texture;
+    PROBE_PREV.value = (done > 1 ? targets[1] : targets[0]).texture;
+    PROBE_MIX.value = 0;
+    PROBE_AT.value.set(at.x, at.y, at.z, done > 1 ? 1 : 0);
+    for (const f of listeners) f();
+  }
   return true;
 }
