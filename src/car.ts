@@ -617,13 +617,15 @@ material.shadowSide = THREE.DoubleSide;
 // lamps' light, and what's seen at a slant (the sides, the edges of the roof and the bonnet)
 // mirrors more of it, as a car's clear coat does; all of it more when it's wet, when the paint
 // is a little darker too (the same in TSL: webgpu/vehicles.ts).
-export const CAR_GLOSS = { dry: 0.25, sky: 0.5, lamps: 0.12, rim: [0.5, 0.8], rimSky: 4, rimLamps: 0.3, darker: 0.85 };
+// The glass mirrors `glass` times as much as the paint: from above, a windscreen and a rear
+// window that catch the sky are what make a car read as a car, not a dark slab.
+export const CAR_GLOSS = { dry: 0.25, sky: 0.5, lamps: 0.12, rim: [0.5, 0.8], rimSky: 4, rimLamps: 0.3, darker: 0.85, glass: 3.5 };
 const COAT_GLSL = /* glsl */ `
 uniform float uWet;
 uniform vec3 uSkyRef;
 float carTop(vec3 n) { return smoothstep(.35, .9, dot(n, (viewMatrix * vec4(0., 1., 0., 0.)).xyz)); }
 vec3 carCoat(vec3 c, vec3 n, vec3 v, vec3 lamp) {
-  float glass = dot(c, vec3(.3, .59, .11)) < .04 && c.b > c.r * 1.25 ? 1.5 : 1.;
+  float glass = dot(c, vec3(.3, .59, .11)) < .04 && c.b > c.r * 1.25 ? ${CAR_GLOSS.glass.toFixed(2)} : 1.;
   float coat = mix(${CAR_GLOSS.dry.toFixed(2)}, 1., uWet) * glass * carTop(n);
   float slant = 1. - max(dot(n, v), 0.), rim = slant * slant * slant * slant * mix(${CAR_GLOSS.rim[0].toFixed(2)}, ${CAR_GLOSS.rim[1].toFixed(2)}, uWet) * glass;
   return (uSkyRef * ${CAR_GLOSS.sky.toFixed(1)} + lamp * ${CAR_GLOSS.lamps.toFixed(2)}) * coat + (uSkyRef * ${CAR_GLOSS.rimSky.toFixed(1)} + lamp * ${CAR_GLOSS.rimLamps.toFixed(2)}) * rim;

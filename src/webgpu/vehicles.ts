@@ -48,7 +48,7 @@ const uSkyRef: N = followColor(SKY_REF);
 const carTop = (): N => smoothstep(0.35, 0.9, dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz));
 const carCoat = (c: N): N => {
   const lamp = lampLight(positionWorld, normalView);
-  const glass = select(luma(c).lessThan(0.04).and(c.z.greaterThan(c.x.mul(1.25))), float(1.5), float(1));
+  const glass = select(luma(c).lessThan(0.04).and(c.z.greaterThan(c.x.mul(1.25))), float(CAR_GLOSS.glass), float(1));
   const coat = mix(CAR_GLOSS.dry, 1, uWet).mul(glass).mul(carTop());
   const slant = max(dot(normalView, positionViewDirection), 0).oneMinus();
   const rim = slant.mul(slant).mul(slant).mul(slant).mul(mix(CAR_GLOSS.rim[0], CAR_GLOSS.rim[1], uWet)).mul(glass);
