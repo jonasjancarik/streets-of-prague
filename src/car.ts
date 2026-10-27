@@ -9,7 +9,7 @@ import type { Point2 } from './map/geo.ts';
 import { posts } from './posts.ts';
 import { fences } from './fences.ts';
 import { lampLit, LAMP_ON } from './lamps.ts';
-import { SNOW, STREET_SNOW, WET } from './shading.ts';
+import { SNOW, STREET_SNOW, WET, SKY_REF, NOISE, NOISE_GLSL } from './shading.ts';
 import { send, sendInstances } from './gpu.ts';
 
 export interface CarSpec {
@@ -610,6 +610,24 @@ const material = new THREE.MeshLambertMaterial({ vertexColors: true });
 // shadow map by default, so the roof and bonnet (front faces from the sun) cast nothing and
 // the shadow comes out as a hollow outline.
 material.shadowSide = THREE.DoubleSide;
+// The paint and the glass have a gloss: what faces up mirrors a little of the sky and of the
+// lamps' light, more when it's wet, when the paint is a little darker too and the rain stands
+// on it in beads (the same in TSL: webgpu/vehicles.ts). From above that's the roof, the bonnet
+// and the windscreen.
+export const CAR_GLOSS = { dry: 0.25, sky: 0.5, lamps: 0.12, beads: [2, 0.25], bead: 45, darker: 0.85 };
+const COAT_GLSL = /* glsl */ `
+uniform float uWet;
+uniform vec3 uSkyRef;
+varying vec3 vCarP;
+${NOISE_GLSL}
+float carTop(vec3 n) { return smoothstep(.35, .9, dot(n, (viewMatrix * vec4(0., 1., 0., 0.)).xyz)); }
+vec3 carCoat(vec3 c, vec3 n, vec3 lamp) {
+  float top = carTop(n);
+  float glass = dot(c, vec3(.3, .59, .11)) < .04 && c.b > c.r * 1.25 ? 1.5 : 1.;
+  float coat = mix(${CAR_GLOSS.dry.toFixed(2)}, 1., uWet) * glass * top;
+  float bead = uWet * top * smoothstep(.86, .94, vnoise(vCarP.xz * ${CAR_GLOSS.bead.toFixed(1)}));
+  return (uSkyRef * ${CAR_GLOSS.sky.toFixed(1)} + lamp * ${CAR_GLOSS.lamps.toFixed(2)}) * coat + (uSkyRef * ${CAR_GLOSS.beads[0].toFixed(1)} + lamp * ${CAR_GLOSS.beads[1].toFixed(2)}) * bead;
+}`;
 // Snow settles on the roofs and bonnets (weather.ts).
 material.onBeforeCompile = (sh) => {
   lampLit(sh);
@@ -621,6 +639,7 @@ attribute vec4 paint;
 attribute vec3 hinge;
 attribute vec4 doors;
 varying float vLit;
+varying vec3 vCarP;
 vec2 swing(vec2 p) {
   if (hinge.z < .5) return p;
   float a = hinge.z < 1.5 ? -doors.x : hinge.z < 2.5 ? doors.y : hinge.z < 3.5 ? -doors.z : doors.w;
@@ -638,16 +657,20 @@ if (lamp > .5) {
   if (mod(floor(paint.w / exp2(lamp - 1.)), 2.) > .5) { vLit = -1.; vColor.rgb = vec3(.05, .05, .055); }
 }`)
     .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal.xz = swing(objectNormal.xz);')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);\nvCarP = transformed;');
   sh.uniforms.uSnow = SNOW;
+  Object.assign(sh.uniforms, { uWet: WET, uSkyRef: SKY_REF, uNoise: NOISE });
   sh.fragmentShader = sh.fragmentShader
-    .replace('#include <common>', '#include <common>\nuniform float uSnow;\nvarying float vLit;')
+    .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\n${COAT_GLSL}`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * max(vLit, 0.) * ${LAMP_GLOW.toFixed(2)};`)
     .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
   if (uSnow > .01) {
     float up = dot(normal, (viewMatrix * vec4(0., 1., 0., 0.)).xyz);
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.8, .82, .86), smoothstep(.75, .95, up) * smoothstep(.1, .6, uSnow) * .6);
-  }`);
+  }
+  vec3 coatC = diffuseColor.rgb;
+  diffuseColor.rgb *= mix(1., ${CAR_GLOSS.darker.toFixed(2)}, uWet * carTop(normal));`)
+    .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += carCoat(coatC, normal, lampLightOn(vLampW, normal));');
 };
 material.customProgramCacheKey = () => 'cars';
 const depthMaterial = new THREE.MeshDepthMaterial();
