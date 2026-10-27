@@ -369,6 +369,28 @@ function boxBuilder(paintColour?: string) {
   };
   const box = (colour: string, x0: number, x1: number, y0: number, y1: number, w: number, z = 0) =>
     add(new THREE.BoxGeometry(x1 - x0, y1 - y0, w), colour, (x0 + x1) / 2, (y0 + y1) / 2, z);
+  // A box with its corners rounded off in plan (radius r, or [front, back]) and, with
+  // `bevel`, its top edges too: from above that's what keeps a bus or a lorry from
+  // reading as a crate.
+  const rounded = (colour: string, x0: number, x1: number, y0: number, y1: number, w: number, r: number | [number, number], bevel = 0, z = 0) => {
+    const [rf, rb] = (typeof r === 'number' ? [r, r] : r).map((v) => Math.max(v - bevel, 0.005));
+    const h = w / 2 - bevel, a = x0 + bevel, b = x1 - bevel, shape = new THREE.Shape();
+    shape.moveTo(a + rb, -h);
+    shape.lineTo(b - rf, -h);
+    shape.absarc(b - rf, -h + rf, rf, -Math.PI / 2, 0, false);
+    shape.lineTo(b, h - rf);
+    shape.absarc(b - rf, h - rf, rf, 0, Math.PI / 2, false);
+    shape.lineTo(a + rb, h);
+    shape.absarc(a + rb, h - rb, rb, Math.PI / 2, Math.PI, false);
+    shape.lineTo(a, -h + rb);
+    shape.absarc(a + rb, -h + rb, rb, Math.PI, Math.PI * 1.5, false);
+    const g = new THREE.ExtrudeGeometry(shape, {
+      depth: Math.max(y1 - y0 - 2 * bevel, 0.001), curveSegments: 3,
+      bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2,
+    });
+    g.rotateX(-Math.PI / 2); // the shape's plane flat, its height up
+    add(g, colour, 0, y0 + bevel, z);
+  };
   const wheel = (x: number, W: number, twin = false) => {
     for (const z of [-1, 1]) {
       const w = new THREE.CylinderGeometry(0.5, 0.5, twin ? 0.6 : 0.34, 14);
@@ -379,25 +401,27 @@ function boxBuilder(paintColour?: string) {
       add(hub, '#70757b', x, 0.5, z * (W / 2 - 0.04));
     }
   };
-  return { box, wheel, done: () => mergeGeometries(parts) };
+  return { box, rounded, wheel, done: () => mergeGeometries(parts) };
 }
 
 function busGeometry(S: CarSpec): THREE.BufferGeometry {
-  const { box, wheel, done } = boxBuilder(S.color || '#c8102e');
+  const { box, rounded, wheel, done } = boxBuilder(S.color || '#c8102e');
   const L = S.L / 2, W = S.W, red = S.color || '#c8102e', white = '#eeeeea', glass = '#1b242c', grey = '#8a8f94';
   const small = S.L < 10;
   const sill = 1.15, top = small ? 2.3 : 2.55, roof = small ? 2.65 : 2.95;
-  box('#2a2c2f', -L + 0.05, L - 0.05, 0.28, 0.5, W - 0.02); // skirt and bumpers
-  box(red, -L, L, 0.5, sill, W);
-  box(glass, -L + 0.02, L - 0.02, sill, top, W - 0.06);
+  // Rounded at the corners, more at the front than the back.
+  const nose = 0.3, tail = 0.16;
+  rounded('#2a2c2f', -L + 0.05, L - 0.05, 0.28, 0.5, W - 0.02, [nose, tail]); // skirt and bumpers
+  rounded(red, -L, L, 0.5, sill, W, [nose, tail]);
+  rounded(glass, -L + 0.02, L - 0.02, sill, top, W - 0.06, [nose - 0.02, tail - 0.02]);
   // The roof stops short of the front, so from above the dark windscreen and line
-  // board show which way the bus faces.
-  box(white, -L, L - 0.4, top, roof, W);
-  box('#141414', L - 0.4, L, top, roof - 0.08, W - 0.04);
+  // board show which way the bus faces; its edges are rounded off.
+  rounded(white, -L, L - 0.4, top, roof, W, [0.06, tail], 0.1);
+  rounded('#141414', L - 0.4, L, top, roof - 0.08, W - 0.04, [nose, 0.01], 0.04);
   const ac = small ? 0.6 : 1;
-  box('#9a9fa3', -3.3 * ac, 0.9 * ac, roof, roof + 0.18, 1.8 * (small ? 0.85 : 1)); // air conditioning
-  box('#e2e4e2', -3.2 * ac, 0.8 * ac, roof + 0.18, roof + 0.3, 1.7 * (small ? 0.85 : 1));
-  box('#9a9fa3', -L + 0.3, -L + 2.0, roof, roof + 0.25, W - 0.55); // engine vents
+  rounded('#9a9fa3', -3.3 * ac, 0.9 * ac, roof - 0.02, roof + 0.18, 1.8 * (small ? 0.85 : 1), 0.25, 0.05); // air conditioning
+  rounded('#e2e4e2', -3.2 * ac, 0.8 * ac, roof + 0.1, roof + 0.3, 1.7 * (small ? 0.85 : 1), 0.2, 0.06);
+  rounded('#9a9fa3', -L + 0.3, -L + 2.0, roof - 0.02, roof + 0.25, W - 0.55, 0.12, 0.05); // engine vents
   if (!small) {
     box('#b9bdbf', 1.9, 2.7, roof, roof + 0.06, 0.8); // roof hatches
     box('#b9bdbf', -5.0, -4.2, roof, roof + 0.06, 0.8);
@@ -409,7 +433,7 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
     box(white, x - 0.07, x + 0.07, sill, top, W + 0.01);
   }
   box(white, L - 2.25, L - 2.1, sill, top, W + 0.01);
-  box(white, -L + 0.02, -L + 0.5, sill, top, W + 0.01); // the back corners
+  rounded(white, -L + 0.02, -L + 0.5, sill, top, W + 0.01, [0.005, tail]); // the back corners
   // Doors on the right (+z): glass nearly down to the kerb, a red frame round them.
   for (const d of doors) {
     box(red, d - 0.68, d + 0.68, 0.32, top, 0.04, W / 2);
@@ -417,12 +441,13 @@ function busGeometry(S: CarSpec): THREE.BufferGeometry {
     box('#15191d', d - 0.02, d + 0.02, 0.38, top - 0.08, 0.08, W / 2 + 0.005);
   }
   // Front: a tall windscreen, the line board above it, headlamps; tail lamps at the back.
-  box(glass, L - 0.05, L + 0.02, 0.9, top, W - 0.2);
-  box('#141414', L - 0.04, L + 0.03, top + 0.04, roof - 0.06, W - 0.5);
+  // (Everything on the front and back stays inside the rounded corners.)
+  box(glass, L - 0.05, L + 0.02, 0.9, top, W - 2 * nose);
+  box('#141414', L - 0.04, L + 0.03, top + 0.04, roof - 0.06, W - 0.62);
   box('#ffb020', L - 0.03, L + 0.035, top + 0.1, roof - 0.12, W - 0.9);
   for (const z of [-1, 1]) {
-    box('#fff6d8', L - 0.05, L + 0.03, 0.55, 0.72, 0.4, z * (W / 2 - 0.3));
-    box('#b3161b', -L - 0.03, -L + 0.05, 0.6, 1.1, 0.22, z * (W / 2 - 0.2));
+    box('#fff6d8', L - 0.05, L + 0.03, 0.55, 0.72, 0.36, z * (W / 2 - nose - 0.2));
+    box('#b3161b', -L - 0.03, -L + 0.05, 0.6, 1.1, 0.22, z * (W / 2 - tail - 0.13));
   }
   box(glass, -L - 0.02, -L + 0.05, 1.4, top - 0.1, W - 0.5);
   box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
@@ -446,22 +471,22 @@ const GLYPHS: Record<string, string[]> = {
 // on the roof what shows from above: a tread-plate deck inside a rail, the ladder, the
 // suction hoses, a locker and the light bars. HASIČI on the front and chevrons at the back.
 function fireGeometry(S: CarSpec): THREE.BufferGeometry {
-  const { box, wheel, done } = boxBuilder(S.color || '#c4161c');
+  const { box, rounded, wheel, done } = boxBuilder(S.color || '#c4161c');
   const L = S.L / 2, W = S.W, red = S.color || '#c4161c', glass = '#1b242c', white = '#e9e9e4', alu = '#b4b9bd', dark = '#2a2c2f';
-  const cab = 3.1, cx = L - cab, floor = 0.55, top = 2.95, cabTop = 3.05, axle = -L + 2.55;
+  const cab = 3.1, cx = L - cab, floor = 0.55, top = 2.95, cabTop = 3.05, axle = -L + 2.55, nose = 0.22;
   box(dark, -L + 0.05, L - 0.05, 0.3, floor, W - 0.3); // chassis
-  box(red, -L, cx, floor, top, W); // body
-  box(red, cx, L, floor, cabTop, W); // cab
+  rounded(red, -L, cx, floor, top, W, [0.005, 0.08], 0.04); // body
+  rounded(red, cx, L, floor, cabTop, W, [nose, 0.005], 0.08); // cab, its front corners and roof edges rounded
   box(dark, cx - 0.03, cx + 0.03, floor + 0.1, top - 0.05, W + 0.01); // the gap between them
-  box(glass, L - 0.05, L + 0.02, 1.75, cabTop - 0.2, W - 0.25); // windscreen
+  box(glass, L - 0.05, L + 0.02, 1.75, cabTop - 0.2, W - 2 * nose - 0.04); // windscreen
   box(glass, L - 1.25, L - 0.3, 1.75, cabTop - 0.3, W + 0.02); // the front doors' windows
   box(glass, cx + 0.3, L - 1.55, 1.75, cabTop - 0.3, W + 0.02); // and the crew's
   box(dark, L - 0.05, L + 0.06, 0.9, 1.2, W - 0.7); // grille
-  box(white, L - 0.05, L + 0.03, 1.2, 1.7, W - 0.1); // the band HASIČI is on
-  box(white, L - 0.15, L + 0.2, 0.32, 0.88, W); // bumper
+  box(white, L - 0.05, L + 0.03, 1.2, 1.7, W - 2 * nose); // the band HASIČI is on
+  rounded(white, L - 0.15, L + 0.2, 0.32, 0.88, W, nose); // bumper
   for (const side of [-1, 1]) {
     const z = side * W / 2;
-    box(white, cx, L, 1.25, 1.6, 0.03, z); // the band along the cab
+    box(white, cx, L - nose, 1.25, 1.6, 0.03, z); // the band along the cab
     box('#e8d21a', -L, cx, 0.6, 0.7, 0.03, z); // reflective strip under the lockers
     // Three roller shutters, the one over the back wheels shorter.
     for (let i = 0; i < 3; i++) {
@@ -469,7 +494,7 @@ function fireGeometry(S: CarSpec): THREE.BufferGeometry {
       box(alu, a, b, low, 2.6, 0.05, z);
       for (let y = low + 0.26; y < 2.5; y += 0.26) box('#8d9296', a, b, y, y + 0.025, 0.06, z); // slats
     }
-    box(HEADLAMP, L + 0.15, L + 0.21, 0.5, 0.76, 0.4, side * (W / 2 - 0.35));
+    box(HEADLAMP, L + 0.15, L + 0.21, 0.5, 0.76, 0.36, side * (W / 2 - nose - 0.2));
     box(TAIL_LAMP, -L - 0.03, -L + 0.05, 0.7, 1.0, 0.22, side * (W / 2 - 0.2));
     // Mirrors on arms out past the cab's corners.
     box(dark, L - 0.25, L - 0.1, 2.5, 2.58, 0.3, side * (W / 2 + 0.1));
@@ -524,29 +549,29 @@ function fireGeometry(S: CarSpec): THREE.BufferGeometry {
 // An ambulance from boxes: a white van with a lime stripe, a green cross panel on each
 // side, a light bar on the cab, double doors at the back and a ramp of tail lamps.
 function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
-  const { box, wheel, done } = boxBuilder();
+  const { box, rounded, wheel, done } = boxBuilder();
   const L = S.L / 2, W = S.W, white = '#f2f3ef', glass = '#1b242c', lime = '#b6d90f', green = '#12935a';
-  const cx = L - 1.9, floor = 0.45, top = 2.55, roof = 2.7;
+  const cx = L - 1.9, floor = 0.45, top = 2.55, roof = 2.7, nose = 0.24, tail = 0.08;
   box('#2a2c2f', -L + 0.05, L - 0.05, 0.3, floor, W - 0.3); // chassis and bumpers
-  box(white, -L, cx, floor, roof, W); // the box where the patient lies
-  box(white, cx, L, floor, top, W); // cab
-  box(white, cx, L - 0.6, top, roof, W); // the roof carries on over the cab
-  box(white, L - 0.6, L, top - 0.15, top, W - 0.1); // the sloping front of the roof
-  box(glass, L - 0.05, L + 0.02, 1.35, top - 0.12, W - 0.25); // windscreen
+  rounded(white, -L, cx, floor, roof, W, [0.005, tail], 0.07); // the box where the patient lies
+  rounded(white, cx, L, floor, top, W, [nose, 0.005]); // cab
+  rounded(white, cx, L - 0.6, top - 0.1, roof, W, 0.005, 0.07); // the roof carries on over the cab
+  rounded(white, L - 0.6, L, top - 0.15, top, W - 0.1, [nose, 0.005], 0.05); // the sloping front of the roof
+  box(glass, L - 0.05, L + 0.02, 1.35, top - 0.12, W - 2 * nose - 0.02); // windscreen
   box(glass, cx + 0.35, L - 0.55, 1.4, top - 0.18, W + 0.02); // cab side windows
   box('#2a2c2f', L - 0.05, L + 0.06, 0.65, 1.0, W - 0.5); // grille
-  box('#2a2c2f', L - 0.1, L + 0.18, 0.3, 0.65, W - 0.05); // front bumper
+  rounded('#2a2c2f', L - 0.1, L + 0.18, 0.3, 0.65, W - 0.05, nose); // front bumper
   box('#2a2c2f', cx + 0.1, cx + 1.1, roof, roof + 0.1, W - 0.9); // base of the light bar
   box('#9a9fa3', -L + 0.8, -L + 1.6, roof, roof + 0.12, W - 0.8); // roof vent
   for (const side of [-1, 1]) {
-    box(lime, -L, L, 0.95, 1.2, 0.03, side * W / 2); // the stripe
-    box(lime, -L, L, 1.55, 1.7, 0.03, side * W / 2);
+    box(lime, -L + tail, L - nose, 0.95, 1.2, 0.03, side * W / 2); // the stripe
+    box(lime, -L + tail, L - nose, 1.55, 1.7, 0.03, side * W / 2);
     // A green panel with a white cross on the side of the box.
     box(green, -L + 1.0, cx - 0.9, 1.75, 2.35, 0.03, side * W / 2);
     box('#ffffff', -L + 1.6, -L + 2.4, 1.98, 2.12, 0.05, side * W / 2);
     box('#ffffff', -L + 1.93, -L + 2.07, 1.8, 2.3, 0.05, side * W / 2);
-    box('#fff6d8', L - 0.05, L + 0.05, 0.65, 0.9, 0.35, side * (W / 2 - 0.28)); // headlamps
-    box('#b3161b', -L - 0.03, -L + 0.05, 0.8, 1.3, 0.2, side * (W / 2 - 0.18)); // tail lamps
+    box('#fff6d8', L - 0.05, L + 0.05, 0.65, 0.9, 0.32, side * (W / 2 - nose - 0.18)); // headlamps
+    box('#b3161b', -L - 0.03, -L + 0.05, 0.8, 1.3, 0.2, side * (W / 2 - tail - 0.12)); // tail lamps
   }
   box('#9ea3a7', cx - 0.03, cx + 0.03, floor, top, W + 0.01); // the line between cab and box
   box('#9ea3a7', -L - 0.03, -L + 0.03, floor + 0.05, roof - 0.1, 0.04); // the join of the rear doors
@@ -563,22 +588,22 @@ function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
 // The artic is a tractor with a trailer, the box truck one rigid body.
 function truckGeometry(type: string, S: CarSpec): THREE.BufferGeometry {
   const paint = '#ffffff';
-  const { box, wheel, done } = boxBuilder(paint);
-  const L = S.L / 2, W = S.W, glass = '#1b242c', artic = type === 'artic';
+  const { box, rounded, wheel, done } = boxBuilder(paint);
+  const L = S.L / 2, W = S.W, glass = '#1b242c', artic = type === 'artic', nose = 0.22;
   const cab = artic ? 2.5 : 2.2, cabTop = artic ? 3.3 : 2.9, floor = artic ? 1.0 : 0.85, top = artic ? 4.0 : 3.6;
   const cx = L - cab; // where the cab starts
   box('#2a2c2f', -L, L, 0.35, floor, W - 0.5); // chassis
-  box(paint, cx, L, floor - 0.2, cabTop, W); // cab
-  box(glass, L - 0.05, L + 0.02, floor + 0.65, cabTop - 0.2, W - 0.25); // windscreen
+  rounded(paint, cx, L, floor - 0.2, cabTop, W, [nose, 0.005], 0.08); // cab
+  box(glass, L - 0.05, L + 0.02, floor + 0.65, cabTop - 0.2, W - 2 * nose - 0.04); // windscreen
   box(glass, cx + 0.5, L - 0.4, floor + 0.7, cabTop - 0.25, W + 0.02); // side windows
-  box(paint, cx + 0.05, cx + 0.5, cabTop, cabTop + (artic ? 0.5 : 0.0), W - 0.3); // roof deflector
-  box('#2a2c2f', L - 0.1, L + 0.15, 0.35, 0.75, W - 0.1); // bumper
+  if (artic) rounded(paint, cx + 0.05, cx + 0.6, cabTop - 0.05, cabTop + 0.5, W - 0.3, 0.15, 0.08); // roof deflector
+  rounded('#2a2c2f', L - 0.1, L + 0.15, 0.35, 0.75, W - 0.1, nose); // bumper
   const bx = artic ? cx - 0.9 : cx - 0.1; // the box's front end
-  box('#e6e7e3', -L, bx, floor, top, W); // box or trailer
-  box(paint, -L, bx, floor + 0.7, floor + 1.05, W + 0.01); // stripe
+  rounded('#e6e7e3', -L, bx, floor, top, W, 0.06, 0.05); // box or trailer, its edges just rounded off
+  rounded(paint, -L, bx, floor + 0.7, floor + 1.05, W + 0.01, 0.06); // stripe
   box('#9a9fa3', -L, -L + 0.06, floor + 0.15, top - 0.15, W - 0.3); // rear doors
   for (const z of [-1, 1]) {
-    box('#fff6d8', L - 0.05, L + 0.05, floor - 0.1, floor + 0.2, 0.4, z * (W / 2 - 0.3));
+    box('#fff6d8', L - 0.05, L + 0.05, floor - 0.1, floor + 0.2, 0.36, z * (W / 2 - nose - 0.2));
     box('#b3161b', -L - 0.03, -L + 0.05, floor - 0.1, floor + 0.3, 0.25, z * (W / 2 - 0.2));
   }
   box('#3a3c3f', -L - 0.1, -L + 0.05, 0.55, 0.75, W - 0.2); // under-run bar
@@ -789,6 +814,9 @@ export class Car {
 
   get doors() { return doorsOf(this.type); }
 
+  // Called as a door swings shut (the game plays the slam).
+  static onShut?: (car: Car) => void;
+
   // Opens or shuts door n.
   open(n: number, on = true) {
     if (!on && !this.door) return;
@@ -808,7 +836,9 @@ export class Car {
     let open = 0;
     for (let i = 0; i < 4; i++) {
       if (this.speed > 1.5) d[4 + i] = 0;
+      const was = d[i];
       d[i] += clamp(d[4 + i] - d[i], -DOOR_SPEED * dt, DOOR_SPEED * dt);
+      if (was > 0 && d[i] <= 0) Car.onShut?.(this);
       open += d[i] + d[4 + i];
     }
     if (!open) this.door = undefined;
