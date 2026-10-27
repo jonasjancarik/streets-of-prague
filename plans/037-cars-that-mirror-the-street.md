@@ -6,7 +6,7 @@ read_when: Changing how car paint and glass reflect (CAR_GLOSS, carCoat in car.t
 
 ## Status and intent
 
-- Status: PHASES 1–3 BUILT (27 October 2026: `00be853`, `d9f00b8` with its WebGL fix `5571c51`, `7133c1e`). The seven strip images are made (prompts in `assets/reflections/src/`) and packed into `public/reflections.webp`, both waiting for review before they're committed; until then the cars keep the made-up street of phase 1. Category: looks. Priority: P2.
+- Status: DONE: PHASES 1–3 BUILT (27 October 2026: `00be853`, `d9f00b8` with its WebGL fix `5571c51`, `7133c1e`). The seven strip images were reviewed and committed on 27 October 2026 (`assets/reflections/src/*.webp` with their prompts, packed into `public/reflections.webp`). Category: looks. Priority: P2.
 - Effort: phase 1 one to two days; phase 2 one day plus review of the images; phase 3 two to three days. Each phase is checked and measured before the next starts, and the work can stop after any of them.
 - Depends on: the car bodies of 27 October 2026 (`3ebb74f`, `7d03b2e`, `dd783e5`) and the stronger glass (`a1c7384`).
 - Planned at: `5b57c19d5e9f12d38350f552b29ac3de7e7dd640`, 27 October 2026.
