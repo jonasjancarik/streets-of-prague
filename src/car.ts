@@ -674,7 +674,8 @@ vec3 carStreet(vec3 r, float area) {
   float edge = ${R.edge.toFixed(3)} + ${R.ragged.toFixed(3)} * (.55 * sin(a * 5.) + .3 * sin(a * 13. + 1.7) + .15 * sin(a * 31. + .4));
   vec3 sky = uSkyRef * mix(${R.horizon.toFixed(2)}, ${R.zenith.toFixed(2)}, smoothstep(.1, .9, r.y));
   vec3 walls = uStreetRef * mix(.75, 1.05, smoothstep(-.02, edge, r.y));
-  vec3 ground = uStreetRef * .5, above = smoothstep(-.06, 0., r.y);
+  vec3 ground = uStreetRef * .5;
+  float above = smoothstep(-.06, 0., r.y);
   vec3 c = mix(ground, mix(walls, sky, smoothstep(edge - .015, edge + .015, r.y)), above);
   if (uStripsOn > .5) {
     float t = r.y / max(length(r.xz), .001) / ${CS.stripTop.toFixed(3)};
