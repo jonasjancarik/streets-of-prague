@@ -14,7 +14,9 @@ const allowedHosts = ['.local', '.ts.net'];
 // the full licence of every package the bundles use, found from the modules' paths.
 // The tile worker is bundled separately, before the main bundle is written, so both
 // builds add to the same set and the main one writes the file.
-const bundled = new Set();
+// Each package's folder comes from its module path, not from ./node_modules, so the build
+// also works in a git worktree, where the packages are the main checkout's.
+const bundled = new Map();
 function licences(emit) {
   return {
     name: 'licences',
@@ -23,13 +25,12 @@ function licences(emit) {
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== 'chunk') continue;
         for (const id of chunk.moduleIds ?? Object.keys(chunk.modules)) {
-          const m = id.replace(/\\/g, '/').match(/\/node_modules\/((?:@[^/]+\/)?[^/]+)\//);
-          if (m) bundled.add(m[1]);
+          const m = id.replace(/\\/g, '/').match(/^(.*\/node_modules\/((?:@[^/]+\/)?[^/]+))\//);
+          if (m) bundled.set(m[2], m[1]);
         }
       }
       if (!emit) return;
-      const parts = [...bundled].sort().map((name) => {
-        const dir = join('node_modules', name);
+      const parts = [...bundled].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, dir]) => {
         const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
         // A package that ships no licence file (pmtiles) has its text in licences/<name>.txt.
         const own = readdirSync(dir).find((f) => /^(licen[cs]e|copying)(\.|$)/i.test(f));
