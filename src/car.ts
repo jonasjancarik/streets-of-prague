@@ -1213,6 +1213,8 @@ export class CarPool {
     mesh.count = 0;
     mesh.visible = false;
     mesh.castShadow = true;
+    // And in the shade of the buildings and trees they're in it too.
+    mesh.receiveShadow = true;
     mesh.customDepthMaterial = depthMaterial;
     mesh.frustumCulled = false;
     this.scene.add(mesh);

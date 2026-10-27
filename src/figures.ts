@@ -231,7 +231,7 @@ export class Figures {
     });
     this.mesh = new THREE.InstancedMesh(g, kit.material, capacity);
     this.mesh.customDepthMaterial = kit.depthMaterial;
-    this.mesh.castShadow = true;
+    this.mesh.castShadow = this.mesh.receiveShadow = true;
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
     this.capacity = capacity;
