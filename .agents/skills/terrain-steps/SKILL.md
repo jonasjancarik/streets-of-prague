@@ -79,12 +79,21 @@ trough, twist (the lean changing within 4 m) and stretch off the road (grass or 
 over the carriageway), with a place to paste into the game. Two minutes for praha,
 seconds with `--near`. `--strict` fails on anything over the hard limits.
 
-What it found first (27 October 2026, 57,188 streets): about 100 steps over 1 m (V Údolí
-in Suchdol cut by a canyon, Chotkova's hairpin on a wall top, Pod Plynojemem, Na Botiči),
-about 200 streets with 10 m or more off the road, and some 5,000 leaning over 15 %. The
-leaning is real in the game, not the checker: the 4 m lattice tilts hillside streets
-(Italská's left edge 0.5–1 m above its right). Compare runs before and after a rule
-change rather than chasing the total.
+Steps, lean and crown count only where the samples lie on the carriageway as drawn: OSM's
+width reaches past the kerb, onto the retaining wall beside the street (U Komína and
+Ostřicová looked like walls across the road). Each street's worst step says what it is:
+`wall` (between two terraces of the terrain: a retaining wall's strip or a bridge's
+pad), `deck` (the edge of a bridge or tunnel level) or `ground` (the lattice itself), with
+the two sample points and their labels in `--save`'s `stepPair`.
+
+What it found first (27 October 2026, 57,188 streets): about 100 steps over 1 m, some 200
+streets with 10 m or more off the road, and some 5,000 leaning over 15 %. The leaning is
+real in the game, not the checker: the 4 m lattice tilts hillside streets (Italská's left
+edge 0.5–1 m above its right). Compare runs before and after a rule change rather than
+chasing the total. Of the 15 worst steps, 9 were retaining walls' terraces running along
+or across a street, 4 bridges' pads and 1 the made-up land beyond IPR's model; the
+terrace now stops at a car street's kerbs (`dtm_heights.py`) and the made-up land is no
+steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
 
 ## Finding what's wrong at a place
 
@@ -178,6 +187,20 @@ change rather than chasing the total.
   still let through.
 - Low, short retaining walls (under 1.5 m, under 12 m) make more ragged ends than
   steps.
+- A retaining wall's terrace is cut out of every car street it reaches: its far edge,
+  8 m from the wall, used to lie along the middle of the street at the wall's foot (Pod
+  Plynojemem, 12 m), and a wall line the map and the survey place a metre or two apart
+  ran down the carriageway. Taking the street into the terrace instead put the terrace's
+  end across it (Řevnická, U Trezorky: 5 m); dropping the wall's line where it lies on a
+  street took its heights too (the embankments by the river came out stepped).
+- Beyond IPR's model each point of the made-up land beside water rose from its nearest
+  water, and where the nearest changed from the brook in the valley to a pond on the
+  plateau the land jumped 56 m (V Údolí, Suchdol). It's now lowered to no steeper than
+  VALLEY from any neighbour (`--valley-nearest` for the old way).
+- A bridge's pad that doesn't meet the street past it is a wall across that street
+  (Ohrobecké údolí, Železničářů, Komořanská by most Závodu míru, Rašínovo nábřeží by
+  Palackého most: 3–7 m). Leaving such pads out broke the joins of Palackého most (8.9 m)
+  and Lahovický most: not done; the four are still there.
 
 Tried and dropped: a terrace for every surveyed street well above or below the ground
 beside it (cliffs 12 m high under Letná); leaving the terrain model wherever the
