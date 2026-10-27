@@ -96,21 +96,26 @@ class Car:
                     return [p + (q - p) * u for p, q in zip(a, b)]
             return list(stations[0 if x > 0 else -1][1:])
         ra = r + 0.05
-        arch = {}
+        arch = set()
         for xw in wheels:
-            for k in range(5):
-                t = math.pi * k / 4
-                arch[xw + ra * math.cos(t)] = r + ra * math.sin(t)
-            for e in (1, -1):
-                arch[xw + e * (ra + 0.002)] = None
-        xs = {s[0] for s in stations} | set(arch)
+            arch |= {xw + ra * math.cos(math.pi * k / 6) for k in range(7)}
+            arch |= {xw + e * (ra + 0.002) for e in (1, -1)}
+
+        def over(x):
+            # The sill's height over a wheel (any section that falls there, not only
+            # the arch's own, or it pulls the sill down across the tyre), or None.
+            for xw in wheels:
+                if abs(x - xw) <= ra + 1e-6:
+                    return r + math.sqrt(max(0.0, ra * ra - (x - xw) ** 2))
+            return None
+        xs = {s[0] for s in stations} | arch
         for x0, x1, _ in doors:
             xs |= {x for x in (x0, x1) if all(abs(x - k) > 1e-4 for k in xs)}
         xs = sorted(xs, reverse=True)
         rings = []
         for x in xs:
             w, zt, z0 = at(x)
-            z0 = max(z0, arch.get(x) or 0)
+            z0 = max(z0, over(x) or 0)
             lo = max(z0 + 0.01, min(z0 + 0.13, zt - 0.15))
             hi = max(lo + 0.01, zt - 0.13)
             pts = [(w - 0.05, z0, "Trim"), (w, lo, "Paint")]
