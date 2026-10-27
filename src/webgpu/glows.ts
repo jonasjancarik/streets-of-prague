@@ -8,11 +8,11 @@
 import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
-  Fn, If, Discard, float, vec2, vec3, vec4, uv, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, positionViewDirection, normalView, cameraViewMatrix,
+  Fn, If, abs, Discard, float, vec2, vec3, vec4, uv, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, positionViewDirection, normalView, cameraViewMatrix,
   cameraProjectionMatrix, smoothstep, mix, min, max, clamp, dot, sqrt, pow, fract, sin, cos, length, select, sRGBTransferEOTF, toneMappingExposure,
 } from 'three/tsl';
 import { setGlows } from '../lamps.ts';
-import { setSignalGlow } from '../signals.ts';
+import { setSignalGlow, setSignalFlare } from '../signals.ts';
 import { setBeamShade, setGlintShade, BEAM_ON } from '../lightfx.ts';
 import { setSprayDrawing } from '../spray.ts';
 import { setSmokeDrawing } from '../chimneySmoke.ts';
@@ -105,6 +105,13 @@ setSignalGlow(() => additive(() => {
   const d = length(uv().mul(2).sub(1)), f = smoothDown(1, 0, d);
   const g = f.mul(f).mul(uLampOn.mul(0.5).add(0.9)).add(smoothDown(0.3, 0.2, d).mul(0.9));
   return vec4(unmap(instanceColor.mul(g), true), 1);
+}));
+// A car light's flare (signals.ts): brightest at the head, widening and fading over the road.
+setSignalFlare(() => additive(() => {
+  const along = uv().y.oneMinus(), x = uv().x.sub(0.5).mul(2);
+  const fan = along.oneMinus().mul(along.oneMinus()).mul(smoothDown(1, 0.55, abs(x).div(along.mul(0.6).add(0.4))));
+  const core = smoothDown(1, 0.3, length(vec2(x.div(0.4), along.sub(0.06).div(0.13))));
+  return vec4(unmap(instanceColor.mul(fan.mul(uLampOn.mul(0.4).add(0.9)).add(core)), true), 1);
 }));
 
 // ---- The scene's fog, for colours on the screen (the spray, the tyre marks) ----

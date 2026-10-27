@@ -14,9 +14,15 @@ import { send } from './gpu.ts';
 // The crossings at a junction have the pedestrians' lights, red and green only, at
 // their ends facing across: green while the street they cross has red.
 
-// The WebGPU trial's own version of the glow (webgpu/glows.ts), set before the signals are made.
+// The WebGPU trial's own versions of the glow and the flare (webgpu/glows.ts), set before the signals are made.
 let glowBy: (() => THREE.Material) | null = null;
 export const setSignalGlow = (f: typeof glowBy) => { glowBy = f; };
+let flareBy: (() => THREE.Material) | null = null;
+export const setSignalFlare = (f: typeof flareBy) => { flareBy = f; };
+// A car light's flare: the light leaving the head under its hoods, from their front edge
+// (HOOD m ahead of the pole) out over the road, FLARE m long and wide at its end.
+const HOOD = 0.5, FLARE = [1, 1.4];
+const NONE = new THREE.Matrix4().makeScale(0, 0, 0);
 
 export const GREEN = 0, AMBER = 1, RED = 2, READY = 3; // READY: red and amber together
 const AMBER_T = 3, CLEAR = 2, READY_T = 1.5;
@@ -79,12 +85,14 @@ export class Signals {
   private boxes: THREE.InstancedMesh;
   private lamps: THREE.InstancedMesh;
   private glows: THREE.InstancedMesh;
+  private flares: THREE.InstancedMesh;
   private beams: THREE.InstancedMesh;
   private walkBoxes: THREE.InstancedMesh;
   private walkLamps: THREE.InstancedMesh;
   private dummy = new THREE.Object3D();
   private c = new THREE.Color();
   private m = new THREE.Matrix4();
+  private local = new THREE.Matrix4();
 
   // `height(x, y, bridge)`: of the ground, or of a bridge's deck where there is one.
   // `onRoad(x, y)`: whether the ground there is carriageway, to keep the poles off it.
@@ -133,7 +141,7 @@ export class Signals {
     this.walkBoxes = new THREE.InstancedMesh(walkBox, this.boxes.material, MAX_HEADS);
     this.walkLamps = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.22, 0.03).translate(0, 0, 0.21), new THREE.MeshBasicMaterial(), MAX_HEADS * 2);
     this.walkLamps.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 2 * 3), 3);
-    // The lit lamp's glow, flat, a little over a metre across so the colour reads from above; brighter at night.
+    // A crossing's lit lamp's glow, flat, so the colour reads from above; brighter at night.
     this.glows = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), glowBy ? glowBy() : new THREE.ShaderMaterial({
       uniforms: { uOn: LAMP_ON },
       vertexShader: /* glsl */ `
@@ -149,11 +157,32 @@ export class Signals {
     }), MAX_HEADS);
     this.glows.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3), 3);
     this.glows.renderOrder = 5;
-    for (const m of [this.poles, this.boxes, this.lamps, this.glows, this.beams, this.walkBoxes, this.walkLamps]) {
+    // A car light's: the light seen leaving the front of the head (a lamp's own light can't
+    // come through the top of the head), brightest just out from under the hoods and
+    // widening and fading over the road, so from above it also shows which way it faces.
+    // Flat at the lamp's height; uv.y is 1 at the head.
+    this.flares = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0, 0, 0.5), flareBy ? flareBy() : new THREE.ShaderMaterial({
+      uniforms: { uOn: LAMP_ON },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv; varying vec3 vC;
+        void main() { vUv = uv; vC = instanceColor; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.); }`,
+      fragmentShader: /* glsl */ `
+        uniform float uOn; varying vec2 vUv; varying vec3 vC;
+        void main() {
+          float along = 1. - vUv.y, x = (vUv.x - .5) * 2.;
+          float fan = (1. - along) * (1. - along) * smoothstep(1., .55, abs(x) / (.4 + .6 * along));
+          float core = smoothstep(1., .3, length(vec2(x / .4, (along - .06) / .13)));
+          gl_FragColor = vec4(vC * (fan * (.9 + .4 * uOn) + core), 1.);
+        }`,
+      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
+    }), MAX_HEADS);
+    this.flares.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3), 3);
+    this.flares.renderOrder = 5;
+    for (const m of [this.poles, this.boxes, this.lamps, this.glows, this.flares, this.beams, this.walkBoxes, this.walkLamps]) {
       m.count = 0;
       m.frustumCulled = false;
     }
-    scene.add(this.poles, this.boxes, this.lamps, this.glows, this.beams, this.walkBoxes, this.walkLamps);
+    scene.add(this.poles, this.boxes, this.lamps, this.glows, this.flares, this.beams, this.walkBoxes, this.walkLamps);
 
     void fetch(dataUrl(area, 'signals.json')).then((r) => (r.ok ? r.json() as Promise<SignalsJSON> : null)).then((data) => {
       if (!data) return;
@@ -334,26 +363,25 @@ export class Signals {
       // Top to bottom: red, amber, green.
       const on = [show === RED || show === READY, show === AMBER || show === READY, show === GREEN];
       for (let k = 0; k < 3; k++) this.lamps.setColorAt(i * 3 + k, on[k] ? COLOURS[2 - k] : OFF[2 - k]);
-      // The glow round the lowest lamp that's lit.
+      // The flare of the lowest lamp that's lit, out from the head as it's turned; no round glow.
       const k = on[2] ? 2 : on[1] ? 1 : 0;
-      this.lamps.getMatrixAt(i * 3 + k, m);
-      d.position.setFromMatrixPosition(m);
-      d.position.y += 0.2;
-      d.rotation.set(0, 0, 0);
-      d.scale.setScalar(1.2);
-      d.updateMatrix();
-      d.scale.setScalar(1);
-      this.glows.setMatrixAt(i, d.matrix);
-      this.glows.setColorAt(i, this.c.copy(COLOURS[2 - k]));
+      this.boxes.getMatrixAt(i, m);
+      this.local.makeScale(FLARE[0], 1, FLARE[1]).setPosition(0, 2.85 - 0.3 * k, HOOD);
+      this.flares.setMatrixAt(i, m.multiply(this.local));
+      this.flares.setColorAt(i, this.c.copy(COLOURS[2 - k]));
+      this.glows.setMatrixAt(i, NONE);
     });
     // The beams of the lights drawn again, or all of them at a new brightness.
     const same = this.beamOn === LAMP_ON.value, from = same ? lo : 0, to = same ? carsTo : this.cars;
     this.beamOn = LAMP_ON.value;
     for (let i = from; i < to; i++) this.beams.setColorAt(i, this.c.copy(COLOURS[LIT[shown[i]]]).multiplyScalar(0.06 + 0.16 * LAMP_ON.value));
     this.glows.count = this.near.length;
+    this.flares.count = this.cars;
     this.beams.count = this.cars;
     mark(this.glows.instanceMatrix, lo, hi);
     if (this.glows.instanceColor) mark(this.glows.instanceColor, lo, hi);
+    mark(this.flares.instanceMatrix, lo, carsTo);
+    if (this.flares.instanceColor) mark(this.flares.instanceColor, lo, carsTo);
     if (this.beams.instanceColor) mark(this.beams.instanceColor, from, to);
     if (this.lamps.instanceColor) mark(this.lamps.instanceColor, lo * 3, carsTo * 3);
     if (this.walkLamps.instanceColor) mark(this.walkLamps.instanceColor, walks * 2, walksTo * 2);
