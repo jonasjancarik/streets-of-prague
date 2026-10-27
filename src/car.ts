@@ -11,6 +11,7 @@ import { fences } from './fences.ts';
 import { lampLit, LAMP_ON } from './lamps.ts';
 import { SNOW, STREET_SNOW, WET, SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from './shading.ts';
 import { send, sendInstances } from './gpu.ts';
+import { KINDS, STRIPS, STRIPS_ON } from './reflections.ts';
 
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
@@ -654,28 +655,46 @@ export const CAR_GLOSS = { dry: 0.25, sky: 0.5, lamps: 0.12, rim: [0.5, 0.8], ri
 // top is `edge` (the sine of its height) give or take `ragged`.
 export const CAR_MIRROR = { value: 1 };
 export const CAR_REFLECT = { top: 0.32, side: 2.4, wet: 1.5, edge: 0.17, ragged: 0.09, horizon: 2.4, zenith: 1.3, glint: 0.08, sharp: 400 };
-const R = CAR_REFLECT;
+// The strips of real-looking streets (reflections.ts) cover from below the horizon up to
+// `stripTop` (the tangent of the top's height, 35°), the horizon `stripHorizon` of the way
+// down each; `stripGain` brings their colours to the light of the made-up street.
+export const CAR_STRIPS = { stripTop: 0.7, stripHorizon: 0.806, stripGain: 3.5, kinds: KINDS.length };
+// A car's kind of area rides in paint.w above its lamps (256 a step), and in the vertex
+// stage into vLit, 4 a step, so it needs no varying of its own.
+export const AREA_STEP = 256;
+const R = CAR_REFLECT, CS = CAR_STRIPS;
 const COAT_GLSL = /* glsl */ `
-uniform float uWet, uMirror;
+uniform float uWet, uMirror, uStripsOn;
 uniform vec3 uSkyRef, uStreetRef, uSunDir, uSunLight;
+uniform sampler2D uStrips;
 float carTop(vec3 n) { return smoothstep(.35, .9, dot(n, (viewMatrix * vec4(0., 1., 0., 0.)).xyz)); }
-// The street round the car, seen in the direction r (world).
-vec3 carStreet(vec3 r) {
+// The street round the car, seen in the direction r (world), in the car's kind of area.
+vec3 carStreet(vec3 r, float area) {
   float a = atan(r.z, r.x);
   float edge = ${R.edge.toFixed(3)} + ${R.ragged.toFixed(3)} * (.55 * sin(a * 5.) + .3 * sin(a * 13. + 1.7) + .15 * sin(a * 31. + .4));
   vec3 sky = uSkyRef * mix(${R.horizon.toFixed(2)}, ${R.zenith.toFixed(2)}, smoothstep(.1, .9, r.y));
   vec3 walls = uStreetRef * mix(.75, 1.05, smoothstep(-.02, edge, r.y));
-  vec3 c = mix(uStreetRef * .5, mix(walls, sky, smoothstep(edge - .015, edge + .015, r.y)), smoothstep(-.06, 0., r.y));
+  vec3 ground = uStreetRef * .5, above = smoothstep(-.06, 0., r.y);
+  vec3 c = mix(ground, mix(walls, sky, smoothstep(edge - .015, edge + .015, r.y)), above);
+  if (uStripsOn > .5) {
+    float t = r.y / max(length(r.xz), .001) / ${CS.stripTop.toFixed(3)};
+    float v = ${CS.stripHorizon.toFixed(3)} * (1. - t);
+    vec4 s = texture2D(uStrips, vec2(a / 6.2832 + .5, 1. - (area + clamp(v, .01, .99)) / ${CS.kinds.toFixed(1)}));
+    s.a *= step(0., v);
+    vec3 street = s.rgb * dot(uStreetRef, vec3(.3, .59, .11)) * ${CS.stripGain.toFixed(2)};
+    c = mix(mix(ground, sky, above), street, v > 1. ? 0. : s.a);
+    c = v > 1. ? ground : c;
+  }
   return c + uSunLight * pow(max(dot(r, uSunDir), 0.), ${R.sharp.toFixed(1)}) * ${R.glint.toFixed(3)};
 }
-vec3 carCoat(vec3 c, vec3 n, vec3 v, vec3 lamp) {
+vec3 carCoat(vec3 c, vec3 n, vec3 v, vec3 lamp, float area) {
   float glass = dot(c, vec3(.3, .59, .11)) < .04 && c.b > c.r * 1.25 ? ${CAR_GLOSS.glass.toFixed(2)} : 1.;
   float coat = mix(${CAR_GLOSS.dry.toFixed(2)}, 1., uWet) * glass * carTop(n);
   float slant = 1. - max(dot(n, v), 0.), rim = slant * slant * slant * slant * mix(${CAR_GLOSS.rim[0].toFixed(2)}, ${CAR_GLOSS.rim[1].toFixed(2)}, uWet) * glass;
   vec3 tint = uSkyRef * ${CAR_GLOSS.sky.toFixed(1)} * coat + uSkyRef * ${CAR_GLOSS.rimSky.toFixed(1)} * rim;
   vec3 r = (vec4(reflect(-v, n), 0.) * viewMatrix).xyz;
   float s4 = slant * slant * slant * slant;
-  vec3 mirrored = carStreet(r) * (${R.top.toFixed(2)} + ${R.side.toFixed(2)} * s4) * glass * mix(1., ${R.wet.toFixed(2)}, uWet);
+  vec3 mirrored = carStreet(r, area) * (${R.top.toFixed(2)} + ${R.side.toFixed(2)} * s4) * glass * mix(1., ${R.wet.toFixed(2)}, uWet);
   return mix(tint, mirrored, uMirror) + lamp * (${CAR_GLOSS.lamps.toFixed(2)} * coat + ${CAR_GLOSS.rimLamps.toFixed(2)} * rim);
 }`;
 // Snow settles on the roofs and bonnets (weather.ts).
@@ -704,14 +723,17 @@ if (lamp > .5) {
   float tail = mod(floor(paint.w / 32.), 4.);
   vLit = lamp < 2.5 ? mod(floor(paint.w / 16.), 2.) : tail > 1.5 ? 1.5 : tail * .45;
   if (mod(floor(paint.w / exp2(lamp - 1.)), 2.) > .5) { vLit = -1.; vColor.rgb = vec3(.05, .05, .055); }
-}`)
+}
+vLit += 4. * floor(paint.w / ${AREA_STEP}.);`)
     .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal.xz = swing(objectNormal.xz);')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
   sh.uniforms.uSnow = SNOW;
-  Object.assign(sh.uniforms, { uWet: WET, uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uMirror: CAR_MIRROR });
+  Object.assign(sh.uniforms, { uWet: WET, uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uMirror: CAR_MIRROR, uStrips: STRIPS, uStripsOn: STRIPS_ON });
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\n${COAT_GLSL}`)
-    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * max(vLit, 0.) * ${LAMP_GLOW.toFixed(2)};`)
+    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  float area = floor((vLit + 1.5) / 4.), lit = vLit - 4. * area;
+  totalEmissiveRadiance += diffuseColor.rgb * max(lit, 0.) * ${LAMP_GLOW.toFixed(2)};`)
     .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
   if (uSnow > .01) {
     float up = dot(normal, (viewMatrix * vec4(0., 1., 0., 0.)).xyz);
@@ -719,7 +741,7 @@ if (lamp > .5) {
   }
   vec3 coatC = diffuseColor.rgb;
   diffuseColor.rgb *= mix(1., ${CAR_GLOSS.darker.toFixed(2)}, uWet * carTop(normal));`)
-    .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += carCoat(coatC, normal, normalize(vViewPosition), lampLightOn(vLampW, normal));');
+    .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += carCoat(coatC, normal, normalize(vViewPosition), lampLightOn(vLampW, normal), area);');
 };
 material.customProgramCacheKey = () => 'cars';
 const depthMaterial = new THREE.MeshDepthMaterial();
@@ -1226,6 +1248,10 @@ export class CarPool {
   private hingeless = new WeakMap<THREE.BufferGeometry, THREE.BufferAttribute>();
   // Each parked four-wheeler's matrix and what it was worked out from (see placed).
   private placings = new WeakMap<Car, Placing>();
+  // The kind of area at a place (reflections.ts; main.ts sets it), and each car's, looked
+  // up again once it has gone some way.
+  area: ((x: number, y: number) => number) | null = null;
+  private areas = new WeakMap<Car, { x: number; y: number; k: number }>();
 
   constructor(scene: THREE.Scene) {
     if (!kit) throw new Error('Figures kit is not loaded');
@@ -1276,6 +1302,15 @@ export class CarPool {
     pages.push(mesh);
     this.meshes.set(key, pages);
     return mesh;
+  }
+
+  private areaOf(c: Car) {
+    if (!this.area) return 0;
+    const was = this.areas.get(c);
+    if (was && Math.abs(c.x - was.x) + Math.abs(c.y - was.y) < 25) return was.k;
+    const k = this.area(c.x, c.y);
+    this.areas.set(c, { x: c.x, y: c.y, k });
+    return k;
   }
 
   prepare(bodies: readonly CarBody[]) {
@@ -1365,7 +1400,7 @@ export class CarPool {
         let paint = this.colours.get(c.paint);
         if (!paint) { paint = new THREE.Color(c.paint); this.colours.set(c.paint, paint); }
         const on = night && !c.burnt && !(c.mode === 'loose' && c.speed < 0.5);
-        const lamps = c.broken + (on ? 16 : 0) + (c.braking && c.mode !== 'loose' ? 64 : on ? 32 : 0);
+        const lamps = c.broken + (on ? 16 : 0) + (c.braking && c.mode !== 'loose' ? 64 : on ? 32 : 0) + AREA_STEP * this.areaOf(c);
         (m.geometry.getAttribute('paint') as THREE.InstancedBufferAttribute).setXYZW(slot, paint.r, paint.g, paint.b, lamps);
         if (c.rider && riders < this.riders.capacity) this.ride(c, riders++, d.matrix, dt);
         const ref = c.line?.ref.trim();

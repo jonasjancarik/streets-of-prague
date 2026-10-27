@@ -4,8 +4,9 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, dot, smoothstep, mix, select, sin, cos, max, floor, mod, exp2, reflect, atan, pow, uniform } from 'three/tsl';
-import { LAMP_GLOW, CAR_GLOSS, CAR_MIRROR, CAR_REFLECT as R } from '../car.ts';
+import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, dot, smoothstep, mix, select, sin, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, length, clamp, step } from 'three/tsl';
+import { LAMP_GLOW, CAR_GLOSS, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP } from '../car.ts';
+import { STRIPS, STRIPS_ON, onStrips } from '../reflections.ts';
 import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit, lampLight, uLampOn } from './lamps.ts';
 import { shareInstances } from './trees.ts';
@@ -39,8 +40,12 @@ const painted: N = attribute('painted', 'float'), paint: N = attribute('paint', 
 const lamp: N = floor(painted.mul(0.5).add(0.01));
 const tail: N = mod(floor(paint.w.div(32)), 4);
 const smashed: N = mod(floor(paint.w.div(exp2(lamp.sub(1)))), 2).greaterThan(0.5);
-const shine: N = select(lamp.lessThan(0.5), float(0), select(smashed, float(-1),
-  select(lamp.lessThan(2.5), mod(floor(paint.w.div(16)), 2), select(tail.greaterThan(1.5), float(1.5), tail.mul(0.45))))).toVarying('vLit');
+const lit: N = select(lamp.lessThan(0.5), float(0), select(smashed, float(-1),
+  select(lamp.lessThan(2.5), mod(floor(paint.w.div(16)), 2), select(tail.greaterThan(1.5), float(1.5), tail.mul(0.45)))));
+// The car's kind of area (reflections.ts) rides along in the same varying, 4 a step.
+const packed: N = lit.add(floor(paint.w.div(AREA_STEP)).mul(4)).toVarying('vLit');
+const area: N = floor(packed.add(1.5).div(4));
+const shine: N = packed.sub(area.mul(4));
 
 // The gloss (CAR_GLOSS in car.ts): the sky and the lamps' light mirrored by what faces up, and
 // more of it by what's seen at a slant; more when wet.
@@ -53,12 +58,23 @@ const uSunDir: N = (() => {
   return u;
 })();
 const carTop = (): N => smoothstep(0.35, 0.9, dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz));
+const uStripsOn: N = follow(STRIPS_ON);
+const stripNodes: N[] = [];
+onStrips((t) => { for (const n of stripNodes) n.value = t; });
 const carStreet = (r: N): N => {
   const a = atan(r.z, r.x);
   const edge = float(R.edge).add(sin(a.mul(5)).mul(0.55).add(sin(a.mul(13).add(1.7)).mul(0.3)).add(sin(a.mul(31).add(0.4)).mul(0.15)).mul(R.ragged));
   const sky = uSkyRef.mul(mix(R.horizon, R.zenith, smoothstep(0.1, 0.9, r.y)));
   const walls = uStreetRef.mul(mix(0.75, 1.05, smoothstep(-0.02, edge, r.y)));
-  const c = mix(uStreetRef.mul(0.5), mix(walls, sky, smoothstep(edge.sub(0.015), edge.add(0.015), r.y)), smoothstep(-0.06, 0, r.y));
+  const ground: N = uStreetRef.mul(0.5), above: N = smoothstep(-0.06, 0, r.y);
+  const made = mix(ground, mix(walls, sky, smoothstep(edge.sub(0.015), edge.add(0.015), r.y)), above);
+  // The strip of the car's kind of area, where the strips are in.
+  const v: N = float(CS.stripHorizon).mul(r.y.div(max(length(r.xz), 0.001)).div(CS.stripTop).oneMinus());
+  const sample: N = texture(STRIPS.value, vec2(a.div(6.2832).add(0.5), float(1).sub(area.add(clamp(v, 0.01, 0.99)).div(CS.kinds))));
+  stripNodes.push(sample);
+  const street = sample.rgb.mul(luma(uStreetRef)).mul(CS.stripGain);
+  const strip = select(v.greaterThan(1), ground, mix(mix(ground, sky, above), street, sample.a.mul(step(0, v))));
+  const c = select(uStripsOn.greaterThan(0.5), strip, made);
   return c.add(uSunLight.mul(pow(max(dot(r, uSunDir), 0), R.sharp)).mul(R.glint));
 };
 const carCoat = (c: N): N => {

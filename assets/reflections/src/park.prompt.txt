@@ -1,0 +1,7 @@
+$imagegen
+Asset: reflection texture for a game, landscape 3:2, one image
+Request: a large city park in Prague: tall broadleaf trees with dense crowns all round, a gravel path, lawns, the treeline filling the band
+Look: straight-on photograph from the middle of the street, eye height 1.5 m, camera level (no tilt), wide angle; soft even daylight, no hard shadows; realistic, slightly muted colours
+Composition: the horizon (eye level) exactly at the vertical middle of the image; buildings or trees fill the band from the street up to their tops; everything above them is sky
+Sky: completely plain flat pure white (#ffffff), no clouds, no gradient, so it can be cut out
+Constraints: no people, no cars, no text, signs, logos, shop names or recognisable landmarks; no watermark or border

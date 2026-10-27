@@ -48,6 +48,7 @@ import { StopBoard } from './board.ts';
 import { Metro } from './metro.ts';
 import { TramStops } from './tramstops.ts';
 import { Districts } from './districts.ts';
+import { kindAt, loadStrips, setCentre } from './reflections.ts';
 import { TileWorld } from './tiles.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import { groundSamples } from './surface.ts';
@@ -386,6 +387,13 @@ async function main() {
   traffic.busLines = await busLines;
   const pavementDrivers = new PavementDrivers(traffic, seeded);
   const carPool = new CarPool(scene);
+  // What the cars mirror (plan 037): the street of their kind of area, the riverbank where
+  // there's water near (reflections.ts).
+  const square = proj4('EPSG:4326', `+proj=tmerc +lat_0=${lat0} +lon_0=${lon0} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`, [14.4206, 50.0873]) as [number, number];
+  setCentre(square[0], square[1]);
+  const NEAR_WATER: [number, number][] = [[0, 0], [40, 0], [-40, 0], [0, 40], [0, -40]];
+  carPool.area = (x, y) => kindAt(x, y, districts.at(x, y)?.name ?? null, NEAR_WATER.some(([dx, dy]) => !!world.waterAt(x + dx, y + dy)));
+  loadStrips();
   const skids = new Skids(scene);
   const steerGuide = new SteerGuide(scene);
   let held: Held | null = null; // the heading the stick asks of your car, for the guide
