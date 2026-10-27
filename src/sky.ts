@@ -26,15 +26,25 @@ function sunAt(secOfDay: number, dayOfYear: number) {
   return { el, az };
 }
 
-type Mood = { sun: string; sunI: number; sky: string; ground: string; skyI: number; exposure: number };
+type Light = { sun: string; sunI: number; sky: string; skyI: number };
+type Mood = Light & { ground: string; exposure: number; clear?: Light };
 // By the sun's height in degrees. Below the horizon the moon takes over (see update).
+// `clear`: the light under a clear sky, where it differs (mixed in as the clouds clear).
+// Under a clear sky the sky's light is blue: what lies in shade is lit by it alone, so
+// shade is blue-grey (in Google's aerial photo of Náměstí Míru a shaded pavement keeps
+// about 0.4 of the sunlit one's red, 0.5 of its green and 0.7 of its blue). The sun is a
+// little warmer and stronger to make up for it, so that sunlit stone stays as warm and as
+// light. Under clouds the sky's light stays grey.
 const MOODS: [number, Mood][] = [
   [-10, { sun: '#8fa6d8', sunI: 0.5, sky: '#2c3a5c', ground: '#16151c', skyI: 1.0, exposure: 2.03 }],
   [-4, { sun: '#8fa6d8', sunI: 0.0, sky: '#4a4e72', ground: '#2a2230', skyI: 1.45, exposure: 1.96 }],
   [1, { sun: '#ffa060', sunI: 1.8, sky: '#948aa4', ground: '#4c3a34', skyI: 1.3, exposure: 1.82 }],
-  [8, { sun: '#ffaa66', sunI: 3.0, sky: '#b4b2bd', ground: '#6a5444', skyI: 1.1, exposure: 1.69 }],
-  [20, { sun: '#ffd1a0', sunI: 3.4, sky: '#bfc4cc', ground: '#7a6a52', skyI: 1.15, exposure: 1.62 }],
-  [40, { sun: '#fff0dc', sunI: 3.6, sky: '#c9cfd6', ground: '#857a62', skyI: 1.2, exposure: 1.62 }],
+  [8, { sun: '#ffaa66', sunI: 3.0, sky: '#b4b2bd', ground: '#6a5444', skyI: 1.1, exposure: 1.69,
+    clear: { sun: '#ffaa66', sunI: 3.15, sky: '#a2aecb', skyI: 1.0 } }],
+  [20, { sun: '#ffd1a0', sunI: 3.4, sky: '#bfc4cc', ground: '#7a6a52', skyI: 1.15, exposure: 1.62,
+    clear: { sun: '#ffca90', sunI: 3.65, sky: '#93aedc', skyI: 1.0 } }],
+  [40, { sun: '#fff0dc', sunI: 3.6, sky: '#c9cfd6', ground: '#857a62', skyI: 1.2, exposure: 1.62,
+    clear: { sun: '#ffe3c0', sunI: 3.9, sky: '#96b4e6', skyI: 1.02 } }],
 ];
 
 // Under clouds the sky's light is grey by day; at night the clouds glow orange with
@@ -50,6 +60,17 @@ const LIT = [0.12, 0.08, 0.06, 0.05, 0.06, 0.12, 0.25, 0.3, 0.15, 0.1, 0.1, 0.1,
 const ca = new THREE.Color(), cb = new THREE.Color(), cc = new THREE.Color(), seen = new THREE.Color();
 function mix(a: string, b: string, t: number, out: THREE.Color) {
   return out.copy(ca.set(a).convertSRGBToLinear()).lerp(cb.set(b).convertSRGBToLinear(), t).convertLinearToSRGB();
+}
+// A mood's light under so much cloud (0 clear … 1 overcast), into `out`.
+const clearA: Light = { sun: '', sunI: 0, sky: '', skyI: 0 }, clearB: Light = { ...clearA }, lc = new THREE.Color();
+function lightIn(m: Mood, cloud: number, out: Light): Light {
+  if (!m.clear) return m;
+  const k = 1 - cloud;
+  out.sun = `#${mix(m.sun, m.clear.sun, k, lc).getHexString()}`;
+  out.sky = `#${mix(m.sky, m.clear.sky, k, lc).getHexString()}`;
+  out.sunI = THREE.MathUtils.lerp(m.sunI, m.clear.sunI, k);
+  out.skyI = THREE.MathUtils.lerp(m.skyI, m.clear.skyI, k);
+  return out;
 }
 
 // Tone mapping and grading: an extended Reinhard per channel, so bright colours drift
@@ -137,11 +158,13 @@ export class Sky {
     while (i < MOODS.length - 2 && deg > MOODS[i + 1][0]) i++;
     const [d0, a] = MOODS[i], [d1, b] = MOODS[i + 1];
     const t = THREE.MathUtils.clamp((deg - d0) / (d1 - d0), 0, 1);
-    mix(a.sun, b.sun, t, this.sun.color);
-    mix(a.sky, b.sky, t, this.hemi.color);
+    // (The clear sky's light as far as the clouds let it through.)
+    const ac = lightIn(a, w.cloud, clearA), bc = lightIn(b, w.cloud, clearB);
+    mix(ac.sun, bc.sun, t, this.sun.color);
+    mix(ac.sky, bc.sky, t, this.hemi.color);
     mix(a.ground, b.ground, t, this.hemi.groundColor);
-    this.sun.intensity = THREE.MathUtils.lerp(a.sunI, b.sunI, t);
-    this.hemi.intensity = THREE.MathUtils.lerp(a.skyI, b.skyI, t);
+    this.sun.intensity = THREE.MathUtils.lerp(ac.sunI, bc.sunI, t);
+    this.hemi.intensity = THREE.MathUtils.lerp(ac.skyI, bc.skyI, t);
     let exposure = THREE.MathUtils.lerp(a.exposure, b.exposure, t);
 
     // Clouds: the sun hidden (and its shadows faint), the sky's light grey and a
