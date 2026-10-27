@@ -680,3 +680,22 @@ per-pixel cost (cars cover a few per cent of the screen) is not measured directl
 Nearly all of it is main-thread time (js followed the frame time): one more pass
 of three.js over the scene's lists, not GPU work. The second run was on a busier
 machine (higher baselines). The kept setting is under the plan's 1 ms limit.
+
+## Car dents and crazed windows, 27 October 2026
+
+The dents (car.ts `DENT_GLSL`, `CRACKS_GLSL`; webgpu/vehicles.ts) run on every car
+vertex and the crack pattern on every car pixel, dented or not, so the cost doesn't
+depend on how many cars are damaged. Measured on the Pixel 5 over adb, WebGPU, the
+tier's own pixel ratio, High, 14:00, clear: `76b4fed` (before) against `ac73875`
+(the dents), each served from a detached worktree, `--vs`, three pairs a scene,
+then the same with the order reversed. Battery 24.6 → 36.1 °C over the twelve pairs.
+
+| Scene | Before (ms a frame, six runs) | Dents (six runs) | Means |
+|---|---|---|---|
+| stand | 49.4, 42.1, 49.1, 41.9, 54.3, 43.1 | 42.5, 42.2, 51.5, 42.2, 42.5, 43.2 | 46.7 / 44.0 |
+| drive | 86.6, 85.2, 84.2, 86.8, 87.7, 87.5 | 82.8, 86.8, 83.4, 86.3, 87.8, 86.3 | 86.3 / 85.6 |
+
+Same draw calls (90 standing, 155–158 driving). The spread with no code change
+(42–54 ms standing) is far larger than any difference, so the dents cost nothing
+measurable here, which puts them under about 1 ms a frame. One drive in the reversed
+series first failed to get into the car and was retried by the bench.
