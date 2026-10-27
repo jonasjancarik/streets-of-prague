@@ -4,8 +4,8 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, dot, smoothstep, mix, select, sin, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
-import { LAMP_GLOW, CAR_GLOSS, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP } from '../car.ts';
+import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, positionGeometry, materialColor, normalize, dot, smoothstep, mix, select, sin, min, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
+import { LAMP_GLOW, CAR_GLOSS, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP, DENT_STEP, DENT_SHAPE as DS } from '../car.ts';
 import { STRIPS, STRIPS_ON, onStrips } from '../reflections.ts';
 import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_MIX, PROBE_NEAR, PROBE_PREV, onProbe } from '../probe.ts';
 import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from '../shading.ts';
@@ -38,15 +38,56 @@ const swing = (p: N): N => {
 // vertex is part of is packed into `painted`, and the car's lamps into `paint.w` (see
 // LAMP in car.ts): -1 here for a smashed one, 0 off, or how bright.
 const painted: N = attribute('painted', 'float'), paint: N = attribute('paint', 'vec4');
-const lamp: N = floor(painted.mul(0.5).add(0.01));
+const own: N = mod(painted, 16), lampAt: N = floor(own.mul(0.5).add(0.01));
+// (Which lamp, if any, in a varying of its own: `painted` also holds where the vertex is.)
+const lamp: N = lampAt.toVarying('vLamp');
 const tail: N = mod(floor(paint.w.div(32)), 4);
-const smashed: N = mod(floor(paint.w.div(exp2(lamp.sub(1)))), 2).greaterThan(0.5);
-const lit: N = select(lamp.lessThan(0.5), float(0), select(smashed, float(-1),
-  select(lamp.lessThan(2.5), mod(floor(paint.w.div(16)), 2), select(tail.greaterThan(1.5), float(1.5), tail.mul(0.45)))));
+const smashed: N = mod(floor(paint.w.div(exp2(lampAt.sub(1)))), 2).greaterThan(0.5);
+const lit: N = select(lampAt.lessThan(0.5), float(0), select(smashed, float(-1),
+  select(lampAt.lessThan(2.5), mod(floor(paint.w.div(16)), 2), select(tail.greaterThan(1.5), float(1.5), tail.mul(0.45)))));
 // The car's kind of area (reflections.ts) rides along in the same varying, 4 a step.
-const packed: N = lit.add(floor(paint.w.div(AREA_STEP)).mul(4)).toVarying('vLit');
+const packed: N = lit.add(mod(floor(paint.w.div(AREA_STEP)), DENT_STEP / AREA_STEP).mul(4)).toVarying('vLit');
 const area: N = floor(packed.add(1.5).div(4));
 const shine: N = packed.sub(area.mul(4));
+
+// The dents (DENT_GLSL in car.ts): where on the car a vertex is, how crumpled each
+// corner and side is, how far the nose, tail, left and right are pushed in there.
+const dentLevel = (i: number): N => mod(floor(floor(paint.w.div(DENT_STEP)).div(4 ** i)), 4);
+const zone: N = floor(painted.div(16));
+const at: N = vec2(mod(zone, 32).div(15.5).sub(1), float(1).sub(floor(zone.div(32)).div(15.5)));
+const dentAt = (): N => {
+  const l: N = smoothstep(-0.9, 0.7, at.y), r: N = smoothstep(-0.9, 0.7, at.y.negate()), mid: N = float(1).sub(at.x.mul(at.x));
+  const nose: N = smoothstep(0.45, 1, at.x).mul(dentLevel(0).mul(l).add(dentLevel(1).mul(r)));
+  const tail: N = smoothstep(0.45, 1, at.x.negate()).mul(dentLevel(2).mul(l).add(dentLevel(3).mul(r)));
+  const left: N = smoothstep(0.4, 1, at.y).mul(mid).mul(dentLevel(4)), right: N = smoothstep(0.4, 1, at.y.negate()).mul(mid).mul(dentLevel(5));
+  return vec4(nose, tail, left, right);
+};
+const bumpy = (p: N): N => sin(p.x.mul(11).add(p.z.mul(7))).add(sin(p.z.mul(13).sub(p.y.mul(9)).add(2))).mul(0.25).add(0.5);
+const dented = (p: N, d: N): N => {
+  const w = bumpy(p).add(0.5), all = d.x.add(d.y).add(d.z).add(d.w);
+  const q = vec3(p.x.add(d.y.sub(d.x).mul(DS.nose).mul(w)), p.y, p.z.add(d.z.sub(d.w).mul(DS.side).mul(w)));
+  return vec3(q.x, q.y.mul(float(1).sub(all.mul(DS.sag).mul(bumpy(q.zyx)))), q.z);
+};
+const dentNormal = (n: N, p: N, d: N): N =>
+  normalize(n.add(vec3(sin(p.z.mul(17).add(1)), 0, sin(p.x.mul(19))).mul(d.x.add(d.y).add(d.z).add(d.w).mul(DS.tilt))));
+// The colour of a vertex, painted (in the vertex stage, in place of the vertex colour's
+// own varying).
+const tinted: N = attribute('color', 'vec3').mul(mix(vec3(1), paint.rgb, own.sub(lampAt.mul(2)))).toVarying('vTint');
+// Where on a crazed window a point is (x and z on the car), and whether it's crazed.
+const crackAt: N = (() => {
+  const c: N = attribute('color', 'vec3');
+  const end = select(at.x.greaterThan(0.05), max(dentLevel(0), dentLevel(1)), select(at.x.lessThan(-0.05), max(dentLevel(2), dentLevel(3)), float(0)));
+  const side = select(at.y.greaterThan(0.4), dentLevel(4), select(at.y.lessThan(-0.4), dentLevel(5), float(0)));
+  const glassy = own.lessThan(0.5).and(luma(c).lessThan(0.04)).and(c.z.greaterThan(c.x.mul(1.25))).and(max(end, side).greaterThanEqual(2));
+  return vec3(positionGeometry.x, positionGeometry.z, select(glassy, float(1), float(0))).toVarying('vCrack');
+})();
+// The cracks (CRACKS_GLSL in car.ts).
+const cracks = (p: N): N => {
+  const a = p.x.mul(6).add(sin(p.y.mul(17)).mul(0.35)).fract().sub(0.5).abs();
+  const b = p.x.mul(0.5).add(p.y.mul(0.87)).mul(7).add(sin(p.x.mul(23)).mul(0.3)).fract().sub(0.5).abs();
+  const c = p.x.mul(0.5).sub(p.y.mul(0.87)).mul(8).add(sin(p.y.mul(19).add(1)).mul(0.3)).fract().sub(0.5).abs();
+  return smoothstep(0.03, 0.09, min(a, min(b, c))).oneMinus();
+};
 
 // The gloss (CAR_GLOSS in car.ts): the sky and the lamps' light mirrored by what faces up, and
 // more of it by what's seen at a slant; more when wet.
@@ -108,14 +149,18 @@ addPort(/^cars$/, (node) => {
   // (Before the instance's own transform goes on, in setupPosition.)
   node.setupPosition = function (builder: N) {
     shareInstances(builder);
-    const p = swing(positionLocal.xz.sub(hinge.xy)).add(hinge.xy), n = swing(normalLocal.xz);
-    positionLocal.assign(vec3(p.x, positionLocal.y, p.y));
-    normalLocal.assign(vec3(n.x, normalLocal.y, n.y));
+    const d = dentAt(), bent = dented(positionLocal, d), normal = dentNormal(normalLocal, positionGeometry, d);
+    const p = swing(bent.xz.sub(hinge.xy)).add(hinge.xy), n = swing(normal.xz);
+    positionLocal.assign(vec3(p.x, bent.y, p.y));
+    normalLocal.assign(vec3(n.x, normal.y, n.y));
     return proto.setupPosition.call(this, builder);
   };
+  node.vertexColors = false; // the colour node is the vertex colour, painted
+  node.colorNode = vec4(vec3(materialColor).mul(tinted), 1);
   node.setupDiffuseColor = function (builder: N) {
     proto.setupDiffuseColor.call(this, builder);
-    diffuseColor.rgb.mulAssign(mix(vec3(1), paint.rgb, painted.sub(lamp.mul(2))));
+    const crazed = mix(mix(diffuseColor.rgb, vec3(0.6), DS.milk), vec3(...DS.crack), cracks(crackAt.xy));
+    diffuseColor.rgb.assign(mix(diffuseColor.rgb, crazed, crackAt.z));
     diffuseColor.rgb.assign(select(shine.lessThan(-0.5), vec3(0.05, 0.05, 0.055), diffuseColor.rgb));
     const up = dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);
     const cover = smoothstep(0.75, 0.95, up).mul(smoothstep(0.1, 0.6, uSnow)).mul(0.6);
@@ -123,7 +168,7 @@ addPort(/^cars$/, (node) => {
     diffuseColor.rgb.mulAssign(mix(1, CAR_GLOSS.darker, uWet.mul(carTop())));
   };
   glow(node, () => Fn(() => carCoat(diffuseColor.rgb))());
-  glow(node, () => select(lamp.lessThan(0.5), vec3(0), vertexColor().rgb).mul(max(shine, 0)).mul(LAMP_GLOW));
+  glow(node, () => select(lamp.lessThan(0.5), vec3(0), tinted).mul(max(shine, 0)).mul(LAMP_GLOW));
   lampLit(node);
 });
 

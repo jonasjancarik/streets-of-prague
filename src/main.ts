@@ -1207,7 +1207,7 @@ async function main() {
     const [lon, lat] = dev.toLonLat(who.x, who.y);
     return {
       v: 1, area: AREA, at: Date.now(), lat, lon, heading: ((((90 - (who.h * 180) / Math.PI) % 360) + 360) % 360), street,
-      car: c ? { type: c.type, paint: c.paint, box: c.courier, variant: c.modelName, damage: c.damage, radio: c.radio, broken: c.broken, ram: c.ram } : null,
+      car: c ? { type: c.type, paint: c.paint, box: c.courier, variant: c.modelName, damage: c.damage, radio: c.radio, broken: c.broken, crush: [...c.crush], ram: c.ram } : null,
       money: wallet.balance, ticket: wallet.held, health: health.value, heat: police.heat,
       clock: clock.t, season: season.day, weather: { kind: weather.kind, fixed: weather.fixed },
     };
@@ -1246,6 +1246,7 @@ async function main() {
     car.radio = s.car.radio;
     if (s.car.ram) car.armour();
     car.broken = s.car.broken ?? 0;
+    if (s.car.crush) car.crush = s.car.crush.map((v) => Math.max(0, Math.min(3, v)));
     for (let i = loose.length - 1; i >= 0; i--) if (Math.hypot(loose[i].x - car.x, loose[i].y - car.y) < 5) loose.splice(i, 1);
     car.mode = 'loose';
     loose.push(car);

@@ -21,7 +21,7 @@ export interface SaveData {
   // as the map's local metres, so a save survives a change to the map's origin.
   lat: number; lon: number; heading: number;
   street: string | null;
-  car: { type: string; paint: string; box?: string; variant: string | null; damage: number; radio?: number; broken?: number; ram?: boolean } | null;
+  car: { type: string; paint: string; box?: string; variant: string | null; damage: number; radio?: number; broken?: number; crush?: number[]; ram?: boolean } | null;
   money: number;
   ticket: { from: number; minutes: number } | null;
   health: number;
@@ -45,6 +45,7 @@ function carData(value: unknown) {
     && textOrNull(value.variant) && num(value.damage)
     && (value.box === undefined || typeof value.box === 'string')
     && optionalNumber(value.radio) && optionalNumber(value.broken)
+    && (value.crush === undefined || (Array.isArray(value.crush) && value.crush.length === 6 && value.crush.every(num)))
     && (value.ram === undefined || typeof value.ram === 'boolean'));
 }
 

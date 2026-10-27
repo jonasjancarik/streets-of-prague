@@ -394,6 +394,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
 
     // Sets a car on fire (a parked one burns for a minute or so before it blows up, the one
     // you're driving for a few seconds).
+    // Crumples a car where a blow `along` and `left` of its middle (metres) would land, by
+    // `levels` (see DENT in car.ts).
+    dent(c: Car, along: number, left: number, levels = 3) { c.dent(along, left, levels); return [...c.crush]; },
     ignite(c: Car) {
       c.damage = Math.max(c.damage, 95);
       g.fires.check(c);
@@ -414,6 +417,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       return g.traffic.agents.map((k) => k.car).filter((c) => !c.two && (!roomy || room(c))).sort((a, b) => Math.hypot(a.x - m.x, a.y - m.y) - Math.hypot(b.x - m.x, b.y - m.y))[0] ?? null;
     },
     driven(c: Car) { return g.traffic.agents.some((k) => k.car === c); },
+    // Everything driving in traffic, with its route (and `kerb` while up on the pavement).
+    trafficAgents() { return g.traffic.agents; },
     fleeing(c: Car) { return g.crowd.people.filter((p) => p.state === 'flee' && Math.hypot(p.x - c.x, p.y - c.y) < 16).length; },
     // How a car's fire and the brigade's call to it stand.
     fire(c: Car) {
