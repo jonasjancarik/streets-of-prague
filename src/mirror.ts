@@ -24,6 +24,15 @@ export const MIRROR_K = { value: 0.06 };
 export const MIRROR_BRIGHT = { value: new THREE.Vector2(0.3, 0.5) };
 
 export const mirrored = <T extends THREE.Object3D>(o: T) => { o.layers.enable(MIRROR_LAYER); return o; };
+// A flat glow facing up, added to what's there: seen from below in the mirror, and added to
+// the colour only, so that the mirror's alpha still says where something solid covers the sky.
+export function mirroredGlow(o: THREE.Mesh) {
+  mirrored(o);
+  Object.assign(o.material as THREE.Material, {
+    side: THREE.DoubleSide, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation,
+    blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+  });
+}
 
 const cam = new THREE.PerspectiveCamera();
 cam.layers.set(MIRROR_LAYER);

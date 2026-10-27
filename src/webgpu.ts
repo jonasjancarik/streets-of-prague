@@ -285,10 +285,8 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo 
     // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
     emissive: Fn(() => {
       const l = lampLight(slope ? positionWorld.add(vec3(slope.x, 0, slope.y).mul(6)) : positionWorld, normalView).toVar();
-      const mirror = id !== 10 && !sheltered;
-      // (Under the mirror, the lamps' own reflections take the place of the spot under each.)
-      const spot = l.mul(smoothstep(LAMP_MIRROR[0], LAMP_MIRROR[1], dot(l, vec3(0.3, 0.59, 0.11))).mul(0.85));
-      const e = g.rgb.mul(l).add((mirror ? mirrorOf(g.a, timeOf(time)).add(spot.mul(uMirrorOn.oneMinus())) : uSkyRef.add(spot)).mul(g.a));
+      const sky = id !== 10 && !sheltered ? mirrorOf(g.a, timeOf(time)) : uSkyRef;
+      const e = g.rgb.mul(l).add(sky.add(l.mul(smoothstep(LAMP_MIRROR[0], LAMP_MIRROR[1], dot(l, vec3(0.3, 0.59, 0.11))).mul(0.85))).mul(g.a));
       return slope ? e.add(waterShine(positionWorld, wp, slope, timeOf(time), uSkyRef, l)) : e;
     })(),
     normal: slope ? transformNormalToView(waveNormal(slope)) : null,

@@ -1,6 +1,6 @@
 import { dataUrl } from './data.ts';
 import * as THREE from 'three';
-import { mirrored } from './mirror.ts';
+import { mirrored, mirroredGlow } from './mirror.ts';
 import { fetchBinary } from './terrain.ts';
 import { CLOUD, CLOUD_MAP, CLOUD_GLSL } from './clouds.ts';
 import { posts, fall, type Post } from './posts.ts';
@@ -506,13 +506,7 @@ export class Lamps {
     this.glows.count = 0;
     this.glows.frustumCulled = false;
     this.glows.renderOrder = 5;
-    // Puddles mirror the lit heads, seen from below there.
-    // Added to the colour only, so that the mirror's alpha still says where something solid covers the sky.
-    mirrored(this.glows);
-    Object.assign(this.glows.material as THREE.Material, {
-      side: THREE.DoubleSide, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation,
-      blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
-    });
+    mirroredGlow(this.glows);
     // The cables of the hung lamps near the camera: HALVES lines a side, two sides each.
     const cableGeometry = new THREE.BufferGeometry();
     cableGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_HUNG * 2 * HALVES * 2 * 3), 3));
