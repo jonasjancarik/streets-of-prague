@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SKY_REF, SUN_DIR, SUN_LIGHT, WINDOWS } from './shading.ts';
+import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT, WINDOWS } from './shading.ts';
 import { CLEAR, MIST } from './weather.ts';
 import { updateClouds } from './clouds.ts';
 import type { Conditions } from './weather.ts';
@@ -190,6 +190,9 @@ export class Sky {
     WINDOWS.value = THREE.MathUtils.lerp(LIT[hour], LIT[(hour + 1) % 24], (sec % 3600) / 3600) * this.dark;
     // Puddles mirror the sky above.
     SKY_REF.value.copy(this.hemi.color).multiplyScalar(this.hemi.intensity * 0.06 * (1 - night * 0.8));
+    // Cars mirror the street round them under the sky: its walls and trees, lit like the
+    // ground, darker than the sky (car.ts).
+    STREET_REF.value.copy(this.hemi.groundColor).lerp(this.hemi.color, 0.25).multiplyScalar(this.hemi.intensity * 0.06 * 0.55 * (1 - night * 0.8));
 
     // Fog, measured from the camera: `amount` of it on the ground right below, more
     // further off, less on the roofs.

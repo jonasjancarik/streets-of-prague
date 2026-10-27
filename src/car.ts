@@ -9,7 +9,7 @@ import type { Point2 } from './map/geo.ts';
 import { posts } from './posts.ts';
 import { fences } from './fences.ts';
 import { lampLit, LAMP_ON } from './lamps.ts';
-import { SNOW, STREET_SNOW, WET, SKY_REF } from './shading.ts';
+import { SNOW, STREET_SNOW, WET, SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from './shading.ts';
 import { send, sendInstances } from './gpu.ts';
 
 export interface CarSpec {
@@ -645,15 +645,38 @@ material.shadowSide = THREE.DoubleSide;
 // The glass mirrors `glass` times as much as the paint: from above, a windscreen and a rear
 // window that catch the sky are what make a car read as a car, not a dark slab.
 export const CAR_GLOSS = { dry: 0.25, sky: 0.5, lamps: 0.12, rim: [0.5, 0.8], rimSky: 4, rimLamps: 0.3, darker: 0.85, glass: 3.5 };
+// What the paint and glass mirror (CAR_MIRROR 1; 0 is the plain tint of the sky above, for
+// comparing): a street round the car, looked up by the direction each point reflects (plan
+// 037). Above the street's walls the sky, lighter towards the horizon, with a glint where the
+// sun is; along the horizon a darker band for the buildings and trees, its top edge uneven;
+// below it the street. `top` is how much a surface facing the camera mirrors, `side` how
+// much more one seen at a slant does, `wet` how much more of both in the rain; the band's
+// top is `edge` (the sine of its height) give or take `ragged`.
+export const CAR_MIRROR = { value: 1 };
+export const CAR_REFLECT = { top: 0.32, side: 2.4, wet: 1.5, edge: 0.17, ragged: 0.09, horizon: 2.4, zenith: 1.3, glint: 0.08, sharp: 400 };
+const R = CAR_REFLECT;
 const COAT_GLSL = /* glsl */ `
-uniform float uWet;
-uniform vec3 uSkyRef;
+uniform float uWet, uMirror;
+uniform vec3 uSkyRef, uStreetRef, uSunDir, uSunLight;
 float carTop(vec3 n) { return smoothstep(.35, .9, dot(n, (viewMatrix * vec4(0., 1., 0., 0.)).xyz)); }
+// The street round the car, seen in the direction r (world).
+vec3 carStreet(vec3 r) {
+  float a = atan(r.z, r.x);
+  float edge = ${R.edge.toFixed(3)} + ${R.ragged.toFixed(3)} * (.55 * sin(a * 5.) + .3 * sin(a * 13. + 1.7) + .15 * sin(a * 31. + .4));
+  vec3 sky = uSkyRef * mix(${R.horizon.toFixed(2)}, ${R.zenith.toFixed(2)}, smoothstep(.1, .9, r.y));
+  vec3 walls = uStreetRef * mix(.75, 1.05, smoothstep(-.02, edge, r.y));
+  vec3 c = mix(uStreetRef * .5, mix(walls, sky, smoothstep(edge - .015, edge + .015, r.y)), smoothstep(-.06, 0., r.y));
+  return c + uSunLight * pow(max(dot(r, uSunDir), 0.), ${R.sharp.toFixed(1)}) * ${R.glint.toFixed(3)};
+}
 vec3 carCoat(vec3 c, vec3 n, vec3 v, vec3 lamp) {
   float glass = dot(c, vec3(.3, .59, .11)) < .04 && c.b > c.r * 1.25 ? ${CAR_GLOSS.glass.toFixed(2)} : 1.;
   float coat = mix(${CAR_GLOSS.dry.toFixed(2)}, 1., uWet) * glass * carTop(n);
   float slant = 1. - max(dot(n, v), 0.), rim = slant * slant * slant * slant * mix(${CAR_GLOSS.rim[0].toFixed(2)}, ${CAR_GLOSS.rim[1].toFixed(2)}, uWet) * glass;
-  return (uSkyRef * ${CAR_GLOSS.sky.toFixed(1)} + lamp * ${CAR_GLOSS.lamps.toFixed(2)}) * coat + (uSkyRef * ${CAR_GLOSS.rimSky.toFixed(1)} + lamp * ${CAR_GLOSS.rimLamps.toFixed(2)}) * rim;
+  vec3 tint = uSkyRef * ${CAR_GLOSS.sky.toFixed(1)} * coat + uSkyRef * ${CAR_GLOSS.rimSky.toFixed(1)} * rim;
+  vec3 r = (vec4(reflect(-v, n), 0.) * viewMatrix).xyz;
+  float s4 = slant * slant * slant * slant;
+  vec3 mirrored = carStreet(r) * (${R.top.toFixed(2)} + ${R.side.toFixed(2)} * s4) * glass * mix(1., ${R.wet.toFixed(2)}, uWet);
+  return mix(tint, mirrored, uMirror) + lamp * (${CAR_GLOSS.lamps.toFixed(2)} * coat + ${CAR_GLOSS.rimLamps.toFixed(2)} * rim);
 }`;
 // Snow settles on the roofs and bonnets (weather.ts).
 material.onBeforeCompile = (sh) => {
@@ -685,7 +708,7 @@ if (lamp > .5) {
     .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal.xz = swing(objectNormal.xz);')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
   sh.uniforms.uSnow = SNOW;
-  Object.assign(sh.uniforms, { uWet: WET, uSkyRef: SKY_REF });
+  Object.assign(sh.uniforms, { uWet: WET, uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uMirror: CAR_MIRROR });
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\n${COAT_GLSL}`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * max(vLit, 0.) * ${LAMP_GLOW.toFixed(2)};`)

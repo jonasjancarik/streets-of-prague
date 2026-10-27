@@ -549,6 +549,9 @@ export const BARE = { value: 0 };
 // turned, how much the fruit trees are in flower, and how fresh the new leaves are.
 export const SEASON = { value: new THREE.Vector4(0, 0, 0, 0) };
 export const SKY_REF = { value: new THREE.Color(0, 0, 0) };
+// What a car's paint mirrors low down, where a real street has its buildings and trees:
+// in the same light as SKY_REF, darker (sky.ts).
+export const STREET_REF = { value: new THREE.Color(0, 0, 0) };
 // The river and ponds (webgpu.ts): waves that mirror the sky, the sun and the lamps
 // (graphics.ts: 1 on, 0 the plain water; a setting, and never on Lowest), and for them where the sun or the
 // moon stands and how bright it is (sky.ts).

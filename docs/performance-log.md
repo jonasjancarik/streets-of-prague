@@ -648,3 +648,22 @@ is ready that much later; its drawing waits for the workers and the sky view
 anyway, so arrival didn't change. The intervals over 100 ms that are left are
 mostly the idle-thread kind. On the M5 (CPU slowed 4×): longest tile task 53 →
 5 ms, arrival median 113 → 112 ms.
+
+## Cars mirror a street (plan 037 phase 1), 27 October 2026
+
+The car paint and glass shader (car.ts `carStreet`/`carCoat`, webgpu/vehicles.ts)
+looks up a made-up street by the reflected direction: sky, a ragged band of walls,
+ground and a sun glint. `--ab` can't separate it (`CAR_MIRROR` only blends two
+results that are both worked out), so the four changed files were swapped on the
+one dev server between runs, old and new in turn, three rounds, stand and drive
+at 2× High on the M5:
+
+| Round | Old stand / drive (ms a frame) | New stand / drive |
+|---|---|---|
+| 1 (seven Codex jobs starting) | 4.9 / 8.3 | 6.7 / 11.2 |
+| 2 | 6.9 / 10.1 | 6.7 / 9.0 |
+| 3 | 5.9 / 8.8 | 6.0 / 9.1 |
+
+The same draw calls and triangles. Rounds 2 and 3 are within noise; round 1 is the
+machine getting busy, not the shader. No GPU timer on this machine, so the
+per-pixel cost (cars cover a few per cent of the screen) is not measured directly.

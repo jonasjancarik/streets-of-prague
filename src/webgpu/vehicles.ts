@@ -4,12 +4,12 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, diffuseColor, positionLocal, positionWorld, positionViewDirection, normalLocal, dot, smoothstep, mix, select, sin, cos, max, floor, mod, exp2 } from 'three/tsl';
-import { LAMP_GLOW, CAR_GLOSS } from '../car.ts';
-import { SKY_REF } from '../shading.ts';
+import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, dot, smoothstep, mix, select, sin, cos, max, floor, mod, exp2, reflect, atan, pow, uniform } from 'three/tsl';
+import { LAMP_GLOW, CAR_GLOSS, CAR_MIRROR, CAR_REFLECT as R } from '../car.ts';
+import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit, lampLight, uLampOn } from './lamps.ts';
 import { shareInstances } from './trees.ts';
-import { type N, addPort, uSnow, uWet, followColor } from './common.ts';
+import { type N, addPort, uSnow, uWet, follow, followColor } from './common.ts';
 
 const luma = (c: N) => dot(c, vec3(0.3, 0.59, 0.11));
 
@@ -44,15 +44,34 @@ const shine: N = select(lamp.lessThan(0.5), float(0), select(smashed, float(-1),
 
 // The gloss (CAR_GLOSS in car.ts): the sky and the lamps' light mirrored by what faces up, and
 // more of it by what's seen at a slant; more when wet.
-const uSkyRef: N = followColor(SKY_REF);
+// And what they mirror (CAR_REFLECT in car.ts): the street round the car, the sky above it.
+const uSkyRef: N = followColor(SKY_REF), uStreetRef: N = followColor(STREET_REF), uSunLight: N = followColor(SUN_LIGHT);
+const uMirror: N = follow(CAR_MIRROR);
+const uSunDir: N = (() => {
+  const u = uniform(SUN_DIR.value.clone()).setGroup(renderGroup);
+  u.onRenderUpdate(() => { u.value.copy(SUN_DIR.value); return u.value; });
+  return u;
+})();
 const carTop = (): N => smoothstep(0.35, 0.9, dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz));
+const carStreet = (r: N): N => {
+  const a = atan(r.z, r.x);
+  const edge = float(R.edge).add(sin(a.mul(5)).mul(0.55).add(sin(a.mul(13).add(1.7)).mul(0.3)).add(sin(a.mul(31).add(0.4)).mul(0.15)).mul(R.ragged));
+  const sky = uSkyRef.mul(mix(R.horizon, R.zenith, smoothstep(0.1, 0.9, r.y)));
+  const walls = uStreetRef.mul(mix(0.75, 1.05, smoothstep(-0.02, edge, r.y)));
+  const c = mix(uStreetRef.mul(0.5), mix(walls, sky, smoothstep(edge.sub(0.015), edge.add(0.015), r.y)), smoothstep(-0.06, 0, r.y));
+  return c.add(uSunLight.mul(pow(max(dot(r, uSunDir), 0), R.sharp)).mul(R.glint));
+};
 const carCoat = (c: N): N => {
   const lamp = lampLight(positionWorld, normalView);
   const glass = select(luma(c).lessThan(0.04).and(c.z.greaterThan(c.x.mul(1.25))), float(CAR_GLOSS.glass), float(1));
   const coat = mix(CAR_GLOSS.dry, 1, uWet).mul(glass).mul(carTop());
   const slant = max(dot(normalView, positionViewDirection), 0).oneMinus();
-  const rim = slant.mul(slant).mul(slant).mul(slant).mul(mix(CAR_GLOSS.rim[0], CAR_GLOSS.rim[1], uWet)).mul(glass);
-  return uSkyRef.mul(CAR_GLOSS.sky).add(lamp.mul(CAR_GLOSS.lamps)).mul(coat).add(uSkyRef.mul(CAR_GLOSS.rimSky).add(lamp.mul(CAR_GLOSS.rimLamps)).mul(rim));
+  const s4 = slant.mul(slant).mul(slant).mul(slant);
+  const rim = s4.mul(mix(CAR_GLOSS.rim[0], CAR_GLOSS.rim[1], uWet)).mul(glass);
+  const tint = uSkyRef.mul(CAR_GLOSS.sky).mul(coat).add(uSkyRef.mul(CAR_GLOSS.rimSky).mul(rim));
+  const r = cameraWorldMatrix.mul(vec4(reflect(positionViewDirection.negate(), normalView), 0)).xyz;
+  const mirrored = carStreet(r).mul(s4.mul(R.side).add(R.top)).mul(glass).mul(mix(1, R.wet, uWet));
+  return mix(tint, mirrored, uMirror).add(lamp.mul(coat.mul(CAR_GLOSS.lamps).add(rim.mul(CAR_GLOSS.rimLamps))));
 };
 
 addPort(/^cars$/, (node) => {
