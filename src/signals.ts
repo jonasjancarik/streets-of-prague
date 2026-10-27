@@ -111,10 +111,10 @@ export class Signals {
     const lamp = new THREE.SphereGeometry(0.105, 10, 6).scale(1, 1, 0.8).translate(0, 0, 0.23);
     this.poles = new THREE.InstancedMesh(pole, lit(new THREE.MeshLambertMaterial({ color: '#3b3d3f' }), 'signal-pole'), MAX_HEADS);
     this.boxes = new THREE.InstancedMesh(box, lit(new THREE.MeshLambertMaterial({ color: '#23251f' }), 'signal-head'), MAX_HEADS);
-    // The lit lamp's beam on the ground, a wedge widening towards the traffic it faces.
+    // The lit lamp's spill on the ground just in front of the pole, fading out within a couple of metres.
     const beam = new THREE.BufferGeometry();
-    beam.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.3, -0.25, 0, 0.3, 0.25, 0, 0.3, -0.9, 0, 3, 0.9, 0, 3, -1.8, 0, 6.5, 1.8, 0, 6.5], 3));
-    beam.setAttribute('color', new THREE.Float32BufferAttribute([1, 1, 1, 1, 1, 1, 1, 1, 1, .3, .3, .3, .3, .3, .3, 0, 0, 0, 0, 0, 0], 3));
+    beam.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.3, -0.2, 0, 0.3, 0.2, 0, 0.3, -0.5, 0, 1.1, 0.5, 0, 1.1, -0.9, 0, 2.2, 0.9, 0, 2.2], 3));
+    beam.setAttribute('color', new THREE.Float32BufferAttribute([1, 1, 1, 1, 1, 1, 1, 1, 1, .4, .4, .4, .4, .4, .4, 0, 0, 0, 0, 0, 0], 3));
     beam.setIndex([0, 3, 1, 1, 3, 4, 1, 4, 2, 3, 5, 4, 4, 5, 6]);
     this.beams = new THREE.InstancedMesh(beam, new THREE.MeshBasicMaterial({
       vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false,
@@ -133,7 +133,7 @@ export class Signals {
     this.walkBoxes = new THREE.InstancedMesh(walkBox, this.boxes.material, MAX_HEADS);
     this.walkLamps = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.22, 0.03).translate(0, 0, 0.21), new THREE.MeshBasicMaterial(), MAX_HEADS * 2);
     this.walkLamps.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 2 * 3), 3);
-    // The lit lamp's glow, flat and larger than life, so it shows from above; brighter at night.
+    // The lit lamp's glow, flat, a little over a metre across so the colour reads from above; brighter at night.
     this.glows = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), glowBy ? glowBy() : new THREE.ShaderMaterial({
       uniforms: { uOn: LAMP_ON },
       vertexShader: /* glsl */ `
@@ -143,7 +143,7 @@ export class Signals {
         uniform float uOn; varying vec2 vUv; varying vec3 vC;
         void main() {
           float d = length(vUv), f = smoothstep(1., 0., d);
-          gl_FragColor = vec4(vC * (f * f * (.8 + uOn) + smoothstep(.3, .2, d) * .5), 1.);
+          gl_FragColor = vec4(vC * (f * f * (.9 + .5 * uOn) + smoothstep(.3, .2, d) * .9), 1.);
         }`,
       blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
     }), MAX_HEADS);
@@ -320,7 +320,7 @@ export class Signals {
         d.position.setFromMatrixPosition(m);
         d.position.y += 0.2;
         d.rotation.set(0, 0, 0);
-        d.scale.setScalar(1.6);
+        d.scale.setScalar(0.8);
         d.updateMatrix();
         d.scale.setScalar(1);
         this.glows.setMatrixAt(i, d.matrix);
@@ -340,7 +340,7 @@ export class Signals {
       d.position.setFromMatrixPosition(m);
       d.position.y += 0.2;
       d.rotation.set(0, 0, 0);
-      d.scale.setScalar(2.6);
+      d.scale.setScalar(1.2);
       d.updateMatrix();
       d.scale.setScalar(1);
       this.glows.setMatrixAt(i, d.matrix);
@@ -349,7 +349,7 @@ export class Signals {
     // The beams of the lights drawn again, or all of them at a new brightness.
     const same = this.beamOn === LAMP_ON.value, from = same ? lo : 0, to = same ? carsTo : this.cars;
     this.beamOn = LAMP_ON.value;
-    for (let i = from; i < to; i++) this.beams.setColorAt(i, this.c.copy(COLOURS[LIT[shown[i]]]).multiplyScalar(0.22 + 0.3 * LAMP_ON.value));
+    for (let i = from; i < to; i++) this.beams.setColorAt(i, this.c.copy(COLOURS[LIT[shown[i]]]).multiplyScalar(0.06 + 0.16 * LAMP_ON.value));
     this.glows.count = this.near.length;
     this.beams.count = this.cars;
     mark(this.glows.instanceMatrix, lo, hi);

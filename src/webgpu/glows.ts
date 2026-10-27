@@ -103,7 +103,7 @@ setGlintShade(() => {
 
 setSignalGlow(() => additive(() => {
   const d = length(uv().mul(2).sub(1)), f = smoothDown(1, 0, d);
-  const g = f.mul(f).mul(uLampOn.add(0.8)).add(smoothDown(0.3, 0.2, d).mul(0.5));
+  const g = f.mul(f).mul(uLampOn.mul(0.5).add(0.9)).add(smoothDown(0.3, 0.2, d).mul(0.9));
   return vec4(unmap(instanceColor.mul(g), true), 1);
 }));
 
