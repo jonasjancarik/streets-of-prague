@@ -8,7 +8,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
-import { WebGPURenderer, MeshLambertNodeMaterial } from 'three/webgpu';
+import { WebGPURenderer, MeshLambertNodeMaterial, CubeRenderTarget } from 'three/webgpu';
+import { PROBE_OPTIONS, PROBE_SIZE, setProbeTarget } from './probe.ts';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, clamp, transformNormalToView,
@@ -42,6 +43,8 @@ const hedgeShade = select(hedgeV.lessThan(1.5), mix(0.55, 1.0, smoothstep(0.0, 1
   float(1).sub(smoothstep(0.12, 0.3, abs(fract(hedgeV).sub(0.5))).mul(0.3)));
 const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(hedgeShade), 1);
 addPort(/^hedge-season$/, (node) => { node.colorNode = hedgeColour; });
+// The cars' probe of the street (probe.ts) needs WebGPU's kind of cube target.
+setProbeTarget(new CubeRenderTarget(PROBE_SIZE, PROBE_OPTIONS) as never);
 function pAsphalt(c0: N, p: N) {
   const c = c0.mul(fbm(p.mul(0.3)).mul(0.18).add(0.9)).toVar();
   c.mulAssign(mix(1, 0.9, smoothstep(0.62, 0.66, fbm(p.mul(0.07).add(3)))));

@@ -12,6 +12,7 @@ import { lampLit, LAMP_ON } from './lamps.ts';
 import { SNOW, STREET_SNOW, WET, SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from './shading.ts';
 import { send, sendInstances } from './gpu.ts';
 import { KINDS, STRIPS, STRIPS_ON } from './reflections.ts';
+import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_NEAR } from './probe.ts';
 
 export interface CarSpec {
   L: number; W: number; H: number; mass: number; accel: number; vmax: number;
@@ -667,9 +668,13 @@ const COAT_GLSL = /* glsl */ `
 uniform float uWet, uMirror, uStripsOn;
 uniform vec3 uSkyRef, uStreetRef, uSunDir, uSunLight;
 uniform sampler2D uStrips;
+uniform samplerCube uProbe;
+uniform vec4 uProbeAt;
+uniform vec2 uProbeNear;
+uniform float uProbeK;
 float carTop(vec3 n) { return smoothstep(.35, .9, dot(n, (viewMatrix * vec4(0., 1., 0., 0.)).xyz)); }
 // The street round the car, seen in the direction r (world), in the car's kind of area.
-vec3 carStreet(vec3 r, float area) {
+vec3 carStreet(vec3 r, float area, vec3 p) {
   float a = atan(r.z, r.x);
   float edge = ${R.edge.toFixed(3)} + ${R.ragged.toFixed(3)} * (.55 * sin(a * 5.) + .3 * sin(a * 13. + 1.7) + .15 * sin(a * 31. + .4));
   vec3 sky = uSkyRef * mix(${R.horizon.toFixed(2)}, ${R.zenith.toFixed(2)}, smoothstep(.1, .9, r.y));
@@ -686,16 +691,22 @@ vec3 carStreet(vec3 r, float area) {
     c = mix(mix(ground, sky, above), street, v > 1. ? 0. : s.a);
     c = v > 1. ? ground : c;
   }
+  // On Ultra, near the middle of the view: the real street (probe.ts).
+  if (uProbeAt.w > .5) {
+    float w = 1. - smoothstep(uProbeNear.y, uProbeNear.x, distance(p.xz, uProbeAt.xz));
+    vec4 m = textureCube(uProbe, r);
+    c = mix(c, m.rgb * uProbeK, m.a * w);
+  }
   return c + uSunLight * pow(max(dot(r, uSunDir), 0.), ${R.sharp.toFixed(1)}) * ${R.glint.toFixed(3)};
 }
-vec3 carCoat(vec3 c, vec3 n, vec3 v, vec3 lamp, float area) {
+vec3 carCoat(vec3 c, vec3 n, vec3 v, vec3 lamp, float area, vec3 p) {
   float glass = dot(c, vec3(.3, .59, .11)) < .04 && c.b > c.r * 1.25 ? ${CAR_GLOSS.glass.toFixed(2)} : 1.;
   float coat = mix(${CAR_GLOSS.dry.toFixed(2)}, 1., uWet) * glass * carTop(n);
   float slant = 1. - max(dot(n, v), 0.), rim = slant * slant * slant * slant * mix(${CAR_GLOSS.rim[0].toFixed(2)}, ${CAR_GLOSS.rim[1].toFixed(2)}, uWet) * glass;
   vec3 tint = uSkyRef * ${CAR_GLOSS.sky.toFixed(1)} * coat + uSkyRef * ${CAR_GLOSS.rimSky.toFixed(1)} * rim;
   vec3 r = (vec4(reflect(-v, n), 0.) * viewMatrix).xyz;
   float s4 = slant * slant * slant * slant;
-  vec3 mirrored = carStreet(r, area) * (${R.top.toFixed(2)} + ${R.side.toFixed(2)} * s4) * glass * mix(1., ${R.wet.toFixed(2)}, uWet);
+  vec3 mirrored = carStreet(r, area, p) * (${R.top.toFixed(2)} + ${R.side.toFixed(2)} * s4) * glass * mix(1., ${R.wet.toFixed(2)}, uWet);
   return mix(tint, mirrored, uMirror) + lamp * (${CAR_GLOSS.lamps.toFixed(2)} * coat + ${CAR_GLOSS.rimLamps.toFixed(2)} * rim);
 }`;
 // Snow settles on the roofs and bonnets (weather.ts).
@@ -729,7 +740,7 @@ vLit += 4. * floor(paint.w / ${AREA_STEP}.);`)
     .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nobjectNormal.xz = swing(objectNormal.xz);')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.xz = hinge.xy + swing(transformed.xz - hinge.xy);');
   sh.uniforms.uSnow = SNOW;
-  Object.assign(sh.uniforms, { uWet: WET, uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uMirror: CAR_MIRROR, uStrips: STRIPS, uStripsOn: STRIPS_ON });
+  Object.assign(sh.uniforms, { uWet: WET, uSkyRef: SKY_REF, uStreetRef: STREET_REF, uSunDir: SUN_DIR, uSunLight: SUN_LIGHT, uMirror: CAR_MIRROR, uStrips: STRIPS, uStripsOn: STRIPS_ON, uProbe: PROBE_MAP, uProbeAt: PROBE_AT, uProbeNear: PROBE_NEAR, uProbeK: PROBE_K });
   sh.fragmentShader = sh.fragmentShader
     .replace('#include <common>', `#include <common>\nuniform float uSnow;\nvarying float vLit;\n${COAT_GLSL}`)
     .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -742,7 +753,7 @@ vLit += 4. * floor(paint.w / ${AREA_STEP}.);`)
   }
   vec3 coatC = diffuseColor.rgb;
   diffuseColor.rgb *= mix(1., ${CAR_GLOSS.darker.toFixed(2)}, uWet * carTop(normal));`)
-    .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += carCoat(coatC, normal, normalize(vViewPosition), lampLightOn(vLampW, normal), area);');
+    .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n  reflectedLight.directDiffuse += carCoat(coatC, normal, normalize(vViewPosition), lampLightOn(vLampW, normal), area, cameraPosition + (vec4(-vViewPosition, 0.) * viewMatrix).xyz);');
 };
 material.customProgramCacheKey = () => 'cars';
 const depthMaterial = new THREE.MeshDepthMaterial();
@@ -1304,6 +1315,9 @@ export class CarPool {
     this.meshes.set(key, pages);
     return mesh;
   }
+
+  // Every page of every body (for the probe to leave out: probe.ts).
+  *allMeshes() { for (const pages of this.meshes.values()) yield* pages; }
 
   private areaOf(c: Car) {
     if (!this.area) return 0;

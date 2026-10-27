@@ -4,9 +4,10 @@
 // the 'cars', 'trams', 'funicular' and 'boats' materials (see addPort).
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, dot, smoothstep, mix, select, sin, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, length, clamp, step } from 'three/tsl';
+import { Fn, float, vec2, vec3, vec4, attribute, vertexColor, normalView, cameraViewMatrix, cameraWorldMatrix, diffuseColor, renderGroup, positionLocal, positionWorld, positionViewDirection, normalLocal, dot, smoothstep, mix, select, sin, cos, max, floor, mod, exp2, reflect, atan, pow, uniform, texture, cubeTexture, length, clamp, step, distance } from 'three/tsl';
 import { LAMP_GLOW, CAR_GLOSS, CAR_MIRROR, CAR_REFLECT as R, CAR_STRIPS as CS, AREA_STEP } from '../car.ts';
 import { STRIPS, STRIPS_ON, onStrips } from '../reflections.ts';
+import { PROBE_AT, PROBE_K, PROBE_MAP, PROBE_NEAR } from '../probe.ts';
 import { SKY_REF, STREET_REF, SUN_DIR, SUN_LIGHT } from '../shading.ts';
 import { lampLit, lampLight, uLampOn } from './lamps.ts';
 import { shareInstances } from './trees.ts';
@@ -59,6 +60,9 @@ const uSunDir: N = (() => {
 })();
 const carTop = (): N => smoothstep(0.35, 0.9, dot(normalView, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz));
 const uStripsOn: N = follow(STRIPS_ON);
+const uProbeK: N = follow(PROBE_K);
+const uProbeAt: N = (() => { const u = uniform(PROBE_AT.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(PROBE_AT.value); return u.value; }); return u; })();
+const uProbeNear: N = (() => { const u = uniform(PROBE_NEAR.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(PROBE_NEAR.value); return u.value; }); return u; })();
 const stripNodes: N[] = [];
 onStrips((t) => { for (const n of stripNodes) n.value = t; });
 const carStreet = (r: N): N => {
@@ -74,7 +78,11 @@ const carStreet = (r: N): N => {
   stripNodes.push(sample);
   const street = sample.rgb.mul(luma(uStreetRef)).mul(CS.stripGain);
   const strip = select(v.greaterThan(1), ground, mix(mix(ground, sky, above), street, sample.a.mul(step(0, v))));
-  const c = select(uStripsOn.greaterThan(0.5), strip, made);
+  const c0 = select(uStripsOn.greaterThan(0.5), strip, made);
+  // On Ultra, near the middle of the view: the real street (probe.ts).
+  const m: N = cubeTexture(PROBE_MAP.value as never, r);
+  const w = smoothstep(uProbeNear.y, uProbeNear.x, distance(positionWorld.xz, uProbeAt.xz)).oneMinus().mul(step(0.5, uProbeAt.w));
+  const c = mix(c0, m.rgb.mul(uProbeK), m.a.mul(w));
   return c.add(uSunLight.mul(pow(max(dot(r, uSunDir), 0), R.sharp)).mul(R.glint));
 };
 const carCoat = (c: N): N => {

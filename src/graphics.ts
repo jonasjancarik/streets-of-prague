@@ -1,4 +1,5 @@
 import { wantStrips } from './reflections.ts';
+import { PROBE_ON } from './probe.ts';
 import * as THREE from 'three';
 import { DIRT, LEAVES, ROOF_DETAIL, ROOF_CLUTTER, WATER, WEATHER_DETAIL } from './shading.ts';
 import { LAMP_SHADOWS, LAMP_SIZE, LIGHT_FX } from './lamps.ts';
@@ -187,6 +188,7 @@ export class Graphics {
     STREAKS_ON.value = look && this.reflections === 'lights' ? 1 : 0;
     MIRROR_ON.value = look && this.reflections === 'mirror' ? 1 : 0;
     wantStrips(look); // (the cars' mirrored streets)
+    PROBE_ON.value = this.tier === 'ultra' ? 1 : 0; // (and on Ultra the real one round the middle of the view)
     // (The lamps resize their maps at the next frame; the materials are bound afresh below.)
     const lampSize = lampMap, resized = LAMP_SIZE.value !== lampSize;
     LAMP_SIZE.value = lampSize;

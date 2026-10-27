@@ -4,6 +4,7 @@ import { STATIONS } from './radio.ts';
 import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts';
 import * as THREE from 'three';
 import { renderMirror } from './mirror.ts';
+import { renderProbe } from './probe.ts';
 import { Streaks } from './streaks.ts';
 import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
@@ -2417,7 +2418,9 @@ async function main() {
     show('tank', inCar?.type === 'fire' && water_ < 100 ? `<span role="img" aria-label="${t('Water: {n}%', { n: water_ })}" style="width:${water_}%"></span>` : '', 'html');
 
     dev.update();
-    if (renderMirror(renderer, scene, camera, camGround, weather.now.wet)) {
+    // (Ultra: the street round the middle of the view, for the cars to mirror.)
+    const probed = renderProbe(renderer, scene, camPos.x, camGround, camPos.z, carPool.allMeshes());
+    if (renderMirror(renderer, scene, camera, camGround, weather.now.wet) || probed) {
       scene.matrixWorldAutoUpdate = false;
       renderer.render(scene, camera);
       scene.matrixWorldAutoUpdate = true;
