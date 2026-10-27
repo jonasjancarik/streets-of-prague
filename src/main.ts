@@ -4,6 +4,7 @@ import { STATIONS } from './radio.ts';
 import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts';
 import * as THREE from 'three';
 import { renderMirror } from './mirror.ts';
+import { Streaks } from './streaks.ts';
 import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
 import { Ferries } from './ferries.ts';
@@ -293,6 +294,7 @@ async function main() {
   };
   const lamps = new Lamps(scene, renderer, AREA, (x, y) => world.terrainAt(x, y), deckAt);
   const signals = new Signals(scene, AREA, () => clock.t, (x, y, bridge) => (bridge ? world.heightAt(x, y) : world.terrainAt(x, y)), (x, y) => world.onRoad(x, y));
+  const streaks = new Streaks(scene);
   if (params.has('ipr')) void import('./iprdebug.ts').then((m) => m.iprOverlay(scene, AREA, (x, y) => world.terrainAt(x, y)));
   world.onEdges = (d, w, b, key, paths) => { names.add(d); names.add(w); crowd?.index(w); lamps.fill(key, d, b, paths); signals.add(d); };
 
@@ -2243,6 +2245,7 @@ async function main() {
       lamps.update(camPos.x, -camPos.z, viewRadius() + 10, sky.dark, drawn, ground, now, trams.list, lightOpt);
     }
     signals.update(camPos.x, -camPos.z, viewRadius() + 10, now);
+    streaks.update(camera, [lamps.glows, signals.flares, signals.glows], (x, y) => world.heightAt(x, y), viewRadius() + 10, time.value);
     weatherFx.tint.value.copy(sky.tint);
     weatherFx.fog.value.copy(sky.haze);
     weatherFx.update(weather.now, time.value, camPos.x, -camPos.z, camGround, height, viewRadius(), renderer.getPixelRatio(), mistGround, mistWater);

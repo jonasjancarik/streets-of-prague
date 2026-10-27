@@ -340,7 +340,7 @@ export class Lamps {
   private models: THREE.InstancedMesh[] = [];
   private streets = new Map<number, Map<string, number[]>>();
   private facing = new Map<number, number>(); // a lamp → the way (radians) its arm points
-  private glows: THREE.InstancedMesh;
+  glows: THREE.InstancedMesh; // (read by the streaks, streaks.ts)
   private near: number[] = []; // the lamps round the camera
   private nearAt = { x: Infinity, y: Infinity, r: 0, asked: 0, t: 0 }; // r: the radius gathered, asked: the one asked for
   private dummy = new THREE.Object3D();

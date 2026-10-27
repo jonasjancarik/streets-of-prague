@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
   Fn, If, abs, Discard, float, vec2, vec3, vec4, uv, attribute, uniform, renderGroup, instanceColor, positionGeometry, positionView, positionViewDirection, normalView, cameraViewMatrix,
-  cameraProjectionMatrix, smoothstep, mix, min, max, clamp, dot, sqrt, pow, fract, sin, cos, length, select, sRGBTransferEOTF, toneMappingExposure,
+  cameraProjectionMatrix, positionWorld, smoothstep, mix, min, max, clamp, dot, sqrt, pow, fract, sin, cos, length, select, sRGBTransferEOTF, toneMappingExposure,
 } from 'three/tsl';
 import { setGlows } from '../lamps.ts';
 import { setSignalGlow, setSignalFlare } from '../signals.ts';
@@ -18,8 +18,9 @@ import { setSprayDrawing } from '../spray.ts';
 import { setSmokeDrawing } from '../chimneySmoke.ts';
 import { setPuffShade } from '../fire.ts';
 import { setSkidShade } from '../skids.ts';
+import { setStreakShade, STREAK_GAIN, STREAK_TIME } from '../streaks.ts';
 import { lampLit, uLampOn } from './lamps.ts';
-import { type N, addPort, follow, followVec, followColor } from './common.ts';
+import { type N, addPort, follow, followVec, followColor, uWet, uRain, vnoise, fbm2 } from './common.ts';
 
 addPort(/^signal-(pole|head)$/, (node) => { lampLit(node); });
 
@@ -113,6 +114,20 @@ setSignalFlare(() => additive(() => {
   const core = smoothDown(1, 0.3, length(vec2(x.div(0.4), along.sub(0.06).div(0.13))));
   return vec4(unmap(instanceColor.mul(fan.mul(uLampOn.mul(0.4).add(0.9)).add(core)), true), 1);
 }, THREE.DoubleSide));
+
+// ---- The lights' streaks in the wet streets (streaks.ts) ----
+
+const uStreakTime = follow(STREAK_TIME);
+setStreakShade(() => additive(() => {
+  const along = uv().y.oneMinus(), x = uv().x.sub(0.5).mul(2);
+  const f = select(along.lessThan(0.25), along.div(0.25), along.oneMinus().div(0.75));
+  const across = x.mul(x).oneMinus();
+  const p = vec2(positionWorld.x, positionWorld.z.negate());
+  const puddle = smoothstep(0.66, 0.71, fbm2(p.mul(0.3).add(31)).mul(0.75).add(fbm2(p.mul(0.04).add(7)).mul(0.35)));
+  const flicker = float(1).sub(uRain.mul(0.5).mul(vnoise(vec2(along.mul(9).add(x.mul(2)), uStreakTime.mul(4)))));
+  const a = f.mul(f).mul(across).mul(across).mul(uWet).mul(uLampOn).mul(puddle.mul(0.75).add(0.25)).mul(flicker).mul(STREAK_GAIN);
+  return vec4(unmap(instanceColor.mul(a), true), 1);
+}));
 
 // ---- The scene's fog, for colours on the screen (the spray, the tyre marks) ----
 

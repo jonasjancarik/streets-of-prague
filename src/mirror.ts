@@ -1,4 +1,4 @@
-// What the wet streets mirror (Ultra only): the scene drawn once more, at half the screen's
+// What the wet streets mirror (the "Full mirror" setting, Graphics.reflections): the scene drawn once more, at half the screen's
 // resolution, from the camera reflected in the ground under the view (a plane at camGround,
 // clipped there, as three.js's Reflector does). Only what stands up out of the street is
 // drawn (objects marked `mirrored`: buildings and walls, trees, lamps, cars and trams); the

@@ -81,8 +81,9 @@ export class Signals {
   private poles: THREE.InstancedMesh;
   private boxes: THREE.InstancedMesh;
   private lamps: THREE.InstancedMesh;
-  private glows: THREE.InstancedMesh;
-  private flares: THREE.InstancedMesh;
+  // (Both read by the streaks, streaks.ts.)
+  glows: THREE.InstancedMesh;
+  flares: THREE.InstancedMesh;
   private walkBoxes: THREE.InstancedMesh;
   private walkLamps: THREE.InstancedMesh;
   private dummy = new THREE.Object3D();
