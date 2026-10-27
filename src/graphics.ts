@@ -7,6 +7,7 @@ import { MIRROR_ON } from './mirror.ts';
 import { STREAKS_ON } from './streaks.ts';
 import type { Sky } from './sky.ts';
 import { t } from './i18n.ts';
+import { slowHint } from './graphicswarning.ts';
 
 // Graphics tiers keep the street surfaces and facade pictures at every level. High,
 // Medium and Low keep the dirt, grime, leaves, tone curve and detailed roofs too.
@@ -33,6 +34,8 @@ import { t } from './i18n.ts';
 // by their mean without the quickest and slowest tenth. It ignores pauses, tile
 // builds and the seconds after loading, returning to the tab or changing a tier.
 // A tier that proved too slow is tried again after 2 minutes, then 4, 8…
+// Still too slow on Lowest for STUCK windows in a row, it tells the player once
+// (graphicswarning.ts: the game needs a better computer, and what may help).
 // The choice is remembered; ?graphics=auto|ultra|high|medium|low|lowest overrides it for
 // one visit. ?dpr fixes only the pixel ratio, leaving the other tier settings intact.
 // WebGL keeps its startup MSAA: it cannot change that without a new renderer.
@@ -78,11 +81,13 @@ const QUICK = TARGET_MS * 0.75, STEADY = 0.9; // …and one with 90% of its fram
 const SAMPLES = 60;
 const LONGEST = 250;          // longer is a pause, not a slow frame
 const WARMUP = 4000, SETTLE = 3000, RETRY = 120000;
+const STUCK = 5;
 
 export class AutoTier {
   tier: Tier;
   private samples: number[] = [];
   private holdUntil = 0;
+  stuck = 0; // windows in a row too slow with no tier lower to go to
   private failures: Record<Tier, number> = { lowest: 0, low: 0, medium: 0, high: 0, ultra: 0 };
   private retryAt: Record<Tier, number> = { lowest: 0, low: 0, medium: 0, high: 0, ultra: 0 };
   // Skip a tier only when all of its effective settings are the same.
@@ -117,6 +122,7 @@ export class AutoTier {
     };
     let next: Tier | null = null;
     const lower = step(-1), higher = step(1);
+    this.stuck = mean > SLOW && !lower ? this.stuck + 1 : 0;
     if (mean > SLOW && lower) {
       this.failures[this.tier] += 1;
       this.retryAt[this.tier] = now + RETRY * 2 ** (this.failures[this.tier] - 1);
@@ -256,6 +262,7 @@ export class Graphics {
     if (this.choice !== 'auto' || busy) return;
     const next = this.auto.record(ms, now);
     if (next) { this.tier = next; this.apply(); }
+    if (this.auto.stuck >= STUCK) slowHint();
   }
 
   label() {

@@ -53,3 +53,33 @@ export function graphicsWarning(parent: HTMLElement, cls: string) {
   onLang(show);
   return line;
 }
+
+// In the game, once per device: Auto is down to Lowest and the game is still slow. A card
+// under the corner buttons that stays until it's closed; without the graphics card it repeats that
+// warning instead, as the one thing likely to help.
+const SLOW_KEY = 'slow-hint';
+const SLOW_TEXT = 'The game is running slowly even at the lowest graphics settings. It draws a whole city in 3D, so it needs a fairly recent computer. It can help to plug in a laptop, close other tabs and apps, or make the window smaller.';
+let slowShown = false;
+
+export function slowHint(again = false) {
+  if (slowShown && !again) return;
+  slowShown = true;
+  if (!again) {
+    try { if (localStorage.getItem(SLOW_KEY) === 'seen') return; localStorage.setItem(SLOW_KEY, 'seen'); } catch { /* storage blocked: once per visit */ }
+  }
+  const card = document.createElement('div');
+  card.className = 'panel slow-hint';
+  card.setAttribute('role', 'status');
+  const text = document.createElement('p');
+  const ok = document.createElement('button');
+  ok.type = 'button';
+  ok.className = 'news-go';
+  card.append(text, ok);
+  const label = () => {
+    text.textContent = t(trouble === 'software' ? TEXT.software : SLOW_TEXT);
+    ok.textContent = t('Got it');
+  };
+  onLang(label);
+  ok.addEventListener('click', () => card.remove());
+  document.body.appendChild(card);
+}
