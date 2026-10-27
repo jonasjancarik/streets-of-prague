@@ -6,9 +6,9 @@ import * as THREE from 'three';
 import { NodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Discard, float, int, ivec2, vec2, vec3, vec4, texture, attribute, positionGeometry, positionWorld, normalView, cameraViewMatrix, diffuseColor,
-  dot, smoothstep, abs, select, min, max, step, length, mix,
+  dot, smoothstep, abs, select, min, max, step, length, mix, sqrt, inverseSqrt,
 } from 'three/tsl';
-import { LAMP_MAP, LAMP_MAP_HIGH, LAMP_MAP_OPEN, OPEN_ABOVE, LAMP_BOX, LAMP_REF, LAMP_ON, LAMP_SHADOWS, setPools } from '../lamps.ts';
+import { LAMP_MAP, LAMP_MAP_HIGH, LAMP_MAP_OPEN, OPEN_ABOVE, LAMP_BOX, LAMP_REF, LAMP_ON, LAMP_SHADOWS, POOL, setPools } from '../lamps.ts';
 
 const LUMA = vec3(0.3, 0.59, 0.11);
 import { type N, follow, followVec } from './common.ts';
@@ -52,12 +52,14 @@ function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture, laye
   const spot = at.w.greaterThan(3.5), w2 = at.w.sub(select(spot, 4, 0));
   const high = w2.greaterThan(1.5), beam = w2.sub(select(high, 2, 0)).greaterThan(0.5);
   const l = select(beam, vec2(q.x.mul(0.5).add(0.5), q.y), q);
-  const off = select(spot, q.mul(shape.z), select(beam, dir.mul(l.x).mul(shape.z).add(side.mul(q.y).mul(shape.w)), dir.mul(q.x).add(side.mul(q.y)).mul(shape.z)));
+  const off = select(spot, q.mul(shape.z), select(beam, dir.mul(l.x).mul(shape.z).add(side.mul(q.y).mul(shape.w)), dir.mul(q.x).mul(shape.z).add(side.mul(q.y).mul(shape.w))));
   // (A light of the other map is put outside the picture.)
   const mine = layer ? high : high.not();
   m.vertexNode = select(mine, vec4(at.xy.add(off).sub(uView.xy).mul(uView.zw), 0, 1), vec4(2, 2, 2, 1));
   const vP = at.xy.add(off).toVarying('vP'), vLamp = vec3(at.x.add(select(spot, dir.x, 0)), at.z.add(colour.a), at.y.add(select(spot, dir.y, 0))).toVarying('vLamp');
   const vCa: N = carsA.toVarying('vCa'), vCb: N = carsB.toVarying('vCb'), vCc: N = carsC.toVarying('vCc');
+  // A street lamp's pool (one up on a head, see POOL): its reach over the head's height.
+  const vU = select(spot.or(beam).not().and(colour.a.greaterThan(2.9)), sqrt(shape.z.mul(shape.w)).div(colour.a.mul(POOL.height)), 0).toVarying('vU');
   const vL = l.toVarying('vL'), vC = colour.rgb.toVarying('vC'), vH = at.z.toVarying('vH'), vBeam = select(spot, 2, select(beam, 1, 0)).toVarying('vBeam');
   m.fragmentNode = Fn(() => {
     const f = float(0).toVar();
@@ -69,7 +71,12 @@ function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture, laye
       f.assign(t.oneMinus().mul(t.oneMinus()).mul(smoothstep(0.35, 1, a).oneMinus()).mul(smoothstep(0, 0.1, t)));
     }).Else(() => {
       const d = dot(vL, vL);
-      f.assign(select(d.lessThan(1), d.oneMinus().mul(d.oneMinus()), 0));
+      If(vU.greaterThan(0), () => {
+        const e = d.mul(vU).mul(vU).add(1);
+        f.assign(inverseSqrt(e).div(e).mul(smoothstep(0.5, 1, d).oneMinus()).mul(POOL.peak));
+      }).Else(() => {
+        f.assign(select(d.lessThan(1), d.oneMinus().mul(d.oneMinus()), 0));
+      });
     });
     If(f.lessThan(0.002), () => { Discard(); });
     If(uShadow.greaterThan(0.5).and(vCa.x.greaterThan(-0.5)), () => {

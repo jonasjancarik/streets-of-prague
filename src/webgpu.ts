@@ -15,7 +15,7 @@ import {
   attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize,
 } from 'three/tsl';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
-import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M } from './shading.ts';
+import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR } from './shading.ts';
 import {
   type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, followVec, addPort, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports, skyAmbient,
 } from './webgpu/common.ts';
@@ -265,7 +265,7 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo 
     // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
     emissive: Fn(() => {
       const l = lampLight(slope ? positionWorld.add(vec3(slope.x, 0, slope.y).mul(6)) : positionWorld, normalView).toVar();
-      const e = g.rgb.mul(l).add(uSkyRef.add(l.mul(0.85)).mul(g.a));
+      const e = g.rgb.mul(l).add(uSkyRef.add(l.mul(smoothstep(LAMP_MIRROR[0], LAMP_MIRROR[1], dot(l, vec3(0.3, 0.59, 0.11))).mul(0.85))).mul(g.a));
       return slope ? e.add(waterShine(positionWorld, wp, slope, timeOf(time), uSkyRef, l)) : e;
     })(),
     normal: slope ? transformNormalToView(waveNormal(slope)) : null,

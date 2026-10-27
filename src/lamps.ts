@@ -109,6 +109,16 @@ export function lampLit(sh: Shader, world?: string) {
     .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n${CLOUDS ? `  reflectedLight.directDiffuse *= cloudLit(${w});\n` : ''}  reflectedLight.directDiffuse += diffuseColor.rgb * lampLightOn(${w}, normal);`);
 }
 
+// A street lamp's pool falls off as the light of a point at the head's height would (the
+// cube of the cosine over the distance squared), but as if the head were lower (`height`
+// of it), since a lamp throws most of its light down beneath it, and so brighter there
+// (`peak`): a hot spot under each lamp, darker between them. Lamps on arms and walls
+// throw it further along their street than across it (`along`, `across`, times the reach),
+// from the end of the arm (`arm`, m, for the two kinds).
+export const POOL = { height: 0.6, peak: 1.8, along: 1.25, across: 0.75, arm: [1.68, 0.55] };
+// How wide a lamp head's glow is (m): enough to show where the light comes from, from above.
+const GLOW = 4;
+
 // Kinds of lamp (pipeline/build_lamps.py): the height of the head, the pole under it,
 // how far its light reaches and how bright it is. Floodlights on monuments light the
 // walls higher up (`raise`: they count as standing that much higher).
@@ -117,7 +127,7 @@ const KINDS = [
   { head: 4.5, pole: false, r: 10, i: 0.8, raise: 0, glow: 0.4 }, // on a wall
   { head: 4.2, pole: true, r: 10, i: 0.8, raise: 0, glow: 0.45 }, // gas lamp
   { head: 5.5, pole: true, r: 11, i: 0.9, raise: 0, glow: 0.45 }, // festive, on a pole
-  { head: 1.0, pole: false, r: 9, i: 1.3, raise: 14, glow: 0 }, // floodlight on a monument
+  { head: 1.0, pole: false, r: 5.5, i: 1.6, raise: 14, glow: 0 }, // floodlight on a monument (lights its walls, not the square)
   { head: 0, pole: false, r: 7, i: 0.8, raise: 0, glow: 0 }, // in a tunnel or underpass
   { head: 0, pole: false, r: 3, i: 0.4, raise: 0, glow: 0 }, // set into the ground
   { head: 6.3, pole: false, r: 14, i: 0.9, raise: 0, glow: 0.5 }, // added: hung over a street on cables (see fill)
@@ -389,21 +399,23 @@ export class Lamps {
         attribute vec4 iCarsA; attribute vec4 iCarsB;
         uniform vec4 uView;
         varying vec2 vL; varying vec3 vC; varying float vH; varying float vBeam;
-        varying vec2 vP; varying vec3 vLamp; varying vec4 vCa; varying vec4 vCb;
+        varying vec2 vP; varying vec3 vLamp; varying vec4 vCa; varying vec4 vCb; varying float vU;
         void main() {
           vec2 dir = iShape.xy, side = vec2(-dir.y, dir.x), q = position.xy, off;
           // (4 added: a spot, a round pool whose light comes from the point dir away from its centre.)
           float spot = step(3.5, iAt.w), beam = mod(iAt.w - 4. * spot, 2.);
           if (spot > .5) { vL = q; off = q * iShape.z; }
           else if (beam > .5) { vL = vec2(q.x * .5 + .5, q.y); off = dir * vL.x * iShape.z + side * q.y * iShape.w; }
-          else { vL = q; off = (dir * q.x + side * q.y) * iShape.z; }
+          else { vL = q; off = dir * q.x * iShape.z + side * q.y * iShape.w; }
+          // A street lamp's pool (one up on a head, see POOL): its reach over the head's height.
+          vU = spot + beam < .5 && iColour.a > 2.9 ? sqrt(iShape.z * iShape.w) / (iColour.a * ${POOL.height.toFixed(2)}) : 0.;
           vC = iColour.rgb; vH = iAt.z; vBeam = beam + 2. * spot;
           vP = iAt.xy + off; vLamp = vec3(iAt.x + spot * dir.x, iAt.z + iColour.a, iAt.y + spot * dir.y); vCa = iCarsA; vCb = iCarsB;
           gl_Position = vec4((iAt.xy + off - uView.xy) * uView.zw, 0., 1.);
         }`,
       fragmentShader: /* glsl */ `
         varying vec2 vL; varying vec3 vC; varying float vH; varying float vBeam;
-        varying vec2 vP; varying vec3 vLamp; varying vec4 vCa; varying vec4 vCb;
+        varying vec2 vP; varying vec3 vLamp; varying vec4 vCa; varying vec4 vCb; varying float vU;
         uniform sampler2D uCars; uniform float uShadow; uniform vec4 uRef;
         // How much box i keeps the light from the ground point p (0..1): the ray from the
         // lamp to the point through the box, the edge softer the further the shadow falls
@@ -438,7 +450,10 @@ export class Lamps {
             f = (1. - t) * (1. - t) * smoothstep(1., .35, a) * smoothstep(0., .1, t);
           } else {
             float d = dot(vL, vL);
-            f = d < 1. ? (1. - d) * (1. - d) : 0.;
+            if (vU > 0.) {
+              float e = 1. + d * vU * vU;
+              f = ${POOL.peak.toFixed(2)} * inversesqrt(e) / e * (1. - smoothstep(.5, 1., d));
+            } else f = d < 1. ? (1. - d) * (1. - d) : 0.;
           }
           if (f < .002) discard;
           if (uShadow > .5 && vCa.x > -.5) {
@@ -845,14 +860,14 @@ export class Lamps {
           if (g >= this.glows.instanceMatrix.count) break;
           // (a local x along the arm is (cos, -sin) in world x, z; z across it, (sin, cos).)
           d.position.set(lx + gx * co + gz * si, z + gy, -ly - gx * si + gz * co);
-          d.scale.set(1.6, 1, 1.6);
+          d.scale.set(GLOW, 1, GLOW);
           d.updateMatrix();
           this.glows.setMatrixAt(g, d.matrix);
           this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], this.seeds[i])).multiplyScalar(k.glow * 2));
         }
       } else if (k.glow && g < this.glows.instanceMatrix.count) {
         d.position.set(lx, z + k.head, -ly);
-        d.scale.set(1.6, 1, 1.6);
+        d.scale.set(GLOW, 1, GLOW);
         d.updateMatrix();
         this.glows.setMatrixAt(g, d.matrix);
         this.glows.setColorAt(g++, this.c.copy(colourOf(this.kind[i], this.seeds[i])).multiplyScalar(k.glow * 2));
@@ -987,7 +1002,7 @@ export class Lamps {
       const ids = this.pickIds;
       if (shading && up > 0) {
         if (beam === 1) this.pick(lx + dx * len / 2, ly + dy * len / 2, len / 2 + wid, own, most);
-        else this.pick(lx, ly, len, own, most);
+        else this.pick(lx, ly, Math.max(len, wid), own, most);
       } else ids.fill(-1);
       for (let k = 0; k < 4; k++) { ca[n * 4 + k] = ids[k]; cb[n * 4 + k] = ids[4 + k]; cc[n * 4 + k] = ids[8 + k]; }
       n++;
@@ -999,7 +1014,14 @@ export class Lamps {
       // (Only the lamps up on poles and walls: not the floodlights or those in tunnels.)
       const post = this.posts[i];
       const z = this.height(lx, ly) + (this.rise[i] ?? 0);
-      add(lx, ly, z, 0, 1, 0, k.r, k.r, colour, k.i, k.raise || k.head < 3 ? 0 : k.head, (post && this.postIndex.get(post)) ?? -1, this.high[i]);
+      // Facing its street (once the street is known), a lamp on an arm or a wall lights the
+      // street from the end of its arm, more of it along than across.
+      const towards = (this.kind[i] === 0 || this.kind[i] === 1) && this.facing.has(i) ? this.facing.get(i)! : null;
+      if (towards === null) add(lx, ly, z, 0, 1, 0, k.r, k.r, colour, k.i, k.raise || k.head < 3 ? 0 : k.head, (post && this.postIndex.get(post)) ?? -1, this.high[i]);
+      else {
+        const dx = Math.cos(towards), dy = Math.sin(towards), arm = POOL.arm[this.kind[i]];
+        add(lx + dx * arm, ly + dy * arm, z, 0, dx, dy, k.r * POOL.across, k.r * POOL.along, colour, k.i, k.head, (post && this.postIndex.get(post)) ?? -1, this.high[i]);
+      }
       if (fx && k.head >= 3) fx.lamp(lx, ly, z, k.head, colour, k.i, this.carGrid, this.blockAt, cars, this.carZ);
     }
     const d = this.dummy;
