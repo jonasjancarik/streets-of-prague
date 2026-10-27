@@ -14,7 +14,21 @@ export const HEDGE_W = 0.8; // m
 export const RAIL_H = 0.75; // m: a crash barrier's beam is at bumper height
 const RAIL_POSTS = 4; // m of barrier the post-and-beam texture repeats over (a post every 2 m)
 const SECTION = 3; // m: the longest piece a line is cut into
-const PICKET = 1.6; // m of fence the picket texture repeats over
+const FENCE_REPEAT = 2.4; // m of fence the fence texture repeats over (a post at each end)
+// The fence looks, rows of one texture from the bottom up: a wire mesh on posts, wooden
+// boards, metal bars. How often each is put up, in a garden suburb.
+const LOOKS = 3;
+const LOOK_SHARE = [0.55, 0.25, 0.2];
+const LOOK_AREA = 20; // m: fences within one square of this size look the same
+// Which look a fence starting at (x, y) has: the same for the pieces of one plot's fence
+// (the survey gives them one by one), changing from one stretch of street to the next.
+function fenceLook(x: number, y: number) {
+  const i = Math.floor(x / LOOK_AREA), j = Math.floor(y / LOOK_AREA);
+  const h = Math.abs(Math.imul(i, 73856093) ^ Math.imul(j, 19349663)) % 1000 / 1000;
+  let k = 0, sum = LOOK_SHARE[0];
+  while (h >= sum && k < LOOKS - 1) sum += LOOK_SHARE[++k];
+  return k;
+}
 
 const FENCE_VERTS = 12; // a face each way
 const LEAN = 0.45; // how far a fence's two faces lean apart from straight up, for its light
@@ -43,7 +57,10 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
     const rail = line.kind === 'guard_rail';
     const h = rail ? RAIL_H : line.h ?? (hedge ? HEDGE_H : FENCE_H);
     const m = hedge ? out.hedge : rail ? out.rail : out.fence;
-    const repeat = hedge ? 2 : rail ? RAIL_POSTS : PICKET;
+    const repeat = hedge ? 2 : rail ? RAIL_POSTS : FENCE_REPEAT;
+    // The texture rows a fence's faces take (a small gap left either side of each).
+    const look = !hedge && !rail ? fenceLook(line.pts[0][0], line.pts[0][1]) : 0;
+    const rows: [number, number] = rail ? [0, 1] : [(look + 0.03) / LOOKS, (look + 0.97) / LOOKS];
     let along = 0;
     // Where the line bends, a hedge's two sides meet on the bisector of the bend, so no
     // wedge is left open on the outside of a plot's corner: `mitre(i)` is the offset of
@@ -79,7 +96,8 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
         // A quad from the bottom edge (x1,y1,zb1)-(x2,y2,zb2) up to the heights t1 and t2, pushed out by (ox, oy).
         const quad = (ox1: number, oy1: number, ox2: number, oy2: number, t1: number, t2: number, zb1: number, zb2: number, n3: number[], uv: number[], flip = false) => {
           const P = [[x1 + ox1, zb1, -(y1 + oy1)], [x2 + ox2, zb2, -(y2 + oy2)], [x2 + ox2, t2, -(y2 + oy2)], [x1 + ox1, t1, -(y1 + oy1)]];
-          const U = [[uv[0], 0], [uv[1], 0], [uv[1], 1], [uv[0], 1]];
+          const [v0, v1] = hedge ? [0, 1] : rows;
+          const U = [[uv[0], v0], [uv[1], v0], [uv[1], v1], [uv[0], v1]];
           for (const k of flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) {
             m.pos.push(...P[k]);
             m.nor.push(n3[0], n3[2], -n3[1]);
@@ -105,9 +123,10 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
           const zr1 = foot(R1, z1), zr2 = foot(R2, z2), zl1 = foot(L1, z1), zl2 = foot(L2, z2);
           quad(o1[0] * w, o1[1] * w, o2[0] * w, o2[1] * w, t1, t2, zr1, zr2, [nx, ny, 0], [u1, u2]);
           quad(-o1[0] * w, -o1[1] * w, -o2[0] * w, -o2[1] * w, t1, t2, zl1, zl2, [-nx, -ny, 0], [u2, u1], true);
-          // The top, a strip of the two sides' top edges.
+          // The top, a strip of the two sides' top edges. (Its v is 2 more than the
+          // texture needs, which tells the hedge's shading it's the top, see fenceMeshes.)
           const T = [[R1[0], t1, -R1[1]], [R2[0], t2, -R2[1]], [L2[0], t2, -L2[1]], [L1[0], t1, -L1[1]]];
-          const V = [[u1, 0.2], [u2, 0.2], [u2, 0.8], [u1, 0.8]];
+          const V = [[u1, 2.2], [u2, 2.2], [u2, 2.8], [u1, 2.8]];
           for (const k of [0, 1, 2, 0, 2, 3]) { m.pos.push(...T[k]); m.nor.push(0, 1, 0); m.uv.push(...V[k]); }
           // The two ends, so a hedge's last section isn't hollow.
           for (const [A, B, za, zb, top, sgn] of [[L1, R1, zl1, zr1, t1, -1], [L2, R2, zl2, zr2, t2, 1]] as const) {
@@ -127,6 +146,11 @@ export function fenceArrays(data: FenceTile, height: (x: number, y: number) => n
     ({ position: new Float32Array(m.pos), normal: new Float32Array(m.nor), uv: new Float32Array(m.uv) });
   return { fence: pack(out.fence), hedge: pack(out.hedge), rail: pack(out.rail), sections: new Float32Array(sections) };
 }
+
+// How light a hedge is by its texture's v (`v`): the sides darker towards the ground,
+// where the inside of the hedge shows through and the light doesn't reach; the top
+// (v from 2.2 to 2.8) darker along its two edges, so from above it has a rounded look.
+export const HEDGE_SHADE_GLSL = '(vUv.y < 1.5 ? mix(0.55, 1.0, smoothstep(0.0, 1.0, vUv.y)) : 1.0 - 0.3 * smoothstep(0.12, 0.3, abs(fract(vUv.y) - 0.5)))';
 
 let picketMap: THREE.CanvasTexture | null = null;
 let leafMap: THREE.CanvasTexture | null = null;
@@ -151,20 +175,49 @@ function barrier() {
   return railMap;
 }
 
-// Pickets between two rails, on clear ground: see-through between the pickets.
+// The fence looks (see LOOKS), one row each, see-through where nothing is drawn: a wire
+// mesh on dark green posts, which hardly shows from above; weathered wooden boards;
+// anthracite bars. Each row's width is FENCE_REPEAT of fence with a post at its ends.
 function pickets() {
   if (picketMap) return picketMap;
-  const c = document.createElement('canvas');
-  c.width = 128; c.height = 64;
+  const W = 128, H = 64, c = document.createElement('canvas');
+  c.width = W; c.height = H * LOOKS;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#b9ad94';
-  g.fillRect(0, 12, 128, 5);
-  g.fillRect(0, 42, 128, 5);
-  for (let i = 0; i < 8; i++) {
-    const shade = 218 + ((i * 37) % 5) * 5;
-    g.fillStyle = `rgb(${shade},${shade - 6},${shade - 24})`;
-    g.fillRect(i * 16 + 2, 2, 12, 62);
+  let seed = 11;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // Row k of the texture is the k-th from the bottom (the canvas is flipped onto it).
+  const top = (k: number) => (LOOKS - 1 - k) * H;
+  // A wire mesh: diamonds of thin wire between posts, a tension wire along the top.
+  let y0 = top(0) + 2;
+  g.fillStyle = '#4f5b52';
+  for (let d = -H; d < W + H; d += 9) {
+    for (let y = 0; y < H - 6; y++) {
+      g.fillRect(d + y * 0.7, y0 + 3 + y, 1.6, 1);
+      g.fillRect(d - y * 0.7, y0 + 3 + y, 1.6, 1);
+    }
   }
+  g.fillStyle = '#39443b';
+  g.fillRect(0, y0, W, 3);
+  g.fillRect(0, y0 + 0, 4, H - 4);
+  g.fillRect(W - 4, y0, 4, H - 4);
+  // Boards: weathered planks, a finger's gap between them, on two battens.
+  y0 = top(1) + 2;
+  for (let x = 0; x < W; x += 9) {
+    const l = 26 + rand() * 12;
+    g.fillStyle = `hsl(${24 + rand() * 10},${22 + rand() * 12}%,${l}%)`;
+    g.fillRect(x, y0 + rand() * 2, 8, H - 6);
+  }
+  g.fillStyle = '#4a3a2b';
+  g.fillRect(0, y0 + 10, W, 4);
+  g.fillRect(0, y0 + H - 18, W, 4);
+  // Bars: thin uprights between a top and a bottom rail, posts at the ends.
+  y0 = top(2) + 2;
+  g.fillStyle = '#2f3234';
+  for (let x = 6; x < W - 4; x += 7) g.fillRect(x, y0 + 2, 2, H - 8);
+  g.fillRect(0, y0 + 4, W, 3);
+  g.fillRect(0, y0 + H - 12, W, 3);
+  g.fillRect(0, y0, 5, H - 4);
+  g.fillRect(W - 5, y0, 5, H - 4);
   picketMap = new THREE.CanvasTexture(c);
   picketMap.wrapS = THREE.RepeatWrapping;
   picketMap.colorSpace = THREE.SRGBColorSpace;
@@ -172,22 +225,26 @@ function pickets() {
   return picketMap;
 }
 
-// Blotchy foliage.
+// Blotchy foliage, about as dark as the lawn beside it: small leaves in clumps.
 function leaves() {
   if (leafMap) return leafMap;
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#4d7534';
+  g.fillStyle = '#34502a';
   g.fillRect(0, 0, 64, 64);
   let seed = 7;
   const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let i = 0; i < 90; i++) {
-    const l = 30 + rand() * 22;
-    g.fillStyle = `hsl(${88 + rand() * 25},${38 + rand() * 20}%,${l}%)`;
-    g.beginPath();
-    g.arc(rand() * 64, rand() * 64, 2 + rand() * 4, 0, 6.3);
-    g.fill();
+  for (let i = 0; i < 260; i++) {
+    const l = 16 + rand() * 20;
+    g.fillStyle = `hsl(${80 + rand() * 35},${30 + rand() * 18}%,${l}%)`;
+    const x = rand() * 64, y = rand() * 64, r = 1 + rand() * 2.5;
+    // Drawn again across the edges, so the texture tiles without a seam.
+    for (const dx of [-64, 0, 64]) for (const dy of [-64, 0, 64]) {
+      g.beginPath();
+      g.arc(x + dx, y + dy, r, 0, 6.3);
+      g.fill();
+    }
   }
   leafMap = new THREE.CanvasTexture(c);
   leafMap.wrapS = leafMap.wrapT = THREE.RepeatWrapping;
@@ -207,12 +264,14 @@ export function fenceMeshes({ fence, hedge, rail }: FenceBuffers) {
     return mesh;
   };
   const hedgeMaterial = new THREE.MeshLambertMaterial({ map: leaves() });
+  hedgeMaterial.defines = { USE_UV: '' };
   hedgeMaterial.customProgramCacheKey = () => 'hedge-season';
   hedgeMaterial.onBeforeCompile = (sh) => {
     sh.uniforms.uHedgeSeason = HEDGE_SEASON;
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 uHedgeSeason;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uHedgeSeason;');
+      .replace('#include <color_fragment>', `#include <color_fragment>
+diffuseColor.rgb *= uHedgeSeason * ${HEDGE_SHADE_GLSL};`);
   };
   return {
     fence: make(fence, new THREE.MeshLambertMaterial({ map: pickets(), alphaTest: 0.5 }), false),

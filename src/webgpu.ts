@@ -12,7 +12,7 @@ import { WebGPURenderer, MeshLambertNodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, clamp, transformNormalToView,
-  attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup,
+  attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup, uv,
 } from 'three/tsl';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
 import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR } from './shading.ts';
@@ -36,7 +36,11 @@ import { uWater, ripples, waves, waveNormal, waterShine } from './webgpu/water.t
 // PATTERNS_GLSL.
 const uGroundSeason = followVec(GRASS_SEASON.park), uMeadowSeason = followVec(GRASS_SEASON.meadow), uLawnSeason = followVec(GRASS_SEASON.lawn), uGardenSeason = followVec(GRASS_SEASON.garden), uPitchSeason = followVec(GRASS_SEASON.pitch), uWoodSeason = followColor(WOOD_SEASON), uFieldSeason = followColor(FIELD_SEASON);
 // Evergreen hedges keep their opaque geometry and shadows. One graph for all tiles.
-const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)), 1);
+// (As HEDGE_SHADE_GLSL in map/fences.ts: darker low on the sides and along the top's edges.)
+const hedgeV = uv().y;
+const hedgeShade = select(hedgeV.lessThan(1.5), mix(0.55, 1.0, smoothstep(0.0, 1.0, hedgeV)),
+  float(1).sub(smoothstep(0.12, 0.3, abs(fract(hedgeV).sub(0.5))).mul(0.3)));
+const hedgeColour = vec4(materialColor.rgb.mul(followColor(HEDGE_SEASON)).mul(hedgeShade), 1);
 addPort(/^hedge-season$/, (node) => { node.colorNode = hedgeColour; });
 function pAsphalt(c0: N, p: N) {
   const c = c0.mul(fbm(p.mul(0.3)).mul(0.18).add(0.9)).toVar();
