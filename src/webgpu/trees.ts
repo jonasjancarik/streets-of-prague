@@ -12,6 +12,7 @@ import {
   normalize, cross, sqrt, fwidth, distance, select, clamp, storage, buffer, instanceIndex,
 } from 'three/tsl';
 import { BARE, LEAVES, SEASON } from '../shading.ts';
+import { CROWN } from '../map/vegetation.ts';
 import { lampLit } from './lamps.ts';
 import { type N, follow, followVec, addPort, uCut, uWet, uSnow, hash12, detail } from './common.ts';
 
@@ -145,9 +146,16 @@ const leafState = Fn(() => {
       crease.mulAssign(mix(1, float(0.78).add(sl.y.mul(0.38)).mul(mix(0.7, 1, smoothstep(0, 0.12, sl.x))), sd));
     });
   });
-  // Each tuft darker towards its rim (vegetation.ts).
+  // Each tuft darker towards its rim (vegetation.ts), and the crown's own sunny and
+  // shaded sides and its darker lower edge (CROWN).
   If(tuft.z.greaterThanEqual(0), () => {
     crease.mulAssign(mix(TUFT_RIM, 1.1, float(1).sub(smoothstep(0.35, 0.85, length(tuft.xy)))));
+    // (Its round normal and the edge in one varying: a fragment takes no more than 16.)
+    const p = positionGeometry;
+    const edge = smoothstep(0.7, 1.05, length(p.xz)).mul(float(1).sub(smoothstep(0.1, 0.45, p.y)));
+    const crown = vec4(inView(p.sub(vec3(0, 0.1, 0))), edge).toVarying('crown');
+    normal.assign(normalize(mix(normal, normalize(crown.xyz), CROWN.round)));
+    crease.mulAssign(mix(1, CROWN.rim, crown.w));
   });
   return vec4(normal, crease);
 });
