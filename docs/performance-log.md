@@ -667,3 +667,16 @@ at 2× High on the M5:
 The same draw calls and triangles. Rounds 2 and 3 are within noise; round 1 is the
 machine getting busy, not the shader. No GPU timer on this machine, so the
 per-pixel cost (cars cover a few per cent of the screen) is not measured directly.
+
+## The Ultra reflection probe (plan 037 phase 3), 27 October 2026
+
+`--ab` toggling `PROBE_ON` on Ultra, 2× on the M5, stand and drive, 12 s each:
+
+| Probe | Stand off → on (ms a frame) | Drive off → on |
+|---|---|---|
+| A face every frame, 400 m | 3.6 → 4.8 | 6.1 → 7.8 |
+| A face every third frame, 150 m (kept) | 4.6 → 5.1 | 8.9 → 9.8 |
+
+Nearly all of it is main-thread time (js followed the frame time): one more pass
+of three.js over the scene's lists, not GPU work. The second run was on a busier
+machine (higher baselines). The kept setting is under the plan's 1 ms limit.

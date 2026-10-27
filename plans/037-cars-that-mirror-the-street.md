@@ -6,7 +6,7 @@ read_when: Changing how car paint and glass reflect (CAR_GLOSS, carCoat in car.t
 
 ## Status and intent
 
-- Status: PLANNED. Category: looks. Priority: P2.
+- Status: PHASES 1–3 BUILT (27 October 2026: `00be853`, `d9f00b8` with its WebGL fix `5571c51`, `7133c1e`). The seven strip images are made (prompts in `assets/reflections/src/`) and packed into `public/reflections.webp`, both waiting for review before they're committed; until then the cars keep the made-up street of phase 1. Category: looks. Priority: P2.
 - Effort: phase 1 one to two days; phase 2 one day plus review of the images; phase 3 two to three days. Each phase is checked and measured before the next starts, and the work can stop after any of them.
 - Depends on: the car bodies of 27 October 2026 (`3ebb74f`, `7d03b2e`, `dd783e5`) and the stronger glass (`a1c7384`).
 - Planned at: `5b57c19d5e9f12d38350f552b29ac3de7e7dd640`, 27 October 2026.
@@ -199,3 +199,22 @@ machine, or makes compile hitches the player sees; keep phases 1–2.
   give the second its own cache.
 - Ask before committing generated images; keep the source images out of `public/`
   until approved.
+
+## Result
+
+- Phase 1: the made-up street in both renderers (`CAR_REFLECT`, `CAR_MIRROR` in car.ts,
+  `STREET_REF` from sky.ts). No measurable frame cost (`docs/performance-log.md`).
+- Phase 2: seven kinds of area, the strips packed by `assets/reflections/pack.sh`, a
+  car's kind from its cadastral area (a table in `src/reflections.ts`), by distance
+  outside the table, the riverbank where there's water within 40 m. The kind rides in
+  `paint.w` and on into `vLit`, so no new varying (WebGPU's limit) and no new vertex
+  buffer (the car pages use all 8). Not blended at the edges between areas: a car
+  switches kind when it's 25 m on, which hardly shows at 70 px. Lowest keeps the
+  made-up street.
+- Phase 3: a face every third frame, 150 m, 128 px; cars left out of the probe (they
+  read the cube while it's drawn, which WebGPU refuses); the sun and sky lights on a
+  layer of their own for the probe (WebGPU and WebGL light only what shares a layer
+  with the camera, so the mirror's layer alone came out black). +0.5 / +0.9 ms a frame
+  standing / driving on Ultra. No box projection: plain looked right.
+- Checked with `scripts/scene.mjs` shots, close and at the normal height, by day,
+  dusk, night and in rain, on WebGPU and `?renderer=webgl`, High and Ultra.
