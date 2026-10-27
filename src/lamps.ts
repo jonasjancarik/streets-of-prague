@@ -1,5 +1,6 @@
 import { dataUrl } from './data.ts';
 import * as THREE from 'three';
+import { mirrored, mirroredGlow } from './mirror.ts';
 import { fetchBinary } from './terrain.ts';
 import { CLOUD, CLOUD_MAP, CLOUD_GLSL } from './clouds.ts';
 import { posts, fall, type Post } from './posts.ts';
@@ -481,7 +482,7 @@ export class Lamps {
     poleMaterial.onBeforeCompile = (sh) => lampLit(sh);
     poleMaterial.customProgramCacheKey = () => 'lamp-pole';
     this.models = MODELS.map((m) => {
-      const mesh = new THREE.InstancedMesh(m.make(), poleMaterial, MAX_POLES);
+      const mesh = mirrored(new THREE.InstancedMesh(m.make(), poleMaterial, MAX_POLES));
       mesh.count = 0;
       mesh.frustumCulled = false;
       return mesh;
@@ -505,6 +506,7 @@ export class Lamps {
     this.glows.count = 0;
     this.glows.frustumCulled = false;
     this.glows.renderOrder = 5;
+    mirroredGlow(this.glows);
     // The cables of the hung lamps near the camera: HALVES lines a side, two sides each.
     const cableGeometry = new THREE.BufferGeometry();
     cableGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_HUNG * 2 * HALVES * 2 * 3), 3));

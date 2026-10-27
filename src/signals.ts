@@ -1,5 +1,6 @@
 import { dataUrl } from './data.ts';
 import * as THREE from 'three';
+import { mirrored, mirroredGlow } from './mirror.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { lampLit, LAMP_ON } from './lamps.ts';
 import { Polyline, offsetLine } from './network.ts';
@@ -170,6 +171,10 @@ export class Signals {
       m.count = 0;
       m.frustumCulled = false;
     }
+    // Puddles mirror the lights and their flares.
+    for (const m of [this.poles, this.boxes, this.lamps, this.walkBoxes, this.walkLamps]) mirrored(m);
+    mirroredGlow(this.glows);
+    mirroredGlow(this.flares);
     scene.add(this.poles, this.boxes, this.lamps, this.glows, this.flares, this.walkBoxes, this.walkLamps);
 
     void fetch(dataUrl(area, 'signals.json')).then((r) => (r.ok ? r.json() as Promise<SignalsJSON> : null)).then((data) => {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mirrored } from './mirror.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp } from './network.ts';
@@ -1185,7 +1186,7 @@ export class CarPool {
       geometry.setAttribute('hinge', hinge);
     }
     geometry.setAttribute('doors', new THREE.InstancedBufferAttribute(new Float32Array(CarPool.pageCapacity * 4), 4));
-    const mesh = new THREE.InstancedMesh(geometry, material, CarPool.pageCapacity);
+    const mesh = mirrored(new THREE.InstancedMesh(geometry, material, CarPool.pageCapacity));
     mesh.count = 0;
     mesh.visible = false;
     mesh.castShadow = true;

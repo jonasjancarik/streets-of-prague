@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DIRT, LEAVES, ROOF_DETAIL, ROOF_CLUTTER, WATER, WEATHER_DETAIL } from './shading.ts';
 import { LAMP_SHADOWS, LAMP_SIZE, LIGHT_FX } from './lamps.ts';
+import { MIRROR_ON } from './mirror.ts';
 import type { Sky } from './sky.ts';
 import { t } from './i18n.ts';
 
@@ -36,12 +37,12 @@ const CHOICES: Choice[] = ['auto', 'ultra', 'high', 'medium', 'low', 'lowest'];
 // posts cast shadows from every lamp and headlight, 2 only the cars do, 1 a soft darkening
 // round each car, 0 nothing. `lights`: the cones and glints, and the sharper light map.
 // `shadowBlur`: how far the sun shadow's edge is softened, in shadow-map texels.
-const TIERS: Record<Tier, { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; roofs: boolean; clutter: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean }> = {
-  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, roofs: true, clutter: true, crowd: 1, cars: 3, lights: true },
-  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: true, crowd: 1, cars: 2, lights: false },
-  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false },
-  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false },
-  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, roofs: false, clutter: false, crowd: 0.5, cars: 0, lights: false },
+const TIERS: Record<Tier, { look: boolean; maxRatio: number; samples: 0 | 4; shadowSize: number; shadowBlur: number; roofs: boolean; clutter: boolean; crowd: number; cars: 0 | 1 | 2 | 3; lights: boolean; mirror: boolean }> = {
+  ultra: { look: true, maxRatio: 2, samples: 4, shadowSize: 4096, shadowBlur: 2, roofs: true, clutter: true, crowd: 1, cars: 3, lights: true, mirror: true },
+  high: { look: true, maxRatio: 2, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: true, crowd: 1, cars: 2, lights: false, mirror: false },
+  medium: { look: true, maxRatio: 1.5, samples: 4, shadowSize: 2048, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, mirror: false },
+  low: { look: true, maxRatio: 1, samples: 4, shadowSize: 1024, shadowBlur: 1, roofs: true, clutter: false, crowd: 1, cars: 1, lights: false, mirror: false },
+  lowest: { look: false, maxRatio: 1, samples: 0, shadowSize: 1024, shadowBlur: 1, roofs: false, clutter: false, crowd: 0.5, cars: 0, lights: false, mirror: false },
 };
 
 // three r186 has no public sample setter. Its tone-mapping pass caches a target
@@ -164,12 +165,13 @@ export class Graphics {
   get crowd() { return TIERS[this.tier].crowd; }
 
   private apply() {
-    const { look, samples, shadowSize, shadowBlur, roofs, clutter, cars, lights } = TIERS[this.tier];
+    const { look, samples, shadowSize, shadowBlur, roofs, clutter, cars, lights, mirror } = TIERS[this.tier];
     DIRT.value = LEAVES.value = look ? 1 : 0;
     WATER.value = look && this.water ? 1 : 0;
     this.sky.curve = look;
     LAMP_SHADOWS.value = cars;
     LIGHT_FX.value = lights ? 1 : 0;
+    MIRROR_ON.value = mirror ? 1 : 0;
     // (The lamps resize their maps at the next frame; the materials are bound afresh below.)
     const lampSize = lights ? 2048 : 1024, resized = LAMP_SIZE.value !== lampSize;
     LAMP_SIZE.value = lampSize;

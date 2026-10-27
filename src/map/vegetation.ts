@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mirrored } from '../mirror.ts';
 import { Grid, fillPolys, strokeLines, rng } from './geo.ts';
 import { cutAway, NOISE, NOISE_GLSL, LEAVES, SNOW, WET, BARE, SEASON } from '../shading.ts';
 import { PITCH_KINDS } from './pitches.ts';
@@ -781,7 +782,7 @@ export function treePageFactory() {
     // The outline (TreeInstances.outlines), four directions in each.
     geom.setAttribute('outlineA', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4).fill(1), 4));
     geom.setAttribute('outlineB', new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4).fill(1), 4));
-    const mesh = new THREE.InstancedMesh(geom, material, capacity);
+    const mesh = mirrored(new THREE.InstancedMesh(geom, material, capacity));
     mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     mesh.count = 0;
     mesh.visible = false;
