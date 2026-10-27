@@ -110,6 +110,22 @@ buildings), so many village streets are 5.5 m, and some under 4.6 m.
 `node scripts/check-narrow-lanes.mjs` runs two cars head-on through the real updater on
 3.75, 4.0 and 4.5 m streets.
 
+The width these rules use is OSM's, or the room between the surveyed kerbs (`kerb`,
+`pipeline/kerbs.py`) where that is less: about a fifth of two-way streets are mapped
+more than 1.5 m wider than their kerbs (Pod křížkem: 8 m between kerbs 5 m apart), and
+the lane put by OSM's width ran half over the pavement. A car's right side also stays
+1 m inside the right-hand kerb. Kerbs further apart than OSM's width (a parking lane, a
+bay) leave the lane where OSM's width puts it.
+
+**Parking up on the pavement.** Where a side of a street is too narrow for a car at the
+kerb beside the lane (untagged by OSM), the pavement spots on that side come every 6 m
+instead of 12, stand fully up (1.45 m past the kerb, clear of the lane even at bends) and
+fill as the buildings round them call for (`occupancy`), like kerb spots elsewhere.
+Elsewhere a few cars stand on the pavement at random, as before. A pavement car may reach
+0.8 m in from the kerb (two wheels up) before it counts as on the carriageway. On the
+southern suburbs (praha tiles 50,36 to 60,46) this took parked cars from 6476 to 11815;
+cars in a bus's turning sweep (`check-parking-city.mjs`) went from 9 to 25, at most 0.44 m.
+
 **Standing cars and bends.** A car measures what stands in its way along the lane
 ahead (`Route.ahead`: the lane as straight pieces, round bends and through the junction
 curve), not along a straight line from where it is. A standing car is in the way only

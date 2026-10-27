@@ -283,37 +283,48 @@ const PAVED_OVER = new Set(['residential', 'unclassified', 'tertiary', 'secondar
 // Spots up on the pavement beside the kerb, on streets whose kerbs are known: a few
 // metres from the corners, and every 12 m along the way (taken only where nobody has
 // parked at the kerb, see parkCars). Half on (two wheels up) or right up on it.
+// `only`: the street is too narrow for a car at the kerb beside its lane, so the
+// pavement is where the people living there park.
 function pavementSlots(edges: DriveEdge[], r: () => number) {
-  const out: (ParkingSlot & { corner: boolean; edge: DriveEdge; s: number })[] = [];
+  const out: (ParkingSlot & { corner: boolean; only: boolean; edge: DriveEdge; s: number })[] = [];
   for (const e of edges) {
     if (e.bridge || e.tunnel || !PAVED_OVER.has(e.hw) || e.path.length < 16) continue;
     for (const side of e.oneway ? [1, -1] : [1]) {
       const edge = e.kerb?.[side > 0 ? 0 : 1];
       if (edge == null) continue;
+      const only = !e.park?.[side > 0 ? 0 : 1] && Math.abs(side * (edge - 1.05) - e.laneOffset) < 2.3;
       const line = new Polyline(e.pts);
       const along = [4 + r() * 2, line.length - 6 - r() * 2];
-      for (let s = 16; s < line.length - 16; s += 12) along.push(s + (r() - 0.5) * 4);
+      // In a row along a narrow street, one car's length and a gap apart.
+      const step = only ? 6 : 12;
+      for (let s = 16; s < line.length - 16; s += step) along.push(s + (r() - 0.5) * (only ? 1 : 4));
       along.forEach((s, i) => {
-        const q = line.at(s), kerb = edge + (r() < 0.5 ? 0.15 : 1.15);
+        // (On a narrow street all the way up, clear of the lane even where it bends.)
+        const up = r() < 0.5 ? 0.15 : 1.15, q = line.at(s), kerb = edge + (only ? 1.45 : up);
         const x = q.x + Math.sin(q.ang) * kerb * side, y = q.y - Math.cos(q.ang) * kerb * side;
         // Left at a slant, the nose in towards the houses at a corner.
         const skew = (i < 2 ? 0.05 + r() * 0.2 : (r() - 0.5) * 0.1) * side;
-        out.push({ x, y, h: q.ang - skew, lot: false, bay: false, angled: false, fwd: true, corner: i < 2, edge: e, s });
+        out.push({ x, y, h: q.ang - skew, lot: false, bay: false, angled: false, fwd: true, corner: i < 2, only, edge: e, s });
       });
     }
   }
   return out;
 }
 
-// Whether (x, y) is on the driving part of any street in `edges`.
+// Whether (x, y) is on the driving part of any street in `edges`, further in from the
+// kerb than a car with two wheels up on the pavement reaches. Each side by its own
+// kerb where the survey has it: OSM's width is often wider than the street is.
+const TWO_WHEELS_UP = 0.8; // m
 function onCarriageway(x: number, y: number, edges: DriveEdge[]) {
   for (const e of edges) {
     if (e.bridge || e.tunnel) continue;
-    const hw = e.width / 2 + 0.4;
+    const right = e.kerb?.[0] ?? e.width / 2, left = e.kerb?.[1] ?? e.width / 2;
+    const reach = Math.max(right, left);
     for (let i = 0; i < e.pts.length - 1; i++) {
       const [ax, ay] = e.pts[i], [bx, by] = e.pts[i + 1];
-      if (x < Math.min(ax, bx) - hw || x > Math.max(ax, bx) + hw || y < Math.min(ay, by) - hw || y > Math.max(ay, by) + hw) continue;
-      if (segDist(x, y, e.pts[i], e.pts[i + 1]) < hw) return true;
+      if (x < Math.min(ax, bx) - reach || x > Math.max(ax, bx) + reach || y < Math.min(ay, by) - reach || y > Math.max(ay, by) + reach) continue;
+      const onLeft = (bx - ax) * (y - ay) - (by - ay) * (x - ax) > 0;
+      if (segDist(x, y, e.pts[i], e.pts[i + 1]) < Math.max(0.5, (onLeft ? left : right) - TWO_WHEELS_UP)) return true;
     }
   }
   return false;
@@ -429,11 +440,12 @@ export function* parkCarsSteps({ data, edges, clearanceEdges = edges, zones, sol
   };
   for (const s of shuffle(free)) { if (r() < taken(s)) place(s); yield; }
   // Up on the pavement, where there's room beside it at the kerb: more often at a
-  // corner, and as often as not a delivery van.
+  // corner, and as often as not a delivery van. Where the street is too narrow for
+  // the kerb, the residents' cars stand there in a row, as many as the buildings call for.
   for (const s of pavementSlots(edges, r)) {
-    if (!inside(s.x, s.y) || r() > (s.corner ? 0.2 : 0.07) || crowded(s.x, s.y, 5.5)) continue;
+    if (!inside(s.x, s.y) || r() > (s.only && !s.corner ? taken(s) : s.corner ? 0.2 : 0.07) || crowded(s.x, s.y, s.only ? 4.8 : 5.5)) continue;
     const n = cars.length;
-    if (place(s, r() < 0.45 ? 'van' : randomType(r))) onPavement.set(cars[n], { edge: s.edge, s: s.s });
+    if (place(s, r() < (s.only ? 0.08 : 0.45) ? 'van' : randomType(r))) onPavement.set(cars[n], { edge: s.edge, s: s.s });
     yield;
   }
   // On a drive: where the house has a place for one, as often as people are at home.

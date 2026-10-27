@@ -148,17 +148,26 @@ export function streetShare(edges: Iterable<{ hw: string; pts: Point2[] }>, x: n
 // them out over the verge.
 export const SINGLE_LANE = 4.6;
 const SINGLE_LANE_SPEED = 5;
-const narrow = (e: RawStreetEdge) => !e.oneway && e.width < SINGLE_LANE;
+// The driving width: OSM's, or less where the surveyed kerbs (kerbs.py) stand closer
+// together than that (Pod křížkem is mapped 8 m wide between kerbs 5 m apart).
+// Kerbs further apart than OSM's width take in a parking lane or a bay, so they don't widen it.
+const carriageway = (e: RawStreetEdge) =>
+  e.kerb?.[0] != null && e.kerb[1] != null ? Math.min(e.width, e.kerb[0] + e.kerb[1]) : e.width;
+const narrow = (e: RawStreetEdge) => !e.oneway && carriageway(e) < SINGLE_LANE;
 
 function laneOffset(e: RawStreetEdge) {
-  const n = e.lanes || 0;
-  if (narrow(e)) return Math.max(0.5, e.width / 2 - 0.95);
-  if (e.oneway) {
-    const lanes = Math.max(1, n || 1), lw = e.width / lanes;
-    return e.width / 2 - lw * (Math.floor((lanes - 1) / 2) + 0.5);
+  const n = e.lanes || 0, W = carriageway(e);
+  let off;
+  if (narrow(e)) off = Math.max(0.5, W / 2 - 0.95);
+  else if (e.oneway) {
+    const lanes = Math.max(1, n || 1), lw = W / lanes;
+    off = W / 2 - lw * (Math.floor((lanes - 1) / 2) + 0.5);
+  } else {
+    const per = Math.max(1, Math.floor(Math.max(2, n || 2) / 2)), lw = W / (2 * per);
+    off = clamp(lw * (per - 0.5), 1.6, W / 2 - 1);
   }
-  const per = Math.max(1, Math.floor(Math.max(2, n || 2) / 2)), lw = e.width / (2 * per);
-  return clamp(lw * (per - 0.5), 1.6, e.width / 2 - 1);
+  // A car's side stays off the kerb on the right, wherever OSM puts the street's middle.
+  return e.kerb?.[0] != null ? Math.min(off, Math.max(0.5, e.kerb[0] - 1)) : off;
 }
 
 // Takes the edges in `gone` out of `edges` where it stands (others hold the array), in order.
