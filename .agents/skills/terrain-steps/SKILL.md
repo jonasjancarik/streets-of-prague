@@ -66,6 +66,26 @@ worktree with its own copies of the data (APFS clones: `public/data/praha_now`,
    Not another branch's dev server: its lighting and its bridge code differ, and half
    of what looked like new damage in October 2026 was shadows.
 
+## Are the streets flat?
+
+Without the game, on the built tiles with the game's own samplers:
+
+    node scripts/check-road-flatness.mjs praha --save now.json --against before.json
+    node scripts/check-road-flatness.mjs praha --near 50.0827,14.4342,300 --profile Wilsonova
+
+It walks every car street a metre at a time, along its middle and both edges, on its
+own level, and lists per street the worst step, bump (washboard), lean across, ridge or
+trough, twist (the lean changing within 4 m) and stretch off the road (grass or a verge
+over the carriageway), with a place to paste into the game. Two minutes for praha,
+seconds with `--near`. `--strict` fails on anything over the hard limits.
+
+What it found first (27 October 2026, 57,188 streets): about 100 steps over 1 m (V Údolí
+in Suchdol cut by a canyon, Chotkova's hairpin on a wall top, Pod Plynojemem, Na Botiči),
+about 200 streets with 10 m or more off the road, and some 5,000 leaning over 15 %. The
+leaning is real in the game, not the checker: the 4 m lattice tilts hillside streets
+(Italská's left edge 0.5–1 m above its right). Compare runs before and after a rule
+change rather than chasing the total.
+
 ## Finding what's wrong at a place
 
 - **What the lattice says**: `terrain_at.py praha <lat> <lon>` prints heights, labels
