@@ -16,6 +16,7 @@ import osmnx as ox
 import pandas as pd
 import shapely
 import shapely.affinity
+import shapely.ops
 from pyproj import Transformer
 from shapely import STRtree
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon, box
@@ -82,6 +83,9 @@ SURVEYED = 0.5
 SETT_REACH = 4.0
 FENCE_TOLERANCE = 0.25  # m: how far a fence's line may be straightened
 GRID = 0.01  # metres, for overlaying the survey's surface
+HOLE_STEP = 2.0   # m: a surveyed street is checked for holes in the survey's surface this often
+HOLE_BARE = 0.5   # share of a step's width the survey must cover, or the step is a hole
+HOLE_MIN = 4.0    # m: shorter holes are left (a crossing, a gap between two carriageways)
 SPARSE_OTHER = 0.04  # of a block's area: a few shops or sheds in a mostly empty block don't make it commercial
 DECK_ALONG = 8.0  # m of a street on the ground inside a raised carriageway for it to count as the street's (_deck)
 SETTLED_REACH = 30.0  # m: how far from a family house unmapped land counts as its surroundings
@@ -443,7 +447,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     shares = kerbs.surveyed(lines)
     timer.lap("kerb_measure")
     surveyed, sett_near = [], []  # (centre line, cobbled?) of streets drawn from the survey
-    for (ls, _, cls, street), (left, right), share in zip(car_ways, measured, shares):
+    for (ls, est, cls, street), (left, right), share in zip(car_ways, measured, shares):
         # Each side out to its kerb, and round ends so streets join up at crossroads.
         # (The pieces are merged with all the others below, so not one by one here.)
         pieces = [ls.buffer(left, single_sided=True), ls.buffer(-right, single_sided=True),
@@ -459,6 +463,10 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
             surveyed.append((ls, cls == "sett"))
             if cls == "sett":
                 sett_near.append(ls.buffer(max(left, right) + SETT_REACH))
+            if not est["tunnel"]:
+                holes = _survey_holes(ls, left, right, surface)
+                if holes:
+                    road_lines.setdefault(cls, []).extend(holes)
             continue
         road_lines.setdefault(cls, []).extend(pieces)
     timer.lap("road_buffers")
@@ -990,6 +998,29 @@ def _nearest(lines, surface):
         # centimetre, the cells overlap and join cleanly.
         union = shapely.union_all(shapely.buffer(cells[marks], 0.01, join_style="mitre"))
     return _areas(shapely.make_valid(union))
+
+
+def _survey_holes(ls, left, right, surface):
+    """The stretches of a street the survey has but whose surface it lacks (Legerova at
+    Vrchlického sady: 20 m of carriageway missing from the survey, which a roadside verge
+    then filled with grass). Each is drawn from OSM's width, like a street the survey
+    doesn't have; None where there is none."""
+    if surface.is_empty or ls.length < HOLE_MIN:
+        return None
+    near = surface.intersection(ls.buffer(max(left, right) + 1))
+    half = min(left, right)
+    runs, run = [], []
+    for a in np.arange(0, ls.length, HOLE_STEP):
+        b = min(a + HOLE_STEP, ls.length)
+        strip = shapely.ops.substring(ls, a, b).buffer(half, cap_style="flat")
+        bare = strip.area > 0 and near.intersection(strip).area < HOLE_BARE * strip.area
+        if bare:
+            run.append((a, b))
+        if (not bare or b >= ls.length) and run:
+            runs.append((run[0][0], run[-1][1]))
+            run = []
+    holes = [shapely.ops.substring(ls, a, b).buffer(half, cap_style="flat") for a, b in runs if b - a >= HOLE_MIN]
+    return holes or None
 
 
 def _areas(g):
