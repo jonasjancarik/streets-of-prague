@@ -90,6 +90,23 @@ class WalkingSurfaceTests(unittest.TestCase):
             # (No surveyed pavements either: the real ones at this spot would take the ribbons' place.)
             return extract("ujezd", features=(geoms, rows))
 
+    def test_tram_track_through_or_squeezed_by_buildings_is_kept_open_there_only(self):
+        # Letenská: the tram goes through its own arch beside the street's, and before it
+        # the building outlines leave the track a gap narrower than a tram. A track along
+        # a street, a pavement's width from the houses, stays as it is.
+        got = self.extract([{"building": "yes"}, {"railway": "tram"}, {"railway": "tram", "tunnel": "building_passage"},
+                            {"building": "yes"}, {"building": "yes"},
+                            {"building": "yes"}, {"railway": "tram"}],
+                           [box(0, 0, 30, 10), LineString([(-60, 5), (12, 5)]), LineString([(12, 5), (50, 5)]),
+                            box(-30, 0, -10, 4), box(-30, 6, -10, 12),
+                            box(0, 40, 30, 50), LineString([(-40, 37), (60, 37)])])
+        tram = [p for p in got["passages"] if p["hw"] == "tram"]
+        xs = sorted(x for p in tram for x, y in p["pts"])
+        self.assertTrue(tram and all(abs(y - 5) < 0.01 for p in tram for _, y in p["pts"]), tram)
+        self.assertAlmostEqual(xs[0], -30 - (1.8**2 - 1) ** .5 - 3, delta=0.1)
+        self.assertAlmostEqual(xs[-1], 30 + 1.8 + 3, delta=0.1)
+        self.assertEqual(len(got["rails"]), 3)
+
     def test_cobbled_footways_and_pedestrian_streets_use_setts(self):
         got = self.extract([{"highway": "pedestrian", "surface": "sett"},
                             {"highway": "footway", "surface": "cobblestone"},

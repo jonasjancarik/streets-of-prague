@@ -69,6 +69,11 @@ PASSAGE_WAYS = {"footway", "path", "pedestrian", "steps", "corridor", "cycleway"
 # ARCADE metres of it are.
 INSIDE = 0.5
 ARCADE = 3.0
+# A tram track at street level that runs through buildings or closer to them than
+# half this (an arch, or outlines drawn over the street it runs in) is kept open this
+# wide where it does, and TRAM_REACH metres on, so you can drive along it as the tram does.
+TRAM_PASSAGE = 3.6
+TRAM_REACH = 3.0
 COBBLES = ("sett", "cobblestone", "unhewn_cobblestone", "paving_stones")
 SQUARE_EDGE = 0.5  # m: avoid a remnant of a route ribbon along a square's edge
 # `meadow` (meadows, grassland, scrub) and `lawn` (mown grass, and the lawns of housing
@@ -250,6 +255,7 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
     drivable = []  # every car way as the road it covers, to keep inferred parking off it
     service = []  # those of them that aren't streets: they run through blocks of gardens
     maybe = []  # ways that are passages if they run through buildings (passage_tags)
+    trams = []  # tram tracks at street level, open where they run through buildings (TRAM_PASSAGE)
     squares = []  # (polygon, own surface, named outline only); decide after all ways and land
     square_ways = []  # (line, mapped surface) on the ground, including untagged ways
     stops = []  # (x, y) of public transport stops, which people cross the grass to reach (worn_paths.py)
@@ -334,6 +340,9 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
                 continue
             for ls in _lines(g.intersection(clip)):
                 rails.append({"kind": rw, "pts": _coords(ls)})
+            if (rw == "tram" and col(row, "bridge") in (None, "no")
+                    and _ground_level(col(row, "layer")) and _ground_level(col(row, "level"))):
+                trams.append(g)
             continue
 
         if col(row, "barrier") == "guard_rail":
@@ -399,9 +408,16 @@ def extract(area: str, bbox=None, centre=None, source=None, features=None, groun
         return {"buildings": buildings, "parts": parts}
 
     # Passages tagged as tunnels or as covered ways: the ones that run through buildings.
-    if maybe:
+    if maybe or trams:
         shapes = [Polygon(b["rings"][0], b["rings"][1:]) for b in buildings]
         btree = STRtree(shapes)
+        for g in trams:
+            hits = btree.query(g.buffer(TRAM_PASSAGE / 2), predicate="intersects")
+            if not len(hits):
+                continue
+            crowded = g.intersection(unary_union([shapes[k] for k in hits]).buffer(TRAM_PASSAGE / 2))
+            if crowded.length >= 1:
+                add_passage(g.intersection(crowded.buffer(TRAM_REACH)), "tram", TRAM_PASSAGE)
         for row, g, hw, width in maybe:
             hits = btree.query(g, predicate="intersects")
             inside = unary_union([shapes[k] for k in hits]).intersection(g).length if len(hits) else 0

@@ -914,7 +914,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   layer or level, bar an arcade one layer down) counts as a passage when at least
   half of it runs inside buildings, or an arcade 3 m of it (`passage_tags` in
   `pipeline/osm_area.py`), rather than as a tunnel under the ground or a metro
-  station's corridor. While you're in one, a round
+  station's corridor. A tram track at street level that runs through buildings (its
+  own arch, as beside Letenská's street and footway passages, or outlines drawn over
+  the street) is kept open too, 3.6 m wide, wherever it does (`TRAM_PASSAGE`), so
+  you can drive and walk along it. While you're in one, a round
   hole opens in the floors above you so you can still see yourself (`CUTAWAY` in
   `src/shading.ts`).
 
