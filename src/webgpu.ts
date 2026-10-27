@@ -12,14 +12,15 @@ import { WebGPURenderer, MeshLambertNodeMaterial } from 'three/webgpu';
 import {
   Fn, If, Discard, float, vec2, vec3, vec4, texture, materialReference, positionWorld, normalView, materialColor, fract, floor, mod, dot,
   mix, smoothstep, step, length, fwidth, abs, sqrt, min, max, distance, cos, sin, select, clamp, transformNormalToView,
-  attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize,
+  attribute, positionLocal, modelViewMatrix, cameraProjectionMatrix, screenSize, uniform, renderGroup,
 } from 'three/tsl';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
 import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR } from './shading.ts';
 import {
-  type N, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, followVec, addPort, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports, skyAmbient,
+  type N, follow, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, followVec, addPort, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports, skyAmbient,
 } from './webgpu/common.ts';
-import { lampLight } from './webgpu/lamps.ts';
+import { lampLight, uLampOn } from './webgpu/lamps.ts';
+import { MIRROR, MIRROR_BRIGHT, MIRROR_K, MIRROR_MAP, MIRROR_MATRIX } from './mirror.ts';
 import './webgpu/buildings.ts';
 import './webgpu/trees.ts';
 import './webgpu/soft.ts';
@@ -185,6 +186,25 @@ function weathered(id: number, c0: N, p: N, time: N) {
 }
 
 const uSkyRef: N = followColor(SKY_REF);
+const followVec2 = (v: { value: THREE.Vector2 }) => { const u = uniform(v.value.clone()).setGroup(renderGroup); u.onRenderUpdate(() => { u.value.copy(v.value); return u.value; }); return u; };
+// What a puddle mirrors there: the sky, under what mirror.ts drew of the scene, wavering with the ripples (MIRROR_GLSL).
+const uMirrorOn = follow(MIRROR), uMirrorK = follow(MIRROR_K), uMirrorBright: N = followVec2(MIRROR_BRIGHT), mirrorMap = texture(MIRROR_MAP.value);
+const uMirrorMatrix: N = (() => {
+  const u = uniform(MIRROR_MATRIX.value.clone()).setGroup(renderGroup);
+  u.onRenderUpdate(() => { u.value.copy(MIRROR_MATRIX.value); return u.value; });
+  return u;
+})();
+const mirrorOf = (shine: N, time: N) => Fn(() => {
+  const r = vec3(uSkyRef).toVar();
+  If(uMirrorOn.greaterThan(0.5).and(shine.greaterThan(0.001)), () => {
+    const w = positionWorld, p = vec2(w.x, w.z.negate());
+    const o = vec2(vnoise(p.mul(3).add(time.mul(0.7))), vnoise(p.mul(3).add(17).sub(time.mul(0.6)))).sub(0.5).mul(uRain.mul(0.3).add(0.06));
+    const q = uMirrorMatrix.mul(vec4(w.x.add(o.x), w.y, w.z.sub(o.y), 1));
+    const m = (mirrorMap.sample(q.xy.div(q.w)) as N).level(float(0));
+    r.assign(uSkyRef.mul(m.a.oneMinus()).add(m.rgb.mul(0.06)).mul(uMirrorK.div(0.06)).add(max(m.rgb.sub(uMirrorBright.x), 0).mul(uMirrorBright.y).mul(uLampOn)));
+  });
+  return r;
+})();
 // A tile's texture, read from the material drawn: the ground's node graphs are shared by every
 // tile (three.js builds a shader for each graph it hasn't seen, 7–60 ms on the main thread), and
 // each material carries its own tile's textures and their boxes (`${name}Map`, `${name}Box`).
@@ -265,7 +285,10 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo 
     // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
     emissive: Fn(() => {
       const l = lampLight(slope ? positionWorld.add(vec3(slope.x, 0, slope.y).mul(6)) : positionWorld, normalView).toVar();
-      const e = g.rgb.mul(l).add(uSkyRef.add(l.mul(smoothstep(LAMP_MIRROR[0], LAMP_MIRROR[1], dot(l, vec3(0.3, 0.59, 0.11))).mul(0.85))).mul(g.a));
+      const mirror = id !== 10 && !sheltered;
+      // (Under the mirror, the lamps' own reflections take the place of the spot under each.)
+      const spot = l.mul(smoothstep(LAMP_MIRROR[0], LAMP_MIRROR[1], dot(l, vec3(0.3, 0.59, 0.11))).mul(0.85));
+      const e = g.rgb.mul(l).add((mirror ? mirrorOf(g.a, timeOf(time)).add(spot.mul(uMirrorOn.oneMinus())) : uSkyRef.add(spot)).mul(g.a));
       return slope ? e.add(waterShine(positionWorld, wp, slope, timeOf(time), uSkyRef, l)) : e;
     })(),
     normal: slope ? transformNormalToView(waveNormal(slope)) : null,

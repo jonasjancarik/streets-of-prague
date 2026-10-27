@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mirrored } from '../mirror.ts';
 import { signedArea, hash } from './geo.ts';
 import type { GeoData, Point2 } from './geo.ts';
 import { TENEMENT_PLASTER } from '../facades.ts';
@@ -231,7 +232,7 @@ export function buildBuildings(data: BuildingTile) {
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setAttribute('drapeUv', new THREE.Float32BufferAttribute(uv, 2));
-  const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  const mesh = mirrored(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })));
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return { mesh, stats, sites };
@@ -272,7 +273,7 @@ export function wallMesh({ position, normal }: WallBuffers) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(position, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
-  const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: '#cbbd9f', side: THREE.DoubleSide }));
+  const mesh = mirrored(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: '#cbbd9f', side: THREE.DoubleSide })));
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;

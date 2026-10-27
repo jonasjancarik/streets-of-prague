@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mirrored } from './mirror.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Point2 } from './map/geo.ts';
@@ -603,7 +604,7 @@ export class Trams {
       const type = types.get(v.kind);
       if (!type) throw new Error('Trams are not loaded');
       const sections = type.sections.map((spec) => {
-        const m = new THREE.Mesh(spec.geometry, material);
+        const m = mirrored(new THREE.Mesh(spec.geometry, material));
         m.castShadow = true;
         return m;
       });

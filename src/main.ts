@@ -3,6 +3,7 @@ import { ANYWHERE, anywhereIndex } from './countrysideTiles.ts';
 import { STATIONS } from './radio.ts';
 import { stationAllowed, onRadioPreferencesChange } from './radio-preferences.ts';
 import * as THREE from 'three';
+import { renderMirror } from './mirror.ts';
 import proj4 from 'proj4';
 import { Funicular } from './funicular.ts';
 import { Ferries } from './ferries.ts';
@@ -2405,7 +2406,11 @@ async function main() {
     show('tank', inCar?.type === 'fire' && water_ < 100 ? `<span role="img" aria-label="${t('Water: {n}%', { n: water_ })}" style="width:${water_}%"></span>` : '', 'html');
 
     dev.update();
-    renderer.render(scene, camera);
+    if (renderMirror(renderer, scene, camera, camGround, weather.now.wet)) {
+      scene.matrixWorldAutoUpdate = false;
+      renderer.render(scene, camera);
+      scene.matrixWorldAutoUpdate = true;
+    } else renderer.render(scene, camera);
     // A picture of the frame just drawn, asked for by the feedback form: the canvas can only
     // be read in the task that drew it.
     if (grab.length) { const picture = takePicture(); for (const done of grab.splice(0)) done(picture); }

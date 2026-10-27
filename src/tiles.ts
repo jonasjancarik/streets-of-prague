@@ -1,6 +1,7 @@
 import { dataUrl } from './data.ts';
 import * as telemetry from './telemetry.ts';
 import * as THREE from 'three';
+import { mirrored } from './mirror.ts';
 import { streetOf } from './map/roofRules.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Geo, Grid, rng, hash } from './map/geo.ts';
@@ -315,7 +316,7 @@ function buildingMesh(arrays: BuildingArrays, sky: Float32Array | null) {
   g.setAttribute('facade', new THREE.BufferAttribute(arrays.facade, 4));
   g.setAttribute('sky', new THREE.BufferAttribute(sky ?? new Float32Array(arrays.position.length / 3).fill(1), 1));
   if (arrays.parts) g.userData.parts = { ...arrays.parts, end: arrays.position.length / 3 };
-  const mesh = new THREE.Mesh(g, buildingMaterial());
+  const mesh = mirrored(new THREE.Mesh(g, buildingMaterial()));
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;

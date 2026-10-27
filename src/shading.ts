@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FACADE_ATLAS, FACADE_ON, FACADE_GLSL } from './facades.ts';
-import { lampLit } from './lamps.ts';
+import { LAMP_ON, lampLit } from './lamps.ts';
+import { MIRROR, MIRROR_BRIGHT, MIRROR_K, MIRROR_MAP, MIRROR_MATRIX } from './mirror.ts';
 import { ROOF_TILES } from './map/roofPalette.ts';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON } from './groundSeason.ts';
 
@@ -339,6 +340,24 @@ vec3 weathered(int id, vec3 c, vec2 p, inout float shine) {
     shine *= 1. - cover;
   }
   return c;
+}
+`;
+
+// What a puddle mirrors there: the sky, under what mirror.ts drew of the scene, wavering with
+// the ripples.
+const MIRROR_GLSL = /* glsl */ `
+uniform sampler2D uMirror;
+uniform mat4 uMirrorMatrix;
+uniform float uMirrorOn;
+uniform float uMirrorK;
+uniform vec2 uMirrorBright;
+uniform float uMirrorNight;
+vec3 mirrorOf(vec3 w, vec2 p) {
+  if (uMirrorOn < .5) return uSkyRef;
+  vec2 o = (vec2(vnoise(p * 3. + uTime * .7), vnoise(p * 3. + 17. - uTime * .6)) - .5) * (.06 + .3 * uRain);
+  vec4 q = uMirrorMatrix * vec4(w.x + o.x, w.y, w.z - o.y, 1.);
+  vec4 m = textureLod(uMirror, q.xy / q.w, 0.);
+  return (uSkyRef * (1. - m.a) + m.rgb * .06) * (uMirrorK / .06) + max(m.rgb - uMirrorBright.x, 0.) * uMirrorBright.y * uMirrorNight;
 }
 `;
 
@@ -767,6 +786,8 @@ export function patterned(
     sh.uniforms.uStreetSnow = STREET_SNOW;
     sh.uniforms.uRain = RAIN;
     sh.uniforms.uSkyRef = SKY_REF;
+    const mirror = id !== 10 && !sheltered;
+    if (mirror) Object.assign(sh.uniforms, { uMirror: MIRROR_MAP, uMirrorMatrix: MIRROR_MATRIX, uMirrorOn: MIRROR, uMirrorK: MIRROR_K, uMirrorBright: MIRROR_BRIGHT, uMirrorNight: LAMP_ON });
     sh.uniforms.uGroundSeason = GRASS_SEASON.park;
     sh.uniforms.uMeadowSeason = GRASS_SEASON.meadow;
     sh.uniforms.uLawnSeason = GRASS_SEASON.lawn;
@@ -794,7 +815,7 @@ export function patterned(
       .replace('#include <common>', '#include <common>\nvarying vec3 vWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\nuniform sampler2D uSky; uniform vec4 uSkyBox; uniform float uSkyOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}\n${WEATHER_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vWorld;\nuniform sampler2D uRelief; uniform vec4 uReliefBox; uniform float uReliefOn;\nuniform sampler2D uSky; uniform vec4 uSkyBox; uniform float uSkyOn;\n${photo ? 'uniform sampler2D uPhoto; uniform vec4 uPhotoBox;\n' : ''}${deck ? 'uniform vec4 uCut; uniform sampler2D uDeck; uniform vec4 uDeckBox;\n' : ''}${dig ? 'uniform vec4 uDig;\n' : ''}${NOISE_GLSL}\n${PATTERNS_GLSL}\n${WEATHER_GLSL}${mirror ? MIRROR_GLSL : ''}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
   vec2 wp = vec2(vWorld.x, -vWorld.z);
 ${deck ? `  if (vWorld.y > uCut.y && distance(vWorld.xz, uCut.xz) < uCut.w) discard;
@@ -806,8 +827,8 @@ ${deck.mask ? '  if (texture2D(uDeck, (wp - uDeckBox.xy) / (uDeckBox.zw - uDeckB
 ${sheltered ? '' : `  diffuseColor.rgb = weathered(${id}, diffuseColor.rgb, wp, shine);\n`}${dig ? `  if (distance(vWorld.xz, uDig.xy) < uDig.z) diffuseColor.rgb = vec3(.23, .19, .15) * (.8 + .4 * fbm(wp * .7));
 ` : ''}`);
     lampLit(sh, 'vWorld');
-    // Wet ground mirrors the sky and the lamps.
-    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  vec3 lampOn = lampLightOn(vWorld, normal);\n  reflectedLight.directDiffuse += shine * (uSkyRef + lampOn * .85 * smoothstep(${LAMP_MIRROR[0].toFixed(2)}, ${LAMP_MIRROR[1].toFixed(2)}, dot(lampOn, vec3(.3, .59, .11))));\n  // Courtyards and lanes see less of the sky: less ambient light, never less sun or lamplight.\n  if (uSkyOn > .5) reflectedLight.indirectDiffuse *= mix(${SKY_LEAST.toFixed(2)}, 1., texture2D(uSky, (wp - uSkyBox.xy) / (uSkyBox.zw - uSkyBox.xy)).r);`);
+    // Wet ground mirrors the sky and the lamps, and on Ultra what stands over it (mirror.ts).
+    sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  vec3 lampOn = lampLightOn(vWorld, normal);\n  reflectedLight.directDiffuse += shine * (${mirror ? '(shine > .001 ? mirrorOf(vWorld, wp) : uSkyRef)' : 'uSkyRef'} + lampOn * .85 * smoothstep(${LAMP_MIRROR[0].toFixed(2)}, ${LAMP_MIRROR[1].toFixed(2)}, dot(lampOn, vec3(.3, .59, .11)))${mirror ? ' * (1. - uMirrorOn)' : ''});\n  // Courtyards and lanes see less of the sky: less ambient light, never less sun or lamplight.\n  if (uSkyOn > .5) reflectedLight.indirectDiffuse *= mix(${SKY_LEAST.toFixed(2)}, 1., texture2D(uSky, (wp - uSkyBox.xy) / (uSkyBox.zw - uSkyBox.xy)).r);`);
   };
   material.customProgramCacheKey = () => `pattern-${id}-${relief ? 1 : 0}${relief?.sky ? 's' : ''}-${deck ? (deck.mask ? 'mask' : 'cut') : ''}-${dig ? 'dig' : ''}${photo ? '-photo' : ''}${sheltered ? '-in' : ''}${seasonal ? '' : '-summer'}`;
   return material;
