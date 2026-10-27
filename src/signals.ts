@@ -20,8 +20,8 @@ export const setSignalGlow = (f: typeof glowBy) => { glowBy = f; };
 let flareBy: (() => THREE.Material) | null = null;
 export const setSignalFlare = (f: typeof flareBy) => { flareBy = f; };
 // A car light's flare: the light leaving the head under its hoods, from their front edge
-// (HOOD m ahead of the pole) out over the road, FLARE m long and wide at its end.
-const HOOD = 0.5, FLARE = [1, 1.4];
+// (HOOD m ahead of the pole) down to the road FLARE[1] m further on, FLARE[0] m wide there.
+const HOOD = 0.5, FLARE = [1.2, 2.2];
 const NONE = new THREE.Matrix4().makeScale(0, 0, 0);
 
 export const GREEN = 0, AMBER = 1, RED = 2, READY = 3; // READY: red and amber together
@@ -32,8 +32,6 @@ const LOOK = 70, EASY = 3.5, HARD = 7;
 const MAX_HEADS = 800;
 const COLOURS = [new THREE.Color('#22ff88'), new THREE.Color('#ffae00'), new THREE.Color('#ff2414')];
 const OFF = [new THREE.Color('#0c1a12'), new THREE.Color('#1c150a'), new THREE.Color('#1e0c0a')];
-// The colour of the glow and the beam in each phase, that of the lowest lamp lit.
-const LIT = [0, 1, 2, 1];
 const WALK = 4, STOP = 5; // a crossing's light, as kept in Signals.shown
 
 // Mark items [from, to) of `attr` to be sent, in one span with any range still waiting
@@ -77,16 +75,13 @@ export class Signals {
   private near: Head[] = []; // the cars' lights, then the crossings'
   private cars = 0; // how many of near are the cars' lights
   private nearAt = { x: Infinity, y: Infinity, r: 0, asked: 0, t: 0 }; // r: the radius gathered, asked: the one asked for
-  // What each slot of near shows as drawn (a phase, WALK or STOP), -1 to draw it afresh;
-  // and the night's brightness the beams were drawn at.
+  // What each slot of near shows as drawn (a phase, WALK or STOP), -1 to draw it afresh.
   private shown = new Int8Array(MAX_HEADS).fill(-1);
-  private beamOn = NaN;
   private poles: THREE.InstancedMesh;
   private boxes: THREE.InstancedMesh;
   private lamps: THREE.InstancedMesh;
   private glows: THREE.InstancedMesh;
   private flares: THREE.InstancedMesh;
-  private beams: THREE.InstancedMesh;
   private walkBoxes: THREE.InstancedMesh;
   private walkLamps: THREE.InstancedMesh;
   private dummy = new THREE.Object3D();
@@ -119,21 +114,10 @@ export class Signals {
     const lamp = new THREE.SphereGeometry(0.105, 10, 6).scale(1, 1, 0.8).translate(0, 0, 0.23);
     this.poles = new THREE.InstancedMesh(pole, lit(new THREE.MeshLambertMaterial({ color: '#3b3d3f' }), 'signal-pole'), MAX_HEADS);
     this.boxes = new THREE.InstancedMesh(box, lit(new THREE.MeshLambertMaterial({ color: '#23251f' }), 'signal-head'), MAX_HEADS);
-    // The lit lamp's spill on the ground just in front of the pole, fading out within a couple of metres.
-    const beam = new THREE.BufferGeometry();
-    beam.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0.3, -0.2, 0, 0.3, 0.2, 0, 0.3, -0.5, 0, 1.1, 0.5, 0, 1.1, -0.9, 0, 2.2, 0.9, 0, 2.2], 3));
-    beam.setAttribute('color', new THREE.Float32BufferAttribute([1, 1, 1, 1, 1, 1, 1, 1, 1, .4, .4, .4, .4, .4, .4, 0, 0, 0, 0, 0, 0], 3));
-    beam.setIndex([0, 3, 1, 1, 3, 4, 1, 4, 2, 3, 5, 4, 4, 5, 6]);
-    this.beams = new THREE.InstancedMesh(beam, new THREE.MeshBasicMaterial({
-      vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false,
-      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide,
-    }), MAX_HEADS);
-    this.beams.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3), 3);
-    this.beams.renderOrder = 4;
     this.lamps = new THREE.InstancedMesh(lamp, new THREE.MeshBasicMaterial(), MAX_HEADS * 3);
     this.lamps.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3 * 3), 3);
     // A crossing's light: a smaller head lower down, two square lamps (the red man over the
-    // green), no hoods and no beam on the road.
+    // green), no hoods and no flare.
     const walkBox = mergeGeometries([
       new THREE.BoxGeometry(0.3, 0.62, 0.2).translate(0, 2.3, 0.1),
       new THREE.BoxGeometry(0.4, 0.74, 0.04).translate(0, 2.3, -0.02),
@@ -159,9 +143,13 @@ export class Signals {
     this.glows.renderOrder = 5;
     // A car light's: the light seen leaving the front of the head (a lamp's own light can't
     // come through the top of the head), brightest just out from under the hoods and
-    // widening and fading over the road, so from above it also shows which way it faces.
-    // Flat at the lamp's height; uv.y is 1 at the head.
-    this.flares = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0, 0, 0.5), flareBy ? flareBy() : new THREE.ShaderMaterial({
+    // widening and fading as it slopes down to the road, so that from above or aside it's
+    // one cone from the head to the ground, and shows which way the light faces. It's
+    // drawn from the lamp's height (1, scaled to it) down to the ground (0); uv.y is 1 at the head.
+    const cone = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0, 0, 0.5);
+    const at = cone.attributes.position;
+    for (let v = 0; v < at.count; v++) at.setY(v, -at.getZ(v));
+    this.flares = new THREE.InstancedMesh(cone, flareBy ? flareBy() : new THREE.ShaderMaterial({
       uniforms: { uOn: LAMP_ON },
       vertexShader: /* glsl */ `
         varying vec2 vUv; varying vec3 vC;
@@ -170,19 +158,19 @@ export class Signals {
         uniform float uOn; varying vec2 vUv; varying vec3 vC;
         void main() {
           float along = 1. - vUv.y, x = (vUv.x - .5) * 2.;
-          float fan = (1. - along) * (1. - along) * smoothstep(1., .55, abs(x) / (.4 + .6 * along));
+          float fan = pow(1. - along, 1.5) * smoothstep(1., .55, abs(x) / (.3 + .7 * along));
           float core = smoothstep(1., .3, length(vec2(x / .4, (along - .06) / .13)));
           gl_FragColor = vec4(vC * (fan * (.9 + .4 * uOn) + core), 1.);
         }`,
-      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, side: THREE.DoubleSide,
     }), MAX_HEADS);
     this.flares.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HEADS * 3), 3);
     this.flares.renderOrder = 5;
-    for (const m of [this.poles, this.boxes, this.lamps, this.glows, this.flares, this.beams, this.walkBoxes, this.walkLamps]) {
+    for (const m of [this.poles, this.boxes, this.lamps, this.glows, this.flares, this.walkBoxes, this.walkLamps]) {
       m.count = 0;
       m.frustumCulled = false;
     }
-    scene.add(this.poles, this.boxes, this.lamps, this.glows, this.flares, this.beams, this.walkBoxes, this.walkLamps);
+    scene.add(this.poles, this.boxes, this.lamps, this.glows, this.flares, this.walkBoxes, this.walkLamps);
 
     void fetch(dataUrl(area, 'signals.json')).then((r) => (r.ok ? r.json() as Promise<SignalsJSON> : null)).then((data) => {
       if (!data) return;
@@ -311,10 +299,6 @@ export class Signals {
         return;
       }
       this.boxes.setMatrixAt(i, d.matrix);
-      d.position.y += 0.15;
-      d.updateMatrix();
-      this.beams.setMatrixAt(i, d.matrix);
-      d.position.y -= 0.15;
       for (let k = 0; k < 3; k++) {
         d.position.y += k ? -0.3 : 2.85;
         d.updateMatrix();
@@ -322,15 +306,15 @@ export class Signals {
       }
     });
     this.poles.count = this.near.length;
-    this.boxes.count = this.beams.count = this.cars;
+    this.boxes.count = this.cars;
     this.lamps.count = this.cars * 3;
     this.walkBoxes.count = this.near.length - this.cars;
     this.walkLamps.count = this.walkBoxes.count * 2;
-    for (const m of [this.poles, this.boxes, this.lamps, this.beams, this.walkBoxes, this.walkLamps]) send(m.instanceMatrix, m.count);
+    for (const m of [this.poles, this.boxes, this.lamps, this.walkBoxes, this.walkLamps]) send(m.instanceMatrix, m.count);
   }
 
   // Once a frame: the lights round the view (x, y), within r. Only the lights whose
-  // phase has changed are drawn again, and the beams too when the night's brightness has.
+  // phase has changed are drawn again.
   update(x: number, y: number, r: number, now: number) {
     this.gather(x, y, r, now);
     const t = this.time(), d = this.dummy, m = this.m, shown = this.shown;
@@ -366,23 +350,18 @@ export class Signals {
       // The flare of the lowest lamp that's lit, out from the head as it's turned; no round glow.
       const k = on[2] ? 2 : on[1] ? 1 : 0;
       this.boxes.getMatrixAt(i, m);
-      this.local.makeScale(FLARE[0], 1, FLARE[1]).setPosition(0, 2.85 - 0.3 * k, HOOD);
+      const up = 2.85 - 0.3 * k;
+      this.local.makeScale(FLARE[0], up - 0.05, FLARE[1]).setPosition(0, up, HOOD);
       this.flares.setMatrixAt(i, m.multiply(this.local));
       this.flares.setColorAt(i, this.c.copy(COLOURS[2 - k]));
       this.glows.setMatrixAt(i, NONE);
     });
-    // The beams of the lights drawn again, or all of them at a new brightness.
-    const same = this.beamOn === LAMP_ON.value, from = same ? lo : 0, to = same ? carsTo : this.cars;
-    this.beamOn = LAMP_ON.value;
-    for (let i = from; i < to; i++) this.beams.setColorAt(i, this.c.copy(COLOURS[LIT[shown[i]]]).multiplyScalar(0.06 + 0.16 * LAMP_ON.value));
     this.glows.count = this.near.length;
     this.flares.count = this.cars;
-    this.beams.count = this.cars;
     mark(this.glows.instanceMatrix, lo, hi);
     if (this.glows.instanceColor) mark(this.glows.instanceColor, lo, hi);
     mark(this.flares.instanceMatrix, lo, carsTo);
     if (this.flares.instanceColor) mark(this.flares.instanceColor, lo, carsTo);
-    if (this.beams.instanceColor) mark(this.beams.instanceColor, from, to);
     if (this.lamps.instanceColor) mark(this.lamps.instanceColor, lo * 3, carsTo * 3);
     if (this.walkLamps.instanceColor) mark(this.walkLamps.instanceColor, walks * 2, walksTo * 2);
   }
