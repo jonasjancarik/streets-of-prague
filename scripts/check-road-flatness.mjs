@@ -224,7 +224,10 @@ for (const e of edges.values()) {
     if (st.level !== undefined && Number.isNaN(levelAt(...a, st.level)) !== Number.isNaN(levelAt(...b, st.level))) return 'deck';
     return sideAt(...a) !== sideAt(...b) ? 'wall' : 'ground';
   })();
-  const r = { id: e.id, why, name: e.name || '', hw: e.hw, level: e.level, length: Math.round(length) };
+  // (Where exactly, and the terrace labels either side: for finding what made it.)
+  const stepPair = st ? (st.side === 'mid' ? [[st.prev.x, st.prev.y], [st.x, st.y]] : st.side === 'l' ? [[st.prev.lx, st.prev.ly], [st.lx, st.ly]]
+    : [[st.prev.rx, st.prev.ry], [st.rx, st.ry]]).map(([x, y]) => [+x.toFixed(2), +y.toFixed(2), sideAt(x, y)]) : null;
+  const r = { id: e.id, why, stepPair, name: e.name || '', hw: e.hw, level: e.level, length: Math.round(length) };
   for (const k of Object.keys(worst)) { r[k] = +worst[k][0].toFixed(k === 'lean' || k === 'twist' ? 1 : 2); r[`${k}At`] = worst[k][1] ? toWgs(worst[k][1].x, worst[k][1].y) : null; }
   r.profile = args.profile && `${e.id} ${e.name || ''}`.includes(args.profile) ? prof : undefined;
   rows.push(r);
