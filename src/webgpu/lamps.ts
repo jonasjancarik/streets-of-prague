@@ -8,7 +8,7 @@ import {
   Fn, If, Discard, float, int, ivec2, vec2, vec3, vec4, texture, attribute, positionGeometry, positionWorld, normalView, cameraViewMatrix, diffuseColor,
   dot, smoothstep, abs, select, min, max, step, length, mix, sqrt, inverseSqrt,
 } from 'three/tsl';
-import { LAMP_MAP, LAMP_MAP_HIGH, LAMP_MAP_OPEN, OPEN_ABOVE, LAMP_BOX, LAMP_REF, LAMP_ON, LAMP_SHADOWS, POOL, setPools } from '../lamps.ts';
+import { LAMP_MAP, LAMP_MAP_HIGH, LAMP_MAP_OPEN, OPEN_ABOVE, LAMP_BOX, LAMP_REF, LAMP_ON, LAMP_SHADOWS, POOL, setPools, CAR_SHAPED } from '../lamps.ts';
 
 const LUMA = vec3(0.3, 0.59, 0.11);
 import { type N, follow, followVec } from './common.ts';
@@ -19,27 +19,44 @@ import { type N, follow, followVec } from './common.ts';
 function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture, layer: number) {
   const m = new NodeMaterial();
   const carTex = texture(cars), uShadow = follow(LAMP_SHADOWS), uRef = followVec(LAMP_REF);
+  // How far the ray runs through a box, its corners in plan rounded off by r, and where it
+  // leaves (`through` in the GLSL); and the light a stretch that long keeps off (`blocked`).
+  const through = (from: N, D: N, lo: N, hi: N, r: N): N => {
+    const t1: N = lo.sub(from).div(D), t2: N = hi.sub(from).div(D);
+    const tn: N = min(t1, t2), tf: N = max(t1, t2);
+    const t0: N = max(max(max(tn.x, tn.y), tn.z), 0), t3: N = min(min(min(tf.x, tf.y), tf.z), 1);
+    const m: N = from.add(D.mul(t0.add(t3).mul(0.5)));
+    const half: N = hi.xz.sub(lo.xz).mul(0.5), c: N = abs(m.xz.sub(hi.xz.add(lo.xz).mul(0.5)));
+    const keep = select(r.greaterThan(0), smoothstep(-0.06, 0.06, length(max(c.sub(half).add(r), 0)).sub(r)).oneMinus(), float(1));
+    return vec2(max(t3.sub(t0), 0).mul(length(D)).mul(keep), t3);
+  };
+  // (The edge is softer the further the shadow falls behind the box, and never sharper than the map's texels.)
+  const blocked = (s: N, len: N): N => smoothstep(0, max(uRef.z, s.y.oneMinus().mul(len).mul(0.06).add(0.2)), s.x).mul(0.92);
   const cover = (id: N, p: N, lamp: N, gy: N): N => {
     const out = float(0).toVar();
     If(id.greaterThan(-0.5), () => {
       const i = int(id.add(0.5));
       const a = carTex.load(ivec2(i, int(0))).toVar(), b = carTex.load(ivec2(i, int(1))).toVar();
       const fw = a.zw, sd = vec2(a.w.negate(), a.z);
+      // (A car's box comes with its half length negative: CAR_SHAPED.)
+      const car = step(b.x, 0), hl = abs(b.x), r = car.mul(CAR_SHAPED.corner);
       If(uShadow.lessThan(1.5), () => {
         const o = p.sub(a.xy), l = vec2(dot(o, fw), dot(o, sd));
-        const d = length(max(abs(l).sub(b.xy), 0));
+        const d = length(max(abs(l).sub(vec2(hl, b.y)).add(r), 0)).sub(r);
         out.assign(smoothstep(0, 1.2, d).oneMinus().mul(smoothstep(1.5, 3, abs(gy.sub(b.w))).oneMinus()).mul(0.55));
       }).Else(() => {
         const o = lamp.xz.sub(a.xy), e = p.sub(a.xy);
         const from = vec3(dot(o, fw), lamp.y.sub(b.w), dot(o, sd));
         const D = vec3(dot(e, fw), gy.sub(b.w), dot(e, sd)).sub(from).toVar();
         D.addAssign(step(0, D).mul(2).sub(1).mul(1e-4));
-        const t1 = vec3(b.x.negate(), 0.12, b.y.negate()).sub(from).div(D), t2 = vec3(b.x, b.z.sub(b.w), b.y).sub(from).div(D);
-        const tn = min(t1, t2), tf = max(t1, t2);
-        const t0 = max(max(max(tn.x, tn.y), tn.z), 0), t3 = min(min(min(tf.x, tf.y), tf.z), 1).toVar();
-        // The edge is softer the further the shadow falls behind the box (and never sharper than the map's texels).
-        const len = length(D), soft = max(uRef.z, t3.oneMinus().mul(len).mul(0.06).add(0.2));
-        out.assign(smoothstep(0, soft, t3.sub(t0).mul(len)).mul(0.92));
+        const H = b.z.sub(b.w), len = length(D);
+        const whole = blocked(through(from, D, vec3(hl.negate(), 0.12, b.y.negate()), vec3(hl, H, b.y), float(0)), len);
+        // A car: the body up to the windows, and the cabin on it, shorter and narrower; the
+        // ray's stretches through the two add up, as through one solid car.
+        const belt = H.mul(CAR_SHAPED.belt);
+        const body: N = through(from, D, vec3(hl.negate(), 0.12, b.y.negate()), vec3(hl, belt, b.y), r);
+        const cabin: N = through(from, D, vec3(hl.mul(-CAR_SHAPED.cabin[0]), belt, b.y.mul(-CAR_SHAPED.narrow)), vec3(hl.mul(CAR_SHAPED.cabin[1]), H, b.y.mul(CAR_SHAPED.narrow)), r.mul(0.6));
+        out.assign(select(car.greaterThan(0.5), blocked(vec2(body.x.add(cabin.x), max(body.y, cabin.y)), len), whole));
       });
     });
     return out;

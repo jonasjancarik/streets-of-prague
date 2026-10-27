@@ -47,6 +47,13 @@ export const LIGHT_FX = { value: 0 };
 // Over the ground a light falls on, from where the open map's light takes over (m): above
 // a car's roof, below a tree's crown.
 export const OPEN_ABOVE = [2.2, 3.4];
+// What a car is to the lamps' light (cover, in the pools' shaders): not one box but its
+// body up to `belt` of its height and a cabin on it from -cabin[0] to cabin[1] of its half
+// length and `narrow` of its width, their corners rounded off by `corner` m in plan (the
+// cabin's less), so its shadow has a car's shape instead of a crate's. Vans, lorries, buses
+// and two-wheelers stay boxes, as do trams, people and posts.
+export const CAR_SHAPED = { belt: 0.62, cabin: [0.72, 0.38], narrow: 0.8, corner: 0.35 };
+export const carShaped = (s: { H: number; heavy?: boolean; two?: string }) => !s.heavy && !s.two && s.H < 1.7;
 export const LAMP_GLSL = /* glsl */ `
 #define OPEN_ABOVE vec2(${OPEN_ABOVE[0].toFixed(1)}, ${OPEN_ABOVE[1].toFixed(1)})
 uniform sampler2D uLampMap; uniform sampler2D uLampOpen; uniform vec4 uLampBox; uniform vec4 uLampRef; uniform float uLampOn;
@@ -421,25 +428,45 @@ export class Lamps {
         // How much box i keeps the light from the ground point p (0..1): the ray from the
         // lamp to the point through the box, the edge softer the further the shadow falls
         // behind it; or, for the cheap version, closeness to the box's outline.
+        // How far the ray O + D t runs through a box from lo to hi (the car's own axes), its
+        // corners in plan rounded off by r (where the stretch is centred in a corner the
+        // rounding cuts away it counts for nothing), and in y where it leaves the box.
+        vec2 through(vec3 O, vec3 D, vec3 lo, vec3 hi, float r) {
+          vec3 t1 = (lo - O) / D, t2 = (hi - O) / D;
+          vec3 tn = min(t1, t2), tf = max(t1, t2);
+          float t0 = max(max(max(tn.x, tn.y), tn.z), 0.), t3 = min(min(min(tf.x, tf.y), tf.z), 1.);
+          vec3 m = O + D * (t0 + t3) * .5;
+          vec2 half_ = (hi.xz - lo.xz) * .5, c = abs(m.xz - (hi.xz + lo.xz) * .5);
+          float keep = r > 0. ? 1. - smoothstep(-.06, .06, length(max(c - half_ + r, 0.)) - r) : 1.;
+          return vec2(max(t3 - t0, 0.) * length(D) * keep, t3);
+        }
+        // The light kept off by a stretch that long, the edge softer the further the shadow
+        // falls behind (t3 where the ray leaves).
+        float blocked(vec2 s, float len) { return .92 * smoothstep(0., max(uRef.z, .2 + .06 * (1. - s.y) * len), s.x); }
         float cover(float id, vec2 p) {
           if (id < -.5) return 0.;
           int i = int(id + .5);
           vec4 a = texelFetch(uCars, ivec2(i, 0), 0), b = texelFetch(uCars, ivec2(i, 1), 0);
           vec2 sd = vec2(-a.w, a.z);
+          // (A car's box comes with its half length negative: CAR_SHAPED.)
+          float car = step(b.x, 0.), hl = abs(b.x), r = car * ${CAR_SHAPED.corner.toFixed(2)};
           if (uShadow < 1.5) {
             vec2 o = p - a.xy, l = vec2(dot(o, a.zw), dot(o, sd));
-            float d = length(max(abs(l) - b.xy, 0.));
+            float d = length(max(abs(l) - vec2(hl, b.y) + r, 0.)) - r;
             return .55 * (1. - smoothstep(0., 1.2, d)) * (1. - smoothstep(1.5, 3., abs(vH - b.w)));
           }
           vec2 o = vLamp.xz - a.xy, e = p - a.xy;
           vec3 O = vec3(dot(o, a.zw), vLamp.y - b.w, dot(o, sd));
           vec3 D = vec3(dot(e, a.zw), vH - b.w, dot(e, sd)) - O;
           D += vec3(1e-4) * (step(0., D) * 2. - 1.);
-          vec3 t1 = (vec3(-b.x, .12, -b.y) - O) / D, t2 = (vec3(b.x, b.z - b.w, b.y) - O) / D;
-          vec3 tn = min(t1, t2), tf = max(t1, t2);
-          float t0 = max(max(max(tn.x, tn.y), tn.z), 0.), t3 = min(min(min(tf.x, tf.y), tf.z), 1.);
-          float len = length(D);
-          return .92 * smoothstep(0., max(uRef.z, .2 + .06 * (1. - t3) * len), (t3 - t0) * len);
+          float H = b.z - b.w, len = length(D);
+          if (car < .5) return blocked(through(O, D, vec3(-hl, .12, -b.y), vec3(hl, H, b.y), 0.), len);
+          // A car: the body up to the windows, and the cabin on it, shorter and narrower; the
+          // ray's stretches through the two add up, as through one solid car.
+          float belt = H * ${CAR_SHAPED.belt.toFixed(2)};
+          vec2 body = through(O, D, vec3(-hl, .12, -b.y), vec3(hl, belt, b.y), r);
+          vec2 cabin = through(O, D, vec3(-hl * ${CAR_SHAPED.cabin[0].toFixed(2)}, belt, -b.y * ${CAR_SHAPED.narrow.toFixed(2)}), vec3(hl * ${CAR_SHAPED.cabin[1].toFixed(2)}, H, b.y * ${CAR_SHAPED.narrow.toFixed(2)}), r * .6);
+          return blocked(vec2(body.x + cabin.x, max(body.y, cabin.y)), len);
         }
         void main() {
           float f;
@@ -899,7 +926,7 @@ export class Lamps {
       data[i * 4] = bx; data[i * 4 + 1] = -by; data[i * 4 + 2] = Math.cos(h); data[i * 4 + 3] = -Math.sin(h);
       const o = MAX_CARS * 4 + i * 4;
       data[o] = halfL; data[o + 1] = halfW; data[o + 2] = ground + tall; data[o + 3] = ground;
-      at[i * 3] = bx; at[i * 3 + 1] = by; at[i * 3 + 2] = Math.max(halfL, halfW);
+      at[i * 3] = bx; at[i * 3 + 1] = by; at[i * 3 + 2] = Math.max(Math.abs(halfL), halfW);
       const k = Math.floor(bx / CAR_CELL) * 4096 + Math.floor(by / CAR_CELL);
       const list = this.carGrid.get(k);
       if (list) list.push(i); else this.carGrid.set(k, [i]);
@@ -908,7 +935,7 @@ export class Lamps {
     for (let i = 0; i < cars.length; i++) {
       const c = cars[i], z = carHeight(c.x, c.y, c as never);
       this.carZ[i] = z;
-      if (on) this.carIndex.set(c, put(c.x, c.y, c.h, c.spec.L / 2, c.spec.W / 2, z, c.spec.H));
+      if (on) this.carIndex.set(c, put(c.x, c.y, c.h, (carShaped(c.spec) ? -1 : 1) * c.spec.L / 2, c.spec.W / 2, z, c.spec.H));
     }
     if (on && LAMP_SHADOWS.value > 2.5) {
       more?.(put);
