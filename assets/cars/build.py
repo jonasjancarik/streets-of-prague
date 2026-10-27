@@ -43,6 +43,8 @@ COLOURS = {
     "Seat": (0.07, 0.07, 0.075),
 }
 MATS = list(COLOURS)
+# How far in from the side a rounded body's top begins (see Car.body's crown).
+LID = 0.12
 
 
 def material(name):
@@ -82,13 +84,17 @@ class Car:
     def v(self, x, y, z):
         return self.bm.verts.new((x, y, z))
 
-    def body(self, stations, wheels=(), r=0.31, stripe=None, bonnet_band=None, doors=(), cabin=None, livery=None):
+    def body(self, stations, wheels=(), r=0.31, stripe=None, bonnet_band=None, doors=(), cabin=None, livery=None,
+             crown=None):
         """stations: (x, half width, height of the top, height of the sill), front to
         back. Over each wheel (at x in `wheels`, radius `r`) the sill rises in an arch.
         doors: (x of the front edge, x of the back edge, number of the left door), the
         right one being the next number. cabin: (front, back), where the top is left open
         under the cabin, so the seats show through an open door. livery: (x, material)
-        to the material a band of the side has at x, for a stripe that changes along the car."""
+        to the material a band of the side has at x, for a stripe that changes along the car.
+        crown: x to how far the middle of the top stands above its edges (a bonnet and boot
+        that bulge, so the light runs across them), with the sides rounded off into it
+        over LID metres instead of the usual square shoulder."""
         def at(x):
             for (x0, *a), (x1, *b) in zip(stations, stations[1:]):
                 if x1 <= x <= x0:
@@ -118,15 +124,23 @@ class Car:
             z0 = max(z0, over(x) or 0)
             lo = max(z0 + 0.01, min(z0 + 0.13, zt - 0.15))
             hi = max(lo + 0.01, zt - 0.13)
-            pts = [(w - 0.05, z0, "Trim"), (w, lo, "Paint")]
+            if crown:
+                pts = [(w - 0.06, z0, "Trim"), (w - 0.01, lo, "Paint")]
+            else:
+                pts = [(w - 0.05, z0, "Trim"), (w, lo, "Paint")]
             for z, mat in stripe or ():
                 pts.append((w, min(max(z, pts[-1][1] + 0.002), hi - 0.002), mat))
-            pts += [(w, hi, "Paint"), (w - 0.035, zt - 0.035, "Paint"), (w - 0.11, zt, "Paint")]
+            if crown:
+                pts += [(w, hi, "Paint"), (w - 0.012, zt - 0.055, "Paint"), (w - 0.045, zt - 0.017, "Paint"),
+                        (w - LID, zt, "Paint")]
+            else:
+                pts += [(w, hi, "Paint"), (w - 0.035, zt - 0.035, "Paint"), (w - 0.11, zt, "Paint")]
             L = [self.v(x, y, z) for y, z, _ in pts]
             R = [self.v(x, -y, z) for y, z, _ in pts]
-            rings.append((L, R, [m for _, _, m in pts]))
+            ridge = self.v(x, 0, zt + crown(x)) if crown else None
+            rings.append((L, R, [m for _, _, m in pts], ridge))
         for s in range(len(rings) - 1):
-            (L0, R0, mats), (L1, R1, _) = rings[s], rings[s + 1]
+            (L0, R0, mats, C0), (L1, R1, _, C1) = rings[s], rings[s + 1]
             mid = (xs[s] + xs[s + 1]) / 2
             door = next((k for x0, x1, k in doors if x1 < mid < x0), 0)
             for i in range(len(L0) - 1):
@@ -137,43 +151,68 @@ class Car:
                 if door and i:
                     left[self.door], right[self.door] = door, door + 1
             top = "Blue" if bonnet_band and bonnet_band[0] < mid < bonnet_band[1] else "Paint"
-            lid = self.face([L0[-1], L1[-1], R1[-1], R0[-1]], top)
+            lids = ([self.face([L0[-1], L1[-1], C1, C0], top), self.face([C0, C1, R1[-1], R0[-1]], top)] if crown
+                    else [self.face([L0[-1], L1[-1], R1[-1], R0[-1]], top)])
             if cabin and cabin[1] < mid < cabin[0]:
-                self.under.append(lid)
+                self.under += lids
             self.under.append(self.face([L0[0], R0[0], R1[0], L1[0]], "Trim"))
-        for L, R, mats in (rings[0], rings[-1]):
+        for L, R, mats, C in (rings[0], rings[-1]):
             for i in range(len(L) - 1):
                 # Bumpers across the bottom, paint above.
                 self.face([L[i], L[i + 1], R[i + 1], R[i]], "Trim" if i == 0 else "Paint")
+            if C:
+                self.face([L[-1], C, R[-1]], "Paint")
 
     def cabin(self, belt, xa, xb, xm, xc, xd, wb, wr, top, glass_rear=True, glass_back_side=True, xm_top=None,
-              rear_doors=True, xq=None):
+              rear_doors=True, xq=None, edge=None, crown=0.0, bow=0.0):
         """Windscreen from (xa, belt) up to (xb, top), roof to xc, rear window down to
         xd; sides from half width wb at the belt to wr at the roof, split at xm by the
         B pillar. Every window is inset, so the pillars and frames show in paint.
         The front side windows are part of doors 1 and 2, the back ones of 3 and 4 (with
-        rear_doors): as far back as xq, where another pillar ends the door, if xq is given."""
+        rear_doors): as far back as xq, where another pillar ends the door, if xq is given.
+        edge: x to the half width at the belt, where the body narrows (instead of wb).
+        crown: how far the middle of the roof stands above its sides; bow: how much
+        further the roof reaches over the windscreen and the rear window in the middle,
+        so seen from above it's rounded, not a rectangle."""
         xm_top = xm if xm_top is None else xm_top
         z0 = belt - 0.02
-        A, M, D = ([self.v(x, s * wb, z0) for s in (1, -1)] for x in (xa, xm, xd))
+        half = edge or (lambda x: wb)
+        A, M, D = ([self.v(x, s * half(x), z0) for s in (1, -1)] for x in (xa, xm, xd))
         B, T, C = ([self.v(x, s * wr, top) for s in (1, -1)] for x in (xb, xm_top, xc))
-        screen = self.face([A[0], A[1], B[1], B[0]], "Glass")
-        rear = self.face([D[1], D[0], C[0], C[1]], "Glass")
+        if crown or bow:
+            # The roof's middle line: the windscreen and the rear window take it on their top edge.
+            for row, x in ((B, xb + bow), (T, xm_top), (C, xc - bow)):
+                row.append(self.v(x, 0, top + crown))
+            screen = self.face([A[0], A[1], B[1], B[2], B[0]], "Glass")
+            rear = self.face([D[1], D[0], C[0], C[2], C[1]], "Glass")
+        else:
+            screen = self.face([A[0], A[1], B[1], B[0]], "Glass")
+            rear = self.face([D[1], D[0], C[0], C[1]], "Glass")
+
+        def roof(*rows):
+            for a, b in zip(rows, rows[1:]):
+                if len(a) > 2:
+                    self.face([a[0], a[2], b[2], b[0]], "Paint")
+                    self.face([a[2], a[1], b[1], b[2]], "Paint")
+                else:
+                    self.face([a[0], a[1], b[1], b[0]], "Paint")
         sides_front = [self.face([A[0], B[0], T[0], M[0]], "Glass"), self.face([A[1], M[1], T[1], B[1]], "Glass")]
         for k, f in enumerate(sides_front):
             f[self.door] = 1 + k
-        self.face([B[0], B[1], T[1], T[0]], "Paint")
+        roof(B, T)
         if xq is None:
             sides_back = [self.face([M[0], T[0], C[0], D[0]], "Glass"), self.face([M[1], D[1], C[1], T[1]], "Glass")]
             behind = sides_back
-            self.face([T[0], T[1], C[1], C[0]], "Paint")
+            roof(T, C)
             floor = self.face([A[0], M[0], D[0], D[1], M[1], A[1]], "Paint")
         else:
-            Q = [self.v(xq, s * wb, z0) for s in (1, -1)]
+            Q = [self.v(xq, s * half(xq), z0) for s in (1, -1)]
             P = [self.v(xq - 0.06, s * wr, top) for s in (1, -1)]
+            if crown or bow:
+                P.append(self.v(xq - 0.06, 0, top + crown))
             behind = [self.face([M[0], T[0], P[0], Q[0]], "Glass"), self.face([M[1], Q[1], P[1], T[1]], "Glass")]
             sides_back = behind + [self.face([Q[0], P[0], C[0], D[0]], "Glass"), self.face([Q[1], D[1], C[1], P[1]], "Glass")]
-            self.face([T[0], T[1], P[1], C[1], C[0], P[0]], "Paint")
+            roof(T, P, C)
             floor = self.face([A[0], M[0], Q[0], D[0], D[1], Q[1], M[1], A[1]], "Paint")
         if rear_doors:
             for k, f in enumerate(behind):
@@ -226,7 +265,7 @@ class Car:
 
     def text(self, word, x, px, top, mat):
         """A word lying on the bonnet, read from in front of the car: the tops of its
-        letters at x, each pixel px across, `top(x)` the height of the bonnet there."""
+        letters at x, each pixel px across, `top(x, y)` the height of the bonnet there."""
         pitch = 6 * px
         y0 = -(len(word) * pitch - px) / 2
         for i, ch in enumerate(word):
@@ -241,9 +280,32 @@ class Car:
                         e += 1
                     xa, xb = x + r * px, x + (r + 1) * px
                     ya, yb = y0 + i * pitch + c * px, y0 + i * pitch + e * px
-                    self.decals.append(([(xa, ya, top(xa) + 0.006), (xb, ya, top(xb) + 0.006),
-                                         (xb, yb, top(xb) + 0.006), (xa, yb, top(xa) + 0.006)], mat))
+                    self.decal([(xa, ya), (xb, ya), (xb, yb), (xa, yb)], mat, top)
                     c = e
+
+    def bumper(self, outline, z0, z1, out=0.04):
+        """A black bumper standing `out` proud of the body round `outline` (x, y points
+        along the body's edge, from one side round the end to the other), from z0 up to z1."""
+        pts = []
+        for i, (x, y) in enumerate(outline):
+            (xa, ya), (xb, yb) = outline[max(i - 1, 0)], outline[min(i + 1, len(outline) - 1)]
+            dx, dy = xb - xa, yb - ya
+            d = math.hypot(dx, dy) or 1
+            # Outwards is to the left of the way round.
+            pts.append((x, y, x - dy / d * out, y + dx / d * out))
+        rows = [[self.v(xo, yo, z) for _, _, xo, yo in pts] for z in (z0, z1)]
+        back = [self.v(x, y, z1) for x, y, _, _ in pts]
+        for i in range(len(pts) - 1):
+            self.face([rows[0][i], rows[0][i + 1], rows[1][i + 1], rows[1][i]], "Trim")
+            self.face([rows[1][i], rows[1][i + 1], back[i + 1], back[i]], "Trim")
+        for end in (0, len(pts) - 1):
+            # (The ends of the rim, against the body.)
+            self.face([rows[0][end], rows[1][end], back[end]], "Trim")
+
+    def decal(self, points, mat, z, lift=0.008):
+        """A flat shape lying on the body (lettering, a lamp): `points` (x, y) round it,
+        `z(x, y)` the height of the body under each."""
+        self.decals.append(([(x, y, z(x, y) + lift) for x, y in points], mat))
 
     def block(self, c, s, mat):
         (cx, cy, cz), (sx, sy, sz) = c, s
@@ -273,16 +335,25 @@ class Car:
             for s in (1, -1):
                 self.wheel(x, s * (w - 0.04), r, width)
 
-    def mirrors(self, x, w, z):
+    def mirrors(self, x, w, z, stalk=False):
+        """With `stalk`: a housing in paint out on a black arm, the glass facing back."""
         for s in (1, -1):
-            self.block((x, s * (w - 0.02), z), (0.1, 0.22, 0.11), "Paint")
+            if not stalk:
+                self.block((x, s * (w - 0.02), z), (0.1, 0.22, 0.11), "Paint")
+                continue
+            self.block((x, s * w, z - 0.02), (0.06, 0.12, 0.05), "Trim")
+            self.block((x - 0.02, s * (w + 0.1), z), (0.11, 0.17, 0.11), "Paint")
+            self.block((x - 0.08, s * (w + 0.1), z), (0.012, 0.15, 0.09), "Glass")
 
-    def lamps(self, front, back, w_front, w_back, z_front, z_back):
+    def lamps(self, front, back, w_front, w_back, z_front, z_back, plates=None):
+        """plates: (x, height) of the number plates at the front and the back, if they
+        aren't just in front of the lamps."""
         for s in (1, -1):
             self.block((front + 0.02, s * w_front, z_front), (0.1, 0.3, 0.1), "Lamp")
             self.block((back - 0.02, s * w_back, z_back), (0.1, 0.26, 0.13), "Tail")
-        self.block((front + 0.03, 0, 0.42), (0.04, 0.5, 0.11), "Plate")
-        self.block((back - 0.03, 0, 0.62), (0.04, 0.5, 0.11), "Plate")
+        (xf, zf), (xr, zr) = plates or ((front + 0.03, 0.42), (back - 0.03, 0.62))
+        self.block((xf, 0, zf), (0.04, 0.5, 0.11), "Plate")
+        self.block((xr, 0, zr), (0.04, 0.5, 0.11), "Plate")
 
     def finish(self, name):
         bm = self.bm
@@ -354,18 +425,53 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     light bar goes (the middle of `cabin` in src/car.ts, where src/police.ts flashes it).
     `r` is the wheel radius and `lift` how much higher the bonnet and sills sit (an SUV).
     `word` is written across the bonnet, and the stripe then turns into yellow and blue
-    blocks on the front wings and behind the rear doors (the Czech police's colours)."""
+    blocks on the front wings and behind the rear doors (the Czech police's colours).
+
+    Seen from above (and from above at a slant, away from the middle of the screen) a
+    car is its outline, its glass and how the light runs over it, so: corners rounded
+    off and the body narrowing to the nose and tail, sides that bow out a little, black
+    bumpers round the ends, a bonnet, boot and roof that bulge in the middle, a roof
+    rounded where it meets the windscreen and the rear window, and the lamps showing on
+    top of the nose and tail."""
     c = Car()
     w, n = W / 2, L / 2
     belt = 0.93 if H < 1.48 else 0.95 if H < 1.6 else 1.03
     boot = {"hatch": belt, "sedan": belt + 0.03, "estate": belt}[rear]
-    stations = [
-        (n, w * 0.8, 0.7 + lift, 0.3 + lift), (n - 0.12, w * 0.93, 0.76 + lift, 0.26 + lift),
-        (n - 0.35, w * 0.985, 0.8 + lift, 0.24 + lift), (n - 0.8, w, 0.84 + lift, 0.22 + lift),
-        (n - 1.25, w, belt - 0.01, 0.22 + lift), (n - 1.45, w, belt, 0.22 + lift),
-        (-n + 0.7, w, boot, 0.22 + lift), (-n + 0.3, w * 0.985, boot, 0.24 + lift),
-        (-n + 0.1, w * 0.95, boot - 0.02, 0.27 + lift), (-n, w * 0.86, boot - 0.06, 0.3 + lift),
+    # The heights of the top and of the sill along the car: (x, top, sill).
+    profile = [
+        (n, 0.7 + lift, 0.3 + lift), (n - 0.12, 0.76 + lift, 0.26 + lift), (n - 0.35, 0.8 + lift, 0.24 + lift),
+        (n - 0.8, 0.84 + lift, 0.22 + lift), (n - 1.25, belt - 0.01, 0.22 + lift), (n - 1.45, belt, 0.22 + lift),
+        (-n + 0.7, boot, 0.22 + lift), (-n + 0.3, boot, 0.24 + lift), (-n + 0.1, boot - 0.02, 0.27 + lift),
+        (-n, boot - 0.06, 0.3 + lift),
     ]
+
+    def along(x, i):
+        for (x0, *a), (x1, *b) in zip(profile, profile[1:]):
+            if x1 <= x <= x0:
+                return a[i] + (b[i] - a[i]) * (x0 - x) / (x0 - x1)
+        return profile[0 if x > 0 else -1][1 + i]
+    # The outline: each end's corners an ellipse (along, across), the back ones of an
+    # estate or a hatchback squarer than a saloon's, and the sides bowing out a little.
+    nose = (0.5, 0.36)
+    tail = {"hatch": (0.26, 0.24), "sedan": (0.36, 0.3), "estate": (0.24, 0.22)}[rear]
+
+    # The bumpers stand `bump` proud of the body at each end.
+    bump = 0.04
+    nb = n - bump
+
+    def half(x):
+        h = w * (1 - 0.018 * (x / n) ** 2)
+        for (a, b), d in ((nose, x - (nb - nose[0])), (tail, (-nb + tail[0]) - x)):
+            if d > 0:
+                h -= b * (1 - math.sqrt(max(0.0, 1 - (d / a) ** 2)))
+        return h
+    xs = {x for x, *_ in profile if abs(x) < nb - 0.02}
+    for a, sign_ in ((nose[0], 1), (tail[0], -1)):
+        xs |= {sign_ * (nb - a + a * math.sin(math.radians(t))) for t in (20, 40, 55, 68, 80, 90)}
+    xs = sorted(xs, reverse=True)
+    xs = [x for i, x in enumerate(xs) if i == 0 or xs[i - 1] - x > 0.012]
+    stations = [(x, half(x), along(x * n / nb, 0), along(x * n / nb, 1)) for x in xs]
+
     xa = n - 1.45
     if rear == "hatch":
         xb, xc, xd = xa - 0.72, -n + 0.45, -n + 0.12
@@ -379,28 +485,58 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     # going on behind that (a hatchback's, an estate's) gets a pillar there.
     xq = max(wheels[1] + 0.05, xm - 0.95)
     back = max(xd + 0.05, -n + 0.3)
+
+    def bulge(x):
+        # Most in the middle of the bonnet and boot, nothing where they meet the glass
+        # or the bumpers.
+        return 0.035 * min(abs(x - xa), abs(x - back), 0.3) / 0.3
+
     def livery(x, mat):
         if mat != "Blue" or xq < x < xa:
             return mat
         return "Paint" if x > n - 0.3 or x < -n + 0.25 else "Yellow" if int((x + n) / 0.19) % 2 else "Blue"
 
     c.body(stations, wheels, r, stripe=stripe, doors=[(xa, xm, 1), (xm, xq, 3)], cabin=(xa, back),
-           livery=livery if word else None)
+           livery=livery if word else None, crown=bulge)
+    for end, z0, z1 in ((1, 0.3 + lift, 0.52 + lift), (-1, 0.32 + lift, 0.56 + lift)):
+        # Round the end from the side, a little back from the corner.
+        xs_ = [x for x in xs if end * x > end * (end * nb - (nose if end > 0 else tail)[0] - 0.12)]
+        xs_ = sorted(set(xs_ + [end * (nb - (nose if end > 0 else tail)[0] - 0.12)]), key=lambda x: end * x)
+        side = [(x, end * half(x)) for x in xs_]
+        c.bumper(side + [(x, -y) for x, y in reversed(side)], z0, z1, bump)
+
+    def top(x, y):
+        # The height of the bonnet or boot at (x, y), as body() lays it.
+        for (x0, w0, z0, _), (x1, w1, z1, _) in zip(stations, stations[1:]):
+            if x1 <= x <= x0:
+                u = (x0 - x) / (x0 - x1)
+                edge = w0 + (w1 - w0) * u - LID
+                return z0 + (z1 - z0) * u + bulge(x) * max(0.0, 1 - abs(y) / edge)
+        return stations[0][2]
     if word:
-        def top(x):
-            for (x0, _, z0, _), (x1, _, z1, _) in zip(stations, stations[1:]):
-                if x1 <= x <= x0:
-                    return z0 + (z1 - z0) * (x0 - x) / (x0 - x1)
-            return stations[0][2]
         c.text(word, n - 1.17, 0.038, top, "Blue")
-    c.cabin(belt, xa, xb, xm, xc, xd, w - 0.11, w * 0.74, H, xm_top=(xb + xc) / 2 + 0.05,
-            xq=xq if xq - 0.06 > xc + 0.3 else None)
+    roof = H - 0.035
+    c.cabin(belt, xa, xb, xm, xc, xd, w - 0.11, w * 0.74, roof, xm_top=(xb + xc) / 2 + 0.05,
+            xq=xq if xq - 0.06 > xc + 0.3 else None, edge=lambda x: half(x) - LID, crown=0.035, bow=0.05)
     floor = 0.36 + lift
     c.interior(xa - 0.01, back, w - 0.08, floor, belt - 0.02, H - 0.03, xb - 0.03, xc + 0.03, w * 0.74 - 0.03,
                [((xa + xm) / 2 - 0.1, s * w * 0.48, 0.5) for s in (1, -1)] + [((xm + xq) / 2 - 0.05, 0, W - 0.4)])
     c.wheels(wheels, w, r)
-    c.mirrors(xa - 0.08, w, belt + 0.07)
-    c.lamps(n - 0.06, -n + 0.04, w * 0.6, w * 0.68, 0.64 + lift, boot - 0.12)
+    c.mirrors(xa - 0.1, half(xa - 0.1), belt + 0.08, stalk=True)
+    front, end = nb - 0.06, -nb + 0.06
+    # (Placed by the width at the very end: the corners round off in front of the lamps.)
+    c.lamps(front, end, half(nb) - 0.17, half(-nb) - 0.15, 0.64 + lift, boot - 0.12,
+            plates=((n - 0.01, 0.42 + lift), (-n + 0.01, 0.46 + lift)))
+    # The lamps from above: the headlamps wrapping over the corners of the nose, and on a
+    # saloon (with a boot behind the rear window) the tail lamps over the boot's.
+    for s in (1, -1):
+        x0, x1 = nb - 0.04, nb - 0.19
+        outer = [(x, s * (half(x) - LID - 0.02)) for x in (x0, (x0 + x1) / 2, x1)]
+        c.decal([(x0, s * (outer[0][1] * s - 0.3))] + outer + [(x1, s * (outer[-1][1] * s - 0.26))], "Lamp", top)
+        if rear == "sedan":
+            x0, x1 = -nb + 0.04, -nb + 0.16
+            outer = [(x, s * (half(x) - LID - 0.02)) for x in (x0, (x0 + x1) / 2, x1)]
+            c.decal([(x0, s * (outer[0][1] * s - 0.28))] + outer + [(x1, s * (outer[-1][1] * s - 0.28))], "Tail", top)
     mid = (xb + xc) / 2
     if sign:
         c.block((mid, 0, H + 0.1), (0.24, 0.62, 0.2), "Sign")
@@ -412,7 +548,7 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
             c.block((bar, s * W * 0.265, H + 0.1), (0.32, W * 0.25, 0.06), "Blue")
     if rails:
         for s in (1, -1):
-            c.block(((xb + xc) / 2, s * (w * 0.74 - 0.05), H + 0.03), (xb - xc - 0.1, 0.05, 0.05), "Trim")
+            c.block(((xb + xc) / 2, s * (w * 0.74 - 0.05), roof + 0.02), (xb - xc - 0.1, 0.05, 0.05), "Trim")
     return c.finish(name)
 
 
