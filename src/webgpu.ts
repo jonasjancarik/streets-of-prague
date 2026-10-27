@@ -331,6 +331,14 @@ export function configureRenderer(renderer: WebGPURenderer) {
     if (node && node !== legacy && legacy.customProgramCacheKey) {
       const key = legacy.customProgramCacheKey();
       for (const p of ports) if (p.match.test(key)) p.port(node, legacy);
+      // The shadow pass reads the scene's own (legacy) material, not this one: a port's
+      // shadow position (the people's animation, the trees' crowns) goes on it too, and
+      // its version moves on so that shadow nodes worked out without it are made again.
+      const cast = (node as any).castShadowPositionNode;
+      if (cast && !(legacy as any).castShadowPositionNode) {
+        (legacy as any).castShadowPositionNode = cast;
+        legacy.needsUpdate = true;
+      }
     }
     return node;
   };

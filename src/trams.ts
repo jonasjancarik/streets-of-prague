@@ -605,7 +605,7 @@ export class Trams {
       if (!type) throw new Error('Trams are not loaded');
       const sections = type.sections.map((spec) => {
         const m = mirrored(new THREE.Mesh(spec.geometry, material));
-        m.castShadow = true;
+        m.castShadow = m.receiveShadow = true;
         return m;
       });
       look = { kind: v.kind, sections, sign: new THREE.Mesh(signGeometry) };
