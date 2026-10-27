@@ -209,9 +209,13 @@ before that day's frame-count fix may be doubled.
 - **Gardens (plan 025):** paved strips, sheds, beds, pools, the `plots` field, fences
   lit from both sides and hedges on their own ground are in main and show after the
   ground rebuild (seen on one rebuilt chunk, Ořechovka). Left: corner gaps in the
-  data; the `plots` tile field is unread and adds about 12 % to a dense suburban
-  tile's JSON, so trim it or use it; 25 drive places in that chunk still touch a road
-  or path; fences read quite white from above; crown positions from the photographs.
+  data; 25 drive places in that chunk still touch a road or path; crown positions from
+  the photographs. The game reads `plots` since 27 October (each plot's lawn tone and a
+  terrace on the garden side, `withPatches` in src/tiles.ts): the two see-through lawn
+  layers over the gardens are not benchmarked yet. Fences are wire mesh, boards or bars
+  now, not white pickets. Street-side fences are missing where the survey covers the
+  tile: the survey has no fence line there (thick-wall outlines and bank edges instead),
+  and dtm_walls.py drops the made-up ones.
 - **Woods (plan 026):** the young-wood rule errs towards leaving a wood alone (praha:
   298 ha young, 254 ha clearings); a 0.25 m photo could tell pole-stage stands. A tile
   can't see a wood lying wholly in the next tile, so its shrub fringe is missing along

@@ -350,15 +350,72 @@ export function clipLine(pts: Point2[], [x0, y0, x1, y1]: Bounds): Point2[][] {
 // The tile's areas with what stands on the plots of family houses laid over the garden
 // (pipeline/plots.py): the paving joins the paved squares and the vegetable beds the
 // worn earth, which look the same and so cost no draw of their own; pools get a layer.
+// Each plot's lawn is kept a little differently (`plot_dry`, `plot_lush`, see
+// ground.ts), and most houses have a paved terrace on the garden side (patios()).
 function withPatches(t: TileJSON): TileJSON['areas'] {
-  const p = t.patches;
-  if (!p || !(p.paving || p.bed || p.pool)) return t.areas;
+  const p = t.patches ?? {};
+  const dry: Polygons = [], lush: Polygons = [];
+  for (const plot of t.plots ?? []) {
+    const h = hash(`${plot.b}/lawn`);
+    if (h < PLOT_DRY) dry.push([plot.ring]);
+    else if (h > 1 - PLOT_LUSH) lush.push([plot.ring]);
+  }
+  const paving = [...(p.paving || []), ...patios(t)];
+  if (!paving.length && !p.bed && !p.pool && !dry.length && !lush.length) return t.areas;
   return {
     ...t.areas,
-    ...(p.paving ? { square: [...(t.areas.square || []), ...p.paving] } : {}),
+    ...(paving.length ? { square: [...(t.areas.square || []), ...paving] } : {}),
     ...(p.bed ? { worn: [...(t.areas.worn || []), ...p.bed] } : {}),
     ...(p.pool ? { pool: p.pool } : {}),
+    ...(dry.length ? { plot_dry: dry } : {}),
+    ...(lush.length ? { plot_lush: lush } : {}),
   };
+}
+
+// The shares of plots whose lawn is drier and paler, and greener and thicker, than the rest.
+const PLOT_DRY = 0.3, PLOT_LUSH = 0.25;
+// A terrace: how often a house has one, how deep it is (m), and its longest.
+const PATIO = 0.65, PATIO_DEPTH = 3, PATIO_LONGEST = 8;
+
+// Paved terraces against the houses on family plots, on the side of the house away
+// from the gate (the garden side), along the middle of that wall: only where all of it
+// lies in the house's plot and in no other building.
+function patios(t: TileJSON): Polygons {
+  if (!t.plots?.length) return [];
+  const byId = new Map<string, Point2[]>();
+  for (const b of t.buildings) if (b.id && b.rings?.[0]) byId.set(String(b.id), b.rings[0]);
+  const out: Polygons = [];
+  for (const plot of t.plots) {
+    const ring = byId.get(String(plot.b));
+    if (!plot.gate || !ring || ring.length < 3 || hash(`${plot.b}/patio`) > PATIO) continue;
+    let cx = 0, cy = 0;
+    for (const [x, y] of ring) { cx += x; cy += y; }
+    cx /= ring.length; cy /= ring.length;
+    // The wall facing furthest from the gate.
+    const gx = plot.gate[0] - cx, gy = plot.gate[1] - cy, gl = Math.hypot(gx, gy) || 1;
+    let best: [Point2, Point2, number, number] | null = null, bestDot = 0.3;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (len < 4) continue;
+      let nx = (b[1] - a[1]) / len, ny = -(b[0] - a[0]) / len;
+      if (nx * ((a[0] + b[0]) / 2 - cx) + ny * ((a[1] + b[1]) / 2 - cy) < 0) { nx = -nx; ny = -ny; }
+      const away = -(nx * gx + ny * gy) / gl;
+      if (away > bestDot) { bestDot = away; best = [a, b, nx, ny]; }
+    }
+    if (!best) continue;
+    const [a, b, nx, ny] = best, len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const half = Math.min(len * 0.7, PATIO_LONGEST) / 2, ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len;
+    const mx = (a[0] + b[0]) / 2 + nx * 0.05, my = (a[1] + b[1]) / 2 + ny * 0.05;
+    const quad: Point2[] = [
+      [mx - ux * half, my - uy * half], [mx + ux * half, my + uy * half],
+      [mx + ux * half + nx * PATIO_DEPTH, my + uy * half + ny * PATIO_DEPTH], [mx - ux * half + nx * PATIO_DEPTH, my - uy * half + ny * PATIO_DEPTH],
+    ];
+    const probes: Point2[] = [...quad, [mx + nx * PATIO_DEPTH / 2, my + ny * PATIO_DEPTH / 2]];
+    if (!probes.every(([x, y]) => inRing(x, y, plot.ring))) continue;
+    if (t.buildings.some((o) => o.rings?.[0] && o.rings[0] !== ring && probes.some(([x, y]) => inRing(x, y, o.rings[0])))) continue;
+    out.push([quad]);
+  }
+  return out;
 }
 
 function inPassage(passages: TilePassage[], x: number, y: number, pad = 0) {

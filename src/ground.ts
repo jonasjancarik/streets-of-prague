@@ -672,6 +672,10 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(A.ipr_meadow || []), COLORS.park, 'meadow');
     add(polygons(A.ipr_shrubs || []), COLORS.shrubBed, 'garden');
     add(polygons(A.ipr_bed || []), COLORS.bed, 'dirt');
+    // Each family plot's lawn kept its own way (tiles.ts, withPatches): over some a
+    // pale, dry wash, over others a deeper green; from above the plots read apart.
+    add(polygons(A.plot_dry || []), '#b8a868', 'flat', 0.2);
+    add(polygons(A.plot_lush || []), '#3a5c2a', 'flat', 0.22);
     // Paths people have worn across the grass (worn_paths.py): a faint rim, then the bare earth.
     add(polygons(A.worn_edge || []), COLORS.worn, 'dirt', 0.35);
     add(polygons(A.worn || []), COLORS.worn, 'dirt', 0.9);
