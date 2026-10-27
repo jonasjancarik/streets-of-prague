@@ -318,6 +318,7 @@ def main() -> None:
     ap.add_argument("--no-feather", action="store_true", help="the ground beside surveyed streets as the terrain model has it (to compare)")
     ap.add_argument("--dmr5g", action="store_true", help="prototype: ČÚZK's DMR 5G as the terrain in dmr5g.BOXES")
     ap.add_argument("--shoulder", action="store_true", help="trial: the ground within 5 m of a surveyed street level with it")
+    ap.add_argument("--walls-on-streets", action="store_true", help="retaining walls across car streets as the survey has them (to compare)")
     ap.add_argument("--cut-streets", action="store_true", help="trial: a surveyed street under or over a steep bank is a terrace, cut along its outline")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble the complete generation separately")
     args = ap.parse_args()
@@ -344,12 +345,17 @@ def main() -> None:
     N, step = grid_step(T)
     gx0, gy0 = -ox, -oy
     tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
-    weirs = []
+    weirs, streets = [], {}
     for i, j, t in layers.tiles(area, meta):
         tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
         boxes[(i, j)] = box(*t["box"])
         water += [Polygon(r[0], r[1:]).buffer(0) for r in t["areas"].get("water", [])]
         weirs += t.get("weirs") or []
+        # The car streets on the ground, kerb to kerb (a tile lists each edge that touches it).
+        for e in t.get("drive") or []:
+            if not e.get("bridge") and len(e["pts"]) > 1 and e["id"] not in streets:
+                half = min(e["width"] / 2, *(e.get("kerb") or [e["width"] / 2]))
+                streets[e["id"]] = (LineString(e["pts"]), half)
         if t["areas"].get("water"):
             for kind in ("road", "sett", "path", "dirt"):
                 here = [Polygon(r[0], r[1:]).buffer(0) for r in t["roads"].get(kind, [])]
@@ -419,7 +425,7 @@ def main() -> None:
     labels, terraces = {}, {}
     if not args.no_survey:
         surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes, by_water,
-                                      [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown)
+                                      [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, [] if args.walls_on_streets else list(streets.values()), args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown)
         labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")

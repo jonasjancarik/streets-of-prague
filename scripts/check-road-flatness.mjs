@@ -21,6 +21,8 @@
 // - twist: how much the lean changes over TWIST metres along the street;
 // - off the road: the longest stretch of a street on the ground whose middle isn't on a
 //   carriageway's surface (grass or a verge drawn over the road).
+// Steps, lean and the rest count only where the samples are on the carriageway as drawn
+// (OSM's width can reach past the kerb, onto a wall beside the street).
 // The samples within END metres (or the street's width) of its ends are left out: at a
 // junction the edges lie across other streets. The lean is the middle value over LEAN metres. --strict fails when anything is over the hard limits (LIMIT).
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -73,8 +75,9 @@ function tileOf(i, j) {
     const structures = t.structures || [];
     const levels = structures.length ? binary(`${k}.levels.bin`) : null;
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
-    const roads = t.roads || {};
+    const roads = t.roads || {}, side = terraceAt(t.terraces);
     out = {
+      side: side || (() => 0),
       ground: height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step, pointLabels(height, terrain.n),
         terraceAt(t.terraces), flatTerraces(t.terraces, REF)) : () => NaN,
       levels: structures.map((s, n) => ({ level: s.level, on: onPolygons(s.polys), sample: withRamps(heightSampler(heights[n], t.box, terrain.n, terrain.step), s.ramps, REF) })),
@@ -113,6 +116,7 @@ function levelAt(x, y, level) {
   }
   return NaN;
 }
+const sideAt = (x, y) => at(x, y)?.side(x, y) ?? 0;
 const heightOn = (x, y, level) => {
   const h = level !== undefined ? levelAt(x, y, level) : NaN;
   return Number.isNaN(h) ? groundAt(x, y) : h;
@@ -156,10 +160,13 @@ function walk(e) {
       const level = e.levels ? e.levels.reduce((lv, [from, l]) => (from <= s ? l : lv), e.levels[0][1]) : e.level;
       // (Left is anticlockwise of the way's direction, as the pipeline's buffers.)
       const lx = x - uy * left, ly = y + ux * left, rx = x + uy * right, ry = y - ux * right;
-      out.push({ s, x, y, level, mid: heightOn(x, y, level), l: heightOn(lx, ly, level), r: heightOn(rx, ry, level), left, width: left + right,
+      out.push({ s, x, y, lx, ly, rx, ry, level, mid: heightOn(x, y, level), l: heightOn(lx, ly, level), r: heightOn(rx, ry, level), left, width: left + right,
         // (Off the road only where the whole width is: one way of a dual carriageway has a
         // median down its middle.)
-        road: level !== undefined || onRoad(x, y, living) || onRoad(lx, ly, living) || onRoad(rx, ry, living) });
+        ...(() => {
+          const on = level !== undefined ? [true, true, true] : [onRoad(x, y, living), onRoad(lx, ly, living), onRoad(rx, ry, living)];
+          return { road: on.some(Boolean), on: { mid: on[0], l: on[1], r: on[2] } };
+        })() });
     }
   }
   return out;
@@ -180,13 +187,17 @@ for (const e of edges.values()) {
       // A jump, not a slope: what the change either side of it doesn't account for.
       const beside = Math.max(i > 1 ? Math.abs(prof[i - 1][side] - prof[i - 2][side]) : 0,
         i < prof.length - 1 ? Math.abs(prof[i + 1][side] - p[side]) : 0);
-      if (Number.isFinite(d) && Number.isFinite(beside)) note('step', Math.sign(d) * (Math.abs(d) - Math.min(Math.abs(d), beside)), p);
+      // (Only on the carriageway: OSM's width can reach past the kerb, onto a wall beside it.)
+      if (!p.on[side] || !prof[i - 1].on[side]) continue;
+      if (Number.isFinite(d) && Number.isFinite(beside)) note('step', Math.sign(d) * (Math.abs(d) - Math.min(Math.abs(d), beside)), { ...p, side, prev: prof[i - 1] });
     }
   }
   // (Over LEAN metres, the middle one of them: one sample is a point in a gutter or on a crossing.)
-  const across = prof.map((p) => (p.l - p.r) / p.width * 100), m = LEAN >> 1;
-  const lean = across.map((_, i) => (i < m || i + m >= across.length ? NaN
-    : across.slice(i - m, i + m + 1).sort((a, b) => a - b)[m]));
+  const across = prof.map((p) => (p.on.l && p.on.r ? (p.l - p.r) / p.width * 100 : NaN)), m = LEAN >> 1;
+  const lean = across.map((_, i) => {
+    const w = i < m || i + m >= across.length ? [NaN] : across.slice(i - m, i + m + 1);
+    return w.some(Number.isNaN) ? NaN : w.sort((a, b) => a - b)[m];
+  });
   for (let i = 0; i < prof.length; i++) {
     const p = prof[i];
     if (!inner(p) || !Number.isFinite(lean[i])) continue;
@@ -194,7 +205,7 @@ for (const e of edges.values()) {
     const b = Math.round(BUMP / STEP);
     if (i >= b && i + b < prof.length && inner(prof[i - b]) && inner(prof[i + b])) note('bump', p.mid - (prof[i - b].mid + prof[i + b].mid) / 2, p);
     // (The middle against the straight line between the edges, where the middle crosses it.)
-    note('crown', p.mid - (p.l + (p.r - p.l) * p.left / p.width), p);
+    if (p.on.l && p.on.r && p.on.mid) note('crown', p.mid - (p.l + (p.r - p.l) * p.left / p.width), p);
     const j = i - Math.round(TWIST / STEP);
     if (j >= 0 && inner(prof[j]) && Number.isFinite(lean[j])) note('twist', lean[i] - lean[j], p);
   }
@@ -204,7 +215,16 @@ for (const e of edges.values()) {
       if (inner(p) && !p.road) { if (!run) from = p; run += STEP; note('off', run, from); } else run = 0;
     }
   }
-  const r = { id: e.id, name: e.name || '', hw: e.hw, level: e.level, length: Math.round(length) };
+  // What the worst step is: the edge of a deck or a tunnel's floor, a wall between two
+  // terraces of the terrain, or the ground's lattice itself (a ramp or a spike).
+  const st = worst.step[1], why = (() => {
+    if (!st) return '';
+    const xy = (q) => (st.side === 'mid' ? [q.x, q.y] : st.side === 'l' ? [q.lx, q.ly] : [q.rx, q.ry]);
+    const [a, b] = [xy(st.prev), xy(st)];
+    if (st.level !== undefined && Number.isNaN(levelAt(...a, st.level)) !== Number.isNaN(levelAt(...b, st.level))) return 'deck';
+    return sideAt(...a) !== sideAt(...b) ? 'wall' : 'ground';
+  })();
+  const r = { id: e.id, why, name: e.name || '', hw: e.hw, level: e.level, length: Math.round(length) };
   for (const k of Object.keys(worst)) { r[k] = +worst[k][0].toFixed(k === 'lean' || k === 'twist' ? 1 : 2); r[`${k}At`] = worst[k][1] ? toWgs(worst[k][1].x, worst[k][1].y) : null; }
   r.profile = args.profile && `${e.id} ${e.name || ''}`.includes(args.profile) ? prof : undefined;
   rows.push(r);
@@ -226,7 +246,7 @@ for (const [k, title, unit] of KINDS) {
   if (!list.length) continue;
   console.log(`\n${title}:`);
   for (const r of list) {
-    console.log(`  ${String(r[k]).padStart(6)} ${unit}  ${r[`${k}At`].join(', ')}  ${r.hw} ${r.name} (${r.id}, ${r.length} m${r.level !== undefined ? `, level ${r.level}` : ''})`);
+    console.log(`  ${String(r[k]).padStart(6)} ${unit}  ${r[`${k}At`].join(', ')}  ${k === 'step' ? `${r.why}: ` : ''}${r.hw} ${r.name} (${r.id}, ${r.length} m${r.level !== undefined ? `, level ${r.level}` : ''})`);
   }
 }
 for (const r of rows) {

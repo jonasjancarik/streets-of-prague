@@ -43,6 +43,10 @@ the terrain's lattice:
   not a hillside) is a retaining wall. The lattice points within REACH of it take the
   lowest height the terrain model has out to REACH on their own side below the wall, the
   highest above it, and the strip STRIP wide at the wall's foot is marked as a terrace.
+  Not where the wall lies on a car street on the ground (within the carriageway, kerbs
+  CLEAR_KERB in): a street isn't stepped. Such a line runs across a junction or a ramp,
+  or along the street where the map and the survey disagree by a metre or two, and it put
+  walls of up to 13 m across streets (U Komína, Chotkova's hairpin, Ostřicová).
 
 Everything else keeps the terrain model's height, and so do the places listed in
 terrain_keep.json: looked at in the game and found worse with the survey than without
@@ -132,6 +136,7 @@ RUN_MIN = 12.0  # m: shorter stretches of retaining wall are left alone (their e
 REACH = 10.0  # m either side of a retaining wall: as far as the terrain model's ramp reaches
 LONE = 2.0  # m: a surveyed point this far above or below every point round it is a spike or a pit
 STRIP = 8.0  # m: the width of the terrace marked at a wall's foot (two lattice cells)
+CLEAR_KERB = 1.0  # m in from a car street's kerbs: a retaining wall there is none
 
 
 def _tables(package, codes):
@@ -315,6 +320,17 @@ def _retaining(lines, at, dry):
     return runs
 
 
+def _off_streets(line, streets, tree):
+    """The pieces of a wall's line that aren't on a car street (`streets`: carriageways,
+    `tree` their STRtree), RUN_MIN or longer, and the metres taken off."""
+    hits = tree.query(line, predicate="intersects") if tree is not None else []
+    if not len(hits):
+        return [line], 0.0
+    rest = line.difference(shapely.union_all(streets[hits]))
+    parts = [g for g in shapely.get_parts(rest) if g.geom_type == "LineString" and g.length >= RUN_MIN]
+    return parts, line.length - sum(g.length for g in parts)
+
+
 def level_water(level, wet, step, weir=None):
     """The water's heights (`level` at the lattice points `wet`) lying as water does.
     Wide water (POOL_WIDE or more from the bank) is a pool: joined through other wide
@@ -414,13 +430,14 @@ def weir_points(weirs, shape, x_of, y_of, step):
     return out
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
     `water`: the water's polygons in local metres; `boxes`: each tile's box; `roads`: the
     streets and paths on the ground in the tiles with water; `tunnels`: the map's tunnels
-    and underpasses as (line, width); `carriageways`: those of `roads` that cars drive on; `keep`: places looked at by hand where the terrain
+    and underpasses as (line, width); `carriageways`: those of `roads` that cars drive on;
+    `streets`: every car street on the ground as (line, half its width between the kerbs); `keep`: places looked at by hand where the terrain
     model does better left as it is (terrain_keep.json), as polygons. Returns what it changed, for
     the log, with "labels" (each tile's lattice of labels) and "terraces" (each tile's
     terraces: their label and outline; and under label 1 its water, where that's not
@@ -723,8 +740,14 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             before = grid.copy()
 
     lowered = np.zeros(grid.shape, dtype=bool)  # the points a wall has put at its foot
+    lanes = np.array([ls.buffer(half - CLEAR_KERB) for ls, half in streets if half > CLEAR_KERB], dtype=object)
+    lane_tree = STRtree(lanes) if len(lanes) else None
+    runs, on_streets = [], 0.0
     for run, low in _retaining(walls, at, dry):
-        line = shapely.LineString(run)
+        pieces, off = _off_streets(shapely.LineString(run), lanes, lane_tree)
+        runs += [(g, low) for g in pieces]
+        on_streets += off
+    for line, low in runs:
         bx0, by0, bx1, by1 = line.bounds
         ia, ib = max(0, int(np.floor((bx0 - REACH - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 + REACH - x_of(0)) / step)))
         ja, jb = max(0, int(np.floor((by0 - REACH - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 + REACH - y_of(0)) / step)))
@@ -856,6 +879,6 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
     return {"survey_rejected_vertices": rejected, "surfaces": surfaces, "street_points": street_points, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
-            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "wall_points": wall_points, "lone_points": lone_points,
+            "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "walls_off_streets_metres": round(on_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}
