@@ -172,16 +172,17 @@ class Car:
         rear_doors): as far back as xq, where another pillar ends the door, if xq is given.
         edge: x to the half width at the belt, where the body narrows (instead of wb).
         crown: how far the middle of the roof stands above its sides; bow: how much
-        further the roof reaches over the windscreen and the rear window in the middle,
-        so seen from above it's rounded, not a rectangle."""
+        further the roof reaches over the windscreen and the rear window in the middle
+        (or a pair: front, back), so seen from above it's rounded, not a rectangle."""
         xm_top = xm if xm_top is None else xm_top
         z0 = belt - 0.02
         half = edge or (lambda x: wb)
         A, M, D = ([self.v(x, s * half(x), z0) for s in (1, -1)] for x in (xa, xm, xd))
         B, T, C = ([self.v(x, s * wr, top) for s in (1, -1)] for x in (xb, xm_top, xc))
-        if crown or bow:
+        bow_front, bow_back = bow if isinstance(bow, tuple) else (bow, bow)
+        if crown or bow_front or bow_back:
             # The roof's middle line: the windscreen and the rear window take it on their top edge.
-            for row, x in ((B, xb + bow), (T, xm_top), (C, xc - bow)):
+            for row, x in ((B, xb + bow_front), (T, xm_top), (C, xc - bow_back)):
                 row.append(self.v(x, 0, top + crown))
             screen = self.face([A[0], A[1], B[1], B[2], B[0]], "Glass")
             rear = self.face([D[1], D[0], C[0], C[2], C[1]], "Glass")
@@ -208,7 +209,7 @@ class Car:
         else:
             Q = [self.v(xq, s * half(xq), z0) for s in (1, -1)]
             P = [self.v(xq - 0.06, s * wr, top) for s in (1, -1)]
-            if crown or bow:
+            if len(B) > 2:
                 P.append(self.v(xq - 0.06, 0, top + crown))
             behind = [self.face([M[0], T[0], P[0], Q[0]], "Glass"), self.face([M[1], Q[1], P[1], T[1]], "Glass")]
             sides_back = behind + [self.face([Q[0], P[0], C[0], D[0]], "Glass"), self.face([Q[1], D[1], C[1], P[1]], "Glass")]
@@ -416,6 +417,71 @@ class Car:
         return obj
 
 
+class Shape:
+    """A body's outline and the heights along it, for Car.body: from above, a car is its
+    outline, so each end's corners are an ellipse (`nose`, `tail`: along, across), the
+    body narrows towards them, the sides bow out a little (`bow`) and black bumpers
+    stand `bump` proud round the ends. profile: (x, height of the top, height of the
+    sill) along the car, front to back, from +n to -n. `bulge` (x to how far the middle
+    of the top stands above its edges) is set by the car once it knows where its glass is."""
+
+    def __init__(self, n, w, profile, nose, tail, bow=0.018, bump=0.04):
+        self.n, self.w, self.nose, self.tail, self.bump = n, w, nose, tail, bump
+        self.nb = nb = n - bump
+        self.bow = bow
+        self.bulge = lambda x: 0.0
+
+        def along(x, i):
+            for (x0, *a), (x1, *b) in zip(profile, profile[1:]):
+                if x1 <= x <= x0:
+                    return a[i] + (b[i] - a[i]) * (x0 - x) / (x0 - x1)
+            return profile[0 if x > 0 else -1][1 + i]
+        xs = {x for x, *_ in profile if abs(x) < nb - 0.02}
+        for a, sign in ((nose[0], 1), (tail[0], -1)):
+            xs |= {sign * (nb - a + a * math.sin(math.radians(t))) for t in (20, 40, 55, 68, 80, 90)}
+        xs = sorted(xs, reverse=True)
+        self.xs = [x for i, x in enumerate(xs) if i == 0 or xs[i - 1] - x > 0.012]
+        self.stations = [(x, self.half(x), along(x * n / nb, 0), along(x * n / nb, 1)) for x in self.xs]
+
+    def half(self, x):
+        h = self.w * (1 - self.bow * (x / self.n) ** 2)
+        for (a, b), d in ((self.nose, x - (self.nb - self.nose[0])), (self.tail, (-self.nb + self.tail[0]) - x)):
+            if d > 0:
+                h -= b * (1 - math.sqrt(max(0.0, 1 - (d / a) ** 2)))
+        return h
+
+    def top(self, x, y):
+        """The height of the bonnet or boot at (x, y), as Car.body lays it."""
+        for (x0, w0, z0, _), (x1, w1, z1, _) in zip(self.stations, self.stations[1:]):
+            if x1 <= x <= x0:
+                u = (x0 - x) / (x0 - x1)
+                edge = w0 + (w1 - w0) * u - LID
+                return z0 + (z1 - z0) * u + self.bulge(x) * max(0.0, 1 - abs(y) / edge)
+        return self.stations[0][2]
+
+    def bumpers(self, c, front, back):
+        """The bumpers, each (bottom, top), round the ends from a little back from the corners."""
+        for end, (z0, z1), corner in ((1, front, self.nose), (-1, back, self.tail)):
+            start = end * (self.nb - corner[0] - 0.12)
+            xs = sorted({x for x in self.xs if end * x > end * start} | {start}, key=lambda x: end * x)
+            side = [(x, end * self.half(x)) for x in xs]
+            c.bumper(side + [(x, -y) for x, y in reversed(side)], z0, z1, self.bump)
+
+    def lamps(self, c, front=True, back=False, size=(0.15, 0.3)):
+        """The lamps from above: headlamps wrapping over the corners of the nose and (with
+        `back`, where there's a boot or a bonnet-like top behind) tail lamps over the
+        tail's; `size` is how far each reaches along and across."""
+        along, across = size
+        for s in (1, -1):
+            for end, on, mat in ((1, front, "Lamp"), (-1, back, "Tail")):
+                if not on:
+                    continue
+                x0, x1 = end * (self.nb - 0.04), end * (self.nb - 0.04 - along)
+                outer = [(x, s * (self.half(x) - LID - 0.02)) for x in (x0, (x0 + x1) / 2, x1)]
+                c.decal([(x0, s * (abs(outer[0][1]) - across))] + outer +
+                        [(x1, s * (abs(outer[-1][1]) - across + 0.04))], mat, self.top)
+
+
 # ---- The cars ---------------------------------------------------------------
 # Lengths, widths and heights as in src/car.ts TYPES.
 
@@ -445,32 +511,9 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
         (-n, boot - 0.06, 0.3 + lift),
     ]
 
-    def along(x, i):
-        for (x0, *a), (x1, *b) in zip(profile, profile[1:]):
-            if x1 <= x <= x0:
-                return a[i] + (b[i] - a[i]) * (x0 - x) / (x0 - x1)
-        return profile[0 if x > 0 else -1][1 + i]
-    # The outline: each end's corners an ellipse (along, across), the back ones of an
-    # estate or a hatchback squarer than a saloon's, and the sides bowing out a little.
-    nose = (0.5, 0.36)
-    tail = {"hatch": (0.26, 0.24), "sedan": (0.36, 0.3), "estate": (0.24, 0.22)}[rear]
-
-    # The bumpers stand `bump` proud of the body at each end.
-    bump = 0.04
-    nb = n - bump
-
-    def half(x):
-        h = w * (1 - 0.018 * (x / n) ** 2)
-        for (a, b), d in ((nose, x - (nb - nose[0])), (tail, (-nb + tail[0]) - x)):
-            if d > 0:
-                h -= b * (1 - math.sqrt(max(0.0, 1 - (d / a) ** 2)))
-        return h
-    xs = {x for x, *_ in profile if abs(x) < nb - 0.02}
-    for a, sign_ in ((nose[0], 1), (tail[0], -1)):
-        xs |= {sign_ * (nb - a + a * math.sin(math.radians(t))) for t in (20, 40, 55, 68, 80, 90)}
-    xs = sorted(xs, reverse=True)
-    xs = [x for i, x in enumerate(xs) if i == 0 or xs[i - 1] - x > 0.012]
-    stations = [(x, half(x), along(x * n / nb, 0), along(x * n / nb, 1)) for x in xs]
+    # The back corners of an estate or a hatchback squarer than a saloon's.
+    shape = Shape(n, w, profile, nose=(0.5, 0.36), tail={"hatch": (0.26, 0.24), "sedan": (0.36, 0.3), "estate": (0.24, 0.22)}[rear])
+    half, nb, stations = shape.half, shape.nb, shape.stations
 
     xa = n - 1.45
     if rear == "hatch":
@@ -487,9 +530,9 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     back = max(xd + 0.05, -n + 0.3)
 
     def bulge(x):
-        # Most in the middle of the bonnet and boot, nothing where they meet the glass
-        # or the bumpers.
+        # Most in the middle of the bonnet and boot, nothing where they meet the glass.
         return 0.035 * min(abs(x - xa), abs(x - back), 0.3) / 0.3
+    shape.bulge = bulge
 
     def livery(x, mat):
         if mat != "Blue" or xq < x < xa:
@@ -498,23 +541,9 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
 
     c.body(stations, wheels, r, stripe=stripe, doors=[(xa, xm, 1), (xm, xq, 3)], cabin=(xa, back),
            livery=livery if word else None, crown=bulge)
-    for end, z0, z1 in ((1, 0.3 + lift, 0.52 + lift), (-1, 0.32 + lift, 0.56 + lift)):
-        # Round the end from the side, a little back from the corner.
-        xs_ = [x for x in xs if end * x > end * (end * nb - (nose if end > 0 else tail)[0] - 0.12)]
-        xs_ = sorted(set(xs_ + [end * (nb - (nose if end > 0 else tail)[0] - 0.12)]), key=lambda x: end * x)
-        side = [(x, end * half(x)) for x in xs_]
-        c.bumper(side + [(x, -y) for x, y in reversed(side)], z0, z1, bump)
-
-    def top(x, y):
-        # The height of the bonnet or boot at (x, y), as body() lays it.
-        for (x0, w0, z0, _), (x1, w1, z1, _) in zip(stations, stations[1:]):
-            if x1 <= x <= x0:
-                u = (x0 - x) / (x0 - x1)
-                edge = w0 + (w1 - w0) * u - LID
-                return z0 + (z1 - z0) * u + bulge(x) * max(0.0, 1 - abs(y) / edge)
-        return stations[0][2]
+    shape.bumpers(c, (0.3 + lift, 0.52 + lift), (0.32 + lift, 0.56 + lift))
     if word:
-        c.text(word, n - 1.17, 0.038, top, "Blue")
+        c.text(word, n - 1.17, 0.038, shape.top, "Blue")
     roof = H - 0.035
     c.cabin(belt, xa, xb, xm, xc, xd, w - 0.11, w * 0.74, roof, xm_top=(xb + xc) / 2 + 0.05,
             xq=xq if xq - 0.06 > xc + 0.3 else None, edge=lambda x: half(x) - LID, crown=0.035, bow=0.05)
@@ -527,16 +556,8 @@ def saloon(name, L, W, H, rear, stripe=None, sign=False, bar=None, rails=False, 
     # (Placed by the width at the very end: the corners round off in front of the lamps.)
     c.lamps(front, end, half(nb) - 0.17, half(-nb) - 0.15, 0.64 + lift, boot - 0.12,
             plates=((n - 0.01, 0.42 + lift), (-n + 0.01, 0.46 + lift)))
-    # The lamps from above: the headlamps wrapping over the corners of the nose, and on a
-    # saloon (with a boot behind the rear window) the tail lamps over the boot's.
-    for s in (1, -1):
-        x0, x1 = nb - 0.04, nb - 0.19
-        outer = [(x, s * (half(x) - LID - 0.02)) for x in (x0, (x0 + x1) / 2, x1)]
-        c.decal([(x0, s * (outer[0][1] * s - 0.3))] + outer + [(x1, s * (outer[-1][1] * s - 0.26))], "Lamp", top)
-        if rear == "sedan":
-            x0, x1 = -nb + 0.04, -nb + 0.16
-            outer = [(x, s * (half(x) - LID - 0.02)) for x in (x0, (x0 + x1) / 2, x1)]
-            c.decal([(x0, s * (outer[0][1] * s - 0.28))] + outer + [(x1, s * (outer[-1][1] * s - 0.28))], "Tail", top)
+    # (Tail lamps from above only on a saloon, with a boot behind the rear window.)
+    shape.lamps(c, back=rear == "sedan")
     mid = (xb + xc) / 2
     if sign:
         c.block((mid, 0, H + 0.1), (0.24, 0.62, 0.2), "Sign")
@@ -556,22 +577,31 @@ def van(name="van", L=5.2, W=2.0, H=2.3):
     c = Car()
     w, n = W / 2, L / 2
     belt = 1.05
-    stations = [
-        (n, w * 0.84, 0.8, 0.34), (n - 0.12, w * 0.95, 0.88, 0.3), (n - 0.4, w, 0.96, 0.28),
-        (n - 0.62, w, belt, 0.28), (-n + 0.2, w, belt, 0.28), (-n, w * 0.97, belt, 0.32),
+    profile = [
+        (n, 0.8, 0.34), (n - 0.12, 0.88, 0.3), (n - 0.4, 0.96, 0.28),
+        (n - 0.62, belt, 0.28), (-n + 0.2, belt, 0.28), (-n, belt, 0.32),
     ]
+    # A short rounded nose, and a box behind that's square but for its corners.
+    shape = Shape(n, w, profile, nose=(0.42, 0.34), tail=(0.1, 0.08), bow=0.01)
+    half, nb = shape.half, shape.nb
     xa = n - 0.62
     wheels = (n - 0.9, -n + 0.95)
     xm = xa - 1.05
-    c.body(stations, wheels, 0.34, doors=[(xa, xm, 1)], cabin=(xa, xm - 0.3))
-    # A tall box behind the cab: windows only in the cab doors, none in the back.
-    c.cabin(belt, xa, xa - 0.72, xm, -n + 0.06, -n + 0.02, w - 0.02, w * 0.93, H,
-            glass_rear=False, glass_back_side=False, xm_top=xm, rear_doors=False)
-    c.interior(xa - 0.01, xm - 0.3, w - 0.08, 0.5, belt - 0.02, H - 0.03, xa - 0.75, xm - 0.3, w * 0.93 - 0.03,
+    shape.bulge = lambda x: 0.03 * min(max(x - xa, 0.0), 0.25) / 0.25
+    c.body(shape.stations, wheels, 0.34, doors=[(xa, xm, 1)], cabin=(xa, xm - 0.3), crown=shape.bulge)
+    shape.bumpers(c, (0.34, 0.56), (0.36, 0.6))
+    # A tall box behind the cab: windows only in the cab doors, none in the back; the
+    # roof bulges a little and reaches over the windscreen in the middle.
+    c.cabin(belt, xa, xa - 0.72, xm, -nb + 0.06, -nb + 0.02, w - 0.02, w * 0.93, H - 0.06,
+            glass_rear=False, glass_back_side=False, xm_top=xm, rear_doors=False,
+            edge=lambda x: half(x) - 0.03, crown=0.06, bow=(0.08, 0.0))
+    c.interior(xa - 0.01, xm - 0.3, w - 0.08, 0.5, belt - 0.02, H - 0.07, xa - 0.75, xm - 0.3, w * 0.93 - 0.03,
                [(xa - 0.6, s * w * 0.5, 0.55) for s in (1, -1)])
     c.wheels(wheels, w, 0.34, 0.23)
-    c.mirrors(xa - 0.05, w + 0.03, belt + 0.1)
-    c.lamps(n - 0.05, -n + 0.02, w * 0.66, w * 0.86, 0.72, 0.85)
+    c.mirrors(xa - 0.05, half(xa - 0.05) + 0.03, belt + 0.1, stalk=True)
+    c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.15, 0.72, 0.85,
+            plates=((n - 0.01, 0.45), (-n + 0.01, 0.48)))
+    shape.lamps(c)
     return c.finish(name)
 
 
@@ -580,28 +610,39 @@ def pickup(name="pickup", L=5.9, W=2.03, H=1.95):
     c = Car()
     w, n = W / 2, L / 2
     belt, rail, r = 1.24, 1.2, 0.4
-    stations = [
-        (n, w * 0.82, 1.02, 0.44), (n - 0.15, w * 0.94, 1.1, 0.42), (n - 0.5, w * 0.985, 1.17, 0.4),
-        (n - 1.0, w, rail, 0.38), (-n + 0.1, w, rail, 0.38), (-n, w * 0.97, rail - 0.05, 0.4),
+    profile = [
+        (n, 1.02, 0.44), (n - 0.15, 1.1, 0.42), (n - 0.5, 1.17, 0.4),
+        (n - 1.0, rail, 0.38), (-n + 0.1, rail, 0.38), (-n, rail - 0.05, 0.4),
     ]
+    # A blunt, square-shouldered nose, and a bed square at the back.
+    shape = Shape(n, w, profile, nose=(0.4, 0.26), tail=(0.06, 0.05), bow=0.01)
+    half, nb = shape.half, shape.nb
     xa = n - 1.5
     xd = xa - 2.4
     wheels = (n - 1.05, -n + 1.05)
     xm = xa - 1.2
-    c.body(stations, wheels, r, doors=[(xa, xm, 1), (xm, xd + 0.08, 3)], cabin=(xa, xd + 0.05))
-    c.cabin(belt, xa, xa - 0.65, xm, xd + 0.1, xd, w - 0.12, w * 0.8, H, xm_top=xa - 1.15)
-    c.interior(xa - 0.01, xd + 0.05, w - 0.08, 0.6, belt - 0.02, H - 0.03, xa - 0.68, xd + 0.13, w * 0.8 - 0.03,
+    # Only the bonnet bulges: the bed lies flat behind the cab.
+    shape.bulge = lambda x: 0.03 * min(max(x - xa, 0.0), 0.3) / 0.3
+    c.body(shape.stations, wheels, r, doors=[(xa, xm, 1), (xm, xd + 0.08, 3)], cabin=(xa, xd + 0.05),
+           crown=shape.bulge)
+    shape.bumpers(c, (0.44, 0.72), (0.46, 0.76))
+    c.cabin(belt, xa, xa - 0.65, xm, xd + 0.1, xd, w - 0.12, w * 0.8, H - 0.035, xm_top=xa - 1.15,
+            edge=lambda x: half(x) - LID, crown=0.035, bow=(0.05, 0.0))
+    c.interior(xa - 0.01, xd + 0.05, w - 0.08, 0.6, belt - 0.02, H - 0.06, xa - 0.68, xd + 0.13, w * 0.8 - 0.03,
                [(xa - 0.65, s * w * 0.48, 0.55) for s in (1, -1)] + [(xm - 0.6, 0, W - 0.4)])
     c.wheels(wheels, w, r, 0.28)
-    c.mirrors(xa - 0.1, w + 0.02, belt + 0.1)
-    c.lamps(n - 0.06, -n + 0.04, w * 0.72, w * 0.8, 0.86, 0.98)
+    c.mirrors(xa - 0.1, half(xa - 0.1) + 0.02, belt + 0.1, stalk=True)
+    c.lamps(nb - 0.06, -nb + 0.06, half(nb) - 0.17, half(-nb) - 0.14, 0.86, 0.98,
+            plates=((n - 0.01, 0.6), (-n + 0.01, 0.62)))
+    shape.lamps(c, size=(0.14, 0.32))
     # The bed: a dark floor between paint rails, and the tailgate.
-    end = -n + 0.06
-    c.block(((xd + end) / 2 - 0.02, 0, rail + 0.012), (xd - end - 0.2, W - 0.3, 0.024), "Trim")
+    end = -nb + 0.04
+    side = half((xd + end) / 2)
+    c.block(((xd + end) / 2 - 0.02, 0, rail + 0.012), (xd - end - 0.2, 2 * side - 0.3, 0.024), "Trim")
     for s in (1, -1):
-        c.block(((xd + end) / 2, s * (w - 0.07), rail + 0.03), (xd - end, 0.14, 0.06), "Paint")
-    c.block((end + 0.04, 0, rail + 0.04), (0.08, W - 0.04, 0.08), "Paint")
-    c.block((xd - 0.06, 0, rail + 0.04), (0.1, W - 0.04, 0.08), "Paint")
+        c.block(((xd + end) / 2, s * (side - 0.07), rail + 0.03), (xd - end, 0.14, 0.06), "Paint")
+    c.block((end + 0.04, 0, rail + 0.04), (0.08, 2 * half(end + 0.04) - 0.04, 0.08), "Paint")
+    c.block((xd - 0.06, 0, rail + 0.04), (0.1, 2 * half(xd) - 0.04, 0.08), "Paint")
     return c.finish(name)
 
 
