@@ -214,7 +214,6 @@ export const CS: Record<string, string> = {
 
   // The HUD
   '{n} car wrecked|{n} cars wrecked': '{n} rozbité auto|{n} rozbitá auta|{n} rozbitých aut',
-  '{n} person knocked over|{n} people knocked over': '{n} sražený člověk|{n} sražení lidé|{n} sražených lidí',
   'busted {n}×': 'dostali tě {n}×',
   'wasted {n}×': 'zabit {n}×',
   'Health: {n}%': 'Zdraví: {n} %',
