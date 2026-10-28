@@ -447,13 +447,15 @@ class Net:
                 self.h[i] = fixed[b[0][1]]
 
 
-def solve(ways, ground, decks, soft=frozenset()):
+def solve(ways, ground, decks, soft=frozenset(), streets=()):
     """Heights along every structure way (metres above sea level), as a profile per
     way: (cumulative distance along it, heights) at its points. `ground(xs, ys)`: bare
     terrain; `decks`: IPR's bridges (ipr_decks); `soft`: the ids of the ways that are
     stairs (see stairs): between a deck and the ground it's they that take up the
-    difference in height, not the deck's last metres."""
+    difference in height, not the deck's last metres; `streets`: the car streets on the
+    ground, as lines (see ipr_ends)."""
     net = Net(ways, soft)
+    streets = (STRtree(streets), streets) if len(streets) else None
     if not len(net.xy):
         return net, []
     T = ground(net.xy[:, 0], net.xy[:, 1])
@@ -516,6 +518,19 @@ def solve(ways, ground, decks, soft=frozenset()):
         if all(i in fixed for i in ends) and w["hw"] in ON_FOOT and abs(fixed[ends[0]] - fixed[ends[1]]) <= STAIRS_MAX * max(length[w["id"]], 1):
             continue
         if all(i in fixed for i in ends) and abs(fixed[ends[0]] - fixed[ends[1]]) > STEEP * max(length[w["id"]], 1):
+            # Where IPR measured the deck, it says which end is wrong: a ramp's end on the
+            # slope under it (the slip road off Jižní spojka over Vrbova, 5 m under its
+            # deck), or on the top of an abutment wall the terrain model kept (Strakonická
+            # by Barrandovský most, 3 m over it). Each end on IPR's deck, and the street's
+            # last metres brought to it.
+            on_ipr = ipr_ends(w, decks, ground, [fixed[i] for i in ends], streets)
+            if on_ipr:
+                for end, i, (h, far) in zip((0, -1), ends, on_ipr):
+                    fixed[i] = h
+                    w.setdefault("raised", {}).pop(end, None)
+                    if far:
+                        w["raised"][end] = (far, h)
+                continue
             fixed[ends[0]] = fixed[ends[1]] = max(fixed[ends[0]], fixed[ends[1]])
             w.pop("raised", None)
     # (What's kept for the street's last metres before each end, see pads, at the height it has now.)
@@ -660,6 +675,59 @@ def abutment(ground, at, ahead, here):
     # out to half as far again.)
     more = np.asarray(at)[None, :] + d[None, :] * np.linspace(ABUTMENT, 1.5 * ABUTMENT, 5)[:, None]
     return float(np.nanmax(np.r_[hs, ground(more[:, 0], more[:, 1])])), float(far[int(np.argmax(rise)) + 2])
+
+
+def ipr_ends(w, decks, ground, at_ends, streets=None):
+    """A short bridge way's two ends on IPR's deck, [(height, how far on the street
+    the ground comes to it)] for its first and last end, or None: where IPR has no deck
+    along most of it, none within IPR_END of an end, one as steep as the map's ends, one
+    the street reaches within IPR_END of neither end (it's to say which end is wrong, not
+    overrule both), no ground within PAD_MAX on along the street within MEET of it, or
+    a car street on the ground (`streets`: (STRtree, lines)) across the ground that
+    would come up. That's a bridge the map draws too short, its ends on the street it
+    crosses (Jižní spojka over Ryšavého): raising the ground walls that street off."""
+    line = LineString(w["pts"])
+    lo, hi = min(at_ends), max(at_ends)
+    s = np.arange(0, line.length + 0.01, 1.0)
+    z = np.array([deck_at(decks, p.x, p.y, hi, below=hi - lo + 3.0) for p in (line.interpolate(d) for d in s)])
+    if np.isnan(z).mean() > 0.4:
+        return None
+    out, agree = [], False
+    for end, (a, b) in ((0, (w["pts"][1], w["pts"][0])), (-1, (w["pts"][-2], w["pts"][-1]))):
+        near = (z if end == 0 else z[::-1])[s <= IPR_END]
+        near = near[~np.isnan(near)]
+        if not len(near):
+            return None
+        h = float(near[0])
+        d = np.subtract(b, a) / (math.dist(a, b) or 1)
+        far = np.arange(0, PAD_MAX + 0.01, 1.0)
+        on = np.asarray(b)[None, :] + d[None, :] * far[:, None]
+        # (Where the street first comes within half of MEET of the deck, or nearest it: the
+        # end at the street's height there, so the ground brought to it meets the street.)
+        g = ground(on[:, 0], on[:, 1])
+        off = np.where(np.isnan(g), np.inf, np.abs(g - h))
+        close = np.nonzero(off <= MEET / 2)[0]
+        k = int(close[0]) if len(close) else int(np.argmin(off))
+        agree = agree or far[k] <= IPR_END
+        if off[k] > MEET or (k and streets and crossed(LineString([b, on[k]]).buffer(w["w"] / 2 + 1.0, cap_style="flat"), d, streets)):
+            return None
+        out.append((float(g[k]), float(far[k]) + 0.5 if k else 0.0))
+    if not agree or abs(out[0][0] - out[1][0]) > STEEP * max(line.length, 1):
+        return None
+    return out
+
+
+def crossed(pad, d, streets):
+    """Whether a street in `streets` ((STRtree, lines)) crosses `pad`, more than 30°
+    off its direction `d` (not the street it lies on, running on from the bridge)."""
+    tree, lines = streets
+    for k in tree.query(pad, predicate="intersects"):
+        for part in shapely.get_parts(lines[k].intersection(pad)):
+            if part.geom_type == "LineString" and part.length >= 1:
+                (x0, y0), (x1, y1) = part.coords[0], part.coords[-1]
+                if abs((x1 - x0) * d[0] + (y1 - y0) * d[1]) < math.cos(math.pi / 6) * math.hypot(x1 - x0, y1 - y0):
+                    return True
+    return False
 
 
 def components(net):
@@ -927,6 +995,7 @@ def ramps(ways, lines, profiles, out):
 
 
 STEEP, STEEP_LENGTH = 0.15, 80.0  # a bridge way shorter than this many metres, steeper than this: not a ramp, a mistake in the map
+IPR_END, PAD_MAX, MEET = 4.0, 20.0, 1.0  # m (ipr_ends): IPR's deck this near a short bridge's end is the end's; the ground this far on, within this of it, meets it
 SCRAP = 25.0  # m: a bridge way shorter than this, lying on a much longer one, is a scrap of that bridge
 PORTAL = 12.0  # m a tunnel reaches out of its portal, at the portal's height
 
@@ -1381,7 +1450,7 @@ def ramps_per_tile(all_pieces, tile_boxes):
     return out
 
 
-def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, tile_boxes, source_manifest=None, way_levels=None, ramps_out=None):
+def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, tile_boxes, source_manifest=None, way_levels=None, ramps_out=None, streets=()):
     """Everything for the game: per tile, a list of (level, kind, heights, polygons).
     `ways`: structure_ways from every chunk; `outlines`: the man_made=bridge polygons;
     `roads`: the street polygons (for the ends of bridges with no street on them).
@@ -1389,14 +1458,15 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     strict assembly's freshness check. `way_levels`: an optional list that gets each
     way's level, {kind, level, pts} (for OnLevels). `ramps_out`: an optional dictionary
     that gets, per tile and level, the profiles of the ways too steep for the lattice.
+    `streets`: the car streets on the ground, as lines (see ipr_ends).
     """
     ways = merge_ways(ways)
     decks = ipr_decks(local, source_manifest)
-    net, profiles = solve(ways, ground, decks)
+    net, profiles = solve(ways, ground, decks, streets=streets)
     # Again with the stairs known (the first run's profiles say which ways are stairs).
     soft = frozenset(ways[k]["id"] for k in stairs(ways, profiles))
     if soft:
-        net, profiles = solve(ways, ground, decks, soft)
+        net, profiles = solve(ways, ground, decks, soft, streets)
     ways, profiles = drop_shallow(ways, net, profiles, ground)
     road_tree = STRtree(roads) if roads else None
     all_pieces, groups = pieces(ways, profiles, outlines, ground, decks, road_tree)

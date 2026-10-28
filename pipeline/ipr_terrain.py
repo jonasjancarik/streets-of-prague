@@ -435,7 +435,8 @@ def main() -> None:
     merged = unary_union(outlines) if outlines else None
     way_levels, steep = [], {}
     found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0, labels),
-                             local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources, way_levels=way_levels, ramps_out=steep)
+                             local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources, way_levels=way_levels, ramps_out=steep,
+                             streets=[line for line, _ in streets.values()])
     # Where a bridge is close over the ground (at its ends) the ground comes up, or down,
     # to it: wholly within NEAR_DECK of it, less and less out to OFF_DECK. The map's bridge
     # and the street it runs on from rarely meet where the terrain says the abutment is,
