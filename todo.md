@@ -193,12 +193,15 @@ before that day's frame-count fix may be doubled.
   Pankrác were not looked at. `check-bridge-decks.mjs praha` lists them
   (`docs/bridge-deck-check.md`). A game older than 7 October draws bridge stairs at
   ground height on the new tiles: release the game with or before the map.
-- **Steps in car streets** (`node scripts/check-road-flatness.mjs praha`, 38 over 1 m on
-  27 October 2026): four bridges' pads that the street past them doesn't meet (Ohrobecké
-  údolí, Železničářů, Komořanská by most Závodu míru, Rašínovo nábřeží by Palackého most);
-  new since the terraces stop at the kerbs, nábřeží Edvarda Beneše under Letná (8 m at
-  50.0942, 14.4179) and Chotkova (7.4 m at 50.0940, 14.4094), where the street now shares
-  its label with the ground above a wall beside it. Lean and twist (some 4,000 streets
+- **Steps in car streets** (`node scripts/check-road-flatness.mjs praha`, 40 over 1 m on
+  28 October 2026): two bridges' pads that the street past them doesn't meet (Ohrobecké
+  údolí, Železničářů); new since the terraces stop at the kerbs, nábřeží Edvarda Beneše
+  under Letná (8 m at 50.0942, 14.4179) and Chotkova (7.4 m at 50.0940, 14.4094), where
+  the street now shares its label with the ground above a wall beside it; Hořejší
+  nábřeží at the foot of its wall leans 46 % (1.45 m step) and Bubenská by Hlávkův most
+  has a 1.8 m step. Palackého most's west end has a footway joining 2.8 m off by the
+  quay. Jižní spojka over Ryšavého (50.0403, 14.4823) is drawn too short, its ends on
+  Ryšavého under IPR's deck: a 5 m join that needs the bridge extended to IPR's deck's end. Lean and twist (some 4,000 streets
   over 15 %) are the lattice tilting hillside streets: the next big thing to fix.
 - **Car streets crossing drops of 7–10 m on the ground** (`node
   scripts/check-step-edges.mjs praha`): terrain or map faults to look at.
