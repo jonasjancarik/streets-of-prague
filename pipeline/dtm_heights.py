@@ -15,7 +15,11 @@ the terrain's lattice:
   under náměstí Míru, too little for SURVEY_OFFSET);
 - a lattice point on a surveyed street surface (carriageway, pavement, parking, tram
   track, platform…) takes its height from the surveyed points along that surface's own
-  edge, so the street above a wall never mixes with the quay below it;
+  edge, so the street above a wall never mixes with the quay below it. Where those
+  nearest points are more than LEVELS apart within UNDER_BRIDGE of one of the map's
+  bridges, one surface has two levels (Rašínovo nábřeží over the embankment's passage
+  under Palackého most): the point takes the upper level, the street over the passage,
+  where averaging made a pit 3 m deep;
   (not where the map has a tunnel or an underpass and the survey is well below the
   terrain model: that's the street in the underpass, and the ground is the one over it);
 - the ground within SHOULDER of a surveyed street is level with it, and from there to
@@ -117,6 +121,8 @@ OVERHANG = 12.0  # m from a surveyed street: a mapped carriageway this near one 
 UNDER = 2.0  # m below the terrain model, in a tunnel of the map's: surveyed under the ground
 UNDER_SIDE = 4.0  # m either side of the tunnel that counts as in it
 FEW = 3  # a surface with fewer surveyed points than this keeps the terrain model's heights
+LEVELS = 3.0  # m between the surveyed points nearest a lattice point under a bridge: a surface on two levels
+UNDER_BRIDGE = 6.0  # m round a bridge that count as under it (how far its deck's heights reach)
 WATER_REACH = 16.0  # m: further than the terrain model's ramp at a bank reaches
 POOL_WIDE = 10.0  # m from the bank: water this wide is a river's or a pond's, level between weirs
 POOL_FALL = 0.001  # the most its surface falls a metre along (a metre a kilometre: the Berounka's is 0.6)
@@ -448,7 +454,7 @@ def weir_points(weirs, shape, x_of, y_of, step):
     return out
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=()):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -493,7 +499,18 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     order = np.argsort(owner, kind="stable")
     owner, point = owner[order], point[order]
     starts = np.flatnonzero(np.r_[True, owner[1:] != owner[:-1]]) if len(owner) else np.empty(0, dtype=int)
-    surfaces = street_points = 0
+    surfaces = street_points = two_levels = 0
+    # The lattice points under one of the map's bridges (see LEVELS).
+    bridged = np.zeros(grid.shape, dtype=bool)
+    for shape in bridges:
+        shape = shape.buffer(UNDER_BRIDGE)
+        bx0, by0, bx1, by1 = shape.bounds
+        ia, ib = max(0, int(np.ceil((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.floor((bx1 - x_of(0)) / step)))
+        ja, jb = max(0, int(np.ceil((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.floor((by1 - y_of(0)) / step)))
+        if ia > ib or ja > jb:
+            continue
+        bi, bj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+        bridged[bj, bi] |= shapely.contains_xy(shape, x_of(bi), y_of(bj))
     street = np.zeros(grid.shape, dtype=bool)
     which = np.zeros(grid.shape, dtype=np.int32)  # the surface each street point is on, from 1
     for a, b in zip(starts, np.r_[starts[1:], len(owner)]):
@@ -515,7 +532,17 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         d, near = cKDTree(pts[own]).query(np.column_stack([x_of(gi), y_of(gj)]), k=k)
         d, near = d.reshape(len(gi), k), near.reshape(len(gi), k)
         wgt = 1.0 / (d * d + 0.25)
-        grid[gj, gi] = (wgt * points[own, 2][near]).sum(axis=1) / wgt.sum(axis=1)
+        # Two levels in one surface under one of the map's bridges (a junction over a
+        # passage under it, Palackého most's east end): the upper one, the street on top,
+        # not a pit halfway between. (The level nearest the terrain model's was the cutting
+        # under Jižní spojka's ramps; anywhere, not only under a bridge, the rule moved
+        # 78,000 points and made more steps than it took away.)
+        z = points[own, 2][near]
+        split = (z.max(axis=1) - z.min(axis=1) > LEVELS) & bridged[gj, gi]
+        if split.any():
+            wgt = np.where(split[:, None] & (z < z.max(axis=1)[:, None] - 1.0), 0.0, wgt)
+            two_levels += int(split.sum())
+        grid[gj, gi] = (wgt * z).sum(axis=1) / wgt.sum(axis=1)
         street[gj, gi] = True
         which[gj, gi] = owner[a] + 1
         surfaces += 1
@@ -904,7 +931,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         if listed:
             outlines[(i, j)] = listed
     changed = ~np.isnan(bare) & (np.abs(grid - bare) > 0.05)
-    return {"survey_rejected_vertices": rejected, "surfaces": surfaces, "street_points": street_points, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
+    return {"survey_rejected_vertices": rejected, "surfaces": surfaces, "street_points": street_points, "two_levels": two_levels, "under_points": under, "feathered": feathered, "overhang_points": overhang, "water_points": int(wet.sum()), "water_levelled": levelled, "valley_points": valley, "bank_points": bank_points,
             "kept_by_hand": kept, "cut_streets": cuts, "retaining_walls": len(strips) - cuts, "retaining_metres": round(wall_length), "terrace_off_streets_m2": round(off_streets), "wall_points": wall_points, "lone_points": lone_points,
             "changed": int(changed.sum()), "mean_change": float(np.abs(grid - bare)[changed].mean()) if changed.any() else 0.0,
             "labels": labels, "terraces": outlines}
