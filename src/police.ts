@@ -17,7 +17,7 @@ import type { Point3 } from './guns.ts';
 interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
 // `door`: the one of their car they got out of, left open till they're back. `led`: making
 // an arrest, moved by src/arrest.ts.
-export interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean }
+export interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean }
 // A stretch of the way a police car or a fire engine can take: a street, or (`foot`) a
 // way meant for people.
 type Way = (DriveEdge | WalkEdge) & { mid?: Polyline; twin?: DriveEdge | null };
@@ -32,7 +32,12 @@ const PAVEMENT_COST = 10;
 const FOOT_COST = 3; // a metre there counts as this many by road: the street is taken where there is one
 const FOOT_SPEED = 10; // m/s among people
 const FOOT_FAR = 15; // m: a footpath is where a way starts or ends only if it's this much nearer than any street (a pavement runs beside every street)
-interface PlayerTarget { x: number; y: number; z: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean }
+const OTHER_LEVEL = 15; // m: a street on another level than the one wanted counts as this much further
+const LEVEL_APART = 3; // m of height between two that are on different levels (as main.ts's `apart`)
+// Whether a street is on a level of that kind: in a tunnel (below 0), on a bridge (above), or on the ground.
+export const onLevel = (e: { bridge?: boolean; tunnel?: boolean }, level: number) => (level < 0 ? !!e.tunnel : level > 0 ? !!e.bridge : !e.bridge && !e.tunnel);
+// (`level`: on the ground 0, in a tunnel below it, on a bridge above it; see TileWorld.track.)
+interface PlayerTarget { x: number; y: number; z: number; level: number; vx: number; vy: number; speed: number; car: Car | null; air: boolean; riding: boolean }
 interface PoliceOptions {
   scene: THREE.Scene; drive: DriveGraph; traffic: Traffic; grid: CarGrid;
   height: (x: number, y: number, who?: Car | Officer) => number;
@@ -240,6 +245,12 @@ export class Police {
     yield* this.helis.watching;
   }
 
+  // Whether a police car or an officer is on your level (not on the road over the
+  // tunnel you're in, or under the bridge you're on).
+  level(who: Car | Officer, me: PlayerTarget) {
+    return Math.abs(this.height(who.x, who.y, who) - me.z) < LEVEL_APART;
+  }
+
   clear(ax: number, ay: number, bx: number, by: number) {
     const d = Math.hypot(bx - ax, by - ay), n = Math.ceil(d / 2);
     for (let i = 1; i < n; i++) if (this.grid.at(ax + ((bx - ax) * i) / n, ay + ((by - ay) * i) / n) === 255) return false;
@@ -382,13 +393,15 @@ export class Police {
     return this.nearestWay(x, y, radius, false) as { e: DriveEdge & { mid: Polyline }; s: number; d: number } | null;
   }
 
-  // The same, with (`foot`) the footpaths an emergency vehicle may take.
-  nearestWay(x: number, y: number, radius: number, foot: boolean) {
+  // The same, with (`foot`) the footpaths an emergency vehicle may take. With a
+  // `level`, a street on another one (the road over a tunnel you're in) counts only if
+  // nothing on yours is much nearer.
+  nearestWay(x: number, y: number, radius: number, foot: boolean, level?: number) {
     let best: { e: Way & { mid: Polyline }; s: number; d: number; foot: boolean } | null = null;
     for (const e of this.edgesNear(x, y, radius)) {
       e.mid = e.mid || new Polyline(e.pts);
-      const p = project(e.mid, x, y);
-      if (p.d < radius && (!best || p.d < best.d)) best = { e: e as DriveEdge & { mid: Polyline }, s: p.s, d: p.d, foot: false };
+      const p = project(e.mid, x, y), d = p.d + (level !== undefined && !onLevel(e, level) ? OTHER_LEVEL : 0);
+      if (p.d < radius && (!best || d < best.d)) best = { e: e as DriveEdge & { mid: Polyline }, s: p.s, d, foot: false };
     }
     if (foot) for (const e of this.walkNear(x, y, radius)) {
       if (!this.drivable(e) || this.pavement(e)) continue;
@@ -400,19 +413,20 @@ export class Police {
 
   // Where a police car stops for you on foot: in the traffic lane nearest you, the
   // side of the street you're on. The lanes keep clear of the parked cars, so the car
-  // doesn't drive over them (or up on the pavement) to get to you. A street on a
-  // bridge or in a tunnel counts only if nothing else is much nearer.
-  roadside(x: number, y: number, foot = true) {
+  // doesn't drive over them (or up on the pavement) to get to you. A street on
+  // another level than yours (a bridge or a tunnel, when you're on the ground; the
+  // street above, when you're in the tunnel) counts only if nothing else is much nearer.
+  roadside(x: number, y: number, foot = true, level = 0) {
     let best: { x: number; y: number } | null = null, bestD = 80;
     for (const e of this.edgesNear(x, y, 80)) {
-      const q = project(e.path, x, y), d = q.d + (e.bridge || e.tunnel ? 15 : 0);
+      const q = project(e.path, x, y), d = q.d + (onLevel(e, level) ? 0 : OTHER_LEVEL);
       if (d >= bestD) continue;
       const p = e.path.at(q.s);
       best = { x: p.x, y: p.y };
       bestD = d;
     }
     // In a pedestrian zone or a park: on the path through it, if that's nearer than any street.
-    if (foot) for (const e of this.walkNear(x, y, 80)) {
+    if (foot && !level) for (const e of this.walkNear(x, y, 80)) {
       if (!this.drivable(e)) continue;
       const q = project(e.path, x, y);
       if (q.d + FOOT_FAR >= bestD || this.pavement(e)) continue;
@@ -426,14 +440,15 @@ export class Police {
   // Shortest way from (ax, ay) to (bx, by), as a Polyline, or null: by road, and where
   // there's none, through pedestrian zones and parks (police cars and fire engines
   // may). If the paths lead nowhere, by road as near as it gets.
-  // (`foot` false: by road only.)
-  route(ax: number, ay: number, bx: number, by: number, foot = true): Polyline | null {
+  // (`foot` false: by road only. `levels`: those of the start and the end, so a way to
+  // someone in a tunnel ends in the tunnel, not on the street above it.)
+  route(ax: number, ay: number, bx: number, by: number, foot = true, levels?: [number, number]): Polyline | null {
     this.sync();
-    return (foot && this.way(ax, ay, bx, by, true)) || this.way(ax, ay, bx, by, false);
+    return (foot && this.way(ax, ay, bx, by, true, levels)) || this.way(ax, ay, bx, by, false, levels);
   }
 
-  way(ax: number, ay: number, bx: number, by: number, foot: boolean): Polyline | null {
-    const A = this.nearestWay(ax, ay, 40, foot), B = this.nearestWay(bx, by, 40, foot);
+  way(ax: number, ay: number, bx: number, by: number, foot: boolean, levels?: [number, number]): Polyline | null {
+    const A = this.nearestWay(ax, ay, 40, foot, levels?.[0]), B = this.nearestWay(bx, by, 40, foot, levels?.[1]);
     if (!A || !B) return null;
     const lenA = A.e.mid.length, lenB = B.e.mid.length;
     let pts: Point2[];
@@ -522,8 +537,10 @@ export class Police {
   chase(p: ChaseCar, dt: number, me: PlayerTarget) {
     const c = p.car, vf = c.forwardSpeed;
     const dx = me.x - c.x, dy = me.y - c.y, dist = Math.hypot(dx, dy);
+    // (Not on the street over the tunnel you're in, nor in the tunnel under you.)
+    const level = this.level(c, me);
     let tx, ty, want;
-    if (me.car && dist < 40 && this.clear(c.x, c.y, me.x, me.y)) {
+    if (me.car && dist < 40 && level && this.clear(c.x, c.y, me.x, me.y)) {
       // In sight and you're driving: straight at you, to ram you.
       tx = me.x + me.vx * Math.min(0.8, dist / 25);
       ty = me.y + me.vy * Math.min(0.8, dist / 25);
@@ -536,8 +553,8 @@ export class Police {
       // foot the way ends at the roadside nearest you, and the car doesn't look for a
       // new one while its officer is out.
       if (c.crew && (p.replan < 0 || (me.car && p.path && p.s > p.path.length - 6))) {
-        const to = me.car ? null : this.roadside(me.x, me.y);
-        p.path = this.route(c.x, c.y, to ? to.x : me.x, to ? to.y : me.y);
+        const to = me.car ? null : this.roadside(me.x, me.y, true, me.level);
+        p.path = this.route(c.x, c.y, to ? to.x : me.x, to ? to.y : me.y, true, [c.level ?? 0, me.level]);
         p.s = 0;
         p.replan = 1.2 + this.r() * 0.8;
       }
@@ -564,10 +581,10 @@ export class Police {
     // On foot, also once the car has got as near as the road goes: the officer runs
     // the rest of the way.
     const there = behind || (!me.car && dist < 60 && !!p.path && p.path.length - p.s < 8);
-    if (c.crew && !me.air && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18 || there)) this.getOut(c);
+    if (c.crew && !me.air && level && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18 || there)) this.getOut(c);
     // Near you and in sight, from four stars: a shot out of the window now and then.
     p.reload = (p.reload ?? 1) - dt;
-    if (c.crew && this.stars >= FROM_CARS && !me.air && dist < RANGE && p.reload <= 0 && this.clear(c.x, c.y, me.x, me.y)) {
+    if (c.crew && this.stars >= FROM_CARS && !me.air && level && dist < RANGE && p.reload <= 0 && this.clear(c.x, c.y, me.x, me.y)) {
       p.reload = this.pace() + 1;
       this.shoot(c.x, c.y, c, me);
     }
@@ -612,7 +629,8 @@ export class Police {
       fig.look(0, { shirt: '#1f3a68', trousers: '#1a2438', skin: '#e3b99a', hair: '#15233f', sleeves: true });
     }
     this.scene.add(fig.mesh);
-    this.officers.push({ x, y, h: car.h, vx: 0, vy: 0, car, fig, anim: new Anim(this.kit, 'idle'), down: 0, back: false, door });
+    // On the car's level: out of a car in a tunnel, in the tunnel (not on the street above).
+    this.officers.push({ x, y, h: car.h, vx: 0, vy: 0, car, fig, anim: new Anim(this.kit, 'idle'), down: 0, back: false, door, level: car.level, gz: car.gz });
   }
 
   blocked(x: number, y: number) {
@@ -643,7 +661,8 @@ export class Police {
       // Armed, in range and in sight: they stand and shoot. Closer in they still come to
       // arrest you.
       o.reload = (o.reload ?? 0.5 + this.r() * 0.6) - dt;
-      const aiming = !o.back && !this.arresting && this.stars >= ARMED && !me.air && toMe > 5 && toMe < RANGE && this.clear(o.x, o.y, me.x, me.y);
+      const level = this.level(o, me);
+      const aiming = !o.back && !this.arresting && this.stars >= ARMED && !me.air && level && toMe > 5 && toMe < RANGE && this.clear(o.x, o.y, me.x, me.y);
       if (this.arresting && !o.back) {
         // Someone else has you: come up and stand by.
         if (toMe > 3.4) steer(o, me.x, me.y, RUN, this.bodyAt, null, this.r);
@@ -658,7 +677,7 @@ export class Police {
         const d = Math.hypot(tx - o.x, ty - o.y) || 1;
         steer(o, tx, ty, o.back && !ride ? 1.4 : RUN, this.bodyAt, o.back ? o.car : null, this.r);
         if (o.back && ride && d < 2.6) { o.gone = true; o.car.crew = true; if (o.door) o.car.open(o.door, false); return; }
-        if (!o.back && this.heat > 0 && !me.air) {
+        if (!o.back && this.heat > 0 && !me.air && level) {
           const reach = me.car ? me.car.spec.L / 2 + 1 : 1.1;
           if ((toMe < reach || door < 0.8) && (!me.car || me.speed < 2)) this.onBusted(o);
         }
