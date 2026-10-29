@@ -837,7 +837,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   (the footfall map, 1 at the Old Town Square), and quiet at night;
   distant traffic by day and a low hum by night; and birds where it's quiet (a
   blackbird at dawn and dusk, small garden birds by day, a morning chorus early on),
-  none in rain or snow. It starts with the first key press or tap (the browser's rule);
+  none in rain or snow, and none within 40 m of a trunk or primary road, fading back
+  in by 150 m. It starts with the first key press or tap (the browser's rule);
   M turns it off and on, and it goes quiet in the metro.
 - **Car radio.** While driving a car, use R to cycle stations or the controls under
   the speed display to pick one, step backwards/forwards or switch the radio off.

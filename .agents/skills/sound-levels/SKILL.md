@@ -17,7 +17,7 @@ Report numbers (dB) to the user and let them judge by ear.
   for faster cars later, on no car yet), tyres by road surface, rail-joint clicks,
   weather. Recorded: the four nearest trams (`TramVoice`, distance falloff in
   `place()`: `15 / (15 + d)`) and the city ambience (`Ambience`).
-- `src/soundmix.ts`: the ambience gains (`AMBIENCE`, `ambienceGains(busy, hour, wet)`)
+- `src/soundmix.ts`: the ambience gains (`AMBIENCE`, `ambienceGains(busy, hour, wet, season, road)`)
   and how muffled each loop is (`ambienceMuffle(busy)`, a lowpass: the crowd heard
   from a side street; `levels.mjs` measures through the same filter).
   Pure, no imports, so Node can run it: the measuring script uses the same code as the
@@ -28,8 +28,10 @@ Report numbers (dB) to the user and let them judge by ear.
 - `pipeline/build_audio.py`: cuts the clips from Freesound previews (downloaded into
   `pipeline/.cache/audio/freesound/`, no login needed). Loops are evened out to about
   -20 dBFS RMS, one-offs peak at -1 dBFS; birdsong (`song`) isn't evened out.
-- `main.ts` passes `busy` (footfall within 150 m / 0.2, capped at 1) and `hour` from
-  the game clock into `sound.update`.
+- `main.ts` passes `busy` (footfall within 150 m / 0.2, capped at 1), `road` (how near
+  a big road is, `roadNoise`: 1 within 40 m of a trunk or primary road, nothing from
+  150 m) and `hour` from the game clock into `sound.update`. `levels.mjs` takes `road`
+  from the tiles' streets and prints it beside `busy`.
 
 ## Measuring
 
@@ -56,6 +58,9 @@ difference.
   Petřín 0.049, Letná park 0.031, Barrandov 0.007, Kunratice 0.004. Anything meant to
   fade with busyness wants a log scale (as the birds do: none from 0.1, all below
   0.006). The footfall map doesn't know parks, so city parks only get a little.
+  Nor cars: it counts people, so a six-lane road with no pavement is as quiet to it as
+  a field (Barrandovský most 0.006, like Barrandov's estate). That's what `road` is
+  for: the birds go beside a big road whatever the footfall.
 - **Loud needs room (advice from a game audio designer).** Loudness is perceived
   loudness, and the same mixing principles apply as in music mastering. A sound only
   feels big if the others make space for it: to make one loud, duck the rest. Brains

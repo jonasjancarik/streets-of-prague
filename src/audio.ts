@@ -143,6 +143,7 @@ export interface SoundState {
   rain?: number; wet?: number; snow?: number; // the weather, 0–1 each (weather.ts)
   strikes?: number; // lightning so far: each new one thunders a moment later
   busy?: number; // how busy the streets around you are, 0 (the edge of town) to 1 (the Old Town)
+  road?: number; // how near a big road is, 0–1 (roadNoise in soundmix.ts)
   hour?: number; // the time of day, in hours (13.5 is half past one)
   season?: BirdSeason; // the fixed game's date curves, without constructing another object
   sirens?: Siren[]; // emergency vehicles with their sirens on
@@ -343,7 +344,7 @@ export class Sound {
     this.tyres!.update(car, s.surface, s.wet ?? 0);
     this.weather!.update(s.rain ?? 0, s.snow ?? 0);
     const aloft = clamp(s.aloft ?? 0, 0, 1);
-    this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0), aloft, s.season);
+    this.ambience?.update(s.busy ?? 0.5, s.hour ?? 12, Math.max(s.rain ?? 0, s.snow ?? 0), aloft, s.season, s.road ?? 0);
     this.buses.trams.gain.setTargetAtTime(this.level('trams') * (1 - 0.9 * aloft), t, 0.5);
     if (s.strikes !== undefined) {
       if (this.strikes >= 0 && s.strikes > this.strikes) this.weather!.thunder(t + 0.6 + Math.random() * 3.5);
@@ -982,9 +983,9 @@ class Ambience {
     }
   }
 
-  // `busy` 0–1, `hour` 0–24, `wet` how hard it rains or snows 0–1.
-  update(busy: number, hour: number, wet: number, aloft = 0, season?: BirdSeason) {
-    const t = this.ctx.currentTime, gains = ambienceGains(busy, hour, wet, season), muffle = ambienceMuffle(busy);
+  // `busy` 0–1, `hour` 0–24, `wet` how hard it rains or snows 0–1, `road` how near a big road is 0–1.
+  update(busy: number, hour: number, wet: number, aloft = 0, season?: BirdSeason, road = 0) {
+    const t = this.ctx.currentTime, gains = ambienceGains(busy, hour, wet, season, road), muffle = ambienceMuffle(busy);
     // High up the city is a faint murmur: much quieter, and only its lows reach you.
     for (const [name, g] of Object.entries(this.gains)) g.gain.setTargetAtTime((gains[name] ?? 0) * (1 - 0.93 * aloft), t, 2);
     for (const [name, lp] of Object.entries(this.muffles)) lp.frequency.setTargetAtTime(Math.min(muffle[name] ?? 20000, 20000 - 18500 * aloft), t, 2);
