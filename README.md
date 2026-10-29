@@ -485,8 +485,11 @@ record the measurements, merge decisions and pending landmark asset activation.
   light costs one texture read a pixel however many lamps there are; its alpha keeps
   the height of the ground under the lamps, so their light stays off the roofs. Cars
   cast shadows into that map, so it is drawn a second time at a quarter of the size
-  with nothing in the way, and what stands more than about 3 m above the lit ground
-  (a tree's crown over a parked car) takes its light from that copy instead. The
+  with only the shadows that climb (those of lights lower than the car's roof, the
+  headlights), and what stands more than about 3 m above the lit ground (a tree's crown
+  over a parked car, the wall behind a van in someone's headlights) takes its light
+  from that copy instead. On Ultra the headlights' cones in the air stop at the first
+  car in their way. The
   lamps come on at dusk (earlier under heavy cloud), and a share of the windows is lit
   by the hour, most in the evening.
 - **Tiles.** The map streams in 250 m tiles (`src/tiles.ts`) around the camera. Each
