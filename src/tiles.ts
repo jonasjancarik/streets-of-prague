@@ -10,6 +10,7 @@ import { TreePool } from './trees.ts';
 import { Surfaces } from './surface.ts';
 import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
+import type { Footprint } from './facades.ts';
 import { Zones, parkCarsSteps, inRing, inPoly } from './parking.ts';
 import { finish } from './parkingClearance.ts';
 import { openWater } from './river.ts';
@@ -52,6 +53,7 @@ interface TileSource {
   extrude: (TileJSON['buildings'][number] & { base: number })[];
   clipped: WorkerJobs['ground']['edges']; parkingZones: (string | null)[];
   standing: { rings: Point2[][] }[]; // the buildings that stand on the ground
+  footprints: Footprint[]; // the same and those round the tile, not their parts, for the party walls
   shapes: Shadower[]; trees: LandResult['trees'];
 }
 type MeshJobs = Promise<[WorkerResults['ground'], BuildingArrays | null, BuildingArrays | null]>;
@@ -1232,7 +1234,7 @@ export class TileWorld {
     const source: TileSource = {
       t, size: data.size, origin: data.origin, bounds, ground, levels: tileLevels, masks: [], marks, hide,
       withIpr, ipr: withIpr ? ipr : null, extrude, clipped, parkingZones, standing: own.filter(grounded).map((b) => ({ rings: b.rings })),
-      shapes, trees: { matrices: new Float32Array(0), colours: new Float32Array(0), yearly: new Float32Array(0), outlines: new Float32Array(0), count: 0, big: 0, shrubs: 0, conifers: 0 },
+      shapes, footprints: t.buildings.filter((b) => grounded(b) && !b.part).map((b) => ({ rings: b.rings, h: b.h })), trees: { matrices: new Float32Array(0), colours: new Float32Array(0), yearly: new Float32Array(0), outlines: new Float32Array(0), count: 0, big: 0, shrubs: 0, conifers: 0 },
     };
     // A tile that's in view as soon as it's loaded: its meshes' jobs go to the workers
     // along with this one.
@@ -1349,7 +1351,7 @@ export class TileWorld {
         d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility },
         paint: TILE_LOOK.roadPaint, box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
-      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5 }, [buffer]) : null,
+      buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
       !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [] }) : null,
     ]);
   }

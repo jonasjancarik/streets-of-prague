@@ -124,7 +124,7 @@ const insertAt = (a: BuildingArrays, d: DetailArrays, at: number): BuildingArray
 // positions in centimetres from the tile corner, a colour per triangle and, in newer
 // data, a material per triangle. Those in a landmark's footprint (`hide`) are left
 // out: the landmark stands there instead.
-function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter }: WorkerJobs['ipr']): BuildingArrays {
+function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter, footprints }: WorkerJobs['ipr']): BuildingArrays {
   const all = new DataView(buffer).getUint32(0, true);
   const p16 = new Int16Array(buffer, 8, all * 9);
   const colAt = 8 + all * 18 + ((4 - ((8 + all * 18) % 4)) % 4);
@@ -170,7 +170,7 @@ function ipr({ buffer, box: [x0, y0], absolute, ground, bbox, hide, clutter }: W
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.computeVertexNormals();
   const lines: WallLine[] = [];
-  const facade = facadeCoords(pos, groundAt(ground), styleAt(bbox), lines);
+  const facade = facadeCoords(pos, groundAt(ground), styleAt(bbox), lines, footprints);
   const code = (o: number) => (m8 ? m8[kept[o]] >> 4 : 0);
   if (m8) for (let o = 0; o < n; o++) {
     const style = WALL_CODES[code(o)]?.[0];
