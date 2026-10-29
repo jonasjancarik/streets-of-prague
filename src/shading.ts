@@ -412,18 +412,22 @@ vec3 roofTiles(vec3 c, vec2 wp, vec3 n) {
   if (max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) > .08) return beaverTiles(c, wp, n);
   return roofTilesAs(c, wp, n, 1.);
 }
-// Sheet metal: smooth pans running down the slope between thin standing seams (a lit
-// edge and a faint shadow beside it), with a broad, soft sheen; copper with verdigris
-// in patches.
+// Sheet metal: pans running down the slope between thin standing seams (a lit edge and
+// a faint shadow beside it), each a shade of its own and laid in sheets of about 2.4 m,
+// now and then one replaced or gone rusty (not on copper), so that it reads as metal
+// from the game's height; a broad, soft sheen; copper with verdigris in patches.
 vec3 sheetRoof(vec3 c, vec2 wp, vec3 n, float copper) {
   vec2 down = normalize(vec2(n.x, -n.z) + vec2(0., .0001));
-  float a = dot(wp, vec2(-down.y, down.x)) / .6;
+  float a = dot(wp, vec2(-down.y, down.x)) / .6, b = dot(wp, down) / 2.4;
   float seam = fract(a);
-  vec3 t = c * (1. + .07 * (1. - smoothstep(0., .035, seam)) - .06 * smoothstep(.94, 1., seam));
-  t *= .96 + .03 * fract(sin(floor(a) * 12.9898) * 43758.5453);
+  float pan = fract(sin(floor(a) * 12.9898) * 43758.5453);
+  float sheet = fract(sin(floor(a) * 78.233 + floor(b) * 37.719) * 43758.5453);
+  vec3 tone = c * (.92 + .09 * pan);
+  tone = mix(tone, tone * 1.12, step(.93, sheet) * step(sheet, .97) * (1. - copper));
+  tone = mix(tone, tone * vec3(1.02, .8, .62), step(.97, sheet) * (1. - copper));
+  vec3 t = tone * (1. + .07 * (1. - smoothstep(0., .035, seam)) - .06 * smoothstep(.94, 1., seam));
   t = mix(t, t * vec3(.82, 1.1, 1.02) + vec3(.02, .06, .05), copper * smoothstep(.45, .8, fbm(wp * .25)) * .7);
-  t *= .95 + .1 * fbm(wp * .04);
-  return mix(c * (.95 + .1 * fbm(wp * .04)), t, detail(wp, .3));
+  return mix(mix(c, tone, detail(wp, .6)), t, detail(wp, .3)) * (.95 + .1 * fbm(wp * .04));
 }
 // A mansard's steep lower slope (facades.ts, mansardCoords): a window in every bay of
 // about 3.2 m, 1.3 m high from 0.6 m up the slope, in a light frame. mansardGlass is 1 on
