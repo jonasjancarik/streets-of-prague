@@ -95,6 +95,7 @@ const VEHICLE_NAMES: Record<string, string> = {
 };
 import { haptic, hapticCrash, hapticBlast } from './haptics.ts';
 import { tunnelHole } from './tunnelView.ts';
+import { hideIdleCursor } from './cursor.ts';
 import { setupTestkit, PLACES } from './testkit.ts';
 import * as telemetry from './telemetry.ts';
 import { benchPause } from './benchpause.ts';
@@ -1285,6 +1286,7 @@ async function main() {
     },
   };
   const settingsPanel = setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
+  hideIdleCursor(renderer.domElement, () => settingsPanel.open);
 
   // ---- Input -------------------------------------------------------------
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
