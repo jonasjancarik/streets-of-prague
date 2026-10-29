@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { sendInstances } from './gpu.ts';
+import { send, sendInstances } from './gpu.ts';
 
 // What the lights do besides lighting the ground, on the Ultra graphics tier: a faint
 // cone in the air in front of every headlight and round the emergency lights, stronger
@@ -24,6 +24,7 @@ interface Roof { x: number; y: number; h: number; spec: { L: number; W: number; 
 
 export class LightFx {
   private beams: THREE.InstancedMesh | null = null;
+  private cuts: THREE.InstancedBufferAttribute | null = null;
   private glints: THREE.InstancedMesh | null = null;
   private dummy = new THREE.Object3D();
   private c = new THREE.Color();
@@ -37,6 +38,9 @@ export class LightFx {
     if (!beamBy || !glintBy) return;
     // A cone along x, from a tenth of its width at the light to its full width at the far end.
     const cone = new THREE.CylinderGeometry(1, 0.1, 1, 20, 1, true).rotateZ(-Math.PI / 2).translate(0.5, 0, 0);
+    // (How much of each cone is drawn, from the light: one in the way cuts it short.)
+    this.cuts = new THREE.InstancedBufferAttribute(new Float32Array(MAX_BEAMS), 1);
+    cone.setAttribute('iCut', this.cuts);
     this.beams = new THREE.InstancedMesh(cone, beamBy(), MAX_BEAMS);
     this.glints = new THREE.InstancedMesh(new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2), glintBy(), MAX_GLINTS);
     for (const m of [this.beams, this.glints]) {
@@ -59,15 +63,17 @@ export class LightFx {
     if (!this.eye) this.commit();
   }
 
-  // A cone of light in the air from (x, y, z), `len` long and `wide` across at its end.
-  beam(x: number, y: number, z: number, dx: number, dy: number, len: number, wide: number, colour: THREE.Color, strength: number, dip = 0.04) {
-    if (!this.eye || !this.beams || this.nb >= MAX_BEAMS) return;
-    const d = this.dummy;
+  // A cone of light in the air from (x, y, z), `len` long and `wide` across at its end;
+  // drawn only the first `reach` m, up to what stands in its way (Lamps.reach).
+  beam(x: number, y: number, z: number, dx: number, dy: number, len: number, wide: number, colour: THREE.Color, strength: number, dip = 0.04, reach = len) {
+    if (!this.eye || !this.beams || this.nb >= MAX_BEAMS || reach < 0.3) return;
+    const d = this.dummy, cut = Math.min(1, reach / len);
     d.position.set(x, z, -y);
     d.rotation.set(0, Math.atan2(dy, dx), -dip);
-    d.scale.set(len, wide, wide);
+    d.scale.set(len * cut, wide * (0.1 + 0.9 * cut), wide * (0.1 + 0.9 * cut));
     d.updateMatrix();
     this.beams.setMatrixAt(this.nb, d.matrix);
+    this.cuts!.setX(this.nb, cut);
     this.beams.setColorAt(this.nb++, this.c.copy(colour).multiplyScalar(strength));
   }
 
@@ -123,5 +129,6 @@ export class LightFx {
       m.count = n;
       sendInstances(m);
     }
+    if (this.cuts) send(this.cuts, this.nb);
   }
 }

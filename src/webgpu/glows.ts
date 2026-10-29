@@ -78,7 +78,8 @@ setGlows(() => additive(() => {
 
 setBeamShade(() => {
   const strength = follow(BEAM_ON);
-  const t: N = positionGeometry.x.toVarying('vBeamT');
+  // (Along the whole cone, of which a car in the way leaves only the first part drawn: lightfx.ts.)
+  const t: N = positionGeometry.x.mul(attribute('iCut', 'float')).toVarying('vBeamT');
   const m = additive(() => {
     const through = dot(normalView, positionViewDirection).abs();
     const a = t.oneMinus().pow(1.6).mul(smoothstep(0, 0.07, t)).mul(through.pow(1.5)).mul(strength).mul(0.5);
