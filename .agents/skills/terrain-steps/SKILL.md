@@ -139,7 +139,24 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   level: a level's heights are on the lattice and reach 6 m past each piece, so the
   lower one pulls the deck's edge down (`BESIDE` in `assign_levels`).
 - A short bridge way steeper than 15 % is a mistake in the map, not a ramp (a service
-  way off Hlávkův most tied to the landing by the water): it's level (`STEEP`).
+  way off Hlávkův most tied to the landing by the water): it's level (`STEEP`). Where
+  IPR has a deck along most of it, IPR says which end is wrong instead (`ipr_ends`):
+  each end on IPR's deck, and the street's last metres brought to it as a flat terrace,
+  out to where the ground comes within 1 m of the deck. Barrandovský most's ramps: the
+  slip road off Jižní spojka over Vrbova had its far end on the slope under the deck
+  (−4.4 m join), and Strakonická's end sat on an abutment wall's top that the terrain
+  model kept, 3 m over IPR's deck (a floating slab). The street has to reach IPR's
+  height within 4 m of one end (a 4 m track bridge that IPR puts 1.5 m over both ends
+  stays level), and no car street on the ground may cross the ground that comes up:
+  Jižní spojka over Ryšavého is drawn too short, its ends on Ryšavého's carriageways
+  under IPR's deck, and the terrace put 6 m walls across Ryšavého. Extending such a
+  bridge out to IPR's deck's end would be the real fix there (not tried: the street
+  running on would need to be on the bridge's level).
+- Under a bridge the survey may hold two surfaces over each other (the junction on
+  Palackého most's east end, and the quay path passing under it). Their average was a
+  pit 3 m deep. Within 6 m of a bridge, where a lattice point's nearest surveyed points
+  are more than 3 m apart in height, the upper ones count (`LEVELS`, `UNDER_BRIDGE`).
+  Everywhere, it moved 78,000 points and added 20 steps.
 - A path down a bank is narrower than the lattice, so only a point here and there took
   the survey's height and the slope came out in teeth. The ground within 14 m of a
   surveyed street now moves with it (`FEATHER`); `--no-feather` to compare.
@@ -192,15 +209,19 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   Plynojemem, 12 m), and a wall line the map and the survey place a metre or two apart
   ran down the carriageway. Taking the street into the terrace instead put the terrace's
   end across it (Řevnická, U Trezorky: 5 m); dropping the wall's line where it lies on a
-  street took its heights too (the embankments by the river came out stepped).
+  street took its heights too (the embankments by the river came out stepped). It left
+  Hořejší nábřeží, which runs along the foot of the wall down to the quay, leaning 46 %.
+  Keeping the terrace for a street at the wall's foot fixed Hořejší but brought back Na
+  Botiči (10.8 m) and Řevnická: dropped.
 - Beyond IPR's model each point of the made-up land beside water rose from its nearest
   water, and where the nearest changed from the brook in the valley to a pond on the
   plateau the land jumped 56 m (V Údolí, Suchdol). It's now lowered to no steeper than
   VALLEY from any neighbour (`--valley-nearest` for the old way).
 - A bridge's pad that doesn't meet the street past it is a wall across that street
-  (Ohrobecké údolí, Železničářů, Komořanská by most Závodu míru, Rašínovo nábřeží by
-  Palackého most: 3–7 m). Leaving such pads out broke the joins of Palackého most (8.9 m)
-  and Lahovický most: not done; the four are still there.
+  (Ohrobecké údolí, Železničářů: 4–7 m). Leaving such pads out broke the joins of
+  Palackého most (8.9 m) and Lahovický most: not done. Rašínovo nábřeží by Palackého
+  most and Komořanská by most Závodu míru were the two-level survey under a bridge (see
+  above): fixed since, most Závodu míru's join down from 3.7 m to 0.9 m.
 
 Tried and dropped: a terrace for every surveyed street well above or below the ground
 beside it (cliffs 12 m high under Letná); leaving the terrain model wherever the

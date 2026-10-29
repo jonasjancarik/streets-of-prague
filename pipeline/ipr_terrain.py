@@ -426,7 +426,8 @@ def main() -> None:
     labels, terraces = {}, {}
     if not args.no_survey:
         surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes, by_water,
-                                      [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, [] if args.walls_on_streets else list(streets.values()), args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown, valley_smooth=not args.valley_nearest)
+                                      [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, [] if args.walls_on_streets else list(streets.values()), args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown, valley_smooth=not args.valley_nearest,
+                                      bridges=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1] + list(outlines))
         labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")
@@ -434,7 +435,8 @@ def main() -> None:
     merged = unary_union(outlines) if outlines else None
     way_levels, steep = [], {}
     found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0, labels),
-                             local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources, way_levels=way_levels, ramps_out=steep)
+                             local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources, way_levels=way_levels, ramps_out=steep,
+                             streets=[line for line, _ in streets.values()])
     # Where a bridge is close over the ground (at its ends) the ground comes up, or down,
     # to it: wholly within NEAR_DECK of it, less and less out to OFF_DECK. The map's bridge
     # and the street it runs on from rarely meet where the terrain says the abutment is,
