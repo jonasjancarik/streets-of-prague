@@ -21,9 +21,9 @@ export interface TouchState {
 // pedals are one surface, so a thumb can roll from gas to brake without lifting.
 //
 // Or, chosen in the settings, the stick alone drives a car, for one hand: how far you
-// push is the gas, and pointing back against the way the car goes brakes and then
-// reverses (the back of the car follows the stick then, see aimSteer). Letting go
-// coasts. The pedals are hidden; the handbrake and the other buttons stay.
+// push is the gas, and pointing back against the way the car goes brakes, then backs
+// up swinging the nose round to the stick and drives off that way (stickOnly). Letting
+// go coasts. The pedals are hidden; the handbrake and the other buttons stay.
 
 const RANGE = 48; // px of thumb travel for a full push
 const DEAD = 0.12;
@@ -40,6 +40,20 @@ export function setTouchDrive(d: TouchDrive) {
   drive = d;
   try { localStorage.setItem('touchDrive', d); } catch { /* not saved */ }
   document.getElementById('touch')?.setAttribute('data-drive', d);
+}
+
+// Stick-only driving: the gas and the way to steer for a car, from where the stick
+// points (also used by the test kit's t.thumb).
+export function stickOnly(car: Car, aim: { h: number; mag: number }) {
+  const reversing = car.forwardSpeed < -0.3;
+  const back = Math.abs(turnOf(car.h, aim.h)) > (reversing ? BACK_REVERSING : BACK_GOING);
+  // The stick points where you want to go, so backing up the nose swings round
+  // toward it until the car can drive off forward (aimSteer turns the back of a
+  // reversing car toward the aim, so it gets the opposite way). Were the back to
+  // follow the stick, the car would go wherever you point, tail first, never
+  // faster than its reverse. Braking while still going forward, the same aim
+  // steers straight: a pull straight back brakes in a line before the car turns.
+  return { move: back ? -aim.mag : aim.mag, aim: back || reversing ? { h: aim.h + Math.PI, mag: aim.mag } : aim };
 }
 
 // Keep getting a finger's moves after it slides off the control it started on.
@@ -258,17 +272,9 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
     state.aim = mag > DEAD ? { h: Math.atan2(push.y, push.x), mag: dead(mag) } : null;
     state.run = !!inCar && assistOn;
     if (inCar && drive === 'stick') {
-      const aim = state.aim;
-      if (!aim) state.move = 0;
-      else if (!('forwardSpeed' in inCar)) state.move = aim.mag; // the helicopter flies the way it's pointed
-      else {
-        const reversing = inCar.forwardSpeed < -0.3;
-        const back = Math.abs(turnOf(inCar.h, aim.h)) > (reversing ? BACK_REVERSING : BACK_GOING);
-        state.move = back ? -aim.mag : aim.mag;
-        // Braking while still going forward, steer as the reversing car will: the stick
-        // straight back brakes straight, rather than swinging the car round to face it.
-        if (back && !reversing && inCar.forwardSpeed > 0.5) state.aim = { h: aim.h + Math.PI, mag: aim.mag };
-      }
+      if (!state.aim) state.move = 0;
+      else if (!('forwardSpeed' in inCar)) state.move = state.aim.mag; // the helicopter flies the way it's pointed
+      else Object.assign(state, stickOnly(inCar, state.aim));
     }
     const mode = inCar ? 'car' : driving ? 'drive' : tram ? 'tram' : wait ? 'stop' : 'foot';
     set('mode', mode, (m) => {

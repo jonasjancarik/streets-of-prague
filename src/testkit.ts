@@ -5,6 +5,7 @@ import { fences } from './fences.ts';
 import type { Post } from './posts.ts';
 import type { Point2 } from './map/geo.ts';
 import { segDist } from './network.ts';
+import { stickOnly } from './touch.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 import type { Wallet } from './money.ts';
 import type { Police } from './police.ts';
@@ -811,6 +812,24 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       try {
         for (let i = 0; i < n; i++) {
           g.simulate(1 / 60, ctl);
+          if (kit.watch || i % 60 === 59) await frame();
+        }
+      } finally {
+        kit.paused = was;
+      }
+      await frame();
+    },
+    // Drive your car this long with the stick alone (the "Stick only" setting), a thumb
+    // holding it toward `heading` (compass degrees) pushed `mag` of the way.
+    async thumb(seconds: number, heading: number, mag = 1) {
+      const was = kit.paused;
+      kit.paused = true;
+      const n = Math.round(seconds * 60);
+      try {
+        for (let i = 0; i < n; i++) {
+          const c = g.car();
+          if (!c) throw new Error('Not in a car');
+          g.simulate(1 / 60, stickOnly(c, { h: rad(heading), mag }));
           if (kit.watch || i % 60 === 59) await frame();
         }
       } finally {

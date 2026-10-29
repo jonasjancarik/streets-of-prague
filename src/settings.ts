@@ -173,7 +173,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
   if (matchMedia('(pointer: coarse)').matches || new URLSearchParams(location.search).has('touch')) {
     const r = row<TouchDrive>('Driving', [{ id: 'pedals', label: () => t('Stick and pedals') }, { id: 'stick', label: () => t('Stick only') }], touchDrive, setTouchDrive);
     const note = el('p', 'settings-note', r);
-    relabel.push(() => { note.textContent = t('With the stick only, you drive with one thumb: push further to go faster, pull back to brake and reverse, let go to coast.'); });
+    relabel.push(() => { note.textContent = t('With the stick only, you drive with one thumb: push further to go faster, point behind the car to brake and turn round, let go to coast.'); });
   }
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
   row<TunnelView>('Tunnels', TUNNEL_VIEWS.map((v) => ({ id: v, label: () => t(TUNNEL_LABEL[v]) })), tunnelView, setTunnelView);

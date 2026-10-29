@@ -115,6 +115,9 @@ in compass degrees (0 north, 90 east), speeds in km/h.
 - `t.wait(seconds, controls)`: runs the world in 1/60 s steps with
   `{ move, turn, run, brake, jump, aim }` held (the live loop pauses meanwhile). `aim`
   is the touch stick: `{ h, mag }`, a heading in the game's radians (0 east, anticlockwise).
+- `t.thumb(seconds, heading, mag = 1)`: drives your car with the stick alone (the
+  one-handed "Stick only" setting, `stickOnly` in `src/touch.ts`), the thumb held toward a
+  compass heading. Scenario `stick-only`.
 - `t.probe()`: position, speed, car type/damage/burning/broken lamps/braking/ram, money, stars, police cars,
   health, ticket, time, weather, date.
 - `t.camera({ at, height, tilt, heading, level })` looks from anywhere without moving you
