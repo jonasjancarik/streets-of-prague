@@ -134,6 +134,11 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   the ground, 8 m down (Palackého most, Čechův most). A scrap running on from a much
   longer bridge way is level at the higher of its ends, has that way's height and
   level, and asks for no flat terrace of its own (`SCRAP` in `structures.py`).
+- A man_made=bridge outline takes its height from the ways on it, those within 3 m of
+  the one that covers most of it. Most by area (length × width), not length:
+  Barrandovský most's outline (19,000 m²) took a cycleway that runs its whole length
+  and down a ramp off it, and was drawn at the cycleway's height as a second slab 1–4 m
+  under the main deck and wider than it (`pieces`, `test_bridge_outline.py`).
 - Where pieces of one level lie over each other, the higher one counts (`rasterise`).
 - Two structures side by side, anywhere more than 3 m apart in height, can't share a
   level: a level's heights are on the lattice and reach 6 m past each piece, so the

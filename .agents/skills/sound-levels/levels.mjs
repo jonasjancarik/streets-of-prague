@@ -3,7 +3,8 @@
 // public/audio/amb-*.m4a at the gains src/soundmix.ts gives them (the same code the
 // game runs), their loudness measured once with ffmpeg (EBU R128, LUFS: loudness as
 // heard) and added up as the game mixes them. Busyness comes from the footfall map
-// the way the game takes it (within 150 m, / 0.2).
+// the way the game takes it (within 150 m, / 0.2), and how near a big road is from the
+// tiles' streets (roadNoise).
 //
 //   node .claude/skills/sound-levels/levels.mjs
 //     [--places "Old Town:14.4213,50.0875;Kunratice:14.4937,50.0141"] (lon,lat; default: a spread from the centre to the suburbs)
@@ -33,10 +34,10 @@ const PLACES = (args.places || [
   'Old Town Square:14.4213,50.0875', 'Wenceslas Square:14.4265,50.0815', 'Náměstí Míru:14.4372,50.0753',
   'Jiřího z Poděbrad:14.4497,50.0779', 'Vinohrady, Slezská:14.4455,50.0745', 'Dejvice:14.4040,50.1005',
   'Stromovka:14.4230,50.1060', 'Petřín:14.3960,50.0815', 'Letná park:14.4235,50.0955',
-  'Barrandov:14.3985,50.0330', 'Kunratice:14.4937,50.0141',
+  'Barrandov:14.3985,50.0330', 'Barrandovský most:14.4083,50.0373', 'Kunratice:14.4937,50.0141',
 ].join(';')).split(';').map((p) => { const [name, ll] = p.split(':'); const [lon, lat] = ll.split(',').map(Number); return { name, lon, lat }; });
 
-const { AMBIENCE, ambienceGains, ambienceMuffle } = await import(join(ROOT, 'src/soundmix.ts'));
+const { AMBIENCE, ambienceGains, ambienceMuffle, roadNoise, ROAD_FAR } = await import(join(ROOT, 'src/soundmix.ts'));
 const proj4 = createRequire(join(ROOT, 'package.json'))('proj4');
 const db = (power) => (power > 0 ? 10 * Math.log10(power) : -Infinity);
 const fmt = (x) => (Number.isFinite(x) ? x.toFixed(1).padStart(6) : '   off');
@@ -87,21 +88,35 @@ function busyAt(x, y, r = 150) {
   }
   return Math.min(1, sum / n / 0.2);
 }
+// How near a big road is: the streets for cars in the tiles within ROAD_FAR, as main.ts
+// takes them.
+const index = JSON.parse(readFileSync(join(ROOT, `public/data/${AREA}_now/index.json`), 'utf8'));
+function roadAt(x, y) {
+  const T = index.tile, [ox, oy] = index.origin, edges = [];
+  for (let i = Math.floor((x - ROAD_FAR + ox) / T); i <= Math.floor((x + ROAD_FAR + ox) / T); i++) {
+    for (let j = Math.floor((y - ROAD_FAR + oy) / T); j <= Math.floor((y + ROAD_FAR + oy) / T); j++) {
+      const file = join(ROOT, `public/data/${AREA}_now/tiles/${i}_${j}.json`);
+      if (existsSync(file)) edges.push(...JSON.parse(readFileSync(file, 'utf8')).drive);
+    }
+  }
+  return roadNoise(edges, x, y);
+}
+
 // The game's local metres: a transverse Mercator centred on the area (as in main.ts).
-const [w0, s0, e0, n0] = JSON.parse(readFileSync(join(ROOT, `public/data/${AREA}_now/index.json`), 'utf8')).bbox_wgs84;
+const [w0, s0, e0, n0] = index.bbox_wgs84;
 const tm = `+proj=tmerc +lat_0=${(s0 + n0) / 2} +lon_0=${(w0 + e0) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m`;
 
 const BIRDS = ['blackbird', 'garden', 'morning'];
-console.log(`${'place'.padEnd(22)} busy  ${'hour'.padStart(5)}  ${'total'.padStart(6)}  ${'birds'.padStart(6)} birds vs rest   loudest layers (LUFS)`);
+console.log(`${'place'.padEnd(22)} busy  road ${'hour'.padStart(5)}  ${'total'.padStart(6)}  ${'birds'.padStart(6)} birds vs rest   loudest layers (LUFS)`);
 for (const p of PLACES) {
-  const [x, y] = proj4('EPSG:4326', tm, [p.lon, p.lat]), busy = busyAt(x, y);
+  const [x, y] = proj4('EPSG:4326', tm, [p.lon, p.lat]), busy = busyAt(x, y), road = roadAt(x, y);
   for (const hour of HOURS) {
-    const gains = ambienceGains(busy, hour, WET), muffle = ambienceMuffle(busy);
+    const gains = ambienceGains(busy, hour, WET, undefined, road), muffle = ambienceMuffle(busy);
     const power = Object.fromEntries(Object.keys(gains).map((n) => [n, gains[n] > 0 ? 10 ** (loudness(`amb-${n}.m4a`, muffle[n]) / 10) * gains[n] ** 2 : 0]));
     const sum = (names) => names.reduce((a, n) => a + power[n], 0);
     const birds = sum(BIRDS), rest = sum(Object.keys(power).filter((n) => !BIRDS.includes(n)));
     const top = Object.entries(power).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([n, v]) => `${n} ${db(v).toFixed(1)}`).join(', ');
-    console.log(`${p.name.padEnd(22)} ${busy.toFixed(3)} ${String(hour).padStart(5)}  ${fmt(db(birds + rest))}  ${fmt(db(birds))}  ${birds && rest ? (db(birds) - db(rest)).toFixed(1).padStart(6) + ' dB' : '      -  '}   ${top}`);
+    console.log(`${p.name.padEnd(22)} ${busy.toFixed(3)} ${road.toFixed(2)} ${String(hour).padStart(5)}  ${fmt(db(birds + rest))}  ${fmt(db(birds))}  ${birds && rest ? (db(birds) - db(rest)).toFixed(1).padStart(6) + ' dB' : '      -  '}   ${top}`);
     if (args.wav) {
       const dir = args.wav === true ? '/tmp/sound-levels' : args.wav;
       mkdirSync(dir, { recursive: true });

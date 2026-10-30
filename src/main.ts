@@ -65,6 +65,7 @@ import { liveWeather } from './liveweather.ts';
 import { Season, parseDay } from './season.ts';
 import { LaneAssist, turnOf, project } from './assist.ts';
 import { Sound, surfaceOf } from './audio.ts';
+import { roadNoise, ROAD_FAR } from './soundmix.ts';
 import type { Surface, HornKind } from './audio.ts';
 import { setupTouch } from './touch.ts';
 import { setupGamepad, padLabels, usingPad } from './gamepad.ts';
@@ -1182,7 +1183,7 @@ async function main() {
   // What the ground under a car is made of, for its tyres: the OSM surface of the street
   // it's on, or the pavement off the streets.
   let surface: Surface = 'asphalt', surfaceT = 0;
-  let busy = 0.5, busyT = 0; // how busy the streets around you are, for the city's sound
+  let busy = 0.5, road = 0, busyT = 0; // how busy the streets around you are and how near a big road, for the city's sound
   const surfaceUnder = (x: number, y: number): Surface => {
     let best: DriveEdge | null = null, bestD = Infinity;
     for (const e of edgesNear(x, y, 20)) {
@@ -2187,10 +2188,14 @@ async function main() {
     surfaceT -= dt;
     if (inCar && surfaceT < 0) { surfaceT = 0.2; surface = surfaceUnder(inCar.x, inCar.y); }
     busyT -= dt;
-    if (busyT < 0) { busyT = 0.5; busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1); }
+    if (busyT < 0) {
+      busyT = 0.5;
+      busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1);
+      road = roadNoise(edgesNear(px(), py(), ROAD_FAR), px(), py());
+    }
     if (hornHeld && !inCar && !ride.driving) honk(false);
     if (hornHeld && (hornT -= dt) < 0) { hornT = 0.5; scareAhead(); }
-    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, sirens: [
+    sound.update(dt, { x: px(), y: py(), car: inCar, throttle: ctl.move, surface, trams: trams.list, quiet: metro.active, rain: weather.now.rain, wet: weather.now.wet, snow: weather.now.snow, strikes: weather.now.strikes, busy, road, hour: (clock.t % 86400) / 3600, season, aloft: inHeli ? clamp((inHeli.air - 5) / 40, 0, 1) : 0, sirens: [
       ...police.chasing.map((p) => ({ key: p, kind: 'police' as const, x: p.car.x, y: p.car.y, vx: p.car.vx, vy: p.car.vy })),
       ...brigade.engines.filter((e) => e.phase === 'go' && !e.wrecked).map((e) => ({ key: e, kind: 'fire' as const, x: e.car.x, y: e.car.y, vx: e.car.vx, vy: e.car.vy })),
       ...ambulances.rigs.filter((r) => r.phase === 'go' && !r.wrecked).map((r) => ({ key: r, kind: 'ambulance' as const, x: r.car.x, y: r.car.y, vx: r.car.vx, vy: r.car.vy })),

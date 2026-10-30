@@ -38,15 +38,45 @@ export function birdActivity(hour: number, season?: BirdSeason) {
   return (1 + 0.4 * springMorning) * (1 - 0.65 * lateSummer) * (1 - 0.97 * season.cold);
 }
 
+// How loud each class of road is against a trunk road's roar, for roadNoise.
+export const ROAD_NOISE: Record<string, number> = {
+  motorway: 1, trunk: 1, primary: 1, motorway_link: 0.8, trunk_link: 0.8, primary_link: 0.8,
+  secondary: 0.6, secondary_link: 0.5,
+};
+export const ROAD_NEAR = 40; // m: within this of a road it drowns the birds
+export const ROAD_FAR = 150; // m: from this on it doesn't
+
+// How near a big road is, 0–1: 1 within ROAD_NEAR of a trunk or primary road, nothing
+// from ROAD_FAR, a smaller main road counting for less (ROAD_NOISE). The footfall map
+// counts people, so a road with six lanes and no pavement (Barrandovský most) is
+// as quiet to it as a field. `edges`: the streets for cars within ROAD_FAR.
+export function roadNoise(edges: Iterable<{ hw: string; pts: [number, number][] }>, x: number, y: number) {
+  let most = 0;
+  for (const e of edges) {
+    const w = ROAD_NOISE[e.hw] ?? 0;
+    if (w <= most) continue;
+    let d = Infinity;
+    for (let i = 0; i < e.pts.length - 1; i++) {
+      const [ax, ay] = e.pts[i], [bx, by] = e.pts[i + 1], dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
+      const s = len ? clamp(((x - ax) * dx + (y - ay) * dy) / len, 0, 1) : 0;
+      d = Math.min(d, Math.hypot(ax + s * dx - x, ay + s * dy - y));
+    }
+    const near = clamp((ROAD_FAR - d) / (ROAD_FAR - ROAD_NEAR), 0, 1);
+    most = Math.max(most, w * near * near * (3 - 2 * near));
+  }
+  return most;
+}
+
 // Each loop's gain: `busy` how busy the streets within 150 m are, 0 (the edge of town)
 // to 1 (the Old Town, from the footfall map), `hour` 0–24, `wet` how hard it rains or
-// snows, 0–1.
-export function ambienceGains(busy: number, hour: number, wet: number, season?: BirdSeason): Record<string, number> {
+// snows, 0–1, `road` how near a big road is (roadNoise).
+export function ambienceGains(busy: number, hour: number, wet: number, season?: BirdSeason, road = 0): Record<string, number> {
   // Birds only well away from the centre: none from 0.1 up (the inner city, even
   // Vinohrady's side streets), all of them below 0.006 (the suburbs), on a log scale
   // (half the city is under 0.01). The parks in town, at 0.03–0.06, get a little.
+  // And none beside a big road, whatever the footfall.
   const far = clamp((-1 - Math.log10(Math.max(busy, 1e-4))) / 1.2, 0, 1);
-  const quiet = far * far * (3 - 2 * far), dry = 1 - wet;
+  const quiet = far * far * (3 - 2 * far) * (1 - road), dry = 1 - wet;
   const birds = quiet * dry * birdActivity(hour, season);
   const awake = 0.15 + 0.85 * span(hour, 5.5, 8, 21, 24); // how many people are about
   const night = 1 - span(hour, 5, 6.5, 22, 23.5);
