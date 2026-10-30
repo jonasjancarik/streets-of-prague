@@ -95,6 +95,7 @@ const VEHICLE_NAMES: Record<string, string> = {
 };
 import { haptic, hapticCrash, hapticBlast } from './haptics.ts';
 import { tunnelHole } from './tunnelView.ts';
+import { hideIdleCursor } from './cursor.ts';
 import { setupTestkit, PLACES } from './testkit.ts';
 import * as telemetry from './telemetry.ts';
 import { benchPause } from './benchpause.ts';
@@ -1285,6 +1286,7 @@ async function main() {
     },
   };
   const settingsPanel = setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
+  hideIdleCursor(renderer.domElement, () => settingsPanel.open);
 
   // ---- Input -------------------------------------------------------------
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
@@ -1634,7 +1636,7 @@ async function main() {
     const movers = loose.filter(moving);
     for (const c of movers) c.update(dt, null, grid);
     const me = inCar || inHeli || walker;
-    police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || taxi.riding, riding: ride.on || taxi.riding });
+    police.update(dt, { x: me.x, y: me.y, z: inHeli ? inHeli.z : ground(me.x, me.y, inCar || walker), level: inHeli ? 0 : world.track(inCar || walker), vx: me.vx, vy: me.vy, speed: Math.hypot(me.vx, me.vy), car: inCar, air: (!!inHeli && !inHeli.landed) || ride.on || taxi.riding, riding: ride.on || taxi.riding });
     inspector.update(dt, { x: me.x, y: me.y, h: inCar ? inCar.h : walker.h, onFoot: !inCar && !inHeli && !ride.on && !taxi.riding && !boats.me && !funicular.me && !ferries.me, inVehicle: !!inCar || !!inHeli || taxi.riding || !!boats.me });
     brigade.update(dt, me);
     ambulances.update(dt, me);
@@ -2160,7 +2162,12 @@ async function main() {
     drawn.length = 0;
     {
       const cx = camPos.x, cy = -camPos.z, r = viewRadius() + 12;
+      // Not the cars on the street over the tunnel you're in (or on the bridge over
+      // you), where the hole looks down past it: the ground and the houses there are cut
+      // away too (see CUTAWAY).
+      const [hx, hz, hy, hr] = [CUTAWAY.value.x, CUTAWAY.value.y, -CUTAWAY.value.z, CUTAWAY.value.w];
       const see = (c: Car) => {
+        if (hr > 0 && Math.hypot(c.x - hx, c.y - hy) < hr && (c.gz ?? world.terrainAt(c.x, c.y)) > hz) { c.lastH = undefined; return; }
         if (Math.abs(c.x - cx) < r && Math.abs(c.y - cy) < r) drawn.push(c);
         else c.lastH = undefined; // so a bike coming back into view doesn't lean at once
       };

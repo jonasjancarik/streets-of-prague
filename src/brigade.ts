@@ -31,8 +31,9 @@ const GIVE_UP = 60; // seconds a call waits for a street to spawn an engine on
 const CHASE = 25; // seconds the crew runs after someone who took their engine
 const RUN = 4.6; // m/s
 const WRECKED = 90; // damage that puts an engine out of action
+const LEVEL_APART = 3; // m of height between a car in a tunnel and the street above it, at least
 
-interface Fighter { x: number; y: number; h: number; vx: number; vy: number; engine: Engine; fig: Figures; anim: Anim; down: number; spot: { x: number; y: number }; back: boolean; spraying: boolean; gone?: boolean; gz?: number; detour?: number; chase?: number; best: number; stuck: number }
+interface Fighter { x: number; y: number; h: number; vx: number; vy: number; engine: Engine; fig: Figures; anim: Anim; down: number; spot: { x: number; y: number }; back: boolean; spraying: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; chase?: number; best: number; stuck: number }
 interface Engine extends Follower { spraying?: boolean; car: Car; target: Car; phase: 'go' | 'work' | 'leave'; t: number; wrecked: boolean; crew: boolean; gone?: boolean; goal: { x: number; y: number }; astray?: boolean; mark: { x: number; y: number }; direct?: boolean; roads?: boolean }
 interface Call { target: Car; t: number; roads?: boolean } // `roads`: the last engine got stuck in a pedestrian zone; this one keeps to the streets
 interface BrigadeOptions {
@@ -110,25 +111,33 @@ export class Brigade {
     // Two ways to go about it: through the pedestrian zone or the park right up to the
     // fire, or by the streets as near as they get and the crew on foot from there.
     // Whichever looks quicker (`roads`: the first has been tried, and the engine got stuck).
-    const through = o.police.roadside(target.x, target.y), round = o.police.roadside(target.x, target.y, false);
+    // (To a car burning in a tunnel, through the tunnel: not to the street above it.)
+    const level = target.level ?? 0;
+    const through = o.police.roadside(target.x, target.y, true, level), round = o.police.roadside(target.x, target.y, false, level);
     const plans: { byRoad: boolean; stop: { x: number; y: number } }[] = [];
     if (through && !(roads && round)) plans.push({ byRoad: false, stop: through });
     if (round && !(through && round.x === through.x && round.y === through.y && plans.length)) plans.push({ byRoad: true, stop: round });
     let best: { car: Car; path: NonNullable<Engine['path']>; time: number; byRoad: boolean } | null = null;
+    // For a fire in a tunnel, from further along the same tunnel first: the way in from
+    // the street can be a kilometre round, and out of the map that's loaded.
+    const tube = level < 0 ? edges.filter((e) => e.tunnel && e.level === target.level) : [];
     for (let t = 0, found = 0; t < 30 && found < 4 && edges.length; t++) {
-      const e = edges[Math.floor(r() * edges.length)];
-      if (e.bridge || e.tunnel || e.path.length < 14) continue;
+      const pool = t < 12 && tube.length ? tube : edges;
+      const e = pool[Math.floor(r() * pool.length)];
+      if (e.bridge || (e.tunnel && level >= 0) || e.path.length < 14) continue;
       const q = e.path.at(r() * e.path.length), d = Math.hypot(q.x - target.x, q.y - target.y);
       if (d < 150 || d > far || !o.offscreen(q.x, q.y)) continue;
       let car: Car | null = null;
       for (const { byRoad, stop } of plans) {
-        const path = o.police.route(q.x, q.y, stop.x, stop.y, !byRoad);
+        const path = o.police.route(q.x, q.y, stop.x, stop.y, !byRoad, [e.tunnel ? e.level ?? level : 0, level]);
         if (!path) continue;
         if (!car) {
           // Facing the way it's to go: a long engine can't turn round in a narrow street.
           car = new Car('fire', r, q.x, q.y, path.at(Math.min(6, path.length)).ang);
+          if (e.tunnel) Object.assign(car, { hint: 'tunnel', e });
           // (Not into a wall, nor into a tram or a queue of cars it would be wedged in.)
-          if (car.worldSamples().some(([sx, sy]) => o.grid.at(sx, sy) || o.bodyAt(sx, sy, 1.2, null))) break;
+          const walls = o.grid.view?.(car) ?? o.grid; // (the tunnel's, in a tunnel)
+          if (car.worldSamples().some(([sx, sy]) => walls.at(sx, sy) || o.bodyAt(sx, sy, 1.2, null))) break;
           found++;
         }
         // Seconds, roughly: by road, among people (slowly, and with trees and corners to get round), and the crew's run at the end.
@@ -196,8 +205,9 @@ export class Brigade {
         fig.look(0, { shirt: '#232c4a', trousers: '#151a28', skin: '#e3b99a', hair: '#2b2118', sleeves: true });
       }
       o.scene.add(fig.mesh);
+      // (On the engine's level: out of an engine in a tunnel, in the tunnel.)
       this.crew.push({ x, y, h: car.h, vx: 0, vy: 0, engine: e, fig, anim: new Anim(o.kit, 'idle'), down: 0, back: false, spraying: false, best: Infinity, stuck: 0,
-        spot: this.spot(e, i) });
+        spot: this.spot(e, i), level: car.level, gz: car.gz });
     }
   }
 
@@ -206,12 +216,17 @@ export class Brigade {
     return g.at(x, y) || g.at(x + r, y) || g.at(x - r, y) || g.at(x, y + r) || g.at(x, y - r);
   }
 
-  // No wall between a firefighter (or the engine) and the car.
-  sees(f: { x: number; y: number }, c: Car) {
+  // No wall between a firefighter (or the engine) and the car, and both on one level:
+  // nobody sprays a car in a tunnel from the street above it.
+  sees(f: Car | Fighter, c: Car) {
+    if (!this.level(f, c)) return false;
+    const g = this.o.grid.view?.(f as Car) ?? this.o.grid; // (in a tunnel, its walls, not the houses above)
     const d = Math.hypot(c.x - f.x, c.y - f.y), n = Math.ceil(d / 0.8);
-    for (let i = 1; i < n; i++) if (this.o.grid.at(f.x + ((c.x - f.x) * i) / n, f.y + ((c.y - f.y) * i) / n)) return false;
+    for (let i = 1; i < n; i++) if (g.at(f.x + ((c.x - f.x) * i) / n, f.y + ((c.y - f.y) * i) / n)) return false;
     return true;
   }
+
+  level(f: Car | Fighter, c: Car) { return Math.abs(this.o.height(f.x, f.y, f) - this.o.height(c.x, c.y, c)) <= LEVEL_APART; }
 
   // In a firefighter's way: a wall, or a car or tram. (They go round the corner of a house the way they go round a car.)
   inWay = (x: number, y: number, r: number, skip: Car | null) => !!this.blocked(x, y) || this.o.bodyAt(x, y, r, skip);
@@ -243,7 +258,7 @@ export class Brigade {
         const dx = tc.x - f.x, dy = tc.y - f.y;
         const far = Math.hypot(dx, dy);
         // (Stuck behind the cars that fill a lane, say: over them from here.)
-        if (far < SPRAY + tc.spec.L / 2 || (f.stuck > 2 && far < LONG_SPRAY && this.sees(f, tc))) {
+        if ((far < SPRAY + tc.spec.L / 2 && this.level(f, tc)) || (f.stuck > 2 && far < LONG_SPRAY && this.sees(f, tc))) {
           f.h = Math.atan2(dy, dx);
           f.spraying = true;
           o.fires.douse(tc, dt * HOSE);
@@ -297,8 +312,8 @@ export class Brigade {
       // street, and an engine this long gets wedged across it trying to turn round.
       if (e.replan < 0) {
         if ((!e.path && !e.direct) || e.astray || !(Math.hypot(tc.x - e.goal.x, tc.y - e.goal.y) <= 10)) {
-          const stop = o.police.roadside(tc.x, tc.y, !e.roads);
-          if (stop) { e.path = o.police.route(c.x, c.y, stop.x, stop.y, !e.roads); e.s = 0; e.goal = { x: tc.x, y: tc.y }; e.direct = false; }
+          const stop = o.police.roadside(tc.x, tc.y, !e.roads, tc.level ?? 0);
+          if (stop) { e.path = o.police.route(c.x, c.y, stop.x, stop.y, !e.roads, [c.level ?? 0, tc.level ?? 0]); e.s = 0; e.goal = { x: tc.x, y: tc.y }; e.direct = false; }
           e.astray = false;
         }
         e.replan = 3;
