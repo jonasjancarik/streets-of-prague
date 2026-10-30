@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import proj4 from 'proj4';
+import type { Point2 } from './map/geo.ts';
 
 // Facade modules: one window bay by one storey each, drawn as sheets of 6 × 2
 // (upper floors on top, ground floors below) and packed by assets/facades/build_atlas.py
@@ -213,7 +214,9 @@ export function cellHash(i: number, j: number) {
 // ends, so the windows run on across the triangles. `p`: the triangles' positions
 // (three.js world); returns 4 floats a vertex. (Measured from the world's origin
 // with each triangle's own normal, they jumped by metres at every seam.)
-export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) => number, styleAt: (x: number, y: number, height: number) => number, lines?: WallLine[]) {
+// `footprints`: the OSM outlines of the buildings in and round the tile (not their
+// parts), with their heights, for the party walls whose neighbour IPR has in another tile, or lower down.
+export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) => number, styleAt: (x: number, y: number, height: number) => number, lines?: WallLine[], footprints?: Footprint[]) {
   const n = p.length / 9, out = new Float32Array(n * 12);
   const nrm = new Float32Array(n * 2), wall = new Int32Array(n).fill(-1);
   const up = (i: number): number => (wall[i] === i ? i : (wall[i] = up(wall[i])));
@@ -267,10 +270,10 @@ export function facadeCoords(p: Float32Array, groundAt: (x: number, y: number) =
       out[o + 2] = rooftopBox ? 0 : Math.max(to - from, 0.5);
       out[o + 3] = style;
     }
-    ends.push({ tris, nx: nrm[w * 2], nz: nrm[w * 2 + 1], ax: p[a], az: p[a + 2], bx: p[b], bz: p[b + 2], len });
+    ends.push({ tris, nx: nrm[w * 2], nz: nrm[w * 2 + 1], ax: p[a], az: p[a + 2], bx: p[b], bz: p[b + 2], len, top });
     lines?.push({ nx: nrm[w * 2], nz: nrm[w * 2 + 1], ax: p[a], az: p[a + 2], tx, tz, from, length: Math.max(to - from, 0.5), top: topY, tris });
   }
-  for (const e of partyWalls(ends)) for (const t of e.tris) for (let o = t * 12 + 3; o < t * 12 + 12; o += 4) out[o] += BLANK;
+  for (const e of partyWalls(ends, footprints)) for (const t of e.tris) for (let o = t * 12 + 3; o < t * 12 + 12; o += 4) out[o] += BLANK;
   return out;
 }
 
@@ -342,13 +345,64 @@ export function mansardCoords(p: Float32Array, out: Float32Array, lines?: WallLi
   }
 }
 
-interface WallEnds { tris: number[]; nx: number; nz: number; ax: number; az: number; bx: number; bz: number; len: number }
+interface WallEnds { tris: number[]; nx: number; nz: number; ax: number; az: number; bx: number; bz: number; len: number; top: number }
+export interface Footprint { rings: Point2[][]; h: number }
+
+// Whether (x, y) is inside a polygon (outer ring, then holes).
+function inside(x: number, y: number, rings: Point2[][]) {
+  let at = false;
+  for (const r of rings) {
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [xi, yi] = r[i], [xj, yj] = r[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) at = !at;
+    }
+  }
+  return at;
+}
+
+const PARTY_PROBE = 1.5; // m out from a wall (and in), past where OSM's outlines and IPR's walls disagree
+// A neighbour lower than this, or than this share of the wall, leaves it its windows: a
+// garage or a shed against a house, a shop's wing in front of a block of flats.
+const PARTY_NEIGHBOUR = 4; // m
+const PARTY_SHARE = 0.4;
+// Walls with another building just outside them over at least half their length, by
+// the OSM outlines: points PARTY_PROBE out from the wall that fall in an outline the
+// points as far in don't fall in (the building's own). This finds the party walls
+// whose neighbour is in the next tile, or whose own wall IPR doesn't have.
+function touching(walls: WallEnds[], footprints: Footprint[]) {
+  const boxes = footprints.map((f) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of f.rings[0]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    return [x0, y0, x1, y1];
+  });
+  const hits = (x: number, y: number) => {
+    const out: number[] = [];
+    for (let k = 0; k < footprints.length; k++) {
+      const b = boxes[k];
+      if (x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && inside(x, y, footprints[k].rings)) out.push(k);
+    }
+    return out;
+  };
+  const found = new Set<WallEnds>();
+  for (const e of walls) {
+    if (e.len < 2) continue;
+    const steps = Math.max(3, Math.round(e.len / 2));
+    let covered = 0;
+    for (let s = 0; s < steps; s++) {
+      const f = (s + 0.5) / steps, x = e.ax + (e.bx - e.ax) * f, z = e.az + (e.bz - e.az) * f;
+      const own = hits(x - e.nx * PARTY_PROBE, -(z - e.nz * PARTY_PROBE));
+      if (hits(x + e.nx * PARTY_PROBE, -(z + e.nz * PARTY_PROBE)).some((k) => !own.includes(k) && footprints[k].h >= Math.max(PARTY_NEIGHBOUR, PARTY_SHARE * e.top))) covered++;
+    }
+    if (covered >= 0.5 * steps) found.add(e);
+  }
+  return found;
+}
 
 // Party walls: walls standing back to back with another building's, in one plane and
 // facing away from each other, over at least half their length. What shows of them
 // above a lower neighbour is a štítová zeď, plastered and without windows. (A
-// neighbour in the next tile isn't seen, so a few stay with windows.)
-function partyWalls(walls: WallEnds[]) {
+// neighbour in the next tile is found from the OSM outlines, see touching.)
+function partyWalls(walls: WallEnds[], footprints?: Footprint[]) {
   const A = 0.03, D = 0.4, turns = Math.round(Math.PI / A);
   // Bucketed by the line they lie on: direction (either way round) and distance from the origin.
   const line = (e: WallEnds) => {
@@ -374,6 +428,7 @@ function partyWalls(walls: WallEnds[]) {
       }
     }
   }
+  if (footprints) for (const e of touching(walls.filter((w) => !party.has(w)), footprints)) party.add(e);
   return party;
 }
 

@@ -96,17 +96,26 @@ function roofTiles(c0: N, wp: N, n: N, wpWidth: N, slateGiven?: N) {
   c.mulAssign(fbm(wp.mul(0.22)).mul(0.24).add(0.88));
   return mix(c, c.mul(vec3(0.86, 0.9, 0.8)), smoothstep(0.62, 0.75, fbm(wp.mul(0.09).add(4))).mul(0.7));
 }
-// Sheet metal and copper (sheetRoof in shading.ts): smooth pans between thin standing
-// seams, a broad soft sheen, verdigris on copper.
+// Sheet metal and copper (sheetRoof in shading.ts): pans between thin standing seams,
+// each pan a shade of its own and laid in sheets of about 2.4 m down the slope, now and
+// then one replaced or gone rusty (not on copper), so that a roof of it reads as metal
+// from the game's height and not as a bare grey plate; a broad soft sheen, verdigris on
+// copper.
 function sheetRoof(c0: N, wp: N, n: N, wpWidth: N, copper: N) {
   const down = normalize(vec2(n.x, n.z.negate()).add(vec2(0, 0.0001)));
   const a = dot(wp, vec2(down.y.negate(), down.x)).div(0.6);
+  const b = dot(wp, down).div(2.4);
   const seam = fract(a);
-  const t = c0.mul(float(1).add(float(1).sub(smoothstep(0, 0.035, seam)).mul(0.07)).sub(smoothstep(0.94, 1, seam).mul(0.06))).toVar();
-  t.mulAssign(fract(sin(floor(a).mul(12.9898)).mul(43758.5453)).mul(0.03).add(0.96));
+  const pan = fract(sin(floor(a).mul(12.9898)).mul(43758.5453));
+  const sheet = fract(sin(floor(a).mul(78.233).add(floor(b).mul(37.719))).mul(43758.5453));
+  const tone = c0.mul(pan.mul(0.09).add(0.92)).toVar();
+  const odd = float(1).sub(copper);
+  tone.assign(mix(tone, tone.mul(1.12), step(0.93, sheet).mul(step(sheet, 0.97)).mul(odd)));
+  tone.assign(mix(tone, tone.mul(vec3(1.02, 0.8, 0.62)), step(0.97, sheet).mul(odd)));
+  const t = tone.mul(float(1).add(float(1).sub(smoothstep(0, 0.035, seam)).mul(0.07)).sub(smoothstep(0.94, 1, seam).mul(0.06))).toVar();
   t.assign(mix(t, t.mul(vec3(0.82, 1.1, 1.02)).add(vec3(0.02, 0.06, 0.05)), copper.mul(smoothstep(0.45, 0.8, fbm(wp.mul(0.25)))).mul(0.7)));
   const sheen = fbm(wp.mul(0.04)).mul(0.1).add(0.95);
-  return mix(c0.mul(sheen), t.mul(sheen), fade(wpWidth, 0.3));
+  return mix(mix(c0, tone, fade(wpWidth, 0.6)), t, fade(wpWidth, 0.3)).mul(sheen);
 }
 // A mansard's steep lower slope (mansardWindows in shading.ts): a window in every bay of
 // about 3.2 m in a light frame.

@@ -6,6 +6,7 @@ import type { TreeSpot, CanopyCells } from './map/vegetation.ts';
 import type { FenceBuffers, FenceTile } from './map/fences.ts';
 import type { Shed, ShedBuffers } from './map/sheds.ts';
 import type { BuildingTile } from './map/buildings.ts';
+import type { Footprint } from './facades.ts';
 import type { SkyJob, SkyResult } from './map/skyView.ts';
 import type { FurnitureData, FurnitureInstances } from './map/furniture.ts';
 import type { Crosser } from './stepEdges.ts';
@@ -47,6 +48,7 @@ export interface MapIndex extends GeoData {
 
 export type TileBuilding = BuildingTile['buildings'][number] & {
   own?: boolean;
+  part?: boolean; // an OSM building:part
   noIpr?: boolean;
   base?: number;
 };
@@ -131,7 +133,7 @@ export interface WorkerJobs {
   // water: the tile's water polygons, so what stands on them is built as a boat (map/buildings.ts).
   roofs: { buildings: TileBuilding[]; size: Point2; origin: Point2; ground: HeightGrid | null; bbox: Bounds; water: Point2[][][] };
   // hide: landmarks' footprints (rings of each), where IPR's buildings give way to them.
-  ipr: { buffer: ArrayBuffer; box: Bounds; absolute: boolean; ground: HeightGrid | null; bbox: Bounds; hide: Point2[][][]; clutter: boolean };
+  ipr: { buffer: ArrayBuffer; box: Bounds; absolute: boolean; ground: HeightGrid | null; bbox: Bounds; hide: Point2[][][]; clutter: boolean; footprints: Footprint[] };
   ground: {
     d: GroundTileData; box: Bounds; edges: GroundRoadEdge[];
     buildings: { rings: Point2[][] }[]; parkingZones: (string | null)[];

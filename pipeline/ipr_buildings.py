@@ -230,6 +230,13 @@ MEASURED_WALL = 15  # on walls: their colour is measured, so the game keeps it (
 BORROW_TOUCH = 0.6  # m; buildings this close share a wall: one terrace
 BORROW_NEAR = 30.0  # m; else a building of the same kind this near: the same block
 REGION_SHARE = 0.5  # of a roof triangle's area (from above) inside a region for it to take the region's cover
+# IPR codes roofs up to 14° as flat. Those sloping more than LEVEL (3°) are the shallow
+# back slopes of tenements and the like, sheet metal nearly always: the flat-roof
+# materials (bitumen, membrane, gravel, or none) drew them as bare grey plates among the
+# tiles (náměstí Jiřího z Poděbrad), and slate wants a steep roof. mesh_colours.py
+# measures by the same rule.
+LEVEL = math.cos(math.radians(3))
+NOT_SHALLOW = ("", "slate", "bitumen", "membrane", "gravel")
 
 
 def colours(bid, osm):
@@ -570,6 +577,7 @@ def main() -> None:
     timings.lap("osm_roofs_water")
     per_tile = {}  # (i, j) → list of (int16 positions, uint8 colours), one pair per building
     footprints = []  # ground outlines of every IPR building, to find OSM ones it doesn't cover
+    shallow = [0, 0.0]  # buildings with shallow roofs made sheet metal (LEVEL), and those roofs' m2
     for name, found in build_cache.parallel_map(read_sheet, sheets, args.jobs):
         count = 0
         for bid, cx, cy, (i, j), pos, codes, fp in found:
@@ -614,6 +622,15 @@ def main() -> None:
                         k = k[~said[k]]
                         col[k] = c
                         mat[k] = MATERIALS.index(m) if m in MATERIALS else 0
+                if top.any():
+                    v = pos.reshape(-1, 3, 3).astype(np.float64)
+                    nrm = np.cross(v[:, 1] - v[:, 0], v[:, 2] - v[:, 0])
+                    up = nrm[:, 1] / np.maximum(np.linalg.norm(nrm, axis=1), 1e-9)  # (packed as x, height, y)
+                    sloped = (codes == 2) & (np.abs(up) < LEVEL) & np.isin(mat, [MATERIALS.index(m) for m in NOT_SHALLOW])
+                    if sloped.any():
+                        mat[sloped] = MATERIALS.index("metal")
+                        shallow[0] += 1
+                        shallow[1] += float(np.linalg.norm(nrm[sloped], axis=1).sum()) / 2e4
                 key = bid or f"{name}/{count}"
                 heights = pos.reshape(-1, 3)[:, 1]
                 style, code = styles.code(cx, cy, (int(heights.max()) - int(heights.min())) / 100, key)
@@ -630,6 +647,7 @@ def main() -> None:
             count += 1
         print(f"  {name}: {count} buildings in the area", flush=True)
     print(f"  sheets read in {time.perf_counter() - started:.0f} s; {afloat} buildings left out for standing on water")
+    print(f"  shallow roofs (over 3°) IPR counts flat made sheet metal on {shallow[0]} buildings, {shallow[1] / 1e3:.0f} thousand m2")
     print(f"  the facade's style by the building's age for {styles.known} of {styles.all} buildings ({building_age.CACHE.name})")
     if measured and not args.no_borrow:
         borrow_walls(walls, per_tile)

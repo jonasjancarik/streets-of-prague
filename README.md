@@ -402,7 +402,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   4.4 m ground floor, a panel block's 2.85 m), stretched a little so that whole floors
   fill each wall up to its cornice. Party walls (a building's side wall standing
   back to back with its neighbour's, and showing where the neighbour is lower) are
-  plastered without windows. Each building gets its own plaster colour: mostly ochres,
+  plastered without windows. So is a wall with another building's OSM outline just
+  outside it (a neighbour in the next tile, or one whose own wall IPR doesn't have),
+  unless that building is lower than 4 m or than 40 % of the wall. Each building gets its own plaster colour: mostly ochres,
   yellows, creams and stone-like sands and greys, with a few pale greens, pinks and
   blues, mixed differently for each style. The parts were
   drawn by an image model as twelve sheets, each asked for with an earlier sheet as a
@@ -579,7 +581,8 @@ record the measurements, merge decisions and pending landmark asset activation.
   buildings take their real colours from IPR's photorealistic mesh instead of the
   palette: each roof face its colour and material (tiles, slate, sheet metal, copper;
   flat roofs bitumen, membrane, gravel, planted or paving), and each building its
-  plaster. The photographs were taken on a summer
+  plaster. Only faces under 3° count as flat: the shallow back slopes of tenements,
+  which IPR codes flat up to 14°, are sheet metal (`LEVEL` in `pipeline/ipr_buildings.py`). The photographs were taken on a summer
   morning, so the light is taken out first: the sun's direction and a light model are
   measured on the data itself (`--calibrate`), samples in the shade of other buildings
   are left out, and walls or roof faces seen only in shade count as unsure (their

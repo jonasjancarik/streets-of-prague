@@ -410,7 +410,7 @@ MEMBRANE_L = 68.0  # grey and lighter than this: a plastic membrane; between: gr
 MATERIALS = ("tiles", "slate", "metal", "copper", "bitumen", "membrane", "gravel", "green", "paving")
 
 
-def material(c, flat: bool) -> str:
+def material(c, flat: bool, shallow: bool = False) -> str:
     L, a, b = c
     chroma = float(np.hypot(a, b))
     if flat:
@@ -423,7 +423,8 @@ def material(c, flat: bool) -> str:
         return "copper"
     if a > 0 and b > 0 and chroma >= TILE_CHROMA:
         return "tiles"
-    return "slate" if L < SLATE_L else "metal"
+    # Slate needs a steep roof; a shallow grey one (under 14°, what IPR counts flat) is metal.
+    return "slate" if L < SLATE_L and not shallow else "metal"
 
 
 # When a measurement is too unsure to use: fewer samples than MIN_SAMPLES, or the
@@ -454,7 +455,7 @@ LIT = 0.3
 # Roof faces meeting the sun less squarely than this count as in shade: the gain that
 # would bring them to full sun (2.4 or more) also blows up the sky's blue in them.
 ROOF_LIT = 0.35
-FLAT = 0.995  # a roof face whose normal is steeper than this (under 6°) is flat
+FLAT = ipr.LEVEL  # a roof face whose normal is steeper than this (under 3°) is flat
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 # Walls seen only in shade (see from_shade and calibrate): the sky's tint to take out
 # (linear RGB, green 1), and the brightness (linear luminance) of walls in shade at
@@ -864,7 +865,7 @@ def summarise(sampled, az: float = SUN_AZIMUTH, el: float = SUN_ELEVATION, balan
                     dom = balance(dom, ROOF_GAIN, ROOF_CHROMA)[0]
             # A face in its own shade is as unsure as a wall in shade.
             lit = float(f["normal"] @ sun_vector(az, el)) > ROOF_LIT
-            rec["roofs"].append(dict(f, lab=dom, material=material(dom, f["flat"]) if dom is not None else None,
+            rec["roofs"].append(dict(f, lab=dom, material=material(dom, f["flat"], f["normal"][2] > 0.97) if dom is not None else None,
                                      sure=dom is not None and lit and f["n"] >= MIN_SAMPLES and f["share"] >= MIN_SHARE))
         out.append(rec)
     return out
