@@ -860,11 +860,13 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
         on = []
         if tree is not None:
             hits = [bridges[k] for k in tree.query(poly, predicate="intersects")]
-            # The ways on this bridge: those at the height of the one most of which lies
-            # on it (not a flyover crossing it higher up, or a street passing under).
+            # The ways on this bridge: those at the height of the one that covers most of
+            # it (not a flyover crossing it higher up, or a street passing under). Most of
+            # it by area, not length: on Barrandovský most a cycleway runs the whole
+            # outline and down a ramp off it, longer than any of the carriageways.
             share = {k: lines[k].intersection(poly).length for k in hits}
             if share and max(share.values()) > 5:
-                ref = max(share, key=share.get)
+                ref = max(share, key=lambda k: share[k] * ways[k]["w"])
                 c = lines[ref].intersection(poly).interpolate(0.5, normalized=True)
                 href = out[ref].height(np.array([c.x]), np.array([c.y]))[0]
                 for k in hits:
