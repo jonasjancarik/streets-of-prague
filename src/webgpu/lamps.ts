@@ -40,7 +40,10 @@ function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture, laye
       const fw = a.zw, sd = vec2(a.w.negate(), a.z);
       // (A car's box comes with its half length negative: CAR_SHAPED.)
       const car = step(b.x, 0), hl = abs(b.x), r = car.mul(CAR_SHAPED.corner);
-      If(uShadow.lessThan(1.5), () => {
+      // (The open map: only what stands taller than the light, see LAMP_MAP_OPEN.)
+      If(uShadow.lessThan(-1.5).and(lamp.y.greaterThanEqual(b.z)), () => {
+        out.assign(0);
+      }).ElseIf(abs(uShadow).lessThan(1.5), () => {
         const o = p.sub(a.xy), l = vec2(dot(o, fw), dot(o, sd));
         const d = length(max(abs(l).sub(vec2(hl, b.y)).add(r), 0)).sub(r);
         out.assign(smoothstep(0, 1.2, d).oneMinus().mul(smoothstep(1.5, 3, abs(gy.sub(b.w))).oneMinus()).mul(0.55));
@@ -96,7 +99,7 @@ function poolsMaterial(view: { value: THREE.Vector4 }, cars: THREE.Texture, laye
       });
     });
     If(f.lessThan(0.002), () => { Discard(); });
-    If(uShadow.greaterThan(0.5).and(vCa.x.greaterThan(-0.5)), () => {
+    If(uShadow.greaterThan(0.5).or(uShadow.lessThan(-1.5)).and(vCa.x.greaterThan(-0.5)), () => {
       const c = float(0).toVar();
       for (const k of ['x', 'y', 'z', 'w']) c.assign(max(c, max(cover(vCa[k], vP, vLamp, vH), cover(vCb[k], vP, vLamp, vH))));
       If(vCc.x.greaterThan(-0.5), () => {

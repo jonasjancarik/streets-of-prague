@@ -23,10 +23,13 @@ import { LightFx } from './lightfx.ts';
 
 export const LAMP_MAP: { value: THREE.Texture | null } = { value: null };
 export const LAMP_MAP_HIGH: { value: THREE.Texture | null } = { value: null };
-// The first map's light again with nothing in its way, at a quarter of its size: the map
-// is flat, so the shadow a car casts on the street would also darken whatever is above
-// it (a tree's crown over a parked car). What stands well above the ground a light falls
-// on takes its light from here instead. Drawn only when the cars cast shadows (LAMP_REF.w).
+// The first map's light again at a quarter of its size, in the way of each light only what
+// stands taller than it: the map is flat, so the shadow a car casts on the street would also
+// darken whatever is above it (a tree's crown over a parked car). What stands well above the
+// ground a light falls on takes its light from here instead. A light lower than a car's
+// roof (a headlight) throws its shadow up the wall behind the car, so that one stays: else
+// a headlight lit the wall over a van in its way as if the van weren't there. Drawn only
+// when the cars cast shadows (LAMP_REF.w).
 export const LAMP_MAP_OPEN: { value: THREE.Texture | null } = { value: null };
 // (x, z of the map's centre, 1 / its half width, 1 / its half depth)
 export const LAMP_BOX = { value: new THREE.Vector4(0, 0, 1, 1) };
@@ -37,7 +40,7 @@ export const LAMP_REF = { value: new THREE.Vector4(0, 0, 0.3, 0) };
 export const LAMP_ON = { value: 0 };
 // What gets in the way of the lamps' light: 0 nothing, 1 a soft darkening round each car
 // (cheap), 2 the cars block it, casting shadows away from every lamp and headlight,
-// 3 people, trams and posts do too.
+// 3 people, trams and posts do too. (Negative while LAMP_MAP_OPEN is drawn.)
 export const LAMP_SHADOWS = { value: 0 };
 // Texels across the light map (graphics.ts).
 export const LAMP_SIZE = { value: 1024 };
@@ -450,7 +453,9 @@ export class Lamps {
           vec2 sd = vec2(-a.w, a.z);
           // (A car's box comes with its half length negative: CAR_SHAPED.)
           float car = step(b.x, 0.), hl = abs(b.x), r = car * ${CAR_SHAPED.corner.toFixed(2)};
-          if (uShadow < 1.5) {
+          // (The open map: only what stands taller than the light, see LAMP_MAP_OPEN.)
+          if (uShadow < -1.5 && vLamp.y >= b.z) return 0.;
+          if (abs(uShadow) < 1.5) {
             vec2 o = p - a.xy, l = vec2(dot(o, a.zw), dot(o, sd));
             float d = length(max(abs(l) - vec2(hl, b.y) + r, 0.)) - r;
             return .55 * (1. - smoothstep(0., 1.2, d)) * (1. - smoothstep(1.5, 3., abs(vH - b.w)));
@@ -484,7 +489,7 @@ export class Lamps {
             } else f = d < 1. ? (1. - d) * (1. - d) : 0.;
           }
           if (f < .002) discard;
-          if (uShadow > .5 && vCa.x > -.5) {
+          if ((uShadow > .5 || uShadow < -1.5) && vCa.x > -.5) {
             float c = 0.;
             for (int k = 0; k < 4; k++) c = max(c, max(cover(vCa[k], vP), cover(vCb[k], vP)));
             f *= 1. - c;
@@ -975,6 +980,38 @@ export class Lamps {
     }
   }
 
+  // How far a beam in the air from (x, y) at height z, along (dx, dy), runs before the first
+  // car, van or tram in its way (`len` if none; `own`: the box it starts on). People, posts
+  // and two-wheelers are too narrow to cut it short. Only the boxes already in the texture:
+  // the cars cast shadows on every tier that draws the beams.
+  private reach(x: number, y: number, z: number, dx: number, dy: number, len: number, own: number) {
+    const data = this.carData, at = this.blockAt;
+    let best = len;
+    const x1 = x + dx * len, y1 = y + dy * len;
+    for (let cx = Math.floor((Math.min(x, x1) - 6) / CAR_CELL); cx <= Math.floor((Math.max(x, x1) + 6) / CAR_CELL); cx++) {
+      for (let cy = Math.floor((Math.min(y, y1) - 6) / CAR_CELL); cy <= Math.floor((Math.max(y, y1) + 6) / CAR_CELL); cy++) {
+        const list = this.carGrid.get(cx * 4096 + cy);
+        if (!list) continue;
+        for (const i of list) {
+          const o = MAX_CARS * 4 + i * 4, halfW = data[o + 1];
+          if (i === own || halfW < 0.6 || data[o + 3] > z || data[o + 2] < z) continue;
+          // The ray against the box in its own axes.
+          const fx = data[i * 4 + 2], fy = -data[i * 4 + 3], ox = x - at[i * 3], oy = y - at[i * 3 + 1];
+          const u = ox * fx + oy * fy, v = -ox * fy + oy * fx, du = dx * fx + dy * fy, dv = -dx * fy + dy * fx;
+          let t0 = 0, t1 = best;
+          for (const [p, d, h] of [[u, du, Math.abs(data[o])], [v, dv, halfW]]) {
+            if (Math.abs(d) < 1e-6) { if (Math.abs(p) > h) t0 = Infinity; continue; }
+            const a = (-h - p) / d, b = (h - p) / d;
+            t0 = Math.max(t0, Math.min(a, b));
+            t1 = Math.min(t1, Math.max(a, b));
+          }
+          if (t0 < t1) best = t0;
+        }
+      }
+    }
+    return best;
+  }
+
   // Once a frame before the scene is drawn. `on`: how dark it is (Sky.dark); `cars`:
   // the cars in view, lit when they're driving; `carHeight(x, y, car)` the ground
   // under them; `trams`, the ones drawn (with a look) light the street round them.
@@ -1070,7 +1107,10 @@ export class Lamps {
       for (const s of c.two ? [0] : [-1, 1]) {
         const across = s * (W - 0.3);
         if (!(broken & (s > 0 ? 4 : 8))) add(c.x - fx0 * L - fy * across, c.y - fy * L + fx0 * across, z, 1, -fx0, -fy, c.two ? 2 : 3.5, c.two ? 0.6 : 1.2, TAIL, (c.two ? 0.3 : 0.22) * brake, 0.75, own);
-        if (fx && !(broken & (s > 0 ? 1 : 2))) fx.beam(c.x + fx0 * (L - 0.05) - fy * across, c.y + fy * (L - 0.05) + fx0 * across, z + 0.75, fx0, fy, c.two ? 11 : 16, c.two ? 1.3 : 1.9, HEAD, 1);
+        if (fx && !(broken & (s > 0 ? 1 : 2))) {
+          const hx = c.x + fx0 * (L - 0.05) - fy * across, hy = c.y + fy * (L - 0.05) + fx0 * across, len = c.two ? 11 : 16;
+          fx.beam(hx, hy, z + 0.75, fx0, fy, len, c.two ? 1.3 : 1.9, HEAD, 1, undefined, this.reach(hx, hy, z + 0.75, fx0, fy, len, own));
+        }
       }
       // Two headlights and two rear lights (one each on a bike).
       for (const [along, colour, size, left] of [[L - 0.05, HEAD, 0.9, 1], [-L - 0.05, TAIL, c.braking ? 0.8 : 0.5, 4]] as [number, THREE.Color, number, number][]) {
@@ -1112,7 +1152,10 @@ export class Lamps {
       add(f.x + fx0 * half, f.y + fy * half, z, 1, fx0, fy, 28, 5, HEAD, 1.8, LAMP_SHADOWS.value > 2.5 ? 0.9 : 0);
       add(b.x - bx * half, b.y - by * half, v.levels?.[0]?.gz ?? this.height(b.x, b.y), 0, 1, 0, 2.6, 2.6, TAIL, 0.5);
       for (const s of [-1, 1]) {
-        if (fx) fx.beam(f.x + fx0 * (half + 0.1) - fy * s * 0.9, f.y + fy * (half + 0.1) + fx0 * s * 0.9, z + 0.9, fx0, fy, 18, 2, HEAD, 1);
+        if (fx) {
+          const hx = f.x + fx0 * (half + 0.1) - fy * s * 0.9, hy = f.y + fy * (half + 0.1) + fx0 * s * 0.9;
+          fx.beam(hx, hy, z + 0.9, fx0, fy, 18, 2, HEAD, 1, undefined, this.reach(hx, hy, z + 0.9, fx0, fy, 18, -1));
+        }
         if (g >= this.glows.instanceMatrix.count) break;
         d.position.set(f.x + fx0 * (half + 0.1) - fy * s * 0.9, z + 0.9, -(f.y + fy * (half + 0.1) + fx0 * s * 0.9));
         d.scale.set(1, 1, 1);
@@ -1150,11 +1193,12 @@ export class Lamps {
       renderer.clear(true, false, false);
       renderer.render(l ? this.highScene : this.lightScene, this.lightCam);
     }
-    // The ground's lights once more with nothing in their way (LAMP_MAP_OPEN).
+    // The ground's lights once more, in the way of each only what stands taller than it
+    // (LAMP_MAP_OPEN): a negative LAMP_SHADOWS to the pools.
     const blocking = LAMP_SHADOWS.value;
     LAMP_REF.value.w = blocking > 0 ? 1 : 0;
     if (blocking > 0) {
-      LAMP_SHADOWS.value = 0;
+      LAMP_SHADOWS.value = -blocking;
       renderer.setRenderTarget(this.targetOpen);
       renderer.clear(true, false, false);
       renderer.render(this.lightScene, this.lightCam);
