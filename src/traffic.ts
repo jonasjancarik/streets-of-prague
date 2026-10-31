@@ -19,6 +19,10 @@ export interface TrafficAgent {
   // How far right (+) or left of its lane it is steering round a car standing in the
   // way (m), and where it wants to be.
   off: number;
+  // How fast `off` is changing (m/s), eased so the car doesn't twitch sideways, and the
+  // cars it has chosen a side to pass (true: to their left, towards the middle of the street).
+  offV?: number;
+  passSide?: Map<Car, boolean>;
   gone?: boolean;
   // A bus on its line (buses.json): where it is along it and the stops it has served.
   bus?: BusRun;
@@ -66,7 +70,7 @@ export const MERGE = 20;
 
 // The furthest a car pulls out of its lane to get round a car standing in it (m), and
 // how much room it leaves beside that car.
-const SWERVE = 2.4, PASS = 0.35;
+const SWERVE = 3.2, PASS = 0.35;
 // A car standing beside the lane is in the way when it's nearer than this to the side
 // of the passing one. Less than the room parked cars leave a lane (parkingClearance),
 // or the widest cars would stop for every car parked at the least distance.
@@ -105,6 +109,7 @@ export class Traffic {
   // The bus lines through the area (buses.json); without them buses wander the main roads.
   busLines: BusLine[] = [];
   swerving = new Set<Car>();
+  private seenSides = new Set<Car>();
   // The traffic lights at junctions.
   signals: Signals | null = null;
   // Emergency vehicles with their sirens on (main.ts sets them each frame): cars in front
@@ -305,6 +310,8 @@ export class Traffic {
       // across from its lane (lo to hi) to get past them all, the nearest of them in
       // its way, and whether a car is coming the other way.
       let lo = -Infinity, hi = Infinity, stillGap = Infinity, still = null, oncoming = false;
+      const sides = a.passSide ??= new Map(), seen = this.seenSides;
+      seen.clear();
       for (const o of near(c.x, c.y, reach + 8)) {
         if (o.car === c) continue;
         // On a bridge overhead, or under the one this car is on.
@@ -349,7 +356,12 @@ export class Traffic {
           if (along < along0) {
             // Pass it on the side away from where it stands across the lane, with room.
             if (along > -(L / 2 + o.r + 0.5) && along < reach + o.r && Math.abs(lat) < need + SWERVE) {
-              if (lat >= keepLeft) hi = Math.min(hi, lat - need);
+              // One side for the whole car, kept while it's being passed: its circles
+              // lie either side of the middle of the lane, and the choice mustn't flip.
+              let leftOf = o.car ? sides.get(o.car) : undefined;
+              if (leftOf === undefined) { leftOf = lat >= keepLeft; if (o.car) sides.set(o.car, leftOf); }
+              if (o.car) seen.add(o.car);
+              if (leftOf) hi = Math.min(hi, lat - need);
               else lo = Math.max(lo, lat + need);
             }
           }
@@ -400,6 +412,7 @@ export class Traffic {
       // Where to be across the lane: as near its middle as gets past the cars standing
       // in it, within the street (on a street it knows) and never far out of the lane.
       // Pulling out towards the other side of the street waits for oncoming traffic.
+      if (sides.size) for (const k of sides.keys()) if (!seen.has(k)) sides.delete(k);
       const left = Math.min(SWERVE, edge ? edge.laneOffset + edge.width / 2 - W / 2 : SWERVE);
       const right = Math.min(SWERVE, edge ? Math.max(0, edge.width / 2 - edge.laneOffset - W / 2) : 0.5);
       let want = clamp(0, lo, hi);
@@ -504,12 +517,17 @@ export class Traffic {
       }
       // Across towards where it wants to be, faster the faster it goes (just edging out
       // when it has stopped), turned that way.
-      const rate = clamp(a.speed * 0.5, 0.3, 1.6) * dt, shift = clamp(want - a.off, -rate, rate);
-      a.off += shift;
+      // The sideways speed eases up and down, so the car curves out and back instead of
+      // twitching, and it is turned along the path it takes.
+      const top = clamp(a.speed * 0.5, 0.3, 1.6), gap2 = want - a.off;
+      const wish = clamp(gap2 * 1.5, -top, top);
+      const accSide = 2.5;
+      const v = a.offV = (a.offV ?? 0) + clamp(wish - (a.offV ?? 0), -accSide * dt, accSide * dt);
+      a.off += v * dt;
       if (a.off) {
         c.x += Math.sin(p.ang) * a.off;
         c.y -= Math.cos(p.ang) * a.off;
-        ang -= Math.atan2(shift, Math.max(a.speed, 1) * dt);
+        ang -= Math.atan2(v, Math.max(a.speed, 1.5));
       }
       let dh = Math.atan2(Math.sin(ang - c.h), Math.cos(ang - c.h));
       c.h += dh * Math.min(1, dt * 10);

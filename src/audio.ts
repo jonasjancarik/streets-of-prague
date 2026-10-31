@@ -405,6 +405,31 @@ export class Sound {
     thump.stop(t + 0.16);
   }
 
+  // A car door shutting d m away, dx of it to the east: a dull thud and the latch catching.
+  doorShut(d: number, dx: number) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.on || d > 80) return;
+    const t = ctx.currentTime, loud = 10 / (10 + d), pan = ctx.createStereoPanner();
+    pan.pan.value = clamp(dx / 30, -0.85, 0.85);
+    pan.connect(this.buses.bangs);
+    const thump = ctx.createOscillator(), tg = gain(ctx, 0);
+    thump.frequency.setValueAtTime(170, t);
+    thump.frequency.exponentialRampToValueAtTime(62, t + 0.1);
+    tg.gain.setValueAtTime(loud * 0.5, t);
+    tg.gain.exponentialRampToValueAtTime(0.0005, t + 0.14);
+    thump.connect(tg).connect(pan);
+    thump.start(t);
+    thump.stop(t + 0.15);
+    for (const [at, top, level, len] of [[0, 1100 - Math.min(d, 80) * 7, 0.55, 0.09], [0.035, 3200, 0.16, 0.05]]) {
+      const src = loop(ctx, this.noise, 0.9 + Math.random() * 0.2), f = filter(ctx, at ? 'bandpass' : 'lowpass', top), g = gain(ctx, 0);
+      g.gain.setValueAtTime(loud * level, t + at);
+      g.gain.exponentialRampToValueAtTime(0.0005, t + at + len);
+      src.connect(f).connect(g).connect(pan);
+      src.start(t + at, Math.random() * 1.5);
+      src.stop(t + at + len + 0.02);
+    }
+  }
+
   // A car blowing up d m away, dx of it to the east: a deep bang, and a roar that
   // rumbles on for a second or two.
   boom(d: number, dx: number) {

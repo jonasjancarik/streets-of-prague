@@ -766,6 +766,7 @@ async function main() {
   let hornHeld = false, hornT = 0;
   const hornKind = (c: Car): HornKind => (c.two === 'bike' ? 'bike' : c.two === 'moto' ? 'moto' : c.spec.heavy ? 'heavy' : 'car');
   // Drivers held up by you toot at you.
+  Car.onShut = (c) => sound.doorShut(Math.hypot(c.x - px(), c.y - py()), c.x - px());
   traffic.onHonk = (c, long) => sound.toot(Math.hypot(c.x - px(), c.y - py()), c.x - px(), hornKind(c), long);
   const honk = (on: boolean) => {
     if (ride.driving) {
