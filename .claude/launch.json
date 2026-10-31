@@ -102,6 +102,32 @@
         "dev"
       ],
       "port": 5197
+    },
+    {
+      "name": "car-shade",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=5243",
+        "npm",
+        "--prefix",
+        ".claude/worktrees/car-shade",
+        "run",
+        "dev"
+      ],
+      "port": 5243
+    },
+    {
+      "name": "street-steps",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=5244",
+        "npm",
+        "--prefix",
+        ".claude/worktrees/street-steps",
+        "run",
+        "dev"
+      ],
+      "port": 5244
     }
   ]
 }
