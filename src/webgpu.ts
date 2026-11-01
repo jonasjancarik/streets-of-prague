@@ -378,7 +378,7 @@ export function configureRenderer(renderer: WebGPURenderer) {
   attributes.delete = (attribute: { shared?: boolean }) => (attribute.shared ? null : deleteAttribute(attribute));
   // The sun's light node is swapped for one that takes the cloud shadows into account.
   // (`&nocloud` in the address leaves them out, to compare with and without.)
-  if (!location.search.includes('nocloud')) library.lightNodes.set(THREE.DirectionalLight, CloudSunNode);
+  if (!location.search.includes('nocloud')) THREE.DirectionalLight.registerNode(CloudSunNode);
   library.addToneMapping(toneCurve, THREE.CustomToneMapping);
   // GLSL materials can't be drawn: hide them all. (Material's constructor sets
   // visible through this setter too.)
