@@ -232,6 +232,8 @@ Three sets in `landmarks.py` cover such a landmark (8 October 2026):
 - `PLAIN` (`plain` in `landmarks.json`): no tiled roofs, so the game draws it with the
   cutaway only. Otherwise near-black texels on a sloping face count as a roof in shadow
   and are drawn as clay tiles: red-brown patches on the glass tower's skirt.
+  Slate and copper church roofs need it too (St Vitus, St Ludmila, Vyšehrad): their
+  shaded slopes otherwise come out as red-brown tile patches. Check every new church.
 
 Walking under it needs nothing from the landmark: OSM's `passages` open the collision
 grid, and the cutaway opens the model above the player.

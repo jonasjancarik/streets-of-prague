@@ -60,6 +60,13 @@ LANDMARKS = {
     "mikulas": ["way/27859115"],  # Kostel sv. Mikuláše, Staroměstské náměstí
     "okamura": ["way/998156376"],  # Vila Tomia Okamury (House Okamura), Nad Tejnkou 9a, Břevnov; not in IPR's city model, so the mesh as it is
     "tancici": ["relation/6751056"],  # Tančící dům (Ginger & Fred), Jiráskovo náměstí
+    "muzeum": ["relation/3366506"],  # Historická budova Národního muzea, Václavské náměstí
+    "mikulas-ms": ["way/7645355", "way/26426951"],  # Kostel sv. Mikuláše and Svatomikulášská městská zvonice, Malostranské náměstí
+    "mostecka": ["way/839278890"],  # Staroměstská mostecká věž, Karlův most
+    "vit": ["relation/15317899"],  # Katedrála sv. Víta, Václava a Vojtěcha, Pražský hrad
+    "ludmila": ["way/27854653"],  # Kostel sv. Ludmily, náměstí Míru
+    "vysehrad": ["way/24376643"],  # Bazilika sv. Petra a Pavla, Vyšehrad
+    "emauzy": ["relation/33709"],  # Emauzský klášter (Na Slovanech), the cloister; the church on its north side is not in it
 }
 # Places on a landmark's roofs (lon, lat, radius in metres) where the photographs show
 # something that isn't the roof, a tree reaching over it: what is much darker than the
@@ -78,7 +85,7 @@ SHADED = {"tancici": (0.85, 1.45)}
 # Landmarks without a tiled roof. The game draws tiles where a landmark's photograph
 # shows a red or a near-black roof (shadeLandmark in src/shading.ts); these are drawn as
 # photographed throughout (the Dancing House's dark glass slopes like a roof).
-PLAIN = {"tancici"}
+PLAIN = {"tancici", "vit", "ludmila", "vysehrad"}  # the churches: slate and copper, no clay tiles
 PAD = 1.5
 BLENDER = os.environ.get("BLENDER") or shutil.which("blender") or "/Applications/Blender.app/Contents/MacOS/Blender"
 
