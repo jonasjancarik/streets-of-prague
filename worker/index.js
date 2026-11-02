@@ -4,7 +4,7 @@
 // (worker/stats.js):
 //
 //   POST /api/subscribe  { email, lang, token }
-//   POST /api/feedback   { message, email?, context?, scenario?, screenshot?, lang }
+//   POST /api/feedback   { message, email?, newsletter?, context?, scenario?, screenshot?, lang }
 //   POST /api/report     one statistics report
 //   GET  /api/weather    the weather in Prague now, from ČHMÚ (worker/weather.js), if turned on
 //
@@ -105,9 +105,15 @@ async function subscribe(body, env, origin, ip) {
   if (body.website) return [{ ok: true }, 200];
   if (env.TURNSTILE_SECRET_KEY && !await human(text(body.token, 2048), env, ip)) return [{ error: 'check' }, 403];
 
-  // The language picked in the form: of the confirmation email, and kept with the
-  // contact so later emails can go out in it.
-  const lang = body.lang === 'cs' ? 'cs' : 'en';
+  const [answer, status] = await invite(email, body.lang, env, origin);
+  return [answer, status];
+}
+
+// Hands an address to Brevo, which sends the confirmation email. The language picked in
+// the form is the confirmation email's, and is kept with the contact so later emails can
+// go out in it.
+async function invite(email, language, env, origin) {
+  const lang = language === 'cs' ? 'cs' : 'en';
   const template = (lang === 'cs' && env.BREVO_DOI_TEMPLATE_ID_CS) || env.BREVO_DOI_TEMPLATE_ID;
   const res = await fetch(BREVO, {
     method: 'POST',
@@ -184,6 +190,12 @@ async function feedback(body, env, origin, ip, here) {
   } catch (e) {
     console.error(`Sending feedback failed: ${e?.message ?? e}`);
     return [{ error: 'failed' }, 502];
+  }
+  // The player ticked the newsletter box (the form only offers it with an address): the
+  // same confirmation email as the signup form sends. The message has already gone, so a
+  // failure here is logged and doesn't turn it into an error.
+  if (body.newsletter === true && email && env.BREVO_API_KEY && env.BREVO_LIST_ID && env.BREVO_DOI_TEMPLATE_ID) {
+    try { await invite(email, body.lang, env, origin); } catch (e) { console.error(`Newsletter signup from feedback failed: ${e?.message ?? e}`); }
   }
   return [{ ok: true }, 200];
 }

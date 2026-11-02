@@ -466,6 +466,10 @@
       .news-row[hidden], .news-check[hidden] { display: none; }
       .news-row span { margin-right: 6px; font: 16px/1 'Bebas Neue', sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(236, 228, 214, 0.65); }
       .news-check:not(:empty) { margin: 0 0 12px; }
+      .news-opt { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.4; cursor: pointer; }
+      .news-opt[hidden] { display: none; }
+      .news-opt input { margin: 2px 0 0; flex: none; }
+      .news-opt input:disabled + span { opacity: 0.55; }
       .news-trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
       .news-go { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; box-sizing: border-box; font: 20px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; color: var(--ink); background: var(--edge); border: 0; padding: 2px 18px 0; cursor: pointer; box-shadow: 3px 3px 0 #000; white-space: nowrap; }
       @supports (text-box: trim-both cap alphabetic) { .news-go { padding-top: 0; } }

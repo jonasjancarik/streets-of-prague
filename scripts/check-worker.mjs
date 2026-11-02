@@ -156,6 +156,18 @@ assert.equal(mail[0].replyTo, 'player@example.com');
 assert.equal(mail[0].subject, 'Feedback: The tram at Anděl drove through my car.');
 assert.match(mail[0].text, /^The tram at Anděl drove through my car\.\nSecond line\.\n\n--\nFrom: player@example\.com\nVersion v1\.2\.3\nChrome$/);
 
+// Ticking the newsletter box sends the confirmation email too, and only with an address.
+{
+  res = await say({ message: 'Hello.', email: 'player@example.com', newsletter: true, lang: 'cs' });
+  assert.equal(res.status, 200);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].body.email, 'player@example.com');
+  await say({ message: 'Hello.', newsletter: true });
+  assert.equal(sent.length, 0);
+  await say({ message: 'Hello.', email: 'player@example.com' });
+  assert.equal(sent.length, 0);
+}
+
 // A copy is kept for the viewer, and losing it doesn't stop the email.
 {
   const kept = [];

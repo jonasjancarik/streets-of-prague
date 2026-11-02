@@ -173,6 +173,8 @@ export const CS: Record<string, string> = {
   'Your email address, if you\'d like an answer': 'Tvůj e-mail, pokud chceš odpověď',
   Send: 'Odeslat',
   'Thank you. Your message is on its way.': 'Děkujeme. Zpráva je na cestě.',
+  'Thank you. Your message is on its way. Open the email we sent you to confirm the newsletter.': 'Děkujeme. Zpráva je na cestě. Otevři e-mail, který ti posíláme, a potvrď odběr novinek.',
+  'Also send me the game\'s newsletter (you\'ll get an email to confirm)': 'Chci také odebírat novinky o hře (přijde e-mail k potvrzení)',
   'Write a few words first.': 'Nejdřív něco napiš.',
   'Sending didn\'t work this time. Please try again later.': 'Odeslání se teď nepovedlo. Zkus to prosím později.',
   'We couldn\'t confirm whether your message arrived. Your message is still here if you want to try again.': 'Nepodařilo se ověřit, jestli zpráva dorazila. Zpráva tu zůstává, pokud ji chceš zkusit odeslat znovu.',

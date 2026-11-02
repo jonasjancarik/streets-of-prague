@@ -16,6 +16,8 @@ declare const __DATA_VERSION__: string;
 // deploy/feedback) shows none of this.
 
 const URL_ = import.meta.env.VITE_FEEDBACK_URL as string | undefined;
+// The newsletter box is offered only where the signup is set up too.
+const NEWSLETTER = !!import.meta.env.VITE_SUBSCRIBE_URL;
 
 // The frame rate over the last second or so, and the last few errors the page saw:
 // kept as the game runs, for when a message is written.
@@ -103,6 +105,17 @@ function build(extra: () => string, seen: () => ReturnType<typeof look>) {
   email.name = 'email';
   email.autocomplete = 'email';
   const trap = trapField(form);
+  const news = el('label', 'news-opt', form) as HTMLLabelElement;
+  news.hidden = !NEWSLETTER;
+  const tick = el('input', '', news) as HTMLInputElement;
+  tick.type = 'checkbox';
+  tick.disabled = true;
+  const tickText = el('span', '', news);
+  // It needs an address to write to.
+  email.addEventListener('input', () => {
+    tick.disabled = !email.value.trim();
+    if (tick.disabled) tick.checked = false;
+  });
   const go = el('button', 'news-go', form) as HTMLButtonElement;
   go.type = 'submit';
   const status = el('p', 'news-status', d);
@@ -118,6 +131,7 @@ function build(extra: () => string, seen: () => ReturnType<typeof look>) {
     intro.textContent = t('Found a bug, or something you\'d like to see in the game? Write it here.');
     message.ariaLabel = t('Your message');
     email.placeholder = email.ariaLabel = t('Your email address, if you\'d like an answer');
+    tickText.textContent = t('Also send me the game\'s newsletter (you\'ll get an email to confirm)');
     go.textContent = sending ? t('Sending…') : t('Send');
     go.disabled = sending;
     status.textContent = note && t(note);
@@ -134,10 +148,10 @@ function build(extra: () => string, seen: () => ReturnType<typeof look>) {
     label();
     try {
       const { picture, scenario } = seen();
-      const answer = await postForm(URL_, { message: message.value, email: email.value, website: trap.value, lang: getLang(), context: context(extra), scenario, screenshot: await picture });
+      const answer = await postForm(URL_, { message: message.value, email: email.value, newsletter: NEWSLETTER && tick.checked, website: trap.value, lang: getLang(), context: context(extra), scenario, screenshot: await picture });
       done = answer.ok;
       if (done) telemetry.did('sent feedback');
-      note = done ? 'Thank you. Your message is on its way.' : PROBLEMS[answer.error ?? ''] ?? FAILED;
+      note = done ? (NEWSLETTER && tick.checked ? 'Thank you. Your message is on its way. Open the email we sent you to confirm the newsletter.' : 'Thank you. Your message is on its way.') : PROBLEMS[answer.error ?? ''] ?? FAILED;
     } catch (error) {
       note = error instanceof DOMException && error.name === 'TimeoutError'
         ? 'We couldn\'t confirm whether your message arrived. Your message is still here if you want to try again.'
@@ -149,7 +163,7 @@ function build(extra: () => string, seen: () => ReturnType<typeof look>) {
   // Opened again after a message went out, it is ready for another.
   d.addEventListener('close', () => {
     if (!done) return;
-    done = false; note = ''; message.value = '';
+    done = false; note = ''; message.value = ''; tick.checked = false; tick.disabled = !email.value.trim();
     label();
   });
   return d;
