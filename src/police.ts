@@ -72,13 +72,14 @@ const CHASERS = [0, 1, 2, 3, 4, 6]; // police cars after you, by stars
 const HELIS = [0, 0, 0, 1, 1, 1];
 const PATROLS = 3;
 const RAMS = [0.15, 0.2, 0.35, 0.5, 0.7, 0.85]; // how many of the cars sent after you carry the ram frame, by stars
-const POINTS = { knock: 1, carjack: 1, wreck: 0.6, hitCop: 2, stealCop: 3, stealTram: 1.5, blowUp: 1.5, blowUpCop: 3, fareDodge: 2 };
+const POINTS = { knock: 1, carjack: 1, wreck: 0.6, hitCop: 2, stealCop: 3, stealTram: 1.5, blowUp: 1.5, blowUpCop: 3, fareDodge: 2, gunfire: 1 };
 // What each is called in the statistics (src/telemetry.ts).
 const CRIME_NAMES: Record<keyof typeof POINTS, string> = {
   knock: 'knocked someone over', carjack: 'took a car from its driver', wreck: 'wrecked a car', hitCop: 'hit the police',
   stealCop: 'took a police car', stealTram: 'took a tram', blowUp: 'blew up a car', blowUpCop: 'blew up a police car', fareDodge: 'ran from a ticket inspector',
+  gunfire: 'fired a gun',
 };
-const COOLDOWN: Partial<Record<keyof typeof POINTS, number>> = { hitCop: 1 }; // one scrape shouldn't count ten times
+const COOLDOWN: Partial<Record<keyof typeof POINTS, number>> = { hitCop: 1, gunfire: 2.5 }; // one scrape (or one burst) shouldn't count ten times
 const RUN = 6.4; // officers on foot, m/s: you can outrun them, but not walking
 const WRECKED = 90; // damage that puts a police car out of the chase
 const ARMED = 3; // stars from which officers on foot shoot

@@ -285,6 +285,13 @@ that without a new renderer.
   stars shows how much you have left once you're hurt, and it comes back by itself
   after a few quiet seconds. When it runs out you're wasted: you fall where you are
   and come round outside the nearest hospital, no longer wanted (`src/guns.ts`).
+- **Your pistol.** Hold the mouse button over the map to shoot where it points, or F
+  (RB on a pad, Shoot on a touch screen) to shoot ahead, at the nearest car roughly that
+  way; from a car the mouse shoots out of the window. Bullets stop at walls, cars and
+  trams and never hit anyone: people in the way are passed by and run. Each bullet
+  damages the car it hits (enough of them set it burning) and smashes a lamp it lands
+  on. Gunfire is a crime (a star when the police hear it close by), and shooting a
+  police car brings its crew out after you (`src/pistol.ts`).
 - **Burning cars.** A car that's taken enough knocks (crashes, police bullets, a blast
   nearby) starts to smoke, then catches fire and a few seconds later blows up, leaving
   a charred wreck that smoulders for a while and can't be driven. If your own car

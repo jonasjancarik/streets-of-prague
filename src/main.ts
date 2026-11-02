@@ -75,6 +75,8 @@ import type { Officer } from './police.ts';
 import { Brigade } from './brigade.ts';
 import { Ambulances } from './ambulance.ts';
 import { Tracers, Health, MAX_HEALTH } from './guns.ts';
+import { trace, strike, assist as aimAssist, PACE } from './pistol.ts';
+import type { Hit } from './pistol.ts';
 import { Fires } from './fire.ts';
 import { Chopper } from './helicopter.ts';
 import { Boats } from './boats.ts';
@@ -743,6 +745,44 @@ async function main() {
     banner: (text) => showBanner(text),
   });
   const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car), ...brigade.engines.map((e) => e.car), ...ambulances.rigs.map((r) => r.car)];
+  // Your pistol (pistol.ts): the mouse button held over the map shoots where it points,
+  // F (on foot) or the touch button straight ahead, at the nearest car roughly that way.
+  // Nobody is ever hit; cars, trams and walls stop the bullets.
+  let aimAt: { x: number; y: number } | null = null; // the mouse button is held, pointing here
+  let fireHeld = false;
+  let gunCool = 0;
+  const canShoot = () => wastedT <= 0 && frozen <= 0 && !arrest.active && !getIn.active && walker.down <= 0 && !inHeli && !ride.on
+    && !boats.me && !funicular.me && !ferries.me && !taxi.riding && !metro.active && !dialog.active;
+  const shoot = (h?: number): Hit | null => {
+    const me = inCar || walker, cars = allCars();
+    if (h === undefined) h = aimAt ? Math.atan2(aimAt.y - me.y, aimAt.x - me.x) : aimAssist(me.x, me.y, me.h, cars, inCar);
+    if (!inCar) walker.h = h;
+    const lx = Math.cos(h), ly = Math.sin(h);
+    // From the hand on foot, out of the window in a car.
+    const off = inCar ? inCar.spec.W / 2 + 0.2 : 0.5, sx = me.x + lx * off, sy = me.y + ly * off;
+    const base = ground(me.x, me.y, inCar || walker), z = base + (inCar ? inCar.spec.H * 0.8 : 1.3);
+    const hit = trace(sx, sy, h, { wall: (x, y) => grid.at(x, y) === 255, cars, trams: trams.bodies(me.x, me.y, 80).flatMap((b) => b.circles.map(([x, y]) => ({ x, y, r: 1.25 }))), skip: inCar });
+    tracers.fire([sx, sy, z], [hit.x, hit.y, hit.car ? base + hit.car.spec.H * 0.6 : z - 0.2]);
+    sound.shot(0, 0);
+    crowd.scare(sx, sy, 45);
+    crowd.scare(hit.x, hit.y, 12);
+    police.crime('gunfire', sx, sy);
+    telemetry.did('fired a gun');
+    const c = hit.car;
+    if (c) {
+      strike(c, hit.x, hit.y);
+      fires.blame(c);
+      fires.check(c);
+      if (c.type === 'police' || c.mode === 'police') police.crime('hitCop', c.x, c.y, c);
+    }
+    return hit;
+  };
+  const shootStep = (dt: number) => {
+    gunCool = Math.max(0, gunCool - dt);
+    if (!(aimAt || (fireHeld && !inCar)) || gunCool > 0 || !canShoot()) return;
+    gunCool = PACE;
+    shoot();
+  };
   const drawn: Car[] = []; // the cars drawn this frame
   // Off the tram onto the pavement beside it.
   const getOff = () => {
@@ -1379,7 +1419,7 @@ async function main() {
     if (e.code === 'KeyB' && !e.repeat) pressB();
     const pick = /^Digit([1-4])$/.exec(e.code);
     if (pick && !e.repeat && inspector.phase !== 'decide') buyTicket(TICKETS[Number(pick[1]) - 1]);
-        if (e.code === 'KeyF') { cannonHeld = true; if (!e.repeat) stealTram(); }
+        if (e.code === 'KeyF') { cannonHeld = true; fireHeld = true; if (!e.repeat) stealTram(); }
     if (e.code === 'KeyX' && !e.repeat) { if (ride.driving) telemetry.did('opened the tram doors'); ride.doors(); }
     if (e.code === 'KeyQ' && !e.repeat) honk(true);
     // Space jumps, except at a tram stop, where holding it waits for a tram.
@@ -1407,7 +1447,7 @@ async function main() {
     if (keymap[e.code]) input[keymap[e.code]] = false;
     if (!e.shiftKey) input.run = false;
     if (e.code === 'KeyQ') honk(false);
-    if (e.code === 'KeyF') cannonHeld = false;
+    if (e.code === 'KeyF') { cannonHeld = false; fireHeld = false; }
   }, { capture: true }); // release even when a focused developer field stops bubbling
   // A key released in another window never sends us keyup. Clear held actions
   // immediately so returning to the game cannot leave the throttle or horn on.
@@ -1415,6 +1455,8 @@ async function main() {
     for (const key of Object.keys(input) as InputKey[]) input[key] = false;
     honk(false);
     cannonHeld = false;
+    fireHeld = false;
+    aimAt = null;
   };
   window.addEventListener('blur', releaseInput);
   document.addEventListener('visibilitychange', () => { if (document.hidden) releaseInput(); });
@@ -1426,8 +1468,23 @@ async function main() {
     if (testkit?.cam) testkit.cam.height = clamp(testkit.cam.height * f, 5, 1500);
     else zoomBy(f);
   }, { passive: true });
+  // The mouse over the map aims the pistol, the main button fires it (held, again and again).
+  const ray = new THREE.Raycaster(), floor = new THREE.Plane(new THREE.Vector3(0, 1, 0)), pointed = new THREE.Vector3();
+  const pointAt = (e: PointerEvent) => {
+    const me = inCar || walker;
+    floor.constant = -(ground(me.x, me.y, inCar || walker) + 1);
+    ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
+    if (!ray.ray.intersectPlane(floor, pointed)) return null;
+    return { x: pointed.x, y: -pointed.z };
+  };
+  renderer.domElement.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0 || !playing || settingsPanel.open) return;
+    aimAt = pointAt(e);
+  });
+  window.addEventListener('pointermove', (e) => { if (aimAt && e.pointerType === 'mouse') aimAt = pointAt(e) ?? aimAt; }, { passive: true });
+  window.addEventListener('pointerup', (e) => { if (e.button === 0) aimAt = null; });
   $('t-ticket').addEventListener('click', pressB);
-  const touch = setupTouch({ action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, doors: () => ride.doors(), jump: () => {
+  const touch = setupTouch({ action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, shoot: (on) => { fireHeld = on; }, doors: () => ride.doors(), jump: () => {
     if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !ferries.me && !taxi.riding) { input.jump = true; telemetry.did('jumped'); }
   }, force: params.has('touch') });
   Object.assign(padHooks, { settings: () => settingsPanel.show(), menu: () => metro.active || dialog.active, zoomBy });
@@ -1778,6 +1835,7 @@ async function main() {
     crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y));
     bags.update(dt, px(), py());
     missions.update(dt);
+    shootStep(dt);
 
     // ---- Collisions ------------------------------------------------------
     // Two cars that have just met: the lamps the blow landed on break.
@@ -2560,6 +2618,7 @@ async function main() {
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
     grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
     missions, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list },
+    shoot: (h) => (canShoot() ? shoot(h) : null),
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     recovering: () => wastedT > 0,
     enterCar: (c) => { only = c; try { enterOrExit(); } finally { only = null; } },

@@ -60,9 +60,9 @@ export function stickOnly(car: Car, aim: { h: number; mag: number }) {
 const capture = (el: HTMLElement, e: PointerEvent) => { try { el.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ } };
 const dead = (v: number) => (Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD));
 
-export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, doors, jump, force }: {
+export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, shoot, doors, jump, force }: {
   action: () => void; backOnRoad: () => void; zoomBy: (factor: number) => void;
-  horn: (on: boolean) => void; steal: () => void; cannon: (on: boolean) => void; doors: () => void; jump: () => void; force: boolean;
+  horn: (on: boolean) => void; steal: () => void; cannon: (on: boolean) => void; shoot: (on: boolean) => void; doors: () => void; jump: () => void; force: boolean;
 }): TouchState {
   const $ = (id: string): HTMLElement => {
     const el = document.getElementById(id);
@@ -201,6 +201,18 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
   cannonButton.addEventListener('pointerup', cannonUp);
   cannonButton.addEventListener('pointercancel', cannonUp);
   cannonButton.addEventListener('lostpointercapture', cannonUp);
+  // The pistol fires again and again for as long as it's held, at the car ahead if there is one.
+  const shootButton = $('t-shoot');
+  const shootUp = () => { shoot(false); shootButton.classList.remove('down'); };
+  shootButton.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    capture(shootButton, e);
+    shoot(true);
+    shootButton.classList.add('down');
+  });
+  shootButton.addEventListener('pointerup', shootUp);
+  shootButton.addEventListener('pointercancel', shootUp);
+  shootButton.addEventListener('lostpointercapture', shootUp);
   // The horn (a tram's bell) sounds for as long as it's held.
   const hornButton = $('t-horn');
   const hornUp = () => { horn(false); hornButton.classList.remove('down'); };
@@ -248,6 +260,7 @@ export function setupTouch({ action, backOnRoad, zoomBy, horn, steal, cannon, do
     fastUp();
     hornUp();
     cannonUp();
+    shootUp();
     fingers.clear();
     spread = 0;
   };

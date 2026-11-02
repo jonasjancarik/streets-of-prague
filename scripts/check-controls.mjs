@@ -69,10 +69,10 @@ const hide = () => { document.hidden = true; document.dispatchEvent(new Event('v
 const show = () => { document.hidden = false; document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new Event('focus')); };
 
 const { setupTouch } = await import('../src/touch.ts');
-let horn = false, cannon = false, zooms = 0;
+let horn = false, cannon = false, shooting = false, zooms = 0;
 const touch = setupTouch({
   action() {}, backOnRoad() {}, zoomBy() { zooms++; }, horn: on => { horn = on; },
-  steal() {}, cannon: on => { cannon = on; }, doors() {}, jump() {}, force: true,
+  steal() {}, cannon: on => { cannon = on; }, shoot: on => { shooting = on; }, doors() {}, jump() {}, force: true,
 });
 const update = () => touch.update({ car: null, canEnter: false, engine: true });
 update();
@@ -92,7 +92,7 @@ assert(touch.aim, 'an old pointer cannot release the current stick');
 
 for (const [id, held] of [
   ['t-hand', () => touch.brake], ['t-fast', () => touch.fast],
-  ['t-horn', () => horn], ['t-cannon', () => cannon],
+  ['t-horn', () => horn], ['t-cannon', () => cannon], ['t-shoot', () => shooting],
 ]) {
   pointer(id, 'pointerdown');
   assert(held(), id + ' is held');
@@ -105,13 +105,13 @@ for (const suspend of [() => window.dispatchEvent(new Event('blur')), hide]) {
   pointer('t-steer', 'pointerdown', 3);
   pointer('t-steer', 'pointermove', 3, 96, 48);
   pointer('t-pedals', 'pointerdown');
-  for (const id of ['t-hand', 't-fast', 't-horn', 't-cannon']) pointer(id, 'pointerdown');
+  for (const id of ['t-hand', 't-fast', 't-horn', 't-cannon', 't-shoot']) pointer(id, 'pointerdown');
   pointer('app', 'pointerdown', 1, 0, 0);
   pointer('app', 'pointerdown', 2, 100, 0);
   update();
   assert.equal(touch.move, 1);
   suspend();
-  assert.deepEqual([touch.move, touch.brake, touch.fast, touch.aim, horn, cannon], [0, false, false, null, false, false]);
+  assert.deepEqual([touch.move, touch.brake, touch.fast, touch.aim, horn, cannon, shooting], [0, false, false, null, false, false, false]);
   show();
   pointer('app', 'pointermove', 2, 150, 0);
   assert.equal(zooms, 0, 'an interrupted pinch cannot zoom on return');

@@ -23,6 +23,7 @@ import type { Ferries } from './ferries.ts';
 import type { Bags } from './bags.ts';
 import type { Missions } from './missions.ts';
 import type { Standing } from './factions.ts';
+import type { Hit } from './pistol.ts';
 import { upgrade } from './save.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
@@ -112,6 +113,8 @@ interface Game {
   missions: Missions;
   // Holds the fire engine's water cannon on (F).
   cannon: (on: boolean) => void;
+  // A shot from your pistol, along `h` (the game's radians) or at the car ahead; null when you can't shoot now.
+  shoot: (h?: number) => Hit | null;
   standing: Standing;
   // Trams: the ride you're on (ride.ts) and every tram running.
   tram: {
@@ -497,6 +500,14 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     aimAtCar(c: Car, back = 14) { kit.aimAt({ x: c.x, y: c.y, r: 4 } as Post, back); },
     // The water cannon of the fire engine you drive, held on or let go.
     cannon(on: boolean) { g.cannon(on); },
+    // A shot from your pistol: toward a compass heading, at a car (or a spot), or, with
+    // nothing, the way you face with the aim helping, as F does. Where it went and what it hit.
+    shoot(at?: number | { x: number; y: number }) {
+      const me = g.me();
+      const h = at === undefined ? undefined : typeof at === 'number' ? rad(at) : Math.atan2(at.y - me.y, at.x - me.x);
+      const hit = g.shoot(h);
+      return hit && { x: round(hit.x), y: round(hit.y), d: round(hit.d), car: hit.car, tram: hit.tram };
+    },
     // What a saved game of an older format becomes (null: can't be opened).
     upgradeSave(old: unknown) { return upgrade(old); },
     // Onto the nearest tram and into its cab, as F does once you ride one.
