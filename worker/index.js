@@ -4,7 +4,7 @@
 // (worker/stats.js):
 //
 //   POST /api/subscribe  { email, lang, token }
-//   POST /api/feedback   { message, email?, newsletter?, context?, scenario?, screenshot?, lang }
+//   POST /api/feedback   { message, email?, newsletter?, token?, context?, scenario?, screenshot?, lang }
 //   POST /api/report     one statistics report
 //   GET  /api/weather    the weather in Prague now, from ČHMÚ (worker/weather.js), if turned on
 //
@@ -143,6 +143,14 @@ async function feedback(body, env, origin, ip, here) {
   const email = address(body.email);
   if (text(body.email, 1) && !email) return [{ error: 'email' }, 400];
   if (body.website) return [{ ok: true }, 200];
+  // Asking for the newsletter makes the game email the address typed here, which may not
+  // be the sender's own: that needs the same check as the signup form. If it fails, the
+  // message still goes through and only the signup is dropped, which the answer says (202).
+  // Where signups aren't set up, the box is ignored.
+  let news = body.newsletter === true && !!email && !!env.BREVO_API_KEY && !!env.BREVO_LIST_ID && !!env.BREVO_DOI_TEMPLATE_ID
+    && !(env.TURNSTILE_SITE_KEY && !env.TURNSTILE_SECRET_KEY);
+  let dropped = false;
+  if (news && env.TURNSTILE_SECRET_KEY && !await human(text(body.token, 2048), env, ip)) { news = false; dropped = true; }
 
   // What the game adds by itself: its version, the browser, where the player was.
   const context = text(body.context, 4000);
@@ -194,10 +202,10 @@ async function feedback(body, env, origin, ip, here) {
   // The player ticked the newsletter box (the form only offers it with an address): the
   // same confirmation email as the signup form sends. The message has already gone, so a
   // failure here is logged and doesn't turn it into an error.
-  if (body.newsletter === true && email && env.BREVO_API_KEY && env.BREVO_LIST_ID && env.BREVO_DOI_TEMPLATE_ID) {
+  if (news) {
     try { await invite(email, body.lang, env, origin); } catch (e) { console.error(`Newsletter signup from feedback failed: ${e?.message ?? e}`); }
   }
-  return [{ ok: true }, 200];
+  return dropped ? [{ ok: true, newsletter: false }, 202] : [{ ok: true }, 200];
 }
 
 const json = (data, status, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers } });

@@ -166,6 +166,21 @@ assert.match(mail[0].text, /^The tram at Anděl drove through my car\.\nSecond l
   assert.equal(sent.length, 0);
   await say({ message: 'Hello.', email: 'player@example.com' });
   assert.equal(sent.length, 0);
+  // With Turnstile on, the box needs a good token; without one the message still goes
+  // (answered 202) and only the signup is dropped.
+  const tenv = { ...fenv, TURNSTILE_SITE_KEY: 'site', TURNSTILE_SECRET_KEY: 'secret' };
+  res = await say({ message: 'Hello.', email: 'player@example.com', newsletter: true }, { e: tenv });
+  assert.equal(res.status, 202);
+  assert.equal(sent.length, 0);
+  assert.equal(mail.length, 1);
+  res = await say({ message: 'Hello.', email: 'player@example.com', newsletter: true, token: 'good' }, { e: tenv });
+  assert.equal(res.status, 200);
+  assert.equal(sent.length, 1);
+  assert.equal(mail.length, 1);
+  // Feedback without the box needs no token.
+  res = await say({ message: 'Hello.', email: 'player@example.com' }, { e: tenv });
+  assert.equal(res.status, 200);
+  assert.equal(mail.length, 1);
 }
 
 // A copy is kept for the viewer, and losing it doesn't stop the email.

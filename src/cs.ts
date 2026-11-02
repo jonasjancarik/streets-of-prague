@@ -174,6 +174,7 @@ export const CS: Record<string, string> = {
   Send: 'Odeslat',
   'Thank you. Your message is on its way.': 'Děkujeme. Zpráva je na cestě.',
   'Thank you. Your message is on its way. Open the email we sent you to confirm the newsletter.': 'Děkujeme. Zpráva je na cestě. Otevři e-mail, který ti posíláme, a potvrď odběr novinek.',
+  'Thank you. Your message is on its way. We couldn\'t confirm that a person is signing up, so the newsletter signup didn\'t go through. You can sign up from the settings.': 'Děkujeme. Zpráva je na cestě. Nepodařilo se ověřit, že se přihlašuje člověk, takže přihlášení k novinkám neproběhlo. Můžeš se přihlásit v nastavení.',
   'Also send me the game\'s newsletter (you\'ll get an email to confirm)': 'Chci také odebírat novinky o hře (přijde e-mail k potvrzení)',
   'Write a few words first.': 'Nejdřív něco napiš.',
   'Sending didn\'t work this time. Please try again later.': 'Odeslání se teď nepovedlo. Zkus to prosím později.',

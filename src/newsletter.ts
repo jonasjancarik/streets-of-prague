@@ -20,7 +20,7 @@ const SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
 
 // The deadline covers response headers and an error body. Successful headers are
 // enough to confirm acceptance; waiting for their body must not hold the form open.
-export async function postForm(url: string, data: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+export async function postForm(url: string, data: Record<string, unknown>): Promise<{ ok: boolean; status?: number; error?: string }> {
   const controller = new AbortController();
   let rejected = false;
   let timer = 0;
@@ -36,7 +36,7 @@ export async function postForm(url: string, data: Record<string, unknown>): Prom
       const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data), signal: controller.signal });
       if (res.ok) {
         void res.body?.cancel().catch(() => {});
-        return { ok: true };
+        return { ok: true, status: res.status };
       }
       rejected = true;
       const answer = await res.json().catch(() => ({})) as { error?: string } | null;
@@ -69,7 +69,7 @@ export const el = (tag: string, cls: string, parent: HTMLElement) => {
   return e;
 };
 
-const PROBLEMS: Record<string, string> = {
+export const PROBLEMS: Record<string, string> = {
   email: 'That doesn\'t look like an email address.',
   busy: 'Too many tries from here. Please wait a minute and try again.',
   check: 'We couldn\'t confirm that a person is signing up. Please try again; if a content blocker is on for this page, switching it off may help.',
@@ -119,6 +119,34 @@ function build() {
   return d;
 }
 
+// Cloudflare's check, in a box added to `parent`. The token is asked for once `start` is
+// called and waited for, a while, when the form is sent before it has come. A token is good
+// for one try: `again` asks for a new one. Does nothing in a build without a site key.
+export function humanCheck(parent: HTMLElement) {
+  const box = el('div', 'news-check', parent);
+  let token = '', widget = '', waiting: ((token: string) => void) | null = null;
+  const start = () => {
+    if (!SITE_KEY || widget) return;
+    loadTurnstile().then(() => {
+      widget ||= window.turnstile!.render(box, {
+        sitekey: SITE_KEY, theme: 'dark', size: 'flexible', appearance: 'interaction-only', language: getLang(),
+        callback: (tk: string) => { token = tk; waiting?.(tk); },
+        'expired-callback': () => { token = ''; },
+        'error-callback': () => { token = ''; return true; },
+      });
+    }).catch(() => {});
+  };
+  return {
+    box, start,
+    token: () => (token ? Promise.resolve(token) : new Promise<string>((resolve) => {
+      start();
+      waiting = resolve;
+      setTimeout(() => resolve(''), 15000);
+    })),
+    again: () => { token = ''; if (widget) window.turnstile?.reset(widget); },
+  };
+}
+
 // The signup itself, added to `d`: the address, the language of the emails, Cloudflare's
 // check, what came of it and the small print. Nothing, where there is no newsletter.
 // `done` is called once an address has been taken.
@@ -148,29 +176,9 @@ export function signupFields(d: HTMLElement, { focus = false, done: onDone = () 
     return { b, id: l.id };
   });
 
-  // Cloudflare's check. The token is asked for when the form opens and waited for, a
-  // while, when the form is sent before it has come.
-  const checkBox = el('div', 'news-check', d);
-  let token = '', widget = '', waiting: ((token: string) => void) | null = null;
-  const startCheck = () => {
-    if (!SITE_KEY || widget) return;
-    loadTurnstile().then(() => {
-      widget ||= window.turnstile!.render(checkBox, {
-        sitekey: SITE_KEY, theme: 'dark', size: 'flexible', appearance: 'interaction-only', language: getLang(),
-        callback: (tk: string) => { token = tk; waiting?.(tk); },
-        'expired-callback': () => { token = ''; },
-        'error-callback': () => { token = ''; return true; },
-      });
-    }).catch(() => {});
-  };
-  const checked = () => (token ? Promise.resolve(token) : new Promise<string>((resolve) => {
-    startCheck();
-    waiting = resolve;
-    setTimeout(() => resolve(''), 15000);
-  }));
-  // A token is good for one try.
-  const again = () => { token = ''; if (widget) window.turnstile?.reset(widget); };
-  startCheck();
+  const check = humanCheck(d);
+  const checkBox = check.box;
+  check.start();
 
   const status = el('p', 'news-status', d);
   status.setAttribute('role', 'status');
@@ -199,7 +207,7 @@ export function signupFields(d: HTMLElement, { focus = false, done: onDone = () 
     sending = true; message = '';
     label();
     try {
-      const tk = SITE_KEY ? await checked() : '';
+      const tk = SITE_KEY ? await check.token() : '';
       if (SITE_KEY && !tk) message = PROBLEMS.check;
       else {
         const answer = await postForm(URL_, { email: email.value, website: trap.value, lang: lang(), token: tk });
@@ -212,7 +220,7 @@ export function signupFields(d: HTMLElement, { focus = false, done: onDone = () 
         ? 'We couldn\'t confirm your signup. Check your inbox before trying again.'
         : 'Signing up didn\'t work this time. Please try again later.';
     }
-    if (!done) again();
+    if (!done) check.again();
     else onDone();
     sending = false;
     label();
