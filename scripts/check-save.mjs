@@ -22,10 +22,11 @@ try {
   const { KINDS } = await server.ssrLoadModule('/src/weather.ts');
 
   const game = {
-    v: 1, area: 'prague', at: Date.now(), lat: 50.08, lon: 14.42, heading: 90,
+    v: 2, area: 'prague', at: Date.now(), lat: 50.08, lon: 14.42, heading: 90,
     street: 'Karlova', car: { type: 'hatch', paint: '#336699', variant: null, damage: 12 },
     money: 9320, ticket: { from: 3600, minutes: 90 }, health: 80, heat: 2,
     clock: 5400, season: 270, weather: { kind: 'rain', fixed: true },
+    jobs: { done: { courier: 2 }, failed: 1, earned: 640 }, rep: { fofr: 12, rank: -6 },
   };
   writeSave('auto', game);
   assert.deepEqual(readSave('auto', game.area), game, 'current save round trips');
@@ -34,6 +35,10 @@ try {
   assert.equal(readSave('auto', 'another-map'), null, 'saves stay with their own map');
   assert.equal(unreadable('auto', 'another-map'), false, 'another map is not corruption');
 
+  const before = structuredClone(game);
+  before.v = 1; delete before.jobs; delete before.rep;
+  writeSave('before-work', before);
+  assert.deepEqual(readSave('before-work', game.area), { ...game, jobs: { done: {}, failed: 0, earned: 0 }, rep: {} }, 'saves from before work are upgraded');
   const legacy = structuredClone(game);
   delete legacy.season;
   writeSave('legacy', legacy);
@@ -55,7 +60,7 @@ try {
   const corrupt = [
     ['invalid JSON', '{'], ['empty value', ''], ['null root', 'null'], ['array root', '[]'],
     ...[
-      ['unknown version', { v: 2 }], ['missing area', { area: undefined }],
+      ['unknown version', { v: 3 }], ['missing area', { area: undefined }],
       ['bad position', { lat: 91 }], ['longitude outside the globe', { lon: 181 }],
       ['nonfinite number after JSON parse', { money: null }],
       ['missing street', { street: undefined }], ['object street', { street: {} }],
@@ -111,6 +116,7 @@ try {
       armour() { this.ram = true; }
     },
     seeded: () => 0.5, loose: [], restingStale: false, walker: { sync() {} }, enterOrExit() {},
+    missions: { stop() {} }, repute: {},
   };
   const resume = new Function(...Object.keys(state), resumeSource.replace('const resume = async (s: SaveData)', 'return async (s)'))(...Object.values(state));
   for (const type of ['a-removed-type', 'toString', 'constructor', '__proto__']) {
@@ -126,6 +132,8 @@ try {
   assert.equal(cars[0].radio, -1);
   assert.equal(cars[0].broken, 15);
   assert.equal(cars[0].ram, true);
+  assert.deepEqual(state.missions.progress, current.jobs, 'the jobs done come back');
+  assert.deepEqual(state.repute.saved, current.rep, 'so does the standing with each faction');
 
   blocked = true;
   assert.equal(readSave('auto', game.area), null);

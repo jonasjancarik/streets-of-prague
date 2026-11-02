@@ -98,6 +98,12 @@ import { haptic, hapticCrash, hapticBlast } from './haptics.ts';
 import { tunnelHole } from './tunnelView.ts';
 import { hideIdleCursor } from './cursor.ts';
 import { setupTestkit, PLACES } from './testkit.ts';
+import { Missions } from './missions.ts';
+import type { Spot } from './missions.ts';
+import { JOBS } from './jobs.ts';
+import { Standing } from './factions.ts';
+import { Marker } from './marker.ts';
+import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
 import { benchPause } from './benchpause.ts';
 import type { Testkit } from './testkit.ts';
@@ -602,6 +608,7 @@ async function main() {
   let frozen = 0;
   const busted = (by?: Officer) => {
     if (frozen > 0 || testkit?.unarrested) return;
+    missions.onBusted();
     getIn.cancel();
     if (inHeli) enterOrExit();
     // Out of a car through its door, an officer's hand on your collar; off a bike at once.
@@ -662,10 +669,12 @@ async function main() {
     [14.42275, 50.07468], [14.4217, 50.09185], [14.3412, 50.0753], [14.4745, 50.0737], // VFN, Na Františku, Motol, Vinohrady
     [14.463, 50.1163], [14.4604, 50.0306], [14.368, 50.072], [14.366, 50.093], // Bulovka, Thomayer, Homolka, ÚVN
   ];
+  const HOSPITAL_NAMES = ['Všeobecná fakultní nemocnice', 'Nemocnice Na Františku', 'Nemocnice Motol', 'Nemocnice Vinohrady', 'Nemocnice Bulovka', 'Thomayerova nemocnice', 'Nemocnice Na Homolce', 'Ústřední vojenská nemocnice'];
   let wastedT = 0;
   // The last move to a hospital or a cell (the test kit waits for it to finish).
   let moved: Promise<void> = Promise.resolve();
   const wasted = () => {
+    missions.onWasted();
     if (funicular.me) { funicular.leave(); pid.leave(); }
     if (ferries.me) { ferries.leave(); pid.leave(); }
     boats.me = null;
@@ -1219,10 +1228,11 @@ async function main() {
     const c = inCar && !inCar.burnt ? inCar : null, who = c || walker;
     const [lon, lat] = dev.toLonLat(who.x, who.y);
     return {
-      v: 1, area: AREA, at: Date.now(), lat, lon, heading: ((((90 - (who.h * 180) / Math.PI) % 360) + 360) % 360), street,
+      v: 2, area: AREA, at: Date.now(), lat, lon, heading: ((((90 - (who.h * 180) / Math.PI) % 360) + 360) % 360), street,
       car: c ? { type: c.type, paint: c.paint, box: c.courier, variant: c.modelName, damage: c.damage, radio: c.radio, broken: c.broken, crush: [...c.crush], ram: c.ram } : null,
       money: wallet.balance, ticket: wallet.held, health: health.value, heat: police.heat,
       clock: clock.t, season: season.day, weather: { kind: weather.kind, fixed: weather.fixed },
+      jobs: structuredClone(missions.progress), rep: repute.saved,
     };
   };
   const autosave = () => {
@@ -1249,6 +1259,9 @@ async function main() {
     wallet.balance = Math.max(0, Math.floor(s.money));
     wallet.held = s.ticket;
     health.value = Math.max(1, Math.min(100, s.health));
+    missions.stop();
+    missions.progress = structuredClone(s.jobs);
+    repute.saved = s.rep;
     let [x, y] = dev.toLocal(s.lon, s.lat);
     const h = ((90 - s.heading) * Math.PI) / 180;
     // A game saved out in the countryside, opened where there is none (without
@@ -1312,6 +1325,42 @@ async function main() {
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
   const keymap: Record<string, InputKey> = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', Space: 'brake' };
   const dialog = new Dialog();
+  // ---- Work (missions.ts, jobs.ts) and the factions (factions.ts) ---------------
+  const repute = new Standing();
+  // Places a job can send you to wherever the loaded tiles are: the tram stops and the taxi's named places.
+  let jobPlaces: Spot[] | null = null;
+  const inMap = (lon: number, lat: number) => lon > w0 && lon < e0 && lat > s0 && lat < n0;
+  const spotAt = (name: string, lon: number, lat: number): Spot => { const [x, y] = dev.toLocal(lon, lat); return { name, x, y }; };
+  const hospitals = HOSPITALS.flatMap(([lon, lat], i) => (inMap(lon, lat) ? [spotAt(HOSPITAL_NAMES[i], lon, lat)] : []));
+  const missions = new Missions({
+    me: () => inCar || inHeli || walker,
+    car: () => inCar,
+    tram: () => (ride.driving && ride.passengers ? { doors: ride.passengers.doors, at: ride.atName, next: ride.next, on: ride.passengers.on, off: ride.passengers.off } : null),
+    busy: () => dialog.active || arrest.active || wastedT > 0 || frozen > 0 || metro.active || taxi.busy || !!boats.me || !!funicular.me || !!inHeli || (ride.on && !ride.driving),
+    loaded: (x, y) => grid.at(x, y) !== 255,
+    free: (x, y) => grid.at(x, y) === 0,
+    standAt: (x, y) => nearestWalkable(grid, x, y, 20),
+    crowd: () => crowd,
+    parked: (x, y, r) => loose.filter((c) => Math.abs(c.x - x) < r && Math.abs(c.y - y) < r && Math.hypot(c.x - x, c.y - y) < r),
+    addCar: (c) => { loose.push(c); restingStale = true; },
+    removeCar: (c) => { const i = loose.indexOf(c); if (i >= 0) { loose.splice(i, 1); restingStale = true; } },
+    offscreen,
+    carry: (colour) => bags.carry(colour),
+    stars: () => police.stars,
+    places: () => (jobPlaces ??= [
+      ...(ride.passengers?.stops ?? []).map((s) => ({ name: s.name, x: s.x, y: s.y })),
+      ...NAMED_PLACES.flatMap(([name, lon, lat]) => (inMap(lon, lat) ? [spotAt(name, lon, lat)] : [])),
+    ]),
+    hospitals: () => hospitals,
+    get fires() { return fires; },
+    wallet, dialog, banner: (text, alert) => showBanner(text, alert), rng: seeded,
+  }, JOBS);
+  missions.auto = !params.has('go'); // test runs get no offers they didn't ask for
+  missions.allowed = (d) => !d.faction || d.minRep === undefined || repute.of(d.faction) >= d.minRep;
+  missions.onDone = (d) => { if (d.faction && d.rep) repute.add(d.faction, d.rep); telemetry.did('finished a job'); };
+  missions.onFail = () => telemetry.did('failed or gave up a job');
+  $('job').addEventListener('click', () => { missions.key('KeyJ'); });
+  const marker = new Marker(scene, camera, $('mark'), (x, y) => ground(x, y));
   window.addEventListener('keydown', (e) => {
     // The metro screen and a conversation take the keys while they're up.
     if (metro.active || dialog.active) {
@@ -1323,6 +1372,7 @@ async function main() {
     // Escape pauses the game by opening the settings, which also hold the saves.
     if (e.code === 'Escape') { if (!e.repeat && !settingsPanel.open) settingsPanel.show(); e.preventDefault(); return; }
     if (taxi.key(e.code, !inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me)) { e.preventDefault(); return; }
+    if (!e.repeat && taxi.state !== 'menu' && missions.key(e.code)) { e.preventDefault(); return; }
     if (keymap[e.code]) { input[keymap[e.code]] = true; e.preventDefault(); }
     if (e.shiftKey) input.run = true;
     if ((e.code === 'KeyE' || e.code === 'Enter') && !e.repeat) interact();
@@ -1402,7 +1452,7 @@ async function main() {
     onIgnite: (c) => {
       if (c === inCar) telemetry.did('own car caught fire');
       if (c === inCar) showBanner(t('Your car is on fire!'), true);
-      brigade.call(c);
+      if (!missions.owns(c)) brigade.call(c); // (a fire that is your job is yours alone)
       // A driver from the traffic gets out of a car that's on fire and runs, leaving it where it stands.
       const agent = traffic.agents.find((k) => k.car === c);
       if (agent && c !== inCar) {
@@ -1727,6 +1777,7 @@ async function main() {
     const threats = [...(inCar ? [inCar] : []), ...movers.filter((c) => c.speed > 5), ...cops.filter((c) => c.speed > 5)];
     crowd.update(dt, threats, carsOnly, (x, y) => !offscreen(x, y));
     bags.update(dt, px(), py());
+    missions.update(dt);
 
     // ---- Collisions ------------------------------------------------------
     // Two cars that have just met: the lamps the blow landed on break.
@@ -2056,6 +2107,10 @@ async function main() {
     { who: 'marek', name: 'Marek', text: 'Come around the back. Don’t use the main entrance. I’ll be waiting by the tram stop.', objective: 'Meet Marek behind the block' },
     { who: 'policewoman', name: 'Officer Nováková', text: 'You there. Seen a man in a green jacket come this way?' },
   ]);
+
+  // ?mission=<id> starts a job straight away (courier, taxi, ambulance, tram, fire), for trying one out.
+  const asked = JOBS.find((d) => d.id === params.get('mission'));
+  if (asked && !missions.start(asked)) showBanner(t('No work around here right now'));
 
   graphics.started(performance.now());
   // Anonymous statistics (src/telemetry.ts): what the game runs on, then once a frame
@@ -2442,9 +2497,9 @@ async function main() {
       wanted.classList.toggle('blink', stars > 0 && !police.seen);
       wanted.setAttribute('aria-label', stars ? t('Wanted: {stars} of 5 stars', { stars }) : t('Not wanted'));
     }
-    const money = kc(wallet.balance), paid = wallet.paidT > 0 ? wallet.paid : 0;
+    const money = kc(wallet.balance), paid = wallet.paidT > 0 ? wallet.paid : 0, got = wallet.gotT > 0 ? wallet.got : 0;
     const left = wallet.ticketLeft(clock.t), validFor = left > 0 ? (left < 5400 ? t('{n} min', { n: Math.ceil(left / 60) }) : t('{n} h', { n: Math.ceil(left / 3600) })) : '';
-    show('money', `${money}${paid ? ` <span class="paid">−${kc(paid)}</span>` : ''}${validFor ? ` <span class="valid">${t('ticket: {left}', { left: validFor })}</span>` : ''}`, 'html');
+    show('money', `${money}${got ? ` <span class="got">+${kc(got)}</span>` : ''}${paid ? ` <span class="paid">−${kc(paid)}</span>` : ''}${validFor ? ` <span class="valid">${t('ticket: {left}', { left: validFor })}</span>` : ''}`, 'html');
     if (shown.moneyLabel !== money) { shown.moneyLabel = money; $('money').setAttribute('aria-label', t('Money: {money}', { money })); }
     // Health: a bar once you're hurt, and red at the edges of the screen as you're hit.
     const hp = Math.ceil(health.value);
@@ -2453,6 +2508,14 @@ async function main() {
     // The water left in an engine's tank, while it's being used or isn't full.
     const water_ = Math.ceil((cannon.tank / TANK) * 100);
     show('tank', inCar?.type === 'fire' && water_ < 100 ? `<span role="img" aria-label="${t('Water: {n}%', { n: water_ })}" style="width:${water_}%"></span>` : '', 'html');
+
+    // Work: the offer or the objective in its card, and the marker where the job wants you.
+    const jobCard = metro.active ? '' : missions.card(touch.active);
+    show('job', jobCard, 'html');
+    if (shown.jobOn !== (jobCard ? 1 : 0)) { shown.jobOn = jobCard ? 1 : 0; $('job').hidden = !jobCard; }
+    const wanted_ = metro.active ? null : missions.target();
+    if (wanted_) marker.show(wanted_.x, wanted_.y); else marker.hide();
+    marker.update(dt, { x: px(), y: py() });
 
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
@@ -2473,7 +2536,7 @@ async function main() {
     get heli() { return inHeli; },
     choppers, addChopper,
     teleport: (x: number, y: number) => { (inCar || inHeli || walker).x = x; (inCar || inHeli || walker).y = y; camPos.set(x, 0, -y); },
-    enterOrExit, teleportTo, dev, touch, dialog,
+    enterOrExit, teleportTo, dev, touch, dialog, missions, repute,
     // One step of the world with these controls (for tests, and while the tab is hidden).
     simulate: (dt: number, ctl: Partial<Controls> = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),
     view: (z: number) => { zoom = z; height = (inCar ? 120 : 100) * z; },
@@ -2496,6 +2559,7 @@ async function main() {
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
     grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
+    missions, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list },
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     recovering: () => wastedT > 0,
     enterCar: (c) => { only = c; try { enterOrExit(); } finally { only = null; } },

@@ -6,15 +6,20 @@ import type { Kind } from './weather.ts';
 // "auto" slot (every few seconds and when the page is left), so a refresh puts you
 // back where you were; any number of others are saved by hand from the settings.
 // A save holds you and what you own: where you are, the car you're driving, money,
-// ticket, health, police heat, the date, the time and the weather. The rest of the city (the
-// traffic, the people, a ride in progress) starts fresh, as it does at a teleport.
+// ticket, health, police heat, the date, the time and the weather, and how you stand
+// with work: the jobs you've done and your name with each faction. The rest of the city
+// (the traffic, the people, a ride or a job in progress) starts fresh, as it does at a
+// teleport.
 
 // A save is 'auto' or a hand-made one named by when it was made (its Date.now()).
 export type Slot = string;
 const HAND = 'save:hand:';
 
+// The format's version. 1: before there was work. 2: with `jobs` and `rep`.
+export const VERSION = 2;
+
 export interface SaveData {
-  v: 1;
+  v: 2;
   area: string;
   at: number; // Date.now() when it was saved
   // Where you are (or your car is) as latitude and longitude and a compass heading, not
@@ -30,6 +35,10 @@ export interface SaveData {
   // The day of the year (season.ts); saves from before the game had a date lack it.
   season?: number;
   weather: { kind: Kind; fixed: boolean };
+  // Work: how often each job was done, how many failed, what it all paid.
+  jobs: { done: Record<string, number>; failed: number; earned: number };
+  // How you stand with each faction, -100 to 100 (factions.ts).
+  rep: Record<string, number>;
 }
 
 const key = (slot: Slot) => `save:${slot}`;
@@ -56,14 +65,15 @@ function ticketData(value: unknown) {
 // JSON can be syntactically valid yet crash restoration (for example, an unknown
 // weather kind). Check nested state as well, keeping older optional fields optional.
 function saveData(s: unknown): s is SaveData {
-  return object(s) && s.v === 1 && typeof s.area === 'string'
+  return object(s) && s.v === VERSION && typeof s.area === 'string'
     && [s.money, s.health, s.heat, s.at].every(num)
     && num(s.lat) && Math.abs(s.lat) < 90 && num(s.lon) && Math.abs(s.lon) <= 180
     && between(s.heading, 0, 360) && between(s.clock, 0, 7 * 86400)
     && textOrNull(s.street) && optionalNumber(s.season)
     && carData(s.car) && ticketData(s.ticket)
     && object(s.weather) && typeof s.weather.kind === 'string' && WEATHER_KINDS.includes(s.weather.kind as Kind)
-    && typeof s.weather.fixed === 'boolean';
+    && typeof s.weather.fixed === 'boolean'
+    && object(s.jobs) && object(s.jobs.done) && num(s.jobs.failed) && num(s.jobs.earned) && object(s.rep);
 }
 
 type Check = 'ok' | 'other area' | 'unreadable';
@@ -73,10 +83,21 @@ type Check = 'ok' | 'other area' | 'unreadable';
 // player's progress would vanish. What can't be opened is kept and shown as such.
 function check(raw: string, area: string): { how: Check; data?: SaveData } {
   try {
-    const s: unknown = JSON.parse(raw);
-    if (!saveData(s)) return { how: 'unreadable' };
+    const s = upgrade(JSON.parse(raw));
+    if (!s) return { how: 'unreadable' };
     return s.area === area ? { how: 'ok', data: s } : { how: 'other area' };
   } catch { return { how: 'unreadable' }; }
+}
+
+// A save of any version so far, brought up to the current shape, or null when it isn't
+// one this version can open (a newer format, or not a save at all). Each step takes a
+// save from one version to the next, so an old one goes through all of them.
+export function upgrade(parsed: unknown): SaveData | null {
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  let s = parsed as Record<string, unknown>;
+  // 1 -> 2: nothing done yet, and nobody knows you.
+  if (s.v === 1) s = { ...s, v: 2, jobs: { done: {}, failed: 0, earned: 0 }, rep: {} };
+  return saveData(s) ? s : null;
 }
 
 const get = (slot: Slot) => { try { return localStorage.getItem(key(slot)); } catch { return null; } };

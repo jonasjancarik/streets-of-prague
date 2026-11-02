@@ -29,7 +29,7 @@ try {
   const autoSource = main.match(/const autosave = \(\) => \{[\s\S]*?\n  \};/)?.[0];
   const callbacksSource = main.match(/const saves = \{[\s\S]*?\n  \};/)?.[0];
   assert.ok(autoSource && callbacksSource, 'locate the production save handlers');
-  const game = { v: 1, area: 'test', at: Date.now(), lat: 50, lon: 14, heading: 90, street: null, car: null, money: 1000, ticket: null, health: 100, heat: 0, clock: 3600, weather: { kind: 'clear', fixed: true } };
+  const game = { v: 2, area: 'test', at: Date.now(), lat: 50, lon: 14, heading: 90, street: null, car: null, money: 1000, ticket: null, health: 100, heat: 0, clock: 3600, weather: { kind: 'clear', fixed: true }, jobs: { done: {}, failed: 0, earned: 0 }, rep: {} };
   const original = { ...game, money: 10 }, selected = { ...game, money: 20 };
   const setup = (overrides = {}) => {
     failure = ''; storage.clear();
@@ -39,7 +39,7 @@ try {
     const dependencies = {
       ...api, AREA: 'test', newSlot: () => 'hand:new', capture: () => ({ ...session }),
       telemetry: { count: name => events.push(name), did: name => events.push(name) },
-      restart: () => { restarts++; }, playing: true, saving: true, wastedT: 0, arrest: { active: false }, health: { dead: false }, inHeli: null,
+      restart: () => { restarts++; }, anywhere: null, playing: true, saving: true, wastedT: 0, arrest: { active: false }, health: { dead: false }, inHeli: null,
       ...overrides,
     };
     const handlers = new Function(...Object.keys(dependencies), compile(`${autoSource}\n${callbacksSource}\nreturn { saves, autosave };`))(...Object.values(dependencies));

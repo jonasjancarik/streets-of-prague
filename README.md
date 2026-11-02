@@ -179,6 +179,18 @@ that without a new renderer.
   available while any metro line is running.
   Taxis need money for the fare, and let you out when it reaches your balance. Shared bikes are
   paid as you ride (below).
+- **Jobs** (`src/missions.ts`, `src/jobs.ts`): work that pays. Press J to ask for a
+  job (on touch, tap the job card), J again to take the one on offer, and J twice to
+  give one up. On foot, on a bike or in an ordinary car that is a courier run: fetch a
+  parcel and bring it across town in time. Sit in a taxi and you get fares to pick up
+  and drive; in an ambulance, patients to take to hospital; in the cab of a tram you
+  took over, a shift of five stops; in a fire engine, burning cars to put out with the
+  water cannon before they blow up. The HUD shows the objective, the time left, the
+  distance and the pay, and a green pillar marks the place (an arrow at the edge of the
+  screen points to it when it's out of view). Being quick pays more. Failing or giving
+  up costs nothing. The jobs you've done are kept in the saved game, along with how
+  three made-up factions think of you (`src/factions.ts`; nothing else comes of that
+  yet). `?mission=courier` (or `taxi`, `ambulance`, `tram`, `fire`) starts one at once.
 - **Taxis**: on foot near a street, press T (on touch, "Taxi") and pick how to get one
   (`src/taxi.ts`): wave down a free taxi that is passing by, or order one through Zipp or Hopla, two
   made-up ride-hailing apps that cost less and whose drivers speed, tailgate and push
@@ -991,7 +1003,8 @@ that two versions of the roof builder can be compared.
 
 ## Not yet in the game
 
-- Something to do: missions (deliveries, taxi, courier), and earning money.
+- More to do: written missions, factions that hold parts of town and react to you
+  (`plans/004-missions-and-factions.md`). The first odd jobs are in.
 - Visible damage on cars.
 - Sound for the traffic, crashes, people and the helicopter.
 

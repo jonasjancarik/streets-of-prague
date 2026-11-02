@@ -11,7 +11,7 @@
 
 ## Status
 
-- State: phases 1–3 DONE (1 October 2026, branch `worktree-firefighters`, merged into `main`). Phase 4 (the job) is not built; it waits for plan 004 phase 1.
+- State: phases 1–3 DONE (1 October 2026, branch `worktree-firefighters`, merged into `main`). Phase 4 (the job) is on branch `night-missions` with plan 004's engine, not merged: the `fire` job in `src/jobs.ts` and `putOut` in `src/missions.ts`. A car parked near the place is set alight when you come within 170 m, the brigade isn't sent to it while the job is yours, and the pay is 400 Kč plus up to 300 for getting there fast. The fire doesn't spread beyond what a blast already does.
 - Priority: P2 (the city reacting to the chaos you cause; not a prerequisite for anything)
 - Effort: phase 1 M (about 1.5 days), phase 2 S–M, phase 3 M, phase 4 depends on plan 004
 - Risk: medium. New code mostly lives in its own module, but it touches `src/fire.ts`,
