@@ -56,7 +56,11 @@ export interface MissionWorld {
   // A parcel on your back (its colour), or none.
   carry: (colour: string | null) => void;
   stars: () => number;
+  // The police come after you with at least this many stars.
+  wanted: (stars: number) => void;
   places: () => Spot[];
+  // Sights a tourist wants to see (jobs.ts SIGHTS, those on the map).
+  sights: () => Spot[];
   hospitals: () => Spot[];
   fires: Fires;
   wallet: Wallet;
@@ -76,15 +80,16 @@ export interface Run {
   limit: number;
   spare: number[]; // for each timed step done: the share of its time that was left
   away: number; // seconds out of the vehicle the job needs
-  cargo: Car | null; // the car your passenger sits in
+  cargo: Car | null; // the car your passenger sits in, or the car you are to bring
   owned: Set<Car>; // cars the mission put there or set burning
+  mark: Car | null; // the car the job is about (to bring somewhere, or to wreck)
 }
 
 type Outcome = boolean | Text; // true: done; a text: failed, and why
 
 export interface Step {
   goal: Text | ((w: MissionWorld, run: Run) => Text);
-  at?: (w: MissionWorld) => { x: number; y: number } | null;
+  at?: (w: MissionWorld, run: Run) => { x: number; y: number } | null;
   limit?: number;
   begin?: (run: Run, w: MissionWorld) => void;
   tick: (run: Run, w: MissionWorld, dt: number) => Outcome;
@@ -231,11 +236,11 @@ export function dropOff(spot: Spot, o: { goal: Text; limit?: number; r?: number 
 }
 
 // A car on clear ground near a spot, for a mission to use.
-function placeCar(w: MissionWorld, type: string, x: number, y: number) {
+function placeCar(w: MissionWorld, type: string, x: number, y: number, paint?: string) {
   for (let r = 0, n = 0; r <= 36 && n < 60; r += 4) for (let a = 0; a < (r ? 8 : 1) && n < 60; a++, n++) {
     const cx = x + Math.cos((a * Math.PI) / 4) * r, cy = y + Math.sin((a * Math.PI) / 4) * r;
     if (!w.free(cx, cy) || w.parked(cx, cy, 5).length) continue;
-    const c = new Car(type, w.rng, cx, cy, w.rng() * Math.PI * 2);
+    const c = new Car(type, w.rng, cx, cy, w.rng() * Math.PI * 2, paint);
     if (!c.worldSamples().every(([sx, sy]) => w.free(sx, sy)) || posts.touches(c)) continue;
     c.mode = 'loose';
     w.addCar(c);
@@ -280,6 +285,89 @@ export function putOut(spot: Spot, o: { goal: Text; near: Text; limit?: number }
       if (car) run.owned.delete(car);
       car = null;
     },
+  };
+}
+
+// The car a job is about, near a spot: one parked there that isn't anybody's in
+// particular (no taxi, police or rescue), or, with none, one of `type` put there. It is
+// found only once you're near and its tiles are in.
+function carNear(w: MissionWorld, spot: Spot, type: string, paint?: string) {
+  if (far(w.me(), spot) > 170 || !w.loaded(spot.x, spot.y)) return null;
+  const mine = w.car();
+  const found = w.parked(spot.x, spot.y, 45)
+    .filter((c) => !c.two && !c.burnt && c !== mine && c.damage < 30 && !['fire', 'ambulance', 'police', 'taxi', 'bus', 'truck'].includes(c.type) && far(c, w.me()) > 25)
+    .sort((a, b) => far(a, spot) - far(b, spot))[0];
+  return found ?? placeCar(w, type, spot.x, spot.y, paint);
+}
+
+// Find the car the job is about near a spot and get into it. From then on it is the
+// car you have to stay in (as with a passenger, out of it too long and the job fails).
+export function takeCar(spot: Spot, o: { goal: Text; near: Text; type: string; paint?: string; limit?: number }): Step {
+  return {
+    goal: (_w, run) => (run.mark ? o.near : o.goal), limit: o.limit, at: (_w, run) => run.mark ?? spot,
+    tick: (run, w) => {
+      if (!run.mark) {
+        run.mark = carNear(w, spot, o.type, o.paint);
+        if (run.mark) run.owned.add(run.mark);
+        return false;
+      }
+      if (run.mark.burnt) return ['The car is a wreck'];
+      if (w.car() !== run.mark) return false;
+      run.cargo = run.mark;
+      return true;
+    },
+  };
+}
+
+// Bring the car you took to a place and stop there. What it pays goes down with the
+// damage the car took on the way.
+export function bringCar(spot: Spot, o: { goal: Text; limit?: number; r?: number }): Step {
+  return {
+    goal: o.goal, limit: o.limit, at: () => spot,
+    tick: (run, w) => {
+      const c = run.mark;
+      if (!c || c.burnt) return ['The car is a wreck'];
+      if (w.car() !== c || c.speed > STILL || far(c, spot) > (o.r ?? 15)) return false;
+      run.pay = Math.round(run.pay * Math.max(0.3, Math.min(1, 1 - c.damage / 120)) / 10) * 10;
+      run.cargo = null;
+      return true;
+    },
+  };
+}
+
+// The car the job is about, near a spot, has to go up in flames: shot at, rammed,
+// whatever it takes. Nobody comes to put it out while the job is yours (and once it
+// burns, nobody will in time).
+export function wreck(spot: Spot, o: { goal: Text; near: Text; type: string; paint?: string; limit?: number }): Step {
+  return {
+    goal: (_w, run) => (run.mark ? o.near : o.goal), limit: o.limit,
+    at: (_w, run) => run.mark ?? spot,
+    tick: (run, w) => {
+      if (!run.mark) {
+        run.mark = carNear(w, spot, o.type, o.paint);
+        if (run.mark) run.owned.add(run.mark);
+        return false;
+      }
+      return !!run.mark.burnt || run.mark.damage >= BURNING;
+    },
+  };
+}
+
+// The police are after you (at least `stars`) with your passenger in the car: shake them
+// off before you go where you're going.
+export function lose(stars: number, o: { goal: Text }): Step {
+  return {
+    goal: o.goal,
+    begin: (_run, w) => w.wanted(stars),
+    tick: (_run, w) => w.stars() === 0,
+  };
+}
+
+// Drive past a place with your passenger: close enough to see it, at any speed.
+export function pass(spot: Spot, o: { goal: Text; r?: number }): Step {
+  return {
+    goal: o.goal, at: () => spot,
+    tick: (run, w) => !!run.cargo && w.car() === run.cargo && far(run.cargo, spot) < (o.r ?? 90),
   };
 }
 
@@ -391,7 +479,7 @@ export class Missions {
     if (brief && def.brief && !this.progress.done[def.id]) {
       steps.unshift(talk(def.brief.map((text) => ({ who: def.from.who, name: t(def.from.name), text: t(text, plan.vars) })), [def.title]));
     }
-    this.run = { def, steps, i: 0, pay: plan.pay, bonus: plan.bonus ?? 0, left: null, limit: 0, spare: [], away: 0, cargo: null, owned: new Set() };
+    this.run = { def, steps, i: 0, pay: plan.pay, bonus: plan.bonus ?? 0, left: null, limit: 0, spare: [], away: 0, cargo: null, owned: new Set(), mark: null };
     this.state = 'on';
     this.offered = null;
     this.note = null;
@@ -529,7 +617,7 @@ export class Missions {
   // Where the marker goes.
   target() {
     const run = this.run;
-    return run ? run.steps[run.i].at?.(this.w) ?? null : null;
+    return run ? run.steps[run.i].at?.(this.w, run) ?? null : null;
   }
 
   objective() {

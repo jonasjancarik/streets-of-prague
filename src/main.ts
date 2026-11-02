@@ -102,7 +102,7 @@ import { hideIdleCursor } from './cursor.ts';
 import { setupTestkit, PLACES } from './testkit.ts';
 import { Missions } from './missions.ts';
 import type { Spot } from './missions.ts';
-import { JOBS } from './jobs.ts';
+import { JOBS, SIGHTS } from './jobs.ts';
 import { Standing } from './factions.ts';
 import { Marker } from './marker.ts';
 import { PLACES as NAMED_PLACES } from './taxi.ts';
@@ -1368,7 +1368,7 @@ async function main() {
   // ---- Work (missions.ts, jobs.ts) and the factions (factions.ts) ---------------
   const repute = new Standing();
   // Places a job can send you to wherever the loaded tiles are: the tram stops and the taxi's named places.
-  let jobPlaces: Spot[] | null = null;
+  let jobPlaces: Spot[] | null = null, jobSights: Spot[] | null = null;
   const inMap = (lon: number, lat: number) => lon > w0 && lon < e0 && lat > s0 && lat < n0;
   const spotAt = (name: string, lon: number, lat: number): Spot => { const [x, y] = dev.toLocal(lon, lat); return { name, x, y }; };
   const hospitals = HOSPITALS.flatMap(([lon, lat], i) => (inMap(lon, lat) ? [spotAt(HOSPITAL_NAMES[i], lon, lat)] : []));
@@ -1387,6 +1387,8 @@ async function main() {
     offscreen,
     carry: (colour) => bags.carry(colour),
     stars: () => police.stars,
+    wanted: (n) => { police.heat = Math.max(police.heat, n * n + 0.5); },
+    sights: () => (jobSights ??= SIGHTS.flatMap(([name, lon, lat]) => (inMap(lon, lat) ? [spotAt(name, lon, lat)] : []))),
     places: () => (jobPlaces ??= [
       ...(ride.passengers?.stops ?? []).map((s) => ({ name: s.name, x: s.x, y: s.y })),
       ...NAMED_PLACES.flatMap(([name, lon, lat]) => (inMap(lon, lat) ? [spotAt(name, lon, lat)] : [])),

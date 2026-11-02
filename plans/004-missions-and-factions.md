@@ -85,6 +85,23 @@ undo. Where an answer shapes content, the content is data.
 - `?mission=<id>`, the test API (`t.job()` and the rest, see the scene-testing skill),
   the README, Czech text.
 
+### Added on 3 November (merged into main)
+
+The branch was merged into main (conflicts in `save.ts`, `main.ts`, `cs.ts`), and the
+answer to question 3 changed: the player has a pistol (`src/pistol.ts`), which never
+hits people. Four jobs were added, all passing `scenarios/job-regulars.ts`:
+
+- **Sightseeing tour** (`tour`, the taxi drivers): pick a tourist up, drive past the
+  three nearest sights of `SIGHTS` in `src/jobs.ts`, bring them back. Any car.
+- **Bring a car** (`fetch`, the Regulars): a car parked near a place (one standing
+  there, or a sedan put there) to a yard across town; the pay drops with its damage.
+- **Settle a debt** (`wreck`, the Regulars, from standing 4): a car near a place has
+  to catch fire, shot at or rammed. Done when it burns (a parked car's fuse is 45–75 s).
+- **Getaway** (`getaway`, the Regulars, from standing 8): pick Venca up, the police
+  come after you with two stars, lose them, drop him off.
+
+New steps in `src/missions.ts`: `takeCar`, `bringCar`, `wreck`, `lose`, `pass`.
+
 ### Not built
 
 - "Bring a car" and "catch a tram" jobs. Towing: the game has no tow truck to drive.
