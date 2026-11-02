@@ -2406,7 +2406,7 @@ async function main() {
       $('t-ticket').hidden = !ticketBtn;
       $('t-ticket').textContent = t(ticketBtn === 2 ? 'Pay the fine' : 'Buy a ticket');
     }
-    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', driving: ride.driving, tram: (ride.on && !ride.driving) || taxi.riding || (!!funicular.me || !!ferries.me), wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
+    touch.update({ car: inCar || inHeli, engine: inCar?.type === 'fire', driving: ride.driving, tram: (ride.on && !ride.driving) || taxi.riding || (!!funicular.me || !!ferries.me), steal: ride.on && !ride.driving, wait: !!board.shown || taxi.state === 'coming', label: cab || label || (station ? 'Metro' : null), canEnter: !!cab || canEnter || !!canBoard || !!station || !!cabin || !!ferryHere?.open || funicular.me?.stop != null || ferries.me?.stop != null, limit: assisted ? assist.limit : null });
     show('tally', `${tn(stats.wrecked, '{n} car wrecked|{n} cars wrecked')}${stats.busted ? ` · ${t('busted {n}×', { n: stats.busted })}` : ''}${stats.wasted ? ` · ${t('wasted {n}×', { n: stats.wasted })}` : ''}`);
     // Wanted stars: they blink while the police have lost sight of you.
     const stars = police.stars, wanted = $('wanted');
@@ -2473,6 +2473,17 @@ async function main() {
     enterCar: (c) => { only = c; try { enterOrExit(); } finally { only = null; } },
     settled: () => moved,
     tramsNear: (x, y, r) => trams.bodies(x, y, r),
+    tramStop: () => {
+      for (const v of trams.list) {
+        const p = v.parts[0];
+        if (v.dwell <= 1 || !v.look || Math.hypot(p.x - walker.x, p.y - walker.y) > 300) continue;
+        for (const side of [2.5, -2.5]) {
+          const x = p.x + Math.sin(p.ang) * side, y = p.y - Math.cos(p.ang) * side;
+          if (ride.boardable(x, y)) { walker.x = x; walker.y = y; camPos.set(x, 0, -y); return true; }
+        }
+      }
+      return false;
+    },
     view0: () => ({ x: camPos.x, y: -camPos.z, height }),
     viewRadius, offscreen,
     canvas: renderer.domElement, fov: camera.fov,
