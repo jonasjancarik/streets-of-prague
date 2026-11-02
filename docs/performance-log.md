@@ -699,3 +699,52 @@ Same draw calls (90 standing, 155–158 driving). The spread with no code change
 (42–54 ms standing) is far larger than any difference, so the dents cost nothing
 measurable here, which puts them under about 1 ms a frame. One drive in the reversed
 series first failed to get into the car and was retried by the bench.
+
+## Auto's tier changes and hitches, 2 November 2026
+
+Two reports: a stutter on an M5 at night with Auto on Medium ("maybe should have
+downgraded"), and a phone (PowerVR, WebGPU) that froze right after Auto dropped to Low.
+
+**Auto's own step was the freeze.** On WebGPU, `Graphics.apply` disposed every material
+in the scene whenever the sun's shadow map or the lamps' light map changed size, so
+every render object was built again (TSL to WGSL on the main thread, then pipelines).
+High → Medium changes the lamp map (2048 → 1024), Medium → Low the shadow map
+(2048 → 1024), and Auto retries a tier after 2 minutes, so a session could pay this
+several times. On WebGL nothing is rebuilt and the steps cost 20–110 ms.
+
+Measured on the M5 (headless Chrome, WebGPU, 2×, 23:00, standing on the Old Town
+Square), stepping tiers the way Auto does, worst frame in the 3 s after each step,
+`f0909e9` against this change, `--vs`, one page each. The machine was heavily loaded by
+other sessions (load average 400–600, no idle CPU), so read the sizes, not the
+milliseconds:
+
+| Step | Before | After |
+|---|---|---|
+| High → Medium | 567, 625 ms | 16, 47 ms |
+| Medium → Low | 604, 606 ms | 45, 31 ms |
+| Low → Medium | 663, 577 ms | 29, 17 ms |
+| Low → Lowest | 1081 ms | 731 ms |
+
+What changed: three r186 binds the resized sun shadow map by itself (no validation
+errors; day screenshots after three resizes match the baseline's shadows, same
+dark-pixel share), so the shadow resize no longer disposes anything. The lamps' maps
+are not rebound (without the dispose: `Destroyed texture … RGBA16Float used in a
+submit`), so Auto now keeps the lamp map at the size it started with (2048 on desktop,
+1024 on touch devices, which start on Medium) and only a chosen tier still resizes it
+and rebuilds. Entering Lowest still builds 69 shaders (0.7 s here): MSAA off and the
+looks off change the pipelines. Not addressed.
+
+**Auto never saw hitches.** It judged 60-frame windows by their mean without the
+slowest tenth, skipped frames over 250 ms and frames while tiles were being built.
+Now it also adds up the time spent in frames over 50 ms (up to 1 s; longer is a
+pause): two windows in a row that spend a quarter of their time in them step down
+(with the usual retry back-off), and a choppy window never steps up. Tile builds are
+still not counted. `scripts/check-graphics.mjs` checks both cases.
+
+**Other hitches on a night drive** (`--hitches`, Újezd, 04:48, cloudy, Auto, 90 s with a
+return at 60 s, one run each, no tier change in either): the largest code hitch was the
+first build of the lamps' light-pool material with cars in it
+(`NodeMaterial [position,iCarsA,iCarsB,iCarsC,iAt,iShape,iColour]`, 249 / 367 ms),
+10 s in; ground material builds 20–30 ms; the baseline run also had 300–590 ms
+stalls inside GPU calls (writeBuffer), likely the loaded machine. Tile insertion
+stayed at 2–4 ms.

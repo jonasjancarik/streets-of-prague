@@ -29,10 +29,14 @@ import { slowHint } from './graphicswarning.ts';
 // that for one visit, to compare.
 // Car shadows in lamplight go from full to soft to none (2 / 1 / 0); their light map is 2048
 // texels across on High and Ultra (at 1024 a car's shadow stepped along the texels), 1024 below.
+// Auto keeps the light map at the size it began with: a new size rebuilds every shader.
 //
 // Auto starts high (medium on touch devices) and judges windows of 60 frame times
-// by their mean without the quickest and slowest tenth. It ignores pauses, tile
-// builds and the seconds after loading, returning to the tab or changing a tier.
+// by their mean without the quickest and slowest tenth. That mean doesn't see hitches,
+// so it also adds up the time spent in frames over 50 ms: two windows in a row that
+// spend a quarter of their time in them step down too, and a choppy window never steps
+// up. It ignores pauses, tile builds and the seconds after loading, returning to the
+// tab or changing a tier.
 // A tier that proved too slow is tried again after 2 minutes, then 4, 8…
 // Still too slow on Lowest for STUCK windows in a row, it tells the player once
 // (graphicswarning.ts: the game needs a better computer, and what may help).
@@ -79,13 +83,19 @@ const TARGET_MS = 1000 / 40;  // 40 frames a second
 const SLOW = TARGET_MS * 1.1; // a window whose average frame is slower steps down
 const QUICK = TARGET_MS * 0.75, STEADY = 0.9; // …and one with 90% of its frames within 3/4 of the target can step up
 const SAMPLES = 60;
-const LONGEST = 250;          // longer is a pause, not a slow frame
+const LONGEST = 250;          // longer isn't averaged in…
+const PAUSE = 1000;           // …and longer still is a pause (a dialog, the debugger), not a hitch
+const HITCH = TARGET_MS * 2;  // a frame this long (50 ms) is a hitch, and a window that spends
+const CHOPPY = 0.25, CHOPPY_WINDOWS = 2; // a quarter of its time in them is choppy: two in a row step down
 const WARMUP = 4000, SETTLE = 3000, RETRY = 120000;
 const STUCK = 5;
 
 export class AutoTier {
   tier: Tier;
   private samples: number[] = [];
+  private spent = 0;  // the window's time (ms)…
+  private stalled = 0; // …and how much of it went in hitches
+  private choppy = 0; // windows in a row that were
   private holdUntil = 0;
   stuck = 0; // windows in a row too slow with no tier lower to go to
   private failures: Record<Tier, number> = { lowest: 0, low: 0, medium: 0, high: 0, ultra: 0 };
@@ -102,18 +112,25 @@ export class AutoTier {
   hold(now: number, ms: number) {
     this.holdUntil = Math.max(this.holdUntil, now + ms);
     this.samples.length = 0;
+    this.spent = this.stalled = this.choppy = 0;
   }
 
   // One frame's time; the new tier when it's time to change.
   record(ms: number, now: number): Tier | null {
-    if (ms > LONGEST || now < this.holdUntil) return null;
+    if (ms > PAUSE || now < this.holdUntil) return null;
+    this.spent += ms;
+    if (ms > HITCH) this.stalled += ms;
+    if (ms > LONGEST) return null;
     this.samples.push(ms);
     if (this.samples.length < SAMPLES) return null;
     const sorted = [...this.samples].sort((a, b) => a - b);
     const trim = sorted.slice(SAMPLES / 10, -SAMPLES / 10);
     const mean = trim.reduce((a, b) => a + b, 0) / trim.length;
-    const steady = sorted.filter((t) => t <= QUICK).length >= sorted.length * STEADY;
+    const choppy = this.stalled > this.spent * CHOPPY;
+    const steady = !choppy && sorted.filter((t) => t <= QUICK).length >= sorted.length * STEADY;
+    this.choppy = choppy ? this.choppy + 1 : 0;
     this.samples.length = 0;
+    this.spent = this.stalled = 0;
     const step = (dir: 1 | -1) => {
       for (let i = ORDER.indexOf(this.tier) + dir; i >= 0 && i < ORDER.length; i += dir) {
         if (!this.same(ORDER[i], this.tier)) return ORDER[i];
@@ -123,7 +140,7 @@ export class AutoTier {
     let next: Tier | null = null;
     const lower = step(-1), higher = step(1);
     this.stuck = mean > SLOW && !lower ? this.stuck + 1 : 0;
-    if (mean > SLOW && lower) {
+    if ((mean > SLOW || this.choppy >= CHOPPY_WINDOWS) && lower) {
       this.failures[this.tier] += 1;
       this.retryAt[this.tier] = now + RETRY * 2 ** (this.failures[this.tier] - 1);
       next = lower;
@@ -145,6 +162,7 @@ export class Graphics {
   private renderer: THREE.WebGLRenderer;
   private sky: Sky;
   private fixedRatio: number | null;
+  private applied = false;
 
   constructor(renderer: THREE.WebGLRenderer, sky: Sky, params: URLSearchParams) {
     this.renderer = renderer;
@@ -195,31 +213,35 @@ export class Graphics {
     MIRROR_ON.value = look && this.reflections === 'mirror' ? 1 : 0;
     wantStrips(look); // (the cars' mirrored streets)
     PROBE_ON.value = this.tier === 'ultra' ? 1 : 0; // (and on Ultra the real one round the middle of the view)
-    // (The lamps resize their maps at the next frame; the materials are bound afresh below.)
-    const lampSize = lampMap, resized = LAMP_SIZE.value !== lampSize;
+    // (The lamps resize their maps at the next frame; the materials are bound afresh below,
+    // which freezes the game for half a second even on an M5, so Auto keeps the size the
+    // lamps were given when it began.)
+    const lampSize = this.choice === 'auto' && this.applied ? LAMP_SIZE.value : lampMap, resized = LAMP_SIZE.value !== lampSize;
     LAMP_SIZE.value = lampSize;
+    this.applied = true;
     ROOF_DETAIL.value = roofs ? 1 : 0;
     WEATHER_DETAIL.value = look ? 1 : 0;
     ROOF_CLUTTER.value = (this.clutter ?? clutter) ? 1 : 0;
     setSamples(this.renderer, samples);
     const shadow = this.sky.sun.shadow;
     shadow.radius = shadowBlur;
-    if (shadow.mapSize.x !== shadowSize || shadow.mapSize.y !== shadowSize || resized) {
+    if (shadow.mapSize.x !== shadowSize || shadow.mapSize.y !== shadowSize) {
       shadow.mapSize.set(shadowSize, shadowSize);
-      // WebGPU resizes the shadow target itself; WebGL needs a new one.
+      // WebGPU resizes the shadow target itself, and the materials bind the new depth
+      // texture by themselves; WebGL needs a new one.
       if (!(this.renderer as GPURenderer).backend) { shadow.map?.dispose(); shadow.map = null; }
-      else {
-        // Converted legacy materials don't observe the shadow texture's resize.
-        // Release their render caches once so every binding is made for the new
-        // texture, including stationary objects. Materials remain reusable.
-        const materials = new Set<THREE.Material>();
-        this.sky.sun.parent?.traverse((o) => {
-          const m = (o as THREE.Mesh).material;
-          if (Array.isArray(m)) for (const item of m) materials.add(item);
-          else if (m) materials.add(m);
-        });
-        for (const material of materials) material.dispose();
-      }
+    }
+    if (resized && (this.renderer as GPURenderer).backend) {
+      // The materials don't notice the lamps' maps being replaced and would go on
+      // sampling the destroyed ones. Release their render caches once so every binding
+      // is made afresh, including stationary objects. Materials remain reusable.
+      const materials = new Set<THREE.Material>();
+      this.sky.sun.parent?.traverse((o) => {
+        const m = (o as THREE.Mesh).material;
+        if (Array.isArray(m)) for (const item of m) materials.add(item);
+        else if (m) materials.add(m);
+      });
+      for (const material of materials) material.dispose();
     }
     const r = this.ratio(this.tier);
     if (this.renderer.getPixelRatio() !== r) this.renderer.setPixelRatio(r);

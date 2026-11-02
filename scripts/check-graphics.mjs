@@ -12,7 +12,7 @@ const check = `(async () => {
   const { AutoTier } = await import('/src/graphics.ts');
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   for (const [tier, size, samples, look, cars, crowd, blur] of [
-    ['lowest',1024,0,0,0,0.5,1], ['high',2048,4,1,2,1,1], ['ultra',4096,4,1,2,1,2],
+    ['lowest',1024,0,0,0,0.5,1], ['high',2048,4,1,2,1,1], ['ultra',4096,4,1,3,1,2],
     ['low',1024,4,1,1,1,1], ['medium',2048,4,1,1,1,1], ['lowest',1024,0,0,0,0.5,1],
   ]) {
     g.set(tier);
@@ -37,6 +37,14 @@ const check = `(async () => {
   for(let i=0;i<60;i++) assert(auto.record(35,4000+i) === null,'Auto warmup');
   for(let i=0;i<60;i++) next=auto.record(35,9000+i*35);
   assert(next === 'low', 'Auto can reach the smaller shadow map');
+  // Hitches: a quick mean with every sixth frame frozen for 120 ms. One choppy window
+  // holds, the second steps down; a frame of a second or more is a pause.
+  const choppy = new AutoTier('high', () => false);
+  const run = (t0) => { let n = null; for (let i = 0; i < 60; i++) n = choppy.record(i % 6 ? 16 : 120, t0 + i * 34) ?? n; return n; };
+  assert(run(1000) === null, 'Auto waits for a second choppy window');
+  assert(run(4000) === 'medium', 'Auto steps down when it keeps hitching');
+  const paused = new AutoTier('high', () => false);
+  for (let w = 0; w < 3; w++) for (let i = 0; i < 60; i++) assert(paused.record(i ? 16 : 5000, 1000 + w * 2000 + i * 20) === null, 'A pause is not a hitch');
   g.set('ultra');
   g.set('auto');
   assert(g.tier === 'high', 'Auto goes no higher than High');
