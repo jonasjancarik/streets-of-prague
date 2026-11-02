@@ -1,6 +1,8 @@
 import { dataUrl } from './data.ts';
 import proj4 from 'proj4';
-import type * as Leaflet from 'leaflet';
+import type { GeoJSONSource, LngLatBoundsLike, Map as MapLibreMap, Marker } from 'maplibre-gl';
+import type { LayerSpecification, SourceSpecification } from '@maplibre/maplibre-gl-style-spec';
+import { RED, foldCredits, loadMapLibre, posterStyle } from './postermap.ts';
 import type { MapIndex } from './contracts.ts';
 import type { Bounds, Point2 } from './map/geo.ts';
 import type { Graphics, Choice } from './graphics.ts';
@@ -323,46 +325,58 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     setTimeout(() => { $('dev-heli').textContent = 'Helicopter next to me'; }, 1800);
   };
 
-  // The map: OpenStreetMap tiles, your position, click anywhere to go there.
-  let map: Leaflet.Map | null = null, marker: Leaflet.CircleMarker | null = null, reachLine: Leaflet.Rectangle | null = null;
+  // The map, in the poster's colours (postermap.ts): your position, the built map's edge
+  // and (dashed, on the dev server) how far you can go before the game reloads; click
+  // anywhere to go there.
+  let map: MapLibreMap | null = null, marker: Marker | null = null;
+  const outline = (b: Bounds): GeoJSON.Feature => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]], [b[0], b[1]]] } });
   const overlay = document.createElement('div');
   overlay.id = 'dev-mapbox';
   overlay.hidden = true;
-  overlay.innerHTML = `<div id="dev-leaflet"></div><div class="dev-maphint">Click where you want to be${import.meta.env.DEV ? ' (past the dashed line, the game reloads there)' : ''} · right-click copies the coordinates · <kbd>Esc</kbd> closes the map</div>`;
+  overlay.innerHTML = `<div id="dev-mapview"></div><div class="dev-maphint">Click where you want to be${import.meta.env.DEV ? ' (past the dashed line, the game reloads there)' : ''} · right-click copies the coordinates · <kbd>Esc</kbd> closes the map</div>`;
   document.body.appendChild(overlay);
   $('dev-map').onclick = async () => {
     overlay.hidden = false;
-    const L = (await import('leaflet')).default;
-    await import('leaflet/dist/leaflet.css');
+    const lib = await loadMapLibre();
     const [lon, lat] = toLonLat(...position());
     // The countryside's file may open after the map was first shown.
     const [ew, es, ee, en] = extent();
-    const bounds: Leaflet.LatLngBoundsExpression = anywhere ? [[-85, -400], [85, 400]] : [[es - 0.02, ew - 0.02], [en + 0.02, ee + 0.02]];
+    const bounds: LngLatBoundsLike | null = anywhere ? null : [ew - 0.02, es - 0.02, ee + 0.02, en + 0.02];
     if (!map) {
-      map = L.map('dev-leaflet', { maxBounds: bounds }).setView([lat, lon], 16);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      }).addTo(map);
-      L.rectangle([[s, w], [n, e]], { color: '#ffd23f', weight: 2, fill: false }).addTo(map);
-      marker = L.circleMarker([lat, lon], { radius: 7, color: '#d9612c', fillOpacity: 0.9 }).addTo(map);
-      map.on('contextmenu', (ev) => {
-        const text = fixed(ev.latlng.lat, ev.latlng.lng);
-        void navigator.clipboard?.writeText(text).catch(() => {});
-        L.popup().setLatLng(ev.latlng).setContent(`Copied ${text}`).openOn(map!);
+      const sources: Record<string, SourceSpecification> = { built: { type: 'geojson', data: outline([w, s, e, n]) } };
+      const layers: LayerSpecification[] = [{ id: 'built', type: 'line', source: 'built', paint: { 'line-color': RED, 'line-width': 2.5 } }];
+      if (anywhere) {
+        sources.reach = { type: 'geojson', data: outline([ew, es, ee, en]) };
+        layers.push({ id: 'reach', type: 'line', source: 'reach', paint: { 'line-color': RED, 'line-width': 1.5, 'line-dasharray': [4, 3] } });
+      }
+      const m = map = new lib.Map({
+        container: 'dev-mapview', center: [lon, lat], zoom: 16, maxZoom: 19, maxBounds: bounds ?? undefined,
+        dragRotate: false, pitchWithRotate: false, touchPitch: false, attributionControl: { compact: true },
+        style: posterStyle(sources, layers),
       });
-      map.on('click', (ev) => {
+      foldCredits(m);
+      m.touchZoomRotate.disableRotation();
+      m.keyboard.disableRotation();
+      const you = document.createElement('div');
+      you.className = 'dev-you';
+      marker = new lib.Marker({ element: you }).setLngLat([lon, lat]).addTo(m);
+      m.on('contextmenu', (ev) => {
+        const text = fixed(ev.lngLat.lat, ev.lngLat.lng);
+        void navigator.clipboard?.writeText(text).catch(() => {});
+        new lib.Popup().setLngLat(ev.lngLat).setText(`Copied ${text}`).addTo(m);
+      });
+      m.on('click', (ev) => {
         overlay.hidden = true;
-        const h = hit(ev.latlng.wrap().lng, ev.latlng.lat, 'the spot you picked');
+        const h = hit(ev.lngLat.wrap().lng, ev.lngLat.lat, 'the spot you picked');
         if (h.far) reopen(...h.far); else void go(h.x, h.y, h.label);
       });
-      if (anywhere) reachLine = L.rectangle([[es, ew], [en, ee]], { color: '#ffd23f', weight: 1, dashArray: '6 6', fill: false }).addTo(map);
     } else {
-      reachLine?.setBounds([[es, ew], [en, ee]]);
+      (map.getSource('reach') as GeoJSONSource | undefined)?.setData(outline([ew, es, ee, en]));
       map.setMaxBounds(bounds);
-      map.setView([lat, lon], map.getZoom());
-      marker?.setLatLng([lat, lon]);
+      map.jumpTo({ center: [lon, lat] });
+      marker?.setLngLat([lon, lat]);
     }
-    setTimeout(() => map?.invalidateSize(), 0);
+    map.resize();
   };
 
   const toggle = (on = panel.hidden) => {
