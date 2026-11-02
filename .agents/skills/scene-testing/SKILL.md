@@ -110,6 +110,7 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   partial edge tile.
 - `t.orderTaxi()` orders an app taxi on foot, `t.taxi()` says how it stands (`state`,
   `near`, `to`), `t.boardTaxi()` gets in, `t.taxiTo(n)` picks the n-th place of its list.
+  `t.boardTram(seconds)` waits for a tram to stop near you and gets on it (scenario `takeover-button`).
   `t.probe()` also gives `traffic` and `people` (how many are about) and `place` (the
   last title shown for the part of town or the village).
 - `t.wait(seconds, controls)`: runs the world in 1/60 s steps with

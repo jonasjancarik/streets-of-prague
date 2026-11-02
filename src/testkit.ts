@@ -92,6 +92,8 @@ interface Game {
   inspector: { phase: string; where: string; owed: number; pay: () => void };
   carsNear: (x: number, y: number, r: number) => Car[];
   tramsNear: (x: number, y: number, r: number) => TramBody[];
+  // Stands you by the door of a tram waiting at a stop near you, if there is one.
+  tramStop: () => boolean;
   // Where the camera looks now, and how high it is (for starting the free camera there).
   view0: () => { x: number; y: number; height: number };
   viewRadius: () => number;
@@ -546,6 +548,13 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       return kit.taxi();
     },
     taxi() { return { state: g.taxi.state, near: g.taxi.near(), to: g.taxi.dest }; },
+    // Waits (up to `seconds`) for a tram to stop near you, then gets on it as E does.
+    async boardTram(seconds = 120) {
+      let at = g.tramStop();
+      for (let s = 0; s < seconds && !at; s += 2) { await kit.wait(2); at = g.tramStop(); }
+      if (at) g.enterOrExit();
+      return g.mode() === 'tram';
+    },
     boardTaxi() { return g.taxi.enter(); },
     cancelTaxi() { g.taxi.cancel(); },
     taxiTo(n: number) { g.taxi.key(`Digit${n % 10}`, false); return kit.taxi(); },
