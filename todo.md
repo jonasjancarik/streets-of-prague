@@ -103,6 +103,9 @@ Pixel 5 readings of 6 October are in `docs/performance-log.md`. Bench figures ta
 before that day's frame-count fix may be doubled.
 
 - Auto does not hold Medium on the Pixel 5 (see "Decisions needed").
+- Auto's steps no longer rebuild every shader (2 November); entering Lowest still builds
+  69 (0.7 s on an M5), and the lamps' light-pool shader (with cars) takes 250–370 ms on
+  first sight at night. Neither checked on a phone; hitch-aware Auto not tried on one.
 - Sun shadows cost about 4 ms at 1× on the Pixel 5 (High, standing), not 11 ms.
 - On a drive, `traffic.update` (up to 11.7 ms) was the largest simulation piece in long
   tasks, then `trams.update` (7.5 ms) and `crowd.update` (5 ms).

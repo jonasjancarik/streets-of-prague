@@ -29,7 +29,7 @@
 // localhost), the battery temperature is printed after each scene (a phone slows as it
 // warms), and the phone's screen and pixel ratio stand in for the window here. It waits
 // for other sessions' scenes and benchmarks to finish first (game-lock.mjs). Needs the
-// dev server (npm run dev) and Playwright; it takes Playwright from PLAYWRIGHT_PATH or
+// dev server (npm run dev) and Playwright; SOP_LOAD_TIMEOUT (s, default 120) is how long a load may take; it takes Playwright from PLAYWRIGHT_PATH or
 // the usual places.
 
 import { createRequire } from 'node:module';
@@ -196,7 +196,7 @@ async function runScene(browser, name, base = URL_BASE) {
     try { console.log(`[${name}] loading ${f1((Date.now() - loadStart) / 1000)} s`, await loadingState(), 'requests', [...pending]); } catch {}
   }, 5000) : null;
   try {
-    await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__drive, null, { timeout: 120000, polling: 100 });
+    await page.waitForFunction(() => document.getElementById('loading')?.classList.contains('done') && window.__drive, null, { timeout: Number(process.env.SOP_LOAD_TIMEOUT || 120) * 1000, polling: 100 });
   } catch (e) {
     console.error(`[${name}] load did not finish`, await loadingState().catch(() => null), 'requests', [...pending]);
     throw e;

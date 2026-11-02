@@ -178,6 +178,13 @@ device trace if the visual result and callback timings disagree. Use raw timesta
 not clamped simulation `dt`, and retain genuine long stalls in the hitch report.
 Auto-quality sampling may exclude pauses, but that filter is not a stutter metric.
 
+A graphics tier change is a hitch of its own when it rebuilds shaders: on WebGPU a
+material `dispose()` (as `Graphics.apply` did for every material when a shadow or
+lamp map changed size) cost 0.5–0.7 s on an M5. To time a change, record frame
+intervals round it in an `--eval` and count `renderer._nodes.nodeBuilderCache` before
+and after; a resize that skips the rebuild must still show no `Destroyed texture`
+errors and the same shadows (see "Auto's tier changes and hitches" in the log).
+
 ### Follow mutations through rendering
 
 For a tile arrival or departure, distinguish worker completion, main-thread
