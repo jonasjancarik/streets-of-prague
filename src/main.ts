@@ -749,7 +749,9 @@ async function main() {
   // F (on foot) or the touch button straight ahead, at the nearest car roughly that way.
   // Nobody is ever hit; cars, trams and walls stop the bullets.
   let aimAt: { x: number; y: number } | null = null; // the mouse button is held, pointing here
+  let lastAim: { x: number; y: number } | null = null; // where a click pointed that was let go before it fired
   let fireHeld = false;
+  let pulled = false; // pressed since the last step: a click shorter than a frame still fires
   let gunCool = 0;
   const canShoot = () => wastedT <= 0 && frozen <= 0 && !arrest.active && !getIn.active && walker.down <= 0 && !inHeli && !ride.on
     && !boats.me && !funicular.me && !ferries.me && !taxi.riding && !metro.active && !dialog.active;
@@ -779,9 +781,13 @@ async function main() {
   };
   const shootStep = (dt: number) => {
     gunCool = Math.max(0, gunCool - dt);
-    if (!(aimAt || (fireHeld && !inCar)) || gunCool > 0 || !canShoot()) return;
+    const want = pulled || aimAt || (fireHeld && !inCar);
+    if (!want || gunCool > 0) return;
+    pulled = false;
+    if (!canShoot()) return;
     gunCool = PACE;
-    shoot();
+    shoot(aimAt || !lastAim ? undefined : Math.atan2(lastAim.y - (inCar || walker).y, lastAim.x - (inCar || walker).x));
+    lastAim = null;
   };
   const drawn: Car[] = []; // the cars drawn this frame
   // Off the tram onto the pavement beside it.
@@ -1421,7 +1427,7 @@ async function main() {
     if (e.code === 'KeyB' && !e.repeat) pressB();
     const pick = /^Digit([1-4])$/.exec(e.code);
     if (pick && !e.repeat && inspector.phase !== 'decide') buyTicket(TICKETS[Number(pick[1]) - 1]);
-        if (e.code === 'KeyF') { cannonHeld = true; fireHeld = true; if (!e.repeat) stealTram(); }
+        if (e.code === 'KeyF') { cannonHeld = true; fireHeld = true; if (!e.repeat) { pulled = !inCar; stealTram(); } }
     if (e.code === 'KeyX' && !e.repeat) { if (ride.driving) telemetry.did('opened the tram doors'); ride.doors(); }
     if (e.code === 'KeyQ' && !e.repeat) honk(true);
     // Space jumps, except at a tram stop, where holding it waits for a tram.
@@ -1480,13 +1486,14 @@ async function main() {
     return { x: pointed.x, y: -pointed.z };
   };
   renderer.domElement.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'mouse' || e.button !== 0 || !playing || settingsPanel.open) return;
-    aimAt = pointAt(e);
+    if (e.pointerType !== 'mouse' || e.button !== 0 || settingsPanel.open) return;
+    aimAt = lastAim = pointAt(e);
+    pulled = !!aimAt;
   });
   window.addEventListener('pointermove', (e) => { if (aimAt && e.pointerType === 'mouse') aimAt = pointAt(e) ?? aimAt; }, { passive: true });
   window.addEventListener('pointerup', (e) => { if (e.button === 0) aimAt = null; });
   $('t-ticket').addEventListener('click', pressB);
-  const touch = setupTouch({ action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, shoot: (on) => { fireHeld = on; }, doors: () => ride.doors(), jump: () => {
+  const touch = setupTouch({ action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, shoot: (on) => { fireHeld = on; if (on) pulled = true; }, doors: () => ride.doors(), jump: () => {
     if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !ferries.me && !taxi.riding) { input.jump = true; telemetry.did('jumped'); }
   }, force: params.has('touch') });
   Object.assign(padHooks, { settings: () => settingsPanel.show(), menu: () => metro.active || dialog.active, zoomBy });
