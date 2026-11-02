@@ -13,7 +13,7 @@ export default {
     const car = t.car('sedan', { ahead: 14 });
     if (!t.check('a car to shoot at', !!car)) return;
     const g = window.__drive as {
-      crowd: { people: { state: string; x: number; y: number }[] }; police: { heat: number }; fires: { onFire: (c: unknown) => boolean };
+      crowd: { people: { state: string; x: number; y: number }[] }; police: { heat: number; reports: unknown[] }; fires: { onFire: (c: unknown) => boolean };
       walker: { x: number; y: number }; grid: { at: (x: number, y: number) => number }; loose: { x: number; y: number }[];
     };
     // Stand where nothing but open ground is between you and the car, 12 m off.
@@ -36,7 +36,7 @@ export default {
     t.check('nobody in the way is hit', people.every((p) => p.state !== 'down'), people.map((p) => p.state).join(','));
     await t.wait(0.3);
     t.check('the people near it run', people.some((p) => p.state === 'flee'), people.map((p) => p.state).join(','));
-    t.check('shooting is a crime', t.probe().stars > 0 || g.police.heat > 0, `heat ${g.police.heat}`);
+    t.check('shooting is a crime', t.probe().stars > 0 || g.police.heat > 0 || g.police.reports.length > 0, `heat ${g.police.heat}`);
     // Into the lamps: the headlamps go first from the front.
     for (let i = 0; i < 14 && !car!.burnt && car!.damage < 95; i++) { t.shoot({ x: car!.x, y: car!.y }); await t.wait(0.3); }
     t.check('enough bullets set it burning', g.fires.onFire(car!) || !!car!.burnt, `damage ${Math.round(car!.damage)}`);

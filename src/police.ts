@@ -17,7 +17,7 @@ import type { Point3 } from './guns.ts';
 interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
 // `door`: the one of their car they got out of, left open till they're back. `led`: making
 // an arrest, moved by src/arrest.ts.
-export interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean }
+export interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number }
 // A stretch of the way a police car or a fire engine can take: a street, or (`foot`) a
 // way meant for people.
 type Way = (DriveEdge | WalkEdge) & { mid?: Polyline; twin?: DriveEdge | null };
@@ -62,7 +62,12 @@ interface PoliceOptions {
 // A few police cars patrol with the traffic. Once you're wanted, cars chase you along
 // the street network, more of them the more stars you have, and ram you. When you're
 // on foot or stopped, an officer gets out and runs after you: if they reach you,
-// you're busted. Stay out of their sight for a while and you lose a star at a time.
+// you're busted, unless you break away before they've had hold of you for a moment
+// or two. Stay out of their sight for a while and you lose a star at a time.
+//
+// The police only know where you are while they can see you. A crime none of them saw
+// is phoned in some seconds later, and they go to where it happened; once there,
+// they find you only if you're still in sight of them.
 // From three stars a helicopter joins in (src/helicopter.ts), and the officers draw
 // their pistols: they stop where they can see you and shoot rather than run you down.
 // From four stars they shoot from the cars as well.
@@ -85,6 +90,9 @@ const WRECKED = 90; // damage that puts a police car out of the chase
 const ARMED = 3; // stars from which officers on foot shoot
 const FROM_CARS = 4; // and from which they shoot from the cars
 const RANGE = 24; // m; further off they come closer first
+const REPORT = 6; // s at least before a crime the police didn't see is phoned in
+const GRIP = 1.4; // s an officer has to keep hold of you on foot before you're busted
+const GRIP_CAR = 2.4; // s at the door of the car you've stopped in: time to drive off
 
 // Points of `poly` from s0 to s1 (backwards if s1 < s0), as [x, y].
 function slice(poly: Polyline, s0: number, s1: number): Point2[] {
@@ -208,6 +216,15 @@ export class Police {
   lastT?: number; stolen: WeakSet<Car>;
   // An arrest is being made (src/arrest.ts): nobody shoots, the other officers stand round.
   arresting = false;
+  // Where the police think you are: where they last saw you, or where a crime was
+  // phoned in from. Out of sight, that is where they go, not to you.
+  known: Point2 | null = null;
+  // Crimes nobody from the police saw, on their way in by phone.
+  reports: { heat: number; x: number; y: number; t: number }[] = [];
+  // How fast you really got anywhere in the last step, m/s (running into a wall, the
+  // legs go but you don't).
+  moved = 0;
+  private was: Point2 | null = null;
 
   constructor({ scene, drive, traffic, grid, height, rng, edgesNear, walk = undefined, walkNear = () => [], offscreen, onBusted, kit, bodyAt = () => false, onShot = () => {} }: PoliceOptions) {
     this.scene = scene; this.drive = drive; this.traffic = traffic; this.grid = grid;
@@ -285,9 +302,11 @@ export class Police {
     if (this.cool[kind] > 0) return;
     telemetry.did(`crime: ${CRIME_NAMES[kind]}`);
     this.cool[kind] = COOLDOWN[kind] || 0;
-    const seen = this.sees(x, y);
-    this.heat = Math.min(40, this.heat + POINTS[kind] * (seen ? 1.5 : 0.5));
-    if (seen) this.lose = 0;
+    if (this.sees(x, y)) {
+      this.heat = Math.min(40, this.heat + POINTS[kind] * 1.5);
+      this.lose = 0;
+      this.known = [x, y];
+    } else this.reports.push({ heat: POINTS[kind] * 0.5, x, y, t: REPORT + this.r() * 5 });
   }
 
   // You got into a police car, with its crew or one they've left to come after you on
@@ -317,6 +336,8 @@ export class Police {
     for (const o of this.officers) this.dismiss(o);
     this.officers = [];
     this.cars = [];
+    this.reports = [];
+    this.known = null;
     this.helis.reset();
   }
 
@@ -582,7 +603,7 @@ export class Police {
     // On foot, also once the car has got as near as the road goes: the officer runs
     // the rest of the way.
     const there = behind || (!me.car && dist < 60 && !!p.path && p.path.length - p.s < 8);
-    if (c.crew && !me.air && level && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18 || there)) this.getOut(c);
+    if (c.crew && this.seen && !me.air && level && Math.abs(vf) < 2.5 && (me.car ? me.speed < 2 && dist < 14 : dist < 18 || there)) this.getOut(c);
     // Near you and in sight, from four stars: a shot out of the window now and then.
     p.reload = (p.reload ?? 1) - dt;
     if (c.crew && this.stars >= FROM_CARS && !me.air && level && dist < RANGE && p.reload <= 0 && this.clear(c.x, c.y, me.x, me.y)) {
@@ -639,7 +660,7 @@ export class Police {
     return g.at(x, y) || g.at(x + r, y) || g.at(x - r, y) || g.at(x, y + r) || g.at(x, y - r);
   }
 
-  walk(o: Officer, dt: number, me: PlayerTarget) {
+  walk(o: Officer, dt: number, me: PlayerTarget, goal = me) {
     if (o.led) return;
     if (o.down > 0) {
       o.down -= dt;
@@ -653,8 +674,9 @@ export class Police {
       o.back = this.heat <= 0 || !!(ride && me.car && me.speed > 6 && toMe > 12);
       // You in a car: they make for the nearer of its front doors, not for its middle
       // (which they can't get near from the front or the back).
-      let gx = me.x, gy = me.y, door = Infinity;
-      for (const d of me.car?.doors ?? []) {
+      // Out of sight, to where they last knew you to be.
+      let gx = goal.x, gy = goal.y, door = Infinity;
+      for (const d of goal === me ? me.car?.doors ?? [] : []) {
         if (d.n > 2) continue;
         const [x, y] = me.car!.beside(d, 0.9), far = Math.hypot(x - o.x, y - o.y);
         if (far < door && !this.blocked(x, y)) { door = far; gx = x; gy = y; }
@@ -679,9 +701,13 @@ export class Police {
         steer(o, tx, ty, o.back && !ride ? 1.4 : RUN, this.bodyAt, o.back ? o.car : null, this.r);
         if (o.back && ride && d < 2.6) { o.gone = true; o.car.crew = true; if (o.door) o.car.open(o.door, false); return; }
         if (!o.back && this.heat > 0 && !me.air && level) {
+          // Hold of you, or at the door of the car you've stopped in: it takes a moment, and
+          // you can still run out of their hands (walking, you can't) or drive off.
           const reach = me.car ? me.car.spec.L / 2 + 1 : 1.1;
-          if ((toMe < reach || door < 0.8) && (!me.car || me.speed < 2)) this.onBusted(o);
-        }
+          const hold = (toMe < reach + 0.4 || door < 0.8) && (me.car ? me.speed < 2 : this.moved < 4.5);
+          o.grip = hold ? (o.grip ?? 0) + dt : Math.max(0, (o.grip ?? 0) - 2 * dt);
+          if (o.grip >= (me.car ? GRIP_CAR : GRIP)) { o.grip = 0; this.onBusted(o); }
+        } else o.grip = 0;
       }
     }
     const nx = o.x + o.vx * dt, ny = o.y + o.vy * dt;
@@ -699,6 +725,8 @@ export class Police {
   update(dt: number, me: PlayerTarget) {
     for (const k in this.cool) this.cool[k] -= dt;
     const stars = this.stars;
+    this.moved = this.was && dt > 0 ? Math.hypot(me.x - this.was[0], me.y - this.was[1]) / dt : 0;
+    this.was = [me.x, me.y];
 
     // Patrols ride along with the traffic.
     const patrols = this.traffic.agents.filter((a) => a.car.type === 'police');
@@ -733,22 +761,36 @@ export class Police {
       this.lose = 0;
     }
 
+    // Crimes phoned in: the heat, and the police go to where it happened (unless
+    // they're watching you already).
+    for (const p of this.reports) {
+      if ((p.t -= dt) > 0) continue;
+      this.heat = Math.min(40, this.heat + p.heat);
+      if (!this.seen) this.known = [p.x, p.y];
+    }
+    this.reports = this.reports.filter((p) => p.t > 0);
+    if (this.heat <= 0) this.known = null;
+    // Where they're after you: where you are while they see you, otherwise where they
+    // last knew you to be. (Wanted by other means, say a job's, they know.)
+    if (this.seen || !this.known) this.known = [me.x, me.y];
+    const goal: PlayerTarget = this.seen ? me : { ...me, x: this.known[0], y: this.known[1], vx: 0, vy: 0, speed: 0 };
+
     // As many cars on your tail as your stars call for: patrols nearby join in first.
     const want = CHASERS[this.stars];
     let chasing = this.chasing;
     for (const a of patrols) {
       if (chasing.length >= want) break;
-      if (Math.hypot(a.car.x - me.x, a.car.y - me.y) > 250) continue;
+      if (Math.hypot(a.car.x - goal.x, a.car.y - goal.y) > 250) continue;
       this.traffic.release(a);
       this.enlist(a.car);
       chasing = this.chasing;
     }
     if (chasing.length < want && this.spawnT < 0) {
       this.spawnT = 1.5;
-      this.spawn(me.x, me.y);
+      this.spawn(goal.x, goal.y);
     }
     if (chasing.length > want) {
-      const far = [...chasing].sort((a, b) => Math.hypot(b.car.x - me.x, b.car.y - me.y) - Math.hypot(a.car.x - me.x, a.car.y - me.y));
+      const far = [...chasing].sort((a, b) => Math.hypot(b.car.x - goal.x, b.car.y - goal.y) - Math.hypot(a.car.x - goal.x, a.car.y - goal.y));
       for (const p of far.slice(0, chasing.length - want)) p.calm = true;
     }
 
@@ -756,7 +798,7 @@ export class Police {
       const c = p.car;
       if (!p.wrecked && c.damage > WRECKED) p.wrecked = true;
       let ctl = null;
-      if (!p.wrecked && !p.calm) ctl = this.chase(p, dt, me);
+      if (!p.wrecked && !p.calm) ctl = this.chase(p, dt, goal);
       else if (!p.wrecked) ctl = { throttle: c.forwardSpeed > 0.3 ? -1 : 0, steer: 0, handbrake: false };
       if (p.wrecked) c.mode = 'loose';
       c.update(dt, ctl, this.grid);
@@ -769,8 +811,8 @@ export class Police {
     }
     this.cars = this.cars.filter((p) => !p.gone);
 
-    this.helis.update(dt, me, HELIS[this.stars]);
-    for (const o of this.officers) this.walk(o, dt, me);
+    this.helis.update(dt, goal, HELIS[this.stars]);
+    for (const o of this.officers) this.walk(o, dt, me, goal);
     for (const o of this.officers) if (o.gone) this.dismiss(o);
     this.officers = this.officers.filter((o) => !o.gone);
   }
@@ -795,6 +837,8 @@ export class Police {
   forgive() {
     this.heat = 0;
     this.lose = 0;
+    this.reports = [];
+    this.known = null;
     for (const p of this.cars) p.calm = true;
   }
 

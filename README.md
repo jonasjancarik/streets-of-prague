@@ -268,12 +268,17 @@ that without a new renderer.
 - **Police.** Knocking people over, pulling drivers out of their cars, wrecking
   traffic, ramming or stealing a police car and speeding past the police (20 km/h over
   the limit) earn stars, up to five; crimes the police see count three times as much.
+  A crime none of them saw is phoned in six to eleven seconds later, and they go to
+  where it happened rather than to you: the police only know where you are while they
+  can see you, and otherwise make for where they last saw you.
   Police cars chase you along the streets and ram you; some carry a ram frame on the
   nose, more of them the more stars you have. When you're on foot they stay
   on the road and stop at the kerb nearest you; then (or when you stop the car) an
   officer gets out (their door stays open till they're back) and runs after you, to
-  your door if you're in a car, and if they reach you, you're busted (the
-  police keep the car). The arrest is played out (`src/arrest.ts`): the officer opens
+  your door if you're in a car. Once they have hold of you it takes them a moment
+  (about a second and a half on foot, two and a half at the door of a car you've
+  stopped in) and then you're busted (the police keep the car); run, not walk, and you
+  get out of their hands, or drive off before they open the door. The arrest is played out (`src/arrest.ts`): the officer opens
   your door and has you out of the car, your hands go up, they step behind you and
   put the handcuffs on, and you're walked to their car and put in the back, while the
   other officers stand round and nobody shoots. The screen fades to black on the way;
