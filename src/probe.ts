@@ -9,9 +9,15 @@
 // Three cubes take turns: the cars see the last two finished ones, fading from the older
 // to the newer while the next is drawn, so what they mirror moves on smoothly instead of a
 // face at a time (which showed as a jerky reflection on parked cars).
+//
+// The cube is drawn with the lamps off (their light, heads and glows): it is seen from one
+// point, so with the view's middle under a lamp every car round it mirrored that lamp right
+// overhead and lit up, and dimmed again a few metres on. Each car mirrors the lamps' light
+// where it stands instead (lampLight in the cars' gloss).
 
 import * as THREE from 'three';
 import { MIRROR_LAYER } from './mirror.ts';
+import { LAMP_ON } from './lamps.ts';
 
 export const PROBE_SIZE = 128;
 // The tier allows it (graphics.ts: Ultra), and once two cubes are finished: where the
@@ -75,8 +81,9 @@ export function renderProbe(renderer: THREE.WebGLRenderer, scene: THREE.Scene, x
   camera.updateMatrixWorld();
 
   const before = renderer.getRenderTarget(), clear = renderer.getClearColor(clearColour).getHex(), alpha = renderer.getClearAlpha();
-  const shadows = renderer.shadowMap.autoUpdate, background = scene.background;
+  const shadows = renderer.shadowMap.autoUpdate, background = scene.background, lamps = LAMP_ON.value;
   renderer.shadowMap.autoUpdate = false;
+  LAMP_ON.value = 0;
   scene.background = null;
   renderer.setClearColor(0x000000, 0);
   renderer.setRenderTarget(targets[2] as unknown as THREE.WebGLRenderTarget, face);
@@ -89,6 +96,7 @@ export function renderProbe(renderer: THREE.WebGLRenderer, scene: THREE.Scene, x
   renderer.setClearColor(clear, alpha);
   scene.background = background;
   renderer.shadowMap.autoUpdate = shadows;
+  LAMP_ON.value = lamps;
 
   if (++face === 6) {
     // Finished: it becomes the newer, the newer the older, and the older is drawn over next.
