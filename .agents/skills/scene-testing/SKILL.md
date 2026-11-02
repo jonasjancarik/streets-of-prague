@@ -82,7 +82,9 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   driver's, 2 the other front one), `t.wallBeside(car, n)` turns the ground beside door n into a
   wall (it returns the function that removes it), `t.fromDoor(car, n)` is how far you are from where you'd
   stand to use it. `t.arrested()` is how far an arrest has got
-  (`door`, `out`, `hands`, `cuff`, `lead`, `seat`, `back`) or null.
+  (`door`, `out`, `hands`, `cuff`, `lead`, `seat`, `back`) or null. `t.bust()` arrests you
+  on the spot (by the nearest officer on foot, if any), even inside a scenario;
+  `await t.settled()` waits for the move to the cell to load. Scenario `arrest-car`.
   `t.busLines()` lists loaded PID identifiers/destinations; `t.busLine(car, ref)` assigns
   one of those lines to a test bus. `t.policeCar()` finds the nearest police vehicle;
   `t.policeLights(car)` reports whether its flashing lamps are active.
