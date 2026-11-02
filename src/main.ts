@@ -634,6 +634,10 @@ async function main() {
       // Three stars or more: the prison in Pankrác (if the map reaches that far), else the station in Bartolomějská.
       const inMap = (lon: number, lat: number) => lon > w0 && lon < e0 && lat > s0 && lat < n0;
       const cell = police.stars >= 3 && inMap(14.43747, 50.05786) ? [14.43747, 50.05786] : [14.41636, 50.08256];
+      // You come out of the cell on foot, whatever you got into on the way (the move
+      // below would take it along).
+      getIn.cancel();
+      if (inCar || inHeli) enterOrExit();
       if (kept && loose.includes(kept)) loose.splice(loose.indexOf(kept), 1);
       kept = null;
       police.forgive();
@@ -1062,7 +1066,8 @@ async function main() {
     }
     takeSeat(best);
   };
-  const interact = () => enterOrExit(false);
+  // Not while you're being arrested (or still coming round): your hands are up or cuffed.
+  const interact = () => { if (!arrest.active && frozen <= 0) enterOrExit(false); };
 
   // A hard knock on a bike or motorbike throws you off it.
   const throwOff = () => {
@@ -2460,6 +2465,10 @@ async function main() {
     me: () => inCar || inHeli || walker, car: () => inCar, heli: () => inHeli,
     mode: () => (inCar ? 'car' : inHeli ? 'helicopter' : ride.on ? 'tram' : taxi.riding ? 'taxi' : boats.me ? 'boat' : ferries.me ? 'ferry' : funicular.me ? 'funicular' : metro.active ? 'metro' : 'foot'),
     street: () => street, enterOrExit, interact, arrest,
+    bust: () => {
+      const me = inCar || walker;
+      busted(police.officers.filter((o) => o.down <= 0).sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0]);
+    },
     addCar: (c) => { loose.push(c); restingStale = true; },
     loose,
     simulate: (dt, ctl = {}) => simulate(dt, { move: 0, turn: 0, run: false, brake: false, jump: false, aim: null, ...ctl }),

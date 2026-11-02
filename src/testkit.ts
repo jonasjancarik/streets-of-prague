@@ -65,6 +65,8 @@ interface Game {
   enterOrExit: () => void;
   interact: () => void;
   arrest: { readonly now: { phase: string } | null };
+  // Busted where you stand, by the nearest officer on foot if there is one.
+  bust: () => void;
   // Wasted and not yet come round; and the move to the hospital or the cell, once under way.
   recovering: () => boolean;
   // E beside this car, meaning this car: not a nearer one, a taxi, a tram or a bag.
@@ -338,6 +340,15 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // How far an arrest has got ('door', 'out', 'hands', 'cuff', 'lead', 'seat', 'back'), or null.
     arrested() { return g.arrest.now?.phase ?? null; },
+    // Busted here and now, as an officer catching you would have it (even in a scenario,
+    // which can't be arrested otherwise).
+    bust() {
+      const was = kit.unarrested;
+      kit.unarrested = false;
+      try { g.bust(); } finally { kit.unarrested = was; }
+    },
+    // Until the last move to a cell or a hospital has finished loading.
+    settled() { return g.settled(); },
 
     set({ money, stars, health }: { money?: number; stars?: number; health?: number }) {
       if (money !== undefined) g.wallet.balance = Math.max(0, Math.floor(money));
