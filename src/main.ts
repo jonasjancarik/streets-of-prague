@@ -332,14 +332,16 @@ async function main() {
   // (The view at the start is about 85 m across; what's beyond is loaded but not yet drawn.)
   await world.loadNow(sx, sy, 380, 85 + world.drawBeyond);
   // You stand at the spot on a street nearest to that point (a named street, if one is close).
-  let startEdge = drive.edges[0], startS = 0, startD = Infinity;
-  for (const e of drive.edges) {
-    for (let d = 0; d <= e.path.length; d += 3) {
-      const p = e.path.at(d), far = Math.hypot(p.x - sx, p.y - sy) + (e.name ? 0 : 60);
-      if (far < startD) { startEdge = e; startS = d; startD = far; }
+  const streetNear = (sx: number, sy: number) => {
+    let edge = drive.edges[0], at = 0, best = Infinity;
+    for (const e of drive.edges) {
+      for (let d = 0; d <= e.path.length; d += 3) {
+        const p = e.path.at(d), far = Math.hypot(p.x - sx, p.y - sy) + (e.name ? 0 : 60);
+        if (far < best) { edge = e; at = d; best = far; }
+      }
     }
-  }
-  const q = startEdge.path.at(startS);
+    return { edge, q: edge.path.at(at) };
+  };
 
   // Up Petřín and down again (E at a station).
   const funicular = new Funicular(index.rails, scene, {
@@ -435,8 +437,10 @@ async function main() {
   // A courier's bag you've picked up rides on your back.
   const bags = new Bags(scene, (x, y) => ground(x, y));
   walker.mesh.add(bags.back);
-  {
-    const side = (startEdge.kerb?.[0] ?? startEdge.width / 2) + 1.2;
+  // On the pavement beside that street, with a car waiting at the kerb and a bike ahead.
+  const standAtStart = (sx: number, sy: number) => {
+    const { edge, q } = streetNear(sx, sy);
+    const side = (edge.kerb?.[0] ?? edge.width / 2) + 1.2;
     const [x, y] = nearestWalkable(grid, q.x + Math.sin(q.ang) * side, q.y - Math.cos(q.ang) * side);
     Object.assign(walker, { x, y, h: q.ang });
     walker.sync();
@@ -450,7 +454,8 @@ async function main() {
     // And a bike a few steps ahead of you.
     const bike = new Car('bike', seeded, x + Math.cos(q.ang) * 3, y + Math.sin(q.ang) * 3, q.ang);
     if (bike.worldSamples().every(([x, y]) => grid.at(x, y) === 0)) loose.push(bike);
-  }
+  };
+  standAtStart(sx, sy);
   let inCar: Car | null = null, inHeli: Chopper | null = null;
   const choppers: Chopper[] = []; // helicopters you can fly (from the developer tools)
   let height = 100;
@@ -1227,6 +1232,14 @@ async function main() {
   document.addEventListener('visibilitychange', () => { if (document.hidden) autosave(); });
   // Back into a saved game: the map is already loaded, so this is a teleport with your
   // belongings, and into your car if you were driving.
+  // A new game at the spot picked on the start screen's map, beside the street nearest it.
+  const startAt = async (lon: number, lat: number) => {
+    const [x, y] = dev.toLocal(lon, lat);
+    await teleportTo(x, y);
+    standAtStart(x, y);
+    camPos.set(walker.x, 0, -walker.y);
+    camGround = ground(walker.x, walker.y, walker);
+  };
   const resume = async (s: SaveData) => {
     clock.t = s.clock;
     world.night = clock.night;
@@ -2022,6 +2035,11 @@ async function main() {
       weather.begin(choice.weather, clock.t, choice.live);
       // Beta mist can only reach this choice through an explicit selection.
       if (choice.weather === 'mist') weather.fixed = true;
+      if (choice.at) {
+        status('Building the streets…');
+        await startAt(...choice.at);
+        status('');
+      }
     }
     if (sound.on !== choice.sound) sound.toggle();
     playing = true;

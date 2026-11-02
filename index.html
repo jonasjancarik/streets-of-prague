@@ -242,6 +242,27 @@
       .ls-go:not(:disabled):active { transform: translate(0.4vh, 0.4vh); box-shadow: 0.2vh 0.2vh 0 var(--poster-black); }
       .ls-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; }
       .ls-start [hidden] { display: none; }
+      /* The map of where to begin (src/startmap.ts), over the whole start screen: the
+         question at the top like the poster's title, the spot picked and the button at
+         the bottom, and a red pin where you'll be. */
+      .sm { position: fixed; inset: 0; z-index: 5; background: var(--poster-black); color: var(--poster-paper); font: 16px/1.2 'Bebas Neue', sans-serif; letter-spacing: 0.05em; }
+      .sm[hidden] { display: none; }
+      .sm .sm-map { position: absolute; inset: 0; }
+      .sm-top { position: absolute; top: max(16px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; pointer-events: none; }
+      .sm-title { font-size: clamp(22px, min(5vh, 7.5vw), 46px); line-height: 1; padding: 10px 18px 6px; background: var(--poster-black); box-shadow: 6px 6px 0 var(--poster-red); transform: rotate(-2deg); transform-origin: left; }
+      .sm-close { pointer-events: auto; flex: none; width: 48px; height: 48px; font: 32px/1 Inter, system-ui, sans-serif; color: var(--poster-paper); background: var(--poster-black); border: 0; cursor: pointer; box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35); }
+      .sm-close:hover { background: var(--poster-red); }
+      .sm-bar { position: absolute; left: 16px; right: 16px; bottom: max(44px, env(safe-area-inset-bottom)); max-width: 720px; margin: 0 auto; box-sizing: border-box; display: flex; align-items: center; gap: 16px; padding: 12px 12px 12px 18px; background: rgba(20, 13, 12, 0.92); border-left: 5px solid var(--poster-red); box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.35); }
+      .sm-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+      .sm-place { font-size: clamp(22px, 3.6vh, 34px); line-height: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sm-note { font: 15px/1.35 Inter, system-ui, sans-serif; letter-spacing: 0; opacity: 0.9; }
+      .sm-place:empty, .sm-note:empty { display: none; }
+      .sm-go { flex: none; font: 24px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; padding: 10px 18px; color: var(--poster-paper); background: var(--poster-red); border: 0; cursor: pointer; box-shadow: 4px 4px 0 #000; transition: background 0.12s, transform 0.12s; }
+      .sm-go:not(:disabled):hover, .sm-go:focus-visible { background: #e2342b; transform: translate(-2px, -2px); outline: none; }
+      .sm-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; box-shadow: none; }
+      .sm-pin { width: 36px; height: 44px; cursor: default; }
+      .sm-pin span { position: absolute; left: 4px; top: 0; width: 28px; height: 28px; box-sizing: border-box; background: var(--poster-red); border: 3px solid var(--poster-paper); border-radius: 50% 50% 50% 0; transform: rotate(-45deg); box-shadow: -3px 3px 0 var(--poster-black); }
+      .sm-pin span::after { content: ''; position: absolute; left: 8px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--poster-paper); }
       /* The saved game, as a card: what it is in small letters, the place big, the rest under it. */
       .ls-saved { display: flex; flex-direction: column; gap: calc(0.4 * var(--u)); margin-bottom: var(--u); padding: var(--u) calc(1.6 * var(--u)); background: rgba(20, 13, 12, 0.75); border-left: max(calc(0.6 * var(--u)), 3px) solid var(--poster-red); letter-spacing: 0.06em; }
       .ls-saved-label { font-size: 0.8em; letter-spacing: 0.12em; opacity: 0.6; }

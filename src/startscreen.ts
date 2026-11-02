@@ -8,8 +8,11 @@ import { graphicsWarning } from './graphicswarning.ts';
 import { betaNote } from './betanote.ts';
 import { SEASONS, pragueToday, seasonOfDay, seasonStartDay } from './season.ts';
 import type { SeasonName } from './season.ts';
+import { pickStart } from './startmap.ts';
+import type { StartSpot } from './startmap.ts';
 
-// The start of the game, on the loading screen: the date, time and weather it will begin
+// The start of the game, on the loading screen: where it begins (a random street, or a
+// spot picked on a map of Prague, startmap.ts), the date, time and weather it will begin
 // with (the time in Prague now and a weather picked for the season, if nothing was
 // asked for in the URL), each one changeable, and sound on or off. The button stays
 // grey while the map loads, and pressing it is also what lets the browser play sound.
@@ -36,6 +39,8 @@ export interface StartChoice {
   season: number;
   // Carry on from the saved game (time and weather are then the save's own).
   resume: boolean;
+  // Where to begin, as [lon, lat], picked on the map; null for a random street.
+  at: [number, number] | null;
 }
 
 const el = (tag: string, cls: string, parent: HTMLElement, text = '') => {
@@ -68,6 +73,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   let liveDay: number | null = null;
   const liveAvailable = () => { const today = pragueToday(); return day === today && liveDay === today; };
   let resuming = !!opts.saved;
+  let spot: StartSpot | null = null;
 
   // The poster behind shows what is picked: the sky's light for the time of day, and
   // the weather over it (index.html). "Now" shows the part of the day it is now.
@@ -111,6 +117,16 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
 
   const fixed = (s: string) => () => s;
   row<Lang>('Language', LANGS.map((l) => ({ id: l.id, label: fixed(l.label) })), getLang(), setLang);
+  // A random street, or a spot on the map: the second chip then shows the spot's name,
+  // and opens the map again to pick another. Closing the map keeps what was there.
+  const placeRow = row('Place', [{ id: 'random', label: () => t('Random street') }, { id: 'map', label: () => spot ? spot.name : t('Pick on the map') }], 'random', (id) => {
+    if (id === 'random') { spot = null; showPlace(); return; }
+    void pickStart(root, spot).then((s) => { if (s) spot = s; showPlace(); placeRow.buttons[spot ? 1 : 0].focus(); });
+  });
+  const showPlace = () => {
+    placeRow.buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(i === (spot ? 1 : 0))));
+    placeRow.buttons[1].textContent = spot ? spot.name : t('Pick on the map');
+  };
   const seasonRow = row('Season', SEASONS.map(id => ({ id, label: () => t(SEASON_NAMES[id]) })), seasonOfDay(day), (id) => {
     const today = pragueToday();
     day = seasonStartDay(id, today);
@@ -154,7 +170,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
   const sync = () => {
     panel.classList.toggle('resume', resuming);
     found.hidden = fresh.hidden = !resuming;
-    for (const r of [seasonRow.row, timeRow.row, weatherRow.row]) r.hidden = resuming;
+    for (const r of [placeRow.row, seasonRow.row, timeRow.row, weatherRow.row]) r.hidden = resuming;
     go.textContent = !ready ? t('Loading…') : resuming ? t('Continue') : opts.saved ? t('Start new game') : t('Start game');
     fresh.textContent = t('New game');
   };
@@ -209,7 +225,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
           const startDay = resuming ? opts.savedLook?.season ?? day : useToday ? pragueToday() : day;
           // A page or beta note kept open across midnight still starts in today's Prague.
           const startWeather = !resuming && startDay !== day && (!weatherPicked || usingLive) ? automaticWeather(opts.weatherForSeason(startDay)) : weather;
-          resolve({ time: t ? t.sec : null, weather: startWeather, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming });
+          resolve({ time: t ? t.sec : null, weather: startWeather, live: !resuming && usingLive && startWeather === weather && liveAvailable(), sound, season: startDay, resume: resuming, at: !resuming && spot ? [spot.lon, spot.lat] : null });
         });
       }, { once: true }));
     },
