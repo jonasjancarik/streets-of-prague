@@ -11,7 +11,7 @@ summer 2023, ~5 cm/px, CC BY, a public I3S layer) around the building's OSM foot
 and Blender (`pipeline/landmark_bake.py`, run in the background) bakes those colours
 onto the building's clean model from IPR's city model (LOD3). The game hides IPR's and
 OSM's buildings in the landmark's footprint and draws the model instead
-(`landmarkModel` in `src/tiles.ts`). The README ("Landmarks") says how it works; this
+(`landmarkModel` in `src/tiles.ts`). The handbook (`docs/handbook.md`, "Landmarks") says how it works; this
 is how to do it and what goes wrong.
 
 Mánes with Šítkovská vodárenská věž was the first (29 September 2026). Everything

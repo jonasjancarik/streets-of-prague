@@ -81,7 +81,7 @@ local map with every deploy, so it needs none of this.
 
 1. Check the local map is whole and readable: `node scripts/check-data-format.mjs public/data`.
 2. Upload it under a new name, the date plus a suffix if needed:
-   `scripts/upload-data.sh 2026-10-05`. It needs the rclone remote `streets:` (README,
+   `scripts/upload-data.sh 2026-10-05`. It needs the rclone remote `streets:` (handbook,
    "After rebuilding map data"). It takes a while: about 0.7 GB in tens of thousands of
    files. Interrupted? Run it again with `--resume`.
 3. Commit `deploy/data-version` and `deploy/data-history`, which the script updated,

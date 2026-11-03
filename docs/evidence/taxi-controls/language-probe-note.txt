@@ -1,4 +1,0 @@
-The failed extra language-switch probe imported /src/i18n.ts without a query.
-The served taxi/main modules import /src/i18n.ts?t=1790995663319.
-The menu image remained English, consistent with a duplicate Vite language singleton.
-This probe is not counted as a Czech browser pass; actual-class Czech CPU checks pass.

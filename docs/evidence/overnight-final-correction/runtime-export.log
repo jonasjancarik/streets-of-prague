@@ -1,6 +1,0 @@
-/Users/janca/.codex/worktrees/overnight-city-integration/streets-of-prague/pipeline/structures.py:567: RuntimeWarning: All-NaN slice encountered
-  return float(np.nanmin(ground(xs, ys, dry=True)))  # (not the water's level, where there's a river beside it)
-/Users/janca/.codex/worktrees/overnight-city-integration/streets-of-prague/pipeline/structures.py:859: RuntimeWarning: Mean of empty slice
-  h = float(np.nanmean(g[0].height(np.array([c.x]), np.array([c.y]))))
-  6 bridge and tunnel ways: 3 ends on the ground, 58 points on IPR's decks
-  6 bridge and tunnel pieces on up to 1 levels either way

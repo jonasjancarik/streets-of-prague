@@ -96,7 +96,7 @@ Only to confirm the clips load and nothing throws; the levels come from the scri
    The API works with that login from the page:
    `fetch('/apiv2/search/text/?query=…&filter=license:("Creative Commons 0" OR "Attribution")&fields=id,name,username,license,duration,previews,description&format=json')`.
    Prefer recordings made in Prague. Never NC licences (see "Licences for added
-   assets" in the README).
+   assets" in `docs/handbook.md`).
 2. **Ask before downloading**: list each file (id, name, licence, length, size of
    the preview) and wait for a yes.
 3. **Download the previews** (`previews['preview-hq-ogg']`) with curl straight from

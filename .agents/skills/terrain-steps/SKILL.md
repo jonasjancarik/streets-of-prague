@@ -8,7 +8,7 @@ description: How Streets of Prague's terrain gets its quay walls, retaining wall
 IPR's terrain model has a point about every 10 m, and the game reads it on a 4 m
 lattice, bilinearly: on its own a quay wall is a ramp, and where the wall runs across
 the lattice at an angle the ramp has teeth. Since October 2026 the walls are steps.
-The README's "Steps in the ground" has the outline; the top of
+The handbook's (`docs/handbook.md`) "Steps in the ground" has the outline; the top of
 `pipeline/dtm_heights.py` has every rule and why. In short:
 
 - **Heights** come from the technical map's surveyed lines (DTM ZPS, set 3) where a

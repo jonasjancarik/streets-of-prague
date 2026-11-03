@@ -1,9 +1,0 @@
-{
-  "head": "77717393bb65547834692acab0b3d93176a0d171",
-  "trafficSha": "31fe647ba28b3cbc06b506b076c2fc277aa1a37c58fc95def7a73d9bc345f8b7",
-  "parkingSha": "cc8e1c1c02eff4bbaa2997ec4e6290f4f6704534343833b759122b400b612a90",
-  "runtimeDiffSha": "fd52be56afaaf6f5e9c46b2646c8be57a6cc6bc722a0c5a862adb1dd26f1cae5",
-  "precommit": true,
-  "stage": "legacy",
-  "started": "2026-10-17T23:29:16.927Z"
-}

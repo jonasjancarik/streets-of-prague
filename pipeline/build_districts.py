@@ -35,7 +35,7 @@ def boundaries():
     """Every cadastral area in the extract as GeoJSON features (WGS84)."""
     if not CACHE.exists():
         if not PBF.exists():
-            sys.exit(f"needs the OSM extract {PBF} (see the README)")
+            sys.exit(f"needs the OSM extract {PBF} (see "Building the map" in docs/handbook.md)")
         CACHE.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(["osmium", "tags-filter", "--overwrite", "-o", str(CACHE), str(PBF), "r/boundary=cadastral"],
                        check=True)

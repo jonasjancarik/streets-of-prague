@@ -241,7 +241,7 @@ For each phase:
 ## Result
 
 Phases 0–3 are in commit `a1f11e4` in the plan-013 worktree at
-`/Users/janca/.codex/worktrees/2bc4/streets-of-prague`; the result and deferred
+`~/.codex/worktrees/2bc4/streets-of-prague`; the result and deferred
 plan are committed separately. The initial worktree's `public/data` and relevant
 `pipeline/.cache` directories were independent copy-on-write copies of the original
 data. Converted plan-010 landmarks remain only

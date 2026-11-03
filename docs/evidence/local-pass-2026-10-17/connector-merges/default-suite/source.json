@@ -1,6 +1,0 @@
-{
-  "head": "ece08897ab305fc1f592d80fea93bd489accccc7",
-  "trafficSha": "31fe647ba28b3cbc06b506b076c2fc277aa1a37c58fc95def7a73d9bc345f8b7",
-  "started": "2026-10-17T22:50:18.578Z",
-  "note": "One sorted default suite, clear/summer/High; WebGPU verified before running. No scenario repeats."
-}
