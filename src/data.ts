@@ -14,7 +14,8 @@ export const dataUrl = (area: string, path: string) => `${base}${area}_now/${pat
 export const elevationUrl: string = import.meta.env.VITE_ELEVATION_URL ?? 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/';
 export const countrysideUrl: string = import.meta.env.VITE_COUNTRYSIDE_URL ?? `${base}countryside/central-bohemia.pmtiles`;
 // The same vector tiles for the whole planet, read live from Protomaps' daily build
-// (?countryside=live, from the developer tools), through the dev server (vite.config):
+// (?countryside=live, from the developer tools, and ?at=), through the dev server
+// (vite.config) or the beta's Caddy (scripts/Caddyfile.mbxp):
 // their builds are kept for a few weeks and aren't meant for a game's players, so this
 // is for trying places out only.
 export async function liveCountrysideUrl(): Promise<string> {

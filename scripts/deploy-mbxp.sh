@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Deploy to mbxp as https://beta.streetsofprague.com (Cloudflare tunnel urad-ai-poc → 127.0.0.1:3017).
+# Deploy to mbxp as https://beta.streetsofprague.com (Cloudflare tunnel urad-ai-poc → 127.0.0.1:3017),
+# served by Caddy (scripts/Caddyfile.mbxp), which also passes Protomaps' planet build through
+# for ?at= (a world centred anywhere) as the dev server does.
 # The built site goes to releases/<commit>/site. The locally built map data (public/data)
 # goes to data/<id>, where the id is a fingerprint of its files: a changed map gets a new
 # folder and a new address (data/<id>/), so the running game keeps the map it started
@@ -55,7 +57,7 @@ if [[ -n ${TURNSTILE_SITE_KEY:-} ]]; then export VITE_TURNSTILE_SITE_KEY=$TURNST
 # Statistics go to production's Worker too; the domain they carry tells the beta apart.
 if [[ -n $CF_MAP ]]; then export VITE_DATA_URL=https://data.streetsofprague.com/$CF_MAP/ VITE_DATA_VERSION=$CF_MAP; else export VITE_DATA_URL=data/$ID/; fi
 VITE_TELEMETRY_URL=$API/report node --input-type=module -e "import { build } from 'vite'; await build({ publicDir: false })"
-# busybox httpd can't send no-store, so the game asks for it with cache: 'no-store'.
+# The beta's Caddy sends no Cache-Control, so the game asks for it with cache: 'no-store'.
 node scripts/write-version-json.mjs dist "${CF_MAP:-$ID}" --fixed
 
 # site/data/<id> is the mountpoint for the map (it can't be created inside a read-only mount).
@@ -64,7 +66,7 @@ rsync -a dist/ "$HOST:$DIR/releases/$SHA/site/"
 # The build leaves public/ out (publicDir: false, for the sake of public/data), so the
 # committed files in it (figures.glb, cars.glb, facades.webp) go over on their own.
 (cd public && git ls-files) | rsync -a --files-from=- public/ "$HOST:$DIR/releases/$SHA/site/"
-rsync -a scripts/httpd.conf "$HOST:$DIR/releases/$SHA/httpd.conf"
+rsync -a scripts/Caddyfile.mbxp "$HOST:$DIR/releases/$SHA/Caddyfile"
 # The map is sent to <id>.partial and renamed once it's whole, so an interrupted sync is
 # never served. Unchanged files are linked from the map in use (or, the first time, from
 # shared/data, where the map used to live).
@@ -85,10 +87,11 @@ docker run -d --name streets-of-prague --restart unless-stopped \
   -p 127.0.0.1:$PORT:80 \
   -v "$DIR/releases/$SHA/site:/www:ro" \
   -v "$DIR/data/$ID:/www/data/$ID:ro" \
-  -v "$DIR/releases/$SHA/httpd.conf:/etc/httpd.conf:ro" \
-  busybox:latest httpd -f -p 80 -h /www -c /etc/httpd.conf >/dev/null
+  -v "$DIR/releases/$SHA/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  caddy:2.11.4-alpine >/dev/null
 sleep 1
 curl -fsS -o /dev/null -w "index.html: HTTP %{http_code}\n" http://127.0.0.1:$PORT/
+curl -fsS -o /dev/null -w "Protomaps builds: HTTP %{http_code}\n" http://127.0.0.1:$PORT/protomaps-meta/builds.json
 # With --cloudflare-map there is no map here: the check of its format ran before the build.
 [ -n "$CF_MAP" ] || curl -fsS -o /dev/null -w "praha index: HTTP %{http_code} %{content_type}\n" http://127.0.0.1:$PORT/data/$ID/praha_now/index.json
 # Which code and which map are live, and the map this release went out with.

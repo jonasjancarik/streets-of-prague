@@ -1,0 +1,36 @@
+# The beta on mbxp (scripts/deploy-mbxp.sh): the built site and its map from /www, and
+# Protomaps' daily planet build for ?at= and ?countryside=live, which their server lets
+# only a few sites read in a browser. The same two paths as the dev server's proxy
+# (vite.config.js).
+{
+	admin off
+}
+
+:80 {
+	handle_path /protomaps-build/* {
+		reverse_proxy https://build.protomaps.com {
+			header_up Host {upstream_hostport}
+			header_up -Origin
+			header_up -Referer
+		}
+	}
+	handle_path /protomaps-meta/* {
+		reverse_proxy https://build-metadata.protomaps.dev {
+			header_up Host {upstream_hostport}
+			header_up -Origin
+			header_up -Referer
+		}
+	}
+
+	handle {
+		root * /www
+		# The tiles' .bin files come gzipped; the game unpacks them itself, so they go as
+		# they are, and with a Content-Type, which Cloudflare needs to pass the rest
+		# compressed.
+		@bin path *.bin *.gz
+		header @bin Content-Type application/octet-stream
+		@txt path *.txt
+		header @txt Content-Type "text/plain; charset=utf-8"
+		file_server
+	}
+}

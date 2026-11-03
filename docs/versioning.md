@@ -69,8 +69,8 @@ Both deploy scripts write `version.json` at the site root with
 `game` is what `git describe` gave the build (as in the settings panel), `map` the map
 it goes with and `mapsAccepted` the range from the check above. On mbxp the map is the
 fingerprint id, and that is the only one accepted. Cloudflare serves it with
-`Cache-Control: no-store` (the generated `_headers`); busybox httpd on mbxp can't send
-headers, so the game asks for it with `cache: 'no-store'` instead.
+`Cache-Control: no-store` (the generated `_headers`); the beta's Caddy on mbxp sends no
+such header, so the game asks for it with `cache: 'no-store'` instead.
 
 An open tab reads it (`src/update.ts`) on load and when it becomes visible again, at
 most every 15 minutes. If `game` differs from the tab's own version, the settings panel
