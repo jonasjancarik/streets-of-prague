@@ -10,7 +10,7 @@ import type { DriveEdge } from './network.ts';
 import type { Traffic, TrafficAgent } from './traffic.ts';
 import type { FigureKit } from './figures.ts';
 
-// The dustcarts. In the centre, by day, one or two are about on their rounds: crawling
+// The dustcarts. In the inner city, by day, two or three are about on their rounds: crawling
 // along the side streets with their amber lamps going, two dustmen riding on the steps
 // at the back. Every few houses the cart stops; the dustmen jump down, go into the
 // house beside it (bins in the old town are kept in the passage or the courtyard), wheel
@@ -18,8 +18,8 @@ import type { FigureKit } from './figures.ts';
 // back in, and climb on again. Cars behind wait, or get past where the street is wide
 // enough. A cart that's crashed into or taken is left, and its crew walks off.
 
-const CENTRE = [-3205, 3097], ROUNDS = 3000; // m from the Old Town Square: rounds only in the centre
-const FROM = 5, TO = 22; // the hours they're out
+const CENTRE = [-3205, 3097], ROUNDS = 6000; // m from the Old Town Square: rounds only in the inner city
+const FROM = 5, TO = 23; // the hours they're out
 const CREW = 2;
 const CRAWL = 5.5; // m/s between houses
 const GAP = 16; // m at least between stops (and up to as much again)
@@ -68,8 +68,8 @@ export class Refuse {
 
   constructor(o: RefuseOptions) {
     this.o = o;
-    this.fig = new Figures(o.kit, CREW * 4);
-    for (let i = 0; i < CREW * 4; i++) this.fig.look(i, { shirt: '#ee7a1c', trousers: '#2e3540', skin: '#e3b99a', hair: '#3a2a1e', sleeves: true });
+    this.fig = new Figures(o.kit, CREW * 8);
+    for (let i = 0; i < CREW * 8; i++) this.fig.look(i, { shirt: '#ee7a1c', trousers: '#2e3540', skin: '#e3b99a', hair: '#3a2a1e', sleeves: true });
     this.fig.commit(0);
     o.scene.add(this.fig.mesh);
     this.binMesh = new THREE.InstancedMesh(binGeometry(), cutAway(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), 'furniture'), BINS);
@@ -182,7 +182,7 @@ export class Refuse {
     if (this.spawnT < 0) {
       this.spawnT = 2;
       const h = o.hour(), centre = Math.hypot(me.x - CENTRE[0], me.y - CENTRE[1]) < ROUNDS;
-      const want = o.quiet() || !centre || h < FROM || h >= TO ? 0 : h >= 6 && h < 11 ? 2 : 1;
+      const want = o.quiet() || !centre || h < FROM || h >= TO ? 0 : h >= 6 && h < 12 ? 3 : 2;
       if (this.rounds.filter((r) => r.phase !== 'gone').length < want) this.send(me.x, me.y);
     }
     for (const r of this.rounds) {

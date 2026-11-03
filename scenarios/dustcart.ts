@@ -18,10 +18,14 @@ export default {
     t.check('the crew ride on the back', round().crew.every((j) => j === 'ride'), round().crew);
     const seen = new Set<string>();
     let top = 0, stopped = false, shot = false;
+    // (You keep near it, walking along behind: a cart left far behind you is taken off the streets.)
+    const me = (window.__drive as { walker: { x: number; y: number } }).walker;
+    const follow = (c: { x: number; y: number; h?: number }) => { if (Math.hypot(c.x - me.x, c.y - me.y) > 60) { me.x = c.x - Math.cos(c.h ?? 0) * 12; me.y = c.y - Math.sin(c.h ?? 0) * 12; } };
     for (let i = 0; i < 240; i++) {
       await t.wait(0.5);
       const r = round();
       if (!r) break;
+      follow(r.car);
       top = Math.max(top, r.speed);
       r.crew.forEach((j) => seen.add(j));
       if (r.phase === 'work') stopped = true;
@@ -42,15 +46,13 @@ export default {
     t.check('everyone back on the steps and the cart going on', !!r && r.phase === 'drive' && r.crew.every((j) => j === 'ride'), r && { phase: r.phase, crew: r.crew });
     t.check('no bin left behind', !!r && r.bins === 0, r?.bins);
 
-    // Taken from them: the crew get down and walk off.
-    const g = window.__drive as { walker: { x: number; y: number }; refuse: { rounds: { agent: { crawl?: number } }[]; crew: { job: string }[] } };
-    g.refuse.rounds[0].agent.crawl = 0;
-    await t.wait(4);
-    const c = r!.car as unknown as { x: number; y: number; h: number; spec: { W: number } };
-    g.walker.x = c.x - Math.sin(c.h) * (c.spec.W / 2 + 0.8);
-    g.walker.y = c.y + Math.cos(c.h) * (c.spec.W / 2 + 0.8);
-    t.interact();
-    await t.wait(2);
+    // Taken from them, while it works a house: the crew get down and walk off.
+    const g = window.__drive as { refuse: { rounds: { phase: string; car: unknown }[]; crew: { job: string }[] } };
+    for (let i = 0; i < 120 && g.refuse.rounds[0] && g.refuse.rounds[0].phase !== 'work'; i++) { await t.wait(0.5); follow(round().car); }
+    const cartNow = g.refuse.rounds[0]?.car;
+    if (!t.check('it stops at another house', !!cartNow)) return;
+    await (t as unknown as { enter: (c: unknown) => Promise<unknown> }).enter(cartNow);
+    await t.wait(1);
     const crew = g.refuse.crew.map((m) => m.job);
     t.check('taken, the crew get down and walk off', t.where().mode !== 'foot' && crew.length > 0 && crew.every((j) => j === 'leave'), { crew, mode: t.where().mode });
     t.exit();

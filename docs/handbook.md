@@ -363,9 +363,9 @@ that without a new renderer.
   who are out run after you for a while). The developer panel's "Leave the nearest
   person hurt" button is the quickest way to see it (`src/ambulance.ts`,
   `scenarios/ambulance.ts`).
-- **Dustcarts.** Within about 3 km of the Old Town Square, from 5:00 to 22:00, one
-  dustcart is out on its round (two between 6:00 and 11:00). It keeps to the side
-  streets at about 20 km/h, with its amber lamps flashing and two dustmen riding on the
+- **Dustcarts.** Within about 6 km of the Old Town Square, from 5:00 to 23:00, two
+  dustcarts are out on their rounds near you (three between 6:00 and 12:00). Each keeps
+  to the side streets at about 20 km/h, with its amber lamps flashing and two dustmen riding on the
   steps at the back. Every 16–32 m it stops beside a house. The dustmen jump down, go in
   (old-town bins are kept in the passage or the courtyard) and wheel a bin out to the
   lift at the back, which tips it. They take the bin back in, sometimes come out with a
