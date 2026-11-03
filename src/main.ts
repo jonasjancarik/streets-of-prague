@@ -108,6 +108,7 @@ import { Standing } from './factions.ts';
 import { Marker } from './marker.ts';
 import { Satnav } from './satnav.ts';
 import { mapOpen, pickSpot } from './startmap.ts';
+import { Blinkers } from './blinkers.ts';
 import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
 import { benchPause } from './benchpause.ts';
@@ -1418,6 +1419,7 @@ async function main() {
   const satnav = new Satnav(scene, drive, (x, y, r) => edgesNear(x, y, r), (x, y, level) => world.surfaceAt(x, y, level),
     new Marker(scene, camera, $('navmark'), (x, y) => ground(x, y), '#6cc4ff'), (text) => showBanner(text));
   assist.prefer = (e) => satnav.next(e);
+  const blinkers = new Blinkers(scene); // the indicators before the directions' turns
   // The map of where to drive; the game waits while it's up.
   const openMap = async () => {
     if (mapOpen() || metro.active || dialog.active) return;
@@ -2386,6 +2388,7 @@ async function main() {
       for (const r of ambulances.rigs) see(r.car);
     }
     carPool.render(drawn, ground, dt, world.terrainRevision);
+    blinkers.update(dt, inCar, inCar ? satnav.signal(inCar.speed) : null, carPool);
     skids.update(dt * scale, drawn, ground);
     steerGuide.update(dt, inCar, inCar && guideOn && !usingPad() ? held : null, (x, y) => ground(x, y, inCar), clamp(height / 120, 1, 3));
     spray.update(dt * scale, drawn, ground, renderer.domElement.height);

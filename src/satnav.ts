@@ -18,6 +18,7 @@ const QUICK = 17; // m/s, for how near the search looks to be (a fast town stree
 const U_TURN = 30, TURN = 3; // s added for turning back, and for a turn (fewer turns)
 const OFF = 14; // m off the line before the way is worked out again
 const ARRIVE = 25; // m from a picked spot that counts as there
+const SIGNAL = 35; // m before a turn the indicator comes on at the least (4 s ahead at speed)
 const WIDTH = 2, STEP = 2.5, CHEVRON = 3; // the line on the road: m wide, sampled every m, one arrow per m
 const PICKED = '#6cc4ff', JOB = '#5ee6a8'; // the line's colour to a spot you picked (the pin's too), and to the job's (its marker's)
 
@@ -243,6 +244,17 @@ export class Satnav {
     if (!w || !this.mesh.visible) return null;
     const i = w.edges.indexOf(e);
     return i >= 0 ? w.edges[i + 1] ?? null : null;
+  }
+
+  // Which way to indicate: from a few seconds before the next turn until you're through
+  // it. Turning round goes to the left, across the oncoming lane.
+  signal(speed: number): 'left' | 'right' | null {
+    const w = this.way;
+    if (!w || !this.mesh.visible) return null;
+    const ahead = Math.max(SIGNAL, speed * 4);
+    const next = w.turns.find((x) => x.at - this.s > -12);
+    if (!next || next.at - this.s > ahead) return null;
+    return next.kind === 'right' || next.kind === 'keep-right' ? 'right' : 'left';
   }
 
   private drop() {

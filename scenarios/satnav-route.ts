@@ -1,8 +1,8 @@
 import type { Scenario } from '../src/testkit.ts';
 
 // Directions to a spot picked on the map (src/satnav.ts): from Národní, heading east, to
-// Karlovo náměstí. The way turns right into Spálená, lane assist follows it, and stopping
-// the directions clears the card.
+// Karlovo náměstí. The way turns right into Spálená, lane assist follows it, the right
+// indicator comes on before the turn, and stopping the directions clears the card.
 export default {
   title: 'Directions from Národní to Karlovo náměstí, followed with lane assist',
   async run(t) {
@@ -22,7 +22,9 @@ export default {
     }
     const way = t.nav();
     t.check('the way reaches the spot', way.reached, way);
-    t.check('a sensible length', way.length > 800 && way.length < 1200, `${way.length} m`);
+    // (Measured from where the car is when the whole way first shows.)
+    const me = t.where(), crow = Math.hypot(way.to!.x - me.x, way.to!.y - me.y);
+    t.check('a sensible length', way.length > crow && way.length < crow * 2, `${way.length} m for ${Math.round(crow)} m as the crow flies`);
     t.check('first right into Spálená', way.turns[0]?.kind === 'right' && way.turns[0]?.onto === 'Spálená', way.turns);
     const card = document.getElementById('nav');
     t.check('the card names the turn', !!card && !card.hidden && card.innerText.includes('Spálená'), card?.innerText);
@@ -30,6 +32,11 @@ export default {
     await t.frames(3);
     const on = t.nav();
     t.check('lane assist keeps to the way', on.along > way.along + 40 && on.length === way.length, `${way.along} → ${on.along} m along a ${on.length} m way`);
+    // Coming up to the turn, the right indicator flashes; not long before.
+    t.check('no indicator 100 m before', on.signal === null || on.turns[0].at - on.along < 60, on);
+    let near = t.nav();
+    for (let i = 0; i < 120 && near.turns[0].at - near.along > 25; i++) { await t.wait(0.25, { move: 1, run: true }); near = t.nav(); }
+    t.check('the right indicator before Spálená', near.signal === 'right', `${Math.round(near.turns[0].at - near.along)} m before: ${near.signal}`);
     await t.shot('satnav-route');
     t.navTo();
     await t.frames(3);

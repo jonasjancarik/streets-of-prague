@@ -136,6 +136,10 @@ that without a new renderer.
   sooner, the job's too until its next stop. On foot the card only says where you're
   headed. `node scripts/check-satnav.mjs` checks the routing offline on the real map;
   in the test API, `t.nav()` reads the way shown and `t.navTo(lat, lon)` picks a spot.
+- **Indicators** (`src/blinkers.ts`): with directions on, your car's indicators flash
+  amber on their own from about 4 s (at least 35 m) before each turn until you're
+  through it, to the left for turning round. Glows over the car's corners, as its own
+  lamps are drawn in its shader.
 - **Metro**: the M signs are the real entrances. Press E at one to go down, pick a
   station on any line (W/S, A/D for the line, E to go, or tap), and the ride plays out
   on the line's map: the wait for a train, the stations going by, a change of line

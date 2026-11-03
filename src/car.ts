@@ -1461,6 +1461,15 @@ export class CarPool {
   // Every page of every body (for the probe to leave out: probe.ts).
   *allMeshes() { for (const pages of this.meshes.values()) yield* pages; }
 
+  // Where the last render put `c` (on the ground, tilted with it), into `out`; false if it wasn't drawn.
+  matrixOf(c: Car, out: THREE.Matrix4) {
+    const i = this.groups.get(c.key)?.indexOf(c) ?? -1;
+    const page = i < 0 ? undefined : this.meshes.get(c.key)?.[Math.floor(i / CarPool.pageCapacity)];
+    if (!page) return false;
+    page.getMatrixAt(i % CarPool.pageCapacity, out);
+    return true;
+  }
+
   private areaOf(c: Car) {
     if (!this.area) return 0;
     const was = this.areas.get(c);

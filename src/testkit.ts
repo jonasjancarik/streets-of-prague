@@ -479,8 +479,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     },
     // ---- Directions (satnav.ts) ----
     // The way shown: where to, whether it gets there or only as far as the streets have
-    // loaded, its length and how far along it you are (m), its streets and its turns.
-    nav() { return g.satnav.probe(); },
+    // loaded, its length and how far along it you are (m), its streets and its turns, and
+    // which way your indicators flash (blinkers.ts).
+    nav() { return { ...g.satnav.probe(), signal: g.satnav.signal(g.car()?.speed ?? 0) }; },
     // Directions to (lat, lon), as if picked on the map; with nothing, they stop.
     navTo(lat?: number, lon?: number) {
       if (lat === undefined || lon === undefined) { g.satnav.pick(null); return kit.nav(); }
