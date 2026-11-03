@@ -109,6 +109,12 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   its heading and wall plane, or null. It checks the full car, nearby vehicles, tram
   circles, posts and fences. `wall-crash` coasts from 60 km/h, records actual wall
   impacts and keeps the final speed check below 15 km/h.
+- `t.nav()`: the directions (`src/satnav.ts`): where they lead, whether the way reaches
+  the spot or only the end of the loaded streets, its length, how far along you are and
+  the turns. `t.navTo(lat, lon)` picks a spot as the map would, `t.navTo()` stops.
+  Lane assist is `run: true` in `t.wait` controls. Standing, only a few hundred metres
+  of streets are loaded; drive with real-time pauses between waits for the rest to
+  stream in (scenario `satnav-route`).
 - `t.route(from, to)`: the shortest way by car through the streets loaded now (those
   within some 700 m of you): `{ length, line }`, the line as `[lat, lon]` points, or null
   where the streets don't join up. `t.follow(line, kmh)` drives your car along such a

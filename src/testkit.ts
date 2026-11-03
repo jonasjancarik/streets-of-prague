@@ -23,6 +23,7 @@ import type { Boats } from './boats.ts';
 import type { Ferries } from './ferries.ts';
 import type { Bags } from './bags.ts';
 import type { Missions } from './missions.ts';
+import type { Satnav } from './satnav.ts';
 import type { Standing } from './factions.ts';
 import type { Hit } from './pistol.ts';
 import { upgrade } from './save.ts';
@@ -112,6 +113,7 @@ interface Game {
   rng: () => number;
   bags: Bags;
   missions: Missions;
+  satnav: Satnav;
   // Holds the fire engine's water cannon on (F).
   cannon: (on: boolean) => void;
   // A shot from your pistol, along `h` (the game's radians) or at the car ahead; null when you can't shoot now.
@@ -474,6 +476,17 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       const p = g.missions.probe();
       const at = p.at ? g.toLonLat(p.at.x, p.at.y) : null;
       return { ...p, out: p.away, at: at ? [round(at[1], 5), round(at[0], 5)] as Point2 : null, away: p.at ? Math.round(Math.hypot(p.at.x - g.me().x, p.at.y - g.me().y)) : null, rep: { ...g.standing.rep } };
+    },
+    // ---- Directions (satnav.ts) ----
+    // The way shown: where to, whether it gets there or only as far as the streets have
+    // loaded, its length and how far along it you are (m), its streets and its turns.
+    nav() { return g.satnav.probe(); },
+    // Directions to (lat, lon), as if picked on the map; with nothing, they stop.
+    navTo(lat?: number, lon?: number) {
+      if (lat === undefined || lon === undefined) { g.satnav.pick(null); return kit.nav(); }
+      const [x, y] = g.toLocal(lon, lat);
+      g.satnav.pick({ x, y, name: `${lat}, ${lon}` });
+      return kit.nav();
     },
     // The jobs there are, and what each needs you to be driving.
     jobs() { return g.missions.defs.map((d) => ({ id: d.id, needs: d.needs ?? null })); },

@@ -11,7 +11,8 @@ interface AssistedCar {
 // press it any time and the assist takes the next left or right turn; otherwise it goes
 // straight on. The brakes stay yours, and the gas only up to the speed limit of the
 // street you're on (OSM maxspeed, else the Czech defaults; see `limit`): to go faster,
-// let go of the assist.
+// let go of the assist. With directions on (satnav.ts), it takes their turns (`prefer`)
+// unless you press A or D.
 
 // Nearest point of a polyline to (x, y), searching [s0, s1]: { s, d, ang }.
 export function project(path: Polyline, x: number, y: number, s0 = 0, s1 = path.length) {
@@ -46,6 +47,8 @@ export class LaneAssist {
   s: number;
   intent: number;
   limit: number | null = null;
+  // The street to take after `e` when you don't pick one (the directions' way), or null.
+  prefer: (e: DriveEdge) => DriveEdge | null = () => null;
 
   constructor(drive: DriveGraph, edgesNear: (x: number, y: number, radius: number) => DriveEdge[]) {
     this.g = drive;
@@ -82,6 +85,8 @@ export class LaneAssist {
     if (!e) return null;
     const opts = (this.g.out.get(e.v) || []).filter((f) => f !== e.twin);
     if (!opts.length) return null;
+    const wanted = Math.abs(steer) > 0.3 ? null : this.prefer(e);
+    if (wanted && opts.includes(wanted)) return wanted;
     const endAng = e.path.at(e.path.length).ang;
     const turns = opts.map((f) => ({ f, t: turnOf(endAng, f.path.at(Math.min(8, f.path.length)).ang) }));
     if (steer > 0.3) return turns.reduce((a, b) => (b.t > a.t ? b : a)).f;   // leftmost

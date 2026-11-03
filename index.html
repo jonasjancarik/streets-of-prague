@@ -119,6 +119,17 @@
       #mark { position: fixed; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: none; font: 16px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; color: #5ee6a8; text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 1px 1px 0 #140d0c; }
       #mark[hidden] { display: none; }
       #mark i { display: block; line-height: 0; filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9)); }
+      /* The spot picked on the map to drive to (src/satnav.ts), and the way's next turn in the HUD. */
+      #navmark { position: fixed; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: none; font: 16px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; color: #6cc4ff; text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 1px 1px 0 #140d0c; }
+      #navmark[hidden] { display: none; }
+      #navmark i { display: block; line-height: 0; filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9)); }
+      #nav { margin-top: 8px; max-width: 280px; padding-top: 7px; border-top: 2px solid #6cc4ff; cursor: pointer; }
+      #nav[hidden] { display: none; }
+      #nav .nav-turn { display: flex; align-items: center; gap: 8px; font: 20px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
+      #nav .nav-turn i { font-style: normal; font: 26px/1 Inter, system-ui, sans-serif; color: #6cc4ff; width: 26px; text-align: center; }
+      #nav .nav-turn b { margin-left: auto; font-weight: normal; }
+      #nav .nav-onto { margin: 3px 0 0 34px; line-height: 1.25; }
+      #nav .nav-to, #nav .nav-left { margin: 3px 0 0 34px; font-size: 12px; opacity: 0.75; }
       #money .valid { font-size: 14px; opacity: 0.7; margin-left: 10px; }
       #health { height: 5px; margin-top: 8px; background: var(--key); border-radius: 3px; overflow: hidden; }
       #health:empty { display: none; }
@@ -261,7 +272,7 @@
       /* The map of where to begin (src/startmap.ts), over the whole start screen: the
          question at the top like the poster's title, the spot picked and the button at
          the bottom, and a red pin where you'll be. */
-      .sm { position: fixed; inset: 0; z-index: 5; background: var(--poster-black); color: var(--poster-paper); font: 16px/1.2 'Bebas Neue', sans-serif; letter-spacing: 0.05em; }
+      .sm { position: fixed; inset: 0; z-index: 11; background: var(--poster-black); color: var(--poster-paper); font: 16px/1.2 'Bebas Neue', sans-serif; letter-spacing: 0.05em; }
       .sm[hidden] { display: none; }
       .sm .sm-map { position: absolute; inset: 0; }
       .sm-top { position: absolute; top: max(16px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; pointer-events: none; }
@@ -276,6 +287,12 @@
       .sm-go { flex: none; font: 24px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; padding: 10px 18px; color: var(--poster-paper); background: var(--poster-red); border: 0; cursor: pointer; box-shadow: 4px 4px 0 #000; transition: background 0.12s, transform 0.12s; }
       .sm-go:not(:disabled):hover, .sm-go:focus-visible { background: #e2342b; transform: translate(-2px, -2px); outline: none; }
       .sm-go:disabled { background: #4a3f3c; color: rgba(236, 228, 214, 0.55); cursor: default; box-shadow: none; }
+      .sm-stop { flex: none; font: 20px/1 'Bebas Neue', sans-serif; letter-spacing: 0.06em; padding: 10px 14px; color: var(--poster-paper); background: none; border: 2px solid rgba(236, 228, 214, 0.5); cursor: pointer; }
+      .sm-stop:hover, .sm-stop:focus-visible { border-color: var(--poster-paper); outline: none; }
+      .sm-stop[hidden] { display: none; }
+      @media (max-width: 520px) { .sm-bar { flex-wrap: wrap; } .sm-text { flex-basis: 100%; } }
+      /* Where you are, on the map of where to drive. */
+      .sm-you { width: 14px; height: 14px; border-radius: 50%; background: #6cc4ff; border: 3px solid var(--poster-paper); box-shadow: 0 0 0 2px var(--poster-black); }
       .sm-pin { width: 36px; height: 44px; cursor: default; }
       .sm-pin span { position: absolute; left: 4px; top: 0; width: 28px; height: 28px; box-sizing: border-box; background: var(--poster-red); border: 3px solid var(--poster-paper); border-radius: 50% 50% 50% 0; transform: rotate(-45deg); box-shadow: -3px 3px 0 var(--poster-black); }
       .sm-pin span::after { content: ''; position: absolute; left: 8px; top: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--poster-paper); }
@@ -629,6 +646,7 @@
       <div id="tally"></div>
       <div id="ride" hidden></div>
       <div id="taxi" hidden></div>
+      <div id="nav" hidden></div>
       <div id="job" hidden></div>
       <div id="board" hidden></div>
     </div>
@@ -636,6 +654,7 @@
     <div id="fade"></div>
     <div id="banner"></div>
     <div id="mark" hidden></div>
+    <div id="navmark" hidden></div>
     <div id="district" aria-live="polite"></div>
     <div id="help" class="panel" data-mode="foot">
       <section class="foot-only">
@@ -648,6 +667,7 @@
           <dt><kbd>E</kbd></dt><dd data-t>Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop</dd>
           <dt><kbd>T</kbd></dt><dd data-t>Get a taxi: wave one down or order one through an app</dd>
           <dt><kbd>J</kbd></dt><dd data-t>Jobs: ask for work, take the job on offer, or give one up</dd>
+          <dt><kbd>N</kbd></dt><dd data-t>Map: pick where to drive, and the way there shows on the road</dd>
           <dt><kbd>F</kbd> <span data-t>or click</span></dt><dd data-t>Shoot ahead, or where you click (hold it to keep shooting). Bullets never hit people</dd>
         </dl>
       </section>
@@ -657,10 +677,11 @@
           <dt><kbd>W</kbd> <kbd>S</kbd></dt><dd data-t>Gas and brake, hold S to reverse</dd>
           <dt><kbd>A</kbd> <kbd>D</kbd></dt><dd data-t>Steer</dd>
           <dt><kbd>Space</kbd></dt><dd data-t>Handbrake</dd>
-          <dt><kbd>Shift</kbd></dt><dd data-t>Hold to keep to the lane and the speed limit, while A and D pick the next turn</dd>
+          <dt><kbd>Shift</kbd></dt><dd data-t>Hold to keep to the lane and the speed limit, while A and D pick the next turn. With directions on, it follows them</dd>
           <dt><kbd>Q</kbd></dt><dd data-t>Horn (hold it)</dd>
           <dt><kbd>F</kbd></dt><dd data-t>Water cannon of a fire engine (hold it)</dd>
           <dt><kbd>R</kbd></dt><dd data-t>Radio: next station, and off (or use the buttons under the speed)</dd>
+          <dt><kbd>N</kbd></dt><dd data-t>Map: pick where to drive, and the way there shows on the road</dd>
           <dt><kbd>E</kbd></dt><dd data-t>Get out, or off a bike</dd>
         </dl>
       </section>

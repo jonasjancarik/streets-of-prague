@@ -106,6 +106,8 @@ import type { Spot } from './missions.ts';
 import { JOBS, SIGHTS } from './jobs.ts';
 import { Standing } from './factions.ts';
 import { Marker } from './marker.ts';
+import { Satnav } from './satnav.ts';
+import { mapOpen, pickSpot } from './startmap.ts';
 import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
 import { benchPause } from './benchpause.ts';
@@ -1368,7 +1370,7 @@ async function main() {
     },
   };
   const settingsPanel = setupSettings({ sound, graphics, weather: { kinds: KINDS, get: () => (weather.fixed ? weather.kind : 'auto'), set: (k: Kind | 'auto') => { if (k === 'auto') weather.fixed = false; else weather.set(k); } }, saves });
-  hideIdleCursor(renderer.domElement, () => settingsPanel.open);
+  hideIdleCursor(renderer.domElement, () => settingsPanel.open || mapOpen());
 
   // ---- Input -------------------------------------------------------------
   const input: Record<InputKey, boolean> = { up: false, down: false, left: false, right: false, run: false, brake: false, jump: false };
@@ -1412,7 +1414,41 @@ async function main() {
   missions.onFail = () => telemetry.did('failed or gave up a job');
   $('job').addEventListener('click', () => { missions.key('KeyJ'); });
   const marker = new Marker(scene, camera, $('mark'), (x, y) => ground(x, y));
+  // Directions: to a spot picked on the map, or else to the job's (src/satnav.ts).
+  const satnav = new Satnav(scene, drive, (x, y, r) => edgesNear(x, y, r), (x, y, level) => world.surfaceAt(x, y, level),
+    new Marker(scene, camera, $('navmark'), (x, y) => ground(x, y), '#6cc4ff'), (text) => showBanner(text));
+  assist.prefer = (e) => satnav.next(e);
+  // The map of where to drive; the game waits while it's up.
+  const openMap = async () => {
+    if (mapOpen() || metro.active || dialog.active) return;
+    releaseInput();
+    telemetry.did('opened the map');
+    const goal = satnav.goal, at = goal ? dev.toLonLat(goal.x, goal.y) : null;
+    const spot = await pickSpot(document.body, {
+      title: t('Where do you want to drive?'), go: t('Drive here'), hint: t('Click or tap a street where you want to go.'),
+      current: goal && at ? { lon: at[0], lat: at[1], name: goal.name } : null,
+      here: dev.toLonLat(px(), py()), stop: satnav.target ? t('Stop navigating') : null,
+    });
+    if (spot === 'stop') satnav.pick(null);
+    else if (spot) {
+      const [x, y] = dev.toLocal(spot.lon, spot.lat);
+      satnav.pick({ x, y, name: spot.name });
+      telemetry.did('picked a place to drive to');
+    }
+  };
+  const mapButton = document.createElement('button');
+  mapButton.type = 'button';
+  mapButton.className = 'corner-btn';
+  mapButton.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg>';
+  const labelMap = () => { mapButton.title = mapButton.ariaLabel = t('Map and directions (N)'); };
+  labelMap();
+  onLang(labelMap);
+  mapButton.addEventListener('click', () => { mapButton.blur(); void openMap(); });
+  const cornerBox = document.querySelector('.corner');
+  cornerBox?.insertBefore(mapButton, cornerBox.querySelector('.corner-btn:not(.corner-feedback)'));
+  $('nav').addEventListener('click', () => { void openMap(); });
   window.addEventListener('keydown', (e) => {
+    if (mapOpen()) return; // (it takes Escape itself)
     // The metro screen and a conversation take the keys while they're up.
     if (metro.active || dialog.active) {
       if (!dialog.active) metro.key(e.code, e.repeat);
@@ -1422,6 +1458,7 @@ async function main() {
     }
     // Escape pauses the game by opening the settings, which also hold the saves.
     if (e.code === 'Escape') { if (!e.repeat && !settingsPanel.open) settingsPanel.show(); e.preventDefault(); return; }
+    if (e.code === 'KeyN' && !e.repeat) { void openMap(); e.preventDefault(); return; }
     if (taxi.key(e.code, !inCar && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me)) { e.preventDefault(); return; }
     if (!e.repeat && taxi.state !== 'menu' && missions.key(e.code)) { e.preventDefault(); return; }
     if (keymap[e.code]) { input[keymap[e.code]] = true; e.preventDefault(); }
@@ -2228,8 +2265,9 @@ async function main() {
   let soundHeld = false;
   renderer.setAnimationLoop((now) => {
     if (benchPause.paused) { last = now; return; } // a benchmark elsewhere on this machine (dev only)
-    const dt = settingsPanel.open ? 0 : Math.min(0.05, (now - last) / 1000); // the settings pause the game
-    if (settingsPanel.open !== soundHeld) sound.hold((soundHeld = settingsPanel.open)); // and the sound with it
+    const paused = settingsPanel.open || mapOpen();
+    const dt = paused ? 0 : Math.min(0.05, (now - last) / 1000); // the settings and the map pause the game
+    if (paused !== soundHeld) sound.hold((soundHeld = paused)); // and the sound with it
     graphics.frame(now - last, now, world.busy);
     telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);
     telemetry.most('maxStars', police.stars);
@@ -2605,6 +2643,10 @@ async function main() {
     const wanted_ = metro.active ? null : missions.target();
     if (wanted_) marker.show(wanted_.x, wanted_.y); else marker.hide();
     marker.update(dt, { x: px(), y: py() });
+    satnav.update(dt, inCar, { x: px(), y: py() }, wanted_);
+    const navCard = metro.active ? '' : satnav.card();
+    show('nav', navCard, 'html');
+    if (shown.navOn !== (navCard ? 1 : 0)) { shown.navOn = navCard ? 1 : 0; $('nav').hidden = !navCard; }
 
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
@@ -2648,7 +2690,7 @@ async function main() {
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
     grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, traffic, crowd, rng: seeded, bags,
-    missions, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list },
+    missions, satnav, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list },
     shoot: (h) => (canShoot() ? shoot(h) : null),
     carsNear: (x, y, r) => [...carsNear(x, y, r)],
     recovering: () => wastedT > 0,

@@ -119,7 +119,23 @@ that without a new renderer.
   lane, and A/D then pick the turn at the next junction instead of steering. It also
   keeps you to the street's speed limit (OSM `maxspeed`, else 50 km/h in town, 70 on
   trunk roads, 80 on motorways): the gas fades out at the limit, and faster than that
-  the car eases down to it. To drive faster, let go of Shift.
+  the car eases down to it. To drive faster, let go of Shift. With directions on (below),
+  it takes their turns at junctions unless you press A or D.
+- **Directions** (`src/satnav.ts`): press N (or the map button in the top right corner,
+  or tap the directions card) to open the map of Prague, tap a street and "Drive here".
+  While you drive, the quickest way by car (by time, along one-way streets) is painted
+  on the road ahead in blue, with moving arrows, and the HUD shows the next turn, the
+  street it leads into and how far there is to go; a blue pillar marks the spot. With
+  no spot picked, the way leads to where the job wants you, in the job's green. The
+  game waits while the map is open. The streets are only known as far as they have
+  loaded (a few hundred metres round a parked car, about a kilometre once you drive
+  and the view widens), so the way to somewhere further off runs to
+  the loaded street that looks quickest from there and is worked out again as more of
+  the city arrives, and whenever you leave it for a second or so. Reaching the spot
+  ("You have arrived") ends the directions; "Stop navigating" on the map ends them
+  sooner, the job's too until its next stop. On foot the card only says where you're
+  headed. `node scripts/check-satnav.mjs` checks the routing offline on the real map;
+  in the test API, `t.nav()` reads the way shown and `t.navTo(lat, lon)` picks a spot.
 - **Metro**: the M signs are the real entrances. Press E at one to go down, pick a
   station on any line (W/S, A/D for the line, E to go, or tap), and the ride plays out
   on the line's map: the wait for a train, the stations going by, a change of line
