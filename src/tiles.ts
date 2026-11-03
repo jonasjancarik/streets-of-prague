@@ -1410,7 +1410,8 @@ export class TileWorld {
     const neighboursThen = this.neighbourCount(t.i, t.j);
     const skyResult = await this.workers.run('sky', {
       box: t.box, ground: s.ground, shapes: this.shadowersFor(t.i, t.j, s.shapes),
-      meshes: arraysOf.map((a) => ({ position: a.position.slice(), normal: a.normal.slice(), facade: a.facade.slice() })),
+      // postMessage clones these read-only inputs; keep the originals for the meshes below.
+      meshes: arraysOf.map((a) => ({ position: a.position, normal: a.normal, facade: a.facade })),
     }).catch((e) => { console.warn(`Sky view of tile ${k} failed`, e); return null; });
     const photo = this.ortho ? await this.photos.get(k) : null;
     const entry = this.sky.get(key);

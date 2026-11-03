@@ -748,3 +748,17 @@ first build of the lamps' light-pool material with cars in it
 10 s in; ground material builds 20–30 ms; the baseline run also had 300–590 ms
 stalls inside GPU calls (writeBuffer), likely the loaded machine. Tile insertion
 stayed at 2–4 ms.
+
+## Sky lighting during tile streaming, 4 November 2026
+
+Precomputing the 240 ray sample offsets used by every exposed ground texel reduced
+the mean CPU time to bake six Praha tiles from 356.8 to 120.9 ms per set of six.
+`node scripts/check-sky-rays.mjs` compares against `b35c0ca` with three warmups
+and six pairs in alternating order (Node 26.12.1, arm64). Ground textures and
+wall lighting were byte-identical on all six real tiles and 18 synthetic cases.
+
+Tile assembly now lets the worker message clone the mesh inputs directly. The three
+explicit slices it replaces copied 40 bytes per vertex. On centrum_now tiles
+0_0, 7_4 and 16_6 this removed 787,080, 2,892,720 and 2,247,120 bytes of copying
+respectively. `node scripts/check-sky-copy.mjs` checks worker results and renderer
+buffer ownership. End-to-end tile arrival times and gameplay FPS remain unmeasured.

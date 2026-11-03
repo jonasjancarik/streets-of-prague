@@ -23,6 +23,10 @@ const DIRS = 16;
 const RING = Array.from({ length: DIRS }, (_, k) => [Math.cos((k + 0.5) * 2 * Math.PI / DIRS), Math.sin((k + 0.5) * 2 * Math.PI / DIRS)]);
 // Distances along a ray, closer together near the start where the nearest walls matter most.
 const REACH = [1.5, 3, 4.5, 6, 8, 10, 13, 16, 20, 25, 30, 37, 45, 52, 60];
+// Every query starts at a cell centre. Round the displacements once, keeping double
+// precision until after floor (some samples are only 0.000066 m from a cell edge).
+// The furthest sample is 59 cells away on either axis, inside the 60-cell margin.
+const RAYS = RING.map(([dx, dy]) => REACH.map((d) => [Math.floor(0.5 + dx * d / SKY_STEP), Math.floor(0.5 + dy * d / SKY_STEP)]));
 
 // Fill a polygon (outer ring, then holes) into a height field with `top` where it is higher.
 function fill(field: Float32Array, w: number, h: number, ox: number, oy: number, rings: Point2[][], top: number) {
@@ -60,15 +64,14 @@ export function skyView({ box, ground, shapes, meshes }: SkyJob): SkyResult {
     fill(field, w, w, ox, oy, s.rings, base + s.h);
   }
   const texels = new Uint8Array(n * n);
-  const openness = (x: number, y: number, z0: number) => {
+  const offsets = RAYS.map((ray) => Int32Array.from(ray, ([i, j]) => j * w + i));
+  const openness = (c: number, z0: number) => {
     let sum = 0;
     for (let k = 0; k < DIRS; k++) {
-      const dx = RING[k][0], dy = RING[k][1];
+      const ray = offsets[k];
       let t = 0;
-      for (const d of REACH) {
-        const i = Math.floor((x + dx * d - ox) / SKY_STEP), j = Math.floor((y + dy * d - oy) / SKY_STEP);
-        if (i < 0 || j < 0 || i >= w || j >= w) break;
-        const up = (field[j * w + i] - z0) / d;
+      for (let s = 0; s < REACH.length; s++) {
+        const up = (field[c + ray[s]] - z0) / REACH[s];
         if (up > t) t = up;
       }
       sum += 1 / (1 + t * t);
@@ -77,10 +80,9 @@ export function skyView({ box, ground, shapes, meshes }: SkyJob): SkyResult {
   };
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const x = bx0 + (i + 0.5) * SKY_STEP, y = by0 + (j + 0.5) * SKY_STEP;
       const c = (j + m) * w + i + m;
       // On a roof (or wherever the field stands above the land) the whole sky is in view.
-      texels[j * n + i] = field[c] > land[c] + 0.5 ? 255 : Math.round(255 * openness(x, y, land[c] + 0.3));
+      texels[j * n + i] = field[c] > land[c] + 0.5 ? 255 : Math.round(255 * openness(c, land[c] + 0.3));
     }
   }
   const at = (x: number, y: number) => {
