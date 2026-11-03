@@ -115,3 +115,35 @@ take is replayed, so engine, tyres, rain, thunder, trams and the city's ambience
 what the game would play at that frame. `SOUND_ONLY=true ./film.sh` records it again
 without filming. The mix only evens the takes out, cuts with the picture and fades.
 A led car collects damage from whatever it brushes; `lib.js` keeps it at none.
+
+## The launch video
+
+`launch.mp4` (English lines) and `launch-cs.mp4` (Czech), 28 seconds, every shot straight
+down as the game is played: a morning over the Castle, a red car pulling away along Ječná
+("Get in."), a tram on the embankment, a helicopter over Charles Bridge ("Go anywhere."),
+St. Nicholas in Malá Strana, a wet night on Vodičkova and a police chase onto most Legií
+("Lose them."); then the dark, the pull back from the car on the bridge to every street lamp
+of the city with what the map holds counted up, and the title.
+
+| File | What |
+| --- | --- |
+| `launch/plan.py` | the one place the timing lives: the shots in order, how long each shows, its time and place, the lines in both languages, the camera's height through the rise → `plan.json`, `src/launch_data.rs` |
+| `launch/shots.js`, `lib.js`, `film.sh` | the shots: where, when, what moves and how the camera follows it; `film.sh [names]` films them into `clips/launch-<shot>.mp4` with the game's own sound of each into `launch/sound/<shot>.wav` |
+| `launch/soundtrack.py` | the sound: each shot's own, evened out and cut with the picture, thumps under the lines, a rising noise into the dark, a chord under the pull back → `media/launch.wav` (−16 LUFS target) |
+| `src/launch.rs`, `src/bin/launch.rs` | the picture: the cuts, the place labels, the lines, the pull back and title (the maps and counting of `atmo.rs`) |
+
+```sh
+python3 trailer/atmo/map.py                 # the night maps and the numbers (stats.json), from the map data
+python3 trailer/launch/plan.py
+trailer/launch/film.sh                      # with the scene server running as above (about 8 minutes)
+python3 trailer/launch/soundtrack.py
+cd trailer && touch src/lib.rs
+cargo run --release --bin launch -- render && street/finish.sh out.mp4 launch.mp4
+cargo run --release --bin launch -- render --czech && street/finish.sh out.mp4 launch-cs.mp4
+```
+
+The free camera needs `level: true` for its heading to turn the picture (`above` in
+`lib.js`); without it north stays up. A helicopter needs open ground to appear on, so the
+`heli` shot makes it on the quay and moves it over the water, and the next shot's `begin`
+lands it first. The pull back starts where the atmospheric trailer's does, so the map
+pictures fit both.

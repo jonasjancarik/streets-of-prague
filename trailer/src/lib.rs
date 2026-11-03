@@ -14,9 +14,11 @@ use std::sync::LazyLock;
 
 pub mod atmo;
 pub mod day;
+pub mod launch;
 pub mod street;
 mod street_data;
 mod atmo_data;
+mod launch_data;
 
 // The fonts and the sound in `media/` are embedded into the binary (fonts are used by
 // family name); the clips are read from `clips/` when it runs (see main.rs).

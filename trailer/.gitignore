@@ -29,3 +29,7 @@ media/street.wav
 
 # What is made for working on a trailer elsewhere: clean pictures, stems.
 /export/
+
+# The launch video: the shots' sound and the mix.
+/launch/sound/
+media/launch.wav

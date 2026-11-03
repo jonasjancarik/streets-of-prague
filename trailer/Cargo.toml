@@ -33,6 +33,10 @@ path = "src/bin/day.rs"
 name = "street"
 path = "src/bin/street.rs"
 
+[[bin]]
+name = "launch"
+path = "src/bin/launch.rs"
+
 [workspace]
 
 [profile.dev]
