@@ -408,7 +408,7 @@ All IPR Praha, CC BY, at
   experiments: it holds the photos, the hand labels and the surface model. Remove it
   when those are done. Kept unmerged on purpose: `worktree-crowd-worker` (plan 019),
   `mosaic-ornaments`, `worktree-rust-wgpu`, `ipad-audio`.
-- **Codex worktrees:** gone through in `docs/codex-worktrees-review.md`. Eleven of
+- **Codex worktrees:** gone through in `docs/evidence/reports/codex-worktrees-review.md` (local only). Eleven of
   fifteen hold nothing unique and can be removed; keep `2bc4` (plan 012 Part B, same
   as `811c`), `ae03` (a dry-ground pilot) and `fd60` (a furniture timing script) until
   decided. All are detached: branch what is kept.

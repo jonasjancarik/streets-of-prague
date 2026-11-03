@@ -1,8 +1,0 @@
-/Users/janca/.codex/worktrees/ae03/streets-of-prague/pipeline/.venv/lib/python3.14/site-packages/shapely/constructive.py:1353: RuntimeWarning: invalid value encountered in oriented_envelope
-  return lib.oriented_envelope(geometry, **kwargs)
-  26 bridge and tunnel ways: 18 ends on the ground, 595 points on IPR's decks
-  37 bridge and tunnel pieces on up to 4 levels either way
-{'reader': 'before', 'seconds': 0.23790304200156243, 'tiles': 21, 'levels': 32, 'finite_height_samples': 10564}
-  26 bridge and tunnel ways: 18 ends on the ground, 674 points on IPR's decks
-  37 bridge and tunnel pieces on up to 3 levels either way
-{'reader': 'after', 'seconds': 0.10977533299956121, 'tiles': 21, 'levels': 31, 'finite_height_samples': 10536}

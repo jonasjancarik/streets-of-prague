@@ -1,8 +1,0 @@
-// From the integration root: node docs/evidence/overnight-final/reproduce-sampler.mjs
-import fs from 'node:fs';import zlib from 'node:zlib';
-import {decodeHeights,pointLabels,heightSampler,terraceAt,flatTerraces} from '../../../src/terrain.ts';
-const data=JSON.parse(fs.readFileSync(new URL('./sampler-case.json',import.meta.url))),{n,step,ref}=data;
-const tiles=data.tiles.map(t=>{const bytes=zlib.gunzipSync(Buffer.from(t.height_gzip_base64,'base64')),buffer=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),hm=decodeHeights(buffer,n,ref),labels=pointLabels(buffer,n);return {...t,hm,labels,sample:heightSampler(hm,t.box,n,step,labels,terraceAt(t.terraces),flatTerraces(t.terraces,ref))};});
-const points=data.points.map(([x,y])=>({x,y,left:tiles[0].sample(x,y,0),right:tiles[1].sample(x,y,0),delta:tiles[1].sample(x,y,0)-tiles[0].sample(x,y,0)}));
-const corners=tiles.map(t=>{const x=-780,y=248.82,u=Math.min(n-1.001,Math.max(0,(x-t.box[0])/step)),v=Math.min(n-1.001,Math.max(0,(y-t.box[1])/step)),i=Math.floor(u),j=Math.floor(v),ids=[j*n+i,j*n+i+1,(j+1)*n+i,(j+1)*n+i+1];return {tile:t.tile,u,v,corners:ids.map(k=>({grid:k,height:t.hm[k],label:t.labels?.[k]??0})),plainFallbackNeighbours: Array.from({length:Math.min(n-1,j+2)-Math.max(0,j-1)+1},(_,q)=>q+Math.max(0,j-1)).flatMap(row=>Array.from({length:Math.min(n-1,i+2)-Math.max(0,i-1)+1},(_,p)=>p+Math.max(0,i-1)).filter(col=>t.labels[row*n+col]===0).map(col=>({row,col,height:t.hm[row*n+col]}))),sharedRow: [i,i+1].map(col=>{const k=t.tile==='5_6'?(n-1)*n+col:col;return {height:t.hm[k],label:t.labels?.[k]??0};})};});
-console.log(JSON.stringify({built:data.built,points,corners},null,2));

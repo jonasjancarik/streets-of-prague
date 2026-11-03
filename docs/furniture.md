@@ -59,5 +59,5 @@ Run `node scripts/check-furniture.mjs` for deterministic placement, seams, clear
 slopes and density. With Vite running, `node scripts/check-furniture-browser.mjs
 http://localhost:5203/` exercises real raster exclusions, land-worker transfer,
 collision, shared models and instance disposal in Chrome. The usual typecheck/build
-remain applicable. See `docs/overnight-furniture-results.md` for the camera and map
-provenance of the initial visual check.
+remain applicable. The camera and map
+provenance of the initial visual check are in the local working records (`docs/evidence/`).

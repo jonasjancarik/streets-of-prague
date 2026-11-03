@@ -115,12 +115,12 @@ deployment is part of it.
 
 | Plan | Original completed worktree | Final original commit |
 | --- | --- | --- |
-| 007 | `/Users/janca/.codex/worktrees/60f1/streets-of-prague` | `50c92d6e48a0a9ce1465ef6b9e6d19a7e1312e5e` |
-| 008 | `/Users/janca/.codex/worktrees/8d89/streets-of-prague` | `408aae2ebafd83d7ae0a6172a10a42f272cf01ab` |
-| 009 | `/Users/janca/.codex/worktrees/2632/streets-of-prague` | `be7c6e0de3e88c85af6de8869c204713c1194370` |
-| 010 | `/Users/janca/.codex/worktrees/2438/streets-of-prague` | `afdf836b77124d4aba261aa0fafc6fc5063bd330` |
-| 011 | `/Users/janca/.codex/worktrees/208b/streets-of-prague` | `c2e2e7093c2ccafa2925786a44813d8f49a04376` |
-| 012 | `/Users/janca/.codex/worktrees/811c/streets-of-prague` | `dc84b12ae6fc8720c3beeb70a7519e0734e3e539` |
+| 007 | `~/.codex/worktrees/60f1/streets-of-prague` | `50c92d6e48a0a9ce1465ef6b9e6d19a7e1312e5e` |
+| 008 | `~/.codex/worktrees/8d89/streets-of-prague` | `408aae2ebafd83d7ae0a6172a10a42f272cf01ab` |
+| 009 | `~/.codex/worktrees/2632/streets-of-prague` | `be7c6e0de3e88c85af6de8869c204713c1194370` |
+| 010 | `~/.codex/worktrees/2438/streets-of-prague` | `afdf836b77124d4aba261aa0fafc6fc5063bd330` |
+| 011 | `~/.codex/worktrees/208b/streets-of-prague` | `c2e2e7093c2ccafa2925786a44813d8f49a04376` |
+| 012 | `~/.codex/worktrees/811c/streets-of-prague` | `dc84b12ae6fc8720c3beeb70a7519e0734e3e539` |
 
 Plan 010's converted assets remain at
 `/tmp/sop-landmark-colours-010/centrum_now` and

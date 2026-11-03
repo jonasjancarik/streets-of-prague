@@ -20,3 +20,12 @@ dist-cf/
 
 # The game as built by scripts/local-two-hosts.sh.
 .local-hosts/
+
+# Working records: test captures, logs and before/after pictures, kept locally.
+docs/evidence/
+screenshots/
+
+# Local launch settings for the desktop app (dev servers, worktrees).
+.claude/launch.json
+.claude/settings.local.json
+.claude/worktrees/

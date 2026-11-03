@@ -238,7 +238,7 @@ data. Their test servers are stopped. No generated assets were changed or deploy
 ## Merge decision, 1 October 2026
 
 Part A is selected for main with the original worker-count default. Part B remains
-only in the experiment worktree `/Users/janca/.codex/worktrees/811c/streets-of-prague`
+only in the experiment worktree `~/.codex/worktrees/811c/streets-of-prague`
 and the separately launched plan-013 integration worktree. Its correctness tests
 passed, but a consistent desktop regression is insufficient reason to replace the
 existing collision implementation. Main keeps `syncResting()` and its existing
