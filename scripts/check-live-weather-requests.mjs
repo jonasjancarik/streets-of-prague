@@ -33,7 +33,7 @@ try {
   requested.length = 0;
 
   for (const code of [-99, -1, 0.5, 1.5, 51.5, 95.2, NaN, Infinity]) assert.equal(kindOfCode(code), null, `invalid code ${code}`);
-  for (const [code, kind] of [[0, 'clear'], [1, 'clear'], [2, 'cloudy'], [3, 'cloudy'], [45, 'mist'], [61, 'rain'], [71, 'snow'], [95, 'storm']]) assert.equal(kindOfCode(code), kind);
+  for (const [code, kind] of [[0, 'clear'], [1, 'clear'], [2, 'clear'], [3, 'cloudy'], [45, 'mist'], [61, 'rain'], [71, 'snow'], [95, 'storm']]) assert.equal(kindOfCode(code), kind);
   serve = async url => url === '/api/weather' ? { ok: false } : response({ current: { weather_code: -1 } });
   assert.equal(await liveWeather(), null, 'malformed fallback data is not a clear-sky report');
 

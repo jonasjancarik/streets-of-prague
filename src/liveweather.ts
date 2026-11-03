@@ -12,8 +12,10 @@ const URL = 'https://api.open-meteo.com/v1/forecast?latitude=50.0875&longitude=1
 // WMO weather codes: https://open-meteo.com/en/docs
 export function kindOfCode(code: number): Kind | null {
   if (!Number.isInteger(code) || code < 0) return null;
-  if (code <= 1) return 'clear';
-  if (code <= 3) return 'cloudy';
+  // Partly cloudy (2) counts as clear: fair weather has its drifting cloud shadows, and
+  // the grey Cloudy look is kept for an overcast sky (3).
+  if (code <= 2) return 'clear';
+  if (code === 3) return 'cloudy';
   if (code === 45 || code === 48) return 'mist';
   if (code >= 51 && code <= 67) return 'rain'; // drizzle, rain and freezing rain
   if (code >= 71 && code <= 77) return 'snow';

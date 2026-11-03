@@ -26,8 +26,9 @@ const seen = (o, h = 12) => kindOf(latest(file([...at(h - 1, { ww: 508, N: 1, VV
 
 assert.equal(seen({ ww: 508, N: 1, VV: 25 }), 'clear', 'a nearly clear sky');
 assert.equal(seen({ ww: 508, N: 4, VV: 25 }), 'clear', 'half the sky clouded is still a fine day');
+assert.equal(seen({ ww: 508, N: 6, VV: 20 }), 'clear', 'a broken sky is fair weather too');
 assert.equal(seen({ ww: 508, N: 7, VV: 15 }), 'cloudy', 'an overcast sky');
-assert.equal(seen({ ww: 10, N: 5, VV: 8 }), 'cloudy', 'haze under cloud is cloudy, not mist');
+assert.equal(seen({ ww: 10, N: 7, VV: 8 }), 'cloudy', 'haze under cloud is cloudy, not mist');
 assert.equal(seen({ ww: 45, N: 9, VV: 0.1 }), 'mist', 'fog reported by the observer');
 assert.equal(seen({ ww: 134, VV: 0.3 }), 'mist', 'fog reported by the automatic sensor');
 assert.equal(seen({ ww: 508, N: 3, VV: 0.4 }), 'mist', 'low visibility without a code');

@@ -66,7 +66,9 @@ export function kindOf(o) {
   if (o.rain !== null && o.rain >= 0.2) return cold ? 'snow' : 'rain';
   if (o.visibility !== null && o.visibility < 1) return 'mist';
   if (o.cloud === null) return null;
-  return o.cloud >= 9 ? 'mist' : o.cloud >= 5 ? 'cloudy' : 'clear';
+  // Cloudy only for a sky (nearly) overcast, 7 eighths or more, as Open-Meteo's code 3 in
+  // src/liveweather.ts; a broken sky is fair weather with drifting cloud shadows.
+  return o.cloud >= 9 ? 'mist' : o.cloud >= 7 ? 'cloudy' : 'clear';
 }
 
 const day = (ms) => new Date(ms).toISOString().slice(0, 10).replaceAll('-', '');
