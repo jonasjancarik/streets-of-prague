@@ -1481,10 +1481,18 @@ async function main() {
   $('minimap').addEventListener('click', () => { void openMap(); });
   window.addEventListener('keydown', (e) => {
     if (mapOpen()) return; // (it takes Escape itself)
-    // The metro screen and a conversation take the keys while they're up.
-    if (metro.active || dialog.active) {
-      if (!dialog.active) metro.key(e.code, e.repeat);
-      else if (!e.repeat) dialog.key(e.code);
+    // The metro screen takes the keys while it's up. A conversation (a job's briefing,
+    // on the phone) takes E, Enter and Space to go on, and leaves you the keys that
+    // walk and drive: the world doesn't stop for it.
+    if (metro.active) {
+      metro.key(e.code, e.repeat);
+      e.preventDefault();
+      return;
+    }
+    if (dialog.active) {
+      if (!e.repeat) dialog.key(e.code);
+      if (keymap[e.code] && e.code !== 'Space') input[keymap[e.code]] = true;
+      if (e.shiftKey) input.run = true;
       e.preventDefault();
       return;
     }
@@ -1568,7 +1576,7 @@ async function main() {
   const touch = setupTouch({ action: interact, backOnRoad, zoomBy, horn: honk, steal: stealTram, cannon: (on) => { cannonHeld = on; }, shoot: (on) => { fireHeld = on; if (on) pulled = true; }, doors: () => ride.doors(), jump: () => {
     if (!inCar && !inHeli && !ride.on && !metro.active && !dialog.active && !boats.me && !funicular.me && !ferries.me && !taxi.riding) { input.jump = true; telemetry.did('jumped'); }
   }, force: params.has('touch') });
-  Object.assign(padHooks, { settings: () => settingsPanel.show(), menu: () => metro.active || dialog.active, zoomBy });
+  Object.assign(padHooks, { settings: () => settingsPanel.show(), menu: () => metro.active, zoomBy }); // (a conversation leaves the stick steering)
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();

@@ -254,7 +254,7 @@ that without a new renderer.
   `input-release` checks this and window focus in the running game.
 - **Game controllers** (`src/gamepad.ts`): the left stick points where to go, the
   triggers are gas and brake, X gets in or out, A jumps or brakes, d-pad right is J
-  (jobs) outside the metro and conversations, and Menu opens settings. In a panel, the stick or d-pad moves focus and A activates the selected
+  (jobs) outside the metro, and Menu opens settings. In a panel, the stick or d-pad moves focus and A activates the selected
   control; left/right adjusts sliders and selection lists. Returning from another
   window requires releasing held buttons before pressing them again.
   When a dialog opens over another one, controls follow the front dialog.

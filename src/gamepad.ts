@@ -6,8 +6,8 @@
 // settings, the beta note) the stick and d-pad move between them, A presses one and
 // B closes the panel.
 //
-//   left stick   walk, run (full push) or steer toward where it points; in the metro
-//                and in conversations it moves the choice
+//   left stick   walk, run (full push) or steer toward where it points (in a
+//                conversation too); in the metro it moves the choice
 //   right trigger / left trigger   gas / brake and reverse
 //   right stick  zoom (up and down)
 //   A            Space: jump, handbrake, wait for a tram, confirm
@@ -19,7 +19,7 @@
 //   left stick click   R: next radio station
 //   right stick click  X: open and close a tram's doors
 //   d-pad        the arrow keys; right is J (jobs: ask for one, take the offer) outside the
-//                metro and conversations
+//                metro
 //   View         T: taxi
 //   Menu         the settings
 //
@@ -210,12 +210,12 @@ export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void;
     press('ShiftLeft', live.has(4));
     // B backs out of the metro, and pays a fine or buys a ticket anywhere else.
     if (hit(1) && !latched.has(1)) tap(menu() ? 'Escape' : 'KeyB');
-    // D-pad right is J (work), and → in the metro and conversations.
+    // D-pad right is J (work), and → in the metro.
     if (hit(15) && !latched.has(15)) tap(menu() ? 'ArrowRight' : 'KeyJ');
     if (hit(9) && !latched.has(9)) settings();
     held = pressed;
 
-    // The left stick. In the metro or a conversation it presses the arrow keys.
+    // The left stick. In the metro it presses the arrow keys.
     if (menu()) {
       Object.assign(state, { move: 0, turn: 0, aim: null });
       const way = direction(sx, sy, dt);
