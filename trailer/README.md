@@ -121,9 +121,11 @@ A led car collects damage from whatever it brushes; `lib.js` keeps it at none.
 `launch.mp4` (English lines) and `launch-cs.mp4` (Czech), 28 seconds, every shot straight
 down as the game is played: a morning over the Castle, a red car pulling away along Ječná
 ("Get in."), a tram on the embankment, a helicopter over Charles Bridge ("Go anywhere."),
-St. Nicholas in Malá Strana, a wet night on Vodičkova and a police chase onto most Legií
-("Lose them."); then the dark, the pull back from the car on the bridge to every street lamp
-of the city with what the map holds counted up, and the title.
+St. Nicholas in Malá Strana, a wet night on Vodičkova and a police chase from the National
+Theatre onto most Legií ("Lose them."); then the dark, the pull back from the car on the
+bridge to every street lamp of the city with what the map holds counted up (lamps, trees,
+buildings, km of streets, km² of map), and the title. In Czech the lines are "Nasedni.",
+"Vyraž kamkoli." and "Setřes je."
 
 | File | What |
 | --- | --- |
@@ -145,5 +147,7 @@ cargo run --release --bin launch -- render --czech && street/finish.sh out.mp4 l
 The free camera needs `level: true` for its heading to turn the picture (`above` in
 `lib.js`); without it north stays up. A helicopter needs open ground to appear on, so the
 `heli` shot makes it on the quay and moves it over the water, and the next shot's `begin`
-lands it first. The pull back starts where the atmospheric trailer's does, so the map
-pictures fit both.
+lands it first. The chase starts on the embankment and drives onto the bridge: a car put
+down on most Legií over Střelecký ostrov was now and then taken for being under the deck,
+and the game opened its cutaway hole round it. The pull back starts where the atmospheric
+trailer's does, so the map pictures fit both.

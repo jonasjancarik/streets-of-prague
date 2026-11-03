@@ -167,10 +167,13 @@ impl Scene for Whole {
                     {maps(ctx, h, c, smooth(380.0, 820.0, h), dim, None)}
                     <g opacity={numbers}>
                         <text x="1824" y="146" text-anchor="end" font-family={MONO} font-size="26" letter-spacing="5" fill={PAPER} opacity={0.7 * smooth(0.3, 1.0, seconds)}>{format!("{} M", spaced(if h < 1000.0 { h } else { (h / 100.0).round() * 100.0 }))}</text>
-                        {tally(seconds, 1.5, 0.0, LAMPS, if cz { "POULIČNÍCH LAMP" } else { "STREET LAMPS" })}
-                        {tally(seconds, 2.1, 1.0, BUILDINGS, if cz { "BUDOV" } else { "BUILDINGS" })}
-                        {tally(seconds, 2.7, 2.0, ROAD_KM, if cz { "KM ULIC" } else { "KM OF STREETS" })}
-                        {tally(seconds, 3.3, 3.0, KM2, if cz { "KM² MAPY" } else { "KM² OF MAP" })}
+                        <g transform="translate(0 -66)">
+                            {tally(seconds, 1.3, 0.0, LAMPS, if cz { "POULIČNÍCH LAMP" } else { "STREET LAMPS" })}
+                            {tally(seconds, 1.8, 1.0, TREES, if cz { "STROMŮ" } else { "TREES" })}
+                            {tally(seconds, 2.3, 2.0, BUILDINGS, if cz { "BUDOV" } else { "BUILDINGS" })}
+                            {tally(seconds, 2.8, 3.0, ROAD_KM, if cz { "KM ULIC" } else { "KM OF STREETS" })}
+                            {tally(seconds, 3.3, 4.0, KM2, if cz { "KM² MAPY" } else { "KM² OF MAP" })}
+                        </g>
                     </g>
                     <g opacity={if titled { smooth(2.0, 16.0, t) * (1.0 - smooth(n - 10.0, n - 1.0, t)) } else { 0.0 }}>
                         <text x="960" y={556.0 + 36.0 * (1.0 - settle(t / 24.0))} text-anchor="middle" font-family={TITLE_FONT} font-size="236" letter-spacing="10" fill={PAPER}>"STREETS OF PRAGUE"</text>

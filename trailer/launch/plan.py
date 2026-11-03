@@ -2,7 +2,7 @@
 """The launch video: about thirty seconds, every shot from straight above as the game is
 played. A morning over the Castle, a car pulling away on Ječná, a tram, a
 helicopter over Charles Bridge, St. Nicholas in Malá Strana, a rainy night and a police chase
-onto most Legií; then the dark, the pull back from the car on the bridge to
+from the National Theatre onto most Legií; then the dark, the pull back from the car on the bridge to
 every street lamp of the city, and the title.
 
 This is the one place the timing lives. Writes plan.json (what film.sh films: each shot's
@@ -29,7 +29,7 @@ SPARE = 0.4
 # The lines: the shot they come in on, seconds into it, seconds shown, English, Czech.
 LINES = [
     ('getin', 0.3, 1.6, 'GET IN.', 'NASEDNI.'),
-    ('heli', 0.2, 1.7, 'GO ANYWHERE.', 'JEĎ, KAM CHCEŠ.'),
+    ('heli', 0.2, 1.7, 'GO ANYWHERE.', 'VYRAŽ KAMKOLI.'),
     ('chase', 0.9, 1.8, 'LOSE THEM.', 'SETŘES JE.'),
 ]
 
@@ -80,7 +80,7 @@ rs += ['];', '/// first frame, the frame after its last, English, Czech',
        f'pub const LINES: [(usize, usize, &str, &str); {len(lines)}] = [']
 rs += [f'    ({a}, {b}, "{en}", "{cs}"),' for a, b, en, cs in lines]
 rs += ['];', f'pub const HEIGHT: [f32; {len(height)}] = [{", ".join(f"{h:.2f}" for h in height)}];',
-       f'pub const LAMPS: f32 = {stats["lamps"]:.1f};', f'pub const BUILDINGS: f32 = {stats["buildings"]:.1f};',
+       f'pub const LAMPS: f32 = {stats["lamps"]:.1f};', f'pub const TREES: f32 = {stats["trees"]:.1f};', f'pub const BUILDINGS: f32 = {stats["buildings"]:.1f};',
        f'pub const ROAD_KM: f32 = {stats["roadKm"]:.1f};', f'pub const KM2: f32 = {stats["km2"]:.1f};', '']
 open(os.path.join(HERE, '../src/launch_data.rs'), 'w').write('\n'.join(rs))
 print(f'{TOTAL} frames ({TOTAL / FPS:.1f} s), rise filmed for {filmed} frames')
