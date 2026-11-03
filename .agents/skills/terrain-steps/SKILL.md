@@ -1,6 +1,6 @@
 ---
 name: terrain-steps
-description: How Streets of Prague's terrain gets its quay walls, retaining walls and bridge heads (the steps in the ground, from the technical map's survey), and how to find and fix a place where the ground looks broken. Use when the ground is ragged, pitted or spiked somewhere, when a bridge dips, kinks or doesn't meet its street, when water climbs a bank or a wall has a hole in it, when working on pipeline/dtm_heights.py, pipeline/structures.py, pipeline/ipr_terrain.py, pipeline/terrain_keep.json, the labels in src/terrain.ts or the cutting and walls in src/ground.ts, or when rebuilding the terrain.
+description: How Streets of Prague's terrain gets its quay walls, retaining walls and bridge heads (the steps in the ground, from the technical map's survey), and how to find and fix a place where the ground looks broken. Use when the ground is ragged, pitted or spiked somewhere, when a bridge dips, kinks or doesn't meet its street, when water climbs a bank or a wall has a hole in it, when working on pipeline/dtm_heights.py, pipeline/structures.py, pipeline/ipr_terrain.py, pipeline/terrain_keep.json, pipeline/terrain_walls.json, the labels in src/terrain.ts or the cutting and walls in src/ground.ts, or when rebuilding the terrain.
 ---
 
 # Steps in the ground
@@ -278,6 +278,16 @@ See `docs/river-terrain-findings.md` for a verified fixed-pose example.
 place stays as the terrain model has it. Use it for a place that's worse with the
 survey than without, after looking at both; don't bend a rule for one place. A box
 that takes in a bridge's end changes where that bridge lands: measure it again.
+
+`pipeline/terrain_walls.json`: a wall the survey has no wall for (a line in degrees, lon
+and lat, and why), where the ground beside it is a slope in the game instead of a step.
+The terrace goes on its top, so it works over a street in a cutting (Divadelní by the
+National Theatre, the plaza 3 m above). Draw the line along the surveyed edge at the
+top's height: cross-sections through the survey's lines show where it is (the first
+guess there, the plaza's paving 3 m further in, moved the slope instead of removing it).
+Its foot takes the lowest ground within `REACH` (10 m), so don't run it up to a tunnel's
+portal, where the floor dips (the portal's wall at Divadelní put a 1 m bump in the
+street and was dropped).
 
 ## Edges that stop you
 

@@ -62,6 +62,14 @@ terrain_keep.json: looked at in the game and found worse with the survey than wi
 (a tangle of ramps and walls the rules above get wrong). Add a place there rather than
 bend a rule for it.
 
+The other way round, terrain_walls.json lists walls the survey misses, drawn by hand from
+its lines: the edge of náměstí Václava Havla over Divadelní's cutting is surveyed as a
+paved area's edge, 3 m over the street beside it, not as a wall. A drawn wall is taken as
+a retaining wall without the test for one, and its terrace goes on its top: the street at
+its foot keeps its heights, and its own points beside the wall come down to it (the
+survey bounds the street with the line along the wall's top, so they had the top's
+height).
+
 The marks are what lets the game make a step of a wall. Each lattice point has a label:
 0 the plain ground, 1 water, 2 and up a terrace of its tile, whose outline the tile lists
 ("terraces"). Where the labels in a lattice cell differ, the game reads the height at a
@@ -330,6 +338,21 @@ def _retaining(lines, at, dry):
     return runs
 
 
+def _drawn(lines, at):
+    """The walls drawn by hand (terrain_walls.json) as _retaining's stretches: [(line,
+    low, True)], low = 1 where the terrain model's ground PROBE out is lower on the line's
+    left. A wall the survey misses stands over a street in a cutting, so its terrace goes
+    on top (see apply)."""
+    out = []
+    for line in lines:
+        c = _along(shapely.get_coordinates(line), PIECE)
+        d = c[1:] - c[:-1]
+        n = np.column_stack([-d[:, 1], d[:, 0]]) / np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
+        m = (c[1:] + c[:-1]) / 2
+        out.append((line, int(-np.sign(np.nanmean(at(m + n * PROBE) - at(m - n * PROBE)))), True))
+    return out
+
+
 def _no_steeper(grid, free, rise, rounds=400):
     """Lower the points `free` of `grid` (in place) until none is more than `rise` above
     a neighbour (its diagonal ones √2 times that); how many it lowered."""
@@ -454,7 +477,7 @@ def weir_points(weirs, shape, x_of, y_of, step):
     return out
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=()):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=()):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -466,7 +489,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     the log, with "labels" (each tile's lattice of labels) and "terraces" (each tile's
     terraces: their label and outline; and under label 1 its water, where that's not
     simply the map's: see below). `weirs`: the map's weirs as lines; `unknown`: {(i, j):
-    which of the tile's points the terrain model had nothing for}."""
+    which of the tile's points the terrain model had nothing for}; `drawn`: walls the
+    survey misses (terrain_walls.json), as lines in local metres."""
     polys, lines, walls = survey(area, bbox)
     walls = [np.column_stack(to_local.transform(w[:, 0], w[:, 1])) for w in walls]
     polys = shapely.transform(np.array(polys, dtype=object), lambda c: np.column_stack(to_local.transform(c[:, 0], c[:, 1])))
@@ -794,8 +818,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     lanes = np.array([ls.buffer(half) for ls, half in streets if half > 0], dtype=object)
     lane_tree = STRtree(lanes) if len(lanes) else None
     off_streets = 0.0  # m² of terrace taken off the car streets
-    for run, low in _retaining(walls, at, dry):
-        line = shapely.LineString(run)
+    for line, low, top in [(shapely.LineString(run), low, False) for run, low in _retaining(walls, at, dry)] + _drawn(drawn, at):
         bx0, by0, bx1, by1 = line.bounds
         ia, ib = max(0, int(np.floor((bx0 - REACH - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 + REACH - x_of(0)) / step)))
         ja, jb = max(0, int(np.floor((by0 - REACH - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 + REACH - y_of(0)) / step)))
@@ -806,8 +829,9 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         p = np.column_stack([x_of(gi), y_of(gj)])
         pt = shapely.points(p)
         d, u = shapely.distance(line, pt), shapely.line_locate_point(line, pt)
-        # Beside the wall, not past its ends.
-        on = (d <= REACH) & (d > 1e-6) & (u > 1e-6) & (u < line.length - 1e-6) & ~wet[gj, gi] & ~street[gj, gi] & ~np.isnan(grid[gj, gi])
+        # Beside the wall, not past its ends. (A drawn wall's street too: the survey bounds
+        # it with the line along the wall's top, so it came up to the top's height.)
+        on = (d <= REACH) & (d > 1e-6) & (u > 1e-6) & (u < line.length - 1e-6) & ~wet[gj, gi] & (top | ~street[gj, gi]) & ~np.isnan(grid[gj, gi])
         gi, gj, p, d, u = gi[on], gj[on], p[on], d[on], u[on]
         if len(gi):
             foot = shapely.get_coordinates(shapely.line_interpolate_point(line, u))
@@ -833,7 +857,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             grid[gj[ok], gi[ok]] = h[ok]
             lowered[gj[ok & below], gi[ok & below]] = True
             wall_points += int(ok.sum())
-        strip = line.buffer(STRIP * low, single_sided=True).buffer(0)
+        # (A drawn wall's terrace is on top: the street at its foot isn't stepped.)
+        strip = line.buffer(STRIP * (-low if top else low), single_sided=True).buffer(0)
         hits = lane_tree.query(strip, predicate="intersects") if lane_tree is not None else []
         if len(hits):
             was = strip.area

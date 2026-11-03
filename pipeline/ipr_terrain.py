@@ -308,6 +308,14 @@ def kept_places(local):
     return out
 
 
+def drawn_walls(local):
+    """The walls in terrain_walls.json (lines in degrees: lon, lat) as lines in the
+    area's metres."""
+    to_local = Transformer.from_crs("EPSG:4326", local, always_xy=True)
+    return [LineString(zip(*to_local.transform(*zip(*wall["line"]))))
+            for wall in json.loads((Path(__file__).parent / "terrain_walls.json").read_text())]
+
+
 def main() -> None:
     command_started = time.perf_counter()
     timings = build_cache.Timings()
@@ -427,7 +435,8 @@ def main() -> None:
     if not args.no_survey:
         surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes, by_water,
                                       [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, [] if args.walls_on_streets else list(streets.values()), args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown, valley_smooth=not args.valley_nearest,
-                                      bridges=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1] + list(outlines))
+                                      bridges=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1] + list(outlines),
+                                      drawn=drawn_walls(local))
         labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")

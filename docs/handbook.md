@@ -1202,7 +1202,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   `?nostepedges` turns the edges off.
   Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
-  in degrees and why) and it stays as the terrain model has it.
+  in degrees and why) and it stays as the terrain model has it. A wall the survey doesn't
+  have as one (it came out as a slope) goes in `pipeline/terrain_walls.json` (a line in
+  degrees and why): the plaza over Divadelní's cutting by the National Theatre.
   Rendered tile edges also share a world-aligned 2 m height profile and perimeter
   stations (`src/terrain-edges.ts`), including tiles without steps, so differing
   clipped-outline refinement cannot open a gap on a curved slope. This changes
