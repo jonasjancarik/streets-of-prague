@@ -129,7 +129,10 @@ const SHOTS = {
     await begin(start, { time: '01:30' });
     const line = route(start, at(-3815, 2412));
     const c = await redCar('sedan');
-    const V = 21, s0 = Math.max(0, lengthOf(line) - FRAMES * V / 30 - 5);
+    // From the embankment by the National Theatre onto the bridge, as far as the island: put
+    // down on the bridge over the island, the car was taken for being under it now and then,
+    // and the game opened its hole in the deck round it.
+    const V = 19, s0 = 328;
     put(c, line, s0, 0); clear(c, 60);
     t.cam = above(ahead(c, 14), 70); await settle(4000);
     t.set({ stars: 3 });
@@ -157,7 +160,7 @@ const SHOTS = {
     const c = await redCar('sedan');
     let best = 0;
     for (let s = 0; s < lengthOf(line); s += 0.5) { const q = along(line, s); if (Math.hypot(q.x - p.x, q.y - p.y) < Math.hypot(along(line, best).x - p.x, along(line, best).y - p.y)) best = s; }
-    put(c, line, best, 0); clear(c, 60);
+    put(c, line, best, 0); c.hint = 'bridge'; clear(c, 60);
     t.cam = above(c, 600); await settle(9000);
     t.cam = above(c, PLAN.height[0]); await settle(2000);
     return record((k) => {

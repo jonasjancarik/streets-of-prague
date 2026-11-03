@@ -27,6 +27,8 @@ async function begin(where, { date = '08-28', time = '12:00', weather = 'clear' 
 // A red car of this type here, on its way along `line` (from `route`).
 const RED = '#c4161c';
 async function redCar(type = 'sedan') {
+  // (Not beside the red car of an earlier shot, left standing where it was.)
+  for (let k = d.loose.length - 1; k >= 0; k--) if (d.loose[k].paint === RED) d.loose.splice(k, 1);
   const c = await t.drive(type);
   c.paint = RED;
   return c;
