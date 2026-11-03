@@ -5,6 +5,7 @@ import * as THREE from 'three';
 // the distance. (The taxi you ordered has a pillar of its own in taxi.ts, in yellow.)
 
 const EDGE = 54; // px the arrow keeps from the edge of the screen
+const HEAD = '<svg viewBox="0 0 20 20" width="24" height="24" aria-hidden="true"><path d="M10 1 18 19 10 14.5 2 19Z" fill="currentColor"/></svg>';
 
 export class Marker {
   private group = new THREE.Group();
@@ -67,6 +68,7 @@ export class Marker {
     this.shown = face;
     this.el.hidden = false;
     this.el.style.transform = `translate(${left}px, ${top}px) translate(-50%, -50%)`;
-    this.el.innerHTML = `<i style="transform:rotate(${turn}deg)">▲</i><span>${far}</span>`;
+    // (A notched arrowhead: turned a third of the way round, a plain ▲ looks unturned.)
+    this.el.innerHTML = `<i style="transform:rotate(${turn}deg)">${HEAD}</i><span>${far}</span>`;
   }
 }
