@@ -18,7 +18,8 @@
 //   right bumper F: water cannon (hold), take over a tram
 //   left stick click   R: next radio station
 //   right stick click  X: open and close a tram's doors
-//   d-pad        the arrow keys
+//   d-pad        the arrow keys; right is J (jobs: ask for one, take the offer) outside the
+//                metro and conversations
 //   View         T: taxi
 //   Menu         the settings
 //
@@ -32,7 +33,7 @@ const REPEAT_FIRST = 0.4, REPEAT = 0.12; // s: a held stick direction in a menu 
 // Standard mapping: button index → the key it presses and releases.
 const BUTTONS: [number, string][] = [
   [0, 'Space'], [2, 'KeyE'], [3, 'KeyQ'], [5, 'KeyF'], [10, 'KeyR'], [11, 'KeyX'],
-  [12, 'ArrowUp'], [13, 'ArrowDown'], [14, 'ArrowLeft'], [15, 'ArrowRight'],
+  [12, 'ArrowUp'], [13, 'ArrowDown'], [14, 'ArrowLeft'],
   [8, 'KeyT'],
 ];
 
@@ -41,7 +42,7 @@ export const usingPad = () => using;
 
 // The hints are written for the keyboard: <b>E</b> get in. For a pad, the same hint
 // with the names of the buttons.
-const NAMES: Record<string, string> = { E: 'X', Space: 'A', Shift: 'LB', F: 'RB', Q: 'Y', B: 'B', X: 'R3', T: 'View', R: 'L3', W: 'RT', S: 'LT', Esc: 'B', Enter: 'A' };
+const NAMES: Record<string, string> = { E: 'X', Space: 'A', Shift: 'LB', F: 'RB', Q: 'Y', B: 'B', X: 'R3', T: 'View', J: 'D-pad →', R: 'L3', W: 'RT', S: 'LT', Esc: 'B', Enter: 'A' };
 export function padLabels(html: string): string {
   if (!using) return html;
   return html
@@ -209,6 +210,8 @@ export function setupGamepad({ settings, menu, zoomBy }: { settings: () => void;
     press('ShiftLeft', live.has(4));
     // B backs out of the metro, and pays a fine or buys a ticket anywhere else.
     if (hit(1) && !latched.has(1)) tap(menu() ? 'Escape' : 'KeyB');
+    // D-pad right is J (work), and → in the metro and conversations.
+    if (hit(15) && !latched.has(15)) tap(menu() ? 'ArrowRight' : 'KeyJ');
     if (hit(9) && !latched.has(9)) settings();
     held = pressed;
 

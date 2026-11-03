@@ -161,6 +161,14 @@ assert.equal(keys.size, 0, 'a button first pressed in the background also needs 
 button(2, false); tick(); button(2, true); tick();
 assert(keys.has('KeyE'));
 
+// D-pad right is J for work (and → only in the metro and conversations).
+const tapped = [];
+window.addEventListener('keydown', e => tapped.push(e.code));
+for (let i = 0; i < pad.buttons.length; i++) button(i, false);
+tick(); button(15, true); tick();
+assert(tapped.includes('KeyJ') && !tapped.includes('ArrowRight'), 'd-pad right asks for work');
+button(15, false); tick();
+
 pads = [pad];
 pad.axes[0] = 0;
 for (let i = 0; i < pad.buttons.length; i++) button(i, false);

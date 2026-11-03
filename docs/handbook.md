@@ -204,8 +204,8 @@ that without a new renderer.
 - **Jobs** (`src/missions.ts`, `src/jobs.ts`): work that pays. Press J to ask for a
   job (on touch, tap the job card), J again to take the one on offer, and J twice to
   give one up. With no job on, the card under the speed says "J look for work" ("Tap
-  here: look for work" on touch; hidden while a gamepad is in use, which has no button
-  for it). On foot, on a bike or in an ordinary car, J goes through what's on: a
+  here: look for work" on touch). On a gamepad, d-pad right is J. On foot, on a bike
+  or in an ordinary car, J goes through what's on: a
   courier run (fetch a parcel and bring it across town in time), a sightseeing tour (a
   tourist driven past three sights and back), and the Regulars' work for Jarka's pub
   crowd: bring a parked car to a yard (dents come off the pay), and once they know you,
@@ -253,8 +253,8 @@ that without a new renderer.
   Releasing a movement key in a developer field still stops movement; scenario
   `input-release` checks this and window focus in the running game.
 - **Game controllers** (`src/gamepad.ts`): the left stick points where to go, the
-  triggers are gas and brake, X gets in or out, A jumps or brakes, and Menu opens
-  settings. In a panel, the stick or d-pad moves focus and A activates the selected
+  triggers are gas and brake, X gets in or out, A jumps or brakes, d-pad right is J
+  (jobs) outside the metro and conversations, and Menu opens settings. In a panel, the stick or d-pad moves focus and A activates the selected
   control; left/right adjusts sliders and selection lists. Returning from another
   window requires releasing held buttons before pressing them again.
   When a dialog opens over another one, controls follow the front dialog.
