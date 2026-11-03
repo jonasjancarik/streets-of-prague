@@ -349,7 +349,11 @@ def _drawn(lines, at):
         d = c[1:] - c[:-1]
         n = np.column_stack([-d[:, 1], d[:, 0]]) / np.maximum(np.hypot(d[:, 0], d[:, 1]), 1e-9)[:, None]
         m = (c[1:] + c[:-1]) / 2
-        out.append((line, int(-np.sign(np.nanmean(at(m + n * PROBE) - at(m - n * PROBE)))), True))
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            rise = np.nanmean(at(m + n * PROBE) - at(m - n * PROBE))
+        if np.isfinite(rise) and rise:  # (not one outside the area being built)
+            out.append((line, int(-np.sign(rise)), True))
     return out
 
 
