@@ -67,6 +67,8 @@ export const TYPES: Record<string, CarSpec> = {
   fire: { L: 8.5, W: 2.5, H: 3.2, mass: 14000, accel: 2.4, vmax: 25, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#c4161c', heavy: true, wheelbase: 5, drive: 'rwd', radius: 8.5, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
   // An ambulance: src/ambulance.ts sends these to people lying hurt. Never parked or in traffic.
   ambulance: { L: 6, W: 2.1, H: 2.7, mass: 3200, accel: 5.5, vmax: 30, grip: 8, turn: 1.8, weight: 0, traffic: 0, color: '#f2f3ef', wheelbase: 3.6, drive: 'rwd', radius: 6, response: 6, brake: 11, tough: 4.5, drag: 0.5, weather: 1.1 },
+  // A dustcart: src/refuse.ts keeps one or two on their rounds in the centre. Never parked or in the ordinary mix.
+  garbage: { L: 9.6, W: 2.5, H: 3.3, mass: 18000, accel: 2, vmax: 22, grip: 7, turn: 1.3, weight: 0, traffic: 0, color: '#e8701e', heavy: true, wheelbase: 4.6, drive: 'rwd', radius: 9, response: 4, brake: 8, fade: 0.3, drag: 0.4, reverse: 0.2, tough: 6, weather: 1.15 },
 };
 // A variant of a body type: the same geometry (so the same draw call) with its own
 // handling and engine. `make`, `model` and `engine` (made-up names, never translated) are shown when
@@ -279,6 +281,7 @@ function carGeometry(type: string, box?: string): THREE.BufferGeometry {
     : type === 'bus' || type === 'minibus' ? busGeometry(S)
     : type === 'fire' ? fireGeometry(S)
     : type === 'ambulance' ? ambulanceGeometry(S)
+    : type === 'garbage' ? garbageGeometry(S)
     : bodyGeometry(type, box);
   markZones(geometry);
   cache.set(k, geometry);
@@ -346,7 +349,7 @@ function bodyGeometry(type: string, box?: string): THREE.BufferGeometry {
 
 // A car's doors: 1 front left (the driver's), 2 front right, 3 and 4 behind them. `side`
 // is 1 on the left; `front` (the hinge) and `back` are along the car from its middle.
-// Vehicles built here from boxes (buses, lorries, the fire engine, the ambulance) have
+// Vehicles built here from boxes (buses, lorries, the fire engine, the ambulance, the dustcart) have
 // no door to swing (`real`), only the places to get in at the cab.
 export interface Door { n: number; side: number; front: number; back: number; real: boolean }
 const DOORS = new Map<string, Door[]>();
@@ -594,6 +597,58 @@ function ambulanceGeometry(S: CarSpec): THREE.BufferGeometry {
   box('#e3e5e0', L - 0.03, L + 0.04, 0.3, 0.42, 0.52); // number plate
   wheel(L - 1.1, W);
   wheel(-L + 1.2, W);
+  return done();
+}
+
+// A dustcart from boxes: a rear loader, its low cab and the compactor body behind it in
+// municipal orange, the body's ribs and the tailgate (darker, with the hopper and the
+// bin lift at the bottom) showing from above, a step either side at the back for the
+// crew to ride on with a handle to hold, amber lamps on the cab and on the tailgate
+// (beacons.ts), and red and white chevrons on the back.
+function garbageGeometry(S: CarSpec): THREE.BufferGeometry {
+  const paint = S.color || '#e8701e';
+  const { box, rounded, wheel, done } = boxBuilder(paint);
+  const L = S.L / 2, W = S.W, glass = '#1b242c', dark = '#2a2c2f', grey = '#8d9296', rib = '#c95e17', gate = '#b9561a';
+  const cab = 2.2, cx = L - cab, floor = 0.55, cabTop = 2.85, top = 3.3, nose = 0.24;
+  const back = -L + 0.45; // the tailgate's back, with the steps behind it
+  const hinge = back + 1.7; // where the tailgate meets the body
+  box(dark, back, L - 0.05, 0.3, floor + 0.2, W - 0.4); // chassis
+  rounded(paint, cx, L, floor, cabTop, W, [nose, 0.005], 0.1); // cab
+  box(glass, L - 0.05, L + 0.02, 1.3, cabTop - 0.2, W - 2 * nose - 0.04); // windscreen, low down to the kerb
+  box(glass, cx + 0.4, L - 0.35, 1.3, cabTop - 0.25, W + 0.02); // door windows
+  box(glass, L - 0.6, L - 0.1, 0.65, 1.2, W + 0.02); // the low windows in the doors
+  rounded(dark, L - 0.1, L + 0.15, 0.3, 0.7, W - 0.1, nose); // bumper
+  box('#e9e9e4', cx + 0.3, L - 0.5, cabTop, cabTop + 0.05, W - 0.6); // the cab roof's white panel
+  box(dark, cx - 0.12, cx, floor + 0.3, top - 0.2, W - 0.2); // the gap behind the cab
+  // The body, its top edges rounded off: a long rounded box from above, with ribs across.
+  rounded(paint, hinge, cx - 0.12, floor + 0.3, top, W, 0.12, 0.28);
+  for (let x = hinge + 0.55; x < cx - 0.4; x += 0.85) box(rib, x - 0.06, x + 0.06, floor + 0.3, top + 0.01, W + 0.03);
+  // The tailgate: lower at the back, the hopper opening at the bottom and the lift's bar across it.
+  rounded(gate, back, hinge, floor + 0.5, top - 0.1, W - 0.04, 0.1, 0.22);
+  rounded(gate, back - 0.05, back + 0.6, floor + 0.2, top - 0.55, W - 0.1, 0.08, 0.12);
+  box('#141516', back - 0.08, back + 0.02, floor + 0.35, floor + 0.95, W - 0.5); // the hopper's mouth
+  box(grey, back - 0.25, back - 0.05, floor + 0.3, floor + 0.45, W - 0.6); // the lift's comb
+  for (const side of [-1, 1]) {
+    const z = side * (W / 2 - 0.32);
+    box('#e6e7e3', hinge, L - nose, floor + 0.32, floor + 0.47, 0.03, side * W / 2); // a reflective band along the side
+    box(HEADLAMP, L + 0.08, L + 0.15, 0.45, 0.7, 0.36, side * (W / 2 - nose - 0.2));
+    box(TAIL_LAMP, back - 0.07, back + 0.01, 1.6, 1.95, 0.2, side * (W / 2 - 0.15));
+    // The steps at the back, and the handles above them.
+    box(grey, -L, back, 0.42, 0.5, 0.62, z);
+    box('#54585c', -L, -L + 0.06, 0.3, 0.5, 0.62, z);
+    box('#d9dcde', back - 0.14, back - 0.08, 1.0, 2.1, 0.05, side * (W / 2 - 0.12));
+    box('#d9dcde', back - 0.14, back - 0.08, 2.05, 2.1, 0.4, side * (W / 2 - 0.3));
+    // Mirrors out past the cab's corners.
+    box(dark, L - 0.3, L - 0.15, 2.2, 2.6, 0.12, side * (W / 2 + 0.18));
+    box(dark, L - 0.28, L - 0.18, 2.4, 2.45, 0.3, side * (W / 2 + 0.06));
+    box('#c47a12', L - 0.75, L - 0.45, cabTop + 0.05, cabTop + 0.2, 0.3, side * 0.55); // the cab's amber lamps
+    box('#c47a12', back + 0.15, back + 0.45, top - 0.1, top + 0.05, 0.3, side * 0.8); // and the tailgate's
+  }
+  // Red and white chevrons across the back, under the lamps.
+  for (let i = 0; i < 6; i++) box(i % 2 ? '#e9e9e4' : '#c4161c', back - 0.09, back - 0.02, 1.15, 1.5, (W - 0.4) / 6, -W / 2 + 0.2 + (i + 0.5) * ((W - 0.4) / 6));
+  box('#e3e5e0', L + 0.12, L + 0.16, 0.32, 0.44, 0.52); // number plate
+  wheel(L - 1.25, W);
+  wheel(L - 1.25 - S.wheelbase!, W, true);
   return done();
 }
 
@@ -867,6 +922,8 @@ export class Car {
   lastH?: number;
   anim?: Anim;
   crew?: boolean;
+  // A dustcart standing at a house while its crew fetch the bins (refuse.ts).
+  working?: boolean;
   // A delivery courier's box colour (COURIER_BOXES), on a bike or moped.
   courier?: string;
   // Blown up (src/fire.ts): a charred wreck nobody can drive.

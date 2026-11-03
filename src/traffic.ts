@@ -34,6 +34,8 @@ export interface TrafficAgent {
   stop?: { edge: DriveEdge; s: number };
   hired?: boolean;
   reckless?: boolean;
+  // No faster than this (m/s): a dustcart on its round (refuse.ts).
+  crawl?: number;
   // Held up by you for this long (s), and when it'll sound its horn next.
   wait?: number;
   beep?: number;
@@ -327,7 +329,8 @@ export class Traffic {
         const ahead = dx * fx + dy * fy;
         const side = dx * fy - dy * fx; // + = to the right
         let lat = (o.x - here.x) * hy - (o.y - here.y) * hx, along = (o.x - here.x) * hx + (o.y - here.y) * hy;
-        if (o.kind === 'car' && o.car?.mode !== 'traffic' && ov < 0.3) {
+        // (A dustcart standing at a house is passed like a parked car, where there's room.)
+        if (o.kind === 'car' && (o.car?.mode !== 'traffic' || o.car.working) && ov < 0.3) {
           // Standing: how far along the lane it is and how far to its side, round the bends.
           if (pieces < 0) {
             pieces = a.route.ahead(L / 2 + 3, reach + 4, lane);
@@ -461,6 +464,7 @@ export class Traffic {
         held = this.signals.held;
         if (light < Infinity) target = Math.min(target, Math.sqrt(2 * 3 * Math.max(0, light - 0.3)));
       }
+      if (a.crawl !== undefined) target = Math.min(target, a.crawl);
       // Braking in time for where it has to stop.
       if (a.stop) target = Math.min(target, Math.sqrt(2 * 3 * Math.max(0, a.route.to(a.stop.edge, a.stop.s) - 0.3)));
       // On the pavement it creeps along, and a little faster pulling in.
@@ -490,7 +494,7 @@ export class Traffic {
       c.braking = target < a.speed - 0.4 || (a.speed < 0.3 && target < 0.3);
       a.speed += clamp(target - a.speed, -acc * dt, acc * dt);
       const p = a.route.advance(a.speed * dt);
-      if (a.route.ended || (c.spec.heavy && c.type !== 'bus' && c.type !== 'minibus' && !lorryRoad(a.route.head))) { a.gone = true; continue; }
+      if (a.route.ended || (c.spec.heavy && c.type !== 'bus' && c.type !== 'minibus' && c.type !== 'garbage' && !lorryRoad(a.route.head))) { a.gone = true; continue; }
       const prevX = c.x, prevY = c.y;
       c.x = p.x;
       c.y = p.y;

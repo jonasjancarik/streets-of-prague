@@ -14,6 +14,7 @@ import type { Clock } from './clock.ts';
 import type { Fires } from './fire.ts';
 import type { Brigade } from './brigade.ts';
 import type { Ambulances } from './ambulance.ts';
+import type { Refuse } from './refuse.ts';
 import type { Pedestrian } from './people.ts';
 import type { Traffic } from './traffic.ts';
 import type { TramBody } from './trams.ts';
@@ -105,7 +106,7 @@ interface Game {
   viewRadius: () => number;
   offscreen: (x: number, y: number) => boolean;
   canvas: HTMLElement; fov: number;
-  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; traffic: Traffic; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
+  wallet: Wallet; police: Police; health: Health; clock: Clock; fires: Fires; brigade: Brigade; ambulances: Ambulances; refuse: Refuse; traffic: Traffic; crowd: { people: { state: string; x: number; y: number }[] }; hurtNearest: (grave?: boolean) => Pedestrian | null;
   weather: { set: (k: Kind | 'auto') => void; kind: () => string };
   season: { set: (when: string | number) => void; date: () => string };
   rng: () => number;
@@ -419,6 +420,13 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       g.enterCar(c);
       const crew = g.ambulances.crew;
       return g.car() === c ? crew.filter((k) => k.chase !== undefined).length : -1;
+    },
+
+    // A dustcart on its round from a street within `r` m of you (in view too), or null.
+    dustcart(r = 80) { const m = g.me(); return g.refuse.send(m.x, m.y, r)?.car ?? null; },
+    // How the dustcarts' rounds stand: each cart's phase and speed, and what its crew are doing.
+    rounds() {
+      return g.refuse.rounds.map((k) => ({ phase: k.phase, speed: round(k.agent.speed), crew: k.crew.map((m) => m.job), bins: g.refuse.bins.length, car: k.car }));
     },
 
     // Sets a car on fire (a parked one burns for a minute or so before it blows up, the one

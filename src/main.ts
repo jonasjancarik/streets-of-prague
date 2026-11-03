@@ -74,6 +74,7 @@ import { Police } from './police.ts';
 import type { Officer } from './police.ts';
 import { Brigade } from './brigade.ts';
 import { Ambulances } from './ambulance.ts';
+import { Refuse } from './refuse.ts';
 import { Tracers, Health, MAX_HEALTH } from './guns.ts';
 import { trace, strike, assist as aimAssist, PACE } from './pistol.ts';
 import type { Hit } from './pistol.ts';
@@ -94,7 +95,7 @@ import type { Tracked } from './tiles.ts';
 import { getLang, onLang, t, tHtml, tn, translatePage } from './i18n.ts';
 const VEHICLE_NAMES: Record<string, string> = {
   van: 'Van', taxi: 'Taxi', police: 'Police car', bike: 'Bicycle', moto: 'Motorbike',
-  truck: 'Lorry', artic: 'Articulated lorry', bus: 'Bus', minibus: 'Minibus', fire: 'Fire engine',
+  truck: 'Lorry', artic: 'Articulated lorry', bus: 'Bus', minibus: 'Minibus', fire: 'Fire engine', garbage: 'Dustcart',
 };
 import { haptic, hapticCrash, hapticBlast } from './haptics.ts';
 import { tunnelHole } from './tunnelView.ts';
@@ -427,6 +428,7 @@ async function main() {
       crowd.people.forEach(person);
       police.officers.forEach(person);
       brigade.crew.forEach(person);
+      refuse.walking.forEach(person);
       if (!inCar && !inHeli && !ride.on && !taxi.riding) person(walker);
     },
   };
@@ -1190,6 +1192,7 @@ async function main() {
     police.reset();
     brigade.reset();
     ambulances.reset();
+    refuse.reset();
     fires.reset();
     scatterPeople(false);
     camPos.set(px(), 0, -py());
@@ -1582,6 +1585,12 @@ async function main() {
     people: () => crowd.people, revive: (p) => crowd.revive(p),
     take: (p) => { if (crowd.people.includes(p)) crowd.retire(p); },
   });
+  const refuse: Refuse = new Refuse({
+    scene, traffic, grid, kit, height: ground, rng: seeded, offscreen, edgesNear,
+    spot: (x, y) => lifeSpots(px(), py(), 40)(x, y),
+    bodyAt: (x, y, r, skip) => police.bodyAt(x, y, r, skip),
+    hour: () => clock.hour, quiet: () => !!testkit?.quiet,
+  });
   // Streets far behind you leave the graphs, and what is indexed from them, unless one
   // of these is still out there (see TileWorld.forget).
   world.anchors = () => {
@@ -1776,6 +1785,7 @@ async function main() {
     inspector.update(dt, { x: me.x, y: me.y, h: inCar ? inCar.h : walker.h, onFoot: !inCar && !inHeli && !ride.on && !taxi.riding && !boats.me && !funicular.me && !ferries.me, inVehicle: !!inCar || !!inHeli || taxi.riding || !!boats.me });
     brigade.update(dt, me);
     ambulances.update(dt, me);
+    refuse.update(dt, me);
     cannon.update(dt, inCar, cannonHeld, (x, y) => ground(x, y));
     if (cannon.jet && inCar) {
       // The water puts out burning cars and knocks people (and officers) over, gently.
@@ -1811,6 +1821,7 @@ async function main() {
     for (const o of police.officers) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     for (const o of brigade.crew) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     for (const o of ambulances.crew) hash.add({ x: o.x, y: o.y, z: o.gz, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
+    for (const o of refuse.walking) hash.add({ x: o.x, y: o.y, r: 0.4, vx: o.vx, vy: o.vy, kind: 'person' });
     if (inspector.person) hash.add({ x: inspector.person.x, y: inspector.person.y, z: inspector.person.gz, r: 0.4, vx: inspector.person.vx, vy: inspector.person.vy, kind: 'person' });
     const tramBodies = trams.bodies(px(), py(), LIFE_RADIUS + 100);
     for (const t of tramBodies) for (const [x, y] of t.circles) hash.add({ x, y, r: 1.25, vx: t.vx, vy: t.vy, kind: 'tram' });
@@ -2000,6 +2011,15 @@ async function main() {
         if (c.speed > 3 && m.down <= 0) ambulances.knock(m, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
       });
     }
+    for (const m of refuse.walking) {
+      offTrams(m, 0.3, open);
+      bump(m, 0.3, (c, nx, ny) => {
+        if (c.speed > 3 && m.down <= 0) {
+          refuse.knock(m, c.vx * 0.9 + nx * 2, c.vy * 0.9 + ny * 2);
+          if (c === inCar) police.crime('knock', m.x, m.y);
+        }
+      });
+    }
     for (const f of brigade.crew) {
       offTrams(f, 0.3, open);
       bump(f, 0.3, (c, nx, ny) => {
@@ -2072,7 +2092,7 @@ async function main() {
       let surplus = Math.min(3, traffic.agents.length - carsWanted());
       for (const a of [...traffic.agents]) {
         if (surplus <= 0) break;
-        if (a.hired || a.car.type === 'bus' || a.car.type === 'minibus' || a.car.type === 'police' || !offscreen(a.car.x, a.car.y)) continue;
+        if (a.hired || a.car.type === 'bus' || a.car.type === 'minibus' || a.car.type === 'police' || a.car.type === 'garbage' || !offscreen(a.car.x, a.car.y)) continue;
         traffic.release(a);
         surplus--;
       }
@@ -2294,15 +2314,17 @@ async function main() {
     crowd.render(ground, (x, y) => !offscreen(x, y));
     police.render(ground, time.value);
     {
-      const chasing = police.lit(inCar), engines = brigade.lit, rescue = ambulances.lit;
+      const chasing = police.lit(inCar), engines = brigade.lit, rescue = ambulances.lit, carts = refuse.lit;
       flashing.length = 0;
       for (const car of chasing) flashing.push({ car, reach: 19, rate: 1.4 });
       for (const car of engines) flashing.push({ car, reach: 24, rate: 1.2 });
       for (const car of rescue) flashing.push({ car, reach: 18, rate: 1.6 });
-      beacons.draw([...chasing, ...engines, ...rescue], ground, time.value, sky.dark);
+      for (const car of carts) flashing.push({ car, reach: 14, rate: 1, amber: true });
+      beacons.draw([...chasing, ...engines, ...rescue, ...carts], ground, time.value, sky.dark);
     }
     brigade.render();
     ambulances.render();
+    refuse.render();
     inspector.render(ground);
     tracers.update(dt);
     // Only the cars in view (and a little round it, for their shadows) are drawn.
@@ -2598,7 +2620,7 @@ async function main() {
   });
 
   window.__drive = {
-    scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, health, fires, trams, ride, taxi, clock, board, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
+    scene, camera, traffic, crowd, loose, restingByCar, restingIndex, get resting() { return resting; }, boats, drive, walk, grid, walker, stats, world, renderer, police, brigade, refuse, health, fires, trams, ride, taxi, clock, board, metro, funicular, ferries, graphics, sound, weather, lamps, sky, skids, bikeShare, carPool, spawnWork, bags,
     get car() { return inCar; },
     get heli() { return inHeli; },
     choppers, addChopper,
@@ -2625,7 +2647,7 @@ async function main() {
     steps: (x, y, r) => world.stepEdgesNear(x, y, r), ground: (x, y) => world.terrainAt(x, y),
     streets: drive, countryside: () => !!world.country?.box, place: () => $('district').textContent || null, taxi,
     builtMap: (x, y) => !pastMap(x, y) && world.available.has(world.keyAt(x, y)),
-    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, hurtNearest, traffic, crowd, rng: seeded, bags,
+    grid, boats, ferries, pid, inspector, wallet, police, health, clock, fires, brigade, ambulances, refuse, hurtNearest, traffic, crowd, rng: seeded, bags,
     missions, standing: repute, cannon: (on) => { cannonHeld = on; }, tram: { ride, list: () => trams.list },
     shoot: (h) => (canShoot() ? shoot(h) : null),
     carsNear: (x, y, r) => [...carsNear(x, y, r)],

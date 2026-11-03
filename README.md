@@ -259,7 +259,7 @@ that without a new renderer.
   haul them out onto the road, from the other side they get out of their own door
   and run. Press E again on the way to the door to change your mind. A car that is
   still rolling faster than a walk is left at once, without the door, and vehicles
-  built from boxes (buses, lorries, the fire engine, the ambulance) have no door to
+  built from boxes (buses, lorries, the fire engine, the ambulance, the dustcart) have no door to
   swing: you step up to the cab and in.
 - **Lamps.** A hard knock (from about 16 km/h) smashes the headlamp or tail lamp it lands
   on, which then stays dark and lights nothing at night; the headlamps behind a police
@@ -339,6 +339,16 @@ that without a new renderer.
   who are out run after you for a while). The developer panel's "Leave the nearest
   person hurt" button is the quickest way to see it (`src/ambulance.ts`,
   `scenarios/ambulance.ts`).
+- **Dustcarts.** Within about 3 km of the Old Town Square, from 5:00 to 22:00, one
+  dustcart is out on its round (two between 6:00 and 11:00). It keeps to the side
+  streets at about 20 km/h, with its amber lamps flashing and two dustmen riding on the
+  steps at the back. Every 16–32 m it stops beside a house. The dustmen jump down, go in
+  (old-town bins are kept in the passage or the courtyard) and wheel a bin out to the
+  lift at the back, which tips it. They take the bin back in, sometimes come out with a
+  second one, then climb back on. Cars behind wait, or get past where the street is
+  wide enough. If the cart is crashed into, set on fire or taken, the crew walk off and
+  leave any bin where it stands. Hitting a dustman with your car knocks him over, as it
+  does anyone else (`src/refuse.ts`, `scenarios/dustcart.ts`).
 - **Developer panel**: press <kbd>`</kbd> (or add `?dev`). Type a street for instant
   matches from the area's `names.json`, press Enter to look up a full address on
   OpenStreetMap's Nominatim, paste coordinates or a Google Maps / Mapy.cz link, or pick

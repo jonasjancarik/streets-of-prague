@@ -418,7 +418,7 @@ export const CS: Record<string, string> = {
   'Radio: next station, and off (or use the buttons under the speed)': 'Rádio: další stanice, a vypnout (nebo tlačítky pod rychlostí)',
   'Radio off': 'Rádio vypnuto',
   'Van': 'Dodávka', 'Police car': 'Policejní auto', 'Bicycle': 'Kolo', 'Motorbike': 'Motorka',
-  'Lorry': 'Nákladní auto', 'Articulated lorry': 'Kamion', 'Bus': 'Autobus', 'Minibus': 'Minibus', 'Fire engine': 'Hasičské auto',
+  'Lorry': 'Nákladní auto', 'Articulated lorry': 'Kamion', 'Bus': 'Autobus', 'Minibus': 'Minibus', 'Fire engine': 'Hasičské auto', 'Dustcart': 'Popelářské auto',
   '{name} isn’t playing right now': '{name} teď nehraje',
   'Pick where to get off': 'Vybrat, kde vystoupit',
   'Speed up the ride': 'Zrychlit jízdu',

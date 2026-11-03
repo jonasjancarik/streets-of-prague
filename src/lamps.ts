@@ -184,7 +184,7 @@ const PATHS = new Set(['footway', 'path', 'pedestrian', 'steps', 'cycleway']), P
 // Warm LED, old sodium, neutral LED; gas; floodlights.
 const WARM = new THREE.Color('#ffcf8f'), SODIUM = new THREE.Color('#ffa850'), NEUTRAL = new THREE.Color('#f1ece0');
 const GAS = new THREE.Color('#ffbb6e'), FLOOD = new THREE.Color('#ffe0b0');
-const BEACON = new THREE.Color(0.12, 0.38, 1);
+const BEACON = new THREE.Color(0.12, 0.38, 1), AMBER_BEACON = new THREE.Color(1, 0.55, 0.1);
 const HEAD = new THREE.Color('#fff4df'), TAIL = new THREE.Color('#ff2a1a'), CABIN = new THREE.Color('#fff0d8');
 const TRAM_SECTION = 10.2; // m (trams.ts)
 
@@ -286,7 +286,7 @@ export interface Spot { x: number; y: number; z: number; tx: number; ty: number 
 const SEARCH = new THREE.Color('#fff3d6');
 const SEARCH_R = 9; // m: how wide its pool of light is
 
-export interface Flashing { car: LitCar; reach: number; rate: number }
+export interface Flashing { car: LitCar; reach: number; rate: number; amber?: boolean }
 // How lit each side of a light bar is at `time` (0..1 each), `rate` cycles a second: two
 // short flashes on the left, then two on the right.
 export function strobe(time: number, rate: number): [number, number] {
@@ -1137,7 +1137,7 @@ export class Lamps {
       const sx = -Math.sin(c.h), sy = Math.cos(c.h), half = c.spec.W / 2;
       for (const [side, lit] of [[1, left], [-1, right]] as [number, number][]) {
         // (A little always shows between the flashes: the bar's glow.)
-        add(c.x + sx * side * half, c.y + sy * side * half, z, 0, 1, 0, f.reach, f.reach, BEACON, 0.12 + 1.9 * lit, up, own);
+        add(c.x + sx * side * half, c.y + sy * side * half, z, 0, 1, 0, f.reach, f.reach, f.amber ? AMBER_BEACON : BEACON, 0.12 + 1.9 * lit, up, own);
       }
     }
     for (const v of trams) {
