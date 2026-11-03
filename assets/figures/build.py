@@ -2,7 +2,8 @@
 
 A small low-poly person with a skeleton and a handful of clips (standing, walking,
 running, jumping, being knocked over and getting up, riding a bike and a motorbike,
-getting into a car, hauling someone out of one, being arrested and making the arrest),
+getting into a car, hauling someone out of one, being arrested and making the arrest,
+wheeling a bin and riding on the back of the dustcart),
 plus a bike and a motorbike to ride. Everything is made from code here, so the kit
 can be tweaked and rebuilt; src/figures.js bakes the clips into textures at load.
 
@@ -840,6 +841,29 @@ def cuff(frames=16):
     return out
 
 
+def push():
+    """A dustman wheeling a bin: the walk, both hands forward on its handle."""
+    out = []
+    for D, t in gait(GAITS["walk"]):
+        D["spine"] = Ry(0.12) @ D["spine"]
+        for side in ("L", "R"):
+            hand(D, t, side, (0.42, 0.19, 1.0), (0, 1, -1))
+        out.append((D, t))
+    return out
+
+
+def hold(frames=24):
+    """Riding on the step at the back of the dustcart: facing it, both hands on its grab handles."""
+    out = []
+    for f in range(frames):
+        a = 2 * math.pi * f / frames
+        D, t = pose({"spine": 0.06, "head": -0.04, "t": (0, 0, 0.004 * math.sin(a)), "thighL": 0.08, "kneeL": 0.1})
+        hand(D, t, "L", (0.3, 0.24, 1.4 + 0.01 * math.sin(a)), (0, 1, -1))
+        hand(D, t, "R", (0.3, 0.24, 1.25 - 0.01 * math.sin(a)), (0, 1, -1))
+        out.append((D, t))
+    return out
+
+
 CLIPS = {
     "idle": (idle(), True),
     "walk": (gait(GAITS["walk"]), True),
@@ -857,6 +881,8 @@ CLIPS = {
     "cuffedwalk": (cuffed_walk(), True),
     "escort": (escort(), True),
     "cuff": (cuff(), True),
+    "push": (push(), True),
+    "hold": (hold(), True),
 }
 
 
