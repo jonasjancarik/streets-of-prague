@@ -4,7 +4,7 @@
 
 Written in the night of 5–6 October 2026, short of time: the order and the inputs
 below were read from the code; the swap and the timings are marked where they were
-not tried. The README's "Building the map" has the background.
+not tried. The handbook's "Building the map" (`docs/handbook.md`) has the background.
 
 A `build_tiles.py --chunks "ci,cj ..."` trial keeps the chunks it does not name. It
 requires an existing build with the same area, projection, tile size and chunk grid;
