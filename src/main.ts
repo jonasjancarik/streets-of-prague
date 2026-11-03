@@ -76,7 +76,7 @@ import { Brigade } from './brigade.ts';
 import { Ambulances } from './ambulance.ts';
 import { Refuse } from './refuse.ts';
 import { Tracers, Health, MAX_HEALTH } from './guns.ts';
-import { trace, strike, assist as aimAssist, PACE } from './pistol.ts';
+import { trace, strike, assist as aimAssist, PACE, gunOn, setGun } from './pistol.ts';
 import type { Hit } from './pistol.ts';
 import { Fires } from './fire.ts';
 import { Chopper } from './helicopter.ts';
@@ -753,13 +753,15 @@ async function main() {
   const allCars = () => [...loose, ...traffic.agents.map((a) => a.car), ...police.cars.map((p) => p.car), ...brigade.engines.map((e) => e.car), ...ambulances.rigs.map((r) => r.car)];
   // Your pistol (pistol.ts): the mouse button held over the map shoots where it points,
   // F (on foot) or the touch button straight ahead, at the nearest car roughly that way.
-  // Nobody is ever hit; cars, trams and walls stop the bullets.
+  // Nobody is ever hit; cars, trams and walls stop the bullets. Only with the pistol
+  // handed out in the developer panel.
   let aimAt: { x: number; y: number } | null = null; // the mouse button is held, pointing here
   let lastAim: { x: number; y: number } | null = null; // where a click pointed that was let go before it fired
   let fireHeld = false;
   let pulled = false; // pressed since the last step: a click shorter than a frame still fires
   let gunCool = 0;
-  const canShoot = () => wastedT <= 0 && frozen <= 0 && !arrest.active && !getIn.active && walker.down <= 0 && !inHeli && !ride.on
+  setGun(gunOn(), false);
+  const canShoot = () => gunOn() && wastedT <= 0 && frozen <= 0 && !arrest.active && !getIn.active && walker.down <= 0 && !inHeli && !ride.on
     && !boats.me && !funicular.me && !ferries.me && !taxi.riding && !metro.active && !dialog.active;
   const shoot = (h?: number): Hit | null => {
     const me = inCar || walker, cars = allCars();

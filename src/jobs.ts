@@ -244,7 +244,7 @@ export const JOBS: MissionDef[] = [
     offer: 'Someone who owes Jarka parks near {at}. She wants the car on fire. Not the owner: the car.',
     brief: [
       'He’s owed me for the tab since spring. Talking didn’t help.',
-      'His car stands near {at}. Shoot it, ram it, whatever: I want to hear it’s burning. And nobody gets hurt, understood?',
+      'His car stands near {at}. Ram it till it catches fire, whatever it takes: I want to hear it’s burning. And nobody gets hurt, understood?',
     ],
     faction: 'pubs', rep: 5, minRep: 4,
     plan: (w, pick) => {
@@ -254,7 +254,7 @@ export const JOBS: MissionDef[] = [
       return {
         vars: { at: at.name }, pay: r.base, bonus: r.bonus,
         steps: [wreck(at, {
-          goal: ['Find the debtor’s car near {name}', { name: at.name }], near: ['Wreck the marked car: shoot it or ram it until it catches fire'],
+          goal: ['Find the debtor’s car near {name}', { name: at.name }], near: ['Wreck the marked car: ram it until it catches fire'],
           type: 'suv', limit: allow(apart(me, at), r.speed, r.slack),
         })],
       };

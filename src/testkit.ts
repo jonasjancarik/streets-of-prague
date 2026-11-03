@@ -26,6 +26,7 @@ import type { Missions } from './missions.ts';
 import type { Satnav } from './satnav.ts';
 import type { Standing } from './factions.ts';
 import type { Hit } from './pistol.ts';
+import { gunOn, setGun } from './pistol.ts';
 import { upgrade } from './save.ts';
 
 // Test API for scenarios (scenarios/*.ts), the developer panel and scripts/scene.mjs,
@@ -522,7 +523,10 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     aimAtCar(c: Car, back = 14) { kit.aimAt({ x: c.x, y: c.y, r: 4 } as Post, back); },
     // The water cannon of the fire engine you drive, held on or let go.
     cannon(on: boolean) { g.cannon(on); },
-    // A shot from your pistol: toward a compass heading, at a car (or a spot), or, with
+    // The pistol handed out (as the developer panel does) or taken away again, for this
+    // page only; players have none. Whether you have it now.
+    gun(on?: boolean) { if (on !== undefined) setGun(on, false); return gunOn(); },
+    // A shot from your pistol (null without one, see gun): toward a compass heading, at a car (or a spot), or, with
     // nothing, the way you face with the aim helping, as F does. Where it went and what it hit.
     shoot(at?: number | { x: number; y: number }) {
       const me = g.me();

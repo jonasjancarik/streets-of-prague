@@ -10,6 +10,17 @@ import { LAMP } from './car.ts';
 // What a shot does to the world (the police, the sound, the tracer) is up to main.ts;
 // this only finds where it goes.
 
+// Players don't have it: only the developer panel hands it out (dev.ts), and that
+// browser keeps it. The `gun-on` class on the page shows the controls that go with it.
+let armed = false;
+try { armed = localStorage.getItem('pistol') === 'on'; } catch { /* no storage: unarmed */ }
+export const gunOn = () => armed;
+export function setGun(on: boolean, keep = true) {
+  armed = on;
+  if (keep) try { localStorage.setItem('pistol', on ? 'on' : 'off'); } catch { /* not kept */ }
+  document.body.classList.toggle('gun-on', on);
+}
+
 export const RANGE = 55; // m a bullet carries
 export const PACE = 0.26; // s between shots, holding the trigger
 export const DAMAGE = 7; // what a bullet does to a car (a crash's damage is the speed over 8 m/s)

@@ -207,7 +207,7 @@ that without a new renderer.
   courier run (fetch a parcel and bring it across town in time), a sightseeing tour (a
   tourist driven past three sights and back), and the Regulars' work for Jarka's pub
   crowd: bring a parked car to a yard (dents come off the pay), and once they know you,
-  set a debtor's car on fire (shoot it or ram it; nobody gets hurt) and a getaway (pick
+  set a debtor's car on fire (ram it till it burns; nobody gets hurt) and a getaway (pick
   Venca up with two stars on you, lose the police, then drop him off). Sit in a taxi and you get fares to pick up
   and drive; in an ambulance, patients to take to hospital; in the cab of a tram you
   took over, a shift of five stops; in a fire engine, burning cars to put out with the
@@ -317,7 +317,9 @@ that without a new renderer.
   stars shows how much you have left once you're hurt, and it comes back by itself
   after a few quiet seconds. When it runs out you're wasted: you fall where you are
   and come round outside the nearest hospital, no longer wanted (`src/guns.ts`).
-- **Your pistol.** Hold the mouse button over the map to shoot where it points, or F
+- **Your pistol** (developers only). Players have none: the developer panel's Pistol
+  box hands it out, and that browser keeps it (the controls card and the touch Shoot
+  button show only then). Hold the mouse button over the map to shoot where it points, or F
   (RB on a pad, Shoot on a touch screen) to shoot ahead, at the nearest car roughly that
   way; from a car the mouse shoots out of the window. Bullets stop at walls, cars and
   trams and never hit anyone: people in the way are passed by and run. Each bullet

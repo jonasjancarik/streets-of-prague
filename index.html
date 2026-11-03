@@ -596,6 +596,8 @@
       #touch button.down, .t-pedal.down { background: rgba(236, 228, 214, 0.3); }
       #t-action { height: 52px; padding: 0 22px; font-size: 16px; border-color: var(--accent); }
       #t-fast, #t-steal, #t-doors, #t-taxi, #t-jump, #t-shoot, #t-ticket, #t-cannon { height: 52px; padding: 0 18px; }
+      /* The pistol's controls, only once the developer panel has handed it out (src/pistol.ts). */
+      body:not(.gun-on) .gun-only { display: none !important; }
       #touch #t-cannon[hidden], #touch #t-steal[hidden] { display: none; }
       #touch #t-ticket[hidden] { display: none; }
       #t-action.off { visibility: hidden; }
@@ -673,7 +675,7 @@
           <dt><kbd>T</kbd></dt><dd data-t>Get a taxi: wave one down or order one through an app</dd>
           <dt><kbd>J</kbd></dt><dd data-t>Jobs: ask for work, take the job on offer, or give one up</dd>
           <dt><kbd>N</kbd></dt><dd data-t>Map: pick where to drive, and the way there shows on the road</dd>
-          <dt><kbd>F</kbd> <span data-t>or click</span></dt><dd data-t>Shoot ahead, or where you click (hold it to keep shooting). Bullets never hit people</dd>
+          <dt class="gun-only"><kbd>F</kbd> <span data-t>or click</span></dt><dd class="gun-only" data-t>Shoot ahead, or where you click (hold it to keep shooting). Bullets never hit people</dd>
         </dl>
       </section>
       <section class="car-only">
@@ -747,7 +749,7 @@
           <dt><kbd>A</kbd></dt><dd data-t>Jump</dd>
           <dt><kbd>X</kbd></dt><dd data-t>Get into the nearest car, onto a bike or motorbike, or onto a tram at a stop</dd>
           <dt><kbd>View</kbd></dt><dd data-t>Get a taxi: wave one down or order one through an app</dd>
-          <dt><kbd>RB</kbd></dt><dd data-t>Shoot ahead (hold it to keep shooting). Bullets never hit people</dd>
+          <dt class="gun-only"><kbd>RB</kbd></dt><dd class="gun-only" data-t>Shoot ahead (hold it to keep shooting). Bullets never hit people</dd>
         </dl>
       </section>
       <section class="car-only">
@@ -820,7 +822,7 @@
         <button id="t-ticket" data-t hidden>Buy a ticket</button>
         <button id="t-taxi" class="foot-only" data-t>Taxi</button>
         <button id="t-jump" class="foot-only" data-t>Jump</button>
-        <button id="t-shoot" class="foot-only" data-t>Shoot</button>
+        <button id="t-shoot" class="foot-only gun-only" data-t>Shoot</button>
         <button id="t-action" class="off">Get in</button>
         <button id="t-cannon" class="car-only" data-t hidden>Water cannon</button>
         <div class="t-row car-only"><button id="t-horn" data-t>Horn</button><button id="t-hand" data-t>Handbrake</button></div>

@@ -67,7 +67,9 @@ export default {
     if (t.probe().car) t.exit();
     g.walker.x = spot![0]; g.walker.y = spot![1];
     money = t.probe().money;
+    t.gun(true); // (the developer's pistol: quicker than ramming it)
     for (let i = 0; i < 20 && debt!.damage < 92; i++) { t.shoot({ x: debt!.x, y: debt!.y }); await t.wait(0.3); }
+    t.gun(false);
     t.check('the bullets set it burning', debt!.damage >= 90, `damage ${Math.round(debt!.damage)}`);
     await until(() => t.job().state === 'idle', 30);
     j = t.job();

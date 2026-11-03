@@ -1,7 +1,8 @@
 import type { Scenario } from '../src/testkit.ts';
 
 // The player's pistol: bullets go into cars (damage, smashed lamps, in the end a fire),
-// stop at walls, and never hit anyone, however many people stand in the way.
+// stop at walls, and never hit anyone, however many people stand in the way. Players
+// have no pistol: it's handed out here as the developer panel does.
 export default {
   title: 'The pistol: cars take the bullets, walls stop them, people are never hit and run',
   async run(t) {
@@ -9,6 +10,9 @@ export default {
     t.time('14:00');
     t.weather('clear');
     t.set({ stars: 0 });
+    t.gun(false);
+    t.check('players have no gun', t.shoot(0) === null);
+    t.gun(true);
     // A car parked a little way off, and people put right in the line of fire.
     const car = t.car('sedan', { ahead: 14 });
     if (!t.check('a car to shoot at', !!car)) return;
@@ -47,5 +51,6 @@ export default {
     const wallAt = t.runway(0);
     const north = t.shoot(0);
     t.check('a wall stops the bullet', !!north && (wallAt < 0 || north.d <= wallAt + 1), `wall ${wallAt}, bullet ${north?.d}`);
+    t.gun(false);
   },
 } satisfies Scenario;

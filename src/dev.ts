@@ -9,6 +9,7 @@ import type { Graphics, Choice } from './graphics.ts';
 import { MIST, MIST_DEFAULT, MOST_SHEETS, type Kind, type Mist } from './weather.ts';
 import { LOCAL_MIST, LOCAL_MIST_DEFAULT, MIST_MODE, supportsLocalMist, type MistMode, type LocalMistSettings } from './localmist.ts';
 import type { Testkit } from './testkit.ts';
+import { gunOn, setGun } from './pistol.ts';
 
 // far: a place out of the game's reach, [lat, lon]; going there reloads the game.
 interface DevHit { label: string; x: number; y: number; far?: [number, number] }
@@ -548,6 +549,7 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
     <div class="dev-row dev-here">
       <button id="dev-heal">Full health</button>
       <label class="dev-check" title="Crashes, shots and explosions don't hurt you"><input id="dev-unhurt" type="checkbox" /> Nothing hurts</label>
+      <label class="dev-check" title="Players have no gun. This hands you the pistol (click, F on foot, RB, the Shoot button), and this browser keeps it"><input id="dev-gun" type="checkbox" /> Pistol</label>
     </div>
     <div class="dev-row">
       <button id="dev-car" title="A car on clear ground ahead of you, with you in it">Into a new car</button>
@@ -586,6 +588,9 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
   $('dev-heal').onclick = () => kit.set({ health: 100 });
   const unhurt = $('dev-unhurt') as HTMLInputElement;
   unhurt.onchange = () => { kit.unhurt = unhurt.checked; };
+  const gun = $('dev-gun') as HTMLInputElement;
+  gun.checked = gunOn();
+  gun.onchange = () => setGun(gun.checked);
   const kind = $('dev-car-kind') as HTMLSelectElement;
   $('dev-car').onclick = async () => {
     try { await kit.drive(kind.value); } catch (e) { out.textContent = e instanceof Error ? e.message : String(e); }

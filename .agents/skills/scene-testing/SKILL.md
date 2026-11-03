@@ -70,6 +70,8 @@ in compass degrees (0 north, 90 east), speeds in km/h.
   `cruise-lock` and `cruise-weir`; offline, `scripts/check-river.mjs` and `scripts/check-river-boats.mjs`.
   With a dev server on another port pass `--url http://localhost:<port>/` to every
   command, `run` included: without it the command loads the game from port 5191.
+- `t.gun(on)`: players have no pistol; this hands it out (or takes it away) for the page,
+  as the developer panel's Pistol box does for good. `t.shoot(at)` returns null without it.
 - `t.dent(car, along, left, levels)` crumples a car as a blow that far along and to the left of
   its middle would (metres; `DENT` in `src/car.ts`) and returns `car.crush`.
 - `t.ignite(car)` sets a car on fire; `t.fire(car)`: whether it burns, is a wreck, still
