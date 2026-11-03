@@ -10,7 +10,7 @@ const check = `(async () => {
   assert(select, 'The developer weather control is missing');
   const expected = {
     clear: [0, 0, 0, 0, 0, 0, 0],
-    cloudy: [0.85, 0, 0, 0, 0, 0, 0],
+    cloudy: [0.55, 0, 0, 0, 0, 0, 0],
     rain: [1, 1, 0, 0, 0.12, 1, 0],
     storm: [1, 1, 1, 0, 0.2, 1, 0],
     mist: [0.6, 0, 0, 0, 1, 0, 0],

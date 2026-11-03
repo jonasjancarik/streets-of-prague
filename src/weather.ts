@@ -35,7 +35,7 @@ export const CLEAR: Conditions = { cloud: 0, rain: 0, storm: 0, snow: 0, mist: 0
 
 const LOOK: Record<Kind, { cloud: number; rain: number; storm: number; snow: number; mist: number }> = {
   clear: { cloud: 0, rain: 0, storm: 0, snow: 0, mist: 0 },
-  cloudy: { cloud: 0.85, rain: 0, storm: 0, snow: 0, mist: 0 },
+  cloudy: { cloud: 0.55, rain: 0, storm: 0, snow: 0, mist: 0 },
   rain: { cloud: 1, rain: 1, storm: 0, snow: 0, mist: 0.12 },
   storm: { cloud: 1, rain: 1, storm: 1, snow: 0, mist: 0.2 },
   mist: { cloud: 0.6, rain: 0, storm: 0, snow: 0, mist: 1 },
