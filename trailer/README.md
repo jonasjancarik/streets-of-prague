@@ -144,6 +144,11 @@ cargo run --release --bin launch -- render && street/finish.sh out.mp4 launch.mp
 cargo run --release --bin launch -- render --czech && street/finish.sh out.mp4 launch-cs.mp4
 ```
 
+Every shot is filmed on Ultra with WebGPU and the river's waves and reflections on
+(`begin` in `lib.js` turns them on, and stops if WebGPU isn't there); with another
+session's scene server on 5199, run yours on another port and `PORT=<port> film.sh`. In
+the chase the nearest police car is kept right behind the red car, and the police
+helicopter 150 m up, above the camera (left to itself it can fly through the shot).
 The free camera needs `level: true` for its heading to turn the picture (`above` in
 `lib.js`); without it north stays up. A helicopter needs open ground to appear on, so the
 `heli` shot makes it on the quay and moves it over the water, and the next shot's `begin`

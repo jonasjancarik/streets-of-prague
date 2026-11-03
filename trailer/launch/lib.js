@@ -14,13 +14,19 @@ const settle = async (ms = 5000) => { await t.wait(0.5); await new Promise((r) =
 const above = (p, height, heading = 0) => ({ x: p.x, y: p.y, height, tilt: 0, heading, level: true });
 const at = (x, y) => { const [lon, lat] = d.dev.toLonLat(x, y); return [lat, lon]; };
 
-// On foot, the police and the jobs called off, and the day and weather of the shot.
-async function begin(where, { date = '08-28', time = '12:00', weather = 'clear' } = {}) {
+// On foot, the police and the jobs called off, and the day and weather of the shot; the
+// game drawn on Ultra with WebGPU, the river with its waves and reflections.
+// `heading`: the way to face (compass degrees), where a car is to be made just ahead.
+async function begin(where, { date = '08-28', time = '12:00', weather = 'clear', heading } = {}) {
+  const g = d.graphics;
+  if (g.choice !== 'ultra') g.set('ultra');
+  if (!g.water) g.setWater(true);
+  if (g.tier !== 'ultra' || g.api !== 'WebGPU') throw new Error(`Not filming on ${g.tier} with ${g.api}: Ultra with WebGPU only`);
   // (A helicopter in the air has to land first: t.onFoot does that.)
   if (t.where().mode === 'helicopter') await t.onFoot();
   for (let i = 0; i < 3 && t.where().mode !== 'foot'; i++) { d.enterOrExit(); await t.wait(0.3); }
   t.set({ stars: 0 }); t.cam = null; t.unhurt = true; t.autoJobs(false);
-  await t.go(where);
+  await t.go(where, heading === undefined ? {} : { heading });
   t.season(date); t.time(time); t.weather(weather);
 }
 
@@ -126,5 +132,6 @@ async function record(each, { pedal = () => false, ctl = {}, n = FRAMES } = {}) 
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   await window.__saveFile(`${SHOT}.wav`, btoa(bin));
   t.cam = null; t.unhurt = false; t.set({ stars: 0 });
-  return { shot: SHOT, frames: n, peak: +peak.toFixed(3) };
+  const g = d.graphics;
+  return { shot: SHOT, frames: n, peak: +peak.toFixed(3), graphics: `${g.tier}, ${g.api}, water ${g.water ? 'waves' : 'plain'}` };
 }

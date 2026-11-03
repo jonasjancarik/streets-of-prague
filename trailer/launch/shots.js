@@ -126,7 +126,7 @@ const SHOTS = {
   // The police after you from Národní onto the bridge: wide, close and turning, then high.
   async chase() {
     const start = at(-3470, 2480);
-    await begin(start, { time: '01:30' });
+    await begin(start, { time: '01:30', heading: 270 });
     const line = route(start, at(-3815, 2412));
     const c = await redCar('sedan');
     // From the embankment by the National Theatre onto the bridge, as far as the island: put
@@ -136,15 +136,22 @@ const SHOTS = {
     put(c, line, s0, 0); clear(c, 60);
     t.cam = above(ahead(c, 14), 70); await settle(4000);
     t.set({ stars: 3 });
+    // The police helicopter that joins in at three stars flies at 55 m and can cross under
+    // the camera, filling the picture: kept above it instead, its searchlight still on you.
+    const aloft = () => { for (const h of d.police.helis.list) h.z = d.world.terrainAt(h.x, h.y) + 150; };
     // Wait where you are until a police car is close, then run for it.
     for (let i = 0; i < 40; i++) {
-      put(c, line, s0, 0);
+      put(c, line, s0, 0); aloft();
       await t.wait(1);
       if (d.police.cars.some((p) => Math.hypot(p.car.x - c.x, p.car.y - c.y) < 40)) break;
     }
+    let cop = null;
     return record((k, n) => {
       const s = s0 + k * V / 30;
-      put(c, line, s, V); clear(c, 25);
+      put(c, line, s, V); clear(c, 25); aloft();
+      // The nearest police car right behind, every take (left to itself it may stop to shoot).
+      cop ??= d.police.cars.map((p) => p.car).sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
+      if (cop) put(cop, line, s - 7.5, V);
       if (k < 55) t.cam = above(ahead(c, 16), 72);
       else if (k < 110) t.cam = above(ahead(c, 3), 34, compass(c.h) + mix(-35, 25, (k - 55) / 55));
       else t.cam = above(ahead(c, -12), mix(88, 100, (k - 110) / (n - 110)), compass(c.h));
