@@ -69,6 +69,7 @@ export const CS: Record<string, string> = {
   Vibration: 'Vibrace',
   'Stick and pedals': 'Páka a pedály',
   'Stick only': 'Jen páka',
+  'Minimap': 'Minimapa',
   'With the stick only, you drive with one thumb: push further to go faster, point behind the car to brake and turn round, let go to coast.': 'Jen s pákou řídíš jedním palcem: čím víc ji vychýlíš, tím rychleji jedeš, když ji namíříš za auto, zabrzdíš a otočíš se, a když ji pustíš, auto dojede samo.',
   Tunnels: 'Tunely',
   'Usual view': 'Běžný pohled',

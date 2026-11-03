@@ -13,6 +13,7 @@ import { creditsOpen } from './credits.ts';
 import { updateNotice } from './update.ts';
 import { hapticsOn, setHaptics } from './haptics.ts';
 import { touchDrive, setTouchDrive } from './touch.ts';
+import { minimapOn, setMinimap } from './minimap.ts';
 import type { TouchDrive } from './touch.ts';
 import { TUNNEL_VIEWS, tunnelView, setTunnelView } from './tunnelView.ts';
 import type { TunnelView } from './tunnelView.ts';
@@ -176,6 +177,7 @@ export function setupSettings({ sound, graphics, weather, saves }: {
     relabel.push(() => { note.textContent = t('With the stick only, you drive with one thumb: push further to go faster, point behind the car to brake and turn round, let go to coast.'); });
   }
   row<Choice>('Graphics', GRAPHICS.map((g) => ({ id: g.id, label: () => (g.id === 'auto' ? t('Auto ({tier})', { tier: t(cap(graphics.tier)).toLowerCase() }) : t(g.label)) })), () => graphics.choice, (id) => graphics.set(id));
+  row('Minimap', [{ id: 'on', label: () => t('On') }, { id: 'off', label: () => t('Off') }], () => (minimapOn() ? 'on' : 'off'), (id) => setMinimap(id === 'on'));
   row<TunnelView>('Tunnels', TUNNEL_VIEWS.map((v) => ({ id: v, label: () => t(TUNNEL_LABEL[v]) })), tunnelView, setTunnelView);
   row<Reflections>('Wet streets', [{ id: 'none', label: () => t('No reflections') }, { id: 'lights', label: () => t('Lights reflect') }, { id: 'mirror', label: () => t('Full mirror (demanding)') }], () => graphics.reflections, (id) => graphics.setReflections(id));
   row('Water', [{ id: 'waves', label: () => t('Waves and reflections') }, { id: 'plain', label: () => t('Plain') }], () => (graphics.water ? 'waves' : 'plain'), (id) => graphics.setWater(id === 'waves'));

@@ -140,6 +140,10 @@ that without a new renderer.
   amber on their own from about 4 s (at least 35 m) before each turn until you're
   through it, to the left for turning round. Glows over the car's corners, as its own
   lamps are drawn in its shader.
+- **Minimap** (`src/minimap.ts`): a round map under the corner buttons, north up, about
+  560 m round you: the streets you can drive (as far as they've loaded), the way the
+  directions give, where it leads, the job's spot and the police. A click opens the big
+  map; Settings, Minimap, turns it off.
 - **Metro**: the M signs are the real entrances. Press E at one to go down, pick a
   station on any line (W/S, A/D for the line, E to go, or tap), and the ride plays out
   on the line's map: the wait for a train, the stations going by, a change of line

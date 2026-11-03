@@ -246,6 +246,12 @@ export class Satnav {
     return i >= 0 ? w.edges[i + 1] ?? null : null;
   }
 
+  // The way for the minimap, from where you are on it, while it's shown.
+  drawn(): { pts: Point2[]; cum: number[]; from: number; colour: string } | null {
+    const w = this.way;
+    return w && this.mesh.visible ? { pts: w.line.pts, cum: w.line.cum, from: this.s, colour: this.target?.job ? JOB : PICKED } : null;
+  }
+
   // Which way to indicate: from a few seconds before the next turn until you're through
   // it. Turning round goes to the left, across the oncoming lane.
   signal(speed: number): 'left' | 'right' | null {

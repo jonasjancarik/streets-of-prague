@@ -122,6 +122,10 @@
       /* The spot picked on the map to drive to (src/satnav.ts), and the way's next turn in the HUD. */
       #navmark { position: fixed; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: none; font: 16px/1 'Bebas Neue', sans-serif; letter-spacing: 0.04em; color: #6cc4ff; text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 1px 1px 0 #140d0c; }
       #navmark[hidden] { display: none; }
+      /* The small map under the corner buttons (src/minimap.ts). */
+      #minimap { position: fixed; top: calc(max(12px, env(safe-area-inset-top)) + 46px); right: max(12px, env(safe-area-inset-right)); z-index: 4; border-radius: 50%; cursor: pointer; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3); }
+      #minimap[hidden] { display: none; }
+      body.touch #minimap { top: calc(max(12px, env(safe-area-inset-top)) + 52px); }
       #navmark i { display: block; line-height: 0; filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9)); }
       #nav { margin-top: 8px; max-width: 280px; padding-top: 7px; border-top: 2px solid #6cc4ff; cursor: pointer; }
       #nav[hidden] { display: none; }
@@ -655,6 +659,7 @@
     <div id="banner"></div>
     <div id="mark" hidden></div>
     <div id="navmark" hidden></div>
+    <canvas id="minimap" hidden aria-hidden="true"></canvas>
     <div id="district" aria-live="polite"></div>
     <div id="help" class="panel" data-mode="foot">
       <section class="foot-only">

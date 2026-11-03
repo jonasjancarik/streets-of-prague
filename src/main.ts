@@ -109,6 +109,7 @@ import { Marker } from './marker.ts';
 import { Satnav } from './satnav.ts';
 import { mapOpen, pickSpot } from './startmap.ts';
 import { Blinkers } from './blinkers.ts';
+import { Minimap, minimapOn } from './minimap.ts';
 import { PLACES as NAMED_PLACES } from './taxi.ts';
 import * as telemetry from './telemetry.ts';
 import { benchPause } from './benchpause.ts';
@@ -1449,6 +1450,12 @@ async function main() {
   const cornerBox = document.querySelector('.corner');
   cornerBox?.insertBefore(mapButton, cornerBox.querySelector('.corner-btn:not(.corner-feedback)'));
   $('nav').addEventListener('click', () => { void openMap(); });
+  // The small map in the corner; a click opens the big one.
+  const minimap = new Minimap($('minimap') as HTMLCanvasElement, drive, (x, y, r) => edgesNear(x, y, r));
+  const labelMinimap = () => { $('minimap').title = t('Map and directions (N)'); };
+  labelMinimap();
+  onLang(labelMinimap);
+  $('minimap').addEventListener('click', () => { void openMap(); });
   window.addEventListener('keydown', (e) => {
     if (mapOpen()) return; // (it takes Escape itself)
     // The metro screen and a conversation take the keys while they're up.
@@ -2650,6 +2657,11 @@ async function main() {
     const navCard = metro.active ? '' : satnav.card();
     show('nav', navCard, 'html');
     if (shown.navOn !== (navCard ? 1 : 0)) { shown.navOn = navCard ? 1 : 0; $('nav').hidden = !navCard; }
+    const goTo = satnav.target, meNow = inCar || inHeli || walker;
+    const dots = police.cars.map((p) => ({ x: p.car.x, y: p.car.y, colour: '#5b8cff' }));
+    if (wanted_ && goTo && !goTo.job) dots.push({ x: wanted_.x, y: wanted_.y, colour: '#5ee6a8' });
+    minimap.update(dt, minimapOn() && !metro.active && !mapOpen(), { x: meNow.x, y: meNow.y, h: meNow.h }, satnav.drawn(),
+      goTo ? { x: goTo.x, y: goTo.y, colour: goTo.job ? '#5ee6a8' : '#6cc4ff' } : null, dots);
 
     dev.update();
     // (Ultra: the street round the middle of the view, for the cars to mirror.)
