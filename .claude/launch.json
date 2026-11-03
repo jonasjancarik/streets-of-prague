@@ -51,6 +51,17 @@
       "autoPort": true
     },
     {
+      "name": "feedback-tracker",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/feedback-viewer.mjs",
+        "--port",
+        "5198",
+        "--no-open"
+      ],
+      "port": 5198
+    },
+    {
       "name": "site",
       "runtimeExecutable": "python3",
       "runtimeArgs": [

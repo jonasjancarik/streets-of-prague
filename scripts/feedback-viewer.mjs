@@ -30,7 +30,9 @@ const option = (name, fallback) => (args.includes(name) ? args[args.indexOf(name
 const PORT = Number(option('--port', 5196)), HOST = option('--host', '127.0.0.1');
 const SAMPLE_MODE = flag('--sample');
 
-const cf = (...a) => execFileSync('cf', a, { env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT }, encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
+// FORCE_COLOR (set by some launchers) makes cf colour its JSON, which then can't be parsed.
+const CF_ENV = { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT, NO_COLOR: '1', FORCE_COLOR: '0' };
+const cf = (...a) => execFileSync('cf', a, { env: CF_ENV, encoding: 'utf8', maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
 const cfMessage = (e) => String(e.stderr || e.message).replace(/[┌│└]/g, '').trim().split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 2).join(' ');
 
 function listKeys() {
@@ -69,7 +71,7 @@ function screenshot(key) {
   const file = join(CACHE, key.replaceAll('/', '__'));
   if (existsSync(file)) return readFileSync(file);
   mkdirSync(CACHE, { recursive: true });
-  const bytes = execFileSync('cf', ['r2', 'objects', 'get', key, '--bucket-name', BUCKET], { env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT }, maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
+  const bytes = execFileSync('cf', ['r2', 'objects', 'get', key, '--bucket-name', BUCKET], { env: CF_ENV, maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
   writeFileSync(file, bytes);
   return bytes;
 }
