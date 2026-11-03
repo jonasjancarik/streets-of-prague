@@ -1,5 +1,6 @@
 // Made by street/cut.py from plan.json: change those, not this.
 
+pub const STREET: &str = "MASARYKOVO NÁBŘEŽÍ";
 pub const RISE_AT: (f32, f32) = (-3682.083, 2155.979);
 /// The closest map picture: file, left edge and top edge (m), width and height (m)
 pub const NEAR: (&str, f32, f32, f32, f32) = ("map-street.png", -5082.1, 3006.0, 2800.0, 1700.0);

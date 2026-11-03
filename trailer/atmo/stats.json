@@ -1,11 +1,11 @@
 {
  "tiles": 14595,
  "km2": 912,
- "roadKm": 5863,
- "streets": 9466,
- "lamps": 131736,
+ "roadKm": 5357,
+ "streets": 9539,
+ "lamps": 168134,
  "buildings": 247117,
- "trees": 188019,
+ "trees": 209348,
  "levels": [
   {
    "name": "map-near",
