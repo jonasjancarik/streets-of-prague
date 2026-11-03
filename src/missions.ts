@@ -3,7 +3,7 @@ import { BURNING } from './fire.ts';
 import { posts } from './posts.ts';
 import { t } from './i18n.ts';
 import { kc } from './money.ts';
-import { padLabels } from './gamepad.ts';
+import { padLabels, usingPad } from './gamepad.ts';
 import type { Fires } from './fire.ts';
 import type { Crowd, Pedestrian } from './people.ts';
 import type { Wallet } from './money.ts';
@@ -639,7 +639,8 @@ export class Missions {
         + `<div class="job-keys">${key(t('take the job'))} · ${Math.ceil(left)} s</div>`;
     }
     const run = this.run;
-    if (!run) return note;
+    // Nothing on: a standing reminder that there's work to ask for (not on a pad, which has no J).
+    if (!run) return note || (this.w.busy() || usingPad() ? '' : `<div class="job-keys">${key(t('look for work'))}</div>`);
     const at = this.target(), d = at ? far(at, this.w.me()) : 0;
     const meta = [
       run.left !== null ? `<span class="${run.left < 20 ? 'late' : ''}">${mmss(run.left)}</span>` : '',

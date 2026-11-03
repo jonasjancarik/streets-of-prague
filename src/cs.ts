@@ -479,6 +479,7 @@ export const CS: Record<string, string> = {
   'Pay: about {pay}': 'Odměna: asi {pay}',
   'take the job': 'vzít práci',
   'give up': 'vzdát to',
+  'look for work': 'hledat práci',
   'again to give the job up': 'znovu a je po práci',
   'Tap here: {what}': 'Klepni sem: {what}',
   'Get back in the car: {secs} s': 'Vrať se do auta: {secs} s',

@@ -203,7 +203,9 @@ that without a new renderer.
   paid as you ride (below).
 - **Jobs** (`src/missions.ts`, `src/jobs.ts`): work that pays. Press J to ask for a
   job (on touch, tap the job card), J again to take the one on offer, and J twice to
-  give one up. On foot, on a bike or in an ordinary car, J goes through what's on: a
+  give one up. With no job on, the card under the speed says "J look for work" ("Tap
+  here: look for work" on touch; hidden while a gamepad is in use, which has no button
+  for it). On foot, on a bike or in an ordinary car, J goes through what's on: a
   courier run (fetch a parcel and bring it across town in time), a sightseeing tour (a
   tourist driven past three sights and back), and the Regulars' work for Jarka's pub
   crowd: bring a parked car to a yard (dents come off the pay), and once they know you,
