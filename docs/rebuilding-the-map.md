@@ -101,6 +101,13 @@ depend on these steps: rebuild one only if its own script changed
 cores (`--jobs`), so run the areas one after another. Within an area the order above
 is required; only `build_signals.py` may run beside the steps after `build_tiles.py`.
 
+OSM chunk builds and IPR sheet processing submit at most two futures per worker
+(`2 * --jobs`), including completed results waiting for the caller. OSM chunks
+are reported as they finish; IPR sheets retain input order. Both refill the queue
+as results are consumed, cancel queued work on failure or early close, and wait
+for running workers to finish before closing the pool. This limits retained
+futures, not total memory: a single chunk or sheet can still be large.
+
 ## How long
 
 Quiet machine, from the README and the terrain skill (not measured again tonight):

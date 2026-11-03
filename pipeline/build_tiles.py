@@ -11,7 +11,8 @@ buildings and streets across a chunk border come out whole and the same on both
 sides); every chunk is fetched from OSM, classified by osm_area.extract() in the
 area's own local metres, and cut into tiles. With the local OSM extract, each
 chunk's OSM data is read once and kept next to its cut (<area>_<ci>_<cj>.parsed.pkl),
-so building again, or another layer, starts straight from it.
+so building again, or another layer, starts straight from it. Parallel builds keep
+at most two chunk futures per worker and report completed chunks as they finish.
 
 What a tile has comes in layers (see layers.py), and --layers rebuilds only some:
 buildings (OSM buildings that touch the tile, with `own` set on the tile holding the
@@ -34,7 +35,8 @@ import pickle
 import re
 import subprocess
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from itertools import islice
 from pathlib import Path
 
 import osmnx as ox
@@ -460,6 +462,29 @@ def build_chunk(job):
     return ci, cj, lap
 
 
+def chunk_results(jobs, workers):
+    """Report finished chunks with at most two submitted futures per worker."""
+    if workers == 1 or len(jobs) <= 1:
+        yield from map(build_chunk, jobs)
+    else:
+        with ProcessPoolExecutor(workers, initializer=setup) as pool:
+            pending, done = set(), set()
+            jobs = iter(jobs)
+            try:
+                for job in islice(jobs, 2 * workers):
+                    pending.add(pool.submit(build_chunk, job))
+                while pending:
+                    done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                    while done:
+                        yield done.pop().result()
+                        # Refill only after the caller has reported the result.
+                        for job in islice(jobs, 1):
+                            pending.add(pool.submit(build_chunk, job))
+            finally:
+                for future in pending | done:
+                    future.cancel()
+
+
 def main() -> None:
     command_started = time.perf_counter()
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -546,15 +571,7 @@ def main() -> None:
     print(f"{area}: {x1 - x0:.0f} x {y1 - y0:.0f} m, {len(todo)} chunks, layers {', '.join(sorted(wanted))}, {args.jobs} at a time; "
           f"{len(jobs)} chunks to build, {reused} layer outputs reused", flush=True)
 
-    def results():
-        if args.jobs == 1 or len(jobs) <= 1:
-            yield from map(build_chunk, jobs)
-        else:
-            with ProcessPoolExecutor(args.jobs, initializer=setup) as pool:
-                for future in as_completed([pool.submit(build_chunk, job) for job in jobs]):
-                    yield future.result()
-
-    for number, (ci, cj, lap) in enumerate(results(), 1):
+    for number, (ci, cj, lap) in enumerate(chunk_results(jobs, args.jobs), 1):
         steps = ", ".join(f"{k} {v:.1f}" for k, v in lap.items() if k not in ("total", "extract", "stats"))
         print(f"chunk {number}/{len(jobs)} ({ci},{cj}) {lap['total']:.1f} s ({steps})", flush=True)
         build_cache.report_times(f"  extract {ci},{cj}", lap["extract"])

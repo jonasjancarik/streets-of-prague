@@ -14,7 +14,9 @@ import platform
 import resource
 import sys
 import time
+from collections import deque
 from concurrent.futures import ProcessPoolExecutor
+from itertools import islice
 from pathlib import Path
 
 
@@ -180,12 +182,25 @@ def sources_current(manifest):
 
 
 def parallel_map(function, jobs, workers):
-    """Keep deterministic sheet ordering and close the worker pool after consumption."""
+    """Yield sheets in order, with at most twice the workers' results waiting."""
     if workers == 1 or len(jobs) <= 1:
         yield from map(function, jobs)
     else:
         with ProcessPoolExecutor(workers) as pool:
-            yield from pool.map(function, jobs)
+            pending = deque()
+            jobs = iter(jobs)
+            try:
+                for job in islice(jobs, 2 * workers):
+                    pending.append(pool.submit(function, job))
+                while pending:
+                    # Drop the consumed future before handing its result to the caller.
+                    yield pending.popleft().result()
+                    # Refill only when the caller asks for another sheet.
+                    for job in islice(jobs, 1):
+                        pending.append(pool.submit(function, job))
+            finally:
+                for future in pending:
+                    future.cancel()
 
 
 def peak_mb():

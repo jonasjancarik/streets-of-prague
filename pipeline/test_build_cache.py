@@ -1,6 +1,7 @@
 """Map cache correctness using tiny sources and private temporary directories."""
 
 import contextlib
+import gzip
 import io
 import json
 import os
@@ -11,6 +12,7 @@ from unittest.mock import patch
 
 import build_cache
 import build_tiles
+import building_age
 import chunk_cache
 import dtm
 import dtm_walls
@@ -301,6 +303,10 @@ class ChunkBuildTests(unittest.TestCase):
         self.run_build()
         cache = self.root / "ipr"
         cache.mkdir()
+        ages = self.root / "building-age.json.gz"
+        ages.write_bytes(gzip.compress(b"[]"))
+        network = self.stack.enter_context(patch.object(building_age.requests, "get",
+                                                       side_effect=AssertionError("network access in fixture")))
         buildings = cache / "BD3_test.gml"
         buildings.write_text('''<root xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
 <bldg:Building gml:id="test"><bldg:GroundSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 180 9 1 180 9 9 180 1 9 180 1 1 180</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:GroundSurface>
@@ -313,7 +319,8 @@ class ChunkBuildTests(unittest.TestCase):
         def sheets(area, meta):
             return meta["crs"], [("BD3_test", str(buildings), meta["crs"], meta["tile"], meta["origin"])]
 
-        for obj, attr, value in [(ipr_buildings, "OUT", self.out), (ipr_buildings, "CACHE", cache),
+        for obj, attr, value in [(building_age, "CACHE", ages),
+                                 (ipr_buildings, "OUT", self.out), (ipr_buildings, "CACHE", cache),
                                  (ipr_buildings, "MESH_COLOURS", self.root / "colours"),
                                  (ipr_buildings, "sheet_jobs", sheets), (ipr_buildings, "krovak_to_local", IdentityTransform),
                                  (ipr_terrain, "OUT", self.out), (ipr_terrain, "CACHE", cache),
@@ -343,6 +350,8 @@ class ChunkBuildTests(unittest.TestCase):
         binary.write_bytes(b"damaged")
         with self.assertRaises(SystemExit):
             layers.assemble("ujezd", strict=True)
+
+        network.assert_not_called()
 
     def test_water_dependency_and_missing_payload_are_checked_before_writes(self):
         self.run_build()
