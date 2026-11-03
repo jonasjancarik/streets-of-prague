@@ -153,8 +153,13 @@ function parseContext(ctx){const chips=[],rows=[],rest=[];
   return{chips,rows,rest}}
 
 const QUOTE={en:['Re: your feedback on Streets of Prague','Thanks for your message:','Hello,'],cs:['Re: vaše zpětná vazba ke hře Streets of Prague','Děkuji za zprávu:','Dobrý den,']};
+function replyParts(m){const t=QUOTE[m.lang]||QUOTE.en;
+  return[t[0],t[2]+'\n\n'+t[1]+'\n'+m.message.split('\n').map(l=>'> '+l).join('\n')+'\n\n']}
+// A mailto: link does nothing unless the computer has a mail app set as the default, so the button opens Gmail's compose window instead.
+function gmailCompose(m){const[subject,body]=replyParts(m);
+  return'https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(m.email)+'&su='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body)}
 function mailto(m){const t=QUOTE[m.lang]||QUOTE.en;
-  const body=t[2]+'\n\n'+t[1]+'\n'+m.message.split('\n').map(l=>'> '+l).join('\n')+'\n\n';
+  const body=replyParts(m)[1];
   return'mailto:'+encodeURIComponent(m.email).replace('%40','@')+'?subject='+encodeURIComponent(t[0])+'&body='+encodeURIComponent(body)}
 
 function toast(text,undoFn){clearTimeout(toastTimer);const t=$('toast');t.replaceChildren(text);
@@ -220,7 +225,7 @@ function drawDetail(reset){
     el('span',{className:'dot'}),STATUS[s],el('kbd',{textContent:String(i+1)}))));
   seg.querySelectorAll('.dot').forEach((x,i)=>{x.dataset.s=KEYS[i];seg.children[i].dataset.s=KEYS[i];seg.children[i].style.setProperty('--c','var(--'+KEYS[i]+')')});
   const replied=el('button',{id:'replied',type:'button',className:'btn',ariaPressed:String(e.replied),onclick:()=>change(m,{replied:!entry(m.key).replied})},el('span',{textContent:e.replied?'Replied':'Mark as replied'}),el('kbd',{textContent:'r'}));
-  const reply=m.email?el('a',{className:'btn primary',href:mailto(m),textContent:'Reply by email',onclick:()=>{if(!entry(m.key).replied)toast('Opened your mail app. Mark as replied once you have sent it.')}}):el('span',{className:'btn',ariaDisabled:'true',disabled:true,textContent:'No email address to reply to'});
+  const reply=m.email?el('a',{className:'btn primary',href:gmailCompose(m),target:'_blank',rel:'noopener',textContent:'Reply by email',onclick:()=>{if(!entry(m.key).replied)toast('Opened a new message in Gmail. Mark as replied once you have sent it.')}}):el('span',{className:'btn',ariaDisabled:'true',disabled:true,textContent:'No email address to reply to'});
   const copy=el('button',{type:'button',className:'btn',textContent:'Copy text',onclick:async()=>{try{await navigator.clipboard.writeText(m.message);toast('Copied')}catch{toast("Couldn't copy")}}});
   const details=rows.length||rest.length?el('div',{className:'card'},el('h2',{textContent:'From the game'}),
     ...(rows.length?[el('dl',{},...rows.flatMap(([k,v])=>[el('dt',{textContent:k}),el('dd',{textContent:v})]))]:[]),
