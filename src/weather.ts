@@ -16,7 +16,8 @@ import { LocalMistVolume, MIST_MODE } from './localmist.ts';
 // (by the game's clock); falling snow covers them again, fastest at night. The
 // weather changes by itself every half hour or so of the game's clock, more often to
 // rain in summer and to snow in winter (by the game's date, season.ts),
-// with automatic mist replaced by clouds while it is in beta,
+// with mist left out of the roll (and the real weather's mist shown as clouds) while
+// it is in beta,
 // unless it's been picked
 // (?weather=clear|cloudy|rain|storm|mist|snow, the P key or the developer panel).
 //
@@ -47,13 +48,16 @@ const STRIKES = 1 / 9;
 const FLICKER: [number, number][] = [[0, 1], [0.07, 0.15], [0.14, 0.85], [0.22, 0.3], [0.3, 0.5], [0.7, 0]];
 
 // How likely each weather is to come next, in the middle of each season (blended
-// between them by the date).
+// between them by the date). Grey skies are kept to about a quarter of the time at
+// most: from above, a long overcast spell flattens the whole city. Mist isn't rolled
+// while it is in beta.
 const CHANCES: Record<SeasonName, Record<Kind, number>> = {
-  winter: { clear: 2, cloudy: 4, rain: 1, storm: 0, mist: 2, snow: 3 },
-  spring: { clear: 4, cloudy: 3, rain: 2, storm: 0.3, mist: 0.5, snow: 0.2 },
+  winter: { clear: 2.5, cloudy: 2.5, rain: 1, storm: 0, mist: 2, snow: 3 },
+  spring: { clear: 4, cloudy: 2, rain: 2, storm: 0.3, mist: 0.5, snow: 0.2 },
   summer: { clear: 6, cloudy: 2, rain: 1.5, storm: 0.7, mist: 0.2, snow: 0 },
-  autumn: { clear: 3, cloudy: 4, rain: 2.5, storm: 0.1, mist: 2, snow: 0.2 },
+  autumn: { clear: 3.5, cloudy: 2, rain: 2.5, storm: 0.1, mist: 2, snow: 0.2 },
 };
+const MIST_ROLLED = false; // beta (automaticWeather)
 const CLEAR_CHANCES: Record<Kind, number> = { clear: 0, cloudy: 0, rain: 0, storm: 0, mist: 0, snow: 0 };
 
 const CHANGE = 1 / 25;         // of the full change a second (clear to rain in 25 s)
@@ -124,6 +128,7 @@ export class Weather {
     for (const s of SEASONS) for (const k of KINDS) chances[k] += shares[s] * CHANCES[s][k];
     const hour = (clockT % 86400) / 3600;
     if (hour > 4 && hour < 10) chances.mist *= 2.5; // mist mostly in the morning
+    if (!MIST_ROLLED) chances.mist = 0;
     const total = KINDS.reduce((a, k) => a + chances[k], 0);
     let x = this.rng() * total;
     for (const k of KINDS) if ((x -= chances[k]) < 0) return automaticWeather(k);

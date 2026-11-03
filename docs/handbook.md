@@ -496,8 +496,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   picks the next one every 20 to 60 minutes of the game's clock, by the game's date (rain in
   summer, snow in winter); a picked weather stays.
   Mist is marked **beta** on the start screen and is available only through an
-  explicit choice. Automatic seasonal picks, live weather and restored automatic
-  weather substitute Cloudy for Mist while it is in beta.
+  explicit choice. While it is in beta the seasonal roll leaves it out, and live
+  weather and restored automatic weather show Cloudy instead. Cloudy comes up about
+  a quarter of the time in autumn, winter and spring and a fifth in summer.
   Picking weather in the developer panel applies it immediately, including rain,
   mist and the ground's wetness or snow cover, even while the simulation is paused.
   The P key and the ordinary settings retain the gradual transition.
