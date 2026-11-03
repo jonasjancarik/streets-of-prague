@@ -79,7 +79,7 @@ import { Tracers, Health, MAX_HEALTH } from './guns.ts';
 import { trace, strike, assist as aimAssist, PACE, gunOn, setGun } from './pistol.ts';
 import type { Hit } from './pistol.ts';
 import { Fires } from './fire.ts';
-import { Chopper } from './helicopter.ts';
+import { Chopper, loadHelicopters } from './helicopter.ts';
 import { Boats } from './boats.ts';
 import { isMapIndex } from './contracts.ts';
 import type { MapIndex } from './contracts.ts';
@@ -209,6 +209,7 @@ async function main() {
   const kitLoad = loadKit();
   const carsLoad = loadCars();
   const tramsLoad = loadTrams();
+  const helisLoad = loadHelicopters();
   const footfallLoad = loadFootfall(AREA);
   const indexValue: unknown = anywhere ? anywhereIndex(...anywhere) : await fetch(dataUrl(AREA, 'index.json')).then((r) => {
     if (!r.ok) throw new Error(`Map index could not be loaded (${r.status})`);
@@ -287,6 +288,7 @@ async function main() {
   useKit(kit);
   await carsLoad;
   await tramsLoad;
+  await helisLoad;
   if (params.get('mist') === 'volume') MIST_MODE.value = 'volume';
   const weatherFx = new WeatherFx(scene);
   const world = new TileWorld({ area: AREA, index, scene, drive, walk, time, night: params.has('night') || clock.night, osmBuildings: params.has('osm'), ortho: params.has('ortho'), countryside: anywhere || params.get('countryside') === 'live' ? 'live' : params.has('countryside') });
@@ -471,7 +473,7 @@ async function main() {
   };
   standAtStart(sx, sy);
   let inCar: Car | null = null, inHeli: Chopper | null = null;
-  const choppers: Chopper[] = []; // helicopters you can fly (from the developer tools)
+  const choppers: Chopper[] = []; // helicopters you can fly (on Palackého náměstí, and from the developer tools)
   let height = 100;
   let heightWanted = height; // where the camera is heading (zooming out, speeding up)
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
@@ -1224,6 +1226,25 @@ async function main() {
       return true;
     }
     return false;
+  };
+  // A helicopter always stands on the lawn of Palackého náměstí, nose to the north, so
+  // there's one to find. Once it's been flown off, another is put down there while the
+  // lawn is out of sight, and the oldest one left elsewhere out of sight goes, so there
+  // are never more than a few.
+  let heliPad: [number, number] | null = null, padded = false;
+  const parkHelicopter = () => {
+    heliPad ??= dev.toLocal(14.4147706, 50.0722078);
+    const [x, y] = heliPad;
+    // (Not until its tile is here; after the first, not where you'd see it appear.)
+    if (grid.at(x, y) !== 0 || (padded && !offscreen(x, y))) return;
+    if (choppers.some((c) => Math.hypot(c.x - x, c.y - y) < 30)) return;
+    if (choppers.length >= 4) {
+      const old = choppers.findIndex((c) => c !== inHeli && offscreen(c.x, c.y));
+      if (old < 0) return;
+      choppers.splice(old, 1)[0].remove(scene);
+    }
+    choppers.push(new Chopper(scene, grid, (x, y, z) => world.below(x, y, z), x, y, Math.PI / 2));
+    padded = true;
   };
   // Developer tools: the nearest person on the pavement is left lying hurt (the ambulance comes).
   const hurtNearest = (grave = true) => {
@@ -2402,12 +2423,13 @@ async function main() {
     steerGuide.update(dt, inCar, inCar && guideOn && !usingPad() ? held : null, (x, y) => ground(x, y, inCar), clamp(height / 120, 1, 3));
     spray.update(dt * scale, drawn, ground, renderer.domElement.height);
     water.update(dt * scale, cannon.jet ? [...brigade.jets, cannon.jet] : brigade.jets, renderer.domElement.height);
-    for (const c of choppers) c.render(dt);
+    for (const c of choppers) c.render();
     surfaceT -= dt;
     if (inCar && surfaceT < 0) { surfaceT = 0.2; surface = surfaceUnder(inCar.x, inCar.y); }
     busyT -= dt;
     if (busyT < 0) {
       busyT = 0.5;
+      parkHelicopter();
       busy = clamp(footfall.around(px(), py(), 150) / 0.2, 0, 1);
       road = roadNoise(edgesNear(px(), py(), ROAD_FAR), px(), py());
     }

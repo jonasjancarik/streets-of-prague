@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clamp } from './network.ts';
 import { turnOf } from './assist.ts';
 
@@ -7,6 +8,7 @@ interface Helicopter {
   x: number; y: number; z: number; vx: number; vy: number; h: number; w: number;
   g: THREE.Group; rotor: THREE.Group; tail: THREE.Group;
   leaving: boolean; orbit: number; air: boolean; gone?: boolean; pitch?: number; roll?: number;
+  blades: number; fan: number; // the rotors' angles
 }
 
 // Police helicopters. From three stars up one joins the chase (two at five): it flies
@@ -23,50 +25,91 @@ export const HELI_SIGHT = 160;
 
 const POLICE = { body: '#eef1f4', band: '#1d4fa3', stripe: '#d4e02b' };
 
-function model(paint = POLICE) {
-  const g = new THREE.Group();
-  const mat = (color: string, extra: THREE.MeshLambertMaterialParameters = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
-  const add = (geo: THREE.BufferGeometry, color: string, [x, y, z]: [number, number, number], parent = g, extra?: THREE.MeshLambertMaterialParameters) => {
-    const m = new THREE.Mesh(geo, mat(color, extra));
-    m.position.set(x, y, z);
-    m.castShadow = true;
-    parent.add(m);
-    return m;
+// The body comes from public/helicopters.glb (built in Blender by
+// assets/helicopters/build.py): heli_body, and heli_rotor and heli_tail with their origins
+// on their hubs. Paint, Band and Stripe take the livery; the other parts are named after
+// what they are.
+const PART: Record<string, string> = { Glass: '#1b232b', Dark: '#2a2d31', Metal: '#7b7f84', Blade: '#26282c', Tip: '#e9e4d6', Lamp: '#fff6d8', Beacon: '#d0242a' };
+interface Part { geometry: THREE.BufferGeometry; part: string }
+let built: { body: Part[]; rotor: Part[]; tail: Part[]; hub: THREE.Vector3; tailHub: THREE.Vector3 } | null = null;
+
+export async function loadHelicopters(url = 'helicopters.glb') {
+  const gltf = await new GLTFLoader().loadAsync(url);
+  gltf.scene.updateMatrixWorld(true);
+  const node = (name: string) => {
+    const n = gltf.scene.getObjectByName(name);
+    if (!n) throw new Error(`Missing ${name} in helicopters.glb`);
+    return n;
   };
-  const ball = (sx: number, sy: number, sz: number) => new THREE.SphereGeometry(1, 18, 12).scale(sx, sy, sz);
-  const box = (x: number, y: number, z: number) => new THREE.BoxGeometry(x, y, z);
-  // Local +x is the nose, +y up; the car models use the same axes.
-  add(ball(2.4, 1.15, 1.1), paint.body, [0.3, 1.5, 0]);
-  add(ball(1.3, 0.8, 0.95), '#1b232b', [1.45, 1.8, 0]);
-  // The band and stripe wrap the body just outside it, stopping short of the canopy;
-  // `from` and `to` are heights on the body, -1 at the bottom and 1 at the top.
-  const wrap = (from: number, to: number) => new THREE.SphereGeometry(1, 36, 2, Math.PI + 0.7, Math.PI * 2 - 1.4, Math.acos(to), Math.acos(from) - Math.acos(to)).scale(2.46, 1.18, 1.14);
-  add(wrap(-0.32, -0.02), paint.band, [0.3, 1.5, 0]);
-  add(wrap(-0.02, 0.09), paint.stripe, [0.3, 1.5, 0]);
-  add(box(5.2, 0.42, 0.42), paint.body, [-3.8, 1.8, 0]);
-  add(box(1.0, 1.5, 0.12), paint.band, [-6.2, 2.45, 0]);
-  add(box(0.3, 0.08, 1.8), paint.band, [-5.9, 1.85, 0]);
-  for (const z of [-1, 1]) {
-    add(box(4.0, 0.1, 0.12), '#2a2d31', [0.3, 0.05, z]);
-    for (const x of [-0.6, 1.2]) add(box(0.1, 0.6, 0.1), '#2a2d31', [x, 0.35, z * 0.95]);
-  }
-  add(new THREE.CylinderGeometry(0.16, 0.2, 0.6, 10), '#2a2d31', [0.2, 2.65, 0]);
-  add(box(0.3, 0.25, 0.3), '#fff6d8', [1.8, 0.75, 0]); // searchlight
+  const parts = (n: THREE.Object3D) => {
+    const inv = n.matrixWorld.clone().invert(), out: Part[] = [];
+    n.traverse((o) => {
+      if (o instanceof THREE.Mesh) out.push({ geometry: o.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)), part: (o.material as THREE.Material).name });
+    });
+    return out;
+  };
+  const rotor = node('heli_rotor'), tail = node('heli_tail');
+  built = { body: parts(node('heli_body')), rotor: parts(rotor), tail: parts(tail), hub: rotor.position.clone(), tailHub: tail.position.clone() };
+}
+
+// Turning blades leave two fainter copies trailing behind them, so the rotor reads as
+// spinning from above at any frame rate (`spin` 0..1 fades them in).
+const TRAIL = [0.13, 0.26];
+// How fast the rotors turn (rad/s). Slower than a real one's, so that from frame to frame
+// they move on by less than half the angle between their blades and are seen turning
+// the right way at 30, 60 or 120 frames a second.
+const ROTOR = 14, FAN = 40;
+const materials = new Map<string, THREE.MeshLambertMaterial>();
+const shared = (color: string) => {
+  let m = materials.get(color);
+  if (!m) materials.set(color, (m = new THREE.MeshLambertMaterial({ color })));
+  return m;
+};
+
+function model(paint = POLICE) {
+  if (!built) throw new Error('loadHelicopters first');
+  const colour = (part: string) => part === 'Paint' ? paint.body : part === 'Band' ? paint.band : part === 'Stripe' ? paint.stripe : PART[part] || '#777777';
+  const g = new THREE.Group();
+  const meshes = (parts: Part[], parent: THREE.Object3D, mat = (p: Part) => shared(colour(p.part))) => {
+    for (const p of parts) {
+      const m = new THREE.Mesh(p.geometry, mat(p));
+      m.castShadow = true;
+      parent.add(m);
+    }
+  };
+  meshes(built.body, g);
   const rotor = new THREE.Group();
-  rotor.position.set(0.2, 2.98, 0);
+  rotor.position.copy(built.hub);
   g.add(rotor);
-  add(box(11.2, 0.05, 0.3), '#2a2d31', [0, 0, 0], rotor);
-  add(box(0.3, 0.05, 11.2), '#2a2d31', [0, 0, 0], rotor);
+  meshes(built.rotor, rotor);
+  const trails: THREE.MeshLambertMaterial[] = [];
+  for (const back of TRAIL) {
+    const ghost = new THREE.Group();
+    ghost.rotation.y = -back;
+    rotor.add(ghost);
+    meshes(built.rotor.filter((p) => p.part === 'Blade' || p.part === 'Tip'), ghost, (p) => {
+      const m = new THREE.MeshLambertMaterial({ color: colour(p.part), transparent: true, opacity: 0, depthWrite: false });
+      trails.push(m);
+      return m;
+    });
+    ghost.traverse((o) => { o.castShadow = false; });
+  }
   // A faint disc where the blades blur.
-  const blur = new THREE.Mesh(new THREE.CircleGeometry(5.6, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#1a1c20', transparent: true, opacity: 0.16, depthWrite: false }));
-  blur.position.set(0.2, 2.96, 0);
+  const blur = new THREE.Mesh(new THREE.CircleGeometry(5.6, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#1a1c20', transparent: true, opacity: 0, depthWrite: false }));
+  blur.position.copy(built.hub).y -= 0.02;
   g.add(blur);
   const tail = new THREE.Group();
-  tail.position.set(-6.25, 2.45, 0.2);
+  tail.position.copy(built.tailHub);
   g.add(tail);
-  add(box(0.1, 1.9, 0.06), '#2a2d31', [0, 0, 0], tail);
-  return { g, rotor, tail };
+  meshes(built.tail, tail);
+  // How fast the rotor turns, 0..1.
+  const blurred = (spin: number) => {
+    blur.material.opacity = 0.13 * spin;
+    trails.forEach((m, i) => { m.opacity = spin * (i < trails.length / 2 ? 0.4 : 0.2); });
+  };
+  return { g, rotor, tail, blurred };
 }
+
 
 export class Helicopters {
   scene: THREE.Scene;
@@ -95,9 +138,10 @@ export class Helicopters {
   spawn(x: number, y: number, d = 260) {
     const a = Math.random() * Math.PI * 2;
     const hx = x + Math.cos(a) * d, hy = y + Math.sin(a) * d;
-    const { g, rotor, tail } = model();
+    const { g, rotor, tail, blurred } = model();
+    blurred(1);
     this.scene.add(g);
-    const h: Helicopter = { x: hx, y: hy, z: this.height(hx, hy) + ALT, vx: 0, vy: 0, h: a + Math.PI, w: 0, g, rotor, tail, leaving: false, orbit: Math.random() * 6, air: true };
+    const h: Helicopter = { x: hx, y: hy, z: this.height(hx, hy) + ALT, vx: 0, vy: 0, h: a + Math.PI, w: 0, g, rotor, tail, leaving: false, orbit: Math.random() * 6, air: true, blades: 0, fan: 0 };
     this.list.push(h);
     return h;
   }
@@ -121,6 +165,9 @@ export class Helicopters {
       // Circle a little off to one side so it never hides you. The lead makes up for
       // the lag of the chase below, so a steady pace keeps it on the circle.
       h.orbit += dt * 0.35;
+      // (The rotors turn with the world's time, so they turn evenly in footage too.)
+      h.blades = (h.blades + dt * ROTOR) % (Math.PI * 2);
+      h.fan = (h.fan + dt * FAN) % (Math.PI * 2);
       let tx = me.x + me.vx / 0.8 + Math.cos(h.orbit) * OFFSET;
       let ty = me.y + me.vy / 0.8 + Math.sin(h.orbit) * OFFSET;
       if (h.leaving) {
@@ -152,15 +199,15 @@ export class Helicopters {
     this.me = me;
   }
 
-  render(time: number, dt = 1 / 60) {
+  render(time: number) {
     let n = 0;
     this.lit.length = 0;
     this.spot.material.opacity = 0.32 * (1 - this.night);
     for (const h of this.list) {
       h.g.position.set(h.x, h.z, -h.y);
       h.g.rotation.set(h.roll || 0, h.h, h.pitch || 0, 'YZX');
-      h.rotor.rotation.y += dt * 38;
-      h.tail.rotation.z += dt * 60;
+      h.rotor.rotation.y = h.blades;
+      h.tail.rotation.z = h.fan;
       if (h.leaving || !this.me) continue;
       // The searchlight follows you, wobbling a little.
       if (n >= this.spots.length) {
@@ -198,6 +245,8 @@ export class Chopper {
   vx: number; vy: number; vz: number; w: number; spin: number;
   g: THREE.Group; rotor: THREE.Group; tail: THREE.Group;
   pitch?: number; roll?: number;
+  blades = 0; fan = 0; // the rotors' angles
+  private blurred: (spin: number) => void;
 
   // `z`: the height to put it down from (onto a bridge's deck, or the ground under it).
   constructor(scene: THREE.Scene, grid: { at(x: number, y: number): number }, below: Below, x: number, y: number, h: number, z = Infinity) {
@@ -205,7 +254,7 @@ export class Chopper {
     this.vx = 0; this.vy = 0; this.vz = 0; this.w = 0; this.spin = 0;
     this.z = below(x, y, z).h;
     const m = model({ body: '#c8312b', band: '#f2efe8', stripe: '#2a2d31' });
-    this.g = m.g; this.rotor = m.rotor; this.tail = m.tail;
+    this.g = m.g; this.rotor = m.rotor; this.tail = m.tail; this.blurred = m.blurred;
     scene.add(m.g);
   }
 
@@ -225,6 +274,8 @@ export class Chopper {
     const flying = !!ctl;
     this.spin += ((flying ? 1 : 0) - this.spin) * Math.min(1, dt * (flying ? 0.8 : 0.4));
     const lift = this.spin > 0.85; // the rotor needs to be up to speed
+    this.blades = (this.blades + dt * ROTOR * this.spin) % (Math.PI * 2);
+    this.fan = (this.fan + dt * FAN * this.spin) % (Math.PI * 2);
     ctl = ctl || { move: 0, turn: 0, up: false, down: false };
     const low = this.air < 0.6;
     const fx = Math.cos(this.h), fy = Math.sin(this.h);
@@ -264,11 +315,12 @@ export class Chopper {
     this.roll = clamp(-this.w * this.speed * 0.02, -0.35, 0.35);
   }
 
-  render(dt: number) {
+  render() {
     this.g.position.set(this.x, this.z, -this.y);
     this.g.rotation.set(this.roll || 0, this.h, this.pitch || 0, 'YZX');
-    this.rotor.rotation.y += dt * 38 * this.spin;
-    this.tail.rotation.z += dt * 60 * this.spin;
+    this.rotor.rotation.y = this.blades;
+    this.tail.rotation.z = this.fan;
+    this.blurred(this.spin);
   }
 
   remove(scene: THREE.Scene) { scene.remove(this.g); }

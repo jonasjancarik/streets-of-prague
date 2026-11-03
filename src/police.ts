@@ -213,7 +213,7 @@ export class Police {
   seen: boolean; lose: number; cool: Record<string, number>; spawnT: number; checkT: number; limit: number;
   nodes: Map<string, Point2>; links: Map<string, Link[]>; linked: number; walked = 0;
   paths: WalkGraph | null; walkNear: NonNullable<PoliceOptions['walkNear']>;
-  lastT?: number; stolen: WeakSet<Car>;
+  stolen: WeakSet<Car>;
   // An arrest is being made (src/arrest.ts): nobody shoots, the other officers stand round.
   arresting = false;
   // Where the police think you are: where they last saw you, or where a crime was
@@ -852,8 +852,7 @@ export class Police {
   }
 
   render(height: (x: number, y: number, who: Car | Officer) => number, time: number) {
-    this.helis.render(time, time - (this.lastT ?? time));
-    this.lastT = time;
+    this.helis.render(time);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(SCALE, SCALE, SCALE);
     for (const o of this.officers) {
       m.compose(p.set(o.x, height(o.x, o.y, o), -o.y), q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, o.h), sc);

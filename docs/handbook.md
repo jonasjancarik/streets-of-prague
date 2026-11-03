@@ -314,6 +314,11 @@ that without a new renderer.
   four stars they shoot out of the cars too. Gunshots send people running. Stay out of
   sight and the stars go one at a time; they blink while nobody can see you
   (`src/police.ts`, `src/helicopter.ts`).
+- **Your own helicopter.** One always stands on the lawn of Palackého náměstí: E gets
+  in, W/S fly, A/D turn, Space climbs, Shift comes down. Below 30 m the buildings are
+  in the way; land on open ground to get out. Once it's been flown off, another is put
+  down there while the lawn is out of sight, and the oldest one left elsewhere out of
+  sight goes, so there are never more than four (`parkHelicopter` in `src/main.ts`).
 - **Health.** Shots hurt you, far less in a car (the car takes most of it), and so
   does being run down, knocked over by a tram or thrown off a bike. A bar under the
   stars shows how much you have left once you're hurt, and it comes back by itself
@@ -387,9 +392,8 @@ that without a new renderer.
   then move the camera instead of you. Under Testing: pause, one frame at a time, slow
   motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,
   the test places, and the scenarios (see Testing above).
-  "Helicopter next to me" parks one on the nearest open ground: E gets in, W/S fly,
-  A/D turn, Space climbs, Shift comes down. Below 30 m the buildings are in the way;
-  land on open ground to get out.
+  "Helicopter next to me" parks one on the nearest open ground (flown like the one on
+  Palackého náměstí, see Playing).
 
 ## How it works
 
@@ -816,6 +820,14 @@ record the measurements, merge decisions and pending landmark asset activation.
   (`TileWorld.terrainRevision`), instead of sampling the ground under its wheels every
   frame; `node scripts/check-car-transforms.mjs --url …` checks the kept matrices
   against the original calculation ([plan 032](../plans/032-cache-parked-car-transforms.md)).
+- **Helicopters**, yours and the police's, are one model built the same way
+  (`assets/helicopters/build.py` → `public/helicopters.glb`, `-- --preview DIR` renders
+  it): a light twin-engined utility helicopter, the fuselage and cowling lofted through
+  rounded sections, with the main and tail rotors as objects of their own on their hubs.
+  `src/helicopter.ts` paints the livery onto the parts named Paint, Band and Stripe
+  (red for yours, the police's white and blue). The rotors turn with the world's time,
+  not the screen's, and turning blades leave two faint copies trailing behind them, so
+  they read as spinning from above at any frame rate, footage included.
 - **Trams** run Prague's real lines (`src/trams.ts`), taken from OSM's route
   relations: each line goes round its whole route there and back. How many trams a line
   has out follows PID's timetable for the game clock's day and hour (`src/clock.ts`):
