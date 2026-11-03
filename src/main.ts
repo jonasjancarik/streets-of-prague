@@ -2426,7 +2426,7 @@ async function main() {
     // the hole round you (below), deep as it may be.
     // (On the metro, the ground above the train: see Metro.view.)
     const body = inHeli || underway ? null : inCar || walker;
-    const deep = !!body && world.track(body) < 0;
+    const deep = !!body && world.buried(body);
     const below = underway ? underway.ground
       : deep ? Math.max(world.terrainAt(px(), py()), body.gz ?? 0) : ground(camPos.x, -camPos.z, body);
     camGround += (below - camGround) * Math.min(1, dt * 3);

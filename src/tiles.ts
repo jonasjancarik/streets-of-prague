@@ -759,11 +759,18 @@ export class TileWorld {
     return this.surfaceAt(x, y, this.track(who));
   }
 
+  // Whether `who` (as track) is in a tunnel with the ground over it: not in the open
+  // cutting before its portal, where the tunnel's level already runs (from where it
+  // meets the ground) but the ground beside is barely above it.
+  buried(who: Tracked) {
+    return this.track(who) < 0 && this.terrainAt(who.x, who.y) - (who.gz ?? 0) > CLIMB;
+  }
+
   // Whether something is over `who` (as track): a bridge above it, or the ground above
   // a tunnel. There a round hole opens so it stays in view.
   covered(who: Tracked) {
     const level = this.track(who), z = who.gz ?? 0, t = this.tileAt(who.x, who.y);
-    if (level < 0) return true;
+    if (this.buried(who)) return true;
     if (t) for (const l of t.levels) {
       if (l.level <= level || !l.grid.at(who.x, who.y)) continue;
       if (this.levelAt(who.x, who.y, l.level) - z > CLIMB) return true;
