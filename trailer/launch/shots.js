@@ -143,19 +143,25 @@ const SHOTS = {
     // The police helicopter that joins in at three stars flies at 55 m and can cross under
     // the camera, filling the picture: kept above it instead, its searchlight still on you.
     const aloft = () => { for (const h of d.police.helis.list) h.z = d.world.terrainAt(h.x, h.y) + 150; };
-    // Wait where you are until a police car is close, then run for it.
-    for (let i = 0; i < 40; i++) {
+    // Wait where you are until a police car is close and another is out, then run for it.
+    for (let i = 0; i < 60; i++) {
       put(c, line, s0, 0); aloft();
       await t.wait(1);
-      if (d.police.cars.some((p) => Math.hypot(p.car.x - c.x, p.car.y - c.y) < 40)) break;
+      if (d.police.cars.length > 1 && d.police.cars.some((p) => Math.hypot(p.car.x - c.x, p.car.y - c.y) < 40)) break;
     }
-    let cop = null;
+    let cop = null, other = null;
     return record((k, n) => {
       const s = s0 + k * V / 30;
       put(c, line, s, V); clear(c, 25); aloft();
       // The nearest police car right behind, every take (left to itself it may stop to shoot).
       cop ??= d.police.cars.map((p) => p.car).sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
       if (cop) put(cop, line, s - 7.5, V);
+      // And a second one starting behind it, left to itself: it pulls out and comes past
+      // the first to ram you from the side.
+      if (k === 0) {
+        other = d.police.cars.map((p) => p.car).find((q) => q !== cop) ?? null;
+        if (other) put(other, line, s - 17, V);
+      }
       if (k < 55) t.cam = above(ahead(c, 16), 72);
       else if (k < 110) t.cam = above(ahead(c, 3), 34, compass(c.h) + mix(-35, 25, (k - 55) / 55));
       else t.cam = above(ahead(c, -12), mix(88, 100, (k - 110) / (n - 110)), compass(c.h));
