@@ -7,7 +7,7 @@ ffmpeg, x264, x265 and opus already there). The picture is filmed from the game 
 | File | What |
 | --- | --- |
 | `shots/*.js` | one clip each: where, when, in what weather, what is driven, how long |
-| `record.sh` | films the shots frame by frame (`t.film` in `src/testkit.ts`) and encodes them into `clips/` |
+| `record.sh` | films the shots frame by frame (`t.film` in `src/testkit.ts`: each frame steps the game 1/fps, and the camera and smoothing move by that much too, not by the real time between frames) and encodes them into `clips/` |
 | `soundtrack.sh` | mixes `media/soundtrack.wav` from the game's CC0 recordings in `public/audio` |
 | `src/lib.rs` | the cut: the title, the clips in order with their captions, the closing card |
 | `src/main.rs` | the command line (`fframes::cli`); reads `clips/` when it runs |

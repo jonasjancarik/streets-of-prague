@@ -2305,7 +2305,9 @@ async function main() {
   renderer.setAnimationLoop((now) => {
     if (benchPause.paused) { last = now; return; } // a benchmark elsewhere on this machine (dev only)
     const paused = settingsPanel.open || mapOpen();
-    const dt = paused ? 0 : Math.min(0.05, (now - last) / 1000); // the settings and the map pause the game
+    let dt = paused ? 0 : Math.min(0.05, (now - last) / 1000); // the settings and the map pause the game
+    // (Filming, a frame's worth of the game's time and no more: see Testkit.frameDt.)
+    if (testkit && testkit.frameDt !== undefined) { dt = testkit.frameDt; testkit.frameDt = 0; }
     if (paused !== soundHeld) sound.hold((soundHeld = paused)); // and the sound with it
     graphics.frame(now - last, now, world.busy);
     telemetry.tick(now - last, dt, playingAs(), px(), py(), graphics.choice, graphics.tier);

@@ -148,6 +148,10 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // The live game's clock: paused, or running at this speed (0.25 = slow motion).
     paused: false,
     speed: 1,
+    // While filming: how far the next frame drawn moves on what follows the clock of
+    // real frames (the camera after you, smoothing), so it keeps pace with the game,
+    // stepped a fixed 1/fps a frame. The draws after it move nothing.
+    frameDt: undefined as number | undefined,
     // Nothing hurts you (for looking round a chase).
     unhurt: false,
     // The dice for a ticket inspection on a ferry: 0 always checks you, 1 never (null: chance).
@@ -1017,11 +1021,13 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
         for (let i = 0, n = Math.round(seconds * fps); i < n; i++) {
           if (each) await each(i, n);
           for (let k = 0; k < Math.round(60 / fps); k++) g.simulate(1 / 60, ctl);
+          kit.frameDt = 1 / fps;
           await frame();
           await frame();
           await save(`${name}-${String(i + 1).padStart(4, '0')}`);
         }
       } finally {
+        kit.frameDt = undefined;
         kit.paused = was;
         hide.forEach((el, i) => { el.style.visibility = shown[i]; });
       }
