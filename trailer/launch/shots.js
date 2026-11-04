@@ -149,18 +149,29 @@ const SHOTS = {
       await t.wait(1);
       if (d.police.cars.length > 1 && d.police.cars.some((p) => Math.hypot(p.car.x - c.x, p.car.y - c.y) < 40)) break;
     }
-    let cop = null, other = null;
+    let cop = null, other = null, go = null;
     return record((k, n) => {
       const s = s0 + k * V / 30;
       put(c, line, s, V); clear(c, 25); aloft();
       // The nearest police car right behind, every take (left to itself it may stop to shoot).
       cop ??= d.police.cars.map((p) => p.car).sort((a, b) => Math.hypot(a.x - c.x, a.y - c.y) - Math.hypot(b.x - c.x, b.y - c.y))[0];
       if (cop) put(cop, line, s - 7.5, V);
-      // And a second one starting behind it, left to itself: it pulls out and comes past
-      // the first to ram you from the side.
-      if (k === 0) {
-        other = d.police.cars.map((p) => p.car).find((q) => q !== cop) ?? null;
-        if (other) put(other, line, s - 17, V);
+      // And a second one behind it that swerves out over the tram tracks, comes past the
+      // first and draws up alongside you. Driven by the shot, like the first: left to
+      // itself it rammed you, and with your car held to its line the two of them looked
+      // to be pushing it along.
+      other ??= d.police.cars.map((p) => p.car).find((q) => q !== cop) ?? null;
+      if (other) {
+        // (It pulls out over the tracks once no tram is coming the other way there.)
+        if (go === null && k >= 35 && !d.trams.list.some((v) => v.parts.some((q) => Math.hypot(q.x - other.x, q.y - other.y) < 30))) go = k;
+        const g = go ?? Infinity;
+        const back = (j) => mix(17, 1.5, ease(clamp01((j - g - 20) / 50))), side = (j) => 2.9 * ease(clamp01((j - g) / 28));
+        const spot = (j) => {
+          const p = along(line, s0 + (j * V) / 30 - back(j));
+          return { x: p.x - Math.sin(p.h) * side(j), y: p.y + Math.cos(p.h) * side(j) };
+        };
+        const a = spot(k), b = spot(k + 1), h = Math.atan2(b.y - a.y, b.x - a.x);
+        Object.assign(other, { x: a.x, y: a.y, h, vx: (b.x - a.x) * 30, vy: (b.y - a.y) * 30, w: 0, damage: 0 });
       }
       if (k < 55) t.cam = above(ahead(c, 16), 72);
       else if (k < 110) t.cam = above(ahead(c, 3), 34, compass(c.h) + mix(-35, 25, (k - 55) / 55));
