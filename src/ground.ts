@@ -31,6 +31,7 @@ export interface GroundRoadEdge {
   lanes?: number | null; oneway?: boolean; bridge?: boolean; tunnel?: boolean; surface?: string;
   maxspeed?: number | null;
   named?: boolean; // false: the map gives it no street name (true or unknown otherwise)
+  name?: string; // on a bridge: the street's name (for BALUSTRADES)
   level?: number; // on a bridge or in a tunnel: its level, where the map says (see groundLayers)
 }
 // side: at a step in the ground, which side's height (terrain.ts, heightSampler).
@@ -53,7 +54,7 @@ export const COLORS = {
   field: '#b9b27a', yard: '#a9a69e', dtmYard: '#85837e', ballast: '#99948a', bare: '#bba888',
   water: '#4d7680', pool: '#62aec2', asphalt: '#6b6a68', sett: '#8a847a', parking: '#72706c',
   bed: '#6f5b43', shrubBed: '#5d6b3c', iron: '#3f3d3b',
-  bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4',
+  bridge: '#6d6c6a', trackbed: '#8a8a85', steel: '#3a3b3d', paint: '#efede4', kerb: '#aba79e',
   quay: '#7c776c', funicular: '#6e6a62', slab: '#8e8b84', tunnel: '#46484c', tunnelWall: '#a59f93',
 };
 // Paint of parking bays by paid-parking zone: [zone, colour, dashes].
@@ -382,7 +383,8 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
       const H = (x: number, y: number) => { const h = l.height(x, y); return Number.isNaN(h) ? T(x, y) : h; };
       if (l.kind === 'bridge') {
         groundHeight = H;
-        upper.push(...deckSlab(l.polys, box, masks[k], H, T, l.level));
+        const stone = (paintOn.get(k) || []).some((e) => !!e.name && BALUSTRADES.has(e.name));
+        upper.push(...deckSlab(l.polys, box, masks[k], H, T, l.level, stone));
         // What's on the deck floats a hand's breadth above the slab: they're
         // triangulated differently, so they'd cut into each other.
         groundHeight = (x: number, y: number) => H(x, y) + 0.12;
@@ -505,7 +507,7 @@ function openSides(polys: Polygons, [x0, y0, x1, y1]: Bounds, mask: LevelMask, H
   }
 }
 
-function quads() {
+function quads(facing = false) {
   const pos: number[] = [], nor: number[] = [], idx: number[] = [];
   return {
     pos, nor, idx,
@@ -513,7 +515,12 @@ function quads() {
       const i = pos.length / 3;
       pos.push(...a, ...b, ...c, ...d);
       for (let k = 0; k < 4; k++) nor.push(...n);
-      idx.push(i, i + 1, i + 2, i, i + 2, i + 3);
+      // With `facing`, wound to face its normal: a double-sided material lights a back
+      // face from behind, which reads as dark.
+      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+      const f = (u[1] * v[2] - u[2] * v[1]) * n[0] + (u[2] * v[0] - u[0] * v[2]) * n[1] + (u[0] * v[1] - u[1] * v[0]) * n[2];
+      if (facing && f < 0) idx.push(i, i + 2, i + 1, i, i + 3, i + 2);
+      else idx.push(i, i + 1, i + 2, i, i + 2, i + 3);
     },
   };
 }
@@ -528,16 +535,59 @@ function joined(top: GroundGeometry, q: ReturnType<typeof quads>): GroundGeometr
   };
 }
 
+// Bridges whose parapet is a stone balustrade, by the name of the street over them:
+// a rail on short balusters between pillars, each pillar with a stone ball on top. From
+// above that's the rail with the pillars and balls along it, and a shadow with light
+// through it.
+const BALUSTRADES = new Set(['most Legií']);
+const RAIL_W = 0.42, PLINTH = 0.2, RAIL = 0.8, BALUSTER = 0.3, PILLAR = 3.2, BALL = 0.21;
+
 // A bridge level as a solid slab: its surface, the edge below it and a parapet along
-// every open side.
-function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T: HeightAt, level: number): GroundLayer[] {
-  const q = quads();
+// every open side (a balustrade, with `stone`).
+function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T: HeightAt, level: number, stone = false): GroundLayer[] {
+  const q = quads(true);
+  let run = 0; // how far along the parapet, for the pillars
   openSides(polys, box, mask, D, T, (a, b, ha, hb, ox, oy) => {
     const out = [ox, 0, -oy], inn = [-ox, 0, oy];
-    const ia = [a[0] - ox * PARAPET_W, a[1] - oy * PARAPET_W], ib = [b[0] - ox * PARAPET_W, b[1] - oy * PARAPET_W];
-    q.quad([a[0], ha - FASCIA, -a[1]], [b[0], hb - FASCIA, -b[1]], [b[0], hb + PARAPET, -b[1]], [a[0], ha + PARAPET, -a[1]], out);
-    q.quad([ib[0], hb, -ib[1]], [ia[0], ha, -ia[1]], [ia[0], ha + PARAPET, -ia[1]], [ib[0], hb + PARAPET, -ib[1]], inn);
-    q.quad([a[0], ha + PARAPET, -a[1]], [b[0], hb + PARAPET, -b[1]], [ib[0], hb + PARAPET, -ib[1]], [ia[0], ha + PARAPET, -ia[1]], [0, 1, 0]);
+    if (!stone) {
+      const ia = [a[0] - ox * PARAPET_W, a[1] - oy * PARAPET_W], ib = [b[0] - ox * PARAPET_W, b[1] - oy * PARAPET_W];
+      q.quad([a[0], ha - FASCIA, -a[1]], [b[0], hb - FASCIA, -b[1]], [b[0], hb + PARAPET, -b[1]], [a[0], ha + PARAPET, -a[1]], out);
+      q.quad([ib[0], hb, -ib[1]], [ia[0], ha, -ia[1]], [ia[0], ha + PARAPET, -ia[1]], [ib[0], hb + PARAPET, -ib[1]], inn);
+      q.quad([a[0], ha + PARAPET, -a[1]], [b[0], hb + PARAPET, -b[1]], [ib[0], hb + PARAPET, -ib[1]], [ia[0], ha + PARAPET, -ia[1]], [0, 1, 0]);
+      return;
+    }
+    q.quad([a[0], ha - FASCIA, -a[1]], [b[0], hb - FASCIA, -b[1]], [b[0], hb, -b[1]], [a[0], ha, -a[1]], out);
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len;
+    // A point `s` along the side and `c` in from its edge, `z` above the deck there.
+    const at = (s: number, c: number, z: number) => [a[0] + ux * s - ox * c, ha + ((hb - ha) * s) / len + z, -(a[1] + uy * s - oy * c)];
+    const block = (s0: number, s1: number, c0: number, c1: number, z0: number, z1: number) => {
+      q.quad(at(s0, c0, z1), at(s1, c0, z1), at(s1, c1, z1), at(s0, c1, z1), [0, 1, 0]);
+      q.quad(at(s0, c0, z0), at(s1, c0, z0), at(s1, c0, z1), at(s0, c0, z1), out);
+      q.quad(at(s1, c1, z0), at(s0, c1, z0), at(s0, c1, z1), at(s1, c1, z1), inn);
+      q.quad(at(s1, c0, z0), at(s1, c1, z0), at(s1, c1, z1), at(s1, c0, z1), [ux, 0, -uy]);
+      q.quad(at(s0, c1, z0), at(s0, c0, z0), at(s0, c0, z1), at(s0, c1, z1), [-ux, 0, uy]);
+    };
+    block(0, len, 0, RAIL_W, 0, PLINTH);
+    block(0, len, 0, RAIL_W, RAIL, RAIL + 0.16);
+    for (let s = BALUSTER / 2; s < len; s += BALUSTER) block(s - 0.07, s + 0.07, 0.13, RAIL_W - 0.13, PLINTH, RAIL);
+    for (let k = Math.ceil(run / PILLAR); k * PILLAR < run + len; k++) {
+      const s = k * PILLAR - run, top = RAIL + 0.28;
+      block(s - 0.26, s + 0.26, -0.04, RAIL_W + 0.04, 0, top);
+      // The ball, on a short neck.
+      const [cx, cy, cz] = at(s, RAIL_W / 2, top + 0.06 + BALL);
+      block(s - 0.08, s + 0.08, RAIL_W / 2 - 0.08, RAIL_W / 2 + 0.08, top, top + 0.08);
+      const ring = (i: number, j: number) => {
+        const th = (Math.PI * j) / 4, ph = (Math.PI * 2 * i) / 8;
+        const n = [Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph)];
+        return { p: [cx + n[0] * BALL, cy + n[1] * BALL, cz + n[2] * BALL], n };
+      };
+      for (let i = 0; i < 8; i++) for (let j = 0; j < 4; j++) {
+        const p = [ring(i, j), ring(i + 1, j), ring(i + 1, j + 1), ring(i, j + 1)];
+        const m = ring(i + 0.5, j + 0.5).n;
+        q.quad(p[3].p, p[2].p, p[1].p, p[0].p, m);
+      }
+    }
+    run += len;
   });
   const geometry = joined(polygons(polys), q);
   return geometry.index.length ? [{ order: -600, geometry, color: COLORS.slab, pattern: 'concrete', blend: null, slab: true, level }] : [];
@@ -545,7 +595,10 @@ function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T:
 
 // What's drawn on a bridge level, over its slab: its surface, tram tracks and the
 // bridges' road paint. Zebra crossings stay on the ground: they're far more often
-// under a flyover than on a bridge.
+// under a flyover than on a bridge. A deck that carries a street is paved, as the
+// pavements are, from parapet to parapet, with the carriageway over it between granite
+// kerbs (the survey has no pavements on the bridges); one that carries none (a railway
+// bridge) stays plain.
 function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[], level: number): GroundLayer[] {
   const out: GroundLayer[] = [];
   let order = -599;
@@ -553,13 +606,36 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
     const o = order++;
     if (geometry.index.length) out.push({ order: o, geometry, color, pattern, blend: null, deck: true, level });
   };
-  add(polygons(polys), COLORS.bridge, 'asphalt');
+  const streets = edges.filter((e) => e.pts.length > 1);
+  if (streets.length) {
+    add(polygons(polys), COLORS.path, 'mosaic');
+    const ways = streets.map((e) => ({ pts: e.pts, half: carriageway(e, trams) / 2 }));
+    for (const w of ways) add(strips([w.pts], w.half * 2), COLORS.bridge, 'asphalt');
+    add(strips(ways.flatMap((w) => [offsetLine(w.pts, w.half), offsetLine(w.pts, -w.half)]), 0.25), COLORS.kerb, 'concrete');
+  } else add(polygons(polys), COLORS.bridge, 'asphalt');
   add(strips(trams, 2.5), COLORS.trackbed, 'concrete');
   add(strips(trams.flatMap((pts) => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.1), COLORS.steel);
   const { dashed, solid } = roadPaint(edges, trams);
   add(strips(dashed, 0.13, [3, 6], true), COLORS.paint);
   add(strips(solid, 0.13, null, true), COLORS.paint);
   return out;
+}
+
+// How wide a street on a bridge is from kerb to kerb: as the map has it, or wider where
+// tram tracks run along it, to take them and a lane beside them (the map's width leaves
+// the tracks out: 7 m on most Legií, kerb to kerb 10 m).
+function carriageway(e: GroundRoadEdge, trams: Point2[][]) {
+  let off = -1;
+  for (let i = 0; i < e.pts.length - 1; i++) {
+    const [ax, ay] = e.pts[i], [bx, by] = e.pts[i + 1], len = Math.hypot(bx - ax, by - ay);
+    if (len < 0.1) continue;
+    const ux = (bx - ax) / len, uy = (by - ay) / len;
+    for (const line of trams) for (const [x, y] of line) {
+      const along = (x - ax) * ux + (y - ay) * uy, across = Math.abs((x - ax) * uy - (y - ay) * ux);
+      if (along >= 0 && along <= len && across < 4) off = Math.max(off, across);
+    }
+  }
+  return off < 0 ? e.width : Math.max(e.width, 2 * (off + 0.75 + 2.6));
 }
 
 // A tunnel level: its floor, the walls along it and its road paint.

@@ -718,6 +718,12 @@ record the measurements, merge decisions and pending landmark asset activation.
   metro stay. A connected tunnel that never reaches 2.5 m below the ground is
   treated as a passage at street level; its streets lose their tunnel tag when no
   underground level covers them.
+  A bridge with a street on it is paved as pavement from parapet to parapet, with the
+  carriageway laid over it between granite kerbs. The carriageway is as wide as the
+  street, or wide enough for its tram tracks with a lane either side (on most Legií
+  OSM's 7 m leaves the tracks out). Bridges in `BALUSTRADES` (`src/ground.ts`; most
+  Legií so far) get a stone balustrade instead of the plain parapet: a rail on balusters
+  between pillars, each with a stone ball on top.
   Cars, trams and people drive or walk onto a bridge or into a tunnel where it meets
   the street and off it at the far end; parapets and tunnel walls keep them in, and
   whatever is on one level and another passes by. Under a bridge a round hole opens in

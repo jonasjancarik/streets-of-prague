@@ -1207,7 +1207,7 @@ export class TileWorld {
       .map((b) => ({ ...b, base: Math.min(...b.rings[0].map(([x, y]) => hAt(x, y))), street: streetOf(b.rings[0], edges) }));
     // (An edge that changes level along itself is painted stretch by stretch.)
     const clipped = edges.flatMap((e) => byLevel(e).flatMap((part) => clipLine(part.pts, t.box).map((pts) => (
-      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name, level: part.level }))));
+      { pts, u: e.u, v: e.v, hw: e.hw, lanes: e.lanes, oneway: e.oneway, width: e.width, surface: e.surface, bridge: e.bridge, tunnel: e.tunnel, maxspeed: e.maxspeed, named: !!e.name, name: e.bridge ? e.name ?? undefined : undefined, level: part.level }))));
     // Paid-parking colour of each parking area's bay lines.
     const parkingZones = (t.areas.parking || []).map((rs) => {
       const r = rs[0], cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;
