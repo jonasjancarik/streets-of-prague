@@ -317,8 +317,9 @@ that without a new renderer.
   sight and the stars go one at a time; they blink while nobody can see you
   (`src/police.ts`, `src/helicopter.ts`).
 - **Your own helicopter.** One always stands on the lawn of Palackého náměstí: E gets
-  in, W/S fly, A/D turn, Space climbs, Shift comes down. Below 30 m the buildings are
-  in the way; land on open ground to get out. Once it's been flown off, another is put
+  in, W/S fly, A/D turn, Space climbs, Shift comes down. Within 30 m of the ground
+  under a building the buildings are in the way (over a bridge's parapet, it's the river
+  below that counts); land on open ground to get out. Once it's been flown off, another is put
   down there while the lawn is out of sight, and the oldest one left elsewhere out of
   sight goes, so there are never more than four (`parkHelicopter` in `src/main.ts`).
 - **Health.** Shots hurt you, far less in a car (the car takes most of it), and so

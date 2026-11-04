@@ -296,11 +296,13 @@ export class Chopper {
     this.vz += (wantZ - this.vz) * Math.min(1, dt * 3);
 
     // Below the rooftops, buildings stop you like walls.
+    // (Below the rooftops from the ground at each spot looked at: over a bridge's deck,
+    // its parapet is low and the river beside it lower still, so 25 m above the deck
+    // the helicopter flies on over the parapet instead of catching on it.)
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
-    const under = this.z - this.height(nx, ny) < ROOFS;
     // So does the side of a bridge's deck.
     const hits = (x: number, y: number) => this.below(x, y, this.z).roof - TALL < this.z - 1
-      || (under && [[3, 0], [-3, 0], [0, 3], [0, -3], [0, 0]].some(([a, b]) => this.solid(x + a, y + b)));
+      || [[3, 0], [-3, 0], [0, 3], [0, -3], [0, 0]].some(([a, b]) => this.z - this.height(x + a, y + b) < ROOFS && this.solid(x + a, y + b));
     if (!hits(nx, this.y)) this.x = nx; else this.vx *= -0.2;
     if (!hits(this.x, ny)) this.y = ny; else this.vy *= -0.2;
     this.z += this.vz * dt;
