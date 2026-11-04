@@ -14,7 +14,7 @@ import type { FigureKit } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Point3 } from './guns.ts';
 
-interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number }
+interface ChaseCar extends Follower { car: Car; calm: boolean; wrecked: boolean; gone?: boolean; reload?: number; side?: number }
 // `door`: the one of their car they got out of, left open till they're back. `led`: making
 // an arrest, moved by src/arrest.ts.
 export interface Officer { x: number; y: number; h: number; vx: number; vy: number; car: Car; fig: Figures; anim: Anim; down: number; back: boolean; gone?: boolean; level?: number; gz?: number; detour?: number; reload?: number; door?: number; led?: boolean; grip?: number }
@@ -567,6 +567,22 @@ export class Police {
       tx = me.x + me.vx * Math.min(0.8, dist / 25);
       ty = me.y + me.vy * Math.min(0.8, dist / 25);
       want = Math.max(12, me.speed + 6);
+      // Another police car in the way, between it and you: past it on one side, to come
+      // up alongside you and ram you from there, not into the back of the other one.
+      const ux = (tx - c.x) / (Math.hypot(tx - c.x, ty - c.y) || 1), uy = (ty - c.y) / (Math.hypot(tx - c.x, ty - c.y) || 1);
+      const block = this.cars.find((q) => {
+        if (q === p || q.wrecked) return false;
+        const fx = q.car.x - c.x, fy = q.car.y - c.y, along = fx * ux + fy * uy;
+        return along > 2 && along < dist - 2 && Math.abs(fx * uy - fy * ux) < 2.6;
+      });
+      if (block) {
+        // The side it's on already (or one picked once), across the way you're going.
+        const hm = me.speed > 2 ? Math.atan2(me.vy, me.vx) : Math.atan2(uy, ux), nx = -Math.sin(hm), ny = Math.cos(hm);
+        p.side ??= Math.sign((c.x - block.car.x) * nx + (c.y - block.car.y) * ny) || (this.r() < 0.5 ? -1 : 1);
+        tx += nx * p.side * 3;
+        ty += ny * p.side * 3;
+        want += 3;
+      } else p.side = undefined;
     } else {
       p.replan -= dt;
       // Where there's no way through (you're somewhere the street graph doesn't reach,

@@ -296,7 +296,8 @@ that without a new renderer.
   A crime none of them saw is phoned in six to eleven seconds later, and they go to
   where it happened rather than to you: the police only know where you are while they
   can see you, and otherwise make for where they last saw you.
-  Police cars chase you along the streets and ram you; some carry a ram frame on the
+  Police cars chase you along the streets and ram you; one stuck behind another goes
+  round it to come up alongside you rather than ramming it. Some carry a ram frame on the
   nose, more of them the more stars you have. When you're on foot they stay
   on the road and stop at the kerb nearest you; then (or when you stop the car) an
   officer gets out (their door stays open till they're back) and runs after you, to
