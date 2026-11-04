@@ -480,6 +480,8 @@ async function main() {
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
   let camGround = ground(walker.x, walker.y, walker);
   let eyeH = 0; // the first-person view's height (developer panel), smoothed over kerbs
+  // The vehicle that view follows from behind, and the heading it looks along (lagging the vehicle's).
+  let chased: { h: number } | null = null, chaseH = 0;
   let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
   const viewRadius = (h = height) => h * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
@@ -2481,6 +2483,7 @@ async function main() {
     const free = testkit?.cam;
     if (free) {
       // The developer panel's free camera: tilted back from the spot it looks at.
+      chased = null;
       camPos.set(free.x, 0, -free.y);
       camGround = world.terrainAt(free.x, free.y);
       const hd = ((90 - free.heading) * Math.PI) / 180, back = free.height * Math.tan((free.tilt * Math.PI) / 180);
@@ -2489,19 +2492,35 @@ async function main() {
       camera.lookAt(free.x, camGround, -free.y);
       camera.up.set(0, 0, -1);
     } else if (eyes && !underway) {
-      // The developer panel's first-person view: at eye height, looking the way you face;
-      // in a car from just ahead of its bonnet, so the car itself doesn't block the view.
-      const me = inHeli || inCar || walker;
-      const ahead = inCar ? inCar.spec.L / 2 + 0.2 : inHeli ? 3 : 0.3;
-      const base = inHeli ? inHeli.z - 0.5 : (deep && body ? body.gz ?? 0 : ground(me.x, me.y, body)) + (inCar ? Math.min(2.6, inCar.spec.H * 0.8) : walker.z + walker.perch + 1.65);
+      // The developer panel's first-person view: on foot at eye height, looking the way you
+      // face; driving or flying, from behind and above the vehicle, swinging round after it
+      // as it turns. Dragging turns the view (round the vehicle when following one).
+      const vehicle = inCar || inHeli, me = vehicle || walker;
+      const base = inHeli ? inHeli.z : (deep && body ? body.gz ?? 0 : ground(me.x, me.y, body)) + (inCar ? 0 : walker.z + walker.perch + 1.65);
       eyeH += (base - eyeH) * (Math.abs(base - eyeH) > 5 ? 1 : Math.min(1, dt * 12));
-      const h = me.h, aim = me.h + THREE.MathUtils.degToRad(eyes.yaw), pitch = THREE.MathUtils.degToRad(eyes.pitch);
-      const ex = me.x + Math.cos(h) * ahead, ey = me.y + Math.sin(h) * ahead;
-      camera.position.set(ex, eyeH, -ey);
+      const yaw = THREE.MathUtils.degToRad(eyes.yaw), pitch = THREE.MathUtils.degToRad(eyes.pitch);
       camera.up.set(0, 1, 0);
-      camera.lookAt(ex + Math.cos(aim) * Math.cos(pitch), eyeH + Math.sin(pitch), -(ey + Math.sin(aim) * Math.cos(pitch)));
+      if (vehicle) {
+        // (A new vehicle, or after a teleport, starts straight behind it.)
+        if (chased !== vehicle) { chased = vehicle; chaseH = vehicle.h; }
+        chaseH += Math.atan2(Math.sin(vehicle.h - chaseH), Math.cos(vehicle.h - chaseH)) * Math.min(1, dt * 3);
+        const len = inCar ? inCar.spec.L : 14, tall = inCar ? inCar.spec.H : 4;
+        const back = len / 2 + (inCar ? 4.5 : 10), up = tall + (inCar ? 1.4 : 4), h = chaseH + yaw;
+        const cx = vehicle.x - Math.cos(h) * back, cy = vehicle.y - Math.sin(h) * back;
+        camera.position.set(cx, eyeH + up, -cy);
+        // Looking over the roof at the road a little ahead.
+        const tx = vehicle.x + Math.cos(h) * len, ty = vehicle.y + Math.sin(h) * len;
+        camera.lookAt(tx, eyeH + tall * 0.5 + Math.tan(pitch) * (back + len), -ty);
+      } else {
+        chased = null;
+        const aim = me.h + yaw;
+        const ex = me.x + Math.cos(me.h) * 0.3, ey = me.y + Math.sin(me.h) * 0.3;
+        camera.position.set(ex, eyeH, -ey);
+        camera.lookAt(ex + Math.cos(aim) * Math.cos(pitch), eyeH + Math.sin(pitch), -(ey + Math.sin(aim) * Math.cos(pitch)));
+      }
       camera.up.set(0, 0, -1);
     } else {
+      chased = null;
       camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
       camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
     }
