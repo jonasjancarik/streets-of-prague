@@ -77,6 +77,7 @@ const PUSH = 15, CREEP = 1.5; // s a parked car can hold a tram up before the tr
 // night lines (91-99) through the night.
 const FALLBACK = { day: 7.5, night: 3 };
 export const MEAN_SPEED = 5.5; // m/s along a line, stops included: spaces the trams out
+const WEEK = 7 * 86400;
 const MANAGE = 2; // seconds between checks of how many trams each line should have out
 const CELL = 20;
 const NONE: TramCell[] = [];
@@ -253,6 +254,7 @@ export class Trams {
   list: TramVehicle[];
   id: number;
   manageT: number;
+  clockT: number; // the clock at the last update, to tell when it jumps
   lines: TramLine[];
 
   constructor(lines: RawTramLine[], scene: THREE.Scene, { clock, rng = Math.random }: { clock: Clock; rng?: () => number }) {
@@ -265,10 +267,21 @@ export class Trams {
     this.list = [];
     this.id = 0;
     this.manageT = 0;
+    this.clockT = clock.t;
     this.lines = lines.map(prepare);
+    for (const line of this.lines) line.trams = [];
+    this.lay();
+  }
+
+  // Every line's trams laid out afresh for the clock's day and hour, evenly round it:
+  // at the start, and when the clock jumps (the time picked on the start screen, a
+  // night in the cells), where leaving one by one out of sight would keep the trams of
+  // before about for a long while (a night tram at 7 in the evening). A tram you're on
+  // or driving, or one coming for you, stays.
+  lay() {
     for (const line of this.lines) {
-      line.trams = [];
-      const L = line.path.length, n = this.target(line), offset = rng() * (L / Math.max(1, n));
+      for (const v of [...line.trams]) if (!v.rider && !v.driven && !v.forPlayer) this.remove(v);
+      const L = line.path.length, n = this.target(line) - line.trams.length, offset = this.rng() * (L / Math.max(1, n));
       for (let k = 0; k < n; k++) this.add(line, offset + (k * L) / n);
     }
   }
@@ -418,6 +431,9 @@ export class Trams {
   update(dt: number, { near = null, x = 0, y = 0, r = 0, seen = () => false }: {
     near?: Nearby | null; x?: number; y?: number; r?: number; seen?: (x: number, y: number) => boolean;
   } = {}) {
+    const step = (((this.clock.t - this.clockT) % WEEK) + WEEK) % WEEK;
+    this.clockT = this.clock.t;
+    if (Math.min(Math.abs(step - dt), WEEK - step) > 120) this.lay();
     this.manageT -= dt;
     if (this.manageT < 0) {
       this.manageT = MANAGE;

@@ -123,7 +123,7 @@ interface Game {
   // Trams: the ride you're on (ride.ts) and every tram running.
   tram: {
     ride: { on: boolean; driving: boolean; v: { speed: number } | null; atName: string | null; next: { stop: { name: string }; dist: number } | null; passengers: { doors: boolean; on: number; off: number } | null; board: (v: never) => void; steal: () => boolean; doors: () => void };
-    list: () => { parts: { x: number; y: number }[]; look?: unknown }[];
+    list: () => { parts: { x: number; y: number }[]; look?: unknown; line: { ref: string } }[];
   };
 }
 
@@ -551,6 +551,12 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       return r.driving && r.v ? { speed: round(r.v.speed * 3.6), at: r.atName, next: r.next ? { name: r.next.stop.name, dist: Math.round(r.next.dist) } : null, doors: !!r.passengers?.doors, on: r.passengers?.on ?? 0, off: r.passengers?.off ?? 0 } : null;
     },
     tramDoors() { g.tram.ride.doors(); },
+    // How many trams each line has out, across the city.
+    tramsOut() {
+      const out: Record<string, number> = {};
+      for (const v of g.tram.list()) out[v.line.ref] = (out[v.line.ref] ?? 0) + 1;
+      return out;
+    },
 
     // Into a new car of this type (out of whatever you were in first).
     async drive(type = 'hatch') {

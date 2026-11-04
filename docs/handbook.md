@@ -842,8 +842,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   has out follows PID's timetable for the game clock's day and hour (`src/clock.ts`):
   a tram every few minutes on a weekday afternoon, fewer at weekends and in the
   evening, and only the night lines 91–99 after midnight. Trams join a line where the
-  gap is widest and leave service out of sight; the dev panel's time slider moves the
-  clock. The departure boards count down from where the trams really are, so a
+  gap is widest and leave service out of sight. When the clock jumps (the time picked
+  on the start screen, a night in the cells or in hospital, the dev panel's time
+  slider) every line is laid out afresh for the new hour, keeping only a tram you're on,
+  driving or waiting for; the `tram-clock-jump` scenario checks it. The departure boards count down from where the trams really are, so a
   tram held up in traffic shows up late there too. They stop at
   every stop, keep to the track's speed limit, slow down for curves and brake for the
   tram in front and for anything on the track. A car left on the track that holds a
