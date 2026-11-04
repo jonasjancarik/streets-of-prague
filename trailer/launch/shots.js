@@ -32,8 +32,12 @@ const SHOTS = {
 
   // Into the cab of a tram by the National Theatre and away, the game's own camera on it.
   async tram() {
-    await begin(at(-3725, 2410), { time: '19:00' });
+    const spot = { x: -3725, y: 2410 };
+    await begin(at(spot.x, spot.y), { time: '19:00' });
     await settle(3000);
+    // The nearest tram may be a stop away along Národní: wait for one at the junction.
+    const near = () => d.trams.list.some((v) => Math.hypot(v.parts[1].x - spot.x, v.parts[1].y - spot.y) < 25);
+    for (let i = 0; i < 120 && !near(); i++) await t.wait(1);
     t.takeTram();
     t.view(0.55);
     await t.wait(1.5, { move: 1 }); await settle(3000);
