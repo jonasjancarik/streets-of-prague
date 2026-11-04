@@ -17,7 +17,7 @@ class Element {
   classList = { toggle: () => {}, add: () => {} };
   appendChild(e) { this.children.push(e); return e; }
   get firstChild() { return this.children[0]; }
-  insertBefore(e, before) { this.children.splice(this.children.indexOf(before), 0, e); }
+  insertBefore(e, before) { const i = this.children.indexOf(e); if (i >= 0) this.children.splice(i, 1); this.children.splice(this.children.indexOf(before), 0, e); }
   prepend(e) { this.children.unshift(e); }
   append(...nodes) { this.children.push(...nodes); }
   setAttribute(k, v) { this.attributes.set(k, String(v)); }
@@ -65,7 +65,7 @@ try {
   const make = (extra = {}) => {
     const root = new Element();
     const screen = startScreen(root, { now: '00:30', season: pragueToday(), dateLinked: false, weather: 'cloudy', weatherFixed: false,
-      weatherForSeason: day => seasonOfDay(day) === 'summer' ? 'clear' : 'cloudy', sound: true, saved: null, lost: false, ...extra });
+      sound: true, saved: null, lost: false, ...extra });
     const panel = root.children[0];
     const row = label => panel.children.find(r => r.children[0]?.textContent === label);
     const button = (label, text) => row(label).children[1].children.find(b => b.textContent === text);
@@ -73,10 +73,15 @@ try {
     return { root, screen, panel, row, button, go };
   };
   const current = make(); current.screen.live('rain');
+  assert.deepEqual(current.row('Weather').children[1].children.slice(0, 3).map(b => b.textContent), ['Clear', 'Now: Rain', 'Cloudy'], 'the real weather comes second, after Clear');
   const beta = make({ weather: 'mist' });
-  assert.equal(beta.root.dataset.weather, 'cloudy', 'automatic initial mist becomes cloudy');
+  assert.equal(beta.root.dataset.weather, 'clear', 'the game starts clear, whatever the roll');
+  assert.equal(beta.button('Weather', 'Clear').getAttribute('aria-pressed'), 'true');
   assert.equal(beta.button('Weather', 'Mist (beta)').getAttribute('aria-pressed'), 'false');
   beta.screen.live('mist');
+  assert.equal(beta.root.dataset.weather, 'clear', 'the real weather is offered, not picked');
+  assert.equal(beta.button('Weather', 'Now: Cloudy').getAttribute('aria-pressed'), 'false');
+  beta.button('Weather', 'Now: Cloudy').click();
   assert.equal(beta.root.dataset.weather, 'cloudy', 'live fog becomes cloudy');
   assert.equal(beta.button('Weather', 'Now: Cloudy').getAttribute('aria-pressed'), 'true');
   beta.button('Weather', 'Mist (beta)').click();
@@ -85,15 +90,14 @@ try {
   assert.equal(beta.root.dataset.weather, 'mist', 'manual mist survives a season choice');
   const betaChoice = beta.screen.ready(); beta.go.click();
   assert.equal((await betaChoice).weather, 'mist', 'manual beta mist reaches game launch');
-  const previewMist = make({ weatherForSeason: () => 'mist' });
-  previewMist.button('Season', 'Summer').click();
-  assert.equal(previewMist.root.dataset.weather, 'cloudy', 'automatic season preview replaces mist');
   assert.equal(current.root.dataset.season, 'autumn');
   const live = current.button('Weather', 'Now: Rain');
-  assert.equal(live.hidden, false); assert.equal(live.getAttribute('aria-pressed'), 'true');
+  assert.equal(live.hidden, false); assert.equal(live.getAttribute('aria-pressed'), 'false');
+  live.click(); assert.equal(current.root.dataset.weather, 'rain');
   current.button('Season', 'Summer').click();
   assert.equal(live.hidden, true); assert.equal(live.getAttribute('aria-pressed'), 'false');
-  assert.equal(current.root.dataset.weather, 'clear', 'summer does not inherit automatically selected real weather');
+  assert.equal(current.root.dataset.weather, 'clear', 'another season goes back to Clear, not the real weather');
+  assert.equal(current.button('Weather', 'Clear').getAttribute('aria-pressed'), 'true');
   const chosen = current.screen.ready(); current.go.click();
   assert.equal((await chosen).season, parseDay('07-15'));
 
@@ -102,7 +106,7 @@ try {
   const linked = make({ season: parseDay('10-20'), dateLinked: true }); linked.screen.live('rain');
   assert.equal(linked.button('Weather', 'Now: Rain').hidden, true, 'another date in the current season is not today');
   linked.button('Season', 'Autumn').click();
-  assert.equal(linked.button('Weather', 'Now: Rain').hidden, false); assert.equal(linked.root.dataset.weather, 'rain');
+  assert.equal(linked.button('Weather', 'Now: Rain').hidden, false); assert.equal(linked.root.dataset.weather, 'clear');
   const late = make(); late.button('Season', 'Summer').click(); late.screen.live('snow');
   assert.equal(late.root.dataset.weather, 'clear', 'late live-weather response cannot replace another season');
   assert.equal(late.button('Weather', 'Now: Snow').hidden, true);
@@ -120,7 +124,7 @@ try {
   assert.equal(fresh.row('Roční období').children[1].getAttribute('aria-label'), 'Roční období');
   fresh.button('Roční období', 'Jaro').click(); assert.equal(fresh.root.dataset.season, 'spring');
   setLang('en'); assert.equal(fresh.button('Season', 'Spring').getAttribute('aria-pressed'), 'true');
-  const overnight = make(); overnight.screen.live('snow');
+  const overnight = make(); overnight.screen.live('snow'); overnight.button('Weather', 'Now: Snow').click();
   const unchangedLink = make({ season: 276, dateLinked: true });
   const defaultToday = make();
   instant += 86400 * 1000;
@@ -130,9 +134,11 @@ try {
   assert.equal((await exactLink).season, 276, 'explicit date link stays fixed across midnight');
   overnight.button('Season', 'Autumn').click();
   const nextDay = overnight.screen.ready(); overnight.go.click();
-  assert.equal((await nextDay).season, 277, 'current-season click uses today even after the page crossed midnight');
+  const overnightChoice = await nextDay;
+  assert.equal(overnightChoice.season, 277, 'current-season click uses today even after the page crossed midnight');
+  assert.deepEqual([overnightChoice.weather, overnightChoice.live], ['clear', false], 'yesterday\'s real weather falls back to Clear');
   assert.equal(overnight.button('Weather', 'Now: Snow').hidden, true, 'yesterday\'s live forecast is no longer offered');
-  assert.equal(overnight.root.dataset.weather, 'cloudy');
+  assert.equal(overnight.root.dataset.weather, 'clear');
   const acrossNote = make();
   const afterNote = acrossNote.screen.ready(); acrossNote.go.click();
   instant += 86400 * 1000;

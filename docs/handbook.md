@@ -68,9 +68,10 @@ it. `?date=MM-DD` keeps an exact date and `?season=spring|summer|autumn|winter` 
 season's representative date. These links keep their date until a season button is picked.
 The weather changes by itself every half hour or so of the game's clock;
 `?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen
-(language, season, time, weather and sound). The real weather in Prague, from
-Open-Meteo (`src/liveweather.ts`), is offered only for today's game date; other dates
-start with weather chosen for that season. A game begun with it follows the real
+(language, season, time, weather and sound). The start screen picks Clear; the real
+weather in Prague, from Open-Meteo (`src/liveweather.ts`), is offered right after it as
+"Now: …", only for today's game date (another season goes back to Clear). The weather
+only starts changing by itself once the game is under way. A game begun with it follows the real
 weather as it changes, until you pick one yourself ([docs/live-weather.md](live-weather.md),
 which also covers ČHMÚ's open data as a source through the Worker). <kbd>P</kbd> steps through the weather.
 `?osm` shows OSM footprints instead of IPR's 3D buildings, `?dev` opens the

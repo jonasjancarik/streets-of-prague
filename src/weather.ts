@@ -119,7 +119,7 @@ export class Weather {
 
   private span() { return (20 + this.rng() * 40) * 60; }
 
-  // A start-screen choice, without changing the live weather or shader values.
+  // What the roll would pick, without changing the weather or shader values (checks).
   preview(clockT: number, season: Season): Kind { return this.pick(clockT, season); }
 
   private pick(clockT: number, season = this.season): Kind {

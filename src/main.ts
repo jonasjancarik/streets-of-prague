@@ -195,7 +195,6 @@ async function main() {
   // The game saved by itself last time, unless it's a test run (?go).
   const saved = params.has('go') || anywhere ? null : readSave('auto', AREA);
   const start = params.has('go') ? null : startScreen($('loading'), { now: Clock.nowLabel(), season: season.day, dateLinked: parseDay(params.get('date')) !== null || parseDay(params.get('season')) !== null, weather: weather.kind, weatherFixed: weather.fixed,
-    weatherForSeason: (day) => { const preview = new Season(params); preview.set(day); return weather.preview(clock.t, preview); },
     sound: savedSound !== 'off', saved: saved && (() => describe(saved)), savedLook: saved ? { clock: saved.clock, weather: saved.weather.fixed ? saved.weather.kind : automaticWeather(saved.weather.kind), season: saved.season } : undefined, lost: !saved && !params.has('go') && unreadable('auto', AREA) });
   // The weather in Prague now, for the start screen (the URL's ?weather wins).
   if (start && !params.has('weather')) void liveWeather().then((k) => { if (k) start.live(k); });
