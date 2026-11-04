@@ -168,6 +168,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     // Set: the camera stays here instead of following you (the world still streams in
     // round it).
     cam: null as FreeCam | null,
+    // Set: the camera looks out of your eyes (or your car's windscreen) instead of down
+    // from above; yaw and pitch (degrees) turn the view from the way you face.
+    eyes: null as { yaw: number; pitch: number } | null,
 
     toLocal(w: Where): Point2 {
       if (typeof w === 'string') {
@@ -240,7 +243,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       }
       kit.exit();
       if (g.mode() !== 'foot') throw new Error(`Could not start the scenario on foot from ${g.mode()}`);
-      kit.cam = null;
+      kit.cam = kit.eyes = null;
       g.view(1);
       await frame();
     },
@@ -1110,16 +1113,25 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
   // right-drag or Shift-drag to turn (sideways) and tilt (up and down).
   let drag: { x: number; y: number; turn: boolean } | null = null;
   g.canvas.addEventListener('pointerdown', (e) => {
-    if (!kit.cam || e.pointerType === 'touch') return;
+    if (e.pointerType === 'touch') return;
+    // First person: right-drag or Shift-drag looks round.
+    if (!kit.cam && kit.eyes && !(e.button === 2 || e.shiftKey)) return;
+    if (!kit.cam && !kit.eyes) return;
     drag = { x: e.clientX, y: e.clientY, turn: e.button === 2 || e.shiftKey };
     try { g.canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic event (tests) */ }
   });
   g.canvas.addEventListener('pointermove', (e) => {
     const cam = kit.cam;
-    if (!drag || !cam) return;
+    if (!drag || (!cam && !kit.eyes)) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.x = e.clientX;
     drag.y = e.clientY;
+    if (!cam && kit.eyes) {
+      kit.eyes.yaw = Math.max(-150, Math.min(150, kit.eyes.yaw - dx * 0.25));
+      kit.eyes.pitch = Math.max(-60, Math.min(60, kit.eyes.pitch - dy * 0.2));
+      return;
+    }
+    if (!cam) return;
     if (drag.turn) {
       cam.heading = (cam.heading + dx * 0.3 + 360) % 360;
       cam.tilt = Math.max(0, Math.min(75, cam.tilt + dy * 0.2));
@@ -1135,7 +1147,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
   const end = () => { drag = null; };
   g.canvas.addEventListener('pointerup', end);
   g.canvas.addEventListener('pointercancel', end);
-  g.canvas.addEventListener('contextmenu', (e) => { if (kit.cam) e.preventDefault(); });
+  g.canvas.addEventListener('contextmenu', (e) => { if (kit.cam || kit.eyes) e.preventDefault(); });
   return kit;
 }
 

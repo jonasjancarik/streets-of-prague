@@ -93,6 +93,8 @@ import type { DriveEdge, WalkEdge } from './network.ts';
 import type { Point2 } from './map/geo.ts';
 import type { Tracked } from './tiles.ts';
 import { getLang, onLang, t, tHtml, tn, translatePage } from './i18n.ts';
+// Behind the city, where the view from above never reaches the sky.
+const BACKDROP = '#2a2622';
 const VEHICLE_NAMES: Record<string, string> = {
   van: 'Van', taxi: 'Taxi', police: 'Police car', bike: 'Bicycle', moto: 'Motorbike',
   truck: 'Lorry', artic: 'Articulated lorry', bus: 'Bus', minibus: 'Minibus', fire: 'Fire engine', garbage: 'Dustcart',
@@ -261,7 +263,7 @@ async function main() {
   renderer.domElement.addEventListener('webglcontextlost', () => telemetry.error('graphics lost', 'WebGL context lost'));
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#2a2622');
+  scene.background = new THREE.Color(BACKDROP);
   const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 1, 6000);
   camera.up.set(0, 0, -1);
 
@@ -477,6 +479,7 @@ async function main() {
   let heightWanted = height; // where the camera is heading (zooming out, speeding up)
   const camPos = new THREE.Vector3(walker.x, 0, -walker.y);
   let camGround = ground(walker.x, walker.y, walker);
+  let eyeH = 0; // the first-person view's height (developer panel), smoothed over kerbs
   let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
   const viewRadius = (h = height) => h * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
@@ -2330,7 +2333,9 @@ async function main() {
     // The city lives well beyond the screen; only the tiles near it are drawn.
     // (The developer panel's free camera can look far across the city: everything is drawn.)
     // Zooming out, the tiles the view is about to take in are drawn before it gets there.
-    world.update(camPos.x, -camPos.z, viewRadius() + 220, testkit?.cam ? Infinity : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond);
+    // (In first person you see along the street to the horizon: more of it is loaded.)
+    const eyes = !testkit?.cam && testkit?.eyes;
+    world.update(camPos.x, -camPos.z, eyes ? 650 : viewRadius() + 220, testkit?.cam || eyes ? Infinity : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond);
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
     // it steers along your lane, and A/D picks the turn at the next junction instead.
@@ -2483,6 +2488,19 @@ async function main() {
       if (free.level) camera.up.set(Math.cos(hd), 0, -Math.sin(hd));
       camera.lookAt(free.x, camGround, -free.y);
       camera.up.set(0, 0, -1);
+    } else if (eyes && !underway) {
+      // The developer panel's first-person view: at eye height, looking the way you face;
+      // in a car from just ahead of its bonnet, so the car itself doesn't block the view.
+      const me = inHeli || inCar || walker;
+      const ahead = inCar ? inCar.spec.L / 2 + 0.2 : inHeli ? 3 : 0.3;
+      const base = inHeli ? inHeli.z - 0.5 : (deep && body ? body.gz ?? 0 : ground(me.x, me.y, body)) + (inCar ? Math.min(2.6, inCar.spec.H * 0.8) : walker.z + walker.perch + 1.65);
+      eyeH += (base - eyeH) * (Math.abs(base - eyeH) > 5 ? 1 : Math.min(1, dt * 12));
+      const h = me.h, aim = me.h + THREE.MathUtils.degToRad(eyes.yaw), pitch = THREE.MathUtils.degToRad(eyes.pitch);
+      const ex = me.x + Math.cos(h) * ahead, ey = me.y + Math.sin(h) * ahead;
+      camera.position.set(ex, eyeH, -ey);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(ex + Math.cos(aim) * Math.cos(pitch), eyeH + Math.sin(pitch), -(ey + Math.sin(aim) * Math.cos(pitch)));
+      camera.up.set(0, 0, -1);
     } else {
       camera.position.set(camPos.x + jx, camGround + height, camPos.z + jz);
       camera.lookAt(camPos.x + jx, camGround, camPos.z + jz);
@@ -2500,14 +2518,23 @@ async function main() {
     DIG.value.set(hx, -hy, (deep || underway) && cutR > 0.3 ? cutR : 0, 0);
 
     sun.target.position.set(camPos.x, camGround, camPos.z);
-    sky.update(clock.t % 86400, weather.now, height, season.day);
+    sky.update(clock.t % 86400, weather.now, eyes ? 300 : height, season.day);
+    // In first person the horizon shows: a sky behind the city, and haze on the far
+    // streets so the edge of what's loaded fades out.
+    if (eyes) {
+      sky.fog.near = Math.min(sky.fog.near, 180);
+      sky.fog.far = Math.min(sky.fog.far, 620);
+      (scene.background as THREE.Color).copy(sky.haze);
+    } else (scene.background as THREE.Color).set(BACKDROP);
+    const nearPlane = eyes ? 0.2 : 1;
+    if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.
     {
       // Looking straight down, the light map covers what's in view; the free camera sees further.
       const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-      lightOpt.box = free ? undefined : [height * tan * camera.aspect + 6, height * tan + 6];
+      lightOpt.box = free || eyes ? undefined : [height * tan * camera.aspect + 6, height * tan + 6];
       lightOpt.time = time.value;
       police.helis.night = sky.dark;
       lightOpt.spots = police.helis.lit;

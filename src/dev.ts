@@ -175,6 +175,7 @@ export function setupDev({ area, index, teleport, position, helicopter, setFire,
     #dev input[type=number] { width: 90px; padding: 4px 6px; }
     #dev .dev-check { display: flex; gap: 6px; align-items: center; }
     #dev .dev-check input { margin: 0; }
+    #dev .dev-inline { padding: 1px 6px; font-size: 11px; }
     #dev-mist summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
     #dev-mist .dev-time span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: 0.8; }
     #dev-mist [hidden] { display: none; }
@@ -532,6 +533,8 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
     <div class="dev-sub">Camera</div>
     <label class="dev-check" title="The camera stops following you. Searching or picking a spot on the map now moves the camera, not you."><input id="dev-free" type="checkbox" /> Free camera</label>
     <div class="dev-note" id="dev-free-hint" hidden>Drag to move it · wheel to zoom · right-drag or Shift-drag to turn and tilt</div>
+    <label class="dev-check" title="See the street the way you'd see it standing in it, or from the driver's seat"><input id="dev-eyes" type="checkbox" /> First person</label>
+    <div class="dev-note" id="dev-eyes-hint" hidden>Right-drag or Shift-drag to look round · <button id="dev-ahead" class="dev-inline">Look ahead again</button></div>
     <div class="dev-row" id="dev-free-row" hidden>
       <button id="dev-top" title="Looking straight down, north up">Straight down</button>
       <button id="dev-back" title="The camera follows you again">Back to me</button>
@@ -570,7 +573,10 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
     </div>
     <div id="dev-out"></div>`;
   const free = $('dev-free') as HTMLInputElement;
-  free.onchange = () => { void kit.camera(free.checked ? {} : null); };
+  free.onchange = () => { if (free.checked) kit.eyes = null; void kit.camera(free.checked ? {} : null); };
+  const eyes = $('dev-eyes') as HTMLInputElement;
+  eyes.onchange = () => { kit.eyes = eyes.checked ? { yaw: 0, pitch: 0 } : null; if (eyes.checked) void kit.camera(null); };
+  $('dev-ahead').onclick = () => { if (kit.eyes) kit.eyes.yaw = kit.eyes.pitch = 0; };
   $('dev-top').onclick = () => { void kit.camera({ tilt: 0, heading: 0 }); };
   $('dev-back').onclick = () => { void kit.camera(null); };
   const keep = (el: HTMLElement) => el.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
@@ -636,6 +642,8 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
     update() {
       free.checked = !!kit.cam;
       $('dev-free-hint').hidden = $('dev-free-row').hidden = !kit.cam;
+      eyes.checked = !!kit.eyes && !kit.cam;
+      $('dev-eyes-hint').hidden = !eyes.checked;
       pause.textContent = kit.paused ? 'Carry on' : 'Pause';
       const p = kit.probe();
       if (document.activeElement !== money) money.value = String(p.money);

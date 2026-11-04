@@ -392,7 +392,11 @@ that without a new renderer.
   coordinates (with a copy button) and links to the spot on Google Maps, Street View
   (facing your way) and Mapy.cz. The free camera stops following you: drag to move it,
   the wheel zooms, right-drag or Shift-drag turns and tilts it, and searching or the map
-  then move the camera instead of you. Under Testing: pause, one frame at a time, slow
+  then move the camera instead of you. First person looks out at eye height the way you
+  face (from just ahead of the bonnet in a car) and you keep playing; right-drag or
+  Shift-drag looks round (`t.eyes = { yaw, pitch }` in scripts). It loads 650 m round
+  you and hazes the far streets; shadows only reach as far as the view from above would
+  show. Under Testing: pause, one frame at a time, slow
   motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,
   the test places, and the scenarios (see Testing above).
   "Helicopter next to me" parks one on the nearest open ground (flown like the one on
