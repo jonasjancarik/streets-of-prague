@@ -70,7 +70,7 @@ The weather changes by itself every half hour or so of the game's clock;
 `?weather=clear|cloudy|rain|storm|mist|snow` fixes it, and `?go` skips the start screen
 (language, season, time, weather and sound). The start screen picks Clear; the real
 weather in Prague, from Open-Meteo (`src/liveweather.ts`), is offered right after it as
-"Now: …", only for today's game date (another season goes back to Clear). The weather
+"Live: …", only for today's game date (another season goes back to Clear). The weather
 only starts changing by itself once the game is under way. A game begun with it follows the real
 weather as it changes, until you pick one yourself ([docs/live-weather.md](live-weather.md),
 which also covers ČHMÚ's open data as a source through the Worker). <kbd>P</kbd> steps through the weather.

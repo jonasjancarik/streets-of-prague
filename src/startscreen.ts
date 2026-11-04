@@ -32,7 +32,7 @@ export interface StartChoice {
   // Seconds since midnight, or null to keep the clock as it is (the time now).
   time: number | null;
   weather: Kind;
-  // The weather is the real one in Prague now ("Now: …"), for the game to keep following.
+  // The weather is the real one in Prague now ("Live: …"), for the game to keep following.
   live: boolean;
   sound: boolean;
   // Day of the year, including the saved date when continuing.
@@ -195,7 +195,7 @@ export function startScreen(root: HTMLElement, opts: StartOptions) {
       liveDay = pragueToday();
       const b = liveButton = el('button', 'ls-chip', weatherRow.chips) as HTMLButtonElement;
       weatherRow.chips.insertBefore(b, weatherRow.buttons[1]);
-      relabel.push(() => { b.textContent = t('Now: {weather}', { weather: t(WEATHER[kind]) }); });
+      relabel.push(() => { b.textContent = t('Live: {weather}', { weather: t(WEATHER[kind]) }); });
       b.type = 'button';
       b.setAttribute('aria-pressed', 'false');
       const choose = () => {

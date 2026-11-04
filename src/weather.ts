@@ -82,7 +82,7 @@ export class Weather {
   // Picked by hand: it stays.
   fixed: boolean;
   readonly now: Conditions = { ...CLEAR };
-  // Following the real weather in Prague (the start screen's "Now"): `follow` brings each
+  // Following the real weather in Prague (the start screen's "Live"): `follow` brings each
   // new report, and until the last one is too old the weather doesn't change by itself.
   // Picking a weather by hand ends it.
   live = false;

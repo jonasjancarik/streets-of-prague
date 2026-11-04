@@ -76,7 +76,7 @@ export const CS: Record<string, string> = {
   'Wider view': 'Širší pohled',
   'Whole tunnel': 'Celý tunel',
   'Now {time}': 'Teď {time}',
-  'Now: {weather}': 'Teď: {weather}',
+  'Live: {weather}': 'Aktuálně: {weather}',
   Morning: 'Ráno',
   Midday: 'Poledne',
   Evening: 'Večer',

@@ -5,7 +5,7 @@ or `worker/weather.js`, or when deciding where the real weather comes from.
 
 ## What the game does
 
-The start screen offers "Now: …", the weather in Prague at the moment, for today's
+The start screen offers "Live: …", the weather in Prague at the moment, for today's
 date, right after Clear, which is picked by default. A game begun with it keeps following the real weather: it asks again every ten
 minutes (`LIVE_EVERY`), and the game's weather moves to each report over a few minutes
 (`LIVE_CHANGE`, a sixth of the usual pace, so clouds gather before the rain as they do
