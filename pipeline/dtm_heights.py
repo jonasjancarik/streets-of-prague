@@ -187,6 +187,10 @@ def _inside(blob, box):
     return g if x1 >= box[0] and x0 <= box[2] and y1 >= box[1] and y0 <= box[3] else None
 
 
+def survey_packages():
+    return sorted(PACKAGES.glob("*.zip")) + sorted(LINES.glob("*.zip"))
+
+
 def survey(area, bbox, margin=60.0):
     """The survey on the ground within a WGS84 box, in S-JTSK: (surface polygons,
     original lines measured on the ground as (n, 3) arrays, the walls' lines as
@@ -196,10 +200,10 @@ def survey(area, bbox, margin=60.0):
     w, s, e, n = bbox
     cx, cy = to_krovak.transform([w, w, e, e], [s, n, s, n])
     box = (min(cx) - margin, min(cy) - margin, max(cx) + margin, max(cy) + margin)
-    packages = sorted(PACKAGES.glob("*.zip")) + sorted(LINES.glob("*.zip"))
+    packages = survey_packages()
     cache = CACHE / "heights" / f"{area}.pkl"
     key = [VERSION, [build_cache.identity(p) for p in packages], list(bbox), SURFACES, ON_GROUND, WALLS, SPACING,
-           [build_cache.function_key(f) for f in (survey, _tables, _inside, _along)], build_cache.runtime_key()]
+           [build_cache.function_key(f) for f in (survey, _tables, _inside, _along, _wkb)], build_cache.runtime_key()]
     got = build_cache.load_pickle(cache, key)
     if got:
         return got["polys"], got["lines"], got["walls"]

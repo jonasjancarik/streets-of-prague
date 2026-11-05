@@ -24,10 +24,14 @@ RES = 2.0  # m
 BOXES = {"letna": (14.4080, 50.0915, 14.4340, 50.1005)}
 
 
+def raster_path(name):
+    return CACHE / f"{name}.npz"
+
+
 def raster(name):
     """(heights with rows from the north, x0, y1) in S-JTSK for a box of BOXES: the
     raster's west and north edges; a cell is RES metres."""
-    path = CACHE / f"{name}.npz"
+    path = raster_path(name)
     if path.exists():
         got = np.load(path)
         return got["h"], float(got["x0"]), float(got["y1"])

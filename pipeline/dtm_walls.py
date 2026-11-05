@@ -75,7 +75,7 @@ def lines():
     """(lines in WGS84, their kinds, their heights) for all of Prague, read from the
     packages once and kept in walls.pkl until they change."""
     packages = sorted(LINES.glob("*.zip"))
-    key = [VERSION, [build_cache.identity(p) for p in packages], CODES, [WALL_H, LOW_WALL_H, FENCE_H, RAILING_H],
+    key = [VERSION, [build_cache.identity(p) for p in packages], CODES, [WALL_H, LOW_WALL_H, FENCE_H, RAILING_H, ENCLOSING],
            [build_cache.function_key(f) for f in (lines, _read, _wkb)], build_cache.runtime_key()]
     got = build_cache.load_pickle(PARSED, key)
     if got:

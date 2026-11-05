@@ -47,10 +47,11 @@ from shapely.ops import unary_union
 
 import layers
 import build_cache
+import dmr5g
 import dtm_heights
 import structures
 from osm_area import AREAS, OUT
-from ipr_buildings import CACHE, krovak_to_local, search, sheet, sheet_name
+from ipr_buildings import CACHE, krovak_to_local, search, sheet_names
 
 STEP = 4.0  # roughly: the step used divides the tile evenly (grid_step)
 NEAR_DECK, OFF_DECK = 0.5, 1.5  # m between a bridge and the ground under or beside it: one with it, nothing to do with it
@@ -116,8 +117,11 @@ def pull_to_bridges(tiles, labels, found, N):
     return changed
 
 
+CATALOGUE = "catalogue_ter.json"
+
+
 def catalogue():
-    path = CACHE / "catalogue_ter.json"
+    path = CACHE / CATALOGUE
     if path.exists():
         return json.loads(path.read_text())
     items = {t[: -len("_gml")]: i for t, (i, _) in search("TER_").items() if t.endswith("_gml")}
@@ -126,8 +130,12 @@ def catalogue():
     return items
 
 
+def sheet_path(name):
+    return CACHE / f"{name}_gml.gml"
+
+
 def download(name, items):
-    path = CACHE / f"{name}_gml.gml"
+    path = sheet_path(name)
     if path.exists():
         return path
     if name not in items:
@@ -236,7 +244,7 @@ def read_sheet(job):
     name, path, local, gx0, gy0, step = job
     cache = CACHE / "parsed" / f"{name}_{zlib.crc32(local.encode()):08x}.pkl"
     started = time.perf_counter()
-    key = [PARSED_VERSION, build_cache.identity(path), build_cache.code_key(), build_cache.runtime_key(), local, gx0, gy0, step]
+    key = [PARSED_VERSION, build_cache.identity(path), *build_cache.processing("terrain_sheet"), local, gx0, gy0, step]
     got = build_cache.load_pickle(cache, key)
     if got:
         print(f"  {name}: area cache hit, {time.perf_counter() - started:.2f} s, worker peak {build_cache.peak_mb():.1f} MB", flush=True)
@@ -316,6 +324,16 @@ def drawn_walls(local):
             for wall in json.loads((Path(__file__).parent / "terrain_walls.json").read_text())]
 
 
+def source_paths(area, options):
+    paths = [CACHE / CATALOGUE, *structures.bridge_files()]
+    paths.extend(sheet_path(f"TER_{name}") for name in sheet_names(area))
+    if not options.get("no_survey"):
+        paths.extend(dtm_heights.survey_packages())
+    if options.get("dmr5g"):
+        paths.extend(dmr5g.raster_path(name) for name in dmr5g.BOXES)
+    return paths
+
+
 def main() -> None:
     command_started = time.perf_counter()
     timings = build_cache.Timings()
@@ -329,6 +347,7 @@ def main() -> None:
     ap.add_argument("--walls-on-streets", action="store_true", help="retaining walls' terraces over car streets as they come (to compare)")
     ap.add_argument("--valley-nearest", action="store_true", help="made-up land beside water from the nearest water alone, cliffs and all (to compare)")
     ap.add_argument("--cut-streets", action="store_true", help="trial: a surveyed street under or over a steep bank is a terrace, cut along its outline")
+    ap.add_argument("--resume", action="store_true", help="reuse completed terrain output if its inputs and binary files match")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble the complete generation separately")
     args = ap.parse_args()
     if args.jobs < 1:
@@ -342,17 +361,35 @@ def main() -> None:
     T = meta["tile"]
     ox, oy = meta["origin"]
     local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
-    to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
-    corners = [sheet(*to_krovak.transform(lon, lat)) for lon in (w, e) for lat in (s, n)]
+    options = {name: getattr(args, name) for name in (
+        "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets")}
+    inputs = layers.stage_inputs(area, "terrain", options, meta)
+    if args.resume and layers.resume_stage(area, "terrain", inputs, args.no_assemble):
+        return
+    layers.begin_layer(area, "terrain")
+    N, step = grid_step(T)
+    gx0, gy0 = -ox, -oy
     items = catalogue()
-    dependencies = layers.dependency_snapshot(area, layers.DEPENDENCIES["terrain"])
-    processing = [build_cache.code_key(), build_cache.runtime_key()]
+    sheets = []
+    for suffix in sheet_names(area):
+        name = f"TER_{suffix}"
+        path = download(name, items)
+        if not path:
+            print(f"  {name}: not in the catalogue")
+            continue
+        sheets.append((name, str(path), local, gx0, gy0, step))
+    if sheets:
+        structures.bridge_shapefile(download=True)
+        if args.dmr5g:
+            for name in dmr5g.BOXES:
+                if not dmr5g.raster_path(name).exists():
+                    dmr5g.raster(name)
+    inputs["sources"] = layers.stage_sources(area, "terrain", options)
+    timings.lap("prepare_downloads")
 
     # Heights on one lattice over the area (x = -ox + i * step), kept per tile and
     # filled sheet by sheet, so memory follows the tiles that exist, not the bbox. The
     # step divides the tile, so tile (i, j) starts at lattice point (i * N, j * N).
-    N, step = grid_step(T)
-    gx0, gy0 = -ox, -oy
     tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
     weirs, streets = [], {}
     for i, j, t in layers.tiles(area, meta):
@@ -378,18 +415,7 @@ def main() -> None:
                 roads += [Polygon(r[0], r[1:]) for r in t["roads"].get(kind, [])]
     for ci, cj in layers.chunks(meta):
         ways += layers.read_chunk(area, "streets", ci, cj).get("structures", [])
-    sheets = []
-    for X in range(min(c[0] for c in corners), max(c[0] for c in corners) + 1):
-        for Y in range(min(c[1] for c in corners), max(c[1] for c in corners) + 1):
-            name = sheet_name(X, Y) and f"TER_{sheet_name(X, Y)}"
-            path = name and download(name, items)
-            if not path:
-                if name:
-                    print(f"  {name}: not in the catalogue")
-                continue
-            sheets.append((name, str(path), local, gx0, gy0, step))
-    sources = build_cache.sources([job[1] for job in sheets])
-    timings.lap("prepare_downloads_layers")
+    timings.lap("prepare_layers")
     started = time.perf_counter()
     lo, hi = math.inf, -math.inf
     for name, (gi0, gj0, sub, slo, shi, count) in build_cache.parallel_map(read_sheet, sheets, args.jobs):
@@ -418,7 +444,6 @@ def main() -> None:
     timings.lap("fill_gaps")
     # Prototype: ČÚZK's DMR 5G (laser-scanned, 2 m) instead of IPR's model where it's been fetched.
     if args.dmr5g:
-        import dmr5g
         swapped = 0
         for name in dmr5g.BOXES:
             at = dmr5g.sampler(name, local)
@@ -444,7 +469,7 @@ def main() -> None:
     merged = unary_union(outlines) if outlines else None
     way_levels, steep = [], {}
     found = structures.build(ways, list(getattr(merged, "geoms", [merged])) if merged else [], roads, sampler(tiles, N, T, step, gx0, gy0, labels),
-                             local, tiles, N, T, step, gx0, gy0, boxes, source_manifest=sources, way_levels=way_levels, ramps_out=steep,
+                             local, tiles, N, T, step, gx0, gy0, boxes, way_levels=way_levels, ramps_out=steep,
                              streets=[line for line, _ in streets.values()])
     # Where a bridge is close over the ground (at its ends) the ground comes up, or down,
     # to it: wholly within NEAR_DECK of it, less and less out to OFF_DECK. The map's bridge
@@ -488,7 +513,6 @@ def main() -> None:
     fine = lambda a: np.clip(np.round((np.nan_to_num(a, nan=100.0) - 100) * 100), 0, 65535).astype("<u2").tobytes()  # noqa: E731
     per_tile = {}
     payloads = {}
-    layers.begin_layer(area, "terrain")
     for (i, j), arr in tiles.items():
         k = f"{i}_{j}"
         layers.write_bin(out_dir / "tiles", f"{k}.height.bin", encode(arr, labels.get((i, j), plain)), payloads)
@@ -504,13 +528,13 @@ def main() -> None:
         # bridges were raised into it.
         layers.remove_bin(out_dir / "tiles", f"{k}.deck.bin")
         layers.remove_bin(out_dir / "tiles", f"{k}.bare.bin")
-    if not build_cache.sources_current(sources) or processing != [build_cache.code_key(), build_cache.runtime_key()]:
+    if inputs != layers.stage_inputs(area, "terrain", options):
         raise RuntimeError("terrain sources or processing code changed; keep output staged and rebuild")
     layers.write_layer(area, "terrain", {"gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in tiles], "tiles": per_tile,
                                          "terraces": {f"{i}_{j}": v for (i, j), v in terraces.items()},
                                          # Each bridge or tunnel way's level, for the streets and tram tracks on them (structures.OnLevels).
                                          "ways": way_levels,
-                                         "dependencies": dependencies, "sources": sources, "processing": processing, "payloads": payloads,
+                                         **inputs, "payloads": payloads,
                                          "index": {"step": step, "n": N + 1, "min": float(lo), "max": float(hi), "structures": sorted(per_tile), "wayLevels": True}})
     print(f"terrain {lo:.0f}–{hi:.0f} m for {len(tiles)} tiles")
     timings.lap("encode_write")

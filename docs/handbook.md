@@ -1146,20 +1146,29 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
 - **Staged rebuilds and resume.** For a complete rebuild, work in an isolated copy
   with its own writable caches and output; keep the active map in place until the
   new generation has passed validation. No other pipeline job should write to that
-  copy. From its `pipeline/` directory, run this sequence for each required area:
+  copy. Run these commands from its `pipeline/` directory to prepare the base
+  layers. [Rebuilding the map](rebuilding-the-map.md) lists the full sequence.
 
   ```bash
   uv run build_tiles.py praha --jobs 4 --resume --no-assemble
-  uv run ipr_buildings.py praha --jobs 4 --no-assemble
-  uv run ipr_terrain.py praha --jobs 4 --no-assemble
-  uv run layers.py praha --strict
+  uv run ipr_buildings.py praha --jobs 4 --resume --no-assemble
+  uv run ipr_terrain.py praha --jobs 4 --resume --no-assemble
   ```
 
+  Follow with the cover and tree steps for the area and the final strict assembly.
+  For `praha`, assemble once before measuring tree sizes, run
+  `uv run --group cover tree_sizes.py build praha --no-assemble`, then run
+  `uv run layers.py praha --strict`.
+
   Repeat for `centrum` and `ujezd` when needed. `--resume` is opt-in: it skips only
-  chunk layers with matching grid, source identities, processing code, library
-  versions and output hashes. Missing, damaged or interrupted outputs are rebuilt.
-  Local OSM cuts also track their parent source and requested box; replacing the
-  country extract invalidates its area and chunk cuts. Overpass builds cannot reuse
+  OSM chunk layers and whole IPR stages with matching grid, local sources,
+  processing code, library versions and output hashes. IPR stages also check
+  output options such as `--no-roof-details` or `--no-survey`. Worker count and
+  assembly timing can vary between runs. Missing, damaged or interrupted outputs
+  are rebuilt. Code outside a layer's processing dependencies, such as the audio
+  builder, leaves its cache valid.
+  Local OSM cuts also track their parent source, requested box and osmium
+  executable. Replacing the country extract invalidates its area and chunk cuts. Overpass builds cannot reuse
   completed OSM chunk layers through resume because they lack a local source identity.
   Ordinary commands still rebuild the requested layers and assemble immediately.
 
@@ -1170,11 +1179,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   records, so old caches must be rebuilt once. Validation does not activate or deploy
   the result; switch the complete validated generation separately.
 
-  IPR buildings depend on OSM buildings **and ground-water polygons**; terrain
-  depends on ground, streets and IPR bridge data. Rebuild the affected IPR stage
-  after those inputs change. Copying sources to another location conservatively
-  invalidates their caches: large sources use path, size, mtime and ctime rather
-  than hashing the whole country extract on every invocation.
+  Both IPR stages depend on the buildings, ground and street chunks because those
+  chunks determine which tiles exist. The building stage also uses ground-water
+  polygons to identify boats. Terrain uses the survey packages, hand-drawn
+  terrain corrections, IPR bridge files and DMR 5G rasters when enabled. Large
+  sources use path, size, mtime and ctime for identification, so copying a source
+  to another location invalidates its cache.
 - **Build measurements.** Each builder reports preparation, processing, writing,
   assembly and complete command durations. OSM chunks also report extraction laps
   (DTM streets, kerbs, cobble assignment, land unions and gardens), feature counts,

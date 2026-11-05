@@ -5,6 +5,7 @@ import gzip
 import io
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,7 +15,9 @@ import build_cache
 import build_tiles
 import building_age
 import chunk_cache
+import dmr5g
 import dtm
+import dtm_heights
 import dtm_walls
 import ipr_trees
 import ipr_buildings
@@ -217,6 +220,34 @@ class ChunkBuildTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             chunk_cache.check_complete("ujezd", meta)
 
+    def test_overpass_completion_is_validated_but_never_resumed(self):
+        self.run_build()
+        area = "ujezd"
+        meta = layers.read_meta(area)
+        meta["build_source"] = None
+        wanted = set(layers.CHUNKED)
+        keys = chunk_cache.inputs(area, meta, wanted, None, meta["build_settings"])
+        record = chunk_cache.begin(area, meta, 0, 0, wanted)
+        outputs = {name: raw.decode() for name, raw in self.outputs().items()}
+        chunk_cache.complete(area, 0, 0, record, outputs, keys)
+        chunk_cache.check_complete(area, meta)
+        self.assertEqual(chunk_cache.remaining(area, meta, 0, 0, wanted, keys), wanted - {"parking"})
+        # Legacy Overpass completions stored no processing fingerprint.
+        record["layers"]["buildings"]["input"] = None
+        build_cache.write_json(chunk_cache.record_path(area, 0, 0), record)
+        with self.assertRaisesRegex(SystemExit, "buildings chunk"):
+            chunk_cache.check_complete(area, meta)
+
+    def test_footfall_metadata_change_only_rebuilds_ground(self):
+        self.run_build()
+        data = self.out / "ujezd_now"
+        data.mkdir()
+        (data / "footfall.json").write_text('{"box":[0,0,1,1],"cell":1}')
+        with patch.object(build_tiles, "build_chunk", wraps=build_tiles.build_chunk) as build:
+            self.run_build("--resume")
+            self.assertEqual(build.call_args.args[0][4], {"ground"})
+        chunk_cache.check_complete("ujezd", layers.read_meta("ujezd"))
+
     def test_parking_only_does_not_cut_osm_or_invalidate_other_layers(self):
         self.run_build()
         expected = self.outputs()
@@ -269,14 +300,13 @@ class ChunkBuildTests(unittest.TestCase):
         self.run_build()
         meta = layers.read_meta("ujezd")
         keys = [f"{i}_{j}" for i, j, _ in layers.tiles("ujezd", meta)]
-        processing = [build_cache.code_key(), build_cache.runtime_key()]
         tiles_dir = self.out / "ujezd_now" / "tiles"
         payloads = {}
         for k in keys:
             layers.write_bin(tiles_dir, f"{k}.height.bin", bytes(63 ** 2 * 2), payloads)
         for name in ("ipr", "terrain"):
             data = {"tile": meta["tile"], "made_for": keys, "gzip": True, "tiles": {},
-                    "processing": processing, "sources": {}, "payloads": payloads if name == "terrain" else {}}
+                    **layers.stage_inputs("ujezd", name, {}), "payloads": payloads if name == "terrain" else {}}
             data.update({"iprRef": 180} if name == "ipr" else {"index": {"n": 63, "step": 250 / 62}})
             layers.write_layer("ujezd", name, data)
         index = layers.assemble("ujezd", strict=True)
@@ -292,14 +322,14 @@ class ChunkBuildTests(unittest.TestCase):
     def test_interrupted_binary_stage_cannot_reuse_old_completion(self):
         self.run_build()
         layers.write_layer("ujezd", "ipr", {"tile": 250, "gzip": True, "made_for": ["0_0"], "tiles": {},
-                                             "processing": [build_cache.code_key(), build_cache.runtime_key()], "sources": {}})
+                                             **layers.stage_inputs("ujezd", "ipr", {}), "payloads": {}})
         self.assertTrue(layers.layer_complete("ujezd", "ipr"))
         layers.begin_layer("ujezd", "ipr")
         self.assertFalse(layers.layer_complete("ujezd", "ipr"))
         with self.assertRaises(SystemExit):
             layers.assemble("ujezd", strict=True)
 
-    def test_complete_staged_sequence_matches_immediate_assembly(self):
+    def test_staged_ipr_resume_matches_full_build_and_validates_completion(self):
         self.run_build()
         cache = self.root / "ipr"
         cache.mkdir()
@@ -311,52 +341,120 @@ class ChunkBuildTests(unittest.TestCase):
         buildings.write_text('''<root xmlns:gml="http://www.opengis.net/gml" xmlns:bldg="http://www.opengis.net/citygml/building/2.0">
 <bldg:Building gml:id="test"><bldg:GroundSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 180 9 1 180 9 9 180 1 9 180 1 1 180</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:GroundSurface>
 <bldg:RoofSurface><gml:Polygon><gml:exterior><gml:LinearRing><gml:posList>1 1 185 9 1 185 9 9 185 1 9 185 1 1 185</gml:posList></gml:LinearRing></gml:exterior></gml:Polygon></bldg:RoofSurface></bldg:Building></root>''')
-        terrain = cache / "TER_test.gml"
+        terrain = cache / "TER_test_gml.gml"
         terrain.write_text('''<root xmlns:gml="http://www.opengis.net/gml"><gml:Triangle>
 <gml:posList>-100 -100 180 400 -100 182 -100 400 184 -100 -100 180</gml:posList>
 </gml:Triangle></root>''')
 
-        def sheets(area, meta):
-            return meta["crs"], [("BD3_test", str(buildings), meta["crs"], meta["tile"], meta["origin"])]
-
         for obj, attr, value in [(building_age, "CACHE", ages),
                                  (ipr_buildings, "OUT", self.out), (ipr_buildings, "CACHE", cache),
                                  (ipr_buildings, "MESH_COLOURS", self.root / "colours"),
-                                 (ipr_buildings, "sheet_jobs", sheets), (ipr_buildings, "krovak_to_local", IdentityTransform),
+                                 (ipr_buildings, "sheet_names", lambda area: ["test"]), (ipr_buildings, "catalogue", lambda: {}),
+                                 (ipr_buildings, "krovak_to_local", IdentityTransform),
                                  (ipr_terrain, "OUT", self.out), (ipr_terrain, "CACHE", cache),
                                  (ipr_terrain, "krovak_to_local", IdentityTransform), (ipr_terrain, "catalogue", lambda: {}),
-                                 (ipr_terrain, "sheet", lambda x, y: (0, 0)), (ipr_terrain, "sheet_name", lambda x, y: "test"),
-                                 (ipr_terrain, "download", lambda name, items: terrain),
+                                 (ipr_terrain, "sheet_names", lambda area: ["test"]),
+                                 (dtm_heights, "CACHE", self.root / "dtm"),
+                                 (dtm_heights, "PACKAGES", self.root / "dtm" / "ZPS_OPL"),
+                                 (dtm_heights, "LINES", self.root / "dtm" / "ZPS_KR"),
+                                 (structures, "CACHE", cache),
                                  (structures, "build", lambda *args, **kwargs: {})]:
             self.stack.enter_context(patch.object(obj, attr, value))
+        bridge = cache / "mosty" / "mosty.shp"
+        bridge.parent.mkdir()
+        bridge.touch()
         # The two builds are compared byte for byte, and the index records when it was built.
         self.stack.enter_context(patch.object(layers.time, "gmtime", return_value=layers.time.gmtime(0)))
 
-        def run_ipr(deferred):
-            flags = ["--no-assemble"] if deferred else []
-            with patch("sys.argv", ["ipr_buildings.py", "ujezd", "--jobs", "1", "--no-roof-details", *flags]):
-                ipr_buildings.main()
-            with patch("sys.argv", ["ipr_terrain.py", "ujezd", "--jobs", "1", *flags]):
-                ipr_terrain.main()
+        def run_stage(module, *flags):
+            options = ["--no-roof-details"] if module == ipr_buildings else []
+            with patch("sys.argv", [Path(module.__file__).name, "ujezd", "--jobs", "1", *options, *flags]):
+                module.main()
 
-        run_ipr(True)
+        run_stage(ipr_buildings, "--no-assemble")
+        run_stage(ipr_terrain, "--no-assemble")
         self.assertFalse((self.out / "ujezd_now" / "index.json").exists())
         layers.assemble("ujezd", strict=True)
         expected = {p.relative_to(self.out): p.read_bytes() for p in self.out.rglob("*") if p.is_file()}
-        run_ipr(False)
+
+        # A warm staged run does not even read sheets. A warm immediate run assembles.
+        with patch.object(ipr_buildings, "read_sheet") as b, patch.object(ipr_terrain, "read_sheet") as t, \
+                patch.object(layers, "assemble", wraps=layers.assemble) as assemble:
+            run_stage(ipr_buildings, "--resume", "--no-assemble")
+            run_stage(ipr_terrain, "--resume", "--jobs", "2")
+            b.assert_not_called()
+            t.assert_not_called()
+            assemble.assert_called_once_with("ujezd")
         actual = {p.relative_to(self.out): p.read_bytes() for p in self.out.rglob("*") if p.is_file()}
         self.assertEqual(actual, expected)
-        binary = self.out / "ujezd_now" / "tiles" / "0_0.height.bin.gz"
-        binary.write_bytes(b"damaged")
-        with self.assertRaises(SystemExit):
+
+        tiles_dir = self.out / "ujezd_now" / "tiles"
+        for module, layer, payload, option in (
+                (ipr_buildings, "ipr", "0_0.ipr.bin.gz", "--no-borrow"),
+                (ipr_terrain, "terrain", "0_0.height.bin.gz", "--no-feather")):
+            with self.subTest(layer=layer), patch.object(module, "read_sheet", wraps=module.read_sheet) as read:
+                path = tiles_dir / payload
+                for damage in ("missing", "corrupt", "interrupted", "legacy", "forced", "options"):
+                    with self.subTest(damage=damage):
+                        read.reset_mock()
+                        flags = ["--no-assemble", "--resume"]
+                        if damage == "missing":
+                            path.unlink()
+                        elif damage == "corrupt":
+                            path.write_bytes(b"damaged")
+                        elif damage == "interrupted":
+                            layers.begin_layer("ujezd", layer)
+                        elif damage == "legacy":
+                            data = layers.read_layer("ujezd", layer)
+                            del data["options"]
+                            layers.write_layer("ujezd", layer, data)
+                        elif damage == "forced":
+                            flags.remove("--resume")
+                        elif damage == "options":
+                            flags.append(option)
+                        if damage in ("missing", "corrupt", "interrupted", "legacy"):
+                            with self.assertRaises(SystemExit):
+                                layers.assemble("ujezd", strict=True)
+                        run_stage(module, *flags)
+                        read.assert_called_once()
+                        self.assertEqual(path.read_bytes(), expected[path.relative_to(self.out)])
+                        layers.assemble("ujezd", strict=True)
+
+        # Newly available sources are detected even though the previous run did not use them.
+        before = layers.stage_inputs("ujezd", "terrain", {})
+        bridge.with_suffix(".dbf").touch()
+        self.assertNotEqual(before, layers.stage_inputs("ujezd", "terrain", {}))
+        with self.assertRaisesRegex(SystemExit, "terrain dependencies"):
             layers.assemble("ujezd", strict=True)
+        with patch.object(dmr5g, "CACHE", self.root / "dmr"):
+            options = {"dmr5g": True}
+            with_dmr = layers.stage_inputs("ujezd", "terrain", options)
+            without_dmr = layers.stage_inputs("ujezd", "terrain", {})
+            raster = dmr5g.raster_path("letna")
+            raster.parent.mkdir()
+            raster.touch()
+            self.assertNotEqual(with_dmr, layers.stage_inputs("ujezd", "terrain", options))
+            self.assertEqual(without_dmr, layers.stage_inputs("ujezd", "terrain", {}))
+
+        # An addition to the survey during processing must prevent completion.
+        dtm_heights.LINES.mkdir(parents=True)
+        write_bin = layers.write_bin
+
+        def survey_changed(*args):
+            (dtm_heights.LINES / "new.zip").touch()
+            return write_bin(*args)
+
+        with patch.object(layers, "write_bin", side_effect=survey_changed):
+            with self.assertRaisesRegex(RuntimeError, "changed"):
+                run_stage(ipr_terrain, "--no-assemble")
+        self.assertFalse(layers.layer_complete("ujezd", "terrain"))
 
         network.assert_not_called()
 
     def test_water_dependency_and_missing_payload_are_checked_before_writes(self):
         self.run_build()
         layers.write_layer("ujezd", "ipr", {"tile": 250, "gzip": True, "tiles": {}, "made_for": ["0_0"],
-                                             "processing": [build_cache.code_key(), build_cache.runtime_key()], "sources": {}})
+                                             **layers.stage_inputs("ujezd", "ipr", {}), "payloads": {}})
         before = layers.read_layer("ujezd", "ipr")["dependencies"]
         ground = layers.chunk_path("ujezd", "ground", 0, 0)
         ground.write_bytes(ground.read_bytes() + b" ")
@@ -365,6 +463,44 @@ class ChunkBuildTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             layers.assemble("ujezd", strict=True)
         self.assertFalse((self.out / "ujezd_now" / "index.json").exists())
+
+
+class ProcessingKeyTests(unittest.TestCase):
+    LAYERS = (*layers.CHUNKED, "ipr", "terrain")
+
+    def test_dependencies_invalidate_only_their_layers(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(build_cache, "PIPELINE", Path(tmp)):
+            files = {name for files in build_cache.CODE.values() for name in files}
+            for name in files | {"build_audio.py", "build_cache.py", "chunk_cache.py"}:
+                shutil.copyfile(Path(__file__).with_name(name), Path(tmp) / name)
+            before = {layer: build_cache.processing(layer) for layer in self.LAYERS}
+            for name, old, new, expected in (
+                    ("build_audio.py", "", "\n# unrelated audio edit", set()),
+                    ("plots.py", "", "\n# changed garden helper", {"ground"}),
+                    ("terrain_walls.json", "", " ", {"terrain"}),
+                    ("mesh_colours.py", "c = np.asarray(rgb, np.float64).reshape(-1, 3) / 255",
+                     "c = np.asarray(rgb, np.float64).reshape(-1, 3) / 256", {"ipr"}),
+                    ("ipr_buildings.py", "self.to_wgs.transform(x, y)", "self.to_wgs.transform(x + 1, y)",
+                     {"ipr", "terrain"})):
+                with self.subTest(file=name):
+                    path = Path(tmp) / name
+                    original = path.read_text()
+                    self.assertIn(old, original)
+                    path.write_text(original.replace(old, new, 1) if old else original + new)
+                    changed = {layer for layer in self.LAYERS if build_cache.processing(layer) != before[layer]}
+                    self.assertEqual(changed, expected)
+                    path.write_text(original)
+
+    def test_library_change_invalidates_the_layers_that_use_it(self):
+        before = {layer: build_cache.processing(layer) for layer in self.LAYERS}
+        version = build_cache.importlib.metadata.version
+
+        def updated(name):
+            return "test-upgrade" if name == "lxml" else version(name)
+
+        with patch.object(build_cache.importlib.metadata, "version", side_effect=updated):
+            changed = {layer for layer in self.LAYERS if build_cache.processing(layer) != before[layer]}
+        self.assertEqual(changed, {"ipr", "terrain"})
 
 
 class ReachKeyTests(unittest.TestCase):

@@ -61,14 +61,21 @@ frame-time checks before release. Rebuild outputs keyed by street IDs, including
 
     cd pipeline
     uv run build_tiles.py praha --resume --no-assemble
-    uv run ipr_buildings.py praha --no-assemble
-    uv run ipr_terrain.py praha --no-assemble
+    uv run ipr_buildings.py praha --resume --no-assemble
+    uv run ipr_terrain.py praha --resume --no-assemble
     uv run --group cover ground_cover.py build praha --no-assemble   # every area has this layer
     uv run --group cover young_woods.py build praha --no-assemble    # praha only
     uv run layers.py praha                                           # praha: not --strict yet (below)
-    uv run --group cover tree_sizes.py build praha                   # praha only; assembles again
+    uv run --group cover tree_sizes.py build praha --no-assemble     # praha only
     uv run layers.py praha --strict
     uv run build_signals.py praha
+
+`--resume` reuses completed OSM chunk layers and whole IPR stages when their
+grid, inputs, processing code, runtime versions and output hashes match. The IPR
+stages also check their build options, so a run with flags such as `--no-survey`
+or `--mesh-colours off` can only be reused with the same settings. Missing,
+damaged or interrupted output is rebuilt. The previous completion records miss
+once after upgrading. Omit `--resume` to rebuild the requested layers.
 
 Then `centrum` and `ujezd` the same way (without the young woods and tree size steps
 they don't have, and with `layers.py --strict` straight away). `tree_sizes.py` measures
@@ -81,11 +88,11 @@ one. Seen on 18 October; the strict assemble after the tree sizes is the check.
 | Step | Reads | Writes |
 |---|---|---|
 | `build_tiles.py` | `.cache/osm/` (country extract, the area's and chunks' cuts and `.parsed.pkl`), `.cache/dtm/`, `.cache/trees/`, `public/data/<area>_parking.json` | `.cache/layers/<area>/{buildings,ground,streets,parking}/`, `completed/`, `meta.json`, and the OSM cuts |
-| `ipr_buildings.py` | buildings and ground layers, `.cache/ipr/` (sheets, `parsed/`, `source/`), `.cache/mesh_colours/<area>*` | `tiles/*.ipr.bin.gz` in `public/data/<area>_now`, `.cache/layers/<area>/ipr.json` |
-| `ipr_terrain.py` | ground and streets layers, `.cache/ipr/` (terrain sheets, bridges), `.cache/dtm/` (survey heights), `terrain_keep.json` | `tiles/*.height.bin.gz`, `*.levels.bin.gz`, `.cache/layers/<area>/terrain.json` |
+| `ipr_buildings.py` | buildings, ground and streets layers, `.cache/ipr/` (sheets, `parsed/`, `source/`), building ages and optional mesh colours | `tiles/*.ipr.bin.gz` in `public/data/<area>_now`, `.cache/layers/<area>/ipr.json` |
+| `ipr_terrain.py` | buildings, ground and streets layers, `.cache/ipr/` (terrain sheets, bridges), `.cache/dtm/` (survey heights), `terrain_keep.json`, `terrain_walls.json`, optional DMR 5G rasters | `tiles/*.height.bin.gz`, `*.levels.bin.gz`, `.cache/layers/<area>/terrain.json` |
 | `ground_cover.py build` | the layers, the terrain layer, `.cache/cover/` (photos, surface model, model, results); asks IPR's server for photos of tiles it has none of | `.cache/layers/<area>/cover.json` |
 | `young_woods.py build` | ground layer, terrain layer, `.cache/cover/dsm_ipr` | `.cache/layers/<area>/young.json` |
-| `tree_sizes.py build` | the assembled `tiles/*.json`, the terrain layer, `.cache/cover/` (IPR's surface model, ČÚZK's DMP 1G, the summer photo at 1 m and 0.25 m and the colour-infrared one at 1 m: fetched for tiles that have none) | `.cache/layers/<area>/treesize.json` (each tree's height, crown, outline and colour; what grows where, on a 2 m grid), then the tiles |
+| `tree_sizes.py build` | the assembled `tiles/*.json`, the terrain layer, `.cache/cover/` (IPR's surface model, ČÚZK's DMP 1G, the summer photo at 1 m and 0.25 m and the colour-infrared one at 1 m: fetched for tiles that have none) | `.cache/layers/<area>/treesize.json` (each tree's height, crown, outline and colour; what grows where, on a 2 m grid); final assembly writes the tiles |
 | `layers.py --strict` | every layer, and checks the binary files against the layers' records | `tiles/*.json`, `index.json`, `names.json`, `leaving.json` (the streets that run on past the map's edge, for the countryside made in the browser); removes files of tiles that are gone |
 | `build_signals.py` | streets layer, `.cache/osm/` | `signals.json` |
 
@@ -113,8 +120,8 @@ futures, not total memory: a single chunk or sheet can still be large.
 Quiet machine, from the README and the terrain skill (not measured again tonight):
 `praha` with buildings and terrain about 11 minutes with warm caches before the
 survey heights came, `ipr_terrain.py praha` alone about 16 minutes now; `centrum`
-under half a minute, `ujezd` seconds. After tonight's merges every chunk is worked
-out again (the cache key covers all pipeline code), so expect the long end.
+under half a minute, `ujezd` seconds. These timings predate the per-layer
+processing fingerprints and IPR stage resume.
 
 Tonight, in a worktree on APFS clones (so every cache missed) with the machine at a
 load of 150–200 from fifteen other sessions: `build_tiles.py ujezd --jobs 2

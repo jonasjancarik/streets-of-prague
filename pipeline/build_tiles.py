@@ -67,7 +67,8 @@ PBF = Path(os.environ.get("OSM_PBF", Path(__file__).parent / ".cache" / "osm" / 
 def cut(bbox, out, source=None, stats=None):
     """The OSM data of a box (.osm XML or .pbf by name), cut from a local extract with osmium."""
     out, source = Path(out), Path(PBF if source is None else source)
-    expected = {"version": 1, "source": build_cache.identity(source), "bbox": list(bbox), "strategy": "smart"}
+    expected = {"version": 1, "source": build_cache.identity(source), "bbox": list(bbox), "strategy": "smart",
+                "osmium": build_cache.osmium_identity(), "code": build_cache.function_key(cut)}
     record = out.with_name(f"{out.name}.source.json")
     got = build_cache.read_json(record)
     hit = out.exists() and got.get("input") == expected and got.get("output") == build_cache.identity(out)
@@ -79,7 +80,7 @@ def cut(bbox, out, source=None, stats=None):
         w, s, e, n = bbox
         subprocess.run(["osmium", "extract", "-b", f"{w},{s},{e},{n}", "--strategy", "smart",
                         "--overwrite", "-o", str(tmp), str(source)], check=True)
-        if build_cache.identity(source) != expected["source"]:
+        if build_cache.identity(source) != expected["source"] or build_cache.osmium_identity() != expected["osmium"]:
             raise RuntimeError(f"OSM source changed while cutting {out.name}")
         tmp.replace(out)
         build_cache.write_json(record, {"input": expected, "output": build_cache.identity(out)})
@@ -244,8 +245,9 @@ def read_osm(source: Path, stats=None):
     the street graphs; the features for osm_area.extract). Kept next to the cut and
     read again only when the cut or the tags asked for change."""
     cache = source.with_suffix(".parsed.pkl")
-    key = [PARSED_VERSION, build_cache.identity(source), ox.__version__, repr(FEATURE_TAGS),
-           build_cache.function_key(features_from_json), build_cache.function_key(feature_rows)]
+    key = [PARSED_VERSION, build_cache.identity(source), repr(FEATURE_TAGS),
+           [build_cache.function_key(f) for f in (read_osm, features_from_json, feature_rows)],
+           build_cache.runtime_key(build_cache.PACKAGES["buildings"])]
     got = build_cache.load_pickle(cache, key)
     if stats is not None:
         stats["parsed_cache"] = "hit" if got else "miss"

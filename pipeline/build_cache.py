@@ -12,6 +12,7 @@ import os
 import pickle
 import platform
 import resource
+import shutil
 import sys
 import time
 from collections import deque
@@ -34,6 +35,11 @@ def identity(path):
     return [str(path.resolve()), st.st_size, st.st_mtime_ns, st.st_ctime_ns]
 
 
+def osmium_identity():
+    executable = shutil.which("osmium")
+    return identity(executable) if executable else None
+
+
 def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
@@ -42,23 +48,62 @@ def key(value):
     return digest(json.dumps(value, sort_keys=True, separators=(",", ":")).encode())
 
 
-def code_key():
-    """Conservative invalidation for processing changes, without manual version bumps."""
-    root = Path(__file__).parent
-    # (ground_cover.py with its cover_*.py helpers, young_woods.py and tree_sizes.py work on
-    # finished tiles and keep their own keys, layers.cover_processing, young_processing and
-    # treesize_processing; so do
-    # IPR's surveyed greenery and street marks, which no other step reads.)
-    return key({p.name: digest(p.read_bytes()) for p in sorted(root.glob("*.py"))
-                if not p.name.startswith(("test_", "cover_")) and p.name not in (
-                    "ground_cover.py", "young_woods.py", "tree_sizes.py", "ipr_open.py", "ipr_greenery.py", "ipr_utility.py")})
+# Processing dependencies, including helpers called through other modules or imported
+# inside functions. Keep whole shared producers where their work is interleaved
+# (build_tiles and osm_area); use named roots for helpers in mixed-purpose modules.
+PIPELINE = Path(__file__).resolve().parent
+OSM = {"build_tiles.py": (), "osm_area.py": (), "roofs.py": (), "sports.py": (),
+       "layers.py": ("FORMAT", "chunk_tiles", "tile_box", "dumps", "write", "chunk_path")}
+SURVEY = {"dtm.py": (), "kerbs.py": (), "lanes.py": (), "worn_paths.py": ()}
+IPR_OUTPUT = {"layers.py": ("FORMAT", "tiles", "write_layer", "begin_layer", "write_bin", "remove_bin")}
+PROJECTION = ("krovak_to_local",)
+CODE = {
+    "buildings": OSM,
+    "ground": {**OSM, **SURVEY, "dtm_walls.py": (), "ipr_trees.py": (), "ipr_open.py": (),
+               "barriers.py": (), "pavements.py": (), "plots.py": (), "verges.py": ()},
+    "streets": {**OSM, **SURVEY, "structures.py": ("structure_ways",)},
+    "parking": {"build_tiles.py": (), "osm_area.py": ("OUT", "AREAS", "_polys", "_rings"),
+                "layers.py": OSM["layers.py"]},
+    "ipr_sheet": {"ipr_buildings.py": ("read_sheet", *PROJECTION)},
+    "terrain_sheet": {"ipr_terrain.py": ("read_sheet",), "ipr_buildings.py": PROJECTION},
+    "ipr": {**IPR_OUTPUT, "ipr_buildings.py": (), "osm_area.py": ("AREAS", "OUT"),
+            "building_age.py": (), "roofs.py": (), "roof_details.py": (), "mesh_colours.py": ("lab",)},
+    "terrain": {**IPR_OUTPUT, "ipr_terrain.py": (),
+                "ipr_buildings.py": (*PROJECTION, "sheet_names", "search", "CACHE"),
+                "osm_area.py": ("AREAS", "OUT", "_polys", "_rings"),
+                "dtm_heights.py": (), "dtm.py": ("CACHE", "PACKAGES", "_wkb"),
+                "structures.py": ("build", "pads"), "dmr5g.py": (),
+                "terrain_keep.json": (), "terrain_walls.json": ()},
+}
+OSM_RUNTIME = ("osmnx", "geopandas", "pandas", "networkx", "requests", "scipy")
+GEOMETRY = ("numpy", "shapely", "pyproj")
+PACKAGES = {
+    "buildings": (*GEOMETRY, *OSM_RUNTIME),
+    "ground": (*GEOMETRY, *OSM_RUNTIME, "pillow"),
+    "streets": (*GEOMETRY, *OSM_RUNTIME),
+    "parking": GEOMETRY,
+    "ipr_sheet": (*GEOMETRY, "lxml"),
+    "terrain_sheet": (*GEOMETRY, "lxml"),
+    "ipr": (*GEOMETRY, "lxml", "requests"),
+    "terrain": (*GEOMETRY, "lxml", "geopandas", "pyogrio", "fiona", "pandas", "scipy", "requests", "tifffile"),
+}
+
+
+def processing(layer):
+    files = {**CODE[layer], "build_cache.py": ("identity", "key", "atomic", "load_pickle",
+                                               "source_data", "source_records", "parallel_map")}
+    if layer in ("buildings", "ground", "streets", "parking"):
+        files["chunk_cache.py"] = ()
+    code = {name: reach_key(PIPELINE / name, roots, imports=True) if roots else digest((PIPELINE / name).read_bytes())
+            for name, roots in files.items()}
+    return [key(code), runtime_key(PACKAGES[layer])]
 
 
 def function_key(function):
     return digest(inspect.getsource(function).encode())
 
 
-def reach_key(path, roots):
+def reach_key(path, roots, *, imports=False):
     """A key of the functions `roots` in the file at `path` and of everything in that file
     they lead to (the functions they call and the constants they read, and so on down):
     a change to anything else in the file leaves it as it was. Read from the source, so
@@ -71,6 +116,8 @@ def reach_key(path, roots):
         elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             names = [n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)]
+        elif imports and isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [alias.asname or alias.name.split(".")[0] for alias in node.names]
         else:
             continue
         for name in names:
@@ -88,10 +135,14 @@ def reach_key(path, roots):
     return key(dict(sorted(reached.items())))
 
 
-def runtime_key():
-    return [platform.python_version(),
-            {name: importlib.metadata.version(name)
-             for name in ("osmnx", "shapely", "numpy", "pyproj", "lxml", "scipy")}]
+def runtime_key(packages=("osmnx", "shapely", "numpy", "pyproj", "lxml", "scipy")):
+    versions = {}
+    for name in packages:
+        try:
+            versions[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            versions[name] = None  # optional readers such as Fiona or tifffile
+    return [platform.python_version(), versions]
 
 
 def read_json(path):

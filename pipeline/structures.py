@@ -192,22 +192,34 @@ def structure_ways(data, tf, ground=frozenset()):
 
 # ---- IPR's bridges ------------------------------------------------------------------
 
+def bridge_shapefile(download=False):
+    shp = CACHE / "mosty" / "mosty.shp"
+    if download and not shp.exists():
+        print("  downloading IPR's bridges…")
+        data = urllib.request.urlopen(f"https://www.arcgis.com/sharing/rest/content/items/{MOSTY_ITEM}/data").read()
+        shp.parent.mkdir(parents=True, exist_ok=True)
+        zipfile.ZipFile(io.BytesIO(data)).extractall(shp.parent)
+    return shp
+
+
+def bridge_files():
+    shp = bridge_shapefile()
+    return sorted({shp, *(p for p in shp.parent.glob("*") if p.is_file())})
+
+
 def ipr_decks(local, source_manifest=None):
     """IPR's bridges' flat faces on a 1 m grid in the local metres: {cell: heights},
     cell = (round(x), round(y)). Kept per area in pipeline/.cache/ipr/parsed/.
     Optional source_manifest receives the shapefile identities used by this cache.
     """
     cache = CACHE / "parsed" / f"mosty_{zlib.crc32(local.encode()):08x}.pkl"
-    shp = CACHE / "mosty" / "mosty.shp"
-    if not shp.exists():
-        print("  downloading IPR's bridges…")
-        data = urllib.request.urlopen(f"https://www.arcgis.com/sharing/rest/content/items/{MOSTY_ITEM}/data").read()
-        shp.parent.mkdir(parents=True, exist_ok=True)
-        zipfile.ZipFile(io.BytesIO(data)).extractall(shp.parent)
-    sources = build_cache.sources(sorted(p for p in shp.parent.iterdir() if p.is_file()))
+    shp = bridge_shapefile(download=True)
+    sources = build_cache.sources(bridge_files())
     if source_manifest is not None:
         source_manifest.update(sources)
-    key = [1, local, sources, build_cache.function_key(ipr_decks), build_cache.runtime_key()]
+    key = [1, local, sources, build_cache.function_key(ipr_decks),
+           build_cache.reach_key(build_cache.PIPELINE / "ipr_buildings.py", ["krovak_to_local"], imports=True),
+           build_cache.runtime_key(build_cache.PACKAGES["terrain"])]
     got = build_cache.load_pickle(cache, key)
     if got:
         return got["decks"]

@@ -11,27 +11,25 @@ from osm_area import OUT
 def inputs(area, meta, wanted, source, settings):
     cut = build_cache.read_json(f"{source}.source.json") if source else {}
     parent = cut.get("input", {}).get("source")
-    common = {"grid": layers.grid_key(meta), "code": build_cache.code_key(),
-              "runtime": build_cache.runtime_key(), "source": build_cache.identity(source) if source else None,
-              "parent_source": build_cache.identity(parent[0]) if parent else None,
-              "settings": settings}
-    survey = [build_cache.identity(p) for p in sorted(dtm.PACKAGES.glob("*.zip"))]
+    grid = layers.grid_key(meta)
+    osm = {"source": build_cache.identity(source) if source else None,
+           "parent_source": build_cache.identity(parent[0]) if parent else None,
+           "osmium": build_cache.osmium_identity() if source else None}
     keys = {}
     for name in wanted:
-        base = common if name != "parking" else {**common, "source": None, "parent_source": None}
-        extra = {}
+        if name == "parking":
+            extra = {"parking": build_cache.identity(OUT / f"{area}_parking.json")}
+        else:
+            extra = {**osm, "settings": {k: v for k, v in settings.items() if k != "road_tolerance" or name == "ground"}}
         if name in ("ground", "streets"):
-            extra["dtm"] = survey
+            extra["dtm"] = [build_cache.identity(p) for p in sorted(dtm.PACKAGES.glob("*.zip"))]
         if name == "ground":
             extra["dtm_lines"] = [build_cache.identity(p) for p in sorted(dtm_walls.LINES.glob("*.zip"))]
             extra["trees"] = build_cache.identity(ipr_trees.CACHE)
-            # The worn paths follow the footfall map where the area has one (worn_paths.py).
-            footfall = OUT / f"{area}_now" / "footfall.png"
-            extra["footfall"] = build_cache.identity(footfall) if footfall.exists() else None
-        if name == "parking":
-            extra["parking"] = build_cache.identity(OUT / f"{area}_parking.json")
-        # Overpass data can change without a local input identity. Never resume it.
-        keys[name] = build_cache.key([base, extra]) if source or name == "parking" else None
+            # Worn paths use both the image and its coordinate metadata.
+            extra["footfall"] = [build_cache.identity(OUT / f"{area}_now" / f"footfall.{ext}")
+                                 for ext in ("png", "json")]
+        keys[name] = build_cache.key([grid, build_cache.processing(name), extra])
     return keys
 
 
@@ -45,8 +43,12 @@ def remaining(area, meta, ci, cj, wanted, keys):
         return set(wanted)
     todo = set(wanted)
     for name in wanted:
-        got = record.get("layers", {}).get(name, {})
-        if keys[name] is None or got.get("input") != keys[name]:
+        # Strict assembly can validate Overpass output, but it has no local source
+        # identity to compare when deciding whether to skip a fresh build.
+        if name != "parking" and not meta.get("build_source"):
+            continue
+        got = record["layers"].get(name, {})
+        if not isinstance(got, dict) or got.get("input") != keys[name]:
             continue
         try:
             raw = layers.chunk_path(area, name, ci, cj).read_bytes()
@@ -88,6 +90,6 @@ def check_complete(area, meta):
         for name in layers.CHUNKED:
             got = record.get("layers", {}).get(name, {})
             path = layers.chunk_path(area, name, ci, cj)
-            if (got.get("input") != keys[name] or not got.get("hash") or not path.exists()
+            if (not isinstance(got, dict) or got.get("input") != keys[name] or not got.get("hash") or not path.exists()
                     or build_cache.digest(path.read_bytes()) != got["hash"]):
                 raise SystemExit(f"{area}: {name} chunk {ci},{cj} is incomplete or changed; rebuild it")

@@ -135,14 +135,67 @@ def grid_key(meta):
                                                      "tile", "chunk_tiles", "cols", "rows")}))
 
 
-def dependency_snapshot(area, names):
-    meta = read_meta(area)
+def dependency_snapshot(area, names, meta=None):
+    meta = meta if meta is not None else read_meta(area)
     return {"grid": grid_key(meta), "chunks": {
         f"{name}/{ci}_{cj}": build_cache.identity(chunk_path(area, name, ci, cj))
         for name in names for ci, cj in chunks(meta)}}
 
 
-DEPENDENCIES = {"ipr": ("buildings", "ground"), "terrain": ("ground", "streets")}
+# Both stages use tiles(), whose coverage is determined by buildings, ground and walk edges.
+DEPENDENCIES = {name: ("buildings", "ground", "streets") for name in ("ipr", "terrain")}
+
+
+def stage_sources(area, layer, options):
+    # Source inventories are read locally, including newly added files and absent
+    # optional inputs. Strict assembly uses the options recorded by the producer.
+    if layer == "ipr":
+        from ipr_buildings import source_paths
+    else:
+        from ipr_terrain import source_paths
+    return build_cache.sources(source_paths(area, options))
+
+
+def stage_inputs(area, layer, options, meta=None):
+    return {"options": options, "dependencies": dependency_snapshot(area, DEPENDENCIES[layer], meta),
+            "processing": build_cache.processing(layer), "sources": stage_sources(area, layer, options)}
+
+
+def stage_current(area, layer, data, inputs):
+    return (data and data.get("gzip") is True and data.get("tile") == inputs["dependencies"]["grid"]["tile"]
+            and isinstance(data.get("made_for"), list) and isinstance(data.get("tiles"), dict)
+            and isinstance(data.get("payloads"), dict)
+            and all(data.get(k) == value for k, value in inputs.items()) and layer_complete(area, layer))
+
+
+def stage_payload_error(area, layer, data):
+    """Return a missing or damaged binary's name, or None for a complete payload."""
+    needed = {f"{k}.ipr.bin.gz" for k in data["tiles"]} if layer == "ipr" else {
+        *(f"{k}.height.bin.gz" for k in data["made_for"]), *(f"{k}.levels.bin.gz" for k in data["tiles"])}
+    payloads = data.get("payloads", {})
+    tiles_dir = OUT / f"{area}_now" / "tiles"
+    if missing := needed.symmetric_difference(payloads):
+        return min(missing)
+    for filename in sorted(needed):
+        try:
+            raw = (tiles_dir / filename).read_bytes()
+        except OSError:
+            return filename
+        if payloads[filename] != [len(raw), build_cache.digest(raw)]:
+            return filename
+    return None
+
+
+def resume_stage(area, layer, inputs, no_assemble):
+    data = build_cache.read_json(folder(area) / f"{layer}.json")
+    if not stage_current(area, layer, data, inputs) or stage_payload_error(area, layer, data):
+        return False
+    if inputs != stage_inputs(area, layer, inputs["options"]):
+        return False
+    print(f"{area}: reused completed {layer} output", flush=True)
+    if not no_assemble:
+        assemble(area)
+    return True
 
 
 def begin_layer(area, layer):
@@ -166,8 +219,12 @@ def write_layer(area: str, layer: str, data: dict):
 def layer_complete(area, layer):
     record = build_cache.read_json(folder(area) / f"{layer}.complete.json")
     path = folder(area) / f"{layer}.json"
-    return (record.get("complete") is True and path.exists()
-            and record.get("metadata") == build_cache.digest(path.read_bytes()))
+    if record.get("complete") is not True:
+        return False
+    try:
+        return record.get("metadata") == build_cache.digest(path.read_bytes())
+    except OSError:
+        return False
 
 
 def chunks(meta: dict):
@@ -370,8 +427,7 @@ def assemble(area: str, strict=False) -> dict:
     if strict:
         from chunk_cache import check_complete
         check_complete(area, meta)
-    ipr, terrain = read_layer(area, "ipr"), read_layer(area, "terrain")
-    processing = [build_cache.code_key(), build_cache.runtime_key()]
+    ipr, terrain = (build_cache.read_json(folder(area) / f"{name}.json") for name in ("ipr", "terrain"))
     cover = read_layer(area, "cover")
     if cover and not (cover.get("tile") == meta["tile"] and cover.get("processing") == cover_processing()
                       and build_cache.sources_current(cover.get("sources", {}))):
@@ -392,17 +448,14 @@ def assemble(area: str, strict=False) -> dict:
     utility = surveyed_layer(area, "utility", utility_processing(), meta, "ipr_utility.py", strict)
     treesize = surveyed_layer(area, "treesize", treesize_processing(), meta, "tree_sizes.py", strict)
     for name, layer in (("ipr", ipr), ("terrain", terrain)):
-        current = (layer and layer.get("dependencies") == dependency_snapshot(area, DEPENDENCIES[name])
-                   and layer.get("processing") == processing and build_cache.sources_current(layer.get("sources", {}))
-                   and layer_complete(area, name))
+        options = layer.get("options")
+        current = isinstance(options, dict) and stage_current(area, name, layer, stage_inputs(area, name, options))
         if not current:
-            message = f"{area}: {name} dependencies are missing or changed; rebuild that step"
+            message = f"{area}: {name} dependencies or output are missing or changed; rebuild that step"
             if strict:
                 raise SystemExit(message)
             if layer:
                 print(message)
-        if strict and (not layer.get("gzip") or layer.get("tile") != meta["tile"]):
-            raise SystemExit(f"{area}: {name} format/grid does not match; rebuild that step")
     if strict:
         # Check coverage and payloads before the first assembled output is changed.
         keys = set()
@@ -421,18 +474,9 @@ def assemble(area: str, strict=False) -> dict:
             raise SystemExit(f"{area}: the young woods of {len(young_outdated)} tiles are out of date ({', '.join(young_outdated[:6])} …); run young_woods.py build {area}")
         if outdated:
             raise SystemExit(f"{area}: the ground cover of {len(outdated)} tiles is out of date ({', '.join(outdated[:6])} …); run ground_cover.py build {area}")
-        tiles_dir = OUT / f"{area}_now" / "tiles"
-        for k in keys:
-            needed = [("terrain", terrain, f"{k}.height.bin.gz")]
-            if k in ipr["tiles"]:
-                needed.append(("ipr", ipr, f"{k}.ipr.bin.gz"))
-            if k in terrain["tiles"]:
-                needed.append(("terrain", terrain, f"{k}.levels.bin.gz"))
-            for name, layer, filename in needed:
-                p = tiles_dir / filename
-                expected = layer.get("payloads", {}).get(filename)
-                if not expected or not p.is_file() or [p.stat().st_size, build_cache.digest(p.read_bytes())] != expected:
-                    raise SystemExit(f"{area}: missing or changed {filename}; rebuild {name}")
+        for name, layer in (("ipr", ipr), ("terrain", terrain)):
+            if filename := stage_payload_error(area, name, layer):
+                raise SystemExit(f"{area}: missing or changed {filename}; rebuild {name}")
     out_dir = OUT / f"{area}_now"
     (out_dir / "tiles").mkdir(parents=True, exist_ok=True)
     # IPR's buildings and the terrain are made for a tile grid; after the tiles changed

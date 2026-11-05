@@ -109,8 +109,11 @@ def search(prefix):
     return found
 
 
+CATALOGUE = "catalogue_bd3.json"
+
+
 def catalogue():
-    path = CACHE / "catalogue_bd3.json"
+    path = CACHE / CATALOGUE
     if path.exists():
         return json.loads(path.read_text())
     items = {t: i for t, (i, kind) in search("BD3_").items() if kind == "GML"}
@@ -119,8 +122,12 @@ def catalogue():
     return items
 
 
+def sheet_path(name):
+    return CACHE / f"{name}.gml"
+
+
 def download(name, items):
-    path = CACHE / f"{name}.gml"
+    path = sheet_path(name)
     if path.exists():
         return path
     if name not in items:
@@ -307,7 +314,7 @@ def read_sheet(job):
     name, path, local, T, origin = job
     cache = CACHE / "parsed" / f"{name}_{zlib.crc32(local.encode()):08x}.pkl"
     started = time.perf_counter()
-    key = [PARSED_VERSION, build_cache.identity(path), build_cache.code_key(), build_cache.runtime_key(), local, T, origin, REF_HEIGHT]
+    key = [PARSED_VERSION, build_cache.identity(path), *build_cache.processing("ipr_sheet"), local, T, origin, REF_HEIGHT]
     got = build_cache.load_pickle(cache, key)
     if got:
         print(f"  {name}: area cache hit, {time.perf_counter() - started:.2f} s, worker peak {build_cache.peak_mb():.1f} MB", flush=True)
@@ -449,28 +456,38 @@ def borrow_walls(walls, per_tile):
                   f"any other building in the area: {np.median(other):.1f}")
 
 
+def sheet_names(area):
+    """SMO-5 sheets intersecting the area's WGS84 box, in processing order."""
+    w, s, e, n = AREAS[area]
+    to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
+    corners = [sheet(*to_krovak.transform(lon, lat)) for lon in (w, e) for lat in (s, n)]
+    return [name for X in range(min(c[0] for c in corners), max(c[0] for c in corners) + 1)
+            for Y in range(min(c[1] for c in corners), max(c[1] for c in corners) + 1)
+            if (name := sheet_name(X, Y))]
+
+
+def source_paths(area, options):
+    # Include missing sheet paths so a newly available sheet invalidates this stage.
+    paths = [CACHE / CATALOGUE, building_age.CACHE]
+    paths.extend(sheet_path(f"BD3_{name}") for name in sheet_names(area))
+    if options.get("mesh_colours") != "off":
+        paths.append(MESH_COLOURS / f"{area}.json.gz")
+    return paths
+
+
 def sheet_jobs(area, meta):
-    """The area's local projection, and a read_sheet job for each sheet over the area
-    (downloaded if it isn't yet)."""
+    """The area's local projection and a read_sheet job for each available sheet."""
     w, s, e, n = AREAS[area]
     local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
-    to_krovak = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
-    corners = [to_krovak.transform(lon, lat) for lon in (w, e) for lat in (s, n)]
-    xs = [sheet(x, y) for x, y in corners]
-    X0, X1 = min(c[0] for c in xs), max(c[0] for c in xs)
-    Y0, Y1 = min(c[1] for c in xs), max(c[1] for c in xs)
     items = catalogue()
     jobs = []
-    for X in range(X0, X1 + 1):
-        for Y in range(Y0, Y1 + 1):
-            if not sheet_name(X, Y):
-                continue
-            name = f"BD3_{sheet_name(X, Y)}"
-            path = download(name, items)
-            if not path:
-                print(f"  {name}: not in the catalogue")
-                continue
-            jobs.append((name, str(path), local, meta["tile"], meta["origin"]))
+    for suffix in sheet_names(area):
+        name = f"BD3_{suffix}"
+        path = download(name, items)
+        if not path:
+            print(f"  {name}: not in the catalogue")
+            continue
+        jobs.append((name, str(path), local, meta["tile"], meta["origin"]))
     return local, jobs
 
 
@@ -485,6 +502,7 @@ def main() -> None:
                          "only, also walls guessed from the shade, or none")
     ap.add_argument("--no-roof-details", action="store_true", help="no chimneys or roof windows (roof_details.py)")
     ap.add_argument("--no-borrow", action="store_true", help="walls not measured keep the palette instead of a measured neighbour's colour")
+    ap.add_argument("--resume", action="store_true", help="reuse completed building output if its inputs and binary files match")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble after terrain finishes")
     args = ap.parse_args()
     if args.jobs < 1:
@@ -496,11 +514,15 @@ def main() -> None:
         raise SystemExit(f"{area}: run build_tiles.py {area} first")
     T = meta["tile"]
     origin = meta["origin"]
+    options = {name: getattr(args, name) for name in ("mesh_colours", "no_roof_details", "no_borrow")}
+    inputs = layers.stage_inputs(area, "ipr", options, meta)
+    if args.resume and layers.resume_stage(area, "ipr", inputs, args.no_assemble):
+        return
+    layers.begin_layer(area, "ipr")
     local, sheets = sheet_jobs(area, meta)
-    dependencies = layers.dependency_snapshot(area, layers.DEPENDENCIES["ipr"])
-    building_age.download()
-    sources = build_cache.sources([job[1] for job in sheets] + [MESH_COLOURS / f"{area}.json.gz", building_age.CACHE])
-    processing = [build_cache.code_key(), build_cache.runtime_key()]
+    if not building_age.CACHE.exists():
+        building_age.download()
+    inputs["sources"] = layers.stage_sources(area, "ipr", options)
     timings.lap("prepare_downloads")
 
     # OSM buildings per tile, to borrow tags (church, roof shape, roof cover) for colours.
@@ -666,7 +688,6 @@ def main() -> None:
     total = extra = 0
     tiles = {}
     payloads = {}
-    layers.begin_layer(area, "ipr")
     for (i, j), blist in per_tile.items():
         pos_arr = np.concatenate([b[0] for b in blist])
         col = np.concatenate([b[1].ravel() for b in blist])
@@ -684,10 +705,10 @@ def main() -> None:
         if (i, j) not in per_tile:
             layers.remove_bin(out_dir / "tiles", f"{i}_{j}.ipr.bin")
     # Heights in the .ipr.bin are above iprRef, in metres a.s.l.
-    if not build_cache.sources_current(sources) or processing != [build_cache.code_key(), build_cache.runtime_key()]:
+    if inputs != layers.stage_inputs(area, "ipr", options):
         raise RuntimeError("IPR sources or processing code changed; keep output staged and rebuild")
     layers.write_layer(area, "ipr", {"iprRef": REF_HEIGHT, "gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in osm_by_tile],
-                                     "tiles": tiles, "dependencies": dependencies, "sources": sources, "processing": processing,
+                                     "tiles": tiles, **inputs,
                                      "payloads": payloads})
     print(f"{len(per_tile)} tiles with IPR buildings, {total / 1e6:.1f} MB before gzip; {extra} OSM buildings IPR doesn't have")
     timings.lap("match_pack_write")
