@@ -1854,7 +1854,12 @@ async function main() {
       const hit = inCar.update(dt, { throttle: ctl.move, steer, handbrake: ctl.brake, cap }, grid);
       if (hit > 6) { shake = Math.min(1.2, shake + hit * 0.04); hapticCrash(hit); }
       jolt = hit;
-    } else if (!scripted && !arrest.active && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !taxi.riding) walker.update(dt, ctl);
+    } else if (!scripted && !arrest.active && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !taxi.riding) {
+      // In first person, looking round turns you: you walk the way you look.
+      const eyes = !testkit?.cam && testkit?.eyes;
+      if (eyes && eyes.yaw && walker.down <= 0) { walker.h += THREE.MathUtils.degToRad(eyes.yaw); eyes.yaw = 0; }
+      walker.update(dt, ctl);
+    }
     // In the helicopter Space climbs and Shift comes down.
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;
     for (const c of choppers) c.update(dt, c === inHeli ? { move: ctl.move, turn: heliTurn, up: ctl.brake, down: ctl.run } : null);

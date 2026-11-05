@@ -397,7 +397,8 @@ that without a new renderer.
   drawn life size there rather than 1.35× (`FIGURE_SIZE`). In a car or the helicopter it
   follows from behind and above like a driving game's chase camera, the car in the lower
   third, swinging round after it as it turns. A click takes the mouse to look round with
-  (Esc lets go); right-drag or Shift-drag looks round too (`t.eyes = { yaw, pitch }` in
+  (Esc lets go); right-drag or Shift-drag looks round too. On foot, looking sideways turns
+  you, so you walk the way you look (`t.eyes = { yaw, pitch }` in
   scripts). It loads 650 m round
   you and hazes the far streets; shadows only reach as far as the view from above would
   show. Under Testing: pause, one frame at a time, slow
