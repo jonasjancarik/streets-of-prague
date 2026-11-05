@@ -58,8 +58,11 @@ interface TileSource {
 }
 type MeshJobs = Promise<[WorkerResults['ground'], BuildingArrays | null, BuildingArrays | null]>;
 // TileWorld.picks: one view's tiles, and everything they were worked out from.
+// Which way a street-level view looks: its heading (radians, 0 east, anticlockwise)
+// and how far either side of it the tiles to draw may lie.
+export interface View { h: number; spread: number }
 interface Picks {
-  x: number; y: number; r: number; drawn: number; T: number; ox: number; oy: number;
+  x: number; y: number; r: number; drawn: number; T: number; ox: number; oy: number; view: View | null;
   available: Set<string>; revision: number; country: CountrysideTiles | null; box: Bounds | null;
   around: string[]; show: string[]; shown: Set<string>; keep: Set<string>; keepDrawn: Set<string> | null;
 }
@@ -499,6 +502,14 @@ export class TileWorld {
   // at once instead, so it never waits for frames that may not come.
   private jobs: { steps: Generator<void, unknown>; busy: number; done: (r: { value: unknown; busy: number }) => void; fail: (e: unknown) => void }[] = [];
   private urgent = 0;
+  // Tiles whose meshes are ready wait their turn to join the scene, one a frame (update()
+  // lets the next in): the frame a tile is first drawn its buffers go to the GPU and its
+  // shaders are built, and several in one frame stalled the game.
+  private turns: (() => void)[] = [];
+  // At street level a tile joins in view, so even one tile's buffers at once stalled a
+  // frame: there, its meshes start hidden and show a few a frame (far off, in the haze).
+  private street = false;
+  private reveal: THREE.Object3D[] = [];
   sliceMs = 8;
   buildTimes: number[];
   skyTotals: { coalesced: number; cancelled: number };
@@ -1021,26 +1032,42 @@ export class TileWorld {
   // the view and on which tiles there are, so exactly the same view as last time (as
   // when standing still) gets the same lists back. What has failed, finished or is due
   // is up to update(), every frame.
-  private picks(x: number, y: number, r: number, drawn: number): Picks {
+  private picks(x: number, y: number, r: number, drawn: number, view: View | null = null): Picks {
     const p = this.picked, box = this.country?.box ?? null;
-    if (p && p.x === x && p.y === y && p.r === r && p.drawn === drawn && p.T === this.T && p.ox === this.ox && p.oy === this.oy
+    if (p && p.x === x && p.y === y && p.r === r && p.drawn === drawn && p.view?.h === view?.h && p.view?.spread === view?.spread && p.T === this.T && p.ox === this.ox && p.oy === this.oy
       && p.available === this.available && p.revision === this.availableRevision && p.country === this.country
       && (p.box === null ? box === null : !!box && p.box.every((v, n) => v === box[n]))) return p;
-    const around = this.around(x, y, r), show = drawn < r ? this.near(x, y, drawn) : around;
+    const around = this.around(x, y, r), near = drawn < r ? this.near(x, y, drawn) : around;
+    // Looking along the street, only the tiles in view are drawn (and those round you).
+    // Ones already drawn stay drawn when you turn away, so looking back costs nothing.
+    const show = view ? near.filter((k) => this.inView(k, x, y, view)) : near;
     // (The countryside's box is copied: it is its contents that decide what it covers.)
     return this.picked = {
-      x, y, r, drawn, T: this.T, ox: this.ox, oy: this.oy, available: this.available, revision: this.availableRevision,
+      x, y, r, drawn, T: this.T, ox: this.ox, oy: this.oy, view: view && { ...view }, available: this.available, revision: this.availableRevision,
       country: this.country, box: box && [box[0], box[1], box[2], box[3]], around, show, shown: new Set(show),
       keep: new Set(this.around(x, y, r + this.T * 0.5, false)),
       keepDrawn: drawn < r ? new Set(this.near(x, y, drawn + DRAWN_KEEP, false)) : null,
     };
   }
 
+  // Whether tile k lies (partly) within the view's wedge from (x, y), or right by you.
+  private inView(k: string, x: number, y: number, view: View) {
+    const [i, j] = k.split('_').map(Number), T = this.T;
+    const cx = (i + 0.5) * T - this.ox - x, cy = (j + 0.5) * T - this.oy - y, d = Math.hypot(cx, cy);
+    if (d < T) return true;
+    const off = Math.abs(Math.atan2(Math.sin(Math.atan2(cy, cx) - view.h), Math.cos(Math.atan2(cy, cx) - view.h)));
+    return off <= view.spread + Math.asin(Math.min(1, (T * Math.SQRT1_2) / d));
+  }
+
   // Called every frame: starts building the nearest missing tiles within r and drops
-  // far ones; of those loaded, the ones within `drawn` of the point get their meshes.
-  update(x: number, y: number, r: number, drawn = r) {
+  // far ones; of those loaded, the ones within `drawn` of the point get their meshes
+  // (with a `view`, only the ones it looks towards).
+  update(x: number, y: number, r: number, drawn = r, view: View | null = null) {
     const now = performance.now();
-    const { around, show, shown, keep, keepDrawn } = this.picks(x, y, r, drawn);
+    this.turns.shift()?.();
+    this.street = !!view;
+    for (let n = 0; n < 6 && this.reveal.length; n++) this.reveal.shift()!.visible = true;
+    const { around, show, shown, keep, keepDrawn } = this.picks(x, y, r, drawn, view);
     const want = around.filter((k) => !((this.retry.get(k) ?? 0) > now));
     for (const k of want.slice(0, 12)) this.fetchTile(k);
     this.shown = shown;
@@ -1454,8 +1481,15 @@ export class TileWorld {
     group.traverse((o) => { o.matrixAutoUpdate = false; o.updateMatrix(); });
     group.updateMatrixWorld(true);
     group.updateMatrixWorld = () => {};
+    // Its turn to join the scene (at once while loading at the start or after a jump).
+    if (!this.urgent) {
+      await new Promise<void>((go) => this.turns.push(go));
+      // Left behind meanwhile: thrown away the way it would have been once drawn.
+      if (gone()) { tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])], smoke }; this.undress(tile); return; }
+    }
     // The tree pages are leased last: if they can't be, nothing is left half done.
     this.trees.add(k, s.trees);
+    if (this.street && !this.urgent) group.traverse((o) => { if (o !== group && o.visible && (o as THREE.Mesh).geometry) { o.visible = false; this.reveal.push(o); } });
     this.scene.add(group);
     tile.drawn = { group, surfaces, own: [...buildings, ...(hidden ? [hidden] : [])], smoke };
     lap('meshes');

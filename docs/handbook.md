@@ -399,8 +399,11 @@ that without a new renderer.
   third, swinging round after it as it turns. A click takes the mouse to look round with
   (Esc lets go); right-drag or Shift-drag looks round too. On foot it plays like a
   first-person game: the mouse turns you, W/S walk the way you look and A/D step sideways (`t.eyes = { yaw, pitch }` in
-  scripts). It loads 650 m round
-  you and hazes the far streets; shadows only reach as far as the view from above would
+  scripts). It loads 400 m round
+  you, where the haze closes in, and draws only the tiles you look towards (ones already
+  drawn stay when you turn); a tile coming into view shows a few meshes a frame, and only
+  one tile joins the scene a frame anywhere, so none stalls the game (`View` in
+  `src/tiles.ts`). Shadows only reach as far as the view from above would
   show. Under Testing: pause, one frame at a time, slow
   motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,
   the test places, and the scenarios (see Testing above).

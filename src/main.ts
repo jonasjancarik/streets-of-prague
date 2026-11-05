@@ -484,6 +484,8 @@ async function main() {
   let chased: { h: number } | null = null, chaseH = 0;
   let cutR = 0; // radius of the hole above a passage, under a bridge or down into a tunnel (see CUTAWAY)
 
+  // First person: how far the city is loaded and drawn, and which way the view looks.
+  const EYES_REACH = 400, STEP5 = THREE.MathUtils.degToRad(5), looking = new THREE.Vector3(), view = { h: 0, spread: 1 };
   const viewRadius = (h = height) => h * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * Math.hypot(1, camera.aspect) + 15;
   // The sun's shadow map covers only what is on screen: the view's rectangle from a
   // little below the lowest ground in it to 40 m above the highest (the roofs), as the
@@ -2341,9 +2343,18 @@ async function main() {
     // The city lives well beyond the screen; only the tiles near it are drawn.
     // (The developer panel's free camera can look far across the city: everything is drawn.)
     // Zooming out, the tiles the view is about to take in are drawn before it gets there.
-    // (In first person you see along the street to the horizon: more of it is loaded.)
+    // (In first person you see along the street: 400 m of it, as far as the haze lets you,
+    // and of that only the tiles the view looks towards are drawn.)
     const eyes = !testkit?.cam && testkit?.eyes;
-    world.update(camPos.x, -camPos.z, eyes ? 650 : viewRadius() + 220, testkit?.cam || eyes ? Infinity : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond);
+    if (eyes) {
+      camera.getWorldDirection(looking);
+      // (A little wider than the picture, so turning doesn't show an empty edge at once;
+      // in steps of 5° so a steady view keeps the same tiles.)
+      const half = Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect) + 0.35;
+      view.h = Math.round(Math.atan2(-looking.z, looking.x) / STEP5) * STEP5;
+      view.spread = Math.round(half / STEP5) * STEP5;
+    }
+    world.update(camPos.x, -camPos.z, eyes ? EYES_REACH : viewRadius() + 220, testkit?.cam ? Infinity : eyes ? EYES_REACH : viewRadius(Math.max(height, heightWanted)) + world.drawBeyond, eyes ? view : null);
 
     // Player: keyboard and touch controls together. In the car, Shift is lane assist:
     // it steers along your lane, and A/D picks the turn at the next junction instead.
@@ -2549,8 +2560,8 @@ async function main() {
     // In first person the horizon shows: a sky behind the city, and haze on the far
     // streets so the edge of what's loaded fades out.
     if (eyes) {
-      sky.fog.near = Math.min(sky.fog.near, 180);
-      sky.fog.far = Math.min(sky.fog.far, 620);
+      sky.fog.near = Math.min(sky.fog.near, 120);
+      sky.fog.far = Math.min(sky.fog.far, EYES_REACH);
       (scene.background as THREE.Color).copy(sky.haze);
     } else (scene.background as THREE.Color).set(BACKDROP);
     const nearPlane = eyes ? 0.2 : 1;
