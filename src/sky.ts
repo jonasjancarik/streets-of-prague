@@ -38,10 +38,12 @@ type Mood = Light & { ground: string; exposure: number; clear?: Light };
 const MOODS: [number, Mood][] = [
   [-10, { sun: '#8fa6d8', sunI: 0.5, sky: '#2c3a5c', ground: '#16151c', skyI: 1.0, exposure: 2.03 }],
   [-4, { sun: '#8fa6d8', sunI: 0.0, sky: '#4a4e72', ground: '#2a2230', skyI: 1.45, exposure: 1.96 }],
-  [1, { sun: '#ffa060', sunI: 1.8, sky: '#948aa4', ground: '#4c3a34', skyI: 1.3, exposure: 1.82 }],
-  [8, { sun: '#ffaa66', sunI: 3.0, sky: '#b4b2bd', ground: '#6a5444', skyI: 1.1, exposure: 1.69,
+  [1, { sun: '#ffa060', sunI: 1.8, sky: '#948aa4', ground: '#4c3a34', skyI: 1.3, exposure: 1.93 }],
+  // (A low sun lights the street less, and the eye adapts: the exposure opens up as it sinks,
+  // so a November afternoon isn't a dimmer copy of a summer noon.)
+  [8, { sun: '#ffaa66', sunI: 3.0, sky: '#b4b2bd', ground: '#6a5444', skyI: 1.1, exposure: 1.9,
     clear: { sun: '#ffaa66', sunI: 3.15, sky: '#a2aecb', skyI: 1.0 } }],
-  [20, { sun: '#ffd1a0', sunI: 3.4, sky: '#bfc4cc', ground: '#7a6a52', skyI: 1.15, exposure: 1.62,
+  [20, { sun: '#ffd1a0', sunI: 3.4, sky: '#bfc4cc', ground: '#7a6a52', skyI: 1.15, exposure: 1.8,
     clear: { sun: '#ffca90', sunI: 3.65, sky: '#93aedc', skyI: 1.0 } }],
   [40, { sun: '#fff0dc', sunI: 3.6, sky: '#c9cfd6', ground: '#857a62', skyI: 1.2, exposure: 1.62,
     clear: { sun: '#ffe3c0', sunI: 3.9, sky: '#96b4e6', skyI: 1.02 } }],
@@ -50,7 +52,9 @@ const MOODS: [number, Mood][] = [
 // Under clouds the sky's light is grey by day; at night the clouds glow orange with
 // the city's lights.
 const OVERCAST = new THREE.Color('#b3b8bf'), CITY_GLOW = new THREE.Color('#5a4d48');
-const SNOWY_GROUND = new THREE.Color('#b9bec6'), LIGHTNING = new THREE.Color('#dfe6ff');
+// The share of the sunlight that comes back off the street's sunlit walls into its shade.
+const BOUNCE = 0.06;
+const SNOWY_GROUND =new THREE.Color('#b9bec6'), LIGHTNING = new THREE.Color('#dfe6ff');
 // Fog and mist, as seen (display colours): by day, at night, at night under clouds.
 const FOG_DAY = new THREE.Color('#b4b9bf'), FOG_NIGHT = new THREE.Color('#1a1e25'), FOG_GLOW = new THREE.Color('#2c2a2b');
 const FOG_SHARE = 0.88; // WebGPU's share of the fog asked for (see Sky.update)
@@ -193,6 +197,13 @@ export class Sky {
     // Cars mirror the street round them under the sky: its walls and trees, lit like the
     // ground, darker than the sky (car.ts).
     STREET_REF.value.copy(this.hemi.groundColor).lerp(this.hemi.color, 0.25).multiplyScalar(this.hemi.intensity * 0.06 * 0.55 * (1 - night * 0.8));
+    // Sunlight thrown back into the street by the sunlit walls and paving, warm, into what
+    // lies in shade. The lower the sun, the more of it the walls catch (by the cosine of its
+    // height) while the ground gets less: on a winter afternoon it is much of what lights a
+    // shaded pavement. (After the reflections above: puddles mirror the sky, not the walls.)
+    const bounce = BOUNCE * this.sun.intensity * Math.cos(el) * THREE.MathUtils.smoothstep(deg, -2, 4);
+    cc.copy(this.hemi.color).multiplyScalar(this.hemi.intensity).add(lc.copy(this.sun.color).multiplyScalar(bounce));
+    this.hemi.color.copy(cc.multiplyScalar(1 / this.hemi.intensity));
 
     // Fog, measured from the camera: `amount` of it on the ground right below, more
     // further off, less on the roofs.
