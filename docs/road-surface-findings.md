@@ -149,12 +149,27 @@ bridge footprint `1000338903053` and road polygons `1000338903031` and
 so they can inform the extent and identity of a deck, not directly its height.
 Elevated line records nearby do carry measured heights.
 
-These observations do not establish that the objects describe the entire problem
-crossing correctly; some may describe adjacent structures. They justify matching
-the unused objects to individual carriageways before relying only on the cutting
-heuristic. Preserve identifiers, levels, accuracy classes, acquisition methods and
-edge subtypes when doing that. Conflicting elevations should remain separate
-observations until their physical surface is known.
+Matching the survey polygons to the actual crossing, near 50.06160, 14.43082,
+showed why the original cutting rule missed part of 5. května. Its 38.0 m deck
+follows one carriageway (DTM `1000338903031`). The other carriageway and its slip
+road run through DTM `1000338903032` on the same footprint. The nearby level −2
+tunnel `1000414175124` belongs to a different crossing. Its closest point is
+14.6 m from the original deck centreline. The carriageway and footprint exports
+are from 31 October 2026. The construction-line export is from 31 August 2026.
+The bridge perimeter has uncertain height accuracy (class 9). Class 3 and 5
+measurements along the second carriageway's kerbs and median support a surface
+around 241 m. [ČÚZK rules for structure footprints](https://dtmwiki.cuzk.gov.cz/01_pravidla/01_zaklad/04_plosne_objekty_zps),
+[survey accuracy classes](https://dtmwiki.cuzk.gov.cz/01_pravidla/01_zaklad/02_presnost).
+
+The optional `--survey-companion-decks` uses that relationship to add 39.2 m of
+5. května and 43.7 m of its slip road. The source observations verify the deck
+level against both approaches, and the profiles join the terrain heights at
+their ends. In a six-tile comparison, the largest bump on the added 5. května
+stretch fell from 1.05 m to 0.01 m, and its cross-slope from 31.7% to 3.8%.
+The slip road went from a 1.01 m bump and 41.6% cross-slope to 0.06 m and 4.5%.
+Kongresová stays on the lower ground, where it still has a 0.71 m bump and
+29.5% cross-slope. The change relies on an existing cutting deck and leaves the
+original rule in place for crossings without a match.
 
 The separate DTM transport-infrastructure model also defines road axes, network
 nodes and bridge extents. Its populated coverage and usefulness here remain to be

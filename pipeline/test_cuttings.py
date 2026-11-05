@@ -3,7 +3,9 @@
 import unittest
 
 import numpy as np
+from shapely.geometry import LineString, box
 
+import dtm_structures as dtm
 import structures
 
 
@@ -57,6 +59,65 @@ class Cuttings(unittest.TestCase):
         self.assertIsNone(on.over_cutting({"bridge": True, "pts": [[0, -60], [0, 60]]}))
         # (the underpass's street, crossing under it)
         self.assertIsNone(on.over_cutting({"pts": [[-60, 0], [60, 0]]}))
+
+
+def evidence(code, ident, level, shape, **attrs):
+    return {"package": "fixture.gpkg.zip", "code": code,
+            "attrs": {"ID": ident, dtm.LEVEL: level, **attrs}, "shape": shape}
+
+
+class SurveyCompanions(unittest.TestCase):
+    underpass = tunnel(1, [[-30, 0], [30, 0]])
+    streets = {
+        "a": street("a", [[-8, -60], [-8, 60]], 8),
+        "b": street("b", [[8, -22], [8, 22]], 8),
+        "c": street("c", [[23, -22], [23, 22]], 8),
+        "lower": street("lower", [[-30, 0], [30, 0]], 7),
+    }
+
+    def evidence(self, half_span=12, accuracy=3, z=240):
+        return [
+            evidence(dtm.BRIDGE, 10, 1, box(-14, -12, 14, 12)),
+            evidence(dtm.ROAD, 11, 1, box(-12, -12, -4, 12)),
+            evidence(dtm.ROAD, 12, 1, box(4, -half_span, 12, half_span)),
+            # A nearby, separately mapped bridge and a tunnel that overlaps the road in plan.
+            evidence(dtm.BRIDGE, 13, 1, box(19, -12, 27, 12)),
+            evidence(dtm.ROAD, 14, 1, box(19, -12, 27, 12)),
+            evidence(dtm.TUNNEL, 15, -2, box(-32, -3, 32, 3)),
+            evidence(dtm.EDGE, 16, -2, LineString([(-30, -3, 227), (30, -3, 227)]),
+                     **{dtm.ACCURACY_Z: 3, dtm.ACQUISITION: 3, dtm.EDGE_TYPE: 18}),
+            *(evidence(dtm.EDGE, 17 + k, 1, LineString([(x, y, z) for y in (-10, -5, 5, 10)]),
+                       **{dtm.ACCURACY_Z: accuracy, dtm.ACQUISITION: 1, dtm.EDGE_TYPE: 1})
+              for k, x in enumerate((4, 12))),
+        ]
+
+    def build(self, records):
+        return structures.cuttings([self.underpass], self.streets, trench(6),
+                                   dtm.DeckSurvey(records, lambda x, y: (x, y)))
+
+    def test_supported_second_carriageway_has_its_own_span_and_keeps_lower_street_on_ground(self):
+        dropped, bridges = self.build(self.evidence())
+        self.assertEqual(dropped, {1})
+        self.assertEqual(len(bridges), 2)
+        upper = bridges[-1]
+        self.assertEqual(upper["pts"], [[8, -12], [8, 12]])
+        self.assertEqual(upper["survey_sources"]["bridge"]["ID"], 10)
+        self.assertEqual(upper["survey_sources"]["road"]["ID"], 12)
+        self.assertEqual({r["ID"] for r in upper["survey_sources"]["edges"]}, {17, 18})
+        on = structures.OnLevels([dict(w, level=1) for w in bridges], {})
+        self.assertIsNotNone(on.over_cutting(self.streets["b"]))
+        self.assertIsNone(on.over_cutting(self.streets["c"]))
+        self.assertIsNone(on.over_cutting(self.streets["lower"]))
+        _, profiles = structures.solve(bridges, trench(6), {})
+        np.testing.assert_allclose(profiles[-1][1], 240)
+
+    def test_incomplete_extent_uncertain_height_and_wrong_height_keep_original_cut(self):
+        for evidence in (self.evidence(half_span=5), self.evidence(accuracy=9), self.evidence(z=234)):
+            with self.subTest(evidence=evidence):
+                dropped, bridges = self.build(evidence)
+                self.assertEqual(dropped, {1})
+                self.assertEqual(len(bridges), 1)
+                self.assertNotIn("survey_sources", bridges[0])
 
 
 if __name__ == "__main__":

@@ -1246,6 +1246,13 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   the game paints that stretch on the deck (`onDeck` in `src/ground.ts`). Under such a
   bridge the ground is the terrain model's cutting. The build log lists each one
   (`cutting: …`). See `docs/road-surface-findings.md`.
+  The optional `ipr_terrain.py praha --survey-companion-decks` adds a missing
+  carriageway to a cutting bridge the build already found. The DTM must place both
+  carriageways on the same bridge footprint. Surveyed kerbs from the added road must
+  agree with the terrain heights at its approaches. The deck joins those approaches
+  and the street underneath stays on the ground. `dtm_structures.py LAT LON --ground`
+  lists nearby survey objects, their placement levels, measured height ranges and
+  source quality. Both commands use the local DTM packages.
   Each grid point also has a label
   (plain ground, water, or a terrace at a retaining wall's foot, whose outline is in the
   tile's `terraces`), stored after the heights in `<tile>.height.bin`. Where the labels

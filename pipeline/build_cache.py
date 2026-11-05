@@ -71,7 +71,7 @@ CODE = {
     "terrain": {**IPR_OUTPUT, "ipr_terrain.py": (),
                 "ipr_buildings.py": (*PROJECTION, "sheet_names", "search", "CACHE"),
                 "osm_area.py": ("AREAS", "OUT", "_polys", "_rings"),
-                "dtm_heights.py": (), "dtm.py": ("CACHE", "PACKAGES", "_wkb"),
+                "dtm_heights.py": (), "dtm_structures.py": (), "dtm.py": ("CACHE", "PACKAGES", "_wkb"),
                 "structures.py": ("build", "pads"), "dmr5g.py": (), "ipr_lidar.py": (),
                 "terrain_keep.json": (), "terrain_walls.json": ()},
 }

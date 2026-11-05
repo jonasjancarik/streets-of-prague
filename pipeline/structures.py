@@ -476,12 +476,20 @@ def solve(ways, ground, decks, soft=frozenset(), streets=()):
     except TypeError:
         wet = np.zeros(len(T), dtype=bool)
     fixed = {}
-    for w in ways:
+    surveyed = set()
+    for w, path in zip(ways, net.paths):
+        if w.get("survey_sources"):
+            surveyed.update(path)
         # Only its ends: a way on the ground meeting a bridge halfway along (stairs up
         # from the valley under Nuselský most, say) meets it at the deck's height.
         for k, (n, g) in enumerate(zip(w["nodes"], w["grade"])):
             if g and k in (0, len(w["nodes"]) - 1):
                 i = net.key[("n", n)]
+                if w.get("survey_sources"):
+                    # The observed span already reaches both approaches. Share their
+                    # post-survey ground heights, with no second choice of abutment.
+                    fixed[i] = T[i]
+                    continue
                 ahead = np.subtract(w["pts"][0], w["pts"][1]) if k == 0 else np.subtract(w["pts"][-1], w["pts"][-2])
                 if w["kind"] == "bridge":
                     # A bridge drawn from past the edge of its wall: the street's last metres,
@@ -567,7 +575,7 @@ def solve(ways, ground, decks, soft=frozenset(), streets=()):
     # and a flight pinned to one of them drags everything it joins.)
     on_stairs = {i for i, nb in enumerate(net.adj) if nb and all((i, j) in net.soft for j, _ in nb)}
     for i in np.nonzero(kind == "bridge")[0]:
-        if i in fixed or np.isnan(net.h[i]) or i in on_stairs:
+        if i in fixed or np.isnan(net.h[i]) or i in on_stairs or i in surveyed:
             continue
         z = deck_at(decks, *net.xy[i], net.h[i] + 2.0, below=6.0, above=4.0)
         if not np.isnan(z) and not (wet[i] and z < T[i] + room[i] - 0.5):
@@ -640,7 +648,7 @@ CUT_LOOK = 30.0  # m either side of the crossing that the street's own height is
 CUT_GRADE = 0.06  # the steepest the street over it can run from one side to the other
 
 
-def cuttings(ways, streets, ground):
+def cuttings(ways, streets, ground, deck_survey=None):
     """A short underpass whose street the terrain model shows in an open cutting: the
     model leaves the deck over it out, as it does a bridge's, and runs down the street
     inside (Kongresová under 5. května at Pankrác: a trench 20 m wide and 6 m deep under
@@ -651,7 +659,8 @@ def cuttings(ways, streets, ground):
 
     `ways`: structure_ways; `streets`: the car streets on the ground, {id: edge} (with
     pts, width, hw); `ground(xs, ys)`: the bare terrain. Returns the ids of the tunnel
-    ways that are on the ground after all, and the bridge ways (marked `cut`)."""
+    ways that are on the ground after all, and the bridge ways (marked `cut`). An
+    optional `deck_survey` can add a missing carriageway on an already-found deck."""
     tunnels = [w for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1 and w["hw"] not in ON_FOOT | STATION_FOOT | {"cycleway", "bridleway"}]
     edges = [e for e in streets.values() if len(e["pts"]) > 1 and not e.get("tunnel")]
     if not tunnels or not edges:
@@ -660,6 +669,17 @@ def cuttings(ways, streets, ground):
     tree = STRtree(lines)
     dropped, out = set(), []
     serial = iter(range(-1, -10**9, -1))  # (ids of their own for the new ways and their points: OSM's are positive)
+
+    def cut_way(edge, span, survey_sources=None):
+        pts = [[round(v, 2) for v in p] for p in shapely.get_coordinates(span)]
+        ends = [i in (0, len(pts) - 1) for i in range(len(pts))]
+        return {
+            "id": next(serial), "kind": "bridge", "layer": 1, "mapped_layer": None, "cut": True,
+            "hw": edge.get("hw", "primary"), "w": round(float(edge["width"]), 1), "pts": pts,
+            "nodes": [next(serial) for _ in pts], "grade": ends, "on_ground": ends.copy(),
+            **({"survey_sources": survey_sources} if survey_sources else {}),
+        }
+
     for w in tunnels:
         line = LineString(w["pts"])
         if line.length > CUT_LONGEST:
@@ -667,11 +687,16 @@ def cuttings(ways, streets, ground):
         near = [lines[k] for k in tree.query(line.buffer(CUT_LOOK + w["w"]))]
         merged = shapely.ops.linemerge(near)
         chains = list(getattr(merged, "geoms", [merged])) if not merged.is_empty else []
-        found = []
+        found, candidates = [], []
         for k in tree.query(line, predicate="intersects"):
             edge, crossing = edges[k], lines[k]
             at = crossing.intersection(line)
             at = at if at.geom_type == "Point" else at.centroid
+            if deck_survey is not None:
+                # A companion may fork at an abutment. Extend along the whole street
+                # where it is one unbranched chain, otherwise use that edge alone.
+                linked = next((c for c in chains if c.covers(crossing)), crossing)
+                candidates.append((edge, crossing, linked))
             if min(line.project(at), line.length - line.project(at)) < w["w"] / 2:
                 continue  # meeting it at a portal, not crossing over it
             # The street with the ways it runs on into, so its sides reach past the cutting.
@@ -701,14 +726,15 @@ def cuttings(ways, streets, ground):
                 continue  # (the other way of a two-way street: one edge each way along the same line)
             print(f"    cutting: {w['hw']} way {w['id']} under {edge.get('name') or edge.get('hw')} at "
                   f"({at.x:.0f}, {at.y:.0f}): {min(h0, h1) - min(low0, low1):.1f} m down, {span:.0f} m across, sides {h0:.1f}/{h1:.1f}")
-            pts = [list(map(lambda v: round(v, 2), c)) for c in shapely.get_coordinates(span_line)]
-            found.append({
-                "id": next(serial), "kind": "bridge", "layer": 1, "mapped_layer": None, "cut": True,
-                "hw": edge.get("hw", "primary"), "w": round(float(edge["width"]), 1), "pts": pts,
-                "nodes": [next(serial) for _ in pts],
-                "grade": [i in (0, len(pts) - 1) for i in range(len(pts))],
-                "on_ground": [i in (0, len(pts) - 1) for i in range(len(pts))],
-            })
+            found.append(cut_way(edge, span_line))
+        if found and deck_survey is not None:
+            known = [LineString(f["pts"]) for f in found]
+            for edge, span, sources in deck_survey.companions(line, known, candidates, ground, CUT_DIP, CUT_GRADE):
+                if any(LineString(f["pts"]).hausdorff_distance(span) < 2.0 for f in found):
+                    continue  # two directions of the same edge
+                found.append(cut_way(edge, span, sources))
+                print(f"    survey companion: {edge['id']} on bridge {sources['bridge']['ID']}, "
+                      f"carriageway {sources['road']['ID']}, {span.length:.1f} m")
         if found:
             dropped.add(w["id"])
             out += found
@@ -1599,7 +1625,8 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     all_pieces, groups = pieces(ways, profiles, outlines, ground, decks, road_tree)
     deepest = assign_levels(groups)
     if way_levels is not None:  # (the pieces start with one per way, in the ways' order)
-        way_levels.extend({"kind": w["kind"], "level": p.level, "pts": w["pts"], **({"cut": True} if w.get("cut") else {})} for w, p in zip(ways, all_pieces))
+        way_levels.extend({"kind": w["kind"], "level": p.level, "pts": w["pts"],
+                           **{k: w[k] for k in ("cut", "survey_sources") if w.get(k)}} for w, p in zip(ways, all_pieces))
     print(f"  {len(all_pieces)} bridge and tunnel pieces on up to {deepest} levels either way")
     heights = rasterise(all_pieces, tiles, N, T, step, gx0, gy0)
     polys = outlines_per_tile(all_pieces, tile_boxes)

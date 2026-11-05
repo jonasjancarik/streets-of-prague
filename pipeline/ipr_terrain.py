@@ -353,11 +353,15 @@ def main() -> None:
     ap.add_argument("--valley-nearest", action="store_true", help="made-up land beside water from the nearest water alone, cliffs and all (to compare)")
     ap.add_argument("--cut-streets", action="store_true", help="trial: a surveyed street under or over a steep bank is a terrace, cut along its outline")
     ap.add_argument("--no-level", action="store_true", help="car streets from their nearest kerb points, leaning and all, not level across (to compare)")
+    ap.add_argument("--survey-companion-decks", action="store_true",
+                    help="trial: use the DTM to add a second carriageway on a bridge already identified above a cutting")
     ap.add_argument("--resume", action="store_true", help="reuse completed terrain output if its inputs and binary files match")
     ap.add_argument("--no-assemble", action="store_true", help="leave output staged; assemble the complete generation separately")
     args = ap.parse_args()
     if args.jobs < 1:
         ap.error("jobs must be positive")
+    if args.survey_companion_decks and args.no_survey:
+        ap.error("--survey-companion-decks requires the survey")
     area = args.area
     out_dir = OUT / f"{area}_now"
     meta = layers.read_meta(area)
@@ -371,6 +375,8 @@ def main() -> None:
         "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets", "no_level")}
     if args.ipr_lidar:
         options["ipr_lidar"] = str(args.ipr_lidar.resolve())
+    if args.survey_companion_decks:
+        options["survey_companion_decks"] = True
     inputs = layers.stage_inputs(area, "terrain", options, meta)
     if args.resume and layers.resume_stage(area, "terrain", inputs, args.no_assemble):
         return
@@ -487,7 +493,11 @@ def main() -> None:
     # A short underpass in an open cutting is on the ground, and the streets over it on
     # bridges (structures.cuttings), before the survey, which leaves the ground under
     # bridges alone.
-    dropped, cut_bridges = structures.cuttings(ways, street_edges, sampler(tiles, N, T, step, gx0, gy0))
+    deck_survey = None
+    if args.survey_companion_decks:
+        import dtm_structures
+        deck_survey = dtm_structures.for_area(AREAS[area], krovak_to_local(local).transform)
+    dropped, cut_bridges = structures.cuttings(ways, street_edges, sampler(tiles, N, T, step, gx0, gy0), deck_survey)
     if dropped:
         ways = [w for w in ways if w["id"] not in dropped] + cut_bridges
         print(f"  {len(dropped)} underpasses in an open cutting: on the ground, {len(cut_bridges)} streets over them on bridges")
