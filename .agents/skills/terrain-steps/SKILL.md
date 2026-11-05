@@ -90,7 +90,11 @@ What it found first (27 October 2026, 57,188 streets): about 100 steps over 1 m,
 streets with 10 m or more off the road, and some 5,000 leaning over 15 %. The leaning is
 real in the game, not the checker: the 4 m lattice tilts hillside streets (Italská's left
 edge 0.5–1 m above its right). Compare runs before and after a rule change rather than
-chasing the total. Of the 15 worst steps, 9 were retaining walls' terraces running along
+chasing the total. Levelling the car streets across (`_level_across` in
+`dtm_heights.py`, 5 November 2026) took leaning over 15 % from 4,039 to 3,049 streets,
+twisting over 12 % from 2,912 to 2,499, bumps over 0.5 m from 683 to 578 and ridges over
+1 m from 216 to 167; the first version, without blending where streets meet and with the
+kerbs of streets passing underneath, made 900 streets bumpier. Of the 15 worst steps, 9 were retaining walls' terraces running along
 or across a street, 4 bridges' pads and 1 the made-up land beyond IPR's model; the
 terrace now stops at a car street's kerbs (`dtm_heights.py`) and the made-up land is no
 steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.

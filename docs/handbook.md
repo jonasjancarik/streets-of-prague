@@ -1225,6 +1225,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   segments are skipped, keeping gross source errors from spreading into the ground.
   Separate components of a survey line stay separate. The survey log reports rejected
   vertices. See `docs/river-terrain-findings.md` for the checks and remaining limits.
+  A car street is then level from kerb to kerb, with the pavement a grid cell beyond:
+  each grid point on it takes the mean of both kerbs' surveyed heights across from it
+  (`_level_across`), not the heights of whichever kerb is nearest, so hillside streets
+  don't lean and twist from cell to cell. Kerbs of a street passing under or over it
+  don't count, and where streets meet their heights are blended over a cell.
+  `ipr_terrain.py --no-level` builds without it, to compare.
   Each grid point also has a label
   (plain ground, water, or a terrace at a retaining wall's foot, whose outline is in the
   tile's `terraces`), stored after the heights in `<tile>.height.bin`. Where the labels
