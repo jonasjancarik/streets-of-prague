@@ -1857,8 +1857,9 @@ async function main() {
     } else if (!scripted && !arrest.active && !inHeli && !ride.on && !boats.me && !funicular.me && !ferries.me && !taxi.riding) {
       // In first person, looking round turns you: you walk the way you look.
       const eyes = !testkit?.cam && testkit?.eyes;
+      // And like any first-person game, the mouse turns and A/D step sideways.
       if (eyes && eyes.yaw && walker.down <= 0) { walker.h += THREE.MathUtils.degToRad(eyes.yaw); eyes.yaw = 0; }
-      walker.update(dt, ctl);
+      walker.update(dt, eyes ? { ...ctl, strafe: true } : ctl);
     }
     // In the helicopter Space climbs and Shift comes down.
     const heliTurn = inHeli && ctl.aim ? clamp(turnOf(inHeli.h, ctl.aim.h) * 1.2, -1, 1) : ctl.turn;

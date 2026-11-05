@@ -486,6 +486,8 @@ export class Walker {
   grid: WalkGrid;
   x: number; y: number; h: number; z: number; speed: number; down: number;
   vx: number; vy: number;
+  // Stepping sideways (first person's A/D), m/s to the left.
+  side = 0;
   // Standing on a car: how high its bonnet, roof or boot is under your feet.
   perch: number;
   anim: Anim;
@@ -538,7 +540,8 @@ export class Walker {
     return this.perch < 0.3 && fences.blocks(x, y, 0.15, this.z) && !fences.blocks(this.x, this.y, 0.15, this.z);
   }
 
-  update(dt: number, ctl: { turn: number; move: number; run: boolean; jump: boolean; aim?: { h: number; mag: number } | null }) {
+  // `strafe` (first person): left/right step sideways instead of turning.
+  update(dt: number, ctl: { turn: number; move: number; run: boolean; jump: boolean; aim?: { h: number; mag: number } | null; strafe?: boolean }) {
     const a = this.anim;
     if (this.down > 0) {
       this.down -= dt;
@@ -551,6 +554,7 @@ export class Walker {
       if (this.down < GETUP / 1.5) a.play('getup', false, 0.1);
       a.step(dt, a.name === 'getup' ? 1.5 : 1);
       this.z = 0;
+      this.side = 0;
       this.sync();
       return;
     }
@@ -564,19 +568,27 @@ export class Walker {
       const facing = Math.max(0, Math.cos(off));
       target = (ctl.aim.mag > 0.9 || ctl.run ? 7.5 : 3.6 * Math.min(1, ctl.aim.mag / 0.8)) * facing;
     } else {
-      this.h += turn * (ctl.run ? 3.6 : 4.2) * dt;
+      if (!ctl.strafe) this.h += turn * (ctl.run ? 3.6 : 4.2) * dt;
       target = move > 0 ? move * (ctl.run ? 7.5 : 3.6) : move * 2;
     }
+    // Like a first-person game: forward and sideways together no faster than either alone.
+    let across = ctl.strafe && !ctl.aim ? turn * (ctl.run ? 5 : 3) : 0;
+    if (across && target) { const k = 1 / Math.SQRT2; target *= k; across *= k; }
+    this.side += (across - this.side) * Math.min(1, dt * 10);
+    if (Math.abs(this.side) < 0.01) this.side = 0;
     const jumping = a.name === 'jump' && !a.done;
     if (ctl.jump && !jumping) a.play('jump', true, 0.06);
     this.speed += (target - this.speed) * Math.min(1, dt * 10);
-    this.vx = Math.cos(this.h) * this.speed;
-    this.vy = Math.sin(this.h) * this.speed;
+    const c = Math.cos(this.h), sn = Math.sin(this.h);
+    this.vx = c * this.speed - sn * this.side;
+    this.vy = sn * this.speed + c * this.side;
     if (!this.blocked(this.x + this.vx * dt, this.y)) this.x += this.vx * dt;
     if (!this.blocked(this.x, this.y + this.vy * dt)) this.y += this.vy * dt;
+    // (Sideways, the legs walk at the pace you go.)
+    const pace = Math.abs(this.side) > Math.abs(this.speed) ? Math.abs(this.side) : this.speed;
     if (a.name === 'jump' && !a.done) a.step(dt);
     // Turning on the spot shuffles the feet.
-    else locomote(a, dt, Math.abs(this.speed) > 0.2 ? this.speed : Math.abs(turn) * 0.9);
+    else locomote(a, dt, Math.abs(pace) > 0.2 ? pace : ctl.strafe ? 0 : Math.abs(turn) * 0.9);
     this.z = a.name === 'jump' ? jumpHeight(a.t, 1.1) : 0;
     this.sync();
   }
