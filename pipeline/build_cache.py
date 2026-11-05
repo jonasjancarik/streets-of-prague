@@ -274,3 +274,40 @@ class Timings:
 
 def report_times(label, times):
     print(f"{label}: " + ", ".join(f"{name} {seconds:.2f} s" for name, seconds in times.items()), flush=True)
+
+
+def _span(seconds):
+    minutes = round(seconds / 60)
+    if seconds < 90:
+        return "under 2 min"
+    if minutes < 60:
+        return f"about {minutes} min"
+    return f"about {minutes // 60} h {minutes % 60:02d} min"
+
+
+class Eta:
+    """How long the rest of a run will take, for its progress lines: `eta(done)` after each
+    item gives ", about 12 min left (done around 14:05)", or "" while it's too early to say.
+    Items finish at uneven rates (a dense city chunk takes minutes, a field seconds, and a
+    pool hands back several at once), so the rate is the average of the whole run so far
+    and of the latest stretch (the last tenth of the items, at least 20): the first keeps
+    one slow item from swinging it, the second follows a run that speeds up or slows down."""
+
+    def __init__(self, total):
+        self.total, self.started, self.seen = total, time.monotonic(), []
+
+    def __call__(self, done):
+        now = time.monotonic()
+        self.seen.append((done, now))
+        elapsed, left = now - self.started, self.total - done
+        if done < 3 or elapsed < 10 or left <= 0:
+            return ""
+        rate = done / elapsed
+        window = max(20, self.total // 10)
+        recent = [p for p in self.seen if p[0] >= done - window]
+        if len(recent) >= 10 and now > recent[0][1]:
+            rate = (rate + (done - recent[0][0]) / (now - recent[0][1])) / 2
+        self.seen = self.seen[-window - 1:]
+        seconds = left / rate
+        finish = time.strftime("%H:%M", time.localtime(time.time() + seconds))
+        return f", {_span(seconds)} left (done around {finish})"

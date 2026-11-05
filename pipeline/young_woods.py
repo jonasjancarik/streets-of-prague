@@ -260,6 +260,7 @@ def run(area, tiles, jobs, write=True):
         before = layers.read_layer(area, "young") or {}
         found, cleared, keys = dict(before.get("tiles", {})), dict(before.get("clear", {})), dict(before.get("inputs", {}))
     by_key = {f"{j[2]}_{j[3]}": tile_key(j[5], j[6]) for j in todo}
+    eta = build_cache.Eta(len(todo))
     with ProcessPoolExecutor(jobs) as pool:
         for n, (k, polys, clear, share, clear_share, wood_m2) in enumerate(pool.map(tile_job, todo, chunksize=2), 1):
             shares.append((k, share, wood_m2, clear_share))
@@ -270,8 +271,9 @@ def run(area, tiles, jobs, write=True):
                 found[k] = polys
             if clear:
                 cleared[k] = clear
+            left = eta(n)
             if n % 50 == 0:
-                print(f"  {n}/{len(todo)} tiles in {time.time() - started:.0f} s", flush=True)
+                print(f"  {n}/{len(todo)} tiles in {time.time() - started:.0f} s{left}", flush=True)
     wood_total = sum(w for _, _, w, _ in shares)
     young_total = sum(s * w for _, s, w, _ in shares)
     clear_total = sum(c * w for _, _, w, c in shares)

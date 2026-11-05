@@ -403,6 +403,7 @@ def run(area, tiles, jobs, write=True):
         before = layers.read_layer(area, "treesize") or {}
         found, bands = dict(before.get("tiles", {})), dict(before.get("canopy", {}))
     started, total, sized, young, tops, radii = time.time(), 0, 0, 0, [], []
+    eta = build_cache.Eta(len(todo))
     with ProcessPoolExecutor(jobs) as pool:
         for n, (k, sizes, canopy_, count) in enumerate(pool.map(tile_job, todo, chunksize=2), 1):
             found.pop(k, None)
@@ -417,8 +418,9 @@ def run(area, tiles, jobs, write=True):
             young += len(sizes) - len(grown)
             tops += [s[2] for s in grown]
             radii += [s[3] for s in grown]
+            left = eta(n)
             if n % 100 == 0:
-                print(f"  {n}/{len(todo)} tiles in {time.time() - started:.0f} s", flush=True)
+                print(f"  {n}/{len(todo)} tiles in {time.time() - started:.0f} s{left}", flush=True)
     if tops:
         print(f"{sized} of {total} trees measured, {young} young; top 10/50/90 %: {np.percentile(tops, [10, 50, 90]).round(1).tolist()} m, "
               f"crown radius 10/50/90 %: {np.percentile(radii, [10, 50, 90]).round(1).tolist()} m")

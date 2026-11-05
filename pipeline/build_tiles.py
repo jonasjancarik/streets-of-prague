@@ -573,9 +573,10 @@ def main() -> None:
     print(f"{area}: {x1 - x0:.0f} x {y1 - y0:.0f} m, {len(todo)} chunks, layers {', '.join(sorted(wanted))}, {args.jobs} at a time; "
           f"{len(jobs)} chunks to build, {reused} layer outputs reused", flush=True)
 
+    eta = build_cache.Eta(len(jobs))
     for number, (ci, cj, lap) in enumerate(chunk_results(jobs, args.jobs), 1):
         steps = ", ".join(f"{k} {v:.1f}" for k, v in lap.items() if k not in ("total", "extract", "stats"))
-        print(f"chunk {number}/{len(jobs)} ({ci},{cj}) {lap['total']:.1f} s ({steps})", flush=True)
+        print(f"chunk {number}/{len(jobs)} ({ci},{cj}) {lap['total']:.1f} s ({steps}){eta(number)}", flush=True)
         build_cache.report_times(f"  extract {ci},{cj}", lap["extract"])
         print(f"  counts/cache {ci},{cj}: {json.dumps(lap['stats'], sort_keys=True)}", flush=True)
     if chunk_cache.inputs(area, meta, wanted, area_pbf, settings) != keys:

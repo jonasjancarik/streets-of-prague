@@ -1258,6 +1258,8 @@ def build(area, meta, jobs, tiles=None, limit=None):
             yield (area, meta, raw, {f"{di},{dj}": stock[(i + di, j + dj)] for di, dj in near},
                    {f"{di},{dj}": height(i + di, j + dj) for di, dj in [(0, 0), *near]})
     done, redone, covers, keys, nopic = 0, 0, {}, {}, 0
+    total = sum(1 for k in stock if want is None or k in want)
+    eta = build_cache.Eta(min(total, limit) if limit else total)
     if want is not None:  # a trial on some tiles adds to what the layer already has
         before = layers.read_layer(area, "cover") or {}
         covers, keys = dict(before.get("tiles", {})), dict(before.get("inputs", {}))
@@ -1271,8 +1273,9 @@ def build(area, meta, jobs, tiles=None, limit=None):
                 nopic += 1
             elif got["areas"] or got["trees"]:
                 covers[f"{i}_{j}"] = got
+            left = eta(done)
             if done % 100 == 0:
-                print(f"  {done} tiles ({redone} worked out, {nopic} outside the photographs) in {time.time() - started:.0f} s", flush=True)
+                print(f"  {done}/{eta.total} tiles ({redone} worked out, {nopic} outside the photographs) in {time.time() - started:.0f} s{left}", flush=True)
     sources = build_cache.sources([IPR_DSM])
     layers.write_layer(area, "cover", {
         "tile": meta["tile"], "made_for": sorted(keys), "tiles": covers, "inputs": keys,
