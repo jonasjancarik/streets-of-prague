@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { stepEdges, stampEdges, parapetArrays, EDGE_DROP } from '../src/stepEdges.ts';
+import { bridgeApproaches } from '../src/roadLevels.ts';
 
 // A terrace (label 2) over the west half of a 100 m tile, `drop` m below the rest.
 const box = [0, 0, 100, 100];
@@ -51,4 +52,19 @@ test('the edge is solid in the grid on the higher side, and parapets have geomet
   assert.equal(at(48, 80), 0);
   const p = parapetArrays(edges);
   assert.ok(p.position.length > 0 && p.position.length === p.normal.length && p.position.every(Number.isFinite));
+});
+
+// A bridge can open a pad at its raised stretch's ends, including where a raw edge
+// continues onto ground. Its overhead middle must leave the wall below intact.
+test('bridge approaches open pads at level transitions, not below the middle of a deck', () => {
+  const edge = { bridge: true, pts: [[10, 40], [90, 40]], levels: [[0, 0], [40, 1], [70, 0]] };
+  const ways = bridgeApproaches(edge).map((pts) => ({ pts, half: 3 }));
+  const approach = stepEdges(terrace, [], height(3), box, ways);
+  assert.ok(approach.every((e) => Math.abs((e.a[1] + e.b[1]) / 2 - 40) >= 3));
+  assert.ok(metres(approach) < 95);
+  const middle = { bridge: true, pts: [[10, 40], [90, 40]], level: 1 };
+  const below = stepEdges(terrace, [], height(3), box, bridgeApproaches(middle).map((pts) => ({ pts, half: 3 })));
+  assert.equal(metres(below), 100);
+  assert.deepEqual(bridgeApproaches({ ...edge, bridge: false }), []);
+  assert.deepEqual(bridgeApproaches({ bridge: true, pts: edge.pts, level: 0 }), []);
 });

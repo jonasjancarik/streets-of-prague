@@ -32,6 +32,7 @@ import { overheadWires } from './wires.ts';
 import { posts, type Post } from './posts.ts';
 import { fences, type FenceSection } from './fences.ts';
 import { stepEdges, type Crosser, type StepEdge } from './stepEdges.ts';
+import { byLevel, bridgeApproaches } from './roadLevels.ts';
 import { fenceMeshes } from './map/fences.ts';
 import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
@@ -127,44 +128,6 @@ const CLIMB = 1.5;
 const ANCHOR_REACH = 400;
 const DRAWN_KEEP = 40;
 
-// Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
-// the same north-west as the sun: 1 = unchanged, darker on slopes facing away. The
-// ground's broad variation (broad) is multiplied in, sparing the shader its noise.
-// `around(di, dj)`: the neighbouring tile's heights (hm) if it is loaded and shares this
-// tile's edge points, for the slope at the edge; `edges()` shades the edges again once
-// a neighbour has come.
-// An edge cut where it changes level along itself (RawStreetEdge.levels): its stretches,
-// each with its level; whole, with its one level, when it doesn't.
-function byLevel(e: { pts: Point2[]; level?: number; levels?: [number, number][] }): { pts: Point2[]; level?: number }[] {
-  if (!e.levels || e.levels.length < 2) return [{ pts: e.pts, level: e.level }];
-  const out: { pts: Point2[]; level?: number }[] = [];
-  let k = 0, s = 0, cur: Point2[] = [e.pts[0]];
-  for (let i = 0; i < e.pts.length - 1; i++) {
-    const a = e.pts[i], b = e.pts[i + 1], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    while (k + 1 < e.levels.length && e.levels[k + 1][0] <= s + d) {
-      const f = d ? (e.levels[k + 1][0] - s) / d : 0, at: Point2 = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-      cur.push(at);
-      out.push({ pts: cur, level: e.levels[k][1] });
-      cur = [at];
-      k++;
-    }
-    cur.push(b);
-    s += d;
-  }
-  out.push({ pts: cur, level: e.levels[k][1] });
-  return out.filter((part) => part.pts.length > 1);
-}
-
-// The two ends of a bridge's way, each as a short line from 4 m inside the bridge to
-// 4 m out along the street it continues.
-function bridgeEnds(pts: Point2[], reach = 4): Point2[][] {
-  const end = (a: Point2, b: Point2): Point2[] => {
-    const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / d, uy = (b[1] - a[1]) / d, r = Math.min(reach, d);
-    return [[a[0] - ux * reach, a[1] - uy * reach], [a[0] + ux * r, a[1] + uy * r]];
-  };
-  return pts.length < 2 ? [] : [end(pts[0], pts[1]), end(pts[pts.length - 1], pts[pts.length - 2])];
-}
-
 // Which bridge level the tram track at a point is on (0: none), from the stretches the
 // map lists (TileJSON.deckRails): that of the stretch within 2 m, the nearest.
 function deckRailLevel(stretches: { level: number; pts: Point2[] }[]) {
@@ -182,6 +145,12 @@ function deckRailLevel(stretches: { level: number; pts: Point2[] }[]) {
   };
 }
 
+// Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
+// the same north-west as the sun: 1 = unchanged, darker on slopes facing away. The
+// ground's broad variation (broad) is multiplied in, sparing the shader its noise.
+// `around(di, dj)`: the neighbouring tile's heights (hm) if it is loaded and shares this
+// tile's edge points, for the slope at the edge; `edges()` shades the edges again once
+// a neighbour has come.
 function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds, n: number, step: number, ref: number,
   around: ((di: number, dj: number) => Float32Array | null) | null, terraces: Terrace[] | undefined) {
   // Heights in metres above `ref` (the game's y = 0), bilinear and clamped to the tile.
@@ -1268,7 +1237,7 @@ export class TileWorld {
     // street goes on across onto the deck.)
     const crossers = [
       ...clipped.filter((e) => !e.bridge && !e.tunnel).map((e) => ({ pts: e.pts, half: e.width / 2 + 2.5, hw: 'drive' })),
-      ...edges.filter((e) => e.bridge).flatMap((e) => byLevel(e).filter((part) => part.level).flatMap((part) => bridgeEnds(part.pts)).map((pts) => ({ pts, half: e.width / 2 + 2.5, hw: 'drive' }))),
+      ...edges.flatMap((e) => bridgeApproaches(e).map((pts) => ({ pts, half: e.width / 2 + 2.5, hw: 'drive' }))),
       ...(this.walkBy.get(k) || []).filter((e) => !e.bridge && !e.tunnel).flatMap((e) => clipLine(e.pts, t.box).map((pts) => ({ pts, half: Math.max(1.5, e.width / 2 + 0.5), hw: e.hw }))),
     ];
     const outlines = t.buildings.filter(grounded).map((b) => ({ rings: b.rings }));

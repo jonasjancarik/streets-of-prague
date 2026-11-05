@@ -111,6 +111,9 @@ okruh deck end).
   wrong with the streets round a place; `--save`/`--against` compare two builds.
 - `uv run --project pipeline python .agents/skills/terrain-steps/terrain_at.py praha lat lon`
   prints the lattice there, with labels and level heights.
+- `node scripts/check-step-edges.mjs praha` checks solid edges and parapets. It now
+  uses the same raised bridge-approach segments as the game (`src/roadLevels.ts`),
+  so bridge entrances are open in the offline check as well as at runtime.
 - A height map with the tunnels, bridges and streets drawn over it shows a trench
   or a hump at a glance. That's how the cutting at Kongresová showed up.
 - From above and from a low oblique angle, before and after:

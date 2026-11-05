@@ -8,6 +8,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { decodeHeights, pointLabels, heightSampler, terraceAt, flatTerraces } from '../src/terrain.ts';
 import { stepEdges } from '../src/stepEdges.ts';
+import { bridgeApproaches } from '../src/roadLevels.ts';
 
 const args = process.argv.slice(2), area = args.find((a) => !a.startsWith('--')) ?? 'ujezd';
 const list = args.includes('--list') ? Number(args[args.indexOf('--list') + 1]) : 15;
@@ -28,6 +29,7 @@ for (const f of readdirSync(`${dir}tiles`)) {
   const H = heightSampler(hm, t.box, n, step, labels, terraceAt(t.terraces), flatTerraces(t.terraces, 0));
   const ways = [
     ...(t.drive ?? []).filter((e) => !e.bridge && !e.tunnel).map((e) => ({ pts: e.pts, half: e.width / 2 + 2.5, hw: e.hw, car: true, name: e.name })),
+    ...(t.drive ?? []).flatMap((e) => bridgeApproaches(e).map((pts) => ({ pts, half: e.width / 2 + 2.5, hw: e.hw, car: true, name: e.name }))),
     ...(t.walk ?? []).filter((e) => !e.bridge && !e.tunnel).map((e) => ({ pts: e.pts, half: Math.max(1.5, e.width / 2 + 0.5), hw: e.hw, car: false, name: e.name })),
   ].filter((w) => clip(w.pts, t.box));
   const seen = new Set();
