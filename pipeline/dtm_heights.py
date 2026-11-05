@@ -583,7 +583,7 @@ def weir_points(weirs, shape, x_of, y_of, step):
     return out
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=()):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -644,6 +644,19 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         bi, bj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
         bridged[bj, bi] |= shapely.contains_xy(grown, x_of(bi), y_of(bj))
         beneath[bj, bi] |= shapely.contains_xy(shape, x_of(bi), y_of(bj))
+    # (And `cut`: under a bridge over an underpass's cutting, structures.cuttings, where of
+    # a surface on two levels it's the lower that's the ground, the street in the cutting.)
+    cut = np.zeros(grid.shape, dtype=bool)
+    cut_under = np.zeros(grid.shape, dtype=bool)
+    for shape in cuts:
+        bx0, by0, bx1, by1 = shape.bounds
+        ia, ib = max(0, int(np.ceil((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.floor((bx1 - x_of(0)) / step)))
+        ja, jb = max(0, int(np.ceil((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.floor((by1 - y_of(0)) / step)))
+        if ia > ib or ja > jb:
+            continue
+        bi, bj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
+        cut[bj, bi] |= shapely.contains_xy(shape.buffer(UNDER_BRIDGE), x_of(bi), y_of(bj))
+        cut_under[bj, bi] |= shapely.contains_xy(shape.buffer(1.0), x_of(bi), y_of(bj))
     street = np.zeros(grid.shape, dtype=bool)
     which = np.zeros(grid.shape, dtype=np.int32)  # the surface each street point is on, from 1
     for a, b in zip(starts, np.r_[starts[1:], len(owner)]):
@@ -673,13 +686,21 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         z = points[own, 2][near]
         split = (z.max(axis=1) - z.min(axis=1) > LEVELS) & bridged[gj, gi]
         if split.any():
-            wgt = np.where(split[:, None] & (z < z.max(axis=1)[:, None] - 1.0), 0.0, wgt)
+            low = split & cut[gj, gi]
+            wgt = np.where((split & ~low)[:, None] & (z < z.max(axis=1)[:, None] - 1.0), 0.0, wgt)
+            wgt = np.where(low[:, None] & (z > z.min(axis=1)[:, None] + 1.0), 0.0, wgt)
             two_levels += int(split.sum())
         grid[gj, gi] = (wgt * z).sum(axis=1) / wgt.sum(axis=1)
         street[gj, gi] = True
         which[gj, gi] = owner[a] + 1
         surfaces += 1
         street_points += len(gi)
+
+    # Right under a bridge over an underpass's cutting the ground is the cutting's, as
+    # the terrain model has it, wherever the kerbs nearest came from.
+    back = cut_under & street & ~np.isnan(bare)
+    grid[back] = bare[back]
+    street[back] = False
 
     # A car street is level from kerb to kerb: each of its points takes the height of
     # its cross-section, not of the kerb points nearest it (see _level_across). Not

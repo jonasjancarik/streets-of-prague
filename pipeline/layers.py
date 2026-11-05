@@ -558,6 +558,13 @@ def assemble(area: str, strict=False) -> dict:
         if on_levels:
             for edges in (t["drive"], t["walk"]):
                 for e in edges:
+                    cut = on_levels.over_cutting(e)
+                    if cut:  # (a street on the ground over an underpass's cutting: see structures.cuttings)
+                        if len(cut) > 1:
+                            e["levels"] = cut
+                        else:
+                            e["level"] = cut[0][1]
+                        continue
                     level = on_levels.edge(e)
                     if level is not None:
                         e["level"] = level

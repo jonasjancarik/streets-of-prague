@@ -348,7 +348,10 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   };
   if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones })), masks: [] };
   const T = height || (() => 0);
-  const lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !e.bridge && !e.tunnel), buildings, parkingZones, bridges: false }));
+  // (A street on the ground with a level is on a bridge over an underpass's cutting
+  // there, pipeline/structures.py's cuttings: painted on its deck.)
+  const onDeck = (e: GroundRoadEdge) => !!e.bridge || (!e.tunnel && (e.level ?? 0) > 0);
+  const lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, bridges: false }));
   const masks = levels.map((l) => levelMask(box, l.polys, l.level));
   const on = (k: number, x: number, y: number) => onMask(masks[k], x, y);
   // Each street on a bridge or in a tunnel is painted on one level, and each stretch of
@@ -359,8 +362,8 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   const indexOf = new Map(levels.map((l, i) => [l.level, i]));
   const paintOn = new Map<number, GroundRoadEdge[]>();
   for (const e of edges) {
-    if (!e.bridge && !e.tunnel) continue;
-    const k = e.level !== undefined && indexOf.has(e.level) ? indexOf.get(e.level)! : mostlyOn(e.pts, (x, y) => levels.map((l, i) => (l.kind === (e.bridge ? 'bridge' : 'tunnel') && on(i, x, y) ? i : -1)).filter((i) => i >= 0));
+    if (!onDeck(e) && !e.tunnel) continue;
+    const k = e.level !== undefined && indexOf.has(e.level) ? indexOf.get(e.level)! : mostlyOn(e.pts, (x, y) => levels.map((l, i) => (l.kind === (onDeck(e) ? 'bridge' : 'tunnel') && on(i, x, y) ? i : -1)).filter((i) => i >= 0));
     if (k >= 0) paintOn.set(k, [...(paintOn.get(k) || []), e]);
   }
   const trams = d.rails.filter((r) => r.kind === 'tram').map((r) => r.pts);

@@ -1234,6 +1234,16 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   up to the bridge's outline (without that, its last metres before a bridge over a
   cutting kept the cutting's heights and sagged).
   `ipr_terrain.py --no-level` builds without it, to compare.
+  A short underpass that IPR's terrain model shows as an open cutting (it leaves the
+  deck over it out, as it does every bridge's) is turned round to match the model
+  (`structures.cuttings`): a tunnel cars use, under 80 m, crossed by a car street whose
+  terrain dips over 2 m under it while the street is about level from side to side. The
+  underpass goes on the ground in its cutting, and the street over it onto a short
+  bridge (a way marked `cut`, without the flat terraces of `pads`). The street keeps its
+  edge on the ground, with the deck's stretch as a level (`OnLevels.over_cutting`), and
+  the game paints that stretch on the deck (`onDeck` in `src/ground.ts`). Under such a
+  bridge the ground is the terrain model's cutting. The build log lists each one
+  (`cutting: …`). See `docs/road-surface-findings.md`.
   Each grid point also has a label
   (plain ground, water, or a terrace at a retaining wall's foot, whose outline is in the
   tile's `terraces`), stored after the heights in `<tile>.height.bin`. Where the labels

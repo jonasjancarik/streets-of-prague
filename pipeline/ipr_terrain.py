@@ -392,7 +392,7 @@ def main() -> None:
     # filled sheet by sheet, so memory follows the tiles that exist, not the bbox. The
     # step divides the tile, so tile (i, j) starts at lattice point (i * N, j * N).
     tiles, boxes, outlines, roads, ways, water, by_water, driven = {}, {}, [], [], [], [], [], []
-    weirs, streets = [], {}
+    weirs, streets, street_edges = [], {}, {}
     for i, j, t in layers.tiles(area, meta):
         tiles[(i, j)] = np.full((N + 1, N + 1), np.nan, dtype=np.float32)
         boxes[(i, j)] = box(*t["box"])
@@ -403,6 +403,7 @@ def main() -> None:
             if not e.get("bridge") and len(e["pts"]) > 1 and e["id"] not in streets:
                 half = min(e["width"] / 2, *(e.get("kerb") or [e["width"] / 2]))
                 streets[e["id"]] = (LineString(e["pts"]), half)
+                street_edges[e["id"]] = e
         if t["areas"].get("water"):
             for kind in ("road", "sett", "path", "dirt"):
                 here = [Polygon(r[0], r[1:]).buffer(0) for r in t["roads"].get(kind, [])]
@@ -456,13 +457,21 @@ def main() -> None:
                     arr[ok] = h[ok]
                     swapped += int(ok.sum())
         print(f"  DMR 5G at {swapped} points")
+    # A short underpass in an open cutting is on the ground, and the streets over it on
+    # bridges (structures.cuttings), before the survey, which leaves the ground under
+    # bridges alone.
+    dropped, cut_bridges = structures.cuttings(ways, street_edges, sampler(tiles, N, T, step, gx0, gy0))
+    if dropped:
+        ways = [w for w in ways if w["id"] not in dropped] + cut_bridges
+        print(f"  {len(dropped)} underpasses in an open cutting: on the ground, {len(cut_bridges)} streets over them on bridges")
     # Streets and water from the survey on the ground (dtm_heights.py).
     labels, terraces = {}, {}
     if not args.no_survey:
         surveyed = dtm_heights.apply(area, AREAS[area], krovak_to_local(local), tiles, N, step, gx0, gy0, unary_union(water) if water else None, boxes, by_water,
                                       [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, [] if args.walls_on_streets else list(streets.values()), args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown, valley_smooth=not args.valley_nearest,
                                       bridges=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1] + list(outlines),
-                                      drawn=drawn_walls(local), level_across=not args.no_level)
+                                      drawn=drawn_walls(local), level_across=not args.no_level,
+                                      cuts=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w.get("cut")])
         labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")
