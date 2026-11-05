@@ -1,6 +1,7 @@
 ---
 read_when:
   - Trying the experimental Italská road profile or comparing its road and vehicle heights
+  - Deciding whether to fit a road beside a retaining wall
 ---
 
 # Italská road profile pilot
@@ -46,8 +47,8 @@ cloned worktree.
 | Largest checked mesh-to-vehicle height difference in the core | 0.761 m | 0.008 m |
 
 The fitted road descends 2.76 m with a 2.07% cross-slope and a longitudinal
-grade of 4.7–6.8%. The largest sampled
-mesh-to-vehicle height difference in the end and shoulder transitions was 0.030 m.
+grade of 4.7–6.8%. The largest sampled mesh-to-vehicle height difference in the
+end and shoulder transitions was 0.030 m.
 The withheld stations use the same survey lines as nearby fitting stations, so
 their residuals measure interpolation within the source.
 
@@ -55,7 +56,47 @@ Only the pilot edge's results changed among 396 nearby streets. The adjacent
 Vozová junction kept the same sampled height. Two independently meshed synthetic
 tiles agree along a shared edge within 0.01 mm. The real Italská strip is inside
 one tile. A sedan completed one test drive in each variant without damage, and the
-fixed top-down views showed continuous paving and lane markings.
+fixed top-down views showed continuous paving and lane markings. At 30 sampled
+marking overlaps, paint triangles ranged from 0.6 mm below the asphalt to
+1.0 mm above it. The at-grade layers write no depth, and stencil rank places
+the markings over the asphalt regardless of these height differences.
 
 The affected tile's road and sett layers increased from 11,050 to 15,603
 triangles. This pilot did not measure frame times.
+
+
+## Hořejší nábřeží
+
+The same profile cannot safely cover the riverward kerb of edge
+`21896519>8571419383>0` in tile `53_58`. The existing flatness check finds 21%
+lean at 50.07412, 14.40960. The edge is 27.6 m long and bends up to 1.18 m
+away from the straight line between its ends.
+
+At 8 m along that edge, the upper carriageway occupies offsets −3.57 to
++3.42 m. Negative offsets are toward the river. Terrace 5 starts at the
+riverward kerb and extends from −3.57 to −3.83 m. The lower carriageway starts
+at −4.66 m. Two DTM wall lines cross this section at −3.56 and −3.82 m. The
+cache retains their position but drops their heights. The nearest road-edge
+height observations in the DTM cache are on the inland side of the upper road
+(+3.41 m, 193.74 m a.s.l.) and the far edge of the lower road
+(−10.16 m, 190.27 m a.s.l.).
+
+| Offset from the upper road centre | Surface | Game height a.s.l. |
+|---:|---|---:|
+| −3.60 m | Terrace 5 | 190.60 m |
+| −3.50 m | Upper road at the riverward edge | 192.44 m |
+| −2.73 m | Upper road, riverward sample | 192.78 m |
+| 0.00 m | Upper road centre | 193.40 m |
+| +2.88 m | Upper road, inland sample | 193.91 m |
+
+The profile's 2 m shoulder would leave at most 1.57 m of core on either side
+of the centreline before reaching the terrace. That misses both flatness
+samples. Even a 10 m trial strip from stations 5 to 15 with a 3.5 m half-width
+and 2 m shoulders intersects 15.82 m² of terrace 4 and 2.81 m² of terrace 5.
+The generator rejected it.
+
+A patch here needs to follow the curved road polygon and stop at the surveyed
+wall line on the river side. Its riverward edge needs its own height constraint
+to join the wall top while keeping the height of the terrace and lower road.
+The road and terrace need separate edges at their shared plan position so the
+mesh and the vehicle sampler preserve the step.
