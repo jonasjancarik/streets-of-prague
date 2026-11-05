@@ -100,3 +100,40 @@ wall line on the river side. Its riverward edge needs its own height constraint
 to join the wall top while keeping the height of the terrace and lower road.
 The road and terrace need separate edges at their shared plan position so the
 mesh and the vehicle sampler preserve the step.
+
+### Original wall heights and the trial fit
+
+The original Prague 5 ZPS package, `VS_CZ010_MOMC_500143_20260831_ZPS_KR.gpkg.zip`,
+supplies the missing height. At the 8 m section above, wall record
+`100085041784` is 193.89 m a.s.l. and coincides with the upper asphalt edge.
+The opposite kerb `100021615720` is 193.74 m, a cross-slope of about 2.2%.
+Both have horizontal and vertical accuracy class 3 and acquisition code 1.
+The foot of the wall, record `100085041782`, is 190.50 m and has vertical
+class 5. [ČÚZK accuracy classes](https://dtmwiki.cuzk.gov.cz/01_pravidla/01_zaklad/02_presnost)
+
+An offline trial followed the curved carriageway along the existing terrace
+cut. Its core used the wall top and inland kerb. Cubic joins matched the
+existing road heights and slopes at both ends, and a narrow blend inside the
+inland kerb left the adjoining pavement alone. Stations here are measured along
+the straight chord of the OSM edge. The patch ran from −10.5 to 27.25 m, with
+the survey-constrained core from 2 to 9 m. The check sampled every 0.25 m from
+−16 to 42 m, including the approaches beyond the fit.
+
+The largest river-side wheel-path grade fell from 46.4% to 12.3% within the
+patch. The largest remaining grade, 22.4%, was outside it. The centreline
+bump measured against samples 3 m to either side fell from 0.160 m to 0.059 m. The inland kerb itself stayed at its existing height, with a mean absolute
+difference of 0.310 m in the core. The joins put the upper edge below the survey.
+
+| Survey comparison | Stations | Mean absolute difference | Largest difference |
+|---|---:|---:|---:|
+| Core wall top, used as a constraint | 29 | 0.000 m | 0.000 m |
+| South join, wall top | 50 | 0.274 m | 0.499 m |
+| North join, wall top | 73 | 0.653 m | 1.107 m |
+| North join, separately surveyed river-side kerb | 24 | 0.908 m | 1.109 m |
+
+At station 22 m the surveyed wall top is 194.17 m and the trial is 193.06 m.
+The separate kerb is still 194.13–194.16 m farther north, as the distance
+between it and the wall grows from 3 cm to over a metre. An approach fit there
+needs to follow the road once it separates from the wall, while preserving the
+wall as a separate feature. The trial stayed offline because its smoother
+joins disagreed with both sources.
