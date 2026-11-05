@@ -143,6 +143,20 @@ other work, every chunk worked out again: `build_tiles.py praha` 60 min,
 sampling's cache keys had changed), `young_woods.py build` 8 min, `layers.py` 1 min,
 `tree_sizes.py build` 41 min, `layers.py --strict` 1 min: about 3 h 10 min for `praha`.
 
+Measured on 5 November 2026, main checkout, the machine at a load of about 3, every
+chunk worked out again (a pipeline change and the survey reach recomputed):
+`build_tiles.py praha` 64 min, `ipr_buildings.py` 4 min, `ipr_terrain.py` 4 min,
+`ground_cover.py build` 17 min (5,234 of 7,323 tiles worked out), `young_woods.py build`
+2 min, `layers.py` 1 min, `tree_sizes.py build` 9 min, `layers.py --strict` 1 min: about
+1 h 45 min for `praha`; `centrum` 6 min, `ujezd` 2 min, the lamps 1.5 min, so 1 h 53 min
+for everything.
+
+The long steps (`build_tiles.py`, `ground_cover.py`, `young_woods.py`, `tree_sizes.py`)
+end their progress lines with the time left and when they should be done. In
+`build_tiles.py` it runs low for the first half: the chunks go column by column, from
+the light edge to the dense middle. On 5 November it said 11:42 at the start and 12:42
+halfway, and the step finished at 12:21; from chunk 200 of 252 on it was within a minute.
+
 ## Checking the result
 
     node scripts/check-data-format.mjs public/data
