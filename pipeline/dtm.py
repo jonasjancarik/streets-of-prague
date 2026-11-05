@@ -208,6 +208,8 @@ def covered(lon, lat):
         kinds = surfaces() if any(PACKAGES.glob("*.zip")) else {}
         xy = [shapely.get_coordinates(geoms) for _, geoms in kinds.values() if len(geoms)]
         if not xy:
+            # Not kept on disk: an empty answer cached before the download stuck for
+            # weeks (its key doesn't see the packages arriving), so ask again next run.
             _reach = (0.0, 0.0, np.zeros((1, 1), bool))
         else:
             xy = np.concatenate(xy)
@@ -217,8 +219,8 @@ def covered(lon, lat):
             grid[cy, cx] = True
             grid = ndimage.binary_fill_holes(ndimage.binary_closing(np.pad(grid, 4), iterations=3))[4:-4, 4:-4]
             _reach = (x0, y0, grid)
-        CACHE.mkdir(parents=True, exist_ok=True)
-        build_cache.atomic(kept, pickle.dumps({"key": key, "reach": _reach}, protocol=5))
+            CACHE.mkdir(parents=True, exist_ok=True)
+            build_cache.atomic(kept, pickle.dumps({"key": key, "reach": _reach}, protocol=5))
     x0, y0, grid = _reach
     lon, lat = np.asarray(lon, float), np.asarray(lat, float)
     cx, cy = np.floor((lon - x0) / REACH_CELL[0]).astype(int), np.floor((lat - y0) / REACH_CELL[1]).astype(int)
