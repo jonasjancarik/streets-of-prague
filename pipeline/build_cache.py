@@ -72,7 +72,7 @@ CODE = {
                 "ipr_buildings.py": (*PROJECTION, "sheet_names", "search", "CACHE"),
                 "osm_area.py": ("AREAS", "OUT", "_polys", "_rings"),
                 "dtm_heights.py": (), "dtm.py": ("CACHE", "PACKAGES", "_wkb"),
-                "structures.py": ("build", "pads"), "dmr5g.py": (),
+                "structures.py": ("build", "pads"), "dmr5g.py": (), "ipr_lidar.py": (),
                 "terrain_keep.json": (), "terrain_walls.json": ()},
 }
 OSM_RUNTIME = ("osmnx", "geopandas", "pandas", "networkx", "requests", "scipy")

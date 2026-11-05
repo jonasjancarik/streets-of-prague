@@ -89,7 +89,7 @@ one. Seen on 18 October; the strict assemble after the tree sizes is the check.
 |---|---|---|
 | `build_tiles.py` | `.cache/osm/` (country extract, the area's and chunks' cuts and `.parsed.pkl`), `.cache/dtm/`, `.cache/trees/`, `public/data/<area>_parking.json` | `.cache/layers/<area>/{buildings,ground,streets,parking}/`, `completed/`, `meta.json`, and the OSM cuts |
 | `ipr_buildings.py` | buildings, ground and streets layers, `.cache/ipr/` (sheets, `parsed/`, `source/`), building ages and optional mesh colours | `tiles/*.ipr.bin.gz` in `public/data/<area>_now`, `.cache/layers/<area>/ipr.json` |
-| `ipr_terrain.py` | buildings, ground and streets layers, `.cache/ipr/` (terrain sheets, bridges), `.cache/dtm/` (survey heights), `terrain_keep.json`, `terrain_walls.json`, optional DMR 5G rasters | `tiles/*.height.bin.gz`, `*.levels.bin.gz`, `.cache/layers/<area>/terrain.json` |
+| `ipr_terrain.py` | buildings, ground and streets layers, `.cache/ipr/` (terrain sheets, bridges), `.cache/dtm/` (survey heights), `terrain_keep.json`, `terrain_walls.json`, optional IPR LiDAR or DMR 5G raster | `tiles/*.height.bin.gz`, `*.levels.bin.gz`, `.cache/layers/<area>/terrain.json` |
 | `ground_cover.py build` | the layers, the terrain layer, `.cache/cover/` (photos, surface model, model, results); asks IPR's server for photos of tiles it has none of | `.cache/layers/<area>/cover.json` |
 | `young_woods.py build` | ground layer, terrain layer, `.cache/cover/dsm_ipr` | `.cache/layers/<area>/young.json` |
 | `tree_sizes.py build` | the assembled `tiles/*.json`, the terrain layer, `.cache/cover/` (IPR's surface model, ČÚZK's DMP 1G, the summer photo at 1 m and 0.25 m and the colour-infrared one at 1 m: fetched for tiles that have none) | `.cache/layers/<area>/treesize.json` (each tree's height, crown, outline and colour; what grows where, on a 2 m grid); final assembly writes the tiles |
@@ -114,6 +114,32 @@ are reported as they finish; IPR sheets retain input order. Both refill the queu
 as results are consumed, cancel queued work on failure or early close, and wait
 for running workers to finish before closing the pool. This limits retained
 futures, not total memory: a single chunk or sheet can still be large.
+
+## Trying IPR's LiDAR terrain
+
+Use a worktree with its own map output and about 8 GB free for the download and
+import. From `pipeline/`:
+
+    temp=$(mktemp -d)
+    curl --fail --location --output "$temp/DTM.zip.part" \
+      https://www.arcgis.com/sharing/rest/content/items/97d2c9c11aa9478cb21b469b8a4f820e/data && \
+      mv "$temp/DTM.zip.part" "$temp/DTM.zip"
+    uv run --with 'tifffile==2026.10.15' --with 'imagecodecs==2026.10.10' ipr_lidar.py "$temp/DTM.zip"
+    uv run ipr_terrain.py ujezd --ipr-lidar .cache/ipr_lidar/2023
+
+The importer checks the archive's SHA-256 and its GeoTIFF against the supplied
+world file before publishing a memory-mapped cache. Its two files and the build
+option are tracked by `--resume` and strict assembly. The terrain build reads
+the cache without the TIFF packages. Use `--output` on the importer to create
+another cache directory.
+
+This switch samples IPR's 1 m bare-earth elevations in Bpv onto the existing
+terrain lattice before the street survey, water and bridges are applied. CityGML
+supplies the samples where the raster has no coverage. Builds without the switch
+use the existing CityGML terrain source, and `--dmr5g` is a separate experiment.
+The map index records the raster's source and archive checksum when it is used.
+Credit IPR Praha under CC BY for maps built with the raster.
+[IPR catalogue and licence](https://www.arcgis.com/sharing/rest/content/items/97d2c9c11aa9478cb21b469b8a4f820e/info/metadata/metadata.xml?format=default&output=html).
 
 ## How long
 

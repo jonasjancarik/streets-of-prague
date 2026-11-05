@@ -49,6 +49,7 @@ import layers
 import build_cache
 import dmr5g
 import dtm_heights
+import ipr_lidar
 import structures
 from osm_area import AREAS, OUT
 from ipr_buildings import CACHE, krovak_to_local, search, sheet_names
@@ -331,6 +332,8 @@ def source_paths(area, options):
         paths.extend(dtm_heights.survey_packages())
     if options.get("dmr5g"):
         paths.extend(dmr5g.raster_path(name) for name in dmr5g.BOXES)
+    if directory := options.get("ipr_lidar"):
+        paths.extend(ipr_lidar.source_paths(directory))
     return paths
 
 
@@ -342,7 +345,9 @@ def main() -> None:
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
     ap.add_argument("--no-survey", action="store_true", help="the terrain model's heights as they are, without the survey's (dtm_heights.py)")
     ap.add_argument("--no-feather", action="store_true", help="the ground beside surveyed streets as the terrain model has it (to compare)")
-    ap.add_argument("--dmr5g", action="store_true", help="prototype: ČÚZK's DMR 5G as the terrain in dmr5g.BOXES")
+    raster = ap.add_mutually_exclusive_group()
+    raster.add_argument("--dmr5g", action="store_true", help="prototype: ČÚZK's DMR 5G as the terrain in dmr5g.BOXES")
+    raster.add_argument("--ipr-lidar", type=Path, metavar="CACHE_DIR", help="use IPR's 2023 bare-earth raster where available")
     ap.add_argument("--shoulder", action="store_true", help="trial: the ground within 5 m of a surveyed street level with it")
     ap.add_argument("--walls-on-streets", action="store_true", help="retaining walls' terraces over car streets as they come (to compare)")
     ap.add_argument("--valley-nearest", action="store_true", help="made-up land beside water from the nearest water alone, cliffs and all (to compare)")
@@ -364,10 +369,11 @@ def main() -> None:
     local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
     options = {name: getattr(args, name) for name in (
         "no_survey", "no_feather", "dmr5g", "shoulder", "walls_on_streets", "valley_nearest", "cut_streets", "no_level")}
+    if args.ipr_lidar:
+        options["ipr_lidar"] = str(args.ipr_lidar.resolve())
     inputs = layers.stage_inputs(area, "terrain", options, meta)
     if args.resume and layers.resume_stage(area, "terrain", inputs, args.no_assemble):
         return
-    layers.begin_layer(area, "terrain")
     N, step = grid_step(T)
     gx0, gy0 = -ox, -oy
     items = catalogue()
@@ -386,6 +392,11 @@ def main() -> None:
                 if not dmr5g.raster_path(name).exists():
                     dmr5g.raster(name)
     inputs["sources"] = layers.stage_sources(area, "terrain", options)
+    if args.ipr_lidar:
+        try:
+            lidar_at, lidar_source = ipr_lidar.sampler(options["ipr_lidar"], local)
+        except ValueError as exc:
+            ap.exit(1, f"{exc}\n")
     timings.lap("prepare_downloads")
 
     # Heights on one lattice over the area (x = -ox + i * step), kept per tile and
@@ -436,6 +447,22 @@ def main() -> None:
         print(f"  {name}: {count} triangles", flush=True)
     print(f"  sheets read in {time.perf_counter() - started:.0f} s")
     timings.lap("sheets_raster_merge")
+    if args.ipr_lidar:
+        sampled = 0
+        offsets = np.arange(N + 1)
+        for (i, j), arr in tiles.items():
+            # Use integer lattice indices so adjacent tiles query the same shared points.
+            xs, ys = np.meshgrid(gx0 + (i * N + offsets) * step, gy0 + (j * N + offsets) * step)
+            h = lidar_at(xs, ys)
+            valid = np.isfinite(h)
+            if valid.any():
+                arr[valid] = h[valid]
+                lo, hi = min(lo, float(h[valid].min())), max(hi, float(h[valid].max()))
+                sampled += int(valid.sum())
+        if not sampled:
+            ap.exit(1, f"{area}: no valid IPR LiDAR samples in the map tiles\n")
+        print(f"  IPR LiDAR at {sampled:,} of {len(tiles) * (N + 1)**2:,} tile lattice points")
+        timings.lap("lidar_raster")
     if lo == math.inf:
         print("no terrain")
         return
@@ -523,6 +550,7 @@ def main() -> None:
     fine = lambda a: np.clip(np.round((np.nan_to_num(a, nan=100.0) - 100) * 100), 0, 65535).astype("<u2").tobytes()  # noqa: E731
     per_tile = {}
     payloads = {}
+    layers.begin_layer(area, "terrain")
     for (i, j), arr in tiles.items():
         k = f"{i}_{j}"
         layers.write_bin(out_dir / "tiles", f"{k}.height.bin", encode(arr, labels.get((i, j), plain)), payloads)
@@ -540,12 +568,14 @@ def main() -> None:
         layers.remove_bin(out_dir / "tiles", f"{k}.bare.bin")
     if inputs != layers.stage_inputs(area, "terrain", options):
         raise RuntimeError("terrain sources or processing code changed; keep output staged and rebuild")
+    terrain_index = {"step": step, "n": N + 1, "min": float(lo), "max": float(hi), "structures": sorted(per_tile), "wayLevels": True}
+    if args.ipr_lidar:
+        terrain_index["lidar"] = lidar_source
     layers.write_layer(area, "terrain", {"gzip": True, "tile": T, "made_for": [f"{i}_{j}" for i, j in tiles], "tiles": per_tile,
                                          "terraces": {f"{i}_{j}": v for (i, j), v in terraces.items()},
                                          # Each bridge or tunnel way's level, for the streets and tram tracks on them (structures.OnLevels).
                                          "ways": way_levels,
-                                         **inputs, "payloads": payloads,
-                                         "index": {"step": step, "n": N + 1, "min": float(lo), "max": float(hi), "structures": sorted(per_tile), "wayLevels": True}})
+                                         **inputs, "payloads": payloads, "index": terrain_index})
     print(f"terrain {lo:.0f}–{hi:.0f} m for {len(tiles)} tiles")
     timings.lap("encode_write")
     if not args.no_assemble:
