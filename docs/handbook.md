@@ -1230,6 +1230,9 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   (`_level_across`), not the heights of whichever kerb is nearest, so hillside streets
   don't lean and twist from cell to cell. Kerbs of a street passing under or over it
   don't count, and where streets meet their heights are blended over a cell.
+  Points under a bridge are left as the ground below it, but the street is levelled right
+  up to the bridge's outline (without that, its last metres before a bridge over a
+  cutting kept the cutting's heights and sagged).
   `ipr_terrain.py --no-level` builds without it, to compare.
   Each grid point also has a label
   (plain ground, water, or a terrace at a retaining wall's foot, whose outline is in the
@@ -1250,7 +1253,8 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   The top of a step that drops 0.8 m or more stops cars and people (`src/stepEdges.ts`:
   solid in the tile's collision grid, with a low parapet; a quay less than 2.5 m above
   the water has none, the water stops you there). The edge is open over the width of
-  each street, path or stairs on the ground that crosses it. `node
+  each street, path or stairs on the ground that crosses it, and at each end of a bridge
+  (the flat terrace before it is a step over the ground under the deck). `node
   scripts/check-step-edges.mjs <area>` counts the edges and lists the car streets that
   cross the highest drops (places where the terrain or the map is wrong);
   `?nostepedges` turns the edges off.

@@ -155,6 +155,16 @@ function byLevel(e: { pts: Point2[]; level?: number; levels?: [number, number][]
   return out.filter((part) => part.pts.length > 1);
 }
 
+// The two ends of a bridge's way, each as a short line from 4 m inside the bridge to
+// 4 m out along the street it continues.
+function bridgeEnds(pts: Point2[], reach = 4): Point2[][] {
+  const end = (a: Point2, b: Point2): Point2[] => {
+    const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / d, uy = (b[1] - a[1]) / d, r = Math.min(reach, d);
+    return [[a[0] - ux * reach, a[1] - uy * reach], [a[0] + ux * r, a[1] + uy * r]];
+  };
+  return pts.length < 2 ? [] : [end(pts[0], pts[1]), end(pts[pts.length - 1], pts[pts.length - 2])];
+}
+
 // Which bridge level the tram track at a point is on (0: none), from the stretches the
 // map lists (TileJSON.deckRails): that of the stretch within 2 m, the nearest.
 function deckRailLevel(stretches: { level: number; pts: Point2[] }[]) {
@@ -1253,8 +1263,12 @@ export class TileWorld {
     const seedArray = new Float64Array(seeds);
     // The streets, paths and stairs on the ground: where one crosses a step in the
     // terrain, the step's edge is open (stepEdges.ts).
+    // (And a bridge's ends: the last metres of the street before it are a flat terrace,
+    // pipeline/structures.py's pads, a step over the ground under the bridge, which the
+    // street goes on across onto the deck.)
     const crossers = [
       ...clipped.filter((e) => !e.bridge && !e.tunnel).map((e) => ({ pts: e.pts, half: e.width / 2 + 2.5, hw: 'drive' })),
+      ...edges.filter((e) => e.bridge).flatMap((e) => byLevel(e).filter((part) => part.level).flatMap((part) => bridgeEnds(part.pts)).map((pts) => ({ pts, half: e.width / 2 + 2.5, hw: 'drive' }))),
       ...(this.walkBy.get(k) || []).filter((e) => !e.bridge && !e.tunnel).flatMap((e) => clipLine(e.pts, t.box).map((pts) => ({ pts, half: Math.max(1.5, e.width / 2 + 0.5), hw: e.hw }))),
     ];
     const outlines = t.buildings.filter(grounded).map((b) => ({ rings: b.rings }));

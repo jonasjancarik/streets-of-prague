@@ -631,16 +631,19 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     starts = np.flatnonzero(np.r_[True, owner[1:] != owner[:-1]]) if len(owner) else np.empty(0, dtype=int)
     surfaces = street_points = two_levels = 0
     # The lattice points under one of the map's bridges (see LEVELS).
+    # (And `beneath`: right under one, without the margin.)
     bridged = np.zeros(grid.shape, dtype=bool)
+    beneath = np.zeros(grid.shape, dtype=bool)
     for shape in bridges:
-        shape = shape.buffer(UNDER_BRIDGE)
-        bx0, by0, bx1, by1 = shape.bounds
+        grown = shape.buffer(UNDER_BRIDGE)
+        bx0, by0, bx1, by1 = grown.bounds
         ia, ib = max(0, int(np.ceil((bx0 - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.floor((bx1 - x_of(0)) / step)))
         ja, jb = max(0, int(np.ceil((by0 - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.floor((by1 - y_of(0)) / step)))
         if ia > ib or ja > jb:
             continue
         bi, bj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
-        bridged[bj, bi] |= shapely.contains_xy(shape, x_of(bi), y_of(bj))
+        bridged[bj, bi] |= shapely.contains_xy(grown, x_of(bi), y_of(bj))
+        beneath[bj, bi] |= shapely.contains_xy(shape, x_of(bi), y_of(bj))
     street = np.zeros(grid.shape, dtype=bool)
     which = np.zeros(grid.shape, dtype=np.int32)  # the surface each street point is on, from 1
     for a, b in zip(starts, np.r_[starts[1:], len(owner)]):
@@ -679,8 +682,10 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         street_points += len(gi)
 
     # A car street is level from kerb to kerb: each of its points takes the height of
-    # its cross-section, not of the kerb points nearest it (see _level_across).
-    levelled_points = _level_across(grid, street & ~bridged, points, streets, x_of, y_of, step) if level_across else 0
+    # its cross-section, not of the kerb points nearest it (see _level_across). Not
+    # under a bridge (that's the ground below it), but right up to one: the street's
+    # last metres before a bridge over a cutting kept the cutting's heights and sagged.
+    levelled_points = _level_across(grid, street & ~beneath, points, streets, x_of, y_of, step) if level_across else 0
 
     # A street surveyed in an underpass is under the ground, not on it: where the map has
     # a tunnel and the survey is well below the terrain model, the terrain stays.
