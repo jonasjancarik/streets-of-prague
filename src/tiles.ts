@@ -14,6 +14,7 @@ import type { Footprint } from './facades.ts';
 import { Zones, parkCarsSteps, inRing, inPoly } from './parking.ts';
 import { finish } from './parkingClearance.ts';
 import { openWater } from './river.ts';
+import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
 import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary, withRamps } from './terrain.ts';
 import type { Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
@@ -494,6 +495,7 @@ export class TileWorld {
   skyTotals: { coalesced: number; cancelled: number };
   landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
   furnitureReserved: Promise<Float32Array | null>;
+  private roadProfiles: Promise<ReturnType<typeof readRoadProfile>> | null;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
     view: (who: Tracked) => { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
@@ -508,6 +510,9 @@ export class TileWorld {
     this.photos = new Map();
     this.area = area;
     this.index = index;
+    this.roadProfiles = new URLSearchParams(location.search).has('roadprofiles') ? fetch(dataUrl(area, 'road-profile.json'))
+      .then(async (r) => r.ok ? readRoadProfile(await r.json(), area, index.built) : null)
+      .catch(() => null) : null;
     loadFacadeAtlas();
     this.scene = scene;
     this.trees = new TreePool(scene);
@@ -1193,8 +1198,12 @@ export class TileWorld {
     const shared = !!terrain && Math.abs((terrain.n - 1) * terrain.step - (x1 - x0)) < 0.01;
     const around = shared ? (di: number, dj: number) => this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.hm ?? null : null;
     const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces) : null;
+    const pilot = this.roadProfiles && this.available.has(k) && shade ? await this.roadProfiles : null;
+    const roadProfile = pilot?.tiles.includes(k) ? pilot.profile : undefined;
+    if (shade && roadProfile) shade.sample = withRoadProfile(shade.sample, roadProfile, this.ref);
     const hAt = shade ? shade.sample : () => 0;
-    const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels, terraces: t.terraces, ref: this.ref } : null;
+    const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
+      terraces: t.terraces, ref: this.ref, ...(roadProfile ? { roadProfile } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     const structures = t.structures || [];
     const heights = levels && terrain ? decodeLevels(levels, terrain.n, structures.length, this.ref) : [];

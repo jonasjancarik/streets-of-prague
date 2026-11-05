@@ -8,7 +8,7 @@
 //
 //   node scripts/check-road-flatness.mjs [area, praha] [--data public/data] [--worst 25]
 //        [--near lat,lon[,metres]] [--save now.json] [--against before.json]
-//        [--profile <edge id or part of a name>] [--strict]
+//        [--roadprofiles] [--profile <edge id or part of a name>] [--strict]
 //
 // Per street, the worst of:
 // - step: a jump between two samples a metre apart that the slope either side doesn't
@@ -29,6 +29,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps } from '../src/terrain.ts';
+import { readRoadProfile, withRoadProfile } from '../src/roadProfiles.ts';
 import { onPolygons } from '../src/map/geo.ts';
 
 const args = {}, pos = [];
@@ -41,6 +42,9 @@ const root = new URL('..', import.meta.url).pathname;
 const area = pos[0] || 'praha', dir = join(args.data || join(root, 'public/data'), `${area}_now`);
 const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8'));
 const { tile: T, origin: [ox, oy], terrain } = index;
+const pilot = args.roadprofiles
+  ? readRoadProfile(JSON.parse(readFileSync(join(dir, 'road-profile.json'), 'utf8')), index.area, index.built) : null;
+if (args.roadprofiles && !pilot) throw new Error('No road profile for this map build');
 const REF = 100; // heights here are metres above 100 m a.s.l.
 const STEP = 1;     // m between samples
 const END = 4;      // m at each end left out, or the street's width if more (a junction)
@@ -76,10 +80,11 @@ function tileOf(i, j) {
     const levels = structures.length ? binary(`${k}.levels.bin`) : null;
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
     const roads = t.roads || {}, side = terraceAt(t.terraces);
+    const base = height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step,
+      pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF)) : () => NaN;
     out = {
       side: side || (() => 0),
-      ground: height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step, pointLabels(height, terrain.n),
-        terraceAt(t.terraces), flatTerraces(t.terraces, REF)) : () => NaN,
+      ground: withRoadProfile(base, height && pilot?.tiles.includes(k) ? pilot.profile : undefined, REF),
       levels: structures.map((s, n) => ({ level: s.level, on: onPolygons(s.polys), sample: withRamps(heightSampler(heights[n], t.box, terrain.n, terrain.step), s.ramps, REF) })),
       // (The carriageways, and outside the survey the asphalt the photos show.)
       road: [...['road', 'sett', 'bridge', 'trambed'].map((k) => roads[k]), ...['cover_asphalt', 'parking'].map((k) => t.areas?.[k])]

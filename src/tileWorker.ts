@@ -23,6 +23,7 @@ import type { WallLine } from './facades.ts';
 import { roofClutter, smokingChimneys } from './map/roofClutter.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
 import { flatTerraces, heightSampler, terraceAt, withRamps } from './terrain.ts';
+import { withRoadProfile } from './roadProfiles.ts';
 import { skyView } from './map/skyView.ts';
 import { stepEdges, stampEdges, parapetArrays } from './stepEdges.ts';
 import type { StepEdge } from './stepEdges.ts';
@@ -69,7 +70,12 @@ const appendTo = (a: BuildingArrays, d: DetailArrays | null, uv?: (x: number, y:
   return res;
 };
 
-const groundAt = (g: HeightGrid | null) => (g ? withRamps(heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, g.ref ?? 0)), g.ramps, g.ref ?? 0) : () => 0);
+function groundAt(g: HeightGrid | null) {
+  if (!g) return () => 0;
+  const ref = g.ref ?? 0;
+  const base = heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, ref));
+  return withRoadProfile(withRamps(base, g.ramps, ref), g.roadProfile, ref);
+}
 
 function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roofs']): BuildingArrays {
   const hAt = groundAt(ground);
@@ -309,7 +315,7 @@ function land({ data, seeds, ground, bridges, box, structures }: WorkerJobs['lan
     return r;
   };
   const trees = treeInstances(geo, hAt, room);
-  const edges = ground && data.stepEdges ? stepEdges(ground.terraces, data.areas.water ?? [], heightSampler(ground.hm, ground.box, ground.n, ground.step, ground.labels, terraceAt(ground.terraces), flatTerraces(ground.terraces, ground.ref ?? 0)), ground.box, data.crossers) : [];
+  const edges = ground && data.stepEdges ? stepEdges(ground.terraces, data.areas.water ?? [], hAt, ground.box, data.crossers) : [];
   const walls = joinWalls(wallArrays(data, hAt), parapetArrays(edges));
   const fences = fenceArrays(data, hAt);
   const sheds = shedArrays(data.sheds, hAt);
@@ -372,7 +378,8 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
       case 'ground': {
         const { d, ground, levels, ...opts } = event.data.data;
         const result = groundLayers(d, {
-          ...opts, height: ground ? groundAt(ground) : null, steps: ground?.labels ? ground.terraces ?? [] : null,
+          ...opts, height: ground ? groundAt(ground) : null, roadProfile: ground?.roadProfile,
+          steps: ground?.labels ? ground.terraces ?? [] : null,
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,
         });
         worker.postMessage({ id, result } satisfies WorkerResponse, layerBuffers(result));

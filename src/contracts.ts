@@ -1,3 +1,4 @@
+import type { RoadProfile } from './roadProfiles.ts';
 import type { Bounds, GeoData, Point2, Polygons } from './map/geo.ts';
 import type { RawStreetEdge } from './network.ts';
 import type { Ramp, Terrace } from './terrain.ts';
@@ -102,7 +103,7 @@ export interface TileJSON extends GroundTileData {
 
 // labels, terraces: the steps in the ground (terrain.ts, pointLabels), where the tile has any.
 // ramps: on a bridge level's grid, its stairs (terrain.ts, withRamps).
-export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; ref?: number; ramps?: Ramp[] }
+export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; ref?: number; ramps?: Ramp[]; roadProfile?: RoadProfile }
 // A level with its heights, for the tile workers.
 export interface LevelInput extends TileStructure { heights: HeightGrid }
 

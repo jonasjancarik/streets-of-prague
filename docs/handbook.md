@@ -1234,6 +1234,8 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   up to the bridge's outline (without that, its last metres before a bridge over a
   cutting kept the cutting's heights and sagged).
   `ipr_terrain.py --no-level` builds without it, to compare.
+  The [Italská profile pilot](road-profile-pilot.md) tries a separate, survey-fitted
+  road surface with `?roadprofiles` and a generated file for the current map build.
   A short underpass that IPR's terrain model shows as an open cutting (it leaves the
   deck over it out, as it does every bridge's) is turned round to match the model
   (`structures.cuttings`): a tunnel cars use, under 80 m, crossed by a car street whose
