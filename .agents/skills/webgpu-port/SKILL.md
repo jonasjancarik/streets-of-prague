@@ -10,7 +10,8 @@ selects the legacy `THREE.WebGLRenderer`. The default path uses TSL, three's nod
 language, which compiles to WGSL and can also target three's WebGL 2 backend.
 Legacy GLSL customizations need explicit TSL ports. Read `docs/performance-log.md`
 and `docs/optimisation-findings-007-012.md` for current results, and
-the `performance` skill before measuring. The older per-port timings below are
+the `performance` skill before measuring. The global `threejs-webgpu-performance` skill covers
+three's build caching, instancing limits, warm-up and TSL rules for any project. The older per-port timings below are
 historical observations, not claims about the current combined renderer.
 
 ## Where things stand

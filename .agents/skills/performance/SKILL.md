@@ -11,6 +11,12 @@ work and `docs/optimisation-findings-007-012.md` for the completed experiments a
 integration decisions. Historical timings below describe those runs, not a
 performance baseline for every later revision.
 
+What holds for any three.js WebGPU game (how three caches builds, instancing and the
+vertex-buffer limits, warm-up before play, phone GPUs, measuring over adb, frame pacing,
+staging scene changes) is in the global `threejs-webgpu-performance` skill
+(`~/.agents/skills/threejs-webgpu-performance`). This skill keeps what is specific to
+Streets of Prague: its bench, scenes, files and results.
+
 ## Measuring
 
 Use `scripts/bench.mjs` (it documents its options at the top). It loads the game in
@@ -161,22 +167,10 @@ established explanation for every regression; preserve the original evidence.
 The desktop benchmark launches Chrome with `--disable-frame-rate-limit` and
 `--disable-gpu-vsync`. Use that setup for matched cost comparisons, then verify
 the same driving route in a normally paced browser on the target device before
-claiming smoother play. Keep those results separate; an uncapped headless run
-does not establish displayed-frame pacing.
-
-Quiet Blocks documented a Pixel 5 change that removed unused bloom passes and
-improved throughput by about 10%, yet worsened p95 frame intervals from 89 to
-145 ms and median consecutive-interval variation from 11 to 33 ms. This is evidence
-that less work can deliver less evenly, not a recommendation to keep redundant
-rendering in this game.
-
-Record the raw frame-interval sequence alongside mean and tail times. A useful
-additional signal is `abs(interval[n] - interval[n - 1])`: compare its distribution
-and repeated short/long bursts at matching display cadence. Animation callbacks
-are a proxy for presentation, not proof of displayed frames; use a compositor or
-device trace if the visual result and callback timings disagree. Use raw timestamps,
-not clamped simulation `dt`, and retain genuine long stalls in the hitch report.
-Auto-quality sampling may exclude pauses, but that filter is not a stutter metric.
+claiming smoother play (see "Frame timing that matches what players feel" in the
+global skill's `references/measuring.md`). Use raw timestamps, not clamped
+simulation `dt`, and retain genuine long stalls in the hitch report. Auto-quality
+sampling may exclude pauses, but that filter is not a stutter metric.
 
 A graphics tier change is a hitch of its own when it rebuilds shaders: on WebGPU a
 material `dispose()` (as `Graphics.apply` did for every material when a shadow or
@@ -189,18 +183,8 @@ errors and the same shadows (see "Auto's tier changes and hitches" in the log).
 
 For a tile arrival or departure, distinguish worker completion, main-thread
 assembly, scene insertion/removal, first colour/shadow use, and retirement of GPU
-resources. A short JavaScript mutation can leave expensive work for the next
-renderer submission. A slow submission can in turn appear as a large frame
-interval on the following callback. Correlate adjacent frames and the preceding
-mutation instead of requiring all peaks to have the same timestamp.
-
-Keep main-thread preparation, CPU time inside renderer calls, frame gaps and GPU
-execution as separate measurements. A long interval with a short renderer call
-does not identify the GPU as the cause; inspect simulation, other tasks and browser
-scheduling too. `queue.onSubmittedWorkDone()` observes completion of previously
-submitted work and can alter pacing if awaited every frame; it is not an isolated
-GPU timer. Unsupported counters are unknown, not zero. Global counter changes
-during a particular object's render are leads, not proof that object caused them.
+resources. The global skill's `references/streaming-and-edits.md` explains why the
+cost lands on the next render and how to line stalls up with changes.
 
 ### Interpreting optimization results
 
@@ -425,13 +409,15 @@ but their results do not establish a general frame-rate gain; see the findings d
   of the tiles' shared graphs (ground, `buildings-procedural`, `cut-*`); give a new
   shared tile graph the same treatment. Never hold states of graphs made afresh per
   material: each would be kept for good.
-- **Every `InstancedMesh` gets a build of its own:** three.js puts `object.uuid` into the
-  render cache key (its instancing nodes bind that mesh's buffers), whatever the
-  material. Before pooling, each tile's new tree meshes paid for the tuft shader
+- **Instanced meshes and builds.** Until the upgrade to r187 (1 November 2026), three.js
+  put `object.uuid` into the render cache key of every `InstancedMesh`, so each got a
+  build of its own. Before pooling, each tile's new tree meshes paid for the tuft shader
   (~14 ms at 1× on an M5, ~60 ms on a Pixel 5), and `CarPool.render` replaced meshes
-  on growth. Keep and reuse instanced meshes rather than making new ones. Check
-  stable UUIDs/buffers, bounds after reuse, overflow, and shared-resource disposal.
-  Don't patch the key: a shared build would bind the first mesh's buffers.
+  on growth. Since r187, instanced meshes share a build while geometry attributes +
+  instance matrix + `instanceColor` fit in 8 vertex buffers; past that each mesh is
+  still built on its own (see the global skill's `references/three-webgpu.md`).
+  Keep and reuse instanced meshes either way. Check stable UUIDs/buffers, bounds after
+  reuse, overflow, and shared-resource disposal.
 - **Long main-thread work for a tile goes through `TileWorld`'s jobs** (a generator
   run from `update()` for at most `sliceMs` a frame; `loadNow` runs it at once).
   Parked cars do since 26 October: the clearance sweeps had made them 110–220 ms in
@@ -511,17 +497,11 @@ core count: `--init "Object.defineProperty(navigator, 'hardwareConcurrency', { g
 
 ## Cross-project references
 
-Reviewed on 1 October 2026; use the methods, not the other projects' timings or
-renderer policies, as evidence for Streets of Prague:
-
-- `~/projects/quiet-blocks/docs/web-performance.md`: the bloom frame-pacing
-  regression, delayed renderer work and separate resource-lifetime workloads.
-- `~/projects/quiet-blocks/.agents/skills/quiet-blocks-renderer-performance/`:
-  `SKILL.md` and `references/edit-performance.md` cover completed-render staging,
-  pending upload ranges, cancellation and retention growth.
-- `~/projects/oss/hussite-wars-threejs/.claude/skills/3d-performance/SKILL.md`:
-  browser-pane cadence and renderer-counter caveats. Its on-demand idle battle
-  loop is not a drop-in policy for this continuously simulated city.
+The global `threejs-webgpu-performance` skill gathers what Quiet Blocks, Sídliště
+and Hussite Wars found (5 November 2026), with each project's own notes listed at its
+top. Use the methods, not the other projects' timings or renderer policies, as
+evidence for Streets of Prague. When something learnt here holds for any three.js
+WebGPU game, add it there too.
 
 ## Before you commit
 
