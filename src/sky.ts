@@ -53,7 +53,7 @@ const MOODS: [number, Mood][] = [
 // the city's lights.
 const OVERCAST = new THREE.Color('#b3b8bf'), CITY_GLOW = new THREE.Color('#5a4d48');
 // The share of the sunlight that comes back off the street's sunlit walls into its shade.
-const BOUNCE = 0.06;
+const BOUNCE = 0.12;
 const SNOWY_GROUND =new THREE.Color('#b9bec6'), LIGHTNING = new THREE.Color('#dfe6ff');
 // Fog and mist, as seen (display colours): by day, at night, at night under clouds.
 const FOG_DAY = new THREE.Color('#b4b9bf'), FOG_NIGHT = new THREE.Color('#1a1e25'), FOG_GLOW = new THREE.Color('#2c2a2b');
