@@ -20,6 +20,7 @@ const OFF = 14; // m off the line before the way is worked out again
 const ARRIVE = 25; // m from a picked spot that counts as there
 const SIGNAL = 35; // m before a turn the indicator comes on at the least (4 s ahead at speed)
 const WIDTH = 2, STEP = 2.5, CHEVRON = 3; // the line on the road: m wide, sampled every m, one arrow per m
+const FADE = 14; // m over which the line fades in ahead of the car, instead of being cut off
 const PICKED = '#6cc4ff', JOB = '#5ee6a8'; // the line's colour to a spot you picked (the pin's too), and to the job's (its marker's)
 
 export type TurnKind = 'left' | 'right' | 'keep-left' | 'keep-right' | 'back';
@@ -210,14 +211,14 @@ export class Satnav {
   private age = 0; // s since the way was worked out
   private learnt = 0;
   private mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
-  private at = -1;
+  private faded = 0; // the furthest vertex pair whose alpha was last set below 1
   private driving = false;
   private here = false; // at the job's spot: the job takes over
 
   constructor(scene: THREE.Scene, private g: DriveGraph, private near: (x: number, y: number, r: number) => DriveEdge[],
     private height: (x: number, y: number, level: number) => number, private pin: Marker, private say: (text: string) => void) {
     this.mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
-      map: chevrons(), color: PICKED, transparent: true, opacity: 0.85, depthWrite: false, fog: false,
+      map: chevrons(), color: PICKED, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, fog: false,
       polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
     }));
     this.mesh.frustumCulled = false;
@@ -310,7 +311,6 @@ export class Satnav {
     this.learnt = this.g.count;
     this.s = this.off = this.age = 0;
     this.wait = this.way ? 1 : 2;
-    this.at = -1;
     if (this.way) this.build(this.way);
   }
 
@@ -318,6 +318,7 @@ export class Satnav {
   private build(w: Way) {
     const { line, lv } = w, n = Math.max(2, Math.ceil(line.length / STEP) + 1);
     const pos = new Float32Array(n * 6), uv = new Float32Array(n * 4), index: number[] = [];
+    const rgba = new Float32Array(n * 8).fill(1); // white, so the material's colour shows; alpha fades near the car
     let seg = 1;
     for (let i = 0; i < n; i++) {
       const d = Math.min(line.length, i * STEP), p = line.at(d);
@@ -331,21 +332,32 @@ export class Satnav {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setAttribute('color', new THREE.BufferAttribute(rgba, 4));
     geo.setIndex(index);
+    this.faded = 0;
     this.mesh.geometry.dispose();
     this.mesh.geometry = geo;
   }
 
-  // From a few metres ahead of the car to the end.
+  // From just ahead of the car to the end, fading in over the first FADE metres so the
+  // line melts away behind the car rather than losing a piece at a time.
   private place() {
     const w = this.way;
     this.mesh.visible = !!w;
     if (!w) return;
-    const from = Math.floor((this.s + 3) / STEP);
-    if (from === this.at) return;
-    this.at = from;
-    const total = this.mesh.geometry.index?.count ?? 0;
-    this.mesh.geometry.setDrawRange(Math.min(total, from * 6), Math.max(0, total - from * 6));
+    const geo = this.mesh.geometry, from = Math.max(0, Math.floor((this.s + 1) / STEP));
+    const total = geo.index?.count ?? 0;
+    geo.setDrawRange(Math.min(total, from * 6), Math.max(0, total - from * 6));
+    const col = geo.getAttribute('color') as THREE.BufferAttribute | undefined;
+    if (!col) return;
+    const n = col.count / 2, end = Math.min(n, Math.max(this.faded, from + Math.ceil(FADE / STEP) + 2));
+    for (let i = from; i < end; i++) {
+      const a = Math.min(1, Math.max(0, (i * STEP - this.s - 1) / FADE));
+      col.setW(2 * i, a);
+      col.setW(2 * i + 1, a);
+    }
+    col.needsUpdate = true;
+    this.faded = Math.min(n, from + Math.ceil(FADE / STEP) + 2);
   }
 
   // The card in the HUD, as HTML ('' when there's nothing to say).
