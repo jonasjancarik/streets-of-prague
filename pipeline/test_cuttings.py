@@ -1,9 +1,10 @@
 """A short underpass the terrain model shows in an open cutting (structures.cuttings)."""
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
-from shapely.geometry import LineString, box
+from shapely.geometry import LineString, Polygon, box
 
 import dtm_structures as dtm
 import structures
@@ -108,8 +109,8 @@ class SurveyCompanions(unittest.TestCase):
         self.assertIsNotNone(on.over_cutting(self.streets["b"]))
         self.assertIsNone(on.over_cutting(self.streets["c"]))
         self.assertIsNone(on.over_cutting(self.streets["lower"]))
-        _, profiles = structures.solve(bridges, trench(6), {})
-        np.testing.assert_allclose(profiles[-1][1], 240)
+        _, heights = structures.companion_profile(upper, trench(6))
+        np.testing.assert_allclose(heights, 240)
 
     def test_incomplete_extent_uncertain_height_and_wrong_height_keep_original_cut(self):
         for evidence in (self.evidence(half_span=5), self.evidence(accuracy=9), self.evidence(z=234)):
@@ -118,6 +119,44 @@ class SurveyCompanions(unittest.TestCase):
                 self.assertEqual(dropped, {1})
                 self.assertEqual(len(bridges), 1)
                 self.assertNotIn("survey_sources", bridges[0])
+
+    def test_companion_does_not_renumber_or_move_another_deck(self):
+        ways = [self.underpass, tunnel(2, [[135, 70], [175, 70]])]
+        streets = {**self.streets, "far": street("far", [[160, 15], [160, 130]], 8)}
+
+        def ground(xs, ys):
+            return np.minimum(trench(6)(xs, ys), trench(5)(xs, np.asarray(ys) - 70))
+
+        survey = dtm.DeckSurvey(self.evidence(), lambda x, y: (x, y))
+        _, old = structures.cuttings(ways, streets, ground)
+        _, new = structures.cuttings(ways, streets, ground, survey)
+        self.assertEqual(old, [w for w in new if not w.get("survey_sources")])
+        self.assertEqual(len(new), len(old) + 1)
+
+        near, far = (0, 0), (2, 1)
+        boxes = {near: box(-50, -50, 50, 50), far: box(150, 50, 250, 150)}
+
+        def make(ways):
+            levels = []
+            with patch.object(structures, "ipr_decks", return_value={}):
+                tiles = structures.build(ways, [], [], ground, None, boxes, 20, 100, 5, -50, -50,
+                                         boxes, way_levels=levels)
+            return levels, tiles[far][0]
+
+        old_levels, old_deck = make(old)
+        new_levels, new_deck = make(new)
+        self.assertEqual(old_levels, [w for w in new_levels if not w.get("survey_sources")])
+        self.assertEqual(old_deck[:2], new_deck[:2])
+        self.assertTrue(Polygon(*old_deck[3][0]).equals(Polygon(*new_deck[3][0])))
+        np.testing.assert_array_equal(old_deck[2], new_deck[2])
+
+    def test_companion_takes_a_free_level_after_existing_decks(self):
+        shape = box(0, 0, 10, 10)
+        upper = structures.Piece("bridge", shape, lambda xs, ys: np.full(len(xs), 240.0), [1])
+        companion = structures.Piece("bridge", shape, lambda xs, ys: np.full(len(xs), 234.0), [2])
+        structures.assign_levels([[companion], [upper]], {2})
+        self.assertEqual(upper.level, 1)
+        self.assertEqual(companion.level, 2)
 
 
 if __name__ == "__main__":

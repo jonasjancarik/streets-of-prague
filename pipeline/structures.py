@@ -476,20 +476,12 @@ def solve(ways, ground, decks, soft=frozenset(), streets=()):
     except TypeError:
         wet = np.zeros(len(T), dtype=bool)
     fixed = {}
-    surveyed = set()
-    for w, path in zip(ways, net.paths):
-        if w.get("survey_sources"):
-            surveyed.update(path)
+    for w in ways:
         # Only its ends: a way on the ground meeting a bridge halfway along (stairs up
         # from the valley under Nuselský most, say) meets it at the deck's height.
         for k, (n, g) in enumerate(zip(w["nodes"], w["grade"])):
             if g and k in (0, len(w["nodes"]) - 1):
                 i = net.key[("n", n)]
-                if w.get("survey_sources"):
-                    # The observed span already reaches both approaches. Share their
-                    # post-survey ground heights, with no second choice of abutment.
-                    fixed[i] = T[i]
-                    continue
                 ahead = np.subtract(w["pts"][0], w["pts"][1]) if k == 0 else np.subtract(w["pts"][-1], w["pts"][-2])
                 if w["kind"] == "bridge":
                     # A bridge drawn from past the edge of its wall: the street's last metres,
@@ -575,7 +567,7 @@ def solve(ways, ground, decks, soft=frozenset(), streets=()):
     # and a flight pinned to one of them drags everything it joins.)
     on_stairs = {i for i, nb in enumerate(net.adj) if nb and all((i, j) in net.soft for j, _ in nb)}
     for i in np.nonzero(kind == "bridge")[0]:
-        if i in fixed or np.isnan(net.h[i]) or i in on_stairs or i in surveyed:
+        if i in fixed or np.isnan(net.h[i]) or i in on_stairs:
             continue
         z = deck_at(decks, *net.xy[i], net.h[i] + 2.0, below=6.0, above=4.0)
         if not np.isnan(z) and not (wet[i] and z < T[i] + room[i] - 0.5):
@@ -669,14 +661,16 @@ def cuttings(ways, streets, ground, deck_survey=None):
     tree = STRtree(lines)
     dropped, out = set(), []
     serial = iter(range(-1, -10**9, -1))  # (ids of their own for the new ways and their points: OSM's are positive)
+    survey_serial = iter(range(-10**9, -2 * 10**9, -1))  # companions never renumber an existing cutting
 
     def cut_way(edge, span, survey_sources=None):
         pts = [[round(v, 2) for v in p] for p in shapely.get_coordinates(span)]
         ends = [i in (0, len(pts) - 1) for i in range(len(pts))]
+        ids = survey_serial if survey_sources else serial
         return {
-            "id": next(serial), "kind": "bridge", "layer": 1, "mapped_layer": None, "cut": True,
+            "id": next(ids), "kind": "bridge", "layer": 1, "mapped_layer": None, "cut": True,
             "hw": edge.get("hw", "primary"), "w": round(float(edge["width"]), 1), "pts": pts,
-            "nodes": [next(serial) for _ in pts], "grade": ends, "on_ground": ends.copy(),
+            "nodes": [next(ids) for _ in pts], "grade": ends, "on_ground": ends.copy(),
             **({"survey_sources": survey_sources} if survey_sources else {}),
         }
 
@@ -739,6 +733,13 @@ def cuttings(ways, streets, ground, deck_survey=None):
             dropped.add(w["id"])
             out += found
     return dropped, out
+
+
+def companion_profile(way, ground):
+    """The measured span reaches both approaches, which supply its end heights."""
+    pts = np.asarray(way["pts"], dtype=float)
+    s = np.r_[0.0, np.cumsum(np.hypot(*np.diff(pts, axis=0).T))]
+    return s, np.interp(s, s[[0, -1]], ground(*pts[[0, -1]].T))
 
 
 def drop_shallow(ways, net, profiles, ground):
@@ -947,7 +948,9 @@ def pieces(ways, profiles, outlines, ground, decks, road_tree):
         out.append(Piece(w["kind"], shape, (lambda xs, ys, line=line, prof=prof: height_along(line, prof, xs, ys)),
                          [w["id"]], w.get("mapped_layer"), w["nodes"]))
     groups = [[p] for p in out]
-    bridges = [k for k, w in enumerate(ways) if w["kind"] == "bridge"]
+    # A surveyed companion already has its own span and profile. It cannot supply
+    # the height of a separate mapped outline or borrow another way's profile.
+    bridges = [k for k, w in enumerate(ways) if w["kind"] == "bridge" and not w.get("survey_sources")]
     tree = STRtree([out[k].shape for k in bridges]) if bridges else None
     group_of = {id(p): g for g in groups for p in g}
 
@@ -1211,20 +1214,26 @@ def own_profile(poly, ground, decks, road_tree):
     return height
 
 
-def assign_levels(groups):
+def assign_levels(groups, companions=frozenset()):
     """Levels for the groups: bridges 1, 2, … from the lowest up and tunnels -1, -2, …
     from the highest down, so that no two groups overlapping at heights more than
-    SAME apart share one."""
-    info = []
-    for g in groups:
+    SAME apart share one. Survey companions take an available level after the
+    existing groups have their levels, without renumbering structures elsewhere."""
+    info, regular, deferred = [], [], []
+    for k, g in enumerate(groups):
         shape = unary_union([p.shape for p in g])
         c = shape.representative_point()
         h = float(np.nanmean(g[0].height(np.array([c.x]), np.array([c.y]))))
         declared = {p.mapped_layer for p in g if p.mapped_layer is not None}
         nodes = frozenset(n for p in g for n in p.nodes)
         info.append((g, shape, h, g[0].kind, declared, nodes, any(p.ramp for p in g)))
+        members = {i for p in g for i in p.members} if companions else set()
+        (deferred if members and members <= companions else regular).append(k)
     tree = STRtree([q[1] for q in info])
-    order = sorted(range(len(info)), key=lambda k: info[k][2] if info[k][3] == "bridge" else -info[k][2])
+    def priority(k):
+        return info[k][2] if info[k][3] == "bridge" else -info[k][2]
+
+    order = sorted(regular, key=priority) + sorted(deferred, key=priority)
     level = {}
     for k in order:
         g, shape, _, kind, declared, nodes, stairs = info[k]
@@ -1614,6 +1623,9 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     `streets`: the car streets on the ground, as lines (see ipr_ends).
     """
     ways = merge_ways(ways)
+    companions = [w for w in ways if w.get("survey_sources")]
+    if companions:
+        ways = [w for w in ways if not w.get("survey_sources")]
     decks = ipr_decks(local, source_manifest)
     net, profiles = solve(ways, ground, decks, streets=streets)
     # Again with the stairs known (the first run's profiles say which ways are stairs).
@@ -1621,9 +1633,13 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     if soft:
         net, profiles = solve(ways, ground, decks, soft, streets)
     ways, profiles = drop_shallow(ways, net, profiles, ground)
+    # These spans already have ground contacts at both ends. Keep their profiles
+    # out of the graph for existing bridges and tunnels.
+    ways += companions
+    profiles += [companion_profile(w, ground) for w in companions]
     road_tree = STRtree(roads) if roads else None
     all_pieces, groups = pieces(ways, profiles, outlines, ground, decks, road_tree)
-    deepest = assign_levels(groups)
+    deepest = assign_levels(groups, {w["id"] for w in companions})
     if way_levels is not None:  # (the pieces start with one per way, in the ways' order)
         way_levels.extend({"kind": w["kind"], "level": p.level, "pts": w["pts"],
                            **{k: w[k] for k in ("cut", "survey_sources") if w.get(k)}} for w, p in zip(ways, all_pieces))
