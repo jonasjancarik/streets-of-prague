@@ -15,6 +15,10 @@ import { send } from './gpu.ts';
 // with the other clip too. The whole crowd is one draw call.
 
 export const SCALE = 1.35; // people (and what they ride) are drawn bigger than life, to read from above
+// The most anyone is drawn at: SCALE from above, life size (1) in first person, where the
+// bigger people tower over the cars. Anyone set bigger is shrunk to it in the shader (so
+// it holds for every group of people), their bikes by the car pool.
+export const FIGURE_SIZE = { value: SCALE };
 const FPS = 24;
 const PARTS = ['Skin', 'Shirt', 'Sleeve', 'Trousers', 'Shoes', 'Hair'];
 
@@ -152,10 +156,12 @@ function vatMaterial<T extends THREE.MeshLambertMaterial | THREE.MeshDepthMateri
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uPos = { value: kit.pos };
     sh.uniforms.uNrm = { value: kit.nrm };
+    sh.uniforms.uSize = FIGURE_SIZE;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
 uniform highp sampler2D uPos;
 uniform highp sampler2D uNrm;
+uniform float uSize;
 attribute vec4 aAnimA;
 attribute vec4 aAnimB;
 attribute float aPart;
@@ -171,7 +177,7 @@ vec3 vat(highp sampler2D t) {
   return mix(a, b, aAnimA.w);
 }`)
       .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = normalize(vat(uNrm));')
-      .replace('#include <begin_vertex>', `vec3 transformed = vat(uPos);
+      .replace('#include <begin_vertex>', `vec3 transformed = vat(uPos) * min(1.0, uSize / length(instanceMatrix[0].xyz));
 vTint = aPart < 0.5 ? aSkin : aPart < 1.5 ? aShirt : aPart < 2.5 ? (aAnimB.w > 0.5 ? aShirt : aSkin)
   : aPart < 3.5 ? aTrousers : aPart < 4.5 ? vec3(0.02, 0.018, 0.016) : aHair;`);
     if (colour) {
@@ -362,7 +368,7 @@ export class Anim {
       this.gait += (want - this.gait) * Math.min(1, dt * 6);
     }
     const lo = Math.min(Math.floor(this.gait), GAITS.length - 2), mix = this.gait - lo;
-    const stride = GAITS[lo].stride + (GAITS[lo + 1].stride - GAITS[lo].stride) * mix;
+    const stride = (GAITS[lo].stride + (GAITS[lo + 1].stride - GAITS[lo].stride) * mix) * Math.min(1, FIGURE_SIZE.value / SCALE);
     this.phase = (((this.phase + (dt * speed) / stride) % 1) + 1) % 1;
     if (this.blend) {
       this.name = GAITS[lo].clip;

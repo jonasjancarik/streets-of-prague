@@ -5,10 +5,11 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three';
-import { vec3, vec4, int, ivec2, attribute, vertexIndex, texture, positionLocal, normalLocal, diffuseColor, mix, normalize, select, varying } from 'three/tsl';
+import { float, vec3, vec4, int, ivec2, attribute, vertexIndex, texture, positionLocal, normalLocal, diffuseColor, mix, normalize, select, varying } from 'three/tsl';
 import { lampLit } from './lamps.ts';
 import { instanceMatrix, shareInstances } from './trees.ts';
-import { type N, addPort } from './common.ts';
+import { type N, addPort, follow } from './common.ts';
+import { FIGURE_SIZE } from '../figures.ts';
 
 addPort(/^figures-true$/, (node, legacy) => {
   const proto = Object.getPrototypeOf(node);
@@ -21,7 +22,9 @@ addPort(/^figures-true$/, (node, legacy) => {
     return mix(a, b, animA.w);
   };
   const positions = texture(pos), normals = texture(nrm);
-  const position = vat(positions);
+  // Anyone drawn bigger than FIGURE_SIZE is shrunk to it (life size in first person).
+  const shrink: N = float(1).min(follow(FIGURE_SIZE).div(instanceMatrix().mul(vec4(1, 0, 0, 0)).xyz.length()));
+  const position = vat(positions).mul(shrink);
 
   // The instance's own transform goes on afterwards (setupPosition).
   node.setupPosition = function (builder: N) {

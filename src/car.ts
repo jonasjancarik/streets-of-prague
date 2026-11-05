@@ -3,7 +3,7 @@ import { mirrored } from './mirror.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp } from './network.ts';
-import { Figures, Anim, SCALE } from './figures.ts';
+import { Figures, Anim, SCALE, FIGURE_SIZE } from './figures.ts';
 import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
 import { posts } from './posts.ts';
@@ -1396,6 +1396,7 @@ export class CarPool {
   dummy: THREE.Object3D;
   riders: Figures;
   scale: THREE.Matrix4;
+  life: THREE.Matrix4;
   m: THREE.Matrix4;
   boards: THREE.Mesh[] = [];
   private colours = new Map<string, THREE.Color>();
@@ -1416,6 +1417,7 @@ export class CarPool {
     this.riders = new Figures(kit, 64);
     scene.add(this.riders.mesh);
     this.scale = new THREE.Matrix4().makeScale(SCALE, SCALE, SCALE);
+    this.life = new THREE.Matrix4();
     this.m = new THREE.Matrix4();
   }
 
@@ -1562,7 +1564,8 @@ export class CarPool {
             if (p) this.placings.set(c, p); else this.placings.delete(c);
           }
         }
-        m.setMatrixAt(slot, d.matrix);
+        // A bike or motorbike shrinks with its rider in first person (FIGURE_SIZE).
+        m.setMatrixAt(slot, c.two && FIGURE_SIZE.value < SCALE ? this.m.copy(d.matrix).multiply(this.life.makeScale(FIGURE_SIZE.value / SCALE, FIGURE_SIZE.value / SCALE, FIGURE_SIZE.value / SCALE)) : d.matrix);
         let paint = this.colours.get(c.paint);
         if (!paint) { paint = new THREE.Color(c.paint); this.colours.set(c.paint, paint); }
         const on = night && !c.burnt && !(c.mode === 'loose' && c.speed < 0.5);

@@ -14,7 +14,7 @@ import { parseBusLines } from './buses.ts';
 import { DriveGraph, WalkGraph, StreetNames, SpatialHash, clamp, streetShare } from './network.ts';
 import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodies, useKit, variantName } from './car.ts';
 import { RestingCars } from './restingCars.ts';
-import { loadKit } from './figures.ts';
+import { loadKit, FIGURE_SIZE, SCALE } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
@@ -2546,6 +2546,8 @@ async function main() {
       (scene.background as THREE.Color).copy(sky.haze);
     } else (scene.background as THREE.Color).set(BACKDROP);
     const nearPlane = eyes ? 0.2 : 1;
+    // Down at street level, people (and their bikes) are life size: from above they're drawn bigger to read.
+    FIGURE_SIZE.value = eyes ? 1 : SCALE;
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
