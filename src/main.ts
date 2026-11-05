@@ -2496,7 +2496,7 @@ async function main() {
       // face; driving or flying, from behind and above the vehicle, swinging round after it
       // as it turns. Dragging turns the view (round the vehicle when following one).
       const vehicle = inCar || inHeli, me = vehicle || walker;
-      const base = inHeli ? inHeli.z : (deep && body ? body.gz ?? 0 : ground(me.x, me.y, body)) + (inCar ? 0 : walker.z + walker.perch + 1.65);
+      const base = inHeli ? inHeli.z : (deep && body ? body.gz ?? 0 : ground(me.x, me.y, body)) + (inCar ? 0 : walker.z + walker.perch + 1.75);
       eyeH += (base - eyeH) * (Math.abs(base - eyeH) > 5 ? 1 : Math.min(1, dt * 12));
       const yaw = THREE.MathUtils.degToRad(eyes.yaw), pitch = THREE.MathUtils.degToRad(eyes.pitch);
       camera.up.set(0, 1, 0);
@@ -2505,7 +2505,9 @@ async function main() {
         if (chased !== vehicle) { chased = vehicle; chaseH = vehicle.h; }
         chaseH += Math.atan2(Math.sin(vehicle.h - chaseH), Math.cos(vehicle.h - chaseH)) * Math.min(1, dt * 3);
         const len = inCar ? inCar.spec.L : 14, tall = inCar ? inCar.spec.H : 4;
-        const back = len / 2 + (inCar ? 4.5 : 10), up = tall + (inCar ? 1.4 : 4), h = chaseH + yaw;
+        // Like a driving game's chase camera: high enough to see the road over the roof,
+        // the car in the lower third of the picture.
+        const back = len / 2 + (inCar ? 5.5 : 10), up = tall + (inCar ? 1.9 : 4), h = chaseH + yaw;
         const cx = vehicle.x - Math.cos(h) * back, cy = vehicle.y - Math.sin(h) * back;
         camera.position.set(cx, eyeH + up, -cy);
         // Looking over the roof at the road a little ahead.
@@ -2546,8 +2548,13 @@ async function main() {
       (scene.background as THREE.Color).copy(sky.haze);
     } else (scene.background as THREE.Color).set(BACKDROP);
     const nearPlane = eyes ? 0.2 : 1;
+    // A wider view at street level (38° from above, which would feel like a telephoto lens).
+    const fov = eyes ? 55 : 38;
+    if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
     // Down at street level, people (and their bikes) are life size: from above they're drawn bigger to read.
     FIGURE_SIZE.value = eyes ? 1 : SCALE;
+    // Out of first person, the mouse it took to look round with is let go.
+    if (!eyes && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();

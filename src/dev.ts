@@ -534,7 +534,7 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
     <label class="dev-check" title="The camera stops following you. Searching or picking a spot on the map now moves the camera, not you."><input id="dev-free" type="checkbox" /> Free camera</label>
     <div class="dev-note" id="dev-free-hint" hidden>Drag to move it · wheel to zoom · right-drag or Shift-drag to turn and tilt</div>
     <label class="dev-check" title="See the street the way you'd see it standing in it; driving, from just behind your car"><input id="dev-eyes" type="checkbox" /> First person</label>
-    <div class="dev-note" id="dev-eyes-hint" hidden>Right-drag or Shift-drag to look round · <button id="dev-ahead" class="dev-inline">Look ahead again</button></div>
+    <div class="dev-note" id="dev-eyes-hint" hidden>Click to look round with the mouse (Esc to let go), or right-drag · <button id="dev-ahead" class="dev-inline">Look ahead again</button></div>
     <div class="dev-row" id="dev-free-row" hidden>
       <button id="dev-top" title="Looking straight down, north up">Straight down</button>
       <button id="dev-back" title="The camera follows you again">Back to me</button>

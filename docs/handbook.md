@@ -392,9 +392,13 @@ that without a new renderer.
   coordinates (with a copy button) and links to the spot on Google Maps, Street View
   (facing your way) and Mapy.cz. The free camera stops following you: drag to move it,
   the wheel zooms, right-drag or Shift-drag turns and tilts it, and searching or the map
-  then move the camera instead of you. First person looks out at eye height the way you
-  face, and you keep playing; in a car or the helicopter it follows from just behind and
-  above, swinging round after it as it turns. Right-drag or Shift-drag looks round (`t.eyes = { yaw, pitch }` in scripts). It loads 650 m round
+  then move the camera instead of you. First person looks out at eye height (1.75 m) the
+  way you face, with a wider 55° view, and you keep playing; people and their bikes are
+  drawn life size there rather than 1.35× (`FIGURE_SIZE`). In a car or the helicopter it
+  follows from behind and above like a driving game's chase camera, the car in the lower
+  third, swinging round after it as it turns. A click takes the mouse to look round with
+  (Esc lets go); right-drag or Shift-drag looks round too (`t.eyes = { yaw, pitch }` in
+  scripts). It loads 650 m round
   you and hazes the far streets; shadows only reach as far as the view from above would
   show. Under Testing: pause, one frame at a time, slow
   motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,

@@ -1114,21 +1114,34 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
   let drag: { x: number; y: number; turn: boolean } | null = null;
   g.canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch') return;
-    // First person: right-drag or Shift-drag looks round.
+    // First person: a click takes the mouse to look round with (Esc lets it go);
+    // right-drag or Shift-drag looks round too.
+    if (!kit.cam && kit.eyes && e.button === 0 && !e.shiftKey && document.pointerLockElement !== g.canvas) {
+      void Promise.resolve(g.canvas.requestPointerLock?.()).catch(() => { /* refused (headless, or straight after Esc) */ });
+      return;
+    }
     if (!kit.cam && kit.eyes && !(e.button === 2 || e.shiftKey)) return;
     if (!kit.cam && !kit.eyes) return;
     drag = { x: e.clientX, y: e.clientY, turn: e.button === 2 || e.shiftKey };
     try { g.canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic event (tests) */ }
   });
+  // Yaw all the way round either way, pitch up to 60° up or down.
+  const look = (dx: number, dy: number) => {
+    kit.eyes!.yaw = ((kit.eyes!.yaw - dx + 540) % 360) - 180;
+    kit.eyes!.pitch = Math.max(-60, Math.min(60, kit.eyes!.pitch - dy));
+  };
   g.canvas.addEventListener('pointermove', (e) => {
+    if (document.pointerLockElement === g.canvas) {
+      if (kit.eyes && !kit.cam) look(e.movementX * 0.12, e.movementY * 0.1);
+      return;
+    }
     const cam = kit.cam;
     if (!drag || (!cam && !kit.eyes)) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.x = e.clientX;
     drag.y = e.clientY;
     if (!cam && kit.eyes) {
-      kit.eyes.yaw = Math.max(-150, Math.min(150, kit.eyes.yaw - dx * 0.25));
-      kit.eyes.pitch = Math.max(-60, Math.min(60, kit.eyes.pitch - dy * 0.2));
+      look(dx * 0.25, dy * 0.2);
       return;
     }
     if (!cam) return;
