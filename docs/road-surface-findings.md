@@ -3,6 +3,7 @@ read_when:
   - A street looks broken, tilted, bumpy or sunk in the game
   - Changing pipeline/dtm_heights.py's street heights, structures.py's bridges and tunnels, or src/stepEdges.ts
   - Thinking of another source for street or ground heights
+  - Choosing which measurements to fit a road surface to
 ---
 
 # Road surfaces: findings, fixes and further research
@@ -708,3 +709,66 @@ the reviewed IPR faces. The generator stops if the survey file differs
 from the reviewed source.
 Pass the result as `--bridgesurfaces` to the road, bridge and step checks
 alongside the existing `--roadsurfaces road-shelves.json`.
+
+## Height sources compared on eight streets
+
+Before fitting whole road surfaces, we compared what each source says about
+the carriageway itself. `pipeline/road_height_sources.py` follows a street for
+80–120 m and samples five sources every 0.5 m along it and every 0.25 m across
+the mapped carriageway: the game's terrain lattice, the surveyed kerb lines, IPR's
+1 m LiDAR terrain, IPR's 1 m surface model, and the photomesh at its finest
+level, rasterised from above at 0.25 m. A wave is the height's distance from
+the straight line between the points 3 m either side, as in
+`check-asphalt-waves.mjs`. At each surveyed kerb point, each source is sampled
+0.5 m inside the carriageway.
+
+Six of the streets are on the ground: Italská, Dobrovolského, Husitská,
+Karmelitská, Pod Kaštany and Evropská. The ranges are across those six.
+
+| Source | 6 m wave, median | 6 m wave, 95th percentile | At surveyed kerbs: offset, scatter | Road samples over 30 cm above LiDAR |
+|---|---:|---:|---:|---:|
+| Game lattice | 1–5 cm | 3–67 cm | −2 to +13 cm, 3–20 cm | |
+| LiDAR terrain | 0–1 cm | 1–5 cm | −4 to +6 cm, 2–10 cm | |
+| Surface model | 2–13 cm | 8–180 cm | +3 to +11 cm, 3–11 cm | 0–22% |
+| Photomesh | 0–2 cm | 1–571 cm | −2 to +6 cm, 3–11 cm | 0–23% |
+
+- **LiDAR terrain is the best source for roads on the ground.** It is the
+  smoothest, vehicles and tree crowns are already filtered out, and it keeps the
+  real shape: gutters, crossfall and Italská's changes of grade. It also agrees
+  with the surveyed kerbs, although unlike the game lattice it was not built from them.
+- **The photomesh is accurate where it can see the asphalt**, within 1–2 cm of
+  the LiDAR heights. Parked cars, trams, buses and tree crowns cover up to 23% of
+  the road samples, by up to several metres. On the ground it adds nothing the
+  LiDAR lacks. At level 16 it has 1.4–5 vertices per m², fewest on plain asphalt.
+- **The surface model** has the same obstructions and more noise
+  (spikes of 40 cm both ways along Evropská). There is no reason to use it for roads.
+- **The surveyed kerbs** are precise points, but a surface fitted to them
+  alone drifted 35 cm away from all three dense sources at the end of Italská,
+  near a junction, and lay 5–10 cm above them along Husitská. They are
+  better as anchors and checks than as the surface itself.
+- **Bridge decks:** the LiDAR heights under Nuselský most are the valley floor. The
+  photomesh and the surface model agree on the deck within a few centimetres
+  and put it 0.39–0.42 m below the game's deck along all 120 m. How
+  `structures.py` arrives at that deck height still needs checking.
+- **Crossings:** at 5. května over Kongresová, the LiDAR has the lower road,
+  the photomesh and surface model the deck, and the game lattice a hump between
+  them. The level each measurement belongs to has to be settled before fitting.
+- **Rounding:** the ground lattice is written in decimetres
+  (`encode` in `ipr_terrain.py`), structure levels in centimetres. A fitted
+  road written into the lattice would be rounded by up to 5 cm, enough for a
+  visible wave on a gentle grade.
+
+These streets do not explain why the earlier citywide LiDAR terrain build still
+had 403 road segments with bumps over 0.5 m. Those may come from structures,
+walls, the survey corrections applied on top or the rounding. That is the
+next thing to check before a pilot.
+
+The figures (hillshades, cross-sections, long profiles) and numbers are in
+`docs/evidence/road-sources/`. Regenerate them with a built Prague map and the
+survey, LiDAR, surface-model and photomesh caches; missing photomesh pieces are
+downloaded:
+
+```sh
+uv run --project pipeline --with matplotlib python pipeline/road_height_sources.py \
+  --out docs/evidence/road-sources [--sites italska,nuselsky_most]
+```
