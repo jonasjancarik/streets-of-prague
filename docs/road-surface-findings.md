@@ -17,7 +17,9 @@ reconstruction. The fixes, visual observations and before-and-after counts below
 come from Claude's implementation investigation. The additional research inspected
 the pipeline and cached survey records and checked public data catalogs on 5 November;
 it did not rebuild the map or validate the proposed approaches in the game. Source
-availability and licensing below describe that research snapshot.
+availability and licensing below describe that research snapshot. Subsequent
+[implementation trials](#implementation-trials-6-november-2026) record the work
+and measurements from later on 6 November.
 
 ## Where a street's shape comes from
 
@@ -355,5 +357,175 @@ or hiding one road beneath another. Check seams where the pilot meets unchanged 
 
 Priority: use more of the existing survey, compare the LiDAR terrain raster, then
 pilot explicit road surfaces. Investigate street LiDAR access for cases the existing
-sources cannot resolve. No new source was integrated and none of these proposed
-experiments was run as part of the additional research.
+sources cannot resolve. The trials below test several of these directions.
+
+## Implementation trials, 6 November 2026
+
+The overnight work used isolated checkouts based on `flat-roads` at `3dfafe52`.
+The integrated code is on `codex/road-reconstruction`. The baseline Prague map
+was built at `2026-11-05T22:58:30Z`; its producer identifies itself as
+`34c361d375-dirty` (a dirty working tree), distinct from the `3dfafe52` checkout
+base used for these experiments. The final survey candidate was built at
+`2026-11-06T00:13:10Z` from `d5e2afebc7` and copied into the integration preview.
+No production deployment or push was performed.
+
+### Survey-supported decks at Kongresová
+
+The additional survey records address a specific omission. The existing inferred
+bridge carried one 5. května carriageway. A second carriageway and its connected
+slip road belonged to the same surveyed bridge footprint but still followed the
+cutting below. The opt-in `--survey-companion-decks` build adds 39.2 m of the main
+carriageway and 43.7 m of the slip road, using same-level road polygons and measured
+road-edge vertices to check the approaches. Kongresová remains underneath.
+
+The first city build exposed unrelated pedestrian-height changes caused by inserting
+new structures into the existing solve and level assignment. The accepted version
+solves the original network first, uses a separate synthetic-ID range and independent
+approach-to-approach profiles for the additions, and preserves existing masks outside
+the affected tiles. It refuses an addition if its numeric level would contradict the
+vertical order of existing decks. This matters because the runtime uses level order
+to find the lowest bridge and overhead cover.
+
+| Checked road segment | Largest absolute bump | Largest absolute cross-slope | Largest change in cross-slope over 4 m |
+|---|---:|---:|---:|
+| Second 5. května carriageway | 1.05 → 0.01 m | 31.7 → 3.9% | 31.0 → 3.0 percentage points |
+| Connected slip road | 1.01 → 0.06 m | 41.6 → 4.7% | 38.7 → 3.7 percentage points |
+| Lower Kongresová segment | 0.72 → 0.70 m | 29.5 → 29.5% | 32.2 → 27.6 percentage points |
+
+The lower road was essentially unchanged and still has a surface problem. The
+added decks are roughly 5.6–5.8 m above it at the checked centreline crossings.
+
+Of 36,988 tile files, exactly three changed, all for tile `59_53`: `59_53.json`,
+`59_53.height.bin.gz` and `59_53.levels.bin.gz`. All other tile files were
+byte-identical, with none added or removed. Five of 57,188 checked car-network
+rows changed, all at this crossing, with no new threshold failures. All 4,135 bridge
+rows matched the baseline. The step-edge report also matched when both maps were
+checked with the identical checker revision. There were no
+additional stale cover or young-wood entries. The local assembly retained the copied
+IPR building layer with a dependency warning; this was not a strict release build.
+
+### Traffic and actual driving
+
+Geometry alone was insufficient. The inferred spans carry `level` or `levels`
+metadata but retain their original OSM bridge/tunnel flags. Traffic used those flags
+for placement and could start below the visible carriageway. The runtime now resolves
+the current lane station's named level against its own mask and finite height. It
+sets vehicle height and level together and falls back to ground when that named
+surface is absent. Raw centreline stations remain unchanged for rendering; offset
+lane stations are prepared separately. Traffic, routed buses and the developer road
+reset use this information, and taking over a vehicle releases its route's level
+intent while preserving its resolved position.
+
+On the final map, traffic spawned on both new upper spans and drove onto the ground
+at their ends. Both directed Kongresová roads stayed on the lower surface. Player
+car drives at a nominal 25 km/h also completed the main, slip and lower routes
+without damage. Recorded upper-road transitions were ground → deck → ground; the
+largest actual height changes per simulation step were 0.022 m and 0.016 m. The
+lower drive remained at level zero, with a largest change of 0.058 m.
+
+The existing `t.follow().jump` reports bare terrain, including the cutting underneath
+a bridge. These checks recorded the vehicle's actual `gz` and `level` instead; the
+bare-terrain diagnostic must not be presented as a vehicle falling through a deck.
+
+### Italská profile and the rejected quay experiment
+
+A separate opt-in `?roadprofiles` pilot fits 50 m of Italská from both surveyed
+kerbs and uses the same surface for vehicle height and rendered ground. It preserves
+a 4.7–6.8% downhill grade and approximately 2.07% cross-slope. The largest change
+in cross-slope fell from 11.1 to 1.8 percentage points, while the adjacent junction
+retained its sampled height. The maximum sampled mesh-to-vehicle difference in the
+core fell from 0.761 m to 0.008 m. Withheld survey stations come from the same lines
+as the fit, so their smaller residuals are not independent accuracy validation.
+
+Three alternating static WebGPU timing pairs gave aggregate frame times of
+4.2 → 4.3 ms, with individual pairs changing in both directions. Draw calls stayed
+at 140; the rendered triangle count rose about 0.9%. This establishes no stable
+performance gain or regression. Hill shading still uses the old terrain lattice.
+The new bridge spans also retain generic bridge paving and edge styling; these
+trials establish geometry and traversal, not a finished citywide surface style.
+[Profile measurements and reproduction](road-profile-pilot.md),
+[performance log](performance-log.md).
+
+At Hořejší nábřeží, raw survey records confirmed a wall top around 193.89 m and its
+foot around 190.50 m. A curved asymmetric trial respected the measured core and
+improved smoothness, but its northern transition lay about 1.1 m below both the
+measured wall top and a separate road kerb. It was rejected and never added to the
+runtime. A longer blend would not solve the changing relationship between the road
+and wall; that location needs separate road and wall surfaces with supported joins.
+The observations and rejected constructions are preserved in local evidence.
+
+### LiDAR source comparison
+
+The numeric IPR raster was downloaded, checked against a pinned SHA-256, decoded
+and integrated as an opt-in source with CityGML fallback outside its valid coverage.
+The 1 m raster's embedded metadata describes a July 2025 export from a corrected
+25 cm terrain model. The import pins its optional TIFF decoder packages; normal
+terrain builds read a NumPy cache and need no new package downloads.
+[Import and rebuild instructions](rebuilding-the-map.md).
+
+Four Újezd builds separated source effects from survey corrections. Without the
+corrections, hard-limit bumps fell from 7 to 0, cross-slope findings from 25 to 2,
+and twist findings from 22 to 0. With normal corrections, the corresponding counts were 2, 4 and 2 with either
+source, and one new ridge warning appeared near Divadelní/Národní after the swap.
+
+| Prague road segments beyond the hard limit | Existing source | LiDAR source |
+|---|---:|---:|
+| Steps over 1 m | 36 | 35 |
+| Bumps over 0.5 m | 563 | 403 |
+| Cross-slope over 15% | 3,024 | 2,227 |
+| Ridge/trough over 1 m | 150 | 141 |
+| Cross-slope change over 4 m above 12 percentage points | 2,480 | 1,775 |
+
+These gains do not justify switching the default source. Nine old hard steps
+cleared the threshold but eight new ones appeared, including a 5.44 m wall step and
+a 3.57 m step at Nad Výšinkou. Karlův most's worst join increased from 0.39 to
+1.48 m, creating a fifth named bridge failure. Inferred cuttings also changed:
+Národní and K Přehradám appeared, Wilsonova and Pražská disappeared, and the
+Kongresová span narrowed from 38 to 22 m. The road graph's edge IDs were unchanged;
+277 edge annotation records changed, including 75 tunnel flags and 202 level-only
+changes. Changed level annotations alone do not establish a change in physical connectivity.
+
+The terrain-only build omitted stale cover and young woods. Asphalt-cover masks
+were present in 8 tiles instead of 1,017. A separate checker-only copy with the old
+asphalt masks restored produced the same hard-limit counts for steps, bumps, cross-slope, ridges, twist
+and off-carriageway stretches; it was a
+sensitivity check, not a validated game map. LiDAR remains opt-in, and the final
+integration preview uses the existing terrain source with the surveyed deck fix.
+
+### Driving frame-cost check
+
+The final runtime was compared with the frozen baseline in three eight-second
+Old Town driving pairs, followed by three pairs in the reverse order. The first
+order averaged about 4.0 → 4.1 ms per frame; reversing the order also made the
+second variant slower, even though that second variant was now the baseline.
+Across all six samples per variant, means were 3.99 ms for baseline and 4.02 ms
+for candidate. Scene draw counts varied slightly. This does not isolate a stable
+cost of the tracking change, and phone performance remains unmeasured. The
+Italská profile was disabled for this check. Exact conditions and per-pair results
+are in the [performance log](performance-log.md).
+
+### Validation and remaining limits
+
+The integrated code passed 347 pipeline tests, 36 focused Node tests, TypeScript
+checking and a production build. Two read-only Codex reviews reported no actionable
+findings. Fixed top-down comparison screenshots have identical eye positions and
+quaternions; screenshots covered the changed locations and the unchanged
+Hořejší nábřeží and Újezd controls.
+
+The broad game suite was not fully green: both candidate and frozen baseline had
+five failures among 48 scenes. Four matched: passenger-door theft, regular-customer
+mission, step edges and tunnel mouth. Dustcart failed only in the candidate's full
+run, while police-fair failed only in the baseline. Dustcart then passed two focused
+reruns on each. The tile-lifecycle check also has a baseline-reproduced fixture
+failure (`turns.shift`). These results are recorded rather than counted as passes.
+
+The next model work should use the raw wall and road-edge elevations to reconstruct
+connected, curved carriageways and junctions without blending through real steps.
+LiDAR is a useful additional terrain measurement, but the trial shows that source
+replacement alone does not resolve the road/structure interpretation problem.
+
+Local logs, map snapshots, source observations, screenshots and rejected fits are
+under `docs/evidence/road-reconstruction/` in the integration worktree. They are
+ignored working records, not committed map data. The source implementations and
+these findings are committed; pushing, merging into main and deployment remain
+outside this overnight task.

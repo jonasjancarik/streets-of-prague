@@ -789,7 +789,7 @@ pairs. This does not establish a performance improvement or a stable regression.
 Draw calls stayed at 140, while renderer triangle counts rose from 2,513,591 to
 2,535,938 (about 0.9%). These include the scene's rendering passes; the affected
 tile's road/sett geometry alone grew from 11,050 to 15,603 triangles. GPU timing
-was unavailable. Driving and phone frame times were not measured.
+was unavailable. Driving through the profile and phone frame times were not measured.
 
 The command used `scripts/bench.mjs --url http://localhost:5261/ --vs
 http://localhost:5260/ --scenes stand --runs 3 --seconds 8 --dpr 1 --graphics high
@@ -799,3 +799,39 @@ simulation and fixed its absolute eye height. Logs and raw measurements are
 `docs/evidence/road-reconstruction/profile-performance.{log,json}` in the
 integration worktree. See [the pilot findings](road-profile-pilot.md) for the
 geometry and driving smoke checks.
+
+
+## 6 November 2026: traffic road-level tracking
+
+Compared frozen `3dfafe52` with runtime `2a875efc`, using `scripts/bench.mjs`'s
+Old Town `drive` scene. The candidate map contained the surveyed Kongresová
+addition, whose off-target tiles were byte-identical to baseline; that addition
+is outside this drive. The Italská profile was disabled. Both variants used
+headless Chrome/WebGPU, High, DPR 1, 14:00, clear weather and date 10-20. No other
+task-owned scene browser or map rebuild was active.
+
+Three alternating eight-second pairs were followed by three with the server
+order reversed. In the table the columns always identify the actual code variant.
+
+| Order | Baseline mean frame | Candidate mean frame |
+|---|---:|---:|
+| Baseline first, pair 1 | 3.7 ms | 3.9 ms |
+| Baseline first, pair 2 | 3.9 ms | 4.3 ms |
+| Baseline first, pair 3 | 4.2 ms | 4.2 ms |
+| Candidate first, pair 1 | 3.8 ms | 3.5 ms |
+| Candidate first, pair 2 | 4.0 ms | 3.9 ms |
+| Candidate first, pair 3 | 4.3 ms | 4.3 ms |
+
+The six-sample means were 3.99 ms baseline and 4.02 ms candidate; JavaScript
+means were 3.83 and 3.86 ms. The second variant tended to be slower in both
+orders, and scene draw counts varied slightly. These short whole-game runs do
+not isolate a stable tracking cost. GPU timing was unavailable and no phone
+measurement was made. Deterministic traffic lane traces and their Math.hypot
+counts also matched the baseline in the regression checks.
+
+Command: `node scripts/bench.mjs --url http://localhost:5261/ --vs
+http://localhost:5260/ --scenes drive --runs 3 --seconds 8 --dpr 1 --graphics high
+--time 14:00 --weather clear --extra "&date=10-20" --require-webgpu`, then the
+same command with the two server URLs swapped. Raw results are
+`docs/evidence/road-reconstruction/traffic-performance.json` and
+`traffic-performance-reversed.json`, with corresponding `.log` files.
