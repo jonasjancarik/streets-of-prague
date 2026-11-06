@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
-from shapely.geometry import LineString, Polygon, box
+from shapely.geometry import LineString, Point, Polygon, box
 
 import dtm_structures as dtm
 import structures
@@ -147,8 +147,20 @@ class SurveyCompanions(unittest.TestCase):
         new_levels, new_deck = make(new)
         self.assertEqual(old_levels, [w for w in new_levels if not w.get("survey_sources")])
         self.assertEqual(old_deck[:2], new_deck[:2])
-        self.assertTrue(Polygon(*old_deck[3][0]).equals(Polygon(*new_deck[3][0])))
+        self.assertEqual(old_deck[3], new_deck[3])
         np.testing.assert_array_equal(old_deck[2], new_deck[2])
+
+    def test_companion_crossing_a_tile_edge_has_geometry_and_equal_height_on_both_sides(self):
+        _, ways = self.build(self.evidence())
+        south, north = (0, -1), (0, 0)
+        boxes = {south: box(-50, -100, 50, 0), north: box(-50, 0, 50, 100)}
+        with patch.object(structures, "ipr_decks", return_value={}):
+            tiles = structures.build(ways, [], [], trench(6), None, boxes, 20, 100, 5, -50, 0, boxes)
+        for key, y, row in ((south, -1, -1), (north, 1, 0)):
+            level, kind, heights, polygons = tiles[key][0]
+            self.assertEqual((level, kind), (1, "bridge"))
+            self.assertTrue(any(Polygon(p[0], p[1:]).covers(Point(8, y)) for p in polygons))
+            self.assertEqual(heights[row, 12], 240.0)
 
     def test_companion_cannot_take_a_higher_level_below_an_existing_deck(self):
         shape = box(0, 0, 10, 10)

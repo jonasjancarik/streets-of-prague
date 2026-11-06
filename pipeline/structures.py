@@ -1662,13 +1662,24 @@ def build(ways, outlines, roads, ground, local, tiles, N, T, step, gx0, gy0, til
     profiles += [companion_profile(w, ground) for w in companions]
     road_tree = STRtree(roads) if roads else None
     all_pieces, groups = pieces(ways, profiles, outlines, ground, decks, road_tree)
-    deepest = assign_levels(groups, {w["id"] for w in companions})
+    survey_ids = {w["id"] for w in companions}
+    deepest = assign_levels(groups, survey_ids)
     if way_levels is not None:  # (the pieces start with one per way, in the ways' order)
         way_levels.extend({"kind": w["kind"], "level": p.level, "pts": w["pts"],
                            **{k: w[k] for k in ("cut", "survey_sources") if w.get(k)}} for w, p in zip(ways, all_pieces))
     print(f"  {len(all_pieces)} bridge and tunnel pieces on up to {deepest} levels either way")
     heights = rasterise(all_pieces, tiles, N, T, step, gx0, gy0)
-    polys = outlines_per_tile(all_pieces, tile_boxes)
+    if companions:
+        # A whole-level union can change ring ordering and simplification far
+        # from the added spans. Keep the regular outline pass for other tiles.
+        extra = {p for p in all_pieces if survey_ids.intersection(p.members)}
+        polys = outlines_per_tile([p for p in all_pieces if p not in extra], tile_boxes)
+        keys = list(tile_boxes)
+        tree = STRtree(list(tile_boxes.values()))
+        touched = {keys[i] for p in extra for i in tree.query(p.shape.buffer(PAD), predicate="intersects")}
+        polys.update(outlines_per_tile(all_pieces, {k: tile_boxes[k] for k in sorted(touched)}))
+    else:
+        polys = outlines_per_tile(all_pieces, tile_boxes)
     if ramps_out is not None:
         ramps_out.update({k: dict(v) for k, v in ramps_per_tile(all_pieces, tile_boxes).items()})
     out = {}

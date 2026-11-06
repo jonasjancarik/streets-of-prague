@@ -165,8 +165,8 @@ The optional `--survey-companion-decks` uses that relationship to add 39.2 m of
 5. května and 43.7 m of its slip road. The source observations verify the deck
 level against both approaches, and the profiles join the terrain heights at
 their ends. In a six-tile comparison, the largest bump on the added 5. května
-stretch fell from 1.05 m to 0.01 m, and its cross-slope from 31.7% to 3.8%.
-The slip road went from a 1.01 m bump and 41.6% cross-slope to 0.06 m and 4.5%.
+stretch fell from 1.05 m to 0.01 m, and its cross-slope from 31.7% to 3.9%.
+The slip road went from a 1.01 m bump and 41.6% cross-slope to 0.06 m and 4.7%.
 Kongresová stays on the lower ground, where it still has a 0.71 m bump and
 29.5% cross-slope. The change relies on an existing cutting deck and leaves the
 original rule in place for crossings without a match.
