@@ -755,15 +755,64 @@ Karmelitská, Pod Kaštany and Evropská. The ranges are across those six.
 - **Crossings:** at 5. května over Kongresová, the LiDAR has the lower road,
   the photomesh and surface model the deck, and the game lattice a hump between
   them. The level each measurement belongs to has to be settled before fitting.
-- **Rounding:** the ground lattice is written in decimetres
-  (`encode` in `ipr_terrain.py`), structure levels in centimetres. A fitted
-  road written into the lattice would be rounded by up to 5 cm, enough for a
-  visible wave on a gentle grade.
+- **The 4 m lattice:** LiDAR written into the game's lattice keeps most of
+  the road's shape. On four of the six streets its worst 6 m waves stay at
+  1–5 cm. Where the ground rises steeply beside the road, as at Dobrovolského
+  and Husitská, lattice cells across the kerb pull the bank into the road and
+  the worst waves reach 15 cm. The lattice stores ground heights in decimetres
+  (`encode` in `ipr_terrain.py`). Rounding adds up to 2 cm to the worst waves,
+  much less than the spacing does.
 
-These streets do not explain why the earlier citywide LiDAR terrain build still
-had 403 road segments with bumps over 0.5 m. Those may come from structures,
-walls, the survey corrections applied on top or the rounding. That is the
-next thing to check before a pilot.
+### Where the remaining bumps come from
+
+The earlier LiDAR terrain build still had 403 car streets with a bump over
+0.5 m, the flatness check's hard limit. `pipeline/road_bump_causes.py`
+measures the same bump at the same place in the raw LiDAR and in the LiDAR
+sampled on the game's 4 m lattice in decimetres, and notes what is nearby. A
+bump counts as added after sampling when neither has more than 15 cm there,
+and as theirs when one has 30 cm or more.
+
+| Where the bump is | Streets | Added after sampling | Made by the 4 m lattice | Partly | In the raw LiDAR | No LiDAR there |
+|---|---:|---:|---:|---:|---:|---:|
+| Within 20 m of a bridge, tunnel or cutting | 134 | 113 | 9 | 4 | 8 | 0 |
+| Within 8 m of a retaining wall or quay | 32 | 21 | 0 | 9 | 2 | 0 |
+| Within 15 m of a junction | 27 | 17 | 0 | 1 | 6 | 3 |
+| On a bridge or in a tunnel | 5 | 3 | 0 | 0 | 2 | 0 |
+| Plain ground | 205 | 127 | 22 | 7 | 23 | 26 |
+| All | 403 | 281 | 31 | 21 | 41 | 29 |
+
+- **Most come from the survey corrections.** 269 of the 403 have the same
+  bump, within 5 cm, in the build from IPR's older terrain model, so the
+  terrain source makes no difference to them. 194 of those lie inside a
+  surveyed street outline, where the street's height comes from the nearest
+  surveyed kerbs whatever the terrain says. On Košíkářská (49.97206, 14.39057)
+  the LiDAR has the street on an even shelf at 226 m. The current map's lattice
+  has points at 232 m and 220 m within 8 m of each other there, and no
+  surveyed kerb within 15 m.
+- **The lattice spacing** accounts for 31, mostly where the street runs
+  beside a slope, and the raw LiDAR for 41. The 29 with no LiDAR are beyond
+  its coverage at the map's edges.
+- **Raw LiDAR alone would put 296 streets on the ground over the limit**,
+  189 of them dips where the bare terrain drops under a deck. 103 are within
+  20 m of a structure the map has. Others, such as a 10 m dip on Pražský okruh
+  at 50.09872, 14.59284, probably mark bridges the map lacks. The current
+  build keeps 252 of the 296 under the limit, so a fit to the LiDAR has to
+  mask it under decks as the build does now. Its dips can also help find
+  missing bridges.
+
+For the road fit this means replacing the survey corrections inside streets
+rather than running on top of them, with the kerbs as checks. The LiDAR needs
+masking under and beside decks. Where a bank rises at the kerb, the road
+needs its own edge in the ground mesh, or the 4 m lattice will mix the bank in.
+
+```sh
+e=docs/evidence/road-reconstruction
+uv run --project pipeline python pipeline/road_bump_causes.py \
+  $e/lidar/praha-lidar-roads.json $e/final-roads.json --out docs/evidence/road-bumps/causes.json
+```
+
+The reports are `check-road-flatness.mjs --save` files from the two builds.
+The script walks the streets of the current map in `public/data/praha_now`.
 
 The figures (hillshades, cross-sections, long profiles) and numbers are in
 `docs/evidence/road-sources/`. Regenerate them with a built Prague map and the
