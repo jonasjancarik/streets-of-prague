@@ -277,3 +277,26 @@ same road and step checks on the result before copying it to
 `public/data/praha_now/road-junctions.json`. Compare the preview with
 `?roadsurfaces&roadraster` in both views and add `&roadjunctions` for the
 extended fits. The logs and matched views are in `docs/evidence/junction-surfaces/`.
+
+### Measuring waves across Dobrovolského
+
+The earlier bump check sampled the centreline over a 6 m span. The asphalt
+probe samples the rendered surface every 0.5 m along the road and every
+0.25 m across the paved width. It compares each sampled height with the
+straight line through the two ends of each span and records the driving
+height at the same points.
+
+With the extended fit and raster asphalt, the largest 6 m wave was 17 cm on
+the centreline and 30 cm near the kerb, 28 m from the junction. Over 20 m
+the largest wave was 47 cm, about 101 m from the junction. The driving
+surface deviated by 35 cm and 49 cm at those same kerb samples. Vector asphalt
+also showed waves of 30 cm over 6 m and 45 cm over 20 m.
+
+```sh
+node scripts/check-asphalt-waves.mjs '666516985>46818140>0' 50.03516,14.50886 \
+  --url http://localhost:5261/ --extra '&roadsurfaces&roadjunctions&roadraster'
+```
+
+Drop `&roadraster` to repeat with vector asphalt. The probe reports where it
+found asphalt and measures longitudinal profiles at fixed offsets from the
+mapped centreline. The logs are in `docs/evidence/dobrovolskeho-waves/`.

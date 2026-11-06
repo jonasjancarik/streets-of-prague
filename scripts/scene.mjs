@@ -15,6 +15,7 @@
 // window; t.film saves footage frame by frame at that size)] [--jpeg (screenshots as JPEG)].
 // With a server running (serve), each command takes a second or two instead of the
 // 30–60 s of loading the map; without one, it opens a browser just for the command.
+// --fresh always opens a new browser so URL options apply.
 // The server follows the dev server's reloads: a command waits for the game to load
 // again. A command waits while another session benchmarks (game-lock.mjs). Exits 1 if
 // a scenario fails or the page throws. Needs the dev server
@@ -141,12 +142,13 @@ const scenarioNames = () => readdirSync(join(ROOT, 'scenarios')).filter((f) => f
 
 // Through the server if one is running, otherwise in a browser just for this.
 async function withGame(bodies) {
-  if (await alive()) {
+  if (!args.fresh && await alive()) {
     const out = [];
     for (const b of bodies) out.push(await call(b));
     return out;
   }
-  console.error('No scene server running (node scripts/scene.mjs serve); loading the game for this command…');
+  console.error(args.fresh ? 'Loading the game in a fresh browser…'
+    : 'No scene server running (node scripts/scene.mjs serve); loading the game for this command…');
   const game = await openGame({ show: !!args.show });
   try {
     const out = [];
