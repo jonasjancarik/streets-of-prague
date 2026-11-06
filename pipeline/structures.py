@@ -1238,6 +1238,8 @@ def assign_levels(groups, companions=frozenset()):
     for k in order:
         g, shape, _, kind, declared, nodes, stairs = info[k]
         taken = set()
+        companion = k in deferred
+        minimum, maximum = 1, math.inf
         for o in tree.query(shape, predicate="dwithin", distance=BESIDE):
             if o == k or o not in level or info[o][3] != kind:
                 continue
@@ -1246,27 +1248,48 @@ def assign_levels(groups, companions=frozenset()):
             mapped_apart = bool(declared and info[o][4] and declared.isdisjoint(info[o][4]) and nodes.isdisjoint(info[o][5]))
             if mapped_apart:
                 taken.add(level[o])
-                continue
+                if not companion:
+                    continue
             # Over each other or side by side: a level's heights are on the terrain's lattice
             # and reach PAD past each piece, so steps going down beside a bridge's deck, or
             # a jetty at the water's level, would pull the deck's edge down with them. Where
             # the two are close, are they anywhere more than SAME apart?
             near = shape.exterior if shape.geom_type == "Polygon" else shape.boundary
             near = near.intersection(info[o][1].buffer(BESIDE))
-            if near.is_empty or near.length < 0.5:
+            overlap = shape.intersection(info[o][1]) if companion else None
+            common = overlap is not None and overlap.area > 0
+            if common:
+                # One deck may sit inside the other. Drop point or line contacts
+                # alongside the common area before sampling its whole perimeter.
+                near = overlap.buffer(0).boundary
+            if not common and (near.is_empty or near.length < 0.5):
                 continue
-            ps = [near.interpolate(d) for d in np.arange(0, near.length, 3.0)]
+            lines = shapely.get_parts(near) if common else (near,)
+            ps = [line.interpolate(d) for line in lines for d in np.arange(0, line.length, 3.0)]
+            if common:
+                ps.append(overlap.representative_point())
             xs, ys = np.array([q.x for q in ps]), np.array([q.y for q in ps])
             with np.errstate(invalid="ignore"):
-                apart = np.abs(piece_height(g, xs, ys) - piece_height(info[o][0], xs, ys))
+                difference = piece_height(g, xs, ys) - piece_height(info[o][0], xs, ys)
+            if common and not np.isfinite(difference).all():
+                raise ValueError("survey companion overlaps a bridge whose height is unknown")
             # (Stairs lie over or under the deck they leave in plan, a metre or two off its
             # height: they share its level only where they're at its height.)
-            if np.nanmax(apart, initial=0) > (STAIRS_SAME if stairs or info[o][6] else SAME):
+            same = STAIRS_SAME if stairs or info[o][6] else SAME
+            if np.nanmax(np.abs(difference), initial=0) > same:
                 taken.add(level[o])
+                if companion:
+                    if np.nanmax(difference, initial=0) > same:
+                        minimum = max(minimum, level[o] + 1)
+                    if np.nanmin(difference, initial=0) < -same:
+                        maximum = min(maximum, level[o] - 1)
         step = 1 if kind == "bridge" else -1
-        lv = step
+        lv = minimum if companion else step
         while lv in taken:
             lv += step
+        if companion and lv > maximum:
+            at = shape.representative_point()
+            raise ValueError(f"survey companion near ({at.x:.0f}, {at.y:.0f}) cannot fit between the existing bridge levels")
         level[k] = lv
         for p in g:
             p.level = lv

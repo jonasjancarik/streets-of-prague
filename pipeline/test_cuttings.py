@@ -150,12 +150,20 @@ class SurveyCompanions(unittest.TestCase):
         self.assertTrue(Polygon(*old_deck[3][0]).equals(Polygon(*new_deck[3][0])))
         np.testing.assert_array_equal(old_deck[2], new_deck[2])
 
-    def test_companion_takes_a_free_level_after_existing_decks(self):
+    def test_companion_cannot_take_a_higher_level_below_an_existing_deck(self):
         shape = box(0, 0, 10, 10)
         upper = structures.Piece("bridge", shape, lambda xs, ys: np.full(len(xs), 240.0), [1])
         companion = structures.Piece("bridge", shape, lambda xs, ys: np.full(len(xs), 234.0), [2])
-        structures.assign_levels([[companion], [upper]], {2})
+        with self.assertRaisesRegex(ValueError, "cannot fit between the existing bridge levels"):
+            structures.assign_levels([[companion], [upper]], {2})
         self.assertEqual(upper.level, 1)
+        self.assertEqual(companion.level, 0)
+
+    def test_companion_above_a_contained_deck_takes_the_next_level(self):
+        lower = structures.Piece("bridge", box(12, 12, 20, 20), lambda xs, ys: np.full(len(xs), 234.0), [1])
+        companion = structures.Piece("bridge", box(0, 0, 40, 40), lambda xs, ys: np.full(len(xs), 240.0), [2])
+        structures.assign_levels([[companion], [lower]], {2})
+        self.assertEqual(lower.level, 1)
         self.assertEqual(companion.level, 2)
 
 
