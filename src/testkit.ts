@@ -995,6 +995,19 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       if (opt.at) await g.loaded(cam.x, cam.y);
       await frame();
     },
+    // Orbit the point in the middle of the view without changing its apparent size.
+    orbit(heading: number, tilt: number) {
+      const cam = kit.cam;
+      if (!cam) return;
+      const next = Math.max(0, Math.min(75, tilt));
+      if (next !== cam.tilt) {
+        const distance = cam.height / Math.cos(cam.tilt * Math.PI / 180);
+        cam.height = Math.max(5, Math.min(1500, distance * Math.cos(next * Math.PI / 180)));
+        cam.tilt = next;
+      }
+      cam.heading = ((heading % 360) + 360) % 360;
+      cam.level = true;
+    },
     // A screenshot (headless only: scripts/scene.mjs saves it; in the panel it's skipped).
     async shot(name: string) {
       await frame();
@@ -1111,9 +1124,9 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
   };
   // The free camera with the mouse: drag to move it, the wheel (in main.ts) to zoom,
   // right-drag or Shift-drag to turn (sideways) and tilt (up and down).
-  let drag: { x: number; y: number; turn: boolean } | null = null;
+  let drag: { id: number; x: number; y: number; turn: boolean } | null = null;
   g.canvas.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'touch') return;
+    if (e.pointerType === 'touch' || drag || (e.button !== 0 && e.button !== 2)) return;
     // First person: a click takes the mouse to look round with (Esc lets it go);
     // right-drag or Shift-drag looks round too.
     if (!kit.cam && kit.eyes && e.button === 0 && !e.shiftKey && document.pointerLockElement !== g.canvas) {
@@ -1122,7 +1135,7 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     }
     if (!kit.cam && kit.eyes && !(e.button === 2 || e.shiftKey)) return;
     if (!kit.cam && !kit.eyes) return;
-    drag = { x: e.clientX, y: e.clientY, turn: e.button === 2 || e.shiftKey };
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, turn: e.button === 2 || e.shiftKey };
     try { g.canvas.setPointerCapture(e.pointerId); } catch { /* a synthetic event (tests) */ }
   });
   // Yaw all the way round either way, pitch up to 60° up or down.
@@ -1136,8 +1149,8 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
       return;
     }
     const cam = kit.cam;
-    if (!drag || (!cam && !kit.eyes)) return;
-    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag || e.pointerId !== drag.id || (!cam && !kit.eyes)) return;
+    let dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.x = e.clientX;
     drag.y = e.clientY;
     if (!cam && kit.eyes) {
@@ -1146,20 +1159,26 @@ export function setupTestkit(g: Game, scenarios = import.meta.glob<{ default: Sc
     }
     if (!cam) return;
     if (drag.turn) {
-      cam.heading = (cam.heading + dx * 0.3 + 360) % 360;
-      cam.tilt = Math.max(0, Math.min(75, cam.tilt + dy * 0.2));
+      kit.orbit(cam.heading + dx * 0.25, cam.tilt - dy * 0.2);
       return;
     }
-    // Metres per pixel on the ground at the middle of the view.
-    const m = (2 * cam.height * Math.tan((g.fov * Math.PI) / 360)) / innerHeight / Math.cos((cam.tilt * Math.PI) / 180);
-    const h = rad(cam.heading), fx = Math.cos(h), fy = Math.sin(h);
-    // Dragging pulls the ground along with the pointer: right moves the view left.
-    cam.x += (-dx * fy + dy * fx) * m;
-    cam.y += (dx * fx + dy * fy) * m;
+    const cosTilt = Math.cos(cam.tilt * Math.PI / 180);
+    const metres = 2 * cam.height * Math.tan(g.fov * Math.PI / 360) / (g.canvas.clientHeight * cosTilt);
+    const h = rad(cam.heading), east = Math.cos(h), north = Math.sin(h);
+    if (!cam.level) {
+      // Scripted north-up views can have a different screen orientation from
+      // the orbit camera. Project north into the orbit camera's screen axes.
+      const x = -east, y = north * cosTilt, len = Math.hypot(x, y);
+      [dx, dy] = [(y * dx - x * dy) / len, (x * dx + y * dy) / len];
+    }
+    const across = -dx * metres, forward = dy * metres / cosTilt;
+    cam.x += across * north + forward * east;
+    cam.y += -across * east + forward * north;
   });
-  const end = () => { drag = null; };
+  const end = (e: PointerEvent) => { if (drag?.id === e.pointerId) drag = null; };
   g.canvas.addEventListener('pointerup', end);
   g.canvas.addEventListener('pointercancel', end);
+  g.canvas.addEventListener('lostpointercapture', end);
   g.canvas.addEventListener('contextmenu', (e) => { if (kit.cam || kit.eyes) e.preventDefault(); });
   return kit;
 }

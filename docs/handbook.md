@@ -434,9 +434,11 @@ that without a new renderer.
   loads the tiles there and drops you on the pavement. "Copy link" gives a `?start=`
   link; `?place=` takes one of the test places in `src/testkit.ts`. The panel shows your
   coordinates (with a copy button) and links to the spot on Google Maps, Street View
-  (facing your way) and Mapy.cz. The free camera stops following you: drag to move it,
-  the wheel zooms, right-drag or Shift-drag turns and tilts it, and searching or the map
-  then move the camera instead of you. First person looks out at eye height (1.75 m) the
+  (facing your way) and Mapy.cz. In free camera mode, drag the map to pan and
+  scroll to zoom. Right-drag or Shift-drag to orbit the centre of the view. Drag
+  up for a more angled view and down to look straight down. The Rotation and Tilt
+  sliders let you set either angle separately. Straight down resets both angles
+  to a north-up view. Searching or picking a spot on the map moves the camera. First person looks out at eye height (1.75 m) the
   way you face, with a wider 55° view, and you keep playing; people and their bikes are
   drawn life size there rather than 1.35× (`FIGURE_SIZE`). In a car or the helicopter it
   follows from behind and above like a driving game's chase camera, the car in the lower

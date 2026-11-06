@@ -532,12 +532,16 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
   box.innerHTML = `
     <div class="dev-sub">Camera</div>
     <label class="dev-check" title="The camera stops following you. Searching or picking a spot on the map now moves the camera, not you."><input id="dev-free" type="checkbox" /> Free camera</label>
-    <div class="dev-note" id="dev-free-hint" hidden>Drag to move it · wheel to zoom · right-drag or Shift-drag to turn and tilt</div>
+    <div class="dev-note" id="dev-free-hint" hidden>Drag to pan · scroll to zoom · right-drag or Shift-drag to orbit</div>
     <label class="dev-check" title="See the street the way you'd see it standing in it; driving, from just behind your car"><input id="dev-eyes" type="checkbox" /> First person</label>
     <div class="dev-note" id="dev-eyes-hint" hidden>Click to look round with the mouse (Esc to let go), or right-drag · <button id="dev-ahead" class="dev-inline">Look ahead again</button></div>
-    <div class="dev-row" id="dev-free-row" hidden>
-      <button id="dev-top" title="Looking straight down, north up">Straight down</button>
-      <button id="dev-back" title="The camera follows you again">Back to me</button>
+    <div id="dev-free-row" hidden>
+      <label class="dev-camera-angle">Rotation <span id="dev-heading-value" aria-hidden="true"></span><input id="dev-heading" type="range" min="0" max="359" step="1" /></label>
+      <label class="dev-camera-angle">Tilt <span id="dev-tilt-value" aria-hidden="true"></span><input id="dev-tilt" type="range" min="0" max="75" step="1" /></label>
+      <div class="dev-row">
+        <button id="dev-top" title="Looking straight down, north up">Straight down</button>
+        <button id="dev-back" title="The camera follows you again">Back to me</button>
+      </div>
     </div>
     <div class="dev-sub">Testing</div>
     <div class="dev-row">
@@ -573,13 +577,19 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
     </div>
     <div id="dev-out"></div>`;
   const free = $('dev-free') as HTMLInputElement;
-  free.onchange = () => { if (free.checked) kit.eyes = null; void kit.camera(free.checked ? {} : null); };
+  free.onchange = () => { if (free.checked) kit.eyes = null; void kit.camera(free.checked ? { level: true } : null); };
   const eyes = $('dev-eyes') as HTMLInputElement;
   eyes.onchange = () => { kit.eyes = eyes.checked ? { yaw: 0, pitch: 0 } : null; if (eyes.checked) void kit.camera(null); };
   $('dev-ahead').onclick = () => { if (kit.eyes) kit.eyes.yaw = kit.eyes.pitch = 0; };
-  $('dev-top').onclick = () => { void kit.camera({ tilt: 0, heading: 0 }); };
+  $('dev-top').onclick = () => kit.orbit(0, 0);
   $('dev-back').onclick = () => { void kit.camera(null); };
   const keep = (el: HTMLElement) => el.addEventListener('keydown', (ev) => { if (ev.code !== 'Backquote') ev.stopPropagation(); });
+  const heading = $('dev-heading') as HTMLInputElement, tilt = $('dev-tilt') as HTMLInputElement;
+  const headingValue = $('dev-heading-value'), tiltValue = $('dev-tilt-value');
+  keep(heading);
+  keep(tilt);
+  heading.oninput = () => { if (kit.cam) kit.orbit(heading.valueAsNumber, kit.cam.tilt); };
+  tilt.oninput = () => { if (kit.cam) kit.orbit(kit.cam.heading, tilt.valueAsNumber); };
   const out = $('dev-out');
   const pause = $('dev-pause');
   pause.onclick = () => { kit.paused = !kit.paused; };
@@ -642,6 +652,12 @@ function setupBench(kit: Testkit, $: (id: string) => HTMLElement) {
     update() {
       free.checked = !!kit.cam;
       $('dev-free-hint').hidden = $('dev-free-row').hidden = !kit.cam;
+      if (kit.cam) {
+        heading.value = String(((Math.round(kit.cam.heading) % 360) + 360) % 360);
+        tilt.value = String(Math.round(kit.cam.tilt));
+        headingValue.textContent = heading.value + '°';
+        tiltValue.textContent = tilt.value + '°';
+      }
       eyes.checked = !!kit.eyes && !kit.cam;
       $('dev-eyes-hint').hidden = !eyes.checked;
       pause.textContent = kit.paused ? 'Carry on' : 'Pause';
