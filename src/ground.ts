@@ -376,7 +376,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   const T = height || (() => 0);
   // (A street on the ground with a level is on a bridge over an underpass's cutting
   // there, pipeline/structures.py's cuttings: painted on its deck.)
-  const onDeck = (e: GroundRoadEdge) => !!e.bridge || (!e.tunnel && (e.level ?? 0) > 0);
+  const onDeck = (e: GroundRoadEdge) => !e.tunnel && (e.level === undefined ? !!e.bridge : e.level > 0);
   const lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, bridges: false, rasterRoads }));
   const masks = levels.map((l) => levelMask(box, l.polys, l.level));
   const on = (k: number, x: number, y: number) => onMask(masks[k], x, y);

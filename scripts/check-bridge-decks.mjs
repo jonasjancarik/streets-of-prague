@@ -26,7 +26,7 @@ import { join } from 'node:path';
 import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps } from '../src/terrain.ts';
 import { onPolygons } from '../src/map/geo.ts';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
-import { bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
+import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
 import { bridgeRegressions } from './bridge-regressions.mjs';
 
 const args = {}, pos = [];
@@ -63,9 +63,10 @@ function tileOf(i, j) {
   let out = null;
   const path = join(dir, 'tiles', `${k}.json`);
   if (existsSync(path)) {
-    const t = bridgeSurfaceTile(JSON.parse(readFileSync(path, 'utf8')), k, preview), height = binary(`${k}.height.bin`);
+    const t = bridgeSurfaceTile(JSON.parse(readFileSync(path, 'utf8')), k, preview);
     const structures = t.structures || [];
-    const levels = structures.length ? binary(`${k}.levels.bin`) : null;
+    const { height, levels } = bridgeSurfaceBuffers(t, k, terrain.n, binary(`${k}.height.bin`),
+      structures.length ? binary(`${k}.levels.bin`) : null, preview);
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
     const side = terraceAt(t.terraces);
     const base = height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step,
@@ -114,7 +115,7 @@ for (const [i, j] of index.tiles) {
   if (centre && (Math.abs((i + 0.5) * T - ox - centre[0]) > centre[2] + T || Math.abs((j + 0.5) * T - oy - centre[1]) > centre[2] + T)) continue;
   const path = join(dir, 'tiles', `${i}_${j}.json`);
   if (!existsSync(path)) continue;
-  const t = JSON.parse(readFileSync(path, 'utf8'));
+  const t = bridgeSurfaceTile(JSON.parse(readFileSync(path, 'utf8')), `${i}_${j}`, preview);
   for (const [net, list] of [['drive', t.drive || []], ['walk', t.walk || []]]) {
     for (const e of list) {
       const key = `${net}:${e.id}`, had = edges.get(key);
@@ -145,7 +146,7 @@ function walk(e) {
     if (own !== undefined) h = levelAt(x, y, own);
     // (An edge can run on from its deck onto another level: stairs down from a bridge,
     // mapped as bridge ways, are one edge with the footway they leave.)
-    if (Number.isNaN(h)) {
+    if (Number.isNaN(h) && own !== 0) {
       // The level nearest in height to the last sample (to the ground, at the start).
       const ref = Number.isNaN(was) ? groundAt(x, y) : was;
       for (const l of bridgesAt(x, y)) {
@@ -200,6 +201,7 @@ for (const [e, prof] of profs) {
   // from the middle of a bridge leave it at the deck's height, whatever the ground is);
   // at the bridge's own end, the streets on the ground.
   const joins = [0, 1].map((end) => {
+    if (e.levels?.[end ? e.levels.length-1 : 0]?.[1] === 0) return 0;
     const node = end ? e.v : e.u, mine = endHeight(e, node, profs), among = bridgeEnds(node, e.net) > 1;
     let far = 0;
     for (const o of atNode.get(node) || []) {

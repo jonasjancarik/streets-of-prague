@@ -16,7 +16,7 @@ import { finish } from './parkingClearance.ts';
 import { openWater } from './river.ts';
 import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from './roadSurfaces.ts';
-import { bridgeSurfaceTile, readBridgeSurfacePreview } from './bridgeSurfacePreview.ts';
+import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from './bridgeSurfacePreview.ts';
 import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary, withRamps } from './terrain.ts';
 import type { Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
@@ -1190,6 +1190,7 @@ export class TileWorld {
   async make(k: string, { t, height, bare, ipr, levels }: TileFiles, sliced = false): Promise<Tile> {
     const preview = this.bridgeSurfacePreview ? await this.bridgeSurfacePreview : null;
     t = bridgeSurfaceTile(t, k, preview);
+    ({ height, levels } = bridgeSurfaceBuffers(t, k, this.index.terrain?.n, height, levels, preview));
     // Fetch only the adjacent JSON, before any render resources/leases are created.
     const clearanceEdges = await this.parkingEdges(t);
     const nearBuildings = await this.parkingBuildings(t);

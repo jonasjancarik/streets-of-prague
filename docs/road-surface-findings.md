@@ -679,3 +679,32 @@ the resulting road and step reports with the screened shelf preview.
 After the checks pass, copy the candidate to
 `public/data/praha_now/bridge-surfaces.json` and add `&bridgesurfaces`
 to the local link.
+
+### The lower ramp ends at U Bulhara
+
+Two obstructions remained after the upper deck repair. The renderer added
+parapets where the map ended the lower decks. It also drew walls along the
+edges of the flat terrain pads that the builder had put at those joins.
+The IPR bridge faces show that both ramps continue beyond the mapped ends.
+Near the foot of the east ramp, the surveyed deck is around 200.4 m while
+the bare terrain underneath is below 199 m.
+
+The follow-up extends the lower decks to the surveyed ends and moves the
+driving and walking transitions to those points. It
+removes the flat pads and restores the measured terrain beneath them. A
+short blend on each ground approach joins the existing street to the
+surveyed deck. The largest measured height difference across a ground-to-deck
+transition was 12 cm across the four driving joins. A test car drove onto the east ramp and off the west ramp
+without damage. The matched close-ups show the walls cleared from the lanes.
+The citywide checks found no new road regressions across 57,188 segments
+or new join regressions on the 4,135 existing bridge paths.
+[Close-ups and measurements](evidence/ramp-joins/).
+
+To regenerate the repair, pass the screened `bridge-surfaces.json` from the
+railway and upper deck preview as `--current` to
+`pipeline/ramp_approach_preview.py`, along with `--data`, `--lidar`, `--out`
+and `--report`. The recipe in `pipeline/ramp_approaches.json` identifies
+the reviewed IPR faces. The generator stops if the survey file differs
+from the reviewed source.
+Pass the result as `--bridgesurfaces` to the road, bridge and step checks
+alongside the existing `--roadsurfaces road-shelves.json`.

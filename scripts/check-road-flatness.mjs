@@ -8,7 +8,7 @@
 //
 //   node scripts/check-road-flatness.mjs [area, praha] [--data public/data] [--worst 25]
 //        [--near lat,lon[,metres]] [--save now.json] [--against before.json]
-//        [--roadprofiles | --roadsurfaces file] [--profile <edge id or part of a name>] [--strict]
+//        [--roadprofiles | --roadsurfaces file] [--bridgesurfaces file] [--profile <edge id or part of a name>] [--strict]
 //
 // Per street, the worst of:
 // - step: a jump between two samples a metre apart that the slope either side doesn't
@@ -32,6 +32,7 @@ import { join } from 'node:path';
 import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps } from '../src/terrain.ts';
 import { readRoadProfile, withRoadProfile } from '../src/roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
+import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
 import { onPolygons } from '../src/map/geo.ts';
 
 const args = {}, pos = [];
@@ -49,8 +50,15 @@ const pilot = args.roadprofiles
 if (args.roadprofiles && !pilot) throw new Error('No road profile for this map build');
 if (args.roadsurfaces === true) throw new Error('--roadsurfaces requires a filename');
 const trial = args.roadsurfaces ? readFileSync(args.roadsurfaces, 'utf8') : undefined;
-const surfaces = trial !== undefined ? readRoadSurfaces(JSON.parse(trial), index.area, index.built) : null;
+let surfaces = trial !== undefined ? readRoadSurfaces(JSON.parse(trial), index.area, index.built) : null;
 if (args.roadsurfaces && (!surfaces || pilot)) throw new Error('Choose one matching road surface file');
+const bridgeTrial = args.bridgesurfaces ? readFileSync(args.bridgesurfaces, 'utf8') : null;
+const preview = bridgeTrial ? readBridgeSurfacePreview(JSON.parse(bridgeTrial), index.area, index.built) : null;
+if (args.bridgesurfaces && !preview) throw new Error('Bridge surfaces do not match the map build');
+if (preview) {
+  surfaces = new Map(surfaces);
+  for (const [key, fits] of preview.ground) surfaces.set(key, [...fits, ...(surfaces.get(key) ?? [])]);
+}
 const REF = 100; // heights here are metres above 100 m a.s.l.
 const STEP = 1;     // m between samples
 const END = 4;      // m at each end left out, or the street's width if more (a junction)
@@ -81,9 +89,10 @@ function tileOf(i, j) {
   let out = null;
   const path = join(dir, 'tiles', `${k}.json`);
   if (existsSync(path)) {
-    const t = JSON.parse(readFileSync(path, 'utf8')), height = binary(`${k}.height.bin`);
+    const t = bridgeSurfaceTile(JSON.parse(readFileSync(path, 'utf8')), k, preview);
     const structures = t.structures || [];
-    const levels = structures.length ? binary(`${k}.levels.bin`) : null;
+    const { height, levels } = bridgeSurfaceBuffers(t, k, terrain.n, binary(`${k}.height.bin`),
+      structures.length ? binary(`${k}.levels.bin`) : null, preview);
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
     const roads = t.roads || {}, side = terraceAt(t.terraces);
     const base = height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step,
@@ -150,7 +159,8 @@ for (const [i, j] of index.tiles) {
   if (centre && (Math.abs((i + 0.5) * T - ox - centre[0]) > centre[2] + T || Math.abs((j + 0.5) * T - oy - centre[1]) > centre[2] + T)) continue;
   const path = join(dir, 'tiles', `${i}_${j}.json`);
   if (!existsSync(path)) continue;
-  for (const e of JSON.parse(readFileSync(path, 'utf8')).drive || []) {
+  const tile = bridgeSurfaceTile(JSON.parse(readFileSync(path, 'utf8')), `${i}_${j}`, preview);
+  for (const e of tile.drive || []) {
     const key = both(e.id), had = edges.get(key);
     if (!had || had.pts.length < e.pts.length) edges.set(key, e);
   }
@@ -177,7 +187,7 @@ function walk(e) {
         // (Off the road only where the whole width is: one way of a dual carriageway has a
         // median down its middle.)
         ...(() => {
-          const on = level !== undefined ? [true, true, true] : [onRoad(x, y, living), onRoad(lx, ly, living), onRoad(rx, ry, living)];
+          const on = level ? [true, true, true] : [onRoad(x, y, living), onRoad(lx, ly, living), onRoad(rx, ry, living)];
           return { road: on.some(Boolean), on: { mid: on[0], l: on[1], r: on[2] } };
         })() });
     }
@@ -322,7 +332,10 @@ for (const r of rows) {
   console.log('  ' + r.profile.map((p) => `${(p.l + REF).toFixed(1)}/${(p.mid + REF).toFixed(1)}/${(p.r + REF).toFixed(1)}${p.road ? '' : '*'}`).join(' '));
   delete r.profile;
 }
-if (args.save) writeFileSync(args.save, JSON.stringify({ built: index.built, terrainMode: surfaces ? 'surfaces' : pilot ? 'profile' : 'base', patchDigest: trial && createHash('sha256').update(trial).digest('hex'), rows: rows.map(({ profile, ...r }) => r) }));
+if (args.save) writeFileSync(args.save, JSON.stringify({ built: index.built, terrainMode: surfaces ? 'surfaces' : pilot ? 'profile' : 'base',
+  patchDigest: trial && createHash('sha256').update(trial).digest('hex'),
+  ...(bridgeTrial ? { bridgeDigest: createHash('sha256').update(bridgeTrial).digest('hex') } : {}),
+  rows: rows.map(({ profile, ...r }) => r) }));
 if (args.strict) {
   const bad = KINDS.reduce((n, [k]) => n + over(rows, k, LIMIT), 0);
   if (bad) {

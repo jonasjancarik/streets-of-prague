@@ -3,13 +3,14 @@
 // and every street, path or stairs that crosses a step (where the edge is open), by
 // kind and by how far the ground drops there. A car street crossing a drop of metres
 // is a place where the terrain or the map is wrong: they are listed.
-//   node scripts/check-step-edges.mjs [area] [--list N] [--roadsurfaces file --save report.json] [--tiles i_j,i_j]
+//   node scripts/check-step-edges.mjs [area] [--list N] [--roadsurfaces file] [--bridgesurfaces file] [--save report.json] [--tiles i_j,i_j]
 import { readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { decodeHeights, pointLabels, heightSampler, terraceAt, flatTerraces } from '../src/terrain.ts';
 import { stepEdges } from '../src/stepEdges.ts';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
+import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
 import { bridgeApproaches, byLevel } from '../src/roadLevels.ts';
 import { clipLine } from '../src/map/geo.ts';
 
@@ -29,6 +30,9 @@ const index = JSON.parse(readFileSync(`${dir}index.json`, 'utf8')), { n, step } 
 const trial = options['--roadsurfaces'] ? readFileSync(options['--roadsurfaces'], 'utf8') : undefined;
 const surfaces = trial !== undefined ? readRoadSurfaces(JSON.parse(trial), index.area, index.built) : null;
 if (trial && !surfaces) throw new Error('No road surfaces for this map build');
+const bridgeTrial = options['--bridgesurfaces'] ? readFileSync(options['--bridgesurfaces'], 'utf8') : null;
+const preview = bridgeTrial ? readBridgeSurfacePreview(JSON.parse(bridgeTrial), index.area, index.built) : null;
+if (bridgeTrial && !preview) throw new Error('Bridge surfaces do not match the map build');
 const selected = options['--tiles']?.split(',');
 if (selected?.some(k => !/^\d+_\d+$/.test(k))) throw new Error('Expected comma-separated tile keys');
 const changed = [];
@@ -36,16 +40,17 @@ let metres = 0, parapet = 0, tiles = 0, withEdges = 0;
 const crossings = new Map(), worst = [];
 for (const f of selected ? selected.map(k => k + '.json') : readdirSync(`${dir}tiles`)) {
   if (!/^\d+_\d+\.json$/.test(f)) continue;
-  const t = JSON.parse(readFileSync(`${dir}tiles/${f}`, 'utf8')), k = f.slice(0, -5);
+  const k = f.slice(0, -5), t = bridgeSurfaceTile(JSON.parse(readFileSync(`${dir}tiles/${f}`, 'utf8')), k, preview);
   const hb = [`${dir}tiles/${k}.height.bin.gz`, `${dir}tiles/${k}.height.bin`].find(existsSync);
   if (!hb || !t.terraces?.length) continue;
   tiles++;
   const raw = readFileSync(hb), buf = hb.endsWith('.gz') ? gunzipSync(raw) : raw;
-  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  const { height: ab } = bridgeSurfaceBuffers(t, k, n, buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), null, preview);
   const hm = decodeHeights(ab, n, 0), labels = pointLabels(ab, n);
   const side = terraceAt(t.terraces);
   const base = heightSampler(hm, t.box, n, step, labels, side, flatTerraces(t.terraces, 0));
-  const patches = t.structures?.some((s) => s.kind === 'tunnel') ? undefined : surfaces?.get(k);
+  const road = surfaces?.get(k), lower = preview?.ground.get(k);
+  const patches = t.structures?.some((s) => s.kind === 'tunnel') ? undefined : lower ? [...lower, ...(road ?? [])] : road;
   const H = withRoadSurfaces(base, patches, 0, side);
   const ways = [
     ...(t.drive ?? []).filter((e) => !e.bridge && !e.tunnel).flatMap((e) => byLevel(e)
@@ -107,4 +112,5 @@ for (const w of worst.slice(0, list)) console.log(`    ${w.drop.toFixed(1)} m  t
 
 if (options['--save']) writeFileSync(options['--save'], JSON.stringify({
   built: index.built, patchDigest: trial && createHash('sha256').update(trial).digest('hex'), changed,
+  ...(bridgeTrial ? { bridgeDigest: createHash('sha256').update(bridgeTrial).digest('hex') } : {}),
 }) + "\n");
