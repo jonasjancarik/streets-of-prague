@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { PATTERN, patterned, held, DIG } from './shading.ts';
+import { PATTERN, patterned, held, DIG, roadRasterEnabled } from './shading.ts';
+import type { RoadRaster } from './roadRaster.ts';
 
 // A tile's ground as meshes, from the layers ground.ts worked out (in a tile worker):
 // procedural shaders for the surfaces, soft shading at shores and round buildings,
@@ -18,6 +19,7 @@ export interface GroundLayer {
   tunnel?: boolean;
   level?: number;
   base?: boolean; // the plain ground under everything (see `photo`)
+  raster?: RoadRaster;
   wall?: boolean; // the walls at the ground's steps: upright, drawn from their lower side only
 }
 
@@ -41,7 +43,8 @@ export class Surfaces {
       g.setAttribute('normal', new THREE.BufferAttribute(l.geometry.normal, 3));
       if (l.geometry.alpha) g.setAttribute('alpha', new THREE.BufferAttribute(l.geometry.alpha, 1));
       g.setIndex(new THREE.BufferAttribute(l.geometry.index, 1));
-      const mat = surfaceMaterial(l, time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, l.base ? photo : null);
+      const raster = l.raster ? this.coverageTexture(l.raster) : null;
+      const mat = surfaceMaterial(l, time, relief, l.level === undefined ? null : masks.get(l.level) ?? null, l.base ? photo : null, raster);
       const m = new THREE.Mesh(g, mat);
       if (l.geometry.hold) {
         g.setAttribute('hold', new THREE.BufferAttribute(l.geometry.hold, 3));
@@ -63,6 +66,15 @@ export class Surfaces {
       if (l.slab) m.castShadow = true;
       this.group.add(m);
     }
+  }
+
+  private coverageTexture({ cells, w, h }: RoadRaster) {
+    const texture = new THREE.DataTexture(cells, w, h, THREE.RedFormat, THREE.UnsignedByteType);
+    texture.unpackAlignment = 1;
+    texture.minFilter = texture.magFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+    this.masks.push(texture);
+    return texture;
   }
 
   dispose() {
@@ -94,7 +106,7 @@ function onceAPixel(m: THREE.Mesh, l: GroundLayer) {
 let softShadeBy: ((opacity: number) => THREE.Material) | null = null;
 export const setSoftShade = (f: (opacity: number) => THREE.Material) => { softShadeBy = f; };
 
-function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: SurfaceTexture | null, mask: SurfaceTexture | null, photo: { texture: THREE.Texture; box: number[] } | null = null) {
+function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: SurfaceTexture | null, mask: SurfaceTexture | null, photo: { texture: THREE.Texture; box: number[] } | null = null, raster: THREE.Texture | null = null) {
   // A bridge deck's slab is solid: drawn with depth, so what's under it is hidden
   // (except round the player, see CUTAWAY), and it casts a shadow.
   if (l.slab) return patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide }), PATTERN[l.pattern ?? 'flat'], time, null, { mask: null });
@@ -125,7 +137,8 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
       fragmentShader: 'uniform float opacity; uniform vec4 uDig; varying float vA; varying vec2 vXZ; void main() { if (distance(vXZ, uDig.xy) < uDig.z) discard; gl_FragColor = vec4(0.08, 0.07, 0.06, vA * vA * opacity); }',
     });
   }
-  const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[l.pattern ?? 'flat'], time, relief, null, true, photo);
+  const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false, depthTest: false }), PATTERN[l.pattern ?? 'flat'], time, relief, null, true, photo, false, true,
+    raster && l.raster ? { texture: raster, box: l.raster.box } : null);
   if (l.blend !== null && l.blend !== undefined) { mat.blending = THREE.CustomBlending; mat.opacity = l.blend; }
   // Seen from behind, a wall would be drawn over the ground above it.
   if (l.wall) mat.side = THREE.FrontSide;
@@ -144,6 +157,10 @@ export function groundSamples(time: { value: number }) {
   const relief = { texture, box: [0, 0, 1, 1] };
   const layers: GroundLayer[] = Object.keys(PATTERN).map((pattern, order) => ({ order, geometry: plane(), color: '#ffffff', pattern, blend: null }));
   layers.push({ order: layers.length, geometry: plane(), shade: 0.5 });
+  if (roadRasterEnabled()) {
+    const raster: RoadRaster = { box: [0, 1, 1, 0], w: 1, h: 1, cells: new Uint8Array([255]) };
+    layers.push({ order: layers.length, geometry: plane(), color: '#ffffff', pattern: 'asphalt', raster });
+  }
   // And the bridge decks' kinds.
   const decks: GroundLayer[] = [
     ...Object.keys(PATTERN).map((pattern, order) => ({ order, geometry: plane(), color: '#ffffff', pattern, blend: null, deck: true, level: 1 })),

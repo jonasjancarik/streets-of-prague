@@ -846,3 +846,13 @@ and renderer triangle counts rose from about 5.02 million to 5.04 million.
 The measured curve fit was identical in the final screened preview.
 These samples cover a static desktop view. Logs are in
 `docs/evidence/wider-road-surfaces/perf-*.log`.
+
+## 6 November 2026 — shared terrain asphalt
+
+The opt-in asphalt mask uses the tile's terrain triangles with extra subdivision
+where road height probes depart from the mesh edge. At three fixed top-down
+views, the loaded ground triangle count fell 7–10%. Draw calls in the timed
+Kongresová view stayed at 175. Mean frame time switched direction with run
+order, and the raster variant's slow-frame tail was higher in both pairs.
+See [the shared asphalt trial](tiny-prague-road-rendering.md#shared-asphalt-trial-6-november-2026)
+for frame, worker and raw buffer measurements.

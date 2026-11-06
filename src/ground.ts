@@ -10,6 +10,7 @@ import type { Terrace } from './terrain.ts';
 import { offsetLine } from './network.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
 import type { GroundLayer } from './surface.ts';
+import { pavingRaster, refineRasterRoad, roadRasterGeometry, type RoadRaster } from './roadRaster.ts';
 import { PITCH_LOOKS } from './map/pitches.ts';
 import { coverGeometry } from './map/utility.ts';
 import type { UtilityMark } from './map/utility.ts';
@@ -87,7 +88,7 @@ const COVER: [string, string, string][] = [
   ['cover_asphalt', '#6e7174', 'asphalt'],
 ];
 
-function polygons(polys: Polygons): GroundGeometry {
+function polygons(polys: Polygons, raster: RoadRaster | null = null): GroundGeometry {
   const pos: number[] = [], idx: number[] = [];
   for (const rings of polys) {
     const contour = rings[0].map(([x, y]) => new THREE.Vector2(x, y));
@@ -96,7 +97,7 @@ function polygons(polys: Polygons): GroundGeometry {
     for (const v of [contour, ...holes].flat()) pos.push(v.x, 0, -v.y);
     for (const [a, b, c] of THREE.ShapeUtils.triangulateShape(contour, holes)) idx.push(base + a, base + b, base + c);
   }
-  return finish(pos, idx);
+  return finish(pos, idx, null, raster);
 }
 
 // Quads along polylines, `w` metres wide. `dash` = [on, off] in metres for dashed lines.
@@ -263,11 +264,12 @@ function refineRoad(pos: number[], i: number, j: number, d2: number) {
 // Keep the ordinary 8 m mesh away from steps, with closer samples along them.
 // The actual cuts follow every outline, including narrow enclosed terraces and
 // three levels meeting; triangle-corner labels alone cannot detect those cases.
-function cutAtSteps(pos: number[], idx: number[], extra: number[] | null, at: (x: number, y: number) => number) {
+function cutAtSteps(pos: number[], idx: number[], extra: number[] | null, at: (x: number, y: number) => number,
+  refineRoads: ((i: number, j: number, d2: number) => boolean) | null) {
   const side: number[] = [];
   const sideAt = (i: number) => (side[i] ??= at(pos[i * 3], -pos[i * 3 + 2]));
   const crossesStep = (i: number, j: number, d2: number) => d2 > STEP_FINE * STEP_FINE && sideAt(i) !== sideAt(j);
-  const refine = roadBoxes ? (i: number, j: number, d2: number) => crossesStep(i, j, d2) || refineRoad(pos, i, j, d2) : crossesStep;
+  const refine = refineRoads ? (i: number, j: number, d2: number) => crossesStep(i, j, d2) || refineRoads(i, j, d2) : crossesStep;
   idx = subdivide(pos, idx, extra, 8, refine);
   return cutTerrainSteps(pos, idx, extra, at, stepIndex!);
 }
@@ -306,7 +308,7 @@ function stepWalls(lines: Point2[][]): GroundGeometry {
   return joined(polygons([]), q);
 }
 
-function finish(pos: number[], idx: number[], extra: number[] | null = null): GroundGeometry {
+function finish(pos: number[], idx: number[], extra: number[] | null = null, raster: RoadRaster | null = null): GroundGeometry {
   // Wind every triangle to face up, so lighting never sees a back face.
   for (let t = 0; t < idx.length; t += 3) {
     const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
@@ -315,8 +317,11 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
   }
   if (groundHeight) {
     let side: number[] | null = null;
-    if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf));
-    else idx = subdivide(pos, idx, extra, 8, roadBoxes && !afloat ? (i, j, d2) => refineRoad(pos, i, j, d2) : null);
+    const refineRaster = raster ? refineRasterRoad(pos, raster, groundHeight, sideOf) : null;
+    const refine = !afloat && (roadBoxes || refineRaster)
+      ? (i: number, j: number, d2: number) => refineRoad(pos, i, j, d2) || !!refineRaster?.(i, j, d2) : null;
+    if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf, refine));
+    else idx = subdivide(pos, idx, extra, 8, refine);
     if (groundBox) ({ pos, idx, extra, side } = conformTerrainEdges(pos, idx, extra, side, groundBox, STEP_FINE));
     for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat ? WATER : side ? side[k] : false);
   }
@@ -344,13 +349,14 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
 //
 // `steps`: the terrain knows the steps in it (the tile's terraces; its water is in `d`),
 // so the layers are cut along them and the steps get walls (see `sideOf`).
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true }: {
+export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
   // false: no lane lines (see TILE_LOOK in tiles.ts)
   paint?: boolean;
   roadProfile?: RoadProfile;
   roadSurfaceBoxes?: Bounds[];
+  rasterRoads?: boolean;
 }): GroundResult {
   paintRoads = paint;
   // The steps in the terrain: which side a point is on, and their outlines (stepEdges.ts).
@@ -365,12 +371,12 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
     stepIndex = at ? new TerrainStepIndex(outlines) : null;
     try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; stepIndex = null; groundBox = roadBoxes = null; }
   };
-  if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones })), masks: [] };
+  if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones, rasterRoads })), masks: [] };
   const T = height || (() => 0);
   // (A street on the ground with a level is on a bridge over an underpass's cutting
   // there, pipeline/structures.py's cuttings: painted on its deck.)
   const onDeck = (e: GroundRoadEdge) => !!e.bridge || (!e.tunnel && (e.level ?? 0) > 0);
-  const lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, bridges: false }));
+  const lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, bridges: false, rasterRoads }));
   const masks = levels.map((l) => levelMask(box, l.polys, l.level));
   const on = (k: number, x: number, y: number) => onMask(masks[k], x, y);
   // Each street on a bridge or in a tunnel is painted on one level, and each stretch of
@@ -422,7 +428,10 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
 
 // The typed arrays in a tile's ground, to hand them over from a worker without copying.
 export const layerBuffers = ({ layers, masks }: GroundResult): ArrayBuffer[] => {
-  const buffers = [...layers.flatMap((l) => Object.values(l.geometry).map((a) => a.buffer)), ...masks.map((m) => m.cells.buffer)];
+  const buffers = [
+    ...layers.flatMap((l) => [...Object.values(l.geometry).map((a) => a.buffer), ...(l.raster ? [l.raster.cells.buffer] : [])]),
+    ...masks.map((m) => m.cells.buffer),
+  ];
   if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Ground transfer requires ArrayBuffer storage');
   return buffers as ArrayBuffer[];
 };
@@ -682,9 +691,9 @@ function tunnelLayers(polys: Polygons, box: Bounds, mask: LevelMask, H: HeightAt
   return out;
 }
 
-function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridges: withBridges = true }: {
+function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridges: withBridges = true, rasterRoads = false }: {
   box: Bounds; edges: GroundRoadEdge[]; buildings: { rings: Point2[][] }[];
-  parkingZones: (string | null)[]; bridges?: boolean;
+  parkingZones: (string | null)[]; bridges?: boolean; rasterRoads?: boolean;
 }): GroundLayer[] {
   const out: GroundLayer[] = [];
   const A = d.areas, R = d.roads;
@@ -750,7 +759,8 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     }
       return out;
     };
-    add(polygons([[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]]), COLORS.pavement, 'asphalt');
+    const roadRaster = rasterRoads ? pavingRaster(box, R.road || []) : null;
+    add(polygons([[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]], roadRaster), COLORS.pavement, 'asphalt');
     out[out.length - 1].base = true;
     for (const [key, pattern] of LAND_USE) add(polygons(A[key] || []), COLORS[key as keyof typeof COLORS], pattern);
     for (const [key, color, pattern] of DTM_LAND) add(polygons(A[key] || []), color, pattern);
@@ -809,7 +819,13 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(R.pavement_asphalt || []), COLORS.pavement, 'asphalt');
     add(polygons(R.pavement || []), COLORS.path, 'mosaic');
     add(polygons(R.sett || []), COLORS.sett, 'setts');
-    add(polygons(R.road || []), COLORS.asphalt, 'asphalt');
+    if (rasterRoads) {
+      if (roadRaster) {
+        const geometry = roadRasterGeometry(out[0].geometry, roadRaster);
+        if (geometry.index.length) out.push({ order, geometry, color: COLORS.asphalt, pattern: 'asphalt', raster: roadRaster });
+      }
+      order++;
+    } else add(polygons(R.road || []), COLORS.asphalt, 'asphalt');
     // Where the trams have a bed of their own beside the street: ballast under the tracks.
     add(polygons(R.trambed || []), COLORS.ballast, 'gravel');
     // Bay lines as Prague paints them: a solid blue line in residents' zones, white

@@ -89,6 +89,10 @@ measurements and limits.
 matches the assembled map. The [generation and screening instructions](road-profile-pilot.md)
 explain how to prepare the file for another build.
 
+On WebGPU, `?roadraster` previews rasterized asphalt on shared terrain triangles.
+See [the shared asphalt trial](tiny-prague-road-rendering.md#shared-asphalt-trial-6-november-2026)
+for the comparison and measurements.
+
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 
 | Setting | Ultra | High | Medium | Low | Lowest |

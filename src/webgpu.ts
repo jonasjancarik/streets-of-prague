@@ -17,6 +17,7 @@ import {
 } from 'three/tsl';
 import { GRASS_SEASON, WOOD_SEASON, FIELD_SEASON, HEDGE_SEASON } from './groundSeason.ts';
 import { setPatterned, setHeld, HOLD_PX, SKY_REF, GRIT, GRIT_M, LAMP_MIRROR } from './shading.ts';
+import type { RasterGroundInput } from './shading.ts';
 import {
   type N, follow, uDirt, uWet, uSnow, uStreetSnow, uRain, uCut, uDig, timeOf, followColor, followVec, addPort, hash12, vnoise, fbm, fbm2, detail, blocks, stones, ports, skyAmbient,
 } from './webgpu/common.ts';
@@ -226,24 +227,26 @@ type GroundInputs = {
   relief: { texture: THREE.Texture; box: number[]; sky?: { texture: THREE.Texture; box: number[] } | null } | null;
   deck: { mask: THREE.Texture | null; box?: number[] } | null;
   photo: { texture: THREE.Texture; box: number[] } | null;
+  raster: RasterGroundInput | null;
 };
-const groundGraphs = new Map<{ value: number }, Map<string, { color: N; ao: N | null; emissive: N; normal: N | null }>>();
+const groundGraphs = new Map<{ value: number }, Map<string, { color: N; ao: N | null; emissive: N; normal: N | null; mask: N | null }>>();
 
 // patterned() in shading.ts, as a node material.
 function groundMaterial(
   base: THREE.MeshLambertMaterial, id: number, time: { value: number },
   relief: GroundInputs['relief'] = null, deck: GroundInputs['deck'] = null,
   dig = false, photo: GroundInputs['photo'] = null, sheltered = false,
-  seasonal = true,
+  seasonal = true, raster: GroundInputs['raster'] = null,
 ) {
   const m = new MeshLambertNodeMaterial();
   m.color.copy(base.color);
   Object.assign(m, { side: base.side, depthWrite: base.depthWrite, depthTest: base.depthTest, transparent: base.transparent, opacity: base.opacity });
-  const inputs = { relief, deck, photo };
+  const inputs = { relief, deck, photo, raster };
   const shade = (n: N, pattern: number, seasonal = true) => {
     const g = groundGraph(pattern, time, inputs, dig, sheltered, seasonal);
     Object.assign(n, {
       colorNode: g.color, aoNode: g.ao, emissiveNode: g.emissive, normalNode: g.normal,
+      maskNode: g.mask, rasterMap: raster?.texture, rasterBox: raster && boxOf(raster.box),
       reliefMap: relief?.texture, reliefBox: relief && boxOf(relief.box), skyMap: relief?.sky?.texture, skyBox: relief?.sky && boxOf(relief.sky.box),
       maskMap: deck?.mask, maskBox: deck?.mask && boxOf(deck.box!), photoMap: photo?.texture, photoBox: photo && boxOf(photo.box),
     });
@@ -275,8 +278,8 @@ function heldMaterial(material: THREE.MeshLambertMaterial) {
   (material as unknown as MeshLambertNodeMaterial).positionNode = heldPosition;
   return material;
 }
-function groundGraph(id: number, time: { value: number }, { relief, deck, photo }: GroundInputs, dig: boolean, sheltered: boolean, seasonal: boolean) {
-  const key = `${id} ${!!relief} ${!!relief?.sky} ${!!deck} ${!!deck?.mask} ${!!photo} ${dig} ${sheltered} ${seasonal}`;
+function groundGraph(id: number, time: { value: number }, { relief, deck, photo, raster }: GroundInputs, dig: boolean, sheltered: boolean, seasonal: boolean) {
+  const key = `${id} ${!!relief} ${!!relief?.sky} ${!!deck} ${!!deck?.mask} ${!!photo} ${!!raster} ${dig} ${sheltered} ${seasonal}`;
   let byKey = groundGraphs.get(time);
   if (!byKey) groundGraphs.set(time, (byKey = new Map()));
   let graph = byKey.get(key);
@@ -287,6 +290,7 @@ function groundGraph(id: number, time: { value: number }, { relief, deck, photo 
   const slope = id === 10 && !photo && !sheltered ? waves(wp, timeOf(time)).toVar() : null;
   graph = {
     color: vec4(g.rgb, 1),
+    mask: raster ? tileTexture('raster', wp).r.greaterThan(0.5) : null,
     // Courtyards and lanes see less of the sky: less of the ambient light, none of the sun's or the lamps'.
     ao: relief?.sky ? skyAmbient(tileTexture('sky', vec2(positionWorld.x, positionWorld.z.negate())).r) : null,
     // Lamp light on the ground, and the wet ground's mirror of the sky and the lamps.
@@ -389,8 +393,9 @@ export function configureRenderer(renderer: WebGPURenderer) {
   // finishes; what isn't compiled by then is compiled when it's first drawn.
   const compileAsync = renderer.compileAsync.bind(renderer);
   renderer.compileAsync = (...a: Parameters<typeof compileAsync>) => Promise.race([compileAsync(...a), new Promise<void>((r) => setTimeout(r, 10000))]);
-  setPatterned(groundMaterial);
+  const webgpu = 'isWebGPUBackend' in renderer.backend && renderer.backend.isWebGPUBackend === true;
+  setPatterned(groundMaterial, webgpu);
   setHeld(heldMaterial);
-  console.info(`Renderer: three.js WebGPURenderer on ${(renderer.backend as any).isWebGPUBackend ? 'WebGPU' : 'WebGL 2 (no WebGPU here)'}`);
+  console.info(`Renderer: three.js WebGPURenderer on ${webgpu ? 'WebGPU' : 'WebGL 2 (no WebGPU here)'}`);
   return renderer as unknown as THREE.WebGLRenderer;
 }

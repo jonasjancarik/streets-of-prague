@@ -139,7 +139,7 @@ export interface WorkerJobs {
   ground: {
     d: GroundTileData; box: Bounds; edges: GroundRoadEdge[];
     buildings: { rings: Point2[][] }[]; parkingZones: (string | null)[];
-    ground: HeightGrid | null; levels: LevelInput[] | null; paint?: boolean;
+    ground: HeightGrid | null; levels: LevelInput[] | null; paint?: boolean; rasterRoads?: boolean;
   };
   sky: SkyJob;
   land: {
