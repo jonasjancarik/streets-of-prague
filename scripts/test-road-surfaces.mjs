@@ -18,6 +18,22 @@ test('a trial is tied to its map and must feather out at the edge of its grid', 
   assert.equal(readRoadSurfaces({ ...file, patches: [{ ...patch, weights: [255, ...weights.slice(1)] }] }, 'praha', 'new'), null);
 });
 
+test('a height grid blends into the junction below it and respects terrain steps', () => {
+  const grid = { ...patch, id: 'corridor', z: undefined,
+    heights: weights.map((_, i) => 103 + (i % 21) * .1),
+    weights: weights.map((w, i) => i % 21 < 11 ? Math.min(w, 128) : w) };
+  const layers = readRoadSurfaces({ ...file, patches: [grid, patch] }, 'praha', 'new');
+  const baseline = () => 0;
+  const side = (_x, y) => y < 4 ? 2 : 0;
+  const prior = withRoadSurfaces(baseline, [patch], 100, side);
+  const h = withRoadSurfaces(baseline, layers.get('0_0'), 100, side);
+  assert.ok(Math.abs(h(10, 10) - (4 * 128 + prior(10, 10) * 127) / 255) < 1e-10);
+  assert.ok(Math.abs(h(11.5, 10) - 4.15) < 1e-10);
+  assert.equal(h(10, 3), 0);
+  assert.equal(h(0, 10), prior(0, 10));
+  assert.equal(readRoadSurfaces({ ...file, patches: [{ ...grid, heights: [103] }] }, 'praha', 'new'), null);
+});
+
 test('an intersection surface keeps the retaining wall and water on separate levels', () => {
   const side = (x, y) => y < 4 ? 2 : 0;
   const base = (x, y, s = false) => s === true ? -2 : (s === false ? side(x,y) : s) === 2 ? -1 : 0;

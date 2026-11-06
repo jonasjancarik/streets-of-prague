@@ -92,6 +92,14 @@ explain how to prepare the file for another build.
 Add `&roadjunctions` to load the wider junction trial from the matching
 `road-junctions.json`. [Junction trial results and generation](road-profile-pilot.md#extended-junction-trial).
 
+Add `&roadcorridor` to preview the fitted Dobrovolského corridor when the matching
+`road-corridor.json` is present. [Corridor trial results](road-profile-pilot.md#dobrovolského-corridor-trial).
+
+For matched terrain comparisons, `?camera=lat,lon,altitude,height,tilt,heading`
+opens the free camera at a fixed pose. Altitude is the target elevation in metres
+above sea level. Height is the camera's rise above that target, in metres.
+Tilt and heading are in degrees.
+
 On WebGPU, `?roadraster` previews rasterized asphalt on shared terrain triangles.
 See [the shared asphalt trial](tiny-prague-road-rendering.md#shared-asphalt-trial-6-november-2026)
 for the comparison and measurements.

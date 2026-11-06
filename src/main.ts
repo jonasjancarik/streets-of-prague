@@ -2502,7 +2502,7 @@ async function main() {
       // The developer panel's free camera: tilted back from the spot it looks at.
       chased = null;
       camPos.set(free.x, 0, -free.y);
-      camGround = world.terrainAt(free.x, free.y);
+      camGround = free.targetY ?? world.terrainAt(free.x, free.y);
       const hd = ((90 - free.heading) * Math.PI) / 180, back = free.height * Math.tan((free.tilt * Math.PI) / 180);
       camera.position.set(free.x - Math.cos(hd) * back, camGround + free.height, -(free.y - Math.sin(hd) * back));
       if (free.level) camera.up.set(Math.cos(hd), 0, -Math.sin(hd));
@@ -2836,6 +2836,14 @@ async function main() {
   });
   window.__test = testkit;
   dev.attach(testkit);
+  // A fixed target altitude keeps before/after terrain views on the same camera.
+  const shot = params.get('camera')?.split(',').map(Number);
+  if (shot?.length === 6 && shot.every(Number.isFinite)) {
+    const [lat, lon, altitude, height, tilt, heading] = shot;
+    if (inside(lon, lat) && height > 0 && height <= 1500) {
+      await testkit.camera({ at: [lat, lon], targetY: altitude - world.ref, height, tilt, heading, level: true });
+    }
+  }
 }
 
 // The stick in a car steers towards the heading it points at (see aimSteer).

@@ -300,3 +300,45 @@ node scripts/check-asphalt-waves.mjs '666516985>46818140>0' 50.03516,14.50886 \
 Drop `&roadraster` to repeat with vector asphalt. The probe reports where it
 found asphalt and measures longitudinal profiles at fixed offsets from the
 mapped centreline. The logs are in `docs/evidence/dobrovolskeho-waves/`.
+
+### Dobrovolského corridor trial
+
+The corridor fit covers the 126.6 m road edge from Šperlova to Ke Stáčírně.
+It fits a smooth longitudinal grade and a varying cross-slope to surveyed
+kerb elevations. The first 12 m and the last 10 m blend into the existing
+surfaces at the junctions. At 48 withheld kerb points the mean absolute
+error was 1.5 cm for the fit and 20.1 cm for the assembled terrain before
+road patches.
+
+The asphalt probe covered all 254 stations with raster asphalt enabled.
+Each table cell compares the junction preview with and without the corridor
+fit. A wave is the deviation from the straight line through the span's
+endpoints.
+
+| Span along road | Largest wave on the centreline | Largest wave across the paved width |
+|---|---:|---:|
+| 4 m | 13.3 → 1.9 cm | 20.9 → 8.7 cm |
+| 6 m | 17.2 → 3.3 cm | 30.3 → 10.8 cm |
+| 12 m | 16.7 → 6.7 cm | 29.4 → 12.8 cm |
+| 20 m | 29.5 → 8.6 cm | 47.2 → 11.8 cm |
+
+The largest remaining waves are near the Ke Stáčírně tie-in. In the
+matched low camera view, the kerb runs more evenly while some variation
+remains in the asphalt shading and surrounding ground.
+
+The citywide check compared 57,188 segments with the junction preview.
+Only Dobrovolského's reported metrics changed. The collision-edge check
+found no changes.
+
+```sh
+e=docs/evidence/dobrovolskeho-corridor
+uv run --project pipeline python pipeline/road_corridor.py \
+  --data public/data/praha_now --survey-snapshot pipeline/.cache/dtm/heights/praha.pkl \
+  --current public/data/praha_now/road-junctions.json --tile 81_41 \
+  --edge '666516985>46818140>0' --out "$e/candidate.json" --report "$e/fit.json"
+```
+
+After checking the candidate, copy it to `public/data/praha_now/road-corridor.json`.
+Keep `?roadsurfaces&roadjunctions&roadraster` in both preview links and add
+`&roadcorridor` for the fitted corridor. The logs and fixed-camera captures
+are in `docs/evidence/dobrovolskeho-corridor/`.

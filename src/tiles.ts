@@ -495,11 +495,17 @@ export class TileWorld {
     const loadRoadSurfaces = (file: string) => fetch(dataUrl(area, file))
       .then(async (r) => r.ok ? readRoadSurfaces(await r.json(), area, index.built) : null)
       .catch(() => null);
-    this.roadSurfaces = query.has('roadsurfaces')
-      ? query.has('roadjunctions')
-        ? loadRoadSurfaces('road-junctions.json').then((fits) => fits ?? loadRoadSurfaces('road-surfaces.json'))
-        : loadRoadSurfaces('road-surfaces.json')
-      : null;
+    this.roadSurfaces = query.has('roadsurfaces') ? (async () => {
+      if (query.has('roadcorridor')) {
+        const fits = await loadRoadSurfaces('road-corridor.json');
+        if (fits) return fits;
+      }
+      if (query.has('roadjunctions')) {
+        const fits = await loadRoadSurfaces('road-junctions.json');
+        if (fits) return fits;
+      }
+      return loadRoadSurfaces('road-surfaces.json');
+    })() : null;
     this.roadProfiles = !this.roadSurfaces && query.has('roadprofiles') ? fetch(dataUrl(area, 'road-profile.json'))
       .then(async (r) => r.ok ? readRoadProfile(await r.json(), area, index.built) : null)
       .catch(() => null) : null;
