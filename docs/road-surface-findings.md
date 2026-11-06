@@ -725,6 +725,8 @@ the straight line between the points 3 m either side, as in
 Six of the streets are on the ground: Italská, Dobrovolského, Husitská,
 Karmelitská, Pod Kaštany and Evropská. The ranges are across those six.
 
+![The right wheel path on each street, each source's height above a smooth reference](images/road-height-sources.png)
+
 | Source | 6 m wave, median | 6 m wave, 95th percentile | At surveyed kerbs: offset, scatter | Road samples over 30 cm above LiDAR |
 |---|---:|---:|---:|---:|
 | Game lattice | 1–5 cm | 3–67 cm | −2 to +13 cm, 3–20 cm | |
