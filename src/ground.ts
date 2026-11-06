@@ -22,6 +22,7 @@ export interface GroundTileData {
   // The stretches of tram track on a bridge, each with its level (pipeline/structures.py,
   // OnLevels), in a tile with bridges; not in older maps.
   deckRails?: { level: number; pts: Point2[] }[];
+  bridgeTracks?: { level: number; pts: Point2[] }[];
   weirs?: Point2[][];
   crossings?: Point2[][];
   marks?: Point2[][];
@@ -406,6 +407,11 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
     });
   }
   const upper: GroundLayer[] = [];
+  const railway = new Map<number, Point2[][]>();
+  for (const track of d.bridgeTracks ?? []) {
+    const lines = railway.get(track.level);
+    if (lines) lines.push(track.pts); else railway.set(track.level, [track.pts]);
+  }
   try {
     levels.forEach((l, k) => {
       const H = (x: number, y: number) => { const h = l.height(x, y); return Number.isNaN(h) ? T(x, y) : h; };
@@ -416,7 +422,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
         // What's on the deck floats a hand's breadth above the slab: they're
         // triangulated differently, so they'd cut into each other.
         groundHeight = (x: number, y: number) => H(x, y) + 0.12;
-        upper.push(...deckLayers(l.polys, tramsOn.get(k) || [], paintOn.get(k) || [], l.level));
+        upper.push(...deckLayers(l.polys, tramsOn.get(k) || [], paintOn.get(k) || [], l.level, railway.get(l.level)));
       } else {
         groundHeight = H;
         upper.push(...tunnelLayers(l.polys, box, masks[k], H, T, paintOn.get(k) || [], l.level));
@@ -630,12 +636,13 @@ function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T:
 // pavements are, from parapet to parapet, with the carriageway over it between granite
 // kerbs (the survey has no pavements on the bridges); one that carries none (a railway
 // bridge) stays plain.
-function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[], level: number): GroundLayer[] {
+function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[], level: number, railway: Point2[][] = []): GroundLayer[] {
   const out: GroundLayer[] = [];
   let order = -599;
-  const add = (geometry: GroundGeometry, color: string, pattern = 'flat') => {
+  const add = (geometry: GroundGeometry, color: string, pattern = 'flat', topOnly = false) => {
     const o = order++;
-    if (geometry.index.length) out.push({ order: o, geometry, color, pattern, blend: null, deck: true, level });
+    if (geometry.index.length) out.push({ order: o, geometry, color, pattern, blend: null, deck: true, level,
+      ...(topOnly ? { topOnly } : {}) });
   };
   const streets = edges.filter((e) => e.pts.length > 1);
   if (streets.length) {
@@ -643,9 +650,11 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
     const ways = streets.map((e) => ({ pts: e.pts, half: carriageway(e, trams) / 2 }));
     for (const w of ways) add(strips([w.pts], w.half * 2), COLORS.bridge, 'asphalt');
     add(strips(ways.flatMap((w) => [offsetLine(w.pts, w.half), offsetLine(w.pts, -w.half)]), 0.25), COLORS.kerb, 'concrete');
-  } else add(polygons(polys), COLORS.bridge, 'asphalt');
+  } else if (railway.length) add(polygons(polys), COLORS.ballast, 'gravel', true);
+  else add(polygons(polys), COLORS.bridge, 'asphalt');
   add(strips(trams, 2.5), COLORS.trackbed, 'concrete');
   add(strips(trams.flatMap((pts) => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.1), COLORS.steel);
+  if (railway.length) add(strips(railway.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.12), COLORS.steel, 'flat', true);
   const { dashed, solid } = roadPaint(edges, trams);
   add(strips(dashed, 0.13, [3, 6], true), COLORS.paint);
   add(strips(solid, 0.13, null, true), COLORS.paint);

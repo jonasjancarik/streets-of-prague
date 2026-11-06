@@ -614,3 +614,60 @@ baseline. After the checks pass, copy the screened file to
 `public/data/praha_now/road-shelves.json` and add `&roadshelves` to the
 local comparison link. The evidence directory contains the matched
 captures, source samples and screening decisions.
+
+## The railway at Husitská and the ramps at U Bulhara
+
+The Nové spojení railway crosses above Husitská. The tile already had a
+separate deck around 210 m above sea level. Its generic asphalt finish made
+it look like an elevated road. IPR's bridge faces and the lower LiDAR
+heights identify which mapped rail lines are on that deck. The preview
+draws ballast and rails on top of the confirmed railway spans.
+[Nové spojení engineering profile](https://30let.ckait.cz/stavba-07-nove-spojeni-zeleznice-v-centru-prahy.html).
+
+At U Bulhara, the main Wilsonova deck outline included both lower ramps in
+plan. At one sampled point the game put the ramp at 201.1 m and the cover
+above it at 206.1 m. The surveyed deck top there was 201.0 m, consistent
+with the ramp height.
+[Photograph of the Wilsonova ramp](https://commons.wikimedia.org/wiki/File%3AU_Bulhara%2C_Wilsonova%2C_n%C3%A1jezdov%C3%A1_rampa.jpg).
+
+The generator looks for continuous runs where a ramp runs alongside an
+upper road, the higher outline covers it and the survey records a deck at
+the lower height. It trims the higher outline around those runs, keeping surveyed
+upper faces and a margin around the mapped upper roads and paths. At U
+Bulhara that removed about 2,050 m² of cover. Both sampled ramps now have
+only their lower deck, and the sampled main road stays on the upper deck.
+
+The lower road beneath the railway has its own correction. It uses the
+continuous part of the corridor where the LiDAR and existing street agree
+on the lower elevation. Using individual LiDAR returns as the target
+raised low points and made an approach rougher. The retained fit uses
+the supported lower height as a ceiling, with a taper at either end.
+It lowered one sampled asphalt spike from 205.29 to 201.64 m. Beside
+tracks with unconfirmed heights the fit leaves more of the bank in place.
+The building faces visible through foreground terrain and the remaining
+rough banks still show in the oblique views.
+
+The combined check covered 57,188 road segments and 4,135 bridge paths.
+It found no new road, bridge or collision-edge regressions. Matched views
+and the sampled deck and ground heights are in `docs/evidence/rail-and-ramps/`.
+
+```sh
+e=docs/evidence/rail-and-ramps
+map=public/data/praha_now
+mkdir -p "$e"
+uv run --project pipeline python pipeline/bridge_surface_preview.py \
+  --data "$map" --lidar pipeline/.cache/ipr_lidar/2023 \
+  --tiles 60_63,61_63,61_64,61_65,62_64,62_65 \
+  --underpass '11293600574>1837022975>0,1837022975>60709807>0' \
+  --out "$e/candidate.json" --report "$e/candidate-report.json"
+node scripts/check-bridge-decks.mjs praha --roadsurfaces "$map/road-shelves.json" \
+  --bridgesurfaces "$e/candidate.json" --against docs/evidence/interchange-repair/protected-bridges.json \
+  --strict-regressions --save "$e/city-bridges.json"
+```
+
+For the road and step checks, prepend the candidate's `ground` patches
+to the existing `road-shelves.json` patches in a separate sidecar. Compare
+the resulting road and step reports with the screened shelf preview.
+After the checks pass, copy the candidate to
+`public/data/praha_now/bridge-surfaces.json` and add `&bridgesurfaces`
+to the local link.

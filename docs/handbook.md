@@ -102,6 +102,10 @@ Add `&roadshelves` to load the screened LiDAR terrain corrections beside
 lower roads from the matching `road-shelves.json`.
 [Source comparison and screening](road-surface-findings.md#lower-ground-beside-elevated-roads).
 
+Add `&bridgesurfaces` to preview the surveyed railway and ramp repairs from
+the matching `bridge-surfaces.json`.
+[Husitská and U Bulhara](road-surface-findings.md#the-railway-at-husitská-and-the-ramps-at-u-bulhara).
+
 For matched terrain comparisons, `?camera=lat,lon,altitude,height,tilt,heading`
 opens the free camera at a fixed pose. Altitude is the target elevation in metres
 above sea level. Height is the camera's rise above that target, in metres.

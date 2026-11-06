@@ -11,7 +11,7 @@ interface SurfaceFootprint {
 
 export type RoadSurface = SurfaceFootprint & (
   { z: [number, number, number, number, number, number]; heights?: never }
-  | { heights: number[]; z?: never }
+  | { heights: number[]; z?: never; lowerOnly?: true }
 );
 
 type HeightAt = (x: number, y: number, side?: number | boolean) => number;
@@ -32,7 +32,8 @@ export function readRoadSurfaces(value: unknown, area: string, built?: string): 
       || !Array.isArray(p.tiles) || !p.tiles.length || new Set(p.tiles).size !== p.tiles.length
       || !p.tiles.every((k) => typeof k === 'string' && /^\d+_\d+$/.test(k))) return null;
     const [nx, ny] = p.n;
-    if (p.heights === undefined ? !finite(p.z, 6) : p.z !== undefined || !finite(p.heights, nx * ny)) return null;
+    if (p.heights === undefined ? !finite(p.z, 6) : p.z !== undefined || !finite(p.heights, nx * ny)
+      || (p.lowerOnly !== undefined && p.lowerOnly !== true)) return null;
     if (p.weights.some((w, i) => w !== 0
       && (i < nx || i >= nx * (ny - 1) || i % nx === 0 || i % nx === nx - 1))) return null;
     ids.add(p.id);
@@ -61,8 +62,10 @@ export function withRoadSurfaces(base: HeightAt, patches: RoadSurface[] | undefi
       if (side === false && label?.(x, y)) return base(x, y, side);
       if (p.heights) {
         const fitted = bilinear(p.heights, k, n, a, b) - ref;
+        if (strength === 1 && !p.lowerOnly) return fitted;
         // A corridor can taper into the junction fit below it.
-        return strength === 1 ? fitted : strength * fitted + (1 - strength) * sample(x, y, side, i + 1);
+        const below = sample(x, y, side, i + 1);
+        return strength * (p.lowerOnly ? Math.min(fitted, below) : fitted) + (1 - strength) * below;
       }
       const s = 2 * u / (x1 - x0) - 1, t = 2 * v / (y1 - y0) - 1;
       const [h, dx, dy, xx, xy, yy] = p.z;

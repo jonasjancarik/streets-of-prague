@@ -7,7 +7,7 @@
 //   node scripts/check-bridge-decks.mjs [area, praha] [--data public/data] [--worst 25]
 //        [--save now.json] [--against before.json] [--profile <edge id or part of a name>]
 //        [--max-break 1.0] [--max-join 1.0] [--named-only] [--near lat,lon[,metres]]
-//        [--roadsurfaces file] [--strict-regressions (requires --against)]
+//        [--roadsurfaces file] [--bridgesurfaces file] [--strict-regressions (requires --against)]
 //
 // A "break" is the largest jump between two samples a metre apart along a deck (the
 // change that the slope either side doesn't account for; ways tagged as steps are left
@@ -26,6 +26,7 @@ import { join } from 'node:path';
 import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps } from '../src/terrain.ts';
 import { onPolygons } from '../src/map/geo.ts';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
+import { bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
 import { bridgeRegressions } from './bridge-regressions.mjs';
 
 const args = {}, pos = [];
@@ -41,6 +42,9 @@ const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8'));
 const trial = args.roadsurfaces ? readFileSync(args.roadsurfaces, 'utf8') : null;
 const surfaces = trial && readRoadSurfaces(JSON.parse(trial), index.area, index.built);
 if (args.roadsurfaces && !surfaces) throw new Error('Road surfaces do not match the map build');
+const bridgeTrial = args.bridgesurfaces ? readFileSync(args.bridgesurfaces, 'utf8') : null;
+const preview = bridgeTrial ? readBridgeSurfacePreview(JSON.parse(bridgeTrial), index.area, index.built) : null;
+if (args.bridgesurfaces && !preview) throw new Error('Bridge surfaces do not match the map build');
 const { tile: T, origin: [ox, oy], terrain } = index;
 const REF = 100; // heights here are metres above 100 m a.s.l.
 const STEP = 1, BREAK = Number(args['max-break'] ?? 1.0), JOIN = Number(args['max-join'] ?? 1.0);
@@ -59,14 +63,16 @@ function tileOf(i, j) {
   let out = null;
   const path = join(dir, 'tiles', `${k}.json`);
   if (existsSync(path)) {
-    const t = JSON.parse(readFileSync(path, 'utf8')), height = binary(`${k}.height.bin`);
+    const t = bridgeSurfaceTile(JSON.parse(readFileSync(path, 'utf8')), k, preview), height = binary(`${k}.height.bin`);
     const structures = t.structures || [];
     const levels = structures.length ? binary(`${k}.levels.bin`) : null;
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
     const side = terraceAt(t.terraces);
     const base = height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step,
       pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF)) : () => NaN;
-    const patches = height && !structures.some(s => s.kind === 'tunnel') && surfaces ? surfaces.get(k) : undefined;
+    const road = surfaces ? surfaces.get(k) : undefined, lower = preview?.ground.get(k);
+    const fits = lower ? [...lower, ...(road ?? [])] : road;
+    const patches = height && !structures.some(s => s.kind === 'tunnel') ? fits : undefined;
     out = {
       t, ground: withRoadSurfaces(base, patches, REF, side),
       levels: structures.map((s, n) => ({ level: s.level, kind: s.kind, on: onPolygons(s.polys), sample: withRamps(heightSampler(heights[n], t.box, terrain.n, terrain.step), s.ramps, REF) })),
@@ -293,6 +299,7 @@ if (args.profile) {
   }
 }
 const result = { built: index.built, summary, rows,
+  ...(bridgeTrial ? { bridgeDigest: createHash('sha256').update(bridgeTrial).digest('hex') } : {}),
   ...(trial ? { patchDigest: createHash('sha256').update(trial).digest('hex') } : {}) };
 if (args.save) writeFileSync(args.save, JSON.stringify(result));
 const bad = summary.filter((s) => s.break > BREAK || s.join > JOIN);

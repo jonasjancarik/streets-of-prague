@@ -34,6 +34,14 @@ test('a height grid blends into the junction below it and respects terrain steps
   assert.equal(readRoadSurfaces({ ...file, patches: [{ ...grid, heights: [103] }] }, 'praha', 'new'), null);
 });
 
+test('a lowering-only grid preserves lower heights already supplied by a junction', () => {
+  const grid = { ...patch, id: 'cutting', z: undefined, heights: weights.map(() => 103), lowerOnly: true };
+  const data = readRoadSurfaces({ ...file, patches: [grid, patch] }, 'praha', 'new');
+  const sampled = withRoadSurfaces(() => 10, data.get('0_0'), 100, null);
+  assert.equal(sampled(10, 10), withRoadSurfaces(() => 10, [patch], 100, null)(10, 10));
+  assert.equal(withRoadSurfaces(() => 10, [grid], 100, null)(10, 10), 3);
+});
+
 test('an intersection surface keeps the retaining wall and water on separate levels', () => {
   const side = (x, y) => y < 4 ? 2 : 0;
   const base = (x, y, s = false) => s === true ? -2 : (s === false ? side(x,y) : s) === 2 ? -1 : 0;

@@ -16,6 +16,7 @@ import { finish } from './parkingClearance.ts';
 import { openWater } from './river.ts';
 import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from './roadSurfaces.ts';
+import { bridgeSurfaceTile, readBridgeSurfacePreview } from './bridgeSurfacePreview.ts';
 import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary, withRamps } from './terrain.ts';
 import type { Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
@@ -477,6 +478,7 @@ export class TileWorld {
   furnitureReserved: Promise<Float32Array | null>;
   private roadSurfaces: Promise<ReturnType<typeof readRoadSurfaces>> | null;
   private roadProfiles: Promise<ReturnType<typeof readRoadProfile>> | null;
+  private bridgeSurfacePreview: Promise<ReturnType<typeof readBridgeSurfacePreview>> | null;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
     view: (who: Tracked) => { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
@@ -492,6 +494,9 @@ export class TileWorld {
     this.area = area;
     this.index = index;
     const query = new URLSearchParams(location.search);
+    this.bridgeSurfacePreview = query.has('bridgesurfaces') ? fetch(dataUrl(area, 'bridge-surfaces.json'))
+      .then(async (r) => r.ok ? readBridgeSurfacePreview(await r.json(), area, index.built) : null)
+      .catch(() => null) : null;
     const loadRoadSurfaces = (file: string) => fetch(dataUrl(area, file))
       .then(async (r) => r.ok ? readRoadSurfaces(await r.json(), area, index.built) : null)
       .catch(() => null);
@@ -1183,6 +1188,8 @@ export class TileWorld {
 
   // A tile without its meshes: what the traffic, the people and the parked cars need.
   async make(k: string, { t, height, bare, ipr, levels }: TileFiles, sliced = false): Promise<Tile> {
+    const preview = this.bridgeSurfacePreview ? await this.bridgeSurfacePreview : null;
+    t = bridgeSurfaceTile(t, k, preview);
     // Fetch only the adjacent JSON, before any render resources/leases are created.
     const clearanceEdges = await this.parkingEdges(t);
     const nearBuildings = await this.parkingBuildings(t);
@@ -1225,7 +1232,9 @@ export class TileWorld {
     const roadProfile = pilot?.tiles.includes(k) ? pilot.profile : undefined;
     if (shade && roadProfile) shade.sample = withRoadProfile(shade.sample, roadProfile, this.ref);
     const trial = this.roadSurfaces && this.available.has(k) && shade ? (await this.roadSurfaces)?.get(k) : undefined;
-    const surfaces = trial && !t.structures?.some((s) => s.kind === 'tunnel') ? trial : undefined;
+    const lower = preview?.ground.get(k);
+    const fits = lower ? [...lower, ...(trial ?? [])] : trial;
+    const surfaces = fits && !t.structures?.some((s) => s.kind === 'tunnel') ? fits : undefined;
     if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
@@ -1400,7 +1409,7 @@ export class TileWorld {
     }
     return Promise.all([
       w.run('ground', {
-        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility },
+        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, bridgeTracks: t.bridgeTracks, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility },
         paint: TILE_LOOK.roadPaint, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,

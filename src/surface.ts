@@ -16,6 +16,7 @@ export interface GroundLayer {
   shade?: number;
   slab?: boolean;
   deck?: boolean;
+  topOnly?: boolean;
   tunnel?: boolean;
   level?: number;
   base?: boolean; // the plain ground under everything (see `photo`)
@@ -122,7 +123,7 @@ function surfaceMaterial(l: GroundLayer, time: { value: number }, relief: Surfac
   }
   if (l.deck) {
     if (!mask) throw new Error('Deck surface requires a mask');
-    const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: THREE.DoubleSide, depthWrite: false }), PATTERN[l.pattern ?? 'flat'], time, null, { mask: mask.texture, box: mask.box });
+    const mat = patterned(new THREE.MeshLambertMaterial({ color: l.color, side: l.topOnly ? THREE.FrontSide : THREE.DoubleSide, depthWrite: false }), PATTERN[l.pattern ?? 'flat'], time, null, { mask: mask.texture, box: mask.box });
     Object.assign(mat, { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 });
     return mat;
   }
