@@ -8,7 +8,7 @@
 //
 //   node scripts/check-road-flatness.mjs [area, praha] [--data public/data] [--worst 25]
 //        [--near lat,lon[,metres]] [--save now.json] [--against before.json]
-//        [--roadprofiles] [--profile <edge id or part of a name>] [--strict]
+//        [--roadprofiles | --roadsurfaces file] [--profile <edge id or part of a name>] [--strict]
 //
 // Per street, the worst of:
 // - step: a jump between two samples a metre apart that the slope either side doesn't
@@ -26,10 +26,12 @@
 // The samples within END metres (or the street's width) of its ends are left out: at a
 // junction the edges lie across other streets. The lean is the middle value over LEAN metres. --strict fails when anything is over the hard limits (LIMIT).
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps } from '../src/terrain.ts';
 import { readRoadProfile, withRoadProfile } from '../src/roadProfiles.ts';
+import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
 import { onPolygons } from '../src/map/geo.ts';
 
 const args = {}, pos = [];
@@ -45,6 +47,10 @@ const { tile: T, origin: [ox, oy], terrain } = index;
 const pilot = args.roadprofiles
   ? readRoadProfile(JSON.parse(readFileSync(join(dir, 'road-profile.json'), 'utf8')), index.area, index.built) : null;
 if (args.roadprofiles && !pilot) throw new Error('No road profile for this map build');
+if (args.roadsurfaces === true) throw new Error('--roadsurfaces requires a filename');
+const trial = args.roadsurfaces ? readFileSync(args.roadsurfaces, 'utf8') : undefined;
+const surfaces = trial !== undefined ? readRoadSurfaces(JSON.parse(trial), index.area, index.built) : null;
+if (args.roadsurfaces && (!surfaces || pilot)) throw new Error('Choose one matching road surface file');
 const REF = 100; // heights here are metres above 100 m a.s.l.
 const STEP = 1;     // m between samples
 const END = 4;      // m at each end left out, or the street's width if more (a junction)
@@ -84,7 +90,9 @@ function tileOf(i, j) {
       pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF)) : () => NaN;
     out = {
       side: side || (() => 0),
-      ground: withRoadProfile(base, height && pilot?.tiles.includes(k) ? pilot.profile : undefined, REF),
+      base,
+      ground: withRoadSurfaces(withRoadProfile(base, height && pilot?.tiles.includes(k) ? pilot.profile : undefined, REF),
+        height && !structures.some((s) => s.kind === 'tunnel') ? surfaces?.get(k) : undefined, REF, side),
       levels: structures.map((s, n) => ({ level: s.level, on: onPolygons(s.polys), sample: withRamps(heightSampler(heights[n], t.box, terrain.n, terrain.step), s.ramps, REF) })),
       // (The carriageways, and outside the survey the asphalt the photos show.)
       road: [...['road', 'sett', 'bridge', 'trambed'].map((k) => roads[k]), ...['cover_asphalt', 'parking'].map((k) => t.areas?.[k])]
@@ -177,6 +185,57 @@ function walk(e) {
   return out;
 }
 
+// The ordinary metrics trim edge ends. Check the same-level approaches too,
+// using the unmodified sampler for a point-by-point comparison.
+function surfaceCheck(prof) {
+  const ids = new Set();
+  let unsafe = false;
+  for (const [key, xKey, yKey] of [['mid', 'x', 'y'], ['l', 'lx', 'ly'], ['r', 'rx', 'ry']]) {
+    const prior = prof.map((p) => {
+      const x = p[xKey], y = p[yKey], i = Math.floor((x + ox) / T), j = Math.floor((y + oy) / T);
+      const patches = surfaces.get(`${i}_${j}`);
+      if (!patches || p.level) return p[key];
+      const candidates = patches.filter(({ box: [a, b, c, d] }) => x > a && x < c && y > b && y < d);
+      if (!candidates.length) return p[key];
+      const h = at(x, y).base(x, y);
+      if (Math.abs(h - p[key]) > 1e-6) for (const patch of candidates) ids.add(patch.id);
+      return h;
+    });
+    const same = (a, b) => a.on[key] && b.on[key] && a.level === b.level
+      && sideAt(a[xKey], a[yKey]) === sideAt(b[xKey], b[yKey]);
+    for (let i = 1; i < prof.length; i++) {
+      const a = prof[i - 1], b = prof[i];
+      if (a[key] === prior[i - 1] && b[key] === prior[i]) continue;
+      if (!same(a, b) || b.s - a.s < .3) continue;
+      const grade = Math.abs(b[key] - a[key]) / (b.s - a.s);
+      const old = Math.abs(prior[i] - prior[i - 1]) / (b.s - a.s);
+      if (grade > .18 && grade > old + .035) unsafe = true;
+    }
+    for (let i = 3; i + 3 < prof.length; i++) {
+      const a = prof[i - 3], b = prof[i], c = prof[i + 3];
+      if (a[key] === prior[i - 3] && b[key] === prior[i] && c[key] === prior[i + 3]) continue;
+      if (!same(a, b) || !same(b, c) || c.s - a.s < 4) continue;
+      const f = (b.s - a.s) / (c.s - a.s);
+      const bump = Math.abs(b[key] - (a[key] * (1 - f) + c[key] * f));
+      const old = Math.abs(prior[i] - (prior[i - 3] * (1 - f) + prior[i + 3] * f));
+      if (bump > .22 && bump > old + .06) unsafe = true;
+    }
+  }
+  return ids.size ? { patches: [...ids], unsafeApproach: unsafe } : {};
+}
+
+const patchBounds = surfaces ? [...new Set([...surfaces.values()].flat())].map((p) => p.box) : [];
+function touchesPatch(e) {
+  if (!patchBounds.length || !e.pts.length) return false;
+  const half = Math.max(1, (e.width || 6) / 2);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of e.pts) {
+    x0 = Math.min(x, x0); y0 = Math.min(y, y0);
+    x1 = Math.max(x, x1); y1 = Math.max(y, y1);
+  }
+  return patchBounds.some(([a, b, c, d]) => x0 - half < c && x1 + half > a && y0 - half < d && y1 + half > b);
+}
+
 const rows = [];
 for (const e of edges.values()) {
   const prof = walk(e);
@@ -235,7 +294,7 @@ for (const e of edges.values()) {
   const r = { id: e.id, why, stepPair, name: e.name || '', hw: e.hw, level: e.level, length: Math.round(length) };
   for (const k of Object.keys(worst)) { r[k] = +worst[k][0].toFixed(k === 'lean' || k === 'twist' ? 1 : 2); r[`${k}At`] = worst[k][1] ? toWgs(worst[k][1].x, worst[k][1].y) : null; }
   r.profile = args.profile && `${e.id} ${e.name || ''}`.includes(args.profile) ? prof : undefined;
-  rows.push(r);
+  rows.push(touchesPatch(e) ? { ...r, ...surfaceCheck(prof) } : r);
 }
 
 const before = args.against ? JSON.parse(readFileSync(args.against, 'utf8')) : null;
@@ -263,7 +322,7 @@ for (const r of rows) {
   console.log('  ' + r.profile.map((p) => `${(p.l + REF).toFixed(1)}/${(p.mid + REF).toFixed(1)}/${(p.r + REF).toFixed(1)}${p.road ? '' : '*'}`).join(' '));
   delete r.profile;
 }
-if (args.save) writeFileSync(args.save, JSON.stringify({ built: index.built, rows: rows.map(({ profile, ...r }) => r) }));
+if (args.save) writeFileSync(args.save, JSON.stringify({ built: index.built, terrainMode: surfaces ? 'surfaces' : pilot ? 'profile' : 'base', patchDigest: trial && createHash('sha256').update(trial).digest('hex'), rows: rows.map(({ profile, ...r }) => r) }));
 if (args.strict) {
   const bad = KINDS.reduce((n, [k]) => n + over(rows, k, LIMIT), 0);
   if (bad) {

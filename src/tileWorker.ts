@@ -24,6 +24,7 @@ import { roofClutter, smokingChimneys } from './map/roofClutter.ts';
 import { groundLayers, layerBuffers, levelMask } from './ground.ts';
 import { flatTerraces, heightSampler, terraceAt, withRamps } from './terrain.ts';
 import { withRoadProfile } from './roadProfiles.ts';
+import { withRoadSurfaces } from './roadSurfaces.ts';
 import { skyView } from './map/skyView.ts';
 import { stepEdges, stampEdges, parapetArrays } from './stepEdges.ts';
 import type { StepEdge } from './stepEdges.ts';
@@ -74,7 +75,8 @@ function groundAt(g: HeightGrid | null) {
   if (!g) return () => 0;
   const ref = g.ref ?? 0;
   const base = heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, ref));
-  return withRoadProfile(withRamps(base, g.ramps, ref), g.roadProfile, ref);
+  const profiled = withRoadProfile(withRamps(base, g.ramps, ref), g.roadProfile, ref);
+  return withRoadSurfaces(profiled, g.roadSurfaces, ref, g.roadSurfaces ? terraceAt(g.terraces) : null);
 }
 
 function roofs({ buildings, size, origin, ground, bbox, water }: WorkerJobs['roofs']): BuildingArrays {
@@ -379,6 +381,7 @@ worker.onmessage = async (event: MessageEvent<unknown>) => {
         const { d, ground, levels, ...opts } = event.data.data;
         const result = groundLayers(d, {
           ...opts, height: ground ? groundAt(ground) : null, roadProfile: ground?.roadProfile,
+          roadSurfaceBoxes: ground?.roadSurfaces?.map((p) => p.box),
           steps: ground?.labels ? ground.terraces ?? [] : null,
           levels: levels ? levels.map((l) => ({ level: l.level, kind: l.kind, polys: l.polys, height: groundAt(l.heights) })) : null,
         });

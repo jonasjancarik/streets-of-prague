@@ -835,3 +835,14 @@ http://localhost:5260/ --scenes drive --runs 3 --seconds 8 --dpr 1 --graphics hi
 same command with the two server URLs swapped. Raw results are
 `docs/evidence/road-reconstruction/traffic-performance.json` and
 `traffic-performance-reversed.json`, with corresponding `.log` files.
+
+## 6 November 2026 — wider Cidlinská curve
+
+Four six-second static headless Chrome/WebGPU runs used the same top-down
+camera, High graphics, DPR 1, 14:00 and paused simulation. Baseline-first
+frame means were 6.99 and 7.30 ms. Candidate-first means were 7.18 and 7.63 ms.
+The ordering changed which variant ran faster. Draw calls stayed at 211,
+and renderer triangle counts rose from about 5.02 million to 5.04 million.
+The measured curve fit was identical in the final screened preview.
+These samples cover a static desktop view. Logs are in
+`docs/evidence/wider-road-surfaces/perf-*.log`.

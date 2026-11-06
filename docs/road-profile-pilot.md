@@ -1,6 +1,7 @@
 ---
 read_when:
   - Trying the experimental Italská road profile or comparing its road and vehicle heights
+  - Generating and screening road surface patches across Prague
   - Deciding whether to fit a road beside a retaining wall
 ---
 
@@ -143,3 +144,97 @@ between it and the wall grows from 3 cm to over a metre. An approach fit there
 needs to follow the road once it separates from the wall, while preserving the
 wall as a separate feature. The trial stayed offline because its smoother
 joins disagreed with both sources.
+
+## Wider Prague trial, 6 November 2026
+
+The wider trial fits small two-dimensional surfaces to surveyed road edges. A fit
+can follow a curved carriageway or span a connected junction. It fades into the
+existing terrain around the edge of the patch. The car sampler and ground mesh
+read the same surface. Existing terrain labels keep retaining-wall faces and
+water separate, and the terrain lattice still supplies hill shading.
+
+The generator screened 1,000 locations on Prague map `2026-11-06T00:13:10Z`,
+alternating between three roughness severity bands where available. It proposed
+117 fits after excluding locations without enough consistent survey evidence,
+mapped crossings, rail and tiles with tunnel depth masks. It used a 1 m blend
+mask for each fitted plane or quadratic. The held-out stations come from the
+same survey lines as nearby fitted stations.
+
+A second screen uses the game's height sampler to compare the same road
+segments before and after fitting. It includes the approaches that the usual
+flatness report trims. A patch needs a measured improvement on a road it
+changes. The screen rejects patches that introduce hard-threshold findings or
+materially worsen existing metrics. It also rejects steepened approaches,
+changed blocking edges and larger drops at open crossings. When two patches
+affect the same road, both are excluded so a single street-wide improvement cannot earn credit twice.
+The road and collision reports must match the exact patch file by SHA-256.
+
+### Prague regression check
+
+The screen retained 74 patches: 28 curves, four junctions, one street beside
+a retaining wall and 41 other street sections. The final comparison checked
+all 57,188 car-network segments. Measured geometry changed on 83 segments.
+There were no new hard-threshold findings. Blocking-edge geometry matched,
+and no reported open crossing drop increased by more than 5 cm.
+
+| Segments over the hard limit | Baseline | Screened patches |
+|---|---:|---:|
+| Steps over 1 m | 36 | 36 |
+| Bumps over 0.5 m | 561 | 560 |
+| Cross-slope over 15% | 3,022 | 2,977 |
+| Cross-slope change over 12 percentage points | 2,478 | 2,435 |
+| Ridges or troughs over 1 m | 150 | 150 |
+| Off-carriageway stretches over 10 m | 0 | 0 |
+
+### Representative places
+
+- Cidlinská's bend. Largest cross-slope 35.8% → 6.5%, with a completed
+  drive in both variants and no damage. The largest height change over
+  a sixth of a second fell from 0.22 m to 0.16 m.
+- Šperlova and Dobrovolského. Largest bump 0.35 m → 0.14 m on the
+  measured Šperlova arm. The sedan completed a turn in both variants.
+  The largest sampled height change on the drive fell from 0.34 m to 0.20 m.
+  Both runs recorded small amounts of damage.
+- U Žlábku, beside a retaining wall. Largest change in cross-slope 60.5 → 56.0 percentage
+  points. The existing 1.6 m step remains. The collision edges matched, but
+  the player-drive attempts on both route lengths stalled in both variants.
+  A reverse approach with an in-car road reset also stalled in both.
+- Hořejší nábřeží. The initial fit reduced the tested cross-slope from 21%
+  to 6%, but added blocking-edge pieces. A second fit faded away from
+  the wall and preserved the original blocking edges. Its approach and cross-section checks
+  still rejected it. Hořejší is excluded from the preview.
+
+The fixed top-down screenshots use identical camera poses for both variants.
+See `docs/evidence/wider-road-surfaces/` for the fits, rejection reasons,
+checker logs, routes and screenshots.
+
+### Generate and screen another Prague build
+
+The generated sidecar belongs to one assembled map. The experimental
+`?roadsurfaces` option loads it when its build stamp matches. Use
+`?roadprofiles` to replay the original Italská pilot. The wider option
+takes precedence when both are present.
+
+Run from the root of a checkout with a privately copied assembled map and its
+matching trusted DTM survey cache. The files under the evidence directory
+are working records.
+
+```sh
+e=docs/evidence/wider-road-surfaces
+mkdir -p "$e"
+node scripts/check-road-flatness.mjs praha --save "$e/baseline.json"
+uv run --project pipeline python pipeline/road_surfaces.py \
+  --data public/data/praha_now \
+  --survey-snapshot pipeline/.cache/dtm/heights/praha.pkl \
+  --baseline "$e/baseline.json" --out "$e/trial.json" --report "$e/fits.json" \
+  --seed horejsi,50.07412,14.40960,26 --seed italska,50.08243,14.43964,22 \
+  --seed chotkova,50.09316,14.40628,22 --seed miru,50.07604,14.43656,24
+node scripts/check-road-flatness.mjs praha --roadsurfaces "$e/trial.json" --save "$e/trial-roads.json"
+node scripts/check-step-edges.mjs praha --roadsurfaces "$e/trial.json" --save "$e/trial-steps.json"
+node scripts/screen-road-surfaces.mjs "$e/trial.json" "$e/baseline.json" \
+  "$e/trial-roads.json" "$e/trial-steps.json" "$e/accepted.json" "$e/screen.json"
+```
+
+Run both checkers on `accepted.json`, then run the screener on those outputs. Check
+that every accepted patch survives the repeat, then put the file at
+`public/data/praha_now/road-surfaces.json`.

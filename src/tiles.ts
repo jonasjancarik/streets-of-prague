@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { mirrored } from './mirror.ts';
 import { streetOf } from './map/roofRules.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { Geo, Grid, rng, hash } from './map/geo.ts';
+import { Geo, Grid, rng, hash, clipLine } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
 import { Surfaces } from './surface.ts';
@@ -15,6 +15,7 @@ import { Zones, parkCarsSteps, inRing, inPoly } from './parking.ts';
 import { finish } from './parkingClearance.ts';
 import { openWater } from './river.ts';
 import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
+import { readRoadSurfaces, withRoadSurfaces } from './roadSurfaces.ts';
 import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary, withRamps } from './terrain.ts';
 import type { Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
@@ -310,30 +311,6 @@ function buildingMesh(arrays: BuildingArrays, sky: Float32Array | null) {
   return mesh;
 }
 
-// Clip a polyline to a box; returns the pieces inside.
-export function clipLine(pts: Point2[], [x0, y0, x1, y1]: Bounds): Point2[][] {
-  const out: Point2[][] = [];
-  let cur: Point2[] | null = null;
-  for (let i = 0; i < pts.length - 1; i++) {
-    let [ax, ay] = pts[i], [bx, by] = pts[i + 1];
-    let t0 = 0, t1 = 1;
-    const dx = bx - ax, dy = by - ay;
-    let ok = true;
-    for (const [p, q] of [[-dx, ax - x0], [dx, x1 - ax], [-dy, ay - y0], [dy, y1 - ay]]) {
-      if (p === 0) { if (q < 0) ok = false; continue; }
-      const t = q / p;
-      if (p < 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
-    }
-    if (!ok || t0 > t1) { if (cur) { out.push(cur); cur = null; } continue; }
-    const a: Point2 = [ax + dx * t0, ay + dy * t0], b: Point2 = [ax + dx * t1, ay + dy * t1];
-    if (!cur) cur = [a];
-    cur.push(b);
-    if (t1 < 1) { out.push(cur); cur = null; }
-  }
-  if (cur) out.push(cur);
-  return out.filter((l) => l.length > 1);
-}
-
 // Whether (x, y) is within `pad` metres of a passage through a building.
 // The tile's areas with what stands on the plots of family houses laid over the garden
 // (pipeline/plots.py): the paving joins the paved squares and the vegetable beds the
@@ -498,6 +475,7 @@ export class TileWorld {
   skyTotals: { coalesced: number; cancelled: number };
   landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
   furnitureReserved: Promise<Float32Array | null>;
+  private roadSurfaces: Promise<ReturnType<typeof readRoadSurfaces>> | null;
   private roadProfiles: Promise<ReturnType<typeof readRoadProfile>> | null;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
@@ -513,7 +491,11 @@ export class TileWorld {
     this.photos = new Map();
     this.area = area;
     this.index = index;
-    this.roadProfiles = new URLSearchParams(location.search).has('roadprofiles') ? fetch(dataUrl(area, 'road-profile.json'))
+    const query = new URLSearchParams(location.search);
+    this.roadSurfaces = query.has('roadsurfaces') ? fetch(dataUrl(area, 'road-surfaces.json'))
+      .then(async (r) => r.ok ? readRoadSurfaces(await r.json(), area, index.built) : null)
+      .catch(() => null) : null;
+    this.roadProfiles = !this.roadSurfaces && query.has('roadprofiles') ? fetch(dataUrl(area, 'road-profile.json'))
       .then(async (r) => r.ok ? readRoadProfile(await r.json(), area, index.built) : null)
       .catch(() => null) : null;
     loadFacadeAtlas();
@@ -1222,9 +1204,12 @@ export class TileWorld {
     const pilot = this.roadProfiles && this.available.has(k) && shade ? await this.roadProfiles : null;
     const roadProfile = pilot?.tiles.includes(k) ? pilot.profile : undefined;
     if (shade && roadProfile) shade.sample = withRoadProfile(shade.sample, roadProfile, this.ref);
+    const trial = this.roadSurfaces && this.available.has(k) && shade ? (await this.roadSurfaces)?.get(k) : undefined;
+    const surfaces = trial && !t.structures?.some((s) => s.kind === 'tunnel') ? trial : undefined;
+    if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
-      terraces: t.terraces, ref: this.ref, ...(roadProfile ? { roadProfile } : {}) } : null;
+      terraces: t.terraces, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     const structures = t.structures || [];
     const heights = levels && terrain ? decodeLevels(levels, terrain.n, structures.length, this.ref) : [];

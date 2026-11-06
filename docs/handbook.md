@@ -85,6 +85,10 @@ checks transit hints, developer search results and scenario reports in both lang
 off by default; see [the road profile pilot](road-profile-pilot.md) for generation,
 measurements and limits.
 
+`?roadsurfaces` loads the wider screened road surfaces when `road-surfaces.json`
+matches the assembled map. The [generation and screening instructions](road-profile-pilot.md)
+explain how to prepare the file for another build.
+
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 
 | Setting | Ultra | High | Medium | Low | Lowest |

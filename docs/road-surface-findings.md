@@ -529,3 +529,9 @@ under `docs/evidence/road-reconstruction/` in the integration worktree. They are
 ignored working records, not committed map data. The source implementations and
 these findings are committed; pushing, merging into main and deployment remain
 outside this overnight task.
+
+## Wider screened surfaces
+
+The subsequent Prague trial retained 74 fits after checking measured road
+heights, approaches and collision edges. Its curves, junctions, wall trials and
+citywide comparison are recorded in [the road surface pilot notes](road-profile-pilot.md).

@@ -243,7 +243,7 @@ let sideOf: ((x: number, y: number) => number) | null = null;
 let terraceOutlines: Polygons = []; // (the water's among them)
 let stepIndex: TerrainStepIndex | null = null;
 let groundBox: Bounds | null = null;
-let roadBox: Bounds | null = null;
+let roadBoxes: Bounds[] | null = null;
 const ROAD_FINE = 2; // m between draped samples in the experimental corridor
 // Set while the water itself is built: all of it lies at the water's level.
 let afloat = false;
@@ -251,10 +251,13 @@ const STEP_FINE = 2; // m between a layer's points along a step, so the cut foll
 const WALL_MIN = 0.03; // m: a step lower than this gets no wall
 
 function refineRoad(pos: number[], i: number, j: number, d2: number) {
-  if (!roadBox || d2 <= ROAD_FINE * ROAD_FINE) return false;
+  if (!roadBoxes || d2 <= ROAD_FINE * ROAD_FINE) return false;
   const ax = pos[i * 3], ay = -pos[i * 3 + 2], bx = pos[j * 3], by = -pos[j * 3 + 2];
-  return Math.min(ax, bx) <= roadBox[2] && Math.max(ax, bx) >= roadBox[0]
-    && Math.min(ay, by) <= roadBox[3] && Math.max(ay, by) >= roadBox[1];
+  for (const [x0, y0, x1, y1] of roadBoxes) {
+    if (Math.min(ax, bx) <= x1 && Math.max(ax, bx) >= x0
+        && Math.min(ay, by) <= y1 && Math.max(ay, by) >= y0) return true;
+  }
+  return false;
 }
 
 // Keep the ordinary 8 m mesh away from steps, with closer samples along them.
@@ -264,7 +267,7 @@ function cutAtSteps(pos: number[], idx: number[], extra: number[] | null, at: (x
   const side: number[] = [];
   const sideAt = (i: number) => (side[i] ??= at(pos[i * 3], -pos[i * 3 + 2]));
   const crossesStep = (i: number, j: number, d2: number) => d2 > STEP_FINE * STEP_FINE && sideAt(i) !== sideAt(j);
-  const refine = roadBox ? (i: number, j: number, d2: number) => crossesStep(i, j, d2) || refineRoad(pos, i, j, d2) : crossesStep;
+  const refine = roadBoxes ? (i: number, j: number, d2: number) => crossesStep(i, j, d2) || refineRoad(pos, i, j, d2) : crossesStep;
   idx = subdivide(pos, idx, extra, 8, refine);
   return cutTerrainSteps(pos, idx, extra, at, stepIndex!);
 }
@@ -313,7 +316,7 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
   if (groundHeight) {
     let side: number[] | null = null;
     if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf));
-    else idx = subdivide(pos, idx, extra, 8, roadBox && !afloat ? (i, j, d2) => refineRoad(pos, i, j, d2) : null);
+    else idx = subdivide(pos, idx, extra, 8, roadBoxes && !afloat ? (i, j, d2) => refineRoad(pos, i, j, d2) : null);
     if (groundBox) ({ pos, idx, extra, side } = conformTerrainEdges(pos, idx, extra, side, groundBox, STEP_FINE));
     for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat ? WATER : side ? side[k] : false);
   }
@@ -341,12 +344,13 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
 //
 // `steps`: the terrain knows the steps in it (the tile's terraces; its water is in `d`),
 // so the layers are cut along them and the steps get walls (see `sideOf`).
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, paint = true }: {
+export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
   // false: no lane lines (see TILE_LOOK in tiles.ts)
   paint?: boolean;
   roadProfile?: RoadProfile;
+  roadSurfaceBoxes?: Bounds[];
 }): GroundResult {
   paintRoads = paint;
   // The steps in the terrain: which side a point is on, and their outlines (stepEdges.ts).
@@ -355,11 +359,11 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   const stepped = <R>(build: () => R): R => {
     groundHeight = height ? edgeHeightSampler(height, box, STEP_FINE) : null;
     groundBox = height ? box : null;
-    roadBox = height && roadProfile ? roadProfileBounds(roadProfile) : null;
+    roadBoxes = height ? roadSurfaceBoxes ?? (roadProfile ? [roadProfileBounds(roadProfile)] : null) : null;
     sideOf = at;
     terraceOutlines = outlines;
     stepIndex = at ? new TerrainStepIndex(outlines) : null;
-    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; stepIndex = null; groundBox = roadBox = null; }
+    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; stepIndex = null; groundBox = roadBoxes = null; }
   };
   if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones })), masks: [] };
   const T = height || (() => 0);
