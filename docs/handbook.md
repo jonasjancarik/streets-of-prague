@@ -749,6 +749,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   round you shown as bare earth. Everything else under the ground stays hidden
   (`track` and `view` in `src/tiles.ts`, the meshes in `src/ground.ts`). The car
   network keeps the tunnels and the magistrála, so traffic drives through them.
+  A road can change levels partway along an edge. Traffic, buses and the developer
+  tool that puts a car back on the road use the level at that point along the lane.
+  A named deck or tunnel is used where the loaded tile has its surface and height.
+  A ground-level crossing under the same bridge still follows the ground.
 - **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.ts`), in
   which buildings raised 3 m or more off the ground (OSM `min_height`, like a covered
   bridge between two houses) leave the way under them open; AI

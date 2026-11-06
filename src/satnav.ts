@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Heap } from './police.ts';
 import { Polyline, junctionCurve, junctionTrim } from './network.ts';
 import { project, turnOf } from './assist.ts';
+import { levelOnLane } from './roadLevels.ts';
 import { t } from './i18n.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
 import type { Marker } from './marker.ts';
@@ -36,12 +37,6 @@ export interface Way {
 }
 export interface Goal { x: number; y: number; name: string }
 interface Driver { x: number; y: number; h: number }
-
-const levelOf = (e: DriveEdge, s: number) => {
-  let l = e.level ?? 0;
-  for (const [m, v] of e.levels ?? []) if (m <= s) l = v;
-  return l;
-};
 
 // The lane a car at (x, y) heading `h` is driving in: near it and running its way.
 export function startOn(near: DriveEdge[], x: number, y: number, h: number) {
@@ -152,13 +147,13 @@ function lay(g: DriveGraph, edges: DriveEdge[], s0: number, s1: number, reached:
     const f = edges[i + 1], p = e.path;
     const trim = f ? junctionTrim(e, f) : 0, to = Math.max(from, f ? p.length - trim : s1);
     const a = p.at(from);
-    put(a.x, a.y, levelOf(e, from));
-    for (let k = 0; k < p.pts.length; k++) if (p.cum[k] > from && p.cum[k] < to) put(p.pts[k][0], p.pts[k][1], levelOf(e, p.cum[k]));
+    put(a.x, a.y, levelOnLane(e, from) ?? 0);
+    for (let k = 0; k < p.pts.length; k++) if (p.cum[k] > from && p.cum[k] < to) put(p.pts[k][0], p.pts[k][1], levelOnLane(e, p.cum[k]) ?? 0);
     const b = p.at(to);
-    put(b.x, b.y, levelOf(e, to));
+    put(b.x, b.y, levelOnLane(e, to) ?? 0);
     if (!f) return;
     joins.push(pts.length - 1);
-    for (const [x, y] of junctionCurve(b, f.path.at(trim)).pts) put(x, y, levelOf(e, to));
+    for (const [x, y] of junctionCurve(b, f.path.at(trim)).pts) put(x, y, levelOnLane(e, to) ?? 0);
     from = trim;
   });
   if (pts.length < 2) { const q = pts[0] ?? [0, 0]; put(q[0] + 0.01, q[1], lv[0] ?? 0); }

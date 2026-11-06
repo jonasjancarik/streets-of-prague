@@ -34,6 +34,7 @@ import { posts, type Post } from './posts.ts';
 import { fences, type FenceSection } from './fences.ts';
 import { stepEdges, type Crosser, type StepEdge } from './stepEdges.ts';
 import { byLevel, bridgeApproaches } from './roadLevels.ts';
+import type { RoadHint } from './roadLevels.ts';
 import { fenceMeshes } from './map/fences.ts';
 import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
@@ -96,7 +97,9 @@ interface Tile {
 export interface Tracked {
   x: number; y: number; _tx?: number; _ty?: number; level?: number; gz?: number;
   // Where it's put on a street: on a bridge, in a tunnel or on the ground (see track).
-  hint?: 'bridge' | 'tunnel' | 'ground';
+  hint?: RoadHint;
+  // An AI driver's current named route span, for as long as it follows that lane.
+  roadLevel?: number; _roadTerrainRevision?: number;
   // Kept on the ground, whatever is under it or over it (a car in traffic on a street
   // at ground level, see Traffic.update).
   grounded?: boolean;
@@ -691,12 +694,30 @@ export class TileWorld {
   // ground (or the level it's on), off it where it ends. Sets `level` and `gz` (the
   // height underfoot) on it; returns the level.
   track(who: Tracked) {
-    if (who._tx === who.x && who._ty === who.y && who.level !== undefined) return who.level;
+    const numericHint = typeof who.hint === 'number' ? who.hint : undefined;
+    const roadLevel = who.roadLevel ?? numericHint;
+    if (who._tx === who.x && who._ty === who.y && who.level !== undefined && numericHint === undefined
+      && (roadLevel === undefined || (roadLevel === who.level && who._roadTerrainRevision === this.terrainRevision))
+      && (!who.grounded || who.level === 0)) return who.level;
     // Moved far since last time (put somewhere else): where it was says nothing.
     if (who._tx !== undefined && who._ty !== undefined && Math.abs(who.x - who._tx) + Math.abs(who.y - who._ty) > 12) who.level = undefined;
     who._tx = who.x;
     who._ty = who.y;
     const { x, y } = who, t = this.tileAt(x, y);
+    if (roadLevel !== undefined) {
+      who.hint = undefined;
+      who._roadTerrainRevision = this.terrainRevision;
+      // A named level is useful only where its own deck or tunnel actually
+      // exists. If missing, don't put the car on an unrelated crossing level.
+      if (roadLevel && t) for (const l of t.levels) {
+        if (l.level !== roadLevel || !l.grid.at(x, y)) continue;
+        const h = l.sample(x, y);
+        if (Number.isFinite(h)) { who.level = roadLevel; who.gz = h; return roadLevel; }
+      }
+      who.level = 0;
+      who.gz = this.terrainAt(x, y);
+      return 0;
+    }
     if (!t?.levels.length || who.grounded) {
       who.level = 0;
       who.gz = this.terrainAt(x, y);

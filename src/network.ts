@@ -2,6 +2,7 @@
 // offset to the right, and an undirected pedestrian network.
 
 import type { Point2 } from './map/geo.ts';
+import { laneLevels } from './roadLevels.ts';
 
 export interface RawStreetEdge {
   id: string;
@@ -30,6 +31,7 @@ export type ParkingOrientation = 'parallel' | 'diagonal' | 'perpendicular' | 'no
 
 export interface DriveEdge extends RawStreetEdge {
   laneOffset: number;
+  laneLevels?: [number, number][]; // map level changes expressed along the offset lane
   path: Polyline;
   speed: number;
   twin?: DriveEdge | null;
@@ -202,6 +204,7 @@ export class DriveGraph {
       const e = { ...raw, refs: 1, n: ++this.count } as DriveEdge;
       e.laneOffset = laneOffset(e);
       e.path = new Polyline(offsetLine(e.pts, e.laneOffset));
+      if (e.levels?.length) e.laneLevels = laneLevels(e, e.path);
       e.speed = e.maxspeed ? Math.min(e.maxspeed / 3.6, CLASS_SPEED[e.hw] || 9) : CLASS_SPEED[e.hw] || 9;
       if (narrow(e)) e.speed = Math.min(e.speed, SINGLE_LANE_SPEED);
       this.byId.set(e.id, e);

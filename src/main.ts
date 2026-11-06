@@ -16,6 +16,7 @@ import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodie
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
+import { roadHint } from './roadLevels.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
 import { Bags } from './bags.ts';
@@ -1176,17 +1177,16 @@ async function main() {
 
   const backOnRoad = () => {
     if (!inCar) return;
-    let best = null, bestD = Infinity, onto = null;
+    let best = null, bestD = Infinity, onto = null, station = 0;
     for (const e of edgesNear(inCar.x, inCar.y, 150)) {
       for (let s = 0; s < e.path.length; s += 3) {
         const p = e.path.at(s), d = Math.hypot(p.x - inCar.x, p.y - inCar.y);
-        if (d < bestD) { bestD = d; best = p; onto = e; }
+        if (d < bestD) { bestD = d; best = p; onto = e; station = s; }
       }
     }
     if (!best || !onto) return;
-    // Onto a bridge if that street is a bridge, into a tunnel if it's a tunnel, else
-    // onto the ground.
-    Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0, level: undefined, hint: onto.bridge ? 'bridge' : onto.tunnel ? 'tunnel' : 'ground' });
+    // The selected stretch can be on a different level from the rest of its road.
+    Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0, level: undefined, hint: roadHint(onto, station) });
   };
 
   // Jump anywhere in the area: load the tiles there first, then land on a pavement

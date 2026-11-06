@@ -3,6 +3,7 @@ import { mirrored } from './mirror.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp } from './network.ts';
+import type { RoadHint } from './roadLevels.ts';
 import { Figures, Anim, SCALE, FIGURE_SIZE } from './figures.ts';
 import type { FigureKit, Look } from './figures.ts';
 import type { Point2 } from './map/geo.ts';
@@ -917,8 +918,9 @@ export class Car {
   samples: Point2[];
   level?: number;
   gz?: number;
-  hint?: 'bridge' | 'tunnel' | 'ground';
+  hint?: RoadHint;
   grounded?: boolean;
+  roadLevel?: number;
   lastH?: number;
   anim?: Anim;
   crew?: boolean;
@@ -1362,14 +1364,14 @@ const BOARD_AT = { bus: boardPlacement('bus'), minibus: boardPlacement('minibus'
 interface Placing {
   m: number[]; height: unknown; terrain: number;
   x: number; y: number; h: number; lean: number; L: number; W: number;
-  level?: number; gz?: number; hint?: string; grounded?: boolean; tx?: number; ty?: number; e?: unknown;
+  level?: number; gz?: number; hint?: RoadHint; grounded?: boolean; roadLevel?: number; tx?: number; ty?: number; e?: unknown;
 }
 
 function placed(p: Placing, c: Car, height: unknown, terrain: number) {
   const t = c as Car & { _tx?: number; _ty?: number; e?: unknown };
   return p.height === height && p.terrain === terrain && p.x === c.x && p.y === c.y && p.h === c.h && p.lean === c.lean &&
     p.L === c.spec.L && p.W === c.spec.W && p.level === c.level && p.gz === c.gz && p.hint === c.hint &&
-    p.grounded === c.grounded && p.tx === t._tx && p.ty === t._ty && p.e === t.e;
+    p.grounded === c.grounded && p.roadLevel === c.roadLevel && p.tx === t._tx && p.ty === t._ty && p.e === t.e;
 }
 
 // Notes a matrix for reuse (in `p`, if there is one already), unless something in it
@@ -1380,7 +1382,7 @@ function place(p: Placing | undefined, c: Car, height: unknown, terrain: number,
   p ??= { m: new Array(16), height, terrain, x: 0, y: 0, h: 0, lean: 0, L: 0, W: 0 };
   m.toArray(p.m);
   p.height = height; p.terrain = terrain; p.x = c.x; p.y = c.y; p.h = c.h; p.lean = c.lean; p.L = c.spec.L; p.W = c.spec.W;
-  p.level = c.level; p.gz = c.gz; p.hint = c.hint; p.grounded = c.grounded; p.tx = t._tx; p.ty = t._ty; p.e = t.e;
+  p.level = c.level; p.gz = c.gz; p.hint = c.hint; p.grounded = c.grounded; p.roadLevel = c.roadLevel; p.tx = t._tx; p.ty = t._ty; p.e = t.e;
   return p;
 }
 

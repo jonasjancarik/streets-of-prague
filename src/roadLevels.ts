@@ -1,10 +1,43 @@
 // Road stretches and bridge approaches shared by tile assembly and offline checks.
 import type { Point2 } from './map/geo.ts';
+import type { DriveEdge, RawStreetEdge } from './network.ts';
+
+export type RoadHint = number | 'bridge' | 'tunnel' | 'ground';
+
+// Distances in the map follow the centreline. The offset lane can be longer
+// or shorter at a bend, but its segments correspond point for point.
+export function laneLevels({ pts, levels }: RawStreetEdge, lane: DriveEdge['path']) {
+  if (!levels?.length || lane.pts === pts) return levels;
+  let i = 1, start = 0, end = Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
+  return levels.map(([s, level]): [number, number] => {
+    while (s > end && i < pts.length - 1) {
+      start = end;
+      end += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+      i++;
+    }
+    const f = Math.max(0, Math.min(1, (s - start) / (end - start || 1)));
+    return [lane.cum[i - 1] + f * (lane.cum[i] - lane.cum[i - 1]), level];
+  });
+}
+
+// Level at a station along the lane. Undefined leaves older maps to the
+// bridge/tunnel flags and the spatial tracker. Zero is an explicit ground span.
+export function levelOnLane(e: DriveEdge, s: number) {
+  const spans = e.laneLevels ?? e.levels;
+  if (spans) for (let i = spans.length - 1; i >= 0; i--) {
+    if (spans[i][0] <= s) return spans[i][1];
+  }
+  return e.level;
+}
+
+export function roadHint(e: DriveEdge, s: number): RoadHint {
+  return levelOnLane(e, s) ?? (e.bridge ? 'bridge' : e.tunnel ? 'tunnel' : 'ground');
+}
 
 // An edge cut where it changes level along itself (RawStreetEdge.levels): its stretches,
 // each with its level; whole, with its one level, when it doesn't.
 export function byLevel(e: { pts: Point2[]; level?: number; levels?: [number, number][] }): { pts: Point2[]; level?: number }[] {
-  if (!e.levels || e.levels.length < 2) return [{ pts: e.pts, level: e.level }];
+  if (!e.levels || e.levels.length < 2) return [{ pts: e.pts, level: e.levels?.[0]?.[1] ?? e.level }];
   const out: { pts: Point2[]; level?: number }[] = [];
   let k = 0, s = 0, cur: Point2[] = [e.pts[0]];
   for (let i = 0; i < e.pts.length - 1; i++) {
