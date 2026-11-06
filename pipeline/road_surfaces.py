@@ -6,6 +6,7 @@ the patch. Existing retaining-wall labels still separate the two surfaces.
 """
 
 import argparse
+from collections import defaultdict
 from functools import lru_cache
 import json
 import math
@@ -14,6 +15,7 @@ import pickle
 
 import numpy as np
 import shapely
+from pyproj.enums import TransformDirection
 from scipy.optimize import least_squares
 from shapely.geometry import LineString, Point, box
 
@@ -75,7 +77,7 @@ class Map:
                 if (i, j) in self.keys}
 
 
-def fit(city, ident, centre, radius):
+def fit(city, ident, centre, radius, *, junction=False):
     cx, cy = centre
     disk = Point(centre).buffer(radius)
     bounds = [math.floor(cx-radius)-1, math.floor(cy-radius)-1,
@@ -168,7 +170,8 @@ def fit(city, ident, centre, radius):
     xy = np.column_stack([xs.ravel(), ys.ravel()])
     pts = shapely.points(xy)
     feather = 2.5
-    weight = smooth((radius - np.linalg.norm(xy-centre, axis=1)) / 9)
+    transition = radius * .45 if junction else 9
+    weight = smooth((radius - np.linalg.norm(xy-centre, axis=1)) / transition)
     weight *= smooth((feather - shapely.distance(pts, road)) / feather)
     for exclusion in (houses, other, water):
         if not exclusion.is_empty:
@@ -214,17 +217,71 @@ def fit(city, ident, centre, radius):
                 }
 
 
+def extend_junctions(city, current):
+    """Try wider survey fits around the road node of each screened junction."""
+    patches = {p["id"]: p for p in current["patches"]}
+    report = []
+    for ident, prior in list(patches.items()):
+        if prior["kind"] != "junction":
+            continue
+        bounds = prior["box"]
+        old_centre = (np.array(bounds[:2]) + bounds[2:]) / 2
+        old_box = box(*bounds)
+        edges = {edge_key(e): e for tile in city.tiles(bounds).values() for e in tile.get("drive", [])
+                 if len(e["pts"]) > 1 and not any(e.get(k) for k in ("bridge", "tunnel", "level", "levels"))}
+        nodes = defaultdict(list)
+        for edge in edges.values():
+            nodes[edge["u"]].append(edge["pts"][0])
+            nodes[edge["v"]].append(edge["pts"][-1])
+        choices = [np.array(ends[0]) for ends in nodes.values() if len(ends) >= 3
+                   and old_box.covers(Point(ends[0]))]
+        if not choices:
+            report.append(dict(id=ident, rejected="no connected junction node in existing patch"))
+            continue
+        centre = min(choices, key=lambda xy: np.linalg.norm(xy - old_centre))
+        lon, lat = city.tf.to_local.transform(*centre, direction=TransformDirection.INVERSE)
+        others = [box(*p["box"]) for key, p in patches.items() if key != ident]
+        trials, fits = [], []
+        for radius in (24, 30, 36, 40):
+            try:
+                patch, stats = fit(city, ident, centre, radius, junction=True)
+                footprint = box(*patch["box"])
+                if patch["kind"] != "junction" or any(footprint.intersects(b) for b in others):
+                    raise ValueError("fit is not an isolated ordinary junction")
+                fits.append((stats["residual"], radius, patch))
+                trials.append(dict(radius=radius, **stats))
+            except ValueError as exc:
+                trials.append(dict(radius=radius, rejected=str(exc)))
+        chosen = None
+        if fits:
+            _, chosen, patches[ident] = min(fits, key=lambda f: (f[0], f[1]))
+        report.append(dict(id=ident, at=[lat, lon], radius=chosen, trials=trials))
+    return list(patches.values()), report
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--data", type=Path, required=True)
     ap.add_argument("--survey-snapshot", type=Path, required=True, help="trusted local DTM heights pickle")
-    ap.add_argument("--baseline", type=Path, required=True, help="matching check-road-flatness JSON")
+    source = ap.add_mutually_exclusive_group(required=True)
+    source.add_argument("--baseline", type=Path, help="matching check-road-flatness JSON")
+    source.add_argument("--extend-junctions", type=Path, help="matching screened road-surfaces JSON")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--report", type=Path, required=True)
     ap.add_argument("--seed", action="append", default=[], help="name,latitude,longitude,radius")
     ap.add_argument("--count", type=int, default=1000)
     args = ap.parse_args()
     city = Map(args.data, args.survey_snapshot)
+    if args.extend_junctions:
+        current = json.loads(args.extend_junctions.read_text())
+        if (current.get("version"), current.get("area"), current.get("built")) != (
+                1, city.index["area"], city.index["built"]):
+            ap.error("screened surfaces do not match this map build")
+        patches, report = extend_junctions(city, current)
+        write(args.out, json.dumps({**current, "patches": patches}, separators=(",", ":")) + "\n")
+        write(args.report, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+        print(f"{sum(bool(r.get('radius')) for r in report)} extended junctions from {len(report)} existing fits")
+        return
     base = json.loads(args.baseline.read_text())
     if base["built"] != city.index["built"]:
         ap.error("baseline map build differs")

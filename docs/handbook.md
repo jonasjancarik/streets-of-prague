@@ -89,6 +89,9 @@ measurements and limits.
 matches the assembled map. The [generation and screening instructions](road-profile-pilot.md)
 explain how to prepare the file for another build.
 
+Add `&roadjunctions` to load the wider junction trial from the matching
+`road-junctions.json`. [Junction trial results and generation](road-profile-pilot.md#extended-junction-trial).
+
 On WebGPU, `?roadraster` previews rasterized asphalt on shared terrain triangles.
 See [the shared asphalt trial](tiny-prague-road-rendering.md#shared-asphalt-trial-6-november-2026)
 for the comparison and measurements.

@@ -238,3 +238,42 @@ node scripts/screen-road-surfaces.mjs "$e/trial.json" "$e/baseline.json" \
 Run both checkers on `accepted.json`, then run the screener on those outputs. Check
 that every accepted patch survives the repeat, then put the file at
 `public/data/praha_now/road-surfaces.json`.
+
+## Extended junction trial
+
+The trial starts from the screened junction patches. Inside each patch it
+finds the road node closest to the patch centre that has at least three
+connected arms. It fits one surface over that node and its approaches, trying
+radii of 24, 30, 36 and 40 m. Each fit tapers into the underlying terrain
+over the outer 45% of its radius and fades at the edges of the mapped
+carriageway and the surveyed area. Among fits that pass the existing survey
+and geometry checks, it picks the one with the smallest error at withheld
+survey points. The asphalt mesh and vehicle height sampler use the same fit.
+
+The generator replaced three of four junction patches on this build. At
+Šperlova and Dobrovolského, the largest measured bump on the affected Šperlova
+arm fell from 14 to 7 cm relative to the screened preview. At Bohnická and
+Ve Vrších, the change in cross-slope over 4 m fell from 5.3 to 1.8 percentage
+points on one Bohnická arm. A 24 m fit replaced the 18 m trial at Davídkova.
+The existing patch at Ve Výrech stayed in place because the wider fits
+disagreed with withheld survey heights.
+
+A trace of the Šperlova turn with the default steering look-ahead put the
+car's centre more than a metre past the kerb in both versions. The largest
+height change over one sixth of a second rose from 16.8 to 19.4 cm. A slower
+turn with a shorter look-ahead kept the car's centre on asphalt in both
+versions. Both finished without damage, and the largest height change
+fell from 11.5 to 11.0 cm. The controlled drive through Bohnická finished
+without damage and measured a largest height change of 6 cm in both versions.
+
+The Prague screen retained all 74 patches. Eight of 57,188 segments changed
+their reported metrics compared with the previous preview. None crossed a
+new hard limit, and the collision-edge check found no changes.
+
+To reproduce the trial, replace the `--baseline` and `--seed` arguments in the
+generation command above with
+`--extend-junctions public/data/praha_now/road-surfaces.json`. Run the
+same road and step checks on the result before copying it to
+`public/data/praha_now/road-junctions.json`. Compare the preview with
+`?roadsurfaces&roadraster` in both views and add `&roadjunctions` for the
+extended fits. The logs and matched views are in `docs/evidence/junction-surfaces/`.
