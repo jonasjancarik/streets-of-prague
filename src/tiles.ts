@@ -496,6 +496,11 @@ export class TileWorld {
       .then(async (r) => r.ok ? readRoadSurfaces(await r.json(), area, index.built) : null)
       .catch(() => null);
     this.roadSurfaces = query.has('roadsurfaces') ? (async () => {
+      if (query.has('roadcorridors')) {
+        const file = query.get('roadcorridors') === 'trial' ? 'road-corridors-trial.json' : 'road-corridors.json';
+        const fits = await loadRoadSurfaces(file);
+        if (fits) return fits;
+      }
       if (query.has('roadcorridor')) {
         const fits = await loadRoadSurfaces('road-corridor.json');
         if (fits) return fits;

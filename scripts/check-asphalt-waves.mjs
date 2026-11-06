@@ -2,18 +2,12 @@
 // Measure the level-zero asphalt mesh across a named road edge in the game.
 // Usage: node scripts/check-asphalt-waves.mjs EDGE LAT,LON [scene options]
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-
-const [edge, location, ...options] = process.argv.slice(2);
-const at = location?.split(',').map(Number);
-if (!edge || at?.length !== 2 || !at.every(Number.isFinite)) {
-  console.error('Usage: node scripts/check-asphalt-waves.mjs EDGE LAT,LON [--url URL] [--extra "&roadsurfaces&roadraster"]');
-  process.exit(2);
-}
 
 // Runs in the game with the scene test API. Intersect the actual mesh and
 // apply the same coverage cutoff as the raster material.
-async function measure(t, id, at) {
+async function measure(t, id, at, candidate = null) {
   const { world, dev } = window.__drive;
   function coverage(x, y, material) {
     const tex = material.rasterMap;
@@ -49,6 +43,7 @@ async function measure(t, id, at) {
   const along = .5, across = .25;
   const offsets = Math.ceil(Math.max(6, edge.width / 2 + 2, ...(edge.kerb ?? []).map(w => w + 2)) / across);
   const rows = [], errors = [], modes = new Set();
+  let coverageHash = 2166136261;
   let s0 = 0, windowEnd = 0, meshes = new Map();
   for (let i = 1; i < edge.pts.length; i++) {
     const [x0, y0] = edge.pts[i-1], [x1, y1] = edge.pts[i];
@@ -89,15 +84,29 @@ async function measure(t, id, at) {
         }
         if (!sampled) break;
       }
+      for (const j of row.keys()) coverageHash = Math.imul(coverageHash ^ (rows.length * 512 + j), 16777619);
     }
     s0 += length;
   }
   if (!errors.length) throw new Error(`No rendered asphalt along ${id}`);
   errors.sort((a, b) => a - b);
   const round = (n) => +n.toFixed(3);
+  const joins = [0, 1].map(() => ({ meshStep: 0, drivingStep: 0, meshWave: 0, drivingWave: 0 }));
+  const ends = (i) => [i*along <= 16, (rows.length-1-i)*along <= 16];
+  for (let i = 1; i < rows.length; i++) {
+    ends(i).forEach((inside, side) => {
+      if (!inside) return;
+      for (const [j, m] of rows[i]) {
+        const a = rows[i-1].get(j);
+        if (!a) continue;
+        joins[side].meshStep = Math.max(joins[side].meshStep, Math.abs(m.mesh-a.mesh));
+        joins[side].drivingStep = Math.max(joins[side].drivingStep, Math.abs(m.driving-a.driving));
+      }
+    });
+  }
   const waves = [4, 6, 12, 20].map(span => {
     const half = span / (2*along);
-    let centreline = null, acrossAsphalt = null;
+    let centreline = null, acrossAsphalt = null, acrossDriving = 0;
     for (let i = half; i < rows.length-half; i++) {
       for (const [j, m] of rows[i]) {
         const a = rows[i-half].get(j), b = rows[i+half].get(j);
@@ -105,6 +114,12 @@ async function measure(t, id, at) {
         if (rows.slice(i-half+1, i+half).some(row => !row.has(j))) continue;
         const mesh = m.mesh - (a.mesh + b.mesh)/2;
         const driving = m.driving - (a.driving + b.driving)/2;
+        acrossDriving = Math.max(acrossDriving, Math.abs(driving));
+        if (span === 6) ends(i).forEach((inside, side) => {
+          if (!inside) return;
+          joins[side].meshWave = Math.max(joins[side].meshWave, Math.abs(mesh));
+          joins[side].drivingWave = Math.max(joins[side].drivingWave, Math.abs(driving));
+        });
         const bestCentre = j === 0 && (!centreline || Math.abs(mesh) > Math.abs(centreline.mesh));
         const bestAcross = !acrossAsphalt || Math.abs(mesh) > Math.abs(acrossAsphalt.mesh);
         if (bestCentre || bestAcross) {
@@ -114,16 +129,73 @@ async function measure(t, id, at) {
         }
       }
     }
-    return { span, centreline, acrossAsphalt };
+    return { span, centreline, acrossAsphalt, acrossDriving };
   });
+  const guards = candidate?.guard.map(({ id, pts, width, kerb }) => {
+    const half = Math.max(1, (width || 6) / 2);
+    const [left, right] = (kerb ?? [half, half]).map(w => Math.max(.5, Math.min(w, half) - .75));
+    const profile = [];
+    let distance = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, ay] = pts[i-1], [bx, by] = pts[i];
+      const length = Math.hypot(bx-ax, by-ay);
+      if (length < 1e-5) continue;
+      const ux = (bx-ax)/length, uy = (by-ay)/length;
+      for (let station = profile.length; station < distance+length; station = profile.length) {
+        const x = ax + ux*(station-distance), y = ay + uy*(station-distance);
+        profile.push([0, left, -right].map(offset => {
+          const px = x-uy*offset, py = y+ux*offset;
+          if (!world.tileAt(px, py)?.sample) return null;
+          return round(world.terrainAt(px, py));
+        }));
+      }
+      distance += length;
+    }
+    return { id, profile };
+  });
+  const active = candidate && candidate.tiles.some(k => candidate.surfaces.get(k)?.some(p => p.id === candidate.id));
   return { edge: id, name: edge.name, built: world.index.built, asphalt: [...modes], length: round(s0),
     coveredStations: rows.filter(row => row.size).length, stations: rows.length,
     samples: errors.length, meshDrivingP95: round(errors[Math.floor(errors.length*.95)]),
-    meshDrivingMax: round(errors.at(-1)), waves };
+    meshDrivingMax: round(errors.at(-1)), coverageHash, waves, joins, guards, active };
 }
 
+async function batch(t, measure, manifest, variant) {
+  const world = window.__drive.world;
+  const surfaces = await world.roadSurfaces;
+  if (world.index.built !== manifest.built || !surfaces) throw new Error('Expected the matching road preview');
+  const name = { trial: 'road-corridors-trial.json', screened: 'road-corridors.json', baseline: 'road-corridor.json' }[variant];
+  const response = await fetch('/data/praha_now/' + name, { cache: 'no-store' });
+  if (!response.ok) throw new Error('Could not read ' + name);
+  const hash = await crypto.subtle.digest('SHA-256', await response.arrayBuffer());
+  const digest = [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('');
+  const results = [];
+  for (const c of manifest.cases) {
+    if (variant === 'screened' && !c.tiles.some(k => surfaces.get(k)?.some(p => p.id === c.id))) continue;
+    try { results.push(await measure(t, c.edge, c.at, { ...c, surfaces })); }
+    catch (e) { results.push({ edge: c.edge, error: String(e) }); }
+  }
+  return { built: world.index.built, digest, results };
+}
+
+const [edge, location, ...options] = process.argv.slice(2);
+const at = location?.split(',').map(Number);
+let code, flags = [];
+if (edge === '--batch' && location && ['baseline', 'trial', 'screened'].includes(options[0])) {
+  const variant = options.shift();
+  const manifest = JSON.parse(readFileSync(location, 'utf8'));
+  code = `return await (${batch})(t, ${measure}, ${JSON.stringify(manifest)}, ${JSON.stringify(variant)});`;
+  const stage = { baseline: '', trial: '&roadcorridors=trial', screened: '&roadcorridors' };
+  flags = ['--extra', '&roadsurfaces&roadjunctions&roadraster&roadcorridor' + stage[variant]];
+} else if (edge && at?.length === 2 && at.every(Number.isFinite)) {
+  code = `return await (${measure})(t, ${JSON.stringify(edge)}, ${JSON.stringify(at)});`;
+} else {
+  console.error('Usage: node scripts/check-asphalt-waves.mjs EDGE LAT,LON [scene options]\n'
+    + '       node scripts/check-asphalt-waves.mjs --batch candidates.json baseline|trial|screened [scene options]');
+  process.exit(2);
+}
 const scene = fileURLToPath(new URL('scene.mjs', import.meta.url));
-const code = `return await (${measure})(t, ${JSON.stringify(edge)}, ${JSON.stringify(at)});`;
-const result = spawnSync(process.execPath, [scene, 'eval', code, ...options, '--fresh'], { stdio: 'inherit' });
+const result = spawnSync(process.execPath, [scene, 'eval', ...options, ...flags, '--fresh', '--stdin'],
+  { input: code, stdio: ['pipe', 'inherit', 'inherit'] });
 if (result.error) throw result.error;
 process.exitCode = result.status ?? 1;

@@ -23,7 +23,7 @@
 
 import { createRequire } from 'node:module';
 import { createServer, request } from 'node:http';
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkIn } from './game-lock.mjs';
@@ -206,7 +206,7 @@ if (cmd === 'serve') {
   console.log(failed ? `${failed} of ${names.length} failed` : `All ${names.length} passed`);
   process.exit(failed ? 1 : 0);
 } else if (cmd === 'eval') {
-  const [r] = await withGame([{ cmd: 'eval', code: pos.join(' ') }]);
+  const [r] = await withGame([{ cmd: 'eval', code: args.stdin ? readFileSync(0, 'utf8') : pos.join(' ') }]);
   if (r.value !== undefined) console.log(JSON.stringify(r.value, null, 2));
   process.exit(report(r) ? 0 : 1);
 } else if (cmd === 'shot') {

@@ -342,3 +342,73 @@ After checking the candidate, copy it to `public/data/praha_now/road-corridor.js
 Keep `?roadsurfaces&roadjunctions&roadraster` in both preview links and add
 `&roadcorridor` for the fitted corridor. The logs and fixed-camera captures
 are in `docs/evidence/dobrovolskeho-corridor/`.
+
+### Automatic Prague corridor trial
+
+The citywide flatness report flagged 3,626 at-grade stretches for the corridor
+trial. The generator considers road edges from 30 to 160 m with a measured
+bump of at least 15 cm, a change in cross-slope of at least 9 percentage
+points, or a cross-slope of at least 15%. It located 3,624 of those stretches
+in the map and produced 85 non-overlapping survey fits. The fitter requires
+asphalt and continuous kerb observations on both sides. Its geometry checks
+exclude nearby walls, rail and water, mapped structures, and tunnel tiles.
+
+The checker compares the same paved samples in the baseline and trial renders. A fit needs
+to reduce the largest wave by at least 3 cm and 20%. Across the four measured
+spans of 4, 6, 12 and 20 m, neither the mesh nor the driving surface may gain more than 1 cm of
+wave. At each end it checks the last 16 m of the fit, allowing up to 2 cm
+increase in height change between adjacent half-metre samples and up to
+3 cm increase in a 6 m wave. It also checks grades, crossfall and waves at
+matched points on neighbouring roads.
+
+The browser screen kept 54 fits and rejected 31. Twenty-one failed a join or
+adjoining-road check and ten failed a wave check. The full road-network
+check excluded two more fits for unsafe approaches, at Pravoúhlá and
+Kubišova. The remaining 52 had a median 66% reduction in the largest
+rendered wave and passed again when loaded together. The final scan found
+no road regressions across 57,188 segments and no collision-edge changes.
+This pass covers flagged stretches that fit the current model. Its length,
+curvature and level limits still exclude many roads.
+
+Run in a private map worktree with the existing dev preview and a matching
+survey snapshot. The current sidecar and its full flatness report form the
+baseline. Keep the sidecars fixed while the browser probes are running.
+
+```sh
+e=docs/evidence/prague-corridors
+map=public/data/praha_now
+baseline=docs/evidence/dobrovolskeho-corridor/city-after.json
+mkdir -p "$e"
+uv run --project pipeline python pipeline/road_corridor.py \
+  --data "$map" --survey-snapshot pipeline/.cache/dtm/heights/praha.pkl \
+  --current "$map/road-corridor.json" --baseline-roads "$baseline" \
+  --out "$e/trial.json" --report "$e/candidates.json"
+cp "$e/trial.json" "$map/road-corridors-trial.json"
+node scripts/check-asphalt-waves.mjs --batch "$e/candidates.json" baseline --url http://localhost:5261/ > "$e/waves-baseline.log"
+node scripts/check-asphalt-waves.mjs --batch "$e/candidates.json" trial --url http://localhost:5261/ > "$e/waves-trial.log"
+node scripts/screen-road-corridors.mjs "$e/candidates.json" "$map/road-corridor.json" \
+  "$e/trial.json" "$e/waves-baseline.log" "$e/waves-trial.log" "$e/retained.json" "$e/screen.json"
+```
+
+Check the retained sidecar with both citywide checkers. If the verifier
+finds a regression and can attribute it to new fits, it writes a pruned
+sidecar and exits with an error. Rerun this block with that file as the
+candidate. The final browser pass confirms that the retained fits still
+pass together.
+
+```sh
+candidate="$e/retained.json"
+node scripts/check-road-flatness.mjs praha --roadsurfaces "$candidate" --save "$e/retained-roads.json"
+node scripts/check-step-edges.mjs praha --roadsurfaces "$candidate" --save "$e/retained-steps.json"
+node scripts/verify-road-corridors.mjs "$map/road-corridor.json" "$candidate" \
+  "$baseline" "$e/retained-roads.json" "$e/retained-steps.json" "$e/pruned.json" &&
+  cp "$candidate" "$map/road-corridors.json"
+node scripts/check-asphalt-waves.mjs --batch "$e/candidates.json" screened --url http://localhost:5261/ > "$e/waves-retained.log"
+node scripts/screen-road-corridors.mjs "$e/candidates.json" "$map/road-corridor.json" \
+  "$candidate" "$e/waves-baseline.log" "$e/waves-retained.log" "$e/rechecked.json" "$e/recheck.json" --recheck
+cmp "$candidate" "$e/rechecked.json"
+```
+
+Add `&roadcorridors` to the local preview after both checks pass. Leave
+`roadsurfaces`, `roadjunctions`, `roadcorridor`, and `roadraster` on
+in the baseline and the comparison.

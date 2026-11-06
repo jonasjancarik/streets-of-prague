@@ -95,6 +95,9 @@ Add `&roadjunctions` to load the wider junction trial from the matching
 Add `&roadcorridor` to preview the fitted Dobrovolského corridor when the matching
 `road-corridor.json` is present. [Corridor trial results](road-profile-pilot.md#dobrovolského-corridor-trial).
 
+Add `&roadcorridors` to load the screened Prague batch from the matching
+`road-corridors.json`. [Batch selection and checks](road-profile-pilot.md#automatic-prague-corridor-trial).
+
 For matched terrain comparisons, `?camera=lat,lon,altitude,height,tilt,heading`
 opens the free camera at a fixed pose. Altitude is the target elevation in metres
 above sea level. Height is the camera's rise above that target, in metres.

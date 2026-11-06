@@ -1,18 +1,21 @@
 """Fit a surveyed asphalt corridor and feather it into a screened road preview."""
 
 import argparse
+from collections import Counter
+import hashlib
 import json
 from pathlib import Path
 
 import numpy as np
 import shapely
+from pyproj.enums import TransformDirection
 from scipy.interpolate import BSpline
 from scipy.optimize import least_squares
 from shapely.geometry import LineString, box
 
 from dtm_heights import _along
 from layers import write
-from road_profile import polygons, terrain_at
+from road_profile import edge_key, polygons, terrain_at
 from road_surfaces import Map, smooth
 
 
@@ -125,18 +128,94 @@ def fit_corridor(city, edge):
                     maxCrossfall=float(abs(fit[7:]).max()), maxChange=float(delta.max()))
 
 
+def collect_candidates(city, current, rows):
+    """Fit flagged ground-level asphalt roads, giving the roughest first choice."""
+    eligible = {edge_key(r): max(abs(r["bump"]) / .15, abs(r["twist"]) / 9, abs(r["lean"]) / 15)
+                for r in rows if r.get("level") in (None, 0) and 30 <= r["length"] <= 160
+                and r["hw"] in {"residential", "unclassified", "living_street", "tertiary", "secondary", "primary", "service"}}
+    eligible = {k: v for k, v in eligible.items() if v >= 1}
+    edges = {}
+    for i, j, *_ in city.index["tiles"]:
+        for e in city.tile(i, j).get("drive", []):
+            if len(e["pts"]) < 2 or any(e.get(k) for k in ("bridge", "tunnel", "level", "levels")):
+                continue
+            key = edge_key(e)
+            if key not in eligible:
+                continue
+            if key not in edges or len(e["pts"]) > len(edges[key]["pts"]):
+                edges[key] = e
+    occupied = [box(*p["box"]) for p in current["patches"] if "heights" in p]
+    cases, patches = [], []
+    rejected = Counter()
+    for key, edge in sorted(edges.items(), key=lambda kv: (-eligible[kv[0]], kv[0])):
+        line = LineString(edge["pts"])
+        corridor = line.buffer(9)
+        if any(corridor.intersects(b) for b in occupied):
+            rejected["overlaps another corridor"] += 1
+            continue
+        try:
+            patch, report = fit_corridor(city, edge)
+            footprint = box(*patch["box"])
+            if any(footprint.intersects(b) for b in occupied):
+                raise ValueError("overlaps another corridor")
+        except ValueError as exc:
+            rejected[str(exc)] += 1
+            continue
+        # Measure other ground roads the fit can reach, plus the target's ends.
+        # The masks fade before the box, so this deliberately includes a margin.
+        neighbourhood = footprint.buffer(8)
+        nearby = {edge_key(e): e for t in city.tiles(neighbourhood.bounds).values() for e in t.get("drive", [])
+                  if len(e["pts"]) > 1 and not any(e.get(k) for k in ("bridge", "tunnel", "level", "levels"))}
+        guard = []
+        affected = [edge["id"]]
+        for other_key, other in nearby.items():
+            if other_key == key:
+                continue
+            parts = shapely.get_parts(LineString(other["pts"]).intersection(neighbourhood))
+            used = False
+            for part in parts:
+                if part.geom_type != "LineString" or part.length < .5:
+                    continue
+                used = True
+                guard.append(dict(id=other["id"], width=other["width"], kerb=other.get("kerb"), pts=list(part.coords)))
+            if used:
+                affected.append(other["id"])
+        lon, lat = city.tf.to_local.transform(*line.interpolate(.5, normalized=True).coords[0],
+                                              direction=TransformDirection.INVERSE)
+        patches.append(patch)
+        occupied.append(footprint.buffer(8))
+        cases.append(dict(edge=edge["id"], id=patch["id"], at=[lat, lon], guard=guard, affected=affected,
+                          name=edge.get("name", ""), tiles=patch["tiles"], **report))
+    return patches, dict(flagged=len(eligible), located=len(edges), rejected=dict(rejected), cases=cases)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     for flag in ("data", "survey-snapshot", "current", "out", "report"):
         ap.add_argument(f"--{flag}", type=Path, required=True)
-    ap.add_argument("--edge", required=True)
-    ap.add_argument("--tile", required=True, help="assembled tile containing the edge")
+    source = ap.add_mutually_exclusive_group(required=True)
+    source.add_argument("--edge")
+    source.add_argument("--baseline-roads", type=Path, help="citywide flatness report for the current sidecar")
+    ap.add_argument("--tile", help="assembled tile containing a single requested edge")
     args = ap.parse_args()
     city = Map(args.data, args.survey_snapshot)
-    current = json.loads(args.current.read_text())
+    raw = args.current.read_bytes()
+    current = json.loads(raw)
     if (current.get("version"), current.get("area"), current.get("built")) != (
             1, city.index["area"], city.index["built"]):
         ap.error("screened surfaces do not match this map build")
+    if args.baseline_roads:
+        baseline = json.loads(args.baseline_roads.read_text())
+        digest = hashlib.sha256(raw).hexdigest()
+        if baseline.get("built") != current["built"] or baseline.get("patchDigest") != digest:
+            ap.error("baseline road report does not match the current sidecar")
+        patches, report = collect_candidates(city, current, baseline["rows"])
+        write(args.out, json.dumps({**current, "patches": [*patches, *current["patches"]]}, separators=(",", ":")) + "\n")
+        write(args.report, json.dumps({**report, "built": current["built"], "baselineDigest": digest}, indent=2) + "\n")
+        print(f"{len(patches)} proposals from {report['located']} mapped stretches ({report['flagged']} flagged)")
+        return
+    if not args.tile:
+        ap.error("--tile is required with --edge")
     tile = city.tile(*map(int, args.tile.split("_")))
     edge = next((e for e in tile.get("drive", []) if e["id"] == args.edge), None)
     if not edge or len(edge["pts"]) < 2 or any(edge.get(k) for k in ("bridge", "tunnel", "level", "levels")):
