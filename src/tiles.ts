@@ -17,6 +17,7 @@ import { openWater } from './river.ts';
 import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from './roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from './bridgeSurfacePreview.ts';
+import { readStationTracks } from './stationTracks.ts';
 import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary, withRamps } from './terrain.ts';
 import type { Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
@@ -478,6 +479,7 @@ export class TileWorld {
   furnitureReserved: Promise<Float32Array | null>;
   private roadSurfaces: Promise<ReturnType<typeof readRoadSurfaces>> | null;
   private roadProfiles: Promise<ReturnType<typeof readRoadProfile>> | null;
+  private stationTracks: Promise<ReturnType<typeof readStationTracks>> | null;
   private bridgeSurfacePreview: Promise<ReturnType<typeof readBridgeSurfacePreview>> | null;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
@@ -494,9 +496,14 @@ export class TileWorld {
     this.area = area;
     this.index = index;
     const query = new URLSearchParams(location.search);
-    this.bridgeSurfacePreview = query.has('bridgesurfaces') ? fetch(dataUrl(area, 'bridge-surfaces.json'))
+    const station = area === 'praha' && query.has('stationtracks');
+    this.bridgeSurfacePreview = (query.has('bridgesurfaces') || station) ? fetch(dataUrl(area, 'bridge-surfaces.json'))
       .then(async (r) => r.ok ? readBridgeSurfacePreview(await r.json(), area, index.built) : null)
       .catch(() => null) : null;
+    this.stationTracks = station && this.bridgeSurfacePreview ? this.bridgeSurfacePreview.then((bridges) =>
+      bridges ? fetch(dataUrl(area, 'station-tracks.json'))
+        .then(async (r) => r.ok ? readStationTracks(await r.json(), area, index.built) : null)
+        .catch(() => null) : null) : null;
     const loadRoadSurfaces = (file: string) => fetch(dataUrl(area, file))
       .then(async (r) => r.ok ? readRoadSurfaces(await r.json(), area, index.built) : null)
       .catch(() => null);
@@ -1408,9 +1415,10 @@ export class TileWorld {
       buffer = await this.binary(k, 'ipr');
       validateTileBinary('ipr', buffer, { key: k, url: this.binaryUrl(k, 'ipr'), n: this.index.terrain?.n, tile: t });
     }
+    const station = this.stationTracks ? (await this.stationTracks)?.[k] : undefined;
     return Promise.all([
       w.run('ground', {
-        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, bridgeTracks: t.bridgeTracks, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility },
+        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, bridgeTracks: t.bridgeTracks, station, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility },
         paint: TILE_LOOK.roadPaint, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,

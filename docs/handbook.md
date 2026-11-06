@@ -106,6 +106,15 @@ Add `&bridgesurfaces` to preview the surveyed railway and ramp repairs from
 the matching `bridge-surfaces.json`.
 [Husitská and U Bulhara](road-surface-findings.md#the-railway-at-husitská-and-the-ramps-at-u-bulhara).
 
+Add `&stationtracks` to preview the mapped rail lines, ballast, sleepers and
+platforms at Praha hlavní nádraží and its approaches. This loads the bridge
+preview to keep the tracks on the right level. After building
+`bridge-surfaces.json` for the current map, generate the station file with
+`python pipeline/station_tracks.py public/data/praha_now pipeline/.cache/osm/praha.osm.pbf`
+in the pipeline environment. OpenStreetMap supplies the track and platform
+outlines. Bridge-tagged rails fill gaps in the surveyed track coverage where
+they intersect a single deck.
+
 For matched terrain comparisons, `?camera=lat,lon,altitude,height,tilt,heading`
 opens the free camera at a fixed pose. Altitude is the target elevation in metres
 above sea level. Height is the camera's rise above that target, in metres.

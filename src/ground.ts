@@ -14,6 +14,7 @@ import { pavingRaster, refineRasterRoad, roadRasterGeometry, type RoadRaster } f
 import { PITCH_LOOKS } from './map/pitches.ts';
 import { coverGeometry } from './map/utility.ts';
 import type { UtilityMark } from './map/utility.ts';
+import type { StationTracks } from './stationTracks.ts';
 
 export interface GroundTileData {
   areas: Record<string, Polygons | undefined>;
@@ -23,6 +24,7 @@ export interface GroundTileData {
   // OnLevels), in a tile with bridges; not in older maps.
   deckRails?: { level: number; pts: Point2[] }[];
   bridgeTracks?: { level: number; pts: Point2[] }[];
+  station?: StationTracks;
   weirs?: Point2[][];
   crossings?: Point2[][];
   marks?: Point2[][];
@@ -408,7 +410,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   }
   const upper: GroundLayer[] = [];
   const railway = new Map<number, Point2[][]>();
-  for (const track of d.bridgeTracks ?? []) {
+  for (const track of d.station?.bridgeTracks ?? d.bridgeTracks ?? []) {
     const lines = railway.get(track.level);
     if (lines) lines.push(track.pts); else railway.set(track.level, [track.pts]);
   }
@@ -422,7 +424,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
         // What's on the deck floats a hand's breadth above the slab: they're
         // triangulated differently, so they'd cut into each other.
         groundHeight = (x: number, y: number) => H(x, y) + 0.12;
-        upper.push(...deckLayers(l.polys, tramsOn.get(k) || [], paintOn.get(k) || [], l.level, railway.get(l.level)));
+        upper.push(...deckLayers(l.polys, tramsOn.get(k) || [], paintOn.get(k) || [], l.level, railway.get(l.level), !!d.station));
       } else {
         groundHeight = H;
         upper.push(...tunnelLayers(l.polys, box, masks[k], H, T, paintOn.get(k) || [], l.level));
@@ -636,7 +638,7 @@ function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T:
 // pavements are, from parapet to parapet, with the carriageway over it between granite
 // kerbs (the survey has no pavements on the bridges); one that carries none (a railway
 // bridge) stays plain.
-function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[], level: number, railway: Point2[][] = []): GroundLayer[] {
+function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[], level: number, railway: Point2[][] = [], station = false): GroundLayer[] {
   const out: GroundLayer[] = [];
   let order = -599;
   const add = (geometry: GroundGeometry, color: string, pattern = 'flat', topOnly = false) => {
@@ -654,11 +656,34 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
   else add(polygons(polys), COLORS.bridge, 'asphalt');
   add(strips(trams, 2.5), COLORS.trackbed, 'concrete');
   add(strips(trams.flatMap((pts) => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.1), COLORS.steel);
-  if (railway.length) add(strips(railway.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.12), COLORS.steel, 'flat', true);
+  if (station && railway.length) railwayLayers(railway, (g, color, pattern) => add(g, color, pattern, true));
+  else if (railway.length) add(strips(railway.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.12), COLORS.steel, 'flat', true);
   const { dashed, solid } = roadPaint(edges, trams);
   add(strips(dashed, 0.13, [3, 6], true), COLORS.paint);
   add(strips(solid, 0.13, null, true), COLORS.paint);
   return out;
+}
+
+// Three batches for the station's track bed, sleepers and standard-gauge rails.
+function railwayLayers(lines: Point2[][], add: (g: GroundGeometry, color: string, pattern?: string) => void) {
+  const sleepers: Point2[][] = [];
+  for (const line of lines) {
+    let next = 0.4;
+    for (let i = 1; i < line.length; i++) {
+      const [x, y] = line[i - 1], [bx, by] = line[i];
+      const len = Math.hypot(bx - x, by - y);
+      if (len < 1e-6) continue;
+      const ux = (bx - x) / len, uy = (by - y) / len;
+      for (; next < len; next += 0.85) {
+        const cx = x + ux * next, cy = y + uy * next;
+        sleepers.push([[cx - uy * 1.2, cy + ux * 1.2], [cx + uy * 1.2, cy - ux * 1.2]]);
+      }
+      next -= len;
+    }
+  }
+  add(strips(lines, 3.2), '#5d5750', 'gravel');
+  add(strips(sleepers, 0.26), '#8b8175');
+  add(strips(lines.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.16), '#c4beb1');
 }
 
 // How wide a street on a bridge is from kerb to kerb: as the map has it, or wider where
@@ -851,6 +876,12 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     for (let i = 0; i < shadow.position.length; i += 3) { shadow.position[i] += 3; shadow.position[i + 2] += 3.5; }
     add(shadow, '#000000', 'flat', 0.28);
     add(polygons(bridges), COLORS.bridge, 'asphalt');
+
+    if (d.station) {
+      railwayLayers(d.station.rails, add);
+      add(polygons(d.station.platforms), '#b6afa0', 'concrete');
+      add(strips(d.station.platformEdges, 0.23), '#d1c7b2');
+    } else order += 5;
 
     // Tram tracks: concrete bed and two rails at standard gauge.
     const trams = d.rails.filter((r) => r.kind === 'tram').map((r) => r.pts);
