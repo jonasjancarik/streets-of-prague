@@ -427,4 +427,5 @@ The apparent beige obstruction projects from a building mesh beside the
 road. Its sampled faces are several metres outside the asphalt in plan.
 A terrain depth pass hid those faces but exposed distorted surfaces at
 the ramps. This area still needs a repair to the way the lower street,
-bank and elevated structures meet. [Local evidence](evidence/husitska-structure/).
+bank and elevated structures meet. The later LiDAR trial restored the lower
+roadside pavement. [Source comparison and repair](road-surface-findings.md#lower-ground-beside-elevated-roads).

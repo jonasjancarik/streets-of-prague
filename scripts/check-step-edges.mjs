@@ -3,7 +3,7 @@
 // and every street, path or stairs that crosses a step (where the edge is open), by
 // kind and by how far the ground drops there. A car street crossing a drop of metres
 // is a place where the terrain or the map is wrong: they are listed.
-//   node scripts/check-step-edges.mjs [area] [--list N] [--roadsurfaces file --save report.json]
+//   node scripts/check-step-edges.mjs [area] [--list N] [--roadsurfaces file --save report.json] [--tiles i_j,i_j]
 import { readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
@@ -29,10 +29,12 @@ const index = JSON.parse(readFileSync(`${dir}index.json`, 'utf8')), { n, step } 
 const trial = options['--roadsurfaces'] ? readFileSync(options['--roadsurfaces'], 'utf8') : undefined;
 const surfaces = trial !== undefined ? readRoadSurfaces(JSON.parse(trial), index.area, index.built) : null;
 if (trial && !surfaces) throw new Error('No road surfaces for this map build');
+const selected = options['--tiles']?.split(',');
+if (selected?.some(k => !/^\d+_\d+$/.test(k))) throw new Error('Expected comma-separated tile keys');
 const changed = [];
 let metres = 0, parapet = 0, tiles = 0, withEdges = 0;
 const crossings = new Map(), worst = [];
-for (const f of readdirSync(`${dir}tiles`)) {
+for (const f of selected ? selected.map(k => k + '.json') : readdirSync(`${dir}tiles`)) {
   if (!/^\d+_\d+\.json$/.test(f)) continue;
   const t = JSON.parse(readFileSync(`${dir}tiles/${f}`, 'utf8')), k = f.slice(0, -5);
   const hb = [`${dir}tiles/${k}.height.bin.gz`, `${dir}tiles/${k}.height.bin`].find(existsSync);

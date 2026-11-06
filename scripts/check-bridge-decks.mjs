@@ -7,6 +7,7 @@
 //   node scripts/check-bridge-decks.mjs [area, praha] [--data public/data] [--worst 25]
 //        [--save now.json] [--against before.json] [--profile <edge id or part of a name>]
 //        [--max-break 1.0] [--max-join 1.0] [--named-only] [--near lat,lon[,metres]]
+//        [--roadsurfaces file] [--strict-regressions (requires --against)]
 //
 // A "break" is the largest jump between two samples a metre apart along a deck (the
 // change that the slope either side doesn't account for; ways tagged as steps are left
@@ -19,10 +20,13 @@
 // Maps built before the pipeline wrote each street's level have no `level` on their
 // edges: there the deck walked is the bridge level nearest in height to the last sample.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps } from '../src/terrain.ts';
 import { onPolygons } from '../src/map/geo.ts';
+import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
+import { bridgeRegressions } from './bridge-regressions.mjs';
 
 const args = {}, pos = [];
 const rest = process.argv.slice(2);
@@ -30,9 +34,13 @@ for (let i = 0; i < rest.length; i++) {
   if (rest[i].startsWith('--')) args[rest[i].slice(2)] = rest[i + 1] && !rest[i + 1].startsWith('--') ? rest[++i] : true;
   else pos.push(rest[i]);
 }
+if (args['strict-regressions'] && !args.against) throw new Error('--strict-regressions requires --against');
 const root = new URL('..', import.meta.url).pathname;
 const area = pos[0] || 'praha', dir = join(args.data || join(root, 'public/data'), `${area}_now`);
 const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8'));
+const trial = args.roadsurfaces ? readFileSync(args.roadsurfaces, 'utf8') : null;
+const surfaces = trial && readRoadSurfaces(JSON.parse(trial), index.area, index.built);
+if (args.roadsurfaces && !surfaces) throw new Error('Road surfaces do not match the map build');
 const { tile: T, origin: [ox, oy], terrain } = index;
 const REF = 100; // heights here are metres above 100 m a.s.l.
 const STEP = 1, BREAK = Number(args['max-break'] ?? 1.0), JOIN = Number(args['max-join'] ?? 1.0);
@@ -55,9 +63,12 @@ function tileOf(i, j) {
     const structures = t.structures || [];
     const levels = structures.length ? binary(`${k}.levels.bin`) : null;
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
+    const side = terraceAt(t.terraces);
+    const base = height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step,
+      pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF)) : () => NaN;
+    const patches = height && !structures.some(s => s.kind === 'tunnel') && surfaces ? surfaces.get(k) : undefined;
     out = {
-      t, ground: height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step, pointLabels(height, terrain.n),
-        terraceAt(t.terraces), flatTerraces(t.terraces, REF)) : () => NaN,
+      t, ground: withRoadSurfaces(base, patches, REF, side),
       levels: structures.map((s, n) => ({ level: s.level, kind: s.kind, on: onPolygons(s.polys), sample: withRamps(heightSampler(heights[n], t.box, terrain.n, terrain.step), s.ramps, REF) })),
     };
   }
@@ -281,9 +292,15 @@ if (args.profile) {
     }
   }
 }
-if (args.save) writeFileSync(args.save, JSON.stringify({ built: index.built, summary, rows }));
+const result = { built: index.built, summary, rows,
+  ...(trial ? { patchDigest: createHash('sha256').update(trial).digest('hex') } : {}) };
+if (args.save) writeFileSync(args.save, JSON.stringify(result));
 const bad = summary.filter((s) => s.break > BREAK || s.join > JOIN);
-if (bad.length) {
+if (args['strict-regressions']) {
+  const regressions = bridgeRegressions(before, result);
+  console.log(`Bridge regressions: ${JSON.stringify(regressions)}`);
+  if (regressions.length) process.exitCode = 1;
+} else if (bad.length) {
   console.error(`\n${bad.length} named bridge(s) over the limits (break ${BREAK} m, join ${JOIN} m): ${bad.map((s) => s.name).join(', ')}`);
   process.exit(1);
 }

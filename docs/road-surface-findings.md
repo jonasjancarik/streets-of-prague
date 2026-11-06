@@ -538,3 +538,79 @@ outside this overnight task.
 The subsequent Prague trial retained 74 fits after checking measured road
 heights, approaches and collision edges. Its curves, junctions, wall trials and
 citywide comparison are recorded in [the road surface pilot notes](road-profile-pilot.md).
+
+## Lower ground beside elevated roads
+
+At Husitská, the apparent wall and the steep roadside pavement have different
+causes. The coarse IPR terrain, sampled before the road corrections, already
+climbs across the pavement toward the elevated ground. The road corrections
+lower the carriageway but leave much of that rise on the pavement. The
+independent 1 m IPR LiDAR raster shows a level strip beside the lower road,
+consistent with the surveyed kerbs. The rise occurs farther from the road.
+
+The new generator scans ground roads on tiles that contain bridges. It looks
+for a continuous strip where the LiDAR heights agree with the lower road
+but the assembled terrain is at least 1.2 m higher. It can follow the lower
+strip, or shelf, across a road node. The fit takes the measured lower
+elevations throughout the shelf and tapers back at its edges. A first attempt
+weighted each node by the difference between the two sources. That introduced
+a new wave on the Husitská approach, so the current fit uses the difference
+to identify the strip and then blends its heights continuously.
+
+The mask keeps at least 1.4 m of clearance between its active grid vertices
+and buildings, rail lines, water and labelled terraces, with a separate
+taper near bridge approaches. The preview uses the existing height sampler
+for the lower ground and separate height samples for the elevated levels.
+
+The scan checked 13,711 ground roads on bridge tiles and flagged 183
+stretches. The pilot tried 12 fits and retained six after local road, bridge
+and collision checks. The combined file passed the checks on all 57,188 road
+segments, 4,135 bridge paths and the citywide collision edges.
+
+At a sampled section of Husitská, the rise between the road centre and
+the pavement 7.5 m to the right fell from 5.5 m to 0.3 m. The low and
+overhead views show the pavement and parking restored below the bank.
+Farther toward the ramps, the protected outer edge still rises sharply.
+In one 1.5 m cross-section there, the rise increased from 1.9 m to 2.3 m
+as the lower part of the pavement dropped.
+Fixed-camera spot checks also measured the fitted ground 2.7 m lower at
+Pernerova and 3.1 m lower at Švehlova. At both sampled points the new height
+was closer to the LiDAR measurement.
+
+The beige wall visible farther ahead comes from an IPR building face
+several metres outside the roadway. In the low view it draws through
+foreground terrain. The experimental ground depth pass hid the face and
+exposed distorted surfaces at the ramps. The preview uses the shelf fit
+with the existing renderer. The remaining overlap involves the terrain
+and deck geometry at the interchange.
+
+Generate and check a preview in a private worktree with the matching map,
+screened road sidecar and imported LiDAR cache.
+
+```sh
+e=docs/evidence/interchange-repair
+map=public/data/praha_now
+current="$map/road-corridors.json"
+baseline=docs/evidence/prague-corridors/final-roads.json
+mkdir -p "$e"
+uv run --project pipeline python pipeline/road_shelves.py \
+  --data "$map" --lidar pipeline/.cache/ipr_lidar/2023 --current "$current" \
+  --priority-edge '1017997567>11293600574>0' \
+  --out "$e/protected.json" --report "$e/protected-report.json"
+node scripts/screen-road-shelves.mjs "$current" "$e/protected.json" \
+  "$e/protected-report.json" "$e/protected-screened.json" "$e/protected-screen"
+node scripts/check-road-flatness.mjs praha --roadsurfaces "$e/protected-screened.json" --save "$e/protected-roads.json"
+node scripts/check-step-edges.mjs praha --roadsurfaces "$e/protected-screened.json" --save "$e/protected-steps.json"
+node scripts/verify-road-corridors.mjs "$current" "$e/protected-screened.json" \
+  "$baseline" "$e/protected-roads.json" "$e/protected-steps.json"
+node scripts/check-bridge-decks.mjs praha --roadsurfaces "$current" --save "$e/bridges-before.json"
+node scripts/check-bridge-decks.mjs praha --roadsurfaces "$e/protected-screened.json" \
+  --against "$e/bridges-before.json" --strict-regressions --save "$e/protected-bridges.json"
+```
+
+The baseline deck command writes its report even if existing bridges
+exceed its limits. The final comparison checks for increases against that
+baseline. After the checks pass, copy the screened file to
+`public/data/praha_now/road-shelves.json` and add `&roadshelves` to the
+local comparison link. The evidence directory contains the matched
+captures, source samples and screening decisions.
