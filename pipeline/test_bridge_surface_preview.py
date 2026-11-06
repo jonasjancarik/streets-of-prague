@@ -6,6 +6,7 @@ import numpy as np
 import shapely
 from shapely.geometry import Point, box as rectangle
 
+from bridge_footprints import connect_outline
 from bridge_surface_preview import ramp_cuts
 from road_profile import polygons
 
@@ -32,3 +33,17 @@ class RampCoverTest(unittest.TestCase):
         self.assertFalse(trimmed.covers(Point(12, 3)))
         self.assertTrue(trimmed.covers(Point(24, 3)))
         self.assertTrue(trimmed.covers(Point(12, 10)))
+
+    def test_continuous_outline_replaces_the_remnants_and_preserves_ends(self):
+        main = rectangle(0, 0, 12, 100)
+        extra = rectangle(12, 35, 19, 65)
+        old = main.union(extra)
+        surveyed = rectangle(.5, 0, 11.5, 100)
+        restored = connect_outline(old, surveyed, extra, (-5, 0, 30, 100))
+        self.assertEqual(restored.geom_type, "Polygon")
+        self.assertFalse(restored.interiors)
+        self.assertFalse(restored.covers(Point(14, 52)))
+        for ends in (rectangle(-5, 0, 30, 20), rectangle(-5, 80, 30, 100)):
+            self.assertTrue(restored.intersection(ends).equals(old.intersection(ends)))
+        broken = surveyed.difference(rectangle(-1, 45, 13, 55))
+        self.assertIsNone(connect_outline(old, broken, extra, (-5, 0, 30, 100)))

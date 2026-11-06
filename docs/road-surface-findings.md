@@ -632,10 +632,18 @@ with the ramp height.
 
 The generator looks for continuous runs where a ramp runs alongside an
 upper road, the higher outline covers it and the survey records a deck at
-the lower height. It trims the higher outline around those runs, keeping surveyed
-upper faces and a margin around the mapped upper roads and paths. At U
-Bulhara that removed about 2,050 m² of cover. Both sampled ramps now have
-only their lower deck, and the sampled main road stays on the upper deck.
+the lower height. The first preview cut openings around those runs. This
+exposed the ramps but left eight pieces of upper deck, some with fascia
+and parapets running across the ramps.
+
+The follow-up uses the original surveyed face polygons for the upper deck
+through the split. It joins the surveyed outline back to the old deck on
+either side of the ramps and checks that the mapped upper routes still
+fit. The result at U Bulhara is one continuous deck outline. Both ramp
+openings are clear in the matched view. The seam bands agree with the
+earlier preview to the precision of the exported outlines, and the
+4,135-path bridge check found no regressions.
+[Matched view and outline checks](evidence/bulhar-deck/).
 
 The lower road beneath the railway has its own correction. It uses the
 continuous part of the corridor where the LiDAR and existing street agree

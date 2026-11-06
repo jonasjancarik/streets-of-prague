@@ -11,6 +11,7 @@ import numpy as np
 import shapely
 from shapely.geometry import LineString, box
 from shapely.ops import substring
+from bridge_footprints import flat_faces, surveyed_outline
 
 from ipr_lidar import sampler as lidar_sampler
 from layers import write
@@ -18,7 +19,7 @@ from osm_area import _coords, _rings
 from road_profile import polygons
 from road_shelves import Map as GroundMap, road_on_ground
 from road_surfaces import smooth
-from structures import ipr_decks
+from structures import bridge_shapefile, ipr_decks
 
 
 def local_crs(index):
@@ -275,9 +276,20 @@ def main():
     measured = ipr_decks(local)
     lidar, _ = lidar_sampler(args.lidar, local)
     adjusted, report = {}, []
-    for key, level, polys, area in ramp_cuts(tiles, measured):
+    cuts = ramp_cuts(tiles, measured)
+    faces = list(flat_faces(bridge_shapefile(), local, shapely.union_all([t.box for t in tiles]).envelope)) if cuts else []
+    paths = routes(tiles) + routes(tiles, "walk")
+    by_key = {t.key: t for t in tiles}
+    for key, level, polys, area in cuts:
+        t = by_key[key]
+        original = t.levels[level][0]
+        restored = surveyed_outline(t, level, original, shapely.union_all(polygons(polys)), faces, paths)
+        if restored is not None:
+            polys = [_rings(restored, .04)]
+            area = round(original.difference(restored).area, 1)
         adjusted.setdefault(key, {})[str(level)] = polys
-        report.append(dict(tile=key, level=level, removed_m2=area))
+        report.append(dict(tile=key, level=level, removed_m2=area,
+                           outline="surveyed" if restored is not None else "ramp cut"))
     tracks = railway_decks(tiles, measured, lidar)
     patches, cutting = [], None
     if args.underpass:
