@@ -341,8 +341,9 @@ type ParkCarsOptions = Parameters<typeof parkCarsSteps>[0];
 // The same a little at a time: it pauses (yields) after each spot it tries, with the
 // same spots, the same random numbers and the same cars in the end. A phone took up to
 // 180 ms a tile in one go; TileWorld spreads it over frames.
-export function* parkCarsSteps({ data, edges, clearanceEdges = edges, zones, solid, r, night = false, shares = null, inside = () => true, buildings = null }: {
+export function* parkCarsSteps({ data, edges, clearanceEdges = edges, zones, solid, height, r, night = false, shares = null, inside = () => true, buildings = null }: {
   data: ParkingData; edges: DriveEdge[]; zones: Zones; solid: (x: number, y: number) => boolean | number;
+  height?: (x: number, y: number) => number;
   clearanceEdges?: DriveEdge[];
   // The buildings in and round the tile (as far as the neighbouring tiles reach): without
   // them, outside the zones a fifth of the kerb spots and under half of a car park's get a car.
@@ -400,6 +401,15 @@ export function* parkCarsSteps({ data, edges, clearanceEdges = edges, zones, sol
     if (nearRail(s.x, s.y, 4.5) && outline.some(([x, y]) => nearRail(x, y, 1.65))) return false;
     if (outline.some(([x, y]) => solid(x, y)) || car.worldOutline().some(([x, y]) => solid(x, y)) || crowded(s.x, s.y, s.bay ? 2.4 : 4.8) || posts.touches(car)) return false;
     if (s.fwd && outline.some(([x, y]) => onCarriageway(x, y, clearanceEdges))) return false;
+    if (height) {
+      // Use the same support points as CarPool.render. A mapped parking
+      // strip can be draped up a bank or over the edge of a retaining wall.
+      const { x, y, h, spec: { L, W } } = car;
+      const dx = Math.cos(h) / 2, dy = Math.sin(h) / 2;
+      const across = Math.abs(height(x - dy * W, y + dx * W) - height(x + dy * W, y - dx * W));
+      const along = Math.abs(height(x + dx * L, y + dy * L) - height(x - dx * L, y - dy * L));
+      if (!(across <= .30 * W && along <= .40 * L)) return false;
+    }
     car.mode = 'loose';
     cars.push(car);
     const k = key(s.x, s.y);

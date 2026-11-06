@@ -994,7 +994,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   against someone standing still) and drawn as a streak flying to where the bullet went.
 - **Parking** follows TSK Praha's paid-parking data: each street section gets spaces ×
   measured occupancy cars (day or night), placed in OSM's parking lanes and lots and
-  then along the kerb (`src/parking.ts`). Outside the paid zones (most of the east and
+  then along the kerb (`src/parking.ts`). The game checks the terrain under each
+  parked car and skips places steeper than 30% across or 40% along the car.
+  Outside the paid zones (most of the east and
   south of the city and everything past the city limits) each spot's chance of a car
   comes from the buildings within about 60 m (`src/parkingDemand.ts`): the floor area
   (footprint × storeys) of flats and tenements, terraced and mid-rise houses, family

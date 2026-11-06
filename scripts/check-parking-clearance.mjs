@@ -37,6 +37,15 @@ const park = (edges, clearanceEdges, lots, seed = 10, extra = {}) => parkCars({
 const positions = (cars) => cars.map((c) => [c.x,c.y,c.h,c.type,c.paint]).sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 const reports = [];
 
+const hillLot = [rectangle(0, 0, 70, 10)];
+const ordinaryLot = park([], [], hillLot).cars;
+assert.ok(ordinaryLot.length > 0, 'parking fixture places cars without a height sampler');
+assert.deepEqual(positions(park([], [], hillLot, 10, { height: (x, y) => .08 * (x + y) }).cars),
+  positions(ordinaryLot), 'a plausible slope keeps the same parked cars');
+assert.equal(park([], [], hillLot, 10, { height: (x, y) => x + y }).cars.length, 0,
+  'the lot outline does not make a steep hillside suitable for parking');
+reports.push('parking remains available on ordinary slopes and rejects steep ground');
+
 // The curve cuts across clear ground between the straight lanes; a safe corner
 // farther from it must remain available. Both trim distances match actual Route.
 const corner = graph([raw('in','a','j',[[-40,0],[0,0]]), raw('out','j','b',[[0,0],[0,-40]])]);
@@ -289,7 +298,7 @@ try {
 reports.push('required neighbour graph fields, empty arrays, legacy omissions and retry');
 const pruned=Object.create(TileWorld.prototype);
 Object.assign(pruned,{T:50,ox:0,oy:0,jsonRange:null,jsons:new Map([['0_0',Promise.resolve(fixture)],['99_99',Promise.resolve(fixture)]]),
- retry:new Map(),pending:new Map(),loaded:new Map(),photos:new Map(),inFlight:new Set(),dressing:new Set(),workers:{size:0},building:0,around:()=>[],jobs:[]});
+ retry:new Map(),pending:new Map(),loaded:new Map(),photos:new Map(),inFlight:new Set(),dressing:new Set(),workers:{size:0},building:0,around:()=>[],jobs:[],turns:[],reveal:[]});
 let scans=0;const keys=pruned.jsons.keys.bind(pruned.jsons);pruned.jsons.keys=()=>{scans++;return keys();};
 pruned.update(5,5,100);assert.equal(pruned.jsons.size,1);assert.equal(scans,1);
 pruned.update(6,6,100);assert.equal(scans,1,'stationary frames do not rescan the halo cache');

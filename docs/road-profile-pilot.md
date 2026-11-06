@@ -412,3 +412,19 @@ cmp "$candidate" "$e/rechecked.json"
 Add `&roadcorridors` to the local preview after both checks pass. Leave
 `roadsurfaces`, `roadjunctions`, `roadcorridor`, and `roadraster` on
 in the baseline and the comparison.
+
+#### What the Husitská comparison misses
+
+The 106 to 22 cm reduction measures one 60 m stretch of asphalt. The
+same camera also shows the adjoining carriageway, verge and elevated ramps.
+The major distortions are present with and without the batch. Near the
+camera, the terrain rises from about 201 m at the road edge to 209 m on the
+bank within roughly 8 m. Parking used to put cars on that slope. A check
+at the car's support points reduced the number placed along that bank
+from six to two in the matched scene.
+
+The apparent beige obstruction projects from a building mesh beside the
+road. Its sampled faces are several metres outside the asphalt in plan.
+A terrain depth pass hid those faces but exposed distorted surfaces at
+the ramps. This area still needs a repair to the way the lower street,
+bank and elevated structures meet. [Local evidence](evidence/husitska-structure/).
