@@ -359,6 +359,9 @@ Priority: use more of the existing survey, compare the LiDAR terrain raster, the
 pilot explicit road surfaces. Investigate street LiDAR access for cases the existing
 sources cannot resolve. The trials below test several of these directions.
 
+For a comparison with a simpler renderer, see
+[how Tiny Prague renders roads](tiny-prague-road-rendering.md).
+
 ## Implementation trials, 6 November 2026
 
 The overnight work used isolated checkouts based on `flat-roads` at `3dfafe52`.
