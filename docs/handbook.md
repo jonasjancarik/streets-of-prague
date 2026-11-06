@@ -80,6 +80,11 @@ HTML hints use `tHtml()` to keep key formatting while escaping names inserted fr
 map and transit data; text content uses `t()`. `node scripts/check-display-text.mjs`
 checks transit hints, developer search results and scenario reports in both languages.
 
+`?roadprofiles` enables the experimental, map-versioned road surface on a reviewed
+50 m section of Italská when its generated `road-profile.json` is present. It is
+off by default; see [the road profile pilot](road-profile-pilot.md) for generation,
+measurements and limits.
+
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 
 | Setting | Ultra | High | Medium | Low | Lowest |

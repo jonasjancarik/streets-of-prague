@@ -62,7 +62,13 @@ marking overlaps, paint triangles ranged from 0.6 mm below the asphalt to
 the markings over the asphalt regardless of these height differences.
 
 The affected tile's road and sett layers increased from 11,050 to 15,603
-triangles. This pilot did not measure frame times.
+triangles. A later integration check used three alternating baseline/candidate
+WebGPU runs with a fixed top-down camera, High graphics, DPR 1 and paused
+simulation. Mean frame times were 4.2 → 4.3 ms; individual pairs changed in both
+directions (3.9/4.2, 4.6/4.5 and 4.2/4.0 ms). The difference was smaller than the
+run-to-run variation. Draw calls stayed at 140 and total rendered triangles rose
+from 2,513,591 to 2,535,938. These static desktop measurements do not establish
+driving or mobile performance. See [the performance log](performance-log.md).
 
 
 ## Hořejší nábřeží
