@@ -518,9 +518,20 @@ def fit(city, area, lidar_at, dsm_at):
                         p95=float(np.percentile(np.abs(e - np.median(e)), 95)))
         stats["surveyCheck"] = dict(points=int(near.sum()), fit=spread((C @ z - sv[:, 2])[near]),
                                     now=spread((now - sv[:, 2])[near]))
+    # Round LiDAR set aside off the car streets the patches fade into the map, which is
+    # right there more often than not. Where the surface model lies nearer the fit than the
+    # map, the fit stays: fading into a map metres off would raise a hill in a car park.
+    aside_dist = ndimage.distance_transform_edt(~aside) * CELL if aside.any() else np.full(gx.shape, np.inf)
+    keep_fit = np.zeros(gx.shape)
+    zone = (aside_dist < 2 * ASIDE + CELL) & np.isfinite(Z) & np.isfinite(ground)
+    if zone.any():
+        top = dsm_at(gx[zone], gy[zone])
+        keep_fit[zone] = np.abs(top - Z[zone]) < np.abs(top - ground[zone])
+        keep_fit = ndimage.uniform_filter(keep_fit, 3)
+        stats["asideKept"] = int(np.count_nonzero(keep_fit[zone] > 0.5))
     grids = dict(Z=Z, base=ground, lidar=lid, inside=inside, masked=masked | pinned, iso=iso > 0, cut=cut)
-    return dict(Z=Z, x0=x0, y0=y0, on=on, geo=geo, paved=paved, bounds=bounds, tiles=tiles, at=at, idx=idx, walls=walls, aside=ndimage.distance_transform_edt(~aside) * CELL if aside.any() else np.full(gx.shape, np.inf),
-                grids=grids), stats
+    return dict(Z=Z, x0=x0, y0=y0, on=on, geo=geo, paved=paved, bounds=bounds, tiles=tiles, at=at, idx=idx, walls=walls,
+                aside=aside_dist, keep_fit=keep_fit, grids=grids), stats
 
 
 def node_heights(Z, x0, y0, px, py, i, j, fa, fb, walls):
@@ -589,10 +600,15 @@ def patches(city, f):
                 houses = house.intersection(reach)
                 if not houses.is_empty:
                     weight *= smooth(shapely.distance(houses, g) / HOUSE_GAP)
-            # Where the fit set the LiDAR aside it had nothing to go on: the map shows there.
-            ai = np.clip(np.round((px - x0) / CELL).astype(int), 0, Z.shape[1] - 1)
-            aj = np.clip(np.round((py - y0) / CELL).astype(int), 0, Z.shape[0] - 1)
-            weight *= smooth((f["aside"][aj, ai] - ASIDE) / ASIDE)
+            # Where the fit set the LiDAR aside it had nothing to go on: the map shows there
+            # (unless the surface model sides with the fit, see fit()).
+            # Read between the cells: a fade that changed only at each 2 m cell would cut a
+            # step into the ground wherever the fit and the map are metres apart.
+            far = np.minimum(f["aside"], 2 * ASIDE + CELL)
+            gc = [(py - y0) / CELL, (px - x0) / CELL]
+            near_aside = ndimage.map_coordinates(far, gc, order=1, mode="nearest")
+            fade = smooth((near_aside - ASIDE) / ASIDE)
+            weight *= fade + (1 - fade) * ndimage.map_coordinates(f["keep_fit"], gc, order=1, mode="nearest")
             own = (px >= cx) & (px <= cx + CORE) & (py >= cy) & (py <= cy + CORE)
             weight[~own] = 0
             # Heights from the 2 m grid; a node needs its four grid cells.
