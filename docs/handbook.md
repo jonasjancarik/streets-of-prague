@@ -102,6 +102,10 @@ Add `&roadshelves` to load the screened LiDAR terrain corrections beside
 lower roads from the matching `road-shelves.json`.
 [Source comparison and screening](road-surface-findings.md#lower-ground-beside-elevated-roads).
 
+Add `&roadfit` to load the Vinohrady–Nusle road fit from the matching
+`road-fit.json`: one smooth surface over the streets, fitted to IPR's LiDAR.
+[How it is made and what it changes](road-surface-findings.md#road-fit-pilot-vinohradynusle).
+
 Add `&bridgesurfaces` to preview the surveyed railway and ramp repairs from
 the matching `bridge-surfaces.json`.
 [Husitská and U Bulhara](road-surface-findings.md#the-railway-at-husitská-and-the-ramps-at-u-bulhara).
