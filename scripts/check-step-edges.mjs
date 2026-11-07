@@ -50,7 +50,7 @@ for (const f of selected ? selected.map(k => k + '.json') : readdirSync(`${dir}t
   const side = terraceAt(t.terraces);
   const base = heightSampler(hm, t.box, n, step, labels, side, flatTerraces(t.terraces, 0));
   const road = surfaces?.get(k), lower = preview?.ground.get(k);
-  const patches = t.structures?.some((s) => s.kind === 'tunnel') ? undefined : lower ? [...lower, ...(road ?? [])] : road;
+  const patches = lower ? [...lower, ...(road ?? [])] : road;
   const H = withRoadSurfaces(base, patches, 0, side);
   const ways = [
     ...(t.drive ?? []).filter((e) => !e.bridge && !e.tunnel).flatMap((e) => byLevel(e)

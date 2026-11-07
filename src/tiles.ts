@@ -275,13 +275,18 @@ export async function landmarkModel(url: string, plain = false) {
 
 // The ground of a tile as depth alone, a little below the ground itself: drawn after
 // the ground's layers (which have no depth) and before the tunnels, so what's under
-// the ground is hidden but for the hole round you.
-function depthOnlyGround(hm: Float32Array, [x0, y0]: Bounds, n: number, step: number) {
+// the ground is hidden but for the hole round you. Where road surfaces lower the ground
+// (`patched`, in `boxes`), each point goes under the lowest of the surface round it, or
+// the cars on the road would be hidden too.
+function depthOnlyGround(hm: Float32Array, [x0, y0]: Bounds, n: number, step: number,
+  patched?: { sample: (x: number, y: number) => number; boxes: Bounds[] }) {
+  const low = Float32Array.from(hm);
+  if (patched) lowerUnder(low, x0, y0, n, step, patched.sample, patched.boxes);
   const pos = new Float32Array(n * n * 3), idx: number[] = [];
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const k = (j * n + i) * 3;
     pos[k] = x0 + i * step;
-    pos[k + 1] = hm[j * n + i] - 0.3;
+    pos[k + 1] = low[j * n + i] - 0.3;
     pos[k + 2] = -(y0 + j * step);
   }
   for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
@@ -294,6 +299,26 @@ function depthOnlyGround(hm: Float32Array, [x0, y0]: Bounds, n: number, step: nu
   const mesh = new THREE.Mesh(g, cutAway(new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }), 'depth-ground'));
   mesh.renderOrder = -800;
   return mesh;
+}
+
+// Each lattice point in or next to a box goes down to the lowest height `sample` gives
+// on a 2 m grid over the cells round it, so the lattice's flat triangles stay under it.
+export function lowerUnder(hm: Float32Array, x0: number, y0: number, n: number, step: number,
+  sample: (x: number, y: number) => number, boxes: Bounds[]) {
+  const m = Math.max(1, Math.round(step / 2)), h = step / m, w = (n - 1) * m + 1;
+  const fine = new Float32Array(w * w).fill(Infinity);
+  const near = (x: number, y: number) => boxes.some(([bx0, by0, bx1, by1]) => x > bx0 - step && x < bx1 + step && y > by0 - step && y < by1 + step);
+  for (let b = 0; b < w; b++) for (let a = 0; a < w; a++) {
+    const x = x0 + a * h, y = y0 + b * h;
+    if (near(x, y)) fine[b * w + a] = sample(x, y);
+  }
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    if (!near(x0 + i * step, y0 + j * step)) continue;
+    let low = hm[j * n + i];
+    for (let b = Math.max(0, (j - 1) * m); b <= Math.min(w - 1, (j + 1) * m); b++)
+      for (let a = Math.max(0, (i - 1) * m); a <= Math.min(w - 1, (i + 1) * m); a++) low = Math.min(low, fine[b * w + a]);
+    hm[j * n + i] = low;
+  }
 }
 
 // Buildings from a worker's arrays: IPR's or extruded from OSM footprints, with their
@@ -1247,7 +1272,7 @@ export class TileWorld {
     const trial = this.roadSurfaces && this.available.has(k) && shade ? (await this.roadSurfaces)?.get(k) : undefined;
     const lower = preview?.ground.get(k);
     const fits = lower ? [...lower, ...(trial ?? [])] : trial;
-    const surfaces = fits && !t.structures?.some((s) => s.kind === 'tunnel') ? fits : undefined;
+    const surfaces = fits;
     if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
     const hAt = shade ? shade.sample : () => 0;
     const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
@@ -1511,7 +1536,8 @@ export class TileWorld {
     const surfaces = new Surfaces(layers, { time: this.time, relief: shade ? { texture: shade.texture, box: shade.box, sky: skyTexture ? { texture: skyTexture, box: skyBox } : null } : null, masks: levelMasks, photo: photo ? { texture: photo, box: [x0, y0, x1, y1] } : null });
     // Under a tunnel, the ground hides what's below it (the tunnel, the cars in it)
     // except round you (CUTAWAY): the ground's own layers are drawn without depth.
-    const hidden = shade && terrain && tile.levels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step) : null;
+    const hidden = shade && terrain && tile.levels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step,
+      s.ground?.roadSurfaces?.length ? { sample: shade.sample, boxes: s.ground.roadSurfaces.map((p) => p.box) } : undefined) : null;
     if (hidden) group.add(hidden);
     const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
     const smoke = iprArrays?.chimneys ? chimneySmoke(iprArrays.chimneys, this.scene) : null;

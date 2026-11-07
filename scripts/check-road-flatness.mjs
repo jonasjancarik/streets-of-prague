@@ -101,7 +101,7 @@ function tileOf(i, j) {
       side: side || (() => 0),
       base,
       ground: withRoadSurfaces(withRoadProfile(base, height && pilot?.tiles.includes(k) ? pilot.profile : undefined, REF),
-        height && !structures.some((s) => s.kind === 'tunnel') ? surfaces?.get(k) : undefined, REF, side),
+        height ? surfaces?.get(k) : undefined, REF, side),
       levels: structures.map((s, n) => ({ level: s.level, on: onPolygons(s.polys), sample: withRamps(heightSampler(heights[n], t.box, terrain.n, terrain.step), s.ramps, REF) })),
       // (The carriageways, and outside the survey the asphalt the photos show.)
       road: [...['road', 'sett', 'bridge', 'trambed'].map((k) => roads[k]), ...['cover_asphalt', 'parking'].map((k) => t.areas?.[k])]
