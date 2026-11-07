@@ -161,6 +161,18 @@ steeper than VALLEY anywhere, which took steps over 1 m from 71 to 38.
   under IPR's deck, and the terrace put 6 m walls across Ryšavého. Extending such a
   bridge out to IPR's deck's end would be the real fix there (not tried: the street
   running on would need to be on the bridge's level).
+- A gentler short bridge can have an end on the wrong ground too. A trunk link at
+  Zlíchov runs level on IPR's deck along the top of Dobříšská's cutting; the terrain
+  model has no wall there, so both ends sat on the cutting's floor 6 m down. The
+  abutment rule lifted the north end, and the deck ran down 14 % to the south one,
+  under `STEEP`. Any short car-street bridge with an end `WRONG_GROUND` (2 m) or more
+  off IPR's deck now goes onto it the same way, and an end already on the deck counts
+  as the street reaching it. At 1 m it lifted one of Železničářů's twin carriageways
+  away from the other (lean 30 → 59 %) and put a 3 m trough in the slip road under
+  Jižní spojka's short bridges. At 2 m, city-wide against a build of the same code
+  without it: 5 ways move, joins over 1 m 122 → 119, and the Pražský okruh slip road
+  at 50.0948, 14.5943 loses a 1.9 m bump. The link's south terrace still ends 1 m
+  above the map's slope on its east edge: the cutting needs its wall.
 - Under a bridge the survey may hold two surfaces over each other (the junction on
   Palackého most's east end, and the quay path passing under it). Their average was a
   pit 3 m deep. Within 6 m of a bridge, where a lattice point's nearest surveyed points

@@ -1127,7 +1127,10 @@ from 3.3 to 1.4 m and otherwise matches the map. The bridge check is unchanged.
 
 - The trunk link at 50.04779, 14.40959 (asked about earlier) is fixed: lean
   34 → 4 %, twist 28.6 → 0.7 %, crown 0.96 → 0.14 m. Another link 40 m north
-  (50.04821, 14.40954) still leans 42 % (46 % on the map).
+  (50.04821, 14.40954) leaned 42 % (46 % on the map), where its own short bridge
+  started in a wedge: the bridge's deck had been built down to the cutting's floor.
+  The structures pipeline now puts it on IPR's deck (see below), and the street leans
+  17 % with the fit (21 % on the map).
 - Ke Sklárně at the interchange: the map has two pits of up to 10 m beside the
   tunnel (50.0499, 14.4083) where the LiDAR and the surface model both show the
   street at about 201 m. The tunnel's 4 m hold kept them; with the rule for the
@@ -1144,6 +1147,29 @@ from 3.3 to 1.4 m and otherwise matches the map. The bridge check is unchanged.
 
 ![Zlíchov in the game from above, now and with the fit: the trunk link, the interchange, the hairpin, and the cutting at the north end](images/road-fit-zlichov.jpg)
 
+### The trunk link's deck
+
+The link's short bridge (OSM way 27792986, 42 m) runs level on IPR's deck at 195 m
+along the top of Dobříšská's cutting. The terrain model has no wall at the cutting's
+edge, so both of the bridge's ends lay on the cutting's floor at 189 m. The north end
+was lifted by the rule for a bridge drawn past its wall, the south end wasn't (the
+ground there rises over 16 m, not in a step), and the deck ran down 14 % to it: too
+gentle for the rule for steep short bridges. `structures.solve` now moves an end of
+any short car-street bridge that lies 2 m or more off IPR's deck onto it, and counts
+an end already on the deck as the street meeting it (`test_ramp_ends.LevelLinkTests`).
+The deck is level at 195.1–195.2 m.
+
+City-wide, against a build of the same code without the rule: 5 ways move, joins
+between deck and street over 1 m go 122 → 119 (over 0.5 m 232 → 228), and the counts
+of leaning, bumps, ridges and twists each fall by one or two streets. Moving ends from
+1 m off instead moved 31 ways and made Železničářů and Jižní spojka's slip road worse
+(see the terrain-steps skill).
+
+Rebuilt with the rule, the map also takes in the pipeline's other changes since
+6 November. In Nusle that adds a 42 % lean on 5. května's slip road by Kongresová
+(50.0617, 14.4310; 23 % with the fit), so Nusle's counts with the fit there are now
+6 / 2 bumps, 36 / 13 leaning and 18 / 7 twisting. The deck rule moves nothing there.
+
 ### What doesn't work yet in Zlíchov
 
 - Dobříšská at the north end (50.0615, 14.4061). The LiDAR and the surface model
@@ -1153,12 +1179,12 @@ from 3.3 to 1.4 m and otherwise matches the map. The bridge check is unchanged.
   cutting's walls in the terrain (see the terrain-steps skill), not a road fit.
 - Dobříšská's leans of 53 and 71 % at 50.05025, 14.408 are the tunnel portal's
   cutting edge, the same on the map.
-- The trunk link under the bridge (50.04821, 14.40954) rises in a wedge where its
-  own short bridge starts. The map's ground there drops to Dobříšská's level, 189 m,
-  and the bridge's deck was built to meet it, while the LiDAR and the surface model
-  keep the link at 195 m. The fit holds the map's level beside a deck, so the deck
-  and the street still meet. The deck has to be raised in the map (its heights come
-  from the structures pipeline), and then the fit can follow.
+- South of the trunk link's short bridge (50.0480, 14.4096) the terrace that brings
+  the street up to the deck ends 1 m above the map's ground on its east edge (a step
+  of 1.27 m on the map, 0.98 m with the fit, and a small dark wall face in the angled
+  views). The LiDAR keeps the street at 195 m out to a wall at the top of Dobříšská's
+  cutting; the terrain model has a 10 m slope down to 189 m instead. Like the north
+  end, this needs the cutting's wall in the terrain (`terrain_walls.json`).
 - With the fit, thin bright streaks show on the grass and the road near the
   Zlíchov tunnel, about 30 m west of the interchange. They were there with the
   first Zlíchov run too, and the newer one has fewer; the plain map has none. They
