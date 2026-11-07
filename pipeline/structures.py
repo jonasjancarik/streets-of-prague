@@ -518,6 +518,7 @@ def solve(ways, ground, decks, soft=frozenset(), streets=()):
                     if i in fixed:
                         fixed[i] = max(known)
                 level.add(w["id"])
+    moved_to_ipr = []
     # No bridge that cars or people use drops a storey in a few metres. Where a short
     # bridge way's two ends on the ground are that far apart in height (a service way off
     # Hlávkův most whose far end the map ties to the landing by the water, 10 m down in
@@ -545,6 +546,24 @@ def solve(ways, ground, decks, soft=frozenset(), streets=()):
                 continue
             fixed[ends[0]] = fixed[ends[1]] = max(fixed[ends[0]], fixed[ends[1]])
             w.pop("raised", None)
+        elif all(i in fixed for i in ends) and w["hw"] not in ON_FOOT:
+            # Not steep enough to be a mistake on its own, but an end WRONG_GROUND or more off
+            # IPR's deck is still on the wrong ground: a trunk link at Zlíchov along the
+            # top of Dobříšská's cutting, whose south end the terrain model puts on the road
+            # 6 m below (it has no wall there), ran down 14 % to it with IPR's deck level.
+            # (Not less: a metre or so is what the ground brought to a bridge's ends takes up,
+            # and lifting one end that much split Železničářů's carriageway from its twin and
+            # put a trough in the slip road under Jižní spojka's short bridges.)
+            on_ipr = ipr_ends(w, decks, ground, [fixed[i] for i in ends], streets)
+            if on_ipr and any(abs(h - fixed[i]) >= WRONG_GROUND for i, (h, _) in zip(ends, on_ipr)):
+                for end, i, (h, far) in zip((0, -1), ends, on_ipr):
+                    fixed[i] = h
+                    w.setdefault("raised", {}).pop(end, None)
+                    if far:
+                        w["raised"][end] = (far, h)
+                moved_to_ipr.append(w["id"])
+    if moved_to_ipr:
+        print(f"structures: {len(moved_to_ipr)} short bridge ways with an end moved onto IPR's deck")
     # (What's kept for the street's last metres before each end, see pads, at the height it has now.)
     for w in ways:
         for end, (far, _) in list(w.get("raised", {}).items()):
@@ -803,8 +822,9 @@ def ipr_ends(w, decks, ground, at_ends, streets=None):
     """A short bridge way's two ends on IPR's deck, [(height, how far on the street
     the ground comes to it)] for its first and last end, or None: where IPR has no deck
     along most of it, none within IPR_END of an end, one as steep as the map's ends, one
-    the street reaches within IPR_END of neither end (it's to say which end is wrong, not
-    overrule both), no ground within PAD_MAX on along the street within MEET of it, or
+    the street reaches within IPR_END of neither end and neither end is on already (it's
+    to say which end is wrong, not overrule both), no ground within PAD_MAX on along the
+    street within MEET of it, or
     a car street on the ground (`streets`: (STRtree, lines)) across the ground that
     would come up. That's a bridge the map draws too short, its ends on the street it
     crosses (Jižní spojka over Ryšavého): raising the ground walls that street off."""
@@ -830,7 +850,9 @@ def ipr_ends(w, decks, ground, at_ends, streets=None):
         off = np.where(np.isnan(g), np.inf, np.abs(g - h))
         close = np.nonzero(off <= MEET / 2)[0]
         k = int(close[0]) if len(close) else int(np.argmin(off))
-        agree = agree or far[k] <= IPR_END
+        # (An end the street already meets on IPR's deck, as one the abutment rule lifted
+        # onto the street past its wall, says the same: the other end is the wrong one.)
+        agree = agree or far[k] <= IPR_END or abs(at_ends[end] - h) <= MEET
         if off[k] > MEET or (k and streets and crossed(LineString([b, on[k]]).buffer(w["w"] / 2 + 1.0, cap_style="flat"), d, streets)):
             return None
         out.append((float(g[k]), float(far[k]) + 0.5 if k else 0.0))
@@ -1122,6 +1144,7 @@ def ramps(ways, lines, profiles, out):
 
 STEEP, STEEP_LENGTH = 0.15, 80.0  # a bridge way shorter than this many metres, steeper than this: not a ramp, a mistake in the map
 IPR_END, PAD_MAX, MEET = 4.0, 20.0, 1.0  # m (ipr_ends): IPR's deck this near a short bridge's end is the end's; the ground this far on, within this of it, meets it
+WRONG_GROUND = 2.0  # m: a short bridge's end this far off IPR's deck is on the wrong ground, however gentle the way (see solve)
 SCRAP = 25.0  # m: a bridge way shorter than this, lying on a much longer one, is a scrap of that bridge
 PORTAL = 12.0  # m a tunnel reaches out of its portal, at the portal's height
 
