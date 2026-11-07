@@ -159,9 +159,9 @@ function deckRailLevel(stretches: { level: number; pts: Point2[] }[]) {
 // tile's edge points, for the slope at the edge; `edges()` shades the edges again once
 // a neighbour has come.
 function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds, n: number, step: number, ref: number,
-  around: ((di: number, dj: number) => Float32Array | null) | null, terraces: Terrace[] | undefined) {
+  around: ((di: number, dj: number) => Float32Array | null) | null, terraces: Terrace[] | undefined, unit = 0.1) {
   // Heights in metres above `ref` (the game's y = 0), bilinear and clamped to the tile.
-  const hm = decodeHeights(buffer, n, ref), labels = pointLabels(buffer, n);
+  const hm = decodeHeights(buffer, n, ref, unit), labels = pointLabels(buffer, n);
   // Hill shading uses the bare ground where bridges were raised (see ipr_terrain.py).
   const hs = new Uint16Array(bareBuffer || buffer, 0, n * n);
   const L = [-110, 80, 190], ll = Math.hypot(...L);
@@ -170,7 +170,7 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
   // Height (m above 100 m a.s.l.) at a grid point; one past the edge, from the
   // neighbour's second row (its first is this tile's edge); NaN where there's none.
   const at = (i: number, j: number) => {
-    if (i >= 0 && i < n && j >= 0 && j < n) return hs[j * n + i] / 10;
+    if (i >= 0 && i < n && j >= 0 && j < n) return hs[j * n + i] * unit;
     const o = around?.(i < 0 ? -1 : i >= n ? 1 : 0, j < 0 ? -1 : j >= n ? 1 : 0);
     return o ? o[(j < 0 ? n - 2 : j >= n ? 1 : j) * n + (i < 0 ? n - 2 : i >= n ? 1 : i)] + ref - 100 : NaN;
   };
@@ -1265,7 +1265,7 @@ export class TileWorld {
     // Data from 2026-09-29 on shares the grid points along tile edges with the neighbours.
     const shared = !!terrain && Math.abs((terrain.n - 1) * terrain.step - (x1 - x0)) < 0.01;
     const around = shared ? (di: number, dj: number) => this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.hm ?? null : null;
-    const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces) : null;
+    const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces, terrain.unit) : null;
     const pilot = this.roadProfiles && this.available.has(k) && shade ? await this.roadProfiles : null;
     const roadProfile = pilot?.tiles.includes(k) ? pilot.profile : undefined;
     if (shade && roadProfile) shade.sample = withRoadProfile(shade.sample, roadProfile, this.ref);

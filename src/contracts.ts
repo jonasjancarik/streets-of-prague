@@ -17,6 +17,8 @@ import type { UtilityMark } from './map/utility.ts';
 export interface TerrainMetadata {
   n: number;
   step: number;
+  // Metres per unit of the heights (a prototype's centimetres); left out, decimetres.
+  unit?: number;
   bare?: string[];
   // Tiles with bridges or tunnels of their own (pipeline/structures.py).
   structures?: string[];

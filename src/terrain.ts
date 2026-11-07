@@ -1,13 +1,14 @@
 // A tile's terrain (pipeline/ipr_terrain.py): n × n heights every `step` metres from the
-// tile's south-west corner, as uint16 decimetres above 100 m a.s.l., then each point's
-// label as a byte. Used on the main thread and in the tile workers alike.
+// tile's south-west corner, as uint16 decimetres above 100 m a.s.l. (`unit` metres each:
+// a prototype's are centimetres), then each point's label as a byte. Used on the main
+// thread and in the tile workers alike.
 import { onPolygons } from './map/geo.ts';
 import type { Polygons } from './map/geo.ts';
 
 // Heights in metres above `ref` (the game's y = 0).
-export function decodeHeights(buffer: ArrayBuffer, n: number, ref: number) {
+export function decodeHeights(buffer: ArrayBuffer, n: number, ref: number, unit = 0.1) {
   const h = new Uint16Array(buffer, 0, n * n), hm = new Float32Array(n * n);
-  for (let i = 0; i < hm.length; i++) hm[i] = h[i] / 10 + 100 - ref;
+  for (let i = 0; i < hm.length; i++) hm[i] = h[i] * unit + 100 - ref;
   return hm;
 }
 

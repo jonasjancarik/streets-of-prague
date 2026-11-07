@@ -95,7 +95,7 @@ function tileOf(i, j) {
       structures.length ? binary(`${k}.levels.bin`) : null, preview);
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
     const roads = t.roads || {}, side = terraceAt(t.terraces);
-    const base = height ? heightSampler(decodeHeights(height, terrain.n, REF), t.box, terrain.n, terrain.step,
+    const base = height ? heightSampler(decodeHeights(height, terrain.n, REF, terrain.unit), t.box, terrain.n, terrain.step,
       pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF)) : () => NaN;
     out = {
       side: side || (() => 0),

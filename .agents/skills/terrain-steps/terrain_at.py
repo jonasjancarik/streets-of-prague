@@ -39,7 +39,7 @@ def main():
     T, (ox, oy), size, step = index["tile"], index["origin"], index["terrain"]["n"], index["terrain"]["step"]
     i, j = int((x + ox) // T), int((y + oy) // T)
     raw = read(data / "tiles" / f"{i}_{j}.height.bin")
-    h = np.frombuffer(raw[:size * size * 2], "<u2").reshape(size, size) / 10 + 100
+    h = np.frombuffer(raw[:size * size * 2], "<u2").reshape(size, size) * index["terrain"].get("unit", 0.1) + 100
     label = np.frombuffer(raw[size * size * 2:], "u1").reshape(size, size) if len(raw) >= size * size * 3 else np.zeros((size, size), int)
     tile = json.loads(read(data / "tiles" / f"{i}_{j}.json"))
     structures = tile.get("structures", [])

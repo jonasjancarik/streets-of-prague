@@ -167,6 +167,18 @@ ALONG, ALONG_FAR, KERB_OUT, LEVEL_OUT, OTHER = 5.0, 15.0, 1.5, 4.0, 1.0
 BLEND = 3.0  # m: where two streets meet, their levels are blended over this far (a Gaussian's sigma)
 
 
+class Reach:
+    """How far the ramps reach at walls and banks: the terrain model's are some 10 m
+    wide. In a 1 m laser scan (`sharp`, prototype) they're a metre or two."""
+
+    def __init__(self, sharp=False):
+        self.reach, self.bank, self.strip, self.inland, self.water_reach = (
+            (4.0, 3.0, 4.0, 8.0, 8.0) if sharp else (REACH, BANK, STRIP, INLAND, WATER_REACH))
+        # (Where the ground beside a wall is read from: past the ramp, and past where the
+        # survey's line and the scan's step may lie apart.)
+        self.near = 1.5 if sharp else REACH / 5
+
+
 def _tables(package, codes):
     """(code, level, WKB) of each object of the wanted kinds in a package."""
     with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(package) as z:
@@ -583,7 +595,7 @@ def weir_points(weirs, shape, x_of, y_of, step):
     return out
 
 
-def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=()):
+def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=(), tunnels=(), keep=(), carriageways=(), streets=(), no_feather=False, no_shoulder=True, cut_streets=False, weirs=(), unknown=None, valley_smooth=True, bridges=(), drawn=(), level_across=True, cuts=(), sharp=False):
     """Correct the tiles' lattices in place (see the top of the file). Works on arrays
     over the whole area (a few GB for `praha`). `tiles`: {(i, j):
     (N + 1) x (N + 1) heights}, the lattice of tile (i, j) starting at point (i * N, j * N);
@@ -596,7 +608,12 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     terraces: their label and outline; and under label 1 its water, where that's not
     simply the map's: see below). `weirs`: the map's weirs as lines; `unknown`: {(i, j):
     which of the tile's points the terrain model had nothing for}; `drawn`: walls the
-    survey misses (terrain_walls.json), as lines in local metres."""
+    survey misses (terrain_walls.json), as lines in local metres. `sharp` (prototype):
+    the lattice is a laser scan's, which has the streets right; the survey only says
+    where the streets, walls and water are, and gives no street its heights."""
+    ramp = Reach(sharp)
+    if sharp:
+        level_across, no_feather = False, True
     polys, lines, walls = survey(area, bbox)
     walls = [np.column_stack(to_local.transform(w[:, 0], w[:, 1])) for w in walls]
     polys = shapely.transform(np.array(polys, dtype=object), lambda c: np.column_stack(to_local.transform(c[:, 0], c[:, 1])))
@@ -701,6 +718,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     back = cut_under & street & ~np.isnan(bare)
     grid[back] = bare[back]
     street[back] = False
+    if sharp:
+        grid[street] = bare[street]
 
     # A car street is level from kerb to kerb: each of its points takes the height of
     # its cross-section, not of the kerb points nearest it (see _level_across). Not
@@ -813,7 +832,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         shapely.prepare(water)
         wet[ja:jb + 1, ia:ib + 1] = shapely.contains_xy(water, x_of(gi), y_of(gj))
         wet &= ~np.isnan(bare)
-        r = int(np.ceil(WATER_REACH / step))
+        r = int(np.ceil(ramp.water_reach / step))
         yy, xx = np.mgrid[-r:r + 1, -r:r + 1]
         level = ndimage.minimum_filter(np.where(wet, bare, np.inf), footprint=xx * xx + yy * yy <= r * r, mode="constant", cval=np.inf)
         # And nothing stands higher than the water it is joined to, but across a weir.
@@ -847,7 +866,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         street &= ~wet
         land = ~wet & ~np.isnan(bare)
         from_water = ndimage.distance_transform_edt(~wet) * step
-        spoilt = land & ~street & (from_water <= BANK)
+        spoilt = land & ~street & (from_water <= ramp.bank)
         # By a surveyed street: its height.
         if street.any():
             d, (sj, si) = ndimage.distance_transform_edt(~street, return_indices=True)
@@ -861,10 +880,10 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             d, _ = cKDTree(np.concatenate([_along(w) for w in walls])).query(np.column_stack([x_of(gi), y_of(gj)]), distance_upper_bound=WALL_NEAR)
             walled = np.zeros(grid.shape, dtype=bool)
             walled[gj[np.isfinite(d)], gi[np.isfinite(d)]] = True
-            clear = land & (street | (from_water > BANK))
+            clear = land & (street | (from_water > ramp.bank))
             if clear.any():
                 d, (sj, si) = ndimage.distance_transform_edt(~clear, return_indices=True)
-                take = walled & (d * step <= INLAND)
+                take = walled & (d * step <= ramp.inland)
                 grid[take] = grid[sj[take], si[take]]
                 bank_points += int(take.sum())
 
@@ -956,8 +975,8 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
     off_streets = 0.0  # m² of terrace taken off the car streets
     for line, low, top in [(shapely.LineString(run), low, False) for run, low in _retaining(walls, at, dry)] + _drawn(drawn, at):
         bx0, by0, bx1, by1 = line.bounds
-        ia, ib = max(0, int(np.floor((bx0 - REACH - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 + REACH - x_of(0)) / step)))
-        ja, jb = max(0, int(np.floor((by0 - REACH - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 + REACH - y_of(0)) / step)))
+        ia, ib = max(0, int(np.floor((bx0 - ramp.reach - x_of(0)) / step))), min(grid.shape[1] - 1, int(np.ceil((bx1 + ramp.reach - x_of(0)) / step)))
+        ja, jb = max(0, int(np.floor((by0 - ramp.reach - y_of(0)) / step))), min(grid.shape[0] - 1, int(np.ceil((by1 + ramp.reach - y_of(0)) / step)))
         if ia > ib or ja > jb:
             continue
         gi, gj = np.meshgrid(np.arange(ia, ib + 1), np.arange(ja, jb + 1))
@@ -967,7 +986,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
         d, u = shapely.distance(line, pt), shapely.line_locate_point(line, pt)
         # Beside the wall, not past its ends. (A drawn wall's street too: the survey bounds
         # it with the line along the wall's top, so it came up to the top's height.)
-        on = (d <= REACH) & (d > 1e-6) & (u > 1e-6) & (u < line.length - 1e-6) & ~wet[gj, gi] & (top | ~street[gj, gi]) & ~np.isnan(grid[gj, gi])
+        on = (d <= ramp.reach) & (d > 1e-6) & (u > 1e-6) & (u < line.length - 1e-6) & ~wet[gj, gi] & (top | ~street[gj, gi]) & ~np.isnan(grid[gj, gi])
         gi, gj, p, d, u = gi[on], gj[on], p[on], d[on], u[on]
         if len(gi):
             foot = shapely.get_coordinates(shapely.line_interpolate_point(line, u))
@@ -982,7 +1001,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             # narrower than that, and the ground beyond its far wall is low again).
             with np.errstate(invalid="ignore"), warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
-                along = np.array([at(foot + away * r) for r in np.linspace(REACH / 5, REACH, 5)])
+                along = np.array([at(foot + away * r) for r in np.linspace(ramp.near, ramp.reach, 5)])
                 h = np.where(below, np.nanmin(along, axis=0), np.nanmax(along, axis=0))
             # What one wall has at its foot, no other wall lifts: a rampart has a wall on
             # each face, and a battered wall is surveyed along its crown and along its
@@ -994,7 +1013,7 @@ def apply(area, bbox, to_local, tiles, N, step, gx0, gy0, water, boxes, roads=()
             lowered[gj[ok & below], gi[ok & below]] = True
             wall_points += int(ok.sum())
         # (A drawn wall's terrace is on top: the street at its foot isn't stepped.)
-        strip = line.buffer(STRIP * (-low if top else low), single_sided=True).buffer(0)
+        strip = line.buffer(ramp.strip * (-low if top else low), single_sided=True).buffer(0)
         hits = lane_tree.query(strip, predicate="intersects") if lane_tree is not None else []
         if len(hits):
             was = strip.area
