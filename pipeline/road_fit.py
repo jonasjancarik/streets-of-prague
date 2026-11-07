@@ -26,7 +26,7 @@ first metres past the kerb.
 The checkers take the file with --roadsurfaces and the game with
 ?roadsurfaces&roadfit (road-fit.json beside the map).
 
-    uv run --project pipeline python pipeline/road_fit.py --data public/data/praha_now \\
+    uv run --project pipeline python pipeline/road_fit.py --data public/data/praha_now --area nusle zlichov \\
       --out public/data/praha_now/road-fit.json --report docs/evidence/road-fit/report.json
 """
 
@@ -60,7 +60,7 @@ HERE = Path(__file__).resolve().parent
 LIDAR = HERE / ".cache" / "ipr_lidar" / "2023"
 SURVEY = HERE / ".cache" / "dtm" / "heights" / "praha.pkl"
 # west, south, east, north
-AREAS = {"nusle": (14.424, 50.059, 14.447, 50.085)}
+AREAS = {"nusle": (14.424, 50.059, 14.447, 50.085), "zlichov": (14.398, 50.040, 14.420, 50.062)}
 
 CELL = 2.0          # m, the fit's grid
 INSET = 1.0         # m, LiDAR only this far inside the kerb (the kerb's own step stays out)
@@ -344,6 +344,16 @@ def fit(city, area, lidar_at, dsm_at):
     if tunnel is not None and not tunnel.is_empty:
         shapely.prepare(tunnel)
         pinned[on] = shapely.dwithin(tunnel, shapely.points(cx, cy), TUNNEL_GAP)
+        # Beside a covered tunnel the map can dip to the tunnel's own level. Where the LiDAR and
+        # the surface model agree on a level a metre or more off the map, that's the street on
+        # top (also at the kerb, where the fit otherwise takes no LiDAR).
+        beside = pinned.copy()
+        beside[beside] = ~shapely.intersects(tunnel, shapely.points(gx[beside], gy[beside]))
+        bx, by = gx[beside], gy[beside]
+        l_here = np.asarray(lidar_at(bx, by), float)
+        on_top = (np.abs(l_here - ground[beside]) >= APART) & (np.abs(dsm_at(bx, by) - l_here) < SEEN)
+        print(f"{np.count_nonzero(on_top)} cells beside a tunnel where the street on top shows")
+        pinned[tuple(a[on_top] for a in np.nonzero(beside))] = False
     deck = geo.get("deck")
     if deck is not None and not deck.is_empty:
         shapely.prepare(deck)
@@ -623,7 +633,8 @@ def patches(city, f):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=Path, required=True)
-    ap.add_argument("--area", default="nusle", choices=AREAS)
+    ap.add_argument("--area", nargs="+", default=["nusle"], choices=AREAS,
+                    help="one or more areas; their patches go into one file")
     ap.add_argument("--survey-snapshot", type=Path, default=SURVEY)
     ap.add_argument("--lidar", type=Path, default=LIDAR)
     ap.add_argument("--out", type=Path, required=True)
@@ -639,14 +650,25 @@ def main():
 
     def to_krovak(xs, ys):
         return k_wgs.transform(*to_wgs.transform(xs, ys), direction=TransformDirection.INVERSE)
-    f, stats = fit(city, AREAS[args.area], lidar_at, dsm_sampler(to_krovak))
-    out, report = patches(city, f)
-    np.savez_compressed(args.report.with_suffix(".npz"), x0=f["x0"], y0=f["y0"], cell=CELL, **f["grids"])
+    areas = list(dict.fromkeys(args.area))
+    out, reports = [], {}
+    for name in areas:
+        f, stats = fit(city, AREAS[name], lidar_at, dsm_sampler(to_krovak))
+        got, report = patches(city, f)
+        # Patches sit on one fixed layout, so two areas sharing a patch would clash.
+        shared = {p["id"] for p in out} & {p["id"] for p in got}
+        if shared:
+            raise SystemExit(f"{name} shares patches with another area: {', '.join(sorted(shared))}")
+        out += got
+        npz = args.report.with_suffix(".npz" if len(areas) == 1 else f".{name}.npz")
+        np.savez_compressed(npz, x0=f["x0"], y0=f["y0"], cell=CELL, **f["grids"])
+        reports[name] = dict(box=AREAS[name], fit=stats, **report)
+        print(json.dumps({name: dict(fit=stats, **report)}, indent=1))
     write(args.out, json.dumps(dict(version=1, area=city.index["area"], built=city.index["built"], patches=out),
                                separators=(",", ":")) + "\n")
-    write(args.report, json.dumps(dict(area=args.area, box=AREAS[args.area], fit=stats, **report,
-                                       lidar=source), ensure_ascii=False, indent=2) + "\n")
-    print(json.dumps(dict(fit=stats, **report), indent=1))
+    one = reports[areas[0]] if len(areas) == 1 else None
+    write(args.report, json.dumps(dict(area=areas[0], **one, lidar=source) if one else dict(areas=reports, lidar=source),
+                                  ensure_ascii=False, indent=2) + "\n")
 
 
 if __name__ == "__main__":
