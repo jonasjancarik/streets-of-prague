@@ -31,6 +31,15 @@ class LidarTests(unittest.TestCase):
         x, y = ORIGIN
         np.testing.assert_allclose(ipr_lidar.sample_projected(h, ORIGIN, x + .5, [y, y - .5]), [201, np.nan])
 
+    def test_range_within_reach_by_cell_centres(self):
+        h = np.array([[200, 201, 202, 203], [204, 205, np.nan, 207], [208, 209, 210, 211]], dtype=np.float32)
+        x, y = ORIGIN
+        # Cell (1, 1): its four neighbours are within 1 m, the corners aren't; the missing
+        # cell doesn't count, and a point off the raster has nothing.
+        lo, hi = ipr_lidar.range_projected(h, ORIGIN, [x + 1, x + 3, x - 5], [y - 1, y - 1, y], 1)
+        np.testing.assert_allclose(lo, [201, 203, np.nan])
+        np.testing.assert_allclose(hi, [209, 211, np.nan])
+
     def test_terrain_transform_matches_citygml_alignment(self):
         x, y = ORIGIN
         local_xy = krovak_to_local(LOCAL).transform(x + .25, y - .5)

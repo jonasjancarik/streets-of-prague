@@ -58,6 +58,51 @@ class SurveyVertexTests(unittest.TestCase):
         self.assertEqual(rejected, 0)
         self.assertGreater(len(points), 2)
 
+    def test_under_the_scan_moved_up(self):
+        # Svornosti: a kerb's corner 2.2 m under the junction the scan has at 194.3–194.5 m.
+        scan = lambda xs, ys, reach: (np.full(len(xs), 194.3), np.full(len(xs), 194.5))  # noqa: E731
+        counts = {}
+        points, rejected = dh._survey_points([np.array([(0, 0, 194.6), (6, 0, 192.1), (12, 0, 194.5)], dtype=float)],
+                                             Identity(), lambda p: np.full(len(p), 194.0), None, scan, counts)
+        self.assertEqual(rejected, 0)
+        self.assertEqual(counts["off_scan"], 1)
+        self.assertAlmostEqual(points[np.argmin(np.abs(points[:, 0] - 6)), 2], 194.3)
+        self.assertGreater(points[:, 2].min(), 194.2)
+
+    def test_under_the_scan_by_a_bridge_kept(self):
+        # A quay street under a bridge's end, where the scan has the abutment over it.
+        scan = lambda xs, ys, reach: (np.full(len(xs), 194.2), np.full(len(xs), 194.4))  # noqa: E731
+        counts = {}
+        points, _ = dh._survey_points([np.array([(0, 0, 191.0), (8, 0, 191.0)], dtype=float)], Identity(),
+                                      lambda p: np.full(len(p), 192.0), None, scan, counts,
+                                      lambda p: p[:, 0] > 4)
+        self.assertEqual(counts["off_scan"], 1)
+        self.assertEqual(points[0, 2], 194.2)
+        self.assertEqual(points[-1, 2], 191.0)
+
+    def test_over_the_scan_kept(self):
+        # An elevated road surveyed as ground: left as it was (its bridge's joins need it).
+        scan = lambda xs, ys, reach: (np.full(len(xs), 200.0), np.full(len(xs), 200.4))  # noqa: E731
+        points, rejected = dh._survey_points([np.array([(0, 0, 206.0), (8, 0, 206.0)], dtype=float)],
+                                             Identity(), lambda p: np.full(len(p), 201.0), None, scan, {})
+        self.assertEqual(rejected, 0)
+        np.testing.assert_array_equal(points[:, 2], 206.0)
+
+    def test_kerb_by_a_wall_within_the_scans_range_retained(self):
+        # The scan has the wall's foot and top within 2 m: a kerb at either is on the ground.
+        scan = lambda xs, ys, reach: (np.full(len(xs), 200.0), np.full(len(xs), 203.0))  # noqa: E731
+        points, rejected = dh._survey_points([np.array([(0, 0, 200.2), (8, 0, 202.9)], dtype=float)],
+                                             Identity(), lambda p: np.full(len(p), 201.5), None, scan)
+        self.assertEqual(rejected, 0)
+        self.assertGreater(len(points), 2)
+        self.assertAlmostEqual(points[0, 2], 200.2)
+
+    def test_no_scan_there_does_not_reject(self):
+        scan = lambda xs, ys, reach: (np.full(len(xs), np.nan), np.full(len(xs), np.nan))  # noqa: E731
+        points, rejected = dh._survey_points([np.array([(0, 0, 192.1), (8, 0, 192.1)], dtype=float)],
+                                             Identity(), lambda p: np.full(len(p), 194.0), None, scan)
+        self.assertEqual(rejected, 0)
+
     def test_unknown_lowest_does_not_reject(self):
         points, rejected = dh._survey_points([np.array([(0, 0, 222.0), (8, 0, 222.0)], dtype=float)], Identity(),
                                              lambda p: np.full(len(p), 243.0), lambda p: np.full(len(p), np.nan))

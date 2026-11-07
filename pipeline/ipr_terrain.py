@@ -335,6 +335,8 @@ def source_paths(area, options):
         paths.extend(dmr5g.raster_path(name) for name in dmr5g.BOXES)
     if directory := options.get("ipr_lidar"):
         paths.extend(ipr_lidar.source_paths(directory))
+    if (directory := options.get("survey_scan")) and directory != options.get("ipr_lidar"):
+        paths.extend(ipr_lidar.source_paths(directory))
     return paths
 
 
@@ -345,6 +347,8 @@ def main() -> None:
     ap.add_argument("area", nargs="?", default="centrum", choices=AREAS)
     ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) - 2)), help="sheets read side by side")
     ap.add_argument("--no-survey", action="store_true", help="the terrain model's heights as they are, without the survey's (dtm_heights.py)")
+    ap.add_argument("--no-survey-scan", action="store_true",
+                    help="leave the survey's points however far under IPR's 2023 LiDAR they are (to compare; dtm_heights.OFF_SCAN)")
     ap.add_argument("--no-feather", action="store_true", help="the ground beside surveyed streets as the terrain model has it (to compare)")
     raster = ap.add_mutually_exclusive_group()
     raster.add_argument("--dmr5g", action="store_true", help="prototype: ČÚZK's DMR 5G as the terrain in dmr5g.BOXES")
@@ -385,6 +389,14 @@ def main() -> None:
         options["ipr_lidar"] = str(args.ipr_lidar.resolve())
     if args.survey_companion_decks:
         options["survey_companion_decks"] = True
+    # The survey's points are checked against IPR's 2023 LiDAR wherever it's been imported
+    # (ipr_lidar.py), whether or not it's the ground.
+    scan_dir = args.ipr_lidar or ipr_lidar.CACHE
+    if not args.no_survey and not args.no_survey_scan:
+        if all(p.exists() for p in ipr_lidar.source_paths(scan_dir)):
+            options["survey_scan"] = str(Path(scan_dir).resolve())
+        else:
+            print(f"  note: no LiDAR in {scan_dir}, so the survey isn't checked against it (ipr_lidar.py imports it)")
     if args.step != STEP:
         options["step"] = args.step
     if args.lidar_ground:
@@ -523,7 +535,8 @@ def main() -> None:
                                       [(LineString(w["pts"]), w["w"]) for w in ways if w["kind"] == "tunnel" and len(w["pts"]) > 1], kept_places(local), driven, [] if args.walls_on_streets else list(streets.values()), args.no_feather, not args.shoulder, args.cut_streets, weirs=weirs, unknown=unknown, valley_smooth=not args.valley_nearest,
                                       bridges=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w["kind"] == "bridge" and len(w["pts"]) > 1] + list(outlines),
                                       drawn=drawn_walls(local), level_across=not args.no_level,
-                                      cuts=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w.get("cut")], sharp=args.lidar_ground)
+                                      cuts=[LineString(w["pts"]).buffer(w["w"] / 2) for w in ways if w.get("cut")], sharp=args.lidar_ground,
+                                      scan=ipr_lidar.range_sampler(options["survey_scan"])[0] if options.get("survey_scan") else None)
         labels, terraces = surveyed.pop("labels"), surveyed.pop("terraces")
         print(f"  survey: {surveyed}")
         timings.lap("survey")

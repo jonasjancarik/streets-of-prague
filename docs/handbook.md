@@ -1302,8 +1302,13 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   a retaining wall the height it has clear of the ramp. Original street vertices more
   than 30 m from the bare terrain are rejected before interpolation; their attached
   segments are skipped, keeping gross source errors from spreading into the ground.
+  Where IPR's 2023 LiDAR raster has been imported (`pipeline/ipr_lidar.py`), a vertex
+  more than a metre below every height the scan has within 2 m of it is moved up to the
+  lowest of them (a kerb's corner 2 m under the junction of Svornosti and Lidická sank
+  the crossing into a pit), except by the map's bridges and in its tunnels. Without the raster the build says so and skips this;
+  `--no-survey-scan` skips it to compare.
   Separate components of a survey line stay separate. The survey log reports rejected
-  vertices. See `docs/river-terrain-findings.md` for the checks and remaining limits.
+  vertices, and in `off_scan` those moved up to the scan. See `docs/river-terrain-findings.md` for the checks and remaining limits.
   A car street is then level from kerb to kerb, with the pavement a grid cell beyond:
   each grid point on it takes the mean of both kerbs' surveyed heights across from it
   (`_level_across`), not the heights of whichever kerb is nearest, so hillside streets

@@ -137,8 +137,40 @@ def sample_projected(heights, origin, xs, ys):
     return result
 
 
-def sampler(directory, local):
-    """Return the sampler and source record for the verified, memory-mapped raster."""
+def range_projected(heights, origin, xs, ys, reach):
+    """The lowest and highest height of the cells within `reach` m of each point in
+    EPSG:5514 (by their centres), NaN where none has data."""
+    x, y = origin
+    u = np.round(np.asarray(xs, float) - x).astype(np.int64)
+    v = np.round(y - np.asarray(ys, float)).astype(np.int64)
+    rows, cols = heights.shape
+    lo = np.full(u.shape, np.inf, dtype=np.float32)
+    hi = np.full(u.shape, -np.inf, dtype=np.float32)
+    r = int(math.floor(reach))
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            if dx * dx + dy * dy > reach * reach:
+                continue
+            uu, vv = u + dx, v + dy
+            inside = (uu >= 0) & (uu < cols) & (vv >= 0) & (vv < rows)
+            h = np.full(u.shape, np.nan, dtype=np.float32)
+            h[inside] = heights[vv[inside], uu[inside]]
+            ok = np.isfinite(h)
+            lo[ok] = np.minimum(lo[ok], h[ok])
+            hi[ok] = np.maximum(hi[ok], h[ok])
+    lo[~np.isfinite(lo)] = np.nan
+    hi[~np.isfinite(hi)] = np.nan
+    return lo, hi
+
+
+def range_sampler(directory):
+    """`(xs, ys, reach) -> (lowest, highest)` in EPSG:5514 on the verified raster, and
+    its source record."""
+    heights, origin, source = _open(directory)
+    return (lambda xs, ys, reach: range_projected(heights, origin, xs, ys, reach)), source
+
+
+def _open(directory):
     heights_path, metadata_path = source_paths(directory)
     try:
         metadata = json.loads(metadata_path.read_text())
@@ -152,6 +184,12 @@ def sampler(directory, local):
             raise ValueError("incompatible raster cache")
     except (OSError, EOFError, ValueError, TypeError, KeyError, AttributeError) as exc:
         raise ValueError(f"{directory}: {exc}. Import DTM.zip with ipr_lidar.py first.") from exc
+    return heights, origin, {**SOURCE, "archiveSha256": metadata["archiveSha256"]}
+
+
+def sampler(directory, local):
+    """Return the sampler and source record for the verified, memory-mapped raster."""
+    heights, origin, source = _open(directory)
 
     # Match ipr_buildings.krovak_to_local in reverse: converting directly from
     # the datum-less local projection would omit the Czech datum shift.
@@ -164,7 +202,7 @@ def sampler(directory, local):
         kx, ky = krovak_to_wgs.transform(lon, lat, direction=TransformDirection.INVERSE)
         return sample_projected(heights, origin, kx, ky)
 
-    return at, {**SOURCE, "archiveSha256": metadata["archiveSha256"]}
+    return at, source
 
 
 def main():
