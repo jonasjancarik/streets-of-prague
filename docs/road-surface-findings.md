@@ -852,7 +852,11 @@ the result as road surface patches with `?roadsurfaces&roadfit`.
   and over the next 3 m, so the game shows the map's own ground (about 7,100 m²,
   0.7 % of the patched area, all round the 5. května interchange and by the main
   station). On a car street the fit stays: there it mends holes the map and the
-  LiDAR share, as on Legerova and Kongresová.
+  LiDAR share, as on Legerova and Kongresová. The fit also stays where the surface
+  model lies nearer to it than to the map (1,699 grid cells in Nusle, 2,065 in
+  Zlíchov). In the Strakonická car park the map is 5 m too high, and fading into it
+  raised a hill whose slope the game's ground layers broke through as black shards.
+  The fade is read between grid cells, so it doesn't step every 2 m.
 - Retaining walls and terraces cut the grid. Up to a wall, each side keeps its own
   height: the cells cut at a wall, and the patches' 1 m points near one, take their
   heights only from fitted cells on their own side, so the step falls on the wall
@@ -1035,7 +1039,9 @@ sunken patches in the náměstí Míru junction are gone. Elsewhere only the sha
 changes a little. Matched views are in `docs/evidence/road-fit/shots/` (`pair-*`,
 `crop-*` with a difference panel, and `pair2-*` from the tunnel tiles), and the
 leftovers' before and after in `shots3/` (`pair-*`, `triple-strip.png`, and
-`sections.png` with cross-sections of Na Topolce and Závišova).
+`sections.png` with cross-sections of Na Topolce and Závišova). From straight
+above most of the change is hard to see, so for Zlíchov there are angled views as
+well (`docs/evidence/road-fit/zlichov/shots/zoom-*`).
 
 ### What doesn't work yet
 
@@ -1147,6 +1153,12 @@ from 3.3 to 1.4 m and otherwise matches the map. The bridge check is unchanged.
   cutting's walls in the terrain (see the terrain-steps skill), not a road fit.
 - Dobříšská's leans of 53 and 71 % at 50.05025, 14.408 are the tunnel portal's
   cutting edge, the same on the map.
+- The trunk link under the bridge (50.04821, 14.40954) rises in a wedge where its
+  own short bridge starts. The map's ground there drops to Dobříšská's level, 189 m,
+  and the bridge's deck was built to meet it, while the LiDAR and the surface model
+  keep the link at 195 m. The fit holds the map's level beside a deck, so the deck
+  and the street still meet. The deck has to be raised in the map (its heights come
+  from the structures pipeline), and then the fit can follow.
 - With the fit, thin bright streaks show on the grass and the road near the
   Zlíchov tunnel, about 30 m west of the interchange. They were there with the
   first Zlíchov run too, and the newer one has fewer; the plain map has none. They
