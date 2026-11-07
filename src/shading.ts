@@ -759,7 +759,10 @@ export const setHeld = (f: typeof held) => { heldBy = f; };
 
 // The WebGPU trial's own version (webgpu.ts), set before any ground is made.
 let patternedBy: typeof patterned | null = null;
-export const setPatterned = (f: typeof patterned) => { patternedBy = f; };
+let rasterBackend = false;
+export const setPatterned = (f: typeof patterned, webgpu = false) => { patternedBy = f; rasterBackend = webgpu; };
+export const roadRasterEnabled = () => rasterBackend && new URLSearchParams(location.search).has('roadraster');
+export interface RasterGroundInput { texture: THREE.Texture; box: number[] }
 
 // Add a world-position varying to a Lambert/Standard shader and colour it by pattern.
 // `relief`: optional { texture, box } hill shading for a tile, times broad() (see
@@ -778,8 +781,9 @@ export function patterned(
   photo: { texture: THREE.Texture; box: number[] } | null = null,
   sheltered = false, // in a tunnel: no rain or snow
   seasonal = true, // false only for the original-summer cost comparison
+  raster: RasterGroundInput | null = null,
 ): THREE.MeshLambertMaterial {
-  if (patternedBy) return patternedBy(material, id, time, relief, deck, dig, photo, sheltered, seasonal);
+  if (patternedBy) return patternedBy(material, id, time, relief, deck, dig, photo, sheltered, seasonal, raster);
   material.userData.flatten = () => patterned(material.clone(), 0, time, relief, deck, dig, photo, sheltered);
   if ([5, 6, 7, 12, 13, 14, 15].includes(id)) material.userData.summerGround = () => patterned(material.clone(), id, time, relief, deck, dig, photo, sheltered, false);
   material.onBeforeCompile = (sh) => {

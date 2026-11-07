@@ -188,3 +188,27 @@ export function onPolygons(polys: Polygons) {
     return x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3] && inRing(rings[0], x, y) && !rings.slice(1).some((hole) => inRing(hole, x, y));
   });
 }
+
+// Clip a polyline to a box; returns the pieces inside.
+export function clipLine(pts: Point2[], [x0, y0, x1, y1]: Bounds): Point2[][] {
+  const out: Point2[][] = [];
+  let cur: Point2[] | null = null;
+  for (let i = 0; i < pts.length - 1; i++) {
+    let [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+    let t0 = 0, t1 = 1;
+    const dx = bx - ax, dy = by - ay;
+    let ok = true;
+    for (const [p, q] of [[-dx, ax - x0], [dx, x1 - ax], [-dy, ay - y0], [dy, y1 - ay]]) {
+      if (p === 0) { if (q < 0) ok = false; continue; }
+      const t = q / p;
+      if (p < 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+    }
+    if (!ok || t0 > t1) { if (cur) { out.push(cur); cur = null; } continue; }
+    const a: Point2 = [ax + dx * t0, ay + dy * t0], b: Point2 = [ax + dx * t1, ay + dy * t1];
+    if (!cur) cur = [a];
+    cur.push(b);
+    if (t1 < 1) { out.push(cur); cur = null; }
+  }
+  if (cur) out.push(cur);
+  return out.filter((l) => l.length > 1);
+}

@@ -16,6 +16,7 @@ import { Car, TYPES, CarPool, collideBodies, contact, loadCars, ordinaryCarBodie
 import { RestingCars } from './restingCars.ts';
 import { loadKit, FIGURE_SIZE, SCALE } from './figures.ts';
 import { Traffic, trafficWanted } from './traffic.ts';
+import { roadHint } from './roadLevels.ts';
 import { preparePeople, pickPerson } from './spawn.ts';
 import { PavementDrivers } from './pavement.ts';
 import { Bags } from './bags.ts';
@@ -52,7 +53,7 @@ import { Districts } from './districts.ts';
 import { kindAt, loadStrips, setCentre } from './reflections.ts';
 import { TileWorld } from './tiles.ts';
 import { loadFacadeAtlas } from './facades.ts';
-import { groundSamples } from './surface.ts';
+import { groundSamples, GROUND_DEPTH } from './surface.ts';
 import { CUTAWAY, DIG, WEATHER_DETAIL } from './shading.ts';
 import { setupDev } from './dev.ts';
 import { setupSettings } from './settings.ts';
@@ -1176,17 +1177,16 @@ async function main() {
 
   const backOnRoad = () => {
     if (!inCar) return;
-    let best = null, bestD = Infinity, onto = null;
+    let best = null, bestD = Infinity, onto = null, station = 0;
     for (const e of edgesNear(inCar.x, inCar.y, 150)) {
       for (let s = 0; s < e.path.length; s += 3) {
         const p = e.path.at(s), d = Math.hypot(p.x - inCar.x, p.y - inCar.y);
-        if (d < bestD) { bestD = d; best = p; onto = e; }
+        if (d < bestD) { bestD = d; best = p; onto = e; station = s; }
       }
     }
     if (!best || !onto) return;
-    // Onto a bridge if that street is a bridge, into a tunnel if it's a tunnel, else
-    // onto the ground.
-    Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0, level: undefined, hint: onto.bridge ? 'bridge' : onto.tunnel ? 'tunnel' : 'ground' });
+    // The selected stretch can be on a different level from the rest of its road.
+    Object.assign(inCar, { x: best.x, y: best.y, h: best.ang, vx: 0, vy: 0, w: 0, level: undefined, hint: roadHint(onto, station) });
   };
 
   // Jump anywhere in the area: load the tiles there first, then land on a pavement
@@ -2502,7 +2502,7 @@ async function main() {
       // The developer panel's free camera: tilted back from the spot it looks at.
       chased = null;
       camPos.set(free.x, 0, -free.y);
-      camGround = world.terrainAt(free.x, free.y);
+      camGround = free.targetY ?? world.terrainAt(free.x, free.y);
       const hd = ((90 - free.heading) * Math.PI) / 180, back = free.height * Math.tan((free.tilt * Math.PI) / 180);
       camera.position.set(free.x - Math.cos(hd) * back, camGround + free.height, -(free.y - Math.sin(hd) * back));
       if (free.level) camera.up.set(Math.cos(hd), 0, -Math.sin(hd));
@@ -2573,6 +2573,8 @@ async function main() {
     // Out of first person, the mouse it took to look round with is let go.
     if (!eyes && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
     if (camera.near !== nearPlane) { camera.near = nearPlane; camera.updateProjectionMatrix(); }
+    // From street level the ground hides what's behind it (see GROUND_DEPTH).
+    GROUND_DEPTH.visible = !!eyes;
     sun.position.copy(sun.target.position).add(sky.offset);
     fitShadow();
     // Street lamps and headlights, and the rain, snow and mist round the view.
@@ -2836,6 +2838,14 @@ async function main() {
   });
   window.__test = testkit;
   dev.attach(testkit);
+  // A fixed target altitude keeps before/after terrain views on the same camera.
+  const shot = params.get('camera')?.split(',').map(Number);
+  if (shot?.length === 6 && shot.every(Number.isFinite)) {
+    const [lat, lon, altitude, height, tilt, heading] = shot;
+    if (inside(lon, lat) && height > 0 && height <= 1500) {
+      await testkit.camera({ at: [lat, lon], targetY: altitude - world.ref, height, tilt, heading, level: true });
+    }
+  }
 }
 
 // The stick in a car steers towards the heading it points at (see aimSteer).

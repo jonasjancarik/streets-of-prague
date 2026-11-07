@@ -762,3 +762,97 @@ explicit slices it replaces copied 40 bytes per vertex. On centrum_now tiles
 0_0, 7_4 and 16_6 this removed 787,080, 2,892,720 and 2,247,120 bytes of copying
 respectively. `node scripts/check-sky-copy.mjs` checks worker results and renderer
 buffer ownership. End-to-end tile arrival times and gameplay FPS remain unmeasured.
+
+
+## 6 November 2026: Italská road profile
+
+Compared the frozen `3dfafe52` baseline with the integrated profile at `bc11e5a2`,
+using the same Prague map built at `2026-11-05T22:58:30Z`. The generated profile was
+enabled only in the candidate; the baseline code ignores `?roadprofiles`. Both
+used headless Google Chrome with WebGPU, High graphics, DPR 1, clear weather,
+14:00 and game date 10-20. Other task-owned scene browsers and heavy map builds
+were stopped for the measurement.
+
+Three alternating pairs of eight-second static captures used the same camera
+position `[-1858.0375213601621, 141.43067411084718, -2534.1520985763214]`, looking
+straight down over 50.08243, 14.43964. The camera's relative height was adjusted
+for each variant's ground height. Simulation was paused.
+
+| Run | Baseline mean frame | Profile mean frame |
+|---|---:|---:|
+| 1 | 3.9 ms | 4.2 ms |
+| 2 | 4.6 ms | 4.5 ms |
+| 3 | 4.2 ms | 4.0 ms |
+
+The reported aggregate was 4.2 → 4.3 ms, with the direction changing between
+pairs. This does not establish a performance improvement or a stable regression.
+Draw calls stayed at 140, while renderer triangle counts rose from 2,513,591 to
+2,535,938 (about 0.9%). These include the scene's rendering passes; the affected
+tile's road/sett geometry alone grew from 11,050 to 15,603 triangles. GPU timing
+was unavailable. Driving through the profile and phone frame times were not measured.
+
+The command used `scripts/bench.mjs --url http://localhost:5261/ --vs
+http://localhost:5260/ --scenes stand --runs 3 --seconds 8 --dpr 1 --graphics high
+--time 14:00 --weather clear --extra "&roadprofiles&date=10-20" --require-webgpu`,
+with an `--eval` that moved the free camera to the coordinate above, paused
+simulation and fixed its absolute eye height. Logs and raw measurements are
+`docs/evidence/road-reconstruction/profile-performance.{log,json}` in the
+integration worktree. See [the pilot findings](road-profile-pilot.md) for the
+geometry and driving smoke checks.
+
+
+## 6 November 2026: traffic road-level tracking
+
+Compared frozen `3dfafe52` with runtime `2a875efc`, using `scripts/bench.mjs`'s
+Old Town `drive` scene. The candidate map contained the surveyed Kongresová
+addition, whose off-target tiles were byte-identical to baseline; that addition
+is outside this drive. The Italská profile was disabled. Both variants used
+headless Chrome/WebGPU, High, DPR 1, 14:00, clear weather and date 10-20. No other
+task-owned scene browser or map rebuild was active.
+
+Three alternating eight-second pairs were followed by three with the server
+order reversed. In the table the columns always identify the actual code variant.
+
+| Order | Baseline mean frame | Candidate mean frame |
+|---|---:|---:|
+| Baseline first, pair 1 | 3.7 ms | 3.9 ms |
+| Baseline first, pair 2 | 3.9 ms | 4.3 ms |
+| Baseline first, pair 3 | 4.2 ms | 4.2 ms |
+| Candidate first, pair 1 | 3.8 ms | 3.5 ms |
+| Candidate first, pair 2 | 4.0 ms | 3.9 ms |
+| Candidate first, pair 3 | 4.3 ms | 4.3 ms |
+
+The six-sample means were 3.99 ms baseline and 4.02 ms candidate; JavaScript
+means were 3.83 and 3.86 ms. The second variant tended to be slower in both
+orders, and scene draw counts varied slightly. These short whole-game runs do
+not isolate a stable tracking cost. GPU timing was unavailable and no phone
+measurement was made. Deterministic traffic lane traces and their Math.hypot
+counts also matched the baseline in the regression checks.
+
+Command: `node scripts/bench.mjs --url http://localhost:5261/ --vs
+http://localhost:5260/ --scenes drive --runs 3 --seconds 8 --dpr 1 --graphics high
+--time 14:00 --weather clear --extra "&date=10-20" --require-webgpu`, then the
+same command with the two server URLs swapped. Raw results are
+`docs/evidence/road-reconstruction/traffic-performance.json` and
+`traffic-performance-reversed.json`, with corresponding `.log` files.
+
+## 6 November 2026 — wider Cidlinská curve
+
+Four six-second static headless Chrome/WebGPU runs used the same top-down
+camera, High graphics, DPR 1, 14:00 and paused simulation. Baseline-first
+frame means were 6.99 and 7.30 ms. Candidate-first means were 7.18 and 7.63 ms.
+The ordering changed which variant ran faster. Draw calls stayed at 211,
+and renderer triangle counts rose from about 5.02 million to 5.04 million.
+The measured curve fit was identical in the final screened preview.
+These samples cover a static desktop view. Logs are in
+`docs/evidence/wider-road-surfaces/perf-*.log`.
+
+## 6 November 2026 — shared terrain asphalt
+
+The opt-in asphalt mask uses the tile's terrain triangles with extra subdivision
+where road height probes depart from the mesh edge. At three fixed top-down
+views, the loaded ground triangle count fell 7–10%. Draw calls in the timed
+Kongresová view stayed at 175. Mean frame time switched direction with run
+order, and the raster variant's slow-frame tail was higher in both pairs.
+See [the shared asphalt trial](tiny-prague-road-rendering.md#shared-asphalt-trial-6-november-2026)
+for frame, worker and raw buffer measurements.

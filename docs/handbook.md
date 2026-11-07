@@ -80,6 +80,75 @@ HTML hints use `tHtml()` to keep key formatting while escaping names inserted fr
 map and transit data; text content uses `t()`. `node scripts/check-display-text.mjs`
 checks transit hints, developer search results and scenario reports in both languages.
 
+`?roadprofiles` enables the experimental, map-versioned road surface on a reviewed
+50 m section of Italská when its generated `road-profile.json` is present. It is
+off by default; see [the road profile pilot](road-profile-pilot.md) for generation,
+measurements and limits.
+
+`?roadsurfaces` loads the wider screened road surfaces when `road-surfaces.json`
+matches the assembled map. The [generation and screening instructions](road-profile-pilot.md)
+explain how to prepare the file for another build.
+
+Add `&roadjunctions` to load the wider junction trial from the matching
+`road-junctions.json`. [Junction trial results and generation](road-profile-pilot.md#extended-junction-trial).
+
+Add `&roadcorridor` to preview the fitted Dobrovolského corridor when the matching
+`road-corridor.json` is present. [Corridor trial results](road-profile-pilot.md#dobrovolského-corridor-trial).
+
+Add `&roadcorridors` to load the screened Prague batch from the matching
+`road-corridors.json`. [Batch selection and checks](road-profile-pilot.md#automatic-prague-corridor-trial).
+
+Add `&roadshelves` to load the screened LiDAR terrain corrections beside
+lower roads from the matching `road-shelves.json`.
+[Source comparison and screening](road-surface-findings.md#lower-ground-beside-elevated-roads).
+
+Add `&roadfit` to load the road fit over the inner city (Vinohrady, Nusle, Zlíchov,
+Smíchov, the centre and Žižkov) from
+`road-fit.json`: one smooth surface over the streets, fitted to IPR's LiDAR. Every
+step that puts the map together (`layers.assemble`) fits it again, so it always
+matches the map; without IPR's LiDAR and surface model in `pipeline/.cache` the map
+has none.
+[How it is made and what it changes](road-surface-findings.md#road-fit-pilot-vinohradynusle).
+
+A prototype puts the LiDAR into the map itself instead: `uv run ipr_terrain.py <area>
+--ipr-lidar .cache/ipr_lidar/2023 --lidar-ground --step 2` makes the ground a 2 m
+lattice of the 2023 LiDAR's heights in centimetres (`unit` in index.json's
+`terrain`), and the survey only says where the streets, walls and water are. Tried on
+`centrum`, not on `praha`.
+[What it changes](road-surface-findings.md#one-surface-a-trial-on-the-centre-map).
+With either ground, `--step-lines` (`pipeline/step_lines.py`) also writes each step's
+outline as a line with the ground's height on either side (`stepLines` in the tile),
+and the game reads the ground near a step from it: smoother wall tops, walls closer to
+the LiDAR's; on `praha` it takes two-thirds of the sawtooth off the wall tops. On today's
+ground a line gives way where it's far from the lattice and has a step the lattice
+doesn't: it's reading another place's ground. `?lines=off` leaves the lines out to compare, and so does `--lines off`
+for `check-road-flatness.mjs`, `check-bridge-decks.mjs` and `check-step-edges.mjs`, so
+one build gives both sides of the comparison.
+[Walls as lines](road-surface-findings.md#walls-as-lines),
+[on praha](road-surface-findings.md#walls-as-lines-on-praha).
+
+Add `&bridgesurfaces` to preview the surveyed railway and ramp repairs from
+the matching `bridge-surfaces.json`.
+[Husitská and U Bulhara](road-surface-findings.md#the-railway-at-husitská-and-the-ramps-at-u-bulhara).
+
+Add `&stationtracks` to preview the mapped rail lines, ballast, sleepers and
+platforms at Praha hlavní nádraží and its approaches. This loads the bridge
+preview to keep the tracks on the right level. After building
+`bridge-surfaces.json` for the current map, generate the station file with
+`python pipeline/station_tracks.py public/data/praha_now pipeline/.cache/osm/praha.osm.pbf`
+in the pipeline environment. OpenStreetMap supplies the track and platform
+outlines. Bridge-tagged rails fill gaps in the surveyed track coverage where
+they intersect a single deck.
+
+For matched terrain comparisons, `?camera=lat,lon,altitude,height,tilt,heading`
+opens the free camera at a fixed pose. Altitude is the target elevation in metres
+above sea level. Height is the camera's rise above that target, in metres.
+Tilt and heading are in degrees.
+
+On WebGPU, `?roadraster` previews rasterized asphalt on shared terrain triangles.
+See [the shared asphalt trial](tiny-prague-road-rendering.md#shared-asphalt-trial-6-november-2026)
+for the comparison and measurements.
+
 Graphics (<kbd>G</kbd> cycles it, remembered in the browser):
 
 | Setting | Ultra | High | Medium | Low | Lowest |
@@ -390,9 +459,11 @@ that without a new renderer.
   loads the tiles there and drops you on the pavement. "Copy link" gives a `?start=`
   link; `?place=` takes one of the test places in `src/testkit.ts`. The panel shows your
   coordinates (with a copy button) and links to the spot on Google Maps, Street View
-  (facing your way) and Mapy.cz. The free camera stops following you: drag to move it,
-  the wheel zooms, right-drag or Shift-drag turns and tilts it, and searching or the map
-  then move the camera instead of you. First person looks out at eye height (1.75 m) the
+  (facing your way) and Mapy.cz. In free camera mode, drag the map to pan and
+  scroll to zoom. Right-drag or Shift-drag to orbit the centre of the view. Drag
+  up for a more angled view and down to look straight down. The Rotation and Tilt
+  sliders let you set either angle separately. Straight down resets both angles
+  to a north-up view. Searching or picking a spot on the map moves the camera. First person looks out at eye height (1.75 m) the
   way you face, with a wider 55° view, and you keep playing; people and their bikes are
   drawn life size there rather than 1.35× (`FIGURE_SIZE`). In a car or the helicopter it
   follows from behind and above like a driving game's chase camera, the car in the lower
@@ -404,7 +475,9 @@ that without a new renderer.
   drawn stay when you turn); a tile coming into view shows a few meshes a frame, and only
   one tile joins the scene a frame anywhere, so none stalls the game (`View` in
   `src/tiles.ts`). Shadows only reach as far as the view from above would
-  show. Under Testing: pause, one frame at a time, slow
+  show. The ground's layers write no depth (from above nothing is behind the ground), so
+  in first person each tile's plain ground goes into the depth first, 0.3 m low, and hides
+  what lies behind a crest or down a slope (`GROUND_DEPTH` in `src/surface.ts`). Under Testing: pause, one frame at a time, slow
   motion or 2–4×, money, stars, full health, nothing hurts, into a new car of any type,
   the test places, and the scenarios (see Testing above).
   "Helicopter next to me" parks one on the nearest open ground (flown like the one on
@@ -744,6 +817,10 @@ record the measurements, merge decisions and pending landmark asset activation.
   round you shown as bare earth. Everything else under the ground stays hidden
   (`track` and `view` in `src/tiles.ts`, the meshes in `src/ground.ts`). The car
   network keeps the tunnels and the magistrála, so traffic drives through them.
+  A road can change levels partway along an edge. Traffic, buses and the developer
+  tool that puts a car back on the road use the level at that point along the lane.
+  A named deck or tunnel is used where the loaded tile has its surface and height.
+  A ground-level crossing under the same bridge still follows the ground.
 - **Life.** Arcade car physics against the 0.5 m collision grid (`src/car.ts`), in
   which buildings raised 3 m or more off the ground (OSM `min_height`, like a covered
   bridge between two houses) leave the way under them open; AI
@@ -963,7 +1040,9 @@ record the measurements, merge decisions and pending landmark asset activation.
   against someone standing still) and drawn as a streak flying to where the bullet went.
 - **Parking** follows TSK Praha's paid-parking data: each street section gets spaces ×
   measured occupancy cars (day or night), placed in OSM's parking lanes and lots and
-  then along the kerb (`src/parking.ts`). Outside the paid zones (most of the east and
+  then along the kerb (`src/parking.ts`). The game checks the terrain under each
+  parked car and skips places steeper than 30% across or 40% along the car.
+  Outside the paid zones (most of the east and
   south of the city and everything past the city limits) each spot's chance of a car
   comes from the buildings within about 60 m (`src/parkingDemand.ts`): the floor area
   (footprint × storeys) of flats and tenements, terraced and mid-rise houses, family
@@ -1223,8 +1302,13 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   a retaining wall the height it has clear of the ramp. Original street vertices more
   than 30 m from the bare terrain are rejected before interpolation; their attached
   segments are skipped, keeping gross source errors from spreading into the ground.
+  Where IPR's 2023 LiDAR raster has been imported (`pipeline/ipr_lidar.py`), a vertex
+  more than a metre below every height the scan has within 2 m of it is moved up to the
+  lowest of them (a kerb's corner 2 m under the junction of Svornosti and Lidická sank
+  the crossing into a pit), except by the map's bridges and in its tunnels. Without the raster the build says so and skips this;
+  `--no-survey-scan` skips it to compare.
   Separate components of a survey line stay separate. The survey log reports rejected
-  vertices. See `docs/river-terrain-findings.md` for the checks and remaining limits.
+  vertices, and in `off_scan` those moved up to the scan. See `docs/river-terrain-findings.md` for the checks and remaining limits.
   A car street is then level from kerb to kerb, with the pavement a grid cell beyond:
   each grid point on it takes the mean of both kerbs' surveyed heights across from it
   (`_level_across`), not the heights of whichever kerb is nearest, so hillside streets
@@ -1234,6 +1318,26 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   up to the bridge's outline (without that, its last metres before a bridge over a
   cutting kept the cutting's heights and sagged).
   `ipr_terrain.py --no-level` builds without it, to compare.
+  The [Italská profile pilot](road-profile-pilot.md) tries a separate, survey-fitted
+  road surface with `?roadprofiles` and a generated file for the current map build.
+  A short underpass that IPR's terrain model shows as an open cutting (it leaves the
+  deck over it out, as it does every bridge's) is turned round to match the model
+  (`structures.cuttings`): a tunnel cars use, under 80 m, crossed by a car street whose
+  terrain dips over 2 m under it while the street is about level from side to side. The
+  underpass goes on the ground in its cutting, and the street over it onto a short
+  bridge (a way marked `cut`, without the flat terraces of `pads`). The street keeps its
+  edge on the ground, with the deck's stretch as a level (`OnLevels.over_cutting`), and
+  the game paints that stretch on the deck (`onDeck` in `src/ground.ts`). Under such a
+  bridge the ground is the terrain model's cutting. The build log lists each one
+  (`cutting: …`). See `docs/road-surface-findings.md`.
+  The optional `ipr_terrain.py praha --survey-companion-decks` adds a missing
+  carriageway to a cutting bridge the build already found. The DTM must place both
+  carriageways on the same bridge footprint. Surveyed kerbs from the added road must
+  agree with the terrain heights at its approaches. The deck joins those approaches
+  and the street underneath stays on the ground. If the new deck would put nearby
+  bridge levels out of height order, the trial build stops. `dtm_structures.py LAT LON --ground`
+  lists nearby survey objects, their placement levels, measured height ranges and
+  source quality. Both commands use the local DTM packages.
   Each grid point also has a label
   (plain ground, water, or a terrace at a retaining wall's foot, whose outline is in the
   tile's `terraces`), stored after the heights in `<tile>.height.bin`. Where the labels
@@ -1256,8 +1360,12 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   each street, path or stairs on the ground that crosses it, and at each end of a bridge
   (the flat terrace before it is a step over the ground under the deck). `node
   scripts/check-step-edges.mjs <area>` counts the edges and lists the car streets that
-  cross the highest drops (places where the terrain or the map is wrong);
-  `?nostepedges` turns the edges off.
+  cross the highest drops (places where the terrain or the map is wrong), how many
+  metres of parapet have a top that jumps from the metres either side of it (a sawtooth
+  from above) and the roughest places; `--data <folder>` reads a copy of a map, and
+  `--sides plane` reads the ground by a step from its own side's slope (`sampling` in
+  `src/terrain.ts`, a trial, off in the game), and `--lines off` leaves a map's step
+  lines out. `?nostepedges` turns the edges off.
   Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it. A wall the survey doesn't

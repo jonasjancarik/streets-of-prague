@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { onPolygons, signedArea } from './map/geo.ts';
 import { WATER } from './terrain.ts';
+import { roadProfileBounds } from './roadProfiles.ts';
+import type { RoadProfile } from './roadProfiles.ts';
 import { stepSides } from './stepEdges.ts';
 import { TerrainStepIndex, cutTerrainSteps } from './terrain-cut.ts';
 import { edgeHeightSampler, conformTerrainEdges } from './terrain-edges.ts';
@@ -8,9 +10,11 @@ import type { Terrace } from './terrain.ts';
 import { offsetLine } from './network.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
 import type { GroundLayer } from './surface.ts';
+import { pavingRaster, refineRasterRoad, roadRasterGeometry, type RoadRaster } from './roadRaster.ts';
 import { PITCH_LOOKS } from './map/pitches.ts';
 import { coverGeometry } from './map/utility.ts';
 import type { UtilityMark } from './map/utility.ts';
+import type { StationTracks } from './stationTracks.ts';
 
 export interface GroundTileData {
   areas: Record<string, Polygons | undefined>;
@@ -19,6 +23,8 @@ export interface GroundTileData {
   // The stretches of tram track on a bridge, each with its level (pipeline/structures.py,
   // OnLevels), in a tile with bridges; not in older maps.
   deckRails?: { level: number; pts: Point2[] }[];
+  bridgeTracks?: { level: number; pts: Point2[] }[];
+  station?: StationTracks;
   weirs?: Point2[][];
   crossings?: Point2[][];
   marks?: Point2[][];
@@ -85,7 +91,7 @@ const COVER: [string, string, string][] = [
   ['cover_asphalt', '#6e7174', 'asphalt'],
 ];
 
-function polygons(polys: Polygons): GroundGeometry {
+function polygons(polys: Polygons, raster: RoadRaster | null = null): GroundGeometry {
   const pos: number[] = [], idx: number[] = [];
   for (const rings of polys) {
     const contour = rings[0].map(([x, y]) => new THREE.Vector2(x, y));
@@ -94,7 +100,7 @@ function polygons(polys: Polygons): GroundGeometry {
     for (const v of [contour, ...holes].flat()) pos.push(v.x, 0, -v.y);
     for (const [a, b, c] of THREE.ShapeUtils.triangulateShape(contour, holes)) idx.push(base + a, base + b, base + c);
   }
-  return finish(pos, idx);
+  return finish(pos, idx, null, raster);
 }
 
 // Quads along polylines, `w` metres wide. `dash` = [on, off] in metres for dashed lines.
@@ -241,18 +247,33 @@ let sideOf: ((x: number, y: number) => number) | null = null;
 let terraceOutlines: Polygons = []; // (the water's among them)
 let stepIndex: TerrainStepIndex | null = null;
 let groundBox: Bounds | null = null;
+let roadBoxes: Bounds[] | null = null;
+const ROAD_FINE = 2; // m between draped samples in the experimental corridor
 // Set while the water itself is built: all of it lies at the water's level.
 let afloat = false;
 const STEP_FINE = 2; // m between a layer's points along a step, so the cut follows its bends
 const WALL_MIN = 0.03; // m: a step lower than this gets no wall
 
+function refineRoad(pos: number[], i: number, j: number, d2: number) {
+  if (!roadBoxes || d2 <= ROAD_FINE * ROAD_FINE) return false;
+  const ax = pos[i * 3], ay = -pos[i * 3 + 2], bx = pos[j * 3], by = -pos[j * 3 + 2];
+  for (const [x0, y0, x1, y1] of roadBoxes) {
+    if (Math.min(ax, bx) <= x1 && Math.max(ax, bx) >= x0
+        && Math.min(ay, by) <= y1 && Math.max(ay, by) >= y0) return true;
+  }
+  return false;
+}
+
 // Keep the ordinary 8 m mesh away from steps, with closer samples along them.
 // The actual cuts follow every outline, including narrow enclosed terraces and
 // three levels meeting; triangle-corner labels alone cannot detect those cases.
-function cutAtSteps(pos: number[], idx: number[], extra: number[] | null, at: (x: number, y: number) => number) {
+function cutAtSteps(pos: number[], idx: number[], extra: number[] | null, at: (x: number, y: number) => number,
+  refineRoads: ((i: number, j: number, d2: number) => boolean) | null) {
   const side: number[] = [];
   const sideAt = (i: number) => (side[i] ??= at(pos[i * 3], -pos[i * 3 + 2]));
-  idx = subdivide(pos, idx, extra, 8, (i, j, d2) => d2 > STEP_FINE * STEP_FINE && sideAt(i) !== sideAt(j));
+  const crossesStep = (i: number, j: number, d2: number) => d2 > STEP_FINE * STEP_FINE && sideAt(i) !== sideAt(j);
+  const refine = refineRoads ? (i: number, j: number, d2: number) => crossesStep(i, j, d2) || refineRoads(i, j, d2) : crossesStep;
+  idx = subdivide(pos, idx, extra, 8, refine);
   return cutTerrainSteps(pos, idx, extra, at, stepIndex!);
 }
 
@@ -290,7 +311,7 @@ function stepWalls(lines: Point2[][]): GroundGeometry {
   return joined(polygons([]), q);
 }
 
-function finish(pos: number[], idx: number[], extra: number[] | null = null): GroundGeometry {
+function finish(pos: number[], idx: number[], extra: number[] | null = null, raster: RoadRaster | null = null): GroundGeometry {
   // Wind every triangle to face up, so lighting never sees a back face.
   for (let t = 0; t < idx.length; t += 3) {
     const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
@@ -299,8 +320,11 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
   }
   if (groundHeight) {
     let side: number[] | null = null;
-    if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf));
-    else idx = subdivide(pos, idx, extra, 8);
+    const refineRaster = raster ? refineRasterRoad(pos, raster, groundHeight, sideOf) : null;
+    const refine = !afloat && (roadBoxes || refineRaster)
+      ? (i: number, j: number, d2: number) => refineRoad(pos, i, j, d2) || !!refineRaster?.(i, j, d2) : null;
+    if (sideOf && !afloat) ({ pos, idx, side, extra } = cutAtSteps(pos, idx, extra, sideOf, refine));
+    else idx = subdivide(pos, idx, extra, 8, refine);
     if (groundBox) ({ pos, idx, extra, side } = conformTerrainEdges(pos, idx, extra, side, groundBox, STEP_FINE));
     for (let i = 0, k = 0; i < pos.length; i += 3, k++) pos[i + 1] = groundHeight(pos[i], -pos[i + 2], afloat ? WATER : side ? side[k] : false);
   }
@@ -328,11 +352,14 @@ function finish(pos: number[], idx: number[], extra: number[] | null = null): Gr
 //
 // `steps`: the terrain knows the steps in it (the tile's terraces; its water is in `d`),
 // so the layers are cut along them and the steps get walls (see `sideOf`).
-export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, paint = true }: {
+export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [], parkingZones = [], height = null, levels = null, steps = null, roadProfile, roadSurfaceBoxes, paint = true, rasterRoads = false }: {
   box: Bounds; edges?: GroundRoadEdge[]; buildings?: { rings: Point2[][] }[];
   parkingZones?: (string | null)[]; height?: HeightAt | null; levels?: GroundLevel[] | null; steps?: Terrace[] | null;
   // false: no lane lines (see TILE_LOOK in tiles.ts)
   paint?: boolean;
+  roadProfile?: RoadProfile;
+  roadSurfaceBoxes?: Bounds[];
+  rasterRoads?: boolean;
 }): GroundResult {
   paintRoads = paint;
   // The steps in the terrain: which side a point is on, and their outlines (stepEdges.ts).
@@ -341,14 +368,18 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   const stepped = <R>(build: () => R): R => {
     groundHeight = height ? edgeHeightSampler(height, box, STEP_FINE) : null;
     groundBox = height ? box : null;
+    roadBoxes = height ? roadSurfaceBoxes ?? (roadProfile ? [roadProfileBounds(roadProfile)] : null) : null;
     sideOf = at;
     terraceOutlines = outlines;
     stepIndex = at ? new TerrainStepIndex(outlines) : null;
-    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; stepIndex = null; groundBox = null; }
+    try { return build(); } finally { groundHeight = sideOf = null; terraceOutlines = []; stepIndex = null; groundBox = roadBoxes = null; }
   };
-  if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones })), masks: [] };
+  if (!levels) return { layers: stepped(() => layers(d, { box, edges, buildings, parkingZones, rasterRoads })), masks: [] };
   const T = height || (() => 0);
-  const lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !e.bridge && !e.tunnel), buildings, parkingZones, bridges: false }));
+  // (A street on the ground with a level is on a bridge over an underpass's cutting
+  // there, pipeline/structures.py's cuttings: painted on its deck.)
+  const onDeck = (e: GroundRoadEdge) => !e.tunnel && (e.level === undefined ? !!e.bridge : e.level > 0);
+  const lower = stepped(() => layers(d, { box, edges: edges.filter((e) => !onDeck(e) && !e.tunnel), buildings, parkingZones, bridges: false, rasterRoads }));
   const masks = levels.map((l) => levelMask(box, l.polys, l.level));
   const on = (k: number, x: number, y: number) => onMask(masks[k], x, y);
   // Each street on a bridge or in a tunnel is painted on one level, and each stretch of
@@ -359,8 +390,8 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
   const indexOf = new Map(levels.map((l, i) => [l.level, i]));
   const paintOn = new Map<number, GroundRoadEdge[]>();
   for (const e of edges) {
-    if (!e.bridge && !e.tunnel) continue;
-    const k = e.level !== undefined && indexOf.has(e.level) ? indexOf.get(e.level)! : mostlyOn(e.pts, (x, y) => levels.map((l, i) => (l.kind === (e.bridge ? 'bridge' : 'tunnel') && on(i, x, y) ? i : -1)).filter((i) => i >= 0));
+    if (!onDeck(e) && !e.tunnel) continue;
+    const k = e.level !== undefined && indexOf.has(e.level) ? indexOf.get(e.level)! : mostlyOn(e.pts, (x, y) => levels.map((l, i) => (l.kind === (onDeck(e) ? 'bridge' : 'tunnel') && on(i, x, y) ? i : -1)).filter((i) => i >= 0));
     if (k >= 0) paintOn.set(k, [...(paintOn.get(k) || []), e]);
   }
   const trams = d.rails.filter((r) => r.kind === 'tram').map((r) => r.pts);
@@ -378,6 +409,11 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
     });
   }
   const upper: GroundLayer[] = [];
+  const railway = new Map<number, Point2[][]>();
+  for (const track of d.station?.bridgeTracks ?? d.bridgeTracks ?? []) {
+    const lines = railway.get(track.level);
+    if (lines) lines.push(track.pts); else railway.set(track.level, [track.pts]);
+  }
   try {
     levels.forEach((l, k) => {
       const H = (x: number, y: number) => { const h = l.height(x, y); return Number.isNaN(h) ? T(x, y) : h; };
@@ -388,7 +424,7 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
         // What's on the deck floats a hand's breadth above the slab: they're
         // triangulated differently, so they'd cut into each other.
         groundHeight = (x: number, y: number) => H(x, y) + 0.12;
-        upper.push(...deckLayers(l.polys, tramsOn.get(k) || [], paintOn.get(k) || [], l.level));
+        upper.push(...deckLayers(l.polys, tramsOn.get(k) || [], paintOn.get(k) || [], l.level, railway.get(l.level), !!d.station));
       } else {
         groundHeight = H;
         upper.push(...tunnelLayers(l.polys, box, masks[k], H, T, paintOn.get(k) || [], l.level));
@@ -400,7 +436,10 @@ export function groundLayers(d: GroundTileData, { box, edges = [], buildings = [
 
 // The typed arrays in a tile's ground, to hand them over from a worker without copying.
 export const layerBuffers = ({ layers, masks }: GroundResult): ArrayBuffer[] => {
-  const buffers = [...layers.flatMap((l) => Object.values(l.geometry).map((a) => a.buffer)), ...masks.map((m) => m.cells.buffer)];
+  const buffers = [
+    ...layers.flatMap((l) => [...Object.values(l.geometry).map((a) => a.buffer), ...(l.raster ? [l.raster.cells.buffer] : [])]),
+    ...masks.map((m) => m.cells.buffer),
+  ];
   if (buffers.some((buffer) => !(buffer instanceof ArrayBuffer))) throw new Error('Ground transfer requires ArrayBuffer storage');
   return buffers as ArrayBuffer[];
 };
@@ -599,12 +638,13 @@ function deckSlab(polys: Polygons, box: Bounds, mask: LevelMask, D: HeightAt, T:
 // pavements are, from parapet to parapet, with the carriageway over it between granite
 // kerbs (the survey has no pavements on the bridges); one that carries none (a railway
 // bridge) stays plain.
-function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[], level: number): GroundLayer[] {
+function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[], level: number, railway: Point2[][] = [], station = false): GroundLayer[] {
   const out: GroundLayer[] = [];
   let order = -599;
-  const add = (geometry: GroundGeometry, color: string, pattern = 'flat') => {
+  const add = (geometry: GroundGeometry, color: string, pattern = 'flat', topOnly = false) => {
     const o = order++;
-    if (geometry.index.length) out.push({ order: o, geometry, color, pattern, blend: null, deck: true, level });
+    if (geometry.index.length) out.push({ order: o, geometry, color, pattern, blend: null, deck: true, level,
+      ...(topOnly ? { topOnly } : {}) });
   };
   const streets = edges.filter((e) => e.pts.length > 1);
   if (streets.length) {
@@ -612,13 +652,38 @@ function deckLayers(polys: Polygons, trams: Point2[][], edges: GroundRoadEdge[],
     const ways = streets.map((e) => ({ pts: e.pts, half: carriageway(e, trams) / 2 }));
     for (const w of ways) add(strips([w.pts], w.half * 2), COLORS.bridge, 'asphalt');
     add(strips(ways.flatMap((w) => [offsetLine(w.pts, w.half), offsetLine(w.pts, -w.half)]), 0.25), COLORS.kerb, 'concrete');
-  } else add(polygons(polys), COLORS.bridge, 'asphalt');
+  } else if (railway.length) add(polygons(polys), COLORS.ballast, 'gravel', true);
+  else add(polygons(polys), COLORS.bridge, 'asphalt');
   add(strips(trams, 2.5), COLORS.trackbed, 'concrete');
   add(strips(trams.flatMap((pts) => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.1), COLORS.steel);
+  if (station && railway.length) railwayLayers(railway, (g, color, pattern) => add(g, color, pattern, true));
+  else if (railway.length) add(strips(railway.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.12), COLORS.steel, 'flat', true);
   const { dashed, solid } = roadPaint(edges, trams);
   add(strips(dashed, 0.13, [3, 6], true), COLORS.paint);
   add(strips(solid, 0.13, null, true), COLORS.paint);
   return out;
+}
+
+// Three batches for the station's track bed, sleepers and standard-gauge rails.
+function railwayLayers(lines: Point2[][], add: (g: GroundGeometry, color: string, pattern?: string) => void) {
+  const sleepers: Point2[][] = [];
+  for (const line of lines) {
+    let next = 0.4;
+    for (let i = 1; i < line.length; i++) {
+      const [x, y] = line[i - 1], [bx, by] = line[i];
+      const len = Math.hypot(bx - x, by - y);
+      if (len < 1e-6) continue;
+      const ux = (bx - x) / len, uy = (by - y) / len;
+      for (; next < len; next += 0.85) {
+        const cx = x + ux * next, cy = y + uy * next;
+        sleepers.push([[cx - uy * 1.2, cy + ux * 1.2], [cx + uy * 1.2, cy - ux * 1.2]]);
+      }
+      next -= len;
+    }
+  }
+  add(strips(lines, 3.2), '#5d5750', 'gravel');
+  add(strips(sleepers, 0.26), '#8b8175');
+  add(strips(lines.flatMap(pts => [offsetLine(pts, 0.72), offsetLine(pts, -0.72)]), 0.16), '#c4beb1');
 }
 
 // How wide a street on a bridge is from kerb to kerb: as the map has it, or wider where
@@ -660,9 +725,9 @@ function tunnelLayers(polys: Polygons, box: Bounds, mask: LevelMask, H: HeightAt
   return out;
 }
 
-function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridges: withBridges = true }: {
+function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridges: withBridges = true, rasterRoads = false }: {
   box: Bounds; edges: GroundRoadEdge[]; buildings: { rings: Point2[][] }[];
-  parkingZones: (string | null)[]; bridges?: boolean;
+  parkingZones: (string | null)[]; bridges?: boolean; rasterRoads?: boolean;
 }): GroundLayer[] {
   const out: GroundLayer[] = [];
   const A = d.areas, R = d.roads;
@@ -728,7 +793,8 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     }
       return out;
     };
-    add(polygons([[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]]), COLORS.pavement, 'asphalt');
+    const roadRaster = rasterRoads ? pavingRaster(box, R.road || []) : null;
+    add(polygons([[[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]], roadRaster), COLORS.pavement, 'asphalt');
     out[out.length - 1].base = true;
     for (const [key, pattern] of LAND_USE) add(polygons(A[key] || []), COLORS[key as keyof typeof COLORS], pattern);
     for (const [key, color, pattern] of DTM_LAND) add(polygons(A[key] || []), color, pattern);
@@ -787,7 +853,13 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     add(polygons(R.pavement_asphalt || []), COLORS.pavement, 'asphalt');
     add(polygons(R.pavement || []), COLORS.path, 'mosaic');
     add(polygons(R.sett || []), COLORS.sett, 'setts');
-    add(polygons(R.road || []), COLORS.asphalt, 'asphalt');
+    if (rasterRoads) {
+      if (roadRaster) {
+        const geometry = roadRasterGeometry(out[0].geometry, roadRaster);
+        if (geometry.index.length) out.push({ order, geometry, color: COLORS.asphalt, pattern: 'asphalt', raster: roadRaster });
+      }
+      order++;
+    } else add(polygons(R.road || []), COLORS.asphalt, 'asphalt');
     // Where the trams have a bed of their own beside the street: ballast under the tracks.
     add(polygons(R.trambed || []), COLORS.ballast, 'gravel');
     // Bay lines as Prague paints them: a solid blue line in residents' zones, white
@@ -804,6 +876,12 @@ function layers(d: GroundTileData, { box, edges, buildings, parkingZones, bridge
     for (let i = 0; i < shadow.position.length; i += 3) { shadow.position[i] += 3; shadow.position[i + 2] += 3.5; }
     add(shadow, '#000000', 'flat', 0.28);
     add(polygons(bridges), COLORS.bridge, 'asphalt');
+
+    if (d.station) {
+      railwayLayers(d.station.rails, add);
+      add(polygons(d.station.platforms), '#b6afa0', 'concrete');
+      add(strips(d.station.platformEdges, 0.23), '#d1c7b2');
+    } else order += 5;
 
     // Tram tracks: concrete bed and two rails at standard gauge.
     const trams = d.rails.filter((r) => r.kind === 'tram').map((r) => r.pts);

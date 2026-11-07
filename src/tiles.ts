@@ -4,18 +4,22 @@ import * as THREE from 'three';
 import { mirrored } from './mirror.ts';
 import { streetOf } from './map/roofRules.ts';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { Geo, Grid, rng, hash } from './map/geo.ts';
+import { Geo, Grid, rng, hash, clipLine } from './map/geo.ts';
 import { wallMesh } from './map/buildings.ts';
 import { TreePool } from './trees.ts';
 import { Surfaces } from './surface.ts';
-import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER } from './shading.ts';
+import { shadeBuildings, shadeLandmark, cutAway, broad, ROOF_CLUTTER, roadRasterEnabled } from './shading.ts';
 import { loadFacadeAtlas } from './facades.ts';
 import type { Footprint } from './facades.ts';
 import { Zones, parkCarsSteps, inRing, inPoly } from './parking.ts';
 import { finish } from './parkingClearance.ts';
 import { openWater } from './river.ts';
-import { decodeHeights, decodeLevels, flatTerraces, heightSampler, pointLabels, terraceAt, fetchBinary, withRamps } from './terrain.ts';
-import type { Terrace } from './terrain.ts';
+import { readRoadProfile, withRoadProfile } from './roadProfiles.ts';
+import { readRoadSurfaces, withRoadSurfaces } from './roadSurfaces.ts';
+import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from './bridgeSurfacePreview.ts';
+import { readStationTracks } from './stationTracks.ts';
+import { decodeHeights, decodeLevels, flatTerraces, heightSampler, lineReach, pointLabels, stepLineIndex, terraceAt, fetchBinary, withRamps } from './terrain.ts';
+import type { StepLine, Terrace } from './terrain.ts';
 import { SKY_STEP, SKY_MARGIN } from './map/skyView.ts';
 import type { Shadower } from './map/skyView.ts';
 import type { Point2, Bounds, Polygons } from './map/geo.ts';
@@ -32,6 +36,8 @@ import { overheadWires } from './wires.ts';
 import { posts, type Post } from './posts.ts';
 import { fences, type FenceSection } from './fences.ts';
 import { stepEdges, type Crosser, type StepEdge } from './stepEdges.ts';
+import { byLevel, bridgeApproaches } from './roadLevels.ts';
+import type { RoadHint } from './roadLevels.ts';
 import { fenceMeshes } from './map/fences.ts';
 import { shedMesh } from './map/sheds.ts';
 import { furnitureMeshes, disposeFurniture } from './furniture.ts';
@@ -94,7 +100,9 @@ interface Tile {
 export interface Tracked {
   x: number; y: number; _tx?: number; _ty?: number; level?: number; gz?: number;
   // Where it's put on a street: on a bridge, in a tunnel or on the ground (see track).
-  hint?: 'bridge' | 'tunnel' | 'ground';
+  hint?: RoadHint;
+  // An AI driver's current named route span, for as long as it follows that lane.
+  roadLevel?: number; _roadTerrainRevision?: number;
   // Kept on the ground, whatever is under it or over it (a car in traffic on a street
   // at ground level, see Traffic.update).
   grounded?: boolean;
@@ -127,44 +135,6 @@ const CLIMB = 1.5;
 const ANCHOR_REACH = 400;
 const DRAWN_KEEP = 40;
 
-// Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
-// the same north-west as the sun: 1 = unchanged, darker on slopes facing away. The
-// ground's broad variation (broad) is multiplied in, sparing the shader its noise.
-// `around(di, dj)`: the neighbouring tile's heights (hm) if it is loaded and shares this
-// tile's edge points, for the slope at the edge; `edges()` shades the edges again once
-// a neighbour has come.
-// An edge cut where it changes level along itself (RawStreetEdge.levels): its stretches,
-// each with its level; whole, with its one level, when it doesn't.
-function byLevel(e: { pts: Point2[]; level?: number; levels?: [number, number][] }): { pts: Point2[]; level?: number }[] {
-  if (!e.levels || e.levels.length < 2) return [{ pts: e.pts, level: e.level }];
-  const out: { pts: Point2[]; level?: number }[] = [];
-  let k = 0, s = 0, cur: Point2[] = [e.pts[0]];
-  for (let i = 0; i < e.pts.length - 1; i++) {
-    const a = e.pts[i], b = e.pts[i + 1], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    while (k + 1 < e.levels.length && e.levels[k + 1][0] <= s + d) {
-      const f = d ? (e.levels[k + 1][0] - s) / d : 0, at: Point2 = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-      cur.push(at);
-      out.push({ pts: cur, level: e.levels[k][1] });
-      cur = [at];
-      k++;
-    }
-    cur.push(b);
-    s += d;
-  }
-  out.push({ pts: cur, level: e.levels[k][1] });
-  return out.filter((part) => part.pts.length > 1);
-}
-
-// The two ends of a bridge's way, each as a short line from 4 m inside the bridge to
-// 4 m out along the street it continues.
-function bridgeEnds(pts: Point2[], reach = 4): Point2[][] {
-  const end = (a: Point2, b: Point2): Point2[] => {
-    const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / d, uy = (b[1] - a[1]) / d, r = Math.min(reach, d);
-    return [[a[0] - ux * reach, a[1] - uy * reach], [a[0] + ux * r, a[1] + uy * r]];
-  };
-  return pts.length < 2 ? [] : [end(pts[0], pts[1]), end(pts[pts.length - 1], pts[pts.length - 2])];
-}
-
 // Which bridge level the tram track at a point is on (0: none), from the stretches the
 // map lists (TileJSON.deckRails): that of the stretch within 2 m, the nearest.
 function deckRailLevel(stretches: { level: number; pts: Point2[] }[]) {
@@ -182,10 +152,16 @@ function deckRailLevel(stretches: { level: number; pts: Point2[] }[]) {
   };
 }
 
+// Hill shading for a tile from its terrain heights (pipeline/ipr_terrain.py), lit from
+// the same north-west as the sun: 1 = unchanged, darker on slopes facing away. The
+// ground's broad variation (broad) is multiplied in, sparing the shader its noise.
+// `around(di, dj)`: the neighbouring tile's heights (hm) if it is loaded and shares this
+// tile's edge points, for the slope at the edge; `edges()` shades the edges again once
+// a neighbour has come.
 function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds, n: number, step: number, ref: number,
-  around: ((di: number, dj: number) => Float32Array | null) | null, terraces: Terrace[] | undefined) {
+  around: ((di: number, dj: number) => Float32Array | null) | null, terraces: Terrace[] | undefined, unit = 0.1, stepLines?: StepLine[]) {
   // Heights in metres above `ref` (the game's y = 0), bilinear and clamped to the tile.
-  const hm = decodeHeights(buffer, n, ref), labels = pointLabels(buffer, n);
+  const hm = decodeHeights(buffer, n, ref, unit), labels = pointLabels(buffer, n);
   // Hill shading uses the bare ground where bridges were raised (see ipr_terrain.py).
   const hs = new Uint16Array(bareBuffer || buffer, 0, n * n);
   const L = [-110, 80, 190], ll = Math.hypot(...L);
@@ -194,7 +170,7 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
   // Height (m above 100 m a.s.l.) at a grid point; one past the edge, from the
   // neighbour's second row (its first is this tile's edge); NaN where there's none.
   const at = (i: number, j: number) => {
-    if (i >= 0 && i < n && j >= 0 && j < n) return hs[j * n + i] / 10;
+    if (i >= 0 && i < n && j >= 0 && j < n) return hs[j * n + i] * unit;
     const o = around?.(i < 0 ? -1 : i >= n ? 1 : 0, j < 0 ? -1 : j >= n ? 1 : 0);
     return o ? o[(j < 0 ? n - 2 : j >= n ? 1 : j) * n + (i < 0 ? n - 2 : i >= n ? 1 : i)] + ref - 100 : NaN;
   };
@@ -227,7 +203,7 @@ function relief(buffer: ArrayBuffer, bareBuffer: ArrayBuffer | null, box: Bounds
     for (let k = 0; k < n; k++) { paint(k, 0); paint(k, n - 1); paint(0, k); paint(n - 1, k); }
     tex.needsUpdate = true;
   };
-  return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step, labels, terraceAt(terraces), flatTerraces(terraces, ref)), hm, labels, edges };
+  return { texture: tex, box: [x0 - half, y0 - half, x0 + (n - 1) * step + half, y0 + (n - 1) * step + half], sample: heightSampler(hm, box, n, step, labels, terraceAt(terraces), flatTerraces(terraces, ref), stepLineIndex(stepLines, ref, lineReach(step), unit)), hm, labels, edges };
 }
 
 const shadowerBox = new WeakMap<Shadower, Bounds>();
@@ -299,13 +275,18 @@ export async function landmarkModel(url: string, plain = false) {
 
 // The ground of a tile as depth alone, a little below the ground itself: drawn after
 // the ground's layers (which have no depth) and before the tunnels, so what's under
-// the ground is hidden but for the hole round you.
-function depthOnlyGround(hm: Float32Array, [x0, y0]: Bounds, n: number, step: number) {
+// the ground is hidden but for the hole round you. Where road surfaces lower the ground
+// (`patched`, in `boxes`), each point goes under the lowest of the surface round it, or
+// the cars on the road would be hidden too.
+function depthOnlyGround(hm: Float32Array, [x0, y0]: Bounds, n: number, step: number,
+  patched?: { sample: (x: number, y: number) => number; boxes: Bounds[] }) {
+  const low = Float32Array.from(hm);
+  if (patched) lowerUnder(low, x0, y0, n, step, patched.sample, patched.boxes);
   const pos = new Float32Array(n * n * 3), idx: number[] = [];
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const k = (j * n + i) * 3;
     pos[k] = x0 + i * step;
-    pos[k + 1] = hm[j * n + i] - 0.3;
+    pos[k + 1] = low[j * n + i] - 0.3;
     pos[k + 2] = -(y0 + j * step);
   }
   for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
@@ -318,6 +299,26 @@ function depthOnlyGround(hm: Float32Array, [x0, y0]: Bounds, n: number, step: nu
   const mesh = new THREE.Mesh(g, cutAway(new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }), 'depth-ground'));
   mesh.renderOrder = -800;
   return mesh;
+}
+
+// Each lattice point in or next to a box goes down to the lowest height `sample` gives
+// on a 2 m grid over the cells round it, so the lattice's flat triangles stay under it.
+export function lowerUnder(hm: Float32Array, x0: number, y0: number, n: number, step: number,
+  sample: (x: number, y: number) => number, boxes: Bounds[]) {
+  const m = Math.max(1, Math.round(step / 2)), h = step / m, w = (n - 1) * m + 1;
+  const fine = new Float32Array(w * w).fill(Infinity);
+  const near = (x: number, y: number) => boxes.some(([bx0, by0, bx1, by1]) => x > bx0 - step && x < bx1 + step && y > by0 - step && y < by1 + step);
+  for (let b = 0; b < w; b++) for (let a = 0; a < w; a++) {
+    const x = x0 + a * h, y = y0 + b * h;
+    if (near(x, y)) fine[b * w + a] = sample(x, y);
+  }
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    if (!near(x0 + i * step, y0 + j * step)) continue;
+    let low = hm[j * n + i];
+    for (let b = Math.max(0, (j - 1) * m); b <= Math.min(w - 1, (j + 1) * m); b++)
+      for (let a = Math.max(0, (i - 1) * m); a <= Math.min(w - 1, (i + 1) * m); a++) low = Math.min(low, fine[b * w + a]);
+    hm[j * n + i] = low;
+  }
 }
 
 // Buildings from a worker's arrays: IPR's or extruded from OSM footprints, with their
@@ -335,30 +336,6 @@ function buildingMesh(arrays: BuildingArrays, sky: Float32Array | null) {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
-}
-
-// Clip a polyline to a box; returns the pieces inside.
-export function clipLine(pts: Point2[], [x0, y0, x1, y1]: Bounds): Point2[][] {
-  const out: Point2[][] = [];
-  let cur: Point2[] | null = null;
-  for (let i = 0; i < pts.length - 1; i++) {
-    let [ax, ay] = pts[i], [bx, by] = pts[i + 1];
-    let t0 = 0, t1 = 1;
-    const dx = bx - ax, dy = by - ay;
-    let ok = true;
-    for (const [p, q] of [[-dx, ax - x0], [dx, x1 - ax], [-dy, ay - y0], [dy, y1 - ay]]) {
-      if (p === 0) { if (q < 0) ok = false; continue; }
-      const t = q / p;
-      if (p < 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
-    }
-    if (!ok || t0 > t1) { if (cur) { out.push(cur); cur = null; } continue; }
-    const a: Point2 = [ax + dx * t0, ay + dy * t0], b: Point2 = [ax + dx * t1, ay + dy * t1];
-    if (!cur) cur = [a];
-    cur.push(b);
-    if (t1 < 1) { out.push(cur); cur = null; }
-  }
-  if (cur) out.push(cur);
-  return out.filter((l) => l.length > 1);
 }
 
 // Whether (x, y) is within `pad` metres of a passage through a building.
@@ -525,6 +502,11 @@ export class TileWorld {
   skyTotals: { coalesced: number; cancelled: number };
   landmarks: Promise<Landmark[]>; landmarkModels: Map<string, Promise<THREE.Group | null>>;
   furnitureReserved: Promise<Float32Array | null>;
+  private roadSurfaces: Promise<ReturnType<typeof readRoadSurfaces>> | null;
+  private roadProfiles: Promise<ReturnType<typeof readRoadProfile>> | null;
+  private stationTracks: Promise<ReturnType<typeof readStationTracks>> | null;
+  private stepLines: boolean;
+  private bridgeSurfacePreview: Promise<ReturnType<typeof readBridgeSurfacePreview>> | null;
   grid: {
     res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number;
     view: (who: Tracked) => { res: number; height: (x: number, y: number) => number; at: (x: number, y: number) => number };
@@ -539,6 +521,48 @@ export class TileWorld {
     this.photos = new Map();
     this.area = area;
     this.index = index;
+    const query = new URLSearchParams(location.search);
+    const station = area === 'praha' && query.has('stationtracks');
+    // ?lines=off: a map's step lines (pipeline/step_lines.py, a trial) left out, to compare.
+    this.stepLines = query.get('lines') !== 'off';
+    this.bridgeSurfacePreview = (query.has('bridgesurfaces') || station) ? fetch(dataUrl(area, 'bridge-surfaces.json'))
+      .then(async (r) => r.ok ? readBridgeSurfacePreview(await r.json(), area, index.built) : null)
+      .catch(() => null) : null;
+    this.stationTracks = station && this.bridgeSurfacePreview ? this.bridgeSurfacePreview.then((bridges) =>
+      bridges ? fetch(dataUrl(area, 'station-tracks.json'))
+        .then(async (r) => r.ok ? readStationTracks(await r.json(), area, index.built) : null)
+        .catch(() => null) : null) : null;
+    const loadRoadSurfaces = (file: string) => fetch(dataUrl(area, file))
+      .then(async (r) => r.ok ? readRoadSurfaces(await r.json(), area, index.built) : null)
+      .catch(() => null);
+    this.roadSurfaces = query.has('roadsurfaces') ? (async () => {
+      // Pilot: one smooth surface over an area's streets (pipeline/road_fit.py).
+      if (query.has('roadfit')) {
+        const fits = await loadRoadSurfaces('road-fit.json');
+        if (fits) return fits;
+      }
+      if (query.has('roadshelves')) {
+        const fits = await loadRoadSurfaces('road-shelves.json');
+        if (fits) return fits;
+      }
+      if (query.has('roadcorridors')) {
+        const file = query.get('roadcorridors') === 'trial' ? 'road-corridors-trial.json' : 'road-corridors.json';
+        const fits = await loadRoadSurfaces(file);
+        if (fits) return fits;
+      }
+      if (query.has('roadcorridor')) {
+        const fits = await loadRoadSurfaces('road-corridor.json');
+        if (fits) return fits;
+      }
+      if (query.has('roadjunctions')) {
+        const fits = await loadRoadSurfaces('road-junctions.json');
+        if (fits) return fits;
+      }
+      return loadRoadSurfaces('road-surfaces.json');
+    })() : null;
+    this.roadProfiles = !this.roadSurfaces && query.has('roadprofiles') ? fetch(dataUrl(area, 'road-profile.json'))
+      .then(async (r) => r.ok ? readRoadProfile(await r.json(), area, index.built) : null)
+      .catch(() => null) : null;
     loadFacadeAtlas();
     this.scene = scene;
     this.trees = new TreePool(scene);
@@ -717,12 +741,30 @@ export class TileWorld {
   // ground (or the level it's on), off it where it ends. Sets `level` and `gz` (the
   // height underfoot) on it; returns the level.
   track(who: Tracked) {
-    if (who._tx === who.x && who._ty === who.y && who.level !== undefined) return who.level;
+    const numericHint = typeof who.hint === 'number' ? who.hint : undefined;
+    const roadLevel = who.roadLevel ?? numericHint;
+    if (who._tx === who.x && who._ty === who.y && who.level !== undefined && numericHint === undefined
+      && (roadLevel === undefined || (roadLevel === who.level && who._roadTerrainRevision === this.terrainRevision))
+      && (!who.grounded || who.level === 0)) return who.level;
     // Moved far since last time (put somewhere else): where it was says nothing.
     if (who._tx !== undefined && who._ty !== undefined && Math.abs(who.x - who._tx) + Math.abs(who.y - who._ty) > 12) who.level = undefined;
     who._tx = who.x;
     who._ty = who.y;
     const { x, y } = who, t = this.tileAt(x, y);
+    if (roadLevel !== undefined) {
+      who.hint = undefined;
+      who._roadTerrainRevision = this.terrainRevision;
+      // A named level is useful only where its own deck or tunnel actually
+      // exists. If missing, don't put the car on an unrelated crossing level.
+      if (roadLevel && t) for (const l of t.levels) {
+        if (l.level !== roadLevel || !l.grid.at(x, y)) continue;
+        const h = l.sample(x, y);
+        if (Number.isFinite(h)) { who.level = roadLevel; who.gz = h; return roadLevel; }
+      }
+      who.level = 0;
+      who.gz = this.terrainAt(x, y);
+      return 0;
+    }
     if (!t?.levels.length || who.grounded) {
       who.level = 0;
       who.gz = this.terrainAt(x, y);
@@ -1186,6 +1228,9 @@ export class TileWorld {
 
   // A tile without its meshes: what the traffic, the people and the parked cars need.
   async make(k: string, { t, height, bare, ipr, levels }: TileFiles, sliced = false): Promise<Tile> {
+    const preview = this.bridgeSurfacePreview ? await this.bridgeSurfacePreview : null;
+    t = bridgeSurfaceTile(t, k, preview);
+    ({ height, levels } = bridgeSurfaceBuffers(t, k, this.index.terrain?.n, height, levels, preview));
     // Fetch only the adjacent JSON, before any render resources/leases are created.
     const clearanceEdges = await this.parkingEdges(t);
     const nearBuildings = await this.parkingBuildings(t);
@@ -1223,9 +1268,18 @@ export class TileWorld {
     // Data from 2026-09-29 on shares the grid points along tile edges with the neighbours.
     const shared = !!terrain && Math.abs((terrain.n - 1) * terrain.step - (x1 - x0)) < 0.01;
     const around = shared ? (di: number, dj: number) => this.byIndex.get((t.i + di) * 65536 + t.j + dj)?.relief?.hm ?? null : null;
-    const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces) : null;
+    const shade = height && terrain ? relief(height, bare, t.box, terrain.n, terrain.step, this.ref, around, t.terraces, terrain.unit, this.stepLines ? t.stepLines : undefined) : null;
+    const pilot = this.roadProfiles && this.available.has(k) && shade ? await this.roadProfiles : null;
+    const roadProfile = pilot?.tiles.includes(k) ? pilot.profile : undefined;
+    if (shade && roadProfile) shade.sample = withRoadProfile(shade.sample, roadProfile, this.ref);
+    const trial = this.roadSurfaces && this.available.has(k) && shade ? (await this.roadSurfaces)?.get(k) : undefined;
+    const lower = preview?.ground.get(k);
+    const fits = lower ? [...lower, ...(trial ?? [])] : trial;
+    const surfaces = fits;
+    if (shade && surfaces) shade.sample = withRoadSurfaces(shade.sample, surfaces, this.ref, terraceAt(t.terraces));
     const hAt = shade ? shade.sample : () => 0;
-    const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels, terraces: t.terraces, ref: this.ref } : null;
+    const ground = shade && terrain ? { hm: shade.hm, box: t.box, n: terrain.n, step: terrain.step, labels: shade.labels,
+      terraces: t.terraces, stepLines: this.stepLines ? t.stepLines : undefined, unit: terrain.unit, ref: this.ref, ...(roadProfile ? { roadProfile } : {}), ...(surfaces ? { roadSurfaces: surfaces } : {}) } : null;
     // Bridges above the ground and tunnels below it, each level with its own heights.
     const structures = t.structures || [];
     const heights = levels && terrain ? decodeLevels(levels, terrain.n, structures.length, this.ref) : [];
@@ -1268,7 +1322,7 @@ export class TileWorld {
     // street goes on across onto the deck.)
     const crossers = [
       ...clipped.filter((e) => !e.bridge && !e.tunnel).map((e) => ({ pts: e.pts, half: e.width / 2 + 2.5, hw: 'drive' })),
-      ...edges.filter((e) => e.bridge).flatMap((e) => byLevel(e).filter((part) => part.level).flatMap((part) => bridgeEnds(part.pts)).map((pts) => ({ pts, half: e.width / 2 + 2.5, hw: 'drive' }))),
+      ...edges.flatMap((e) => bridgeApproaches(e).map((pts) => ({ pts, half: e.width / 2 + 2.5, hw: 'drive' }))),
       ...(this.walkBy.get(k) || []).filter((e) => !e.bridge && !e.tunnel).flatMap((e) => clipLine(e.pts, t.box).map((pts) => ({ pts, half: Math.max(1.5, e.width / 2 + 0.5), hw: e.hw }))),
     ];
     const outlines = t.buildings.filter(grounded).map((b) => ({ rings: b.rings }));
@@ -1338,7 +1392,7 @@ export class TileWorld {
     const inside = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1;
     const parking = parkCarsSteps({
       data, edges, clearanceEdges, zones, buildings: location.search.includes('oldparking') ? null : nearBuildings, r: rng(Math.floor(hash(`${this.area}/${k}`) * 1e9)), night: this.night,
-      shares: new Map((t.sections ?? []).map((s) => [s.code, s.share])), inside,
+      shares: new Map((t.sections ?? []).map((s) => [s.code, s.share])), inside, height: shade?.sample,
       // No parking inside passages.
       solid: (x, y) => (inside(x, y) ? grid.at(x, y) !== 0 || inPassage(t.passages || [], x, y, 1) : false),
     });
@@ -1394,10 +1448,11 @@ export class TileWorld {
       buffer = await this.binary(k, 'ipr');
       validateTileBinary('ipr', buffer, { key: k, url: this.binaryUrl(k, 'ipr'), n: this.index.terrain?.n, tile: t });
     }
+    const station = this.stationTracks ? (await this.stationTracks)?.[k] : undefined;
     return Promise.all([
       w.run('ground', {
-        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility },
-        paint: TILE_LOOK.roadPaint, box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
+        d: { areas: withPatches(t), roads: t.roads, rails: t.rails, deckRails: t.deckRails, bridgeTracks: t.bridgeTracks, station, weirs: t.weirs, crossings: TILE_LOOK.roadPaint ? t.crossings : [], marks: t.marks, utility: t.utility },
+        paint: TILE_LOOK.roadPaint, rasterRoads: !this.ortho && !!s.ground && roadRasterEnabled(), box: s.bounds, edges: s.clipped, buildings: s.standing, parkingZones: s.parkingZones, ground: s.ground, levels: s.levels,
       }),
       buffer ? w.run('ipr', { buffer, box: t.box, absolute: this.index.iprRef != null, ground: s.ground, bbox: this.index.bbox_wgs84, hide: s.hide, clutter: ROOF_CLUTTER.value > 0.5, footprints: s.footprints }, [buffer]) : null,
       !s.withIpr || s.extrude.length ? w.run('roofs', { buildings: s.extrude, size: s.size, origin: s.origin, ground: s.ground, bbox: this.index.bbox_wgs84, water: t.areas?.water ?? [] }) : null,
@@ -1484,7 +1539,8 @@ export class TileWorld {
     const surfaces = new Surfaces(layers, { time: this.time, relief: shade ? { texture: shade.texture, box: shade.box, sky: skyTexture ? { texture: skyTexture, box: skyBox } : null } : null, masks: levelMasks, photo: photo ? { texture: photo, box: [x0, y0, x1, y1] } : null });
     // Under a tunnel, the ground hides what's below it (the tunnel, the cars in it)
     // except round you (CUTAWAY): the ground's own layers are drawn without depth.
-    const hidden = shade && terrain && tile.levels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step) : null;
+    const hidden = shade && terrain && tile.levels.some((l) => l.level < 0) ? depthOnlyGround(shade.hm, t.box, terrain.n, terrain.step,
+      s.ground?.roadSurfaces?.length ? { sample: shade.sample, boxes: s.ground.roadSurfaces.map((p) => p.box) } : undefined) : null;
     if (hidden) group.add(hidden);
     const buildings = arraysOf.map((arrays, n) => buildingMesh(arrays, (skyResult && !location.search.includes('nosky') ? skyResult.walls[n] : null)));
     const smoke = iprArrays?.chimneys ? chimneySmoke(iprArrays.chimneys, this.scene) : null;

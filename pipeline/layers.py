@@ -419,7 +419,15 @@ def pipeline_commit() -> str:
 
 
 def assemble(area: str, strict=False) -> dict:
-    """Write the game's tiles, index.json and names.json from the layers."""
+    """Write the game's tiles, index.json and names.json from the layers, then the road
+    fit over them (road_fit.after_assemble), which must carry the same build."""
+    index = put_together(area, strict)
+    import road_fit  # (it reads the map back through modules that import this one)
+    road_fit.after_assemble(index, OUT / f"{area}_now", folder(area) / "road-fit")
+    return index
+
+
+def put_together(area: str, strict=False) -> dict:
     meta = read_meta(area)
     if not meta:
         raise SystemExit(f"{area}: no layers yet; run build_tiles.py {area} first")
@@ -558,6 +566,13 @@ def assemble(area: str, strict=False) -> dict:
         if on_levels:
             for edges in (t["drive"], t["walk"]):
                 for e in edges:
+                    cut = on_levels.over_cutting(e)
+                    if cut:  # (a street on the ground over an underpass's cutting: see structures.cuttings)
+                        if len(cut) > 1:
+                            e["levels"] = cut
+                        else:
+                            e["level"] = cut[0][1]
+                        continue
                     level = on_levels.edge(e)
                     if level is not None:
                         e["level"] = level
@@ -569,6 +584,9 @@ def assemble(area: str, strict=False) -> dict:
         # Its terraces at the foot of retaining walls (dtm_heights.py; their labels are in its .height.bin).
         if terrain and terrain.get("terraces", {}).get(k):
             t["terraces"] = terrain["terraces"][k]
+        # (Trial: its steps as lines with the ground's height either side, step_lines.py.)
+        if terrain and terrain.get("steplines", {}).get(k):
+            t["stepLines"] = terrain["steplines"][k]
         written += write(out_dir / "tiles" / f"{k}.json", dumps(t))
         leaving(t, meta, outward)
         # Whether it has IPR's buildings, so the game can fetch them with the rest.

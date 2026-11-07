@@ -49,5 +49,25 @@ class RampEndTests(unittest.TestCase):
         self.assertIsNone(structures.ipr_ends(way(), {}, ground, [203.0, 197.0]))
 
 
+class LevelLinkTests(unittest.TestCase):
+    """A trunk link at Zlíchov, level on IPR's deck at 195 m along the top of a cutting.
+    The terrain model has no wall there: both of the bridge's ends lie on the cutting's
+    floor at 189 m, the street reaches the deck's height 6 m on from its north end (a
+    wall the abutment rule sees) and only 16 m on from its south end (a slope)."""
+
+    def ground(self, xs, ys, dry=False):
+        xs = np.asarray(xs, float)
+        north = np.where(xs < -6, 195.0, 189.0)
+        return np.where(xs > 42, np.clip(189 + 0.4 * (xs - 42), 189, 195.2), north)
+
+    def test_both_ends_go_onto_ipr_and_the_deck_is_level(self):
+        ways = [{"id": 1, "kind": "bridge", "hw": "trunk_link", "w": 7.0, "layer": 1, "mapped_layer": None,
+                 "nodes": [1, 2], "pts": [[0.0, 0.0], [42.0, 0.0]], "grade": [True, True], "on_ground": [True, True]}]
+        decks = {(x, y): np.array([194.4, 195.2], dtype=np.float32) for x in range(-1, 44) for y in (-1, 0, 1)}
+        _, ((s, h),) = structures.solve(ways, self.ground, decks)
+        self.assertGreater(h.min(), 194.5)
+        self.assertLess(h.max() - h.min(), 0.6)
+
+
 if __name__ == "__main__":
     unittest.main()

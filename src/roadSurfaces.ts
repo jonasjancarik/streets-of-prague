@@ -1,0 +1,123 @@
+// Local survey fits. The mask feathers into ordinary terrain and the terrain
+// labels keep the two sides of a retaining wall separate.
+import type { Bounds } from './map/geo.ts';
+
+interface SurfaceFootprint {
+  id: string;
+  box: Bounds;
+  n: [number, number];
+  weights: number[];
+}
+
+export type RoadSurface = SurfaceFootprint & (
+  { z: [number, number, number, number, number, number]; heights?: never }
+  | { heights: number[]; z?: never; lowerOnly?: true }
+);
+
+type HeightAt = (x: number, y: number, side?: number | boolean) => number;
+
+export function readRoadSurfaces(value: unknown, area: string, built?: string): Map<string, RoadSurface[]> | null {
+  if (!value || typeof value !== 'object' || !built) return null;
+  const f = value as { version?: number; area?: string; built?: string; patches?: unknown };
+  if (f.version !== 1 || f.area !== area || f.built !== built || !Array.isArray(f.patches)) return null;
+  const tiles = new Map<string, RoadSurface[]>();
+  const ids = new Set<string>();
+  const finite = (a: unknown, size: number) => Array.isArray(a) && a.length === size && a.every(Number.isFinite);
+  for (const packed of f.patches as (RoadSurface & { tiles: string[] })[]) {
+    const p = unpack(packed);
+    if (!p) return null;
+    if (typeof p.id !== 'string' || ids.has(p.id) || !finite(p.box, 4) || !p.box.every(Number.isInteger) || !finite(p.n, 2)
+      || !p.n.every((n) => Number.isInteger(n) && n >= 2 && n <= 128)
+      || p.box[2] - p.box[0] !== p.n[0] - 1 || p.box[3] - p.box[1] !== p.n[1] - 1
+      || !Array.isArray(p.weights) || p.weights.length !== p.n[0] * p.n[1]
+      || !p.weights.every((w) => Number.isInteger(w) && w >= 0 && w <= 255)
+      || !Array.isArray(p.tiles) || !p.tiles.length || new Set(p.tiles).size !== p.tiles.length
+      || !p.tiles.every((k) => typeof k === 'string' && /^\d+_\d+$/.test(k))) return null;
+    const [nx, ny] = p.n;
+    if (p.heights === undefined ? !finite(p.z, 6) : p.z !== undefined || !finite(p.heights, nx * ny)
+      || (p.lowerOnly !== undefined && p.lowerOnly !== true)) return null;
+    if (p.weights.some((w, i) => w !== 0
+      && (i < nx || i >= nx * (ny - 1) || i % nx === 0 || i % nx === nx - 1))) return null;
+    ids.add(p.id);
+    for (const key of p.tiles) {
+      const list = tiles.get(key) ?? [];
+      list.push(p);
+      tiles.set(key, list);
+    }
+  }
+  return tiles;
+}
+
+// A patch may carry its grids packed (pipeline/road_fit.py): the weights as base64 bytes,
+// the heights as base64 little-endian int16 steps from a base, each row as the change from
+// the node before it (wrapping round at 16 bits).
+type Packed = { base: number; step: number; data: string };
+function unpack<P extends { weights: unknown; heights?: unknown; n?: unknown }>(p: P): P | null {
+  if (!p || typeof p !== 'object') return p;
+  const bytes = (b64: string) => { try { return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); } catch { return null; } };
+  let out = p;
+  if (typeof p.weights === 'string') {
+    const w = bytes(p.weights);
+    if (!w) return null;
+    out = { ...out, weights: Array.from(w) };
+  }
+  const h = p.heights as Packed | undefined;
+  if (h && typeof h === 'object' && !Array.isArray(h)) {
+    const raw = typeof h.data === 'string' ? bytes(h.data) : null;
+    if (!raw || raw.length % 2 || !Number.isFinite(h.base) || !Number.isFinite(h.step) || !(h.step > 0)) return null;
+    const q = new DataView(raw.buffer), nx = Array.isArray(p.n) ? p.n[0] : 0;
+    if (!(nx > 0) || (raw.length / 2) % nx) return null;
+    let at = 0;
+    out = { ...out, heights: Array.from({ length: raw.length / 2 }, (_, i) => {
+      at = i % nx ? (at + q.getInt16(2 * i, true)) << 16 >> 16 : q.getInt16(2 * i, true);
+      return h.base + at * h.step;
+    }) };
+  }
+  return out;
+}
+
+export function withRoadSurfaces(base: HeightAt, patches: RoadSurface[] | undefined, ref: number,
+  label: ((x: number, y: number) => number) | null): HeightAt {
+  if (!patches?.length) return base;
+  const sample = (x: number, y: number, side: number | boolean = false, start = 0): number => {
+    if (side) return base(x, y, side);
+    for (let i = start; i < patches.length; i++) {
+      const p = patches[i];
+      const [x0, y0, x1, y1] = p.box;
+      if (x <= x0 || x >= x1 || y <= y0 || y >= y1) continue;
+      const u = x - x0, v = y - y0, col = Math.floor(u), row = Math.floor(v), n = p.n[0];
+      const a = u - col, b = v - row, k = row * n + col;
+      const strength = bilinear(p.weights, k, n, a, b) / 255;
+      if (!strength) continue;
+      if (side === false && label?.(x, y)) return base(x, y, side);
+      if (p.heights) {
+        const fitted = weighted(p.heights, p.weights, k, n, a, b) - ref;
+        if (strength === 1 && !p.lowerOnly) return fitted;
+        // A corridor can taper into the junction fit below it.
+        const below = sample(x, y, side, i + 1);
+        return strength * (p.lowerOnly ? Math.min(fitted, below) : fitted) + (1 - strength) * below;
+      }
+      const s = 2 * u / (x1 - x0) - 1, t = 2 * v / (y1 - y0) - 1;
+      const [h, dx, dy, xx, xy, yy] = p.z;
+      const fitted = h + s * (dx + s * xx + t * xy) + t * (dy + t * yy) - ref;
+      return strength === 1 ? fitted : strength * fitted + (1 - strength) * base(x, y, side);
+    }
+    return base(x, y, side);
+  };
+  return sample;
+}
+
+// The heights between four nodes, each counted by its weight as well: a node the patch
+// doesn't cover (weight 0) is often across a wall, at the height of the wall's top, and a
+// street's last metre before the wall leant up to it (the walls on Letná's bank above
+// nábřeží Edvarda Beneše went jagged, standing on it).
+function weighted(h: number[], w: number[], k: number, stride: number, a: number, b: number) {
+  const c0 = (1 - a) * (1 - b) * w[k], c1 = a * (1 - b) * w[k + 1];
+  const c2 = (1 - a) * b * w[k + stride], c3 = a * b * w[k + stride + 1];
+  return (c0 * h[k] + c1 * h[k + 1] + c2 * h[k + stride] + c3 * h[k + stride + 1]) / (c0 + c1 + c2 + c3);
+}
+
+function bilinear(v: number[], k: number, stride: number, a: number, b: number) {
+  return (v[k] * (1 - a) + v[k + 1] * a) * (1 - b)
+    + (v[k + stride] * (1 - a) + v[k + stride + 1] * a) * b;
+}

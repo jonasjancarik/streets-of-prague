@@ -4,6 +4,7 @@ import { COURIER_BOXES, Car, randomType } from './car.ts';
 import { courierLook, randomLook } from './figures.ts';
 import { MAIN_ROADS, Route, clamp, roadWeight } from './network.ts';
 import type { DriveEdge, DriveGraph } from './network.ts';
+import { levelOnLane, roadHint } from './roadLevels.ts';
 import type { Signals } from './signals.ts';
 import { prepareTraffic, pickTraffic } from './spawn.ts';
 import * as THREE from 'three';
@@ -167,7 +168,7 @@ export class Traffic {
       const car = new Car(kind, r, p.x, p.y, p.ang, undefined, box);
       car.mode = 'traffic';
       // On a bridge, in a tunnel or on the ground under or over one (TileWorld.track).
-      car.hint = edge.bridge ? 'bridge' : edge.tunnel ? 'tunnel' : 'ground';
+      car.hint = roadHint(edge, s);
       if (car.two) car.rider = box ? courierLook(r, box) : randomLook(r);
       const agent = { car, route: new Route(this.g, edge, s, r, bus, lorry ? (_e, opts) => { const ok = opts.filter(lorryRoad); return ok.length ? ok[Math.floor(r() * ok.length)] : null; } : undefined, ordinary && !lorry), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.95 + r() * 0.25, off: 0 };
       this.agents.push(agent);
@@ -189,7 +190,7 @@ export class Traffic {
       const p = edge.path.at(s);
       const car = new Car(busType(run.line.ref), this.r, p.x, p.y, p.ang);
       car.mode = 'traffic';
-      car.hint = 'ground';
+      car.hint = roadHint(edge, s);
       car.line = { ref: run.line.ref, to: run.line.to };
       this.agents.push({ car, route: new Route(this.g, edge, s, this.r, true, (e, opts) => run.pick(e, opts)), speed: edge.speed * 0.6, stuck: 0, jam: 0, ignore: 0, cruise: 0.9, off: 0, bus: run });
       return;
@@ -225,7 +226,7 @@ export class Traffic {
   }
 
   release(agent: TrafficAgent) {
-    agent.car.grounded = undefined;
+    agent.car.grounded = agent.car.roadLevel = undefined;
     this.agents.splice(this.agents.indexOf(agent), 1);
   }
 
@@ -498,7 +499,7 @@ export class Traffic {
       const prevX = c.x, prevY = c.y;
       c.x = p.x;
       c.y = p.y;
-      let ang = p.ang;
+      let ang = p.ang, centreS = a.route.s;
       if (c.spec.heavy) {
         // A bus's or lorry's back wheels follow the lane, and its front ones are a wheelbase further on:
         // on a bend it lies across the inside of the curve rather than sticking out.
@@ -507,6 +508,7 @@ export class Traffic {
         if (Math.hypot(f.x - p.x, f.y - p.y) > wb / 2) ang = Math.atan2(f.y - p.y, f.x - p.x);
         c.x = p.x + Math.cos(ang) * wb * 0.42;
         c.y = p.y + Math.sin(ang) * wb * 0.42;
+        centreS = Math.min(a.route.leg.s1, centreS + wb * 0.42);
       }
       if (a.kerb) {
         // Right of the lane by `off`, less and less over the last `merge` metres (a
@@ -541,9 +543,12 @@ export class Traffic {
       // On a street at ground level it is on the ground, whatever it passes over: a
       // tunnel just under the surface near its portal would otherwise take it in, and
       // it would sink into the road as the tunnel goes deeper (see TileWorld.track).
-      // (Between two streets, on the ground only if both are.)
-      const on = a.route.leg.edge, next = on ?? a.route.legs[1]?.edge;
-      c.grounded = !!next && !next.bridge && !next.tunnel && (!!on || !!c.grounded);
+      // Across a junction, keep a level only if the two connected spans agree.
+      const on = a.route.leg.edge, nextLeg = a.route.legs[1], next = on ?? nextLeg?.edge;
+      const named = next ? levelOnLane(next, on ? centreS : nextLeg.s0) : undefined;
+      c.roadLevel = !a.kerb && (on || named === c.roadLevel) ? named : undefined;
+      c.grounded = !!a.kerb || (!!next && (named !== undefined ? named === 0 : !next.bridge && !next.tunnel)
+        && (!!on || !!c.grounded));
       c.sync();
     }
     // Cars whose street runs off the loaded map just disappear.
