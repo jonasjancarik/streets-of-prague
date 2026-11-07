@@ -1388,27 +1388,30 @@ the line has no heights and the street keeps the lattice's ramp.
 
 In the game, `heightSampler` gives a point within 3 m of a line the line's height on
 the point's side, going over into the lattice by 3 m out. Past a line's end the line's
-say fades as a point comes round to its other side. Whatever reads the ground by a step
+say fades as a point comes round to its other side. From a metre out, the line only has
+as much say as the lattice's cell there has corners on another side: in a cell whose
+four corners are all on the point's side, the lattice is right as it is. Whatever reads the ground by a step
 reads it through this: the edges and parapets, the walls' faces, the ground's cut, the
 cars. `?lines=off` leaves the lines out, and so does `check-step-edges.mjs --lines off`.
 
 | | today | today, lines | one surface | one surface, lines |
 |---|---|---|---|---|
-| parapet with a top jumping over 15 cm | 2,376 m | 916 m | 3,791 m | 743 m |
-| edges that stop you | 36.1 km | 36.3 km | 36.1 km | 32.5 km |
-| car streets with bumps over 0.5 m | 54 | 53 | 32 | 33 |
-| leaning over 15 % | 118 | 119 | 62 | 64 |
-| twisting over 12 % | 115 | 114 | 56 | 59 |
-| steps over 1 m | 14 | 14 | 14 | 13 |
+| parapet with a top jumping over 15 cm | 2,376 m | 910 m | 3,791 m | 752 m |
+| edges that stop you | 36.1 km | 36.3 km | 36.1 km | 32.3 km |
+| car streets with bumps over 0.5 m | 54 | 52 | 32 | 32 |
+| leaning over 15 % | 118 | 117 | 62 | 62 |
+| twisting over 12 % | 115 | 112 | 56 | 57 |
+| steps over 1 m | 14 | 12 | 14 | 14 |
 
 (The one-surface column is the same build without lines, rebuilt after the table above
 was made; it differs from it by a street or two.)
 
-Wall tops are smoother on both maps, by 60 % on today's and 80 % on the LiDAR's, and the
-streets come out even. On the LiDAR map the walls also agree better with the scan. The
+Wall tops are smoother on both maps, by 60 % on today's and 80 % on the LiDAR's. No
+street gets bumpier with lines; on today's map a few lose steps and bumps, and one street
+on each map twists a little more (Lidická from 10.8 % to 12.4 %, Na Kleovce). On the LiDAR map the walls also agree better with the scan. The
 measure is the jump across each outline in the scan, net of the slope on either side (the
 scan at 1.5 m and 3.5 m out on each side). On land the mean difference from it falls from
-1.24 m to 0.65 m. Of the scan's jumps over 0.8 m, the lines find 19.8 km where the
+1.24 m to 0.66 m. Of the scan's jumps over 0.8 m, the lines find 19.5 km where the
 lattice found 17.8 km, and they add 2.0 km of walls the scan doesn't have where the
 lattice added 5.4 km. By the water the difference falls from 0.91 m to 0.41 m and the
 walls the scan doesn't have from 3.6 km to 1.4 km. The 3.6 km fewer edges on the LiDAR
@@ -1443,13 +1446,19 @@ What went wrong on the way, each seen in the checks or the pictures:
   line's height, carried the lattice's staircase out onto the streets: more bumps.
 - Reading the land side from the lattice instead of the LiDAR: the walls agree worse
   with the scan, the streets about the same.
+- A line spread its height 3 m out whatever lay there. On nábřeží Edvarda Beneše by
+  Čechův most, past the end of a narrow terrace, a line runs down the bank at 195 m,
+  1.5 m from the street at 193.5 m, and lifted three stretches of the street (bumps from
+  0.07 m to 0.74 m), though the lattice's cells under them have all four corners on the
+  street at 193.5 m. Past a metre from the line it now has a say only where the cell is
+  mixed. The street is level again, and the bank meets the pavement in a short steep
+  fold, as in the scan; the wall tops stay as smooth.
 
-Left over: three stretches of nábřeží Edvarda Beneše by Čechův most get bumpier (0.07 m
-to 0.74 m). Past the end of a narrow terrace the line runs down a bank, 195 m high, 1.5 m
-from the street at 193.5 m, and its height spreads onto the street. A line would need
-each side's slope as well as its height. The lines cost 2,100–2,400 lines and 50,000–
-56,000 points on the centre map, the tiles' gzipped JSON grows from 6.3 MB to 6.7 MB,
-and the build spends 5–20 s on them. Not tried on `praha`.
+![nábřeží Edvarda Beneše by Čechův most: the bank's height spread over the pavement, and after](images/step-lines-benese.jpg)
+
+The lines cost 2,100–2,400 lines and 50,000–56,000 points on the centre map, the tiles'
+gzipped JSON grows from 6.3 MB to 6.7 MB, and the build spends 5–20 s on them. Not tried
+on `praha`.
 
 ### Reproducing
 

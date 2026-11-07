@@ -138,19 +138,22 @@ function sidePlane(hm: Float32Array, labels: Uint8Array, n: number, p0: number, 
 // labels on its left and right, and at each point the ground's height (m a.s.l.) on
 // either side, smoothed along the line (null where there was none to read).
 export interface StepLine { l: number; r: number; pts: [number, number, number | null, number | null][] }
-export interface StepLineIndex { cell: (x: number, y: number) => number[] | undefined; near: (x: number, y: number, want: number, pieces: number[]) => [number, number] }
+export interface StepLineIndex { cell: (x: number, y: number) => number[] | undefined; near: (x: number, y: number, want: number, pieces: number[], loose: number) => [number, number] }
 
 const ON_LINE = 0.3; // m: this near a step line, a point may be on either side of it
 const FACING = 0.3; // past a line's end, its say fades as a point comes round to the other side (cosines)
+const HOLD = 1; // m from a step line where it has the say whatever the lattice's cell
 // How far from a step its line has the say over the lattice (heightSampler): past where
 // the lattice's points by a step read one corner and its ramp.
 export const lineReach = (step: number) => Math.max(3, 1.5 * step);
 
 // A tile's step lines for heightSampler, their heights above `ref`, or null with none.
-// `near(x, y, want, pieces)`: of each line within `reach` with the side `want`, its
-// height on that side at the nearest point, weighted 1 at the line to 0 at `reach`, and
-// only on that side of it: the same label past the line is another place (the street
-// below a terrace and the hillside above it). [sum of weight × height, sum of weights].
+// `near(x, y, want, pieces, loose)`: of each line within `reach` with the side `want`,
+// its height on that side at the nearest point, weighted 1 at the line to 0 at `reach`,
+// and only on that side of it: the same label past the line is another place (the
+// street below a terrace and the hillside above it). Past HOLD from the line, the weight
+// is only `loose`: how much of the lattice's cell there is another side's. [sum of
+// weight × height, sum of weights].
 export function stepLineIndex(lines: StepLine[] | null | undefined, ref: number, reach: number): StepLineIndex | null {
   if (!sampling.lines || !lines?.length) return null;
   const ax: number[] = [], ay: number[] = [], bx: number[] = [], by: number[] = [], h: number[][] = [], lab: number[][] = [], line: number[] = [];
@@ -176,7 +179,7 @@ export function stepLineIndex(lines: StepLine[] | null | undefined, ref: number,
   const best = new Map<number, [number, number, number]>();
   return {
     cell: (x, y) => cells.get(key(Math.floor(x / reach), Math.floor(y / reach))),
-    near: (x, y, want, pieces) => {
+    near: (x, y, want, pieces, loose) => {
       best.clear();
       for (const k of pieces) {
         if (lab[k][0] !== want && lab[k][1] !== want) continue;
@@ -199,7 +202,8 @@ export function stepLineIndex(lines: StepLine[] | null | undefined, ref: number,
       }
       let sum = 0, weight = 0;
       for (const [d, hk, facing] of best.values()) {
-        const f = d / reach, w = (1 - f * f * (3 - 2 * f)) * facing;
+        const f = d / reach, e = Math.min(1, d / HOLD), hold = 1 - e * e * (3 - 2 * e);
+        const w = (1 - f * f * (3 - 2 * f)) * facing * Math.max(hold, loose);
         sum += w * hk;
         weight += w;
       }
@@ -276,15 +280,26 @@ export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [nu
     return (a * (1 - fu) + b * fu) * (1 - fv) + (c * (1 - fu) + d * fu) * fv;
   };
   if (!lines || !labels) return lattice;
+  // How much of the point's cell (its corners, bilinearly) is another side's than `want`:
+  // 0 in a cell all of its side, where the lattice is right as it is.
+  const loose = (x: number, y: number, want: number) => {
+    const u = Math.min(n - 1.001, Math.max(0, (x - bx) / step)), v = Math.min(n - 1.001, Math.max(0, (y - by) / step));
+    const i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j, o = j * n + i;
+    return 1 - ((labels[o] === want ? (1 - fu) * (1 - fv) : 0) + (labels[o + 1] === want ? fu * (1 - fv) : 0)
+      + (labels[o + n] === want ? (1 - fu) * fv : 0) + (labels[o + n + 1] === want ? fu * fv : 0));
+  };
   // Near a step, its line's height on the point's side, going over into the lattice
-  // out to the line's reach (stepLineIndex). (Putting the lattice right by the line's
-  // difference from it instead carried the lattice's staircase out onto the streets.)
+  // out to the line's reach (stepLineIndex), and from HOLD out only as far as the
+  // lattice's cell is mixed: a line's height is the ground at the step, and spread over
+  // a cell of the lattice's own it lifted a street with a bank's (nábřeží Edvarda
+  // Beneše). (Putting the lattice right by the line's difference from it instead carried
+  // the lattice's staircase out onto the streets.)
   return (x: number, y: number, side: number | boolean = false) => {
     const pieces = lines.cell(x, y);
     if (!pieces) return lattice(x, y, side);
     const want = sideOf(x, y, side);
     if (flat?.has(want)) return flat.get(want)!;
-    const [sum, weight] = lines.near(x, y, want, pieces);
+    const [sum, weight] = lines.near(x, y, want, pieces, loose(x, y, want));
     if (!weight) return lattice(x, y, side);
     return weight >= 1 ? sum / weight : sum + (1 - weight) * lattice(x, y, side);
   };
