@@ -95,6 +95,44 @@ export function withRamps(base: (x: number, y: number) => number, ramps: Ramp[] 
   };
 }
 
+// How a point by a step gets its height (heightSampler): `plane`, from its own side's
+// slope (sidePlane); off, from its own side's corners of the cell alone, which is flat
+// across the cell where it has one (a wall running down a hill had a staircase for a top).
+export const sampling = { plane: false };
+
+// A stand-in height at lattice point (p0, q0), which is on another side of a step, for
+// the side `want`: the plane through that side's points within two steps of it (least
+// squares, the nearer the more), there. Every cell with that point for a corner reads the
+// same, so the ground on each side keeps its own slope up to the step, and doesn't jump
+// from cell to cell. NaN with none of that side about.
+function sidePlane(hm: Float32Array, labels: Uint8Array, n: number, p0: number, q0: number, want: number) {
+  let s0 = 0, sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0, sz = 0, sxz = 0, syz = 0, lo = Infinity, hi = -Infinity;
+  for (let q = Math.max(0, q0 - 2); q <= Math.min(n - 1, q0 + 2); q++) {
+    for (let p = Math.max(0, p0 - 2); p <= Math.min(n - 1, p0 + 2); p++) {
+      if (labels[q * n + p] !== want) continue;
+      const z = hm[q * n + p];
+      if (Number.isNaN(z)) continue;
+      const dx = p - p0, dy = q - q0, w = 1 / (dx * dx + dy * dy);
+      s0 += w; sx += w * dx; sy += w * dy; sxx += w * dx * dx; sxy += w * dx * dy; syy += w * dy * dy;
+      sz += w * z; sxz += w * dx * z; syz += w * dy * z;
+      if (z < lo) lo = z;
+      if (z > hi) hi = z;
+    }
+  }
+  if (!s0) return NaN;
+  const mx = sx / s0, my = sy / s0, mz = sz / s0;
+  const cxx = sxx / s0 - mx * mx, cxy = sxy / s0 - mx * my, cyy = syy / s0 - my * my;
+  const cxz = sxz / s0 - mx * mz, cyz = syz / s0 - my * mz, det = cxx * cyy - cxy * cxy;
+  let gx = 0, gy = 0;
+  if (det > 0.01) { gx = (cxz * cyy - cyz * cxy) / det; gy = (cyz * cxx - cxz * cxy) / det; }
+  // (Its points all in a row: the slope along the row.)
+  else if (cxx > 0.05 && cxx >= cyy) gx = cxz / cxx;
+  else if (cyy > 0.05) gy = cyz / cyy;
+  // (Never further out than its points' own spread, should the plane be a poor one.)
+  const span = hi - lo;
+  return Math.max(lo - span, Math.min(hi + span, mz - gx * mx - gy * my));
+}
+
 // Height at a point, bilinear and clamped to the tile (NaN next to a missing height).
 // With `labels` (pointLabels), in a cell a step crosses only the corners on the point's
 // own side count. `side`: the label of that side; true for the water's; left out, it's
@@ -103,6 +141,7 @@ export function withRamps(base: (x: number, y: number) => number, ramps: Ramp[] 
 // terraces' heights (flatTerraces).
 export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [number, number, number, number], n: number, step: number,
   labels: Uint8Array | null = null, terrace: ((x: number, y: number) => number) | null = null, flat: Map<number, number> | null = null) {
+  const ghosts = new Map<number, number>(); // (sidePlane's, by point and side)
   const sideOf = (x: number, y: number, side: number | boolean) => (side === true ? WATER : side === false ? (terrace ? terrace(x, y) : 0) : side);
   return (x: number, y: number, side: number | boolean = false) => {
     let want = -1;
@@ -122,6 +161,17 @@ export function heightSampler(hm: Float32Array, [bx, by]: [number, number] | [nu
       // tip of a quay narrower than a cell, cut out of the water round it.)
       if (mixed || (side !== false && la !== (side === true ? WATER : side))) {
         if (want < 0) want = sideOf(x, y, side);
+        if (sampling.plane) {
+          const at = (k: number, p: number, q: number) => {
+            if (labels[k] === want) return hm[k];
+            const key = k * 256 + want;
+            let h = ghosts.get(key);
+            if (h === undefined) ghosts.set(key, h = sidePlane(hm, labels, n, p, q, want));
+            return h;
+          };
+          const ga = at(o, i, j), gb = at(o + 1, i + 1, j), gc = at(o + n, i, j + 1), gd = at(o + n + 1, i + 1, j + 1);
+          if (!Number.isNaN(ga + gb + gc + gd)) return (ga * (1 - fu) + gb * fu) * (1 - fv) + (gc * (1 - fu) + gd * fu) * fv;
+        }
         let ka = la === want ? 1 : 0, kb = lb === want ? 1 : 0, kc = lc === want ? 1 : 0, kd = ld === want ? 1 : 0;
         if (!(ka + kb + kc + kd)) {
           // No corner of its own (a sliver of a terrace, a spit of land): the points of
