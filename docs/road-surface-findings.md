@@ -1374,15 +1374,93 @@ LiDAR on each side and smoothed along the wall, written into the tile, with the
 parapets, the wall faces, the ground's cut and the collision all reading those, and the
 lattice points beside a wall taking their own side's height.
 
+### Walls as lines
+
+Tried the same evening: `--step-lines` (`pipeline/step_lines.py`) gives each step's
+outline, every 2 m along it, the ground's height on either side, written into the tile
+as `stepLines`. A side's height is read 1.5–4 m out on that side (from the LiDAR, from
+the lattice on today's map, and the water's always from the lattice), counting only
+readings that land on that side. A straight line through them is carried in to the
+outline but kept between the nearest reading and what's read on the outline itself,
+then smoothed along the outline over 2 m. Where the two sides come out less than 0.3 m
+apart, both get their mean, so there's no step. Where a car street crosses the outline,
+the line has no heights and the street keeps the lattice's ramp.
+
+In the game, `heightSampler` gives a point within 3 m of a line the line's height on
+the point's side, going over into the lattice by 3 m out. Past a line's end the line's
+say fades as a point comes round to its other side. Whatever reads the ground by a step
+reads it through this: the edges and parapets, the walls' faces, the ground's cut, the
+cars. `?lines=off` leaves the lines out, and so does `check-step-edges.mjs --lines off`.
+
+| | today | today, lines | one surface | one surface, lines |
+|---|---|---|---|---|
+| parapet with a top jumping over 15 cm | 2,376 m | 916 m | 3,791 m | 743 m |
+| edges that stop you | 36.1 km | 36.3 km | 36.1 km | 32.5 km |
+| car streets with bumps over 0.5 m | 54 | 53 | 32 | 33 |
+| leaning over 15 % | 118 | 119 | 62 | 64 |
+| twisting over 12 % | 115 | 114 | 56 | 59 |
+| steps over 1 m | 14 | 14 | 14 | 13 |
+
+(The one-surface column is the same build without lines, rebuilt after the table above
+was made; it differs from it by a street or two.)
+
+Wall tops are smoother on both maps, by 60 % on today's and 80 % on the LiDAR's, and the
+streets come out even. On the LiDAR map the walls also agree better with the scan. The
+measure is the jump across each outline in the scan, net of the slope on either side (the
+scan at 1.5 m and 3.5 m out on each side). On land the mean difference from it falls from
+1.24 m to 0.65 m. Of the scan's jumps over 0.8 m, the lines find 19.8 km where the
+lattice found 17.8 km, and they add 2.0 km of walls the scan doesn't have where the
+lattice added 5.4 km. By the water the difference falls from 0.91 m to 0.41 m and the
+walls the scan doesn't have from 3.6 km to 1.4 km. The 3.6 km fewer edges on the LiDAR
+map are mostly banks: by the river and on Chotkova the scan has a grass bank rising about
+a metre per metre from the road or the water, and nothing upright at the outline.
+
+![nábřeží Edvarda Beneše and Chotkova on the one-surface map, without and with lines](images/step-lines.jpg)
+
+The parapet along the bank above nábřeží Edvarda Beneše loses its sawtooth and keeps a
+few clean steps. On Chotkova the zigzag parapet goes, and the bank is a bank. On Letná,
+the battered wall above the building by Chotkova is now drawn as its 16 m sloping face,
+where before it was a thin upright wall: that's what the scan has. The garden terraces
+below Vlašská are a tangle with lines and without.
+
+What went wrong on the way, each seen in the checks or the pictures:
+
+- A terrace a few metres wide: reading 1.5–4 m out reached past it into the next one, a
+  9 m wall that isn't there. Only readings on the side's own label count.
+- A bank rising away from the outline, carried in straight, dug a pit at its foot (3 m
+  "walls" the lattice didn't have). Capping the slope carried in fixed that but broke
+  the battered wall on Letná, a terrace that is the sloping face itself, read 6 m up the
+  face. Keeping the height between the nearest reading and the one on the outline does
+  both: a wall reads halfway up on its outline (the scan blurs it over a metre or two),
+  so its top and foot come through.
+- A point with no reading of its own along the line took one smoothed in from 10–20 m
+  away; past 4 m from a reading, a side now has none, and with nothing read on its side
+  it takes the outline's own.
+- Plain ground lies on both sides of many terraces (the street below, the hillside
+  above). A line now lends its height only to the side a point is on. A sharp switch at
+  a line's end made 2.5 m steps in streets (Holečkova), hence the fade.
+- Putting the lattice right by the line's difference from it, instead of taking the
+  line's height, carried the lattice's staircase out onto the streets: more bumps.
+- Reading the land side from the lattice instead of the LiDAR: the walls agree worse
+  with the scan, the streets about the same.
+
+Left over: three stretches of nábřeží Edvarda Beneše by Čechův most get bumpier (0.07 m
+to 0.74 m). Past the end of a narrow terrace the line runs down a bank, 195 m high, 1.5 m
+from the street at 193.5 m, and its height spreads onto the street. A line would need
+each side's slope as well as its height. The lines cost 2,100–2,400 lines and 50,000–
+56,000 points on the centre map, the tiles' gzipped JSON grows from 6.3 MB to 6.7 MB,
+and the build spends 5–20 s on them. Not tried on `praha`.
+
 ### Reproducing
 
     cd pipeline
     uv run build_tiles.py centrum && uv run ipr_buildings.py centrum
     uv run ipr_terrain.py centrum                       # today
     uv run ipr_terrain.py centrum --ipr-lidar .cache/ipr_lidar/2023 --lidar-ground --step 2
+    # either with --step-lines for the walls as lines
     cd .. && node scripts/check-road-flatness.mjs centrum
     node scripts/check-bridge-decks.mjs centrum
-    node scripts/check-step-edges.mjs centrum [--sides plane]
+    node scripts/check-step-edges.mjs centrum [--sides plane] [--lines off]
 
-The game shows the map at `?area=centrum`. `?countryside` still writes decimetres and
+The game shows the map at `?area=centrum`, and `&lines=off` leaves the step lines out. `?countryside` still writes decimetres and
 doesn't go with a centimetre map.

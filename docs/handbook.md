@@ -116,6 +116,11 @@ lattice of the 2023 LiDAR's heights in centimetres (`unit` in index.json's
 `terrain`), and the survey only says where the streets, walls and water are. Tried on
 `centrum`, not on `praha`.
 [What it changes](road-surface-findings.md#one-surface-a-trial-on-the-centre-map).
+With either ground, `--step-lines` (`pipeline/step_lines.py`) also writes each step's
+outline as a line with the ground's height on either side (`stepLines` in the tile),
+and the game reads the ground near a step from it: smoother wall tops, walls closer to
+the LiDAR's. `?lines=off` leaves the lines out to compare.
+[Walls as lines](road-surface-findings.md#walls-as-lines).
 
 Add `&bridgesurfaces` to preview the surveyed railway and ramp repairs from
 the matching `bridge-surfaces.json`.
@@ -1347,7 +1352,8 @@ Areas (`ujezd`, `centrum`, `praha`) are defined in `pipeline/osm_area.py`.
   metres of parapet have a top that jumps from the metres either side of it (a sawtooth
   from above) and the roughest places; `--data <folder>` reads a copy of a map, and
   `--sides plane` reads the ground by a step from its own side's slope (`sampling` in
-  `src/terrain.ts`, a trial, off in the game). `?nostepedges` turns the edges off.
+  `src/terrain.ts`, a trial, off in the game), and `--lines off` leaves a map's step
+  lines out. `?nostepedges` turns the edges off.
   Where the rules make a place worse than the
   terrain model alone (seen in the game), list it in `pipeline/terrain_keep.json` (a box
   in degrees and why) and it stays as the terrain model has it. A wall the survey doesn't
