@@ -119,8 +119,13 @@ lattice of the 2023 LiDAR's heights in centimetres (`unit` in index.json's
 With either ground, `--step-lines` (`pipeline/step_lines.py`) also writes each step's
 outline as a line with the ground's height on either side (`stepLines` in the tile),
 and the game reads the ground near a step from it: smoother wall tops, walls closer to
-the LiDAR's. `?lines=off` leaves the lines out to compare.
-[Walls as lines](road-surface-findings.md#walls-as-lines).
+the LiDAR's; on `praha` it takes two-thirds of the sawtooth off the wall tops. On today's
+ground a line gives way where it's far from the lattice: it's reading another place's
+ground. `?lines=off` leaves the lines out to compare, and so does `--lines off`
+for `check-road-flatness.mjs`, `check-bridge-decks.mjs` and `check-step-edges.mjs`, so
+one build gives both sides of the comparison.
+[Walls as lines](road-surface-findings.md#walls-as-lines),
+[on praha](road-surface-findings.md#walls-as-lines-on-praha).
 
 Add `&bridgesurfaces` to preview the surveyed railway and ramp repairs from
 the matching `bridge-surfaces.json`.

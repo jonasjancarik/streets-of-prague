@@ -1390,23 +1390,30 @@ In the game, `heightSampler` gives a point within 3 m of a line the line's heigh
 the point's side, going over into the lattice by 3 m out. Past a line's end the line's
 say fades as a point comes round to its other side. From a metre out, the line only has
 as much say as the lattice's cell there has corners on another side: in a cell whose
-four corners are all on the point's side, the lattice is right as it is. Whatever reads the ground by a step
-reads it through this: the edges and parapets, the walls' faces, the ground's cut, the
-cars. `?lines=off` leaves the lines out, and so does `check-step-edges.mjs --lines off`.
+four corners are all on the point's side, the lattice is right as it is. On today's
+ground, a line also gives way to the lattice where the two are far apart at a point: it
+has its full say within 1.5 m of the lattice's height there (2 m right on the outline)
+and none from twice that, because such a line is reading another place's ground with the
+same label (see praha, below). On the LiDAR map it doesn't: there the lattice blurs each
+wall into a ramp and a line read from the scan may well be metres off it. Whatever reads
+the ground by a step reads it through this: the edges and parapets, the walls' faces, the
+ground's cut, the cars. `?lines=off` leaves the lines out, and so does `--lines off` for
+`check-step-edges.mjs`, `check-road-flatness.mjs` and `check-bridge-decks.mjs`.
 
 | | today | today, lines | one surface | one surface, lines |
 |---|---|---|---|---|
-| parapet with a top jumping over 15 cm | 2,376 m | 910 m | 3,791 m | 752 m |
-| edges that stop you | 36.1 km | 36.3 km | 36.1 km | 32.3 km |
+| parapet with a top jumping over 15 cm | 2,376 m | 1,131 m | 3,791 m | 752 m |
+| edges that stop you | 36.1 km | 36.2 km | 36.1 km | 32.3 km |
 | car streets with bumps over 0.5 m | 54 | 52 | 32 | 32 |
 | leaning over 15 % | 118 | 117 | 62 | 62 |
-| twisting over 12 % | 115 | 112 | 56 | 57 |
-| steps over 1 m | 14 | 12 | 14 | 14 |
+| twisting over 12 % | 115 | 113 | 56 | 57 |
+| steps over 1 m | 14 | 13 | 14 | 14 |
 
 (The one-surface column is the same build without lines, rebuilt after the table above
-was made; it differs from it by a street or two.)
+was made; it differs from it by a street or two. Before the check against the lattice,
+today's map with lines had 910 m of rough parapet and 12 steps over 1 m.)
 
-Wall tops are smoother on both maps, by 60 % on today's and 80 % on the LiDAR's. No
+Wall tops are smoother on both maps, by half on today's and 80 % on the LiDAR's. No
 street gets bumpier with lines; on today's map a few lose steps and bumps, and one street
 on each map twists a little more (Lidická from 10.8 % to 12.4 %, Na Kleovce). On the LiDAR map the walls also agree better with the scan. The
 measure is the jump across each outline in the scan, net of the slope on either side (the
@@ -1456,9 +1463,59 @@ What went wrong on the way, each seen in the checks or the pictures:
 
 ![nábřeží Edvarda Beneše by Čechův most: the bank's height spread over the pavement, and after](images/step-lines-benese.jpg)
 
-The lines cost 2,100–2,400 lines and 50,000–56,000 points on the centre map, the tiles'
-gzipped JSON grows from 6.3 MB to 6.7 MB, and the build spends 5–20 s on them. Not tried
-on `praha`.
+The lines cost 2,100–2,400 lines and 50,000–56,000 points on the centre map, and the
+tiles' gzipped JSON grows from 6.3 MB to 6.7 MB.
+
+### Walls as lines on praha
+
+`ipr_terrain.py praha --step-lines` on today's ground, 7 November 2026: 15,915 lines with
+413,400 points in 2,293 of the 14,595 tiles. They take 18 s of the 16-minute build, once
+the lattice is read and the heights fitted for all of a tile's points at once (point by
+point, the centre map alone took 21 s), and add 3.6 MB to the tiles' 196 MB of gzipped
+JSON. Each check below ran on that one build, with `--lines off` for the first column.
+
+| praha | without lines | lines | lines, checked against the lattice |
+|---|---|---|---|
+| parapet with a top jumping over 15 cm | 16.7 km | 4.9 km | 5.9 km |
+| of it by the water | 1.29 km | 0.30 km | 0.34 km |
+| edges that stop you | 276.5 km | 276.4 km | 276.5 km |
+| car streets with steps over 1 m | 37 | 16 | 18 |
+| with bumps over 0.5 m | 561 | 553 | 553 |
+| leaning over 15 % | 3,022 | 3,015 | 3,013 |
+| twisting over 12 % | 2,478 | 2,466 | 2,463 |
+| streets the lines give a step over 1 m | | 2 | 0 |
+
+The wall tops jump by over 15 cm along a third as much of the city's walls. Car streets
+with a step over 1 m fall from 37 to 18, most of them where a wall's terrace lies along a
+street on a hillside (Ve Střešovičkách, Lysolajské údolí, Čábelecká, nábřeží Kapitána
+Jaroše). Two trunk links lean a little more (one from 11 % to 20 %) and four streets twist
+a little more (Vřesovická, Apolinářská and two links, to 13–19 %). Of the named bridges,
+Palackého most's worst join goes from 2.7 m to 2.0 m and the north end of Hlávkův most
+from 0.93 m to 0.72 m. Štefánikův most's goes from 3.8 m to 4.7 m, but that join was
+already broken: its way ends over the quay terrace 5 m under the deck, and the lines
+bring the quay nearer its own height.
+
+![A path on an embankment in Stodůlky, without and with lines](images/step-lines-praha.jpg)
+
+Without the check, two streets got a step. At K Vlásence a terrace three lattice
+points long lies in a hollow with plain ground on both sides, the street at
+229 m on one and the hillside at 233 m on the other; the lattice's plain-ground corners
+change from one to the other within a cell, so the line, read 1.5–4 m out, had the
+hillside, and the street's edge along the outline took it: a step of 2.85 m and a lean
+of 101 %. On Prokopova, plain ground at 239.5 m (the street) and at 246 m (the
+embankment beside it) lie 3 m apart past a cluster of tiny terraces, and three lines
+with 246 m lifted the street 2 m. Holečkova and Za Strahovem leaned and twisted more for
+the same reason. The pipeline can't tell the two grounds apart on a 4 m lattice; the
+game can, by the lattice's own height at the point. With the check, all four are as
+without lines or better.
+
+The check costs some of the best walls. Under the castle by Jelení příkop the lines
+straighten a zigzag wall top, and with the check half of the zigzag comes back; on Letná
+a dip comes back in a parapet. Both stay better than without lines. On the LiDAR map
+the check put the sawtooth back on nábřeží Edvarda Beneše and Chotkova, hence its
+exception there.
+
+![Under the castle by Jelení příkop: without lines, with lines, and with the check](images/step-lines-check.jpg)
 
 ### Reproducing
 
@@ -1470,6 +1527,8 @@ on `praha`.
     cd .. && node scripts/check-road-flatness.mjs centrum
     node scripts/check-bridge-decks.mjs centrum
     node scripts/check-step-edges.mjs centrum [--sides plane] [--lines off]
+    # praha, today's ground only: 16 min, then the same checks with praha [--lines off]
+    cd pipeline && uv run ipr_terrain.py praha --step-lines
 
 The game shows the map at `?area=centrum`, and `&lines=off` leaves the step lines out. `?countryside` still writes decimetres and
 doesn't go with a centimetre map.
