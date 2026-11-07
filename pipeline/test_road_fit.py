@@ -1,6 +1,7 @@
 """The road fit's bending penalty (road_fit.build_penalty): a street may climb and lean
 at any steady rate for free, bending along it costs more than the same bending across,
 and at a junction it costs the same whichever way it runs."""
+import base64
 import unittest
 
 import numpy as np
@@ -53,6 +54,23 @@ class RoadFitPenaltyTests(unittest.TestCase):
         z = np.where(self.x < 4, 240.0, 242.0)[idx >= 0]
         r = P @ z
         self.assertAlmostEqual(float(r @ r), 0, places=9)
+
+
+class PackTests(unittest.TestCase):
+    def test_packed_heights_come_back_where_the_game_reads_them(self):
+        y, x = np.mgrid[0:12, 0:15].astype(float)
+        h = 240 + 0.5 * x + 3 * np.sin(y) + 30 * (x > 12)  # a 40 m range: steps under a mm
+        weights = np.zeros(h.shape, np.uint8)
+        weights[2:8, 2:9] = 255
+        packed = road_fit.pack_heights(h, weights)
+        dq = np.frombuffer(base64.b64decode(packed["data"]), "<i2").reshape(h.shape)
+        q = np.cumsum(dq.astype(np.int64), axis=1)
+        q = ((q + 32768) % 65536) - 32768  # the reader wraps round at 16 bits too
+        back = packed["base"] + q * packed["step"]
+        used = np.zeros(h.shape, bool)
+        used[1:9, 1:10] = True
+        self.assertLess(np.abs(back - h)[used].max(), packed["step"])
+        self.assertTrue((back[~used] == packed["base"]).all())
 
 
 if __name__ == "__main__":

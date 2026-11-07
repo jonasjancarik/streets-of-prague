@@ -12,12 +12,15 @@ place is judged on its own. A metre or more apart, IPR's surface model (the
 top surface, as the game's camera sees it) picks the level; closer than that,
 or where it shows neither, the map keeps its level unless it has a hole or a
 spike there and the LiDAR runs on smoothly. Where the map keeps its level the
-fit follows it, smoothed. Retaining walls, terraces and tunnels split the grid.
+fit follows it, smoothed. Retaining walls and terraces split the grid. Over a
+tunnel and where the ground meets a bridge's deck the street is the map's (its
+ground was shaped there to meet them) and the fit comes down to it, so there is
+no step where they meet.
 The surveyed road edges are only a check: the map was built with them.
 
 The result is written as level-zero road surface patches (src/roadSurfaces.ts)
 that replace the map's ground on the carriageway and fade into it over the
-first metres past the kerb. The game leaves them out of tiles with a tunnel.
+first metres past the kerb.
 The checkers take the file with --roadsurfaces and the game with
 ?roadsurfaces&roadfit (road-fit.json beside the map).
 
@@ -26,6 +29,7 @@ The checkers take the file with --roadsurfaces and the game with
 """
 
 import argparse
+import base64
 from collections import defaultdict
 import json
 import math
@@ -46,7 +50,7 @@ from shapely.geometry import box as rect
 from dtm_heights import _along
 import ipr_lidar
 from layers import write
-from road_height_sources import dsm_sampler
+from road_height_sources import Map as RoadHeights, dsm_sampler
 from road_profile import polygons, terrain_at
 from road_surfaces import Map, smooth
 
@@ -71,6 +75,10 @@ ALONG, ACROSS, TWIST = 6.0, 0.05, 0.8
 JUNCTION = 2.0      # isotropic, at junctions and on squares
 TIE = 1e-3          # weak pull to the map's ground, so a cell with no data has a height
 HELD = 0.2          # where the map keeps its level it holds the fit there, smoothed
+PIN = 100.0         # over a tunnel the fit takes the map's level
+TUNNEL_GAP = 4.0    # m round a tunnel where it does so too
+EDGE = 10.0         # m inside the area's edge where it does so too
+MEETS = 1.0         # m: where the ground is this close to a deck beside it, it meets the deck
 ROUGH, SMOOTH = 0.25, 0.08  # m off the 3×3 mean: a map hole's sides, a LiDAR street with none
 APART = 1.0         # m, where the LiDAR and the map are this far apart the surface model decides
 SEEN = 0.5          # m, the surface model (lowest quarter) this close to a level shows it is on top
@@ -220,8 +228,36 @@ def bilinear_rows(px, py, x0, y0, idx):
     return keep, sp.csr_matrix((vals, (rows, cols)), shape=(k, int(idx.max()) + 1))
 
 
+class Decks:
+    """The highest bridge deck at a point on the game's lattice (NaN off any deck)."""
+
+    def __init__(self):
+        self.m = RoadHeights()
+
+    def at(self, xs, ys):
+        m = self.m
+        xs, ys = np.asarray(xs, float).ravel(), np.asarray(ys, float).ravel()
+        out = np.full(xs.shape, np.nan)
+        ti = np.floor((xs + m.ox) / m.T).astype(int)
+        tj = np.floor((ys + m.oy) / m.T).astype(int)
+        for i, j in set(zip(ti.tolist(), tj.tolist())):
+            got = m.lattice(i, j)
+            if got is None or got[1] is None:
+                continue
+            g = got[1]
+            sel = (ti == i) & (tj == j)
+            a = np.clip((xs[sel] + m.ox - i * m.T) / m.step, 0, m.n - 1.001)
+            b = np.clip((ys[sel] + m.oy - j * m.T) / m.step, 0, m.n - 1.001)
+            ia, ib = a.astype(int), b.astype(int)
+            fa, fb = a - ia, b - ib
+            out[sel] = ((1 - fa) * (1 - fb) * g[ib, ia] + fa * (1 - fb) * g[ib, ia + 1]
+                        + (1 - fa) * fb * g[ib + 1, ia] + fa * fb * g[ib + 1, ia + 1])
+        return out
+
+
 def fit(city, area, lidar_at, dsm_at):
     t0 = time.time()
+    decks = Decks()
     w, s, e, n = area
     lon = np.array([w, e, e, w])
     lat = np.array([s, s, n, n])
@@ -235,7 +271,7 @@ def fit(city, area, lidar_at, dsm_at):
     pts = shapely.points(gx.ravel(), gy.ravel())
     near = shapely.dwithin(paved, pts, FEATHER + CELL).reshape(gx.shape)
     cut = np.zeros_like(near)
-    blockers = [geo.get("terrace"), geo.get("tunnel")]
+    blockers = [geo.get("terrace")]
     sub = pts[near.ravel()]
     blocked = np.zeros(len(sub), bool)
     for g in blockers:
@@ -249,13 +285,26 @@ def fit(city, area, lidar_at, dsm_at):
         shapely.prepare(walls)
         blocked |= shapely.dwithin(walls, sub, WALL_GAP)
     cut[near] = blocked
+
+    # The map's ground now: the weak tie, a check on the LiDAR and the measure of the change.
+    at = terrain_at(city.data, city.index, tiles)
+    ground = np.full(gx.shape, np.nan)
+    ground[near] = at(gx[near], gy[near])
+    # LiDAR, a 2 m cell as the mean of its four 1 m samples, only well inside the kerb.
+    inside = np.zeros(gx.shape, bool)
+    inner = paved.buffer(-INSET)
+    shapely.prepare(inner)
+    uncut = near & ~cut
+    inside[uncut] = shapely.covers(inner, shapely.points(gx[uncut], gy[uncut]))
+    lid = np.full(gx.shape, np.nan)
+    qx, qy = gx[inside], gy[inside]
+    samples = np.stack([lidar_at(qx + a, qy + b) for a in (-.5, .5) for b in (-.5, .5)]).astype(float)
+    lid[inside] = np.where(samples.max(0) - samples.min(0) < 0.5, samples.mean(0), np.nan)
     on = near & ~cut
     idx = np.full(gx.shape, -1, int)
     idx[on] = np.arange(np.count_nonzero(on))
     cells = np.count_nonzero(on)
-    tunnel_tiles = sorted(k for k, t in tiles.items() if any(st["kind"] == "tunnel" for st in t.get("structures", [])))
-    print(f"{len(tiles)} tiles ({len(tunnel_tiles)} with a tunnel, where the game leaves road patches out), "
-          f"{len(edges)} ground streets, {cells} grid cells ({time.time() - t0:.0f} s)")
+    print(f"{len(tiles)} tiles, {len(edges)} ground streets, {cells} grid cells ({time.time() - t0:.0f} s)")
 
     # Each cell's street direction, and whether it is at a junction or off any street axis.
     ap, ad, ah = axes(edges)
@@ -273,19 +322,29 @@ def fit(city, area, lidar_at, dsm_at):
         iso[on] = (dj <= reach[kj]) | (dist > ah[nearest] + FEATHER + 6)
     P = build_penalty(idx, tx, ty, iso)
 
-    # The map's ground now: the weak tie, a check on the LiDAR and the measure of the change.
-    at = terrain_at(city.data, city.index, tiles)
-    ground = np.full(gx.shape, np.nan)
-    ground[on] = at(cx, cy)
-    # LiDAR, a 2 m cell as the mean of its four 1 m samples, only well inside the kerb.
-    inside = np.zeros(gx.shape, bool)
-    inner = paved.buffer(-INSET)
-    shapely.prepare(inner)
-    inside[on] = shapely.covers(inner, shapely.points(cx, cy))
-    lid = np.full(gx.shape, np.nan)
-    qx, qy = gx[inside], gy[inside]
-    samples = np.stack([lidar_at(qx + a, qy + b) for a in (-.5, .5) for b in (-.5, .5)]).astype(float)
-    lid[inside] = np.where(samples.max(0) - samples.min(0) < 0.5, samples.mean(0), np.nan)
+    # Over a tunnel and round it, and where the ground meets a bridge's deck (at its ends,
+    # over a cutting), the map's ground: no LiDAR, and the map's level held. The ground
+    # there was shaped to meet them.
+    pinned = np.zeros(gx.shape, bool)
+    tunnel = geo.get("tunnel")
+    if tunnel is not None and not tunnel.is_empty:
+        shapely.prepare(tunnel)
+        pinned[on] = shapely.dwithin(tunnel, shapely.points(cx, cy), TUNNEL_GAP)
+    deck = geo.get("deck")
+    if deck is not None and not deck.is_empty:
+        shapely.prepare(deck)
+        near_deck = on.copy()
+        near_deck[on] = shapely.dwithin(deck, shapely.points(cx, cy), TUNNEL_GAP)
+        qx, qy = gx[near_deck], gy[near_deck]
+        meets = np.zeros(len(qx), bool)
+        r = TUNNEL_GAP * 0.75
+        for a, b in [(0, 0)] + [(r * math.cos(t), r * math.sin(t)) for t in np.arange(8) * math.pi / 4]:
+            d = decks.at(qx + a, qy + b)
+            meets |= np.abs(d - ground[near_deck]) < MEETS
+        pinned[near_deck] = meets
+    # At the edge of the area the fit comes down to the map, which goes on beyond it.
+    pinned |= on & ((gx < bounds[0] + EDGE) | (gx > bounds[2] - EDGE) | (gy < bounds[1] + EDGE) | (gy > bounds[3] - EDGE))
+    lid[pinned] = np.nan
 
     # Where the LiDAR and the map's ground disagree, one of them isn't the road. Where they
     # are a metre or more apart IPR's surface model, which sees the top surface as the
@@ -333,7 +392,7 @@ def fit(city, area, lidar_at, dsm_at):
     L_idx = idx[data_cells]
     d_lidar = lid[data_cells]
     L = sp.csr_matrix((np.ones(len(L_idx)), (np.arange(len(L_idx)), L_idx)), shape=(len(L_idx), cells))
-    held = np.where(masked[on], HELD, TIE)
+    held = np.where(pinned[on], PIN, np.where(masked[on], HELD, TIE))
     base = np.where(np.isfinite(ground[on]), ground[on], np.nanmedian(d_lidar))
     print(f"{len(d_lidar)} LiDAR cells, {np.count_nonzero(masked)} left to the map ({time.time() - t0:.0f} s)")
 
@@ -379,7 +438,7 @@ def fit(city, area, lidar_at, dsm_at):
                            change=round(float(np.median(delta)), 2), most=round(float(delta[np.abs(delta).argmax()]), 2),
                            lidarLeftOut=round(float(masked[sl][part].mean()), 2)))
     places.sort(key=lambda p: -p["area"])
-    stats = dict(tiles=len(tiles), tunnelTiles=tunnel_tiles, cells=int(cells), lidarCells=int(nl), disagreements=dict(votes), leftToMap=int(np.count_nonzero(masked)),
+    stats = dict(tiles=len(tiles), cells=int(cells), lidarCells=int(nl), disagreements=dict(votes), leftToMap=int(np.count_nonzero(masked)),
                  lidarResidual=dict(median=float(np.median(np.abs(r))), p95=float(np.percentile(np.abs(r), 95))),
                  seconds=round(time.time() - t0), largeChanges=places)
     # The surveyed road edges (the lines along the carriageway's outline) as a check.
@@ -399,8 +458,22 @@ def fit(city, area, lidar_at, dsm_at):
                         p95=float(np.percentile(np.abs(e - np.median(e)), 95)))
         stats["surveyCheck"] = dict(points=int(near.sum()), fit=spread((C @ z - sv[:, 2])[near]),
                                     now=spread((now - sv[:, 2])[near]))
-    grids = dict(Z=Z, base=ground, lidar=lid, inside=inside, masked=masked, iso=iso, cut=cut)
+    grids = dict(Z=Z, base=ground, lidar=lid, inside=inside, masked=masked | pinned, iso=iso, cut=cut)
     return dict(Z=Z, x0=x0, y0=y0, on=on, geo=geo, paved=paved, bounds=bounds, tiles=tiles, at=at, idx=idx, grids=grids), stats
+
+
+def pack_heights(h, weights):
+    """Heights as int16 steps from the middle of their range (a millimetre, or a little more
+    where the range is wider than 65 m), each row as the change from the node before it (wrapping
+    round), base64 (src/roadSurfaces.ts). Nodes no weighted cell touches are left at the
+    base: nothing reads them, and the file packs far smaller."""
+    used = ndimage.binary_dilation(weights > 0, np.ones((3, 3), bool))
+    lo, hi = float(np.min(h[used])), float(np.max(h[used]))
+    base = round((lo + hi) / 2, 3)
+    step = max(0.001, (hi - lo) / 65000)
+    q = np.where(used, np.round((h - base) / step), 0).astype(np.int32)
+    dq = np.diff(q, axis=1, prepend=0).astype("<i2")
+    return dict(base=base, step=step, data=base64.b64encode(dq.tobytes()).decode())
 
 
 def patches(city, f):
@@ -411,7 +484,7 @@ def patches(city, f):
     zone = paved.buffer(FEATHER)
     blocked = [g for g in (geo.get("terrace"), geo.get("tunnel")) if g is not None and not g.is_empty]
     house = geo.get("house")
-    out, report = [], dict(patches=0, nodes=0, full=0, inTunnelTiles=0, change=[])
+    out, report = [], dict(patches=0, nodes=0, full=0, change=[])
     for cx in range(int(math.floor(b[0] / CORE)) * CORE, int(math.ceil(b[2] / CORE)) * CORE, CORE):
         for cy in range(int(math.floor(b[1] / CORE)) * CORE, int(math.ceil(b[3] / CORE)) * CORE, CORE):
             core = rect(cx, cy, cx + CORE, cy + CORE)
@@ -460,15 +533,12 @@ def patches(city, f):
             report["patches"] += 1
             report["nodes"] += int(np.count_nonzero(active))
             report["full"] += int(np.count_nonzero(enc == 255))
-            # The game leaves road patches out of a tile with a tunnel (its ground is cut there).
-            keys = [k for k, t in city.tiles(bx).items()
-                    if not any(st["kind"] == "tunnel" for st in t.get("structures", []))]
-            if len(keys) < len(city.tiles(bx)):
-                report["inTunnelTiles"] += 1
+            keys = list(city.tiles(bx))
             if not keys:
                 continue
             out.append(dict(id=f"roadfit:{cx}_{cy}", kind="roadfit", box=bx, n=[xs.shape[1], xs.shape[0]],
-                            weights=enc.tolist(), heights=np.round(h, 3).tolist(), tiles=sorted(keys)))
+                            weights=base64.b64encode(enc.astype(np.uint8).tobytes()).decode(),
+                            heights=pack_heights(h.reshape(xs.shape), enc2), tiles=sorted(keys)))
     ch = np.concatenate(report.pop("change")) if report["patches"] else np.array([0.0])
     report["change"] = dict(median=float(np.median(ch)), p95=float(np.percentile(ch, 95)), max=float(ch.max()))
     return out, report

@@ -65,3 +65,18 @@ test('an intersection surface keeps the retaining wall and water on separate lev
   assert.ok(lower.every((z) => z === -1));
   assert.ok(upper.every((z) => z > .7));
 });
+
+test('a patch may carry its grids packed as base64', () => {
+  const heights = weights.map((_, i) => 103 + (i % 21) * .1);
+  const b64 = (bytes) => Buffer.from(bytes).toString('base64');
+  // Each row as the change from the node before it, wrapping round at 16 bits.
+  const steps = heights.map((h) => Math.round((h - 104) / 0.001));
+  const q = new Int16Array(steps.map((v, i) => i % 21 ? v - steps[i - 1] : v));
+  const packed = { ...patch, id: 'packed', z: undefined, weights: b64(Uint8Array.from(weights)),
+    heights: { base: 104, step: 0.001, data: b64(new Uint8Array(q.buffer)) } };
+  const [got] = readRoadSurfaces({ ...file, patches: [packed] }, 'praha', 'new').get('0_0');
+  assert.deepEqual(got.weights, weights);
+  assert.ok(got.heights.every((h, i) => Math.abs(h - heights[i]) < 6e-4));
+  assert.equal(readRoadSurfaces({ ...file, patches: [{ ...packed, weights: b64(Uint8Array.from(weights.slice(1))) }] }, 'praha', 'new'), null);
+  assert.equal(readRoadSurfaces({ ...file, patches: [{ ...packed, heights: { ...packed.heights, step: 0 } }] }, 'praha', 'new'), null);
+});

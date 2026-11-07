@@ -23,8 +23,10 @@ export function readRoadSurfaces(value: unknown, area: string, built?: string): 
   const tiles = new Map<string, RoadSurface[]>();
   const ids = new Set<string>();
   const finite = (a: unknown, size: number) => Array.isArray(a) && a.length === size && a.every(Number.isFinite);
-  for (const p of f.patches as (RoadSurface & { tiles: string[] })[]) {
-    if (!p || typeof p.id !== 'string' || ids.has(p.id) || !finite(p.box, 4) || !p.box.every(Number.isInteger) || !finite(p.n, 2)
+  for (const packed of f.patches as (RoadSurface & { tiles: string[] })[]) {
+    const p = unpack(packed);
+    if (!p) return null;
+    if (typeof p.id !== 'string' || ids.has(p.id) || !finite(p.box, 4) || !p.box.every(Number.isInteger) || !finite(p.n, 2)
       || !p.n.every((n) => Number.isInteger(n) && n >= 2 && n <= 128)
       || p.box[2] - p.box[0] !== p.n[0] - 1 || p.box[3] - p.box[1] !== p.n[1] - 1
       || !Array.isArray(p.weights) || p.weights.length !== p.n[0] * p.n[1]
@@ -44,6 +46,34 @@ export function readRoadSurfaces(value: unknown, area: string, built?: string): 
     }
   }
   return tiles;
+}
+
+// A patch may carry its grids packed (pipeline/road_fit.py): the weights as base64 bytes,
+// the heights as base64 little-endian int16 steps from a base, each row as the change from
+// the node before it (wrapping round at 16 bits).
+type Packed = { base: number; step: number; data: string };
+function unpack<P extends { weights: unknown; heights?: unknown; n?: unknown }>(p: P): P | null {
+  if (!p || typeof p !== 'object') return p;
+  const bytes = (b64: string) => { try { return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); } catch { return null; } };
+  let out = p;
+  if (typeof p.weights === 'string') {
+    const w = bytes(p.weights);
+    if (!w) return null;
+    out = { ...out, weights: Array.from(w) };
+  }
+  const h = p.heights as Packed | undefined;
+  if (h && typeof h === 'object' && !Array.isArray(h)) {
+    const raw = typeof h.data === 'string' ? bytes(h.data) : null;
+    if (!raw || raw.length % 2 || !Number.isFinite(h.base) || !Number.isFinite(h.step) || !(h.step > 0)) return null;
+    const q = new DataView(raw.buffer), nx = Array.isArray(p.n) ? p.n[0] : 0;
+    if (!(nx > 0) || (raw.length / 2) % nx) return null;
+    let at = 0;
+    out = { ...out, heights: Array.from({ length: raw.length / 2 }, (_, i) => {
+      at = i % nx ? (at + q.getInt16(2 * i, true)) << 16 >> 16 : q.getInt16(2 * i, true);
+      return h.base + at * h.step;
+    }) };
+  }
+  return out;
 }
 
 export function withRoadSurfaces(base: HeightAt, patches: RoadSurface[] | undefined, ref: number,

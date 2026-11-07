@@ -834,7 +834,7 @@ the result as road surface patches with `?roadsurfaces&roadfit`.
 
 ### How the fit works
 
-- A 2 m grid covers IPR's carriageway outlines and 2.5 m past the kerb, 367,492
+- A 2 m grid covers IPR's carriageway outlines and 2.5 m past the kerb, 369,101
   cells here. Each cell at least 1 m inside the kerb takes the mean of four 1 m
   LiDAR samples, so the kerb's own step stays out.
 - A bending penalty holds the surface together. It is stiff along each street (the
@@ -844,21 +844,30 @@ the result as road surface patches with `?roadsurfaces&roadfit`.
   smoothed away.
 - The loss is robust and lopsided (6 cm above the surface, 12 cm below), so a car
   or a hedge left in the LiDAR can't lift the road.
-- Retaining walls, terraces and tunnels cut the grid. Up to a wall, each side keeps
-  its own height, so a step falls on the wall line.
+- Retaining walls and terraces cut the grid. Up to a wall, each side keeps its own
+  height, so a step falls on the wall line.
+- Over a tunnel and for 4 m round it, wherever the ground comes within a metre of
+  a bridge's deck beside it (the deck's ends, a street crossing a cutting), and in
+  the outer 10 m of the area, the fit takes the map's own level. The map's ground
+  there was shaped to meet those structures and the ground beyond the area, so the
+  fitted streets come down to it without a step.
 - Where the LiDAR and the map's ground are more than 0.3 m apart, each place is
   judged on its own. At a metre or more apart, IPR's surface model decides: it
   sees the top surface, as the game's camera does. Below a metre, or when the
   surface model matches neither level, the map keeps its level. The exception is a
   hole or spike in the map where the LiDAR runs on smoothly. Where the map keeps
-  its level, the fit follows a smoothed copy of it. Of 1,404 such places, the map
-  kept 1,312. The surface model sided with the LiDAR at 78 and with the map at 14.
-  No place in this area was settled by the hole-or-spike test.
+  its level, the fit follows a smoothed copy of it. Of 1,371 such places, the map
+  kept 1,273. The surface model sided with the LiDAR at 86 and with the map at 12.
 - The surveyed road edges are only a check. The map was built with them, so they
   favour it.
 - The fit is cut into 345 patches of 120 m. Each has full weight on the carriageway
-  and fades out over 2.5 m past the kerb and within 2 m of a building. The solve
-  takes about 15 s and the whole run about 40 s.
+  and fades out over 2.5 m past the kerb and within 2 m of a building. The whole run
+  takes about 40 s.
+- The patches are packed: weights as bytes, heights as 16-bit steps of a millimetre,
+  each row stored as the change from the point before it, both in base64. Heights
+  that nothing reads (away from any weighted point) are left out. The file for this
+  area is 21 MB, 2.5 MB gzipped, against 49 MB and 10 MB as plain JSON lists.
+  `src/roadSurfaces.ts` reads both forms.
 
 ### Why not the LiDAR everywhere
 
@@ -881,19 +890,53 @@ aside. On narrow streets with an edge at a different height on each side (Balbí
 V luhu), that tipped the street up to 2 m sideways, because a steady lean costs
 nothing. The edges went back to being a check.
 
+### Tiles with a tunnel
+
+The first pilot couldn't show the fit in 20 of the 104 tiles: the game and the
+checkers left road patches out of any tile with a tunnel. Such a tile has a second,
+invisible copy of its ground (`depthOnlyGround` in `src/tiles.ts`). It is drawn on
+the coarse 4 m lattice 0.3 m under the ground and hides the tunnel and the cars in
+it, except in a hole round you. A patch that lowers the road below that copy would
+hide the cars on the road as well.
+
+Now, under road patches, each lattice point of the hidden copy goes down to the
+lowest patched height round it (sampled on a 2 m grid over the two cells either
+side), and the game, `check-road-flatness.mjs` and `check-step-edges.mjs` use the
+patches in tunnel tiles too. In the four tunnel tiles round I. P. Pavlova, 123,008
+points sampled over the hidden copy all lie at least 0.23 m under the road.
+
+Letting the fit into those tiles at first made two hard-limit steps. On Wilsonova
+(0.96 m) the fit cut its grid at a tunnel's outline under the carriageway and
+met the old ground there. On 5. května over the Kongresová cutting (1.47 m) it
+lowered the ground at the end of the street's deck. Holding the map's level over
+tunnels and where the ground meets a deck (see above) took both back to 0.20 and
+0.14 m.
+
+Two other ideas were tried and dropped:
+
+- Cutting the grid wherever the map drops more than 0.9 m between two cells
+  (a cutting's side the map has no wall line for). It brought back a 3.5 m hole on
+  Legerova (50.07785, 14.43071) that the map and the LiDAR share. There the
+  surface model puts the road at about 225.5 m, so both of them see under
+  something. Checking the cut against the surface model cut too little at the
+  Kongresová cutting.
+- Giving each cell cut at a wall the map's height plus its nearest fitted cell's
+  correction, instead of that cell's height. It didn't fix Na Topolce (below) and
+  added a lean on Na Rybníčku.
+
 ### Results inside the area
 
 `check-road-flatness.mjs` on the 1,051 car streets lying wholly inside the box (802
-of them on the ground):
+of them on the ground). "First fit" is the version without tunnel tiles:
 
-| Findings (flag / hard limit) | Map now | Road fit |
-| --- | ---: | ---: |
-| Steps along the street (> 0.25 / 1 m) | 4 / 1 | 4 / 0 |
-| Bumps (> 0.15 / 0.5 m) | 66 / 8 | 19 / 3 |
-| Leaning across (> 8 / 15 %) | 82 / 30 | 47 / 19 |
-| Ridge or trough (> 0.3 / 1 m) | 14 / 1 | 8 / 0 |
-| Twisting (> 5 / 12 %) | 94 / 26 | 38 / 12 |
-| Off the road (> 4 / 10 m) | 0 / 0 | 0 / 0 |
+| Findings (flag / hard limit) | Map now | First fit | Road fit |
+| --- | ---: | ---: | ---: |
+| Steps along the street (> 0.25 / 1 m) | 4 / 1 | 4 / 0 | 2 / 0 |
+| Bumps (> 0.15 / 0.5 m) | 66 / 8 | 19 / 3 | 4 / 0 |
+| Leaning across (> 8 / 15 %) | 82 / 30 | 47 / 19 | 39 / 15 |
+| Ridge or trough (> 0.3 / 1 m) | 14 / 1 | 8 / 0 | 8 / 0 |
+| Twisting (> 5 / 12 %) | 94 / 26 | 38 / 12 | 15 / 4 |
+| Off the road (> 4 / 10 m) | 0 / 0 | 0 / 0 | 0 / 0 |
 
 The existing preview patches (`road-shelves.json`) change one twist inside this box.
 The largest repairs:
@@ -902,46 +945,50 @@ The largest repairs:
 - Božetěchova: bump 1.20 → 0.20 m
 - Anglická: twist 55.2 → 1.1 %
 - Pod Zvonařkou: twist 50.4 → 6.2 %
+- In the tunnel tiles: Kongresová's bump 0.70 → 0.19 m and twist 27.6 → 16.6 %,
+  Legerova's bump 0.87 → 0.15 m by I. P. Pavlova
 
-The fit stays within 0.8 cm of the LiDAR it uses (median; 95th percentile 5.9 cm). It
-moves the carriageway by 8 cm (median; 95th percentile 39 cm). Against the surveyed
+The fit stays within 0.8 cm of the LiDAR it uses (median; 95th percentile 6.7 cm). It
+moves the carriageway by 8 cm (median; 95th percentile 35 cm). Against the surveyed
 edges, the fit spreads 10.9 cm and the map 9.2 cm, with the same 39 cm tail. That
 comparison favours the map, which was built from those edges.
 
-The step-edge check matches the current map, apart from the drop under Bělehradská
-(2.8 → 2.1 m) and one footway and one path crossing fewer. The bridge check
-reports the named bridges unchanged. Seven of 237 deck ends moved by up to 15 cm,
-and one footpath end improved from 4.62 to 3.48 m.
+The step-edge check, over the 91 tiles the patches cover, matches the current map,
+apart from the drop under Bělehradská (2.8 → 2.3 m) and one path crossing fewer. The
+bridge check reports the named bridges unchanged; one footpath end improved from
+4.62 to 4.02 m.
 
 ![Bumps and dips on the carriageways around náměstí Míru: blotches and holes in the map, an even crown and gutters in the fit](images/road-fit-relief.png)
 
 From above, the game shows the difference mainly at real defects. The dark,
 sunken patches in the náměstí Míru junction are gone. Elsewhere only the shading
 changes a little. Matched views are in `docs/evidence/road-fit/shots/` (`pair-*`,
-and `crop-*` with a difference panel).
+`crop-*` with a difference panel, and `pair2-*` from the tunnel tiles).
 
 ### What doesn't work yet
 
-- The game and the checkers leave road patches out of any tile with a tunnel (20 of
-  the 104 here). That includes Kongresová under 5. května, I. P. Pavlova and the
-  main station, so the fit there is computed but never shown. Writing the fit
-  into the ground grid instead of patches would remove that gap.
-- U tržnice (50.07671, 14.44267) has a retaining wall down the middle of the
-  carriageway, probably a ramp beside the street. The fit follows both levels, and
-  the street's lean goes from 0.7 to 32.9 %. A wall inside a carriageway needs its
-  own rule.
-- Smaller new findings: steps of 0.25–0.30 m on Čiklova, Opletalova, Helénská and
-  Španělská, and leans of 8–9 % on Šmilovského and Pod Karlovem.
-- The fit moves the carriageway by more than a metre at 81 places. The report
+- U tržnice (50.07671, 14.44267): the checker reports a lean of 32.9 % (0.7 % on the
+  map). The fit is right there. The street's west lane lies about 2 m below its
+  east lane behind a retaining wall the map has, and the LiDAR and the surface
+  model both show it. The map had both lanes at one level. The check measures the
+  lean across the wall.
+- New, smaller findings: a 0.44 m step on Na Topolce (50.05933, 14.42522), where a
+  wall runs along the street and the fit lifts the ground beside it by a metre (not
+  yet explained), and leans
+  of 8–13.5 % on Závišova, Ctiborova, Lumírova, Pod Nuselskými schody, Šmilovského
+  and Boleslavova.
+- The fit moves the carriageway by more than a metre at 73 places. The report
   lists them for a look.
-- The patches take 49 MB of JSON for this one area. A city build would need a
-  binary format or the ground grid itself.
 - Bridge decks are not fitted. Nuselský most's deck stays 0.4 m high.
+- In the current game, without any patches, the hidden ground in the four tunnel
+  tiles round I. P. Pavlova sticks up through the visible ground at 993 of
+  123,008 sampled points, by up to 2.26 m (at local -2393, 2145). It may hide cars
+  there. This needs its own look; the road fit doesn't cause it.
 
 ### Reproducing
 
 ```sh
-e=docs/evidence/road-fit
+e=docs/evidence/road-fit/final
 uv run --project pipeline python pipeline/road_fit.py --data public/data/praha_now \
   --out $e/road-fit.json --report $e/report.json
 cp $e/road-fit.json public/data/praha_now/road-fit.json
@@ -949,9 +996,13 @@ node scripts/check-road-flatness.mjs praha --near 50.072,14.4355,1700 --save $e/
 node scripts/check-road-flatness.mjs praha --near 50.072,14.4355,1700 \
   --roadsurfaces $e/road-fit.json --save $e/fit-roads.json
 uv run --project pipeline python pipeline/road_fit_compare.py plain=$e/plain-roads.json fit=$e/fit-roads.json
+T=$(python3 -c "import json; f=json.load(open('$e/road-fit.json')); print(','.join(sorted({k for p in f['patches'] for k in p['tiles']})))")
+node scripts/check-step-edges.mjs praha --tiles $T --save $e/plain-steps.json
+node scripts/check-step-edges.mjs praha --tiles $T --roadsurfaces $e/road-fit.json --save $e/fit-steps.json
+node scripts/check-bridge-decks.mjs praha --near 50.072,14.4355,1700 --roadsurfaces $e/road-fit.json --save $e/fit-bridges.json
 ```
 
 The report (`report.json`) lists each step's counts and the large changes.
-`report.npz` holds the grids (fit, map, LiDAR, what was left to the map) for
-drawing. The fit needs the survey snapshot, the LiDAR import and IPR's surface model
-in `pipeline/.cache`.
+`report.npz` holds the grids (fit, map, LiDAR, what was left to the map or held to
+it) for drawing. The fit needs the survey snapshot, the LiDAR import and IPR's
+surface model in `pipeline/.cache`.
