@@ -51,7 +51,7 @@ for (const f of selected ? selected.map(k => k + '.json') : readdirSync(`${dir}t
   const { height: ab } = bridgeSurfaceBuffers(t, k, n, buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), null, preview);
   const hm = decodeHeights(ab, n, 0, index.terrain.unit), labels = pointLabels(ab, n);
   const side = terraceAt(t.terraces);
-  const base = heightSampler(hm, t.box, n, step, labels, side, flatTerraces(t.terraces, 0), stepLineIndex(t.stepLines, 0, lineReach(step)));
+  const base = heightSampler(hm, t.box, n, step, labels, side, flatTerraces(t.terraces, 0), stepLineIndex(t.stepLines, 0, lineReach(step), index.terrain.unit));
   const road = surfaces?.get(k), lower = preview?.ground.get(k);
   const patches = lower ? [...lower, ...(road ?? [])] : road;
   const H = withRoadSurfaces(base, patches, 0, side);

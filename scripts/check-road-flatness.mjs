@@ -29,7 +29,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
-import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps, stepLineIndex, lineReach } from '../src/terrain.ts';
+import { decodeHeights, decodeLevels, pointLabels, heightSampler, terraceAt, flatTerraces, withRamps, stepLineIndex, lineReach, sampling } from '../src/terrain.ts';
 import { readRoadProfile, withRoadProfile } from '../src/roadProfiles.ts';
 import { readRoadSurfaces, withRoadSurfaces } from '../src/roadSurfaces.ts';
 import { bridgeSurfaceBuffers, bridgeSurfaceTile, readBridgeSurfacePreview } from '../src/bridgeSurfacePreview.ts';
@@ -41,6 +41,7 @@ for (let i = 0; i < rest.length; i++) {
   if (rest[i].startsWith('--')) args[rest[i].slice(2)] = rest[i + 1] && !rest[i + 1].startsWith('--') ? rest[++i] : true;
   else pos.push(rest[i]);
 }
+if (args.lines === 'off') sampling.lines = false; // the steps' lattice ramps, without the tile's step lines
 const root = new URL('..', import.meta.url).pathname;
 const area = pos[0] || 'praha', dir = join(args.data || join(root, 'public/data'), `${area}_now`);
 const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8'));
@@ -96,7 +97,7 @@ function tileOf(i, j) {
     const heights = levels ? decodeLevels(levels, terrain.n, structures.length, REF) : [];
     const roads = t.roads || {}, side = terraceAt(t.terraces);
     const base = height ? heightSampler(decodeHeights(height, terrain.n, REF, terrain.unit), t.box, terrain.n, terrain.step,
-      pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF), stepLineIndex(t.stepLines, REF, lineReach(terrain.step))) : () => NaN;
+      pointLabels(height, terrain.n), side, flatTerraces(t.terraces, REF), stepLineIndex(t.stepLines, REF, lineReach(terrain.step), terrain.unit)) : () => NaN;
     out = {
       side: side || (() => 0),
       base,

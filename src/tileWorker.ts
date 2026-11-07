@@ -74,7 +74,7 @@ const appendTo = (a: BuildingArrays, d: DetailArrays | null, uv?: (x: number, y:
 function groundAt(g: HeightGrid | null) {
   if (!g) return () => 0;
   const ref = g.ref ?? 0;
-  const base = heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, ref), stepLineIndex(g.stepLines, ref, lineReach(g.step)));
+  const base = heightSampler(g.hm, g.box, g.n, g.step, g.labels, terraceAt(g.terraces), flatTerraces(g.terraces, ref), stepLineIndex(g.stepLines, ref, lineReach(g.step), g.unit));
   const profiled = withRoadProfile(withRamps(base, g.ramps, ref), g.roadProfile, ref);
   return withRoadSurfaces(profiled, g.roadSurfaces, ref, g.roadSurfaces ? terraceAt(g.terraces) : null);
 }

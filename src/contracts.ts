@@ -108,7 +108,7 @@ export interface TileJSON extends GroundTileData {
 
 // labels, terraces: the steps in the ground (terrain.ts, pointLabels), where the tile has any.
 // ramps: on a bridge level's grid, its stairs (terrain.ts, withRamps).
-export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; stepLines?: StepLine[]; ref?: number; ramps?: Ramp[]; roadProfile?: RoadProfile; roadSurfaces?: RoadSurface[] }
+export interface HeightGrid { hm: Float32Array; box: Bounds; n: number; step: number; labels?: Uint8Array | null; terraces?: Terrace[]; stepLines?: StepLine[]; unit?: number; ref?: number; ramps?: Ramp[]; roadProfile?: RoadProfile; roadSurfaces?: RoadSurface[] }
 // A level with its heights, for the tile workers.
 export interface LevelInput extends TileStructure { heights: HeightGrid }
 
