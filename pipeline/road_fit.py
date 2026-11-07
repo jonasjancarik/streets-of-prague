@@ -24,10 +24,11 @@ The result is written as level-zero road surface patches (src/roadSurfaces.ts)
 that replace the map's ground on the carriageway and fade into it over the
 first metres past the kerb.
 The checkers take the file with --roadsurfaces and the game with
-?roadsurfaces&roadfit (road-fit.json beside the map).
+?roadsurfaces&roadfit (road-fit.json beside the map). layers.assemble writes that
+one for every area in AREAS on the map (after_assemble); by hand, for a trial:
 
-    uv run --project pipeline python pipeline/road_fit.py --data public/data/praha_now --area nusle zlichov \\
-      --out public/data/praha_now/road-fit.json --report docs/evidence/road-fit/report.json
+    uv run --project pipeline python pipeline/road_fit.py --data public/data/praha_now --area nusle \\
+      --out docs/evidence/road-fit/road-fit.json --report docs/evidence/road-fit/report.json
 """
 
 import argparse
@@ -52,7 +53,7 @@ from shapely.geometry import box as rect
 from dtm_heights import _along
 import ipr_lidar
 from layers import write
-from road_height_sources import Map as RoadHeights, dsm_sampler
+from road_height_sources import DSM, Map as RoadHeights, dsm_sampler
 from road_profile import polygons, terrain_at
 from road_surfaces import Map, smooth
 
@@ -646,6 +647,62 @@ def patches(city, f):
     return out, report
 
 
+def run(data, areas, out, report, survey=SURVEY, lidar=LIDAR, verbose=True):
+    """Fit the areas (keys of AREAS) on the map in data and write their patches to out,
+    stamped with the map's build, and the report (with each area's grids as .npz) to report."""
+    city = Map(data, survey)
+    w, s, e, n = city.index["bbox_wgs84"]
+    local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
+    lidar_at, source = ipr_lidar.sampler(lidar, local)
+    to_wgs = Transformer.from_crs(local, "EPSG:4326", always_xy=True)
+    k_wgs = Transformer.from_crs("EPSG:5514", "EPSG:4326", always_xy=True,
+                                 area_of_interest=AreaOfInterest(14.2, 49.9, 14.8, 50.2))
+
+    def to_krovak(xs, ys):
+        return k_wgs.transform(*to_wgs.transform(xs, ys), direction=TransformDirection.INVERSE)
+    areas = list(dict.fromkeys(areas))
+    out_patches, reports = [], {}
+    for name in areas:
+        f, stats = fit(city, AREAS[name], lidar_at, dsm_sampler(to_krovak))
+        got, rep = patches(city, f)
+        # Patches sit on one fixed layout, so two areas sharing a patch would clash.
+        shared = {p["id"] for p in out_patches} & {p["id"] for p in got}
+        if shared:
+            raise SystemExit(f"{name} shares patches with another area: {', '.join(sorted(shared))}")
+        out_patches += got
+        npz = report.with_suffix(".npz" if len(areas) == 1 else f".{name}.npz")
+        np.savez_compressed(npz, x0=f["x0"], y0=f["y0"], cell=CELL, **f["grids"])
+        reports[name] = dict(box=AREAS[name], fit=stats, **rep)
+        if verbose:
+            print(json.dumps({name: dict(fit=stats, **rep)}, indent=1))
+    write(out, json.dumps(dict(version=1, area=city.index["area"], built=city.index["built"], patches=out_patches),
+                          separators=(",", ":")) + "\n")
+    one = reports[areas[0]] if len(areas) == 1 else None
+    write(report, json.dumps(dict(area=areas[0], **one, lidar=source) if one else dict(areas=reports, lidar=source),
+                             ensure_ascii=False, indent=2) + "\n")
+    return reports
+
+
+def after_assemble(index, out_dir, report_dir):
+    """Fit every area of AREAS that lies wholly on the map just put together (layers.assemble).
+    The game takes road-fit.json only when it carries the map's build, and every step
+    that puts the map together gives it a new one: refitting here keeps the two together."""
+    out = out_dir / "road-fit.json"
+    w, s, e, n = index["bbox_wgs84"]
+    inside = [k for k, (a, b, c, d) in AREAS.items() if a >= w and b >= s and c <= e and d <= n]
+    missing = [str(p) for p in (LIDAR, SURVEY, DSM) if not p.exists()] if inside else []
+    if not inside or missing:
+        if missing:
+            print(f"road fit: none, missing {', '.join(missing)}")
+        out.unlink(missing_ok=True)  # one left from an earlier build would no longer match
+        return
+    started = time.perf_counter()
+    report_dir.mkdir(parents=True, exist_ok=True)
+    reports = run(out_dir, inside, out, report_dir / "report.json", verbose=False)
+    done = ", ".join(f"{k} {r['patches']} patches" for k, r in reports.items())
+    print(f"road fit: {done} → {out.name} ({time.perf_counter() - started:.0f} s)")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=Path, required=True)
@@ -656,35 +713,7 @@ def main():
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--report", type=Path, required=True)
     args = ap.parse_args()
-    city = Map(args.data, args.survey_snapshot)
-    w, s, e, n = city.index["bbox_wgs84"]
-    local = f"+proj=tmerc +lat_0={(s + n) / 2} +lon_0={(w + e) / 2} +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"
-    lidar_at, source = ipr_lidar.sampler(args.lidar, local)
-    to_wgs = Transformer.from_crs(local, "EPSG:4326", always_xy=True)
-    k_wgs = Transformer.from_crs("EPSG:5514", "EPSG:4326", always_xy=True,
-                                 area_of_interest=AreaOfInterest(14.2, 49.9, 14.8, 50.2))
-
-    def to_krovak(xs, ys):
-        return k_wgs.transform(*to_wgs.transform(xs, ys), direction=TransformDirection.INVERSE)
-    areas = list(dict.fromkeys(args.area))
-    out, reports = [], {}
-    for name in areas:
-        f, stats = fit(city, AREAS[name], lidar_at, dsm_sampler(to_krovak))
-        got, report = patches(city, f)
-        # Patches sit on one fixed layout, so two areas sharing a patch would clash.
-        shared = {p["id"] for p in out} & {p["id"] for p in got}
-        if shared:
-            raise SystemExit(f"{name} shares patches with another area: {', '.join(sorted(shared))}")
-        out += got
-        npz = args.report.with_suffix(".npz" if len(areas) == 1 else f".{name}.npz")
-        np.savez_compressed(npz, x0=f["x0"], y0=f["y0"], cell=CELL, **f["grids"])
-        reports[name] = dict(box=AREAS[name], fit=stats, **report)
-        print(json.dumps({name: dict(fit=stats, **report)}, indent=1))
-    write(args.out, json.dumps(dict(version=1, area=city.index["area"], built=city.index["built"], patches=out),
-                               separators=(",", ":")) + "\n")
-    one = reports[areas[0]] if len(areas) == 1 else None
-    write(args.report, json.dumps(dict(area=areas[0], **one, lidar=source) if one else dict(areas=reports, lidar=source),
-                                  ensure_ascii=False, indent=2) + "\n")
+    run(args.data, args.area, args.out, args.report, args.survey_snapshot, args.lidar)
 
 
 if __name__ == "__main__":

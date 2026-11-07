@@ -419,7 +419,15 @@ def pipeline_commit() -> str:
 
 
 def assemble(area: str, strict=False) -> dict:
-    """Write the game's tiles, index.json and names.json from the layers."""
+    """Write the game's tiles, index.json and names.json from the layers, then the road
+    fit over them (road_fit.after_assemble), which must carry the same build."""
+    index = put_together(area, strict)
+    import road_fit  # (it reads the map back through modules that import this one)
+    road_fit.after_assemble(index, OUT / f"{area}_now", folder(area) / "road-fit")
+    return index
+
+
+def put_together(area: str, strict=False) -> dict:
     meta = read_meta(area)
     if not meta:
         raise SystemExit(f"{area}: no layers yet; run build_tiles.py {area} first")

@@ -2,7 +2,10 @@
 at any steady rate for free, bending along it costs more than the same bending across,
 and at a junction it costs the same whichever way it runs."""
 import base64
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import shapely
@@ -88,6 +91,38 @@ class PackTests(unittest.TestCase):
         used[1:9, 1:10] = True
         self.assertLess(np.abs(back - h)[used].max(), packed["step"])
         self.assertTrue((back[~used] == packed["base"]).all())
+
+
+class AfterAssembleTests(unittest.TestCase):
+    """Every step that puts a map together refits it, so road-fit.json carries its build."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        self.out = self.dir / "road-fit.json"
+        self.out.write_text("{}")  # left from the map's earlier build
+
+    def after(self, bbox, present=True):
+        here = self.dir if present else self.dir / "nowhere"
+        with mock.patch.object(road_fit, "run", return_value={}) as run, \
+                mock.patch.multiple(road_fit, LIDAR=here, SURVEY=here, DSM=here):
+            road_fit.after_assemble({"bbox_wgs84": bbox}, self.dir, self.dir / "report")
+        return run
+
+    def test_the_areas_on_the_map_are_fitted(self):
+        run = self.after([14.2244, 49.9419, 14.7068, 50.1774])  # praha
+        self.assertEqual(run.call_args.args[1], ["nusle", "zlichov"])
+
+    def test_a_map_without_an_area_has_no_fit(self):
+        run = self.after([14.3985, 50.0765, 14.4155, 50.0865])  # ujezd
+        run.assert_not_called()
+        self.assertFalse(self.out.exists())
+
+    def test_without_the_lidar_the_old_fit_goes(self):
+        run = self.after([14.2244, 49.9419, 14.7068, 50.1774], present=False)
+        run.assert_not_called()
+        self.assertFalse(self.out.exists())
 
 
 if __name__ == "__main__":

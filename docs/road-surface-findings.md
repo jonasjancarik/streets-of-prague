@@ -1074,13 +1074,18 @@ well (`docs/evidence/road-fit/zlichov/shots/zoom-*`).
 
 ### Reproducing
 
+The map's build makes the file the game reads: every step that puts the map together
+(`layers.assemble`, at the end of `ipr_terrain.py`, `ipr_buildings.py` and the rest)
+fits each area in `road_fit.AREAS` that lies wholly on the map into
+`public/data/<area>_now/road-fit.json`, with the report and grids in
+`pipeline/.cache/layers/<area>/road-fit/`. Before 7 November 2026 it had to be run by
+hand after every build, and the game dropped a fit left from the build before.
+To fit one area on its own, or to try a change without putting the map together:
+
 ```sh
 e=docs/evidence/road-fit/final
 uv run --project pipeline python pipeline/road_fit.py --data public/data/praha_now \
   --out $e/road-fit.json --report $e/report.json
-# Both areas into the file the game reads (patch ids must not repeat across areas):
-uv run --project pipeline python pipeline/road_fit.py --data public/data/praha_now \
-  --area nusle zlichov --out public/data/praha_now/road-fit.json --report $e/report-both.json
 node scripts/check-road-flatness.mjs praha --near 50.072,14.4355,1700 --save $e/plain-roads.json
 node scripts/check-road-flatness.mjs praha --near 50.072,14.4355,1700 \
   --roadsurfaces $e/road-fit.json --save $e/fit-roads.json
